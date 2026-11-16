@@ -8,3 +8,406 @@ docs:
 on_change:
   - A change to a component's markup moves its nil-Classes golden; regenerate it in the same change and read the diff.
   - Screenshot the rendered examples/meridian (marketing, app, auth, admin, phone width, light and dark) and look at it; a DOM dump or computed style cannot show layout.
+twins:
+  - job: List the markers that load the headless behaviour module.
+    why: The treegate reads registry.Markers arguments as string literals only, so the call cannot take the named slice the marker test compares against.
+    sites:
+      - path: framework/headless/behavior.go
+        note: behaviorMarkers, the slice TestBehaviorIsRegisteredWithItsMarkers reads.
+      - path: framework/headless/behavior.go
+        note: The literal registry.Markers arguments on the RegisterBehavior call.
+  - job: Refuse the signal names __proto__, constructor and prototype at render.
+    why: core-ui/interactive keeps its check unexported, so headless repeats it; each copy is pinned by its own test, TestIslandRefusesAReservedSignal and TestLocalMutatorsRefuseReservedSignals.
+    sites:
+      - path: framework/headless/box.go
+        note: checkSignalName, called by Bind, Island and Action.
+      - path: core-ui/interactive/interactive.go
+        note: refuseReservedSignalName, called by the local signal mutators.
+invariants:
+  - id: nil-classes-render-no-class
+    rule: A component rendered at a nil Classes carries no class attribute anywhere in its markup.
+    enforced_by:
+      - test: framework/headless.TestEveryCaseMeetsTheUniversalContract
+      - test: framework/headless.TestSpecGolden
+  - id: class-appends-to-the-class-map
+    rule: A class the component or a caller's part attrs set is appended after the class map's class for that part and never replaces it.
+    enforced_by:
+      - test: framework/headless.TestOverridesCannotBreakAComponent
+      - test: framework/headless.TestButtonPartsAppendTheRootClass
+      - test: framework/headless.TestSweepCoreComponentAttrsBeatPartAttrs
+  - id: variant-class-lookup
+    rule: Classes.Variant looks a variant up under the part name, two hyphens and the variant, and an empty variant yields no class.
+    enforced_by:
+      - test: framework/headless.TestAlertToneReachesTheClasses
+      - test: framework/headless.TestTableColumnVariantLandsOnHeaderAndCells
+  - id: attrs-drop-empty-values
+    rule: Attrs drops every pair whose value is empty, so an unset prop renders no attribute.
+    enforced_by:
+      - test: framework/headless.TestEveryCaseMeetsTheUniversalContract
+      - test: framework/headless.TestSpecGolden
+  - id: presence-attrs-through-mark
+    rule: An attribute whose presence is its value, a data-hui-* hook or hidden, popover, open, inert or disabled, is set with Mark or Flag and never through Attrs, which drops it.
+    enforced_by:
+      - test: framework/headless.TestEveryDeclaredHookIsRendered
+      - test: framework/headless.TestSpecGolden
+  - id: internal-marks-only-owned-subtrees
+    rule: A component marks data-cui-internal only on subtrees that hold none of a caller's content, never on an element holding a slot or on its own root.
+    enforced_by:
+      - test: framework/headless.TestCardActionLeavesHeaderReachable
+      - test: framework/headless.TestSpecGolden
+  - id: extra-attrs-refuse-reserved-keys
+    rule: Safe and part attrs drop style, every on* key, every data-hui-, data-cui-, data-fui-, data-action-, data-param- and data-kiln- key, and data-behavior, data-island, data-widget, data-component, data-bind and data-action, compared case-folded.
+    enforced_by:
+      - test: framework/headless.TestSafeRefusesFoldedAndPrivilegedKeys
+      - test: framework/headless.TestSafeRefusesInlineHandlerKeys
+      - test: framework/headless.TestOverridesCannotBreakAComponent
+      - test: framework/headless.TestSweepCoreSafeRefusesEveryReservedKey
+  - id: safe-drops-owned-keys
+    rule: Safe drops class, id and every key the component names as owned, under any spelling.
+    enforced_by:
+      - test: framework/headless.TestActionExtraAttrsCannotStealTheLifecycle
+      - test: framework/headless.TestSweepCoreSafeDropsOwnedKeysUnderAnySpelling
+  - id: caller-keys-stored-folded
+    rule: Safe and part attrs store a caller's keys lowercased and panic on one key under two spellings.
+    enforced_by:
+      - test: framework/headless.TestExtrasAndOverridesStoreKeysFolded
+      - test: framework/headless.TestSweepCorePartAttrsStoreKeysFolded
+  - id: merge-second-wins
+    rule: Merge returns a new map in which the second argument's value wins for every shared key.
+    enforced_by:
+      - test: framework/headless.TestSweepCoreMergeLaterWins
+  - id: describe-error-before-hint
+    rule: Describe lists the error id before the hint id, keeps both when both are set, and returns nothing for an empty id.
+    enforced_by:
+      - test: framework/headless.TestFieldWiresLabelHintAndErrorToTheControl
+      - test: framework/headless.TestSweepCoreDescribeNeedsAnID
+  - id: default-action-is-hidden-and-unclassed
+    rule: A PartDefaultAction button is a hidden, untabbable submit rendered before every other submit control of its form, and no class map gives it a class.
+    enforced_by:
+      - test: framework/headless.TestStepWizardDefaultButtonIsNext
+      - test: framework/headless.TestRepeaterDefaultButtonCarriesNoOperation
+      - test: framework/ui.TestDefaultActionTakesNoClass
+    applies:
+      - framework/ui/stepwizard.go
+      - framework/ui/repeater.go
+      - framework/ui/formrepeater.go
+  - id: part-attrs-never-beat-the-component
+    rule: A caller's part attrs never set id and never replace an attribute the component sets on that part.
+    enforced_by:
+      - test: framework/headless.TestOverridesCannotBreakAComponent
+      - test: framework/headless.TestSweepCoreComponentAttrsBeatPartAttrs
+  - id: bind-refuses-runtime-owned-attrs
+    rule: An attr-mode Bind refuses aria-pressed, aria-busy, aria-live, aria-invalid, aria-expanded, aria-current, hidden, disabled, data-state, every data-hui-* key and any attribute outside interactive.SignalAttrAllowed, in any letter case.
+    enforced_by:
+      - test: framework/headless.TestBindRefusesWhatTheRuntimeWouldRefuse
+      - test: framework/headless.TestSweepCoreBindRefusesAFoldedRuntimeAttr
+  - id: bind-mode-shape
+    rule: A Bind needs a Signal, mode text or html takes no Attr, mode attr needs one, and any other mode panics.
+    enforced_by:
+      - test: framework/headless.TestBindRefusesWhatTheRuntimeWouldRefuse
+  - id: reserved-signal-names-refused
+    rule: A Bind, an Island and an Action refuse the signal names __proto__, constructor and prototype.
+    enforced_by:
+      - test: framework/headless.TestIslandRefusesAReservedSignal
+      - test: framework/headless.TestBindRefusesWhatTheRuntimeWouldRefuse
+  - id: content-bind-only-on-fillable-parts
+    rule: A text or html Bind panics on a part the spec does not list as Fillable and arrives on every part it does.
+    enforced_by:
+      - test: framework/headless.TestATextBindNeedsAFillablePart
+      - test: framework/headless.TestEveryFillablePartTakesATextBind
+      - test: framework/headless.TestBindLandsOnTheNamedPartOnly
+  - id: slot-fills-only-fillable-parts
+    rule: A Slot's content arrives on every part the spec lists as Fillable and on no other part.
+    enforced_by:
+      - test: framework/headless.TestFilledSlotsKeepTheContract
+      - test: framework/headless.TestSweepCoreASlotFillsOnlyAFillablePart
+  - id: filled-needs-content
+    rule: Box.Filled is true only for a slot holding non-empty content.
+    enforced_by:
+      - test: framework/headless.TestSweepCoreFilledNeedsContent
+  - id: island-trigger-contract
+    rule: An Island trigger carries data-cui-rpc, an upper-cased data-cui-rpc-method and data-cui-rpc-signal, panics without a method, and carries data-cui-push-state only for a GET with an href.
+    enforced_by:
+      - test: framework/headless.TestIslandAttrsShape
+      - test: framework/headless.TestSweepCoreIslandTriggerNeedsAMethod
+  - id: island-query-merge
+    rule: An Island's data-cui-rpc keeps the endpoint's own query, appends the href's pairs after it with both values of a shared key kept, and drops any fragment.
+    enforced_by:
+      - test: framework/headless.TestIslandAttrsShape
+      - test: framework/headless.TestSweepCoreIslandEndpointDropsItsFragment
+  - id: island-endpoint-same-origin
+    rule: An Island Endpoint, like every RPC endpoint the package renders, is a path starting with one slash and not with two slashes or a slash and a backslash.
+    enforced_by:
+      - test: framework/headless.TestIslandRefusesTheUnwired
+      - test: framework/headless.TestEndpointsRefuseTheBackslashSpelling
+      - test: framework/headless.TestRPCSinksAreSameOrigin
+  - id: island-needs-a-signal
+    rule: An Island with an Endpoint and no Signal panics at render.
+    enforced_by:
+      - test: framework/headless.TestIslandRefusesTheUnwired
+      - test: framework/headless.TestRequiredIslandsRefuseTheLinkOnlyRender
+  - id: in-page-change-requires-an-island
+    rule: A component whose purpose is an in-page state change panics when rendered without an Island, so its link-only form cannot be built.
+    enforced_by:
+      - test: framework/headless.TestRequiredIslandsRefuseTheLinkOnlyRender
+  - id: instance-ids-are-unique
+    rule: An explicit control id is used as given and reserved with its suffix family, and a derived id is suffixed when its id or any suffix of its family is already taken on the page.
+    enforced_by:
+      - test: framework/headless.TestFormControlIDsAreUniqueAcrossInstances
+      - test: framework/headless.TestSweepCoreInstanceIDKeepsExplicitAndSuffixesDerived
+  - id: own-marks-top-level-elements
+    rule: Own marks every top-level element not already marked and leaves text, comments and raw-text bodies alone, and ownedSlot is true only when every top-level element is marked and no top-level text exists.
+    enforced_by:
+      - test: framework/headless.TestOwnMarksEveryTopLevelElement
+      - test: framework/headless.TestOwnedSlotNeedsEveryRootMarked
+      - test: framework/headless.TestSweepCoreOwnSkipsRawTextBodies
+  - id: spec-names-are-unique
+    rule: Register panics on a spec with no name or with a name already registered.
+    enforced_by:
+      - test: framework/headless.TestSweepCoreRegisterRefusesAnEmptyOrRepeatedName
+  - id: specs-in-name-order
+    rule: Specs returns the registered specs sorted by name.
+    enforced_by:
+      - test: framework/headless.TestSpecGolden
+  - id: every-component-has-a-spec
+    rule: Every exported function of the package that returns render.HTML, El and Own aside, has a registered spec.
+    enforced_by:
+      - test: framework/headless.TestEveryComponentHasASpec
+  - id: parts-match-the-anatomy
+    rule: Every part a spec's Anatomy lists is drawn by some case, and every part a case draws is in the Anatomy.
+    enforced_by:
+      - test: framework/headless.TestEveryDeclaredPartIsActuallyDrawn
+      - test: framework/headless.TestEveryPartDrawnIsDeclared
+  - id: hooks-match-the-spec
+    rule: Every hook a spec declares is rendered as an attribute by some case of that spec.
+    enforced_by:
+      - test: framework/headless.TestEveryDeclaredHookIsRendered
+  - id: every-case-says-why
+    rule: Every Case has a non-blank Why and renders something.
+    enforced_by:
+      - test: framework/headless.TestEveryCaseSaysWhyItExists
+  - id: parts-props-have-with-parts
+    rule: A props type embedding Parts names a spec whose WithParts is set.
+    enforced_by:
+      - test: framework/headless.TestEveryPropsTypeWithPartsHasAFixture
+  - id: kit-without-resolver-is-unstyled
+    rule: A Kit with no resolver returns a nil class map for every child component.
+    enforced_by:
+      - test: framework/headless.TestSweepCoreKitWithoutResolverIsUnstyled
+  - id: specimen-glyph-has-a-size
+    rule: SpecimenGlyph and every svg a fixture renders declares a viewBox or a width and height.
+    enforced_by:
+      - test: framework/headless.TestEverySVGInAFixtureDeclaresItsSize
+  - id: empty-string-falls-back-to-english
+    rule: Resolve fills every empty field of a caller's Strings from the English defaults, so a partial translation never renders an empty word.
+    enforced_by:
+      - test: framework/headless.TestPartialStringsFallBackToEnglish
+      - test: framework/headless.TestLightboxViewerPartialStringsFallBack
+  - id: nil-strings-take-the-probe-or-english
+    rule: A nil Strings resolves to the harness probe when one is set and to a fresh copy of the English defaults otherwise.
+    enforced_by:
+      - test: framework/headless.TestSpecGoldenStrings
+      - test: framework/headless.TestEveryWordIsSaidBySomeCase
+      - test: framework/headless.TestSpecGolden
+  - id: every-word-has-a-default
+    rule: Every exported Strings field has a non-empty English default, and its probe keeps the default's placeholders in order.
+    enforced_by:
+      - test: framework/headless.TestEveryWordHasADefault
+  - id: every-word-is-said
+    rule: Every exported Strings field is rendered by some case or WithParts fixture.
+    enforced_by:
+      - test: framework/headless.TestEveryWordIsSaidBySomeCase
+  - id: no-english-outside-strings
+    rule: Outside init and the defaults, no string literal holding a space and a letter reaches render.Text, render.HTML, orDefault, fmt.Sprintf or an aria-label, title, placeholder or alt value.
+    enforced_by:
+      - test: framework/headless.TestHeadlessSaysNothingInEnglishOutsideStrings
+  - id: defaults-match-the-i18nui-english
+    rule: The English default of every Strings field equals the English text of the i18nui key framework/ui maps it to.
+    enforced_by:
+      - test: framework/ui.TestStringsForNoTranslatorIsHeadlessEnglish
+  - id: numbers-follow-the-request
+    rule: A Strings from ForRequest writes counts and filled numbers in the request's locale and leaves the shared probe untouched.
+    enforced_by:
+      - test: framework/headless.TestNumbersFollowRequestLocale
+      - test: framework/headless.TestCarouselUsesLocalizedTotal
+      - test: framework/headless.TestSweepCoreForRequestLeavesTheProbeAlone
+  - id: configuration-refused-at-render
+    rule: A selector, fragment id, storage key, label, enum value or id list a caller configures panics at render when empty, whitespace-only, holding a control byte or markup, outside its set, or repeated.
+    enforced_by:
+      - test: framework/headless.TestCheckSelectorRefusesBrokenValues
+      - test: framework/headless.TestCheckFragmentIDRefusesBrokenValues
+      - test: framework/headless.TestCheckStorageKeyRefusesBrokenValues
+      - test: framework/headless.TestCheckEnumRefusesValuesOutsideTheSet
+      - test: framework/headless.TestCheckNoDuplicateIDsRefusesARepeatedID
+      - test: framework/headless.TestCheckLabelRefusesWhitespaceOnlyLabels
+      - test: framework/headless.TestGalleryRefusesBrokenConfiguration
+      - test: framework/headless.TestDisclosureRefusesBrokenConfiguration
+  - id: markers-match-declared-hooks
+    rule: The headless module registers exactly the markers behaviorMarkers lists, and each is a hook some spec declares.
+    enforced_by:
+      - test: framework/headless.TestBehaviorIsRegisteredWithItsMarkers
+  - id: markers-are-literals
+    rule: Every registry.Markers argument in the tree is a string literal.
+    enforced_by:
+      - test: core-ui/runtime/internal/treegate.TestMarkersInTheTreeUseDocumentedDataFuiAttrs
+  - id: module-requires-the-action-primitive
+    rule: The headless module requires the kernel's action module and retains a cold click on a sort or page anchor while it loads.
+    enforced_by:
+      - test: framework/headless.TestE2E_ActionFailureIsAnnounced
+      - test: framework/headless.TestE2E_ActionRebindsAfterSwap
+      - test: framework/headless.TestSweepCoreBehaviorReplaysColdSortAndPageClicks
+decisions:
+  - id: classes-live-in-the-styled-layer
+    date: 2026-11-16
+    status: accepted
+    decision: Components render structure only and take a Classes value, and the class maps live in framework/ui, which imports this package.
+    rejected:
+      - option: Components that carry their own class names.
+        why: A restyle would then edit the same code that holds every role, label and hook, putting accessibility guarantees at risk with each palette change.
+    upholds: [nil-classes-render-no-class]
+  - id: kit-resolves-through-a-function
+    date: 2026-11-16
+    status: accepted
+    decision: A Kit reaches a child component's class map through a resolver function the styled layer supplies.
+    rejected:
+      - option: A map of class maps held in this package.
+        why: It would put class names in the headless half, which the split exists to keep out.
+      - option: Passing the parent's class map to each child, or writing the child as raw HTML.
+        why: Both rendered naked browser-default controls that no part check, golden or audit could see.
+    upholds: [kit-without-resolver-is-unstyled]
+  - id: one-vocabulary-for-classes-slots-and-attrs
+    date: 2026-11-16
+    status: accepted
+    decision: Classes, Slots, PartAttrs and Binds are all keyed by Part, so a part a class map can style is one a caller can fill, annotate and bind.
+    rejected:
+      - option: A separate list of hooks for each layer.
+        why: A component author could then offer a hook to one layer and not the others.
+    upholds: [parts-match-the-anatomy]
+  - id: slots-only-where-content-carries-no-guarantee
+    date: 2026-11-16
+    status: accepted
+    decision: A component offers a slot, and a text or html Bind, only on a part whose own content carries no guarantee.
+    rejected:
+      - option: Slots on every part.
+        why: Replacing a Password's input or an action's labels would render the component as its own skeleton with nothing failing.
+    upholds: [slot-fills-only-fillable-parts, content-bind-only-on-fillable-parts]
+  - id: bind-is-the-only-signal-route
+    date: 2026-11-16
+    status: accepted
+    decision: A part follows a client signal only through a typed Bind, because attrs cannot carry a data-cui-* key.
+    rejected:
+      - option: Letting ExtraAttrs or part attrs carry data-cui-signal attributes.
+        why: Decoration could then become a request or reach an attribute the runtime executes, with nothing reviewable at the call site.
+    upholds: [extra-attrs-refuse-reserved-keys, bind-refuses-runtime-owned-attrs]
+  - id: island-is-a-typed-prop
+    date: 2026-11-16
+    status: accepted
+    decision: An in-page state change is an Island prop on the component that fires it, rendered as the RPC contract on the same element that keeps its href or action for a reader without script.
+    rejected:
+      - option: Splicing RPC attributes into the rendered markup from outside.
+        why: It works on anything and so says nothing, and the attributes could be forged through ExtraAttrs.
+      - option: A link that navigates to a new page of rows, a new sort or a filter.
+        why: Hard rule 1 keeps in-page state on its route.
+    upholds: [in-page-change-requires-an-island, island-trigger-contract, uihost/in-page-state-stays-on-its-route]
+  - id: mutation-url-is-the-servers
+    date: 2026-11-16
+    status: accepted
+    decision: Only a GET trigger renders data-cui-push-state; a mutation's URL comes from the server's X-Gofastr-Push-State once it knows the outcome.
+    rejected:
+      - option: Pushing the href for every method.
+        why: A mutation's resulting URL depends on whether it succeeded and where the changed thing now lives.
+    upholds: [island-trigger-contract]
+  - id: query-merge-is-parsed
+    date: 2026-11-16
+    status: accepted
+    decision: The island endpoint and the href share one query, merged by parsing and re-encoding both.
+    rejected:
+      - option: Two URLs for one click.
+        why: The island and the address bar drift apart and the island shows a different page than the URL says.
+      - option: Concatenating the query strings.
+        why: A query whose pairs are percent-encoded differently could smuggle a second question mark past the join.
+    upholds: [island-query-merge]
+  - id: refuse-configuration-scrub-request-data
+    date: 2026-11-16
+    status: accepted
+    decision: A value the caller configured is refused with a panic at render, while data a request carried is scrubbed or clamped and rendered.
+    rejected:
+      - option: Refusing request data too.
+        why: A hostile POST could take a page down.
+      - option: Repairing configuration silently.
+        why: The mistake would surface as a dead control in production instead of a panic with a reason.
+    upholds: [configuration-refused-at-render]
+  - id: selector-check-stops-at-transport
+    date: 2026-11-16
+    status: accepted
+    decision: checkSelector refuses only an empty selector, a control byte or markup, and leaves malformed CSS to the module, which catches querySelector's throw.
+    rejected:
+      - option: Validating CSS selector syntax in Go.
+        why: The module already turns every other malformed selector into a safe no-op.
+    upholds: [configuration-refused-at-render]
+  - id: label-check-leaves-control-bytes
+    date: 2026-11-16
+    status: accepted
+    decision: checkLabel refuses a whitespace-only label and leaves control bytes to the render path's scrubbing.
+    rejected:
+      - option: Refusing a label holding a control byte.
+        why: Such a label is request data, which the package scrubs rather than refuses.
+    upholds: [configuration-refused-at-render]
+  - id: describe-keeps-the-hint-with-the-error
+    date: 2026-11-16
+    status: accepted
+    decision: aria-describedby reads the error first and keeps the hint beside it.
+    rejected:
+      - option: Dropping the hint while an error shows.
+        why: The hint is the rule the value broke, needed most exactly then.
+    upholds: [describe-error-before-hint]
+  - id: own-marks-composed-content
+    date: 2026-11-16
+    status: accepted
+    decision: A composer marks the markup it builds and hands to another component as a slot with Own, and a slot holding only marked elements counts as the receiver's own.
+    rejected:
+      - option: Letting the receiving component guess.
+        why: It cannot tell a composer's markup from a caller's.
+    upholds: [own-marks-top-level-elements, internal-marks-only-owned-subtrees]
+  - id: strings-are-a-typed-struct
+    date: 2026-11-16
+    status: accepted
+    decision: The words are one exported string field each on Strings, with an empty field taking its English default at render.
+    rejected:
+      - option: A key map such as dismiss.label to a translation.
+        why: A missing string would only be found on a rendered page.
+      - option: Plurals built by appending an s.
+        why: Other languages do not pluralise that way, so a count takes two fields chosen by the component.
+    upholds: [empty-string-falls-back-to-english, every-word-has-a-default]
+  - id: probe-through-a-package-variable
+    date: 2026-11-16
+    status: accepted
+    decision: The harness sets the unexported stringsProbe so every fixture renders through the probe words without editing any Case.
+    rejected:
+      - option: Passing probe Strings into every fixture.
+        why: Every Case would need editing, and one missed fixture would hide its English.
+    upholds: [nil-strings-take-the-probe-or-english]
+  - id: spec-is-the-one-fixture
+    date: 2026-11-16
+    status: accepted
+    decision: One Spec per component drives the nil-Classes contract sweep, the goldens and the parts tests, and a component's specific promises stay in its own contract tests.
+    rejected:
+      - option: A hand-written contract test, stylesheet test, golden and gallery specimen per component.
+        why: A component added in a hurry got one or two of the four, and a missing golden is silent.
+    upholds: [every-component-has-a-spec]
+  - id: mark-for-presence-attributes
+    date: 2026-11-16
+    status: accepted
+    decision: Attrs drops empty values and presence attributes have their own helper, Mark.
+    rejected:
+      - option: One builder for both.
+        why: A popover attribute, a copy hook, a drop list, repeater rows and a hidden flag were each lost through the dropping builder in the package this one grew from.
+    upholds: [presence-attrs-through-mark, attrs-drop-empty-values]
+  - id: replay-cold-sort-and-page-clicks
+    date: 2026-11-16
+    status: accepted
+    decision: The module registers click interactions on the sort and page anchors so a click that lands while it is still fetching is replayed once it registers.
+    rejected:
+      - option: Losing the first click of a cold load.
+        why: The sort or page turn and its focus restore would be the one click the cold-cache window ate.
+    upholds: [module-requires-the-action-primitive]

@@ -1,33 +1,5 @@
 package headless
 
-// Strings: every string a component says, in one typed table.
-//
-// The headless layer is the accessibility half of the system, and a
-// surprising amount of what it guarantees is wording: the tone said
-// before an alert's title, the name of the button that reveals a
-// password, "Previous" on a pager's disabled end. A
-// French reader needs those guarantees in French, and a key map
-// ("dismiss.label" → "Fermer") would put the finding of a missing
-// string on a rendered page. So the words are a typed struct: one
-// field per string, a doc comment saying its shape, and a field left
-// empty falling back to its English default at RUNTIME — a partial
-// translation is safe, and the miss is a stray English word on a
-// French page, not a compile error. The probe golden
-// (spec_golden_strings.txt) is what catches a component saying a
-// word no field carries. The framework's own translated strings live
-// in framework/i18nui as keys; framework/ui's StringsFor(ctx) is the
-// layer above that resolves each field from those keys once per
-// request.
-//
-// The field is Strings on every component's props: nil means the
-// English defaults below, which is what the goldens pin.
-// Nothing here fetches, caches or guesses a language.
-//
-// Plurals are two fields, One and Many, chosen by the component and
-// never built by appending "s". Formats keep their verbs: a
-// translation may reorder the words but must keep the placeholders,
-// which the gates in words_test.go hold.
-
 import (
 	"context"
 	"reflect"
@@ -36,383 +8,137 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// Strings are the strings the components say. Every field defaults to
-// the English the components rendered before this type existed, so a
-// nil or partially-set value is safe; DefaultWords returns them all
-// and ProbeWords returns one probe token per field.
-//
-// A field with a value to put in writes it as {{name}}, the placeholder
-// spelling every catalog uses. The component fills it at render when
-// the value is known there (fill); otherwise the string travels as a
-// data-* attribute and the runtime fills it when the count or the chip
-// exists. A translation may move a placeholder but must keep it.
+// Strings are the words the components say, one field per string; nil or an
+// empty field takes the English default. A {{name}} placeholder is filled at
+// render when the value is known there and by the runtime otherwise, and a
+// translation keeps every placeholder.
 type Strings struct {
-	// ─── said by more than one component ───────────────────────────
-	//
-	// The same English word doing the same job in several components
-	// is one field, so one translation serves every speaker of it.
-
-	// DismissTitled names a dismiss control whose target follows it:
-	// an Alert's, a SystemBanner's. The title follows the colon and a
-	// space: {{title}}.
-	DismissTitled string
-	// RemoveLabelled names a remove control by what it removes: a
-	// Tag's chip, a TagInput's or a MultiSelect's, with {{label}} for
-	// the value's name. A MultiSelect's chips are built by the
-	// runtime, which fills it there.
+	DismissTitled  string
 	RemoveLabelled string
 
-	// ─── OptimisticAction / ToggleAction ───────────────────────────
-
-	// ActionFailed is what a failed mutation announces when the caller
-	// supplied nothing better. A sentence, not a word: it says the
-	// save did not happen and that trying again is allowed.
 	ActionFailed string
 
-	// ─── Color ──────────────────────────────────────────────────────
-
-	// PickColor names the colour swatch, which carries no visible
-	// label, with {{name}} for the field's name.
 	PickColor string
 
-	// ─── Password ───────────────────────────────────────────────────
-
-	// ShowPassword names the reveal button. It is a toggle button: the
-	// name never changes and aria-pressed says whether the password is
-	// shown, so there is no second name for the pressed state.
 	ShowPassword string
-	// RevealShow is the reveal button's visible word, inside
-	// ShowPassword's words so the name contains what is seen. It does
-	// not change either.
-	RevealShow string
+	RevealShow   string
 
-	// ─── Pagination ─────────────────────────────────────────────────
-
-	// Previous and Next label the pager's ends, which are disabled
-	// anchors rather than absent ones. One word each; they carry no
-	// arrows, so a translation may add its own.
 	Previous string
 	Next     string
 
-	// ─── SystemBanner, Alert ────────────────────────────────────────
-
-	// ToneInfo, ToneSuccess, ToneWarning and ToneDanger are the tone
-	// said before a title — a SystemBanner's, and an Alert's when the
-	// caller passes one as ToneWord — because the title says WHAT
-	// happened and the
-	// tone is the only thing saying how serious it is. One word each,
-	// the one a reader understands rather than the stylesheet's name
-	// for the colour ("Error", not "Danger"); the colon and space that
-	// follow are added in the assembly.
 	ToneInfo    string
 	ToneSuccess string
 	ToneWarning string
 	ToneDanger  string
 
-	// ─── Upload ──────────────────────────────────────────────────────
-
-	// FileSelected says one file was chosen, with {{name}} where the
-	// file's name goes. The runtime writes the name in when it knows
-	// it; the server never renders this string with a value in it,
-	// because before the reader picks there is no value to say.
-	FileSelected string
-	// FilesSelected says several files were chosen, with {{n}} for the
-	// count and {{names}} for the joined list. Substituted by the runtime
-	// like FileSelected's {{name}}, for the same reason: neither the
-	// count nor the names exist until the reader has picked.
+	FileSelected  string
 	FilesSelected string
 
-	// ─── Lightbox viewer ────────────────────────────────────────────
-
-	// LightboxViewerLabel is the accessible name of the open image
-	// viewer: what a screen reader says when the viewer takes focus.
-	// A short noun phrase; the image's own alt travels beside it.
 	LightboxViewerLabel string
-	// LightboxPrevious and LightboxNext name the viewer's nav buttons.
-	// They name the action on this surface ("Previous image"), not the
-	// pager's bare word: a reader inside a viewer needs to know what
-	// stepping moves.
-	LightboxPrevious string
-	LightboxNext     string
-	// LightboxDownload names the anchor that saves the image being
-	// viewed.
-	LightboxDownload string
+	LightboxPrevious    string
+	LightboxNext        string
+	LightboxDownload    string
 
-	// ─── Table ───────────────────────────────────────────────────────
-
-	// TableSortBy names a sort control whose column carries no
-	// visible header text: an actions or icon column that can still
-	// be sorted, with {{column}} for the column's Key; the
-	// token is written in at render, when the anchor is built —
-	// unlike the {{n}} the runtime substitutes, the key is known on
-	// the server.
-	TableSortBy string
-	// TableSelectAll names a select-all header checkbox whose column
-	// has no Header.
-	TableSelectAll string
-	// SelectionCount says how many rows a selection holds, with {{n}}
-	// where the behaviour writes the number.
-	SelectionCount string
-	// SelectionClear names the button that clears a selection.
-	SelectionClear string
-	// SelectionCopy names the button that copies a selection as CSV.
-	SelectionCopy string
-	// SelectionCopied is the toast after a copy, with {{n}} for the rows.
-	SelectionCopied string
-	// SelectionCopyFailed is the toast when the rows could not be
-	// copied.
+	TableSortBy         string
+	TableSelectAll      string
+	SelectionCount      string
+	SelectionClear      string
+	SelectionCopy       string
+	SelectionCopied     string
 	SelectionCopyFailed string
-	// TableSortedBy says what a changed table is now sorted by, with
-	// {{column}} where the column's header goes and {{direction}} where
-	// the direction word goes. Rendered into data-hui-table-announcement
-	// at render and copied into the status after a swap, so a
-	// translated page announces in its own language.
-	TableSortedBy string
-	// SortAscending and SortDescending are the direction words
-	// TableSortedBy carries. One lowercase word each: they sit inside
-	// a sentence, after a comma.
-	SortAscending  string
-	SortDescending string
+	TableSortedBy       string
+	SortAscending       string
+	SortDescending      string
 
-	// ─── Counter ─────────────────────────────────────────────────────
-
-	// CounterLabel names the counter group, which carries no visible
-	// label of its own. One noun.
-	CounterLabel string
-	// CounterDecrement and CounterIncrement name the counter's two
-	// buttons. One word each; the counter's value is the context.
+	CounterLabel     string
 	CounterDecrement string
 	CounterIncrement string
 
-	// ─── BackToTop ───────────────────────────────────────────────────
-
-	// BackToTop names the back-to-top anchor, whose glyph carries no
-	// words. A short imperative.
 	BackToTop string
 
-	// ─── NumberInput ─────────────────────────────────────────────────
-
-	// NumberDecrement and NumberIncrement name the stepper's two
-	// buttons, which need the field's name to tell them from any
-	// other stepper's, with {{label}} for it.
 	NumberDecrement string
 	NumberIncrement string
 
-	// ─── Slider and RangeSlider ──────────────────────────────────────
-
-	// RangeLow and RangeHigh name the two thumbs of a range pair —
-	// "Minimum {{label}}" and "Maximum {{label}}", the label standing
-	// in for the thing bounded. RangeValue is the pair's one output
-	// sentence, "{{low}} to {{high}}".
 	RangeLow   string
 	RangeHigh  string
 	RangeValue string
 
-	// ─── Rating ──────────────────────────────────────────────────────
-
-	// RatingChoice names one rating radio: "{{n}} out of {{max}}", the
-	// chosen value and the ceiling.
 	RatingChoice string
 
-	// ─── TagInput ────────────────────────────────────────────────────
-
-	// TagInputAdd names the control that commits the draft, with
-	// {{label}} for the field's label. TagInputAdded and
-	// TagInputRemoved are what the status region says after a chip
-	// operation, with {{name}} where the chip's text goes — the runtime
-	// writes it when the operation has happened.
 	TagInputAdd     string
 	TagInputAdded   string
 	TagInputRemoved string
 
-	// ─── Repeater ────────────────────────────────────────────────────
-
-	// RepeaterAdd names the add control. RepeaterRemove names one
-	// remove control, with {{n}} for the item's 1-based position,
-	// because twelve controls all called Remove tell a screen reader
-	// user nothing.
 	RepeaterAdd    string
 	RepeaterRemove string
 
-	// ─── NotificationBell ────────────────────────────────────────────
-
-	// NotificationCount is the bell's accessible name, "{{n}} unread
-	// notifications" — the count the anchor carries, said in words.
 	NotificationCount string
 
-	// ─── StepWizard ──────────────────────────────────────────────────
-
-	// StepBack, StepNext and StepSubmit are the wizard's three
-	// controls; Next is the one weighted action until the last step
-	// makes it Submit. StepOf is the rail's name, "Step {{step}} of
-	// {{total}}", and StepName is one dot's, "Step {{step}}:
-	// {{heading}}".
 	StepBack   string
 	StepNext   string
 	StepSubmit string
 	StepOf     string
 	StepName   string
 
-	// ─── TableOfContents ─────────────────────────────────────────────
-
-	// TableOfContentsLabel names the contents navigation, which is a
-	// landmark a screen reader jumps to by name. A short prepositional
-	// phrase naming what the list is of.
 	TableOfContentsLabel string
 
-	// ─── Combobox ─────────────────────────────────────────────────────
-
-	// ComboboxLoading is what the status region says while results
-	// are being fetched. One word or a short phrase.
-	ComboboxLoading string
-	// ComboboxNoResults is what the status region says when a query
-	// matched nothing.
-	ComboboxNoResults string
-	// ComboboxResultCount announces how many results a query found,
-	// "{{n}}" where the count goes — the module writes the count in when
-	// the results arrive, so the sentence travels as an attribute and
-	// the placeholder is a name, not a fmt verb.
-	ComboboxResultCount string
-	// ComboboxResultsLabel names the listbox: "<Label> results" is
-	// assembled at render, so the word here is the noun.
+	ComboboxLoading      string
+	ComboboxNoResults    string
+	ComboboxResultCount  string
 	ComboboxResultsLabel string
 
-	// ─── Carousel ─────────────────────────────────────────────────────
-
-	// CarouselSlide names one slide and the total, "Slide {{n}} of
-	// {{total}}" — {{n}} and {{total}} are filled at render (the module
-	// re-says it into the status after each step).
-	CarouselSlide string
-	// CarouselGoTo names a dot control, "Go to slide {{n}}".
-	CarouselGoTo string
-	// CarouselRole and CarouselSlideRole are the roledescriptions the
-	// region and each slide carry ("carousel", "slide"): a screen
-	// reader says them in place of "region" and "group". One word each.
+	CarouselSlide     string
+	CarouselGoTo      string
 	CarouselRole      string
 	CarouselSlideRole string
 
-	// ─── PaneHost ─────────────────────────────────────────────────────
-
-	// PaneSecondary and PaneTertiary name a side pane's region when its
-	// own label is empty ("Secondary", "Tertiary"). One word each.
 	PaneSecondary string
 	PaneTertiary  string
 
-	// ─── Sidebar ──────────────────────────────────────────────────────
-
-	// SidebarOpenDrawer names the phone drawer's hamburger when its own
-	// DrawerLabel is empty ("Open navigation"): the button is the only
-	// way into the navigation there, and an unnamed one is a button a
-	// screen reader calls "button".
 	SidebarOpenDrawer string
 
-	// ─── JSONTree ──────────────────────────────────────────────────────
-
-	// JSONObject names an object node in a JSON tree. One word.
-	JSONObject string
-	// JSONArray names an array node in a JSON tree. One word.
-	JSONArray string
-	// JSONNull is the null literal. One word.
-	JSONNull string
-	// JSONTrue / JSONFalse are the boolean literals. One word each.
-	JSONTrue  string
-	JSONFalse string
-	// JSONEmptyObject / JSONEmptyArray are what an empty collection
-	// renders: the literal braces/brackets. One token each.
+	JSONObject      string
+	JSONArray       string
+	JSONNull        string
+	JSONTrue        string
+	JSONFalse       string
 	JSONEmptyObject string
 	JSONEmptyArray  string
-	// JSONTruncated is the mark a truncated string ends with.
-	JSONTruncated string
+	JSONTruncated   string
 
-	// ─── ValidationSummary ──────────────────────────────────────────
-
-	// ThereIsAProblem heads the list a failed submit focuses. A short
-	// sentence; it names the fact, the list names each field.
 	ThereIsAProblem string
 
-	// ─── Breadcrumbs ────────────────────────────────────────────────
-
-	// BreadcrumbsLabel names the trail's navigation landmark, which a
-	// screen reader jumps to by name. One word.
 	BreadcrumbsLabel string
 
-	// ─── SortableList ───────────────────────────────────────────────
-
-	// SortableItemRole is the roledescription every row carries: it
-	// tells a screen reader what kind of thing the row is before any
-	// key is pressed. Two words.
-	SortableItemRole string
-	// SortableDragLabel names one row by what it offers, with
-	// {{label}} for the row's visible label, filled at render.
-	SortableDragLabel string
-	// SortableGrabbed is said when a row is picked up, with {{label}}
-	// where the row's name goes. Substituted by the runtime when the
-	// grab happens, so the sentence travels as an attribute.
-	SortableGrabbed string
-	// SortablePosition says where the grabbed row now is, with
-	// {{position}} and {{list}} (the list's own name) written in by the
-	// runtime after each move.
-	SortablePosition string
-	// SortableMoved says the row changed lists, with {{list}} and
-	// {{position}}: the kanban crossing, announced after it lands.
-	SortableMoved string
-	// SortableSaved confirms a commit the server accepted.
-	SortableSaved string
-	// SortableReverted says a failed commit put the rows back.
-	SortableReverted string
-	// SortableCancelled says Esc put the grabbed row back where it
-	// started, uncommitted.
-	SortableCancelled string
-	// SortableConflictReverted says a 409 was reconciled by putting
-	// the rows back.
-	SortableConflictReverted string
-	// SortableConflictRefreshed says a 409 was reconciled by
-	// replacing the list with the server's own rows.
+	SortableItemRole          string
+	SortableDragLabel         string
+	SortableGrabbed           string
+	SortablePosition          string
+	SortableMoved             string
+	SortableSaved             string
+	SortableReverted          string
+	SortableCancelled         string
+	SortableConflictReverted  string
 	SortableConflictRefreshed string
 
-	// ─── MultiSelect ────────────────────────────────────────────────
-
-	// MultiSelectPlaceholder is what the chips strip says when
-	// nothing is picked. A short phrase; the chips replace it the
-	// moment one is.
 	MultiSelectPlaceholder string
 
-	// ─── DatePicker ─────────────────────────────────────────────────
-
-	// DatePickerPrevMonth, DatePickerNextMonth, DatePickerPrevYear and
-	// DatePickerNextYear name the calendar's four nav anchors, which
-	// show a glyph and no word. A short phrase each.
-	DatePickerPrevMonth string
-	DatePickerNextMonth string
-	DatePickerPrevYear  string
-	DatePickerNextYear  string
-	// DatePickerStart and DatePickerEnd label a range's two native
-	// inputs when the caller names neither. Two words each.
-	DatePickerStart string
-	DatePickerEnd   string
-	// DatePickerChosen is said when a day is picked, with {{date}} for
-	// the day's full date, written in by the runtime.
-	DatePickerChosen string
-	// DatePickerChooseEnd is said when a range's start is picked, with
-	// {{date}} for it: it says what was picked and what comes next.
-	DatePickerChooseEnd string
-	// DatePickerRange is said when a range's end is picked, with
-	// {{start}} and {{end}} for the two full dates.
-	DatePickerRange string
-	// DatePickerMonthFailed titles the toast a month that failed to
-	// load raises. A short sentence.
+	DatePickerPrevMonth   string
+	DatePickerNextMonth   string
+	DatePickerPrevYear    string
+	DatePickerNextYear    string
+	DatePickerStart       string
+	DatePickerEnd         string
+	DatePickerChosen      string
+	DatePickerChooseEnd   string
+	DatePickerRange       string
 	DatePickerMonthFailed string
 
-	// ctx is the request the words were resolved for, set by ForRequest:
-	// a count, a step number or a slider value is written the way its
-	// reader writes numbers. It is the one field that is not a word, so
-	// every walk over the words skips unexported fields.
 	ctx context.Context
 }
 
-// ForRequest returns a copy of w whose numbers follow ctx's locale:
-// framework/ui's StringsFor sets it alongside the words. Safe on a nil
-// receiver, which yields the English words.
+// ForRequest returns a copy of w whose numbers follow ctx's locale; nil w
+// yields the English words.
 func (w *Strings) ForRequest(ctx context.Context) *Strings {
 	out := w.Resolve()
 	if out == stringsProbe {
@@ -423,9 +149,7 @@ func (w *Strings) ForRequest(ctx context.Context) *Strings {
 	return out
 }
 
-// Number writes n the way the reader writes numbers: "1 234" in
-// French, "١٬٢٣٤" in Egyptian Arabic. Without a request (ForRequest
-// never ran) it writes English, "1,234".
+// Number writes n in the reader's locale, or English without a request.
 func (w *Strings) Number(n int) string {
 	var ctx context.Context
 	if w != nil {
@@ -434,8 +158,6 @@ func (w *Strings) Number(n int) string {
 	return i18n.Number(ctx, n)
 }
 
-// defaultStrings is the English the components rendered before Strings
-// existed. The goldens pin these bytes.
 var defaultStrings = Strings{
 	DismissTitled:  "Dismiss: {{title}}",
 	RemoveLabelled: "Remove {{label}}",
@@ -461,24 +183,16 @@ var defaultStrings = Strings{
 	LightboxPrevious:    "Previous image",
 	LightboxNext:        "Next image",
 	LightboxDownload:    "Download image",
-	// The i18nui catalog's own English for ui.table.sortBy; the ui
-	// bridge's gate holds the two to the same bytes.
-	TableSortBy: "Sort by {{column}}",
-	// The i18nui catalog's own English for ui.table.selectAll.
-	TableSelectAll: "Select all rows",
-	// The i18nui catalog's own English for ui.selection.count and
-	// ui.selection.clear.
+	TableSortBy:         "Sort by {{column}}",
+	TableSelectAll:      "Select all rows",
 	SelectionCount:      "{{n}} selected",
 	SelectionClear:      "Clear selection",
 	SelectionCopy:       "Copy CSV",
 	SelectionCopied:     "Copied {{n}} rows as CSV",
 	SelectionCopyFailed: "The rows could not be copied.",
-	// The i18nui catalog's own English for ui.table.sortedBy and the
-	// two direction words; the ui bridge's gate holds the two to the
-	// same bytes.
-	TableSortedBy:  "Sorted by {{column}}, {{direction}}",
-	SortAscending:  "ascending",
-	SortDescending: "descending",
+	TableSortedBy:       "Sorted by {{column}}, {{direction}}",
+	SortAscending:       "ascending",
+	SortDescending:      "descending",
 
 	CounterLabel:     "Counter",
 	CounterDecrement: "Decrement",
@@ -566,16 +280,12 @@ var defaultStrings = Strings{
 	DatePickerMonthFailed: "The month could not be loaded.",
 }
 
-// DefaultStrings returns a fresh copy of the English defaults, every
-// field set. Fresh so a caller cannot mutate the package's copy
-// through it.
+// DefaultStrings returns a fresh copy of the English defaults.
 func DefaultStrings() *Strings {
 	w := defaultStrings
 	return &w
 }
 
-// withDefaults returns w with every empty field filled from the
-// English defaults; w itself is left alone.
 func (w *Strings) withDefaults() *Strings {
 	out := DefaultStrings()
 	out.ctx = w.ctx
@@ -598,11 +308,8 @@ func (w *Strings) withDefaults() *Strings {
 	return out
 }
 
-// ProbeStrings returns a Strings whose every field is its own name in
-// angle brackets — formats as the name plus their placeholders, so
-// `<RemoveLabelled env=prod>` renders where "Remove env=prod" would. A render against it shows exactly which words came
-// through the table; a real English word in one is a word that
-// bypassed it.
+// ProbeStrings returns a Strings whose every field is "<FieldName>" plus the
+// default's placeholders, so a render shows which words came through it.
 func ProbeStrings() *Strings {
 	w := DefaultStrings()
 	v := reflect.ValueOf(w).Elem()
@@ -625,8 +332,6 @@ func ProbeStrings() *Strings {
 	return w
 }
 
-// placeholdersIn lists a default's {{name}} placeholders in order.
-// ProbeStrings keeps them so a probe render still fills its values.
 func placeholdersIn(s string) []string {
 	var out []string
 	for {
@@ -643,12 +348,6 @@ func placeholdersIn(s string) []string {
 	}
 }
 
-// fill puts each value into its {{name}} placeholder in tpl, through
-// i18n.FillContext: kv is name, value pairs, and a number value is
-// written the way w's reader writes numbers, so pass the count, not
-// strconv.Itoa of it. A value is never rescanned, and a placeholder kv
-// does not name is left as text, which is how a probe or a catalog slip
-// stays visible.
 func (w *Strings) fill(tpl string, kv ...any) string {
 	params := make(map[string]any, len(kv)/2)
 	for i := 0; i+1 < len(kv); i += 2 {
@@ -663,19 +362,10 @@ func (w *Strings) fill(tpl string, kv ...any) string {
 	return i18n.FillContext(ctx, tpl, params)
 }
 
-// stringsProbe, when set, is what every component says instead of the
-// English defaults. Only the harness sets it, to render the whole
-// corpus through Strings without editing every fixture; it is
-// nil in production and Resolve behaves as if it did not exist.
 var stringsProbe *Strings
 
-// Resolve is how a component reaches its strings: the caller's when a
-// layer above resolved them from the request, the harness's probe
-// when a test is looking, and the English defaults otherwise. A
-// caller's Strings may be partial: every empty field falls back to
-// its English default, so a Strings that sets one string does not
-// silently unname the reveal button. Safe on a nil receiver, which is
-// what an unset prop is.
+// Resolve returns s with every empty field defaulted, the harness probe when
+// s is nil and a probe is set, and the English defaults otherwise.
 func (s *Strings) Resolve() *Strings {
 	if s != nil {
 		return s.withDefaults()
