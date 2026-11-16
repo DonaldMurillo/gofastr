@@ -28,49 +28,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// Broker is the production capability broker for the module reverse channel
-// (design #37 §5). It implements [ReverseBroker]: it installs the host.*
-// reverse-request handlers on each child's [moduleproto.Peer] and mints
-// per-call delegation handles that let a reverse call re-attach the
-// originating end-user request's caller context to the CRUD re-dispatch.
-//
-// The capability model is module-grant ∩ caller-authority (design §5):
-//
-//   - The MODULE half is [access.ScopeMatch] of the derived required
-//     permission against the operator-approved grant view, run BEFORE any
-//     dispatch. The required permission is derived from the TRUSTED method +
-//     canonical host resource (entity name / "search" / event topic), NEVER
-//     from a child-supplied capability string (the confused-deputy control).
-//   - The CALLER half is the CRUD chokepoint re-entered via [crud.Redispatch]
-//     through the router so owner/tenant/permission + token-scope re-run on
-//     the re-attached caller identity.
-//
-// The CrossOwnerRead carve-out (design §5) is enforced on BOTH halves: a
-// module never brokers data in a cross-owner/cross-tenant frame, so even a
-// delegated end-user who legitimately holds CrossOwnerRead in their own
-// session cannot exercise it through a module.
-//
-// Fail-closed by construction: an unknown / expired / released delegation
-// handle denies; an ambient (caller-less) reverse call carries no owner/tenant
-// id so the CRUD owner/tenant gates refuse (errOwnerRequired / RequireTenant);
-// a missing entity/search surface denies rather than silently returning empty.
+// Broker is the capability broker for the module reverse channel. It
+// implements [ReverseBroker]: a reverse call needs both the module's grant
+// and, re-checked by the CRUD routes, the originating caller's authority.
 type Broker struct {
-	router    http.Handler       // app router for CRUD re-dispatch (nil → entity ops deny)
-	entities  entity.Registry    // entity name → table + CrossOwnerRead perm (nil → entity ops deny)
-	events    *event.EventBus    // host.event.emit target (nil → emit denies)
-	apiPrefix string             // "" or "/api"; prepended to entity table path
-	policy    *access.RolePolicy // optional app-wide policy for ambient synthetic role
-
-	// searchEndpoint, when set, is the http.Handler a host.search.query call
-	// re-dispatches through after the perm gate. The framework ships no global
-	// search surface in v1; nil → search denies after the perm gate (honest
-	// denial, never an empty-results success).
+	router         http.Handler
+	entities       entity.Registry
+	events         *event.EventBus
+	apiPrefix      string
+	policy         *access.RolePolicy
 	searchEndpoint http.Handler
 
-	// --- Delegation handle table (design §5): in-memory, replica-local. ---
-	// The handle round-trips only within one replica over stdio; an unknown
-	// handle denies. No HMAC, no signed token, an exfiltrated handle is
-	// meaningless on another replica.
 	mu      sync.Mutex
 	handles map[string]delegationEntry
 
@@ -78,20 +46,7 @@ type Broker struct {
 	now       func() time.Time
 }
 
-// delegationEntry is the snapshot stashed at delegation-mint time. It carries
-// exactly what the reverse path needs to (a) re-attach the caller's identity
-// to the CRUD re-dispatch (every field of every credential header re-injected
-// via crud.Redispatch reading mcp.WithRequest) and (b) run the
-// CrossOwnerRead carve-out on the delegated caller (roles + policy). module
-// binds the handle to the module that minted it (F6) so an app-global handle
-// table cannot be replayed under a different module's reverse handler.
-// parentCallID is diagnostic correlation.
 type delegationEntry struct {
-	// credentials holds every FIELD of every credential header the minting
-	// request presented, keyed by canonical header name — the four-header
-	// canon in delegationCredentialHeaders. Nothing else from the request
-	// rides along, so a delegation can re-present the caller's authority
-	// but never MORE of it (issue #360).
 	credentials  http.Header
 	roles        []string
 	policy       *access.RolePolicy
@@ -103,25 +58,20 @@ type delegationEntry struct {
 // BrokerOption configures a [Broker].
 type BrokerOption func(*Broker)
 
-// WithBrokerPolicy installs the app-wide RolePolicy so an ambient (caller-less)
-// reverse call can resolve the module's synthetic `module/<name>` role against
-// its operator-approved grants. Optional: when nil, ambient re-dispatch is
-// anonymous and fails closed on any RBAC-gated entity (still safe, the
-// owner/tenant gates refuse regardless).
+// WithBrokerPolicy installs the app-wide RolePolicy that resolves an ambient
+// reverse call's synthetic `module/<name>` role.
 func WithBrokerPolicy(p *access.RolePolicy) BrokerOption {
 	return func(b *Broker) { b.policy = p }
 }
 
-// WithBrokerSearchEndpoint wires the host.search.query re-dispatch target.
-// Optional; nil → search denies after the perm gate.
+// WithBrokerSearchEndpoint wires the host.search.query target; without it
+// search denies.
 func WithBrokerSearchEndpoint(h http.Handler) BrokerOption {
 	return func(b *Broker) { b.searchEndpoint = h }
 }
 
-// WithBrokerHandleTTL bounds the lifetime of a leaked-but-unreleased handle.
-// Default 5m; d <= 0 keeps the default (a zero TTL minted every handle
-// already expired, so no delegated call could succeed). Tests override to
-// exercise expiry without real sleeps.
+// WithBrokerHandleTTL bounds the lifetime of an unreleased handle. Default
+// 5m; d <= 0 keeps the default.
 func WithBrokerHandleTTL(d time.Duration) BrokerOption {
 	return func(b *Broker) {
 		if d > 0 {
@@ -135,11 +85,9 @@ func WithBrokerClock(now func() time.Time) BrokerOption {
 	return func(b *Broker) { b.now = now }
 }
 
-// NewBroker constructs a capability broker. router/entities/events may be nil;
-// a nil dependency makes the corresponding reverse surface deny (fail-closed)
-// rather than silently succeed, the supervisor's [NopBroker] is the all-deny
-// degenerate case. apiPrefix is the app's API prefix ("" or "/api") used to
-// build entity CRUD re-dispatch paths.
+// NewBroker constructs a capability broker. A nil router, entities or events
+// makes that reverse surface deny. apiPrefix ("" or "/api") prefixes entity
+// re-dispatch paths.
 func NewBroker(router http.Handler, entities entity.Registry, events *event.EventBus, apiPrefix string, opts ...BrokerOption) *Broker {
 	b := &Broker{
 		router:    router,
@@ -155,12 +103,10 @@ func NewBroker(router http.Handler, entities entity.Registry, events *event.Even
 	return b
 }
 
-// Compile-time assertion that Broker satisfies ReverseBroker.
 var _ ReverseBroker = (*Broker)(nil)
 
-// InstallHandlers registers the six host.* reverse-request handlers (design
-// §4.4) on p, each scoped to view. Handlers are registered once per child
-// connection; the view captures the spawn's effective grant set + generation.
+// InstallHandlers registers the six host.* reverse handlers on p, each
+// scoped to view.
 func (b *Broker) InstallHandlers(p *moduleproto.Peer, view ModuleGrantView) {
 	mustHandle(p, moduleproto.MethodHostEntityQuery, b.entityHandler(view, opQuery))
 	mustHandle(p, moduleproto.MethodHostEntityCreate, b.entityHandler(view, opCreate))
@@ -172,42 +118,16 @@ func (b *Broker) InstallHandlers(p *moduleproto.Peer, view ModuleGrantView) {
 
 func mustHandle(p *moduleproto.Peer, method string, h moduleproto.Handler) {
 	if err := p.Handle(method, h); err != nil {
-		// Handle only errors on the reserved module.cancel name or empty
-		// method; neither is possible for the host.* catalog.
 		panic(fmt.Sprintf("processmodule: broker install %q: %v", method, err))
 	}
 }
 
-// MintDelegation stashes a snapshot of the originating request under a random
-// opaque handle and returns it with a release func. The supervisor attaches
-// the handle to module.http's Caller block; the child echoes it on reverse
-// host.* calls so the broker can re-attach THIS request's caller context to
-// the CRUD re-dispatch. release() MUST be called when the parent call returns
-// (including buffered-503 crash paths) so the in-memory table does not leak.
-// A nil r is the ambient (caller-less) path. MintDelegation is still legal
-// but returns an empty handle the broker treats as ambient.
-//
-// The snapshot deliberately does NOT pin which identity CLASS resolved the
-// original request (grant vs session vs API key): it re-presents the
-// credential fields verbatim and lets the re-dispatch's middleware chain
-// re-run the same verdicts on the same headers. Pinning would mean the
-// broker interpreting credentials, which the capability model reserves for
-// the auth surfaces; and under the real wiring the question is mostly moot —
-// embed.Host.Middleware (contract: installed OUTERMOST) deletes
-// Cookie/Authorization/X-API-Key from the request the moment a grant verdict
-// is final, i.e. BEFORE the supervisor mints, so a mixed request snapshots
-// as the class its middleware already chose. A grant that may not reach the
-// re-dispatched CRUD path fails closed there (embed reach refusal), it never
-// falls through to the suppressed cookie.
+// MintDelegation stashes the request's credentials under a random opaque
+// handle and returns it with a release func the caller must invoke when the
+// parent call returns. A nil r mints an ambient entry.
 func (b *Broker) MintDelegation(r *http.Request, parentCallID uint64) (string, func()) {
 	handle, err := randomHandle()
 	if err != nil {
-		// Entropy failure is fatal: rand.Read failing means the handle would
-		// be the identical all-zero string for every call, and the handle IS
-		// the delegation credential. Fail loud, mirrors
-		// battery/auth/apitoken.go ("Entropy failure is fatal"). The panic
-		// is contained by the host's recovery middleware (→ 503/500); no
-		// handle is minted, so no delegation occurs.
 		panic(fmt.Sprintf("processmodule broker: mint delegation handle: %v", err))
 	}
 	entry := delegationEntry{parentCallID: parentCallID, expires: b.now().Add(b.handleTTL)}
@@ -230,10 +150,6 @@ func (b *Broker) MintDelegation(r *http.Request, parentCallID uint64) (string, f
 	}
 }
 
-// randomHandle returns a 128-bit opaque delegation handle. The error from
-// crypto/rand is propagated (never swallowed): on failure every handle would
-// otherwise collapse to the same all-zero string, and the handle is the
-// delegation credential. Callers MUST treat a non-nil error as fatal.
 func randomHandle() (string, error) {
 	var buf [16]byte
 	if _, err := rand.Read(buf[:]); err != nil {
@@ -242,17 +158,8 @@ func randomHandle() (string, error) {
 	return hex.EncodeToString(buf[:]), nil
 }
 
-// delegationModuleKey carries the module name a delegation handle is being
-// minted for (F6). It is stamped on the mint request's context by the
-// supervisor's proxy and tool dispatch (the only legitimate minters) and read
-// by MintDelegation so resolveCaller can refuse a handle minted for one
-// module when it is echoed under a different module's reverse handler. The
-// unexported key type means no value can be set except via withDelegationModule.
 type delegationModuleKey struct{}
 
-// withDelegationModule stamps ctx with the module name a delegation handle is
-// being minted for. The supervisor's proxy (serveProxy) and tool dispatch
-// (dispatchToolCall) call this immediately before MintDelegation.
 func withDelegationModule(ctx context.Context, module string) context.Context {
 	return context.WithValue(ctx, delegationModuleKey{}, module)
 }
@@ -265,8 +172,6 @@ func delegationModuleFromCtx(ctx context.Context) string {
 	return m
 }
 
-// ----- entity ops -----
-
 type entityOp int
 
 const (
@@ -276,9 +181,6 @@ const (
 	opDelete
 )
 
-// verb derives the capability verb for op (design §4.4). create and update
-// both map to "write"; the CRUD Access block distinguishes them but the
-// module-grant vocabulary collapses the two into a single write scope.
 func (op entityOp) verb() string {
 	switch op {
 	case opCreate, opUpdate:
@@ -290,12 +192,6 @@ func (op entityOp) verb() string {
 	}
 }
 
-// entityHandler builds the reverse handler for one host.entity.* method. It
-// runs the capability gate once (module-grant pre-filter + CrossOwnerRead
-// carve-out on both halves + delegation resolve), then performs the op-shaped
-// CRUD re-dispatch. On any denial it returns a [*moduleproto.Error] with
-// [moduleproto.CodeCapabilityDenied] so the child receives a per-call denial,
-// not a protocol fault.
 func (b *Broker) entityHandler(view ModuleGrantView, op entityOp) moduleproto.Handler {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
 		entityName, caller, err := parseEntityCall(op, params)
@@ -310,9 +206,6 @@ func (b *Broker) entityHandler(view ModuleGrantView, op entityOp) moduleproto.Ha
 	}
 }
 
-// parseEntityCall unmarshals the op's params shape and returns the canonical
-// entity name + the echoed CallerRef. query uses EntityQueryParams; the three
-// mutations share EntityMutationParams.
 func parseEntityCall(op entityOp, params json.RawMessage) (entityName string, caller moduleproto.CallerRef, err error) {
 	if op == opQuery {
 		var p moduleproto.EntityQueryParams
@@ -328,63 +221,28 @@ func parseEntityCall(op entityOp, params json.RawMessage) (entityName string, ca
 	return p.Entity, p.Caller, nil
 }
 
-// gate is the capability gate shared by every host.entity.* call. It enforces,
-// in order:
-//  1. module-grant pre-filter: [access.ScopeMatch](view.Grants, <entity>:<verb>);
-//  2. CrossOwnerRead carve-out, module-grant half (belt-and-suspenders): the
-//     install-time carve-out already removed these from view.Grants, so a
-//     present non-grantable scope means tampering: deny;
-//  3. delegation resolve: look up the handle (ambient when empty), denying on
-//     unknown/expired/released;
-//  4. CrossOwnerRead carve-out, delegated-caller half (belt-and-suspenders):
-//     the root-cause guarantee is the brokeredCall marker on the re-dispatch
-//     context (crossOwnerReadGranted returns false for it). This gate is the
-//     explicit deny: it evaluates the carve-out against the delegated
-//     caller's snapshot policy, falling back to the broker's app-wide policy,
-//     and DENIES when neither is available (the pre-fix no-op).
-//
-// It returns the resolved entity (for the re-dispatch path) and the
-// re-dispatch context with the caller's identity re-attached.
 func (b *Broker) gate(ctx context.Context, entityName, verb string, view ModuleGrantView, caller moduleproto.CallerRef) (*entity.Entity, context.Context, error) {
-	// Trust boundary: a child cannot name an arbitrary resource. The resource
-	// is the entity it asked for, resolved through the HOST's registry, a
-	// name the registry does not know is denied, never silently empty.
 	ent := b.lookupEntity(entityName)
 	if ent == nil {
 		return nil, nil, brokerDeny("entity %q is not a host resource", entityName)
 	}
 
-	// (1) Confused-deputy control: the required permission is derived from the
-	// trusted method + canonical resource. A child-supplied capability string
-	// is never consulted.
 	required := access.Permission(entityName + ":" + verb)
 	if !access.ScopeMatch(view.Grants, required) {
 		return nil, nil, brokerDeny("module grant does not satisfy %q", required)
 	}
 
-	// (2) CrossOwnerRead module-grant half (belt-and-suspenders). Install-time
-	// validation already removed these; presence here is tamper-detection.
 	for _, g := range view.Grants {
 		if reason := nonGrantableReason(g); reason != "" {
 			return nil, nil, brokerDeny("non-grantable scope in view (%s)", reason)
 		}
 	}
 
-	// (3) Delegation resolve (ambient when the handle is empty).
 	rctx, entry, err := b.resolveCaller(ctx, caller, view)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// (4) CrossOwnerRead delegated-caller half, belt-and-suspenders. The
-	// root-cause guarantee is the brokeredCall marker resolveCaller stamps on
-	// the re-dispatch context: crossOwnerReadGranted returns false for it, so
-	// owner scoping holds by construction regardless of the re-resolved
-	// caller's permissions. This gate is the explicit, visible deny. It
-	// evaluates against the delegated caller's snapshot policy when present,
-	// falling back to the broker's app-wide policy; when neither is available
-	// the carve-out is unevaluatable and we DENY rather than silently permit
-	// (the pre-fix behavior, which no-op'd on a nil entry.policy).
 	if cor := ent.Config.Scope.CrossOwnerRead; cor != "" {
 		policy := b.policy
 		roles := []string{moduleRole(view.Name)}
@@ -406,19 +264,8 @@ func (b *Broker) gate(ctx context.Context, entityName, verb string, view ModuleG
 	return ent, rctx, nil
 }
 
-// resolveCaller maps the echoed Caller to a re-dispatch context. An empty
-// Delegation handle is the ambient path (module's own cron/queue work): the
-// synthetic module/<name> role + the broker's app-wide policy are attached so
-// the CRUD permission gate can consult the module's grants; owner/tenant
-// gates then fail closed (no owner id). A non-empty handle is looked up; an
-// unknown/expired/released handle, or one bound to a different module (F6),
-// denies. Every returned context is stamped brokeredCall (F3) so the CRUD
-// owner gate never lifts scope for a brokered call.
 func (b *Broker) resolveCaller(ctx context.Context, caller moduleproto.CallerRef, view ModuleGrantView) (context.Context, *delegationEntry, error) {
 	if caller.Delegation == "" {
-		// Ambient. Attach the synthetic role; the design's safe-by-construction
-		// proof (RequireOwner/RequireTenant refuse without an owner id) holds
-		// regardless of whether the host's middleware preserves these roles.
 		rctx := access.WithRoles(ctx, []string{moduleRole(view.Name)})
 		if b.policy != nil {
 			rctx = access.WithPolicy(rctx, b.policy)
@@ -437,25 +284,14 @@ func (b *Broker) resolveCaller(ctx context.Context, caller moduleproto.CallerRef
 		b.mu.Unlock()
 		return nil, nil, brokerDeny("expired delegation handle")
 	}
-	// F6: a handle is bound to the module that minted it (entry.module). A
-	// handle minted for one module must not resolve under another module's
-	// reverse handler. entry.module is "" for minters not yet wired through
-	// withDelegationModule; those stay unbound (not rejected) for back-compat.
 	if entry.module != "" && entry.module != view.Name {
 		return nil, nil, brokerDeny("delegation handle bound to module %q, not %q", entry.module, view.Name)
 	}
-	// Re-attach the originating request so crud.Redispatch re-injects the
-	// caller's Cookie/Authorization and the full middleware chain re-resolves
-	// the identity (design §5 caveat b).
 	snap := snapshotRequest(entry)
 	rctx := mcp.WithRequest(ctx, snap)
-	// F3: stamp the re-dispatch as brokered so crossOwnerReadGranted refuses
-	// to lift owner scoping no matter what the re-resolved caller holds.
 	return crud.WithBrokeredCall(rctx), &entry, nil
 }
 
-// dispatchEntity performs the op-shaped CRUD re-dispatch through the router
-// and maps the JSON envelope to the moduleproto result type.
 func (b *Broker) dispatchEntity(op entityOp, ent *entity.Entity, ctx context.Context, params json.RawMessage) (any, error) {
 	if b.router == nil {
 		return nil, brokerDeny("no CRUD router configured")
@@ -467,9 +303,6 @@ func (b *Broker) dispatchEntity(op entityOp, ent *entity.Entity, ctx context.Con
 		if err := unmarshalParams(params, &p); err != nil {
 			return nil, err
 		}
-		// F2: a child cannot smuggle control keys (include/trashed/where/…)
-		// or undeclared names through p.Filter into the CRUD query. Drop
-		// every key that is not a declared, non-Hidden, non-NoQuery field.
 		filtered, err := sanitizeFilter(ent, p.Filter)
 		if err != nil {
 			return nil, paramErr("filter: %v", err)
@@ -524,13 +357,6 @@ func (b *Broker) dispatchEntity(op entityOp, ent *entity.Entity, ctx context.Con
 	return nil, brokerDeny("unknown entity op")
 }
 
-// ----- search -----
-
-// searchHandler enforces the search:query module-grant pre-filter then
-// re-dispatches through the configured search endpoint. No global search
-// surface in v1 → a nil endpoint denies after the perm gate (honest denial).
-// v1 applies only the module-grant half; per-caller search authority is not
-// modeled (search results are not owner-scoped in the framework today).
 func (b *Broker) searchHandler(view ModuleGrantView) moduleproto.Handler {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
 		var p moduleproto.SearchQueryParams
@@ -561,11 +387,6 @@ func (b *Broker) searchHandler(view ModuleGrantView) moduleproto.Handler {
 	}
 }
 
-// ----- events -----
-
-// eventHandler enforces the <topic>:emit module-grant pre-filter then emits on
-// the host event bus. v1 applies only the module-grant half (events are not
-// owner-scoped). A nil event bus denies.
 func (b *Broker) eventHandler(view ModuleGrantView) moduleproto.Handler {
 	return func(ctx context.Context, params json.RawMessage) (any, error) {
 		var p moduleproto.EventEmitParams
@@ -597,14 +418,6 @@ func (b *Broker) eventHandler(view ModuleGrantView) moduleproto.Handler {
 	}
 }
 
-// ----- helpers -----
-
-// lookupEntity resolves an entity name through the host registry. Returns nil
-// for an unknown name or a nil registry, both deny (fail-closed). The Get
-// call runs under a recover guard: the registry is host-supplied code on
-// the module dispatch path (every reverse host.entity.* call), which has
-// no per-request net — a panic denies the lookup (fail-closed) and is
-// logged instead of killing the read loop.
 func (b *Broker) lookupEntity(name string) (ent *entity.Entity) {
 	if b.entities == nil || name == "" {
 		return nil
@@ -622,9 +435,6 @@ func (b *Broker) lookupEntity(name string) (ent *entity.Entity) {
 	return ent
 }
 
-// entityPath builds the CRUD re-dispatch path for ent: <apiPrefix>/<table>.
-// Mirrors CrudHandler.mcpBase so the re-dispatch hits the same routes REST
-// traffic does.
 func (b *Broker) entityPath(ent *entity.Entity) string {
 	if b.apiPrefix == "" {
 		return "/" + ent.GetTable()
@@ -632,26 +442,10 @@ func (b *Broker) entityPath(ent *entity.Entity) string {
 	return "/" + b.apiPrefix + "/" + ent.GetTable()
 }
 
-// moduleRole is the synthetic ambient role name for a module (design §5).
 func moduleRole(name string) string { return "module/" + name }
 
-// delegationCredentialHeaders is the framework's credential-header canon: the
-// four transport headers the auth surfaces resolve (Authorization bearer,
-// X-API-Key apitoken, the embed grant, Cookie sessions — the same list
-// app.go's credentialFingerprint hashes). It MUST stay in sync with
-// credentialFingerprint's list in app.go and the copy list in
-// crud/mcp.go runToolRequest: a header one of them recognizes and the others
-// drop is the issue #360 defect class — authority the caller legitimately
-// holds that never reaches the re-dispatch.
 var delegationCredentialHeaders = []string{"Authorization", "X-API-Key", fembed.GrantHeader, "Cookie"}
 
-// credentialSnapshot copies every FIELD of every credential header r carries.
-// Values, never Get: Get returns only the FIRST field, and Cookie is
-// routinely several (a proxy prepends its own before the browser's), which
-// is the exact collapse app.go's credentialFingerprint documents. Headers
-// outside the canon are deliberately excluded — the snapshot re-presents
-// the caller's credentials and nothing else, so it can never carry more
-// authority than the minting request had.
 func credentialSnapshot(r *http.Request) http.Header {
 	h := http.Header{}
 	for _, name := range delegationCredentialHeaders {
@@ -666,16 +460,6 @@ func credentialSnapshot(r *http.Request) http.Header {
 	return h
 }
 
-// snapshotRequest builds a minimal *http.Request carrying the stashed caller
-// credentials so crud.Redispatch's mcp.WithRequest header re-injection
-// recovers the same identity the middleware would resolve for a live request.
-//
-// The header map is a fresh CLONE of the stash per call: re-dispatch
-// middleware mutates request headers in place (embed's grant path deletes
-// Cookie/Authorization/X-API-Key once the grant verdict is final — "the
-// grant is the only identity an embed request may have"), and a shared map
-// would let one re-dispatch's verdict erase the credentials of every later
-// reverse call on the same handle.
 func snapshotRequest(entry delegationEntry) *http.Request {
 	header := entry.credentials.Clone()
 	if header == nil {
@@ -684,11 +468,6 @@ func snapshotRequest(entry delegationEntry) *http.Request {
 	return &http.Request{Header: header, URL: &url.URL{Path: "/"}}
 }
 
-// entityQuerySuffix expands the structured query params into the CRUD list
-// query string the filter/sort/select/limit/offset DSL expects. p.Filter MUST
-// be allow-listed by the caller (dispatchEntity runs it through sanitizeFilter)
-// before reaching here, expandRaw forwards every key verbatim, so an
-// unfiltered filter would let a child inject control keys (include/trashed/…).
 func entityQuerySuffix(p moduleproto.EntityQueryParams) string {
 	q := url.Values{}
 	expandRaw(q, p.Filter)
@@ -713,11 +492,6 @@ func entityQuerySuffix(p moduleproto.EntityQueryParams) string {
 	return "?" + enc
 }
 
-// expandRaw sets one query param per top-level key of a JSON object filter.
-// Non-object filters are ignored (the host's filter DSL is a flat map). It is
-// an UNFILTERED primitive, every key is forwarded verbatim, so the caller
-// MUST allow-list first (see sanitizeFilter, which mirrors the crud/mcp.go
-// listTool field allow-list). Do NOT call expandRaw on an untrusted filter.
 func expandRaw(q url.Values, raw json.RawMessage) {
 	if len(raw) == 0 {
 		return
@@ -731,10 +505,6 @@ func expandRaw(q url.Values, raw json.RawMessage) {
 	}
 }
 
-// filterParamString spells one filter value as a query param. A number is
-// written in plain decimal, the form the filter DSL's integer parser
-// reads: fmt.Sprint(float64(1234567)) is "1.234567e+06". An integer past
-// 2^53 arrives as a json.Number and keeps the module's digits.
 func filterParamString(v any) string {
 	if f, ok := v.(float64); ok {
 		return strconv.FormatFloat(f, 'f', -1, 64)
@@ -742,21 +512,13 @@ func filterParamString(v any) string {
 	return fmt.Sprint(v)
 }
 
-// sanitizeFilter reduces a child-supplied filter object to the keys that name
-// a declared, non-Hidden, non-NoQuery field of ent, optionally suffixed with
-// a comparison operator the filter DSL recognizes (_ne/_gt/_gte/_lt/_lte/_like/_in).
-// Control keys (include/trashed/where/limit/sort/fields/q/…), Hidden/NoQuery
-// field names, and undeclared names are dropped so they can never reach the
-// CRUD list query string. This is the F2 fix: it mirrors the allow-list
-// crud/mcp.go listTool builds, which expandRaw alone does not. Non-object
-// filters pass through unchanged (expandRaw ignores them anyway).
 func sanitizeFilter(ent *entity.Entity, raw json.RawMessage) (json.RawMessage, error) {
 	if ent == nil || len(raw) == 0 {
 		return raw, nil
 	}
 	var m map[string]any
 	if jsonexact.Unmarshal(raw, &m) != nil {
-		return raw, nil // non-object: expandRaw ignores it; pass through
+		return raw, nil
 	}
 	allowed := queryableFieldKeys(ent)
 	out := make(map[string]any, len(m))
@@ -775,10 +537,6 @@ func sanitizeFilter(ent *entity.Entity, raw json.RawMessage) (json.RawMessage, e
 	return b, nil
 }
 
-// queryableFieldKeys returns the set of filter keys the CRUD list parser
-// accepts for ent's declared, non-Hidden, non-NoQuery fields: each field's
-// column Name and WireName alias, each with the optional comparison suffixes
-// the filter DSL recognizes. Mirrors crud/mcp.go listTool's mcpFieldKey loop.
 func queryableFieldKeys(ent *entity.Entity) map[string]bool {
 	allowed := make(map[string]bool)
 	if ent == nil {
@@ -792,10 +550,6 @@ func queryableFieldKeys(ent *entity.Entity) map[string]bool {
 			if k == "" {
 				continue
 			}
-			// The bare key, each suffix spelling, and each bracket
-			// spelling (k[in]), which is the only one that reaches a
-			// field beside its name plus a suffix: the list route
-			// refuses the bare key that reads two ways.
 			allowed[k] = true
 			for _, s := range filter.FilterSuffixes {
 				allowed[k+s.Suffix] = true
@@ -859,7 +613,6 @@ func unmarshalParams(raw json.RawMessage, dst any) error {
 func mapQueryResult(res any) (any, error) {
 	env, ok := res.(map[string]any)
 	if !ok {
-		// Non-envelope (rare): return the raw value as rows.
 		rows, err := json.Marshal(res)
 		if err != nil {
 			return nil, fmt.Errorf("encode query rows: %w", err)
@@ -881,8 +634,6 @@ func mapQueryResult(res any) (any, error) {
 	return moduleproto.EntityQueryResult{Rows: rows, Total: total}, nil
 }
 
-// envelopeTotal reads an envelope's total as crud.Redispatch decodes
-// it: a json.Number holding an integer.
 func envelopeTotal(raw any) (int, bool) {
 	n, ok := raw.(json.Number)
 	if !ok {
@@ -929,10 +680,6 @@ func mapSearchResult(res any) (any, error) {
 	return moduleproto.SearchQueryResult{Results: raw}, nil
 }
 
-// mapRedispatchErr converts a CRUD chokepoint failure into a wire error. A
-// 401/403 from the re-dispatch is the caller-authority half failing, surface
-// it as a capability denial so the adversarial property ("caller lacks the
-// perm → 403 from the re-dispatch") is observable as a denial.
 func mapRedispatchErr(err error) error {
 	msg := err.Error()
 	if strings.Contains(msg, "status 401") || strings.Contains(msg, "status 403") {
@@ -941,9 +688,6 @@ func mapRedispatchErr(err error) error {
 	return &moduleproto.Error{Code: moduleproto.CodeInternalError, Message: "crud redispatch failed: " + msg}
 }
 
-// brokerDeny returns a [*moduleproto.Error] capability denial. It is the single
-// shape every gate denial takes so the child sees a consistent, diagnosable
-// CodeCapabilityDenied rather than a generic internal error.
 func brokerDeny(format string, args ...any) error {
 	return &moduleproto.Error{Code: moduleproto.CodeCapabilityDenied, Message: "moduleproto broker: " + fmt.Sprintf(format, args...)}
 }
