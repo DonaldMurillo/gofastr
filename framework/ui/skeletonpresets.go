@@ -1,14 +1,5 @@
 package ui
 
-// ─── Skeleton compositions ──────────────────────────────────────────
-//
-// Loading-state presets over headless.Skeleton: one primitive render
-// per preset, so exactly one polite "Loading…" announcement and one
-// hidden set of bars — never a live region per line. The preset shapes
-// (which line is the title, which the footer, where the circle sits)
-// are the stylesheet's, keyed on the primitive's own hooks
-// (data-hui-lines, data-hui-skeleton-last) and position.
-
 import (
 	"context"
 
@@ -20,8 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// skeletonLabel resolves the preset's announcement: the caller's
-// Label, or the framework's "Loading…" through i18n.
 func skeletonLabel(label string, ctx context.Context) string {
 	if label != "" {
 		return label
@@ -32,7 +21,6 @@ func skeletonLabel(label string, ctx context.Context) string {
 	return i18nui.Loading.Text(ctx)
 }
 
-// skeletonClasses dresses the bars every preset draws.
 func skeletonClasses(root string) headless.Classes {
 	return headless.Classes{
 		headless.PartRoot:           root,
@@ -43,37 +31,24 @@ func skeletonClasses(root string) headless.Classes {
 
 // SkeletonCardConfig configures a SkeletonCard.
 type SkeletonCardConfig struct {
-	// BodyLines is the number of skeleton lines rendered in the body.
-	// Defaults to 2 when zero.
+	// BodyLines is the number of body lines. Defaults to 2.
 	BodyLines int
-	// ShowFooter renders a hairline-divided skeleton footer line.
+	// ShowFooter adds a footer line below a hairline.
 	ShowFooter bool
-	// Label is the announcement the preset makes once, politely.
-	// Defaults to the reader's "Loading…".
+	// Label is the one polite announcement. Defaults to "Loading…".
 	Label string
-	// Ctx carries the per-request context used to resolve the default
-	// label. When nil, English fallback applies.
+	// Ctx resolves the default label; nil uses English.
 	Ctx   context.Context
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the placeholder's root element. Keys the
-	// component owns are dropped: class and id (use Class / ID),
-	// style, data-cui-* and aria-hidden (skeletons are always
-	// presentational; the one announcement is the primitive's).
+	// ExtraAttrs forwards attributes to the root; class, id, style, data-cui-* and aria-hidden are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// skeletonCardClasses dresses the card preset. The root wears the
-// card chrome beside its own preset class, exactly as the preset
-// always did.
 var skeletonCardClasses = skeletonClasses("fui-card fui-skeleton-card")
 
-// SkeletonCard renders a card-shaped loading placeholder on
-// headless.Skeleton: a title line, a body line-stack, and an optional
-// footer line — one announcement, bars the stylesheet sizes by
-// position.
+// SkeletonCard renders a card-shaped loading placeholder: a title, body lines and an optional footer.
 func SkeletonCard(cfg SkeletonCardConfig) render.HTML {
 	bodyLines := cfg.BodyLines
 	if bodyLines <= 0 {
@@ -83,9 +58,6 @@ func SkeletonCard(cfg SkeletonCardConfig) render.HTML {
 	cls := cfg.Class
 	if cfg.ShowFooter {
 		lines++
-		// The footer line is the marked last line; the modifier is
-		// what tells the sheet the mark means "footer" rather than
-		// "the short last line of a paragraph".
 		cls = joinNonEmpty("fui-skeleton-card--footed", cls)
 	}
 	return skeletonPresetsStyle.WrapHTML(headless.Skeleton(headless.SkeletonProps{
@@ -99,33 +71,23 @@ func SkeletonCard(cfg SkeletonCardConfig) render.HTML {
 
 // SkeletonRowConfig configures a SkeletonRow.
 type SkeletonRowConfig struct {
-	// HideChevron drops the trailing chevron skeleton: use for plain
-	// label/value rows that aren't drill-down navigable.
+	// HideChevron drops the trailing chevron, for a row that links nowhere.
 	HideChevron bool
-	// Label is the announcement the preset makes once, politely.
-	// Defaults to the reader's "Loading…".
+	// Label is the one polite announcement. Defaults to "Loading…".
 	Label string
-	// Ctx carries the per-request context used to resolve the default
-	// label. When nil, English fallback applies.
+	// Ctx resolves the default label; nil uses English.
 	Ctx   context.Context
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the placeholder's root element. Keys the
-	// component owns are dropped: class and id (use Class / ID),
-	// style, data-cui-* and aria-hidden.
+	// ExtraAttrs forwards attributes to the root; class, id, style, data-cui-* and aria-hidden are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// SkeletonRow renders a list-row loading placeholder on
-// headless.Skeleton: a label line on the left, a value line on the
-// right, and a trailing chevron the stylesheet draws.
+// SkeletonRow renders a list-row loading placeholder: a label, a value and a chevron.
 func SkeletonRow(cfg SkeletonRowConfig) render.HTML {
 	cls := cfg.Class
 	if !cfg.HideChevron {
-		// The chevron is a ::after the sheet draws as the third grid
-		// column; the plain modifier drops it.
 		cls = joinNonEmpty("fui-skeleton-row--chevron", cls)
 	}
 	return skeletonPresetsStyle.WrapHTML(headless.Skeleton(headless.SkeletonProps{
@@ -139,32 +101,22 @@ func SkeletonRow(cfg SkeletonRowConfig) render.HTML {
 
 // SkeletonTimelineConfig configures a SkeletonTimeline.
 type SkeletonTimelineConfig struct {
-	// Rows is the number of event-shaped rows to draw (dot, name
-	// line, two text lines each). Default 3, the shape of a short
-	// activity feed.
+	// Rows is the number of event rows, a dot and three lines each. Defaults to 3.
 	Rows int
-	// Label is the polite announcement. Default "Loading…".
+	// Label is the one polite announcement. Defaults to "Loading…".
 	Label string
-	// Ctx carries the per-request context used to resolve the default
-	// label. When nil, English fallback applies.
+	// Ctx resolves the default label; nil uses English.
 	Ctx   context.Context
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the placeholder's root element. Keys the
-	// component owns are dropped: class and id (use Class / ID),
-	// style, data-cui-* and aria-hidden.
+	// ExtraAttrs forwards attributes to the root; class, id, style, data-cui-* and aria-hidden are dropped.
 	ExtraAttrs html.Attrs
 }
 
 var skeletonTimelineClasses = skeletonClasses("fui-skeleton-timeline")
 
-// SkeletonTimeline renders a timeline-shaped loading placeholder on
-// headless.Skeleton: one row per event — a dot on the rail, a name
-// line, and two text lines — the shape ui.Timeline arrivals have, so
-// the placeholder promises exactly what lands. One announcement, one
-// hidden set of bars.
+// SkeletonTimeline renders a loading placeholder in the shape of a ui.Timeline's events.
 func SkeletonTimeline(cfg SkeletonTimelineConfig) render.HTML {
 	rows := cfg.Rows
 	if rows <= 0 {
@@ -185,34 +137,24 @@ var skeletonRowClasses = skeletonClasses("fui-skeleton-row")
 type SkeletonAvatarConfig struct {
 	// HideSubline collapses the two stacked lines into one.
 	HideSubline bool
-	// Label is the announcement the preset makes once, politely.
-	// Defaults to the reader's "Loading…".
+	// Label is the one polite announcement. Defaults to "Loading…".
 	Label string
-	// Ctx carries the per-request context used to resolve the default
-	// label. When nil, English fallback applies.
+	// Ctx resolves the default label; nil uses English.
 	Ctx   context.Context
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the placeholder's root element. Keys the
-	// component owns are dropped: class and id (use Class / ID),
-	// style, data-cui-* and aria-hidden.
+	// ExtraAttrs forwards attributes to the root; class, id, style, data-cui-* and aria-hidden are dropped.
 	ExtraAttrs html.Attrs
 }
 
 var skeletonAvatarClasses = skeletonClasses("fui-skeleton-avatar")
 
-// SkeletonAvatar renders an avatar-with-text loading placeholder on
-// headless.Skeleton: a circle on the left with the text lines on the
-// right, the second line dropped when HideSubline is true. The
-// circle's diameter is the --ui-skeleton-avatar-size knob (2.5rem,
-// with a stylesheet override on the preset class as the other way a
-// custom size is set, never an inline style a strict CSP drops).
+// SkeletonAvatar renders a loading placeholder of a circle beside a name line and a subline.
 func SkeletonAvatar(cfg SkeletonAvatarConfig) render.HTML {
-	lines := 3 // circle + name + subline
+	lines := 3
 	if cfg.HideSubline {
-		lines = 2 // circle + name
+		lines = 2
 	}
 	return skeletonPresetsStyle.WrapHTML(headless.Skeleton(headless.SkeletonProps{
 		Label:      skeletonLabel(cfg.Label, cfg.Ctx),
@@ -225,29 +167,20 @@ func SkeletonAvatar(cfg SkeletonAvatarConfig) render.HTML {
 
 // SkeletonLineConfig configures a SkeletonLine.
 type SkeletonLineConfig struct {
-	// Label is the announcement the preset makes once, politely.
-	// Defaults to the reader's "Loading…".
+	// Label is the one polite announcement. Defaults to "Loading…".
 	Label string
-	// Ctx carries the per-request context used to resolve the default
-	// label. When nil, English fallback applies.
+	// Ctx resolves the default label; nil uses English.
 	Ctx   context.Context
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the placeholder's root element. Keys the
-	// component owns are dropped: class and id (use Class / ID),
-	// style, data-cui-* and aria-hidden.
+	// ExtraAttrs forwards attributes to the root; class, id, style, data-cui-* and aria-hidden are dropped.
 	ExtraAttrs html.Attrs
 }
 
 var skeletonLineClasses = skeletonClasses("fui-skeleton-line")
 
-// SkeletonLine renders ONE bar on headless.Skeleton — the loading
-// twin of a short text run (a breadcrumb trail, a one-line label),
-// where Card/Row/Timeline would promise a shape that never arrives.
-// One announcement, one bar, capped at the width a run of text
-// occupies so it never reads as a full-width block.
+// SkeletonLine renders one bar capped at a short run of text's width, for a one-line label.
 func SkeletonLine(cfg SkeletonLineConfig) render.HTML {
 	return skeletonPresetsStyle.WrapHTML(headless.Skeleton(headless.SkeletonProps{
 		Label:      skeletonLabel(cfg.Label, cfg.Ctx),
@@ -261,12 +194,6 @@ func SkeletonLine(cfg SkeletonLineConfig) render.HTML {
 var skeletonPresetsStyle = registry.RegisterStyle("ui-skeleton-presets", func(_ style.Theme) string {
 	return skeletonPresetsCSS
 })
-
-// Knobs: --ui-skeleton-bar-height (0.85rem, every preset's bar),
-// --ui-skeleton-row-chevron-size (0.5rem), --ui-skeleton-avatar-size
-// (2.5rem, the circle; the preset's min-height and text padding are
-// calc() over it), --ui-skeleton-timeline-dot-size (12px) and
-// --ui-skeleton-line-max-width (12rem, the single-bar cap).
 
 const skeletonPresetsCSS = `
 [data-cui-comp="ui-skeleton-presets"] .fui-visually-hidden {

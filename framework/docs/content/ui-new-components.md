@@ -192,7 +192,12 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
   consistent with the mount, and build any translated caller `Label` with
   that request's context before passing it to the trigger. The mounted
   body's default empty text uses its own request context; explicit `Label`
-  and `EmptyText` remain as supplied.
+  and `EmptyText` remain as supplied. An item's `Href` that fails the link
+  policy renders as `#`. Knobs: `--ui-notification-bell-badge-inset-block`
+  (-12px) and `-inset-inline` (-10px) offset the badge from the glyph's
+  corner, `--ui-notification-bell-badge-size` (18px) is its round body, and
+  `--ui-notification-bell-panel-min-width` (18rem) and `-max-width` (24rem)
+  bound the panel.
 - **confirmaction**: `framework/ui.ConfirmAction`, trigger + alertdialog Modal
 - **commandpalette**: *(also under Selection; same component)*
 
@@ -220,7 +225,7 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
 - **sortablelist**: `framework/ui.SortableList`, drag-and-drop + keyboard reorderable list on the headless primitive (Space grabs, arrows move, columns following the screen in RTL, Space drops, Esc, focus leaving the row or a new grab cancels; a drag released off the list puts the row back); the commit is the pattern's server round trip — 2xx confirms, non-2xx reverts, linked columns share `Group`, a versioned 409 refetches fresh rows (`SortableListItems` is that fragment)
 - **optimisticaction**: `framework/ui.OptimisticAction`, button that flips to its SSR-declared success state on click; the RPC fires underneath and rolls back with a shake on non-2xx
 - **toggleaction**: `framework/ui.ToggleAction`, OptimisticAction's three-state cousin: idle ↔ committed with optional untoggle endpoint and `Group` mutex (committing one reverts its siblings)
-- **networkretrybanner**: `framework/ui.NetworkRetryBanner`, persistent banner that shows on RPC-failure threshold or SSE silence; retry button pings a health endpoint to recover
+- **networkretrybanner**: `framework/ui.NetworkRetryBanner`, the offline banner: it ships hidden and the runtime shows it when the connection is lost; its Retry control is a real link to `HealthEndpoint` (a relative path or an http(s) URL), which with script is fetched in place and a 2xx hides the banner. `window.__gofastr.networkStatus.reportFailure()` / `reportRecovery()` drive it from app-level signals. Mount it once, in the persistent shell. Knobs: `--ui-network-retry-banner-desc-opacity` (0.9) dims the description, `--ui-network-retry-banner-retry-checking-opacity` (0.7) dims the link while a check runs
 
 ### Data display
 
@@ -255,7 +260,7 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
 - **detaillist**: `framework/ui.DetailList`, label/value description list for record detail views; stacks labels above values in narrow containers, including desktop context cards, and on phones; `Stacked` draws a read-only value in a form, label above and the value boxed like a control; `Spread` draws compact side-column facts, label at the start and value at the end, a long first value (an id) truncating ahead of a copy button
 - **progress**: `framework/ui.Progress`, native `<progress>` with theme styling; determinate (`Value` 0..`Max`, clamped at render) or indeterminate (`Value` < 0), labelled visibly (`ShowLabel`) or through `aria-label`. A named-stage walk is `ProgressSteps`, a different component
 - **terminalblock**: `framework/ui.TerminalBlock`, terminal transcript with a labelled header and `TerminalOut` / `TerminalOK` / `TerminalErr` lines
-- **skeleton**: `framework/ui.SkeletonCard` / `SkeletonRow` / `SkeletonAvatar` / `SkeletonTimeline` / `SkeletonLine`, loading placeholders over `framework/headless.Skeleton`: hidden shimmer bars, one polite "Loading…" announcement per preset; their own stylesheet visually hides that accessible announcement even without the host's app.css floor, so it occupies no grid cell; the timeline preset draws event-shaped rows (dot, name line, two text lines) matching what `ui.Timeline` arrivals look like, and `SkeletonLine` draws ONE capped bar — the loading twin of a breadcrumb trail or a one-line label (an area's `Loading.Show`, a crumbs skeleton)
+- **skeleton**: `framework/ui.SkeletonCard` / `SkeletonRow` / `SkeletonAvatar` / `SkeletonTimeline` / `SkeletonLine`, loading placeholders over `framework/headless.Skeleton`: hidden shimmer bars, one polite "Loading…" announcement per preset; their own stylesheet visually hides that accessible announcement even without the host's app.css floor, so it occupies no grid cell; the timeline preset draws event-shaped rows (dot, name line, two text lines) matching what `ui.Timeline` arrivals look like, and `SkeletonLine` draws ONE capped bar — the loading twin of a breadcrumb trail or a one-line label (an area's `Loading.Show`, a crumbs skeleton). Knobs: `--ui-skeleton-bar-height` (0.85rem, every bar), `--ui-skeleton-row-chevron-size` (0.5rem), `--ui-skeleton-avatar-size` (2.5rem, the circle; set it on the preset's class, never as an inline style), `--ui-skeleton-timeline-dot-size` (12px) and `--ui-skeleton-line-max-width` (12rem)
 - **spinner**: `framework/ui.Spinner`, inline CSS loading indicator
 
 ### Tags, badges, filters
@@ -309,7 +314,7 @@ fragments do not repeat the response-signal binding inside that region.
 - **notification**: `framework/ui.Notification`, toast-styled inline notification (variant + dismiss)
 - **emptystate**: `framework/ui.EmptyState`, centered title + description + optional CTA for no-data screens; `Compact` draws one muted line in a small panel, for an empty list inside another screen
 - **signout**: `framework/ui.SignOut`, logout control: minimal form POSTing to the auth sign-out endpoint; compatible with `auth.WithBFFPosture`, whose logout handler enforces same-origin submission
-- **pollingindicator**: `framework/ui.PollingIndicator`, pulsing dot + label confirming a polling RPC is firing
+- **pollingindicator**: `framework/ui.PollingIndicator`, pulsing dot + label confirming a polling RPC is firing, in a polite `role="status"` region so a changed label is announced. Knob: `--ui-polling-indicator-dot-size` (0.5rem)
 - **seo**: `core-ui/seo` + `uihost.WithSitemap` / `WithRobots` + `ScreenCanonical` / `ScreenHreflangs` / `ScreenSchema`, per-page SEO + sitewide sitemap.xml / robots.txt
 - **seo-bundle**: `ScreenSEO(ctx)` returning an `SEO` struct, per-screen bundle of description + canonical + hreflangs + robots + OG + Twitter Card + JSON-LD in one declaration; alternative to the per-method calls above
 
