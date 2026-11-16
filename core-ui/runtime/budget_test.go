@@ -1737,12 +1737,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// (TestOpenDuringNavigationSurvivesCommit) and stay under its
 		// lines; 46 of it is the pass answering when its mounts and
 		// deep-link opens settle, so the event means the widgets are in.
-		// 3813 measured + 2 (2026-11-16): an Escape pressed while a layer
+		// 3867 measured + 2 (2026-11-16): an Escape pressed while a layer
 		// is open and widgetfocus is still loading is handed to that
-		// module once it registers, instead of being lost
-		// (TestEscapeBeforeFocusModuleLoadsClosesModal, the
-		// TestBrowser_EscClosesModals flake).
-		"widgets": 3815,
+		// module once it registers, if the same layers are still open
+		// (TestEscapeBeforeFocusModuleLoadsClosesModal,
+		// TestHeldEscapeSkipsALaterLayer).
+		"widgets": 3869,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
