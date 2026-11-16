@@ -16,34 +16,20 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-// ModuleManifest is the declarative metadata a Module carries alongside
-// its Battery Init. Everything in it is informational, the framework
-// uses DependsOn for battery init ordering (it doubles as the battery
-// dep list), and the rest is surfaced through introspection.
+// ModuleManifest is a Module's metadata. DependsOn is also its battery
+// dependency list; the rest is informational.
 type ModuleManifest struct {
-	// Version is an optional, informational version string.
-	Version string
-
-	// Description is a short, human-readable summary.
+	Version     string
 	Description string
-
-	// DependsOn names other MODULES that must be enabled (and initialised)
-	// before this one. RegisterModule forwards this to BatteryManager as
-	// the battery dep list, so topo-sort orders module init.
+	// DependsOn names modules that must be enabled, and initialized, first.
 	DependsOn []string
-
-	// MigrationGroup defaults to the module name. It is an informational
-	// pointer to the core/migrate group (#33) the module owns, the
-	// framework does not enforce that it matches a registered migration
-	// group, but the modules doc describes the tie-in.
+	// MigrationGroup defaults to the module name; it is not checked.
 	MigrationGroup string
 }
 
-// Module is a Battery plus a manifest. Everything a module registers
-// during Init (routes, entities, cron jobs, queue consumers, MCP tools)
-// is attributed to the module, and a runtime enable/disable gate is
-// enforced at dispatch time: disabled → its routes 404, its cron jobs
-// and queue consumers skip, its MCP tools refuse.
+// Module is a Battery plus a manifest. What it registers during Init is
+// attributed to it, and while it is disabled its routes 404, its cron
+// jobs and queue consumers skip and its MCP tools refuse.
 type Module interface {
 	Battery
 	Manifest() ModuleManifest
@@ -61,43 +47,25 @@ type ModuleInfo struct {
 	RouteCount     int
 	ToolCount      int
 
-	// --- process-module operator introspection (design §8) ---
-	// These fields are ADDITIVE: zero / empty for in-process modules
-	// (there is no child process and no supervisor state to report). They
-	// are populated by ModuleManager.List when a process-module
-	// supervisor is attached via SetProcessReconciler.
-
-	// ProcessState is the live [ProcessState] for a process module, or
-	// the empty string for an in-process module.
+	// The process fields below are zero for an in-process module.
 	ProcessState string
-	// RestartCount is the number of unexpected exits in the current
-	// circuit window (process modules only).
-	RestartCount int
-	// ObservedGeneration is the child's current desired_generation view
-	// compared against the store's; non-zero only for process modules.
+	// RestartCount counts unexpected exits in the current circuit window.
+	RestartCount       int
 	ObservedGeneration uint64
-	// InstanceID is the live spawn's liveness nonce (process modules only).
-	InstanceID string
-	// LastExit is the diagnostic label of the most recent child exit
-	// (process modules only). One of: "", "drained", "crashed: <err>",
-	// "lease-expired-drain", "failed: <reason>", "exited-cleanly-unexpected".
+	InstanceID         string
+	// LastExit is "", "drained", "crashed: <err>", "lease-expired-drain",
+	// "failed: <reason>" or "exited-cleanly-unexpected".
 	LastExit string
 }
 
-// ModuleStore persists module enable/disable state across restarts.
-// The default in-memory store is used when the app has no DB; an app
-// built with WithDB gets the SQL store automatically.
+// ModuleStore persists module enable/disable state. An app with a DB
+// uses SQLModuleStore, one without uses InMemoryModuleStore.
 type ModuleStore interface {
 	Load(ctx context.Context) (map[string]bool, error)
 	SetEnabled(ctx context.Context, name string, enabled bool) error
 }
 
-// ---------------------------------------------------------------------------
-// In-memory store
-// ---------------------------------------------------------------------------
-
-// InMemoryModuleStore is the default store for apps without a DB. State
-// is lost on restart, modules re-enable on every boot.
+// InMemoryModuleStore holds module state for the life of the process.
 type InMemoryModuleStore struct {
 	mu   sync.Mutex
 	data map[string]bool
@@ -125,20 +93,14 @@ func (s *InMemoryModuleStore) SetEnabled(_ context.Context, name string, enabled
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// SQL store
-// ---------------------------------------------------------------------------
-
-// SQLModuleStore persists module state in a gofastr_modules table.
-// Self-migrating (CREATE TABLE IF NOT EXISTS), not a migrate group.
+// SQLModuleStore persists module state in the gofastr_modules table.
 type SQLModuleStore struct {
 	db      *sql.DB
 	dialect migrate.Dialect
 	now     func() time.Time
 }
 
-// NewSQLModuleStore creates a SQL-backed store and ensures the table
-// exists. dialect is probed via migrate.DetectDialect when not explicit.
+// NewSQLModuleStore creates the store, creating its table if missing.
 func NewSQLModuleStore(db *sql.DB) (*SQLModuleStore, error) {
 	s := &SQLModuleStore{
 		db:      db,
@@ -164,10 +126,6 @@ func (s *SQLModuleStore) ensureTable() error {
 	return nil
 }
 
-// registerModuleExport declares gofastr_modules to App.ExportData. Left
-// out, a restore booted every module an operator had turned off back on:
-// a module with no row is enabled. No eraser: the rows name modules, not
-// users.
 func registerModuleExport() {
 	datexport.Register(datexport.DataExporter{
 		Name: "gofastr_modules", Source: "modules", Table: "gofastr_modules",
@@ -204,72 +162,40 @@ func (s *SQLModuleStore) SetEnabled(ctx context.Context, name string, enabled bo
 	return err
 }
 
-// ---------------------------------------------------------------------------
-// Module manager
-// ---------------------------------------------------------------------------
-
-// moduleEntry holds a registered module's manifest.
 type moduleEntry struct {
 	manifest ModuleManifest
 }
 
-// ModuleManager tracks registered modules, their enable/disable state,
-// and the attribution of routes/tools/entities to modules. It is the
-// runtime gate that disabled-module enforcement reads on every request.
+// ModuleManager tracks registered modules, their enabled state, and which
+// module owns each route, tool and entity; the dispatch gates read it.
 type ModuleManager struct {
 	mu      sync.RWMutex
 	modules map[string]*moduleEntry
-	order   []string // registration order
-
-	// enabled is the in-memory cache loaded from the store at boot.
-	// Modules absent from the map are treated as enabled (default).
+	order   []string
 	enabled map[string]bool
 
-	// Attribution maps, populated during module Init.
-	routes   map[string]string // "METHOD /path" → module name
-	tools    map[string]string // tool name → module name
-	entities map[string]string // entity name → module name
+	routes   map[string]string
+	tools    map[string]string
+	entities map[string]string
 
-	// current is the module whose Init is running (attribution target).
-	// Set/cleared under mu by the battery init loop. Boot is
-	// single-threaded through BatteryManager.InitAll.
-	current string
-
-	// toggleMu serializes Enable/Disable check-then-act sequences
-	// (dependency check → store write → cache flip) so concurrent
-	// toggles cannot interleave to a forbidden state. Separate from mu
-	// (the read-path RWMutex) so Enabled() stays cheap.
+	current  string
 	toggleMu sync.Mutex
 
 	store    ModuleStore
-	storeErr error         // non-nil if SQL store creation failed with a DB
-	fanout   fanout.Fanout // nil = single-replica
-	nodeID   string        // for fanout self-dedup
-	db       *sql.DB       // nil when no DB
+	storeErr error
+	fanout   fanout.Fanout
+	nodeID   string
+	db       *sql.DB
 
-	// processCoordinator, when set, lets a process-module supervisor
-	// (one per replica) hook reconcile signals and introspection into the
-	// in-process module manager. nil when the app has no process modules.
-	// Wired by App.RegisterProcessModule (framework/app.go).
 	processCoordinator processModuleCoordinator
+	process            map[string]bool
 
-	// process names the modules a process supervisor owns. Their enabled
-	// state lives in the supervisor's desired-state row
-	// (gofastr_process_modules), not in store/enabled: Enabled, Enable and
-	// Disable route them through the coordinator, so the route gate, the
-	// module-tool gate and the supervisor all read one value.
-	process map[string]bool
-
-	// auditToggle is installed at app initialization when audit logging is enabled.
 	auditToggle func(context.Context, string, bool)
 }
 
-// NewModuleManager creates a manager backed by the appropriate store.
-// When db is non-nil a SQLModuleStore is used; otherwise in-memory.
-// If db is non-nil and the SQL store cannot be created (e.g. CREATE TABLE
-// fails), the error is stored and surfaced by loadFromStore so boot fails
-// closed, a deliberately disabled module must not silently come back
-// enabled on a broken store.
+// NewModuleManager creates a manager on a SQLModuleStore when db is
+// non-nil, else in memory. A SQL store that cannot be created fails the
+// boot, at loadFromStore.
 func NewModuleManager(db *sql.DB, f fanout.Fanout) *ModuleManager {
 	mm := &ModuleManager{
 		modules:  make(map[string]*moduleEntry),
@@ -287,10 +213,6 @@ func NewModuleManager(db *sql.DB, f fanout.Fanout) *ModuleManager {
 		if err == nil {
 			mm.store = store
 		} else {
-			// Store creation failed with a DB provided, propagate the
-			// error via storeErr so loadFromStore fails the boot.
-			// Do NOT fall back to in-memory: that would silently
-			// re-enable every deliberately-disabled module.
 			mm.storeErr = fmt.Errorf("create modules table: %w", err)
 		}
 	} else {
@@ -299,7 +221,6 @@ func NewModuleManager(db *sql.DB, f fanout.Fanout) *ModuleManager {
 	return mm
 }
 
-// register records a module's manifest. Called by App.RegisterModule.
 func (mm *ModuleManager) register(name string, manifest ModuleManifest) {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
@@ -307,33 +228,24 @@ func (mm *ModuleManager) register(name string, manifest ModuleManifest) {
 	mm.order = append(mm.order, name)
 }
 
-// setCurrent marks the module whose Init is about to run so that
-// registration hooks attribute routes/tools/entities to it.
 func (mm *ModuleManager) setCurrent(name string) {
 	mm.mu.Lock()
 	mm.current = name
 	mm.mu.Unlock()
 }
 
-// clearCurrent removes the current-module marker. Called after each
-// module's Init returns (or when a non-module battery inits).
 func (mm *ModuleManager) clearCurrent() {
 	mm.mu.Lock()
 	mm.current = ""
 	mm.mu.Unlock()
 }
 
-// currentModule returns the module currently being initialised, or "".
 func (mm *ModuleManager) currentModule() string {
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
 	return mm.current
 }
 
-// recordRoute stamps a route with the current module. Called by
-// the router register hook. The key is method + " " + pattern so two
-// modules owning different methods on the same path are attributed
-// independently.
 func (mm *ModuleManager) recordRoute(method, pattern string) {
 	mm.mu.Lock()
 	if mm.current != "" {
@@ -342,7 +254,6 @@ func (mm *ModuleManager) recordRoute(method, pattern string) {
 	mm.mu.Unlock()
 }
 
-// recordTool stamps an MCP tool name with the current module.
 func (mm *ModuleManager) recordTool(toolName string) {
 	mm.mu.Lock()
 	if mm.current != "" {
@@ -351,7 +262,6 @@ func (mm *ModuleManager) recordTool(toolName string) {
 	mm.mu.Unlock()
 }
 
-// recordEntity stamps an entity name with the current module.
 func (mm *ModuleManager) recordEntity(entityName string) {
 	mm.mu.Lock()
 	if mm.current != "" {
@@ -360,12 +270,6 @@ func (mm *ModuleManager) recordEntity(entityName string) {
 	mm.mu.Unlock()
 }
 
-// loadFromStore populates the enabled cache from the persisted store.
-// Called once at boot, after batteries init. Modules absent from the
-// store are enabled by default; store rows for unknown modules are
-// kept but never read. The cache entry this writes for a process module
-// is never read: Enabled answers those from the supervisor's row, so a
-// process module nobody enabled stays closed (404) after boot.
 func (mm *ModuleManager) loadFromStore(ctx context.Context) error {
 	if mm.storeErr != nil {
 		return mm.storeErr
@@ -386,15 +290,13 @@ func (mm *ModuleManager) loadFromStore(ctx context.Context) error {
 	return nil
 }
 
-// Enabled is the hot-path read the dispatch gates use. A single map
-// read under RLock; absent modules are enabled by default. A process
-// module answers from its supervisor's desired state.
+// Enabled reports whether name is enabled; a module with no stored state
+// is. A process module answers from its supervisor's desired state.
 func (mm *ModuleManager) Enabled(name string) bool {
 	mm.mu.RLock()
 	if mm.process[name] {
 		pt, _ := mm.processCoordinator.(processModuleToggler)
 		mm.mu.RUnlock()
-		// No toggler means nothing could spawn the child: closed.
 		return pt != nil && pt.DesiredEnabled(name)
 	}
 	defer mm.mu.RUnlock()
@@ -405,9 +307,6 @@ func (mm *ModuleManager) Enabled(name string) bool {
 	return v
 }
 
-// routeAllowed returns false when the route's owning module is disabled.
-// The key is "METHOD /path" (matching recordRoute). Routes with no owner
-// pass.
 func (mm *ModuleManager) routeAllowed(key string) bool {
 	mm.mu.RLock()
 	owner := mm.routes[key]
@@ -418,8 +317,6 @@ func (mm *ModuleManager) routeAllowed(key string) bool {
 	return mm.Enabled(owner)
 }
 
-// toolAllowed returns an error when the tool's owning module is disabled.
-// Tools with no owner pass.
 func (mm *ModuleManager) toolAllowed(toolName string) error {
 	mm.mu.RLock()
 	owner := mm.tools[toolName]
@@ -433,23 +330,18 @@ func (mm *ModuleManager) toolAllowed(toolName string) error {
 	return nil
 }
 
-// cronGate returns a gate func that skips jobs whose owning module is
-// disabled. nil currentModule means no module owns the scheduler.
 func (mm *ModuleManager) cronGate(moduleName string) func(string) bool {
 	return func(_ string) bool {
 		return mm.Enabled(moduleName)
 	}
 }
 
-// queueGate returns a gate func that defers jobs whose owning module
-// is disabled.
 func (mm *ModuleManager) queueGate(moduleName string) func(string) bool {
 	return func(_ string) bool {
 		return mm.Enabled(moduleName)
 	}
 }
 
-// hasModule reports whether name is a registered module.
 func (mm *ModuleManager) hasModule(name string) bool {
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
@@ -457,8 +349,6 @@ func (mm *ModuleManager) hasModule(name string) bool {
 	return ok
 }
 
-// dependents returns the names of currently-enabled modules that list
-// name in their DependsOn.
 func (mm *ModuleManager) dependents(name string) []string {
 	mm.mu.RLock()
 	defer mm.mu.RUnlock()
@@ -469,7 +359,7 @@ func (mm *ModuleManager) dependents(name string) []string {
 			continue
 		}
 		if slices.Contains(entry.manifest.DependsOn, name) {
-			if mm.enabled[modName] { // only block if the dependent is enabled
+			if mm.enabled[modName] {
 				deps = append(deps, modName)
 			}
 		}
@@ -477,13 +367,9 @@ func (mm *ModuleManager) dependents(name string) []string {
 	return deps
 }
 
-// Enable persists the new state and flips the cache. Refuses if any of
-// the module's DependsOn is disabled. The check-then-act sequence
-// (dependency check → store write → cache flip) is serialized by
-// toggleMu so concurrent toggles cannot interleave to a forbidden state.
+// Enable persists and applies name's enabled state. It errors when name
+// is not registered or one of its DependsOn is unregistered or disabled.
 func (mm *ModuleManager) Enable(ctx context.Context, name string) (err error) {
-	// Registered before the unlock defer: the audit callback runs after
-	// the toggle lock is released and only for a committed toggle.
 	defer func() {
 		if err == nil && mm.auditToggle != nil {
 			mm.auditToggle(ctx, name, true)
@@ -513,9 +399,6 @@ func (mm *ModuleManager) Enable(ctx context.Context, name string) (err error) {
 	return nil
 }
 
-// setEnabled persists a toggle and flips the cache. A process module's
-// toggle goes to its supervisor instead, which writes the desired-state
-// row and wakes the supervise loop to spawn or drain the child.
 func (mm *ModuleManager) setEnabled(ctx context.Context, name string, enabled bool) error {
 	mm.mu.RLock()
 	isProcess := mm.process[name]
@@ -536,12 +419,9 @@ func (mm *ModuleManager) setEnabled(ctx context.Context, name string, enabled bo
 	return nil
 }
 
-// Disable persists the new state and flips the cache. Refuses (fail
-// closed) if any currently-enabled module lists name in DependsOn, no
-// cascade. Serialized by toggleMu alongside Enable.
+// Disable persists and applies name's disabled state. It errors when name
+// is not registered or an enabled module depends on it; it never cascades.
 func (mm *ModuleManager) Disable(ctx context.Context, name string) (err error) {
-	// Registered before the unlock defer: the audit callback runs after
-	// the toggle lock is released and only for a committed toggle.
 	defer func() {
 		if err == nil && mm.auditToggle != nil {
 			mm.auditToggle(ctx, name, false)
@@ -564,15 +444,11 @@ func (mm *ModuleManager) Disable(ctx context.Context, name string) (err error) {
 	return nil
 }
 
-// moduleToggleMessage is the fanout payload for a remote enable/disable.
 type moduleToggleMessage struct {
 	Name    string `json:"name"`
 	Enabled bool   `json:"enabled"`
 }
 
-// publish broadcasts a toggle to other replicas via fanout. No-op when
-// no fanout is attached. A Publish failure is logged at Warn so a dead
-// bus doesn't silently strand stale replicas.
 func (mm *ModuleManager) publish(_ context.Context, name string, enabled bool) {
 	if mm.fanout == nil {
 		return
@@ -584,32 +460,21 @@ func (mm *ModuleManager) publish(_ context.Context, name string, enabled bool) {
 	}
 }
 
-// handleRemoteToggle processes a fanout message from another replica.
-// The message is treated as a REFRESH SIGNAL only: the payload's
-// Enabled field is never trusted directly. Instead the authoritative
-// state is re-read from the store and the cache is set to whatever the
-// store says. This makes message ordering irrelevant (the store is the
-// source of truth) and neuters crafted payloads (they can only trigger
-// a re-read). Unknown module names are ignored so they cannot pollute
-// the cache.
 func (mm *ModuleManager) handleRemoteToggle(raw []byte) {
 	nodeID, body, err := fanout.Unwrap(raw)
 	if err != nil {
 		return
 	}
 	if nodeID == mm.nodeID {
-		return // own publish
+		return
 	}
 	var msg moduleToggleMessage
 	if err := json.Unmarshal(body, &msg); err != nil {
 		return
 	}
-	// Ignore names not registered as modules, a crafted or stale
-	// payload must not pollute the cache.
 	if !mm.hasModule(msg.Name) {
 		return
 	}
-	// Re-read authoritative state from the store.
 	state, err := mm.store.Load(context.Background())
 	if err != nil {
 		log.Printf("WARN: module manager: store load on fanout refresh for %q failed: %v: keeping current cache", msg.Name, err)
@@ -620,19 +485,11 @@ func (mm *ModuleManager) handleRemoteToggle(raw []byte) {
 		mm.enabled[msg.Name] = v
 	}
 	mm.mu.Unlock()
-	// Process-module reconcile hook (design §8): a remote toggle is one
-	// of the THREE reconcile sources. After the in-process cache has
-	// been re-read, fan the signal into the per-module supervisor so it
-	// spawns / drains its child. The in-process fail-open WARN above is
-	// deliberately NOT inherited by the process supervisor, it enforces
-	// its own fail-closed state lease.
 	if mm.processCoordinator != nil {
 		mm.processCoordinator.Reconcile(msg.Name)
 	}
 }
 
-// subscribeFanout registers the manager's fanout listener. Called once
-// at boot when a fanout is attached.
 func (mm *ModuleManager) subscribeFanout() error {
 	if mm.fanout == nil {
 		return nil
@@ -658,7 +515,6 @@ func (mm *ModuleManager) List() []ModuleInfo {
 		if mg == "" {
 			mg = name
 		}
-		// Count owned surfaces.
 		var routes, tools, entities int
 		for _, mod := range mm.routes {
 			if mod == name {
@@ -694,9 +550,6 @@ func (mm *ModuleManager) List() []ModuleInfo {
 			RouteCount:     routes,
 			ToolCount:      tools,
 		}
-		// Process-module introspection (design §8): fill operator-only
-		// fields when a process coordinator is attached. nil/zero for
-		// in-process modules. [ProcessModuleInfo] is additive.
 		if mm.processCoordinator != nil {
 			if pi, ok := mm.processCoordinator.Info(name); ok {
 				info.ProcessState = pi.State.String()
@@ -711,63 +564,33 @@ func (mm *ModuleManager) List() []ModuleInfo {
 	return out
 }
 
-// processModuleCoordinator is the seam between the in-process ModuleManager
-// and a process-module [ProcessModuleSupervisor] (one per replica). The
-// ModuleManager owns the route gate and enable/disable cache; the supervisor
-// owns the per-module-per-replica state machine. When the manager receives a
-// remote-toggle signal it forwards a reconcile nudge; when List() runs it
-// pulls operator introspection. nil when the app has no process modules.
 type processModuleCoordinator interface {
-	// Reconcile nudges the named module's supervise loop. One of three
-	// reconcile sources per design §8 (local enable/disable, remote
-	// toggle, periodic poll).
 	Reconcile(name string)
-
-	// Info returns the operator introspection snapshot for name, or
-	// ok=false if name is not a process module supervised here.
 	Info(name string) (ProcessModuleInfo, bool)
 }
 
-// processModuleToggler is the enable/disable half a process supervisor's
-// coordinator adds to [processModuleCoordinator]. The module manager
-// routes a process module's Enabled read and its Enable/Disable writes
-// through it, so the supervisor's desired-state row is the one source of
-// truth whichever API toggled it.
 type processModuleToggler interface {
-	// DesiredEnabled is this replica's view of the module's desired
-	// state: the supervisor's row as of its last write or reconcile.
 	DesiredEnabled(name string) bool
-	// SetDesiredEnabled writes the desired state and wakes the
-	// supervise loop, which spawns or drains the child.
 	SetDesiredEnabled(ctx context.Context, name string, enabled bool) error
 }
 
-// markProcess records that name is a process module whose enabled state
-// the coordinator owns. Called by App.RegisterProcessModule.
 func (mm *ModuleManager) markProcess(name string) {
 	mm.mu.Lock()
 	mm.process[name] = true
 	mm.mu.Unlock()
 }
 
-// SetProcessCoordinator installs the process-module coordinator. Called
-// once by App wiring (RegisterProcessModule / a With… option); subsequent
-// calls overwrite the prior coordinator. Passing nil disables the hook.
+// SetProcessCoordinator installs, or with nil removes, the process-module
+// coordinator, replacing any earlier one.
 func (mm *ModuleManager) SetProcessCoordinator(pc processModuleCoordinator) {
 	mm.mu.Lock()
 	mm.processCoordinator = pc
 	mm.mu.Unlock()
 }
 
-// ---------------------------------------------------------------------------
-// App integration
-// ---------------------------------------------------------------------------
-
-// RegisterModule validates the name, registers the module as a battery
-// (with deps = Manifest().DependsOn so topo-sort orders module init),
-// and records the manifest in the module manager.
-//
-//	app.RegisterModule(myModule) // registers as battery + records manifest
+// RegisterModule registers m as a battery depending on its DependsOn and
+// records its manifest. It panics after InitPlugins and on a battery
+// registration error.
 func (a *App) RegisterModule(m Module) *App {
 	if a.initialized.Load() {
 		panic(fmt.Sprintf("framework: RegisterModule(%q) called after InitPlugins; register modules before App.Start", m.Name()))
@@ -780,8 +603,7 @@ func (a *App) RegisterModule(m Module) *App {
 	return a
 }
 
-// Modules returns the app's module manager, through which callers can
-// list modules, query enabled state, and toggle modules at runtime.
+// Modules returns the app's module manager.
 func (a *App) Modules() *ModuleManager {
 	return a.modules
 }
