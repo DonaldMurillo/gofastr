@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // EraseOption configures EraseUserData.
@@ -252,7 +253,7 @@ func (a *App) buildDataGraph() (*dataGraph, error) {
 		if ent == nil {
 			continue
 		}
-		t := ent.GetTable()
+		t := asciicase.Lower(ent.GetTable())
 		dt := g.tables[t]
 		if dt == nil {
 			dt = &dataTable{name: n, table: t, key: ent.KeyColumns(), unmanaged: true}
@@ -300,7 +301,7 @@ func (a *App) buildDataGraph() (*dataGraph, error) {
 					n, rel.Name, strings.Join(rel.ForeignKey, ", "), rel.Entity, strings.Join(key, ", "))
 			}
 			e := fkEdge{
-				child: ent.GetTable(), parent: target.GetTable(),
+				child: asciicase.Lower(ent.GetTable()), parent: asciicase.Lower(target.GetTable()),
 				cols: slices.Clone(rel.ForeignKey), key: key,
 				setNull: rel.OnDelete == entity.OnDeleteSetNull,
 				blocks:  blockingAction(rel.OnDelete),
@@ -315,13 +316,14 @@ func (a *App) buildDataGraph() (*dataGraph, error) {
 		}
 	}
 	for _, p := range migrate.GeneratedPivotTables(a.registryView()) {
-		if g.tables[p.Table] != nil {
+		pt, src, dst := asciicase.Lower(p.Table), asciicase.Lower(p.SourceTable), asciicase.Lower(p.TargetTable)
+		if g.tables[pt] != nil {
 			continue
 		}
-		g.tables[p.Table] = &dataTable{name: p.Table, table: p.Table, key: []string{p.LocalKey, p.TargetFK}, pivot: true}
+		g.tables[pt] = &dataTable{name: p.Table, table: pt, key: []string{p.LocalKey, p.TargetFK}, pivot: true}
 		g.edges = append(g.edges,
-			fkEdge{child: p.Table, parent: p.SourceTable, cols: []string{p.LocalKey}, key: []string{p.SourceKey}, label: p.Table},
-			fkEdge{child: p.Table, parent: p.TargetTable, cols: []string{p.TargetFK}, key: []string{p.TargetKey}, label: p.Table},
+			fkEdge{child: pt, parent: src, cols: []string{p.LocalKey}, key: []string{p.SourceKey}, label: p.Table},
+			fkEdge{child: pt, parent: dst, cols: []string{p.TargetFK}, key: []string{p.TargetKey}, label: p.Table},
 		)
 	}
 	g.sorted = slices.Sorted(maps.Keys(g.tables))
