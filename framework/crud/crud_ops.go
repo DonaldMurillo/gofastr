@@ -178,8 +178,15 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if err := ch.checkMediaProvenance(ctx, body, ch.currentMediaKeys(ctx, r, id, idKey)); err != nil {
 		return nil, err
 	}
-	if pre, err := ch.selectPreImage(ctx, r, id); err == nil && pre != nil {
+	pre, preErr := ch.selectPreImage(ctx, r, id)
+	if preErr != nil {
+		pre = nil
+	}
+	if pre != nil {
 		ctx = WithAuditPreImage(ctx, pre)
+	}
+	if err := ch.dropMaskedEchoes(ctx, r, id, body, pre); err != nil {
+		return nil, err
 	}
 	if ch.Entity != nil {
 		ctx = withRecordWrite(ctx, ch.Entity.GetName(), id)

@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"io"
 	"os"
 	"strings"
@@ -77,7 +78,7 @@ func tailFile(w io.Writer, path string, n int, follow bool) error {
 		lines = lines[len(lines)-n:]
 	}
 	if len(lines) > 0 && !(len(lines) == 1 && lines[0] == "") {
-		fmt.Fprintln(w, scrubControl(strings.Join(lines, "\n")))
+		fmt.Fprintln(w, textsafe.ScrubTerminal(strings.Join(lines, "\n")))
 	}
 	if !follow {
 		return nil
@@ -117,6 +118,6 @@ func tailFile(w io.Writer, path string, n int, follow bool) error {
 			return err
 		}
 		off += int64(nr)
-		_, _ = w.Write([]byte(scrubControl(string(bytes.TrimRight(chunk[:nr], "\x00")))))
+		_, _ = w.Write([]byte(textsafe.ScrubTerminal(string(bytes.TrimRight(chunk[:nr], "\x00")))))
 	}
 }

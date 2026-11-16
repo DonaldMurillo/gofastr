@@ -61,6 +61,10 @@ type SchemaChange struct {
 	// every table's changes.
 	deferredFKs []SchemaChange
 
+	// pgRetypes names the table and entity whose column this Postgres
+	// change retypes in place, which a view reading the column blocks.
+	pgRetypes []string
+
 	// irreversible marks a change with no inverse at all (a SQLite
 	// rebuild, or a key change off a column the diff drops). A generated
 	// migration holding one ships no Down: the other changes' inverses
@@ -595,6 +599,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 			SQL:         alterColumnTypeSQL(qtable, qcol, liveType, declaredType, ColumnDefaultClause(f, dialect)),
 			Down:        alterColumnTypeSQL(qtable, qcol, declaredType, liveType, previousConstraints[source].dflt),
 			Destructive: true,
+			pgRetypes:   []string{ent.GetTable(), ent.GetName()},
 		})
 	}
 
@@ -1349,7 +1354,8 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if err != nil {
 			return nil, fmt.Errorf("invalid column name %q: %w", f.Name, err)
 		}
-		col := fmt.Sprintf("%s %s", ddlIdent(safeCol), columnSQLType(ent, f, all, dialect))
+		colType := columnSQLType(ent, f, all, dialect)
+		col := fmt.Sprintf("%s %s", ddlIdent(safeCol), colType)
 		inKey := slices.Contains(keys, f.Name)
 		if inKey && len(keys) == 1 {
 			col += " PRIMARY KEY"
@@ -1368,7 +1374,7 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 			}
 			col += " UNIQUE"
 		}
-		c := declaredConstraint(f, keys, dialect)
+		c := declaredConstraint(f, keys, dialect, colType)
 		if c.notNull {
 			col += " NOT NULL"
 		}

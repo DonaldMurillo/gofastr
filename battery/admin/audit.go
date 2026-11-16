@@ -45,13 +45,14 @@ type auditRow struct {
 // CRUD hooks and entityui's bulk runs write (crud's create, update,
 // delete, restore, purge and state_override, entityui's bulk summary),
 // then what the operations pages write (a queue replay, a role grant or
-// revoke, a user's role assignment, the module levers). A state
+// revoke, a user's role assignment, the account page's name, the module
+// levers). A state
 // transition writes "transition:<key>", which no fixed select could
 // enumerate, so it is filtered by entity instead; a refused operation
 // shows in the unfiltered log.
 var auditOps = []string{
 	"create", "update", "delete", "restore", "purge", "state_override", "bulk",
-	"replay", "grant", "revoke", "assign-roles",
+	"replay", "grant", "revoke", "assign-roles", "set-name",
 	opModuleEnable, opModuleDisable, opModuleBump, opModuleRevoke,
 }
 
@@ -588,13 +589,16 @@ func agoCell(ctx context.Context, now, t time.Time) render.HTML {
 }
 
 // opKind folds the operations that carry a key onto one name: every
-// "transition:<key>" is a transition, and state_override an override.
+// "transition:<key>" is a transition, state_override an override, and a
+// module lever ("module_enable") its verb.
 func opKind(op string) string {
 	switch {
 	case strings.HasPrefix(op, "transition:"):
 		return "transition"
 	case op == "state_override":
 		return "override"
+	case slices.Contains([]string{opModuleEnable, opModuleDisable, opModuleBump, opModuleRevoke}, op):
+		return strings.TrimPrefix(op, "module_")
 	}
 	return op
 }
@@ -606,7 +610,7 @@ func opVariant(op string) ui.StatusVariant {
 		return ui.StatusSuccess
 	case "delete", "purge", "revoke", "disable":
 		return ui.StatusDanger
-	case "update", "transition", "override", "replay":
+	case "update", "transition", "override", "replay", "bump":
 		return ui.StatusInfo
 	}
 	return ui.StatusNeutral

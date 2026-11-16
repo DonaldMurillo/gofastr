@@ -186,6 +186,12 @@ than a transport error, return `mcp.ToolResult{IsError: true}`. A result
 JSON cannot encode (a NaN, a channel), as a plain value or as
 `structuredContent`, is answered with the same "internal tool error".
 
+Prompt handlers and resource contents funcs follow the same error rule,
+through the same code: an `*RPCError` (wrapped or not) keeps its code and
+message, a typed 4xx `*handler.Error` becomes `-32602` with the same
+`data`, and anything else is logged and answered with the generic
+"internal prompt error" or "internal resource error".
+
 Options:
 
 | Option | Effect |
@@ -213,8 +219,8 @@ Three more calls matter when you hold the server in-process:
 
 `SetRegisterHook` and `SetCallGate` are framework wiring: the framework uses
 them to attribute tools to modules and to refuse tools owned by a disabled
-module. A disabled module's tool returns a generic internal error
-("tool unavailable") from `tools/call`.
+module. A disabled module's tool answers `tools/call` exactly as an
+unregistered one does: `-32601`, `tool "<name>" not found`.
 
 ## Registering a resource
 
@@ -315,7 +321,8 @@ one capability for both). Errors: empty `uriTemplate` or `name`, duplicate
 `uriTemplate`.
 
 Options: `WithResourceTemplateDescription`, `WithResourceTemplateMeta`
-(verbatim `_meta`), and `WithResourceTemplateGate`.
+(verbatim `_meta`), and `WithResourceTemplateGate` (a nil gate panics,
+like every other gate option).
 
 Both template and resource gates behave the same: the listing entry is the
 whole disclosure for a template (its uriTemplate and description), and the
@@ -459,8 +466,8 @@ client implements. In a framework app,
 (see [agent-readiness](agent-ready.md)).
 
 On `tools/call` the checks run in order: resolve the tool (unknown name:
-method-not-found), the framework call gate (disabled module: a generic
-internal error), the tool's own gate, then the handler. An item gate's
+method-not-found), the framework call gate (disabled module: the same
+method-not-found), the tool's own gate, then the handler. An item gate's
 refusal answers EXACTLY as an unknown name does — the same code, the
 same message — on `tools/call`, `resources/read` and `prompts/get`, so
 a direct call can never confirm a gated item exists (the listings

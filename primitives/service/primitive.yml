@@ -1,0 +1,15 @@
+primitive: service
+summary: Running an app as a per-user OS service, with its install and control commands, log tail and the localhost sign-in gate.
+code:
+  - battery/service/
+docs:
+  - framework/docs/content/service.md
+invariants:
+  - id: localhost-tab-follows-the-browser-address
+    rule: The gate redirects a localhost tab to the address open signs the browser in at, which is 127.0.0.1 for an IPv4 or unspecified IPv4 bind and [::1] for an IPv6 or unspecified IPv6 bind.
+    enforced_by:
+      - test: battery/service.TestCanonicalRedirectFollowsBrowserAddr
+  - id: tool-output-and-logs-are-scrubbed
+    rule: A service tool's output folded into an error and every log line the logs command prints pass through textsafe.ScrubTerminal first.
+    enforced_by:
+      - test: battery/service.TestToolOutputAndLogsAreScrubbedForTheTerminal

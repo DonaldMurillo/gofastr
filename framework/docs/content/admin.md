@@ -48,7 +48,10 @@ entities, or set `AllEntities: true` for every registered entity whose
 CRUD is on. CRUD-off entities (`battery/auth`'s `users` and `sessions`)
 stay hidden, so `AllEntities` never exposes credential tables. Naming an
 entity in `Entities` exposes it even with CRUD off. A name the app does
-not register fails boot.
+not register fails boot. An entity the app mounts read-only (an
+`App.View` with `Columns`) is exposed read-only: the admin lists and
+shows its rows, mounts none of the `/admin/api/<name>` routes below for
+it, and draws no New, edit, delete or bulk control.
 
 ## Pages and routes
 
@@ -365,17 +368,29 @@ app.RegisterBattery(admin.New(admin.Config{
 | `POST /admin/queue/_replay_all` | Re-queue every failed job, up to 10,000 a click |
 
 The Jobs page filters by All, Pending, Running, Failed and Done, each
-a link with its count (a `ui.SegmentedLinks` strip, nothing to apply),
+a link with its count (a `ui.SegmentedLinks` strip, nothing to apply);
+a `?status=` that names none of them lists All under the "Filter not
+applied" warning,
 and lists each job's id, type, status, attempts, when
 it last changed and its last error (one line, cut with an ellipsis).
 Done jobs show when the queue keeps them (`queue.WithDoneRetention`).
 Replay is offered on each failed row, and "Replay N failed" in the
 header whenever a job has failed, when the queue supports it (`DBQueue`
 does). Each replay writes an audit row (entity `queue`, op `replay`)
-naming the actor. A failed job whose `UniqueKey` a newer live job holds
+naming the actor. Replaying a job that is no longer failed (already
+replayed in another tab, or an id the queue does not hold) answers 409
+with a notice, queues nothing and writes no audit row; "Replay N
+failed" skips such a job without a row. The queue says which it was
+through `queue.ReplayReporter`, which `DBQueue`, `MemoryQueue` and
+`RedisQueue` implement; a custom queue with `Replay` alone cannot say,
+so each of its replays is reported and audited. A failed job whose `UniqueKey` a newer live job holds
 is not replayed: one replay answers 409 with a notice, and "Replay N
 failed" leaves it failed, replays the rest, and says some were skipped. A failed list or stats read shows a generic notice and
-logs the driver error; the page never prints it. The Jobs page shows
+logs the driver error; the page never prints it. A queue that cannot count
+(a `RedisQueue` whose client has no `LLEN`, see
+[queue](queue.md#optional-listlengther)) lists its first page of jobs with
+no counts, no pager and no "Replay N failed" button, and the dashboard's
+Failed jobs figure reads "—". The Jobs page shows
 `QueueListLimit` jobs a page (default 50), newest first; the pager
 under the table turns pages through `?p=` and keeps the status. The
 audit page reads
@@ -458,7 +473,8 @@ to midnight UTC, whatever the server's zone). The operation select
 offers the fixed set the audit log writes — `create`, `update`,
 `delete`, `restore`, `purge`, `state_override` and entityui's `bulk`
 summary, then the operations pages' `replay`, `grant`, `revoke`,
-`assign-roles` and `module_enable`/`disable`/`bump`/`revoke` — plus
+`assign-roles`, the account page's `set-name` and
+`module_enable`/`disable`/`bump`/`revoke` — plus
 "any". A state transition (`transition:<key>`) is found by entity, and a
 refused operation in the unfiltered log. The entity select offers the
 exposed entities.
@@ -677,8 +693,11 @@ to `/admin/modules/_enable`, `_disable`, `_bump` and `_revoke`, and need
 the `modules:manage` permission on top of the gate, held through the
 caller's roles in `Config.Policy` and not denied by an `access.Decider`;
 without it, or without a policy, the page is read-only. Each lever writes an audit row (`module_enable`, ...), and
-a refused one a `*_refused` row. A failed lever answers a generic
-notice and logs the error.
+a refused one a `*_refused` row. A lever the supervisor refuses
+answers 409 with a generic notice, logs the error and writes no audit
+row. Revoking a capability the module does not hold is one: the
+supervisor returns an error and changes nothing, so the page never
+reports or audits a revoke that took nothing away.
 
 ### Email previews
 
@@ -745,6 +764,15 @@ palette). With `Config.LoginPath` set, a signed-out GET redirects to
 `LoginPath?next=<path and query>` instead, so a link to a filtered list
 or a later page comes back to the same view after sign-in; a signed-out
 post is still a `401`.
+
+A link into the admin followed from mail, chat or another site arrives
+without the `SameSite=Strict` session cookie. Behind
+`auth.SessionMiddleware`, that arrival gets a page from this origin that
+loads the same URL again with the cookie, so a signed-in admin lands on
+the page and not on the login form
+([auth](auth.md#a-link-from-another-site-into-a-guarded-page)). A
+visitor who is really signed out gets the redirect or `401` above on
+the reload.
 
 <!-- gofastr:compile
 import "context"

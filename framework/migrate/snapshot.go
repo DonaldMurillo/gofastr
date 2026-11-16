@@ -59,6 +59,10 @@ type SchemaSnapshot struct {
 type RoutineDef struct {
 	Up   string `json:"up"`
 	Down string `json:"down"`
+	// DependsOn is a view's declared sources, and Order a routine's place
+	// in the plan (from 1): what a removal needs to drop dependents first.
+	DependsOn []string `json:"depends_on,omitempty"`
+	Order     int      `json:"order,omitempty"`
 }
 
 // SnapshotFromRegistry builds the desired-state snapshot from the registered
@@ -154,15 +158,19 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 		snap.Views = map[string]RoutineDef{}
 		for _, v := range plan.Views {
 			up, down := v.render(dialect)
-			snap.Views[v.Name] = RoutineDef{Up: up, Down: down}
+			snap.Views[v.Name] = RoutineDef{Up: up, Down: down, DependsOn: slices.Clone(v.DependsOn)}
 		}
 	}
 	// A routine scoped to another dialect never runs on this one, at boot or
 	// in a generated file, so the snapshot does not record it.
 	if routines, _ := partitionRoutinesByDialect(plan.Routines, dialect); len(routines) > 0 {
 		snap.Routines = map[string]RoutineDef{}
-		for _, r := range routines {
-			snap.Routines[r.Name] = RoutineDef{Up: r.Up, Down: r.Down}
+		for i, r := range routines {
+			def := RoutineDef{Up: r.Up, Down: r.Down, Order: i + 1}
+			if first, ok := snap.Routines[r.Name]; ok {
+				def.Order = first.Order // a repeated name runs where it first stood
+			}
+			snap.Routines[r.Name] = def
 		}
 	}
 	return snap
@@ -252,18 +260,16 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	// Boot skips a routine scoped to another dialect, so a migration
 	// generated for this one must not carry it either.
 	routines, _ := partitionRoutinesByDialect(plan.Routines, dialect)
-	_, viewDrops, err := routineChanges(viewRoutines, prev.Views)
+	_, viewDrops, err := routineChanges(viewRoutines, prev.Views, viewRemovalOrder)
 	if err != nil {
 		return "", "", SchemaSnapshot{}, err
 	}
-	viewRedrops, viewUpserts := viewChanges(topoSortViews(plan.Views), prev.Views, dialect)
-	routineUpserts, routineDrops, err := routineChanges(routines, prev.Routines)
+	routineUpserts, routineDrops, err := routineChanges(routines, prev.Routines, routineRemovalOrder)
 	if err != nil {
 		return "", "", SchemaSnapshot{}, err
 	}
 
-	changes := append(routineDrops, viewRedrops...)
-	changes = append(changes, viewDrops...)
+	var changes []SchemaChange
 	// The snapshot's column sets let a Postgres key change detach the
 	// foreign keys onto its table; it records no constraint names, so
 	// foreign keys themselves are not compared (fks stays nil). The keys a
@@ -334,6 +340,18 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	}
 
 	changes = append(changes, env.deferred...)
+
+	// Postgres refuses to retype a column a view reads, so the views that
+	// declare a retyped table in DependsOn are dropped and recreated too.
+	retyped := map[string]bool{}
+	for _, c := range changes {
+		for _, name := range c.pgRetypes {
+			retyped[strings.ToLower(name)] = true
+			retyped[tableKey(dialect, name)] = true
+		}
+	}
+	viewRedrops, viewUpserts := viewChanges(topoSortViews(plan.Views), prev.Views, dialect, retyped)
+	changes = slices.Concat(routineDrops, viewRedrops, viewDrops, changes)
 
 	if len(ordered) > 0 {
 		pivotChanges, err := diffPivotTables(ordered, all, dialect, prev.Tables)
@@ -513,7 +531,7 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 				"PRAGMA legacy_alter_table=ON;\n"+rename+";\nPRAGMA legacy_alter_table=OFF", 1)
 		}
 		// No previous definitions, so no removals and no error.
-		routineUpserts, _, _ = routineChanges(routines, nil)
+		routineUpserts, _, _ = routineChanges(routines, nil, routineRemovalOrder)
 	}
 
 	changes = append(changes, viewUpserts...)
@@ -583,13 +601,18 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 // Down recreates the old view and each creation's Down drops the new one,
 // so the rollback runs the same steps backwards. Every snapshot has
 // recorded a view's Down since views were added, so the drop always has
-// one.
-func viewChanges(ordered []View, prev map[string]RoutineDef, dialect Dialect) (drops, creates []SchemaChange) {
+// one. retyped names the tables (and their entities, lower case) a
+// Postgres ALTER COLUMN TYPE changes: a view that lists one in DependsOn
+// is redone like a changed view.
+func viewChanges(ordered []View, prev map[string]RoutineDef, dialect Dialect, retyped map[string]bool) (drops, creates []SchemaChange) {
 	dependents := viewDependents(ordered)
 	redo := map[string]bool{}
 	for _, v := range ordered {
 		up, _ := v.render(dialect)
-		if p, ok := prev[v.Name]; ok && p.Up != up {
+		readsRetyped := slices.ContainsFunc(v.DependsOn, func(d string) bool {
+			return retyped[strings.ToLower(d)] || retyped[tableKey(dialect, d)]
+		})
+		if p, ok := prev[v.Name]; ok && (p.Up != up || readsRetyped) {
 			redo[v.Name] = true
 			for _, d := range dependents[v.Name] {
 				redo[d.Name] = true
@@ -614,10 +637,11 @@ func viewChanges(ordered []View, prev map[string]RoutineDef, dialect Dialect) (d
 // routines emit their Up in the order given: a view after the views it
 // depends on, and routines in the plan's order, the order boot runs them
 // in. A changed routine's Down restores the previous body, a new routine's
-// Down is its own Down. Removed routines come back separately, name-sorted,
-// so the caller can drop them before the tables they read: each is dropped
-// via the snapshot's stored Down, with its recreation as the inverse.
-func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, removals []SchemaChange, err error) {
+// Down is its own Down. Removed routines come back separately, in the order
+// removalOrder gives their names, so the caller can drop them before the
+// tables they read: each is dropped via the snapshot's stored Down, with its
+// recreation as the inverse.
+func routineChanges(current []Routine, prev map[string]RoutineDef, removalOrder func(removed []string, prev map[string]RoutineDef) []string) (upserts, removals []SchemaChange, err error) {
 	seen := map[string]bool{}
 	byName := map[string]Routine{}
 	for _, r := range current {
@@ -662,7 +686,7 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, rem
 		}
 	}
 	sort.Strings(removed)
-	for _, name := range removed {
+	for _, name := range removalOrder(removed, prev) {
 		// A Routine's Down is optional (see routine.go), so the snapshot
 		// may hold no drop for a removed routine. Writing the removal
 		// anyway made a migration of nothing but ";" while the snapshot
@@ -681,6 +705,43 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, rem
 		})
 	}
 	return upserts, removals, nil
+}
+
+// viewRemovalOrder orders removed views (given in name order) so a view
+// drops before the removed views its recorded DependsOn names. A view an
+// older snapshot recorded without DependsOn keeps its place in name order.
+func viewRemovalOrder(removed []string, prev map[string]RoutineDef) []string {
+	out := make([]string, 0, len(removed))
+	done := map[string]bool{}
+	var visit func(name string)
+	visit = func(name string) {
+		if done[name] {
+			return
+		}
+		done[name] = true
+		for _, other := range removed {
+			if slices.ContainsFunc(prev[other].DependsOn, func(d string) bool { return strings.EqualFold(d, name) }) {
+				visit(other)
+			}
+		}
+		out = append(out, name)
+	}
+	for _, name := range removed {
+		visit(name)
+	}
+	return out
+}
+
+// routineRemovalOrder orders removed routines last created first, by the
+// plan order the snapshot recorded. An older snapshot recorded none: then
+// reverse name order, the reverse of the order RoutinesFS creates in.
+func routineRemovalOrder(removed []string, prev map[string]RoutineDef) []string {
+	out := slices.Clone(removed)
+	slices.Reverse(out)
+	if !slices.ContainsFunc(out, func(n string) bool { return prev[n].Order == 0 }) {
+		slices.SortStableFunc(out, func(a, b string) int { return prev[b].Order - prev[a].Order })
+	}
+	return out
 }
 
 // recreateTableSQL reconstructs a CREATE TABLE from a snapshot's column set,

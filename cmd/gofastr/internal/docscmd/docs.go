@@ -2,6 +2,7 @@ package docscmd
 
 import (
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"os"
 	"strconv"
 	"strings"
@@ -179,7 +180,7 @@ func pluralS(n int) string {
 
 // highlight wraps each case-insensitive occurrence of `term` in `s`
 // with ANSI bold so the matching word stands out in --grep output. The
-// text is scrubbed (cli.ScrubTerminalOutput) before the bold goes on,
+// text is scrubbed (textsafe.ScrubTerminal) before the bold goes on,
 // so the caller prints the result raw and keeps the colour.
 //
 // It scans s directly, rune by rune, rather than locating the match in
@@ -191,17 +192,17 @@ func pluralS(n int) string {
 // with "slice bounds out of range".
 func highlight(s, term string) string {
 	if term == "" {
-		return cli.ScrubTerminalOutput(s)
+		return textsafe.ScrubTerminal(s)
 	}
 	var b strings.Builder
 	for i := 0; i < len(s); {
 		if end, ok := foldPrefixLen(s[i:], term); ok {
-			b.WriteString(cli.Bold(cli.ScrubTerminalOutput(s[i : i+end])))
+			b.WriteString(cli.Bold(textsafe.ScrubTerminal(s[i : i+end])))
 			i += end
 			continue
 		}
 		_, size := utf8.DecodeRuneInString(s[i:])
-		b.WriteString(cli.ScrubTerminalOutput(s[i : i+size]))
+		b.WriteString(textsafe.ScrubTerminal(s[i : i+size]))
 		i += size
 	}
 	return b.String()

@@ -21,7 +21,7 @@ import (
 //
 // Schema (table auth_api_tokens, created at construction):
 //
-//	id            TEXT PRIMARY KEY
+//	id            TEXT PRIMARY KEY NOT NULL
 //	name          TEXT NOT NULL
 //	owner_kind    TEXT NOT NULL          -- "user" | "service"
 //	owner_id      TEXT NOT NULL
@@ -75,7 +75,7 @@ func (s *SQLAPITokenStore) ensureSchema(ctx context.Context) error {
 	}
 	stmt := fmt.Sprintf(
 		`CREATE TABLE IF NOT EXISTS %s (`+
-			`id TEXT PRIMARY KEY, name TEXT NOT NULL, owner_kind TEXT NOT NULL, owner_id TEXT NOT NULL, `+
+			`id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, owner_kind TEXT NOT NULL, owner_id TEXT NOT NULL, `+
 			`prefix TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, scopes TEXT NOT NULL DEFAULT '[]', `+
 			`expires_at %s NULL, last_used_at %s NULL, revoked_at %s NULL, created_at %s NOT NULL)`,
 		query.QuoteFolded(s.table), tsType, tsType, tsType, tsType,
@@ -245,7 +245,7 @@ func (s *SQLAPITokenStore) RevokeAny(ctx context.Context, id string) error {
 //
 // Schema (table auth_service_accounts, created at construction):
 //
-//	id          TEXT PRIMARY KEY
+//	id          TEXT PRIMARY KEY NOT NULL
 //	name        TEXT NOT NULL UNIQUE
 //	roles       TEXT NOT NULL DEFAULT '[]'   -- JSON array
 //	disabled    <bool> NOT NULL DEFAULT false
@@ -315,7 +315,7 @@ func (s *SQLServiceAccountStore) ensureSchema(ctx context.Context) error {
 		tsType, boolType, boolFalse = "TIMESTAMP", "BOOLEAN", "FALSE"
 	}
 	stmt := fmt.Sprintf(
-		`CREATE TABLE IF NOT EXISTS %s (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, roles TEXT NOT NULL DEFAULT '[]', disabled %s NOT NULL DEFAULT %s, created_at %s NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS %s (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL UNIQUE, roles TEXT NOT NULL DEFAULT '[]', disabled %s NOT NULL DEFAULT %s, created_at %s NOT NULL)`,
 		query.QuoteFolded(s.table), boolType, boolFalse, tsType,
 	)
 	if _, err := s.db.ExecContext(ctx, stmt); err != nil {

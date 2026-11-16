@@ -1,12 +1,12 @@
 package appgen
 
 import (
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	"github.com/DonaldMurillo/gofastr/codegen"
 )
@@ -57,7 +57,7 @@ func TestErrorDiagnosticFailsGeneration(t *testing.T) {
 	// Diagnostics reach a terminal, so they get the same scrub the child's raw
 	// stderr does; an extension does not get to rewrite the operator's window
 	// title through a JSON field either.
-	if got := cli.ScrubTerminalOutput("a\x1b]0;pwned\x07b\x7fc"); got != "a]0;pwnedbc" {
+	if got := textsafe.ScrubTerminal("a\x1b]0;pwned\x07b\x7fc"); got != "a]0;pwnedbc" {
 		t.Errorf("scrubTerminalOutput left escape bytes: %q", got)
 	}
 	// The scrub happens in the cli helpers the diagnostics print through.

@@ -642,6 +642,14 @@ letters or digits, then CANCEL TAG (Scotland, England, Wales). Any other
 tag run, one behind a black flag included, is stripped or refused. Start
 at `core/textsafe/textsafe.go`.
 
+`ScrubTerminal(s string) string` is the one scrub for text this process
+did not write and is about to print to an operator's terminal: a child
+process's stderr, a log line, tool output. It removes every character
+`IsUnsafe` names except newline and tab, and every byte that is not
+valid UTF-8 (a bare `0x9b` is CSI to an 8-bit terminal). Do not write
+another: the CLI, the codegen extension replay, the module probe, the
+contracts report, the harness TUI and `service logs` all call it.
+
 `Storable(s string) bool` answers a different question: whether a string
 is valid UTF-8 without a NUL byte, so Postgres can bind it as text without
 SQLSTATE `22021`. Use it before a SQL bind and refuse caller input with

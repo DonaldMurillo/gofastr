@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -389,9 +390,9 @@ func parseProbeOutput(p ProbeID, stdout string, timedOut bool, stderr string) Pr
 		}
 		return ProbeResult{ID: p, Status: ProbeStatusPass, Detail: detail, Reported: true}
 	case strings.HasPrefix(first, probeOutBreach):
-		return ProbeResult{ID: p, Status: ProbeStatusFail, Detail: scrubTerminalBytes(strings.TrimSpace(strings.TrimPrefix(first, probeOutBreach))), Reported: true}
+		return ProbeResult{ID: p, Status: ProbeStatusFail, Detail: textsafe.ScrubTerminal(strings.TrimSpace(strings.TrimPrefix(first, probeOutBreach))), Reported: true}
 	case strings.HasPrefix(first, probeOutUnreachable):
-		return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: scrubTerminalBytes(strings.TrimSpace(strings.TrimPrefix(first, probeOutUnreachable))), Reported: true}
+		return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: textsafe.ScrubTerminal(strings.TrimSpace(strings.TrimPrefix(first, probeOutUnreachable))), Reported: true}
 	default:
 		detail := "child produced no result line"
 		if stdout != "" {
@@ -412,35 +413,7 @@ func tailForDetail(s string) string {
 	if len(s) > 200 {
 		s = "…" + s[len(s)-200:]
 	}
-	return scrubTerminalBytes(s)
-}
-
-func scrubTerminalBytes(s string) string {
-	clean := true
-	for i := range len(s) {
-		if terminalCtrlByte(s[i]) {
-			clean = false
-			break
-		}
-	}
-	if clean {
-		return s
-	}
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := range len(s) {
-		if !terminalCtrlByte(s[i]) {
-			b.WriteByte(s[i])
-		}
-	}
-	return b.String()
-}
-
-func terminalCtrlByte(c byte) bool {
-	if c == '\n' || c == '\t' {
-		return false
-	}
-	return c < 0x20 || c == 0x7f
+	return textsafe.ScrubTerminal(s)
 }
 
 func buildProbeChildEnv(setup probeSetup) []string {

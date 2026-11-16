@@ -7,14 +7,14 @@ import (
 
 // Child-process output replayed into ProbeResult.Detail is scrubbed of
 // terminal control bytes (CWE-150) — the repo's standard for subprocess
-// stderr (codegen's scrubTerminalBytes, documented at
+// stderr (textsafe.ScrubTerminal, documented at
 // framework/docs/content/codegen.md: "escape sequences are stripped ...
 // Newlines and tabs survive"), applied at tailForDetail so every Detail
 // arm inherits it at the single choke point.
 
 // assertProbeDetailNoCtrl fails when a ProbeResult.Detail carries any C0
 // control byte other than newline/tab, or DEL — the bytes
-// scrubTerminalBytes strips, per codegen.md's "newlines and tabs
+// textsafe.ScrubTerminal strips, per codegen.md's "newlines and tabs
 // survive".
 func assertProbeDetailNoCtrl(t *testing.T, shape, detail string) {
 	t.Helper()
@@ -22,7 +22,7 @@ func assertProbeDetailNoCtrl(t *testing.T, shape, detail string) {
 		if b := detail[i]; (b < 0x20 && b != '\n' && b != '\t') || b == 0x7f {
 			t.Errorf("SECURITY: [probe-ctrl] %s: Detail carries control byte 0x%02X at offset %d: %q — "+
 				"child stderr/stdout must not reach operator logs/errors with terminal-control bytes intact "+
-				"(repo standard: scrubTerminalBytes)",
+				"(repo standard: textsafe.ScrubTerminal)",
 				shape, b, i, detail)
 			return
 		}

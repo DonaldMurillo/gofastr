@@ -28,7 +28,7 @@ import (
 // Schema (all dialects):
 //
 //	idempotency_keys(
-//	    key            TEXT PRIMARY KEY,
+//	    key            TEXT PRIMARY KEY NOT NULL,
 //	    fingerprint    TEXT NOT NULL,
 //	    status         INTEGER,           -- nullable while in-flight
 //	    headers        TEXT,              -- JSON, http.Header shape
@@ -160,7 +160,7 @@ func (s *SQLIdempotencyStore) ensureTable() error {
 		tsType, blobType = "TIMESTAMPTZ", "BYTEA"
 	}
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-		key         TEXT PRIMARY KEY,
+		key         TEXT PRIMARY KEY NOT NULL,
 		fingerprint TEXT NOT NULL,
 		status      INTEGER,
 		headers     TEXT,
@@ -191,7 +191,9 @@ func (s *SQLIdempotencyStore) ensureTable() error {
 // surfacing a PK-violation error that would otherwise look like a
 // generic store failure and bypass idempotency.
 func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string) (*IdempotentResponse, bool, error) {
-	now := time.Now()
+	// UTC: SQLite compares these as text, and a local offset that changes
+	// (a DST fall-back) puts an expired row after "now".
+	now := time.Now().UTC()
 	principal, err := s.columnPrincipal(key)
 	if err != nil {
 		return nil, false, err
@@ -304,7 +306,7 @@ func (s *SQLIdempotencyStore) Finish(ctx context.Context, key, fingerprint strin
 	if err != nil {
 		return err
 	}
-	expires := time.Now().Add(s.ttl)
+	expires := time.Now().UTC().Add(s.ttl)
 	_, err = s.db.ExecContext(ctx, fmt.Sprintf(
 		"UPDATE %s SET status = %s, headers = %s, body = %s, expires_at = %s WHERE key = %s AND fingerprint = %s",
 		s.table,

@@ -584,8 +584,8 @@ func (s *Signaler) Rooms() []string {
 
 // Kick closes the local socket of one peer. Reports whether a local
 // peer with that id was found; a peer held by another replica is not
-// reached. The leave event is published when the socket's read loop
-// exits. Kick is a nudge, not a revocation: the browser module
+// reached. The close runs off the caller's goroutine, and the leave
+// event is published when the socket's read loop exits. Kick is a nudge, not a revocation: the browser module
 // reconnects with backoff, so a peer that must stay out is refused by
 // Authorize on that reconnect, and a TURN credential it already holds
 // keeps working until TURN.TTL runs out.
@@ -602,7 +602,7 @@ func (s *Signaler) Kick(room, peerID string) bool {
 	if conn == nil {
 		return false
 	}
-	conn.Close()
+	closeDetached(conn)
 	return true
 }
 

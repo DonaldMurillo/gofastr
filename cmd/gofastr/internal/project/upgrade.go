@@ -2,10 +2,10 @@ package project
 
 import (
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"os"
 	"path/filepath"
 
-	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"golang.org/x/mod/modfile"
 )
 
@@ -27,7 +27,7 @@ func GoModGofastrVersion(root string) (version string, replaced bool, err error)
 	}
 	f, err := modfile.Parse("go.mod", body, nil)
 	if err != nil {
-		return "", false, fmt.Errorf("parse go.mod: %s", cli.ScrubTerminalOutput(err.Error()))
+		return "", false, fmt.Errorf("parse go.mod: %s", textsafe.ScrubTerminal(err.Error()))
 	}
 	for _, r := range f.Require {
 		if r.Mod.Path == GofastrModule {

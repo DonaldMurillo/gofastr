@@ -124,7 +124,7 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 		// gate refuses everything.
 		if _, p, err := net.SplitHostPort(addr); err == nil {
 			if port, err := strconv.Atoi(p); err == nil {
-				g.pin(port, b.extraHosts(port))
+				g.pinAt(browserAddr(addr), port, b.extraHosts(port))
 			}
 		}
 		select {

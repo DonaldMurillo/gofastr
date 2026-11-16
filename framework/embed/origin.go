@@ -126,13 +126,10 @@ func validOriginHost(host string) bool {
 	if strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") {
 		return false
 	}
-	// A browser normalizes every numeric host to dotted-quad: "127.1",
-	// "2130706433" and "0177.0.0.1" all serialize as "127.0.0.1". Go's URL
-	// parser treats them as ordinary DNS labels, so such an allowlist entry is
-	// accepted and then never matches. Rejecting is the honest answer: the
-	// author gets an error at boot instead of an embed that silently never
-	// completes its handshake.
-	if looksNumericHost(host) && net.ParseIP(host) == nil {
+	// A browser reads a host whose last label is a number (decimal, or
+	// 0x hex) as IPv4 and serializes it dotted-quad, or refuses it: such
+	// an entry that is not already a dotted quad never matches.
+	if endsInNumber(host) && net.ParseIP(host) == nil {
 		return false
 	}
 	for label := range strings.SplitSeq(host, ".") {
@@ -159,20 +156,21 @@ func validOriginHost(host string) bool {
 	return true
 }
 
-// looksNumericHost reports whether every label is decimal digits, the shape a
-// browser reads as an IPv4 address however many parts it has.
-func looksNumericHost(host string) bool {
-	if host == "" {
+// endsInNumber reports whether host's last label is decimal digits or
+// 0x followed by hex digits, the WHATWG test for an IPv4 host.
+func endsInNumber(host string) bool {
+	last := host[strings.LastIndexByte(host, '.')+1:]
+	if last == "" {
 		return false
 	}
-	for label := range strings.SplitSeq(host, ".") {
-		if label == "" {
+	digits, hex := last, false
+	if rest, ok := strings.CutPrefix(last, "0x"); ok {
+		digits, hex = rest, true
+	}
+	for i := 0; i < len(digits); i++ {
+		c := digits[i]
+		if (c < '0' || c > '9') && !(hex && c >= 'a' && c <= 'f') {
 			return false
-		}
-		for i := 0; i < len(label); i++ {
-			if label[i] < '0' || label[i] > '9' {
-				return false
-			}
 		}
 	}
 	return true

@@ -167,7 +167,7 @@ func (s *SQLStore) ensureTables() error {
 		}
 	}
 	tasks := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-		id         TEXT PRIMARY KEY,
+		id         TEXT PRIMARY KEY NOT NULL,
 		owner      TEXT NOT NULL,
 		context_id TEXT NOT NULL DEFAULT '',
 		skill_id   TEXT NOT NULL DEFAULT '',
