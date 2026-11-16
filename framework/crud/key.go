@@ -119,11 +119,14 @@ type dialectMemo struct {
 	pg    bool
 }
 
-// onPostgres is isPostgres asked at most once per handler: per *sql.DB
-// when there is one, else in the handler's memo, shared by its tx copies.
+// onPostgres is the one way a handler learns its dialect: asked once per
+// *sql.DB when there is one, else once per handler, in its memo.
 func (ch *CrudHandler) onPostgres(ctx context.Context) bool {
-	if ch.dialectHandle() != nil || ch.dialect == nil {
-		return isPostgres(ctx, ch.dialectHandle(), ch.conn(ctx))
+	if handle := ch.dialectHandle(); handle != nil {
+		return isPostgres(ctx, handle, ch.conn(ctx))
+	}
+	if ch.dialect == nil {
+		panic("crud: a CrudHandler whose DB is not a *sql.DB has no place to remember its dialect; build it with NewCrudHandler")
 	}
 	ch.dialect.mu.Lock()
 	defer ch.dialect.mu.Unlock()
@@ -131,6 +134,12 @@ func (ch *CrudHandler) onPostgres(ctx context.Context) bool {
 		ch.dialect.pg, ch.dialect.known = probeDialect(ctx, ch.conn(ctx))
 	}
 	return ch.dialect.pg
+}
+
+// forEntity is a handler for another entity on this handler's database,
+// sharing what it knows of the dialect; for posture and gate probes.
+func (ch *CrudHandler) forEntity(ent *entity.Entity) *CrudHandler {
+	return &CrudHandler{Entity: ent, DB: ch.DB, Registry: ch.Registry, root: ch.root, dialect: ch.dialect}
 }
 
 // probeDialect asks q for SELECT version(); certain is false for an
@@ -281,7 +290,7 @@ func (ch *CrudHandler) execOwn(ctx context.Context, id string, matching func(col
 		}
 		return res.RowsAffected()
 	}
-	if isPostgres(ctx, ch.dialectHandle(), ch.DB) {
+	if ch.onPostgres(ctx) {
 		sqlStr, args := build(ch.keyCols())
 		changed, err := ch.queryKeyed(ctx, ch.keyCols(), sqlStr, args)
 		if err != nil {

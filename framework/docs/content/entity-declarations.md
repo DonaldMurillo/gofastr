@@ -146,6 +146,12 @@ were mounted or not, and hooks and typed queries work as usual). Setting
 `MCP: true` alongside `CRUD: false` is a registration error, not a silent
 mismatch: MCP CRUD tools dispatch through the routes.
 
+A handler you build yourself comes from `crud.NewCrudHandler(ent, db)`.
+It asks the database which dialect it is once and remembers the answer.
+A `&crud.CrudHandler{...}` literal whose `DB` is not a `*sql.DB` (a
+wrapper, or a transaction) has nowhere to remember it, and panics at the
+first operation that depends on the dialect.
+
 The `<table>_list` tool takes the list route's filters as arguments, one per
 key (`status`, `amount_gte`, `status_in`), and sends them on as the query
 string. An `_in` argument is a JSON array of at least one value, and no

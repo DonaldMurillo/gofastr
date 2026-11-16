@@ -37,7 +37,7 @@ func storedTextColumn(field string) string {
 
 // legacyTimestampsPossible: an Unmanaged entity on SQLite, whose Timestamp text may be in any layout.
 func (ch *CrudHandler) legacyTimestampsPossible(ctx context.Context) bool {
-	return ch.Entity != nil && ch.Entity.Config.Unmanaged && !isPostgres(ctx, ch.dialectHandle(), ch.conn(ctx))
+	return ch.Entity != nil && ch.Entity.Config.Unmanaged && !ch.onPostgres(ctx)
 }
 
 // storedTimestampKeys maps each Timestamp field to the row key of its stored text, so a keyset binds what ORDER BY sorted; nil binds canonical values.

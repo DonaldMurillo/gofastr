@@ -44,7 +44,7 @@ func (ch *CrudHandler) SumAll(ctx context.Context, field string, opts ListOption
 		return "", err
 	}
 	inner, args := qb.Build()
-	if f.Type == schema.Decimal && !isPostgres(ctx, ch.dialectHandle(), ch.conn(ctx)) {
+	if f.Type == schema.Decimal && !ch.onPostgres(ctx) {
 		return ch.sumDecimalRows(ctx, inner, args)
 	}
 	var total any
