@@ -4,3 +4,204 @@ code:
   - framework/uihost/strict.go
 docs:
   - framework/docs/content/strict-mode.md
+invariants:
+  - id: every-level-is-honoured
+    rule: Each StrictConfig level field decides its own check's findings, and the zero value of each enforces.
+    enforced_by:
+      - test: framework/uihost.TestStrictConfigOffLevelIsSilent
+      - test: framework/uihost.TestStrictConfigWarnLevelLogsAndServes
+      - test: framework/uihost.TestStrictConfigMixedLevelsSplitCorrectly
+      - test: framework/uihost.TestStrictInternalLinksRespectsLevel
+      - test: framework/uihost.TestSweepEmbedStrictAxeCoverageLevelIsHonoured
+  - id: findings-routed-by-level
+    rule: An off finding is dropped, a warn finding is logged and served, and every enforced finding panics together in one message.
+    enforced_by:
+      - test: framework/uihost.TestStrictConfigOffLevelIsSilent
+      - test: framework/uihost.TestStrictConfigWarnLevelLogsAndServes
+      - test: framework/uihost.TestStrictFlagsMissingSiteSurface
+      - test: framework/uihost.TestStrictFlagsScreenMissingTitleAndDescription
+  - id: missing-manifest-posture
+    rule: A missing axe manifest warns by default, fails boot under StrictAbsenceEnforce and is silent under StrictAbsenceOff.
+    enforced_by:
+      - test: framework/uihost.TestStrictAxeCoverageEnforcedInDevOnly
+      - test: framework/uihost.TestStrictConfigManifestMissingCanBeEnforced
+      - test: framework/uihost.TestSweepEmbedStrictManifestMissingOffIsSilent
+  - id: exempt-matching
+    rule: An ExemptScreens entry matches its route exactly, or as "/prefix/*" the prefix itself and every route below a slash after it, and it exempts chrome links pointing there too.
+    enforced_by:
+      - test: framework/uihost.TestSweepEmbedStrictExemptMatching
+      - test: framework/uihost.TestStrictInternalLinksRespectsExemptScreens
+  - id: with-strict-composes-last-wins
+    rule: A later WithStrict replaces an earlier config, a bare WithStrict included, and one call with two configs panics.
+    enforced_by:
+      - test: framework/uihost.TestWithStrictBareCallResetsRelaxedConfig
+      - test: framework/uihost.TestWithStrictRejectsMultipleConfigs
+  - id: links-checked-at-boot
+    rule: The chrome link check runs in ValidateBoot on the complete route table, never at Mount.
+    enforced_by:
+      - test: framework/uihost.TestStrictChromeLinkToRouteRegisteredAfterMountPasses
+      - test: framework/uihost.TestStrictChromeLinkToCoreRouterGETRoutePasses
+  - id: validate-boot-finishes-late-screens
+    rule: ValidateBoot mounts the toast stack, compiles the actions of screens registered after Mount and reruns the embed server-action gate, strict or not.
+    enforced_by:
+      - test: framework/uihost.TestLateScreenActionsCompileAtBoot
+      - test: framework/uihost.TestLateScreenRefusalsAtBoot
+      - test: framework/uihost.TestBootMountsTheDefaultToastStack
+  - id: validate-boot-builds-behaviours
+    rule: ValidateBoot builds the behaviour registry's block, so a refused requirement graph stops the boot instead of the first page request.
+    judge: Does this change stop ValidateBoot from building runtime.BehaviorsJSON, or move it after the listener binds?
+  - id: screen-checks-cover-page-screens
+    rule: The title and description checks cover every page screen by its pattern, constrained ones included, skip drawers, sheets and dialogs, and accept a ScreenSEO component without a description.
+    enforced_by:
+      - test: framework/uihost.TestStrictSkipsNonPageScreens
+      - test: framework/uihost.TestStrictChecksConstrainedRoutes
+      - test: framework/uihost.TestStrictZeroValueScreenSEOOptsOutOfDescription
+      - test: framework/uihost.TestStrictFlagsScreenMissingTitleAndDescription
+  - id: site-checks
+    rule: Strict mode requires a site description with text, a favicon or app icon, robots directives and a sitemap whose BaseURL InvalidSitemapBaseURL accepts.
+    enforced_by:
+      - test: framework/uihost.TestStrictFlagsMissingSiteSurface
+      - test: framework/uihost.TestStrictTakesHostHeadDescription
+      - test: framework/uihost.TestSweepEmbedStrictAppIconSatisfiesTheIconCheck
+      - test: framework/uihost.TestStrictFlagsInvalidSitemapBaseURL
+  - id: sitemap-base-is-bare-origin
+    rule: InvalidSitemapBaseURL accepts only an http or https origin with a host and no userinfo, query, fragment or path.
+    enforced_by:
+      - test: framework/uihost.TestStrictFlagsInvalidSitemapBaseURL
+  - id: chrome-of-every-layout
+    rule: The link check renders the default layout and every page screen's own layout.
+    enforced_by:
+      - test: framework/uihost.TestStrictChecksPerScreenLayoutChrome
+      - test: framework/uihost.TestStrictFlagsChromeLinkToUnregisteredPath
+  - id: chrome-hrefs-extracted
+    rule: Only a plain href attribute in either quote style counts, never data-href or xlink:href, and its value is HTML-unescaped.
+    enforced_by:
+      - test: framework/uihost.TestExtractChromeHrefs
+      - test: framework/uihost.TestExtractChromeHrefsUnescapesEntities
+  - id: internal-route-path-classification
+    rule: internalRoutePath splits fragment and query on the raw href, judges only hrefs starting with a slash, decodes percent-escapes, and drops protocol-relative, backslashed and placeholder paths.
+    enforced_by:
+      - test: framework/uihost.TestInternalRoutePathClassification
+      - test: framework/uihost.TestStrictChromeLinkPercentEncodedNonASCIIResolves
+      - test: framework/uihost.TestStrictChromeLinkExclusions
+  - id: link-resolves-like-a-request
+    rule: A chrome link resolves when a screen, a static file or any registered GET route on the framework router serves it, after its locale prefix is removed.
+    enforced_by:
+      - test: framework/uihost.TestStrictChromeLinkToRegisteredPathPasses
+      - test: framework/uihost.TestStrictChromeLinkResolvesDynamicRoute
+      - test: framework/uihost.TestStrictChromeLinkToCoreRouterGETRoutePasses
+      - test: framework/uihost.TestStrictLinkUnderLocalePrefix
+      - test: framework/uihost.TestStrictChromeLinkUnderCatchAllRoutePassesUnverified
+  - id: probe-survives-conflicting-patterns
+    rule: A route pattern that conflicts with an earlier one is skipped by the link probe instead of aborting the check.
+    enforced_by:
+      - test: framework/uihost.TestStrictLinkUnderLocalePrefix
+  - id: axe-coverage-only-in-dev
+    rule: The axe-coverage check runs only when dev mode is enabled.
+    enforced_by:
+      - test: framework/uihost.TestSweepEmbedStrictAxeCoverageSkippedOutsideDev
+  - id: axe-coverage-off-reads-nothing
+    rule: With AxeCoverage off, and for an app with no page screens, the axe check reads no manifest and reports nothing.
+    enforced_by:
+      - test: framework/uihost.TestSweepEmbedStrictAxeCoverageOffSkipsTheManifest
+      - test: framework/uihost.TestSweepEmbedStrictScreenlessAppNeedsNoManifest
+  - id: axe-demand-follows-discovery
+    rule: A dynamic page route is demanded only when its StaticPaths returns an instance; otherwise it is logged as invisible and skipped.
+    enforced_by:
+      - test: framework/uihost.TestStrictDynamicRouteWithoutStaticPathsWarnsNotDemands
+      - test: framework/uihost.TestStrictDynamicRouteWithEmptyStaticPathsWarnsNotDemands
+      - test: framework/uihost.TestStrictDynamicRouteWithStaticPathsIsDemanded
+  - id: axe-coverage-resolves-scans
+    rule: The axe check demands each page screen by its pattern, constrained ones included, and a recorded scan covers the route its concrete path resolves to.
+    enforced_by:
+      - test: framework/uihost.TestStrictAxeCoverageResolvesDynamicRoutes
+      - test: framework/uihost.TestStrictAxeDemandsConstrainedRoute
+  - id: unreadable-manifest-is-enforced
+    rule: A manifest that exists but cannot be read is an AxeCoverage finding, not a missing manifest.
+    enforced_by:
+      - test: framework/uihost.TestStrictCorruptManifestFailsBoot
+decisions:
+  - id: zero-value-is-strictest
+    date: 2026-11-16
+    status: accepted
+    decision: The zero value of every StrictConfig level enforces, so configuration can only relax a check, visibly in review.
+    rejected:
+      - option: A zero value that warns or skips.
+        why: A forgotten field would then relax a check without anyone writing it down.
+    upholds: [every-level-is-honoured]
+  - id: missing-manifest-warns
+    date: 2026-11-16
+    status: accepted
+    decision: A missing axe manifest warns by default while a manifest with gaps fails boot.
+    rejected:
+      - option: Enforce absence like drift.
+        why: Every fresh clone and fresh generate has no manifest, and first boot must not wait on a Chrome run.
+    upholds: [missing-manifest-posture]
+  - id: unreadable-manifest-is-not-absence
+    date: 2026-11-16
+    status: accepted
+    decision: A manifest that cannot be parsed fails boot under the AxeCoverage level.
+    rejected:
+      - option: Treat it as missing.
+        why: It would relax enforcement exactly when the coverage record cannot be trusted.
+    upholds: [unreadable-manifest-is-enforced]
+  - id: axe-check-dev-only
+    date: 2026-11-16
+    status: accepted
+    decision: The axe-coverage check runs only under gofastr dev.
+    rejected:
+      - option: Run it on every boot.
+        why: The manifest is a local test artifact that never ships, so a production boot would fail on its absence.
+    upholds: [axe-coverage-only-in-dev]
+  - id: links-checked-in-validate-boot
+    date: 2026-11-16
+    status: accepted
+    decision: The chrome link check runs in ValidateBoot, which framework.App.Start calls after its last route registration.
+    rejected:
+      - option: Check at Mount.
+        why: Batteries, plugins and Start itself register routes after Mount, so a link to /admin would fail a boot that serves it.
+    revisit_if: Hosts mounted outside framework.App need the link check, since nothing calls ValidateBoot for them.
+    upholds: [links-checked-at-boot]
+  - id: strict-panics-at-boot
+    date: 2026-11-16
+    status: accepted
+    decision: Enforced findings panic at boot, the framework's contract for configuration it cannot honour.
+    rejected:
+      - option: Return an error from Mount.
+        why: Route conflicts and other unhonourable configuration already panic, and a strict app must never take traffic.
+    upholds: [findings-routed-by-level]
+  - id: chrome-links-only
+    date: 2026-11-16
+    status: accepted
+    decision: The link check reads only a href in rendered layout chrome.
+    rejected:
+      - option: Also check form actions and data-cui-rpc.
+        why: They target handlers, not pages, and would misfire on every CRUD form in the chrome.
+      - option: Fail on chrome that cannot render without a request.
+        why: A header that branches on the signed-in user is legitimate, so it is rendered logged-out and links only the other branch emits go unchecked.
+    upholds: [chrome-hrefs-extracted]
+  - id: probe-from-route-table
+    date: 2026-11-16
+    status: accepted
+    decision: GET routes are probed on a throwaway ServeMux built from the router's route patterns.
+    rejected:
+      - option: Ask the live mux or call a catch-all's handler.
+        why: That executes the app at boot, so a link under a catch-all route is accepted unverified instead.
+    upholds: [link-resolves-like-a-request]
+  - id: exported-layouts-only
+    date: 2026-11-16
+    status: accepted
+    decision: The link check enumerates the default layout and each page screen's innermost layout through the exported router surface.
+    rejected:
+      - option: Enumerate the outer shells of nested screen groups.
+        why: They are reachable only through unexported router state, and the generator emits no such shape.
+    revisit_if: Apps nest screen groups with different layouts at two levels.
+    upholds: [chrome-of-every-layout]
+  - id: axe-demand-follows-discovery
+    date: 2026-11-16
+    status: accepted
+    decision: The axe check demands a dynamic route only when the sitemap can discover its instances.
+    rejected:
+      - option: Demand every dynamic route.
+        why: A route the sitemap cannot list is unreachable for a sitemap-driven axe gate, so the demand could not be met.
+    upholds: [axe-demand-follows-discovery]
