@@ -88,6 +88,11 @@ invariants:
     enforced_by:
       - test: framework.TestWithMCPToolsNilPanics
       - test: framework.TestWithFanout_NilPanics
+  - id: init-plugins-runs-once
+    rule: InitPlugins runs plugin, battery and MCP registrar initialization once per App, so the call inside Start after a manual one is a no-op.
+    enforced_by:
+      - test: framework.TestSweepApp1InitPluginsRunsRegistrarsOnce
+      - test: framework.TestInitPluginsIsIdempotent
 decisions:
   - id: with-config-replaces-not-merges
     date: 2026-11-16
