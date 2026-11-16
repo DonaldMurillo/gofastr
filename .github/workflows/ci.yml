@@ -214,6 +214,15 @@ jobs:
       - name: Install Chrome (stable chromedp suites run here too)
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
         with:
+          # A pinned Chromium snapshot, the same one in every job. The
+          # default, latest, is a new snapshot every few hours, installed
+          # under a directory named for its number and put on PATH. Go's
+          # test cache keys a result on every variable the test read, and a
+          # test that looks up a binary reads PATH: the 2026-11-16 main run
+          # re-ran 175 of 403 packages over three changed files because the
+          # snapshot moved from 1745180 to 1745190. Bump it on purpose, in
+          # every step at once; TestChromeIsPinned holds them to one value.
+          chrome-version: "1745190"
           install-dependencies: true
 
       - name: Install bubblewrap (linux sandbox backend + P1-P7 probes)
@@ -615,6 +624,8 @@ jobs:
       - name: Install Chrome (framework/uihost's chromedp tests)
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
         with:
+          # Pinned with the test job's Chrome step; see the reason there.
+          chrome-version: "1745190"
           install-dependencies: true
 
       - name: Install bubblewrap (the framework's sandbox probes)
@@ -1095,6 +1106,8 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
         with:
+          # Pinned with the test job's Chrome step; see the reason there.
+          chrome-version: "1745190"
           install-dependencies: true
 
       - name: Install the gofastr binary
@@ -1156,6 +1169,8 @@ jobs:
       - name: Install Chrome (the chromedp suites read files too)
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
         with:
+          # Pinned with the test job's Chrome step; see the reason there.
+          chrome-version: "1745190"
           install-dependencies: true
 
       - name: Install bubblewrap (the sandbox probes skip without it)
