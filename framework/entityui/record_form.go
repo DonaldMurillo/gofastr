@@ -237,6 +237,10 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		toast = i18nui.EntitySaved.Text(ctx)
 		dest = under(base, m.idPath(b.id))
 	}
+	native := action
+	if !fb.create {
+		native = b.ui.saveAction(action, dest)
+	}
 	attrs := rpc.
 		OnSuccessToast(toast).
 		OnSuccess(interactive.Navigate(dest)).
@@ -248,7 +252,7 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 	// cross-site guard). The runtime sends FormData for it, as it does
 	// for any form with a file input.
 	forms := []render.HTML{ui.Form(ui.FormConfig{
-		Action:           action,
+		Action:           native,
 		Method:           "POST",
 		ID:               recordFormID(m),
 		Ctx:              ctx,
@@ -265,7 +269,7 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 	// attribute. Each PUTs the one field it owns.
 	for _, name := range fb.replace {
 		forms = append(forms, ui.Form(ui.FormConfig{
-			Action:     action,
+			Action:     native,
 			Method:     "POST",
 			ID:         fb.replaceFormID(name),
 			Ctx:        ctx,
