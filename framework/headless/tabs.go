@@ -11,17 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The tabs: a tablist of anchors and a stack of panels. Selection is
-// the kernel's signal contract — each tab carries data-cui-signal-set
-// beside its fragment href, the wrapper mirrors the signal into
-// data-active, and CSS lights the panel — so with script the switch is
-// client-side and without script the fragment href lands on the panel
-// the server rendered selected. The module owns the keyboard contract:
-// one tab is roving-tabindex 0, ArrowLeft/ArrowRight are RTL-aware
-// and select on focus, Home/End jump, and Tab leaves the strip
-// naturally.
-
-// Tabs parts.
 const (
 	PartTab       Part = "tab"
 	PartTabPanel  Part = "tabpanel"
@@ -35,57 +24,37 @@ type Tab struct {
 	Label string
 	// Panel is the tab's panel content.
 	Panel render.HTML
-	// Href overrides the fragment href (a same-origin deep link).
+	// Href overrides the fragment href with a same-origin deep link.
 	Href string
-	// Disabled removes the tab from the keyboard rotation and makes a
-	// click do nothing: the tab renders with aria-disabled and without
-	// its signal write or its href (Href is ignored).
+	// Disabled renders the tab with aria-disabled and without its signal write or href.
 	Disabled bool
 }
 
 // TabsProps configures a tab strip.
 type TabsProps struct {
-	// Name is the signal the selection lives in. Required: the strip's
-	// whole contract is that clicking a tab writes the signal and the
-	// wrapper mirrors it.
+	// Name is the signal the selection lives in. Required.
 	Name string
 	// Tabs, in order. Required, at least one.
 	Tabs []Tab
-	// Active is the selected tab's index. Out-of-range (negative, or
-	// past the last tab) takes 0, and the headless-tabs module writes 0
-	// back into the signal when the store holds no tab of this strip (a
-	// seed of 5 on a three-tab strip), so the paint and the store agree.
+	// Active is the selected tab's index; out of range takes 0.
 	Active int
-	// VacateHidden ships hidden panels EMPTY with their content in an
-	// adjacent JSON stash the module restores on first show, so
-	// page-scoped locators cannot match hidden text.
+	// VacateHidden ships hidden panels empty, their content in a JSON stash the module restores on first show.
 	VacateHidden bool
-	// StateAttrs mirrors data-state="active"/"inactive" onto every tab
-	// after client-side switches, the attribute Radix-style ports pin
-	// their locators to.
+	// StateAttrs mirrors data-state active or inactive onto every tab.
 	StateAttrs bool
-	// ID is the prefix the tab and panel ids derive from ("<ID>-tab-<n>"
-	// and "<ID>-panel-<n>"). Empty takes Name; a page with two strips
-	// on one signal-distinct name can still disambiguate ids with it.
+	// ID prefixes the tab and panel ids (<ID>-tab-<n>, <ID>-panel-<n>); empty takes Name.
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the root, the tabs and the panels.
 	Parts Parts
 
-	// Ctx is the render context. An id this component derives (no ID
-	// given) is handed out through its id scope (render.UniqueID), so a
-	// repeat on the page gets a -2 suffix; an explicit ID is never
-	// changed. With no Ctx the derived id is used as is.
+	// Ctx is the render context whose id scope suffixes a derived id; an explicit ID is never changed.
 	Ctx context.Context
 }
 
-// tabsMaxPanels bounds the generated per-index CSS the styled layer
-// emits; refuse beyond it loudly rather than hiding panels.
 const tabsMaxPanels = 24
 
-// TabsMaxPanels exposes the ceiling to the styled layer, whose
-// generated CSS covers exactly this many indices.
+// TabsMaxPanels is the most tabs a strip renders, the count the styled layer's CSS covers.
 func TabsMaxPanels() int { return tabsMaxPanels }
 
 // Tabs renders the tab strip.
@@ -109,7 +78,6 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 		}
 	}
 
-	// The family: every tab's and panel's id is built from p.ID.
 	family := make([]string, 0, 2*len(p.Tabs))
 	for i := range p.Tabs {
 		family = append(family, "-tab-"+strconv.Itoa(i), "-panel-"+strconv.Itoa(i))
@@ -120,8 +88,6 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 		render.ReserveID(p.Ctx, p.ID, family...)
 	}
 	b := p.Parts.Box(s)
-	// Roving tabindex: the active tab is in the tab order, the rest
-	// are reached by the arrows.
 	var tabs []render.HTML
 	for i, tab := range p.Tabs {
 		own := html.Attrs{
@@ -130,15 +96,10 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 			"aria-selected":       strconv.FormatBool(i == p.Active),
 			"tabindex":            tabTabIndex(i == p.Active),
 			"data-cui-signal-set": p.Name + ":" + strconv.Itoa(i),
-			// The per-index pair the styled layer's generated CSS keys
-			// the active highlight and the visible panel on.
-			"data-cui-tab-index": strconv.Itoa(i),
+			"data-cui-tab-index":  strconv.Itoa(i),
 		}
 		own["aria-controls"] = p.ID + "-panel-" + strconv.Itoa(i)
 		if tab.Disabled {
-			// A disabled anchor is not a thing in HTML: the signal write
-			// and the href go, so a click neither selects the tab nor
-			// follows its link, and aria-disabled says why.
 			own["aria-disabled"] = "true"
 			delete(own, "data-cui-signal-set")
 		}
@@ -147,9 +108,6 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 		if href == "" {
 			href = fragment
 		} else if !strings.HasPrefix(href, "#") {
-			// A same-origin deep link is fine; an unsafe one degrades
-			// to the FRAGMENT href the tab would have had — never to
-			// empty, which would point the anchor at the current page.
 			href = cleanTabHref(href)
 			if href == "" || href == "#" {
 				href = fragment
@@ -168,13 +126,6 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 		tabs = append(tabs, b.El("a", PartTab, own, render.Text(scrubControlBytes(tab.Label))))
 	}
 
-	// panelsRenderContent says whether any panel actually renders its
-	// Panel as a DOM child — the only caller content a panel can hold.
-	// A vacated panel never does (its content moves to the stash
-	// below, inert JSON text, not markup). When no panel renders any,
-	// the whole panels wrapper is marked as a unit below; otherwise a
-	// panel that itself renders nothing marks itself instead, since
-	// its siblings may still hold the caller's.
 	panelsRenderContent := false
 	for i, t := range p.Tabs {
 		if t.Panel != "" && !(p.VacateHidden && i != p.Active) {
@@ -183,7 +134,6 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 		}
 	}
 
-	// VacateHidden parks every inactive panel's content in the stash.
 	stash := map[string]string{}
 	var panels []render.HTML
 	for i, tab := range p.Tabs {
@@ -210,10 +160,6 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 	if len(stash) > 0 {
 		if buf, err := json.Marshal(stash); err == nil {
 			enc := strings.ReplaceAll(string(buf), `</`, `<\/`)
-			// The stash is inert JSON, none of it markup: it is marked
-			// here unless the wrapper's own mark below already covers it.
-			// Each branch keeps its attrs a literal at the call so the
-			// inline-script lint sees the inert type.
 			el := render.Tag("script", html.Attrs{
 				"type":                "application/json",
 				"data-hui-tabs-stash": "true",
@@ -243,8 +189,6 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 		Mark(rootAttrs, "data-hui-tabs-vacate")
 	}
 
-	// Every tab is built from Label (a string) plus generated attrs, so
-	// the whole tablist is always this component's own.
 	panelsOwn := html.Attrs(nil)
 	if !panelsRenderContent {
 		panelsOwn = Internal(nil)
@@ -255,7 +199,6 @@ func Tabs(p TabsProps, s Classes) render.HTML {
 	)
 }
 
-// tabTabIndex spells the roving contract.
 func tabTabIndex(active bool) string {
 	if active {
 		return "0"
@@ -263,8 +206,6 @@ func tabTabIndex(active bool) string {
 	return "-1"
 }
 
-// cleanTabHref routes a tab's deep-link href through the anchor policy,
-// degrading to the fragment.
 func cleanTabHref(href string) string {
 	return urlsafe.CleanAnchor(href)
 }

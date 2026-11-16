@@ -16,3 +16,365 @@ code:
   - framework/headless/toc_behavior.go
   - framework/headless/panehost.go
   - framework/headless/panehost_behavior.go
+invariants:
+  - id: kit-marks-own-subtrees
+    rule: Every subtree these components render that holds no caller content carries data-cui-internal on its topmost element, and no element holding caller content (an icon, a count, a panel, a trigger) carries it.
+    enforced_by:
+      - test: framework/ui.TestKitMarksInternalSubtrees
+      - test: framework/headless.TestSidebarCountFollowsLabel
+      - test: framework/headless.TestSweepNavigationSidebarToggleMarksItselfBesideCallerContent
+      - test: framework/headless.TestTabsVacateStashAndState
+  - id: hrefs-pass-the-anchor-policy
+    rule: Every href these components write goes through urlsafe.CleanAnchor; a Tag, Step or BackToTop href it refuses panics, and a menu row, sidebar leaf or tab href it refuses degrades to "#" or to the tab's own fragment.
+    enforced_by:
+      - test: framework/headless.TestSweepNavigationTagHrefPassesTheAnchorPolicy
+      - test: framework/headless.TestHrefsGoThroughTheAnchorPolicy
+      - test: framework/headless.TestStepsHrefStateAndMarker
+      - test: framework/headless.TestBackToTopRefusesBrokenLinks
+      - test: framework/headless.TestSweepNavigationMenuUnsafeHrefDegrades
+      - test: framework/headless.TestMenuActionRowsRenderForms
+      - test: framework/headless.TestSidebarUnsafeHrefDegrades
+      - test: framework/headless.TestTabsUnsafeHrefDegradesToFragment
+  - id: in-page-controls-require-an-island
+    rule: A Tag with DismissHref and a ToolbarSearch refuse to render without an Island, so neither renders the link-only form of an in-page state change.
+    enforced_by:
+      - test: framework/headless.TestRequiredIslandsRefuseTheLinkOnlyRender
+  - id: tag-dismiss-keeps-its-href
+    rule: A Tag's dismiss is one anchor carrying both its no-script href and the island contract, with a GET writing the href as push-state and a mutation writing none.
+    enforced_by:
+      - test: framework/headless.TestTagCarriesTheContractOnItsDismiss
+      - test: framework/headless.TestTagDismissMutationPostsBody
+  - id: tag-dismiss-method-and-body
+    rule: DismissMethod is GET (empty), POST, PUT, PATCH or DELETE, and a DismissBody must be valid JSON sent with a method other than GET.
+    enforced_by:
+      - test: framework/headless.TestTagDismissMutationPostsBody
+  - id: toolbar-has-no-role
+    rule: Toolbar renders no role attribute of its own, and a role a caller passes through ExtraAttrs survives.
+    enforced_by:
+      - test: framework/headless.TestToolbarDoesNotClaimTheToolbarPattern
+  - id: toolbar-search-is-a-get-form
+    rule: ToolbarSearch renders a form with method get, no action and no push-state, carrying the island's GET contract.
+    enforced_by:
+      - test: framework/headless.TestToolbarSearchIsTheFormThatCarriesTheContract
+  - id: pagination-refuses-a-bad-path
+    rule: Pagination refuses a Path that is not same-origin or that carries its own query or fragment, a Page outside 1..Pages, fewer than one page and an empty AriaLabel.
+    enforced_by:
+      - test: framework/headless.TestPaginationRefusesAPathTheAnchorPolicyRejects
+      - test: framework/headless.TestPaginationRefusesAPathWithItsOwnQueryOrFragment
+      - test: framework/headless.TestPaginationRefusesPagesOutsideTheRun
+      - test: framework/headless.TestPaginationRefusesAnUnnamedNav
+  - id: pagination-replaces-the-page-param
+    rule: Each page href is the carried Query, scrubbed, with the page parameter set (never appended), built through net/url on Path.
+    enforced_by:
+      - test: framework/headless.TestPaginationBuildsItsHrefsThroughNetURL
+  - id: pagination-ends-are-disabled-anchors
+    rule: A Previous or Next with nowhere to go renders as an anchor with aria-disabled, tabindex -1, no href and no island contract.
+    enforced_by:
+      - test: framework/headless.TestSweepNavigationPaginationDisabledEndLeavesTheTabOrder
+      - test: framework/headless.TestPaginationCarriesTheContractOnItsAnchors
+  - id: page-hook-only-with-an-island
+    rule: data-hui-page renders on every enabled page anchor of a pager with an Island and on none of a pager without one.
+    enforced_by:
+      - test: framework/headless.TestPaginationPageHookRendersOnlyWithAnIsland
+  - id: pagination-window-keeps-the-current-page
+    rule: pageNumbers always lists the first, last and current pages, and a Window wider than the run lists every page.
+    enforced_by:
+      - test: framework/headless.TestPaginationHugeWindowKeepsCurrentPage
+      - test: framework/headless.TestPaginationWindowsItsPages
+  - id: steps-one-current
+    rule: Steps refuses two steps in State current and an explicit current that disagrees with Current, and refuses a State other than done, current or todo.
+    enforced_by:
+      - test: framework/headless.TestStepsAllowsExactlyOneCurrentStep
+      - test: framework/headless.TestStepsHrefStateAndMarker
+  - id: back-to-top-refuses-bad-links
+    rule: BackToTop refuses an empty or policy-refused Href, a Target that is not a bare element id and a negative Threshold.
+    enforced_by:
+      - test: framework/headless.TestBackToTopRefusesBrokenLinks
+  - id: menu-refuses-incoherent-rows
+    rule: Menu refuses an empty item list, a row with a blank label, a duplicate row id at any depth, and a row combining two ways to act (Href, RPC, RPCAttrs, Action, Copy, Radio, Check or Children).
+    enforced_by:
+      - test: framework/headless.TestMenuRefusesBrokenConfiguration
+      - test: framework/headless.TestMenuRowShapesRefused
+      - test: framework/headless.TestMenuRefusesDuplicateIDInsideIDlessSubmenu
+  - id: menu-action-needs-fields
+    rule: A form row with no Fields panics unless its MenuAction sets Unsafe.
+    enforced_by:
+      - test: framework/headless.TestMenuRefusesBrokenConfiguration
+  - id: menu-rpc-is-same-origin
+    rule: A row's RPC and its RPCAttrs data-cui-rpc must be same-origin paths, the backslash spelling of a host included, and RPCAttrs takes only data-cui-rpc* and data-cui-confirm* keys.
+    enforced_by:
+      - test: framework/headless.TestSweepNavigationMenuRPCIsSameOrigin
+      - test: framework/headless.TestMenuRowShapesRefused
+  - id: menu-copy-target-is-an-id
+    rule: A copy row's Target is an element id, a leading # dropped, and a selector-shaped or empty Target panics.
+    enforced_by:
+      - test: framework/headless.TestMenuRowShapesRefused
+  - id: menu-auto-id-folds-trigger-and-rows
+    rule: A menu with no ID derives hui-menu-<hash> from its label, its TriggerElement and every row label at any depth, so menus differing in any of these get different ids.
+    enforced_by:
+      - test: framework/headless.TestMenuAutoIDSeparatesDistinctMenus
+      - test: framework/headless.TestSweepNavigationMenuAutoIDFoldsTheRows
+  - id: menu-rows-start-out-of-the-tab-order
+    rule: Every menu row renders tabindex -1 with its menu role, and the menu root carries data-hui-disclosure-dismiss so a press outside closes it.
+    enforced_by:
+      - test: framework/headless.TestMenuRendersTheDisclosureContract
+  - id: menu-trigger-element-has-no-summary
+    rule: A menu with a TriggerElement renders no summary and wraps the element in a presentation div whose data-hui-menu-trigger names the menu id.
+    enforced_by:
+      - test: framework/headless.TestMenuTriggerElementPairsByHook
+  - id: disabled-menu-rows-cannot-act
+    rule: A disabled link row renders no href, and a disabled button row and a disabled form row's submit carry the disabled attribute beside aria-disabled.
+    enforced_by:
+      - test: framework/headless.TestMenuDisabledHrefRowDoesNotNavigate
+      - test: framework/headless.TestMenuDisabledActionRowCannotSubmit
+      - test: framework/headless.TestSweepNavigationMenuDisabledButtonRowIsDisabled
+  - id: menu-form-row-is-presentational
+    rule: A form row's form has role none and its submit button carries the row's menuitem role and its data-cui-confirm.
+    enforced_by:
+      - test: framework/headless.TestMenuActionRowsRenderForms
+      - test: framework/headless.TestSweepNavigationMenuFormRowConfirmsOnItsSubmit
+  - id: menu-submenu-row-reads-its-label
+    rule: A submenu parent row's text content is its label alone.
+    enforced_by:
+      - test: framework/headless.TestSweepNavigationMenuSubmenuRowReadsItsLabel
+  - id: behaviours-declare-markers-and-requirements
+    rule: headless-menu loads on data-hui-menu and data-hui-menu-trigger and requires headless-disclosure and widgets, headless-toc requires headless-rail, and headless-sidebar loads on data-hui-sidebar and data-hui-sidebar-group-toggle and requires widgets.
+    enforced_by:
+      - test: framework/headless.TestSweepNavigationBehaviorsDeclareMarkersAndRequirements
+      - test: framework/headless.TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers
+  - id: breadcrumbs-one-current-step
+    rule: Exactly one breadcrumb is current, rendered as text with aria-current page; it is the step marked Current, else the last step when it has no Href, and a step whose Href the anchor policy refuses is plain text, not current.
+    enforced_by:
+      - test: framework/headless.TestBreadcrumbsOneCurrentStep
+      - test: framework/headless.TestBreadcrumbsCurrentEvenWithHref
+      - test: framework/headless.TestBreadcrumbsDropsDangerousHrefs
+      - test: framework/headless.TestSweepNavigationBreadcrumbRefusedHrefIsText
+  - id: breadcrumb-separators-are-hidden
+    rule: Each breadcrumb separator is an aria-hidden span, and Breadcrumbs refuses an empty trail.
+    enforced_by:
+      - test: framework/headless.TestBreadcrumbsRendersTheTrail
+      - test: framework/headless.TestBreadcrumbsRefusesBrokenConfiguration
+  - id: static-rail-loads-no-module
+    rule: A rail renders data-hui-rail, data-hui-rail-observe and data-hui-rail-target only when ObserveSelector is set.
+    enforced_by:
+      - test: framework/headless.TestSweepNavigationStaticRailLoadsNoModule
+      - test: framework/headless.TestRailArmsTheObserverOnlyWhenAsked
+  - id: rail-label-is-not-a-heading
+    rule: The rail's label renders as a div, never a heading element.
+    enforced_by:
+      - test: framework/headless.TestRailRendersFragmentLinksAndLandmark
+  - id: rail-refuses-bad-entries
+    rule: Rail refuses a blank Label, no items, an Anchor that is not a bare fragment id, an entry with no Text and two entries with one Anchor.
+    enforced_by:
+      - test: framework/headless.TestRailRefusesBrokenConfiguration
+  - id: toc-requires-server-items
+    rule: TableOfContents refuses an empty item list, a Level outside 0..6 and duplicate ids, and always renders data-hui-toc.
+    enforced_by:
+      - test: framework/headless.TestTableOfContentsRefusesBrokenConfiguration
+      - test: framework/headless.TestTableOfContentsRendersTheServerList
+  - id: toc-level-names-the-variant
+    rule: A contents entry wears the h<Level> variant of the item part, a Level of 0 taking h2.
+    enforced_by:
+      - test: framework/headless.TestSweepNavigationTOCLevelZeroIsTwo
+      - test: framework/headless.TestTableOfContentsIndentsByHeadingLevelVariant
+  - id: tabs-bounded-and-clamped
+    rule: Tabs refuses more than TabsMaxPanels tabs, and an Active out of range selects tab 0.
+    enforced_by:
+      - test: framework/headless.TestTabsRefusesBrokenConfiguration
+  - id: tabs-roving-tabindex
+    rule: Only the active tab has tabindex 0; every other tab has -1.
+    enforced_by:
+      - test: framework/headless.TestTabsRendersRovingTabindexAndPanels
+  - id: disabled-tab-neither-selects-nor-links
+    rule: A disabled tab renders aria-disabled with no data-cui-signal-set and no href.
+    enforced_by:
+      - test: framework/headless.TestSweepNavigationDisabledTabNeitherSelectsNorLinks
+  - id: tabs-stash-cannot-close-its-script
+    rule: A vacated panel's content in the JSON stash cannot end the stash's script element, whatever markup it holds.
+    enforced_by:
+      - test: framework/headless.TestSweepNavigationTabsStashCannotCloseItsScript
+      - test: framework/ui.TestTabsVacateStashEscapesScriptTerminator
+  - id: tabs-ids-claim-their-family
+    rule: A strip's tab and panel ids are its ID plus -tab-<n> and -panel-<n>; an explicit ID reserves that family in the render's id scope and a derived one takes the first free suffix.
+    enforced_by:
+      - test: framework/headless.TestSweepNavigationTabsExplicitIDReservesItsFamily
+      - test: framework/ui.TestSameSignalTabsGetUniqueIDs
+  - id: tabs-stash-attrs-are-literal
+    rule: Each render.Tag call that builds the tabs stash spells its attribute map, type application/json included, as a literal at the call.
+    enforced_by:
+      - test: core-ui/check.TestLintNoInlineScripts_RepoIsClean
+  - id: panehost-names-every-open-pane
+    rule: data-hui-pane-open lists every open side pane in slot order, a side pane opens only when it has content, and a closed pane carries hidden.
+    enforced_by:
+      - test: framework/headless.TestSweepNavigationPaneHostNamesEveryOpenPane
+      - test: framework/headless.TestPaneHostRefusesBrokenConfiguration
+      - test: framework/headless.TestPaneHostRendersPrimaryAndSidePanes
+  - id: panehost-refuses-bad-config
+    rule: PaneHost refuses an empty Primary, a side pane label of only whitespace and a DeepLinkParam that is not a bare token.
+    enforced_by:
+      - test: framework/headless.TestPaneHostRefusesBrokenConfiguration
+      - test: framework/headless.TestSweepNavigationPaneHostDeepLinkIsAToken
+  - id: sidebar-refuses-bad-config
+    rule: Sidebar refuses a blank NavLabel, no items, a group with an Href, an unknown Variant, Collapse or GroupMarkup, a ServerCollapsed with Collapse auto, and a storage key or group id prefix with control bytes.
+    enforced_by:
+      - test: framework/headless.TestSidebarRefusesBrokenConfiguration
+  - id: sidebar-collapse-state-has-one-owner
+    rule: A ServerCollapsed state ships as data-collapsed "true" or "false", and data-hui-sidebar-storage renders only with Collapse auto and a CollapseStorageKey.
+    enforced_by:
+      - test: framework/ui.TestSidebarServerExpandedRendersColumnState
+      - test: framework/headless.TestSweepNavigationSidebarStorageHookNeedsAKey
+      - test: framework/headless.TestSidebarCollapseContract
+  - id: sidebar-toggle-carries-both-names
+    rule: The collapse toggle carries both its collapse and expand names, each falling back to NavLabel, and its aria-label is the one for its current state.
+    enforced_by:
+      - test: framework/headless.TestSweepNavigationSidebarCollapseLabelsFallBackToNavLabel
+      - test: framework/headless.TestSidebarCollapseContract
+  - id: sidebar-drawer-trigger-is-named
+    rule: The drawer trigger, in the shell and standalone, takes Strings.SidebarOpenDrawer when DrawerLabel is blank.
+    enforced_by:
+      - test: framework/headless.TestSidebarDrawerTriggerFallsBackToStrings
+  - id: sidebar-leaves-hand-off-to-activelink
+    rule: Every sidebar leaf carries data-cui-activelink, and a leaf with MatchPrefix carries it as data-cui-match-prefix.
+    enforced_by:
+      - test: framework/headless.TestSidebarRendersShellNavGroupsAndLinks
+      - test: framework/ui.TestSidebarEmitsMatchPrefixForActiveLink
+  - id: sidebar-region-has-no-shell-hooks
+    rule: SidebarRegion renders no data-hui-sidebar shell hook and no drawer trigger.
+    enforced_by:
+      - test: framework/headless.TestSidebarRegionRendersNoShellHooks
+  - id: sidebar-button-groups-hide-when-closed
+    rule: A button-dialect group's toggle carries aria-expanded and aria-controls, and its list carries hidden while closed.
+    enforced_by:
+      - test: framework/headless.TestSidebarButtonDialectGroups
+decisions:
+  - id: toolbar-claims-no-role
+    date: 2026-11-16
+    status: accepted
+    decision: Toolbar renders no role; a caller who ships arrow-key roving adds role toolbar through ExtraAttrs.
+    rejected:
+      - option: Render role toolbar.
+        why: The role promises arrow-key roving with one tab stop, which this script-free component cannot keep.
+    upholds: [toolbar-has-no-role]
+  - id: badge-says-no-tone
+    date: 2026-11-16
+    status: accepted
+    decision: A badge says only its label, and the tone a class map paints is decoration.
+    rejected:
+      - option: Prefix the tone as hidden text, as Alert does.
+        why: A badge's label is its meaning, and a colour that means more than the label says needs a better label.
+  - id: pagination-island-is-optional
+    date: 2026-11-16
+    status: accepted
+    decision: Pagination's Island is optional; a list screen's page anchors are plain navigations the client router intercepts, and only an embedded pager carries the island contract.
+    rejected:
+      - option: Require an Island, as Tag and ToolbarSearch do.
+        why: A list screen's page is its URL state (hard rule 1), so its pager is a navigation.
+    upholds: [page-hook-only-with-an-island]
+  - id: disabled-ends-stay-in-place
+    date: 2026-11-16
+    status: accepted
+    decision: A Previous or Next with nowhere to go stays a visible, named anchor with no href.
+    rejected:
+      - option: Remove the end link.
+        why: Every other control would move one place.
+      - option: Link it to the current page.
+        why: A link that silently goes nowhere.
+    upholds: [pagination-ends-are-disabled-anchors]
+  - id: menu-is-a-disclosure
+    date: 2026-11-16
+    status: accepted
+    decision: A menu and each submenu are details disclosures, so headless-menu requires headless-disclosure for the aria mirror, Escape one level at a time and the close on navigate.
+    rejected:
+      - option: A second open and close mechanism for menus and submenus.
+        why: Escape, the aria mirror and close on navigate would be written twice.
+    upholds: [behaviours-declare-markers-and-requirements]
+  - id: menu-trigger-element-beside-details
+    date: 2026-11-16
+    status: accepted
+    decision: A caller-owned trigger renders beside a summary-less details and is paired with it by data-hui-menu-trigger on a wrapper.
+    rejected:
+      - option: Put the caller's element inside the summary.
+        why: An interactive element inside a summary is axe nested-interactive.
+      - option: Set the pairing attributes on the caller's element.
+        why: Attributes cannot be injected into raw caller HTML at render.
+    upholds: [menu-trigger-element-has-no-summary]
+  - id: submenu-caret-is-css
+    date: 2026-11-16
+    status: accepted
+    decision: The submenu caret is a CSS pseudo-element on the row.
+    rejected:
+      - option: A caret span in the row.
+        why: The row's text would no longer be its label, and type-ahead matches the text.
+    upholds: [menu-submenu-row-reads-its-label]
+  - id: menu-csrf-is-the-callers
+    date: 2026-11-16
+    status: accepted
+    decision: A form row never mints or verifies a CSRF token, and a row with no hidden Fields must say Unsafe.
+    rejected:
+      - option: Mint the token in the menu.
+        why: The caller's form middleware owns CSRF, and a state-changing POST with no hidden inputs is almost always a forgotten token.
+    upholds: [menu-action-needs-fields]
+  - id: toc-items-come-from-the-server
+    date: 2026-11-16
+    status: accepted
+    decision: The table of contents renders from items the server passes, and headless-toc only marks the active entry.
+    rejected:
+      - option: Discover the headings in the browser at hydration.
+        why: A list built only at hydration is an empty landmark without script.
+    upholds: [toc-requires-server-items]
+  - id: one-scroll-observer
+    date: 2026-11-16
+    status: accepted
+    decision: The table of contents marks its active entry through the observer headless-rail owns, which headless-toc requires.
+    rejected:
+      - option: A scroll-spy of its own in headless-toc.
+        why: Two observers drift apart.
+    upholds: [behaviours-declare-markers-and-requirements]
+  - id: rail-label-is-plain
+    date: 2026-11-16
+    status: accepted
+    decision: The rail's label is a plain div.
+    rejected:
+      - option: A heading.
+        why: The complementary landmark is already named by its aria-label, and a heading would add an out-of-order entry to the page outline.
+    upholds: [rail-label-is-not-a-heading]
+  - id: tabs-max-panels
+    date: 2026-11-16
+    status: accepted
+    decision: A strip renders at most TabsMaxPanels tabs and refuses more.
+    rejected:
+      - option: Render any number of tabs.
+        why: The styled layer generates per-index CSS for exactly that many, so a later panel would never show.
+    upholds: [tabs-bounded-and-clamped]
+  - id: stash-attrs-spelled-per-branch
+    date: 2026-11-16
+    status: accepted
+    decision: The tabs stash's two render.Tag calls each spell their attribute map rather than share one variable.
+    rejected:
+      - option: Build the attribute map once and add the internal mark to it.
+        why: The inline-script lint sees the inert type only in a literal at the call.
+    revisit_if: The inline-script lint resolves an attribute map held in a variable.
+    upholds: [tabs-stash-attrs-are-literal]
+  - id: sidebar-collapse-is-server-owned-by-default
+    date: 2026-11-16
+    status: accepted
+    decision: Collapse defaults to none, owned by the server, and the module persists an auto state only under a CollapseStorageKey.
+    rejected:
+      - option: Persist the collapse state by default.
+        why: A host that owns the state would have it overwritten, and the retired module never wrote storage without a key.
+    upholds: [sidebar-collapse-state-has-one-owner]
+  - id: panehost-fetches-nothing
+    date: 2026-11-16
+    status: accepted
+    decision: The pane host renders the content it is given and fetches none; a trigger that loads content uses an island inside the pane.
+    rejected:
+      - option: Fetch pane content in headless-panehost.
+        why: It would be a second request path beside the island and RPC rails.
+  - id: sidebar-drawer-is-a-widget
+    date: 2026-11-16
+    status: accepted
+    decision: The mobile drawer is a widget the caller mounts, so headless-sidebar requires widgets for its focus trap and return focus.
+    rejected:
+      - option: A trap and return focus in headless-sidebar.
+        why: A second focus trap beside the widget runtime's would drift from it.
+    upholds: [behaviours-declare-markers-and-requirements]
