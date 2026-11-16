@@ -13,49 +13,27 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── Dropdown ───────────────────────────────────────────────────────
-//
-// A button that opens a panel floating under it: the Menu's sibling for
-// content that is not a list of commands. A menu panel is role=menu
-// and holds only rows; a dropdown holds a small form or a set of
-// controls (a list's filters, a "save this view" name field). It is a
-// native <details> (headless.Disclosure with Dismiss), so it opens with
-// no script, and the disclosure module closes it on a click outside,
-// on Escape and on a client-side navigation.
-//
-// Controls inside a closed dropdown still belong to their form: a
-// dropdown inside a GET form holds fields the form submits whether the
-// panel is open or not.
-
 // DropdownAlign picks which edge of the trigger the panel lines up with.
 type DropdownAlign string
 
 const (
-	// DropdownStart lines the panel up with the trigger's start edge
-	// (the default).
+	// DropdownStart lines the panel up with the trigger's start edge.
 	DropdownStart DropdownAlign = "start"
-	// DropdownEnd lines it up with the trigger's end edge, for a
-	// trigger at the end of a row.
+	// DropdownEnd lines it up with the trigger's end edge.
 	DropdownEnd DropdownAlign = "end"
 )
 
-// DropdownConfig configures a Dropdown.
+// DropdownConfig configures a Dropdown, a floating panel for content that is not commands.
 type DropdownConfig struct {
 	// Label is the trigger's text. Required.
 	Label string
-	// Icon, when set, names a registered ui.Icon drawn before the label.
+	// Icon names a registered icon drawn before the label.
 	Icon string
-	// Count, when above zero, draws a count badge after the label: the
-	// filters applied, the rows chosen.
+	// Count, above zero, draws a count badge after the label.
 	Count int
-	// Ctx carries the per-request context Count is written in
-	// (i18n.Number), handed to an Avatar that sets none. When nil,
-	// English applies.
+	// Ctx writes Count and reaches an Avatar that sets none; nil is English.
 	Ctx context.Context
-	// Avatar draws the trigger as that avatar alone: round, borderless,
-	// 2rem, with a focus ring (an account panel in an app bar). Label
-	// stays the trigger's accessible name, visually hidden. It panics
-	// beside Icon or Count, which dress a text trigger.
+	// Avatar draws the trigger as that avatar alone, named by Label.
 	Avatar *AvatarConfig
 	// Content is the panel. Required.
 	Content render.HTML
@@ -66,8 +44,7 @@ type DropdownConfig struct {
 
 	ID    string
 	Class string
-	// ExtraAttrs land on the root <details>; open and class are the
-	// component's (use Open and Class).
+	// ExtraAttrs land on the root details; open and class are the component's.
 	ExtraAttrs html.Attrs
 }
 
@@ -104,8 +81,6 @@ func Dropdown(cfg DropdownConfig) render.HTML {
 		trigger = append(trigger, dropdownTextTrigger(cfg)...)
 	}
 	out := headless.Disclosure(headless.DisclosureProps{
-		// The trigger is built from strings, a registered icon and an
-		// avatar, so it is the component's own.
 		Summary:    headless.Own(render.Join(trigger...)),
 		Content:    cfg.Content,
 		Open:       cfg.Open,
@@ -120,8 +95,6 @@ func Dropdown(cfg DropdownConfig) render.HTML {
 	return dropdownStyle.WrapHTML(out)
 }
 
-// dropdownTextTrigger is a text trigger: the icon, the label and the
-// count badge.
 func dropdownTextTrigger(cfg DropdownConfig) []render.HTML {
 	trigger := []render.HTML{}
 	if cfg.Icon != "" {
@@ -140,12 +113,6 @@ func dropdownTextTrigger(cfg DropdownConfig) []render.HTML {
 
 var dropdownStyle = registry.RegisterStyle("ui-dropdown", dropdownCSS)
 
-// dropdownCSS draws the trigger as the menu trigger does (a bordered
-// surface button) and the panel as the menu panel (surface, thin
-// border, large radius, the lg shadow), so the two read as one family.
-// Knobs: --ui-dropdown-min-width (14rem) and --ui-dropdown-max-width
-// (28rem) bound the panel; the viewport always wins.
-// --ui-dropdown-count-size (1.25rem) sizes the count badge.
 func dropdownCSS(_ style.Theme) string {
 	return `:where([data-cui-comp="ui-dropdown"]).fui-dropmenu {
   position: relative;

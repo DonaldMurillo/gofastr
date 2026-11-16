@@ -8,35 +8,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── TabNav ─────────────────────────────────────────────────────────
-//
-// A horizontal strip of navigation links where one is current: the tabs
-// above a list that pick a view, the sub-navigation of a record screen.
-// Every tab is a plain <a>, so a tab click is a navigation the client
-// router intercepts and a URL the reader can share, bookmark and reload
-// — the query-param contract tabs carry since list state moved off
-// islands. Selection is server-settled: the current tab carries
-// aria-current="page" and no script moves it, because the destination
-// page says which tab is current, not a click handler.
-//
-// Distinct from ui.Tabs, which switches PANELS in place through a
-// client signal and keeps one URL for all of them. TabNav changes the
-// URL; Tabs changes the panel. A screen whose tabs narrow the same data
-// (views over one list) wants TabNav; a screen whose tabs reveal
-// different regions of one record wants Tabs.
-
 // TabNavItem is one link in the strip.
 type TabNavItem struct {
 	// Text is the visible label. Required.
 	Text string
 	// Href is the tab's destination. Required.
 	Href string
-	// Current marks this tab as the one being viewed: the link renders
-	// with aria-current="page" and the sheet's current treatment.
+	// Current marks the tab being viewed (aria-current="page"); at most one.
 	Current bool
-	// Badge is optional trailing count text inside the tab (a view's
-	// row count). Rendered aria-hidden so the link's accessible name
-	// stays the tab's label, not the count.
+	// Badge is an aria-hidden count inside the tab.
 	Badge string
 }
 
@@ -45,28 +25,18 @@ type TabNavConfig struct {
 	// Items are the tabs, in order. Required, at least one.
 	Items []TabNavItem
 
-	// Label is the nav landmark's accessible name ("Views", "Sections").
-	// Required: an unnamed nav beside another unnamed nav is a landmark
-	// assistive tech cannot tell apart.
+	// Label names the nav landmark. Required.
 	Label string
-
-	// End, when set, is drawn at the strip's trailing edge on the same
-	// rule: a control that acts on the views, such as a "Save view"
-	// dropdown. It sits beside the <nav>, not inside it, so a form in it
-	// is not part of the navigation landmark; the root is then a <div>
-	// holding both.
+	// End is a control at the strip's trailing edge, beside the nav.
 	End render.HTML
 
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the <nav>. Keys the
-	// component owns are dropped: class and id (use Class / ID) and
-	// aria-label (use Label).
+	// ExtraAttrs land on the nav; class, id and aria-label are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// TabNav renders the strip.
+// TabNav renders a strip of links whose current tab the destination page settles.
 func TabNav(cfg TabNavConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: TabNav requires Label — an unnamed nav landmark cannot be told from the page's other navs")

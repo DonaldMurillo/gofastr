@@ -1,13 +1,5 @@
 package ui
 
-// StepRail: sticky-on-desktop, static-on-mobile numbered nav for
-// multi-step pages (onboarding, tutorials, guided tours). Reads as
-// "you are here" + "what's next." Each step is an in-page anchor;
-// pair with html.Section IDs (or ui.Section auto-slugs) for the
-// jumps. headless.Steps carries the list contract — the ordered
-// steps, the anchors, the current step's aria-current — and this
-// adapter wraps it in the complementary rail with its title and meta.
-
 import (
 	"context"
 
@@ -21,11 +13,9 @@ import (
 
 // StepRailItem is one numbered step.
 type StepRailItem struct {
-	// Number is the displayed ordinal (e.g. "01", "02"). Caller picks
-	// the format (zero-padded vs. plain) so the visual matches the
-	// step headings.
+	// Number is the displayed ordinal, formatted by the caller ("01").
 	Number string
-	// Anchor is the in-page #id this rail entry jumps to.
+	// Anchor is the in-page id this entry jumps to, without "#".
 	Anchor string
 	// Label is the visible step name.
 	Label string
@@ -33,42 +23,24 @@ type StepRailItem struct {
 
 // StepRailConfig configures a StepRail.
 type StepRailConfig struct {
-	// Ctx carries the per-request context the default rail label and the
-	// step words are written in. When nil, English applies.
+	// Ctx is the default label's and step words' language; nil is English.
 	Ctx context.Context
-
-	// Title is the small heading at the top of the rail
-	// (e.g. "The path", "On this page"). Optional.
+	// Title labels the rail and names its landmark. Optional.
 	Title string
 	// Items are the numbered steps, in order.
 	Items []StepRailItem
-	// ActiveIndex marks one step as the active one (visually
-	// highlighted, aria-current="step"). Must be in [0, len(Items))
-	// or -1 for "no active step". Out-of-range values panic at render
-	// time so a typo (or a `slices.Index` -1 result, which is the
-	// common one) is caught immediately rather than silently
-	// rendering a rail with no highlight.
+	// ActiveIndex is the current step, or -1 for none; outside that range it panics.
 	ActiveIndex int
-	// Meta is optional small text below the list (e.g. a "stuck?
-	// open the journal" pointer).
+	// Meta is optional small text below the list.
 	Meta string
-	// MetaHref, when non-empty, renders Meta as a link to this URL
-	// instead of plain text, so a "stuck? ask here" pointer is
-	// actually clickable.
+	// MetaHref makes Meta a link.
 	MetaHref string
 	// Class is appended to the fui-step-rail wrapper.
 	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the rail's root <aside>
-	// element. Keys the component owns are dropped: class (use
-	// Class), data-cui-*, role and aria-label (derived from Title).
+	// ExtraAttrs land on the aside; class, data-cui-*, role and aria-label are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// stepRailClasses dresses headless.Steps' parts under the rail. The
-// text wrapper carries no class: the row's grid gives the number its
-// column and the label the rest.
 var stepRailClasses = headless.Classes{
 	headless.PartRoot:    "fui-step-rail__list",
 	headless.PartStep:    "fui-step-rail__item",
@@ -77,9 +49,7 @@ var stepRailClasses = headless.Classes{
 	headless.PartLabel:   "fui-step-rail__label",
 }
 
-// StepRail renders the sticky numbered nav: headless.Steps under the
-// rail's own class map, wrapped in the complementary <aside> the rail
-// has always been.
+// StepRail renders a sticky numbered nav of in-page anchors for a multi-step page.
 func StepRail(cfg StepRailConfig) render.HTML {
 	if len(cfg.Items) == 0 {
 		panic("ui: StepRail requires at least one Item")
@@ -99,21 +69,12 @@ func StepRail(cfg StepRailConfig) render.HTML {
 			state = "current"
 		}
 		steps[i] = headless.Step{
-			Label: item.Label,
-			Href:  "#" + item.Anchor,
-			// The caller's Number is text, not markup: Marker is the
-			// one slot typed render.HTML so ProgressSteps can pass an
-			// SVG, and a string that arrives here unescaped would ride
-			// into the aria-hidden marker raw.
+			Label:  item.Label,
+			Href:   "#" + item.Anchor,
 			Marker: render.Text(item.Number),
 			State:  state,
 		}
 	}
-	// Built entirely from StepRailItem's own typed fields — Marker is
-	// always render.Text(item.Number), never caller HTML — so the
-	// list holds nothing of the caller's; headless.Steps' own root
-	// never self-marks (an owner must place it), so the mark is
-	// spliced on here.
 	list, err := registry.InjectAttribute(
 		headless.Steps(headless.StepsProps{Steps: steps, Strings: StringsFor(cfg.Ctx)}, stepRailClasses),
 		"data-cui-internal", "")
@@ -123,20 +84,12 @@ func StepRail(cfg StepRailConfig) render.HTML {
 
 	body := []render.HTML{}
 	if cfg.Title != "" {
-		// A plain label, NOT a heading: the rail is a complementary
-		// landmark already named by Title (aria-label below), and
-		// emitting an <h6> here would inject a stray, out-of-order
-		// heading into the page outline. The label keeps the visual +
-		// the landmark name without polluting the heading hierarchy.
-		// Built entirely from cfg.Title, a string: this component's own.
 		body = append(body, html.Div(
 			html.DivConfig{Class: "fui-step-rail__title", ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
 			render.Text(cfg.Title)))
 	}
 	body = append(body, list)
 	if cfg.Meta != "" {
-		// Built entirely from cfg.Meta/cfg.MetaHref, both strings:
-		// this component's own.
 		var meta render.HTML = render.Text(cfg.Meta)
 		if cfg.MetaHref != "" {
 			meta = html.Link(html.LinkConfig{Href: cfg.MetaHref, Text: cfg.Meta})

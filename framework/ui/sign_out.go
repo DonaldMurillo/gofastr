@@ -24,27 +24,14 @@ type SignOutConfig struct {
 	// Variant styles the button; defaults to ButtonGhost.
 	Variant ButtonVariant
 	Class   string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the control's root <form>.
-	// Keys the component owns are dropped: class (use Class),
-	// data-cui-*, method, and action.
+	// ExtraAttrs land on the form; class, data-cui-*, method and action are dropped.
 	ExtraAttrs html.Attrs
-	// Ctx carries the per-request context used to resolve the sign-out label.
-	// When nil, English fallbacks apply.
+	// Ctx is the label's language; nil is English.
 	Ctx context.Context
 }
 
-// SignOut renders a logout control: a minimal form that POSTs to the auth
-// logout endpoint. It is a POST (not a link) on purpose: a GET
-// logout is trivially triggerable by a stray <img> or prefetch. The button is
-// a real ui.Button, so it inherits the design system's styling.
+// SignOut renders a form whose ui.Button POSTs to the logout endpoint.
 func SignOut(cfg SignOutConfig) render.HTML {
-	// Scheme allow-list, same one ui.Form and ui.FilterToolbar apply to
-	// their actions. This tag is hand-rolled with render.Escape, which is
-	// HTML escaping and scheme-blind: "javascript:alert(1)" survived it
-	// intact and became the form's action. A rejected action degrades to
-	// the default endpoint rather than "#", which would submit the form
-	// back to the page it is on.
 	action := urlsafe.CleanAnchor(cfg.Action)
 	if action == "" {
 		action = "/auth/logout"
@@ -66,21 +53,13 @@ func SignOut(cfg SignOutConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 	var b strings.Builder
-	// csrf-exempt: battery/auth's logout handler enforces same-origin requests,
-	// and auth.WithBFFPosture exempts only this route from its global CSRF gate.
+	// csrf-exempt: battery/auth's logout handler enforces same-origin; auth.WithBFFPosture exempts only this route.
 	b.WriteString(`<form data-cui-comp="ui-sign-out" class="` + render.Escape(cls) + `" method="post" action="` + render.Escape(action) + `"`)
-	// Caller extras land after the owned attributes. render.Attr
-	// validates the key and escapes the value, matching render.Tag.
 	b.WriteString(serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs, "method", "action")))
 	b.WriteString(`>`)
 	if cfg.Next != "" {
-		// Built entirely from cfg.Next, a string, never caller markup.
 		b.WriteString(`<input type="hidden" name="next" value="` + render.Escape(cfg.Next) + `" data-cui-internal>`)
 	}
-	// The button is built entirely from typed SignOutConfig fields,
-	// never caller markup; it never marks its own root (an owner must
-	// place it, the same as ui.Form's controls), so the mark is
-	// spliced on here.
 	b.WriteString(string(headless.Own(Button(ButtonConfig{Ctx: ctx, Label: label, Variant: variant, Type: "submit", Size: ButtonSizeSmall}))))
 	b.WriteString(`</form>`)
 	return signOutStyle.WrapHTML(render.HTML(b.String()))

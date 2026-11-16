@@ -13,13 +13,9 @@ import (
 
 // LanguageMenuConfig configures a LanguageMenu.
 type LanguageMenuConfig struct {
-	// Ctx is the request's context: it carries the locale the URL
-	// names, the app's locale set and the page the reader is on.
-	// Required; without it the menu renders nothing.
+	// Ctx is the request: its locale, locale set and page. Required.
 	Ctx context.Context
-
-	// Names overrides a locale's label, keyed by catalog tag ("es").
-	// The default is the language's own name (i18n.LanguageName).
+	// Names overrides a locale's label by tag; the default is its own name.
 	Names map[string]string
 
 	// ID, Position and ExtraAttrs are the Menu's.
@@ -28,20 +24,8 @@ type LanguageMenuConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// LanguageMenu renders the language switcher of an app that names the
-// language in the URL (framework.WithLocalePrefixes): a Menu whose
-// trigger shows a globe and the current language, with one row per
-// catalog locale linking this page in that language. Each language is
-// named in itself, so a reader finds theirs whatever the page is in.
-//
-// Each row is a rel="alternate" hreflang link, which the response
-// rewriter leaves unprefixed, and the runtime points those links at
-// the current page after every client-side navigation, so a switcher
-// in persistent chrome follows the reader. Following one loads a new
-// document: another locale is another document.
-//
-// Without path locales on Ctx it renders nothing, so an app can place
-// it in shared chrome before it routes by locale.
+// LanguageMenu renders a Menu linking this page in each path locale
+// (framework.WithLocalePrefixes); without path locales it renders nothing.
 func LanguageMenu(cfg LanguageMenuConfig) render.HTML {
 	if cfg.Ctx == nil {
 		return ""
@@ -52,9 +36,6 @@ func LanguageMenu(cfg LanguageMenuConfig) render.HTML {
 	}
 	page := "/"
 	if r := app.RequestFromContext(cfg.Ctx); r != nil {
-		// The router strips the prefix before the screen renders; a
-		// wrapper that runs before it sees the prefixed path. The path
-		// stays escaped: a decoded %3F would start a query string.
 		p := r.URL.EscapedPath()
 		if tag, rest := set.Split(p); tag != "" {
 			page = rest

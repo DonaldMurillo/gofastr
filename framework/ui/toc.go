@@ -13,89 +13,44 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── TableOfContents ────────────────────────────────────────────────
-//
-// Renders headless.TableOfContents dressed with the fui-toc class
-// map: a labelled <nav> whose ordered list of "#anchor" links the
-// SERVER rendered from explicit Items. The items are required: a
-// server-rendered component cannot discover headings that only exist
-// in a future browser DOM, and a TOC the runtime fills at hydration is
-// an empty landmark a reader without script never sees. The
-// headless-toc module's only job is the active state — aria-current
-// and a class on the entry whose heading is in view, through the
-// observer headless-rail owns.
-
 // TOCItem is one entry in the contents list.
 type TOCItem struct {
-	// ID is the fragment id of the heading this entry links to,
-	// without the leading #. Required.
+	// ID is the heading's fragment id, without "#". Required.
 	ID string
 	// Label is the entry's visible text. Required.
 	Label string
-	// Level is the heading's level, 1 to 6; 0 takes 2. It names the
-	// item's modifier class (fui-toc__item--h3, …) so the sheet can
-	// indent by depth.
+	// Level is the heading level, 1 to 6, that indents the entry; 0 is 2.
 	Level int
 }
 
 // TOCConfig configures a TableOfContents.
 type TOCConfig struct {
-	// Ctx carries the per-request context the default contents label is
-	// written in. When nil, English applies.
+	// Ctx is the default label's language; nil is English.
 	Ctx context.Context
-
-	// Items are the entries, in document order. Required: the
-	// no-script contract is this rendered list.
+	// Items are the entries, in document order. Required.
 	Items []TOCItem
-
-	// Target is the CSS selector of the content region whose headings
-	// the module watches for the active state (e.g. "main",
-	// "article"). Optional: without it the links work and nothing is
-	// marked.
+	// Target is the selector of the region whose headings mark the entry in view.
 	Target string
-
-	// Label is the accessible nav-label (defaults to "On this page").
+	// Label names the nav. Defaults to "On this page".
 	Label string
-
-	// Sticky adds the position: sticky modifier. Default false: the
-	// nav scrolls with the content unless the caller opts in.
+	// Sticky makes the nav sticky.
 	Sticky bool
-
-	// PhoneSheet folds the contents into a bottom sheet below the
-	// Breakpoint width: a pill floating at the bottom of the viewport
-	// names the section in view and opens the list (an
-	// interactive.PhoneSheet, the pill SectionMenu uses). At and above
-	// the breakpoint the nav renders as it does without it. The pill
-	// follows the entry the Target observer marks, so set Target too.
-	// In a ui.ContentRow aside, set the row's PhoneAsideFlush: the
-	// stacked aside holds nothing else on a phone (with PhoneSheetTop
-	// the aside instead moves above the main column and sticks, and
-	// needs no flag). The pill floats at
-	// the bottom of the screen, so a page carries one floating pill:
-	// beside a SectionMenu's, set PhoneSheetTop. The sheet's id is ID
-	// plus "-sheet", or fui-toc-sheet without an ID.
+	// PhoneSheet folds the list below Breakpoint into a sheet whose pill follows Target.
 	PhoneSheet bool
-	// PhoneSheetTop pins the PhoneSheet pill as a bar under the page's
-	// sticky header ("On this page: Overview") and hangs the list from
-	// it, for a page whose SectionMenu already floats its pill at
-	// the bottom.
+	// PhoneSheetTop pins the pill under the sticky header instead, beside a SectionMenu.
 	PhoneSheetTop bool
 	// CloseLabel names the phone sheet's dismiss control. Empty uses Close.
 	CloseLabel string
-	// Breakpoint is the width below which PhoneSheet folds the list:
-	// below md (48rem, the default) or below lg (64rem). Match the
-	// ContentRow's Breakpoint.
+	// Breakpoint is where PhoneSheet folds; match the ContentRow's.
 	Breakpoint StackBreakpoint
 
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes to the <nav> root.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-hui-* (the toc wiring), and aria-label (use Label).
+	// ExtraAttrs land on the nav; class, id, data-hui-* and aria-label are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// TableOfContents renders the contents navigation.
+// TableOfContents renders a server-built contents nav of Items.
 func TableOfContents(cfg TOCConfig) render.HTML {
 	items := make([]headless.TOCItem, len(cfg.Items))
 	for i, it := range cfg.Items {
