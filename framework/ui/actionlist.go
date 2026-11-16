@@ -13,26 +13,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── ActionList ─────────────────────────────────────────────────────
-//
-// A short list of rows, each a link or a button carrying an RPC, drawn
-// as a menu's rows are. It is the Menu's sibling for a panel that also
-// holds other controls (an account panel with a theme switch): a menu
-// panel is role=menu and may hold only menu rows, so the rows of a
-// mixed panel are a plain list the Tab key walks.
-
-// ActionListItem is one row: Href makes it a link, Do a button.
+// ActionListItem is one row: exactly one of Href (a link) and Do (a button).
 type ActionListItem struct {
 	// Label is the row's text. Required.
 	Label string
-	// Href navigates. Exactly one of Href and Do.
-	Href string
-	// Do is the row's RPC, effects and toasts included (a Sign out
-	// that navigates on success). Exactly one of Href and Do.
-	Do *interactive.Action
+	Href  string
+	Do    *interactive.Action
 	// Icon names a registered icon drawn before the label.
-	Icon string
-	// Danger draws the row in the danger colour.
+	Icon   string
 	Danger bool
 }
 
@@ -40,16 +28,15 @@ type ActionListItem struct {
 type ActionListConfig struct {
 	// Items are the rows. Required.
 	Items []ActionListItem
-	// Label names the list for assistive tech.
 	Label string
 	ID    string
 	Class string
-	// ExtraAttrs land on the root <ul>; class, id and aria-label are the
-	// component's.
+	// ExtraAttrs land on the <ul>, minus class, id and aria-label.
 	ExtraAttrs html.Attrs
 }
 
-// ActionList renders the rows.
+// ActionList renders rows drawn as a menu's are, as a plain list for a
+// panel that also holds other controls.
 func ActionList(cfg ActionListConfig) render.HTML {
 	if len(cfg.Items) == 0 {
 		panic("ui: ActionList requires Items")
@@ -108,8 +95,6 @@ func ActionList(cfg ActionListConfig) render.HTML {
 
 var actionListStyle = registry.RegisterStyle("ui-action-list", actionListCSS)
 
-// actionListCSS draws the rows as a menu's rows: full width, a touch
-// target tall, the soft surface on hover and focus.
 func actionListCSS(_ style.Theme) string {
 	return `:where([data-cui-comp="ui-action-list"]).fui-action-list {
   display: grid;

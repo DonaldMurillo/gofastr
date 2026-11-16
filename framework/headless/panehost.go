@@ -7,20 +7,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The pane host: a layout shell with an always-visible primary pane
-// and one or two openable side panes. The panes are labelled regions
-// whose open state ships server-rendered (hidden on closed panes), so
-// first paint matches server state with no script; the module adds the
-// open/close lifecycle, the focus handoff and restore, the responsive
-// drawer below 768px (its own Tab trap over the kernel's focus
-// selector and the kernel's refcounted scroll lock), and the optional
-// query deep link. Nothing here fetches pane content: a trigger that
-// loads content uses the island/RPC rails inside the pane's region.
-
-// PaneHost parts. A slot's modifier (pane--primary, pane--secondary,
-// pane--tertiary) resolves from the same class map through
-// Classes.Variant(PartPane, slot), the way every variant-taking part
-// in this package resolves.
 const (
 	PartPane Part = "pane"
 )
@@ -36,24 +22,16 @@ type PaneHostProps struct {
 	// SecondaryOpen / TertiaryOpen set the SSR initial open state.
 	SecondaryOpen bool
 	TertiaryOpen  bool
-	// SecondaryLabel / TertiaryLabel label each side pane's region.
-	// Empty takes Strings.PaneSecondary / Strings.PaneTertiary
-	// ("Secondary" / "Tertiary").
+	// SecondaryLabel / TertiaryLabel name the side panes' regions; empty takes Strings.
 	SecondaryLabel string
 	TertiaryLabel  string
-	// DeepLinkParam names the query parameter that carries pane state
-	// for refresh/share/Back parity. Empty leaves the URL alone. A
-	// non-token value (control bytes, markup, whitespace) is refused.
+	// DeepLinkParam names the query parameter carrying pane state; it must be a bare token.
 	DeepLinkParam string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the root and each pane.
-	Parts Parts
-	// Strings are the strings this component says: the side panes'
-	// default region names. Nil means the English defaults; a layer
-	// above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 }
 
@@ -77,10 +55,6 @@ func PaneHost(p PaneHostProps, s Classes) render.HTML {
 		"id": p.ID,
 	})
 	Mark(rootAttrs, "data-hui-panehost")
-	// data-hui-pane-open is the space-separated list of open side
-	// panes, in slot order — the state the module maintains and the
-	// sheet's column rules key off, so both open panes must be named
-	// at render, not just the secondary.
 	open := make([]string, 0, 2)
 	if secondaryOpen {
 		open = append(open, "secondary")
@@ -111,9 +85,6 @@ func PaneHost(p PaneHostProps, s Classes) render.HTML {
 }
 
 func paneHostSlot(b Box, slot, defLabel string, label string, open bool, content render.HTML) render.HTML {
-	// A label that is blank once trimmed is neither the default nor a
-	// label: a caller who typed spaces meant something, and the region
-	// must not ship an accessible name of spaces.
 	if label != "" && strings.TrimSpace(label) == "" {
 		panic("headless: PaneHost " + slot + " label is only whitespace — a region's label has to say something")
 	}
@@ -134,8 +105,6 @@ func paneHostSlot(b Box, slot, defLabel string, label string, open bool, content
 	return b.El("div", PartPane, own, content)
 }
 
-// trimAllSpace drops every whitespace rune (a parameter name with an
-// inner space is not a token).
 func trimAllSpace(s string) string {
 	out := make([]rune, 0, len(s))
 	for _, r := range s {

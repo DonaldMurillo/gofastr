@@ -17,45 +17,16 @@ const (
 	PartDividerLine Part = "divider-line"
 )
 
-// The layout primitives have almost no accessibility surface, and the
-// exceptions are the whole reason they are components rather than
-// classes:
-//
-//   - A <section> is only a landmark when it has an accessible name.
-//     Unnamed, it is a div that clutters a screen reader's landmark
-//     list with entries called "section", which is worse than not
-//     being a landmark at all — so Section renders a plain div until
-//     it is given a heading to be named by.
-//   - A separator between groups of content is meaningful and gets
-//     <hr>; a line drawn for looks inside one group is decoration and
-//     must be hidden, or a screen reader announces "separator" at
-//     every visual flourish on the page.
-//
-// Everything else here — gaps, tracks, gutters — is the class map's, and
-// these types exist so an app never writes a grid-template by hand.
-
 // StackProps is vertical flow: one thing after another, with one gap.
 type StackProps struct {
-	// Gap is a name from the scale, passed through to the class map. It is
-	// not a length, because a system with arbitrary gaps has no
-	// rhythm — and the one the framework ships proves the point: its
-	// Grid takes a free-form Min that nothing ever read.
-	Gap string
-	// Align is cross-axis alignment: "start", "center", "end". Empty
-	// stretches, which is what a stack of cards wants.
-	Align string
-	// Justify is main-axis distribution: "start", "center", "end",
-	// "between". Empty packs to the start, which is what a page's
-	// blocks do.
-	Justify string
-	// Tag overrides the element. A list of things should be a list;
-	// this is how a Stack becomes one without a second component.
-	Tag string
+	Gap     string // a step on the gap scale, never a length
+	Align   string // cross axis: start, center, end; empty stretches
+	Justify string // main axis: start, center, end, between; empty packs to the start
+	Tag     string // the element, "div" by default
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root.
 	Parts Parts
 }
 
@@ -97,36 +68,21 @@ func init() {
 	})
 }
 
-// ClusterProps is horizontal flow that wraps: a row of buttons, a row
-// of tags, a toolbar.
+// ClusterProps is horizontal flow that wraps: tags, badges, a byline's parts.
 type ClusterProps struct {
-	Gap string
-	// Align is cross-axis: "center" by default in the class map, because a
-	// row of controls of different heights should line up on their
-	// middles.
-	Align string
-	// Justify is main-axis: "start", "between", "end".
-	Justify string
-	// NoWrap keeps the row on one line. Use it sparingly: a row that
-	// cannot wrap is a row that overflows on a phone, and horizontal
-	// page scroll is the failure this whole layer exists to prevent.
-	NoWrap bool
-	Tag    string
+	Gap     string
+	Align   string // cross axis; the class map centres by default
+	Justify string // main axis: start, between, end
+	NoWrap  bool   // keeps the row on one line, which overflows a phone
+	Tag     string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root.
 	Parts Parts
 }
 
-// Cluster renders a wrapping row.
-//
-// A row of controls is not a Cluster: Toolbar aligns its children by
-// construction, every child being control-height, and gives the
-// search field the slack and the groups their labels. Cluster is for
-// content that wraps — tags, badges, a byline's parts — where the row
-// is a layout fact and nothing in it is a control.
+// Cluster renders a wrapping row of content; a row of controls is a Toolbar.
 func Cluster(p ClusterProps, s Classes, children ...render.HTML) render.HTML {
 	b := p.Parts.Box(s)
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
@@ -173,22 +129,13 @@ func init() {
 
 // GridProps is an auto-fitting grid.
 type GridProps struct {
-	// Min is the narrowest a column may get before the grid drops one,
-	// as a name from the scale ("sm", "md", "lg"), not a length.
-	//
-	// A length is what the framework's Grid takes, and it silently did
-	// nothing for every value: the component wrote a data attribute
-	// and no stylesheet ever read it. A named step cannot rot that way
-	// — the class map either has a rule for the name or the name is a typo
-	// that shows up the first time anyone looks.
-	Min string
+	Min string // the narrowest column, as a step on the scale ("sm", "md", "lg")
 	Gap string
 	Tag string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root.
 	Parts Parts
 }
 
@@ -221,17 +168,14 @@ func init() {
 	})
 }
 
-// ContainerProps is the page's measure: a maximum width and the
-// gutters that keep content off the edge of the screen.
+// ContainerProps is the page's measure: a maximum width and its gutters.
 type ContainerProps struct {
-	// Size names the measure — "sm", "md", "lg", "full".
-	Size string
+	Size string // "sm", "md", "lg" or "full"; empty is the reading measure
 	Tag  string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root.
 	Parts Parts
 }
 
@@ -282,53 +226,23 @@ func init() {
 
 // SectionProps is a titled region of a page.
 type SectionProps struct {
-	// Title is the heading. It is also what makes this a landmark: a
-	// section with a name is navigable, a section without one is noise
-	// in the landmark list, so Section renders a plain div until it
-	// has a title to be named by.
-	Title string
-	// Eyebrow is a short kicker above the title ("01 / Overview"). It
-	// is aria-hidden: it decorates a heading the reader has already
-	// heard, and reading both is hearing the section's name twice. A
-	// section named by Label alone renders it too — the caller's
-	// heading rides in the body, and the kicker decorates it from
-	// above.
-	Eyebrow string
-	// Level is the heading level, 2 by default. It is a real decision
-	// and not a style: heading levels are how a screen reader user
-	// moves through a page, and a section under an <h1> that renders
-	// an <h3> leaves a hole in the outline.
-	Level int
-	// Description is supporting text under the heading.
-	Description string
-	// DescriptionHTML is supporting text that carries markup — code,
-	// links. When set it takes precedence over Description.
-	DescriptionHTML render.HTML
-	// Label names the region when there is no Title to name it by.
-	// A named section without a heading is still a landmark; an
-	// unnamed one renders as a plain div. With both set, Title wins:
-	// the heading names the region and Label is not read.
-	Label string
-	// Actions sit opposite the heading — a button, a filter.
-	Actions render.HTML
-	Gap     string
+	Title           string      // the heading, and the region's name
+	Eyebrow         string      // a kicker above the title, hidden from assistive tech
+	Level           int         // the heading level, 2 by default
+	Description     string      // supporting text under the heading
+	DescriptionHTML render.HTML // supporting markup; wins over Description
+	Label           string      // names the region when there is no Title; Title wins
+	Actions         render.HTML // controls opposite the heading
+	Gap             string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on every part the region draws.
 	Parts Parts
-
-	// Ctx is the render context. An id this component derives (no ID
-	// given) is handed out through its id scope (render.UniqueID), so a
-	// repeat on the page gets a -2 suffix; an explicit ID is never
-	// changed. With no Ctx the derived id is used as is.
-	Ctx context.Context
+	Ctx   context.Context // a derived id goes through its id scope; an explicit ID is never changed
 }
 
-// SectionIDChildren are the suffixes of the ids a section builds from
-// its id (the heading's "<id>-title"), the family a caller deriving or
-// reserving the id passes to render.UniqueID and render.ReserveID.
+// SectionIDChildren are the suffixes of the ids a section derives from its id.
 var SectionIDChildren = []string{"-title"}
 
 // Section renders the region.
@@ -337,9 +251,6 @@ func Section(p SectionProps, s Classes, children ...render.HTML) render.HTML {
 	render.ReserveID(p.Ctx, p.ID, SectionIDChildren...)
 	own := Merge(Safe(p.ExtraAttrs, "aria-label"), Attrs(map[string]string{"id": p.ID}))
 	mods(own, s, "gap", p.Gap)
-	// The body holds only the caller's children; with none passed it
-	// draws nothing of its own either, so an empty body is itself the
-	// topmost of an (empty) internal subtree.
 	bodyOwn := html.Attrs(nil)
 	if len(children) == 0 {
 		bodyOwn = Internal(nil)
@@ -347,15 +258,8 @@ func Section(p SectionProps, s Classes, children ...render.HTML) render.HTML {
 	body := b.El("div", PartSectionBody, bodyOwn, children...)
 	if p.Title == "" {
 		if p.Label != "" {
-			// A named section without a heading is still a landmark:
-			// the name arrives by aria-label instead of by a heading
-			// to be labelled by.
 			own["aria-label"] = p.Label
 			if p.Eyebrow != "" {
-				// The caller's heading rides in the body when the
-				// section is named by Label alone, and the eyebrow
-				// still decorates it — a named section is not an
-				// unnamed one, and the kicker was never the name.
 				return b.El("section", PartRoot, own,
 					b.El("p", PartSectionBrow,
 						Internal(Attrs(map[string]string{"aria-hidden": "true"})), render.Text(p.Eyebrow)),
@@ -372,11 +276,6 @@ func Section(p SectionProps, s Classes, children ...render.HTML) render.HTML {
 	titleID += "-title"
 	own["aria-labelledby"] = titleID
 
-	// The header holds only the eyebrow, the title and Description when
-	// there is no DescriptionHTML; with one the header is an ancestor
-	// of a slot, so the boundary moves down to the eyebrow and the
-	// title (the description directly holds the slot, so it is left
-	// unmarked either way).
 	headOwn, partOwn := Internal(nil), html.Attrs(nil)
 	if p.DescriptionHTML != "" {
 		headOwn, partOwn = nil, Internal(nil)
@@ -391,10 +290,6 @@ func Section(p SectionProps, s Classes, children ...render.HTML) render.HTML {
 	if p.DescriptionHTML != "" {
 		head = append(head, b.El("p", PartDesc, nil, p.DescriptionHTML))
 	} else if p.Description != "" {
-		// Description-as-text never holds a slot, but it only renders
-		// when DescriptionHTML is empty — exactly when headOwn already
-		// marks the whole header — so it is left unmarked to avoid a
-		// repeat.
 		head = append(head, b.El("p", PartDesc, nil, render.Text(p.Description)))
 	}
 	headWrap := b.El("div", PartHeader, headOwn, head...)
@@ -412,15 +307,7 @@ func headingTag(level int) string {
 	return "h" + string(rune('0'+level))
 }
 
-// slugID derives a stable id from a title, so a component without an
-// explicit ID still has one for aria-labelledby to point at. Two
-// regions with the same title on one page collide — which is a real
-// limit, and the reason ID exists.
-//
-// The prefix is the component's own ("section", "table"), not the
-// class map's namespace: this layer does not know what anyone calls
-// their classes, and an id that borrowed that name would tie the
-// structure to one class map.
+// slugID derives an id from a title, prefixed by the component's own name.
 func slugID(prefix, s string) string {
 	out := make([]rune, 0, len(s))
 	prevDash := false
@@ -433,8 +320,6 @@ func slugID(prefix, s string) string {
 			out = append(out, r+32)
 			prevDash = false
 		case r > unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r)):
-			// Every script's letters survive: an ASCII-only slug gave
-			// two different non-Latin titles the same id.
 			out = append(out, unicode.ToLower(r))
 			prevDash = false
 		default:
@@ -452,30 +337,17 @@ func slugID(prefix, s string) string {
 
 // DividerProps is a line between things.
 type DividerProps struct {
-	// Label puts text in the break ("or"). A labelled divider is
-	// always meaningful, so it is never decorative.
-	Label string
-	// Vertical draws it along the block axis, for a divider inside a
-	// row.
-	Vertical bool
-	// Decorative says this line groups nothing — it is a flourish, and
-	// is hidden from assistive tech. Without it a screen reader
-	// announces "separator" at every line on the page.
-	Decorative bool
+	Label      string // text in the break; a labelled divider is never decorative
+	Vertical   bool
+	Decorative bool // a flourish, hidden from assistive tech
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root, the lines and the label.
 	Parts Parts
 }
 
-// Divider renders the line.
-//
-// A meaningful one is an <hr>: the element already means "a thematic
-// break", so no role has to be claimed. A decorative one is a div that
-// says nothing, because the alternative — an <hr> with aria-hidden —
-// is a semantic element being told to lie.
+// Divider renders an <hr>, a role=separator div when labelled, or a hidden div when decorative.
 func Divider(p DividerProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
@@ -491,8 +363,6 @@ func Divider(p DividerProps, s Classes) render.HTML {
 	if p.Label == "" {
 		return b.El("hr", PartRoot, own)
 	}
-	// With a label the line cannot be an <hr> — it has no content
-	// model — so the role is stated on the element that replaces it.
 	own["role"] = "separator"
 	return b.El("div", PartRoot, own,
 		b.El("span", PartDividerLine, Internal(Attrs(map[string]string{"aria-hidden": "true"})), render.HTML("")),
@@ -526,15 +396,7 @@ func init() {
 	})
 }
 
-// mods looks up one class per modifier and joins them onto the
-// element, as Button does with its variant and size.
-//
-// One lookup per modifier, never a combined key: a class map keyed on
-// "root--md--center" would have to enumerate every gap crossed with
-// every alignment, and the first value nobody thought to combine
-// renders unstyled. Keys are namespaced by axis ("gap-md",
-// "align-center") so a gap named "center" could never collide with an
-// alignment named "center".
+// mods adds one class-map variant per modifier, keyed "<axis>-<value>".
 func mods(own html.Attrs, s Classes, pairs ...string) {
 	for i := 0; i+1 < len(pairs); i += 2 {
 		axis, value := pairs[i], pairs[i+1]
@@ -584,52 +446,19 @@ func init() {
 	})
 }
 
-// ─── Spacer ─────────────────────────────────────────────────────────
-
-// SpacerProps is the flexible space in a row: between a label and a
-// value in a contents list, between the safe action and the
-// destructive one.
+// SpacerProps is the flexible space in a row.
 type SpacerProps struct {
-	// Grow is how much of the row's slack this spacer takes against
-	// its growing siblings. 1 through 4 — 0 is refused because a
-	// spacer that cannot grow is a typo rather than a choice (the
-	// typed Spacer defaults it to 1), and above 4 is refused because
-	// the stylesheet wires exactly those four factors: a number the
-	// sheet does not carry would be a factor that renders as 1.
-	//
-	// It travels as data-hui-grow rather than a style, because an
-	// inline style is a rule the CSP drops and a class per factor is
-	// a class the class map has to enumerate from a number it cannot see.
-	Grow int
-	// Min and Max bound the space, as names from the gap scale rather
-	// than lengths: a spacer with a floor keeps a contents list legible
-	// when the value is missing, and one with a ceiling keeps two
-	// distant words from being pushed to the edges of the screen.
-	Min string
-	Max string
-	// Leader draws a dotted line across the space — the leader between
-	// a term and its value in a contents list, which is what ties the
-	// two together once the row is wider than the pair.
-	Leader bool
-	// Rule draws a hairline rule across the space, for when the line
-	// should read as a divider-in-waiting rather than a tie. A leader
-	// and a rule in the same space are two answers to one question,
-	// and are refused together.
-	Rule bool
+	Grow   int    // 1 through 4, rendered as data-hui-grow; anything else panics
+	Min    string // floor, a step on the gap scale
+	Max    string // ceiling, a step on the gap scale
+	Leader bool   // a dotted leader across the space
+	Rule   bool   // a hairline rule across the space; refused with Leader
 
 	ID         string
 	ExtraAttrs html.Attrs
 }
 
-// Spacer renders the space.
-//
-// It is a <span>, not a div, because a contents list is a paragraph
-// ("Restarts … 263" is one sentence of a list) and a div inside a <p>
-// is a parse error the browser repairs by closing the paragraph —
-// which splits the list into pieces nobody styled. It is aria-hidden
-// and empty: the space is the whole content, and a screen reader user
-// gets the term and the value as neighbours, which is the same fact
-// the leader line draws for the eye.
+// Spacer renders an empty, aria-hidden <span> that takes the row's slack.
 func Spacer(p SpacerProps, s Classes) render.HTML {
 	if p.Grow < 1 || p.Grow > 4 {
 		panic("headless: Spacer Grow must be 1 through 4 — the stylesheet wires those four factors, and 0 is a spacer that cannot grow")

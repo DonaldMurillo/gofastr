@@ -237,9 +237,9 @@ func (b *ScheduleBuilder) Job(jobType string, payload any) *ScheduleBuilder {
 }
 
 // Register adds the scheduled job to the scheduler, computing the first
-// NextRun relative to the current wall clock. It returns an error when the
-// payload given to Job cannot be encoded as JSON or a Cron schedule's spec
-// is invalid, and registers nothing then.
+// NextRun relative to the current wall clock. It returns an error when no
+// job type was set, the payload given to Job cannot be encoded as JSON or a
+// Cron schedule's spec is invalid, and registers nothing then.
 func (b *ScheduleBuilder) Register() error {
 	return b.RegisterAt(time.Now())
 }
@@ -282,7 +282,7 @@ func (b *ScheduleBuilder) UserID(id string) *ScheduleBuilder {
 // (tests, replayed fixtures) without depending on time.Now().
 func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 	if b.jobType == "" {
-		return nil
+		return errors.New("queue: schedule requires a job type")
 	}
 	if b.payloadErr != nil {
 		return b.payloadErr
@@ -344,14 +344,11 @@ func (b *ScheduleBuilder) RegisterAt(base time.Time) error {
 
 // Start begins the scheduling loop. It blocks until ctx is cancelled.
 //
-// The loop re-reads the schedule set (under lock) on every tick, so jobs
-// registered AFTER Start still fire, the natural wiring is "start
-// subsystems, then register jobs", and an empty-at-Start scheduler that
-// exited would silently drop everything registered later. The tick
-// cadence adapts to the finest live interval each pass, so adding a
-// sub-minute schedule after Start takes effect on the next tick.
+// Each pass sleeps until the earliest NextRun, at most a minute, so a job
+// registered after Start still fires and no interval is rounded up to a
+// coarser poll.
 func (s *Scheduler) Start(ctx context.Context) {
-	timer := time.NewTimer(s.tickInterval())
+	timer := time.NewTimer(s.nextWake(time.Now()))
 	defer timer.Stop()
 
 	for {
@@ -360,48 +357,41 @@ func (s *Scheduler) Start(ctx context.Context) {
 			return
 		case <-s.wake:
 			// A job was registered; dispatch anything already due and
-			// re-arm to the (possibly finer) interval.
-			s.dispatchDue(ctx, time.Now())
+			// re-arm for the (possibly earlier) next run.
 			if !timer.Stop() {
 				select {
 				case <-timer.C:
 				default:
 				}
 			}
-			timer.Reset(s.tickInterval())
-		case now := <-timer.C:
-			s.dispatchDue(ctx, now)
-			timer.Reset(s.tickInterval())
+		case <-timer.C:
 		}
+		now := time.Now()
+		s.dispatchDue(ctx, now)
+		timer.Reset(s.nextWake(now))
 	}
 }
 
-// tickInterval returns the current wake cadence: the finest live schedule
-// interval (cron counts as one minute), floored so an empty or cron-only
-// scheduler still wakes once a minute to pick up late registrations.
-func (s *Scheduler) tickInterval() time.Duration {
+// maxSchedulerWake caps one sleep of Start, and is the cadence of an
+// Every(0) schedule; minSchedulerWake keeps a due-now schedule from spinning.
+const (
+	maxSchedulerWake = time.Minute
+	minSchedulerWake = time.Millisecond
+)
+
+// nextWake is how long Start sleeps after a pass at now: until the earliest
+// NextRun, between minSchedulerWake and maxSchedulerWake.
+func (s *Scheduler) nextWake(now time.Time) time.Duration {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	minInterval := time.Duration(0)
+	wake := maxSchedulerWake
 	for _, sch := range s.schedules {
-		d := sch.Interval
-		if sch.cron != nil {
-			d = time.Minute
+		if sch.NextRun.IsZero() || (sch.cron == nil && sch.Interval <= 0) {
+			continue // a stopped cron schedule, or Every(0) on the minute cap
 		}
-		if d <= 0 {
-			continue
-		}
-		if minInterval == 0 || d < minInterval {
-			minInterval = d
-		}
+		wake = min(wake, sch.NextRun.Sub(now))
 	}
-	if minInterval <= 0 || minInterval > time.Minute {
-		// Floor at a minute so a cron-only or not-yet-populated scheduler
-		// still re-checks for newly registered jobs; cap the poll so a
-		// long-interval schedule doesn't leave late registrations waiting.
-		minInterval = time.Minute
-	}
-	return minInterval
+	return max(wake, minSchedulerWake)
 }
 
 func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
@@ -451,8 +441,22 @@ func (s *Scheduler) dispatchDue(ctx context.Context, now time.Time) {
 					)
 				}
 			} else {
-				sch.NextRun = now.Add(sch.Interval)
+				sch.NextRun = nextIntervalRun(sch.NextRun, sch.Interval, now)
 			}
 		}
 	}
+}
+
+// nextIntervalRun is the first run after now on the grid NextRun set: the
+// schedule keeps its phase, and runs missed while the process slept are
+// skipped, not replayed. A zero interval is due again at once.
+func nextIntervalRun(prev time.Time, interval time.Duration, now time.Time) time.Time {
+	if interval <= 0 {
+		return now
+	}
+	next := prev.Add(interval)
+	if !next.After(now) {
+		next = next.Add(now.Sub(next)/interval*interval + interval)
+	}
+	return next
 }

@@ -73,6 +73,7 @@ type CrudHandler struct {
 	Entity     *entity.Entity
 	DB         DBExecutor
 	root       *sql.DB
+	dialect    *dialectMemo       // the handler's own answer when DB has no *sql.DB behind it
 	PrimaryKey []string           // key columns in order; nil means "id"
 	JSONCase   JSONCase           // casing strategy for JSON keys
 	Hooks      *hook.HookRegistry // optional lifecycle hooks
@@ -118,6 +119,7 @@ func NewCrudHandler(ent *entity.Entity, db DBExecutor) *CrudHandler {
 	ch := &CrudHandler{Entity: ent, DB: db, PrimaryKey: ent.KeyColumns(), JSONCase: CaseCamel, Hooks: nil}
 	ch.fcache = newFieldCache(ch)
 	ch.seats = newStreamSeatRegistry()
+	ch.dialect = &dialectMemo{}
 	return ch
 }
 
@@ -545,7 +547,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		for _, c := range listPayload.Where {
 			qb.Where(c.SQL, c.Args...)
 		}
-		filter.ApplySortToQuery(qb, ch.withKeyTiebreak(sorts))
+		filter.ApplySortToQuery(qb, ch.sortTerms(ctx, sorts))
 
 		offset := pagination.OffsetForPage(page, perPage)
 		if o, ok := explicitOffsetValues(q); ok {

@@ -27,20 +27,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── PWA ───────────────────────────────────────────────────────────
-//
-// WithPWA turns a UIHost app into an installable Progressive Web App:
-// a typed web app manifest, a CSP-safe external service worker with a
-// versioned app-shell precache, an offline fallback screen, and the
-// registration script, without the host app hand-wiring any of it.
-//
-// The service worker is deliberately conservative: document navigations
-// are network-first and NEVER cached (rendered HTML can be
-// personalized), and only the goFastr runtime/app shell, the manifest,
-// declared icons, explicit Precache entries, and the offline screen
-// live in Cache Storage. API, auth, session, action, signal, and SSE
-// endpoints are never intercepted and can never be precached.
-
 // PWADisplay is the manifest display mode.
 type PWADisplay string
 
@@ -62,10 +48,7 @@ const (
 	PWAIconPurposeMonochrome PWAIconPurpose = "monochrome"
 )
 
-// PWAIcon declares one manifest icon. Src must be a same-origin
-// root-absolute path (usually a static asset, e.g. "/static/icon-192.png").
-// Chromium's installability check needs at least a 192x192 and a 512x512
-// icon; add a maskable variant for adaptive home-screen shapes.
+// PWAIcon declares one manifest icon; Src is a same-origin root-absolute path.
 type PWAIcon struct {
 	Src     string
 	Sizes   string // e.g. "192x192"
@@ -73,14 +56,9 @@ type PWAIcon struct {
 	Purpose PWAIconPurpose
 }
 
-// PWAConfig configures WithPWA. Every field is optional; sensible
-// defaults are derived at serve time:
-//
-//   - Name defaults to the core-ui app title.
-//   - StartURL and Scope default to "/".
-//   - ID defaults to StartURL.
-//   - Display defaults to standalone.
-//   - OfflineScreen defaults to a framework-provided offline notice.
+// PWAConfig configures WithPWA. Every field is optional: Name defaults to
+// the app name, StartURL and Scope to "/", ID to StartURL and Display to
+// standalone.
 type PWAConfig struct {
 	ID              string
 	Name            string
@@ -92,39 +70,14 @@ type PWAConfig struct {
 	ThemeColor      string
 	BackgroundColor string
 	Icons           []PWAIcon
-
-	// Precache lists extra same-origin root-absolute paths (static
-	// assets, fonts, hero images) to keep available offline alongside
-	// the runtime/app shell. Entries that point at sensitive framework
-	// endpoints (API, auth, session, action, signal, SSE) or at another
-	// origin are dropped: the app-shell cache can never hold them.
-	Precache []string
-
-	// OfflineScreen renders the offline fallback page served at
-	// /__gofastr/pwa/offline and shown when a navigation fails with no
-	// network. The page is precached at service-worker install time, so
-	// it must not render personalized content; it is deliberately NOT
-	// wrapped in the app layout for the same reason. Nil uses the
-	// framework default.
-	OfflineScreen component.Component
-
-	// DenyPaths extends the built-in sensitive-path deny list
-	// (/__gofastr/{sse,session,action,widgets}, /api, /auth)
-	// with app-specific mounts, e.g. a CRUD API at a custom prefix or
-	// an auth battery at a custom base path. Listed paths (and
-	// everything under them) can never be precached and are never
-	// intercepted by the service worker. Root-relative; a bare "/" is
-	// ignored (it would deny the whole app).
-	DenyPaths []string
+	Precache        []string            // extra same-origin paths kept offline; denied paths are dropped
+	OfflineScreen   component.Component // the offline page body, precached, so never personalized; nil is the default
+	DenyPaths       []string            // paths added to the built-in deny list; a bare "/" is ignored
 }
 
-// WithPWA opts the host into the installable-PWA surface: it mounts
-// /manifest.webmanifest, /service-worker.js, /__gofastr/pwa/register.js,
-// and /__gofastr/pwa/offline, and injects the manifest link + external
-// registration script into every rendered page. The theme color and the
-// script ride the generic headTags/extraScripts rails (fixed at option
-// time); the manifest link is written per page, since a locale page
-// links its own locale's manifest (pwaManifestLink).
+// WithPWA serves /manifest.webmanifest, /service-worker.js,
+// /__gofastr/pwa/register.js and /__gofastr/pwa/offline, and links the
+// manifest and the registration script from every page.
 func WithPWA(cfg PWAConfig) Option {
 	return func(ds *UIHost) {
 		ds.pwaConfig = &cfg
@@ -135,14 +88,11 @@ func WithPWA(cfg PWAConfig) Option {
 	}
 }
 
-// PWAEnabled reports whether WithPWA was configured. The static builder
-// uses it to decide whether to emit the PWA assets.
+// PWAEnabled reports whether WithPWA was configured.
 func (ds *UIHost) PWAEnabled() bool {
 	return ds.pwaConfig != nil
 }
 
-// resolvedPWA returns the config with defaults applied. Called at serve
-// time so ds.App (the Name source) is guaranteed populated.
 func (ds *UIHost) resolvedPWA() PWAConfig {
 	cfg := *ds.pwaConfig
 	if cfg.Name == "" {
@@ -167,42 +117,29 @@ func (ds *UIHost) resolvedPWA() PWAConfig {
 	return cfg
 }
 
-// pwaSensitivePaths are framework endpoints that must never be
-// intercepted for caching or precached: they carry credentials,
-// per-user state, or live streams. Matched as exact path or path
-// prefix + "/" so /__gofastr/actions.js (a shell asset) stays allowed
-// while /__gofastr/action (the server-action endpoint) is denied.
 var pwaSensitivePaths = []string{
 	"/__gofastr/sse",
 	"/__gofastr/session",
 	"/__gofastr/action",
 	"/__gofastr/widgets",
-	// Per-id compiled action scripts are session-gated (the concat they
-	// replaced was too); a credentialed response must never enter the
-	// shared shell cache.
 	"/__gofastr/widget",
 	"/core-ui/widget",
 	"/api",
 	"/auth",
 }
 
-// pwaDenyPaths returns the effective deny list: the built-in sensitive
-// framework endpoints plus normalized config DenyPaths entries, each
-// also behind every locale prefix: /es/api/me routes to /api/me, so an
-// unprefixed list let a credentialed response into the shared cache.
 func (ds *UIHost) pwaDenyPaths(cfg PWAConfig) []string {
 	deny := append([]string(nil), pwaSensitivePaths...)
 	for _, d := range cfg.DenyPaths {
 		d = strings.TrimRight(strings.TrimSpace(d), "/")
 		if d == "" || !strings.HasPrefix(d, "/") {
-			continue // "" was a bare "/" (denies everything) or a non-root-relative value
+			continue
 		}
 		deny = append(deny, d)
 	}
 	if ds.pathLocales == nil {
 		return deny
 	}
-	// Every tag, the default too: /en/api/me redirects to /api/me.
 	base := len(deny)
 	for _, tag := range ds.pathLocales.All() {
 		for _, d := range deny[:base] {
@@ -212,10 +149,6 @@ func (ds *UIHost) pwaDenyPaths(cfg PWAConfig) []string {
 	return deny
 }
 
-// pwaAllowedPrecache reports whether a Precache entry may enter the
-// app-shell cache: same-origin root-absolute paths only, never a
-// denied endpoint. The path is decoded and cleaned first, as the router
-// does: /a%70i/me and /static/../api/me both reach /api/me.
 func pwaAllowedPrecache(p string, deny []string) bool {
 	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
 		return false
@@ -237,24 +170,10 @@ func pwaAllowedPrecache(p string, deny []string) bool {
 	return true
 }
 
-// pwaAssetURL matches root-absolute src/href attribute values in the
-// rendered offline page, with the tag that carries them, so its
-// stylesheet/script dependencies join the precache and the page renders
-// styled with no network.
 var pwaAssetURL = regexp.MustCompile(`<([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*?\s(?:src|href)="(/[^"]+)"`)
 
-// pwaNavTags carry a navigation target, not an asset. Precached, a link
-// like /dashboard is the signed-in user's page in Cache Storage, served
-// to whoever is offline next.
 var pwaNavTags = map[string]bool{"a": true, "area": true, "base": true}
 
-// pwaPrecachePaths returns the deduplicated, sorted, basePath-neutral
-// precache manifest: the runtime/app shell, the offline screen and its
-// asset dependencies, the web manifest, declared icons, and the
-// filtered user Precache list. The service worker matches URLs
-// exactly, so entries the client requests with a content-addressed
-// ?v=<hash> (split runtime modules, component CSS) are listed with
-// that exact query.
 func (ds *UIHost) pwaPrecachePaths(ctx context.Context, cfg PWAConfig, offlineHTML string, live bool) []string {
 	set := map[string]bool{
 		"/__gofastr/runtime.js":      true,
@@ -262,24 +181,14 @@ func (ds *UIHost) pwaPrecachePaths(ctx context.Context, cfg PWAConfig, offlineHT
 		"/manifest.webmanifest":      true,
 		pwaOfflinePath:               true,
 	}
-	// Each locale's pages link their own manifest (pwaManifestLink).
 	if ds.pathLocales != nil {
 		for _, tag := range ds.pathLocales.Prefixed {
 			set[ds.pathLocales.Path(tag, "/manifest.webmanifest")] = true
 		}
 	}
 	if live {
-		// LIVE pages request the ?v=<hash> spellings plus manifest.js;
-		// the worker matches exactly, so those must be cached alongside
-		// the bare forms the offline shell references. A static export
-		// never emits them (its pages are query-free and self-contained
-		// by design), and listing them there would 404 the whole install
-		// against files the export doesn't write.
 		set["/__gofastr/runtime.js?v="+widget.RuntimeHash()] = true
 		set["/__gofastr/color-scheme.js?v="+colorSchemeHash()] = true
-		// One manifest per catalog locale: a /es/ page links its own.
-		// The locales are the translator ctx carries, the one the
-		// pages are served under, not the process default.
 		for _, lr := range ds.renderLocales(ctx) {
 			if mHash := ds.manifestFor(lr).hash; mHash != "" {
 				set["/__gofastr/manifest.js?v="+mHash] = true
@@ -295,10 +204,6 @@ func (ds *UIHost) pwaPrecachePaths(ctx context.Context, cfg PWAConfig, offlineHT
 	if ds.HasActions() {
 		set["/__gofastr/actions.js"] = true
 	}
-	// Split runtime modules are demand-loaded parts of the shell; an
-	// offline app still needs theme switching, widgets, toasts, etc.
-	// The loader requests them as <name>.js?v=<hash>, so cache them
-	// under that exact URL.
 	for _, name := range runtime.ModuleNames() {
 		u := "/__gofastr/runtime/" + name + ".js"
 		if hash := widget.RuntimeModuleHash(name); hash != "" {
@@ -307,14 +212,10 @@ func (ds *UIHost) pwaPrecachePaths(ctx context.Context, cfg PWAConfig, offlineHT
 		set[u] = true
 	}
 	deny := ds.pwaDenyPaths(cfg)
-	// Whatever the offline page links (per-component CSS, app.css) must
-	// be cached with it or it renders unstyled when the network is gone.
 	for _, m := range pwaAssetURL.FindAllStringSubmatch(offlineHTML, -1) {
 		if pwaNavTags[m[1]] {
 			continue
 		}
-		// The attribute's HTML spelling (&amp;) is not the URL the page
-		// requests.
 		if u := stdhtml.UnescapeString(m[2]); pwaAllowedPrecache(u, deny) {
 			set[u] = true
 		}
@@ -337,9 +238,6 @@ func (ds *UIHost) pwaPrecachePaths(ctx context.Context, cfg PWAConfig, offlineHT
 	return out
 }
 
-// pwaPrefix prepends basePath to a root-absolute same-origin path.
-// External, protocol-relative, and already-relative values pass through
-// untouched. No-op for the live server (basePath == "").
 func pwaPrefix(basePath, p string) string {
 	if basePath == "" || !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
 		return p
@@ -347,8 +245,6 @@ func pwaPrefix(basePath, p string) string {
 	return basePath + p
 }
 
-// pwaManifestDoc is the typed web app manifest shape. Emitted via
-// encoding/json so every field is escaped correctly.
 type pwaManifestDoc struct {
 	ID              string            `json:"id"`
 	Name            string            `json:"name"`
@@ -369,26 +265,17 @@ type pwaManifestIcon struct {
 	Purpose string `json:"purpose,omitempty"`
 }
 
-// pwaManifestPath is the manifest a page in ctx's locale links: the
-// locale's prefix in front of /manifest.webmanifest.
 func pwaManifestPath(ctx context.Context) string {
 	return i18n.PathPrefix(ctx) + "/manifest.webmanifest"
 }
 
-// pwaManifestLink is the page's <link rel="manifest">. The path is
-// built from the router's locale tag, a root-relative path that the
-// Resource policy always passes.
 func pwaManifestLink(ctx context.Context) string {
 	return `<link rel="manifest" href="` + stdhtml.EscapeString(urlsafe.Clean(pwaManifestPath(ctx), urlsafe.Resource)) + `">`
 }
 
-// PWAManifestJSON renders the web app manifest for ctx's locale (see
-// i18n.WithPathLocale): start_url carries the locale prefix, so a reader
-// who installs from /es/ launches into /es/. id and scope do not, so
-// every locale's manifest names one app and a language switch stays
-// inside it. basePath prefixes start_url, scope, id, and same-origin
-// icon paths for static exports mounted under a subpath; pass "" for
-// the live server.
+// PWAManifestJSON renders the web app manifest for ctx's locale; only
+// start_url carries the locale prefix. basePath prefixes the same-origin
+// paths for a static export under a subpath; pass "" for the live server.
 func (ds *UIHost) PWAManifestJSON(ctx context.Context, basePath string) ([]byte, error) {
 	if ds.pwaConfig == nil {
 		return nil, fmt.Errorf("uihost: PWA not configured")
@@ -418,30 +305,18 @@ func (ds *UIHost) PWAManifestJSON(ctx context.Context, basePath string) ([]byte,
 
 const pwaOfflinePath = "/__gofastr/pwa/offline"
 
-// PWAOfflineHTML renders the offline fallback page: the configured (or
-// default) offline screen inside the standard document shell with the
-// usual chrome (theme bootstrap, app.css, runtime). It is deliberately
-// NOT wrapped in the app layout: the page is precached at
-// service-worker install time, so nothing personalized may render into
-// it. Returns "" when WithPWA was not configured.
+// PWAOfflineHTML renders the offline fallback page in the document shell,
+// outside the app layout. It returns "" when WithPWA was not configured.
 func (ds *UIHost) PWAOfflineHTML() string {
 	if ds.pwaConfig == nil {
 		return ""
 	}
 	cfg := ds.resolvedPWA()
-	// Precached once, so it speaks the catalog's fallback language: there
-	// is no reader to ask for a language at install time.
 	ctx := context.Background()
-	// The built-in body speaks the phrases, so <html lang> names the
-	// language they render in; an app's own offline screen keeps the
-	// app's language.
 	lang := i18n.DocLang(ctx)
 	var body render.HTML
 	if cfg.OfflineScreen != nil {
 		lang = ""
-		// Same containment as every other screen: this renders at
-		// service-worker install/precache time, and a panicking offline
-		// screen must not take the harness down with it.
 		var err error
 		body, err = component.SafeRenderCtx(ctx, cfg.OfflineScreen)
 		if err != nil {
@@ -453,33 +328,14 @@ func (ds *UIHost) PWAOfflineHTML() string {
 		body = defaultPWAOfflineBody(ctx)
 	}
 	shell := ds.documentShellLang(ctx, "", lang, pageOfflineDocTitle.Text(ctx, map[string]any{"app": cfg.Name}), `<main role="main">`+string(body)+`</main>`)
-	// bundle=false (same as RenderStaticPage): component CSS must be
-	// direct per-component links. The bundle URL depends on the page's
-	// component set: precaching it would answer every OTHER page's
-	// bundle request with the offline page's set, and static exports
-	// don't emit the bundle endpoint at all.
 	return ds.injectChromeMode(ctx, shell, pwaOfflinePath, "", "", false)
 }
 
-// defaultPWAOfflineBody is the built-in offline screen. Minimal semantic
-// HTML, same treatment as the bare 404 fallback: typography comes from
-// app.css, no component CSS. (uihost deliberately does not import
-// framework/ui; linking it would force its LoadAlways styles into every
-// host's CSS bundle. Apps that want a richer screen pass OfflineScreen.)
 func defaultPWAOfflineBody(ctx context.Context) render.HTML {
 	return html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageOfflineTitle.Text(ctx))) +
 		html.Paragraph(html.TextConfig{}, render.Text(pageOfflineBody.Text(ctx)))
 }
 
-// pwaVersion fingerprints the deployment: the manifest, the precache
-// URL list (content-addressed framework assets carry their hash in the
-// URL), the offline page, the shell asset bodies, and the bytes of
-// every precache entry resolvable from the host's static storage,
-// so swapping an icon or a precached asset in place (same path, new
-// bytes) rotates the cache. Entries served from elsewhere (a reverse
-// proxy) contribute their URL only; give those a new path or query to
-// bust returning clients. Identical deployments produce identical
-// service workers.
 func (ds *UIHost) pwaVersion(manifest []byte, precache []string, offlineHTML string) string {
 	h := sha256.New()
 	h.Write(manifest)
@@ -500,15 +356,6 @@ func (ds *UIHost) pwaVersion(manifest []byte, precache []string, offlineHTML str
 	return hex.EncodeToString(h.Sum(nil))[:12]
 }
 
-// pwaStaticBytes resolves a precache path against the host's static
-// storage (the static dir first, then the embedded FS: the order a
-// request is served in) and returns its
-// bytes, or nil when the path isn't served from static storage. The
-// path is cleaned to its root-relative form, so traversal segments
-// can't escape the static root, and the static-dir read goes through
-// the host's *os.Root, so symlinked components pointing outside the
-// root are refused rather than fingerprinted (2026-09-04 red-probe
-// round).
 func (ds *UIHost) pwaStaticBytes(p string) []byte {
 	if i := strings.IndexAny(p, "?#"); i >= 0 {
 		p = p[:i]
@@ -530,8 +377,6 @@ func (ds *UIHost) pwaStaticBytes(p string) []byte {
 	return nil
 }
 
-// pwaSlug derives the cache-ownership slug from the app name so
-// activate only ever deletes caches belonging to this application.
 func pwaSlug(name string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(name) {
@@ -549,42 +394,19 @@ func pwaSlug(name string) string {
 	return slug
 }
 
-// pwaNameHash is the fixed-length discriminator that follows the
-// human-readable slug in a live worker's cache name: sha256 of the app
-// name, truncated to 12 hex chars. The dot-separated form
-// "gofastr-pwa-<slug>.<hash>." makes activate's delete-prefix
-// un-extendable: pwaSlug emits only [a-z0-9-] (never "."), so the slug
-// can never run into the hash, and a sibling whose slug is a prefix of
-// ours (e.g. "acme" vs "acme-docs") differs at the "." boundary: its
-// full cache name can never start with our delete-prefix.
 func pwaNameHash(name string) string {
 	sum := sha256.Sum256([]byte(name))
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// pwaStaticHash is the discriminator for a static export's cache name.
-// It hashes the app name AND the raw basePath (before slugging), so
-// subpaths that slug identically ("/a/b" and "/ab" both slug to "ab")
-// get distinct hashes and cannot wipe each other. The NUL byte keeps
-// "Acme\x00/gofastr" from colliding with a name/basePath pair that
-// concatenates to the same string.
 func pwaStaticHash(name, basePath string) string {
 	sum := sha256.Sum256([]byte(name + "\x00" + basePath))
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// PWAServiceWorkerJS generates the service worker. The worker precaches
-// the app shell under a deterministically versioned cache name, keeps
-// document navigations network-first with the offline screen as
-// fallback, never caches anything at runtime, and on activate deletes
-// only obsolete caches owned by this application. It never calls
-// skipWaiting. A new worker activates once existing tabs release the
-// old one; pages hear about a waiting update via the
-// "gofastr:pwa-update" window event dispatched by register.js.
-//
-// It lists the manifests of the process-wide translator's locales
-// (i18n.Default); the served worker lists those of the translator its
-// request carries.
+// PWAServiceWorkerJS generates the live service worker, listing the
+// manifests of i18n.Default's locales. Pages hear of a waiting update
+// through the "gofastr:pwa-update" window event.
 func (ds *UIHost) PWAServiceWorkerJS(basePath string) (string, error) {
 	return ds.serviceWorkerJS(context.Background(), basePath)
 }
@@ -595,8 +417,6 @@ func (ds *UIHost) serviceWorkerJS(ctx context.Context, basePath string) (string,
 	}
 	cfg := ds.resolvedPWA()
 	offlineHTML := ds.PWAOfflineHTML()
-	// The default locale's manifest versions the cache: the others
-	// differ only in start_url, from the same config and locale set.
 	manifest, err := ds.PWAManifestJSON(context.Background(), "")
 	if err != nil {
 		return "", err
@@ -605,9 +425,6 @@ func (ds *UIHost) serviceWorkerJS(ctx context.Context, basePath string) (string,
 	version := ds.pwaVersion(manifest, precache, offlineHTML)
 	nameSlug := pwaSlug(cfg.Name)
 	prefix := "gofastr-pwa-" + nameSlug + "." + pwaNameHash(cfg.Name) + "."
-	// OLD_PREFIX is the pre-hash own-format ("gofastr-pwa-<slug>-<hex>");
-	// activate uses it to reap an orphaned own cache left behind by a
-	// deploy of this newer worker. See the migration guard below.
 	oldPrefix := "gofastr-pwa-" + nameSlug + "-"
 
 	precacheJSON, err := pwaMarshalPrefixed(basePath, precache)
@@ -630,29 +447,15 @@ func (ds *UIHost) serviceWorkerJS(ctx context.Context, basePath string) (string,
 	), nil
 }
 
-// PWAStaticExport describes a completed static export to the full-site
-// worker generator.
+// PWAStaticExport describes a completed static export to
+// PWAStaticServiceWorkerJS.
 type PWAStaticExport struct {
-	// Pages are the exported page URLs, precached atomically. Pass them
-	// in the form the export's links name (framework/static writes
-	// "/about/"): a client navigation's fetch is matched exactly.
-	Pages []string
-	// Assets are framework-generated files (runtime, CSS, widget chrome,
-	// llm.md): precached atomically with the pages.
-	Assets []string
-	// OptionalAssets are user static-dir files: precached best-effort:
-	// one un-servable file (a dotfile a host strips, say) must not brick
-	// the install and pin clients to a previous deployment forever.
-	OptionalAssets []string
-	// ContentHash fingerprints the exported tree's bytes: a redeploy
-	// that edits content without changing the path list must still
-	// produce a byte-different worker, or browsers would never rotate
-	// the stale cache.
-	ContentHash string
+	Pages          []string // page URLs as the export's links name them; precached atomically
+	Assets         []string // framework-generated files; precached atomically
+	OptionalAssets []string // user static-dir files; precached best-effort
+	ContentHash    string   // fingerprint of the exported bytes; a change rotates the cache
 }
 
-// pwaWorkerArgs is the marshaling shared by both worker generators:
-// deny lists, basePath prefixing, and JSON encoding.
 type pwaWorkerArgs struct {
 	offlineURL    string
 	denyExactJSON []byte
@@ -689,28 +492,14 @@ func pwaMarshalPrefixed(basePath string, paths []string) ([]byte, error) {
 	return json.Marshal(prefixed)
 }
 
-// PWAStaticServiceWorkerJS generates the service worker for a STATIC
-// export ("static site as an app"). A static export is a closed,
-// immutable page set, so the personalization concern that keeps the
-// live worker's navigations network-first does not exist: this worker
-// precaches the WHOLE exported site, app shell, every page, every
-// component stylesheet (under the versioned ?v= URLs pages actually
-// request), every asset (deny-filtered), and serves navigations
-// cache-first, tolerating the trailing-slash redirects of static
-// hosts, so the installed PWA works fully offline from the first
-// install. Everything else mirrors PWAServiceWorkerJS: exact URL
-// matching, no skipWaiting, denied endpoints never intercepted. The
-// cache prefix carries a "static" + basePath discriminator so a live
-// deployment and static exports on the same origin never delete each
-// other's caches.
+// PWAStaticServiceWorkerJS generates the worker for a static export: it
+// precaches the whole exported site and serves navigations cache-first.
 func (ds *UIHost) PWAStaticServiceWorkerJS(basePath string, export PWAStaticExport) (string, error) {
 	if ds.pwaConfig == nil {
 		return "", fmt.Errorf("uihost: PWA not configured")
 	}
 	cfg := ds.resolvedPWA()
 	offlineHTML := ds.PWAOfflineHTML()
-	// The default locale's manifest versions the cache: the others
-	// differ only in start_url, from the same config and locale set.
 	manifest, err := ds.PWAManifestJSON(context.Background(), "")
 	if err != nil {
 		return "", err
@@ -729,11 +518,6 @@ func (ds *UIHost) PWAStaticServiceWorkerJS(basePath string, export PWAStaticExpo
 	add(&precache, ds.pwaPrecachePaths(context.Background(), cfg, offlineHTML, false)...)
 	add(&precache, export.Pages...)
 	add(&precache, export.Assets...)
-	// Component stylesheets are requested under content-addressed ?v=
-	// URLs (page <link> tags and the runtime's lazy loader both append
-	// the version). URL matching is exact, so the precache must hold the
-	// SAME versioned form for every registered component or never-visited
-	// pages render unstyled offline.
 	theme := ds.activeTheme()
 	for _, e := range registry.All() {
 		add(&precache, "/__gofastr/comp/"+e.Name+".css?v="+e.VersionFor(theme))
@@ -746,19 +530,12 @@ func (ds *UIHost) PWAStaticServiceWorkerJS(basePath string, export PWAStaticExpo
 	versionInputs := append(append([]string(nil), precache...), optional...)
 	versionInputs = append(versionInputs, "static-content:"+export.ContentHash)
 	version := ds.pwaVersion(manifest, versionInputs, offlineHTML)
-	// "static" + name/basePath hash discriminator: the dot-separated
-	// "gofastr-pwa-static-<slug>.<hash>." delete-prefix can never be a
-	// prefix of a sibling's cache name (see pwaNameHash). The hash is
-	// over the RAW basePath before slugging, so "/a/b" and "/ab", which
-	// slug identically, still get distinct hashes and stay isolated.
 	nameSlug := pwaSlug(cfg.Name)
 	pathSlug := "root"
 	if basePath != "" {
 		pathSlug = pwaSlug(basePath)
 	}
 	prefix := "gofastr-pwa-static-" + nameSlug + "-" + pathSlug + "." + pwaStaticHash(cfg.Name, basePath) + "."
-	// OLD_PREFIX is the pre-hash own-format; activate uses it to reap an
-	// orphaned own cache left by a deploy of this newer worker.
 	oldPrefix := "gofastr-pwa-static-" + nameSlug + "-" + pathSlug + "-"
 
 	precacheJSON, err := pwaMarshalPrefixed(basePath, precache)
@@ -786,8 +563,6 @@ func (ds *UIHost) PWAStaticServiceWorkerJS(basePath string, export PWAStaticExpo
 	), nil
 }
 
-// pwaServiceWorkerTemplate is the generated worker source. Kept ES5-safe
-// and dependency-free; all dynamic values arrive as JSON literals.
 const pwaServiceWorkerTemplate = `/* goFastr service worker: generated by uihost.WithPWA. Do not edit. */
 var CACHE_NAME = %q;
 var CACHE_PREFIX = %q;
@@ -877,11 +652,6 @@ self.addEventListener("fetch", function (event) {
 });
 `
 
-// pwaStaticServiceWorkerTemplate is the full-site worker for static
-// exports. Install/activate/deny mirror the live template; the fetch
-// strategy differs: the exported site is immutable, so navigations are
-// cache-first (network fallback, then the offline screen) and every
-// precached asset answers from cache. ES5-safe, dependency-free.
 const pwaStaticServiceWorkerTemplate = `/* goFastr service worker (static full-site): generated by uihost.WithPWA + static export. Do not edit. */
 var CACHE_NAME = %q;
 var CACHE_PREFIX = %q;
@@ -989,11 +759,9 @@ self.addEventListener("fetch", function (event) {
 });
 `
 
-// PWARegisterJS generates the external, CSP-safe registration script.
-// Registration on every page load doubles as the update check; when a
-// new worker is installed and waiting behind a controlling one, the
-// script dispatches "gofastr:pwa-update" on window so apps can show an
-// "update available" prompt. Returns "" when WithPWA was not configured.
+// PWARegisterJS generates the registration script, which dispatches
+// "gofastr:pwa-update" on window when a new worker is waiting. It returns
+// "" when WithPWA was not configured.
 func (ds *UIHost) PWARegisterJS(basePath string) string {
 	if ds.pwaConfig == nil {
 		return ""
@@ -1024,8 +792,6 @@ const pwaRegisterTemplate = `/* goFastr PWA registration: generated by uihost.Wi
 })();
 `
 
-// ─── Handlers ──────────────────────────────────────────────────────
-
 func (ds *UIHost) handlePWAManifest(w http.ResponseWriter, r *http.Request) {
 	body, err := ds.PWAManifestJSON(r.Context(), "")
 	if err != nil {
@@ -1038,12 +804,6 @@ func (ds *UIHost) handlePWAManifest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ds *UIHost) handlePWAServiceWorker(w http.ResponseWriter, r *http.Request) {
-	// The worker is deployment-constant, but generating it renders the
-	// offline page and hashes the shell assets: too much to repeat on
-	// every update check (browsers re-fetch the worker on page loads).
-	// Memoized on first request: by then the app has rendered at least
-	// one page, so the style registries have settled (same reasoning
-	// as the deployment fingerprint itself).
 	ds.pwaSWOnce.Do(func() {
 		ds.pwaSW, ds.pwaSWErr = ds.serviceWorkerJS(r.Context(), "")
 	})
@@ -1052,8 +812,6 @@ func (ds *UIHost) handlePWAServiceWorker(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	// The browser re-fetches the worker to detect updates; long-lived
-	// caching here would pin every client to a stale deployment.
 	w.Header().Set("Cache-Control", "no-cache")
 	//gofastr:allow(nostore) the worker is built once under context.Background() (offline page included): deployment-constant, no caller to vary on
 	fmt.Fprint(w, ds.pwaSW)

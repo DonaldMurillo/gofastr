@@ -91,16 +91,69 @@ func (a Auth) redact(text string) string {
 	if a.Kind == AuthNone || text == "" {
 		return text
 	}
-	secrets := []string{a.Token, a.Password}
-	if a.Kind == AuthBasic {
-		secrets = append(secrets, base64.StdEncoding.EncodeToString([]byte(a.Username+":"+a.Password)))
-	}
-	for _, s := range secrets {
-		if len(s) >= 4 { // a 1-3 byte secret would blank ordinary words
-			text = strings.ReplaceAll(text, s, redactedCredential)
-		}
+	for _, s := range a.secrets() {
+		text = strings.ReplaceAll(text, s, redactedCredential)
 	}
 	return text
+}
+
+// secrets lists the strings redact blanks. A 1-3 byte secret is left
+// out: it would blank ordinary words.
+func (a Auth) secrets() []string {
+	if a.Kind == AuthNone {
+		return nil
+	}
+	all := []string{a.Token, a.Password}
+	if a.Kind == AuthBasic {
+		all = append(all, base64.StdEncoding.EncodeToString([]byte(a.Username+":"+a.Password)))
+	}
+	out := all[:0]
+	for _, s := range all {
+		if len(s) >= 4 {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// redactHead is redact over the first keep bytes of text, matching
+// credentials that begin there and run past them into the rest.
+func (a Auth) redactHead(text string, keep int) string {
+	if keep >= len(text) {
+		return a.redact(text)
+	}
+	covered := make([]bool, len(text))
+	for _, s := range a.secrets() {
+		for from := 0; ; {
+			i := strings.Index(text[from:], s)
+			if i < 0 {
+				break
+			}
+			for j := from + i; j < from+i+len(s); j++ {
+				covered[j] = true
+			}
+			from += i + 1
+		}
+	}
+	var b strings.Builder
+	for i := 0; i < keep; i++ {
+		switch {
+		case !covered[i]:
+			b.WriteByte(text[i])
+		case i == 0 || !covered[i-1]:
+			b.WriteString(redactedCredential)
+		}
+	}
+	return b.String()
+}
+
+// longestSecret is the byte length of the longest string redact blanks.
+func (a Auth) longestSecret() int {
+	n := 0
+	for _, s := range a.secrets() {
+		n = max(n, len(s))
+	}
+	return n
 }
 
 // reservedAuthHeaders are headers a credential may not take over: the

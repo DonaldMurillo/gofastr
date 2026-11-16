@@ -16,8 +16,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── PageHeader ─────────────────────────────────────────────────────
-
 // PageHeaderConfig configures a page-top header.
 type PageHeaderConfig struct {
 	Title    string      // required
@@ -25,24 +23,16 @@ type PageHeaderConfig struct {
 	Eyebrow  string      // optional small label above the title (e.g. "Customers")
 	Actions  render.HTML // optional trailing action slot (button row, link)
 	Badge    render.HTML // optional status beside the title; wraps below when needed
-	// HeadingLevel overrides the title's heading level (default 1). Set to
-	// 2 when the header is a sub-section of a page that already has an <h1>
-	// (e.g. a related-list block on a detail page) so the outline doesn't
-	// produce a second <h1> or skip levels.
+	// HeadingLevel overrides the title's heading level (default 1).
 	HeadingLevel int
 	Class        string
 	ID           string
 	// Compact removes the divider and outer padding for pane and article titles.
 	Compact bool
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the header's root <header>
-	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID), style, data-cui-* and role.
+	// ExtraAttrs reach the root <header>; class, id, style, role and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// pageHeaderClasses dresses headless.PageHeader's parts.
 var pageHeaderClasses = headless.Classes{
 	headless.PartRoot:         "fui-page-header",
 	headless.PartPageEyebrow:  "fui-page-header__eyebrow",
@@ -53,10 +43,7 @@ var pageHeaderClasses = headless.Classes{
 	headless.PartPageTitleRow: "fui-page-header__title-row",
 }
 
-// PageHeader renders a top-of-page header on headless.PageHeader:
-// the title, the words that qualify it, and the page's own actions.
-// The element is a plain <header> — claiming role=banner is the
-// top-level page header's decision, not the component's.
+// PageHeader renders a page-top header: title, qualifying text and the page's actions.
 func PageHeader(cfg PageHeaderConfig) render.HTML {
 	if cfg.Compact {
 		cfg.Class += " fui-page-header--compact"
@@ -74,10 +61,6 @@ func PageHeader(cfg PageHeaderConfig) render.HTML {
 	}, pageHeaderClasses))
 }
 
-// slug normalizes text into a URL/id-safe slug. Letters and digits of
-// every script survive (lowercased): an ASCII-only slug turned "概要"
-// and "料金" into "", so a Japanese or Arabic heading lost its anchor
-// and two different ones shared a fallback id.
 func slug(s string) string {
 	out := make([]rune, 0, len(s))
 	prevDash := false
@@ -105,66 +88,29 @@ func slug(s string) string {
 	return string(out)
 }
 
-// ─── Section ────────────────────────────────────────────────────────
-
-// SectionConfig configures a labelled content section.
-//
-// ID behaviour, on headless.Section:
-//   - If ID is set, it names the root, and the heading's own id
-//     derives from it ("<id>-title"), so repeated heading text with
-//     distinct IDs never shares a target.
-//   - If ID is empty and Heading is set, the section auto-slugs the
-//     heading as its id ("Forms" → id="forms"), the scrollspy/rail
-//     case, and the heading's id is the slug plus "-title".
-//   - If both ID and Heading are empty but Label is set, the region
-//     is named by aria-label.
-//   - If all three are empty the section renders a plain div: an
-//     unnamed section is noise in the landmark list, not a landmark.
+// SectionConfig configures a content section. With no ID, the id is the
+// Heading's slug; with neither Heading nor Label it renders a plain div.
 type SectionConfig struct {
-	// Eyebrow is an optional short decorative kicker rendered above
-	// the heading, e.g. a section number ("01 / what it generates").
-	// It is marked aria-hidden because it duplicates the heading for
-	// SR users.
-	Eyebrow     string
+	Eyebrow     string // optional decorative kicker above the heading, aria-hidden
 	Heading     string // optional <h2> heading
 	Description string // optional supporting text under the heading
-	// DescriptionHTML lets the supporting text carry inline markup (code,
-	// links). When non-empty it takes precedence over Description.
+	// DescriptionHTML is the supporting text as markup; it wins over Description.
 	DescriptionHTML render.HTML
-	// Label sets the section's accessible name when there is no
-	// Heading, by aria-label.
-	Label string
-	Class string
-	ID    string
+	Label           string // accessible name when there is no Heading
+	Class           string
+	ID              string
 	// Compact removes outer margins when a parent Stack owns section spacing.
 	Compact bool
-	// Overline draws the heading as a group label: small, upper case
-	// and muted, over a run of cards rather than a page band (a
-	// dashboard's "Billing" above its count cards). It is still the
-	// section's <h2>.
+	// Overline draws the heading as a small muted group label over a run of cards.
 	Overline bool
-	// Band draws the section as a page band (marketing, landing, docs
-	// hubs): display-size heading and more air under the head. A
-	// section with an Eyebrow is a band already; Band gives the same
-	// treatment to one with no kicker.
+	// Band draws the section as a page band: display-size heading and more air.
 	Band bool
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the section's root <section> element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, and the accessible-name contract (role,
-	// aria-label, aria-labelledby).
+	// ExtraAttrs reach the root; class, id, role, aria-label, aria-labelledby and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
-
-	// Ctx is the render context. The id a Heading derives is handed
-	// out through its id scope (render.UniqueID), so a second
-	// "Features" section on the page is "features-2" and its
-	// aria-labelledby follows. With no Ctx the derived id is used as
-	// is. An explicit ID is never changed.
+	// Ctx scopes derived ids, so a repeated heading gets a "-2" suffix; an explicit ID is kept.
 	Ctx context.Context
 }
 
-// sectionClasses dresses headless.Section's parts.
 var sectionClasses = headless.Classes{
 	headless.PartRoot:        "fui-section",
 	headless.PartSectionBrow: "fui-section__eyebrow",
@@ -174,10 +120,7 @@ var sectionClasses = headless.Classes{
 	headless.PartSectionBody: "fui-section__body",
 }
 
-// Section renders a content section on headless.Section: a heading
-// names the region through aria-labelledby, a Label names it by
-// aria-label when there is no heading, and neither means the region
-// renders as a plain div rather than an unnamed landmark.
+// Section renders a content section named by its heading or Label.
 func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	if cfg.Compact {
 		cfg.Class += " fui-section--compact"
@@ -192,11 +135,6 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	if sectionID != "" {
 		render.ReserveID(cfg.Ctx, sectionID, headless.SectionIDChildren...)
 	} else if cfg.Heading != "" {
-		// Auto-anchor: typical use is in-page rails / scrollspy where the
-		// rail's href="#<slug>" should land on this section without the
-		// caller having to repeat the slug. A repeat on the page gets a
-		// suffix, and so does a slug that would land on another
-		// section's heading id ("Features title" after "Features").
 		sectionID = render.UniqueID(cfg.Ctx, slug(cfg.Heading), headless.SectionIDChildren...)
 	}
 	return sectionStyle.WrapHTML(headless.Section(headless.SectionProps{
@@ -213,8 +151,6 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	}, sectionClasses, body...))
 }
 
-// ─── FormField ──────────────────────────────────────────────────────
-
 // FormFieldConfig configures a single form field row.
 type FormFieldConfig struct {
 	Label    string // required → <label>
@@ -222,44 +158,18 @@ type FormFieldConfig struct {
 	Help     string // optional helper text under the field
 	Error    string // optional error message; non-empty marks the control invalid
 	Required bool   // marks the label and the control
-
-	// Input BUILDS the control from the wiring the field hands it:
-	// the id the label points at, the described-by chain, the invalid
-	// state and the required flag. It is a builder rather than a
-	// pre-built value because the wiring has to reach the control, and
-	// a pre-built control is how a hint ends up rendered, given an id,
-	// and never referenced — visible on screen and absent to a screen
-	// reader. Build the control with ui.Control (any input type), a
-	// typed field, ui.PasswordInput (its Field field), or headless
-	// directly; a closure that ignores its FieldControl compiles and
-	// loses the wiring, which is the one way left to get this wrong.
+	// Input builds the control from the field's wiring (id, described-by,
+	// invalid, required); use ui.Control, a typed field or headless.
 	Input func(headless.FieldControl) render.HTML
-
-	// ReserveError keeps an empty error paragraph rendered — wired
-	// into the control's aria-describedby and found by the id that
-	// rides it — for a script that fills it without
-	// re-rendering (see headless.FieldProps.ReserveError). The caller
-	// that fills it must also set aria-invalid on the control; the
-	// server-rendered path should pass Error instead.
+	// ReserveError renders an empty, wired error node for a script to fill;
+	// that script must also set aria-invalid.
 	ReserveError bool
 	Class        string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the field row's root <div>. Keys the
-	// component owns are dropped: class and id (use Class) and
-	// data-cui-*.
+	// ExtraAttrs reach the root <div>; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// FormField renders a labelled form field with optional help and error
-// text. Wire the control through Input's builder; the label's For and
-// the control's id cannot disagree, because the control is built from
-// the field's own wiring.
-//
-// Help and Error are BOTH rendered when both are set, the error
-// first: the hint is the rule the value must obey and the error is
-// the violation, so dropping the rule exactly when it was broken is
-// dropping it when it is needed most.
+// FormField renders a labelled field; when both are set, Error renders before Help.
 func FormField(cfg FormFieldConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: FormField requires Label")
@@ -279,31 +189,18 @@ func FormField(cfg FormFieldConfig) render.HTML {
 	}, fieldClasses, cfg.Input))
 }
 
-// ─── FormSection ────────────────────────────────────────────────────
-
 // FormSectionConfig groups related fields under a heading + description.
 type FormSectionConfig struct {
 	Heading     string // optional
 	Description string // optional
 	Class       string
-	// ID names the group and roots the description's id (<ID>-desc).
-	// Without one the id is derived from Heading, so two sections
-	// with one heading and a description on a page would share it:
-	// give the second an ID.
+	// ID names the group and roots the description's id (<ID>-desc);
+	// without it the id derives from Heading.
 	ID string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the group's root element, whichever shape
-	// it takes (<div> without a Heading, <fieldset> with one). Keys
-	// the component owns are dropped: class and id (use Class) and
-	// data-cui-*.
+	// ExtraAttrs reach the root <div> or <fieldset>; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// formSectionClasses dresses headless.Fieldset's parts. The legend
-// maps to fui-form-section__heading: the name the sheet styles and
-// the old markup emitted, so the legend's typography survives the
-// move to the primitive.
 var formSectionClasses = headless.Classes{
 	headless.PartRoot:       "fui-form-section",
 	headless.PartLegend:     "fui-form-section__heading",
@@ -312,10 +209,7 @@ var formSectionClasses = headless.Classes{
 	headless.PartGroupError: "fui-form-section__error",
 }
 
-// FormSection wraps a group of FormFields with a shared heading, on
-// headless.Fieldset: a heading renders the native fieldset + legend
-// pair, and no heading renders the plain div — an unlabelled fieldset
-// is a landmark that names nothing.
+// FormSection groups FormFields: a fieldset and legend with a Heading, a div without.
 func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
 	return formSectionStyle.WrapHTML(headless.Fieldset(headless.FieldsetProps{
 		Legend:      cfg.Heading,
@@ -326,11 +220,8 @@ func FormSection(cfg FormSectionConfig, fields ...render.HTML) render.HTML {
 	}, formSectionClasses, fields...))
 }
 
-// ─── Button ─────────────────────────────────────────────────────────
-
-// ButtonVariant is the semantic variant of a Button. String-typed
-// for ergonomic Go enums + readable serialization. Apps extend the
-// set with RegisterButtonVariant; unregistered values panic at render.
+// ButtonVariant is a Button's semantic variant. Apps extend the set with
+// RegisterButtonVariant; unregistered values panic at render.
 type ButtonVariant string
 
 const (
@@ -340,11 +231,8 @@ const (
 	ButtonGhost     ButtonVariant = "ghost"
 )
 
-// ButtonSize is the rendered button size. Default sits on a 44px
-// touch-target floor (WCAG 2.5.5). ButtonSizeSmall opts out of the
-// floor for row-action contexts where the parent row already provides
-// the tap area (table rows, dense toolbars). ButtonSizeLarge bumps
-// padding + font-size for hero CTAs.
+// ButtonSize is the rendered size. The default keeps the touch-target
+// floor; ButtonSizeSmall drops it for rows that provide the tap area.
 type ButtonSize string
 
 const (
@@ -355,66 +243,33 @@ const (
 
 // ButtonConfig configures a button.
 type ButtonConfig struct {
-	Label string // required visible text + aria-label
-	// AriaLabel overrides the accessible name when it must differ from
-	// the visible Label: a row of buttons all reading "Revoke" that
-	// each need a distinct accessible name ("Revoke admin from Alice").
-	// Empty ⇒ the accessible name is Label. This is the supported way
-	// to set it — an aria-label in ExtraAttrs is dropped (owned key).
+	Label string // required visible text and default accessible name
+	// AriaLabel overrides the accessible name; an aria-label in ExtraAttrs is dropped.
 	AriaLabel string
-	// Variant defaults to ButtonPrimary.
-	Variant ButtonVariant
-	// Size defaults to ButtonSizeDefault.
-	Size ButtonSize
-	// Type is the button type: "button" (default), "submit", or "reset".
-	Type string
-	// Disabled renders the disabled state. This is the supported way to
-	// set it — a disabled key in ExtraAttrs panics pointing here.
+	Variant   ButtonVariant // defaults to ButtonPrimary
+	Size      ButtonSize
+	Type      string // "button" (default), "submit" or "reset"
+	// Disabled renders the disabled state; a disabled key in ExtraAttrs panics.
 	Disabled bool
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the rendered <button>.
-	// Every data-cui-* key is runtime wiring and goes through the
-	// typed Action seam (attach interactive wiring with
-	// interactive.Action.Attrs(), interactive.OpenOnClick and friends —
-	// headless.ButtonProps.Action admits exactly that vocabulary and
-	// panics on any data-cui-* key outside it, where the old carrier
-	// contract rendered it as a dead attribute). Keys the component
-	// owns are dropped: class and id (use Class / ID), type (use
-	// Type), disabled (use Disabled) and aria-label (use AriaLabel).
+	// ExtraAttrs reach the <button>. data-cui-* keys are runtime wiring
+	// (interactive.Action.Attrs and friends); class, id, type, disabled and
+	// aria-label are owned.
 	ExtraAttrs html.Attrs
 	ID         string
 	Class      string
-	// Icon, when set, renders the named registered icon (see
-	// RegisterIcon / Icon) before the label.
-	Icon string
-	// IconOnly draws the icon alone in a square button; Label becomes
-	// the accessible name. It needs a registered Icon.
+	Icon       string // a registered icon drawn before the label
+	// IconOnly draws a registered Icon alone; Label becomes the accessible name.
 	IconOnly bool
-	// Shortcut is a keyboard chord ("Mod+S") that clicks this button,
-	// drawn after the label as ShortcutHint chips. It needs ID: the
-	// chord names the button by it. The chord reaches assistive tech
-	// through aria-keyshortcuts; the accessible name stays the label.
+	// Shortcut is a chord ("Mod+S") that clicks the button; it needs ID.
 	Shortcut string
-	// QuietUntilDirty draws the button in the secondary look until the
-	// form it submits (the one it sits in, or the one its form
-	// attribute names) holds unsaved edits: the leave guard's dirty
-	// state, so that form needs FormConfig.LeaveGuard. It stays
-	// clickable and keeps its shortcut either way.
+	// QuietUntilDirty draws the secondary look until the button's form
+	// holds unsaved edits; the form needs FormConfig.LeaveGuard.
 	QuietUntilDirty bool
-	// Ctx carries the per-request context the Shortcut keycaps are
-	// said in. When nil, English applies.
+	// Ctx is the request context the Shortcut keycaps are said in.
 	Ctx context.Context
 }
 
-// Button renders a semantic button with a typed variant, through the
-// headless structure dressed with this package's class map: Variant
-// maps to .fui-button--<variant> in the registered ui-button CSS.
-//
-// Authors never reach for raw class strings. Pick a variant.
-// Unknown variants panic at render time so typos surface
-// immediately rather than silently rendering an unstyled button.
-// Custom brand variants/sizes join the set via RegisterButtonVariant /
-// RegisterButtonSize (shared with LinkButton).
+// Button renders a semantic button. An unregistered Variant or Size panics.
 func Button(cfg ButtonConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: Button requires Label")
@@ -443,10 +298,6 @@ func Button(cfg ButtonConfig) render.HTML {
 	if cfg.QuietUntilDirty {
 		cls = strings.TrimSpace("fui-button--until-dirty " + cls)
 	}
-	// All variants share the single canonical ui-button marker; the
-	// .fui-button--<variant> class on the same element drives the
-	// visual delta via buttonCSS's variant rules. No legacy per-
-	// variant marker / sheet.
 	return buttonStyle.WrapHTML(headless.Button(headless.ButtonProps{
 		Label:      label,
 		AriaLabel:  aria,
@@ -463,53 +314,28 @@ func Button(cfg ButtonConfig) render.HTML {
 	}, buttonClasses))
 }
 
-// ─── LinkButton ─────────────────────────────────────────────────────
-
-// LinkButtonConfig configures a button-styled <a> link. Use this when
-// the affordance navigates (changes URL): CTAs like "Get started",
-// "Read the docs". For in-page actions that don't change URL, use
-// Button instead.
+// LinkButtonConfig configures a button-styled <a> for navigation; use
+// Button for in-page actions.
 type LinkButtonConfig struct {
 	Label   string        // required visible text
 	Href    string        // required navigation target
 	Variant ButtonVariant // defaults to ButtonPrimary
 	Size    ButtonSize    // defaults to ButtonSizeDefault
-	// External, when true, opens the link in a new tab with
-	// rel="noopener noreferrer". Use for off-site links (docs to
-	// GitHub, pkg.go.dev, etc.). The runtime's SPA-nav interceptor
-	// naturally skips http(s):// hrefs (they're not "internal"), so
-	// External does not also need to "suppress SPA nav": the
-	// underlying SPA router already does the right thing.
+	// External opens the link in a new tab with rel="noopener noreferrer".
 	External bool
-	// Icon, when set, renders the named registered icon (see
-	// RegisterIcon / Icon) before the label. The button's inline-flex
-	// gap handles spacing. Unknown names render the label alone.
-	Icon string
-	// IconOnly draws the icon alone in a square button; Label becomes
-	// the accessible name. It needs a registered Icon.
+	Icon     string // a registered icon drawn before the label; unknown names draw none
+	// IconOnly draws a registered Icon alone; Label becomes the accessible name.
 	IconOnly bool
 	ID       string
 	Class    string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the rendered <a>. The
-	// data-cui-* keys that make sense on a link (push-state, prefetch,
-	// open, deeplink, intercept-page, intercept-swap, intercept-panel,
-	// nav="off" for a full document load)
-	// go through the typed
-	// Action seam;
-	// every other data-cui-* key is refused, as it always was — a
-	// link navigates, a button acts. Keys the component owns are
-	// dropped: class and id (use Class / ID) and href (use Href).
-	// With External, target and rel are owned too; without it a caller
-	// may still set them.
+	// ExtraAttrs reach the <a>. Only the link wiring keys (push-state,
+	// prefetch, open, deeplink, intercept-*, nav) pass among data-cui-*;
+	// class, id and href are owned, and target and rel with External.
 	ExtraAttrs html.Attrs
 }
 
-// LinkButton renders a button-styled anchor, through the same headless
-// structure and class map as Button. The visual styling is shared via
-// the registered ui-button CSS. The difference is semantic:
-// <a> for navigation, <button> for actions. Screen readers, "open in
-// new tab", and SPA push-state nav all rely on the right tag choice.
+// LinkButton renders a button-styled anchor. It panics on an unsafe or
+// protocol-relative Href.
 func LinkButton(cfg LinkButtonConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: LinkButton requires Label")
@@ -517,18 +343,6 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 	if cfg.Href == "" {
 		panic("ui: LinkButton requires Href. Use Button for non-navigating actions")
 	}
-	// Refuse dangerous schemes at render time. The runtime's SPA
-	// navigator screens these too, but a direct anchor click bypasses
-	// the SPA interceptor (browser handles it natively), so the
-	// rendered href must already be safe. javascript:/vbscript:/non-
-	// image data: are the canonical XSS vectors for links. headless
-	// degrades a rejected href to a dead link; this package refuses
-	// outright, so the mistake is found where it is made. The same
-	// posture covers the origin-absolute spellings — "//host/x" and
-	// its backslash twin — which are not XSS but are hrefs headless
-	// drops to a dead link; generated apps feed spec-authored hrefs
-	// here, so an LLM's "//github.com/…" CTA must fail loudly at
-	// build time, not ship as a disabled control.
 	if isUnsafeScheme(cfg.Href) {
 		panic("ui: LinkButton refuses unsafe Href scheme: " + cfg.Href)
 	}
@@ -559,9 +373,6 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 	}, buttonClasses))
 }
 
-// buttonIcon resolves a button's icon and visible label. An unknown
-// icon name draws the label alone; IconOnly moves the label into the
-// accessible name (unless one is set) and needs an icon to draw.
 func buttonIcon(comp, label, name string, only bool, aria *string) (string, render.HTML) {
 	var icon render.HTML
 	if name != "" && IconRegistered(name) {
@@ -579,9 +390,6 @@ func buttonIcon(comp, label, name string, only bool, aria *string) (string, rend
 	return "", icon
 }
 
-// rootClassParts carries a caller's Class onto the root part, where
-// the headless box appends it after the class map's own classes
-// instead of replacing them. The shared class map is never mutated.
 func rootClassParts(class string) headless.Parts {
 	if class == "" {
 		return headless.Parts{}
@@ -591,13 +399,6 @@ func rootClassParts(class string) headless.Parts {
 	}}
 }
 
-// splitButtonAttrs splits a Button's ExtraAttrs at the seam: every
-// data-cui-* key is runtime wiring and travels through the typed
-// Action, where headless admits exactly the wiring vocabulary and
-// panics on anything else, naming the key; everything else is
-// decoration and travels through headless's ExtraAttrs, whose Safe
-// drops the keys the component owns (aria-label among them, which the
-// AriaLabel field is the supported way to set).
 func splitButtonAttrs(extra html.Attrs) (action, plain html.Attrs) {
 	action, plain = html.Attrs{}, html.Attrs{}
 	for k, v := range extra {
@@ -612,14 +413,9 @@ func splitButtonAttrs(extra html.Attrs) (action, plain html.Attrs) {
 		case lk == "disabled":
 			panic("ui: Button ExtraAttrs carries disabled — use ButtonConfig.Disabled, the field owns the state")
 		case lk == "aria-label":
-			// Owned: use AriaLabel.
 		case strings.HasPrefix(lk, "data-cui-"), strings.HasPrefix(lk, "data-fui-"):
 			action[lk] = v
 		case strings.HasPrefix(lk, "data-hui-pane-"):
-			// The pane controls a Button can trigger are data-hui-*
-			// hooks the headless-panehost module binds (the retired
-			// fragment's data-fui-pane family, renamed); they ride the
-			// Action seam like every wiring key.
 			action[lk] = v
 		default:
 			plain[lk] = v
@@ -628,10 +424,6 @@ func splitButtonAttrs(extra html.Attrs) (action, plain html.Attrs) {
 	return action, plain
 }
 
-// splitLinkAttrs is splitButtonAttrs for a link: only the four
-// data-cui-* keys that make sense on an anchor travel the Action seam;
-// every other data-cui-* key is refused as it always was, because a
-// link navigates and a button acts.
 func splitLinkAttrs(extra html.Attrs) (action, plain html.Attrs) {
 	action, plain = html.Attrs{}, html.Attrs{}
 	for k, v := range extra {
@@ -649,7 +441,6 @@ func splitLinkAttrs(extra html.Attrs) (action, plain html.Attrs) {
 			lk == "data-cui-intercept-panel", lk == "data-cui-nav":
 			action[lk] = v
 		case strings.HasPrefix(lk, "data-cui-"), strings.HasPrefix(lk, "data-fui-"):
-			// Refused, as before the seam existed.
 		default:
 			plain[lk] = v
 		}
@@ -657,12 +448,6 @@ func splitLinkAttrs(extra html.Attrs) (action, plain html.Attrs) {
 	return action, plain
 }
 
-// stripURLControls removes every ASCII control byte and space from a
-// URL-shaped string. Browsers strip this set from a URL — including
-// bytes INTERIOR to the scheme token ("java\tscript:" resolves as
-// "javascript:") and between the slashes of an origin ("/\t/evil"
-// resolves as "//evil") — before scheme and origin resolution, so the
-// checks that follow must see the same URL the browser will.
 func stripURLControls(href string) string {
 	var b strings.Builder
 	b.Grow(len(href))
@@ -676,13 +461,8 @@ func stripURLControls(href string) string {
 	return b.String()
 }
 
-// isUnsafeScheme rejects the canonical XSS vectors for `href`/`src`
-// attributes: javascript:, vbscript:, and non-image data: URIs. Used
-// by LinkButton (render-time guard) and shadowed by the runtime's
-// _isUnsafeSignalUrl for programmatic SPA navigation.
 func isUnsafeScheme(href string) bool {
 	s := stripURLControls(href)
-	// Case-insensitive prefix check.
 	lower := strings.ToLower(s)
 	if strings.HasPrefix(lower, "javascript:") {
 		return true
@@ -691,31 +471,19 @@ func isUnsafeScheme(href string) bool {
 		return true
 	}
 	if strings.HasPrefix(lower, "data:") {
-		// Every data: URL, images included: the anchor policy headless
-		// applies (urlsafe.CleanAnchor) refuses them all, so admitting
-		// data:image/ here would render a dead link instead of a panic.
 		return true
 	}
 	return false
 }
 
-// isCrossOriginAbsolute reports whether href names a foreign origin
-// WITHOUT naming its scheme: the protocol-relative "//host/x" and its
-// backslash twin "/\host/x" (a URL parser treats "\" as a path
-// separator, so both resolve to an origin-absolute URL). headless's
-// anchor policy drops both to a dead link; LinkButton refuses them
-// with their own reason instead.
 func isCrossOriginAbsolute(href string) bool {
 	s := stripURLControls(href)
 	return strings.HasPrefix(s, "//") || strings.HasPrefix(s, `/\`)
 }
 
-// ─── StatusBadge ────────────────────────────────────────────────────
-
-// StatusVariant is the semantic variant of a StatusBadge. The same
-// set drives Callout, Tag, Notification, and FilterChipBar chips;
-// apps extend it with RegisterStatusVariant. Unregistered values
-// panic at render.
+// StatusVariant is the tone of a StatusBadge, Callout, Tag, Notification
+// or filter chip. Apps extend it with RegisterStatusVariant; unregistered
+// values panic at render.
 type StatusVariant string
 
 const (
@@ -730,23 +498,14 @@ const (
 type StatusBadgeConfig struct {
 	Label   string        // required visible text
 	Variant StatusVariant // defaults to Neutral
-	// Dot draws a filled circle in the badge's tone before the label,
-	// the shape a status column reads at a glance. Decoration: the
-	// label stays the whole of what a screen reader hears.
-	Dot   bool
-	ID    string
-	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the pill's root <span>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-cui-*.
+	Dot     bool          // a decorative tone circle before the label
+	ID      string
+	Class   string
+	// ExtraAttrs reach the root <span>; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// StatusBadge renders a small inline pill conveying state, on
-// headless.Badge: the label is the whole of what a screen reader
-// hears, so the tone a variant paints is decoration for the word.
+// StatusBadge renders a small inline pill whose label carries the state.
 func StatusBadge(cfg StatusBadgeConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: StatusBadge requires Label")
@@ -769,12 +528,9 @@ func StatusBadge(cfg StatusBadgeConfig) render.HTML {
 	}, badgeClasses))
 }
 
-// badgeClasses dresses headless.Badge.
 var badgeClasses = headless.Classes{
 	headless.PartRoot: "fui-badge",
 }
-
-// ─── EmptyState ─────────────────────────────────────────────────────
 
 // EmptyStateConfig configures an empty-state surface.
 type EmptyStateConfig struct {
@@ -783,27 +539,14 @@ type EmptyStateConfig struct {
 	Action      render.HTML // optional CTA (e.g. a button or link)
 	ID          string
 	Class       string
-	// Compact draws one quiet line in a small panel, for an empty list
-	// inside another screen (a record's related list), where the
-	// section's own header carries the call to action.
+	// Compact draws one quiet line, for an empty list inside another screen.
 	Compact bool
-
-	// HeadingLevel overrides the title's heading level (1–6). Zero defaults
-	// to 3 (h3), preserving the gallery/demo behaviour where the empty state
-	// nests inside a section. A real page that mounts the empty state as the
-	// only content under the page <h1> (e.g. an admin list with zero rows)
-	// passes 2 so the outline doesn't skip h1 → h3.
+	// HeadingLevel overrides the title's heading level (1-6, default 3).
 	HeadingLevel int
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the empty state's root.
-	// Keys the component owns are dropped: class and id (use
-	// Class / ID), style, data-cui-*, role, aria-label and
-	// aria-labelledby.
+	// ExtraAttrs reach the root; class, id, style, role, aria-label, aria-labelledby and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// emptyStateClasses dresses headless.EmptyState's parts.
 var emptyStateClasses = headless.Classes{
 	headless.PartRoot:       "fui-empty-state",
 	headless.PartEmptyTitle: "fui-empty-state__title",
@@ -811,9 +554,7 @@ var emptyStateClasses = headless.Classes{
 	headless.PartEmptyAct:   "fui-empty-state__action",
 }
 
-// EmptyState renders the nothing-here on headless.EmptyState: a
-// region named by its own heading, so "no results" is a findable
-// place with a way out.
+// EmptyState renders a nothing-here region named by its own heading.
 func EmptyState(cfg EmptyStateConfig) render.HTML {
 	if cfg.Compact {
 		cfg.Class = cls("fui-empty-state--compact", cfg.Class)
@@ -829,33 +570,19 @@ func EmptyState(cfg EmptyStateConfig) render.HTML {
 	}, emptyStateClasses))
 }
 
-// ─── Callout ────────────────────────────────────────────────────────
-
 // CalloutConfig configures a persistent informational block.
 type CalloutConfig struct {
 	Title   string
 	Variant StatusVariant // info | success | warning | danger | neutral
 	ID      string
 	Class   string
-
-	// Standing marks a danger or warning callout that is part of the
-	// page as drawn, not news that arrived: a failed record's reason on
-	// its detail page, a notice inside a region that re-renders on a
-	// timer. It keeps its tone and loses role=alert, which a screen
-	// reader announces at once, over whatever it was reading, every
-	// time the region is drawn again.
+	// Standing keeps a danger or warning callout's tone without role=alert,
+	// for a notice that is part of the page rather than news.
 	Standing bool
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the callout's root element. Keys the
-	// component owns are dropped: class and id (use Class / ID),
-	// data-cui-* and role.
+	// ExtraAttrs reach the root; class, id, role and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// calloutClasses dresses headless.Alert's parts. The tone modifier
-// class is appended by the adapter — the registered custom variants
-// arrive as names, not class-map entries.
 var calloutClasses = headless.Classes{
 	headless.PartRoot:   "fui-callout",
 	headless.PartHeader: "fui-callout__head",
@@ -865,15 +592,8 @@ var calloutClasses = headless.Classes{
 	headless.PartFooter: "fui-callout__footer",
 }
 
-// Callout renders a persistent info/warning/error block on
-// headless.Alert. Distinct from Toast / Notification (ephemeral);
-// callouts live inline with content.
-//
-// Danger and warning callouts interrupt (role=alert) unless Standing;
-// the rest are standing messages the page rendered, which do not. The old
-// complementary-<aside> shape is gone: a tip is emphasis, not a
-// tangential region, and a nested complementary landmark is the axe
-// finding the Landmark field existed to dodge.
+// Callout renders a persistent inline message. Danger and warning
+// callouts carry role=alert unless Standing.
 func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 	v := cfg.Variant
 	if v == "" {
@@ -900,8 +620,6 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 	}, calloutClasses))
 }
 
-// ─── StatCard ───────────────────────────────────────────────────────
-
 // TrendDirection indicates the direction of a stat trend.
 type TrendDirection string
 
@@ -917,41 +635,20 @@ type StatCardConfig struct {
 	Value string // required (e.g. "12,483" or "98.4%")
 	Trend string // optional trend label (e.g. "+12% vs. last week")
 
-	// Direction colors the trend pill. Defaults to flat.
-	Direction TrendDirection
-
-	// Href links the label to what the number counts (a dashboard
-	// count to its list).
-	Href string
-
-	// Icon names a registered icon (see Icon) drawn in the card's head.
-	// An unknown name draws no icon, as on LinkButton.
-	Icon string
-
-	// Action is a control in the card's head (a LinkButton to create
-	// one more), outside the label's link.
-	Action render.HTML
-
-	// Plain draws no frame (border, fill, shadow, corners): a figure
-	// inside a StatStrip, whose frame is the strip's.
+	Direction TrendDirection // colors the trend pill; defaults to flat
+	Href      string         // links the label to what the number counts
+	Icon      string         // a registered icon in the card's head; unknown names draw none
+	Action    render.HTML    // a control in the head, outside the label's link
+	// Plain draws no frame, for a figure inside a StatStrip.
 	Plain bool
-
-	// Tile draws the Icon in a tinted square tile on the head's first
-	// line with the Action at its end, and the label on the line under
-	// them: a dashboard's entity cards.
-	Tile bool
-
+	// Tile draws the Icon in a tinted tile beside the Action, the label below.
+	Tile  bool
 	ID    string
 	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the stat card's root <div>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-cui-*.
+	// ExtraAttrs reach the root <div>; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// statCardClasses dresses headless.StatCard's parts.
 var statCardClasses = headless.Classes{
 	headless.PartRoot:      "fui-stat-card",
 	headless.PartHeader:    "fui-stat-card__head",
@@ -966,9 +663,7 @@ var statCardClasses = headless.Classes{
 	headless.Part("stat-trend--flat"): "fui-stat-card__trend--flat",
 }
 
-// StatCard renders a metric card on headless.StatCard: label, value,
-// optional trend — the label first, because the name before the
-// number is what makes the number a fact.
+// StatCard renders a metric card: label, value and an optional trend.
 func StatCard(cfg StatCardConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: StatCard requires Label")
@@ -999,11 +694,7 @@ func StatCard(cfg StatCardConfig) render.HTML {
 	}, statCardClasses))
 }
 
-// ─── Avatar ─────────────────────────────────────────────────────────
-
-// AvatarSize is one of a small set of pre-defined avatar sizes.
-// Sizes are CSS classes, not inline styles, so a strict CSP that
-// blocks `style="…"` attributes still works.
+// AvatarSize is one of the predefined avatar sizes.
 type AvatarSize string
 
 const (
@@ -1013,12 +704,8 @@ const (
 	AvatarXl AvatarSize = "xl" // ~4rem
 )
 
-// AvatarStatus is a presence indicator drawn as a small dot in the
-// avatar's lower corner. Empty renders no dot. Colors come from the
-// status tokens so a themed app recolors them for free. This is the
-// visual half of presence; the framework does not track who is online:
-// an app feeds the status from its own source (see the presence
-// note in framework/docs/content/interactive-patterns.md).
+// AvatarStatus is a presence dot in the avatar's corner; the app supplies
+// the status. Empty renders no dot.
 type AvatarStatus string
 
 const (
@@ -1031,42 +718,23 @@ const (
 
 // AvatarConfig configures an avatar.
 type AvatarConfig struct {
-	// Name is required; used for alt text and to derive initials when
-	// no image source is set.
-	Name string
-	Src  string     // optional image URL; falls back to initials when empty
-	Size AvatarSize // sm | "" (default md) | lg | xl
-	// Square draws a rounded square instead of a circle: a logo or
-	// workspace tile beside a product name, where a circle reads as a
-	// person.
-	Square bool
-
-	// Status draws a presence dot in the lower corner (online / away /
-	// busy / offline). Empty renders no dot.
+	Name   string     // required: alt text, and the initials when Src is empty
+	Src    string     // optional image URL
+	Size   AvatarSize // sm | "" (default md) | lg | xl
+	Square bool       // a rounded square, for a logo or workspace tile
 	Status AvatarStatus
-	// StatusLabel overrides the dot's accessible name. Defaults to the
-	// status word ("Online", "Away", "Busy", "Offline") in the language
-	// of Ctx; a status outside those four defaults to its own value.
-	// Ignored when Status is empty.
+	// StatusLabel overrides the dot's accessible name, by default the
+	// status word in Ctx's language.
 	StatusLabel string
-
-	// Ctx carries the per-request context the status dot's default name
-	// is said in. When nil, English applies. AvatarGroup hands its own
-	// Ctx to an avatar that sets none.
-	Ctx context.Context
-
+	// Ctx is the request context the dot's default name is said in.
+	Ctx   context.Context
 	ID    string
 	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the avatar's root <span>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-cui-*.
+	// ExtraAttrs reach the root <span>; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// Avatar renders a circular avatar with an image fallback to text
-// initials when no image source is provided.
+// Avatar renders an avatar image, or the name's initials without Src.
 func Avatar(cfg AvatarConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: Avatar requires Name")
@@ -1109,10 +777,6 @@ func Avatar(cfg AvatarConfig) render.HTML {
 	return avatarStyle.WrapHTML(html.Span(spanCfg, inner...))
 }
 
-// avatarStatusDot renders the presence dot. It carries role="img" +
-// aria-label so the status is announced (a bare aria-label on a span is
-// rejected by axe: the implicit role doesn't accept a name), matching
-// the AvatarGroup overflow-chip pattern.
 func avatarStatusDot(ctx context.Context, status AvatarStatus, label string) render.HTML {
 	if label == "" {
 		label = avatarStatusLabel(ctx, status)
@@ -1127,9 +791,6 @@ func avatarStatusDot(ctx context.Context, status AvatarStatus, label string) ren
 	})
 }
 
-// avatarStatusLabel is the dot's default name: the status word in the
-// language of ctx, or the raw value for a status outside the four the
-// kit names.
 func avatarStatusLabel(ctx context.Context, status AvatarStatus) string {
 	switch status {
 	case AvatarOnline:
@@ -1168,81 +829,41 @@ func initials(name string) string {
 	return strings.ToUpper(string(out))
 }
 
-// ─── CodeBlock ──────────────────────────────────────────────────────
-
 // CodeBlockConfig configures a styled code-sample block.
 type CodeBlockConfig struct {
 	Code     string // raw source to render; escaped. Ignored when Lines is set.
 	Language string // optional, used for aria-label only
-	// Lines carries pre-rendered (e.g. syntax-highlighted) logical source
-	// lines. When non-empty it takes precedence over Code; each entry is
-	// wrapped as one line so LineNumbers can number it. Callers own the
-	// per-token markup: pass already-escaped, trusted HTML.
-	Lines []render.HTML
-	// Filename, when set, renders a chrome header (status dot + filename)
-	// above the body and switches the wrapper to a framed container.
-	Filename string
-	// Label names the block for assistive tech in place of the default
-	// "source code": what the text is when it is not source ("Call
-	// stack", "Server response").
-	Label string
-	// ShowCopy adds a copy-to-clipboard button (the framework CopyButton)
-	// in the header, targeting this block's own body. Forces a header even
-	// when Filename is empty.
-	ShowCopy bool
-	// LineNumbers renders a left gutter numbering each line.
+	// Lines are trusted, pre-rendered source lines (e.g. highlighted); they win over Code.
+	Lines    []render.HTML
+	Filename string // renders a header with the filename and frames the block
+	Label    string // the accessible name in place of "source code"
+	ShowCopy bool   // a copy button in the header that copies the body
+	// LineNumbers renders a gutter numbering each line.
 	LineNumbers bool
-	// Scroll caps the body height (var(--ui-code-block-scroll-max,
-	// 26rem)) and makes it scroll vertically, for showing a long file in
-	// full without letting it dominate the page. Implies the framed
-	// container.
-	Scroll bool
-	// HighlightLines marks the given 1-based source lines with
-	// fui-code-block__line--highlight, a background band that reaches the
-	// block's edge. Ranges past the last line match nothing.
+	Scroll      bool // caps the body height and scrolls it; frames the block
+	// HighlightLines bands the given 1-based lines.
 	HighlightLines []LineRange
-	// Diff classifies lines by their first character: '+' (including the
-	// '+++' file-header form) gets fui-code-block__line--added, '-' (and
-	// '---') gets --removed. The marker stays in the text: a diff's
-	// content IS the diff. On the Lines path a leading token span is
-	// skipped, so the marker behind it still classifies.
+	// Diff marks lines starting with '+' as added and '-' as removed.
 	Diff bool
-	// HighlightWords wraps literal (not regex) matches inside a line in
-	// <mark class="fui-code-block__mark">. Matching runs on the source
-	// text of each line's text nodes: a word never matches across a tag
-	// boundary, and marked text is escaped like the rest of the line.
+	// HighlightWords marks literal matches inside each line's text.
 	HighlightWords []string
-	// Wrap soft-wraps long lines (white-space: pre-wrap) instead of the
-	// default horizontal scroll. The zero value keeps today's behaviour:
-	// code blocks scroll, they do not wrap.
-	Wrap  bool
-	ID    string
-	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the block's root element, whichever shape
-	// it takes (a bare <pre> or a framed <div>). Keys the component
-	// owns are dropped: class and id (use Class / ID), data-cui-*, and
-	// the scroll contract (tabindex, aria-label) that lives on the
-	// <pre> body.
+	Wrap           bool // soft-wraps long lines instead of scrolling
+	ID             string
+	Class          string
+	// ExtraAttrs reach the root; class, id, tabindex, aria-label and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
-	// Ctx carries the per-request context the block's accessible name,
-	// line count and copy control are said in. When nil, English applies.
+	// Ctx is the request context the block's name, line count and copy control are said in.
 	Ctx context.Context
 }
 
-// LineRange is a 1-based, inclusive range of source lines. To == 0 means
-// a single line (From only).
+// LineRange is a 1-based inclusive range of lines; To == 0 means From alone.
 type LineRange struct {
 	From int
 	To   int
 }
 
-// ParseLineRanges parses a comma-separated list of 1-based line numbers
-// and ascending inclusive ranges ("2", "1,3-5"), the form the highlight
-// fence option accepts. An empty spec parses to no ranges. Anything that
-// is not a positive line number or an ascending range is an error;
-// callers that degrade instead of failing (ui.Markdown) drop the option.
+// ParseLineRanges parses "2" or "1,3-5"; an empty spec is no ranges, and
+// anything but positive numbers and ascending ranges is an error.
 func ParseLineRanges(spec string) ([]LineRange, error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
@@ -1281,17 +902,11 @@ func parseLineNumber(s string) (int, error) {
 	return n, nil
 }
 
-// codeBlockSeq mints a process-unique id for a framed block's body so the
-// copy button can target its own <pre> via #id.
 var codeBlockSeq atomic.Uint64
 
-// CodeBlock renders a styled code sample. In its simplest form (Code only) it
-// is a bare, horizontally-scrollable <pre>. Set Filename / ShowCopy /
-// LineNumbers (or pass Lines) to get the framed variant: a chrome header with
-// the filename, an optional copy button, and an optional line-number gutter.
-//
-// The wrapper element carries data-cui-comp="ui-code-block" so the runtime
-// auto-loads the scoped stylesheet on first appearance.
+// CodeBlock renders a code sample: a bare scrollable <pre> for Code alone,
+// a framed block with a header once Filename, ShowCopy, LineNumbers, Scroll
+// or Lines is set.
 func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	framed := cfg.Filename != "" || cfg.ShowCopy || cfg.LineNumbers || cfg.Scroll || len(cfg.Lines) > 0
 	ctx := cfg.Ctx
@@ -1307,9 +922,6 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	}
 	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, "tabindex", "aria-label")
 
-	// Body <pre>. WCAG 2.1.1: tabindex=0 so keyboard users can pan the
-	// horizontal scroll. (role=region is intentionally avoided. It would
-	// make every block a landmark and fail landmark-unique.)
 	bodyID := cfg.ID
 	if framed && bodyID != "" {
 		bodyID += "-code"
@@ -1317,10 +929,6 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	if framed && cfg.ShowCopy && bodyID == "" {
 		bodyID = "ui-code-block-" + strconv.FormatUint(codeBlockSeq.Add(1), 10)
 	}
-	// Any per-line feature (highlight, diff, word marks) forces the
-	// per-line wrapper on the Code path so the classes attach to the same
-	// fui-code-block__line element the Lines path uses; a config with none
-	// keeps today's <code> body.
 	perLine := len(cfg.HighlightLines) > 0 || cfg.Diff || len(cfg.HighlightWords) > 0
 	var body render.HTML
 	switch {
@@ -1336,8 +944,6 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 		body = render.Join(wrapped...)
 	case perLine:
 		src := strings.Split(cfg.Code, "\n")
-		// Mirror HighlightLines: a trailing newline must not render a
-		// blank last row, or line numbers drift from the Lines path.
 		if n := len(src); n > 1 && src[n-1] == "" {
 			src = src[:n-1]
 		}
@@ -1414,31 +1020,21 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 			Label:        i18nui.CodeBlockCopy.Text(ctx),
 			CopiedLabel:  i18nui.CodeBlockCopied.Text(ctx),
 			AnnounceText: i18nui.CopyCopied.Text(ctx),
-			// A page with two blocks has two buttons that say "copy":
-			// a named block's button says what it copies. The visible
-			// word stays, and leads the name.
-			AriaLabel: copyName,
-			Ctx:       ctx,
-			Class:     "fui-code-block__copy",
+			AriaLabel:    copyName,
+			Ctx:          ctx,
+			Class:        "fui-code-block__copy",
 		}))
 	}
 	if len(metaChildren) > 0 {
 		headChildren = append(headChildren,
 			html.Div(html.DivConfig{Class: "fui-code-block__meta"}, metaChildren...))
 	}
-	// The header draws only from Filename (a string), the line count
-	// and the copy button — none of it a caller's markup — so it is
-	// always this component's own.
 	head := html.Div(html.DivConfig{Class: "fui-code-block__head", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, headChildren...)
 
 	preAttrs := map[string]string{"class": "fui-code-block__body", "tabindex": "0", "aria-label": label}
 	if bodyID != "" {
 		preAttrs["id"] = bodyID
 	}
-	// The body holds a caller's markup only on the Lines path — every
-	// other path (perLine, or the plain default) draws the same text
-	// from Code, a string field, so the body is this component's own
-	// whenever Lines is empty.
 	if len(cfg.Lines) == 0 {
 		preAttrs["data-cui-internal"] = ""
 	}
@@ -1447,8 +1043,6 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 		html.Div(html.DivConfig{Class: cls, ID: cfg.ID, ExtraAttrs: extra}, head, pre))
 }
 
-// lineHighlighted reports whether the 1-based line n falls inside one of
-// the ranges. To == 0 means "From only".
 func lineHighlighted(ranges []LineRange, n int) bool {
 	for _, r := range ranges {
 		if n < r.From {
@@ -1467,11 +1061,6 @@ func lineHighlighted(ranges []LineRange, n int) bool {
 	return false
 }
 
-// firstTextByte returns the line's first visible character, skipping
-// tags so a diff marker behind a token span
-// ('<span class="tk-pn">-</span>x') still classifies. 0 when the line
-// starts with no text: an entity decodes to one of &<>"', never a
-// marker, and an empty line classifies as neither.
 func firstTextByte(s string) byte {
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
@@ -1490,12 +1079,6 @@ func firstTextByte(s string) byte {
 	return 0
 }
 
-// codeBlockLine wraps line i of n (0-based) in its display:block span.
-// Every line but the last ends in its own newline, inside the span: an
-// empty block adds nothing to a selection's text or to innerText, so
-// without it a blank source line vanished from a reader's copy. A
-// trailing newline at the end of a block draws no extra line box, so
-// the layout is unchanged; a newline BETWEEN the spans would draw one.
 func codeBlockLine(cfg CodeBlockConfig, i, n int, content string) render.HTML {
 	class := codeBlockLineClass(cfg, i+1, content)
 	if i < n-1 {
@@ -1504,8 +1087,6 @@ func codeBlockLine(cfg CodeBlockConfig, i, n int, content string) render.HTML {
 	return html.Span(html.TextConfig{Class: class}, render.HTML(content))
 }
 
-// codeBlockLineClass builds the per-line class: the base wrapper plus
-// the highlight band and/or the diff marker class.
 func codeBlockLineClass(cfg CodeBlockConfig, n int, content string) string {
 	cls := "fui-code-block__line"
 	if lineHighlighted(cfg.HighlightLines, n) {
@@ -1522,13 +1103,6 @@ func codeBlockLineClass(cfg CodeBlockConfig, n int, content string) string {
 	return cls
 }
 
-// markWords wraps literal matches of any word in
-// <mark class="fui-code-block__mark">, touching text nodes only: tags
-// pass through untouched and a word never matches across a tag boundary,
-// because each text node is matched on its own. Text nodes are decoded
-// to source text for matching and re-escaped on output, so a word like
-// "<b>" matches the source characters, never emitted markup. A text
-// node with no match is copied verbatim (no decode/re-encode roundtrip).
 func markWords(fragment string, words []string) string {
 	if len(words) == 0 {
 		return fragment
@@ -1539,7 +1113,7 @@ func markWords(fragment string, words []string) string {
 		if fragment[i] == '<' {
 			j := strings.IndexByte(fragment[i:], '>')
 			if j < 0 {
-				break // malformed trailing '<': copy verbatim below
+				break
 			}
 			end := i + j + 1
 			b.WriteString(fragment[i:end])
@@ -1571,9 +1145,6 @@ func containsAnyWord(text string, words []string) bool {
 	return false
 }
 
-// markText marks every literal word occurrence in decoded text and
-// returns escaped HTML. The longest word wins at a given position, so
-// overlapping words ("err", "error") mark the full token once.
 func markText(text string, words []string) string {
 	var b strings.Builder
 	start := 0
@@ -1597,9 +1168,6 @@ func markText(text string, words []string) string {
 	return b.String()
 }
 
-// matchWordAt returns the longest word that matches text at byte offset
-// at, or "" when none does. Empty words never match (a zero-length match
-// would not advance and must not mark between characters).
 func matchWordAt(text string, at int, words []string) string {
 	best := ""
 	for _, w := range words {
@@ -1610,41 +1178,16 @@ func matchWordAt(text string, at int, words []string) string {
 	return best
 }
 
-// ─── SkipLink ──────────────────────────────────────────────────────
-
-// SkipLinkConfig configures a skip-navigation link.
-//
-// Renders a visually-hidden anchor that becomes visible on keyboard
-// focus, letting users jump past repetitive navigation to the main
-// content area. Required for WCAG 2.1 Level A (criterion 2.4.1
-// "Bypass Blocks").
-//
-// Place SkipLink as the first element inside <body>.
-//
-// Usage:
-//
-//	ui.SkipLink(ui.SkipLinkConfig{Target: "main-content"})
-//	// … then on the main element:
-//	// <main id="main-content"> ...
-//	// Or with no Target: defaults to "main-content".
-//	ui.SkipLink(ui.SkipLinkConfig{})
+// SkipLinkConfig configures a skip-navigation link, shown on keyboard
+// focus; place it first inside <body>.
 type SkipLinkConfig struct {
-	// Target is the id of the element to jump to.
-	// Defaults to "main-content" when empty.
-	Target string
-	// Text is the visible label shown on focus.
-	// Defaults to "Skip to main content", in Ctx's language, when empty.
-	Text  string
-	Class string
-	ID    string
-	// Ctx carries the per-request context the default Text is said in.
-	// When nil, English applies.
+	Target string // the id to jump to; defaults to "main-content"
+	Text   string // the label; defaults to "Skip to main content" in Ctx's language
+	Class  string
+	ID     string
+	// Ctx is the request context the default Text is said in.
 	Ctx context.Context
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the link's root <a>. Keys the component
-	// owns are dropped: class and id (use Class / ID), data-cui-*, and
-	// href (use Target).
+	// ExtraAttrs reach the <a>; class, id, href and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 

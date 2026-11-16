@@ -413,6 +413,9 @@ the response body into every `data-cui-signal="<list-signal>"
 data-cui-signal-mode="html"` region, swapping in the authoritative
 shorter list. The "restore" falls out of the model: the list is not
 swapped until 2xx, so a failure leaves the row exactly where it was.
+The name must match `^[A-Za-z0-9_-]+$` and must not be `__proto__`,
+`constructor` or `prototype`, the keys the runtime never writes;
+`ConfirmAction` panics on any other name.
 
 **Compose:**
 

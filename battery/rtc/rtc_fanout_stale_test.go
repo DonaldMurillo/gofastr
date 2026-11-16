@@ -1,6 +1,7 @@
 package rtc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"sync"
@@ -40,18 +41,73 @@ func (h *heldFanout) hold() {
 }
 
 // release delivers everything held, in order, then lets later messages
-// through directly.
+// through directly. Arrivals during the drain queue behind it, as the
+// bus delivers a subscriber's messages in publish order.
 func (h *heldFanout) release() {
-	h.mu.Lock()
-	queued := h.queue
-	h.queue, h.holding = nil, false
-	h.mu.Unlock()
-	for _, deliver := range queued {
+	for {
+		h.mu.Lock()
+		if len(h.queue) == 0 {
+			h.holding = false
+			h.mu.Unlock()
+			return
+		}
+		deliver := h.queue[0]
+		h.queue = h.queue[1:]
+		h.mu.Unlock()
 		deliver()
 	}
 }
 
 var _ fanout.Fanout = (*heldFanout)(nil)
+
+// TestHeldFanoutReleaseKeepsOrder: a message published while release is
+// still draining lands after every held one. The seam holds delivery of
+// the first held message until the third has reached the wrapper.
+func TestHeldFanoutReleaseKeepsOrder(t *testing.T) {
+	bus := fanout.NewInProcess()
+	h := &heldFanout{Fanout: bus}
+	var mu sync.Mutex
+	var got []string
+	inFirst, arrived := make(chan struct{}), make(chan struct{})
+	cancel, err := h.Subscribe("t", func(p []byte) {
+		if string(p) == "1" {
+			close(inFirst)
+			<-arrived
+		}
+		mu.Lock()
+		got = append(got, string(p))
+		mu.Unlock()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	publish := func(p string) {
+		if err := bus.Publish(context.Background(), "t", []byte(p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.hold()
+	publish("1")
+	publish("2")
+	waitFor(t, 3*time.Second, func() bool { h.mu.Lock(); defer h.mu.Unlock(); return len(h.queue) == 2 }, "both held")
+	go h.release()
+	<-inFirst
+	publish("3")
+	waitFor(t, 3*time.Second, func() bool {
+		h.mu.Lock()
+		queued := len(h.queue)
+		h.mu.Unlock()
+		mu.Lock()
+		defer mu.Unlock()
+		return queued == 2 || len(got) > 0
+	}, "the third message reaches the wrapper")
+	close(arrived)
+	waitFor(t, 3*time.Second, func() bool { mu.Lock(); defer mu.Unlock(); return len(got) == 3 }, "all three delivered")
+	if got[0] != "1" || got[1] != "2" || got[2] != "3" {
+		t.Fatalf("delivery order %v, want [1 2 3]", got)
+	}
+}
 
 // TestLateJoinMirrorDoesNotKickTheMovedPeer pins #474's duplicate leave.
 // p1 joins R1, then moves to R2 before R1's join mirror has reached R2.
@@ -121,6 +177,64 @@ func TestLateJoinMirrorDoesNotKickTheMovedPeer(t *testing.T) {
 	}
 }
 
+// TestJoinMirrorPublishedLateIsStillStale: R1's join goroutine stalls
+// between hydrating p1 and publishing its mirror until after p1 has
+// moved to R2, so the mirror leaves R1 later than the R2 seat joined.
+// The seam (the announce gate, plus R1's lane held) pins that window.
+func TestJoinMirrorPublishedLateIsStillStale(t *testing.T) {
+	bus := fanout.NewInProcess()
+	lane1, lane2 := &heldFanout{Fanout: bus}, &heldFanout{Fanout: bus}
+	s1 := newTestSignaler(t, Config{})
+	s2 := newTestSignaler(t, Config{})
+	for _, s := range []*Signaler{s1, s2} {
+		s.heartbeatEvery, s.remoteTTL = time.Hour, time.Hour
+	}
+	s1.testAtAnnounce = make(chan string)
+	s1.testAnnounceGate = make(chan struct{})
+	oldAtGate, publishOld := make(chan struct{}), make(chan struct{})
+	go func() {
+		for id := range s1.testAtAnnounce {
+			if id == "p1" {
+				close(oldAtGate)
+				<-publishOld
+			}
+			s1.testAnnounceGate <- struct{}{}
+		}
+	}()
+	if _, err := s1.SetFanout(lane1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s2.SetFanout(lane2); err != nil {
+		t.Fatal(err)
+	}
+	base1, base2 := startSignaler(t, s1), startSignaler(t, s2)
+
+	lane2.hold()
+	w, _ := join(t, base1, "room1", "pW")
+	defer w.close()
+	old, _ := join(t, base1, "room1", "p1")
+	defer old.close()
+	<-oldAtGate
+	lane1.hold()
+	nu, _ := join(t, base2, "room1", "p1")
+	defer nu.close()
+
+	close(publishOld) // R1 announces the old seat now, after R2's seat joined
+	if je := w.expectEnv(t, "join"); !bytes.Contains(je.Payload, []byte(`"p1"`)) {
+		t.Fatalf("join envelope = %s, want p1", je.Payload)
+	}
+	lane1.release() // R2's seat displaces the old one on R1
+	w.expectEnv(t, "leave")
+	w.expectEnv(t, "join")
+
+	lane2.release() // the late mirror reaches R2
+	waitFor(t, 3*time.Second, func() bool { return hasPeer(s2, "room1", "pW") }, "R2 catches up with R1's roster")
+	w.expectSilence(t, 500*time.Millisecond)
+	if !hasPeer(s2, "room1", "p1") {
+		t.Fatal("R2 dropped its own live p1 on a join mirror for an older seat")
+	}
+}
+
 // fakeReplica publishes one raw lane message as a replica that does not
 // exist, so a test can hand a receiver exactly the envelope it wants.
 func fakeReplica(t *testing.T, bus fanout.Fanout, node string, msg fanoutMsg) {
@@ -135,7 +249,7 @@ func fakeReplica(t *testing.T, bus fanout.Fanout, node string, msg fanoutMsg) {
 	}
 }
 
-// TestStaleJoinMirrorIsDropped: a join mirror whose clock predates the
+// TestStaleJoinMirrorIsDropped: a join mirror whose seat predates the
 // local socket is ignored outright, whatever replica sent it.
 func TestStaleJoinMirrorIsDropped(t *testing.T) {
 	bus := fanout.NewInProcess()
@@ -151,7 +265,7 @@ func TestStaleJoinMirrorIsDropped(t *testing.T) {
 	defer w.close()
 	p1.expectEnv(t, "join") // pW's own arrival
 
-	fakeReplica(t, bus, "ghost", fanoutMsg{Kind: evJoin, Room: "room1", Peer: &PeerInfo{ID: "p1"}, At: 1})
+	fakeReplica(t, bus, "ghost", fanoutMsg{Kind: evJoin, Room: "room1", Peer: &PeerInfo{ID: "p1", Order: 1}})
 	w.expectSilence(t, 300*time.Millisecond)
 	p1.expectSilence(t, 100*time.Millisecond)
 	if !hasPeer(s1, "room1", "p1") {

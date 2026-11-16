@@ -8,19 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The multiselect: a checkbox group inside a disclosure, with a chips
-// strip above it summarising what is picked. The submit contract is
-// the plain form: every checkbox shares the field Name and the form
-// receives the repeated key for each checked option, with no script
-// at all — the chips and their remove buttons are the enhancement,
-// rebuilt by the registered headless-multiselect module on the
-// data-hui-multiselect marker from the checkboxes' own state. The
-// disclosure itself is headless.Disclosure's (Escape to close with
-// focus returned, the aria mirror), required by the module, so there
-// is one disclosure implementation under this, not a second one.
-
-// MultiSelect parts. The summary and the panel are the Disclosure's
-// shared parts; the row is the label that wraps its checkbox.
+// MultiSelect parts; the summary and panel are the Disclosure's.
 const (
 	PartMultiSelectChips Part = "multiselect-chips"
 	PartMultiSelectGroup Part = "multiselect-group"
@@ -32,43 +20,31 @@ type MultiSelectOption struct {
 	// Value is the form-submit value. Required.
 	Value string
 	// Label is the option's visible text. Required.
-	Label string
-	// Selected checks the option on first paint.
+	Label    string
 	Selected bool
-	// Disabled greys the option out and keeps it unsubmitting.
 	Disabled bool
 }
 
 // MultiSelectProps configures one multiselect.
 type MultiSelectProps struct {
-	// Name is the form-field name every checkbox shares; the form
-	// receives the repeated key for each checked option. Required.
+	// Name is the form-field name every checkbox shares. Required.
 	Name string
-	// Label is the group's accessible name and the disclosure's
-	// summary. Required.
+	// Label is the group's name and the disclosure's summary. Required.
 	Label string
 	// Options are the choices, in order. Required and non-empty.
 	Options []MultiSelectOption
 	// Open renders the disclosure expanded.
 	Open bool
-	// Placeholder is what the chips strip says when nothing is
-	// picked. Empty takes Strings.MultiSelectPlaceholder.
+	// Placeholder is the empty chips strip's text; empty takes Strings.MultiSelectPlaceholder.
 	Placeholder string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the root, the chips strip, the summary, the
-	// panel, the group and the rows. No part is fillable: the
-	// checkbox group is the contract.
 	Parts   Parts
 	Strings *Strings
 
-	// Ctx is the render context. The instance id the option ids are
-	// built from defaults to Name; through Ctx's id scope
-	// (render.UniqueID) a second multiselect with the same Name on the
-	// page gets a -2 suffix instead of repeating every option id. An
-	// explicit ID is never changed. With no Ctx the Name is used as is.
+	// Ctx scopes the option ids derived from Name when ID is empty.
 	Ctx context.Context
 }
 
@@ -100,20 +76,13 @@ func MultiSelect(p MultiSelectProps, s Classes) render.HTML {
 
 	b := p.Parts.Box(s, PartSummary, PartPanel)
 
-	// The rows: a label wrapping its checkbox. Option ids are
-	// <instance id>-opt-<index>: the index keeps symbol-heavy values
-	// ("C++" vs "C#") collision-free, and the instance id scopes them
-	// across multiselects on one page.
 	rows := make([]render.HTML, 0, len(p.Options))
 	for i, opt := range p.Options {
 		optID := id + "-opt-" + strconv.Itoa(i)
 		inputAttrs := Attrs(map[string]string{
-			"type": "checkbox",
-			"name": p.Name,
-			"id":   optID,
-			// The value is data the form submits back: escaped at
-			// the attribute and scrubbed of control bytes, never
-			// refused — the same posture as the row's label.
+			"type":  "checkbox",
+			"name":  p.Name,
+			"id":    optID,
 			"value": scrubControlBytes(opt.Value),
 		})
 		if opt.Selected {
@@ -129,8 +98,6 @@ func MultiSelect(p MultiSelectProps, s Classes) render.HTML {
 		))
 	}
 
-	// The options are data, never the caller's markup, but the group
-	// renders as Disclosure's Content, which Disclosure leaves unmarked.
 	neitherFilled := !b.Filled(PartSummary) && !b.Filled(PartPanel)
 	group := b.El("fieldset", PartMultiSelectGroup,
 		Internal(Attrs(map[string]string{"role": "group", "aria-label": p.Label})), rows...)
@@ -139,26 +106,16 @@ func MultiSelect(p MultiSelectProps, s Classes) render.HTML {
 		Summary: render.Text(scrubControlBytes(p.Label)),
 		Content: group,
 		Open:    p.Open,
-		// The disclosure's own fillable parts (summary, panel) are
-		// this component's: a caller's slot, attr or bind for either
-		// routes through the Disclosure's Box, one implementation of
-		// the disclosure under this instead of a second one.
-		Parts: p.Parts,
+		Parts:   p.Parts,
 	}, s)
 	if neitherFilled {
-		// Disclosure leaves its root for an owner to place; composed
-		// here with neither part filled, nothing in it is the caller's.
 		details = Own(details)
 	}
 
 	rootAttrs := Merge(Safe(p.ExtraAttrs, "id"), Attrs(map[string]string{"id": p.ID}))
 	Mark(rootAttrs, "data-hui-multiselect")
 	chipsAttrs := Attrs(map[string]string{
-		"aria-live": "polite",
-		// The placeholder is read by the sheet (::before content on
-		// the empty strip), the remove label by the module. The
-		// placeholder is data-shaped — a caller may derive it from a
-		// stored value — so it is scrubbed like the labels.
+		"aria-live":                         "polite",
 		"data-hui-multiselect-placeholder":  scrubControlBytes(placeholder),
 		"data-hui-multiselect-remove-label": w.RemoveLabelled,
 	})

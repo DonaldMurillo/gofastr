@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"io"
 	"os"
 	"os/exec"
@@ -108,54 +109,10 @@ func (e *commandExtension) replayStderr(stderr *cappedBuffer) {
 	if e.stderr == nil || stderr.Len() == 0 {
 		return
 	}
-	_, _ = e.stderr.Write(scrubTerminalBytes(stderr.Bytes()))
+	_, _ = io.WriteString(e.stderr, textsafe.ScrubTerminal(string(stderr.Bytes())))
 	if stderr.truncated {
 		_, _ = fmt.Fprintf(e.stderr, "\n[gofastr] extension %q stderr truncated at %d bytes\n", e.name, stderr.limit)
 	}
-}
-
-// scrubTerminalBytes strips the control bytes that let a subprocess *drive*
-// the operator's terminal rather than merely write to it: ESC (which opens the
-// CSI/OSC sequences that rewrite the window title, clear the scrollback, or
-// reposition the cursor over output the operator already read), BEL, CR (which
-// returns to column zero so the next write overpaints the line just printed),
-// the rest of the C0 range, and DEL. LF and TAB survive — they are layout, not
-// control.
-//
-// This is the terminal member of the same family as
-// core/handler/respond.go sanitizeHeaderValue (HTTP header values),
-// core/middleware/logging.go safeLogMethod (log attributes) and
-// core/stream/sse.go scrubSSEDataLines (SSE field bodies). Each strips a
-// different set because each protocol frames differently, so they are
-// deliberately separate functions rather than one shared one — SSE must keep
-// LF to preserve framing, a header value must keep neither CR nor LF, and a
-// terminal must keep LF but lose CR.
-func scrubTerminalBytes(b []byte) []byte {
-	clean := true
-	for _, c := range b {
-		if terminalCtrlByte(c) {
-			clean = false
-			break
-		}
-	}
-	if clean { // fast path: the overwhelmingly common case is ordinary output
-		return b
-	}
-	out := make([]byte, 0, len(b))
-	for _, c := range b {
-		if terminalCtrlByte(c) {
-			continue
-		}
-		out = append(out, c)
-	}
-	return out
-}
-
-func terminalCtrlByte(c byte) bool {
-	if c == '\n' || c == '\t' {
-		return false
-	}
-	return c < 0x20 || c == 0x7f
 }
 
 // cappedBuffer accumulates at most limit bytes and silently discards the rest,

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"io"
 	"os"
 	"path/filepath"
@@ -328,7 +329,7 @@ func runSingle(h *xharness.Harness, c *inproc.Client, sess ids.SessionID, prompt
 				// tool results over a hostile repo, provider error bodies):
 				// scrub before it reaches the terminal (2026-09-05
 				// red-probe round; the TUI strips the same class at ingest).
-				fmt.Print(cli.ScrubTerminalOutput(t.Text))
+				fmt.Print(textsafe.ScrubTerminal(t.Text))
 			}
 		}
 		if env.Kind == "TurnEnded" {
@@ -384,7 +385,7 @@ func streamOneTurn(sub <-chan control.EventEnvelope) {
 			if t, ok := td.(control.TextDelta); ok {
 				// Same scrub as runSingle: the REPL and piped-stdin paths
 				// print provider text raw otherwise.
-				fmt.Print(cli.ScrubTerminalOutput(t.Text))
+				fmt.Print(textsafe.ScrubTerminal(t.Text))
 			}
 		case "TurnEnded":
 			fmt.Println()

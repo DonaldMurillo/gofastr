@@ -27,7 +27,7 @@
       "cmd/kiln/agent_http.go": 2,
       "examples/ecommerce/app/app.go": 2,
       "examples/meridian/main.go": 1,
-      "framework/uihost/uihost.go": 2,
+      "framework/uihost/mount.go": 2,
       "kiln/chat/server.go": 2
     }
   }

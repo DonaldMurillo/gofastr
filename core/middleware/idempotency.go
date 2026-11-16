@@ -745,6 +745,12 @@ func (s *memoryIdempotencyStore) Begin(_ context.Context, key, fingerprint strin
 		return e.resp, true, nil
 	}
 
+	// Drop expired entries about once a minute, as the SQL store does.
+	if now.Sub(s.lastReap) > idemReapEvery {
+		s.reapLocked(now)
+		s.lastReap = now
+	}
+
 	// Shed idle entries when at capacity, BEFORE inserting the new claim,
 	// so the map is bounded under a unique-key flood. maxEntries == 0
 	// (a hand-built store literal, never the New constructor) means
@@ -844,6 +850,9 @@ func responseBytes(resp *IdempotentResponse) int {
 	}
 	return n
 }
+
+// idemReapEvery is how often Begin sweeps expired entries out of the map.
+const idemReapEvery = time.Minute
 
 func (s *memoryIdempotencyStore) reapLocked(now time.Time) {
 	for k, e := range s.entries {

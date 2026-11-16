@@ -322,7 +322,7 @@ func TestLocalCloseUnderNewerSeatAnnouncesIt(t *testing.T) {
 	if json.Unmarshal(je.Payload, &jp) != nil || jp.ID != "pX" || jp.Order != moved.Order {
 		t.Fatalf("join envelope = %s, want ghostC's pX seat", je.Payload)
 	}
-	fakeReplica(t, bus, "ghostC", fanoutMsg{Kind: evJoin, Room: "room1", Peer: &moved, At: time.Now().UnixNano()})
+	fakeReplica(t, bus, "ghostC", fanoutMsg{Kind: evJoin, Room: "room1", Peer: &moved})
 	joins, leaves := joinLeaveCounts(t, collectEnvs(y, 300*time.Millisecond))
 	if joins["pX"] != 0 || leaves["pX"] != 0 {
 		t.Fatalf("after the announce pY saw joins %v leaves %v, want nothing more", joins, leaves)

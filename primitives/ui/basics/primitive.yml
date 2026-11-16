@@ -1,0 +1,246 @@
+primitive: ui.basics
+summary: The basic components - page header, section, form field and section wrappers, buttons and link buttons, status badge, empty state, callout, stat card, avatar, code block, card, divider, link, inline code, tag, spinner and status pill, with their sheets.
+code:
+  - framework/ui/components.go
+  - framework/ui/styles_components.go
+  - framework/ui/card.go
+  - framework/ui/divider.go
+  - framework/ui/link.go
+  - framework/ui/inline_code.go
+  - framework/ui/tag.go
+  - framework/ui/spinner.go
+  - framework/ui/status_pill.go
+  - framework/ui/buttonvariant.go
+  - framework/ui/muted.go
+  - framework/ui/icon.go
+  - framework/ui/icons/
+invariants:
+  - id: slug-keeps-every-script
+    rule: A section id derived from its heading keeps the letters and digits of every script, lowercased, so a non-Latin heading still gets an anchor.
+    enforced_by:
+      - test: framework/ui.TestLayoutSectionNonLatinHeadingIDs
+  - id: section-derived-ids-are-unique
+    rule: A Section id derived from its heading takes a numeric suffix when the context's id scope already holds it, and an explicit ID is never changed.
+    enforced_by:
+      - test: framework/ui.TestSameHeadingSectionsGetUniqueIDs
+      - test: framework/ui.TestExplicitSectionIDWins
+  - id: form-field-keeps-hint-with-error
+    rule: A FormField given both Help and Error renders both, the error first, so the rule the value broke stays on screen.
+    enforced_by:
+      - test: framework/ui.TestFormFieldHelpRendersAlongsideError
+      - test: framework/ui.TestFormFieldErrorSwitchesStyling
+  - id: button-shortcut-needs-id
+    rule: A Button with a Shortcut and no ID panics, because the chord names the button it clicks by its id.
+    enforced_by:
+      - test: framework/ui.TestSweepBasicsButtonShortcutNeedsID
+  - id: icon-only-needs-an-icon
+    rule: A Button or LinkButton with IconOnly and no registered Icon panics instead of drawing an empty control.
+    enforced_by:
+      - test: framework/ui.TestSweepBasicsIconOnlyNeedsARegisteredIcon
+  - id: button-wiring-rides-the-action-seam
+    rule: Button ExtraAttrs send every data-cui-*, data-fui-* and data-hui-pane-* key through the headless Action, panic on a disabled key and drop aria-label, which only AriaLabel sets.
+    enforced_by:
+      - test: framework/ui.TestButtonRoutesWiringThroughTheActionSeam
+      - test: framework/ui.TestButtonDisabled
+      - test: framework/ui.TestButtonExtraAttrsCannotOverrideOwned
+  - id: extra-attrs-have-one-spelling
+    rule: Button ExtraAttrs that carry one attribute under two letter cases panic rather than pick one.
+    enforced_by:
+      - test: framework/ui.TestButtonExtraAttrsRefuseTwoSpellings
+  - id: link-button-wiring-vocabulary
+    rule: LinkButton ExtraAttrs pass only the link wiring keys (push-state, prefetch, open, deeplink, intercept-page, intercept-swap, intercept-panel, nav) and drop every other data-cui-* and data-fui-* key.
+    enforced_by:
+      - test: framework/ui.TestLinkButtonWiringVocabulary
+      - test: framework/ui.TestFilterToolbarResetFollowsClientNavigation
+  - id: link-button-refuses-unsafe-href
+    rule: "LinkButton panics on a javascript:, vbscript: or any data: Href, images included, and on a protocol-relative or backslash origin-absolute Href, judged after ASCII controls and spaces are stripped as a browser strips them."
+    enforced_by:
+      - test: framework/ui.TestLinkButtonRefusesUnsafeSchemes
+      - test: framework/ui.TestLinkButtonRejectsControlByteScheme
+  - id: content-links-degrade-to-inert
+    rule: Link and Tag render an Href the anchor policy refuses as an inert link instead of panicking.
+    enforced_by:
+      - test: framework/ui.TestLink_DropsDangerousHrefs
+      - test: framework/ui.TestTagHrefDropsUnsafeSchemes
+  - id: link-carries-wiring
+    rule: Link ExtraAttrs pass data-cui-* wiring through to the anchor, so a link can ship an href fallback with an RPC upgrade.
+    enforced_by:
+      - test: framework/ui.TestLinkExtraAttrsCarriesWiring
+  - id: callout-alert-role
+    rule: A danger or warning Callout carries role=alert unless Standing, and a callout of any other tone carries no live role.
+    enforced_by:
+      - test: framework/ui.TestCalloutRoleSwitchesForAlerts
+  - id: callout-has-no-side-stripe
+    rule: The callout sheet signals its tone with a tinted surface and a leading glyph and never with a coloured side border.
+    enforced_by:
+      - test: framework/ui.TestCalloutCSSAvoidsSideStripe
+  - id: page-header-claims-no-role
+    rule: PageHeader renders a plain <header> and drops a caller's role, leaving role=banner to the page frame.
+    enforced_by:
+      - test: framework/ui.TestSweepBasicsPageHeaderClaimsNoRole
+  - id: avatar-status-dot-is-named
+    rule: An avatar's presence dot is role=img with an aria-label, since axe rejects a name on a bare span.
+    enforced_by:
+      - test: framework/ui.TestAvatarStatusRendersDot
+  - id: avatar-root-does-not-clip
+    rule: The avatar root is position relative without overflow hidden, so the presence dot in its corner is never clipped.
+    enforced_by:
+      - test: framework/ui.TestSweepBasicsAvatarRootDoesNotClip
+  - id: code-block-body-is-focusable
+    rule: A code block's <pre> body carries tabindex=0 so a keyboard can scroll it, and ExtraAttrs cannot override it.
+    enforced_by:
+      - test: framework/ui.TestCodeBlockZeroConfigUnchanged
+      - test: framework/ui.TestCodeBlockExtraAttrsCannotOverrideOwned
+  - id: code-block-line-rows
+    rule: Code split into lines draws no blank row for a trailing newline, and every line but the last keeps its newline inside its own span so a copy keeps blank lines.
+    enforced_by:
+      - test: framework/ui.TestCodeBlockTrailingNewlineNoBlankRow
+      - test: framework/ui.TestCodeBlockCopyKeepsBlankLines
+  - id: code-block-word-marks
+    rule: HighlightWords match literal text within one text node, never across a tag; the longest word at a position wins and an empty word never matches.
+    enforced_by:
+      - test: framework/ui.TestCodeBlockWordsNeverMarkAcrossTags
+      - test: framework/ui.TestSweepBasicsCodeBlockLongestWordWins
+      - test: framework/ui.TestSweepBasicsCodeBlockEmptyWordNeverMarks
+  - id: code-block-diff-skips-tags
+    rule: Diff classifies a line by its first text character, skipping tags, so a marker inside a token span still counts.
+    enforced_by:
+      - test: framework/ui.TestCodeBlockDiffLinesPathTags
+  - id: code-block-internal-only-without-lines
+    rule: A framed code block's body is marked data-cui-internal only when it holds no caller Lines; its header always is.
+    enforced_by:
+      - test: framework/ui.TestKitMarksInternalSubtrees
+  - id: code-block-copy-targets-its-body
+    rule: A code block's copy button targets its own body, two unnamed blocks get distinct body ids, and a labelled block's button names what it copies.
+    enforced_by:
+      - test: framework/ui.TestSweepBasicsUnnamedCopyBlocksTargetTheirOwnBody
+      - test: framework/ui.TestCodeBlockLabelNamesTheBlock
+  - id: icon-app-override-is-exact-name
+    rule: An icon an app registers wins over the built-in of that exact name and leaves the built-in's aliases drawing the built-in.
+    enforced_by:
+      - test: framework/ui.TestIconBuiltinOverrideKeepsAliasIndependent
+  - id: icon-owns-accessibility-attrs
+    rule: An icon without AriaLabel is aria-hidden, a labelled icon is role=img, and ExtraAttrs cannot set role, aria-label or aria-hidden.
+    enforced_by:
+      - test: framework/ui.TestIcon_DefaultIsAriaHidden
+      - test: framework/ui.TestSweepBasicsIconOwnsItsAccessibilityAttrs
+  - id: parse-button-variant-is-exact
+    rule: ParseButtonVariant accepts the built-in and registered spellings case-sensitively and returns no variant when ok is false.
+    enforced_by:
+      - test: framework/ui.TestParseButtonVariant
+  - id: sheets-only-consume-option-variables
+    rule: The button and form-field sheets read the --fui-* option variables the component-options compiler declares and never redeclare one, which would block its inheritance from the theme boundary.
+    enforced_by:
+      - test: framework/ui.TestSweepBasicsSheetsOnlyConsumeOptionVariables
+  - id: button-sheet-loads-on-every-page
+    rule: The ui-button sheet is registered LoadAlways.
+    enforced_by:
+      - test: framework/ui.TestSweepBasicsButtonSheetLoadsOnEveryPage
+  - id: icon-categories-cover-every-icon-once
+    rule: Every canonical icon belongs to exactly one explicitly listed category.
+    enforced_by:
+      - test: framework/ui/icons.TestCategoriesCoverEveryDrawingOnce
+  - id: icon-sources-are-geometry-only
+    rule: The icon generator admits only drawing elements with geometry attributes inside a root that carries exactly the shared 24 by 24 pen.
+    enforced_by:
+      - test: framework/ui/icons/internal/generate.TestValidateRejectsActiveOrInconsistentSVG
+  - id: generator-reserves-handwritten-names
+    rule: The icon generator refuses a constant whose name any handwritten package file declares, whatever that file's build tags, and ignores the generated and test files.
+    enforced_by:
+      - test: framework/ui/icons/internal/generate.TestSweepBasicsReservesEveryHandwrittenName
+decisions:
+  - id: form-field-input-is-a-builder
+    date: 2026-11-16
+    status: accepted
+    decision: FormField.Input is a builder that receives the field's wiring, so the label, hint and error ids reach the control.
+    rejected:
+      - option: A pre-built control value.
+        why: A pre-built control is how a hint ends up rendered and given an id that the control never references.
+    upholds: [form-field-keeps-hint-with-error]
+  - id: unsafe-href-by-component
+    date: 2026-11-16
+    status: accepted
+    decision: LinkButton panics on a refused Href, while Link and Tag degrade it to an inert link.
+    rejected:
+      - option: Let LinkButton degrade to a dead link like headless does.
+        why: Generated apps feed spec-authored hrefs to LinkButton, and a "//host" CTA must fail at build time rather than ship disabled.
+      - option: Panic in Link and Tag as well.
+        why: They render content-level hrefs, where one bad link should not take the page down.
+    upholds: [link-button-refuses-unsafe-href, content-links-degrade-to-inert]
+  - id: callout-is-not-an-aside
+    date: 2026-11-16
+    status: accepted
+    decision: Callout renders on headless.Alert as emphasis inside the content.
+    rejected:
+      - option: A complementary <aside>.
+        why: A tip is not a tangential region, and a nested complementary landmark is an axe finding.
+    upholds: [callout-alert-role]
+  - id: callout-tint-not-stripe
+    date: 2026-11-16
+    status: accepted
+    decision: A callout's tone is a tinted surface and a leading glyph inside a neutral border.
+    rejected:
+      - option: A coloured side stripe.
+        why: Side-stripe admonitions read as a stock template.
+    upholds: [callout-has-no-side-stripe]
+  - id: page-header-leaves-banner-to-the-frame
+    date: 2026-11-16
+    status: accepted
+    decision: PageHeader is a plain <header>, and claiming role=banner is the top-level page frame's choice.
+    rejected:
+      - option: Give every PageHeader role=banner.
+        why: A page with a frame header and a page header would have two banners.
+    upholds: [page-header-claims-no-role]
+  - id: avatar-clip-on-the-image
+    date: 2026-11-16
+    status: accepted
+    decision: The avatar's circular clip sits on the image through border-radius, not on the root.
+    rejected:
+      - option: overflow hidden on the root.
+        why: It clips the presence dot in the corner.
+    upholds: [avatar-root-does-not-clip]
+  - id: avatar-sizes-are-classes
+    date: 2026-11-16
+    status: accepted
+    decision: Avatar sizes are modifier classes.
+    rejected:
+      - option: Inline width and height styles.
+        why: A strict CSP that blocks style attributes would leave every avatar unsized.
+  - id: avatar-presence-is-visual-only
+    date: 2026-11-16
+    status: accepted
+    decision: Avatar draws a presence status the app supplies, and the framework tracks no presence.
+    rejected:
+      - option: Track who is online in the framework.
+        why: That is server state an app owns in its own store.
+  - id: code-block-pre-is-not-a-region
+    date: 2026-11-16
+    status: accepted
+    decision: The code block's scrollable <pre> is focusable and named by aria-label without a role.
+    rejected:
+      - option: role=region on the <pre>.
+        why: Every block would become a landmark and fail landmark-unique.
+    upholds: [code-block-body-is-focusable]
+  - id: code-block-own-tokens
+    date: 2026-11-16
+    status: accepted
+    decision: The code block draws with the code-surface tokens and the theme's syntax slots.
+    rejected:
+      - option: The page text and background pair.
+        why: A theme could not re-skin or dark-adapt code apart from the page.
+  - id: button-sheet-is-eager
+    date: 2026-11-16
+    status: accepted
+    decision: The ui-button sheet is LoadAlways, while PageHeader and Sidebar prewarm and every other sheet loads when its marker first appears.
+    rejected:
+      - option: LoadAuto like the rest.
+        why: Buttons are on nearly every page and would paint as native controls until their sheet arrived.
+    upholds: [button-sheet-loads-on-every-page]
+  - id: explicit-icon-categories
+    date: 2026-11-16
+    status: accepted
+    decision: Icon categories are explicit lists describing the catalog, independent of upstream provenance.
+    rejected:
+      - option: A catch-all category for unassigned drawings.
+        why: A new drawing would fall into it silently.
+    upholds: [icon-categories-cover-every-icon-once]

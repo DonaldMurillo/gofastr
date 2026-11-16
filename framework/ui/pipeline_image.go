@@ -19,16 +19,7 @@ type PipelineSource struct {
 }
 
 // HeaderInfo is the subset of framework/image.VariantHeader that
-// PipelineSourcesFromHeaders consumes. Decoupling from the concrete
-// VariantHeader type lets framework/ui avoid an upward dependency on
-// framework/image. Callers using framework/image can adapt their
-// []VariantHeader with a one-line loop or by writing a typed
-// adapter helper in their own code.
-//
-// Note: Format from VariantHeader is intentionally omitted. MIME
-// is the discriminator the <source type="..."> attribute actually
-// needs, and a parallel `Format string` field would drift in type
-// vs VariantHeader.Format (image.Format enum).
+// PipelineSourcesFromHeaders consumes.
 type HeaderInfo struct {
 	Name   string
 	Width  int
@@ -36,13 +27,9 @@ type HeaderInfo struct {
 	MIME   string
 }
 
-// PipelineSourcesFromHeaders bridges framework/image's variant pipeline
-// to a typed PipelineSource slice. Given a URL function that maps a
-// variant's Name to its public URL (e.g. through a storage backend),
-// build the slice that goes into PipelineImageConfig.Sources without
-// re-deriving MIME or width from filenames.
-//
-// Empty headers are skipped (Width==0 or URL=="").
+// PipelineSourcesFromHeaders maps variant headers to PipelineImageConfig.Sources,
+// urlFor turning a variant's Name into its URL. A header with no width,
+// no MIME or no URL is skipped.
 func PipelineSourcesFromHeaders(headers []HeaderInfo, urlFor func(name string) string) []PipelineSource {
 	out := make([]PipelineSource, 0, len(headers))
 	for _, h := range headers {
@@ -61,41 +48,24 @@ func PipelineSourcesFromHeaders(headers []HeaderInfo, urlFor func(name string) s
 // PipelineImageConfig configures a multi-format <picture> with an
 // optional placeholder (LQIP data URL or BlurHash string).
 type PipelineImageConfig struct {
-	// Fallback is the <img>'s src: required, used by browsers that
-	// can't pick from Sources. Typically a mid-size JPEG / PNG.
+	// Fallback is the <img>'s src (required).
 	Fallback string
 
 	// Alt is required for non-decorative images.
 	Alt string
 
-	// Width and Height are the intrinsic dimensions of Fallback.
-	// Setting them is mandatory to avoid CLS.
+	// Width and Height are Fallback's intrinsic dimensions; a zero one is omitted.
 	Width, Height int
 
-	// Sources is the typed responsive set; one <source> element is
-	// emitted per distinct Type, grouping every PipelineSource with
-	// that type into a single srcset.
-	//
-	// Groups are emitted in the order their Type first appears, so
-	// putting the modern format (WebP) before the legacy one makes
-	// older browsers fall through to the Fallback <img>.
+	// Sources render one <source> per Type, in the order each Type first appears.
 	Sources []PipelineSource
 
 	// Sizes is the CSS sizes attribute. Default "100vw".
 	Sizes string
 
-	// Placeholder, when set to an inline raster data: URI, renders a
-	// low-fidelity image behind this one so something content-shaped is
-	// visible before the real pixels arrive.
-	//
-	// Produce one with framework/image: BlurHashDataURL(hash, …) to render
-	// a stored BlurHash, the natural companion to VariantResult.BlurHash,
-	// or pass VariantResult.Placeholder straight through for an LQIP.
-	// A bare BlurHash string is not accepted; it is not an image until it
-	// is decoded.
-	//
-	// Values that are not usable inline images are dropped and the image
-	// renders without a placeholder.
+	// Placeholder is an inline raster data: URI painted behind the image
+	// (framework/image.BlurHashDataURL or VariantResult.Placeholder); any
+	// other value renders no placeholder.
 	Placeholder string
 
 	Eager        bool
@@ -106,32 +76,15 @@ type PipelineImageConfig struct {
 
 	ID, Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the image's root element
-	// (the wrapping <span>, not the inner <img>). Keys the component
-	// owns are dropped: class and id (use Class / ID) and data-cui-*.
+	// ExtraAttrs lands on the outer <span>; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// PipelineImage renders <picture> with one <source> per MIME type, plus
-// a CLS-safe <img> fallback and an optional placeholder. Built to
-// consume framework/image.VariantSet output directly: take the
-// VariantResult.Variants slice, map each entry to a PipelineSource,
-// pass the BlurHash or Placeholder as the placeholder field.
-//
-// Shares the ui-image visual surface with OptimizedImage; the
-// distinction is multi-Type srcset support, intended for output of
-// the framework's image pipeline where the same source has been
-// encoded as both modern (WebP) and legacy (JPEG/PNG) variants.
+// PipelineImage renders <picture> with one <source> per MIME type, an
+// <img> fallback and an optional placeholder, on OptimizedImage's
+// ui-image surface. It panics without Fallback or without Alt (unless
+// Class carries fui-image--decorative).
 func PipelineImage(cfg PipelineImageConfig) render.HTML {
-	// Programmer errors (empty Fallback URL, missing Alt on a non-
-	// decorative image) still panic. These are bugs in the caller's
-	// code, not data-shape issues. Missing intrinsic dimensions are
-	// a different story: user-generated content frequently lacks
-	// them (old DB rows, malformed uploads), and crashing the render
-	// path on that data turns into a 500. Instead we omit the width/
-	// height attributes when zero, accepting the CLS cost as a
-	// degraded-but-functional fallback.
 	if cfg.Fallback == "" {
 		panic("ui: PipelineImage requires Fallback")
 	}
@@ -139,16 +92,7 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 		panic("ui: PipelineImage requires Alt (or add fui-image--decorative to Class for intentional decorative images with alt=\"\")")
 	}
 
-	// Same URL allow-list OptimizedImage applies: drop unsafe schemes on
-	// the fallback and on every source, replacing an unusable fallback with
-	// the framework's 1x1 stub so the surrounding layout survives. This
-	// component renders storage URLs that often originate in user data, so
-	// it needs the guard at least as much as OptimizedImage does.
-	if safe := safeImageURL(cfg.Fallback); safe != "" {
-		cfg.Fallback = safe
-	} else {
-		cfg.Fallback = "/__gofastr/blank.png"
-	}
+	cfg.Fallback = imageFallbackURL(cfg.Fallback)
 	if len(cfg.Sources) > 0 {
 		filtered := make([]PipelineSource, 0, len(cfg.Sources))
 		for _, s := range cfg.Sources {
@@ -161,29 +105,9 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 
 	lqip := placeholderImage(cfg.Placeholder)
 	if lqip != "" {
-		// Placeholder is a data: URI string, never a caller's markup,
-		// so the placeholder image is always this component's own;
-		// its root becomes a sibling here rather than one an owner
-		// could place, so its own marks collapse into a single one.
 		lqip = headless.Own(lqip)
 	}
-
-	cls := "fui-image"
-	if cfg.Fit != ImageFitCover {
-		cls += " fui-image--fit-" + string(cfg.Fit)
-	}
-	if cfg.Aspect != ImageAspectAuto {
-		cls += " fui-image--aspect-" + string(cfg.Aspect)
-	}
-	if cfg.Rounded {
-		cls += " fui-image--rounded"
-	}
-	if lqip != "" {
-		cls += " fui-image--placeheld"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
+	cls := imageRootClass(cfg.Fit, cfg.Aspect, cfg.Rounded, lqip != "", cfg.Class)
 
 	loading := "lazy"
 	if cfg.Eager {
@@ -224,15 +148,8 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 		}))
 	}
 	children = append(children, img)
-	// The source groups and the fallback img are both built from this
-	// component's own fields (Sources, a struct slice, carries no
-	// render.HTML), so picture — with no wrapper an owner could reach
-	// around — is the topmost internal element here.
 	picture := render.Tag("picture", map[string]string{"data-cui-internal": ""}, children...)
 
-	// The placeholder is emitted before the picture so the real image paints
-	// over it in DOM order. Both are positioned, so tree order decides,
-	// with no z-index needed.
 	return imageStyle.WrapHTML(html.Span(html.TextConfig{
 		Class:      cls,
 		ID:         cfg.ID,
@@ -245,19 +162,8 @@ type pipelineGroup struct {
 	srcset string
 }
 
-// encodeSrcsetURL percent-escapes the four characters that the HTML
-// srcset parser uses as separators: ',' splits candidates, and any
-// ASCII whitespace splits URL from descriptor. Storage URLs that
-// contain raw commas (presigned URLs, keys with comma-separated
-// segments) would otherwise be split into multiple malformed
-// candidates and the wrong (or no) image would be fetched.
-// A data: URI is the one shape whose first comma is structural. It
-// separates the media type from the payload, so escaping it yields a
-// candidate no browser can decode. Every later comma belongs to the
-// percent-decoded payload and must be escaped: a trailing raw comma ends
-// the candidate before its width descriptor. safeImageURL admits inline
-// raster data: URIs for <img src> and srcsets, so this path is reachable
-// by design.
+// encodeSrcsetURL percent-escapes the commas and ASCII whitespace the
+// srcset parser splits on, except a data: URI's first comma.
 func encodeSrcsetURL(url string) string {
 	if !strings.ContainsAny(url, ", \t\n\r") {
 		return url
@@ -291,9 +197,8 @@ func encodeSrcsetURL(url string) string {
 	return b.String()
 }
 
-// groupPipelineSources buckets PipelineSources by MIME type, preserving
-// the input ordering of types' first appearance, and sorts widths
-// within each bucket ascending for predictable srcset output.
+// groupPipelineSources buckets sources by MIME type in first-appearance
+// order, widths ascending, dropping invalid and duplicate entries.
 func groupPipelineSources(sources []PipelineSource) []pipelineGroup {
 	if len(sources) == 0 {
 		return nil

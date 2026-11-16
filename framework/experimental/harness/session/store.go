@@ -131,7 +131,7 @@ CREATE INDEX IF NOT EXISTS idx_events_ts
     ON events (ts);
 
 CREATE TABLE IF NOT EXISTS tool_call_intents (
-    call_id     TEXT PRIMARY KEY,
+    call_id     TEXT PRIMARY KEY NOT NULL,
     log_id      TEXT NOT NULL,
     tool_name   TEXT NOT NULL,
     args_hash   TEXT NOT NULL,
@@ -140,7 +140,7 @@ CREATE TABLE IF NOT EXISTS tool_call_intents (
 );
 
 CREATE TABLE IF NOT EXISTS tool_call_outcomes (
-    call_id      TEXT PRIMARY KEY REFERENCES tool_call_intents(call_id),
+    call_id      TEXT PRIMARY KEY NOT NULL REFERENCES tool_call_intents(call_id),
     outcome      TEXT NOT NULL,
     completed_at TEXT NOT NULL,
     result_ref   TEXT

@@ -10,75 +10,39 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── ThemeToggle ────────────────────────────────────────────────────
-
 // ThemeToggleVariant selects the visual variant of the toggle button.
 type ThemeToggleVariant string
 
 const (
-	// ThemeToggleIcon renders a sun/moon icon button.
-	ThemeToggleIcon ThemeToggleVariant = "icon"
-	// ThemeToggleLabel renders a text button ("Light" / "Dark").
-	ThemeToggleLabel ThemeToggleVariant = "label"
-	// ThemeTogglePill renders a segmented pill with light/auto/dark.
-	ThemeTogglePill ThemeToggleVariant = "pill"
+	ThemeToggleIcon  ThemeToggleVariant = "icon"  // a sun/moon icon button
+	ThemeToggleLabel ThemeToggleVariant = "label" // a "Light" / "Dark" text button
+	ThemeTogglePill  ThemeToggleVariant = "pill"  // a light/auto/dark segmented pill
 )
 
-// ThemeToggleConfig configures a dark/light mode toggle button.
-//
-// The toggle writes to localStorage["gofastr.colorScheme"] via the
-// existing colorscheme.js bootstrap, which applies the change
-// immediately. No page reload needed.
-//
-// The component emits the data-hui-theme-toggle / -option / -cycle
-// hooks so the headless-navigation module can attach the click logic
-// via event delegation.
+// ThemeToggleConfig configures a dark/light mode toggle, which stores
+// the choice in localStorage["gofastr.colorScheme"].
 type ThemeToggleConfig struct {
-	// Variant selects the visual style.
-	// Defaults to ThemeToggleIcon when empty.
+	// Variant selects the visual style. Default ThemeToggleIcon.
 	Variant ThemeToggleVariant
-	// Fill stretches the pill across its container, the options sharing
-	// the width (a panel's full-width switch). Pill only.
-	Fill bool
-
-	// ID is an optional id for the root element.
-	ID string
-
-	// Class is an optional extra CSS class.
+	// Fill stretches the pill across its container. Pill only.
+	Fill  bool
+	ID    string
 	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the toggle's root element, whichever
-	// shape it takes (<button> for icon/label, <div> for pill). Keys
-	// the component owns are dropped: class and id (use Class / ID),
-	// data-cui-* (the colorscheme runtime wiring), type, role, and
-	// aria-label (i18n-resolved).
+	// ExtraAttrs lands on the root; class, id, data-cui-*, type, role and aria-label are dropped.
 	ExtraAttrs html.Attrs
-
-	// LightLabel overrides the light-mode label for label/pill variants.
-	// Defaults to "Light".
+	// LightLabel overrides the light-mode label. Default "Light".
 	LightLabel string
-
-	// DarkLabel overrides the dark-mode label for label/pill variants.
-	// Defaults to "Dark".
+	// DarkLabel overrides the dark-mode label. Default "Dark".
 	DarkLabel string
-
-	// AutoLabel overrides the auto-mode label for pill variant.
-	// Defaults to "Auto".
+	// AutoLabel overrides the pill's auto-mode label. Default "Auto".
 	AutoLabel string
-	// Ctx carries the per-request context used to resolve the light/dark/
-	// auto labels and aria-labels. When nil, English fallbacks apply.
+	// Ctx is the request context the labels are said in.
 	Ctx context.Context
 }
 
-// ThemeToggle renders a dark/light color scheme toggle button.
-//
-// On click, the button cycles through dark → light → auto, skipping a
-// step that would not change what the page shows (on a dark OS, auto
-// goes straight to light), and writes the choice to localStorage. The
-// colorscheme.js bootstrap script
-// picks up the change and swaps data-color-scheme on <html> so all
-// theme tokens update immediately.
+// ThemeToggle renders a color scheme toggle. The button variants cycle
+// dark, light and auto on click, skipping a step that would not change
+// what the page shows; the pill offers all three.
 func ThemeToggle(cfg ThemeToggleConfig) render.HTML {
 	variant := cfg.Variant
 	if variant == "" {
@@ -90,7 +54,6 @@ func ThemeToggle(cfg ThemeToggleConfig) render.HTML {
 	case ThemeTogglePill:
 		return themeToggleStyle.WrapHTML(renderThemeTogglePill(cfg, cls))
 	default:
-		// icon and label both render a single button
 		return themeToggleStyle.WrapHTML(renderThemeToggleButton(cfg, cls, variant))
 	}
 }
@@ -105,11 +68,6 @@ func renderThemeToggleButton(cfg ThemeToggleConfig, cls string, variant ThemeTog
 		attrs = map[string]string{}
 	}
 	attrs["type"] = "button"
-	// The loader marker: headless-navigation's module is demand-loaded
-	// by the [data-hui-theme-toggle] scan, and the click logic lives
-	// in that module. Without the marker on the button variants' own
-	// root, a page whose only theme control is an icon toggle never
-	// loads the module and the button does nothing.
 	attrs["data-hui-theme-toggle"] = ""
 	attrs["data-hui-theme-cycle"] = ""
 	attrs["aria-label"] = i18nui.ThemeToggle.Text(ctx)
@@ -124,7 +82,7 @@ func renderThemeToggleButton(cfg ThemeToggleConfig, cls string, variant ThemeTog
 			headless.Own(Icon("sun", IconConfig{Size: "18", Class: "fui-theme-toggle__sun"})),
 			headless.Own(Icon("moon", IconConfig{Size: "18", Class: "fui-theme-toggle__moon"})),
 		)
-	default: // label
+	default:
 		lightLabel := cfg.LightLabel
 		if lightLabel == "" {
 			lightLabel = i18nui.ThemeLight.Text(ctx)
@@ -171,8 +129,6 @@ func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
 		rootAttrs["id"] = cfg.ID
 	}
 
-	// Auto ships checked and is the one Tab stop, the first-visit
-	// state; the runtime re-checks from the stored scheme.
 	optBtn := func(label, opt string) render.HTML {
 		checked, tab := "false", "-1"
 		if opt == "auto" {

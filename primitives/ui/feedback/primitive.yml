@@ -1,0 +1,248 @@
+primitive: ui.feedback
+summary: Feedback - toasts, notifications and the bell, banners, the network retry banner, the polling indicator, skeleton presets and tooltips.
+code:
+  - framework/ui/toast.go
+  - framework/ui/notification.go
+  - framework/ui/notificationbell.go
+  - framework/ui/banner.go
+  - framework/ui/networkretrybanner.go
+  - framework/ui/pollingindicator.go
+  - framework/ui/skeletonpresets.go
+  - framework/ui/tooltip.go
+invariants:
+  - id: own-wraps-only-own-markup
+    rule: A feedback component passes headless.Own only markup it builds from its own config strings, never a caller's render.HTML field.
+    enforced_by:
+      - test: framework/ui.TestKitMarksInternalSubtrees
+  - id: banner-dismiss-cookie-skips-render
+    rule: A Banner with a DismissID whose Ctx request carries the cookie gofastr.banner-dismiss.<encodeURIComponent(DismissID)>=1 renders nothing, and any other cookie leaves it rendered.
+    enforced_by:
+      - test: framework/ui.TestBannerSkipsRenderOnDismissCookie
+      - test: framework/ui.TestDismissedBannerCookieIsTheOneBannerReads
+  - id: banner-dismiss-cookie-matches-the-module
+    rule: The cookie prefix Banner reads is the one framework/headless/behavior.js writes when it remembers a dismissal.
+    enforced_by:
+      - test: framework/ui.TestSweepFeedbackDismissCookieMatchesTheModule
+  - id: banner-is-a-polite-status
+    rule: A Banner renders role=status in every Variant, says the tone word before the title, and ExtraAttrs cannot set its role or aria-live.
+    enforced_by:
+      - test: framework/ui.TestBannerVariantsRoleSemantics
+      - test: framework/ui.TestBannerExtraAttrsCannotOverrideOwned
+  - id: banner-id-is-the-root-id
+    rule: The ID of a Banner and of a NetworkRetryBanner is the root element's id.
+    enforced_by:
+      - test: framework/ui.TestBannersRenderTheirID
+  - id: banner-identity-is-stable
+    rule: A Banner's system id is its DismissID, else its ID, else a hash of its Variant, Title and Body that is the same on every render and differs when any of them does.
+    enforced_by:
+      - test: framework/ui.TestSweepFeedbackBannerIdentityIsStable
+  - id: retry-health-is-a-safe-link
+    rule: NetworkRetryBanner panics on an empty HealthEndpoint and on one the anchor policy refuses.
+    enforced_by:
+      - test: framework/ui.TestRetryBannerRequiresHealth
+      - test: framework/ui.TestRetryBannerRefusesUnsafeHealth
+  - id: retry-banner-ships-hidden-with-a-real-link
+    rule: NetworkRetryBanner renders the offline SystemBanner hidden, as role=alert, with no dismiss and a retry anchor whose href is HealthEndpoint.
+    enforced_by:
+      - test: framework/ui.TestRetryBannerHiddenByDefault
+      - test: framework/ui.TestRetryBannerAttrs
+  - id: notification-alerts-on-warning-and-danger
+    rule: A warning or danger Notification renders role=alert and every other variant role=status.
+    enforced_by:
+      - test: framework/ui.TestNotificationDangerGetsAlertRole
+      - test: framework/ui.TestSweepFeedbackNotificationWarningInterrupts
+  - id: notification-registered-variant-keeps-info-tone
+    rule: A registered status variant renders a Notification in the info tone with its own fui-notification--<name> class and its registered glyph.
+    enforced_by:
+      - test: framework/ui.TestSweepFeedbackNotificationRegisteredVariantKeepsTheInfoTone
+      - test: framework/ui.TestStatusVariantSpansComponents
+      - test: framework/ui.TestStatusVariantIconFlowsThrough
+  - id: notification-id-keeps-classes
+    rule: A Notification with an ID keeps its Class, Position and variant classes on the root.
+    enforced_by:
+      - test: framework/ui.TestSweepFeedbackNotificationIDKeepsItsClasses
+  - id: bell-needs-a-destination
+    rule: NotificationBellTrigger panics on an empty Name, Label or Href and on an Href of "#".
+    enforced_by:
+      - test: framework/ui.TestNotificationBellRequiresHref
+      - test: framework/ui.TestNotificationBellRefusesHashHref
+      - test: framework/ui.TestNotificationBellRequiresName
+      - test: framework/ui.TestNotificationBellRequiresLabel
+  - id: bell-row-href-is-safe
+    rule: A NotificationItem Href the anchor policy refuses renders as "#".
+    enforced_by:
+      - test: framework/ui.TestBellRowHrefDropsUnsafeScheme
+  - id: bell-popover-text-per-request
+    rule: The bell popover, mounted once, resolves its default empty text in each request's locale, and NotificationBellTrigger resolves its spoken count with the ctx it is given.
+    enforced_by:
+      - test: framework/ui.TestBellTriggerRequestLocale
+      - test: framework/ui.TestBellTriggerKeepsCallerText
+  - id: bell-signal-list-swaps-html
+    rule: With SignalList set, the bell popover's list body carries data-cui-signal with data-cui-signal-mode=html, and without it no signal.
+    enforced_by:
+      - test: framework/ui.TestSweepFeedbackBellSignalListSwapsTheList
+  - id: polling-indicator-owns-its-live-region
+    rule: PollingIndicator's root is role=status with aria-live=polite whatever ExtraAttrs holds.
+    enforced_by:
+      - test: framework/ui.TestSweepFeedbackPollingIndicatorOwnsItsLiveRegion
+  - id: skeleton-one-announcement
+    rule: Each skeleton preset is one headless.Skeleton render, with its bars hidden and one polite announcement.
+    enforced_by:
+      - test: framework/ui.TestSkeletonPresets_HiddenBarsOneAnnouncement
+  - id: skeleton-preset-line-counts
+    rule: SkeletonCard draws 1 plus BodyLines (default 2) lines and one more with the footed modifier for ShowFooter, SkeletonRow 2 with the chevron modifier unless HideChevron, SkeletonTimeline 4 per row (default 3), SkeletonAvatar 3 or 2 with HideSubline, and SkeletonLine 1.
+    enforced_by:
+      - test: framework/ui.TestSkeletonCard_BodyLines
+      - test: framework/ui.TestSkeletonCard_FooterOptional
+      - test: framework/ui.TestSkeletonRow_RendersLabelValueChevron
+      - test: framework/ui.TestSkeletonRow_NoChevron
+      - test: framework/ui.TestSkeletonAvatar_RendersCircleAndLines
+      - test: framework/ui.TestSkeletonTimelineRowsAndRail
+      - test: framework/ui.TestSweepFeedbackSkeletonModifiersMarkTheShape
+      - test: framework/ui.TestSweepFeedbackSkeletonLineIsOneBar
+  - id: toast-header-is-one-json-array
+    rule: AddToast ignores an empty Title and writes X-Gofastr-Toast as one JSON array that each call extends.
+    enforced_by:
+      - test: framework/ui.TestAddToastSetsJSONArrayHeader
+      - test: framework/ui.TestAddToastAccumulatesMultipleCalls
+      - test: framework/ui.TestAddToastIgnoresEmptyTitle
+  - id: toast-reads-a-manual-header
+    rule: AddToast keeps a single-object header value as the array's first entry and drops a malformed array value whole.
+    enforced_by:
+      - test: framework/ui.TestSweepFeedbackAddToastKeepsAManualObject
+      - test: framework/ui.TestSweepFeedbackAddToastDropsAMalformedArray
+  - id: toast-drops-poisoned-entries
+    rule: AddToast drops a toast, new or already in the header, that holds a control byte in its title, body, stack or action, and keeps the rest of the header.
+    enforced_by:
+      - test: framework/ui.TestToastCtlBytesDropped
+      - test: framework/ui.TestToastReparseDropsControlByteEntries
+      - test: framework/ui.TestToastActionCtlBytesDropped
+  - id: toast-header-is-ascii
+    rule: The X-Gofastr-Toast value is ASCII, with every non-ASCII rune written as a JSON \u escape.
+    enforced_by:
+      - test: framework/ui.TestToastHeaderIsASCII
+  - id: toast-trigger-fields-match-the-module
+    rule: Every ToastTrigger JSON field name is a cfg field the headless-feedback module reads.
+    enforced_by:
+      - test: framework/ui.TestSweepFeedbackToastTriggerFieldsMatchTheModule
+  - id: toast-template-carries-every-variant
+    rule: The registered toast row template carries this package's classes and, for neutral and every registered status variant, the class and glyph a Notification of that variant wears.
+    enforced_by:
+      - test: framework/ui.TestToastTemplateCarriesTheKitSkin
+      - test: framework/ui.TestSweepFeedbackToastTemplateCarriesEveryVariant
+  - id: tooltip-describes-its-trigger
+    rule: Tooltip gives its trigger an aria-describedby naming a role=tooltip pop whose id is ID, or else tip- and the slug of Text (a hash of Text when the slug is empty), made unique on the page by Ctx's id scope.
+    enforced_by:
+      - test: framework/ui.TestTooltipWrapsTriggerAndAddsAriaDescribedBy
+      - test: framework/ui.TestTooltipCustomIDOverridesSlug
+      - test: framework/ui.TestTooltipsGetDistinctIDs
+  - id: tooltip-splices-the-first-open-tag
+    rule: The aria-describedby splice goes into the trigger's first open tag past leading whitespace and comments, before a self-closing slash, ignores a > inside quotes, and is skipped only when that tag already carries the attribute.
+    enforced_by:
+      - test: framework/ui.TestTooltipWiresTheRootWhenADescendantCarriesDescribedBy
+      - test: framework/ui.TestTooltipSplicesPastAGtInsideAQuotedValue
+      - test: framework/ui.TestTooltipIdempotentWhenRootCarriesDescribedBy
+      - test: framework/ui.TestSweepFeedbackTooltipSkipsLeadingComments
+      - test: framework/ui.TestSweepFeedbackTooltipSplicesBeforeASelfClose
+decisions:
+  - id: banner-polite-in-every-tone
+    date: 2026-11-16
+    status: accepted
+    decision: Every Banner tone is a polite status, and the urgency of warn and danger is carried by the tone word.
+    rejected:
+      - option: role=alert for warn and danger banners.
+        why: A banner sits at the top of the shell and would interrupt the reader; only the offline banner earns that, because everything the reader does next fails.
+    upholds: [banner-is-a-polite-status]
+  - id: banner-dismissal-skips-the-server-render
+    date: 2026-11-16
+    status: accepted
+    decision: The runtime mirrors a DismissID dismissal into a cookie, and Banner reads it so a dismissed banner is never rendered.
+    rejected:
+      - option: Hide a dismissed banner only in the runtime's hide pass.
+        why: The banner flashes on every page load before the pass hides it.
+      - option: A Banner RPC that stores the dismissal on the server.
+        why: Richer persistence is the app's; the cookie is enough to skip the render.
+    upholds: [banner-dismiss-cookie-skips-render, banner-dismiss-cookie-matches-the-module]
+  - id: banner-identity-from-its-message
+    date: 2026-11-16
+    status: accepted
+    decision: A banner with no DismissID or ID is named by a hash of its message, so a remembered dismissal still hides it after a re-render, a navigation or on another replica.
+    rejected:
+      - option: A per-render counter.
+        why: Each render got a new id, and a dismissed banner came back.
+    upholds: [banner-identity-is-stable]
+  - id: retry-is-a-real-link
+    date: 2026-11-16
+    status: accepted
+    decision: The retry control is an anchor to the health endpoint that script fetches in place.
+    rejected:
+      - option: A script-only button that reloads the page.
+        why: A no-script page would have no control, and a reload as a fix is hard rule 4.
+    upholds: [retry-banner-ships-hidden-with-a-real-link]
+  - id: toast-stack-lives-in-the-browser
+    date: 2026-11-16
+    status: accepted
+    decision: Toasts reach the client stack from window.__gofastr.toast or the X-Gofastr-Toast header of an RPC response, and the stack lives in the browser.
+    rejected:
+      - option: Push toasts over SSE.
+        why: SSE is the last resort for push, and a toast answers a request the client made.
+      - option: A server-side toast queue.
+        why: Server state lives in the database or the client store, never in server RAM.
+    upholds: [toast-header-is-one-json-array, toast-trigger-fields-match-the-module]
+  - id: toast-header-one-array
+    date: 2026-11-16
+    status: accepted
+    decision: Several toasts on one response share one header holding a JSON array.
+    rejected:
+      - option: One header line per toast.
+        why: Fetch joins repeated header values in ways that differ across browsers.
+    upholds: [toast-header-is-one-json-array]
+  - id: toast-drop-not-pass-poisoned-entries
+    date: 2026-11-16
+    status: accepted
+    decision: A toast holding a control byte is dropped and the rest of the header is kept, as InvalidateScreens does.
+    rejected:
+      - option: Write the entry as encoding/json encodes it.
+        why: encoding/json leaves DEL raw, and Go's HTTP/2 writer drops an invalid header whole, losing every toast on the response.
+      - option: Rely on the \u escapes of C0 bytes.
+        why: They decode back into the toast text on the client.
+    upholds: [toast-drops-poisoned-entries]
+  - id: toast-header-escapes-non-ascii
+    date: 2026-11-16
+    status: accepted
+    decision: The header value escapes every non-ASCII rune as \u, which JSON.parse turns back into the text.
+    rejected:
+      - option: Raw UTF-8 in the header.
+        why: Fetch decodes header bytes as ISO-8859-1, so the text arrives as mojibake.
+    upholds: [toast-header-is-ascii]
+  - id: skeleton-one-render-per-preset
+    date: 2026-11-16
+    status: accepted
+    decision: A skeleton preset is one headless.Skeleton render whose shapes the stylesheet draws from line position and the primitive's hooks.
+    rejected:
+      - option: One Skeleton per line inside a wrapper.
+        why: Each line becomes a live region, and the reader hears Loading once per line.
+    upholds: [skeleton-one-announcement]
+  - id: skeleton-sizes-are-knobs
+    date: 2026-11-16
+    status: accepted
+    decision: A preset's sizes, the avatar circle's included, are CSS knobs set on the preset class.
+    rejected:
+      - option: A size field written as an inline style.
+        why: A strict CSP drops inline styles.
+  - id: tooltip-is-css-only
+    date: 2026-11-16
+    status: accepted
+    decision: The tooltip pop is always in the DOM and shown by hover and focus rules on its wrapper.
+    rejected:
+      - option: A runtime module that positions and toggles the pop.
+        why: It needs script, and the pop flashes on mount.
+  - id: tooltip-splices-caller-markup
+    date: 2026-11-16
+    status: accepted
+    decision: Tooltip splices aria-describedby into the caller's trigger markup.
+    rejected:
+      - option: Hand the wiring down a builder seam, as FormField does.
+        why: The trigger is caller-built render.HTML with no seam.
+    revisit_if: Tooltip takes its trigger as a builder rather than as markup.
+    upholds: [tooltip-splices-the-first-open-tag]

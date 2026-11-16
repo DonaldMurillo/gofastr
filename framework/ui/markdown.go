@@ -13,38 +13,24 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── Markdown ───────────────────────────────────────────────────────
-//
-// Themed wrapper over core/markdown. The core renderer produces
-// semantic HTML; this component wraps that in a styled prose container
-// so headings, lists, links, code blocks, and tables get theme-token
-// colors + readable typography without the caller writing CSS.
-
 // MarkdownConfig configures a Markdown renderer.
 type MarkdownConfig struct {
 	// Source is the raw markdown text (required).
 	Source string
-	// Compact tightens spacing, useful for inline previews where
-	// hero-page paragraph rhythm would feel wrong.
+	// Compact tightens spacing for inline previews.
 	Compact bool
-	// Measure caps the line length at a reading width
-	// (--ui-markdown-measure, 72ch) for long-form pages: about, terms,
-	// an explanatory paragraph in a wide page column.
+	// Measure caps the line length at --ui-markdown-measure (72ch).
 	Measure bool
 	ID      string
 	Class   string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the prose container's
-	// root <div>. Keys the component owns are dropped: class and id
-	// (use Class / ID) and data-cui-*.
+	// ExtraAttrs lands on the root <div>; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
-	// Ctx carries the per-request context the code blocks' accessible
-	// names, line counts and copy controls are said in. When nil,
-	// English applies.
+	// Ctx is the request context the code blocks' words are said in.
 	Ctx context.Context
 }
 
-// Markdown renders the given Markdown source as themed HTML.
+// Markdown renders Source as themed prose, each fenced block a
+// highlighted CodeBlock. It panics without Source.
 func Markdown(cfg MarkdownConfig) render.HTML {
 	if cfg.Source == "" {
 		panic("ui: Markdown requires Source")
@@ -68,22 +54,14 @@ func Markdown(cfg MarkdownConfig) render.HTML {
 	return markdownStyle.WrapHTML(render.Tag("div", attrs, render.HTML(body)))
 }
 
-// scrollTables wraps each table in a box that scrolls sideways, so a
-// table wider than a phone scrolls instead of widening the page or being
-// clipped by a column that hides overflow. The box is a tab stop, like a
-// raw <pre>, so a keyboard can scroll it. core/markdown escapes raw HTML,
-// so every literal <table> in its output is one it built from a pipe table.
+// scrollTables wraps each table in a focusable box that scrolls sideways.
 func scrollTables(body string) string {
 	body = strings.ReplaceAll(body, "<table>", `<div class="fui-markdown__table" tabindex="0"><table>`)
 	return strings.ReplaceAll(body, "</table>", "</table></div>")
 }
 
-// enrichCodeBlocks upgrades the plain `<pre><code class="language-X">…</code></pre>`
-// blocks that core/markdown emits into framed ui.CodeBlock surfaces: syntax
-// highlighting (via highlightLines) plus a copy button and chrome, the same
-// component the rest of the framework uses for code. The fenced body arrives
-// HTML-escaped (core/markdown escapes it), so `</code></pre>` is an
-// unambiguous terminator; we un-escape back to source, tokenize, and re-emit.
+// enrichCodeBlocks re-renders each escaped <pre><code> block core/markdown
+// emits as a highlighted CodeBlock with a copy button.
 func enrichCodeBlocks(ctx context.Context, body string) string {
 	const openPre = `<pre tabindex="0"><code`
 	const closer = `</code></pre>`
@@ -112,10 +90,6 @@ func enrichCodeBlocks(ctx context.Context, body string) string {
 		metaAttr := codeAttr(rest[:gt], `data-meta="`)
 		meta := parseFenceMeta(metaAttr)
 		raw := stdhtml.UnescapeString(rest[gt+1 : gt+1+end])
-		// The raw info string rides on the block root in data-meta:
-		// recognized options are consumed below, everything else stays
-		// addressable for tooling instead of vanishing with the <code>
-		// tag it arrived on.
 		extra := html.Attrs{}
 		if metaAttr != "" {
 			extra["data-meta"] = stdhtml.UnescapeString(metaAttr)
@@ -140,9 +114,8 @@ func enrichCodeBlocks(ctx context.Context, body string) string {
 	return out.String()
 }
 
-// codeAttr extracts one value from a `<code>` tag's attribute string, given
-// everything up to and including its opening quote: ` class="language-go"`
-// with marker `class="language-` → "go". Returns "" when absent.
+// codeAttr returns the quoted value after marker in a <code> tag's
+// attributes, or "".
 func codeAttr(attrs, marker string) string {
 	_, after, ok := strings.Cut(attrs, marker)
 	if !ok {
@@ -154,21 +127,9 @@ func codeAttr(attrs, marker string) string {
 	return ""
 }
 
-// fenceMeta is what this renderer understands of a fence's options, which
-// core/markdown parses off the info string and passes through verbatim in
-// data-meta. All of them map onto CodeBlock:
+// fenceMeta is the CodeBlock options a fence's info string carries:
 //
 //	```go title="main.go" showLineNumbers {2,5-7} diff words="err,nil" wrap scroll
-//
-// title (quoted or bare) names the block's chrome header; showLineNumbers turns
-// on the gutter; scroll caps the body height; {1,3-5} (or highlight=1,3-5)
-// highlights lines; diff marks +/- lines as added/removed (the LANGUAGE diff
-// implies nothing, only the option does); words=a,b marks literal matches;
-// wrap soft-wraps long lines (nowrap / wrap=false turn it off). Unknown
-// tokens are ignored rather than rejected, so a fence carrying options for
-// some other tool still renders; an invalid highlight or words spec is
-// dropped the same way instead of failing the page, and a valid earlier
-// value survives it (an invalid later value has nothing to win with).
 type fenceMeta struct {
 	filename    string
 	lineNumbers bool
@@ -182,8 +143,6 @@ type fenceMeta struct {
 func parseFenceMeta(meta string) fenceMeta {
 	var out fenceMeta
 	for _, tok := range splitFenceMeta(stdhtml.UnescapeString(meta)) {
-		// Bare brace form: {1,3-5} is the convention several doc tools
-		// use for line highlight; a synonym of highlight=1,3-5.
 		if len(tok) > 1 && tok[0] == '{' && tok[len(tok)-1] == '}' {
 			if r, err := ParseLineRanges(tok[1 : len(tok)-1]); err == nil {
 				out.highlight = r
@@ -197,7 +156,6 @@ func parseFenceMeta(meta string) fenceMeta {
 				out.filename = strings.Trim(val, `"'`)
 			}
 		case "showlinenumbers":
-			// Bare flag, or an explicit showLineNumbers=false to turn it off.
 			out.lineNumbers = !hasVal || strings.Trim(val, `"'`) != "false"
 		case "scroll":
 			out.scroll = !hasVal || strings.Trim(val, `"'`) != "false"
@@ -226,8 +184,7 @@ func parseFenceMeta(meta string) fenceMeta {
 	return out
 }
 
-// splitFenceMeta splits on whitespace, except inside quotes: a title with a
-// space in it is one token.
+// splitFenceMeta splits on whitespace outside quotes.
 func splitFenceMeta(meta string) []string {
 	var toks []string
 	var cur strings.Builder
@@ -262,12 +219,6 @@ func splitFenceMeta(meta string) []string {
 var markdownStyle = registry.RegisterStyle("ui-markdown", markdownCSS)
 
 func markdownCSS(_ style.Theme) string {
-	// Reading typography for long-form docs. The rhythm is em-based so it
-	// scales with the host's body size, and HIERARCHICAL rather than a flat
-	// gap between every element: paragraphs breathe, section headings open a
-	// larger gap above and bind tightly to the content below, lists and code
-	// get their own measure. Leading is 1.7: light-on-dark text reads lighter
-	// and wants extra line-height (the canonical site theme is dark-first).
 	return `[data-cui-comp="ui-markdown"] {
   display: block;
   color: var(--color-text, #09090B);

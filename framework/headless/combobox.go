@@ -9,16 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The combobox: an input that owns a listbox of options. The input
-// keeps focus through every interaction (the ARIA pattern's rule); the
-// listbox is linked by aria-controls, the active option by
-// aria-activedescendant, and the open state by aria-expanded — all
-// rendered server-side so a reader with no script gets a labelled
-// search form whose results are real content. The module owns the
-// keyboard contract and the pick; the RPC debouncing and the signal
-// swap are the kernel's data-cui-rpc contract, rendered here beside
-// the form's no-script destination.
-
 // Combobox parts.
 const (
 	PartComboboxForm    Part = "combobox-form"
@@ -26,11 +16,7 @@ const (
 	PartComboboxListbox Part = "combobox-listbox"
 	PartComboboxOption  Part = "combobox-option"
 	PartComboboxStatus  Part = "combobox-status"
-	// PartComboboxMeta is an option's secondary line (ComboboxOption
-	// Meta). Its own part: rendered as a second PartComboboxOption it
-	// took the option's class (padding, hover, active fill) inside the
-	// option itself.
-	PartComboboxMeta Part = "combobox-meta"
+	PartComboboxMeta    Part = "combobox-meta"
 )
 
 // ComboboxOption is one row in the listbox.
@@ -43,9 +29,7 @@ type ComboboxOption struct {
 	Label string
 	// Meta is secondary text beside the label (a path, a kind).
 	Meta string
-	// Href turns the option into an anchor: picking it navigates.
-	// Unsafe schemes drop the navigation affordance entirely (the
-	// pick still fills the input).
+	// Href turns the option into an anchor; an unsafe one is dropped.
 	Href string
 	// Disabled removes the option from keyboard navigation.
 	Disabled bool
@@ -55,72 +39,46 @@ type ComboboxOption struct {
 type ComboboxPick struct {
 	// Name is the hidden input's form name. Required.
 	Name string
-	// Value is the picked option's value; Label is the text the input
-	// shows for it. Both empty when nothing is picked.
+	// Value is the picked option's value and Label the input's text; empty when none.
 	Value, Label string
-	// Form is the id of the form the hidden input submits with, when
-	// that is not the form around it (the HTML form attribute).
+	// Form is the hidden input's form attribute, when not the enclosing form.
 	Form string
 }
 
 // ComboboxProps configures the combobox.
 type ComboboxProps struct {
-	// ID is the input's element id. Required; the listbox takes
-	// "<ID>-listbox".
+	// ID is the input's id; the listbox takes "<ID>-listbox". Required.
 	ID string
 	// Name is the form-submit name on the input. Required.
 	Name string
 	// Label names the input. Required.
 	Label string
 
-	// Placeholder for the input.
 	Placeholder string
 
-	// Island is the typed in-page results contract: the endpoint that
-	// re-renders the listbox and the signal the region is bound to.
-	// Optional — a static Options list needs no island; the no-script
-	// path is the same-origin GET form below either way.
+	// Island is the endpoint that re-renders the listbox and its signal.
 	Island *Island
 
-	// NoScriptAction is the form's action URL, the no-script
-	// destination: same-origin, a GET that submits the query. Required
-	// when Island is set (a reader without script must still reach the
-	// results); refused when it is "#".
+	// NoScriptAction is the same-origin GET destination; required with Island.
 	NoScriptAction string
 
-	// Options is a static list the module filters client-side. Takes
-	// precedence over the Island (no round-trip fires).
+	// Options is a static list filtered client-side; it takes precedence over Island.
 	Options []ComboboxOption
 
-	// Pick turns the combobox into a picker inside a host form: the
-	// input searches (its Name is the query the Island endpoint reads)
-	// and a hidden input submits the picked option's Value. Requires
-	// Island; refuses NoScriptAction, whose form would nest inside the
-	// host form. Options become the listbox's first rows, replaced by
-	// each search.
+	// Pick makes a picker inside a host form; it requires Island and refuses NoScriptAction.
 	Pick *ComboboxPick
 
-	// Control hands the input to a host Field: the field's label
-	// names it (the combobox draws none of its own; Label still names
-	// the listbox), and its hint and error describe it.
+	// Control hands the input to a host Field, which labels and describes it.
 	Control *FieldControl
 
-	// DebounceMS bounds the input debounce. Zero takes 250; negative
-	// is refused.
+	// DebounceMS is the input debounce. Zero takes 250; negative is refused.
 	DebounceMS int
 
-	// Inline says the listbox is the surface's own content, laid out
-	// in flow (a command palette's result list), not a popup over the
-	// page. Escape then belongs to the surface: one press closes the
-	// dialog around the combobox. A popup listbox keeps Escape to
-	// itself, so closing the list never also closes a dialog, overlay
-	// or disclosure the combobox sits in.
+	// Inline lays the listbox out in flow, and Escape goes on to the surface around it.
 	Inline bool
 
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the root, the input and the listbox. The
-	// listbox's content is the Options' — not fillable.
 	Parts   Parts
 	Strings *Strings
 }
@@ -156,9 +114,6 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 		}
 	}
 	if p.NoScriptAction != "" {
-		// Whenever it is set, island or static: it becomes the wrapping
-		// form's action, and a static combobox's once shipped with no
-		// check at all (a javascript: URL was the form action).
 		if p.NoScriptAction == "#" {
 			panic("headless: Combobox NoScriptAction must be a real same-origin destination, not #")
 		}
@@ -174,9 +129,6 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 	}
 	listboxID := p.ID + "-listbox"
 
-	// Option ids: caller's, checked for duplicates, or derived. The
-	// derived ids go on a copy: the caller's slice may feed another
-	// combobox with a different ID.
 	p.Options = slices.Clone(p.Options)
 	ids := make([]string, 0, len(p.Options))
 	for i := range p.Options {
@@ -222,18 +174,10 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 		}
 	}
 	if p.Pick != nil {
-		// The search input names a form that does not exist, so the
-		// host form never submits the query; the RPC carrier still
-		// reads it.
 		inputAttrs["form"] = p.ID + "-search"
 		inputAttrs["value"] = scrubControlBytes(p.Pick.Label)
 	}
 
-	// The carrier is a DIV, not a FORM: the HTML parser drops a nested
-	// <form> open tag but honors its </form>, closing any host form the
-	// combobox is embedded in. The RPC trigger attributes work on any
-	// carrier; the real form (the no-script GET) wraps the whole
-	// combobox instead.
 	carrierAttrs := Attrs(map[string]string{})
 	if p.Island != nil && !hasStatic {
 		carrierAttrs["data-cui-rpc"] = p.Island.Endpoint
@@ -251,9 +195,6 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 		"aria-label": scrubControlBytes(p.Label) + " " + w.ComboboxResultsLabel,
 	})
 	Mark(listboxAttrs, "data-hui-combobox-listbox")
-	// The module announces the result count into the status region
-	// through this sentence — on the island listbox after each swap,
-	// on the static listbox after each filter.
 	listboxAttrs["data-hui-combobox-count"] = w.ComboboxResultCount
 	if p.Island != nil && !hasStatic {
 		listboxAttrs["data-cui-signal"] = p.Island.Signal
@@ -278,14 +219,6 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 	Mark(statusAttrs, "data-hui-combobox-status")
 	statusAttrs["data-hui-combobox-no-results"] = w.ComboboxNoResults
 
-	// Nothing in a combobox is the caller's: every option is static
-	// text the server rendered (a ComboboxOption carries only strings).
-	// The root div is wrapped in a no-script form whenever there is a
-	// NoScriptAction, so it is no longer what this function returns at
-	// top level; when wrapped, the div itself is the topmost element of
-	// the internal subtree, and its children must not carry a second
-	// mark — when it is not wrapped, the div IS the returned root (never
-	// marked), so its own children carry the mark instead.
 	wrapped := p.NoScriptAction != ""
 	labelAttrs := Attrs(map[string]string{"for": p.ID})
 	if !wrapped {
@@ -326,9 +259,6 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 	}
 	inner := b.El("div", PartRoot, rootAttrs, body...)
 	if wrapped {
-		// The no-script GET: the same query, submitted as a form to the
-		// same-origin destination. With script, the submit never fires
-		// (Enter picks the active option instead).
 		form := b.El("form", PartComboboxForm, Attrs(map[string]string{
 			"action": p.NoScriptAction,
 			"method": "GET",
@@ -339,11 +269,8 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 	return inner
 }
 
-// comboboxOptionEl renders one static option row.
 // ComboboxRows renders the option rows an island endpoint answers for
-// the listbox whose id is listboxID: ids "<listboxID>-opt-<n>" unless
-// set, and each row's label as data-label, which a picker writes into
-// its input.
+// the listbox listboxID, ids "<listboxID>-opt-<n>" unless set.
 func ComboboxRows(listboxID string, opts []ComboboxOption, s Classes) render.HTML {
 	b := Parts{}.Box(s)
 	rows := make([]render.HTML, 0, len(opts))
@@ -354,8 +281,6 @@ func ComboboxRows(listboxID string, opts []ComboboxOption, s Classes) render.HTM
 		}
 		checkFragmentID("Combobox option", "ID", o.ID)
 		ids = append(ids, o.ID)
-		// Each row is a root of the answer: its parts are the
-		// component's own.
 		rows = append(rows, comboboxOptionEl(b, o, true, true))
 	}
 	checkNoDuplicateIDs("ComboboxRows", ids)
@@ -380,8 +305,6 @@ func comboboxOptionEl(b Box, o ComboboxOption, labelled, root bool) render.HTML 
 	href := urlsafe.Clean(o.Href, urlsafe.Anchor)
 	linked := href != "" && !o.Disabled
 	if linked {
-		// The module hands the pick to the SPA navigator; an unsafe
-		// href drops the navigation affordance entirely.
 		attrs["data-cui-push-state"] = href
 		attrs["href"] = href
 		attrs["tabindex"] = "-1"

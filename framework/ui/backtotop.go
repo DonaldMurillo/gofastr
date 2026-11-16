@@ -9,13 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── BackToTop ──────────────────────────────────────────────────────
-//
-// A fixed-position button that appears after the user scrolls past a
-// configurable threshold and smooth-scrolls to the top of the page on
-// click. Uses a lightweight runtime module with IntersectionObserver
-// for the visibility toggle. No scroll-event listener churn.
-
 // BackToTopPosition selects which corner the button anchors to.
 type BackToTopPosition string
 
@@ -31,7 +24,7 @@ type BackToTopSize string
 
 const (
 	BackToTopSM BackToTopSize = "sm"
-	BackToTopMD BackToTopSize = "" // default (2.75rem)
+	BackToTopMD BackToTopSize = ""
 	BackToTopLG BackToTopSize = "lg"
 )
 
@@ -39,18 +32,18 @@ const (
 type BackToTopVariant string
 
 const (
-	BackToTopPrimary   BackToTopVariant = ""          // default: solid primary
-	BackToTopSecondary BackToTopVariant = "secondary" // outlined, subtle
-	BackToTopGhost     BackToTopVariant = "ghost"     // transparent bg, only visible on hover
+	BackToTopPrimary   BackToTopVariant = ""
+	BackToTopSecondary BackToTopVariant = "secondary"
+	BackToTopGhost     BackToTopVariant = "ghost"
 )
 
-// BackToTopOffset presets for distance from the viewport edge.
+// BackToTopOffset is the distance from the viewport edge.
 type BackToTopOffset string
 
 const (
 	BackToTopOffsetNone BackToTopOffset = "none"
 	BackToTopOffsetSM   BackToTopOffset = "sm"
-	BackToTopOffsetMD   BackToTopOffset = "" // default
+	BackToTopOffsetMD   BackToTopOffset = ""
 	BackToTopOffsetLG   BackToTopOffset = "lg"
 	BackToTopOffsetXL   BackToTopOffset = "xl"
 )
@@ -59,98 +52,48 @@ const (
 type BackToTopScrollBehavior string
 
 const (
-	BackToTopSmooth  BackToTopScrollBehavior = "" // default
+	BackToTopSmooth  BackToTopScrollBehavior = ""
 	BackToTopInstant BackToTopScrollBehavior = "instant"
 )
 
 // BackToTopConfig configures the back-to-top button.
 type BackToTopConfig struct {
-	// Ctx carries the per-request context the component's own words
-	// (the anchor's accessible name) are written in. When nil, English applies.
+	// Ctx is the language of the accessible name; nil is English.
 	Ctx context.Context
-
-	// Position selects which corner the button anchors to.
-	// Defaults to BackToTopBottomRight when empty.
+	// Position is the corner; empty is BackToTopBottomRight.
 	Position BackToTopPosition
-
-	// Icon overrides the button content. Pass any render.HTML
-	// (SVG markup, text, an icon component, etc).
-	// Defaults to a chevron-up arrow SVG.
+	// Icon replaces the chevron.
 	Icon render.HTML
-
-	// ThresholdPx is the scroll distance in pixels before the
-	// button becomes visible. Defaults to 400 when 0.
+	// ThresholdPx is the scroll distance that shows the button; 0 is 400.
 	ThresholdPx int
-
-	// Smooth controls scroll-to-top behavior.
-	// Defaults to smooth scrolling (BackToTopSmooth).
-	// Set to BackToTopInstant for no animation.
+	// Smooth is the scroll animation; empty is smooth.
 	Smooth BackToTopScrollBehavior
-
-	// Size controls the button diameter.
-	// Defaults to BackToTopMD (2.75rem).
+	// Size is the button diameter; empty is 2.75rem.
 	Size BackToTopSize
-
-	// Variant controls the color scheme.
-	// Defaults to BackToTopPrimary (solid primary color).
+	// Variant is the colour scheme; empty is solid primary.
 	Variant BackToTopVariant
-
-	// Offset controls the distance from the viewport edge.
-	// Defaults to BackToTopOffsetMD.
+	// Offset is the distance from the viewport edge.
 	Offset BackToTopOffset
-
-	// Label overrides the aria-label. Defaults to "Back to top".
+	// Label is the accessible name. Defaults to "Back to top".
 	Label string
-
-	// ScrollTarget is the element id to scroll into view, for example
-	// "main-content". A leading "#" is accepted for convenience, but
-	// CSS selectors are not supported. Empty scrolls to y=0.
+	// ScrollTarget is the element id to scroll to, "#" optional; empty is the top.
 	ScrollTarget string
-
-	// ID is an optional id for the root element.
+	// ID is the root's id.
 	ID string
-
-	// Class is an optional extra CSS class.
+	// Class is an extra class on the root.
 	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the root <button>. Keys
-	// the component owns are dropped: class and id (use Class / ID),
-	// data-cui-*, type, aria-label (use Label), and inert (the
-	// runtime's initial-hidden wiring).
+	// ExtraAttrs land on the root; class, id, href, aria-label and the wiring are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// BackToTop renders a smooth-scroll "back to top" button that appears
-// after the user scrolls past the configured threshold.
-//
-// The button is hidden on initial render (aria-hidden until visible).
-// A small runtime module uses an IntersectionObserver on a sentinel
-// to toggle visibility. No scroll-event listener is needed.
-//
-// Usage:
-//
-//	ui.BackToTop(ui.BackToTopConfig{})
-//	ui.BackToTop(ui.BackToTopConfig{ThresholdPx: 800})
-//	ui.BackToTop(ui.BackToTopConfig{
-//	    Position: ui.BackToTopBottomLeft,
-//	    Size:     ui.BackToTopLG,
-//	    Variant:  ui.BackToTopGhost,
-//	    Icon:     render.Raw(`<svg>...</svg>`),
-//	})
+// BackToTop renders a fixed button that appears past ThresholdPx and scrolls back up.
 func BackToTop(cfg BackToTopConfig) render.HTML {
 	threshold := cfg.ThresholdPx
 	if threshold == 0 {
 		threshold = 400
 	}
-	// The scroll target is an element id on the headless primitive,
-	// not a CSS selector: a "#main" selector string becomes "main"
-	// here, because the primitive refuses the "#" spelling and the
-	// module resolves by id.
 	target := strings.TrimPrefix(cfg.ScrollTarget, "#")
 
-	// The corner class carries the offsets: without one, position: fixed
-	// leaves the button where it fell in the flow.
 	position := cfg.Position
 	if position == "" {
 		position = BackToTopBottomRight
@@ -193,8 +136,6 @@ func BackToTop(cfg BackToTopConfig) render.HTML {
 	}, backToTopClasses))
 }
 
-// backToTopClasses dresses headless.BackToTop's parts in this
-// package's own vocabulary; the icon slot carries the chevron.
 var backToTopClasses = headless.Classes{
 	headless.PartRoot:  "fui-back-to-top",
 	headless.PartIcon:  "fui-back-to-top__icon",

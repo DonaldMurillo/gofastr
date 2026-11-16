@@ -11,13 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── PricingCard ─────────────────────────────────────────────────────
-//
-// A marketing pricing card: plan name, headline price + period, an
-// optional one-line pitch, a checked feature list, and a CTA. Compose
-// several inside a ui.Grid for a pricing page. Styling lives in the
-// design system (ui-pricing-card, tokens only). Callers ship no CSS.
-
 // PricingCardConfig configures one plan card.
 type PricingCardConfig struct {
 	Name        string   // plan name, e.g. "Pro"
@@ -29,26 +22,17 @@ type PricingCardConfig struct {
 	CTAHref     string   // CTA target
 	Featured    bool     // highlight as the recommended plan
 	ID          string
-	// HeadingLevel overrides the plan-name heading level (default 3).
-	// Set to 2 when cards sit directly under the page <h1> (no
-	// intervening section <h2>) so axe's heading-order rule passes.
+	// HeadingLevel is the plan-name heading level, 1 to 6 (default 3).
 	HeadingLevel int
 	Class        string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the card's root element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-cui-*.
+	// ExtraAttrs lands on the root; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
-	// Ctx carries the per-request context the badge and the default
-	// CTA label are said in. When nil, English applies.
+	// Ctx is the request context the badge and default CTA label are said in.
 	Ctx context.Context
 }
 
-// PricingCard renders a single plan card. Placed directly in a ui.Grid
-// that holds only plans, the cards of one row share their row lines: a description that wraps
-// moves every plan's price down together, so prices, feature lists and
-// buttons start level across the row. Anywhere else the card lays out
-// on its own.
+// PricingCard renders a single plan card. In a ui.Grid that holds only
+// plans, the cards of a row align their prices, features and buttons.
 func PricingCard(cfg PricingCardConfig) render.HTML {
 	ctx := cfg.Ctx
 	if ctx == nil {
@@ -86,9 +70,6 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 		items = append(items, html.ListItem(html.ListItemConfig{Class: "fui-pricing-card__feature"}, render.Text(f)))
 	}
 
-	// Every field PricingCard draws from is a string or a []string, so
-	// the head and price groups hold none of a caller's markup — both
-	// are the topmost of their own internal subtree.
 	out := []render.HTML{
 		html.Div(html.DivConfig{Class: "fui-pricing-card__head", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, head...),
 		html.Div(html.DivConfig{Class: "fui-pricing-card__price", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, price...),
@@ -105,9 +86,6 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 		if cfg.Featured {
 			variant = ButtonPrimary
 		}
-		// LinkButton's root becomes a nested tag here, never reachable as
-		// one itself: collapse its own marks into a single one, the way
-		// combobox and fileupload do for their own headless calls.
 		out = append(out, headless.Own(LinkButton(LinkButtonConfig{Label: label, Href: cfg.CTAHref, Variant: variant, Class: "fui-pricing-card__cta"})))
 	}
 
@@ -121,13 +99,6 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 var pricingCardStyle = registry.RegisterStyle("ui-pricing-card", pricingCardCSS)
 
 func pricingCardCSS(_ style.Theme) string {
-	// The card's four parts (head, price, features, button) sit on four
-	// rows. In a ui.Grid that holds only plans, the card borrows those
-	// rows from the grid: cards in one row share the tracks, so a
-	// description that wraps moves every plan's price down together
-	// instead of only its own. Anywhere else (a wrapper cell, a grid that
-	// mixes in other cards) its own rows give the features the slack,
-	// which keeps the button at the bottom of a stretched card.
 	return `[data-cui-comp="ui-pricing-card"] {
   display: grid;
   grid-template-rows: auto auto 1fr auto;

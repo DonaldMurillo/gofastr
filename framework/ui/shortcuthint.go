@@ -11,54 +11,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── ShortcutHint ───────────────────────────────────────────────────
-//
-// Renders a keyboard chord (e.g. "Mod+K", "/", "Esc") as a sequence
-// of <kbd> chips. Used to surface available keyboard shortcuts next
-// to triggers: Command Palette buttons, search inputs, menu items.
-//
-// Mod-key glyphs auto-resolve to ⌘ on Mac / Ctrl elsewhere via the
-// runtime-set <html data-cui-os> attribute, with both labels rendered
-// in the SSR output and the wrong one hidden via CSS. Screen readers
-// see the SR-only label exactly once via aria-label on the wrapper.
-//
-// When BindTarget is set, the hint root carries the
-// data-hui-shortcut-click hook with BindTarget as the selector of the
-// element headless-navigation clicks when the chord is pressed.
-// The hint itself is purely visual.
-
 // ShortcutHintConfig configures the chord display.
 type ShortcutHintConfig struct {
-	// Chord is the human-readable chord string accepted by the
-	// runtime's parseCombo: "Mod+K", "Ctrl+/", "Shift+Tab", "/",
-	// "Esc", "Enter". Required.
+	// Chord is the chord to draw, such as "Mod+K", "/" or "Esc". Required.
 	Chord string
-	// BindTarget is an optional CSS selector. When set, the hint
-	// renders data-hui-shortcut-hint carrying the selector and the
-	// headless-navigation module resolves the first connected match and
-	// CLICKS it when the chord is pressed. The selector is validated at
-	// render: control bytes and markup openers are refused, and the
-	// value must be a single selector.
+	// BindTarget is a CSS selector the chord clicks; control bytes and markup are refused.
 	BindTarget string
-
-	// SROnlyLabel overrides the screen-reader announcement.
-	// Default: humanized chord (e.g. "Command-K", "Slash", "Escape").
+	// SROnlyLabel overrides the screen-reader words. Default: the chord spelled out.
 	SROnlyLabel string
-
-	ID    string
-	Class string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the hint's root element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, and aria-hidden — the wrapper must stay in the
-	// accessibility tree for its SR-only label.
+	ID          string
+	Class       string
+	// ExtraAttrs land on the root; class, id, data-cui-* and aria-hidden are dropped.
 	ExtraAttrs html.Attrs
-	// Ctx carries the per-request context the keycap words and the
-	// screen-reader sentence are said in. When nil, English applies.
+	// Ctx resolves the keycap words and the sentence. Nil uses English.
 	Ctx context.Context
 }
 
-// ShortcutHint renders the visual chord chips.
+// ShortcutHint renders a chord as <kbd> chips with a screen-reader sentence.
 func ShortcutHint(cfg ShortcutHintConfig) render.HTML {
 	if cfg.Chord == "" {
 		panic("ui: ShortcutHint requires Chord")
@@ -95,10 +64,6 @@ func ShortcutHint(cfg ShortcutHintConfig) render.HTML {
 	if extras == nil {
 		extras = html.Attrs{}
 	}
-	// The real binding: the chord names the selector the
-	// headless-navigation module resolves and clicks. The module also
-	// carries the chord itself, so one declaration serves both the
-	// visual hint and the keyboard behavior.
 	if cfg.BindTarget != "" {
 		extras["data-hui-shortcut-hint"] = cfg.BindTarget
 		extras["data-hui-shortcut-click"] = cfg.Chord
@@ -106,17 +71,12 @@ func ShortcutHint(cfg ShortcutHintConfig) render.HTML {
 	}
 
 	return shortcutHintStyle.WrapHTML(html.Span(html.TextConfig{
-		Class: cls,
-		ID:    cfg.ID,
-		// Owned aria-hidden wins over any caller override (protected
-		// above), so the SR-only label stays reachable.
+		Class:      cls,
+		ID:         cfg.ID,
 		ExtraAttrs: html.MergeAttrs(extras, html.Attrs{"aria-hidden": "false"}),
 	}, chips...))
 }
 
-// checkShortcutSelector refuses a BindTarget this component cannot hand
-// to the module: control bytes and markup openers never reach the
-// browser intact, and the module resolves ONE selector.
 func checkShortcutSelector(sel string) {
 	if sel == "" {
 		panic("ui: ShortcutHint BindTarget is empty — a chord that clicks nothing is not a binding")
@@ -131,10 +91,9 @@ func checkShortcutSelector(sel string) {
 	}
 }
 
-// chordPart is one normalized component of a chord.
 type chordPart struct {
-	kind string // "mod" | "shift" | "alt" | "key"
-	key  string // for kind=key: literal text (e.g. "K", "/", "Esc")
+	kind string
+	key  string
 }
 
 func parseChordParts(ctx context.Context, chord string) []chordPart {
@@ -187,7 +146,6 @@ func displayKey(ctx context.Context, k string) string {
 func renderChordPart(ctx context.Context, p chordPart) render.HTML {
 	switch p.kind {
 	case "mod":
-		// Two spans: ⌘ for Mac, Ctrl for others. CSS hides the wrong one.
 		return html.Kbd(html.TextConfig{
 			Class:      "fui-shortcut-hint__key fui-shortcut-hint__key--mod",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-cui-internal": ""},
@@ -213,8 +171,6 @@ func renderChordPart(ctx context.Context, p chordPart) render.HTML {
 	}
 }
 
-// ariaKeyShortcuts spells a chord the way aria-keyshortcuts reads it:
-// "Mod+S" is "Meta+S Control+S", one alternative per platform.
 func ariaKeyShortcuts(chord string) string {
 	var mods []string
 	key := ""

@@ -10,76 +10,34 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The gallery: a list of images where every item is a link — to the
-// full image, or to whatever the caller's href says. No module: a
-// click that opens a Lightbox travels the widget runtime's open
-// contract (data-cui-open), which the adapter carries; the primitive
-// guarantees the semantics (a named list, alt text on every image, a
-// safe href on every link, intrinsic sizes so the layout does not
-// shift under the images).
-
 // GalleryItem is one entry.
 type GalleryItem struct {
-	// Src is the full-resolution image URL. Required; refused when
-	// unsafe (a javascript: URL in an image is a payload, not a
-	// picture) — it degrades to nothing the day the caller hands one
-	// in, so the refusal is loud.
-	Src string
-	// Thumb is the thumbnail URL. Defaults to Src.
-	Thumb string
-	// Alt is the image's description. Required: an image with no
-	// description is decoration lying about being content.
-	Alt string
-	// Caption is optional descriptive text under the image.
+	Src     string // required: the full image; an unsafe one degrades to the blank stub and a # link
+	Thumb   string // the thumbnail, Src by default
+	Alt     string // required: the image's description
 	Caption string
-	// Width / Height for the thumbnail (CLS-safe). Default 200×150.
-	Width  int
-	Height int
+	Width   int // the thumbnail's width, 200 by default
+	Height  int // the thumbnail's height, 150 by default
 }
 
 // GalleryProps configures the gallery.
 type GalleryProps struct {
-	// Items are the entries, in order. Required non-empty.
-	Items []GalleryItem
-	// Label names the list. Required: an unnamed image list is a
-	// landmark a screen reader cannot jump to.
-	Label string
-	// HrefFn, when set, returns a per-item destination. Empty for an
-	// item makes that item's link the full image, so every tile stays
-	// a working link.
-	HrefFn func(i int, it GalleryItem) string
-	// ExtraAttrsPerItem adds attributes to item N's anchor (a lightbox
-	// group id, a deeplink): index → attrs.
-	ExtraAttrsPerItem map[int]html.Attrs
-	// Lightbox, when set, wires every item's anchor to a framework
-	// lightbox: the click opens the named overlay instead of
-	// navigating, through the widget runtime's open contract. The
-	// no-script path stays the full-image href the anchor carries.
-	Lightbox GalleryLightbox
+	Items             []GalleryItem                      // required, at least one
+	Label             string                             // required: names the list
+	HrefFn            func(i int, it GalleryItem) string // per-item destination; empty keeps the full image
+	ExtraAttrsPerItem map[int]html.Attrs                 // through Safe, on item N's anchor
+	Lightbox          GalleryLightbox                    // opens a framework lightbox instead of navigating
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the list, items, figures, links, images,
-	// captions.
 	Parts Parts
 }
 
-// GalleryLightbox names the lightbox a gallery's items open. It is a
-// typed prop rather than per-item extra attrs because the data-cui-*
-// keys it renders are the widget runtime's open contract, which the
-// extra-attrs surface refuses on purpose — a caller's decoration can
-// never become a request, but a lightbox trigger is a first-class
-// intent, so it is named here where it is reviewable.
+// GalleryLightbox names the lightbox a gallery's items open; it is a typed prop because its keys are data-cui-* wiring.
 type GalleryLightbox struct {
-	// Name is the lightbox to open: the data-cui-open value, the Name
-	// of a mounted framework/ui.Lightbox. Required when the wiring is
-	// set; a zero GalleryLightbox renders plain links.
-	Name string
-	// Group is the data-fui-lightbox-group value: the id the lightbox's
-	// prev/next nav walks across this gallery's items. Empty derives
-	// "<Name>-gallery".
-	Group string
+	Name  string // required for the wiring: the Name of a mounted framework/ui.Lightbox
+	Group string // the data-fui-lightbox-group the viewer's nav walks; "<Name>-gallery" by default
 }
 
 // Gallery renders the image list.
@@ -117,11 +75,6 @@ func galleryItem(b Box, i int, it GalleryItem, p GalleryProps) render.HTML {
 	if thumb == "" {
 		thumb = it.Src
 	}
-	// Thumb and the Src it falls back to pass the image-source policy
-	// before either reaches img src (the anchor's href already runs the
-	// anchor policy below). An unsafe value degrades the way every URL
-	// sink here degrades — the framework's blank stub, never the
-	// caller's bytes: a javascript: Thumb is a payload, not a picture.
 	if safe := urlsafe.Clean(thumb, urlsafe.ImageSource); safe != "" {
 		thumb = safe
 	} else {
@@ -141,29 +94,14 @@ func galleryItem(b Box, i int, it GalleryItem, p GalleryProps) render.HTML {
 		h = 150
 	}
 	linkAttrs := Attrs(map[string]string{"href": href})
-	// Caller-supplied per-item attrs go through the same refusal every
-	// extra-attrs surface here goes through: the anchor's own keys
-	// (href) are owned, and the refused families (on*, style, the
-	// data-hui-*/data-cui-* wiring) never ride an anchor the caller
-	// did not build. Safe folds and refuses; its own two-spellings
-	// check subsumes the walk this replaced.
 	for k, v := range Safe(p.ExtraAttrsPerItem[i], "href") {
 		linkAttrs[k] = v
 	}
-	// The lightbox wiring rides as the component's own attrs, after the
-	// refusal: the data-cui-* family is the widget runtime's open
-	// contract, not a caller's decoration, which is why it is a typed
-	// prop (GalleryLightbox) rather than an extra attr. The deeplink
-	// carries what the viewer shows — src, alt, caption and the group
-	// its prev/next nav walks — scrubbed then percent-encoded, so a
-	// control byte never travels into an attribute value.
 	if p.Lightbox.Name != "" {
 		group := p.Lightbox.Group
 		if group == "" {
 			group = p.Lightbox.Name + "-gallery"
 		}
-		// The viewer's src passes the image-source policy the thumb
-		// does, degrading to the same blank stub.
 		src := urlsafe.Clean(it.Src, urlsafe.ImageSource)
 		if src == "" {
 			src = "/__gofastr/blank.png"
@@ -185,9 +123,6 @@ func galleryItem(b Box, i int, it GalleryItem, p GalleryProps) render.HTML {
 		"width":  strconv.Itoa(w),
 		"height": strconv.Itoa(h),
 	}))
-	// A GalleryItem is data, never markup — Src, Alt and Caption are
-	// strings the component draws its own img/anchor/figcaption from —
-	// so the whole item is the component's own, with no slot inside it.
 	if it.Caption == "" {
 		return b.El("li", PartControl, Internal(nil), b.El("a", PartLabel, linkAttrs, img))
 	}
@@ -197,21 +132,12 @@ func galleryItem(b Box, i int, it GalleryItem, p GalleryProps) render.HTML {
 			b.El("figcaption", PartText, nil, render.Text(scrubControlBytes(it.Caption)))))
 }
 
-// deeplinkEscape encodes one deeplink key or value the way the
-// runtime decodes it: the data-cui-open delegate
-// (core-ui/runtime/frag/widgets-boot.js) splits the deeplink on '&',
-// takes the first '=' as the key/value split, and decodeURIComponent's
-// each side. url.PathEscape left '&' and '=' bare, so an Alt of
-// "Tom & Jerry" or a Src with a two-parameter query was cut short and
-// spilled junk keys into the viewer's signals. QueryEscape escapes
-// both; its '+' for a space is spelled %20, because decodeURIComponent
-// keeps a '+' as a plus (a literal plus is already %2B).
+// deeplinkEscape encodes a deeplink key or value for the runtime's split on & and = and its decodeURIComponent.
 func deeplinkEscape(s string) string {
 	return strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
 }
 
-// safeGalleryHref degrades an unsafe href to the fragment, the same
-// policy every link this package renders follows.
+// safeGalleryHref degrades an unsafe href to "#".
 func safeGalleryHref(href string) string {
 	if h := cleanTabHref(href); h != "" {
 		return h

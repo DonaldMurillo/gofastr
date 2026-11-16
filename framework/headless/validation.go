@@ -18,61 +18,27 @@ const (
 
 // FieldError is one thing that went wrong.
 type FieldError struct {
-	// For is the id of the control at fault. With it the message
-	// becomes a link that moves focus to the field; without it the
-	// message is text, which is the right fallback and a worse
-	// experience.
-	For string
-	// Message is what is wrong, in words the person can act on.
-	// "Invalid" is not one of them.
+	// For is the id of the control at fault, which the message links to.
+	For     string
 	Message string
 }
 
 // ValidationSummaryProps is the list of everything wrong with a form.
 type ValidationSummaryProps struct {
-	// Title heads the summary. Defaults to "There is a problem".
-	Title string
-	// Level is the title's heading level, 2 by default.
-	Level  int
-	Errors []FieldError
-	// ID names the summary's root. Required, like the control ids the
-	// errors link to: the title's id is derived from it, and two
-	// summaries on one page without ids would share one title id —
-	// breaking both labels and both announcements.
+	// Title defaults to "There is a problem"; Level, its heading, to 2.
+	Title      string
+	Level      int
+	Errors     []FieldError
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root, the title, the list and
-	// its items. Strings carry the title a failed submit
-	// focuses).
 	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	// Strings are the words it says; nil means the English defaults.
 	Strings *Strings
 }
 
-// ValidationSummary renders the summary that goes above a form.
-//
-// This is the single highest-value accessibility component in a form,
-// and the reasoning is worth stating in full.
-//
-// When a form fails validation, a sighted user sees red appear near
-// the fields. A screen reader user, unless told, hears nothing: focus
-// is wherever it was, the page looks the same to the accessibility
-// tree except for text that changed somewhere below. So the summary:
-//
-//   - is role="alert", which interrupts — this DID just happen, it is
-//     the one case where interrupting is correct;
-//   - is tabindex="-1", so the server can send focus to it after a
-//     failed submit. Not focusable-by-tab, focusable-by-script: it
-//     must never become a tab stop for someone filling in the form;
-//   - lists each error as a LINK to the field, because the value of
-//     the summary is getting to the field, not reading the list. The
-//     link moves focus to the control itself, so the next thing the
-//     user types goes in the right box.
-//
-// Rendering it with no errors renders nothing: an empty "there is a
-// problem" box that announces itself is a lie that interrupts.
+// ValidationSummary renders the focusable alert listing a form's errors,
+// nothing when there are none; it panics without ID or on an empty Message.
 func ValidationSummary(p ValidationSummaryProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.ID == "" {
@@ -87,11 +53,6 @@ func ValidationSummary(p ValidationSummaryProps, s Classes) render.HTML {
 			panic("headless: FieldError requires Message")
 		}
 		var inner render.HTML
-		// Every href a component writes goes through the anchor
-		// policy, this one included: the policy accepts a bare
-		// fragment, and a For that is empty or that the policy
-		// refuses is rendered as text rather than as a link nowhere
-		// should follow.
 		jump := ""
 		if e.For != "" {
 			jump = urlsafe.CleanAnchor("#" + e.For)
@@ -114,21 +75,13 @@ func ValidationSummary(p ValidationSummaryProps, s Classes) render.HTML {
 		b.El(headingTag(p.Level), PartTitle,
 			Internal(Attrs(map[string]string{"id": titleIDFor(p.ID)})),
 			render.Text(orDefault(p.Title, p.Strings.Resolve().ThereIsAProblem))),
-		// Every error is built from FieldError's strings, never from
-		// caller markup, so the whole list is the component's own.
 		b.El("ul", PartErrorList, Internal(nil), items...),
 	)
 }
 
-// titleIDFor names the heading the summary is labelled by. The
-// fallback prefix is structural, not the class map's namespace: this
-// layer does not know what anyone calls their classes. The ID is
-// required, so the name is always the summary's own.
 func titleIDFor(id string) string {
 	return id + "-title"
 }
-
-// ─── Timeline ───────────────────────────────────────────────────────
 
 // Timeline parts.
 const (
@@ -142,58 +95,34 @@ const (
 
 // Event is one thing that happened.
 type Event struct {
-	// Title is what happened. Exactly one of Title and Lead is set.
-	Title string
-	// Lead is the caller's own headline markup in place of Title: a
-	// bold actor, the record as a link. It is caller content, so the
-	// title and every row around it stay out of the internal mark.
-	Lead render.HTML
-	// Detail is the supporting line.
+	// Title, or the caller's Lead markup, is what happened; exactly one is set.
+	Title  string
+	Lead   render.HTML
 	Detail string
-	// When is the human-readable time ("3 days ago", "18:22").
-	When string
-	// Machine is the machine-readable timestamp for <time datetime>,
-	// RFC 3339. Without it "3 days ago" is a string no assistive tech,
-	// translation layer or scraper can resolve to a moment.
+	// When is the human-readable time; Machine its RFC 3339 form.
+	When    string
 	Machine string
-	// Tone lets the class map colour the marker — "success", "danger".
+	// Tone is the marker's class-map variant — "success", "danger".
 	Tone string
-	// Icon is drawn inside the marker: what kind of event it was (a
-	// pencil for an edit, a plus for a create). The marker is
-	// aria-hidden, so the icon adds no words; the title says it.
 	Icon render.HTML
-	// Meta is the secondary line beside the title — an actor, a
-	// relative time ("by dom", "2h ago") — in the header row, read
-	// after the title it qualifies. When is the timestamp contract;
-	// Meta is a caption with no machine form.
+	// Meta is the line after the title in its header row — an actor.
 	Meta string
-	// Body is extra markup under the detail: a log excerpt, actions.
 	Body render.HTML
 }
 
 // TimelineProps is a sequence of events.
 type TimelineProps struct {
-	// Label names the list for assistive tech — "Deploy history".
 	Label  string
 	Events []Event
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the list and every part it draws.
 	Parts Parts
 }
 
-// Timeline renders the events as an ordered list.
-//
-// Ordered, because the order is the content: these things happened in
-// this sequence, and <ol> is what says so — a screen reader announces
-// the count and the position, so "3 of 7" locates you in the history
-// without seeing the line down the left.
-//
-// The dots and the connecting line are aria-hidden. They are a picture
-// of the ordering that the list already states, and announcing them
-// would mean hearing "bullet" before every entry.
+// Timeline renders the events as an ordered list; it panics on no events,
+// an event without one headline, or a Machine that is not RFC 3339.
 func Timeline(p TimelineProps, s Classes) render.HTML {
 	if len(p.Events) == 0 {
 		panic("headless: Timeline requires at least one event")
@@ -205,14 +134,9 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 			panic("headless: Event requires exactly one of Title and Lead")
 		}
 		kids := make([]render.HTML, 0, 4)
-		// A caller's Body, Icon or Lead makes the item a slot ancestor;
-		// the mark holding an Icon is one too.
 		lead := e.Lead != ""
 		slot := e.Body != "" || e.Icon != "" || lead
 		markAttrs := internalIf(slot && e.Icon == "", Attrs(map[string]string{"aria-hidden": "true"}))
-		// Tone reaches the class map as the mark's variant, joined to
-		// the mark's own class the way Alert's tone joins its root: a
-		// tinted dot is still a dot.
 		if cls := s.Variant(PartTimelineMark, e.Tone); cls != "" {
 			markAttrs["class"] = cls
 		}
@@ -220,10 +144,6 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 
 		body := make([]render.HTML, 0, 4)
 		if e.When != "" {
-			// <time> promises machine-readable content: with a datetime
-			// the text may say anything ("3 days ago"); without one the
-			// text itself must be a valid date or time, and relative
-			// words are not, so the element becomes a span.
 			if e.Machine != "" {
 				if _, err := time.Parse(time.RFC3339, e.Machine); err != nil {
 					panic("headless: Event Machine must be an RFC 3339 timestamp, not " + strconv.Quote(e.Machine))
@@ -234,19 +154,12 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 				body = append(body, b.El("span", PartTimelineTime, internalIf(slot, nil), render.Text(e.When)))
 			}
 		}
-		// The title is marked by the header row when there is one; a
-		// Lead title is the caller's, and never marked.
-		// data-lead tells a styled kit the headline carries its own
-		// emphasis.
 		title, titleAttrs := e.Lead, html.Attrs{"data-lead": ""}
 		if !lead {
 			title, titleAttrs = render.Text(e.Title), nil
 		}
 		body = append(body, b.El("p", PartTitle, internalIf(slot && e.Meta == "" && !lead, titleAttrs), title))
 		if e.Meta != "" {
-			// The meta line and the title share a header row: the meta
-			// qualifies the title, and DOM order keeps the title first
-			// for a reader who hears the event before its attribution.
 			headRow := body[len(body)-1]
 			body[len(body)-1] = b.El("div", PartTimelineHead, internalIf(slot && !lead, nil),
 				headRow,
@@ -258,8 +171,6 @@ func Timeline(p TimelineProps, s Classes) render.HTML {
 		if e.Body != "" {
 			body = append(body, e.Body)
 		}
-		// Without a caller's Body, Icon or Lead the whole item is the
-		// component's own.
 		kids = append(kids, b.El("div", PartTimelineBody, internalIf(e.Icon != "" && e.Body == "" && !lead, nil), body...))
 		items = append(items, b.El("li", PartTimelineItem, internalIf(!slot, nil), kids...))
 	}

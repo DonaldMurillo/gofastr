@@ -135,8 +135,8 @@ func TestScrubbingPrintsAreInert(t *testing.T) {
 	} {
 		assertInert(t, name, captureOutput(t, call))
 	}
-	if got := cli.ScrubTerminalOutput("a\x9bb\xffc"); got != "abc" {
-		t.Errorf("ScrubTerminalOutput kept an invalid byte: %q", got)
+	if got := textsafe.ScrubTerminal("a\x9bb\xffc"); got != "abc" {
+		t.Errorf("textsafe.ScrubTerminal kept an invalid byte: %q", got)
 	}
 	cli.StdoutIsTTY = true
 	if out := captureOutput(t, func() { cli.Printf(cli.Bold("%s")+"\n", "\x1b[31mred") }); out != "\x1b[1m[31mred\x1b[0m\n" {

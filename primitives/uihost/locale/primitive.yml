@@ -1,0 +1,66 @@
+primitive: uihost.locale
+summary: Locale path prefixes, per-locale render caching and the alternate links between locales.
+code:
+  - framework/uihost/localecache.go
+  - framework/uihost/localeprefix.go
+docs:
+  - framework/docs/content/i18n.md
+invariants:
+  - id: locale-cache-bounded-by-catalog
+    rule: Per-locale caches key on i18n.CatalogLocale, so a request's locale header adds no key beyond the catalog's locales and its fallback.
+    enforced_by:
+      - test: framework/uihost.TestLocaleCachesBoundedByCatalog
+  - id: no-translator-one-key
+    rule: An app without a translator has the one cache key "" and renders it under context.Background.
+    enforced_by:
+      - test: framework/uihost.TestNoTranslatorOneManifest
+  - id: render-locales-include-fallback
+    rule: renderLocales lists every catalog locale and the translator's fallback, sorted, so the precache and a manifest lookup by hash see every body a request can be served.
+    enforced_by:
+      - test: framework/uihost.TestSweepSeoRenderLocalesIncludeFallback
+  - id: locale-render-carries-path-locale
+    rule: A cached per-locale render of an app with path locales carries the path locale the router would set, so loading content builds links under the reader's prefix.
+    enforced_by:
+      - test: framework/uihost.TestSweepSeoLocaleRenderCarriesPathLocale
+  - id: per-locale-panic-not-memoised
+    rule: A per-locale build that panics is dropped from the cache and the panic propagates, so the next request, and every caller that waited on that build, builds again instead of getting the zero value.
+    enforced_by:
+      - test: framework/uihost.TestPerLocalePanicIsNotMemoized
+      - test: framework/uihost.TestSweepSeoPerLocaleWaiterRetriesAfterPanic
+  - id: generated-hreflang
+    rule: A page that declares no hreflang gets one absolute alternate per locale plus x-default on the unprefixed page, its path escaped and under a static export's mount path, and none without a BaseURL.
+    enforced_by:
+      - test: framework/uihost.TestLocaleLinksEscapePath
+      - test: framework/uihost.TestHreflangEmitsAlternateLinks
+      - test: framework/uihost.TestSweepSeoAlternatesNeedBaseURL
+      - test: framework/static.TestExportAlternatesIncludeBase
+  - id: self-urls-carry-the-prefix
+    rule: A page's declared canonical and og:url, root-relative or absolute on the BaseURL, carry the request's locale prefix in the head and in llm.md, without changing the OG value the screen returned.
+    enforced_by:
+      - test: framework.TestCanonicalCarriesPrefix
+      - test: framework/uihost.TestPageLLMMDFollowsLocalePrefix
+      - test: framework/uihost.TestSweepSeoOGURLCarriesPrefix
+  - id: locale-set-published
+    rule: The runtime gets the locale set as {"default","prefixes","base"}, from manifest.js on a live page and from an inert gofastr-locales JSON block on an exported one.
+    enforced_by:
+      - test: framework.TestManifestPublishesLocales
+      - test: framework/static.TestExportWritesLocaleTrees
+decisions:
+  - id: loading-content-cached-per-locale
+    date: 2026-11-16
+    status: accepted
+    decision: The route graph and manifest.js, which carry each route's loading content, are built once per catalog locale.
+    rejected:
+      - option: One build per process.
+        why: Loading content says words in the reader's language, so one build would speak one language to everyone.
+      - option: Keying the cache on the request's locale tag.
+        why: The tag is only sanitized, never matched, so an attacker-chosen header would grow the caches without bound.
+    upholds: [locale-cache-bounded-by-catalog]
+  - id: drop-a-panicking-build
+    date: 2026-11-16
+    status: accepted
+    decision: perLocale marks an entry whose build panicked as failed and drops it, and get retries.
+    rejected:
+      - option: sync.Once alone.
+        why: Once counts a panicking call as done, so every later get returned the zero value, and an empty manifest.js was served with no log after the first 500.
+    upholds: [per-locale-panic-not-memoised]

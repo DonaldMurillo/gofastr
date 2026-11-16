@@ -1,0 +1,370 @@
+primitive: headless.pickers
+summary: Headless value pickers - number inputs, sliders, ratings, combobox, multi-select, date picker, tag input and repeater, with their behaviours.
+code:
+  - framework/headless/controls.go
+  - framework/headless/controls_behavior.go
+  - framework/headless/combobox.go
+  - framework/headless/combobox_behavior.go
+  - framework/headless/multiselect.go
+  - framework/headless/multiselect_behavior.go
+  - framework/headless/datepicker.go
+  - framework/headless/datepicker_behavior.go
+  - framework/headless/collections.go
+  - framework/headless/collections_behavior.go
+  - framework/headless/numbers_behavior.go
+invariants:
+  - id: number-input-refuses-broken-config
+    rule: NumberInput panics on an empty Name, a Label of only spaces, a Step below one, or a Min above Max.
+    enforced_by:
+      - test: framework/headless.TestNumberInputRefusesBrokenConfigAndKeepsPostedData
+  - id: posted-number-is-rendered-as-given
+    rule: NumberInput renders a posted Value as given, outside the bounds included, with only control bytes scrubbed.
+    enforced_by:
+      - test: framework/headless.TestNumberInputScrubsControlBytes
+      - test: framework/headless.TestNumberInputRefusesBrokenConfigAndKeepsPostedData
+  - id: id-is-the-controls-alone
+    rule: NumberInput and Slider put their id on the input only, never on the group around it, so the label's for names the input.
+    enforced_by:
+      - test: framework/headless.TestNumberInputAndSliderGiveTheIDToTheControlOnly
+  - id: slider-clamps-posted-value
+    rule: Slider and Rating clamp a posted Value into their range instead of refusing it, and Slider, RangeSlider and Rating refuse an empty range, a Step below one or a Max below one.
+    enforced_by:
+      - test: framework/headless.TestSliderRefusesBrokenConfigAndClampsPostedValues
+      - test: framework/headless.TestRangeSliderOrdersAndClampsPostedPairs
+      - test: framework/headless.TestRatingRefusesBrokenGroupsAndClampsPostedValues
+  - id: bare-slider-has-no-output-hook
+    rule: A Slider without ShowValue renders no output element and no data-hui-slider-output hook.
+    enforced_by:
+      - test: framework/headless.TestSliderOutputAndEdges
+  - id: range-pair-is-clamped-and-ordered
+    rule: RangeSlider clamps both values into Min..Max and renders a crossed pair ordered low, high.
+    enforced_by:
+      - test: framework/headless.TestRangeSliderOrdersAndClampsPostedPairs
+  - id: range-zero-is-a-set-value
+    rule: A RangeSlider value set to zero is honoured; only a nil value sits on Min or Max.
+    enforced_by:
+      - test: framework/headless.TestRangeSliderZeroPairRoundTrips
+      - test: framework/headless.TestSweepPickersRangeSliderZeroLowIsHonoured
+  - id: rating-choices-in-reading-order
+    rule: Rating renders its radios in order 1..Max, so DOM order is reading order and native arrows move the way the stars read.
+    enforced_by:
+      - test: framework/headless.TestRatingRadioContract
+  - id: combobox-carrier-is-not-a-form
+    rule: The combobox's RPC carrier around the input is a div, never a form, so a combobox inside a host form cannot close it.
+    enforced_by:
+      - test: framework/headless.TestComboboxPickRendersHiddenValue
+      - test: framework/headless.TestSpecGolden
+  - id: combobox-no-script-action-is-checked
+    rule: A Combobox NoScriptAction is held to a same-origin path whenever it is set, a static combobox's included.
+    enforced_by:
+      - test: framework/headless.TestComboboxStaticNoScriptActionIsChecked
+      - test: framework/headless.TestComboboxRefusesBrokenConfiguration
+  - id: combobox-refuses-broken-config
+    rule: Combobox panics on an Island without NoScriptAction, a negative DebounceMS, duplicate option ids, or neither Island nor Options.
+    enforced_by:
+      - test: framework/headless.TestComboboxRefusesBrokenConfiguration
+      - test: framework/headless.TestComboboxRowsRefusesDuplicateIDs
+  - id: combobox-pick-config
+    rule: A Combobox Pick panics without an Island, without a Pick.Name or with a NoScriptAction, and a Control whose ID is not the input's is refused.
+    enforced_by:
+      - test: framework/headless.TestSweepPickersComboboxPickRefusals
+      - test: framework/headless.TestComboboxPickRendersHiddenValue
+  - id: combobox-pick-search-is-detached
+    rule: A picker's search input carries form="<ID>-search", a form that does not exist, so the host form submits only the hidden picked value.
+    enforced_by:
+      - test: framework/headless.TestComboboxPickRendersHiddenValue
+  - id: combobox-leaves-caller-options-alone
+    rule: Combobox derives option ids on a copy, so one Options slice shared by two comboboxes gives each its own ids.
+    enforced_by:
+      - test: framework/headless.TestComboboxSharedOptionsKeepOwnIDs
+  - id: combobox-option-link-safety
+    rule: An option whose Href fails the anchor policy, or which is Disabled, renders no href and no data-cui-push-state; a linked option is an anchor with tabindex -1.
+    enforced_by:
+      - test: framework/headless.TestComboboxUnsafeOptionHrefDropsNavAffordance
+      - test: framework/headless.TestSweepPickersComboboxDisabledOptionIsNoLink
+      - test: framework/headless.TestComboboxRendersTheARIAContract
+  - id: combobox-meta-is-its-own-part
+    rule: An option's Meta renders as PartComboboxMeta, never as a second PartComboboxOption.
+    enforced_by:
+      - test: framework/headless.TestComboboxMetaIsItsOwnPart
+  - id: combobox-default-debounce
+    rule: A DebounceMS of zero renders data-cui-rpc-debounce-ms="250".
+    enforced_by:
+      - test: framework/headless.TestComboboxIslandRendersRPCAndNoScriptForm
+  - id: multiselect-option-ids-by-index
+    rule: MultiSelect option ids are <instance id>-opt-<index>, never built from the value, and the instance id comes through the render id scope.
+    enforced_by:
+      - test: framework/headless.TestMultiSelectRendersTheCheckboxGroup
+      - test: framework/headless.TestMultiSelectIDScopeAndFallback
+      - test: framework/headless.TestFormControlIDsAreUniqueAcrossInstances
+  - id: multiselect-carried-strings-are-scrubbed
+    rule: MultiSelect scrubs control bytes from option values and the placeholder instead of refusing them, and an empty Placeholder takes Strings.MultiSelectPlaceholder.
+    enforced_by:
+      - test: framework/headless.TestMultiSelectHostileValueAndPlaceholderAreScrubbed
+      - test: framework/headless.TestMultiSelectSaysItsWordsThroughStrings
+  - id: multiselect-refuses-broken-config
+    rule: MultiSelect panics on no Options or an option with an empty Value.
+    enforced_by:
+      - test: framework/headless.TestMultiSelectRefusesBrokenConfiguration
+  - id: multiselect-is-one-disclosure
+    rule: MultiSelect renders its panel through Disclosure with the caller's Parts, and its behaviour requires headless-disclosure instead of binding Escape or aria-expanded itself.
+    enforced_by:
+      - test: framework/headless.TestFilledSlotsKeepTheContract
+      - test: framework/headless.TestSweepPickersMultiSelectRequiresDisclosureBehavior
+  - id: multiselect-unfilled-disclosure-is-owned
+    rule: A MultiSelect with neither summary nor panel filled marks its details root data-cui-internal, since nothing in it is the caller's.
+    enforced_by:
+      - test: framework/headless.TestSweepPickersMultiSelectUnfilledDisclosureIsOwned
+  - id: datepicker-refuses-broken-config
+    rule: DatePicker panics on a Path carrying ? or #, a Range with Name, Value or Control, a Control whose ID is not the input's, a Max before Min, or a WeekStart outside Sunday..Saturday.
+    enforced_by:
+      - test: framework/headless.TestDatePickerRefusals
+  - id: datepicker-config-panics-input-falls-back
+    rule: A Today, Min or Max that is not a YYYY-MM-DD date panics, while a Month or Value that is not one (year 0000 included) falls back instead.
+    enforced_by:
+      - test: framework/headless.TestDatePickerRefusals
+      - test: framework/headless.TestDatePickerUserInputFallsBack
+  - id: datepicker-month-nav-is-an-island
+    rule: Each enabled month anchor carries a real href, data-cui-rpc with an error toast and no data-cui-push-state, and every anchor is named by visually hidden text, never aria-label.
+    enforced_by:
+      - test: framework/headless.TestSweepPickersDatePickerMonthNavIsAnIsland
+  - id: datepicker-nav-target-held-in-bounds
+    rule: A month anchor's target is clamped into Min's and Max's months, and an anchor is disabled only when the clamped target is the shown month.
+    enforced_by:
+      - test: framework/headless.TestSweepPickersDatePickerMonthNavIsAnIsland
+      - test: framework/headless.TestDatePickerHoldsTheMonthInBounds
+  - id: datepicker-selection-rides-the-button
+    rule: Each day button carries aria-pressed matching its cell's aria-selected, a range grid is aria-multiselectable, and a refused day is aria-disabled, never disabled.
+    enforced_by:
+      - test: framework/headless.TestSweepPickersDatePickerMonthNavIsAnIsland
+      - test: framework/headless.TestDatePickerRangeGridIsMultiselectable
+  - id: datepicker-tab-stop-order
+    rule: Exactly one day is in the tab order, the selected day (a range's start) when it is in the shown month, else Today, else the first pickable day, else the first.
+    enforced_by:
+      - test: framework/headless.TestSweepPickersDatePickerTabStopOrder
+  - id: datepicker-half-range-selects-start
+    rule: A range whose End is empty or before its Start selects the start day alone.
+    enforced_by:
+      - test: framework/headless.TestSweepPickersDatePickerHalfRangeSelectsStartOnly
+  - id: datepicker-note-describes-its-day
+    rule: A day's Note renders as a span whose id the day button's aria-describedby names.
+    enforced_by:
+      - test: framework/headless.TestSweepPickersDatePickerNoteDescribesItsDay
+  - id: datepicker-replays-cold-clicks
+    rule: headless-datepicker declares click interactions on [data-hui-date] and [data-hui-datepicker-nav], so a click before the module loads is replayed.
+    enforced_by:
+      - test: framework/headless.TestSweepPickersDatePickerReplaysColdClicks
+  - id: tag-input-field-has-its-own-id
+    rule: With an ID, TagInput's draft field takes <ID>-field, so the label's for never names the root div.
+    enforced_by:
+      - test: framework/headless.TestTagInputIDNotRepeated
+  - id: tag-input-cap-covers-rendered-values
+    rule: TagInput truncates rendered Values to MaxLength, refuses a negative MaxLength and carries the cap as data-hui-tag-input-maxlength.
+    enforced_by:
+      - test: framework/headless.TestTagInputValuesAreChipsAndInputs
+      - test: framework/headless.TestTagInputRefusesBrokenFields
+      - test: framework/headless.TestEveryDeclaredHookIsRendered
+  - id: tag-input-value-rides-inside-its-chip
+    rule: Each committed value's hidden input is inside its chip list item, so removing the chip removes the value from the form.
+    enforced_by:
+      - test: framework/headless.TestTagInputValueRidesInsideItsChip
+  - id: tag-input-scrubs-values
+    rule: TagInput scrubs control bytes from posted Values instead of refusing them, and the Help hint is the draft field's aria-describedby.
+    enforced_by:
+      - test: framework/headless.TestTagInputScrubsControlBytesInValues
+      - test: framework/headless.TestTagInputHelpDescribesTheField
+  - id: repeater-default-button-first
+    rule: The Repeater renders a hidden, nameless default submit button before every row, so Enter in a row's field never clicks row 0's Remove.
+    enforced_by:
+      - test: framework/headless.TestRepeaterDefaultButtonCarriesNoOperation
+  - id: repeater-operations-go-to-action
+    rule: The add and remove controls' data-cui-rpc names the Action, with the Island's signal, never the Island's Endpoint.
+    enforced_by:
+      - test: framework/headless.TestRepeaterActionIsWhereOperationsGo
+  - id: repeater-floor-and-ceiling-disable
+    rule: At MinItems every remove control renders disabled and at MaxItems the add control renders disabled.
+    enforced_by:
+      - test: framework/headless.TestRepeaterFloorsAndCeilingsDisable
+  - id: repeater-refuses-broken-config
+    rule: Repeater panics on a negative MinItems or MaxItems, MinItems above MaxItems, more Items than MaxItems, an Island with no Action, an Action with no Island, or an Action that is not a same-origin path.
+    enforced_by:
+      - test: framework/headless.TestRepeaterRefusesBrokenConfigurations
+      - test: framework/headless.TestSweepPickersRepeaterActionIsSameOrigin
+  - id: repeater-submit-controls-are-named
+    rule: The add control submits AddName (default <Name>_add) and each remove control submits RemoveName (default <Name>_remove) with its 0-based row index.
+    enforced_by:
+      - test: framework/headless.TestRepeaterSubmitControlsAreNamed
+      - test: framework/headless.TestSweepPickersRepeaterDefaultControlNames
+  - id: tag-input-remove-label-travels
+    rule: The TagInput root carries the remove-label template as data-hui-tag-input-remove-label, so a chip the module builds is named like a server-rendered one.
+    enforced_by:
+      - test: framework/headless.TestEveryDeclaredHookIsRendered
+  - id: numbers-loads-on-number-signals
+    rule: headless-numbers registers the single marker [data-cui-signal-mode="number"].
+    enforced_by:
+      - test: framework/headless.TestSweepPickersNumbersLoadsOnNumberSignals
+  - id: repeater-remove-names-its-row
+    rule: Each remove control's accessible name carries its row's 1-based position.
+    enforced_by:
+      - test: framework/headless.TestRepeaterSubmitControlsAreNamed
+  - id: range-output-carries-its-sentence
+    rule: The RangeSlider output carries Strings.RangeValue in data-hui-range-slider-output beside the filled sentence.
+    enforced_by:
+      - test: framework/headless.TestRangeSliderPairContract
+decisions:
+  - id: native-control-first
+    date: 2026-11-16
+    status: accepted
+    decision: Every picker is a native control (number, range, radio, checkbox, date input, named submit button) that submits without script, and its module only enhances it.
+    rejected:
+      - option: A scripted widget that owns the value and renders a native control only as a fallback.
+        why: The no-script page would be a degraded page instead of the same page.
+      - option: Let the module repair contradictory server props at runtime.
+        why: A bad prop would render wrong until script arrived; such props are refused at render instead.
+    upholds: [number-input-refuses-broken-config, combobox-refuses-broken-config]
+  - id: posted-data-falls-back-config-panics
+    date: 2026-11-16
+    status: accepted
+    decision: Values a reader may have posted (Value, Month, tag values, option values) are clamped, scrubbed or ignored, while configuration (bounds, steps, Today, Min, Max, ids) panics at render.
+    rejected:
+      - option: Panic on any out-of-range or malformed value.
+        why: A form re-rendered with what the reader sent would crash instead of showing it back.
+    upholds: [posted-number-is-rendered-as-given, slider-clamps-posted-value, range-pair-is-clamped-and-ordered, datepicker-config-panics-input-falls-back]
+  - id: rating-has-no-module
+    date: 2026-11-16
+    status: accepted
+    decision: Rating is a fieldset of radios in order 1..Max with no behaviour module, and the sheet fills the stars with :has().
+    rejected:
+      - option: A behaviour module that owns the rating state.
+        why: The radios already give arrows, a POSTed value and a name per choice; a second state owner adds nothing.
+      - option: Choices in reverse DOM order for a sibling-selector star fill.
+        why: Native arrows would move against the reading order (WCAG 2.4.3).
+    upholds: [rating-choices-in-reading-order]
+  - id: range-sentence-travels
+    date: 2026-11-16
+    status: accepted
+    decision: The RangeSlider output carries its Strings.RangeValue sentence in data-hui-range-slider-output, and the module re-formats through it as a thumb moves.
+    rejected:
+      - option: The module writes its own sentence.
+        why: A translated page would switch to the module's English on the first drag.
+    upholds: [range-output-carries-its-sentence]
+  - id: combobox-rpc-carrier-is-a-div
+    date: 2026-11-16
+    status: accepted
+    decision: The combobox's data-cui-rpc attributes ride a div around the input, and the no-script GET form, when there is one, wraps the whole combobox.
+    rejected:
+      - option: Put the RPC contract on a form element around the input.
+        why: The HTML parser drops a nested form's open tag but honours its close tag, which closes the host form the combobox sits in.
+    upholds: [combobox-carrier-is-not-a-form]
+  - id: combobox-meta-part
+    date: 2026-11-16
+    status: accepted
+    decision: An option's Meta line has its own part, PartComboboxMeta.
+    rejected:
+      - option: Render Meta as a second PartComboboxOption.
+        why: It took the option's padding, hover and active fill inside the option itself.
+    upholds: [combobox-meta-is-its-own-part]
+  - id: multiselect-reuses-disclosure
+    date: 2026-11-16
+    status: accepted
+    decision: MultiSelect renders through Disclosure and its module requires headless-disclosure for Escape, focus return and the aria-expanded mirror.
+    rejected:
+      - option: A second disclosure implementation inside the multiselect module.
+        why: Two disclosure behaviours drift apart.
+    upholds: [multiselect-is-one-disclosure]
+  - id: multiselect-ids-by-index
+    date: 2026-11-16
+    status: accepted
+    decision: MultiSelect option ids use the option's index, not its value.
+    rejected:
+      - option: Build the id from the value.
+        why: Symbol-heavy values such as C++ and C# collide once made into ids.
+    upholds: [multiselect-option-ids-by-index]
+  - id: datepicker-beside-the-native-input
+    date: 2026-11-16
+    status: accepted
+    decision: DatePicker is a calendar beside the native date input it fills, for ranges, refused days and notes, and a single ordinary date stays ui.DateField.
+    rejected:
+      - option: Replace the native date input with the calendar.
+        why: The form must post without script and the reader must always be able to type the date.
+    upholds: [datepicker-config-panics-input-falls-back]
+  - id: datepicker-month-is-not-history
+    date: 2026-11-16
+    status: accepted
+    decision: A month change is an island GET beside a real href, with no data-cui-push-state.
+    rejected:
+      - option: Push a history entry per month, as a pager does.
+        why: A month is the calendar's state, not the page's, and Back would step through the calendar.
+    upholds: [datepicker-month-nav-is-an-island]
+  - id: datepicker-nav-named-by-text
+    date: 2026-11-16
+    status: accepted
+    decision: Month anchors are named by visually hidden text, as Pagination's disabled ends are.
+    rejected:
+      - option: Name them with aria-label.
+        why: A disabled anchor has no href and so no role, and an aria-label on it may go unread (axe aria-prohibited-attr).
+    upholds: [datepicker-month-nav-is-an-island]
+  - id: datepicker-nav-clamps-target
+    date: 2026-11-16
+    status: accepted
+    decision: A month anchor moves to its target held inside the reachable months and is disabled only when it would not move.
+    rejected:
+      - option: Disable an anchor whose target lies outside Min and Max.
+        why: A year back from March with Min last November would be disabled with four pickable months behind it.
+    upholds: [datepicker-nav-target-held-in-bounds]
+  - id: datepicker-pressed-on-the-button
+    date: 2026-11-16
+    status: accepted
+    decision: The selection is aria-selected on the cell and aria-pressed on the day button, kept in step by the module.
+    rejected:
+      - option: aria-selected on the cell alone.
+        why: Focus sits on the button, and most screen readers in focus mode read only the button.
+    upholds: [datepicker-selection-rides-the-button]
+  - id: datepicker-refused-day-stays-reachable
+    date: 2026-11-16
+    status: accepted
+    decision: A refused day is aria-disabled and stays in the keyboard path.
+    rejected:
+      - option: The native disabled attribute.
+        why: The day would leave the keyboard path and the reader would not hear why nothing happens.
+    upholds: [datepicker-selection-rides-the-button]
+  - id: tag-input-chips-are-real
+    date: 2026-11-16
+    status: accepted
+    decision: TagInput renders its values as a real list of chips, each with a named remove button and its hidden input inside it.
+    rejected:
+      - option: A strip of hidden inputs the runtime turns into chips on arrival.
+        why: The values would be invisible before script, and a removed chip could leave its value in the form.
+    upholds: [tag-input-value-rides-inside-its-chip]
+  - id: tag-input-cap-on-rendered-values
+    date: 2026-11-16
+    status: accepted
+    decision: MaxLength truncates the rendered values too and travels to the module.
+    rejected:
+      - option: Cap only the draft input.
+        why: A server value longer than the cap would submit unchanged while a typed one is refused.
+    upholds: [tag-input-cap-covers-rendered-values]
+  - id: repeater-hidden-default-submit
+    date: 2026-11-16
+    status: accepted
+    decision: A hidden, nameless submit button comes first in the Repeater, and the module forwards its click to the host form's own default button.
+    rejected:
+      - option: No default button of its own.
+        why: Implicit submission clicks the form's first submit control, which was row 0's Remove, so Enter deleted the first row.
+    upholds: [repeater-default-button-first]
+  - id: repeater-ops-on-action
+    date: 2026-11-16
+    status: accepted
+    decision: Add and remove requests go to the Action with the Island's signal.
+    rejected:
+      - option: Send them to the Island's Endpoint.
+        why: The Action was checked and then never fetched, so an operations URL apart from the region's renderer was ignored.
+    upholds: [repeater-operations-go-to-action]
+  - id: numbers-module-is-headless
+    date: 2026-11-16
+    status: accepted
+    decision: The locale number formatter for number-mode signals is the headless-numbers behaviour, loaded on its marker.
+    rejected:
+      - option: Put it in the core runtime.
+        why: Every page would pay for it, live numbers or not.
+    upholds: [numbers-loads-on-number-signals]

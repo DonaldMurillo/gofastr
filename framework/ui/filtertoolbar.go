@@ -15,52 +15,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── FilterToolbar ──────────────────────────────────────────────────
-//
-// The filter/sort control strip that sits above a DataTable or card
-// grid on a list screen: a row of facet controls (native <select> or a
-// radio-pill group per facet), an optional search field, an optional
-// sort <select>, and an Apply / Reset pair.
-//
-// URL-driven, server-side, JS-optional by construction. The toolbar is
-// a single <form method="GET" action="<list route>">. Submitting it
-// navigates to `<action>?facet=value&sort=…&q=…`; the screen's
-// Load(ctx) reads those params via app.QueryFromContext and renders the
-// filtered list server-side. Refresh, share, and back-button all reduce
-// to "same URL → same view" with no client state, exactly the
-// "URL params are the source of truth" contract in core-ui/ARCHITECTURE.md.
-// ClientNavigation opts the GET submit into the client navigator when the
-// filtered view belongs to the screen. Native GET remains the default for
-// hosts whose kept layouts also render query-dependent content.
-// Reset is a plain <a> back to the bare action, so it clears every param
-// with zero JavaScript. Without ClientNavigation it carries
-// data-cui-nav="off", so it loads the whole document the way the native
-// GET submit does.
-//
-// Responsive by construction (this is the whole point, two independent
-// eval apps hand-rolled this and clipped the Apply button off-screen at
-// 375px). The toolbar declares itself a container (`container-type:
-// inline-size`) and lays its controls out with flex-wrap + `min-inline-
-// size: 0`, so as width shrinks the row degrades row → wrapped rows →
-// single-column stack. Every control, including Apply/Reset, always
-// stays on-screen and tappable; nothing overflows a narrow ancestor.
-// Pill labels never wrap mid-label (nowrap within a pill; wrap between
-// pills), so "Waiting On Customer" stays one line instead of three.
-//
-// Composition, not reinvention: select facets + sort compose ui.Select,
-// search composes ui.SearchInput, Apply composes ui.Button (submit),
-// Reset composes ui.LinkButton. The toolbar owns only its own layout CSS
-// (the arrangement of its controls) and the pill-group styling.
-
 // FacetKind selects how a facet renders its options.
 type FacetKind string
 
 const (
-	// FacetSelect renders the facet as a labelled native <select>
-	// (the default: best for many options / long labels).
+	// FacetSelect renders a labelled native <select> (the default).
 	FacetSelect FacetKind = ""
-	// FacetPills renders the facet as a wrapping radio-pill group
-	// (best for a small set of short, glanceable choices).
+	// FacetPills renders a wrapping radio-pill group.
 	FacetPills FacetKind = "pills"
 )
 
@@ -68,35 +29,30 @@ const (
 type FacetOption struct {
 	// Label is the visible option text. Required.
 	Label string
-	// Value is the submitted value and the option's stable identifier.
-	// A Value of "" is the "no filter / all" choice.
+	// Value is the submitted value; "" is the "all" choice.
 	Value string
 }
 
-// Facet is one filter dimension: a labelled group of mutually-exclusive
-// options (a status filter, a plan filter, …).
+// Facet is one filter dimension: a labelled group of exclusive options.
 type Facet struct {
-	// Name is the form field name: it becomes the URL query key. Required.
+	// Name is the field name and URL query key. Required.
 	Name string
-	// Label is the group's accessible name (the <select> label or the
-	// pill <fieldset> legend). Required.
+	// Label is the group's accessible name. Required.
 	Label string
-	// Options are the choices. Required, at least one.
+	// Options are the choices. Required.
 	Options []FacetOption
-	// Value is the currently-active Option.Value (from the URL). Empty
-	// selects the "all" choice.
+	// Value is the active Option.Value; one no option lists draws as
+	// its own choice.
 	Value string
-	// Kind picks the render mode. FacetSelect (default) or FacetPills.
-	Kind FacetKind
-	// AllLabel overrides the auto-prepended "all / no filter" choice
-	// (value ""). Defaults to "All <Label>" for selects and "All" for
-	// pills. Ignored when an Option already declares Value "".
+	Kind  FacetKind
+	// AllLabel names the prepended "all" choice; ignored when an
+	// Option has Value "".
 	AllLabel string
 }
 
 // SortOption is one choice in the sort control.
 type SortOption struct {
-	// Label is the visible text ("Newest", "Name A–Z"). Required.
+	// Label is the visible text. Required.
 	Label string
 	// Value is the submitted sort key. Required.
 	Value string
@@ -104,112 +60,67 @@ type SortOption struct {
 
 // FilterSearch configures the toolbar's optional search field.
 type FilterSearch struct {
-	// Name is the form field name (the URL query key). Required.
-	Name string
-	// Value is the current query text (from the URL).
-	Value string
-	// Placeholder overrides the default "Search…".
+	// Name is the field name and URL query key. Required.
+	Name        string
+	Value       string
 	Placeholder string
-	// Label overrides the accessible name (default "Search").
-	Label string
-	// Shortcut is a chord ("/") that focuses the search from anywhere
-	// on the page outside a text field; a chip beside the input shows it.
+	Label       string
+	// Shortcut is a chord ("/") that focuses the search from outside a
+	// text field.
 	Shortcut string
 }
 
-// HiddenField is one hidden input a GET toolbar form carries beside its
-// controls: request state the form does not own (the view a search must
-// not reset, another region's params on the same URL) that a submit
-// would otherwise drop.
+// HiddenField is request state the toolbar form carries through a submit.
 type HiddenField struct {
-	// Name is the form field name, the URL query key it round-trips.
-	// Required, and it must not collide with one of the form's own
-	// controls: the control must win, not race a stale hidden copy.
-	Name string
-	// Value is the current value carried through.
+	// Name is the query key. Required; it panics when it names one of
+	// the form's own controls.
+	Name  string
 	Value string
 }
 
 // FilterToolbarConfig configures a FilterToolbar.
 type FilterToolbarConfig struct {
-	// Action is the list route the form GETs to. Required.
+	// Action is the list route the form GETs. Required.
 	Action string
-	// ClientNavigation opts into a client-side GET navigation. Use it when the
-	// filtered content lives in the screen's replaced cell. Leave it false if a
-	// shared layout also renders filter-dependent content: layouts are kept.
-	// Without JavaScript the form always submits natively.
+	// ClientNavigation submits through the client navigator; leave it
+	// false when a kept layout renders filter-dependent content.
 	ClientNavigation bool
-
-	// Facets are the filter dimensions, rendered left-to-right and
-	// wrapping as width shrinks.
-	Facets []Facet
-
-	// Search, when non-nil, renders a search field.
-	Search *FilterSearch
-
-	// Hidden carries request state the form does not own; see
-	// HiddenField. Rendered as hidden inputs inside the form.
-	Hidden []HiddenField
-
-	// Sort, when non-empty, renders a labelled sort <select>.
-	Sort []SortOption
-	// SortName is the sort field's form name. Default "sort".
-	SortName string
-	// SortValue is the currently-selected sort Value (from the URL).
-	SortValue string
-	// SortLabel overrides the sort control's label. Default "Sort by".
-	SortLabel string
-
-	// ApplyLabel overrides the submit button text. Default "Apply".
+	Facets           []Facet
+	Search           *FilterSearch
+	Hidden           []HiddenField
+	Sort             []SortOption
+	// SortName defaults to "sort".
+	SortName   string
+	SortValue  string
+	SortLabel  string
 	ApplyLabel string
-	// ResetLabel overrides the reset link text. Default "Reset".
 	ResetLabel string
-	// HideReset suppresses the Reset link (e.g. when the caller renders
-	// an active-filter chip bar with its own "Clear all").
-	HideReset bool
-	// Compact keeps search and actions on one row in narrow record lists.
-	// With Dropdown, search shares that row with the filter trigger and tools.
-	// Without Dropdown, controls still stack below 18rem so none are clipped.
+	HideReset  bool
+	// Compact keeps search and actions on one row in a narrow list.
 	Compact bool
-
-	// Dropdown moves the facets, the sort, Extra and the Apply/Reset
-	// pair into a "Filters" ui.Dropdown, so the row is the search field
-	// (--ui-filter-toolbar-search-width wide), the Filters button and
-	// the Tools. The button's badge counts the facets set plus Applied. Every control stays in the one
-	// form: Enter in the search submits the panel's fields too, open or
-	// closed.
+	// Dropdown moves the facets, sort, Extra and Apply/Reset into a
+	// Filters dropdown whose badge counts the facets set plus Applied.
 	Dropdown bool
-	// Extra are more controls of the same form, drawn after the facets
-	// (a typed filter expression).
+	// Extra are more controls of the form, drawn after the facets.
 	Extra []render.HTML
-	// Applied adds the filters Extra holds to the Filters badge.
+	// Applied counts the filters Extra holds. Must not be negative.
 	Applied int
-	// Tools are drawn at the row's end, after the filters: links and
-	// link menus such as a Columns menu or a layout switch. They render
-	// inside the form, so a tool holding a <form> panics: a nested form
-	// is invalid HTML and the browser drops it.
+	// Tools are drawn at the row's end inside the form; one holding a
+	// <form> panics.
 	Tools []render.HTML
-
-	// Label is the toolbar's accessible name (search landmark
-	// aria-label). Default "Filters".
+	// Label is the search landmark's name. Default "Filters".
 	Label string
-
-	// Ctx carries the per-request context used to resolve i18n labels
-	// (Filters / Apply / Reset / Sort by / "All <label>" / Search…).
-	// When nil, English fallbacks are returned.
-	Ctx context.Context
-
+	// Ctx resolves the toolbar's strings; nil uses English.
+	Ctx   context.Context
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the toolbar's root <form>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, and the form contract (method, action, role,
-	// aria-label) — the sanitized Action is never overridable.
+	// ExtraAttrs land on the <form>; class, id, data-cui-*, method,
+	// action, role and aria-label are the component's.
 	ExtraAttrs html.Attrs
 }
 
-// FilterToolbar renders the filter/sort control strip for a list screen.
+// FilterToolbar renders a list screen's filter and sort controls as one
+// GET form to Action, with Apply and a Reset link to the bare Action.
 func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if cfg.Compact {
 		cfg.Class = cls(cfg.Class, "fui-filter-toolbar--compact")
@@ -231,8 +142,6 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if cfg.Applied < 0 {
 		panic("ui: FilterToolbar Applied must not be negative")
 	}
-	// Resolved once, so the hidden-field collision check below owns the
-	// name the sort control actually renders.
 	if cfg.SortName == "" {
 		cfg.SortName = "sort"
 	}
@@ -243,11 +152,6 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if cfg.ID != "" {
 		ctx = render.WithIDNamespace(ctx, cfg.ID)
 	}
-	// Action flows to both the <form action> and the reset LinkButton, so
-	// clean it once here through the same urlsafe.CleanAnchor allow-list
-	// ui.Form uses. A javascript:/vbscript:/data: action never becomes a
-	// live form action and never reaches LinkButton's scheme check (which
-	// would otherwise panic); a rejected value degrades to the inert "#".
 	action := urlsafe.CleanAnchor(cfg.Action)
 	if action == "" {
 		action = "#"
@@ -295,13 +199,10 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if len(cfg.Sort) > 0 {
 		controls = append(controls, renderSortFacet(ctx, cfg))
 	}
-	// The Extra and Tools wrappers hold caller content, so they stay
-	// unmarked: kit internals stop at a slot.
 	for _, x := range cfg.Extra {
 		controls = append(controls, html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet"}, x))
 	}
 
-	// Apply (submit) + Reset (link to the bare action → clears params).
 	applyLabel := cfg.ApplyLabel
 	if applyLabel == "" {
 		applyLabel = i18nui.FilterApply.Text(ctx)
@@ -320,11 +221,6 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		if resetLabel == "" {
 			resetLabel = i18nui.FilterReset.Text(ctx)
 		}
-		// Reset follows the submit: without ClientNavigation the
-		// filtered view reaches into a kept layout, so the bare action
-		// loads as a whole document, the way Apply's native GET does.
-		// A router-taken Reset swapped only the screen cell and left
-		// that layout's query-dependent content filtered.
 		var resetAttrs html.Attrs
 		if !cfg.ClientNavigation {
 			resetAttrs = html.Attrs{"data-cui-nav": "off"}
@@ -337,9 +233,6 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 			ExtraAttrs: resetAttrs,
 		}))
 	}
-	// Hidden inputs first: carried state, not controls. A name shared
-	// with a control would submit twice and the browser's last-value
-	// order would decide, so it is refused here where both are known.
 	owned := map[string]bool{}
 	if cfg.Search != nil {
 		owned[cfg.Search.Name] = true
@@ -366,9 +259,6 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	}, actionsKids...)
 	var row []render.HTML
 	if cfg.Dropdown {
-		// The row is the search, the Filters button and the tools; a
-		// toolbar with nothing to put in the panel draws no button, and
-		// the search submits on Enter.
 		row = append(hidden, search)
 		if len(controls) > 0 {
 			id := ""
@@ -410,17 +300,11 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		formAttrs["id"] = cfg.ID
 	}
 	maps.Copy(formAttrs, html.SafeExtraAttrs(cfg.ExtraAttrs, "action", "method", "role", "aria-label"))
-	// The sanitized action must win: ExtraAttrs is a developer escape hatch,
-	// but letting it rewrite "action" would silently undo the
-	// urlsafe.CleanAnchor pass above (a "javascript:" action would come back
-	// live). Re-assert after the merge so the sanitizer is not reversible.
 	formAttrs["action"] = action
 
 	return filterToolbarStyle.WrapHTML(render.Tag("form", flattenAttrs(formAttrs), row...))
 }
 
-// renderSelectFacet composes ui.Select for a facet, prepending an
-// "all" option (value "") unless one already exists.
 func renderSelectFacet(ctx context.Context, f Facet) render.HTML {
 	opts := make([]SelectOption, 0, len(f.Options)+1)
 	if !hasEmptyValue(f.Options) {
@@ -437,11 +321,6 @@ func renderSelectFacet(ctx context.Context, f Facet) render.HTML {
 		Select(SelectConfig{Ctx: ctx, Name: f.Name, Label: f.Label, Options: opts}))
 }
 
-// facetOptions is the facet's options plus its active value when no
-// option lists it (a stale or hand-edited URL). Matching nothing, the
-// value selected no choice: the control showed "all" while the toolbar
-// counted the filter as applied, and Apply dropped it. The value draws
-// as its own choice, labelled with itself, so Apply keeps it.
 func facetOptions(f Facet) []FacetOption {
 	if f.Value == "" || slices.ContainsFunc(f.Options, func(o FacetOption) bool { return o.Value == f.Value }) {
 		return f.Options
@@ -449,7 +328,6 @@ func facetOptions(f Facet) []FacetOption {
 	return append(slices.Clip(f.Options), FacetOption{Label: f.Value, Value: f.Value})
 }
 
-// renderSortFacet composes ui.Select for the sort control.
 func renderSortFacet(ctx context.Context, cfg FilterToolbarConfig) render.HTML {
 	name := cfg.SortName
 	sortLabel := cfg.SortLabel
@@ -463,9 +341,6 @@ func renderSortFacet(ctx context.Context, cfg FilterToolbarConfig) render.HTML {
 		}
 		opts = append(opts, SelectOption{Value: o.Value, Text: o.Label, Selected: o.Value == cfg.SortValue})
 	}
-	// An active sort no option lists (a stale or hand-edited URL) selected
-	// nothing, so the browser showed the first option and Apply replaced
-	// the sort with it. It draws as its own choice, as facetOptions does.
 	if cfg.SortValue != "" && !slices.ContainsFunc(cfg.Sort, func(o SortOption) bool { return o.Value == cfg.SortValue }) {
 		opts = append(opts, SelectOption{Value: cfg.SortValue, Text: cfg.SortValue, Selected: true})
 	}
@@ -474,7 +349,6 @@ func renderSortFacet(ctx context.Context, cfg FilterToolbarConfig) render.HTML {
 		Select(SelectConfig{Ctx: ctx, Name: name, Label: sortLabel, Options: opts}))
 }
 
-// renderSearchFacet composes ui.SearchInput (no nested <form>).
 func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 	placeholder := s.Placeholder
 	if placeholder == "" {
@@ -505,16 +379,8 @@ func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 		ExtraAttrs: wrap}, kids...)
 }
 
-// renderPillFacet renders a facet as a wrapping radio-pill group inside
-// a labelled <fieldset>/<legend>. Native radio semantics give the caller
-// keyboard nav + a single submitted value for free.
 func renderPillFacet(ctx context.Context, f Facet) render.HTML {
 	pills := make([]render.HTML, 0, len(f.Options)+1)
-	// Pill ids are slug-derived. Two options whose value and label fold
-	// to one slug ("Red Car"/"red car") would share an id, and the
-	// label[for] wiring would silently point both at the first; a
-	// deterministic ordinal suffix keeps the second distinct without
-	// changing any id that was unique already.
 	seen := map[string]int{}
 	pillID := func(o FacetOption) string {
 		id := "filter-" + slug(f.Name) + "-" + slug(o.Value+"-"+o.Label)
@@ -545,8 +411,6 @@ func renderPillFacet(ctx context.Context, f Facet) render.HTML {
 		legend, group)
 }
 
-// pill renders one radio-pill: a <label> wrapping a visually-hidden
-// <input type=radio> and a nowrap text span.
 func pill(name string, o FacetOption, checked bool, id string) render.HTML {
 	inputAttrs := map[string]string{
 		"type":  "radio",
@@ -573,7 +437,6 @@ func hasEmptyValue(opts []FacetOption) bool {
 	return false
 }
 
-// cls joins a base class with an optional extra class.
 func cls(base, extra string) string {
 	if extra == "" {
 		return base

@@ -12,53 +12,28 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── AvatarGroup ────────────────────────────────────────────────────
-//
-// Overlapping stack of avatars with a "+N" overflow indicator. The
-// stack uses CSS negative margins (no inline styles, strict-CSP
-// safe) and propagates the group Size to its children unless the
-// individual AvatarConfig already set one.
-
 // AvatarGroupConfig configures an avatar group / stack.
 type AvatarGroupConfig struct {
-	// Avatars is the source list: at least one. Order matters: the
-	// first element renders on top.
+	// Avatars is the source list (at least one); the first renders on top.
 	Avatars []AvatarConfig
-
-	// Max caps how many avatars render before the "+N" indicator
-	// replaces the remainder. Default 5.
+	// Max caps how many avatars render before "+N". Default 5.
 	Max int
-
-	// Size propagates to each child Avatar unless the child has its
-	// own Size set explicitly. Default AvatarMd.
+	// Size applies to each child Avatar that leaves its own Size unset.
 	Size AvatarSize
-
-	// Label is the aria-label on the group element. Default "Avatars",
-	// in the language of Ctx.
+	// Label is the group's aria-label. Default "Avatars", in Ctx's language.
 	Label string
-
-	// Ctx carries the per-request context the default label and the
-	// overflow count are written in. When nil, English applies.
+	// Ctx is the request context the label and the overflow count are said in.
 	Ctx context.Context
-
-	// ShowNames wraps each Avatar in a Tooltip so hover / keyboard
-	// focus reveals the avatar's Name. Useful for team-roster stacks
-	// where the SR-only initials aren't enough for sighted users.
+	// ShowNames wraps each Avatar in a Tooltip showing its Name.
 	ShowNames bool
-
-	ID    string
-	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the group's root element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, role, and aria-label (use Label).
+	ID        string
+	Class     string
+	// ExtraAttrs lands on the root; class, id, data-cui-*, role and aria-label are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// AvatarGroup renders an overlapping stack of avatars. When
-// len(Avatars) > Max, only the first Max render and a trailing
-// "+N" pill announces the remainder via aria-label.
+// AvatarGroup renders an overlapping stack of avatars, the first Max of
+// them and a "+N" pill for the rest. It panics with no Avatars.
 func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 	if len(cfg.Avatars) == 0 {
 		panic("ui: AvatarGroup requires at least one Avatar")
@@ -102,23 +77,11 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 		}
 		av := Avatar(a)
 		if cfg.ShowNames {
-			av = Tooltip(TooltipConfig{Text: a.Name}, av)
+			av = Tooltip(TooltipConfig{Text: a.Name, Ctx: cfg.Ctx}, av)
 		}
-		// AvatarConfig draws from strings only, so the rendered Avatar
-		// (and the Tooltip wrapping it, when ShowNames is set) holds
-		// none of a caller's markup here; its root becomes a nested
-		// item rather than one an owner could place, so it is
-		// collapsed into a single mark, as combobox/fileupload do for
-		// their own nested headless calls.
 		items = append(items, headless.Own(av))
 	}
 	if overflow > 0 {
-		// role=img + aria-label is the canonical way to attach an
-		// accessible name to a graphical element. axe rejects bare
-		// aria-label on <span> (the implicit role doesn't accept it);
-		// either drop aria-label OR promote the span to a role that
-		// supports the attribute. role=img reads "image, N more" to
-		// screen readers, close enough to the visual "+N" chip.
 		items = append(items, html.Span(html.TextConfig{
 			Class: "fui-avatar-group__overflow",
 			ExtraAttrs: html.Attrs{
@@ -144,17 +107,6 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 var avatarGroupStyle = registry.RegisterStyle("ui-avatar-group", avatarGroupCSS)
 
 func avatarGroupCSS(_ style.Theme) string {
-	// Overlap is sized per-variant so the stack looks tight regardless
-	// of Avatar size: about a quarter of each avatar's width (ring
-	// included) tucks under the previous one, the shadcn spacing. Less
-	// read as a row of loose circles rather than a stack. Stacking order (z-index via :nth-child reverse)
-	// keeps the first avatar on top, which matches the natural reading
-	// order ("Ada, then Grace, then …").
-	//
-	// Knobs: the group reads the avatar component's size knobs
-	// (--ui-avatar-size-sm/md/lg/xl, declared with the avatar sheet)
-	// so the overlap (25% of the size) and the "+N" overflow pill
-	// track the avatars they sit beside.
 	return `[data-cui-comp="ui-avatar-group"] {
   display: inline-flex;
   align-items: center;

@@ -16,77 +16,56 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── ScatterChart ───────────────────────────────────────────────────
-//
-// Points on two numeric axes, for the question a bar chart can't answer:
-// do two measures move together (seats against MRR, latency against
-// payload size)? Pure SVG, no script. Both axes are always drawn, rounded
-// out to clean steps, so a point's position can be read off them. Each
-// point carries a <title> naming its series, label and coordinates.
-
 // ScatterPoint is one point.
 type ScatterPoint struct {
 	X, Y float64
-	// Label names the point in its <title> ("Acme"). Optional.
+	// Label names the point in its <title>. Optional.
 	Label string
 }
 
 // ScatterSeries is one group of points, drawn in one color.
 type ScatterSeries struct {
-	// Name is the legend label and the start of each point's title.
-	// Required.
+	// Name is the legend label and each point's title prefix. Required.
 	Name   string
 	Points []ScatterPoint
-	// Color overrides the palette pick, in the forms BarChartBar.Color
-	// takes: a palette token, a registered status variant, or a CSS
-	// color. Anything else falls back to the palette.
+	// Color takes the forms BarChartBar.Color takes; anything else is the
+	// palette's pick.
 	Color string
 }
 
 // ScatterChartConfig configures a ScatterChart.
 type ScatterChartConfig struct {
-	// Series are the point groups. A point with a NaN or Inf coordinate
-	// is a reading that never arrived and is skipped; with no finite
-	// point left the chart renders the shared empty state.
+	// Series are the point groups; a point with a NaN or Inf coordinate
+	// is skipped.
 	Series []ScatterSeries
-	// XLabel and YLabel title the axes ("Seats", "MRR"). Optional.
+	// XLabel and YLabel title the axes. Optional.
 	XLabel, YLabel string
-	// Width / Height in CSS pixels. Default 360×220.
+	// Width and Height in CSS pixels. Default 360×220.
 	Width, Height int
-	// ShowLegend renders the series names under the chart, wrapping to
-	// another line at the right edge; the plot gives up the height.
+	// ShowLegend renders the series names under the plot.
 	ShowLegend bool
-	// LabelledBy is the id of an element naming the chart for AT.
-	// Without it the chart is aria-hidden, like the other charts.
+	// LabelledBy names the chart; without it the chart is aria-hidden.
 	LabelledBy string
 	ID         string
 	Class      string
-	// ExtraAttrs forwards additional attributes to the root <svg>. Keys
-	// the component owns are dropped: class and id (use Class / ID),
-	// data-cui-*, width, height, viewBox, xmlns, role, aria-labelledby
-	// (use LabelledBy) and aria-hidden.
+	// ExtraAttrs go on the root <svg>, less the keys the chart derives.
 	ExtraAttrs html.Attrs
-	// Ctx carries the request: the chart's numbers and words follow the
-	// reader's locale. Nil writes English.
+	// Ctx sets the locale of numbers and words; nil is English.
 	Ctx context.Context
 }
 
-// Plot gutters: tick labels sit left of and under the plot, and an axis
-// title adds a line on its side.
 const (
-	scatterLeft   = 36.0
-	scatterRight  = 8.0
-	scatterTop    = 8.0
-	scatterBottom = 20.0
-	scatterTitle  = 16.0
-	scatterLegend = 22.0
-	// scatterLegendLine is each extra legend line.
+	scatterLeft       = 36.0
+	scatterRight      = 8.0
+	scatterTop        = 8.0
+	scatterBottom     = 20.0
+	scatterTitle      = 16.0
+	scatterLegend     = 22.0
 	scatterLegendLine = 16.0
-	// scatterCharW is a label's width per character at --text-xs.
-	scatterCharW = 7.0
+	scatterCharW      = 7.0
 )
 
-// ScatterChart renders points on two numeric axes.
+// ScatterChart renders points on two numeric axes, both always drawn.
 func ScatterChart(cfg ScatterChartConfig) render.HTML {
 	xs, ys := []float64{}, []float64{}
 	for _, s := range cfg.Series {
@@ -117,7 +96,6 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 		yText[i] = tickText(cfg.Ctx, t, yStep)
 		widest = max(widest, utf8.RuneCountInString(yText[i]))
 	}
-	// The gutter fits the widest Y tick label.
 	left, bottom := max(scatterLeft, float64(widest)*scatterCharW+10), scatterBottom
 	if cfg.YLabel != "" {
 		left += scatterTitle
@@ -125,7 +103,6 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 	if cfg.XLabel != "" {
 		bottom += scatterTitle
 	}
-	// Legend entries run left to right and wrap at the right edge.
 	type legendSlot struct {
 		x    float64
 		line int
@@ -155,7 +132,6 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 	}
 	xLo, xHi := xTicks[0], xTicks[len(xTicks)-1]
 	yLo, yHi := yTicks[0], yTicks[len(yTicks)-1]
-	// Halves keep a span near the float limit (-1e308 to 1e308) finite.
 	px := func(x float64) float64 { return plotL + (x/2-xLo/2)/(xHi/2-xLo/2)*(plotR-plotL) }
 	py := func(y float64) float64 { return plotB - (y/2-yLo/2)/(yHi/2-yLo/2)*(plotB-plotT) }
 
@@ -291,12 +267,9 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 	return scatterChartStyle.WrapHTML(render.HTML(sb.String()))
 }
 
-// axisTicks rounds the values' range out to clean steps (1, 2, 2.5 or 5
-// times a power of ten), about four of them, and returns every tick from
-// the low end to the high end with the step. A range with no width is
-// widened around its value so the axis still has two ends. When no clean
-// step fits in a float64 (a spread tiny beside the values, or a span past
-// the float limit) the ticks are the data's two ends and the step is 0.
+// axisTicks rounds the values' range out to about four clean steps and
+// returns the ticks and the step, or the data's two ends and step 0 when
+// no clean step fits in a float64.
 func axisTicks(vs []float64) ([]float64, float64) {
 	lo, hi := slices.Min(vs), slices.Max(vs)
 	span := hi - lo
@@ -311,7 +284,7 @@ func axisTicks(vs []float64) ([]float64, float64) {
 	if kHi == kLo {
 		kLo, kHi = kLo-1, kHi+1
 	}
-	const exact = 1 << 52 // integers past this are not all representable
+	const exact = 1 << 52
 	if math.Abs(kLo) > exact || math.Abs(kHi) > exact || !finite(kLo*step) || !finite(kHi*step) {
 		return []float64{lo, hi}, 0
 	}
@@ -323,16 +296,12 @@ func axisTicks(vs []float64) ([]float64, float64) {
 	return ticks, step
 }
 
-// tickText writes a tick with as many decimals as its step needs, so no
-// two ticks read the same. Very large or fallback ticks use the shortest
-// exact form.
+// tickText writes a tick with the decimals its step needs.
 func tickText(ctx context.Context, t, step float64) string {
 	if step == 0 {
 		return exactText(ctx, t)
 	}
 	if math.Abs(t) >= 1e9 || step < 1e-9 {
-		// Past plain decimals: the significant digits that tell this tick
-		// from the next, so 7.5e+299 rather than 7.500000000000005e+299.
 		return strconv.FormatFloat(t, 'g', decExp(t)-decExp(step)+2, 64)
 	}
 	d := 0
@@ -350,9 +319,8 @@ func decExp(v float64) int {
 	return e
 }
 
-// exactText is v's shortest exact form in the reader's locale: 0.0025,
-// 1,250. Past plain decimals it keeps Go's exponent form, 1e+21, which
-// CLDR's table here does not cover.
+// exactText is v's shortest exact form in the reader's locale, or Go's
+// exponent form past plain decimals.
 func exactText(ctx context.Context, v float64) string {
 	if a := math.Abs(v); a >= 1e15 || (a != 0 && a < 1e-6) {
 		return strconv.FormatFloat(v+0, 'g', -1, 64)

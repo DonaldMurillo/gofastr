@@ -11,47 +11,29 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── TimePicker ─────────────────────────────────────────────────────
-//
-// A styled native time input over headless.Field + headless.Input:
-// the browser owns the time UI; this layer owns the label, the 44px
-// touch target and the focus ring. The input's type and accessible
-// label do not change.
-
 // TimePickerConfig configures a TimePicker.
 type TimePickerConfig struct {
-	// Name is the form field name (required).
-	Name string
-	// Label is the accessible label (required).
+	// Name and Label are required.
+	Name  string
 	Label string
-	// Value is the initial value in HH:MM (24-hour) format. Empty
-	// means no preselection.
-	Value string
-	// Min / Max bound the picker (e.g. "09:00", "17:00"). Empty
-	// leaves them unset.
-	Min  string
-	Max  string
-	Step int // step in seconds (default = 60). 1 → seconds visible.
-	// Required marks the input required.
+	// Value, Min and Max are HH:MM (24-hour); empty leaves them unset.
+	Value    string
+	Min      string
+	Max      string
+	Step     int // step in seconds (default = 60). 1 → seconds visible.
 	Required bool
-	// Disabled disables interaction.
 	Disabled bool
-	// Help renders supporting text under the picker.
-	Help string
-	// Error overrides Help with an error message + aria-invalid.
+	Help     string
+	// Error replaces Help and marks the input invalid.
 	Error string
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes to the input element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, and every data-hui-* hook.
+	// ExtraAttrs forwards attributes to the field's root; keys the
+	// component owns are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// timePickerClasses dresses headless.Field's parts; the control
-// inside gets timePickerInputClasses, because Input renders through
-// its own root part and the input's class is not the field's.
 var timePickerClasses = headless.Classes{
 	headless.PartRoot:  "fui-time-picker",
 	headless.PartLabel: "fui-time-picker__label",
@@ -81,9 +63,6 @@ func TimePicker(cfg TimePickerConfig) render.HTML {
 		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.TrimSpace(rootClass)}}
 	}
 
-	// The type-specific attributes travel through Input's Owned seam —
-	// the one place a numeric control's bounds may reach the input
-	// without a caller being able to widen them.
 	owned := html.Attrs{}
 	if cfg.Min != "" {
 		owned["min"] = cfg.Min
@@ -92,7 +71,6 @@ func TimePicker(cfg TimePickerConfig) render.HTML {
 		owned["max"] = cfg.Max
 	}
 	if cfg.Step > 0 {
-		// browsers spec: step in seconds.
 		owned["step"] = strconv.Itoa(cfg.Step)
 	}
 
@@ -105,10 +83,6 @@ func TimePicker(cfg TimePickerConfig) render.HTML {
 		Parts:      parts,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id"),
 	}, timePickerClasses, func(c headless.FieldControl) render.HTML {
-		// TimePicker builds this input itself from cfg's strings/bools;
-		// it is never content TimePicker's own caller handed in, so the
-		// input's root — headless.Field sees it only as its build
-		// closure's caller-content return — takes the mark here.
 		return headless.Own(headless.Input(headless.InputProps{
 			Type:        "time",
 			Name:        cfg.Name,

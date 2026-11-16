@@ -1,16 +1,5 @@
 package ui
 
-// ─── SearchResults ──────────────────────────────────────────────────
-//
-// A full-page list of search results: a search form that GETs the page
-// itself, a polite status line counting the matches, an ordered list of
-// result pages (title link, group, excerpt with its hits marked, and the
-// matching sections as deep links), and pagination below. Everything is
-// server-rendered and works with no script; battery/sitesearch's
-// `sitesearch-page` module hydrates it so typing updates the list in
-// place. Distinct from CommandPalette, whose options are combobox rows
-// a reader cannot follow without script.
-
 import (
 	"context"
 	"maps"
@@ -31,11 +20,10 @@ import (
 // SearchResult is one matching page.
 type SearchResult struct {
 	URL, Title string
-	// Group labels the result ("Docs"); empty shows none.
-	Group string
-	// Excerpt is the page's text around its hits.
+	// Group labels the result ("Docs").
+	Group   string
 	Excerpt []SearchSegment
-	// Sections are the page's matching sections, each a deep link.
+	// Sections are the matching sections, each a deep link.
 	Sections []SearchSection
 }
 
@@ -45,8 +33,7 @@ type SearchSection struct {
 	Excerpt      []SearchSegment
 }
 
-// SearchSegment is a run of excerpt text; Hit marks a run that matched
-// the query, drawn in <mark>.
+// SearchSegment is a run of excerpt text; a Hit run is drawn in <mark>.
 type SearchSegment struct {
 	Text string
 	Hit  bool
@@ -56,37 +43,29 @@ type SearchSegment struct {
 type SearchResultsConfig struct {
 	// Action is the page's own path, which the form GETs. Required.
 	Action string
-	// Query is the query the results answer. Empty draws the form
-	// alone.
-	Query string
-	// Results are the page of results shown.
+	// Query is the query answered; empty draws no status line.
+	Query   string
 	Results []SearchResult
-	// Total counts every match, of which Results are one page.
-	Total int
-	// Page is the page shown, 1-based, and PerPage how many results a
-	// page holds. A Total over PerPage draws pagination.
+	// Total counts every match; a Total over PerPage draws pagination.
+	Total         int
 	Page, PerPage int
 	// ID is the search input's id. Default "search".
 	ID string
-	// Ctx resolves the status words and labels. When nil, English
-	// applies.
+	// Ctx resolves the strings; nil uses English.
 	Ctx   context.Context
 	Class string
-	// ExtraAttrs forwards additional attributes to the <section> root.
-	// Keys the component owns are dropped or overwritten: class,
-	// style, data-cui-* and the data-search-page* hooks.
+	// ExtraAttrs land on the <section>; class, style, data-cui-* and
+	// data-search-page* are the component's.
 	ExtraAttrs html.Attrs
 }
 
-// searchQueryParam and searchPageParam are the query parameters the
-// page reads: the form's field and pagination's.
 const (
 	searchQueryParam = "q"
 	searchPageParam  = "page"
 )
 
-// SearchResults renders the results page body. It panics without an
-// Action: the form must reach the page without script.
+// SearchResults renders a script-free search page body: a GET form, a
+// status line, the results and pagination. It panics without an Action.
 func SearchResults(cfg SearchResultsConfig) render.HTML {
 	if cfg.Action == "" {
 		panic("ui: SearchResults requires Action")
@@ -105,8 +84,6 @@ func SearchResults(cfg SearchResultsConfig) render.HTML {
 
 	form := SearchInput(SearchInputConfig{
 		Name: searchQueryParam, ID: id, Action: cfg.Action, Ctx: ctx,
-		// A query names identifiers (datatable, ScreenPath): a phone must
-		// not capitalize or correct them.
 		ExtraAttrs: map[string]string{
 			"value": cfg.Query, "data-search-page-input": "",
 			"autocapitalize": "none", "autocorrect": "off", "spellcheck": "false",
@@ -157,8 +134,6 @@ func SearchResults(cfg SearchResultsConfig) render.HTML {
 	return searchResultsStyle.WrapHTML(render.Tag("section", attrs, parts...))
 }
 
-// searchStatus words the status line, its count in ctx's locale: empty
-// with no query.
 func searchStatus(ctx context.Context, q string, total int, count, one, none string) string {
 	if q == "" {
 		return ""
@@ -214,7 +189,6 @@ func searchExcerpt(segs []SearchSegment) render.HTML {
 
 var searchResultsStyle = registry.RegisterStyle("ui-search-results", searchResultsCSS)
 
-// Knobs: --ui-search-results-gap (the space between results).
 func searchResultsCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-search-results"] {
   display: grid;

@@ -11,17 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── RatingInput ────────────────────────────────────────────────────
-//
-// A star rating over headless.Rating: a fieldset radiogroup of real
-// radios in forward order (1..Max in the DOM, the order they read, so
-// native arrows move with the stars), each named "N out of Max",
-// submitted by a plain form POST without JavaScript. The hover
-// preview and the checked-state fill are pure CSS: :has() lights
-// every choice that has the checked radio or the hovered choice after
-// it. A browser without :has() still rates; only the earlier stars'
-// fill is missing.
-
 // RatingShape picks one of the bundled glyphs. For a custom glyph,
 // set RatingConfig.Icon instead. Icon overrides Shape.
 type RatingShape string
@@ -36,9 +25,7 @@ const (
 	RatingShapeSquare  RatingShape = "square"
 )
 
-// RatingSize controls the painted glyph size. The tap target stays
-// at the --spacing-touch-target floor (44px WCAG 2.5.5) regardless;
-// only the SVG glyph inside shrinks or grows.
+// RatingSize sets the glyph size; the tap target does not change.
 type RatingSize string
 
 const (
@@ -47,9 +34,7 @@ const (
 	RatingSizeLarge   RatingSize = "large"
 )
 
-// RatingGap controls the visual gap between stars, independent of
-// Size. Useful for compact (tight) inline ratings vs. roomy
-// (loose / wide) detail-page ratings.
+// RatingGap sets the gap between stars, independent of Size.
 type RatingGap string
 
 const (
@@ -61,48 +46,33 @@ const (
 
 // RatingConfig configures a RatingInput.
 type RatingConfig struct {
-	// Ctx carries the per-request context the component's own words
-	// (each choice's "3 out of 5" name) are written in. When nil, English applies.
+	// Ctx resolves each choice's "3 out of 5" name. Nil means English.
 	Ctx context.Context
 
-	// Name is the form-field name (required).
-	Name string
-	// Label is the accessible label (required, used as the
-	// radiogroup's aria-label).
+	// Name and Label are required; Label names the radiogroup.
+	Name  string
 	Label string
-	// Max is the rating ceiling (1..N). Defaults to 5.
-	Max int
-	// Value is the initial selection (0..Max). 0 = no rating chosen.
+	// Max defaults to 5; Value 0 means no rating chosen.
+	Max   int
 	Value int
-	// Shape picks one of the bundled glyphs (star/heart/thumb/fire/
-	// diamond/circle/square). Ignored when Icon is set.
+	// Shape is ignored when Icon is set.
 	Shape RatingShape
-	// Icon is a caller-supplied monochrome SVG (or any render.HTML)
-	// used in place of the bundled Shape glyph. The fill / stroke
-	// inside should use currentColor so the selected-state highlight
-	// works. Cloned into every star.
+	// Icon replaces the bundled glyph in every star; draw it in
+	// currentColor so the selected fill shows.
 	Icon render.HTML
-	// Size picks the icon glyph size. Default=24px, Small=16px,
-	// Large=32px. Tap target stays at the WCAG floor regardless.
+	// Size is 24px by default, 16px small and 32px large.
 	Size RatingSize
-	// Gap picks the visual spacing between stars. Default keeps the
-	// AAA 44×44 tap target per star. Tight shrinks the inline tap
-	// zone to glyph+8px, relaxing AAA to AA (24px floor) for dense
-	// inline ratings. Loose / Wide widen the gap. Independent of Size.
-	Gap RatingGap
-	// Disabled disables all radios.
+	// Gap's default keeps a 44px tap target per star; Tight relaxes it
+	// to the 24px floor.
+	Gap      RatingGap
 	Disabled bool
 	ID       string
 	Class    string
-	// ExtraAttrs forwards additional attributes to the rating's root
-	// <fieldset>. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-cui-*, role, and aria-label — the
-	// radiogroup contract.
+	// ExtraAttrs forwards attributes to the root fieldset; keys the
+	// component owns are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// ratingClasses dresses headless.Rating's parts in this package's own
-// vocabulary — the names the registered ui-rating sheet matches.
 var ratingClasses = headless.Classes{
 	headless.PartRoot:         "fui-rating",
 	headless.PartControl:      "fui-rating__input",
@@ -110,8 +80,8 @@ var ratingClasses = headless.Classes{
 	headless.PartIcon:         "fui-rating__star",
 }
 
-// RatingInput renders a star/heart rating bound to a radio group.
-// Submits as Name=<1..Max> on the surrounding form.
+// RatingInput renders a rating as a radio group that submits
+// Name=<1..Max> with the surrounding form.
 func RatingInput(cfg RatingConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: RatingInput requires Name")
@@ -140,11 +110,6 @@ func RatingInput(cfg RatingConfig) render.HTML {
 			`. Pick one of: "" (default), tight, loose, wide`)
 	}
 
-	// Per-shape color and per-size/-gap density travel as root
-	// modifier classes; the sheet consumes them through custom
-	// properties, so no rule here needs to know a shape's colour.
-	// The modifiers travel as a part-attr class, which APPENDS to the
-	// class map's own root class — so they carry no base of their own.
 	var mods []string
 	if cfg.Icon == "" && cfg.Shape != RatingShapeStar {
 		mods = append(mods, "fui-rating--"+string(cfg.Shape))
@@ -168,8 +133,6 @@ func RatingInput(cfg RatingConfig) render.HTML {
 
 	icon := cfg.Icon
 	if icon == "" {
-		// The bundled glyph is this layer's art: the primitive's own
-		// default is a plain star, and every other shape is ours.
 		icon = headless.Own(render.HTML(ratingIcon(cfg.Shape)))
 	}
 

@@ -189,7 +189,7 @@ func (s *EntityTwoFAStore) EnsureSchema(ctx context.Context) error {
 		boolType, boolFalse = "BOOLEAN", "FALSE"
 	}
 	stmt := fmt.Sprintf(
-		"CREATE TABLE IF NOT EXISTS %s (user_id TEXT PRIMARY KEY, enabled %s NOT NULL DEFAULT %s, secret TEXT NOT NULL DEFAULT '', backup_codes TEXT NOT NULL DEFAULT '[]', verified %s NOT NULL DEFAULT %s, last_used_step BIGINT NOT NULL DEFAULT 0, version BIGINT NOT NULL DEFAULT 0)",
+		"CREATE TABLE IF NOT EXISTS %s (user_id TEXT PRIMARY KEY NOT NULL, enabled %s NOT NULL DEFAULT %s, secret TEXT NOT NULL DEFAULT '', backup_codes TEXT NOT NULL DEFAULT '[]', verified %s NOT NULL DEFAULT %s, last_used_step BIGINT NOT NULL DEFAULT 0, version BIGINT NOT NULL DEFAULT 0)",
 		query.QuoteFolded(s.table), boolType, boolFalse, boolType, boolFalse,
 	)
 	if _, err := s.db.ExecContext(ctx, stmt); err != nil {

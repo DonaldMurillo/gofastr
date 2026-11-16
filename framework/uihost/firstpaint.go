@@ -16,62 +16,24 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// First-paint inlining. A live page cannot paint until it holds the
-// document and every render-blocking resource its <head> names: the
-// color-scheme bootstrap, the component bundle and app.css. As links
-// those cost a second round trip after the document, which on a slow
-// link is most of the time to first paint. A page whose head resources
-// are small carries them in the document instead, so the first response
-// is enough to paint.
-//
-// The budget is in gzip-compressed bytes, the way they cross the wire
-// once the app (AppConfig.Compression) or a proxy in front of it
-// compresses.
-// Inlining trades a first visit's round trip for a return visit's
-// download: linked sheets come from the cache on the next full load,
-// inlined ones arrive again inside every document. 16 KiB takes about one
-// round trip on a slow mobile link (400 kbps, 300 ms), so the bytes a
-// return visit pays for stay under the round trip a first visit saves. A
-// heavier head keeps its links.
-//
-// Every inlined block is allowed by its hash in the response's own
-// Content-Security-Policy (cspAllowInline), never by 'unsafe-inline'. A
-// page whose policy cannot take a hash keeps its links. Static exports
-// always link: their files are served by hosts whose policy the framework
-// does not write.
 const firstPaintBudget = 16 << 10
 
-// maxCachedBundles bounds the per-host cache of inlined component
-// bundles. The key set is the distinct component sets the app's pages
-// render, a few dozen in practice; past the bound a bundle is built per
-// request instead of cached.
 const maxCachedBundles = 256
 
 // WithNoInlineFirstPaint keeps every head resource a link: the component
 // sheets, app.css and the color-scheme bootstrap. Set it when the
-// Content-Security-Policy is written somewhere the page's hashes cannot
-// reach (a proxy, a CDN rule, a <meta> tag in a custom layout), where an
-// inlined block would be refused and the page would paint unstyled.
+// Content-Security-Policy is written where the page's hashes cannot reach
+// (a proxy, a CDN rule, a <meta> tag in a custom layout).
 func WithNoInlineFirstPaint() Option {
 	return func(ds *UIHost) { ds.noInlineFirstPaint = true }
 }
 
-// inlineBlock is a <style> or <script> body that can ship in the
-// document, with its compressed size and its CSP hash source.
 type inlineBlock struct {
 	body string
 	gz   int
 	hash string // 'sha256-<base64>'
 }
 
-// newInlineBlock refuses a body that could end its element early or open
-// a comment the parser would carry past the closing tag: such a body
-// ships as a link instead. HTML matches end tags ASCII case-insensitively.
-//
-// The browser hashes the element's text after HTML preprocessing, which
-// turns CR LF and a lone CR into LF, so the body is normalized the same
-// way first; CSS and JS read every one of them as the same newline. A NUL
-// the parser would replace refuses the block.
 func newInlineBlock(body string) (inlineBlock, bool) {
 	if strings.IndexByte(body, 0) >= 0 {
 		return inlineBlock{}, false
@@ -91,10 +53,6 @@ func newInlineBlock(body string) (inlineBlock, bool) {
 	}, true
 }
 
-// newStyleBlock is newInlineBlock for a stylesheet. A relative URL
-// resolves against the sheet's address when the sheet is linked and
-// against the page's when it is inlined, so a sheet holding one keeps
-// its link.
 func newStyleBlock(css string) (inlineBlock, bool) {
 	if cssHasRelativeRef(css) {
 		return inlineBlock{}, false
@@ -102,11 +60,6 @@ func newStyleBlock(css string) (inlineBlock, bool) {
 	return newInlineBlock(css)
 }
 
-// cssHasRelativeRef reports whether css names a resource by a relative
-// URL: in a url(), in an @import string, or anywhere it uses
-// image-set(), whose bare strings are URLs too. It reads text, not
-// tokens, so a match inside a comment or a string counts as well; that
-// only keeps a link.
 func cssHasRelativeRef(css string) bool {
 	low := asciicase.Lower(css)
 	if strings.Contains(low, "image-set(") {
@@ -135,9 +88,6 @@ func cssHasRelativeRef(css string) bool {
 	return false
 }
 
-// relativeTarget reports whether the URL starting s (after any space
-// and an opening quote) is relative: not rooted at /, not a fragment,
-// and without a scheme. An empty URL is relative.
 func relativeTarget(s string) bool {
 	s = strings.TrimLeft(s, " \t\n\r\f")
 	if s != "" && (s[0] == '"' || s[0] == '\'') {
@@ -174,16 +124,12 @@ func gzipLen(s string) int {
 	return int(n)
 }
 
-// firstPaintCache holds the blocks a host inlines, each built once per
-// content: app.css and the bootstrap are fixed per process, a bundle is
-// keyed by its component set and their versions.
 type firstPaintCache struct {
-	appOnce sync.Once
-	app     inlineBlock
-	appOK   bool
-	bundles sync.Map // bundleKey → bundleBlock
-	n       atomic.Int32
-	// subsets holds the first-paint subsets of bundles (firstpaint_prune.go).
+	appOnce        sync.Once
+	app            inlineBlock
+	appOK          bool
+	bundles        sync.Map // bundleKey → bundleBlock
+	n              atomic.Int32
 	subsets        sync.Map // subsetKey → bundleBlock
 	nSubsets       atomic.Int32
 	behaviorOnce   sync.Once
@@ -194,17 +140,12 @@ type bundleKey struct{ names, version string }
 
 type bundleBlock struct {
 	inlineBlock
-	names []string // the components the block carries, for data-cui-bundle
-	key   bundleKey
-	// droppable lists the fui- classes the bundle's selectors require,
-	// the ones a subset may drop rules for.
+	names     []string // the components the block carries, for data-cui-bundle
+	key       bundleKey
 	droppable []string
-	// fullURL is the URL a linked head names for the same sheets.
-	fullURL string
-	// href is set on a subset: fullURL, which the runtime links at boot
-	// (data-cui-bundle-href).
-	href string
-	ok   bool
+	fullURL   string
+	href      string
+	ok        bool
 }
 
 var (
@@ -231,9 +172,6 @@ func (ds *UIHost) appCSSBlock() (inlineBlock, bool) {
 	return c.app, c.appOK
 }
 
-// bundleBlockFor builds the inline twin of the comp-bundle.css response
-// for names under the host's theme: the same sheets, in the same order,
-// each followed by the newline the endpoint writes.
 func (ds *UIHost) bundleBlockFor(names []string) bundleBlock {
 	theme := ds.activeTheme()
 	th := style.ThemeHash(theme)
@@ -274,7 +212,6 @@ func (ds *UIHost) bundleBlockFor(names []string) bundleBlock {
 	return out
 }
 
-// firstPaintPlan is what one page inlines.
 type firstPaintPlan struct {
 	comp    *bundleBlock // nil when the page renders no component sheet
 	app     inlineBlock
@@ -295,12 +232,6 @@ func (p *firstPaintPlan) styleHashes() []string {
 
 func (p *firstPaintPlan) scriptHashes() []string { return []string{p.scheme.hash} }
 
-// planFirstPaint returns the blocks a page with these component sheets
-// inlines, or false when any block cannot be inlined or together they
-// exceed the budget. A page whose whole bundle does not fit inlines the
-// subset its markup can match, when that fits. If only app.css takes
-// that subset over budget, keep app.css linked rather than discarding
-// the subset and linking the much larger full component bundle.
 func (ds *UIHost) planFirstPaint(names []string, markup ...string) (*firstPaintPlan, bool) {
 	if ds.App == nil {
 		return nil, false
@@ -340,11 +271,6 @@ func (ds *UIHost) planFirstPaint(names []string, markup ...string) (*firstPaintP
 	return p, true
 }
 
-// allowInlineHashes adds the hashes to every policy on the response and
-// reports whether the enforced ones can all take them. When one cannot,
-// nothing is changed and the page links instead. Report-only policies are
-// patched where they can be, so trying a stricter policy does not report
-// the framework's own blocks.
 func allowInlineHashes(h http.Header, styles, scripts []string) bool {
 	const enforce, report = "Content-Security-Policy", "Content-Security-Policy-Report-Only"
 	enforced := append([]string(nil), h.Values(enforce)...)
@@ -381,18 +307,6 @@ type cspDirective struct {
 	srcs []string
 }
 
-// cspAllowInline returns policy with the style hashes allowed for <style>
-// elements and the script hashes for <script> elements. A header value
-// may hold several comma-separated policies; each is patched. ok is false
-// when a policy refuses the kind outright ('none'), which no hash can
-// lift without loosening it.
-//
-// Each kind is governed by its -src-elem directive, then its -src, then
-// default-src. A policy with none of them already allows inline content
-// of that kind. One whose list allows 'unsafe-inline' with no nonce or
-// hash is left alone: adding a hash would switch 'unsafe-inline' off.
-// When default-src governs, a new -src directive carries default-src's
-// sources plus the hashes, so everything default-src allowed still loads.
 func cspAllowInline(policy string, styles, scripts []string) (string, bool) {
 	if strings.TrimSpace(policy) == "" {
 		return policy, true

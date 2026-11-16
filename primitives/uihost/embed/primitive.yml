@@ -1,0 +1,371 @@
+primitive: uihost.embed
+summary: Embedding screens in other sites - the embed host, its content route and grants, and the boot check that refuses server actions on embeddable screens.
+code:
+  - framework/uihost/embed.go
+  - framework/uihost/embed_actions.go
+docs:
+  - framework/docs/content/embed.md
+twins:
+  - job: Delete the ambient credentials (Cookie, Authorization, X-API-Key) from a request that an embed grant authorises.
+    why: The uihost embed routes and the app router's embed middleware strip at different points of the request and framework/embed exports no helper for uihost to call; nothing but work keeps them apart.
+    sites:
+      - path: framework/uihost/embed.go
+        note: stripAmbientCredentials, called first by every embed route handler.
+      - path: framework/embed/middleware.go
+        note: Host.Middleware, after the grant is verified and its reach checked.
+invariants:
+  - id: api-routes-outside-surface-space
+    rule: The exchange, refresh, loader and runtime routes sit outside the /__gofastr/embed/ surface prefix, so no surface name can shadow them.
+    enforced_by:
+      - test: framework/uihost.TestSweepEmbedAPIPathsOutsideSurfaceSpace
+  - id: no-embed-host-no-routes
+    rule: A host built without WithEmbed registers no embed route, not even one that answers 404.
+    enforced_by:
+      - test: framework/uihost.TestEmbedRoutesAbsentWithoutConfig
+  - id: no-keys-answers-503
+    rule: Until the embed host has signing keys, the exchange, refresh, shell and content routes answer 503.
+    enforced_by:
+      - test: framework/uihost.TestEmbedWithoutKeysRefuses
+  - id: api-get-answers-405
+    rule: GET on the exchange or refresh endpoint answers 405, so navigation, prefetch and images never reach the single-use nonce.
+    enforced_by:
+      - test: framework/uihost.TestEmbedExchangeRejectsGET
+  - id: no-ambient-credential
+    rule: Every embed route deletes the Cookie, Authorization and X-API-Key headers before any other code reads the request, the same three the embed middleware deletes.
+    enforced_by:
+      - test: framework/uihost.TestEmbedIgnoresSessionCookie
+      - test: framework/uihost.TestEmbedStripsAuthHeaders
+      - test: framework/uihost.TestSweepEmbedStripMatchesMiddleware
+  - id: framing-rewrites-only-frame-ancestors
+    rule: An embed response drops X-Frame-Options, sends Cross-Origin-Resource-Policy cross-origin, and in every CSP field and policy replaces only the frame-ancestors directive (matched across any whitespace), adding it once to the first policy when none has it.
+    enforced_by:
+      - test: framework/uihost.TestEmbedShellFramingHeaders
+      - test: framework/uihost.TestEmbedFramingKeepsTheRestOfTheCSP
+      - test: framework/uihost.TestEmbedFramingKeepsEveryCSPField
+      - test: framework/uihost.TestEmbedFramingAddsDirectiveOnce
+      - test: framework/uihost.TestWithFrameAncestors
+      - test: framework/uihost.TestSweepEmbedFrameAncestorsMatchedAcrossWhitespace
+  - id: empty-origins-frame-none
+    rule: An empty origin list is written as frame-ancestors 'none', never as a wildcard or an empty source list.
+    enforced_by:
+      - test: framework/uihost.TestEmbedFramingAddsDirectiveOnce
+      - test: framework/uihost.TestEmbedShellFailsClosedOnUnknownCustomer
+      - test: framework/uihost.TestEmbedShellFailsClosedOnSourceError
+  - id: shell-origins-per-customer
+    rule: Without an OriginSource the shell frames for the surface's static origins; with one it frames only for the origins of the customer the request names, and any failure of the source frames for none.
+    enforced_by:
+      - test: framework/uihost.TestEmbedShellStaticOriginsWhenNoSource
+      - test: framework/uihost.TestEmbedShellFailsClosedOnUnknownCustomer
+      - test: framework/uihost.TestEmbedShellFailsClosedOnEmptyOrAbsentCustomerID
+      - test: framework/uihost.TestEmbedShellFailsClosedOnSourceError
+  - id: content-frames-for-grant-origin
+    rule: The content response's frame-ancestors names only the origin the grant was minted for.
+    enforced_by:
+      - test: framework/uihost.TestContentFramingIsGrantOrigin
+  - id: loader-is-cross-origin
+    rule: The embed loader is served with Cross-Origin-Resource-Policy cross-origin, because a customer's page fetches it.
+    enforced_by:
+      - test: framework/uihost.TestEmbedLoaderIsCrossOriginReadable
+  - id: embed-cache-headers
+    rule: The loader, runtime and shell are served no-cache, and the grant and content responses no-store.
+    enforced_by:
+      - test: framework/uihost.TestEmbedAssetsAreNotLongCached
+      - test: framework/uihost.TestEmbedExchangeIsIdempotent
+      - test: framework/uihost.TestEmbedContentIsChromeLessAndUncacheable
+  - id: runtime-carries-actions
+    rule: The embed runtime response ends with the app's compiled component actions.
+    enforced_by:
+      - test: framework/uihost.TestEmbedRuntimeCarriesActions
+  - id: refusals-are-indistinguishable
+    rule: Every embed refusal writes only the status phrase of its code, and the reason goes to the debug log.
+    enforced_by:
+      - test: framework/uihost.TestEmbedContentRejectsCrossSurfaceGrant
+  - id: exchange-body-is-bounded-and-strict
+    rule: The exchange reads at most 8 KiB of body and refuses duplicate or case-folded keys.
+    enforced_by:
+      - test: framework/uihost.TestSweepEmbedExchangeBodyIsCapped
+      - test: framework/uihost.TestEmbedExchangeRejectsDuplicateKeys
+      - test: framework/uihost.TestEmbedExchangeRejectsCaseFoldedKeys
+  - id: replayed-exchange-warns
+    rule: An exchange that replays an already spent nonce logs a warning, and a first exchange does not.
+    enforced_by:
+      - test: framework/uihost.TestSweepEmbedReplayedExchangeWarns
+  - id: grant-expiry-is-relative
+    rule: The grant response's expires_in_ms counts milliseconds from now, never an absolute time.
+    enforced_by:
+      - test: framework/uihost.TestSweepEmbedGrantExpiryIsRelative
+  - id: unknown-surface-and-foreign-grant-look-alike
+    rule: An unknown surface name and a grant for another surface both answer 404 with the same body.
+    enforced_by:
+      - test: framework/uihost.TestEmbedContentRejectsCrossSurfaceGrant
+  - id: vanished-surface-has-no-path
+    rule: embedSurfacePath returns an empty path for a grant whose surface the host no longer knows, so callers scope it to nothing.
+    enforced_by:
+      - test: framework/uihost.TestSweepEmbedSurfacePathOfAVanishedSurfaceIsEmpty
+  - id: page-path-matches-surface
+    rule: A static surface renders only with no path, and a dynamic surface renders only a path that resolves to its own screen.
+    enforced_by:
+      - test: framework/uihost.TestEmbedSurfaceBindsPathParams
+  - id: shell-names-the-app-route
+    rule: The shell's config names the app path the surface renders, and its html lang is that route's language, never the shell URL's.
+    enforced_by:
+      - test: framework/uihost.TestEmbedShellAnnouncesTheSurfacePath
+      - test: framework/uihost.TestSweepEmbedShellLanguageFollowsTheAppRoute
+  - id: shell-loads-component-css
+    rule: The shell carries noindex, the component catalog, the runtime module manifest, and an app.css link with id cui-app-css that component sheets are inserted before.
+    enforced_by:
+      - test: framework/uihost.TestEmbedShellCarriesRuntimeAndConfig
+      - test: framework/uihost.TestEmbedShellCarriesTheComponentCatalog
+      - test: framework/uihost.TestSweepEmbedShellAnchorsComponentSheets
+  - id: shell-catalog-under-customer-theme
+    rule: When a customer theme resolves, the shell's component catalog is versioned under that theme, not the app theme.
+    judge: Does this change build the shell's component catalog under the app theme while app.css links a customer theme variant?
+  - id: shell-carries-runtime-strings
+    rule: The shell carries the runtime's strings in the reader's language, as a normal page does.
+    judge: Does this change drop or untranslate the gofastr-strings block in the embed shell?
+  - id: theme-takes-only-allowed-tokens
+    rule: A customer theme applies only tokens the surface's AllowTokens names, from a strictly decoded object.
+    enforced_by:
+      - test: framework/uihost.TestEmbedThemeAppliesOnlyAllowedTokens
+      - test: framework/uihost.TestResolveEmbedThemeRejectsDupKeys
+  - id: theme-parameter-is-bounded
+    rule: A theme parameter over 6 KiB encoded is refused before it becomes a map key or is decoded, and one over 4 KiB decoded is refused.
+    enforced_by:
+      - test: framework/uihost.TestOversizeThemeCannotEvictARealTheme
+      - test: framework/uihost.TestSweepEmbedResolveThemeRefusesOversizeBeforeDecoding
+      - test: framework/uihost.TestResolveEmbedThemeRejectsADecodedPayloadPastTheByteBound
+  - id: theme-variants-are-capped
+    rule: A surface holds at most MaxVariants theme variants; at the cap the least recently used resolved variant is evicted and released from the variant registry, and a variant still in flight is never evicted.
+    enforced_by:
+      - test: framework/uihost.TestEmbedThemeVariantsAreCapped
+      - test: framework/uihost.TestEmbedThemeCapBoundsTheVariantRegistry
+      - test: framework/uihost.TestEmbedThemeCapDoesNotLockOutTheCustomer
+      - test: framework/uihost.TestEmbedThemeCapHoldsUnderConcurrency
+      - test: framework/uihost.TestSweepEmbedThemeCapEvictsLeastRecentlyUsed
+  - id: refused-theme-leaves-nothing
+    rule: A theme that fails to resolve gives its slot back and leaves no entry in the resolved or used maps.
+    enforced_by:
+      - test: framework/uihost.TestRejectedThemesLeaveNoBookkeeping
+      - test: framework/uihost.TestEmbedThemeRejectionsConsumeNothing
+  - id: in-flight-theme-is-awaited
+    rule: A theme still being resolved is not a lookup hit; a second request for it is told it is a duplicate, not that the cap is full, and waits up to embedThemeWait for the owner's key.
+    enforced_by:
+      - test: framework/uihost.TestInFlightThemeIsNotAHit
+      - test: framework/uihost.TestReserveDistinguishesDuplicateFromFull
+      - test: framework/uihost.TestEmbedThemeKeyWaitsForAnInFlightOwner
+  - id: content-identity-comes-from-the-grant
+    rule: The content render carries the verified grant, drops any user and tenant the app's middleware installed, and installs only the tenant and the non-nil user the host's resolvers return for the grant's subject, tenant first.
+    enforced_by:
+      - test: framework/uihost.TestContentRenderExposesTheGrant
+      - test: framework/uihost.TestEmbedContentIgnoresAMiddlewareInstalledUser
+      - test: framework/uihost.TestEmbedContentDoesNotInheritTheAmbientTenant
+      - test: framework/uihost.TestEmbedContentInstallsTheResolvedTenant
+      - test: framework/uihost.TestEmbedContentDoesNotInstallATypedNilUser
+  - id: content-resolvers-fail-closed
+    rule: A tenant or subject resolver error on the content route answers 403 instead of rendering anonymously.
+    enforced_by:
+      - test: framework/uihost.TestEmbedContentFailsClosedWhenTheTenantDoesNotResolve
+      - test: framework/uihost.TestEmbedContentFailsClosedOnResolverError
+  - id: content-render-failures
+    rule: A content screen that panics answers 500, and one that fails any other way answers 404.
+    enforced_by:
+      - test: framework/uihost.TestSweepEmbedContentPanicIs500
+      - test: framework/uihost.TestSweepEmbedContentRenderErrorIs404
+  - id: content-honours-screen-policy
+    rule: A screen policy redirect answers 403 on the content route, and a block answers its own status, 403 when it sets none.
+    enforced_by:
+      - test: framework/uihost.TestEmbedContentHonorsScreenPolicy
+      - test: framework/uihost.TestSweepEmbedContentBlockKeepsItsStatus
+  - id: content-is-chrome-less
+    rule: Content is wrapped in app.EmbedLayout, never in the app's own layout.
+    enforced_by:
+      - test: framework/uihost.TestSweepEmbedContentCarriesNoSiteChrome
+  - id: grant-reaches-only-its-surface-widgets
+    rule: A grant reaches a widget's routes only when the widget is available on its surface's page.
+    enforced_by:
+      - test: framework/uihost.TestEmbedGrantReachesItsSurfaceWidgets
+  - id: boot-refuses-reachable-server-action
+    rule: Boot panics when a component reachable from an embeddable surface's router screen has a compiled action whose ClientJS calls G.serverAction as internal/actionscan reads it, and a plain action or an unreached one does not.
+    enforced_by:
+      - test: framework/uihost.TestEmbedSurfaceWithServerActionPanicsAtBoot
+      - test: framework/uihost.TestEmbedSurfaceWithPlainActionBootsCleanly
+      - test: framework/uihost.TestEmbedGateResolvesCustomScreenThroughRouter
+      - test: framework/uihost.TestEmbedGateIgnoresUnreachedServerAction
+      - test: framework/uihost.TestEmbedGateFlagsRenderedChildAction
+      - test: framework/uihost.TestBootScanAgreesWithCorpus
+  - id: reach-walk-follows-values
+    rule: The reach walk follows non-nil pointers, interfaces, struct fields, slices, arrays and map keys and values, islands included, records non-struct components, and matches a component held by value to its pointer-compiled registry.
+    enforced_by:
+      - test: framework/uihost.TestGateFollowsIslandChild
+      - test: framework/uihost.TestGateFollowsMapKeyChild
+      - test: framework/uihost.TestEmbedGateSkipsNilChild
+      - test: framework/uihost.TestSweepEmbedGateFollowsValueAndMapChildren
+      - test: framework/uihost.TestSweepEmbedWalkRecordsNonStructComponents
+  - id: reach-walk-stops-at-host-graph
+    rule: The reach walk does not descend into core-ui/app, core/router, the UIHost or framework.App, so a back-reference to the host does not make every component reachable.
+    enforced_by:
+      - test: framework/uihost.TestSweepEmbedGateStopsAtHostBackReferences
+  - id: reach-walk-terminates
+    rule: The reach walk visits each pointer, slice and map once and stops at reachWalkBudget values and reachWalkDepth levels.
+    enforced_by:
+      - test: framework/uihost.TestReachWalkTerminatesOnCycle
+      - test: framework/uihost.TestSweepEmbedWalkVisitsEachPointerOnce
+  - id: offenders-are-ordered
+    rule: Server-action offenders are ordered by component id then event, so the boot panic names the same one every run.
+    enforced_by:
+      - test: framework/uihost.TestSweepEmbedOffendersAreSorted
+decisions:
+  - id: api-routes-outside-surface-space
+    date: 2026-11-16
+    status: accepted
+    decision: The exchange and refresh endpoints live outside /__gofastr/embed/{surface}.
+    rejected:
+      - option: Put them under the surface prefix.
+        why: A surface named exchange would then shadow the endpoint, and route precedence would decide a security boundary.
+    upholds: [api-routes-outside-surface-space]
+  - id: strip-ambient-credentials-not-refuse
+    date: 2026-11-16
+    status: accepted
+    decision: Embed routes delete ambient credentials and carry on, so a same-site frame behaves like a cross-site one.
+    rejected:
+      - option: Answer 4xx when a cookie or credential header arrives.
+        why: An app at app.acme.com framed by www.acme.com is same-site and the browser sends its Strict cookie, so refusing would make same-site embedding impossible.
+    upholds: [no-ambient-credential]
+  - id: frame-ancestors-not-x-frame-options
+    date: 2026-11-16
+    status: accepted
+    decision: Framing is granted through CSP frame-ancestors and X-Frame-Options is removed.
+    rejected:
+      - option: Rewrite X-Frame-Options.
+        why: It has no per-origin mode.
+      - option: Replace the whole Content-Security-Policy.
+        why: That drops the app's script-src, default-src and the rest, a downgrade the embed document does not need.
+    upholds: [framing-rewrites-only-frame-ancestors]
+  - id: shell-frames-for-the-named-customer
+    date: 2026-11-16
+    status: accepted
+    decision: With an OriginSource, the shell lists only the origins of the customer named in its unauthenticated customer parameter.
+    rejected:
+      - option: List the surface's whole allowlist.
+        why: It publishes every customer on every response, and one customer's long list can overflow the header for all.
+    revisit_if: Leaking one customer's origins to anyone who names that customer becomes unacceptable.
+    upholds: [shell-origins-per-customer]
+  - id: actions-ship-in-the-embed-runtime
+    date: 2026-11-16
+    status: accepted
+    decision: The frame's component actions are appended to the embed runtime response, which publishes the app's action names to anyone who can fetch the shell.
+    rejected:
+      - option: Load /__gofastr/actions.js with a script tag.
+        why: That endpoint is credentialed and a script tag carries no grant, so it would 401 and every data-action control in the frame would silently do nothing.
+    upholds: [runtime-carries-actions]
+  - id: embed-assets-not-long-cached
+    date: 2026-11-16
+    status: accepted
+    decision: The loader, runtime and shell are served no-cache.
+    rejected:
+      - option: A long max-age.
+        why: None of the three URLs is content-addressed, so a long max-age pins a customer's page to a stale loader past a security fix, and a stale shell asks for component CSS hashes the new build no longer serves.
+    upholds: [embed-cache-headers]
+  - id: grant-expiry-relative
+    date: 2026-11-16
+    status: accepted
+    decision: The grant response carries expires_in_ms rather than an absolute timestamp.
+    rejected:
+      - option: An absolute expiry.
+        why: The frame schedules its refresh from it, and clock skew between the customer's machine and the server would move the schedule.
+    upholds: [grant-expiry-is-relative]
+  - id: shell-is-content-free
+    date: 2026-11-16
+    status: accepted
+    decision: The shell is a skeleton with one empty root; the surface's content is fetched after the postMessage handshake with the grant.
+    rejected:
+      - option: Server-render the content into the shell.
+        why: The shell is fetched by a navigation, which carries no credential.
+  - id: foreign-grant-answers-404
+    date: 2026-11-16
+    status: accepted
+    decision: A grant for another surface answers the same 404 as an unknown surface name.
+    rejected:
+      - option: Answer 403.
+        why: It would tell any grant holder which surface names exist.
+    upholds: [unknown-surface-and-foreign-grant-look-alike]
+  - id: theme-cap-keys-on-the-parameter
+    date: 2026-11-16
+    status: accepted
+    decision: The theme variant cap counts distinct raw theme parameters, and a repeat parameter is one map read.
+    rejected:
+      - option: Count distinct resulting CSS hashes.
+        why: A hash is known only after the render the cap must decide on beforehand.
+    upholds: [theme-variants-are-capped]
+  - id: theme-cap-evicts-not-refuses
+    date: 2026-11-16
+    status: accepted
+    decision: At the cap the least recently used resolved variant is evicted.
+    rejected:
+      - option: Refuse new themes at the cap.
+        why: The shell is unauthenticated, so a stranger sending MaxVariants distinct themes would lock the surface out of its own customer's theme for the life of the process.
+    upholds: [theme-variants-are-capped]
+  - id: duplicate-theme-waits-for-owner
+    date: 2026-11-16
+    status: accepted
+    decision: A request for a theme already being resolved waits up to embedThemeWait for the owner and falls back to the app theme on timeout.
+    rejected:
+      - option: Resolve a second copy and release it.
+        why: When the duplicate registered first, its release took the refcount back to zero and deleted the variant before the owner held it.
+      - option: Wait without a bound.
+        why: An owner that fails would hang every duplicate.
+    upholds: [in-flight-theme-is-awaited]
+  - id: theme-failures-fall-back
+    date: 2026-11-16
+    status: accepted
+    decision: Every theme failure renders the surface under the app theme instead of failing the embed.
+    rejected:
+      - option: Refuse the shell.
+        why: A customer with a stale or malformed brand config should get the app's look, not a broken frame.
+  - id: policy-redirect-is-refused
+    date: 2026-11-16
+    status: accepted
+    decision: A screen policy redirect on the content route answers 403.
+    rejected:
+      - option: Follow the redirect.
+        why: It would render a different screen than the surface declares, inside a stranger's page.
+    upholds: [content-honours-screen-policy]
+  - id: server-actions-refused-at-boot
+    date: 2026-11-16
+    status: accepted
+    decision: An embeddable surface that reaches a server action fails boot.
+    rejected:
+      - option: Honour embed grants at /__gofastr/action.
+        why: The action registry is app-global, so a grant for one surface could invoke any action in the app.
+      - option: Let the frame find out at runtime.
+        why: The failure then surfaces inside a customer's page, while island RPC, form POSTs and polling all work in a frame.
+    upholds: [boot-refuses-reachable-server-action]
+  - id: gate-checks-what-ships
+    date: 2026-11-16
+    status: accepted
+    decision: The gate matches every compiled registry with a server action against every component type reachable from the surface's screen value.
+    rejected:
+      - option: Inspect only the surface root's own registry.
+        why: A root that renders a child passed while the child's action shipped in the same bundle.
+      - option: Walk declared field types.
+        why: It would refuse a component that can hold a child it does not hold.
+      - option: Stop the walk at core-ui/island.
+        why: An island renders its wrapped child into the frame, so its actions ship.
+    upholds: [reach-walk-follows-values]
+  - id: walk-skips-funcs-and-channels
+    date: 2026-11-16
+    status: accepted
+    decision: The reach walk does not follow funcs or channels, so a component a closure builds at render time is not checked at boot.
+    rejected:
+      - option: Call closures at boot.
+        why: Their components exist only at render time, with a request; the static check-embed analyzer reports the shape as unresolvable instead.
+    revisit_if: Render-built children with server actions reach a frame in practice.
+  - id: walk-is-bounded
+    date: 2026-11-16
+    status: accepted
+    decision: The reach walk stops after 50000 values and 64 levels and then reports what it saw.
+    rejected:
+      - option: An unbounded walk.
+        why: A component referencing a large data graph would turn a boot check into a heap scan or hang it.
+    revisit_if: A real component tree exceeds the budget, so the gate misses an offender.
+    upholds: [reach-walk-terminates]

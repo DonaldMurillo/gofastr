@@ -239,6 +239,9 @@ func (f ParsedFilter) Coerced(t schema.FieldType) ParsedFilter {
 type ParsedSort struct {
 	Field string
 	Desc  bool
+	// PinNulls spells the null position (query.OrderPinNulls); crud sets
+	// it on SQLite for a column that can hold NULL.
+	PinNulls bool
 }
 
 // reservedListParams are the list-endpoint control keys that are never
@@ -933,12 +936,16 @@ func collectInRun(filters []ParsedFilter, start int) (values []any, n int) {
 	return values, n
 }
 
-// applySortToQuery applies parsed sorts to a query builder.
+// ApplySortToQuery applies parsed sorts to a query builder.
 func ApplySortToQuery(qb *query.QueryBuilder, sorts []ParsedSort) {
 	for _, s := range sorts {
 		dir := "ASC"
 		if s.Desc {
 			dir = "DESC"
+		}
+		if s.PinNulls {
+			qb.OrderPinNulls(s.Field, dir)
+			continue
 		}
 		qb.Order(s.Field, dir)
 	}

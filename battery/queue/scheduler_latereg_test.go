@@ -33,18 +33,27 @@ func TestSchedulerFiresJobsRegisteredAfterStart(t *testing.T) {
 	})
 }
 
-// tickInterval must never return a value that would busy-loop or stall.
-func TestSchedulerTickIntervalBounds(t *testing.T) {
+// nextWake must never return a value that would busy-loop or stall.
+func TestSchedulerNextWakeBounds(t *testing.T) {
 	sched := NewScheduler(&recordQueue{})
-	if got := sched.tickInterval(); got != time.Minute {
-		t.Fatalf("empty scheduler tick = %v, want 1m default", got)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if got := sched.nextWake(now); got != time.Minute {
+		t.Fatalf("empty scheduler wake = %v, want the 1m cap", got)
 	}
-	sched.Every(5*time.Second).Job("fast", nil).Register()
-	if got := sched.tickInterval(); got != 5*time.Second {
-		t.Fatalf("tick should adapt to the finest interval, got %v", got)
+	sched.Every(24*time.Hour).Job("slow", nil).RegisterAt(now)
+	if got := sched.nextWake(now); got != time.Minute {
+		t.Fatalf("a far next run should wake at the 1m cap, got %v", got)
 	}
-	sched.Every(24*time.Hour).Job("slow", nil).Register()
-	if got := sched.tickInterval(); got != 5*time.Second {
-		t.Fatalf("finest interval should still win, got %v", got)
+	sched.Every(5*time.Second).Job("fast", nil).RegisterAt(now)
+	if got := sched.nextWake(now); got != 5*time.Second {
+		t.Fatalf("wake should be the earliest next run, got %v", got)
+	}
+	if got := sched.nextWake(now.Add(time.Hour)); got != minSchedulerWake {
+		t.Fatalf("an overdue run should wake at the floor, got %v", got)
+	}
+	sched2 := NewScheduler(&recordQueue{})
+	sched2.Every(0).Job("each-pass", nil).RegisterAt(now)
+	if got := sched2.nextWake(now); got != time.Minute {
+		t.Fatalf("Every(0) rides the 1m cap, got %v", got)
 	}
 }

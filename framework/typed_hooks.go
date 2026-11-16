@@ -187,15 +187,101 @@ func hookDecodeKeys(m map[string]any) map[string]any {
 }
 
 func snapshotDeepCopy[T any](v T) T {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return v
+	if b, err := json.Marshal(v); err == nil {
+		var out T
+		if err := decodeHookJSON(b, &out); err == nil {
+			return out
+		}
 	}
-	var out T
-	if err := decodeHookJSON(b, &out); err != nil {
-		return v
+	src := reflect.ValueOf(&v).Elem()
+	out := reflect.New(src.Type()).Elem()
+	out.Set(deepCopyValue(src, map[copyKey]reflect.Value{}))
+	return out.Interface().(T)
+}
+
+// copyKey identifies a reference already copied: a *T and a *int at one
+// address, or a slice and its prefix, are different references.
+type copyKey struct {
+	addr uintptr
+	typ  reflect.Type
+	n    int
+}
+
+func deepCopyValue(v reflect.Value, seen map[copyKey]reflect.Value) reflect.Value {
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() {
+			return v
+		}
+		key := copyKey{v.Pointer(), v.Type(), 0}
+		if cp, ok := seen[key]; ok {
+			return cp
+		}
+		cp := reflect.New(v.Type().Elem())
+		seen[key] = cp
+		cp.Elem().Set(deepCopyValue(v.Elem(), seen))
+		return cp
+	case reflect.Map:
+		if v.IsNil() {
+			return v
+		}
+		key := copyKey{v.Pointer(), v.Type(), 0}
+		if cp, ok := seen[key]; ok {
+			return cp
+		}
+		cp := reflect.MakeMapWithSize(v.Type(), v.Len())
+		seen[key] = cp
+		iter := v.MapRange()
+		for iter.Next() {
+			cp.SetMapIndex(iter.Key(), deepCopyValue(iter.Value(), seen))
+		}
+		return cp
+	case reflect.Slice:
+		if v.IsNil() {
+			return v
+		}
+		key := copyKey{v.Pointer(), v.Type(), v.Len()}
+		if cp, ok := seen[key]; ok {
+			return cp
+		}
+		cp := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		seen[key] = cp
+		for i := range v.Len() {
+			cp.Index(i).Set(deepCopyValue(v.Index(i), seen))
+		}
+		return cp
+	case reflect.Array:
+		cp := reflect.New(v.Type()).Elem()
+		for i := range v.Len() {
+			cp.Index(i).Set(deepCopyValue(v.Index(i), seen))
+		}
+		return cp
+	case reflect.Struct:
+		cp := reflect.New(v.Type()).Elem()
+		cp.Set(v)
+		copyStructFields(cp, v, seen)
+		return cp
+	case reflect.Interface:
+		if v.IsNil() {
+			return v
+		}
+		cp := reflect.New(v.Type()).Elem()
+		cp.Set(deepCopyValue(v.Elem(), seen))
+		return cp
 	}
-	return out
+	return v
+}
+
+// copyStructFields deep-copies every settable field, and descends into
+// an unexported embedded struct, whose exported fields stay settable.
+func copyStructFields(cp, v reflect.Value, seen map[copyKey]reflect.Value) {
+	for i := range v.NumField() {
+		if f := cp.Field(i); f.CanSet() {
+			f.Set(deepCopyValue(v.Field(i), seen))
+		} else if f.Kind() == reflect.Struct {
+			copyStructFields(f, v.Field(i), seen)
+		}
+	}
 }
 
 func decodeHookJSON(b []byte, dest any) error {

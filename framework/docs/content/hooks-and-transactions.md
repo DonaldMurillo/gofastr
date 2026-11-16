@@ -502,7 +502,9 @@ run `AfterList`; an unhooked in-process read still returns stored values.
 
 A field's declared `Mask` (entity-declarations.md, "Masked fields") runs
 on the same paths, in-process ones under the same opt-in, before these
-hooks and without registering one.
+hooks and without registering one. An update that sends a masked field
+back as it was read leaves that column alone, and its `BeforeUpdate`
+hooks get the body without it.
 
 `ch.ReadHooksRestrict(ctx, id)` answers whether the caller's `BeforeList`
 or `BeforeGet` hooks append any clause for a read of `id` (a hook error
@@ -586,6 +588,9 @@ the write back. See "Redaction implication" below for the surfaces this covers.
 `T` may tag its fields in camelCase (`json:"isAdmin"`, what generated
 models use) or snake_case (`json:"is_admin"`): the payload is offered
 under both spellings, and a change lands back on the payload's own key.
+A change made in place inside a map, slice or pointer field lands too,
+including on a `T` that cannot be marshalled whole (a `chan` or `func`
+field, or a `MarshalJSON` that errors).
 
 The body `OnBeforeCreate[T]`/`OnBeforeUpdate[T]` decode has already had
 its form values cleaned (entity-declarations.md, "Blank form values"),

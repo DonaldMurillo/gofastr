@@ -12,14 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
-// A click that lands while a view transition runs hit-tests to <html>;
-// the transition module holds it and delivers it once the transition
-// has finished. A later click that reaches its element in the meantime
-// used to run first, and the held click then landed after it: two quick
-// clicks on two links ended on the FIRST link's page (the tracker's
-// TestTrackerSupersedingPointerClicksKeepRingOff failed about once in
-// fifteen runs under load for this reason). Clicks keep their order:
-// the page the user clicked last is the page shown.
+// Two quick clicks during a view transition end on the page clicked last.
 func TestHeldClickNeverLandsAfterALaterClick(t *testing.T) {
 	js, err := RuntimeJS()
 	if err != nil {

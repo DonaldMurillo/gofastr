@@ -45,7 +45,7 @@ func (s *SQLPasskeyStore) EnsureSchema(ctx context.Context) error {
 	}
 	t := query.QuoteFolded(s.table)
 	stmts := []string{
-		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, public_key TEXT NOT NULL, alg BIGINT NOT NULL, sign_count BIGINT NOT NULL DEFAULT 0, name TEXT NOT NULL DEFAULT '', backup_eligible INTEGER NOT NULL DEFAULT 0, backed_up INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL, last_used_at BIGINT NOT NULL DEFAULT 0)`, t),
+		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL, public_key TEXT NOT NULL, alg BIGINT NOT NULL, sign_count BIGINT NOT NULL DEFAULT 0, name TEXT NOT NULL DEFAULT '', backup_eligible INTEGER NOT NULL DEFAULT 0, backed_up INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL, last_used_at BIGINT NOT NULL DEFAULT 0)`, t),
 		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s (user_id)`,
 			query.IndexOn(s.dialect.of(s.db) == migrate.DialectSQLite, indexName("", s.table, "_user_id"), t)),
 	}

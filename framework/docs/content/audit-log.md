@@ -30,7 +30,7 @@ audit hooks bind to no entities.
 
 ```sql
 CREATE TABLE audit_log (
-    id          TEXT       PRIMARY KEY,
+    id          TEXT       PRIMARY KEY NOT NULL,
     entity      TEXT       NOT NULL,
     op          TEXT       NOT NULL,   -- 'create' | 'update' | 'delete' | 'restore' | 'purge'
                                         -- | 'state_override' | 'transition:<key>'
@@ -126,6 +126,11 @@ Two cases change it:
   no `"id"` keeps the original. Create and update rows keep the raw id,
   so the delete row of a pseudonymised record does not show in its
   Activity tab.
+- A `Redact` that panics, or returns a map that cannot be marshalled,
+  never lets the unredacted row through: the row keeps its keys and
+  stores `"[redaction failed]"` for every value, and the write it audits
+  still succeeds. A delete whose `Redact` panics keeps the original
+  `record_id`.
 
 ## Transactional behaviour
 

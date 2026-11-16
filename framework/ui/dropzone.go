@@ -12,25 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── FileDropzone ───────────────────────────────────────────────────
-//
-// A larger-surface variant of FileUpload for hero import pages,
-// asset libraries, profile-picture uploads — anywhere the drop
-// affordance is the main UI. Same form-POST semantics: a real
-// <input type="file"> under a <label>, so the whole surface opens the
-// picker with no script. The drop behaviour, the chosen-files list
-// and the pick announcement come from the headless behaviour module
-// on the data-hui-drop hooks (armDrop / showFiles), and the
-// announcement sentences resolve per request through the strings
-// bridge.
-//
-// The preview strip is this component's own: headless has no
-// counterpart and thumbnails are a styling concern. It is driven by
-// the filedropzone module this file registers on
-// data-fui-dropzone-preview — which duplicates nothing, because the
-// names, the drop forwarding and the sentence all belong to the
-// headless module and this package's module touches none of them.
-
 //go:embed filedropzone.js
 var fileDropzoneJS string
 
@@ -39,49 +20,30 @@ var _ = registry.RegisterBehavior("filedropzone", fileDropzoneJS,
 
 // FileDropzoneConfig configures a FileDropzone.
 type FileDropzoneConfig struct {
-	// Name is the form-field name (required).
-	Name string
-	// Label is the accessible label (required, used as the input's
-	// aria-label and the visible heading inside the dropzone).
+	// Name and Label are required; Label names the input and heads the zone.
+	Name  string
 	Label string
-	// Prompt overrides the default "Drop files here or click to
-	// browse" call-to-action text.
-	Prompt string
-	// Accept is the MIME-type filter (e.g. "image/*", ".csv").
-	Accept string
-	// Multiple allows selecting multiple files.
+	// Prompt overrides the localized call to action.
+	Prompt   string
+	Accept   string
 	Multiple bool
-	// Required marks the input required.
 	Required bool
-	// Disabled disables interaction.
 	Disabled bool
-	// ShowPreview opts into a thumbnail strip rendered below the
-	// dropzone after change. Only works for image MIME types: the
-	// filedropzone runtime module FileReader-reads each file and
-	// emits <img>.
+	// ShowPreview adds a thumbnail strip for picked images.
 	ShowPreview bool
-	// MaxSizeMB is announced in the help text. Server is still
-	// authoritative.
+	// MaxSizeMB is announced in the help text; the server enforces it.
 	MaxSizeMB int
-	// Help renders supporting text under the dropzone.
-	Help string
-	// Error overrides Help and switches to error state.
+	Help      string
+	// Error replaces Help and marks the input invalid.
 	Error string
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the dropzone's root div.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, and every data-hui-* key — the drop hooks are
-	// the runtime's contract, not a caller's to forge. A retargeted
-	// data-hui-drop-input would send every drop on this zone to
-	// another input.
+	// ExtraAttrs forwards attributes to the root div; keys the
+	// component owns, every data-hui-* key included, are dropped.
 	ExtraAttrs html.Attrs
 
-	// Ctx carries the per-request context used to resolve the prompt,
-	// the max-size help label and the announcement sentences. When
-	// nil, English fallbacks apply.
+	// Ctx resolves the prompt, size hint and announcements. Nil means English.
 	Ctx context.Context
 }
 
@@ -130,11 +92,6 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 	if cfg.Disabled {
 		inputAttrs["disabled"] = ""
 	}
-	// The preview wiring: ui-only surface with no headless
-	// counterpart (thumbnails are styling, the names list and the
-	// announcement are the headless module's), so it stays in this
-	// package's own vocabulary and is bound by this package's own
-	// module — it duplicates nothing the headless hooks already do.
 	if cfg.ShowPreview {
 		inputAttrs["data-fui-dropzone-preview"] = ""
 	}
@@ -153,25 +110,16 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 			render.Text(cfg.Label)),
 		html.Paragraph(html.TextConfig{Class: "fui-drop__prompt"}, render.Text(prompt)),
 	}
-	// None of the zone's own content (the input, the icon, the label
-	// and the prompt) is the caller's, so the mark sits on the
-	// label wrapper and not the elements inside it.
 	zone := render.Tag("label",
 		map[string]string{"for": id, "class": "fui-drop__label-wrap", "data-cui-internal": ""},
 		render.Tag("div", map[string]string{
-			"class": "fui-drop__zone",
-			// role=region + aria-label so AT users hear "<Label>, region"
-			// when the focus passes through the dropzone container,
-			// distinct from the inner file input.
+			"class":      "fui-drop__zone",
 			"role":       "region",
 			"aria-label": cfg.Label,
 		}, zoneChildren...),
 	)
 
 	children := []render.HTML{zone}
-	// The names list and the announcement: the headless module fills
-	// these on every pick or drop (showFiles). Neither ever holds the
-	// caller's own markup.
 	children = append(children,
 		render.Tag("ul", map[string]string{
 			"class":              "fui-drop__list",
@@ -217,10 +165,6 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	// The headless drop hooks on the root: data-hui-drop arms the
-	// drag listeners, -input resolves the input per event, and the
-	// one/many sentences travel as attributes so a translated page
-	// announces in its own language.
 	rootAttrs := map[string]string{
 		"class":               cls,
 		"data-hui-drop":       "",
@@ -228,10 +172,6 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 		"data-hui-drop-one":   words.FileSelected,
 		"data-hui-drop-many":  words.FilesSelected,
 	}
-	// The caller's extras go on first and the owned hooks over them,
-	// so a forged data-hui-* key cannot retarget the drop or rewrite
-	// the announcement. Every headless component resolves the same
-	// collision the same way: what the component owns wins.
 	merged := map[string]string{}
 	for k, v := range html.SafeExtraAttrs(cfg.ExtraAttrs) {
 		if strings.HasPrefix(strings.ToLower(k), "data-hui-") {
@@ -263,8 +203,6 @@ func dropzoneIcon() string {
 var dropzoneStyle = registry.RegisterStyle("ui-dropzone", dropzoneCSS)
 
 func dropzoneCSS(_ style.Theme) string {
-	// Knobs: --ui-drop-preview-size (72px) is the thumbnail box in the
-	// preview strip (width and height).
 	return `.fui-drop {
   display: grid;
   gap: var(--spacing-md, 8px);

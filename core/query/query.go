@@ -32,8 +32,9 @@ type whereClause struct {
 }
 
 type orderClause struct {
-	column string
-	dir    string
+	column   string
+	dir      string
+	pinNulls bool
 }
 
 // Select creates a new QueryBuilder selecting the given columns.
@@ -119,6 +120,31 @@ func (qb *QueryBuilder) LeftJoin(table, on string) *QueryBuilder {
 func (qb *QueryBuilder) Order(column string, dir string) *QueryBuilder {
 	qb.orderBy = append(qb.orderBy, orderClause{column: column, dir: dir})
 	return qb
+}
+
+// OrderPinNulls is Order with the null position spelled out, as OrderTerm
+// writes it: nulls last ascending, first descending, on any dialect.
+func (qb *QueryBuilder) OrderPinNulls(column string, dir string) *QueryBuilder {
+	qb.orderBy = append(qb.orderBy, orderClause{column: column, dir: dir, pinNulls: true})
+	return qb
+}
+
+// OrderTerm renders one ORDER BY term. pinNulls spells Postgres's default
+// null position (last ascending, first descending), which SQLite reverses.
+func OrderTerm(column, dir string, pinNulls bool) string {
+	term := identSlot(sanitizeFragment(column))
+	dir = sanitizeDirection(dir)
+	if dir != "" {
+		term += " " + dir
+	}
+	switch {
+	case !pinNulls:
+	case dir == "DESC":
+		term += " NULLS FIRST"
+	default:
+		term += " NULLS LAST"
+	}
+	return term
 }
 
 // Limit sets the LIMIT clause.
@@ -221,21 +247,15 @@ func (qb *QueryBuilder) Build() (string, []any) {
 		appendWhereClauses(&sb, qb.wheres, 1)
 	}
 
-	// ORDER BY: column gets fragment sanitisation, direction is
-	// hard-clamped to ASC/DESC/empty so a CRLF / DROP smuggle in the
-	// direction slot can't appear in the emitted SQL.
+	// ORDER BY: OrderTerm scrubs the column and clamps the direction to
+	// ASC/DESC/empty, so a smuggle in either slot cannot reach the SQL.
 	if len(qb.orderBy) > 0 {
 		sb.WriteString(" ORDER BY ")
 		for i, o := range qb.orderBy {
 			if i > 0 {
 				sb.WriteString(", ")
 			}
-			sb.WriteString(identSlot(sanitizeFragment(o.column)))
-			dir := sanitizeDirection(o.dir)
-			if dir != "" {
-				sb.WriteString(" ")
-				sb.WriteString(dir)
-			}
+			sb.WriteString(OrderTerm(o.column, o.dir, o.pinNulls))
 		}
 	}
 

@@ -128,6 +128,12 @@ invariants:
       - test: framework/crud.TestDialectProbeRunsOncePerDatabase
       - test: framework/crud.TestDialectIsRememberedThroughATransaction
       - test: framework/crud.TestDialectMemoDoesNotKeepADatabaseAlive
+  - id: handler-learns-dialect-once
+    rule: Every dialect check in crud goes through CrudHandler.onPostgres, which asks once per *sql.DB, or once per handler (shared with its transaction copies and forEntity siblings) when the DB has no *sql.DB behind it; a handler built as a literal over such a DB panics instead of asking each time.
+    enforced_by:
+      - test: framework/crud.TestWrappedDBHandlerProbesDialectOnce
+      - test: framework/crud.TestLiteralHandlerOnWrappedDBRefusesDialectCheck
+      - test: framework/crud.TestHandlerLearnsDialectOnlyThroughOnPostgres
   - id: hook-sees-its-own-record-id
     rule: A write's After hooks see that write's own record id on ctx, even when another write's hook started it.
     enforced_by:

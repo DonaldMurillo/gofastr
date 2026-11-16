@@ -32,6 +32,39 @@ func (*MetadataNumberRangeError) Error() string {
 	return "semantic: document metadata holds a number outside the range Postgres jsonb stores (131072 digits before the decimal point, 16383 after, exponent 1073741823)"
 }
 
+// InvalidQueryError is a Query the caller must change: an MMRLambda out of
+// range, Rerank with no Reranker, or text or a filter no store could hold.
+type InvalidQueryError struct {
+	Reason string
+}
+
+func (err *InvalidQueryError) Error() string { return "semantic: " + err.Reason }
+
+// validateQueryText holds a query's text and filter to the bounds Add
+// holds a document to, so no filter value is one no chunk could store.
+func validateQueryText(q Query) error {
+	for _, field := range []struct{ name, value string }{
+		{"text", q.Text},
+		{"filter.source", q.Filter.Source},
+		{"filter.kind", q.Filter.Kind},
+	} {
+		if !textsafe.Storable(field.value) {
+			return &InvalidQueryError{Reason: "query " + field.name + " must be valid UTF-8 without NUL bytes"}
+		}
+	}
+	if len(q.Filter.MetaMatch) == 0 {
+		return nil
+	}
+	encoded, err := json.Marshal(q.Filter.MetaMatch)
+	if err == nil {
+		err = storableMetadataJSON(encoded)
+	}
+	if err != nil {
+		return &InvalidQueryError{Reason: "query filter.meta_match holds a value no document metadata can: " + err.Error()}
+	}
+	return nil
+}
+
 func validateDocumentText(document Document) error {
 	for _, field := range []struct{ name, value string }{
 		{"id", document.ID},

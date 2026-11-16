@@ -14,60 +14,32 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// ScreenResponse names the response-wide HTTP semantics for
-// [UIHost.RenderScreen]. The zero value renders a 200 with the default
-// cache policy.
+// ScreenResponse is the status and cache policy of [UIHost.RenderScreen].
+// The zero value renders a 200.
 type ScreenResponse struct {
-	// Status is the HTTP status code to send. Zero means 200, unless
-	// the component implements [ScreenStatusCode], whose value then
-	// applies with the same contract a registered screen has, or its
-	// render sets one through app.SetStatus. An
-	// out-of-range code (<100 or >999) is replaced with 500 rather
-	// than panicking inside net/http.
+	// Status is the HTTP status. Zero takes the component's
+	// [ScreenStatusCode], else what its render set through app.SetStatus,
+	// else 200; a code outside 100-999 is sent as 500.
 	Status int
 
-	// CacheControl overrides the default "private, no-store" on the
-	// bare arm (a client navigation's partial body). The full document
-	// always answers no-store with Vary: Cookie, because it carries the
-	// session chrome and may carry a Set-Cookie; this field does not
-	// change it. Recovery pages are per-user; only set something else
-	// with a reason.
+	// CacheControl replaces "private, no-store" on the partial (client
+	// navigation) answer. The full document always answers no-store with
+	// Vary: Cookie.
 	CacheControl string
 }
 
-// screenCacheControlDefault is what RenderScreen sends when
-// ScreenResponse.CacheControl is empty. A recovery screen is rendered
-// for one caller's auth state, so a shared cache must never replay it.
 const screenCacheControlDefault = "private, no-store"
 
-// RenderScreen writes comp as a full-chrome page (default layout,
-// runtime.js, theme) with the status and cache policy named by resp.
-// It is the supported way for application middleware to answer a
-// guarded screen route with a branded recovery screen instead of
-// middleware plain text, without registering a sentinel path:
+// RenderScreen writes comp as a page in the default layout with the
+// status and cache policy resp names, so middleware can answer a guarded
+// route with a branded recovery screen. It authorizes nothing. A client
+// navigation gets the bare body, title and signal seed under the same
+// status and mints no session; a document load gets the full page.
 //
-//	match, ok := app.MatchFromContext(r.Context())
-//	if ok && sessions.Expired(match.Param("sessionId")) {
-//		host.RenderScreen(w, r, sessionGoneScreen, uihost.ScreenResponse{
-//			Status: http.StatusGone,
-//		})
+//	if m, ok := app.MatchFromContext(r.Context()); ok && expired(m.Param("id")) {
+//		host.RenderScreen(w, r, goneScreen, uihost.ScreenResponse{Status: http.StatusGone})
 //		return
 //	}
-//
-// RenderScreen renders; it authorizes nothing. The caller (middleware)
-// owns the decision, so it also owns status choice: the guide is
-// 401/403 for an authentication failure on a route that exists, 410
-// (or a 404 through ScreenStatusCode) for a route that resolved but
-// whose resource is gone, and nothing here for an unknown route — the
-// host's WithNotFoundScreen 404 stays truthful because RenderScreen is
-// only reached when a guard chose to answer.
-//
-// Full and partial (X-Gofastr-Navigate) requests get the same status.
-// The partial arm carries the bare component body and its signal seed
-// (#gofastr-signals-partial, as a page partial does) under the caller's
-// cache policy and mints nothing; the full arm finishes through the
-// same tail every page runs (finishPageDocument): verify-or-mint the
-// session, no-store + Vary: Cookie, chrome, seed, widget SSR.
 func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp component.Component, resp ScreenResponse) {
 	app.RefuseRetiredScreenMethods("RenderScreen", comp)
 	status := resp.Status
@@ -100,8 +72,6 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
-	// A status the render set (app.SetStatus) applies when neither the
-	// caller nor the component chose one, the ranking pageStatus runs.
 	if resp.Status == 0 && status == http.StatusOK {
 		if code := recorded(); code != 0 {
 			status = code
@@ -119,7 +89,6 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 	if status == http.StatusOK {
 		title = appName
 	}
-	// Same convention as the page pipeline: "<page> — <app>".
 	if t, ok := comp.(app.ScreenTitler); ok {
 		if name := t.ScreenTitle(r.Context()); name != "" {
 			title = name
@@ -129,35 +98,18 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 		}
 	}
 
-	// Client-side navigation: same status, same cache policy, bare
-	// content. No layout, no chrome, and deliberately no session
-	// minting — the partial page path's re-mint would attach a fresh
-	// Set-Cookie to an auth-failure response.
 	if r.Header.Get("X-Gofastr-Navigate") == "1" {
-		// The same navigation contract as handlePartialPage: a runtime
-		// from before the deploy reads a different markup generation
-		// and gets the reload body instead of a screen it cannot
-		// place; a current one gets the partial marked as such, so
-		// nav.js never reads a bare screen body as a full document.
 		if staleMarkupClient(r) {
 			w.Header().Del("Cache-Control")
 			writeStaleMarkupReload(w, r, routePath(r), "")
 			return
 		}
-		// The title and head carrier a hard load would set: without
-		// them the previous page's tab title, language and page-owned
-		// meta stay on the recovery screen (the page partial's tail,
-		// writePartialResult).
 		w.Header().Set("X-Gofastr-Partial", "true")
 		w.Header().Set("X-Gofastr-Title", url.PathEscape(textsafe.StripInvisible(title)))
 		if ds.App != nil {
 			body = render.Join(body, ds.partialHead(ctx, routePath(r), comp))
 		}
 		w.WriteHeader(status)
-		// The signal seed the full document carries, as the page
-		// partial's #gofastr-signals-partial island: without it a value
-		// the render seeded never reaches the client, and a bound
-		// element keeps the value the page the reader left gave it.
 		fmt.Fprint(w, partialSeedIsland(ctx, string(body))+string(body))
 		return
 	}
@@ -167,12 +119,6 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 			body = layout.WrapCtx(r.Context(), body)
 		}
 	}
-	// The full arm finishes through the same tail every page runs
-	// (finishPageDocument): session verify-or-mint with the id in the
-	// chrome, no-store + Vary: Cookie (overriding cacheControl — a
-	// document carrying per-user chrome and a session token must never
-	// enter a shared cache), signal seed, widget SSR. The partial arm
-	// above keeps its bare cache policy and mints nothing.
 	ds.finishPageDocument(w, r, ctx,
 		render.HTML(ds.documentShell(ctx, r.URL.Path, title, string(body))), r.URL.Path, comp, status)
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/chromedp"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
@@ -439,5 +440,22 @@ func TestInsertedMultiSelectRendersChips(t *testing.T) {
 	}
 	if got := evalString(ctx, `Array.from(`+chips+`).map(function(c){return c.textContent}).join(',')`); got != "Red,Blue" {
 		t.Errorf("chips = %q, want \"Red,Blue\"", got)
+	}
+}
+
+func TestDismissedBannerCookieIsTheOneBannerReads(t *testing.T) {
+	cfg := ui.BannerConfig{Title: "Sale", Dismissible: true, DismissID: "promo 2026/é(1)!'*;x=y"}
+	ctx := moduleTestCtx(t, string(ui.Banner(cfg)))
+	if err := chromedp.Run(ctx, chromedp.Click(`.fui-banner__dismiss`, chromedp.ByQuery)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollJS(ctx, `document.cookie.includes('gofastr.banner-dismiss.')`) {
+		t.Fatal("dismissing never wrote the dismissal cookie")
+	}
+	r, _ := http.NewRequest("GET", "/", nil)
+	r.Header.Set("Cookie", evalString(ctx, `document.cookie`))
+	cfg.Ctx = app.WithRequest(r.Context(), r)
+	if h := ui.Banner(cfg); h != "" {
+		t.Errorf("the next request (Cookie: %s) still renders the dismissed banner", r.Header.Get("Cookie"))
 	}
 }

@@ -11,13 +11,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── ThemePicker ────────────────────────────────────────────────────
-
-// ThemeChoice is one theme a ThemePicker offers: the option's label,
-// drawn in the request's language, and the override registered with
-// style.RegisterThemeOverride. A choice is usually declared once at
-// package level beside its theme, so the label is a phrase rather than
-// text resolved for one request.
+// ThemeChoice is one theme a ThemePicker offers: a label phrase and an
+// override registered with style.RegisterThemeOverride.
 type ThemeChoice struct {
 	Label i18n.Phrase
 	Theme style.ThemeRef
@@ -25,50 +20,24 @@ type ThemeChoice struct {
 
 // ThemePickerConfig configures a page-theme picker.
 type ThemePickerConfig struct {
-	// Themes are the registered overrides offered beside the default,
-	// in display order.
+	// Themes are the overrides offered beside the default, in display order.
 	Themes []ThemeChoice
-
-	// DefaultLabel names the option that shows the app's own theme.
-	// Defaults to "Default".
+	// DefaultLabel names the app's own theme. Default "Default".
 	DefaultLabel string
-	// Fill stretches the pill across its container, the options sharing
-	// the width (a panel's full-width switch).
-	Fill bool
-
-	// ID is an optional id for the root element.
-	ID string
-
-	// Class is an optional extra CSS class.
+	// Fill stretches the pill across its container.
+	Fill  bool
+	ID    string
 	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the root. Keys the component owns are
-	// dropped: class and id (use Class / ID), data-cui-*, the
-	// data-hui-theme-* hooks, role, and aria-label (i18n-resolved).
+	// ExtraAttrs lands on the root; class, id, data-cui-*, data-hui-theme-*, role and aria-label are dropped.
 	ExtraAttrs html.Attrs
-
-	// Ctx carries the per-request context used to resolve the labels.
-	// When nil, English fallbacks apply.
+	// Ctx is the request context the labels are said in.
 	Ctx context.Context
 }
 
 // ThemePicker renders a segmented choice between the app's theme and
-// registered overrides, drawn as ThemeToggle's pill. Picking an option
-// puts that override's class (style.ThemeRef.Class) on <html>, so the
-// whole page — body background, component options and knobs included —
-// draws in it; Default removes the class. The choice persists in
-// localStorage["gofastr.theme"], and the colour-scheme bootstrap
-// re-applies it before first paint on the next load.
-//
-// It composes with ThemeToggle: the override's DarkColors follow the
-// document's scheme, and an override without them stays light.
-//
-//	var Brutal = style.RegisterThemeOverride(brutalTheme)
-//
-//	ui.ThemePicker(ui.ThemePickerConfig{
-//	    Themes: []ui.ThemeChoice{{Label: brutalName, Theme: Brutal}},
-//	})
+// registered overrides, drawn as ThemeToggle's pill. Picking one puts
+// its ThemeRef.Class on <html> and stores it in
+// localStorage["gofastr.theme"]; Default removes it.
 func ThemePicker(cfg ThemePickerConfig) render.HTML {
 	ctx := cfg.Ctx
 	if ctx == nil {
@@ -96,9 +65,6 @@ func ThemePicker(cfg ThemePickerConfig) render.HTML {
 		rootAttrs["id"] = cfg.ID
 	}
 
-	// Default ships checked and is the one Tab stop, the first-visit
-	// state; the stored choice lives in the browser, and
-	// headless-navigation's arrival pass re-checks from it.
 	option := func(label, class string) render.HTML {
 		checked, tab := "false", "-1"
 		if class == "" {

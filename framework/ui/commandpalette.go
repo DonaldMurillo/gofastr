@@ -17,147 +17,67 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── CommandPalette ─────────────────────────────────────────────────
-//
-// A Ctrl/Cmd+K-triggered overlay combining a Modal preset (role=dialog,
-// aria-modal, focus trap, Escape close, backdrop) with an embedded
-// combobox (debounced server-fuzzy-search, keyboard nav, listbox
-// selection).
-//
-// The component returns:
-//   - trigger: an SR-only button that opens the palette AND carries
-//     the global shortcut binding (Meta+K by default).
-//   - preset: a *widget.Builder the host mounts once at startup.
-//
-// Selecting an option does whatever the option's HTML wires it to:
-// typically the server emits `<li role="option" data-cui-rpc="..."
-// data-cui-push-state="...">…</li>` so picking it navigates or fires
-// an action. The combobox runtime picks the option's data-value or
-// textContent as the input replacement.
-
 // CommandPaletteConfig configures the command palette.
 type CommandPaletteConfig struct {
-	// Name uniquely identifies the modal widget. Default
-	// "command-palette".
+	// Name identifies the modal widget. Default "command-palette".
 	Name string
-
-	// RPCPath is the search endpoint. The handler receives the
-	// query string and returns `<li role="option">…</li>` fragments
-	// to swap into the listbox. Required unless Commands is set.
+	// RPCPath is the search endpoint answering option rows. Required unless Commands is set.
 	RPCPath string
-
-	// Placeholder is the input placeholder. Default
-	// "Type a command or search…".
+	// Placeholder is the input placeholder. Default "Type a command or search…".
 	Placeholder string
-
-	// Shortcut is the chord that opens the palette. Default "Meta+K"
-	// (Cmd+K on Mac, Ctrl+K elsewhere: the runtime treats either as
-	// Mod when matching).
+	// Shortcut is the chord that opens the palette. Default "Meta+K".
 	Shortcut string
-
-	// DebounceMs is the search debounce window. Default 150 (snappier
-	// than a generic combobox since results render eagerly).
+	// DebounceMs is the search debounce window. Default 150.
 	DebounceMs int
-
-	// TriggerLabel is the trigger's accessible name: what AT users
-	// hear when they reach it. Default "Open command palette".
+	// TriggerLabel is the trigger's accessible name. Default "Open command palette".
 	TriggerLabel string
-
-	// Trigger picks how the returned trigger draws. Zero
-	// (PaletteTriggerHidden) is a visually hidden link that only
-	// carries the shortcut, for chrome that draws its own search
-	// button. PaletteTriggerField draws a search field: a magnifier,
-	// TriggerText and the shortcut's keycaps, shrinking to an icon
-	// button on phones.
+	// Trigger picks how the trigger draws. Default PaletteTriggerHidden.
 	Trigger PaletteTrigger
-
-	// TriggerText is the field trigger's visible text. Default: the
-	// placeholder. Ignored by the hidden trigger.
+	// TriggerText is the field trigger's visible text. Default: the placeholder.
 	TriggerText string
-
-	// EmptyHTML is the listbox HTML at first paint. Empty (default)
-	// renders a placeholder hint.
+	// EmptyHTML is the listbox HTML at first paint.
 	EmptyHTML string
-
-	// Commands, when non-empty, renders a static, client-side-filtered
-	// command list, no search endpoint needed. Use for a small fixed
-	// set (docs/nav links) so the palette works on a serverless export
-	// where no RPC handler exists. Takes precedence over RPCPath.
+	// Commands is a static, client-filtered list; it takes precedence over RPCPath.
 	Commands []PaletteCommand
-
-	// Search turns the palette into full-text site search: typing runs
-	// the query against the index battery/sitesearch builds from every
-	// rendered page, and the matching pages, each with its best
-	// sections as deep links, list after the Commands. The Commands
-	// stay the list a reader sees before typing, so Search requires
-	// them. The battery must be registered: it serves the index on a
-	// live server, writes it into a static export, and ships the
-	// browser client that fills the rows.
+	// Search adds battery/sitesearch full-text results after the Commands; it requires Commands.
 	Search bool
-
-	// SearchPage is the path of the site's search page (battery/
-	// sitesearch's Screen). With Search on, the results end with a "See
-	// all results" row that opens it for the reader's query. Empty
-	// shows no such row. It must be same-origin and start with /.
+	// SearchPage is the same-origin search page the last result row opens; it requires Search.
 	SearchPage string
-
-	// FallbackHref is the ordinary same-origin destination the trigger
-	// navigates to without script: a modal trigger with no navigation
-	// path is a button a scriptless reader cannot use. Required; "#"
-	// and cross-origin values are refused at render.
+	// FallbackHref is the same-origin page the trigger links to without script. Required.
 	FallbackHref string
-
-	// Ctx resolves the trigger returned by CommandPalette. When nil,
-	// English fallbacks apply. The mounted body uses its request context;
-	// CommandPaletteTrigger takes the trigger's request context directly.
+	// Ctx resolves the trigger CommandPalette returns. Nil uses English.
 	Ctx context.Context
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) onto the palette's own root
-	// (the ui-cmd-palette panel inside the modal; the modal chrome is
-	// widget machinery). Keys the component owns are dropped:
-	// class, id, and data-cui-*.
+	// ExtraAttrs land on the palette panel; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
 // PaletteCommand is one entry in a static command-palette list, or
 // one result row a search endpoint answers through PaletteResults.
 type PaletteCommand struct {
-	Label string // visible text
-	Href  string // route to navigate to on pick (data-cui-push-state)
-	Meta  string // optional muted secondary text (e.g. the route path)
+	Label string
+	Href  string
+	Meta  string
 }
 
 // PaletteTrigger names how CommandPalette draws its trigger.
 type PaletteTrigger string
 
 const (
-	// PaletteTriggerHidden is a visually hidden link carrying the
-	// shortcut. The default.
+	// PaletteTriggerHidden is a visually hidden link carrying the shortcut.
 	PaletteTriggerHidden PaletteTrigger = ""
-	// PaletteTriggerField is a visible search field that opens the
-	// palette, with the shortcut's keycaps; an icon button on phones.
+	// PaletteTriggerField is a visible search field with the shortcut's keycaps.
 	PaletteTriggerField PaletteTrigger = "field"
 )
 
-// CommandPalette returns the trigger button and a Modal preset for
-// the palette. Mount the preset once at startup; render
-// CommandPaletteTrigger(ctx, cfg) in your global chrome on each request.
-// The returned trigger is a snapshot resolved with cfg.Ctx. The body's own
-// words (its title, hint chips, loading and empty rows, the default
-// placeholder) follow the reader's locale on each request; the strings
-// a config sets are said as given, so a palette with words of its own
-// to translate mounts CommandPaletteFunc instead.
+// CommandPalette returns a trigger resolved with cfg.Ctx and the Modal
+// preset to mount once. It panics on a config no palette can draw.
 func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	return commandPalette(cfg, nil)
 }
 
-// CommandPaletteFunc is CommandPalette for a palette built per request:
-// the palette's body calls build with each request's context, so its
-// placeholder and commands are the reader's. Mount the returned preset
-// once, and render the trigger in the chrome with
-// CommandPaletteTrigger(r.Context(), build(r.Context())). The widget's identity (Name,
-// Shortcut) comes from build(context.Background()).
+// CommandPaletteFunc is CommandPalette with the body built per request
+// by build; the widget's Name and Shortcut come from
+// build(context.Background()).
 func CommandPaletteFunc(build func(ctx context.Context) CommandPaletteConfig) *widget.Builder {
 	if build == nil {
 		panic("ui.CommandPaletteFunc: build is nil")
@@ -166,7 +86,6 @@ func CommandPaletteFunc(build func(ctx context.Context) CommandPaletteConfig) *w
 	return b
 }
 
-// checkCommandPalette panics on a config no palette can draw.
 func checkCommandPalette(cfg CommandPaletteConfig) {
 	if cfg.RPCPath == "" && len(cfg.Commands) == 0 {
 		panic("ui: CommandPalette requires RPCPath or Commands")
@@ -184,21 +103,14 @@ func checkCommandPalette(cfg CommandPaletteConfig) {
 	if cfg.FallbackHref == "#" {
 		panic("ui: CommandPalette FallbackHref must be a real same-origin destination, not #")
 	}
-	// Same shape as headless's shared same-origin refusal (island.go
-	// checkSameOrigin), plus any backslash anywhere: browsers normalise
-	// `\` to `/` at the authority boundary, so `/\evil.example` reads
-	// same-origin to this check and resolves cross-origin in the URL
-	// parser. urlsafe.OK refuses the byte outright; so does this.
 	if !strings.HasPrefix(cfg.FallbackHref, "/") || strings.HasPrefix(cfg.FallbackHref, "//") ||
 		strings.ContainsRune(cfg.FallbackHref, '\\') {
 		panic("ui: CommandPalette FallbackHref must be same-origin and start with /, not " + cfg.FallbackHref)
 	}
 }
 
-// CommandPaletteTrigger renders the palette's trigger for ctx without
-// constructing a modal. It uses the same config and markup as CommandPalette;
-// ctx, not cfg.Ctx, resolves default labels and visible field text. A nil ctx
-// uses English fallbacks. Keep Name and Shortcut consistent with the mount.
+// CommandPaletteTrigger renders the palette's trigger with ctx, not
+// cfg.Ctx, resolving its default words.
 func CommandPaletteTrigger(ctx context.Context, cfg CommandPaletteConfig) render.HTML {
 	checkCommandPalette(cfg)
 	if ctx == nil {
@@ -217,10 +129,6 @@ func CommandPaletteTrigger(ctx context.Context, cfg CommandPaletteConfig) render
 	if triggerLabel == "" {
 		triggerLabel = i18nui.CommandPaletteOpen.Text(ctx)
 	}
-
-	// The trigger is an anchor to the fallback: with script the widget
-	// runtime's open handler preventDefaults the navigation and opens
-	// the modal; without script it is an ordinary link.
 	triggerAttrs := map[string]string{
 		"href":                    cfg.FallbackHref,
 		"class":                   "fui-visually-hidden",
@@ -296,8 +204,6 @@ func commandPalette(cfg CommandPaletteConfig, build func(context.Context) Comman
 	return trigger, b
 }
 
-// palettePlaceholder is the search field's hint: Placeholder, else the
-// phrase.
 func palettePlaceholder(ctx context.Context, cfg CommandPaletteConfig) string {
 	if cfg.Placeholder != "" {
 		return cfg.Placeholder
@@ -305,9 +211,6 @@ func palettePlaceholder(ctx context.Context, cfg CommandPaletteConfig) string {
 	return i18nui.CommandPalettePlaceholder.Text(ctx)
 }
 
-// shortcutGlyphs spells a chord the way a keycap shows it: "Meta+K"
-// reads ⌘K, "Shift+Meta+P" reads ⇧⌘P. Keys the map does not know keep
-// their name.
 func shortcutGlyphs(chord string) string {
 	glyph := map[string]string{"meta": "⌘", "mod": "⌘", "cmd": "⌘", "ctrl": "Ctrl ", "control": "Ctrl ", "alt": "⌥", "option": "⌥", "shift": "⇧"}
 	var b strings.Builder
@@ -321,12 +224,9 @@ func shortcutGlyphs(chord string) string {
 	return b.String()
 }
 
-// PaletteResults renders the option rows a CommandPalette search
-// endpoint answers: one row per command, picked by keyboard or click,
-// navigating to its Href. name is the palette's Name ("" for the
-// default) and keeps the row ids unique on the page. With no commands
-// it renders one disabled row reading empty, or the localized "No
-// results" when empty is "".
+// PaletteResults renders the option rows a palette search endpoint
+// answers for the palette named name; with no commands it renders one
+// disabled row reading empty, or "No results" when empty is "".
 func PaletteResults(ctx context.Context, name string, cmds []PaletteCommand, empty string) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
@@ -365,8 +265,6 @@ func PaletteResults(ctx context.Context, name string, cmds []PaletteCommand, emp
 	return render.Join(rows...)
 }
 
-// paletteCommandsToOptions maps the palette's public Commands into the
-// combobox's Option shape. data-value defaults to the label.
 func paletteCommandsToOptions(cmds []PaletteCommand) []headless.ComboboxOption {
 	if len(cmds) == 0 {
 		return nil
@@ -391,12 +289,12 @@ type commandPaletteSlot struct {
 	navigateLabel string
 	selectLabel   string
 	closeLabel    string
-	escKey        string            // the Esc key's name on its hint chip
-	loadingLabel  string            // search: the row shown while results load
-	emptyLabel    string            // search: the row shown when nothing matches
-	searchPage    string            // search: the search page the last row opens
-	allLabel      string            // search: that row's words
-	words         *headless.Strings // the combobox words, in the reader's language; nil is English
+	escKey        string
+	loadingLabel  string
+	emptyLabel    string
+	searchPage    string
+	allLabel      string
+	words         *headless.Strings
 	extraAttrs    html.Attrs
 }
 
@@ -404,16 +302,10 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	titleID := s.widgetName + "-title"
 	signalName := s.widgetName + "-results"
 	inputID := s.widgetName + "-input"
-	// title is resolved for the request and stashed on the slot.
-	// Slots constructed directly (e.g. in tests) may leave it
-	// empty: fall back to the localized default so combobox.Render's
-	// non-empty Label contract holds.
 	title := s.title
 	if title == "" {
 		title = i18nui.CommandPaletteTitle.Text(context.Background())
 	}
-	// closeLabel is resolved alongside title for the request;
-	// same direct-construction fallback for slots built in tests.
 	escKey := s.escKey
 	if escKey == "" {
 		escKey = i18nui.KeyEsc.Text(context.Background())
@@ -437,9 +329,6 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	}
 	var parts headless.Parts
 	if s.search {
-		// battery/sitesearch's client fills a listbox carrying this
-		// marker (its SearchAttr) with result rows, and shows the two
-		// words while results load and when nothing matches.
 		parts.Attrs = headless.PartAttrs{headless.PartComboboxListbox: {
 			"data-search":         "",
 			"data-search-loading": s.loadingLabel,
@@ -459,11 +348,9 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		NoScriptAction: s.fallbackHref,
 		DebounceMS:     s.debounceMs,
 		Options:        opts,
-		// The result list is the dialog's body, so one Escape
-		// closes the palette.
-		Inline:  true,
-		Parts:   parts,
-		Strings: s.words,
+		Inline:         true,
+		Parts:          parts,
+		Strings:        s.words,
 	}, headless.Classes{
 		headless.PartRoot:            "fui-cmd-palette__field",
 		headless.PartLabel:           "fui-visually-hidden",
@@ -476,16 +363,6 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		headless.PartComboboxStatus:  "fui-visually-hidden",
 	})
 
-	// Visible close control (#325). data-cui-action="close" is the
-	// framework's declarative widget-dismiss hook (same wiring as the
-	// section-menu drawer): the widget runtime's own click handler
-	// dismisses the palette and restores focus to the trigger, so the
-	// button needs no bespoke JS. Rendered at every breakpoint, not
-	// just mobile: a control that appears only under a breakpoint is a
-	// discoverability inconsistency, and the Esc hint chip cannot be
-	// followed on a touch device. Icon-only: named via aria-label,
-	// the icon itself is decorative (aria-hidden) — the same
-	// convention as Banner dismiss and the section-menu drawer close.
 	closeBtn := render.Tag("button", map[string]string{
 		"class":           "fui-cmd-palette__close",
 		"type":            "button",
@@ -493,10 +370,6 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		"aria-label":      closeLabel,
 	}, Icon("close", IconConfig{Class: "fui-cmd-palette__close-icon"}))
 
-	// Footer hints (visible row of useful shortcuts). aria-hidden moved
-	// from the footer onto the hints row: the hints stay decorative,
-	// but the footer now hosts the close button, which must remain in
-	// the accessibility tree and the focus order.
 	hints := html.Div(html.DivConfig{
 		Class:      "fui-cmd-palette__hints",
 		ExtraAttrs: html.Attrs{"aria-hidden": "true"},
@@ -827,7 +700,3 @@ func commandPaletteTriggerCSS(_ style.Theme) string {
 }
 `
 }
-
-// _ keeps strconv referenced when DebounceMs is templated; the
-// combobox package handles the encoding internally.
-var _ = strconv.Itoa
