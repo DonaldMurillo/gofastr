@@ -35,8 +35,8 @@ few lines, and link the PR or the docs page for the rest.
   A list request read the live declarations in two places (the default
   `created_at` sort and field masks) instead of the handler's snapshot.
   Both now read the snapshot. A `Mask` changed after `NewCrudHandler`
-  applies once `VisibleFields()` republishes the snapshot, like a
-  changed `Hidden`.
+  applies once `VisibleFields()` is called, like a changed `Hidden`;
+  `VisibleFields()` now rebuilds the snapshot on every call.
 - **Two quick clicks during a page transition land on the second.** A
   click made while a view transition ran was held until the transition
   finished, and a later click could run first; the held one then

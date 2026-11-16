@@ -237,6 +237,7 @@ func TestMaskChangedAfterConstructionAppliesOnRepublish(t *testing.T) {
 		{"added", "id", func(context.Context, any) any { return "hidden-id" }, `"id":"hidden-id"`},
 		{"replaced", "number", func(context.Context, any) any { return "swapped" }, `"number":"swapped"`},
 		{"removed", "pin", nil, `"pin":1234`},
+		{"replaced by a closure of the same function", "number", maskTo("first"), `"number":"second"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := maskCrud(t)
@@ -251,10 +252,27 @@ func TestMaskChangedAfterConstructionAppliesOnRepublish(t *testing.T) {
 				t.Fatalf("no field %q", tc.field)
 			}
 			f.ch.VisibleFields()
+			if tc.want == `"number":"second"` {
+				f.get("/cards/c1")
+				for i := range f.ch.Entity.Config.Fields {
+					if f.ch.Entity.Config.Fields[i].Name == tc.field {
+						f.ch.Entity.Config.Fields[i].Mask = maskTo("second")
+					}
+				}
+				f.ch.VisibleFields()
+			}
 			code, body := f.get("/cards/c1")
 			if code != http.StatusOK || !strings.Contains(body, tc.want) {
 				t.Errorf("GET /cards/c1 = %d %s, want 200 with %s: the mask %s on the live declarations did not reach the read after VisibleFields", code, body, tc.want, tc.name)
 			}
 		})
 	}
+}
+
+// maskTo's closures share one code pointer; noinline keeps the compiler
+// from giving each call site its own copy.
+//
+//go:noinline
+func maskTo(v string) func(context.Context, any) any {
+	return func(context.Context, any) any { return v }
 }
