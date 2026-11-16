@@ -633,6 +633,12 @@
       _wEv('fui:widget-open', { name, root: r.root, hydrated: r.hydrated, reinserted: true });
     }
   };
+  const layers = () => openSeq + NS._modalStack + '|' + (NS._popoverStack || []);
+  document.addEventListener('keydown', e => {
+    const at = layers();
+    if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229 || NS._wEsc || at == openSeq + '|') return;
+    NS.loadModule('widgetfocus').then(() => layers() == at && NS._wEsc?.(e));
+  });
   const _kr = NS.doc.reattach;
   NS.doc.reattach = () => { _kr(); NS._reattachWidgets(); };
   (NS.loadedModules ||= {}).widgets = true;

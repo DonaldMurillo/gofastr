@@ -11,92 +11,36 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// The behaviour is the headless module's: the primitive's
-// data-hui-action* hooks bind through the kernel's action primitive,
-// and the retired optimisticaction adapter module (its .js and its
-// registration) is deleted with this move.
-
-// ─── OptimisticAction ───────────────────────────────────────────────
-//
-// Wraps a trigger button with optimistic UI: the button declares both
-// its idle and success labels in SSR markup. On click the runtime flips
-// to the success state IMMEDIATELY, then fires the RPC. On non-2xx
-// (or network error) the button rolls back to idle and surfaces a
-// brief error tooltip.
-//
-// Use for "Follow", "Like", "Subscribe", "Add to cart": actions where
-// the user expects instant feedback and the server response is just a
-// confirmation. NOT for irreversible / destructive actions (delete,
-// charge, …). Pair those with ConfirmAction instead.
-//
-// SSR shape (the headless action contract):
-//
-//	<button data-cui-comp="ui-optimistic-action"
-//	        data-hui-action="" data-hui-action-endpoint="/follow"
-//	        data-hui-action-failed="…"
-//	        data-state="idle"
-//	        class="fui-button fui-button--primary fui-optimistic-action">
-//	    <span data-hui-action-idle>Follow</span>
-//	    <span data-hui-action-done hidden>Following ✓</span>
-//	    …a visually-hidden role=status span the rollback sentence is
-//	    announced into…
-//	</button>
-//
-// The headless module binds the data-hui-action* hooks through the
-// kernel's action primitive — the retired optimisticaction.js is
-// deleted, and a host that still hand-loads it gets a 404.
-
 // OptimisticActionConfig configures an OptimisticAction button.
 type OptimisticActionConfig struct {
 	// Endpoint is the URL the click fires against. Required.
 	Endpoint string
-
-	// Method is "POST" (default), "DELETE", "PATCH", or "PUT".
+	// Method is "POST" (default), "DELETE", "PATCH" or "PUT".
 	Method string
-
-	// IdleLabel is the button text in the rest state. Required.
+	// IdleLabel is the rest-state text. Required.
 	IdleLabel string
-
-	// SuccessLabel is shown immediately on click (the optimistic
-	// flip). Required.
+	// SuccessLabel is shown at once on click. Required.
 	SuccessLabel string
-
-	// IdleIcon optionally renders alongside IdleLabel.
+	// IdleIcon renders beside IdleLabel.
 	IdleIcon render.HTML
-
-	// SuccessIcon optionally renders alongside SuccessLabel. Common
-	// usage: a small check or filled-heart SVG.
+	// SuccessIcon renders beside SuccessLabel.
 	SuccessIcon render.HTML
-
-	// Variant maps to the standard Button variant ("primary"/""
-	// default, "secondary", "danger", "ghost").
+	// Variant is the Button variant. Default primary.
 	Variant ButtonVariant
-
-	// Size maps to the standard Button size ("" default, "small",
-	// "large").
-	Size ButtonSize
-
+	// Size is the Button size.
+	Size  ButtonSize
 	ID    string
 	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the button's root
-	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-cui-* (endpoint and method wiring),
-	// type, and data-state — the optimistic lifecycle contract.
+	// ExtraAttrs land on the button; class, id, data-cui-*, type and data-state are dropped.
 	ExtraAttrs html.Attrs
-
-	// FailedText is what the status span announces when the server
-	// refuses. Empty takes the Strings default.
+	// FailedText is the sentence announced on a refusal. Empty takes the Strings default.
 	FailedText string
-	// Ctx carries the per-request context used to resolve the
-	// failure sentence. When nil, English fallbacks apply.
+	// Ctx resolves the default words. Nil uses English.
 	Ctx context.Context
 }
 
-// OptimisticAction renders the button. The marker fetches this sheet;
-// the clicks are bound through the data-hui-action* hooks the
-// primitive renders.
+// OptimisticAction renders a button that flips to SuccessLabel on
+// click and rolls back when the request fails.
 func OptimisticAction(cfg OptimisticActionConfig) render.HTML {
 	if cfg.Endpoint == "" {
 		panic("ui: OptimisticAction requires Endpoint")
@@ -114,8 +58,6 @@ func OptimisticAction(cfg OptimisticActionConfig) render.HTML {
 	checkButtonVariant("OptimisticAction", ov)
 	checkButtonSize("OptimisticAction", cfg.Size)
 
-	// The optimistic classes ride beside the button family's own so
-	// this sheet's flip styling reaches the same button.
 	parts := headless.Parts{}
 	if extra := strings.TrimSpace(buttonClassTokens(ov, cfg.Size) + " fui-optimistic-action " + cfg.Class); extra != "" {
 		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": strings.TrimSpace(extra)}}
@@ -141,8 +83,6 @@ func OptimisticAction(cfg OptimisticActionConfig) render.HTML {
 	}, optimisticActionClasses))
 }
 
-// optimisticActionClasses dresses the primitive's parts in the button
-// family's vocabulary.
 var optimisticActionClasses = headless.Classes{
 	headless.PartRoot: "fui-button",
 }

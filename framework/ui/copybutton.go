@@ -15,104 +15,44 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── CopyButton ─────────────────────────────────────────────────────
-//
-// A "copy to clipboard" button that targets another element by id.
-// The headless-copy module's [data-hui-copy] reader performs the
-// clipboard write; this component adds:
-//
-//   - Visible label/copied-label swap keyed on the wrapper's
-//     data-hui-copy-state="done", which the module holds for 1.2s.
-//   - A visually-hidden role="status" sibling the module populates
-//     through data-hui-copy-status on success so screen-reader users
-//     hear "Copied" without focus-loss, and with the failure sentence
-//     (data-hui-copy-failed) when the browser refuses the write.
-//   - Token-driven min tap target (the button family's token-driven sizing).
-//
-// Pairs naturally with CodeBlock (Target="#my-code"), but works for
-// any element with a stable id.
-
 // CopyButtonConfig configures the copy button.
 type CopyButtonConfig struct {
-	// Target is the id of the element whose textContent will be
-	// copied. Required. A leading "#" is accepted and dropped, so
-	// "code-1" and "#code-1" name the same element. It is not a CSS
-	// selector: the copy module resolves it with getElementById, and
-	// Render panics on a value carrying selector syntax (whitespace,
-	// '.', '>', '[', ':', '#' past the first byte).
+	// Target is the id of the element whose text is copied; a leading "#" is dropped. Required.
 	Target string
-
-	// Label is the visible button text before copying. Default "Copy".
+	// Label is the text before copying. Default "Copy".
 	Label string
-
-	// CopiedLabel is the visible text shown briefly after success.
-	// Default "Copied".
+	// CopiedLabel is the text shown briefly after success. Default "Copied".
 	CopiedLabel string
-
-	// IconOnly hides the visible label but keeps the SR-only label
-	// (via AriaLabel or default). Use when the button is icon-only.
+	// IconOnly hides the visible label and keeps an accessible name.
 	IconOnly bool
-	// Icon names a registered icon ("link" for a copy-link control).
-	// An IconOnly button draws it in place of the copy glyph; a
-	// labelled one draws it before the label, the way a Button with an
-	// Icon does. Empty, or a name not registered, draws the copy glyph
-	// on an IconOnly button and nothing on a labelled one.
+	// Icon names a registered icon drawn in place of the copy glyph, or before the label.
 	Icon string
-	// Inline sits the button within a line of text (an id in a detail
-	// row): no border, fill or shadow until hover, muted, and a 24px
-	// target in place of the touch-target minimum.
+	// Inline sits the button in a line of text with a 24px target.
 	Inline bool
-	// Ghost draws the button like a small ghost icon Button: no border,
-	// fill or shadow until hover, so it sits in a row of icon buttons
-	// (the drawer bar) without standing out as the one outlined control.
+	// Ghost draws the button with no border, fill or shadow until hover.
 	Ghost bool
-	// Tile draws a full-width tile with its icon above the label. The whole
-	// tile copies Target. It cannot be combined with IconOnly, Inline or Ghost.
+	// Tile draws a full-width tile with the icon above the label; it excludes IconOnly, Inline and Ghost.
 	Tile bool
-
-	// AriaLabel overrides the screen-reader name. When IconOnly is
-	// true and AriaLabel is empty, defaults to "Copy to clipboard".
+	// AriaLabel overrides the accessible name. IconOnly defaults it to "Copy to clipboard".
 	AriaLabel string
-
-	// AnnounceText is the message written into the role=status span
-	// on copy success. Default "Copied".
+	// AnnounceText is the status message on success. Default "Copied".
 	AnnounceText string
-
-	// ToastOnCopy, when true, fires a toast on copy success. The toast
-	// is dispatched via window.__gofastr.toast({...}) so it stacks in
-	// the page's existing ToastStack (or auto-created one), no extra
-	// wiring required. Use ToastTitle / ToastBody / ToastVariant to
-	// configure the message; sensible defaults if left blank.
+	// ToastOnCopy also fires a toast on success.
 	ToastOnCopy bool
-
-	// ToastTitle is the toast title when ToastOnCopy=true. Default "Copied".
+	// ToastTitle defaults to "Copied".
 	ToastTitle string
-
-	// ToastBody is the toast body when ToastOnCopy=true. Default empty.
+	// ToastBody defaults to empty.
 	ToastBody string
-
-	// ToastVariant maps to the toast's variant: "success" (default),
-	// "info", "warning", "danger".
+	// ToastVariant is "success" (default), "info", "warning" or "danger".
 	ToastVariant string
-
-	// ToastTTLms is the toast auto-dismiss timeout in milliseconds.
-	// Default 3000.
+	// ToastTTLms is the toast timeout. Default 3000.
 	ToastTTLms int
-
-	// Ctx carries the per-request context used to resolve the
-	// Copy/Copied/clipboard labels. When nil, English fallbacks apply.
+	// Ctx resolves the default words. Nil uses English.
 	Ctx context.Context
-
-	// ID lands on the button, so an aria-describedby or a test hook can
-	// name it. The wrapper span carries no id.
+	// ID lands on the button, not the wrapper.
 	ID    string
 	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the root wrapper (the
-	// span carrying data-cui-comp). Keys the component owns are
-	// dropped: class, id (ID lands on the button, not the wrapper),
-	// and data-cui-*.
+	// ExtraAttrs land on the wrapper; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
@@ -124,10 +64,6 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	if cfg.Target == "" {
 		panic("ui: CopyButton requires Target")
 	}
-	// The hook carries an ELEMENT ID, not a selector: the module
-	// resolves it with getElementById, so a value carrying "#" (the
-	// old selector spelling) loses its prefix here, and anything that
-	// still reads as a selector would silently match nothing.
 	targetID := strings.TrimPrefix(cfg.Target, "#")
 	if targetID == "" || strings.ContainsAny(targetID, " \t\n\r\f.>[:#") {
 		panic("ui: CopyButton Target must be an element id (a leading # is allowed), not a CSS selector: " +
@@ -167,9 +103,6 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	// Every field CopyButton draws from is a string, bool or int, so
-	// the button and the status span below hold none of a caller's
-	// markup — both are the topmost of their own internal subtree.
 	btnAttrs := html.Attrs{
 		"type":              "button",
 		"data-cui-internal": "",
@@ -199,8 +132,6 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 			toastCfg["body"] = cfg.ToastBody
 		}
 		if b, err := json.Marshal(toastCfg); err == nil {
-			// A toast on copy rides the feedback module's toast API;
-			// the config travels on the wrapper the module resolves.
 			btnAttrs["data-hui-copy-toast"] = string(b)
 		}
 	}
@@ -214,8 +145,6 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 		btnAttrs["aria-label"] = cfg.AriaLabel
 	}
 
-	// Visible labels (CSS shows one at a time from the wrapper's
-	// data-hui-copy-state).
 	var inner []render.HTML
 	if !cfg.IconOnly {
 		if cfg.Icon != "" && IconRegistered(cfg.Icon) {
@@ -233,7 +162,6 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
 			}, render.Text(copied)))
 	} else {
-		// Icon-only: no visible label, just an inline check / clipboard glyph.
 		inner = []render.HTML{
 			render.Raw(`<span class="fui-copy-btn__icon" aria-hidden="true">⧉</span>`),
 		}
@@ -249,9 +177,6 @@ func CopyButton(cfg CopyButtonConfig) render.HTML {
 	btn := render.Tag("button", flattenAttrs(html.MergeAttrs(html.Attrs{"class": cls}, btnAttrs)),
 		inner...)
 
-	// The wrapper holds the button AND the SR-only status span so the
-	// runtime can find it via parentElement.querySelector. Wrapper is
-	// a plain inline-block; CSS class lets consumers target it.
 	status := html.Span(html.TextConfig{
 		Class: "fui-visually-hidden",
 		ExtraAttrs: html.Attrs{

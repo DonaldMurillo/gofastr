@@ -80,14 +80,7 @@ func servedOnce(t *testing.T, walk string, walked, want []string) {
 	}
 }
 
-// A managed table can hold created_at text crud did not write: a seed
-// script's or a migration's "2026-01-02T03:04:05Z". The cursor used to
-// carry the driver's time.Time re-formatted as "…05.000000Z", which
-// SQLite's text comparison puts before the stored "…05Z", so the page
-// after the cursor began with the cursor's own row and a walk never left
-// the first page. The keyset binds the stored text on every SQLite
-// entity, so each row is served once, in the order ORDER BY sorts it,
-// with crud-written rows alongside.
+// Seeded created_at text such as "2026-01-02T03:04:05Z" pages once per row on SQLite.
 func TestCursorOverSeededTimestamps(t *testing.T) {
 	for _, columnType := range []string{"TEXT", "DATETIME", "TIMESTAMP"} {
 		for _, unmanaged := range []bool{false, true} {

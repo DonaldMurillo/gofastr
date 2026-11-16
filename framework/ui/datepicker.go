@@ -12,24 +12,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── DatePicker ────────────────────────────────────────────────────
-//
-// A calendar that stays on the page beside the native date input it
-// fills (headless.DatePicker). It is for what the browser's own picker
-// cannot do: a range in one control, specific days refused (booked,
-// closed), or a note written on each day ("3 left"). An ordinary date
-// is DateField, and stays DateField: the native picker is accessible,
-// local and needs no script.
-//
-// The native input is the value, so the form posts the HTML date
-// format with or without script. A month change is an island: the
-// page serves Endpoint, which answers DatePickerMonth for the month in
-// the query, built from the same config.
-
 // DatePickerDay is what the server knows about one day.
 type DatePickerDay struct {
-	// Disabled refuses the day. It stays in the grid, announced as
-	// unavailable.
+	// Disabled refuses the day, which stays in the grid as unavailable.
 	Disabled bool
 	// Note is a short line written on the day: "3 left", "Full".
 	Note string
@@ -37,12 +22,11 @@ type DatePickerDay struct {
 
 // DatePickerRange makes a DatePicker pick a start and an end.
 type DatePickerRange struct {
-	// StartName and EndName are the two inputs' form names. Required.
+	// StartName and EndName are the inputs' form names. Required.
 	StartName, EndName string
 	// Start and End are the current values, YYYY-MM-DD.
 	Start, End string
-	// StartLabel and EndLabel name the inputs; empty says "Start date"
-	// and "End date" in the reader's language.
+	// StartLabel and EndLabel default to the localized Start/End date.
 	StartLabel, EndLabel string
 }
 
@@ -50,47 +34,37 @@ type DatePickerRange struct {
 // endpoint answers. Build both from one function of the request, so
 // the page and the endpoint agree on the days.
 type DatePickerConfig struct {
-	// ID is the input's id (a range's are ID-start and ID-end). Label
-	// names the field. Required, with Endpoint and Name (or Range).
+	// ID (a range's inputs are ID-start and ID-end), Label, Endpoint
+	// and Name or Range are required.
 	ID, Label string
-	// Name and Value are a single date's form name and value,
-	// YYYY-MM-DD. Refused with Range.
+	// Name and Value are a single date's form name and YYYY-MM-DD value.
 	Name, Value string
 	Range       *DatePickerRange
 
-	// Endpoint is the same-origin path a month change GETs, with the
-	// month in its query (MonthParam): it answers DatePickerMonth.
+	// Endpoint is the same-origin path a month change GETs; it answers
+	// DatePickerMonth.
 	Endpoint string
-	// Month is the month shown, YYYY-MM: the page and the endpoint
-	// both pass the query's. Empty, or not a month, shows the value's
-	// month (a range's start), else Today's, else the server's current
-	// month in UTC; whichever it is, it is held between Min's and
-	// Max's months.
+	// Month is the YYYY-MM shown, from the query; empty or invalid
+	// shows the value's, Today's or the current month, held in Min..Max.
 	Month string
 	// MonthParam names the month query parameter. Default "month".
 	MonthParam string
-	// Path and Query are the page's own path and query: a nav anchor's
-	// href without script is Path plus Query with the month set.
-	// Empty Path is the current page. Path is the page's constant
-	// path, never r.URL.Path: the endpoint builds the same config, and
-	// its r.URL.Path is its own. Two pickers sharing one Endpoint tell
-	// themselves apart through Query.
+	// Path and Query build a month anchor's no-script href. Path is the
+	// page's constant path, never r.URL.Path, which differs on the
+	// endpoint.
 	Path  string
 	Query url.Values
 
-	// Today is the reader's today, YYYY-MM-DD, in the reader's zone,
-	// which the server knows and this package does not.
+	// Today is the reader's today, YYYY-MM-DD, in the reader's zone.
 	Today string
-	// Min and Max bound the dates, YYYY-MM-DD. Today, Min and Max are
-	// configuration and panic when they are not dates: parse request
-	// data before passing it here.
+	// Min and Max bound the dates. Today, Min and Max panic when they
+	// are not YYYY-MM-DD dates.
 	Min, Max string
 	// Days is what the server knows about each day, keyed YYYY-MM-DD.
 	Days map[string]DatePickerDay
 	// WeekStart is the first column. Nil takes the reader's locale.
 	WeekStart *time.Weekday
 
-	// Help and Error describe the field, as on every form field.
 	Help, Error string
 	Required    bool
 	Disabled    bool
@@ -101,9 +75,6 @@ type DatePickerConfig struct {
 	Ctx        context.Context
 }
 
-// datePickerClasses dresses headless.DatePicker. The native inputs
-// wear the field sheet's fui-input and fui-field__label, so a range's
-// two inputs look like every other field's.
 var datePickerClasses = headless.Classes{
 	headless.PartRoot:               "fui-datepicker",
 	headless.PartLabel:              "fui-field__label",
@@ -123,8 +94,6 @@ var datePickerClasses = headless.Classes{
 	headless.PartDatePickerStatus:   "fui-visually-hidden",
 }
 
-// datePickerGroupClasses dresses a range's Fieldset: its legend reads
-// as a field's label, its description and error as a field's.
 var datePickerGroupClasses = headless.Classes{
 	headless.PartRoot:       "fui-datepicker-group",
 	headless.PartLegend:     "fui-field__label",
@@ -145,10 +114,8 @@ func (cfg DatePickerConfig) props(c *headless.FieldControl) headless.DatePickerP
 		ID: cfg.ID, Label: cfg.Label, Name: cfg.Name, Value: cfg.Value,
 		Month: cfg.Month, Today: cfg.Today, Min: cfg.Min, Max: cfg.Max,
 		WeekStart: cfg.WeekStart,
-		// The signal is the calendar's own: one per picker, so two
-		// pickers on a page never answer each other's months.
-		Island: headless.Island{Endpoint: cfg.Endpoint, Signal: cfg.ID + "-calendar"},
-		Path:   cfg.Path, Query: cfg.Query, MonthParam: cfg.MonthParam,
+		Island:    headless.Island{Endpoint: cfg.Endpoint, Signal: cfg.ID + "-calendar"},
+		Path:      cfg.Path, Query: cfg.Query, MonthParam: cfg.MonthParam,
 		Required: cfg.Required, Disabled: cfg.Disabled, Control: c,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs),
 		Strings:    StringsFor(ctx),
@@ -204,12 +171,6 @@ func DatePickerMonth(cfg DatePickerConfig) render.HTML {
 
 var datePickerStyle = registry.RegisterStyle("ui-datepicker", datePickerCSS)
 
-// datePickerCSS draws the calendar on tokens: a bordered surface, a
-// header row of nav anchors around the caption, and a seven-column
-// grid of day buttons whose states come from the attributes the
-// headless layer and its module write (aria-selected on the cell,
-// the range place, aria-current, aria-disabled), never from a class
-// the script toggles.
 func datePickerCSS(_ style.Theme) string {
 	return `.fui-datepicker {
   display: grid;

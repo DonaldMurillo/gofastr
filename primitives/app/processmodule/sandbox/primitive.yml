@@ -96,6 +96,15 @@ decisions:
       - option: App Sandbox.
         why: It needs a signed .app, which a spawned CLI child is not.
     revisit_if: A signed helper or a service account can give the child its own uid on macOS.
+  - id: windows-kills-only-the-child
+    date: 2026-11-16
+    status: accepted
+    decision: On Windows a process module's child gets its own process group for console signals, but nothing kills its grandchildren when it exits or is stopped.
+    rejected:
+      - option: Assign each child to a Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
+        why: Only trusted modules run on Windows, since the stub backend refuses every untrusted spawn, and no CI job runs the framework's process-module tests on Windows, so a Job Object could not be watched failing a test.
+    revisit_if: A CI job runs framework tests on Windows, or the Windows sandbox backend is built, which needs a Job Object anyway.
+    upholds: [child-group-dies-with-child]
   - id: windows-stub
     date: 2026-11-16
     status: accepted

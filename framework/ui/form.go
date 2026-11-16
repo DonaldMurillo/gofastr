@@ -15,131 +15,61 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// FieldErrors maps form field names to user-visible error messages.
-// It is the same shape returned by [framework.ValidationRegistry.Validate]
-// so server-side validation results round-trip directly into FormField.
-//
-// Example flow:
-//
-//	errors := registry.Validate(ctx, formData)  // framework.ValidationRegistry
-//	page := ui.Form(ui.FormConfig{
-//	    Action: "/customers", ID: "customer-form",
-//	    Errors: errors,
-//	},
-//	    ui.FormFieldFor(errors, "email", ...),
-//	    ui.FormFieldFor(errors, "name",  ...),
-//	)
+// FieldErrors maps field names to messages, as ValidationRegistry.Validate returns.
 type FieldErrors map[string]string
 
 // FormConfig wraps a server-rendered <form>.
 type FormConfig struct {
-	// Action is the form's action URL. Required. An action the anchor
-	// policy refuses is a panic at render, not a silent "#" — a form
-	// pointed at a dangerous URL is worse than a no-op, and a dead
-	// one is found where it was made.
+	// Action is the form's URL. Required; one the anchor policy refuses panics.
 	Action string
 
-	// Method is "POST" (default) or "GET". This is the NATIVE method,
-	// what a scriptless browser submits; the request seam's method
-	// (see ExtraAttrs) is independent of it.
+	// Method is the native method, "POST" (default) or "GET".
 	Method string
 
-	// Errors is an optional set of field-level errors. When non-empty
-	// the form renders a ValidationSummary above its fields, marked so
-	// the headless behaviour module moves focus to the summary after a
-	// failed submit — which requires ID (the summary's id is derived
-	// from it), and the per-field wiring reaches FormFieldFor'd fields
-	// automatically.
+	// Errors renders a ValidationSummary above the fields; it requires ID.
 	Errors FieldErrors
 
-	// Summary is a sentence that belongs to no one field (a general
-	// failure, a credentials mismatch). It renders as a text row in
-	// the validation summary, after the field errors. Empty means
-	// nothing when Errors is empty, and the framework default
-	// ("Please fix the highlighted fields and try again.") when
-	// Errors is not.
+	// Summary is the summary's sentence that belongs to no one field.
 	Summary string
 
-	// FieldLabels, FieldIDs and FieldOrder are passed to the
-	// ValidationSummary: FieldIDs maps a field name to its control's
-	// id (a link to #email misses a control whose id is f_email —
-	// an error whose field has no known id renders as text, not as an
-	// anchor to nothing), FieldLabels supplies each link's label, and
-	// FieldOrder fixes the row order.
+	// FieldLabels, FieldIDs and FieldOrder are passed to the ValidationSummary.
 	FieldLabels map[string]string
 	FieldIDs    map[string]string
 	FieldOrder  []string
 
-	// SubmitLabel is the visible submit button label. Defaults to "Save".
+	// SubmitLabel is the submit button's label; empty reads "Save".
 	SubmitLabel string
 
-	// HideSubmit omits the submit button entirely when true.
-	// Use when the caller renders its own submit button.
+	// HideSubmit omits the submit button.
 	HideSubmit bool
 
-	// SubmitFullWidth stacks the actions row into a single full-width
-	// column and stretches the submit button to the form's width. Use
-	// for mobile-first auth and wizard forms where the primary action
-	// should be a thumb target spanning the card.
+	// SubmitFullWidth stretches the submit button to the form's width.
 	SubmitFullWidth bool
 
-	// Wide lifts the readable-measure cap (--ui-form-max), so the form
-	// fills its container: for a form whose body is a FormFrame with a
-	// side column, which splits only when the form is wide enough.
+	// Wide lifts the readable-measure cap so a FormFrame inside can split.
 	Wide bool
 
-	// NoValidate turns off the browser's own validation bubbles, for a
-	// form that validates on the server and reports through Errors.
 	NoValidate bool
 
-	// Multipart sets enctype="multipart/form-data": a file upload needs
-	// it, and so does a form that posts to a route reading JSON or
-	// multipart only (the CRUD routes refuse urlencoded bodies), so a
-	// browser without the runtime submits a body the route reads. The
-	// runtime then sends the form as FormData instead of JSON.
+	// Multipart sets enctype="multipart/form-data".
 	Multipart bool
 
-	// Ctx, when non-nil, lets Form auto-stamp the hidden CSRF input
-	// (the framework's "_csrf" field) on unsafe-method submits. It
-	// reads middleware.TokenFromContext(Ctx), i.e. the token the CSRF
-	// middleware stashes on every request, and renders it masked
-	// (middleware.MaskCSRFToken), so callers do not have to
-	// remember `render.HTML(csrfInput(ctx))` as the first child of
-	// every form. Nil-safe: a form rendered without Ctx omits the
-	// hidden input (matches pre-v3 behavior so existing tests and
-	// non-CSRF flows like Method:"GET" stay correct).
+	// Ctx, on a POST form, stamps the request's masked CSRF token as _csrf.
 	Ctx context.Context
 
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes to the <form>
-	// element. Every data-cui-* and data-action-* key is runtime
-	// wiring and goes through the typed request seam (attach island
-	// wiring with interactive.Post(...).OnSuccess(...).Attrs() —
-	// headless.FormProps.Request admits exactly that vocabulary and
-	// panics on any wiring key outside it, where the old carrier
-	// contract silently rendered a plain form that posts natively).
-	// Everything else is decoration and passes through.
+	// ExtraAttrs lands on the <form>; wiring keys go through the request seam.
 	ExtraAttrs html.Attrs
 
-	// LeaveGuard, when non-empty, marks the form's unsaved edits as
-	// discardable-only-with-asking: while the form is changed, a link
-	// away, Back, a drawer's Escape and a reload all ask first, with
-	// these words. Empty omits the guard. See headless.FormProps.
+	// LeaveGuard is the sentence asked before unsaved edits are left.
 	LeaveGuard string
-	// LeaveGuardTitle and LeaveGuardAccept word the kit's dialog the
-	// guard asks in (its title and danger accept button). Empty keeps
-	// the dialog's own.
+	// LeaveGuardTitle and LeaveGuardAccept word the guard's dialog.
 	LeaveGuardTitle  string
 	LeaveGuardAccept string
 }
 
-// Form renders a complete <form> with an optional error summary above
-// the fields and a submit button below, through the headless form
-// dressed with this package's class map.
-//
-// Pass FormFieldFor(errors, ...) inside as fields so the per-field
-// error wiring is automatic.
+// Form renders a <form>: an optional error summary, the fields, a submit button.
 func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	if cfg.Action == "" {
 		panic("ui: Form requires Action")
@@ -148,7 +78,6 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	if method == "" {
 		method = "POST"
 	}
-	// D-1: Reject invalid methods to prevent silent HTML bugs.
 	if method != "GET" && method != "POST" {
 		panic("ui: Form Method must be GET or POST, got " + method)
 	}
@@ -159,10 +88,6 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 
 	body := make([]render.HTML, 0, len(fields)+2)
 
-	// Auto-embed the hidden CSRF input on unsafe-method submits when a
-	// request ctx is available. POST is the only unsafe method Form
-	// accepts (panic above), so the check is simply "POST + ctx + token
-	// on ctx". GET forms get nothing. They aren't behind CSRF.
 	if method == "POST" && cfg.Ctx != nil {
 		if tok := middleware.TokenFromContext(cfg.Ctx); tok != "" {
 			body = append(body, csrfHiddenInput(middleware.MaskCSRFToken(tok)))
@@ -179,12 +104,6 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 		actions = headless.Own(Button(ButtonConfig{Ctx: ctx, Label: submitLabel, Type: "submit"}))
 	}
 
-	// The summary, when there is one, renders above the body and marks
-	// the form so the behaviour module moves focus to it on arrival.
-	// A general sentence with no field errors is still a failure the
-	// reader has to see: a save refused by a guard or a conflict names
-	// no field, and gating the summary on Errors alone rendered
-	// nothing at all for it.
 	var errorsHTML render.HTML
 	if len(cfg.Errors) > 0 || cfg.Summary != "" {
 		if cfg.ID == "" {
@@ -204,8 +123,6 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 			Title:       i18nui.FormHasErrors.Text(ctx),
 			Ctx:         ctx,
 		})
-		// headless.Form takes Errors as slot content; this summary is
-		// built here from strings, so it is marked here.
 		errorsHTML = headless.Own(errorsHTML)
 	}
 
@@ -218,9 +135,6 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	}
 
 	request, plain := splitFormAttrs(cfg.ExtraAttrs)
-	// The refusal headless applies to a rejected Action is this
-	// package's too: today's "#" substitution shipped a form whose
-	// submit went nowhere, which is worse than a panic at render.
 	return formStyle.WrapHTML(headless.Form(headless.FormProps{
 		Action:           cfg.Action,
 		Method:           method,
@@ -238,12 +152,6 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	}, formClasses, body...))
 }
 
-// splitFormAttrs splits a Form's ExtraAttrs at the seam: every
-// data-cui-* and data-action-* key is runtime wiring and travels
-// through the typed Request, where headless admits exactly the request
-// vocabulary a form reads and panics on anything else, naming the key;
-// everything else is decoration and travels through headless's
-// ExtraAttrs, whose Safe drops the keys the component owns.
 func splitFormAttrs(extra html.Attrs) (request, plain html.Attrs) {
 	request, plain = html.Attrs{}, html.Attrs{}
 	for k, v := range extra {
@@ -264,26 +172,15 @@ func splitFormAttrs(extra html.Attrs) (request, plain html.Attrs) {
 	return request, plain
 }
 
-// csrfFormField is the hidden-input name Form emits when Ctx carries a
-// CSRF token. It matches the framework's default (battery/auth.CSRFFormField
-// + middleware.CSRFConfig.FormField when unset). Hosts that override the
-// form field name in their CSRF config should NOT use Form's auto-embed.
-// Render their own hidden input via auth.CSRFInputFromCtx instead.
 const csrfFormField = "_csrf"
 
-// csrfHiddenInput renders the same markup as battery/auth.CSRFInputFromCtx
-// but without the battery/auth dependency (which would create a layering
-// cycle since framework/ui sits below battery/*). Token values are
-// base64url + "." + base64url(HMAC) so HTMLEscapeString is defense-in-depth.
 func csrfHiddenInput(tok string) render.HTML {
 	//gofastr:allow(GOFASTR1403) the token goes through template.HTMLEscapeString
 	return render.HTML(`<input type="hidden" name="` + csrfFormField +
 		`" value="` + template.HTMLEscapeString(tok) + `">`)
 }
 
-// FormFieldFor is a convenience wrapper that pre-fills FormFieldConfig.Error
-// from a FieldErrors map. Use it inside Form() so error round-tripping
-// is one line per field.
+// FormFieldFor renders a FormField whose Error is errs[name].
 func FormFieldFor(errs FieldErrors, name string, cfg FormFieldConfig) render.HTML {
 	if errs != nil {
 		if msg, ok := errs[name]; ok {
@@ -293,63 +190,27 @@ func FormFieldFor(errs FieldErrors, name string, cfg FormFieldConfig) render.HTM
 	return FormField(cfg)
 }
 
-// ─── ValidationSummary ───────────────────────────────────────────────
-//
-// The summary that goes above a form: role="alert", focusable by
-// script (tabindex="-1", never a tab stop), one link per field error
-// so the value of the summary is getting to the field. Rendered
-// through headless.ValidationSummary dressed with this package's class
-// map.
-
 // ValidationSummaryConfig configures a ValidationSummary.
 type ValidationSummaryConfig struct {
-	// ID names the summary's root. Required: the title's id is derived
-	// from it, and two summaries on one page without ids would share
-	// one title id — breaking both labels and both announcements.
-	ID string
-	// Errors maps field names to error messages. Required together
-	// with General for anything to render.
+	// ID names the summary's root. Required.
+	ID     string
 	Errors FieldErrors
-	// General is a sentence that belongs to no one field (a general
-	// failure, a credentials mismatch). It renders as a text row,
-	// after the field errors: text rather than a link to nothing.
+	// General is a text row, after the field errors, for no one field.
 	General string
-	// FieldLabels maps field names to human-readable labels. The link
-	// text is "<label>: <message>"; falls back to the field name.
+	// FieldLabels names each field in its row; the field name otherwise.
 	FieldLabels map[string]string
-	// FieldIDs maps field names to actual control element IDs. When
-	// the map is non-nil and a field is missing from it, the error
-	// renders as text — a link to #email misses a control whose id is
-	// f_email. When the map is nil, the field name itself is the
-	// target (the typed fields' default: an un-set ID is the Name).
+	// FieldIDs maps field names to control ids; nil targets the field name.
 	FieldIDs map[string]string
-	// FieldOrder controls the order of error rows. Entries that aren't
-	// in Errors are silently skipped, so it's safe to pass the full
-	// form field list. Without FieldOrder, rows fall back to
-	// alphabetical-by-field-name so the rendered HTML is deterministic
-	// across requests (Go map iteration is randomized).
+	// FieldOrder orders the rows; the rest follow alphabetically.
 	FieldOrder []string
-	// Title overrides the default heading. Empty → "Please fix the
-	// following errors:".
-	Title string
-	// Class adds extra CSS classes to the wrapper.
-	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the summary's root. Keys the component
-	// owns are dropped: class and id (use Class / ID), data-cui-*,
-	// role, tabindex and aria-labelledby.
+	Title      string
+	Class      string
 	ExtraAttrs html.Attrs
-
-	// Ctx carries the per-request context used to resolve the i18n
-	// title. When nil, English fallbacks apply.
+	// Ctx resolves the default title; nil reads English.
 	Ctx context.Context
 }
 
-// ValidationSummary renders an inline summary of form validation errors
-// with anchor links to each field. Output ordering is deterministic:
-// FieldOrder first if provided, then any leftover field names
-// alphabetically, then the General row.
+// ValidationSummary renders a form's errors, each linking to its field.
 func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 	if len(cfg.Errors) == 0 && cfg.General == "" {
 		return ""
@@ -359,7 +220,6 @@ func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 		ctx = context.Background()
 	}
 
-	// Deterministic order: FieldOrder first, then alphabetical leftover.
 	ordered := make([]string, 0, len(cfg.Errors))
 	seen := make(map[string]bool, len(cfg.Errors))
 	for _, name := range cfg.FieldOrder {
@@ -384,11 +244,6 @@ func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 		if l, ok := cfg.FieldLabels[field]; ok {
 			label = l
 		}
-		// The target: the mapped control id when the map knows the
-		// field, the field name when no map was given (the typed
-		// fields' own default), and NO link when a map was given and
-		// does not know the field — an anchor to nothing is worse
-		// than text.
 		target := field
 		if cfg.FieldIDs != nil {
 			if id, ok := cfg.FieldIDs[field]; ok {
@@ -421,8 +276,6 @@ func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 var validationSummaryStyle = registry.RegisterStyle("ui-validation-summary", validationSummaryCSS)
 
 func validationSummaryCSS(_ style.Theme) string {
-	// Knobs: --ui-validation-summary-link-min-height (24px) is the
-	// error link's row floor.
 	return `.fui-validation-summary {
   display: grid;
   gap: var(--spacing-sm, 4px);

@@ -9,12 +9,8 @@ import (
 //go:embed carousel.js
 var carouselJS string
 
-// CarouselBehaviorName is the runtime module that binds the carousel's
-// data-hui-* hooks: the active slide, the controls, the status
-// sentence, the auto-rotation with its pauses, and the keyboard. It
-// replaces the retired core-ui/runtime carousel module.
+// CarouselBehaviorName is the runtime module that binds the carousel's data-hui-* hooks.
 const CarouselBehaviorName = "headless-carousel"
 
-// The marker: the carousel root.
 var _ = uiregistry.RegisterBehavior(CarouselBehaviorName, carouselJS,
 	uiregistry.Markers("[data-hui-carousel]"))

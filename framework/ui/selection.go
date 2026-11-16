@@ -11,43 +11,21 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── Selection ──────────────────────────────────────────────────────
-//
-// A body of selectable rows with the bar that acts on them: a list's
-// bulk-action form over its table. The bar shows only while a checkbox
-// in the body is checked, so a list nobody is selecting from does not
-// carry an action form above its rows. The rule is CSS (:has), so it
-// needs no script; a browser without :has() shows the bar always. A
-// table's select-all box is not a row: it neither keeps the bar up nor
-// counts.
-//
-// Floating draws the bar after the rows as a pill held to the bottom of
-// the screen, with the number of rows checked (kept by the headless
-// behaviour: a table is a size container, whose style containment walls
-// a CSS counter in) and, with Form, a button that clears them by
-// resetting that form.
-
 // SelectionConfig configures a Selection.
 type SelectionConfig struct {
-	// Bar acts on the selection: a bulk-action form whose checkboxes
-	// live in Body (the inputs name it through form=). Required.
+	// Bar is the bulk-action form over Body's checkboxes. Required.
 	Bar render.HTML
-	// Body holds the selectable rows and their checkboxes. Required.
+	// Body holds the selectable rows. Required.
 	Body render.HTML
-	// Floating holds the bar to the bottom of the screen, after the
-	// rows, with the count of rows checked.
+	// Floating pins the bar to the screen's bottom with a count.
 	Floating bool
-	// Form is the id of the form the row checkboxes join. With
-	// Floating, the bar ends with a button that resets it, clearing
-	// the selection.
+	// Form is the row checkboxes' form id; with Floating the bar can
+	// reset it.
 	Form string
-	// Copy, with Floating, adds a "Copy CSV" button to the bar: it
-	// copies the checked rows as the CSV Copy answers for repeated _id
-	// parameters (an entity's export route, on the page's origin).
+	// Copy, with Floating, adds a Copy CSV button fetching this route
+	// for the checked ids.
 	Copy string
-	// Ctx carries the request's language for the count and the clear
-	// button's name.
-	Ctx context.Context
+	Ctx  context.Context
 
 	ID    string
 	Class string
@@ -55,7 +33,8 @@ type SelectionConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// Selection renders the rows and their bar through headless.Selection.
+// Selection renders selectable rows and the bar that acts on them,
+// shown only while a row checkbox is checked, through headless.Selection.
 func Selection(cfg SelectionConfig) render.HTML {
 	if strings.TrimSpace(string(cfg.Bar)) == "" {
 		panic("ui: Selection requires Bar — with nothing to act on the selection, render Body alone")
@@ -91,7 +70,6 @@ func Selection(cfg SelectionConfig) render.HTML {
 	}, selectionClasses))
 }
 
-// selectionClasses dresses headless.Selection's parts.
 var selectionClasses = headless.Classes{
 	headless.PartRoot:          "fui-selection",
 	headless.PartBody:          "fui-selection__body",
@@ -103,10 +81,6 @@ var selectionClasses = headless.Classes{
 
 var selectionStyle = registry.RegisterStyle("ui-selection", selectionCSS)
 
-// selectionCSS stacks the bar over the body and hides the bar while no
-// row checkbox in the body is checked (a select-all box, or a box in a
-// form inside the body, is not a row). Knob: --ui-selection-gap (the lg
-// spacing) between the bar and the body.
 func selectionCSS(_ style.Theme) string {
 	return `:where([data-cui-comp="ui-selection"]).fui-selection {
   display: flex;

@@ -1,0 +1,132 @@
+primitive: uihost.session
+summary: The signed session token, its cookie, minting and verification, the mutating-request guards, and the SSE live channel with its presence topics.
+code:
+  - framework/uihost/session.go
+  - framework/uihost/live.go
+  - framework/uihost/presence_declared.go
+  - framework/uihost/internal/
+docs:
+  - framework/docs/content/presence.md
+invariants:
+  - id: token-rotation-window
+    rule: A session token is signed with the current key only and verifies under the current key or any previous key, and SetSessionKey drops the previous keys.
+    enforced_by:
+      - test: framework/uihost/internal/sessiontoken.TestVerifyAnyAcceptsPreviousKey
+      - test: framework/uihost/internal/sessiontoken.TestVerifyAnyMultiplePreviousKeys
+      - test: framework/uihost.TestSweepAssetsSetSessionKeyEndsRotation
+  - id: token-bounds
+    rule: Verify refuses a token over 256 bytes, a key under 16 bytes, a mint time more than two minutes ahead and a token older than maxAge, and Mint refuses a key under 16 bytes.
+    enforced_by:
+      - test: framework/uihost/internal/sessiontoken.TestMaxTokenLenRejectsSignedOverlongToken
+      - test: framework/uihost/internal/sessiontoken.TestSweepAssetsVerifyRefusesShortKey
+      - test: framework/uihost/internal/sessiontoken.TestKeyLenBoundary
+      - test: framework/uihost/internal/sessiontoken.TestClockSkewBoundary
+      - test: framework/uihost/internal/sessiontoken.TestRejectsExpired
+  - id: token-mac-input-unambiguous
+    rule: The token MAC covers a versioned context label, the id and the mint time, each separated, so no two tokens share a signing input.
+    enforced_by:
+      - test: framework/uihost/internal/sessiontoken.TestNoRespellingSharesASigningInput
+      - test: framework/uihost/internal/sessiontoken.TestMintTokenCarriesExactlyWhatMACCovers
+  - id: cookie-name-follows-origin
+    rule: The session cookie is the Secure __Host-gofastr-session on a TLS or non-loopback origin and the plain gofastr-session only on a plaintext loopback origin, and a request reads only the name its origin uses.
+    enforced_by:
+      - test: framework/uihost.TestUIHost_SessionCookieUsesHostPrefix
+      - test: framework/uihost.TestUIHost_PageSessionCookieUsesSecureFlag
+      - test: framework/uihost.TestLoopbackDevCookieRoundTrips
+      - test: framework/uihost.TestSweepAssetsReadsOnlyTheOriginsCookieName
+  - id: cookie-attributes
+    rule: The session cookie is HttpOnly and SameSite=Strict.
+    enforced_by:
+      - test: framework/uihost.TestUIHost_SessionCookieUsesStrictSameSite
+      - test: framework/uihost.TestSweepAssetsSessionCookieIsHttpOnly
+  - id: plaintext-remote-warns-scrubbed
+    rule: A Secure cookie sent over a plaintext non-loopback origin logs one warning whose host is scrubbed of C0, C1 and bidi controls.
+    enforced_by:
+      - test: framework/uihost.TestSessionWarnHostScrubbedBeyondC0
+  - id: mutating-needs-signed-cookie
+    rule: A mutating /__gofastr endpoint answers 401 unless the session cookie holds a token that verifies; a session id in the query or body proves nothing.
+    enforced_by:
+      - test: framework/uihost.TestUIHost_ServerActionRequiresSession
+  - id: presented-grant-is-final
+    rule: A request that presents an embed grant is decided by the grant alone, a refused grant answers 401 whatever cookie rides along, and an accepted grant strips the cookie and other ambient credentials before the handler runs.
+    enforced_by:
+      - test: framework/uihost.TestInvalidGrantDoesNotFallBackToASession
+      - test: framework/uihost.TestSweepAssetsGrantDropsTheAmbientCookie
+  - id: cross-origin-refused
+    rule: A mutating /__gofastr endpoint answers 403 to an Origin whose host differs from the request's or that has no host, and admits a request with no Origin.
+    enforced_by:
+      - test: framework/uihost.TestUIHost_ServerActionRejectsCrossOriginPost
+      - test: framework/uihost.TestUIHost_CreateSessionRejectsCrossOriginRequest
+      - test: framework/uihost.TestSweepAssetsHostlessOriginRefused
+  - id: mutating-body-bounded-strict
+    rule: A mutating /__gofastr JSON body over 64 KiB answers 413, and one with a duplicate or case-folded top-level key answers 400.
+    enforced_by:
+      - test: framework/uihost.TestSweepAssetsMutatingBodyCapIs64KiB
+      - test: framework/uihost.TestServerActionRejectsDuplicateKeys
+      - test: framework/uihost.TestServerActionRejectsCaseFoldedKeys
+  - id: create-session-refuses-grant
+    rule: POST /__gofastr/session answers 403 and sets no cookie when the request carries an embed grant header, so a frame cannot mint a session to pass the action gate.
+    enforced_by:
+      - test: framework/uihost.TestSweepAssetsCreateSessionRefusesAGrant
+  - id: session-token-only-in-cookie
+    rule: POST /__gofastr/session returns only the bare session id in its body; the signed token travels only in Set-Cookie.
+    enforced_by:
+      - test: framework/uihost.TestSweepAssetsSessionBodyCarriesOnlyTheID
+  - id: sse-refuses-grant
+    rule: The SSE endpoint answers 401 to a request carrying an embed grant header and never falls back to the cookie.
+    enforced_by:
+      - test: framework/uihost.TestEmbedGrantIsRefusedOnSSE
+  - id: sse-stream-matches-cookie
+    rule: The SSE endpoint streams only when the session cookie's token verifies and its id equals the ?session= stream id.
+    enforced_by:
+      - test: framework/uihost.TestSSEStreamIDMustMatchCookie
+      - test: framework/uihost.TestUIHost_SSERejectsUnknownSessionID
+  - id: presence-param-bounded
+    rule: A page threads its ?presence= value into the stream URL only when it is at most 4096 bytes.
+    enforced_by:
+      - test: framework/uihost.TestSweepAssetsPresenceParamBounded
+  - id: declared-topics-signed-for-viewer
+    rule: Declared presence topics join a stream only when their signature verifies for the stream's user under the current or a previous session key and has not expired; a widened list or another user's list joins nothing.
+    enforced_by:
+      - test: framework/uihost.TestForgedDeclaredRefused
+      - test: framework/uihost.TestDeclaredSurvivesRotation
+  - id: declared-topics-bounded
+    rule: A declared topic holding a comma is dropped before signing, and a declared list over 4096 bytes is ignored even when signed.
+    enforced_by:
+      - test: framework/uihost.TestSweepAssetsDeclaredTopicWithCommaDropped
+      - test: framework/uihost.TestSweepAssetsOversizeDeclaredListIgnored
+decisions:
+  - id: stateless-signed-sessions
+    date: 2026-11-16
+    status: accepted
+    decision: A session is an HMAC-signed token carrying its id and mint time, so any replica holding the key verifies it and nothing is stored.
+    rejected:
+      - option: An in-memory session map.
+        why: It lives in one replica's RAM, so a second replica or a restart loses every session.
+    upholds: [token-rotation-window]
+  - id: relaxed-cookie-on-loopback
+    date: 2026-11-16
+    status: accepted
+    decision: A plaintext loopback origin gets a cookie without Secure or the __Host- prefix; every other origin keeps the hardened form and only logs a warning when plaintext.
+    rejected:
+      - option: The __Host- cookie everywhere.
+        why: Browsers drop a Secure cookie over http://localhost, so every island RPC and SSE connect on a dev server answered 401.
+      - option: The relaxed cookie on any plaintext origin.
+        why: Off loopback the connection is not trusted, so the cookie would lose its subdomain and fixation defense.
+    upholds: [cookie-name-follows-origin]
+  - id: no-grant-on-sse
+    date: 2026-11-16
+    status: accepted
+    decision: SSE refuses every embed grant; a frame gets passive freshness from data-cui-poll, whose fetch carries the grant header.
+    rejected:
+      - option: Carry the grant in the SSE query string.
+        why: EventSource cannot set a header, and a bearer token in the URL lands in access logs, Referer and history.
+    upholds: [sse-refuses-grant]
+  - id: declared-topics-bind-user
+    date: 2026-11-16
+    status: accepted
+    decision: The declared-topics signature binds the user and an expiry, not the stream id, under a key derived from the session key with its own label.
+    rejected:
+      - option: Bind the stream id.
+        why: The runtime re-mints the session id in place, and the signed list must survive that.
+    upholds: [declared-topics-signed-for-viewer]

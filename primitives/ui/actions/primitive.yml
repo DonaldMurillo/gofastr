@@ -1,0 +1,276 @@
+primitive: ui.actions
+summary: Action components - confirm action and dialog, optimistic and toggle actions, the signal toggle, copy button, command palette, global search, search input, shortcut hints and sheet, and the toolbar.
+code:
+  - framework/ui/confirmaction.go
+  - framework/ui/confirmdialog.go
+  - framework/ui/optimisticaction.go
+  - framework/ui/toggleaction.go
+  - framework/ui/signal_toggle.go
+  - framework/ui/copybutton.go
+  - framework/ui/commandpalette.go
+  - framework/ui/globalsearch.go
+  - framework/ui/searchinput.go
+  - framework/ui/shortcuthint.go
+  - framework/ui/shortcutsheet.go
+  - framework/ui/toolbar.go
+docs:
+  - framework/docs/content/optimistic-ui.md
+twins:
+  - job: Refuse a fallback or endpoint path that is not same-origin before it renders.
+    why: The kit's copies refuse a backslash anywhere while headless's refuses only one right after the leading slash; nothing else keeps them apart, and TestSweepActionsFallbackHrefParity pins the palette and sheet copies to one answer.
+    sites:
+      - path: framework/ui/commandpalette.go
+        note: checkCommandPalette, for FallbackHref.
+      - path: framework/ui/shortcutsheet.go
+        note: checkShortcutSheet, for FallbackHref.
+      - path: framework/ui/inlineedit.go
+        note: The Endpoint check in InlineEdit.
+      - path: framework/headless/island.go
+        note: checkSameOrigin, for every headless endpoint.
+  - job: Refuse a signal name the runtime cannot write before it is emitted.
+    why: "Each emitter grew its own guard: ConfirmAction allows only [A-Za-z0-9_-], interactive.SetSignal refuses a double quote, and all of them refuse __proto__, constructor and prototype, which TestSweepActionsSignalNamesRefuseReservedKeys pins."
+    sites:
+      - path: framework/ui/confirmaction.go
+        note: validSuccessSignalName, for SuccessSignal.
+      - path: core-ui/interactive/interactive.go
+        note: SetSignal and refuseReservedSignalName.
+      - path: framework/headless/box.go
+        note: checkSignalName, for Bind.
+invariants:
+  - id: palette-needs-a-source
+    rule: CommandPalette panics with neither RPCPath nor Commands, and with Search but no Commands, because the Commands are the list a reader sees before typing.
+    enforced_by:
+      - test: framework/ui.TestCommandPaletteSearchNeedsCommands
+      - test: framework/ui.TestSweepActionsPaletteNeedsASource
+  - id: palette-fallback-same-origin
+    rule: "FallbackHref is required, and \"#\", a scheme, a protocol-relative path or a backslash anywhere in it panics, since browsers read a backslash as a slash at the authority."
+    enforced_by:
+      - test: framework/ui.TestCommandPaletteFallbackHrefRefusals
+      - test: framework/ui.TestSweepActionsFallbackHrefParity
+  - id: palette-search-page-same-origin
+    rule: SearchPage panics unless Search is on and it is a path starting with one slash with no backslash, query or fragment.
+    enforced_by:
+      - test: framework/ui.TestCommandPaletteSearchPageRefused
+  - id: palette-trigger-is-a-link
+    rule: Both palette triggers are anchors to FallbackHref carrying data-cui-open and the shortcut, so without script the trigger is an ordinary link.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsPaletteTriggerLinksToFallback
+  - id: palette-unknown-trigger-panics
+    rule: A Trigger other than PaletteTriggerHidden or PaletteTriggerField panics.
+    enforced_by:
+      - test: framework/ui.TestPaletteUnknownTriggerPanics
+  - id: palette-commands-win-over-rpc
+    rule: A palette with Commands renders the static list and no search endpoint wiring, even when RPCPath is set.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsPaletteCommandsWinOverRPC
+    applies:
+      - framework/headless/combobox.go
+  - id: palette-one-escape-closes
+    rule: The palette's combobox renders inline, so its listbox is the dialog body and one Escape closes the palette.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsPaletteComboboxIsInline
+  - id: palette-close-control
+    rule: "The palette body holds exactly one data-cui-action=\"close\" button named by aria-label, and only the hint row is aria-hidden, never the footer that holds the button."
+    enforced_by:
+      - test: framework/ui.TestCommandPaletteCloseControl
+  - id: palette-slot-words-never-empty
+    rule: A palette slot built with no title, Esc or close words renders the English defaults, so the combobox label is never empty.
+    enforced_by:
+      - test: framework/ui.TestPaletteHrefDropsUnsafeSchemes
+  - id: palette-words-per-request
+    rule: The palette trigger and body say their own words in the request's locale, a config's strings as given, and CommandPaletteFunc builds the body from each request's context.
+    enforced_by:
+      - test: framework/ui.TestPaletteTriggerRequestLocale
+      - test: framework/ui.TestCommandPalettePlaceholderPerRequest
+      - test: framework/ui.TestCommandPaletteFuncBuildsPerRequest
+  - id: palette-result-rows-safe
+    rule: PaletteResults escapes labels, writes data-cui-push-state only for an href urlsafe accepts, and gives each row an id under the palette's name.
+    enforced_by:
+      - test: framework/ui.TestPaletteResultsRows
+  - id: palette-search-marks-listbox
+    rule: With Search the listbox carries data-search with its loading and empty words, plus data-search-all and its label when SearchPage is set; without Search it carries none.
+    enforced_by:
+      - test: framework/ui.TestCommandPaletteSearchMarksListbox
+  - id: confirm-action-required
+    rule: ConfirmAction panics without Name, TriggerLabel, Title, Body or RPCPath.
+    enforced_by:
+      - test: framework/ui.TestConfirmActionPanics
+  - id: success-signal-is-a-safe-name
+    rule: "A SuccessSignal outside ^[A-Za-z0-9_-]+$, or one of __proto__, constructor and prototype, panics, because the runtime puts the name in an attribute selector and never writes the reserved keys."
+    enforced_by:
+      - test: framework/ui.TestConfirmActionSuccessSignalRejectedNames
+      - test: framework/ui.TestSweepActionsSignalNamesRefuseReservedKeys
+  - id: confirm-unknown-variant-is-danger
+    rule: An unknown TriggerVariant renders the trigger as a danger button.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsConfirmUnknownVariantIsDanger
+  - id: confirm-cancel-first
+    rule: Cancel renders before Confirm and neither carries autofocus unless AutofocusConfirm puts it on Confirm alone.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsConfirmActionCancelFirst
+      - test: framework/ui.TestConfirmActionSlotRendersAlertdialog
+      - test: framework/ui.TestConfirmActionAutofocusConfirm
+  - id: confirm-without-endpoint-is-plain
+    rule: A confirm slot with no endpoint renders its Confirm button with no data-cui-rpc wiring.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsConfirmWithoutEndpointIsPlain
+  - id: confirm-words-per-request
+    rule: Empty confirm and cancel labels are said in each request's locale, since the modal is mounted once with no reader.
+    enforced_by:
+      - test: framework/ui.TestConfirmDialogWordsPerRequest
+  - id: confirm-template-cancel-first
+    rule: The data-cui-confirm template renders Cancel before both accept buttons, so Enter on an open confirm never answers yes.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsConfirmTemplateCancelFirst
+  - id: confirm-template-words-per-request
+    rule: The confirm template's title, cancel and accept words come from the request's locale.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsConfirmTemplateWordsPerRequest
+  - id: copy-target-is-an-id
+    rule: CopyButton drops one leading "#" from Target and panics on whitespace, ".", ">", "[", ":" or a later "#", because the module resolves it with getElementById.
+    enforced_by:
+      - test: framework/ui.TestCopyButtonTargetRefusesSelector
+  - id: copy-tile-is-exclusive
+    rule: A Tile CopyButton combined with IconOnly, Inline or Ghost panics.
+    enforced_by:
+      - test: framework/ui.TestCopyButtonTile
+  - id: copy-id-on-the-button
+    rule: CopyButton's ID lands on the button once and never on the wrapper.
+    enforced_by:
+      - test: framework/ui.TestCopyButtonIDOnButtonOnly
+  - id: copy-status-beside-the-button
+    rule: The copy wrapper holds the button and a polite role="status" span marked data-hui-copy-status that the module writes the result into.
+    enforced_by:
+      - test: framework/ui.TestCopyButtonBasic
+  - id: copy-unknown-icon
+    rule: An Icon that is not registered draws the copy glyph on an IconOnly button and no icon on a labelled one.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsCopyIconFallback
+  - id: global-search-shortcut
+    rule: An empty GlobalSearch Shortcut is "/", and a single space turns the shortcut and its hint off.
+    enforced_by:
+      - test: framework/ui.TestGlobalSearchShortcutDefaultsToSlash
+      - test: framework/ui.TestGlobalSearchShortcutDisabled
+  - id: action-buttons-own-their-lifecycle
+    rule: ExtraAttrs on OptimisticAction and ToggleAction never set type, data-state or aria-pressed.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsActionButtonsOwnTheirLifecycle
+    applies:
+      - framework/headless/action.go
+  - id: action-buttons-check-variant
+    rule: OptimisticAction and ToggleAction panic on a Button variant or size that is not registered.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsActionButtonsCheckVariantAndSize
+  - id: search-method-get-or-post
+    rule: SearchInput panics on a Method other than GET or POST.
+    enforced_by:
+      - test: framework/ui.TestSearchInputPanicOnInvalidMethod
+  - id: search-extras-keep-type-and-name
+    rule: SearchInput's ExtraAttrs cannot change the input's type or name in any letter case, and a value passes through.
+    enforced_by:
+      - test: framework/ui.TestSearchInputExtraAttrsSanitizedValuePasses
+  - id: search-frame-is-a-label
+    rule: SearchInput's frame is a label for the input in both shapes, so a click anywhere in the box focuses the field.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsSearchInputLabelTargetsInput
+  - id: search-action-is-cleaned
+    rule: "A SearchInput Action that urlsafe refuses renders as action=\"#\"."
+    enforced_by:
+      - test: framework/ui.TestSweepActionsSearchInputRefusesUnsafeAction
+  - id: search-css-on-the-class
+    rule: Every SearchInput rule keys on the .fui-search classes, never on the data-cui-comp marker, which sits on the form when Action is set.
+    enforced_by:
+      - test: framework/ui.TestSearchInputActionVariantKeepsBoxStyle
+  - id: hint-bind-target-checked
+    rule: ShortcutHint panics on a BindTarget holding a control byte or a "<", and a valid one renders the click chord and target.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsShortcutHintRefusesBadTarget
+  - id: hint-stays-exposed
+    rule: "The hint wrapper keeps aria-hidden=\"false\" whatever ExtraAttrs say, so its screen-reader sentence stays reachable."
+    enforced_by:
+      - test: framework/ui.TestSweepActionsShortcutHintStaysExposed
+  - id: hint-mod-for-both-platforms
+    rule: "A Mod key renders both the ⌘ and the Ctrl keycap, and the stylesheet hides one by the runtime's data-cui-os."
+    enforced_by:
+      - test: framework/ui.TestShortcutHintModK
+  - id: aria-key-shortcuts-spelling
+    rule: ariaKeyShortcuts spells a Mod chord as a Meta and a Control alternative with the other modifiers in between, and an unmodified chord as written.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsAriaKeyShortcuts
+  - id: sheet-trigger-owns-its-wiring
+    rule: ShortcutSheet panics with no Items or a FallbackHref that is not a same-origin path, and its trigger's href, aria-label and shortcut cannot be set by ExtraAttrs.
+    enforced_by:
+      - test: framework/ui.TestSweepActionsShortcutSheetTriggerOwnsItsWiring
+  - id: sheet-words-per-request
+    rule: The sheet's title is said in each request's locale, and ShortcutSheetFunc builds its rows from each request's context.
+    enforced_by:
+      - test: framework/ui.TestShortcutSheetTitlePerRequest
+      - test: framework/ui.TestShortcutSheetFuncBuildsPerRequest
+  - id: toggle-escapes-its-markup
+    rule: SignalToggle escapes the signal name, label and class it writes with Sprintf, and ExtraAttrs cannot set role, aria-checked or aria-label.
+    enforced_by:
+      - test: framework/ui.TestSignalToggleLabelEscaped
+      - test: framework/ui.TestSweepActionsSignalToggleEscapesClass
+      - test: framework/ui.TestSweepActionsSignalToggleOwnsTheSwitch
+  - id: toggle-first-paint-from-the-request
+    rule: A SignalToggle over a Slice paints the value seeded on Ctx, and the declared default with no Ctx.
+    enforced_by:
+      - test: framework/ui.TestSignalToggleSliceStampsTheRequestSeed
+  - id: toolbar-groups
+    rule: Toolbar panics on an unknown Align, skips a group with no children, and gives a labelled group role="group".
+    enforced_by:
+      - test: framework/ui.TestToolbarRejectsUnknownAlign
+      - test: framework/ui.TestSweepActionsToolbarSkipsEmptyGroups
+      - test: framework/ui.TestToolbarGroupRoleEmittedWhenLabeled
+decisions:
+  - id: palette-close-at-every-breakpoint
+    date: 2026-11-16
+    status: accepted
+    decision: The palette draws its visible close button at every breakpoint and wires it through the widget runtime's data-cui-action="close" hook.
+    rejected:
+      - option: A close button on phones only.
+        why: A control that appears under one breakpoint is inconsistent to find, and the Esc hint cannot be followed on a desktop touch screen.
+      - option: A bespoke click handler.
+        why: The widget runtime's dismiss hook already closes the modal and returns focus to the trigger.
+    upholds: [palette-close-control]
+  - id: confirm-focus-by-order
+    date: 2026-11-16
+    status: accepted
+    decision: Cancel takes first focus by coming first in the DOM, and autofocus is written only on Confirm when AutofocusConfirm asks.
+    rejected:
+      - option: An autofocus attribute on Cancel.
+        why: It races the Modal preset's focus pass and makes Chrome log that autofocus processing was blocked; the preset already prefers an [autofocus] element when one exists.
+    upholds: [confirm-cancel-first]
+  - id: confirm-action-paints-no-panel
+    date: 2026-11-16
+    status: accepted
+    decision: The ConfirmAction body sets only its width and inner layout, and the widget chrome's centered panel paints its surface.
+    rejected:
+      - option: A background, padding and radius on the body.
+        why: They duplicate the panel's own and double-pad the dialog.
+  - id: search-css-keys-on-the-class
+    date: 2026-11-16
+    status: accepted
+    decision: The SearchInput sheet keys every rule on the .fui-search classes.
+    rejected:
+      - option: Selectors under the data-cui-comp marker.
+        why: WrapHTML puts the marker on the outermost tag, the form when Action is set, so marker-ancestor rules stop matching the label.
+    upholds: [search-css-on-the-class]
+  - id: search-input-module-in-ui
+    date: 2026-11-16
+    status: accepted
+    decision: searchinput.js registers as framework/ui's own behaviour on the ui-search-input marker and binds the component's classes.
+    rejected:
+      - option: The clear-button behaviour in the runtime kernel.
+        why: core-ui/runtime names no kit class, and the classes stay the component's to rename.
+      - option: A headless counterpart.
+        why: SearchInput has no headless primitive.
+    revisit_if: SearchInput moves onto a framework/headless primitive.
+  - id: global-search-space-turns-off
+    date: 2026-11-16
+    status: accepted
+    decision: A single space as GlobalSearch Shortcut turns the shortcut off.
+    rejected:
+      - option: An empty Shortcut meaning off.
+        why: The zero value already means the default "/".
+    upholds: [global-search-shortcut]

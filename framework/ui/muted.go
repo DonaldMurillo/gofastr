@@ -1,11 +1,5 @@
 package ui
 
-// ─── Muted ──────────────────────────────────────────────────────────
-//
-// Subdued inline text for secondary values: empty-value placeholders in
-// tables and detail views, de-emphasized counts, "not set" markers.
-// Colors via the --color-text-muted token so every theme recolors it.
-
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -18,9 +12,7 @@ func Muted(children ...render.HTML) render.HTML {
 		map[string]string{"class": "fui-muted"}, children...))
 }
 
-// EmptyValue is the canonical "no value here" placeholder: a muted em
-// dash. Tables and detail views render it for null/empty fields so
-// emptiness reads as deliberate rather than broken.
+// EmptyValue is the muted em dash that stands for an empty field.
 func EmptyValue() render.HTML {
 	return Muted(render.Text("—"))
 }

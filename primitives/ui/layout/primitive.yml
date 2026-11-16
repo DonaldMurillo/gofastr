@@ -1,0 +1,304 @@
+primitive: ui.layout
+summary: Layout and page frames - stack, cluster, grid, box, sticky, container, content row, list-detail, workbench, pane host, anchored rail, hero and fact box.
+code:
+  - framework/ui/layout.go
+  - framework/ui/content_row.go
+  - framework/ui/container.go
+  - framework/ui/list_detail.go
+  - framework/ui/workbench.go
+  - framework/ui/panehost.go
+  - framework/ui/anchored_rail.go
+  - framework/ui/styles_anchored_rail.go
+  - framework/ui/styles_primitives.go
+  - framework/ui/hero.go
+  - framework/ui/hero_split.go
+  - framework/ui/styles_pageheader.go
+  - framework/ui/fact_box.go
+  - framework/ui/responsive.go
+docs:
+  - framework/docs/content/layouts.md
+  - framework/docs/content/pane-host.md
+on_change:
+  - "A new top-sticky part reads var(--ui-sticky-top, 0px) and a new region that scrolls on its own resets --ui-sticky-top to 0px; add it to the sweep_layout tests' tables."
+twins:
+  - job: Decide the width below which an open PaneHost side pane becomes an overlay drawer.
+    why: The sheet needs the width as a CSS media query and the behaviour module as a matchMedia string, and neither can read the other at runtime.
+    sites:
+      - path: framework/ui/panehost.go
+        note: paneHostCSS, the @media rule that collapses the grid to one column.
+      - path: framework/headless/panehost.js
+        note: The MQ constant that switches an open pane to overlay mode.
+invariants:
+  - id: layout-enums-are-validated
+    rule: An unknown Center MinHeight, Box Pad, Sticky Edge, Offset or ZIndexTier, AspectRatio Ratio, Container Width or Pad, HeroSplit Ratio, FactBox Style, Workbench RailWidth, or ContentRow or Responsive breakpoint panics at render instead of emitting a class no rule styles.
+    enforced_by:
+      - test: framework/ui.TestLayoutEnumsAreValidated
+      - test: framework/ui.TestStickyUnknownTierPanics
+      - test: framework/ui.TestContainerRejectsUnknownWidth
+      - test: framework/ui.TestContainerPadModifierClass
+      - test: framework/ui.TestHeroSplitRejectsUnknownRatio
+      - test: framework/ui.TestFactBoxRejectsUnknownStyle
+      - test: framework/ui.TestWorkbenchUnknownRailWidthPanics
+      - test: framework/ui.TestResponsiveUnknownBreakpointPanics
+      - test: framework/ui.TestContentRowModifiersAndBreakpointValidation
+  - id: required-config-panics
+    rule: PaneHost without Primary, ListDetail without ListLabel or with BackHref but no MobileSinglePane, and FactBox without Label or without Value and ValueHTML panic at render.
+    enforced_by:
+      - test: framework/ui.TestPaneHostPanicsWithoutPrimary
+      - test: framework/ui.TestSweepLayoutListDetailRequiresListLabel
+      - test: framework/ui.TestListDetailBackHrefNeedsSinglePane
+      - test: framework/ui.TestFactBoxRequiresLabel
+      - test: framework/ui.TestFactBoxRequiresValueOrValueHTML
+  - id: extra-attrs-cannot-take-owned-keys
+    rule: Every layout component passes ExtraAttrs through headless.Safe or an html.Safe*Attrs helper, so a caller cannot set the class, id, style or data-cui-* wiring the component owns.
+    enforced_by:
+      - test: framework/ui.TestExtraAttrsForwardingIsSanitized
+      - test: framework/ui.TestWorkbenchExtraAttrsCannotOverrideOwned
+  - id: grid-min-is-an-attribute
+    rule: Grid carries Min, default 16rem, on its root's data-min attribute, never in an inline style, and its Class and Fill classes sit on that same root.
+    enforced_by:
+      - test: framework/ui.TestGridRendersMinAsDataAttribute
+      - test: framework/ui.TestGridAppliesClassOnTheRoot
+  - id: grid-min-fallback-ladder
+    rule: The ui-layout sheet reads data-min through typed attr() with a 16rem default and, for browsers without it, maps every whole rem from 1rem to 64rem onto --ui-grid-min.
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutGridMinLadderCoversWholeRems
+  - id: layout-sheet-compounds-marker
+    rule: The ui-layout sheet selects a layout class on the same element as its data-cui-comp marker, never as a descendant of it.
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutSheetCompoundsMarkerAndClass
+  - id: sticky-tier-attribute
+    rule: Sticky writes its ZIndexTier, default sticky, to data-fui-z-tier, and the ui-sticky sheet maps each of the five tiers to its --z-<tier> token.
+    enforced_by:
+      - test: framework/ui.TestStickyEmitsZTierAttr
+      - test: framework/ui.TestStickyZTierWiredToCSS
+  - id: sticky-header-publishes-offset
+    rule: A StickyHeader stack pins its <header> child and publishes --size-header-height as --ui-sticky-top for the sticky parts below it.
+    enforced_by:
+      - test: framework/ui.TestStackStickyHeaderOffsetsStickyParts
+  - id: stack-screen-is-the-page-column
+    rule: A Screen stack carries fui-stack--screen, which makes it at least one viewport tall with its last child pushed to the bottom.
+    enforced_by:
+      - test: framework/ui.TestStackScreenOption
+  - id: top-sticky-parts-read-offset
+    rule: AnchoredRail, a top-edge Sticky and a Sticky ContentRow's frame stick at var(--ui-sticky-top, 0px) plus their own gap, never at a fixed top.
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutTopStickyPartsReadStickyTop
+  - id: self-scrolling-regions-reset-offset
+    rule: A region that scrolls on its own (a bounded Box, ListDetail's list, the Workbench rail, the PaneHost drawer, a Sticky ContentRow's nav column and a Viewport row's columns) sets --ui-sticky-top to 0px.
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutSelfScrollingRegionsResetStickyTop
+  - id: content-row-landmarks
+    rule: ContentRow wraps Sidebar in a labelled nav landmark and Toolbar in a labelled section, each label defaulting to a translated string, so every part of the sidebar and toolbar sits inside a landmark.
+    enforced_by:
+      - test: framework/ui.TestContentRowNavColumnIsTheSidebarLandmark
+      - test: framework/ui.TestContentRowToolbarIsARegion
+  - id: content-row-one-scroll-model
+    rule: ContentRow panics when Sticky and Viewport are both set.
+    enforced_by:
+      - test: framework/ui.TestContentRowStickyRefusesViewport
+  - id: content-row-postures-exclusive
+    rule: Each breakpoint rule of the content row sheet is scoped to its posture, the md rules to rows without the stack-below-lg class and the lg rules to rows with it, so the two postures never both apply.
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutContentRowPosturesAreExclusive
+  - id: content-row-sticky-nav-does-not-stretch
+    rule: A Sticky ContentRow's nav column sets align-self flex-start, so the row's stretch cannot make it as tall as the page and leave it nothing to stick within.
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutContentRowStickyNavDoesNotStretch
+  - id: content-row-empty-aside-releases-width
+    rule: A ContentRow aside that holds only an empty outlet is not displayed, so an unfilled context column takes no width.
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutContentRowEmptyAsideReleasesWidth
+  - id: dense-reaches-overlays
+    rule: Dense sets the compact control height, gap and touch target on the document root under a fine pointer only.
+    enforced_by:
+      - test: framework/ui.TestContentRowDenseOnFinePointer
+  - id: content-row-claims-no-viewport-height
+    rule: Only the Viewport and Sticky modes size any part of a ContentRow to the viewport; the default row grows as a flex item of its page column.
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutContentRowClaimsNoViewportHeight
+  - id: pane-opens-only-when-filled
+    rule: PaneHost marks a side pane open only when the pane has content and its Open flag is set.
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutPaneHostOpensOnlyAFilledPane
+  - id: pane-columns-follow-the-hook
+    rule: The pane-host sheet derives its grid columns from data-hui-pane-open as well as the open classes, so a pane the module opens in the browser changes the columns.
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutPaneHostColumnsFollowTheHook
+  - id: pane-deep-link-parse
+    rule: PaneDeepLink returns ok only for a value whose part before the first colon is secondary or tertiary, with everything after that colon as the key.
+    enforced_by:
+      - test: framework/ui.TestPaneDeepLinkParse
+  - id: pane-host-breakpoint-matches-module
+    rule: The ui-pane-host sheet collapses at the same media query as the MQ constant in framework/headless/panehost.js.
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutPaneHostBreakpointMatchesModule
+    applies:
+      - framework/headless/panehost.js
+  - id: anchored-rail-defaults
+    rule: AnchoredRail targets .fui-section[id] when TargetSelector is empty, ids its phone sheet ID plus -sheet (fui-anchored-rail-sheet without an ID), and writes counts in the Ctx's locale.
+    enforced_by:
+      - test: framework/ui.TestAnchoredRailRendersThroughHeadlessRail
+      - test: framework/ui.TestAnchoredRailPhoneSheet
+      - test: framework/ui.TestNumbersSpeakCtx
+  - id: anchored-rail-active-both-spellings
+    rule: The anchored rail sheet styles the active entry by both .is-active and aria-current="true".
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutAnchoredRailStylesBothActiveSpellings
+  - id: list-detail-carries-only-vt
+    rule: ListDetail drops every data-cui-* and data-fui-* key of ExtraAttrs, in any letter case, except data-cui-vt and data-cui-vt-when.
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutListDetailCarriesOnlyVTWiring
+  - id: hero-names-its-section
+    rule: Hero names its section by AriaLabel, else by Title; HeroSplit by AriaLabel, else through aria-labelledby by HeadingID, never both.
+    enforced_by:
+      - test: framework/ui.TestSweepLayoutHeroNamedByTitle
+      - test: framework/ui.TestLayoutHeroSplitNamedByItsHeading
+      - test: framework/ui.TestSweepLayoutHeroSplitAriaLabelWinsOverHeadingID
+  - id: layout-marks-own-subtrees
+    rule: Hero, HeroSplit, FactBox and ListDetail put data-cui-internal on the topmost element of each subtree built only from their own strings, and on none that holds a caller's markup.
+    enforced_by:
+      - test: framework/ui.TestKitMarksInternalSubtrees
+  - id: responsive-renders-both
+    rule: Responsive renders both variants in the server markup, and its sheet hides one per posture through the child combinator only, so a nested Responsive's variants are left to its own rules.
+    enforced_by:
+      - test: framework/ui.TestResponsiveEmitsBothVariants
+      - test: framework/ui.TestSweepLayoutResponsiveRulesUseChildCombinator
+decisions:
+  - id: layout-facts-stay-styled-divs
+    date: 2026-11-16
+    status: accepted
+    decision: Stack, Cluster, Grid and Spacer render through their headless primitives, while Center, Box, Sticky and AspectRatio stay styled divs.
+    rejected:
+      - option: A headless primitive for every layout part.
+        why: Center, Box, Sticky and AspectRatio carry no role, label or hook, so a headless layer would add a class map and no contract.
+  - id: one-sheet-for-the-layout-family
+    date: 2026-11-16
+    status: accepted
+    decision: Stack, Cluster, Grid, Spacer, Center and Box share the one ui-layout sheet, so the family loads as one unit.
+    rejected:
+      - option: A sheet per layout primitive.
+        why: A page composes several of them at once and would load several small sheets.
+    upholds: [layout-sheet-compounds-marker]
+  - id: grid-min-through-attr
+    date: 2026-11-16
+    status: accepted
+    decision: Grid passes Min as data-min, read by typed attr() with a whole-rem ladder for browsers without it.
+    rejected:
+      - option: Set --ui-grid-min in an inline style attribute.
+        why: A strict CSP strips inline styles.
+    revisit_if: Every supported browser reads typed attr(), so the ladder can go.
+    upholds: [grid-min-is-an-attribute, grid-min-fallback-ladder]
+  - id: sticky-tiers-are-the-five-built-ins
+    date: 2026-11-16
+    status: accepted
+    decision: Sticky's ZIndexTier accepts only the five built-in ZIndexSet tiers.
+    rejected:
+      - option: Accept any theme-supplied z token.
+        why: The validation and the generated CSS know only five, so a typo would fall back to the default layer without a word.
+    upholds: [layout-enums-are-validated, sticky-tier-attribute]
+  - id: sticky-offset-is-a-layout-fact
+    date: 2026-11-16
+    status: accepted
+    decision: The page stack declares a sticky header once and publishes its height as --ui-sticky-top, which every sticky part reads and every self-scrolling region resets.
+    rejected:
+      - option: A BelowHeader flag on each sticky component.
+        why: Every component would need it set in step with the layout, and a region that scrolls on its own would still pin under a header it cannot see.
+    upholds: [sticky-header-publishes-offset, top-sticky-parts-read-offset, self-scrolling-regions-reset-offset]
+  - id: content-row-two-scroll-models
+    date: 2026-11-16
+    status: accepted
+    decision: ContentRow offers Sticky, where the window stays the scroller and the frame sticks, and Viewport, where the row fills the viewport and each column scrolls on its own, and refuses both at once.
+    rejected:
+      - option: Viewport only.
+        why: With the window no longer the scroller, the client router's scroll restore and fragment jumps stop working.
+    upholds: [content-row-one-scroll-model]
+  - id: content-row-grows-in-its-column
+    date: 2026-11-16
+    status: accepted
+    decision: The content row grows as a flex item inside a Screen stack rather than claiming a viewport height of its own.
+    rejected:
+      - option: A 100vh minimum on the row.
+        why: Under a header it scrolls a short page by the header's height.
+    upholds: [content-row-claims-no-viewport-height]
+  - id: dense-on-the-document-root
+    date: 2026-11-16
+    status: accepted
+    decision: ContentRow's Dense sets the compact control height, gap and touch target on the document root under a fine pointer.
+    rejected:
+      - option: Set the compact values on the row.
+        why: Drawers, dialogs and menus mounted outside the row would keep the loose sizes.
+      - option: Apply Dense on every pointer.
+        why: A touch screen needs its 44px targets.
+    upholds: [dense-reaches-overlays]
+  - id: pane-host-does-not-fetch
+    date: 2026-11-16
+    status: accepted
+    decision: PaneHost owns the pane lifecycle (show, hide, focus handoff and restore, the phone drawer) and loads no content; a trigger fills a pane through data-cui-rpc and a data-cui-signal region.
+    rejected:
+      - option: A PaneHost that fetches each pane's content.
+        why: It would be a second content-loading path beside the RPC and signal rails.
+  - id: pane-state-is-in-page
+    date: 2026-11-16
+    status: accepted
+    decision: Pane open state is in-page state, recorded in a query parameter only when the host sets DeepLinkParam, and the server reads it with PaneDeepLink for first paint.
+    rejected:
+      - option: A route per open pane.
+        why: Opening a pane is in-page state, which hard rule 1 keeps on its route.
+    upholds: [pane-deep-link-parse, uihost/in-page-state-stays-on-its-route]
+  - id: responsive-renders-both-in-ssr
+    date: 2026-11-16
+    status: accepted
+    decision: Responsive renders the desktop and the mobile variant in the server markup and hides one with a media query.
+    rejected:
+      - option: Swap the variant in the runtime.
+        why: It needs JavaScript and flashes the wrong variant before it runs.
+      - option: Serve a separate mobile page.
+        why: Client navigation would have to fetch a different page per viewport.
+    revisit_if: The duplicated subtree costs more than the flash it avoids, or CSS alone can reflow the desktop tree.
+    upholds: [responsive-renders-both]
+  - id: fact-box-one-component
+    date: 2026-11-16
+    status: accepted
+    decision: FactBox renders both the label-first fact and the value-first stat tile through its Style.
+    rejected:
+      - option: Separate FactBox and StatTile components.
+        why: They differ only in source order and value typography.
+  - id: hero-split-three-ratios
+    date: 2026-11-16
+    status: accepted
+    decision: HeroSplit offers only the equal, copy-wide and media-wide ratios.
+    rejected:
+      - option: A free-form column ratio.
+        why: The three cover the shapes pages use, and a free ratio invites a one-off per page.
+  - id: workbench-is-a-kit-shell
+    date: 2026-11-16
+    status: accepted
+    decision: The inspector split, a scrolling rail beside a pane that fills the rest, is the kit's Workbench component.
+    rejected:
+      - option: Bespoke CSS in the tool that needs it.
+        why: gofastr theme edit grew about 25 bespoke classes and 21 hex values for it, and removing them without a component left a rail with no scroll beside a collapsed iframe.
+  - id: anchored-rail-styles-both-active-spellings
+    date: 2026-11-16
+    status: accepted
+    decision: The anchored rail sheet styles the active entry by both the .is-active class and aria-current, which the headless-rail module sets together.
+    rejected:
+      - option: Style one spelling only.
+        why: Apps style the active entry by whichever they already use, the attribute or the class.
+    upholds: [anchored-rail-active-both-spellings]
+  - id: page-header-prewarm
+    date: 2026-11-16
+    status: accepted
+    decision: PageHeader's sheet loads LoadPrewarm.
+    rejected:
+      - option: LoadAlways.
+        why: A page without a PageHeader would block on the sheet.
+      - option: LoadAuto.
+        why: A client navigation that swaps a PageHeader in would wait for the sheet, where the idle prewarm already has it.
+  - id: page-header-draws-no-rule
+    date: 2026-11-16
+    status: accepted
+    decision: PageHeader draws no rule under itself; the title's weight and the gap separate it from the content.
+    rejected:
+      - option: A hairline under every page header.
+        why: It competed with the card and table borders below.

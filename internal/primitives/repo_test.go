@@ -121,7 +121,12 @@ func TestAgentsMDNamesRealRules(t *testing.T) {
 
 // ownedPackages are the package directories PLAN.md step 4 has covered:
 // every non-test Go file directly in one has an owner (app/every-file-has-an-owner).
-var ownedPackages = []string{"framework", "framework/crud"}
+var ownedPackages = []string{
+	"framework", "framework/crud",
+	"framework/headless",
+	"framework/uihost", "framework/uihost/uinoderender", "framework/uihost/internal/sessiontoken",
+	"framework/ui", "framework/ui/theme", "framework/ui/icons", "framework/ui/icons/internal/generate", "framework/ui/internal/treegate",
+}
 
 //gofastr:test-reads primitives/ *.go
 func TestCoveredPackagesHaveNoUnownedFile(t *testing.T) {

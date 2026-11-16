@@ -8,20 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The page-level surfaces: the header that names a page, the state
-// that says a page has nothing in it, the one metric a dashboard
-// holds up, and the label/value pairs a record screen reads from.
-//
-// What they share is the reason they are primitives at all: each one
-// names itself for assistive technology in a way the elements alone
-// cannot. A PageHeader is the heading a screen reader jumps to first;
-// an EmptyState is a region named by its own heading, so "no results"
-// is a findable, nameable place rather than a hole; a DetailList is a
-// description list, where the dt/dd pairing is the contract; a
-// StatCard is the one member with no contract at all — its label,
-// value and trend are plain text in reading order — and it is here
-// so the styled layer composes it rather than hand-rolling it.
-
 // PageHeader parts.
 const (
 	PartPageEyebrow  Part = "page-eyebrow"
@@ -31,53 +17,27 @@ const (
 	PartPageTitleRow Part = "page-title-row"
 )
 
-// PageHeaderProps is the top of a page: a heading, the words that
-// qualify it, and the actions that apply to the whole page.
+// PageHeaderProps is the top of a page: its heading, qualifiers and page-level actions.
 type PageHeaderProps struct {
-	// Title is the page's heading. Required: the header exists to
-	// name the page, and a header with no heading is padding.
-	Title string
-	// Level is the heading level, 1 by default. The page's own header
-	// is the h1; a header for a sub-page inside a page says 2 here
-	// rather than leaving the outline to guess.
-	Level int
-	// Eyebrow is a short kicker above the title ("Customers"). It is
-	// aria-hidden: it repeats what the title or the navigation
-	// already says, in fewer words, and hearing both is hearing the
-	// page's name twice.
-	Eyebrow string
-	// Subtitle is the supporting line under the title.
-	Subtitle string
-	// Badge is status content beside the heading, outside its accessible name.
-	Badge render.HTML
-	// Actions are the page-level controls — New, Import, Filter — in
-	// the trailing slot. They apply to the page, not to an item in
-	// it; an action about one row belongs on that row.
-	Actions render.HTML
+	Title    string      // required: the page's heading
+	Level    int         // the heading level, 1 by default
+	Eyebrow  string      // a kicker above the title, hidden from assistive tech
+	Subtitle string      // the supporting line under the title
+	Badge    render.HTML // status beside the heading, outside its accessible name
+	Actions  render.HTML // the page-level controls in the trailing slot
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on every part the header draws.
 	Parts Parts
 }
 
-// PageHeader renders the page top.
-//
-// The element is a plain <header>: role="banner" is the top-level
-// page header's to claim, and whether this header is that one is a
-// decision the page makes, not the header — so the component claims
-// no role and the browser's header semantics stand.
+// PageHeader renders a plain <header> that claims no role.
 func PageHeader(p PageHeaderProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.Title == "" {
 		panic("headless: PageHeader requires Title — a header that names nothing is padding above the content")
 	}
-	// The text block holds only the component's own eyebrow, title and
-	// subtitle when there is no Badge; with a Badge the title wraps
-	// into a row that holds it, so the boundary moves down to the
-	// eyebrow, the title and the subtitle individually and the badge's
-	// wrapping row is left for an owner to reach.
 	textOwn, partOwn := Internal(nil), html.Attrs(nil)
 	if p.Badge != "" {
 		textOwn, partOwn = nil, Internal(nil)
@@ -141,8 +101,6 @@ func init() {
 	})
 }
 
-// ─── EmptyState ─────────────────────────────────────────────────────
-
 // EmptyState parts.
 const (
 	PartEmptyTitle Part = "empty-title"
@@ -150,41 +108,21 @@ const (
 	PartEmptyAct   Part = "empty-action"
 )
 
-// EmptyStateProps is the page a list with nothing in it shows instead
-// of the list.
+// EmptyStateProps is what a list with nothing in it shows instead of the list.
 type EmptyStateProps struct {
-	// Title is the heading. Required: it is also the region's name.
-	Title string
-	// Level is the heading level, 3 by default. An empty state nests
-	// inside a section; one mounted as the whole page under the h1
-	// says 2 here.
-	Level int
-	// Description is the supporting line: what would be here, or what
-	// to do about it.
-	Description string
-	// Action is the way out — "New app", "Clear the filter". A dead
-	// end with no action is a page the reader can only leave with the
-	// back button.
-	Action render.HTML
+	Title       string      // required: the heading and the region's name
+	Level       int         // the heading level, 3 by default
+	Description string      // what would be here, or what to do about it
+	Action      render.HTML // the way out: "New app", "Clear the filter"
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on every part the state draws.
 	Parts Parts
 }
 
-// EmptyState renders the nothing-here.
-//
-// The root is role="region", because an empty result is a place the
-// reader arrives at and needs to recognise — "this is the empty
-// state, its name is the reason" — and an unnamed div is a place
-// nothing can name. An explicit ID names the heading `<ID>-title`
-// and points the region's aria-labelledby at it, so the name and the
-// heading cannot disagree; without one the region is named by an
-// aria-label equal to the Title and the heading carries no id — a
-// title-derived id is not unique, and two empty panels with one
-// title on a page would collide.
+// EmptyState renders a role=region named by its heading: through aria-labelledby
+// "<ID>-title" with an ID, through an aria-label of Title without one.
 func EmptyState(p EmptyStateProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.Title == "" {
@@ -243,8 +181,6 @@ func init() {
 	})
 }
 
-// ─── StatCard ───────────────────────────────────────────────────────
-
 // StatCard parts.
 const (
 	PartStatValue Part = "stat-value"
@@ -252,49 +188,23 @@ const (
 	PartStatLink  Part = "stat-link"
 )
 
-// StatCardProps is one metric held up for the page: a labelled value,
-// and how it is moving.
+// StatCardProps is one metric held up for the page: a labelled value and how it moves.
 type StatCardProps struct {
-	// Label says what is counted. Required.
-	Label string
-	// Value is the number, formatted by the caller. Required: a stat
-	// card with no value is a label in a box.
-	Value string
-	// Trend is the movement ("+12% vs. last week"). Optional.
-	Trend string
-	// Direction names which way the trend reads — "up", "down" or
-	// "flat". The trend's colour is the class map's to draw from it;
-	// the direction must also be in the Trend's own words for a
-	// reader who cannot see the colour, which is why Direction is a
-	// variant hint and never the only carrier of meaning.
-	Direction string
-
-	// Href links the label to the place the number is about (a
-	// dashboard's count to its list). The link is the label's text, so
-	// the card's name is also its destination's name.
-	Href string
-	// Icon is a decorative glyph drawn in the card's head, hidden from
-	// assistive technology: the label already names the card.
-	Icon render.HTML
-	// Action is a control drawn in the card's head, after the icon (a
-	// dashboard card's New). It sits outside the label's link, so the
-	// card never nests one interactive element in another.
-	Action render.HTML
+	Label     string      // required: what is counted
+	Value     string      // required: the number, formatted by the caller
+	Trend     string      // the movement, in words ("+12% vs. last week")
+	Direction string      // "up", "down" or "flat": a variant hint, never the only carrier
+	Href      string      // links the label to what the number counts
+	Icon      render.HTML // a decorative glyph in the card's head
+	Action    render.HTML // a control in the head, outside the label's link
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on every part the card draws. The value
-	// is the part a dashboard binds to a signal.
 	Parts Parts
 }
 
-// StatCard renders the metric.
-//
-// Label, value and trend are read in that order and the label is
-// first for the same reason a form label precedes its control: the
-// name arrives before the number, so "MRR: 48,200" is one fact
-// instead of a number the reader has to look up.
+// StatCard renders label, value and trend, in that reading order.
 func StatCard(p StatCardProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.Label == "" {
@@ -310,9 +220,6 @@ func StatCard(p StatCardProps, s Classes) render.HTML {
 	}
 	trendAttrs := Attrs(nil)
 	if p.Trend != "" && p.Direction != "" {
-		// The direction rides as data for the styled layer and as a
-		// class-map variant for the class map; either can key on it,
-		// and neither replaces the Trend's own words.
 		trendAttrs["data-direction"] = p.Direction
 		if cls := s.Variant(PartStatTrend, p.Direction); cls != "" {
 			trendAttrs["class"] = cls
@@ -329,10 +236,6 @@ func StatCard(p StatCardProps, s Classes) render.HTML {
 	labelEl := b.El("p", PartLabel, Internal(nil), label)
 	var kids []render.HTML
 	if p.Icon != "" || p.Action != "" {
-		// The head is one row: icon, label, action, in reading order. It
-		// holds the caller's icon and action, so neither it nor the
-		// icon's span is marked internal: content passed in stays in its
-		// owner's reach.
 		var head []render.HTML
 		if p.Icon != "" {
 			head = append(head, b.El("span", PartIcon, html.Attrs{"aria-hidden": "true"}, p.Icon))
@@ -379,8 +282,6 @@ func init() {
 	})
 }
 
-// ─── DetailList ─────────────────────────────────────────────────────
-
 // DetailList parts.
 const (
 	PartDetailRow   Part = "detail-row"
@@ -388,40 +289,23 @@ const (
 	PartDetailValue Part = "detail-value"
 )
 
-// DetailRow is one labelled value: the term in a <dt>, the value in
-// the <dd> that follows it.
+// DetailRow is one labelled value: the term in a <dt>, the value in the <dd> after it.
 type DetailRow struct {
-	// Label is the term. Required: a value with no term is a fact
-	// nobody can look up.
-	Label string
-	// Value is the value, and it may be markup — a status badge, a
-	// link, an empty-value dash. Required: render the empty-value
-	// dash for a missing value, so the absence is deliberate.
-	Value render.HTML
+	Label string      // required: the term
+	Value render.HTML // required: render the empty-value dash for a missing value
 }
 
 // DetailListProps is a record read as label/value pairs.
 type DetailListProps struct {
-	// Rows are the pairs, in reading order. At least one.
-	Rows []DetailRow
+	Rows []DetailRow // in reading order; at least one
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the list, its rows and their terms
-	// and values.
 	Parts Parts
 }
 
-// DetailList renders the record as a <dl>.
-//
-// The description list is the contract: a <dt> and the <dd> after it
-// are one pair to assistive technology in a way a grid of divs never
-// is, and the pair survives every restyling because the relationship
-// is the element, not the layout. A row wrapper keeps each pair
-// addressable for the class map without breaking that pairing — a
-// div between dt and dd is valid HTML and keeps the pair's reading
-// order intact.
+// DetailList renders the record as a <dl>, each dt/dd pair in a row div.
 func DetailList(p DetailListProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if len(p.Rows) == 0 {
@@ -435,8 +319,6 @@ func DetailList(p DetailListProps, s Classes) render.HTML {
 		if r.Value == "" {
 			panic("headless: DetailRow requires Value — render the empty-value dash for a missing value, so the absence is deliberate")
 		}
-		// A Value the composer Own'd (ui.DetailList's empty-value
-		// dash) leaves nothing of the caller's in the row.
 		rows = append(rows, b.El("div", PartDetailRow, internalIf(ownedSlot(r.Value), nil),
 			b.El("dt", PartDetailTerm, Internal(nil), render.Text(r.Label)),
 			b.El("dd", PartDetailValue, nil, r.Value),

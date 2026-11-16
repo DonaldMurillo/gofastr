@@ -7,47 +7,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── Selection ──────────────────────────────────────────────────────
-
-// SelectionProps configures a Selection: a body of selectable rows and
-// the bar that acts on the rows checked in it. Showing the bar only
-// while a row is checked is the class map's (a :has rule); this layer
-// owns the order, the count slot and the clear control.
+// SelectionProps configures a body of selectable rows and the bar that acts on the checked ones.
 type SelectionProps struct {
-	// Bar acts on the selection: a bulk-action form whose checkboxes
-	// live in Body (the inputs name it through form=). Required.
-	Bar render.HTML
-	// Body holds the selectable rows and their checkboxes. Required.
-	Body render.HTML
-	// Floating draws the bar after the rows, so it can be held to the
-	// bottom of the screen, and gives it the count of rows checked,
-	// which the behaviour writes into data-hui-selection-count. A
-	// select-all box (data-hui-table-select-all) is not a row, nor is a
-	// box in a form inside the body (a cell's inline editor).
-	Floating bool
-	// Form is the id of the form the row checkboxes join. With
-	// Floating, the bar ends with a reset button for it: resetting the
-	// form clears every row joined to it.
-	Form string
-	// Copy, with Floating and CopyURL, is a control drawn after Bar
-	// that copies the checked rows as CSV (a "Copy CSV" button). The
-	// component wraps it in the hooks: pressing it, the behaviour
-	// fetches CopyURL with one _id per checked row, writes the answer
-	// to the clipboard and toasts.
-	Copy render.HTML
-	// CopyURL answers CSV for the rows named by repeated _id parameters
-	// (an entity's export route). It must be on the page's own origin:
-	// the behaviour refuses any other, so injected markup cannot fill
-	// the clipboard from elsewhere.
-	CopyURL string
-	ID      string
-	// ExtraAttrs land on the root; class, id and the hooks are the
-	// component's.
+	Bar        render.HTML // required: acts on the selection, e.g. a bulk-action form
+	Body       render.HTML // required: the selectable rows and their checkboxes
+	Floating   bool        // the bar follows the rows and counts the checked ones
+	Form       string      // with Floating, the bar ends with a reset button for this form
+	Copy       render.HTML // with Floating and CopyURL, a control that copies the checked rows as CSV
+	CopyURL    string      // same-origin route answering CSV for repeated _id parameters
+	ID         string
 	ExtraAttrs html.Attrs
 	Parts      Parts
-	// Strings are the strings this component says. Nil means the
-	// English defaults.
-	Strings *Strings
+	Strings    *Strings // nil means the English defaults
 }
 
 // Selection renders the rows and their bar.
@@ -115,9 +86,6 @@ func init() {
 				Name: "copy",
 				Why:  "a floating bar can copy the checked rows as CSV: the wrapper around the control names the export route and the toasts' words, and the behaviour gathers the checked rows' ids when it is pressed, since only the page knows them",
 				HTML: Selection(SelectionProps{Floating: true, Form: "bulk",
-					// The kit dresses the control it passes; the fixture borrows
-					// the clear button's class so it wears one only when a kit
-					// does.
 					Copy: render.Tag("button", Attrs(map[string]string{"type": "button", "class": s[PartControl]}),
 						render.Text((*Strings)(nil).Resolve().SelectionCopy)),
 					CopyURL: "/api/apps/_export.csv",

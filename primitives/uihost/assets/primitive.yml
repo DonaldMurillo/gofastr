@@ -1,0 +1,196 @@
+primitive: uihost.assets
+summary: The app stylesheet, component and bundle CSS, theme variants, the static directory, content-hashed asset URLs, the app icon and the runtime module manifest.
+code:
+  - framework/uihost/css.go
+  - framework/uihost/static.go
+  - framework/uihost/asset_url.go
+  - framework/uihost/assetserve.go
+  - framework/uihost/appicon.go
+  - framework/uihost/manifestjs.go
+  - framework/uihost/themevariant.go
+docs:
+  - framework/docs/content/theming.md
+invariants:
+  - id: app-css-root-floor
+    rule: app.css always begins with the theme's :root custom properties, the default theme's when App.Theme is unset, because component CSS references bare var(--*) tokens.
+    enforced_by:
+      - test: framework/uihost.TestUIHostAppCSSAlwaysEmitsRootVars
+  - id: app-css-layer-order
+    rule: app.css collects every layout's transitions and puts contributed style fragments after WithCustomCSS, so a screen's contribution overrides the app's base rules.
+    enforced_by:
+      - test: framework/uihost.TestAppCSSCollectsLayoutTransitions
+      - test: framework/uihost.TestContributedCSSAfterCustomCSS
+  - id: one-page-wide-indicator
+    rule: app.css carries exactly one page-wide navigation indicator, the progress strip by default or the page-loading rule under WithPageLoading.
+    enforced_by:
+      - test: framework/uihost.TestSweepAssetsOnePageWideIndicator
+  - id: intercept-css-only-when-used
+    rule: app.css carries the intercept overlay CSS only when a registered route intercepts.
+    enforced_by:
+      - test: framework/uihost.TestSweepAssetsInterceptCSSOnlyWhenIntercepting
+  - id: app-css-frozen-and-loud
+    rule: The default app.css is composed once per process, and a style.Contribute or a transition layout registered after that logs one warning instead of recomposing.
+    enforced_by:
+      - test: framework/uihost.TestSweepAssetsLateContributeWarns
+      - test: framework/uihost.TestLateTransitionLayoutWarns
+  - id: variant-key-addresses-served-css
+    rule: A theme variant's key is the fingerprint of the full app.css served for it, not of its palette alone.
+    enforced_by:
+      - test: framework/uihost.TestThemeVariantKeyAddressesServedCSS
+      - test: framework/uihost.TestAppCSS_VariantKeyCoversCustomCSSNotJustPalette
+  - id: unknown-variant-not-immutable
+    rule: An app.css request naming an unregistered variant gets the app theme with no-cache, never immutable.
+    enforced_by:
+      - test: framework/uihost.TestAppCSS_UnknownVariantFallsBackAndIsNotImmutable
+  - id: variant-isolated-from-caller
+    rule: RegisterThemeVariant stores a deep copy, so a later write to the caller's theme maps or extensions changes neither the served CSS nor the key.
+    enforced_by:
+      - test: framework/uihost.TestAppCSS_VariantIsIsolatedFromCallerMutation
+      - test: framework/uihost.TestAppCSS_VariantComponentsIsolatedFromCallerMutation
+      - test: framework/uihost.TestAppCSS_VariantExtensionsIsolatedFromCallerMutation
+  - id: variant-refcounted-release
+    rule: A variant stays registered until its last registration is released, and the last release evicts its component CSS caches unless its palette is the app theme's.
+    enforced_by:
+      - test: framework/uihost.TestReleaseThemeVariantKeepsAVariantWhileAHolderRemains
+      - test: framework/uihost.TestReleaseThemeVariantEvictsComponentCSSCaches
+      - test: framework/uihost.TestSweepAssetsReleaseKeepsAppThemeCacheForSameTheme
+  - id: variant-lock-before-registry
+    rule: ReleaseThemeVariant calls into core-ui/registry only after releasing the variants lock, so no registry lock is ever held while variants.mu is taken.
+    judge: Does this change call a core-ui/registry function while holding ds.variants.mu, or take ds.variants.mu from code the registry calls?
+  - id: component-css-follows-request-theme
+    rule: The single-component and the bundle stylesheet both render under the variant ?t= names, falling back to the app theme.
+    enforced_by:
+      - test: framework/uihost.TestEmbedComponentCSSFollowsTheCustomerTheme
+      - test: framework/uihost.TestSweepAssetsBundleFollowsTheRequestTheme
+  - id: sheet-links-name-registered-safe
+    rule: A page links only registered components whose names pass safeComponentName, the data-cui-comp marker charset, so an unknown marker cannot break the bundle or rewrite the sheet path.
+    enforced_by:
+      - test: framework/uihost.TestUnknownMarkerDoesNotBreakTheBundle
+      - test: framework/uihost.TestSweepAssetsSafeComponentName
+  - id: sheet-link-shape
+    rule: A live page links one bundle for two or more sheets, an unbundled page links each sheet with data-cui-style so the runtime does not load it twice, and a sheet only template content needs is prefetched unless already linked.
+    enforced_by:
+      - test: framework/uihost.TestComponentCSS_MultipleComponentsBundleLink
+      - test: framework/uihost.TestSweepAssetsUnbundledPageLinksEachSheet
+      - test: framework/uihost.TestRenderStaticPageMarksComponentStylesheets
+      - test: framework/uihost.TestEagerTemplateSheetNotPrefetched
+  - id: component-css-immutable-only-when-current
+    rule: A component or bundle stylesheet is immutable only when its ?v= equals the current version and, for a bundle, no name was skipped; otherwise it is no-cache.
+    enforced_by:
+      - test: framework/uihost.TestComponentCSS_CacheHeaderImmutableOnlyWhenVMatches
+      - test: framework/uihost.TestSweepAssetsBundleImmutableOnlyAtItsVersion
+      - test: framework/uihost.TestBundleSkipsUnknownNames
+  - id: bundle-skips-unknown-names
+    rule: The bundle endpoint skips a registered-nowhere name instead of answering 404, and 404s only when every name is unknown.
+    enforced_by:
+      - test: framework/uihost.TestBundleSkipsUnknownNames
+  - id: versioned-text-policy
+    rule: Every /__gofastr text asset carries nosniff and a strong ETag answered with 304, is immutable only when ?v= equals its hash, and is never immutable when private.
+    enforced_by:
+      - test: framework/uihost.TestVersionedAssetPolicy
+      - test: framework/uihost.TestScriptHandlerImmutableOnlyWithV
+      - test: framework/uihost.TestScriptHandler304Revalidation
+      - test: framework/uihost.TestAssetRevalidatesETagList
+      - test: framework/uihost.TestScriptHandlerHeadersAndETag
+      - test: framework/uihost.TestActionCacheCommentsMatchPolicy
+      - test: framework/uihost.TestWidgetJSGatedAndVersioned
+      - test: framework/uihost.TestScriptURLRoundTripImmutable
+  - id: asset-url-hash
+    rule: AssetURL appends the content hash of a clean rooted path's file, retakes it when the file's mtime or size changes, and returns any other path unchanged.
+    enforced_by:
+      - test: framework/uihost.TestAssetURLChangesWithContent
+      - test: framework/uihost.TestSweepAssetsAssetURLLeavesUncleanPath
+  - id: static-immutable-only-on-served-bytes
+    rule: A static response is immutable only when its ?v= equals the hash of the handle it is served from, and never under gofastr dev, where it is no-store.
+    enforced_by:
+      - test: framework/uihost.TestStaleAssetVersionNotImmutable
+      - test: framework/uihost.TestReplacedFileNotCertified
+      - test: framework/uihost.TestVersionedAssetNoStoreInDev
+      - test: framework/uihost.TestDevServesStaticWithNoStore
+  - id: static-fs-confined
+    rule: SetStaticFS re-roots an os.DirFS so a symlink out of the directory is refused.
+    enforced_by:
+      - test: framework/uihost.TestSetStaticFS_DirFSSymlinkEscapeRefused
+  - id: static-refuses-dotfiles
+    rule: The static file server refuses dot segments, server config files and Windows alias spellings, except files under .well-known/ that are not dotfiles themselves.
+    enforced_by:
+      - test: framework/uihost.TestStaticRefusesDotfiles
+  - id: static-directory-falls-through
+    rule: A static-FS path naming a directory is not served and falls through to the screens.
+    enforced_by:
+      - test: framework/uihost.TestStaticFSDirectoryFallsThroughToScreen
+  - id: app-icon-derivation
+    rule: WithAppIcon orients the source by its EXIF tag and centre-crops it before resizing, serves the 32 px icon as /favicon.ico and in AppIconAssets, and fills the PWA icons only when none are declared.
+    enforced_by:
+      - test: framework/uihost.TestAppIconFollowsOrientation
+      - test: framework/uihost.TestSweepAssetsAppIconCropsNotStretches
+      - test: framework/uihost.TestWithAppIconServesFaviconICO
+      - test: framework/uihost.TestSweepAssetsAppIconAssetsCarryFavicon
+      - test: framework/uihost.TestWithAppIconFeedsPWAManifest
+      - test: framework/uihost.TestWithAppIconDoesNotOverrideExplicitPWAIcons
+  - id: app-icon-never-fails-boot
+    rule: An undecodable WithAppIcon source logs a warning and leaves the host without icons; it never fails startup.
+    enforced_by:
+      - test: framework/uihost.TestWithAppIconInvalidSourceIsSkipped
+  - id: manifest-served-by-hash
+    rule: manifest.js serves the locale body whose hash ?v= names, searching only the app's locales, and building a body closes script registration.
+    enforced_by:
+      - test: framework/uihost.TestManifestServesBodyByHash
+      - test: framework/uihost.TestManifestFetchClosesScriptRail
+decisions:
+  - id: variants-by-registration
+    date: 2026-11-16
+    status: accepted
+    decision: A request names a theme variant by the content hash of one the host registered and never supplies theme values.
+    rejected:
+      - option: A theme described in the request.
+        why: Theme values reach CSS, so a crafted colour could escape its declaration, and each distinct theme is a fresh render and cache entry an attacker can mint without bound.
+    upholds: [unknown-variant-not-immutable]
+  - id: variant-key-is-the-sheet
+    date: 2026-11-16
+    status: accepted
+    decision: The variant key fingerprints the composed app.css rather than style.ThemeHash.
+    rejected:
+      - option: Key on the palette hash.
+        why: The sheet also carries custom CSS and contributions, so a release changing those under the same palette would reuse an immutable URL for new bytes.
+    upholds: [variant-key-addresses-served-css]
+  - id: variant-release
+    date: 2026-11-16
+    status: accepted
+    decision: Variants are reference counted and released, so a capped variant cache can evict.
+    rejected:
+      - option: A cap that only refuses new registrations.
+        why: The embed shell is unauthenticated, so a stranger could fill a surface's slots and lock out the customer's branding for good.
+    upholds: [variant-refcounted-release]
+  - id: bundle-skips-unknown
+    date: 2026-11-16
+    status: accepted
+    decision: The bundle skips a name this replica does not know and serves the rest, uncached.
+    rejected:
+      - option: Answer 404 for any unknown name.
+        why: A page another replica rendered mid-deploy can name a component this one lacks, and a 404 drops every sheet in the bundle.
+    upholds: [bundle-skips-unknown-names]
+  - id: manifest-external
+    date: 2026-11-16
+    status: accepted
+    decision: Live pages load the catalog, module, behaviour, action and route data from one content-addressed manifest.js placed before runtime.js; static exports and theme-variant pages keep the inline blocks.
+    rejected:
+      - option: Inline the data blocks in every page.
+        why: They cost about 3 KB gzipped of head on every render and full-shell navigation, and the route graph grows with the app.
+    revisit_if: The manifest starts carrying per-user or gated data, which an ungated script cannot.
+  - id: static-dir-through-os-root
+    date: 2026-11-16
+    status: accepted
+    decision: Every static-directory read goes through an os.Root opened on first use.
+    rejected:
+      - option: A filepath.Abs and HasPrefix check before the open.
+        why: The check is lexical, so a symlinked directory or file served bytes from outside the tree.
+    upholds: [static-fs-confined]
+  - id: app-icon-warns
+    date: 2026-11-16
+    status: accepted
+    decision: A bad WithAppIcon source is a warning and an iconless host.
+    rejected:
+      - option: Fail startup.
+        why: Icons are decoration, and /favicon.ico still answers 204 without them.
+    upholds: [app-icon-never-fails-boot]

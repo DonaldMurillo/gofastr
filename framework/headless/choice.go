@@ -1,10 +1,5 @@
 package headless
 
-// The choice family: checkbox, radio and switch (one control wrapped
-// by its label) and the fieldset groups that hold a set of them under
-// one legend. Roles, the label-wraps-control relationship and the
-// group semantics live here; the row's visual shape lives in the class map.
-
 import (
 	"strconv"
 
@@ -12,41 +7,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// Choice parts: the control and its visible text are shared
-// vocabulary (PartControl, PartText, PartHint); only the affix shell
-// in control.go needs names of its own, declared there.
-
 // ChoiceProps configures one checkbox or radio.
 type ChoiceProps struct {
-	// Type is "checkbox" or "radio".
 	Type string
-	// Name groups the choice. For a radio it IS the group; items that
-	// must act as one group share it, which is why the group helpers
-	// stamp it on every item.
 	Name string
-	// Value is what the choice submits when checked. Required for
-	// Radio: without distinct values a group cannot tell its options
-	// apart. A checkbox may leave it empty and submit "on", the HTML
-	// default.
-	Value string
-	// Label is the visible text beside the control. Required: an
-	// unlabelled choice is a bug, not a variant.
-	Label string
-	// Hint is secondary text under the label, for the consequence of
-	// the choice rather than its meaning.
+	// Value is required for a radio; an empty checkbox value submits "on".
+	Value    string
+	Label    string
 	Hint     string
 	Checked  bool
 	Disabled bool
 
 	ID string
-	// Extra attrs land on the input, the control that submits.
+	// Extra attrs land on the input.
 	Extra html.Attrs
 }
 
-// Choice renders label > input + span(text). The label wraps the
-// control, so clicking the text toggles it with no for/id pair to
-// keep in sync — and the wrap itself is the accessible target, which
-// is why the control's own small box already passes WCAG 2.5.8.
+// Choice renders label > input + span(text).
 func Choice(p ChoiceProps, s Classes) render.HTML {
 	if p.Label == "" {
 		panic("headless: Choice requires Label — an unlabelled choice is a bug, not a variant")
@@ -82,27 +59,19 @@ func Choice(p ChoiceProps, s Classes) render.HTML {
 
 // SwitchProps configures a toggle.
 type SwitchProps struct {
-	// Name is the key the switch submits under when on.
 	Name string
-	// Value overrides what an on switch submits. Empty submits "on",
-	// the HTML default, which is right for a lone "email me" toggle.
-	Value string
-	// Label is the visible text beside the track. Required, same rule
-	// as every choice.
+	// Value is what an on switch submits; empty submits "on".
+	Value    string
 	Label    string
 	Checked  bool
 	Disabled bool
 
 	ID string
-	// Extra attrs land on the input, the control that submits.
+	// Extra attrs land on the input.
 	Extra html.Attrs
 }
 
-// Switch renders a checkbox that looks like a track-and-thumb. The
-// input keeps type=checkbox — it still submits like one — and role=
-// switch states the shape to assistive tech. The track, the thumb and
-// the motion are the stylesheet's, keyed off :checked, so nothing in
-// this markup can fall out of step with the state.
+// Switch renders a checkbox with role=switch, wrapped by its label.
 func Switch(p SwitchProps, s Classes) render.HTML {
 	if p.Label == "" {
 		panic("headless: Switch requires Label — an on/off switch about nothing is a bug, not a variant")
@@ -121,33 +90,21 @@ func Switch(p SwitchProps, s Classes) render.HTML {
 	Flag(input, "disabled", p.Disabled)
 	return El("label", s, PartRoot, Mark(html.Attrs{}, "data-hui-choice"),
 		El("input", s, PartControl, Internal(input)),
-		// No part: the switch's text span carries no class today and
-		// PartText is left to the class map to decide.
 		El("span", s, PartText, Internal(nil), render.Text(p.Label)),
 	)
 }
 
-// GroupProps configures a fieldset of choices under one legend. The
-// items arrive already rendered (each wrapped by its own styled
-// component) because the wrapper owns the per-item style handle.
+// GroupProps configures a fieldset of rendered choices under one legend.
 type GroupProps struct {
-	// Legend is the group's shared label. Required: a set of choices
-	// with no question above them is as broken as an unlabelled input.
 	Legend string
-	// Required marks the legend with data-required, the same state
-	// attribute a Field puts on its label, so a class map can draw
-	// the mark a sighted reader looks for. It is a cue, not a
-	// constraint: what the browser and the parser enforce is the
-	// required attribute on the leaves, which the caller sets there.
+	// Required marks the legend; the caller marks the leaves required.
 	Required bool
 
 	ID    string
 	Extra html.Attrs
 }
 
-// Group renders the fieldset. The legend is a real <legend> inside a
-// real <fieldset>: that pair is the native group semantic, naming
-// every control inside without a single aria attribute.
+// Group renders the items in a <fieldset> under a <legend>.
 func Group(p GroupProps, s Classes, items ...render.HTML) render.HTML {
 	if p.Legend == "" {
 		panic("headless: Group requires Legend — a set of choices with no question above them is as broken as an unlabelled input")
@@ -168,11 +125,7 @@ func init() {
 	Register(Spec{
 		Name:    "Choice",
 		Anatomy: []Part{PartRoot, PartControl, PartText, PartHint},
-		// data-hui-choice is the root's name for the runtime's
-		// form-errors module: a refused submission's message for a
-		// bare choice lands after the label (a <p> may not sit inside
-		// it), where the errored kit render puts it.
-		Hooks: []string{"data-hui-choice"},
+		Hooks:   []string{"data-hui-choice"},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{

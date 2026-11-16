@@ -10,24 +10,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── SegmentedLinks ────────────────────────────────────────────────
-//
-// A small strip of links where one is current, drawn as a segmented
-// control: a list's Table / Cards switch. Each segment is a plain link,
-// so the choice lives in the URL and the server draws the page in it;
-// the current one carries aria-current="true". Icon-only segments keep
-// their text as the accessible name.
-
 // SegmentLink is one segment.
 type SegmentLink struct {
-	// Text names the segment (shown, or the name of an icon-only one).
+	// Text names the segment, shown or as an icon-only one's name.
 	Text string
 	// Href is the segment's destination. Required.
 	Href string
 	// Icon is a registered icon drawn before the text.
 	Icon string
-	// Count is a muted figure after the text ("Failed 3"), part of the
-	// segment's name.
+	// Count is a muted figure after the text, part of the name.
 	Count   string
 	Current bool
 }
@@ -44,7 +35,7 @@ type SegmentedLinksConfig struct {
 	Ctx        context.Context
 }
 
-// SegmentedLinks renders the strip.
+// SegmentedLinks renders a segmented control of plain links, one current.
 func SegmentedLinks(cfg SegmentedLinksConfig) render.HTML {
 	if cfg.Label == "" || len(cfg.Items) == 0 {
 		panic("ui: SegmentedLinks requires Label and Items")
@@ -92,8 +83,6 @@ func SegmentedLinks(cfg SegmentedLinksConfig) render.HTML {
 
 var segmentedLinksStyle = registry.RegisterStyle("ui-segmented-links", segmentedLinksCSS)
 
-// segmentedLinksCSS draws the strip as the segmented control's pill: a
-// soft track, the current segment raised on the surface.
 func segmentedLinksCSS(_ style.Theme) string {
 	return `:where([data-cui-comp="ui-segmented-links"]).fui-seglinks {
   display: inline-flex;

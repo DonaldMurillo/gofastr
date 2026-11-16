@@ -10,14 +10,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── Breadcrumbs ───────────────────────────────────────────────────
-//
-// Renders headless.Breadcrumbs dressed with the fui-breadcrumbs class
-// map: a labelled <nav> whose ordered list walks the hierarchy to the
-// page, the last step marked aria-current="page" and rendered as text.
-// No script, and none needed: the trail is server-rendered and the
-// separators are aria-hidden so assistive tech reads the order alone.
-
 // Crumb is one step in the breadcrumb trail.
 type Crumb struct {
 	// Text is the step's visible label. Required.
@@ -33,27 +25,21 @@ type BreadcrumbsConfig struct {
 	// Items are the steps, shallowest first.
 	Items []Crumb
 
-	// Label is the nav landmark's accessible name. Defaults to
-	// "Breadcrumb", resolved per request through StringsFor when a
-	// translator is on the context.
+	// Label names the nav landmark; empty is the i18n "Breadcrumb".
 	Label string
-	// CompactMobile shows only the final two steps below md, without
-	// a leading separator. The full trail remains on wide screens.
+	// CompactMobile shows only the last two steps below md.
 	CompactMobile bool
 
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes to the <nav> root.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and aria-label (use Label).
+	// ExtraAttrs land on the nav; class, id and aria-label are the component's.
 	ExtraAttrs html.Attrs
 
-	// Ctx resolves the Strings table through the request's translator.
+	// Ctx is the request, for the default label's language.
 	Ctx context.Context
 }
 
-// Breadcrumbs renders the trail. Crumbs may be passed variably or
-// through Items; both land in the same ordered list.
+// Breadcrumbs renders the trail: Items, then the variadic crumbs.
 func Breadcrumbs(cfg BreadcrumbsConfig, crumbs ...Crumb) render.HTML {
 	items := make([]headless.Breadcrumb, 0, len(cfg.Items)+len(crumbs))
 	for _, c := range cfg.Items {

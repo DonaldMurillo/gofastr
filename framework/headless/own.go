@@ -7,18 +7,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// Own marks every top-level element of h data-cui-internal. It is for
-// markup a component builds from its own config and hands to another
-// component as slot content: framework/ui's default banner glyph, a
-// form's submit row, a field's control. The receiving component cannot
-// tell that markup from a caller's, so the composer says it here, and
-// a slot whose content is wholly Own'd counts as the component's own
-// (see ownedSlot): the element holding it is marked too.
-//
-// Top-level text cannot carry an attribute and is left as it is, which
-// also leaves the slot reachable: a composer that wants its text
-// internal wraps it in an element first. Elements already marked are
-// left alone.
+// Own marks every top-level element of h data-cui-internal, leaving text and
+// marked elements as they are, so a slot holding only Own'd markup counts as
+// the component's own.
 func Own(h render.HTML) render.HTML {
 	s := string(h)
 	tags, _ := scanTop(s)
@@ -39,11 +30,6 @@ func Own(h render.HTML) render.HTML {
 	return render.HTML(b.String())
 }
 
-// ownedSlot reports whether slot content is wholly the composing
-// component's: at least one top-level element, every one of them
-// marked data-cui-internal, and no top-level text. A component marks
-// the element holding such a slot, because nothing in it is the
-// caller's.
 func ownedSlot(h render.HTML) bool {
 	tags, text := scanTop(string(h))
 	if len(tags) == 0 || text {
@@ -57,7 +43,6 @@ func ownedSlot(h render.HTML) bool {
 	return true
 }
 
-// internalIf returns own marked when on, own unchanged otherwise.
 func internalIf(on bool, own html.Attrs) html.Attrs {
 	if on {
 		return Internal(own)
@@ -65,18 +50,11 @@ func internalIf(on bool, own html.Attrs) html.Attrs {
 	return own
 }
 
-// topTag is one top-level start tag: end is the index of the '>' (or
-// the '/' of a self-closing "/>") where an attribute may be inserted.
 type topTag struct {
 	end    int
 	marked bool
 }
 
-// scanTop scans a rendered fragment and returns its top-level start
-// tags and whether any non-space text sits outside every element. It
-// reads the markup this repo's renderer writes: quoted attribute
-// values, void and self-closed elements, comments, and the raw-text
-// elements whose bodies are not markup.
 func scanTop(s string) (tags []topTag, text bool) {
 	depth := 0
 	for i := 0; i < len(s); {
@@ -116,7 +94,6 @@ func scanTop(s string) (tags []topTag, text bool) {
 				continue
 			}
 			if rawText(name) {
-				// Skip the body; the end tag's own case closes it.
 				close := strings.Index(strings.ToLower(s[i:]), "</"+name)
 				if close < 0 {
 					return tags, text
@@ -134,9 +111,6 @@ func scanTop(s string) (tags []topTag, text bool) {
 	return tags, text
 }
 
-// scanStartTag reads the start tag at s[i] ('<' then a letter). It
-// returns the lowercased name, the attribute names present, the index
-// of the closing '>' (-1 when unterminated), and whether it ends "/>".
 func scanStartTag(s string, i int) (name string, attrs map[string]bool, end int, selfClose bool) {
 	j := i + 1
 	for j < len(s) && !isSpaceByte(s[j]) && s[j] != '>' && s[j] != '/' {

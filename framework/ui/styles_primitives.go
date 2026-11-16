@@ -8,10 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
-// Style handles for the 10 layout / primitive components added in
-// the same commit. Each registers a scoped stylesheet that the SSR
-// host and runtime load on first appearance.
-
 var (
 	layoutStyle      = registry.RegisterStyle("ui-layout", layoutCSS)
 	stickyStyle      = registry.RegisterStyle("ui-sticky", stickyCSS)
@@ -25,11 +21,6 @@ var (
 	dividerStyle     = registry.RegisterStyle("ui-divider", dividerCSS)
 )
 
-// ─── Layout ─────────────────────────────────────────────────────────
-
-// gridMinStepsCSS maps every whole-rem data-min from 1rem to 64rem onto
-// --ui-grid-min, the fallback for browsers without typed attr(). A Min
-// outside the ladder (px, fractional rem) gets the 16rem default there.
 func gridMinStepsCSS() string {
 	var b strings.Builder
 	for n := 1; n <= 64; n++ {
@@ -39,11 +30,6 @@ func gridMinStepsCSS() string {
 }
 
 func layoutCSS(_ style.Theme) string {
-	// Layout primitives stack data-cui-comp="ui-layout" AND their own
-	// class on the SAME element (Stack, Cluster, Grid, … are sibling
-	// classes, not descendants). Selectors below combine the marker
-	// and class on the same element via `[data-cui-comp="ui-layout"].<class>`
-	// rather than the descendant `[data-cui-comp="ui-layout"] .<class>`.
 	return `[data-cui-comp="ui-layout"] {
   box-sizing: border-box;
 }
@@ -170,8 +156,6 @@ func layoutCSS(_ style.Theme) string {
 [data-cui-comp="ui-layout"].fui-layout--justify-around  { justify-content: space-around; }`
 }
 
-// ─── Card ───────────────────────────────────────────────────────────
-
 func cardCSS(t style.Theme) string {
 	return `[data-cui-comp="ui-card"] {
   display: flex;
@@ -296,8 +280,6 @@ func cardCSS(t style.Theme) string {
 		customModsCSS(cardMods, "ui-card", "fui-card", t)
 }
 
-// ─── OptimizedImage ─────────────────────────────────────────────────
-
 func imageCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-image"] {
   display: inline-block;
@@ -375,14 +357,7 @@ func imageCSS(_ style.Theme) string {
 }`
 }
 
-// ─── Toggle (Checkbox / Radio / Switch) ─────────────────────────────
-
 func toggleCSS(_ style.Theme) string {
-	// Knobs: --ui-choice-box-size (1.25rem) squares the checkbox/radio
-	// box (the hint indent below is calc() over it);
-	// --ui-switch-track-width (2.25rem) / --ui-switch-track-height
-	// (1.25rem) size the switch track; --ui-switch-thumb-rim
-	// (rgba(0, 0, 0, 0.18)) is the thumb's drawn rim in the gradient.
 	return `/* Choice rows are drawn from the native input itself
    (appearance: none): headless.Choice's anatomy has no indicator
    span, and an input cannot host a pseudo-element — so the box, the
@@ -599,11 +574,7 @@ func toggleCSS(_ style.Theme) string {
 .fui-choice-group__error { color: var(--color-danger, #B91C1C); }`
 }
 
-// ─── Tooltip ────────────────────────────────────────────────────────
-
 func tooltipCSS(_ style.Theme) string {
-	// Knob: --ui-tooltip-pop-max-width (240px) keeps a one-line pop
-	// from crossing a narrow viewport.
 	return `[data-cui-comp="ui-tooltip"] {
   position: relative;
   display: inline-block;
@@ -675,13 +646,7 @@ func tooltipCSS(_ style.Theme) string {
 }`
 }
 
-// ─── Tag / Chip ─────────────────────────────────────────────────────
-
 func tagCSS(t style.Theme) string {
-	// Knobs: --ui-tag-line-height (1rem) pins the chip's line box;
-	// --ui-tag-dismiss-size (1.1rem) squares the × hit area and
-	// --ui-tag-dismiss-opacity (0.7) rests it until hover; --ui-tag-case
-	// (none) sets its letter case.
 	return `[data-cui-comp="ui-tag"] {
   display: inline-flex;
   /* A chip keeps its own width in a flex column too (a Card header,
@@ -786,8 +751,6 @@ func tagCSS(t style.Theme) string {
 }` + customStatusCSS("ui-tag", "fui-tag", t)
 }
 
-// ─── Spinner ────────────────────────────────────────────────────────
-
 func spinnerCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-spinner"] {
   display: flex;
@@ -882,8 +845,6 @@ func spinnerCSS(_ style.Theme) string {
 }`
 }
 
-// ─── Divider ────────────────────────────────────────────────────────
-
 func dividerCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-divider"] {
   border: 0;
@@ -919,10 +880,6 @@ func dividerCSS(_ style.Theme) string {
 }
 
 func stickyCSS(_ style.Theme) string {
-	// The z-index layer comes from StickyConfig.ZIndexTier via the
-	// data-fui-z-tier attribute, mapped to the theme's --z-<tier>
-	// tokens (style.ZIndexSet: dropdown 100 / sticky 200 / modal 300 /
-	// popover 400 / toast 500 by default).
 	return `[data-cui-comp="ui-sticky"] {
   position: -webkit-sticky;
   position: sticky;

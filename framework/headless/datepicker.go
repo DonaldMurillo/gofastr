@@ -11,30 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The date picker: a calendar that stays on the page beside the
-// native date input it fills, for what the native picker cannot do —
-// a range in one control, specific days refused, data written on the
-// days. A single ordinary date is ui.DateField, the browser's own
-// picker, and this is never a replacement for it.
-//
-// The native input is the value. It is rendered, named and submitted
-// whatever the calendar does, so the form posts without script and a
-// reader can always type the date. The calendar is an APG date grid:
-// a table with role=grid, a column header per weekday, a button per
-// day carrying its full date as its name, one day in the tab order and
-// the arrow keys moving between them (the headless-datepicker module).
-// A day's selection is aria-selected on its cell, today is
-// aria-current=date, and a refused day is aria-disabled — still
-// reachable, so the reader hears why nothing happens.
-//
-// Changing the month is an in-page state change, so it is an island
-// (the framework's hard rule 1): the four nav anchors keep a real href
-// to the same page with the month in its query, which is the
-// no-script path, and carry the RPC contract beside it, so with script
-// the Island endpoint answers DatePickerMonth and the kernel swaps the
-// calendar in place. The server owns the date math, the disabled days
-// and the notes; the module owns the keyboard and the pick.
-
 // DatePicker parts.
 const (
 	PartDatePickerInputs   Part = "datepicker-inputs"
@@ -52,117 +28,77 @@ const (
 	PartDatePickerStatus   Part = "datepicker-status"
 )
 
-// isoDate and isoMonth are the HTML date and month formats: what an
-// <input type=date> submits and what the month query carries.
 const (
 	isoDate  = "2006-01-02"
 	isoMonth = "2006-01"
 )
 
-// DateRange turns a DatePicker into a range picker: two native date
-// inputs, a start and an end, filled by two picks on one calendar.
+// DateRange turns a DatePicker into a range picker with a start and
+// an end input.
 type DateRange struct {
 	// StartName and EndName are the two inputs' form names. Required.
 	StartName, EndName string
-	// Start and End are the current values, YYYY-MM-DD; empty when
-	// unset.
+	// Start and End are the current values, YYYY-MM-DD.
 	Start, End string
-	// StartLabel and EndLabel name the two inputs. Empty takes the
-	// Strings' "Start date" and "End date".
+	// StartLabel and EndLabel name the inputs; empty takes the Strings defaults.
 	StartLabel, EndLabel string
 }
 
 // DateDay is what the server knows about one day.
 type DateDay struct {
-	// Disabled refuses the day: booked, a holiday, closed. It stays
-	// in the grid and in the keyboard path, announced as unavailable.
+	// Disabled refuses the day; it stays reachable, announced as unavailable.
 	Disabled bool
-	// Note is a short line written on the day, "3 left", "Full",
-	// and read after its date.
+	// Note is a short line on the day ("3 left"), read after its date.
 	Note string
 }
 
-// DatePickerProps configures a DatePicker, and the DatePickerMonth an
-// endpoint answers for it: the endpoint renders the same props with
-// the month it was asked for.
+// DatePickerProps configures a DatePicker and the DatePickerMonth its
+// endpoint answers.
 type DatePickerProps struct {
-	// ID is the input's id; a range's inputs take "<ID>-start" and
-	// "<ID>-end". The calendar takes "<ID>-calendar". Required.
+	// ID is the input's id; a range takes <ID>-start and <ID>-end. Required.
 	ID string
-	// Label names the calendar grid's group and, for a single date,
-	// the input (unless Control hands it to a Field). Required.
+	// Label names the calendar and a single date's input. Required.
 	Label string
 
 	// Name is the single input's form name. Required unless Range.
 	Name string
-	// Value is the single input's value, YYYY-MM-DD. A value that is
-	// not a date (a resubmitted form) is written into the input as
-	// given and selects nothing.
+	// Value is the single input's value, YYYY-MM-DD; a non-date is kept and selects nothing.
 	Value string
-	// Range makes this a range picker. Name and Value are then
-	// refused: the range's own fields say both.
+	// Range makes this a range picker; Name and Value are then refused.
 	Range *DateRange
 
-	// Month is the month shown, YYYY-MM: an endpoint passes the one
-	// it was asked for. Empty, or not a month, shows the month of the
-	// value (the range's start), else Today's, else the server's
-	// current month in UTC; whichever it is, it is held inside Min and
-	// Max's months.
+	// Month is the month shown, YYYY-MM; a non-month falls back to the value's, Today's or the current one.
 	Month string
-	// Today is the reader's today, YYYY-MM-DD, marked
-	// aria-current=date. The server knows the reader's zone and this
-	// package does not, so it is the caller's; empty marks none.
-	//
-	// Today, Min and Max are configuration: one that is not a date
-	// panics at render. Never pass request data through them (a
-	// check-out picker whose Min is the submitted check-in) without
-	// parsing it first; a value the reader sent belongs in Value or
-	// Month, which fall back instead.
+	// Today is the reader's today, YYYY-MM-DD; a non-date panics.
 	Today string
-	// Min and Max bound the dates, YYYY-MM-DD, on the native inputs
-	// and on the calendar: a day outside is refused, the shown month
-	// is held between their months, and a nav anchor moves at most to
-	// the edge, disabled when it would not move at all.
+	// Min and Max bound the dates, YYYY-MM-DD; a non-date panics.
 	Min, Max string
 	// Days is what the server knows about each day, keyed YYYY-MM-DD.
 	Days map[string]DateDay
-	// WeekStart is the first column's weekday. Nil takes the reader's
-	// (i18n.FirstWeekday through Strings' request).
+	// WeekStart is the first column's weekday; nil takes the locale's.
 	WeekStart *time.Weekday
 
-	// Island is where a month change goes: the endpoint that answers
-	// DatePickerMonth, and the signal the calendar is bound to.
-	// Required: a month change is an in-page state change.
+	// Island answers DatePickerMonth for a month change. Required.
 	Island Island
-	// Path is the page's own path, the no-script destination of the
-	// nav anchors: it plus Query, the month parameter set. Empty means
-	// the current document (a relative "?query" href). It is the
-	// page's constant path, never r.URL.Path: the endpoint renders the
-	// same props, and its r.URL.Path is the endpoint's own.
+	// Path is the page's constant path for the nav anchors' hrefs, never r.URL.Path.
 	Path string
-	// Query is what the page's URL already carries, kept across a
-	// month change.
+	// Query is the page's query, kept across a month change.
 	Query url.Values
 	// MonthParam names the month query parameter. Default "month".
 	MonthParam string
 
 	Required bool
 	Disabled bool
-	// Control hands a single date's input to a host Field: the
-	// field's label names it and its hint and error describe it.
-	// Refused with Range, whose two inputs a Fieldset groups instead.
+	// Control hands a single date's input to a host Field; refused with Range.
 	Control *FieldControl
 
 	ExtraAttrs html.Attrs
-	// Parts: attrs on the parts. Nothing is fillable: every element
-	// is half of a relationship built from the id.
-	Parts   Parts
-	Strings *Strings
+	Parts      Parts
+	Strings    *Strings
 }
 
 // DatePicker renders the native input (or the range's two), the
-// calendar for the shown month, and the status region the module
-// speaks through.
+// calendar for the shown month, and its status region.
 func DatePicker(p DatePickerProps, s Classes) render.HTML {
 	p.check()
 	w := p.Strings.Resolve()
@@ -205,10 +141,8 @@ func DatePicker(p DatePickerProps, s Classes) render.HTML {
 		b.El("span", PartDatePickerStatus, Internal(statusAttrs), render.HTML("")))
 }
 
-// DatePickerMonth renders the calendar for p's month: what the Island
-// endpoint answers, swapped into the calendar in place. The endpoint
-// builds the same props the page did, with the month it was asked for
-// (the MonthParam query value) as Month.
+// DatePickerMonth renders the calendar for p's month, the Island
+// endpoint's answer; Month is the MonthParam query value.
 func DatePickerMonth(p DatePickerProps, s Classes) render.HTML {
 	p.check()
 	return datePickerMonth(p.Parts.Box(s), p, p.Strings.Resolve())
@@ -288,12 +222,6 @@ func (p DatePickerProps) check() {
 	}
 }
 
-// shownMonth is the first of the month the calendar shows: Month when
-// it is one, else the value's (a range's start), else Today's, else the
-// server's current month in UTC — then held inside monthBounds, so the
-// calendar never opens on a month it could not leave. Month comes from
-// a query string, so a value that is not a month (year 0000 included)
-// is a stale link, not a mistake, and falls through.
 func (p DatePickerProps) shownMonth() time.Time {
 	lo, hi := p.monthBounds()
 	if m, err := time.Parse(isoMonth, p.Month); err == nil && m.Year() >= 1 {
@@ -307,8 +235,6 @@ func (p DatePickerProps) shownMonth() time.Time {
 	return clampMonth(monthOf(time.Now().UTC()), lo, hi)
 }
 
-// monthBounds are the first and last months a day can be picked in:
-// Min's and Max's, else the calendar's own ends, years 1 and 9999.
 func (p DatePickerProps) monthBounds() (lo, hi time.Time) {
 	lo = time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC)
 	hi = time.Date(9999, time.December, 1, 0, 0, 0, 0, time.UTC)
@@ -342,9 +268,6 @@ func (p DatePickerProps) rangeStart() string {
 	return p.Range.Start
 }
 
-// selected says how the value marks day d: selected at all, and its
-// place in a range ("start", "end", "inside", or "" for a single day
-// or no range). Values that are not dates select nothing.
 func (p DatePickerProps) selected(d string) (bool, string) {
 	if r := p.Range; r != nil {
 		start, end := validDate(r.Start), validDate(r.End)
@@ -352,7 +275,6 @@ func (p DatePickerProps) selected(d string) (bool, string) {
 		case start == "":
 			return false, ""
 		case end == "" || end < start:
-			// Half a range: the start alone, waiting for its end.
 			if d == start {
 				return true, "start"
 			}
@@ -377,9 +299,6 @@ func validDate(s string) string {
 	return s
 }
 
-// datePickerMonth renders one month: the header (four nav anchors
-// around the caption) and the grid, in the month's own root, which is
-// an endpoint's whole answer.
 func datePickerMonth(b Box, p DatePickerProps, w *Strings) render.HTML {
 	month := p.shownMonth()
 	ctx := w.ctx
@@ -389,34 +308,17 @@ func datePickerMonth(b Box, p DatePickerProps, w *Strings) render.HTML {
 
 	lo, hi := p.monthBounds()
 	nav := func(which, label, glyph string, target time.Time) render.HTML {
-		// The target is held inside the reachable months: a year back
-		// from March when Min is last November lands on November, not
-		// on a disabled anchor with four pickable months behind it. An
-		// anchor is disabled only when it would not move at all.
 		tFirst := clampMonth(target, lo, hi)
 		disabled := p.Disabled || tFirst.Equal(month)
-		// Named by its own (visually hidden) text, never aria-label: a
-		// disabled anchor has no href, so it is no link, and a name
-		// given by aria-label to an element with no role is one
-		// assistive technology may not read (axe aria-prohibited-attr);
-		// Pagination's disabled ends are named by their text the same
-		// way.
 		attrs := html.Attrs{"data-hui-datepicker-nav": which}
 		if disabled {
 			attrs["aria-disabled"] = "true"
 		} else {
 			href := p.monthHref(tFirst)
 			attrs["href"] = href
-			// The island contract beside the href, without the
-			// push-state a pager writes: a month is the calendar's
-			// state, not the page's, and a history entry per month
-			// would make Back step through the calendar.
 			attrs["data-cui-rpc"] = mergeQuery(p.Island.Endpoint, href)
 			attrs["data-cui-rpc-method"] = "GET"
 			attrs["data-cui-rpc-signal"] = p.Island.Signal
-			// A month that fails to load says so: the kernel toasts the
-			// title on a non-2xx or a network error, where the html
-			// swap alone would leave the old month and say nothing.
 			attrs["data-cui-rpc-error-toast"] = w.DatePickerMonthFailed
 		}
 		return b.El("a", PartDatePickerNav, attrs,
@@ -447,9 +349,6 @@ func datePickerMonth(b Box, p DatePickerProps, w *Strings) render.HTML {
 		}), render.Text(i18n.WeekdayAbbr(ctx, wd))))
 	}
 
-	// The one day in the tab order: the selected day when it is in
-	// this month, else today, else the first day that can be picked,
-	// else the first.
 	tabDay := ""
 	for d := first; !d.After(last); d = d.AddDate(0, 0, 1) {
 		if sel, place := p.selected(d.Format(isoDate)); sel && (place == "" || place == "start") {
@@ -494,20 +393,14 @@ func datePickerMonth(b Box, p DatePickerProps, w *Strings) render.HTML {
 	})
 	gridAttrs["data-hui-datepicker-grid"] = month.Format(isoMonth)
 	if p.Range != nil {
-		// A range selects many cells; without this a grid allows one.
 		gridAttrs["aria-multiselectable"] = "true"
 	}
 	grid := b.El("table", PartDatePickerGrid, Internal(gridAttrs),
 		render.Tag("thead", nil, render.Tag("tr", nil, heads...)),
 		render.Tag("tbody", nil, rows...))
-	// One root for the month, so an endpoint's answer is one element
-	// whose children carry the mark, and no control inside it carries
-	// a data-cui-* attribute it does not act on.
 	return b.El("div", PartDatePickerMonth, nil, header, grid)
 }
 
-// refused reports whether day d cannot be picked: outside Min..Max,
-// or Disabled by the server.
 func (p DatePickerProps) refused(d string) bool {
 	if p.Disabled || (p.Min != "" && d < p.Min) || (p.Max != "" && d > p.Max) {
 		return true
@@ -527,10 +420,6 @@ func datePickerDay(b Box, p DatePickerProps, w *Strings, d time.Time, tabDay str
 		"aria-label": i18n.Date(w.ctx, d, i18n.DateFull),
 	})
 	dayAttrs["data-hui-date"] = iso
-	// The selection rides the focused element too: aria-selected on the
-	// cell is the grid's state, but focus sits on the button, and most
-	// screen readers in focus mode read only the button. The module
-	// keeps the two in step.
 	dayAttrs["aria-pressed"] = strconv.FormatBool(sel)
 	dayAttrs["tabindex"] = "-1"
 	if iso == tabDay {
@@ -551,9 +440,6 @@ func datePickerDay(b Box, p DatePickerProps, w *Strings, d time.Time, tabDay str
 	return b.El("td", PartDatePickerCell, cellAttrs, b.El("button", PartDatePickerDay, dayAttrs, kids...))
 }
 
-// monthHref is a nav anchor's href: the carried query with the month
-// parameter set, on Path. Built through net/url, never by
-// substitution, and held to the anchor policy like every href here.
 func (p DatePickerProps) monthHref(month time.Time) string {
 	q := scrubbedQuery(p.Query)
 	q.Set(orDefault(p.MonthParam, "month"), month.Format(isoMonth))

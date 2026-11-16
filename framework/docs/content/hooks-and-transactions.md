@@ -588,6 +588,9 @@ the write back. See "Redaction implication" below for the surfaces this covers.
 `T` may tag its fields in camelCase (`json:"isAdmin"`, what generated
 models use) or snake_case (`json:"is_admin"`): the payload is offered
 under both spellings, and a change lands back on the payload's own key.
+A change made in place inside a map, slice or pointer field lands too,
+including on a `T` that cannot be marshalled whole (a `chan` or `func`
+field, or a `MarshalJSON` that errors).
 
 The body `OnBeforeCreate[T]`/`OnBeforeUpdate[T]` decode has already had
 its form values cleaned (entity-declarations.md, "Blank form values"),

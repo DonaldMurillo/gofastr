@@ -12,62 +12,40 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── Select ─────────────────────────────────────────────────────────
-//
-// Labelled native <select>, rendered through headless.Field +
-// headless.Select: the field owns the label, the hint, the error and
-// the wiring that ties them to the control; the select is the control,
-// marked with this component's own data-cui-comp so its sheet loads
-// wherever a Select renders, inside a Form or alone.
-
 // SelectOption describes a single <option>.
 type SelectOption struct {
 	Value    string
 	Text     string
 	Selected bool
-	// ExtraAttrs adds per-option metadata, including language announcements.
+	// ExtraAttrs lands on the <option>; value, selected and disabled are dropped.
 	ExtraAttrs html.Attrs
 }
 
 // SelectConfig configures a Select.
 type SelectConfig struct {
-	// Ctx carries the render ID scope for this control and its descriptions.
+	// Ctx carries the render ID scope.
 	Ctx context.Context
-	// Name is the form-field name (required).
+	// Name is the form-field name. Required.
 	Name string
-	// Label is the accessible label (required).
-	Label string
-	// Options is the list of <option> elements (required, at least one).
+	// Label is the accessible label. Required.
+	Label   string
 	Options []SelectOption
-	// Selected keeps the stored value, including a value no option lists.
-	// A nonempty value overrides the options' Selected flags.
+	// Selected is the chosen value, listed or not; non-empty, it
+	// overrides the options' Selected flags.
 	Selected string
-	// Placeholder adds a disabled, selected-first option with empty value
-	// that acts as a placeholder hint (e.g. "Choose a country…").
+	// Placeholder adds a disabled first option with an empty value.
 	Placeholder string
-	// Required marks the field required.
-	Required bool
-	// Disabled disables interaction.
-	Disabled bool
-	// Help renders supporting text under the field.
-	Help string
-	// Error renders the field's error message and marks the control
-	// invalid. The help stays visible alongside it, the error first.
-	Error string
-	ID    string
-	Class string
-	// LabelHidden keeps the label for assistive tech and hides it from
-	// view: a select in a toolbar or a bar whose place names it.
+	Required    bool
+	Disabled    bool
+	Help        string
+	Error       string
+	ID          string
+	Class       string
+	// LabelHidden hides the label from view but not from assistive tech.
 	LabelHidden bool
-	// Action is a control drawn after the select on its row: a link to
-	// the chosen record, an add button. It is the caller's markup and
-	// stays reachable by an owned style sheet.
+	// Action is the caller's control drawn after the select on its row.
 	Action render.HTML
-	// ExtraAttrs forwards additional attributes to the <select>
-	// element (a relation's data-rel-entity among them). Keys the
-	// component owns are dropped: class and id (use Class / ID),
-	// data-cui-*, name, disabled, required, aria-invalid, and
-	// aria-describedby.
+	// ExtraAttrs lands on the <select>; keys the component owns are dropped.
 	ExtraAttrs html.Attrs
 }
 
@@ -80,11 +58,6 @@ func Select(cfg SelectConfig) render.HTML {
 		panic("ui: Select requires Label")
 	}
 	id := scopedControlID(cfg.Ctx, cfg.ID, cfg.Name, "-hint", "-error")
-	// The last Selected option wins, which is the browser's own rule
-	// when more than one carries the attribute.
-	// With nothing flagged and no placeholder the first option is the
-	// browser's default; naming it keeps a later empty-value option
-	// from matching the empty selection.
 	selected, flagged := cfg.Selected, cfg.Selected != ""
 	for _, opt := range cfg.Options {
 		if cfg.Selected == "" && opt.Selected {
@@ -112,11 +85,6 @@ func Select(cfg SelectConfig) render.HTML {
 			Extra: html.SafeExtraAttrs(cfg.ExtraAttrs,
 				"name", "disabled", "required", "aria-invalid", "aria-describedby"),
 		}, selectClasses))
-		// The select carries this component's own marker: its sheet is
-		// fetched wherever the control renders, not only inside the
-		// field whose marker fetches the field sheet. Field sees the
-		// control as slot content; it is this component's own, so it
-		// is marked here.
 		sel = headless.Own(sel)
 		if cfg.Action == "" {
 			return sel

@@ -11,14 +11,9 @@ import (
 //go:embed leaveguard.js
 var leaveguardJS string
 
-// LeaveGuardBehaviorName is the runtime module that owns the leave
-// guard's shared "changed" state: a form marked data-hui-leave-guard
-// becomes dirty on input/change and clean again after a successful
-// submit or a reset; while dirty, link navigation, an intercept
-// layer's close paths and a reload all ask first. It exposes
-// __gofastr._leaveGuard.ok(scope) for the kernel's intercept module
-// and listens to the rpc module's gofastr:formresult for refused
-// saves. Without the runtime the hook is inert markup.
+// LeaveGuardBehaviorName is the runtime module that keeps a
+// data-hui-leave-guard form's unsaved-changes state and asks before a
+// navigation, a layer close or a reload drops it.
 const LeaveGuardBehaviorName = "headless-leaveguard"
 
 var _ = uiregistry.RegisterBehavior(LeaveGuardBehaviorName, leaveguardJS,

@@ -44,7 +44,9 @@ type AuditConfig struct {
 	// column; nil returns count as an empty map. On delete it gets
 	// {"id": <record_id>} and the "id" it returns, if any, is stored as
 	// record_id. Nil drops password-, token-, secret- and key-like fields
-	// and stores a sensitive key as "sha256:<hex>".
+	// and stores a sensitive key as "sha256:<hex>". A Redact that panics or
+	// returns what cannot be marshalled stores every value as
+	// "[redaction failed]".
 	Redact func(entity string, row map[string]any) map[string]any
 }
 
@@ -187,7 +189,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 				return fmt.Errorf("audit: AfterCreate payload type = %T, want map[string]any (framework contract drift?)", data)
 			}
 			id := recordIDOf(ctx, ent.GetName(), row, key)
-			redacted := cfg.applyRedact(ent.GetName(), row)
+			redacted, _ := cfg.applyRedact(ent.GetName(), row)
 			diff := buildAuditCreateDiff(redacted, row, auditMeta(ctx))
 			op := auditOpCreate
 			if o := crud.AuditOperationFor(ctx, ent.GetName(), id); o != "" {
@@ -201,12 +203,12 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 				return fmt.Errorf("audit: AfterUpdate payload type = %T, want map[string]any (framework contract drift?)", data)
 			}
 			id := recordIDOf(ctx, ent.GetName(), row, key)
-			redactedNew := cfg.applyRedact(ent.GetName(), row)
+			redactedNew, _ := cfg.applyRedact(ent.GetName(), row)
 			var redactedOld map[string]any
 			var originalOld map[string]any
 			if pre := crud.AuditPreImageFromContext(ctx); pre != nil {
 				originalOld = pre
-				redactedOld = cfg.applyRedact(ent.GetName(), pre)
+				redactedOld, _ = cfg.applyRedact(ent.GetName(), pre)
 			}
 			diff := buildAuditUpdateDiff(redactedOld, redactedNew, originalOld, row, auditMeta(ctx))
 			op := auditOpUpdate
@@ -222,8 +224,8 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			}
 			recordID := cfg.keyID(key, originalID)
 			if cfg.Redact != nil {
-				redacted := cfg.applyRedact(ent.GetName(), map[string]any{"id": originalID})
-				if v, ok := redacted["id"]; ok {
+				redacted, failed := cfg.applyRedact(ent.GetName(), map[string]any{"id": originalID})
+				if v, ok := redacted["id"]; ok && !failed {
 					recordID = sanitizeAuditField(fmt.Sprintf("%v", v))
 				}
 			}
@@ -231,7 +233,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			pre := crud.AuditPreImageFromContext(ctx)
 			meta := auditMeta(ctx)
 			if pre != nil {
-				redactedOld := cfg.applyRedact(ent.GetName(), pre)
+				redactedOld, _ := cfg.applyRedact(ent.GetName(), pre)
 				diff = buildAuditDeleteDiff(redactedOld, pre, meta)
 			} else if meta != nil {
 				diff = buildAuditDeleteDiff(nil, nil, meta)
@@ -454,7 +456,7 @@ func buildAuditCreateDiff(redacted, original map[string]any, meta map[string]any
 	if diff, err := json.Marshal(payload); err == nil {
 		return diff
 	}
-	payload["new"] = original
+	payload["new"] = maskAuditRow(original)
 	if diff, err := json.Marshal(payload); err == nil {
 		return diff
 	}
@@ -472,12 +474,12 @@ func buildAuditUpdateDiff(redactedOld, redactedNew, originalOld, originalNew map
 	if diff, err := json.Marshal(payload); err == nil {
 		return diff
 	}
-	payload["new"] = originalNew
+	payload["new"] = maskAuditRow(originalNew)
 	if diff, err := json.Marshal(payload); err == nil {
 		return diff
 	}
 	if originalOld != nil {
-		payload["old"] = originalOld
+		payload["old"] = maskAuditRow(originalOld)
 		if diff, err := json.Marshal(payload); err == nil {
 			return diff
 		}
@@ -500,7 +502,7 @@ func buildAuditDeleteDiff(redactedOld, originalOld map[string]any, meta map[stri
 		return diff
 	}
 	if originalOld != nil {
-		payload["old"] = originalOld
+		payload["old"] = maskAuditRow(originalOld)
 		if diff, err := json.Marshal(payload); err == nil {
 			return diff
 		}
@@ -508,9 +510,22 @@ func buildAuditDeleteDiff(redactedOld, originalOld map[string]any, meta map[stri
 	return []byte(`{"old":{}}`)
 }
 
-func (c AuditConfig) applyRedact(entity string, row map[string]any) map[string]any {
+const auditRedactionFailed = "[redaction failed]"
+
+func maskAuditRow(row map[string]any) map[string]any {
+	if row == nil {
+		return nil
+	}
+	out := make(map[string]any, len(row))
+	for k := range row {
+		out[k] = auditRedactionFailed
+	}
+	return out
+}
+
+func (c AuditConfig) applyRedact(entity string, row map[string]any) (map[string]any, bool) {
 	if c.Redact == nil {
-		return defaultRedact(row)
+		return defaultRedact(row), false
 	}
 	copied := make(map[string]any, len(row))
 	maps.Copy(copied, row)
@@ -525,12 +540,12 @@ func (c AuditConfig) applyRedact(entity string, row map[string]any) map[string]a
 		out = c.Redact(entity, copied)
 	}()
 	if panicked {
-		return row
+		return maskAuditRow(row), true
 	}
 	if out == nil {
-		return map[string]any{}
+		return map[string]any{}, false
 	}
-	return out
+	return out, false
 }
 
 func recordIDOf(ctx context.Context, entity string, row map[string]any, k auditKey) string {

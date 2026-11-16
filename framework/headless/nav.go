@@ -11,10 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// Badge / Tag / Toolbar / Pagination / Steps parts. PartRoot is each
-// component's outermost element; Badge and Tag share every part they
-// have, because a tag is a badge with a dismiss control and the two
-// must not be allowed to drift apart.
 const (
 	PartBadgeDismiss   Part = "badge-dismiss"
 	PartToolbarGroup   Part = "toolbar-group"
@@ -30,32 +26,19 @@ const (
 	PartStepHint       Part = "step-hint"
 )
 
-// ─── Badge ──────────────────────────────────────────────────────────
-
-// BadgeTone selects a badge's colour. It is class-map vocabulary: the
-// structure does not care, the class map looks it up.
+// BadgeTone selects a badge's colour; only the class map reads it.
 type BadgeTone string
 
-// BadgeProps is a badge: a small status chip, not a fill.
-// A badge has no tone of its own and says none: its label IS its
-// meaning ("running", "3 unread", "beta"), and the tone a class map
-// variant paints it is decoration for the word already there. An Alert prefixes its tone because its title
-// may not say it; a badge whose colour means something its label does
-// not say has the wrong label.
+// BadgeProps is a badge: a status chip whose label is its whole meaning.
 type BadgeProps struct {
-	// Label is the visible text, and the whole of what a screen reader
-	// hears. Required.
+	// Label is the visible text and the accessible name. Required.
 	Label string
-	// Icon renders before the label, and is decorative: the label is
-	// the accessible name, so an icon that repeated it would be read
-	// twice. Anything the icon means that the label does not say
-	// belongs in the label.
+	// Icon renders before the label, aria-hidden.
 	Icon render.HTML
 	ID   string
 
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root and the icon.
 	Parts Parts
 }
 
@@ -76,53 +59,29 @@ func Badge(p BadgeProps, s Classes) render.HTML {
 		kids...)
 }
 
-// ─── Tag ────────────────────────────────────────────────────────────
-
-// TagProps is a tag: a badge-shaped chip standing in for an active
-// filter, removable in place.
+// TagProps is a badge-shaped chip standing in for an active filter, removable in place.
 type TagProps struct {
 	// Label is the visible text. Required.
 	Label string
-	// Icon renders before the label.
+	// Icon renders before the label, aria-hidden.
 	Icon render.HTML
-	// DismissHref adds the dismiss control, an × that keeps a real
-	// href: removing a filter is the server's decision, and the href
-	// is the dismiss that needs no script.
+	// DismissHref adds the × dismiss anchor, the removal that needs no script.
 	DismissHref string
-	// Island is where the dismiss goes with script: removing a filter
-	// is an in-page state change, so the × carries the RPC contract
-	// beside its href — the page without script, the region update
-	// with it, and the URL written after the swap. Required when
-	// DismissHref is set; ignored otherwise.
+	// Island carries the dismiss with script. Required with DismissHref.
 	Island Island
-	// DismissMethod is the method the dismiss request is sent with.
-	// Empty is GET: a read, whose href the island writes to the URL
-	// after the swap. A mutation (POST, PUT, PATCH, DELETE) writes no
-	// URL of its own; the server answers with X-Gofastr-Push-State
-	// when it has one. The href stays the no-script destination either
-	// way.
+	// DismissMethod is the dismiss request's method: GET (empty), POST, PUT, PATCH or DELETE.
 	DismissMethod string
-	// DismissBody is a static JSON body the dismiss request sends
-	// (data-cui-rpc-body). It must be JSON, and needs a DismissMethod
-	// other than GET.
+	// DismissBody is a static JSON body sent with a DismissMethod other than GET.
 	DismissBody string
-	// DismissAriaLabel names the × for screen readers. Defaults to
-	// "Remove <Label>".
+	// DismissAriaLabel names the ×; empty says "Remove <Label>".
 	DismissAriaLabel string
-	// Href makes the whole chip an anchor — a filter link — with the
-	// label and any dismiss inside it. The same anchor policy as
-	// every href this package writes; one chip, one label, whatever
-	// shape it renders.
+	// Href makes the whole chip an anchor, held to the anchor policy.
 	Href string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root and the dismiss control.
-	// Strings carry the dismiss control's name.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 }
 
@@ -142,8 +101,6 @@ func Tag(p TagProps, s Classes) render.HTML {
 		kids = append(kids, b.El("span", PartIcon,
 			Attrs(map[string]string{"aria-hidden": "true"}), p.Icon))
 	}
-	// The label is its own part so a constrained chip can end it with an
-	// ellipsis; a bare text node cannot be clipped that way.
 	kids = append(kids, b.El("span", PartLabel, Internal(nil), render.Text(p.Label)))
 	if p.DismissHref != "" {
 		aria := p.DismissAriaLabel
@@ -159,9 +116,6 @@ func Tag(p TagProps, s Classes) render.HTML {
 			"href":       p.DismissHref,
 			"aria-label": aria,
 		})
-		// The same element is both destinations: the href is the page
-		// without script, the island contract is the region update
-		// with it.
 		method := strings.ToUpper(p.DismissMethod)
 		switch method {
 		case "":
@@ -192,29 +146,20 @@ func Tag(p TagProps, s Classes) render.HTML {
 	return b.El(tag, PartRoot, rootAttrs, kids...)
 }
 
-// ─── Toolbar ────────────────────────────────────────────────────────
-
-// ToolbarProps configures a toolbar. The toolbar carries no role of
-// its own: role="toolbar" promises arrow-key roving that this
-// script-free package cannot implement, and an unfulfilled promise is
-// worse than none. A caller who ships the keyboard handling can add it
-// through ExtraAttrs.
+// ToolbarProps configures a toolbar, which claims no role of its own.
 type ToolbarProps struct {
 	ID         string
 	ExtraAttrs html.Attrs
 }
 
-// Toolbar renders a row of controls that aligns by construction: every
-// child is control-height, so nothing needs aligning to anything else.
-// Build children from ToolbarGroup, ToolbarSpacer and ToolbarSearch.
+// Toolbar renders a row of control-height children: ToolbarGroup, ToolbarSpacer and ToolbarSearch.
 func Toolbar(p ToolbarProps, s Classes, children ...render.HTML) render.HTML {
 	return El("div", s, PartRoot,
 		Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID})),
 		children...)
 }
 
-// ToolbarGroup clusters related controls under a visible label. An
-// empty label omits the label span; the cluster remains.
+// ToolbarGroup clusters controls under a visible label; an empty label renders none.
 func ToolbarGroup(s Classes, label string, children ...render.HTML) render.HTML {
 	kids := make([]render.HTML, 0, len(children)+1)
 	if label != "" {
@@ -229,21 +174,13 @@ func ToolbarSpacer(s Classes) render.HTML {
 	return El("div", s, PartToolbarSpacer, nil)
 }
 
-// ToolbarSearchProps is the toolbar's search field: the one child
-// allowed to take the row's slack, and the GET form that makes a
-// search an island update rather than a navigation. The form carries
-// no action, so without script it submits to the page it is on —
-// which is the search's own URL — and no push-state, because the
-// canonical URL is the server's to name in X-Gofastr-Push-State once
-// it knows what matched.
+// ToolbarSearchProps configures the toolbar's search form.
 type ToolbarSearchProps struct {
-	// Island is required: a search refilters the list the toolbar
-	// sits on, which is an in-page state change — never a route.
+	// Island is where the search goes. Required.
 	Island Island
 }
 
-// ToolbarSearch wraps the search field, the one child allowed to take
-// the row's slack, in the GET form that submits it.
+// ToolbarSearch wraps the search field in the GET form that submits it to the Island.
 func ToolbarSearch(p ToolbarSearchProps, s Classes, child render.HTML) render.HTML {
 	requireIsland("ToolbarSearch", p.Island)
 	return El("form", s, PartToolbarSearch,
@@ -251,36 +188,23 @@ func ToolbarSearch(p ToolbarSearchProps, s Classes, child render.HTML) render.HT
 		child)
 }
 
-// ─── Pagination ─────────────────────────────────────────────────────
-
 // PaginationProps configures a pagination bar.
 type PaginationProps struct {
-	// AriaLabel names the nav landmark for AT. Required: pagination
-	// announced as "pagination" is how AT users find it at all.
+	// AriaLabel names the nav landmark. Required.
 	AriaLabel string
-	// Page is the current page, 1-based. Must be within 1..Pages.
+	// Page is the current page, 1-based, within 1..Pages.
 	Page int
-	// Pages is the total number of pages. At least 1.
+	// Pages is the total number of pages, at least 1.
 	Pages int
 
-	// Path is the screen's own path: each page href is it plus the
-	// carried query, the page parameter replaced. Empty means the
-	// current document — a relative "?query" href. When set it must
-	// be same-origin and carry no query or fragment of its own: the
-	// carry belongs in Query, where it survives the page turn, and a
-	// Path query is silently replaced — a value lost with no error is
-	// the defect this component exists to make structural.
+	// Path is the screen's own same-origin path with no query or fragment; empty is the current document.
 	Path string
-	// Query is the query the screen's URL already carries — the
-	// search, the filters, the sort — and survives a page turn
-	// beside the page number.
+	// Query is the query the screen's URL carries; it survives a page turn.
 	Query url.Values
-	// PageParam names the page query parameter. It defaults to "p".
+	// PageParam names the page query parameter; empty is "p".
 	PageParam string
 
-	// Window is the number of pages shown each side of the current
-	// one, the first and last always shown. Default 1; a Window
-	// large enough shows every page.
+	// Window is the number of pages shown each side of the current one; default 1.
 	Window int
 	// OmitPrevNext drops the Previous and Next anchors entirely.
 	OmitPrevNext bool
@@ -289,36 +213,17 @@ type PaginationProps struct {
 	PrevLabel string
 	NextLabel string
 
-	// Island is where a page change goes when the pager sits inside
-	// a region rather than being the page: the page anchors then
-	// carry the RPC contract beside their hrefs — the page without
-	// script, the region update with it, the URL written after the
-	// swap. Optional, the Table posture: the URL is the truth for a
-	// list, so a list screen's page anchors are plain navigations
-	// the client router intercepts. An Island that looks wired and
-	// is not is refused, whichever shape the pager renders.
+	// Island, optional, makes the page anchors carry the RPC contract beside their hrefs.
 	Island Island
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root, the list and the gaps.
-	// Strings carry the two end links.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 }
 
-// Pagination renders prev / numbered pages / next. The current page
-// carries aria-current="page" and the stylesheet styles the attribute,
-// so state and appearance cannot disagree. Prev and next at the ends
-// are disabled anchors: visible, named, and out of the tab order
-// rather than gone.
-//
-// The nav landmark itself is PartRoot and carries no class; the list
-// inside it is PartPagination, which is where a caller's Class has
-// always landed.
+// Pagination renders Previous, the numbered pages and Next inside a nav landmark.
 func Pagination(p PaginationProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.AriaLabel == "" {
@@ -369,13 +274,6 @@ func Pagination(p PaginationProps, s Classes) render.HTML {
 		b.El("div", PartPagination, Internal(nil), links...))
 }
 
-// paginationLink renders one pagination anchor. Disabled end links
-// stay anchors that say aria-disabled and keep out of the tab order —
-// the same posture as a disabled Button anchor, and better than a
-// link that silently navigates to the page you are on. It renders
-// through the caller's Box, because the link is a named part: the
-// attrs and binds a caller sets on PartPaginationLink land here or
-// they land nowhere.
 func paginationLink(b Box, p PaginationProps, page int, label string, disabled, current bool) render.HTML {
 	attrs := html.Attrs{}
 	if current {
@@ -388,40 +286,19 @@ func paginationLink(b Box, p PaginationProps, page int, label string, disabled, 
 		href := pageHref(p, page)
 		attrs["href"] = href
 		if !p.Island.zero() {
-			// The same element is both destinations: the href is the
-			// page without script, the island contract is the region
-			// update with it, and the query is shared so the two
-			// answer one question.
 			attrs = Merge(attrs, p.Island.attrs(href, "GET"))
-			// The page number the table module records on click and
-			// looks for in the swapped-in pager. Island anchors only:
-			// a plain pager's page is a navigation the router already
-			// focuses, and a hook nothing reads on it is markup
-			// carried for no one.
 			attrs["data-hui-page"] = strconv.Itoa(page)
 		}
 	}
 	return b.El("a", PartPaginationLink, attrs, render.Text(label))
 }
 
-// pageHref builds one page anchor's href: the carried query with the
-// page parameter replaced, on p.Path. Built through net/url and never
-// by substitution; the carried query is scrubbed, not refused, exactly
-// as the table's is.
 func pageHref(p PaginationProps, page int) string {
 	q := scrubbedQuery(p.Query)
-	// Set replaces, and that is the contract: the query a screen
-	// carries may still hold the last page, and p=2&p=3 is two
-	// answers to one question. Add would append; Set does not.
 	q.Set(orDefault(p.PageParam, "p"), strconv.Itoa(page))
 	return queryHref("Pagination", p.Path, q)
 }
 
-// queryHref is a same-page anchor's href: query q on path, or on the
-// current document ("?query") when path is empty. Built through
-// net/url and never by substitution, and held to the anchor policy;
-// component names the caller in a refusal. Pagination's page anchors
-// and DatePicker's month anchors are both this shape.
 func queryHref(component, path string, q url.Values) string {
 	href := "?" + q.Encode()
 	if path != "" {
@@ -432,23 +309,13 @@ func queryHref(component, path string, q url.Values) string {
 		u.RawQuery = q.Encode()
 		href = u.String()
 	}
-	// Every href this package writes goes through the anchor policy;
-	// same-origin and the scrub have refused what a refusal is for.
 	if urlsafe.CleanAnchor(href) == "" {
 		panic("headless: " + component + " Path " + strconv.Quote(path) + " is not a URL the anchor policy allows")
 	}
 	return href
 }
 
-// pageNumbers picks which page numbers to render: the first and last
-// page always, a window of the given size around the current page, and
-// a 0 marking each elision. Pages small enough to show whole are shown
-// whole. It is the core pattern's algorithm, moved.
 func pageNumbers(pages, page, window int) []int {
-	// A window wider than the pages is the whole list: clamp it first,
-	// or 2*(window-1) and page±window overflow for a huge window
-	// ("show every page" as math.MaxInt) and the current page drops
-	// out of the pager.
 	if window > pages {
 		window = pages
 	}
@@ -481,28 +348,17 @@ func pageNumbers(pages, page, window int) []int {
 	return out
 }
 
-// ─── Steps ──────────────────────────────────────────────────────────
-
 // Step is one entry on a Steps rail.
 type Step struct {
 	// Label is the step's name. Required.
 	Label string
 	// Hint is the supporting line under the label.
 	Hint string
-	// Href makes the step a link — a completed step the reader can go
-	// back to. Every href goes through the anchor policy; one the
-	// policy refuses is the developer's mistake, said at render like
-	// every configured href in this package.
+	// Href makes the step a link, held to the anchor policy.
 	Href string
-	// Marker overrides the glyph in the marker circle — a zero-padded
-	// number ("01"), a caller's check icon. It is aria-hidden either
-	// way: the marker is a picture of the step's state, and the label
-	// beside it is what a reader hears.
+	// Marker overrides the aria-hidden glyph in the marker circle.
 	Marker render.HTML
-	// State overrides the state derived from Current: "done",
-	// "current" or "todo". Empty derives. An explicit state is how a
-	// rail says a later step finished while an earlier one is still
-	// open.
+	// State overrides the state derived from Current: done, current or todo.
 	State string
 }
 
@@ -510,28 +366,16 @@ type Step struct {
 type StepsProps struct {
 	// Steps are the entries in order. At least one.
 	Steps []Step
-	// Current is the 1-based step in progress: the steps before it are
-	// done, it is current, the rest are todo. 0 means nothing has
-	// started yet. Must not exceed len(Steps).
+	// Current is the 1-based step in progress; 0 means none has started.
 	Current int
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language. The
-	// step numbers follow its locale.
 	Strings *Strings
 }
 
-// Steps renders a progress rail — a list of states, not a set of
-// controls. Each step's data-state drives both its marker and the
-// connecting line the stylesheet draws between markers, so the rail
-// cannot disagree with the states; the current step also carries
-// aria-current="step" for AT. Exactly one step may be current: an
-// explicit State "current" on a step other than Current's is
-// refused, because two current steps tell assistive technology the
-// flow is in two places at once.
+// Steps renders a progress rail of states, of which at most one is current.
 func Steps(p StepsProps, s Classes) render.HTML {
 	w := p.Strings.Resolve()
 	if len(p.Steps) == 0 {
@@ -540,9 +384,6 @@ func Steps(p StepsProps, s Classes) render.HTML {
 	if p.Current < 0 || p.Current > len(p.Steps) {
 		panic("headless: Steps Current " + strconv.Itoa(p.Current) + " outside 0.." + strconv.Itoa(len(p.Steps)))
 	}
-	// Exactly one current step: an explicit State "current" names the
-	// step it marks, and Current names another, so the two are only
-	// allowed to agree.
 	explicit := -1
 	for i, st := range p.Steps {
 		if st.State == "current" {
@@ -604,11 +445,6 @@ func Steps(p StepsProps, s Classes) render.HTML {
 			tag = "a"
 			rowAttrs["href"] = href
 		}
-		// The marker is the caller's when Marker is set, so the row and
-		// the step around it are a slot ancestor and stay unmarked; with
-		// no caller marker the glyph is generated (a checkmark or the
-		// step number), so the whole step is the component's own and the
-		// boundary moves up to it.
 		stepOwn, textOwn := html.Attrs(nil), Internal(nil)
 		if st.Marker == "" {
 			stepOwn, textOwn = Internal(nil), nil
@@ -781,55 +617,29 @@ func init() {
 	})
 }
 
-// ─── BackToTop ──────────────────────────────────────────────────────
-
 // BackToTopProps configures the page's way back to its top.
 type BackToTopProps struct {
-	// Href is where the link goes: a same-origin anchor, usually the
-	// top of the page or the main content's id. Required — a jump
-	// control with no destination is a button pretending to be one,
-	// and the no-script page would carry a dead link.
+	// Href is the same-origin anchor the link goes to. Required.
 	Href string
-	// Target, when set, is the element id the module reads the scroll
-	// sentinel from and scrolls to. An id, not a selector: the module
-	// resolves it, and an id here cannot become a query the way a
-	// selector string can.
+	// Target is the id of the element the module scrolls to: an id, not a selector.
 	Target string
-	// Label is the accessible name. Empty takes Strings.BackToTop;
-	// the glyph alone names nothing.
+	// Label is the accessible name; empty takes Strings.BackToTop.
 	Label string
-	// Icon is the glyph. The default arrow is the structure's own; a
-	// caller's SVG replaces it.
+	// Icon replaces the default arrow glyph.
 	Icon render.HTML
-	// Threshold is the scroll offset in CSS pixels past which the
-	// module shows the link. Zero takes the module's default;
-	// negative is refused.
+	// Threshold is the scroll offset in CSS pixels past which the link shows; zero is the module's default.
 	Threshold int
-	// Smooth asks for smooth scrolling. The module downgrades to an
-	// instant jump under reduced motion; the preference is honoured,
-	// not overridden.
+	// Smooth asks for smooth scrolling, which reduced motion downgrades.
 	Smooth bool
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root, the icon and the label.
-	// Strings are not read — the name is the caller's Label.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 }
 
-// BackToTop renders the jump link.
-//
-// The anchor is the whole contract: its href is the no-script
-// destination, and the module that binds data-hui-back-to-top shows it
-// past the threshold (through data-hui-back-to-top-visible, which no
-// component renders — the module owns it), scrolls to the target, and
-// returns focus to the link after the scroll. A stylesheet hides the
-// link while the visible mark is absent, so the link appears when it
-// is true and never flashes on a page still at its top.
+// BackToTop renders the jump link the headless-navigation module shows past the threshold.
 func BackToTop(p BackToTopProps, s Classes) render.HTML {
 	if p.Href == "" {
 		panic("headless: BackToTop requires Href — a jump control with no destination is a dead link on the no-script page")
@@ -865,10 +675,6 @@ func BackToTop(p BackToTopProps, s Classes) render.HTML {
 	if icon == "" {
 		icon = render.Text("↑")
 	}
-	// The label is always the component's own generated text. The icon
-	// is the caller's when Icon is set, so it stays reachable; with no
-	// caller icon the glyph is the component's own default arrow, and
-	// it is marked too.
 	iconOwn, labelOwn := Attrs(map[string]string{"aria-hidden": "true"}), Internal(nil)
 	if p.Icon == "" || ownedSlot(p.Icon) {
 		iconOwn = Internal(iconOwn)

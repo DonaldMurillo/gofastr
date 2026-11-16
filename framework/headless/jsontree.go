@@ -11,18 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// The JSON tree: an arbitrary value as nested native details, so the
-// whole surface collapses and expands with no script. Deterministic
-// by construction — object keys render sorted — because a value whose
-// bytes change per render defeats every cache and golden the stack
-// has. No module: the browser owns the disclosure.
-
-// JSONTreeParts: the primitive has no interactive parts beyond the
-// details the browser owns, so the anatomy is textual (the value, the
-// node, the summary, the list, the key) — and, under the value, one
-// part per JSON scalar kind, so a class map can colour a string
-// without colouring a number. Every one renders the same span the
-// shared PartText did; only the name a class map can target differs.
+// JSONTree parts: one per JSON scalar kind under the value, so a class map can colour each.
 const (
 	PartJSONColon Part = "json-colon"
 	PartJSONType  Part = "json-type"
@@ -36,25 +25,15 @@ const (
 
 // JSONTreeProps configures the tree.
 type JSONTreeProps struct {
-	// Value is the data to render. Required non-nil; values that do
-	// not marshal to JSON are refused (a channel, a func, a cycle).
-	Value any
-	// OpenDepth is the recursion depth that renders open by default.
-	// 0 means only the root is open; -1 means everything is open.
-	OpenDepth int
-	// MaxStringLen truncates long strings with the truncation mark,
-	// counted in characters (runes), so a cut never lands inside one.
-	// 0 means no limit.
-	MaxStringLen int
+	Value        any // required; a value that does not marshal to JSON panics
+	OpenDepth    int // the deepest level rendered open; 0 opens the root only, -1 everything
+	MaxStringLen int // truncates strings at this many runes; 0 means no limit
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Strings overrides the words (object, array, null, empty,
-	// truncation). Nil takes the defaults.
-	Strings *Strings
+	Strings *Strings // the words; nil takes the defaults
 
-	// Parts: attrs on the root, nodes, summaries, lists, keys.
 	Parts Parts
 }
 
@@ -76,11 +55,7 @@ func JSONTree(p JSONTreeProps, s Classes) render.HTML {
 	return b.El("div", PartRoot, own, jsonNode(b, parsed, 0, p, w))
 }
 
-// jsonNode renders one value at one depth. Value is data, never markup
-// — the whole tree is drawn from it, with no caller content anywhere —
-// so only the outermost call (depth 0) carries the mark: it is the
-// topmost of the entire internal subtree, and marking a node inside it
-// too, at any depth, would be a mark inside an already-marked subtree.
+// jsonNode renders one value; only depth 0 carries the internal mark.
 func jsonNode(b Box, v any, depth int, p JSONTreeProps, w *Strings) render.HTML {
 	var own html.Attrs
 	if depth == 0 {
@@ -100,14 +75,10 @@ func jsonNode(b Box, v any, depth int, p JSONTreeProps, w *Strings) render.HTML 
 		//gofastr:allow(rawtext) a JSON viewer shows the document's own digits, the source a reader copies
 		return b.El("span", PartJSONNum, own, render.Text(s))
 	case json.Number:
-		// An integer past 2^53, which a float64 would round: the value's
-		// own digits.
 		//gofastr:allow(rawtext) a JSON viewer shows the document's own digits, the source a reader copies
 		return b.El("span", PartJSONNum, own, render.Text(t.String()))
 	case string:
 		s := t
-		// Runes, not bytes: a byte cut split "é" and rendered invalid
-		// UTF-8, the way TagInput's MaxLength (the other cap) never did.
 		if p.MaxStringLen > 0 {
 			if r := []rune(s); len(r) > p.MaxStringLen {
 				s = string(r[:p.MaxStringLen]) + w.JSONTruncated
@@ -149,8 +120,6 @@ func jsonNodeObject(b Box, obj map[string]any, depth int, p JSONTreeProps, w *St
 	if len(obj) == 0 {
 		return b.El("span", PartJSONEmpty, own, render.Text(w.JSONEmptyObject))
 	}
-	// Sorted keys: a map's range order is random, and a tree whose
-	// bytes change per render defeats every cache and golden.
 	items := make([]render.HTML, 0, len(obj))
 	for _, k := range slices.Sorted(maps.Keys(obj)) {
 		key := b.El("span", PartLabel, nil, render.Text(`"`+k+`"`))

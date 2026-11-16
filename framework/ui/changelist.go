@@ -1,13 +1,5 @@
 package ui
 
-// ─── ChangeList ─────────────────────────────────────────────────────
-//
-// What one edit changed, field by field: the field's label, the old
-// value struck through, an arrow, the new value. An audit trail draws it
-// under each update. The old value sits in <del> and the new one in
-// <ins>, each led by visually hidden "from" / "to" words, because most
-// screen readers announce neither element.
-
 import (
 	"context"
 
@@ -19,8 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// Change is one field's edit. An empty From or To draws the empty
-// mark: a value set for the first time, or cleared.
+// Change is one field's edit; an empty From or To draws the empty mark.
 type Change struct {
 	Label string
 	From  render.HTML
@@ -30,20 +21,17 @@ type Change struct {
 // ChangeListConfig configures a ChangeList.
 type ChangeListConfig struct {
 	Changes []Change
-	// Ctx resolves the visually hidden "from" / "to" words. When nil,
-	// English applies.
+	// Ctx resolves the hidden "from" / "to" words; nil uses English.
 	Ctx   context.Context
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes to the <ul> root. Keys
-	// the component owns are dropped: class and id (use Class / ID),
-	// style and data-cui-*.
+	// ExtraAttrs land on the <ul>; class, id, style and data-cui-* are
+	// the component's.
 	ExtraAttrs html.Attrs
 }
 
-// ChangeList renders the edits as a list, one field per row. It panics
-// on an empty Changes: an edit that changed nothing has nothing to list,
-// so the caller draws no list at all.
+// ChangeList renders one row per field: the label, the old value in
+// <del>, the new in <ins>. It panics on an empty Changes.
 func ChangeList(cfg ChangeListConfig) render.HTML {
 	if len(cfg.Changes) == 0 {
 		panic("ui: ChangeList requires at least one Change")
@@ -54,8 +42,6 @@ func ChangeList(cfg ChangeListConfig) render.HTML {
 	}
 	from := i18nui.ChangeFrom.Text(ctx)
 	to := i18nui.ChangeTo.Text(ctx)
-	// The label, arrow, hidden words and empty mark are the component's
-	// own; so is a side, or a whole row, holding no caller value.
 	own := func(tag, class string, kids ...render.HTML) render.HTML {
 		return headless.Own(render.Tag(tag, map[string]string{"class": class}, kids...))
 	}

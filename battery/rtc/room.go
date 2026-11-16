@@ -387,7 +387,7 @@ func (s *Signaler) serve(w http.ResponseWriter, r *http.Request, join Join, rech
 			User:        join.User,
 			DisplayName: join.DisplayName,
 			// Order sorts the roster and doubles as the join instant a
-			// late fanout join mirror is compared against (fanoutMsg.At).
+			// late fanout join mirror's seat is compared against.
 			Order: time.Now().UnixNano(),
 		},
 		conn:    conn,

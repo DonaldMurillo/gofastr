@@ -1004,9 +1004,9 @@ Some of the knobs:
 | `--ui-pricing-card-badge-fg` | `var(--color-text)` | the text colour of `ui.PricingCard`'s Recommended badge |
 
 You can also scope them: set one inside a `ui.Themed` section, or on
-a specific wrapper class, to change a single instance. Each
-component's source lists its knobs next to the CSS that reads them
-(for example `ui.Container`: `--ui-container-pad-start/end`); grep `framework/ui`
+a specific wrapper class, to change a single instance. Each knob is a
+`var(--ui-…, <default>)` in the CSS that reads it (for example
+`ui.Container`: `--ui-container-pad-start/end`); grep `framework/ui`
 and `core-ui/app` for `--ui-` to see the full list.
 
 ## Why you can't just override component CSS

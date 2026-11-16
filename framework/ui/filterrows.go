@@ -12,15 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── FilterRows ────────────────────────────────────────────────────
-//
-// Structured filter rows inside a list's filter form: each row is a
-// field, an operator and a value, submitted as three repeated params
-// (FieldName, OpName, ValueName) in row order. The rows a filter
-// already holds come first, then one blank row to add another. The
-// server reads the rows and writes the filter; a row with an empty
-// value is ignored, which is how a row is removed without script.
-
 // FilterRow is one row's values.
 type FilterRow struct{ Field, Op, Value string }
 
@@ -28,22 +19,20 @@ type FilterRow struct{ Field, Op, Value string }
 type FilterRowsConfig struct {
 	// ID prefixes each control's id. Required.
 	ID string
-	// FieldName, OpName and ValueName are the three params. Required.
+	// FieldName, OpName and ValueName are the repeated params. Required.
 	FieldName, OpName, ValueName string
-	// Fields and Operators are the choices of the first two controls.
-	Fields, Operators []SelectOption
+	Fields, Operators            []SelectOption
 	// Rows are the filter's rows; a blank row follows them.
 	Rows []FilterRow
-	// Legend names the group; FieldLabel, OpLabel and ValueLabel name
-	// each row's controls, numbered ("Field 1").
+	// Legend and the three control labels are required; each label is
+	// numbered per row.
 	Legend, FieldLabel, OpLabel, ValueLabel string
-	// ExtraAttrs forwards attributes to the fieldset; keys the
-	// component owns are dropped.
-	ExtraAttrs html.Attrs
-	Ctx        context.Context
+	ExtraAttrs                              html.Attrs
+	Ctx                                     context.Context
 }
 
-// FilterRows renders the rows.
+// FilterRows renders field, operator and value rows submitted as three
+// repeated params in row order, then one blank row.
 func FilterRows(cfg FilterRowsConfig) render.HTML {
 	if cfg.ID == "" || cfg.FieldName == "" || cfg.OpName == "" || cfg.ValueName == "" {
 		panic("ui: FilterRows requires ID, FieldName, OpName and ValueName")
@@ -59,17 +48,12 @@ func FilterRows(cfg FilterRowsConfig) render.HTML {
 	out = append(out, render.Tag("legend", map[string]string{"class": "fui-filter-rows__legend", "data-cui-internal": ""}, render.Text(cfg.Legend)))
 	for i, r := range rows {
 		id := cfg.ID + "-" + strconv.Itoa(i+1)
-		// The row number a reader hears is in their digits; the id keeps
-		// ASCII.
 		n := i18n.Number(cfg.Ctx, i+1)
 		out = append(out, html.Div(html.DivConfig{Class: "fui-filter-rows__row", ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
 			filterRowSelect(id+"-f", cfg.FieldName, cfg.FieldLabel+" "+n, cfg.Fields, r.Field),
 			filterRowSelect(id+"-o", cfg.OpName, cfg.OpLabel+" "+n, cfg.Operators, r.Op),
 			render.Join(
 				render.Tag("label", map[string]string{"for": id + "-v", "class": "fui-visually-hidden"}, render.Text(cfg.ValueLabel+" "+n)),
-				// The input's look is the field sheet's (.fui-input); no
-				// FormField sits around it here, so the control carries the
-				// sheet's marker itself, the way each select carries its own.
 				formFieldStyle.WrapHTML(Control(ControlConfig{Field: headless.FieldControl{ID: id + "-v"}, Type: "text", Name: cfg.ValueName, Value: r.Value})),
 			),
 		))
@@ -82,7 +66,6 @@ func FilterRows(cfg FilterRowsConfig) render.HTML {
 	return filterRowsStyle.WrapHTML(render.Tag("fieldset", attrs, out...))
 }
 
-// filterRowSelect is one row's select under a visually hidden label.
 func filterRowSelect(id, name, label string, opts []SelectOption, selected string) render.HTML {
 	hopts := make([]headless.Option, 0, len(opts))
 	for _, o := range opts {
@@ -96,8 +79,6 @@ func filterRowSelect(id, name, label string, opts []SelectOption, selected strin
 
 var filterRowsStyle = registry.RegisterStyle("ui-filter-rows", filterRowsCSS)
 
-// filterRowsCSS lays each row out as field, operator and value, the
-// value taking the rest; on a narrow container the value drops below.
 func filterRowsCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-filter-rows"] {
   border: 0;

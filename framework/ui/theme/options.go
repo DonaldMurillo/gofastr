@@ -5,38 +5,18 @@ import (
 	"sort"
 )
 
-// ComponentOptions: the typed form of a theme's component options, the
-// layer above the flattened style.Theme.Components map. Zero means
-// "unspecified" while overrides merge; Default() flattens the merged
-// result, which is complete — every option carries a value — so every
-// theme the framework ships declares a full option set at every theme
-// boundary. That completeness is what makes option variables nest: an
-// inner scope redeclares the whole set, so it wins by proximity and
-// nothing leaks in from an outer scope.
-//
-// Two axes, explained once: Variant (ButtonPrimary, ButtonDanger,
-// ghost) is what a button MEANS; Treatment (filled, outline, soft) is
-// how a theme DRAWS that meaning. A danger outline and a primary
-// outline share their drawing; the variant supplies the semantic
-// colour. Density is the same kind of policy: it retunes control
-// heights and gaps theme-wide, and an explicit Size on one component
-// always wins over it.
-
-// Density is the vertical rhythm of controls: how tall a control aims
-// to be and which spacing step separates them.
+// Density is how tall controls are and how far apart they sit.
 type Density int
 
 const (
 	DensityUnset Density = iota
-	// Comfortable is the default: 44px controls (the WCAG 2.5.5 tap
-	// target) and the md spacing step between them.
+	// Comfortable is the default: 44px controls (the WCAG 2.5.5 tap target), md gaps.
 	Comfortable
-	// Compact is the dense setting: 36px controls, sm gaps.
+	// Compact is 36px controls and sm gaps.
 	Compact
 )
 
-// String returns the flattened form ("comfortable", "compact"), the
-// exact spelling style.Theme.Components carries.
+// String returns the flattened form, "" for unset.
 func (d Density) String() string {
 	switch d {
 	case Comfortable:
@@ -48,8 +28,7 @@ func (d Density) String() string {
 	}
 }
 
-// ParseDensity is String's inverse, for reading a flattened
-// Components map back into the typed form.
+// ParseDensity is String's inverse.
 func ParseDensity(s string) (Density, error) {
 	switch s {
 	case "comfortable":
@@ -61,20 +40,20 @@ func ParseDensity(s string) (Density, error) {
 	}
 }
 
-// ButtonTreatment is how a theme draws a button: where the ink goes.
+// ButtonTreatment is how a theme draws a button variant's colour.
 type ButtonTreatment int
 
 const (
 	TreatmentUnset ButtonTreatment = iota
-	// Filled: solid primary background, primary-fg text, no border.
+	// Filled is a solid primary background with primary-fg text and no border.
 	Filled
-	// Outline: no fill, primary text and border.
+	// Outline is no fill, with primary text and border.
 	Outline
-	// Soft: the soft surface tint, primary text, no border.
+	// Soft is the soft surface tint with primary text and no border.
 	Soft
 )
 
-// String returns the flattened form ("filled", "outline", "soft").
+// String returns the flattened form, "" for unset.
 func (t ButtonTreatment) String() string {
 	switch t {
 	case Filled:
@@ -107,15 +86,15 @@ type ButtonRadius int
 
 const (
 	RadiusUnset ButtonRadius = iota
-	// Round: the theme's md radius token.
+	// Round is the theme's md radius token.
 	Round
-	// Square: no rounding at all.
+	// Square is no rounding.
 	Square
-	// Pill: fully rounded.
+	// Pill is fully rounded.
 	Pill
 )
 
-// String returns the flattened form ("round", "square", "pill").
+// String returns the flattened form, "" for unset.
 func (r ButtonRadius) String() string {
 	switch r {
 	case Round:
@@ -143,18 +122,18 @@ func ParseButtonRadius(s string) (ButtonRadius, error) {
 	}
 }
 
-// FieldLayout is how a field's label sits against its control:
-// stacked above it, or inline beside it. Inline is a preference the
-// stylesheet may override in a narrow context, not a promise.
+// FieldLayout places a field's label above its control or beside it.
 type FieldLayout int
 
 const (
 	LayoutUnset FieldLayout = iota
+	// Stacked puts the label above its control.
 	Stacked
+	// Inline puts the label beside its control; a narrow context may still stack it.
 	Inline
 )
 
-// String returns the flattened form ("stacked", "inline").
+// String returns the flattened form, "" for unset.
 func (l FieldLayout) String() string {
 	switch l {
 	case Stacked:
@@ -178,17 +157,18 @@ func ParseFieldLayout(s string) (FieldLayout, error) {
 	}
 }
 
-// FieldRadius is a field control's corner shape: the radius the
-// field's inputs, selects and summaries draw.
+// FieldRadius is the corner shape of a field's controls.
 type FieldRadius int
 
 const (
 	FieldRadiusUnset FieldRadius = iota
+	// FieldRound is the md radius token on a field's controls.
 	FieldRound
+	// FieldSquare is no rounding on a field's controls.
 	FieldSquare
 )
 
-// String returns the flattened form ("round", "square").
+// String returns the flattened form, "" for unset.
 func (r FieldRadius) String() string {
 	switch r {
 	case FieldRound:
@@ -223,23 +203,22 @@ type FieldOptions struct {
 	Layout FieldLayout
 	Radius FieldRadius
 }
+
+// ComponentOptions is the typed form of style.Theme.Components; a zero field is unset.
 type ComponentOptions struct {
 	Density Density
 	Button  ButtonOptions
 	Field   FieldOptions
 }
 
-// DefaultOptions is the complete option set: what a theme carries when
-// a host says nothing.
+// DefaultOptions is the complete option set a theme carries when a host sets none.
 var DefaultOptions = ComponentOptions{
 	Density: Comfortable,
 	Button:  ButtonOptions{Treatment: Filled, Radius: Round},
 	Field:   FieldOptions{Layout: Stacked, Radius: FieldRound},
 }
 
-// Complete returns o with every unset option replaced by its default.
-// Default() results are complete by construction; Complete is the
-// explicit form for themes assembled by hand.
+// Complete returns o with every unset option set to its default.
 func (o ComponentOptions) Complete() ComponentOptions {
 	if o.Density == DensityUnset {
 		o.Density = DefaultOptions.Density
@@ -259,9 +238,7 @@ func (o ComponentOptions) Complete() ComponentOptions {
 	return o
 }
 
-// Flattened writes o into the style.Theme.Components keys. Unset
-// options are omitted: flattening happens after merging, and an
-// omitted key inherits, which is the nesting contract.
+// Flattened writes o as style.Theme.Components keys, omitting unset options.
 func (o ComponentOptions) Flattened() map[string]string {
 	m := map[string]string{}
 	if o.Density != DensityUnset {
@@ -282,11 +259,7 @@ func (o ComponentOptions) Flattened() map[string]string {
 	return m
 }
 
-// OptionsFromFlattened parses a style.Theme.Components map back into
-// the typed form, the inverse of Flattened. Every key must be known
-// and every value a member of its enum: the flattened form is data
-// that crossed a boundary (a theme file, an edited theme, an embed),
-// and a typo dropped silently is a typo nobody ever hears about again.
+// OptionsFromFlattened is Flattened's inverse; it errors on an unknown key or value.
 func OptionsFromFlattened(m map[string]string) (ComponentOptions, error) {
 	var o ComponentOptions
 	for _, k := range sortedOptionKeys(m) {
@@ -322,31 +295,15 @@ func sortedOptionKeys(m map[string]string) []string {
 	return keys
 }
 
-// Option is one entry of the option catalogue: a flattened Components
-// key, the member values its enum accepts in declaration order, and the
-// default DefaultOptions carries. Tools that author themes list these
-// members, so a control can never offer a value OptionsFromFlattened
-// refuses.
+// Option is one catalogue entry: a flattened key, its members in declaration
+// order, and its default.
 type Option struct {
-	// Key is the flattened Components key ("button.treatment"), the
-	// exact string Flattened writes and OptionsFromFlattened switches
-	// on; ThemeToTokens emits it under "component.".
-	Key string
-	// Members are the values the option's enum accepts, in declaration
-	// order, derived from the enums' String methods.
-	Members []string
-	// Default is the value DefaultOptions carries for the key.
-	Default string
+	Key     string   // the flattened style.Theme.Components key
+	Members []string // the values OptionsFromFlattened accepts
+	Default string   // the value DefaultOptions carries
 }
 
-// Options returns the option catalogue: every flattened option key in a
-// fixed order — the declaration order the option set documents, density
-// first, then the button family, then the field family — each with its
-// members in declaration order and its default. The theme editor renders
-// each entry as a select whose options are the members, so an authored
-// value is a member by construction; the catalogue test pins the
-// catalogue to the flattened vocabulary so a new option cannot be added
-// without the catalogue following.
+// Options returns the catalogue of every option key, in a fixed order.
 func Options() []Option {
 	def := DefaultOptions.Flattened()
 	return []Option{
@@ -358,12 +315,6 @@ func Options() []Option {
 	}
 }
 
-// optionMembers derives one enum's member strings by walking its values
-// from one upward through String, the same method Flattened writes
-// through, until String returns "". Every option enum is iota-based with
-// its Unset sentinel at zero, its members contiguous from one, and ""
-// past the last, so a member added to an enum joins the catalogue with
-// no second list and no bound to move.
 func optionMembers[T ~int](stringOf func(T) string) []string {
 	var out []string
 	for v := T(1); v <= maxOptionMembers; v++ {
@@ -376,6 +327,4 @@ func optionMembers[T ~int](stringOf func(T) string) []string {
 	panic(fmt.Sprintf("theme: an option enum's String never returns \"\" past its last member (walked %d values)", maxOptionMembers))
 }
 
-// maxOptionMembers bounds the member walk: a String whose default arm
-// returns a word instead of "" would otherwise walk forever.
 const maxOptionMembers = 32

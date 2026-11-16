@@ -8,20 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The tree: a WAI-ARIA treeview whose rows are server-rendered and
-// whose whole keyboard contract — the roving tabindex (one treeitem
-// carries tabindex=0, every other carries -1), the arrows, Home and
-// End, type-ahead, expand and collapse — is bound by the registered
-// headless-tree module on the data-hui-tree marker. The no-script
-// contract is the rendered tree itself: every leaf link is a real
-// anchor, every branch's children are real markup (a branch that
-// lazy-loads keeps a hidden group the kernel's rpc primitive fills on
-// first expand, exactly as far as the pattern went). The module's
-// keyboard path drives the same toggle button a click drives, so any
-// lazy-load wiring on it fires either way.
-
-// Tree parts. The row holds the toggle and the label; the group is
-// the child list a branch reveals.
+// Tree parts. The row holds the toggle and the label; the group is a branch's child list.
 const (
 	PartTreeItem   Part = "tree-item"
 	PartTreeRow    Part = "tree-row"
@@ -31,54 +18,25 @@ const (
 
 // TreeNode is one entry in the tree.
 type TreeNode struct {
-	// ID is unique within the tree and becomes the treeitem's element
-	// id. Required, and a bare id: letters, digits, `-`, `_` — a
-	// space, quote, `#` or markup refuses at render. Unlike
-	// SortableItem.Key this is not data: the id pairs with
-	// href="#<id>" fragments and signal names, so slugify stored
-	// values before they reach the tree.
-	ID string
-	// Label is the row's visible text. Required.
-	Label string
-	// Href, when set, makes the row's label a link. A branch with
-	// Href keeps its toggle; a dangerous href degrades to a plain
-	// label rather than a clickable vector.
-	Href string
-	// Children are statically-known descendants. Empty for leaves.
-	Children []TreeNode
-	// LazyPath, when set and Children is empty, makes this a branch
-	// whose children load on first expand: the toggle carries the
-	// kernel's rpc wiring against LazyPath and the child group is
-	// bound to the signal the response swaps in. Children wins when
-	// both are set — the children are already there.
-	LazyPath string
-	// Expanded forces the branch open on first paint. A lazy branch
-	// (LazyPath with no Children) ignores it and starts collapsed: its
-	// children load on the first toggle.
-	Expanded bool
-	// Selected sets aria-selected="true" on the treeitem.
-	Selected bool
+	ID       string     // required, unique in the tree; letters, digits, - and _ only
+	Label    string     // required: the row's text
+	Href     string     // makes the label a link; an unsafe one renders a plain label
+	Children []TreeNode // statically known descendants
+	LazyPath string     // with no Children, the children load from here on first expand
+	Expanded bool       // open on first paint; a lazy branch ignores it
+	Selected bool       // aria-selected="true"
 }
 
+// TreeProps configures a tree.
 type TreeProps struct {
-	// Label is the aria-label on the role="tree" wrapper. Required.
-	Label string
-	// Nodes are the root-level entries. Required and non-empty: a
-	// tree with nothing in it is a landmark that says nothing.
-	Nodes []TreeNode
-	// LazySignalPrefix names the signal namespace the lazy branches
-	// bind their child groups to (each lazy branch's group carries
-	// data-cui-signal="<prefix>-<node-id>"). Required when any node
-	// uses LazyPath, ignored otherwise.
-	LazySignalPrefix string
+	Label            string     // required: the tree's aria-label
+	Nodes            []TreeNode // required, at least one
+	LazySignalPrefix string     // required when a node uses LazyPath: groups bind "<prefix>-<node-id>"
 
-	// ID is the tree wrapper's element id. Required.
-	ID         string
+	ID         string // required
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the root and the rows. No part is fillable: the
-	// tree is the contract.
-	Parts Parts
+	Parts Parts // nothing is fillable
 }
 
 // Tree renders the treeview.
@@ -111,8 +69,6 @@ func Tree(p TreeProps, s Classes) render.HTML {
 	return b.El("ul", PartRoot, own, rendered...)
 }
 
-// treeCheckNodes walks the node tree refusing blank ids and labels
-// and collecting ids for the duplicate check.
 func treeCheckNodes(component string, nodes []TreeNode, ids *[]string) {
 	for _, n := range nodes {
 		checkFragmentID(component+" node", "ID", n.ID)
@@ -122,7 +78,6 @@ func treeCheckNodes(component string, nodes []TreeNode, ids *[]string) {
 	}
 }
 
-// treeNeedsSignals reports whether any node (at any depth) lazy-loads.
 func treeNeedsSignals(nodes []TreeNode) bool {
 	for _, n := range nodes {
 		if n.LazyPath != "" {
@@ -135,18 +90,10 @@ func treeNeedsSignals(nodes []TreeNode) bool {
 	return false
 }
 
-// treeNode renders one treeitem. firstFocusable carries the roving
-// tabindex: the first root row is the tree's keyboard entry point.
-// mark is true for a root-level node — TreeNode holds only strings, so
-// every row, at any depth, is this component's own, and the topmost
-// point of that is each root node; a node's own children never mark
-// themselves, since a root's mark already covers them.
+// treeNode renders one treeitem; only the first root row takes tabindex 0, and only root rows carry the internal mark.
 func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, firstFocusable, mark bool) render.HTML {
 	isBranch := len(n.Children) > 0 || n.LazyPath != ""
 	lazy := n.LazyPath != "" && len(n.Children) == 0
-	// A lazy branch loads on its first toggle, so it starts collapsed:
-	// rendered open, its group would sit empty until the reader closed
-	// and reopened it.
 	expanded := n.Expanded && !lazy
 
 	itemAttrs := Attrs(map[string]string{
@@ -168,24 +115,15 @@ func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, f
 		itemAttrs["aria-selected"] = "true"
 	}
 
-	// The row: the toggle (branches only) beside the label.
 	row := []render.HTML{}
 	if isBranch {
 		toggleAttrs := Attrs(map[string]string{
 			"type": "button",
 		})
 		Mark(toggleAttrs, "data-hui-tree-toggle")
-		// The toggle is decorative — the treeitem's aria-expanded is
-		// the state a reader gets — so it is aria-hidden and out of
-		// the tab order; the module returns focus to the row.
 		toggleAttrs["aria-hidden"] = "true"
 		toggleAttrs["tabindex"] = "-1"
 		if lazy {
-			// Lazy: clicking the toggle fires the kernel's rpc
-			// primitive; the response populates the child group
-			// through the signal swap.
-			// Same-origin like every RPC sink here: a cross-origin
-			// branch is one the runtime silently declines to fetch.
 			checkSameOrigin("Tree node "+strconv.Quote(n.ID), "LazyPath", n.LazyPath)
 			Mark(toggleAttrs, "data-cui-rpc")
 			toggleAttrs["data-cui-rpc-method"] = "POST"
@@ -194,13 +132,7 @@ func treeNode(b Box, n TreeNode, level, pos, setSize int, signalPrefix string, f
 		}
 		row = append(row, b.El("button", PartTreeToggle, toggleAttrs, render.Text("▶")))
 	}
-	// A dangerous Href is dropped and the node degrades to a plain
-	// label rather than a clickable XSS vector.
 	if href := urlsafe.CleanAnchor(n.Href); href != "" {
-		// Out of the tab order: the tree is one tab stop (the APG tree
-		// view), the treeitem holds the roving tabindex, and the module
-		// follows the link on Enter. A tabbable link in every row made
-		// Tab walk the rows instead of leaving the tree.
 		row = append(row, b.El("a", PartLabel, Attrs(map[string]string{"href": href, "tabindex": "-1"}),
 			render.Text(scrubControlBytes(n.Label))))
 	} else {

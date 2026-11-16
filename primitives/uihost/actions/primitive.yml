@@ -1,0 +1,142 @@
+primitive: uihost.actions
+summary: Server actions and widget scripts - compiling a screen's actions, serving their JavaScript and answering action requests.
+code:
+  - framework/uihost/actions.go
+docs:
+  - framework/docs/content/interactive-patterns.md
+invariants:
+  - id: compile-actions-first-wins
+    rule: CompileActions under an id already compiled returns the first registry's JS and keeps the first registry.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavCompileActionsFirstWins
+  - id: action-id-collision-panics
+    rule: AutoCompileActions panics, naming both routes, when two screens derive or declare the same action id.
+    enforced_by:
+      - test: framework/uihost.TestScreenActionIDCollisionNotSilent
+      - test: framework/uihost.TestExplicitIDCollisionAlsoRefused
+      - test: framework/uihost.TestLateScreenRefusalsAtBoot
+  - id: auto-compiled-actions-record-their-screen
+    rule: AutoCompileActions records each action id's screen, whose policy the server-action endpoint then runs.
+    enforced_by:
+      - test: framework/uihost.TestServerActionRunsScreenPolicy
+      - test: framework/uihost.TestServerActionPolicySeesRouteParams
+  - id: compiled-registry-keeps-its-component
+    rule: CompileActions keeps the component each registry came from, so the embed boot walk can find a server action reachable from an embeddable screen.
+    enforced_by:
+      - test: framework/uihost.TestEmbedGateInspectsCompiledActionRegistry
+      - test: framework/uihost.TestEmbedSurfaceWithServerActionPanicsAtBoot
+  - id: action-id-from-path
+    rule: A screen with no ComponentID gets the action id of its path with slashes turned to dashes and colons dropped, and / gets home.
+    enforced_by:
+      - test: framework/uihost.TestUIHostMountAutoCompilesScreenActions
+  - id: action-output-sorted-by-id
+    rule: GetActionJS and the page's widget script tags list components in id order.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavActionOutputSortedByID
+  - id: widget-tags-only-for-components-on-the-page
+    rule: A page gets one content-addressed widget script tag for each compiled id it renders as data-component or data-widget, and none for the rest.
+    enforced_by:
+      - test: framework/uihost.TestUIHostInjectsActions
+      - test: framework/uihost.TestPageExternalizesDataBlocks
+  - id: action-scripts-need-session-or-grant
+    rule: The action concat and the per-widget scripts answer only a caller with a valid session or a valid embed grant, and an invalid grant never falls back to a session.
+    enforced_by:
+      - test: framework/uihost.TestUIHost_ActionsJSRequiresAuth
+      - test: framework/uihost.TestActionsEndpointsAcceptAGrant
+      - test: framework/uihost.TestInvalidGrantDoesNotFallBackToASession
+      - test: framework/uihost.TestWidgetJSGatedAndVersioned
+  - id: server-action-is-post-only
+    rule: The server-action handler answers any method but POST with 405, and its GET sibling answers 405 with Allow POST.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavServerActionIsPostOnly
+    applies:
+      - framework/uihost/errorpages.go
+  - id: server-action-refuses-cross-origin
+    rule: A cross-origin POST to the server-action endpoint is refused before its body is read.
+    enforced_by:
+      - test: framework/uihost.TestUIHost_ServerActionRejectsCrossOriginPost
+  - id: server-action-refuses-declared-oversize
+    rule: A server-action request whose declared length passes the mutating-body limit answers 413 before its body is read.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavServerActionRefusesDeclaredOversize
+  - id: server-action-body-accepts-session-field
+    rule: The server-action body decoder accepts a session field, which older runtimes send.
+    enforced_by:
+      - test: framework/uihost.TestUIHost_ServerActionUnknownActionReturnsNotFound
+      - test: framework/uihost.TestUIHost_ServerActionUnknownComponentReturnsNotFound
+  - id: unknown-action-is-404-before-auth
+    rule: An unknown component or action answers 404 before the session check, so probing reveals only what rendered HTML does.
+    enforced_by:
+      - test: framework/uihost.TestUIHost_ServerActionUnknownComponent
+      - test: framework/uihost.TestUIHost_ServerActionUnknownComponentReturnsNotFound
+  - id: server-action-needs-a-session
+    rule: Invoking a known server action needs a valid session cookie, and an embed grant alone is refused.
+    enforced_by:
+      - test: framework/uihost.TestUIHost_ServerActionRequiresSession
+      - test: framework/uihost.TestServerActionRefusesAnEmbedGrant
+  - id: server-action-runs-screen-policy
+    rule: A server action of a recorded screen runs that screen's whole policy phase first, against the named page when it resolves to that screen and the pattern policy otherwise, and anything but allow refuses.
+    enforced_by:
+      - test: framework/uihost.TestServerActionRunsScreenPolicy
+      - test: framework/uihost.TestServerActionPolicySeesRouteParams
+      - test: framework/uihost.TestServerActionRunsRegionGuards
+      - test: framework/uihost.TestServerActionRunsRequiresResolvers
+      - test: framework/uihost.TestServerActionRefusesFailedPage
+  - id: server-action-refusal-status
+    rule: A refused server action answers the policy's block status when it is 4xx or 5xx, 404 for a page that resolves not-found, and 403 otherwise.
+    enforced_by:
+      - test: framework/uihost.TestServerActionRefusesFailedPage
+      - test: framework/uihost.TestServerActionRunsRequiresResolvers
+  - id: server-action-result
+    rule: A server action's handler receives the request's params, and its JSON result carries Cache-Control no-store and a message in the caller's locale.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavServerActionHandsParamsNoStore
+  - id: action-js-routes-server-calls-by-component
+    rule: Compiled action JS rewrites G.serverAction calls to G._serverActionFor with the component id, quotes that id as a JS string, and registers its handlers with G.register.
+    enforced_by:
+      - test: framework/uihost.TestGateFollowsIslandChild
+      - test: framework/uihost.TestBootWalkCannotSeeRenderBuiltChild
+      - test: framework/uihost.TestUIHostMountAutoCompilesScreenActions
+      - test: framework/uihost.TestEmbedRuntimeCarriesActions
+      - test: framework/uihost.TestSweepNavActionJSQuotesComponentID
+decisions:
+  - id: server-action-takes-a-session-not-a-grant
+    date: 2026-11-16
+    status: accepted
+    decision: Invoking a server action needs a valid session cookie, and an embed grant is refused, so a component that calls G.serverAction does not work inside a frame.
+    rejected:
+      - option: Accept an embed grant as the credential.
+        why: The action registry is app-global and keyed by component and action with no surface, so a grant minted for one surface could invoke any action in the app, including from a surface with no subject.
+    revisit_if: The app declares which embed surfaces may invoke which actions.
+    upholds: [server-action-needs-a-session]
+  - id: session-is-not-a-privilege
+    date: 2026-11-16
+    status: accepted
+    decision: The session check only stops a grant from conferring more than an anonymous visitor has; the owning screen's policy is the page-level gate, and a handler checks anything finer itself.
+    rejected:
+      - option: Treat the session check as authorization.
+        why: A uihost session is self-minted by any same-origin caller, because island state needs an id before any user exists.
+    upholds: [server-action-runs-screen-policy]
+  - id: action-id-collision-panics
+    date: 2026-11-16
+    status: accepted
+    decision: AutoCompileActions panics, naming both routes, when two screens derive one action id.
+    rejected:
+      - option: Keep the first registry and go on.
+        why: The second screen's handlers were unreachable and its clicks ran the other screen's handlers with this page's params, and the symptom could not be traced to the cause.
+    upholds: [action-id-collision-panics]
+  - id: action-body-keeps-session-field
+    date: 2026-11-16
+    status: accepted
+    decision: The server-action body still declares a session field that nothing reads, so a tab running an older runtime that sends it decodes under the strict decoder.
+    rejected:
+      - option: Drop the field.
+        why: Every server action from a tab with the older runtime would fail until it reloads.
+    revisit_if: No supported runtime sends the session field in a server-action body.
+  - id: per-id-widget-scripts
+    date: 2026-11-16
+    status: accepted
+    decision: Live pages load one content-addressed widget script per component on the page, and the whole-app action concat stays only for exports and external callers.
+    rejected:
+      - option: One concatenated bundle of every action on every page.
+        why: It ships every app's actions to every page and maps the whole action surface for anyone who loads it.

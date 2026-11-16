@@ -11,57 +11,29 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── TagInput ───────────────────────────────────────────────────────
-//
-// Free-form text → chips, over headless.TagInput. The committed values
-// are visible chips with their own named remove controls on the first
-// paint AND hidden inputs under one Name (the standard repeated-key
-// pattern), so what a reader sees removed is what a submit stops
-// carrying — with or without script. The module commits the draft on
-// Enter or comma, removes on Backspace or the chip's ×, returns focus
-// to the field, and announces through the sentences the component
-// carries from its Strings.
-//
-// Different from MultiSelect: MultiSelect has a fixed option list;
-// TagInput is open-ended free text.
-
 // TagInputConfig configures a TagInput.
 type TagInputConfig struct {
-	// Ctx carries the per-request context the component's own words
-	// (the add and remove names and the status lines) are written in. When nil, English applies.
+	// Ctx resolves the add and remove names and status lines. Nil
+	// means English.
 	Ctx context.Context
 
-	// Name is the form-field name (required). Each tag is submitted
-	// under this name (repeated key).
-	Name string
-	// Label is the accessible label (required).
-	Label string
-	// Values are the initial tags.
-	Values []string
-	// Placeholder for the text input.
+	// Name, under which every tag submits, and Label are required.
+	Name        string
+	Label       string
+	Values      []string
 	Placeholder string
-	// MaxLength caps individual tag length (chars). 0 = no cap.
+	// MaxLength caps each tag's length; 0 means no cap.
 	MaxLength int
-	// Help renders supporting text under the field.
-	Help string
-	// Disabled disables all interaction.
-	Disabled bool
-	ID       string
-	Class    string
+	Help      string
+	Disabled  bool
+	ID        string
+	Class     string
 
-	// ExtraAttrs forwards additional attributes to the field's root.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, and every data-hui-* hook.
+	// ExtraAttrs forwards attributes to the root; keys the component
+	// owns are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// tagInputClasses dresses headless.TagInput's parts in this package's
-// own vocabulary — the names the registered ui-tag-input sheet
-// matches. The chip and its remove button are the exception: the
-// headless-collections module builds chips at runtime with no class,
-// so the sheet keys them on the hook both renders carry
-// ([data-hui-tag-input-remove] and its button), the way ui-multiselect
-// keys its runtime-built chips.
 var tagInputClasses = headless.Classes{
 	headless.PartRoot:          "fui-tag-input",
 	headless.PartLabel:         "fui-tag-input__label",
@@ -75,7 +47,8 @@ var tagInputClasses = headless.Classes{
 	headless.PartStatus:        "fui-visually-hidden",
 }
 
-// TagInput renders a free-form tag input bound to a chip strip.
+// TagInput renders free-text tags as chips, each with its hidden input
+// and a named remove control.
 func TagInput(cfg TagInputConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: TagInput requires Name")

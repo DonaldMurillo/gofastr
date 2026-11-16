@@ -17,78 +17,28 @@ const (
 )
 
 // CardProps configures a card.
-//
-// A card is the one component here with almost no accessibility
-// surface, and saying so is the point of the type: the heading level
-// is the only decision in it that a screen reader can be hurt by, and
-// it is a decision the card cannot make alone.
 type CardProps struct {
-	// Title renders as a heading. Empty omits it, along with the whole
-	// header when Desc is empty too — an empty header is a stripe of
-	// padding that looks like a mistake.
-	Title string
-	// TitleContent renders as the heading's content in place of
-	// Title's text, for a heading whose words are composed rather than
-	// known at render: a client-filled value (a local entity's text
-	// slot, a signal binding) inside the card's own heading element,
-	// which a filled header would lose. When both are set,
-	// TitleContent wins.
-	TitleContent render.HTML
-	// TitleTag is the heading level, "h3" by default. A card does not
-	// know how deep in the outline it sits, so a page that nests cards
-	// under an h2 says so here rather than letting every card claim
-	// the same level and leave the document with no structure to
-	// navigate by.
-	TitleTag string
-	Desc     string
-	// Href makes the whole card one focusable link — the surface is
-	// the affordance. The contents render inside a single inner part,
-	// so the anchor wraps exactly what the card showed as a div. A
-	// href the anchor policy refuses is refused at render, naming the
-	// prop, the package's posture for every configured href
-	// (Alert.DismissHref, Form.Action, Table.Path): a rejected href is
-	// the developer's mistake, not a link to render dead.
-	Href   string
-	Footer render.HTML
-	// Action is a control at the header's end, beside the title: the
-	// "View all" link of a feed, a card's own menu. It is the one control
-	// a header takes without filling the whole part. A card with Href is
-	// already one link, so Action and Href together panic: a control
-	// inside an anchor is a nested interactive element.
-	Action render.HTML
+	Title        string      // the heading; with Desc empty too, no header renders
+	TitleContent render.HTML // composed heading content; wins over Title
+	TitleTag     string      // "h1" to "h6", "h3" by default
+	Desc         string
+	Href         string // makes the whole card one link; a URL the anchor policy refuses panics
+	Footer       render.HTML
+	Action       render.HTML // a control at the header's end; refused with Href
 
-	// ID is the root's id; with a title, the title is "<ID>-title".
-	ID         string
+	ID         string // with a title, the title's id is "<ID>-title"
 	ExtraAttrs html.Attrs
 
-	// Parts. The header is the one fillable part, and the rule it
-	// comes from is worth stating: a slot exists only where the
-	// component COMPOSES something a prop cannot express. A card's
-	// header is built from a title string and a description string,
-	// so a header that needs a control in it has no prop to arrive
-	// through. The body and the footer already take caller content, so
-	// a slot there would be a second way to do one thing — which is
-	// worse than none, because half the call sites will use each.
-	//
-	// Attrs are the opposite: they apply to every part, on every
-	// component, because adding an attribute cannot break a structure.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
-	Strings *Strings
+	Parts   Parts    // PartCardHeader is the one fillable part
+	Strings *Strings // nil means the English defaults
 }
 
 // Card renders a card around its body.
 func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
-	// The one fillable part, the same list the spec declares: a text
-	// Bind may replace what a Slot may (box.go), and nothing else in
-	// a card may have its content rewritten.
 	if p.Action != "" && p.Href != "" {
 		panic("headless: Card Action and Href together nest a control inside the card's link")
 	}
 	b := p.Parts.Box(s, PartCardHeader)
-	// A linked card marks its inner wrapper; without the link each part
-	// holding only the component's own markup is marked itself.
 	mark := p.Href == ""
 	kids := make([]render.HTML, 0, 3)
 	if p.Title != "" || p.TitleContent != "" || p.Desc != "" || p.Action != "" || b.Filled(PartCardHeader) {
@@ -102,8 +52,6 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 			if title == "" {
 				title = render.Text(p.Title)
 			}
-			// A card with an ID names its title "<ID>-title", so content
-			// inside can point aria-labelledby at it.
 			var titleOwn html.Attrs
 			if p.ID != "" {
 				titleOwn = Attrs(map[string]string{"id": p.ID + "-title"})
@@ -130,10 +78,6 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 			panic("headless: Card Href " + strconv.Quote(p.Href) + " is not a URL the anchor policy allows")
 		}
 		own["href"] = href
-		// The inner wrapper holds only the component's own markup when
-		// none of the header, the body or the footer carries caller
-		// content — otherwise it is an ancestor of a slot and is left
-		// for an owner to reach.
 		var innerOwn html.Attrs
 		if !b.Filled(PartCardHeader) && p.TitleContent == "" && len(body) == 0 && p.Footer == "" {
 			innerOwn = Internal(nil)

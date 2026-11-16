@@ -13,41 +13,30 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── ColumnPicker ──────────────────────────────────────────────────
-//
-// A list's Columns control: a dropdown of its columns in display order,
-// each a link that shows or hides it, with move up and move down links
-// beside a shown one, and a Reset link. Every link is a navigation the
-// caller builds (the list's state lives in its URL), so it works without
-// script and the server owns the order.
-
 // ColumnChoice is one column's row.
 type ColumnChoice struct {
 	// Label names the column. Required.
 	Label string
-	// Shown marks the column on; Locked keeps it on with no toggle (the
-	// column that links to the record).
+	// Locked keeps a column shown with no toggle.
 	Shown, Locked bool
-	// ToggleHref shows or hides it; UpHref and DownHref move a shown
-	// column one place. An empty href draws that control disabled.
+	// An empty or unsafe href draws its control disabled.
 	ToggleHref, UpHref, DownHref string
 }
 
 // ColumnPickerConfig configures a ColumnPicker.
 type ColumnPickerConfig struct {
-	// ID is the dropdown's id. Required.
-	ID string
-	// Label is the trigger's text ("Columns"). Required.
+	// ID and Label (the trigger's text) are required.
+	ID      string
 	Label   string
 	Columns []ColumnChoice
-	// ResetHref and ResetLabel draw the Reset link; empty draws none.
+	// ResetHref and ResetLabel together draw the Reset link.
 	ResetHref, ResetLabel string
-	// ExtraAttrs forwards attributes to the dropdown's root.
-	ExtraAttrs html.Attrs
-	Ctx        context.Context
+	ExtraAttrs            html.Attrs
+	Ctx                   context.Context
 }
 
-// ColumnPicker renders the control.
+// ColumnPicker renders a Columns dropdown: per column a show/hide link
+// and, when shown, move links, each a navigation the caller builds.
 func ColumnPicker(cfg ColumnPickerConfig) render.HTML {
 	if cfg.ID == "" || cfg.Label == "" {
 		panic("ui: ColumnPicker requires ID and Label")
@@ -99,8 +88,6 @@ func ColumnPicker(cfg ColumnPickerConfig) render.HTML {
 		}
 		body = append(body, render.Tag(tag, attrs, render.Text(cfg.ResetLabel)))
 	}
-	// The rows are built from strings and the caller's hrefs: the
-	// panel is this component's own.
 	content := headless.Own(columnPickerStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-colpick"}, body...)))
 	return Dropdown(DropdownConfig{
 		Ctx: ctx,
@@ -109,7 +96,6 @@ func ColumnPicker(cfg ColumnPickerConfig) render.HTML {
 	})
 }
 
-// colpickMove is a move link, or the same glyph disabled with no href.
 func colpickMove(ctx context.Context, href, icon string, key i18n.Phrase, label string) render.HTML {
 	href = urlsafe.CleanAnchor(href)
 	name := key.Text(ctx, map[string]any{"column": label})

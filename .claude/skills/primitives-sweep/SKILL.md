@@ -27,6 +27,8 @@ The order of work across packages is in `primitives/PLAN.md`.
   trimmed: cut one down to the contract (what it does, what it returns,
   when it errors) and move the history out.
 - Comments in `_test.go` files. A test says what it pins. Leave them.
+  A new test gets at most one comment line unless it explains a
+  non-obvious setup.
 - Generated files. Leave them.
 
 ## Steps

@@ -119,6 +119,11 @@ invariants:
       - test: framework.TestTypedHookRedRefAliasAfterResp
       - test: framework.TestTypedHookRedRefAliasBeforeUpdate
       - test: framework.TestTypedAfterHookRedactsCamelKey
+      - test: framework.TestTypedHookSnapshotIsDeepWhenTheValueCannotBeMarshalled
+      - test: framework.TestSnapshotDeepCopyFollowsPointerCycles
+      - test: framework.TestSnapshotDeepCopyEndsMapAndSliceCycles
+      - test: framework.TestSnapshotDeepCopyKeysPointersByType
+      - test: framework.TestTypedHookSnapshotCopiesUnexportedEmbeddedStructs
       - test: framework.TestTypedBeforeHookKeepsDigitKey
   - id: typed-hook-fields-are-encoding-json-fields
     rule: The fields a typed hook merges are the ones encoding/json encodes, embedded promotion and shadowing included, and a field under a nil embedded pointer reads as its zero value.
@@ -180,10 +185,12 @@ decisions:
   - id: typed-hook-merge-diffs-fields
     date: 2026-11-16
     status: accepted
-    decision: The merge diffs a JSON-round-trip snapshot of T against T after the callback, field by field.
+    decision: The merge diffs a JSON-round-trip snapshot of T against T after the callback, field by field; a T that cannot round-trip is snapshotted by a reflect deep copy that ends pointer, map and slice cycles, keys each reference by type, and reaches exported fields under an unexported embedded struct.
     rejected:
       - option: Marshal T after the callback into the payload.
         why: Generated structs tag fields omitempty, so a hook forcing is_admin to false would be dropped and the client's true written.
       - option: Snapshot with a plain struct copy.
         why: Maps, slices and pointers alias, so an in-place change compares equal and is skipped.
+      - option: Fall back to a plain struct copy when T does not marshal.
+        why: A T with a chan or func field, or a MarshalJSON that errors, then lost every in-place change to a map, slice or pointer field.
     upholds: [typed-hook-writes-back-changes-only]

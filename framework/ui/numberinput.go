@@ -12,55 +12,31 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── NumberInput / Stepper ──────────────────────────────────────────
-//
-// Native <input type="number"> flanked by explicit −/+ buttons, over
-// headless.NumberInput. Why the buttons exist: the spinner arrows
-// shipped by browsers are tiny, hidden on touch, and disabled when
-// type=number is in a form-validation error state. The module steps
-// the value inside the declared bounds and dispatches an `input` event
-// so existing form-RPC pipelines see the change; without it the field
-// is still a normal named number control.
-
 // NumberInputConfig configures a NumberInput.
 type NumberInputConfig struct {
-	// Name is the form-field name (required).
+	// Name is the form-field name. Required.
 	Name string
-	// Label is the accessible label (required, used as <label for=…>).
+	// Label is the accessible label. Required.
 	Label string
-	// Min / Max bound the value. When both 0, no client-side bound is
-	// applied (server is still authoritative). When either is set, Min
-	// is a real floor even at 0 (Max: 10 means 0..10); a caller that
-	// allows negatives sets Min explicitly. Max is emitted only when
-	// non-zero, so Min: 1 alone never fabricates an empty 1..0 range.
+	// Min and Max bound the value: both zero is unbounded, otherwise Min
+	// is a floor even at zero and Max applies only when non-zero.
 	Min int
 	Max int
-	// Step is the +/- button granularity. Default 1.
-	Step int
-	// Value is the initial value.
-	Value int
-	// Disabled disables interaction.
+	// Step is the buttons' granularity; zero is 1.
+	Step     int
+	Value    int
 	Disabled bool
-	// Required marks the field required.
 	Required bool
-	// Help renders supporting text under the field.
-	Help string
-	// Error overrides Help with an error message.
-	Error string
-	ID    string
-	Class string
-	// ExtraAttrs forwards additional attributes to the root element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, and every data-hui-* hook.
+	Help     string
+	Error    string
+	ID       string
+	Class    string
+	// ExtraAttrs lands on the root; keys the component owns are dropped.
 	ExtraAttrs html.Attrs
-	// Ctx carries the per-request context used to resolve the Decrement
-	// and Increment aria labels. When nil, English fallbacks apply.
+	// Ctx resolves the buttons' labels; nil reads English.
 	Ctx context.Context
 }
 
-// numberInputClasses dresses headless.NumberInput's parts in this
-// package's own vocabulary — the names the registered ui-number-input
-// sheet matches.
 var numberInputClasses = headless.Classes{
 	headless.PartRoot:            "fui-number-input",
 	headless.PartLabel:           "fui-number-input__label",
@@ -90,8 +66,6 @@ func NumberInput(cfg NumberInputConfig) render.HTML {
 		max = &m
 	}
 
-	// The root's modifier classes travel as part attrs, which append
-	// to the class map's own root class rather than replacing it.
 	parts := headless.Parts{}
 	if rootClass := strings.TrimSpace(modifierClass("is-error", cfg.Error != "") +
 		" " + modifierClass("is-disabled", cfg.Disabled) + " " + cfg.Class); rootClass != "" {
@@ -119,8 +93,6 @@ func NumberInput(cfg NumberInputConfig) render.HTML {
 	}, numberInputClasses))
 }
 
-// modifierClass returns the class when on, "" when off, so a caller's
-// own Class and the component's state classes merge in one string.
 func modifierClass(name string, on bool) string {
 	if !on {
 		return ""

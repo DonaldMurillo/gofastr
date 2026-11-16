@@ -82,15 +82,19 @@ first. Exported doc comments, directives and test comments stay. Order:
 `core-ui/`, `battery/`, `cmd/`, `internal/`.
 
 Done when non-test Go code is under 8% comment lines, from 24% today.
-`scripts/comment-ratio.sh [dir...]` counts them.
+`scripts/comment-ratio.sh [dir...]` counts them, and prints the share
+for `_test.go` files on a second line, which a sweep should not raise.
 
 Status: `framework/crud` is swept, 29.2% to 6.3%. Its rules are 185
 invariants, each naming a test that was watched failing, and 79
 decisions. The root `framework` package is swept too, 33.1% to 5.1%: 397
-more invariants and 151 decisions on `app` and its children. The
-repository as a whole is at the share the script prints. Next, in order:
-`framework/headless`, `framework/uihost`, `framework/ui`, then the rest
-of `framework/`.
+more invariants and 151 decisions on `app` and its children.
+`framework/headless` is swept, 31.4% to 6.8% (300 invariants, 124
+decisions); `framework/uihost`, 35.0% to 4.1% (351 and 114);
+`framework/ui`, 24.0% to 6.8% (385 and 123). The replay eval after them
+held every number (`2026-11-16-replay-ui-sweeps.md`). The repository as
+a whole is at the share the script prints. Next: the rest of
+`framework/`.
 
 ### 3. Bring the known twins in, and merge them
 
@@ -115,6 +119,11 @@ sweep had owners to write to: `app` and its children, `app.processmodule`
 among them, own all 87 files. `TestCoveredPackagesHaveNoUnownedFile`
 fails when a file in a covered package has no owner; add a package to
 its list as this step reaches it.
+
+`framework/headless` (`headless` and five children), `framework/uihost`
+(thirteen children; `uihost.go` was split into files by job so each has
+one) and `framework/ui` (ten children beside `ui.styling`) are covered
+too, ahead of their sweeps.
 
 A rule that spans primitives keeps one home and lists the other files
 it governs under `applies` (settled in step 1: `crud.scope`'s

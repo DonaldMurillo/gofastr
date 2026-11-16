@@ -82,7 +82,10 @@ type task struct {
 	// Graders, on a replay task, names the directory of held-out tests
 	// under graders/: TestReplayReported* covers the path the prompt
 	// reports, TestReplayTwin* the other paths the real fix reached.
-	Graders  string
+	Graders string
+	// MinRuns is the fewest trials the task gets whatever -runs says,
+	// for a task whose result spreads too widely for two runs to show.
+	MinRuns  int
 	Prompt   string
 	Packages []string
 	Tests    string
@@ -179,7 +182,7 @@ var tasks = []task{
 		Packages: []string{"./cmd/gofastr/internal/appspec/"},
 	},
 	{
-		ID: "node-block-entity", Suite: suiteReplay, Ref: "289df96a^", Graders: "node-block-entity", Overlay: "appspec",
+		ID: "node-block-entity", Suite: suiteReplay, Ref: "289df96a^", Graders: "node-block-entity", Overlay: "appspec", MinRuns: 6,
 		Prompt: "In gofastr.yml, an entity_list nested under a node block (type: header, type: div and the like) validates, and the screen then draws an \"unknown kind\" HTML comment where the list belongs. " +
 			"Refuse it when the spec loads." + replayClosing,
 		Packages: []string{"./cmd/gofastr/internal/appspec/"},

@@ -20,51 +20,19 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// Toast surface: client-driven, no SSE.
-//
-// Two trigger paths reach the same client-side stack:
-//
-//  1. **Frontend**: `window.__gofastr.toast({variant, title, body, ttl})`
-//     called from inline JS or component bindings.
-//  2. **Server response header**: any HTTP response, typically an RPC
-//     handler's reply, can set `X-Gofastr-Toast: <json>`; the runtime
-//     scans every `data-cui-rpc` response for the header and dispatches
-//     it through the same client API.
-//
-// Both paths converge on `__gofastr.toast(cfg)` (the headless-feedback
-// module), which clones a row from the <template> this package
-// registers below and preset's slot renders inside the stack, fills its
-// hooks, appends it to the stack container, and wires the TTL + dismiss
-// handlers. No server-side queue, no SSE connection. The stack lives
-// entirely in the browser, and every class a runtime toast wears is
-// this package's, carried by the template: the module names hooks only.
-//
-// Use AddToast from server handlers; use TriggerHeader / TriggerJSON
-// when composing the header value manually.
-
-// ToastTrigger is the JSON shape carried by the X-Gofastr-Toast
-// header, and the same shape accepted by __gofastr.toast(cfg) on
-// the client. Field names match the runtime template; keep both in
-// sync when extending.
+// ToastTrigger is one toast, as the X-Gofastr-Toast header carries it
+// and as window.__gofastr.toast(cfg) takes it on the client.
 type ToastTrigger struct {
 	Variant StatusVariant `json:"variant,omitempty"` // info | success | warning | danger | neutral
 	Title   string        `json:"title"`             // required
 	Body    string        `json:"body,omitempty"`
 	TTL     int           `json:"ttl,omitempty"` // milliseconds; 0 = persistent
-	// Stack is the name of the toast stack widget to push into.
-	// Defaults to the first stack mounted on the page. Set explicitly
-	// when an app hosts multiple stacks (e.g. per-tenant).
+	// Stack names the toast stack to push into; empty is the page's first.
 	Stack string `json:"stack,omitempty"`
-	// Action is the toast's one button (interactive.NewToastAction): an
-	// Undo the server offers in its answer. The button carries RPC
-	// wiring only; the runtime drops any other attribute. A toast with
-	// a button stays up at least ten seconds.
+	// Action is the toast's one RPC button; it keeps the toast up at least ten seconds.
 	Action *interactive.ToastAction `json:"action,omitempty"`
 }
 
-// toastPoisoned reports whether t carries a control byte anywhere it
-// reaches the header: its text, its stack, or its action's label and
-// attributes.
 func toastPoisoned(t ToastTrigger) bool {
 	if textsafe.HasControlBytes(t.Title) || textsafe.HasControlBytes(t.Body) || textsafe.HasControlBytes(t.Stack) {
 		return true
@@ -83,28 +51,13 @@ func toastPoisoned(t ToastTrigger) bool {
 	return false
 }
 
-// AddToast appends a toast trigger to the X-Gofastr-Toast response
-// header. The runtime fires the toast on the client when the matching
-// data-cui-rpc fetch resolves with 2xx.
-//
-// Multiple AddToast calls accumulate into a single header whose value
-// is a JSON array, unaffected by fetch's header-value coalescing
-// across browsers. Apps that need to surface several toasts from one
-// handler just call AddToast multiple times.
-//
-// Apps can call this from any HTTP handler that's reached via
-// data-cui-rpc; the toast travels back on the response that the
+// AddToast appends t to the response's X-Gofastr-Toast JSON array, shown
+// when the data-cui-rpc fetch resolves with a 2xx. A toast with no
+// Title, or with a control byte in any of its text, is dropped.
 func AddToast(w http.ResponseWriter, t ToastTrigger) {
 	if t.Title == "" {
 		return
 	}
-	// Per-entry drop, mirroring InvalidateScreens: encoding/json does
-	// not escape DEL, so a \x7f-bearing title lands as a raw byte in the
-	// header value, and Go's HTTP/2 writer silently drops an invalid
-	// header — losing EVERY toast in the response, not just the poisoned
-	// one. C0 bytes round-trip \u-escaped on the wire but still decode
-	// back into the client-side toast text. Drop the entry, keep the
-	// header.
 	if toastPoisoned(t) {
 		return
 	}
@@ -114,12 +67,7 @@ func AddToast(w http.ResponseWriter, t ToastTrigger) {
 	existing := w.Header().Get("X-Gofastr-Toast")
 	var list []ToastTrigger
 	if existing != "" {
-		// Tolerate either an array (the canonical form we emit) or a
-		// single object (a previous caller may have set it manually).
 		if existing[0] == '[' {
-			// Malformed manual values are dropped, not preserved (and a
-			// half-decoded slice never marches on): the canonical array
-			// form is what this function emits.
 			if err := json.Unmarshal([]byte(existing), &list); err != nil {
 				list = nil
 			}
@@ -129,10 +77,6 @@ func AddToast(w http.ResponseWriter, t ToastTrigger) {
 				list = append(list, single)
 			}
 		}
-		// The re-parsed value gets the same per-entry rule: a manual
-		// caller may have written a control byte straight into the
-		// header, and re-marshalling it would poison this response's
-		// whole accumulated value.
 		kept := list[:0]
 		for _, e := range list {
 			if !toastPoisoned(e) {
@@ -149,11 +93,6 @@ func AddToast(w http.ResponseWriter, t ToastTrigger) {
 	w.Header().Set("X-Gofastr-Toast", asciiJSON(enc))
 }
 
-// asciiJSON rewrites every non-ASCII rune in enc as a JSON \u escape. The
-// Fetch API decodes header bytes as ISO-8859-1, so raw UTF-8 in a header
-// reaches the runtime as mojibake ("Creación" as "CreaciÃ³n"); JSON.parse
-// turns the escapes back into the text. Non-ASCII can only sit inside a
-// JSON string, where an escape means the same rune.
 func asciiJSON(enc []byte) string {
 	var b strings.Builder
 	b.Grow(len(enc))
@@ -171,36 +110,27 @@ func asciiJSON(enc []byte) string {
 	return b.String()
 }
 
-// AddToastSuccess / AddToastError / AddToastWarning are sugar for the
-// common cases. ttlMs of 0 means persistent (caller must dismiss).
+// AddToastSuccess adds a success toast; a ttlMs of 0 keeps it up until dismissed.
 func AddToastSuccess(w http.ResponseWriter, title, body string, ttlMs int) {
 	AddToast(w, ToastTrigger{Variant: StatusSuccess, Title: title, Body: body, TTL: ttlMs})
 }
 
+// AddToastError adds a danger toast that stays up until dismissed.
 func AddToastError(w http.ResponseWriter, title, body string) {
 	AddToast(w, ToastTrigger{Variant: StatusDanger, Title: title, Body: body, TTL: 0})
 }
 
+// AddToastWarning adds a warning toast; a ttlMs of 0 keeps it up until dismissed.
 func AddToastWarning(w http.ResponseWriter, title, body string, ttlMs int) {
 	AddToast(w, ToastTrigger{Variant: StatusWarning, Title: title, Body: body, TTL: ttlMs})
 }
 
-// toastTemplateClasses dresses the row the headless-feedback module
-// clones for a runtime toast: the notification's own classes, plus the
-// stack item the ui-toast-stack sheet lays out and animates.
 var toastTemplateClasses = func() headless.Classes {
 	c := maps.Clone(notificationClasses)
 	c[headless.PartToastItem] = "fui-toast-stack__item"
 	return c
 }()
 
-// toastTemplate renders the row template preset's toast slot ships
-// inside every stack, in the request's language.
-//
-// Every status variant beyond the four tones rides the template too:
-// neutral and each registered status variant, with the class and glyph
-// a server Notification of that variant wears, so a runtime toast
-// carrying one is drawn as itself and not as info.
 func toastTemplate(ctx context.Context) render.HTML {
 	glyphs := map[string]string{
 		"info":    notificationGlyph(StatusInfo),
@@ -222,8 +152,6 @@ func toastTemplate(ctx context.Context) render.HTML {
 	}, classes)
 }
 
-// registeredStatusNames lists the registered status variants in
-// stable order, without sealing the set.
 func registeredStatusNames() []string {
 	statusMods.mu.RLock()
 	defer statusMods.mu.RUnlock()
@@ -232,10 +160,6 @@ func registeredStatusNames() []string {
 
 var _ = registry.RegisterTemplate(preset.ToastTemplate, toastTemplate)
 
-// toastSlot is the widget Slot component that renders the initial
-// stack container (preset.ToastSlotHTML: the container plus the row
-// template). The client-side `__gofastr.toast(cfg)` and header-driven
-// flow both append into this container.
 type toastSlot struct{ name string }
 
 func (t toastSlot) Render() render.HTML {
@@ -251,8 +175,6 @@ var (
 	_ component.ContextComponent = toastSlot{}
 )
 
-// ToastSlot exposes a fresh empty-stack slot Component for callers
-// composing a preset.ToastStack(name, ToastSlot(name)) manually.
-// preset.ToastStack uses it internally; this is exported so a host can
-// build its own custom layout while sharing the runtime contract.
+// ToastSlot returns the empty toast stack named name, for a host that
+// composes preset.ToastStack(name, ToastSlot(name)) itself.
 func ToastSlot(name string) component.Component { return toastSlot{name: name} }
