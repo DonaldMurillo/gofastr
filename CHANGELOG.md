@@ -25,6 +25,9 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`ui.Notification` with an `ID` keeps its classes.** Setting `ID`
+  dropped the `Class`, floating `Position` and registered-variant
+  classes from the root; they now render with it.
 - **A `BaseURL` of `/` no longer pins the agent-ready origin.** An
   `AgentReadyConfig.BaseURL` or `SitemapConfig.BaseURL` made only of
   slashes used to count as pinned and yield an empty origin; it now
