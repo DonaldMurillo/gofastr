@@ -43,6 +43,12 @@ few lines, and link the PR or the docs page for the rest.
   runtime's demand-loaded focus module (`widgetfocus`) had loaded, so
   the first open of a page could stay up. The widgets module now hands
   that Escape to the focus module once it loads.
+- **A closed confirm dialog leaves the page at once.** The confirm
+  module waited for the dialog's `close` event, which Chromium fires
+  with the next animation frame, so under load the closed dialog stayed
+  in the DOM and the gated action's answer came 300 to 900 ms late. It
+  now tears down when the dialog's `open` attribute goes. Nothing to
+  change; see the [runtime contract](framework/docs/content/runtime-contract.md).
 - **Cursor pages over seeded SQLite timestamps no longer repeat.** A
   managed entity paged on `created_at` whose rows a seed script or
   migration inserted as `2026-01-02T03:04:05Z` served its first page
