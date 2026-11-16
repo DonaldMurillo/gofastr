@@ -126,10 +126,11 @@ func (a *App) EraseUserData(ctx context.Context, userID string, opts ...EraseOpt
 	dialect := migrate.DetectDialect(a.DB)
 	erasers := datexport.AllErasers()
 
-	resolved, skipped, err := a.resolveEraserIdentities(ctx, dialect, userID, erasers)
+	user, err := a.resolveErasedUser(ctx, dialect, userID, erasers)
 	if err != nil {
 		return EraseReport{}, err
 	}
+	resolved, skipped := resolveEraserIdentities(user, erasers)
 	tenant := cfg.tenant
 	if !cfg.tenantSet {
 		tenant = handler.GetTenantID(ctx)
@@ -142,7 +143,7 @@ func (a *App) EraseUserData(ctx context.Context, userID string, opts ...EraseOpt
 		return EraseReport{}, err
 	}
 
-	rep, werr := a.eraseWrite(ctx, dialect, userID, cfg, plan, resolved, cfg.dryRun)
+	rep, werr := a.eraseWrite(ctx, dialect, user, cfg, plan, resolved, cfg.dryRun)
 	if werr == nil {
 		rep.Skipped = skipped
 	}
@@ -156,27 +157,63 @@ type resolvedEraser struct {
 	tenant string
 }
 
-func (a *App) resolveEraserIdentities(ctx context.Context, dialect migrate.Dialect, userID string, erasers []datexport.DataEraser) (resolved []resolvedEraser, skipped []string, err error) {
+// resolveErasedUser resolves, once and before anything is deleted, every
+// identity an eraser declares, and every registered one when a store
+// eraser takes resolved identities (EraseResolved): the user row it is
+// read from is gone by the time store erasers run. A kind an eraser
+// declares with no resolver registered fails the erasure, which would
+// otherwise be incomplete.
+func (a *App) resolveErasedUser(ctx context.Context, dialect migrate.Dialect, userID string, erasers []datexport.DataEraser) (datexport.ErasedUser, error) {
+	user := datexport.ErasedUser{ID: userID, Identities: map[datexport.IdentityKind]string{}}
+	kinds := map[datexport.IdentityKind]string{}
 	for _, e := range erasers {
 		if e.Identity == datexport.IdentityUserID {
-			resolved = append(resolved, resolvedEraser{eraser: e, value: e.ValuePrefix + userID})
 			continue
 		}
-		r, ok := datexport.ResolveIdentity(e.Identity)
+		if _, ok := datexport.ResolveIdentity(e.Identity); !ok {
+			return user, fmt.Errorf("framework: erase %q declares identity %d but no resolver is registered: erasure would be incomplete", e.Name, e.Identity)
+		}
+		if _, seen := kinds[e.Identity]; !seen {
+			kinds[e.Identity] = fmt.Sprintf("erase %q", e.Name)
+		}
+	}
+	if slices.ContainsFunc(datexport.AllStoreErasers(), func(s datexport.StoreEraser) bool { return s.EraseResolved != nil }) {
+		for kind := range datexport.AllIdentityResolvers() {
+			if _, seen := kinds[kind]; !seen {
+				kinds[kind] = fmt.Sprintf("identity %d for the store erasers", kind)
+			}
+		}
+	}
+	for _, kind := range slices.Sorted(maps.Keys(kinds)) {
+		r, _ := datexport.ResolveIdentity(kind)
+		val, found, err := a.resolveIdentityValue(ctx, dialect, userID, r)
+		if err != nil {
+			return user, fmt.Errorf("framework: %s: resolve identity: %w", kinds[kind], err)
+		}
+		if found {
+			user.Identities[kind] = val
+		}
+	}
+	return user, nil
+}
+
+// resolveEraserIdentities binds each eraser's value from the resolved
+// identities. An eraser whose identity did not resolve is skipped with a
+// note: there is nothing left to match.
+func resolveEraserIdentities(user datexport.ErasedUser, erasers []datexport.DataEraser) (resolved []resolvedEraser, skipped []string) {
+	for _, e := range erasers {
+		if e.Identity == datexport.IdentityUserID {
+			resolved = append(resolved, resolvedEraser{eraser: e, value: e.ValuePrefix + user.ID})
+			continue
+		}
+		val, ok := user.Identity(e.Identity)
 		if !ok {
-			return nil, nil, fmt.Errorf("framework: erase %q declares identity %d but no resolver is registered: erasure would be incomplete", e.Name, e.Identity)
-		}
-		val, found, rerr := a.resolveIdentityValue(ctx, dialect, userID, r)
-		if rerr != nil {
-			return nil, nil, fmt.Errorf("framework: erase %q: resolve identity: %w", e.Name, rerr)
-		}
-		if !found {
 			skipped = append(skipped, e.Name)
 			continue
 		}
 		resolved = append(resolved, resolvedEraser{eraser: e, value: e.ValuePrefix + val})
 	}
-	return resolved, skipped, nil
+	return resolved, skipped
 }
 
 func (a *App) resolveIdentityValue(ctx context.Context, dialect migrate.Dialect, userID string, r datexport.DataIdentityResolver) (string, bool, error) {
@@ -201,6 +238,11 @@ func (a *App) resolveIdentityValue(ctx context.Context, dialect migrate.Dialect,
 	}
 	if !val.Valid || val.String == "" {
 		return "", false, nil
+	}
+	if r.Canonicalize != nil {
+		if c := r.Canonicalize(val.String); c != "" {
+			return c, true, nil
+		}
 	}
 	return val.String, true, nil
 }
@@ -1060,7 +1102,8 @@ func eraseAuditPlane(ctx context.Context, tx *sql.Tx, at auditShape, userID, tom
 	return n, err
 }
 
-func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID string, cfg eraseConfig, plan *erasePlan, erasers []resolvedEraser, dryRun bool) (EraseReport, error) {
+func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, user datexport.ErasedUser, cfg eraseConfig, plan *erasePlan, erasers []resolvedEraser, dryRun bool) (EraseReport, error) {
+	userID := user.ID
 	report := EraseReport{DryRun: dryRun}
 
 	liveErasers := make([]resolvedEraser, 0, len(erasers))
@@ -1156,7 +1199,7 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID st
 		if err := tx.Rollback(); err != nil {
 			return report, fmt.Errorf("framework: erase dry run: rollback: %w", err)
 		}
-		return report, a.eraseStores(ctx, userID, true, &report)
+		return report, a.eraseStores(ctx, user, true, &report)
 	}
 	if err := tx.Commit(); err != nil {
 		return report, fmt.Errorf("framework: erase: commit: %w", err)
@@ -1169,13 +1212,13 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID st
 	} else {
 		objErr = a.eraseStoredObjects(ctx, deletable)
 	}
-	return report, errors.Join(objErr, a.eraseStores(ctx, userID, false, &report))
+	return report, errors.Join(objErr, a.eraseStores(ctx, user, false, &report))
 }
 
-func (a *App) eraseStores(ctx context.Context, userID string, dryRun bool, rep *EraseReport) error {
+func (a *App) eraseStores(ctx context.Context, user datexport.ErasedUser, dryRun bool, rep *EraseReport) error {
 	var failed []string
 	for _, s := range datexport.AllStoreErasers() {
-		n, err := runStoreEraser(ctx, s, userID, dryRun)
+		n, err := runStoreEraser(ctx, s, user, dryRun)
 		if err != nil {
 			failed = append(failed, fmt.Sprintf("%s (%v)", s.Name, err))
 			continue
@@ -1192,13 +1235,16 @@ func (a *App) eraseStores(ctx context.Context, userID string, dryRun bool, rep *
 		len(failed), strings.Join(failed, "; "))
 }
 
-func runStoreEraser(ctx context.Context, s datexport.StoreEraser, userID string, dryRun bool) (n int, err error) {
+func runStoreEraser(ctx context.Context, s datexport.StoreEraser, user datexport.ErasedUser, dryRun bool) (n int, err error) {
 	defer func() {
 		if v := recover(); v != nil {
 			n, err = 0, fmt.Errorf("panicked: %s", textsafe.Recovered(v))
 		}
 	}()
-	return s.Erase(ctx, userID, dryRun)
+	if s.EraseResolved != nil {
+		return s.EraseResolved(ctx, user, dryRun)
+	}
+	return s.Erase(ctx, user.ID, dryRun)
 }
 
 func (a *App) probeAuditTable(ctx context.Context, dialect migrate.Dialect, cfg eraseConfig) (*auditShape, error) {

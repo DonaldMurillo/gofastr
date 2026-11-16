@@ -75,3 +75,27 @@ func TestProducersListedFirst(t *testing.T) {
 		t.Errorf("store erasers in order %v, want %v", got, want)
 	}
 }
+
+// A store eraser takes exactly one of Erase and EraseResolved: neither
+// would leave the store out of every erasure, and both leave which one
+// runs to chance.
+func TestStoreEraserNeedsExactlyOneEraseFunc(t *testing.T) {
+	Reset(t)
+	t.Cleanup(func() { Reset(t) })
+	resolved := func(context.Context, ErasedUser, bool) (int, error) { return 0, nil }
+	for name, e := range map[string]StoreEraser{
+		"neither": {Name: "s", Source: "a"},
+		"both":    {Name: "s", Source: "a", Erase: nopErase, EraseResolved: resolved},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s: registered", name)
+				}
+			}()
+			RegisterStoreEraser(e)
+		}()
+	}
+	_, un := RegisterStoreEraser(StoreEraser{Name: "s", Source: "a", EraseResolved: resolved})
+	un()
+}

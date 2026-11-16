@@ -15,11 +15,11 @@ import (
 // process memory until a restart. resolveEraseTables registers one
 // datexport.StoreEraser over whichever of them the manager runs with.
 //
-// Magic-link sign-in tokens are keyed by email ("magiclink:<email>"), and a
-// store eraser runs after the SQL erasure has deleted the user row the
-// email would be read from, so those stay until they expire (15 minutes by
-// default). Redeeming one creates a fresh account; it does not restore the
-// erased one.
+// Magic-link and emailed-code tokens are keyed by email
+// ("magiclink:<email>", "emailcode:<email>"). The store eraser runs after
+// the SQL erasure has deleted the user row, so it takes the email the
+// erasure resolved beforehand (EraseResolved, IdentityEmail), falling back
+// to the user store for one the SQL erasure does not reach.
 
 var memoryEraseMu sync.Mutex
 
@@ -75,7 +75,17 @@ func registerMemoryStoreEraser(mgr *AuthManager) {
 	name, unregister := datexport.RegisterStoreEraser(datexport.StoreEraser{
 		Name:   "auth_memory",
 		Source: "auth",
-		Erase: func(_ context.Context, userID string, dryRun bool) (int, error) {
+		EraseResolved: func(ctx context.Context, user datexport.ErasedUser, dryRun bool) (int, error) {
+			userID := user.ID
+			email, ok := user.Identity(datexport.IdentityEmail)
+			if !ok && len(tokens) > 0 {
+				if u, err := mgr.UserStore().FindByID(ctx, userID); err == nil && u != nil {
+					email = u.GetEmail()
+				}
+			}
+			if c, err := mgr.canonicalizeEmail(email); err == nil {
+				email = c
+			}
 			n := 0
 			if sessions != nil {
 				n += sessions.eraseUser(userID, dryRun)
@@ -87,7 +97,7 @@ func registerMemoryStoreEraser(mgr *AuthManager) {
 				n += passkeys.eraseUser(userID, dryRun)
 			}
 			for _, ts := range tokens {
-				n += ts.eraseUser(userID, dryRun)
+				n += ts.eraseUser(userID, email, dryRun)
 			}
 			return n, nil
 		},
@@ -129,13 +139,17 @@ func (m *MemoryPasskeyStore) eraseUser(userID string, dryRun bool) int {
 	return purgeMatching(m.creds, match)
 }
 
-// eraseUser removes the tokens whose payload names userID: password reset,
-// email verification and passkey registration.
-func (m *MemoryMagicLinkTokenStore) eraseUser(userID string, dryRun bool) int {
+// eraseUser removes the tokens whose payload names userID (password
+// reset, email verification, passkey registration) or email (magic link,
+// emailed code). An empty email matches no email-keyed token.
+func (m *MemoryMagicLinkTokenStore) eraseUser(userID, email string, dryRun bool) int {
 	payloads := []string{
 		string(purposeReset) + ":" + userID,
 		string(purposeVerify) + ":" + userID,
 		string(purposePasskeyRegister) + ":" + userID,
+	}
+	if email != "" {
+		payloads = append(payloads, string(purposeMagicLink)+":"+email, string(purposeEmailCode)+":"+email)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()

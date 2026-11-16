@@ -145,6 +145,15 @@ few lines, and link the PR or the docs page for the rest.
   reason to send the session back.
 
 ### Added
+- **Erasure reaches email-keyed tokens in two more cases.**
+  `datexport.DataIdentityResolver.Canonicalize` rewrites a resolved value
+  before it is bound, and `battery/auth` sets it to its email
+  canonicalizer, so a user row stored as `Mixed@Example.com` still erases
+  its magic-link, emailed-code and login-limiter rows.
+  `datexport.StoreEraser.EraseResolved` hands a store eraser the
+  identities resolved before the SQL part ran, so the in-memory auth
+  token store now erases those tokens too. See
+  [data-export](framework/docs/content/data-export.md#stores-outside-the-database).
 - **Sign in with Apple (`auth.NewAppleProvider`).** Signs a fresh ES256
   client secret per exchange and takes Apple's form-POST callback
   (`POST /auth/oauth/{provider}/callback`, for `OAuth2FormPostProvider`s

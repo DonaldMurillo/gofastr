@@ -108,8 +108,13 @@ func registerCanonicalErasers() {
 	// an erasure and re-created the account. The token table is created
 	// lazily by NewSQLMagicLinkTokenStore; a host on the in-memory store has
 	// no such table, so this eraser is a no-op (skipped at erase time).
+	//
+	// Canonicalize binds the address the way the send handlers wrote it:
+	// a user row stored before canonicalization ("Mixed@Example.com")
+	// still reaches its tokens ("magiclink:mixed@example.com").
 	datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
 		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
+		Canonicalize: canonicalEmailOrEmpty(nil),
 	})
 	for _, p := range []tokenPurpose{purposeMagicLink, purposeEmailCode, purposeReset, purposeVerify, purposePasskeyRegister} {
 		registerTokenEraser("magic_link_tokens", p)
@@ -137,10 +142,17 @@ func resolveEraseTables(mgr *AuthManager) {
 			Name: "users_oauth_links", Source: "auth", Table: us.oauthLinksTable(),
 			Column: "user_id", Mode: datexport.EraseDelete,
 		})
-		datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
-			Table: us.table, IDColumn: us.fieldMap.ID, ValueColumn: us.fieldMap.Email,
-		})
 	}
+	// The resolver carries the manager's canonicalizer, which may be the
+	// host's own (AuthConfig.CanonicalizeEmail).
+	email := datexport.DataIdentityResolver{
+		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
+		Canonicalize: canonicalEmailOrEmpty(mgr.config.CanonicalizeEmail),
+	}
+	if us, ok := mgr.UserStore().(*EntityUserStore); ok {
+		email.Table, email.IDColumn, email.ValueColumn = us.table, us.fieldMap.ID, us.fieldMap.Email
+	}
+	datexport.RegisterIdentityResolver(datexport.IdentityEmail, email)
 	if ss, ok := mgr.SessionStore().(*EntitySessionStore); ok {
 		datexport.RegisterEraser(datexport.DataEraser{
 			Name: "auth_sessions", Source: "auth", Table: ss.table,
@@ -223,6 +235,19 @@ func resolveEraseTables(mgr *AuthManager) {
 				registerTokenEraser(ms.table, purposeVerify)
 			}
 		}
+	}
+}
+
+// canonicalEmailOrEmpty is a resolver's Canonicalize over canonicalize
+// (nil for the battery's default): "" when the stored address has no
+// canonical form, and the raw value is bound instead.
+func canonicalEmailOrEmpty(canonicalize func(string) (string, error)) func(string) string {
+	return func(email string) string {
+		c, err := canonicalizeEmailWith(canonicalize, email)
+		if err != nil {
+			return ""
+		}
+		return c
 	}
 }
 

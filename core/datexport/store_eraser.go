@@ -32,11 +32,32 @@ import (
 // Erase runs after the commit, so its failure cannot roll the SQL erasure
 // back: EraseUserData returns an error naming the store, and the caller
 // erases again once the store is reachable.
+//
+// EraseResolved, when set, runs in place of Erase for a store keyed by an
+// identity other than the user id (battery/auth's in-memory token store
+// keys sign-in links by email). The user row is gone by the time a store
+// eraser runs, so the erasure resolves every registered identity before
+// its SQL part and passes them here. Set one of Erase and EraseResolved.
 type StoreEraser struct {
-	Name     string
-	Source   string
-	Erase    func(ctx context.Context, userID string, dryRun bool) (int, error)
-	Producer bool
+	Name          string
+	Source        string
+	Erase         func(ctx context.Context, userID string, dryRun bool) (int, error)
+	EraseResolved func(ctx context.Context, user ErasedUser, dryRun bool) (int, error)
+	Producer      bool
+}
+
+// ErasedUser is the user an erasure removes: the id, and each registered
+// identity the erasure resolved for it before any row was deleted. A kind
+// that did not resolve (no row, no table) is absent.
+type ErasedUser struct {
+	ID         string
+	Identities map[IdentityKind]string
+}
+
+// Identity returns the resolved value of kind and whether it resolved.
+func (u ErasedUser) Identity(kind IdentityKind) (string, bool) {
+	v, ok := u.Identities[kind]
+	return v, ok && v != ""
 }
 
 // storeErasers holds the registered entries. Each is a distinct pointer,
@@ -52,8 +73,8 @@ var storeErasers []*StoreEraser
 // would leave the store out of every erasure. Calling the returned func
 // again does nothing.
 func RegisterStoreEraser(e StoreEraser) (name string, unregister func()) {
-	if e.Name == "" || e.Erase == nil {
-		panic(fmt.Sprintf("datexport: RegisterStoreEraser: %q needs a Name and an Erase func", e.Name))
+	if e.Name == "" || (e.Erase == nil) == (e.EraseResolved == nil) {
+		panic(fmt.Sprintf("datexport: RegisterStoreEraser: %q needs a Name and exactly one of Erase and EraseResolved", e.Name))
 	}
 	entry := &e
 	mu.Lock()

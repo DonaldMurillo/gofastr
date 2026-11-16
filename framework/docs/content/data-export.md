@@ -573,6 +573,14 @@ every registered store eraser after the transaction commits and after the
 stored files are deleted. Each result is listed in `report.Stores` with
 `Mode: "delete"`.
 
+A store keyed by something other than the user id sets `EraseResolved`
+instead of `Erase`: `EraseResolved(ctx, user, dryRun)` gets a
+`datexport.ErasedUser` with the id and every registered identity the
+erasure resolved before its SQL part ran (`user.Identity(datexport.IdentityEmail)`).
+The user row those come from is gone by the time store erasers run, so
+this is the only way such a store learns the address. A registration
+sets exactly one of the two funcs; `RegisterStoreEraser` panics otherwise.
+
 | Store | Registered by (name) | What is erased |
 |---|---|---|
 | a semantic index opened with `Options.Path` | `semantic.Open` (`semantic:<path>`) | the chunks whose `Owner` is the user; the snapshot is rewritten and the WAL emptied, so no copy of the text stays on disk |
@@ -581,7 +589,7 @@ stored files are deleted. Each result is listed in `report.Stores` with
 | `queue.MemoryQueue` | `queue.NewMemoryQueue` (`queue_memory`) | every job whose `UserID` is the user: pending, delayed, handed out by `Dequeue`, and dead; the unique keys they held are freed |
 | `search.Memory` | `search.NewMemory` (`search:memory`) | every document whose `Owner` is the user |
 | `queue.Scheduler` (in-memory) | `queue.NewScheduler` (`queue_scheduler_memory`) | every schedule whose `UserID` is the user, so it is neither kept nor fired again |
-| `battery/auth` in-memory stores (`MemorySessionStore`, `MemoryTwoFAStore`, `MemoryPasskeyStore`, `MemoryMagicLinkTokenStore`) | `AuthManager.Init`, for the ones the manager runs with (`auth_memory`); `AuthManager.OnStop` removes it | the user's sessions, 2FA state, passkeys, and password-reset, email-verification and passkey-registration tokens. Magic-link and emailed-code sign-in tokens are keyed by email, which is gone by the time a store eraser runs; they expire on their own (15 and 10 minutes by default) |
+| `battery/auth` in-memory stores (`MemorySessionStore`, `MemoryTwoFAStore`, `MemoryPasskeyStore`, `MemoryMagicLinkTokenStore`) | `AuthManager.Init`, for the ones the manager runs with (`auth_memory`); `AuthManager.OnStop` removes it | the user's sessions, 2FA state, passkeys, and password-reset, email-verification and passkey-registration tokens, plus the magic-link and emailed-code tokens for the user's email: `EraseResolved` takes the address the erasure resolved, canonicalized, or reads it from a user store the SQL erasure does not reach |
 
 **A store eraser stays registered until the store closes**: `Index.Close`,
 `RedisQueue.Close`, `MemoryQueue.Close`, `Scheduler.Close` or
@@ -834,11 +842,14 @@ user id:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/core/datexport"
+import "strings"
 -->
 ```go
 // Resolve email from the user table: SELECT email FROM auth_users WHERE id = $1
 datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
     Table: "auth_users", IDColumn: "id", ValueColumn: "email",
+    // Optional: bind the form the tokens were written in. "" binds the raw value.
+    Canonicalize: strings.ToLower,
 })
 
 datexport.RegisterEraser(datexport.DataEraser{
@@ -865,6 +876,12 @@ never runs arbitrary SQL. Two guarantees:
 - **No resolver for a declared identity → fail loud.** An erasure that cannot
   reach a declared table is incomplete, and silently-incomplete is the failure
   mode this primitive exists to prevent.
+- **`Canonicalize` rewrites the resolved value before it is bound.** A table
+  written in canonical form (the auth tokens hold the lowercased address)
+  then still matches a user row stored before canonicalization
+  (`Mixed@Example.com`). `battery/auth` sets it to the manager's email
+  canonicalizer, the host's `AuthConfig.CanonicalizeEmail` when one is set,
+  so the login-limiter erasers reach their rows the same way.
 - **Resolver finds no row → skip, don't fail.** On an idempotent re-run the
   user row is already gone, so the identity cannot be resolved. That means
   "nothing left to match": the eraser is skipped (named in `report.Skipped`),
