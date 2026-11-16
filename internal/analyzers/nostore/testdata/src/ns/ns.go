@@ -143,6 +143,26 @@ func meQuiet(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"me": 1})
 }
 
+// chainQuiet's writer reaches the headers through a helper declared
+// after it, so the credit cannot depend on declaration order.
+func chainQuiet(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if r.URL.Path != "" {
+		chainWrite(w)
+	}
+}
+
+func chainWrite(w http.ResponseWriter) {
+	chainHeaders(w)
+	w.Write([]byte("me"))
+}
+
+func chainHeaders(w http.ResponseWriter) {
+	writeCredHeaders(w)
+}
+
 // gateQuiet is the admin battery's shape: the wrapper stamps no-store
 // before next(w, r), and the handler is mounted through a local guard
 // literal that forwards into the gate.
