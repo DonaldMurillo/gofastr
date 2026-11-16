@@ -17,18 +17,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── NotificationBell ───────────────────────────────────────────────
-//
-// Bell button + unread-count badge + paired preset.Popover that lists
-// the most recent items on click. Same compositional pattern as
-// Lightbox: caller mounts the Popover once at app startup, the trigger
-// HTML renders with NotificationBellTrigger(ctx, cfg) on each request.
-//
-// Dynamic feeds (unread count and item list arriving live via SSE):
-// the caller binds the badge to a signal via the SignalUnread option,
-// and binds the popover slot HTML to a signal via the SignalList
-// option (the runtime mirrors signal updates into the bound nodes).
-
 // NotificationItem is one entry in the bell dropdown.
 type NotificationItem struct {
 	// Title is the headline (required, e.g. "Build #4821 failed").
@@ -39,66 +27,42 @@ type NotificationItem struct {
 	Time string
 	// Href, when set, makes the entire row a link.
 	Href string
-	// Unread marks the row with a left-edge primary stripe.
+	// Unread draws the row as unread.
 	Unread bool
 }
 
 // NotificationBellConfig configures a NotificationBell.
 type NotificationBellConfig struct {
-	// Name is the unique widget name (required) used for the paired
-	// preset.Popover. Keep page-unique.
+	// Name is the paired preset.Popover's widget name, unique on the page. Required.
 	Name string
-	// Href is where the trigger goes without script: the
-	// notifications page, same-origin. Required — a bell that rings
-	// to nowhere is a dead link on the no-script page, and "#" is
-	// not a destination.
+	// Href is the notifications page the trigger links to without script; required, never "#".
 	Href string
-	// Label is the required prefix of the trigger anchor's accessible
-	// name, followed by the localized unread count. "Notifications" with
-	// no unread items says "Notifications: 0 unread notifications"; the
-	// prefix remains when SignalUnread updates the count.
+	// Label is the required prefix of the trigger's accessible name, before the unread count.
 	Label string
-	// UnreadCount renders as a badge on the bell. Hidden when 0
-	// (unless SignalUnread is set, then the badge always renders
-	// and the signal drives its visibility / text).
+	// UnreadCount is the badge's number; the badge is hidden at 0 unless SignalUnread is set.
 	UnreadCount int
-	// Items are the entries rendered inside the popover. ≥1 recommended;
-	// 0 renders the EmptyText placeholder.
+	// Items are the popover's rows; none renders EmptyText.
 	Items []NotificationItem
-	// EmptyText is shown when Items is empty. Default
-	// "No new notifications".
+	// EmptyText is shown when Items is empty. Default "No new notifications".
 	EmptyText string
-	// SignalUnread, when non-empty, binds the badge text to that
-	// signal name so live updates can swap the count without a page
-	// reload. The badge always renders when this is set (signal value
-	// "" hides it via the empty-state CSS rule).
+	// SignalUnread binds the badge text to this signal; an empty value hides it.
 	SignalUnread string
-	// SignalList, when non-empty, binds the popover list HTML to that
-	// signal so live updates can swap the list. Items above seed the
-	// SSR initial render.
+	// SignalList binds the popover list's HTML to this signal; Items seed it.
 	SignalList string
 	// Pages, when non-empty, scopes the popover mount to those routes.
 	Pages []string
-	// Ctx resolves the returned trigger's spoken unread count and live-update
-	// template. Nil uses English fallbacks. The mounted popover's default
-	// empty text uses its body's request context, not this field.
+	// Ctx resolves the trigger NotificationBell returns; nil uses English.
 	Ctx context.Context
 
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the bell's root <a>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-* (the popover wiring), type, aria-label (use
-	// Label), and aria-describedby (the unread-count announcement).
+	// ExtraAttrs forwards attributes to the root anchor; class, id, data-cui-*, href, type, aria-label and aria-describedby are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// NotificationBellTrigger renders the bell's trigger for ctx without
-// constructing a popover. It shares NotificationBell's markup and validation;
-// ctx, not cfg.Ctx, resolves the spoken unread count and live-update template.
-// Label is kept as supplied, including after signal updates. A nil ctx uses
-// English fallbacks. Keep Name consistent with the mounted popover.
+// NotificationBellTrigger renders the bell's trigger, with ctx (not
+// cfg.Ctx; nil uses English) resolving its spoken unread count. Keep
+// Name the same as the mounted popover's.
 func NotificationBellTrigger(ctx context.Context, cfg NotificationBellConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: NotificationBell requires Name")
@@ -120,11 +84,6 @@ func NotificationBellTrigger(ctx context.Context, cfg NotificationBellConfig) re
 	if cfg.Class != "" {
 		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
 	}
-	// The trigger IS the headless NotificationBell: the primitive
-	// renders the anchor (href, the spoken count, the count hooks)
-	// and, through Opens, the widget's data-cui-open wiring — the
-	// Island precedent of typed kernel attrs from a prop, refused
-	// when the name is not a key.
 	var unreadBind *headless.Bind
 	if cfg.SignalUnread != "" {
 		unreadBind = &headless.Bind{Signal: cfg.SignalUnread}
@@ -152,11 +111,8 @@ func NotificationBellTrigger(ctx context.Context, cfg NotificationBellConfig) re
 //	widget.MountBuilder(router, pop)
 //
 // Render NotificationBellTrigger(ctx, cfg) in each request's page chrome.
-// The popover's default empty text resolves with its own request context.
 func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder) {
 	trigger := NotificationBellTrigger(cfg.Ctx, cfg)
-	// Popover slot. The popover is mounted once, so the default empty
-	// text is said in each request's locale, not the mount's.
 	slot := requestSlot{build: func(ctx context.Context) component.Component {
 		emptyText := cfg.EmptyText
 		if emptyText == "" {
@@ -209,8 +165,6 @@ func (s *notificationBellSlot) Render() render.HTML {
 			render.Tag("ul", map[string]string{"class": "fui-notification-bell__list"}, rows...),
 		}
 	}
-	// If SignalList is set, wrap the list in a signal-bound div so
-	// runtime swaps replace it wholesale (mode=html).
 	listAttrs := map[string]string{"class": "fui-notification-bell__body"}
 	if s.signalList != "" {
 		listAttrs["data-cui-signal"] = s.signalList
@@ -248,9 +202,6 @@ func renderBellRow(it NotificationItem) render.HTML {
 	}
 	var inner render.HTML
 	if it.Href != "" {
-		// Items are data-driven (live notification feeds). Drop unsafe
-		// href schemes per the framework/ui/safety.go allow-list and
-		// degrade to an inert "#" rather than a live javascript: link.
 		href := urlsafe.CleanAnchor(it.Href)
 		if href == "" {
 			href = "#"
@@ -266,8 +217,6 @@ func renderBellRow(it NotificationItem) render.HTML {
 	return render.Tag("li", map[string]string{"class": rowCls}, inner)
 }
 
-// whenStringSpan returns an empty render.HTML when s is empty, or a
-// span containing s otherwise, keeping the row-header layout uniform.
 func whenStringSpan(s, cls string) render.HTML {
 	if s == "" {
 		return render.HTML("")
@@ -422,9 +371,6 @@ a.fui-notification-bell__row-link:hover {
 }`
 }
 
-// notificationBellClasses dresses headless.NotificationBell's parts in
-// this package's own vocabulary — the names the registered
-// ui-notification-bell sheet matches.
 var notificationBellClasses = headless.Classes{
 	headless.PartRoot:   "fui-notification-bell",
 	headless.PartIcon:   "fui-notification-bell__icon",
