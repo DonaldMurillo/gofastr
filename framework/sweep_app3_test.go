@@ -232,3 +232,20 @@ func TestSweepApp3MCPAppWithoutMountWarns(t *testing.T) {
 		}
 	}
 }
+
+// A worker's banner names only the health surface it serves.
+func TestSweepApp3WorkerBannerAdvertisesOnlyHealth(t *testing.T) {
+	app := sweepApp3PostsApp(t, WithRole(RoleWorker))
+	var buf bytes.Buffer
+	app.startupOutput = &buf
+	app.printStartupBanner("127.0.0.1:8080", "tcp", "demo", true, true, "")
+	out := buf.String()
+	if !strings.Contains(out, "worker ready") || !strings.Contains(out, "/healthz") {
+		t.Fatalf("worker banner lacks the worker line or health URLs: %q", out)
+	}
+	for _, leak := range []string{"/posts", "OpenAPI", "/mcp", "Listening"} {
+		if strings.Contains(out, leak) {
+			t.Errorf("worker banner advertises %q: %q", leak, out)
+		}
+	}
+}
