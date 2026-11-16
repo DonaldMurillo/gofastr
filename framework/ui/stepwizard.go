@@ -11,91 +11,45 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── FormStepWizard ─────────────────────────────────────────────────
-//
-// Multi-step form over headless.StepWizard: a rail of named steps, a
-// validation summary the existing headless module focuses after a
-// failed submit, and Back/Continue controls that submit the plain form
-// with wizard_action=back|next. The server reads the action and
-// re-renders with the updated CurrentStep.
-
 // StepWizardStep is one step in the wizard.
 type StepWizardStep struct {
-	// Heading is the step heading. Required.
-	Heading string
-	// Description is optional supporting text below the heading.
+	Heading     string // required
 	Description string
-	// Fields are the form fields rendered for this step.
-	Fields []render.HTML
+	Fields      []render.HTML
 }
 
 // StepWizardConfig configures a multi-step form wizard.
 type StepWizardConfig struct {
-	// Steps is the ordered list of wizard steps. Required, min 1.
+	// Steps are the wizard's steps, at least one.
 	Steps []StepWizardStep
-
-	// CurrentStep is 0-indexed. The server sets this after each POST.
+	// CurrentStep is the 0-indexed step the server is rendering.
 	CurrentStep int
-
-	// Action is the form action URL. Required.
+	// Action is the form action URL (required).
 	Action string
-
 	// Method defaults to "POST".
 	Method string
-
-	// HiddenFields are hidden inputs to carry forward between steps
-	// (e.g. previously entered data).
+	// HiddenFields carry earlier steps' values forward.
 	HiddenFields []render.HTML
-
-	// Errors is an optional set of field-level errors for the current
-	// step, the same shape ui.Form takes. When non-empty the wizard
-	// renders a ValidationSummary between the step rail and the
-	// step's fields, and marks the form (data-hui-form-errors) so the
-	// headless behaviour module moves focus to the summary after a
-	// failed submit — which requires ID, the summary's id being derived
-	// from it. FieldErrors round-trips directly from a server-side
-	// validation of the submitted step.
+	// Errors renders a ValidationSummary above the step's fields that
+	// is focused after a failed submit; it needs ID.
 	Errors FieldErrors
-	// Summary is a sentence that belongs to no one field, rendered in
-	// the summary after the field errors. Empty means the framework
-	// default when Errors is not.
+	// Summary is the summary's sentence for no one field. Default the framework's.
 	Summary string
-	// FieldLabels, FieldIDs and FieldOrder are passed to the
-	// ValidationSummary; see ValidationSummaryConfig.
+	// FieldLabels, FieldIDs and FieldOrder are passed to the ValidationSummary.
 	FieldLabels map[string]string
 	FieldIDs    map[string]string
 	FieldOrder  []string
-
-	// Island, when set, makes each submit a region update: the same
-	// form and controls, the answer swapped into the signal's region.
+	// Island, when set, makes each submit a region update.
 	Island headless.Island
-
-	// ID is the form's id; required when Errors is set (the summary's
-	// id is derived from it).
-	ID string
-
+	// ID is the form's id; required when Errors or Summary is set.
+	ID    string
 	Class string
-
-	// ExtraAttrs forwards additional attributes to the wizard's root
-	// <form> element. Keys the component owns are dropped: class and
-	// id (use Class / ID), data-cui-*, method, and action (both
-	// validated by the primitive; the form posts wizard_action
-	// through them).
+	// ExtraAttrs lands on the <form>; class, id, data-cui-*, method and action are dropped.
 	ExtraAttrs html.Attrs
-
-	// Ctx carries the per-request context used to resolve i18n strings
-	// (Back, Continue, Submit button labels, the rail's sentence).
-	// When nil, context.Background() is used and English fallbacks are
-	// returned.
+	// Ctx is the request context the wizard's words are said in.
 	Ctx context.Context
 }
 
-// stepWizardClasses dresses headless.StepWizard's parts in this
-// package's own vocabulary — the names the registered ui-step-wizard
-// sheet matches. The rail's row (PartStepRow) carries no class: its
-// marker and step text are visually hidden and the sheet draws the
-// rail through the step-dot list items, so a class there would be a
-// selector nothing owns.
 var stepWizardClasses = headless.Classes{
 	headless.PartRoot:     "fui-step-wizard",
 	headless.PartSteps:    "fui-step-wizard__indicator",
@@ -111,11 +65,9 @@ var stepWizardClasses = headless.Classes{
 	headless.PartStatus:   "fui-visually-hidden",
 }
 
-// StepWizard renders a multi-step form with a progress indicator bar.
-//
-// Server-driven: each step is a full form submission. The server
-// reads the "wizard_action" field (value "back" or "next") to
-// determine direction and re-renders with the updated CurrentStep.
+// StepWizard renders a multi-step form whose Back and Continue submit
+// wizard_action=back or next; the server re-renders with the new
+// CurrentStep. It panics without steps or Action, or on an out-of-range CurrentStep.
 func StepWizard(cfg StepWizardConfig) render.HTML {
 	if len(cfg.Steps) == 0 {
 		panic("ui: StepWizard requires at least one Step")
@@ -141,8 +93,6 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 		}
 	}
 
-	// The failed submit's summary, the same one ui.Form renders: above
-	// the fields, focused on arrival by the existing headless module.
 	var errors render.HTML
 	if len(cfg.Errors) > 0 || cfg.Summary != "" {
 		if cfg.ID == "" {
@@ -162,8 +112,6 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 			Title:       i18nui.FormHasErrors.Text(ctx),
 			Ctx:         ctx,
 		})
-		// headless.StepWizard takes Errors as slot content; this
-		// summary is built here from the config, so it is marked here.
 		errors = headless.Own(errors)
 	}
 
@@ -187,12 +135,7 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 	}, stepWizardClasses))
 }
 
-// stepWizardStyle is registered in styles_components.go
-
 func stepWizardCSS(_ style.Theme) string {
-	// Knobs: --ui-step-wizard-step-dot-height (4px) is the progress
-	// rail thickness; --ui-step-wizard-action-min-height (40px) is the
-	// back/next button floor.
 	return `[data-cui-comp="ui-step-wizard"] {
   display: grid;
   gap: var(--spacing-lg, 16px);

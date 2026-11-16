@@ -1,17 +1,5 @@
 package ui
 
-// ─── CommentThread ──────────────────────────────────────────────────
-//
-// A discussion: comments with their replies nested under them, as deep
-// as the conversation goes. Each comment is an <article> (a byline, then
-// the body) in a list item, and its replies are a list inside that item,
-// so a screen reader hears the depth as list nesting. Each level is
-// indented a step and ruled on its leading edge so the eye can follow a
-// reply back to its parent; in a narrow container the step shrinks, so
-// a deep thread keeps a readable column on a phone. The body is the
-// caller's markup (paragraphs, links); long unbroken words and URLs wrap
-// instead of widening the page. Server-rendered, no script.
-
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -22,14 +10,11 @@ import (
 
 // Comment is one comment and its replies.
 type Comment struct {
-	// ID is the comment's element id, so a link can point at it.
-	// Optional.
+	// ID is the comment's optional element id.
 	ID string
-	// Byline is the line above the body: the author, the age, a link
-	// to the comment. The caller's markup.
+	// Byline is the caller's markup above the body.
 	Byline render.HTML
-	// Body is the comment's text: the caller's markup, already safe
-	// (escaped text, paragraphs, links).
+	// Body is the comment's text, caller markup already safe.
 	Body render.HTML
 	// Replies are drawn nested under the comment, in order.
 	Replies []Comment
@@ -39,19 +24,16 @@ type Comment struct {
 type CommentThreadConfig struct {
 	// Comments are the top-level comments, in order.
 	Comments []Comment
-	// Label names the thread for assistive tech ("Comments").
-	// Required.
+	// Label names the thread for assistive tech (required).
 	Label string
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes to the root list. Keys
-	// the component owns are dropped: class and id (use Class / ID),
-	// style, aria-label and data-cui-*. A role replaces the root's
-	// default role="list".
+	// ExtraAttrs lands on the root list; class, id, style, aria-label and
+	// data-cui-* are dropped, and a role replaces role="list".
 	ExtraAttrs html.Attrs
 }
 
-// CommentThread renders the thread. It panics without a Label.
+// CommentThread renders the thread as nested lists. It panics without a Label.
 func CommentThread(cfg CommentThreadConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: CommentThread requires Label — name the thread for assistive tech")
@@ -66,9 +48,6 @@ func CommentThread(cfg CommentThreadConfig) render.HTML {
 	}
 	attrs["class"] = cls
 	attrs["aria-label"] = cfg.Label
-	// list-style: none drops list semantics in WebKit/VoiceOver; the
-	// role keeps the nesting a screen reader announces as depth. A
-	// caller's own role (ExtraAttrs) wins.
 	if _, set := attrs["role"]; !set {
 		attrs["role"] = "list"
 	}
@@ -79,9 +58,8 @@ func CommentThread(cfg CommentThreadConfig) render.HTML {
 	return commentThreadStyle.WrapHTML(render.Tag("ul", attrs, items...))
 }
 
-// commentItems draws one level of the thread, recursing into replies.
-// held reports whether any item holds caller markup: a subtree holding
-// none is the component's own, marked internal at its top.
+// commentItems draws one level of the thread, recursing into replies;
+// held reports whether any item holds caller markup.
 func commentItems(cs []Comment) (out []render.HTML, held bool) {
 	out = make([]render.HTML, len(cs))
 	for i, c := range cs {
@@ -124,10 +102,6 @@ func commentItems(cs []Comment) (out []render.HTML, held bool) {
 
 var commentThreadStyle = registry.RegisterStyle("ui-comment-thread", commentThreadCSS)
 
-// Knobs: --ui-comment-thread-gap (the space between comments),
-// --ui-comment-thread-indent (each reply level's step) and
-// --ui-comment-thread-indent-compact (the step in a container narrower
-// than 30rem).
 func commentThreadCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-comment-thread"] {
   container-type: inline-size;

@@ -12,54 +12,38 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// CodeSample is one language tab in a CodeTabs group: a label, a language
-// key for syntax highlighting, and the raw source.
+// CodeSample is one language tab in a CodeTabs group.
 type CodeSample struct {
-	// Label is the visible tab text ("Go", "TypeScript", "curl"). Required.
+	// Label is the visible tab text (required).
 	Label string
-	// Language is the HighlightLines language key (go, js, ts, sql, json,
-	// yaml, shell, …). Unknown values fall back to plain escaped text.
+	// Language is the HighlightLines language key.
 	Language string
-	// Code is the raw source; it is escaped/tokenized, never trusted HTML.
-	// Required.
+	// Code is the raw source, escaped and tokenized (required).
 	Code string
-	// Filename, when set, renders the CodeBlock's framed chrome header.
+	// Filename, when set, renders the CodeBlock's framed header.
 	Filename string
 }
 
 // CodeTabsConfig configures a CodeTabs group.
 type CodeTabsConfig struct {
-	// Name groups the tabs as one exclusive set (native <details name=>
-	// exclusivity). Required and must be unique within the page.
+	// Name groups the tabs as one set, unique within the page (required).
 	Name string
-	// Label is an optional accessible name for the tab strip: it
-	// renders as the aria-label of the role="tablist" element.
+	// Label is the tablist's optional aria-label.
 	Label string
-	// LineNumbers turns on the CodeBlock line-number gutter for every tab.
+	// LineNumbers turns on the line-number gutter for every tab.
 	LineNumbers bool
-	ID          string
-	Class       string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the tab group's root
-	// element. Keys the component owns are dropped: class (use
-	// Class), id (ID tags the inner tabset, not the root), and
-	// data-cui-*.
+	// ID tags the inner tabset, not the root.
+	ID    string
+	Class string
+	// ExtraAttrs lands on the root; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
-	// Ctx carries the per-request context the code blocks' accessible
-	// names, line counts and copy controls are said in. When nil,
-	// English applies.
+	// Ctx is the request context the code blocks' words are said in.
 	Ctx context.Context
 }
 
-// CodeTabs renders the same snippet in several languages behind a tab strip,
-// the "install this SDK in Go / TypeScript / curl" shape docs sites need.
-// It is pure composition: headless.Tabs (the zero-JS fragment contract)
-// one syntax-highlighted CodeBlock (with copy button) per sample.
-//
-// Selection is per-tabset: the native <details name=> mechanism has no
-// page-wide state, so picking "TypeScript" in one group does not switch
-// sibling groups.
+// CodeTabs renders one highlighted CodeBlock per sample behind a tab
+// strip; picking a tab in one group never switches another group. It
+// panics without Name, without samples, or on a sample with no Label or Code.
 func CodeTabs(cfg CodeTabsConfig, samples ...CodeSample) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: CodeTabs requires Name")
@@ -95,9 +79,6 @@ func CodeTabs(cfg CodeTabsConfig, samples ...CodeSample) render.HTML {
 		rootAttrs = map[string]string{}
 	}
 	rootAttrs["class"] = cls
-	// The strip renders through headless.Tabs with the code-tabs
-	// class map: anchor tabs with the signal contract, fragment hrefs
-	// as the no-script path, the keyboard bound by headless-tabs.
 	classes := headless.Classes{
 		headless.PartRoot:      "fui-code-tabs__strip",
 		headless.PartTabsNav:   "fui-code-tabs__nav",
@@ -110,12 +91,6 @@ func CodeTabs(cfg CodeTabsConfig, samples ...CodeSample) render.HTML {
 		parts.Attrs = headless.PartAttrs{headless.PartTabsNav: {"aria-label": cfg.Label}}
 	}
 	inner := headless.Tabs(headless.TabsProps{Name: cfg.Name, ID: cfg.ID, Tabs: items, Parts: parts, Ctx: cfg.Ctx}, classes)
-	// Every panel here is a CodeBlock built from CodeSample's strings —
-	// CodeSample carries no render.HTML field, so nothing a caller
-	// handed CodeTabs ever reaches into this subtree. headless.Tabs'
-	// root becomes a nested tag here, never one an owner could place,
-	// so its own marks collapse into a single one, as combobox and
-	// fileupload do for their own nested headless calls.
 	inner = headless.Own(inner)
 	return codeTabsStyle.WrapHTML(render.Tag("div",
 		rootAttrs,
@@ -126,11 +101,6 @@ func CodeTabs(cfg CodeTabsConfig, samples ...CodeSample) render.HTML {
 var codeTabsStyle = registry.RegisterStyle("ui-code-tabs", codeTabsCSS)
 
 func codeTabsCSS(_ style.Theme) string {
-	// The strip carries the retired tabs pattern's look on the new
-	// class names: spaced labels, a 2px underline on the active tab,
-	// and only the active panel visible. Panel visibility keys on the
-	// same data-active/data-cui-tab-index pair ui.Tabs generates its
-	// rules from, pre-generated to the primitive's ceiling.
 	var b strings.Builder
 	b.WriteString(`
 [data-cui-comp="ui-code-tabs"] .fui-code-tabs__nav {

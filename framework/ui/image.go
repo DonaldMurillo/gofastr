@@ -9,8 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── OptimizedImage ─────────────────────────────────────────────────
-
 // ImageFit selects the object-fit treatment.
 type ImageFit string
 
@@ -20,8 +18,7 @@ const (
 	ImageFitFill    ImageFit = "fill"
 )
 
-// ImageAspect selects a CSS aspect-ratio class. Predefined buckets
-// avoid inline styles (CSP-clean).
+// ImageAspect selects a CSS aspect-ratio class.
 type ImageAspect string
 
 const (
@@ -45,96 +42,53 @@ type OptimizedImageConfig struct {
 	Src string // fallback / single-resolution URL (required)
 	Alt string // alt text: required for non-decorative images
 
-	// Width and Height are the intrinsic pixel dimensions of the
-	// fallback Src. Setting them is mandatory to reserve layout space
-	// and avoid Cumulative Layout Shift on first paint.
+	// Width and Height are Src's intrinsic pixel dimensions, both required.
 	Width  int
 	Height int
 
-	// Sources, when set, render alongside Src in a <picture> via
-	// srcset="<url> <width>w, …". The browser picks the best size for
-	// the viewport.
+	// Sources, when set, render a <picture> with srcset="<url> <width>w, …".
 	Sources []ImageSource
 
-	// Sizes is the CSS sizes attribute for the responsive source set.
-	// Defaults to "100vw" when Sources is non-empty.
+	// Sizes is the sizes attribute for Sources. Default "100vw".
 	Sizes string
 
-	// Eager flips loading="lazy" → loading="eager". Use for
-	// above-the-fold hero images.
+	// Eager sets loading="eager" for above-the-fold images.
 	Eager bool
 
-	// HighPriority sets fetchpriority="high" (above-the-fold critical
-	// imagery). Mutually exclusive with Eager=false; setting both
-	// keeps both behaviors.
+	// HighPriority sets fetchpriority="high".
 	HighPriority bool
 
 	// Fit selects the object-fit treatment (default cover).
 	Fit ImageFit
 
-	// Aspect locks the aspect ratio via a CSS class (CSP-clean,
-	// no inline style). Setting Width + Height already establishes
-	// the intrinsic ratio; Aspect is for forced ratios distinct from
-	// the source.
+	// Aspect forces an aspect ratio distinct from Width and Height.
 	Aspect ImageAspect
 
 	// Rounded toggles a token-driven border-radius treatment.
 	Rounded bool
 
-	// Placeholder, when set to an inline raster data: URI, renders a
-	// low-fidelity image behind this one so something content-shaped is
-	// visible before the real pixels arrive.
-	//
-	// Produce one with framework/image: BlurHashDataURL(hash, …) to render
-	// a stored BlurHash, or Image.Placeholder() to build an LQIP straight
-	// from the source. A bare BlurHash string is not accepted: it is not
-	// an image until it is decoded.
-	//
-	// Values that are not usable inline images (a raw hash, a remote URL,
-	// a non-raster data: URI) are dropped and the image renders without a
-	// placeholder. See placeholderImage for why that degrades instead of
-	// panicking.
+	// Placeholder is an inline raster data: URI painted behind the image
+	// while it loads (framework/image.BlurHashDataURL or
+	// Image.Placeholder); any other value renders no placeholder.
 	Placeholder string
 
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the image's root wrapper
-	// (the outer <span>, in both the single-source and <picture>
-	// shapes). Keys the component owns are dropped: class and id
-	// (use Class / ID) and data-cui-*.
+	// ExtraAttrs lands on the outer <span>; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
 // OptimizedImage renders a responsive, lazy-loaded image with
-// width/height reservations to eliminate Cumulative Layout Shift.
-//
-// Anti-CLS rule: callers MUST provide Width and Height (intrinsic
-// pixel dimensions of Src). Omitting either panics: the framework
-// will not silently emit a layout-shifting image.
+// width/height reservations. It panics without Src, without Alt (unless
+// Class carries fui-image--decorative), or without Width and Height.
 func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	if cfg.Src == "" {
 		panic("ui: OptimizedImage requires Src")
 	}
-	// Drop unsafe schemes on the fallback src and on every Sources URL;
-	// see framework/ui/safety.go. When the src is unsafe we replace it
-	// with the framework's tiny placeholder URL, a 1×1 transparent
-	// stub the runtime serves. The browser renders nothing, and the
-	// surrounding layout is preserved. Preferable to silently shipping
-	// a `javascript:` URL into <img src>.
-	//
-	// safeImageURL, not the stricter subresource policy: an inline raster
-	// data: URI is a legitimate image source, and rejecting it here
-	// produced an image that looked broken rather than one that looked
-	// blocked.
-	if safe := safeImageURL(cfg.Src); safe != "" {
-		cfg.Src = safe
-	} else {
-		cfg.Src = "/__gofastr/blank.png"
-	}
+	cfg.Src = imageFallbackURL(cfg.Src)
 	if len(cfg.Sources) > 0 {
-		filtered := cfg.Sources[:0]
+		filtered := make([]ImageSource, 0, len(cfg.Sources))
 		for _, s := range cfg.Sources {
 			if safeImageURL(s.URL) != "" {
 				filtered = append(filtered, s)
@@ -143,8 +97,6 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 		cfg.Sources = filtered
 	}
 	if cfg.Alt == "" && !strings.Contains(cfg.Class, "fui-image--decorative") {
-		// Decorative images must opt in explicitly to skip alt: Alt=""
-		// is otherwise treated as missing, not "intentionally empty".
 		panic("ui: OptimizedImage requires Alt (or add fui-image--decorative to Class for intentional decorative images with alt=\"\")")
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 {
@@ -153,29 +105,9 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 
 	lqip := placeholderImage(cfg.Placeholder)
 	if lqip != "" {
-		// Placeholder is a data: URI string, never a caller's markup,
-		// so the placeholder image is always this component's own;
-		// its root becomes a sibling here rather than one an owner
-		// could place, so its own marks collapse into a single one.
 		lqip = headless.Own(lqip)
 	}
-
-	cls := "fui-image"
-	if cfg.Fit != ImageFitCover {
-		cls += " fui-image--fit-" + string(cfg.Fit)
-	}
-	if cfg.Aspect != ImageAspectAuto {
-		cls += " fui-image--aspect-" + string(cfg.Aspect)
-	}
-	if cfg.Rounded {
-		cls += " fui-image--rounded"
-	}
-	if lqip != "" {
-		cls += " fui-image--placeheld"
-	}
-	if cfg.Class != "" {
-		cls += " " + cfg.Class
-	}
+	cls := imageRootClass(cfg.Fit, cfg.Aspect, cfg.Rounded, lqip != "", cfg.Class)
 
 	loading := "lazy"
 	if cfg.Eager {
@@ -199,9 +131,6 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 		ExtraAttrs: imgAttrs,
 	}
 
-	// Single-source path: just <img>. With no picture wrapper, the img
-	// itself — built entirely from this component's own fields — is
-	// the topmost internal element.
 	if len(cfg.Sources) == 0 {
 		single := imgCfg
 		single.ExtraAttrs = html.MergeAttrs(imgAttrs, html.Attrs{"data-cui-internal": ""})
@@ -211,7 +140,6 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 		}, lqip, html.Image(single)))
 	}
 
-	// Multi-source <picture> wrapper.
 	srcset := buildSrcset(cfg.Sources)
 	sizes := cfg.Sizes
 	if sizes == "" {
@@ -221,15 +149,42 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 		"srcset": srcset,
 		"sizes":  sizes,
 	})
-	// The source set and the img are both built from this component's
-	// own fields (Sources, a struct slice, carries no render.HTML), so
-	// picture — with no picture wrapper an owner could reach around —
-	// is the topmost internal element here.
 	picture := render.Tag("picture", map[string]string{"data-cui-internal": ""}, source, html.Image(imgCfg))
 	return imageStyle.WrapHTML(html.Span(html.TextConfig{
 		Class: cls, ID: cfg.ID,
 		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}, lqip, picture))
+}
+
+// imageFallbackURL is u through the image policy, or the blank stub
+// when the policy refuses it.
+func imageFallbackURL(u string) string {
+	if safe := safeImageURL(u); safe != "" {
+		return safe
+	}
+	return "/__gofastr/blank.png"
+}
+
+// imageRootClass is the fui-image root's class list, shared by
+// OptimizedImage and PipelineImage.
+func imageRootClass(fit ImageFit, aspect ImageAspect, rounded, placeheld bool, extra string) string {
+	cls := "fui-image"
+	if fit != ImageFitCover {
+		cls += " fui-image--fit-" + string(fit)
+	}
+	if aspect != ImageAspectAuto {
+		cls += " fui-image--aspect-" + string(aspect)
+	}
+	if rounded {
+		cls += " fui-image--rounded"
+	}
+	if placeheld {
+		cls += " fui-image--placeheld"
+	}
+	if extra != "" {
+		cls += " " + extra
+	}
+	return cls
 }
 
 func buildSrcset(sources []ImageSource) string {
@@ -238,9 +193,6 @@ func buildSrcset(sources []ImageSource) string {
 		if s.URL == "" || s.Width <= 0 {
 			continue
 		}
-		// encodeSrcsetURL, not raw concatenation: a comma or space in the
-		// URL (presigned links, keys with comma-separated segments) would
-		// otherwise split one candidate into several malformed ones.
 		parts = append(parts, encodeSrcsetURL(s.URL)+" "+strconv.Itoa(s.Width)+"w")
 	}
 	return strings.Join(parts, ", ")
