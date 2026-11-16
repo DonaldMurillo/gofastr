@@ -9,18 +9,6 @@ import (
 	"time"
 )
 
-// Portable probe bodies and helpers shared by the build-tagged per-OS
-// probe files (processmodule_probe_unix.go /
-// processmodule_probe_windows.go). P2 (no inherited secrets) and P4 (no
-// network egress) have the same observable-outcome contract on every OS;
-// only the P4 breach detail names the OS-specific enforcement mechanism,
-// so that wording stays a parameter. This file replaces the former
-// byte-duplicated P2/P4 bodies, pidStr, and splitCSV that each tagged
-// file carried its own copy of.
-
-// probeNoInheritedSecretBody runs the P2 probe: canary env + secret file
-// both invisible under baseline hygiene. Prints exactly one result line
-// through pass/breach; the returned exit code is always 0.
 func probeNoInheritedSecretBody(pass, breach func(string)) int {
 	if name := os.Getenv("GOFASTR_PROBE_CANARY_NAME"); name != "" {
 		if got := os.Getenv(name); got != "" {
@@ -38,18 +26,6 @@ func probeNoInheritedSecretBody(pass, breach func(string)) int {
 	return 0
 }
 
-// probeNoNetworkEgressBody runs the P4 probe: every dial target must be
-// refused. breachDetail completes the breach message with the platform's
-// own wording ("network egress permitted" on Unix, the WFP stub wording
-// on Windows). Short per-dial timeout so a black-holed route does not
-// hang the probe past its wall budget.
-//
-// A refused dial proves nothing on its own: the fixed targets may simply
-// be closed or filtered on this host. The proof is the positive controls
-// (GOFASTR_PROBE_NET_CONTROLS), listeners the probe runner opened and
-// dialled itself before the spawn, so each is known to accept. Only a
-// child that cannot reach a known-open listener has been denied egress;
-// with no control at all the probe is unreachable, never a pass.
 func probeNoNetworkEgressBody(pass, breach, unreachable func(string), breachDetail string) int {
 	controls := splitCSV(os.Getenv("GOFASTR_PROBE_NET_CONTROLS"))
 	if len(controls) == 0 {
@@ -69,21 +45,12 @@ func probeNoNetworkEgressBody(pass, breach, unreachable func(string), breachDeta
 	return 0
 }
 
-// probeNetControl is one positive-control listener for P4: open, proven
-// reachable from the probe runner, and counting every connection it
-// accepts after that proof.
 type probeNetControl struct {
 	ln       net.Listener
 	accepted atomic.Int64
-	done     chan struct{} // closed when the accept loop exits
+	done     chan struct{}
 }
 
-// openProbeNetControls opens the P4 positive controls: a loopback
-// listener, and one on the host's first non-loopback IPv4 address when
-// the host has one (a backend that refuses only loopback still reaches
-// it). Each is dialled once from here; a listener the runner itself
-// cannot reach is closed and dropped, since a refusal against it proves
-// nothing. Returns an error when no control survives.
 func openProbeNetControls() ([]*probeNetControl, error) {
 	hosts := []string{"127.0.0.1"}
 	if ip := firstNonLoopbackIPv4(); ip != "" {
@@ -110,8 +77,6 @@ func openProbeNetControl(host string) (*probeNetControl, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The proof dial: the runner reaches the listener before the child
-	// tries, so a refusal in the child is the sandbox, not the host.
 	conn, err := net.DialTimeout("tcp", ln.Addr().String(), 2*time.Second)
 	if err != nil {
 		_ = ln.Close()
@@ -139,8 +104,6 @@ func openProbeNetControl(host string) (*probeNetControl, error) {
 	return c, nil
 }
 
-// firstNonLoopbackIPv4 is the host's first up, non-loopback, non-link-local
-// IPv4 interface address, or "" when it has none.
 func firstNonLoopbackIPv4() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
@@ -160,21 +123,14 @@ func firstNonLoopbackIPv4() string {
 	return ""
 }
 
-// closeProbeNetControls closes every control listener.
 func closeProbeNetControls(controls []*probeNetControl) {
 	for _, c := range controls {
 		_ = c.ln.Close()
 	}
 }
 
-// probeNetControlsVerdict is P4's host-side check: a control listener
-// that accepted a connection after its proof dial was reached by the
-// child, whatever the child reported.
 func probeNetControlsVerdict(controls []*probeNetControl, res ProbeResult) ProbeResult {
 	for _, c := range controls {
-		// Drain the backlog first: a connection the kernel completed
-		// for the child may not have reached Accept yet. The deadline
-		// ends the accept loop once the queue is empty.
 		if tl, ok := c.ln.(*net.TCPListener); ok {
 			_ = tl.SetDeadline(time.Now().Add(100 * time.Millisecond))
 		} else {
@@ -189,11 +145,8 @@ func probeNetControlsVerdict(controls []*probeNetControl, res ProbeResult) Probe
 	return res
 }
 
-// pidStr is the current pid, formatted, for unique scratch filenames.
 func pidStr() string { return fmt.Sprintf("%d", os.Getpid()) }
 
-// splitCSV splits a comma-separated env value, trimming whitespace and
-// dropping empties.
 func splitCSV(s string) []string {
 	if s == "" {
 		return nil
