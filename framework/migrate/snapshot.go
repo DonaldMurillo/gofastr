@@ -256,14 +256,12 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	if err != nil {
 		return "", "", SchemaSnapshot{}, err
 	}
-	viewRedrops, viewUpserts := viewChanges(topoSortViews(plan.Views), prev.Views, dialect)
 	routineUpserts, routineDrops, err := routineChanges(routines, prev.Routines)
 	if err != nil {
 		return "", "", SchemaSnapshot{}, err
 	}
 
-	changes := append(routineDrops, viewRedrops...)
-	changes = append(changes, viewDrops...)
+	var changes []SchemaChange
 	// The snapshot's column sets let a Postgres key change detach the
 	// foreign keys onto its table; it records no constraint names, so
 	// foreign keys themselves are not compared (fks stays nil). The keys a
@@ -334,6 +332,18 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	}
 
 	changes = append(changes, env.deferred...)
+
+	// Postgres refuses to retype a column a view reads, so the views that
+	// declare a retyped table in DependsOn are dropped and recreated too.
+	retyped := map[string]bool{}
+	for _, c := range changes {
+		for _, name := range c.pgRetypes {
+			retyped[strings.ToLower(name)] = true
+			retyped[tableKey(dialect, name)] = true
+		}
+	}
+	viewRedrops, viewUpserts := viewChanges(topoSortViews(plan.Views), prev.Views, dialect, retyped)
+	changes = slices.Concat(routineDrops, viewRedrops, viewDrops, changes)
 
 	if len(ordered) > 0 {
 		pivotChanges, err := diffPivotTables(ordered, all, dialect, prev.Tables)
@@ -583,13 +593,18 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 // Down recreates the old view and each creation's Down drops the new one,
 // so the rollback runs the same steps backwards. Every snapshot has
 // recorded a view's Down since views were added, so the drop always has
-// one.
-func viewChanges(ordered []View, prev map[string]RoutineDef, dialect Dialect) (drops, creates []SchemaChange) {
+// one. retyped names the tables (and their entities, lower case) a
+// Postgres ALTER COLUMN TYPE changes: a view that lists one in DependsOn
+// is redone like a changed view.
+func viewChanges(ordered []View, prev map[string]RoutineDef, dialect Dialect, retyped map[string]bool) (drops, creates []SchemaChange) {
 	dependents := viewDependents(ordered)
 	redo := map[string]bool{}
 	for _, v := range ordered {
 		up, _ := v.render(dialect)
-		if p, ok := prev[v.Name]; ok && p.Up != up {
+		readsRetyped := slices.ContainsFunc(v.DependsOn, func(d string) bool {
+			return retyped[strings.ToLower(d)] || retyped[tableKey(dialect, d)]
+		})
+		if p, ok := prev[v.Name]; ok && (p.Up != up || readsRetyped) {
 			redo[v.Name] = true
 			for _, d := range dependents[v.Name] {
 				redo[d.Name] = true
@@ -614,8 +629,8 @@ func viewChanges(ordered []View, prev map[string]RoutineDef, dialect Dialect) (d
 // routines emit their Up in the order given: a view after the views it
 // depends on, and routines in the plan's order, the order boot runs them
 // in. A changed routine's Down restores the previous body, a new routine's
-// Down is its own Down. Removed routines come back separately, name-sorted,
-// so the caller can drop them before the tables they read: each is dropped
+// Down is its own Down. Removed routines come back separately, in reverse
+// name order, so the caller can drop them before the tables they read: each is dropped
 // via the snapshot's stored Down, with its recreation as the inverse.
 func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, removals []SchemaChange, err error) {
 	seen := map[string]bool{}
@@ -661,7 +676,9 @@ func routineChanges(current []Routine, prev map[string]RoutineDef) (upserts, rem
 			removed = append(removed, name)
 		}
 	}
-	sort.Strings(removed)
+	// Reverse name order: RoutinesFS creates in name order, so a trigger
+	// (stamp_audit_trg) is dropped before the function it calls (stamp_audit).
+	sort.Sort(sort.Reverse(sort.StringSlice(removed)))
 	for _, name := range removed {
 		// A Routine's Down is optional (see routine.go), so the snapshot
 		// may hold no drop for a removed routine. Writing the removal

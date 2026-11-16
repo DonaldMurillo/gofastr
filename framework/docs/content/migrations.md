@@ -312,9 +312,9 @@ with `Up` plus a `Down` section when a safe inverse exists:
 -- +migrate Version 2
 -- +migrate Name add_published
 -- +migrate Up
-ALTER TABLE "posts" ADD COLUMN "published" BOOLEAN;
+ALTER TABLE posts ADD COLUMN published BOOLEAN;
 -- +migrate Down
-ALTER TABLE "posts" DROP COLUMN "published";
+ALTER TABLE posts DROP COLUMN published;
 ```
 
 Within an entity the file drops changed indexes first, then changes
@@ -430,7 +430,11 @@ after it, since Postgres cannot cast the old one. When a generated rollback
 uses that conversion, it restores the original default recorded in the schema
 snapshot, including on a column renamed in the same migration. Other
 changes may still need a data-specific `USING` clause, so review and
-hand-tighten. A `String` whose `Max` changed is a type change on
+hand-tighten. Postgres refuses to retype a column a view reads, so the
+file drops each view that lists the table in `DependsOn` (and the views
+that read it) before the retype and creates it again after; the `Down`
+does the same around the reverse retype. A view that reads the table
+without listing it in `DependsOn` still fails the migration. A `String` whose `Max` changed is a type change on
 Postgres, which enforces the `VARCHAR` width: `ALTER COLUMN … TYPE
 VARCHAR(200)` widens it, and a narrower width fails on a row that no
 longer fits rather than cutting it. SQLite ignores the width, so the
@@ -558,7 +562,7 @@ foreign key you added by hand may depend on a unique index and the drop
 would fail. The snapshot keeps recording the old index while the new
 one is declared, so removing or changing the index later drops both.
 
-The migrator writes table, column and index names bare, so Postgres
+The migrator writes table, column, index and view names bare, so Postgres
 folds them to lowercase, the spelling CRUD's quoted SQL names. A name
 that is a keyword on either engine cannot go bare (`CREATE TABLE posts
 (order TEXT)` is a syntax error), so it is written quoted and folded:
@@ -869,7 +873,9 @@ another raw table): `Columns` names one local column per key column, in
 key order: `{Columns: []string{"user_id"}, RefTable: "users"}`, or
 `{Columns: []string{"order_store", "order_no"}, RefTable: "orders"}` for a
 composite one. Mark several columns `PrimaryKey: true` for a composite key;
-the key takes them in column order.
+the key takes them in column order. On SQLite a one-column primary key that
+is not `NotNull` takes `NULL` (SQLite's rule for any key but an `INTEGER
+PRIMARY KEY`), where Postgres refuses it: set `NotNull` on the key column.
 A table with no primary key is allowed but cannot be referenced. `RawType` on a column overrides
 the portable type with an exact SQL type (`NUMERIC(10,2)`, `INET`, …) and works
 on entity fields too. A raw table has no CRUD routes, and the admin's
@@ -1050,8 +1056,12 @@ column the same migration drops. On Postgres that means a changed view is
 not replaced in place: grants on it go with the drop, and a view that
 reads it but is not declared in the plan makes the drop fail, so declare
 it with `DependsOn`. The `Down` runs the changes backwards. Removed
-views drop in name order, since the snapshot records no `DependsOn`: when
-one removed view reads another, remove them in separate migrations.
+views and removed routines drop in reverse name order, since the snapshot
+records neither `DependsOn` nor the plan's order. `RoutinesFS` creates
+routines in name order, so `stamp_audit_trg` is dropped before the
+`stamp_audit` it calls, and the `Down` recreates `stamp_audit` first. When
+a removed view reads another removed view whose name sorts after its own,
+remove them in separate migrations.
 
 ### Worked Postgres example
 

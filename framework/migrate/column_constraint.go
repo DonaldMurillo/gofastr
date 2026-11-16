@@ -47,20 +47,43 @@ func declaredConstraint(f schema.Field, keys []string, dialect Dialect) colConst
 // clause is the last thing columnDefs writes, so it runs to the end of
 // the definition.
 func recordedConstraints(ddl string) (map[string]colConstraint, bool) {
+	defs, ok := recordedColumnDefs(ddl)
+	if !ok {
+		return nil, false
+	}
+	out := map[string]colConstraint{}
+	for _, def := range defs {
+		c := colConstraint{notNull: strings.Contains(" "+def.head+" ", " NOT NULL ")}
+		if def.dflt != "" {
+			c.dflt = " DEFAULT " + def.dflt
+		}
+		out[strings.ToLower(def.name)] = c
+	}
+	return out, true
+}
+
+// recordedColumnDef is one column line of a recorded CREATE TABLE: its
+// name unquoted, the text after it up to DEFAULT, and the default's text.
+type recordedColumnDef struct {
+	name, head, dflt string
+}
+
+// recordedColumnDefs reads the column definitions of a buildCreateTableSQL
+// statement, leaving out its PRIMARY KEY and FOREIGN KEY table constraints.
+func recordedColumnDefs(ddl string) ([]recordedColumnDef, bool) {
 	_, body, ok := strings.Cut(ddl, " (\n\t")
 	if !ok {
 		return nil, false
 	}
-	body = strings.TrimSuffix(body, "\n)")
-	out := map[string]colConstraint{}
-	for _, def := range splitColumnDefs(body) {
+	var out []recordedColumnDef
+	for _, def := range splitColumnDefs(strings.TrimSuffix(body, "\n)")) {
 		name, rest, _ := strings.Cut(def, " ")
-		head, dflt, hasDefault := strings.Cut(rest, " DEFAULT ")
-		c := colConstraint{notNull: strings.Contains(" "+head+" ", " NOT NULL ")}
-		if hasDefault {
-			c.dflt = " DEFAULT " + dflt
+		// A column named primary or foreign is a keyword, so it is quoted.
+		if (strings.EqualFold(name, "PRIMARY") || strings.EqualFold(name, "FOREIGN")) && strings.HasPrefix(strings.ToUpper(rest), "KEY") {
+			continue
 		}
-		out[strings.ToLower(unquoteDDLIdent(name))] = c
+		head, dflt, _ := strings.Cut(rest, " DEFAULT ")
+		out = append(out, recordedColumnDef{name: unquoteDDLIdent(name), head: head, dflt: dflt})
 	}
 	return out, true
 }

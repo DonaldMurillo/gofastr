@@ -63,16 +63,14 @@ func snapshotUniques(prev SchemaSnapshot) map[string][]string {
 // writes UNIQUE on: one definition per ",\n\t"-joined line, with UNIQUE
 // after the type and before any DEFAULT, whose literal could hold the word.
 func recordedUniqueColumns(ddl string) ([]string, bool) {
-	_, body, ok := strings.Cut(ddl, " (\n\t")
+	defs, ok := recordedColumnDefs(ddl)
 	if !ok {
 		return nil, false
 	}
 	out := []string{}
-	for _, def := range strings.Split(strings.TrimSuffix(body, "\n)"), ",\n\t") {
-		head, _, _ := strings.Cut(def, " DEFAULT ")
-		name, rest, _ := strings.Cut(head, " ")
-		if strings.Contains(" "+rest+" ", " UNIQUE ") {
-			out = append(out, unquoteDDLIdent(name))
+	for _, def := range defs {
+		if strings.Contains(" "+def.head+" ", " UNIQUE ") {
+			out = append(out, def.name)
 		}
 	}
 	return out, true
