@@ -33,15 +33,14 @@ invariants:
     enforced_by:
       - test: framework.TestAssertJSONComparesBigIntegers
   - id: coverage-records-every-verdict
-    rule: Semantic coverage records a permission check and its roles whatever the verdict, and every hook firing and event emission.
+    rule: Semantic coverage records a permission check and its roles whatever the verdict.
     enforced_by:
       - test: framework.TestPermissionEvaluationsAreRecorded
-      - test: framework.TestHookFiringsAreRecorded
   - id: coverage-flushes-without-exit-hook
     rule: RecordSemanticCoverage writes the manifest when each recording test ends, and a serving process under GOFASTR_SEMANTIC_COVERAGE=1 writes it after each newly seen route, never only at exit.
     enforced_by:
       - test: framework.TestSweepServeSemanticCoverageFlushesAtTestEnd
-      - test: framework.TestServingProcessRecordsWhenEnvIsSet
+      - test: framework.TestSweepServeServingCoverageFlushesPerRoute
   - id: coverage-entity-from-last-segment
     rule: A served route pattern is credited to the entity its last non-parameter segment names, by table or by name.
     enforced_by:

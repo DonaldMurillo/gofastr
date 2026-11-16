@@ -111,7 +111,7 @@ invariants:
   - id: no-ready-hook-after-shutdown
     rule: No OnReady hook starts once a Shutdown has begun.
     enforced_by:
-      - test: framework.TestOnReadyFiresAfterBind
+      - test: framework.TestSweepServeNoReadyHookAfterShutdown
   - id: wrap-server-latched
     rule: WrapServer panics once the HTTP host has begun applying the wrappers, including from inside a wrapper.
     enforced_by:
@@ -127,10 +127,11 @@ invariants:
       - test: framework.TestSweepServeStreamEndForcesStuckClose
       - test: framework.TestSweepServeShutdownClosesHandlerPastDeadline
   - id: stream-membership-by-response
-    rule: A request joins the open-stream set by what its handler does (a GET answered as text/event-stream, or a hijack), never by its Accept header; a POST answered as a stream and a JSON GET drain the normal way.
+    rule: A request joins the open-stream set by what its handler does (a GET answered as text/event-stream, or a hijack), never by its Accept header; a POST answered as a stream and a JSON GET drain the normal way, and a GET that becomes a stream after the drain started is ended at once.
     enforced_by:
       - test: framework.TestShutdownDrainsStreamPOST
-      - test: framework.TestJSONGetDrainsNormally
+      - test: framework.TestSweepServeStreamStartedDuringDrainEnds
+      - test: framework.TestSweepServeJSONGetStaysOutOfTheStreamSet
       - test: framework.TestStreamWithoutAcceptEnds
   - id: nothing-hijacked-past-the-drain
     rule: Once the drain starts, a Hijack is refused, and a connection or WebSocket handed over after its stream ended is closed at once.

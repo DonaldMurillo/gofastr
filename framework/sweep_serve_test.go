@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -425,4 +426,33 @@ func TestSweepServeShutdownClosesHandlerPastDeadline(t *testing.T) {
 		t.Fatalf("connection still open after Shutdown: %v", err)
 	}
 	<-done
+}
+
+// An OnReady hook does not start once a Shutdown has begun.
+func TestSweepServeNoReadyHookAfterShutdown(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware())
+	app.startupOutput = io.Discard
+	app.Config.DisableSignalHandling = true
+	stopped := make(chan error, 1)
+	app.OnReady(func(string) {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			stopped <- app.Shutdown(ctx)
+		}()
+		for !app.stopRequestedNow() {
+			runtime.Gosched()
+		}
+	})
+	var second bool
+	app.OnReady(func(string) { second = true })
+	if err := app.Start("127.0.0.1:0"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := <-stopped; err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if second {
+		t.Fatal("an OnReady hook ran after Shutdown began")
+	}
 }

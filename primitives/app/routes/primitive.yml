@@ -39,10 +39,9 @@ invariants:
       - test: framework.TestLocaleSegmentRoutePanics
       - test: framework.TestStartRefusesLocaleRoute
   - id: url-decides-the-locale
-    rule: WithLocalePrefixes panics at NewApp together with WithLocaleResolver or without WithI18n.
+    rule: WithLocalePrefixes panics at NewApp together with WithLocaleResolver.
     enforced_by:
       - test: framework.TestLocalePrefixesRefuseResolver
-      - test: framework.TestLocalePrefixesNeedI18n
   - id: server-wrappers-see-the-path-locale
     rule: A WrapServer wrapper, which runs before the router splits the prefix, sees the locale the path names on its request context.
     enforced_by:

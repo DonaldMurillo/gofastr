@@ -21,6 +21,7 @@ invariants:
     enforced_by:
       - test: framework.TestReadinessDrainDefault
       - test: framework.TestReadinessDrainLocalRunDefaultsToZero
+      - test: framework.TestSweepServeInProcessListenerIsLocalOnly
   - id: sigterm-deadline-adds-the-grace
     rule: The default SIGTERM handler gives Shutdown AppConfig.ShutdownTimeout plus the readiness grace, so the grace does not eat the drain's budget.
     enforced_by:

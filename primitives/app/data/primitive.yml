@@ -65,10 +65,9 @@ invariants:
     enforced_by:
       - test: framework.TestSweepServeTxDialectProbeFailureIsNotCached
   - id: no-db-no-context-value
-    rule: WithDBContext with a nil DB returns the context unchanged, and DBContextMiddleware on an App with no DB passes requests through.
+    rule: WithDBContext with a nil DB returns the context unchanged, so a request through an App with no DB carries no DB.
     enforced_by:
       - test: framework.TestWithDBContextNilDBIsNoOp
-      - test: framework.TestAppDBContextMiddlewarePassThroughWithoutDB
 decisions:
   - id: embed-two-purposes
     date: 2026-11-16

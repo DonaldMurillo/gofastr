@@ -12,6 +12,7 @@ invariants:
       - test: framework.TestFacadeCrudWrappersDelegate
       - test: framework.TestFacadeEntityWrappersDelegate
       - test: framework.TestFacadeTenantCronEventHookWrappersDelegate
+      - test: framework.TestSweepServeReexportsDelegate
 decisions:
   - id: root-entity-openapi-without-route-check
     date: 2026-11-16
