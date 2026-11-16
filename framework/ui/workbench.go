@@ -10,45 +10,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── Workbench ──────────────────────────────────────────────────────
-//
-// A viewport-height inspector shell: a fixed-width rail that scrolls on its
-// own, beside a content pane that fills whatever is left.
-//
-// It exists because "controls on the left, the thing you are editing on the
-// right" had no home in the design system, and the tool that needed it,
-// `gofastr theme edit`, grew ~25 bespoke classes and ~21 hardcoded hex values
-// standing in for one. Deleting those without adding this produced a rail with
-// no scroll (a 2300px page) beside a preview iframe collapsed to its ~300x150
-// default box. Both are the same missing piece.
-//
-// Workbench is the shell only. Put Stack/Collapsible/FormField inside the rail
-// and whatever you are inspecting in the pane; the shell owns nothing but the
-// split, the scroll and the fill.
-
 // WorkbenchConfig configures a Workbench.
 type WorkbenchConfig struct {
-	// RailWidth picks one of the rail widths the kit ships:
-	// WorkbenchRailNarrow (240px), the default (320px, which fits a
-	// label above a control comfortably) and WorkbenchRailWide (480px).
-	// Each is a modifier class reading the --ui-workbench-rail-narrow /
-	// -wide token, so a theme moves a width without an inline style
-	// attribute a strict CSP would strip. Any other value panics at
-	// render.
+	// RailWidth is WorkbenchRailNarrow, the default or WorkbenchRailWide; any other value panics.
 	RailWidth WorkbenchRailWidth
-	// Rail is the left column. It scrolls independently of the pane, so a
-	// long control list never pushes the pane off screen.
+	// Rail is the left column; it scrolls independently of the pane.
 	Rail render.HTML
-	// Pane is the right column. It fills the remaining space in both axes:
-	// an <iframe> placed directly inside fills it edge to edge, which is the
-	// case that motivated the component.
+	// Pane is the right column; it fills the rest in both axes, an <iframe> edge to edge.
 	Pane render.HTML
 
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes to the root element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, and style.
+	// ExtraAttrs is forwarded to the root without the keys the component owns.
 	ExtraAttrs html.Attrs
 }
 

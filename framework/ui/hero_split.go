@@ -1,11 +1,5 @@
 package ui
 
-// HeroSplit: two-column hero section. Copy on one side, media on the
-// other. The shape recurs across docs/marketing surfaces: a code block
-// next to the pitch, a stat band next to a docs intro, a screenshot
-// next to a feature description. The framework owns the grid + the
-// mobile single-column collapse; the consumer fills both slots.
-
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -13,25 +7,19 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// HeroSplitRatio picks the column ratio. The three values cover the
-// shapes that actually show up. Pages that want something else
-// should write a one-off and not abuse the enum.
+// HeroSplitRatio picks the column ratio.
 type HeroSplitRatio string
 
 const (
 	// HeroSplitEqual is 1:1, balanced two-column hero.
 	HeroSplitEqual HeroSplitRatio = ""
-	// HeroSplitCopyWide gives the copy column more room (1.4:1).
-	// Use when the right slot is a compact stat band or icon grid.
+	// HeroSplitCopyWide gives the copy column more room (1.4:1), for a stat band or icon grid.
 	HeroSplitCopyWide HeroSplitRatio = "copy"
-	// HeroSplitMediaWide gives the media column more room (1:1.2).
-	// Use when the right slot is a code block, screenshot, or video.
+	// HeroSplitMediaWide gives the media column more room (1:1.2), for code, a screenshot or video.
 	HeroSplitMediaWide HeroSplitRatio = "media"
 )
 
-// HeroSplitConfig configures a HeroSplit. Copy and Media are both
-// slots. The framework does not assume their contents. Pair with
-// ui.Container if you want a max-width wrapper around the hero.
+// HeroSplitConfig configures a HeroSplit; Copy and Media are both slots.
 type HeroSplitConfig struct {
 	// Copy is the left column body (title, lede, CTAs).
 	Copy render.HTML
@@ -39,28 +27,18 @@ type HeroSplitConfig struct {
 	Media render.HTML
 	// Ratio picks the column split. Defaults to HeroSplitEqual.
 	Ratio HeroSplitRatio
-	// AriaLabel labels the <section> for screen readers (the hero is
-	// almost always the page-opening landmark). Set it or HeadingID: a
-	// heading inside a <section> does not name it on its own, and an
-	// unnamed section is not a landmark.
+	// AriaLabel names the section. Set it or HeadingID: an unnamed section is no landmark.
 	AriaLabel string
-	// HeadingID is the id of the heading inside Copy (usually the
-	// page's h1) that names the section, wired as aria-labelledby.
-	// AriaLabel wins when both are set.
+	// HeadingID is the id of the heading in Copy that names the section; AriaLabel wins.
 	HeadingID string
 	// Class is appended to the ui-hero-split wrapper.
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the hero's root <section>.
-	// Keys the component owns are dropped: class and id (use Class),
-	// data-cui-*, aria-label (use AriaLabel) and aria-labelledby (use
-	// HeadingID).
+	// ExtraAttrs is forwarded to the root without the keys the component owns.
 	ExtraAttrs html.Attrs
 }
 
-// HeroSplit renders a two-column hero. The wrapper is a <section>;
-// callers pass the content for each column as HTML.
+// HeroSplit renders a two-column hero section.
 func HeroSplit(cfg HeroSplitConfig) render.HTML {
 	switch cfg.Ratio {
 	case HeroSplitEqual, HeroSplitCopyWide, HeroSplitMediaWide:
@@ -86,8 +64,6 @@ func HeroSplit(cfg HeroSplitConfig) render.HTML {
 	} else if cfg.HeadingID != "" {
 		attrs["aria-labelledby"] = cfg.HeadingID
 	}
-	// Copy/Media are slots; empty renders a div with none of a
-	// caller's markup in it, so that div is this component's own.
 	var copyOwn, mediaOwn html.Attrs
 	if cfg.Copy == "" {
 		copyOwn = html.Attrs{"data-cui-internal": ""}
