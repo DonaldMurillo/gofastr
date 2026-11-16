@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -266,5 +268,35 @@ func TestSweepPrivacyImportReordersArchiveListing(t *testing.T) {
 	}
 	if n := identityCount(t, db, `SELECT COUNT(*) FROM post_tags`); n != 1 {
 		t.Errorf("post_tags has %d rows, want 1", n)
+	}
+}
+
+type goneStore struct{ *recordingDeleteStore }
+
+func (goneStore) Delete(context.Context, string) error {
+	return fmt.Errorf("delete: %w", os.ErrNotExist)
+}
+
+// A stored object that is already gone is not an erasure error: a re-run
+// after a half-finished erasure succeeds.
+func TestSweepPrivacyEraseToleratesGoneObject(t *testing.T) {
+	datexport.Reset(t)
+	db := openSQLiteMem(t)
+	app := NewApp(WithDB(db), WithFileStorage(goneStore{&recordingDeleteStore{present: map[string]bool{}}}))
+	eraseProfilesEntity(t, app)
+	identityExec(t, db, `INSERT INTO profiles (id, avatar, avatar_variants, owner_id, created_at, updated_at)
+		VALUES ('p1', 'uploads/a.png', '[]', 'u1', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')`)
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatalf("EraseUserData = %v, want an already deleted object tolerated", err)
+	}
+}
+
+// A cycle of tables cannot be closed through a primary-key column: the
+// restore refuses it instead of writing the key empty.
+func TestSweepPrivacyHeldRefThroughKeyRefused(t *testing.T) {
+	rows := []map[string]any{{"id": "a", "b_id": "b"}}
+	_, _, err := holdLaterRefs(rows, []string{"id"}, []fkEdge{{cols: []string{"id"}, label: "a.b"}})
+	if err == nil || !strings.Contains(err.Error(), "key column") {
+		t.Fatalf("holdLaterRefs = %v, want the key column refused", err)
 	}
 }

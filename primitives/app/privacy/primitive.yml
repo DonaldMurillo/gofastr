@@ -141,6 +141,10 @@ invariants:
     rule: A stored object that fails to delete, other than one already gone, is named in EraseUserData's error after the rows commit.
     enforced_by:
       - test: framework.TestEraseUserData_ReportsSurvivingObjects
+      - test: framework.TestSweepPrivacyEraseToleratesGoneObject
+  - id: failed-share-check-deletes-nothing
+    rule: When the check for keys other rows still name errors, erasure deletes no stored object and says so in its error.
+    judge: Does this change let erasure delete stored objects when unsharedObjectKeys returned an error?
   - id: store-erasers-run-after-commit
     rule: Store erasers run after the SQL commit, every one even when another fails or panics, and each failure is named in the returned error.
     enforced_by:
@@ -219,6 +223,7 @@ invariants:
       - test: framework.TestHeldRefsShareAColumn
       - test: framework.TestHeldRefNullKeyRefused
       - test: framework.TestDeferredRefMissingRowFails
+      - test: framework.TestSweepPrivacyHeldRefThroughKeyRefused
   - id: import-advances-sequences
     rule: On Postgres a restore moves each auto-increment sequence, of entity and raw tables, past the restored ids.
     enforced_by:
