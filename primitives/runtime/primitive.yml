@@ -47,6 +47,11 @@ invariants:
     enforced_by:
       - test: core-ui/runtime.TestHeldClickNeverLandsAfterALaterClick
       - test: examples/tracker.TestTrackerSupersedingPointerClicksKeepRingOff
+  - id: confirm-closes-in-the-closing-task
+    rule: A closed confirm dialog is removed, its answer resolved and focus handed back in the task that closed it, whatever closed it (a button, Escape, close(), requestClose).
+    enforced_by:
+      - test: core-ui/runtime.TestConfirmTeardownRunsInTheClosingTask
+      - test: core-ui/runtime.TestConfirmInsideModalWidgetOwnsKeyboard
 decisions:
   - id: poll-before-push
     status: accepted
@@ -64,3 +69,11 @@ decisions:
         why: It would land after the later click and override it, which is the order inversion held-clicks-keep-their-order forbids.
     revisit_if: A held click must reach a control whose effect does not depend on order, such as a toggle.
     upholds: [held-clicks-keep-their-order]
+  - id: confirm-teardown-watches-the-open-attribute
+    date: 2026-11-16
+    status: accepted
+    decision: The confirm module tears its dialog down from a MutationObserver on the dialog's open attribute.
+    rejected:
+      - option: Tear down on the dialog's close event.
+        why: Chromium fires close with the next animation frame, so under load the closed dialog stayed in the page and the answer waited 300 to 900 ms in headless Chrome.
+    upholds: [confirm-closes-in-the-closing-task]
