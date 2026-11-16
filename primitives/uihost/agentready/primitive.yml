@@ -5,3 +5,186 @@ code:
   - framework/uihost/agentcard_signing.go
 docs:
   - framework/docs/content/agent-ready.md
+twins:
+  - job: Derive a request's origin from TLS, the Host header and an exactly http or https X-Forwarded-Proto sent by a trusted proxy.
+    why: Each copy sits in a package the others do not import and no shared helper exists in internal/clientip yet; pluginhost also refuses a bad value with 400 where the others ignore it.
+    sites:
+      - path: framework/uihost/agentready.go
+        note: resolveBaseURL, for the agent card, the Link header and the sitemap.
+      - path: framework/wellknown.go
+        note: resolveWellKnownBase, for the framework's well-known documents.
+      - path: framework/pluginhost/assets.go
+        note: requestOrigin, for a framed asset's CSP.
+      - path: framework/entityui/record_render.go
+        note: absoluteURL, for a record's copyable link.
+invariants:
+  - id: zero-config-installs-nothing
+    rule: WithAgentReady with a zero AgentReadyConfig installs nothing and leaves a config a granular option installed untouched.
+    enforced_by:
+      - test: framework/uihost.TestWithAgentReady_ZeroValueIsNoOp
+  - id: bundle-merges-granular
+    rule: WithAgentReady merges into the config granular options installed, in either order; a field the bundle sets wins and a field it leaves unset keeps the granular value.
+    enforced_by:
+      - test: framework/uihost.TestWithAgentReady_MergesGranular
+      - test: framework/uihost.TestAgentBundlePreservesUnsetFields
+  - id: bundle-defaults
+    rule: The bundle turns Link headers on unless LinkHeaders is false, leaves markdown negotiation alone unless ContentNegotiation is set, and serves /llms.txt when any of Title, Summary, Sections, WhenToUse or CLI is set.
+    enforced_by:
+      - test: framework/uihost.TestWithAgentReady_BundleDefaults
+      - test: framework/uihost.TestWithAgentReady_MergesGranular
+      - test: framework/uihost.TestSweepAgentLLMsTxtSectionsAloneOptIn
+  - id: llms-autolinks-defer-to-host
+    rule: /llms.txt adds the OpenAPI and MCP links only when the rendered document does not already name their paths.
+    enforced_by:
+      - test: framework/uihost.TestLLMsTxt_AutoLinksSkipHostSectionsThatCoverThem
+  - id: llms-default-links-served-index
+    rule: With no Sections, /llms.txt links only /llm-pages.md, and only while page docs are served.
+    enforced_by:
+      - test: framework/uihost.TestDefaultLLMsSections_NoneWhenPrivate
+      - test: framework/uihost.TestLLMsTxtSkipsDisabledIndex
+  - id: card-at-both-paths
+    rule: The agent card is served at /.well-known/agent-card.json and at the legacy /.well-known/agent.json.
+    enforced_by:
+      - test: framework/uihost.TestAgentCard_HTTPAndAlias
+  - id: card-required-members
+    rule: The card always carries skills as an array and each skill's description and tags, [] and "" when empty, never null or absent.
+    enforced_by:
+      - test: framework/uihost.TestAgentSkillAlwaysEmitsRequiredKeys
+      - test: framework/uihost.TestSweepAgentCardSkillsNeverNull
+  - id: card-a2a-interface
+    rule: An A2AEndpoint is the card's JSON-RPC interface ahead of an MCPEndpoint, and it turns the streaming and pushNotifications capabilities on.
+    enforced_by:
+      - test: framework/uihost.TestAgentCard_A2AEndpoint
+  - id: card-failure-is-500
+    rule: A card that fails to sign or to encode answers 500, never an unsigned or empty card, and the signing error is logged, not sent.
+    enforced_by:
+      - test: framework/uihost.TestSweepAgentSigningFailureIs500
+      - test: framework/uihost.TestSweepAgentCardEncodeFailureIs500
+  - id: signing-needs-pinned-origin
+    rule: Mount panics when SigningKeys is set and neither AgentReadyConfig.BaseURL nor SitemapConfig.BaseURL pins the origin, so no signed card names a request-derived URL.
+    enforced_by:
+      - test: framework/uihost.TestSigning_RequiresPinnedBaseURL
+  - id: signing-keys-validated-at-mount
+    rule: Mount panics with an error naming the key on a signing key that is nil, repeats a kid, is an off-curve EC point, or is not ECDSA P-256, P-384, P-521 or Ed25519.
+    enforced_by:
+      - test: framework/uihost.TestSigning_RejectsUnsupportedKey
+      - test: framework/uihost.TestSweepAgentSigningRejectsUnsupportedCurve
+      - test: framework/uihost.TestSigning_RejectsNilSignerAndDuplicateKids
+      - test: framework/uihost.TestSigning_RejectsOffCurvePoint
+      - test: framework/uihost.TestSweepAgentSigningNilSignerNamed
+  - id: card-signature-is-detached-jws
+    rule: Each card signature is a detached JWS whose protected header holds alg, typ JOSE, kid and jku, over the JCS form of the card without signatures, with ECDSA signatures in r||s form.
+    enforced_by:
+      - test: framework/uihost.TestSignedCard_Verifies
+      - test: framework/uihost.TestSweepAgentSignatureProtectedHeader
+  - id: jwks-public-members-only
+    rule: The JWKS holds only public members (kty, crv, x, y, kid, alg, use).
+    enforced_by:
+      - test: framework/uihost.TestJWKS_PublicKeysOnly
+  - id: kid-defaults-to-thumbprint
+    rule: A signing key with no KeyID gets the RFC 7638 SHA-256 thumbprint of its public JWK as its kid.
+    enforced_by:
+      - test: framework/uihost.TestKidDefaultsToThumbprint
+  - id: origin-not-spoofable
+    rule: resolveBaseURL never reads X-Forwarded-Host and takes X-Forwarded-Proto only from a trusted proxy and only when it is exactly http or https.
+    enforced_by:
+      - test: framework/uihost.TestDiscoveryURLsIgnoreForwardedProto
+      - test: framework/uihost.TestForwardedProtoNeedsTrustedPeer
+      - test: framework/uihost.TestSweepAgentOriginIgnoresForwardedHost
+  - id: host-proxy-list-replaces-app-list
+    rule: WithTrustedProxies, when it names any proxy, replaces the App's trusted proxy list for X-Forwarded-Proto rather than adding to it.
+    enforced_by:
+      - test: framework/uihost.TestForwardedProtoReadsAppProxies
+  - id: discovery-varies-unless-pinned
+    rule: The agent card and a page's discovery Link header carry Vary on Host and X-Forwarded-Proto while the origin is request-derived, and none once a BaseURL pins it.
+    enforced_by:
+      - test: framework/uihost.TestAgentCardVaryOnOriginInputs
+      - test: framework/uihost.TestAgentLinkHeadersVaryOrigin
+      - test: framework/uihost.TestSweepAgentPinnedOriginHasNoVary
+  - id: link-header-appends
+    rule: The discovery links are appended to a Link header an earlier layer wrote, never replace it.
+    enforced_by:
+      - test: framework/uihost.TestSweepAgentLinkHeaderAppends
+  - id: link-alternate-only-for-served-docs
+    rule: A page's markdown alternate link is emitted only while page docs are served and the screen has not set NoLLMMD, and it uses the escaped request path with control bytes stripped.
+    enforced_by:
+      - test: framework/uihost.TestLinkAlternateSkipsNoLLMMD
+      - test: framework/uihost.TestLinkAlternatePathControlBytes
+      - test: framework/uihost.TestSweepAgentMarkdownAlternateStripsControls
+  - id: accept-q-zero-refuses
+    rule: A media range with q=0 does not select markdown or problem JSON, and */* or text/html alone never selects problem JSON.
+    enforced_by:
+      - test: framework/uihost.TestSweepAgentAcceptQZeroRefuses
+      - test: framework/uihost.TestNotFound_JSONProblemAcceptVariants
+  - id: page-markdown-not-storable
+    rule: Negotiated page markdown is sent private, no-store, with Vary Cookie added to any Vary already set.
+    enforced_by:
+      - test: framework/uihost.TestPageMarkdownIsNotStorable
+      - test: framework/uihost.TestPageMarkdownIsNoStore
+  - id: negotiated-markdown-answers-as-html
+    rule: Negotiated markdown answers as the HTML would, the redirect for a redirect decision, the block's status clamped to 400-599, the page's own status otherwise, and title and SEO front matter only for an allowed, loaded instance.
+    enforced_by:
+      - test: framework/uihost.TestNegotiatedMarkdownKeepsPolicyStatus
+      - test: framework/uihost.TestNegotiatedMarkdownBlockStatusClamped
+      - test: framework/uihost.TestNegotiatedMarkdownSetStatus
+      - test: framework/uihost.TestSweepAgentNegotiatedMarkdownHidesGatedMetadata
+      - test: framework/uihost.TestSweepAgentNegotiatedMarkdownLoadedSEO
+decisions:
+  - id: jwks-at-well-known
+    date: 2026-11-16
+    status: accepted
+    decision: The verification keys are published at /.well-known/jwks.json, since A2A v1.0 names no path.
+    rejected:
+      - option: A path under /__gofastr/.
+        why: Verifiers look for a JWKS at the well-known convention; a framework-private path is found only through jku.
+  - id: stdlib-jose
+    date: 2026-11-16
+    status: accepted
+    decision: Card signing is written on the standard library and core/jcs, decoding the ECDSA DER signature with encoding/asn1 into JOSE r||s.
+    rejected:
+      - option: A JOSE library.
+        why: Repository policy keeps signing on the standard library.
+      - option: ecdsa.UnmarshalASN1.
+        why: Go 1.27 removed it.
+    upholds: [card-signature-is-detached-jws]
+  - id: no-rsa-signing
+    date: 2026-11-16
+    status: accepted
+    decision: Signing accepts only ECDSA on the NIST curves and Ed25519 and refuses every other key at mount.
+    rejected:
+      - option: Signing RSA keys with a chosen algorithm.
+        why: Picking an algorithm for a key type the code does not model is how algorithm-confusion bugs start.
+    revisit_if: A2A or a major verifier requires RS256 or PS256 card signatures.
+    upholds: [signing-keys-validated-at-mount]
+  - id: validate-signing-at-mount
+    date: 2026-11-16
+    status: accepted
+    decision: Signing keys and the pinned origin are resolved when the routes mount, so a bad configuration fails the boot.
+    rejected:
+      - option: Resolving on the first card request.
+        why: A misconfiguration would surface as a 500 to the first agent instead of at deploy time.
+    upholds: [signing-keys-validated-at-mount, signing-needs-pinned-origin]
+  - id: ignore-x-forwarded-host
+    date: 2026-11-16
+    status: accepted
+    decision: The request-derived origin uses the Host header and never X-Forwarded-Host; a proxy that rewrites Host is handled by setting a BaseURL.
+    rejected:
+      - option: Honouring X-Forwarded-Host from trusted proxies.
+        why: The origin is reflected into cacheable Link headers and the card, so a spoofed host would poison them; a configured BaseURL is server-controlled.
+    upholds: [origin-not-spoofable]
+  - id: llms-links-index-not-routes
+    date: 2026-11-16
+    status: accepted
+    decision: The default /llms.txt section links the /llm-pages.md index rather than every route.
+    rejected:
+      - option: One link per registered route.
+        why: Non-screen routes such as /api and /healthz have no markdown doc and would be dead links.
+    upholds: [llms-default-links-served-index]
+  - id: accept-zero-only
+    date: 2026-11-16
+    status: accepted
+    decision: Accept matching honours only the q=0 exclusion of RFC 9110.
+    rejected:
+      - option: Full quality-value ranking.
+        why: The only question asked is whether the client wants the representation at all.
+    upholds: [accept-q-zero-refuses]
