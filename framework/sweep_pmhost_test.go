@@ -264,3 +264,19 @@ func TestSweepPMHostLeaseFailingServesNothing(t *testing.T) {
 		t.Fatal("a call reached the child while its lease was failing")
 	}
 }
+
+// A full seven-probe report conforms only when every probe passed: one
+// Unreachable or Unknown result among six passes disqualifies it.
+func TestSweepPMHostConformsNeedsEveryPass(t *testing.T) {
+	for _, st := range []ProbeStatus{ProbeStatusUnreachable, ProbeStatusUnknown, ProbeStatusFail} {
+		results := make([]ProbeResult, 0, len(allProbes))
+		for _, p := range allProbes {
+			results = append(results, ProbeResult{ID: p, Status: ProbeStatusPass})
+		}
+		results[3].Status = st
+		r := ConformanceReport{Backend: "x", Available: true, Results: results}
+		if r.Conforms() {
+			t.Errorf("a report with one %s probe conforms", st)
+		}
+	}
+}
