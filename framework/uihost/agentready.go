@@ -1,21 +1,5 @@
 package uihost
 
-// agentready.go: the agent-discovery surface that makes a GoFastr site
-// score well on scanners like isitagentready.com. It is purely additive:
-// every endpoint is opt-in, and the existing robots.txt / sitemap.xml /
-// llm.md / OpenAPI surfaces are untouched. The pieces:
-//
-//   - /llms.txt                            (llmstxt.org): curated markdown index
-//   - /.well-known/agent-card.json         (A2A v1.0): agent identity + skills
-//   - /.well-known/agent.json              (legacy alias): older A2A clients
-//   - Link: response headers on HTML pages: point agents at all of the above
-//   - Accept: text/markdown negotiation: markdown for any HTML page
-//
-// WithAgentReady turns on the sane defaults in one call; WithLLMsTxt /
-// WithAgentCard expose each piece granularly. AI-bot-aware robots rules
-// are merged into handleRobots (seo.go) from the bundle, so they compose
-// with an existing WithRobots config regardless of option order.
-
 import (
 	"cmp"
 	"encoding/json"
@@ -32,97 +16,34 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
-// ─── Public config types ───────────────────────────────────────────
-
-// AgentReadyConfig configures the WithAgentReady bundle. The zero value
-// is a no-op; set fields for the surfaces you want. Sensible defaults
-// apply inside WithAgentReady.
+// AgentReadyConfig configures the WithAgentReady bundle; the zero value
+// installs nothing.
 type AgentReadyConfig struct {
-	// BaseURL is the canonical origin (scheme://host) used to
-	// absolutize URLs in the agent card and Link headers. When empty,
-	// handlers derive it per request from the request Host and the
-	// TLS state, with X-Forwarded-Proto honored only from a peer listed
-	// in WithTrustedProxies: correct behind a proxy that sets Host.
-	BaseURL string
-
-	// Title is the /llms.txt H1 and the agent-card name fallback.
-	Title string
-	// Summary is the /llms.txt blockquote lede and the agent-card
-	// description fallback.
-	Summary string
-	// Sections are the /llms.txt file-list sections (H2 + links). When
-	// nil, a default "Docs" section links the app's /llm-pages.md index
-	// (requires WithPublicLLMMD) and the per-screen /llm.md docs.
-	Sections []LLMsTxtSection
-
-	// FullText, when non-empty, is served verbatim at /llms-full.txt:
-	// the second tier of the llmstxt.org convention: /llms.txt is the
-	// small index an agent fetches first; /llms-full.txt is the whole
-	// docs corpus in one markdown file for agents that want everything
-	// in a single request. Link it from a Sections entry so agents
-	// reading the index can find it.
-	FullText string
-
-	// AgentCard, when non-nil, serves /.well-known/agent-card.json plus
-	// the legacy /.well-known/agent.json alias. When nil but the bundle
-	// is on, a minimal card is derived from Title/Summary/BaseURL.
-	AgentCard *AgentCardConfig
-
-	// AllowAIBots, when non-nil, augments robots.txt with explicit
-	// rules for the common AI crawlers (GPTBot, ClaudeBot, Google-Extended,
-	// …). true → allow; false → deny. nil → no AI-bot block.
-	AllowAIBots *bool
-
-	// ContentSignals, when set, emits a Content-Signal: directive line in
-	// robots.txt declaring AI usage preferences (e.g.
-	// "ai-train=no, search=yes, ai-input=yes"). See contentsignals.org.
-	ContentSignals string
-
-	// LinkHeaders, when non-nil, toggles Link response headers on every
-	// HTML page. Default (nil → bundle sets true) advertises the sitemap,
-	// llms.txt, agent card, and the per-page markdown alternate.
-	LinkHeaders *bool
-
-	// OpenAPIEndpoint, when set (e.g. "/openapi.json"), is advertised via
-	// a Link: rel="service-desc" header so agents discover the API
-	// catalog. Set it to the path the framework serves the OpenAPI spec
-	// at (requires WithPublicOpenAPI so the spec is reachable).
-	OpenAPIEndpoint string
-
-	// ContentNegotiation, when non-nil, toggles serving a markdown
-	// rendering of any HTML page when the request Accepts
-	// text/markdown. Default off (nil → bundle leaves it off unless set).
-	ContentNegotiation *bool
-
-	// WhenToUse, when non-empty, renders a "## When to use" section in
-	// /llms.txt: the scanner-recognized phrasing agents read to decide
-	// whether this service fits their task. One or two plain sentences
-	// naming the best-fit use cases.
-	WhenToUse string
-
-	// CLI, when non-nil, renders a "## CLI" section in /llms.txt with
-	// the install command and docs link, so agents (and scanners)
-	// discover the scriptable path without probing package registries.
-	CLI *CLIToolConfig
+	BaseURL            string           // canonical origin; empty derives it per request
+	Title              string           // the /llms.txt H1 and the card's name fallback
+	Summary            string           // the /llms.txt lede and the card's description fallback
+	Sections           []LLMsTxtSection // nil links /llm-pages.md when WithPublicLLMMD is on
+	FullText           string           // served verbatim at /llms-full.txt
+	AgentCard          *AgentCardConfig // nil derives a card from Title and Summary
+	AllowAIBots        *bool            // adds an allow or deny robots.txt block for AI crawlers
+	ContentSignals     string           // a robots.txt Content-Signal value, e.g. "ai-train=no"
+	LinkHeaders        *bool            // discovery Link headers on HTML pages; nil means on
+	OpenAPIEndpoint    string           // advertised as Link rel="service-desc" and in /llms.txt
+	ContentNegotiation *bool            // markdown for Accept: text/markdown; nil means off
+	WhenToUse          string           // the /llms.txt "## When to use" section
+	CLI                *CLIToolConfig   // the /llms.txt "## CLI" section
 }
 
 // CLIToolConfig describes the official CLI advertised in /llms.txt.
 type CLIToolConfig struct {
-	// Name is the binary/package name (e.g. "acme").
-	Name string
-	// Install is the copy-paste install command
-	// (e.g. "npm install -g @acme/cli", "brew install acme").
-	Install string
-	// Docs is an optional root-relative or absolute URL for CLI docs.
-	Docs string
+	Name    string // binary or package name
+	Install string // copy-paste install command
+	Docs    string // optional docs URL
 }
 
 // LLMsTxtSection is one H2 file-list section of /llms.txt.
 type LLMsTxtSection struct {
-	// Title is the H2 heading. The special title "Optional" renders the
-	// spec's skippable-context section.
-	Title string
-	// Links are the markdown `[name](url): notes` entries.
+	Title string // "Optional" is the spec's skippable-context section
 	Links []LLMsTxtLink
 }
 
@@ -133,67 +54,26 @@ type LLMsTxtLink struct {
 	Notes string // optional text after the colon
 }
 
-// AgentCardConfig configures the A2A /.well-known/agent-card.json. The
-// card is the discovery artifact: even without a full A2A task server, a
-// valid card advertises the agent's identity, service URL, and skills.
+// AgentCardConfig configures the A2A v1.0 card at
+// /.well-known/agent-card.json and its legacy alias /.well-known/agent.json.
 type AgentCardConfig struct {
-	// Name is the human-readable agent name (REQUIRED by A2A).
-	Name string
-	// Description is a short summary.
-	Description string
-	// Version is the agent/software version. Defaults to "1.0.0".
-	Version string
-	// URL is the agent's service endpoint (absolute). When empty,
-	// derived from BaseURL.
-	URL string
-	// MCPEndpoint, when set (e.g. "/mcp"), advertises the MCP endpoint
-	// as the card's JSON-RPC service interface and a skill pointing
-	// agents at it.
-	MCPEndpoint string
-	// A2AEndpoint, when set (e.g. "/a2a"), advertises the A2A task
-	// exchange (framework.WithA2A) as the card's JSON-RPC service
-	// interface INSTEAD of the MCP endpoint, and forces the card's
-	// streaming and pushNotifications capabilities on (the exchange
-	// supports both; the config's booleans are OR-ed, never lowered).
-	// Skills stay the one list: pass app.A2ASkills() (plus any extra).
-	// A card with A2AEndpoint set but no Skills and no MCPEndpoint
-	// serves "skills": [].
-	A2AEndpoint string
-	// Skills are the agent's capabilities. When empty and MCPEndpoint is
-	// set, a default "mcp" skill is emitted; hosts can declare richer
-	// skills (one per domain capability).
-	Skills []AgentSkill
-
-	// Streaming / push-notification capability flags. Default false.
-	Streaming         bool
-	PushNotifications bool
-
-	// SecuritySchemes, when non-nil, is emitted verbatim under
-	// security_schemes (OpenAPI-style). nil omits the field.
-	SecuritySchemes map[string]AgentSecurityScheme
-
-	// DefaultInputModes / DefaultOutputModes are the MIME types the
-	// agent accepts/emits. Default ["text/plain"].
-	DefaultInputModes  []string
-	DefaultOutputModes []string
-
-	// SigningKeys, when non-empty, signs the card per A2A v1.0 §8.4: a
-	// `signatures` array of JWS signatures (ES256/ES384/ES512 or
-	// EdDSA) over the JCS-canonicalized card, with the verification
-	// keys published at /.well-known/jwks.json. Signing requires an
-	// explicit BaseURL (WithAgentReady BaseURL or WithSitemap BaseURL):
-	// a signed card whose URLs derive from the request Host header
-	// would let an attacker launder their endpoint as validly signed.
-	// Hosts without a pinned base fail at mount.
-	SigningKeys []AgentCardSigningKey
+	Name               string                         // defaults to "GoFastr Agent"
+	Description        string                         // short summary
+	Version            string                         // defaults to "1.0.0"
+	URL                string                         // absolute service URL; empty uses the base URL
+	MCPEndpoint        string                         // advertised as the JSON-RPC interface and a default "mcp" skill
+	A2AEndpoint        string                         // advertised instead of MCPEndpoint; turns streaming and push on
+	Skills             []AgentSkill                   // pass app.A2ASkills() with an A2AEndpoint
+	Streaming          bool                           // the card's streaming capability
+	PushNotifications  bool                           // the card's pushNotifications capability
+	SecuritySchemes    map[string]AgentSecurityScheme // emitted as securitySchemes; nil omits it
+	DefaultInputModes  []string                       // defaults to ["text/plain"]
+	DefaultOutputModes []string                       // defaults to ["text/plain"]
+	SigningKeys        []AgentCardSigningKey          // signs the card; needs a configured BaseURL or mount panics
 }
 
-// AgentSkill is one A2A AgentSkill.
-//
-// The A2A AgentSkill schema marks description and tags REQUIRED, so
-// neither key is omitted: an unset description serializes as "" and an
-// unset tags list as [] (MarshalJSON below keeps a nil slice from
-// serializing as null, which the schema also refuses).
+// AgentSkill is one A2A AgentSkill; description and tags are always
+// emitted, as "" and [] when unset.
 type AgentSkill struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
@@ -213,24 +93,16 @@ func (s AgentSkill) MarshalJSON() ([]byte, error) {
 	return json.Marshal(plain(s))
 }
 
-// AgentSecurityScheme is an OpenAPI-style security scheme emitted in the
-// card's security_schemes. The raw map lets hosts express any scheme
-// shape (apiKey, http OAuth2, etc.) without the framework modeling each.
+// AgentSecurityScheme is one OpenAPI-style security scheme, emitted as given.
 type AgentSecurityScheme map[string]any
 
-// ─── Options ───────────────────────────────────────────────────────
-
-// WithAgentReady turns on the agent-discovery surface in one call. It is
-// the recommended entry point; pass a populated AgentReadyConfig. Each
-// piece is also available as a granular Option (WithLLMsTxt,
-// WithAgentCard) for fine control.
+// WithAgentReady turns on the agent-discovery surface in one call. It
+// merges with the granular options (WithLLMsTxt, WithAgentCard,
+// WithMarkdownNegotiation, WithAgentLinkHeaders) in either order; a field
+// the bundle sets wins.
 func WithAgentReady(cfg AgentReadyConfig) Option {
 	ar := &agentReadyConfig{baseURL: cfg.BaseURL}
 
-	// /llms.txt: on whenever a Title is set, sections are provided, or
-	// one of the scanner-oriented content sections (WhenToUse, CLI) is
-	// configured — those only render inside llms.txt, so setting one is
-	// itself the opt-in.
 	if cfg.Title != "" || cfg.Summary != "" || cfg.Sections != nil || cfg.WhenToUse != "" || cfg.CLI != nil {
 		ar.llms = &llmsCfg{
 			title:     cfg.Title,
@@ -241,8 +113,6 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 		}
 	}
 
-	// Agent card: explicit config, or a minimal derived card when the
-	// bundle is on with a title.
 	switch {
 	case cfg.AgentCard != nil:
 		ar.card = cfg.AgentCard
@@ -250,49 +120,31 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 		ar.card = &AgentCardConfig{Name: cfg.Title, Description: cfg.Summary}
 	}
 
-	// AI-bot robots block.
 	if cfg.AllowAIBots != nil {
 		b := *cfg.AllowAIBots
 		ar.allowAIBots = &b
 	}
 
-	// Link headers: default on for the bundle.
 	lh := true
 	if cfg.LinkHeaders != nil {
 		lh = *cfg.LinkHeaders
 	}
 	ar.linkHeaders = lh
 
-	// Content negotiation: default off.
 	if cfg.ContentNegotiation != nil {
 		ar.contentNeg = *cfg.ContentNegotiation
 	}
 
-	// OpenAPI service-desc link: opt-in (path the host serves the spec at).
 	ar.openAPI = cfg.OpenAPIEndpoint
-
-	// Full-corpus tier: opt-in content for /llms-full.txt.
 	ar.fullTxt = cfg.FullText
-
-	// Content-Signal robots directive: opt-in preference string.
 	ar.contentSignals = cfg.ContentSignals
 
 	return func(ds *UIHost) {
-		// The zero value is a no-op (matches the doc): don't install the
-		// surface unless something meaningful is configured. linkHeaders
-		// alone, with nothing to link to, doesn't justify it. A granular
-		// option may already have installed ds.agentReady; the early return
-		// leaves it untouched rather than wiping it.
 		if ar.llms == nil && ar.card == nil && ar.allowAIBots == nil &&
 			ar.baseURL == "" && !ar.contentNeg && ar.openAPI == "" && ar.contentSignals == "" &&
 			ar.fullTxt == "" {
 			return
 		}
-		// Merge into any config a granular option (WithMarkdownNegotiation,
-		// WithLLMsTxt, WithAgentCard, WithAgentLinkHeaders) already installed
-		// rather than replacing it, so the bundle and granular options compose
-		// regardless of option order. The bundle wins for every field it
-		// explicitly sets; a field it leaves unset preserves the granular value.
 		cur := ds.agentReady
 		if cur == nil {
 			cur = &agentReadyConfig{}
@@ -309,17 +161,11 @@ func WithAgentReady(cfg AgentReadyConfig) Option {
 		if ar.allowAIBots != nil {
 			cur.allowAIBots = ar.allowAIBots
 		}
-		// Link headers default on for the bundle; OR them in so a granular
-		// enable is never clobbered. Only an explicit LinkHeaders:&false
-		// turns them off.
 		if cfg.LinkHeaders != nil {
 			cur.linkHeaders = *cfg.LinkHeaders
 		} else {
 			cur.linkHeaders = cur.linkHeaders || ar.linkHeaders
 		}
-		// Content negotiation only flips when the bundle explicitly sets it
-		// (ContentNegotiation non-nil); otherwise a granular
-		// WithMarkdownNegotiation survives.
 		if cfg.ContentNegotiation != nil {
 			cur.contentNeg = *cfg.ContentNegotiation
 		}
@@ -382,8 +228,7 @@ func mergeAgentCardCfg(previous, next *AgentCardConfig) *AgentCardConfig {
 	return &merged
 }
 
-// WithLLMsTxt serves /llms.txt from the given title, summary, and
-// sections. Granular alternative to the WithAgentReady bundle.
+// WithLLMsTxt serves /llms.txt from the given title, summary, and sections.
 func WithLLMsTxt(title, summary string, sections []LLMsTxtSection) Option {
 	return func(ds *UIHost) {
 		if ds.agentReady == nil {
@@ -393,11 +238,7 @@ func WithLLMsTxt(title, summary string, sections []LLMsTxtSection) Option {
 	}
 }
 
-// WithLLMsFullTxt serves the given markdown verbatim at /llms-full.txt,
-// the full-corpus tier of the llmstxt.org convention. Pair it with
-// WithLLMsTxt (or the bundle) and add a Sections link to /llms-full.txt
-// so agents reading the index can find it. Granular alternative to the
-// WithAgentReady bundle's FullText field.
+// WithLLMsFullTxt serves the given markdown verbatim at /llms-full.txt.
 func WithLLMsFullTxt(content string) Option {
 	return func(ds *UIHost) {
 		if ds.agentReady == nil {
@@ -407,8 +248,7 @@ func WithLLMsFullTxt(content string) Option {
 	}
 }
 
-// WithAgentCard serves /.well-known/agent-card.json (+ legacy
-// /.well-known/agent.json). Granular alternative to the bundle.
+// WithAgentCard serves /.well-known/agent-card.json and /.well-known/agent.json.
 func WithAgentCard(cfg AgentCardConfig) Option {
 	return func(ds *UIHost) {
 		if ds.agentReady == nil {
@@ -419,9 +259,8 @@ func WithAgentCard(cfg AgentCardConfig) Option {
 	}
 }
 
-// WithMarkdownNegotiation makes HTML pages serve a markdown rendering
-// when the request Accepts text/markdown. Requires WithPublicLLMMD so
-// the per-screen markdown renderers are available.
+// WithMarkdownNegotiation serves a page's markdown when the request
+// accepts text/markdown; it needs WithPublicLLMMD.
 func WithMarkdownNegotiation() Option {
 	return func(ds *UIHost) {
 		if ds.agentReady == nil {
@@ -431,9 +270,8 @@ func WithMarkdownNegotiation() Option {
 	}
 }
 
-// WithAgentLinkHeaders emits Link response headers on HTML pages
-// advertising the configured discovery artifacts (sitemap, llms.txt,
-// agent card, markdown alternate). Granular alternative to the bundle.
+// WithAgentLinkHeaders adds Link headers naming the configured discovery
+// documents to HTML pages.
 func WithAgentLinkHeaders() Option {
 	return func(ds *UIHost) {
 		if ds.agentReady == nil {
@@ -443,16 +281,12 @@ func WithAgentLinkHeaders() Option {
 	}
 }
 
-// ─── Internal config ───────────────────────────────────────────────
-
-// SetMCPManifestPath declares the mounted MCP manifest for discovery links.
-// Framework wiring calls it at startup; manual hosts call it only when
-// they also serve that manifest. An empty path omits the manifest link.
+// SetMCPManifestPath names the served MCP manifest for the discovery
+// links; an empty path omits the link.
 func (ds *UIHost) SetMCPManifestPath(path string) {
 	ds.mcpManifestPath = path
 }
 
-// agentReadyConfig is the resolved, internal form stored on *UIHost.
 type agentReadyConfig struct {
 	baseURL        string
 	llms           *llmsCfg
@@ -460,24 +294,20 @@ type agentReadyConfig struct {
 	allowAIBots    *bool
 	linkHeaders    bool
 	contentNeg     bool
-	openAPI        string            // OpenAPI spec path → Link: rel="service-desc"
-	contentSignals string            // Content-Signal: robots directive value
-	fullTxt        string            // /llms-full.txt content (full-corpus tier)
-	signing        *agentCardSigning // non-nil when the card is signed
+	openAPI        string
+	contentSignals string
+	fullTxt        string
+	signing        *agentCardSigning
 }
 
 type llmsCfg struct {
 	title     string
 	summary   string
 	sections  []LLMsTxtSection
-	whenToUse string         // "## When to use" section body (AgentReadyConfig.WhenToUse)
-	cli       *CLIToolConfig // "## CLI" section (AgentReadyConfig.CLI)
+	whenToUse string
+	cli       *CLIToolConfig
 }
 
-// ─── Route mounting ────────────────────────────────────────────────
-
-// mountAgentReady registers the agent-discovery routes the bundle/granular
-// options enabled. Called from Mount, next to the robots/sitemap block.
 func (ds *UIHost) mountAgentReady(r *router.Router) {
 	if ds.agentReady == nil {
 		return
@@ -489,9 +319,6 @@ func (ds *UIHost) mountAgentReady(r *router.Router) {
 		r.Get("/llms-full.txt", http.HandlerFunc(ds.handleLLMsFullTxt))
 	}
 	if ds.agentReady.card != nil {
-		// Resolve signing before the routes exist: an invalid key set
-		// or a missing pinned BaseURL must fail the boot, not surface
-		// as a 500 on the first card request.
 		if len(ds.agentReady.card.SigningKeys) > 0 {
 			keys, err := resolveSigningKeys(ds.agentReady.card.SigningKeys)
 			if err != nil {
@@ -511,14 +338,10 @@ func (ds *UIHost) mountAgentReady(r *router.Router) {
 			}
 			r.Get(jwksPath, http.HandlerFunc(ds.handleJWKS))
 		}
-		// A2A v1.0 canonical path + the older agent.json alias so both
-		// current and legacy clients resolve the card.
 		r.Get("/.well-known/agent-card.json", http.HandlerFunc(ds.handleAgentCard))
 		r.Get("/.well-known/agent.json", http.HandlerFunc(ds.handleAgentCard))
 	}
 }
-
-// ─── /llms.txt handler ─────────────────────────────────────────────
 
 func (ds *UIHost) handleLLMsTxt(w http.ResponseWriter, req *http.Request) {
 	cfg := ds.agentReady.llms
@@ -531,8 +354,6 @@ func (ds *UIHost) handleLLMsTxt(w http.ResponseWriter, req *http.Request) {
 	w.Write([]byte(renderLLMsTxt(cfg, ds)))
 }
 
-// handleLLMsFullTxt serves the full-corpus tier verbatim. text/plain to
-// match /llms.txt. Agents fetch both the same way.
 func (ds *UIHost) handleLLMsFullTxt(w http.ResponseWriter, req *http.Request) {
 	full := ds.agentReady.fullTxt
 	if full == "" {
@@ -544,15 +365,6 @@ func (ds *UIHost) handleLLMsFullTxt(w http.ResponseWriter, req *http.Request) {
 	w.Write([]byte(full))
 }
 
-// renderLLMsTxt builds the markdown per llmstxt.org: H1 title, blockquote
-// summary, then one H2 section per file-list. A nil-sections default links
-// the app's /llm-pages.md index + per-screen docs when public. On top of
-// the host's sections it renders the scanner-oriented content the bundle
-// configures — "## When to use" (WhenToUse), "## CLI" (CLI) — and
-// auto-links the OpenAPI spec and MCP endpoint the bundle knows about,
-// so agents reading the index find every machine surface without the
-// host hand-writing links. Auto-links are skipped when the rendered
-// output already mentions the path (host sections win).
 func renderLLMsTxt(cfg *llmsCfg, ds *UIHost) string {
 	var b strings.Builder
 	title := cfg.title
@@ -596,10 +408,6 @@ func renderLLMsTxt(cfg *llmsCfg, ds *UIHost) string {
 			fmt.Fprintf(&b, "Docs: [CLI documentation](%s)\n\n", cfg.cli.Docs)
 		}
 	}
-	// Auto-linked discovery artifacts, appended only when the rendered
-	// document doesn't already reference them: the OpenAPI spec and the
-	// MCP endpoint + well-known manifest. (ds may predate the bundle:
-	// granular WithLLMsTxt hosts have no agentReady config.)
 	if ds != nil && ds.agentReady != nil {
 		if ep := ds.agentReady.openAPI; ep != "" && !strings.Contains(b.String(), ep) {
 			fmt.Fprintf(&b, "## API\n\n- [OpenAPI spec](%s): machine-readable API catalog\n\n", ep)
@@ -617,12 +425,6 @@ func renderLLMsTxt(cfg *llmsCfg, ds *UIHost) string {
 	return strings.TrimRight(b.String(), "\n") + "\n"
 }
 
-// defaultLLMsSections builds a Docs section linking the app's existing
-// /llm-pages.md markdown index, so a bundle host with WithPublicLLMMD
-// gets a useful llms.txt for free. The index itself enumerates every
-// screen + its /llm.md doc. We link just the index rather than every
-// route, because non-screen routes (/api/*, /healthz, /.well-known/*,
-// …) have no markdown counterpart and would produce dead links.
 func defaultLLMsSections(ds *UIHost) []LLMsTxtSection {
 	if !ds.pageDocsOn() {
 		return nil
@@ -637,8 +439,6 @@ func defaultLLMsSections(ds *UIHost) []LLMsTxtSection {
 	}}
 }
 
-// ─── Agent card handler ────────────────────────────────────────────
-
 func (ds *UIHost) handleAgentCard(w http.ResponseWriter, req *http.Request) {
 	cfg := ds.agentReady.card
 	if cfg == nil {
@@ -648,35 +448,20 @@ func (ds *UIHost) handleAgentCard(w http.ResponseWriter, req *http.Request) {
 	base := ds.resolveBaseURL(req)
 	doc := buildAgentCard(cfg, base)
 	if ds.agentReady.signing != nil {
-		// Sign the card exactly as served: A2A v1.0 §8.4 — JWS over
-		// the JCS canonical form of the card WITHOUT `signatures`,
-		// appended after. Resolution (key validation, pinned base)
-		// already happened at mount; failure here is a 500, never a
-		// silently-unsigned card.
 		sigs, err := signAgentCard(doc, ds.agentReady.signing)
 		if err != nil {
-			// Signing errors name key material and paths. Never the client's.
 			log.Printf("uihost: agent card signing failed: %v", err)
 			i18n.HTTPError(w, req, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		doc["signatures"] = sigs
 	}
-	// Same Vary discipline as framework/wellknown.go's varyWellKnown
-	// (the pinned sibling contract): with no BaseURL configured the
-	// card body embeds supportedInterfaces[].url built from r.Host and
-	// the enum-gated X-Forwarded-Proto (resolveBaseURL), so a shared
-	// cache must key on those inputs or the first caller's origin is
-	// pinned into every later agent's card. A pinned BaseURL makes the
-	// output request-independent, so no Vary is needed there.
 	if !ds.baseURLPinned() {
 		w.Header().Add("Vary", "Host")
 		w.Header().Add("Vary", "X-Forwarded-Proto")
 	}
 	b, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
-		// A host-filled card member with no JSON form would answer an
-		// empty card; answer 500 so agents treat it as failed.
 		slog.Warn("uihost: encode agent card", "error", err)
 		i18n.HTTPError(w, req, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
@@ -687,9 +472,6 @@ func (ds *UIHost) handleAgentCard(w http.ResponseWriter, req *http.Request) {
 	w.Write([]byte("\n"))
 }
 
-// buildAgentCard assembles the A2A v1.0 card as an ordered map so the
-// JSON reads naturally (name, description, version, url, interfaces,
-// capabilities, skills, security, modes).
 func buildAgentCard(cfg *AgentCardConfig, baseURL string) map[string]any {
 	name := cfg.Name
 	if name == "" {
@@ -723,9 +505,6 @@ func buildAgentCard(cfg *AgentCardConfig, baseURL string) map[string]any {
 		}}
 	}
 
-	// capabilities: the exchange (A2AEndpoint) streams and pushes by
-	// construction, so setting it ORs both flags on. An empty
-	// A2AEndpoint keeps the config's booleans verbatim.
 	streaming, push := cfg.Streaming, cfg.PushNotifications
 	if cfg.A2AEndpoint != "" {
 		streaming, push = true, true
@@ -738,20 +517,13 @@ func buildAgentCard(cfg *AgentCardConfig, baseURL string) map[string]any {
 			"streaming":         streaming,
 			"pushNotifications": push,
 		},
-		"skills":             skills, // REQUIRED (proto field 12); emit [] when empty, never omit
+		"skills":             skills,
 		"defaultInputModes":  in,
 		"defaultOutputModes": out,
 	}
-	// skills is REQUIRED in A2A v1.0: a nil slice marshals to null, so
-	// force a non-nil empty array when there are no skills.
 	if len(skills) == 0 {
 		doc["skills"] = []AgentSkill{}
 	}
-	// supportedInterfaces is REQUIRED (proto field 3) and is the ONLY place
-	// the service endpoint lives in v1.0 (no top-level url). Advertise the
-	// JSON-RPC endpoint: the A2A task exchange when configured, else the
-	// MCP endpoint (it genuinely speaks JSON-RPC; initialize/tools-list
-	// work), else the service URL.
 	ifaceURL := serviceURL
 	switch {
 	case cfg.A2AEndpoint != "":
@@ -770,43 +542,14 @@ func buildAgentCard(cfg *AgentCardConfig, baseURL string) map[string]any {
 	return doc
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────
-
-// resolveBaseURL returns the canonical origin for absolute discovery URLs:
-// the WithAgentReady BaseURL if set, else the WithSitemap BaseURL (so a host
-// that configured one origin gets it everywhere), else derived per request
-// from the scheme (TLS state, or X-Forwarded-Proto from a trusted proxy)
-// and Host.
 func (ds *UIHost) resolveBaseURL(req *http.Request) string {
-	if ds.agentReady != nil && ds.agentReady.baseURL != "" {
-		return strings.TrimRight(ds.agentReady.baseURL, "/")
+	if base := ds.pinnedBaseURL(); base != "" {
+		return base
 	}
-	if ds.sitemapConfig != nil && ds.sitemapConfig.BaseURL != "" {
-		return strings.TrimRight(ds.sitemapConfig.BaseURL, "/")
-	}
-	// X-Forwarded-Host is NOT honored: it is a plain request header any
-	// client can set, and this value is reflected into absolute URLs
-	// (sitemap entries, the Link: rel="service" header naming the MCP
-	// endpoint). Trusting it makes those a cache-poisoning primitive.
-	// A host that terminates TLS at a proxy which rewrites Host should
-	// set the sitemap BaseURL above, which takes precedence and is
-	// server-controlled, the same shape battery/print documents.
 	scheme := "http"
 	if req.TLS != nil {
 		scheme = "https"
 	}
-	// X-Forwarded-Proto is honored for the scheme ONLY from a peer
-	// listed in WithTrustedProxies (or, when the host lists none, in the
-	// App's AppConfig.TrustedProxies), and then ONLY as an exact
-	// "http"/"https". Any client can send the header, and this origin is
-	// reflected into cacheable output (the Link header, the agent card's
-	// service URL), so an untrusted peer could make the host advertise
-	// http:// URLs, and a non-scheme value like "https://evil.example/p"
-	// would poison both with an attacker-named origin, the same
-	// reflection the Host refusal above exists to prevent.
-	// framework/wellknown.go's resolveWellKnownBase applies the same
-	// trust rule (#669), and framework/pluginhost/assets.go the same
-	// enum check.
 	if ds.trustedFor(req).ContainsAddr(req.RemoteAddr) {
 		if u := req.Header.Get("X-Forwarded-Proto"); u == "http" || u == "https" {
 			scheme = u
@@ -815,11 +558,6 @@ func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 	return scheme + "://" + req.Host
 }
 
-// trustedFor is the proxy list resolveBaseURL honors X-Forwarded-Proto
-// from: WithTrustedProxies when the host named any entry, else the list a
-// framework.App puts on each request's context (AppConfig.TrustedProxies).
-// A host list replaces the App's; it is not added to it, so the host
-// option says exactly whom the host trusts.
 func (ds *UIHost) trustedFor(req *http.Request) clientip.Proxies {
 	if len(ds.trustedProxies) > 0 {
 		return ds.proxies
@@ -827,23 +565,10 @@ func (ds *UIHost) trustedFor(req *http.Request) clientip.Proxies {
 	return clientip.TrustedFrom(req.Context())
 }
 
-// baseURLPinned reports whether resolveBaseURL returns a configured
-// constant rather than request-derived inputs. Surfaces that reflect
-// the base into response bodies or headers declare Vary on the request
-// inputs only while they actually vary.
 func (ds *UIHost) baseURLPinned() bool {
-	if ds.agentReady != nil && ds.agentReady.baseURL != "" {
-		return true
-	}
-	return ds.sitemapConfig != nil && ds.sitemapConfig.BaseURL != ""
+	return ds.pinnedBaseURL() != ""
 }
 
-// acceptRangeMatches reports whether any member of the request's Accept
-// header names one of wanted with a non-zero quality. RFC 9110 §12.4.2:
-// q=0 means "not acceptable", so `text/markdown;q=0` must NOT select the
-// markdown representation. Only the zero-exclusion is honored; full
-// q-value ranking is not needed to pick between "asked for it" and
-// "did not".
 func acceptRangeMatches(accept string, wanted ...string) bool {
 	for part := range strings.SplitSeq(accept, ",") {
 		fields := strings.Split(part, ";")
@@ -873,22 +598,14 @@ func acceptRangeMatches(accept string, wanted ...string) bool {
 	return false
 }
 
-// acceptsMarkdown reports whether the request's Accept header asks for
-// text/markdown. Used by the content-negotiation path in handlePage.
 func acceptsMarkdown(r *http.Request) bool {
 	return acceptRangeMatches(r.Header.Get("Accept"), "text/markdown")
 }
 
-// acceptsProblemJSON reports whether the request's Accept header asks
-// for a JSON API response (application/json or application/problem+json).
-// Used by serveNotFound's RFC 9457 arm. A bare */* or text/html does
-// NOT match: browsers keep getting the HTML 404.
 func acceptsProblemJSON(r *http.Request) bool {
 	return acceptRangeMatches(r.Header.Get("Accept"), "application/json", "application/problem+json")
 }
 
-// writeAgentLinkHeaders emits the Link response header advertising the
-// configured discovery artifacts. Called from handlePage for HTML pages.
 func (ds *UIHost) writeAgentLinkHeaders(w http.ResponseWriter, req *http.Request) {
 	if ds.agentReady == nil || !ds.agentReady.linkHeaders {
 		return
@@ -904,39 +621,24 @@ func (ds *UIHost) writeAgentLinkHeaders(w http.ResponseWriter, req *http.Request
 	if ds.agentReady.card != nil {
 		links = append(links, fmt.Sprintf(`<%s/.well-known/agent-card.json>; rel="agent-card"; type="application/json"`, base))
 	}
-	// MCP endpoint (Streamable HTTP). Advertised from the agent card's
-	// MCPEndpoint so a client following the Link header reaches the
-	// server's JSON-RPC tool surface.
 	if ds.agentReady.card != nil && ds.agentReady.card.MCPEndpoint != "" {
 		links = append(links, fmt.Sprintf(`<%s%s>; rel="service"`, base, ds.agentReady.card.MCPEndpoint))
 	}
-	// OpenAPI spec (API catalog). Opt-in via AgentReadyConfig.OpenAPIEndpoint.
 	if ds.agentReady.openAPI != "" {
 		links = append(links, fmt.Sprintf(`<%s%s>; rel="service-desc"; type="application/json"`, base, ds.agentReady.openAPI))
 	}
-	// Only a doc that is served: none for an app or a screen that opts
-	// out with NoLLMMD.
 	if ds.pageDocsOn() {
 		if scr, _, ok := ds.App.Router.Resolve(routePath(req)); ok && !scr.NoLLMMD {
-			// The escaped path: decoded, a > , ; or " in it would close
-			// the URI reference and start a link of the client's choosing.
 			links = append(links, fmt.Sprintf(`<%s%s>; rel="alternate"; type="text/markdown"`, base, markdownAlternate(req.URL.EscapedPath())))
 		}
 	}
 	if len(links) == 0 {
 		return
 	}
-	// The links above embed resolveBaseURL(req) output (r.Host +
-	// enum-gated X-Forwarded-Proto when unpinned), so the page response
-	// varies on those inputs: declare Vary exactly like the card route
-	// and framework/wellknown.go's varyWellKnown, or a shared cache can
-	// pin the attacker-named https://<host>/mcp endpoint into every
-	// later visitor's page. Pinned base → request-independent → no Vary.
 	if !ds.baseURLPinned() {
 		w.Header().Add("Vary", "Host")
 		w.Header().Add("Vary", "X-Forwarded-Proto")
 	}
-	// Append so a host/middleware that set Link headers already keeps them.
 	prev := w.Header().Get("Link")
 	joined := strings.Join(links, ", ")
 	if prev != "" {
@@ -945,15 +647,6 @@ func (ds *UIHost) writeAgentLinkHeaders(w http.ResponseWriter, req *http.Request
 	w.Header().Set("Link", joined)
 }
 
-// markdownAlternate maps an HTML page path to its /llm.md markdown
-// counterpart (the GoFastr convention served via WithPublicLLMMD).
-//
-// r.URL.Path is percent-DECODED, so a request path carrying %0d%0a or %00
-// arrives here with raw CR/LF/NUL. The result is concatenated into the
-// outbound Link header, and net/http only collapses CR/LF at write time —
-// NUL and every other C0 byte reach w.Header() consumers (recorders,
-// header-copying middleware, proxies) verbatim. Strip them; tab is kept,
-// it is legal in a header field value.
 func markdownAlternate(path string) string {
 	var b strings.Builder
 	b.Grow(len(path))
@@ -969,28 +662,16 @@ func markdownAlternate(path string) string {
 	return strings.TrimRight(path, "/") + "/llm.md"
 }
 
-// pageDocsOn reports whether the per-screen markdown docs are served:
-// WithPublicLLMMD is on and the app has not opted out with NoLLMMD.
-// Every surface that serves or links a page doc checks it.
 func (ds *UIHost) pageDocsOn() bool {
 	return ds.App != nil && ds.llmMDPublic && !ds.App.NoLLMMD
 }
 
-// setPageMarkdownHeaders marks a page-doc response (the negotiated
-// markdown, /llm-pages.md, a screen's llm.md) the way the HTML twin is
-// marked: private, no-store and Vary: Cookie. Each is rendered for the
-// caller (policy, Load and the session the cookie names decide what it
-// holds), and the no-cache it used to carry still lets a shared cache
-// store the body, keyed on the URL and Accept alone. Vary is added,
-// never set, so a Vary an earlier layer wrote survives.
 func setPageMarkdownHeaders(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Add("Vary", "Cookie")
 }
 
-// serveMarkdownForPage renders the markdown for the requested path via
-// the per-screen LLM doc renderer. Returns false if no screen matches.
 func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) bool {
 	if !ds.pageDocsOn() {
 		return false
@@ -999,31 +680,18 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 	if !ok || screen.NoLLMMD {
 		return false
 	}
-	// Per-instance doc (SetParams → DI → Load) so a dynamic route's
-	// negotiated markdown carries the page's real title + content,
-	// and, critically, the policy chain is evaluated with the live
-	// request: a non-Allow decision degrades to the metadata-free
-	// withheld doc instead of leaking the screen's rendered content,
-	// title, or SEO bundle.
 	ctx, recorded := app.TrackStatus(app.WithRequest(r.Context(), r))
 	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, routePath(r))
 	if !ok {
 		return false
 	}
-	// The markdown is this URL's other representation, so it carries the
-	// status the HTML would (app.SetStatus, ScreenStatusCode): a missing
-	// record answers 404 in either.
 	status := pageStatus(app.RenderResult{Component: res.Component}, recorded())
-	// A refused page answers as its HTML does: the redirect, or the
-	// block's status over the withheld doc.
 	switch res.Decision.Kind {
 	case app.DecisionRedirect:
 		w.Header().Add("Vary", "Accept")
 		http.Redirect(w, r, scrubCtl(res.Decision.URL), http.StatusSeeOther)
 		return true
 	case app.DecisionBlock:
-		// As writeBlock answers it through i18n.HTTPError: a status
-		// outside 400-599 (decide.Block(0) included) is a 500.
 		status = res.Decision.Status
 		if status < 400 || status > 599 {
 			status = http.StatusInternalServerError
@@ -1035,9 +703,6 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 		if title == "" {
 			title = screen.Title
 		}
-		// SEO resolved against the LOADED instance so the negotiated
-		// markdown's front matter matches the HTML head (llmmd_seo.go's
-		// lockstep contract), not the zero-value registration template.
 		seo := ds.localizeSEO(ctx, routePath(r), resolveScreenSEOFor(ctx, screen, res.Component))
 		if fm := screenSEOFrontMatter(title, seo); fm != "" {
 			md = fm + "\n" + md

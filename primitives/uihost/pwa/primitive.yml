@@ -4,3 +4,182 @@ code:
   - framework/uihost/pwa.go
 docs:
   - framework/docs/content/pwa.md
+invariants:
+  - id: sensitive-paths-never-precached
+    rule: The SSE, session, action, widget, /api and /auth endpoints, every DenyPaths entry and each of them behind every locale prefix, the default locale's included, are never precached and never intercepted by either worker.
+    enforced_by:
+      - test: framework/uihost.TestPWAPrecacheDropsSensitive
+      - test: framework/uihost.TestPrecacheRefusesWidgetState
+      - test: framework/uihost.TestPWADenyCoversLocalePrefix
+      - test: framework/uihost.TestPWAServiceWorkerDenyList
+      - test: framework/uihost.TestSweepAgentWorkersSkipDeniedPaths
+      - test: framework/uihost.TestSweepAgentPWABuiltInDenyList
+  - id: deny-matches-whole-segments
+    rule: A deny entry matches its exact path and paths under it, so /__gofastr/actions.js stays precacheable while /__gofastr/action is denied.
+    enforced_by:
+      - test: framework/uihost.TestSweepAgentPWADenyMatchesWholeSegments
+  - id: deny-paths-ignore-root
+    rule: A DenyPaths entry that is "/" or not root-relative is dropped rather than denying the whole app.
+    enforced_by:
+      - test: framework/uihost.TestSweepAgentPWADenyPathsIgnoreRoot
+  - id: precache-decoded-before-deny
+    rule: A precache entry is percent-decoded and cleaned before the deny check, and one that is not root-relative or is protocol-relative is dropped.
+    enforced_by:
+      - test: framework/uihost.TestPWAPrecacheDecodesBeforeDeny
+      - test: framework/uihost.TestPWAPrecacheDropsSensitive
+  - id: offline-assets-precached-links-not
+    rule: The offline page's asset URLs join the precache HTML-unescaped, and its a, area and base targets never do.
+    enforced_by:
+      - test: framework/uihost.TestPWAPrecachesAssetsNotLinks
+  - id: precache-urls-match-requests
+    rule: The live precache lists split runtime modules under their ?v= URLs, and a static export's precache lists no live-only versioned shell URL.
+    enforced_by:
+      - test: framework/uihost.TestPWAServiceWorkerExactMatching
+      - test: framework/uihost.TestSweepAgentStaticPrecacheOmitsLiveURLs
+  - id: manifest-locale-start-url-only
+    rule: A locale's manifest carries the locale prefix in start_url only; id and scope are the same for every locale.
+    enforced_by:
+      - test: framework/uihost.TestPWAManifestPerLocale
+  - id: offline-page-links-component-css
+    rule: The offline page links component stylesheets one by one, never the per-page CSS bundle.
+    enforced_by:
+      - test: framework/uihost.TestPWAOfflineNoBundleCSS
+  - id: offline-screen-panic-contained
+    rule: A panicking OfflineScreen is replaced by the default offline page rather than failing the worker or the page.
+    enforced_by:
+      - test: framework/uihost.TestPWAOfflineScreenPanicContained
+  - id: offline-page-not-personalized
+    rule: The offline page renders under context.Background, outside the app layout, so it holds nothing specific to a reader.
+    judge: Does this change render the offline page with a request, a session or the app layout, or feed it reader-specific data?
+  - id: version-tracks-served-bytes
+    rule: The cache version changes when a precached static file's served bytes change at the same path, reading the static dir before the embedded FS.
+    enforced_by:
+      - test: framework/uihost.TestPWAVersionTracksAssetBytes
+      - test: framework/uihost.TestPWAFingerprintsServedFile
+  - id: static-version-tracks-content
+    rule: A static export whose ContentHash changes gets a different cache version even when its path list does not.
+    enforced_by:
+      - test: framework/uihost.TestStaticServiceWorkerPrecachesWholeSite
+  - id: cache-prefix-isolated
+    rule: A worker's delete prefix is never a prefix of the cache name of another app, of a static export at another basePath, or of the live worker on the same origin.
+    enforced_by:
+      - test: framework/uihost.TestPWAPrefixNotPrefixOfSibling
+      - test: framework/uihost.TestPWAStaticPrefixNotPrefixOfSibling
+  - id: migration-reaps-only-own-old-cache
+    rule: Activate deletes an old-format cache only when it starts with the worker's OLD_PREFIX and the rest is hex.
+    enforced_by:
+      - test: framework/uihost.TestPWAMigrationReapsOnlyOwnOldCache
+  - id: precache-rewrapped
+    rule: Install stores each precached response re-wrapped in a new Response, so a redirected response never answers a navigation.
+    enforced_by:
+      - test: framework/uihost.TestPWAServiceWorkerRewrapsPrecache
+  - id: live-worker-never-caches-at-runtime
+    rule: The live worker stores responses only at install, fetches navigations from the network first, and never calls skipWaiting.
+    enforced_by:
+      - test: framework/uihost.TestSweepAgentLiveWorkerNeverCachesAtRuntime
+      - test: framework/uihost.TestPWAServiceWorkerServed
+  - id: static-optional-assets-best-effort
+    rule: The static worker installs pages, framework assets and every component stylesheet under its ?v= URL atomically, and user static-dir files best-effort.
+    enforced_by:
+      - test: framework/uihost.TestStaticServiceWorkerReviewContracts
+      - test: framework/uihost.TestSweepAgentStaticPrecachesVersionedComponentCSS
+  - id: worker-cache-lookups
+    rule: Activate never deletes the worker's own current cache, and the static worker retries a navigation under the other trailing-slash form of its path.
+    enforced_by:
+      - test: framework/uihost.TestSweepAgentWorkerCacheLookups
+  - id: worker-served-no-cache
+    rule: The service worker is served with Cache-Control no-cache so browsers see a new deployment.
+    enforced_by:
+      - test: framework/uihost.TestPWAServiceWorkerServed
+  - id: theme-color-escaped
+    rule: The theme-color meta tag carries ThemeColor HTML-escaped.
+    enforced_by:
+      - test: framework/uihost.TestSweepAgentPWAThemeColorEscaped
+decisions:
+  - id: live-navigations-network-first
+    date: 2026-11-16
+    status: accepted
+    decision: The live worker serves navigations from the network and falls back to the offline page; it never caches a document.
+    rejected:
+      - option: Caching rendered pages for offline reading.
+        why: Rendered HTML can be personalized, and Cache Storage would serve one reader's page to the next.
+    upholds: [live-worker-never-caches-at-runtime]
+  - id: static-navigations-cache-first
+    date: 2026-11-16
+    status: accepted
+    decision: The static export worker precaches every page and serves navigations cache-first, trying the trailing-slash twin of the path.
+    rejected:
+      - option: The live worker's network-first navigations.
+        why: An exported page set is immutable and holds nothing personal, so network-first only loses offline use.
+  - id: no-skip-waiting
+    date: 2026-11-16
+    status: accepted
+    decision: A new worker waits until open tabs release the old one, and register.js tells the page through gofastr:pwa-update.
+    rejected:
+      - option: Calling skipWaiting on install.
+        why: Open tabs would run one deployment's page against another deployment's cached shell.
+    upholds: [live-worker-never-caches-at-runtime]
+  - id: assets-network-first-unless-versioned
+    date: 2026-11-16
+    status: accepted
+    decision: In the live worker a ?v= URL is cache-first and every other asset network-first, with the cache answering only offline.
+    rejected:
+      - option: Cache-first for every asset.
+        why: Fresh HTML would pair with a previous deployment's runtime or CSS.
+  - id: offline-page-outside-layout
+    date: 2026-11-16
+    status: accepted
+    decision: The offline page is the offline screen in the bare document shell, rendered once for the precache in the catalog's fallback language.
+    rejected:
+      - option: Wrapping it in the app layout.
+        why: It is precached at install, so anything a layout shows for the installing reader would be served to every later reader.
+    upholds: [offline-page-not-personalized]
+  - id: default-offline-body-plain-html
+    date: 2026-11-16
+    status: accepted
+    decision: The default offline body is plain core-ui html, styled by app.css alone.
+    rejected:
+      - option: Building it from framework/ui components.
+        why: Importing framework/ui into uihost would force its always-loaded styles into every host's CSS.
+  - id: cache-name-dot-hash
+    date: 2026-11-16
+    status: accepted
+    decision: Cache names are gofastr-pwa-<slug>.<hash>. with a hash of the app name, and of the raw basePath for a static export.
+    rejected:
+      - option: The slug alone, as gofastr-pwa-<slug>-<version>.
+        why: An app named Acme deleted the caches of an app named Acme Docs on the same origin, and basePaths /a/b and /ab slugged alike.
+    revisit_if: No deployment can still hold an old-format cache, so the OLD_PREFIX migration can go.
+    upholds: [cache-prefix-isolated, migration-reaps-only-own-old-cache]
+  - id: identical-slug-old-caches-not-separated
+    date: 2026-11-16
+    status: accepted
+    decision: The migration leaves old-format caches of static exports whose basePaths slug alike for manual cleanup.
+    rejected:
+      - option: Reaping them by version.
+        why: Their old names are identical, so nothing tells one export's old cache from the other's.
+  - id: worker-memoized-on-first-request
+    date: 2026-11-16
+    status: accepted
+    decision: The served worker is generated once, on its first request.
+    rejected:
+      - option: Generating it on every request.
+        why: It renders the offline page and hashes the shell, and browsers fetch it on every page load.
+      - option: Generating it at mount.
+        why: The style registries settle only once the app has rendered a page.
+  - id: version-hashes-static-bytes
+    date: 2026-11-16
+    status: accepted
+    decision: The cache version hashes the bytes of precache entries the host serves from static storage and only the URL of any other entry.
+    rejected:
+      - option: Fetching every entry to hash it.
+        why: Entries served by a reverse proxy are not readable at generation time.
+    revisit_if: Hosts report stale proxied assets after a redeploy that kept their URLs.
+    upholds: [version-tracks-served-bytes]
+  - id: static-export-omits-live-urls
+    date: 2026-11-16
+    status: accepted
+    decision: A static export's precache leaves out the live server's ?v= shell URLs and manifest.js.
+    rejected:
+      - option: One precache list for both workers.
+        why: The export does not write those files, so their 404s would fail the whole install.
+    upholds: [precache-urls-match-requests]
