@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -627,8 +628,14 @@ func TestNodeBlockEntityRunsSixTimesByDefault(t *testing.T) {
 }
 
 func TestGitErrorsCarryGitsOwnMessage(t *testing.T) {
-	_, err := gitOutput(t.TempDir(), "rev-parse", "HEAD")
-	if err == nil || !strings.Contains(err.Error(), "not a git repository") {
-		t.Fatalf("gitOutput error = %v, want git's stderr in it", err)
+	dir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(dir))
+	_, err := gitOutput(dir, "rev-parse", "HEAD")
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || len(exit.Stderr) == 0 {
+		t.Fatalf("gitOutput error = %v, want a failed git with stderr", err)
+	}
+	if !strings.Contains(err.Error(), strings.TrimSpace(string(exit.Stderr))) {
+		t.Fatalf("gitOutput error = %v, want git's stderr %q in it", err, exit.Stderr)
 	}
 }
