@@ -12,18 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// confirmDialogTemplate is the dialog every data-cui-confirm control
-// opens (interactive.Action.WithConfirm / WithConfirmDialog, a form's
-// data-cui-confirm). The host emits it once per page inside an inert
-// <template>; the runtime's confirm module clones it, writes the
-// control's title, message and accept label into the parts, keeps the
-// accept button the control's tone picks and drops the other, and
-// opens it modal. Cancel takes focus first, so Enter on an open
-// confirm never answers yes.
-//
-// The default title and labels come from the request's language; a
-// control that names its own title or accept label replaces them at
-// open time.
 func confirmDialogTemplate(ctx context.Context) render.HTML {
 	confirm := i18nui.DialogConfirm.Text(ctx)
 	button := func(label string, v ButtonVariant, part string) render.HTML {
@@ -64,11 +52,6 @@ var _ = registry.RegisterTemplate(preset.ConfirmTemplate, confirmDialogTemplate)
 
 var confirmDialogStyle = registry.RegisterStyle("ui-confirm-dialog", confirmDialogCSS)
 
-// confirmDialogCSS paints the confirm dialog with the modal widget's
-// panel tokens (surface, thin border, large radius and padding, the xl
-// shadow) and its scrim, so a confirm and a modal read as one family.
-// Knobs: --ui-confirm-dialog-max-width (28rem) caps the dialog;
-// --ui-scrim (rgba(0,0,0,0.45)) is the backdrop every modal shares.
 func confirmDialogCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-confirm-dialog"] {
   box-sizing: border-box;

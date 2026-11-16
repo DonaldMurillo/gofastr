@@ -14,96 +14,36 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── ConfirmAction ──────────────────────────────────────────────────
-//
-// A declarative pair: a destructive-action trigger button + a modal
-// alertdialog wired to confirm/cancel. Eliminates the per-button
-// boilerplate of building a hidden Modal preset by hand.
-//
-// Usage:
-//
-//	trigger, modal := ui.ConfirmAction(ui.ConfirmActionConfig{
-//	    Name:         "delete-user-42",
-//	    TriggerLabel: "Delete",
-//	    Title:        "Delete user?",
-//	    Body:         "This permanently removes the user and their data.",
-//	    RPCPath:      "/users/42/delete",
-//	})
-//	def := modal.Build()
-//	widget.Mount(r, &def) // once at app startup
-//	// then render `trigger` wherever the destructive button belongs
-
 // ConfirmActionConfig configures the confirmation flow.
 type ConfirmActionConfig struct {
-	// Name uniquely identifies the modal widget. Required.
-	// Usually qualified per row, e.g. "delete-user-42".
+	// Name identifies the modal widget, usually per row. Required.
 	Name string
-
-	// TriggerLabel is the visible text on the destructive button.
-	// Required.
+	// TriggerLabel is the destructive button's text. Required.
 	TriggerLabel string
-
-	// TriggerVariant maps to one of the framework button variants.
-	// Defaults to "danger". The trigger always renders as
-	// .fui-btn--<TriggerVariant>.
+	// TriggerVariant is the trigger's button variant. Default "danger".
 	TriggerVariant string
-
-	// Title is the alertdialog title (h2). Required.
+	// Title is the alertdialog heading. Required.
 	Title string
-
-	// Body is the alertdialog body paragraph. Required: the body
-	// gives the user the information they need to confirm safely.
+	// Body is the alertdialog paragraph. Required.
 	Body string
-
 	// ConfirmLabel defaults to "Confirm" in the reader's locale.
 	ConfirmLabel string
-
 	// CancelLabel defaults to "Cancel" in the reader's locale.
 	CancelLabel string
-
-	// RPCPath is the endpoint the Confirm button posts to. Required.
+	// RPCPath is the endpoint Confirm posts to. Required.
 	RPCPath string
-
 	// RPCMethod defaults to "POST".
 	RPCMethod string
-
-	// SuccessSignal, when set, emits data-cui-rpc-signal="<name>" on
-	// the Confirm button. On a 2xx response the runtime broadcasts
-	// the response body (typically the fresh authoritative list HTML)
-	// into the named signal: pair it with a
-	// data-cui-signal="<name>" data-cui-signal-mode="html" region to
-	// swap in that HTML (e.g. the shorter list after a delete). On a
-	// non-2xx response html-mode regions are left unchanged (the
-	// optimistic-UI invariant: a failed delete leaves the row/list
-	// intact), while text-mode regions render a human-readable
-	// "Error: …" string. Empty (the default) leaves the response
-	// unused, which is correct for fire-and-forget confirms.
-	//
-	// The name MUST match ^[A-Za-z0-9_-]+$: ConfirmAction panics
-	// otherwise. The runtime interpolates the value into a CSS
-	// attribute selector (querySelectorAll '[data-cui-signal="…"]'),
-	// so any other shape is either an invalid selector (silently
-	// drops the broadcast) or a selector-injection footgun.
+	// SuccessSignal names the signal a 2xx response body is written to; it must match ^[A-Za-z0-9_-]+$.
 	SuccessSignal string
-
-	// AutofocusConfirm flips the initial focus from Cancel (the
-	// default, safer choice for destructive flows where accidental
-	// Enter must not fire the action) to Confirm. Set to true for
-	// non-destructive confirmations ("Apply changes?", "Continue?").
+	// AutofocusConfirm moves initial focus from Cancel to Confirm.
 	AutofocusConfirm bool
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) onto the dialog's own root
-	// (the ui-confirm-action panel; the modal chrome is widget
-	// machinery, and the trigger is a plain ui.Button — render a
-	// Button yourself for trigger-level extras). Keys the component
-	// owns are dropped: class, id, and data-cui-*.
+	// ExtraAttrs land on the dialog panel; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// ConfirmAction returns the trigger button and a *widget.Builder for
-// the alertdialog. The caller mounts the preset once at startup; the
-// trigger renders inline anywhere on the page.
+// ConfirmAction returns the trigger button and the alertdialog preset
+// to mount once. It panics on a missing required field.
 func ConfirmAction(cfg ConfirmActionConfig) (render.HTML, *widget.Builder) {
 	if cfg.Name == "" {
 		panic("ui: ConfirmAction requires Name")
@@ -121,7 +61,7 @@ func ConfirmAction(cfg ConfirmActionConfig) (render.HTML, *widget.Builder) {
 		panic("ui: ConfirmAction requires RPCPath")
 	}
 	if cfg.SuccessSignal != "" && !validSuccessSignalName(cfg.SuccessSignal) {
-		panic("ui: ConfirmAction SuccessSignal must match ^[A-Za-z0-9_-]+$, got " + cfg.SuccessSignal)
+		panic("ui: ConfirmAction SuccessSignal must match ^[A-Za-z0-9_-]+$ and not be __proto__, constructor or prototype, got " + cfg.SuccessSignal)
 	}
 	variant := cfg.TriggerVariant
 	if variant == "" {
@@ -146,9 +86,6 @@ func buildConfirmTrigger(name, label, variant string) render.HTML {
 	})
 }
 
-// parseButtonVariant maps a free-form variant string to a typed
-// ButtonVariant. Unknown values fall back to ButtonDanger because
-// ConfirmAction's primary use case is destructive flows.
 func parseButtonVariant(v string) ButtonVariant {
 	switch ButtonVariant(v) {
 	case ButtonPrimary, ButtonSecondary, ButtonDanger, ButtonGhost:
@@ -157,15 +94,10 @@ func parseButtonVariant(v string) ButtonVariant {
 	return ButtonDanger
 }
 
-// validSuccessSignalName returns true iff name is a safe identifier
-// for use as a data-cui-rpc-signal / data-cui-signal value. The runtime
-// interpolates the name verbatim into the CSS attribute selector
-// `[data-cui-signal="<name>"]`; values outside [A-Za-z0-9_-] are either
-// invalid selectors (the broadcast silently no-ops) or selector-injection
-// (a `"` or `]` breaks out of the attribute matcher). Keep this in sync
-// with the same shape used by interactive.SetSignal and the CSS.escape
-// contract documented in core-ui/ARCHITECTURE.md.
 func validSuccessSignalName(name string) bool {
+	if name == "__proto__" || name == "constructor" || name == "prototype" {
+		return false
+	}
 	for _, c := range name {
 		switch {
 		case c >= 'a' && c <= 'z',
@@ -182,8 +114,6 @@ func validSuccessSignalName(name string) bool {
 func buildConfirmModal(name, title, body, confirmLabel, cancelLabel, method, rpcPath, successSignal string, autofocusConfirm bool, extraAttrs html.Attrs) *widget.Builder {
 	titleID := name + "-title"
 	bodyID := name + "-body"
-	// An empty label is the dialog's own word, said in each request's
-	// locale: the modal is mounted once, with no reader.
 	slot := requestSlot{build: func(ctx context.Context) component.Component {
 		confirm, cancel := confirmLabel, cancelLabel
 		if confirm == "" {
@@ -231,22 +161,12 @@ func (s *confirmDialogSlot) Render() render.HTML {
 		"data-cui-rpc-close": "",
 	}
 	if s.rpcPath != "" {
-		// A dialog with no endpoint is a plain confirmation: the
-		// confirm button renders without the request wiring rather
-		// than carrying a dead data-cui-rpc="".
 		confirmAttrs["data-cui-rpc"] = s.rpcPath
 		confirmAttrs["data-cui-rpc-method"] = s.rpcMethod
 	}
 	if s.successSignal != "" {
 		confirmAttrs["data-cui-rpc-signal"] = s.successSignal
 	}
-	// Only the OPT-IN case carries an autofocus attribute. Cancel is
-	// rendered first in DOM order so the Modal preset's "focus the
-	// first focusable" pass already lands on it, adding autofocus
-	// there would race with the preset's focus() call and emit
-	// Chrome's "Autofocus processing was blocked" info message. The
-	// preset's focus pass also explicitly prefers any [autofocus]
-	// element when one is present, so AutofocusConfirm still wins.
 	if s.autofocusConfirm {
 		confirmAttrs["autofocus"] = ""
 	}
@@ -276,12 +196,6 @@ var _ component.Component = (*confirmDialogSlot)(nil)
 var confirmActionStyle = registry.RegisterStyle("ui-confirm-action", confirmActionCSS)
 
 func confirmActionCSS(_ style.Theme) string {
-	// No background / padding / border-radius here: the widget chrome's
-	// centered panel (`.cui-pos-center > .cui-panel`, core-ui/widget)
-	// paints the panel surface for every modal body. This component
-	// only constrains its own width and lays out its internals:
-	// duplicating the panel props would double-pad the dialog.
-	// Knobs: --ui-confirm-action-max-width (28rem) caps the dialog body.
 	return `[data-cui-comp="ui-confirm-action"] {
   display: block;
   max-inline-size: var(--ui-confirm-action-max-width, 28rem);
