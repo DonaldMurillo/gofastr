@@ -1,12 +1,5 @@
 package ui
 
-// Hero: a single-column editorial hero for marketing/landing surfaces:
-// an optional eyebrow pill, a large display title, a supporting lede, and a
-// row of call-to-action buttons. When Media is supplied it becomes a
-// two-column split (copy + media) that collapses to one column on small
-// screens. The framework owns the type scale, spacing, and responsive
-// behaviour so consumers don't hand-roll hero CSS.
-
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -17,49 +10,31 @@ import (
 
 // HeroConfig configures a Hero.
 type HeroConfig struct {
-	// Eyebrow is an optional short kicker rendered as an accent pill above
-	// the title (e.g. "Billing & revenue").
+	// Eyebrow is an optional kicker rendered as an accent pill above the title.
 	Eyebrow string
 	// Title is the display headline (rendered as the page <h1>).
 	Title string
 	// Subtitle is the supporting lede under the title.
 	Subtitle string
-	// Lede is a rich supporting lede: inline markup (strong, a code
-	// span, a link) rendered in the lede paragraph. It replaces
-	// Subtitle when both are set. Inline content only: it renders
-	// inside a <p>.
+	// Lede is an inline-markup lede that replaces Subtitle; it renders inside a <p>.
 	Lede render.HTML
-	// Actions are the call-to-action elements (usually ui.LinkButton),
-	// laid out in a wrapping row beneath the lede.
+	// Actions are the call-to-action elements, in a wrapping row under the lede.
 	Actions []render.HTML
-	// Footer is content under the actions, inside the copy column and
-	// as wide as it: an install command, a byline, a stats line, a
-	// second paragraph. Optional.
+	// Footer is optional content under the actions, as wide as the copy column.
 	Footer render.HTML
-	// Media is an optional visual rendered beside the copy. When set, the
-	// hero becomes a two-column split; when empty it's a single column.
+	// Media is an optional visual beside the copy; it makes the hero a two-column split.
 	Media render.HTML
 	// AriaLabel names the hero <section>. Defaults to the Title.
 	AriaLabel string
 	// Class is appended to the ui-hero wrapper.
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the hero's root <section>.
-	// Keys the component owns are dropped: class and id (use Class),
-	// data-cui-*, and aria-label (use AriaLabel).
+	// ExtraAttrs is forwarded to the root without the keys the component owns.
 	ExtraAttrs html.Attrs
 }
 
 // Hero renders a single-column (or copy+media split) hero section.
 func Hero(cfg HeroConfig) render.HTML {
-	// Eyebrow/Title/Subtitle draw from strings alone, so the pill,
-	// title and plain lede never hold a caller's markup — but Actions,
-	// Lede and Footer do. With any of those present, copy holds a slot
-	// beside its own parts, so each own part is marked on its own;
-	// with none, copy holds nothing but its own parts, so copy itself
-	// is marked instead and they are left unmarked to avoid marking
-	// twice inside the same subtree.
 	var copyOwn, partsOwn html.Attrs
 	if len(cfg.Actions) > 0 || cfg.Lede != "" || cfg.Footer != "" {
 		partsOwn = html.Attrs{"data-cui-internal": ""}
@@ -70,17 +45,12 @@ func Hero(cfg HeroConfig) render.HTML {
 	if cfg.Eyebrow != "" {
 		pill := StatusPill(StatusPillConfig{Label: cfg.Eyebrow, Tone: StatusPillAccent})
 		if partsOwn != nil {
-			// StatusPillConfig carries no render.HTML field, so its
-			// whole output is this component's own; its root becomes
-			// a nested tag here, so its marks collapse into one, as
-			// combobox/fileupload do for their own nested calls.
 			pill = headless.Own(pill)
 		}
 		copyParts = append(copyParts, pill)
 	}
 	copyParts = append(copyParts, html.Heading(html.HeadingConfig{Level: 1, Class: "fui-hero__title", ExtraAttrs: partsOwn}, render.Text(cfg.Title)))
 	if cfg.Lede != "" {
-		// Caller markup: the paragraph is a slot, not marked internal.
 		copyParts = append(copyParts, html.Paragraph(html.TextConfig{Class: "fui-hero__lede"}, cfg.Lede))
 	} else if cfg.Subtitle != "" {
 		copyParts = append(copyParts, html.Paragraph(html.TextConfig{Class: "fui-hero__lede", ExtraAttrs: partsOwn}, render.Text(cfg.Subtitle)))
@@ -122,7 +92,6 @@ func Hero(cfg HeroConfig) render.HTML {
 var heroStyle = registry.RegisterStyle("ui-hero", heroCSS)
 
 func heroCSS(_ style.Theme) string {
-	// Knobs: --ui-hero-copy-max-width (42rem) caps the copy column.
 	return `[data-cui-comp="ui-hero"] { display: flex; }
 :where([data-cui-comp="ui-hero"]).fui-hero--split {
   display: grid;

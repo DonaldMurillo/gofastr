@@ -13,8 +13,7 @@ import (
 
 // ListDetailConfig configures the two panes of a ListDetail.
 type ListDetailConfig struct {
-	// Ctx carries the per-request context the default back label is
-	// written in. When nil, English applies.
+	// Ctx carries the request context the default back label is written in; nil is English.
 	Ctx context.Context
 
 	// List is kept chrome in a group layout, not a per-route outlet.
@@ -26,10 +25,8 @@ type ListDetailConfig struct {
 	// MobileSinglePane shows either list or detail on phones instead of
 	// stacking them. Render ListDetailPlaceholder for the index screen.
 	MobileSinglePane bool
-	// BackHref adds a link back to the list at the top of the detail
-	// pane. It shows only while the detail pane is alone: a phone, with
-	// a selected detail (not ListDetailPlaceholder). It sits outside
-	// Detail, so it survives detail navigation. Requires MobileSinglePane.
+	// BackHref adds a back link above the detail, shown only on a phone showing a
+	// selected detail alone. It requires MobileSinglePane.
 	BackHref string
 	// BackLabel is the back link's text. Default "Back".
 	BackLabel string
@@ -38,17 +35,8 @@ type ListDetailConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// ListDetail places a scrolling list beside a detail region, stacked on
-// phones. Keeping it in a group layout preserves the list's DOM and scroll
-// while navigation replaces Detail. No pane lifecycle or JavaScript is added.
-//
-// A list/detail page wants the row's whole content column, and the
-// component cannot take it: it fills 100% of its container, and the width
-// comes from the content row around it. Leave `ContentRowConfig.Aside`
-// unfilled on screens that don't need it (an empty aside outlet releases
-// its column). `ContentRowConfig.Viewport` (the tracker's spelling) makes
-// the panes scroll on their own; it does not change their width. A sidebar
-// plus an aside leaves the detail pane roughly 300px wide at 1280px.
+// ListDetail places a scrolling list beside a detail region, stacked on phones.
+// In a group layout the list keeps its DOM and scroll while navigation replaces Detail.
 func ListDetail(cfg ListDetailConfig) render.HTML {
 	if cfg.ListLabel == "" {
 		panic("ui: ListDetail requires ListLabel")
@@ -66,11 +54,6 @@ func ListDetail(cfg ListDetailConfig) render.HTML {
 	if cfg.MobileSinglePane {
 		class += " fui-list-detail--single-mobile"
 	}
-	// back is built entirely from BackHref/BackLabel through LinkButton,
-	// never caller markup, so it always marks itself as this
-	// component's own — except when Detail is empty, when the detail
-	// pane around it holds nothing else either and takes the one mark
-	// as a whole instead.
 	var back render.HTML
 	if cfg.BackHref != "" {
 		label := cfg.BackLabel
@@ -99,9 +82,8 @@ func ListDetail(cfg ListDetailConfig) render.HTML {
 	))
 }
 
-// ListDetailPlaceholder marks an unselected detail screen. A ListDetail
-// using MobileSinglePane shows the list instead on phones; desktop keeps
-// this content beside it. Missing-record screens should not use this marker.
+// ListDetailPlaceholder marks an unselected detail screen, which a MobileSinglePane
+// ListDetail swaps for the list on phones. Not for missing-record screens.
 func ListDetailPlaceholder(body render.HTML) render.HTML {
 	return listDetailStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-list-detail__placeholder"}, body))
 }

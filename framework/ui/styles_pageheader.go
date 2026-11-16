@@ -5,13 +5,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
-// pageHeaderStyle registers PageHeader's CSS with the framework
-// component registry. The handle wraps every PageHeader render so
-// the runtime auto-loads /__gofastr/comp/ui-page-header.css on
-// first appearance, dedup'd globally. LoadPrewarm: a page that
-// renders a PageHeader links the sheet through the SSR scan, so first
-// paint is styled either way, and a page without one does not block
-// on it. The idle prewarm covers a client navigation that swaps one in.
 var pageHeaderStyle = registry.RegisterStyle(
 	"ui-page-header",
 	pageHeaderCSS,
@@ -27,11 +20,6 @@ func pageHeaderCSS(t style.Theme) string {
 			"align-items", "flex-start",
 			"justify-content", "space-between",
 			"gap", "var(--spacing-lg, 16px)",
-			// No rule under the header: the title's weight and the gap to
-			// the content separate them, and a hairline that every page
-			// header drew competed with the card and table borders below.
-			// Knob: --ui-page-header-inset (the xl spacing) is the top
-			// inset; a frame that pads its content already sets it to 0.
 			"padding", "var(--ui-page-header-inset, var(--spacing-xl, 24px)) 0 var(--spacing-sm, 4px)",
 		).
 		End().
@@ -51,14 +39,9 @@ func pageHeaderCSS(t style.Theme) string {
 			"font-size", "var(--text-sm, 0.875rem)",
 			"font-weight", "{font-weight.medium}",
 			"color", "var(--color-text-muted, #52525B)",
-			// Knob: --ui-page-header-eyebrow-case (none) sets the
-			// eyebrow's letter case.
 			"text-transform", "var(--ui-page-header-eyebrow-case, none)",
 		).
 		End().
-		// Knobs: --ui-page-header-title-size/-leading/-tracking let a host
-		// scale titles to editorial display type app-wide without
-		// restyling the component's internals.
 		Rule(".fui-page-header__title").
 		Set(
 			"margin", "0",
@@ -71,21 +54,11 @@ func pageHeaderCSS(t style.Theme) string {
 		End().
 		Rule(".fui-page-header__subtitle").
 		Set("margin", "0", "font-size", "var(--text-sm, 0.875rem)", "color", "var(--color-text-muted, #52525B)",
-			// A URL path has no break point: left whole it sets the
-			// page's width on a phone. The title breaks the same way.
 			"overflow-wrap", "anywhere").
 		End().
-		// An h2 title is a section under the page's own h1 (a dashboard's
-		// recent rows, a detail page's related list): one step down. It
-		// reads its own knob, --ui-page-header-section-title-size, so a
-		// host that scales page titles to display type leaves sections
-		// a step below them.
 		Rule("h2.fui-page-header__title").
 		Set("font-size", "var(--ui-page-header-section-title-size, var(--text-xl, 1.25rem))").
 		End().
-		// An h3 or deeper title is a section inside a section (a
-		// dashboard panel's list): another step down, read from
-		// --ui-page-header-subsection-title-size.
 		Rule(":is(h3, h4, h5, h6).fui-page-header__title").
 		Set("font-size", "var(--ui-page-header-subsection-title-size, var(--text-base, 1rem))",
 			"letter-spacing", "normal").
@@ -97,8 +70,6 @@ func pageHeaderCSS(t style.Theme) string {
 			"gap", "var(--spacing-sm, 4px)",
 		).
 		End().
-		// A section header sits in its parent's rhythm (a stack gap), so
-		// it drops the page header's top inset.
 		Rule("&:has(h2.fui-page-header__title)").
 		Set("padding-block-start", "0").
 		End().
