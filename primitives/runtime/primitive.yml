@@ -48,9 +48,11 @@ invariants:
       - test: core-ui/runtime.TestHeldClickNeverLandsAfterALaterClick
       - test: examples/tracker.TestTrackerSupersedingPointerClicksKeepRingOff
   - id: escape-waits-for-widgetfocus
-    rule: An Escape pressed while a modal or popover is open and the demand-loaded widgetfocus module has not registered yet is handed to that module once it loads, so it closes the top layer instead of being lost.
+    rule: An Escape pressed while a modal or popover is open and the demand-loaded widgetfocus module has not registered yet is handed to that module once it loads, so it closes the top layer instead of being lost, unless a layer opened or closed in between; an Escape that belongs to an IME is never forwarded.
     enforced_by:
       - test: core-ui/runtime.TestEscapeBeforeFocusModuleLoadsClosesModal
+      - test: core-ui/runtime.TestHeldEscapeSkipsALaterLayer
+      - test: core-ui/check.TestLintKeyGuard_Repo
       - test: kiln/integration.TestBrowser_EscClosesModals
   - id: confirm-closes-in-the-closing-task
     rule: A closed confirm dialog is removed, its answer resolved and focus handed back in the task that closed it, whatever closed it (a button, Escape, close(), requestClose).
