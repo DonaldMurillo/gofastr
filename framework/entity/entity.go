@@ -621,20 +621,12 @@ func Define(name string, config EntityConfig) *Entity {
 			panic(fmt.Sprintf("entity %q: cursor field %q is not a declared field", name, cf))
 		}
 	}
-	// A keyset column must never hold NULL. The row comparison
-	// (a, id) > ($1, $2) is not true for any row whose a is NULL, so those
-	// rows are skipped, and the dialects disagree on where NULLs sort
-	// (SQLite first, Postgres last). A key column, a Required field and a
-	// framework-generated one (created_at, an auto id) always carry a
-	// value. A separate loop so the Hidden/NoQuery/undeclared refusals
-	// above keep their precedence.
+	// A keyset column must never hold NULL: (a, id) > ($1, $2) is not true
+	// for a row whose a is NULL, so those rows would be skipped.
 	for _, cf := range cursorCols {
-		if slices.Contains(keyCols, cf) {
-			continue
-		}
 		for _, f := range config.Fields {
-			if f.Name == cf && !f.Required && f.AutoGenerate == schema.AutoNone {
-				panic(fmt.Sprintf("entity %q: cursor field %q can hold NULL (keyset paging skips NULL rows and the dialects sort them differently); make it Required, or page on a non-null column", name, cf))
+			if f.Name == cf && CanHoldNull(f, keyCols) {
+				panic(fmt.Sprintf("entity %q: cursor field %q can hold NULL (keyset paging skips NULL rows); make it Required, or page on a non-null column", name, cf))
 			}
 		}
 	}

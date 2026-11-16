@@ -19,6 +19,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"io"
 	"os"
 	"os/exec"
@@ -70,7 +71,7 @@ func RunDeploy(args []string) {
 		return
 	}
 	if !errors.Is(err, flag.ErrHelp) {
-		cli.Fail("%s", cli.ScrubTerminalOutput(err.Error()))
+		cli.Fail("%s", textsafe.ScrubTerminal(err.Error()))
 	}
 	if errors.Is(err, errUsage) || errors.Is(err, flag.ErrHelp) {
 		fmt.Print(usage)
@@ -204,7 +205,7 @@ func Run(w io.Writer, args []string, now time.Time, r runner) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprint(w, cli.ScrubTerminalOutput(out))
+		fmt.Fprint(w, textsafe.ScrubTerminal(out))
 		if code != 0 {
 			return fmt.Errorf("the server could not be asked (exit %d)", code)
 		}
@@ -331,7 +332,7 @@ func send(ctx context.Context, o *options, r runner, local, path string) error {
 
 // report turns a script's last line and exit code into what happened.
 func report(w io.Writer, o *options, out string, code int) error {
-	out = cli.ScrubTerminalOutput(strings.TrimRight(out, "\n"))
+	out = textsafe.ScrubTerminal(strings.TrimRight(out, "\n"))
 	body, last := out, ""
 	if i := strings.LastIndexByte(out, '\n'); i >= 0 {
 		body, last = out[:i], out[i+1:]
@@ -389,7 +390,7 @@ func (execRunner) ssh(ctx context.Context, o *options, command string, stdin io.
 		return out.String(), 0, nil
 	case errors.As(err, &exit) && exit.ExitCode() == 255:
 		// 255 is ssh's own failure, not the remote command's.
-		return "", 255, fmt.Errorf("ssh could not reach %s: %s", o.target, strings.TrimSpace(cli.ScrubTerminalOutput(out.String())))
+		return "", 255, fmt.Errorf("ssh could not reach %s: %s", o.target, strings.TrimSpace(textsafe.ScrubTerminal(out.String())))
 	case errors.As(err, &exit):
 		return out.String(), exit.ExitCode(), nil
 	}

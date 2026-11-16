@@ -174,7 +174,7 @@ data part. Failure mapping:
   `TASK_STATE_FAILED`, the agent message carrying the refusal text
   (e.g. `entity mcp request failed: status 401: …`).
 - **A skill the router cannot name** → `TASK_STATE_REJECTED`, naming the
-  registered skill ids.
+  skill asked for and no registered skill id.
 
 ## Auth and owner scoping
 
@@ -256,7 +256,7 @@ applies exactly as it does over `/mcp` (see
 
 Tool gating carries over too: `CallTool` runs the server's call gate, so
 a tool the framework hides from agents (one owned by a disabled module)
-is refused through A2A with the same generic `tool unavailable` error it
+is refused through A2A with the same `tool "<name>" not found` error it
 returns over `/mcp`.
 
 ## Task lifecycle
@@ -404,7 +404,9 @@ or the stream's seat is evicted.
 
 A client registers a webhook per task (in `SendMessage`'s
 `configuration.taskPushNotificationConfig`, or via
-`CreateTaskPushNotificationConfig` after the task exists). The server
+`CreateTaskPushNotificationConfig` after the task exists). A send that
+is refused after its config was stored (a resume that lost a race with a
+cancel) deletes that config again, so the retry can register it. The server
 POSTs each `StreamResponse` to the configured URL with the
 `A2A-Notification-Token` header carrying the config's token, so the
 receiver can check the notification came from the agent it registered

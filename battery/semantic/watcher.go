@@ -235,6 +235,10 @@ func (w *Watcher) scanRoot(ctx context.Context, abs string, seen map[string]stru
 	defer root.Close()
 	return filepath.WalkDir(abs, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			// A directory deleted mid-walk is a racing deletion, as for a file.
+			if path != abs && errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
 		if ctx.Err() != nil {

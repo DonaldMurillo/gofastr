@@ -85,7 +85,8 @@ type Field struct {
 	// value. A NULL is not passed to it. entity.Define marks a field with a
 	// Mask NoQuery, so no filter, sort or search reads the stored value.
 	// Return a placeholder for a value it cannot read: a Mask that panics
-	// reads as null, and the panic is logged.
+	// reads as null, and the panic is logged. An update that sends back
+	// Mask(stored value) leaves the column alone.
 	//
 	// The tag keeps Field encodable: encoding/json refuses a func-typed
 	// struct field even when it is nil, and entity.Endpoint publishes

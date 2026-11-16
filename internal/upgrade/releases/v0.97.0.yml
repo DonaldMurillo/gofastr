@@ -10,6 +10,9 @@ notes:
   - change: "Field masks no longer inherit back office CRUD elevation on any read or write response"
     guidance: "A permission-sensitive mask checks the caller's own permissions. Grant the intended read permission explicitly if an admin should see the stored value."
     nodetect: "the mask's runtime permission checks determine the output; no host source spelling distinguishes an affected mask"
+  - change: "an update (REST PATCH and PUT, _batch, a cascade child, the MCP update tool, UpdateOne, BatchUpdateMany, UpsertOne on an existing key) whose value for a field with a Mask equals Mask of the stored value leaves that column alone; it used to store the masked text over the stored value"
+    guidance: "Nothing to change for a client that reads a record and writes it back. A masked field can no longer be set to its own masked form, and a body that carries only that value answers 400 no fields to update. TypedQuery.UpdateAll still writes the value as given."
+    nodetect: "the difference depends on the sent value matching the mask of the stored row at runtime; no host source spelling distinguishes it"
   - change: "BREAKING - battery/cache.CacheMiddlewareWithLimit panics when maxBodyBytes is negative; a negative cap used to read as 0 and buffer every response whole"
     breaking: true
     nodetect: "the condition is a negative value, usually read from configuration, which no spelling shows; every ordinary call passes a cap or 0"
@@ -18,6 +21,14 @@ notes:
     breaking: true
     nodetect: "a fact of the request and the database: a key declared without AutoGenerate is ordinary, and only a write that sends no key value changes answer"
     guidance: "Send the key, or declare it generated (AutoGenerate: schema.AutoUUID). Rows already stored under a NULL key cannot be read, updated or deleted through the CRUD routes: find them with SELECT ... WHERE <key> IS NULL and give them a key or delete them."
+  - change: "BREAKING on SQLite - CREATE TABLE (boot, migrate generate, the table rebuild) writes NOT NULL on a one-column primary key, for entities and migrate.Table, except a lone INTEGER PRIMARY KEY; SQLite used to take NULL in such a key, any number of times, where Postgres refuses it. The tables the framework, batteries and core create for themselves and the migration gofastr init writes say it too, and gofastr verify reports a hand-written CREATE TABLE whose primary-key column has no NOT NULL as error GOFASTR1418"
+    breaking: true
+    nodetect: "a fact of the SQL a host runs: only a raw insert that leaves out or nulls a text key on a newly created SQLite table changes answer"
+    guidance: "Send the key in raw SQL inserts and test fixtures (INSERT INTO t (id, ...) VALUES (...)). An existing table keeps its column: boot does not rebuild it and neither DiffSchema nor migrate generate proposes a change. Before a migration that rebuilds an older table, give its NULL-key rows a key or delete them (SELECT ... WHERE <key> IS NULL), or the copy fails and the migration rolls back. For GOFASTR1418, write NOT NULL on the key column of your own CREATE TABLE (id TEXT PRIMARY KEY NOT NULL, and on each column a PRIMARY KEY (a, b) names); the table you already created keeps its column, so nothing has to be migrated."
+  - change: "BREAKING on SQLite - a sort on a column that can hold NULL (?sort=, ?stream=true, ListAll, TypedQuery.Order, the DSL's order(), GroupCountAll's groups) puts the rows with no value last ascending and first descending, the order Postgres gives; SQLite used to put them first ascending and last descending"
+    breaking: true
+    nodetect: "a fact of the stored rows: a sort on a nullable column is ordinary, and only rows holding NULL in it change place"
+    guidance: "Nothing to change in code. A SQLite app's sorted lists show their null rows at the other end; a first page under ?limit= may hold different rows. A column that should never be empty can be declared required. dsl.BuildDSLQuery now writes NULLS LAST or NULLS FIRST after a nullable order() column on both databases; on Postgres that is the default order and plain indexes still serve it."
   - change: "the generated seedEntity (stubs.go) gains Count, Weights and Authored beside Rows; Rows still holds every row, the Authored leading rows first, so seeding itself does not change"
     guidance: "Regenerate to pick the fields up (gofastr generate app gofastr.yml --force; an app that hand-maintains its root copies the seedEntity type and seedData from a scratch regeneration's stubs.go, at the app root, not entities/). Nothing must change: the new fields are additive and seeding reads Rows only. gofastr pack now reads the seed recipe back instead of flattening a count:/weights: entry to explicit rows, and a generated row that was hand-edited packs as explicit rows with the recipe dropped."
     nodetect: "additive fields on a generated struct; no source spelling differs"
@@ -383,3 +394,44 @@ notes:
   - change: "generated apps wrap their entity UI extensions as fwApp.EntityUI(withViewStubs(fwApp, appExtensions)) in app.go, so a display.views entry with no where: boots and answers an error naming extensions.go until its filter is registered there"
     guidance: "An app generated earlier keeps its app.go (gofastr generate --add preserves it). Before adding a view with no where:, regenerate into a scratch directory and copy view_stubs.go plus view_stubs_<entity>_init.go for each entity with such a view into the app (the per-entity files register the stubs; view_stubs.go alone registers none), then change the EntityUI call in app.go to fwApp.EntityUI(withViewStubs(fwApp, appExtensions))."
     nodetect: "the call lives in an owned app.go the generator does not rewrite; whether it is needed depends on the spec's views"
+  - change: "auth.SessionMiddleware answers a cross-site top-level GET or HEAD that carries no session cookie and is about to get a 401, or a gate's login redirect, with a 200 same-site hop page (Refresh to the same path and query) so the reload carries the SameSite=Strict cookie"
+    guidance: "Nothing to change for RequireSession, SessionPolicy, RolePolicy or battery/admin. A middleware or screen policy of your own that redirects a signed-out visitor to a login page calls handler.NoteSessionRefusal(ctx) before the redirect to get the same answer; one that answers 401 needs nothing. A test that sends Sec-Fetch-Site: cross-site with navigate and document and no cookie now sees the 200 hop page first."
+    nodetect: "the difference depends on a request's Fetch Metadata and cookies at runtime; no host source spelling distinguishes it"
+  - change: "BREAKING - the Prometheus metric queue_dead_letter_total (declared a counter) is now the gauge queue_dead_letter_jobs, with no alias; queue_depth reports the real backlog on MemoryQueue and RedisQueue, where it read 0"
+    breaking: true
+    guidance: "Point dashboards and alerts at queue_dead_letter_jobs and remove rate() or increase() around it: it is the current count of failed jobs and falls on a replay or an erasure."
+    nodetect: "the metric name lives in dashboards and alert rules outside the app's source"
+  - change: "BREAKING - the in-memory queue Scheduler's Register and RegisterAt return an error for a schedule with no job type; they used to return nil and register nothing"
+    breaking: true
+    guidance: "Give the schedule a job with .Job(type, payload) before Register. A schedule built without one never fired."
+    nodetect: "a missing .Job call in a builder chain has no single source spelling; the error at boot names it"
+  - change: "BREAKING - framework/embed refuses at boot an allowed origin whose last host label is a number (decimal or 0x hex) and that is not a dotted-quad IPv4, such as https://0x7f000001 or https://example.123"
+    breaking: true
+    guidance: "Write the origin as the browser serializes it (https://127.0.0.1). Such an entry never matched a real browser origin."
+    nodetect: "origins are usually read from configuration; the boot error names the entry"
+  - change: "an MCP prompt handler or resource contents func that returns a typed 4xx *handler.Error answers -32602 with its message, and a wrapped *mcp.RPCError keeps its code, as a tool handler's does; both used to answer a generic internal error"
+    guidance: "Nothing to change. A client that matched on the internal-error code for these cases sees the specific code."
+    nodetect: "depends on the error a handler returns at runtime"
+  - change: "POST /semantic/query answers 400 query_invalid (semantic.InvalidQueryError from Index.Query) for an mmr_lambda out of range, rerank with no Reranker, unstorable text or filter text, or a filter.meta_match number outside the write path's bound; these answered 500"
+    guidance: "Nothing to change. A Go caller can tell a caller fault apart with errors.As on *semantic.InvalidQueryError."
+    nodetect: "depends on the query sent at runtime"
+  - change: "under framework.WithLocalePrefixes the response rewrite adds the locale prefix to the URL of a Refresh header, of a meta refresh and of Content-Location, as it does to Location; the auth same-site hop page on /es/orders reloads /es/orders, where it reloaded /orders"
+    guidance: "Nothing to change. A handler that prepends i18n.PathPrefix to such a URL itself keeps working: a URL that already starts with a locale is left as written."
+    nodetect: "the header is written at runtime and only differs on a request under a locale prefix"
+
+  - change: "BREAKING - a crud.CrudHandler built as a struct literal whose DB is not a *sql.DB (a wrapper, a transaction) panics at the first operation that depends on the dialect (a sort, a decimal write, a keyed write on an Unmanaged entity); a handler from crud.NewCrudHandler asks the database for its dialect once instead of on each such operation"
+    breaking: true
+    guidance: "Build the handler with crud.NewCrudHandler(ent, db) and set the remaining fields on the result. A literal over a *sql.DB keeps working."
+    nodetect: "a CrudHandler literal is ordinary in tests over a *sql.DB; only the DB value's type at runtime decides"
+  - change: "BREAKING - the Prometheus metric outbox_dead_letter_total (declared a counter) is now the gauge outbox_dead_letter_deliveries, with no alias"
+    breaking: true
+    guidance: "Point dashboards and alerts at outbox_dead_letter_deliveries and remove rate() or increase() around it: it is the current count of dead-lettered outbox deliveries and falls on a Replay, a purge or an erasure."
+    nodetect: "the metric name lives in dashboards and alert rules outside the app's source"
+  - change: "BREAKING - queue.RedisQueue.Stats counts the dead-letter list with LLEN through the optional queue.ListLengther and no longer reads the list; over a client without LLen it returns an error, queue.MetricsCollector emits neither queue_depth nor queue_dead_letter_jobs, and the admin Jobs page shows no counts, no pager and no Replay N failed button"
+    breaking: true
+    guidance: "Add LLen(ctx, key) (int64, error) to the RedisClient adapter; with go-redis it is return c.rdb.LLen(ctx, key).Result(). An adapter that already has it needs nothing."
+    nodetect: "whether the adapter type has an LLen method is a property of a host type the scanner cannot tie to the RedisClient passed to NewRedisQueue"
+  - change: "text this process did not write and prints to a terminal (codegen extension stderr, module probe detail, service logs and tool errors, the contracts report, the harness TUI, CLI output) goes through one scrub, textsafe.ScrubTerminal, which removes C0 and C1 controls, DEL, bidi and zero-width characters and bytes that are not valid UTF-8, keeping newline and tab; the six earlier copies each kept a different set"
+    guidance: "Nothing to change. Output that carried such characters prints without them."
+    nodetect: "depends on the bytes a child process or log line carries at runtime"
+

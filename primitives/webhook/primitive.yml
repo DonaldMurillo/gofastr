@@ -1,0 +1,47 @@
+primitive: webhook
+summary: Outbound webhook subscribers and deliveries, inbound envelopes, and the memory and SQL stores behind them.
+code:
+  - battery/webhook/
+docs:
+  - framework/docs/content/webhooks.md
+twins:
+  - job: Store a subscriber and read it back with the paused state it was given.
+    why: MemoryStore keeps the Subscriber struct, while SQLStore keeps one active column that other replicas read and derives Paused from it on the scan, so the two cannot share the round trip.
+    sites:
+      - path: battery/webhook/memory.go
+        note: MemoryStore, which hands back the struct it was given.
+      - path: battery/webhook/sql.go
+        note: scanSubscriber, which sets Paused from the active column.
+  - job: Retry a settle write that SQLite refuses with a transient SQLITE_BUSY.
+    why: Outbound deliveries and inbound envelopes are separate stores over separate tables with their own statements; the retry loop itself is already one function, sqlbusy.Retry, and each store's write has to be wrapped in it where the statement is built.
+    sites:
+      - path: battery/webhook/sql.go
+        note: SQLStore's claim settles (success, retry, dead, release).
+      - path: battery/webhook/inbound_sql.go
+        note: SQLInboundStore's MarkEnvelopeProcessing, UpdateEnvelope and RegisterDedupeKey.
+invariants:
+  - id: paused-survives-the-store-round-trip
+    rule: A subscriber stored paused reads back paused and inactive from MemoryStore and SQLStore alike, and a Subscribe of the value read back keeps it paused.
+    enforced_by:
+      - test: battery/webhook.TestPausedSubscriberSurvivesReadModifySubscribe
+  - id: settle-writes-retry-sqlite-busy
+    rule: Every settle write of the outbound SQLStore and the inbound SQLInboundStore succeeds through a transient SQLITE_BUSY, by way of sqlbusy.Retry.
+    enforced_by:
+      - test: battery/webhook.TestClaimSettlesRetrySQLiteBusy
+      - test: battery/webhook.TestInboundSettlesRetrySQLiteBusy
+  - id: stored-response-holds-no-credential
+    rule: The response body a delivery stores holds no part of the subscriber's credential, wherever ResponseBodyLimit cuts the body and however often the receiver echoes it, and is never longer than the limit.
+    enforced_by:
+      - test: battery/webhook.TestDeliveryRedactsCredentialCutByBodyLimit
+      - test: battery/webhook.TestDeliveryRedactsRepeatedCredentialEcho
+decisions:
+  - id: redact-in-the-body-offsets-before-the-cut
+    date: 2026-11-16
+    status: accepted
+    decision: readResponse reads the limit plus the longest secret, marks every byte a credential covers in the body's own offsets, and writes the first ResponseBodyLimit bytes of the body with each covered run replaced.
+    rejected:
+      - option: Cut the body at the limit and redact what is left.
+        why: A credential that straddles the limit is cut to a prefix that no longer equals the secret, so the prefix is stored.
+      - option: Redact the longer read and then cut the redacted text at the limit.
+        why: The placeholder is shorter than a secret, so text past the limit, a second echo the read cut short included, slides into the kept window.
+    upholds: [stored-response-holds-no-credential]

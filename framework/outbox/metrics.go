@@ -46,9 +46,10 @@ func (o *Outbox) DeliveryCounts(ctx context.Context) (pending, dead map[string]i
 }
 
 // MetricsCollector returns a Prometheus text-exposition collector that
-// samples the outbox's per-consumer delivery counts at scrape time. Register
-// it on the app's *middleware.Metrics via RegisterCollector so outbox lag and
-// dead-letters land on the single /metrics surface.
+// samples the outbox's per-consumer delivery counts at scrape time, as two
+// gauges: outbox_pending and outbox_dead_letter_deliveries (the dead rows
+// held now, which fall on a Replay, a purge or an erasure). Register it on
+// the app's *middleware.Metrics via RegisterCollector.
 //
 // A transient query error emits nothing for this scrape, the collector must
 // never break /metrics. Consumers are rendered in sorted order for
@@ -64,10 +65,10 @@ func (o *Outbox) MetricsCollector() func(io.Writer) {
 		for _, c := range slices.Sorted(maps.Keys(pending)) {
 			fmt.Fprintf(w, "outbox_pending{consumer=%q} %d\n", c, pending[c])
 		}
-		fmt.Fprint(w, "# HELP outbox_dead_letter_total Outbox deliveries dead-lettered after exhausting the retry budget.\n")
-		fmt.Fprint(w, "# TYPE outbox_dead_letter_total counter\n")
+		fmt.Fprint(w, "# HELP outbox_dead_letter_deliveries Dead-lettered outbox deliveries held now.\n")
+		fmt.Fprint(w, "# TYPE outbox_dead_letter_deliveries gauge\n")
 		for _, c := range slices.Sorted(maps.Keys(dead)) {
-			fmt.Fprintf(w, "outbox_dead_letter_total{consumer=%q} %d\n", c, dead[c])
+			fmt.Fprintf(w, "outbox_dead_letter_deliveries{consumer=%q} %d\n", c, dead[c])
 		}
 	}
 }

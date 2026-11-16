@@ -467,6 +467,9 @@ entity also declares — AutoMigrate creates it first, so the
 constraint never exists — or an inline UNIQUE beside a single-column
 unique index); `GOFASTR1417 settlestamp` (a status UPDATE writing no
 stamp column when every sibling status UPDATE on the table does);
+`GOFASTR1418 nullablekey` (a hand-written CREATE TABLE whose primary
+key column lacks NOT NULL: SQLite stores a NULL there, Postgres
+refuses it; a lone `INTEGER PRIMARY KEY` and a SERIAL key are exempt);
 `GOFASTR1826 flexreverse` (row-reverse/column-reverse in kit CSS:
 screen readers and Tab follow DOM order). Browser JS lints in
 core-ui/check: `dateutcyear` (`Date.UTC(y, …)`/`new Date(y, m, …)`

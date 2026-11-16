@@ -391,6 +391,14 @@ Fetch Metadata, such as curl or a script, gets the hop page first: it
 follows the page's `Refresh` header or its link, or sends
 `Sec-Fetch-Site: none` to skip the hop.
 
+`auth.SessionMiddleware` uses the same page for a guarded page reached
+from another site, on a narrower test: only an explicit
+`Sec-Fetch-Site: cross-site` top-level `GET` or `HEAD` with no session
+cookie, and only when the answer would be a `401` or a redirect a gate
+marked with `handler.NoteSessionRefusal`. A request with no Fetch
+Metadata is not hopped there, so curl and API clients keep the `401`.
+See [auth](auth.md#a-link-from-another-site-into-a-guarded-page).
+
 ### Routes you mount yourself
 
 Entity endpoints and CRUD routes refuse a forged cross-site write
@@ -484,7 +492,10 @@ then read from the right: the key is the first hop not in
 `TrustedProxies`, so client-supplied entries an appending proxy keeps on
 the left never pick the bucket). Tune
 `Capacity`/`RefillEvery`/`RefillBy` per route by composing two `RateLimit`
-middlewares in different `middleware.Chain` calls.
+middlewares in different `middleware.Chain` calls. A full bucket earns
+nothing while it waits: its refill clock restarts at the first request
+that spends from it, so a quiet client gets one `Capacity` burst, not
+two back to back.
 
 The in-memory bucket store caps its resident entry count at `MaxKeys`
 (default 100_000, the `framework/ratelimit` convention): an IPv6 peer

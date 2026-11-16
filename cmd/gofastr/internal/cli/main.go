@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"io"
 	"os"
 	"slices"
@@ -72,7 +73,7 @@ func Dim(msg string) string {
 
 // Success, Fail, Info, Warn and InfoString print one status line. The
 // mark's colour is the helper's own; every ARGUMENT is scrubbed of what
-// a terminal acts on instead of printing (ScrubTerminalOutput: C0 but
+// a terminal acts on instead of printing (textsafe.ScrubTerminal: C0 but
 // tab and newline, DEL, C1, bidi overrides and zero-width runes), so a
 // path, an error or a value read from a cloned repo cannot write the
 // clipboard (OSC 52), clear the screen or reorder the line. The format
@@ -117,11 +118,11 @@ func Printf(format string, args ...interface{}) {
 }
 
 func Print(args ...interface{}) {
-	fmt.Print(ScrubTerminalOutput(fmt.Sprint(args...)))
+	fmt.Print(textsafe.ScrubTerminal(fmt.Sprint(args...)))
 }
 
 func Println(args ...interface{}) {
-	fmt.Print(ScrubTerminalOutput(fmt.Sprintln(args...)))
+	fmt.Print(textsafe.ScrubTerminal(fmt.Sprintln(args...)))
 }
 
 func Fprintf(w io.Writer, format string, args ...interface{}) {
@@ -129,11 +130,11 @@ func Fprintf(w io.Writer, format string, args ...interface{}) {
 }
 
 func Fprintln(w io.Writer, args ...interface{}) {
-	_, _ = io.WriteString(w, ScrubTerminalOutput(fmt.Sprintln(args...)))
+	_, _ = io.WriteString(w, textsafe.ScrubTerminal(fmt.Sprintln(args...)))
 }
 
 // scrubbedf is fmt.Sprintf with every argument passed through
-// ScrubTerminalOutput after it is formatted with its own verb, width and
+// textsafe.ScrubTerminal after it is formatted with its own verb, width and
 // flags, so %q, %v, %s and %x read the value the way they always did.
 // Numbers and booleans carry no text to scrub and stay bare, which keeps
 // a %*d width argument an int. With no arguments it forwards format and
@@ -171,7 +172,7 @@ func scrubArgs(args []interface{}) []interface{} {
 type scrubbedArg struct{ v interface{} }
 
 func (a scrubbedArg) Format(f fmt.State, verb rune) {
-	_, _ = io.WriteString(f, ScrubTerminalOutput(fmt.Sprintf(fmt.FormatString(f, verb), a.v)))
+	_, _ = io.WriteString(f, textsafe.ScrubTerminal(fmt.Sprintf(fmt.FormatString(f, verb), a.v)))
 }
 
 func HasHelpFlag(args []string) bool {

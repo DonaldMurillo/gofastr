@@ -862,9 +862,18 @@ func candidateWidth(k int) int {
 	return w
 }
 
-func (i *index) Query(ctx context.Context, q Query) ([]Hit, error) {
+func (i *index) Query(ctx context.Context, q Query) (hits []Hit, err error) {
+	// Embedder, store and reranker are host-supplied, as on the Add path.
+	defer func() {
+		if v := recover(); v != nil {
+			hits, err = nil, fmt.Errorf("semantic: query panicked: %v", v)
+		}
+	}()
 	if math.IsNaN(q.MMRLambda) || math.IsInf(q.MMRLambda, 0) || q.MMRLambda < 0 || q.MMRLambda > 1 {
-		return nil, errors.New("semantic: MMRLambda must be finite and between 0 and 1")
+		return nil, &InvalidQueryError{Reason: "MMRLambda must be finite and between 0 and 1"}
+	}
+	if err := validateQueryText(q); err != nil {
+		return nil, err
 	}
 	if q.Text == "" {
 		return nil, nil
@@ -880,7 +889,7 @@ func (i *index) Query(ctx context.Context, q Query) ([]Hit, error) {
 		k = maxQueryK
 	}
 	if q.Rerank && i.reranker == nil {
-		return nil, errors.New("semantic: Query.Rerank=true but no Reranker configured on Options")
+		return nil, &InvalidQueryError{Reason: "Query.Rerank=true but no Reranker configured on Options"}
 	}
 	vecs, err := i.embedder.Embed(ctx, []string{q.Text})
 	if err != nil {
@@ -1000,13 +1009,14 @@ func (i *index) hydrateKeywordHits(ctx context.Context, raw []KeywordHit, filter
 		matched = fl.chunksByIDMatching(ctx, ids, filter)
 	}
 	out := make([]Hit, 0, len(raw))
+	match := newFilterMatcher(filter)
 	for _, kh := range raw {
 		var c Chunk
 		if filtersItself {
 			if c, ok = matched[kh.ChunkID]; !ok {
 				continue
 			}
-		} else if c, ok = cl.ChunkByID(kh.ChunkID); !ok || !chunkMatches(&c, filter) {
+		} else if c, ok = cl.ChunkByID(kh.ChunkID); !ok || !match.matches(&c) {
 			continue
 		}
 		out = append(out, Hit{Chunk: c, Score: kh.Score, Reason: "kw"})

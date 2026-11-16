@@ -277,9 +277,10 @@ or refused short of twice the memory limit. CPU throttling is not probed.
 
 Probe output replayed to the operator (a `ProbeResult.Detail`, e.g.
 inside the conformance report `NewSandboxRunner` embeds in
-`ErrSandboxUnavailable`) is scrubbed of terminal control bytes — C0
-except newline and tab, plus DEL — the same contract the codegen
-extension path applies to child stderr, so a sandbox wrapper's or child's
+`ErrSandboxUnavailable`) is scrubbed with `textsafe.ScrubTerminal`: C0 and C1 controls, DEL,
+bidi and zero-width characters and bytes that are not valid UTF-8 go;
+newline and tab stay. The codegen extension path applies the same scrub
+to child stderr, so a sandbox wrapper's or child's
 output cannot drive the operator's terminal from inside an error string.
 
 ### Hosting an untrusted module

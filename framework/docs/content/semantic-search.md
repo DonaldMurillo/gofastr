@@ -90,9 +90,9 @@ Snapshots, the WAL, and the directory that holds them are owner-only
 document corpus, which is app data, not a shared artifact.
 
 Pluggable backends (chunker, embedder, store, keyword index) run under
-recover guards on the indexing and watcher paths: a panicking
-implementation surfaces as an attributed error from `Add` / `Remove` /
-`scan` instead of killing the process.
+recover guards on the indexing, query and watcher paths: a panicking
+implementation (the reranker included) surfaces as an attributed error from
+`Add` / `Remove` / `Query` / `scan` instead of killing the process.
 
 ## Hybrid retrieval
 
@@ -144,7 +144,7 @@ w.Run(ctx, "./src", "./docs")     // until ctx cancellation
 w.ScanOnce(ctx, "./src")          // one-shot
 ```
 
-A file refused for invalid document text or a chunking error is logged and left out of the index, along with any version of it indexed before; the scan goes on, and the watcher retries the file once it changes. An embedder or store error still stops `Run`.
+A file refused for invalid document text or a chunking error is logged and left out of the index, along with any version of it indexed before; the scan goes on, and the watcher retries the file once it changes. An embedder or store error still stops `Run`. A directory deleted while a scan is walking it is skipped like a deleted file; a root that does not exist fails the scan.
 
 Only regular files are indexed. Symlinks, devices, sockets and pipes under a root are skipped, so a link to `~/.ssh/id_ed25519` or `/dev/zero` is never read, and a link inside the root to another file there is not indexed twice. Each file is opened through an `os.Root` on its root, so a path swapped for a link out of the root between the walk and the read is refused, not followed. The open does not wait, so a file swapped for a FIFO is skipped instead of blocking the scan until a writer appears, and a root directory swapped for one fails the scan with an error. The read stops at `MaxFileSize`: a file that grew past it since the walk measured it, or was deleted, is skipped, and the document indexed for its path before is removed, whether this watcher or an earlier process indexed it. A root may name one file (`ScanOnce(ctx, "README.md")`, `gofastr semantic index README.md`); it is confined to the file's directory and indexes only that file.
 
@@ -314,6 +314,15 @@ are skipped in the keyword index with a warning, both for snapshot rebuilds
 and WAL replay. Live additions and direct `IndexOwned` calls remain strict.
 The watcher logs document-text refusals separately from chunking failures
 and continues indexing the rest of the tree.
+
+`Index.Query` returns `*semantic.InvalidQueryError` for a query the caller
+must change, and `POST /query` answers 400 `query_invalid` for it: an
+`mmr_lambda` outside 0 to 1, `rerank` with no `Options.Reranker`, a NUL in
+`text`, `filter.source` or `filter.kind`, or a `filter.meta_match` value no
+document metadata could hold (a NUL in a string or key, a number outside the
+range above such as `1e999999`). The phrase key is `semantic.query_invalid`.
+`FlatStore` reads the filter once per query, compares numbers by their digits
+and exponent, and stops when the request's context is cancelled.
 
 `POST /index` and `POST /query` decode their bodies strictly: duplicate or
 case-folded top-level JSON keys are refused with 400 rather than silently

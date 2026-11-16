@@ -907,9 +907,8 @@ func (q *MemoryQueue) ListJobs(_ context.Context, status string, limit, offset i
 	return out, nil
 }
 
-// Stats implements [Browsable]. The in-memory backend can only count the
-// retained dead-letter jobs (pending/claimed jobs are transient on the
-// heap), so it reports those under "failed".
+// Stats implements [Browsable]. It counts what ListJobs can list: the
+// retained dead-letter jobs, under "failed".
 func (q *MemoryQueue) Stats(_ context.Context) (JobStats, error) {
 	q.deadMu.Lock()
 	n := len(q.dead)
@@ -921,11 +920,26 @@ func (q *MemoryQueue) Stats(_ context.Context) (JobStats, error) {
 	return stats, nil
 }
 
+// pendingDepth is the queue_depth gauge's number: the jobs on the pending
+// heap, delayed and gate-deferred ones included.
+func (q *MemoryQueue) pendingDepth(context.Context) (int, error) {
+	q.pmu.Lock()
+	defer q.pmu.Unlock()
+	return len(q.pending.items), nil
+}
+
 // Replay implements [Replayable]: it moves a retained terminally-failed job
 // back onto the pending set with Attempts reset to 0 so Dequeue returns it
 // again. Idempotent and safe: replaying an unknown or non-failed id matches no
 // retained job and is a no-op (nil), never a double-enqueue.
 func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
+	_, err := q.ReplayJob(ctx, jobID)
+	return err
+}
+
+// ReplayJob implements [ReplayReporter]: Replay, reporting whether a
+// retained dead job was queued again.
+func (q *MemoryQueue) ReplayJob(ctx context.Context, jobID string) (bool, error) {
 	q.moveMu.RLock()
 	defer q.moveMu.RUnlock()
 	q.deadMu.Lock()
@@ -938,7 +952,7 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 	}
 	if idx == -1 {
 		q.deadMu.Unlock()
-		return nil // unknown / non-failed id, no-op
+		return false, nil // unknown / non-failed id, no-op
 	}
 	job, gen := q.dead[idx].job, q.dead[idx].gen
 	q.deadMu.Unlock()
@@ -955,7 +969,7 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 	job.Attempts = 0
 	job.ScheduledAt = q.now()
 	if err := q.Enqueue(ctx, job); err != nil {
-		return err
+		return false, err
 	}
 	if q.replayEnqueued != nil {
 		q.replayEnqueued()
@@ -977,7 +991,7 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 		}
 	}
 	q.deadMu.Unlock()
-	return nil
+	return true, nil
 }
 
 // Compile-time interface assertions for MemoryQueue.
@@ -985,6 +999,8 @@ var (
 	_ Queue      = (*MemoryQueue)(nil)
 	_ Browsable  = (*MemoryQueue)(nil)
 	_ Replayable = (*MemoryQueue)(nil)
+
+	_ ReplayReporter = (*MemoryQueue)(nil)
 )
 
 // Close drains pending jobs and waits for all workers to finish. It signals

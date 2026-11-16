@@ -28,6 +28,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"io"
 	"os"
 	"os/signal"
@@ -318,7 +319,7 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 	case control.TextDelta:
 		t.dismissSpinner()
 		t.collapseThinkingBurst()
-		t.ingestAssistantText(sanitizeAgentText(v.Text))
+		t.ingestAssistantText(textsafe.ScrubTerminal(v.Text))
 	case control.ThinkingDelta:
 		t.dismissSpinner()
 		t.ingestThinkingText(string(v.Block))
@@ -332,16 +333,16 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		// The tool NAME is as external as its args: MCP-bridged and
 		// plugin tools surface remote-chosen names, and the envelope
 		// codec round-trips raw control bytes in string fields intact.
-		t.appendMultiline("● ", fmt.Sprintf("%s(%s)", sanitizeAgentText(v.Tool), sanitizeAgentText(summarizeArgs(v.Args))))
+		t.appendMultiline("● ", fmt.Sprintf("%s(%s)", textsafe.ScrubTerminal(v.Tool), textsafe.ScrubTerminal(summarizeArgs(v.Args))))
 		t.assistantOpen = false
 	case control.ToolCallProgress:
 		// Partial output is tool stdout: text this process did not
 		// write, sanitized like every other external string.
-		t.appendMultiline("  ⎿ ", truncate(sanitizeAgentText(v.Partial), 400))
+		t.appendMultiline("  ⎿ ", truncate(textsafe.ScrubTerminal(v.Partial), 400))
 		t.assistantOpen = false
 	case control.ToolResult:
 		t.dropPermission(v.CallID)
-		summary := strings.TrimSpace(sanitizeAgentText(summarizeContent(v.Content)))
+		summary := strings.TrimSpace(textsafe.ScrubTerminal(summarizeContent(v.Content)))
 		if summary == "" {
 			summary = "(no output)"
 		}
@@ -369,7 +370,7 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 		t.thinkingOpen = false
 	case control.Error:
 		t.ensureBlankBefore()
-		t.scrollback = append(t.scrollback, "[error] "+sanitizeAgentText(v.Message))
+		t.scrollback = append(t.scrollback, "[error] "+textsafe.ScrubTerminal(v.Message))
 		t.assistantOpen = false
 		t.thinkingOpen = false
 	case control.Cancelled, control.SessionEnded:
@@ -389,7 +390,7 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 					continue
 				}
 				t.ensureBlankBefore()
-				t.scrollback = append(t.scrollback, "→ "+sanitizeAgentText(b.Text))
+				t.scrollback = append(t.scrollback, "→ "+textsafe.ScrubTerminal(b.Text))
 				t.assistantOpen = false
 			}
 		}
@@ -403,8 +404,8 @@ func (t *TUI) renderEvent(env control.EventEnvelope) {
 	case control.PermissionRequested:
 		t.ensureBlankBefore()
 		t.appendMultiline(
-			fmt.Sprintf("[permission] %s requested — ", sanitizeAgentText(v.Tool)),
-			sanitizeAgentText(summarizeArgs(v.Args)))
+			fmt.Sprintf("[permission] %s requested — ", textsafe.ScrubTerminal(v.Tool)),
+			textsafe.ScrubTerminal(summarizeArgs(v.Args)))
 		// Help line: indent under the start of the label content
 		// (column-aligned with "B" of "Bash requested..."). `[permission] `
 		// is 13 runes, so the indent is exactly 13 spaces.
@@ -589,7 +590,7 @@ func (t *TUI) submit() bool {
 		t.dropPermission(pending.CallID)
 		if len(t.pendingPermissions) > 0 {
 			t.scrollback = append(t.scrollback,
-				fmt.Sprintf("[permission] next: %s", sanitizeAgentText(t.pendingPermissions[0].Tool)))
+				fmt.Sprintf("[permission] next: %s", textsafe.ScrubTerminal(t.pendingPermissions[0].Tool)))
 		}
 		t.mu.Unlock()
 		if t.Client != nil {
@@ -814,7 +815,7 @@ func (t *TUI) ingestThinkingText(text string) {
 	if unquoted, ok := unjsonString(text); ok {
 		text = unquoted
 	}
-	text = sanitizeAgentText(text)
+	text = textsafe.ScrubTerminal(text)
 	parts := strings.Split(text, "\n")
 	for i, part := range parts {
 		if i == 0 {

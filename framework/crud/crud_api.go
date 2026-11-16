@@ -268,7 +268,7 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	if err != nil {
 		return nil, err
 	}
-	filter.ApplySortToQuery(qb, ch.withKeyTiebreak(opts.Sorts))
+	filter.ApplySortToQuery(qb, ch.sortTerms(ctx, opts.Sorts))
 	if opts.Limit > 0 {
 		qb.Limit(opts.Limit)
 	}

@@ -15,7 +15,7 @@ import (
 func init() {
 	contracts.Register(&contracts.Analyzer{
 		Name: "security",
-		Doc:  "Injection, CSRF, cookie attributes, committed secrets, reflected proxy headers, raw body and frame decodes, cross-site predicate copies, URL-attribute escaping, Vary writes, queue SQL safety, dialect twin drift, erase/export coverage, inline DDL constraints, and status-update stamps.",
+		Doc:  "Injection, CSRF, cookie attributes, committed secrets, reflected proxy headers, raw body and frame decodes, cross-site predicate copies, URL-attribute escaping, Vary writes, queue SQL safety, dialect twin drift, erase/export coverage, inline DDL constraints, status-update stamps, and primary keys that accept NULL.",
 		Rules: []string{
 			contracts.RuleSQLStringConcat,
 			contracts.RuleFormWithoutCSRF,
@@ -34,6 +34,7 @@ func init() {
 			contracts.RuleEraseCover,
 			contracts.RuleDDLConstraint,
 			contracts.RuleSettleStamp,
+			contracts.RuleNullableKey,
 		},
 		Run: runSecurity,
 	})
@@ -75,6 +76,7 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			out = append(out, ruleEraseCover(p, f.Rel, file)...)
 			out = append(out, ruleDDLConstraint(p, f.Rel, file)...)
 			out = append(out, ruleSettleStamp(p, f.Rel, file)...)
+			out = append(out, ruleNullableKey(p, f.Rel, file)...)
 		}
 	}
 	return out, nil

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// A job that spent its attempts counts in queue_dead_letter_total. The
+// A job that spent its attempts counts in queue_dead_letter_jobs. The
 // collector read a "dead" key no backend writes; every backend files a
 // dead-lettered job under "failed", so the metric stayed 0.
 func TestDeadLetterMetricCountsFailed(t *testing.T) {
@@ -26,7 +26,7 @@ func TestDeadLetterMetricCountsFailed(t *testing.T) {
 
 	var buf bytes.Buffer
 	MetricsCollector(q, "default")(&buf)
-	if want := `queue_dead_letter_total{lane="default"} 1`; !strings.Contains(buf.String(), want) {
+	if want := `queue_dead_letter_jobs{lane="default"} 1`; !strings.Contains(buf.String(), want) {
 		t.Fatalf("metrics output missing %q\ngot:\n%s", want, buf.String())
 	}
 }
