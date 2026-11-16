@@ -147,8 +147,18 @@ func TestSweepAuditUnmarshalableRedactMasksValues(t *testing.T) {
 	}
 	for _, row := range rows {
 		diff, _ := row["diff"].(string)
-		if strings.Contains(diff, "before") || strings.Contains(diff, "after") || !strings.Contains(diff, `"title":"[redaction failed]"`) {
-			t.Errorf("%s diff = %q, want the title key with its value masked", row["op"], diff)
+		var images map[string]map[string]any
+		if err := json.Unmarshal([]byte(diff), &images); err != nil {
+			t.Fatalf("%s diff %q: %v", row["op"], diff, err)
+		}
+		want := []string{"new"}
+		if row["op"] == "update" {
+			want = append(want, "old")
+		}
+		for _, image := range want {
+			if images[image]["title"] != "[redaction failed]" {
+				t.Errorf("%s diff = %q, want %s.title masked", row["op"], diff, image)
+			}
 		}
 	}
 }
@@ -171,8 +181,11 @@ func TestSweepAuditDeleteRedactPanicKeepsRecordID(t *testing.T) {
 	id := created["id"].(string)
 	ta.Delete("/posts/"+id).AssertStatus(t, http.StatusNoContent)
 	rows := readAuditRows(t, db)
-	if last := rows[len(rows)-1]; last["record_id"] != id {
-		t.Fatalf("delete record_id = %v, want %s", last["record_id"], id)
+	if len(rows) != 2 || rows[1]["op"] != "delete" {
+		t.Fatalf("audit rows = %v, want a create then a delete", rows)
+	}
+	if rows[1]["record_id"] != id {
+		t.Fatalf("delete record_id = %v, want %s", rows[1]["record_id"], id)
 	}
 }
 
