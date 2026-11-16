@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	frameworkopenapi "github.com/DonaldMurillo/gofastr/framework/openapi"
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
@@ -210,5 +211,23 @@ func TestSweepApp2OptionsSeeDotEnv(t *testing.T) {
 	NewApp(func(*App) { seen = os.Getenv(k) })
 	if seen != "from-file" {
 		t.Fatalf("option saw %s=%q, want the .env value", k, seen)
+	}
+}
+
+// The default idempotency Scope gives one namespace per set of held
+// scopes: order and repeats do not matter, and names cannot run together.
+func TestSweepApp2HeldScopeKeyIsASet(t *testing.T) {
+	key := func(held ...string) string {
+		r := httptest.NewRequest(http.MethodPost, "/", nil)
+		return heldScopeKey(r.WithContext(access.WithHeldScopes(r.Context(), held)))
+	}
+	if key("b", "a", "a") != key("a", "b") {
+		t.Fatal("repeated or reordered scopes got a different namespace")
+	}
+	if key("ab") == key("a", "b") {
+		t.Fatal(`"ab" and "a","b" share a namespace`)
+	}
+	if heldScopeKey(httptest.NewRequest(http.MethodPost, "/", nil)) != "" {
+		t.Fatal("an unscoped request got a scoped namespace")
 	}
 }

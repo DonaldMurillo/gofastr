@@ -25,11 +25,12 @@ invariants:
       - test: framework.TestIdempotencyKeyCarriesTenant
       - test: framework.TestIdemReplayKeyedOnHeldScopes
   - id: idempotency-defaults-key-on-caller-tenant-and-scopes
-    rule: An IdempotencyConfig with no Principal, Tenant or Scope keys on the request's owner, its resolved tenant id, and its held scopes sorted and deduplicated, so a token resending a key a broader credential used runs its own request.
+    rule: An IdempotencyConfig with no Principal, Tenant or Scope keys on the request's owner, its resolved tenant id, and its held scopes as a length-prefixed set, so a token resending a key a broader credential used runs its own request.
     enforced_by:
       - test: framework.TestWithIdempotency_RepliesCachedResponse
       - test: framework.TestIdempotencyKeyCarriesTenant
       - test: framework.TestIdemReplayKeyedOnHeldScopes
+      - test: framework.TestSweepApp2HeldScopeKeyIsASet
   - id: idempotency-namespace-per-credential
     rule: With no resolved owner the default Principal keys on a hash of every value of the Authorization, X-API-Key, embed grant and Cookie headers, and uses the shared "anon" namespace only for a request that carries none.
     enforced_by:
