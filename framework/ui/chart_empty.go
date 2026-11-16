@@ -10,19 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// chartEmpty renders the zero-data placeholder shared by every chart
-// component. Data-bound charts (dashboards, reports) legitimately receive no
-// rows, a brand-new user has no customers yet, so an empty dataset is a
-// normal runtime state, NOT misuse. A chart must show a calm empty state in
-// that case; panicking would crash the whole screen (and, behind the SSR
-// host's panic recovery, surface as a 404 on the first page a user ever sees).
-//
-// Genuine programmer errors (negative values, missing series names, unknown
-// shapes) still panic. Those are bugs, not states.
-// The placeholder's min-height is a fixed token in the stylesheet below,
-// not the chart's height: the framework forbids inline styles. The
-// caller's ID and ExtraAttrs ride along so a host's anchor or data-* test
-// hook still resolves when the chart renders its zero-data branch.
+// chartEmpty renders the zero-data placeholder every chart shares.
 func chartEmpty(ctx context.Context, id, labelledBy, class, message string, extra html.Attrs) render.HTML {
 	if message == "" {
 		message = i18nui.ChartNoData.Text(ctx)
@@ -48,8 +36,6 @@ func chartEmpty(ctx context.Context, id, labelledBy, class, message string, extr
 }
 
 var chartEmptyStyle = registry.RegisterStyle("ui-chart-empty", func(_ style.Theme) string {
-	// Knobs: --ui-chart-empty-min-height (10rem) is the placeholder's
-	// height floor.
 	return `[data-cui-comp="ui-chart-empty"] {
 	display: flex;
 	align-items: center;

@@ -15,29 +15,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── Waterfall ──────────────────────────────────────────────────────
-//
-// The steps of one piece of work on a shared time axis: a request's
-// database queries and outbound calls, a build's stages, a job's
-// phases. Each row names a step, says when it started and how long it
-// took, and draws that as a bar, so where the time went is visible at
-// a glance. It is a table: the numbers are in cells assistive tech
-// reads, and the bars are decoration beside them. Pure SVG bars, no
-// script. Events with no duration are a Timeline, not this.
-
 // WaterfallTone names the color a step's bar takes.
 type WaterfallTone string
 
 const (
-	// WaterfallNeutral is the default bar.
 	WaterfallNeutral WaterfallTone = ""
-	// WaterfallWarning marks a step worth a look: a slow one.
+	// WaterfallWarning marks a slow step.
 	WaterfallWarning WaterfallTone = "warning"
-	// WaterfallDanger marks a step that failed.
+	// WaterfallDanger marks a failed step.
 	WaterfallDanger WaterfallTone = "danger"
 )
 
-// waterfallMaxDepth is the deepest indent drawn; deeper steps sit at it.
 const waterfallMaxDepth = 6
 
 // WaterfallStep is one row.
@@ -48,47 +36,34 @@ type WaterfallStep struct {
 	Detail string
 	// Start is when the step began, from the start of the whole.
 	Start time.Duration
-	// Dur is how long it took.
-	Dur time.Duration
-	// Depth indents the label: 0 for the whole, 1 for its steps, 2 for
-	// theirs. Levels past six draw at six.
+	Dur   time.Duration
+	// Depth indents the label, up to six levels.
 	Depth int
-	// Tone colors the bar.
-	Tone WaterfallTone
-	// Note is a word beside the label that says what the tone means:
-	// "Failed", "Slow". A color tells nothing to someone who cannot
-	// see it, or cannot tell red from black, so a toned step says it
-	// in words too.
+	Tone  WaterfallTone
+	// Note says in words what Tone says in color ("Failed", "Slow").
 	Note string
 }
 
 // WaterfallConfig configures a Waterfall.
 type WaterfallConfig struct {
-	// Label is the table's caption, read by assistive tech and hidden
-	// from view. Required.
+	// Label is the table's visually hidden caption. Required.
 	Label string
-	// Total is the width of the time axis. Zero takes the latest end
-	// among Steps.
+	// Total is the time axis's width; zero takes the latest step end.
 	Total time.Duration
-	// Steps are the rows, in the order to draw them.
 	Steps []WaterfallStep
 
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes to the root. Keys the
-	// component owns are dropped: class and id (use Class / ID) and
-	// data-cui-*.
+	// ExtraAttrs go on the root, less class, id and data-cui-*.
 	ExtraAttrs html.Attrs
-	// Ctx carries the request: the headings and the durations follow
-	// the reader's locale. Nil writes English.
+	// Ctx sets the locale of headings and durations; nil is English.
 	Ctx context.Context
 }
 
 var waterfallTones = []WaterfallTone{WaterfallNeutral, WaterfallWarning, WaterfallDanger}
 
-// DurationText writes d the way people read a latency: "412 µs",
-// "3.1 ms", "1.24 s", with the number in ctx's locale. A negative d
-// reads as zero.
+// DurationText writes d as a latency ("412 µs", "3.1 ms", "1.24 s") in
+// ctx's locale. A negative d reads as zero.
 func DurationText(ctx context.Context, d time.Duration) string {
 	d = max(d, 0)
 	switch {
@@ -101,7 +76,8 @@ func DurationText(ctx context.Context, d time.Duration) string {
 	}
 }
 
-// Waterfall renders the table of steps.
+// Waterfall renders the steps of one piece of work as a table with a bar
+// per step on a shared time axis.
 func Waterfall(cfg WaterfallConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: Waterfall needs a Label")
@@ -121,10 +97,8 @@ func Waterfall(cfg WaterfallConfig) render.HTML {
 	if len(cfg.Steps) == 0 {
 		return chartEmpty(cfg.Ctx, cfg.ID, "", cfg.Class, i18nui.WaterfallEmpty.Text(cfg.Ctx), cfg.ExtraAttrs)
 	}
-	total = max(total, time.Nanosecond) // every step empty: one unit keeps the divide whole
+	total = max(total, time.Nanosecond)
 
-	// The axis is 1000 units wide whatever the table's width: the SVG
-	// stretches, so a bar's position is a number, never a style.
 	const axis, minBar = 1000.0, 4.0
 	var sb strings.Builder
 	sb.WriteString(`<table data-cui-internal="" class="fui-waterfall__table"><caption class="fui-waterfall__caption">`)
@@ -198,9 +172,6 @@ func Waterfall(cfg WaterfallConfig) render.HTML {
 var waterfallStyle = registry.RegisterStyle("ui-waterfall", waterfallCSS)
 
 func waterfallCSS(_ style.Theme) string {
-	// Knobs: --ui-waterfall-bar-size (0.75rem) is a bar's height,
-	// --ui-waterfall-lane (45%) the share of the table the bars take,
-	// --ui-waterfall-indent (the lg spacing step) one level of depth.
 	return `[data-cui-comp="ui-waterfall"] {
   container-type: inline-size;
   font-size: var(--text-sm, 0.875rem);

@@ -14,16 +14,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── Gauge ──────────────────────────────────────────────────────────
-//
-// One reading against a range, drawn as a semicircle dial: CPU at 73%,
-// p95 latency against its budget, disk used. The root is an ARIA meter
-// carrying the range and the reading, so a screen reader announces
-// "CPU, 73%" where a picture would say nothing. Bands color the arc by
-// where the reading falls (green under 70, amber under 90, red above).
-// Pure SVG, no script. A fraction of a task that finishes is Progress,
-// not this.
-
 // GaugeTone names the theme color the value arc takes.
 type GaugeTone string
 
@@ -43,42 +33,35 @@ type GaugeBand struct {
 
 // GaugeConfig configures a Gauge.
 type GaugeConfig struct {
-	// Label names the gauge, visibly under the dial and as the meter's
-	// accessible name. Required.
+	// Label names the meter, visibly under the dial. Required.
 	Label string
-	// Value is the reading. Outside [Min, Max] the arc stops at the
-	// nearer end, and ValueText still says what was read. NaN or Inf
-	// (a reading that never arrived) renders the empty state.
+	// Value is the reading; the arc stops at the nearer end of the range,
+	// and NaN or Inf renders the empty state.
 	Value float64
 	// Min and Max bound the range. Both zero takes 0 to 100.
 	Min, Max float64
-	// ValueText is the reading as people read it ("73%", "412 ms"),
-	// drawn in the dial and announced as aria-valuetext. Empty takes
-	// Value as a plain number, to two decimals at most.
+	// ValueText is the reading as read ("73%"), the dial's text and
+	// aria-valuetext. Empty writes Value to two decimals.
 	ValueText string
-	// Bands pick the arc's tone: the band with the highest From at or
-	// below Value wins, in any order. No bands, or a Value under every
-	// From, takes GaugePrimary.
+	// Bands pick the arc's tone: the highest From at or below Value wins,
+	// else GaugePrimary.
 	Bands []GaugeBand
-	// Size is the dial's width in CSS pixels; the height is a little
-	// over half of it, and the reading's text scales with it. Default 160.
+	// Size is the dial's width in CSS pixels. Default 160.
 	Size int
 
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes to the root. Keys the
-	// component owns are dropped: class and id (use Class / ID),
-	// data-cui-*, role and the aria-label and aria-value* the meter
-	// derives from config.
+	// ExtraAttrs go on the root, less class, id, data-cui-*, role,
+	// aria-label and aria-value*.
 	ExtraAttrs html.Attrs
-	// Ctx carries the request: the chart's numbers and words follow the
-	// reader's locale. Nil writes English.
+	// Ctx sets the locale of numbers and words; nil is English.
 	Ctx context.Context
 }
 
 var gaugeTones = []GaugeTone{GaugePrimary, GaugeInfo, GaugeSuccess, GaugeWarning, GaugeDanger}
 
-// Gauge renders the dial.
+// Gauge renders one reading against a range as a semicircle dial with
+// the ARIA meter role.
 func Gauge(cfg GaugeConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: Gauge needs a Label")

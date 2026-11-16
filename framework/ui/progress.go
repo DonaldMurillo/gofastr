@@ -8,41 +8,27 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// Renders headless.Progress dressed with the fui-progress class map:
-// the native <progress> element, named (visibly or through
-// aria-label) and clamped — a value the request carried is clamped
-// into [0, Max] at render, a negative value is the indeterminate
-// posture. No script: the element carries its own accessibility
-// contract. This is one fraction of one quantity, not a walk through
-// named stages — a step indicator is ProgressSteps, a different
-// component.
-
 // ProgressConfig configures one bar.
 type ProgressConfig struct {
-	// Value is the current progress. 0 to Max renders a determinate
-	// bar; a negative value renders an indeterminate one. Clamped to
-	// Max at render.
+	// Value is the progress, clamped to Max; a negative one is indeterminate.
 	Value float64
 	// Max is the ceiling. 0 takes 100.
 	Max float64
 
-	// Label is the bar's accessible name. Required; visible as text
-	// when ShowLabel is set, aria-label otherwise.
+	// Label names the bar, as text with ShowLabel, else aria-label. Required.
 	Label     string
 	ShowLabel bool
 
-	// Description is an optional sentence beside the bar ("73 of
-	// 100", "Uploading…").
+	// Description is an optional line beside the bar ("73 of 100").
 	Description string
 
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes to the root. Keys the
-	// component owns are dropped: class and id (use Class / ID).
+	// ExtraAttrs go on the root, less class and id.
 	ExtraAttrs html.Attrs
 }
 
-// Progress renders the bar.
+// Progress renders a native <progress> bar for one quantity.
 func Progress(cfg ProgressConfig) render.HTML {
 	classes := headless.Classes{
 		headless.PartRoot:          "fui-progress",
@@ -68,7 +54,6 @@ func Progress(cfg ProgressConfig) render.HTML {
 var progressStyle = registry.RegisterStyle("ui-progress", progressCSS)
 
 func progressCSS(_ style.Theme) string {
-	// Knobs: --ui-progress-bar-height (0.5rem) is the track thickness.
 	return `[data-cui-comp="ui-progress"] {
   display: grid;
   gap: var(--spacing-xs, 2px);

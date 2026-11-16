@@ -11,8 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// counterStyle registers the scoped CSS for fui-counter. The host emits
-// it for any page whose HTML carries data-cui-comp="fui-counter".
 var counterStyle = registry.RegisterStyle("fui-counter", counterCSS)
 
 func counterCSS(_ style.Theme) string {
@@ -33,47 +31,33 @@ func counterCSS(_ style.Theme) string {
 		`[data-cui-comp="fui-counter"] .fui-counter__value{min-width:2ch;text-align:center;font-variant-numeric:tabular-nums;font-weight:var(--font-weight-semibold);color:var(--fui-foreground, var(--color-text, #09090B))}`
 }
 
-// CounterConfig configures a client-side counter with increment/decrement buttons.
-// The counter is purely local, no RPC calls. It uses the signal system for state.
+// CounterConfig configures a Counter.
 type CounterConfig struct {
-	// SignalName is the signal that holds the count value. Required
-	// unless Slice is set.
+	// SignalName is the signal holding the count. Required unless Slice is set.
 	SignalName string
 
-	// Slice, when set, supplies both the signal name and the initial
-	// value from one typed source (and auto-seeds it). Takes precedence
+	// Slice supplies the signal name and the request's value, and wins
 	// over SignalName.
 	Slice *store.Slice[int]
 
-	// Step is the increment/decrement size. Defaults to 1.
+	// Step is the change per press. Default 1.
 	Step int
 
-	// Class is an optional extra CSS class on the wrapper.
 	Class string
-	// Ctx carries the per-request context used to resolve the Decrement,
-	// Increment and Counter group aria labels. When nil, English fallbacks apply.
+	// Ctx sets the locale of the buttons' and group's labels; nil is English.
 	Ctx context.Context
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the root element. Keys
-	// the component owns are dropped: class (use Class), id, and
-	// data-cui-*, plus role=group and the aria-label it derives.
+	// ExtraAttrs go on the root, less class, id, data-cui-*, role and aria-label.
 	ExtraAttrs html.Attrs
 }
 
-// Counter renders a counter with + and − buttons that mutate a signal
-// locally in the browser. No server round-trip.
-//
-// The counter displays a `<span data-cui-signal="name">0</span>` that
-// the runtime updates when the signal changes.
+// Counter renders a value with + and − buttons that change a signal in
+// the browser, with no server round-trip.
 func Counter(cfg CounterConfig) render.HTML {
 	name := cfg.SignalName
 	initial := 0
 	if cfg.Slice != nil {
 		name = cfg.Slice.Name()
-		// The request's value, not the declaration: the page seeds the
-		// signal with what a producer Seeded on Ctx, and the first paint
-		// must show the number the first + steps from.
 		initial = cfg.Slice.Value(cfg.Ctx)
 	}
 	if name == "" {
@@ -89,12 +73,8 @@ func Counter(cfg CounterConfig) render.HTML {
 		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
 	}
 	return counterStyle.WrapHTML(headless.Counter(headless.CounterProps{
-		Signal: name,
-		Value:  initial,
-		// The page owns this signal's seed (Slice auto-seeds it into the
-		// signals block and every partial; a bare SignalName is the
-		// app's to seed): the primitive hands the runtime no second one,
-		// so a server value that changes across an island swap wins.
+		Signal:     name,
+		Value:      initial,
 		Seeded:     true,
 		Step:       cfg.Step,
 		ID:         scopedID(cfg.Ctx, "counter"),
@@ -104,9 +84,6 @@ func Counter(cfg CounterConfig) render.HTML {
 	}, counterClasses))
 }
 
-// counterClasses dresses headless.Counter's parts in this package's
-// own vocabulary — the names the registered fui-counter sheet
-// matches.
 var counterClasses = headless.Classes{
 	headless.PartRoot:             "fui-counter",
 	headless.PartCounterDecrement: "fui-counter__btn fui-counter__dec",
