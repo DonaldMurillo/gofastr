@@ -121,11 +121,11 @@ func toolError(name string, args []string, out []byte, err error) error {
 	return fmt.Errorf("service: %s %s: %w: %s", name, strings.Join(args, " "), err, msg)
 }
 
-// scrubControl drops C0 control bytes and DEL except newline and tab,
+// scrubControl drops C0 and C1 controls and DEL except newline and tab,
 // so tool output and log lines cannot drive the user's terminal.
 func scrubControl(s string) string {
 	return strings.Map(func(r rune) rune {
-		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
+		if (r < 0x20 && r != '\n' && r != '\t') || (r >= 0x7f && r <= 0x9f) {
 			return -1
 		}
 		return r

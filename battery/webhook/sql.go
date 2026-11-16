@@ -721,6 +721,7 @@ func scanSubscriber(r rowScanner) (*Subscriber, string, error) {
 		return nil, "", err
 	}
 	sub.Active = active != 0
+	sub.Paused = !sub.Active
 	if events != "" {
 		// A corrupt events column is an error, not "all events": the
 		// zero-value sub.Events would silently make the subscriber

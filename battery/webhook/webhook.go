@@ -713,6 +713,7 @@ func (m *Manager) tick(ctx context.Context) {
 		}
 	}
 	if err != nil {
+		m.logf("webhook: read due deliveries failed: %v", err)
 		return
 	}
 	for i, d := range due {
@@ -940,7 +941,7 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 		return
 	}
 	d.ResponseStatus = resp.StatusCode
-	d.ResponseBody = sub.Auth.redact(m.readResponse(resp.Body))
+	d.ResponseBody = m.readResponse(resp.Body, sub.Auth)
 	_ = resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -1011,9 +1012,12 @@ func (m *Manager) credentialClient() *http.Client {
 }
 
 // readResponse keeps the first ResponseBodyLimit bytes of a receiver's
-// body as safe text and drains the rest within MaxResponseBodyBytes,
-// so the connection can be reused.
-func (m *Manager) readResponse(body io.Reader) string {
+// body as safe text, with the subscriber's credential blanked, and
+// drains the rest within MaxResponseBodyBytes, so the connection can be
+// reused. It reads one credential's length past the limit before it
+// redacts: a credential the receiver echoed across the limit would
+// otherwise be cut to a prefix that redact no longer matches.
+func (m *Manager) readResponse(body io.Reader, auth Auth) string {
 	total := m.opts.MaxResponseBodyBytes
 	if total > 0 {
 		body = io.LimitReader(body, total)
@@ -1024,8 +1028,13 @@ func (m *Manager) readResponse(body io.Reader) string {
 	}
 	var kept string
 	if keep > 0 {
-		buf, _ := io.ReadAll(io.LimitReader(body, keep))
-		kept = textsafe.ScrubControlBytes(strings.ToValidUTF8(string(buf), "\uFFFD"))
+		buf, _ := io.ReadAll(io.LimitReader(body, keep+int64(auth.longestSecret())))
+		over := int64(len(buf)) > keep
+		kept = auth.redact(string(buf))
+		if over && int64(len(kept)) > keep {
+			kept = kept[:keep]
+		}
+		kept = textsafe.ScrubControlBytes(strings.ToValidUTF8(kept, "\uFFFD"))
 	}
 	if total != 0 {
 		_, _ = io.Copy(io.Discard, body)
