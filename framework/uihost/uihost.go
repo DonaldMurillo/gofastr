@@ -2627,7 +2627,9 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	case bundle:
 		colorTag = `<script src="/__gofastr/color-scheme.js?v=` + colorSchemeHash() + `"></script>`
 	}
-	page = replaceChromeMarker(page, "<head>", "<head>"+colorTag, "color-scheme bootstrap")
+	// The static meta precedes the bootstrap, which finds and updates
+	// it (uihost/color-scheme-meta-is-static).
+	page = replaceChromeMarker(page, "<head>", "<head>"+colorSchemeMeta+colorTag, "color-scheme bootstrap")
 	// The deferred scripts close <head>, after the stylesheets: defer
 	// keeps them off the first paint, the preload scanner finds them
 	// with the first bytes, and they run before any deferred script
@@ -3651,6 +3653,10 @@ func (ds *UIHost) handleColorSchemeJS(w http.ResponseWriter, r *http.Request) {
 	}
 	serveVersionedText(w, r, "application/javascript; charset=utf-8", js, colorSchemeHash(), false)
 }
+
+// colorSchemeMeta tells the browser, before any script or sheet, that the
+// page supports both schemes, so native controls follow the OS with JS off.
+const colorSchemeMeta = `<meta name="color-scheme" content="light dark">`
 
 // colorSchemeHash content-addresses the color-scheme bootstrap once.
 var (

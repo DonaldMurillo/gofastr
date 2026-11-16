@@ -118,3 +118,19 @@ func TestManifestFetchClosesScriptRail(t *testing.T) {
 		t.Fatal("a script registered after manifest.js froze the route graph was accepted")
 	}
 }
+
+// The page tells the browser it paints both schemes before any script
+// or sheet runs, so native controls follow the OS with JS off; the
+// bootstrap updates that one meta rather than adding a second.
+func TestColorSchemeMetaIsStatic(t *testing.T) {
+	ds := newTestUIHost()
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	page := w.Body.String()
+	if !strings.Contains(page, "<head>"+colorSchemeMeta+"<script") {
+		t.Errorf("<head> does not open with %s before the bootstrap:\n%.600s", colorSchemeMeta, page)
+	}
+	if n := strings.Count(page, `<meta name="color-scheme"`); n != 1 {
+		t.Errorf("%d color-scheme metas in the page, want 1", n)
+	}
+}

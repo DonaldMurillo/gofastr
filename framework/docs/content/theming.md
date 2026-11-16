@@ -556,6 +556,59 @@ Follow these rules:
    color-scheme state, so a partial palette can end up mixing dark
    browser link/control colors with light app colors.
 
+### Native controls: `color-scheme`
+
+The browser draws form controls, scrollbars and the page canvas itself,
+and it picks their colors from the page's `color-scheme`, not from your
+tokens. GoFastr declares it three ways, so native controls match the
+tokens even with JavaScript off:
+
+- Every page the UI host renders opens its `<head>` with
+  `<meta name="color-scheme" content="light dark">`, before the
+  color-scheme bootstrap and before any stylesheet.
+- A theme with a dark palette emits `color-scheme: light dark` on
+  `:root`, `light` under `:root[data-color-scheme="light"]` and `dark`
+  under `:root[data-color-scheme="dark"]`. A light-only theme emits
+  `color-scheme: light` on `:root`, so a dark OS never gives a light page
+  dark controls. A `ui.Themed` scope declares `light` in its own block
+  and `dark` in its dark blocks.
+- The bootstrap sets the meta to the forced mode when the reader picked
+  one, and back to `light dark` while the page follows the OS.
+
+The icon `ui.ThemeToggle` never stores a mode the OS already shows: on a
+light OS, going from dark back to light stores no choice (it applies
+`auto`), so the page follows the OS again when the OS changes.
+
+### One part of the page in the other scheme: `ui.ColorScheme`
+
+To keep one part of a page dark on a light page (a pricing band, a code
+sample, a hero), or light on a dark one, wrap it:
+
+```go
+ui.ColorScheme(ui.SchemeDark,
+    ui.Section(ui.SectionConfig{Heading: "Pricing"},
+        ui.Button(ui.ButtonConfig{Label: "Start", Variant: ui.ButtonPrimary}),
+    ),
+)
+```
+
+`ColorScheme` renders `<div data-color-scheme="dark">` (or `"light"`).
+The theme CSS re-declares that scheme's palette on the wrapper, together
+with `color-scheme`, the wrapper's text and background color, and every
+token, knob and component option whose value reads another variable, so
+a primary button inside draws the dark primary. Native controls inside
+the wrapper follow its scheme. Wrappers nest: a light card inside a dark
+band is light again.
+
+It needs a theme with a dark palette (`DarkColors`): a light-only theme
+has no dark values to pin. It is a second rule beside the root one, not
+a JavaScript feature, so it works with JavaScript off and needs no
+runtime attribute.
+
+One limit: a `ui.Themed` scope follows the nearest dark ancestor
+anywhere above it. Inside a light `ColorScheme` wrapper on a dark page,
+a `Themed` scope with a dark palette stays dark.
+
 ## Section-level overrides: `ui.Themed`
 
 To re-skin one part of a page (a dark marketing band, a branded

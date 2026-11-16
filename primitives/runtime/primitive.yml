@@ -42,6 +42,16 @@ invariants:
       - battery/
       - examples/
       - cmd/gofastr/
+  - id: scheme-meta-follows-the-choice
+    rule: The color-scheme bootstrap sets the color-scheme meta to the forced mode when the reader chose one and to light dark while the page follows the OS.
+    enforced_by:
+      - test: framework/ui.TestThemeChoiceSetsSchemeAndMeta
+  - id: toggle-stores-no-mode-the-os-shows
+    rule: A theme-toggle cycle step that lands on the scheme the OS already shows stores no choice, so the page keeps following the OS.
+    enforced_by:
+      - test: framework/ui.TestThemeCycleStoresNoChoiceTheOSShows
+    applies:
+      - framework/headless/navigation.js
 decisions:
   - id: poll-before-push
     status: accepted

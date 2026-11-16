@@ -865,6 +865,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 	// is never the canonical location of anything, so keep it out of indexes.
 	b.WriteString(`<meta name="robots" content="noindex, nofollow">` + "\n")
 	fmt.Fprintf(&b, `<meta name="gofastr-embed" content="%s">`+"\n", stdhtml.EscapeString(string(cfgJSON)))
+	b.WriteString(colorSchemeMeta + "\n")
 	b.WriteString(`<script src="/__gofastr/color-scheme.js"></script>` + "\n")
 	// id="cui-app-css": the runtime inserts each component sheet before it.
 	// In a frame every component sheet loads lazily, so without the anchor

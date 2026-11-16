@@ -27,6 +27,16 @@ invariants:
       - battery/
       - examples/
       - cmd/gofastr/
+  - id: scheme-is-declared-in-css
+    rule: "A theme with a dark palette declares color-scheme: light dark on :root and light or dark under each forced scheme, a light-only theme declares light, and a scoped theme declares the scheme each of its blocks paints."
+    enforced_by:
+      - test: core-ui/style.TestSchemeIsDeclaredInCSS
+      - test: core-ui/style.TestThemeOverrideDeclaresScheme
+  - id: subtree-scheme-override
+    rule: A data-color-scheme attribute on any element below <html> re-declares that scheme's palette, color-scheme, paint and every token, knob and component option whose value reads another variable on that element.
+    enforced_by:
+      - test: core-ui/style.TestSubtreeSchemeBlocksRebind
+      - test: framework/ui.TestColorSchemeSubtreeOverride
 decisions:
   - id: generator-ships-no-css
     status: accepted
@@ -35,3 +45,16 @@ decisions:
       - option: Let the generator carry its own base stylesheet.
         why: Building Meridian it grew about 70 bespoke rules that duplicated or worked around existing components.
     upholds: [one-styling-surface]
+  - id: subtree-scheme-is-an-attribute
+    date: 2026-11-16
+    status: accepted
+    decision: A subtree pins its scheme with the same data-color-scheme attribute the root reads, selected as a descendant of :root, and ui.ColorScheme is the typed way to write it.
+    rejected:
+      - option: Register a dark ThemeOverride per section and wrap it in ui.Themed.
+        why: It needs a second whole theme and a hash class per palette for what is the app theme's own dark half.
+      - option: Rewrite the tokens as light-dark() pairs and set color-scheme on the subtree.
+        why: Component option variables computed at :root would still carry the root's colours, and the toggle's forced schemes would need a second mechanism.
+      - option: A data-cui-* attribute read by the runtime.
+        why: CSS alone does the job, so it works with JS off and the runtime has nothing to read.
+    revisit_if: Every supported browser has @scope, so a ui.Themed scope can follow the nearest scheme wrapper instead of any dark ancestor.
+    upholds: [subtree-scheme-override]

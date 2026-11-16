@@ -15,3 +15,7 @@ invariants:
       - battery/
       - examples/
       - cmd/gofastr/
+  - id: color-scheme-meta-is-static
+    rule: Every page the host renders opens its head with one <meta name="color-scheme" content="light dark"> ahead of the color-scheme bootstrap, which updates that meta instead of adding one.
+    enforced_by:
+      - test: framework/uihost.TestColorSchemeMetaIsStatic
