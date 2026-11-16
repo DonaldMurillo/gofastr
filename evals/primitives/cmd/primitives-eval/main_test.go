@@ -625,3 +625,10 @@ func TestNodeBlockEntityRunsSixTimesByDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestGitErrorsCarryGitsOwnMessage(t *testing.T) {
+	_, err := gitOutput(t.TempDir(), "rev-parse", "HEAD")
+	if err == nil || !strings.Contains(err.Error(), "not a git repository") {
+		t.Fatalf("gitOutput error = %v, want git's stderr in it", err)
+	}
+}
