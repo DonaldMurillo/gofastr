@@ -9,46 +9,31 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── Toolbar ────────────────────────────────────────────────────────
-//
-// role="toolbar" wrapper for a horizontal strip of action buttons,
-// optionally split into groups. Native browser keyboard semantics:
-// the user Tab-stops once on the toolbar, then arrows between
-// buttons inside (caller handles arrow-key roving if needed; the
-// default is straight Tab between buttons).
-
-// ToolbarGroup is a logical group of buttons inside a toolbar. Groups
-// are rendered side-by-side with a visual separator between.
+// ToolbarGroup is one group of controls, separated from the next.
 type ToolbarGroup struct {
-	// Label is the accessible group name (optional). When set the
-	// group renders with role="group" + aria-label.
+	// Label, when set, makes the group a labelled role="group".
 	Label string
-	// Children are the actual button/link elements. The caller
-	// decides what goes in: Button, Link, IconButton, etc.
+	// Children are the group's controls.
 	Children []render.HTML
 }
 
 // ToolbarConfig configures a Toolbar.
 type ToolbarConfig struct {
-	// Label is the accessible name for the toolbar (required,
-	// becomes aria-label).
+	// Label is the toolbar's aria-label. Required.
 	Label string
-	// Groups are rendered in order with separators between.
+	// Groups render in order; a group with no children is skipped.
 	Groups []ToolbarGroup
-	// Align picks justify-content. Default is "start". Options:
-	// "start", "center", "end", "between".
+	// Align is "start" (default), "center", "end" or "between".
 	Align string
 	ID    string
 	Class string
 	// Plain removes the frame and padding when placed in existing chrome.
 	Plain bool
-	// ExtraAttrs forwards additional attributes to the root element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, role, and aria-label (use Label).
+	// ExtraAttrs land on the root; class, id, data-cui-*, role and aria-label are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// Toolbar renders a horizontal action strip with role=toolbar.
+// Toolbar renders a role="toolbar" strip of control groups.
 func Toolbar(cfg ToolbarConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: Toolbar requires Label")
@@ -101,7 +86,6 @@ func Toolbar(cfg ToolbarConfig) render.HTML {
 var toolbarStyle = registry.RegisterStyle("ui-toolbar", toolbarCSS)
 
 func toolbarCSS(_ style.Theme) string {
-	// Knobs: --ui-toolbar-separator-height (20px) is the group divider.
 	return `[data-cui-comp="ui-toolbar"] {
   display: flex;
   align-items: center;

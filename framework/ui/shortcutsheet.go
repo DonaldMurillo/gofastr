@@ -14,60 +14,37 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── ShortcutSheet ─────────────────────────────────────────────────
-//
-// The keyboard help sheet: a modal listing an app's shortcuts, each
-// chord drawn as keycaps beside what it does, opened by its own chord
-// ("?" by default) or a link. Like CommandPalette it returns the
-// trigger and a Modal preset: mount the preset once at startup and
-// render ShortcutSheetTrigger(ctx, cfg) in each request's chrome.
-// Without script the trigger is an
-// ordinary link to FallbackHref.
-
 // ShortcutItem is one row: a chord ("Mod+K", "/") and what it does.
 type ShortcutItem struct{ Chord, Label string }
 
 // ShortcutSheetConfig configures a ShortcutSheet.
 type ShortcutSheetConfig struct {
-	// Name is the widget name (default "shortcut-sheet").
+	// Name is the widget name. Default "shortcut-sheet".
 	Name string
-	// Shortcut opens the sheet (default "?").
+	// Shortcut opens the sheet. Default "?".
 	Shortcut string
-	// FallbackHref is the trigger's href without script: a same-origin
-	// page that lists the same shortcuts. Required.
+	// FallbackHref is the same-origin page the trigger links to without script. Required.
 	FallbackHref string
 	// Items are the rows, in order. Required.
 	Items []ShortcutItem
-	// TriggerLabel names the trigger (default "Keyboard shortcuts").
+	// TriggerLabel names the trigger and the sheet. Default "Keyboard shortcuts".
 	TriggerLabel string
-	// TriggerVisible draws the trigger as a small link rather than a
-	// visually hidden one.
+	// TriggerVisible draws the trigger as a small link, not a hidden one.
 	TriggerVisible bool
-	// ExtraAttrs forwards attributes to the trigger; keys the component
-	// owns are dropped.
+	// ExtraAttrs land on the trigger; the attributes it owns are dropped.
 	ExtraAttrs html.Attrs
-	// Ctx resolves the trigger returned by ShortcutSheet. The mounted
-	// body uses its request context; ShortcutSheetTrigger takes the
-	// trigger's request context directly. Nil uses English fallbacks.
+	// Ctx resolves the trigger ShortcutSheet returns. Nil uses English.
 	Ctx context.Context
 }
 
-// ShortcutSheet returns a trigger snapshot resolved with cfg.Ctx and the
-// modal preset. Mount once and render ShortcutSheetTrigger(ctx, cfg) in
-// each request's chrome. The sheet body's
-// own words (its close button, the keycaps, the default title) follow
-// the reader's locale on each request. Items and TriggerLabel are said
-// as given, so a sheet whose rows should be translated mounts
-// ShortcutSheetFunc instead.
+// ShortcutSheet returns a trigger resolved with cfg.Ctx and the Modal
+// preset to mount once.
 func ShortcutSheet(cfg ShortcutSheetConfig) (render.HTML, *widget.Builder) {
 	return shortcutSheet(cfg, nil)
 }
 
-// ShortcutSheetFunc is ShortcutSheet for a sheet built per request: the
-// sheet's body calls build with each request's context, so its rows and
-// title are the reader's. Mount the returned preset once, and render the
-// trigger with ShortcutSheetTrigger(r.Context(), build(r.Context())). The
-// widget's identity (Name, Shortcut, FallbackHref) comes from
+// ShortcutSheetFunc is ShortcutSheet with the body built per request
+// by build; the widget's Name, Shortcut and FallbackHref come from
 // build(context.Background()).
 func ShortcutSheetFunc(build func(ctx context.Context) ShortcutSheetConfig) *widget.Builder {
 	if build == nil {
@@ -77,7 +54,6 @@ func ShortcutSheetFunc(build func(ctx context.Context) ShortcutSheetConfig) *wid
 	return b
 }
 
-// checkShortcutSheet panics on a config no sheet can draw.
 func checkShortcutSheet(cfg ShortcutSheetConfig) {
 	if len(cfg.Items) == 0 {
 		panic("ui: ShortcutSheet requires Items")
@@ -87,7 +63,6 @@ func checkShortcutSheet(cfg ShortcutSheetConfig) {
 	}
 }
 
-// shortcutSheetTitle is the sheet's name: TriggerLabel, else the phrase.
 func shortcutSheetTitle(ctx context.Context, cfg ShortcutSheetConfig) string {
 	if cfg.TriggerLabel != "" {
 		return cfg.TriggerLabel
@@ -95,11 +70,8 @@ func shortcutSheetTitle(ctx context.Context, cfg ShortcutSheetConfig) string {
 	return i18nui.ShortcutSheetTitle.Text(ctx)
 }
 
-// ShortcutSheetTrigger renders the sheet's trigger for ctx without
-// constructing a modal. It shares ShortcutSheet's markup and validation;
-// ctx, not cfg.Ctx, resolves the default visible and accessible label.
-// TriggerLabel overrides that default. Nil ctx uses English fallbacks.
-// Keep Name and Shortcut consistent with the mounted sheet.
+// ShortcutSheetTrigger renders the sheet's trigger with ctx, not
+// cfg.Ctx, resolving its default label.
 func ShortcutSheetTrigger(ctx context.Context, cfg ShortcutSheetConfig) render.HTML {
 	checkShortcutSheet(cfg)
 	if ctx == nil {
@@ -157,9 +129,7 @@ func shortcutSheet(cfg ShortcutSheetConfig, build func(context.Context) Shortcut
 	return trigger, preset.Modal(name).Hidden().Role("dialog").LabelledBy(name+"-title").Slot("body", body)
 }
 
-// ShortcutList draws the rows a sheet holds, for a page of its own (the
-// sheet's FallbackHref) or anywhere else: each chord as keycaps beside
-// its label, the keycaps said in ctx's language.
+// ShortcutList draws each chord as keycaps beside its label.
 func ShortcutList(ctx context.Context, items []ShortcutItem) render.HTML {
 	rows := make([]render.HTML, 0, len(items))
 	for _, it := range items {
@@ -195,8 +165,6 @@ var (
 	shortcutListStyle  = registry.RegisterStyle("ui-shortcut-list", shortcutListCSS)
 )
 
-// shortcutListCSS lays each row out as the label and its keycaps at the
-// line's end.
 func shortcutListCSS(_ style.Theme) string {
 	return `:where([data-cui-comp="ui-shortcut-list"]).fui-shortcut-list {
   margin: 0;
