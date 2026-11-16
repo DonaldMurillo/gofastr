@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -306,6 +307,12 @@ func (ch *CrudHandler) fieldCacheSignature() uint64 {
 		}
 		h *= prime64
 		h ^= uint64(f.Type)
+		h *= prime64
+		h ^= uint64(f.AutoGenerate)
+		h *= prime64
+		if f.Mask != nil {
+			h ^= uint64(reflect.ValueOf(f.Mask).Pointer())
+		}
 		h *= prime64
 	}
 	return h

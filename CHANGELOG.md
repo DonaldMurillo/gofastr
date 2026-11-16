@@ -31,6 +31,12 @@ few lines, and link the PR or the docs page for the rest.
   again on every request. On SQLite the cursor now carries the stored
   text for every entity, not only `Unmanaged` ones. Nothing to change;
   see [cursor pagination](framework/docs/content/cursor-pagination.md).
+- **No data race when a host rewrites field declarations mid-serve.**
+  A list request read the live declarations in two places (the default
+  `created_at` sort and field masks) instead of the handler's snapshot.
+  Both now read the snapshot. A `Mask` changed after `NewCrudHandler`
+  applies once `VisibleFields()` republishes the snapshot, like a
+  changed `Hidden`.
 - **Two quick clicks during a page transition land on the second.** A
   click made while a view transition ran was held until the transition
   finished, and a later click could run first; the held one then
