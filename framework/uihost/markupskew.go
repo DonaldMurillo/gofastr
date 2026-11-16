@@ -48,8 +48,8 @@ func writeStaleMarkupReload(w http.ResponseWriter, r *http.Request, path, swapLa
 	}
 	h.Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusConflict)
-	// The refresh is no link the page rewriter reads, so the locale
-	// prefix the router stripped goes back on here.
+	// The locale prefix the router stripped goes back on here: the
+	// target is checked below in the form the browser will load.
 	// path is in routing form, so a key segment holding "/" goes back
 	// out as %2F.
 	target := i18n.PathPrefix(r.Context()) + app.EscapeRoutePath(path)
