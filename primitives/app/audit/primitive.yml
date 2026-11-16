@@ -54,6 +54,10 @@ invariants:
     enforced_by:
       - test: framework.TestSweepAuditUpdateDiffOmitsMissingOld
       - test: framework.TestAppendAuditEvent_NilDiffWritesNULL
+  - id: client-ip-without-port
+    rule: The client_ip an audit row records is the request's remote address with its port removed.
+    enforced_by:
+      - test: framework.TestSweepAuditClientIPDropsPort
   - id: op-override-is-per-record
     rule: A crud operation override (restore, purge, transition, state override) names only its own entity and record, so a nested write of another row keeps its plain op.
     enforced_by:

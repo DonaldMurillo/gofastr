@@ -116,11 +116,13 @@ invariants:
     enforced_by:
       - test: framework.TestEraseScrubsAuditDiff
       - test: framework.TestEraseAuditMatchesStrippedKey
+      - test: framework.TestSweepPrivacyEraseScrubsDigestedAuditRecord
       - test: framework.TestEraseUserData_AuditTableAndTombstoneOptions
   - id: audit-table-needs-actor
     rule: An audit table without an actor_id column fails the erasure, and one without diff, entity or record_id skips only the scrubs that need them.
     enforced_by:
       - test: framework.TestEraseUserData_AuditTableAndTombstoneOptions
+      - test: framework.TestSweepPrivacyEraseRefusesAuditTableWithoutActor
   - id: dry-run-is-the-real-run-rolled-back
     rule: A dry run performs the whole erasure and rolls it back, so its counts and refusals are the real run's, and it removes no stored object and asks store erasers only to count.
     enforced_by:
@@ -145,6 +147,7 @@ invariants:
       - test: framework.TestEraseRunsStoreErasersAfterCommit
       - test: framework.TestEraseReportsFailedStoreEraser
       - test: framework.TestStoreEraserPanicIsAnError
+      - test: framework.TestSweepPrivacyEveryStoreEraserRuns
   - id: erase-locks-rows-it-reads-keys-of
     rule: On Postgres the reads of file keys inside an erasure lock their rows FOR UPDATE until the commit, so no concurrent write swaps a key between the read and the delete.
     enforced_by:
@@ -166,6 +169,7 @@ invariants:
       - test: framework.TestExportImportDataRoundTrip
       - test: framework.TestImportKeepsBinaryBytes
       - test: framework.TestImportKeepsLargeIntegers
+      - test: framework.TestSweepPrivacyArchiveValuesDecodeExactly
       - test: framework.TestSQLiteRestoreKeepsTimestampText
       - test: framework.TestExportRefusesNonUTF8Text
       - test: framework.TestExportNamesNonfiniteCell
@@ -208,6 +212,7 @@ invariants:
     rule: Import writes sources in the live schema's parents-first order, rows of a self-referencing table after the rows they name, and sets the references a cycle keeps out once every row is in.
     enforced_by:
       - test: framework.TestImportWritesParentsFirst
+      - test: framework.TestSweepPrivacyImportReordersArchiveListing
       - test: framework.TestImportOrdersSelfReferences
       - test: framework.TestImportRestoresRowCycle
       - test: framework.TestImportRestoresTableCycle

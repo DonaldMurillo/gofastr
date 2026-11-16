@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -163,5 +164,14 @@ func TestSweepAuditUpdateDiffOmitsMissingOld(t *testing.T) {
 	}
 	if buildAuditDeleteDiff(nil, nil, nil) != nil {
 		t.Fatal("a delete with no pre-image and no request meta has a diff, want NULL")
+	}
+}
+
+// The client IP an audit row records has no port.
+func TestSweepAuditClientIPDropsPort(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "203.0.113.7:51234"
+	if got := clientIP(r); got != "203.0.113.7" {
+		t.Fatalf("clientIP = %q, want 203.0.113.7", got)
 	}
 }

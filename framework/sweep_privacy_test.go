@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -160,5 +161,110 @@ func TestSweepPrivacyEraseRefusesMisshapenForeignKey(t *testing.T) {
 	}
 	if n := identityCount(t, db, `SELECT COUNT(*) FROM posts`); n != 1 {
 		t.Errorf("posts has %d rows after a refused erasure, want 1", n)
+	}
+}
+
+// A failing store eraser does not stop the ones after it, and each failure
+// is named.
+func TestSweepPrivacyEveryStoreEraserRuns(t *testing.T) {
+	app, _ := storeEraseApp(t)
+	ran := false
+	for _, name := range []string{"a_down", "b_down"} {
+		_, _ = datexport.RegisterStoreEraser(datexport.StoreEraser{Name: name, Source: "test",
+			Erase: func(context.Context, string, bool) (int, error) { return 0, errors.New("unreachable") }})
+	}
+	_, _ = datexport.RegisterStoreEraser(datexport.StoreEraser{Name: "c_up", Source: "test",
+		Erase: func(context.Context, string, bool) (int, error) { ran = true; return 1, nil }})
+	rep, err := app.EraseUserData(context.Background(), "u1")
+	if err == nil || !strings.Contains(err.Error(), "a_down") || !strings.Contains(err.Error(), "b_down") {
+		t.Fatalf("EraseUserData = %v, want both failing stores named", err)
+	}
+	if !ran {
+		t.Fatal("the store eraser after the failing ones did not run")
+	}
+	if !slices.ContainsFunc(rep.Stores, func(r EraseTableResult) bool { return r.Name == "c_up" }) {
+		t.Errorf("report stores = %+v, want c_up", rep.Stores)
+	}
+}
+
+// An audit table without actor_id fails the erasure, which would otherwise
+// anonymize nothing.
+func TestSweepPrivacyEraseRefusesAuditTableWithoutActor(t *testing.T) {
+	app, _ := storeEraseApp(t)
+	identityExec(t, app.DB, `CREATE TABLE audit_log (id TEXT PRIMARY KEY, entity TEXT, diff TEXT)`)
+	_, err := app.EraseUserData(context.Background(), "u1")
+	if err == nil || !strings.Contains(err.Error(), `no column "actor_id"`) {
+		t.Fatalf("EraseUserData = %v, want the audit table refused", err)
+	}
+	if n := identityCount(t, app.DB, `SELECT COUNT(*) FROM notes WHERE owner_id = 'u1'`); n != 1 {
+		t.Errorf("u1 has %d notes after a refused erasure, want 1", n)
+	}
+}
+
+// An audit row that names an erased row by the digest WithAuditLog stores
+// for a sensitive key is scrubbed with the row.
+func TestSweepPrivacyEraseScrubsDigestedAuditRecord(t *testing.T) {
+	app, _ := storeEraseApp(t)
+	if err := EnsureAuditTable(app.DB, ""); err != nil {
+		t.Fatal(err)
+	}
+	identityExec(t, app.DB, `INSERT INTO audit_log (id, entity, op, record_id, actor_id, created_at, diff)
+		VALUES ('adm1', 'notes', 'update', '`+auditKeyDigest("n1")+`', 'admin', '2024-01-01T00:00:00Z', '{"new":{"body":"secret"}}')`)
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	var diff string
+	if err := app.DB.QueryRow(`SELECT diff FROM audit_log WHERE id = 'adm1'`).Scan(&diff); err != nil {
+		t.Fatal(err)
+	}
+	if diff != erasedAuditDiff {
+		t.Errorf("digested audit diff = %q, want the erasure marker", diff)
+	}
+}
+
+// Archive values decode exactly: an integer past int64 keeps its digits,
+// an array is refused, and an object must be exactly {"$bytes": ...}.
+func TestSweepPrivacyArchiveValuesDecodeExactly(t *testing.T) {
+	rows, err := decodeNDJSON([]byte(`{"n":18446744073709551617}` + "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rows[0]["n"] != "18446744073709551617" {
+		t.Errorf("big integer decoded as %#v, want its decimal text", rows[0]["n"])
+	}
+	for _, bad := range []string{`{"a":[1]}`, `{"a":{"$bytes":"AA==","x":1}}`} {
+		if _, err := decodeNDJSON([]byte(bad + "\n")); err == nil {
+			t.Errorf("decodeNDJSON(%s) = nil error, want it refused", bad)
+		}
+	}
+}
+
+// Import orders sources by the live schema, so an archive listing children
+// before parents still restores.
+func TestSweepPrivacyImportReordersArchiveListing(t *testing.T) {
+	db := openTestDB(t, DialectSQLite)
+	app := newPivotApp(t, db)
+	identityExec(t, db,
+		`INSERT INTO posts (id, owner_id, title) VALUES ('p1', 'u1', 't')`,
+		`INSERT INTO tags (id, name) VALUES ('g1', 'go')`,
+		`INSERT INTO post_tags (post_id, tag_id) VALUES ('p1', 'g1')`)
+	dir := t.TempDir()
+	ctx := context.Background()
+	if err := app.ExportData(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	m := readManifest(t, dir)
+	slices.Reverse(m.Entities)
+	if i, j := slices.IndexFunc(m.Entities, func(e manifestEntry) bool { return e.Name == "post_tags" }),
+		slices.IndexFunc(m.Entities, func(e manifestEntry) bool { return e.Name == "posts" }); i < 0 || j < i {
+		t.Fatalf("reversed listing does not put post_tags before posts: %+v", m.Entities)
+	}
+	writeManifest(t, dir, m)
+	identityExec(t, db, `DELETE FROM post_tags`, `DELETE FROM posts`, `DELETE FROM tags`)
+	if err := app.ImportData(ctx, dir); err != nil {
+		t.Fatalf("ImportData of a children-first listing: %v", err)
+	}
+	if n := identityCount(t, db, `SELECT COUNT(*) FROM post_tags`); n != 1 {
+		t.Errorf("post_tags has %d rows, want 1", n)
 	}
 }
