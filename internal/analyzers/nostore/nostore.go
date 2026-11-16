@@ -266,14 +266,18 @@ func run(pass *analysis.Pass) (any, error) {
 	// Helper arm of the CC credit: a top-level call in family F to a
 	// package-local family that sets Cache-Control unconditionally
 	// (meHandler -> writeCredentialHeaders).
-	for _, fam := range families {
-		if fam.cc {
-			continue
-		}
-		for _, top := range fam.topCalls {
-			if t := byDecl[astx.ResolveCall(pass, top.Fun, funcs, methods)]; t != nil && t.cc {
-				fam.cc = true
-				break
+	for changed := true; changed; {
+		changed = false
+		for _, fam := range families {
+			if fam.cc {
+				continue
+			}
+			for _, top := range fam.topCalls {
+				if t := byDecl[astx.ResolveCall(pass, top.Fun, funcs, methods)]; t != nil && t.cc {
+					fam.cc = true
+					changed = true
+					break
+				}
 			}
 		}
 	}
