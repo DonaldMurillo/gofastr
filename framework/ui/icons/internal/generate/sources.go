@@ -52,8 +52,6 @@ var (
 	sourceLabelPattern  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9 ]*$`)
 )
 
-// loadSources verifies the vendored bytes without reaching the network. Paths
-// are canonical, and os.Root confines file reads to the icon package directory.
 func loadSources(dir string) (sourceManifest, string, error) {
 	var m sourceManifest
 	root, err := os.OpenRoot(dir)

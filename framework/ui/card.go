@@ -1,13 +1,5 @@
 package ui
 
-// ─── Card ───────────────────────────────────────────────────────────
-//
-// headless.Card carries the structure: header (title + description,
-// or a caller's whole header through the fillable part), body, footer,
-// and the interactive shell where Href makes the whole surface one
-// link. This adapter dresses it with the fui-card class map and this
-// package's variant vocabulary.
-
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -19,74 +11,35 @@ import (
 type CardVariant string
 
 const (
-	// CardElevated is the default: surface + shadow + radius.
-	CardElevated CardVariant = ""
-	// CardOutlined draws a 1px border instead of a shadow.
-	CardOutlined CardVariant = "outlined"
-	// CardFlat drops both the border and the shadow.
-	CardFlat CardVariant = "flat"
-	// CardRow is a dense linked record: heading and body metadata above
-	// the description, with no elevated chrome.
-	CardRow CardVariant = "row"
+	CardElevated CardVariant = ""         // default: surface, shadow and radius
+	CardOutlined CardVariant = "outlined" // a border instead of a shadow
+	CardFlat     CardVariant = "flat"     // neither border nor shadow
+	CardRow      CardVariant = "row"      // a dense linked record without elevated chrome
 )
 
 // CardConfig configures a card.
 type CardConfig struct {
-	// Heading is the optional top-of-card title, rendered as a
-	// heading inside the card's header. The heading level defaults to
-	// 3; a card does not know how deep in the outline it sits, so a
-	// page that nests cards under an h2 says HeadingLevel: 2.
-	Heading string
-	// HeadingContent is the heading as markup instead of text, for a
-	// heading whose words are filled in the browser: a local entity's
-	// Row.Text slot or a signal binding. It renders inside the card's
-	// own heading element with the heading's styles. It wins over
-	// Heading when both are set.
+	Heading string // optional title in the card's header
+	// HeadingContent is the heading as markup, for words filled in the
+	// browser; it wins over Heading.
 	HeadingContent render.HTML
-
-	// HeadingLevel overrides the heading element level (default 3).
-	HeadingLevel int
-
-	// Description is optional supporting text rendered beneath the
-	// heading.
-	Description string
-
-	// Header replaces the auto-rendered Heading/Description block
-	// through the primitive's fillable header part. Use when the
-	// header needs more than a title, e.g. a row with an avatar and
-	// trailing actions.
+	HeadingLevel   int    // the heading level, default 3
+	Description    string // optional text beneath the heading
+	// Header replaces the Heading and Description block.
 	Header render.HTML
-
-	// Footer renders below the body, separated by a hairline border.
-	// Common usage: button row, last-updated timestamp, status pill.
-	Footer render.HTML
-
-	// Action is a control at the header's end, beside the heading: a
-	// feed's "View all" link, the card's own menu. It panics with Href,
-	// whose link would wrap it.
+	Footer render.HTML // renders below the body
+	// Action is a control beside the heading; it panics with Href.
 	Action render.HTML
-
-	// Interactive flips the surface to a focusable, hover-able link
-	// shell. When set, the card renders as an <a> wrapping one inner
-	// part so the entire surface activates on click.
-	Href string
-
+	// Href renders the whole card as one focusable link.
+	Href    string
 	Variant CardVariant
-	// ID is the card root's id. A card with an ID and a heading also
-	// names the heading "<ID>-title", so a chart inside can pass it as
-	// LabelledBy.
+	// ID is the root's id; with a heading, the heading's id is "<ID>-title".
 	ID    string
 	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the card's root element,
-	// whichever shape it takes (<a> or <div>). Keys the component
-	// owns are dropped: class and id (use Class / ID), style,
-	// data-cui-* and href (use Href).
+	// ExtraAttrs reach the root <a> or <div>; class, id, style, href and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// cardClasses dresses headless.Card's parts.
 var cardClasses = headless.Classes{
 	headless.PartRoot:       "fui-card",
 	headless.PartTitle:      "fui-card__heading",
@@ -98,13 +51,9 @@ var cardClasses = headless.Classes{
 	headless.PartFooter:     "fui-card__footer",
 }
 
-// Card renders a labelled content card on headless.Card: an optional
-// titled header (or the caller's whole header through the fillable
-// part), the body, an optional footer — and with Href, the whole
-// surface as one focusable link.
+// Card renders a content card: an optional header, the body and an
+// optional footer. An unregistered Variant panics.
 func Card(cfg CardConfig, body ...render.HTML) render.HTML {
-	// Unknown variants panic like every other variant-taking component
-	// (registered custom variants pass. See RegisterCardVariant).
 	checkCardVariant(cfg.Variant)
 
 	titleTag := ""
