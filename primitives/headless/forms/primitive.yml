@@ -9,3 +9,352 @@ code:
   - framework/headless/upload.go
   - framework/headless/leaveguard_behavior.go
   - framework/headless/when_behavior.go
+invariants:
+  - id: form-action-is-required-and-safe
+    rule: Form panics when Action is empty or is a URL the anchor policy refuses.
+    enforced_by:
+      - test: framework/headless.TestFormRefusesAnActionlessSubmit
+      - test: framework/headless.TestHrefsGoThroughTheAnchorPolicy
+  - id: form-keeps-its-native-target
+    rule: Form's method defaults to post, and a form with an Island or a Request keeps its native method and action beside the RPC contract, whose method may differ.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsFormDefaultsToPostAndKeepsItsNativeTarget
+      - test: framework/headless.TestOptionalIslandsAreOptional
+  - id: form-island-or-request
+    rule: A Form given both Island and Request panics rather than choosing one.
+    enforced_by:
+      - test: framework/headless.TestFormRefusesIslandAndRequestTogether
+  - id: form-errors-ask-for-focus
+    rule: A Form with non-empty Errors renders them before the body and marks the form data-hui-form-errors; a form without Errors carries no such mark.
+    enforced_by:
+      - test: framework/headless.TestFormWithErrorsAsksForFocus
+  - id: form-multipart-sets-enctype
+    rule: A Multipart form renders enctype="multipart/form-data".
+    enforced_by:
+      - test: framework/headless.TestMultipartFormSaysSo
+  - id: form-leave-guard-needs-its-sentence
+    rule: Only a non-empty LeaveGuard renders data-hui-leave-guard and its message, and LeaveGuardTitle and LeaveGuardAccept render only when set beside it.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsLeaveGuardAttrsNeedTheGuard
+      - test: framework/ui.TestFormLeaveGuard
+  - id: form-request-vocabulary-is-closed
+    rule: A Form Request key outside the request vocabulary panics, data-cui-rpc-body included, so decoration and a static body never ride the request seam.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsRequestRefusesBadValues
+      - test: framework/ui.TestFormRequestRefusesUnknownKeys
+  - id: form-request-values-are-checked
+    rule: "A Form Request refuses an empty or cross-origin endpoint or navigate, a method other than GET, POST, PUT, PATCH or DELETE, an empty signal, open, refresh, toast or confirm, a trigger other than input, a non-digit debounce, and an empty or whitespace-bearing data-action-mount."
+    enforced_by:
+      - test: framework/headless.TestSweepFormsRequestRefusesBadValues
+  - id: form-request-keys-are-folded
+    rule: Form Request keys are stored lower-cased, and two spellings of one key panic.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsRequestAdmitsItsVocabularyFolded
+      - test: framework/headless.TestSweepFormsRequestRefusesBadValues
+  - id: input-group-is-plain-unless-named
+    rule: InputGroup renders a plain div with no role, and role=group with an aria-label only when Label is set.
+    enforced_by:
+      - test: framework/headless.TestInputGroupAddsNoSemanticsByDefault
+  - id: field-label-names-a-control
+    rule: Field panics without Label or without For.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsFieldRefusesALabelThatNamesNothing
+  - id: field-describes-error-then-hint
+    rule: A Field's control is described by the error's id and then the hint's, the hint stays rendered after an error, and the error node is a role=alert paragraph with id For+"-error".
+    enforced_by:
+      - test: framework/headless.TestFieldWiresLabelHintAndErrorToTheControl
+      - test: framework/headless.TestSweepFormsFieldMarksItsHooksAndRequiredLabel
+  - id: field-hands-its-state-down
+    rule: Field builds its control from a FieldControl whose ID is For, whose Invalid is true exactly when Error is set and whose Required mirrors the field, and marks a required field's label data-required.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsFieldMarksItsHooksAndRequiredLabel
+      - test: framework/headless.TestSweepFormsReservedErrorNodeIsWiredAndEmpty
+  - id: field-reserved-error-is-wired
+    rule: ReserveError with no Error renders one empty role=alert error node with id For+"-error" and the data-hui-field-error hook, puts that id first in the control's description, and leaves the control valid.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsReservedErrorNodeIsWiredAndEmpty
+      - test: framework/ui.TestFormFieldReserveErrorRendersAnEmptyWiredNode
+  - id: field-carries-form-errors-hooks
+    rule: A Field's root carries data-hui-field and its error node, rendered or reserved, carries data-hui-field-error, which is how the form-errors module places a refused submission's messages.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsFieldMarksItsHooksAndRequiredLabel
+      - test: framework/headless.TestSweepFormsReservedErrorNodeIsWiredAndEmpty
+  - id: fieldset-is-native-when-named
+    rule: A Fieldset with a Legend renders a fieldset and legend, and without one a plain div.
+    enforced_by:
+      - test: framework/headless.TestFieldsetRendersTheNativeGroupSemantic
+  - id: fieldset-describes-desc-then-error
+    rule: A Fieldset's aria-describedby lists the description's id and then the error's, and a Description or Error with neither ID nor Legend panics.
+    enforced_by:
+      - test: framework/headless.TestFieldsetDescribesItsGroupWithDescriptionAndError
+      - test: framework/headless.TestFieldsetRefusesAnUnnameableGroupError
+  - id: conditional-field-renders-visible
+    rule: ConditionalField renders with no hidden attribute; only the headless-when module hides it.
+    enforced_by:
+      - test: framework/headless.TestConditionalFieldIsRenderedVisible
+  - id: conditional-field-condition-is-complete
+    rule: ConditionalField panics without When, without one of Value and Values, with both, or with an empty member in Values, and carries Values as one JSON array in data-hui-when-in.
+    enforced_by:
+      - test: framework/headless.TestConditionalFieldRefusesIncompleteConditions
+      - test: framework/headless.TestConditionalFieldInRefusesAmbiguousConditions
+      - test: framework/headless.TestConditionalFieldInEncodesListAsJSON
+  - id: when-reads-its-own-form-first
+    rule: The headless-when module reads a region's watched name among the controls its own form owns, and only when there are none among the controls no form owns, falling back to every control of that name in document order.
+    enforced_by:
+      - test: framework/headless.TestE2E_WhenFollowsAFormAssociatedControlOutsideTheFormElement
+      - test: framework/headless.TestE2E_WhenOutsideTheFormsPrefersTheLooseControl
+    applies:
+      - framework/headless/when.js
+  - id: input-type-defaults-to-text
+    rule: An Input with no Type renders type="text".
+    enforced_by:
+      - test: framework/headless.TestSweepFormsInputTypeDefaultsToText
+  - id: input-owned-is-bounds-only
+    rule: Input.Owned admits only min, max and step, panics on any other key or on two spellings of one, and its non-empty values override Extra's.
+    enforced_by:
+      - test: framework/headless.TestInputOwnedIsForBoundsOnly
+      - test: framework/headless.TestInputOwnedRefusesOneKeyUnderTwoSpellings
+      - test: framework/headless.TestSweepFormsInputOwnedBoundsBeatExtra
+  - id: text-controls-render-their-description
+    rule: Input, Textarea, Select, Password and Color each render the DescribedBy they are handed as aria-describedby.
+    enforced_by:
+      - test: framework/headless.TestEveryTextControlCarriesItsDescription
+  - id: textarea-value-is-content
+    rule: Textarea renders its value as element content and never as a value attribute, and doubles a leading newline or carriage return the HTML parser would drop.
+    enforced_by:
+      - test: framework/headless.TestTextareaKeepsLeadingNewline
+      - test: framework/headless.TestSweepFormsTextareaHooksAndRows
+  - id: textarea-hooks-are-props
+    rule: Textarea renders data-cui-autogrow only for Autogrow, data-hui-json only for a non-empty JSON sentence with control bytes scrubbed, and rows only for a positive Rows.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsTextareaHooksAndRows
+  - id: select-placeholder-is-a-prompt
+    rule: A Select placeholder is a disabled first option with an empty value, selected only while Selected is empty; with no placeholder an empty Selected selects the option whose value is empty.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsSelectPlaceholderIsAPrompt
+  - id: select-keeps-an-unlisted-value
+    rule: A Selected value no option lists renders as its own selected option labelled with the value, and a listed one adds nothing.
+    enforced_by:
+      - test: framework/headless.TestSelectKeepsUnlistedValue
+      - test: framework/headless.TestSelectListedValueAddsNothing
+  - id: select-owns-option-state
+    rule: An Option's ExtraAttrs cannot set its value, selected or disabled.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsSelectPlaceholderIsAPrompt
+  - id: password-wires-the-inner-input
+    rule: Password puts ID, Extra, the description and aria-invalid on the inner input, and the shell carries only data-hui-affix and, when invalid, data-invalid.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsPasswordWiresTheInputNotTheShell
+  - id: password-reveal-keeps-one-name
+    rule: The Password reveal is a type=button toggle with one constant aria-label, one constant visible word and aria-pressed false at render.
+    enforced_by:
+      - test: framework/headless.TestToggleButtonsKeepOneName
+  - id: color-text-submits
+    rule: Color's hex text input carries the name and the value as written, and the swatch carries no name and sits out of the tab order.
+    enforced_by:
+      - test: framework/headless.TestColorSwatchAndTextCarryOneValue
+      - test: framework/headless.TestSweepFormsColorUnpickableValueIsKeptAndMarked
+  - id: color-keeps-an-unpickable-value
+    rule: A Color value that is not #rgb or #rrggbb stays verbatim in the text, hands the swatch #000000 and marks the shell data-invalid; a short hex is expanded for the swatch only and is valid.
+    enforced_by:
+      - test: framework/headless.TestColorAcceptsShortHexAndExpandsItForThePicker
+      - test: framework/headless.TestSweepFormsColorUnpickableValueIsKeptAndMarked
+  - id: choice-refuses-what-cannot-submit
+    rule: Choice panics without Label or Name, with a Type other than checkbox or radio, or as a radio without Value; Switch panics without Label or Name.
+    enforced_by:
+      - test: framework/headless.TestChoiceRefusesAnUnlabelledControl
+      - test: framework/headless.TestChoiceRefusesAnUnknownType
+      - test: framework/headless.TestChoiceFamilyRefusesWhatCannotSubmitOrBeNamed
+      - test: framework/headless.TestSwitchRefusesAnUnlabelledControl
+  - id: choice-label-wraps-the-control
+    rule: Choice and Switch render a label root carrying data-hui-choice that wraps the input.
+    enforced_by:
+      - test: framework/headless.TestChoiceLabelWrapsItsControl
+      - test: framework/headless.TestSweepFormsChoiceAndSwitchCarryTheChoiceHook
+  - id: switch-is-a-checkbox
+    rule: Switch renders an input of type checkbox with role=switch.
+    enforced_by:
+      - test: framework/headless.TestSwitchIsACheckboxThatSaysItIsASwitch
+  - id: group-is-a-fieldset-with-its-question
+    rule: Group renders a fieldset whose first child is a legend, panics without Legend, and marks the legend data-required only when Required is set.
+    enforced_by:
+      - test: framework/headless.TestChoiceGroupCarriesItsQuestion
+      - test: framework/headless.TestSweepFormsRequiredGroupMarksItsLegend
+  - id: summary-needs-an-id
+    rule: ValidationSummary panics without ID, even with no errors, and its title's id is ID+"-title", which labels the summary.
+    enforced_by:
+      - test: framework/headless.TestValidationSummaryRequiresAnID
+      - test: framework/headless.TestSweepFormsSummaryKeepsItsRoleAndTitle
+  - id: summary-empty-renders-nothing
+    rule: A ValidationSummary with no errors renders the empty string.
+    enforced_by:
+      - test: framework/headless.TestValidationSummaryWithNoErrorsRendersNothing
+  - id: summary-interrupts-and-takes-focus
+    rule: A ValidationSummary root is role=alert with tabindex=-1, and ExtraAttrs cannot replace either.
+    enforced_by:
+      - test: framework/headless.TestValidationSummaryInterruptsAndCanTakeFocus
+      - test: framework/headless.TestSweepFormsSummaryKeepsItsRoleAndTitle
+  - id: summary-links-through-the-anchor-policy
+    rule: A FieldError links to "#"+For only when For is set and the anchor policy accepts it, and is plain text otherwise; an error with no Message panics.
+    enforced_by:
+      - test: framework/headless.TestAnErrorWhoseFieldThePolicyRefusesIsText
+      - test: framework/headless.TestErrorWithoutAFieldIsStillListed
+      - test: framework/headless.TestSweepFormsSummaryKeepsItsRoleAndTitle
+  - id: timeline-is-ordered-with-hidden-marks
+    rule: Timeline renders an ol whose markers are aria-hidden and whose When renders as a time with datetime only when Machine is set, else as a span.
+    enforced_by:
+      - test: framework/headless.TestTimelineIsOrderedAndDated
+      - test: framework/headless.TestTimelineRendersRelativeTextWithoutAMachineValueAsText
+  - id: timeline-refuses-unresolvable-events
+    rule: Timeline panics with no events, on an event without exactly one of Title and Lead, and on a Machine that is not RFC 3339.
+    enforced_by:
+      - test: framework/headless.TestSweepFormsTimelineEventNeedsOneHeadline
+      - test: framework/headless.TestTimelineRefusesAMachineValueThatIsNotATimestamp
+  - id: timeline-meta-follows-the-title
+    rule: An event's Meta shares a header row with the title and comes after it.
+    enforced_by:
+      - test: framework/headless.TestTimelineMetaQualifiesTheTitle
+  - id: timeline-tone-joins-the-mark
+    rule: An event's Tone reaches the class map as the mark's variant, joined to the mark's own class.
+    enforced_by:
+      - test: framework/headless.TestTimelineToneJoinsTheMarkClass
+  - id: upload-is-a-real-input-in-its-label
+    rule: FileUpload renders a type=file input with the ID and Name it was given, whose label for=ID is the drop zone, with no button inside the label, and panics without Name, ID or Label.
+    enforced_by:
+      - test: framework/headless.TestUploadIsARealInputInALabel
+      - test: framework/headless.TestFileUploadKeepsTheInputInTheTree
+      - test: framework/headless.TestSweepFormsFileUploadRefusesWhatItCannotLabel
+  - id: upload-hint-id-does-not-collide
+    rule: A FileUpload hint has id ID+"-accept", never the ID+"-hint" a wrapping Field derives, and the input's description lists a caller's DescribedBy before it.
+    enforced_by:
+      - test: framework/headless.TestUploadHintIsTiedToTheInput
+  - id: upload-announces-politely
+    rule: FileUpload's status is role=status with no aria-live, beside a data-hui-drop-list list, and its root carries the data-hui-drop-one and data-hui-drop-many sentences.
+    enforced_by:
+      - test: framework/headless.TestUploadAnnouncesWhatWasChosen
+      - test: framework/headless.TestSweepFormsFileUploadRefusesWhatItCannotLabel
+decisions:
+  - id: request-is-its-own-seam
+    date: 2026-11-16
+    status: accepted
+    decision: A form's request wiring rides FormProps.Request, a closed vocabulary checked at render, rather than ExtraAttrs.
+    rejected:
+      - option: Let the wiring ride ExtraAttrs.
+        why: Safe drops every data-cui-* and data-action-* key, so the form would render plain and post natively.
+      - option: Resolve Island against Request by precedence.
+        why: A silent choice between two things a caller meant; refusing the pair says so at render.
+    upholds: [form-request-vocabulary-is-closed, form-island-or-request]
+  - id: rpc-method-independent-of-native
+    date: 2026-11-16
+    status: accepted
+    decision: The native method and action stay on an RPC form for no script, and the RPC method may differ, as a form that natively POSTs may PUT over RPC.
+    rejected:
+      - option: One method for both.
+        why: They answer different questions, what a scriptless browser submits and what the region update asks for.
+    upholds: [form-keeps-its-native-target]
+  - id: island-failure-answers-200
+    date: 2026-11-16
+    status: accepted
+    decision: An island form's failed validation is answered 200 with the region's HTML, and the summary in it takes focus.
+    rejected:
+      - option: Answer a failed validation 422.
+        why: The runtime delivers a non-2xx as {ok:false, status, text} in the signal and never as markup, so the errors render nowhere.
+    revisit_if: The runtime starts swapping markup from a non-2xx answer into a region.
+  - id: leave-guard-on-form
+    date: 2026-11-16
+    status: accepted
+    decision: The leave-guard hook is a Form prop, because no headless primitive owns a whole form and the record screens are its carriers.
+    rejected:
+      - option: A separate guard component around the form.
+        why: It would own nothing but the attribute the form already carries.
+    upholds: [form-leave-guard-needs-its-sentence]
+  - id: control-built-from-field
+    date: 2026-11-16
+    status: accepted
+    decision: Field builds its control through a callback handed the FieldControl wiring, so the id, the description and the invalid state reach the control by construction.
+    rejected:
+      - option: Accept a pre-built control.
+        why: A hint then ends up rendered with an id that nothing references, visible on screen and absent to a screen reader.
+    upholds: [field-hands-its-state-down, field-describes-error-then-hint]
+  - id: hint-stays-on-error
+    date: 2026-11-16
+    status: accepted
+    decision: A Field's hint stays rendered and described when Error is set, after the error.
+    rejected:
+      - option: Drop the hint while the error shows.
+        why: The hint is the rule the error says was broken, and dropping it removes it exactly when it is needed.
+    revisit_if: A caller needs a shorter errored row and cannot get it by leaving the hint unset.
+    upholds: [field-describes-error-then-hint]
+  - id: field-error-is-an-alert
+    date: 2026-11-16
+    status: accepted
+    decision: A Field's error node is role=alert, because it is inserted after a failed submit and has to interrupt.
+    rejected:
+      - option: An aria-live region updated in place.
+        why: The node is inserted rather than updated, and a polite region would not interrupt.
+    upholds: [field-describes-error-then-hint]
+  - id: reserved-error-is-not-an-interrupt
+    date: 2026-11-16
+    status: accepted
+    decision: A reserved error node's contract is its visible text and its place in the description; whether filling it also interrupts depends on the engine and is not relied on.
+    rejected:
+      - option: Promise that filling the reserved node announces like an inserted alert.
+        why: Engines differ on whether a node that was empty and hidden announces when filled.
+    upholds: [field-reserved-error-is-wired]
+  - id: conditional-renders-visible
+    date: 2026-11-16
+    status: accepted
+    decision: ConditionalField renders visible and the headless-when module hides it, so a page without script, a reader mode, a crawler and the first paint see the field.
+    rejected:
+      - option: Render it hidden and let script reveal it.
+        why: A field only script can reveal never arrives for a reader without script.
+    upholds: [conditional-field-renders-visible]
+  - id: conditional-value-is-never-empty
+    date: 2026-11-16
+    status: accepted
+    decision: ConditionalField refuses an empty Value or Values member, so "show when unchecked" is expressed by watching a control whose values are all stated.
+    rejected:
+      - option: Allow an empty Value to mean unchecked.
+        why: An empty condition is indistinguishable from a forgotten one.
+    upholds: [conditional-field-condition-is-complete]
+  - id: textarea-autogrow-is-a-prop
+    date: 2026-11-16
+    status: accepted
+    decision: Autogrow is a Textarea prop, the one data-cui-* attribute a component here renders.
+    rejected:
+      - option: Let the caller pass data-cui-autogrow through Extra.
+        why: Safe and the part-attrs sanitiser refuse the data-cui- prefix so decoration cannot become a request, and autogrow is behaviour of the control.
+    upholds: [textarea-hooks-are-props]
+  - id: color-text-is-the-value
+    date: 2026-11-16
+    status: accepted
+    decision: The Color hex text submits and the swatch is an unnamed picker bound to it, with a value the picker cannot show kept verbatim and the shell marked.
+    rejected:
+      - option: Let the type=color swatch submit.
+        why: It rewrites a legitimate value such as var(--color-primary) to #000000 on submit.
+      - option: Refuse a value the picker cannot show.
+        why: The component exists to edit config whose colours are often token references.
+    upholds: [color-text-submits, color-keeps-an-unpickable-value]
+  - id: reveal-name-is-constant
+    date: 2026-11-16
+    status: accepted
+    decision: The Password reveal keeps one name and one word and carries its state in aria-pressed, the APG toggle-button pattern.
+    rejected:
+      - option: Swap the name to Hide password while pressed.
+        why: It read as Hide password, pressed, the state said twice and the second time backwards.
+    upholds: [password-reveal-keeps-one-name]
+  - id: upload-drag-is-an-enhancement
+    date: 2026-11-16
+    status: accepted
+    decision: FileUpload's drop zone is the input's label, so a single click opens the picker before any script runs and dragging is only an enhancement.
+    rejected:
+      - option: A drag-only zone with a button inside it.
+        why: WCAG 2.5.7 needs a single-pointer alternative to dragging, and a button inside a label swallows the label's click.
+    upholds: [upload-is-a-real-input-in-its-label]
+  - id: when-module-is-split
+    date: 2026-11-16
+    status: accepted
+    decision: The data-hui-when regions are bound by their own headless-when module, split from the headless module to keep both under the size budget.
+    rejected:
+      - option: Raise the headless module's budget.
+        why: The budget rule is to split or shrink a module, never to raise its row.
