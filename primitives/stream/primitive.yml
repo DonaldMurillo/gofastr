@@ -1,0 +1,9 @@
+primitive: stream
+summary: The streaming transports of core/stream, among them the WebSocket connection and its close handshake.
+code:
+  - core/stream/
+invariants:
+  - id: close-frame-has-its-own-deadline
+    rule: WebSocketConn.Close writes its Close frame under a deadline of its own, so a negative WriteTimeout and a peer that stopped reading cannot block Close for good.
+    enforced_by:
+      - test: core/stream.TestCloseFrameIsBoundedAfterDrainWhenWriteTimeoutDisabled

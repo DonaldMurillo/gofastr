@@ -74,6 +74,7 @@ func (s *Signaler) admitSeatLocked(roomName string, p *roomPeer, user string) (d
 				delete(s.seatOrder, user)
 			}
 			if rm := s.rooms[oldest.room]; rm != nil && rm.peers[oldest.peer.info.ID] == oldest.peer {
+				s.detachLocked(rm, oldest.peer)
 				delete(rm.peers, oldest.peer.info.ID)
 				rm.listed.forget(oldest.peer.info.ID)
 				s.publishDepartureLocked(oldest.room, rm, oldest.peer)

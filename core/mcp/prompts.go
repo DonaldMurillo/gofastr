@@ -285,7 +285,7 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 
 	messages, err := s.getPromptMessages(ctx, p, args)
 	if err != nil {
-		return handlerErrorResponse(req, err, "mcp: prompt handler failed", "internal prompt error",
+		return handlerErrorResponse(ctx, req, err, "mcp: prompt handler failed", "internal prompt error",
 			slog.String("prompt", p.Name))
 	}
 	if messages == nil {
@@ -311,17 +311,10 @@ func (s *Server) getPromptMessages(ctx context.Context, p Prompt, args map[strin
 	return p.handler(ctx, args)
 }
 
-// handlerErrorResponse converts an error returned by an app-supplied
-// prompt handler or resource contents func into a Response: a
-// deliberate *RPCError crosses verbatim (its text is a caller-facing
-// channel), while any other error is internal detail (filesystem
-// paths, driver text) that must not cross the transport — callTool's
-// posture. The plain error is logged server-side with logMsg and attrs
-// (the error itself is appended) and answered with the generic
-// genericMsg. It replaces the two verbatim copies of this shape in
-// handlePromptsGet and handleResourcesRead.
-func handlerErrorResponse(req Request, err error, logMsg, genericMsg string, attrs ...slog.Attr) Response {
-	if rpcErr, ok := err.(*RPCError); ok {
+// handlerErrorResponse answers a prompt handler's or resource contents func's
+// error: callerFacingError decides what crosses, the rest is logged and generic.
+func handlerErrorResponse(ctx context.Context, req Request, err error, logMsg, genericMsg string, attrs ...slog.Attr) Response {
+	if rpcErr, ok := callerFacingError(ctx, err); ok {
 		return Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}
 	}
 	attrs = append(attrs, slog.String("err", err.Error()))

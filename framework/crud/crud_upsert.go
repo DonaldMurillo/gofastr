@@ -83,6 +83,31 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				}
 			}
 		}
+		var previous map[string]any
+		kept, echoed := map[string]any{}, map[string]any{}
+		readKey := ""
+		// keepEchoes moves body's echoes of previous's masked values to kept.
+		keepEchoes := func() {
+			for _, name := range ch.maskedEchoes(ctx, body, previous) {
+				kept[name], echoed[name] = previous[ch.convertKey(name)], body[name]
+				delete(body, name)
+			}
+		}
+		if ch.carriesMasked(body) {
+			if err := ch.upsertPreflight(ctx, body); err != nil {
+				return err
+			}
+			var err error
+			if previous, err = ch.upsertExistingRow(ctx, body); err != nil {
+				return err
+			}
+			if previous != nil && ch.upsertTargetHidden(ctx, req, body) {
+				return errUpsertForeignRow
+			}
+			readKey = fmt.Sprint(ch.colKeyVals(body))
+			keepEchoes()
+		}
+		isKept := func(name string) bool { _, ok := kept[name]; return ok }
 		s := ch.entitySchema()
 		keys := ch.keyCols()
 		s.Fields = slices.DeleteFunc(slices.Clone(s.Fields), func(f schema.Field) bool {
@@ -106,16 +131,8 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err := ch.refuseCascadeUpsertKey(body); err != nil {
 			return err
 		}
-		vs := ch.entitySchema()
-		if setKeys := ch.cascadeSetKeys(body); len(setKeys) > 0 {
-			vs.Fields = slices.Clone(vs.Fields)
-			for i := range vs.Fields {
-				if setKeys[vs.Fields[i].Name] {
-					vs.Fields[i].Required = false
-				}
-			}
-		}
-		vr := schema.ValidateAll(vs, body)
+		setKeys := ch.cascadeSetKeys(body)
+		vr := schema.ValidateAll(optional(ch.entitySchema(), func(name string) bool { return setKeys[name] || isKept(name) }), body)
 		if !vr.Valid {
 			return &ValidationError{fields: vr.Errors}
 		}
@@ -126,12 +143,25 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			return err
 		}
 
-		if err := ch.upsertPreflight(ctx, body); err != nil {
-			return err
-		}
-		previous, err := ch.upsertExistingRow(ctx, body)
-		if err != nil {
-			return err
+		if readKey == "" || readKey != fmt.Sprint(ch.colKeyVals(body)) {
+			if err := ch.upsertPreflight(ctx, body); err != nil {
+				return err
+			}
+			var err error
+			if previous, err = ch.upsertExistingRow(ctx, body); err != nil {
+				return err
+			}
+			// A hook moved the key: judge the echoes against the row it names now.
+			for name, sent := range echoed {
+				if _, set := body[name]; !set {
+					body[name] = sent
+				}
+			}
+			clear(kept)
+			clear(echoed)
+			if previous != nil && !ch.upsertTargetHidden(ctx, req, body) {
+				keepEchoes()
+			}
 		}
 		existed := previous != nil
 		if existed && ch.upsertTargetHidden(ctx, req, body) {
@@ -155,7 +185,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err := ch.coerceNumberColumnValues(body); err != nil {
 			return err
 		}
-		vr = schema.ValidateAll(ch.entitySchema(), body)
+		vr = schema.ValidateAll(optional(ch.entitySchema(), isKept), body)
 		if !vr.Valid {
 			return &ValidationError{fields: vr.Errors}
 		}
@@ -206,6 +236,11 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 					cols = append(cols, f.Name)
 					vals = append(vals, ch.bindJSONValue(f.Name, f.Default))
 				}
+				continue
+			}
+			if stored, ok := kept[f.Name]; ok {
+				cols = append(cols, f.Name)
+				vals = append(vals, ch.bindJSONValue(f.Name, stored))
 				continue
 			}
 			val, ok := body[f.Name]
@@ -380,6 +415,17 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		ch.EmitEvent(ctx, eventType, result)
 	}
 	return out, nil
+}
+
+// optional is s with Required cleared on the fields skip names.
+func optional(s schema.Schema, skip func(string) bool) schema.Schema {
+	s.Fields = slices.Clone(s.Fields)
+	for i := range s.Fields {
+		if skip(s.Fields[i].Name) {
+			s.Fields[i].Required = false
+		}
+	}
+	return s
 }
 
 // upsertExistingRow reads the row holding the body's key, unscoped, or

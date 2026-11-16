@@ -314,7 +314,9 @@ diagnosed without a packet capture:
 `LastError` stays short (`http 401`). A subscriber's own credential is
 replaced with `[redacted]` wherever the receiver echoes it back (an
 error page that prints the `Authorization` or API key header), since
-the body column is not sealed like the auth column. The body is stored
+the body column is not sealed like the auth column. That holds for an
+echo cut by the limit too: the credential is replaced before the body
+is cut, so no part of it is stored. The body is stored
 with the delivery, so a receiver that echoes the payload or a secret back puts
 it in the store; keep the limit at what an error message needs. The
 `SQLStore` keeps both in `response_status` and `response_body`, which
@@ -417,6 +419,9 @@ Set `Paused: true` in the `Subscriber` you pass to `Subscribe` to
 register it inactive; `Publish` skips paused subscribers and no
 deliveries are queued. To resume, re-subscribe (Subscribe upserts on
 ID) with `Paused: false`. The default for a new subscription is active.
+A subscriber read back from a store carries `Paused: true` while it is
+paused, on `MemoryStore` and `SQLStore` alike, so reading one, changing
+a field and subscribing it again keeps it paused.
 
 ## Stores
 

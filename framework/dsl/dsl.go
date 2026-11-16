@@ -292,6 +292,12 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 			}
 			continue
 		}
+		// No dialect is known here, so a nullable column spells the null
+		// position Postgres defaults to; its plain indexes still serve it.
+		if entity.CanHoldNull(orderField, ent.KeyColumns()) {
+			qb.OrderPinNulls(order.Field, order.Direction)
+			continue
+		}
 		qb.Order(order.Field, order.Direction)
 	}
 	if parsed.Limit > 0 {

@@ -29,7 +29,7 @@ type modelBinder interface {
 // ensureModelTable creates the model table; EnsureSchema calls it.
 func (s *PgVectorStore) ensureModelTable(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS `+query.QuoteFolded(modelTable)+` (
-		table_name TEXT PRIMARY KEY,
+		table_name TEXT PRIMARY KEY NOT NULL,
 		model      TEXT NOT NULL,
 		dim        INTEGER NOT NULL
 	)`); err != nil {

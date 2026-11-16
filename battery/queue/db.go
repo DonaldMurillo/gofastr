@@ -367,7 +367,7 @@ func (q *DBQueue) ensureTable() error {
 		}
 	}
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-		id            TEXT PRIMARY KEY,
+		id            TEXT PRIMARY KEY NOT NULL,
 		occurrence_id TEXT NOT NULL DEFAULT '',
 		type          TEXT NOT NULL,
 		payload       TEXT,
@@ -1221,12 +1221,23 @@ func (q *DBQueue) settleFailure(ctx context.Context, job Job, reason error) (dea
 // A failed job whose UniqueKey a newer live job now holds stays failed, and
 // Replay returns ErrDuplicateJob.
 func (q *DBQueue) Replay(ctx context.Context, jobID string) error {
-	stmt := fmt.Sprintf("UPDATE %s SET status='pending', attempts=0, scheduled_at=$1, updated_at=$1 WHERE id=$2 AND status='failed'", q.qt())
-	_, err := q.db.ExecContext(ctx, stmt, q.now().UTC(), jobID)
-	if isUniqueViolation(err) {
-		return fmt.Errorf("%w: replay %s", ErrDuplicateJob, jobID)
-	}
+	_, err := q.ReplayJob(ctx, jobID)
 	return err
+}
+
+// ReplayJob implements [ReplayReporter]: Replay, reporting whether the
+// update matched a failed row.
+func (q *DBQueue) ReplayJob(ctx context.Context, jobID string) (bool, error) {
+	stmt := fmt.Sprintf("UPDATE %s SET status='pending', attempts=0, scheduled_at=$1, updated_at=$1 WHERE id=$2 AND status='failed'", q.qt())
+	res, err := q.db.ExecContext(ctx, stmt, q.now().UTC(), jobID)
+	if isUniqueViolation(err) {
+		return false, fmt.Errorf("%w: replay %s", ErrDuplicateJob, jobID)
+	}
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // ListJobs implements [Browsable]. Returns up to limit jobs in the
@@ -1239,7 +1250,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 	}
 	offset = max(offset, 0)
 	base := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts,
-		max_attempts, created_at, scheduled_at, status, updated_at, last_error, unique_key, max_age_ns, sequence_key FROM %s`, q.qt())
+		max_attempts, created_at, scheduled_at, status, updated_at, last_error, unique_key, max_age_ns, sequence_key, user_id FROM %s`, q.qt())
 	args := []any{}
 	if status != "" && status != "all" {
 		base += " WHERE status = $1"
@@ -1260,7 +1271,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 		var createdAt, scheduledAt, updatedAt any
 		if err := rows.Scan(&j.ID, &j.OccurrenceID, &j.Type, &payload, &j.Priority,
 			&j.Lane, &j.Attempts, &j.MaxAttempts, &createdAt, &scheduledAt,
-			&j.Status, &updatedAt, &j.LastError, &j.UniqueKey, &j.MaxAge, &j.SequenceKey); err != nil {
+			&j.Status, &updatedAt, &j.LastError, &j.UniqueKey, &j.MaxAge, &j.SequenceKey, &j.UserID); err != nil {
 			return nil, err
 		}
 		j.CreatedAt, err = query.ParseDBTime(createdAt)
@@ -1313,6 +1324,8 @@ var (
 	_ Queue      = (*DBQueue)(nil)
 	_ Browsable  = (*DBQueue)(nil)
 	_ Replayable = (*DBQueue)(nil)
+
+	_ ReplayReporter = (*DBQueue)(nil)
 )
 
 // Close stops worker goroutines started by Start. Idempotent.

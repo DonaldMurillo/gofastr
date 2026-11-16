@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -1301,7 +1302,7 @@ func pinFrameworkRequire(dir string) (frameworkPin, error) {
 	edit := exec.Command("go", "mod", "edit", "-require="+project.GofastrModule+"@"+release)
 	edit.Dir = moduleRoot
 	if out, err := edit.CombinedOutput(); err != nil {
-		return frameworkPin{needsGet: true}, fmt.Errorf("could not pin %s %s in go.mod: %v %s", project.GofastrModule, release, err, cli.ScrubTerminalOutput(strings.TrimSpace(string(out))))
+		return frameworkPin{needsGet: true}, fmt.Errorf("could not pin %s %s in go.mod: %v %s", project.GofastrModule, release, err, textsafe.ScrubTerminal(strings.TrimSpace(string(out))))
 	}
 	return frameworkPin{version: release}, nil
 }
@@ -1364,7 +1365,7 @@ func removeRetiredAppSpecFiles(writeRoot string) error {
 // Extension output reaches a terminal, so messages get the same scrub the
 // child's stderr does; an extension does not get to drive the operator's
 // terminal through a JSON field either. The cli helpers scrub every
-// argument (cli.ScrubTerminalOutput), so the message goes to them as is.
+// argument (textsafe.ScrubTerminal), so the message goes to them as is.
 func reportCodegenDiagnostics(diags []codegen.Diagnostic, jsonMode ...bool) bool {
 	failed := false
 	output := os.Stdout

@@ -26,7 +26,7 @@ func (f *fakeBrowsable) Stats(_ context.Context) (JobStats, error) {
 	return f.stats, nil
 }
 
-// TestQueueMetricsCollector emits queue_depth and queue_dead_letter_total from
+// TestQueueMetricsCollector emits queue_depth and queue_dead_letter_jobs from
 // a Browsable's Stats snapshot, labelled with the queue lane.
 func TestQueueMetricsCollector(t *testing.T) {
 	fake := &fakeBrowsable{stats: JobStats{"pending": 3, "failed": 1}}
@@ -39,9 +39,9 @@ func TestQueueMetricsCollector(t *testing.T) {
 		"# HELP queue_depth Jobs waiting to be processed.",
 		"# TYPE queue_depth gauge",
 		`queue_depth{lane="ingest"} 3`,
-		"# HELP queue_dead_letter_total Jobs that exhausted their retry budget and were dead-lettered.",
-		"# TYPE queue_dead_letter_total counter",
-		`queue_dead_letter_total{lane="ingest"} 1`,
+		"# HELP queue_dead_letter_jobs Dead-lettered jobs the queue holds now.",
+		"# TYPE queue_dead_letter_jobs gauge",
+		`queue_dead_letter_jobs{lane="ingest"} 1`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("metrics output missing %q\ngot:\n%s", want, out)
@@ -73,7 +73,7 @@ func TestQueueMetricsCollector_MissingKeys(t *testing.T) {
 	if !strings.Contains(out, `queue_depth{lane="ingest"} 0`) {
 		t.Errorf("expected pending default 0, got:\n%s", out)
 	}
-	if !strings.Contains(out, `queue_dead_letter_total{lane="ingest"} 0`) {
+	if !strings.Contains(out, `queue_dead_letter_jobs{lane="ingest"} 0`) {
 		t.Errorf("expected dead default 0, got:\n%s", out)
 	}
 }

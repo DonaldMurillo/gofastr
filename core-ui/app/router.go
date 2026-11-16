@@ -59,7 +59,7 @@ func (r *Router) Screen(screen *Screen, layout *Layout) {
 		screen.Layout = layout
 	}
 
-	screen.Path = normalizeRoutePath(screen.Path)
+	screen.Path = canonicalRoutePattern(screen.Path)
 	if screen.Intercept != nil {
 		screen.Intercept = normalizeIntercept(screen.Intercept)
 	}
@@ -136,6 +136,16 @@ func normalizeRoutePath(path string) string {
 		}
 	}
 	return strings.Join(parts, "/")
+}
+
+// canonicalRoutePattern is the one spelling of a pattern that screens,
+// Paths, intercept origins and the route manifest compare by.
+func canonicalRoutePattern(path string) string {
+	path = normalizeRoutePath(path)
+	if strings.Contains(path, ":") {
+		return "/" + strings.Trim(path, "/")
+	}
+	return path
 }
 
 // DefaultLayout sets the default layout for screens without one.
@@ -307,7 +317,7 @@ func validateDynamicSegments(pathLabel string, parts []string) []string {
 // its constraint ("/admin/:id:int" is not a numeric id), so the
 // resolve-the-pattern idiom silently drops constrained routes.
 func (r *Router) ScreenByPattern(pattern string) (*Screen, bool) {
-	pattern = normalizeRoutePath(pattern)
+	pattern = canonicalRoutePattern(pattern)
 	if s, ok := r.screens[pattern]; ok {
 		return s, true
 	}

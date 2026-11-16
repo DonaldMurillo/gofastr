@@ -1,0 +1,22 @@
+primitive: embed
+summary: Embedding an app in another site's page, with its origin allowlist and handshake.
+code:
+  - framework/embed/
+docs:
+  - framework/docs/content/embed.md
+invariants:
+  - id: number-ending-host-is-a-dotted-quad
+    rule: NormalizeOrigin refuses an origin whose host's last label is decimal digits or 0x followed by hex digits unless the host is already a dotted quad.
+    enforced_by:
+      - test: framework/embed.TestNormalizeOriginRefusesNumberEndingHosts
+decisions:
+  - id: refuse-hosts-a-browser-rewrites
+    date: 2026-11-16
+    status: accepted
+    decision: An allowlist entry a browser would read as IPv4 and rewrite or refuse is an error when the allowlist is built, decided by the WHATWG test on the last label.
+    rejected:
+      - option: Accept the entry as an ordinary DNS name, as Go's URL parser reads it.
+        why: The embed then never completes its handshake and nothing says why, where an error names the entry.
+      - option: Refuse only a host whose every label is decimal digits.
+        why: It let 0x7f000001 and example.123 through, and such an entry never matches the origin a browser sends.
+    upholds: [number-ending-host-is-a-dotted-quad]

@@ -343,7 +343,7 @@ func (o *Outbox) ensureTable() error {
 		tsType = "TIMESTAMPTZ"
 	}
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-		id              TEXT PRIMARY KEY,
+		id              TEXT PRIMARY KEY NOT NULL,
 		type            TEXT NOT NULL,
 		payload         TEXT,
 		owner           TEXT NOT NULL DEFAULT '',
