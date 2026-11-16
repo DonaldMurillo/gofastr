@@ -2,15 +2,13 @@ package icons
 
 import "strings"
 
-// Category is a curated group of icons. ID is the stable filter value;
-// Label is the human-readable name.
+// Category is a curated group of icons; ID is the stable filter value.
 type Category struct {
 	ID    string
 	Label string
 }
 
-// Categories returns all icon categories in display order. The returned slice
-// belongs to the caller. Each canonical icon has exactly one category.
+// Categories returns a caller-owned slice of the categories in display order.
 func Categories() []Category {
 	result := make([]Category, 0, len(categoryGroups))
 	for _, group := range categoryGroups {
@@ -29,9 +27,6 @@ func CategoryFor(name string) (Category, bool) {
 	return category, ok
 }
 
-// Categories describe our catalog, independently of upstream SVG provenance.
-// Keep assignments explicit so a new drawing cannot silently fall into a
-// catch-all category. Tests require complete, non-overlapping coverage.
 var categoryGroups = []struct {
 	Category
 	names string
