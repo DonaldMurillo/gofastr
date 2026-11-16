@@ -8,26 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The sortable list: a reorderable <ol> whose rows move under HTML5
-// drag-and-drop or the keyboard (Space grabs, the arrows move, Space
-// drops, Escape cancels) and whose commit is a server round trip the
-// server stays authoritative over — non-2xx reverts the DOM. The
-// no-script contract is the list itself: a plain ordered list of
-// rows, so a reader without script sees (and submits, if the caller
-// wraps it in a form) exactly the rows the server rendered. The
-// registered headless-sortablelist module binds the data-hui-sortable
-// marker and owns the moves, the announcements (through Strings that
-// travel as attributes, so a translated page announces in its own
-// language) and the commit/rollback/conflict contract the pattern
-// shipped: linked lists share a Group, a commit carries the
-// destination order plus container and version fields, a versioned
-// 409 refetches fresh rows instead of a blanket rollback, and the
-// server renews a versioned list's token through
-// RenewSortableVersion.
-
-// sortableGripIcon is the six-dot drag grip: a real 14×14 svg with
-// its own size, aria-hidden because the row's name rides its
-// aria-label and the grip is decoration.
+// sortableGripIcon is the six-dot grip: a sized svg, aria-hidden as decoration.
 const sortableGripIcon render.HTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="3" r="1.2"/><circle cx="5" cy="7" r="1.2"/><circle cx="5" cy="11" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="9" cy="7" r="1.2"/><circle cx="9" cy="11" r="1.2"/></svg>`
 
 // SortableList parts.
@@ -38,82 +19,33 @@ const (
 
 // SortableItem is one row.
 type SortableItem struct {
-	// Key is the stable identifier the server applies the new order
-	// by. Required. It is data the database hands the page, not
-	// configuration: a space, a quote, `#` or markup renders escaped
-	// in its attribute and control bytes are scrubbed — only the
-	// empty key refuses.
-	Key string
-	// Label is the row's visible text and the drag name. Required.
-	Label string
-	// Content, when set, replaces the label as the row's body. Use
-	// for richer rows; the grip and the announcements still use
-	// Label.
-	Content render.HTML
+	Key     string      // required: the server applies the order by it; data, rendered escaped and scrubbed
+	Label   string      // required: the row's text and its drag name
+	Content render.HTML // replaces the label as the row's body; the grip and announcements keep Label
 }
 
 // SortableListProps configures one list.
 type SortableListProps struct {
-	// Items are the rows in initial order. May be empty: an empty
-	// column renders a valid sortable <ol> with no rows and stays a
-	// drop target.
-	Items []SortableItem
-	// Label is the list's accessible name. Required.
-	Label string
-	// RPCPath, when set, is POSTed after every successful reorder:
-	// order=<comma-separated keys>, plus container=<id> when
-	// Container is set, version=<token> when Version is set, and
-	// moved=<key> on a cross-container drop. The server confirms with
-	// 2xx or rejects (the DOM reverts).
-	RPCPath string
-	// Group is the board id shared by linked lists (kanban): lists
-	// with the same non-empty Group accept cross-container drag and
-	// keyboard moves between them, including into an empty one.
-	Group string
-	// Container is the per-column id sent as the container field so
-	// the server can route the write without inferring the column
-	// from the key set. Distinct from Group because a board has one
-	// Group and N containers.
-	Container string
-	// Version is an optional optimistic-concurrency token appended to
-	// every commit: the version the list's rows were rendered at.
-	// When set, a 409 fires the conflict path instead of a blanket
-	// rollback. Linked lists (one Group) share one token, the board's.
-	// The server renews it with RenewSortableVersion on the 2xx that
-	// accepts a move and on the ConflictRPC response; without the
-	// renewal every move after the first sends the token it rendered
-	// with and conflicts.
-	Version string
-	// ConflictRPC, alongside Version, is GET-fetched on a 409: the
-	// response body (fresh rows) replaces the list's contents,
-	// server-rendered reconciliation, and the response's renewed
-	// version replaces the list's token. Without it a 409 falls back
-	// to rollback.
-	ConflictRPC string
+	Items       []SortableItem // in initial order; may be empty, and an empty list stays a drop target
+	Label       string         // required: the list's accessible name
+	RPCPath     string         // POSTed after every reorder: order, container, version and moved
+	Group       string         // the board id linked lists share; rows move between lists of one Group
+	Container   string         // this column's id, sent as the container field
+	Version     string         // the concurrency token the rows rendered at; a 409 takes the conflict path
+	ConflictRPC string         // GET on a 409: its rows replace the list's and its version the token
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the root and the rows. No part is fillable:
-	// the rows are the caller's data.
-	Parts   Parts
+	Parts   Parts // nothing is fillable
 	Strings *Strings
 }
 
-// sortableVersionHeader carries a versioned list's renewed token,
-// percent-encoded: HTTP header values are Latin-1, the token is any
-// string.
+// sortableVersionHeader carries a renewed version, percent-encoded because header values are Latin-1.
 const sortableVersionHeader = "X-Gofastr-Sortable-Version"
 
-// RenewSortableVersion tells a versioned list the version the server
-// holds now. Call it on the 2xx that accepts a move, with the version
-// the move produced: every list of the move's Group still holding the
-// token the move sent takes it, since their rows showed the state the
-// server accepted the move against. Call it on the ConflictRPC
-// response too, with the version the returned rows were read at: the
-// refreshed list takes it with its rows. Lists holding any other token
-// keep theirs, so a list whose rows are older than the server's still
-// conflicts and refreshes. An empty version sets nothing.
+// RenewSortableVersion sets the version the server holds now on w: call it on the 2xx
+// that accepts a move and on the ConflictRPC response. An empty version sets nothing.
 func RenewSortableVersion(w http.ResponseWriter, version string) {
 	if version == "" {
 		return
@@ -127,11 +59,7 @@ func SortableList(p SortableListProps, s Classes) render.HTML {
 	return b.El("ol", PartRoot, sortableRootAttrs(p), sortableRows(p, b, false)...)
 }
 
-// SortableItems renders just the row elements without the <ol>
-// wrapper, the fragment a conflict-recovery endpoint returns to
-// replace a list's contents with the server's own rows. Empty items
-// render an empty fragment: authoritative reconciliation may empty a
-// column.
+// SortableItems renders the rows without the <ol>, the fragment a ConflictRPC answers with.
 func SortableItems(p SortableListProps, s Classes) render.HTML {
 	return render.Join(sortableRows(p, p.Parts.Box(s), true)...)
 }
@@ -145,8 +73,6 @@ func sortableRootAttrs(p SortableListProps) html.Attrs {
 	}))
 	Mark(own, "data-hui-sortable")
 	if p.RPCPath != "" {
-		// Same-origin like every RPC sink here: the module's fetch of a
-		// cross-origin path would carry the reorder off the page.
 		checkSameOrigin("SortableList", "RPCPath", p.RPCPath)
 		own["data-hui-sortable-rpc"] = p.RPCPath
 	}
@@ -164,9 +90,6 @@ func sortableRootAttrs(p SortableListProps) html.Attrs {
 		checkSameOrigin("SortableList", "ConflictRPC", p.ConflictRPC)
 		own["data-hui-sortable-conflict"] = p.ConflictRPC
 	}
-	// The module's announcements travel as attributes so a translated
-	// page says them in its own language; the module substitutes the
-	// {label}/{list}/{position} tokens when the move has happened.
 	own["data-hui-sortable-s-grabbed"] = w.SortableGrabbed
 	own["data-hui-sortable-s-position"] = w.SortablePosition
 	own["data-hui-sortable-s-moved"] = w.SortableMoved
@@ -178,36 +101,22 @@ func sortableRootAttrs(p SortableListProps) html.Attrs {
 	return own
 }
 
-// sortableRows renders the rows. fragment says whether they render
-// with no wrapping <ol> (SortableItems, where each row is its own
-// parse root and can never itself be marked) or inside SortableList's
-// <ol> (where a row with no caller content at all is not a root and
-// can carry the mark as a whole).
+// sortableRows renders the rows; fragment is true when they have no wrapping <ol>.
 func sortableRows(p SortableListProps, b Box, fragment bool) []render.HTML {
 	w := p.Strings.Resolve()
 	rows := make([]render.HTML, 0, len(p.Items))
 	for _, it := range p.Items {
-		// The key is data, not configuration: the database stamps it
-		// and the page must render whatever it says. Only an empty
-		// key refuses (the server applies the order by these keys);
-		// everything else lands escaped in the attribute with its
-		// control bytes scrubbed, and the module reads it back with
-		// getAttribute — it never interpolates a key into a selector.
 		if it.Key == "" {
 			panic("headless: SortableList item Key is required — the server applies the new order by these keys; an empty key orders nothing")
 		}
 		checkLabel("SortableList item "+it.Key, "Label", it.Label)
 		attrs := Attrs(map[string]string{
-			// An option of the listbox root: a listbox with no option
-			// children fails aria-required-children.
 			"role":                 "option",
 			"aria-roledescription": w.SortableItemRole,
 			"aria-label":           w.fill(w.SortableDragLabel, "label", scrubControlBytes(it.Label)),
 			"data-hui-sort-key":    scrubControlBytes(it.Key),
 		})
 		Mark(attrs, "data-hui-sortable-item")
-		// draggable is enumerated: an empty value is "auto", and an
-		// <li> under auto is not draggable, so pointer drag needs "true".
 		attrs["draggable"] = "true"
 		attrs["tabindex"] = "0"
 
@@ -216,27 +125,14 @@ func sortableRows(p SortableListProps, b Box, fragment bool) []render.HTML {
 		body := it.Content
 		switch {
 		case body != "":
-			// The caller's content stays reachable; the grip beside it
-			// is still the component's own.
 			gripOwn = Internal(gripOwn)
 		case fragment:
-			// Each row is its own root here (no wrapping <ol>), so the
-			// row itself can never be marked — the grip and the
-			// generated label mark themselves instead.
 			gripOwn = Internal(gripOwn)
 			body = b.El("span", PartLabel, Internal(nil), render.Text(scrubControlBytes(it.Label)))
 		default:
-			// Wrapped in SortableList's <ol>, the row is not a root:
-			// with no caller content at all the whole row is the
-			// component's own, so the mark goes there instead of on
-			// the grip alone.
 			liOwn = Internal(attrs)
 			body = b.El("span", PartLabel, nil, render.Text(scrubControlBytes(it.Label)))
 		}
-		// The <li> itself is the focusable + draggable interactive
-		// element (a focusable <li> must not contain a <button> —
-		// axe nested-interactive); the grip is a decorative span and
-		// the row's name rides its aria-label.
 		rows = append(rows, b.El("li", PartSortableItem, liOwn,
 			b.El("span", PartSortableGrip, gripOwn, sortableGripIcon),
 			body,
@@ -300,10 +196,6 @@ func init() {
 		Name:    "SortableItems",
 		Anatomy: []Part{PartSortableItem, PartSortableGrip, PartLabel},
 		Hooks:   []string{"data-hui-sortable-item", "data-hui-sort-key"},
-		// No WithParts on purpose: the fragment is the rows alone, so
-		// there is no root to route a bind to — a caller dressing the
-		// rows reaches them through SortableListProps.Parts, whose
-		// fixture is SortableList's.
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{
