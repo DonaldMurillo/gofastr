@@ -109,6 +109,7 @@ invariants:
     rule: A typed hook's struct decodes each payload key under its own, camelCase and snake_case spelling, never replacing a key the payload holds itself.
     enforced_by:
       - test: framework.TestTypedHookSeesSnakeTaggedFields
+      - test: framework.TestSweepModulesHookAliasKeepsOwnKeys
   - id: typed-hook-writes-back-changes-only
     rule: A typed hook writes back exactly the fields its callback changed, a change to a zero value included and a change inside a map, slice or pointer included, under the payload's own key when it holds one and the snake_case name otherwise.
     enforced_by:
