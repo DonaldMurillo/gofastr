@@ -3,6 +3,8 @@ package framework
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -433,4 +435,59 @@ func TestSweepApp3A2ARunsEndBeforeStopHooks(t *testing.T) {
 	if !endedFirst.Load() {
 		t.Fatal("an OnStop hook ran while an A2A run was still running")
 	}
+}
+
+// Seeds run under WithoutAutoMigrate: they are data, not schema.
+func TestSweepApp3SeedsRunWithoutAutoMigrate(t *testing.T) {
+	db := openTestDB(t, "sqlite3")
+	app := NewApp(WithDB(db), WithoutAutoMigrate(), WithoutDefaultMiddleware())
+	var seeded atomic.Bool
+	app.Entity("gadgets", entity.EntityConfig{
+		Table:  "gadgets",
+		Fields: []schema.Field{{Name: "name", Type: schema.String}},
+		Seed:   func(context.Context, *sql.DB) error { seeded.Store(true); return nil },
+	}.WithTimestamps(false))
+	if err := AutoMigrate(db, app.Registry); err != nil {
+		t.Fatal(err)
+	}
+	if err := startAndStop(t, app); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if !seeded.Load() {
+		t.Fatal("WithoutAutoMigrate skipped the entity seed")
+	}
+}
+
+// Serve closes the caller's listener when it refuses to start: after a
+// Shutdown that came before any run, and on an App already started.
+func TestSweepApp3ServeClosesListenerWhenRefused(t *testing.T) {
+	stopped := quietServeApp()
+	if err := stopped.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ln := newPipeListener()
+	if err := stopped.Serve(ln); err != nil {
+		t.Fatalf("Serve after Shutdown = %v, want nil", err)
+	}
+	if !ln.isClosed() {
+		t.Error("Serve after Shutdown left the listener open")
+	}
+
+	app := quietServeApp()
+	ready := make(chan struct{})
+	app.OnReady(func(string) { close(ready) })
+	done := make(chan error, 1)
+	go func() { done <- app.Serve(newPipeListener()) }()
+	<-ready
+	second := newPipeListener()
+	if err := app.Serve(second); !errors.Is(err, ErrAlreadyStarted) {
+		t.Errorf("second Serve = %v, want ErrAlreadyStarted", err)
+	}
+	if !second.isClosed() {
+		t.Error("a refused second Serve left its listener open")
+	}
+	if err := app.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	<-done
 }
