@@ -64,229 +64,56 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/retired"
 )
 
-// Mountable is anything that can register routes on the framework's router.
-// UI hosts, admin panels, websocket pubsub layers, etc. all satisfy this
-// interface and are attached via App.Mount.
+// Mountable is anything that registers routes on the router; App.Mount attaches it.
 type Mountable interface {
 	Mount(*router.Router)
 }
 
-// JSONCase / CaseCamel / CaseSnake moved to framework/crud. See
-// reexports_crud.go for the facade aliases that keep framework.X working.
-
 // AppConfig holds application-level configuration.
 type AppConfig struct {
-	Name           string        // application name
-	JSONCase       crud.JSONCase // JSON key casing: "camelCase" (default) or "snake_case"
-	DebugEndpoints bool          // opt-in for /.debug/* endpoints
-	NoLLMMD        bool          // disable auto-generated /llm.md entity docs
-
-	// PublicOpenAPI serves /openapi.json without the auth gate. By default
-	// the spec is auth-gated (it enumerates every route), so a minimal app
-	// returns 401 there, which surprised users following the quickstart
-	// curl. Set true (or use WithPublicOpenAPI) when the spec is meant to be
-	// public, e.g. a docs site or an internal API behind a network boundary.
-	// The API docs page at /api/docs/ follows the same setting: public
-	// spec, public browse page; gated spec, gated page.
-	PublicOpenAPI bool
-
-	// APIPrefix mounts every auto-CRUD entity route (list/get/create/update/
-	// delete + _batch + _events + per-entity llm.md) under this path, e.g.
-	// "/api" serves GET /api/posts instead of GET /posts. Empty (default)
-	// keeps the bare entity-name mounts, so this is not a breaking change.
-	// The generated OpenAPI spec bakes the prefix into its path keys
-	// (servers stays [{url: "/"}]), so documented paths match requests.
-	// GroupEntity routes are unaffected. A group owns its own prefix. MCP
-	// tool names are unchanged.
-	APIPrefix string
-
-	// BaseURL is the canonical origin (scheme://host) the well-known
-	// discovery documents build their absolute URLs from: the server
-	// card, the MCP manifest, the API catalog, /auth.md and the agent
-	// extras. Empty (default) derives the origin from the request (the
-	// Host it was addressed to, and X-Forwarded-Proto from a
-	// TrustedProxies peer). Set it when the app is reachable under one
-	// fixed origin: it wins over every request input, and the documents
-	// stop varying on Host and X-Forwarded-Proto, so a spoofed Host can
-	// no longer paint an attacker-named origin into cacheable output.
-	BaseURL string
-
-	// TrustedProxies lists the TCP peer addresses (IPs and CIDR ranges)
-	// X-Forwarded-Proto is honored from, the same trust rule the rate
-	// limiters apply to X-Forwarded-For. A client that is not a listed
-	// peer cannot change the scheme of the well-known documents' URLs,
-	// the origin in the Content-Security-Policy of a framework/pluginhost
-	// framed asset served from this App's router, nor the scheme of a
-	// framework/entityui record's copy links.
-	// Empty (default) honors X-Forwarded-Proto from nobody, so behind a
-	// TLS-terminating proxy that forwards it you must list the proxy or
-	// set BaseURL (BaseURL reaches neither pluginhost nor entityui: their
-	// URLs need the proxy listed).
-	TrustedProxies []string
-
-	// RequestTimeout caps the per-request wall-clock budget enforced by
-	// the default middleware chain. Zero (default) installs a 30s cap.
-	// Set a positive duration to override. The cap applies to buffered
-	// responses only: a handler that flips into streaming mode (first
-	// Flush or Hijack, every SSE subscription does) sheds the deadline
-	// and the server-level read/write deadlines for the life of the
-	// stream, so subscribers are never cut off by this budget. To
-	// disable the timeout middleware entirely, set
-	// DisableRequestTimeout. Overloading sign for "disable" is too
-	// easy to trip on (e.g. accidentally subtracting two timestamps).
-	//
-	// A budget at or past the server's write deadline would lose every
-	// buffered response finished after that deadline, so the two move
-	// together: an unset HTTPServerTimeouts.WriteTimeout (60s) is raised
-	// to the budget plus 10s, and an explicit one no longer than the
-	// budget makes Start return an error.
-	RequestTimeout time.Duration
-
-	// DisableRequestTimeout removes the Timeout middleware from the
-	// default chain entirely and drops the server-level read/write
-	// timeouts to match (header and idle timeouts stay). Useful for
-	// long-running uploads; SSE no longer needs it. Streams shed the
-	// deadline at their first flush. Pair with per-handler ctx
-	// deadlines if you still need bounded request lifetime.
-	DisableRequestTimeout bool
-
-	// Compression adds the Compress middleware to the default chain:
-	// text responses (HTML, CSS, JavaScript, JSON) are gzipped for
-	// clients that accept gzip; see middleware.Compress for what is
-	// skipped. Off by default, since a reverse proxy or CDN in front of
-	// the app usually compresses; set it when the app faces clients
-	// directly.
-	Compression bool
-
-	// HTTPServerTimeouts overrides the four connection deadlines on the
-	// underlying http.Server: ReadHeaderTimeout, ReadTimeout,
-	// WriteTimeout, IdleTimeout. Every field is a *time.Duration so an
-	// unset field (nil) keeps its framework default while an explicit
-	// pointer to 0 disables that one timeout (net/http semantics: 0
-	// means no timeout). A plain time.Duration could not tell those two
-	// apart. Defaults: read-header 10s, read 60s, write 60s, idle 120s.
-	// See [HTTPServerTimeoutsConfig] and [WithHTTPServerTimeouts].
-	//
-	// WriteTimeout bounds the whole response, including an SSE stream:
-	// when it lapses the browser's EventSource reconnects automatically, so
-	// the single /__gofastr/sse bus keeps working at any value. To hold
-	// one stream open for longer (fewer reconnects on a presence/collab
-	// surface), raise WriteTimeout or set it to 0. See the deployment
-	// guide's "HTTP server timeouts" section.
-	HTTPServerTimeouts HTTPServerTimeoutsConfig
-
-	// TLS serves HTTPS on the listen address. Nil (the default) serves
-	// plain HTTP, the shape behind a proxy that terminates TLS. See
-	// [TLSConfig] and [WithTLS].
-	TLS *TLSConfig
-
-	// HTTPProtocols sets the HTTP versions the server speaks, passed to
-	// http.Server.Protocols. Nil keeps net/http's default: HTTP/1.1, plus
-	// HTTP/2 when TLS is on. SetUnencryptedHTTP2 turns on HTTP/2 without
-	// TLS (h2c with prior knowledge, no Upgrade), for a proxy that speaks
-	// h2c to the app. HTTP/3 is not offered. See [WithHTTPProtocols].
-	HTTPProtocols *http.Protocols
-
-	// SecurityHeaders configures the defensive HTTP response headers
-	// (Content-Security-Policy, Referrer-Policy, X-Frame-Options,
-	// Permissions-Policy, CORP, COOP, HSTS) emitted by the SecurityHeaders
-	// middleware in the default chain. The zero value installs the
-	// framework's strict defaults (default-src 'self', no 'unsafe-inline');
-	// set fields to override, e.g. ContentSecurityPolicy to allow
-	// style-src 'unsafe-inline' for a third-party CSS dependency. Unset
-	// fields keep their built-in defaults, so a partial override never
-	// silently drops a defensive header. See [WithSecurityHeaders].
-	SecurityHeaders middleware.SecurityHeadersConfig
-
-	// ShutdownTimeout bounds the graceful drain that the default
-	// SIGINT/SIGTERM handler runs via App.Shutdown. Zero installs the
-	// 15s default. The handler's deadline is this plus the readiness
-	// grace (WithReadinessDrain) Shutdown spends first, serving while
-	// /readyz answers 503; a grace longer than this is cut to half the
-	// deadline. The drain then stops accepting connections, waits for
-	// in-flight requests, force-closes whatever remains at the deadline
-	// (an open SSE stream never goes idle), then stops batteries and
-	// runs OnStop hooks.
-	ShutdownTimeout time.Duration
-
-	// DisableSignalHandling opts out of the SIGINT/SIGTERM handler that
-	// Start installs by default. Set it when the embedding process owns
-	// signal handling and calls App.Shutdown (or RunWithSignals) itself.
-	DisableSignalHandling bool
+	Name                  string        // application name
+	JSONCase              crud.JSONCase // JSON key casing: "camelCase" (default) or "snake_case"
+	DebugEndpoints        bool          // opt-in for /.debug/* endpoints
+	NoLLMMD               bool          // disable auto-generated /llm.md entity docs
+	PublicOpenAPI         bool          // serve /openapi.json and /api/docs/ without the auth gate
+	APIPrefix             string        // mount auto-CRUD entity routes under this path, e.g. "/api"
+	BaseURL               string        // origin of the well-known documents; empty derives it from the request
+	TrustedProxies        []string      // peers (IPs, CIDRs) whose X-Forwarded-Proto is honored
+	RequestTimeout        time.Duration // request budget of the default chain; zero means 30s
+	DisableRequestTimeout bool          // drop the timeout middleware and the unset read/write deadlines
+	Compression           bool          // gzip text responses in the default chain
+	HTTPServerTimeouts    HTTPServerTimeoutsConfig
+	TLS                   *TLSConfig                       // nil serves plain HTTP
+	HTTPProtocols         *http.Protocols                  // nil keeps net/http's default
+	SecurityHeaders       middleware.SecurityHeadersConfig // unset fields keep the strict defaults
+	ShutdownTimeout       time.Duration                    // drain budget of the signal handler; zero means 15s
+	DisableSignalHandling bool                             // the host owns SIGINT/SIGTERM and calls Shutdown itself
 }
 
-// defaultShutdownTimeout bounds the signal-triggered drain when
-// AppConfig.ShutdownTimeout is unset. Kubernetes gives pods 30s between
-// SIGTERM and SIGKILL by default; finishing well inside that budget
-// leaves room for the pre-stop hook and container runtime overhead.
 const defaultShutdownTimeout = 15 * time.Second
 
-// HTTPServerTimeoutsConfig overrides the connection deadlines of the
-// framework's embedded http.Server. Each field mirrors the equally named
-// field on [net/http.Server]. Fields are *time.Duration (not time.Duration)
-// so an unset field, nil, keeps the framework default, while an explicit
-// pointer to 0 disables just that deadline (matching net/http, where a zero
-// time.Duration means "no timeout"). Build the pointers with the Go 1.26
-// new(expr) builtin:
-//
-//	app := framework.NewApp(framework.WithHTTPServerTimeouts(framework.HTTPServerTimeoutsConfig{
-//	    WriteTimeout: new(2 * time.Minute), // raise for slow handlers
-//	    ReadTimeout:  new(time.Duration(0)), // disable (e.g. huge uploads)
-//	}))
-//
-// ReadHeaderTimeout bounds reading the request headers (slowloris defence)
-// and is always kept non-zero by the defaults; prefer leaving it set.
+// HTTPServerTimeoutsConfig overrides http.Server deadlines: a nil field keeps its default (read-header
+// 10s, read 60s, write 60s, idle 120s) and a pointer to 0 disables that deadline.
 type HTTPServerTimeoutsConfig struct {
-	// ReadHeaderTimeout is http.Server.ReadHeaderTimeout.
 	ReadHeaderTimeout *time.Duration
-	// ReadTimeout is http.Server.ReadTimeout.
-	ReadTimeout *time.Duration
-	// WriteTimeout is http.Server.WriteTimeout. It bounds the whole
-	// response write, including a streaming/SSE response: when it lapses
-	// the client's EventSource reconnects, so SSE keeps working at any
-	// value. Set to 0 to disable it for long-lived single streams.
-	WriteTimeout *time.Duration
-	// IdleTimeout is http.Server.IdleTimeout.
-	IdleTimeout *time.Duration
+	ReadTimeout       *time.Duration
+	WriteTimeout      *time.Duration
+	IdleTimeout       *time.Duration
 }
 
-// Defaults applied to the http.Server when AppConfig.HTTPServerTimeouts leaves
-// a field unset. ReadHeaderTimeout is kept small as a slowloris guard;
-// Read/WriteTimeout bound ordinary request/response cycles; IdleTimeout lets a
-// keep-alive connection sit between requests. See AppConfig.DisableRequestTimeout
-// for the coarse opt-out that zeroes Read/Write (keeping these as the fallback).
 const (
 	defaultServerReadHeaderTimeout = 10 * time.Second
 	defaultServerReadTimeout       = 60 * time.Second
 	defaultServerWriteTimeout      = 60 * time.Second
 	defaultServerIdleTimeout       = 120 * time.Second
 
-	// requestTimeoutWriteSlack is how far past a raised RequestTimeout an
-	// unset WriteTimeout is moved, so the timeout middleware's own 504
-	// (or a response finished just inside the budget) is still written.
 	requestTimeoutWriteSlack = 10 * time.Second
 
-	// idempotencyInFlightSlack is how far past the request budget the
-	// App-sized idempotency in-flight claim TTL sits, so a handler that
-	// finishes inside the budget still holds its claim to the end.
 	idempotencyInFlightSlack = 10 * time.Second
 
-	// defaultRequestTimeout is the deadline DefaultMiddleware's timeout
-	// middleware enforces when AppConfig.RequestTimeout is unset. The
-	// idempotency in-flight check reads it so an unset budget still
-	// sizes and checks the claim against the deadline that is real.
 	defaultRequestTimeout = 30 * time.Second
 )
 
-// checkIdempotencyInFlightTTL checks the idempotency store's in-flight
-// claim TTL against the request budget, the WriteTimeout-vs-
-// RequestTimeout shape: a claim that expires while its handler still
-// runs (the budget has not killed it yet) lets a retry execute the
-// handler again — exactly the double execution the key promised to
-// prevent. A store that reports no TTL cannot be checked and says so;
-// with no request deadline at all (DisableRequestTimeout, or the
-// default middleware chain removed) there is nothing to check against,
-// which is also said.
 func (a *App) checkIdempotencyInFlightTTL() error {
 	if a.idempotency == nil || a.idempotency.Store == nil {
 		return nil
@@ -315,11 +142,6 @@ func (a *App) checkIdempotencyInFlightTTL() error {
 	return nil
 }
 
-// requestBudget is the request deadline the default chain's timeout
-// middleware enforces: the configured RequestTimeout, or the
-// framework's own 30s default when the host set none. Zero only when
-// no deadline is enforced at all (WithoutDefaultMiddleware or
-// DisableRequestTimeout).
 func (a *App) requestBudget() time.Duration {
 	if a.noDefaults || a.Config.DisableRequestTimeout {
 		return 0
@@ -330,14 +152,6 @@ func (a *App) requestBudget() time.Duration {
 	return defaultRequestTimeout
 }
 
-// checkRequestWriteTimeouts refuses an explicit WriteTimeout no longer
-// than the enforced request deadline (see requestBudget: the configured
-// RequestTimeout, or its 30s default when unset). Each is valid alone;
-// together a buffered response finished between the two is never
-// delivered (the client sees the connection drop, not the response or
-// the timeout middleware's 504) while its handler runs on to the
-// budget. An unset WriteTimeout is raised instead (see Start); 0
-// disables the deadline.
 func (a *App) checkRequestWriteTimeouts() error {
 	budget := a.requestBudget()
 	w := a.Config.HTTPServerTimeouts.WriteTimeout
@@ -350,114 +164,51 @@ func (a *App) checkRequestWriteTimeouts() error {
 }
 
 // App is the top-level application container.
-// It wires together the entity registry, router, MCP server, and database.
 type App struct {
 	Registry            *Registry
-	router              *router.Router // access via App.Router() method
+	router              *router.Router
 	MCP                 *mcp.Server
 	DB                  *sql.DB
 	Config              AppConfig
 	Plugins             *PluginManager
-	Storage             upload.Storage                          // optional; enables multipart on Image/File fields
-	imageDeriver        file.ImageDeriver                       // optional; derives renditions + BlurHash for Image fields
+	Storage             upload.Storage // optional; enables multipart on Image/File fields
+	imageDeriver        file.ImageDeriver
 	fieldImageDerivers  map[string]map[string]file.ImageDeriver // entity -> field -> override
-	stripUploadMetadata bool                                    // WithStripUploadMetadata: strip EXIF/XMP from stored originals
+	stripUploadMetadata bool
 
-	// auditTable is the audit log's table once WithAuditLog ran; "" when
-	// the app keeps no audit log. entityui's Activity tab reads it.
-	auditTable string
-	// auditActor is WithAuditLog's actor resolver, for audit rows written
-	// outside the CRUD hooks (entityui's bulk runs).
-	auditActor func(context.Context) string
-	// auditCfg is WithAuditLog's config, for the Activity tab to map a
-	// record id to the record_id the audit rows store (AuditConfig.keyID).
-	auditCfg *AuditConfig
-	// entityUI is the UI EntityUI built; a second call is refused.
-	entityUI *entityui.UI
-	// pendingEndpoints holds EntityEndpoints calls until entity registration
-	// registers the entity they name.
+	auditTable       string
+	auditActor       func(context.Context) string
+	auditCfg         *AuditConfig
+	entityUI         *entityui.UI
 	pendingEndpoints map[string][]entity.Endpoint
-	// claimedEndpoints names the queues an entity registration merged.
-	// The queue stays in place, so the same entity registered into
-	// another version group gets the same endpoints.
 	claimedEndpoints map[string]bool
-	// crudMounts records where each entity's write routes mounted: the
-	// router that carries them (a group's sub-router, with its
-	// middleware) and the path on it. EntityUI mounts the bulk and export
-	// routes on the same router, and its screens post to the full path.
-	crudMounts map[*entity.Entity]crudMount
-	// trustedProxies is AppConfig.TrustedProxies parsed once: the peers
-	// X-Forwarded-Proto is honored from in the well-known documents, and,
-	// through the request context (clientip.WithTrusted), in
-	// framework/pluginhost's framed asset CSP and framework/entityui's
-	// record copy links.
-	trustedProxies clientip.Proxies
+	crudMounts       map[*entity.Entity]crudMount
+	trustedProxies   clientip.Proxies
 
-	migrationRoutines []migrate.Routine // stored procedures/functions/triggers run on boot
-	migrationViews    []migrate.View    // views (virtual tables built from entities) run on boot
+	migrationRoutines []migrate.Routine
+	migrationViews    []migrate.View
 
 	Batteries *BatteryManager
 
-	// embedHost is the mounted embeddable-surface host, if any. Captured at
-	// Mount so InitPlugins can register the reserved prefixes of whatever
-	// batteries this app actually mounted.
 	embedHost *fembed.Host
 
-	// modules manages registered modules and their enable/disable state.
-	// Created in NewApp; nil-safe (NewModuleManager always returns non-nil).
 	modules *ModuleManager
 
-	// access, when set (WithGrantStore), is the app's RBAC GrantStore.
-	// When a fanout is also attached (WithFanout), grant/revoke propagate
-	// to every replica as a refresh-signal. Nil by default. Apps that
-	// don't use RBAC are unaffected.
 	access *access.GrantStore
 
-	// processModules supervises out-of-process third-party modules
-	// (issue #37, wave 2a). Lazily constructed by RegisterProcessModule;
-	// nil when the app has no process modules. [App.Start] starts its
-	// loops and [App.Shutdown] drains it.
 	processModules *ProcessModuleSupervisor
 
-	// sandbox is the untrusted-tier runner state: the backend
-	// WithSandboxBackend chose (nil = the host default) and the result
-	// of probing it, resolved once by [App.ProcessModuleSandbox].
 	sandbox processModuleSandbox
 
-	// moduleTools is the MCP tool registry shared across every process
-	// module (design §5.1). Lazily constructed alongside processModules;
-	// nil when the app has no process modules. The supervisor uses it as
-	// its ToolRegistrar; the composite MCP call gate consults it so a
-	// disabled module's tools are omitted from tools/list.
 	moduleTools *ModuleToolRegistry
 
-	serverMu sync.Mutex // guards server + appCtx/appCancel. Start writes, Shutdown reads/nils
-	server   *http.Server
-	// boundHost is the IP the listener bound ("127.0.0.1", "::"), set
-	// once Start holds the port; servesLocalOnly reads it. Guarded by
-	// serverMu.
-	boundHost string
-	// boundInProcess is set when the listener is one nothing outside the
-	// process dials (inProcessNetwork); servesLocalOnly reads it.
-	// Guarded by serverMu.
-	boundInProcess bool
-	// shutdownDone is set by the first Shutdown and closed when its
-	// teardown returns; every later call waits on it instead of tearing
-	// down again. Guarded by shutdownMu.
-	shutdownMu   sync.Mutex
-	shutdownDone chan struct{}
-	// Run state (host.go), guarded by serverMu. runHost is the host the
-	// one admitted run was given; booting is set from admission until the
-	// engine hands the App to the host or aborts; deferredStarting is set
-	// while startDeferred runs the OnStart hooks interactive setup
-	// postponed, a boot phase that runs after boot ended; stopRequested
-	// latches at the first Shutdown. teardownToEngine records a Shutdown
-	// that arrived while either phase ran and left the teardown to it,
-	// and handoffCtx is that Shutdown's context, which the teardown runs
-	// on; whichever phase ends last takes both (takeHandoffLocked) and
-	// passes the result back in handoffErr (written before shutdownDone
-	// closes, read after). servicesReady is App.ServicesReady's channel.
-	runHost             Host
+	serverMu            sync.Mutex // guards server, appCtx, appCancel and the fields marked serverMu
+	server              *http.Server
+	boundHost           string // serverMu
+	boundInProcess      bool   // serverMu
+	shutdownMu          sync.Mutex
+	shutdownDone        chan struct{} // shutdownMu
+	runHost             Host          // runHost through servicesReadyClosed: serverMu
 	booting             bool
 	deferredStarting    bool
 	stopRequested       bool
@@ -466,267 +217,109 @@ type App struct {
 	handoffErr          error
 	servicesReady       chan struct{}
 	servicesReadyClosed bool
-	// draining is set when Shutdown starts: /readyz answers 503 from
-	// then on, through the readiness grace and the drain after it.
-	draining atomic.Bool
-	// newConns holds connections the server accepted that have not sent
-	// a request yet (net/http's StateNew): a browser's speculative
-	// preconnect, a Transport's spare dial. Server.Shutdown spares such a
-	// connection for five seconds (go.dev/issue/22682), which turns a
-	// bounded drain into a five-second stall, so Shutdown closes them
-	// itself first. The ConnState hook keeps the set exact.
-	newConnsMu sync.Mutex
-	newConns   map[net.Conn]struct{}
-	// streams holds the open event-stream requests, which Shutdown ends
-	// when the drain starts (shutdown_streams.go).
-	streams    openStreams
-	events     *event.EventBus
-	hooksMu    sync.RWMutex // guards hooks: kiln's build-mode runtime registers while the app serves
-	hooks      map[string]*hook.HookRegistry
-	mountables []Mountable
-	noDefaults bool
+	draining            atomic.Bool
+	newConnsMu          sync.Mutex
+	newConns            map[net.Conn]struct{}
+	streams             openStreams
+	events              *event.EventBus
+	hooksMu             sync.RWMutex // guards hooks: kiln's build mode registers while the app serves
+	hooks               map[string]*hook.HookRegistry
+	mountables          []Mountable
+	noDefaults          bool
 
-	// outbox is the transactional event outbox (WithOutbox). When set,
-	// CRUD lifecycle events are staged in the write transaction and a
-	// relay, started by Start, drained on Shutdown, delivers each to
-	// the declared durable consumers (WithOutboxConsumer). The relay no
-	// longer touches the live bus; the real-time lane (EmitEvent) feeds
-	// SSE and ephemeral subscribers independently.
 	outbox          *outbox.Outbox
 	outboxOpts      []outbox.Option
 	outboxEnabled   bool
 	outboxConsumers []outboxConsumerDecl
 
-	// fanout, when set (WithFanout), bridges the real-time lane across
-	// replicas: the event bus is attached in NewApp and any Mountable that
-	// supports SetFanout (a mounted UI host's island manager) is wired at
-	// Mount time. Caller-owned. The app never closes it.
 	fanout fanout.Fanout
 
-	// secret is the app-wide secret (WithSecret, or GOFASTR_SECRET).
-	// Subsystem keys are HKDF-derived from it, never used raw, starting
-	// with the uihost session-signing key wired at Mount time. Empty is
-	// valid for a single replica (the host self-mints a per-boot key);
-	// with a fanout attached (multi-replica) Mount fails closed instead,
-	// because sessions minted on one replica must verify on every other.
-	secret []byte
-	// previousSecrets are retired app secrets accepted (verify-only) for
-	// graceful GOFASTR_SECRET rotation, mirroring the CSRF AdditionalKeys
-	// idiom. Their session-signing keys are handed to a mounted host
-	// alongside the current key (SetSessionKeys); tokens signed by a
-	// previous secret still verify for a drain window (one session TTL).
-	// Set via WithSecretRotation or GOFASTR_SECRET_PREVIOUS.
+	secret          []byte
 	previousSecrets [][]byte
 
-	// secretOptionSet records that WithSecret or WithSecretRotation ran, so
-	// the GOFASTR_SECRET_PREVIOUS env fallback stays out of an explicitly
-	// configured rotation window (including one explicitly emptied).
 	secretOptionSet bool
 
-	// noAutoMigrate suppresses the boot-time entity auto-migration
-	// (WithoutAutoMigrate) for deployments that require every schema
-	// change to be an explicit, operator-invoked step.
 	noAutoMigrate bool
 
-	// logger is the App-local *slog.Logger. Read via Logger(), swapped via
-	// SetLogger(). Stored behind an atomic pointer so middleware composed
-	// at NewApp time can resolve the current logger per request without a
-	// lock, plugins (battery/log, etc.) can swap it from their Init.
 	logger atomic.Pointer[slog.Logger]
 
-	// initialized guards InitPlugins against double-init. Public so a test
-	// or CLI can call InitPlugins manually pre-Start, then Start also calls
-	// it. The second call must be a no-op (otherwise routes/middleware
-	// double-register and panic on duplicate mux patterns).
 	initialized atomic.Bool
 
-	// Lifecycle hooks fired by Start/Stop. startHooks run with the app's
-	// derived context so workers cancel when Stop is called.
 	startHooks []func(ctx context.Context) error
 	appCtx     context.Context
 	appCancel  context.CancelFunc
 
-	// readyHooks fire once the HTTP listener has bound, just before the
-	// server starts accepting connections. See App.OnReady.
 	readyHooks []func(addr string)
 
-	// seedHooks run during Start AFTER auto-migration (tables exist) and
-	// before plugin/battery init. See App.WithSeed.
 	seedHooks []func(ctx context.Context) error
 
-	// lc is the graceful-shutdown coordinator. OnStop hooks register
-	// here as Drainers so a single Shutdown() call walks both the
-	// app-level stop hooks and any battery-registered drainers /
-	// health checkers through one documented sequence.
 	lc *lifecycle.Lifecycle
 
-	// Readiness checks registered by app code, plugins, and batteries.
-	// /readyz runs them in parallel; /healthz is unconditional.
 	health *healthState
 
-	// Feature flags. Lazily created on first access (Flags()) so apps
-	// that never use them pay nothing.
 	flagEval     *featureflag.Evaluator
 	flagMu       sync.Mutex
-	flagAccessed bool // true once Flags()/SetFlagStore has run. Guards against late SetFlagStore
+	flagAccessed bool
 
-	// Optional idempotency config wired into the default chain when set.
 	idempotency *middleware.IdempotencyConfig
 
-	// Optional translator. When set, the i18n middleware is wired into
-	// the default chain so handlers can call App.T(ctx, key, ...).
 	translator *i18n.Translator
 
-	// Optional locale resolver (set via WithLocaleResolver). Consulted
-	// before X-Locale / Accept-Language during negotiation so a stored
-	// per-user locale (cookie) can win. Only effective with WithI18n.
-	// Unset while its Resolve is nil.
 	localeResolver i18n.LocaleResolver
 
-	// localePrefixes is set by WithLocalePrefixes; pathLocales is the
-	// locale set NewApp reads from the translator for it.
 	localePrefixes bool
 	pathLocales    i18n.PathLocales
 
-	// Optional metrics. When set (via WithMetrics), the metrics middleware
-	// joins the default chain and a Prometheus /metrics endpoint is mounted.
 	metrics *middleware.Metrics
 
-	// debugAuthorize replaces the admin-role check on /.debug/* (see
-	// WithDebugAuthorize). nil means the default.
 	debugAuthorize func(ctx context.Context) bool
 
-	// tracing enables the OpenTelemetry tracing middleware in the default
-	// chain (via WithTracing). Spans no-op until a TracerProvider is wired
-	// through otel.SetTracerProvider.
 	tracing bool
 
-	// mcpIntrospection enables a set of read-only MCP tools that expose
-	// the app's routes, plugins, batteries, config, and readiness state
-	// for agent debugging. Set via WithMCPIntrospection().
-	mcpIntrospection bool
-	// mcpControl enables the MUTATING MCP tools (module enable/disable)
-	// for trusted /mcp endpoints. Set via WithMCPControl().
-	mcpControl bool
-	// mcpControlGate replaces the control tools' admin-role gate. Set via
-	// WithMCPControlGate.
-	mcpControlGate func(ctx context.Context) error
-	// localRunInfo is SetLocalRunInfo's addition to the local run
-	// record Start writes.
-	localRunInfo LocalRunInfo
-	// mcpRegistrars run against a.MCP during InitPlugins, after every
-	// plugin and battery Init and before the introspection set. Set via
-	// WithMCPTools.
-	mcpRegistrars []func(*mcp.Server) error
-	// mcpApps queues MCP App registrations (a UI resource + its linking
-	// tool) added via WithMCPApp, registered during InitPlugins.
-	mcpApps []mcp.AppConfig
-	// mcp*DevImplied mark surfaces the dev loop turned on (GOFASTR_DEV,
-	// see NewApp) rather than an explicit option. Dev-implied surfaces
-	// tolerate collisions (hand-mounted /mcp, same-named tools) with a
-	// warning; explicit ones keep their documented panic/error.
+	mcpIntrospection           bool
+	mcpControl                 bool
+	mcpControlGate             func(ctx context.Context) error
+	localRunInfo               LocalRunInfo
+	mcpRegistrars              []func(*mcp.Server) error
+	mcpApps                    []mcp.AppConfig
 	mcpMountDevImplied         bool
 	mcpIntrospectionDevImplied bool
 	devEntityMCPTools          sync.Map
 	mcpControlDevImplied       bool
-	// mcpAutoMount exposes the MCP server at /mcp (Streamable HTTP:
-	// POST JSON-RPC + GET SSE) without the host hand-wiring the route.
-	// Set via WithMCP(). Makes the server's tools reachable at the
-	// canonical endpoint for agent-readiness.
-	mcpAutoMount bool
-	// mcpGate is WithMCPGate's precondition, held here and installed on
-	// the final a.MCP once every option has run: set on the server at
-	// option time, a later WithMCPServer swapped in an ungated one.
-	mcpGate func(ctx context.Context) error
-	// a2aCfg, when set via WithA2A, mounts the Agent2Agent task
-	// exchange during Start. Held until then because the derived entity
-	// skills read the MCP tool registry, complete only once entities,
-	// plugins, and batteries have initialized.
-	a2aCfg *A2AConfig
-	// a2a is the mounted exchange server; nil until Start mounts it
-	// (and forever when WithA2A was never called). See App.A2A().
-	a2a *a2a.Server
-	// a2aPath is the configured exchange path (default "/a2a"), read by
-	// agentMux so the agent role forwards it the way it forwards /mcp.
-	a2aPath string
-	// oauthResource, when set, serves /.well-known/oauth-protected-resource
-	// (RFC 9728) so OAuth-token-protected APIs are discoverable. Set via
-	// WithOAuthProtectedResource().
-	oauthResource *OAuthProtectedResourceConfig
-	// agentSkills, when set, serves /.well-known/agent-skills/index.json
-	// (agent-skills-discovery-rfc). Set via WithAgentSkills().
-	agentSkills []AgentSkillEntry
-	// oauthAuthServer, when set, serves /.well-known/oauth-authorization-server
-	// (RFC 8414). Set via WithOAuthAuthorizationServer().
-	oauthAuthServer *OAuthAuthorizationServerConfig
-	// authMD, when set, serves /auth.md + merges an agent_auth block into
-	// the OAuth authorization-server metadata (WorkOS agentic-registration).
-	authMD *AuthMDConfig
-	// authenticatorNoted is set by NoteAuthenticator; the startup banner
-	// reads it to decide whether to print its "no auth is wired" line.
-	authenticatorNoted atomic.Bool
-	// webBotAuth/ucp/acp: opt-in commerce + bot-signing discovery docs
-	// (isitagentready.com production checks). Set via WithWebBotAuth /
-	// WithUCP / WithACP. webBotAuth.Verify additionally installs the
-	// inbound Web Bot Auth verification middleware (experimental).
-	webBotAuth         *WebBotAuthConfig
-	webBotAuthVerifier *webbotauth.Verifier
-	ucp                *UCPConfig
-	acp                *ACPConfig
+	mcpAutoMount               bool
+	mcpGate                    func(ctx context.Context) error
+	a2aCfg                     *A2AConfig
+	a2a                        *a2a.Server
+	a2aPath                    string
+	oauthResource              *OAuthProtectedResourceConfig
+	agentSkills                []AgentSkillEntry
+	oauthAuthServer            *OAuthAuthorizationServerConfig
+	authMD                     *AuthMDConfig
+	authenticatorNoted         atomic.Bool
+	webBotAuth                 *WebBotAuthConfig
+	webBotAuthVerifier         *webbotauth.Verifier
+	ucp                        *UCPConfig
+	acp                        *ACPConfig
 
-	// startupOutput receives the human-readable readiness banner. It defaults
-	// to os.Stdout and stays unexported so tests can verify startup ordering
-	// without replacing the process-wide stdout file descriptor.
 	startupOutput io.Writer
 
-	// role is the resolved process role (all/serve/worker), set once in
-	// NewApp from WithRole > GOFASTR_ROLE > RoleAll. AddCron/AddQueue and
-	// the outbox relay gate on it so RoleServe doesn't start work it can't
-	// drain. roleOpt/roleSet carry the raw WithRole value until resolution.
 	role    Role
 	roleOpt Role
 	roleSet bool
 
-	// configDiscards collects AppConfig field names WithConfig zeroed after
-	// an earlier option had set them. NewApp filters it against the final
-	// Config (a later option may have restored the field) and warns once.
-	// The discard is legal, replace-semantics are the contract, but it is
-	// almost always a misplaced option and used to be perfectly silent.
 	configDiscards []string
 
-	// setup is the optional first-run setup runner (WithSetup). When set
-	// and setup is incomplete at boot, Start either runs the steps
-	// headlessly (all required env present) or serves an interactive
-	// wizard until setup finishes, then atomically swaps to the real
-	// router. See SetupRunner for the full lifecycle.
 	setup SetupRunner
 
-	// handlerCell holds the currently-serving http.Handler behind an
-	// atomic.Pointer so the interactive-setup swap can switch from the
-	// wizard surface to the real app router without a restart. We use a
-	// wrapper struct (not atomic.Value) because atomic.Value panics when
-	// the concrete type changes between Stores (http.HandlerFunc vs
-	// *router.Router). The wrapper normalizes both to *servingHandler.
 	handlerCell atomic.Pointer[servingHandler]
 
-	// serverWrappers wrap the handler Start hands the http.Server, so
-	// they see every request the listener accepts: the router, a role's
-	// reduced mux, and the interactive setup wizard alike. Guarded by
-	// serverMu. See WrapServer.
-	serverWrappers []func(http.Handler) http.Handler
-	// serverWrapped latches once Start has applied serverWrappers; a
-	// later WrapServer panics even after Shutdown clears a.server.
-	serverWrapped bool
+	serverWrappers []func(http.Handler) http.Handler // serverMu
+	serverWrapped  bool
 
-	// txDialectVal caches the DB's dialect for InTx's read-only path;
-	// txDialectMu guards it. Empty until a probe succeeds.
 	txDialectMu  sync.Mutex
 	txDialectVal migrate.Dialect
 }
 
-// servingHandler wraps an http.Handler so it can be stored in an
-// atomic.Pointer without panicking on concrete-type changes during the
-// setup-to-real-router swap.
 type servingHandler struct {
 	h http.Handler
 }
@@ -741,20 +334,8 @@ func WithDB(db *sql.DB) AppOption {
 	}
 }
 
-// WithConfig sets the application config by replacing AppConfig wholesale.
-// Options apply left to right and later options win: a granular setter placed
-// after WithConfig (WithAPIPrefix, WithPublicOpenAPI, …) overrides the field
-// it touches, while WithConfig overrides every option that ran before it,
-// including fields it leaves at the zero value. A zero field means the zero
-// value, not "keep whatever a previous option set". To turn a boolean back off,
-// set it in the AppConfig passed to WithConfig (or place a granular setter
-// after it) instead of relying on a zero field to preserve a prior value.
-//
-// Because that discard used to be perfectly silent. The classic form is a
-// scaffold that pastes WithPublicOpenAPI() next to WithDB, one line above the
-// WithConfig that zeroes it. NewApp now logs a warning naming every field an
-// earlier option set that the replacement returned to zero (and that no later
-// option restored). Place WithConfig first to stay silent.
+// WithConfig replaces AppConfig wholesale, zero fields included: it overrides every earlier option and
+// later granular setters override it. NewApp warns naming each earlier-set field it discards.
 func WithConfig(config AppConfig) AppOption {
 	return func(a *App) {
 		a.configDiscards = append(a.configDiscards, discardedConfigFields(a.Config, config)...)
@@ -762,17 +343,10 @@ func WithConfig(config AppConfig) AppOption {
 	}
 }
 
-// defaultAppConfig is the Config NewApp seeds before options run. It exists so
-// the seed and discardedConfigFields' notion of "nothing was set yet" cannot
-// drift: a seeded default (JSONCase) being replaced is business as usual, not
-// a lost option.
 func defaultAppConfig() AppConfig {
 	return AppConfig{JSONCase: crud.CaseCamel}
 }
 
-// discardedConfigFields reports the AppConfig fields that old carried beyond
-// the NewApp seed and replacement returns to zero: the fields a wholesale
-// WithConfig replacement silently throws away.
 func discardedConfigFields(old, replacement AppConfig) []string {
 	def := reflect.ValueOf(defaultAppConfig())
 	ov := reflect.ValueOf(old)
@@ -780,74 +354,44 @@ func discardedConfigFields(old, replacement AppConfig) []string {
 	var out []string
 	for i := 0; i < ov.NumField(); i++ {
 		if !nv.Field(i).IsZero() {
-			continue // the replacement sets it; nothing lost
+			continue
 		}
 		if reflect.DeepEqual(ov.Field(i).Interface(), def.Field(i).Interface()) {
-			continue // nothing beyond the seed to lose
+			continue
 		}
 		out = append(out, ov.Type().Field(i).Name)
 	}
 	return out
 }
 
-// WithAPIPrefix mounts auto-CRUD entity routes under prefix (e.g. "/api").
-// See AppConfig.APIPrefix. A leading slash is added and a trailing slash
-// trimmed, so "api", "/api", and "/api/" all behave identically.
+// WithAPIPrefix sets AppConfig.APIPrefix; "api", "/api" and "/api/" are the same prefix.
 func WithAPIPrefix(prefix string) AppOption {
 	return func(a *App) {
 		a.Config.APIPrefix = prefix
 	}
 }
 
-// WithPublicOpenAPI serves /openapi.json without the auth gate. Equivalent to
-// setting AppConfig.PublicOpenAPI. Use when the spec is meant to be public
-// (docs sites, internal APIs behind a network boundary).
+// WithPublicOpenAPI sets AppConfig.PublicOpenAPI.
 func WithPublicOpenAPI() AppOption {
 	return func(a *App) {
 		a.Config.PublicOpenAPI = true
 	}
 }
 
-// WithSecurityHeaders configures the defensive HTTP response headers
-// (Content-Security-Policy, Referrer-Policy, X-Frame-Options, …) emitted
-// by the SecurityHeaders middleware in the default chain. Equivalent to
-// setting AppConfig.SecurityHeaders. The zero value keeps the framework's
-// strict defaults; override individual fields (e.g.
-// ContentSecurityPolicy) to relax a specific directive, unset fields
-// retain their built-in defaults so a partial override never drops a
-// defensive header. See middleware.SecurityHeadersConfig.
-//
-// This removes the need to shadow the default middleware with a
-// hand-rolled SecurityHeaders middleware just to change one directive.
+// WithSecurityHeaders sets AppConfig.SecurityHeaders; unset fields keep the strict defaults.
 func WithSecurityHeaders(cfg middleware.SecurityHeadersConfig) AppOption {
 	return func(a *App) {
 		a.Config.SecurityHeaders = cfg
 	}
 }
 
-// WithHTTPServerTimeouts overrides the connection deadlines of the embedded
-// http.Server. Equivalent to setting AppConfig.HTTPServerTimeouts. Every
-// field is a *time.Duration: nil keeps the framework default
-// (read-header 10s, read 60s, write 60s, idle 120s); an explicit pointer
-// to 0 disables that one timeout (net/http semantics). Set a single field
-// to override just that deadline without touching the others.
-//
-// This removes the need to re-derive the http.Server (which the framework
-// owns) just to change one timeout, the same shape as WithSecurityHeaders
-// for the header chain.
-//
-//	app := framework.NewApp(framework.WithHTTPServerTimeouts(framework.HTTPServerTimeoutsConfig{
-//	    WriteTimeout: new(2 * time.Minute),
-//	}))
+// WithHTTPServerTimeouts sets AppConfig.HTTPServerTimeouts.
 func WithHTTPServerTimeouts(cfg HTTPServerTimeoutsConfig) AppOption {
 	return func(a *App) {
 		a.Config.HTTPServerTimeouts = cfg
 	}
 }
 
-// apiPrefix returns the normalized API prefix: "" when unset, otherwise a
-// single leading slash and no trailing slash (e.g. "/api"). Tolerates the
-// "api", "/api/", "//api" forms a user might set via WithConfig.
 func (a *App) apiPrefix() string {
 	p := strings.Trim(a.Config.APIPrefix, "/")
 	if p == "" {
@@ -856,13 +400,7 @@ func (a *App) apiPrefix() string {
 	return "/" + p
 }
 
-// OpenAPISpec builds the entity document App.Start serves at
-// /openapi.json: the CRUD routes registration mounted, under the app's
-// APIPrefix, each field named in the app's JSONCase. A host that mounts the
-// entity routes without Start (kiln's live studio) serves this one, so its
-// document names the keys and paths its routes answer. An empty title
-// falls back to Config.Name, then "GoFastr API". Call it after the entities
-// are registered: the document is built from the registry as it stands.
+// OpenAPISpec builds the /openapi.json document from the registry as it stands; title defaults to Config.Name.
 func (a *App) OpenAPISpec(title string) *coreoa.Spec {
 	if title == "" {
 		title = a.Config.Name
@@ -873,21 +411,15 @@ func (a *App) OpenAPISpec(title string) *coreoa.Spec {
 	return openapi.EntityOpenAPIFor(a.Registry, openapi.Options{
 		Title: title, Version: "1.0.0",
 		CRUDMounted: a.entityCRUDEnabled, BulkMounted: a.entityUIMounted,
-		// The same mount facts the llm.md index reads (#358): a view
-		// serves its read routes only.
 		ReadOnlyMounted: func(e *entity.Entity) bool { return a.entityCrudMount(e).ReadOnly },
 		BasePath:        a.apiPrefix(), JSONCase: a.JSONCasing(),
 	})
 }
 
-// entityMountPath is the base path an entity's CRUD routes mount at:
-// apiPrefix + "/" + table. With no prefix this is the historical "/table".
 func (a *App) entityMountPath(table string) string {
 	return a.apiPrefix() + "/" + table
 }
 
-// crudMount is where one entity's write routes live: rel on r, which
-// serves them at full.
 type crudMount struct {
 	r    *router.Router
 	rel  string
@@ -902,78 +434,36 @@ func (a *App) recordCrudMount(e *entity.Entity, r *router.Router, rel, full stri
 	a.mountEntityUIRoutes(e)
 }
 
-// entityCRUDEnabled is THE predicate for "this entity has HTTP CRUD
-// routes": a DB is attached and Exposure.CRUD is unset or true. Route
-// registration, collision checks, and the startup banner must all agree
-// on it — the banner advertising a URL registration never mounted hands
-// a first-run user a 404 (#244).
 func (a *App) entityCRUDEnabled(e *entity.Entity) bool {
 	return a.DB != nil && (e.Config.Exposure.CRUD == nil || *e.Config.Exposure.CRUD)
 }
 
-// EntityCRUDMounted reports whether an entity's CRUD routes were actually
-// registered — the predicate route registration, the startup banner,
-// openapi.json and /api/llm.md agree on, exported for surfaces that
-// advertise routes from outside this package (#266). sdkdocs.Config takes
-// it as CRUDMounted; Exposure.CRUD alone is not the answer, because a
-// DB-less app mounts no CRUD while every entity still reads "auto". A
-// read-only view mount counts as mounted: its read routes exist and are
-// what such a surface documents.
-//
-// This wrapper was deleted once, in the #358 rework that introduced
-// entityCrudMount below, while framework/docs/content/sdk.md, the
-// sdkdocs.Config.CRUDMounted comment, and repolint's
-// crud-exposure-rederived message all still told callers to pass it —
-// the documented wiring did not compile for one release (v0.78.0).
-// TestEntityCRUDMountedTracksTheMount pins the symbol and its answers.
+// EntityCRUDMounted reports whether e's CRUD routes were registered, read-only view mounts included.
 func (a *App) EntityCRUDMounted(e *entity.Entity) bool {
 	return a.entityCrudMount(e).Mounted
 }
 
-// EntityReadOnlyMounted reports whether an entity's mounted auto-CRUD routes
-// are read-only, as with a columned App.View. Pass it to sdkdocs.Config alongside
-// EntityCRUDMounted so the reference omits unmounted write operations.
+// EntityReadOnlyMounted reports whether e's mounted CRUD routes are read-only, as with a columned App.View.
 func (a *App) EntityReadOnlyMounted(e *entity.Entity) bool {
 	return a.entityCrudMount(e).ReadOnly
 }
 
-// entityCrudMount is THE predicate for the llm.md index (#358): like
-// entityCRUDEnabled, but it also reports read-only mounts. App.View
-// registers its entities with CrudRouteOptions{ReadOnly: true}, a fact no
-// entity declaration carries — the app that performed the mount is the
-// only party that knows, so the index asks it, the same way #266 threaded
-// the DB-less case. A read-only view is counted and labelled as the three
-// routes it serves instead of eight, five of which would 404/405.
 func (a *App) entityCrudMount(e *entity.Entity) crud.MountInfo {
 	if !a.entityCRUDEnabled(e) {
-		// No CRUD routes, but relative custom endpoints still mount under
-		// the API prefix (openapi.EntityEndpointRoutePath), so the index
-		// row's base path carries it. A versioned entity keeps its Version.
 		if a.apiPrefix() != "" && e.Version == "" {
 			return crud.MountInfo{Path: a.entityMountPath(e.GetTable())}
 		}
 		return crud.MountInfo{}
 	}
-	// Views registered with Columns become ORM entities and mount
-	// read-only (App.View); column-less views never register an entity,
-	// so they never reach this predicate. Table names are unique per
-	// booted app or route registration would already have panicked.
-	// Path is where recordCrudMount saw the routes land, API and group
-	// prefixes included: the index links there, not at /<table> (#503).
 	path := a.crudMounts[e].full
 	for _, v := range a.migrationViews {
 		if len(v.Columns) > 0 && v.Name == e.GetTable() {
-			// App.View records no mount; its routes sit at entityMountPath.
 			return crud.MountInfo{Mounted: true, ReadOnly: true, Path: a.entityMountPath(e.GetTable())}
 		}
 	}
 	return crud.MountInfo{Mounted: true, Path: path}
 }
 
-// pageIndexPath is where the app serves its page index, or "" when it
-// serves none. Only a UI host built with WithPublicLLMMD registers
-// /llm-pages.md (behind its mount prefix, when it has one), so the
-// /api/llm.md index asks the route table rather than assuming a host.
 func (a *App) pageIndexPath() string {
 	for _, rt := range a.router.Routes() {
 		if rt.Method == http.MethodGet && path.Base(rt.Pattern) == "llm-pages.md" {
@@ -990,25 +480,7 @@ func WithRouter(r *router.Router) AppOption {
 	}
 }
 
-// Router returns the App's *router.Router, which is where custom routes are
-// registered:
-//
-//	a.Router().Handle("POST", "/orders/{id}/confirm", confirmOrder)
-//	a.Router().Get("/healthz", healthz)
-//
-// Patterns are net/http ServeMux syntax: `{id}`, not `:id`. An
-// Express-style `:id` segment matches literally and 404s every real
-// request; `gofastr verify` catches it (GOFASTR1002).
-//
-// Two App-level helpers sit above it and are preferred where they apply:
-//
-//   - App.Use(mw):         middleware, forwards to Router().Use
-//   - App.Group(prefix):   a sub-router carrying a prefix, middleware,
-//     access rules, and an OpenAPI tag. Anything guarded belongs here.
-//
-// Exposed as a method (rather than a field) so plugins and batteries can
-// swap or wrap the router during Init without callers depending on direct
-// field assignment.
+// Router returns the router custom routes go on; patterns use net/http ServeMux syntax ({id}, not :id).
 func (a *App) Router() *router.Router { return a.router }
 
 // WithMCPServer sets a custom MCP server.
@@ -1018,16 +490,7 @@ func WithMCPServer(s *mcp.Server) AppOption {
 	}
 }
 
-// WithMCPTools runs register against the app's MCP server during
-// InitPlugins, after every plugin and battery has registered its own
-// tools and before the introspection set. It is how a package that must
-// stay below the framework root (framework/docs/mcptools, which carries
-// the embedded docs corpus) adds tools without importing framework:
-//
-//	framework.NewApp(framework.WithMCP(), framework.WithMCPTools(mcptools.Register))
-//
-// A registrar error fails the boot, a tool-name collision included,
-// the way a plugin Init error does.
+// WithMCPTools runs register on the MCP server during InitPlugins, before the introspection tools; an error fails the boot, nil panics.
 func WithMCPTools(register func(*mcp.Server) error) AppOption {
 	if register == nil {
 		panic("framework.WithMCPTools: nil registrar")
@@ -1037,77 +500,36 @@ func WithMCPTools(register func(*mcp.Server) error) AppOption {
 	}
 }
 
-// WithMCP exposes the app's MCP server at /mcp using the Streamable HTTP
-// transport (POST JSON-RPC + GET Server-Sent Events), so a host doesn't
-// have to hand-wire fwApp.Router().Handle("POST", "/mcp", fwApp.MCP). This
-// is the agent-ready default: combined with uihost.WithAgentReady (which
-// advertises /mcp via the agent card + Link headers) it makes the server's
-// tools discoverable to MCP clients. Calling this AND manually mounting
-// /mcp will panic with a route conflict. Pick one.
+// WithMCP serves the MCP server at /mcp over Streamable HTTP; mounting /mcp by hand as well panics.
 func WithMCP() AppOption {
 	return func(a *App) {
 		a.mcpAutoMount = true
 	}
 }
 
-// WithFileStorage sets the default upload.Storage used by CRUD handlers
-// to persist files for Image and File entity fields when a multipart
-// request arrives. Without this option, multipart requests on those
-// fields fail with a clear error.
+// WithFileStorage sets the storage for Image and File fields; without it a multipart request on them fails.
 func WithFileStorage(s upload.Storage) AppOption {
 	return func(a *App) {
 		a.Storage = s
 	}
 }
 
-// WithImagePipeline makes every schema.Image upload produce stored
-// renditions plus a BlurHash (or LQIP) automatically, instead of needing a
-// per-entity upload handler.
-//
-// Pass a deriver from framework/imagefield, which is a separate package so
-// applications that do not process images never link the image decoders:
-//
-//	framework.WithImagePipeline(imagefield.MustNew(imagefield.Config{
-//	    Variants:  []image.Variant{{Width: 960, Format: image.FormatWebP, Suffix: "md"}},
-//	    BlurHashX: 4, BlurHashY: 3,
-//	}))
-//
-// Derived values are written to sibling columns the entity declares,
-// for an Image field "cover": "cover_blurhash", "cover_placeholder", and
-// "cover_variants" (JSON). Columns that do not exist are skipped, so
-// adopting one means adding the column and nothing else.
-//
-// Requires WithFileStorage; the renditions are written through the same
-// backend as the original. A source that cannot be decoded fails the
-// upload rather than storing a file with no renditions.
-// WithStripUploadMetadata opts every auto-CRUD multipart upload into
-// file.StripMetadata: EXIF, XMP and text segments are removed from the
-// stored original (JPEG, PNG, WebP; other bytes pass through), with EXIF
-// orientation applied first so photos still display upright. Off by
-// default: originals are stored verbatim. Per-handler: CrudHandler.
-// StripUploadMetadata.
+// WithStripUploadMetadata strips EXIF, XMP and text metadata from stored upload originals, applying orientation first.
 func WithStripUploadMetadata() AppOption {
 	return func(a *App) {
 		a.stripUploadMetadata = true
 	}
 }
 
+// WithImagePipeline derives renditions and a BlurHash for every schema.Image upload into the declared
+// <field>_blurhash, _placeholder and _variants columns. Requires WithFileStorage.
 func WithImagePipeline(d file.ImageDeriver) AppOption {
 	return func(a *App) {
 		a.imageDeriver = d
 	}
 }
 
-// WithImagePipelineFor overrides WithImagePipeline for a single image field.
-// One app-wide config cannot describe every image: an avatar wants portrait
-// BlurHash components and animated sources rejected, while a hero cover wants
-// wide renditions. Compose both:
-//
-//	framework.WithImagePipeline(covers),                         // default
-//	framework.WithImagePipelineFor("users", "avatar", avatars),  // override
-//
-// Passing a nil deriver opts that one field out of the pipeline entirely
-// without unpicking the app-wide default.
+// WithImagePipelineFor overrides WithImagePipeline for one entity field; a nil deriver opts the field out.
 func WithImagePipelineFor(entityName, fieldName string, d file.ImageDeriver) AppOption {
 	return func(a *App) {
 		if a.fieldImageDerivers == nil {
@@ -1120,34 +542,15 @@ func WithImagePipelineFor(entityName, fieldName string, d file.ImageDeriver) App
 	}
 }
 
-// WithoutAutoMigrate disables the entity auto-migration that App.Start
-// otherwise runs before serving. Use it in deployments whose policy
-// forbids unattended schema changes on boot: generate the entity DDL
-// into versioned migration files instead (`gofastr migrate generate
-// <name>`) and apply them as an explicit step (`gofastr migrate up`). Entity seeds still run at Start,
-// they are idempotent data, not schema, which also means an entity
-// WITH seeds fails Start fast when its table is missing, instead of the
-// app serving against an unmigrated schema.
+// WithoutAutoMigrate skips the entity DDL Start runs. Seeds still run, so a seeded entity with no table fails Start.
 func WithoutAutoMigrate() AppOption {
 	return func(a *App) {
 		a.noAutoMigrate = true
 	}
 }
 
-// WithOutbox enables the transactional event outbox (framework/outbox):
-// CRUD lifecycle events are written to an outbox table INSIDE the same
-// transaction as the entity write, and a relay goroutine (started by
-// App.Start, drained on Shutdown) delivers each committed row to the
-// declared durable consumers. This closes the crash window where a plain
-// post-commit emit is lost, and makes delivery at-least-once per consumer.
-// Consumers that care must dedupe on Event.ID. Requires WithDB; NewApp
-// panics otherwise.
-//
-// The relay delivers ONLY to consumers declared via [WithOutboxConsumer];
-// it no longer publishes to the live event bus. The real-time lane (SSE
-// EventStream, ephemeral On/Subscribe) is fed independently by EmitEvent,
-// so the two lanes never duplicate. opts are forwarded to outbox.New
-// (outbox.WithTable, outbox.WithPollInterval, …).
+// WithOutbox stages CRUD lifecycle events in the write transaction and relays them at least once to the
+// WithOutboxConsumer consumers, not the live bus. Requires WithDB; opts go to outbox.New.
 func WithOutbox(opts ...outbox.Option) AppOption {
 	return func(a *App) {
 		a.outboxEnabled = true
@@ -1155,44 +558,21 @@ func WithOutbox(opts ...outbox.Option) AppOption {
 	}
 }
 
-// outboxConsumerDecl captures a WithOutboxConsumer declaration until the
-// outbox is constructed in NewApp, then registered on it.
 type outboxConsumerDecl struct {
 	name      string
 	eventType string
 	handler   event.EventHandler
 }
 
-// WithOutboxConsumer declares a durable outbox consumer. Requires
-// WithOutbox (NewApp panics if the outbox isn't also enabled). name is a
-// stable identity used to track per-consumer delivery across
-// restarts/replicas; (eventType, name) must be unique. handler is invoked
-// once per delivery with Event.ID set to the outbox row id (dedup key).
-// It must be idempotent (at-least-once delivery). A handler that errors
-// or panics is retried with backoff and eventually dead-lettered
-// independently of its sibling consumers (sibling isolation).
+// WithOutboxConsumer declares a durable consumer, unique by (eventType, name), whose handler dedupes on Event.ID. Requires WithOutbox.
 func WithOutboxConsumer(name, eventType string, handler event.EventHandler) AppOption {
 	return func(a *App) {
 		a.outboxConsumers = append(a.outboxConsumers, outboxConsumerDecl{name, eventType, handler})
 	}
 }
 
-// WithFanout attaches a cross-replica fanout (core/fanout.Fanout) to the
-// app's real-time lane. The event bus is bridged, every locally-emitted
-// event is mirrored to the other replicas and re-emitted on their buses, so
-// entity `_events` SSE streams work regardless of which replica holds the
-// connection, and any Mountable that supports SetFanout (a mounted UI
-// host) gets its island manager wired the same way.
-//
-// SEMANTICS: with a fanout attached the bus becomes a broadcast. Every
-// On/Subscribe handler fires on EVERY replica. That is correct for UI push
-// and wrong for side effects; per-event work belongs on the durable lane
-// (WithOutboxConsumer). Handlers that derive new events must gate on
-// event.IsRemote(ctx). See the events doc, "Cross-replica fan-out".
-//
-// The fanout is caller-owned: construct it before NewApp (e.g.
-// framework/fanout.NewPostgres) and close it after Shutdown. The bridge
-// itself is detached by Shutdown. Panics if f is nil.
+// WithFanout bridges the event bus and mounted UI hosts across replicas: every On/Subscribe handler then fires
+// on every replica. The caller closes f after Shutdown. Panics on nil.
 func WithFanout(f fanout.Fanout) AppOption {
 	if f == nil {
 		panic("framework: WithFanout(nil): construct a fanout first (framework/fanout.NewPostgres, core/fanout.NewRedis)")
@@ -1202,16 +582,8 @@ func WithFanout(f fanout.Fanout) AppOption {
 	}
 }
 
-// WithGrantStore registers the app's RBAC GrantStore so the framework can
-// auto-wire cross-replica grant/revoke invalidation. When a fanout is also
-// attached (WithFanout), every GrantStore.Grant/Revoke publishes a
-// refresh-signal on the "gofastr.access" lane and each replica re-reads
-// the named role's grants from the DB into its local RolePolicy, never
-// trusting the message body. Without a fanout the store is usable but
-// grant/revoke stays local to this process (other replicas heal on
-// restart). The store MUST already be constructed (NewGrantStore) and
-// have EnsureSchema + LoadInto run on it before Start; the framework
-// only wires the fanout subscription.
+// WithGrantStore registers the RBAC GrantStore; with WithFanout a Grant or Revoke makes every replica
+// re-read that role from the DB. Run EnsureSchema and LoadInto on it before Start.
 func WithGrantStore(gs *access.GrantStore) AppOption {
 	return func(a *App) {
 		a.access = gs
