@@ -8,21 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The counter: a value between a decrement and an increment button,
-// all three owned by one group. The value lives in a client signal —
-// the kernel's signals module is the one increment path, through the
-// data-cui-signal / data-cui-signal-inc contracts this component
-// renders — so no module of this package owns the number. What this
-// package adds is the seed and the animation presentation. The kernel
-// steps the value the signal store holds, not the markup, so a
-// counter nobody seeded would step from zero while showing Value: a
-// stepping counter carries its Value on data-hui-counter-value, and
-// the headless-controls module hands it to the signal when the
-// counter arrives (page load, an island swap, a navigation), so the
-// first + steps from the number on screen. The animation
-// (AnimateFrom) never mutates the value: the final number is SSR
-// text, and a reader without script sees the true count, not a zero.
-
 // Counter parts.
 const (
 	PartCounterDecrement Part = "counter-decrement"
@@ -30,60 +15,31 @@ const (
 	PartCounterIncrement Part = "counter-increment"
 )
 
-// CounterProps configures a client-side counter.
+// CounterProps configures a counter whose value lives in a client signal.
 type CounterProps struct {
-	// Signal is the client signal the count lives in. Required: the
-	// buttons' whole contract is that they change a value the page
-	// already holds, and the display's contract is that the same
-	// signal writes it.
+	// Signal is the client signal the count lives in. Required.
 	Signal string
-	// Name, when set, renders the value as a named number input the
-	// surrounding form submits — the no-script path. The input's
-	// value follows the signal the same way the span does, so the
-	// two variants are one control.
+	// Name renders the value as a named number input the form submits.
 	Name string
-	// Value is the count's first value, seeded into the markup and,
-	// unless Seeded, into the signal when the counter arrives: a
-	// counter the page re-renders with a new Value (an island swap)
-	// steps from the new number, and a rescan of the same markup
-	// changes nothing.
+	// Value is the first value, rendered as text and, unless Seeded, handed to the signal on arrival.
 	Value int
-	// Seeded reports that the page seeds Signal itself (a store.Slice
-	// in a layer above, whose seed travels in the page's signals block
-	// and every partial): the counter then hands the runtime no value
-	// of its own, so the page's seed is the only one and a server value
-	// that changes across an island swap wins through it.
+	// Seeded reports that the page seeds Signal itself, so the counter hands the runtime no value.
 	Seeded bool
 	// Step is the increment size. Default 1; must be positive.
 	Step int
-	// Label names the group for assistive technology. Empty takes
-	// Strings.CounterLabel: three controls with no group name is a
-	// label, a minus, a number and a plus to nobody, so the default
-	// names them.
+	// Label names the group; blank takes Strings.CounterLabel.
 	Label string
-	// AnimateFrom, when set, is the value the count animates from on
-	// arrival; Value is where it lands, and Value stays the SSR text.
-	// Nil means no animation. The hooks it renders are bound by the
-	// headless-controls module, which respects reduced motion and
-	// never owns the number.
+	// AnimateFrom is the value the count animates from on arrival; nil means no animation.
 	AnimateFrom *int
-	// DurationMS bounds the animation. Zero takes the module's
-	// default; negative is refused.
+	// DurationMS bounds the animation; zero takes the module's default and negative is refused.
 	DurationMS int
-	// Display renders the value alone, without the two step buttons:
-	// a figure that animates in (ui.AnimatedCounter), not a control.
-	// The root then carries no group role and ignores Label, and the
-	// value is not a live region.
+	// Display renders the value alone, a figure with no step buttons, group role or live region.
 	Display bool
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root and the value. Strings
-	// carry the group's name and the two buttons'.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 }
 
@@ -108,8 +64,6 @@ func Counter(p CounterProps, s Classes) render.HTML {
 	}
 	w := p.Strings.Resolve()
 	b := p.Parts.Box(s)
-	// Trimmed: a label of spaces names nothing, so it falls to the
-	// Strings default exactly like an empty one.
 	label := p.Label
 	if strings.TrimSpace(label) == "" {
 		label = w.CounterLabel
@@ -120,19 +74,10 @@ func Counter(p CounterProps, s Classes) render.HTML {
 		"id":         p.ID,
 	}))
 	if p.Display {
-		// A figure is text in its sentence, not a group of controls: the
-		// page around it names it (a stat card's label), and a role here
-		// would announce "Counter, group" before the number.
 		delete(own, "role")
 		delete(own, "aria-label")
 	}
-	// The module counts in JavaScript numbers, exact only to 2^53-1:
-	// past that it would round the server's figure, so a value out of
-	// that range renders without the animation.
 	if p.AnimateFrom != nil && jsSafeInt(p.Value) && jsSafeInt(*p.AnimateFrom) {
-		// The animation is presentation: the module that binds these
-		// hooks writes the value from AnimateFrom toward Value and
-		// leaves the number the signal owns alone.
 		Mark(own, "data-hui-counter-animate")
 		own["data-hui-counter-from"] = strconv.Itoa(*p.AnimateFrom)
 		own["data-hui-counter-to"] = strconv.Itoa(p.Value)
@@ -140,16 +85,10 @@ func Counter(p CounterProps, s Classes) render.HTML {
 			own["data-hui-counter-ms"] = strconv.Itoa(p.DurationMS)
 		}
 	}
-	// The seed: only a counter with step buttons reads the store (a
-	// display figure steps nothing), only when no layer above seeds the
-	// signal, and only a value a JavaScript number holds exactly.
 	if !p.Display && !p.Seeded && jsSafeInt(p.Value) {
 		own["data-hui-counter-value"] = strconv.Itoa(p.Value)
 	}
 
-	// The kernel's increment spelling, unchanged: name alone means
-	// +1, name:n means ±n. The decrement always spells its negative —
-	// "name:-0" is how a zero-step button would read.
 	inc := "data-cui-signal-inc"
 	dec := html.Attrs{inc: p.Signal + ":" + strconv.Itoa(-step)}
 	plus := html.Attrs{inc: p.Signal}
@@ -159,15 +98,6 @@ func Counter(p CounterProps, s Classes) render.HTML {
 
 	var value render.HTML
 	if p.Name != "" {
-		// The signal writes the input's value attribute, so a named
-		// counter is still one control: the buttons, the display and
-		// the submitted field hold one number. Built through Bind, the
-		// package's one binding spelling: it writes the attr mode the
-		// kernel reads. Without data-cui-signal-mode the kernel took
-		// the input for a text binding, set the void input's
-		// textContent on each step, left its value alone (the form
-		// submitted the server's number), and stamped role=status over
-		// its spinbutton role.
 		value = b.El("input", PartCounterValue, Internal(Merge(html.Attrs{
 			"type":       "number",
 			"name":       p.Name,
@@ -176,13 +106,8 @@ func Counter(p CounterProps, s Classes) render.HTML {
 			"aria-label": label,
 		}, Bind{Signal: p.Signal, Mode: "attr", Attr: "value"}.attrs())))
 	} else {
-		// Number mode: the runtime writes each new value the reader's
-		// way, as the server wrote this one.
 		live := html.Attrs{"aria-live": "polite", "data-cui-signal": p.Signal, "data-cui-signal-mode": "number"}
 		if p.Display {
-			// No step button changes a figure, so there is nothing to
-			// announce, and a live region would read out every frame of
-			// the tick-up animation.
 			delete(live, "aria-live")
 		}
 		value = b.El("span", PartCounterValue, Internal(live), render.Text(w.Number(p.Value)))
@@ -242,7 +167,6 @@ func init() {
 	})
 }
 
-// jsSafeInt reports whether n survives a JavaScript number unchanged.
 func jsSafeInt(n int) bool {
 	const max = 1<<53 - 1
 	return int64(n) >= -max && int64(n) <= max // int64: a 32-bit int cannot hold max

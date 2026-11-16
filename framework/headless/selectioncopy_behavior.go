@@ -9,11 +9,9 @@ import (
 //go:embed selectioncopy.js
 var selectionCopyJS string
 
-// SelectionCopyBehaviorName is the runtime module behind a selection's
-// Copy control (SelectionProps.CopyURL): it fetches the checked rows as
-// CSV and writes them to the clipboard.
+// SelectionCopyBehaviorName is the runtime module behind a selection's Copy
+// control: it copies the checked rows as CSV.
 const SelectionCopyBehaviorName = "headless-selection-copy"
 
-// The marker: the Copy control.
 var _ = uiregistry.RegisterBehavior(SelectionCopyBehaviorName, selectionCopyJS,
 	uiregistry.Markers("[data-hui-selection-copy]"))

@@ -14,28 +14,8 @@ const (
 	PartDismiss  Part = "dismiss"
 )
 
-// Live says how — and whether — an alert interrupts.
-//
-// This is the decision the component exists to force, because getting
-// it wrong is not a small mistake in either direction.
-//
-//   - LiveOff is the default and the right answer for anything the
-//     server rendered as part of the page. An alert that was already
-//     on screen when the page loaded has not "happened"; announcing it
-//     as an event means a screen reader reads page furniture over the
-//     top of whatever the user was doing, on every single page load.
-//   - LivePolite queues the message until the user pauses. It is for
-//     something that arrived after load and can wait: a background job
-//     finished, a value saved.
-//   - LiveAssertive interrupts immediately. It is for something the
-//     user must hear before they do anything else: the deploy failed,
-//     the form did not submit, the connection dropped. Nothing routine
-//     belongs here — an assertive region that fires often is one a
-//     user learns to resent and cannot turn off.
-//
-// role="alert" already implies assertive and role="status" already
-// implies polite, so only the role is written. Stating both is how a
-// message ends up announced twice.
+// Live says whether an alert interrupts: LiveOff (the default, for what the
+// page rendered), LivePolite (role=status) or LiveAssertive (role=alert).
 type Live string
 
 const (
@@ -46,69 +26,36 @@ const (
 
 // AlertProps is a message about something that happened, or is true.
 type AlertProps struct {
-	// Tone names the kind of message: the class map turns it into colour
-	// through the root's "<part>--<tone>" variant. It is passed
-	// through, not interpreted; the tone word is what carries it to a
-	// reader.
+	// Tone names the kind of message; the class map colours the root's "root--<tone>" variant.
 	Tone string
-	// ToneWord is the tone in words — "Error", "Warning", "Success".
-	// It is rendered for assistive tech and hidden visually, and it is
-	// the reason this component satisfies WCAG 1.4.1: colour may not
-	// be the only thing carrying meaning, and a red box is exactly
-	// that to anyone who cannot see the red.
-	//
-	// Empty means the Title already says which kind it is — "Deploy
-	// failed" needs no "Error:" in front of it — so the word is
-	// skipped rather than duplicated.
+	// ToneWord is the tone in words ("Error"), read before the title and hidden
+	// visually; empty means the Title already says it.
 	ToneWord string
-	// Title is the headline. Required: an alert with no headline is a
-	// coloured paragraph.
+	// Title is the headline.
 	Title string
 	// Text is the detail, in prose.
 	Text string
-	// Body is the detail as markup — a list, a code sample, nested
-	// content that is not an action. It renders after Text; prose
-	// belongs in Text, and actions in Actions.
+	// Body is the detail as markup, rendered after Text.
 	Body render.HTML
-	// Icon is decorative. The tone word carries the meaning.
+	// Icon is decorative.
 	Icon render.HTML
-	// Actions are the controls: retry, view logs, dismiss.
+	// Actions are the controls: retry, view logs.
 	Actions render.HTML
-	// Live says whether this interrupts. See Live.
+	// Live says whether this interrupts.
 	Live Live
-	// Focus moves focus here when the page loads.
-	//
-	// It is how a message that is ALREADY THERE gets announced. A live
-	// region announces changes; content present when the document
-	// loads is not a change, and role="alert" at load time is reported
-	// inconsistently across screen readers. After a form posts and the
-	// server redirects — the shape of every action in a
-	// server-rendered app — the confirmation is present at load, so
-	// the only reliable way to say it is to put the reader on it.
+	// Focus moves focus here when the page loads, which is how a message present at load is announced.
 	Focus bool
-	// DismissHref makes the alert dismissable with a link that keeps a
-	// real href, so dismissing needs no script and survives the page
-	// being reloaded. The label names what is being dismissed, because
-	// "Dismiss" three times in a row tells a screen reader user
-	// nothing. Empty DismissLabel names it after the Title, or the
-	// Text when there is no Title; with neither it is refused.
+	// DismissHref makes the alert dismissable through a link with a real href.
+	// DismissLabel names the control; empty names it after the Title, else the Text.
 	DismissHref  string
 	DismissLabel string
-	// Island is where the dismiss goes with script: dismissing is an
-	// in-page state change, so the × carries the RPC contract beside
-	// its href. Required when DismissHref is set; ignored otherwise.
+	// Island is where the dismiss goes with script. Required when DismissHref is set.
 	Island Island
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on every part. Nothing here is
-	// fillable — Actions already takes the page's own controls, and
-	// everything else an alert draws is what a screen reader is given
-	// to tell one alert from another.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 }
 
@@ -120,8 +67,6 @@ func Alert(p AlertProps, s Classes) render.HTML {
 	}
 	own := Merge(Safe(p.ExtraAttrs, "role"), Attrs(map[string]string{"id": p.ID}))
 	if p.Focus {
-		// Focusable without joining the tab order: focus is put here
-		// once, and Tab from it carries on into the page.
 		own["tabindex"] = "-1"
 		Mark(own, "autofocus")
 	}
@@ -135,9 +80,6 @@ func Alert(p AlertProps, s Classes) render.HTML {
 		own["class"] = cls
 	}
 
-	// The header holds the caller's icon when there is one, so the
-	// owned-style boundary sits on the title; with no icon the whole
-	// header is the component's own and the boundary moves up to it.
 	headOwn, titleOwn := html.Attrs(nil), Internal(nil)
 	if p.Icon == "" {
 		headOwn, titleOwn = Internal(nil), nil
@@ -149,10 +91,6 @@ func Alert(p AlertProps, s Classes) render.HTML {
 	}
 	title := make([]render.HTML, 0, 2)
 	if p.ToneWord != "" {
-		// Read before the title, so the kind of message arrives before
-		// the message. The trailing space is inside the hidden span:
-		// without it screen readers run the two together ("ErrorDeploy
-		// failed").
 		title = append(title, b.El("span", PartToneWord, nil, render.Text(p.ToneWord+": ")))
 	}
 	if p.Title != "" || p.ToneWord != "" {
@@ -177,10 +115,6 @@ func Alert(p AlertProps, s Classes) render.HTML {
 		}
 		label := p.DismissLabel
 		if label == "" {
-			// Named from the Title, or the Text when there is none (the
-			// way a Toast falls back to its Body): an empty Title named
-			// the control "Dismiss: ", which tells a screen reader user
-			// nothing.
 			target := orDefault(p.Title, p.Text)
 			if target == "" {
 				panic("headless: Alert with DismissHref and no Title or Text requires DismissLabel — the dismiss control would be named after nothing")
@@ -188,9 +122,6 @@ func Alert(p AlertProps, s Classes) render.HTML {
 			w := p.Strings.Resolve()
 			label = w.fill(w.DismissTitled, "title", target)
 		}
-		// The same element is both destinations: the href is the page
-		// without script, the island contract is the region update
-		// with it.
 		dismiss := Merge(Attrs(map[string]string{"href": p.DismissHref, "aria-label": label}),
 			p.Island.attrs(p.DismissHref, "GET"))
 		kids = append(kids, b.El("a", PartDismiss, Internal(dismiss), render.Text("×")))
@@ -246,9 +177,6 @@ func init() {
 		Name:    "Button",
 		Anatomy: []Part{PartRoot, PartIcon},
 		WithParts: func(s Classes, parts Parts) render.HTML {
-			// Icon-only, so the fixture draws the icon part too: a
-			// class or an attribute a caller sets on either part has
-			// somewhere to land and the sweep can see it arrive.
 			return Button(ButtonProps{AriaLabel: "Close", Icon: SpecimenGlyph, Variant: "ghost", Parts: parts}, s)
 		},
 		Cases: func(k Kit) []Case {

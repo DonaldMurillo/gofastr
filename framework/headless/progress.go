@@ -8,50 +8,27 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The progress bar: the native <progress> element, named for a screen
-// reader and clamped for the DOM. The element carries the whole
-// accessibility contract itself — role, value, maximum — so the
-// component's job is naming it and keeping the numbers honest: a
-// value the request carried is clamped into [0, Max] rather than
-// trusted, because a hostile or garbled number must never panic a
-// render or paint a bar past its own end. A negative value is the
-// documented indeterminate posture: no value attribute, the browser
-// animates the bar, and the reader hears the label alone. Distinct
-// from the step wizard's ProgressSteps (framework/ui), which walks
-// named stages; this is one fraction. No script.
-
-// Progress parts. The bar is the element; the description is the
-// human sentence beside it.
+// Progress parts.
 const (
 	PartProgressValue Part = "progress-value"
 )
 
-// ProgressProps configures one bar.
+// ProgressProps configures one native <progress> bar.
 type ProgressProps struct {
-	// Value is the current progress. 0 to Max renders a determinate
-	// bar; a negative value renders an indeterminate one. A value
-	// past Max is clamped to Max at render; NaN and the infinities
-	// render indeterminate, because a number that is not a number
-	// cannot label progress.
+	// Value is the progress, clamped to Max; a negative or non-finite value renders indeterminate.
 	Value float64
-	// Max is the ceiling. 0 (and any non-finite or negative value)
-	// takes 100.
+	// Max is the ceiling; zero, negative or non-finite takes 100.
 	Max float64
-	// Label names the bar for assistive tech. Required: a progress
-	// bar with no name is a stripe a screen reader cannot identify.
+	// Label names the bar for assistive tech. Required.
 	Label string
-	// LabelVisible renders the label as text above the bar (wired to
-	// the element through aria-labelledby) instead of an aria-label.
+	// LabelVisible renders the label as text wired through aria-labelledby.
 	LabelVisible bool
-	// Description is an optional human sentence beside the bar ("73
-	// of 100", "Uploading…"). Scrubbed, never refused: it is data a
-	// request can carry.
+	// Description is an optional sentence beside the bar, scrubbed of control bytes.
 	Description string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the root and the value. No part is fillable.
 	Parts Parts
 }
 
@@ -95,8 +72,6 @@ func Progress(p ProgressProps, s Classes) render.HTML {
 		Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID})), parts...)
 }
 
-// clampMax returns the ceiling a bar renders with: the caller's when
-// it is a positive finite number, 100 otherwise.
 func clampMax(max float64) float64 {
 	if math.IsNaN(max) || math.IsInf(max, 0) || max <= 0 {
 		return 100
@@ -104,10 +79,6 @@ func clampMax(max float64) float64 {
 	return max
 }
 
-// progressValue clamps the bar's value into [0, max] and reports
-// whether the bar is determinate. NaN and the infinitudes are
-// indeterminate rather than clamped: Infinity past the max is a
-// number that never arrived intact.
 func progressValue(value, max float64) (float64, bool) {
 	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
 		return 0, false
