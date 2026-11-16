@@ -705,7 +705,8 @@ func (c *WebSocketConn) Close() error {
 		}
 		// Send close frame. Ignore the error: if writing fails the peer
 		// is likely already gone, but we still want to drop the TCP conn.
-		_ = c.writeFrame(wsopcodeClose, payload)
+		// Its own deadline: the drain's writes clear the one set above.
+		_ = c.writeFrameBy(wsopcodeClose, payload, time.Now().Add(c.drainBound()))
 		c.takeMu.Unlock()
 
 		// Drain incoming frames briefly so we receive the peer's Close
