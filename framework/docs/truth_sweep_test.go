@@ -77,9 +77,11 @@ func TestNotificationsDocFromOverrideRejected(t *testing.T) {
 // X-Forwarded-Host is deliberately not honored (cache-poisoning); the
 // well-known origin uses r.Host. agent-ready.md must not imply otherwise.
 func TestAgentReadyDocDoesNotHonorForwardedHost(t *testing.T) {
-	code := readRepo(t, "framework/wellknown.go")
-	if !strings.Contains(code, "X-Forwarded-Host is NOT honored") {
-		t.Fatal("wellknown.go changed its X-Forwarded-Host policy — re-verify agent-ready.md")
+	// The policy is pinned by a behavioural test in the root package
+	// (app.agents/wellknown-origin-not-spoofable); this test
+	// only keeps the doc in step with it.
+	if !strings.Contains(readRepo(t, "framework/sweep_agents_test.go"), "func TestSweepAgentsWellKnownIgnoresForwardedHost(") {
+		t.Fatal("the test pinning wellknown.go's X-Forwarded-Host policy is gone — re-verify agent-ready.md")
 	}
 	// Collapse whitespace so the assertion survives line-wrapping.
 	doc := strings.Join(strings.Fields(readDoc(t, "agent-ready.md")), " ")
