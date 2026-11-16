@@ -6,17 +6,9 @@ import (
 )
 
 // DefaultToastStack is the name of the toast stack the host mounts at
-// boot when the app mounted none. A toast raised by a response header
-// or window.__gofastr.toast needs a region to land in; the
-// headless-feedback module mounts none of its own (a module that
-// invents a region invents its classes too), so the host guarantees
-// one. An app that mounts its own stack, under any name, keeps it and
-// gets no second.
+// boot when the app mounted none.
 const DefaultToastStack = "gofastr-toasts"
 
-// ensureToastStack mounts the default stack unless a preset-built one
-// is already registered. Called from ValidateBoot, after the last
-// route registration, so an app's own mount anywhere in its boot wins.
 func (ds *UIHost) ensureToastStack() {
 	if ds.coreRouter == nil {
 		return
@@ -25,9 +17,6 @@ func (ds *UIHost) ensureToastStack() {
 	for _, d := range widget.AllForSSR() {
 		if preset.IsToastStack(d) {
 			registered = true
-			// The definition is process-wide, so another host may have
-			// mounted it under its own prefix; serve whatever of its
-			// published endpoints this router is missing.
 			widget.MountShared(ds.coreRouter, d)
 		}
 	}
