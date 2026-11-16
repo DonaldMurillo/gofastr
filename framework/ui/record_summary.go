@@ -1,10 +1,5 @@
 package ui
 
-// RecordSummary and MetricBand provide the missing composition primitives for
-// record- and operations-heavy pages. They deliberately own structure and
-// responsive behavior so host applications do not recreate a bespoke hero,
-// stat-card grid, or button-width override for every important record.
-
 import (
 	"strconv"
 
@@ -25,12 +20,9 @@ const (
 	RecordSummaryToneDanger  RecordSummaryTone = "danger"
 )
 
-// RecordSummaryConfig configures the dominant summary of one record, event, or
-// operational state. The slots are intentionally bounded: use Highlight for
-// the next decision, Metrics for a MetricBand, Aside for one compact supporting
-// fact group, Footer for ownership/context, and Actions for natural-width
-// primary controls. Actions render in the lead region so the primary path does
-// not fall below a long summary on phones.
+// RecordSummaryConfig configures the summary of one record: Highlight
+// for the next decision, Metrics for a MetricBand, Aside for supporting
+// facts, Footer for context and Actions for the primary controls.
 type RecordSummaryConfig struct {
 	Title        string
 	Eyebrow      string
@@ -46,15 +38,13 @@ type RecordSummaryConfig struct {
 	ID           string
 	Class        string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the summary's root
-	// <article> element. Keys the component owns are dropped: class
-	// and id (use Class / ID), data-cui-*.
+	// ExtraAttrs land on the <article>; class, id and data-cui-* are
+	// the component's.
 	ExtraAttrs html.Attrs
 }
 
-// RecordSummary renders a compact semantic <article>. It is the one dominant
-// summary for a page; do not repeat the same state in a separate Banner.
+// RecordSummary renders a page's one record summary as an <article>. It
+// panics without a Title, on an unknown Tone or a HeadingLevel past 1-6.
 func RecordSummary(cfg RecordSummaryConfig) render.HTML {
 	if cfg.Title == "" {
 		panic("ui: RecordSummary requires Title")
@@ -86,12 +76,6 @@ func RecordSummary(cfg RecordSummaryConfig) render.HTML {
 		children = append(children, html.Div(html.DivConfig{Class: "fui-record-summary__status"}, cfg.Status))
 	}
 
-	// Eyebrow/Title/Description draw from strings alone, so copy never
-	// holds a caller's markup — but Aside/Actions can. With either
-	// present, lead holds a slot beside copy, so copy is marked on its
-	// own; with neither, lead holds nothing but copy, so lead itself
-	// is marked instead, to avoid marking twice inside the same
-	// subtree.
 	hasSupport := cfg.Aside != "" || cfg.Actions != ""
 	var leadOwn, copyOwn html.Attrs
 	if hasSupport {
@@ -156,17 +140,13 @@ type MetricBandConfig struct {
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the band's root <dl> element. Keys the
-	// component owns are dropped: class and id (use Class / ID),
-	// data-cui-*, and aria-label (derived from Label).
+	// ExtraAttrs land on the <dl>; class, id, data-cui-* and aria-label
+	// are the component's.
 	ExtraAttrs html.Attrs
 }
 
-// MetricBand renders a semantic <dl>. Wide viewports use one row; phones use
-// two columns. When the phone grid has an odd item count, the final signal
-// spans the row instead of leaving an accidental empty quadrant. It is
-// intentionally flatter than a grid of StatCards.
+// MetricBand renders one to six signals as a <dl>: one row when wide, two
+// columns on a phone, an odd last item spanning the row.
 func MetricBand(cfg MetricBandConfig) render.HTML {
 	if len(cfg.Items) < 1 || len(cfg.Items) > 6 {
 		panic("ui: MetricBand requires 1-6 Items")
@@ -183,8 +163,6 @@ func MetricBand(cfg MetricBandConfig) render.HTML {
 		if item.Hint != "" {
 			parts = append(parts, render.Tag("dd", map[string]string{"class": "fui-metric-band__hint"}, render.Text(item.Hint)))
 		}
-		// MetricBandItem draws from strings alone, so each item is
-		// always this component's own.
 		items = append(items, html.Div(html.DivConfig{Class: "fui-metric-band__item", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, parts...))
 	}
 	cls := "fui-metric-band fui-metric-band--" + strconv.Itoa(len(cfg.Items))
@@ -208,8 +186,6 @@ func MetricBand(cfg MetricBandConfig) render.HTML {
 var recordSummaryStyle = registry.RegisterStyle("ui-record-summary", recordSummaryCSS)
 var metricBandStyle = registry.RegisterStyle("ui-metric-band", metricBandCSS)
 
-// Knobs (beside the accent and title-size knobs set on the rules):
-// --ui-record-summary-copy-max-width (54rem) caps the copy column.
 func recordSummaryCSS(t style.Theme) string {
 	return style.NewComponentSheet("ui-record-summary", t).
 		Rule("&").Set(
@@ -217,8 +193,6 @@ func recordSummaryCSS(t style.Theme) string {
 		"gap", "var(--spacing-lg, 16px)",
 		"padding", "clamp(var(--spacing-lg, 16px), 4vw, var(--spacing-2xl, 32px))",
 		"background", "var(--color-surface, #fff)",
-		// The tone tints the hairline rather than painting a side stripe;
-		// the status pill carries the loud signal.
 		"border", "var(--stroke-thin, 1px) solid color-mix(in oklab, var(--ui-record-summary-accent, var(--color-border, #e4e4e7)) 35%, var(--color-border, #e4e4e7))",
 		"border-radius", "var(--radii-xl, 14px)",
 		"box-shadow", "var(--shadow-xs)",
@@ -270,8 +244,6 @@ func metricBandCSS(t style.Theme) string {
 		Media("(max-width: 720px)", func(s *style.ComponentSheet) {
 			s.Rule("&.fui-metric-band--2, &.fui-metric-band--3, &.fui-metric-band--4, &.fui-metric-band--5, &.fui-metric-band--6").Set("grid-template-columns", "repeat(2, minmax(0, 1fr))").End()
 			s.Rule(".fui-metric-band__item").Set("border-inline-start", "0", "border-block-start", "var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7)").End()
-			// Column divider for the two-up phone grid. A single-item band's
-			// sole item is odd AND full-width, no divider to paint.
 			s.Rule("&:not(.fui-metric-band--1) .fui-metric-band__item:nth-child(odd)").Set("border-inline-end", "var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7)").End()
 			s.Rule(".fui-metric-band__item:first-child, .fui-metric-band__item:nth-child(2)").Set("border-block-start", "0").End()
 			s.Rule("&.fui-metric-band--3 .fui-metric-band__item:last-child, &.fui-metric-band--5 .fui-metric-band__item:last-child").Set("grid-column", "1 / -1", "align-items", "center", "text-align", "center", "border-inline-end", "0").End()

@@ -12,18 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── DiffViewer ─────────────────────────────────────────────────────
-//
-// Line-by-line diff renderer for unified-format input (the same kind
-// `diff -u` / `git diff` produces). Two modes:
-//
-//   - DiffUnified (default):  single column; +/- prefix per line
-//   - DiffSplit:              two columns: removed on left, added on right
-//
-// Input is the raw diff body (no headers needed). The viewer parses
-// it line by line.
-
-// DiffMode picks the layout.
+// DiffMode picks the layout: DiffUnified or DiffSplit.
 type DiffMode string
 
 const (
@@ -33,31 +22,22 @@ const (
 
 // DiffViewerConfig configures a DiffViewer.
 type DiffViewerConfig struct {
-	// Ctx supplies the reader's locale for default column labels.
-	// Nil uses the English defaults; explicit labels are unchanged.
+	// Ctx localizes the default split labels; nil uses English.
 	Ctx context.Context
-	// Patch is the raw unified-diff body (required). Lines prefixed
-	// "+" are additions, "-" are removals, " " (space) are context,
-	// "@@" lines are hunk headers, "---" / "+++" headers are
-	// rendered as a filename row.
+	// Patch is the unified-diff body. Required.
 	Patch string
-	// Mode picks unified (default) or split layout.
-	Mode DiffMode
-	// LeftLabel / RightLabel show above split columns (defaults
-	// "Old" / "New").
+	Mode  DiffMode
+	// LeftLabel and RightLabel head the split columns ("Old", "New").
 	LeftLabel  string
 	RightLabel string
 	ID         string
 	Class      string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the root element. Keys
-	// the component owns are dropped: class and id (use Class / ID),
-	// and data-cui-*.
+	// ExtraAttrs land on the root, minus class, id and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
-// DiffViewer renders a unified-diff body as a styled view.
+// DiffViewer renders a unified-diff body, one column or split into
+// removed and added. A ---/+++ line outside a hunk is a file header.
 func DiffViewer(cfg DiffViewerConfig) render.HTML {
 	if cfg.Patch == "" {
 		panic("ui: DiffViewer requires Patch")
@@ -99,8 +79,6 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		sb.WriteString(escapeXML(right))
 		sb.WriteString(`</div></div>`)
 
-		// Walk hunks: emit removed in left, added in right; context
-		// duplicated in both columns; align by zipping +/- runs.
 		i := 0
 		for i < len(lines) {
 			ln := lines[i]
@@ -118,7 +96,6 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 				i++
 				continue
 			}
-			// Buffer a contiguous +/-/space run.
 			var removed, added []string
 			for i < len(lines) {
 				cur := lines[i]
@@ -135,7 +112,6 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 					i++
 					continue
 				}
-				// Context line: flush buffered, emit context in both cols.
 				flushSplit(&sb, removed, added)
 				removed, added = nil, nil
 				ctx := cur
@@ -153,7 +129,6 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 			flushSplit(&sb, removed, added)
 		}
 	} else {
-		// Unified mode.
 		for index, ln := range lines {
 			switch {
 			case strings.HasPrefix(ln, "@@"):
@@ -254,7 +229,6 @@ func flushSplit(sb *strings.Builder, removed, added []string) {
 	n := max(len(added), len(removed))
 	for i := range n {
 		sb.WriteString(`<div class="fui-diff-viewer__row" data-cui-internal="">`)
-		// Left column: removed (or empty).
 		sb.WriteString(`<div class="fui-diff-viewer__cell fui-diff-viewer__cell--remove">`)
 		if i < len(removed) {
 			sb.WriteString(`<pre class="fui-diff-viewer__code" tabindex="0">`)
@@ -262,7 +236,6 @@ func flushSplit(sb *strings.Builder, removed, added []string) {
 			sb.WriteString(`</pre>`)
 		}
 		sb.WriteString(`</div>`)
-		// Right column: added (or empty).
 		sb.WriteString(`<div class="fui-diff-viewer__cell fui-diff-viewer__cell--add">`)
 		if i < len(added) {
 			sb.WriteString(`<pre class="fui-diff-viewer__code" tabindex="0">`)
@@ -273,9 +246,6 @@ func flushSplit(sb *strings.Builder, removed, added []string) {
 		sb.WriteString(`</div>`)
 	}
 }
-
-// _ keeps strconv used (if we later add line-number gutters).
-var _ = strconv.Itoa
 
 var diffViewerStyle = registry.RegisterStyle("ui-diff-viewer", diffViewerCSS)
 

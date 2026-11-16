@@ -19,3 +19,212 @@ code:
   - framework/ui/searchresults.go
   - framework/ui/sortablelist.go
   - framework/ui/selection.go
+invariants:
+  - id: pager-shares-table-island
+    rule: A DataTable's Pagination with no Island of its own takes the table's Island, so sort and page call one handler and swap one region.
+    enforced_by:
+      - test: framework/ui.TestDataTableSharesItsIslandWithThePager
+  - id: empty-table-draws-no-select-all
+    rule: A SelectAll column of a table with no rows draws no select-all checkbox.
+    enforced_by:
+      - test: framework/ui.TestEmptyTableDrawsNoSelectAll
+  - id: card-cell-is-one-value
+    rule: In ResponsiveCards each cell's content is wrapped in one .fui-data-table__value span, so a value of several inline parts stays one item on its card line; other modes add no wrapper.
+    enforced_by:
+      - test: framework/ui.TestSweepDataCardsWrapEachCellInOneValue
+  - id: phone-slot-marks-cells-only
+    rule: In ResponsiveRows a column's Phone slot adds is-phone-<slot> to its cells beside their alignment class and leaves the header with its alignment alone.
+    enforced_by:
+      - test: framework/ui.TestDataTable_ResponsiveRows_SlotsCells
+  - id: rows-mode-needs-a-title
+    rule: A ResponsiveRows table with no PhoneTitle column panics.
+    enforced_by:
+      - test: framework/ui.TestDataTable_ResponsiveRowsNeedsTitle
+  - id: column-width-modes-exclusive
+    rule: A Column panics when it sets Fit with Wrap, or Truncate with Wrap or Fit.
+    enforced_by:
+      - test: framework/ui.TestDataTableRefusesFitWithWrap
+      - test: framework/ui.TestSweepDataTruncateExcludesWrapAndFit
+  - id: hidden-caption-stays-a-caption
+    rule: CaptionHidden appends fui-visually-hidden to the caption's own class and keeps its element, id and text, so the scroll region's aria-labelledby still resolves; without a Caption it panics.
+    enforced_by:
+      - test: framework/ui.TestDataTableCaptionHidden
+      - test: framework/ui.TestDataTableCaptionHiddenRequiresCaption
+  - id: table-footer-marked-unless-caller-tools
+    rule: The table footer is marked internal as a whole only when it holds no FooterTools; beside caller tools the summary and the pager are marked on their own.
+    enforced_by:
+      - test: framework/ui.TestKitMarksInternalSubtrees
+  - id: table-status-visually-hidden
+    rule: The table's role=status announcement span carries fui-visually-hidden, out of sight but in the accessibility tree.
+    enforced_by:
+      - test: framework/ui.TestSweepDataTableStatusIsVisuallyHidden
+  - id: toolbar-action-sanitized
+    rule: FilterToolbar passes Action through urlsafe.CleanAnchor before it reaches the form and the Reset link, a rejected action becoming "#", and ExtraAttrs cannot set the form's action.
+    enforced_by:
+      - test: framework/ui.TestFormActionSinksRejectUnsafeURL
+      - test: framework/ui.TestFilterToolbarExtraAttrsCannotOverrideAction
+      - test: framework/ui.TestFilterToolbarExtraAttrsCannotOverrideOwned
+  - id: reset-follows-the-submit
+    rule: Without ClientNavigation the form submits natively and the Reset link carries data-cui-nav="off"; with it the form carries data-cui-spa and Reset is router-taken.
+    enforced_by:
+      - test: framework/ui.TestFilterToolbarResetFollowsClientNavigation
+      - test: framework/ui.TestFilterToolbarClientNavigationIsOptIn
+  - id: hidden-field-never-shadows-a-control
+    rule: A HiddenField whose Name is a facet's, the search's or the resolved sort name (default "sort") panics, so a submit never carries one key twice.
+    enforced_by:
+      - test: framework/ui.TestFilterToolbarHiddenCarriesRequestState
+      - test: framework/ui.TestFilterHiddenRefusesDefaultSortName
+  - id: unlisted-active-value-kept
+    rule: An active facet or sort value that no option lists is drawn as its own selected choice labelled with itself, so Apply resubmits it.
+    enforced_by:
+      - test: framework/ui.TestFacetKeepsUnlistedValue
+      - test: framework/ui.TestSortKeepsUnlistedValue
+  - id: pill-ids-distinct
+    rule: Two pill options whose value and label fold to one slug get distinct ids, the later taking an ordinal suffix.
+    enforced_by:
+      - test: framework/ui.TestSweepDataPillIDsStayDistinct
+  - id: dropdown-panel-only-when-filled
+    rule: A Dropdown toolbar with no facet, sort or Extra draws no Filters button and no Apply.
+    enforced_by:
+      - test: framework/ui.TestFilterToolbarDropdownSearchOnly
+  - id: dropdown-badge-counts-filters
+    rule: The Filters button's badge counts the facets with a Value plus Applied, and a negative Applied panics.
+    enforced_by:
+      - test: framework/ui.TestFilterToolbarDropdownLayout
+      - test: framework/ui.TestSweepDataFilterToolbarRefusesNegativeApplied
+  - id: tools-hold-no-form
+    rule: A FilterToolbar tool containing a <form> tag in any letter case panics, because the tools render inside the toolbar's form.
+    enforced_by:
+      - test: framework/ui.TestFilterToolbarToolsRefuseAForm
+  - id: caller-slot-wrappers-unmarked
+    rule: A wrapper holding caller content (a toolbar's Extra and Tools, a StatStrip cell, a RecordSummary lead holding Aside or Actions) carries no data-cui-internal mark.
+    enforced_by:
+      - test: framework/ui.TestKitMarksInternalSubtrees
+  - id: change-list-names-both-sides
+    rule: A ChangeList row puts the old value in <del> and the new in <ins>, each led by a visually hidden from or to word, and an empty side draws the empty-value mark.
+    enforced_by:
+      - test: framework/ui.TestSweepDataChangeListNamesBothSides
+  - id: entry-list-keeps-list-semantics
+    rule: An unranked EntryList carries role="list" unless the caller sets a role, and its item rule sets no display, so a ranked list's numbers stay the browser's ::marker.
+    enforced_by:
+      - test: framework/ui.TestEntryListKeepsListRole
+      - test: framework/ui.TestSweepDataEntryListItemsKeepTheirMarker
+  - id: sortable-items-fragment-is-bare
+    rule: SortableListItems returns the rows alone, with no list element and no component wrapper, for a conflict response to drop into an existing list.
+    enforced_by:
+      - test: framework/ui.TestSweepDataSortableListItemsIsBareRows
+  - id: filter-rows-blank-row
+    rule: FilterRows draws the given rows then exactly one blank row whose operator is the first Operator.
+    enforced_by:
+      - test: framework/ui.TestSweepDataFilterRowsBlankRowTakesFirstOperator
+  - id: filter-rows-numbers-localized
+    rule: A filter row's control labels number the row in the reader's digits while its ids keep ASCII digits.
+    enforced_by:
+      - test: framework/ui.TestNumbersSpeakCtx
+  - id: filter-rows-value-loads-field-sheet
+    rule: A filter row's value input carries the form-field sheet's marker itself, since no FormField wraps it.
+    enforced_by:
+      - test: framework/ui.TestFilterRowsValueInputLoadsFieldSheet
+  - id: column-picker-moves-shown-only
+    rule: ColumnPicker draws move controls only beside a shown column, and an empty move href draws a disabled control.
+    enforced_by:
+      - test: framework/ui.TestSweepDataColumnPickerMovesOnlyShownColumns
+  - id: action-list-is-not-a-menu
+    rule: ActionList renders a plain <ul> with no role=menu.
+    enforced_by:
+      - test: framework/ui.TestActionList
+  - id: search-input-keeps-identifiers
+    rule: The SearchResults query input sets autocapitalize none, autocorrect off and spellcheck false, so a phone does not alter identifiers in a query.
+    enforced_by:
+      - test: framework/ui.TestSearchResultsRendersLinks
+  - id: record-summary-tone-tints-the-frame
+    rule: A RecordSummary tone tints the frame's thin border and never paints a side stripe.
+    enforced_by:
+      - test: framework/ui.TestRecordSummaryCSSControlsMobileScaleAndActionWidth
+  - id: metric-band-single-item-no-divider
+    rule: The phone column divider of a MetricBand skips a single-item band.
+    enforced_by:
+      - test: framework/ui.TestMetricBandCSSIsFlatWideAndTwoColumnMobile
+  - id: chip-dismiss-targets-the-bar
+    rule: Every chip dismissal and Clear all target RPCSignal, "filter-bar" when unset.
+    enforced_by:
+      - test: framework/ui.TestFilterChipBarRendersChips
+  - id: timeline-body-wrapped
+    rule: A Timeline event's caller Body is wrapped in .fui-timeline__body, and the timeline sheet styles parts by class, never a bare p.
+    enforced_by:
+      - test: framework/ui.TestTimelineBodyRidesInTheBodyWrapper
+      - test: framework/ui.TestTimelineTitleKeepsItsOwnRuleWithoutMeta
+  - id: selection-bar-hides-only-with-has
+    rule: The selection bar's hide rule sits inside @supports selector(:has(*)) and counts no select-all box or checkbox of a form inside the body.
+    enforced_by:
+      - test: framework/ui.TestSelectionHidesOnlyWhereHasWorks
+      - test: framework/ui.TestSelectionIgnoresSelectAll
+  - id: selection-copy-needs-floating
+    rule: Selection draws the Copy CSV button only when Floating is set.
+    enforced_by:
+      - test: framework/ui.TestSweepDataSelectionCopyNeedsFloating
+decisions:
+  - id: filter-toolbar-is-a-get-form
+    date: 2026-11-16
+    status: accepted
+    decision: FilterToolbar is one GET form to the list route whose query is the whole filter state, Reset is a link to the bare route, and the screen filters on the server.
+    rejected:
+      - option: Client-side filter state applied by script.
+        why: Refresh, share and back would lose the view, and the list math would move into JS.
+    upholds: [uihost/in-page-state-stays-on-its-route, runtime/no-list-math-in-js]
+  - id: native-get-by-default
+    date: 2026-11-16
+    status: accepted
+    decision: The toolbar submits natively unless ClientNavigation is set, and Reset declines the router to match.
+    rejected:
+      - option: Route every submit and Reset through the client navigator.
+        why: The router swaps only the screen cell, so a kept layout that renders query-dependent content stayed filtered.
+    revisit_if: Kept layouts re-render when the query string changes.
+    upholds: [reset-follows-the-submit]
+  - id: action-list-beside-menu
+    date: 2026-11-16
+    status: accepted
+    decision: ActionList draws menu-like rows as a plain list the Tab key walks, for a panel that also holds other controls.
+    rejected:
+      - option: Use Menu's rows in a mixed panel.
+        why: A role=menu panel may hold only menu items, so a theme switch beside the rows would break its semantics.
+    upholds: [action-list-is-not-a-menu]
+  - id: column-picker-links
+    date: 2026-11-16
+    status: accepted
+    decision: Every ColumnPicker control is a link the caller builds over the list's URL state, so it works without script and the server owns column order.
+    rejected:
+      - option: Toggle and reorder columns in the browser.
+        why: It needs script and leaves the order the server renders out of step with the view.
+    upholds: [uihost/in-page-state-stays-on-its-route]
+  - id: chip-dismiss-is-a-post
+    date: 2026-11-16
+    status: accepted
+    decision: A chip's dismissal is a POST through the typed Island to DismissPath with its body, swapping the bar, while the same anchor keeps DismissPath as its href for no script.
+    rejected:
+      - option: A GET navigation to a URL without the filter.
+        why: A mutation would push a history entry and reload the page instead of swapping the bar.
+    upholds: [chip-dismiss-targets-the-bar]
+  - id: selection-count-from-behaviour
+    date: 2026-11-16
+    status: accepted
+    decision: The floating bar's checked-row count is kept by the headless selection behaviour.
+    rejected:
+      - option: A CSS counter over the checked rows.
+        why: A table is a size container, and its style containment walls the counter in, so the bar outside it reads zero.
+    revisit_if: Style containment stops scoping CSS counters.
+  - id: selection-bar-hidden-by-css
+    date: 2026-11-16
+    status: accepted
+    decision: The selection bar hides with a CSS :has rule while no row checkbox is checked, so it needs no script; a browser without :has shows it always.
+    rejected:
+      - option: Show and hide the bar from script.
+        why: The bar would flash or stay hidden before hydration and without script.
+    upholds: [selection-bar-hides-only-with-has]
+  - id: table-classes-only-where-read
+    date: 2026-11-16
+    status: accepted
+    decision: The DataTable class map names only the parts a selector reads; the sheet reaches head, rows and cells by tag inside .fui-data-table__table, and alignment rides the column variant.
+    rejected:
+      - option: A class on every table part.
+        why: Each row and cell would carry bytes no selector reads.

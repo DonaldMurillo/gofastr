@@ -10,42 +10,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── JSONViewer ─────────────────────────────────────────────────────
-//
-// Collapsible tree renderer for arbitrary Go values. Pure render
-// (uses native <details>/<summary> for collapse), no JS. Good for
-// admin / debug surfaces.
-//
-// Render flow: marshal the value to JSON to walk it generically, then
-// re-walk the parsed tree to emit nested <details> elements. Strings
-// / numbers / bools render inline; objects / arrays become collapsible
-// nodes whose summary line shows the type + element count.
-
 // JSONViewerConfig configures a JSONViewer.
 type JSONViewerConfig struct {
-	// Ctx carries the per-request context the tree's type words and
-	// counts are written in. When nil, English applies.
-	Ctx context.Context
-
-	// Value is the data to render (required).
+	// Ctx localizes the type words and counts; nil uses English.
+	Ctx   context.Context
 	Value any
-	// OpenDepth is the recursion depth that renders open by default.
-	// 0 means just the root is open; -1 means everything is open.
+	// OpenDepth is the depth rendered open: 0 the root, -1 everything.
 	OpenDepth int
-	// MaxStringLen truncates long strings with "…". 0 = no limit.
+	// MaxStringLen truncates longer strings with "…"; 0 is no limit.
 	MaxStringLen int
 	ID           string
 	Class        string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the viewer's root <div>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-cui-*.
+	// ExtraAttrs land on the root, minus class, id and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
-// JSONViewer renders a collapsible tree view of any Go value through
-// headless.JSONTree (deterministic sorted keys, native details).
+// JSONViewer renders any Go value as a collapsible <details> tree
+// through headless.JSONTree, with keys sorted.
 func JSONViewer(cfg JSONViewerConfig) render.HTML {
 	cls := "fui-json-viewer"
 	if cfg.Class != "" {

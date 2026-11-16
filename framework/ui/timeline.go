@@ -1,14 +1,5 @@
 package ui
 
-// ─── Timeline ───────────────────────────────────────────────────────
-//
-// Vertical event list on a rail. headless.Timeline carries the
-// contract — the ordered list (the order IS the content), the
-// aria-hidden dots, the <time> pair a machine-readable timestamp
-// makes possible — and this adapter dresses it with the fui-timeline
-// class map. Used for audit logs, activity feeds, order history,
-// deployment histories.
-
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -30,30 +21,20 @@ const (
 
 // TimelineEvent is one entry in the Timeline.
 type TimelineEvent struct {
-	// Title is the event headline (e.g. "Deployed v3.2.1"). Exactly one
-	// of Title and Lead is set.
+	// Title is the headline; exactly one of Title and Lead is set.
 	Title string
-	// Lead is a headline the caller draws, in place of Title: an
-	// activity line with a bold actor and the record as a link. It is
-	// markup, so the caller escapes what it interpolates.
+	// Lead is caller markup in place of Title; the caller escapes it.
 	Lead render.HTML
-	// Meta is the optional right-aligned secondary text (e.g. a time
-	// or actor: "2h ago" / "by dom"), rendered in the header row
-	// after the title.
+	// Meta is secondary text after the title.
 	Meta string
-	// When is the human-readable timestamp, independent of Meta.
-	When string
-	// Machine is its RFC 3339 timestamp. With When it renders <time
-	// datetime>; When alone renders a span. An invalid pair panics.
+	// When is the readable timestamp; Machine is its RFC 3339 form,
+	// drawn as <time datetime>. An invalid pair panics.
+	When    string
 	Machine string
-	// Body is the optional supporting prose / nested HTML.
-	Body render.HTML
-	// Variant tints the dot on the rail. Defaults to neutral.
+	Body    render.HTML
 	Variant TimelineEventVariant
-	// Icon names a registered icon (see Icon) drawn in the marker, which
-	// becomes a bordered circle with the icon tinted by Variant: the kind
-	// of event at a glance, as an activity feed draws it. An unknown
-	// name draws the plain dot.
+	// Icon names a registered icon drawn in the marker; an unknown name
+	// draws the plain dot.
 	Icon string
 }
 
@@ -62,16 +43,11 @@ type TimelineConfig struct {
 	Events []TimelineEvent
 	ID     string
 	Class  string
-	// ExtraAttrs forwards additional attributes to the <ol> root.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style and data-cui-*.
+	// ExtraAttrs land on the <ol>; class, id, style and data-cui-* are
+	// the component's.
 	ExtraAttrs html.Attrs
 }
 
-// timelineClasses dresses headless.Timeline's parts. PartDesc maps to
-// fui-timeline__detail: the muted supporting line, keyed on the part
-// and never on a bare p, which would outrank the title's own rule
-// whenever an event has no Meta.
 var timelineClasses = headless.Classes{
 	headless.PartRoot:         "fui-timeline",
 	headless.PartTimelineItem: "fui-timeline__item",
@@ -83,16 +59,14 @@ var timelineClasses = headless.Classes{
 	headless.PartTitle:        "fui-timeline__title",
 	headless.PartDesc:         "fui-timeline__detail",
 
-	// The tone variants join the mark's own class at render (the
-	// Alert shape), so each carries the modifier alone.
 	headless.Part("timeline-mark--success"): "fui-timeline__dot--success",
 	headless.Part("timeline-mark--warn"):    "fui-timeline__dot--warn",
 	headless.Part("timeline-mark--danger"):  "fui-timeline__dot--danger",
 	headless.Part("timeline-mark--info"):    "fui-timeline__dot--info",
 }
 
-// Timeline renders an ordered list of events on a vertical rail, on
-// headless.Timeline.
+// Timeline renders events as an ordered list on a vertical rail, on
+// headless.Timeline. It panics on no events or an unknown Variant.
 func Timeline(cfg TimelineConfig) render.HTML {
 	if len(cfg.Events) == 0 {
 		panic("ui: Timeline requires at least one Event")
@@ -108,9 +82,6 @@ func Timeline(cfg TimelineConfig) render.HTML {
 			panic("ui: Timeline event unknown Variant " + string(e.Variant) +
 				`. Pick one of: "" (neutral), success, warn, danger, info`)
 		}
-		// The caller's Body is markup this adapter does not compose:
-		// the wrapper keeps the sheet's body rule off the primitive's
-		// own children, the shape the old markup rendered.
 		body := e.Body
 		if body != "" {
 			body = render.Tag("div", map[string]string{"class": "fui-timeline__body"}, body)
