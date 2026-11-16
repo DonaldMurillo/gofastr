@@ -25,6 +25,16 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`ui.Notification` with an `ID` keeps its classes.** Setting `ID`
+  dropped the `Class`, floating `Position` and registered-variant
+  classes from the root; they now render with it.
+- **`ui.OptimizedImage` no longer rewrites the caller's `Sources`.** It
+  filtered refused sources in place, so the slice the caller passed in
+  came back changed; it now filters into a new slice.
+- **`ui.ConfirmAction` refuses `__proto__`, `constructor` and
+  `prototype` as `SuccessSignal`.** The runtime never writes those
+  names, so the control could not work; it now panics at render like
+  any other invalid signal name.
 - **A `BaseURL` of `/` no longer pins the agent-ready origin.** An
   `AgentReadyConfig.BaseURL` or `SitemapConfig.BaseURL` made only of
   slashes used to count as pinned and yield an empty origin; it now
