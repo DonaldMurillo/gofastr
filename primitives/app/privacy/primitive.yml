@@ -39,13 +39,14 @@ invariants:
       - test: framework.TestEraseDeletesPivotRows
       - test: framework.TestEraseLeavesSetNullChildren
       - test: framework.TestEraseUserData_ChildBeforeParentFKOrder
+      - test: framework.TestSweepPrivacyEraseSkipsUnmanagedChild
   - id: restrict-blocks-erasure
     rule: When a row the erasure does not remove names a row it would through a RESTRICT or NO ACTION relation, EraseUserData (dry run included) errors naming the relation and erases nothing; the user's own child rows do not block.
     enforced_by:
       - test: framework.TestEraseRefusesRestrictChild
       - test: framework.TestEraseRestrictWithoutBlockers
   - id: erase-refuses-unidentifiable-rows
-    rule: Erasure refuses, before any delete, a row it would remove whose primary key holds a NULL, an owner-scoped table with no primary key, and a foreign key whose columns do not line up with the key it references.
+    rule: Erasure refuses, before any delete, a row it would remove whose primary key holds a NULL, and a foreign key whose columns do not line up with the key it references.
     enforced_by:
       - test: framework.TestEraseRefusesNullKeyChild
   - id: erase-cuts-reference-cycles
@@ -192,7 +193,7 @@ invariants:
       - test: framework.TestImportRejectsIncompatibleColumns
       - test: framework.TestImportRejectsSQLMetacharacters
       - test: framework.TestImportRefusesASourceListedTwice
-      - test: framework.TestImportTableMismatch
+      - test: framework.TestSweepPrivacyImportRefusesRenamedTable
       - test: framework.TestImportRefusesKeylessArchive
       - test: framework.TestImportRejectsTraversalSourceName
   - id: import-checks-the-bytes-it-restores

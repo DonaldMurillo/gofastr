@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
@@ -65,5 +67,70 @@ func TestSweepPrivacyGraphAndSourcesAgreeOnTables(t *testing.T) {
 	slices.Sort(fromSources)
 	if !slices.Equal(fromSources, g.sorted) {
 		t.Fatalf("export sources name tables %v, the erase graph %v", fromSources, g.sorted)
+	}
+}
+
+// An archive whose manifest names another table for a live source is
+// refused, though its file and checksum are intact.
+func TestSweepPrivacyImportRefusesRenamedTable(t *testing.T) {
+	datexport.Reset(t)
+	app, db := newExportTestApp(t)
+	seedExportRows(t, db)
+	dir := t.TempDir()
+	if err := app.ExportData(context.Background(), dir); err != nil {
+		t.Fatal(err)
+	}
+	m := readManifest(t, dir)
+	found := false
+	for i := range m.Entities {
+		if m.Entities[i].Name == "tags" {
+			m.Entities[i].Table = "documents"
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("archive has no tags source")
+	}
+	writeManifest(t, dir, m)
+	if _, err := db.Exec(`DELETE FROM tags`); err != nil {
+		t.Fatal(err)
+	}
+	err := app.ImportData(context.Background(), dir)
+	if err == nil || !strings.Contains(err.Error(), `archive table "documents"`) {
+		t.Fatalf("ImportData = %v, want the table mismatch refused", err)
+	}
+}
+
+// The cascade does not reach an Unmanaged entity: its rows that name an
+// erased row stay.
+func TestSweepPrivacyEraseSkipsUnmanagedChild(t *testing.T) {
+	db := openTestDB(t, DialectSQLite)
+	app := NewApp(WithDB(db))
+	app.Registry.Register(entity.Define("posts", entity.EntityConfig{
+		Table:  "posts",
+		Scope:  &entity.ScopeConfig{OwnerField: "owner_id"},
+		Fields: []schema.Field{{Name: "owner_id", Type: schema.String}},
+	}.WithTimestamps(false)))
+	if err := AutoMigrate(db, app.Registry); err != nil {
+		t.Fatal(err)
+	}
+	app.Registry.Register(entity.Define("post_views", entity.EntityConfig{
+		Table:     "post_views",
+		Unmanaged: true,
+		Fields:    []schema.Field{{Name: "post_id", Type: schema.String}},
+		Relations: []entity.Relation{entity.BelongsTo("post", "posts", "post_id")},
+	}.WithTimestamps(false)))
+	identityExec(t, db,
+		`CREATE TABLE post_views (id TEXT PRIMARY KEY, post_id TEXT)`,
+		`INSERT INTO posts (id, owner_id) VALUES ('p1', 'u1')`,
+		`INSERT INTO post_views (id, post_id) VALUES ('v1', 'p1')`)
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if n := identityCount(t, db, `SELECT COUNT(*) FROM posts`); n != 0 {
+		t.Errorf("posts has %d rows, want the owned one erased", n)
+	}
+	if n := identityCount(t, db, `SELECT COUNT(*) FROM post_views`); n != 1 {
+		t.Errorf("post_views has %d rows, want the Unmanaged row kept", n)
 	}
 }
