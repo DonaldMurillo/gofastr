@@ -1,13 +1,5 @@
 package ui
 
-// ─── ShortID ────────────────────────────────────────────────────────
-//
-// A long identifier (a UUID, a job id, a hash) in a table cell: its
-// first characters in monospace, then a quiet copy button that copies
-// the whole value. The full value is the shortened text's title on
-// hover, and screen readers hear it once, from a visually hidden copy
-// that is also what the button copies.
-
 import (
 	"context"
 	"hash/fnv"
@@ -20,28 +12,24 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// shortIDLength is how many characters a ShortID shows by default.
 const shortIDLength = 8
 
 // ShortIDConfig configures a ShortID.
 type ShortIDConfig struct {
 	// Value is the full identifier. Required.
 	Value string
-	// Length is how many leading characters show; a longer Value is
-	// cut there and ends in an ellipsis. Default 8.
+	// Length is how many characters show, 8 by default.
 	Length int
-	// Ctx resolves the copy button's label. When nil, English applies.
+	// Ctx localizes the copy button; nil means English.
 	Ctx   context.Context
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes to the root span. Keys
-	// the component owns are dropped: class and id (use Class / ID),
-	// style and data-cui-*.
+	// ExtraAttrs adds attributes to the root, minus class, id, style and data-cui-*.
 	ExtraAttrs html.Attrs
 }
 
-// ShortID renders the identifier and its copy button. It panics on an
-// empty Value: there is nothing to show or copy.
+// ShortID renders an identifier's first characters and a button that copies
+// all of it. It panics on an empty Value.
 func ShortID(cfg ShortIDConfig) render.HTML {
 	if cfg.Value == "" {
 		panic("ui: ShortID requires Value")
@@ -50,8 +38,6 @@ func ShortID(cfg ShortIDConfig) render.HTML {
 	if n <= 0 {
 		n = shortIDLength
 	}
-	// One id per value: the same value twice on a page holds the same
-	// text, so either copy target copies it.
 	h := fnv.New32a()
 	h.Write([]byte(cfg.Value))
 	target := "fui-short-id-" + strconv.FormatUint(uint64(h.Sum32()), 36)

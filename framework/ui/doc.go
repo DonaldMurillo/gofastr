@@ -1,203 +1,34 @@
-// Package ui is the framework's opinionated component layer on top of
-// core-ui.
+// Package ui is the styled component layer: components that express product
+// intent, built on framework/headless and drawn in framework/ui/theme tokens.
 //
-// The split:
-//
-//	core-ui/:        unstyled building blocks (elements, widget, runtime)
-//	framework/ui/:   semantic components that consume framework/ui/theme
-//
-// Components in this package express *product intent* rather than
-// HTML primitives: PageHeader, FormField, EmptyState, StatusBadge.
-// Every visual decision routes through framework/ui/theme so a single
-// token swap re-skins the whole app.
-//
-// Consumers import this package directly:
-//
-//	import "github.com/DonaldMurillo/gofastr/framework/ui"
-//	import "github.com/DonaldMurillo/gofastr/framework/ui/theme"
-//
-//	page := ui.PageHeader(ui.PageHeaderConfig{
-//	    Title:    "Customers",
-//	    Subtitle: "1,283 active",
-//	    Actions:  ui.Button(ui.ButtonConfig{Label: "Delete all", Variant: ui.ButtonDanger}),
-//	})
-//
-// If a piece of work maps 1:1 to an HTML element or ARIA pattern, it
-// belongs in core-ui. If it composes primitives to express intent, it
-// belongs here.
-//
-// Component inventory (alphabetical; kept complete by
-// TestDocGoInventoryComplete in internal/treegate):
-//
-//	ActionList:           a list of link and button rows in a menu row's look, for a mixed panel
-//	AnchoredRail:         sticky in-page nav rail with scrollspy wiring
-//	AnimatedCounter:      scroll-triggered number tick animation
-//	AspectRatioComponent: CLS-safe aspect-ratio wrapper (alias: AspectRatio)
-//	AuthCard:             centered card shell for login/register/reset forms
-//	Avatar:               circular image/initials avatar (sm/md/lg/xl)
-//	AvatarGroup:          overlapping avatar stack with overflow chip
-//	BackToTop:            fixed scroll-to-top affordance after a threshold
-//	Banner:               page-level persistent status strip (dismissible)
-//	BarChart:             categorical SVG bar chart
-//	Breadcrumbs:         labelled nav trail ending at the current page
-//	Box:                  padded/bordered layout box
-//	Button:               primary/secondary/danger/ghost variants, Disabled, Action wiring seam
-//	Callout:              inline info/warning/danger/neutral block
-//	Card:                 labelled <section> with header/body/footer
-//	Carousel:             horizontal scroll-snap slider
-//	Center:               layout centering wrapper
-//	Checkbox:             labelled checkbox with FieldErrors wiring
-//	CheckboxGroup:        <fieldset> of checkboxes with shared label + errors
-//	Cluster:              horizontal layout that wraps by default (NoWrap opts out)
-//	CodeBlock:            styled <pre><code> sample block
-//	Combobox:            input owning a listbox of suggestions (static or island-backed)
-//	CodeTabs:             one snippet in several languages behind a zero-JS tab strip
-//	Collapsible:          styled <details> disclosure with summary
-//	Dropdown:             trigger button with a floating panel for a small form or controls
-//	ChangeList:           field-by-field "from → to" list of what an edit changed
-//	ColorField:           colour swatch beside a text input, one control
-//	ColorPicker:          styled native <input type=color>
-//	CommandPalette:       ⌘K modal + combobox composition
-//	CommentThread:        nested discussion: each comment a byline and body, replies indented under it
-//	ConditionalField:     form region visible until the watched field mismatches (the runtime hides it)
-//	ConfirmAction:        trigger + themed alertdialog modal pair
-//	Container:            max-width page wrapper with breakpoint padding
-//	ContentRow:           nav column + main + optional context aside row
-//	CopyButton:           clipboard button with SR-announced confirmation
-//	ShortID:              a long identifier's first characters and a copy button for all of it
-//	Counter:              signal-driven counter with +/− buttons
-//	DataTable:            sortable/paginated table (island-friendly)
-//	DateField:            typed labelled native date field with bounds
-//	DateTimeField:        typed labelled native date-and-time field with bounds and step
-//	DatePicker:           calendar beside the native date input: range, refused days, notes on days
-//	DatePickerMonth:      the month a DatePicker's island endpoint answers
-//	DetailList:           label/value description list for record detail
-//	DiffViewer:           unified or split diff renderer
-//	Divider:              <hr> for plain horizontal; role="separator" otherwise
-//	DrawerBar:            close / path / copy-link bar atop an intercepted drawer
-//	EmptyState:           title/description/action block for no-data screens
-//	EntryList:            dense list of title links with a source and a meta line, optionally ranked
-//	FactBox:              labelled tile (label-first OR value-first KPI)
-//	FileDropzone:         hero file-drop surface with image previews
-//	FileUpload:           drag-drop file picker over <input type="file">
-//	FilterChipBar:        role=toolbar of removable filter chips
-//	FilterToolbar:        URL-driven filter/sort/search control strip
-//	Form:                 opinionated <form> wrapper with submit + errors
-//	FormField:            labelled input with required + help + error states
-//	FormFrame:            two-column record-form frame, side rail dropping under on its own width
-//	FormRepeater:         dynamic list of repeating field groups
-//	FormSection:          grouped fields with heading + description
-//	Gallery:              Grid/Strip/Masonry thumbnail surface
-//	GlobalSearch:         inline persistent /-shortcut search bar
-//	Grid:                 responsive auto-fit grid
-//	Hero:                 centered landing hero
-//	HeroSplit:            two-column hero (copy + media) with mobile collapse
-//	InputGroup:           input with prepend/append addons
-//	JSONViewer:           collapsible tree of arbitrary values
-//	LanguageMenu:         locale switcher linking this page in each language
-//	Lightbox:             zoom-overlay modal; pairs with Gallery
-//	LineChart:            multi-series SVG time-series chart
-//	Link:                 typed-variant anchor with unsafe-href sanitizing
-//	LinkButton:            anchor styled as Button, for CTAs that navigate
-//	ListDetail:           kept scrollable list beside routed detail, stacked on phones
-//	ListDetailPlaceholder: unselected detail for a single-pane phone list/detail view
-//	Markdown:             themed wrapper over core/markdown
-//	Menu:                 <details>-driven dropdown menu (keyboard + ARIA; submenus, radio rows)
-//	MetricBand:           compact semantic band of one to six related signals
-//	MultiSelect:          checkbox-group disclosure with a chips summary
-//	Muted:                subdued inline <span> for secondary text
-//	NetworkRetryBanner:   RPC-failure banner with health-probe retry
-//	Notification:         toast-styled inline notification (variant + dismiss)
-//	NotificationBell:     bell + unread badge + popover dropdown
-//	NumberInput:          number field with explicit +/− step buttons
-//	NumberField:          typed labelled native number field with bounds
-//	OptimisticAction:     instant-flip button with rollback on error
-//	OptimizedImage:       responsive <picture> with srcset + lazy + Width/Height
-//	PageHeader:           top-of-page header with title/eyebrow/subtitle/actions
-//	Workbench:            scrolling rail beside a filling pane (inspector shell)
-//	PaneHost:             primary pane + openable secondary/tertiary side panes
-//	PasswordInput:        password field with show/hide toggle
-//	Pagination:           numeric page pager over a list (typed query props, optional island)
-//	PieChart:             SVG ratio chart (donut variant via InnerRadius)
-//	Gauge:                semicircle dial for one reading against a range (ARIA meter, tone bands)
-//	ScatterChart:         SVG points on two numeric axes, one color per series
-//	Heatmap:              SVG grid of values shaded in four strengths of one color
-//	PipelineImage:        multi-format <picture> consuming framework/image
-//	Picker:               form field picking one record from a server-searched list
-//	FilterRows:           field / operator / value rows inside a list's filter form
-//	ColumnPicker:         a list's Columns dropdown: show, hide and move columns by link
-//	ShortcutSheet:        keyboard help modal opened by "?", and ShortcutList for its rows
-//	SegmentedLinks:       a segmented strip of links, one current (a list's Table / Cards switch)
-//	InlineEdit:           a value edited where it is shown: a popup one-field form saved over RPC
-//	                       VariantSet output (typed sources + a stacked
-//	                       low-fidelity placeholder from a data: URI)
-//	PollingIndicator:     pulsing dot confirming a polling RPC is firing
-//	PricingCard:          plan tile with price + feature list + CTA
-//	Progress:             native <progress> bar, determinate or indeterminate
-//	ProgressSteps:        linear step indicator (horizontal + vertical)
-//	Radio:                labelled radio with FieldErrors wiring
-//	RadioGroup:           <fieldset> of radios with shared label + errors
-//	RangeSlider:          dual-thumb range with cross-clamp
-//	Rating:               read-only score as a row of glyphs (role=img)
-//	RatingInput:          1-N star/heart rating input
-//	RecordSummary:        dominant record/event summary with bounded support rail
-//	Repeater:             dynamic add/remove item list with min/max limits
-//	Responsive:           viewport-swap pair (desktop / mobile variant)
-//	SearchInput:          search field with icon prefix + clear button
-//	SearchResults:        full-page results: GET form, status, result list, pagination
-//	Section:              labelled content section with heading + description
-//	SegmentedControl:     radio-group styled as a sliding pill bar
-//	Select:               labelled native <select> with help/error/placeholder
-//	Selection:            bulk bar over selectable rows, shown while a row is checked
-//	ShortcutHint:         OS-aware keyboard chord chips
-//	Sidebar:              responsive primary navigation (inline/drawer)
-//	SidebarBody:          nav content only, for a mirroring drawer slot
-//	SidebarBrand:         logo tile, name and muted sub-line for a sidebar head
-//	SidebarDrawerTrigger: the drawer hamburger standalone, for host chrome
-//	SignalToggle:         role=switch bound to a boolean signal
-//	SignOut:              logout form POSTing the auth sign-out endpoint
-//	SkeletonAvatar:       circular shimmer placeholder
-//	SkeletonCard:         card-shaped shimmer placeholder
-//	SkeletonRow:          row-shaped shimmer placeholder
-//	SkeletonLine:         one short shimmer bar (a trail, a one-line label)
-//	SkeletonTimeline:     event-row shimmer placeholder (dot + lines)
-//	SkipLink:             focus-visible bypass link to main content
-//	Slider:               <input type=range> with optional live value mirror
-//	Sparkline:            pure-SVG inline trend chart
-//	SortableList:         drag + keyboard reorderable list with server-authoritative commit
-//	SortableListItems:    the rows-only fragment a 409 reconciliation returns
-//	Spinner:              inline role="status" loading indicator
-//	Stack:                vertical layout with gap
-//	StatCard:             metric tile with label/value/trend
-//	StatStrip:            one frame around a row of figures, divided by hairlines
-//	StatusBadge:          small status pill (success/warning/danger/info/neutral)
-//	StatusPill:           compact status pill with optional leading dot
-//	StepRail:             sticky numbered nav for multi-step pages
-//	StepWizard:           multi-step form with a progress indicator bar
-//	Sticky:               theme-token sticky wrapper (top/bottom pinning)
-//	Switch:               iOS-style toggle switch with role=switch
-//	TableOfContents:      auto-built sticky nav from <h2>/<h3>
-//	TabNav:              navigation strip of links, one current
-//	Tabs:                 signal-driven tab strip
-//	Tag:                  interactive pill (filter link or × dismiss)
-//	TagInput:             free-form chips, Enter/comma to commit
-//	TerminalBlock:        terminal transcript with a labelled header
-//	TextArea:             multi-line input with typed Autogrow
-//	Control:              styled native input for a FormField builder
-//	TextField:            typed labelled native text field
-//	Themed:               wraps a subtree in a registered theme override
-//	ThemePicker:          whole-page switch between registered theme overrides
-//	ThemeToggle:          dark/light/auto toggle persisting color-scheme
-//	Thumbnail:            square lazily loaded image preview (sm/md/lg)
-//	Timeline:             vertical event rail
-//	TimePicker:           styled native <input type=time>
-//	ToggleAction:         three-state commit/untoggle button with mutex groups
-//	Toolbar:              role=toolbar wrapper for grouped actions
-//	Tooltip:              CSS-only hover/focus reveal
-//	Tree:                 WAI-ARIA treeview (roving tabindex, lazy branches)
-//	ValidationSummary:    inline summary of form validation errors
-//	Waterfall:            steps of one piece of work as bars on a shared time axis (a table; SVG bars)
-//
-// Layout primitives (Stack, Cluster, Grid, Center, Spacer, Box) share
-// one ui-layout stylesheet. See layout.go.
+// Components:
+// ActionList, AnchoredRail, AnimatedCounter, AspectRatioComponent, AuthCard,
+// Avatar, AvatarGroup, BackToTop, Banner, BarChart, Box, Breadcrumbs,
+// Button, Callout, Card, Carousel, Center, ChangeList, Checkbox,
+// CheckboxGroup, Cluster, CodeBlock, CodeTabs, Collapsible, ColorField,
+// ColorPicker, ColumnPicker, Combobox, CommandPalette, CommentThread,
+// ConditionalField, ConfirmAction, Container, ContentRow, Control,
+// CopyButton, Counter, DataTable, DateField, DatePicker, DatePickerMonth,
+// DateTimeField, DetailList, DiffViewer, Divider, DrawerBar, Dropdown,
+// EmptyState, EntryList, FactBox, FileDropzone, FileUpload, FilterChipBar,
+// FilterRows, FilterToolbar, Form, FormField, FormFrame, FormRepeater,
+// FormSection, Gallery, Gauge, GlobalSearch, Grid, Heatmap, Hero, HeroSplit,
+// InlineEdit, InputGroup, JSONViewer, LanguageMenu, Lightbox, LineChart,
+// Link, LinkButton, ListDetail, ListDetailPlaceholder, Markdown, Menu,
+// MetricBand, MultiSelect, Muted, NetworkRetryBanner, Notification,
+// NotificationBell, NumberField, NumberInput, OptimisticAction,
+// OptimizedImage, PageHeader, Pagination, PaneHost, PasswordInput, Picker,
+// PieChart, PipelineImage, PollingIndicator, PricingCard, Progress,
+// ProgressSteps, Radio, RadioGroup, RangeSlider, Rating, RatingInput,
+// RecordSummary, Repeater, Responsive, ScatterChart, SearchInput,
+// SearchResults, Section, SegmentedControl, SegmentedLinks, Select,
+// Selection, ShortcutHint, ShortcutList, ShortcutSheet, ShortID, Sidebar,
+// SidebarBody, SidebarBrand, SidebarDrawerTrigger, SignalToggle, SignOut,
+// SkeletonAvatar, SkeletonCard, SkeletonLine, SkeletonRow, SkeletonTimeline,
+// SkipLink, Slider, SortableList, SortableListItems, Spacer, Sparkline,
+// Spinner, Stack, StatCard, StatStrip, StatusBadge, StatusPill, StepRail,
+// StepWizard, Sticky, Switch, TableOfContents, TabNav, Tabs, Tag, TagInput,
+// TerminalBlock, TextArea, TextField, Themed, ThemePicker, ThemeToggle,
+// Thumbnail, Timeline, TimePicker, ToggleAction, Toolbar, Tooltip, Tree,
+// ValidationSummary, Waterfall, Workbench.
 package ui
