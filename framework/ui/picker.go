@@ -10,48 +10,36 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── Picker ────────────────────────────────────────────────────────
-//
-// A form field that picks one record out of many: a search input over
-// a server-searched listbox, with a hidden input that submits the
-// picked value (headless.Combobox in Pick mode). It sits inside a host
-// form; the search input is detached from that form, so only the value
-// submits. Endpoint answers each search with PickerRows.
-
 // PickerOption is one row of a picker.
 type PickerOption struct {
 	// Value is what the field submits when the row is picked. Required.
 	Value string
-	// Label is the row's text, and the input's text once picked.
+	// Label is the row's text, and the input's once picked.
 	Label string
-	// Meta is secondary text beside the label.
-	Meta string
+	Meta  string
 }
 
 // PickerConfig configures a Picker.
 type PickerConfig struct {
-	// Name is the submitted field name; ID the search input's id
-	// (default "pick-"+Name). Label names the field. Required: Name,
-	// Label, Endpoint.
+	// Name is the submitted field and ID the search input's (default
+	// "pick-"+Name). Name, Label and Endpoint are required.
 	Name, ID, Label string
-	// Help and Error describe the field, as on every form field.
-	Help, Error string
-	Required    bool
-	// Value is the picked value and ValueLabel its text; both empty
-	// when nothing is picked.
+	Help, Error     string
+	Required        bool
+	// Value is the picked value and ValueLabel its text.
 	Value, ValueLabel string
 	Placeholder       string
-	// Form is the id of the form the picked value submits with, when
-	// that is not the form around the picker (the HTML form attribute).
+	// Form is the id of the form the value submits with, when not the
+	// one around the picker.
 	Form string
-	// Options are the listbox's first rows, shown on focus before any
-	// search; More is a note row after them ("Showing 20 of 312").
+	// Options are the rows shown before any search; More is a note row
+	// after them ("Showing 20 of 312").
 	Options []PickerOption
 	More    string
 	// Endpoint is the same-origin path a search POSTs {"q": …} to; it
-	// answers with PickerRows for this picker's ID.
+	// answers with PickerRows.
 	Endpoint string
-	// Action sits after the input on its row: an open or a new button.
+	// Action sits after the input on its row.
 	Action render.HTML
 	Class  string
 	// ExtraAttrs forwards attributes to the combobox's root; keys the
@@ -60,7 +48,8 @@ type PickerConfig struct {
 	Ctx        context.Context
 }
 
-// Picker renders the field.
+// Picker renders a form field that picks one record from a
+// server-searched listbox; only the hidden picked value submits.
 func Picker(cfg PickerConfig) render.HTML {
 	if cfg.Name == "" || cfg.Label == "" || cfg.Endpoint == "" {
 		panic("ui: Picker requires Name, Label and Endpoint")
@@ -134,8 +123,6 @@ func pickerOptions(opts []PickerOption, more string) []headless.ComboboxOption {
 
 var pickerStyle = registry.RegisterStyle("ui-picker", pickerCSS)
 
-// pickerCSS lays the input and its Action on one row, the input taking
-// the rest of it.
 func pickerCSS(_ style.Theme) string {
 	return `.fui-picker {
   display: flex;

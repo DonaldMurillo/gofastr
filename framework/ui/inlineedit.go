@@ -13,33 +13,20 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── InlineEdit ────────────────────────────────────────────────────
-//
-// A value edited where it is shown: a table cell's value is the trigger
-// of an editor drawn over it, the field and a Save button on one line
-// (give the Control a hidden label: the cell names it). Saving sends the field to
-// Action over the runtime's form RPC (PUT by default) and, on success,
-// says Saved and navigates to Return, so the server redraws the page
-// with the stored value. Escape or a press outside closes it unsaved.
-// Without script the trigger still opens the popup (it is a <details>)
-// and the form posts like any other.
-
 // InlineEditConfig configures an InlineEdit.
 type InlineEditConfig struct {
 	// Display is the value as the page shows it. Required.
 	Display render.HTML
-	// Label names the edit ("Edit Status of INV-1"): the trigger's
-	// accessible name and the field's label. Required.
-	Label string
-	// Control is the one input the form submits, named for the field.
+	// Label names the trigger and the field ("Edit Status of INV-1").
 	// Required.
+	Label string
+	// Control is the one input the form submits. Required.
 	Control render.HTML
-	// Action is the write the form sends; Method is "PUT" (default) or
-	// "PATCH". Return is where a saved edit navigates. Required: Action
-	// and Return, both same-origin paths.
+	// Action is the write, sent as Method "PUT" (default) or "PATCH";
+	// Return is where a saved edit navigates. Both are required
+	// same-origin paths.
 	Action, Method, Return string
-	// SaveLabel and Saved name the button and the toast (defaults "Save"
-	// and "Saved").
+	// SaveLabel and Saved name the button and the toast.
 	SaveLabel, Saved string
 	ID               string
 	// ExtraAttrs forwards attributes to the root; keys the component
@@ -48,7 +35,9 @@ type InlineEditConfig struct {
 	Ctx        context.Context
 }
 
-// InlineEdit renders the editable value.
+// InlineEdit renders a value whose trigger opens an editor over it;
+// a save toasts Saved and navigates to Return, and without script the
+// form posts like any other.
 func InlineEdit(cfg InlineEditConfig) render.HTML {
 	if cfg.Display == "" || cfg.Label == "" || cfg.Control == "" {
 		panic("ui: InlineEdit requires Display, Label and Control")
@@ -84,7 +73,6 @@ func InlineEdit(cfg InlineEditConfig) render.HTML {
 		cfg.Control,
 		headless.Own(Button(ButtonConfig{Ctx: ctx, Label: save, Type: "submit", Variant: ButtonPrimary, Size: ButtonSizeSmall})),
 	))
-	// The value is the caller's; its name is ours.
 	summary := render.Join(
 		html.Span(html.TextConfig{Class: "fui-inline-edit__value"}, cfg.Display),
 		html.Span(html.TextConfig{Class: "fui-visually-hidden", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, render.Text(cfg.Label)),
@@ -105,9 +93,6 @@ func InlineEdit(cfg InlineEditConfig) render.HTML {
 
 var inlineEditStyle = registry.RegisterStyle("ui-inline-edit", inlineEditCSS)
 
-// inlineEditCSS draws the trigger as the value itself, tinted on hover
-// and focus, and the panel as an editor laid over the value: the field
-// and Save on one line, in the field's own frame colour.
 func inlineEditCSS(_ style.Theme) string {
 	return `:where([data-cui-comp="ui-inline-edit"]).fui-inline-edit {
   position: relative;

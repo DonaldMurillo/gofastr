@@ -11,62 +11,33 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── RangeSlider (dual thumb) ───────────────────────────────────────
-//
-// Two overlaid <input type="range"> elements over headless.RangeSlider,
-// one low bound and one high bound. Native semantics on each thumb.
-// The module cross-clamps a drag that would cross the pair and keeps
-// the output sentence in step, re-formatted through the sentence the
-// server rendered into the output's hook.
-//
-// Form-submit shape: two fields, Name+"-min" and Name+"-max", so the
-// server gets explicit lo/hi values without parsing a composite
-// string.
-
 // RangeSliderConfig configures a RangeSlider.
 type RangeSliderConfig struct {
-	// Ctx carries the per-request context the component's own words
-	// (the thumbs' names) are written in. When nil, English applies.
+	// Ctx resolves the thumbs' names. Nil means English.
 	Ctx context.Context
 
-	// Name is the form-field base name (required). Two inputs ship:
-	// Name+"-min" and Name+"-max".
+	// Name is required; the thumbs submit Name+"-min" and Name+"-max".
 	Name string
-	// Label is the accessible group name (required; each thumb is
-	// named from it: "Minimum <Label>", "Maximum <Label>").
+	// Label names the group and each thumb. Required.
 	Label string
-	// Min / Max bound the range. Defaults: 0 / 100.
-	Min int
-	Max int
-	// Step is the step granularity. Default 1.
+	// Min and Max default to 0 and 100, Step to 1.
+	Min  int
+	Max  int
 	Step int
-	// ValueLow / ValueHigh are the initial values. Nil means unset: an
-	// unset low sits on Min and an unset high on Max. Any set value is
-	// honoured, zero included (ValueLow: new(0), ValueHigh: new(0) is
-	// a real 0..0 pair). Values outside Min..Max clamp into it and a
-	// crossed pair (low above high) renders ordered — the same repair
-	// the module makes of a drag.
+	// ValueLow and ValueHigh are the initial values; nil sits on Min or
+	// Max, and a set value is clamped and ordered.
 	ValueLow  *int
 	ValueHigh *int
 	// ShowValue renders the live "lo to hi" sentence beside the label.
 	ShowValue bool
-	// Disabled disables both thumbs.
-	Disabled bool
-	ID       string
-	Class    string
-	// ExtraAttrs forwards additional attributes to the root element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, role, and aria-label (use Label).
+	Disabled  bool
+	ID        string
+	Class     string
+	// ExtraAttrs forwards attributes to the root; keys the component
+	// owns are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// rangeSliderClasses dresses headless.RangeSlider's parts in this
-// package's own vocabulary — the names the registered ui-range-slider
-// sheet matches. The two thumbs carry one class: they are visually
-// identical by design (the module cross-clamps the pair), and the
-// inputs are distinguished by their data-hui-range-slider-low/-high
-// hooks and their -min/-max field names, which is what a selector
-// should key on — not by a styling modifier nothing styles.
 var rangeSliderClasses = headless.Classes{
 	headless.PartRoot:        "fui-range-slider",
 	headless.PartLabel:       "fui-range-slider__label",
@@ -110,12 +81,6 @@ func RangeSlider(cfg RangeSliderConfig) render.HTML {
 var rangeSliderStyle = registry.RegisterStyle("ui-range-slider", rangeSliderCSS)
 
 func rangeSliderCSS(_ style.Theme) string {
-	// Knobs: --ui-range-slider-track-height (6px, the bar both thumbs
-	// ride), --ui-range-slider-thumb-size (20px, the WebKit thumb) and
-	// --ui-range-slider-thumb-size-moz (18px, the Firefox thumb). The
-	// bar's centring arithmetic (track padding, 50% offset, the
-	// WebKit thumb's margin-top) is calc() over the same knobs.
-
 	return `[data-cui-comp="ui-range-slider"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
