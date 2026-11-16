@@ -7,36 +7,19 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── ColorPicker ────────────────────────────────────────────────────
-//
-// Styled wrapper around <input type="color">. The browser's native
-// color UI handles the actual color picking. We own the visual
-// chrome (label + sized swatch that respects --spacing-touch-target).
-//
-// Preset-swatches strip is deferred (see ui-component-roadmap.md):
-// implementing arbitrary-color swatches without inline `style="…"`
-// requires either a runtime module that paints them via CSS custom
-// properties or a pre-known palette baked into the stylesheet.
-
 // ColorPickerConfig configures a ColorPicker.
 type ColorPickerConfig struct {
-	// Name is the form field name for the color input (required).
-	Name string
-	// Label is the accessible label (required).
+	// Name and Label are required.
+	Name  string
 	Label string
-	// Value is the initial color (hex, e.g. "#4F46E5"). Defaults to
-	// the browser's native default (black) when empty.
-	Value string
-	// Disabled disables the input.
+	// Value is the initial hex colour; empty leaves the browser's black.
+	Value    string
 	Disabled bool
 	ID       string
 	Class    string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the picker's root element
-	// (the wrapper div, not the <input>). Keys the component owns
-	// are dropped: class, id (the wrapper id derives from ID / Name),
-	// and data-cui-*.
+	// ExtraAttrs forwards attributes to the wrapper div; keys the
+	// component owns are dropped.
 	ExtraAttrs html.Attrs
 }
 
@@ -73,8 +56,6 @@ func ColorPicker(cfg ColorPickerConfig) render.HTML {
 		inputAttrs["disabled"] = ""
 	}
 
-	// Swatch first, label after. The same reading order as Checkbox
-	// (control on the left, its name on the right).
 	row := []render.HTML{
 		render.Tag("input", inputAttrs),
 		render.Tag("label", map[string]string{
@@ -89,10 +70,6 @@ func ColorPicker(cfg ColorPickerConfig) render.HTML {
 	}
 	rootAttrs["class"] = cls
 	rootAttrs["id"] = id + "-wrap"
-	// The row holds only the swatch input and its label, both built
-	// here from cfg's strings — none of ColorPickerConfig is caller
-	// markup — so the row is the topmost internal subtree under the
-	// (exempt) root.
 	return colorPickerStyle.WrapHTML(render.Tag("div",
 		rootAttrs,
 		render.Tag("div", map[string]string{"class": "fui-color-picker__row", "data-cui-internal": ""}, row...),

@@ -11,48 +11,32 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── Slider ─────────────────────────────────────────────────────────
-//
-// A labelled range input over headless.Slider: native semantics
-// (keyboard ArrowLeft/Right, PageUp/Down, Home/End), an output the
-// module keeps in step while the thumb moves, and the min/max edge
-// labels. The styled track and thumb live in this sheet; the value the
-// output shows is SSR text, so the number is right before script.
-
 // SliderConfig configures a Slider.
 type SliderConfig struct {
-	// Ctx carries the per-request context the value output and edge
-	// labels are written in. When nil, English applies.
+	// Ctx resolves the output and edge labels. Nil means English.
 	Ctx context.Context
 
-	// Name is the form-field name (required).
-	Name string
-	// Label is the accessible label (required, used as <label for=…>).
+	// Name and Label are required.
+	Name  string
 	Label string
-	// Min / Max bound the range. Defaults: 0 / 100.
-	Min int
-	Max int
-	// Step is the step granularity. Default 1.
+	// Min and Max default to 0 and 100, Step to 1.
+	Min  int
+	Max  int
 	Step int
-	// Value is the initial value. Outside the range or off a step is
-	// refused at render — the server's own props are not repaired.
+	// Value is clamped into Min..Max.
 	Value int
 	// ShowValue renders the value output beside the label.
 	ShowValue bool
-	// ShowEdgeLabels renders the Min and Max values under the track.
+	// ShowEdgeLabels renders Min and Max under the track.
 	ShowEdgeLabels bool
-	// Disabled disables interaction.
-	Disabled bool
-	ID       string
-	Class    string
-	// ExtraAttrs forwards additional attributes to the root element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, and every data-hui-* hook.
+	Disabled       bool
+	ID             string
+	Class          string
+	// ExtraAttrs forwards attributes to the root; keys the component
+	// owns are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// sliderClasses dresses headless.Slider's parts in this package's own
-// vocabulary — the names the registered ui-slider sheet matches.
 var sliderClasses = headless.Classes{
 	headless.PartRoot:         "fui-slider",
 	headless.PartLabel:        "fui-slider__label",
@@ -96,11 +80,6 @@ func Slider(cfg SliderConfig) render.HTML {
 var sliderStyle = registry.RegisterStyle("ui-slider", sliderCSS)
 
 func sliderCSS(_ style.Theme) string {
-	// Knobs: --ui-slider-track-height (6px, the runnable track's bar),
-	// --ui-slider-thumb-size (20px, the WebKit thumb) and
-	// --ui-slider-thumb-size-moz (18px, the Firefox thumb, whose box
-	// swallows the border differently). The WebKit thumb's centring
-	// margin is calc() over the track and thumb knobs.
 	return `[data-cui-comp="ui-slider"] {
   display: grid;
   gap: var(--spacing-xs, 2px);

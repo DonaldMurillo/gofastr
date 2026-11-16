@@ -9,79 +9,40 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── SegmentedControl ───────────────────────────────────────────────
-//
-// A radiogroup styled as a horizontal pill toggle bar with a sliding
-// background indicator. Built on native <input type="radio"> so:
-//
-//   - Keyboard nav (Tab, Arrow keys, Space/Enter) works out of the
-//     box. No custom JS for navigation.
-//   - Form submissions submit the selected value as the radio group's
-//     value, no client-side bookkeeping.
-//   - Screen readers announce "radio group", current option, position
-//     in set, all via native ARIA.
-//
-// The sliding indicator is CSS-only: the checked option is a CSS
-// anchor and the indicator is positioned on it, so it fits any number
-// of options. A browser without anchor positioning draws the pill on
-// the checked option itself, without the slide.
-//
-// Optional RPCPath fires a POST to the server on change so apps can
-// pre-cache or re-render dependent islands; pair with RPCSignal for
-// signal-driven downstream updates.
-
 // SegmentedOption is one selectable segment.
 type SegmentedOption struct {
-	// Label is the visible text. Required.
-	Label string
-	// Value is the submit value and the option's stable identifier.
-	// Required and unique within the control.
-	Value string
-	// Disabled marks the segment as non-selectable.
+	// Label and Value are required; Value is unique within the control.
+	Label    string
+	Value    string
 	Disabled bool
 }
 
 // SegmentedControlConfig configures a segmented radiogroup.
 type SegmentedControlConfig struct {
-	// Name is the form-submit name shared by all radios. Required.
+	// Name is shared by every radio. Required.
 	Name string
-
-	// Options must contain at least two segments. Required.
+	// Options holds at least two segments.
 	Options []SegmentedOption
-
-	// Selected is the initially selected Value. Empty defaults to
-	// Options[0].Value. A value matching no option checks no segment,
-	// so the group submits nothing rather than a value nobody chose.
+	// Selected is the checked Value: empty checks the first segment,
+	// and a value no option lists checks none.
 	Selected string
-
-	// Label is the aria-label on the radiogroup wrapper. Required
-	// when the surrounding context doesn't already label it (e.g.
-	// the SegmentedControl is not inside a <label> or FormField).
+	// Label names the radiogroup when nothing around it does.
 	Label string
-
-	// RPCPath, when set, attaches data-cui-rpc to each radio so a change
-	// POSTs to the server carrying the selected segment's name=value. The
-	// runtime serializes the form the radio belongs to (node.form), so place
-	// the SegmentedControl inside a <form> for the selection to round-trip:
-	// a radio with no enclosing form posts an empty body and the handler
-	// cannot see which segment was chosen. An explicit data-cui-rpc-body on a
-	// radio still wins over form serialization. Method is POST.
+	// RPCPath POSTs the radio's form on change; outside a form the
+	// body carries no selection.
 	RPCPath string
-
-	// RPCSignal, when set, broadcasts the response as the given
-	// signal name (data-cui-rpc-signal).
+	// RPCSignal broadcasts the RPC response under this signal name.
 	RPCSignal string
 
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the control's root
-	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-cui-*, role, aria-label, and data-count.
+	// ExtraAttrs forwards attributes to the root; keys the component
+	// owns are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// SegmentedControl renders the radiogroup with a sliding indicator.
+// SegmentedControl renders native radios as a pill toggle bar whose
+// indicator slides to the checked segment in CSS alone.
 func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 	if cfg.RPCPath != "" {
 		checkRPCPath("SegmentedControl", "RPCPath", cfg.RPCPath)
@@ -97,9 +58,6 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 			panic("ui: SegmentedControl option requires Label and Value")
 		}
 	}
-	// An empty Selected starts on the first segment. A value no segment
-	// lists checks none: falling back to the first submitted a value
-	// nobody chose, and no segment can draw the one that was given.
 	selected := cfg.Selected
 	if selected == "" {
 		selected = cfg.Options[0].Value
@@ -110,7 +68,6 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	// Sanitized extras first, owned keys on top so they win.
 	wrapAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "data-count", "aria-label")
 	if wrapAttrs == nil {
 		wrapAttrs = html.Attrs{}
@@ -148,13 +105,7 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 			}
 		}
 		input := render.Tag("input", flattenAttrs(inputAttrs))
-		// data-label feeds the hidden bold copy that reserves the
-		// checked weight's width (see segmentedCSS).
 		labelHTML := html.Span(html.TextConfig{Class: "fui-segmented__label", ExtraAttrs: html.Attrs{"data-label": o.Label}}, render.Text(o.Label))
-		// Every option comes from SegmentedControlConfig's Options
-		// (label/value strings), never from caller markup, so each label
-		// is a topmost internal subtree; its input/labelHTML children
-		// need no mark of their own.
 		labelAttrs := html.Attrs{
 			"class":             "fui-segmented__option",
 			"for":               cfg.Name + "--" + strconv.Itoa(i),
@@ -162,8 +113,6 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 		}
 		items = append(items, render.Tag("label", flattenAttrs(labelAttrs), input, labelHTML))
 	}
-	// Indicator (anchored to the checked option in CSS), also this
-	// component's own, not caller content.
 	items = append(items, html.Span(html.TextConfig{
 		Class:      "fui-segmented__indicator",
 		ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-cui-internal": ""},
@@ -172,19 +121,9 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 	return segmentedStyle.WrapHTML(render.Tag("div", flattenAttrs(wrapAttrs), items...))
 }
 
-// slug is local to the package; toggle.go already defines one.
-
 var segmentedStyle = registry.RegisterStyle("ui-segmented", segmentedCSS)
 
 func segmentedCSS(_ style.Theme) string {
-	// Equal-width columns via CSS Grid (grid-auto-columns: 1fr). The
-	// sliding indicator is anchored to the checked option (CSS anchor
-	// positioning, scoped to the control), so it fits any option count.
-	//
-	// Knobs: --ui-segmented-min-width-2…-6 (16/22/26/30/34rem, the
-	// minimum widths for two to six options; seven or more size to
-	// their content), --ui-segmented-indicator-shadow (the sliding
-	// pill's two-layer shadow).
 	return `[data-cui-comp="ui-segmented"] {
   position: relative;
   anchor-scope: --fui-segmented-checked;

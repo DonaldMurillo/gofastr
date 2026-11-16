@@ -20,14 +20,10 @@ type RatingDisplayConfig struct {
 	Value int
 	// Max is the number of glyphs. Defaults to 5.
 	Max int
-	// Label is the accessible name. Defaults to the localized
-	// "%d out of %d" (Strings.RatingChoice).
-	Label string
-	// Shape and Size match RatingInput's, so a review form and the
-	// reviews it produces draw the same glyph.
-	Shape RatingShape
-	Size  RatingSize
-	// Ctx resolves the localized default label. Nil means English.
+	// Label is the accessible name. Defaults to Strings.RatingChoice.
+	Label      string
+	Shape      RatingShape
+	Size       RatingSize
 	Ctx        context.Context
 	ID         string
 	Class      string
@@ -69,8 +65,6 @@ func Rating(cfg RatingDisplayConfig) render.HTML {
 	if label == "" {
 		label = i18n.FillContext(cfg.Ctx, StringsFor(cfg.Ctx).RatingChoice, map[string]any{"n": cfg.Value, "max": max})
 	}
-	// The shape and size modifiers are RatingInput's own, so one
-	// --ui-rating-color override recolours both.
 	cls := []string{"fui-rating-display"}
 	if cfg.Shape != RatingShapeStar {
 		cls = append(cls, "fui-rating--"+string(cfg.Shape))

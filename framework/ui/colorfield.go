@@ -11,70 +11,37 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── ColorField ─────────────────────────────────────────────────────
-//
-// The affix-shell colour control, rendered through headless.Color: the
-// native picker reduced to a swatch beside the hex text, so the field
-// reads as one control-height input. The text input is the source of
-// truth and the control that submits; the swatch is a picker bound to
-// it (data-hui-affix-swatch, out of the tab order so there is exactly
-// one focus target), and the headless behaviour module keeps the two
-// one value through data-hui-color.
-//
-// A value the picker cannot show — "transparent", "var(--x)", a CSS
-// colour name — is kept verbatim in the text and the shell is marked
-// data-invalid rather than the value being degraded: this component
-// edits config, and rewriting an unpickable value to black would
-// destroy it.
-
 // ColorFieldConfig configures a ColorField.
 type ColorFieldConfig struct {
-	// Name is the hex text input's form-field name (required): the
-	// text input is the control that submits.
+	// Name is the hex text input's form name. Required.
 	Name string
-	// Value is the authoritative value, placed in the text input
-	// verbatim. When it is not #rgb or #rrggbb the swatch falls back
-	// to black and the shell is marked data-invalid.
+	// Value goes into the text input verbatim; one that is not #rgb or
+	// #rrggbb leaves the swatch black and marks the shell data-invalid.
 	Value string
-	// TextID is the id of the text input, for a label's `for`.
-	// A Field's id wins over it when both are set.
+	// TextID is the text input's id; a Field's id wins over it.
 	TextID string
-	// SwatchLabel is required. The swatch's own accessible name comes
-	// from the component's PickColor word plus Name; SwatchLabel
-	// names the TEXT input when TextLabel is empty — the input that
-	// carries the value is the worse of the two to leave unnamed,
-	// and the easy one to miss, because a caller that wraps this in
-	// its own <label for=…> sees a labelled control while a caller
-	// that does not ships an unnamed critical control.
+	// SwatchLabel is required, and names the text input when TextLabel
+	// is empty; the swatch is named by PickColor plus Name.
 	SwatchLabel string
-	// TextLabel is the accessible name for the text input. Defaults
-	// to SwatchLabel. Set aria-label or aria-labelledby in TextAttrs
-	// to take over.
+	// TextLabel names the text input. An aria-label or aria-labelledby
+	// in TextAttrs takes over.
 	TextLabel string
-	// SwatchAttrs and TextAttrs add attributes to the respective
-	// inputs, for the data-* attributes a caller's own JS binds to.
-	// Keys the component owns are dropped: the swatch's aria-label,
-	// type, value and tabindex; the text input's name, value and the
-	// field wiring; and every data-cui-* / data-hui-* key.
+	// SwatchAttrs and TextAttrs add attributes to each input; keys the
+	// component owns are dropped.
 	SwatchAttrs html.Attrs
 	TextAttrs   html.Attrs
 
 	Class string
 
-	// ExtraAttrs forwards additional attributes to the shell's root
-	// element. Keys the component owns are dropped: class (use
-	// Class), id, and every data-cui-* / data-hui-* key. Per-input
-	// attributes belong in SwatchAttrs / TextAttrs.
+	// ExtraAttrs forwards attributes to the shell's root; keys the
+	// component owns are dropped.
 	ExtraAttrs html.Attrs
 
-	// Ctx carries the per-request context used to resolve the swatch's
-	// word (ui.StringsFor: PickColor). When nil, the English default
-	// is used.
+	// Ctx resolves the swatch's word. Nil means English.
 	Ctx context.Context
 
-	// Field is the wiring an enclosing FormField handed its builder:
-	// applied to the text input (id, described-by chain, invalid
-	// state), and it wins over TextID. Zero value means standalone.
+	// Field is an enclosing FormField's wiring, applied to the text
+	// input. Zero means standalone.
 	Field headless.FieldControl
 }
 
@@ -91,10 +58,6 @@ func ColorField(cfg ColorFieldConfig) render.HTML {
 		id = cfg.Field.ID
 	}
 
-	// Name the text input unless the caller already did: applied on
-	// the merged attrs so an explicit aria-label / aria-labelledby
-	// wins, and a caller pointing at its own visible label is not
-	// overridden.
 	hexAttrs := html.Attrs{}
 	maps.Copy(hexAttrs, cfg.TextAttrs)
 	if hexAttrs["aria-label"] == "" && hexAttrs["aria-labelledby"] == "" {
@@ -110,9 +73,6 @@ func ColorField(cfg ColorFieldConfig) render.HTML {
 
 	rootAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs)
 
-	// A nil Ctx resolves through i18nui's English defaults (the
-	// bridge pins them byte-for-byte to headless's), preserving the
-	// swappable-defaults behaviour the framework's i18n table has.
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
