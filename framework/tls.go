@@ -15,55 +15,35 @@ import (
 )
 
 // TLSConfig makes the app serve HTTPS on its listen address. Set exactly
-// one source: CertFile and KeyFile, AutoCert, or Config. Every source
-// refuses protocol versions below TLS 1.2, and HTTP/2 is offered over
-// TLS unless AppConfig.HTTPProtocols says otherwise.
-//
-// Leave AppConfig.TLS nil behind a proxy or load balancer that
-// terminates TLS; the app then serves plain HTTP to it.
+// one source: CertFile and KeyFile, AutoCert, or Config; Start fails
+// otherwise. Every source refuses versions below TLS 1.2.
 type TLSConfig struct {
-	// CertFile and KeyFile are PEM files: the certificate chain and its
-	// private key. They are read at Start, which fails if they do not
-	// load, and read again on the next handshake after either file's
-	// modification time or size changes, so a renewal (certbot, a
-	// mounted secret) takes effect without a restart. A pair that does
-	// not load, such as a new certificate beside the old key mid-copy,
-	// keeps the last good one and logs.
+	// CertFile and KeyFile are PEM files, read at Start and again on the
+	// next handshake after either file changes.
 	CertFile string
 	KeyFile  string
 
-	// AutoCert obtains and renews certificates from an ACME authority
-	// (Let's Encrypt by default) using the TLS-ALPN-01 challenge, which
-	// runs on the HTTPS port itself: the app must be reachable on :443
-	// at every name in Domains.
+	// AutoCert obtains and renews certificates over ACME TLS-ALPN-01, so
+	// the app must be reachable on :443 at every name in Domains.
 	AutoCert *AutoCertConfig
 
-	// Config is a caller-built configuration, for what the other two do
-	// not cover (client certificates, a certificate store). It must
-	// supply a certificate (Certificates, GetCertificate or
-	// GetConfigForClient). A zero MinVersion becomes TLS 1.2; a lower
-	// one fails Start. A config GetConfigForClient returns with a
-	// MinVersion below TLS 1.2 is raised to it. The app works on a clone.
+	// Config is a caller-built configuration that supplies a certificate.
+	// A zero MinVersion becomes TLS 1.2; a lower one fails Start.
 	Config *tls.Config
 }
 
 // AutoCertConfig configures ACME certificates for TLSConfig.AutoCert.
 // Setting it accepts the ACME authority's terms of service.
 type AutoCertConfig struct {
-	// Domains are the host names to obtain certificates for. Required:
-	// a handshake for any other name is refused, so a scanner cannot
-	// make the app request certificates for names it does not serve.
+	// Domains are the only host names certificates are requested for.
+	// Required.
 	Domains []string
-	// CacheDir is where certificates and the account key persist across
-	// restarts, created 0700 if missing. Required: without it every
-	// restart asks the authority again and soon hits its rate limits.
+	// CacheDir persists certificates and the account key. Required.
 	CacheDir string
-	// Email is the contact address the authority sends expiry notices
-	// to. Optional.
+	// Email is the contact for expiry notices. Optional.
 	Email string
-	// DirectoryURL is the ACME directory. Empty is Let's Encrypt's
-	// production directory; point it at the staging directory while
-	// testing a deployment.
+	// DirectoryURL is the ACME directory; empty is Let's Encrypt
+	// production.
 	DirectoryURL string
 }
 
@@ -78,8 +58,6 @@ func WithHTTPProtocols(p http.Protocols) AppOption {
 	return func(a *App) { a.Config.HTTPProtocols = &p }
 }
 
-// urlScheme is the scheme of the app's own URLs: the banner, the setup
-// link and the local run record.
 func (a *App) urlScheme() string {
 	if a.Config.TLS != nil {
 		return "https"
@@ -87,8 +65,6 @@ func (a *App) urlScheme() string {
 	return "http"
 }
 
-// serverTLSConfig builds the listener's TLS configuration from
-// AppConfig.TLS, or returns nil for plain HTTP.
 func (a *App) serverTLSConfig() (*tls.Config, error) {
 	c := a.Config.TLS
 	if c == nil {
@@ -151,9 +127,6 @@ func (a *App) serverTLSConfig() (*tls.Config, error) {
 			return nil, errors.New("framework: TLS Config has no certificate")
 		}
 		if get := cfg.GetConfigForClient; get != nil {
-			// The callback's config replaces this one for the handshake,
-			// so it gets the same floor: a MinVersion below TLS 1.2 is
-			// raised to it on a clone.
 			cfg.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 				c, err := get(hello)
 				if err != nil || c == nil || c.MinVersion >= tls.VersionTLS12 {
@@ -168,25 +141,21 @@ func (a *App) serverTLSConfig() (*tls.Config, error) {
 	}
 }
 
-// fileStamp is what a certificate file looked like when it was read.
 type fileStamp struct {
 	mod  time.Time
 	size int64
 }
 
-// certReloader serves a certificate pair from disk and reads it again
-// when either file changes.
 type certReloader struct {
 	certFile, keyFile string
 	logger            *slog.Logger
 
 	mu      sync.Mutex
 	cert    *tls.Certificate
-	loaded  [2]fileStamp // the stamps cert was read at
-	refused [2]fileStamp // the last stamps that failed to load
+	loaded  [2]fileStamp
+	refused [2]fileStamp
 }
 
-// stamps stats both files.
 func (r *certReloader) stamps() ([2]fileStamp, error) {
 	var out [2]fileStamp
 	for i, f := range []string{r.certFile, r.keyFile} {
@@ -214,8 +183,6 @@ func (r *certReloader) reload() error {
 	return nil
 }
 
-// get is tls.Config.GetCertificate: the loaded pair, read again first
-// when a file changed since it was loaded and since the last refusal.
 func (r *certReloader) get(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

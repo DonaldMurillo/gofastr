@@ -6,3 +6,87 @@ code:
 docs:
   - framework/docs/content/health-checks.md
   - framework/docs/content/observability.md
+invariants:
+  - id: draining-readiness-answers-at-once
+    rule: Once Shutdown begins, /readyz answers 503 with status draining without running any check, while /healthz keeps answering 200 and the server keeps serving through the grace.
+    enforced_by:
+      - test: framework.TestShutdownDrainsReadinessBeforeClosing
+  - id: drain-takes-half-the-deadline
+    rule: The readiness grace takes at most half of what Shutdown's context has left, and none once it has expired.
+    enforced_by:
+      - test: framework.TestReadinessDrainCappedByDeadline
+      - test: framework.TestShutdownDrainLeavesTheTeardownItsShare
+  - id: drain-default-zero-where-nothing-probes
+    rule: Without WithReadinessDrain the grace is 5s, and 0 in a test binary, under gofastr dev, in a battery/service run, on a loopback bind and on an in-process listener.
+    enforced_by:
+      - test: framework.TestReadinessDrainDefault
+      - test: framework.TestReadinessDrainLocalRunDefaultsToZero
+      - test: framework.TestSweepServeInProcessListenerIsLocalOnly
+  - id: sigterm-deadline-adds-the-grace
+    rule: The default SIGTERM handler gives Shutdown AppConfig.ShutdownTimeout plus the readiness grace, so the grace does not eat the drain's budget.
+    enforced_by:
+      - test: framework.TestReadinessDrainDefault
+  - id: readiness-error-text-redacted
+    rule: Without WithVerboseReadiness a failed check reports "check failed" in /readyz, never its error text.
+    enforced_by:
+      - test: framework.TestReadiness_DoesNotLeakInternalErrorTextByDefault
+  - id: readiness-bounded-by-deadline
+    rule: /readyz answers by its deadline even when a check ignores its context, reporting each unfinished check as timeout and each finished one, named or not, with its own result.
+    enforced_by:
+      - test: framework.TestReadiness_DoesNotHangPastDeadline
+      - test: framework.TestReadinessTimeoutKeepsFinishedUnnamedCheck
+      - test: framework.TestReadinessUnnamedCompletedCheckIsNotATimeout
+  - id: readiness-check-panic-contained
+    rule: A panicking or nil readiness check reports status error and never escapes the /readyz handler.
+    enforced_by:
+      - test: framework.TestReadiness_RecoversFromPanickingCheck
+      - test: framework.TestReadiness_NilCheckFnTreatedAsError
+  - id: metrics-collectors-wired
+    rule: App.Metrics attaches the DB pool collector when the App has a DB and the outbox collector when it has an outbox.
+    enforced_by:
+      - test: framework.TestAppMetrics_DBPoolCollector
+      - test: framework.TestAppMetrics_OutboxCollectorAutoWired
+decisions:
+  - id: readiness-drain-five-seconds
+    date: 2026-11-16
+    status: accepted
+    decision: The default readiness grace is five seconds, enough for a typical balancer probe interval.
+    rejected:
+      - option: A longer grace.
+        why: Every rollout would wait it out; Kubernetes usually removes an endpoint within 5s and an ALB starts deregistering on the first failed check.
+      - option: No grace.
+        why: A balancer still routing here would see connections refused while it had not yet noticed the 503.
+    revisit_if: A common deployment target probes readiness less often than every five seconds.
+    upholds: [drain-default-zero-where-nothing-probes]
+  - id: readiness-redacted-by-default
+    date: 2026-11-16
+    status: accepted
+    decision: /readyz omits check error text unless WithVerboseReadiness is set.
+    rejected:
+      - option: Error text by default.
+        why: /readyz is usually reachable without authentication, and raw errors leak internal addresses and connection strings.
+    upholds: [readiness-error-text-redacted]
+  - id: readiness-results-over-a-channel
+    date: 2026-11-16
+    status: accepted
+    decision: Each readiness check sends its row over a channel buffered for every check, and only the collecting loop writes the result slice, telling a finished row by a done flag.
+    rejected:
+      - option: Each goroutine writes its own slot of the result slice.
+        why: A check finishing after the deadline raced the timeout path reading the slice.
+      - option: Telling a finished row by a non-empty Name.
+        why: A passed check registered without a name was reported as a timeout.
+    upholds: [readiness-bounded-by-deadline]
+  - id: registrar-method-name
+    date: 2026-11-16
+    status: accepted
+    decision: The optional plugin interface method is RegisterReadinessChecks, plural.
+    rejected:
+      - option: RegisterReadiness, the App method's name.
+        why: A battery embedding *App would get an ambiguous selector.
+  - id: db-check-without-nil-guard
+    date: 2026-11-16
+    status: accepted
+    decision: The default db readiness check pings a.DB with no nil check of its own, since it is registered only when the App has a DB.
+    rejected:
+      - option: Report ok when the DB is nil.
+        why: A stale DB pointer would read as healthy.

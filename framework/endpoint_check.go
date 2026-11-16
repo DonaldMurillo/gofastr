@@ -9,8 +9,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 )
 
-// EndpointRouteError identifies the endpoint whose resolved route collided.
-// Index is its zero-based position in ValidateEntityEndpointRoutes' endpoints.
+// EndpointRouteError is the error for the endpoint at Index whose route
+// collided.
 type EndpointRouteError struct {
 	Index int
 	Err   error
@@ -19,12 +19,10 @@ type EndpointRouteError struct {
 func (e *EndpointRouteError) Error() string { return e.Err.Error() }
 func (e *EndpointRouteError) Unwrap() error { return e.Err }
 
-// ValidateEntityEndpointRoutes checks endpoint collisions before registration.
-// Each endpoint's Path must be its resolved, absolute HTTP route, including
-// API/group prefixes. mount is the entity's CRUD mount, or empty when CRUD is
-// disabled; opts describe that mount. withEntityUI includes its bulk, export
-// and picker routes. existing optionally supplies routes already registered
-// on the app. No routes or handlers are executed or published.
+// ValidateEntityEndpointRoutes reports the first endpoint whose resolved
+// absolute route collides with the entity's CRUD routes at mount (none when
+// mount is empty), its EntityUI routes when withEntityUI, existing, or a
+// sibling. It registers nothing.
 func ValidateEntityEndpointRoutes(mount string, opts crud.CrudRouteOptions, withEntityUI bool, endpoints []Endpoint, existing ...router.RegisteredRoute) error {
 	taken := map[string]string{}
 	for _, rt := range existing {
