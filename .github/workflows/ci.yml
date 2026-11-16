@@ -799,6 +799,64 @@ jobs:
         if: failure() && runner.os == 'macOS'
         run: log show --last 15m --style compact --predicate 'sender == "Sandbox" OR subsystem == "com.apple.sandbox.reporting"' | grep -i deny | tail -60 || true
 
+  e2e-scope:
+    # The affected selection for every browser-e2e row, taken once. Each
+    # row used to restore the 2.2 GB Go cache and install Go only to learn
+    # that the change does not reach its suite: 1 to 1.6 minutes a row,
+    # 19.4 runner-minutes on a pull request that reached none (2026-11).
+    # Here the list costs one module download; a row now checks its
+    # pattern against it before it restores or installs anything. Every
+    # other trigger runs every row, so this job only says so.
+    name: browser e2e scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CGO_ENABLED: "1"
+      GOFASTR_TEST_ALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+      GOFASTR_AFFECTED_BASE: ${{ github.event.pull_request.base.sha }}
+      GOFASTR_AFFECTED_DIFF_BASE: "1"
+    outputs:
+      all: ${{ steps.list.outputs.all }}
+      untagged: ${{ steps.list.outputs.untagged }}
+      chromium: ${{ steps.list.outputs.chromium }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: github.event_name == 'pull_request'
+
+      - name: Fetch the pull request base (affected scope)
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin "$GOFASTR_AFFECTED_BASE"
+
+      - name: Set up Go
+        if: github.event_name == 'pull_request'
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          # No cache: go list needs module sources only, and a fresh
+          # download of them took 12 s (2026-11), less than restoring the
+          # test job's entry.
+          cache: false
+
+      - name: List affected packages
+        id: list
+        # One import path per line, untagged and under the chromium tag
+        # (the chromium-ui row's buildtags). A selector error fails the
+        # step, and every row then fails rather than skipping.
+        run: |
+          if [ "$GOFASTR_TEST_ALL" = 1 ]; then
+            echo "all=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          go build -o "$RUNNER_TEMP/affected" ./cmd/affected
+          untagged=$("$RUNNER_TEMP/affected")
+          chromium=$("$RUNNER_TEMP/affected" -tags chromium)
+          {
+            echo "all=false"
+            printf 'untagged<<GOFASTR_PKGS\n%s\nGOFASTR_PKGS\n' "$untagged"
+            printf 'chromium<<GOFASTR_PKGS\n%s\nGOFASTR_PKGS\n' "$chromium"
+          } >> "$GITHUB_OUTPUT"
+          echo "affected: $(printf '%s' "$untagged" | grep -c . || true) untagged, $(printf '%s' "$chromium" | grep -c . || true) chromium-tagged"
+
   browser-e2e:
     # One matrix shard per chromedp suite. These suites were serialized in
     # a single job because they contend for Chrome/sockets when they share
@@ -811,6 +869,10 @@ jobs:
     # run; release.yml's gate counts checks whose name contains
     # "(blocking)", so the suffix must stay in `name`.
     name: "browser e2e · ${{ matrix.suite }} (blocking)"
+    # Runs even when e2e-scope failed: a skipped row reports as passing,
+    # so the row's first step fails it instead.
+    needs: e2e-scope
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     # Budget = the largest per-suite go-test timeout (site-axe, 30m) plus
     # setup.
@@ -969,13 +1031,42 @@ jobs:
             # the deterministic -p 2 run for the same contention reason.
             run: go test -count=1 -timeout=10m ./evals/ui-quality/...
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      # First, before the cache restore and every install: a suite the
+      # change does not reach costs this step and nothing else (#598).
+      # matrix.pkg is matched with grep -E against e2e-scope's import
+      # paths, so it keeps to the syntax Go's regexp and ERE read alike
+      # (TestBrowserE2EPatternsArePortable).
+      - name: Is this suite affected?
+        id: scope
+        env:
+          SCOPE: ${{ needs.e2e-scope.result }}
+          ALL: ${{ needs.e2e-scope.outputs.all }}
+          UNTAGGED: ${{ needs.e2e-scope.outputs.untagged }}
+          CHROMIUM: ${{ needs.e2e-scope.outputs.chromium }}
+          PKG: ${{ matrix.pkg }}
+          TAGS: ${{ matrix.buildtags }}
+        run: |
+          if [ "$SCOPE" != success ]; then
+            echo "::error::browser e2e scope did not succeed ($SCOPE), so nothing says this suite may skip"
+            exit 1
+          fi
+          case "$TAGS" in
+            "") pkgs=$UNTAGGED ;;
+            chromium) pkgs=$CHROMIUM ;;
+            *) echo "::error::e2e-scope lists no packages for tags '$TAGS'"; exit 1 ;;
+          esac
+          if [ "$ALL" = true ] || printf '%s\n' "$pkgs" | grep -Eq -- "$PKG"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$PKG is not in this change's import-graph closure; suite skipped (runs on main)."
+          fi
 
-      - name: Fetch the pull request base (affected scope)
-        if: github.event_name == 'pull_request'
-        run: git fetch --no-tags --depth=1 origin "$GOFASTR_AFFECTED_BASE"
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: steps.scope.outputs.run == 'true'
 
       - name: Go module + build cache (restore only)
+        if: steps.scope.outputs.run == 'true'
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
@@ -991,6 +1082,7 @@ jobs:
             go-test-${{ runner.os }}-
 
       - name: Set up Go
+        if: steps.scope.outputs.run == 'true'
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
@@ -998,25 +1090,6 @@ jobs:
           # between dependency bumps. This job restores the test job's
           # per-SHA cache instead.
           cache: false
-
-      # Before the Chrome and gofastr installs: a suite the change does
-      # not reach skips them too, not only the test run (#598).
-      - name: Is this suite affected?
-        id: scope
-        env:
-          PKG: ${{ matrix.pkg }}
-          TAGS: ${{ matrix.buildtags }}
-        # The assignment keeps the selector's exit status, so the step's
-        # bash -e fails on a selector error; inside the [ ] test it read
-        # as "nothing affected" and skipped the suite.
-        run: |
-          matched=$(go run ./cmd/affected -tags "$TAGS" -match "$PKG")
-          if [ -n "$matched" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::$PKG is not in this change's import-graph closure; suite skipped (runs on main)."
-          fi
 
       - name: Install Chrome
         if: steps.scope.outputs.run == 'true'
