@@ -17,8 +17,6 @@ func entityMCPToolNames(ent *entity.Entity, m registrationMount) []string {
 	return names
 }
 
-// Keep provenance for dev-only reads too: those intentionally survive the
-// bind withdrawal, so core/mcp's mutating-tool marker cannot identify them.
 func (a *App) rememberDevEntityMCPTools(ent *entity.Entity, m registrationMount) {
 	if ent.Config.Exposure.MCP {
 		return

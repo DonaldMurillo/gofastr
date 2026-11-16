@@ -11,34 +11,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-// WithMCPIntrospection installs a set of MCP tools that expose the
-// running App's structure to an agent: registered routes, plugins,
-// batteries, app config, readiness status. Opt-in because:
-//
-//   - The tools are read-only but cumulatively reveal a lot about the
-//     app's shape (every mounted route, every loaded module, every
-//     config field). Production apps that expose MCP to untrusted
-//     callers should weigh the disclosure surface before enabling.
-//   - The framework should stay zero-config-friendly: nothing should
-//     show up on the MCP server unless the operator asked for it.
-//
-// Tools registered:
-//
-//   - app_routes:     list every (method, pattern) registered on the router.
-//   - app_plugins:    list registered plugins (name only).
-//   - app_batteries:  list registered batteries with deps + lifecycle status.
-//   - app_modules:    list modules with manifest metadata and enabled state.
-//   - app_config:     return the AppConfig snapshot (Name, JSONCase, timeouts…).
-//   - app_readiness:  run every registered readiness check and report results.
-//   - app_goroutine_leaks: count + stacks of runtime-proven leaked goroutines.
-//   - app_routines:   every registered stored routine with its ledger state.
-//   - app_unmounted:  gofastr packages compiled in as unmounted copies.
-//
-// The framework's embedded docs (framework_docs_list / framework_docs_get
-// / framework_docs_search) are a separate opt-in,
-// WithMCPTools(mcptools.Register) from framework/docs/mcptools: framework itself never
-// imports the markdown corpus, so a docs edit does not rebuild or retest
-// every package that imports framework.
+// WithMCPIntrospection installs the read-only app_* MCP tools that report
+// the running App's routes, plugins, batteries, modules, config,
+// readiness, goroutine leaks, routines and unmounted copies.
 func WithMCPIntrospection() AppOption {
 	return func(a *App) {
 		a.mcpIntrospection = true
@@ -107,11 +82,6 @@ func (a *App) registerIntrospectionTools() error {
 			handler:     a.toolUnmounted,
 		},
 	}
-	// Under the dev implication these tools are ungated and disclose the
-	// app's routes, config, goroutine stacks and module state. That is
-	// only safe on a loopback listener: mark them dev-implied so the bind
-	// guard withdraws them on an exposed bind, as it does battery/log's
-	// read tools. An explicit WithMCPIntrospection keeps them.
 	var opts []mcp.ToolOption
 	if a.mcpIntrospectionDevImplied {
 		opts = append(opts, mcp.WithDevImplied())
@@ -126,8 +96,6 @@ func (a *App) registerIntrospectionTools() error {
 	}
 	return nil
 }
-
-// ---- handlers ------------------------------------------------------------
 
 func (a *App) toolRoutes(_ context.Context, _ map[string]any) (any, error) {
 	routes := a.router.Routes()
@@ -202,17 +170,10 @@ func (a *App) toolConfig(_ context.Context, _ map[string]any) (any, error) {
 		"no_llmmd":                a.Config.NoLLMMD,
 		"request_timeout_ms":      a.Config.RequestTimeout.Milliseconds(),
 		"disable_request_timeout": a.Config.DisableRequestTimeout,
-		// The resolved connection deadlines the http.Server actually uses
-		// (defaults applied, HTTPServerTimeouts overrides honored, DisableRequestTimeout
-		// zeroing reflected). Answers "why did my handler get cut?" without guessing.
 		"http_server_timeouts_ms": a.effectiveServerTimeoutsMs(),
 	}, nil
 }
 
-// effectiveServerTimeoutsMs reports the four http.Server connection deadlines
-// after defaults and AppConfig.HTTPServerTimeouts / DisableRequestTimeout are
-// resolved, for the app_config introspection tool. Before Start the server is
-// nil, so the documented defaults are reported instead of zeros.
 func (a *App) effectiveServerTimeoutsMs() map[string]int64 {
 	rh := defaultServerReadHeaderTimeout
 	r := defaultServerReadTimeout
@@ -236,17 +197,11 @@ func (a *App) toolGoroutineLeaks(_ context.Context, _ map[string]any) (any, erro
 	if p == nil {
 		return nil, fmt.Errorf("goroutineleak profile unavailable in this runtime")
 	}
-	// Detection is GC-reachability-based; force a cycle so the report
-	// reflects now, not the last collection.
 	runtime.GC()
 	var buf bytes.Buffer
-	// debug=1 is the leak report; debug>=2 degrades to ALL goroutine
-	// stacks (leaked or not) by stdlib design.
 	if err := p.WriteTo(&buf, 1); err != nil {
 		return nil, err
 	}
-	// Bound the payload — each leaked stack is small, but a mass leak
-	// must not turn an introspection reply into a megabyte dump.
 	const maxStackBytes = 64 << 10
 	stacks := buf.String()
 	truncated := false
@@ -268,17 +223,8 @@ func (a *App) toolReadiness(ctx context.Context, _ map[string]any) (any, error) 
 	ctx, cancel := context.WithTimeout(ctx, a.readinessTimeout())
 	defer cancel()
 	checks := a.readinessChecks()
-	// Force verbose=false regardless of App.readinessVerbose, /readyz
-	// and /mcp may have very different trust boundaries (e.g. /readyz on
-	// a private listener vs /mcp behind authenticated tunneling), and
-	// the introspection tool must not leak raw error text (DSNs, IPs,
-	// stack fragments) just because the operator enabled verbose for
-	// the load balancer's probe.
 	resp := runReadinessChecks(ctx, checks, false)
 	out := make([]map[string]any, 0, len(resp.Checks))
-	// An app with no checks registered is not "ready", it's
-	// unconfirmed. Surface that explicitly rather than silently
-	// reporting ready=true (which would hide a wiring mistake).
 	if len(checks) == 0 {
 		return map[string]any{
 			"ready":  false,
@@ -307,25 +253,10 @@ func (a *App) toolReadiness(ctx context.Context, _ map[string]any) (any, error) 
 	}, nil
 }
 
-// toolRoutines lists every routine the App registered (via App.Routine or
-// App.RoutinesFS) alongside the live ledger/liveness state. The intent is
-// agent self-orientation: "did the routine body change I just deployed
-// actually land?", "is there a routine the code still registers but the boot
-// skipped?", "is there an object missing in pg_proc?".
-//
-// Each entry carries: name, declared Dialect ("" = all engines), the sha256
-// checksum of the current registered Up body, ledger_state ∈
-// {present,drifted,missing,unknown}, and liveness ∈ {present,absent,unknown}.
-// ledger_state is "unknown" when no DB is wired; liveness is "unknown" on
-// SQLite (no pg_proc/pg_views) or when the catalog query errors, the tool
-// never fails, it just degrades gracefully so an agent always gets the
-// static fields.
 func (a *App) toolRoutines(ctx context.Context, _ map[string]any) (any, error) {
 	registered := a.migrationRoutines
 	out := make([]map[string]any, 0, len(registered))
 
-	// No DB → return static fields + unknown ledger/liveness. The tool never
-	// fails; a degraded answer is more useful to an agent than an error.
 	if a.DB == nil {
 		for _, r := range registered {
 			out = append(out, map[string]any{
@@ -343,10 +274,6 @@ func (a *App) toolRoutines(ctx context.Context, _ map[string]any) (any, error) {
 		}, nil
 	}
 
-	// The cached dialect, filled at boot: DetectDialect probes on a
-	// background context, three 5s attempts, and held a canceled call
-	// about 15s on an exhausted pool. A failed probe leaves the ledger
-	// unread, so every state reads unknown.
 	dialect, dialectErr := a.txDialect()
 	ledger, ledgerRead := map[string]string{}, false
 	if dialectErr == nil {
@@ -360,10 +287,6 @@ func (a *App) toolRoutines(ctx context.Context, _ map[string]any) (any, error) {
 			"dialect":  dialectStringForTool(r.Dialect),
 			"checksum": newSum,
 		}
-		// Ledger state: only meaningful when the dialect matches. A routine
-		// declared PG-only running against SQLite will never have a ledger row
-		// for this engine, report "skipped_for_dialect" so an agent doesn't
-		// read it as drift.
 		if dialectErr == nil && r.Dialect != "" && r.Dialect != dialect {
 			entry["ledger_state"] = "skipped_for_dialect"
 		} else if !ledgerRead {
@@ -388,11 +311,6 @@ func (a *App) toolRoutines(ctx context.Context, _ map[string]any) (any, error) {
 	}, nil
 }
 
-// readRoutineLedger reads the routine ledger in one shot under the
-// caller's context. ok is false when the read failed: every entry then
-// reads "unknown", because an unread ledger is not an empty one and
-// "missing" would claim a routine never applied. A ledger table that does
-// not exist yet is a read that succeeded: no routine has been applied.
 func (a *App) readRoutineLedger(ctx context.Context, dialect migrate.Dialect) (map[string]string, bool) {
 	ledger := map[string]string{}
 	rows, err := a.DB.QueryContext(ctx, `SELECT name, checksum FROM gofastr_routines`)
@@ -414,16 +332,9 @@ func (a *App) readRoutineLedger(ctx context.Context, dialect migrate.Dialect) (m
 	return ledger, true
 }
 
-// probeRoutineLiveness asks the DB whether a routine object with the given
-// name currently exists. Postgres: pg_proc (functions/procedures) UNIONed
-// with pg_views (views). SQLite: there is no portable catalog query that
-// covers all routine kinds cheaply, so we report "unknown" rather than lie.
-// Any query error returns "unknown", the introspection tool degrades to the
-// static fields rather than failing.
 func (a *App) probeRoutineLiveness(ctx context.Context, name string, dialect migrate.Dialect) string {
 	switch dialect {
 	case migrate.DialectPostgres:
-		// One round-trip: pg_proc (functions + procedures) and pg_views.
 		const q = `SELECT EXISTS (
 				SELECT 1 FROM pg_proc WHERE proname = $1
 				UNION ALL
@@ -439,20 +350,10 @@ func (a *App) probeRoutineLiveness(ctx context.Context, name string, dialect mig
 		}
 		return "absent"
 	default:
-		// SQLite: sqlite_master covers views, triggers, tables, but a function
-		// or procedure body has no catalog entry (SQLite has no stored
-		// functions). Reporting "present" or "absent" off sqlite_master would
-		// be misleading for the function/procedure case, so we surface
-		// "unknown" and let ledger_state carry the water.
 		return "unknown"
 	}
 }
 
-// dialectStringForTool renders a Dialect for the MCP response. Re-implements
-// the migrate package's dialectString helper because this file lives in
-// package framework and the helper is unexported there. The two must stay in
-// sync. See TestRoutineChecksum_StableAndDifferent's sibling test
-// (framework-level) for the parity assertion.
 func dialectStringForTool(d migrate.Dialect) string {
 	if d == "" {
 		return "all"

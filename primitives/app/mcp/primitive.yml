@@ -35,7 +35,7 @@ invariants:
   - id: gated-tool-hidden-from-list
     rule: A gated framework MCP tool is registered with mcp.WithToolGate, so a caller its gate refuses can neither list its schema nor call it.
     enforced_by:
-      - test: framework.TestControlToolsHiddenFromUnauthenticatedList
+      - test: framework.TestSweepAgentsControlToolsUnlistedForAnonymous
       - test: framework.TestControlToolsRequireAdmin
   - id: empty-gate-panics
     rule: WithMCPGate and WithMCPControlGate given a nil gate, and MCPRequireRole given no role, panic at wiring time instead of admitting every caller.
@@ -95,8 +95,7 @@ invariants:
       - test: framework.TestContractToolsFollowDevMode
   - id: verify-never-echoes-secrets
     rule: contracts_verify replaces the message of a diagnostic marked RedactSnippet with its rule title.
-    enforced_by:
-      - test: framework.TestContractsVerifyNeverEchoesADetectedSecret
+    judge: Does this change let contracts_verify return the message of a diagnostic marked RedactSnippet instead of its rule title?
   - id: fix-reports-partial-writes
     rule: When contracts_fix fails after rewriting some files, its error result names the files already written.
     enforced_by:
@@ -113,11 +112,12 @@ invariants:
       - test: framework.TestMCPAppReadinessNoChecksNotReady
       - test: framework.TestReadinessToolReportsDraining
   - id: routines-report-what-they-know
-    rule: app_routines reports ledger_state unknown when the ledger could not be read, skipped_for_dialect for a routine declared for another engine, and static fields without failing when no DB is wired.
+    rule: app_routines reports ledger_state unknown when the ledger could not be read, missing when the ledger table does not exist yet, skipped_for_dialect for a routine declared for another engine, and static fields without failing when no DB is wired.
     enforced_by:
       - test: framework.TestRoutinesUnreadableLedgerUnknown
       - test: framework.TestSweepAgentsRoutinesSkipOtherDialect
       - test: framework.TestMCPAppRoutinesSurvivesNilDB
+      - test: framework.TestMCPAppRoutinesReportsMissingLedgerRow
   - id: goroutine-leak-tool-bounded
     rule: app_goroutine_leaks writes the goroutineleak profile at debug level 1, which holds only leaked stacks, and returns at most 64 KiB of them.
     judge: Does this change make app_goroutine_leaks write the profile at debug level 2 or higher, which dumps every goroutine, or remove the cap on the stacks it returns?
@@ -128,6 +128,7 @@ invariants:
       - test: framework.TestDevEntityCatalogCollisionBoots
       - test: framework.TestDevExplicitCollisionStillFails
       - test: framework.TestReplacedDevToolCollisionFails
+      - test: framework.TestSweepAgentsExplicitEntityCollisionFails
 decisions:
   - id: control-separate-from-introspection
     date: 2026-11-16

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/a2a"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -245,5 +246,42 @@ func TestSweepAgentsAgentAuthSkillDefaultsToOrigin(t *testing.T) {
 	}
 	if doc.AgentAuth.Skill != "http://ex.test/auth.md" {
 		t.Errorf("agent_auth.skill = %q, want http://ex.test/auth.md", doc.AgentAuth.Skill)
+	}
+}
+
+// Once registered, the control tools are absent from an anonymous
+// tools/list and present for an admin.
+func TestSweepAgentsControlToolsUnlistedForAnonymous(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "0")
+	app := NewApp(WithMCPControl())
+	if err := app.InitPlugins(); err != nil {
+		t.Fatalf("InitPlugins: %v", err)
+	}
+	admin := handler.SetUser(context.Background(), debugRoleUser{roles: []string{"admin"}})
+	if !hasTool(toolNames(t, app, admin), "app_module_disable") {
+		t.Fatal("premise: an admin's tools/list does not show app_module_disable")
+	}
+	for _, n := range toolNames(t, app, context.Background()) {
+		if strings.HasPrefix(n, "app_module_") {
+			t.Errorf("SECURITY: [disclosure] anonymous tools/list shows %q", n)
+		}
+	}
+}
+
+// An entity whose MCP tools are explicitly exposed keeps its collisions
+// fatal in the dev loop: only dev-implied entity tools displace built-ins.
+func TestSweepAgentsExplicitEntityCollisionFails(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "1")
+	t.Setenv("GOFASTR_ENV", "development")
+	db := newStoreDB(t)
+	defer db.Close()
+	app := NewApp(WithDB(db), WithMCPIntrospection())
+	crudTrue := true
+	app.Entity("contracts", entity.EntityConfig{
+		Fields:   []schema.Field{{Name: "title", Type: schema.String}},
+		Exposure: &entity.ExposureConfig{CRUD: &crudTrue, MCP: true},
+	})
+	if err := app.InitPlugins(); err == nil || !strings.Contains(err.Error(), "already registered") {
+		t.Fatalf("explicit entity collision with contracts_list = %v, want an already-registered error", err)
 	}
 }
