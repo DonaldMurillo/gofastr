@@ -3,3 +3,193 @@ summary: Mounting the host on the router - route patterns, the screen and static
 code:
   - framework/uihost/mount.go
   - framework/uihost/routematch.go
+twins:
+  - job: Decide whether a request path resolves to the favicon fallback, a static file, a dynamic llm.md or a screen.
+    why: serveOrRender serves the answer while resolvesStaticOrScreen only says yes or no for the MethodNotAllowed fall-through; merging needs one resolver both call.
+    sites:
+      - path: framework/uihost/mount.go
+        note: serveOrRender, the NotFound catch-all.
+      - path: framework/uihost/static.go
+        note: resolvesStaticOrScreen, the predicate serveMethodNotAllowed asks.
+invariants:
+  - id: serve-and-predicate-agree
+    rule: resolvesStaticOrScreen reports true for exactly the paths serveOrRender answers with something other than 404.
+    enforced_by:
+      - test: framework/uihost.TestResolvePredicateMatchesServeOrRender
+  - id: runtime-js-immutable-at-its-hash
+    rule: /__gofastr/runtime.js is served immutable only when its v parameter equals widget.RuntimeHash.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreRuntimeJSImmutableAtItsHash
+  - id: mount-validates-at-boot
+    rule: Mount panics on a fill outside its screen's layout chain, a group Requires no resolver declares, an intercept origin with no screen, and a server action on an embeddable surface.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreMountRefusesFillOutsideTheChain
+      - test: framework/uihost.TestMountPanicsOnRequiresNameNothingDeclares
+      - test: framework/uihost.TestMountRefusesUnknownIntercept
+      - test: framework/uihost.TestEmbedSurfaceWithServerActionPanicsAtBoot
+  - id: infrastructure-posts-refuse-get
+    rule: A GET to /__gofastr/session or /__gofastr/action answers 405 with Allow POST and mints no session.
+    enforced_by:
+      - test: framework/uihost.TestUIHost_CreateSessionGETRejected
+      - test: framework/uihost.TestSweepCoreInfrastructurePostRoutesRefuseGET
+  - id: widget-catalog-needs-a-credential
+    rule: /__gofastr/widgets answers 401 and names no widget to a request with neither a valid session nor a valid embed grant.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreWidgetCatalogWithheldWithoutSession
+  - id: grant-reads-its-own-surface-catalog
+    rule: A request carrying a valid embed grant reads the widget catalog of the grant's surface path, whatever page it names.
+    enforced_by:
+      - test: framework/uihost.TestWidgetCatalogIsScopedToTheGrantsSurface
+  - id: refused-grant-never-falls-back
+    rule: A request presenting an embed grant that fails verification is refused by the widget catalog and the widget session gate even when it carries a valid session cookie.
+    enforced_by:
+      - test: framework/uihost.TestRefusedGrantNeverFallsBackOnWidgetRoutes
+  - id: grant-session-gate-is-surface-scoped
+    rule: An embed grant satisfies a widget's RequireSession gate only for a widget available on the grant's surface path, the widget taken from the asking gate and never from the URL.
+    enforced_by:
+      - test: framework/uihost.TestGrantSatisfiesTheWidgetSessionCheck
+  - id: authenticated-gate-needs-a-signed-in-user
+    rule: A widget's RequireAuthenticated gate admits only a request with a resolved user, and refuses one that carries an embed grant or held scopes.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreAuthenticatedCheckRefusesGrant
+      - test: framework/uihost.TestAuthenticatedCheckRefusesToken
+      - test: framework/uihost.TestRequireAuthenticatedWidgetRefusesAnonSession
+  - id: screen-survives-method-mismatch
+    rule: A GET to a screen path renders the screen when a route at that path serves only another method.
+    enforced_by:
+      - test: framework/uihost.TestGetScreenSurvivesPostOnlyRoute
+  - id: route-patterns-are-screens
+    rule: RoutePatterns lists every screen pattern and no redirect.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreRoutePatternsSkipRedirects
+  - id: llm-md-route-once-per-path
+    rule: Screens at /x and /x/ share one /x/llm.md route, registered once.
+    enforced_by:
+      - test: framework/uihost.TestLLMMD_DualSlashRegistrationNoPanic
+  - id: llm-md-opt-outs
+    rule: The app's NoLLMMD removes every page-level llm.md route, and a screen's NoLLMMD removes its own, exact or dynamic.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreLLMMDOptOuts
+  - id: refused-pattern-doc-is-withheld
+    rule: A dynamic screen's pattern llm.md, for a request its policies do not allow, is the metadata-free withheld doc.
+    enforced_by:
+      - test: framework/uihost.TestSweepCorePatternLLMMDWithheldByPolicy
+  - id: llm-md-follows-page-status
+    rule: A concrete URL's llm.md answers the page's 404 whenever the page answers anything but 200.
+    enforced_by:
+      - test: framework/uihost.TestLLMMDSwallowedResolver404
+      - test: framework/uihost.TestLLMMDRequiredOutlet404
+      - test: framework/uihost.TestDynamicLLMMDSetStatus404
+  - id: llm-md-renders-under-page-url
+    rule: A page's llm.md renders under a request whose path is the page's own, an encoded key kept.
+    enforced_by:
+      - test: framework/uihost.TestLLMMDRendersUnderPageURL
+      - test: framework/uihost.TestLLMMDKeepsEncodedKey
+  - id: llm-md-front-matter-only-when-allowed
+    rule: An allowed llm.md carries the screen's SEO front matter, localized to the path's locale, and a refused one carries none.
+    enforced_by:
+      - test: framework/uihost.TestGatedLLMMDHidesSEO
+      - test: framework/uihost.TestPatternLLMMDFollowsLocale
+  - id: missing-slash-redirects
+    rule: A request for /x where only /x/ resolves answers 301 to the escaped slash form with the query kept.
+    enforced_by:
+      - test: framework/uihost.TestUIHostRedirectsMissingTrailingSlash
+      - test: framework/uihost.TestUIHostTrailingSlashRedirectKeepsQuery
+      - test: framework/uihost.TestSweepCoreTrailingSlashLocationIsEscaped
+      - test: framework/uihost.TestTrailingSlashLocationScrubbed
+  - id: static-directory-is-no-file
+    rule: A directory in the static dir or the static FS is never served; its path falls through to the screens.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreStaticDirDirectoryFallsThroughToScreen
+      - test: framework/uihost.TestStaticFSDirectoryFallsThroughToScreen
+  - id: favicon-fallback-is-204
+    rule: /favicon.ico, and a WithFavicon URL, answers 204 when no route or static file serves it.
+    enforced_by:
+      - test: framework/uihost.TestWithFaviconServesNoContentWhenFileMissing
+      - test: framework/uihost.TestWithAppIconInvalidSourceIsSkipped
+  - id: unsafe-method-on-screen-stops-early
+    rule: A method other than GET or HEAD to a screen path no route serves answers 405 before the screen's policy, Load or session minting runs, and a declared redirect's path is not a screen path.
+    enforced_by:
+      - test: framework/uihost.TestScreenRefusesUnsafeMethods
+      - test: framework/uihost.TestScreenUnsafeMethodKeepsLiveSession
+      - test: framework/uihost.TestUnsafeMethodRedirectsUnchanged
+  - id: screen-allow-merges-routed-methods
+    rule: A screen path's Allow header lists GET and HEAD, then each method a route registered at that path serves, each once.
+    enforced_by:
+      - test: framework/uihost.TestRegisteredRouteOnScreenPathWins
+  - id: page-handler-forces-only-static-paths
+    rule: PageHandler dispatches a static path as its own path, while a path with a whole {name} or :name segment keeps the request path; a brace inside a literal segment is static.
+    enforced_by:
+      - test: framework/uihost.TestPageHandlerKeepsDynamicRequestPath
+      - test: framework/uihost.TestPageHandlerKeepsColonParamPath
+      - test: framework/uihost.TestPageHandlerForcesLiteralBracePath
+  - id: static-render-carries-a-request
+    rule: RenderStaticPage builds a GET request for the path when ctx carries none, so layout chrome renders for that page.
+    enforced_by:
+      - test: framework/uihost.TestRenderStaticPageCarriesTheRequestAndMatch
+  - id: static-render-refuses-non-pages
+    rule: RenderStaticPage returns PolicyBlockedError for a redirect or block decision, NotFoundOutletError for a 404 outlet outcome and StatusPageError for any other status than 200.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreStaticRenderRefusesNonPages
+  - id: static-page-links-each-sheet
+    rule: A static page links each component stylesheet on its own and never the query-addressed comp-bundle.css.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreStaticPageLinksEachComponentSheet
+  - id: static-not-found-needs-root-layout
+    rule: RenderStaticNotFoundPage reports false for an app with no root layout, and otherwise renders the path-less not-found body with no live channel.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreStaticNotFoundPageNeedsRootLayout
+  - id: route-match-on-context
+    rule: RouteMatchMiddleware puts the screen match on the context of a request whose path resolves, and nothing on one whose path does not.
+    enforced_by:
+      - test: framework/uihost.TestRouteMatchMiddlewarePopulatesContext
+      - test: framework/uihost.TestRouteMatchMiddlewarePicksSubroute
+      - test: framework/uihost.TestRouteMatchMiddlewareUnknownStill404
+  - id: from-header-in-routing-form
+    rule: fromPath turns X-Gofastr-From's path into routing form and passes its query and fragment through as sent.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreFromPathKeepsQueryAsSent
+      - test: framework/uihost.TestFromHeaderKeepsEncodedParamLayer
+  - id: has-screen-knows-only-with-router
+    rule: HasScreen reports known false for a host with no app router, and otherwise whether a screen route serves the escaped path.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreHasScreen
+decisions:
+  - id: no-http-roster-endpoint
+    date: 2026-11-16
+    status: accepted
+    decision: The host mounts no HTTP route for a presence roster; the roster stays in process as island.Manager.PresenceRoster and reaches clients over the SSE bus.
+    rejected:
+      - option: A generic roster route.
+        why: The framework cannot know an app's per-topic authorization, so an ungated route leaks viewer identities to anyone who guesses a topic.
+  - id: link-check-runs-after-mount
+    date: 2026-11-16
+    status: accepted
+    decision: The strict internal-link check runs in ValidateBoot from App.Start, not in Mount.
+    rejected:
+      - option: Run it in Mount.
+        why: Batteries, plugins and App.Start register routes after Mount, so the route table is still partial there.
+  - id: session-mint-is-post-only
+    date: 2026-11-16
+    status: accepted
+    decision: Sessions are minted only by POST /__gofastr/session.
+    rejected:
+      - option: Mint on GET.
+        why: A cross-site image or form action could then mint sessions silently.
+    upholds: [infrastructure-posts-refuse-get]
+  - id: grant-never-authenticates
+    date: 2026-11-16
+    status: accepted
+    decision: An embed grant never satisfies RequireAuthenticated, and a grant-bearing request is refused rather than answered from an ambient cookie.
+    rejected:
+      - option: Let a grant with a subject pass.
+        why: The embed author vouched for the viewer, the viewer did not sign in; battery/auth's RequireRole refuses a grant for the same reason.
+    upholds: [authenticated-gate-needs-a-signed-in-user]
+  - id: static-export-links-each-sheet
+    date: 2026-11-16
+    status: accepted
+    decision: A static export links each component stylesheet separately.
+    rejected:
+      - option: The comp-bundle.css?names= link live pages use.
+        why: Static hosts do not serve a different file per query string.
+    upholds: [static-page-links-each-sheet]
