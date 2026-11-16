@@ -296,6 +296,7 @@ func execModuleSchemaRoleStmts(ctx context.Context, adminDB *sql.DB, stmts []str
 			return fmt.Errorf("exec %q: %w", firstLine(redactRolePassword(s)), err)
 		}
 	}
+	// best-effort: a locked-down cluster must not block provisioning
 	_, _ = adminDB.ExecContext(ctx, `REVOKE CREATE ON SCHEMA public FROM PUBLIC`)
 	return nil
 }
