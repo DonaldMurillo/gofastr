@@ -180,6 +180,13 @@ jobs:
           restore-keys: |
             go-test-${{ runner.os }}-
 
+      - name: Age the restored Go cache (main only)
+        # With the prune step before the save, the saved entry holds what
+        # this run used and nothing older. scripts/go-cache-prune.sh has
+        # the reason and the sizes.
+        if: github.ref == 'refs/heads/main'
+        run: scripts/go-cache-prune.sh age
+
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
@@ -395,6 +402,10 @@ jobs:
         run: |
           go run ./cmd/gofastr verify --no-vet --strict
 
+      - name: Prune the Go cache to what this run used (main only)
+        if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
+        run: scripts/go-cache-prune.sh prune
+
       - name: Save the Go cache and coverage manifests (main only)
         if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -444,6 +455,11 @@ jobs:
           key: go-lint-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
             go-lint-${{ runner.os }}-
+
+      - name: Age the restored Go cache (main only)
+        # See the test job.
+        if: github.ref == 'refs/heads/main'
+        run: scripts/go-cache-prune.sh age
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -551,6 +567,10 @@ jobs:
         # Fail closed: an opt-in skip must never satisfy this blocking gate.
         run: ./scripts/test-linux-desktop.sh
 
+      - name: Prune the Go cache to what this run used (main only)
+        if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
+        run: scripts/go-cache-prune.sh prune
+
       - name: Save the Go cache (main only)
         if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -613,6 +633,11 @@ jobs:
           key: go-race-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
             go-race-${{ runner.os }}-
+
+      - name: Age the restored Go cache (main only)
+        # See the test job.
+        if: github.ref == 'refs/heads/main'
+        run: scripts/go-cache-prune.sh age
 
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -698,6 +723,10 @@ jobs:
           go run ./cmd/affected \
             -match 'gofastr/framework/crud$' \
             -- go test -race -timeout=10m -run '^(TestFieldMutationDuringServeIsRaceFree|TestBatchRace_.*)$'
+
+      - name: Prune the Go cache to what this run used (main only)
+        if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
+        run: scripts/go-cache-prune.sh prune
 
       - name: Save the Go cache (main only)
         if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'

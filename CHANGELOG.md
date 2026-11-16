@@ -68,6 +68,14 @@ few lines, and link the PR or the docs page for the rest.
   package whose tests look up a binary: 175 of 403 on a main run that
   changed three files. `TestChromeIsPinned` keeps every `setup-chrome` step
   on one fixed version; bump them together.
+- **CI saves only the Go cache entries a run used.** Go drops a cache
+  entry after five days without use, so the `go-test-` entry kept every
+  object built in that time: 5.1 GB where a fresh one is 1.0 GB, 164 s to
+  restore in each of the 18 jobs that read it, and enough to push the
+  lint and race entries out of the repo's 10 GB. On main,
+  `scripts/go-cache-prune.sh` now ages the restored entries and removes
+  the ones no step touched before the save.
+  `TestGoCacheIsPrunedBeforeSave` holds the two steps in each saving job.
 - **`primitives stop` skips testdata modules** when a nested `go.mod`
   or `go.sum` changed. Fixture trees such as `cmd/check-embed/testdata`
   are meant not to type-check; `go build ./...` there is no longer a
