@@ -678,6 +678,16 @@ jobs:
             -match 'gofastr/(framework|battery/(queue|cache)(/.*)?|framework/(outbox|fanout|cron|event|hook|ratelimit|lifecycle|slowquery|uihost)(/.*)?|core/(fanout|stream)(/.*)?)$' \
             -- go test -race -timeout=20m
 
+      - name: Race detector (framework/crud's race-only tests)
+        # framework/crud is not in the list above: racing its whole suite
+        # costs minutes. These tests assert nothing without the detector
+        # (a host mutating declarations mid-serve, concurrent batches), so
+        # they are raced by name when a change reaches the package.
+        run: |
+          go run ./cmd/affected \
+            -match 'gofastr/framework/crud$' \
+            -- go test -race -timeout=10m -run '^(TestFieldMutationDuringServeIsRaceFree|TestBatchRace_.*)$'
+
       - name: Save the Go cache (main only)
         if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
