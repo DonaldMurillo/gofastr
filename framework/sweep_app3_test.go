@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
@@ -247,5 +249,33 @@ func TestSweepApp3WorkerBannerAdvertisesOnlyHealth(t *testing.T) {
 		if strings.Contains(out, leak) {
 			t.Errorf("worker banner advertises %q: %q", leak, out)
 		}
+	}
+}
+
+// An embed grant never reaches /.debug/*, even when a WithDebugAuthorize
+// predicate would admit the caller.
+func TestSweepApp3DebugRefusesEmbedGrantUnderCustomAuthorize(t *testing.T) {
+	app := NewApp(WithDebugAuthorize(func(context.Context) bool { return true }))
+	app.registerDebugEndpoints()
+	user := handler.SetUser(context.Background(), "u-1")
+	if got := debugStatus(app, "/.debug/stats", user); got != http.StatusOK {
+		t.Fatalf("admitted caller = %d, want 200", got)
+	}
+	if got := debugStatus(app, "/.debug/stats", fembed.WithGrant(user, fembed.Grant{})); got != http.StatusForbidden {
+		t.Fatalf("caller through an embed grant = %d, want 403", got)
+	}
+}
+
+// The banner names the /mcp endpoint and its tool count when it is mounted.
+func TestSweepApp3BannerNamesMCPEndpoint(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware(), WithMCP())
+	if err := app.MCP.RegisterTool("ping", "ping", nil, sweepApp3Tool); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	app.startupOutput = &buf
+	app.printStartupBanner("127.0.0.1:8080", "tcp", "demo", false, false, "")
+	if out := buf.String(); !strings.Contains(out, "http://127.0.0.1:8080/mcp  (1 tools") {
+		t.Fatalf("banner does not name /mcp with its tool count: %q", out)
 	}
 }
