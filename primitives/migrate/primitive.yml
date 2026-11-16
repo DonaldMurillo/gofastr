@@ -1,0 +1,70 @@
+primitive: migrate
+summary: Schema migration, covering the boot auto-migrate, the generated migration files and the snapshot they diff against.
+code:
+  - framework/migrate/
+docs:
+  - framework/docs/content/migrations.md
+twins:
+  - job: Keep the declared views that read a table usable across a change of one of its columns' types.
+    why: Postgres alters the column in place and refuses under a view, so the views are dropped and recreated around the ALTER, while SQLite has no ALTER COLUMN TYPE and rebuilds the table, renaming the replacement in under legacy_alter_table; the two statements share nothing.
+    sites:
+      - path: framework/migrate/schema_diff.go
+        note: The Postgres ALTER COLUMN TYPE change and its pgRetypes, and the SQLite retype that joins the table rebuild.
+      - path: framework/migrate/snapshot.go
+        note: viewChanges redoing a view whose DependsOn names a retyped table, and the legacy_alter_table rename around a SQLite rebuild.
+invariants:
+  - id: one-recorded-column-parser
+    rule: recordedConstraints and recordedUniqueColumns read a recorded CREATE TABLE through one parser, recordedColumnDefs, which leaves out the PRIMARY KEY and FOREIGN KEY table constraints, so a column named primary or foreign generates no migration for an unchanged plan.
+    enforced_by:
+      - test: framework/migrate.TestConstraintLineIsNoColumn
+    judge: Does this change split a recorded CREATE TABLE into column definitions anywhere other than recordedColumnDefs?
+  - id: retype-keeps-dependent-views
+    rule: A generated change of a column's type leaves an unchanged declared view that reads the table, and the views that read that view, queryable on Postgres and SQLite, and on Postgres the Down restores the old type under them.
+    enforced_by:
+      - test: framework/migrate.TestRetypeUnderUnchangedView
+      - test: framework/migrate.TestSQLiteRebuildUnderView
+  - id: removals-drop-dependents-first
+    rule: Removed views drop before the removed views their recorded DependsOn names and removed routines drop last created first by their recorded Order; a snapshot that recorded neither keeps views in name order and routines in reverse name order.
+    enforced_by:
+      - test: framework/migrate.TestRemovedObjectsDropDependentsFirst
+      - test: framework/migrate.TestRemovalOrderWithoutRecordedOrder
+      - test: framework/migrate.TestViewRemovalDropsDependentsFirst
+  - id: keyword-view-name-is-quoted
+    rule: A view named with a keyword is created, replaced, read and dropped under its quoted name at boot and in generated files, on both dialects.
+    enforced_by:
+      - test: framework/migrate.TestKeywordViewName
+  - id: key-columns-refuse-null
+    rule: Every primary-key column the migrator creates refuses NULL on both engines; on SQLite columnDefs writes NOT NULL on each key column except a lone INTEGER PRIMARY KEY, the rowid alias SQLite fills itself.
+    enforced_by:
+      - test: framework/migrate.TestSingleColumnKeyRefusesNull
+  - id: older-sqlite-key-tables-stay-as-they-are
+    rule: A SQLite table created before its key said NOT NULL boots with no rebuild and its rows kept, and neither the live diff nor migrate generate proposes a change for it.
+    enforced_by:
+      - test: framework/migrate.TestOlderSQLiteKeyTableBootsUnchanged
+decisions:
+  - id: column-readers-share-one-parser
+    date: 2026-11-16
+    status: accepted
+    decision: recordedColumnDefs is the one reader of a recorded CREATE TABLE's column lines; recordedConstraints' own split and recordedUniqueColumns' own split on the line separator are removed.
+    rejected:
+      - option: Teach each reader to skip the table constraints.
+        why: The two had already drifted, one splitting with splitColumnDefs and the other on the raw separator, and both read PRIMARY KEY and FOREIGN KEY lines as columns.
+    upholds: [one-recorded-column-parser]
+  - id: snapshot-records-removal-order
+    date: 2026-11-16
+    status: accepted
+    decision: The snapshot records a view's depends_on and a routine's order in the plan, and a removal is ordered from them.
+    rejected:
+      - option: Drop removed views and routines in reverse name order.
+        why: A name says nothing about what reads what, so a view whose name sorts before its source, or a trigger named before its function, dropped in the wrong order and Postgres refused.
+    revisit_if: Routines gain a declared DependsOn of their own, which would replace the recorded creation order.
+    upholds: [removals-drop-dependents-first]
+  - id: key-not-null-applies-to-new-tables
+    date: 2026-11-16
+    status: accepted
+    decision: Existing SQLite tables are left as they are, so boot never rebuilds a table to add the key's NOT NULL and neither DiffSchema nor migrate generate proposes it, because constraintChanges skips key columns; failing closed applies to new tables.
+    rejected:
+      - option: Tighten existing tables to match.
+        why: SQLite needs a full table rebuild for it, which is destructive and fails on a row that already holds a NULL key.
+    revisit_if: The hand-written framework and battery tables (audit, outbox, queue, webhook, idempotency and others declare TEXT PRIMARY KEY with no NOT NULL) are brought under the same rule.
+    upholds: [key-columns-refuse-null, older-sqlite-key-tables-stay-as-they-are]

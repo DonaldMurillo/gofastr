@@ -1,0 +1,21 @@
+primitive: a2a
+summary: The A2A server, which takes message sends, runs and resumes tasks and stores their push notification configs.
+code:
+  - core/a2a/
+docs:
+  - framework/docs/content/a2a.md
+invariants:
+  - id: refused-send-leaves-no-push-config
+    rule: A resume that is refused after the send's push config was stored deletes that config, so the retry the error asks for can register it again.
+    enforced_by:
+      - test: core/a2a.TestRefusedResumeLeavesNoPushConfig
+    judge: Does this change refuse a send after storePushConfig ran without calling dropSendPushConfig, or delete a refused send's push config by any other code?
+decisions:
+  - id: one-push-config-rollback
+    date: 2026-11-16
+    status: accepted
+    decision: prepareNewTask and prepareResume both call dropSendPushConfig, which deletes under its own timeout on a context the request's cancellation does not reach; the inline delete prepareNewTask carried is removed.
+    rejected:
+      - option: Copy the inline delete into prepareResume.
+        why: The resume path had been missed once already, and a second copy would be the next one to miss a refusal.
+    upholds: [refused-send-leaves-no-push-config]

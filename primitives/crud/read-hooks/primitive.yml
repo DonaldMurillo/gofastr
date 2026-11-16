@@ -77,7 +77,7 @@ invariants:
     enforced_by:
       - test: framework/crud.TestRelationsSweepResponseHookCopiesNestedMaps
   - id: masked-echo-is-not-written
-    rule: An update of a stored row, on REST PATCH and PUT, _batch, a cascade child, the MCP update tool, UpdateOne, BatchUpdateMany and UpsertOne's conflict arm, leaves out each Mask field whose sent value equals Mask of the stored value, read in the write's transaction under its tenant and owner scope; a stored NULL is never an echo and a create drops nothing.
+    rule: An update of a stored row, on REST PATCH and PUT, _batch, a cascade child, the MCP update tool, UpdateOne, BatchUpdateMany and UpsertOne's conflict arm, leaves out each Mask field whose sent value equals Mask of the stored value, read in the write's transaction under its tenant and owner scope; an upsert whose BeforeCreate hook changes the key checks against the row the new key names, a stored NULL is never an echo and a create drops nothing.
     enforced_by:
       - test: framework/crud.TestMaskedValueRoundTripKeepsStoredValue
       - test: framework/crud.TestMaskedFieldTakesANewValue
@@ -86,6 +86,7 @@ invariants:
       - test: framework/crud.TestMaskedEchoReadsUnderOwnerScope
       - test: framework/crud.TestMaskedCreateStoresWhatItIsSent
       - test: framework/crud.TestPGMaskedRoundTripKeepsStoredValue
+      - test: framework/crud.TestMaskedUpsertEchoFollowsAHookChangedKey
 decisions:
   - id: match-by-primary-key
     status: accepted

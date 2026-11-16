@@ -1,0 +1,21 @@
+primitive: rtc
+summary: The WebRTC signaling rooms, covering joins, seats, displacement and the fanout between replicas.
+code:
+  - battery/rtc/
+docs:
+  - framework/docs/content/rtc.md
+invariants:
+  - id: displaced-socket-closes-off-the-caller
+    rule: A socket a rejoin, a seat cap or Kick pushes out is closed by closeDetached on another goroutine, and one a join displaces is first unregistered from its room by detachLocked, so no join and no Kick waits out the old socket's close handshake, and the old socket still gets its Close frame.
+    enforced_by:
+      - test: battery/rtc.TestClosingADisplacedSocketBlocksNoOneElse
+    judge: Does this change close a room peer's socket on the goroutine that holds or just held the Signaler's lock, instead of through closeDetached?
+decisions:
+  - id: one-displacement-path
+    date: 2026-11-16
+    status: accepted
+    decision: Every site that pushes a socket out (a rejoin, the seat cap, a join another replica reports, a peer whose signal was lost and Kick) closes it through closeDetached, and the join sites unregister it through detachLocked; the join's own inline Close calls and each site's own go conn.Close() loop are removed.
+    rejected:
+      - option: Keep closing the replaced socket on the joining goroutine.
+        why: Close waits for the peer's close handshake, up to CloseTimeout on a half-open socket, and the new socket waited that long to join.
+    upholds: [displaced-socket-closes-off-the-caller]

@@ -110,6 +110,7 @@ invariants:
       - test: framework.TestSortNullOrderMatchesAcrossDialects
       - test: framework/crud.TestSortPinsNullsOnlyOnSQLiteNullableColumns
       - test: core/query.TestOrderTermPinsPostgresNullPosition
+      - test: framework.TestBuildDSLQuery
     applies:
       - framework/crud/key.go
       - framework/crud/crud.go
@@ -204,6 +205,23 @@ decisions:
       - option: Write the NULLS term after every order column on SQLite.
         why: SQLite then sorts instead of walking a composite index over never-null columns, which is what the default created_at, key order and a keyset page use.
     revisit_if: A third dialect is supported, or a Required column that holds NULL in old rows needs the same order.
+    upholds: [sort-nulls-order-as-postgres]
+  - id: dsl-pins-nulls-on-both-dialects
+    date: 2026-11-16
+    status: accepted
+    decision: The DSL's order() has no dialect to ask, so it writes the NULLS term for a column that can hold NULL on SQLite and Postgres alike, through query.OrderPinNulls.
+    rejected:
+      - option: Leave the DSL's order bare.
+        why: The same DSL query would page different rows on the two dialects, the drift issue 698 closes.
+    revisit_if: BuildDSLQuery is given the dialect, when it can leave Postgres SQL bare as crud does.
+    upholds: [sort-nulls-order-as-postgres]
+  - id: one-order-term-renderer
+    date: 2026-11-16
+    status: accepted
+    decision: query.OrderTerm renders every ORDER BY term, pinned or not; the query builder's own inline column and direction rendering is removed, and crud's aggregate calls OrderTerm for its group order.
+    rejected:
+      - option: Append the NULLS words in crud where it knows the dialect.
+        why: The column scrub and the direction clamp would then be written beside the builder's, and the null position in a third place.
     upholds: [sort-nulls-order-as-postgres]
   - id: cursor-carries-values-then-key
     date: 2026-11-15

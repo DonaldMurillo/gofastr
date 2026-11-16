@@ -1,0 +1,31 @@
+primitive: middleware
+summary: The HTTP middleware of core/middleware, among them idempotency keys with their memory and SQL stores and the token-bucket rate limit.
+code:
+  - core/middleware/
+docs:
+  - framework/docs/content/idempotency.md
+  - framework/docs/content/rate-limit.md
+twins:
+  - job: Expire an idempotency entry at its TTL and drop expired entries about once a minute.
+    why: The memory store holds a map under a mutex and compares Go times, while the SQL store holds rows other replicas read and expires them by a SQL comparison on expires_at, which SQLite makes as text.
+    sites:
+      - path: core/middleware/idempotency.go
+        note: memoryIdempotencyStore.Begin and reapLocked.
+      - path: core/middleware/idempotency_sql.go
+        note: SQLIdempotencyStore.Begin, its rate-limited reap and Finish.
+invariants:
+  - id: expired-idempotency-entries-leave-both-stores
+    rule: An idempotency entry past its TTL no longer answers a Begin on the memory store or the SQL store, and the memory store drops expired entries on a Begin at most once per idemReapEvery, as the SQL store reaps.
+    enforced_by:
+      - test: core/middleware.TestMemoryIdempotencyReapsExpired
+      - test: core/middleware.TestMemoryStore_TTLExpiry
+      - test: core/middleware.TestSQLIdempotency_ExpiryAllowsFreshClaim
+  - id: sql-idempotency-expiry-binds-utc
+    rule: The SQL idempotency store binds every time in UTC, so a row expires on time when the process's UTC offset changes.
+    enforced_by:
+      - test: core/middleware.TestSQLIdempotencyExpiryIgnoresLocalOffset
+  - id: full-bucket-restarts-its-clock
+    rule: A rate-limit bucket that refills to capacity restarts its tick clock, so a client that was quiet gets one Capacity burst, and a partial refill keeps the clock it had.
+    enforced_by:
+      - test: core/middleware.TestRateLimitFullBucketRestartsClock
+      - test: core/middleware.TestRateLimitPartialRefillKeepsClock
