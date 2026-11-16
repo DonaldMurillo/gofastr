@@ -12,20 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The menu: a disclosure whose panel is a list of commands. The
-// no-script contract is the details element — the summary opens the
-// panel, every row is a real link, button or form submit — and the
-// keyboard contract a sighted reader gets from a native list, a
-// screen reader user gets from the roles and the roving tabindex the
-// rows carry here. headless-menu binds the keyboard (arrows wrap,
-// Home and End jump, type-ahead matches, submenus open and close
-// RTL-aware, Escape walks back one level, Tab closes the chain);
-// headless-disclosure, which it requires, holds the disclosure half
-// (the aria mirror, Escape, the close-on-navigate).
-
-// Menu parts. The summary is the trigger on the summary path; the
-// trigger-element path renders a wrapper (menu-trigger) beside a
-// summary-less details (menu-toggle) that the module pairs by id.
 const (
 	PartMenuCaret   Part = "menu-caret"
 	PartMenuItem    Part = "menu-item"
@@ -35,151 +21,99 @@ const (
 	PartMenuForm    Part = "menu-form"
 )
 
-// MenuItem is one row: an actionable item (Label required, Href / RPC
-// / Action as supplied) or a separator. The framework owns the role
-// attributes; callers only describe semantics.
+// MenuItem is one row: a link, an RPC, a form action, a copy command, an option, a submenu parent or a separator.
 type MenuItem struct {
 	// Label is the row's visible text. Required unless Separator.
 	Label string
 
-	// Href turns the row into an <a> link. Mutually exclusive with the
-	// custom action attrs; if both are supplied, Href wins.
+	// Href makes the row a link.
 	Href string
 
-	// RPC and RPCMethod wire the row to a server-side handler via the
-	// kernel's data-cui-rpc contract. Use for "Delete this row" items.
+	// RPC and RPCMethod (default POST) wire the row to a same-origin data-cui-rpc handler.
 	RPC, RPCMethod string
 
-	// Confirm asks the reader to confirm before the RPC fires; the
-	// runtime honours it on RPC dispatch and on any form submit.
+	// Confirm asks the reader to confirm before the RPC or the form submit.
 	Confirm string
 
-	// Icon is rendered before the Label. Inline HTML.
+	// Icon renders before the Label, aria-hidden.
 	Icon render.HTML
 
 	// Danger tints destructive rows; a visual hint only.
 	Danger bool
 
-	// Disabled removes the row from keyboard navigation and pointer
-	// interaction while keeping it in the panel. A disabled link row
-	// renders with no href, so no input (keyboard, assistive tech, a
-	// crawler) can follow it.
+	// Disabled keeps the row in the panel and makes it inert: no href, no submit.
 	Disabled bool
 
 	// Separator renders a horizontal divider instead of a row.
 	Separator bool
 
-	// ID becomes the rendered row's id attribute. Uniqueness is
-	// caller-owned, like any HTML id — the menu refuses the duplicates
-	// it can see.
+	// ID is the row's id; a duplicate inside one menu is refused.
 	ID string
 
-	// Radio, when non-empty, renders the row as a radio option:
-	// role="menuitemradio" plus aria-checked (see Checked) and the
-	// group attr the module arbitrates client-side. Exactly one row of
-	// a group should carry Checked. Mutually exclusive with Children —
-	// both set is refused at render.
+	// Radio names the radio group the row is an option of.
 	Radio string
 
-	// Check renders the row as a checkbox option: role=
-	// "menuitemcheckbox" plus aria-checked (see Checked). The state is
-	// the server's: pair it with Href or RPC, whose answer re-renders
-	// the row. Mutually exclusive with Radio and Children.
+	// Check renders the row as a server-owned checkbox option.
 	Check bool
 
 	// Checked sets aria-checked on a Radio or Check row.
 	Checked bool
 
-	// Action renders the row as a form submission instead of a link or
-	// RPC, for hosts whose command rows hit PRG endpoints. Nil (the
-	// zero value) renders nothing. Mutually exclusive with Href, RPC,
-	// Radio and Children: incoherent combos are refused at render.
+	// Action renders the row as a form submission.
 	Action *MenuAction
 
-	// RPCAttrs carries a built RPC's attributes, core-ui/interactive's
-	// Action.Attrs(), for a row that needs more of the RPC contract
-	// than RPC and Confirm spell: a navigate on success, an error
-	// toast. Only data-cui-rpc* and data-cui-confirm* keys are taken,
-	// data-cui-rpc is required and must be a same-origin path, and any
-	// other key is refused at render. Mutually exclusive with Href,
-	// RPC, Action, Copy, Radio and Children.
+	// RPCAttrs carries a built RPC's data-cui-rpc* and data-cui-confirm* attributes.
 	RPCAttrs map[string]string
 
-	// Copy renders the row as a copy-to-clipboard command over another
-	// element's text, the headless-copy contract CopyButton
-	// uses. Mutually exclusive with Href, RPC, RPCAttrs, Action, Radio
-	// and Children.
+	// Copy renders the row as a copy-to-clipboard command.
 	Copy *MenuCopy
 
-	// Children nests a submenu behind this row. The row renders as a
-	// disclosure summary; setting Href, RPC, Action or Radio on it is
-	// refused at render.
+	// Children nest a submenu behind the row.
 	Children []MenuItem
 
-	// ExtraAttrs forwards additional attributes onto the row. Keys the
-	// row owns are dropped, as everywhere in this package.
+	// ExtraAttrs are added to the row; keys the row owns are dropped.
 	ExtraAttrs html.Attrs
 }
 
 // MenuCopy is the row's copy shape.
 type MenuCopy struct {
-	// Target is the id of the element whose text the row copies. A
-	// leading "#" is dropped; anything else that reads as a selector
-	// is refused at render, since the module resolves an id.
+	// Target is the id of the element whose text the row copies; a leading # is dropped.
 	Target string
-	// Toast is the title of the success toast shown on copy. Empty
-	// shows none.
+	// Toast is the success toast's title; empty shows none.
 	Toast string
 }
 
-// MenuAction is the row's form-POST shape.
-//
-// CSRF contract: the framework never mints or verifies tokens — the
-// caller's form middleware owns that. But a state-changing POST with
-// no hidden inputs is almost certainly a forgotten token, so the
-// default refuses it: an Action with no Fields panics unless Unsafe
-// explicitly acknowledges the endpoint carries its own protection.
+// MenuAction is the row's form shape; with no Fields it panics unless Unsafe.
 type MenuAction struct {
 	// Path is the form's action URL.
 	Path string
 	// Method defaults to POST.
 	Method string
-	// Fields are the hidden inputs, first use: the CSRF token.
+	// Fields are the hidden inputs, the CSRF token first.
 	Fields map[string]string
-	// Unsafe acknowledges the no-Fields case deliberately.
+	// Unsafe acknowledges an endpoint that protects itself without Fields.
 	Unsafe bool
 }
 
 // MenuProps configures a dropdown menu.
 type MenuProps struct {
-	// ID pairs the trigger with the panel. Empty derives a stable id
-	// from the menu's content.
+	// ID pairs the trigger with the panel; empty derives one from the menu's content.
 	ID string
-	// Label is the trigger's visible text. Mutually exclusive with
-	// TriggerHTML and TriggerElement.
+	// Label is the trigger's visible text.
 	Label string
 	// TriggerHTML overrides Label with custom inline HTML.
 	TriggerHTML render.HTML
-	// TriggerElement replaces the framework summary with a
-	// caller-owned interactive element: the menu renders a
-	// summary-less disclosure beside it and the module makes the
-	// element the controller. Use for host-styled triggers — an
-	// interactive element inside a summary is axe nested-interactive.
+	// TriggerElement replaces the summary with a caller-owned element that controls the menu.
 	TriggerElement render.HTML
-	// Items is the menu's contents. Required; an empty menu panics —
-	// it signals a bug, not a runtime state.
+	// Items are the rows. Required.
 	Items []MenuItem
-	// Position names the panel's anchoring variant (bottom-start, …);
-	// the class map resolves it. Empty takes bottom-start.
+	// Position names the panel's anchoring variant; empty is bottom-start.
 	Position string
-	// LazyPanel ships the panel's rows inside an inert template the
-	// module mounts on first open, for page-scoped consumers that must
-	// not see closed-menu rows in the live DOM.
+	// LazyPanel ships the rows in an inert template the module mounts on first open.
 	LazyPanel bool
 
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the root. Rows own their guarantees.
 	Parts Parts
 }
 
@@ -213,11 +147,6 @@ func Menu(p MenuProps, s Classes) render.HTML {
 	}
 
 	if p.TriggerElement != "" {
-		// Caller-owned trigger: no <summary> (an interactive element
-		// inside one is axe nested-interactive). The wrapper carries
-		// the pairing hook — attributes cannot be injected into raw
-		// caller HTML server-side — beside the summary-less details
-		// the module resolves it against.
 		return b.El("div", PartRoot, rootAttrs,
 			b.El("div", PartMenuTrigger, Attrs(map[string]string{
 				"data-hui-menu-trigger": id,
@@ -226,11 +155,6 @@ func Menu(p MenuProps, s Classes) render.HTML {
 			menuDetails(b, id, panelID, p.Items, p.LazyPanel, PartMenuToggle, "", html.Attrs{}),
 		)
 	}
-	// The summary is the trigger; the caret says the activation opens a
-	// list. TriggerHTML is the caller's, replacing the summary's whole
-	// content — with none, the label and the caret are both the
-	// component's own, and the mark goes on the summary itself. A
-	// trigger the composer built and Own'd counts as its own too.
 	summaryOwn := Attrs(map[string]string{
 		"aria-haspopup": "menu",
 		"aria-controls": panelID,
@@ -242,8 +166,6 @@ func Menu(p MenuProps, s Classes) render.HTML {
 	return menuDetails(b, id, panelID, p.Items, p.LazyPanel, PartRoot, summary, rootAttrs)
 }
 
-// menuTriggerContent builds the summary's inner content: the caller's
-// HTML, or the label and a caret glyph.
 func menuTriggerContent(b Box, p MenuProps) render.HTML {
 	if p.TriggerHTML != "" {
 		return p.TriggerHTML
@@ -254,14 +176,7 @@ func menuTriggerContent(b Box, p MenuProps) render.HTML {
 	)
 }
 
-// menuDetails builds the disclosure that carries the panel. summary is
-// nil on the trigger-element path; rootAttrs carry the caller's extras
-// and the position variant the root wears.
 func menuDetails(b Box, id, panelID string, items []MenuItem, lazy bool, root Part, summary render.HTML, rootAttrs html.Attrs) render.HTML {
-	// rootAttrs arrives already sanitised (Menu ran Safe) with the
-	// position variant folded into its class; re-running Safe here
-	// would drop the class the variant lives in.
-	// A menu is a popup: a press outside closes it.
 	own := Merge(rootAttrs, html.Attrs{
 		"data-hui-disclosure":         "",
 		"data-hui-disclosure-dismiss": "",
@@ -280,10 +195,6 @@ func menuDetails(b Box, id, panelID string, items []MenuItem, lazy bool, root Pa
 	})
 	Mark(panelAttrs, "data-hui-menu-panel")
 	if !hasContent {
-		// No row in this panel carries a caller icon, so the whole
-		// panel is the component's own and the mark sits on it; with
-		// any icon present the mark moves to each row that lacks one
-		// instead (menuRows), so a caller's icon stays reachable.
 		panelAttrs = Internal(panelAttrs)
 	}
 	panel := b.El("div", PartPanel, panelAttrs, rows)
@@ -293,10 +204,6 @@ func menuDetails(b Box, id, panelID string, items []MenuItem, lazy bool, root Pa
 	return b.El("details", root, own, panel)
 }
 
-// menuItemsHaveOwnContent reports whether any row in items carries a
-// caller icon — the only caller content a row can hold. A submenu
-// row's own icon counts here for the panel that renders it; the rows
-// nested behind it live in a separate panel, checked on its own.
 func menuItemsHaveOwnContent(items []MenuItem) bool {
 	for _, it := range items {
 		if it.Icon != "" {
@@ -306,11 +213,6 @@ func menuItemsHaveOwnContent(items []MenuItem) bool {
 	return false
 }
 
-// menuRows renders one panel's rows. mark says whether a row lacking
-// its own icon must carry the internal mark itself: only needed when
-// some sibling in items DOES have an icon, so the panel around them
-// cannot be marked as a whole (see menuDetails and menuSubmenu, which
-// mark the panel instead when it is false).
 func menuRows(b Box, items []MenuItem, parentPanelID string, mark bool) render.HTML {
 	var out []render.HTML
 	for i, it := range items {
@@ -322,7 +224,6 @@ func menuRows(b Box, items []MenuItem, parentPanelID string, mark bool) render.H
 	return render.Join(out...)
 }
 
-// menuItemEl renders one row (or separator, or submenu).
 func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) render.HTML {
 	if it.Separator {
 		hrOwn := html.Attrs{"role": "separator"}
@@ -354,8 +255,6 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 	if it.ID != "" {
 		own["id"] = it.ID
 	}
-	// The roving tabindex is the module's to manage; every row starts
-	// out of the tab order.
 	own["tabindex"] = "-1"
 	own["role"] = menuRowRole(it)
 	if it.Radio != "" || it.Check {
@@ -372,13 +271,6 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 		own["aria-disabled"] = "true"
 	}
 	var icon render.HTML
-	// The icon is the caller's; the label text beside it is always the
-	// component's own. With no icon at all the row itself (the a/button
-	// this function returns, or the form wrapping it below) holds
-	// nothing of the caller's, so the mark moves to the row — but only
-	// when some sibling row in this panel DOES have an icon, which is
-	// exactly when the panel around them cannot carry the mark as a
-	// whole (see menuRows/menuDetails/menuSubmenu).
 	textOwn, rowMark, hiddenMark := html.Attrs(nil), html.Attrs(nil), html.Attrs(nil)
 	if it.Icon != "" {
 		icon = b.El("span", PartIcon, Attrs(map[string]string{"aria-hidden": "true"}), it.Icon)
@@ -396,8 +288,6 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 		if method == "" {
 			method = "POST"
 		}
-		// The same anchor policy as every form-action sink: a rejected
-		// path degrades to the inert "#".
 		action := urlsafe.CleanAnchor(it.Action.Path)
 		if action == "" {
 			action = "#"
@@ -412,23 +302,11 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 		}
 		rowOwn := own
 		if it.Confirm != "" {
-			// data-cui-confirm rides the submit control: the runtime
-			// honours it on any form submit, so a destructive form row
-			// asks before it POSTs.
 			rowOwn = Merge(own, Attrs(map[string]string{"data-cui-confirm": it.Confirm}))
 		}
 		if it.Disabled {
-			// The submit control's own disabled, as the button row has:
-			// aria-disabled alone left the form submitting on activation.
 			rowOwn = Mark(Merge(rowOwn, nil), "disabled")
 		}
-		// role="none": a form is not one of a menu's required owned
-		// elements (menuitem, menuitemcheckbox, menuitemradio, group,
-		// separator) — the presentation role takes it out of the AX
-		// tree so the row's menuitem is what a menu parent is judged
-		// against. The mark sits on the form (the row's own topmost
-		// element) rather than the button, so the hidden inputs beside
-		// it are covered too.
 		return b.El("form", PartMenuForm, Merge(Attrs(map[string]string{
 			"role":   "none",
 			"method": method,
@@ -439,14 +317,8 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 
 	if it.Href != "" {
 		if it.Disabled {
-			// A disabled link row carries no href, as a disabled Button
-			// does: aria-disabled and pointer-events stop a mouse, but a
-			// keyboard Enter or an assistive-tech activation followed a
-			// live href. An <a> with no href is a placeholder, not a link.
 			return b.El("a", PartMenuItem, Merge(own, rowMark), kids...)
 		}
-		// safeURL drops javascript:, data:, and friends; a rejected
-		// href degrades to "#" like every link this framework renders.
 		href := urlsafe.CleanAnchor(it.Href)
 		if href == "" {
 			href = "#"
@@ -466,15 +338,10 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 			own["data-cui-confirm"] = it.Confirm
 		}
 	}
-	// checkMenuItemCoherence has refused every key but the RPC
-	// contract's.
 	for k, v := range it.RPCAttrs {
 		own[k] = v
 	}
 	if it.Copy != nil {
-		// The row is the copy module's wrapper: the module resolves the
-		// clicked element's closest [data-hui-copy] and reads the
-		// target and toast from it.
 		own["data-hui-copy"] = ""
 		own["data-hui-copy-target"] = strings.TrimPrefix(it.Copy.Target, "#")
 		if it.Copy.Toast != "" {
@@ -483,13 +350,11 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 		}
 	}
 	if it.Disabled {
-		// Presence, not value: the button element's own spelling.
 		Mark(own, "disabled")
 	}
 	return b.El("button", PartMenuItem, Merge(Merge(own, rowMark), Attrs(map[string]string{"type": "button"})), kids...)
 }
 
-// menuRowRole names the row's ARIA role.
 func menuRowRole(it MenuItem) string {
 	if it.Radio != "" {
 		return "menuitemradio"
@@ -500,13 +365,6 @@ func menuRowRole(it MenuItem) string {
 	return "menuitem"
 }
 
-// menuSubmenu renders a parent row plus its nested panel. The wrapper
-// is a disclosure — the exact machinery the top level uses — so
-// Escape, the aria mirror and the module's keyboard handling apply at
-// depth without a second mechanism. The summary IS the parent row.
-// mark says whether the summary must carry the internal mark itself
-// when it has no icon (see menuRows); the nested panel behind it is a
-// separate subtree with its own such decision, made here.
 func menuSubmenu(b Box, it MenuItem, parentPanelID string, idx int, mark bool) render.HTML {
 	subID := parentPanelID + "-sub-" + strconv.Itoa(idx)
 	subPanelID := subID + "-panel"
@@ -531,16 +389,8 @@ func menuSubmenu(b Box, it MenuItem, parentPanelID string, idx int, mark bool) r
 		rowAttrs["id"] = it.ID
 	}
 	if it.Disabled {
-		// <summary> has no native disabled attribute; aria + CSS
-		// pointer-events carry the state.
 		rowAttrs["aria-disabled"] = "true"
 	}
-	// The row's own icon is caller content; the label beside it is
-	// always the component's own. With no icon, the summary row holds
-	// nothing of the caller's, so the mark moves to it — but only when
-	// mark says some sibling row DOES have one (see menuRows). The
-	// nested panel behind the summary is a separate subtree and makes
-	// its own such decision below.
 	textOwn := html.Attrs(nil)
 	if it.Icon != "" {
 		textOwn = Internal(nil)
@@ -551,10 +401,6 @@ func menuSubmenu(b Box, it MenuItem, parentPanelID string, idx int, mark bool) r
 		"data-hui-disclosure": "",
 		"data-hui-menu":       subID,
 	},
-		// The submenu caret is a CSS pseudo-element, not a span, so the
-		// row's textContent stays the label alone — type-ahead matches
-		// it. The summary wears the row part so a class map styles it
-		// like any other row (plus the hassub variant).
 		b.El("summary", PartMenuItem, rowAttrs,
 			func() render.HTML {
 				if it.Icon == "" {
@@ -571,11 +417,6 @@ func menuSubmenu(b Box, it MenuItem, parentPanelID string, idx int, mark bool) r
 			Mark(subAttrs, "data-hui-menu-panel")
 			childHasContent := menuItemsHaveOwnContent(it.Children)
 			if !mark {
-				// This whole row's enclosing panel is already marked as
-				// a whole (mark is false), which — since that decision
-				// already recursed into every descendant — covers this
-				// nested panel too; marking it again would be marking
-				// inside an already-marked subtree.
 				return b.El("div", PartPanel, subAttrs, menuRows(b, it.Children, subPanelID, false))
 			}
 			if !childHasContent {
@@ -586,12 +427,9 @@ func menuSubmenu(b Box, it MenuItem, parentPanelID string, idx int, mark bool) r
 	)
 }
 
-// checkMenuItemCoherence refuses the caller-incoherent combinations.
 func checkMenuItemCoherence(it MenuItem) {
 	checkMenuRowShape(it)
 	if it.RPC != "" {
-		// Every other RPC sink in the package refuses a cross-origin
-		// endpoint at render; the runtime would silently decline it.
 		checkSameOrigin("MenuItem", "RPC", it.RPC)
 	}
 	if it.Check && it.Radio != "" {
@@ -619,15 +457,11 @@ func checkMenuItemCoherence(it MenuItem) {
 	}
 }
 
-// checkMenuRowShape refuses an RPCAttrs or Copy row that also names
-// another way to act, and the values neither may carry.
 func checkMenuRowShape(it MenuItem) {
 	if it.RPCAttrs != nil {
 		if it.Href != "" || it.RPC != "" || it.Action != nil || it.Copy != nil || it.Radio != "" || len(it.Children) > 0 {
 			panic("headless: MenuItem with RPCAttrs cannot also set Href, RPC, Action, Copy, Radio or Children — the row is one RPC")
 		}
-		// The package's one same-origin rule: "/\host" is the URL
-		// parser's "//host", which the prefix check here once let by.
 		checkSameOrigin("MenuItem", "RPCAttrs data-cui-rpc", it.RPCAttrs["data-cui-rpc"])
 		for k := range it.RPCAttrs {
 			switch k {
@@ -650,8 +484,6 @@ func checkMenuRowShape(it MenuItem) {
 	}
 }
 
-// menuItemIDs walks the tree, refusing duplicate row ids inside one
-// menu (every aria-controls and page anchor would point at the first).
 func menuItemIDs(items []MenuItem, seen *[]string) {
 	for _, it := range items {
 		if it.Separator {
@@ -665,16 +497,10 @@ func menuItemIDs(items []MenuItem, seen *[]string) {
 			}
 			*seen = append(*seen, it.ID)
 		}
-		// Always into the children: an id-less submenu parent still
-		// holds rows whose ids must not repeat.
 		menuItemIDs(it.Children, seen)
 	}
 }
 
-// menuShortHash is a small FNV-style stable hash used to derive the
-// fallback id when the caller supplies none. Two structurally
-// identical menus share it; callers put distinct IDs on menus that
-// must not toggle each other.
 func menuShortHash(s string) string {
 	var h uint32 = 2166136261
 	for i := range len(s) {
@@ -690,9 +516,6 @@ func menuShortHash(s string) string {
 	return string(out)
 }
 
-// menuPositionsForHash folds every row label (recursing into submenus)
-// into the hash input, so two menus differing only in their rows
-// cannot share the fallback id.
 func menuPositionsForHash(items []MenuItem) string {
 	var b strings.Builder
 	for _, it := range items {

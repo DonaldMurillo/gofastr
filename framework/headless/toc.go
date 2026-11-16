@@ -7,16 +7,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The table of contents: a navigation landmark whose entries are real
-// links the SERVER rendered from explicit items. The items are
-// required on purpose: a server-rendered component cannot discover
-// headings that only exist in a future browser DOM, and a TOC built
-// only at hydration is an empty landmark a reader without script
-// never fills. The module's whole job is the active state —
-// aria-current and a class on the entry whose heading is in view —
-// through the observer headless-rail owns.
-
-// TableOfContents parts.
 const (
 	PartTOCList Part = "toc-list"
 	PartTOCItem Part = "toc-item"
@@ -25,36 +15,26 @@ const (
 
 // TOCItem is one entry.
 type TOCItem struct {
-	// ID is the fragment id of the heading this entry links to,
-	// without the leading #. Required.
+	// ID is the heading's fragment id, without the #. Required.
 	ID string
 	// Label is the entry's visible text. Required.
 	Label string
-	// Level is the heading's level, 1 to 6; 0 takes 2. It names the
-	// item's variant (h2, h3, …) so a class map can indent by depth.
+	// Level is the heading level, 1 to 6, naming the item's variant; 0 takes 2.
 	Level int
 }
 
 // TableOfContentsProps configures the contents navigation.
 type TableOfContentsProps struct {
-	// Label names the landmark. Empty takes
-	// Strings.TableOfContentsLabel.
+	// Label names the landmark; empty takes Strings.TableOfContentsLabel.
 	Label string
-	// Items are the entries, in document order. Required and
-	// non-empty: an empty contents landmark is a name with nothing
-	// under it, and the no-script contract is the rendered list.
+	// Items are the entries in document order. Required.
 	Items []TOCItem
-	// TargetSelector is the CSS selector of the content region whose
-	// headings the module watches to mark the active entry. Empty
-	// renders a purely static list: every link works, nothing is
-	// marked.
+	// TargetSelector is the region whose headings mark the active entry; empty renders a static list.
 	TargetSelector string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the root and the entries. No part is fillable:
-	// the list is the contract.
 	Parts   Parts
 	Strings *Strings
 }
@@ -99,9 +79,6 @@ func TableOfContents(p TableOfContentsProps, s Classes) render.HTML {
 		if level == 0 {
 			level = 2
 		}
-		// The heading level names the item's variant (h2, h3, …) so a
-		// class map can indent by depth; El joins it onto the part's
-		// own class the way Button joins a size.
 		own := html.Attrs{}
 		if cls := s.Variant(PartTOCItem, "h"+strconv.Itoa(level)); cls != "" {
 			own["class"] = cls
@@ -112,8 +89,6 @@ func TableOfContents(p TableOfContentsProps, s Classes) render.HTML {
 	}
 
 	return b.El("nav", PartRoot, own,
-		// TOCItem holds only strings — no caller content is ever
-		// possible here, so the whole list is this component's own.
 		b.El("ol", PartTOCList, Internal(nil), items...),
 	)
 }
