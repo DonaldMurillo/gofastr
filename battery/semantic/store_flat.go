@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"math/big"
 	"reflect"
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/internal/deepcopy"
@@ -116,7 +116,7 @@ func (s *FlatStore) RemoveDoc(_ context.Context, docID string) error {
 
 // Candidates returns up to top chunks by cosine similarity to qv,
 // applying filter to the candidate set first.
-func (s *FlatStore) Candidates(_ context.Context, qv []float32, filter Filter, top int) ([]Hit, error) {
+func (s *FlatStore) Candidates(ctx context.Context, qv []float32, filter Filter, top int) ([]Hit, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := finiteVector(qv); err != nil {
@@ -141,9 +141,15 @@ func (s *FlatStore) Candidates(_ context.Context, qv []float32, filter Filter, t
 		capHint = len(s.chunks)
 	}
 	hits := make([]Hit, 0, capHint)
+	match := newFilterMatcher(filter)
 	for i := range s.chunks {
+		if i&1023 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
 		c := &s.chunks[i]
-		if !chunkMatches(c, filter) {
+		if !match.matches(c) {
 			continue
 		}
 		score := dot(q, c.Vec)
@@ -224,42 +230,69 @@ func (s *FlatStore) AllChunks() []Chunk {
 }
 
 func chunkMatches(c *Chunk, f Filter) bool {
-	if f.Source != "" && c.Source != f.Source {
+	return newFilterMatcher(f).matches(c)
+}
+
+// filterMatcher is a Filter with its MetaMatch values read as JSON once,
+// so matching a chunk never re-encodes or re-parses the filter side.
+type filterMatcher struct {
+	source, kind string
+	wants        []metaWant
+}
+
+type metaWant struct {
+	key  string
+	raw  any
+	json any // raw as a JSON value, numbers as canonNumber
+	ok   bool
+}
+
+func newFilterMatcher(f Filter) *filterMatcher {
+	m := &filterMatcher{source: f.Source, kind: f.Kind}
+	for k, want := range f.MetaMatch {
+		w := metaWant{key: k, raw: want}
+		if v, ok := asJSONValue(want); ok {
+			w.json, w.ok = canonJSON(v), true
+		}
+		m.wants = append(m.wants, w)
+	}
+	return m
+}
+
+func (m *filterMatcher) matches(c *Chunk) bool {
+	if m.source != "" && c.Source != m.source {
 		return false
 	}
-	if f.Kind != "" {
+	if m.kind != "" {
 		got, _ := c.Metadata["kind"].(string)
-		if got != f.Kind {
+		if got != m.kind {
 			return false
 		}
 	}
-	for k, want := range f.MetaMatch {
-		got, ok := c.Metadata[k]
-		if !ok || !metaEqual(got, want) {
+	for i := range m.wants {
+		w := &m.wants[i]
+		got, ok := c.Metadata[w.key]
+		if !ok || !w.equals(got) {
 			return false
 		}
 	}
 	return true
 }
 
-// metaEqual is MetaMatch equality: the two values as JSON values, the way
-// PgVectorStore's JSONB comparison sees them. Go int metadata equals the
-// float64 a JSON filter decodes to, 5 equals a json.Number "5.0", and a
-// named string type equals the plain string. Equal Go values and two
-// plain scalars settle without encoding.
-func metaEqual(got, want any) bool {
-	if reflect.DeepEqual(got, want) {
+// equals is MetaMatch equality: the two values as JSON values, the way
+// PgVectorStore's JSONB comparison sees them (5 equals 5.0).
+func (w *metaWant) equals(got any) bool {
+	if reflect.DeepEqual(got, w.raw) {
 		return true
 	}
-	if plainScalar(got) && plainScalar(want) {
+	if plainScalar(got) && plainScalar(w.raw) {
+		return false
+	}
+	if !w.ok {
 		return false
 	}
 	g, ok := asJSONValue(got)
-	if !ok {
-		return false
-	}
-	w, ok := asJSONValue(want)
-	return ok && jsonValueEqual(g, w)
+	return ok && jsonValueEqual(g, w.json)
 }
 
 // asJSONValue re-reads v's JSON encoding with numbers kept as json.Number.
@@ -274,17 +307,69 @@ func asJSONValue(v any) (any, bool) {
 	return out, dec.Decode(&out) == nil
 }
 
-// jsonValueEqual compares two decoded JSON values, numbers by exact value.
+// canonNumber is a JSON number as sign, significant digits and power of
+// ten: two literals are one value exactly when their canonNumbers are equal.
+type canonNumber struct {
+	neg    bool
+	digits string
+	exp    int64
+	ok     bool
+}
+
+// canonOf reads a JSON number literal in time linear in its length; a
+// big.Rat of 1e999999 computes the power instead.
+func canonOf(literal json.Number) canonNumber {
+	s := string(literal)
+	neg := strings.HasPrefix(s, "-")
+	mantissa, expText, hasExp := strings.Cut(strings.ToLower(strings.TrimPrefix(s, "-")), "e")
+	var exp int64
+	if hasExp {
+		parsed, err := strconv.ParseInt(expText, 10, 64)
+		if err != nil {
+			return canonNumber{}
+		}
+		exp = parsed
+	}
+	integer, fraction, _ := strings.Cut(mantissa, ".")
+	digits := strings.TrimLeft(integer+fraction, "0")
+	exp -= int64(len(fraction))
+	trimmed := strings.TrimRight(digits, "0")
+	exp += int64(len(digits) - len(trimmed))
+	if trimmed == "" {
+		return canonNumber{ok: true} // zero, whatever its sign or exponent
+	}
+	return canonNumber{neg: neg, digits: trimmed, exp: exp, ok: true}
+}
+
+// canonJSON replaces every json.Number in a decoded JSON value with its
+// canonNumber.
+func canonJSON(v any) any {
+	switch x := v.(type) {
+	case json.Number:
+		return canonOf(x)
+	case []any:
+		out := make([]any, len(x))
+		for i := range x {
+			out[i] = canonJSON(x[i])
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, e := range x {
+			out[k] = canonJSON(e)
+		}
+		return out
+	}
+	return v
+}
+
+// jsonValueEqual compares a decoded JSON value with a canonJSON one,
+// numbers by exact value.
 func jsonValueEqual(a, b any) bool {
 	switch av := a.(type) {
 	case json.Number:
-		bv, ok := b.(json.Number)
-		if !ok {
-			return false
-		}
-		ar, aok := new(big.Rat).SetString(av.String())
-		br, bok := new(big.Rat).SetString(bv.String())
-		return aok && bok && ar.Cmp(br) == 0
+		bv, ok := b.(canonNumber)
+		return ok && bv.ok && canonOf(av) == bv
 	case []any:
 		bv, ok := b.([]any)
 		if !ok || len(av) != len(bv) {
