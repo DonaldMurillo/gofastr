@@ -205,3 +205,24 @@ func wantNonGrantableDenial(t *testing.T, err error) {
 		t.Fatalf("denial = %v, want the non-grantable-scope denial", err)
 	}
 }
+
+// The query a reverse host.entity.query re-dispatches carries only the
+// filter keys that name a queryable field; control keys never reach CRUD.
+func TestSweepPMHostQueryFilterSanitizedOnDispatch(t *testing.T) {
+	var rawQuery string
+	router := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rawQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"total":0}`))
+	})
+	b := NewBroker(router, brokerRegistry(brokerEntity("notes", "notes", nil)), nil, "")
+	h := b.entityHandler(ModuleGrantView{Name: "m", Grants: []access.Permission{"notes:read"}}, opQuery)
+	_, err := callReverse(t, h, moduleproto.EntityQueryParams{
+		Entity: "notes",
+		Filter: []byte(`{"subject":"hi","include":"author","trashed":true,"user_id[ne]":"x"}`),
+	})
+	wantOK(t, err)
+	if rawQuery != "subject=hi&user_id%5Bne%5D=x" {
+		t.Fatalf("re-dispatched query = %q, want only the queryable field keys", rawQuery)
+	}
+}
