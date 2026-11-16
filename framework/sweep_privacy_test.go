@@ -134,3 +134,31 @@ func TestSweepPrivacyEraseSkipsUnmanagedChild(t *testing.T) {
 		t.Errorf("post_views has %d rows, want the Unmanaged row kept", n)
 	}
 }
+
+// A foreign key whose columns do not line up with the key it references
+// fails the erasure instead of being skipped, which would leave its rows.
+func TestSweepPrivacyEraseRefusesMisshapenForeignKey(t *testing.T) {
+	db := openTestDB(t, DialectSQLite)
+	app := NewApp(WithDB(db))
+	app.Registry.Register(entity.Define("posts", entity.EntityConfig{
+		Table:  "posts",
+		Scope:  &entity.ScopeConfig{OwnerField: "owner_id"},
+		Fields: []schema.Field{{Name: "owner_id", Type: schema.String}},
+	}.WithTimestamps(false)))
+	app.Registry.Register(entity.Define("comments", entity.EntityConfig{
+		Table:     "comments",
+		Fields:    []schema.Field{{Name: "post_id", Type: schema.String}, {Name: "post_rev", Type: schema.String}},
+		Relations: []entity.Relation{{Name: "post", Type: entity.RelManyToOne, Entity: "posts", ForeignKey: []string{"post_id", "post_rev"}}},
+	}.WithTimestamps(false)))
+	identityExec(t, db,
+		`CREATE TABLE posts (id TEXT PRIMARY KEY, owner_id TEXT)`,
+		`CREATE TABLE comments (id TEXT PRIMARY KEY, post_id TEXT, post_rev TEXT)`,
+		`INSERT INTO posts (id, owner_id) VALUES ('p1', 'u1')`)
+	_, err := app.EraseUserData(context.Background(), "u1")
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("EraseUserData = %v, want the misshapen foreign key refused", err)
+	}
+	if n := identityCount(t, db, `SELECT COUNT(*) FROM posts`); n != 1 {
+		t.Errorf("posts has %d rows after a refused erasure, want 1", n)
+	}
+}

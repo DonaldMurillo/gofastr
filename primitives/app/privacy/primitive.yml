@@ -46,9 +46,10 @@ invariants:
       - test: framework.TestEraseRefusesRestrictChild
       - test: framework.TestEraseRestrictWithoutBlockers
   - id: erase-refuses-unidentifiable-rows
-    rule: Erasure refuses, before any delete, a row it would remove whose primary key holds a NULL, and a foreign key whose columns do not line up with the key it references.
+    rule: Erasure refuses, before any delete, a row it would remove whose primary key holds a NULL and a foreign key whose columns do not line up with the key it references.
     enforced_by:
       - test: framework.TestEraseRefusesNullKeyChild
+      - test: framework.TestSweepPrivacyEraseRefusesMisshapenForeignKey
   - id: erase-cuts-reference-cycles
     rule: References between erased rows that no delete order satisfies (a cycle of tables, a RESTRICT self-reference) are emptied before the deletes, and a cut through a primary-key column is refused.
     enforced_by:
