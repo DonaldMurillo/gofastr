@@ -11,28 +11,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── ProgressSteps ──────────────────────────────────────────────────
-//
-// Step indicator showing current + completed + upcoming steps in a
-// linear flow: a walk through named stages, not a fraction — a single
-// quantity filling towards a maximum is Progress (ui.Progress), a
-// different component. headless.Steps carries the contract — the
-// ordered list, the per-step data-state, aria-current on the current
-// step, and the optional link back on a completed step. This adapter
-// adds the typed status vocabulary, the orientation modifier and the
-// nav landmark wrapper with its label.
-
 // ProgressStepStatus is the rendered state of a single step.
 type ProgressStepStatus string
 
 const (
-	ProgressStepUpcoming ProgressStepStatus = "" // default
+	ProgressStepUpcoming ProgressStepStatus = ""
 	ProgressStepCurrent  ProgressStepStatus = "current"
 	ProgressStepComplete ProgressStepStatus = "complete"
 )
 
-// ProgressStepsOrientation chooses horizontal (default) or vertical
-// layout.
+// ProgressStepsOrientation chooses horizontal (default) or vertical layout.
 type ProgressStepsOrientation string
 
 const (
@@ -42,40 +30,31 @@ const (
 
 // ProgressStep is one entry in the indicator.
 type ProgressStep struct {
-	// Label is the step name (required, e.g. "Account").
+	// Label is the step's name. Required.
 	Label string
-	// Hint is the optional supporting line below the label.
-	Hint string
-	// Status picks the visual state. Defaults to ProgressStepUpcoming.
+	// Hint is an optional line below the label.
+	Hint   string
 	Status ProgressStepStatus
-	// Href, when set on a complete step, makes the step a link the
-	// user can click to navigate back. Upcoming steps ignore Href.
+	// Href links a complete step back; other steps ignore it.
 	Href string
 }
 
 // ProgressStepsConfig configures a step indicator.
 type ProgressStepsConfig struct {
-	// Steps are the entries in order. Required (≥1).
-	Steps []ProgressStep
-	// Orientation defaults to horizontal.
+	// Steps are the entries in order, at least one.
+	Steps       []ProgressStep
 	Orientation ProgressStepsOrientation
-	// Label is the optional aria-label for the wrapping nav. Defaults
-	// to the reader's "Progress".
+	// Label is the nav's aria-label. Default the reader's "Progress".
 	Label string
-	// Ctx carries the per-request context used to resolve the
-	// aria-label. When nil, English fallbacks apply.
+	// Ctx sets the locale of the default label; nil is English.
 	Ctx context.Context
 
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes to the <nav> root.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-* and aria-label (use Label).
+	// ExtraAttrs go on the <nav>, less class, id, data-cui-* and aria-label.
 	ExtraAttrs html.Attrs
 }
 
-// progressStepsClasses dresses headless.Steps' parts under the
-// wrapper the adapter draws.
 var progressStepsClasses = headless.Classes{
 	headless.PartRoot:     "fui-progress-steps__list",
 	headless.PartStep:     "fui-progress-steps__item",
@@ -86,10 +65,8 @@ var progressStepsClasses = headless.Classes{
 	headless.PartStepHint: "fui-progress-steps__hint",
 }
 
-// ProgressSteps renders a step indicator on headless.Steps. Every
-// step's Status is passed as an explicit state, so "a later step
-// finished while an earlier one is open" renders as configured; the
-// primitive's derivation from Current is not used.
+// ProgressSteps renders a step indicator in a labelled nav, each step in
+// the Status it was given.
 func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 	if len(cfg.Steps) == 0 {
 		panic("ui: ProgressSteps requires at least one Step")
@@ -127,9 +104,6 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 		if s.Label == "" {
 			panic("ui: ProgressSteps step requires Label")
 		}
-		// Every state is explicit: the primitive derives "done" for
-		// each step before Current, and an upcoming step that sits
-		// before the current one would otherwise render as finished.
 		state := "todo"
 		switch s.Status {
 		case ProgressStepUpcoming:
@@ -143,14 +117,10 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 		}
 		var marker render.HTML
 		if s.Status == ProgressStepComplete {
-			// The done glyph is this package's check icon; the
-			// primitive's own default is a text ✓.
 			marker = render.HTML(progressStepsCheckIcon())
 		}
 		href := ""
 		if s.Status == ProgressStepComplete {
-			// Only a completed step is a way back; an upcoming step
-			// with an Href renders no anchor, the field's own contract.
 			href = s.Href
 		}
 		steps[i] = headless.Step{
@@ -162,11 +132,6 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 		}
 	}
 
-	// Steps is built entirely from ProgressStep's own typed fields —
-	// Marker is always this package's own check icon or nothing, never
-	// a caller's — so the list Steps renders holds nothing of the
-	// caller's either; Steps' own root never self-marks (an owner must
-	// place it), so the mark is spliced on here.
 	list, err := registry.InjectAttribute(headless.Steps(headless.StepsProps{
 		Steps:   steps,
 		Strings: StringsFor(cfg.Ctx),
@@ -184,12 +149,6 @@ func progressStepsCheckIcon() string {
 var progressStepsStyle = registry.RegisterStyle("ui-progress-steps", progressStepsCSS)
 
 func progressStepsCSS(_ style.Theme) string {
-	// Knobs: --ui-progress-steps-marker-size (28px, the round step
-	// marker) and --ui-progress-steps-connector-height (12px, the
-	// vertical connector's reach above its item). The connectors'
-	// centre-line offsets are calc() over the marker size; their
-	// thickness reads --stroke-thick, the marker ring's own weight.
-
 	return `[data-cui-comp="ui-progress-steps"] {
   display: block;
 }
