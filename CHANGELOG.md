@@ -37,6 +37,24 @@ few lines, and link the PR or the docs page for the rest.
   `MarshalJSON` that errors, fell back to a shallow copy, so a change made
   inside a map, slice or pointer field was dropped. The fallback is now a
   deep copy.
+- **A dynamic screen registered with a trailing slash no longer panics at
+  mount.** `/items/{slug}/` made `uihost.Mount` panic with a nil pointer
+  in `ValidateIntercepts`, and the same screen was left out of the route
+  manifest, the sitemap, the static export and llm.md. The router now
+  drops the trailing slash from a dynamic pattern at registration, so
+  `Screen.Path`, `ScreenByPattern`, `Paths` and intercept origins all
+  spell it `/items/:slug`. Nothing to change.
+- **A late rtc join mirror no longer kicks a peer that moved replicas.**
+  A replica compared the mirror's publish time, not the old seat's join
+  time, against the local socket, so a replica slow to publish a join
+  could close the peer's live socket on the replica it moved to, and the
+  room heard a second leave for it. The seat's `order` now decides; the
+  lane still carries `t` so older replicas keep working mid-upgrade.
+- **Escape pressed right after a modal opens closes it.** A modal or
+  popover with `CloseOnEscape` ignored an Escape that arrived before the
+  runtime's demand-loaded focus module (`widgetfocus`) had loaded, so
+  the first open of a page could stay up. The widgets module now hands
+  that Escape to the focus module once it loads.
 - **Cursor pages over seeded SQLite timestamps no longer repeat.** A
   managed entity paged on `created_at` whose rows a seed script or
   migration inserted as `2026-01-02T03:04:05Z` served its first page
