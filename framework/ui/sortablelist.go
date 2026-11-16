@@ -11,62 +11,34 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── SortableList ──────────────────────────────────────────────────
-//
-// Renders headless.SortableList dressed with the fui-sortablelist
-// class map: a reorderable <ol> whose rows move under drag-and-drop or
-// the keyboard (Space grabs, arrows move, Space drops, Escape cancels)
-// and whose commit is the server round trip the pattern shipped — the
-// browser previews the move, the server confirms with 2xx or the DOM
-// reverts, linked columns share a Group, a versioned 409 refetches
-// the server's own rows through SortableListItems, and the server
-// renews a versioned list's token with RenewSortableVersion. The registered
-// headless-sortablelist module binds it; the no-script fallback is the
-// plain ordered list of rows.
-
-// SortableItem is one row: Key is the stable identifier the server
-// applies the order by, Label the visible text and drag name, Content
-// an optional richer body.
+// SortableItem is one row: Key orders it on the server, Label names it.
 type SortableItem = headless.SortableItem
 
 // SortableListConfig configures one list.
 type SortableListConfig struct {
-	// Items are the rows in initial order. May be empty (an empty
-	// column stays a drop target).
+	// Items are the rows in order; an empty list stays a drop target.
 	Items []SortableItem
 	// Label is the list's accessible name. Required.
 	Label string
-	// RPCPath is POSTed after every successful reorder: the new key
-	// order, plus container/version fields when configured and
-	// moved=<key> on a cross-container drop.
+	// RPCPath is POSTed the new key order after a move.
 	RPCPath string
-	// Group is the board id shared by linked columns (kanban).
-	Group string
-	// Container is the per-column id that routes the write.
+	// Group links columns of one board; Container names this column.
+	Group     string
 	Container string
-	// Version is an optional optimistic-concurrency token, the version
-	// the rows were rendered at; a 409 then fires the conflict path
-	// instead of a rollback. Linked columns share the board's token.
-	// The move handler's 2xx and the ConflictRPC response renew it
-	// with RenewSortableVersion.
+	// Version is the optimistic-concurrency token the rows were read
+	// at; a 409 then fetches ConflictRPC instead of rolling back.
 	Version string
-	// ConflictRPC is GET-fetched on a versioned 409; its response
-	// (fresh rows, e.g. from SortableListItems) replaces the list, and
-	// its renewed version replaces the list's token.
+	// ConflictRPC answers fresh rows (SortableListItems) on a 409.
 	ConflictRPC string
-
-	ID    string
-	Class string
-	// ExtraAttrs forwards additional attributes to the wrapper. Keys
-	// the component owns are dropped: class and id (use Class / ID)
-	// and aria-label (use Label).
+	ID          string
+	Class       string
+	// ExtraAttrs land on the wrapper, minus class, id and aria-label.
 	ExtraAttrs html.Attrs
-
-	// Ctx resolves the Strings table through the request's translator.
-	Ctx context.Context
+	Ctx        context.Context
 }
 
-// SortableList renders the list.
+// SortableList renders headless.SortableList: an <ol> reordered by drag
+// or keyboard, committed by the RPCPath round trip.
 func SortableList(cfg SortableListConfig) render.HTML {
 	classes := headless.Classes{
 		headless.PartRoot:         "fui-sortablelist",
@@ -92,9 +64,7 @@ func SortableList(cfg SortableListConfig) render.HTML {
 	return sortablelistStyle.WrapHTML(out)
 }
 
-// SortableListItems renders just the rows without the <ol> wrapper:
-// the fragment a conflict-recovery endpoint returns to replace a
-// list's contents with the server's own rows.
+// SortableListItems renders the rows alone, for a ConflictRPC response.
 func SortableListItems(cfg SortableListConfig) render.HTML {
 	classes := headless.Classes{
 		headless.PartRoot:         "fui-sortablelist",
@@ -102,9 +72,6 @@ func SortableListItems(cfg SortableListConfig) render.HTML {
 		headless.PartSortableGrip: "fui-sortablelist__grip",
 		headless.PartLabel:        "fui-sortablelist__label",
 	}
-	// No WrapHTML: the fragment is the list's rows (none when the server
-	// empties a column), not one rooted element, and it lands inside a
-	// list whose sheet the page already loaded.
 	return headless.SortableItems(headless.SortableListProps{
 		Items:       cfg.Items,
 		Label:       cfg.Label,
@@ -119,11 +86,8 @@ func SortableListItems(cfg SortableListConfig) render.HTML {
 	}, classes)
 }
 
-// RenewSortableVersion tells a versioned list the version the server
-// holds now: call it on the 2xx that accepts a move (every column of
-// the board still holding the token the move sent takes the new one)
-// and on the ConflictRPC response (the refreshed column takes the
-// version its rows were read at). See headless.RenewSortableVersion.
+// RenewSortableVersion sends a versioned list the server's current
+// version; call it on a move's 2xx and on the ConflictRPC response.
 func RenewSortableVersion(w http.ResponseWriter, version string) {
 	headless.RenewSortableVersion(w, version)
 }
@@ -131,7 +95,6 @@ func RenewSortableVersion(w http.ResponseWriter, version string) {
 var sortablelistStyle = registry.RegisterStyle("ui-sortablelist", sortablelistCSS)
 
 func sortablelistCSS(_ style.Theme) string {
-	// Knobs: --ui-sortablelist-grip-size (28px) is the drag handle box.
 	return `[data-cui-comp="ui-sortablelist"] {
   list-style: none;
   margin: 0;

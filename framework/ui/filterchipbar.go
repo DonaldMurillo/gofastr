@@ -11,87 +11,44 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── FilterChipBar ──────────────────────────────────────────────────
-//
-// A toolbar of active filter chips above a table or search result.
-// Each chip is removable via an island RPC; an optional "Clear all"
-// trailing action wipes them in one shot.
-//
-// The chip itself is the existing ui.Tag (with Dismiss set). This
-// component handles:
-//   - role=toolbar wrapper with aria-label
-//   - "Clear all" affordance when ClearAllPath set
-//   - Empty-state collapse (renders an empty wrapper so the surface
-//     can be revealed without re-rendering when filters return)
-//
-// All chip dismissals share the same RPCSignal so the server can
-// re-render the chip bar HTML once and the runtime swaps it in.
-
 // FilterChip is one active filter.
 type FilterChip struct {
-	// Label is the visible chip text. Required.
+	// Label is the chip text. Required.
 	Label string
-
-	// DismissPath is the endpoint that removes this filter. With
-	// script the × POSTs here (with DismissBody) and the bar swaps in
-	// the response; without script the × is a link to it. Required.
+	// DismissPath removes the filter: POSTed with script, linked
+	// without. Required.
 	DismissPath string
-
-	// DismissBody is an optional static JSON body sent with the
-	// dismiss request (data-cui-rpc-body). When empty, the server
-	// is expected to deduce the filter from DismissPath alone.
+	// DismissBody is an optional static JSON body for the POST.
 	DismissBody string
-
-	// Variant maps to StatusVariant: defaults to neutral. Use to
-	// surface filter kind (info chips for tags, success for "active"
-	// status filters, etc).
-	Variant StatusVariant
+	Variant     StatusVariant
 }
 
 // FilterChipBarConfig configures the bar.
 type FilterChipBarConfig struct {
-	// Filters is the active filter set. Empty renders an empty
-	// (but valid) toolbar.
+	// Filters are the active filters; empty renders an empty toolbar.
 	Filters []FilterChip
-
-	// ClearAllPath, when non-empty, renders a trailing "Clear all"
-	// button that POSTs here.
-	ClearAllPath string
-
-	// ClearAllLabel overrides the trailing button's text.
-	// Default "Clear all".
+	// ClearAllPath draws a "Clear all" link POSTing here when a filter
+	// is active.
+	ClearAllPath  string
 	ClearAllLabel string
-
-	// Label is the aria-label on the toolbar.
-	// Default "Active filters".
+	// Label names the toolbar. Default "Active filters".
 	Label string
-
-	// RPCSignal, when set, is broadcast on every chip dismiss AND
-	// on Clear all, so the bar swaps itself with the server's
-	// re-rendered HTML.
+	// RPCSignal is the signal every dismiss and Clear all targets;
+	// default "filter-bar".
 	RPCSignal string
-
-	// SignalName, when set, is also placed on the wrapper as
-	// data-cui-signal so the runtime can swap the entire bar from
-	// the RPC response. Pair with data-cui-signal-mode="html" on
-	// the parent container.
+	// SignalName makes the bar itself the html-mode signal region.
 	SignalName string
-
-	// Ctx carries the per-request context used to resolve i18n labels
-	// (Clear all / "Remove filter <label>"). When nil, English fallbacks.
-	Ctx context.Context
-
+	// Ctx resolves the bar's strings; nil uses English.
+	Ctx   context.Context
 	ID    string
 	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the toolbar's root div.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, role, and aria-label (use Label).
+	// ExtraAttrs land on the root; class, id, data-cui-*, role and
+	// aria-label are the component's.
 	ExtraAttrs html.Attrs
 }
 
-// FilterChipBar renders the toolbar.
+// FilterChipBar renders a role=toolbar of removable filter chips (ui.Tag
+// with Dismiss) and an optional Clear all.
 func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 	if cfg.ClearAllPath != "" {
 		checkRPCPath("FilterChipBar", "ClearAllPath", cfg.ClearAllPath)
@@ -137,17 +94,10 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		if f.DismissPath == "" {
 			panic("ui: FilterChip requires DismissPath")
 		}
-		// A chip's dismissal is an in-page state change and a
-		// mutation: the typed Island carries the endpoint and the
-		// signal, the request is a POST with the chip's body (so no
-		// URL is pushed), and the same anchor keeps its href for no
-		// script. The signal defaults to the bar's own region.
 		signal := cfg.RPCSignal
 		if signal == "" {
 			signal = "filter-bar"
 		}
-		// Every chip is built from FilterChip's strings, so the whole
-		// Tag is the component's own.
 		items = append(items, headless.Own(Tag(TagConfig{
 			Ctx:           ctx,
 			Label:         f.Label,
@@ -165,8 +115,6 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		if signal == "" {
 			signal = "filter-bar"
 		}
-		// Built entirely from cfg.ClearAllPath/clearLabel, never caller
-		// markup: this component's own.
 		items = append(items, render.Tag("a", map[string]string{
 			"href":                cfg.ClearAllPath,
 			"class":               "fui-filter-bar__clear",

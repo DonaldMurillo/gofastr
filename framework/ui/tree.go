@@ -8,43 +8,25 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── Tree ──────────────────────────────────────────────────────────
-//
-// Renders headless.Tree dressed with the fui-tree class map: the
-// WAI-ARIA treeview whose keyboard contract (roving tabindex, arrows,
-// Home/End, type-ahead, expand/collapse through the toggle button)
-// the registered headless-tree module binds on the data-hui-tree
-// marker. The no-script contract is the rendered tree: leaf links are
-// real anchors, static branches are real markup, and a lazy branch
-// keeps the kernel's rpc wiring on its toggle with a hidden
-// signal-bound group — the same contract the retired
-// core-ui/patterns/tree shipped.
-
-// TreeItem is one entry in the tree. It is headless.TreeNode spelled
-// for this package's config-struct callers.
+// TreeItem is one entry in the tree.
 type TreeItem = headless.TreeNode
 
 // TreeConfig configures a tree.
 type TreeConfig struct {
-	// Label is the aria-label on the role="tree" wrapper. Required.
+	// Label names the role="tree" wrapper. Required.
 	Label string
-
-	// Items are the root-level entries. Required.
+	// Items are the root entries. Required.
 	Items []TreeItem
-
-	// LazySignalPrefix names the signal namespace lazy branches bind
-	// their child groups to. Required when any item uses LazyPath.
+	// LazySignalPrefix is required when an item uses LazyPath.
 	LazySignalPrefix string
-
-	ID    string
-	Class string
-	// ExtraAttrs forwards additional attributes to the wrapper. Keys
-	// the component owns are dropped: class and id (use Class / ID)
-	// and aria-label (use Label).
+	ID               string
+	Class            string
+	// ExtraAttrs land on the wrapper, minus class, id and aria-label.
 	ExtraAttrs html.Attrs
 }
 
-// Tree renders the treeview.
+// Tree renders headless.Tree, a WAI-ARIA treeview whose leaf links and
+// static branches work without script.
 func Tree(cfg TreeConfig) render.HTML {
 	classes := headless.Classes{
 		headless.PartRoot:       "fui-tree",

@@ -9,36 +9,25 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── StatStrip ──────────────────────────────────────────────────────
-//
-// One frame around a row of figures, divided by hairlines: a
-// dashboard's headline numbers read as one band, not a row of loose
-// cards. Each cell is the caller's markup (a poll region holding a
-// StatCard with Plain set); the strip owns the frame, the columns and
-// the dividers. Two columns on a narrow screen.
-
 // StatStripConfig configures a StatStrip.
 type StatStripConfig struct {
 	// Cells are the figures, one to six.
 	Cells []render.HTML
-	// Label names the group for assistive tech.
 	Label string
 	ID    string
 	Class string
-	// ExtraAttrs land on the root; class, id, role and aria-label are
-	// the component's.
+	// ExtraAttrs land on the root, minus class, id, role and aria-label.
 	ExtraAttrs html.Attrs
 }
 
-// StatStrip renders the figures in one frame.
+// StatStrip renders one to six figures in one frame divided by hairlines,
+// two columns on a narrow screen.
 func StatStrip(cfg StatStripConfig) render.HTML {
 	if len(cfg.Cells) < 1 || len(cfg.Cells) > 6 {
 		panic("ui: StatStrip requires 1-6 Cells")
 	}
 	cells := make([]render.HTML, len(cfg.Cells))
 	for i, c := range cfg.Cells {
-		// No internal mark: the cell holds the caller's content, which an
-		// owned style sheet must be able to reach.
 		cells[i] = html.Div(html.DivConfig{Class: "fui-stat-strip__cell"}, c)
 	}
 	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
@@ -58,9 +47,6 @@ func StatStrip(cfg StatStripConfig) render.HTML {
 
 var statStripStyle = registry.RegisterStyle("ui-stat-strip", statStripCSS)
 
-// statStripCSS frames the cells and divides them: each cell draws the
-// hairline on its start edge (and, wrapped, on its top), the first in
-// each row draws none.
 func statStripCSS(_ style.Theme) string {
 	return `:where([data-cui-comp="ui-stat-strip"]).fui-stat-strip {
   display: grid;
