@@ -145,6 +145,30 @@ button's visible word and accessible name from the four `data-hui-*`
 attributes the component rendered from its `Strings`, and keeps the
 caret where the reader left it.
 
+The input carries `spellcheck="false"` and `autocapitalize="off"`
+whichever type it shows: revealed, it is a text input, and a spell
+checker (some send the text off the device) must not read the secret.
+`MinLength` and `EnterKeyHint` set `minlength` and `enterkeyhint` on the
+input. With the toggle, a sign-up or change-password form asks for the
+new password once; it needs no confirm field.
+
+### One-time code field
+
+`framework/ui.OneTimeCode` renders the input for a one-time code (an
+authenticator app's TOTP code, a code sent by SMS or email), built on
+`ui.Control` inside a `FormField` whose label names it. It is
+`type="text"` with `autocomplete="one-time-code"`, `inputmode="numeric"`,
+`pattern="[0-9]{6}"`, `minlength`/`maxlength` 6, `enterkeyhint="done"`
+and no spell check. `Digits` changes the length and `Name` (default
+`code`, the field `/auth/2fa/challenge` reads) the field name. The
+type stays text, not number: a code keeps its leading zeros and gets
+no spinner. `i18nui.AuthOneTimeCode` ("Authentication code") is the
+default label. See [the 2FA flow](auth.md#the-2fa-flow).
+
+`ui.ControlConfig` carries the hints a sign-in field needs:
+`EnterKeyHint`, `InputMode` and `NoSpellCheck` (`spellcheck="false"`
+and `autocapitalize="off"`).
+
 ### Textarea auto-resize
 
 `framework/ui.TextArea` accepts `Autogrow: true`. The runtime module

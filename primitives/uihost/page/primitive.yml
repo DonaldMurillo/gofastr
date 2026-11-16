@@ -157,7 +157,7 @@ invariants:
       - test: framework/uihost.TestDocumentScriptScopedEmission
       - test: framework/uihost.TestDocumentScriptScopeSeesRoutePattern
   - id: color-scheme-runs-first
-    rule: The color-scheme bootstrap is the first element of every head and carries no defer.
+    rule: The color-scheme bootstrap is the first script of every head, preceded only by the static color-scheme meta, and carries no defer.
     enforced_by:
       - test: framework/uihost.TestSweepPageColorSchemeOpensTheHead
       - test: framework/uihost.TestSweepPageExportHeadIsSelfContained
@@ -417,7 +417,7 @@ decisions:
   - id: color-scheme-blocks
     date: 2026-11-16
     status: accepted
-    decision: The color-scheme bootstrap is the one synchronous script, first in the head, and every other host script is deferred and closes the head.
+    decision: The color-scheme bootstrap is the one synchronous script, first in the head after the static color-scheme meta, and every other host script is deferred and closes the head.
     rejected:
       - option: Defer the bootstrap with the rest.
         why: Dark tokens would apply after first paint, a flash of the light theme.

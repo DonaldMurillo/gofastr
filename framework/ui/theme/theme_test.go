@@ -88,10 +88,15 @@ func TestDarkOverrideLandsInBothDarkBlocks(t *testing.T) {
 			t.Errorf("prefers-color-scheme block missing %s:\n%s", decl, css)
 		}
 	}
-	// The light value must appear exactly once, in :root: copying a
+	// The light value must appear exactly once outside the light
+	// subtree block (which pins it on purpose), in :root: copying a
 	// light override into dark mode is the mistake the typed Dark
 	// field exists to prevent.
-	if n := strings.Count(css, `--color-primary: #0F766E;`); n != 1 {
+	scheme := css
+	if i := strings.Index(css, `:root [data-color-scheme="light"]`); i >= 0 {
+		scheme = css[:i]
+	}
+	if n := strings.Count(scheme, `--color-primary: #0F766E;`); n != 1 {
 		t.Errorf("light primary appears %d times, want exactly the :root one:\n%s", n, css)
 	}
 }

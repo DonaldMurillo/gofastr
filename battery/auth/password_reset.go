@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -38,6 +40,13 @@ type PasswordResetConfig struct {
 	// BaseURL is the application URL used to construct the reset link
 	// emailed to the user (e.g. "https://app.example.com").
 	BaseURL string
+
+	// LinkPath is the same-origin path the emailed link opens, with
+	// ?token=<token> appended: the app's page whose form posts the token
+	// and the new password to <BasePath>/reset-password. Default
+	// <BasePath>/reset-password, the endpoint itself, for a client that
+	// renders its own page there.
+	LinkPath string
 
 	// TokenTTL is the reset link's lifetime. Default: 1h. Short by design,
 	// reset tokens are a transient secret and short lifetimes limit the
@@ -138,6 +147,9 @@ func (p *PasswordResetPlugin) Init(mgr *AuthManager) error {
 	if why := invalidLinkBaseURL(p.cfg.BaseURL); why != "" {
 		return fmt.Errorf("auth: password-reset plugin: BaseURL %q %s", p.cfg.BaseURL, why)
 	}
+	if p.cfg.LinkPath != "" && (!handler.IsSafeRelativePath(p.cfg.LinkPath) || strings.ContainsAny(p.cfg.LinkPath, "?#")) {
+		return fmt.Errorf("auth: password-reset plugin: LinkPath %q is not a same-origin path with no query (one leading \"/\", no scheme or host)", p.cfg.LinkPath)
+	}
 	if p.cfg.TokenStore == nil {
 		if err := refuseInMemoryTokenStore(mgr, "password-reset"); err != nil {
 			return err
@@ -170,13 +182,23 @@ func (p *PasswordResetPlugin) burnUnknownBranchWork(r *http.Request) {
 }
 
 func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Request) {
-	if p.limit != nil && !p.limit.guard(w, r) {
+	if rejectCrossSiteForm(w, r) {
+		return
+	}
+	if !guardAuthLimit(p.limit, w, r) {
 		return
 	}
 	var body struct {
 		Email string `json:"email"`
 	}
-	if !decodeJSONLimited(w, r, &body) {
+	isForm := isFormRequest(r)
+	if isForm {
+		v, ok := decodeFormFields(w, r, "email")
+		if !ok {
+			return
+		}
+		body.Email = v["email"]
+	} else if !decodeJSONLimited(w, r, &body) {
 		return
 	}
 	// Canonicalize BEFORE the uniform-response defer is armed: the 400
@@ -207,6 +229,12 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 	// apart, and delivery is the one asymmetry policy will not let us
 	// remove — an address with no account here gets nothing.
 	defer func() {
+		if isForm {
+			// The same redirect for every address: the page it lands on
+			// says a link is on its way if the account exists.
+			http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"sent": true})
 	}()
@@ -269,8 +297,11 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		return
 	}
-	resetURL := fmt.Sprintf("%s%s/reset-password?token=%s",
-		p.cfg.BaseURL, p.mgr.Config().BasePath, tok)
+	linkPath := p.cfg.LinkPath
+	if linkPath == "" {
+		linkPath = p.mgr.Config().BasePath + "/reset-password"
+	}
+	resetURL := fmt.Sprintf("%s%s?token=%s", p.cfg.BaseURL, linkPath, tok)
 
 	switch {
 	case p.cfg.EmailSender != nil:
@@ -348,22 +379,40 @@ func (p *PasswordResetPlugin) dropLinks(ctx context.Context, userID, reason, rem
 }
 
 func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Request) {
-	if p.limit != nil && !p.limit.guard(w, r) {
+	if rejectCrossSiteForm(w, r) {
+		return
+	}
+	if !guardAuthLimit(p.limit, w, r) {
 		return
 	}
 	var body struct {
 		Token    string `json:"token"`
 		Password string `json:"password"`
 	}
-	if !decodeJSONLimited(w, r, &body) {
+	isForm := isFormRequest(r)
+	if isForm {
+		v, ok := decodeFormFields(w, r, "token", "password")
+		if !ok {
+			return
+		}
+		body.Token, body.Password = v["token"], v["password"]
+	} else if !decodeJSONLimited(w, r, &body) {
 		return
 	}
+	// A form gets each failure as the 303 back to its page with ?error=.
+	fail := func(status int, reason i18n.Phrase) {
+		if isForm {
+			writeFormAuthError(w, r, status, reason)
+			return
+		}
+		writeAuthError(w, r, status, reason)
+	}
 	if body.Token == "" || body.Password == "" {
-		writeAuthError(w, r, http.StatusBadRequest, reasonTokenAndPasswordRequired)
+		fail(http.StatusBadRequest, reasonTokenAndPasswordRequired)
 		return
 	}
 	if len(body.Password) > 128 {
-		writeAuthError(w, r, http.StatusBadRequest, reasonPasswordTooLong)
+		fail(http.StatusBadRequest, reasonPasswordTooLong)
 		return
 	}
 
@@ -374,32 +423,32 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	// immediately before SetPassword.
 	setter, ok := p.mgr.UserStore().(PasswordSetter)
 	if !ok {
-		writeAuthError(w, r, http.StatusInternalServerError, reasonStoreNoPasswordSetter)
+		fail(http.StatusInternalServerError, reasonStoreNoPasswordSetter)
 		return
 	}
 
 	if err := ValidatePasswordStrength(body.Password); err != nil {
-		writeAuthError(w, r, http.StatusBadRequest, reasonPasswordTooShort)
+		fail(http.StatusBadRequest, reasonPasswordTooShort)
 		return
 	}
 
 	hash, err := HashPassword(body.Password)
 	if err != nil {
-		writeAuthError(w, r, http.StatusInternalServerError, reasonHashFailed)
+		fail(http.StatusInternalServerError, reasonHashFailed)
 		return
 	}
 
 	userID, err := redeemPurposeToken(r.Context(), p.store, purposeReset, body.Token)
 	if err != nil {
-		writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidToken)
+		fail(http.StatusUnauthorized, reasonInvalidToken)
 		return
 	}
 	if err := setter.SetPassword(r.Context(), userID, hash); err != nil {
 		if errors.Is(err, ErrUserNotFound) {
-			writeAuthError(w, r, http.StatusNotFound, reasonUserNotFound)
+			fail(http.StatusNotFound, reasonUserNotFound)
 			return
 		}
-		writeAuthError(w, r, http.StatusInternalServerError, reasonSetPasswordFailed)
+		fail(http.StatusInternalServerError, reasonSetPasswordFailed)
 		return
 	}
 
@@ -495,7 +544,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		})
 	}
 	if incomplete {
-		writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
+		fail(http.StatusInternalServerError, reasonResetIncomplete)
 		return
 	}
 	// The reset link reached the mailbox, so it is the owner's proof. On an
@@ -515,13 +564,19 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			slog.Warn("password-reset account claim failed",
 				"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-			writeAuthError(w, r, http.StatusInternalServerError, reasonResetIncomplete)
+			fail(http.StatusInternalServerError, reasonResetIncomplete)
 			return
 		}
 	}
 
 	p.queueResetNotice(r.Context(), userID, unlinked)
 
+	if isForm {
+		// The reset signs nobody in: every session was just revoked, so
+		// the form lands where the reader signs in with the new password.
+		http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"updated": true})
 }

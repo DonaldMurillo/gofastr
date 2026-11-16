@@ -191,7 +191,7 @@ func TestSweepPageExportHeadIsSelfContained(t *testing.T) {
 	ctx := context.Background()
 	page := ds.injectChromeMode(ctx, ds.documentShell(ctx, "/", "t", "<p>x</p>"), "/", "", "", false)
 	for _, want := range []string{
-		`<head><script src="/__gofastr/color-scheme.js"></script>`,
+		`<head>`+colorSchemeMeta+`<script src="/__gofastr/color-scheme.js"></script>`,
 		`<link rel="stylesheet" href="/__gofastr/app.css" id="cui-app-css">`,
 		`id="gofastr-catalog"`,
 		`id="gofastr-runtime-modules"`,
@@ -211,8 +211,8 @@ func TestSweepPageColorSchemeOpensTheHead(t *testing.T) {
 		a.Register("/", &describedScreen{}, nil)
 		rec := httptest.NewRecorder()
 		New(a, opts...).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-		if !strings.Contains(rec.Body.String(), "<head><script") {
-			t.Errorf("the color-scheme bootstrap is not the head's first element:\n%s", rec.Body.String())
+		if !strings.Contains(rec.Body.String(), "<head>"+colorSchemeMeta+"<script") {
+			t.Errorf("the static color-scheme meta and then the bootstrap do not open the head:\n%s", rec.Body.String())
 		}
 	}
 }

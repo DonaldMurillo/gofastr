@@ -20,7 +20,7 @@ import (
 var (
 	inlineBundleRe = regexp.MustCompile(`(?s)<style data-cui-bundle="([^"]*)">(.*?)</style>`)
 	inlineAppRe    = regexp.MustCompile(`(?s)<style id="cui-app-css">(.*?)</style>`)
-	inlineSchemeRe = regexp.MustCompile(`(?s)<head><script>(.*?)</script>`)
+	inlineSchemeRe = regexp.MustCompile(`(?s)<head>` + regexp.QuoteMeta(colorSchemeMeta) + `<script>(.*?)</script>`)
 )
 
 func cspHash(body string) string {

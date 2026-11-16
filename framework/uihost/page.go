@@ -529,7 +529,7 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	case bundle:
 		colorTag = `<script src="/__gofastr/color-scheme.js?v=` + colorSchemeHash() + `"></script>`
 	}
-	page = replaceChromeMarker(page, "<head>", "<head>"+colorTag, "color-scheme bootstrap")
+	page = replaceChromeMarker(page, "<head>", "<head>"+colorSchemeMeta+colorTag, "color-scheme bootstrap")
 	headClose.WriteString(scripts.String())
 	page = replaceChromeMarker(page, "</head>", headClose.String()+"</head>", "head chrome (SEO/CSS/scripts)")
 	return page

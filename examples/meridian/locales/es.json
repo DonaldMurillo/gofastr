@@ -265,9 +265,13 @@
     "auth": {
       "credentials_required": "Introduce tu correo electrónico y tu contraseña.",
       "email_taken": "Ese correo electrónico ya está registrado.",
+      "invalid_code": "Ese código no coincide. Prueba con el actual de tu aplicación.",
       "invalid_credentials": "Correo electrónico o contraseña incorrectos.",
+      "invalid_token": "Este enlace ha caducado o ya se usó. Pide uno nuevo.",
+      "not_authenticated": "Tu inicio de sesión caducó. Vuelve a iniciar sesión.",
       "rate_limit": "Demasiados intentos. Espera un momento y vuelve a intentarlo.",
-      "unknown": "Lo sentimos, algo salió mal. Vuelve a intentarlo."
+      "unknown": "Lo sentimos, algo salió mal. Vuelve a intentarlo.",
+      "weak_password": "Usa una contraseña de al menos 8 caracteres."
     },
     "chrome": {
       "about": "Acerca de",
@@ -313,6 +317,12 @@
         "customers": "Clientes",
         "new_customer": "Nuevo cliente",
         "no_customers_yet_add": "Aún no hay clientes. Añade el primero para empezar."
+      },
+      "forgot": {
+        "back": "Volver a iniciar sesión",
+        "sent": "Si alguna cuenta usa esa dirección, le estamos enviando un enlace para restablecer su contraseña.",
+        "submit": "Envíame un enlace",
+        "title": "Restablece tu contraseña"
       },
       "home": {
         "billing_revenue": "Facturación e ingresos",
@@ -385,6 +395,12 @@
         "privacy_policy": "Política de privacidad",
         "privacy_policy_meridian_is": "# Política de privacidad\n\nMeridian es una demostración y solo guarda los datos de ejemplo que creas mientras la exploras. El contenido siguiente es Markdown de relleno.\n\n## Qué recopilamos\n\nNada personal. Una cuenta de demostración y los registros que añadas en la consola, que se restablecen periódicamente.\n\n## Qué compartimos\n\nNada. Esta aplicación de demostración no tiene terceros, rastreadores ni analítica."
       },
+      "reset": {
+        "done": "Contraseña cambiada. Inicia sesión con la nueva.",
+        "no_token": "Este enlace está incompleto. Pide uno nuevo.",
+        "submit": "Guardar contraseña",
+        "title": "Elige una contraseña nueva"
+      },
       "signup": {
         "already_have_an_account": "¿Ya tienes una cuenta? Inicia sesión",
         "create_account": "Crear cuenta",
@@ -400,6 +416,11 @@
       "terms": {
         "terms_of_service": "Términos del servicio",
         "terms_of_service_this": "# Términos del servicio\n\nEsta es una aplicación de demostración. El texto siguiente es contenido de relleno que muestra tipografía extensa y **legible** renderizada desde Markdown en el diseño de marketing.\n\n## Aceptación\n\nAl usar Meridian aceptas que estos términos son solo ilustrativos: no hay ningún servicio, cobro ni obligación reales.\n\n## Uso del servicio\n\n- Evalúa Meridian libremente con cualquier fin.\n- Los datos de ejemplo se restablecen periódicamente sin aviso.\n- No confíes en ella para nada importante.\n\n## Responsabilidad\n\nMeridian se ofrece *tal cual*, sin garantía de ningún tipo."
+      },
+      "two_factor": {
+        "help": "El código de 6 dígitos de tu aplicación de autenticación.",
+        "submit": "Verificar",
+        "title": "Introduce tu código de autenticación"
       }
     }
   },
@@ -477,7 +498,6 @@
       "colType": "Tipo",
       "colUpdated": "Actualizado",
       "colUser": "Usuario",
-      "confirmPassword": "Confirma la nueva contraseña",
       "countMany": "{{count}}+",
       "currentPassword": "Contraseña actual",
       "dashboard": "Panel",
@@ -617,8 +637,10 @@
     },
     "auth": {
       "email": "Correo electrónico",
+      "forgotPassword": "¿Olvidaste tu contraseña?",
       "login": "Iniciar sesión",
       "logout": "Cerrar sesión",
+      "oneTimeCode": "Código de autenticación",
       "password": "Contraseña",
       "rememberMe": "Recordarme",
       "signOut": "Cerrar sesión",

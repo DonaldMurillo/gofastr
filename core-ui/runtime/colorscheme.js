@@ -69,20 +69,21 @@
     try { stored = localStorage.getItem(KEY) || ''; } catch (_) {}
     const apply = () => {
       let mode = stored;
-      if (mode !== 'light' && mode !== 'dark') {
+      const forced = mode === 'light' || mode === 'dark';
+      if (!forced) {
         const mq = window.matchMedia('(prefers-color-scheme: dark)');
         mode = mq && mq.matches ? 'dark' : 'light';
       }
       document.documentElement.setAttribute('data-color-scheme', mode);
-      // Also set the native color-scheme meta so UA-rendered controls
-      // (scrollbars, native datepickers, form inputs) follow.
+      // The native color-scheme meta: a forced mode names it, following
+      // the OS says "light dark" so UA controls track the OS live.
       let meta = document.querySelector('meta[name="color-scheme"]');
       if (!meta) {
         meta = document.createElement('meta');
         meta.setAttribute('name', 'color-scheme');
         document.head.appendChild(meta);
       }
-      meta.setAttribute('content', mode);
+      meta.setAttribute('content', forced ? mode : 'light dark');
     };
     apply();
     // Re-apply on OS preference change when there's no explicit

@@ -3944,7 +3944,7 @@ func isSignupFormBlock(block appspec.AppSpecBlock) bool {
 // The fields are built through FormField's builder with ui.Control, so the
 // label association and any future description wiring arrive by construction
 // rather than by raw input strings.
-func appSpecAuthFormExpr(bp appspec.AppSpec, heading, action, next, submitLabel, pwAutocomplete string, pwMinLength int, footerHref, footerText string) string {
+func appSpecAuthFormExpr(bp appspec.AppSpec, heading, action, next, submitLabel, pwAutocomplete string, pwMinLength int, forgotHref, footerHref, footerText string) string {
 	// html.Input, NOT a hand-rolled <input> string through render.Raw:
 	// the generator ships zero raw markup (hard rule 7), and the
 	// primitive is the same one every other control in the emitted app
@@ -3952,16 +3952,22 @@ func appSpecAuthFormExpr(bp appspec.AppSpec, heading, action, next, submitLabel,
 	// reverseAuthCard knows exactly this shape.
 	hidden := fmt.Sprintf(`html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: %q})`, next)
 	emailField := `ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthEmail.Text(ctx), For: "auth-email", Required: true,` +
-		` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "email"}) }})`
+		` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "username", EnterKeyHint: "next", NoSpellCheck: true}) }})`
 	minLen := ""
 	if pwMinLength > 0 {
 		minLen = fmt.Sprintf(", MinLength: %d", pwMinLength)
 	}
 	pwField := `ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthPassword.Text(ctx), For: "auth-password", Required: true,` +
-		fmt.Sprintf(` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password", AutoComplete: %q%s}) }})`, pwAutocomplete, minLen)
+		fmt.Sprintf(` Input: func(c headless.FieldControl) render.HTML { return ui.PasswordInput(ui.PasswordInputConfig{Ctx: ctx, Field: c, Name: "password", Autocomplete: %q%s, EnterKeyHint: "go"}) }})`, pwAutocomplete, minLen)
+	// The forgot-password link sits under the password field, inside the
+	// form, through the same URL-checked ui.Link as the footer.
+	forgot := ""
+	if forgotHref != "" {
+		forgot = fmt.Sprintf(", ui.Link(ui.LinkConfig{Href: %q, Text: i18nui.AuthForgotPassword.Text(ctx)})", forgotHref)
+	}
 	form := fmt.Sprintf(
-		"ui.Form(ui.FormConfig{Ctx: ctx, Action: %q, Method: \"POST\", SubmitLabel: %s, SubmitFullWidth: true}, %s, %s, %s)",
-		action, appSpecTx(bp, submitLabel), hidden, emailField, pwField)
+		"ui.Form(ui.FormConfig{Ctx: ctx, Action: %q, Method: \"POST\", SubmitLabel: %s, SubmitFullWidth: true}, %s, %s, %s%s)",
+		action, appSpecTx(bp, submitLabel), hidden, emailField, pwField, forgot)
 	footer := ""
 	if footerHref != "" {
 		// ui.Link, NOT a hand-rolled <a> inside render.Raw. render.Raw is what
@@ -3998,11 +4004,12 @@ func renderAppSpecSignupFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock)
 	if heading == "" {
 		heading = "Create your account"
 	}
-	return appSpecAuthFormExpr(bp, heading, action, next, "Create account", "new-password", 8, propStr("login_href"), "Already have an account? Sign in")
+	return appSpecAuthFormExpr(bp, heading, action, next, "Create account", "new-password", 8, "", propStr("login_href"), "Already have an account? Sign in")
 }
 
 // renderAppSpecLoginFormExpr emits the login form. props: action (default
-// <auth base>/login), next (post-login redirect, default /), register_href (optional).
+// <auth base>/login), next (post-login redirect, default /), register_href and
+// forgot_href (optional links: the footer, and the password reset under the field).
 func renderAppSpecLoginFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock) string {
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
 	action := propStr("action")
@@ -4017,7 +4024,7 @@ func renderAppSpecLoginFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock) 
 	if heading == "" {
 		heading = "Sign in"
 	}
-	return appSpecAuthFormExpr(bp, heading, action, next, "Sign in", "current-password", 0, propStr("register_href"), "Create an account")
+	return appSpecAuthFormExpr(bp, heading, action, next, "Sign in", "current-password", 0, propStr("forgot_href"), propStr("register_href"), "Create an account")
 }
 
 // appSpecScreenRoutePath converts an app spec screen route's framework-style

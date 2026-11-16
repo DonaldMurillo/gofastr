@@ -530,11 +530,11 @@ var Catalog = []Entry{
 		return ui.Form(ui.FormConfig{Action: demoFormAction("form"), Method: "POST", SubmitLabel: "Sign in"},
 			ui.FormField(ui.FormFieldConfig{Label: "Email", For: "demo-email", Required: true,
 				Input: func(c headless.FieldControl) render.HTML {
-					return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+					return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "username", EnterKeyHint: "next", NoSpellCheck: true})
 				}}),
 			ui.FormField(ui.FormFieldConfig{Label: "Password", For: "demo-password", Required: true,
 				Input: func(c headless.FieldControl) render.HTML {
-					return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password"})
+					return ui.PasswordInput(ui.PasswordInputConfig{Field: c, Name: "password", Autocomplete: "current-password", EnterKeyHint: "go"})
 				}}),
 		)
 	}},
@@ -647,6 +647,13 @@ var Catalog = []Entry{
 		return ui.FormField(ui.FormFieldConfig{Label: "Password", For: "demo-pw",
 			Input: func(c headless.FieldControl) render.HTML {
 				return ui.PasswordInput(ui.PasswordInputConfig{Name: "pw", ID: "demo-pw", Field: c})
+			}})
+	}},
+	{"onetimecode", "OneTimeCode", "Forms", "One-time code field: the OS offers the code it received, on the digit keyboard.", func() render.HTML {
+		return ui.FormField(ui.FormFieldConfig{Label: "Authentication code", For: "demo-otp", Required: true,
+			Help: "The 6-digit code from your authenticator app.",
+			Input: func(c headless.FieldControl) render.HTML {
+				return ui.OneTimeCode(ui.OneTimeCodeConfig{Field: c})
 			}})
 	}},
 	{"searchinput", "SearchInput", "Forms", "Search field with leading icon + clear button.", func() render.HTML {

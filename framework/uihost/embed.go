@@ -531,6 +531,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 	b.WriteString(`<meta name="viewport" content="width=device-width, initial-scale=1">` + "\n")
 	b.WriteString(`<meta name="robots" content="noindex, nofollow">` + "\n")
 	fmt.Fprintf(&b, `<meta name="gofastr-embed" content="%s">`+"\n", stdhtml.EscapeString(string(cfgJSON)))
+	b.WriteString(colorSchemeMeta + "\n")
 	b.WriteString(`<script src="/__gofastr/color-scheme.js"></script>` + "\n")
 	fmt.Fprintf(&b, `<link rel="stylesheet" href="%s" id="cui-app-css">`+"\n", stdhtml.EscapeString(appCSS))
 	if catalog := catalogJSONScriptFor(ds, shellTheme, variantKey); catalog != "" {

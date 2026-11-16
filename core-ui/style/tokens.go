@@ -193,10 +193,7 @@ func (t Theme) CSSCustomProperties() string {
 	if compiled := t.compiledOptionsCSS(); compiled != "" {
 		css += "\n" + compiled
 	}
-	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
-		css += "\n" + dark
-	}
-	return css
+	return css + "\n" + schemeCSS(t, componentOptionDecls(withDefaultOptions(t.Components)))
 }
 
 // tokenCSS is CSSCustomProperties without the compiled component
@@ -210,9 +207,7 @@ func (t Theme) tokenCSS() string {
 	if knobs := knobsCSS(t.Knobs); knobs != "" {
 		css += "\n" + knobs
 	}
-	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
-		css += "\n" + dark
-	}
+	css += "\n" + schemeCSS(t, nil)
 	return css
 }
 
@@ -295,54 +290,6 @@ func componentCompilerDefaults() map[string]string {
 	componentCompiler.mu.Lock()
 	defer componentCompiler.mu.Unlock()
 	return componentCompiler.defaults
-}
-
-// darkSchemeCSS emits the dark-scheme token overrides for a theme's
-// DarkColors map (token name → CSS value) plus the optional dark syntax
-// palette (Theme.DarkCode): code entries emit `--tk-<name>` lines in the
-// same two dark-scheme blocks. Two selectors cover both ways the scheme
-// is chosen: an explicit `data-color-scheme="dark"` on <html> (set by a
-// ui.ThemeToggle / the color-scheme bootstrap) and the OS preference
-// (unless the user has explicitly forced light). Both re-declare the same
-// tokens, so any surface emitting the theme CSS recolors via the
-// CSS-variable cascade. `color` + `background-color` are set on the scope
-// so bare text/elements without their own token rule still flip; the
-// scope lines only accompany a color re-declaration — a code-only dark
-// palette shouldn't imply the page itself flips.
-func darkSchemeCSS(dark, code map[string]string) string {
-	if len(dark) == 0 && len(code) == 0 {
-		return ""
-	}
-	sortedKeys := func(m map[string]string) []string {
-		names := make([]string, 0, len(m))
-		for name := range m {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		return names
-	}
-	colorNames, codeNames := sortedKeys(dark), sortedKeys(code)
-	writeDecls := func(b *strings.Builder, indent string) {
-		for _, name := range colorNames {
-			fmt.Fprintf(b, "%s--color-%s: %s;\n", indent, name, dark[name])
-		}
-		for _, name := range codeNames {
-			fmt.Fprintf(b, "%s--tk-%s: %s;\n", indent, name, code[name])
-		}
-	}
-	var b strings.Builder
-	b.WriteString(":root[data-color-scheme=\"dark\"] {\n")
-	writeDecls(&b, "  ")
-	if len(dark) > 0 {
-		b.WriteString("  color: var(--color-text);\n  background-color: var(--color-background);\n")
-	}
-	b.WriteString("}\n")
-	b.WriteString("@media (prefers-color-scheme: dark) {\n")
-	b.WriteString("  :root:not([data-color-scheme=\"light\"]) {\n")
-	writeDecls(&b, "    ")
-	b.WriteString("  }\n")
-	b.WriteString("}")
-	return b.String()
 }
 
 // CSSCustomPropertiesOf walks any struct (including the app's

@@ -64,7 +64,7 @@ func TestAccountPageShowsProfile(t *testing.T) {
 	for _, n := range names {
 		got = append(got, n[1])
 	}
-	if strings.Join(got, ",") != "current_password,password,confirm_password" {
+	if strings.Join(got, ",") != "current_password,password" {
 		t.Errorf("the form sends %v; the route refuses any field but its own", got)
 	}
 	for _, ac := range []string{`autocomplete="current-password"`, `autocomplete="new-password"`} {

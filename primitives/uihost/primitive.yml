@@ -15,6 +15,10 @@ invariants:
       - battery/
       - examples/
       - cmd/gofastr/
+  - id: color-scheme-meta-is-static
+    rule: Every page the host renders opens its head with one <meta name="color-scheme" content="light dark"> ahead of the color-scheme bootstrap, which updates that meta instead of adding one.
+    enforced_by:
+      - test: framework/uihost.TestColorSchemeMetaIsStatic
   - id: new-wires-app-not-found-body
     rule: New gives an app with no NotFound body the host's path-less not-found body, so a 404 outlet renders the screen WithNotFoundScreen configured.
     enforced_by:
