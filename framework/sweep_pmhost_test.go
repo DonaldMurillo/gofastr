@@ -2,6 +2,8 @@ package framework
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -224,5 +226,41 @@ func TestSweepPMHostQueryFilterSanitizedOnDispatch(t *testing.T) {
 	wantOK(t, err)
 	if rawQuery != "subject=hi&user_id%5Bne%5D=x" {
 		t.Fatalf("re-dispatched query = %q, want only the queryable field keys", rawQuery)
+	}
+}
+
+// A Ready child whose state lease is failing serves nothing: a tool call is
+// refused as not ready and a proxied route answers 503 with Retry-After,
+// and neither reaches the child.
+func TestSweepPMHostLeaseFailingServesNothing(t *testing.T) {
+	good := demoToolDigest("search", "Search", "desc", nil)
+	sup, sl, _, child, cleanup := toolTestSlot(t, []ToolDigest{good})
+	defer cleanup()
+	var reached atomic.Bool
+	for _, method := range []string{moduleproto.MethodToolCall, moduleproto.MethodHTTP} {
+		if err := child.Handle(method, func(context.Context, json.RawMessage) (any, error) {
+			reached.Store(true)
+			return nil, nil
+		}); err != nil {
+			t.Fatalf("handle %s: %v", method, err)
+		}
+	}
+	sl.mu.Lock()
+	sl.leaseFailing = true
+	sl.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, err := sup.dispatchToolCall(ctx, "demo", "search", map[string]any{"q": "x"}); !errors.Is(err, ErrModuleToolNotReady) {
+		t.Fatalf("tool call with a failing lease: err = %v, want ErrModuleToolNotReady", err)
+	}
+
+	rec := httptest.NewRecorder()
+	sup.ProxyHandler("demo", "list").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/demo", nil))
+	if rec.Code != http.StatusServiceUnavailable || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("proxied route with a failing lease: %d Retry-After=%q, want 503 with Retry-After", rec.Code, rec.Header().Get("Retry-After"))
+	}
+	if reached.Load() {
+		t.Fatal("a call reached the child while its lease was failing")
 	}
 }
