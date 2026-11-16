@@ -191,7 +191,7 @@ func TestSweepPageExportHeadIsSelfContained(t *testing.T) {
 	ctx := context.Background()
 	page := ds.injectChromeMode(ctx, ds.documentShell(ctx, "/", "t", "<p>x</p>"), "/", "", "", false)
 	for _, want := range []string{
-		`<head>`+colorSchemeMeta+`<script src="/__gofastr/color-scheme.js"></script>`,
+		`<head>` + colorSchemeMeta + `<script src="/__gofastr/color-scheme.js"></script>`,
 		`<link rel="stylesheet" href="/__gofastr/app.css" id="cui-app-css">`,
 		`id="gofastr-catalog"`,
 		`id="gofastr-runtime-modules"`,
