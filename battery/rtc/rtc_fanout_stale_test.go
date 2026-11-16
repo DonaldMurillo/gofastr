@@ -40,18 +40,73 @@ func (h *heldFanout) hold() {
 }
 
 // release delivers everything held, in order, then lets later messages
-// through directly.
+// through directly. Arrivals during the drain queue behind it, as the
+// bus delivers a subscriber's messages in publish order.
 func (h *heldFanout) release() {
-	h.mu.Lock()
-	queued := h.queue
-	h.queue, h.holding = nil, false
-	h.mu.Unlock()
-	for _, deliver := range queued {
+	for {
+		h.mu.Lock()
+		if len(h.queue) == 0 {
+			h.holding = false
+			h.mu.Unlock()
+			return
+		}
+		deliver := h.queue[0]
+		h.queue = h.queue[1:]
+		h.mu.Unlock()
 		deliver()
 	}
 }
 
 var _ fanout.Fanout = (*heldFanout)(nil)
+
+// TestHeldFanoutReleaseKeepsOrder: a message published while release is
+// still draining lands after every held one. The seam holds delivery of
+// the first held message until the third has reached the wrapper.
+func TestHeldFanoutReleaseKeepsOrder(t *testing.T) {
+	bus := fanout.NewInProcess()
+	h := &heldFanout{Fanout: bus}
+	var mu sync.Mutex
+	var got []string
+	inFirst, arrived := make(chan struct{}), make(chan struct{})
+	cancel, err := h.Subscribe("t", func(p []byte) {
+		if string(p) == "1" {
+			close(inFirst)
+			<-arrived
+		}
+		mu.Lock()
+		got = append(got, string(p))
+		mu.Unlock()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	publish := func(p string) {
+		if err := bus.Publish(context.Background(), "t", []byte(p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.hold()
+	publish("1")
+	publish("2")
+	waitFor(t, 3*time.Second, func() bool { h.mu.Lock(); defer h.mu.Unlock(); return len(h.queue) == 2 }, "both held")
+	go h.release()
+	<-inFirst
+	publish("3")
+	waitFor(t, 3*time.Second, func() bool {
+		h.mu.Lock()
+		queued := len(h.queue)
+		h.mu.Unlock()
+		mu.Lock()
+		defer mu.Unlock()
+		return queued == 2 || len(got) > 0
+	}, "the third message reaches the wrapper")
+	close(arrived)
+	waitFor(t, 3*time.Second, func() bool { mu.Lock(); defer mu.Unlock(); return len(got) == 3 }, "all three delivered")
+	if got[0] != "1" || got[1] != "2" || got[2] != "3" {
+		t.Fatalf("delivery order %v, want [1 2 3]", got)
+	}
+}
 
 // TestLateJoinMirrorDoesNotKickTheMovedPeer pins #474's duplicate leave.
 // p1 joins R1, then moves to R2 before R1's join mirror has reached R2.
