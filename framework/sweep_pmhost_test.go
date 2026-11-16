@@ -302,3 +302,21 @@ func TestSweepPMHostUIActionRefResolvesOwnRoutesOnly(t *testing.T) {
 		t.Fatalf("undeclared ref rendered %q, want an error", html)
 	}
 }
+
+// The stashed snapshot itself holds only the credential headers, whatever
+// else the minting request carried.
+func TestSweepPMHostSnapshotStashesOnlyCredentials(t *testing.T) {
+	b := NewBroker(nil, nil, nil, "")
+	r := httptest.NewRequest(http.MethodGet, "/x", nil)
+	r.Header.Add("Cookie", "sid=alice")
+	r.Header.Set("X-Internal-Debug", "1")
+	r.Header.Set("X-Forwarded-For", "10.0.0.1")
+	handle, release := b.MintDelegation(r, 1)
+	defer release()
+	b.mu.Lock()
+	creds := b.handles[handle].credentials
+	b.mu.Unlock()
+	if len(creds) != 1 || creds.Get("Cookie") != "sid=alice" {
+		t.Fatalf("stashed headers = %v, want only Cookie", creds)
+	}
+}
