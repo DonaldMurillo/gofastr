@@ -30,15 +30,12 @@ invariants:
     rule: A list or get request reads the entity's own field declarations, its masks and its default created_at sort included, only through the snapshot, so a host rewriting a declaration while requests are served is no data race.
     enforced_by:
       - test: framework/crud.TestFieldMutationDuringServeIsRaceFree
-  - id: snapshot-signature-covers-masks
-    rule: VisibleFields republishes the snapshot when a field's Mask was added, removed or replaced by another function, or its AutoGenerate changed.
-    enforced_by:
-      - test: framework/crud.TestMaskChangedAfterConstructionAppliesOnRepublish
-      - test: framework/crud.TestMaskPanicReadsAsNull
-  - id: snapshot-signature-covers-wire-name-and-type
-    rule: VisibleFields republishes the snapshot when a field's name, WireName, Hidden or Type changed.
+  - id: visible-fields-republishes-the-snapshot
+    rule: Every VisibleFields call rebuilds the snapshot from the live declarations, so a field's name, WireName, Hidden, Type or Mask changed after NewCrudHandler applies from that call on.
     enforced_by:
       - test: framework/crud.TestVisibleFieldsSeesWireNameAndTypeChanges
+      - test: framework/crud.TestMaskChangedAfterConstructionAppliesOnRepublish
+      - test: framework/crud.TestMaskPanicReadsAsNull
   - id: snapshot-follows-json-case
     rule: A JSONCase assigned directly after NewCrudHandler takes effect on the next request.
     enforced_by:
@@ -270,7 +267,7 @@ decisions:
         why: Two concurrent requests that both saw a stale cache wrote the same maps and crashed the process with concurrent map writes.
       - option: Re-read the entity's declarations on every request.
         why: It races a host writing them; a mutation reaches requests only at the next single-threaded VisibleFields or a new handler.
-    upholds: [snapshot-is-a-copy, snapshot-signature-covers-wire-name-and-type, request-path-reads-fields-from-the-snapshot]
+    upholds: [snapshot-is-a-copy, visible-fields-republishes-the-snapshot, request-path-reads-fields-from-the-snapshot]
   - id: refuse-legacy-timestamp-comparisons
     status: accepted
     decision: A comparison on a Timestamp column holding text in another layout is refused with 500 timestamp_layout; the fix is rewriting the rows or reading through a view that writes the canonical layout.
@@ -359,14 +356,14 @@ decisions:
       - option: Key the cache on the *sql.DB itself.
         why: The map kept every closed database alive, one per test or per tenant.
     upholds: [dialect-probed-once-per-database]
-  - id: mask-identity-is-its-function
+  - id: republish-without-comparing
     date: 2026-11-16
     status: accepted
-    decision: The snapshot tells one Mask from another by the function's code pointer, so a Mask changed on the live declarations applies after VisibleFields republishes.
+    decision: VisibleFields rebuilds the snapshot on every call instead of comparing a signature of the declarations first.
     rejected:
+      - option: Republish only when a hash of each field's name, WireName, Hidden, Type and Mask changed.
+        why: A Mask is a function, and two closures of one function share a code pointer, so swapping a permissive mask for a redacting one was not seen and the value stayed exposed.
       - option: Read masks from the live declarations on every request.
         why: It is a data race with a host rewriting a declaration, which TestFieldMutationDuringServeIsRaceFree forbids.
-      - option: Leave masks out of the signature and require them before NewCrudHandler.
-        why: A Mask added later would silently not apply, and a mask exists to hide a value.
-    revisit_if: A host needs to swap between two closures of one function, which share a code pointer and are not told apart.
-    upholds: [snapshot-signature-covers-masks]
+    revisit_if: VisibleFields is called on a hot path, where one snapshot build per call would cost.
+    upholds: [visible-fields-republishes-the-snapshot]
