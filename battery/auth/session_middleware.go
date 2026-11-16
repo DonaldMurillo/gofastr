@@ -55,6 +55,8 @@ func WithSessionLogger(l *slog.Logger) SessionMiddlewareOption {
 //     this manager, user and lookup tenant. Only built-in global stores or
 //     GlobalSessionLookup omit the tenant binding.
 //     Clearing or replacing the user also clears or replaces that assurance.
+//   - A cookieless cross-site page load about to be refused gets the
+//     same-site hop page instead (session_hop.go; docs: auth.md).
 //   - Verified embed grants and calls admitted by App.InProcessHandler
 //     preserve their trusted context user instead of clearing it.
 //     Marked calls also preserve the outer request's recorded assurance;
@@ -132,6 +134,11 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 				ctx = handler.WithPrincipalCheck(ctx, sessionRecheck(mgr, tokens, assurance, log))
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
+			}
+			if target, ok := sameOriginTarget(r); ok && withheldCookieArrival(r, cfg.SessionCookie) {
+				refusalCtx, refused := handler.TrackSessionRefusal(ctx)
+				r = r.WithContext(refusalCtx)
+				w = &arrivalHopWriter{ResponseWriter: w, r: r, pages: cfg.Pages, target: handler.SameSiteHopTarget(r, target), refused: refused}
 			}
 			anon(w, r, next)
 		})
@@ -314,6 +321,7 @@ func RequireSession(opts ...RequireSessionOption) middleware.Middleware {
 				return
 			}
 			if o.failHTMLPath != "" && wantsHTML(r) {
+				handler.NoteSessionRefusal(r.Context())
 				http.Redirect(w, r, o.failHTMLPath, http.StatusSeeOther)
 				return
 			}

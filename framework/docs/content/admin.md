@@ -754,6 +754,15 @@ palette). With `Config.LoginPath` set, a signed-out GET redirects to
 or a later page comes back to the same view after sign-in; a signed-out
 post is still a `401`.
 
+A link into the admin followed from mail, chat or another site arrives
+without the `SameSite=Strict` session cookie. Behind
+`auth.SessionMiddleware`, that arrival gets a page from this origin that
+loads the same URL again with the cookie, so a signed-in admin lands on
+the page and not on the login form
+([auth](auth.md#a-link-from-another-site-into-a-guarded-page)). A
+visitor who is really signed out gets the redirect or `401` above on
+the reload.
+
 <!-- gofastr:compile
 import "context"
 import "slices"

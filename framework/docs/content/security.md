@@ -391,6 +391,14 @@ Fetch Metadata, such as curl or a script, gets the hop page first: it
 follows the page's `Refresh` header or its link, or sends
 `Sec-Fetch-Site: none` to skip the hop.
 
+`auth.SessionMiddleware` uses the same page for a guarded page reached
+from another site, on a narrower test: only an explicit
+`Sec-Fetch-Site: cross-site` top-level `GET` or `HEAD` with no session
+cookie, and only when the answer would be a `401` or a redirect a gate
+marked with `handler.NoteSessionRefusal`. A request with no Fetch
+Metadata is not hopped there, so curl and API clients keep the `401`.
+See [auth](auth.md#a-link-from-another-site-into-a-guarded-page).
+
 ### Routes you mount yourself
 
 Entity endpoints and CRUD routes refuse a forged cross-site write
