@@ -44,7 +44,7 @@ func TestFirstPaintHashesSurviveTheChain(t *testing.T) {
 	body, csp := rec.Body.String(), rec.Header().Get("Content-Security-Policy")
 	blocks := map[string]*regexp.Regexp{
 		"style-src":  regexp.MustCompile(`(?s)<style id="cui-app-css">(.*?)</style>`),
-		"script-src": regexp.MustCompile(`(?s)<head><script>(.*?)</script>`),
+		"script-src": regexp.MustCompile(`(?s)<head><meta name="color-scheme" content="light dark"><script>(.*?)</script>`),
 	}
 	for directive, re := range blocks {
 		m := re.FindStringSubmatch(body)
