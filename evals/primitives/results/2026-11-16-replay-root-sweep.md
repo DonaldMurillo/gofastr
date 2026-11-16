@@ -6,8 +6,9 @@ owners for the root `framework` package and its comment sweep). This is
 the check `PLAN.md` asks for after a step: the replay numbers must not
 drop from `2026-11-15-replay-step1.md`.
 
-All 12 cells ran clean, $13.04. One number dropped, so `node-block-entity`
-was run four more times on the same commit, $4.81.
+All 12 cells ran clean, $13.04. One number dropped, so
+`node-block-entity` was run again: four more times on this commit
+($4.81) and six times on the step 1 commit, `5d7b1376` ($7.92).
 
 | Opus, harness | step 1 (2026-11-15) | after |
 |---|---|---|
@@ -28,20 +29,23 @@ By task, other paths fixed:
 | `node-block-entity` (4 paths) | 2/4 | 4/4 |
 | `dup-column-key` (1 path) | 1/1 | 1/1 |
 
-`node-block-entity` over six runs on this commit: 2/4, 4/4, 2/4, 4/4,
-3/4, 4/4, which is 19 of 24.
+`node-block-entity`, six runs on each commit:
 
-- **The drop is one task, and it is the task's spread, not the stack.**
-  A low run refuses `entity_list`, `entity_form` and `entity_detail`
-  under a node block and misses `login_form` and `signup_form`. Nothing a
-  replay cell reads changed between the step 1 commit and this one: the
-  registry tooling, the harness and its overlays are the same files, and
-  a cell starts from the pre-fix commit, so the swept `framework` code
-  never reaches it. Six runs on identical inputs range from 2/4 to 4/4.
-  Step 1's two runs both landed at the top of that range.
+| Commit | Runs | Other paths fixed |
+|---|---|---|
+| step 1, `5d7b1376` | 4/4, 2/4, 4/4, 4/4, 4/4, 2/4 | 20 of 24 |
+| this stack, `b3d4a291` | 2/4, 4/4, 2/4, 4/4, 3/4, 4/4 | 19 of 24 |
+
+- **The drop is not a regression.** Measured the same way, the step 1
+  commit scores 20 of 24 and this stack 19 of 24, and each has two runs
+  at 2/4. Step 1's published 4/4 twice was two runs from the top of that
+  spread. A low run refuses `entity_list`, `entity_form` and
+  `entity_detail` under a node block and misses `login_form` and
+  `signup_form`.
 - **Two runs per task cannot hold a 12/20 baseline.** One run of this
-  task moves the blind-entry total by two. Compare this task on its
-  six-run figure, 19 of 24, from here on.
+  task moves the blind-entry total by two. Its baseline from here on is
+  the six-run figure, 20 of 24; a later step drops if it falls clearly
+  below that, measured over six runs.
 - **`form-field-typo` is unchanged and still the weak task**, 1 of 5 in
   both runs, as in step 1.
 - **`observer-panic` updated its docs in 2 runs of 2** (1 of 2 in step
