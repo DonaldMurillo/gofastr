@@ -1,0 +1,51 @@
+primitive: migrate.generate
+summary: "The declarative workflow: SnapshotFromPlan records the desired schema, GeneratePlan diffs it against the last schema.snapshot.json, and GenerateMigrationFile writes the next NNNN_<name>.sql in the -- +migrate layout and saves the new snapshot."
+code:
+  - framework/migrate/snapshot.go
+  - framework/migrate/generate_file.go
+  - framework/migrate/table_key.go
+docs:
+  - framework/docs/content/migrations.md
+on_change:
+  - "A change to a SchemaSnapshot field is a file format change: update the Snapshot file format section of the docs, keep the field omitempty, and keep a snapshot written by an older gofastr loading with the field read as unknown."
+  - "Generated output stays byte-for-byte deterministic: iterate maps in sorted order."
+  - "Every rendered file goes through RenderMigrationFileChecked, so no SQL or name line can be read by core/migrate's parser as a directive."
+  - "A change to the file layout also updates parseMigrationSections and the SQL file format section of the docs, and stays parseable by core/migrate parseMigration."
+twins:
+  - job: "Recognise a -- +migrate directive line in migration text."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/snapshot.go
+        note: "containsDirectiveLine, the guard RenderMigrationFileChecked applies to up, down and name."
+      - path: framework/migrate/generate_file.go
+        note: "parseMigrationSections, which reads the last committed file back for lastCommittedSections."
+      - path: core/migrate/migrate.go
+        note: "parseMigration, the runner's parser; TestDirectiveGuardMatchesParserTrim pins the guard to its whitespace trim."
+  - job: "Record in the desired snapshot every property the diff later compares against it."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/snapshot.go
+        note: "SnapshotFromPlan writes Tables, PrimaryKeys, UniqueColumns, TableDDL, Indices, Views and Routines."
+      - path: framework/migrate/schema_diff.go
+        note: "diffEntity reads them back through fkDiffEnv (tables, uniques, tableDDL) and the liveKey GeneratePlan builds."
+      - path: framework/migrate/unique.go
+        note: "snapshotUniques, which falls back to recordedUniqueColumns on TableDDL for a snapshot with no UniqueColumns."
+invariants:
+  - id: refuses-cascading-rebuild
+    rule: "GeneratePlan returns an error instead of a file when a SQLite rebuild's DROP TABLE would fire an ON DELETE CASCADE or SET NULL action."
+    enforced_by:
+      - test: framework/migrate.TestGenerateRefusesCascadingRebuild
+  - id: no-synthesized-directive
+    rule: "Generation refuses a routine body, column DEFAULT or name that would render a line the runner reads as a -- +migrate directive."
+    enforced_by:
+      - test: framework/migrate.TestGenerateRefusesDirectiveInRoutines
+      - test: framework/migrate.TestSQLDefaultCannotSynthesizeDirective
+      - test: framework/migrate.TestDirectiveGuardMatchesParserTrim
+  - id: deterministic-output
+    rule: "Generating from the same plan and snapshot twice writes the same file."
+    enforced_by:
+      - test: framework/migrate.TestGenerateMigrationFileDeterministic
+  - id: no-duplicate-index-ddl
+    rule: "A generated Up holds each index statement once."
+    enforced_by:
+      - test: framework/migrate.TestGeneratePlan_NoDuplicateIndexDDL
