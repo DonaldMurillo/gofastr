@@ -56,8 +56,7 @@ func WithBurnPrunePolicy(threshold int, interval time.Duration) MemoryBurnStoreO
 		if threshold > 0 {
 			s.pruneThreshold = threshold
 		}
-		s.pruneInterval = max(interval,
-			0)
+		s.pruneInterval = max(interval, 0)
 	}
 }
 
