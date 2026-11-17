@@ -1,0 +1,8 @@
+primitive: pagination
+summary: Offset and cursor pagination for list reads, covering the limit and page parameters, the opaque single- and multi-field cursor tokens and the page envelopes.
+code:
+  - framework/pagination/
+docs:
+  - framework/docs/content/cursor-pagination.md
+on_change:
+  - A change to the cursor token's wire format breaks cursors clients already hold; say so in CHANGELOG and in the Wire format section of cursor-pagination.md.
