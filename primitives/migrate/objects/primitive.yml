@@ -5,3 +5,79 @@ code:
   - framework/migrate/routine.go
   - framework/migrate/routine_ledger.go
   - framework/migrate/routines_fs.go
+invariants:
+  - id: misplaced-down-never-runs-as-up
+    rule: A routine file whose .down is not immediately before .sql (foo.down.pg.sql) is refused, never loaded as an Up named foo.down.
+    enforced_by:
+      - test: framework/migrate.TestRoutineSuffixOrder
+  - id: routine-files-fail-loud
+    rule: RoutinesFS refuses an unknown dialect suffix (so a plain name has no dots), an empty Up or Down, two Ups or two Downs for one name, a Down with no Up or of another dialect, and a directory with no Up file.
+    enforced_by:
+      - test: framework/migrate.TestDottedPlainNameRefused
+      - test: framework/migrate.TestRoutinesFS_RejectsEmptyFile
+      - test: framework/migrate.TestRoutinesFS_RejectsPlainAndDialectCollision
+      - test: framework/migrate.TestRoutinesFS_RejectsTwoDialectsForSameName
+      - test: framework/migrate.TestRoutineDownDialect
+      - test: framework/migrate.TestSweepObjectsRoutinesFSRefusals
+  - id: routine-files-read-top-level-sql-only
+    rule: RoutinesFS reads only top-level .sql files that are not dotfiles, strips a byte-order mark, and returns routines sorted by name.
+    enforced_by:
+      - test: framework/migrate.TestRoutinesFS_IgnoresUnrelatedFiles
+      - test: framework/migrate.TestRoutinesFS_DeterministicSortedOrder
+      - test: framework/migrate.TestSweepObjectsRoutinesFSSkipsDotfilesAndDirs
+  - id: routine-ledger-is-reporting-only
+    rule: The routine ledger never gates an Up, which runs at every boot, and an Up change rewrites the routine's recorded checksum.
+    enforced_by:
+      - test: framework/migrate.TestRoutineUpRunsDespiteLedgerMatch
+      - test: framework/migrate.TestLedger_WritesNewChecksumOnUpChange
+      - test: framework/migrate.TestLedger_WarnsWhenRowHasNoRegisteredRoutine
+  - id: view-render-is-idempotent
+    rule: A plain Postgres view renders as CREATE OR REPLACE VIEW, a materialized view and every SQLite view as DROP IF EXISTS then CREATE, and an unsafe view name panics.
+    enforced_by:
+      - test: framework/migrate.TestView_RenderAndToEntityBranches
+      - test: framework/migrate.TestBootReplacesViewWhoseColumnsChanged
+      - test: framework/migrate.TestViewRender_RejectsUnsafeName
+  - id: view-entity-has-a-key
+    rule: View.ToEntity returns nil for a view with no Columns, panics when no column is PrimaryKey, and otherwise builds an Unmanaged entity with non-nil Scope, Pagination and Exposure keyed on the marked columns in order.
+    enforced_by:
+      - test: framework/migrate.TestView_RenderAndToEntityBranches
+      - test: framework/migrate.TestSweepObjectsViewEntityNeedsAKey
+      - test: framework/migrate.TestSweepObjectsViewEntityIsNormalized
+  - id: views-follow-their-dependencies
+    rule: Views are created after the views they depend on, and a view's dependents include every view that reads it through another view.
+    enforced_by:
+      - test: framework/migrate.TestTopoSortViews_SharedDependency
+      - test: framework/migrate.TestSweepObjectsViewDependentsAreTransitive
+  - id: postgres-view-replace-falls-back
+    rule: On Postgres boot drops the plan's views that read a materialized view or a view whose kind changed before recreating it, and a CREATE OR REPLACE VIEW Postgres refuses is retried as drop and create under a savepoint.
+    enforced_by:
+      - test: framework/migrate.TestPGChangedMatViewWithDependent
+      - test: framework/migrate.TestPGViewKindChangeAtBoot
+      - test: framework/migrate.TestBootReplacesViewWhoseColumnsChanged
+decisions:
+  - id: routine-ledger-does-not-gate
+    date: 2026-11-17
+    status: accepted
+    decision: Every matching routine's Up runs at every boot; the ledger only records checksums for introspection, and a routine that leaves the plan keeps its row and object.
+    rejected:
+      - option: Skip an Up whose checksum matches the ledger.
+        why: A dropped or hand-edited object would never come back.
+      - option: Drop a routine that leaves the plan.
+        why: Boot is additive only; removal goes through a reviewed migration with the routine's Down.
+    upholds: [routine-ledger-is-reporting-only]
+  - id: routine-filename-grammar
+    date: 2026-11-17
+    status: accepted
+    decision: A routine file is <name>[.pg|.sqlite][.down].sql, read right to left, with any other trailing segment refused.
+    rejected:
+      - option: Treat an unknown trailing segment as part of the name.
+        why: A typo like foo.mysql.sql or a misplaced .down would load silently, the second as an Up.
+    upholds: [misplaced-down-never-runs-as-up, routine-files-fail-loud]
+  - id: view-replace-keeps-grants
+    date: 2026-11-17
+    status: accepted
+    decision: A plain Postgres view is replaced with CREATE OR REPLACE VIEW first, falling back to drop and create only when Postgres refuses the new columns.
+    rejected:
+      - option: Always drop and create, as on SQLite.
+        why: CREATE OR REPLACE keeps the view's grants and fails only when columns are removed, renamed or retyped.
+    upholds: [postgres-view-replace-falls-back]

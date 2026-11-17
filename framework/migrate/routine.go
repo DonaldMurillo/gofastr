@@ -2,44 +2,29 @@ package migrate
 
 import "github.com/DonaldMurillo/gofastr/framework/entity"
 
-// Routine is a database routine managed as a first-class migration object: a
-// function, stored procedure, trigger, or view. Up is the idempotent
-// definition (CREATE OR REPLACE …); Down rolls it back (a DROP, or a CREATE OR
-// REPLACE of the previous body for true reversibility). The SQL is dialect-
-// specific and run verbatim, so a `$$ … $$` body is a single statement.
-//
-// AutoMigrate runs every routine's Up on boot (idempotent). GenerateMigration
-// tracks each routine by a checksum of its Up and emits a migration only when
-// the body changes, with a Down that restores the previous definition.
+// Routine is a database function, procedure, trigger or view managed as a
+// migration object. Up is idempotent SQL run verbatim at every boot; Down
+// rolls it back. GenerateMigration emits a migration when Up's checksum
+// changes.
 type Routine struct {
 	Name string // unique identifier used for change tracking
 	Up   string // CREATE OR REPLACE … (run verbatim, idempotent)
 	Down string // DROP … or CREATE OR REPLACE of the prior body
 
-	// Dialect scopes a routine to a single SQL dialect. The zero value (the
-	// empty string) means "runs on every detected dialect", today's behavior.
-	// Set DialectPostgres for a Postgres stored proc that has no SQLite
-	// equivalent; set DialectSQLite for a SQLite-only trigger. During
-	// auto-migrate, routines whose Dialect does not match DetectDialect(db)
-	// are skipped. Their Up never runs against the wrong engine. The skipped
-	// names are listed in one slog.Info per boot.
+	// Dialect scopes the routine to one dialect; empty runs on every one, and
+	// boot skips a routine whose Dialect is not the database's.
 	Dialect Dialect
 }
 
-// Plan is the full migration surface: tables (entities via a registry), views,
-// plus stored routines. It's what AutoMigratePlanContext and GeneratePlan consume
-// so tables, views, and routines reconcile in one pass.
+// Plan is the full migration surface AutoMigratePlanContext and GeneratePlan
+// reconcile in one pass: tables, views and routines.
 type Plan struct {
 	Registry entity.Registry
 	Views    []View
 	Routines []Routine
 }
 
-// dialectString renders a Dialect for log output. Empty string ("all
-// dialects") surfaces as "all" so it reads cleanly in slog attributes rather
-// than as an empty quoted value. (Dialect is a type alias for coremig.Dialect,
-// so this is a free function rather than a method. Methods can't be added in
-// the aliasing package.)
+// dialectString renders a Dialect for log output, "all" for the empty one.
 func dialectString(d Dialect) string {
 	if d == "" {
 		return "all"
