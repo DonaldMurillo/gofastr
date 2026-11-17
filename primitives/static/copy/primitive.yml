@@ -1,0 +1,6 @@
+primitive: static.copy
+summary: Copying the static source (a directory or an embedded FS) and Builder.ExtraDirs into the export - what is publishable, symlink handling, the precedence of built files over copies, and appending host rule files.
+code:
+  - framework/static/copy.go
+docs:
+  - framework/docs/content/static-export.md

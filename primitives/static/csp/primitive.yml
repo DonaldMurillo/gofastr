@@ -1,0 +1,7 @@
+primitive: static.csp
+summary: The Content-Security-Policy an export carries - the built-in default, the check that refuses unsafe policies, the per-page meta tags and the _headers file.
+code:
+  - framework/static/csp.go
+docs:
+  - framework/docs/content/static-export.md
+  - framework/docs/content/security.md

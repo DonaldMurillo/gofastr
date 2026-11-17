@@ -1,0 +1,6 @@
+primitive: static.links
+summary: The rewrites every exported page and widget chrome takes - the data-cui-static stamp and preview banner, BasePath prefixing of attributes, srcsets, inline JSON, the route graph and runtime JS, trailing-slash page links, and the locale tree's keep-unprefixed rule.
+code:
+  - framework/static/links.go
+docs:
+  - framework/docs/content/static-export.md

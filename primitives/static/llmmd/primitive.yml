@@ -1,0 +1,7 @@
+primitive: static.llmmd
+summary: The per-page llm.md files and llm-pages.md index an export writes for each locale tree, with skipped and withheld docs matching the pages they describe.
+code:
+  - framework/static/llmmd.go
+docs:
+  - framework/docs/content/agent-ready.md
+  - framework/docs/content/static-export.md

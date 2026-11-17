@@ -1,0 +1,6 @@
+primitive: static.redirects
+summary: The page an exact app.Redirect leaves at its old path (a meta refresh and a plain link under the export CSP) and the _redirects rules for hosts that read them.
+code:
+  - framework/static/redirects.go
+docs:
+  - framework/docs/content/static-export.md

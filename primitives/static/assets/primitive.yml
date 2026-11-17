@@ -1,0 +1,8 @@
+primitive: static.assets
+summary: The generated files an export writes beside its pages - the widget catalog with chrome and styles, sitemap and robots, app icons, extra-script rail entries, and the PWA manifest, full-site service worker and offline page.
+code:
+  - framework/static/assets.go
+  - framework/static/pwa.go
+docs:
+  - framework/docs/content/static-export.md
+  - framework/docs/content/pwa.md
