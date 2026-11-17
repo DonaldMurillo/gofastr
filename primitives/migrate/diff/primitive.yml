@@ -4,3 +4,246 @@ code:
   - framework/migrate/schema_diff.go
   - framework/migrate/snapshot.go
   - framework/migrate/generate_file.go
+twins:
+  - job: Keep the declared views that read a table usable across a change of one of its columns' types.
+    why: Postgres alters the column in place and refuses under a view, so the views are dropped and recreated around the ALTER, while SQLite has no ALTER COLUMN TYPE and rebuilds the table, renaming the replacement in under legacy_alter_table; the two statements share nothing.
+    sites:
+      - path: framework/migrate/schema_diff.go
+        note: The Postgres ALTER COLUMN TYPE change and its pgRetypes, and the SQLite retype that joins the table rebuild.
+      - path: framework/migrate/snapshot.go
+        note: viewChanges redoing a view whose DependsOn names a retyped table, and the legacy_alter_table rename around a SQLite rebuild.
+invariants:
+  - id: retype-keeps-dependent-views
+    rule: A generated change of a column's type leaves an unchanged declared view that reads the table, and the views that read that view, queryable on Postgres and SQLite, and on Postgres the Down restores the old type under them.
+    enforced_by:
+      - test: framework/migrate.TestRetypeUnderUnchangedView
+      - test: framework/migrate.TestSQLiteRebuildUnderView
+  - id: removals-drop-dependents-first
+    rule: Removed views drop before the removed views their recorded DependsOn names and removed routines drop last created first by their recorded Order; a snapshot that recorded neither keeps views in name order and routines in reverse name order.
+    enforced_by:
+      - test: framework/migrate.TestRemovedObjectsDropDependentsFirst
+      - test: framework/migrate.TestRemovalOrderWithoutRecordedOrder
+      - test: framework/migrate.TestViewRemovalDropsDependentsFirst
+  - id: renames-need-both-ends
+    rule: A Renames hint renames a column only when its old name is live and its new name is declared, the renames run in old-name order, and a renamed column's type and key membership are compared under its old live name.
+    enforced_by:
+      - test: framework/migrate.TestSweepDiffStaleRenameHintIgnored
+      - test: framework/migrate.TestRenamesInSortedOrder
+      - test: framework/migrate.TestDiffEntityFromLive_RenameAndTypeChange
+      - test: framework/migrate.TestParentKeyRenameKeepsChildKey
+  - id: required-column-added-nullable
+    rule: A Required field with no default is added nullable, its NOT NULL deferred, a SQLite rebuild in the same change leaves it nullable, and the snapshot records the table as applied so a later generation tightens it.
+    enforced_by:
+      - test: framework/migrate.TestGenerateDeferredNotNullIsTightenedLater
+      - test: framework/migrate.TestGenerateDeferredNotNullSurvivesUnrelatedRebuild
+      - test: framework/migrate.TestRebuildDefersNewRequiredFields
+  - id: added-column-brings-its-indexes
+    rule: An added Unique column gets a unique index named as Postgres names the inline constraint, and an added column gets the declared one-column indexes on it, in the same change set.
+    enforced_by:
+      - test: framework/migrate.TestAddedUniqueColumnIsUnique
+      - test: framework/migrate.TestNonKeywordSchemaRendersUnchanged
+  - id: destructive-changes-are-refused-by-default
+    rule: A dropped column, a Postgres retype and a removed index are Destructive, and ApplySchemaDiff refuses a change set holding one before running any of it.
+    enforced_by:
+      - test: framework/migrate.TestSweepDiffPostgresRetypeIsDestructive
+      - test: framework/migrate.TestLiveSQLiteColumnDropApplies
+      - test: framework/migrate.TestSweepDiffApplyRefusesDestructive
+      - test: framework/migrate.TestSweepDiffRemovedIndexIsDestructive
+  - id: raw-types-are-not-diffed
+    rule: A field with a RawType is never reported as a type change.
+    enforced_by:
+      - test: framework/migrate.TestDiffEntityFromLive_RawTypeNotFlagged
+  - id: dropped-column-down-restores-its-type
+    rule: The Down of a dropped column re-adds it with its live or recorded type.
+    enforced_by:
+      - test: framework/migrate.TestSweepDiffDropDownKeepsType
+  - id: managed-columns-are-not-dropped
+    rule: The diff never drops a column the framework manages for the entity, timestamps, deleted_at, and both the configured tenant column and tenant_id.
+    enforced_by:
+      - test: framework/migrate.TestSweepDiffKeepsBothTenantColumns
+      - test: framework/migrate.TestIsFrameworkManagedColumn_AllBranches
+  - id: types-compare-canonically
+    rule: Declared and live types compare after folding the Postgres catalog aliases and serials, an older INTEGER column under a BIGINT Int is in sync, and a VARCHAR width counts on Postgres only, when both sides name one.
+    enforced_by:
+      - test: framework/migrate.TestVarcharWidthChangeDiffs
+      - test: framework/migrate.TestPGLegacyIntegerNoDrift
+      - test: framework/migrate.TestRetypeCastsTextToInteger
+      - test: framework/migrate.TestSweepDiffWidthComparedOnlyWhenBothNameOne
+  - id: text-to-integer-retype-casts
+    rule: A Postgres retype from text to an integer type uses USING with an explicit cast, dropping the default first and setting the declared one after, and its Down restores the old default.
+    enforced_by:
+      - test: framework/migrate.TestPGRetypeTextToIntWithDefault
+      - test: framework/migrate.TestRetypeOwnsItsDefault
+      - test: framework/migrate.TestPGRetypeDownKeepsDefault
+  - id: sqlite-rebuild-keeps-what-the-table-held
+    rule: A SQLite table rebuild copies every row, columns added in the same change included, keeps the undeclared framework-managed columns, and puts back the declared and automatic indexes and the table's own triggers in creation order, in its schema.
+    enforced_by:
+      - test: framework/migrate.TestSweepDiffRebuildCopiesAddedKeyColumn
+      - test: framework/migrate.TestSQLiteRebuildKeepsRowsManagedColsIndex
+      - test: framework/migrate.TestRetypeRebuildKeepsFKIndex
+      - test: framework/migrate.TestLiveSQLiteRebuildKeepsTriggers
+      - test: framework/migrate.TestLiveSQLiteRebuildKeepsTriggerOrder
+      - test: framework/migrate.TestLiveSQLiteRebuildKeepsRenamedTrigger
+      - test: framework/migrate.TestSweepDiffRebuildKeepsColumnsBeforeCompositeKey
+  - id: live-rebuild-checks-foreign-keys
+    rule: ApplySchemaDiffWithOptions runs a set holding a SQLite rebuild with foreign keys off and rolls it back when it leaves a foreign key violation that did not exist before.
+    enforced_by:
+      - test: framework/migrate.TestRebuildRollsBackNewFKViolation
+      - test: framework/migrate.TestRetypeRebuildKeepsDependentRows
+  - id: live-reads-match-folded-names
+    rule: The migrator's own reads of a Postgres table match its folded schema, table and column names only, so a quoted mixed-case table or column is not the entity's, and the bulk and single readers agree.
+    enforced_by:
+      - test: framework/migrate.TestPGQuotedLegacyColumnNotOurs
+      - test: framework/migrate.TestPGQuotedMixedCaseTableNotOurs
+      - test: framework/migrate.TestSweepDiffColumnReadersAgree
+    applies:
+      - framework/migrate/bulk.go
+  - id: sqlite-pragma-table-is-validated
+    rule: A SQLite column read refuses a table name SafeIdent refuses before building its PRAGMA.
+    enforced_by:
+      - test: framework/migrate.TestReadLiveColumnsRejectsBadTable
+  - id: postgres-unique-is-named
+    rule: On Postgres a Unique column whose key name differs from the legacy default is created with CONSTRAINT and the name entity.UniqueKeyName gives.
+    enforced_by:
+      - test: framework/migrate.TestUniqueKeyNameMatchesPostgres
+  - id: foreign-key-index-is-automatic
+    rule: Every belongs_to foreign key gets an index unless a declared index covers exactly its columns, and the automatic set is the one boot, the diff, the snapshot and the rebuild use.
+    enforced_by:
+      - test: framework/migrate.TestSweepDiffForeignKeyIndexNotDoubled
+      - test: framework/migrate.TestAutoMigrateSkipsOwnerFKIndex
+  - id: key-change-detaches-referrers
+    rule: A Postgres key change detaches and re-adds the foreign keys onto the table, pivot keys and keys no relation declares included, and compares a pivot's live keys under the key they still name.
+    enforced_by:
+      - test: framework/migrate.TestKeyChangeDetachesPivotKey
+      - test: framework/migrate.TestDiffSchemaPostgresPivotKeyChange
+      - test: framework/migrate.TestKeyChangeRefusesUndeclaredKey
+      - test: framework/migrate.TestKeyChangeReaddsAfterChildRename
+  - id: index-changes-wrap-column-changes
+    rule: A generated table's index drops run before its column changes and its index creates after; an index whose definition changed under one name is dropped and recreated; a snapshot with no Indices gets every desired index; and an index kept on a 63-byte refit stays recorded until it is removed.
+    enforced_by:
+      - test: framework/migrate.TestDropIndexedColumnAndIndex
+      - test: framework/migrate.TestRetargetedUniqueIndexSurvives
+      - test: framework/migrate.TestGeneratePlan_IndexDefinitionDrift_SameName
+      - test: framework/migrate.TestGeneratePlan_LegacyNilIndices_EmitsIndices
+      - test: framework/migrate.TestFittedIndexNameDropsNothing
+      - test: framework/migrate.TestRetainedIndexDroppedOnRemoval
+  - id: objects-wrap-table-changes
+    rule: A generated migration drops removed routines, then changed and removed views deepest first, before any table change, and creates views and routines after them.
+    enforced_by:
+      - test: framework/migrate.TestChangedViewDropsBeforeColumn
+      - test: framework/migrate.TestPGChangedMatViewWithDependent
+      - test: framework/migrate.TestRemovalOrderWithoutRecordedOrder
+  - id: generated-rebuild-refuses-referenced-tables
+    rule: GeneratePlan refuses a SQLite rebuild of a table that a recorded or declared foreign key references, with or without an ON DELETE action, since the file runs in a transaction where foreign keys cannot be turned off.
+    enforced_by:
+      - test: framework/migrate.TestGenerateRefusesCascadingRebuild
+      - test: framework/migrate.TestKeywordParentRebuildRefusedAfterRelationRemoved
+      - test: framework/migrate.TestGeneratedRebuildOfReferencedTableRefused
+  - id: generated-rebuild-reruns-routines
+    rule: A generated file holding a SQLite rebuild renames the replacement table under legacy_alter_table and runs every routine's Up again after the tables, so the views and triggers that name the table survive.
+    enforced_by:
+      - test: framework/migrate.TestSQLiteRebuildKeepsTrigger
+      - test: framework/migrate.TestSQLiteRebuildUnderCrossTrigger
+  - id: dropped-table-is-reversible
+    rule: A table the plan no longer declares is dropped children first, refused while a kept table references it, and its Down is the recorded CREATE TABLE and indexes; references inside string literals and comments of the recorded DDL count for nothing.
+    enforced_by:
+      - test: framework/migrate.TestDropRefusesKeptForeignKeys
+      - test: framework/migrate.TestGeneratePlan_DroppedTable_RestoresIndicesInDown
+      - test: framework/migrate.TestGeneratePlan_DropEntityAndPivot_PostgresOrdering
+      - test: framework/migrate.TestDropOrderKeepsLookAlikeTables
+      - test: framework/migrate.TestDropOrderSkipsLiterals
+      - test: framework/migrate.TestCascadeGuardSkipsLiterals
+      - test: framework/migrate.TestQualifiedReferencesParse
+  - id: down-unwinds-the-up
+    rule: The Down runs the changes' inverses in reverse order, a statement repeated in the Up is written once, and a file holding an irreversible change has no Down.
+    enforced_by:
+      - test: framework/migrate.TestGeneratePlan_NoDuplicateIndexDDL
+      - test: framework/migrate.TestNonKeywordSchemaRendersUnchanged
+      - test: framework/migrate.TestAddedUniqueColumnIsUnique
+      - test: framework/migrate.TestSweepDiffSharedKeyChangeStaysIrreversible
+  - id: routine-changes-follow-the-snapshot
+    rule: A repeated routine name keeps its last body and its first place, a changed routine's Down restores the recorded body, and a removed routine with no recorded Down is refused rather than written as an empty drop.
+    enforced_by:
+      - test: framework/migrate.TestSweepDiffRepeatedRoutineKeepsLastBody
+      - test: framework/migrate.TestSweepDiffSkipsOtherDialectRoutines
+      - test: framework/migrate.TestRoutineRemovalWithoutDownRefused
+  - id: generated-file-holds-no-directive
+    rule: A generated file whose Up, Down or name holds a line the runner reads as a -- +migrate directive, near misses included, is refused, never written.
+    enforced_by:
+      - test: framework/migrate.TestSnapshotValidatesNameLine
+      - test: framework/migrate.TestGenerateRefusesDirectiveInRoutines
+      - test: framework/migrate.TestGeneratorGuardCoversNearMissDirectives
+      - test: framework/migrate.TestSQLDefaultCannotSynthesizeDirective
+      - test: framework/migrate.TestDirectiveGuardMatchesParserTrim
+  - id: snapshot-save-is-atomic
+    rule: SaveSnapshot replaces the file by renaming a synced sibling over it, writing through a symlink to its target and keeping an existing file's mode.
+    enforced_by:
+      - test: framework/migrate.TestSaveSnapshotReplacesTheFile
+      - test: framework/migrate.TestSaveSnapshotKeepsASymlink
+      - test: framework/migrate.TestSaveSnapshotKeepsTheFileMode
+  - id: qualifying-a-table-is-no-change
+    rule: Spelling a recorded table with or without its schema in the plan generates nothing.
+    enforced_by:
+      - test: framework/migrate.TestQualifyingTableIsNoChange
+      - test: framework/migrate.TestQualifyingThroughIsNoChange
+  - id: pivot-snapshot-records-its-key
+    rule: The snapshot records a generated pivot's composite key.
+    enforced_by:
+      - test: framework/migrate.TestPivotSnapshotRecordsCompositeKey
+  - id: migration-file-is-written-once
+    rule: GenerateMigrationFile refuses an invalid Group before writing, names the file by a lower-case slug of the name, writes it through a fresh temporary under the migrations directory published by hard link, saves the snapshot only after the file is synced, and when the highest-numbered migration's Up and Down both equal the delta repairs the snapshot instead of writing it again.
+    enforced_by:
+      - test: framework/migrate.TestGenFileRerunAfterSnapshotFail
+      - test: framework/migrate.TestGenerateMigrationFileFirstRun
+      - test: framework/migrate.TestGenerateMigrationFileRejectsBadGroup
+      - test: framework/migrate.TestSweepDiffReconcileNeedsTheSameDown
+      - test: framework/migrate.TestSweepDiffReconcileReadsTheHighestVersion
+      - test: framework/migrate.TestSweepDiffMigrationNameIsOneSlug
+  - id: next-version-follows-the-highest
+    rule: A new migration's number is one past the highest numeric prefix among the directory's .sql files, whatever their padding.
+    enforced_by:
+      - test: framework/migrate.TestSweepDiffNextVersionIsPastTheHighest
+decisions:
+  - id: snapshot-records-removal-order
+    date: 2026-11-16
+    status: accepted
+    decision: The snapshot records a view's depends_on and a routine's order in the plan, and a removal is ordered from them.
+    rejected:
+      - option: Drop removed views and routines in reverse name order.
+        why: A name says nothing about what reads what, so a view whose name sorts before its source, or a trigger named before its function, dropped in the wrong order and Postgres refused.
+    revisit_if: Routines gain a declared DependsOn of their own, which would replace the recorded creation order.
+    upholds: [removals-drop-dependents-first]
+  - id: sqlite-retype-rebuilds-the-table
+    date: 2026-11-17
+    status: accepted
+    decision: A SQLite retype, key change or held-column drop is one destructive, irreversible table rebuild rendered from the entity, copying rows by affinity.
+    rejected:
+      - option: Drop and re-add the column.
+        why: It loses the column's data.
+      - option: Write a Down that rebuilds the old table from the column map.
+        why: The map carries no constraints, and it would replay the sibling ADD and DROP Downs a second time.
+    upholds: [sqlite-rebuild-keeps-what-the-table-held, down-unwinds-the-up]
+  - id: required-add-defers-not-null
+    date: 2026-11-17
+    status: accepted
+    decision: A Required column with no default is added nullable and tightened by a later generation once the snapshot shows it applied.
+    rejected:
+      - option: ADD COLUMN ... NOT NULL.
+        why: It fails on any table that already holds rows, on Postgres and older SQLite.
+    upholds: [required-column-added-nullable]
+  - id: older-integer-columns-stay
+    date: 2026-11-17
+    status: accepted
+    decision: An INTEGER column an older build made for an Int reads as in sync with today's BIGINT; widening it is a hand-written migration.
+    rejected:
+      - option: Propose a retype of every such column.
+        why: It touches every Int column of every app and leaves the int4 sequence behind each SERIAL as it was.
+    upholds: [types-compare-canonically]
+  - id: refitted-index-is-kept
+    date: 2026-11-17
+    status: accepted
+    decision: An index an older build created under a name past 63 bytes is kept beside its fitted replacement and left for the developer to drop.
+    rejected:
+      - option: Drop the old index when the fitted one is created.
+        why: A foreign key added by hand may depend on that unique index, and the DROP fails.
+    upholds: [index-changes-wrap-column-changes]

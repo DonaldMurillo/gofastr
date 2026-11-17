@@ -111,7 +111,8 @@ func TestSweepDiffColumnReadersAgree(t *testing.T) {
 		`CREATE TABLE mixedaccount (id TEXT, "Title" TEXT, title VARCHAR(20))`,
 		`CREATE TABLE "MixedAccount" (other TEXT)`,
 		"CREATE SCHEMA "+other,
-		"CREATE TABLE "+other+".widgets (id BIGINT)")
+		"CREATE TABLE "+other+".widgets (id BIGINT)",
+		`CREATE TABLE widgets (name TEXT)`)
 	ctx := context.Background()
 	tables := []string{"MixedAccount", other + ".widgets", "absent"}
 	bulk, err := ReadLiveColumnsBulk(ctx, db, tables, DialectPostgres)
@@ -177,5 +178,114 @@ func TestSweepDiffNextVersionIsPastTheHighest(t *testing.T) {
 	}
 	if v := nextMigrationVersion(dir); v != 11 {
 		t.Fatalf("next version = %d, want 11", v)
+	}
+}
+
+func TestSweepDiffRemovedIndexIsDestructive(t *testing.T) {
+	changes := diffTableIndices("w", "w", nil, []string{"CREATE INDEX IF NOT EXISTS ix_w_a ON w (a)"})
+	if len(changes) != 1 || !changes[0].Destructive {
+		t.Fatalf("a removed index is not one destructive change: %+v", changes)
+	}
+}
+
+func TestSweepDiffWidthComparedOnlyWhenBothNameOne(t *testing.T) {
+	if !typesEquivalent("VARCHAR(50)", "character varying", DialectPostgres) {
+		t.Fatal("a live VARCHAR read without a width diffed against a declared width")
+	}
+}
+
+func TestSweepDiffRebuildKeepsColumnsBeforeCompositeKey(t *testing.T) {
+	db := sweepDB(t)
+	sweepExec(t, db, `CREATE TABLE w (a TEXT, b TEXT, extra TEXT, PRIMARY KEY (a, b))`, `INSERT INTO w VALUES ('x', 'y', 'kept')`)
+	ent := rawEnt("w", "w", []schema.Field{{Name: "a", Type: schema.String}, {Name: "b", Type: schema.String}}, nil, "")
+	ent.Config.PrimaryKey = []string{"a", "b"}
+	c, err := sqliteRebuildChange(ent, nil, DialectSQLite, map[string]string{"a": "TEXT", "b": "TEXT", "extra": "TEXT"}, nil, "rebuild", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sweepExec(t, db, strings.Split(c.SQL, ";\n")...)
+	var extra string
+	if err := db.QueryRow(`SELECT extra FROM w`).Scan(&extra); err != nil || extra != "kept" {
+		t.Fatalf("the rebuild lost its kept column: %q %v", extra, err)
+	}
+}
+
+func TestSweepDiffSharedKeyChangeStaysIrreversible(t *testing.T) {
+	keeps := rawEnt("a", "w", []schema.Field{{Name: "id", Type: schema.String}, {Name: "code", Type: schema.String}}, nil, "code")
+	drops := rawEnt("b", "w", []schema.Field{{Name: "code", Type: schema.String}}, nil, "code")
+	prev := SchemaSnapshot{
+		Tables:      map[string]map[string]string{"w": {"id": "TEXT", "code": "TEXT"}},
+		PrimaryKeys: map[string][]string{"w": {"id"}},
+	}
+	up, down, _, err := GeneratePlan(Plan{Registry: testReg{"a": keeps, "b": drops}}, prev, DialectPostgres)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if up == "" || down != "" {
+		t.Fatalf("a key change off a dropped column shipped a Down:\nup:\n%s\ndown:\n%s", up, down)
+	}
+}
+
+func sweepGenerated(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".sql") {
+			out = append(out, e.Name())
+		}
+	}
+	return out
+}
+
+func sweepPending(t *testing.T) (Plan, string, string) {
+	t.Helper()
+	plan := Plan{Registry: testReg{"w": rawEnt("w", "w", []schema.Field{{Name: "id", Type: schema.String}}, nil, "id")}}
+	up, down, _, err := GeneratePlan(plan, SchemaSnapshot{}, DialectSQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan, up, down
+}
+
+func TestSweepDiffReconcileNeedsTheSameDown(t *testing.T) {
+	dir := t.TempDir()
+	plan, up, _ := sweepPending(t)
+	if err := os.WriteFile(filepath.Join(dir, "0001_old.sql"), []byte(RenderMigrationFile(1, "old", up, "SELECT 'another down'")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path, err := GenerateMigrationFile(plan, "next", MigrationFileOptions{MigrationsDir: dir, Dialect: DialectSQLite})
+	if err != nil || path == "" {
+		t.Fatalf("a migration with another Down was taken as this delta: path=%q err=%v", path, err)
+	}
+}
+
+func TestSweepDiffReconcileReadsTheHighestVersion(t *testing.T) {
+	dir := t.TempDir()
+	plan, up, down := sweepPending(t)
+	files := map[string]string{
+		"9_same.sql":   RenderMigrationFile(9, "same", up, down),
+		"10_other.sql": RenderMigrationFile(10, "other", "SELECT 1;", ""),
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path, err := GenerateMigrationFile(plan, "next", MigrationFileOptions{MigrationsDir: dir, Dialect: DialectSQLite})
+	if err != nil || filepath.Base(path) != "0011_next.sql" {
+		t.Fatalf("generate after 9 and 10 wrote %q (%v), files %v", path, err, sweepGenerated(t, dir))
+	}
+}
+
+func TestSweepDiffMigrationNameIsOneSlug(t *testing.T) {
+	if got := sanitizeMigrationName("  Add  User--Email! "); got != "add_user_email" {
+		t.Fatalf("slug = %q", got)
+	}
+	if got := sanitizeMigrationName("!!"); got != "migration" {
+		t.Fatalf("an empty slug = %q", got)
 	}
 }

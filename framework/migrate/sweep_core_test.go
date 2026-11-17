@@ -290,3 +290,112 @@ func TestSweepCoreSeedOnOneConnectionPool(t *testing.T) {
 		t.Fatalf("no warning that the seed lock was skipped:\n%s", buf.String())
 	}
 }
+
+func TestSweepCoreRawTableIsOnlyItsColumns(t *testing.T) {
+	ent := Table{Name: "pairs", Columns: []Column{
+		{Name: "store", Type: schema.String, PrimaryKey: true},
+		{Name: "no", Type: schema.Int, PrimaryKey: true},
+	}}.ToEntity()
+	if got := ent.KeyColumns(); strings.Join(got, ",") != "store,no" {
+		t.Fatalf("a raw Table's key is %v, want store,no", got)
+	}
+	cfg := ent.Config
+	if cfg.Timestamps == nil || *cfg.Timestamps || cfg.Exposure.CRUD == nil || *cfg.Exposure.CRUD || len(ent.GetFields()) != 2 {
+		t.Fatalf("a raw Table gained managed columns or CRUD: %+v", cfg)
+	}
+}
+
+func TestSweepCorePivotIndexNameIsClaimed(t *testing.T) {
+	posts := rawEnt("posts", "posts", []schema.Field{{Name: "id", Type: schema.String}},
+		[]entity.Relation{{Type: entity.RelManyToMany, Name: "tags", Entity: "tags", Through: "post_tags", LocalKey: "post_id", ForeignKeyTarget: "tag_id"}}, "id")
+	tags := rawEnt("tags", "tags", []schema.Field{{Name: "id", Type: schema.String}}, nil, "id")
+	other := rawEnt("other", "other", []schema.Field{{Name: "id", Type: schema.String}, {Name: "x", Type: schema.String}}, nil, "id")
+	other.Config.Indices = []entity.Index{{Name: defaultIndexName("post_tags", []string{"tag_id"}), Columns: []string{"x"}}}
+	all := map[string]*entity.Entity{"posts": posts, "tags": tags, "other": other}
+	ordered, err := topoSortEntities(all)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkIndexNames(ordered, all); err == nil {
+		t.Fatal("an index named like a generated pivot's index was accepted")
+	}
+}
+
+func TestSweepCoreForeignKeyJoinsIntegerWidths(t *testing.T) {
+	orders := rawEnt("orders", "orders", []schema.Field{{Name: "store", Type: schema.String}, {Name: "no", Type: schema.Int}}, nil, "")
+	orders.Config.PrimaryKey = []string{"store", "no"}
+	lines := rawEnt("lines", "lines", []schema.Field{{Name: "id", Type: schema.String}, {Name: "order_store", Type: schema.String}, {Name: "order_no", Type: schema.Int, RawType: "INTEGER"}},
+		[]entity.Relation{{Type: entity.RelManyToOne, Name: "order", Entity: "orders", ForeignKey: []string{"order_store", "order_no"}}}, "id")
+	all := map[string]*entity.Entity{"orders": orders, "lines": lines}
+	if err := checkForeignKeyTypes(lines, lines.Config.Relations[0], all); err != nil {
+		t.Fatalf("an INTEGER column referencing a BIGINT key was refused: %v", err)
+	}
+}
+
+func TestSweepCoreKeyShapeCheckedForEveryTable(t *testing.T) {
+	parent := rawEnt("parent", "parent", []schema.Field{{Name: "a", Type: schema.String}, {Name: "b", Type: schema.String}}, nil, "")
+	parent.Config.PrimaryKey = []string{"a", "b"}
+	child := rawEnt("child", "child", []schema.Field{{Name: "id", Type: schema.String}, {Name: "parent_id", Type: schema.String}},
+		[]entity.Relation{{Type: entity.RelManyToOne, Name: "parent", Entity: "parent", ForeignKey: []string{"parent_id"}}}, "id")
+	if _, err := topoSortEntities(map[string]*entity.Entity{"parent": parent, "child": child}); err == nil {
+		t.Fatal("a one-column foreign key onto a two-column key was accepted")
+	}
+}
+
+type unsortedRegistry []*entity.Entity
+
+func (r unsortedRegistry) All() map[string]*entity.Entity { return multiVersionRegistry(r).All() }
+func (r unsortedRegistry) AllSorted() []*entity.Entity    { return r }
+func (r unsortedRegistry) Get(name string) (*entity.Entity, error) {
+	return multiVersionRegistry(r).Get(name)
+}
+
+func TestSweepCoreUnionBaseIsUnversioned(t *testing.T) {
+	v1 := rawEnt("posts", "posts_v1", []schema.Field{{Name: "id", Type: schema.String}}, nil, "id")
+	v1.Version = "/api/v1"
+	plain := rawEnt("posts", "posts", []schema.Field{{Name: "id", Type: schema.String}}, nil, "id")
+	if got := UnionEntities(unsortedRegistry{v1, plain})["posts"].GetTable(); got != "posts" {
+		t.Fatalf("the union's base is the table %q, want the unversioned posts", got)
+	}
+}
+
+func TestSweepCoreSkippedRoutineIsNoOrphan(t *testing.T) {
+	db := sweepDB(t)
+	ctx := context.Background()
+	if err := ensureRoutineLedger(ctx, db, DialectSQLite); err != nil {
+		t.Fatal(err)
+	}
+	if err := upsertRoutineLedger(ctx, db, DialectSQLite, "pg_fn", "x"); err != nil {
+		t.Fatal(err)
+	}
+	buf := captureMigrateSlog(t)
+	plan := Plan{Routines: []Routine{
+		{Name: "pg_fn", Up: "CREATE FUNCTION pg_fn() RETURNS int AS 'SELECT 1' LANGUAGE sql", Dialect: DialectPostgres},
+		{Name: "v", Up: "CREATE VIEW IF NOT EXISTS v AS SELECT 1 AS x"},
+	}}
+	if err := AutoMigratePlanContext(ctx, db, plan); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(buf.String(), "no longer registered") {
+		t.Fatalf("a routine skipped for its dialect was reported as an orphan:\n%s", buf.String())
+	}
+}
+
+func TestSweepCoreTableExistsRefusesBadName(t *testing.T) {
+	db := sweepDB(t)
+	if _, err := TableExistsBulk(context.Background(), db, []string{"x; DROP TABLE y"}, DialectSQLite); err == nil {
+		t.Fatal("TableExistsBulk accepted an invalid table name")
+	}
+}
+
+func TestSweepCoreIndexNamesCompareCut(t *testing.T) {
+	long := strings.Repeat("n", 63)
+	a := rawEnt("a", "a", []schema.Field{{Name: "id", Type: schema.String}, {Name: "x", Type: schema.String}}, nil, "id")
+	a.Config.Indices = []entity.Index{{Name: long + "_one", Columns: []string{"x"}}}
+	b := rawEnt("b", "b", []schema.Field{{Name: "id", Type: schema.String}, {Name: "x", Type: schema.String}}, nil, "id")
+	b.Config.Indices = []entity.Index{{Name: long + "_two", Columns: []string{"x"}}}
+	all := map[string]*entity.Entity{"a": a, "b": b}
+	if err := checkIndexNames([]*entity.Entity{a, b}, all); err == nil {
+		t.Fatal("two index names alike in their first 63 bytes were accepted")
+	}
+}
