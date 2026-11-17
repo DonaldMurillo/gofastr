@@ -1,0 +1,8 @@
+primitive: agentsinv
+summary: The process-wide inventory of agents.md snippets that batteries and framework packages register from init, which gofastr agents writes into a host app's AGENTS.md.
+code:
+  - framework/agentsinv/
+docs:
+  - framework/docs/content/cli.md
+on_change:
+  - A new Kind or Entry field reaches a host's AGENTS.md only once cmd/gofastr/internal/agentscmd, which walks All(), writes it.

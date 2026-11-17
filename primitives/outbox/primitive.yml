@@ -1,0 +1,10 @@
+primitive: outbox
+summary: The transactional outbox - New and its options, the event_outbox table, Append and AppendFor inside the caller's transaction, List, and the table's export and erasure registration.
+code:
+  - framework/outbox/doc.go
+  - framework/outbox/outbox.go
+docs:
+  - framework/docs/content/events.md
+  - framework/docs/content/data-export.md
+on_change:
+  - A column added to event_outbox is also added to existing tables at New, as addOwnerColumn adds owner, and to registerData's export columns.

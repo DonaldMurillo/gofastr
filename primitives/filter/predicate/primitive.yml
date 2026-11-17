@@ -1,0 +1,7 @@
+primitive: filter.predicate
+summary: The nested ?where= predicate tree, its parse and validation against the entity's fields, and the SQL condition it builds.
+code:
+  - framework/filter/predicate.go
+  - framework/filter/validate.go
+docs:
+  - framework/docs/content/entity-declarations.md

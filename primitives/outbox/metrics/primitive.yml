@@ -1,0 +1,8 @@
+primitive: outbox.metrics
+summary: DeliveryCounts and the metrics collector that reports pending and dead-lettered deliveries per consumer.
+code:
+  - framework/outbox/metrics.go
+docs:
+  - framework/docs/content/observability.md
+on_change:
+  - A metric added, renamed or relabelled here is changed in the metrics table of observability.md too.

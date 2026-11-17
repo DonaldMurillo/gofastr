@@ -1,0 +1,13 @@
+primitive: gallery
+summary: The importable component catalog behind the /components showcase and the theme editor - every design-system component as a self-contained demo, with its code snippet, category and package, looked up by slug.
+code:
+  - framework/gallery/gallery.go
+  - framework/gallery/catalog.go
+  - framework/gallery/layout.go
+  - framework/gallery/agents.go
+  - framework/gallery/agents.md
+docs:
+  - framework/docs/content/theming.md
+  - framework/docs/content/ui-new-components.md
+on_change:
+  - A change to the gallery's exported API updates framework/gallery/agents.md, the entry agentsinv serves to agents.

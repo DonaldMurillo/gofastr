@@ -1,0 +1,9 @@
+primitive: file
+summary: The FileField value an upload column stores, its validation, and ProcessFileField and DeleteFileField, which sniff, refuse unsafe content, save and clean up a file in upload storage.
+code:
+  - framework/file/filefield.go
+  - framework/file/wide_text.go
+docs:
+  - framework/docs/content/uploads.md
+on_change:
+  - framework/crud, framework/entityui and framework/imagefield call ProcessFileField and DeleteFileField; run their upload tests too, and read crud.uploads, which holds the ban on framework/file linking framework/image.
