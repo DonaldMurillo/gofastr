@@ -656,11 +656,13 @@ whose two states carry text that must not ghost over itself.
 transitions around it: the fit for a breadcrumb trail, whose root is
 the same on every page and would blink under any fade. Nor does it dim while a slow navigation is in flight, as other busy regions do; it keeps `aria-busy` for screen readers. `Transition{Name: "..."}` assigns a snapshot name without
 generating keyframes; use a framework preset when the region needs a move.
-The host collects every registered layout's generated
-`Layout.TransitionCSS()` into app.css; there is nothing to wire. app.css
-is composed once, at first render, so register screens and groups before
-serving: a layout with transitions that arrives later logs a warning
-naming it and ships no transition CSS. Root-wide
+`NewLayout` registers the layout's generated `Layout.TransitionCSS()`
+as a component sheet of its own (`Layout.TransitionSheet()`), and the
+layer's root names it, so only pages that render the layer load it,
+before the swap that brings the layer in; there is nothing to wire. The
+component catalog freezes at first render, so build layouts before
+serving: a layout with transitions built later logs a warning naming it
+and ships no transition CSS. Root-wide
 presets by name come from `app.ViewTransitionPresetCSS("fade")`. The
 runtime wraps the swap in the View Transitions API with the direction
 type (`forward`/`back`/`reload`), never animates under

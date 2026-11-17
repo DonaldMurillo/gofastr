@@ -10,8 +10,11 @@ package app
 // directly, as before the layout work. What the transition LOOKS
 // like is CSS on the root — component sheets refuse
 // ::view-transition-* (core-ui/style/component_sheet.go), so the
-// framework's blocks are returned as plain CSS, and the host collects
-// every registered layout's blocks into app.css as root-level rules.
+// framework's blocks are returned as plain root-level CSS. NewLayout
+// registers each layout's blocks as a component sheet of their own,
+// and the layer's root carries its marker, so only pages that render
+// the layer load them: before the swap that brings the layer in, like
+// any component sheet.
 //
 // The typed variant: the author configures a region's transition
 // with TYPED Go values (Transition / Anim) on the layout spec; the
@@ -27,10 +30,15 @@ package app
 // motion for those users either.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 // Side is the edge a slide enters from.
@@ -253,9 +261,9 @@ func (tr Transition) animCSS(name string) string {
 }
 
 // TransitionCSS returns the root CSS for every transition this layout
-// declares (spec primary, outlets, and areas). The host appends it to
-// app.css for every layout App.Layouts reports, so apps never wire it
-// by hand.
+// declares (spec primary, outlets, and areas). NewLayout registers it
+// as the layout's transition sheet (TransitionSheet), so apps never
+// wire it by hand.
 func (l *Layout) TransitionCSS() string {
 	if l == nil || l.spec == nil {
 		return ""
@@ -344,4 +352,32 @@ func MustViewTransitionPresetCSS(preset string) string {
 		panic(err)
 	}
 	return css
+}
+
+// TransitionSheet names the component sheet holding the layout's
+// TransitionCSS, the data-cui-comp marker its layer root carries. It is
+// empty when the layout declares no transition, or when NewLayout ran
+// after the component catalog froze (the host warns about that layout:
+// its transitions do not run).
+func (l *Layout) TransitionSheet() string {
+	if l == nil {
+		return ""
+	}
+	return l.vtSheet
+}
+
+// registerTransitionSheet registers css as a component sheet named by
+// its content, so two layouts declaring the same transitions share one
+// sheet, and returns the name; "" for no CSS or a catalog that froze
+// first.
+func registerTransitionSheet(css string) string {
+	if css == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(css))
+	name := "cui-vt-" + hex.EncodeToString(sum[:8])
+	if _, ok := registry.TryRegisterStyle(name, func(style.Theme) string { return css }); !ok {
+		return ""
+	}
+	return name
 }

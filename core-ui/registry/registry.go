@@ -225,6 +225,13 @@ func Freeze() {
 // re-registration (same StyleFn pointer + same options) is a no-op;
 // any other duplicate panics so misnames surface at startup.
 func RegisterStyle(name string, fn func(style.Theme) string, opts ...Option) *Style {
+	st, _ := registerStyle(name, fn, false, opts)
+	return st
+}
+
+// registerStyle is RegisterStyle's body. With late set, a new name after
+// the catalog froze returns false instead of panicking.
+func registerStyle(name string, fn func(style.Theme) string, late bool, opts []Option) (*Style, bool) {
 	if !behaviorName.MatchString(name) {
 		panic(fmt.Sprintf("registry.RegisterStyle: name %q must match ^[a-z][a-z0-9-]{0,63}$ — it is a URL segment and the data-cui-comp marker value", name))
 	}
@@ -246,13 +253,25 @@ func RegisterStyle(name string, fn func(style.Theme) string, opts ...Option) *St
 				name, existing.Load, fnLocation(existing.StyleFn), e.Load, fnLocation(e.StyleFn),
 			))
 		}
-		return &Style{e: existing}
+		return &Style{e: existing}, true
 	}
 	if frozen {
+		if late {
+			return nil, false
+		}
 		panic(fmt.Sprintf("registry: style %q registered after the component catalog froze; register styles at package init", name))
 	}
 	entries[name] = e
-	return &Style{e: e}
+	return &Style{e: e}, true
+}
+
+// TryRegisterStyle is RegisterStyle for a sheet built at run time (a
+// layout's transitions): when the catalog has already frozen and name
+// is new, it registers nothing and returns false instead of panicking,
+// so the caller can degrade and warn. Every other case behaves as
+// RegisterStyle.
+func TryRegisterStyle(name string, fn func(style.Theme) string, opts ...Option) (*Style, bool) {
+	return registerStyle(name, fn, true, opts)
 }
 
 // Lookup returns the entry registered under name.
