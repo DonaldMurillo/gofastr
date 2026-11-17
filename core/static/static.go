@@ -391,8 +391,18 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	if strings.IndexByte(name, 0) >= 0 {
 		return false
 	}
-	var f fs.File
+	var pre fs.FileInfo
 	var err error
+	if config.root != nil {
+		pre, err = config.root.Stat(filepath.FromSlash(name))
+	} else {
+		pre, err = fs.Stat(config.FS, name) //gofastr:allow(rootread) type check only, no bytes read: the Open below and fileInRoot contain the read itself
+	}
+	if err == nil && !pre.Mode().IsRegular() && !pre.IsDir() {
+		http.NotFound(w, r)
+		return true
+	}
+	var f fs.File
 	if config.root != nil {
 		// Disk-backed root: open through *os.Root so the KERNEL contains
 		// the resolution. A symlink pointing outside the root — planted

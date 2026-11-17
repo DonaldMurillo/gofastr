@@ -18,6 +18,8 @@ invariants:
       - test: framework/crud.TestReadQueryParity
       - test: framework/crud.TestRepeatedIncludeKeyIsRefused
       - test: framework/crud.TestReadQueryControlClassification
+    applies:
+      - framework/filter/filter.go
   - id: host-owns-q-only-when-framework-reads-none
     rule: A repeated ?q= passes readQuery only when q is in AllowedFilterParams, the entity declares no SearchFields and no filterable column is named q.
     enforced_by:

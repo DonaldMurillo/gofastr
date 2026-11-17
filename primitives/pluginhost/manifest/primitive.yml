@@ -5,3 +5,124 @@ code:
   - framework/pluginhost/hostreq.go
 docs:
   - framework/docs/content/plugin-platform.md
+on_change:
+  - Adding a sandbox token, a CSP keyword or a Permissions-Policy feature to an allowlist is a security change; say why in the commit and update the plugin-platform page.
+invariants:
+  - id: validate-refuses-same-origin
+    rule: Manifest.Validate refuses allow-same-origin in any case or inside a whitespace-joined element, and refuses a non-empty sandbox list without allow-scripts.
+    enforced_by:
+      - test: framework/pluginhost.TestManifestValidateRejectsAllowSameOrigin
+      - test: framework/pluginhost.TestManifestValidate_CaseAndWhitespaceSameOrigin
+      - test: framework/pluginhost.TestManifestValidateRequiresAllowScriptsWhenSandboxSpecified
+  - id: isolation-is-the-v1-fixpoint
+    rule: Manifest.Validate accepts an empty Isolation or sandbox-iframe-opaque and refuses any other value.
+    enforced_by:
+      - test: framework/pluginhost.TestManifestValidateRejectsUnknownIsolation
+      - test: framework/pluginhost.TestManifestValidateAcceptsV1Fixpoint
+  - id: entry-is-same-origin-path
+    rule: Manifest.Validate refuses an Entry that is empty, holds a control character, has a scheme or is relative, or is protocol-relative once backslashes are read as slashes.
+    enforced_by:
+      - test: framework/pluginhost.TestManifestRejectsOffOriginEntry
+      - test: framework/pluginhost.TestManifestAcceptsSameOriginAbsolutePath
+      - test: framework/pluginhost.TestManifestValidateEntryRequired
+  - id: sandbox-string-is-authoritative
+    rule: SandboxString keeps only tokens in the allowlist (scripts, forms, modals, popups, pointer-lock, orientation-lock, presentation), split on whitespace and de-duplicated, and always includes allow-scripts, whatever Validate said.
+    enforced_by:
+      - test: framework/pluginhost.TestManifestSandboxString
+      - test: framework/pluginhost.TestManifestSandboxString_StripsSameOriginForcesScripts
+      - test: framework/pluginhost.TestSandboxDropsEscapeTokens
+  - id: csp-keyword-exact-allowlist
+    rule: Manifest.Validate accepts a CSP keyword only when it equals 'wasm-unsafe-eval' byte for byte.
+    enforced_by:
+      - test: framework/pluginhost.TestManifestValidateRejectsBadCSP
+      - test: framework/pluginhost.TestManifestValidateAcceptsWasmKeyword
+      - test: framework/pluginhost.TestNewClientModuleRejectsBadCSP
+  - id: module-asset-server-threads-csp
+    rule: ClientModule.AssetServer passes the manifest's CSP to the server it builds.
+    enforced_by:
+      - test: framework/pluginhost.TestModuleAssetServerThreadsCSP
+      - test: framework/pluginhost.TestModuleAssetServerNoTierNoGrant
+  - id: new-client-module-validates
+    rule: NewClientModule refuses an empty name and any manifest Validate refuses.
+    enforced_by:
+      - test: framework/pluginhost.TestNewClientModule_ValidatesManifest
+  - id: host-requirement-closed-grammar
+    rule: A host requirement is "permissions-policy:" and one feature from the closed registry, compared after lowercasing and trimming outer space, and Validate refuses anything else.
+    enforced_by:
+      - test: framework/pluginhost.TestManifestValidateHostRequirementGrammar
+  - id: warn-only-on-empty-allowlist
+    rule: CheckHostRequirements warns once per denied requirement, and only when every directive naming the feature carries the empty allowlist "()".
+    enforced_by:
+      - test: framework/pluginhost.TestCheckWarnsOnDeniedFeature
+      - test: framework/pluginhost.TestDenyRuleRequiresAllDirectivesEmpty
+      - test: framework/pluginhost.TestCheckSilentWhenGrantedOrUndecidable
+      - test: framework/pluginhost.TestCheckWarnsAcrossParenCommas
+  - id: empty-policy-is-the-default
+    rule: An exactly empty policy is read as the middleware's default Permissions-Policy, and a whitespace-only one is read as written.
+    enforced_by:
+      - test: framework/pluginhost.TestCheckHostRequirementsEmptyMeansDefault
+      - test: framework/pluginhost.TestWhitespacePolicyIsNotTheDefault
+  - id: check-never-fails
+    rule: CheckHostRequirements never panics or returns an error, skips tokens that do not parse, and logs to slog.Default when given a nil logger.
+    enforced_by:
+      - test: framework/pluginhost.TestCheckNeverPanicsOnHostileInput
+      - test: framework/pluginhost.TestCheckHostRequirementsNilLoggerWarns
+decisions:
+  - id: sandbox-allowlist
+    date: 2026-11-17
+    status: accepted
+    decision: The frame's sandbox tokens pass through an allowlist of what a UI plugin needs, and adding one is a deliberate edit.
+    rejected:
+      - option: Strip only allow-same-origin.
+        why: It let allow-popups-to-escape-sandbox, allow-top-navigation and allow-downloads through, and a deny-list loses whenever the HTML spec adds a token.
+    revisit_if: A plugin needs a sandbox token outside the list.
+    upholds: [sandbox-string-is-authoritative]
+  - id: validate-is-fail-fast
+    date: 2026-11-17
+    status: accepted
+    decision: Validate fails loudly at registration, while SandboxString and the broker's sandboxFor decide the real attribute and strip regardless, so isolation never depends on Validate having run.
+    rejected:
+      - option: Rely on Validate alone.
+        why: A ClientModule built as a struct literal skips it.
+    upholds: [sandbox-string-is-authoritative, validate-refuses-same-origin]
+  - id: csp-exact-match
+    date: 2026-11-17
+    status: accepted
+    decision: CSP keywords match the allowlist byte for byte, while sandbox tokens are lowercased and split first.
+    rejected:
+      - option: Normalise CSP keywords like sandbox tokens.
+        why: The CSP header does not case-fold source expressions, so a variant is inert, and exact match also refuses ';', whitespace and quote tricks that could splice a directive into the header.
+    upholds: [csp-keyword-exact-allowlist]
+  - id: host-requirements-closed-registry
+    date: 2026-11-17
+    status: accepted
+    decision: Host requirements are checked against a closed registry of Permissions-Policy features and refused at registration.
+    rejected:
+      - option: Normalise and drop unknown tokens, as SandboxString does.
+        why: Host requirements have no authoritative sink, so a dropped typo becomes a requirement nobody is told is unsatisfiable.
+    revisit_if: The Permissions-Policy registry adds a feature a plugin needs.
+    upholds: [host-requirement-closed-grammar]
+  - id: warn-narrowly
+    date: 2026-11-17
+    status: accepted
+    decision: The boot check warns only on the empty allowlist, the one shape that denies every context, and stays silent for (self), *, unnamed features and origin lists.
+    rejected:
+      - option: Warn on any directive that is not a plain grant.
+        why: An origin list cannot be decided before a request names the app's origin, and a warning that fires on grants trains developers to ignore it.
+    upholds: [warn-only-on-empty-allowlist]
+  - id: mirror-default-policy
+    date: 2026-11-17
+    status: accepted
+    decision: The middleware's default Permissions-Policy is mirrored as a constant, pinned to the middleware's real output by a test.
+    rejected:
+      - option: Import core/middleware for the one string.
+        why: pluginhost needs no other coupling to the middleware.
+    upholds: [empty-policy-is-the-default]
+  - id: requirement-prefix
+    date: 2026-11-17
+    status: accepted
+    decision: A host requirement names where it lives with the "permissions-policy:" prefix.
+    rejected:
+      - option: A bare feature word such as camera.
+        why: It reads as a frame capability, the opposite of what it is, and leaves no room for other host-page surfaces.
+    upholds: [host-requirement-closed-grammar]

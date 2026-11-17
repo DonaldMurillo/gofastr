@@ -1,0 +1,36 @@
+primitive: static.llmmd
+summary: The per-page llm.md files and llm-pages.md index an export writes for each locale tree, with skipped and withheld docs matching the pages they describe.
+code:
+  - framework/static/llmmd.go
+docs:
+  - framework/docs/content/agent-ready.md
+  - framework/docs/content/static-export.md
+invariants:
+  - id: doc-per-exported-page
+    rule: Each exported page gets its own llm.md rendered under the GET request its page renders under, and none is written for a NoLLMMD screen, an excluded route, a path a redirect takes or a page that answers a status other than 200.
+    enforced_by:
+      - test: framework/static.TestExportDocSeesPageRequest
+      - test: framework/static.TestBuild_NoLLMMD_PerScreen
+      - test: framework/static.TestSweepStaticExcludedRedirectAndDoc
+      - test: framework/static.TestExportWritesRedirectPages
+      - test: framework/static.TestStaticBuildSkipsSetStatusPage
+      - test: framework/static.TestStaticBuildSkipsNotFoundOutlet
+      - test: framework/static.TestSweepStaticDocStatus
+  - id: unresolved-path-gets-withheld-doc
+    rule: An expanded path its route does not resolve gets the withheld doc, never the pattern doc with the screen's title and content.
+    enforced_by:
+      - test: framework/static.TestSweepStaticUnresolvedDocIsWithheld
+  - id: index-links-written-docs
+    rule: Each tree's llm-pages.md links only the docs that tree wrote.
+    enforced_by:
+      - test: framework/static.TestExportIndexLinksWrittenDocs
+      - test: framework/static.TestSweepStaticExcludedRedirectAndDoc
+decisions:
+  - id: withheld-doc-fallback
+    date: 2026-11-17
+    status: accepted
+    decision: An unresolved expanded path falls back to the withheld doc.
+    rejected:
+      - option: The screen's pattern doc.
+        why: It carries the screen's title and rendered content with no policy evaluation, so a gated screen's content would reach the public tree.
+    upholds: [unresolved-path-gets-withheld-doc]
