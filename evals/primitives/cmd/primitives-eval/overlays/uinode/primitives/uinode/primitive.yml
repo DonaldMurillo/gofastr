@@ -10,7 +10,7 @@ on_change:
   - "A change to the components, props, enum values, limits or action_ref rules a tree may carry updates the UI rendering section of framework/docs/content/process-modules.md and the ui.node.v1 render path section of core-ui/ARCHITECTURE.md in the same commit."
   - "A change that makes Validate refuse a tree it used to accept (a removed component or prop, a narrower enum, a lower default limit) is BREAKING: add a note with breaking true, a nodetect line (the tree is runtime module output, no host source spelling shows it) and guidance to internal/upgrade/releases/<next version>.yml, plus a BREAKING entry under Unreleased in CHANGELOG.md."
   - "A new component needs all four of a Comp constant in types.go, a prop struct with propsMarker in types.go, a componentDecoders entry in registry.go and a case in renderNode in renderer.go; only the first three are cross-checked by a test, so a missing renderer case validates and then fails every render with no mapping."
-  - "Renaming or dropping a component or prop also updates the trees examples/processmodule-demo/main.go returns, which framework/processmodule_gate_test.go and framework/processmoduletest drive end to end."
+  - "Renaming or dropping a component or prop also updates the trees internal/testapps/processmodule-demo/main.go returns, which framework/processmodule_gate_test.go and framework/processmoduletest drive end to end."
   - "framework/processmodule_proxy.go decodeBody is the only production caller and must keep running uinodev1.Validate before Renderer.Render; the renderer panics on shapes only the validator refuses."
 twins:
   - job: "Enumerate the closed set of ui.node.v1 component kinds, each with its own handling."

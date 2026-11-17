@@ -16,10 +16,13 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestUIHostAppCSSAlwaysEmitsRootVars
   - id: app-css-layer-order
-    rule: app.css collects every layout's transitions and puts contributed style fragments after WithCustomCSS, so a screen's contribution overrides the app's base rules.
+    rule: app.css puts contributed style fragments after WithCustomCSS, so a screen's contribution overrides the app's base rules.
     enforced_by:
-      - test: framework/uihost.TestAppCSSCollectsLayoutTransitions
       - test: framework/uihost.TestContributedCSSAfterCustomCSS
+  - id: transitions-load-with-the-layer
+    rule: A layout's transition CSS is a component sheet of its own that only pages rendering the layer load; app.css never carries it.
+    enforced_by:
+      - test: framework/uihost.TestLayoutTransitionsLoadWithTheLayer
   - id: one-page-wide-indicator
     rule: app.css carries exactly one page-wide navigation indicator, the progress strip by default or the page-loading rule under WithPageLoading.
     enforced_by:
@@ -29,7 +32,7 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestSweepAssetsInterceptCSSOnlyWhenIntercepting
   - id: app-css-frozen-and-loud
-    rule: The default app.css is composed once per process, and a style.Contribute or a transition layout registered after that logs one warning instead of recomposing.
+    rule: The default app.css is composed once per process, and a style.Contribute after that, or a layout whose transition sheet the host's catalog does not list, logs one warning instead of recomposing.
     enforced_by:
       - test: framework/uihost.TestSweepAssetsLateContributeWarns
       - test: framework/uihost.TestLateTransitionLayoutWarns
@@ -138,6 +141,14 @@ invariants:
       - test: framework/uihost.TestManifestServesBodyByHash
       - test: framework/uihost.TestManifestFetchClosesScriptRail
 decisions:
+  - id: transitions-are-a-layer-sheet
+    date: 2026-11-17
+    status: accepted
+    decision: NewLayout registers a layout's TransitionCSS as a content-addressed component sheet (cui-vt-<hash>) and the layer root carries its data-cui-comp marker, so the swap that brings the layer in loads it like any component sheet. It registers even after a host froze the catalog (registry.RegisterRuntimeStyle), because catalogs are per host and a later host lists it.
+    rejected:
+      - option: Collect every layout's transitions into app.css.
+        why: Every page then paid for every layout's transitions. Mounting the tracker in the site added about 0.5 KB gzipped to each page and pushed the home page past the first-paint inline budget, so it linked a stylesheet.
+    upholds: [transitions-load-with-the-layer]
   - id: variants-by-registration
     date: 2026-11-16
     status: accepted

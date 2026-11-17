@@ -15,7 +15,7 @@ import (
 // in -short; it compiles the example.
 func TestDesktopTypesAgainstExample(t *testing.T) {
 	if testing.Short() {
-		t.Skip("desktop types e2e: compiles examples/desktop-notes")
+		t.Skip("desktop types e2e: compiles internal/testapps/desktop-notes")
 	}
 
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
@@ -37,7 +37,7 @@ func TestDesktopTypesAgainstExample(t *testing.T) {
 	captured := clitest.CovT_capStdout(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			runDesktopTypes([]string{
-				"--pkg", "./examples/desktop-notes",
+				"--pkg", "./internal/testapps/desktop-notes",
 				"--out", out,
 			})
 		})

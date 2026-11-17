@@ -9,7 +9,7 @@ import (
 
 // The `gofastr desktop` subcommand: usage routing, flag parsing, the
 // bundle layout (plist + icns) on a tiny fixture, and --id validation.
-// `types` is exercised against examples/desktop-notes in
+// `types` is exercised against internal/testapps/desktop-notes in
 // desktop_types_example_test.go (it compiles the real example).
 
 func TestDesktopHelpIsCommandSpecific(t *testing.T) {

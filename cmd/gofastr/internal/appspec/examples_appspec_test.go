@@ -14,7 +14,7 @@ import (
 // It is NOT sufficient on its own. Parsing proves nothing about the Go the
 // generator emits from the parse. See TestExampleAppSpecsBoot (cmd/gofastr).
 //
-//gofastr:test-reads examples/*/gofastr.yml
+//gofastr:test-reads examples/*/gofastr.yml internal/testapps/*/gofastr.yml
 func TestExampleAppSpecsLoad(t *testing.T) {
 	for _, path := range clitest.ExampleAppSpecs(t) {
 		path := path

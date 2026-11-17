@@ -155,7 +155,7 @@ func printHelp() {
   gofastr harness creds list
   gofastr agents init
   gofastr agents sync
-  gofastr desktop run --pkg ./examples/desktop-notes
+  gofastr desktop run --pkg ./internal/testapps/desktop-notes
   gofastr verify
   gofastr verify security --json
   gofastr verify --explain GOFASTR1002

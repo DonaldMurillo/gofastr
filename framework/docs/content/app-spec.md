@@ -913,7 +913,7 @@ exception: `entities/` and `cmd/meridian/` are generator-owned, and
 `TestGeneratedTreesMatchGenerator` regenerates them into a scratch package
 (the CLI through the `cli` entry in Meridian's `gofastr.settings.yml`) and
 fails on any byte of drift (`custom.go`, the dev-owned CLI seam, is
-excluded). `examples/ecommerce` regenerates in place as a whole, because its
+excluded). `internal/testapps/ecommerce` regenerates in place as a whole, because its
 app spec sets `output_dir: app` and the generator owns that directory
 outright.
 
@@ -923,7 +923,7 @@ and descriptions in `stubs.go`, so a stub whose body you have since written
 still packs. It reads `endpoints` back from the `endpoints:` section of
 `gofastr.settings.yml`. A linked handler file is yours once you write its
 body, so the check counts it as hand-written rather than comparing it.
-`examples/ecommerce/app` packs with nothing unrecovered, and a test holds it
+`internal/testapps/ecommerce/app` packs with nothing unrecovered, and a test holds it
 there.
 
 ### Data blocks (`entity_list`, `entity_form`, `entity_detail`)

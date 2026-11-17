@@ -12,9 +12,8 @@
 // It has two entry points. Render takes computed values (a crumb list,
 // a pager config) for a page that draws the shell itself (/get-started,
 // /philosophy). Layer takes the cells of a layout instead: a static nav,
-// the outlets a screen fills, and the layout's primary slot, the way
-// acme-site's helpdocs.Render does for its /help layer, so the shell is
-// built once per layer and kept across sibling navigations.
+// the outlets a screen fills, and the layout's primary slot, so the
+// shell is built once per layer and kept across sibling navigations.
 //
 // Copy the package and change it.
 package docpage
