@@ -1,0 +1,8 @@
+primitive: testkit.postgres
+summary: NewIsolatedDB and its helpers, which create a fresh named Postgres database for one test from an admin DSN and drop it at cleanup.
+code:
+  - framework/testkit/postgres.go
+docs:
+  - framework/docs/content/testkit.md
+on_change:
+  - These helpers only run against a real Postgres cluster; a change here needs a run with a reachable admin DSN, since the short suite without one skips them.

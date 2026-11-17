@@ -1,0 +1,5 @@
+primitive: image.encode
+summary: The terminal Encoder for JPEG, PNG, GIF, BMP, TIFF and lossless WebP, writing to a writer, bytes, base64 or a data URL.
+code:
+  - framework/image/encode.go
+  - framework/image/webp_encode.go

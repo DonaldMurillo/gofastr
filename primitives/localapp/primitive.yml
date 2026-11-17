@@ -1,0 +1,8 @@
+primitive: localapp
+summary: The data directory of an app that runs for one OS user on one device - Open returns its SQLite database, the session secret kept across restarts, and the installation's identity.
+code:
+  - framework/localapp/data.go
+docs:
+  - framework/docs/content/local-apps.md
+on_change:
+  - battery/desktop and battery/service open their state through this package; run their tests too.

@@ -1,0 +1,6 @@
+primitive: openapi.endpoint
+summary: The URL builders, input and output schemas and default tool names for an entity's custom endpoints, shared by routing, the spec and MCP.
+code:
+  - framework/openapi/endpoint.go
+docs:
+  - framework/docs/content/endpoints.md

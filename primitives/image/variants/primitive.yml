@@ -1,0 +1,4 @@
+primitive: image.variants
+summary: VariantSet - one source decoded once into named width and format renditions, returned in memory by Process or streamed to a sink by ProcessTo.
+code:
+  - framework/image/variants.go
