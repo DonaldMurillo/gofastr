@@ -1,0 +1,8 @@
+primitive: dsl.filter-text
+summary: The filter text of admin filter chips, the query box and ?filter=, parsed by ParsePredicate and ParseSort into validated filter predicates and sorts, and written by Quote.
+code:
+  - framework/dsl/predicate.go
+docs:
+  - framework/docs/content/query-dsl.md
+on_change:
+  - A grammar change also updates the filter-text section of query-dsl.md, and Quote must still write text ParsePredicate reads back.

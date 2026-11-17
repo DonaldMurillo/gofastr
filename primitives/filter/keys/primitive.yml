@@ -1,0 +1,6 @@
+primitive: filter.keys
+summary: Spelling and reading filter keys in the suffix (field_op) and bracket (field[op]) forms, and finding the keys a field name makes ambiguous.
+code:
+  - framework/filter/key.go
+docs:
+  - framework/docs/content/entity-declarations.md
