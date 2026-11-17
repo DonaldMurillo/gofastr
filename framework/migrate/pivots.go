@@ -80,12 +80,8 @@ type PivotTable struct {
 }
 
 // GeneratedPivotTables lists the pivot tables AutoMigrate creates for reg,
-// resolved the way the migrator and the snapshot resolve them: version
-// union, dependency order, the first declaration of each Through table,
-// and no table a registered entity owns. A relation the migrator refuses
-// (an unknown end, a composite-keyed end) has no table and is left out.
-// Data export and erasure read it so the rows in these tables, which no
-// entity describes, are dumped, restored, and erased with their ends.
+// resolved as the migrator resolves them; a relation the migrator refuses
+// has no table and is left out.
 func GeneratedPivotTables(reg entity.Registry) []PivotTable {
 	if reg == nil {
 		return nil
