@@ -13,10 +13,8 @@ import (
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 )
 
-// CoverageConfig governs the testing capability's thresholds. Zero values
-// are the strict setting throughout: every demand on, and a line-coverage
-// floor that is only enforced once a number is set (there is no honest
-// default percentage: a floor nobody chose is a floor nobody meets).
+// CoverageConfig governs the testing capability's thresholds. The
+// default turns every demand on and sets no line-coverage floor.
 type CoverageConfig struct {
 	// Minimum is the line-coverage percentage floor. Zero disables the
 	// check; the generated config comments this in at 90.
@@ -38,9 +36,8 @@ type CoverageConfig struct {
 type LayerRule struct {
 	// Name identifies the layer in diagnostics ("core", "domain", "ui").
 	Name string
-	// Packages are import-path globs, matched against the *suffix* of an
-	// import path so `core/**` matches
-	// `github.com/you/app/core/render` without repeating the module path.
+	// Packages are import-path globs matched against the suffix of an
+	// import path, so `core/**` matches `github.com/you/app/core/render`.
 	Packages []string
 }
 
@@ -53,27 +50,22 @@ type ForbidRule struct {
 }
 
 // ArchitectureConfig describes the dependency direction the architecture
-// analyzer enforces. Layers are ordered: a package in layer N may import
-// its own layer and anything below it, never above. That single rule
-// covers "core must not import framework" and "domain must not import UI"
-// without listing every pair.
+// analyzer enforces. Layers are ordered top first: a package may import
+// its own layer and those below it, never above.
 type ArchitectureConfig struct {
 	Layers []LayerRule
 	Forbid []ForbidRule
 }
 
-// Configured reports whether the project described a dependency shape. No
-// layers means the analyzer has nothing to enforce and stays quiet.
-// Inventing a layering for someone else's package tree would be noise.
+// Configured reports whether the project described a dependency shape;
+// without one the architecture analyzer reports nothing.
 func (a ArchitectureConfig) Configured() bool {
 	return len(a.Layers) > 0 || len(a.Forbid) > 0
 }
 
-// Config is the resolved configuration for a verify run. The zero value
-// (via [DefaultConfig]) enforces every rule in the catalog at its declared
-// severity: nothing is quieter than declared unless someone writes it
-// down. Most fields exist to turn something down; severity may also be
-// raised, which is a real choice a team is entitled to make.
+// Config is the resolved configuration for a verify run. [DefaultConfig]
+// enforces every rule at its declared severity; config may move a
+// severity either way.
 type Config struct {
 	// Path is the file this came from, "" when defaults.
 	Path string
@@ -108,12 +100,10 @@ func DefaultConfig() *Config {
 }
 
 // LoadConfig resolves configuration for a project root from the
-// `contracts:` section of gofastr.settings.yml. An explicit path names a
-// settings file and must exist; otherwise the file is looked up from root
-// to the project root, and defaults apply when there is none or it has no
-// contracts section. A file that exists but is malformed is an error:
-// falling back to defaults there would silently re-enable rules the
-// author believed they had turned off.
+// `contracts:` section of gofastr.settings.yml. An explicit path must
+// exist; otherwise the file is looked up from root, and defaults apply
+// when there is none or it has no contracts section. A malformed file,
+// an unknown key or an unknown rule is an error.
 func LoadConfig(root, explicit string) (*Config, error) {
 	var f settings.File
 	if explicit != "" {
@@ -156,8 +146,6 @@ func (c *Config) applyNode(path string, root *coreyaml.Node) error {
 		case "strict":
 			var on bool
 			if on, err = boolValue(path, node); err == nil && on {
-				// Strict makes warnings fail. It cannot make them pass:
-				// there is no setting that raises the floor above error.
 				c.FailOn = SeverityWarn
 			}
 		case "fail-on", "fail_on":
@@ -177,9 +165,6 @@ func (c *Config) applyNode(path string, root *coreyaml.Node) error {
 		case "rules":
 			err = c.applyRules(path, node)
 		default:
-			// A capability name at the top level is the short form:
-			//   contracts:
-			//     performance: warn
 			cap, capErr := ParseCapability(key)
 			if capErr != nil {
 				return fmt.Errorf("%s:%d: unknown contracts key %q", path, node.Line, key)
@@ -209,12 +194,6 @@ func (c *Config) applyCapabilities(path string, node *coreyaml.Node) error {
 	return nil
 }
 
-// applyCapability accepts three spellings, because all three are things
-// people write and rejecting two of them teaches nothing:
-//
-//	performance: warn                 # severity shorthand
-//	performance: false                # off
-//	performance: {severity: warn, exempt: [gen/**]}
 func (c *Config) applyCapability(path string, cap Capability, node *coreyaml.Node) error {
 	switch node.Kind {
 	case coreyaml.Scalar:
@@ -253,8 +232,6 @@ func (c *Config) applyCapability(path string, cap Capability, node *coreyaml.Nod
 				}
 				c.capExempt[cap] = list
 			default:
-				// Capability-scoped settings that belong to one capability
-				// only are routed to their own section.
 				if cap == CapTesting {
 					if err := c.applyCoverageKey(path, key, child); err == nil {
 						continue
@@ -455,17 +432,8 @@ func parseLayers(path string, node *coreyaml.Node) ([]LayerRule, error) {
 	return out, nil
 }
 
-// ------------------------------------------------------------------
-// Resolution
-// ------------------------------------------------------------------
-
-// SeverityFor is the effective severity of a rule after configuration.
-// Rule overrides beat capability overrides, which beat the rule's declared
-// default: most specific wins.
-//
-// Configuration may move a severity in either direction. "Strict by
-// default" is a statement about the *default*, not a ceiling: a team that
-// wants a warning to be an error is making a real, reviewable choice.
+// SeverityFor is the effective severity of a rule after configuration:
+// a rule override beats a capability override beats the declared default.
 func (c *Config) SeverityFor(r Rule) Severity {
 	if c == nil {
 		return r.Severity
@@ -501,11 +469,8 @@ func (c *Config) ExemptFor(r Rule, rel string) bool {
 		matchAnyGlob(c.ruleExempt[r.ID], rel)
 }
 
-// Relaxations lists every severity override and path exemption this
-// config applies, so a report states plainly what was changed rather than
-// quietly honouring it. The name reflects the common case; an escalation
-// is listed too, because the footer's job is "what did config change",
-// not "what did it weaken".
+// Relaxations lists, sorted, every severity override (escalations
+// included) and every global, capability and rule path exemption.
 func (c *Config) Relaxations() []string {
 	if c == nil {
 		return nil
@@ -520,9 +485,6 @@ func (c *Config) Relaxations() []string {
 	for _, g := range c.Exempt {
 		out = append(out, "exempt path "+g)
 	}
-	// Scoped exemptions are relaxations too, a path where a rule cannot
-	// fire, and omitting them left the footer's account incomplete for
-	// exactly the two forms a reader is least likely to know about.
 	for capName, globs := range c.capExempt {
 		for _, g := range globs {
 			out = append(out, fmt.Sprintf("capability %s exempt at %s", capName, g))
@@ -537,13 +499,7 @@ func (c *Config) Relaxations() []string {
 	return out
 }
 
-// ------------------------------------------------------------------
-// YAML scalar helpers
-// ------------------------------------------------------------------
-
 func severityFromScalar(path string, node *coreyaml.Node) (Severity, error) {
-	// `false` is a legitimate spelling of off, and the YAML parser hands
-	// it back as a bool, not a string.
 	if b, ok := node.Value.(bool); ok {
 		if b {
 			return SeverityError, nil

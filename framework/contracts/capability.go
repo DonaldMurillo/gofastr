@@ -6,24 +6,19 @@ import (
 	"strings"
 )
 
-// Capability is the area of the framework a rule speaks about. It is the
-// unit users filter by (`gofastr verify routing`) and the unit config
-// relaxes by, so the set is deliberately small and stable. A new
-// capability is an API change, a new rule inside one is not.
+// Capability is the area of the framework a rule speaks about: the unit
+// `gofastr verify <capability>` filters by and config relaxes by.
 type Capability string
 
 const (
-	// CapMeta covers the contract system talking about itself:
-	// unparsable config, suppressions that no longer match anything.
+	// CapMeta covers the contract system reporting on its own suppressions.
 	CapMeta Capability = "meta"
-	// CapRouting covers the route table: duplicates, auth, reachability,
-	// and registrations that bypass the framework's own helpers.
+	// CapRouting covers the route table: duplicates, auth, reachability.
 	CapRouting Capability = "routing"
-	// CapTesting covers semantic coverage: which routes, permissions, and
-	// entity operations a test run actually exercised.
+	// CapTesting covers which routes, permissions and entity operations
+	// a test run exercised.
 	CapTesting Capability = "testing"
-	// CapAccessibility covers the static WCAG floor the type system can
-	// see. The runtime half lives in `gofastr audit a11y --url`.
+	// CapAccessibility covers the static WCAG floor.
 	CapAccessibility Capability = "accessibility"
 	// CapArchitecture covers dependency direction and package layering.
 	CapArchitecture Capability = "architecture"
@@ -38,15 +33,12 @@ const (
 	// CapPermissions covers who can reach what: owner scoping, RBAC.
 	CapPermissions Capability = "permissions"
 	// CapRendering covers the UI contract: one styling surface, no hard
-	// navigation, no bespoke event streams.
+	// navigation.
 	CapRendering Capability = "rendering"
-	// CapAI covers idiomatic-usage guidance: the hand-rolled shape an
-	// agent reaches for when a framework primitive already exists.
+	// CapAI covers hand-rolled code where a framework primitive exists.
 	CapAI Capability = "ai"
 )
 
-// allCapabilities is the canonical order capabilities are reported in:
-// roughly "how early does getting this wrong hurt", not alphabetical.
 var allCapabilities = []Capability{
 	CapMeta,
 	CapRouting,
@@ -69,8 +61,7 @@ func Capabilities() []Capability {
 	return out
 }
 
-// Order is the capability's position in report order. Unknown
-// capabilities sort last so a future rule never silently jumps the queue.
+// Order is the capability's position in report order; unknown ones sort last.
 func (c Capability) Order() int {
 	for i, known := range allCapabilities {
 		if known == c {
@@ -101,11 +92,9 @@ func (c Capability) Title() string {
 	}
 }
 
-// ParseCapability resolves a user-typed capability name. It accepts the
-// canonical name plus the aliases people actually type: `a11y` for
-// accessibility, `sec` for security, `perf` for performance, because a
-// CLI that rejects `gofastr verify a11y` after shipping `gofastr audit
-// a11y` for a year is just being rude.
+// ParseCapability resolves a capability name or alias (`a11y`, `sec`,
+// `perf`, ...), case-insensitively. An unknown name is an error listing
+// the known ones.
 func ParseCapability(s string) (Capability, error) {
 	norm := strings.ToLower(strings.TrimSpace(s))
 	switch norm {
