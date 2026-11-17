@@ -7,3 +7,64 @@ docs:
   - framework/docs/content/localdb.md
 on_change:
   - agents.md is the package's agentsinv entry (registered in agents.go); keep it in step with Define and its options.
+  - fieldSpec's JSON tags are what localentity.js and localform.js read; change them with the scripts.
+invariants:
+  - id: define-refuses-bad-declarations
+    rule: Define panics on a nil db, a negative MaxRecords, no fields, a field name that is not lowercase snake_case of 1 to 61 bytes or is constructor or prototype, a built-in or repeated name, a type other than String, Text, Int, Float, Bool, Enum, Date or Timestamp, an Enum with no Values, and a Pattern checkPattern refuses.
+    enforced_by:
+      - test: framework/localentity.TestRefusals
+  - id: indexed-must-be-required
+    rule: An Indexed field must be a declared, Required, non-Bool field; created_at and updated_at are always indexed.
+    enforced_by:
+      - test: framework/localentity.TestRefusals
+      - test: framework/localentity.TestIndexedBuiltinsAndPatterns
+  - id: pattern-is-the-shared-subset
+    rule: checkPattern admits only a Go-compiling pattern in the subset Go RE2 and JavaScript u-mode read alike, refusing \s, \S, a bare dot, POSIX classes, inline flags and named groups, a class opening with ], a { that is not {n}, {n,} or {n,m}, a lone } or ], and \p or \P without a general category.
+    enforced_by:
+      - test: framework/localentity.TestIndexedBuiltinsAndPatterns
+      - test: framework/localentity.TestCheckPatternRefusesJSGoAmbiguous
+      - test: framework/localentity.TestPatternQuantifierForms
+  - id: list-needs-an-index
+    rule: List panics when OrderBy names a field with no index or Limit is negative, and renders the order, direction, limit and Failed message as data-fui-local-* attributes.
+    enforced_by:
+      - test: framework/localentity.TestRefusals
+      - test: framework/localentity.TestListRowAndCount
+      - test: framework/localentity.TestListCarriesFailedMessage
+  - id: row-names-known-fields
+    rule: Row.Text panics on a field that is neither declared nor built in, and Row.Edit panics on an empty form id.
+    enforced_by:
+      - test: framework/localentity.TestRefusals
+  - id: form-carries-the-spec
+    rule: Entity.Form wraps the form in a carrier holding the entity target and the JSON field spec the behaviour validates against.
+    enforced_by:
+      - test: framework/localentity.TestFormCarriesTheSpec
+  - id: behaviours-split
+    rule: The list behaviour needs only localdb, the form behaviour needs localdb and formerrors and holds Save clicks made while it loads, and both carriers lay out as display:contents.
+    enforced_by:
+      - test: framework/localentity.TestFormBehaviourRetainsSaveClicks
+      - test: framework/localentity.TestBehavioursAndCarrierStyle
+decisions:
+  - id: two-behaviours
+    date: 2026-11-17
+    status: accepted
+    decision: Lists and forms are two behaviours, so a page that only shows records never downloads the form code.
+    rejected:
+      - option: One behaviour for both.
+        why: Every list page would load the form validation and formerrors.
+    upholds: [behaviours-split]
+  - id: index-only-required
+    date: 2026-11-17
+    status: accepted
+    decision: Indexed fields must be Required.
+    rejected:
+      - option: Allow optional indexed fields.
+        why: IndexedDB leaves a record without the property out of the index, so a list ordered by it hides the record while Count still counts it.
+    upholds: [indexed-must-be-required]
+  - id: refuse-ambiguous-patterns
+    date: 2026-11-17
+    status: accepted
+    decision: A Pattern outside the subset both engines read alike is refused at startup.
+    rejected:
+      - option: Translate patterns between engines.
+        why: \s and the dot differ in which characters they match, so one side would accept what the other refuses.
+    upholds: [pattern-is-the-shared-subset]
