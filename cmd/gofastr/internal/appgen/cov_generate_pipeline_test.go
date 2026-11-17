@@ -109,7 +109,7 @@ func TestFileSetFromGeneratedFiles(t *testing.T) {
 		}
 		got[f.Path] = f.Mode
 	}
-	if len(got) != 2 || got[".env"] != 0o600 || got["a.go"] != 0 {
+	if aMode, ok := got["a.go"]; len(got) != 2 || got[".env"] != 0o600 || !ok || aMode != 0 {
 		t.Fatalf("paths/modes not carried through: %v", got)
 	}
 	if _, err := FileSetFromGeneratedFiles([]GeneratedFile{{Name: "a.go", Content: "package a\n"}, {Name: "a.go", Content: "package b\n"}}, "owner"); err == nil {

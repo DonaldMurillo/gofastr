@@ -1,8 +1,12 @@
 package apps_test
 
+//gofastr:test-reads minimal/ crud/ full/
+
 import (
 	"bytes"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"io"
 	"net"
 	"net/http"
@@ -10,8 +14,23 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	// The apps' direct imports, so cmd/affected selects this test when a
+	// dependency the built binaries link changes (TestBlankImportsCoverApps).
+	_ "github.com/DonaldMurillo/gofastr/battery/search"
+	_ "github.com/DonaldMurillo/gofastr/battery/storage"
+	_ "github.com/DonaldMurillo/gofastr/core-ui/app"
+	_ "github.com/DonaldMurillo/gofastr/core-ui/component"
+	_ "github.com/DonaldMurillo/gofastr/core/render"
+	_ "github.com/DonaldMurillo/gofastr/core/router"
+	_ "github.com/DonaldMurillo/gofastr/core/schema"
+	_ "github.com/DonaldMurillo/gofastr/framework"
+	_ "github.com/DonaldMurillo/gofastr/framework/uihost"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // Every bench app boots and answers GET /healthz: cmd/bench-resources waits
@@ -77,6 +96,31 @@ func bootAndProbeHealthz(t *testing.T, app string) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("SECURITY: [bench-healthz-boot] %s bench app never answered GET /healthz within 10s; stderr tail: %.400s", app, stderr.String())
+		}
+	}
+}
+
+func TestBlankImportsCoverApps(t *testing.T) {
+	f, err := parser.ParseFile(token.NewFileSet(), "boot_test.go", nil, parser.ImportsOnly)
+	if err != nil {
+		t.Fatalf("setup broken: parse: %v", err)
+	}
+	have := map[string]bool{}
+	for _, im := range f.Imports {
+		if im.Name != nil && im.Name.Name == "_" {
+			p, _ := strconv.Unquote(im.Path.Value)
+			have[p] = true
+		}
+	}
+	for _, app := range []string{"minimal", "crud", "full"} {
+		out, err := exec.Command("go", "list", "-f", `{{join .Imports "\n"}}`, "./"+app).Output()
+		if err != nil {
+			t.Fatalf("setup broken: go list %s: %v", app, err)
+		}
+		for _, imp := range strings.Fields(string(out)) {
+			if strings.HasPrefix(imp, "github.com/DonaldMurillo/gofastr/") && !have[imp] {
+				t.Errorf("%s imports %s; add it to boot_test.go's blank imports", app, imp)
+			}
 		}
 	}
 }

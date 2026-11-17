@@ -96,8 +96,8 @@ func TestStringsForNoTranslatorIsHeadlessEnglish(t *testing.T) {
 	for name, ctx := range map[string]context.Context{"background": context.Background(), "nil": nil} {
 		t.Run(name, func(t *testing.T) {
 			got := StringsFor(ctx)
-			if got == want {
-				t.Fatal("StringsFor returned headless.DefaultStrings()'s own pointer — it must build its own value")
+			if got == StringsFor(ctx) {
+				t.Fatal("two StringsFor calls returned one pointer — each call must build its own value")
 			}
 			everyHeadlessStringField(t, got, func(name, val string) {
 				w := reflect.ValueOf(want).Elem().FieldByName(name).String()
