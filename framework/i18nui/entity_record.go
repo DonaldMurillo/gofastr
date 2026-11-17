@@ -2,7 +2,6 @@ package i18nui
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The entity record's chrome. See entity.go.
 var (
 	EntityCreate     = i18n.Define("ui.entity.create", "Create {{entity}}")
 	EntitySave       = i18n.Define("ui.entity.save", "Save")
@@ -16,7 +15,7 @@ var (
 	EntityMoved      = i18n.Define("ui.entity.moved", "{{entity}} updated")
 	EntityMoveFailed = i18n.Define("ui.entity.moveFailed", "Could not {{action}}.")
 	EntityActionRan  = i18n.Define("ui.entity.actionRan", "Ran {{action}}.")
-	// A danger move's or action's confirm, before it runs.
+
 	EntityMoveConfirmTitle   = i18n.Define("ui.entity.moveConfirmTitle", "{{action}} this {{entity}}?")
 	EntityMoveConfirm        = i18n.Define("ui.entity.moveConfirm", "It moves from {{from}} to {{to}}.")
 	EntityMoveAccept         = i18n.Define("ui.entity.moveAccept", "{{action}} {{entity}}")
@@ -30,8 +29,7 @@ var (
 	EntityNotSet             = i18n.Define("ui.entity.notSet", "Not set")
 	EntityKeepValue          = i18n.Define("ui.entity.keepValue", "Leave blank to keep the current value.")
 	EntityNoActivity         = i18n.Define("ui.entity.noActivity", "No activity yet")
-	// A relation picker: its search placeholder and the note after a
-	// cut-off list.
+
 	EntityCreateAnother    = i18n.Define("ui.entity.createAnother", "Create another")
 	EntityCopyAPIURL       = i18n.Define("ui.entity.copyAPIURL", "Copy API URL")
 	EntityPickerSearch     = i18n.Define("ui.entity.pickerSearch", "Search {{entities}}…")
@@ -61,7 +59,6 @@ var (
 	EntityOverrideTitle    = i18n.Define("ui.entity.overrideTitle", "Override the status of this {{entity}}?")
 	EntityOverrideConfirm  = i18n.Define("ui.entity.overrideConfirm", "The change skips the workflow and is recorded in the audit log with your reason.")
 
-	// One Activity tab entry's headline: who did what to this record.
 	EntityActivityCreated  = i18n.Define("ui.entity.activityCreated", "{{actor}} created this {{entity}}")
 	EntityActivityUpdated  = i18n.Define("ui.entity.activityUpdated", "{{actor}} made changes")
 	EntityActivitySaved    = i18n.Define("ui.entity.activitySaved", "{{actor}} saved this {{entity}}")
