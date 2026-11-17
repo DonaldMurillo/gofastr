@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 )
 
@@ -217,5 +218,58 @@ func TestSweepEmbedRefreshExpiryNeverPassesTheDeadline(t *testing.T) {
 	}
 	if next.Expires.After(deadline) {
 		t.Fatalf("refreshed expiry %v is past the deadline %v", next.Expires, deadline)
+	}
+}
+
+func TestSweepEmbedNormalizeOriginRefusesMalformedHosts(t *testing.T) {
+	for _, raw := range []string{
+		"https://acme.com:0",
+		"https://acme.com:65536",
+		"https://acme.com.",
+		"https://" + strings.Repeat("a.", 126) + "com",
+		"https://" + strings.Repeat("a", 64) + ".com",
+		"https://-acme.com",
+		"https://acme-.com",
+	} {
+		if got, err := NormalizeOrigin(raw); err == nil {
+			t.Errorf("NormalizeOrigin(%q) = %q, want an error", raw, got)
+		}
+	}
+	if _, err := NormalizeOrigin("https://" + strings.Repeat("a", 63) + ".com:65535"); err != nil {
+		t.Errorf("a 63-byte label on port 65535: %v", err)
+	}
+}
+
+func TestSweepEmbedOneBadSourceOriginFailsTheCustomer(t *testing.T) {
+	src := &stubOriginSource{byCustomer: map[string][]string{"acme": {"https://acme.com", "https://*.acme.com"}}}
+	if got, err := ResolveCustomerOrigins(context.Background(), src, "reports", "acme"); err == nil {
+		t.Fatalf("a list with one invalid origin served %v", got)
+	}
+}
+
+func TestSweepEmbedEmptyTenantInstallsNoTenant(t *testing.T) {
+	h := testHost(t, func(c *Config) {
+		c.ResolveTenant = func(context.Context, string) (string, error) { return "", nil }
+	})
+	var has bool
+	req := httptest.NewRequest(http.MethodGet, "/embed/dashboard", nil)
+	req.Header.Set(GrantHeader, grantFor(t, h))
+	h.Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, has = handler.GetTenant(r.Context())
+	})).ServeHTTP(httptest.NewRecorder(), req)
+	if has {
+		t.Fatal("an empty resolved tenant was installed as a tenant")
+	}
+}
+
+func TestSweepEmbedEveryFrameworkPrefixIsReserved(t *testing.T) {
+	for _, p := range []string{"/mcp", "/openapi.json", "/api/docs", "/api/llm.md", "/.debug", "/auth", "/admin", "/print", "/semantic", "/metrics"} {
+		_, err := New(Config{
+			Surfaces:  []Surface{{Name: "d", Screen: testScreen{"/d"}, Origins: []string{"https://acme.com"}, Reach: []string{p}}},
+			BurnStore: NewMemoryBurnStore(),
+		})
+		if err == nil {
+			t.Errorf("Reach %q booted", p)
+		}
 	}
 }

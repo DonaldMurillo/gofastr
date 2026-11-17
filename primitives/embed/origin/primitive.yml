@@ -16,12 +16,13 @@ invariants:
     rule: NormalizeOrigin refuses a non-http(s) scheme, a path, query, fragment or userinfo, a port outside 1 to 65535, and a host with a wildcard, underscore, non-ASCII byte, leading or trailing dot, or a label that is empty, over 63 bytes or edged by a dash.
     enforced_by:
       - test: framework/embed.TestNormalizeOriginRejectsNonOrigins
+      - test: framework/embed.TestSweepEmbedNormalizeOriginRefusesMalformedHosts
   - id: ipv4-mapped-is-refused
     rule: NormalizeOrigin refuses an IPv4-mapped IPv6 host.
     enforced_by:
       - test: framework/embed.TestNormalizeOriginRefusesIPv4Mapped
   - id: membership-is-by-normalized-origin
-    rule: An origin set matches a candidate only after normalizing it, and a candidate that does not normalize matches nothing.
+    rule: An origin set matches a candidate by its normalized form, so every spelling of an allowed origin matches.
     enforced_by:
       - test: framework/embed.TestOriginSetMatchesNormalized
   - id: static-allowlist-is-bounded
@@ -42,6 +43,7 @@ invariants:
       - test: framework/embed.TestResolveCustomerOriginsCapsPerResponse
       - test: framework/embed.TestResolveCustomerOriginsRejectsNilSource
       - test: framework/embed.TestResolveCustomerOriginsBoundsRawRowCount
+      - test: framework/embed.TestSweepEmbedOneBadSourceOriginFailsTheCustomer
 decisions:
   - id: compare-normalized-origins
     date: 2026-11-17

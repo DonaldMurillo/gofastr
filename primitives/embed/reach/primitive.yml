@@ -23,13 +23,14 @@ invariants:
       - test: framework/embed.TestRoutedPathRefusesSeparatorDecoding
       - test: framework/embed.TestRoutedPathKeepsOrdinaryEscapes
   - id: reserved-prefixes-are-unreachable
-    rule: A route or Reach entry that overlaps a reserved prefix, dynamic segments included, fails boot or AddReservedPrefixes, "/" fails boot, and Middleware answers 403 for any path under a reserved prefix.
+    rule: A route or Reach entry that overlaps a reserved prefix (/mcp, /openapi.json, /api/docs, /api/llm.md, /.debug, /auth, /admin, /print, /semantic, /metrics, or one added by AddReservedPrefixes), dynamic segments included, fails boot or AddReservedPrefixes, "/" fails boot, and Middleware answers 403 for any path under a reserved prefix.
     enforced_by:
       - test: framework/embed.TestReachRefusesConfigurationsThatCannotBeRight
       - test: framework/embed.TestAddReservedPrefixesRefusesASurfaceOverAMountedBattery
       - test: framework/embed.TestDynamicRouteCannotCoverReserved
       - test: framework/embed.TestRoutesOverlapEitherWay
       - test: framework/embed.TestGrantRefusedAtReservedPrefix
+      - test: framework/embed.TestSweepEmbedEveryFrameworkPrefixIsReserved
   - id: reach-is-default-closed
     rule: A grant reaches only its surface's route subtree, the listed runtime endpoints and its declared Reach prefixes, on segment boundaries, and Middleware answers anything else 403 naming a Reach entry to add.
     enforced_by:
@@ -64,7 +65,7 @@ invariants:
     enforced_by:
       - test: framework/embed.TestGrantExpiryBoundsTheRequestContext
   - id: subject-comes-from-the-resolvers
-    rule: The request's tenant and user are only what ResolveTenant and Resolve return for the grant's subject, a typed nil user installs none, and a resolver error answers 403.
+    rule: The request's tenant and user are only what ResolveTenant and Resolve return for the grant's subject, an empty tenant or a typed nil user installs none, and a resolver error answers 403.
     enforced_by:
       - test: framework/embed.TestResolveTenantInstallsTheSubjectsTenant
       - test: framework/embed.TestRequestCannotInfluenceTheResolvedTenant
@@ -73,6 +74,7 @@ invariants:
       - test: framework/embed.TestEmptyTenantIsNotAnError
       - test: framework/embed.TestMiddlewareFailsClosedWhenTheSubjectVanishes
       - test: framework/embed.TestTypedNilSubjectIsNotInstalledAsAUser
+      - test: framework/embed.TestSweepEmbedEmptyTenantInstallsNoTenant
   - id: held-requests-recheck-the-subject
     rule: The principal check Middleware installs repeats both lookups and fails once either errors or the subject stops resolving to a user.
     enforced_by:
