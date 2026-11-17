@@ -25,6 +25,11 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`gofastr verify` reports a hard navigation through any chain of frames.** GOFASTR1802 caught
+  `location.href = x` and `window.location.href = x`, but missed `window.top.location.href = x` and
+  other chains of more than one hop.
+- **GOFASTR1414 skips a sub-select however it is spaced.** A one-line `id IN (SELECT ...)` was
+  compared as text, so it was reported as drift against a twin that wrote `( SELECT ... )`.
 - **An embed nonce that expires during its exchange answers `ErrExpired`.**
   `Host.Exchange` reported `ErrSpent` ("nonce already used") for a nonce
   never used whose retention deadline passed between verification and
