@@ -10,23 +10,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// indexClaim is one index the schema declares: the table it belongs to
-// and what it covers, so two claims on one name can be told apart from
-// one index listed twice.
 type indexClaim struct {
 	table string
 	def   string
 }
 
-// checkIndexNames refuses two indexes that would share one name. Both
-// engines keep index names per schema, not per table, and the DDL creates
-// each with CREATE INDEX IF NOT EXISTS, so the second of two indexes named
-// alike was skipped without a word: a declared Unique index on the second
-// table never existed, and that table took duplicates. Default names
-// collide too (idx_ + table + columns: table a_b on c and table a on b_c
-// are both idx_a_b_c). The names are compared folded and cut at 63 bytes,
-// the way Postgres stores them, on either dialect, so an app that boots on
-// SQLite boots on Postgres. ordered is every entity the migration covers.
 func checkIndexNames(ordered []*entity.Entity, all map[string]*entity.Entity) error {
 	claims := map[string]indexClaim{}
 	claim := func(table, name string, idx entity.Index) error {
@@ -43,7 +31,7 @@ func checkIndexNames(ordered []*entity.Entity, all map[string]*entity.Entity) er
 			return nil
 		}
 		if prev == c {
-			return nil // the same index, listed twice (two entities on one table)
+			return nil
 		}
 		if prev.table != c.table {
 			return fmt.Errorf("index name %q is used on both table %s and table %s; both engines keep one index per name in a schema, "+
@@ -72,7 +60,7 @@ func checkIndexNames(ordered []*entity.Entity, all map[string]*entity.Entity) er
 			name := idx.Name
 			if name == "" {
 				if len(idx.Columns) == 0 {
-					continue // an expression index without a name fails on its own
+					continue
 				}
 				name = defaultIndexName(table, idx.Columns)
 			}
@@ -90,8 +78,6 @@ func checkIndexNames(ordered []*entity.Entity, all map[string]*entity.Entity) er
 	return nil
 }
 
-// indexSignature is what an index covers, folded the way the DDL's
-// unquoted identifiers fold.
 func indexSignature(idx entity.Index) string {
 	cols := slices.Clone(idx.Columns)
 	for i, c := range cols {

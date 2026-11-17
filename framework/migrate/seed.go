@@ -14,16 +14,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// seedLedgerTable is the bookkeeping table that records which entities
-// have had their Seed function run. One row per entity name; subsequent
-// restarts short-circuit on presence.
 const seedLedgerTable = "_gofastr_seeded"
 
 type seedLoggerKey struct{}
 
-// WithSeedLogger attaches a slog.Logger to ctx so RunSeeds emits per-seed
-// lifecycle events under it. When no logger is attached, RunSeeds writes
-// to a discard handler. Operators opt in.
+// WithSeedLogger attaches a logger to ctx for RunSeeds' per-seed
+// lifecycle events; without one RunSeeds logs nothing. A nil logger
+// returns ctx unchanged.
 func WithSeedLogger(ctx context.Context, logger *slog.Logger) context.Context {
 	if logger == nil {
 		return ctx
@@ -38,11 +35,7 @@ func seedLoggerFromCtx(ctx context.Context) *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// ensureSeedLedger creates the _gofastr_seeded tracking table when
-// missing. Mirrors the shape of core/migrate's _migrations table.
 func ensureSeedLedger(ctx context.Context, db *sql.DB, dialect Dialect) error {
-	// seedLedgerTable is a compile-time constant valid identifier: MustIdent
-	// (panic on invalid) over SafeIdent avoids an unreachable error branch.
 	safe := query.MustIdent(seedLedgerTable)
 	now := "CURRENT_TIMESTAMP"
 	if dialect == coremig.DialectPostgres {
@@ -56,9 +49,6 @@ func ensureSeedLedger(ctx context.Context, db *sql.DB, dialect Dialect) error {
 	return err
 }
 
-// readSeededSet returns the set of entity_name values already in the
-// ledger, in a single round-trip. Avoids the N+1 SELECT-per-entity that
-// dominated boot latency against managed-Postgres deployments.
 func readSeededSet(ctx context.Context, db *sql.DB) (map[string]struct{}, error) {
 	safe := query.MustIdent(seedLedgerTable)
 	q := fmt.Sprintf("SELECT entity_name FROM %s", query.QuoteFolded(safe))
@@ -78,20 +68,12 @@ func readSeededSet(ctx context.Context, db *sql.DB) (map[string]struct{}, error)
 	return set, rows.Err()
 }
 
-// recordSeeded inserts the ledger row marking the entity as seeded.
-// Uses dialect-aware conflict handling so a concurrent RunSeeds (e.g.
-// two processes racing through startup) doesn't error on the
-// duplicate-PK path: whichever process inserts second silently no-ops
-// instead of failing App.Start.
 func recordSeeded(ctx context.Context, db *sql.DB, dialect Dialect, name string) error {
 	safe := query.MustIdent(seedLedgerTable)
 	placeholder := "?"
 	if dialect == coremig.DialectPostgres {
 		placeholder = "$1"
 	}
-	// SQLite ≥3.24 and Postgres both accept ON CONFLICT … DO NOTHING.
-	// Future dialects (MySQL, MSSQL) need their own branch. Split here
-	// so the dialect mapping is the only thing that has to change.
 	q := fmt.Sprintf(
 		"INSERT INTO %s (entity_name) VALUES (%s) ON CONFLICT (entity_name) DO NOTHING",
 		query.QuoteFolded(safe), placeholder,
@@ -100,57 +82,17 @@ func recordSeeded(ctx context.Context, db *sql.DB, dialect Dialect, name string)
 	return err
 }
 
-// RunSeeds runs each entity's Seed function exactly once, tracked in the
-// _gofastr_seeded ledger. Subsequent restarts short-circuit when the
-// entity already has a ledger row. Call after AutoMigrate.
-//
-// Multi-replica safety: the ensure-ledger → read-ledger → run → record
-// sequence runs while holding [coremig.SeedAdvisoryLockKey] (a Postgres
-// advisory lock DISTINCT from the migration lock). Combined with the
-// ledger, this makes an entity's Seed run ONCE globally: whichever
-// replica wins the lock runs the body and records the row; the others
-// wait, then short-circuit on the ledger. SQLite has no advisory locks,
-// so it gets a twin with the same shape: a leased lock row in
-// _gofastr_seed_lock (atomic INSERT ... ON CONFLICT ... DO UPDATE WHERE
-// the lease expired), held across read → run → record and renewed by a
-// heartbeat, plus a process-level mutex — SQLite's file-level locking
-// serializes individual statements, not the read → run → record
-// sequence, so without the twin two replicas both pass the empty-ledger
-// check and both run the body. A crashed lock holder's lease expires and
-// the next boot re-runs the un-recorded Seed, the same posture as a
-// crashed Postgres lock holder.
-//
-// Exception, MaxOpenConns(1): the advisory lock pins a connection, so a
-// Postgres pool capped at ONE connection would deadlock the seed body's
-// own queries. Such a pool SKIPS the lock (logging a WARN) and runs
-// unlocked, so N single-connection replicas are NOT coordinated and can
-// race a Seed. Keep the pool above 1 connection for cross-replica seed
-// serialization (the default unlimited pool is fine).
-//
-// Contract:
-//   - Seed implementations SHOULD be idempotent. The framework now
-//     serializes startup seeds across replicas, so the legacy race is
-//     closed; idempotency is still the right posture because a Seed
-//     that crashed mid-flight is NOT rolled back, and the next boot
-//     re-runs it (no ledger row was recorded).
-//   - Seeds run serially in topological order. Independent seeds run
-//     one at a time; batch parallel work inside a single Seed func
-//     when needed.
-//   - The supplied ctx propagates into each Seed call. Cancelling ctx
-//     unblocks Seed implementations that respect it.
-//   - db == nil is a silent no-op, matching AutoMigrate's behaviour.
-//   - Attach a logger via [WithSeedLogger] to capture per-seed
-//     start/done/skip lifecycle events.
+// RunSeeds runs each entity's Seed once, in topological order, recording
+// each in the _gofastr_seeded ledger; call it after AutoMigrate. Replicas
+// are serialized by a seed lock (a Postgres advisory lock, a leased row on
+// SQLite), except a Postgres pool with MaxOpenConns(1), which runs
+// unlocked and logs a warning. A Seed that fails is not rolled back and
+// runs again on the next boot, so Seeds should be idempotent. ctx reaches
+// each Seed; db == nil is a no-op.
 func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	if db == nil {
 		return nil
 	}
-	// Route through the version union, NOT Registry.All(). All() returns one
-	// representative per name, so a Seed declared only on a non-representative
-	// version is invisible. hasSeed stays false and the seed silently never
-	// runs. The union propagates the sole seed (registration guarantees at
-	// most one) into the merged entity regardless of which version is the
-	// representative (F11).
 	merged := UnionEntities(registry)
 
 	hasSeed := false
@@ -163,26 +105,11 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	if !hasSeed {
 		return nil
 	}
-	// Detect the dialect lazily, only once we know a Seed will run. The
-	// dialect gates the cross-replica seed advisory lock, so a transiently-
-	// unreachable database must fail closed here rather than be guessed (the
-	// v0.62 migration invariant). Seedless registries, the common case,
-	// skip the probe entirely.
 	dialect, err := detectDialectFailClosed(db)
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
 
-	// Serialize the seed phase across replicas behind a Postgres advisory
-	// lock DISTINCT from the migration lock. Seed funcs receive the pool db
-	// (their signature requires *sql.DB), so the lock pins its own conn and
-	// the body runs against the pool, correct on Postgres where every conn
-	// shares the database. A MaxOpenConns(1) pool (e.g. test harness, or a
-	// deployment that deliberately serializes all DB access on one conn)
-	// would deadlock: the pinned lock conn IS the only conn, so the body's
-	// pool queries block forever. Skip the lock in that case: a
-	// single-conn pool already serializes this process's access, and the
-	// lock only coordinates ACROSS processes.
 	poolSize := db.Stats().MaxOpenConnections
 	if dialect == DialectPostgres && poolSize != 1 {
 		return coremig.WithAdvisoryLockKey(ctx, db, dialect, coremig.SeedAdvisoryLockKey, func(_ *sql.Conn) error {
@@ -190,24 +117,8 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 		})
 	}
 	if dialect == DialectPostgres && poolSize == 1 {
-		// Cannot take the advisory lock on a 1-conn pool: WithAdvisoryLock
-		// pins a connection, leaving none for the seed body's pool queries →
-		// deadlock. We run UNLOCKED here, so seeds are NOT coordinated across
-		// replicas in this configuration: N replicas each with a 1-conn pool
-		// can each observe "not seeded" and race a Seed (the ledger's ON
-		// CONFLICT DO NOTHING dedupes the row, not the Seed execution). Warn
-		// loudly on the default logger (the ctx seed logger defaults to
-		// Discard, and this gap must always surface) rather than silently
-		// weaken the single-run guarantee.
 		slog.Default().Warn("seed advisory lock skipped: Postgres pool has MaxOpenConns(1), so startup seeds are NOT serialized across replicas: raise MaxOpenConns above 1 to enable cross-replica seed coordination")
 	}
-	// SQLite twin of the advisory lock, in two layers. The leased lock row
-	// serializes ACROSS processes against a shared file. The process-level
-	// mutex serializes within one process, where two concurrent RunSeeds
-	// calls may not even land on connections that share a database (an
-	// in-memory SQLite pool is per-connection), so no DB-level lock could
-	// order them; it also keeps a second goroutine from re-checking the
-	// ledger before the first has recorded.
 	if dialect == DialectSQLite {
 		sqliteSeedMu.Lock()
 		defer sqliteSeedMu.Unlock()
@@ -220,11 +131,6 @@ func RunSeeds(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	return runSeedsBody(ctx, db, dialect, merged)
 }
 
-// runSeedsBody is the ensure-ledger → read-ledger → run → record loop,
-// extracted so RunSeeds can wrap it in the advisory lock on Postgres and
-// call it directly on SQLite. db is the pool; seed funcs receive it as-is.
-// `all` is the version-union map (one entity per name, with the sole Seed
-// propagated) computed by RunSeeds via UnionEntities.
 func runSeedsBody(ctx context.Context, db *sql.DB, dialect Dialect, all map[string]*entity.Entity) error {
 	logger := seedLoggerFromCtx(ctx)
 	if err := ensureSeedLedger(ctx, db, dialect); err != nil {
@@ -243,9 +149,6 @@ func runSeedsBody(ctx context.Context, db *sql.DB, dialect Dialect, all map[stri
 	}
 
 	for _, ent := range ordered {
-		// Honour context cancellation between seeds as well as during
-		// a Seed call, keeping the loop responsive even when a previous
-		// Seed completed but a SIGTERM landed mid-loop.
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -267,8 +170,6 @@ func runSeedsBody(ctx context.Context, db *sql.DB, dialect Dialect, all map[stri
 			logger.Error("seed failed", "entity", name, "err", err)
 			return fmt.Errorf("seed %s: %w", name, err)
 		}
-		// The seed ran: record it on a detached, bounded context, so a
-		// shutdown that lands now does not seed again on the next boot.
 		recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), seedRecordTimeout)
 		err := recordSeeded(recordCtx, db, dialect, name)
 		cancel()
@@ -280,16 +181,8 @@ func runSeedsBody(ctx context.Context, db *sql.DB, dialect Dialect, all map[stri
 	return nil
 }
 
-// seedRecordTimeout bounds the ledger write after a seed runs.
 const seedRecordTimeout = 10 * time.Second
 
-// sqliteSeedMu serializes RunSeeds calls within one process on SQLite. See
-// the SQLite arm of RunSeeds for why the leased lock row alone cannot order
-// two goroutines whose pool connections may not even share a database.
 var sqliteSeedMu sync.Mutex
 
-// seedLease is how long a _gofastr_seed_lock row counts as held before
-// another process may steal it. A holder renews at lease/3, so a live
-// process never loses the lock; a crashed one blocks other boots for at
-// most one lease.
 const seedLease = 60 * time.Second

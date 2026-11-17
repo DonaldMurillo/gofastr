@@ -21,37 +21,21 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// jsonNumberLiteral is the JSON number grammar, the only json.Number text
-// SQLDefault writes unquoted.
 var jsonNumberLiteral = regexp.MustCompile(`^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$`)
 
-// Dialect identifies the SQL dialect the migrator emits for. It's an alias
-// for coremig.Dialect so framework code and the lower-level migration system
-// share one source of truth for dialect identity.
+// Dialect identifies the SQL dialect the migrator emits for.
 type Dialect = coremig.Dialect
 
-// Dialect identifiers re-exported from core/migrate for ergonomic use inside
-// the framework package and in tests.
+// The dialects the migrator supports.
 const (
 	DialectSQLite   = coremig.DialectSQLite
 	DialectPostgres = coremig.DialectPostgres
 )
 
-// DetectDialect returns the dialect of an open *sql.DB. It probes for
-// PostgreSQL via SELECT version() (cheap, no side effects) and resolves to
-// SQLite when the engine answers but is not PostgreSQL.
-//
-// Boot-critical migration paths (AutoMigrate, MigrateEntity, DiffSchema,
-// RunSeeds) do NOT call this. They call detectDialectFailClosed, which
-// returns an error when the probe cannot reach the database, so a
-// transiently-unreachable Postgres fails the boot loudly instead of being
-// misclassified as SQLite (which would skip the cross-replica advisory lock
-// and every PG-only routine). DetectDialect is retained as a BEST-EFFORT
-// helper for callers that only use the dialect to pick DDL types
-// (audit/auth-store schema, export, introspection): on repeated transient
-// probe failure it logs and falls back to SQLite rather than erroring, since
-// its signature cannot carry an error. New migration-decision call sites
-// should use detectDialectFailClosed instead.
+// DetectDialect returns the dialect of an open *sql.DB, Postgres when
+// SELECT version() names it and SQLite otherwise. When the probe cannot
+// reach the database it logs and returns SQLite; a caller that decides
+// anything beyond DDL types uses DetectDialectStrict.
 func DetectDialect(db *sql.DB) Dialect {
 	d, err := detectDialectFailClosed(db)
 	if err != nil {
@@ -62,30 +46,12 @@ func DetectDialect(db *sql.DB) Dialect {
 	return d
 }
 
-// DetectDialectStrict is the exported fail-closed probe for callers outside
-// this package that make coordination decisions on the answer (advisory
-// locks, dialect-scoped routines). A transient probe failure returns an
-// error; it never resolves to a guessed dialect. Callers that only pick DDL
-// types can keep using best-effort DetectDialect.
+// DetectDialectStrict is DetectDialect that returns an error, never a
+// guess, when the probe keeps failing for a transient reason.
 func DetectDialectStrict(db *sql.DB) (Dialect, error) {
 	return detectDialectFailClosed(db)
 }
 
-// detectDialectFailClosed is DetectDialect with a fail-closed posture. The
-// version() probe is retried with backoff; an engine that lacks version()
-// answers immediately and deterministically (SQLite's "no such function") and
-// resolves to SQLite without retry. Only TRANSIENT failures, statement
-// timeouts, "too many connections", a pooler in statement mode, a connection
-// reset, a transiently-unreachable or bad DSN, are retried, and if every
-// retry fails the function returns an error naming the cause and pointing at
-// the database connection.
-//
-// This is the invariant set in v0.62: uncertainty during a migration decision
-// is a startup error, never a guess. A wrong guess here partitions
-// dialect-scoped routines against the wrong engine and skips the
-// cross-replica advisory lock in core/migrate/lock.go, so a routine-only
-// PostgreSQL app whose probe transiently failed would otherwise boot without
-// its routines.
 func detectDialectFailClosed(db *sql.DB) (Dialect, error) {
 	const attempts = 3
 	var lastErr error
@@ -101,8 +67,6 @@ func detectDialectFailClosed(db *sql.DB) (Dialect, error) {
 			return DialectSQLite, nil
 		}
 		lastErr = err
-		// An engine that genuinely lacks version() answers immediately and
-		// deterministically; only retry what looks transient.
 		if !isTransientProbeErr(err) {
 			return DialectSQLite, nil
 		}
@@ -114,19 +78,13 @@ func detectDialectFailClosed(db *sql.DB) (Dialect, error) {
 		"(check the database connection / DATABASE_URL)", attempts, lastErr)
 }
 
-// isConnectionErr reports whether err looks like a database reachability or
-// open failure rather than a SQL-level error (bad syntax, constraint
-// violation, missing table). Used at the migration boundary to add an
-// actionable hint, since the migrator receives an already-open *sql.DB and
-// cannot itself resolve the configured DSN (e.g. DATABASE_URL). That
-// resolution lives in the host/app layer.
 func isConnectionErr(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
 	for _, frag := range []string{
-		"unable to open database file", // SQLite SQLITE_CANTOPEN (bad / unwritable path)
+		"unable to open database file",
 		"connection refused",
 		"connection reset",
 		"no such host",
@@ -143,12 +101,6 @@ func isConnectionErr(err error) bool {
 	return false
 }
 
-// wrapConnErr adds an actionable reachability hint when err is a
-// connection-class failure. The hint is intentionally generic ("check the
-// database connection / DATABASE_URL") because framework/migrate does not
-// know the DSN source; the host layer that opens *sql.DB from DATABASE_URL is
-// where a precise message belongs. Non-connection errors pass through
-// unchanged.
 func wrapConnErr(err error) error {
 	if err == nil || !isConnectionErr(err) {
 		return err
@@ -156,10 +108,6 @@ func wrapConnErr(err error) error {
 	return fmt.Errorf("%w (cannot reach the database: check the database connection / DATABASE_URL)", err)
 }
 
-// isTransientProbeErr reports whether a failed `SELECT version()` looks
-// like a transport / availability problem rather than "this engine has
-// no such function". SQLite reports the latter as a parse-time "no such
-// function" and is not worth retrying.
 func isTransientProbeErr(err error) bool {
 	msg := stripQuoted(strings.ToLower(err.Error()))
 	for _, deterministic := range []string{"no such function", "unknown function", "syntax error"} {
@@ -170,11 +118,6 @@ func isTransientProbeErr(err error) bool {
 	return true
 }
 
-// stripQuoted removes double-quoted spans from an error message. Postgres
-// quotes identifiers it reports back, a role named "syntax error" turns an
-// authentication failure into text that reads like SQLite's parse error, and
-// treating that as deterministic would resolve a Postgres outage to a
-// confident SQLite answer.
 func stripQuoted(msg string) string {
 	var b strings.Builder
 	inQuote := false
@@ -190,65 +133,30 @@ func stripQuoted(msg string) string {
 	return b.String()
 }
 
-// execQueryer is the subset of *sql.DB / *sql.Tx the migrator needs: Exec for
-// DDL, Query to re-read live columns under the advisory lock. Taking the
-// interface lets AutoMigrate run every entity's DDL inside one transaction
-// (passing the *sql.Tx) while MigrateEntity still works against the raw pool.
 type execQueryer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-// AutoMigrate converges the database schema with all registered entities:
-// creates missing tables and adds missing columns. Equivalent to
-// AutoMigrateContext with a background context. See AutoMigrateContext for the
-// full contract (advisory lock + single-transaction atomicity).
+// AutoMigrate is AutoMigrateContext with a background context.
 func AutoMigrate(db *sql.DB, registry entity.Registry) error {
 	return AutoMigrateContext(context.Background(), db, registry)
 }
 
-// AutoMigrateContext converges the database schema with all registered
-// entities: missing tables are created, and a field declared on an entity
-// whose existing table lacks the column is added via ALTER TABLE ADD COLUMN
-// (additive only: boot never drops, renames, or retypes; those stay behind
-// an explicit AllowDestructive diff apply). Entities are migrated in dependency order so FK
-// targets exist before referencing tables, and CREATE TABLE/INDEX IF NOT
-// EXISTS keeps re-runs safe.
-//
-// Two production guarantees beyond the bare DDL:
-//
-//   - Advisory lock. The whole run is serialized by a database advisory lock
-//     (coremig.WithAdvisoryLock), so booting N replicas at once cannot race
-//     two concurrent streams of DDL against the same database. On SQLite the
-//     lock is the _gofastr_migrate_lock leased lock row (the twin of the seed
-//     lease): SQLite's file-level locking serializes individual statements,
-//     not the read → DDL → commit sequence, so without it two replicas
-//     booting against one file raced their DDL streams.
-//   - Atomicity. All DDL runs inside one transaction; a failure on entity K
-//     rolls back entities 1..K-1 too, so a botched migration never leaves a
-//     half-created schema behind. Both Postgres and SQLite support
-//     transactional DDL.
-//
-// db == nil is a silent no-op, matching the rest of the boot path.
+// AutoMigrateContext converges the database with the registered entities
+// additively: it creates missing tables and indexes and adds missing
+// columns, and never drops, renames or retypes. The run holds the migration
+// lock and is one transaction, so a failure leaves no partial schema.
+// db == nil is a no-op.
 func AutoMigrateContext(ctx context.Context, db *sql.DB, registry entity.Registry) error {
 	return AutoMigratePlanContext(ctx, db, Plan{Registry: registry})
 }
 
-// AutoMigratePlanContext is AutoMigrateContext for a full Plan: entity and
-// raw-Table schema PLUS stored routines (functions / procedures / triggers /
-// views). Tables are created first, then each routine's Up runs (idempotent
-// CREATE OR REPLACE), all inside the one advisory-locked transaction so the
-// whole schema converges atomically.
-//
-// Routines declare their engine via Routine.Dialect; routines whose Dialect
-// doesn't match the detected dialect are skipped (one slog.Info per boot lists
-// them). Every matching routine's Up STILL runs every boot. Boot is
-// idempotent and self-heals against DB-side drift; it does NOT skip based on
-// a stored checksum. The gofastr_routines ledger table records (name, sha256
-// of Up, applied_at) for each routine that ran, inside the SAME tx, so an
-// agent introspecting the running app can see what landed and what drifted.
-// Ledger rows whose name has no registered routine trigger a loud slog.Warn
-// (additive-only: boot never auto-drops).
+// AutoMigratePlanContext is AutoMigrateContext for a full Plan: tables,
+// then views, then every routine whose Dialect is empty or matches the
+// database, in the same transaction. Each matching routine's Up runs on
+// every boot, and the gofastr_routines ledger records its checksum. A
+// ledger row with no registered routine is logged, never dropped.
 func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 	if db == nil {
 		return nil
@@ -256,11 +164,6 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 	var ordered []*entity.Entity
 	all := map[string]*entity.Entity{}
 	if plan.Registry != nil {
-		// One entity per name, but with the field/index/relation set drawn
-		// from the UNION of every registered version. Two versions of one
-		// entity share one DB table; the table is migrated once, from the
-		// union, so a column only v2 declares is created at boot exactly as
-		// a new column on a single-version entity is. See UnionEntities.
 		all = UnionEntities(plan.Registry)
 		var err error
 		ordered, err = topoSortEntities(all)
@@ -278,10 +181,6 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 	if err := checkGeneratedPivotDeclarations(ordered, all, dialect); err != nil {
 		return err
 	}
-	// Partition routines into "applies on this dialect" vs "skipped". The
-	// skip set is logged in ONE line per boot so a misconfigured dialect tag
-	// (e.g. a Postgres stored proc left in the plan against a SQLite dev DB)
-	// is visible without spamming per-routine lines.
 	appliedRoutines, skippedRoutines := partitionRoutinesByDialect(plan.Routines, dialect)
 	if len(skippedRoutines) > 0 {
 		names := make([]string, 0, len(skippedRoutines))
@@ -296,15 +195,9 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 			"count", len(names),
 		)
 	}
-	// Pre-read every managed table's live columns in one pass (existence and
-	// column-drift detection in a single bulk query). This runs BEFORE the
-	// advisory lock. When drift is detected, addMissingColumns re-reads on the
-	// lock-holding connection so a peer replica's concurrent ALTERs are seen.
 	liveByTable := map[string]map[string]string{}
 	tableNames := make([]string, 0, len(ordered))
 	for _, ent := range ordered {
-		// Same skip set as migrateEntity: unmanaged objects and field-less
-		// entities get no DDL, so they need no live read either.
 		if ent.Config.Unmanaged || len(ent.GetFields()) == 0 {
 			continue
 		}
@@ -328,12 +221,6 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 		if err != nil {
 			return fmt.Errorf("migrate: begin tx: %w", err)
 		}
-		// Always roll back on the way out. A no-op after a successful Commit,
-		// but critical on the error AND panic paths: migrateEntity can panic
-		// (e.g. an expression index with no name fails loud), and a leaked open
-		// transaction would wedge the pinned connection when it's returned to
-		// the pool. The deferred rollback runs before WithAdvisoryLock closes
-		// the conn, and the panic still propagates to the caller.
 		defer func() { _ = tx.Rollback() }()
 		var deferred []SchemaChange
 		for _, ent := range ordered {
@@ -346,8 +233,6 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 				return fmt.Errorf("migrate %s: %w", ent.GetName(), err)
 			}
 		}
-		// The foreign keys a key change detached whose child gained their
-		// columns only in its own convergence above.
 		for _, c := range deferred {
 			if _, err := tx.ExecContext(ctx, c.SQL); err != nil {
 				return fmt.Errorf("migrate: %s: %w", c.Summary, err)
@@ -356,52 +241,24 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 		if err := migratePivotTables(ctx, tx, ordered, all, dialect); err != nil {
 			return err
 		}
-		// The routine ledger, dialect skip log, orphan WARN, and summary
-		// line all apply ONLY when the plan carries at least one routine.
-		// Gating here keeps apps that don't use routines from acquiring a
-		// phantom gofastr_routines table and a per-boot summary line, and
-		// keeps the no-routine sqlmock/sequence tests unchanged.
 		if len(plan.Routines) > 0 {
-			// Ledger lives in the same tx as routine application so the
-			// bookkeeping cannot diverge from what landed on the DB. Created
-			// on every boot (IF NOT EXISTS), cheap and means an older
-			// deployment upgrading picks it up without a dedicated migration.
 			if err := ensureRoutineLedger(ctx, tx, dialect); err != nil {
 				return fmt.Errorf("migrate: ensure routine ledger: %w", err)
 			}
-			// Previous ledger state is needed to compute the first-time vs
-			// changed-vs-unchanged summary. Read inside the tx so we see the
-			// pre-this-boot view.
 			prevLedger, err := readRoutineLedger(ctx, tx)
 			if err != nil {
 				return fmt.Errorf("migrate: read routine ledger: %w", err)
 			}
 
-			// Views after tables (they SELECT from them), ordered so a view
-			// that depends on another view follows it. Views do NOT carry a
-			// Dialect tag. Their render() already takes dialect and emits
-			// the right DDL per engine (PG: CREATE OR REPLACE VIEW; SQLite:
-			// DROP IF EXISTS + CREATE; PG MATERIALIZED via the Materialized
-			// bool). Adding a redundant Dialect field to View would be
-			// ambiguous (Materialized already says "PG-only"), so View
-			// stays dialect-untagged.
 			if err := applyViews(ctx, tx, plan.Views, dialect); err != nil {
 				return err
 			}
-			// Routines after views: a trigger/function may reference a
-			// view. CREATE OR REPLACE keeps re-runs idempotent. Every
-			// matching routine runs every boot; the ledger records the
-			// checksum but does not gate.
 			for _, r := range appliedRoutines {
 				if _, err := tx.ExecContext(ctx, r.Up); err != nil {
 					return fmt.Errorf("migrate routine %s: %w", r.Name, err)
 				}
 			}
 
-			// Upsert ledger rows for every applied routine. The checksum
-			// change is how introspection (app_routines) detects "the
-			// registered body drifted since last boot", but the apply
-			// above is unconditional.
 			var (
 				appliedCount   = len(appliedRoutines)
 				changedCount   int
@@ -421,20 +278,11 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 				}
 			}
 
-			// Ledger rows whose name has no registered routine: additive-
-			// only means we DO NOT drop them: the operator removed the
-			// Routine from code, but boot doesn't know whether the DB
-			// object is still needed by ad-hoc SQL, a view, or another
-			// service. Surface each one loudly.
 			registeredNames := make(map[string]struct{}, len(appliedRoutines)+len(skippedRoutines))
 			for _, r := range appliedRoutines {
 				registeredNames[r.Name] = struct{}{}
 			}
 			for _, r := range skippedRoutines {
-				// Skipped-by-dialect routines ARE still registered. They
-				// should NOT be reported as orphaned. They keep their ledger
-				// row from whichever dialect last applied them; on a future
-				// dialect switch the matching engine will reconcile.
 				registeredNames[r.Name] = struct{}{}
 			}
 			var orphaned []string
@@ -459,9 +307,6 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 				"orphaned", len(orphaned),
 			)
 		} else {
-			// No routines in the plan, but views still need to run: keep
-			// the existing view-apply loop here so a plan with views but
-			// no routines doesn't silently skip its views.
 			if err := applyViews(ctx, tx, plan.Views, dialect); err != nil {
 				return err
 			}
@@ -474,20 +319,6 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 	}); err != nil {
 		return fmt.Errorf("migrate: %w", wrapConnErr(err))
 	}
-	// Post-migration scan for the pre-v0.67 owner-column foreign key. A
-	// database created by those releases may still carry one, and with
-	// foreign_keys now on, a create on the table fails with a bare constraint
-	// error that names neither the cause nor the fix. A warning, not an
-	// error: an app that creates no rows is otherwise fine, and failing its
-	// boot on migration day would trade a loud write failure for a dead app.
-	//
-	// The scan reads the schema, so it cannot know where the app's identities
-	// actually live. A single-column key on the owner column pointing at a
-	// table that DOES hold the stamped ids is satisfiable and harmless, and
-	// the scan reports it anyway. The warning says what was found and leaves
-	// the conclusion to the reader for that reason: claiming "every create
-	// fails" was wrong for exactly that database, and `repair --apply` would
-	// drop a constraint that was doing its job.
 	if dialect == DialectSQLite {
 		stale, scanErr := FindStaleOwnerForeignKeys(ctx, db, plan.Registry)
 		if scanErr != nil {
@@ -505,12 +336,6 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 	return nil
 }
 
-// partitionRoutinesByDialect splits routines into (appliesHere, skippedHere)
-// based on whether each routine's declared Dialect matches the running
-// dialect. A zero-value Dialect (the empty string) means "runs on every
-// dialect", today's behavior, so untagged routines always land in the
-// applies set. The order of both outputs preserves plan.Routines order so
-// apply + summary stay deterministic.
 func partitionRoutinesByDialect(routines []Routine, running Dialect) (applies, skipped []Routine) {
 	applies = make([]Routine, 0, len(routines))
 	skipped = make([]Routine, 0)
@@ -524,11 +349,9 @@ func partitionRoutinesByDialect(routines []Routine, running Dialect) (applies, s
 	return applies, skipped
 }
 
-// MigrateEntity creates the table for a single entity if it doesn't exist.
-// It does not emit FK constraints since it has no view of the wider registry,
-// and it does not add columns to an existing table; callers that need foreign
-// keys or column convergence should call AutoMigrate. The dialect is
-// auto-detected from db.
+// MigrateEntity creates one entity's table and indexes if the table does
+// not exist, with no foreign keys and no column convergence (AutoMigrate
+// does both). The dialect is detected from db.
 func MigrateEntity(db *sql.DB, ent *entity.Entity) error {
 	dialect, err := detectDialectFailClosed(db)
 	if err != nil {
@@ -537,27 +360,12 @@ func MigrateEntity(db *sql.DB, ent *entity.Entity) error {
 	return migrateEntity(context.Background(), db, ent, nil, dialect, nil, nil, nil)
 }
 
-// MigrateEntityDialect is the explicit-dialect variant used by callers that
-// already know the target (e.g. CLI codegen, tests).
+// MigrateEntityDialect is MigrateEntity for a known dialect.
 func MigrateEntityDialect(db *sql.DB, ent *entity.Entity, dialect Dialect) error {
 	return migrateEntity(context.Background(), db, ent, nil, dialect, nil, nil, nil)
 }
 
-// migrateEntity is the shared implementation. When `all` is non-nil it is
-// consulted for FK target tables; missing targets return an error before any
-// DDL runs. exec is either the *sql.DB pool (single-entity callers) or the
-// shared *sql.Tx (AutoMigrate's atomic run). live is the table's pre-read
-// column set: empty/nil means "table absent (or unknown, single-entity
-// callers)" and triggers CREATE TABLE IF NOT EXISTS; non-empty means the
-// table pre-exists and is converged additively via addMissingColumns. Column
-// adds run BEFORE index DDL so a new field and its index land in one boot.
-// lk is the existing table's pre-read primary key (nil for a new table, or
-// a single-entity caller); convergeKey checks it after the column adds, and
-// appends to deferred the foreign keys its key change re-adds only once
-// every table has converged.
 func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string, lk *liveKey, deferred *[]SchemaChange) error {
-	// Unmanaged objects (views, FTS virtual tables, external/legacy tables) are
-	// created elsewhere. The migration system emits no DDL for them.
 	if ent.Config.Unmanaged {
 		return nil
 	}
@@ -565,10 +373,6 @@ func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, al
 		return nil
 	}
 
-	// AutoMigrate's read ran before the lock, so a table it saw absent may
-	// have been created since by a peer booting an older version, without
-	// this version's columns. CREATE TABLE IF NOT EXISTS would then do
-	// nothing; read it again here, under the lock, and converge it.
 	if len(live) == 0 && all != nil {
 		table := ent.GetTable()
 		fresh, err := readEntityColumnsQ(ctx, exec, table, dialect)
@@ -615,13 +419,6 @@ func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, al
 		return fmt.Errorf("migrate %s: invalid table name %q: %w", ent.GetName(), ent.GetTable(), err)
 	}
 
-	// Secondary indices: emit AFTER the table exists (and after column adds,
-	// so an index on a just-added column resolves). CREATE INDEX IF NOT
-	// EXISTS works on both engines so re-running AutoMigrate is idempotent.
-	// An index with neither Columns nor Expression is a no-op (legacy: empty
-	// Columns used to silently skip; we preserve that for the all-zero case).
-	// entityIndices adds the automatic belongs_to FK indices, the same list
-	// the diff, the snapshot and the SQLite rebuild use.
 	for _, idx := range entityIndices(ent) {
 		if _, err := exec.ExecContext(ctx, indexDDL(dialect, safeTable, idx)); err != nil {
 			return fmt.Errorf("create index on %s: %w", ent.GetTable(), err)
@@ -630,23 +427,6 @@ func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, al
 	return nil
 }
 
-// addMissingColumns converges an EXISTING table additively: every field the
-// entity declares that the live table lacks is added via ALTER TABLE ADD
-// COLUMN, the exact DDL the declarative diff emits (shared
-// diffEntityFromLive path, so boot and the diff can never disagree).
-// Boot never drops, renames, or retypes: destructive changes are filtered out
-// here and remain behind ApplySchemaDiffWithOptions with AllowDestructive set.
-// (The old `migrate diff --apply` CLI path is gone. It applied an app spec
-// straight onto a live DB; `gofastr migrate generate` emits a reviewable
-// migration instead.)
-//
-// preRead was captured BEFORE the advisory lock, so when it shows drift the
-// columns are re-read on the lock-holding connection and the diff recomputed:
-// a replica that lost the boot race sees its peer's ALTERs and no-ops instead
-// of failing on a duplicate column. (SQLite takes no lock: concurrent
-// multi-process boots could still collide there; the failed boot rolls back
-// and a restart converges.) In the steady state (no drift) this adds zero
-// queries inside the transaction.
 func addMissingColumns(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, preRead map[string]string) error {
 	adds, err := additiveChanges(ent, all, dialect, preRead)
 	if err != nil || len(adds) == 0 {
@@ -657,9 +437,6 @@ func addMissingColumns(ctx context.Context, exec execQueryer, ent *entity.Entity
 		return fmt.Errorf("re-read columns for %s: %w", ent.GetTable(), err)
 	}
 	if len(liveNow) == 0 {
-		// Table vanished between pre-read and lock (or is invisible to this
-		// session), leave it to the CREATE path on the next boot rather than
-		// guessing here.
 		return nil
 	}
 	adds, err = additiveChanges(ent, all, dialect, liveNow)
@@ -674,13 +451,6 @@ func addMissingColumns(ctx context.Context, exec execQueryer, ent *entity.Entity
 	return nil
 }
 
-// additiveChanges returns the ADDITIVE subset of the schema diff for one
-// entity against a NON-EMPTY live column set: only CREATE TABLE and ALTER
-// TABLE ADD COLUMN. Destructive changes (DROP COLUMN, ALTER TYPE) are
-// excluded, AND non-destructive-but-non-additive RENAMEs are excluded too: a
-// rename belongs in a reviewable `migrate generate` file, never silent boot
-// convergence (a stale Renames hint could otherwise rename the wrong in-use
-// column at boot). Callers guarantee live is non-empty.
 func additiveChanges(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, live map[string]string) ([]SchemaChange, error) {
 	changes, err := diffEntityFromLive(ent, all, dialect, live)
 	if err != nil {
@@ -696,28 +466,10 @@ func additiveChanges(ent *entity.Entity, all map[string]*entity.Entity, dialect 
 	return adds, nil
 }
 
-// isRenameChange reports whether a change's SQL is a RENAME COLUMN. Used by
-// additiveChanges to keep boot convergence additive-only: a rename is
-// non-destructive (it preserves data) but is NOT an additive change.
 func isRenameChange(sql string) bool {
-	// Space-delimited so a string literal like DEFAULT 'rename column'
-	// (quote-bordered, not space-bordered) cannot masquerade as a rename and
-	// get an ADD COLUMN discarded at boot. SafeIdent allows no spaces in
-	// identifiers, so a real rename always emits " RENAME COLUMN ".
 	return strings.Contains(strings.ToUpper(sql), " RENAME COLUMN ")
 }
 
-// indexDDL builds the CREATE INDEX statement for one declared Index. Name
-// is synthesised from the table + columns when empty. The table parameter
-// must already be validated via SafeIdent.
-//
-// When idx.Expression is non-empty, the body of the index parens is the
-// raw expression (so functional indices like `lower(food)` work).
-// Expression indices require an explicit Name. There's no safe slug
-// for an arbitrary expression. The expression itself is rejected if it
-// contains a semicolon or a SQL line/block comment marker, which is
-// the minimal sanity check appropriate for an operator-supplied
-// schema declaration loaded at startup.
 func indexDDL(dialect Dialect, table string, idx entity.Index) string {
 	name := idx.Name
 	if name == "" {
@@ -736,11 +488,6 @@ func indexDDL(dialect Dialect, table string, idx entity.Index) string {
 	} else {
 		safeCols := make([]string, len(idx.Columns))
 		for i, col := range idx.Columns {
-			// Validate, and quote only a keyword (folded), the convention of
-			// columnDefs. Quoting a name as written would make Postgres
-			// preserve case here while the CREATE TABLE folded the column to
-			// lowercase, so "UserName" would reference a column that doesn't
-			// exist.
 			safeCols[i] = ddlIdent(query.MustIdent(col))
 		}
 		body = strings.Join(safeCols, ", ")
@@ -748,13 +495,6 @@ func indexDDL(dialect Dialect, table string, idx entity.Index) string {
 	return createIndexSQL(dialect, idx.Unique, safeName, table, body)
 }
 
-// sanitizeIndexExpression rejects index expressions that contain SQL
-// statement terminators or comment markers. The expression is rendered
-// verbatim into DDL at startup, so we want to fail loud on suspicious
-// payloads rather than silently emit a possibly-broken statement.
-// Anything more expressive (real SQL parsing) belongs in a separate
-// validator. For now this catches the obvious "operator pasted a
-// trailing semicolon" / "comment block" footguns.
 func sanitizeIndexExpression(expr string) string {
 	trimmed := strings.TrimSpace(expr)
 	if trimmed == "" {
@@ -768,11 +508,6 @@ func sanitizeIndexExpression(expr string) string {
 	return trimmed
 }
 
-// foreignKeyClauses produces "FOREIGN KEY (col) REFERENCES target(id)"
-// fragments for every BelongsTo relation declared on the entity, naming
-// every column of a foreign key that references a composite key:
-// "FOREIGN KEY (order_store, order_no) REFERENCES orders(store, no)".
-// Targets must exist in `all` or the function returns an error.
 func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect) ([]string, error) {
 	fks, err := declaredForeignKeys(ent, all)
 	if err != nil {
@@ -785,9 +520,6 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity, dialec
 	return out, nil
 }
 
-// declaredFK is one foreign key an entity's relations declare: its
-// columns, the table and key columns they reference (paired in order),
-// and the ON DELETE action ("" for none).
 type declaredFK struct {
 	cols     []string
 	target   *entity.Entity
@@ -796,12 +528,6 @@ type declaredFK struct {
 	onDelete entity.OnDeleteAction
 }
 
-// clause renders the foreign key as a table constraint. Identifiers are
-// validated and left bare unless they are keywords (ddlIdent, which quotes
-// them folded), the convention of columnDefs. Quoting a name as written
-// would preserve case on Postgres while the referenced CREATE TABLE folded
-// its identifiers to lowercase, so a mixed-case target like "MixedAccount"
-// would resolve to a relation that doesn't exist.
 func (fk declaredFK) clause(dialect Dialect) string {
 	c := fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
 		strings.Join(ddlIdents(fk.cols), ", "), referencedTable(dialect, fk.refTable), strings.Join(ddlIdents(fk.refCols), ", "))
@@ -811,8 +537,6 @@ func (fk declaredFK) clause(dialect Dialect) string {
 	return c
 }
 
-// declaredForeignKeys returns the foreign keys foreignKeyClauses renders,
-// with every identifier already validated.
 func declaredForeignKeys(ent *entity.Entity, all map[string]*entity.Entity) ([]declaredFK, error) {
 	var out []declaredFK
 	seen := make(map[string]bool)
@@ -825,18 +549,6 @@ func declaredForeignKeys(ent *entity.Entity, all map[string]*entity.Entity) ([]d
 		if seen[dedup] {
 			continue
 		}
-		// The owner column is stamped by the framework from the session's
-		// identity, and that identity lives in the auth battery's own table
-		// (auth_users), not in any entity the app declares. Emitting a foreign
-		// key on it produces a constraint the framework itself violates on
-		// every create: crud stamps an auth id into a column declared to
-		// reference an app entity, and no row there has that id.
-		//
-		// SQLite never checked, so the contradiction was invisible until
-		// foreign keys were turned on. Postgres has always rejected it. Skip
-		// the clause rather than emit a constraint we guarantee to break; the
-		// relation still resolves for reads if the app does keep the two
-		// tables in sync.
 		if len(fks) == 1 && ent.Config.Scope.OwnerField != "" && strings.EqualFold(fks[0], ent.Config.Scope.OwnerField) {
 			seen[dedup] = true
 			continue
@@ -877,14 +589,6 @@ func declaredForeignKeys(ent *entity.Entity, all map[string]*entity.Entity) ([]d
 	return out, nil
 }
 
-// checkForeignKeyTypes refuses a foreign key of several columns whose
-// columns differ in type from the key columns they reference. Each such
-// column is a plain field typed by its own declaration, where a one-column
-// Relation field takes its target's key type: Postgres refuses the
-// constraint when TEXT references an integer, and SQLite compares the two
-// under different affinities, so a join matches nothing. The types are
-// compared as Postgres would declare them, on either dialect, so an app
-// that boots on SQLite boots on Postgres.
 func checkForeignKeyTypes(ent *entity.Entity, rel entity.Relation, all map[string]*entity.Entity) error {
 	fks := rel.ForeignKey
 	if len(fks) < 2 {
@@ -908,8 +612,6 @@ func checkForeignKeyTypes(ent *entity.Entity, rel entity.Relation, all map[strin
 	return nil
 }
 
-// typeFamily folds the Postgres column types a foreign key may join
-// across: every integer width, and text of any length.
 func typeFamily(t string) string {
 	t = strings.ToUpper(t)
 	if i := strings.IndexByte(t, '('); i >= 0 {
@@ -924,7 +626,6 @@ func typeFamily(t string) string {
 	return t
 }
 
-// safeIdents validates each column name with query.SafeIdent.
 func safeIdents(cols []string) ([]string, error) {
 	out := make([]string, len(cols))
 	for i, c := range cols {
@@ -937,10 +638,6 @@ func safeIdents(cols []string) ([]string, error) {
 	return out, nil
 }
 
-// mutatingFKReferrers names the tables whose foreign keys onto ent's table
-// carry an ON DELETE action that changes rows: every generated pivot of a
-// many_to_many on either side (always CASCADE), and each belongs_to that
-// declares CASCADE or SET NULL. Sorted, without duplicates.
 func mutatingFKReferrers(ent *entity.Entity, all map[string]*entity.Entity) []string {
 	if ent == nil {
 		return nil
@@ -958,7 +655,6 @@ func mutatingFKReferrers(ent *entity.Entity, all map[string]*entity.Entity) []st
 				if all[rel.Entity] != ent || len(rel.ForeignKey) == 0 {
 					continue
 				}
-				// foreignKeyClauses emits no key on the owner column.
 				if other.Config.Scope.OwnerField != "" && len(rel.ForeignKey) == 1 && strings.EqualFold(rel.ForeignKey[0], other.Config.Scope.OwnerField) {
 					continue
 				}
@@ -971,35 +667,11 @@ func mutatingFKReferrers(ent *entity.Entity, all map[string]*entity.Entity) []st
 	return slices.Sorted(maps.Keys(seen))
 }
 
-// UnionEntities returns one entity per name, with the field, index, relation,
-// and seed sets drawn from the UNION of every registered version of that
-// name. Two versions of one entity share one DB table; the table is migrated
-// once, from the union, so a column only v2 declares is treated as an
-// additive change and created at boot, exactly as a new column on a
-// single-version entity is today.
-//
-// This is the single shared helper every consumer of the multi-version
-// registry routes through. Migration (AutoMigrate/DiffSchema), the schema
-// snapshot, the seed runner, and data export all call it so they agree on
-// what "all versions of this physical entity" means. Iterating
-// Registry.All() instead returns one representative per name and silently
-// drops a field, index, or seed declared only on a non-representative
-// version.
-//
-// Single-version names are returned as-is (the registered pointer,
-// unmodified) so the single-version migration path is byte-for-byte
-// unchanged. Multi-version names get a shallow-cloned entity whose
-// Config.Fields / Indices / Relations are the deduplicated union; the
-// base is the representative (unversioned if present, else the
-// lex-first version) so Table, PrimaryKey, Timestamps, SoftDelete, etc.
-// come from a real version rather than a synthesis.
-//
-// Conflict detection at registration (Registry.checkColumnConflicts +
-// checkVersionCompat) guarantees no two versions declare the same column,
-// index, foreign key, table, or managed posture with incompatible physical
-// definitions, and at most one declares a Seed, so the union is always
-// well-defined: where two versions both declare something, either definition
-// is DDL-equivalent.
+// UnionEntities returns one entity per name. A name with one registered
+// version maps to that entity unchanged; a name with several maps to a copy
+// of its unversioned (else lex-first) version whose fields, indexes,
+// relations and seed are the union of every version's, first declaration
+// winning.
 func UnionEntities(reg entity.Registry) map[string]*entity.Entity {
 	sorted := reg.AllSorted()
 	byName := make(map[string][]*entity.Entity, len(sorted))
@@ -1017,12 +689,6 @@ func UnionEntities(reg entity.Registry) map[string]*entity.Entity {
 	return out
 }
 
-// mergeVersions builds the synthetic merged entity for one name that has
-// multiple registered versions. The base (Table, PrimaryKey, scope flags,
-// Unmanaged) comes from the representative, unversioned if present,
-// otherwise versions[0] (AllSorted orders "" before "/api/v1" etc., so the
-// lex-first version is versions[0] when none is unversioned). Fields,
-// Indices, Relations, and Seed are the deduplicated union across every version.
 func mergeVersions(versions []*entity.Entity) *entity.Entity {
 	base := versions[0]
 	for _, e := range versions {
@@ -1031,22 +697,13 @@ func mergeVersions(versions []*entity.Entity) *entity.Entity {
 			break
 		}
 	}
-	merged := *base // shallow clone, only Config is rebuilt below
+	merged := *base
 	merged.Config = mergeEntityConfig(base.Config, versions)
 	return &merged
 }
 
-// mergeEntityConfig returns a copy of base with Fields, Indices, Relations,
-// and Seed replaced by the deduplicated union across all versions. The
-// first declaration wins on a name clash (for fields and indices) or on a
-// ForeignKey clash (for relations); the sole Seed (at most one, enforced at
-// registration) is propagated from whichever version declares it. Conflict
-// detection at registration already guaranteed those clashing declarations
-// are DDL-equivalent, so "first wins" is the same as "any wins".
 func mergeEntityConfig(base entity.EntityConfig, versions []*entity.Entity) entity.EntityConfig {
-	cfg := base // copy, slices below are replaced, not aliased
-
-	// Fields: union by lowercased name. First occurrence wins.
+	cfg := base
 	seenField := make(map[string]bool)
 	fields := make([]schema.Field, 0, len(base.Fields))
 	for _, v := range versions {
@@ -1061,11 +718,6 @@ func mergeEntityConfig(base entity.EntityConfig, versions []*entity.Entity) enti
 	}
 	cfg.Fields = fields
 
-	// Indices: union by name. An unnamed index is deduped by the same
-	// synthesised slug indexDDL would produce, so two versions declaring
-	// the same unnamed index do not double-emit. CREATE INDEX IF NOT
-	// EXISTS makes any residual duplicate harmless, but deduping keeps the
-	// emitted DDL set clean.
 	seenIdx := make(map[string]bool)
 	var indices []entity.Index
 	for _, v := range versions {
@@ -1085,18 +737,13 @@ func mergeEntityConfig(base entity.EntityConfig, versions []*entity.Entity) enti
 	}
 	cfg.Indices = indices
 
-	// Relations: union by ForeignKey (the physical column). foreignKeyClauses
-	// already dedupes by ForeignKey for the CREATE TABLE FK clauses, so
-	// duplicates are harmless, but unioning here keeps the merged entity's
-	// relation list honest for topo-sort (a BelongsTo in any version means
-	// the dependency must be respected at migrate time).
 	seenRel := make(map[string]bool)
 	var rels []entity.Relation
 	for _, v := range versions {
 		for _, rel := range v.Config.Relations {
 			key := strings.Join(rel.ForeignKey, ",")
 			if key == "" {
-				key = rel.Name // a relation with no FK column (many_to_many), dedupe by logical name
+				key = rel.Name
 			}
 			if seenRel[key] {
 				continue
@@ -1107,12 +754,6 @@ func mergeEntityConfig(base entity.EntityConfig, versions []*entity.Entity) enti
 	}
 	cfg.Relations = rels
 
-	// Seed: at most one version may declare a Seed (enforced at registration
-	// by checkVersionCompat), so propagate the sole seed, plus its SeedFS /
-	// SeedPath context, into the merged config regardless of which version is
-	// the representative. Without this, a seed declared only on a
-	// non-representative version would be invisible to RunSeeds, which iterates
-	// this union rather than Registry.All() (F11).
 	for _, v := range versions {
 		if v.Config.Seed != nil {
 			cfg.Seed = v.Config.Seed
@@ -1124,12 +765,7 @@ func mergeEntityConfig(base entity.EntityConfig, versions []*entity.Entity) enti
 	return cfg
 }
 
-// topoSortEntities orders entities so referenced tables come before their
-// referencers. Cycles are broken by name-sorted insertion at the cycle
-// detection point. This is conservative; SQLite tolerates forward refs in
-// CREATE TABLE because FK enforcement is per-statement, not at create time.
 func topoSortEntities(all map[string]*entity.Entity) ([]*entity.Entity, error) {
-	// Stable input order
 	names := make([]string, 0, len(all))
 	for n := range all {
 		names = append(names, n)
@@ -1146,19 +782,11 @@ func topoSortEntities(all map[string]*entity.Entity) ([]*entity.Entity, error) {
 			return nil
 		}
 		if tempMark[name] {
-			return nil // cycle, break it; safe for IF NOT EXISTS DDL
+			return nil
 		}
-		// name is always present: the outer loop iterates all's keys and every
-		// recursive visit(rel.Entity) is guarded by the all[rel.Entity] check
-		// below, so no membership test is needed here.
 		ent := all[name]
 		tempMark[name] = true
 		for _, rel := range ent.Config.Relations {
-			// A foreign key names one column per column of the key it
-			// references; the end holding it may have any key. Checked here,
-			// for every table and not only a new one, so a target whose key
-			// changes shape is refused while an existing child still
-			// references its old key.
 			if err := entity.CheckRelationKeys(ent, rel, all[rel.Entity]); err != nil {
 				return fmt.Errorf("entity %q relation %q: %w", name, rel.Name, err)
 			}
@@ -1193,12 +821,10 @@ func topoSortEntities(all map[string]*entity.Entity) ([]*entity.Entity, error) {
 	return out, nil
 }
 
-// SQLType maps a schema FieldType to a SQL column type for the given dialect.
-// Postgres needs concrete types (TIMESTAMPTZ, REAL, BOOLEAN); SQLite is more
-// permissive but still benefits from explicit declarations.
+// SQLType maps a field to its SQL column type for dialect; a RawType is
+// returned as written. An Int is BIGINT on Postgres (BIGSERIAL when
+// auto-incremented) and INTEGER on SQLite.
 func SQLType(f schema.Field, dialect Dialect) string {
-	// An explicit RawType wins, the escape hatch for column types the
-	// FieldType enum doesn't model (NUMERIC(p,s), INET, custom domains, …).
 	if f.RawType != "" {
 		return f.RawType
 	}
@@ -1211,19 +837,6 @@ func SQLType(f schema.Field, dialect Dialect) string {
 	case schema.Text:
 		return "TEXT"
 	case schema.Int:
-		// Int holds an int64, which is what validation accepts and what
-		// SQLite's INTEGER stores. Postgres's INTEGER is 32-bit, so an
-		// Int there is BIGINT: a value past 2^31 used to pass validation
-		// and fail the insert. A table an older build made keeps its
-		// INTEGER columns (typesEquivalent), and widening one is a
-		// hand-written migration.
-		//
-		// An auto-incrementing integer needs a real sequence on Postgres:
-		// BIGSERIAL is BIGINT + NOT NULL + a bigint sequence + DEFAULT
-		// nextval(). A plain "BIGINT PRIMARY KEY" has no sequence and never
-		// auto-increments. SQLite keeps INTEGER. Its "INTEGER PRIMARY KEY"
-		// aliases the rowid and auto-increments when the column is omitted
-		// from INSERT.
 		if dialect == DialectPostgres {
 			if f.AutoGenerate == schema.AutoIncrement {
 				return "BIGSERIAL"
@@ -1267,25 +880,10 @@ func SQLType(f schema.Field, dialect Dialect) string {
 	}
 }
 
-// ColumnDefaultClause returns the trailing " DEFAULT …" fragment a
-// column definition should include, or "" when none applies. Centralises
-// two decisions every DDL site has to make:
-//
-//  1. An explicit f.Default always wins, rendered via SQLDefault.
-//  2. Otherwise, f.AutoGenerate == AutoUUID on Postgres gets
-//     DEFAULT gen_random_uuid() so raw-SQL INSERTs that omit the id
-//     column don't crash with a NOT NULL constraint violation. (PG 13+
-//     ships gen_random_uuid in core; on older versions it lived in
-//     pgcrypto.) SQLite has no built-in UUID generator, the column
-//     stays app-managed there to avoid silently doing nothing.
-//  3. AutoTimestamp is intentionally NOT auto-defaulted. created_at is
-//     populated at insert time by the auto-generate path; updated_at is
-//     stamped by crud's doUpdate on every write. Auto-emitting now() in
-//     the DDL would create a divergence between SQLite (no DEFAULT, app
-//     sets it) and PG (DEFAULT now(), app ALSO sets it, last write wins).
-//
-// The returned fragment is prefixed with a leading space so callers can
-// always concat without inserting one themselves.
+// ColumnDefaultClause returns a column's " DEFAULT ..." fragment, with its
+// leading space, or "". An explicit Default wins; otherwise an AutoUUID
+// field on Postgres defaults to gen_random_uuid(). An AutoTimestamp field
+// gets no default: the application stamps it.
 func ColumnDefaultClause(f schema.Field, dialect Dialect) string {
 	if f.Default != nil {
 		return " DEFAULT " + SQLDefault(f, dialect)
@@ -1296,39 +894,11 @@ func ColumnDefaultClause(f schema.Field, dialect Dialect) string {
 	return ""
 }
 
-// SQLDefault returns the SQL DEFAULT value for a field. Booleans render as
-// TRUE/FALSE for Postgres and 1/0 for SQLite (both engines accept either,
-// but emitting the native form keeps DDL idiomatic and avoids surprises in
-// pg_dump output).
-//
-// SECURITY: anything that isn't a recognised scalar is rendered as a
-// single-quoted string literal with interior quotes DOUBLED, the same
-// escaping the `case string` arm has always applied.
-//
-// The fallback used to be fmt.Sprintf("'%v'", v) with no escaping at
-// all. schema.Field.Default is `any`, so a named string type, a
-// fmt.Stringer, or a []any / map[string]any decoded from JSON all
-// missed `case string` and took that arm, letting the value close the
-// literal and append arbitrary DDL. The output feeds
-// ColumnDefaultClause → both columnDefs (CREATE TABLE) and
-// diffEntityFromLive (ALTER TABLE ADD COLUMN), and a JSON array
-// default reaches here from kiln's add_entity op over HTTP. A
-// verified payload created and COMMITTED an extra column.
+// SQLDefault renders a field's Default as a SQL literal: integers and
+// floats bare, a bool as TRUE/FALSE on Postgres and 1/0 on SQLite, a JSON
+// field's non-string value as its JSON text, and anything else as a quoted
+// string literal that cannot be closed from inside.
 func SQLDefault(f schema.Field, dialect Dialect) string {
-	// A schema.JSON default is JSON text whatever Go value carries it. A
-	// map or slice is the natural spelling (what crud.marshalJSONColumn
-	// writes and schema.validateJSON accepts); a bool or number is a JSON
-	// scalar, and rendering it as a SQL boolean or number put DEFAULT TRUE
-	// on a JSONB column, which Postgres refuses, and stored the integer 1
-	// on SQLite, which reads back as the JSON number 1, not true. A string
-	// is already JSON on the wire and passes through unchanged.
-	//
-	// Marshal, THEN quote. The escaping is not incidental: the old
-	// unescaped fmt.Sprintf("'%v'", v) fallback let a kiln add_entity
-	// payload close the literal and commit an extra column. Marshalling
-	// instead of quoting would reopen exactly that. An unmarshalable
-	// default is a broken declaration: it falls through so the value is
-	// still escaped rather than spliced.
 	if _, isString := f.Default.(string); f.Type == schema.JSON && !isString {
 		if b, err := json.Marshal(f.Default); err == nil {
 			return quoteSQLLiteral(string(b))
@@ -1342,16 +912,11 @@ func SQLDefault(f schema.Field, dialect Dialect) string {
 	case int64:
 		return strconv.FormatInt(v, 10)
 	case json.Number:
-		// A JSON declaration keeps a default past 2^53 this way. It is
-		// written bare only when it matches the JSON number grammar
-		// (RFC 8259 §6): a json.Number is a string type anyone can fill.
 		if jsonNumberLiteral.MatchString(string(v)) {
 			return string(v)
 		}
 		return quoteSQLLiteral(string(v))
 	case float64:
-		// The shortest form that round-trips: %f rounded to six decimals,
-		// so DEFAULT 1e-7 was 0.000000.
 		return strconv.FormatFloat(v, 'g', -1, 64)
 	case bool:
 		if dialect == DialectPostgres {
@@ -1365,24 +930,14 @@ func SQLDefault(f schema.Field, dialect Dialect) string {
 		}
 		return "0"
 	default:
-		// Render, then escape. Never splice the rendering raw. (A JSON
-		// map or slice was marshalled above; fmt's %v debug form put
-		// DEFAULT 'map[a:1]' on a JSONB column.)
 		return quoteSQLLiteral(fmt.Sprintf("%v", v))
 	}
 }
 
-// quoteSQLLiteral wraps s in single quotes and doubles every interior
-// quote, producing a literal that cannot be terminated from inside.
 func quoteSQLLiteral(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
-// fkColumnSQLType resolves the SQL column type for a foreign key referencing ent's pkName.
-// In PostgreSQL, a SERIAL, BIGSERIAL or SMALLSERIAL key is referenced by an
-// INTEGER, BIGINT or SMALLINT column: the serial spelling would give the
-// referencing column a sequence of its own.
-// A key that is itself a Relation column takes the type columnSQLType gives it.
 func fkColumnSQLType(ent *entity.Entity, pkName string, all map[string]*entity.Entity, dialect Dialect) string {
 	return keyColumnType(ent, pkName, all, dialect, map[columnRef]bool{})
 }
@@ -1403,23 +958,10 @@ func keyColumnType(ent *entity.Entity, pkName string, all map[string]*entity.Ent
 	return "TEXT"
 }
 
-// columnSQLType is SQLType for a column of ent. A Relation field is TEXT,
-// which Postgres refuses as a foreign key to an integer key ("foreign key
-// constraint cannot be implemented") and refuses to join against one. When
-// the field is a belongs_to's foreign key and the target's one-column key
-// is an integer, the column takes that integer type, following a target
-// key that is itself such a Relation. SQLite takes it too: a TEXT column
-// stores 10 as '10', so a range filter or a sort on the foreign key
-// compared text and put 10 before 2. A TEXT foreign key an older build
-// made on SQLite diffs as a retype, which the table rebuild applies,
-// converting the stored values.
 func columnSQLType(ent *entity.Entity, f schema.Field, all map[string]*entity.Entity, dialect Dialect) string {
 	return relationColumnType(ent, f, all, dialect, map[columnRef]bool{})
 }
 
-// columnRef names one column of one entity: the cycle guard of a walk
-// along relation keys, which may pass through two columns of one entity
-// (a self-reference to a key that is itself a reference).
 type columnRef struct {
 	e   *entity.Entity
 	col string
@@ -1452,10 +994,6 @@ func relationColumnType(ent *entity.Entity, f schema.Field, all map[string]*enti
 	return t
 }
 
-// integerFKType is the column type of a foreign key to an integer key of
-// type keyType, any spelling isIntegerType accepts (a RawType "INT", a
-// lower-case "int8", a SERIAL). SQLite has one integer type; Postgres
-// keeps the key's width.
 func integerFKType(keyType string, dialect Dialect) string {
 	if dialect != DialectPostgres {
 		return "INTEGER"
@@ -1469,11 +1007,6 @@ func integerFKType(keyType string, dialect Dialect) string {
 	return "INTEGER"
 }
 
-// generatedPivots yields each many_to_many relation whose Through table the
-// migrator creates itself: the first declaration of each table (matched
-// case-insensitively) in the given order, skipping a table some registered
-// entity already owns. AutoMigrate, DiffSchema and the snapshot all walk it,
-// so reciprocal declarations resolve to the same canonical pivot.
 func generatedPivots(ordered []*entity.Entity, all map[string]*entity.Entity) iter.Seq2[*entity.Entity, entity.Relation] {
 	return func(yield func(*entity.Entity, entity.Relation) bool) {
 		seen := make(map[string]bool)
@@ -1498,12 +1031,6 @@ func generatedPivots(ordered []*entity.Entity, all map[string]*entity.Entity) it
 	}
 }
 
-// checkPivotEntity refuses a many_to_many whose Through table a registered
-// entity owns but whose two link columns that entity does not declare: the
-// migrator creates no pivot then, and every read of the relation would
-// name a column the table lacks. It also refuses a Through that spells a
-// join entity's table with a schema the entity's Table leaves off, or the
-// reverse: reads would find no join entity and skip its gates.
 func checkPivotEntity(ent *entity.Entity, rel entity.Relation, all map[string]*entity.Entity) error {
 	for _, name := range slices.Sorted(maps.Keys(all)) {
 		e := all[name]
@@ -1534,20 +1061,16 @@ func pivotHasEntity(table string, all map[string]*entity.Entity) bool {
 	return false
 }
 
-// pivotSpec is the generated table behind one many_to_many relation.
 type pivotSpec struct {
-	Safe         string            // validated table name
-	Cols         map[string]string // column -> SQL type
-	DDL          string            // CREATE TABLE IF NOT EXISTS
+	Safe         string
+	Cols         map[string]string
+	DDL          string
 	DropDDL      string
-	IndexDDL     string // index on the target key column
+	IndexDDL     string
 	DropIndexDDL string
-	fks          []declaredFK // the two foreign keys DDL declares
+	fks          []declaredFK
 }
 
-// buildPivotSpec renders the pivot table for rel, declared on ent: both key
-// columns typed like the primary keys they reference, a composite primary
-// key, ON DELETE CASCADE to both sides, and an index on the target key.
 func buildPivotSpec(ent *entity.Entity, rel entity.Relation, all map[string]*entity.Entity, dialect Dialect) (pivotSpec, error) {
 	safeThrough, err := query.SafeIdent(rel.Through)
 	if err != nil {
@@ -1615,8 +1138,6 @@ func buildPivotSpec(ent *entity.Entity, rel entity.Relation, all map[string]*ent
 	}, nil
 }
 
-// migratePivotTables synthesizes and creates pivot tables for ManyToMany relations
-// that do not have an explicitly registered entity table.
 func migratePivotTables(ctx context.Context, exec execQueryer, ordered []*entity.Entity, all map[string]*entity.Entity, dialect Dialect) error {
 	for ent, rel := range generatedPivots(ordered, all) {
 		spec, err := buildPivotSpec(ent, rel, all, dialect)

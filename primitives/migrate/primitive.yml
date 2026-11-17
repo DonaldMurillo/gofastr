@@ -5,30 +5,19 @@ code:
 docs:
   - framework/docs/content/migrations.md
 twins:
-  - job: Keep the declared views that read a table usable across a change of one of its columns' types.
-    why: Postgres alters the column in place and refuses under a view, so the views are dropped and recreated around the ALTER, while SQLite has no ALTER COLUMN TYPE and rebuilds the table, renaming the replacement in under legacy_alter_table; the two statements share nothing.
+  - job: Read a Postgres table's live columns for the migrator, folded table, schema and column names only, with a character type's width.
+    why: ReadLiveColumnsBulk reads many tables in one catalog join on a *sql.DB, while readEntityColumnsQ reads one table on the lock-holding *sql.Tx; nothing but the work of giving the bulk reader a queryer keeps them apart.
     sites:
+      - path: framework/migrate/bulk.go
+        note: readLiveColumnsBulkPostgres, the pre-lock read of every managed table.
       - path: framework/migrate/schema_diff.go
-        note: The Postgres ALTER COLUMN TYPE change and its pgRetypes, and the SQLite retype that joins the table rebuild.
-      - path: framework/migrate/snapshot.go
-        note: viewChanges redoing a view whose DependsOn names a retyped table, and the legacy_alter_table rename around a SQLite rebuild.
+        note: readLiveColumnsPostgresQ with foldedOnly, the re-read under the lock; TestSweepDiffColumnReadersAgree pins the two to one answer.
 invariants:
   - id: one-recorded-column-parser
     rule: recordedConstraints and recordedUniqueColumns read a recorded CREATE TABLE through one parser, recordedColumnDefs, which leaves out the PRIMARY KEY and FOREIGN KEY table constraints, so a column named primary or foreign generates no migration for an unchanged plan.
     enforced_by:
       - test: framework/migrate.TestConstraintLineIsNoColumn
     judge: Does this change split a recorded CREATE TABLE into column definitions anywhere other than recordedColumnDefs?
-  - id: retype-keeps-dependent-views
-    rule: A generated change of a column's type leaves an unchanged declared view that reads the table, and the views that read that view, queryable on Postgres and SQLite, and on Postgres the Down restores the old type under them.
-    enforced_by:
-      - test: framework/migrate.TestRetypeUnderUnchangedView
-      - test: framework/migrate.TestSQLiteRebuildUnderView
-  - id: removals-drop-dependents-first
-    rule: Removed views drop before the removed views their recorded DependsOn names and removed routines drop last created first by their recorded Order; a snapshot that recorded neither keeps views in name order and routines in reverse name order.
-    enforced_by:
-      - test: framework/migrate.TestRemovedObjectsDropDependentsFirst
-      - test: framework/migrate.TestRemovalOrderWithoutRecordedOrder
-      - test: framework/migrate.TestViewRemovalDropsDependentsFirst
   - id: keyword-view-name-is-quoted
     rule: A view named with a keyword is created, replaced, read and dropped under its quoted name at boot and in generated files, on both dialects.
     enforced_by:
@@ -48,6 +37,164 @@ invariants:
       - test: framework/contracts/analyzers.TestNullableKeyRuleMatchesSQLite
       - test: framework/contracts/analyzers.TestNullableKeySpellings
     judge: Does this change build a CREATE TABLE piece by piece (a strings.Builder, a joined slice) with a primary-key column that lacks NOT NULL, which the contract rule cannot read?
+  - id: dialect-probe-fails-closed
+    rule: A dialect probe whose SELECT version() keeps failing for a transient reason fails AutoMigrate, MigrateEntity, DiffSchema, RunSeeds and DetectDialectStrict with an error; only a deterministic no-such-function answer resolves to SQLite, and a quoted identifier in the error text does not make a failure deterministic.
+    enforced_by:
+      - test: framework/migrate.TestAutoMigratePlan_DialectDetectFailClosed
+      - test: framework/migrate.TestDetectDialectStrict_TransientFailureErrors
+      - test: framework/migrate.TestProbeClassifier_QuotedPhraseIsNotDeterministic
+      - test: framework/migrate.TestSweepCoreSeedProbeFailsClosed
+  - id: unreachable-database-error-names-the-connection
+    rule: A migration error caused by an unreachable database says to check the database connection / DATABASE_URL; other errors pass through unchanged.
+    enforced_by:
+      - test: framework/migrate.TestAutoMigratePlan_LockAcquireConnErrorActionable
+      - test: framework/migrate.TestAutoMigratePlan_BadDSNActionableError
+  - id: boot-is-additive
+    rule: AutoMigrate only creates tables and indexes and adds columns; it never drops, renames or retypes a column, and a DEFAULT literal reading 'rename column' does not make an ADD COLUMN read as a rename.
+    enforced_by:
+      - test: framework/migrate.TestSweepCoreBootNeverDropsOrRetypes
+      - test: framework/migrate.TestAdditiveChanges_ExcludesRename
+      - test: framework/migrate.TestAdditiveChanges_NotFooledByRenameInDefault
+  - id: boot-rereads-under-the-lock
+    rule: AutoMigrate re-reads a table's columns on the lock-holding transaction before acting on the pre-lock read, so a table or column a peer replica created in between is converged, not created again.
+    enforced_by:
+      - test: framework/migrate.TestMigrateEntityRereadsAbsentTable
+      - test: framework/migrate.TestSweepCoreAddColumnRereadsUnderLock
+  - id: boot-is-one-transaction
+    rule: Every statement of one AutoMigrate run, tables, views, routines and the routine ledger, commits in one transaction, and a failure rolls all of it back.
+    enforced_by:
+      - test: framework/migrate.TestAutoMigratePlan_CommitError
+      - test: framework/migrate.TestRoutineSetRollsBackAtomically
+  - id: ddl-names-fold
+    rule: The DDL names every table, column and index bare, quoting only a keyword and then folded, in CREATE TABLE, index columns and REFERENCES clauses alike, so Postgres folds each to the name the runtime queries.
+    enforced_by:
+      - test: framework/migrate.TestNonKeywordSchemaRendersUnchanged
+      - test: framework/migrate.TestPGForeignKeyComparesSchema
+      - test: framework/migrate.TestKeywordDroppedTablesOrdered
+  - id: expression-index-is-guarded
+    rule: An expression index without a Name, or whose expression holds ";", "--", "/*" or "*/", panics instead of rendering.
+    enforced_by:
+      - test: framework/migrate.TestSweepCoreExpressionIndexNeedsName
+      - test: framework/migrate.TestSweepCoreIndexExpressionRefusesComments
+  - id: owner-column-has-no-foreign-key
+    rule: A one-column belongs_to on the entity's Scope.OwnerField gets no FOREIGN KEY, no automatic index and no place among the tables whose ON DELETE action blocks a SQLite rebuild.
+    enforced_by:
+      - test: framework/migrate.TestSweepCoreOwnerColumnGetsNoForeignKey
+      - test: framework/migrate.TestAutoMigrateSkipsOwnerFKIndex
+  - id: on-delete-action-is-validated
+    rule: A relation whose OnDelete is not CASCADE, SET NULL, RESTRICT, NO ACTION or empty fails the migration.
+    enforced_by:
+      - test: framework/migrate.TestAutoMigrateRejectsBadOnDelete
+  - id: versions-migrate-as-their-union
+    rule: Migration, the snapshot and RunSeeds read the registry through UnionEntities, so a field, index, many_to_many or Seed declared on any version reaches the shared table once, and the base is the unversioned version when there is one.
+    enforced_by:
+      - test: framework/migrate.TestRunSeeds_PicksUpSeedFromNonRepresentative
+      - test: framework/migrate.TestSweepCoreUnionDedupesUnnamedIndex
+      - test: framework/migrate.TestSweepCoreUnionKeepsEveryManyToMany
+      - test: framework/migrate.TestSweepCoreUnionBaseIsUnversioned
+  - id: int-is-64-bit-on-postgres
+    rule: An Int column is BIGINT on Postgres, BIGSERIAL when auto-incremented, and INTEGER on SQLite; a RawType is used as written.
+    enforced_by:
+      - test: framework/migrate.TestPGIntHoldsInt64
+      - test: framework/migrate.TestSQLType_AutoIncrementSerialOnPostgres
+      - test: framework/migrate.TestSQLType_RawTypeAndDefault
+  - id: foreign-key-column-takes-the-key-type
+    rule: A foreign key column to an integer key, a SERIAL or a RawType integer included, is the integer type of that key's width on Postgres and INTEGER on SQLite, never TEXT or a serial.
+    enforced_by:
+      - test: framework/migrate.TestFKTakesIntegerRawKeyType
+      - test: framework/migrate.TestFKTakesIntegerKeyType
+  - id: foreign-key-shape-is-checked
+    rule: Every relation's foreign key, on new and existing tables alike, names one column per column of the key it references, and a key of several columns refuses a column whose type differs in family from its key column, every integer width and text length counting as one family.
+    enforced_by:
+      - test: framework.TestCompositeForeignKeyTypes
+      - test: framework/migrate.TestSweepCoreForeignKeyJoinsIntegerWidths
+      - test: framework/migrate.TestSweepCoreKeyShapeCheckedForEveryTable
+  - id: defaults-render-as-safe-literals
+    rule: SQLDefault writes integers, floats in shortest round-trip form and json.Number values matching the JSON number grammar bare, a bool as TRUE/FALSE on Postgres and 1/0 on SQLite, a JSON field's non-string value as quoted JSON text, and every other value as a single-quoted literal with its quotes doubled.
+    enforced_by:
+      - test: framework/migrate.TestSQLDefaultEscapesEveryType
+      - test: framework/migrate.TestSQLDefaultRendersJSONForMapsAndSlices
+      - test: framework/migrate.TestSQLDefaultWritesNumbersBare
+      - test: framework/migrate.TestScalarDefaultsKeepTheirValue
+  - id: uuid-key-defaults-on-postgres
+    rule: An AutoUUID field with no Default gets DEFAULT gen_random_uuid() on Postgres and no default on SQLite.
+    enforced_by:
+      - test: framework.TestColumnDefaultClause_AutoUUID
+  - id: pivot-is-one-table-per-through
+    rule: The first many_to_many declaring a Through table, compared without case, defines the generated pivot for AutoMigrate, DiffSchema and the snapshot alike, and an existing pivot whose columns or keys drifted from it fails the migration.
+    enforced_by:
+      - test: framework/migrate.TestReciprocalPivotDeclarationsAgree
+      - test: framework/migrate.TestPivotDriftRefused
+  - id: join-entity-matches-its-relation
+    rule: A many_to_many whose Through table a registered entity owns fails the migration when that entity lacks either link column or when one of the two spells the table with a schema the other leaves off.
+    enforced_by:
+      - test: framework/migrate.TestSweepCoreThroughSpelledWithOtherSchemaRefused
+      - test: framework.TestJoinEntityMissingLinkColumn
+  - id: routines-follow-their-dialect
+    rule: A routine whose Dialect names another engine is skipped at boot, in the snapshot and in a generated file, and is not reported as an orphan of the ledger; a plan's views apply whether or not it holds routines.
+    enforced_by:
+      - test: framework/migrate.TestAutoMigratePlan_SkipsRoutinesForOtherDialect
+      - test: framework/migrate.TestSweepDiffSkipsOtherDialectRoutines
+      - test: framework/migrate.TestBootKeepsViewReadOutsideThePlan
+      - test: framework/migrate.TestSweepCoreSkippedRoutineIsNoOrphan
+  - id: unmanaged-entity-gets-no-ddl
+    rule: An Unmanaged entity, or one with no fields, gets no table, column or index DDL.
+    enforced_by:
+      - test: framework/migrate.TestSweepCoreUnmanagedEntityGetsNoDDL
+  - id: stale-owner-foreign-key-warns
+    rule: A SQLite boot logs a warning, never an error, for each table holding a foreign key on its entity's owner column, and a failed scan does not fail the boot.
+    enforced_by:
+      - test: framework/migrate.TestBootWarnsOnStaleOwnerFK
+      - test: framework/migrate.TestBootScanErrorIsNotFatal
+  - id: index-names-are-unique-per-schema
+    rule: Two different indexes, declared, unique or generated, whose names match folded and cut at 63 bytes within one schema fail the migration on either dialect, and one index listed twice does not.
+    enforced_by:
+      - test: framework/migrate.TestIndexNamesSharedByOneTableBoot
+      - test: framework/migrate.TestIndexNameCollisionRefused
+      - test: framework/migrate.TestUniqueFieldNameCollisions
+      - test: framework/migrate.TestSweepCorePivotIndexNameIsClaimed
+      - test: framework/migrate.TestSweepCoreIndexNamesCompareCut
+  - id: seeds-run-once
+    rule: RunSeeds probes the dialect only when some entity has a Seed, runs each Seed once across replicas under the seed lock (a Postgres advisory lock distinct from the migration lock, skipped with a warning on a one-connection pool; a leased row on SQLite), stops between seeds once ctx is cancelled, and records a seed that ran on a context that outlives the cancel, a second record being a no-op.
+    enforced_by:
+      - test: framework/migrate.TestRunSeeds_AdvisoryLockSerializesAcrossReplicas
+      - test: framework/migrate.TestSweepCoreSeedLockIsNotTheMigrationLock
+      - test: framework/migrate.TestSweepCoreSeedOnOneConnectionPool
+      - test: framework/migrate.TestRunSeedsSqliteSeedRunsOnce
+      - test: framework/migrate.TestRunSeeds_CancelledLoopAndSeedNilSkip
+      - test: framework/migrate.TestSeedLedgerSurvivesCancel
+      - test: framework/migrate.TestSweepCoreSeedStopsOnCancel
+      - test: framework/migrate.TestSweepCoreSeedLedgerRecordTwice
+      - test: framework/migrate.TestSweepCoreSeedlessRegistrySkipsProbe
+      - test: framework/migrate.TestSweepCoreSeedOnUnversionedBase
+  - id: qualified-table-names-split-per-statement
+    rule: A schema-qualified table keeps its index in the table's schema (the schema on the table for Postgres, on the index name for SQLite), drops it by its qualified name, names a SQLite REFERENCES parent bare, puts a SQLite pragma's schema before the function and a keyword name quoted inside it, and reads and replays its triggers in its own schema's sqlite_master.
+    enforced_by:
+      - test: framework/migrate.TestCreateIndexSQLPerDialect
+      - test: framework/migrate.TestPGQualifiedTableDefaultIndex
+      - test: framework/migrate.TestPGQualifiedIndexReplaced
+      - test: framework/migrate.TestSQLiteQualifiedPivot
+      - test: framework/migrate.TestSQLiteRebuildQualifiedTable
+      - test: framework/migrate.TestKeywordTableKeyChangeAtBoot
+      - test: framework/migrate.TestLiveSQLiteRebuildKeepsTriggers
+      - test: framework/migrate.TestRepairOwnerFKQualifiedTable
+  - id: long-postgres-names-read-as-cut
+    rule: A table, column or key name past 63 bytes is looked up on Postgres under its first 63 bytes and read back under the declared name, so it converges instead of being added or dropped on every boot.
+    enforced_by:
+      - test: framework/migrate.TestLongIdentifiersConverge
+      - test: framework/migrate.TestLongIdentifierForeignKeysConverge
+      - test: framework/migrate.TestLongColumnMadeUniqueAtBoot
+  - id: table-existence-matches-the-ddl
+    rule: TableExistsBulk refuses a name SafeIdent refuses, finds a Postgres table by its folded schema and name only, a quoted mixed-case table not counting, and a SQLite table without case.
+    enforced_by:
+      - test: framework/migrate.TestPGQuotedMixedCaseTableNotOurs
+      - test: framework/migrate.TestPGTableExistsQualified
+      - test: framework/migrate.TestSQLiteTableExistsIgnoresCase
+      - test: framework/migrate.TestSweepCoreTableExistsRefusesBadName
+  - id: raw-table-is-only-its-columns
+    rule: Table.ToEntity injects no column, turns timestamps and CRUD off, and keys on its PrimaryKey columns in column order.
+    enforced_by:
+      - test: framework/migrate.TestSweepCoreRawTableIsOnlyItsColumns
 decisions:
   - id: column-readers-share-one-parser
     date: 2026-11-16
@@ -57,15 +204,6 @@ decisions:
       - option: Teach each reader to skip the table constraints.
         why: The two had already drifted, one splitting with splitColumnDefs and the other on the raw separator, and both read PRIMARY KEY and FOREIGN KEY lines as columns.
     upholds: [one-recorded-column-parser]
-  - id: snapshot-records-removal-order
-    date: 2026-11-16
-    status: accepted
-    decision: The snapshot records a view's depends_on and a routine's order in the plan, and a removal is ordered from them.
-    rejected:
-      - option: Drop removed views and routines in reverse name order.
-        why: A name says nothing about what reads what, so a view whose name sorts before its source, or a trigger named before its function, dropped in the wrong order and Postgres refused.
-    revisit_if: Routines gain a declared DependsOn of their own, which would replace the recorded creation order.
-    upholds: [removals-drop-dependents-first]
   - id: key-not-null-applies-to-new-tables
     date: 2026-11-16
     status: accepted
@@ -85,3 +223,35 @@ decisions:
         why: The same reason as for the migrator's tables, a rebuild is destructive and fails on a row that already holds a NULL key.
     revisit_if: A store builds its CREATE TABLE piece by piece, which the rule cannot read.
     upholds: [hand-written-keys-say-not-null]
+  - id: boot-never-drops-or-renames
+    date: 2026-11-17
+    status: accepted
+    decision: Boot applies only the additive changes of the diff; drops, retypes and renames wait for a generated migration or ApplySchemaDiffWithOptions with AllowDestructive.
+    rejected:
+      - option: Apply a declared rename at boot, since it keeps the data.
+        why: A stale Renames hint would rename an in-use column on a live database with nothing to review.
+    upholds: [boot-is-additive]
+  - id: owner-column-foreign-key-skipped
+    date: 2026-11-17
+    status: accepted
+    decision: The owner column carries no foreign key, because crud stamps it from the session's identity, which lives in the auth battery's table rather than any declared entity.
+    rejected:
+      - option: Emit the declared belongs_to foreign key on the owner column.
+        why: Every create would violate it on Postgres, and on SQLite once foreign keys are on.
+    revisit_if: Session identities come to live in a table the app declares as an entity.
+    upholds: [owner-column-has-no-foreign-key, stale-owner-foreign-key-warns]
+  - id: dialect-uncertainty-is-an-error
+    date: 2026-11-17
+    status: accepted
+    decision: A migration decision on an unreachable database is a startup error; DetectDialect keeps a logged SQLite fallback only for callers that pick DDL types.
+    rejected:
+      - option: Fall back to SQLite whenever the probe fails.
+        why: A Postgres app misread as SQLite skips the cross-replica lock and every Postgres-only routine.
+    upholds: [dialect-probe-fails-closed]
+  - id: timestamps-get-no-ddl-default
+    date: 2026-11-17
+    status: accepted
+    decision: An AutoTimestamp column gets no DEFAULT; the application stamps created_at and updated_at on every write.
+    rejected:
+      - option: DEFAULT now() on Postgres.
+        why: SQLite would have none, so the two engines would disagree on a raw insert.
