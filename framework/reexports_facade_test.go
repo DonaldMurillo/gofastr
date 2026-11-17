@@ -234,9 +234,9 @@ func TestFacadeMigrateWrappersDelegate(t *testing.T) {
 		t.Errorf("GeneratePlan: %v", err)
 	}
 
-	rendered := RenderMigrationFile(1, "facade", "CREATE TABLE x (id TEXT);", "DROP TABLE x;")
-	if rendered == "" {
-		t.Error("RenderMigrationFile returned empty")
+	rendered, err := RenderMigrationFileChecked(1, "facade", "CREATE TABLE x (id TEXT);", "DROP TABLE x;")
+	if err != nil || rendered == "" {
+		t.Errorf("RenderMigrationFileChecked = %q, %v", rendered, err)
 	}
 	path := filepath.Join(t.TempDir(), "snap.json")
 	if err := SaveSnapshot(path, snap); err != nil {

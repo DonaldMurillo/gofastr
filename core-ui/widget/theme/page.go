@@ -46,9 +46,7 @@ func PageTheme() style.Theme {
 //     kiln-footer, kiln-pill, kiln-quote, kiln-hero, kiln-eyebrow
 //  6. Default styles for native form controls + tables on body.kiln-app
 //
-// Class names use the kiln- prefix for backwards compatibility with
-// pages already authored against them. The framework owns these
-// names going forward.
+// The framework owns these kiln- class names.
 func PageCSS(t style.Theme) string {
 	ss := style.NewStyleSheet(t)
 

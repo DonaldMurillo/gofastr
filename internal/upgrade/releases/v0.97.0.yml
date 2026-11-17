@@ -442,3 +442,36 @@ notes:
     guidance: "Nothing to change. Output that carried such characters prints without them."
     nodetect: "depends on the bytes a child process or log line carries at runtime"
 
+  - change: "BREAKING - tenant.TenantConfig.Header is gone; nothing read it, because the tenant ID comes only from the authenticated server-side context"
+    breaking: true
+    hits: edit
+    guidance: "Delete the Header: entry from TenantConfig literals. Behaviour does not change."
+    find:
+      uses:
+        - gofastr/framework/tenant.TenantConfig.Header
+  - change: "BREAKING - auth.MagicLinkConfig.TokenLength is gone; nothing read it, because the token stores always mint 32 random bytes"
+    breaking: true
+    hits: edit
+    guidance: "Delete the TokenLength: entry from MagicLinkConfig literals. Behaviour does not change; a custom MagicLinkTokenStore still picks its own length."
+    find:
+      uses:
+        - gofastr/battery/auth.MagicLinkConfig.TokenLength
+  - change: "BREAKING - migrate.RenderMigrationFile and its framework.RenderMigrationFile re-export are gone; use RenderMigrationFileChecked, which the framework package now re-exports"
+    breaking: true
+    hits: edit
+    guidance: "Call migrate.RenderMigrationFileChecked(version, name, up, down) (or framework.RenderMigrationFileChecked) and handle its error: it returns ErrDirectiveInSQL when a line of up, down or name would read as a -- +migrate directive, and otherwise the same file text."
+    find:
+      uses:
+        - gofastr/framework/migrate.RenderMigrationFile
+        - gofastr/framework.RenderMigrationFile
+  - change: "BREAKING - WithAgentCard no longer serves the pre-1.0 A2A path /.well-known/agent.json; only /.well-known/agent-card.json answers"
+    breaking: true
+    hits: edit
+    guidance: "Point links, monitors and agent clients at /.well-known/agent-card.json. A host that must keep the old path mounts its own redirect to it."
+    find:
+      strings:
+        match: '/\.well-known/agent\.json'
+  - change: "BREAKING - the runtime no longer sets window.__gofastr.textarea; the textarea module scans inserted content itself"
+    breaking: true
+    guidance: "Delete calls to window.__gofastr.textarea.rescan(). Content the runtime swaps in is scanned on insert; nothing in the framework called the hook."
+    nodetect: "the hook was read from app JavaScript, which the scanner does not parse"

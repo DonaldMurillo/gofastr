@@ -18,7 +18,7 @@ type demandLoadMarker struct {
 }
 
 // demandLoadMarkers is the canonical Go-side mirror of the table at
-// the bottom of core-ui/runtime/runtime.js (search for "DEMAND-LOAD
+// core-ui/runtime/frag/boot.js (search for "DEMAND-LOAD
 // SCANNERS"). The drift test enforces both sides stay aligned.
 var demandLoadMarkers = []demandLoadMarker{
 	{"data-cui-rpc", "rpc"},
