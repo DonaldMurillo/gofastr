@@ -1,0 +1,6 @@
+primitive: i18nui.pseudo
+summary: Pseudo-localization - Pseudo accents, lengthens and brackets a string while keeping its placeholders, and AddPseudo fills a catalog locale with every defined phrase pseudo-localized and marks it so label fallbacks are pseudo-localized too.
+code:
+  - framework/i18nui/pseudo.go
+docs:
+  - framework/docs/content/i18n.md
