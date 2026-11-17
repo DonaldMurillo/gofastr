@@ -5,6 +5,11 @@ code:
 docs:
   - framework/docs/content/service.md
 invariants:
+  - id: stop-waits-for-the-drain-its-first-ask-started
+    rule: On Windows, a stop whose first ask timed out and whose retry then finds the control channel refused or reset waits for the daemon to exit and never runs schtasks /End, because the unanswered ask was still delivered and the daemon is draining on it.
+    enforced_by:
+      - test: battery/service.TestTaskSchedulerStopDoesNotKillTheDrainItsFirstAskStarted
+      - test: battery/service.TestTaskSchedulerStopWaitsOutStartup
   - id: localhost-tab-follows-the-browser-address
     rule: The gate redirects a localhost tab to the address open signs the browser in at, which is 127.0.0.1 for an IPv4 or unspecified IPv4 bind and [::1] for an IPv6 or unspecified IPv6 bind.
     enforced_by:
