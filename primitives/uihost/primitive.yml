@@ -11,6 +11,9 @@ invariants:
       - contract: GOFASTR1004
     judge: Does this change register a new route for state that belongs to an existing page, such as a page number, sort, tab or expanded region?
     applies:
+      - framework/gallery/
+      - framework/i18nui/
+      - framework/sdkdocs/
       - framework/ui/
       - battery/
       - examples/

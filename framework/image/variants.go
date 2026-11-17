@@ -9,221 +9,96 @@ import (
 	"unicode/utf8"
 )
 
-// Variant describes one output produced by a VariantSet. Height is
-// derived from the source aspect ratio (FitInside semantics).
+// Variant describes one output of a VariantSet.
 type Variant struct {
-	// Width is the target box width in pixels. Required, must be >= 1.
+	// Width is the target width in pixels; the height keeps the aspect.
 	Width int
-
-	// Format is the output encoding. Required.
+	// Format is the output encoding.
 	Format Format
-
-	// Quality applies to JPEG (1..100). 0 uses the format default.
+	// Quality is the JPEG quality, 0 for the default.
 	Quality int
-
-	// Suffix is appended to BaseName when forming the output Name.
-	// Empty defaults to the variant width (e.g., "photo-800.jpg").
+	// Suffix names the output, the width when empty.
 	Suffix string
 }
 
-// VariantSet is a declarative spec for producing N outputs from one
-// source image. The same Process call also handles optional LQIP
-// (Placeholder) and BlurHash generation, so callers get one typed
-// result bag that captures every artefact derived from the source.
-//
-// VariantSet is intentionally headless: no UI, no HTTP, no storage
-// dependency. Pair its output with framework/ui.PipelineImage to
-// render or with a battery/storage backend to persist.
+// VariantSet declares the renditions, placeholder and BlurHash of a source.
 type VariantSet struct {
-	// Variants is the ordered list of outputs to produce. Empty means
-	// "no encoded variants, just the placeholder and/or hash".
+	// Variants are the outputs, in order.
 	Variants []Variant
-
-	// Placeholder, if non-nil, produces a base64 data: URL LQIP.
+	// Placeholder, if non-nil, adds a data: URL placeholder.
 	Placeholder *PlaceholderOptions
-
-	// BlurHashX and BlurHashY are the BlurHash component counts (1..9).
-	// Both zero means no BlurHash. Setting only one is an error.
+	// BlurHashX and BlurHashY are the BlurHash components, both 0 for none.
 	BlurHashX int
 	BlurHashY int
-
-	// BaseName is the prefix used for VariantOutput.Name. Default "image".
-	// One too long for the set's names to fit MaxVariantNameBytes is cut
-	// from the front.
+	// BaseName prefixes every output Name, "image" when empty.
 	BaseName string
-
-	// AllowUpscale opts back in to producing variants larger than the
-	// source. The default (false) clamps every variant's effective
-	// width to min(Variant.Width, source width). Without the clamp a
-	// 16×16 source with Variant{Width: 2048} would silently produce a
-	// 2048×2048 pixel-multiplied-garbage output, almost never what a
-	// caller wants.
+	// AllowUpscale lets a variant be wider than the source.
 	AllowUpscale bool
-
-	// RejectAnimated returns ErrAnimatedSource when the source's
-	// Metadata.FrameCount is > 1 (today: animated GIFs). Use this on
-	// upload pipelines where the silent first-frame-flatten behavior
-	// of the default decoder would be a surprise, e.g. avatar
-	// uploads, profile photos. Default (false) preserves the legacy
-	// "first frame wins" behavior.
+	// RejectAnimated refuses a source of more than one frame.
 	RejectAnimated bool
 }
 
-// MaxVariantNameBytes caps a rendition's file name (VariantOutput.Name,
-// VariantHeader.Name) at the common filesystem name limit, the same 255
-// bytes core/upload.MaxFilenameBytes holds an upload name to. A BaseName
-// too long for its set's longest "-<suffix>.<ext>" is cut from the
-// front, by the same amount for every variant, so the names stay
-// distinct and keep the end of the base, where core/upload.UniqueFilename
-// puts its timestamp and random token.
+// MaxVariantNameBytes caps a rendition's file name.
 const MaxVariantNameBytes = 255
 
-// MinVariantBaseBytes is the room a variant's "-<suffix>.<ext>" must
-// leave for the base under MaxVariantNameBytes. The cut keeps the end of
-// the base, and core/upload.UniqueFilename's "_<unixnano>_<16 hex>" tail
-// is 37 bytes: a suffix that left only a few bytes would cut two uploads
-// to the same name, and the later one's renditions would overwrite the
-// earlier one's. CheckVariantNames refuses a suffix that leaves less.
+// MinVariantBaseBytes is the room a variant's suffix must leave for the base.
 const MinVariantBaseBytes = 64
 
-// MaxVariantsPerSet caps Variants to a sane bound. Attacker-controlled
-// variant lists are an obvious DoS vector for upload pipelines: each
-// variant is an encode + allocation; a 10k-variant request would
-// chew several CPU-seconds and ~10 GB of throughput. 64 variants
-// covers every realistic responsive-srcset scenario (5-10 widths ×
-// 3-5 formats); legitimate callers that need more should split into
-// multiple sets.
+// MaxVariantsPerSet caps the length of VariantSet.Variants.
 const MaxVariantsPerSet = 64
 
 // VariantOutput is one fully rendered variant.
 type VariantOutput struct {
-	// Name is a storage-friendly identifier composed from BaseName,
-	// Suffix (or width), and the format extension. Example:
-	// "photo-800.jpg".
+	// Name is <BaseName>-<Suffix>.<ext>, as in "photo-800.jpg".
 	Name string
-
 	// Format is the encoding format.
 	Format Format
-
-	// Width and Height are the rendered output dimensions.
+	// Width and Height are the rendered dimensions.
 	Width  int
 	Height int
-
-	// Bytes is the encoded image. Callers typically hand this to a
-	// storage backend (battery/storage) or to an HTTP response writer.
+	// Bytes is the encoded image.
 	Bytes []byte
-
-	// MIME is the canonical Content-Type for Format.
+	// MIME is the Content-Type for Format.
 	MIME string
 }
 
-// VariantResult is the typed result of Process. Fields are populated
-// only when requested by VariantSet. Placeholder is empty when
-// VariantSet.Placeholder is nil, BlurHash is empty when both BlurHash
-// component counts are zero.
+// VariantResult is the result of Process.
 type VariantResult struct {
-	// SourceWidth and SourceHeight reflect the input image's bounds at
-	// the moment Process was called.
+	// SourceWidth and SourceHeight are the source's dimensions.
 	SourceWidth  int
 	SourceHeight int
-
-	// Variants holds one VariantOutput per VariantSet.Variants entry,
-	// in the same order.
+	// Variants holds one output per VariantSet.Variants entry, in order.
 	Variants []VariantOutput
-
-	// Placeholder is the LQIP data: URL when requested.
+	// Placeholder is the data: URL placeholder, when requested.
 	Placeholder string
-
-	// BlurHash is the base83 hash string when requested.
+	// BlurHash is the hash, when requested.
 	BlurHash string
 }
 
-// Process produces every variant + placeholder + hash declared by the
-// set. The first error halts processing. Callers wanting per-variant
-// resilience can call Process repeatedly with single-element sets.
+// Process produces everything the set declares, in memory.
 func (s VariantSet) Process(src *Image) (VariantResult, error) {
-	if src == nil {
-		return VariantResult{}, fmt.Errorf("image: VariantSet.Process: nil source")
-	}
-	if len(s.Variants) > MaxVariantsPerSet {
-		return VariantResult{}, fmt.Errorf("image: VariantSet: too many variants (%d > MaxVariantsPerSet=%d)", len(s.Variants), MaxVariantsPerSet)
-	}
-	if (s.BlurHashX == 0) != (s.BlurHashY == 0) {
-		return VariantResult{}, fmt.Errorf("image: VariantSet: BlurHashX and BlurHashY must both be set or both zero")
-	}
-	if s.RejectAnimated && src.frames > 1 {
-		return VariantResult{}, ErrAnimatedSource
-	}
-	if err := s.checkUpFront(src); err != nil {
-		return VariantResult{}, err
-	}
-
-	baseName := fitBaseName(s.BaseName, s.Variants)
-
-	bounds := src.Bounds()
-	result := VariantResult{
-		SourceWidth:  bounds.Dx(),
-		SourceHeight: bounds.Dy(),
-	}
-
-	for i, v := range s.Variants {
-		if v.Width < 1 {
-			return result, fmt.Errorf("image: VariantSet.Variants[%d]: Width must be >= 1", i)
-		}
-		if v.Format == FormatUnknown {
-			return result, fmt.Errorf("image: VariantSet.Variants[%d]: Format must be set", i)
-		}
-
-		// Width-only resize already preserves aspect; an extra FitInside
-		// pass would re-quantise the height and lose a pixel.
-		scaled := src.Resize(s.targetWidth(v, bounds.Dx()), 0)
-		enc, err := encodeForFormat(scaled, v.Format, v.Quality)
-		if err != nil {
-			return result, fmt.Errorf("image: VariantSet.Variants[%d]: %w", i, err)
-		}
-		data, err := enc.Bytes()
-		if err != nil {
-			return result, fmt.Errorf("image: VariantSet.Variants[%d]: %w", i, err)
-		}
-		b := scaled.Bounds()
-		result.Variants = append(result.Variants, VariantOutput{
-			Name:   variantName(baseName, v),
-			Format: v.Format,
-			Width:  b.Dx(),
-			Height: b.Dy(),
-			Bytes:  data,
-			MIME:   v.Format.MIME(),
+	var outs []VariantOutput
+	sr, err := s.run(src, "Process", func(h VariantHeader, buf *bytes.Buffer) error {
+		outs = append(outs, VariantOutput{
+			Name:   h.Name,
+			Format: h.Format,
+			Width:  h.Width,
+			Height: h.Height,
+			Bytes:  bytes.Clone(buf.Bytes()),
+			MIME:   h.MIME,
 		})
-	}
-
-	if s.Placeholder != nil {
-		durl, err := src.Placeholder(*s.Placeholder)
-		if err != nil {
-			return result, fmt.Errorf("image: VariantSet placeholder: %w", err)
-		}
-		result.Placeholder = durl
-	}
-
-	if s.BlurHashX > 0 {
-		// Downscale for BlurHash speed; spec is O(W·H·xComp·yComp).
-		// BlurHash auto-resizes internally (cap 64 px on the longest
-		// side) so the pre-resize that used to live here is now a
-		// pessimisation: 256→32→hash produces a different output
-		// than 256→hash directly. Hand the source through and let
-		// BlurHash own the down-scale.
-		hash, err := src.BlurHash(s.BlurHashX, s.BlurHashY)
-		if err != nil {
-			return result, fmt.Errorf("image: VariantSet blurhash: %w", err)
-		}
-		result.BlurHash = hash
-	}
-
-	return result, nil
+		return nil
+	})
+	return VariantResult{
+		SourceWidth:  sr.SourceWidth,
+		SourceHeight: sr.SourceHeight,
+		Variants:     outs,
+		Placeholder:  sr.Placeholder,
+		BlurHash:     sr.BlurHash,
+	}, err
 }
 
-// VariantHeader is the metadata for one streaming variant, delivered
-// to the sink callback alongside an io.Reader carrying the encoded
-// bytes. ProcessTo emits one VariantHeader per Variant in input order.
+// VariantHeader describes the variant ProcessTo hands its sink.
 type VariantHeader struct {
 	Name   string
 	Format Format
@@ -232,8 +107,7 @@ type VariantHeader struct {
 	MIME   string
 }
 
-// StreamResult is the typed return of ProcessTo. Variants are streamed
-// via the sink rather than carried here.
+// StreamResult is the result of ProcessTo.
 type StreamResult struct {
 	SourceWidth  int
 	SourceHeight int
@@ -241,24 +115,13 @@ type StreamResult struct {
 	BlurHash     string
 }
 
-// VariantSink is the callback ProcessTo invokes once per variant.
-// Implementations must read r before returning; the framework reuses
-// the underlying buffer on the next variant and the reader handed in
-// is one-shot. It returns ErrReaderClosed on any access after the
-// sink returns. Returning an error stops emission and propagates out
-// of ProcessTo.
+// VariantSink receives each variant; r fails with ErrReaderClosed once
+// the sink returns.
 type VariantSink func(h VariantHeader, r io.Reader) error
 
-// ErrReaderClosed is returned when a sink reads from its VariantHeader
-// reader after the sink has returned. The reader is intentionally
-// one-shot to surface the "I stashed the reader and read it later"
-// foot-gun loudly instead of returning corrupted bytes from a later
-// variant.
+// ErrReaderClosed is returned by a sink's reader after the sink returns.
 var ErrReaderClosed = errors.New("image: VariantSink reader used after sink returned")
 
-// oneShotReader wraps an io.Reader so reads after Close return
-// ErrReaderClosed. ProcessTo closes the reader as soon as the sink
-// returns, regardless of whether the sink drained the buffer.
 type oneShotReader struct {
 	r      io.Reader
 	closed bool
@@ -271,12 +134,6 @@ func (o *oneShotReader) Read(p []byte) (int, error) {
 	return o.r.Read(p)
 }
 
-// WriteTo delegates to the wrapped reader's WriteTo if it has one.
-// io.Copy queries this interface and uses it as the fast path; the
-// underlying *bytes.Buffer implements it natively. Without exposing
-// it here, io.Copy would fall back to a 32 KB Read loop, turning
-// storage.Save(ctx, key, r) (used by every backend in battery/storage)
-// into a needlessly slow path.
 func (o *oneShotReader) WriteTo(w io.Writer) (int64, error) {
 	if o.closed {
 		return 0, ErrReaderClosed
@@ -289,17 +146,22 @@ func (o *oneShotReader) WriteTo(w io.Writer) (int64, error) {
 
 func (o *oneShotReader) close() { o.closed = true }
 
-// ProcessTo is the streaming variant of Process. Only one variant
-// lives in memory at a time. Once the sink returns, the buffer is
-// released and the next variant is encoded. Wire the sink directly
-// to a storage backend (e.g., core/upload.Storage.Save) to avoid
-// holding all variants resident.
+// ProcessTo is Process streaming each variant to sink.
 func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error) {
-	if src == nil {
-		return StreamResult{}, fmt.Errorf("image: VariantSet.ProcessTo: nil source")
-	}
-	if sink == nil {
+	if src != nil && sink == nil {
 		return StreamResult{}, fmt.Errorf("image: VariantSet.ProcessTo: nil sink")
+	}
+	return s.run(src, "ProcessTo", func(h VariantHeader, buf *bytes.Buffer) error {
+		guarded := &oneShotReader{r: buf}
+		err := sink(h, guarded)
+		guarded.close()
+		return err
+	})
+}
+
+func (s VariantSet) run(src *Image, op string, emit func(VariantHeader, *bytes.Buffer) error) (StreamResult, error) {
+	if src == nil {
+		return StreamResult{}, fmt.Errorf("image: VariantSet.%s: nil source", op)
 	}
 	if len(s.Variants) > MaxVariantsPerSet {
 		return StreamResult{}, fmt.Errorf("image: VariantSet: too many variants (%d > MaxVariantsPerSet=%d)", len(s.Variants), MaxVariantsPerSet)
@@ -347,18 +209,8 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 			Height: b.Dy(),
 			MIME:   v.Format.MIME(),
 		}
-		guarded := &oneShotReader{r: &buf}
-		serr := sink(header, guarded)
-		guarded.close()
-		// Drop the scaled intermediate so the GC can reclaim the
-		// resize-output buffer before we allocate the next one. Without
-		// this, each iteration retains a fresh image.RGBA and the
-		// peak heap grows with variant count. The doc's "only one
-		// variant lives in memory at a time" promise breaks.
-		scaled = nil
-		enc = nil
-		if serr != nil {
-			return result, serr
+		if err := emit(header, &buf); err != nil {
+			return result, err
 		}
 	}
 
@@ -370,11 +222,6 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 		result.Placeholder = durl
 	}
 	if s.BlurHashX > 0 {
-		// BlurHash auto-resizes internally (cap 64 px on the longest
-		// side) so the pre-resize that used to live here is now a
-		// pessimisation: 256→32→hash produces a different output
-		// than 256→hash directly. Hand the source through and let
-		// BlurHash own the down-scale.
 		hash, err := src.BlurHash(s.BlurHashX, s.BlurHashY)
 		if err != nil {
 			return result, fmt.Errorf("image: VariantSet blurhash: %w", err)
@@ -384,8 +231,6 @@ func (s VariantSet) ProcessTo(src *Image, sink VariantSink) (StreamResult, error
 	return result, nil
 }
 
-// targetWidth is v's resize width: without AllowUpscale it is clamped
-// to the source width.
 func (s VariantSet) targetWidth(v Variant, srcW int) int {
 	if !s.AllowUpscale && v.Width > srcW {
 		return srcW
@@ -393,9 +238,6 @@ func (s VariantSet) targetWidth(v Variant, srcW int) int {
 	return v.Width
 }
 
-// checkUpFront refuses colliding names and resize targets past the
-// source's MaxPixels before any variant is encoded, so ProcessTo never
-// hands its sink part of a set it then refuses.
 func (s VariantSet) checkUpFront(src *Image) error {
 	if err := CheckVariantNames(s.Variants); err != nil {
 		return err
@@ -409,11 +251,7 @@ func (s VariantSet) checkUpFront(src *Image) error {
 	return nil
 }
 
-// CheckVariantNames reports two variants whose file names would be the
-// same (the same Suffix, or a Suffix equal to another's width, with the
-// same Format), which would overwrite each other in storage. Process and
-// ProcessTo call it; a caller that holds a variant list from
-// configuration can call it at startup.
+// CheckVariantNames reports colliding or overlong variant names.
 func CheckVariantNames(vs []Variant) error {
 	seen := make(map[string]int, len(vs))
 	for i, v := range vs {
@@ -429,11 +267,6 @@ func CheckVariantNames(vs []Variant) error {
 	return nil
 }
 
-// fitBaseName returns the base every variant name in vs is built on:
-// "image" when base is empty, and otherwise base cut from the front (on
-// a rune boundary) until the longest name fits MaxVariantNameBytes. One
-// cut for the whole set keeps the names distinct, since their tails
-// differ; cutting the front keeps the base's unique tail.
 func fitBaseName(base string, vs []Variant) string {
 	if base == "" {
 		base = "image"
@@ -444,8 +277,6 @@ func fitBaseName(base string, vs []Variant) string {
 	}
 	budget := MaxVariantNameBytes - longest
 	if budget <= 0 || len(base) <= budget {
-		// budget <= 0 is a suffix CheckVariantNames refuses before
-		// any name is built.
 		return base
 	}
 	cut := len(base) - budget
@@ -458,9 +289,6 @@ func fitBaseName(base string, vs []Variant) string {
 	return base[cut:]
 }
 
-// variantName composes a storage-friendly file name for a variant. If
-// Suffix is set, it's used verbatim; otherwise the width is the suffix.
-// Format extension is always appended.
 func variantName(base string, v Variant) string {
 	suffix := v.Suffix
 	if suffix == "" {
@@ -487,9 +315,6 @@ func variantExt(f Format) string {
 	return "bin"
 }
 
-// encodeForFormat returns the Encoder for the given Format + Quality.
-// Quality is honoured for JPEG; ignored for formats that don't expose a
-// quality knob in their option struct.
 func encodeForFormat(img *Image, f Format, quality int) (*Encoder, error) {
 	switch f {
 	case FormatJPEG:
@@ -503,7 +328,6 @@ func encodeForFormat(img *Image, f Format, quality int) (*Encoder, error) {
 	case FormatTIFF:
 		return img.TIFF(), nil
 	case FormatWebP:
-		// Default to lossless; lossy WebP is not supported.
 		return img.WebP(), nil
 	}
 	return nil, fmt.Errorf("unsupported format %q", f)
