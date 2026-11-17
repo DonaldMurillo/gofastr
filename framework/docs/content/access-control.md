@@ -658,9 +658,10 @@ revoked grant stays revoked on every replica:
   code-seeded grant back in, even though the peer's own code baseline
   still declares it.
 - **Revokes survive restarts.** A replica that boots after the revoke runs
-  `LoadInto`, which subtracts tombstones from both the captured baseline
-  and the installed DB grants (and revokes them from the live policy), so
-  a re-seeded code grant does not resurrect the permission.
+  `LoadInto`, which subtracts tombstones from the live policy, so a
+  re-seeded code grant does not resurrect the permission. The captured
+  code baseline itself stays whole: once a re-grant lifts the tombstone,
+  a replica that booted under it allows again, like every other replica.
 - **Re-granting lifts a tombstone.** `GrantStore.Grant` deletes the
   tombstones `Revoke` writes for the same input: `Grant("teams:*")` lifts
   the `teams:*` tombstone and the tombstones of everything it expands to.

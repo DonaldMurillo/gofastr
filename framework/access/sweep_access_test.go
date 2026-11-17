@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -216,5 +217,60 @@ func TestSweepAccessNonStringAuthTenantSharesEntry(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("a non-string tenant split the cache: %d lookups for one user", calls)
+	}
+}
+
+// A replica that booted while a wildcard tombstone stood must, once a rolling-deploy peer lifts it, agree with one that booted before.
+func TestSweepAccessBootUnderTombstoneKeepsBaseline(t *testing.T) {
+	ctx := context.Background()
+	db := openAccessDB(t)
+	boot := func(caps ...Permission) (*GrantStore, *RolePolicy) {
+		t.Helper()
+		policy := NewRolePolicy()
+		policy.Register(caps...)
+		if slices.Contains(caps, "posts:write") {
+			if err := policy.Grant("editor", "posts:write"); err != nil {
+				t.Fatalf("code grant: %v", err)
+			}
+		}
+		store := NewGrantStore(db, policy)
+		if err := store.EnsureSchema(ctx); err != nil {
+			t.Fatalf("EnsureSchema: %v", err)
+		}
+		if err := store.LoadInto(ctx, policy); err != nil {
+			t.Fatalf("LoadInto: %v", err)
+		}
+		return store, policy
+	}
+	old, _ := boot("posts:read")
+	early, policyEarly := boot("posts:read", "posts:write")
+	if err := old.Revoke(ctx, "editor", "posts:*"); err != nil {
+		t.Fatalf("Revoke: %v", err)
+	}
+	late, policyLate := boot("posts:read", "posts:write")
+	if permIn(policyLate.PermissionsOf("editor"), "posts:write") {
+		t.Fatal("a boot under the tombstone allowed posts:write")
+	}
+	if err := old.Grant(ctx, "editor", "posts:*"); err != nil {
+		t.Fatalf("Grant: %v", err)
+	}
+	for _, s := range []*GrantStore{early, late} {
+		if err := s.reloadRole(ctx, "editor"); err != nil {
+			t.Fatalf("reloadRole: %v", err)
+		}
+	}
+	var stones int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM access_grants_revoked`).Scan(&stones); err != nil {
+		t.Fatalf("count tombstones: %v", err)
+	}
+	if stones != 0 {
+		t.Fatalf("the re-grant left %d tombstones", stones)
+	}
+	_, policyFresh := boot("posts:read", "posts:write")
+	want := permIn(policyFresh.PermissionsOf("editor"), "posts:write")
+	gotEarly := permIn(policyEarly.PermissionsOf("editor"), "posts:write")
+	gotLate := permIn(policyLate.PermissionsOf("editor"), "posts:write")
+	if !want || gotEarly != want || gotLate != want {
+		t.Fatalf("code grant with no tombstone: fresh=%v early=%v late=%v, want all true", want, gotEarly, gotLate)
 	}
 }

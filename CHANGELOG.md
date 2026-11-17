@@ -30,6 +30,11 @@ few lines, and link the PR or the docs page for the rest.
   other chains of more than one hop.
 - **GOFASTR1414 skips a sub-select however it is spaced.** A one-line `id IN (SELECT ...)` was
   compared as text, so it was reported as drift against a twin that wrote `( SELECT ... )`.
+- **A replica that restarted while a permission was revoked allows it
+  again once it is re-granted.** A `GrantStore` replica that booted while
+  a revoke stood kept denying a permission the code grants after the
+  revoke was lifted, while the other replicas allowed it. Nothing to
+  change.
 - **An embed nonce that expires during its exchange answers `ErrExpired`.**
   `Host.Exchange` reported `ErrSpent` ("nonce already used") for a nonce
   never used whose retention deadline passed between verification and

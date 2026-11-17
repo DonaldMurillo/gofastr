@@ -153,11 +153,6 @@ func (s *GrantStore) LoadInto(ctx context.Context, policy *RolePolicy) error {
 		tombstones[role] = s.policy.prepareRevokes(ts)
 	}
 	snap := s.policy.Snapshot()
-	for role, ts := range tombstones {
-		if base, ok := snap[role]; ok {
-			snap[role] = subtractPerms(base, ts)
-		}
-	}
 	s.fanoutMu.Lock()
 	s.baseline = snap
 	s.fanoutMu.Unlock()
