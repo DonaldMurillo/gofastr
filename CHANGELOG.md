@@ -206,9 +206,9 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Added
 - **Logout sends `Clear-Site-Data`.** A successful `POST /auth/logout`
-  now sends `Clear-Site-Data: "cache", "storage"`, so the back button
-  can't show the signed-out account's pages and the origin's storage is
-  emptied. `NewCorePlugin().WithLogoutClearSiteData(types...)` picks
+  now sends `Clear-Site-Data: "cache", "storage"`, which asks the browser
+  to empty its caches and the origin's storage. Browsers act on it only
+  over HTTPS, and not all of them honour `"cache"`. `NewCorePlugin().WithLogoutClearSiteData(types...)` picks
   other types; called with none, logout sends no header.
 - **`auth.WithCSRFAuthRoutes(mgr)`.** A host that mounts `auth.CSRF()`
   itself gets the exemptions `WithBFFPosture` applies: the logout path and

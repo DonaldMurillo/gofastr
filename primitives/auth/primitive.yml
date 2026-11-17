@@ -78,8 +78,10 @@ invariants:
     enforced_by:
       - test: battery/auth.TestLogoutSendsClearSiteData
       - test: battery/auth.TestLogoutClearSiteDataConfigurable
+      - test: battery/auth.TestSignedInLogoutSendsClearSiteData
+      - test: battery/auth.TestLogoutFailsClosedOnRevokeFailure
   - id: csrf-exempts-only-self-guarded-auth-routes
-    rule: WithBFFPosture and WithCSRFAuthRoutes exempt from auth.CSRF exactly {BasePath}/logout and POST {BasePath}/oauth/{provider}/callback, both of which carry their own cross-site check; a sibling path under BasePath still needs the token.
+    rule: WithBFFPosture and WithCSRFAuthRoutes exempt from auth.CSRF exactly POST {BasePath}/logout and POST {BasePath}/oauth/{provider}/callback, both of which carry their own cross-site check; a sibling path under BasePath still needs the token.
     enforced_by:
       - test: battery/auth.TestCSRFAuthRoutesLetsFormPostCallbackThrough
       - test: battery/auth.TestBFFPostureLetsFormPostCallbackThrough
@@ -89,7 +91,7 @@ decisions:
   - id: logout-clear-site-data-skips-cookies
     date: 2026-11-17
     status: accepted
-    decision: Logout's default Clear-Site-Data is "cache", "storage", so the next person at the browser cannot page back into the signed-out account or read its stored state.
+    decision: Logout's default Clear-Site-Data is "cache", "storage", asking the browser to drop the signed-out account's cached pages and stored state; browsers honour it only over HTTPS, and not every browser honours every type.
     rejected:
       - option: Include "cookies".
         why: Browsers clear it for the whole registrable domain, signing the visitor out of sibling subdomains, and the session cookie is already expired by the same response.

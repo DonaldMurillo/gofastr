@@ -84,11 +84,11 @@ func WithCSRFAuthRoutes(mgr *AuthManager) CSRFOption {
 		panic("auth: WithCSRFAuthRoutes requires AuthManager")
 	}
 	return withCSRFSkip(func(r *http.Request) bool {
-		base := mgr.Config().BasePath
-		if r.URL.Path == base+"/logout" {
-			return true
+		if r.Method != http.MethodPost {
+			return false
 		}
-		return r.Method == http.MethodPost && isFormPostCallback(base, r.URL.Path)
+		base := mgr.Config().BasePath
+		return r.URL.Path == base+"/logout" || isFormPostCallback(base, r.URL.Path)
 	})
 }
 

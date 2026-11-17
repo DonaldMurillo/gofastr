@@ -248,6 +248,31 @@ func TestLogoutSendsClearSiteData(t *testing.T) {
 	}
 }
 
+func TestSignedInLogoutSendsClearSiteData(t *testing.T) {
+	mgr := New(AuthConfig{DevMode: true, UserStore: newMemoryUserStore()})
+	sess, err := mgr.SessionStore().Create(context.Background(), "u1", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	core := NewCorePlugin()
+	if err := core.Init(mgr); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.AddCookie(&http.Cookie{Name: mgr.Config().SessionCookie, Value: sess.Token})
+	rr := httptest.NewRecorder()
+	core.logoutHandler()(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("logout status = %d, want 204", rr.Code)
+	}
+	if _, err := mgr.SessionStore().Get(context.Background(), sess.Token); err == nil {
+		t.Fatal("premise broken: session still live after logout")
+	}
+	if got := rr.Header().Get("Clear-Site-Data"); got != `"cache", "storage"` {
+		t.Fatalf("Clear-Site-Data = %q", got)
+	}
+}
+
 func TestLogoutClearSiteDataConfigurable(t *testing.T) {
 	if got := NewCorePlugin().WithLogoutClearSiteData("cache", "cookies").clearSiteData; got != `"cache", "cookies"` {
 		t.Fatalf("clearSiteData = %q", got)

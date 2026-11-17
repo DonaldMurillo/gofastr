@@ -358,6 +358,13 @@ func TestCSRFAuthRoutesLetsFormPostCallbackThrough(t *testing.T) {
 			t.Fatalf("%s without a token: %d, want 403", path, w.Code)
 		}
 	}
+	app.Router().Delete("/auth/logout", ok)
+	del := httptest.NewRequest(http.MethodDelete, "/auth/logout", nil)
+	dw := httptest.NewRecorder()
+	app.Router().ServeHTTP(dw, del)
+	if dw.Code != http.StatusForbidden {
+		t.Fatalf("DELETE /auth/logout without a token: %d, want 403", dw.Code)
+	}
 	same := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 	same.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
