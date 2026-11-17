@@ -129,6 +129,7 @@ func runCell(cfg config, c *cell) {
 	agent.Stdout = &stream
 	agent.Stderr = &stream
 	runErr := agent.Run()
+	stopCellProcesses(dir)
 	_, writeErr := transcript.Write(stream.Bytes())
 	if err := errors.Join(writeErr, transcript.Close()); err != nil {
 		fail(err)
