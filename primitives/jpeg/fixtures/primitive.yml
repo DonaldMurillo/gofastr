@@ -1,4 +1,0 @@
-primitive: jpeg.fixtures
-summary: Builders for hostile JPEG test fixtures - scan bombs and large progressive frames - used by the image and file tests.
-code:
-  - framework/internal/jpegtest/
