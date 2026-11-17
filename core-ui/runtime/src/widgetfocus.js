@@ -7,10 +7,12 @@
   // opened with showModal over a widget) owns the keyboard while it
   // shows: the browser makes everything else inert and closes it on
   // Escape itself, so neither handler below may act for the widget.
+  // Widget roots that are themselves <dialog>s are layers of the stacks
+  // below, not foreign.
   const foreign = (root) => {
-    let d = null;
-    try { d = document.querySelector('dialog:modal'); } catch (_) {}
-    return !!d && !(root && root.contains(d));
+    let d = [];
+    try { d = document.querySelectorAll('dialog:modal:not([data-cui-widget])'); } catch (_) {}
+    return [...d].some(x => !(root && root.contains(x)));
   };
 
   if (!document.__fuiModalEsc) {
@@ -30,6 +32,9 @@
       const name = p && (!m || (p.seq || 0) > (m.seq || 0)) ? pName : mName;
       const top = name === pName ? p : m;
       if (top && top.closeOnEscape && !foreign(top.root)) {
+        // preventDefault: the key is spent, so no dialog under the
+        // closed layer receives it again as a cancel.
+        e.preventDefault();
         e.stopPropagation();
         G.closeWidget(name);
       }
@@ -44,7 +49,10 @@
       const root = G._widgets && Object.prototype.hasOwnProperty.call(G._widgets, name)
         ? G._widgets[name]?.root
         : undefined;
-      if (!root || foreign(root)) return;
+      // A modal <dialog> root is contained by the browser (the page is
+      // inert), from the moment it opens: no trap, and no race with this
+      // module's load (#753).
+      if (!root || root.tagName == 'DIALOG' || foreign(root)) return;
       const nodes = Array.from(root.querySelectorAll(G._focusSel)).filter(G._isTabStop);
       if (!nodes.length) { e.preventDefault(); return; }
       const first = nodes[0], last = nodes[nodes.length - 1];

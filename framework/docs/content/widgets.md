@@ -30,7 +30,7 @@ local actions and dismiss controls, so a refused state fetch cannot trap it open
 Examples of widgets the framework already supports:
 
 - **FloatingPanel**: corner-anchored chat / devtools / agent panel
-- **Modal**: center dialog with backdrop, ESC + click-outside dismiss
+- **Modal**: center `<dialog>` opened with `showModal()`, ESC + click-outside dismiss
 - **Toast**: ephemeral notifications. `preset.ToastStack(name)` mounts
   the region; `framework/uihost` mounts one named
   `uihost.DefaultToastStack` at boot when the app mounted none, so an
@@ -125,6 +125,34 @@ type Definition struct {
 
 Most fields have defaults; the fluent `widget.New(name).…` builder
 fills them in idiomatically.
+
+### Modals are native `<dialog>` elements
+
+A widget with `Backdrop` set (`preset.Modal`, `preset.Drawer`,
+`preset.BottomSheet`, anything mounted at `widget.Center`) renders its
+default chrome as `<dialog class="cui-widget …" open>`, not a `<div>`.
+The runtime opens it with `showModal()`, so the browser supplies:
+
+- the top layer, above every other surface, with no z-index;
+- the scrim, painted as `::backdrop` in `--ui-scrim`;
+- an inert page: Tab and the screen reader stay inside the dialog from
+  the moment it opens, before any module loads;
+- close requests: Escape and the Android back gesture close it when
+  `CloseOnEscape` is set. With `CloseOnEscape` off the chrome carries
+  `closedby="none"`, and the runtime cancels the request.
+
+A click on the scrim closes it when `CloseOnClickOutside` is set. The
+press has to start on the scrim too, so a text selection dragged out of
+the panel does not close it. The page scroll lock and focus return to
+the trigger work as before. A non-modal widget (a popover or panel)
+opened while a `<dialog>` modal is open mounts inside that dialog, so it
+stays clickable, and moves back to `<body>` when the dialog closes.
+
+The chrome drops `role="dialog"` and `aria-modal`, which `<dialog>`
+implies; another `Role` (`alertdialog`) is kept. A host `Skeleton` that
+returns a `<div>` keeps the old path: a runtime-created
+`[data-cui-backdrop]` scrim and the `widgetfocus` Tab trap and Escape
+handler.
 
 ### Slots
 
