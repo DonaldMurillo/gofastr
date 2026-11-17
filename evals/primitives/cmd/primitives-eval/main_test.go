@@ -792,7 +792,7 @@ func TestStopCellProcessesLetsGitCleanUpBeforeKilling(t *testing.T) {
 	}
 }
 
-func TestStopCellProcessesClearsTheLockOfAKilledWriter(t *testing.T) {
+func TestStopCellProcessesNeverRemovesALockItself(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("cell processes are found through /proc")
 	}
@@ -811,8 +811,8 @@ func TestStopCellProcessesClearsTheLockOfAKilledWriter(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	stopCellProcesses(dir)
 	waitStopped(t, done, "a writer that ignores SIGTERM survived")
-	if _, err := os.Stat(lock); err == nil {
-		t.Error("the killed writer's index.lock was left for grading to wait on")
+	if _, err := os.Stat(lock); err != nil {
+		t.Error("the harness removed index.lock; it cannot prove no writer outside the cell still holds it")
 	}
 }
 
