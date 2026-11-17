@@ -14,20 +14,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// writeRedirects gives every exact redirect route (app.Redirect) a page
-// at its path, so a link or bookmark to the old URL still lands: a meta
-// refresh to the chain's final target, with a plain link as the
-// fallback, no script and no style, under the export's own CSP. It also
-// writes a `_redirects` rule per redirect (`/old /new 308`, the live
-// status) for Netlify and Cloudflare Pages, the hosts that read the
-// `_headers` file beside it, which then answer with a real redirect. A
-// `_redirects` in the static source is appended after these rules.
-//
-// A pattern redirect (app.RedirectPattern) matches URLs no file can
-// stand for; it is logged as skipped and its URLs answer 404.html. A
-// redirect chain that never ends (the live router fails it closed) is
-// skipped too. With path locales each locale tree gets its own page, its
-// target under the same prefix.
 func (b *Builder) writeRedirects(ctx context.Context, pages map[string]bool, rendered *fileSet, owner map[string]string) error {
 	locales, byPrefix := b.Host.PathLocales()
 	tags := []string{""}
@@ -61,9 +47,6 @@ func (b *Builder) writeRedirects(ctx context.Context, pages map[string]bool, ren
 			}
 			href := b.redirectHref(to, pages)
 			rel := filepath.ToSlash(pathToFile(from))
-			// A redirect file that differs from a page's, or another
-			// redirect's, only in case is the same file on a
-			// case-insensitive filesystem; it would replace that page.
 			if prev, dup := owner[foldPath(rel)]; dup {
 				return fmt.Errorf("static: pages %q and %q both export to %s; give one of them another path", prev, from, rel)
 			}
@@ -82,8 +65,6 @@ func (b *Builder) writeRedirects(ctx context.Context, pages map[string]bool, ren
 	}
 	dst := filepath.Join(b.OutDir, "_redirects")
 	if rules.Len() == 0 {
-		// A reused OutDir may hold an earlier build's rules for
-		// redirects the app has since dropped.
 		if err := removeUnder(b.OutDir, dst); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("static: remove stale _redirects: %w", err)
 		}
@@ -96,10 +77,6 @@ func (b *Builder) writeRedirects(ctx context.Context, pages map[string]bool, ren
 	return nil
 }
 
-// localeTarget is a redirect target as locale tag's tree links it, by the
-// rule its page links follow: a target already naming a locale, or one
-// keepUnprefixed keeps (a static file, a path no route resolves), stays
-// as written; any other gets tag's prefix.
 func (b *Builder) localeTarget(locales i18n.PathLocales, tag, target string) string {
 	p := target
 	if i := strings.IndexAny(target, "?#"); i >= 0 {
@@ -111,9 +88,6 @@ func (b *Builder) localeTarget(locales i18n.PathLocales, tag, target string) str
 	return locales.Path(tag, target)
 }
 
-// redirectHref is a redirect target as the export links it: the page
-// form its host serves without a 301 (slashed) when the target is an
-// exported page, under BasePath, query and fragment kept.
 func (b *Builder) redirectHref(target string, pages map[string]bool) string {
 	p, rest := target, ""
 	if i := strings.IndexAny(target, "?#"); i >= 0 {
@@ -125,10 +99,6 @@ func (b *Builder) redirectHref(target string, pages map[string]bool) string {
 	return urlBytesEscaper(b.BasePath + p + rest)
 }
 
-// urlBytesEscaper percent-encodes the bytes that would end a URL early
-// where the export writes one: a control byte (a live redirect's
-// Location gets the same treatment) and a space, which separates the
-// fields of a _redirects line.
 func urlBytesEscaper(s string) string {
 	var out strings.Builder
 	for i := 0; i < len(s); i++ {
@@ -141,19 +111,11 @@ func urlBytesEscaper(s string) string {
 	return out.String()
 }
 
-// redirectPage is the document an exported redirect leaves at its old
-// path. It carries no script or style: the refresh is a meta, the
-// fallback a plain link, so the export's CSP holds for it like any
-// page.
 func redirectPage(ctx context.Context, href, policy string) string {
 	lang := i18n.FromContext(ctx).Tag
 	if lang == "" {
 		lang = "en"
 	}
-	// The target lands in a meta refresh, a canonical link and an
-	// anchor. HTML escaping leaves javascript: and data: intact, so the
-	// scheme goes through the anchor allow-list first; a refused target
-	// degrades to an inert "#".
 	safe := urlsafe.CleanAnchor(href)
 	if safe == "" {
 		safe = "#"

@@ -16,9 +16,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/rootfs"
 )
 
-// staticSourceFile reports whether the host's static source holds a
-// regular file at rel, a valid fs path (a directory named like a page
-// does not count).
 func (b *Builder) staticSourceFile(rel string) bool {
 	if dir := b.Host.StaticDir(); dir != "" {
 		return isFile(os.DirFS(dir), rel)
@@ -29,7 +26,6 @@ func (b *Builder) staticSourceFile(rel string) bool {
 	return false
 }
 
-// isFile reports whether fsys holds a regular file at name.
 func isFile(fsys fs.FS, name string) bool {
 	if !fs.ValidPath(name) {
 		return false
@@ -38,13 +34,6 @@ func isFile(fsys fs.FS, name string) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-// staticSourceHas reports whether the host's static asset source (dir or
-// embedded FS) provides rel, meaning the user shipped their own copy.
-//
-// The spelling must match: on a case-insensitive filesystem a static
-// MANIFEST.webmanifest opened as manifest.webmanifest, the generated
-// file was skipped, and a case-sensitive host had no manifest. The other
-// spelling is copied as itself and refused as a case twin.
 func (b *Builder) staticSourceHas(rel string) bool {
 	if dir := b.Host.StaticDir(); dir != "" {
 		return spelledIn(os.DirFS(dir), filepath.ToSlash(rel))
@@ -55,12 +44,7 @@ func (b *Builder) staticSourceHas(rel string) bool {
 	return false
 }
 
-// spelledIn reports whether fsys holds rel, a slash path, under exactly
-// that spelling: each directory listing names each segment.
 func spelledIn(fsys fs.FS, rel string) bool {
-	// Absent in any spelling is the common answer, and one Stat gives it.
-	// Any other Stat error (an adapter whose files read but do not stat)
-	// leaves the answer to the listings.
 	if _, err := fs.Stat(fsys, rel); errors.Is(err, fs.ErrNotExist) {
 		return false
 	}
@@ -75,15 +59,7 @@ func spelledIn(fsys fs.FS, rel string) bool {
 	return true
 }
 
-// dumpExtraDirs copies every Builder.ExtraDirs filesystem under its mount
-// path. Deterministic (sorted mounts, sorted walk) and non-clobbering:
-// a file this build already wrote (a page, a framework asset, an earlier
-// mount's file) or one the static SOURCE provides wins. What decides is
-// this build and the source, never what sits in OutDir: Watch rebuilds
-// into the same directory, and the previous build's copy of an extra
-// file must not keep the new one out.
 func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
-	// Keyed folded, like every lookup below.
 	written := newFileSet()
 	for _, p := range res.Assets {
 		written.add(p)
@@ -145,10 +121,6 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
 	return nil
 }
 
-// keepRendered reports whether the static source's file at rel (a slash
-// path) is refused because the build wrote a file there, in any case,
-// and logs the refusal. Any other file, an index.html under a path no
-// page takes included, is copied.
 func keepRendered(rel string, rendered *fileSet, log func(string, ...any)) bool {
 	own, ok := rendered.spelling(rel)
 	if !ok {
@@ -162,12 +134,6 @@ func keepRendered(rel string, rendered *fileSet, log func(string, ...any)) bool 
 	return true
 }
 
-// publishable reports whether rel, a slash path in the export, is copied
-// into the public tree: not a path core/static refuses (a dot segment
-// such as .env or .git/config, or a server config file), the same set
-// the UI host refuses to serve. A leading .well-known/ is the public
-// namespace RFC 8615 reserves, and the root .nojekyll is the marker
-// GitHub Pages reads; both are copied.
 func publishable(rel string) bool {
 	if rel == ".nojekyll" {
 		return true
@@ -175,19 +141,10 @@ func publishable(rel string) bool {
 	return !corestatic.Refuses(strings.TrimPrefix(rel, ".well-known/"))
 }
 
-// generatedHostRules reports whether rel (a slash path) is a host rule
-// file the build wrote: the root _headers, always, and the root
-// _redirects when the app has redirects. A static source's copy of one is
-// appended to it rather than refused, so the app's rules (Cache-Control,
-// HSTS, legacy redirects) apply and the generated ones, the header-only
-// frame-ancestors guard among them, stay first.
 func generatedHostRules(rel string, rendered *fileSet) bool {
 	return (rel == "_headers" || rel == "_redirects") && rendered.hasExact(rel)
 }
 
-// appendHostRules appends the static source's rules to the generated
-// file at rel. Both generated files end in a newline, so the first
-// appended line starts a line of its own.
 func appendHostRules(root *os.Root, rel string, data []byte, log func(string, ...any)) error {
 	f, err := root.OpenFile(rel, os.O_WRONLY|os.O_APPEND, 0)
 	if err != nil {
@@ -210,10 +167,6 @@ func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, .
 		return err
 	}
 	defer root.Close()
-	// Every read goes through an os.Root over src, the way the UI host
-	// reads the static dir: a symlink pointing out of the tree is refused
-	// in the kernel, so the export never publishes a file the live host
-	// answers 404 for. os.Open followed it.
 	srcRoot, err := os.OpenRoot(src)
 	if err != nil {
 		return err
@@ -265,19 +218,6 @@ func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, .
 	})
 }
 
-// walkStatic walks a static tree the way the UI host serves it, calling
-// fn for every entry that is not a directory, slash-separated and
-// relative to the tree's root. In an os.Root view a symlink resolves
-// only inside the tree; any other FS (an embed.FS holds no links) gets
-// no directory link walked, since nothing holds that walk inside it.
-// fs.WalkDir does not descend a symlinked directory, and the live host
-// serves static/images/logo.svg through static/images -> img all the
-// same: the export dropped every asset under such a link and the
-// published site 404'd on them. A directory link that resolves inside
-// the tree is walked under its own name; one that escapes, or names
-// nothing, reaches fn like any other link, which refuses it. A link to
-// a directory the walk is already inside (loop -> .) is skipped: the
-// host would serve loop/loop/... forever, and no export holds that.
 func walkStatic(fsys fs.FS, log func(string, ...any), fn func(rel string, d fs.DirEntry) error) error {
 	rootInfo, err := fs.Stat(fsys, ".")
 	if err != nil {
@@ -301,9 +241,6 @@ func walkStatic(fsys fs.FS, log func(string, ...any), fn func(rel string, d fs.D
 					return err
 				}
 			case e.Type()&fs.ModeSymlink != 0 && rootfs.Confined(fsys):
-				// Only an os.Root view holds a linked directory's walk
-				// inside the root. Elsewhere the link goes to fn, whose
-				// skipIrregular drops it.
 				if fi, err := fs.Stat(fsys, rel); err == nil && fi.IsDir() {
 					sub = fi
 				}
@@ -327,10 +264,6 @@ func walkStatic(fsys fs.FS, log func(string, ...any), fn func(rel string, d fs.D
 	return walk(".", []fs.FileInfo{rootInfo})
 }
 
-// openSourceFile opens rel, a walked static-dir entry, through srcRoot.
-// A non-empty reason means the entry is not published, the way the UI
-// host answers 404 for it: a symlink whose target leaves the tree (or
-// no longer exists), and anything that is not a regular file.
 func openSourceFile(srcRoot *os.Root, rel string, d fs.DirEntry) (*os.File, string, error) {
 	st, err := srcRoot.Stat(rel)
 	if err != nil {
@@ -346,13 +279,6 @@ func openSourceFile(srcRoot *os.Root, rel string, d fs.DirEntry) (*os.File, stri
 	return f, "", err
 }
 
-// skipIrregular reports whether the walked entry at rel is a symlink the
-// export does not publish, and logs why. A symlink in a disk-backed FS
-// (SetStaticFS and Builder.ExtraDirs re-root os.DirFS through os.Root)
-// is published only when it resolves to a regular file inside the tree,
-// as openSourceFile decides for the static dir; a read of one that
-// escapes failed the whole build. One that resolves to a directory in
-// the tree never reaches here: walkStatic walks it.
 func skipIrregular(fsys fs.FS, rel string, d fs.DirEntry, log func(string, ...any)) bool {
 	switch t := d.Type(); {
 	case t.IsRegular():
@@ -361,9 +287,6 @@ func skipIrregular(fsys fs.FS, rel string, d fs.DirEntry, log func(string, ...an
 		log("skipped %s (not a regular file)", rel)
 		return true
 	}
-	// Only an os.Root view keeps the link's target inside the directory.
-	// Any other FS, fs.Sub(os.DirFS(dir), ".") among them, follows it
-	// anywhere on disk, and nothing here can tell where it lands.
 	if !rootfs.Confined(fsys) {
 		log("skipped %s (symlink in a filesystem os.Root does not confine)", rel)
 		return true

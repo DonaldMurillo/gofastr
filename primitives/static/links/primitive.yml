@@ -4,3 +4,48 @@ code:
   - framework/static/links.go
 docs:
   - framework/docs/content/static-export.md
+invariants:
+  - id: pages-stamped-static
+    rule: Every exported page's <html> carries data-cui-static and the dismissible run-locally banner directly after its <body> tag.
+    enforced_by:
+      - test: framework/static.TestBuildMarksPagesStaticAndInjectsNotice
+  - id: base-path-prefixes-root-urls
+    rule: With BasePath set, every root-absolute but not protocol-relative src, href, action, data-cui-push-state and data-cui-match-prefix value, every srcset candidate, every quoted /__gofastr/ JSON value, every route-graph path and the locale set's base gain the prefix.
+    enforced_by:
+      - test: framework/static.TestBuildBasePathRewritesURLs
+      - test: framework/static.TestRewriteBaseURLsPrefixesAction
+      - test: framework/static.TestRewriteBaseURLs_PrefixesPushState
+      - test: framework/static.TestRewriteBaseURLs_PrefixesMatchPrefix
+      - test: framework/static.TestRewriteBaseURLs_PrefixesSrcset
+      - test: framework/static.TestSweepStaticSrcsetCommaEndsCandidate
+      - test: framework/static.TestRewriteBaseURLs_PrefixesCatalogJSON
+      - test: framework/static.TestBuildBasePathRewritesRouteGraph
+      - test: framework/static.TestExportWritesLocaleTrees
+  - id: js-assets-take-base-path
+    rule: With BasePath set, the /__gofastr/ literals in runtime JS assets and fetched rail scripts are prefixed.
+    enforced_by:
+      - test: framework/static.TestBuildBasePathRewritesURLs
+      - test: framework/static.TestSweepStaticRailScriptTakesBasePath
+  - id: page-links-carry-slash
+    rule: A link to an exported page, matched in routing form and registered with or without its slash, is written with a trailing slash in every page, 404.html, widget chrome and the offline page, and any other link is left as written.
+    enforced_by:
+      - test: framework/static.TestExportLinksPagesWithSlash
+      - test: framework/static.TestExportOfflinePageLinksWithSlash
+      - test: framework/static.TestSweepStaticSlashLinksStayInBase
+      - test: framework/static.TestSweepStaticNotFoundPage
+  - id: locale-tree-keeps-file-links
+    rule: In a locale tree a link to a file copied from the static source or ExtraDirs, or to a path no route or redirect takes in routing form, keeps its root path.
+    enforced_by:
+      - test: framework/static.TestLocaleTreeKeepsFileLinks
+      - test: framework/static.TestLocaleTreeTargetsFollowLinkRule
+      - test: framework/static.TestSweepStaticKeepUnprefixedRedirect
+decisions:
+  - id: slash-page-links
+    date: 2026-11-17
+    status: accepted
+    decision: The export writes each link to an exported page in the slashed form its directory index is served at.
+    rejected:
+      - option: Leave links as the app wrote them.
+        why: Static hosts answer /docs with a 301 to /docs/, so every click, client navigation included, cost an extra round trip.
+    revisit_if: Pages are written as <path>.html files that hosts serve without a redirect.
+    upholds: [page-links-carry-slash]
