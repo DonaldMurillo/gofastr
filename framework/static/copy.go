@@ -112,7 +112,7 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
 				b.log("skipped %s (not published)", urlPath)
 				return nil
 			}
-			if skipSymlink(fsys, p, d, b.log) {
+			if skipIrregular(fsys, p, d, b.log) {
 				return nil
 			}
 			dst := filepath.Join(b.OutDir, filepath.FromSlash(rel))
@@ -303,7 +303,7 @@ func walkStatic(fsys fs.FS, log func(string, ...any), fn func(rel string, d fs.D
 			case e.Type()&fs.ModeSymlink != 0 && rootfs.Confined(fsys):
 				// Only an os.Root view holds a linked directory's walk
 				// inside the root. Elsewhere the link goes to fn, whose
-				// skipSymlink drops it.
+				// skipIrregular drops it.
 				if fi, err := fs.Stat(fsys, rel); err == nil && fi.IsDir() {
 					sub = fi
 				}
@@ -332,35 +332,34 @@ func walkStatic(fsys fs.FS, log func(string, ...any), fn func(rel string, d fs.D
 // host answers 404 for it: a symlink whose target leaves the tree (or
 // no longer exists), and anything that is not a regular file.
 func openSourceFile(srcRoot *os.Root, rel string, d fs.DirEntry) (*os.File, string, error) {
-	f, err := srcRoot.Open(rel)
+	st, err := srcRoot.Stat(rel)
 	if err != nil {
 		if d.Type()&fs.ModeSymlink != 0 {
 			return nil, "symlink out of the static dir or to nothing", nil
 		}
 		return nil, "", err
 	}
-	st, err := f.Stat()
-	if err != nil {
-		_ = f.Close()
-		return nil, "", err
-	}
 	if !st.Mode().IsRegular() {
-		_ = f.Close()
 		return nil, "not a regular file", nil
 	}
-	return f, "", nil
+	f, err := srcRoot.Open(rel)
+	return f, "", err
 }
 
-// skipSymlink reports whether the walked entry at rel is a symlink the
+// skipIrregular reports whether the walked entry at rel is a symlink the
 // export does not publish, and logs why. A symlink in a disk-backed FS
 // (SetStaticFS and Builder.ExtraDirs re-root os.DirFS through os.Root)
 // is published only when it resolves to a regular file inside the tree,
 // as openSourceFile decides for the static dir; a read of one that
 // escapes failed the whole build. One that resolves to a directory in
 // the tree never reaches here: walkStatic walks it.
-func skipSymlink(fsys fs.FS, rel string, d fs.DirEntry, log func(string, ...any)) bool {
-	if d.Type()&fs.ModeSymlink == 0 {
+func skipIrregular(fsys fs.FS, rel string, d fs.DirEntry, log func(string, ...any)) bool {
+	switch t := d.Type(); {
+	case t.IsRegular():
 		return false
+	case t&fs.ModeSymlink == 0:
+		log("skipped %s (not a regular file)", rel)
+		return true
 	}
 	// Only an os.Root view keeps the link's target inside the directory.
 	// Any other FS, fs.Sub(os.DirFS(dir), ".") among them, follows it
@@ -395,7 +394,7 @@ func copyFS(fsys fs.FS, dst string, rendered *fileSet, res *Result, log func(str
 			log("skipped %s (not published)", path)
 			return nil
 		}
-		if skipSymlink(fsys, path, d, log) {
+		if skipIrregular(fsys, path, d, log) {
 			return nil
 		}
 		if generatedHostRules(path, rendered) {
