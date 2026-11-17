@@ -112,7 +112,7 @@ func registerCanonicalErasers() {
 		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
 		Canonicalize: canonicalEmailOrEmpty(nil),
 	})
-	for _, p := range []tokenPurpose{purposeMagicLink, purposeEmailCode, purposeReset, purposeVerify, purposePasskeyRegister} {
+	for _, p := range append([]tokenPurpose{purposeMagicLink, purposeEmailCode}, userPurposes...) {
 		registerTokenEraser("magic_link_tokens", p)
 	}
 }
@@ -218,10 +218,12 @@ func resolveEraseTables(mgr *AuthManager) {
 					Column: "user_id", Mode: datexport.EraseDelete,
 				})
 			}
-			// Login challenges carry no user, so only registration ones
-			// are the user's data.
+			// Login challenges carry no user; every other passkey token
+			// names the user it was issued to.
 			if ms, ok := pp.challenges.(*SQLMagicLinkTokenStore); ok {
-				registerTokenEraser(ms.table, purposePasskeyRegister)
+				for _, p := range []tokenPurpose{purposePasskeyRegister, purposePasskeyRegisterQuiet, purposePasskeyReauth, purposePasskeyProof} {
+					registerTokenEraser(ms.table, p)
+				}
 			}
 		}
 	}

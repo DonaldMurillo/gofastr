@@ -188,7 +188,73 @@ func (a *App) resolveErasedUser(ctx context.Context, dialect migrate.Dialect, us
 			user.Identities[kind] = val
 		}
 	}
+	// A retry after a store eraser failed finds the user row gone; the
+	// first run kept what it resolved.
+	if len(user.Identities) < len(kinds) {
+		kept, err := a.keptIdentities(ctx, dialect, userID)
+		if err != nil {
+			return user, fmt.Errorf("framework: erase: read the identities a failed erasure kept: %w", err)
+		}
+		for kind, val := range kept {
+			if _, need := kinds[kind]; need && user.Identities[kind] == "" {
+				user.Identities[kind] = val
+			}
+		}
+	}
 	return user, nil
+}
+
+// eraseIdentitiesTable keeps an erased user's resolved identities (an
+// email, say) from the transaction that deleted the user row until
+// every EraseResolved store eraser has run once without failing, so a
+// retry hands them the same identities.
+const eraseIdentitiesTable = "gofastr_erase_identities"
+
+func hasResolvedStoreErasers() bool {
+	return slices.ContainsFunc(datexport.AllStoreErasers(), func(s datexport.StoreEraser) bool { return s.EraseResolved != nil })
+}
+
+func (a *App) keptIdentities(ctx context.Context, dialect migrate.Dialect, userID string) (map[datexport.IdentityKind]string, error) {
+	phys, exists, err := physicalTable(ctx, a.DB, eraseIdentitiesTable, dialect, false)
+	if err != nil || !exists {
+		return nil, err
+	}
+	rows, err := a.DB.QueryContext(ctx, fmt.Sprintf(`SELECT kind, value FROM %s WHERE user_id = $1`, quotePhysical(phys)), userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[datexport.IdentityKind]string{}
+	for rows.Next() {
+		var kind int64
+		var val string
+		if err := rows.Scan(&kind, &val); err != nil {
+			return nil, err
+		}
+		out[datexport.IdentityKind(kind)] = val
+	}
+	return out, rows.Err()
+}
+
+// keepIdentities writes user's identities inside the erasure's
+// transaction, so they commit with the deletion they outlive.
+func keepIdentities(ctx context.Context, tx *sql.Tx, user datexport.ErasedUser) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM `+eraseIdentitiesTable+` WHERE user_id = $1`, user.ID); err != nil {
+		return err
+	}
+	for _, kind := range slices.Sorted(maps.Keys(user.Identities)) {
+		if v := user.Identities[kind]; v != "" {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO `+eraseIdentitiesTable+` (user_id, kind, value) VALUES ($1, $2, $3)`, user.ID, int64(kind), v); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (a *App) dropKeptIdentities(ctx context.Context, userID string) error {
+	_, err := a.DB.ExecContext(ctx, `DELETE FROM `+eraseIdentitiesTable+` WHERE user_id = $1`, userID)
+	return err
 }
 
 func resolveEraserIdentities(user datexport.ErasedUser, erasers []datexport.DataEraser) (resolved []resolvedEraser, skipped []string) {
@@ -1116,6 +1182,12 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, user date
 	if err != nil {
 		return report, err
 	}
+	keep := !dryRun && len(user.Identities) > 0 && hasResolvedStoreErasers()
+	if keep {
+		if _, err := a.DB.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS `+eraseIdentitiesTable+` (user_id TEXT NOT NULL, kind BIGINT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (user_id, kind))`); err != nil {
+			return report, fmt.Errorf("framework: erase: create %s: %w", eraseIdentitiesTable, err)
+		}
+	}
 	for _, e := range liveErasers {
 		for _, col := range append([]string{e.eraser.Column}, whereColumns(e.eraser)...) {
 			if err := requireColumn(ctx, a.DB, e.table, col, dialect); err != nil {
@@ -1185,6 +1257,12 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, user date
 		}
 	}
 
+	if keep {
+		if err := keepIdentities(ctx, tx, user); err != nil {
+			return report, fmt.Errorf("framework: erase: keep identities for a retry: %w", err)
+		}
+	}
+
 	if dryRun {
 		committed = true
 		if err := tx.Rollback(); err != nil {
@@ -1203,7 +1281,13 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, user date
 	} else {
 		objErr = a.eraseStoredObjects(ctx, deletable)
 	}
-	return report, errors.Join(objErr, a.eraseStores(ctx, user, false, &report))
+	storeErr := a.eraseStores(ctx, user, false, &report)
+	if keep && storeErr == nil {
+		if err := a.dropKeptIdentities(ctx, userID); err != nil {
+			storeErr = fmt.Errorf("framework: erase: every store erased, but the identities kept for a retry were not removed (erase again to remove them): %w", err)
+		}
+	}
+	return report, errors.Join(objErr, storeErr)
 }
 
 func (a *App) eraseStores(ctx context.Context, user datexport.ErasedUser, dryRun bool, rep *EraseReport) error {

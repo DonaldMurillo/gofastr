@@ -122,3 +122,43 @@ func TestOAuthRefusesNonAddressEmail(t *testing.T) {
 		t.Fatalf("SECURITY: a non-address became an account: %v", storeKeys(userStore))
 	}
 }
+
+// Init refuses a CanonicalizeEmail override that moves an address it
+// already canonicalized, and accepts one that is idempotent or refuses
+// some probes.
+func TestInitRefusesNonIdempotentCanonicalizer(t *testing.T) {
+	boot := func(fold func(string) (string, error)) error {
+		mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), CanonicalizeEmail: fold})
+		return mgr.Init(nil)
+	}
+	prefix := func(s string) (string, error) { return "c-" + strings.ToLower(s), nil }
+	if err := boot(prefix); err == nil || !strings.Contains(err.Error(), "not idempotent") {
+		t.Fatalf("a prefixing canonicalizer booted: %v", err)
+	}
+	// Drops one dot per call: idempotent only on an address without dots.
+	oneDot := func(s string) (string, error) {
+		c, err := CanonicalEmail(s)
+		local, domain, _ := strings.Cut(c, "@")
+		return strings.Replace(local, ".", "", 1) + "@" + domain, err
+	}
+	if err := boot(oneDot); err == nil {
+		t.Fatal("a canonicalizer that folds one dot at a time booted")
+	}
+	allDots := func(s string) (string, error) {
+		c, err := CanonicalEmail(s)
+		local, domain, _ := strings.Cut(c, "@")
+		return strings.ReplaceAll(local, ".", "") + "@" + domain, err
+	}
+	if err := boot(allDots); err != nil {
+		t.Fatalf("an idempotent canonicalizer refused: %v", err)
+	}
+	gmailOnly := func(s string) (string, error) {
+		if !strings.HasSuffix(strings.ToLower(s), "@gmail.com") {
+			return "", ErrEmailNotComposed
+		}
+		return CanonicalEmail(s)
+	}
+	if err := boot(gmailOnly); err != nil {
+		t.Fatalf("a canonicalizer that refuses most probes refused: %v", err)
+	}
+}

@@ -279,12 +279,19 @@ func (s *SQLOAuthTokenStore) ensureTable(ctx context.Context) error {
 // addColumn adds a column to a table created by an older build; a column
 // already there is the goal, not an error.
 func (s *SQLOAuthTokenStore) addColumn(ctx context.Context, def string) error {
-	alter := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s`, query.QuoteFolded(s.table), def)
-	if s.dialect.of(s.db) == migrate.DialectPostgres {
-		alter = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s`, query.QuoteFolded(s.table), def)
+	return addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, def)
+}
+
+// addColumnIfMissing adds a column (def is "name TYPE ...") to table when
+// a table created by an older build lacks it; a column already there is
+// the goal, not an error.
+func addColumnIfMissing(ctx context.Context, db *sql.DB, d migrate.Dialect, table, def string) error {
+	alter := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s`, query.QuoteFolded(table), def)
+	if d == migrate.DialectPostgres {
+		alter = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s`, query.QuoteFolded(table), def)
 	}
-	if _, err := s.db.ExecContext(ctx, alter); err != nil {
-		if s.dialect.of(s.db) != migrate.DialectPostgres && strings.Contains(err.Error(), "duplicate column") {
+	if _, err := db.ExecContext(ctx, alter); err != nil {
+		if d != migrate.DialectPostgres && strings.Contains(err.Error(), "duplicate column") {
 			return nil
 		}
 		return err

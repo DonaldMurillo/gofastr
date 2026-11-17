@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **An erasure retried after a store eraser failed hands that store the
+  user's identities again.** The first run's SQL part deleted the user row
+  the email was read from, so the retry's `ErasedUser` carried only the id.
+  The erasure now keeps the identities in `gofastr_erase_identities` until
+  every `EraseResolved` store eraser has run once without failing
+  ([data export](framework/docs/content/data-export.md)). Nothing to change.
 - **`gofastr verify` reports a hard navigation through any chain of frames.** GOFASTR1802 caught
   `location.href = x` and `window.location.href = x`, but missed `window.top.location.href = x` and
   other chains of more than one hop.
@@ -134,6 +140,15 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **BREAKING: `auth.PasskeyStore` gains `RenamePasskey`.** Both built-in
+  stores implement it. A custom store adds it, and may keep the new
+  `PasskeyCredential.Transports` and `AAGUID`.
+- **A passkey sign-in with a credential the server does not hold answers
+  404, not 401.** The message is the same, and the browser can now tell
+  the password manager to drop that passkey.
+- **`AuthConfig.CanonicalizeEmail` must be idempotent, and Init now checks
+  it.** An override that moves an address it already canonicalized fails
+  boot with the address named.
 - **A layout's view-transition CSS loads with its layer, not in app.css.**
   `app.NewLayout` registers the layout's `TransitionCSS()` as a component
   sheet of its own (`Layout.TransitionSheet()`), and the layer root
@@ -205,6 +220,22 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr upgrade` finds the Go spellings.
 
 ### Added
+- **Passkeys: autofill sign-in, step-up, rename and password-manager sync
+  ([#708](https://github.com/DonaldMurillo/gofastr/issues/708)).**
+  `auth.PasskeyAutofillAttrs` lists the device's passkeys in the username
+  field's autofill (conditional UI). `PasskeyUpgradeAttrs` saves a passkey
+  without a prompt after a password sign-in, where the browser supports
+  it. `POST /auth/passkey/reauth` and `PasskeyReauthAttrs` confirm a
+  sensitive action with a passkey, and the handler spends the proof with
+  `PasskeyPlugin.RedeemReauthProof`. `POST /auth/passkey/rename` and
+  `PasskeyRenameAttrs` rename a passkey. Registration stores transports
+  and the AAGUID, and the list answers `rpId`, `userId`, `userName`,
+  `deviceType`, `transports` and `aaguid`. The browser module tells the
+  password manager which passkeys are still valid through the Signal API.
+  See [Passkeys](framework/docs/content/auth.md#passkeys).
+- **`OIDCConfig.Tenants` admits a multi-tenant issuer** such as Microsoft's
+  `common` or `organizations` endpoint: the token's `iss` must be the
+  issuer for its own `tid`, and the tenant must be listed (or `"*"`).
 - **Logout sends `Clear-Site-Data`.** A successful `POST /auth/logout`
   now sends `Clear-Site-Data: "cache", "storage"`, which asks the browser
   to empty its caches and the origin's storage. Browsers act on it only

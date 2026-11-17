@@ -1,0 +1,85 @@
+primitive: auth.passkey
+summary: Passkey sign-in, step-up and management, the WebAuthn verifier and the browser module that runs the ceremonies.
+code:
+  - battery/auth/passkey.go
+  - battery/auth/passkey_sql.go
+  - battery/auth/passkey_client.go
+  - battery/auth/passkey.js
+  - battery/auth/webauthn.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: unknown-credential-answers-404
+    rule: A sign-in or step-up whose credential id the store does not hold, or holds for another account, answers 404 with the same message as every failed sign-in, and the browser module then calls PublicKeyCredential.signalUnknownCredential for that id where the browser has it.
+    enforced_by:
+      - test: battery/auth.TestPasskeyUnknownCredentialIs404
+      - test: battery/auth.TestPasskeyDeleteOnlyOwn
+      - test: battery/auth.TestPasskeyReauthProof
+      - test: battery/auth.TestPasskeyBrowserManageAndReauth
+  - id: transports-kept-and-sent-back
+    rule: Registration stores only the known AuthenticatorTransport values the browser reported, sorted and once each, and the authenticator's AAGUID, and every excludeCredentials and allowCredentials entry carries the stored transports.
+    enforced_by:
+      - test: battery/auth.TestPasskeyKeepsTransportsAndAAGUID
+      - test: battery/auth.TestSQLitePasskeyStoreContract
+      - test: battery/auth.TestSQLitePasskeyStoreUpgradesOldTable
+      - test: battery/auth.TestPasskeyBrowserManageAndReauth
+  - id: only-conditional-create-skips-presence
+    rule: Registration skips the UP and UV checks only for a challenge issued with conditional true, whose options ask for userVerification preferred; every other registration, sign-in and step-up requires both flags.
+    enforced_by:
+      - test: battery/auth.TestPasskeyConditionalCreate
+  - id: management-is-the-owners
+    rule: Rename and delete change only a passkey the signed-in account owns, and answer 404 for any other id.
+    enforced_by:
+      - test: battery/auth.TestPasskeyRenameOnlyOwn
+      - test: battery/auth.TestPasskeyDeleteOnlyOwn
+      - test: battery/auth.TestMemoryPasskeyStoreContract
+      - test: battery/auth.TestSQLitePasskeyStoreContract
+  - id: list-names-the-account
+    rule: GET {base}/passkey/list answers rpId, the base64url user handle and the account's email beside the passkeys, each with its device type, transports and, when known, its AAGUID as a UUID.
+    enforced_by:
+      - test: battery/auth.TestPasskeyListNamesTheAccount
+      - test: battery/auth.TestPasskeyKeepsTransportsAndAAGUID
+  - id: reauth-proof-is-single-use-and-the-sessions
+    rule: A step-up challenge lists only the signed-in account's passkeys, and RedeemReauthProof answers nil once per proof and only for a full session of the account the proof was issued to.
+    enforced_by:
+      - test: battery/auth.TestPasskeyReauthProof
+      - test: battery/auth.TestPasskeyReauthProofNeedsFullSession
+      - test: battery/auth.TestPasskeyBrowserManageAndReauth
+  - id: user-tokens-reach-erasure
+    rule: Every passkey token whose payload names a user (registration, conditional registration, step-up challenge, step-up proof) is removed by erasure from the SQL and in-memory token stores.
+    enforced_by:
+      - test: battery/auth.TestEraseCoversConfiguredStoreTables
+      - test: battery/auth.TestMemoryStoresReachedByErasure
+    applies:
+      - battery/auth/token_purpose.go
+      - battery/auth/erase.go
+      - battery/auth/memory_erase.go
+  - id: one-webauthn-request-at-a-time
+    rule: The browser module withdraws its waiting autofill request before any other ceremony starts and starts it again only once no ceremony is running.
+    enforced_by:
+      - test: battery/auth.TestPasskeyBrowserManageAndReauth
+    judge: Does this change start a navigator.credentials call in passkey.js outside exclusive() while an autofill request may be waiting?
+decisions:
+  - id: keep-hand-rolled-verifier
+    date: 2026-11-17
+    status: accepted
+    decision: The WebAuthn ceremonies stay verified by webauthn.go on the standard library, with its own bounded CBOR and COSE parsing (issue 708).
+    rejected:
+      - option: Adopt github.com/go-webauthn/webauthn.
+        why: It adds a dependency tree for attestation formats and metadata the battery never verifies (it requests attestation none), and the narrow verifier is covered by its own tests and the browser round trips.
+    revisit_if: The battery starts verifying attestation statements or trusting authenticator metadata, or a WebAuthn level adds checks the verifier would have to grow.
+  - id: step-up-returns-a-proof
+    date: 2026-11-17
+    status: accepted
+    decision: A passed step-up answers a single-use proof token, bound to the account and spent by the app's handler with RedeemReauthProof, instead of marking the session.
+    rejected:
+      - option: Stamp a re-authenticated-at time on the session.
+        why: Every SessionStore would need a new extension to write it, and a stamp authorizes every sensitive action in its window rather than the one the user confirmed.
+    upholds: [reauth-proof-is-single-use-and-the-sessions]
+  - id: device-type-from-backup-eligibility
+    date: 2026-11-17
+    status: accepted
+    decision: A passkey's device type is derived from its backup-eligible flag, which is fixed when the passkey is made, rather than stored in a column of its own.
+    rejected:
+      - option: Store the device type.
+        why: It is the BE flag under another name, and a second column could disagree with it.

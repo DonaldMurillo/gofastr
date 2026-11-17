@@ -75,7 +75,7 @@ generated guidance.
 | audit trail, who-did-what, compliance log | `app.WithAuditLog(cfg)` (chained *App method) |
 | admin pages, ops dashboard, queue browser | `battery/admin` |
 | login, signup, session, CSRF, bcrypt, "require admin" | `battery/auth` |
-| passkeys, WebAuthn, "sign in with Face ID / Touch ID", passwordless sign-in | `auth.NewPasskeyPlugin(auth.PasskeyConfig{RPID: …, Origins: …, OnSuccessURL: …, TwoFactorURL: …})` + `auth.NewSQLPasskeyStore`; mark `ui.Button`s with `auth.PasskeyLoginAttrs` / `PasskeyRegisterAttrs` / `PasskeyDeleteAttrs` and render the `csrf-token` meta behind `auth.CSRF`; never hand-roll `navigator.credentials` calls; `gofastr docs auth` |
+| passkeys, WebAuthn, "sign in with Face ID / Touch ID", passwordless sign-in, passkey autofill, "confirm with your passkey" step-up | `auth.NewPasskeyPlugin(auth.PasskeyConfig{RPID: …, Origins: …, OnSuccessURL: …, TwoFactorURL: …})` + `auth.NewSQLPasskeyStore`; mark `ui.Button`s with `auth.PasskeyLoginAttrs` / `PasskeyRegisterAttrs` / `PasskeyRenameAttrs` / `PasskeyDeleteAttrs` / `PasskeyReauthAttrs`, the username field with `PasskeyAutofillAttrs` + `AutoComplete: auth.PasskeyAutocomplete`, spend a step-up with `PasskeyPlugin.RedeemReauthProof`, and render the `csrf-token` meta behind `auth.CSRF`; never hand-roll `navigator.credentials` calls; `gofastr docs auth` |
 | send notification, password reset link, fan-out across channels | `battery/notify` |
 | background job, scheduled task, retry-on-failure | `battery/queue` (use `DBQueue` for real workloads) |
 | send email, SMTP, transactional mail | `battery/email` |

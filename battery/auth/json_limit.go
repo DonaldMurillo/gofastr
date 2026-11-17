@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"net/http"
@@ -33,6 +34,16 @@ const maxAuthBodyBytes = 1 << 20 // 1 MiB
 // handler.IsJSONContentType, shared with Bind — and the 1 MiB cap with
 // its 413 mapping).
 func decodeJSONLimited(w http.ResponseWriter, r *http.Request, dst any) bool {
+	return decodeJSON(w, r, dst, false)
+}
+
+// decodeOptionalJSON is decodeJSONLimited for a body that may be empty,
+// which leaves dst as it was.
+func decodeOptionalJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	return decodeJSON(w, r, dst, true)
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any, emptyOK bool) bool {
 	if !handler.IsJSONContentType(r.Header.Get("Content-Type")) {
 		writeAuthError(w, r, http.StatusUnsupportedMediaType, i18n.ReasonJSONMediaType)
 		return false
@@ -46,6 +57,9 @@ func decodeJSONLimited(w http.ResponseWriter, r *http.Request, dst any) bool {
 		}
 		writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 		return false
+	}
+	if emptyOK && len(bytes.TrimSpace(body)) == 0 {
+		return true
 	}
 	if err := handler.UnmarshalStrict(body, dst); err != nil {
 		writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)

@@ -629,13 +629,15 @@ report lists the rows deleted and the stores that succeeded. Erase again
 once the store is reachable: the SQL planes match nothing, and each store
 removes what is left. A panicking eraser counts as a failed one.
 
-A retry cannot hand an `EraseResolved` store the identities again: the user
-row they were read from went with the first run, so the retry's
-`ErasedUser` carries only the id. A store keyed by such an identity must
-either not fail once it has its input, or find the value another way on a
-retry. `battery/auth`'s in-memory eraser does the second: with no resolved
-email it reads the address from its user store, and it fails only when that
-lookup fails, which a retry repeats.
+A retry hands an `EraseResolved` store the same identities as the first
+run, though the user row they were read from went with it. When any store
+eraser sets `EraseResolved`, the erasure writes the identities it resolved
+to the `gofastr_erase_identities` table (`user_id`, `kind`, `value`) in the
+same transaction as the deletes. A later erasure of that user reads from
+there every identity its resolvers no longer find, and the row is deleted
+once every store eraser has run without failing. Until then the table
+holds the erased user's email (or other identity) and nothing else; a dry
+run writes nothing.
 
 A dry run rolls the transaction back first, then asks each store for its
 count with `dryRun` set, so nothing in the store changes.

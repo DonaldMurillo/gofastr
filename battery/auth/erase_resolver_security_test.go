@@ -59,11 +59,14 @@ func TestMemoryEraserCanonicalizesOnce(t *testing.T) {
 	ctx := context.Background()
 	once := func(s string) (string, error) { return "c-" + strings.ToLower(s), nil }
 	tokens := NewMemoryMagicLinkTokenStore()
-	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), AllowInMemoryStores: true, CanonicalizeEmail: once})
+	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), AllowInMemoryStores: true})
 	mgr.Use(NewEmailCodePlugin(EmailCodeConfig{TokenStore: tokens, DevMode: true}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatal(err)
 	}
+	// Init refuses a canonicalizer that is not idempotent; installed past
+	// that check, the eraser must still fold only once.
+	mgr.config.CanonicalizeEmail = once
 	t.Cleanup(func() { _ = mgr.OnStop(context.Background()) })
 	canonical, _ := once("Ann@Example.com")
 	if _, err := createPurposeToken(ctx, tokens, purposeEmailCode, canonical, time.Hour); err != nil {

@@ -3,8 +3,10 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -18,6 +20,9 @@ import (
 // credential id and COSE public key as unpadded base64url TEXT, the sign
 // counter and timestamps as BIGINT (unix seconds; 0 is "never"), and the
 // backup flags as 0/1 INTEGER, so one DDL runs on SQLite and Postgres.
+// Transports are a comma-joined TEXT list and the AAGUID 32 hex digits
+// (” when unknown); both columns are added to a table an older build
+// created.
 // A public key is not a secret, so nothing is sealed.
 type SQLPasskeyStore struct {
 	db      *sql.DB
@@ -54,10 +59,15 @@ func (s *SQLPasskeyStore) EnsureSchema(ctx context.Context) error {
 			return err
 		}
 	}
+	for _, def := range []string{"transports TEXT NOT NULL DEFAULT ''", "aaguid TEXT NOT NULL DEFAULT ''"} {
+		if err := addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, def); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-const passkeyColumns = `id, user_id, public_key, alg, sign_count, name, backup_eligible, backed_up, created_at, last_used_at`
+const passkeyColumns = `id, user_id, public_key, alg, sign_count, name, backup_eligible, backed_up, created_at, last_used_at, transports, aaguid`
 
 func boolInt(b bool) int {
 	if b {
@@ -121,9 +131,10 @@ func (s *SQLPasskeyStore) AddPasskey(ctx context.Context, c PasskeyCredential, m
 	if held >= maxPerUser {
 		return ErrPasskeyLimit
 	}
-	_, err = tx.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, t, passkeyColumns),
+	_, err = tx.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, t, passkeyColumns),
 		b64url.EncodeToString(c.ID), c.UserID, b64url.EncodeToString(c.PublicKey), c.Algorithm, int64(c.SignCount),
-		c.Name, boolInt(c.BackupEligible), boolInt(c.BackedUp), unixOrZero(c.CreatedAt), unixOrZero(c.LastUsedAt))
+		c.Name, boolInt(c.BackupEligible), boolInt(c.BackedUp), unixOrZero(c.CreatedAt), unixOrZero(c.LastUsedAt),
+		strings.Join(c.Transports, ","), hex.EncodeToString(c.AAGUID))
 	if err != nil {
 		if isUniqueViolation(err) {
 			return ErrPasskeyExists
@@ -134,12 +145,15 @@ func (s *SQLPasskeyStore) AddPasskey(ctx context.Context, c PasskeyCredential, m
 }
 
 func scanPasskey(row rowScanner) (PasskeyCredential, error) {
-	var id, key string
+	var id, key, transports, aaguid string
 	var count, created, used int64
 	var be, bs int
 	var c PasskeyCredential
-	if err := row.Scan(&id, &c.UserID, &key, &c.Algorithm, &count, &c.Name, &be, &bs, &created, &used); err != nil {
+	if err := row.Scan(&id, &c.UserID, &key, &c.Algorithm, &count, &c.Name, &be, &bs, &created, &used, &transports, &aaguid); err != nil {
 		return PasskeyCredential{}, err
+	}
+	if transports != "" {
+		c.Transports = strings.Split(transports, ",")
 	}
 	var err error
 	if c.ID, err = b64url.DecodeString(id); err != nil {
@@ -150,6 +164,12 @@ func scanPasskey(row rowScanner) (PasskeyCredential, error) {
 	}
 	if count < 0 || count > 1<<32-1 {
 		return PasskeyCredential{}, fmt.Errorf("passkey row sign count %d out of range", count)
+	}
+	if c.AAGUID, err = hex.DecodeString(aaguid); err != nil {
+		return PasskeyCredential{}, fmt.Errorf("passkey row aaguid: %w", err)
+	}
+	if len(c.AAGUID) == 0 {
+		c.AAGUID = nil
 	}
 	c.SignCount = uint32(count)
 	c.BackupEligible, c.BackedUp = be != 0, bs != 0
@@ -190,6 +210,17 @@ func (s *SQLPasskeyStore) ListPasskeys(ctx context.Context, userID string) ([]Pa
 func (s *SQLPasskeyStore) RecordPasskeyUse(ctx context.Context, id []byte, old, next uint32, backedUp bool, at time.Time) (bool, error) {
 	q := fmt.Sprintf(`UPDATE %s SET sign_count = $1, backed_up = $2, last_used_at = $3 WHERE id = $4 AND sign_count = $5`, query.QuoteFolded(s.table))
 	res, err := s.db.ExecContext(ctx, q, int64(next), boolInt(backedUp), unixOrZero(at), b64url.EncodeToString(id), int64(old))
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
+
+// RenamePasskey implements PasskeyStore.
+func (s *SQLPasskeyStore) RenamePasskey(ctx context.Context, userID string, id []byte, name string) (bool, error) {
+	q := fmt.Sprintf(`UPDATE %s SET name = $1 WHERE id = $2 AND user_id = $3`, query.QuoteFolded(s.table))
+	res, err := s.db.ExecContext(ctx, q, name, b64url.EncodeToString(id), userID)
 	if err != nil {
 		return false, err
 	}

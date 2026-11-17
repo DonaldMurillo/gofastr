@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -237,6 +238,38 @@ func canonicalizeEmailWith(canonicalize func(string) (string, error), email stri
 		return "", i18n.NewError(reasonInvalidEmail)
 	}
 	return canonical, nil
+}
+
+// canonicalizerProbes are the addresses Init runs an
+// AuthConfig.CanonicalizeEmail override over: mixed case, padding,
+// dots and plus tags, a decomposed accent, a zero-width space and an
+// IDN domain, the shapes a hand-written rule tends to fold one step at
+// a time.
+var canonicalizerProbes = []string{
+	"Alice@Example.COM", "  bob@example.org ", "first.last+news@gmail.com", "F.I.R.S.T@GoogleMail.com",
+	"zoe\u0308@example.com", "ow\u200bner@example.com", "user@xn--bcher-kva.example", "MiXeD.Case+Tag@Sub.Example.co.uk",
+}
+
+// checkCanonicalizerIdempotent refuses an override that changes an
+// address it already canonicalized: erasure and password reset fold
+// the stored address again before matching it, so a second fold that
+// moves it misses the user's tokens. An address the override refuses
+// is skipped; one it accepts must come back unchanged and accepted.
+func checkCanonicalizerIdempotent(canonicalize func(string) (string, error)) error {
+	if canonicalize == nil {
+		return nil
+	}
+	for _, in := range canonicalizerProbes {
+		once, err := canonicalizeEmailWith(canonicalize, in)
+		if err != nil {
+			continue
+		}
+		twice, err := canonicalizeEmailWith(canonicalize, once)
+		if err != nil || twice != once {
+			return fmt.Errorf("auth: AuthConfig.CanonicalizeEmail is not idempotent: %q canonicalizes to %q, and that to %q (err %v); a canonical address must map to itself, since erasure and password reset canonicalize the stored address again", in, once, twice, err)
+		}
+	}
+	return nil
 }
 
 // addressShaped reports whether email is one local@domain pair: exactly

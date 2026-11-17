@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -71,6 +72,10 @@ type PasskeyConfig struct {
 	// RateLimit applies a per-IP limit to every passkey endpoint.
 	// Default: 30 attempts/min with a 5-minute block.
 	RateLimit *RateLimiterConfig
+
+	// ReauthTTL is how long the proof a passed step-up returns stays
+	// good for RedeemReauthProof. Default: 5 min.
+	ReauthTTL time.Duration
 }
 
 // PasskeyCredential is one registered passkey.
@@ -83,8 +88,25 @@ type PasskeyCredential struct {
 	Name           string
 	BackupEligible bool
 	BackedUp       bool
-	CreatedAt      time.Time
-	LastUsedAt     time.Time
+	// Transports are the ways the authenticator said it can be reached
+	// ("internal", "hybrid", "usb", "nfc", "ble", "smart-card"), sent
+	// back in excludeCredentials and allowCredentials.
+	Transports []string
+	// AAGUID names the authenticator's make and model (16 bytes); all
+	// zero when the authenticator withholds it.
+	AAGUID     []byte
+	CreatedAt  time.Time
+	LastUsedAt time.Time
+}
+
+// DeviceType is "multiDevice" for a passkey that can sync between
+// devices (backup eligible) and "singleDevice" for one bound to its
+// authenticator.
+func (c PasskeyCredential) DeviceType() string {
+	if c.BackupEligible {
+		return "multiDevice"
+	}
+	return "singleDevice"
 }
 
 var (
@@ -111,6 +133,9 @@ type PasskeyStore interface {
 	// the use, only while the stored count is still old. It reports
 	// whether it wrote: false means another sign-in got there first.
 	RecordPasskeyUse(ctx context.Context, id []byte, old, next uint32, backedUp bool, at time.Time) (bool, error)
+	// RenamePasskey sets the name of the user's passkey; false when the
+	// user has no passkey with that id.
+	RenamePasskey(ctx context.Context, userID string, id []byte, name string) (bool, error)
 	// DeletePasskey removes the user's passkey; false when the user has
 	// no passkey with that id.
 	DeletePasskey(ctx context.Context, userID string, id []byte) (bool, error)
@@ -133,6 +158,8 @@ func NewMemoryPasskeyStore() *MemoryPasskeyStore {
 func clonePasskey(c PasskeyCredential) PasskeyCredential {
 	c.ID = slices.Clone(c.ID)
 	c.PublicKey = slices.Clone(c.PublicKey)
+	c.Transports = slices.Clone(c.Transports)
+	c.AAGUID = slices.Clone(c.AAGUID)
 	return c
 }
 
@@ -194,6 +221,19 @@ func (m *MemoryPasskeyStore) RecordPasskeyUse(_ context.Context, id []byte, old,
 	return true, nil
 }
 
+// RenamePasskey implements PasskeyStore.
+func (m *MemoryPasskeyStore) RenamePasskey(_ context.Context, userID string, id []byte, name string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.creds[string(id)]
+	if !ok || c.UserID != userID {
+		return false, nil
+	}
+	c.Name = name
+	m.creds[string(id)] = c
+	return true, nil
+}
+
 // DeletePasskey implements PasskeyStore.
 func (m *MemoryPasskeyStore) DeletePasskey(_ context.Context, userID string, id []byte) (bool, error) {
 	m.mu.Lock()
@@ -227,7 +267,10 @@ func (m *MemoryPasskeyStore) DeletePasskeysForUser(_ context.Context, userID str
 //	POST {base}/passkey/register/options  signed in; returns creation options
 //	POST {base}/passkey/register          signed in; stores the passkey
 //	GET  {base}/passkey/list              signed in; the account's passkeys
+//	POST {base}/passkey/rename            signed in; renames one
 //	POST {base}/passkey/delete            signed in; removes one
+//	POST {base}/passkey/reauth/options    signed in; a step-up challenge
+//	POST {base}/passkey/reauth            signed in; verifies, returns a proof
 //
 // Every endpoint speaks JSON (a cross-site page cannot send that without a
 // CORS preflight the battery never answers). The browser half is the
@@ -255,6 +298,9 @@ func NewPasskeyPlugin(cfg PasskeyConfig) *PasskeyPlugin {
 	}
 	if cfg.MaxPerUser <= 0 {
 		cfg.MaxPerUser = 20
+	}
+	if cfg.ReauthTTL <= 0 {
+		cfg.ReauthTTL = 5 * time.Minute
 	}
 	if cfg.RateLimit == nil {
 		cfg.RateLimit = &RateLimiterConfig{MaxAttempts: 30, Window: time.Minute, BlockDuration: 5 * time.Minute}
@@ -320,7 +366,10 @@ func (p *PasskeyPlugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Post(basePath+"/passkey/register/options", http.HandlerFunc(p.registerOptionsHandler))
 	r.Post(basePath+"/passkey/register", http.HandlerFunc(p.registerHandler))
 	r.Get(basePath+"/passkey/list", http.HandlerFunc(p.listHandler))
+	r.Post(basePath+"/passkey/rename", http.HandlerFunc(p.renameHandler))
 	r.Post(basePath+"/passkey/delete", http.HandlerFunc(p.deleteHandler))
+	r.Post(basePath+"/passkey/reauth/options", http.HandlerFunc(p.reauthOptionsHandler))
+	r.Post(basePath+"/passkey/reauth", http.HandlerFunc(p.reauthHandler))
 }
 
 // maxUserHandleLen is WebAuthn's ceiling for user.id.
@@ -394,6 +443,14 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
+	// conditional asks for a create the browser runs without a prompt,
+	// offered right after a password sign-in.
+	var body struct {
+		Conditional bool `json:"conditional"`
+	}
+	if !decodeOptionalJSON(w, r, &body) {
+		return
+	}
 	if len(sess.UserID) > maxUserHandleLen {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonUserIdTooLong)
 		return
@@ -421,14 +478,14 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 		writeAuthError(w, r, http.StatusConflict, reasonPasskeyLimit)
 		return
 	}
-	challenge, err := createPurposeToken(r.Context(), p.challenges, purposePasskeyRegister, sess.UserID, p.config.ChallengeTTL)
+	purpose, uv := purposePasskeyRegister, "required"
+	if body.Conditional {
+		purpose, uv = purposePasskeyRegisterQuiet, "preferred"
+	}
+	challenge, err := createPurposeToken(r.Context(), p.challenges, purpose, sess.UserID, p.config.ChallengeTTL)
 	if err != nil {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonChallengeCreateFailed)
 		return
-	}
-	exclude := make([]map[string]string, 0, len(existing))
-	for _, c := range existing {
-		exclude = append(exclude, map[string]string{"type": "public-key", "id": b64url.EncodeToString(c.ID)})
 	}
 	params := make([]map[string]any, 0, len(passkeyAlgs))
 	for _, alg := range passkeyAlgs {
@@ -441,11 +498,42 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 		"pubKeyCredParams":   params,
 		"timeout":            p.config.ChallengeTTL.Milliseconds(),
 		"attestation":        "none",
-		"excludeCredentials": exclude,
+		"excludeCredentials": credentialDescriptors(existing),
 		"authenticatorSelection": map[string]any{
-			"residentKey": "required", "requireResidentKey": true, "userVerification": "required",
+			"residentKey": "required", "requireResidentKey": true, "userVerification": uv,
 		},
 	}})
+}
+
+// credentialDescriptors lists creds for excludeCredentials or
+// allowCredentials, with the transports each authenticator reported.
+func credentialDescriptors(creds []PasskeyCredential) []map[string]any {
+	out := make([]map[string]any, 0, len(creds))
+	for _, c := range creds {
+		d := map[string]any{"type": "public-key", "id": b64url.EncodeToString(c.ID)}
+		if len(c.Transports) > 0 {
+			d["transports"] = c.Transports
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// knownTransports are the AuthenticatorTransport values the battery
+// keeps; the browser may report others, which are dropped.
+var knownTransports = []string{"ble", "hybrid", "internal", "nfc", "smart-card", "usb"}
+
+// passkeyTransports keeps the known transports in ts, sorted and once
+// each.
+func passkeyTransports(ts []string) []string {
+	var out []string
+	for _, t := range ts {
+		if slices.Contains(knownTransports, t) && !slices.Contains(out, t) {
+			out = append(out, t)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // passkeyName cleans the label a user gives a passkey: trimmed, control
@@ -483,10 +571,11 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var body struct {
-		Name              string `json:"name"`
-		ID                string `json:"id"`
-		ClientDataJSON    string `json:"clientDataJSON"`
-		AttestationObject string `json:"attestationObject"`
+		Name              string   `json:"name"`
+		ID                string   `json:"id"`
+		ClientDataJSON    string   `json:"clientDataJSON"`
+		AttestationObject string   `json:"attestationObject"`
+		Transports        []string `json:"transports"`
 	}
 	if !decodeJSONLimited(w, r, &body) {
 		return
@@ -508,12 +597,12 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	// Spent before the attestation is read: a challenge is good for one
 	// attempt, and it must be one this account asked for.
-	owner, err := redeemPurposeToken(r.Context(), p.challenges, purposePasskeyRegister, challenge)
+	purpose, owner, err := redeemAnyPurpose(r.Context(), p.challenges, challenge, purposePasskeyRegister, purposePasskeyRegisterQuiet)
 	if err != nil || owner != sess.UserID {
 		p.refuse(w, r, sess.UserID, "register", "challenge", errors.New("challenge unknown, spent, expired or another account's"))
 		return
 	}
-	res, err := p.rp.verifyAttestation(f["attestationObject"])
+	res, err := p.rp.verifyAttestation(f["attestationObject"], purpose == purposePasskeyRegisterQuiet)
 	if err != nil {
 		p.refuse(w, r, sess.UserID, "register", "attestation", err)
 		return
@@ -526,7 +615,7 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	cred := PasskeyCredential{
 		ID: res.credID, UserID: sess.UserID, PublicKey: res.publicKey, Algorithm: res.alg,
 		SignCount: res.signCount, Name: name, BackupEligible: res.backupEligible, BackedUp: res.backedUp,
-		CreatedAt: now,
+		Transports: passkeyTransports(body.Transports), AAGUID: res.aaguid, CreatedAt: now,
 	}
 	// The options call checked the cap, but challenges collected while
 	// under it would each register past it, so the store counts again as
@@ -561,7 +650,7 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{
 		Kind: "passkey.registered", UserID: sess.UserID, Remote: remoteHost(r),
-		Meta: map[string]string{"alg": strconv.FormatInt(res.alg, 10), "backup_eligible": strconv.FormatBool(res.backupEligible)},
+		Meta: map[string]string{"alg": strconv.FormatInt(res.alg, 10), "backup_eligible": strconv.FormatBool(res.backupEligible), "conditional": strconv.FormatBool(purpose == purposePasskeyRegisterQuiet)},
 	})
 	writeAuthJSON(w, r, http.StatusCreated, passkeyView(cred))
 }
@@ -593,76 +682,16 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if !p.limit.guard(w, r) {
 		return
 	}
-	var body struct {
-		ID                string `json:"id"`
-		ClientDataJSON    string `json:"clientDataJSON"`
-		AuthenticatorData string `json:"authenticatorData"`
-		Signature         string `json:"signature"`
-		UserHandle        string `json:"userHandle"`
-	}
-	if !decodeJSONLimited(w, r, &body) {
-		return
-	}
-	f, err := decodeB64Fields(map[string]string{
-		"id": body.ID, "clientDataJSON": body.ClientDataJSON, "authenticatorData": body.AuthenticatorData,
-		"signature": body.Signature, "userHandle": body.UserHandle,
-	})
-	if err != nil {
-		writeAuthErrorFor(w, r, http.StatusBadRequest, err, i18n.StatusPhrase(http.StatusBadRequest))
-		return
-	}
-	challenge, err := p.rp.checkClientData(f["clientDataJSON"], "webauthn.get")
-	if err != nil {
-		p.refuse(w, r, "", "login", "client_data", err)
+	f, challenge, ok := p.readAssertion(w, r, "login", "")
+	if !ok {
 		return
 	}
 	if _, err := redeemPurposeToken(r.Context(), p.challenges, purposePasskeyLogin, challenge); err != nil {
 		p.refuse(w, r, "", "login", "challenge", errors.New("challenge unknown, spent or expired"))
 		return
 	}
-	cred, err := p.store.GetPasskey(r.Context(), f["id"])
-	if err != nil {
-		if !errors.Is(err, ErrPasskeyNotFound) {
-			writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
-			return
-		}
-		p.refuse(w, r, "", "login", "unknown_credential", errors.New("unknown credential id"))
-		return
-	}
-	// The authenticator names the account it holds the passkey for; it
-	// must be the account the passkey was registered to.
-	if string(f["userHandle"]) != cred.UserID {
-		p.refuse(w, r, cred.UserID, "login", "user_handle", errors.New("user handle does not match the passkey's account"))
-		return
-	}
-	res, err := p.rp.verifyAssertion(cred.PublicKey, f["clientDataJSON"], f["authenticatorData"], f["signature"])
-	if err != nil {
-		p.refuse(w, r, cred.UserID, "login", "signature", err)
-		return
-	}
-	// Backup eligibility is fixed when the credential is made; a flip
-	// means this is not the authenticator that registered it.
-	if res.backupEligible != cred.BackupEligible {
-		p.refuse(w, r, cred.UserID, "login", "backup_eligibility", errors.New("backup eligibility differs from registration"))
-		return
-	}
-	// A counter that fails to move forward means two copies of the key
-	// exist. Synced passkeys always report zero, which is no signal.
-	if (res.signCount != 0 || cred.SignCount != 0) && res.signCount <= cred.SignCount {
-		p.mgr.emitSecurity(r.Context(), SecurityEvent{
-			Kind: "passkey.clone_suspected", UserID: cred.UserID, Remote: remoteHost(r),
-			Meta: map[string]string{"stored": strconv.FormatUint(uint64(cred.SignCount), 10), "presented": strconv.FormatUint(uint64(res.signCount), 10)},
-		})
-		writeAuthError(w, r, http.StatusUnauthorized, reasonPasskeySignIn)
-		return
-	}
-	wrote, err := p.store.RecordPasskeyUse(r.Context(), cred.ID, cred.SignCount, res.signCount, res.backedUp, time.Now().UTC())
-	if err != nil {
-		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyUpdateFailed)
-		return
-	}
-	if !wrote {
-		writeAuthError(w, r, http.StatusConflict, reasonPasskeyConflict)
+	cred, ok := p.checkAssertion(w, r, "login", f, "")
+	if !ok {
 		return
 	}
 	userStore := p.mgr.UserStore()
@@ -731,8 +760,96 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 	writeAuthJSON(w, r, http.StatusOK, out)
 }
 
-// refuse answers a failed ceremony with one fixed message and records
-// why in the audit trail and the log.
+// assertionBody is the JSON a sign-in or step-up posts.
+type assertionBody struct {
+	ID                string `json:"id"`
+	ClientDataJSON    string `json:"clientDataJSON"`
+	AuthenticatorData string `json:"authenticatorData"`
+	Signature         string `json:"signature"`
+	UserHandle        string `json:"userHandle"`
+}
+
+// readAssertion decodes an assertion body and checks its client data,
+// returning the decoded fields and the challenge it signed.
+func (p *PasskeyPlugin) readAssertion(w http.ResponseWriter, r *http.Request, ceremony, userID string) (map[string][]byte, string, bool) {
+	var body assertionBody
+	if !decodeJSONLimited(w, r, &body) {
+		return nil, "", false
+	}
+	f, err := decodeB64Fields(map[string]string{
+		"id": body.ID, "clientDataJSON": body.ClientDataJSON, "authenticatorData": body.AuthenticatorData,
+		"signature": body.Signature, "userHandle": body.UserHandle,
+	})
+	if err != nil {
+		writeAuthErrorFor(w, r, http.StatusBadRequest, err, i18n.StatusPhrase(http.StatusBadRequest))
+		return nil, "", false
+	}
+	challenge, err := p.rp.checkClientData(f["clientDataJSON"], "webauthn.get")
+	if err != nil {
+		p.refuse(w, r, userID, ceremony, "client_data", err)
+		return nil, "", false
+	}
+	return f, challenge, true
+}
+
+// checkAssertion verifies an assertion against the stored passkey and
+// records its use: the passkey exists (and, when owner is set, belongs
+// to owner), the user handle names its account, the signature verifies,
+// backup eligibility is unchanged and the counter moved forward.
+func (p *PasskeyPlugin) checkAssertion(w http.ResponseWriter, r *http.Request, ceremony string, f map[string][]byte, owner string) (PasskeyCredential, bool) {
+	cred, err := p.store.GetPasskey(r.Context(), f["id"])
+	if err == nil && owner != "" && cred.UserID != owner {
+		err = ErrPasskeyNotFound
+	}
+	if err != nil {
+		if !errors.Is(err, ErrPasskeyNotFound) {
+			writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
+			return PasskeyCredential{}, false
+		}
+		// 404, not 401: the browser can then drop the passkey with
+		// PublicKeyCredential.signalUnknownCredential.
+		p.refuse(w, r, owner, ceremony, "unknown_credential", errors.New("unknown credential id"))
+		return PasskeyCredential{}, false
+	}
+	// The authenticator names the account it holds the passkey for; it
+	// must be the account the passkey was registered to.
+	if string(f["userHandle"]) != cred.UserID {
+		p.refuse(w, r, cred.UserID, ceremony, "user_handle", errors.New("user handle does not match the passkey's account"))
+		return PasskeyCredential{}, false
+	}
+	res, err := p.rp.verifyAssertion(cred.PublicKey, f["clientDataJSON"], f["authenticatorData"], f["signature"])
+	if err != nil {
+		p.refuse(w, r, cred.UserID, ceremony, "signature", err)
+		return PasskeyCredential{}, false
+	}
+	// Backup eligibility is fixed when the credential is made; a flip
+	// means this is not the authenticator that registered it.
+	if res.backupEligible != cred.BackupEligible {
+		p.refuse(w, r, cred.UserID, ceremony, "backup_eligibility", errors.New("backup eligibility differs from registration"))
+		return PasskeyCredential{}, false
+	}
+	// A counter that fails to move forward means two copies of the key
+	// exist. Synced passkeys always report zero, which is no signal.
+	if (res.signCount != 0 || cred.SignCount != 0) && res.signCount <= cred.SignCount {
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind: "passkey.clone_suspected", UserID: cred.UserID, Remote: remoteHost(r),
+			Meta: map[string]string{"stored": strconv.FormatUint(uint64(cred.SignCount), 10), "presented": strconv.FormatUint(uint64(res.signCount), 10)},
+		})
+		writeAuthError(w, r, http.StatusUnauthorized, reasonPasskeySignIn)
+		return PasskeyCredential{}, false
+	}
+	wrote, err := p.store.RecordPasskeyUse(r.Context(), cred.ID, cred.SignCount, res.signCount, res.backedUp, time.Now().UTC())
+	if err != nil {
+		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyUpdateFailed)
+		return PasskeyCredential{}, false
+	}
+	if !wrote {
+		writeAuthError(w, r, http.StatusConflict, reasonPasskeyConflict)
+		return PasskeyCredential{}, false
+	}
+	return cred, true
+}
+
 // refuse answers a failed ceremony check. reason is a fixed code for
 // the audit trail; why can quote the request (the anonymous login route
 // takes anyone's bytes), so its text goes only to the log, scrubbed and
@@ -745,11 +862,14 @@ func (p *PasskeyPlugin) refuse(w http.ResponseWriter, r *http.Request, userID, c
 	slog.Info("passkey ceremony refused", "plugin", "passkey", "ceremony", ceremony,
 		"user_hash", hashedIdentifier(userID), "reason", reason,
 		"detail", textsafe.Truncate(textsafe.ScrubControlBytes(why.Error()), 200))
-	if ceremony == "login" {
+	switch {
+	case ceremony != "register" && reason == "unknown_credential":
+		writeAuthError(w, r, http.StatusNotFound, reasonPasskeySignIn)
+	case ceremony != "register":
 		writeAuthError(w, r, http.StatusUnauthorized, reasonPasskeySignIn)
-		return
+	default:
+		writeAuthError(w, r, http.StatusBadRequest, reasonPasskeyRegistrationFailed)
 	}
-	writeAuthError(w, r, http.StatusBadRequest, reasonPasskeyRegistrationFailed)
 }
 
 // ─── management ───────────────────────────────────────────────────────
@@ -758,6 +878,10 @@ func passkeyView(c PasskeyCredential) map[string]any {
 	v := map[string]any{
 		"id": b64url.EncodeToString(c.ID), "name": c.Name,
 		"createdAt": c.CreatedAt.UTC().Format(time.RFC3339), "backedUp": c.BackedUp,
+		"deviceType": c.DeviceType(), "transports": append([]string{}, c.Transports...),
+	}
+	if id := aaguidString(c.AAGUID); id != "" {
+		v["aaguid"] = id
 	}
 	if !c.LastUsedAt.IsZero() {
 		v["lastUsedAt"] = c.LastUsedAt.UTC().Format(time.RFC3339)
@@ -782,7 +906,64 @@ func (p *PasskeyPlugin) listHandler(w http.ResponseWriter, r *http.Request) {
 	for _, c := range creds {
 		out = append(out, passkeyView(c))
 	}
-	writeAuthJSON(w, r, http.StatusOK, map[string]any{"passkeys": out})
+	// rpId, userId and the user's name let the page tell the password
+	// manager which passkeys are still good (signalAllAcceptedCredentials)
+	// and what the account is called (signalCurrentUserDetails).
+	view := map[string]any{"rpId": p.rp.ID, "userId": b64url.EncodeToString([]byte(sess.UserID)), "passkeys": out}
+	if us := p.mgr.UserStore(); us != nil {
+		if u, err := us.FindByID(r.Context(), sess.UserID); err == nil {
+			view["userName"] = u.GetEmail()
+		}
+	}
+	writeAuthJSON(w, r, http.StatusOK, view)
+}
+
+// aaguidString formats an AAGUID as a UUID, or "" when it is all zero
+// (the authenticator withheld it) or not 16 bytes.
+func aaguidString(b []byte) string {
+	if len(b) != 16 || !slices.ContainsFunc(b, func(x byte) bool { return x != 0 }) {
+		return ""
+	}
+	h := hex.EncodeToString(b)
+	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
+}
+
+func (p *PasskeyPlugin) renameHandler(w http.ResponseWriter, r *http.Request) {
+	if !p.limit.guard(w, r) {
+		return
+	}
+	sess, ok := p.requireFullSession(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if !decodeJSONLimited(w, r, &body) {
+		return
+	}
+	f, err := decodeB64Fields(map[string]string{"id": body.ID})
+	if err != nil {
+		writeAuthErrorFor(w, r, http.StatusBadRequest, err, i18n.StatusPhrase(http.StatusBadRequest))
+		return
+	}
+	name, ok := passkeyName(body.Name)
+	if !ok {
+		writeAuthError(w, r, http.StatusBadRequest, reasonNameTooLong)
+		return
+	}
+	renamed, err := p.store.RenamePasskey(r.Context(), sess.UserID, f["id"], name)
+	if err != nil {
+		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyUpdateFailed)
+		return
+	}
+	if !renamed {
+		writeAuthError(w, r, http.StatusNotFound, reasonPasskeyNotFound)
+		return
+	}
+	p.mgr.emitSecurity(r.Context(), SecurityEvent{Kind: "passkey.renamed", UserID: sess.UserID, Remote: remoteHost(r)})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (p *PasskeyPlugin) deleteHandler(w http.ResponseWriter, r *http.Request) {
@@ -815,6 +996,102 @@ func (p *PasskeyPlugin) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{Kind: "passkey.deleted", UserID: sess.UserID, Remote: remoteHost(r)})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ─── step-up ──────────────────────────────────────────────────────────
+
+// reauthOptionsHandler issues a step-up challenge limited to the
+// signed-in account's own passkeys.
+func (p *PasskeyPlugin) reauthOptionsHandler(w http.ResponseWriter, r *http.Request) {
+	if !p.limit.guard(w, r) || !requireJSON(w, r) {
+		return
+	}
+	sess, ok := p.requireFullSession(w, r)
+	if !ok {
+		return
+	}
+	creds, err := p.store.ListPasskeys(r.Context(), sess.UserID)
+	if err != nil {
+		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
+		return
+	}
+	if len(creds) == 0 {
+		writeAuthError(w, r, http.StatusNotFound, reasonPasskeyNotFound)
+		return
+	}
+	challenge, err := createPurposeToken(r.Context(), p.challenges, purposePasskeyReauth, sess.UserID, p.config.ChallengeTTL)
+	if err != nil {
+		writeAuthError(w, r, http.StatusInternalServerError, reasonChallengeCreateFailed)
+		return
+	}
+	writeAuthJSON(w, r, http.StatusOK, map[string]any{"publicKey": map[string]any{
+		"challenge":        b64url.EncodeToString([]byte(challenge)),
+		"rpId":             p.rp.ID,
+		"timeout":          p.config.ChallengeTTL.Milliseconds(),
+		"userVerification": "required",
+		"allowCredentials": credentialDescriptors(creds),
+	}})
+}
+
+// reauthHandler verifies a step-up assertion by one of the signed-in
+// account's passkeys and answers {"proof": "..."}, a single-use token
+// the app's own handler spends with RedeemReauthProof.
+func (p *PasskeyPlugin) reauthHandler(w http.ResponseWriter, r *http.Request) {
+	if !p.limit.guard(w, r) {
+		return
+	}
+	sess, ok := p.requireFullSession(w, r)
+	if !ok {
+		return
+	}
+	f, challenge, ok := p.readAssertion(w, r, "reauth", sess.UserID)
+	if !ok {
+		return
+	}
+	owner, err := redeemPurposeToken(r.Context(), p.challenges, purposePasskeyReauth, challenge)
+	if err != nil || owner != sess.UserID {
+		p.refuse(w, r, sess.UserID, "reauth", "challenge", errors.New("challenge unknown, spent, expired or another account's"))
+		return
+	}
+	if _, ok := p.checkAssertion(w, r, "reauth", f, sess.UserID); !ok {
+		return
+	}
+	proof, err := createPurposeToken(r.Context(), p.challenges, purposePasskeyProof, sess.UserID, p.config.ReauthTTL)
+	if err != nil {
+		writeAuthError(w, r, http.StatusInternalServerError, reasonChallengeCreateFailed)
+		return
+	}
+	p.mgr.emitSecurity(r.Context(), SecurityEvent{Kind: "passkey.reauthenticated", UserID: sess.UserID, Remote: remoteHost(r)})
+	writeAuthJSON(w, r, http.StatusOK, map[string]any{"proof": proof})
+}
+
+// ErrReauthRequired is RedeemReauthProof's answer when the request has
+// no full session or the proof is missing, spent, expired or another
+// account's.
+var ErrReauthRequired = errors.New("auth: passkey re-authentication required")
+
+// RedeemReauthProof spends the proof a passed step-up returned
+// (POST {base}/passkey/reauth), for the handler of a sensitive action.
+// It answers nil only when r carries a full session of the account the
+// proof was issued to; the proof is spent either way, so it works once.
+//
+//	if err := passkeys.RedeemReauthProof(r, r.FormValue("passkey_reauth")); err != nil {
+//		http.Error(w, "confirm with your passkey first", http.StatusForbidden)
+//		return
+//	}
+func (p *PasskeyPlugin) RedeemReauthProof(r *http.Request, proof string) error {
+	if p.mgr == nil || proof == "" {
+		return ErrReauthRequired
+	}
+	owner, err := redeemPurposeToken(r.Context(), p.challenges, purposePasskeyProof, proof)
+	if err != nil {
+		return ErrReauthRequired
+	}
+	sess, err := p.mgr.requestSession(r, false)
+	if err != nil || sess.PendingTwoFactor || sess.UserID != owner {
+		return ErrReauthRequired
+	}
+	return nil
 }
 
 // purgeUserPasskeys removes every passkey a user has, for an account

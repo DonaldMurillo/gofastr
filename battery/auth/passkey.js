@@ -1,18 +1,33 @@
-// passkey: runs the WebAuthn ceremonies behind the buttons the passkey
-// plugin's markup helpers mark. The buttons render hidden, so a page
-// without script, or a browser without WebAuthn, never shows a control
-// that cannot work; this module reveals them when it can drive them.
+// passkey: runs the WebAuthn ceremonies behind the elements the passkey
+// plugin's markup helpers mark. Buttons render hidden, so a page without
+// script, or a browser without WebAuthn, never shows a control that
+// cannot work; this module reveals them when it can drive them.
 //
 //   data-passkey-login="<auth base>"     sign in, then go where the
 //                                        server says
+//   data-passkey-autofill="<auth base>"  on the username field: offer
+//                                        the device's passkeys in its
+//                                        autofill list (conditional UI)
 //   data-passkey-register="<auth base>"  add a passkey to the signed-in
 //                                        account; the name comes from a
 //                                        [data-passkey-name] field in
 //                                        the same form, when there is one
+//   data-passkey-upgrade="<auth base>"   after a password sign-in, ask
+//                                        the password manager to save a
+//                                        passkey without a prompt
+//   data-passkey-rename="<auth base>"    rename the passkey named by
+//                                        data-passkey-id to the form's
+//                                        [data-passkey-name] value
 //   data-passkey-delete="<auth base>"    remove the passkey named by
 //                                        the button's data-passkey-id
+//   data-passkey-reauth="<auth base>"    confirm with a passkey, put the
+//                                        proof in the form's
+//                                        passkey_reauth field, submit
+//   data-passkey-list="<auth base>"      on a passkey list: tell the
+//                                        password manager which passkeys
+//                                        the account still has
 //
-// Registering or removing re-renders the current page, so a list of
+// Adding, renaming or removing re-renders the current page, so a list of
 // passkeys the server drew shows the change. Failures surface as a
 // toast; a ceremony the user cancelled says nothing.
 (function () {
@@ -31,14 +46,29 @@
   // battery/auth), so a toast speaks the reader's language.
   const say = function (k, en, p) { return typeof NS.say === 'function' ? NS.say(k, en, p) : en; };
 
-  const SEL = '[data-passkey-login], [data-passkey-register], [data-passkey-delete]';
+  const KINDS = ['login', 'autofill', 'register', 'upgrade', 'rename', 'delete', 'reauth', 'list'];
+  const SEL = KINDS.map(function (k) { return '[data-passkey-' + k + ']'; }).join(', ');
   // An auth base is a same-origin path: "/auth", "/api/auth". Anything
-  // else leaves the button inert, so injected markup cannot aim a
+  // else leaves the element inert, so injected markup cannot aim a
   // ceremony at another origin.
   const BASE = /^\/(?!\/)[A-Za-z0-9._~\/-]*$/;
   const ID = /^[A-Za-z0-9_-]+$/;
+  const PROOF_FIELD = 'passkey_reauth';
   const bound = new WeakSet();
-  const supported = typeof window.PublicKeyCredential === 'function' && !!navigator.credentials;
+  const PKC = window.PublicKeyCredential;
+  const supported = typeof PKC === 'function' && !!navigator.credentials;
+
+  // caps resolves the browser's WebAuthn capabilities once; {} where
+  // getClientCapabilities is missing, so every check falls back.
+  let capsP = null;
+  function caps() {
+    if (!capsP) {
+      capsP = supported && typeof PKC.getClientCapabilities === 'function'
+        ? PKC.getClientCapabilities().catch(function () { return {}; })
+        : Promise.resolve({});
+    }
+    return capsP;
+  }
 
   function toB64(buf) {
     const bytes = new Uint8Array(buf);
@@ -56,26 +86,79 @@
     return out;
   }
 
-  async function post(url, body) {
+  // The JSON helpers where the browser has them, the same conversion by
+  // hand where it does not.
+  function descriptors(list) {
+    return (list || []).map(function (c) {
+      const d = { type: c.type, id: fromB64(c.id) };
+      if (Array.isArray(c.transports)) d.transports = c.transports;
+      return d;
+    });
+  }
+  function requestOptions(pk) {
+    if (typeof PKC.parseRequestOptionsFromJSON === 'function') return PKC.parseRequestOptionsFromJSON(pk);
+    return Object.assign({}, pk, { challenge: fromB64(pk.challenge), allowCredentials: descriptors(pk.allowCredentials) });
+  }
+  function creationOptions(pk) {
+    if (typeof PKC.parseCreationOptionsFromJSON === 'function') return PKC.parseCreationOptionsFromJSON(pk);
+    return Object.assign({}, pk, {
+      challenge: fromB64(pk.challenge),
+      user: Object.assign({}, pk.user, { id: fromB64(pk.user.id) }),
+      excludeCredentials: descriptors(pk.excludeCredentials),
+    });
+  }
+  function credJSON(cred) {
+    if (typeof cred.toJSON === 'function') {
+      try { return cred.toJSON(); } catch (_) { /* hand conversion below */ }
+    }
+    const r = cred.response;
+    const out = { id: toB64(cred.rawId), response: { clientDataJSON: toB64(r.clientDataJSON) } };
+    if (r.attestationObject) {
+      out.response.attestationObject = toB64(r.attestationObject);
+      out.response.transports = typeof r.getTransports === 'function' ? r.getTransports() : [];
+    } else {
+      out.response.authenticatorData = toB64(r.authenticatorData);
+      out.response.signature = toB64(r.signature);
+      out.response.userHandle = r.userHandle ? toB64(r.userHandle) : '';
+    }
+    return out;
+  }
+  function assertionBody(cred) {
+    const j = credJSON(cred), r = j.response;
+    return {
+      id: j.id, clientDataJSON: r.clientDataJSON, authenticatorData: r.authenticatorData,
+      signature: r.signature, userHandle: r.userHandle || '',
+    };
+  }
+
+  function csrfHeaders(headers) {
     // Forward the page's CSRF token, so the routes work behind
     // auth.CSRF and WithBFFPosture.
-    const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
     const token = document.querySelector('meta[name="csrf-token"]')?.content;
     if (token) headers['X-CSRF-Token'] = token;
-    const r = await hostFetch(url, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers,
-      body: JSON.stringify(body),
-    });
+    return headers;
+  }
+
+  async function send(url, init) {
+    const r = await hostFetch(url, Object.assign({ credentials: 'same-origin' }, init));
     if (r.status === 204) return null;
     let data = null;
     try { data = await r.json(); } catch (_) { data = null; }
     if (!r.ok) {
       const msg = data && typeof data.error === 'string' ? data.error : say('runtime.request_failed_status', 'Request failed ({{status}})', { status: r.status });
-      throw new Error(msg);
+      const err = new Error(msg);
+      err.status = r.status;
+      throw err;
     }
     return data;
+  }
+
+  function post(url, body) {
+    return send(url, {
+      method: 'POST',
+      headers: csrfHeaders({ 'Content-Type': 'application/json', 'Accept': 'application/json' }),
+      body: JSON.stringify(body),
+    });
   }
 
   function toast(title, variant) {
@@ -88,45 +171,112 @@
     if (typeof NS.navigate === 'function') NS.navigate(location.pathname + location.search, { replace: true, force: true });
   }
 
-  async function signIn(base) {
+  // signalList tells the password manager which of the account's
+  // passkeys the server still accepts and what the account is called,
+  // so a removed passkey stops being offered. Browsers without the
+  // Signal API skip it; it never surfaces an error.
+  async function signalList(base) {
+    if (!supported || (typeof PKC.signalAllAcceptedCredentials !== 'function' && typeof PKC.signalCurrentUserDetails !== 'function')) return;
+    try {
+      const list = await send(base + '/passkey/list', { method: 'GET', headers: { 'Accept': 'application/json' } });
+      if (!list || typeof list.rpId !== 'string' || typeof list.userId !== 'string') return;
+      if (typeof PKC.signalAllAcceptedCredentials === 'function') {
+        await PKC.signalAllAcceptedCredentials({
+          rpId: list.rpId, userId: list.userId,
+          allAcceptedCredentialIds: (list.passkeys || []).map(function (p) { return p.id; }),
+        });
+      }
+      if (typeof PKC.signalCurrentUserDetails === 'function' && typeof list.userName === 'string') {
+        await PKC.signalCurrentUserDetails({ rpId: list.rpId, userId: list.userId, name: list.userName, displayName: list.userName });
+      }
+    } catch (_) { /* advisory only */ }
+  }
+
+  // A browser runs one WebAuthn request at a time, and the autofill one
+  // waits as long as the field is on the page. Every other ceremony
+  // withdraws it first (exclusive), and it starts again only once no
+  // ceremony is running.
+  let waiting = null;
+  let ceremonies = 0;
+  let resumers = [];
+  function withdrawn() {
+    const e = new Error('withdrawn');
+    e.name = 'AbortError';
+    return e;
+  }
+  async function exclusive(fn) {
+    ceremonies++;
+    if (waiting) { waiting.abort(); waiting = null; }
+    try {
+      return await fn();
+    } finally {
+      if (--ceremonies === 0) resumers.splice(0).forEach(function (r) { r(); });
+    }
+  }
+  function idle() {
+    return ceremonies ? new Promise(function (r) { resumers.push(r); }) : Promise.resolve();
+  }
+
+  async function signIn(base, conditional) {
     const opts = await post(base + '/passkey/login/options', {});
     const pk = opts.publicKey;
-    pk.challenge = fromB64(pk.challenge);
-    pk.allowCredentials = [];
-    const cred = await navigator.credentials.get({ publicKey: pk });
-    const res = cred.response;
-    const out = await post(base + '/passkey/login', {
-      id: toB64(cred.rawId),
-      clientDataJSON: toB64(res.clientDataJSON),
-      authenticatorData: toB64(res.authenticatorData),
-      signature: toB64(res.signature),
-      userHandle: res.userHandle ? toB64(res.userHandle) : '',
-    });
+    if (conditional && ceremonies) throw withdrawn();
+    const req = { publicKey: requestOptions(pk) };
+    if (conditional) {
+      waiting = new AbortController();
+      req.signal = waiting.signal;
+      req.mediation = 'conditional';
+    }
+    const cred = await navigator.credentials.get(req);
+    if (conditional) waiting = null;
+    const body = assertionBody(cred);
+    let out;
+    try {
+      out = await post(base + '/passkey/login', body);
+    } catch (err) {
+      // 404: the server holds no such passkey. Tell the password
+      // manager, so it stops offering it.
+      if (err.status === 404 && typeof PKC.signalUnknownCredential === 'function') {
+        PKC.signalUnknownCredential({ rpId: pk.rpId, credentialId: body.id }).catch(function () {});
+      }
+      throw err;
+    }
     // Every cached screen was drawn signed out.
     if (typeof NS.invalidate === 'function') NS.invalidate('*');
     const to = out && typeof out.redirect === 'string' ? out.redirect : '/';
     if (typeof NS.navigate === 'function') NS.navigate(to, { force: true });
   }
 
-  async function register(btn, base) {
+  async function create(base, name, conditional) {
+    const opts = await post(base + '/passkey/register/options', conditional ? { conditional: true } : {});
+    const req = { publicKey: creationOptions(opts.publicKey) };
+    if (conditional) req.mediation = 'conditional';
+    const cred = await navigator.credentials.create(req);
+    const j = credJSON(cred), r = j.response;
+    await post(base + '/passkey/register', {
+      name: name, id: j.id, clientDataJSON: r.clientDataJSON, attestationObject: r.attestationObject,
+      transports: Array.isArray(r.transports) ? r.transports : [],
+    });
+  }
+
+  function nameIn(btn) {
     const form = btn.closest('form');
     const field = form ? form.querySelector('[data-passkey-name]') : null;
-    const name = field && typeof field.value === 'string' ? field.value : '';
-    const opts = await post(base + '/passkey/register/options', {});
-    const pk = opts.publicKey;
-    pk.challenge = fromB64(pk.challenge);
-    pk.user.id = fromB64(pk.user.id);
-    pk.excludeCredentials = (pk.excludeCredentials || []).map(function (c) {
-      return { type: c.type, id: fromB64(c.id) };
-    });
-    const cred = await navigator.credentials.create({ publicKey: pk });
-    await post(base + '/passkey/register', {
-      name: name,
-      id: toB64(cred.rawId),
-      clientDataJSON: toB64(cred.response.clientDataJSON),
-      attestationObject: toB64(cred.response.attestationObject),
-    });
+    return field && typeof field.value === 'string' ? field.value : '';
+  }
+
+  async function register(btn, base) {
+    await create(base, nameIn(btn), false);
     toast(say('auth.passkey_added', 'Passkey added'), 'success');
+    await signalList(base);
+    refresh();
+  }
+
+  async function rename(btn, base) {
+    const id = btn.getAttribute('data-passkey-id') || '';
+    if (!ID.test(id)) return;
+    await post(base + '/passkey/rename', { id: id, name: nameIn(btn) });
+    toast(say('auth.passkey_renamed', 'Passkey renamed'), 'success');
     refresh();
   }
 
@@ -135,41 +285,121 @@
     if (!ID.test(id)) return;
     await post(base + '/passkey/delete', { id: id });
     toast(say('auth.passkey_removed', 'Passkey removed'), 'success');
+    await signalList(base);
     refresh();
+  }
+
+  async function reauth(btn, base) {
+    const form = btn.closest('form');
+    if (!form) return;
+    const opts = await post(base + '/passkey/reauth/options', {});
+    const cred = await navigator.credentials.get({ publicKey: requestOptions(opts.publicKey) });
+    const out = await post(base + '/passkey/reauth', assertionBody(cred));
+    let field = form.querySelector('input[name="' + PROOF_FIELD + '"]');
+    if (!field) {
+      field = document.createElement('input');
+      field.type = 'hidden';
+      field.name = PROOF_FIELD;
+      form.appendChild(field);
+    }
+    field.value = out && typeof out.proof === 'string' ? out.proof : '';
+    form.requestSubmit();
+  }
+
+  function failure(err) {
+    // NotAllowedError is the browser's answer to a cancelled or
+    // timed-out prompt, AbortError to one this module withdrew: the user
+    // already knows, or never saw it.
+    if (!err || err.name === 'NotAllowedError' || err.name === 'AbortError') return '';
+    if (err.name === 'InvalidStateError') return say('auth.passkey_exists_here', 'This device already holds a passkey for this account');
+    if (err.name === 'SecurityError') return say('auth.passkey_wrong_site', 'Passkeys do not work on this site address');
+    return err.message || say('auth.passkey_failed', 'Passkey request failed');
   }
 
   function run(btn, fn) {
     if (btn.getAttribute('aria-busy') === 'true') return;
     btn.setAttribute('aria-busy', 'true');
     btn.disabled = true;
-    fn().catch(function (err) {
-      // NotAllowedError is the browser's answer to a cancelled or
-      // timed-out prompt: the user already knows.
-      if (err && err.name === 'NotAllowedError') return;
-      toast(err && err.message ? err.message : say('auth.passkey_failed', 'Passkey request failed'), 'error');
+    exclusive(fn).catch(function (err) {
+      const msg = failure(err);
+      if (msg) toast(msg, 'error');
     }).finally(function () {
       btn.removeAttribute('aria-busy');
       btn.disabled = false;
     });
   }
 
-  function bind(btn) {
-    if (bound.has(btn)) return;
-    bound.add(btn);
+  // autofill keeps one conditional sign-in waiting behind the field's
+  // autofill list while the field is on the page. A request that ends
+  // without signing in (it timed out, or the passkey was refused) is
+  // started again, a few times at most.
+  async function autofill(input, base) {
+    if (!supported) return;
+    const c = await caps();
+    const ok = c.conditionalGet === true || (c.conditionalGet === undefined &&
+      typeof PKC.isConditionalMediationAvailable === 'function' && await PKC.isConditionalMediationAvailable().catch(function () { return false; }));
+    if (!ok) return;
+    const ac = input.getAttribute('autocomplete') || '';
+    if (!/\bwebauthn\b/.test(ac)) input.setAttribute('autocomplete', (ac ? ac + ' ' : 'username ') + 'webauthn');
+    for (let tries = 0; tries < 5 && input.isConnected; tries++) {
+      await idle();
+      try {
+        await signIn(base, true);
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') {
+          tries--;
+          continue;
+        }
+        const msg = failure(err);
+        if (msg) toast(msg, 'error');
+      }
+    }
+  }
+
+  // upgrade asks for a passkey without a prompt after a password
+  // sign-in, where the browser can (conditionalCreate). It is silent: the
+  // password manager tells the user when it saved one.
+  async function upgrade(base) {
+    if (!supported) return;
+    const c = await caps();
+    if (c.conditionalCreate !== true) return;
+    try { await exclusive(function () { return create(base, '', true); }); } catch (_) { /* nothing to tell */ }
+  }
+
+  function bind(el) {
+    if (bound.has(el)) return;
+    bound.add(el);
     let kind = '';
-    let base = '';
-    if (btn.hasAttribute('data-passkey-login')) { kind = 'login'; base = btn.getAttribute('data-passkey-login'); }
-    else if (btn.hasAttribute('data-passkey-register')) { kind = 'register'; base = btn.getAttribute('data-passkey-register'); }
-    else { kind = 'delete'; base = btn.getAttribute('data-passkey-delete'); }
+    for (const k of KINDS) {
+      if (el.hasAttribute('data-passkey-' + k)) { kind = k; break; }
+    }
+    const base = el.getAttribute('data-passkey-' + kind);
     if (!BASE.test(base || '')) return;
-    // Removing a passkey needs no authenticator; the ceremonies do.
-    if (kind !== 'delete' && !supported) return;
-    btn.hidden = false;
-    btn.addEventListener('click', function (e) {
-      e.preventDefault();
-      if (kind === 'login') run(btn, function () { return signIn(base); });
-      else if (kind === 'register') run(btn, function () { return register(btn, base); });
-      else run(btn, function () { return remove(btn, base); });
+    if (kind === 'autofill') { autofill(el, base); return; }
+    if (kind === 'upgrade') { upgrade(base); return; }
+    if (kind === 'list') { signalList(base); return; }
+    // Renaming or removing a passkey needs no authenticator; the
+    // ceremonies do.
+    if (kind !== 'delete' && kind !== 'rename' && !supported) return;
+    const reveal = function () {
+      el.hidden = false;
+      el.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (kind === 'login') run(el, function () { return signIn(base, false); });
+        else if (kind === 'register') run(el, function () { return register(el, base); });
+        else if (kind === 'rename') run(el, function () { return rename(el, base); });
+        else if (kind === 'reauth') run(el, function () { return reauth(el, base); });
+        else run(el, function () { return remove(el, base); });
+      });
+    };
+    if (kind !== 'register') { reveal(); return; }
+    // Adding a passkey needs an authenticator this device can create
+    // one on: its own, or a phone over hybrid. Where the browser cannot
+    // say, offer it.
+    caps().then(function (c) {
+      if (c.passkeyPlatformAuthenticator === false && c.hybridTransport === false) return;
+      reveal();
     });
   }
 

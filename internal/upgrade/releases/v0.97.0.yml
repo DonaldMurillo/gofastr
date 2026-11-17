@@ -475,3 +475,18 @@ notes:
     breaking: true
     guidance: "Delete calls to window.__gofastr.textarea.rescan(). Content the runtime swaps in is scanned on insert; nothing in the framework called the hook."
     nodetect: "the hook was read from app JavaScript, which the scanner does not parse"
+  - change: "BREAKING - auth.PasskeyStore gains RenamePasskey(ctx, userID, id, name) (bool, error); both built-in stores implement it"
+    breaking: true
+    hits: review
+    guidance: "A custom PasskeyStore adds RenamePasskey: set the name of the user's passkey with that id and answer false when the user has none. It may also store PasskeyCredential.Transports and AAGUID, which registration now fills. SQLPasskeyStore adds its transports and aaguid columns at EnsureSchema."
+    find:
+      uses:
+        - gofastr/battery/auth.PasskeyStore
+  - change: "A passkey sign-in with a credential the server does not hold answers 404 instead of 401, with the same message"
+    guidance: "A client of POST /auth/passkey/login that treats only 401 as a failed sign-in treats 404 the same. The battery's passkey module also calls PublicKeyCredential.signalUnknownCredential on it."
+    nodetect: "the status depends on which credential a browser presents; no host source spelling distinguishes it"
+  - change: "Init refuses an AuthConfig.CanonicalizeEmail override that is not idempotent"
+    guidance: "An override must map a canonical address to itself, as the docs already required: make the fold total (strip every dot, not one), or refuse the addresses it will not fold. The boot error names the address that moved."
+    find:
+      uses:
+        - gofastr/battery/auth.AuthConfig.CanonicalizeEmail

@@ -346,7 +346,7 @@ func TestPasskeyDeleteOnlyOwn(t *testing.T) {
 	if w := f.do(t, "POST", "/passkey/delete", alice, id); w.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d %s", w.Code, w.Body)
 	}
-	if w := f.login(t, a, "u-alice"); w.Code != http.StatusUnauthorized {
+	if w := f.login(t, a, "u-alice"); w.Code != http.StatusNotFound {
 		t.Fatalf("deleted passkey signed in: %d", w.Code)
 	}
 }
@@ -358,7 +358,7 @@ func TestPasskeyClaimRemovesPasskeys(t *testing.T) {
 	if err := f.mgr.claimAccount(context.Background(), "u-alice", "magic_link", "", true); err != nil {
 		t.Fatal(err)
 	}
-	if w := f.login(t, a, "u-alice"); w.Code != http.StatusUnauthorized {
+	if w := f.login(t, a, "u-alice"); w.Code != http.StatusNotFound {
 		t.Fatalf("squatter's passkey survived the claim: %d", w.Code)
 	}
 }
@@ -446,7 +446,7 @@ func TestPasskeyResetRemovesPasskeys(t *testing.T) {
 	if w := f.do(t, "POST", "/reset-password", "", map[string]string{"token": tok, "password": "brandnewpw1"}); w.Code != http.StatusOK {
 		t.Fatalf("reset-password: %d %s", w.Code, w.Body)
 	}
-	if w := f.login(t, a, "u-alice"); w.Code != http.StatusUnauthorized {
+	if w := f.login(t, a, "u-alice"); w.Code != http.StatusNotFound {
 		t.Fatalf("a passkey survived the reset: %d", w.Code)
 	}
 
@@ -561,7 +561,9 @@ func TestPasskeyTwoFADownFailsClosed(t *testing.T) {
 // delete button would remove a passkey with one click.
 func TestPasskeyMarkersLeaveUntrustedIR(t *testing.T) {
 	got := string(noderender.RenderKind("button", map[string]any{
-		"data-passkey-delete": "/auth", "data-passkey-login": "/auth", "data-passkey-register": "/auth", "text": "View invoice",
+		"data-passkey-delete": "/auth", "data-passkey-login": "/auth", "data-passkey-register": "/auth",
+		"data-passkey-rename": "/auth", "data-passkey-reauth": "/auth", "data-passkey-upgrade": "/auth",
+		"data-passkey-autofill": "/auth", "data-passkey-list": "/auth", "text": "View invoice",
 	}, nil))
 	if strings.Contains(got, "data-passkey-") {
 		t.Fatalf("untrusted IR kept a passkey marker: %s", got)

@@ -46,7 +46,18 @@ const (
 	// user id it was issued to; a sign-in challenge carries nothing.
 	purposePasskeyRegister tokenPurpose = "passkeyreg"
 	purposePasskeyLogin    tokenPurpose = "passkeylogin"
+	// A registration challenge for a create the browser runs without a
+	// prompt (conditional create), carrying the user id.
+	purposePasskeyRegisterQuiet tokenPurpose = "passkeyregc"
+	// A step-up challenge, and the proof a passed step-up hands back;
+	// both carry the user id.
+	purposePasskeyReauth tokenPurpose = "passkeyreauth"
+	purposePasskeyProof  tokenPurpose = "passkeyproof"
 )
+
+// userPurposes are the purposes whose payload is a user id: erasure
+// removes their outstanding tokens.
+var userPurposes = []tokenPurpose{purposeReset, purposeVerify, purposePasskeyRegister, purposePasskeyRegisterQuiet, purposePasskeyReauth, purposePasskeyProof}
 
 // errTokenPurpose is returned when a token is valid but belongs to another
 // flow. Callers answer it exactly as they answer an unknown token: telling
@@ -72,24 +83,40 @@ func createPurposeToken(ctx context.Context, store MagicLinkTokenStore, p tokenP
 // happens — after the fact, at the cost of burning a misdirected token.
 // MemoryMagicLinkTokenStore and SQLMagicLinkTokenStore both peek.
 func redeemPurposeToken(ctx context.Context, store MagicLinkTokenStore, p tokenPurpose, token string) (string, error) {
+	_, payload, err := redeemAnyPurpose(ctx, store, token, p)
+	return payload, err
+}
+
+// redeemAnyPurpose is redeemPurposeToken for a token that may belong to
+// any of ps, reporting which. One redeem serves them all, so a store that
+// cannot peek still spends the token once.
+func redeemAnyPurpose(ctx context.Context, store MagicLinkTokenStore, token string, ps ...tokenPurpose) (tokenPurpose, string, error) {
+	match := func(raw string) (tokenPurpose, string, bool) {
+		for _, p := range ps {
+			if payload, ok := strings.CutPrefix(raw, string(p)+":"); ok {
+				return p, payload, true
+			}
+		}
+		return "", "", false
+	}
 	if peeker, ok := store.(MagicLinkTokenPeeker); ok {
 		raw, err := peeker.PeekToken(ctx, token)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
-		if _, ok := peekPurposePayload(raw, p); !ok {
-			return "", errTokenPurpose
+		if _, _, ok := match(raw); !ok {
+			return "", "", errTokenPurpose
 		}
 	}
 	raw, err := store.RedeemToken(ctx, token)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	payload, ok := strings.CutPrefix(raw, string(p)+":")
+	p, payload, ok := match(raw)
 	if !ok {
-		return "", errTokenPurpose
+		return "", "", errTokenPurpose
 	}
-	return payload, nil
+	return p, payload, nil
 }
 
 // peekPurposePayload reads a token's payload without consuming it, for the

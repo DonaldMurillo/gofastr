@@ -692,6 +692,10 @@ func (m *AuthManager) Init(app *framework.App) error {
 		return err
 	}
 
+	if err := checkCanonicalizerIdempotent(m.config.CanonicalizeEmail); err != nil {
+		return err
+	}
+
 	// A negative JWTExpiry is the same sign or unit error: every login
 	// answered 200 with a token that had already expired.
 	if m.config.JWTExpiry < 0 {
