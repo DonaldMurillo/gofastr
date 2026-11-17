@@ -49,14 +49,9 @@ fetch and auto-mount pass; `widgets-boot-static.js` is its static-export
 twin) and `core-ui/runtime/src/widgets.js` (the demand module that fetches
 chrome from `chromePath`). Then document the field.
 
-`core-ui/runtime/runtime.js` is GENERATED: `composeFull()` in
-`core-ui/runtime/runtime.go` stitches `frag/*.js` into one IIFE, so an edit
-to `runtime.js` never reaches the browser. Edit the fragments, then regenerate
-the on-disk file:
-
-```
-GOFASTR_UPDATE_RUNTIME_JS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeMatchesOnDiskFile
-```
+The runtime bundle has no source file of its own: `composeFull()` in
+`core-ui/runtime/runtime.go` stitches `frag/*.js` into one IIFE at build
+time. Edit the fragments.
 
 ### 2. SSR-inline whenever the URL says the surface should be open
 

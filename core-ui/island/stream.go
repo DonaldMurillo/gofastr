@@ -26,8 +26,7 @@ type ssePayload struct {
 const maxSessionIDLen = 256
 
 // ServeSSE is an http.HandlerFunc that streams island updates to a client.
-// It is the backward-compatible entry point (no presence); ServeSSEWithPresence
-// is the presence-aware variant.
+// It tracks no presence; ServeSSEWithPresence is the presence-aware variant.
 //
 // The client connects via EventSource and receives island updates as SSE events.
 // The client must pass a "session" query parameter to identify its session.

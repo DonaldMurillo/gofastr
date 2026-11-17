@@ -46,8 +46,7 @@ func main() {
 }
 ```
 
-That serves `/llms.txt`, `/.well-known/agent-card.json` (+ legacy
-`/.well-known/agent.json`), AI-bot-aware `/robots.txt`, and emits `Link`
+That serves `/llms.txt`, `/.well-known/agent-card.json`, AI-bot-aware `/robots.txt`, and emits `Link`
 response headers on every HTML page. `WithPublicLLMMD` (already common) makes
 the bundle's default `/llms.txt` link the per-screen markdown index, and
 enables markdown content negotiation when `WithMarkdownNegotiation` is added.
@@ -804,7 +803,7 @@ refuses to mount without one (see [Signed agent cards](#signed-agent-cards-a2a-v
 | `uihost.WithAgentReady(cfg)` | Bundle: llms.txt + card + AI-bot robots + Link headers (incl. OpenAPI `service-desc` when `cfg.OpenAPIEndpoint` is set, e.g. `"/openapi.json"`). |
 | `uihost.WithLLMsTxt(title, summary, sections)` | `/llms.txt` only. |
 | `uihost.WithLLMsFullTxt(content)` | `/llms-full.txt` only (full-corpus tier, served verbatim). |
-| `uihost.WithAgentCard(cfg)` | `/.well-known/agent-card.json` + `agent.json` alias. |
+| `uihost.WithAgentCard(cfg)` | `/.well-known/agent-card.json`. |
 | *(card signing)* | With `AgentCardConfig.SigningKeys`: `/.well-known/jwks.json` (the card's verification keys). |
 | `uihost.WithAgentLinkHeaders()` | `Link:` headers on HTML only. |
 | `uihost.WithMarkdownNegotiation()` | `Accept: text/markdown` → markdown. |

@@ -26,14 +26,6 @@ type MagicLinkEmailSender interface {
 
 // MagicLinkConfig configures the MagicLinkPlugin.
 type MagicLinkConfig struct {
-	// TokenLength is not read by anything. NewMagicLinkPlugin sets it to
-	// 32, the byte count the built-in stores always mint.
-	//
-	// Deprecated: the token stores mint 32 random bytes (256 bits, 64 hex
-	// characters) whatever this says; a custom MagicLinkTokenStore picks
-	// its own length. Setting it changes nothing.
-	TokenLength int
-
 	// TokenTTL is how long the magic link remains valid (default: 15 minutes).
 	TokenTTL time.Duration
 
@@ -97,10 +89,6 @@ type MagicLinkConfig struct {
 }
 
 func (c *MagicLinkConfig) defaults() {
-	// Deprecated field, defaulted only so it reads what the stores mint.
-	if c.TokenLength <= 0 {
-		c.TokenLength = 32
-	}
 	if c.TokenTTL <= 0 {
 		c.TokenTTL = 15 * time.Minute
 	}

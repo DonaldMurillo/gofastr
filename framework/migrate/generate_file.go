@@ -44,7 +44,7 @@ type MigrationFileOptions struct {
 //
 // The output matches `gofastr migrate generate --from=<spec.yml>` exactly:
 // same NNNN_name.sql naming, same -- +migrate directive layout, same snapshot
-// format, because both paths use the same GeneratePlan + RenderMigrationFile +
+// format, because both paths use the same GeneratePlan + renderMigrationFile +
 // SaveSnapshot primitives.
 //
 // Returns the written file path. An empty path (nil error) means the schema is
