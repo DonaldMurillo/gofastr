@@ -42,10 +42,10 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestDefaultLLMsSections_NoneWhenPrivate
       - test: framework/uihost.TestLLMsTxtSkipsDisabledIndex
-  - id: card-at-both-paths
-    rule: The agent card is served at /.well-known/agent-card.json and at the legacy /.well-known/agent.json.
+  - id: card-at-one-path
+    rule: The agent card is served at /.well-known/agent-card.json only; the pre-1.0 A2A path /.well-known/agent.json is not served.
     enforced_by:
-      - test: framework/uihost.TestAgentCard_HTTPAndAlias
+      - test: framework/uihost.TestAgentCard_HTTPServesOnlyTheCardPath
   - id: card-required-members
     rule: The card always carries skills as an array and each skill's description and tags, [] and "" when empty, never null or absent.
     enforced_by:

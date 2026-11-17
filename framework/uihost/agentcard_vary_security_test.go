@@ -20,7 +20,7 @@ import (
 // (r.Host, enum-gated X-Forwarded-Proto) declares Vary: Host, X-Forwarded-Proto
 // so a shared cache keys on the inputs the output varies on.
 // Surfaces: framework/uihost/agentready.go::handleAgentCard (routes
-// /.well-known/agent-card.json + /.well-known/agent.json; body embeds
+// /.well-known/agent-card.json; body embeds
 // resolveBaseURL(req) into supportedInterfaces[].url; sets only
 // Cache-Control: no-cache, no Vary) and ::writeAgentLinkHeaders (called from
 // handlePage uihost.go:1424; Link: <https://<host>/mcp>; rel="service" plus
@@ -61,7 +61,7 @@ func TestAgentCardVaryOnOriginInputs(t *testing.T) {
 	// X-Forwarded-Proto reaches the card (#669: it counts from no one else).
 	ds := newISOHost(WithAgentCard(AgentCardConfig{Name: "t", MCPEndpoint: "/mcp"}), WithTrustedProxies("192.0.2.1"))
 
-	for _, path := range []string{"/.well-known/agent-card.json", "/.well-known/agent.json"} {
+	for _, path := range []string{"/.well-known/agent-card.json"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Host = "attacker.example"
 		req.Header.Set("X-Forwarded-Proto", "https")

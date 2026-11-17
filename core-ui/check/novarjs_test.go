@@ -198,11 +198,7 @@ func shippedJSFiles(repoRoot, runtimeDir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, f := range top {
-		if filepath.Base(f) != "runtime.js" {
-			out = append(out, f)
-		}
-	}
+	out = append(out, top...)
 	return out, nil
 }
 

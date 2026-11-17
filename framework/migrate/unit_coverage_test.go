@@ -31,13 +31,13 @@ func rawEnt(name, table string, fields []schema.Field, rels []entity.Relation, p
 }
 
 func TestRenderMigrationFile_WithAndWithoutDown(t *testing.T) {
-	withDown := RenderMigrationFile(3, "add_x", "ALTER TABLE t ADD COLUMN x int;", "ALTER TABLE t DROP COLUMN x;")
+	withDown := renderMigrationFile(3, "add_x", "ALTER TABLE t ADD COLUMN x int;", "ALTER TABLE t DROP COLUMN x;")
 	for _, want := range []string{"-- +migrate Version 3", "-- +migrate Name add_x", "-- +migrate Up", "ADD COLUMN x", "-- +migrate Down", "DROP COLUMN x"} {
 		if !strings.Contains(withDown, want) {
 			t.Errorf("rendered file missing %q:\n%s", want, withDown)
 		}
 	}
-	noDown := RenderMigrationFile(4, "y", "SELECT 1;", "   ")
+	noDown := renderMigrationFile(4, "y", "SELECT 1;", "   ")
 	if strings.Contains(noDown, "-- +migrate Down") {
 		t.Errorf("blank down should omit the Down section:\n%s", noDown)
 	}

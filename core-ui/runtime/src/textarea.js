@@ -72,6 +72,4 @@
   window.__gofastr = window.__gofastr || {};
   (window.__gofastr._moduleScanners ||= {}).textarea = scan;
   (window.__gofastr.loadedModules ||= {}).textarea = true;
-  // Legacy hook preserved for external callers.
-  window.__gofastr.textarea = { rescan: scan };
 })();

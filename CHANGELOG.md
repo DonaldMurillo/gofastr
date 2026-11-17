@@ -182,6 +182,17 @@ few lines, and link the PR or the docs page for the rest.
   or `go.sum` changed. Fixture trees such as `cmd/check-embed/testdata`
   are meant not to type-check; `go build ./...` there is no longer a
   reason to send the session back.
+- **BREAKING: four leftover compatibility spellings are gone.**
+  `tenant.TenantConfig.Header` and `auth.MagicLinkConfig.TokenLength`
+  were read by nothing; delete them from your literals.
+  `migrate.RenderMigrationFile` (and `framework.RenderMigrationFile`) is
+  replaced by `RenderMigrationFileChecked`, which returns
+  `ErrDirectiveInSQL` for SQL that would read as a directive; the
+  `framework` package now re-exports the checked one. `WithAgentCard`
+  serves only `/.well-known/agent-card.json`, not the pre-1.0
+  `/.well-known/agent.json`. The runtime no longer sets
+  `window.__gofastr.textarea`; inserted content is scanned without it.
+  `gofastr upgrade` finds the Go spellings.
 
 ### Added
 - **Scriptless record edits, as an opt-in** ([entityui](framework/docs/content/entityui.md)).

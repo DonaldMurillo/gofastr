@@ -333,8 +333,8 @@ The framework primitives live in:
   for first-party IR silently drops every action attribute.
 - `core-ui/island`: the runtime-side island manager (registration, SSE push, slot lookup)
 - `core-ui/interactive`: declarative interactivity primitives (`OnClick/OnSubmit` wrapping for in-page RPC, signal binding, widget chaining)
-- `core-ui/runtime/runtime.js`: the client-side hydration runtime
-  (minified at first read in production; see
+- `core-ui/runtime/frag/*.js`: the client-side hydration runtime, composed
+  into the one `runtime.js` bundle by `composeFull` (minified at first read in production; see
   [`runtime-minification.md`](../framework/docs/content/runtime-minification.md))
 - `core-ui/runtime/minify`: token-aware Go JS minifier that
   shrinks every embedded runtime source on first read
@@ -614,7 +614,8 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-window-no-drag` | On an element inside a `data-cui-window-drag` region: a press on it or inside it keeps its click instead of starting a window drag. For a clickable element the built-in control list does not cover (a menu trigger, a `role="button"` div). Read by the same `desktop` module listener. |
 
 
-For the authoritative list, grep `data-cui-` in `core-ui/runtime/runtime.js`.
+For the authoritative list, grep `data-cui-` in `core-ui/runtime/frag/` and
+`core-ui/runtime/src/`.
 Adding a new attribute requires updating this table, adding a runtime
 test, AND assigning it an owning fragment in
 `core-ui/runtime/fragments.go` (see [§ Fragments](#fragments-runtime-composition)
@@ -1143,9 +1144,9 @@ needs. `fragment_map_test.go` fails the build if any attribute in the runtime
 sources lacks an owner, or any declared owner has drifted out of the source.
 
 After changing fragment declarations, refresh `frag/SYMBOLS.txt` with
-`GOFASTR_UPDATE_RUNTIME_SYMBOLS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeIsSymbolComplete`
-as well as regenerating `runtime.js`. Re-run both composition guards without
-update flags: regenerating the bundle does not update the symbol manifest.
+`GOFASTR_UPDATE_RUNTIME_SYMBOLS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeIsSymbolComplete`,
+then re-run it without the flag. The bundle itself has no checked-in copy:
+it is composed from the fragments at build time.
 
 Two kinds of fragment, and the distinction is a safety rule, not an
 optimization knob:

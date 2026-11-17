@@ -31,8 +31,8 @@ cleanup() { [ -n "$PID" ] && kill "$PID" 2>/dev/null; exit 0; }
 trap cleanup INT TERM
 
 current_hash() {
-  # Watch .go + embedded asset types, runtime.js is //go:embed'd into
-  # core-ui/runtime, theme.css is built from .go but inline tweaks to
+  # Watch .go + embedded asset types, the runtime fragments are
+  # //go:embed'd into core-ui/runtime, theme.css is built from .go but inline tweaks to
   # the runtime/CSS need a rebuild too.
   find "${WATCH_DIRS[@]}" \( -name '*.go' -o -name '*.js' -o -name '*.css' \) -type f -print0 2>/dev/null \
     | xargs -0 stat -f '%m %N' 2>/dev/null \
