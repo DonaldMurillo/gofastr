@@ -16,9 +16,9 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-//gofastr:test-reads examples/real-estate/gofastr.yml
+//gofastr:test-reads internal/testapps/real-estate/gofastr.yml
 func TestPublicListingsOnlyActive(t *testing.T) {
-	spec, err := appspec.LoadAppSpec("../../examples/real-estate/gofastr.yml")
+	spec, err := appspec.LoadAppSpec("../../internal/testapps/real-estate/gofastr.yml")
 	if err != nil {
 		t.Fatal(err)
 	}

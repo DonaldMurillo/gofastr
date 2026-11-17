@@ -1,6 +1,6 @@
 package framework
 
-//gofastr:test-reads examples/processmodule-demo/
+//gofastr:test-reads internal/testapps/processmodule-demo/
 
 import (
 	"bytes"

@@ -7,10 +7,11 @@ import (
 	"testing"
 )
 
-// ExampleAppSpecs returns every examples/<name>/gofastr.yml in the repo,
+// ExampleAppSpecs returns every examples/<name>/gofastr.yml and
+// internal/testapps/<name>/gofastr.yml in the repo,
 // skipping the test when there are none (a checkout without examples/).
 // A caller's test file declares
-// //gofastr:test-reads examples/*/gofastr.yml for what this reads.
+// //gofastr:test-reads examples/*/gofastr.yml internal/testapps/*/gofastr.yml for what this reads.
 func ExampleAppSpecs(t *testing.T) []string {
 	t.Helper()
 	matches := ExampleAppSpecPaths(t)
@@ -29,19 +30,21 @@ func ExampleAppSpecs(t *testing.T) []string {
 // test-reads audit counts each stat as a read the caller must declare.
 func ExampleAppSpecPaths(t *testing.T) []string {
 	t.Helper()
-	examples := filepath.Join(RepoRootDir(t), "examples")
-	entries, err := os.ReadDir(examples)
-	if err != nil {
-		t.Fatalf("read examples: %v", err)
-	}
+	root := RepoRootDir(t)
 	var matches []string
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
+	for _, dir := range []string{filepath.Join(root, "examples"), filepath.Join(root, "internal", "testapps")} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("read %s: %v", dir, err)
 		}
-		spec := filepath.Join(examples, e.Name(), "gofastr.yml")
-		if _, err := os.Stat(spec); err == nil {
-			matches = append(matches, spec)
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			spec := filepath.Join(dir, e.Name(), "gofastr.yml")
+			if _, err := os.Stat(spec); err == nil {
+				matches = append(matches, spec)
+			}
 		}
 	}
 	return matches

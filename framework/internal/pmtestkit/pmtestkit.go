@@ -131,7 +131,7 @@ var (
 	demoBinErr  error
 )
 
-// DemoBinary builds ./examples/processmodule-demo once per test binary into a
+// DemoBinary builds ./internal/testapps/processmodule-demo once per test binary into a
 // run-wide temp dir (not one test's TempDir) and returns (path, sha256).
 func DemoBinary(t testing.TB) (string, string) {
 	t.Helper()
@@ -148,7 +148,7 @@ func DemoBinary(t testing.TB) (string, string) {
 			return
 		}
 		bin := filepath.Join(dir, ExecutablePath("demo"))
-		cmd := exec.Command("go", "build", "-o", bin, "./examples/processmodule-demo")
+		cmd := exec.Command("go", "build", "-o", bin, "./internal/testapps/processmodule-demo")
 		cmd.Dir = repoRoot
 		if out, err := cmd.CombinedOutput(); err != nil {
 			demoBinErr = fmt.Errorf("go build demo: %v\n%s", err, out)

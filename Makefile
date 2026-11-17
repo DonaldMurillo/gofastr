@@ -17,22 +17,11 @@ build-cmd: $(DIST_DIR)
 build-examples: csp-check embed-check $(DIST_DIR)
 	@SITE_VER=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'); \
 	LDFLAGS=$$( [ -n "$$SITE_VER" ] && echo "-ldflags=-X=main.siteVersion=$$SITE_VER" ); \
-	for dir in examples/api-tour examples/blog examples/semantic-demo \
-	            examples/embed-demo examples/spa examples/static-site \
-	            examples/rtc-call examples/team-builder examples/webmcp-remote-assist examples/site \
-	            examples/hn; do \
+	for dir in examples/site examples/meridian; do \
 		name=$$(basename $$dir); \
 		echo "  building $$name → $(DIST_DIR)/examples/$$name"; \
 		go build $$LDFLAGS -o $(DIST_DIR)/examples/$$name ./$$dir || exit 1; \
 	done
-	@# ecommerce is the declaration-driven flagship: its app is scaffolded
-	@# from gofastr.yml into the owned app/ subpackage (output_dir: app — see
-	@# framework/ARCHITECTURE.md).
-	@# --force refreshes the committed scaffold from the current generator.
-	@echo "  scaffolding ecommerce from app spec"
-	@(cd examples/ecommerce && go run github.com/DonaldMurillo/gofastr/cmd/gofastr generate app gofastr.yml --force) || exit 1
-	@echo "  building ecommerce → $(DIST_DIR)/examples/ecommerce"
-	@go build -o $(DIST_DIR)/examples/ecommerce ./examples/ecommerce/app || exit 1
 
 build-all: csp-check embed-check build-cmd build-examples
 

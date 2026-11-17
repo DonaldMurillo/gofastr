@@ -121,7 +121,7 @@ A directory named `gen/`, wiped and rewritten under a `clean: true`
 flag on every run, is the giveaway of canonical-declaration output: you
 cannot own a file the tool deletes on the next run. (An earlier
 iteration of this generator worked exactly that way; nothing in the
-tree does anymore: `examples/ecommerce` scaffolds into an owned `app/`
+tree does anymore: `internal/testapps/ecommerce` scaffolds into an owned `app/`
 subpackage via `output_dir`, no `gen/`.) Scaffold-and-own emits an
 idiomatic layout the user owns immediately:
 
@@ -142,7 +142,7 @@ The emitted app files are a flat `package main` at the root: no
 calls `RegisterGenerated(...)` directly.
 
 (`--out=<dir>` / `app.output_dir` scaffolds into a subpackage instead of
-the module root, used by monorepo examples like `examples/ecommerce`,
+the module root, used by monorepo examples like `internal/testapps/ecommerce`,
 which keeps its app in an owned `app/` subpackage.)
 
 `generate` is **one-shot for the app**: it scaffolds once, refuses to

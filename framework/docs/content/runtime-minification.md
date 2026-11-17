@@ -112,7 +112,7 @@ Two things change for code that reads the served CSS:
   both modes. `registry.Entry.CSSFor` and `UIHost.AppCSS` still return
   the readable source; `Entry.ServedCSSFor` returns what is sent.
 
-On the examples/hn front page the component bundle drops from 11.4 KB
+On the internal/testapps/hn front page the component bundle drops from 11.4 KB
 to 5.7 KB gzipped and `app.css` from 5.0 KB to 2.6 KB, so the HTML
 and both stylesheets together come to about 12 KB.
 

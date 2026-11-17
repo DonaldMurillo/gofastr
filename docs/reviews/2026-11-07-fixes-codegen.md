@@ -25,7 +25,7 @@ committed copies were regenerated (only the two stamp fields, gofmt
 alignment and the marker sum changed):
 `examples/meridian/entities/client/client.go` (the
 `TestGeneratedTreesMatchGenerator` recipe, client.go copied alone) and
-`examples/ecommerce/app/entities/client/client.go` (`gofastr generate
+`internal/testapps/ecommerce/app/entities/client/client.go` (`gofastr generate
 client` in a scratch copy).
 
 ## C05: TS relation to an integer key typed string (fixed)
@@ -91,7 +91,7 @@ go test -p 2 -count=1 ./cmd/gofastr/internal/appgen/ ./cmd/gofastr/internal/pack
 go test -p 2 -count=1 ./cmd/gofastr/internal/generatecmd/ ./cmd/gofastr/internal/buildcmd/
 go test -p 2 -count=1 -run '^TestGeneratedTreesMatchGenerator$' ./examples/meridian/
 go test -p 2 -count=1 ./framework/docs/
-go build -p 2 ./examples/ecommerce/... ./examples/meridian/...
+go build -p 2 ./internal/testapps/ecommerce/... ./examples/meridian/...
 go vet -p 2 -vettool=<built cmd/vettool> ./cmd/gofastr/internal/appgen/ ./cmd/gofastr/internal/packcmd/
 ```
 

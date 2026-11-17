@@ -47,13 +47,16 @@ func catalogJSON(ds *UIHost, theme style.Theme, variantKey string) []byte {
 		suffix = "?t=" + url.QueryEscape(variantKey)
 	}
 	cat := make(map[string]map[string]any, len(all))
+	listed := make(map[string]bool, len(all))
 	for _, e := range all {
+		listed[e.Name] = true
 		cat[e.Name] = map[string]any{
 			"stylePath": "/__gofastr/comp/" + e.Name + ".css" + suffix,
 			"version":   e.VersionFor(theme),
 			"loadMode":  loadModeString(e.Load),
 		}
 	}
+	ds.catalogListed.Store(&listed)
 	ds.catalogMarshalCount.Add(1)
 	buf, err := json.Marshal(cat)
 	if err != nil {

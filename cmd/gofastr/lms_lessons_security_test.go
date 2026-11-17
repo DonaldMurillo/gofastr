@@ -21,13 +21,13 @@ import (
 // 200) pin the premise that only the lessons create gate is missing, and
 // stay green once the access block gains create: catalog:write.
 //
-//gofastr:test-reads examples/lms/gofastr.yml
+//gofastr:test-reads internal/testapps/lms/gofastr.yml
 func TestLmsLessonsRedCreateGated(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, builds, and boots an app")
 	}
-	clitest.VariantBuild(t, "examples/lms/gofastr.yml")
-	bin, appDir := exampleTree(t, "../../examples/lms/gofastr.yml", "lms")
+	clitest.VariantBuild(t, "internal/testapps/lms/gofastr.yml")
+	bin, appDir := exampleTree(t, "../../internal/testapps/lms/gofastr.yml", "lms")
 	baseURL, appOut, bootDBPath := bootGeneratedApp(t, "lms", bin, appDir)
 
 	registerAndLogin := func(email string) *http.Client {

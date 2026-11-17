@@ -111,7 +111,14 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 		if label == "" {
 			label = i18nui.ContentRowAside.Text(cfg.Ctx)
 		}
-		body = append(body, html.Aside(html.AsideConfig{Label: label, Class: "fui-content-row__aside"}, cfg.Aside))
+		var attrs html.Attrs
+		if cfg.Viewport {
+			// A Viewport aside scrolls on its own, and its content (an
+			// activity feed) may hold nothing focusable: the region
+			// takes focus itself so a keyboard can scroll it.
+			attrs = html.Attrs{"tabindex": "0"}
+		}
+		body = append(body, html.Aside(html.AsideConfig{Label: label, Class: "fui-content-row__aside", ExtraAttrs: attrs}, cfg.Aside))
 	}
 
 	return contentRowStyle.WrapHTML(html.Div(html.DivConfig{

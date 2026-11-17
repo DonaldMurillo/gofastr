@@ -21,9 +21,9 @@ import (
 // is already "confirmed" or file an inquiry already "converted": the
 // create starts at the initial state, and staff move it from there.
 //
-//gofastr:test-reads examples/real-estate/gofastr.yml
+//gofastr:test-reads internal/testapps/real-estate/gofastr.yml
 func TestVisitorCannotSetLeadStatus(t *testing.T) {
-	spec, err := appspec.LoadAppSpec("../../examples/real-estate/gofastr.yml")
+	spec, err := appspec.LoadAppSpec("../../internal/testapps/real-estate/gofastr.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
