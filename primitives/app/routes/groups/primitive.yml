@@ -4,3 +4,65 @@ code:
   - framework/routegroup/
 docs:
   - framework/docs/content/api-versioning.md
+invariants:
+  - id: access-runs-first
+    rule: A group's WithAccess gate runs before its other middleware and its handlers.
+    enforced_by:
+      - test: framework/routegroup.TestAccessRunsBeforeMiddleware
+  - id: nested-groups-inherit
+    rule: A nested group mounts on its parent's sub-router, so it inherits the parent's prefix, middleware and access gate, and both gates run.
+    enforced_by:
+      - test: framework/routegroup.TestNestedAccessBothEnforced
+  - id: prefix-is-the-full-path
+    rule: Prefix returns the full prefix including every enclosing group's, the path the routes are really served at.
+    enforced_by:
+      - test: framework/routegroup.TestNestedPrefixComposesEveryEnclosingGroup
+  - id: prefix-is-canonical
+    rule: A prefix is stripped of control bytes, has backslashes turned to slashes, gains a leading slash and is path.Clean'd, and a root prefix becomes empty.
+    enforced_by:
+      - test: framework/routegroup.TestNormalizePrefix_HardensInput
+  - id: sub-router-made-once
+    rule: The sub-router is created once under a sync.Once, so concurrent registrations on a fresh group land on one router.
+    enforced_by:
+      - test: framework/routegroup.TestGroupRouterRaceFreeInit
+  - id: mcp-names-use-the-innermost-namespace
+    rule: MCPToolName is "<namespace>.<entity>.<action>" with the group's own namespace, an inner group's replacing its parent's, and "<entity>.<action>" without one.
+    enforced_by:
+      - test: framework/routegroup.TestNestedMCPNamespaceComposes
+      - test: framework/routegroup.TestMCPToolName
+  - id: verbs-register-under-the-prefix
+    rule: Handle and each verb method register under the group's prefix with their own method.
+    enforced_by:
+      - test: framework/routegroup.TestVerbsRegisterUnderPrefix
+  - id: openapi-tag-kept
+    rule: OpenAPITag returns the WithOpenAPITag value.
+    enforced_by:
+      - test: framework/routegroup.TestOpenAPITag
+  - id: package-example-is-real
+    rule: Every RouteGroup method the package doc's example calls exists.
+    enforced_by:
+      - test: framework/routegroup.TestDocumentedGroupMethodsExist
+decisions:
+  - id: groups-hold-no-entities
+    date: 2026-11-17
+    status: accepted
+    decision: A RouteGroup is a router surface and metadata (prefix, OpenAPI tag, MCP namespace); App.GroupEntity owns mounting an entity into it.
+    rejected:
+      - option: Register entities on the group itself.
+        why: Entity mounting needs the App's registry, CRUD and MCP wiring, which would pull the App into this package.
+  - id: canonical-prefix
+    date: 2026-11-17
+    status: accepted
+    decision: The prefix is normalised once, at New, before any route is attached under it.
+    rejected:
+      - option: Use the prefix as given.
+        why: A control byte could smuggle a header line, a backslash could bypass an /admin gate, and a non-canonical prefix permanently aliases every child route.
+    upholds: [prefix-is-canonical]
+  - id: lazy-sub-router
+    date: 2026-11-17
+    status: accepted
+    decision: The sub-router is built on first use under a sync.Once.
+    rejected:
+      - option: Build it lazily without synchronisation.
+        why: Concurrent Get, Post or Use on a fresh group spawned several sub-routers and lost registrations.
+    upholds: [sub-router-made-once]
