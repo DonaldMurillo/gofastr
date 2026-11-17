@@ -9,11 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-// GOFASTR1823 reads the same comment-stripped design-system lines as
-// GOFASTR1807, in both shapes: `prop: value` in a stylesheet string and
-// the `"prop", "value"` pair of a builder call. Each value has its var()
-// spans removed first, so a token's fallback never counts as a literal.
-
 var (
 	reBareDeclCSS  = regexp.MustCompile(`(?:^|[\s{;"` + "`" + `])(-{0,2}[a-z][a-z-]*)\s*:\s*([^;{}"` + "`" + `]+)`)
 	reBareDeclPair = regexp.MustCompile(`"([a-z][a-z-]*)",\s*"([^"]+)"`)
@@ -35,9 +30,6 @@ var (
 	reColorProp    = regexp.MustCompile(`^(?:color|background(?:-color|-image)?|(?:border(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?-)?color|outline(?:-color)?|fill|stroke|caret-color|accent-color|text-decoration(?:-color)?|column-rule(?:-color)?|text-shadow|border(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?)$`)
 )
 
-// stripVarSpans drops every var(...) span, fallbacks and nested var()s
-// included, and every calc(...) that reads one: `calc(var(--radii-md)
-// - 2px)` is an inset that follows the theme, not a literal.
 func stripVarSpans(v string) string {
 	var b strings.Builder
 	for i := 0; i < len(v); {
@@ -73,7 +65,6 @@ func stripVarSpans(v string) string {
 	return b.String()
 }
 
-// nonZeroPx reports the first px literal in v that is not zero.
 func nonZeroPx(v string) (string, bool) {
 	for _, m := range reBarePx.FindAllStringSubmatch(v, -1) {
 		if n, err := strconv.ParseFloat(m[1], 64); err == nil && n != 0 {
@@ -83,9 +74,6 @@ func nonZeroPx(v string) (string, bool) {
 	return "", false
 }
 
-// lengthOver1 reports the first px or rem literal in v whose size is
-// more than one pixel. A 1px length is structural (a visually hidden
-// box, a hairline overlap), not a theme quantity.
 func lengthOver1(v string) (string, bool) {
 	for _, m := range reBareLen.FindAllStringSubmatch(v, -1) {
 		n, err := strconv.ParseFloat(m[1], 64)
@@ -103,8 +91,6 @@ func lengthOver1(v string) (string, bool) {
 	return "", false
 }
 
-// valueWords splits a var()-stripped value on whitespace and commas, a
-// trailing !important dropped.
 func valueWords(v string) []string {
 	v = strings.TrimSpace(v)
 	v = strings.TrimSpace(strings.TrimSuffix(v, "!important"))
@@ -114,9 +100,6 @@ func valueWords(v string) []string {
 const weightWant = "--font-weight-normal / --font-weight-medium / --font-weight-semibold / --font-weight-bold " +
 	"(an off-step weight is calc(var(--font-weight-semibold, 600) + 50))"
 
-// fontShorthand judges the font shorthand's size, line height and
-// weight: `font: 13px/1.4 system-ui` reaches none of --text-*,
-// --leading-* or --font-weight-*.
 func fontShorthand(v string) (lit, want string, ok bool) {
 	if m := reFontSize.FindStringSubmatch(v); m != nil {
 		return m[1] + m[2], "--text-* (font: var(--text-sm, 0.875rem)/var(--leading-snug, 1.4) var(--font-body))", true
@@ -134,10 +117,6 @@ func fontShorthand(v string) (lit, want string, ok bool) {
 	return "", "", false
 }
 
-// scaleLiteral judges the typography, spacing, size, colour, opacity
-// and shadow quantities: the ones the theme's scale tokens and the
-// --ui-* knobs own. Lengths in em, %, ch and viewport units are
-// relative to something the theme already sets and pass.
 func scaleLiteral(prop, v string) (lit, want string, ok bool) {
 	switch {
 	case reSpacingProp.MatchString(prop):
@@ -199,10 +178,6 @@ func scaleLiteral(prop, v string) (lit, want string, ok bool) {
 	return "", "", false
 }
 
-// bareThemeLiteral judges one declaration and returns the literal and
-// the token family to read, or ok=false. scale adds the typography,
-// spacing, size, colour, opacity and shadow arms, which dev-only
-// surfaces skip: their chrome is not the app's to theme.
 func bareThemeLiteral(prop, value string, scale bool) (lit, want string, ok bool) {
 	v := stripVarSpans(value)
 	if scale {
@@ -279,9 +254,6 @@ func bareThemeLiteral(prop, value string, scale bool) (lit, want string, ok bool
 const easingWant = "--easing-ease-out / --easing-ease-in / --easing-ease-in-out / --easing-spring " +
 	"(linear and steps() pass)"
 
-// bareEasing reports the first timing function in v a theme's
-// --easing-* tokens own: an ease keyword or a cubic-bezier(). linear
-// and steps() are mechanical (a spinner, a caret blink) and pass.
 func bareEasing(v string) (string, bool) {
 	for _, w := range valueWords(v) {
 		switch {
@@ -294,9 +266,6 @@ func bareEasing(v string) (string, bool) {
 	return "", false
 }
 
-// checkBareThemeLiterals reports one GOFASTR1823 per declaration on a
-// design-system line that writes a theme-owned quantity as a literal.
-// devSurface drops the scale arms (see bareThemeLiteral).
 func checkBareThemeLiterals(rel string, lineNo int, scan, orig string, devSurface bool) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	report := func(prop, value string) {

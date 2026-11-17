@@ -44,10 +44,6 @@ func runTesting(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	return out, nil
 }
 
-// ----------------------------------------------------------------------
-// GOFASTR1106 / 1101 / 1102 / 1103: the semantic-coverage manifest.
-// ----------------------------------------------------------------------
-
 func semanticCoverage(p *contracts.Pass) []contracts.Diagnostic {
 	cfg := p.Config.Coverage
 	if !cfg.Routes && !cfg.Permissions && !cfg.Entities {
@@ -58,10 +54,6 @@ func semanticCoverage(p *contracts.Pass) []contracts.Diagnostic {
 	hooks := Hooks(p)
 	subs := EventSubs(p)
 	roles := Roles(p)
-	// Nothing discoverable to demand coverage of. Hooks and subscriptions
-	// count here too: a package that registers them but whose routes are
-	// wired elsewhere still has a surface worth checking, and leaving them
-	// out of the guard meant they were never examined.
 	if !table.Registered && len(entities) == 0 && len(hooks) == 0 &&
 		len(subs) == 0 && len(roles) == 0 {
 		return nil
@@ -70,23 +62,12 @@ func semanticCoverage(p *contracts.Pass) []contracts.Diagnostic {
 	manifest, err := semcov.Read(semcov.DirFor(p.Root))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			// Absence and drift are different failures, treated
-			// differently on purpose. A fresh clone has never run its
-			// tests; walling the first verify off behind a full test run
-			// would teach people that verify is something to skip.
 			return []contracts.Diagnostic{{
 				RuleID:  contracts.RuleNoCoverageManifest,
 				File:    semcov.FileName,
 				Message: "no semantic-coverage manifest: the route, permission, and entity coverage checks did not run",
 			}}
 		}
-		// A manifest that exists but cannot be read is corruption, not
-		// absence. Relaxing enforcement exactly when the record is
-		// untrustworthy would invert the guarantee.
-		// Its own rule, not a severity bump on the absence rule: Run
-		// assigns severity from the catalog and config by design, so an
-		// analyzer-set Severity here was silently discarded and corruption
-		// reported at the same `info` as absence.
 		return []contracts.Diagnostic{{
 			RuleID:     contracts.RuleCoverageManifestBroken,
 			File:       semcov.FileName,
@@ -117,9 +98,6 @@ func semanticCoverage(p *contracts.Pass) []contracts.Diagnostic {
 			d.Evidence = map[string]string{"entity": e.Name}
 			out = append(out, d)
 		}
-		// Hooks ride with the entity demand: they are entity behaviour,
-		// and an app that has opted out of entity coverage has opted out
-		// of this too.
 		for _, h := range hooks {
 			if manifest.CoveredHook(h.Entity, h.Type) {
 				continue
@@ -131,9 +109,6 @@ func semanticCoverage(p *contracts.Pass) []contracts.Diagnostic {
 		}
 	}
 	if cfg.Entities {
-		// Subscriptions ride with the entity demand for the same reason
-		// hooks do: they are background behaviour that only a real
-		// operation can trigger.
 		for _, s := range subs {
 			if manifest.CoveredEvent(s.Type) {
 				continue
@@ -159,8 +134,6 @@ func semanticCoverage(p *contracts.Pass) []contracts.Diagnostic {
 	return out
 }
 
-// uncoveredPermissions compares the permission strings declared in source
-// against the ones the manifest saw evaluated.
 func uncoveredPermissions(p *contracts.Pass, manifest *semcov.Manifest) []contracts.Diagnostic {
 	declared := declaredPermissions(p)
 	names := make([]string, 0, len(declared))
@@ -183,17 +156,11 @@ func uncoveredPermissions(p *contracts.Pass, manifest *semcov.Manifest) []contra
 	return out
 }
 
-// permSite is where a permission string was declared, so the finding can
-// point at the declaration rather than at nothing.
 type permSite struct {
 	File string
 	Pos  token.Pos
 }
 
-// declaredPermissions finds permission strings in entity Access blocks
-// and in `access.Require("…")`-shaped calls. A permission is recognised
-// by its `resource:verb` shape, which is the framework's convention and
-// specific enough that ordinary strings do not collide with it.
 func declaredPermissions(p *contracts.Pass) map[string]permSite {
 	out := map[string]permSite{}
 	for _, f := range p.AppFiles() {
@@ -206,8 +173,6 @@ func declaredPermissions(p *contracts.Pass) map[string]permSite {
 			if !isCall {
 				return true
 			}
-			// Only permission-shaped call sites, so an arbitrary
-			// "scheme:value" string elsewhere is not mistaken for one.
 			switch method {
 			case "Require", "RequirePermission", "Can", "HasScope", "RequireAPIScopes":
 			default:
@@ -225,9 +190,6 @@ func declaredPermissions(p *contracts.Pass) map[string]permSite {
 			return true
 		})
 	}
-	// Entity access blocks declare permissions too, and they are the ones
-	// most likely to go unexercised. Nothing in the app calls them
-	// explicitly, so only a request can prove them.
 	for _, e := range Entities(p) {
 		for _, perm := range e.AccessPermissions {
 			if _, seen := out[perm]; !seen {
@@ -249,15 +211,6 @@ func looksLikePermission(s string) bool {
 	return true
 }
 
-// ----------------------------------------------------------------------
-// GOFASTR1105: disabled tests.
-// ----------------------------------------------------------------------
-
-// laneBoundaryPhrases mark a skip that describes an executable boundary
-// rather than missing coverage: a capability the machine lacks, a lane
-// the run opted out of. The reason is printed in test output, so the
-// absence is visible rather than hidden, which is the whole distinction
-// this rule draws.
 var laneBoundaryPhrases = []string{
 	"not set", "unavailable", "not available", "requires /bin/sh",
 	"requires docker", "no usable chromium", "no sandbox backend",
@@ -265,7 +218,6 @@ var laneBoundaryPhrases = []string{
 	"short mode", "-short",
 }
 
-// debtPhrases mark a skip that is hiding work.
 var debtPhrases = []string{
 	"not yet", "todo", "temporarily disabled", "restore this test",
 	"restore once", "being reimplemented", "no session cookie",
@@ -295,9 +247,6 @@ func disabledTests(p *contracts.Pass) []contracts.Diagnostic {
 			if hasLegacyAnnotation(lines, pos.Line, "allow-skip:") {
 				return true
 			}
-			// The reason phrase can sit on any line of the call: gofmt
-			// breaks a long Skipf message onto its own line, so judging
-			// only the call's first line missed exactly those.
 			var messages []string
 			for _, argument := range args.Args {
 				ast.Inspect(argument, func(node ast.Node) bool {
@@ -316,15 +265,9 @@ func disabledTests(p *contracts.Pass) []contracts.Diagnostic {
 					return true
 				}
 			}
-			// A `testing.Short()` guard just above is the canonical lane
-			// boundary even when the message does not say so.
 			if guardedByShort(lines, pos.Line) {
 				return true
 			}
-			// Only report skips that read as deferred work. A skip with
-			// an unfamiliar reason is left alone: the alternative is
-			// flagging every conditional skip in the suite, which turns
-			// the rule into noise and gets it switched off.
 			isDebt := false
 			for _, phrase := range debtPhrases {
 				if strings.Contains(line, phrase) {
@@ -343,9 +286,6 @@ func disabledTests(p *contracts.Pass) []contracts.Diagnostic {
 	return out
 }
 
-// callSpan returns the source text of node n's whole line span, from
-// its first line through its last: gofmt breaks a long Skipf message
-// onto its own line, and a reason phrase there is part of the call.
 func callSpan(p *contracts.Pass, rel string, n ast.Node) string {
 	start := p.Position(n.Pos()).Line
 	end := p.Position(n.End()).Line
@@ -374,12 +314,6 @@ func guardedByShort(lines []string, lineNo int) bool {
 	return false
 }
 
-// ----------------------------------------------------------------------
-// GOFASTR1104: line coverage floor.
-// ----------------------------------------------------------------------
-
-// coverageProfiles are the conventional locations a `go test
-// -coverprofile` output lands in, tried in order when none is configured.
 var coverageProfiles = []string{"coverage.out", ".gofastr/coverage.out", "cover.out", "coverage.txt"}
 
 func lineCoverage(p *contracts.Pass) []contracts.Diagnostic {
@@ -427,10 +361,6 @@ func lineCoverage(p *contracts.Pass) []contracts.Diagnostic {
 	}}
 }
 
-// readCoverageProfile computes the statement-weighted percentage from a
-// `go test -coverprofile` file. Weighting by statement count is what `go
-// tool cover -func` reports; averaging the per-block percentages instead
-// would over-weight tiny blocks and quietly inflate the number.
 func readCoverageProfile(path string) (float64, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -446,7 +376,6 @@ func readCoverageProfile(path string) (float64, error) {
 		if line == "" || strings.HasPrefix(line, "mode:") {
 			continue
 		}
-		// name.go:line.col,line.col numberOfStatements count
 		fields := strings.Fields(line)
 		if len(fields) < 3 {
 			continue

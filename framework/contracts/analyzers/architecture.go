@@ -20,21 +20,12 @@ func init() {
 	})
 }
 
-// runArchitecture enforces the dependency shape the project declared.
-//
-// It stays completely silent when nothing is declared. That is the only
-// honest default: a layering the tool invented for someone else's package
-// tree would be wrong more often than right, and a wrong architecture
-// rule is worse than none. It trains people to ignore the analyzer.
 func runArchitecture(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	arch := p.Config.Architecture
 	if !arch.Configured() {
 		return nil, nil
 	}
 
-	// Layer index by name, and a resolver from import path to layer. The
-	// first matching layer wins, so an earlier, more specific entry can
-	// carve an exception out of a later `**` catch-all.
 	layerOf := func(importPath string) (int, string, bool) {
 		for i, layer := range arch.Layers {
 			for _, pattern := range layer.Packages {
@@ -77,9 +68,6 @@ func runArchitecture(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 				continue
 			}
 			toIdx, toName, toKnown := layerOf(target)
-			// Layers are ordered top-first, so a *lower* index is a higher
-			// layer. An import is upward, and forbidden, when the target
-			// sits at a smaller index than the importer.
 			if !toKnown || toIdx >= fromIdx {
 				continue
 			}
@@ -96,17 +84,6 @@ func runArchitecture(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	return out, nil
 }
 
-// matchImportPath matches a glob against an import path, trying the full
-// path and then the module-relative one. That lets a config say
-// `core/**` instead of repeating `github.com/you/app/` in front of every
-// entry, while still allowing a full path for an external dependency.
-//
-// It deliberately does NOT try every suffix. That was the first
-// implementation and it is subtly wrong: for a module named
-// `github.com/acme/core`, the suffix `core` matches the glob `core/**`,
-// so *every* package in the module lands in the core layer and the rule
-// silently stops finding anything. Stripping the known module prefix is
-// the precise version of the same convenience.
 func matchImportPath(pattern, importPath, modulePath string) bool {
 	if matchImportGlob(pattern, importPath) {
 		return true
@@ -115,16 +92,12 @@ func matchImportPath(pattern, importPath, modulePath string) bool {
 		return false
 	}
 	if importPath == modulePath {
-		// The module root package itself, whose relative path is "".
 		return false
 	}
 	rel, ok := strings.CutPrefix(importPath, modulePath+"/")
 	return ok && matchImportGlob(pattern, rel)
 }
 
-// matchImportGlob is contracts' path matcher applied to an import path.
-// Import paths are already slash-separated, so the dialect carries over
-// unchanged: `*` within a segment, `**` across segments.
 func matchImportGlob(pattern, path string) bool {
 	return contracts.MatchPath(pattern, path)
 }

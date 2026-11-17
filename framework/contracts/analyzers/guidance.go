@@ -31,11 +31,6 @@ func runGuidance(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	return out, nil
 }
 
-// handrolledCRUD reports a resource whose REST surface was written by
-// hand. The bar is deliberately high, three or more of the five CRUD
-// verbs on one collection path, because two endpoints on a resource is
-// a normal amount of custom behaviour, and five is someone reimplementing
-// `app.Entity`.
 func handrolledCRUD(p *contracts.Pass) []contracts.Diagnostic {
 	table := Routes(p)
 	if !table.Registered {
@@ -78,8 +73,6 @@ func handrolledCRUD(p *contracts.Pass) []contracts.Diagnostic {
 		if crud < 3 {
 			continue
 		}
-		// A resource that already has a declared entity is fine. The
-		// hand-written routes are the custom operations beside it.
 		name := strings.Trim(collection, "/")
 		if i := strings.LastIndex(name, "/"); i >= 0 {
 			name = name[i+1:]
@@ -102,16 +95,11 @@ func handrolledCRUD(p *contracts.Pass) []contracts.Diagnostic {
 	return out
 }
 
-// collectionPath reduces "/api/orders/{id}" to "/api/orders" so the item
-// and collection routes of one resource group together. Returns "" for a
-// path with no usable resource segment.
 func collectionPath(pattern string) string {
 	segments := strings.Split(strings.Trim(pattern, "/"), "/")
 	if len(segments) == 0 || segments[0] == "" {
 		return ""
 	}
-	// Drop a trailing parameter segment, and any action verb after it
-	// ("/orders/{id}/confirm" is still the orders resource).
 	for len(segments) > 0 {
 		last := segments[len(segments)-1]
 		if strings.HasPrefix(last, "{") || strings.HasPrefix(last, ":") {
@@ -123,7 +111,6 @@ func collectionPath(pattern string) string {
 	if len(segments) == 0 {
 		return ""
 	}
-	// Framework-internal surfaces are not the user's resources.
 	joined := "/" + strings.Join(segments, "/")
 	for _, reserved := range []string{"/__gofastr", "/mcp", "/health", "/metrics", "/.well-known"} {
 		if strings.HasPrefix(joined, reserved) {
@@ -133,8 +120,6 @@ func collectionPath(pattern string) string {
 	return joined
 }
 
-// batterySignals maps a stdlib or third-party import that indicates a
-// hand-rolled subsystem onto the battery that already provides it.
 var batterySignals = []struct {
 	Imports []string
 	Battery string
@@ -152,7 +137,6 @@ var batterySignals = []struct {
 func handrolledBattery(p *contracts.Pass) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	for _, f := range p.AppFiles() {
-		// The batteries themselves obviously use these packages.
 		if strings.HasPrefix(f.Rel, "battery/") || strings.HasPrefix(f.Rel, "framework/") {
 			continue
 		}
@@ -164,13 +148,9 @@ func handrolledBattery(p *contracts.Pass) []contracts.Diagnostic {
 			if !importsAny(file, signal.Imports...) {
 				continue
 			}
-			// Already using the battery alongside it. That is composition,
-			// not reimplementation.
 			if importsAny(file, signal.Battery) {
 				continue
 			}
-			// An unmounted copy of the battery is the battery, owned by
-			// the app: telling it to register the battery is backwards.
 			if unmountedCopyOf(p, f.Rel, signal.Battery) {
 				continue
 			}
@@ -184,9 +164,6 @@ func handrolledBattery(p *contracts.Pass) []contracts.Diagnostic {
 	return out
 }
 
-// unmountedCopyOf reports whether the file carries the marker `gofastr
-// unmount` stamps on a copy of pkg (a path under the gofastr module) or
-// of a package under it.
 func unmountedCopyOf(p *contracts.Pass, rel, pkg string) bool {
 	src, ok := p.Source(rel)
 	if !ok {
@@ -197,10 +174,6 @@ func unmountedCopyOf(p *contracts.Pass, rel, pkg string) bool {
 	return ok && m.Generator == "unmount" && (m.Source == root || strings.HasPrefix(m.Source, root+"/"))
 }
 
-// rawSQLOverRepo reports a raw query naming a table that has a declared
-// entity. The entity's scoping, whether soft delete, tenant filter, or
-// owner field, lives in the CRUD layer, so a raw query silently returns
-// rows those rules exist to hide.
 func rawSQLOverRepo(p *contracts.Pass) []contracts.Diagnostic {
 	entities := Entities(p)
 	if len(entities) == 0 {
@@ -249,10 +222,6 @@ func rawSQLOverRepo(p *contracts.Pass) []contracts.Diagnostic {
 	return out
 }
 
-// tableInStatement finds a declared entity name used as a table in a SQL
-// statement: after FROM, INTO, UPDATE, or JOIN. Matching only in those
-// positions keeps a column or alias that happens to share the name from
-// counting.
 func tableInStatement(sql string, tables map[string]string) string {
 	fields := strings.FieldsFunc(strings.ToLower(sql), func(r rune) bool {
 		return r == ' ' || r == '\t' || r == '\n' || r == '(' || r == ')' || r == ',' || r == ';'
