@@ -20,42 +20,24 @@ import (
 )
 
 const (
-	// defaultPGTable holds payloads too large for an inline NOTIFY.
-	defaultPGTable = "gofastr_fanout_msgs"
-	// pgInlineThreshold: NOTIFY payloads are capped at 8000 bytes by Postgres.
-	// We inline when the marshaled wrapper is at most this size (margin for
-	// framing/escapes); anything larger goes through the fallback table.
-	pgInlineThreshold = 7000
-	// pgPurgeAge: fallback rows are purged once they are older than this,
-	// long enough that a briefly-disconnected receiver can still SELECT them,
-	// short enough that the table stays bounded.
-	pgPurgeAge = 2 * time.Minute
-	// pgPurgeAgeSQL is the same cutoff expressed for the DB clock. Purging
-	// with `created_at < now() - interval` keeps a single clock (the DB's),
-	// avoiding skew between the app's time.Now() and the DB's now() (which
-	// set created_at on insert). MUST stay in sync with pgPurgeAge.
-	pgPurgeAgeSQL   = "2 minutes"
-	pgPurgeInterval = 30 * time.Second
-	pgReconnectMin  = 1 * time.Second
-	pgReconnectMax  = 30 * time.Second
-	// defaultListenTimeout is how long NewPostgres waits for the initial
-	// LISTEN connection to become ready. pq.Listener retries a bad/unroutable
-	// DSN forever; the deadline turns that into a prompt construction error.
+	defaultPGTable       = "gofastr_fanout_msgs"
+	pgInlineThreshold    = 7000
+	pgPurgeAge           = 2 * time.Minute
+	pgPurgeAgeSQL        = "2 minutes"
+	pgPurgeInterval      = 30 * time.Second
+	pgReconnectMin       = 1 * time.Second
+	pgReconnectMax       = 30 * time.Second
 	defaultListenTimeout = 15 * time.Second
 )
 
-// pgInlineMsg is the NOTIFY payload for an inline message: the topic travels
-// alongside the payload so the dispatcher can route it without a channel per
-// topic. Payload is a string (payloads are JSON envelopes, valid UTF-8).
 type pgInlineMsg struct {
 	Topic   string `json:"t"`
 	Payload string `json:"p"`
 }
 
-// PostgresFanout is a lossy-best-effort [cfanout.Fanout] backed by Postgres
-// LISTEN/NOTIFY. One connection LISTENs on a single channel; topic routing is
-// inside the payload. Large payloads spill to a fallback table and are
-// re-fetched by id on receive.
+// PostgresFanout is a lossy [cfanout.Fanout] on Postgres LISTEN/NOTIFY: one
+// channel named after its fallback table, the topic inside the payload, and
+// payloads too large to NOTIFY spilled to that table.
 type PostgresFanout struct {
 	dsn     string
 	db      *sql.DB
@@ -64,12 +46,7 @@ type PostgresFanout struct {
 
 	skipEnsure bool
 
-	// listenTimeout bounds the initial LISTEN readiness wait (see
-	// WithListenTimeout). A bad/unroutable DSN makes pq.Listener retry
-	// forever; the deadline turns that into a prompt construction error.
-	listenTimeout time.Duration
-	// connectFailedLogged preserves onset-once logging of repeated
-	// ListenerEventConnectionAttemptFailed bursts during a bad-DSN retry storm.
+	listenTimeout       time.Duration
 	connectFailedLogged atomic.Bool
 
 	listener *pq.Listener
@@ -78,25 +55,17 @@ type PostgresFanout struct {
 	subs    map[string]map[uint64]*pgSub
 	nextSub uint64
 
-	purgeMu   sync.Mutex
-	lastPurge time.Time
-	// purgeEvery is the purge cadence: the dispatcher's ticker and the
-	// publish-side throttle both use it.
+	purgeMu    sync.Mutex
+	lastPurge  time.Time
 	purgeEvery time.Duration
 
 	closed atomic.Bool
 	done   chan struct{}
 
-	// fetchCtx bounds the dispatcher's fallback-row SELECT; Close cancels
-	// it so a fetch stuck on a slow or locked table cannot outlive the
-	// fanout. dispatched closes when the dispatcher returns.
 	fetchCtx   context.Context
 	stopFetch  context.CancelFunc
 	dispatched chan struct{}
 
-	// Onset-once guards for receive-path drops (lossy lane): each category
-	// logs the first occurrence at Warn so a recurring symptom is observable
-	// without flooding on every message.
 	dropMalformedPtr atomic.Bool
 	dropMissingRow   atomic.Bool
 	dropUndecodable  atomic.Bool
@@ -105,8 +74,8 @@ type PostgresFanout struct {
 // Option configures a [PostgresFanout].
 type Option func(*PostgresFanout)
 
-// WithTableName overrides the fallback table name (default
-// "gofastr_fanout_msgs"). The name must be a valid SQL identifier.
+// WithTableName sets the fallback table, and so the channel; default
+// "gofastr_fanout_msgs".
 func WithTableName(name string) Option {
 	return func(p *PostgresFanout) {
 		if name != "" {
@@ -115,19 +84,14 @@ func WithTableName(name string) Option {
 	}
 }
 
-// WithoutEnsureTable suppresses the CREATE TABLE IF NOT EXISTS that New
-// otherwise runs at construction, mirroring the outbox's option of the same
-// name. You must then create the fallback table via your own migration
-// pipeline before publishing a large payload.
+// WithoutEnsureTable skips creating the fallback table; the host creates it
+// before a large publish.
 func WithoutEnsureTable() Option {
 	return func(p *PostgresFanout) { p.skipEnsure = true }
 }
 
-// WithListenTimeout overrides the deadline NewPostgres waits for the initial
-// LISTEN connection to become ready (default 15s). pq.Listener retries a
-// bad or unroutable DSN forever; this deadline turns that into a prompt,
-// descriptive construction error instead of an indefinite hang. A timeout
-// closes the listener and aborts construction.
+// WithListenTimeout sets how long NewPostgres waits for the LISTEN connection
+// (default 15s) before it errors.
 func WithListenTimeout(d time.Duration) Option {
 	return func(p *PostgresFanout) {
 		if d > 0 {
@@ -136,10 +100,9 @@ func WithListenTimeout(d time.Duration) Option {
 	}
 }
 
-// NewPostgres creates a Postgres-backed fanout. dsn is used for the LISTEN
-// connection (pq.NewListener); db is used for NOTIFY sends and the fallback
-// table. Construction creates the fallback table unless [WithoutEnsureTable]
-// is passed.
+// NewPostgres listens on dsn and sends through db. It errors on a nil db, an
+// empty dsn, an unsafe or over-63-byte table name, a case-kept table, or a
+// listener not up within the listen timeout.
 func NewPostgres(dsn string, db *sql.DB, opts ...Option) (*PostgresFanout, error) {
 	if db == nil {
 		return nil, fmt.Errorf("fanout: NewPostgres: nil db")
@@ -159,23 +122,12 @@ func NewPostgres(dsn string, db *sql.DB, opts ...Option) (*PostgresFanout, error
 	for _, opt := range opts {
 		opt(p)
 	}
-	// Identifier injection guard (table names can't be $1-parameterised),
-	// mirroring the outbox.
 	if _, err := query.SafeIdent(p.table); err != nil {
 		return nil, fmt.Errorf("fanout: invalid table name %q: %w", p.table, err)
 	}
-	// Postgres identifiers are capped at 63 bytes (NAMEDATALEN-1). CREATE
-	// TABLE silently truncates a longer name while pg_notify errors on the
-	// full-length channel, every Publish would fail at runtime. Fail at
-	// construction instead.
 	if len(p.table) > 63 {
 		return nil, fmt.Errorf("fanout: table name %q is %d bytes; Postgres caps identifiers (and NOTIFY channels) at 63", p.table, len(p.table))
 	}
-	// Derive the NOTIFY/LISTEN channel from the (validated) table name so two
-	// fanouts with different fallback tables on one database are fully
-	// isolated: a hardcoded channel would resolve the other instance's
-	// "t:<id>" pointers and re-deliver wrong/foreign payloads. The table
-	// name is SafeIdent-validated, so it is a legal LISTEN channel name.
 	p.channel = p.table
 	if err := query.RefuseCaseKeptTables(context.Background(), db, p.table); err != nil {
 		return nil, fmt.Errorf("fanout: %w", err)
@@ -186,13 +138,7 @@ func NewPostgres(dsn string, db *sql.DB, opts ...Option) (*PostgresFanout, error
 		}
 	}
 
-	// The listener connects asynchronously; the event callback logs
-	// disconnect/reconnect once on onset/recovery so a gap is observable
-	// without flooding (mirrors the outbox's logClaimErr pattern).
 	p.listener = pq.NewListener(dsn, pgReconnectMin, pgReconnectMax, p.onListenerEvent)
-	// pq.Listener.Listen blocks until the connection is up and LISTEN has been
-	// issued; on a bad/unroutable DSN it retries forever. Bound it so
-	// construction fails fast instead of hanging.
 	listenErr := make(chan error, 1)
 	go func() { listenErr <- p.listener.Listen(p.channel) }()
 	select {
@@ -212,7 +158,6 @@ func NewPostgres(dsn string, db *sql.DB, opts ...Option) (*PostgresFanout, error
 	return p, nil
 }
 
-// qt returns the validated, double-quoted fallback table name.
 func (p *PostgresFanout) qt() string {
 	return query.QuoteFolded(p.table)
 }
@@ -227,13 +172,8 @@ func (p *PostgresFanout) ensureTable() error {
 	return err
 }
 
-// Publish broadcasts payload to all subscribers of topic. Inline when the
-// wrapped message fits under the threshold; otherwise spills to the fallback
-// table and NOTIFYs a short pointer. Best-effort.
-//
-// payload and topic must be valid UTF-8: NOTIFY payloads and the fallback
-// table's TEXT column carry JSON envelopes, and Postgres would otherwise
-// silently substitute U+FFFD for invalid bytes, corrupting the message.
+// Publish sends payload to topic's subscribers on every replica, best-effort.
+// It errors on a closed fanout or a topic or payload that is not valid UTF-8.
 func (p *PostgresFanout) Publish(ctx context.Context, topic string, payload []byte) error {
 	if p.closed.Load() {
 		return fmt.Errorf("fanout: closed")
@@ -254,7 +194,6 @@ func (p *PostgresFanout) Publish(ctx context.Context, topic string, payload []by
 	return p.publishViaTable(ctx, string(wrapped))
 }
 
-// notify sends an inline NOTIFY payload.
 func (p *PostgresFanout) notify(ctx context.Context, payload string) error {
 	if _, err := p.db.ExecContext(ctx, `SELECT pg_notify($1, $2)`, p.channel, payload); err != nil {
 		return fmt.Errorf("fanout: pg_notify: %w", err)
@@ -262,9 +201,6 @@ func (p *PostgresFanout) notify(ctx context.Context, payload string) error {
 	return nil
 }
 
-// publishViaTable stores the wrapped message in the fallback table and
-// NOTIFYs a short "t:<id>" pointer. It also opportunistically purges rows
-// older than the purge age so the table stays bounded.
 func (p *PostgresFanout) publishViaTable(ctx context.Context, wrapped string) error {
 	var id int64
 	if err := p.db.QueryRowContext(ctx, fmt.Sprintf(
@@ -272,8 +208,6 @@ func (p *PostgresFanout) publishViaTable(ctx context.Context, wrapped string) er
 		wrapped).Scan(&id); err != nil {
 		return fmt.Errorf("fanout: insert fallback row: %w", err)
 	}
-	// Purge opportunistically (throttled), keeps the table bounded without a
-	// dedicated admin goroutine.
 	p.maybePurge(ctx)
 	if _, err := p.db.ExecContext(ctx, `SELECT pg_notify($1, $2)`, p.channel,
 		fmt.Sprintf("t:%d", id)); err != nil {
@@ -282,7 +216,6 @@ func (p *PostgresFanout) publishViaTable(ctx context.Context, wrapped string) er
 	return nil
 }
 
-// maybePurge runs a throttled DELETE of rows older than the purge age.
 func (p *PostgresFanout) maybePurge(ctx context.Context) {
 	p.purgeMu.Lock()
 	if time.Since(p.lastPurge) < p.purgeEvery {
@@ -295,20 +228,13 @@ func (p *PostgresFanout) maybePurge(ctx context.Context) {
 	if _, err := p.db.ExecContext(ctx, fmt.Sprintf(
 		`DELETE FROM %s WHERE created_at < now() - $1::interval`, p.qt()),
 		pgPurgeAgeSQL); err != nil {
-		// Best-effort housekeeping: the next publish retries it. Debug-level,
-		// a failing purge is a symptom of the same DB trouble the publish
-		// itself will surface loudly.
 		slog.Default().Debug("fanout: purge of expired fallback rows failed", "table", p.table, "err", err)
 	}
 }
 
-// dispatch reads notifications from the listener and routes them to topic
-// subscribers. Exits when Close drains the listener.
 func (p *PostgresFanout) dispatch() {
 	defer close(p.dispatched)
 	notify := p.listener.NotificationChannel()
-	// The purge also runs on this ticker, so a spilled payload expires on
-	// schedule even when no later large publish comes to purge it.
 	purge := time.NewTicker(p.purgeEvery)
 	defer purge.Stop()
 	for {
@@ -329,12 +255,9 @@ func (p *PostgresFanout) dispatch() {
 	}
 }
 
-// handleNotify decodes one NOTIFY payload (inline wrapper or "t:<id>" table
-// pointer) and delivers the routed payload to subscribers.
 func (p *PostgresFanout) handleNotify(extra string) {
 	wrapped := extra
 	if after, ok := strings.CutPrefix(extra, "t:"); ok {
-		// Table fallback pointer: SELECT the row by id.
 		idStr := after
 		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
@@ -344,7 +267,7 @@ func (p *PostgresFanout) handleNotify(extra string) {
 		var row string
 		if err := p.db.QueryRowContext(p.fetchCtx, fmt.Sprintf(`SELECT payload FROM %s WHERE id = $1`, p.qt()), id).Scan(&row); err != nil {
 			if p.fetchCtx.Err() != nil {
-				return // Close cancelled the fetch; nothing was lost that a closed fanout could deliver
+				return
 			}
 			p.logRecvDrop(&p.dropMissingRow, "dropped NOTIFY table-pointer: fallback row already purged or gone", err)
 			return
@@ -359,10 +282,6 @@ func (p *PostgresFanout) handleNotify(extra string) {
 	p.deliver(msg.Topic, []byte(msg.Payload))
 }
 
-// logRecvDrop logs a receive-path drop at Warn, onset-once per category. A
-// dropped message is a more important signal than Debug-level purge noise but
-// must not flood on every notification, so each kind surfaces once until the
-// flag is reset by a process restart.
 func (p *PostgresFanout) logRecvDrop(flag *atomic.Bool, msg string, err error) {
 	if !flag.CompareAndSwap(false, true) {
 		return
@@ -374,19 +293,11 @@ func (p *PostgresFanout) logRecvDrop(flag *atomic.Bool, msg string, err error) {
 	slog.Default().Warn("fanout: "+msg, args...)
 }
 
-// pgSub is one registered subscriber: send is the non-blocking drop-oldest
-// enqueue into the subscriber's dedicated-goroutine queue (cfanout.SubscriberQueue),
-// stop tears that queue down.
 type pgSub struct {
 	send func([]byte)
 	stop func()
 }
 
-// deliver routes payload to every subscriber of topic via each subscriber's
-// non-blocking queue. Delivery does NOT happen inline on the dispatch
-// goroutine: each subscriber runs on its own dedicated goroutine with a
-// bounded, drop-oldest queue, so one slow subscriber cannot stall the single
-// LISTEN/NOTIFY dispatcher (which would freeze delivery to every other topic).
 func (p *PostgresFanout) deliver(topic string, payload []byte) {
 	p.mu.RLock()
 	subs := p.subs[topic]
@@ -400,10 +311,6 @@ func (p *PostgresFanout) deliver(topic string, payload []byte) {
 	}
 }
 
-// deliverOne hands the payload to the subscriber's send under a recover
-// guard: send is registered callback code running on the single
-// LISTEN/NOTIFY dispatcher goroutine, which has no per-request net — a
-// panicking subscriber must not freeze delivery to every other topic.
 func (s *pgSub) deliverOne(topic string, payload []byte) {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -413,26 +320,19 @@ func (s *pgSub) deliverOne(topic string, payload []byte) {
 	s.send(payload)
 }
 
-// Subscribe registers fn for topic. fn is wrapped in a per-subscriber bounded
-// queue (cfanout.SubscriberQueue) so it runs on a dedicated goroutine with
-// drop-oldest overflow, honoring the [cfanout.Fanout] contract that a slow
-// subscriber is dropped, not backpressured, and never stalls other topics.
-// The returned cancel unregisters fn and stops the goroutine; safe to call
-// multiple times.
+// Subscribe runs fn for topic's payloads on its own goroutine with a
+// drop-oldest queue. It errors on a nil fn, a non-UTF-8 topic or a closed
+// fanout; cancel is idempotent.
 func (p *PostgresFanout) Subscribe(topic string, fn func(payload []byte)) (cancel func(), err error) {
 	if fn == nil {
 		return func() {}, fmt.Errorf("fanout: nil subscriber")
 	}
-	// Publish rejects invalid-UTF-8 topics; accepting one here would mint a
-	// subscriber that can never be matched. Reject symmetrically.
 	if !utf8.ValidString(topic) {
 		return func() {}, fmt.Errorf("fanout: subscribe %q: topic is not valid UTF-8 (framework topics are plain identifiers)", topic)
 	}
 	send, stop := cfanout.SubscriberQueue(fn, 0)
 	p.mu.Lock()
 	if p.closed.Load() {
-		// Close already stopped every registered queue; registering after it
-		// would leak an unstoppable goroutine on a dead fanout.
 		p.mu.Unlock()
 		stop()
 		return func() {}, fmt.Errorf("fanout: closed")
@@ -456,10 +356,6 @@ func (p *PostgresFanout) Subscribe(topic string, fn func(payload []byte)) (cance
 	}, nil
 }
 
-// onListenerEvent logs disconnect/reconnect/connect-failure once on
-// onset/recovery so a listener gap is observable without flooding the log.
-// pq fires ListenerEventConnectionAttemptFailed on every retry of a bad DSN,
-// so that path is onset-once-guarded (reset on any successful connect).
 func (p *PostgresFanout) onListenerEvent(ev pq.ListenerEventType, err error) {
 	switch ev {
 	case pq.ListenerEventDisconnected:
@@ -478,12 +374,8 @@ func (p *PostgresFanout) onListenerEvent(ev pq.ListenerEventType, err error) {
 	}
 }
 
-// Close tears down the listener, the dispatch goroutine (cancelling a
-// fallback-row fetch in flight and waiting for it to return), and every
-// subscriber queue, including those whose cancel func the caller dropped,
-// which would otherwise park their goroutines forever. Subscribe refuses new
-// registrations after Close (it checks closed under the same mu, so no
-// subscriber can slip in between the stop sweep and the flag).
+// Close stops the listener, the dispatcher and every subscriber queue; later
+// Subscribe calls fail.
 func (p *PostgresFanout) Close() error {
 	p.mu.Lock()
 	if !p.closed.CompareAndSwap(false, true) {
@@ -500,12 +392,8 @@ func (p *PostgresFanout) Close() error {
 	close(p.done)
 	p.stopFetch()
 	p.listener.Close()
-	// Delivery only enqueues onto subscriber queues, so once the fetch is
-	// cancelled nothing holds the dispatcher: Close returns with it gone
-	// and its pool connection released.
 	<-p.dispatched
 	return nil
 }
 
-// Compile-time interface check.
 var _ cfanout.Fanout = (*PostgresFanout)(nil)
