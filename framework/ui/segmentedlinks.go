@@ -131,5 +131,8 @@ func segmentedLinksCSS(_ style.Theme) string {
     outline: var(--stroke-thick, 2px) solid Highlight;
     outline-offset: calc(-1 * var(--stroke-thick, 2px));
   }
+  [data-cui-comp="ui-segmented-links"] .fui-seglinks__item[aria-current="true"]:focus-visible {
+    outline-offset: var(--stroke-focus-offset, 2px);
+  }
 }`
 }

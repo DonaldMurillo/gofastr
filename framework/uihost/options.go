@@ -198,10 +198,13 @@ func WithPreconnect(origins ...string) Option {
 // whose URL fails the head-URL allow-list is dropped.
 func WithFontPreload(dir string, fonts ...style.WebFont) Option {
 	return func(ds *UIHost) {
+		seen := map[string]bool{}
 		for _, f := range fonts {
-			if !f.Declared() {
+			// FontFaceCSS keeps the first rule per family; preload only that file.
+			if !f.Declared() || seen[f.FaceFamily()] {
 				continue
 			}
+			seen[f.FaceFamily()] = true
 			href := style.FontURL(dir, f)
 			if !isSafeHeadURL(href) {
 				continue

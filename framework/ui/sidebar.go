@@ -969,10 +969,10 @@ func sidebarCSS(_ style.Theme) string {
   transition: rotate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 /* A mask icon is painted by its background, which forced colours turn
-   to Canvas; opting out keeps it in the (forced) text colour. */
+   to Canvas; opting out and painting CanvasText keeps it visible. */
 @media (forced-colors: active) {
   [data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group > summary::after,
-  [data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group-toggle::after { forced-color-adjust: none; background: currentColor; }
+  [data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group-toggle::after { forced-color-adjust: none; background: CanvasText; }
 }
 [data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group:not([open]) > summary::after,
 [data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group-toggle[aria-expanded="false"]::after {

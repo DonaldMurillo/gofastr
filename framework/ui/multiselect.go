@@ -158,9 +158,9 @@ func multiselectCSS(_ style.Theme) string {
   transition: transform var(--duration-fast, 150ms) var(--easing-ease-out, ease);
 }
 /* A mask icon is painted by its background, which forced colours turn
-   to Canvas; opting out keeps it in the (forced) text colour. */
+   to Canvas; opting out and painting CanvasText keeps it visible. */
 @media (forced-colors: active) {
-  [data-cui-comp="ui-multiselect"] .fui-multiselect__summary::after { forced-color-adjust: none; background: currentColor; }
+  [data-cui-comp="ui-multiselect"] .fui-multiselect__summary::after { forced-color-adjust: none; background: CanvasText; }
 }
 [data-cui-comp="ui-multiselect"] details[open] .fui-multiselect__summary::after {
   transform: rotate(180deg);

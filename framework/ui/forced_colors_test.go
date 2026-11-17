@@ -26,13 +26,13 @@ func TestForcedColorsFallbacks(t *testing.T) {
 		{"divider", dividerStyle, []string{".fui-divider__line", "background: CanvasText"}},
 		{"selected tab", tabsStyle, []string{`.fui-tab[aria-selected="true"]`, "border-color:Highlight"}},
 		{"tab nav current", tabNavStyle, []string{".fui-tab-nav__link { border-block-end-color: Canvas; }", `[aria-current="page"] { border-block-end-color: Highlight; }`}},
-		{"segmented links current", segmentedLinksStyle, []string{`.fui-seglinks__item[aria-current="true"]`, "solid Highlight"}},
-		{"segmented pill", segmentedStyle, []string{".fui-segmented__input:checked", "solid Highlight"}},
-		{"menu caret", menuStyle, []string{".fui-menu__caret", "forced-color-adjust: none; background: currentColor"}},
-		{"multiselect chevron", multiselectStyle, []string{".fui-multiselect__summary::after", "forced-color-adjust: none"}},
-		{"sidebar chevron", sidebarStyle, []string{".fui-sidebar__group-toggle::after", "forced-color-adjust: none"}},
-		{"sort icon", dataTableStyle, []string{".fui-data-table__sort::after", "forced-color-adjust: none"}},
-		{"collapsible chevron", collapsibleStyle, []string{".fui-collapsible__summary::after", "forced-color-adjust:none"}},
+		{"segmented links current", segmentedLinksStyle, []string{`.fui-seglinks__item[aria-current="true"]`, "solid Highlight", `[aria-current="true"]:focus-visible`}},
+		{"segmented pill", segmentedStyle, []string{".fui-segmented__input:checked", "solid Highlight", ":has(.fui-segmented__input:focus-visible) {\n    outline-offset: var(--stroke-focus-offset"}},
+		{"menu caret", menuStyle, []string{".fui-menu__caret", "forced-color-adjust: none; background: CanvasText"}},
+		{"multiselect chevron", multiselectStyle, []string{".fui-multiselect__summary::after", "forced-color-adjust: none; background: CanvasText"}},
+		{"sidebar chevron", sidebarStyle, []string{".fui-sidebar__group-toggle::after", "forced-color-adjust: none; background: CanvasText"}},
+		{"sort icon", dataTableStyle, []string{".fui-data-table__sort::after", "forced-color-adjust: none; background: CanvasText"}},
+		{"collapsible chevron", collapsibleStyle, []string{".fui-collapsible__summary::after", "forced-color-adjust:none;background:CanvasText"}},
 	} {
 		css := c.style.Entry().CSSFor(th)
 		i := strings.Index(css, "@media (forced-colors: active)")

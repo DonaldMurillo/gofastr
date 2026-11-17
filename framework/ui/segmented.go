@@ -262,6 +262,11 @@ func segmentedCSS(_ style.Theme) string {
     outline: var(--stroke-thick, 2px) solid Highlight;
     outline-offset: calc(-1 * var(--stroke-thick, 2px));
   }
+  /* Keyboard focus on the checked segment stands off it, so focus and
+     selection still read as two states. */
+  [data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:checked):has(.fui-segmented__input:focus-visible) {
+    outline-offset: var(--stroke-focus-offset, 2px);
+  }
 }
 `
 }

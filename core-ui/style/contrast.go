@@ -82,6 +82,7 @@ func parseColor(s string) (r, g, b float64, ok bool) {
 		if !okL || !okC || !okH {
 			return 0, 0, 0, false
 		}
+		c = math.Max(c, 0) // CSS clamps a negative chroma to zero
 		rad := h * math.Pi / 180
 		r, g, b := oklabToSRGB(l, c*math.Cos(rad), c*math.Sin(rad))
 		return r, g, b, true

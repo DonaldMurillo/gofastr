@@ -19,7 +19,8 @@ func TestKitMixesColoursInOklab(t *testing.T) {
 	}
 }
 
-// Kit headings balance their lines, the hero's fluid size mixes rem with
+// Kit headings balance their lines (table headers stay on one line by
+// design, white-space: nowrap, so they take no balance), the hero's fluid size mixes rem with
 // vw so it follows the reader's font size, and inline code is sized by
 // x-height where the browser can (#711).
 func TestKitTypography(t *testing.T) {
@@ -32,7 +33,6 @@ func TestKitTypography(t *testing.T) {
 		{"hero", heroStyle, []string{"text-wrap: balance", "calc(1.5rem + 3vw)", "calc(0.875rem + 0.6vw)"}},
 		{"page header", pageHeaderStyle, []string{"text-wrap:balance"}},
 		{"card heading", cardStyle, []string{"text-wrap: balance"}},
-		{"table header", dataTableStyle, []string{"text-wrap: balance"}},
 		{"inline code", inlineCodeStyle, []string{"@supports (font-size-adjust: 0.5)", "font-size-adjust: 0.5"}},
 	} {
 		css := c.style.Entry().CSSFor(th)

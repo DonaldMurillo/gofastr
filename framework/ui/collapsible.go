@@ -28,8 +28,8 @@ func collapsibleCSS(_ style.Theme) string {
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::-webkit-details-marker{display:none}` +
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::after{content:"";flex:none;inline-size:var(--ui-collapsible-chevron-size, 16px);block-size:var(--ui-collapsible-chevron-size, 16px);background:var(--fui-muted, var(--color-text-muted, #52525B));-webkit-mask:` + collapsibleChevron + `;mask:` + collapsibleChevron + `;transition:transform var(--duration-fast, 150ms) var(--easing-ease-out, ease)}` +
 		`[data-cui-comp="fui-collapsible"][open] .fui-collapsible__summary::after{transform:rotate(180deg)}` +
-		// Forced colours paint the mask icon's background Canvas; opting out keeps it the text colour.
-		`@media (forced-colors: active){[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::after{forced-color-adjust:none;background:currentColor}}` +
+		// Forced colours paint the mask icon's background Canvas; opting out and painting CanvasText keeps it visible.
+		`@media (forced-colors: active){[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::after{forced-color-adjust:none;background:CanvasText}}` +
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary:focus-visible{outline:var(--stroke-focus, 2px) solid var(--color-text-subtle);outline-offset:var(--stroke-focus-offset, 2px);border-radius:var(--radii-sm, 6px)}` +
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__content{padding:0 0 var(--spacing-lg, 16px);font-size:var(--text-sm, .875rem);color:var(--fui-foreground, var(--color-text, #09090B))}`
 }

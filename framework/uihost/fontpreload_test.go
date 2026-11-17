@@ -18,6 +18,10 @@ func TestWithFontPreload(t *testing.T) {
 	if strings.Count(page, `as="font"`) != 1 {
 		t.Errorf("a font FontFaceCSS declares no rule for was preloaded:\n%s", page)
 	}
+	page = renderHeadPage(t, WithFontPreload("", style.WebFont{Family: "Inter", File: "inter"}, style.WebFont{Family: "Inter", File: "unused"}, style.WebFont{Family: "Mono"}))
+	if strings.Contains(page, "unused.woff2") || !strings.Contains(page, "/fonts/inter.woff2") || !strings.Contains(page, "/fonts/mono.woff2") {
+		t.Errorf("preload must follow FontFaceCSS's first-per-family rule:\n%s", page)
+	}
 	if page := renderHeadPage(t, WithFontPreload("javascript:alert(1)//", style.WebFont{Family: "X"})); strings.Contains(page, "javascript:") {
 		t.Errorf("SECURITY: an unsafe font dir reached the head:\n%s", page)
 	}

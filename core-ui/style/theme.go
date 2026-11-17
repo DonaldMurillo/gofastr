@@ -559,17 +559,31 @@ const ControlBoundaryFloor = 3.0
 //   - a filled-control ink pair (primary, danger) below 4.5:1 written in
 //     rgb(), hsl(), oklab() or oklch(), which Validate skips;
 //   - the input boundary: text fields, selects, checkboxes and radios draw
-//     their edge in --color-text-subtle (through the --ui-control-border
-//     knob), so text-subtle over surface must clear 3:1.
+//     their edge in the ui-control-border knob, text-subtle when unset, so
+//     that colour over surface must clear 3:1.
 //
 // Each pair is judged in the light palette and, when DarkColors is set,
 // in the dark one, a missing dark key falling back to its light value.
 // A pair Go cannot resolve exactly (var(), names, translucency) is skipped.
+var paletteRef = regexp.MustCompile(`^var\(\s*--color-([a-z0-9-]+)\s*(?:,[^)]*)?\)$`)
+
 func ContrastWarnings(t Theme) []string {
-	light := map[string]string{
-		"primary": t.Colors.Primary.Value, "primary-fg": t.Colors.PrimaryFg.Value,
-		"danger": t.Colors.Danger.Value, "danger-fg": t.Colors.DangerFg.Value,
-		"text-subtle": t.Colors.TextSubtle.Value, "surface": t.Colors.Surface.Value,
+	light := map[string]string{}
+	for k, v := range ThemeToTokens(t) {
+		if name, ok := strings.CutPrefix(k, "color-"); ok {
+			light[name] = v
+		}
+	}
+	// The control edge is the ui-control-border knob when the theme sets
+	// it: a palette reference resolves per scheme, a literal is itself.
+	edge := "text-subtle"
+	if v := strings.TrimSpace(t.Knobs["ui-control-border"]); v != "" {
+		if m := paletteRef.FindStringSubmatch(v); m != nil {
+			edge = m[1]
+		} else {
+			light["ui-control-border"] = v
+			edge = "ui-control-border"
+		}
 	}
 	schemes := []struct {
 		where  string
@@ -595,7 +609,7 @@ func ContrastWarnings(t Theme) []string {
 		}{
 			{"primary-fg", "primary", 4.5, true},
 			{"danger-fg", "danger", 4.5, true},
-			{"text-subtle", "surface", ControlBoundaryFloor, false},
+			{edge, "surface", ControlBoundaryFloor, false},
 		} {
 			fg, bg := sc.lookup(p.fg), sc.lookup(p.bg)
 			if p.hexRefused && isPlainHex(fg) && isPlainHex(bg) {

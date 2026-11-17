@@ -44,7 +44,7 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestBootWarnsOnLowContrastPairs
   - id: font-preload-follows-the-face
-    rule: WithFontPreload adds one font preload link per web font FontFaceCSS declares a rule for, at the URL FontFaceCSS names, and drops a URL that fails the head-URL allow-list.
+    rule: WithFontPreload adds one font preload link per web font FontFaceCSS declares a rule for, first per family as FontFaceCSS keeps, at the URL FontFaceCSS names, and drops a URL that fails the head-URL allow-list.
     enforced_by:
       - test: framework/uihost.TestWithFontPreload
   - id: host-shell-lang-precedence

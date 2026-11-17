@@ -128,7 +128,8 @@ parts reads as one system:
   to `--color-text-subtle`, not the hairline `--color-border`: WCAG
   1.4.11 asks for 3:1 between a control's boundary and its surface, and
   the hairline is about 1.3:1. A theme whose `TextSubtle` misses 3:1
-  over `Surface` gets a boot warning (see `style.ContrastWarnings`).
+  over `Surface` (or whose `ui-control-border` knob does) gets a boot
+  warning (see `style.ContrastWarnings`).
 - **Forced colours keep their meaning.** Under Windows high contrast
   (`forced-colors: active`) the browser drops background images and
   author colours, so the checkbox tick, radio dot, switch thumb,
@@ -139,8 +140,8 @@ parts reads as one system:
 - **Native accents follow the brand.** The base sheet sets
   `accent-color` to `--color-primary`, so native range inputs and
   progress bars match, and tints `::selection` with it.
-- **Type wraps evenly.** The hero title, page-header titles, card
-  headings and table headers use `text-wrap: balance`; the hero's fluid
+- **Type wraps evenly.** The hero title, page-header titles and card
+  headings use `text-wrap: balance`; the hero's fluid
   size mixes rem with vw, so it follows the reader's font-size setting.
   Colour tints mix `in oklab`, never `in srgb`.
 
@@ -470,7 +471,9 @@ fallback for an absent key, in a non-empty `DarkColors` map.
 `style.ContrastWarnings(theme)` covers what `Validate` does not refuse,
 and the UI host logs its result once at boot: the same two ink pairs
 written in `rgb()`, `hsl()`, `oklab()` or `oklch()`, and the form-control
-edge, `text-subtle` over `surface`, against 3:1. Go resolves hex and
+edge over `surface` against 3:1: the `ui-control-border` knob when the
+theme sets it (a `var(--color-*)` value resolves per scheme), otherwise
+`text-subtle`. Go resolves hex and
 those four functions exactly (a colour outside sRGB is clipped);
 `var()`, named colours, `color-mix()` and translucent values are
 skipped, never guessed.

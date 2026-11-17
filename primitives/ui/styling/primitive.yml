@@ -29,9 +29,11 @@ invariants:
       - internal/testapps/
       - cmd/gofastr/
   - id: contrast-warns-what-validate-skips
-    rule: ContrastWarnings reports a primary or danger ink pair below 4.5:1 written in rgb(), hsl(), oklab() or oklch(), and text-subtle over surface below 3:1, in both schemes, and skips what Go cannot resolve exactly; Validate keeps refusing only plain-hex ink pairs.
+    rule: ContrastWarnings reports a primary or danger ink pair below 4.5:1 written in rgb(), hsl(), oklab() or oklch(), and the control edge (the ui-control-border knob, text-subtle when unset) over surface below 3:1, in both schemes, and skips what Go cannot resolve exactly; Validate keeps refusing only plain-hex ink pairs.
     enforced_by:
       - test: core-ui/style.TestContrastWarnings
+      - test: core-ui/style.TestContrastWarningsJudgeTheControlBorderKnob
+      - test: core-ui/style.TestParseColorClampsNegativeChroma
       - test: core-ui/style.TestParseColorReadsCSSColourFunctions
       - test: core-ui/style.TestParseColorSkipsWhatItCannotResolve
   - id: font-fallback-face-is-checked

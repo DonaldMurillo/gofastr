@@ -317,9 +317,9 @@ func menuCSS(_ style.Theme) string {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 /* A mask icon is painted by its background, which forced colours turn
-   to Canvas; opting out keeps it in the (forced) text colour. */
+   to Canvas; opting out and painting CanvasText keeps it visible. */
 @media (forced-colors: active) {
-  [data-cui-comp="ui-menu"] .fui-menu__caret { forced-color-adjust: none; background: currentColor; }
+  [data-cui-comp="ui-menu"] .fui-menu__caret { forced-color-adjust: none; background: CanvasText; }
 }
 [data-cui-comp="ui-menu"] .fui-menu__panel {
   /* headless-disclosure shifts a panel that would leave the viewport. */

@@ -1296,7 +1296,6 @@ func dataTableCSS(_ style.Theme) string {
 [data-cui-comp="ui-data-table"] .fui-data-table__table th {
   block-size: var(--fui-density-control-h, var(--spacing-touch-target));
   padding-block: 0;
-  text-wrap: balance;
   font-weight: var(--font-weight-medium);
   color: var(--color-text-muted);
   background: var(--color-surface-soft);
@@ -1371,9 +1370,9 @@ func dataTableCSS(_ style.Theme) string {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='7 15 12 20 17 15'/%3E%3Cpolyline points='7 9 12 4 17 9'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 /* A mask icon is painted by its background, which forced colours turn
-   to Canvas; opting out keeps it in the (forced) text colour. */
+   to Canvas; opting out and painting CanvasText keeps it visible. */
 @media (forced-colors: active) {
-  [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort] .fui-data-table__sort::after { forced-color-adjust: none; background: currentColor; }
+  [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort] .fui-data-table__sort::after { forced-color-adjust: none; background: CanvasText; }
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after {
   opacity: 1;

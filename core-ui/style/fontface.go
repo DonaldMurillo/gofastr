@@ -56,7 +56,11 @@ func (f WebFont) FallbackFamily() string { return f.Family + " Fallback" }
 
 // Declared reports whether FontFaceCSS writes a rule for f: a family
 // that sanitizes to nothing gets none.
-func (f WebFont) Declared() bool { return quotedSlotSanitized(f.Family) != "" }
+func (f WebFont) Declared() bool { return f.FaceFamily() != "" }
+
+// FaceFamily is the family name FontFaceCSS writes for f, and the key it
+// deduplicates on: the first font per FaceFamily wins.
+func (f WebFont) FaceFamily() string { return quotedSlotSanitized(f.Family) }
 
 // FontURL is the URL f's woff2 file is served at under dir (empty uses
 // [DefaultFontDir]), the same URL FontFaceCSS writes, for a preload link.

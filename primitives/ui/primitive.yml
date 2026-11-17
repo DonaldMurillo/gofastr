@@ -37,7 +37,7 @@ invariants:
     enforced_by:
       - test: framework/ui.TestKitMixesColoursInOklab
   - id: kit-headings-balance
-    rule: Hero, page-header, card and table-header titles use text-wrap balance, the hero's fluid size mixes rem with vw, and inline code is sized by font-size-adjust where supported.
+    rule: Hero, page-header and card titles use text-wrap balance, the hero's fluid size mixes rem with vw, and inline code is sized by font-size-adjust where supported.
     enforced_by:
       - test: framework/ui.TestKitTypography
   - id: component-options-root-floor

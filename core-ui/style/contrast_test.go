@@ -83,3 +83,40 @@ func TestContrastWarnings(t *testing.T) {
 		t.Errorf("an unresolvable pair must be skipped, got %v", w)
 	}
 }
+
+// The control edge judged is the ui-control-border knob when set: a
+// literal is itself, a palette var() resolves per scheme.
+func TestContrastWarningsJudgeTheControlBorderKnob(t *testing.T) {
+	th := DefaultTheme()
+	th.DarkColors = DefaultDarkColors()
+	th.Knobs = map[string]string{"ui-control-border": "#FFFFFF"}
+	got := strings.Join(ContrastWarnings(th), "\n")
+	if !strings.Contains(got, "light: ui-control-border #FFFFFF on surface") || strings.Contains(got, "dark:") {
+		t.Errorf("want only the light 1:1 edge (white clears the dark surface):\n%s", got)
+	}
+	th.Knobs["ui-control-border"] = "var(--color-text)"
+	if w := ContrastWarnings(th); len(w) != 0 {
+		t.Errorf("a passing palette edge warned: %v", w)
+	}
+	th.Knobs["ui-control-border"] = "var(--color-border, #ccc)"
+	if got := strings.Join(ContrastWarnings(th), "\n"); !strings.Contains(got, "light: border #E4E4E7") {
+		t.Errorf("the hairline palette edge was not reported:\n%s", got)
+	}
+}
+
+// CSS clamps a negative oklch chroma to zero, so the colour is neutral.
+func TestParseColorClampsNegativeChroma(t *testing.T) {
+	nr, ng, nb, _ := parseColor("oklch(0.6 -0.4 90)")
+	zr, zg, zb, _ := parseColor("oklch(0.6 0 90)")
+	if nr != zr || ng != zg || nb != zb {
+		t.Errorf("negative chroma = %.3f %.3f %.3f, want the neutral %.3f %.3f %.3f", nr, ng, nb, zr, zg, zb)
+	}
+	if pr, pg, pb, _ := parseColor("oklch(0.6 0.1 90)"); pr == zr && pg == zg && pb == zb {
+		t.Error("control: a positive chroma must not be neutral")
+	}
+	th := DefaultTheme()
+	th.Colors.Primary.Value = "oklch(0.6 -0.4 90)"
+	if got := strings.Join(ContrastWarnings(th), "\n"); !strings.Contains(got, "primary-fg #FFFFFF on primary oklch(0.6 -0.4 90)") {
+		t.Errorf("neutral primary at ~3.9:1 under white not reported:\n%s", got)
+	}
+}
