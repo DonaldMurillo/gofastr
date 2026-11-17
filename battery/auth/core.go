@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -36,6 +38,9 @@ type CorePlugin struct {
 	// twoFactorURL is where an HTML form login of a 2FA account goes
 	// (WithTwoFactorURL).
 	twoFactorURL string
+	// clearSiteData is the Clear-Site-Data value a successful logout
+	// sends; empty sends none (WithLogoutClearSiteData).
+	clearSiteData string
 }
 
 // CorePlugin drains its notice queue at shutdown.
@@ -47,7 +52,32 @@ const loginAccountScope = "login_account"
 
 // NewCorePlugin creates the core auth plugin.
 func NewCorePlugin() *CorePlugin {
-	return &CorePlugin{notices: newMailQueue("core")}
+	return &CorePlugin{notices: newMailQueue("core"), clearSiteData: defaultLogoutClearSiteData}
+}
+
+// defaultLogoutClearSiteData: decision auth/logout-clear-site-data-skips-cookies.
+const defaultLogoutClearSiteData = `"cache", "storage"`
+
+// clearSiteDataDirectives are the Clear-Site-Data types the header accepts.
+var clearSiteDataDirectives = map[string]bool{
+	"cache": true, "cookies": true, "storage": true, "executionContexts": true,
+	"clientHints": true, "prefetchCache": true, "prerenderCache": true, "*": true,
+}
+
+// WithLogoutClearSiteData sets the Clear-Site-Data types a successful
+// POST /logout sends, such as "cache", "storage" (the default) or
+// "cookies". Called with none, logout sends no Clear-Site-Data. Panics
+// on a type the header does not define.
+func (c *CorePlugin) WithLogoutClearSiteData(directives ...string) *CorePlugin {
+	quoted := make([]string, 0, len(directives))
+	for _, d := range directives {
+		if !clearSiteDataDirectives[d] {
+			panic("auth: WithLogoutClearSiteData: unknown Clear-Site-Data type " + strconv.Quote(d))
+		}
+		quoted = append(quoted, `"`+d+`"`)
+	}
+	c.clearSiteData = strings.Join(quoted, ", ")
+	return c
 }
 
 // WithTwoFactorURL sets where an HTML form login goes when the account
@@ -456,6 +486,9 @@ func (c *CorePlugin) logoutHandler() http.HandlerFunc {
 			return
 		}
 		mintSessionCookie(w, cfg, "", time.Time{})
+		if c.clearSiteData != "" {
+			w.Header().Set("Clear-Site-Data", c.clearSiteData)
+		}
 		if isFormRequest(r) {
 			http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
 			return

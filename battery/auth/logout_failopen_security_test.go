@@ -86,6 +86,9 @@ func TestLogoutFailsClosedOnRevokeFailure(t *testing.T) {
 		logout(rr, req)
 
 		premiseLive(t, base, sess.Token)
+		if got := rr.Header().Get("Clear-Site-Data"); got != "" {
+			t.Errorf("failed logout sent Clear-Site-Data %q; it must send none while the session is still live", got)
+		}
 		if rr.Code >= 200 && rr.Code < 300 {
 			t.Errorf("logout answered %d (2xx) while SessionStore().Delete failed; the session token remains server-side valid until TTL — a failed revocation must not be reported as logout success (package convention for failed auth-state writes is 500)", rr.Code)
 		}
