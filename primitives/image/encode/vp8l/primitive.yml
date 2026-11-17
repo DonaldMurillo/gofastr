@@ -1,0 +1,4 @@
+primitive: image.encode.vp8l
+summary: The internal lossless WebP (VP8L) encoder - bit writer, predictor transform, LZ77 backward references and Huffman coding.
+code:
+  - framework/image/internal/vp8l/

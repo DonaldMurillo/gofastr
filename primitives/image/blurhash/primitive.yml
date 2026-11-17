@@ -1,0 +1,7 @@
+primitive: image.blurhash
+summary: Placeholders - the tiny JPEG data URL, BlurHash encode and decode, and the memoized BlurHash-to-data-URL renderer.
+code:
+  - framework/image/blurhash.go
+  - framework/image/blurhash_decode.go
+  - framework/image/blurhash_dataurl.go
+  - framework/image/placeholder.go

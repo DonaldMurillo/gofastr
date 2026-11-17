@@ -1,0 +1,6 @@
+primitive: image.field
+summary: The imagefield adapter that makes a VariantSet the file.ImageDeriver behind WithImagePipeline, so a schema.Image upload stores its renditions and BlurHash.
+code:
+  - framework/imagefield/
+docs:
+  - framework/docs/content/uploads.md

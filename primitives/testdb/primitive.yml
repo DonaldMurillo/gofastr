@@ -1,0 +1,6 @@
+primitive: testdb
+summary: The per-test database helpers framework tests share - a single-connection in-memory SQLite or a fresh Postgres schema per test, the dialect loop, Postgres discovery and DSN redaction.
+code:
+  - framework/internal/testdb/
+docs:
+  - framework/docs/content/testkit.md

@@ -1,0 +1,7 @@
+primitive: event.bridge
+summary: AttachFanout, which publishes a bus's local events to a fanout and re-emits other replicas' events on it, with no echo and no blocking emitter.
+code:
+  - framework/event/bridge.go
+docs:
+  - framework/docs/content/events.md
+  - framework/docs/content/scaling.md

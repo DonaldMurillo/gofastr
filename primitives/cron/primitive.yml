@@ -1,0 +1,9 @@
+primitive: cron
+summary: The in-process cron Scheduler - Register, the tick loop with catch-up, gates and leader election, Stop, and the parser for five-field specs and shortcuts.
+code:
+  - framework/cron/cron.go
+docs:
+  - framework/docs/content/cron.md
+  - framework/docs/content/scaling.md
+on_change:
+  - A spec syntax or shortcut added or changed here is changed in the Spec syntax and Shortcuts sections of cron.md too.

@@ -1,0 +1,6 @@
+primitive: testkit.nojs
+summary: The no-JavaScript gate - loads a page with script execution disabled and reports an empty main, dead links, forms with no native submit, an error status, or a runtime that ran anyway.
+code:
+  - framework/testkit/nojstest/
+docs:
+  - framework/docs/content/testkit.md
