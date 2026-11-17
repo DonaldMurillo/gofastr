@@ -2,7 +2,6 @@ package access_test
 
 import (
 	"context"
-	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/access"
 )
@@ -16,6 +15,4 @@ func (docPolicy) Can(ctx context.Context, permission access.Permission) bool {
 	return false
 }
 
-func TestDocPolicySatisfiesIface(t *testing.T) {
-	var _ access.Policy = docPolicy{}
-}
+var _ access.Policy = docPolicy{}

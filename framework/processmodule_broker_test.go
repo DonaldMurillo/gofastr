@@ -21,7 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
-	"github.com/DonaldMurillo/gofastr/framework/owner"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 // These tests are the §10 capability-containment gate (design #37 §5). Each
@@ -38,26 +38,6 @@ import (
 // and mask a missing gate, exactly the regression these tests must catch.
 
 // ----- test doubles -----
-
-type brokerTestUser struct{ id string }
-
-func (u *brokerTestUser) GetID() string { return u.id }
-
-func brokerInstallOwnerExtractor(t *testing.T) {
-	t.Helper()
-	prev := owner.GetExtractor()
-	owner.SetExtractor(func(ctx context.Context) (any, bool) {
-		raw, ok := handler.GetUser(ctx)
-		if !ok || raw == nil {
-			return nil, false
-		}
-		if u, ok := raw.(*brokerTestUser); ok {
-			return u.GetID(), true
-		}
-		return nil, false
-	})
-	t.Cleanup(func() { owner.SetExtractor(prev) })
-}
 
 func brokerSetupDB(t *testing.T, ddl string) *sql.DB {
 	t.Helper()
@@ -117,34 +97,9 @@ func fakeSuccessRouter(hit *atomic.Bool) http.Handler {
 	})
 }
 
-// brokerAuthMiddleware mirrors what battery/auth installs: policy always,
-// plus the caller's user id + roles resolved from the re-injected session
-// cookie. The broker re-injects Cookie via the delegation snapshot, so this is
-// where the caller-authority half of module-grant ∩ caller-authority resolves.
-func brokerAuthMiddleware(policy *access.RolePolicy, rolesFor func(string) []string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := r.Context()
-			if policy != nil {
-				ctx = access.WithPolicy(ctx, policy)
-			}
-			if c := r.Header.Get("Cookie"); strings.HasPrefix(c, "sid=") {
-				sid := strings.TrimPrefix(c, "sid=")
-				ctx = handler.SetUser(ctx, &brokerTestUser{id: sid})
-				if rolesFor != nil {
-					if roles := rolesFor(sid); len(roles) > 0 {
-						ctx = access.WithRoles(ctx, roles)
-					}
-				}
-			}
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
 func newCrudBrokerEnv(t *testing.T, name, table string, configure func(*entity.EntityConfig), policy *access.RolePolicy, rolesFor func(string) []string) (*Broker, *access.RolePolicy) {
 	t.Helper()
-	brokerInstallOwnerExtractor(t)
+	pmtestkit.InstallOwnerExtractor(t)
 	db := brokerSetupDB(t, `CREATE TABLE `+table+` (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subject TEXT)`)
 	ent := brokerEntity(name, table, configure)
 	ent.SetDB(db)
@@ -157,7 +112,7 @@ func newCrudBrokerEnv(t *testing.T, name, table string, configure func(*entity.E
 	if policy == nil {
 		policy = access.NewRolePolicy()
 	}
-	wrapped := brokerAuthMiddleware(policy, rolesFor)(inner)
+	wrapped := pmtestkit.AuthMiddleware(policy, rolesFor)(inner)
 	broker := NewBroker(wrapped, reg, nil, "", WithBrokerPolicy(policy))
 	return broker, policy
 }
@@ -171,7 +126,7 @@ func brokerMint(t *testing.T, b *Broker, policy *access.RolePolicy, sid string, 
 	}
 	if sid != "" {
 		mintReq.Header.Set("Cookie", "sid="+sid)
-		ctx = handler.SetUser(ctx, &brokerTestUser{id: sid})
+		ctx = handler.SetUser(ctx, &pmtestkit.User{ID: sid})
 	}
 	if len(roles) > 0 {
 		ctx = access.WithRoles(ctx, roles)

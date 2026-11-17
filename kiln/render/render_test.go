@@ -36,10 +36,21 @@ func get(t *testing.T, h http.Handler, path string) (*http.Response, string) {
 	return res, string(body)
 }
 
+// An empty world registers no entity and leaves the app on the world's
+// defaults: camelCase JSON, the "api" prefix, llm.md off.
 func TestApplyEmptyWorld(t *testing.T) {
 	app, _ := newTestApp(t)
+	app.Config.APIPrefix = "stale"
 	if err := render.Apply(app, world.New()); err != nil {
 		t.Fatalf("Apply: %v", err)
+	}
+	if n := len(app.Registry.All()); n != 0 {
+		t.Errorf("empty world registered %d entities, want 0", n)
+	}
+	c := app.Config
+	if c.JSONCase != framework.CaseCamel || c.APIPrefix != "api" || !c.NoLLMMD || c.DebugEndpoints {
+		t.Errorf("config = {JSONCase:%q APIPrefix:%q NoLLMMD:%v DebugEndpoints:%v}, want {camelCase api true false}",
+			c.JSONCase, c.APIPrefix, c.NoLLMMD, c.DebugEndpoints)
 	}
 }
 

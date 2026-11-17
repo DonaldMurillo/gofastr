@@ -4,14 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 // This file holds the §10 go/no-go gate-suite helpers and the ONE gate
@@ -36,58 +31,6 @@ import (
 // spawns it as a genuine out-of-process child over moduleproto/stdio.
 
 // ---- demo binary (built once, shared across the run) ---------------------
-
-var (
-	demoBinOnce sync.Once
-	demoBinPath string
-	demoBinErr  error
-)
-
-// buildDemoBinary builds ./examples/processmodule-demo into a process-private
-// temp dir once per test binary and returns (path, sha256). The build output
-// is intentionally NOT tied to any one test's t.TempDir (sync.Once may fire in
-// test A while test B later reuses the path); it lives for the run.
-func buildDemoBinary(t testing.TB) (string, string) {
-	t.Helper()
-	demoBinOnce.Do(func() {
-		gomod, err := exec.Command("go", "env", "GOMOD").Output()
-		if err != nil || len(strings.TrimSpace(string(gomod))) == 0 {
-			demoBinErr = fmt.Errorf("go env GOMOD: %v", err)
-			return
-		}
-		repoRoot := filepath.Dir(strings.TrimSpace(string(gomod)))
-		dir, err := os.MkdirTemp("", "gofastr-demobuild-*")
-		if err != nil {
-			demoBinErr = fmt.Errorf("mkdtemp: %w", err)
-			return
-		}
-		bin := filepath.Join(dir, testExecutablePath("demo"))
-		cmd := exec.Command("go", "build", "-o", bin, "./examples/processmodule-demo")
-		cmd.Dir = repoRoot
-		if out, err := cmd.CombinedOutput(); err != nil {
-			demoBinErr = fmt.Errorf("go build demo: %v\n%s", err, out)
-			return
-		}
-		sha, err := sha256OfFile(bin)
-		if err != nil {
-			demoBinErr = fmt.Errorf("sha256 demo: %w", err)
-			return
-		}
-		demoBinPath = bin
-		// Stash the sha on the package var via a closure-captured trick: we
-		// re-hash on every call (cheap, ~MB) so the value is always fresh
-		// and we avoid a second package var. buildDemoBinary returns it.
-		_ = sha
-	})
-	if demoBinErr != nil {
-		t.Fatalf("build demo binary: %v", demoBinErr)
-	}
-	sha, err := sha256OfFile(demoBinPath)
-	if err != nil {
-		t.Fatalf("sha256 demo: %v", err)
-	}
-	return demoBinPath, sha
-}
 
 // demoPingTool mirrors examples/processmodule-demo/surface.PingTool EXACTLY.
 // The handshake byte-compares ModuleToolDigest(this) against the descriptor's
@@ -107,7 +50,7 @@ func demoPingTool() moduleproto.Tool {
 // the grants + migration group + trust tier per gate item.
 func demoDescriptor(t testing.TB, grants []access.Permission, migrationGroup string, tier TrustTier) ProcessModuleDescriptor {
 	t.Helper()
-	path, sha := buildDemoBinary(t)
+	path, sha := pmtestkit.DemoBinary(t)
 	routes := []RouteDeclaration{
 		{ID: "hello", Method: "GET", Path: "/demo/hello"},
 		{ID: "tree", Method: "GET", Path: "/demo/tree"},
@@ -252,7 +195,7 @@ func proxyGet(t testing.TB, sup *ProcessModuleSupervisor, name, routeID, cookie 
 // CRUD routes behind an auth middleware that resolves Cookie "sid=<user>" →
 // user (so RequireOwner filters rows to the caller's owner id), and exposes a
 // fresh-Broker factory so each supervisor gets its own broker over the shared
-// data. It reuses the broker-test helpers (brokerEntity / brokerAuthMiddleware
+// data. It reuses the broker-test helpers (brokerEntity / pmtestkit.AuthMiddleware
 // / …) so the wiring stays identical to processmodule_broker_test.go.
 type gateCapEnv struct {
 	db       *sql.DB
@@ -266,9 +209,9 @@ type gateCapEnv struct {
 func newGateCapEnv(t *testing.T) *gateCapEnv {
 	t.Helper()
 	// Register the global owner extractor so RequireOwner (owner.Get) can
-	// resolve the Cookie-derived brokerTestUser to an owner id, the same
+	// resolve the Cookie-derived pmtestkit.User to an owner id, the same
 	// setup newCrudBrokerEnv uses in processmodule_broker_test.go.
-	brokerInstallOwnerExtractor(t)
+	pmtestkit.InstallOwnerExtractor(t)
 	db := brokerSetupDB(t,
 		`CREATE TABLE articles (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subject TEXT);`+
 			`CREATE TABLE secrets (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subject TEXT);`)
@@ -287,7 +230,7 @@ func newGateCapEnv(t *testing.T) *gateCapEnv {
 	crud.RegisterCrudRoutes(inner, artCH, "/articles", crud.CrudRouteOptions{NoLLMMD: true})
 	crud.RegisterCrudRoutes(inner, secCH, "/secrets", crud.CrudRouteOptions{NoLLMMD: true})
 	policy := access.NewRolePolicy()
-	wrapped := brokerAuthMiddleware(policy, nil)(inner)
+	wrapped := pmtestkit.AuthMiddleware(policy, nil)(inner)
 	return &gateCapEnv{db: db, router: wrapped, registry: reg, policy: policy}
 }
 

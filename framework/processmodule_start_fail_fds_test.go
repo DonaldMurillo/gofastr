@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 // A spawn that fails after cmd.Start (here, the codec) closes the
@@ -15,7 +16,7 @@ import (
 // review): only the child was killed and reaped, and the three pipe ends
 // leaked on every such failure.
 func TestStartFailClosesParentPipes(t *testing.T) {
-	path, sha := buildChildArtifact(t)
+	path, sha := pmtestkit.ChildArtifact(t)
 	spec := ChildSpec{
 		Descriptor: ProcessModuleDescriptor{
 			Name: "codecfail", Version: "1.0.0",

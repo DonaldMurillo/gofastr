@@ -407,9 +407,23 @@ func TestSnapshotRequest_emptyHasNoHeaders(t *testing.T) {
 		t.Errorf("empty entry headers = %v", r.Header)
 	}
 }
+
+// A handle-less brokered call evaluates under the policy WithBrokerPolicy wired.
 func TestWithBrokerPolicy_wiresPolicy(t *testing.T) {
-	// A fresh empty policy is a legal (fail-closed) wiring; just exercise the setter.
-	NewBroker(nil, nil, nil, "", WithBrokerPolicy(access.NewRolePolicy()))
+	p := access.NewRolePolicy()
+	for name, b := range map[string]*Broker{
+		"with":    NewBroker(nil, nil, nil, "", WithBrokerPolicy(p)),
+		"without": NewBroker(nil, nil, nil, ""),
+	} {
+		rctx, entry, err := b.resolveCaller(context.Background(), moduleproto.CallerRef{}, ModuleGrantView{Name: "m"})
+		if err != nil || entry != nil {
+			t.Fatalf("%s: resolveCaller = (%v, %v), want (nil entry, nil err)", name, entry, err)
+		}
+		want := map[string]*access.RolePolicy{"with": p, "without": nil}[name]
+		if got := access.PolicyFromContext(rctx); got != want {
+			t.Errorf("%s: re-dispatch policy = %p, want %p", name, got, want)
+		}
+	}
 }
 
 // ---- WithBrokerSearchEndpoint + lookupEntity + entityPath ----

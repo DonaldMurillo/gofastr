@@ -225,8 +225,16 @@ func TestUpsert_MultiTenantStamps(t *testing.T) {
 	}
 }
 
+// covRelWorldWithBob adds bob and his post p3, which author.name=alice excludes.
+func covRelWorldWithBob(t *testing.T) *CrudHandler {
+	ch, db, _ := covRelWorld(t)
+	seedRows(t, db, "users", []map[string]any{{"id": "u2", "name": "bob"}})
+	seedRows(t, db, "posts", []map[string]any{{"id": "p3", "title": "third", "author_id": "u2"}})
+	return ch
+}
+
 func TestCursor_WithNestedFilter(t *testing.T) {
-	ch, _, _ := covRelWorld(t)
+	ch := covRelWorldWithBob(t)
 	// Set a cursor field so cursor mode kicks in alongside a nested filter.
 	ch.Entity.Config.Pagination.CursorField = "id"
 	req := withTestUser(httptest.NewRequest("GET", "/posts?cursor=&author.name=alice", nil), "u1")
@@ -235,15 +243,22 @@ func TestCursor_WithNestedFilter(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("cursor+nested-filter = %d, body=%s", rec.Code, rec.Body.String())
 	}
+	if got := strings.Join(idsOf(decodeListResponse(t, rec.Body.String()).Data), ","); got != "p1,p2" {
+		t.Errorf("cursor+nested-filter ids = %s, want p1,p2", got)
+	}
 }
 
 func TestStream_WithNestedFilter(t *testing.T) {
-	ch, _, _ := covRelWorld(t)
-	req := withTestUser(httptest.NewRequest("GET", "/posts?stream=true&author.name=alice", nil), "u1")
+	ch := covRelWorldWithBob(t)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?stream=true&author.name=alice&sort=id", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("stream+nested-filter = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	resp := decodeListResponse(t, rec.Body.String())
+	if got := strings.Join(idsOf(resp.Data), ","); got != "p1,p2" || resp.Total != 2 {
+		t.Errorf("stream+nested-filter ids = %s total = %d, want p1,p2 total 2", got, resp.Total)
 	}
 }
 

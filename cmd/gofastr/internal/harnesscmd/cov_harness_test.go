@@ -45,18 +45,48 @@ func TestMachineKeyFromEnv(t *testing.T) {
 }
 
 func TestBuildLogger(t *testing.T) {
-	dir := t.TempDir()
-	if l := buildLogger(dir, false, ""); l == nil {
-		t.Fatal("nil logger")
+	readLog := func(dir string) string {
+		t.Helper()
+		files, _ := filepath.Glob(filepath.Join(dir, "log", "harness-*.log"))
+		if len(files) != 1 {
+			t.Fatalf("want one daily log file under %s/log, got %v", dir, files)
+		}
+		b, _ := os.ReadFile(files[0])
+		return string(b)
 	}
-	if l := buildLogger(dir, true, "engine=debug"); l == nil {
-		t.Fatal("nil logger with stderr + overrides")
+	dir := t.TempDir()
+	quiet := covT_capStderr(t, func() {
+		l := buildLogger(dir, false, "")
+		l.Info("info-line")
+		l.Debug("debug-line")
+	})
+	if got := readLog(dir); !strings.Contains(got, "info-line") || strings.Contains(got, "debug-line") {
+		t.Fatalf("default logger should log info, not debug, to the file: %q", got)
+	}
+	if quiet != "" {
+		t.Fatalf("toStderr=false wrote to stderr: %q", quiet)
+	}
+	dir = t.TempDir()
+	errOut := covT_capStderr(t, func() {
+		l := buildLogger(dir, true, "engine=debug")
+		l.WithComponent("engine").Debug("engine-debug")
+		l.WithComponent("other").Debug("other-debug")
+	})
+	for name, got := range map[string]string{"file": readLog(dir), "stderr": errOut} {
+		if !strings.Contains(got, "engine-debug") || strings.Contains(got, "other-debug") {
+			t.Fatalf("%s: engine=debug override should apply to engine only: %q", name, got)
+		}
 	}
 }
 
 func TestMustGetwd(t *testing.T) {
-	if mustGetwd() == "" {
-		t.Fatal("mustGetwd empty")
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	clitest.CovT_chdir(t, dir)
+	if got := mustGetwd(); got != dir {
+		t.Fatalf("mustGetwd = %q, want %q", got, dir)
 	}
 }
 

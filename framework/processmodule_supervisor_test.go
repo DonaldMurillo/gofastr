@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +15,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 // This file holds the wave-2a supervisor integration helpers and the
@@ -52,42 +51,6 @@ const (
 	childModeFault     childMode = "fault"      // module.http answers with an unsolicited response
 )
 
-// buildChildArtifact compiles a tiny symlink to the running test binary so
-// the runner's SHA-256 pin can verify it. Returns (path, sha256). The path
-// IS os.Args[0]; we just hash it and pass the same binary as the artifact.
-func buildChildArtifact(t *testing.T) (string, string) {
-	t.Helper()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatalf("os.Executable: %v", err)
-	}
-	// Copy to a scratch file so the test binary's path is stable across
-	// re-invocations (os.Executable may point at a go-build temp path).
-	dir := t.TempDir()
-	dst := filepath.Join(dir, testExecutablePath("child"))
-	in, err := os.Open(exe)
-	if err != nil {
-		t.Fatalf("open exe: %v", err)
-	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		t.Fatalf("create dst: %v", err)
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		t.Fatalf("copy: %v", err)
-	}
-	out.Close()
-	if err := os.Chmod(dst, 0o700); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
-	sha, err := sha256OfFile(dst)
-	if err != nil {
-		t.Fatalf("sha256: %v", err)
-	}
-	return dst, sha
-}
-
 // childEnv returns the env block for re-executing the test binary as a
 // module child in the given mode. PATH is preserved so the child can exec.
 func childEnv(mode childMode, extra map[string]string) []string {
@@ -109,7 +72,7 @@ func childEnv(mode childMode, extra map[string]string) []string {
 // artifact, with the given route + grants + surface digest.
 func descriptorForChild(t *testing.T, mode childMode) ProcessModuleDescriptor {
 	t.Helper()
-	path, sha := buildChildArtifact(t)
+	path, sha := pmtestkit.ChildArtifact(t)
 	surface, _ := ComputeSurfaceSHA256(ProcessModuleDescriptor{
 		Name: "demo", Version: "1.0.0",
 		Routes:          []RouteDeclaration{{ID: "echo", Method: "GET", Path: "/echo"}},

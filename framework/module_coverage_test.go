@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -131,10 +132,27 @@ func TestModuleFanoutSelfDedup(t *testing.T) {
 // HandleRemoteToggle error paths
 // ---------------------------------------------------------------------------
 
+// A malformed or node-less envelope must not trigger a store refresh: the
+// store says m1 is disabled, so any refresh would flip the cached true.
 func TestHandleRemoteToggleBadPayload(t *testing.T) {
 	mm := NewModuleManager(nil, nil)
-	mm.handleRemoteToggle([]byte("not json"))
-	mm.handleRemoteToggle([]byte(`{"n":"","b":""}`))
+	mm.register("m1", ModuleManifest{})
+	_ = mm.store.SetEnabled(context.Background(), "m1", false)
+	mm.enabled["m1"] = true
+	for _, raw := range []string{
+		"not json",
+		`{"n":"","b":"{\"name\":\"m1\",\"enabled\":false}"}`,
+		string(fanout.Wrap("other-node", []byte(`{"name":"m1"`))),
+	} {
+		mm.handleRemoteToggle([]byte(raw))
+		if !mm.Enabled("m1") {
+			t.Fatalf("payload %q refreshed the cache from the store", raw)
+		}
+	}
+	mm.handleRemoteToggle(buildTogglePayload("other-node", "m1", true))
+	if mm.Enabled("m1") {
+		t.Fatal("control: a well-formed remote toggle should refresh m1 from the store")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +162,10 @@ func TestHandleRemoteToggleBadPayload(t *testing.T) {
 func TestNewSQLModuleStoreError(t *testing.T) {
 	db, _ := sql.Open("sqlite3", ":memory:")
 	db.Close()
-	_, _ = NewSQLModuleStore(db) // may or may not error depending on driver
+	s, err := NewSQLModuleStore(db)
+	if err == nil || s != nil || !strings.Contains(err.Error(), "module store: ensure table") {
+		t.Fatalf("NewSQLModuleStore(closed db) = (%v, %v), want nil store and an ensure-table error", s, err)
+	}
 }
 
 func TestNewModuleManagerStoreErrOnDBError(t *testing.T) {

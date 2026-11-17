@@ -109,7 +109,7 @@ invariants:
     rule: StringsFor resolves every field and the number format through ctx, and returns headless.DefaultStrings for a nil ctx.
     enforced_by:
       - test: framework/ui.TestNumbersSpeakCtx
-      - test: framework/ui.TestStringsForNilCtxIsHeadlessEnglish
+      - test: framework/ui.TestStringsForNoTranslatorIsHeadlessEnglish
   - id: themed-wraps-in-the-override-class
     rule: Themed wraps its children in one div whose only attribute is the theme override's class.
     enforced_by:

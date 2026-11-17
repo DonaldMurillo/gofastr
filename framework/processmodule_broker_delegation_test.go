@@ -32,6 +32,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 // delegationCredMiddleware mirrors how the framework's real auth surfaces
@@ -61,18 +62,18 @@ func delegationCredMiddleware(policy *access.RolePolicy, saw func(http.Header)) 
 			}
 			authenticated := false
 			if k := r.Header.Get("X-API-Key"); k != "" {
-				ctx = handler.SetUser(ctx, &brokerTestUser{id: "keyuser-" + k})
+				ctx = handler.SetUser(ctx, &pmtestkit.User{ID: "keyuser-" + k})
 				authenticated = true
 			}
 			if g := r.Header.Get("X-Gofastr-Embed"); g != "" {
-				ctx = handler.SetUser(ctx, &brokerTestUser{id: "embeduser-" + g})
+				ctx = handler.SetUser(ctx, &pmtestkit.User{ID: "embeduser-" + g})
 				authenticated = true
 			} else if !authenticated {
 				for _, field := range r.Header.Values("Cookie") {
 					for _, part := range strings.Split(field, ";") {
 						part = strings.TrimSpace(part)
 						if sid, ok := strings.CutPrefix(part, "sid="); ok && sid != "" {
-							ctx = handler.SetUser(ctx, &brokerTestUser{id: sid})
+							ctx = handler.SetUser(ctx, &pmtestkit.User{ID: sid})
 							authenticated = true
 						}
 					}
@@ -92,7 +93,7 @@ func delegationCredMiddleware(policy *access.RolePolicy, saw func(http.Header)) 
 // middleware. saw is passed through to the middleware (nil = no instrument).
 func newDelegationCredEnv(t *testing.T, saw func(http.Header)) (*Broker, *access.RolePolicy) {
 	t.Helper()
-	brokerInstallOwnerExtractor(t)
+	pmtestkit.InstallOwnerExtractor(t)
 	db := brokerSetupDB(t, `CREATE TABLE logs (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subject TEXT)`)
 	ent := brokerEntity("logs", "logs", func(c *entity.EntityConfig) {
 		c.Exposure.Access.Read = "logs:read"

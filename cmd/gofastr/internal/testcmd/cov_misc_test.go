@@ -28,3 +28,16 @@ func TestColorizeTestLineAllBranches(t *testing.T) {
 		t.Fatalf("pass=%d fail=%d", p, f)
 	}
 }
+
+// go test -v writes one space after "--- PASS:"; the mark replaces the prefix.
+func TestColorizeTestLineDropsTheResultPrefix(t *testing.T) {
+	var p, f int
+	for line, want := range map[string]string{
+		"--- PASS: TestX (0.00s)": "  ✓ TestX (0.00s)",
+		"--- FAIL: TestY (0.01s)": "  ✗ TestY (0.01s)",
+	} {
+		if got := colorizeTestLine(line, &p, &f); got != want {
+			t.Errorf("colorizeTestLine(%q) = %q, want %q", line, got, want)
+		}
+	}
+}

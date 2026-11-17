@@ -42,7 +42,9 @@ func TestStream_WriteErrorAborts(t *testing.T) {
 	w := &covFailWriter{failAfter: 0}
 	req := withTestUser(httptest.NewRequest("GET", "/items?stream=true", nil), "u1")
 	ch.List()(w, req)
-	// No panic; handler returned after the failed prefix write.
+	if w.calls != 1 {
+		t.Errorf("writes = %d, want 1: the stream must stop at the failed prefix", w.calls)
+	}
 }
 
 func TestStream_RowWriteErrorAborts(t *testing.T) {
@@ -52,6 +54,10 @@ func TestStream_RowWriteErrorAborts(t *testing.T) {
 	w := &covFailWriter{failAfter: 2}
 	req := withTestUser(httptest.NewRequest("GET", "/items?stream=true", nil), "u1")
 	ch.List()(w, req)
+	// prefix, row 1, then the failed comma: nothing after it.
+	if w.calls != 3 {
+		t.Errorf("writes = %d, want 3: the stream must stop at the failed comma", w.calls)
+	}
 }
 
 // covRelWorldNoMatch builds a posts world where one post has NO author and

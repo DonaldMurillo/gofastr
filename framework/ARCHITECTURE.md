@@ -273,6 +273,9 @@ framework/
 │                    shared by image/ and file/ the same way
 ├── internal/jpegtest/ hostile JPEG fixtures (the scan bomb) shared by the
 │                    image/ and file/ tests; imported by _test.go files only
+├── internal/pmtestkit/ process-module test helpers (child artifact, demo
+│                    binary, broker auth middleware) shared by the root and
+│                    processmoduletest tests; imported by _test.go files only
 ├── internal/jsonexact/ JSON decode that keeps numbers under `any` exact,
 │                    shared by typed hooks (framework) and typed reads (crud/)
 ├── lifecycle/       Graceful shutdown contract: drain, flush, stop phases

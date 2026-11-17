@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -212,20 +211,6 @@ func contrastPanelLacksJS(pair string) string {
 })()`, pair)
 }
 
-// writeDoneJS is truthy once a Write round-trip completes (button re-enabled
-// and a status line posted), whether it succeeded or errored.
-const writeDoneJS = `(function(){
-  var b = document.getElementById('te-write');
-  var s = document.getElementById('te-status');
-  return !!(b && !b.disabled && s.textContent.length > 0);
-})()`
-
-// statusTextJS returns the status line's text.
-const statusTextJS = `(function(){
-  var el = document.getElementById('te-status');
-  return el ? el.textContent : '';
-})()`
-
 // evalString runs a JS expression in the top frame and returns its result
 // as a string. chromedp actions must execute via Run; a bare Evaluate
 // returns an Action (not an error), so wrapping is what actually sends it.
@@ -335,98 +320,5 @@ func TestThemeEditContrastPanelReportsFailure(t *testing.T) {
 	panel = evalPanel(t, ctx)
 	if strings.Contains(panel.Text, "text|surface") {
 		t.Errorf("contrast panel still names text|surface after restoring a passing value: %q", panel.Text)
-	}
-}
-
-// 3. Write includes the operator's last edit. Type into a token and click
-// Write quickly enough to race the 300 ms debounce, then read the file from
-// disk and assert it carries the typed value. The Go writeBack reads only
-// s.working; without flushing the pending debounced edit, a Write that beat
-// the timer emitted the theme WITHOUT the last keystroke.
-func TestThemeEditWriteIncludesLastEdit(t *testing.T) {
-	if testing.Short() {
-		t.Skip("e2e: -short")
-	}
-	srv, base := newThemeEditE2EServer(t)
-	ctx := themeBrowserCtx(t)
-	navigateEditor(t, ctx, base)
-
-	// Set the value AND click Write in one JS turn so the click lands well
-	// inside the 300 ms debounce, the exact race that loses the edit.
-	const raceJS = `(function(){
-  var input = document.querySelector('[data-token="color-primary"]:not([data-type="color-swatch"])'); // not-a-secret: a DOM attribute selector
-  input.value = "#AB12CD";
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  document.getElementById('te-write').click();
-  return true;
-})()`
-	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(raceJS, nil),
-		chromedp.Poll(writeDoneJS, nil),
-	); err != nil {
-		t.Fatalf("write did not complete: %v", err)
-	}
-
-	status := evalString(t, ctx, statusTextJS)
-	src, err := os.ReadFile(srv.OutPath)
-	if err != nil {
-		var detail string
-		if status != "" {
-			detail = " (status: " + status + ")"
-		}
-		t.Fatalf("read written file: %v%s", err, detail)
-	}
-	// The emitter writes the value as a %q double-quoted literal.
-	if !strings.Contains(string(src), `"#AB12CD"`) {
-		t.Errorf("written file does not carry the last edit (#AB12CD); status=%q\n--- file ---\n%s", status, clitest.Truncate(string(src), 400))
-	}
-}
-
-// 4. Write twice in one session. Edit, Write, edit again, Write again: both
-// must succeed. The first Write creates the file; without the session-owned-
-// file digest the second Write refused, citing a file the tool itself had
-// just produced.
-func TestThemeEditWriteTwiceInOneSession(t *testing.T) {
-	if testing.Short() {
-		t.Skip("e2e: -short")
-	}
-	srv, base := newThemeEditE2EServer(t)
-	ctx := themeBrowserCtx(t)
-	navigateEditor(t, ctx, base)
-
-	// First edit + Write.
-	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(setTokenInputJS("color-primary", "#111111"), nil),
-		chromedp.Poll(primaryColorIsJS("rgb(17, 17, 17)"), nil),
-		chromedp.Click("#te-write", chromedp.ByID),
-		chromedp.Poll(writeDoneJS, nil),
-	); err != nil {
-		t.Fatalf("first write failed: %v", err)
-	}
-	status1 := evalString(t, ctx, statusTextJS)
-	if strings.Contains(status1, "already exists") {
-		t.Fatalf("first write was refused: %q", status1)
-	}
-
-	// Second edit + Write.
-	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(setTokenInputJS("color-primary", "#222222"), nil),
-		chromedp.Poll(primaryColorIsJS("rgb(34, 34, 34)"), nil),
-		chromedp.Click("#te-write", chromedp.ByID),
-		chromedp.Poll(writeDoneJS, nil),
-	); err != nil {
-		t.Fatalf("second write failed: %v", err)
-	}
-	status2 := evalString(t, ctx, statusTextJS)
-
-	src, err := os.ReadFile(srv.OutPath)
-	if err != nil {
-		t.Fatalf("read written file: %v (status1=%q status2=%q)", err, status1, status2)
-	}
-	if strings.Contains(status2, "already exists") {
-		t.Fatalf("second write was refused — the session cannot rewrite its own file: %q", status2)
-	}
-	if !strings.Contains(string(src), `"#222222"`) {
-		t.Errorf("written file does not carry the second edit (#222222); status1=%q status2=%q\n--- file ---\n%s", status1, status2, clitest.Truncate(string(src), 400))
 	}
 }

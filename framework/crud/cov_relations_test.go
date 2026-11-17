@@ -168,18 +168,6 @@ func TestList_ScopedInclude(t *testing.T) {
 	}
 }
 
-func TestList_NestedInclude(t *testing.T) {
-	ch, _, _ := covRelWorld(t)
-	// posts → comments (HasMany), and comments has no further relations, so
-	// exercise author.<deeper> using a registered users entity with a relation.
-	req := withTestUser(httptest.NewRequest("GET", "/posts?include=author", nil), "u1")
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
-	}
-}
-
 func TestList_BadInclude(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
 	req := withTestUser(httptest.NewRequest("GET", "/posts?include=ghostrel", nil), "u1")

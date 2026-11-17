@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 // A child whose own peer faulted kept running: its read loop drained
@@ -20,7 +22,7 @@ func TestDemoChildExitsOnPeerFault(t *testing.T) {
 	if os.Getenv(childEnvName) != "" {
 		return
 	}
-	bin, _ := buildDemoBinary(t)
+	bin, _ := pmtestkit.DemoBinary(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin)

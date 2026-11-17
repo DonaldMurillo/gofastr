@@ -86,15 +86,35 @@ func TestEncryptedRejectsBadKeyLength(t *testing.T) {
 	}
 }
 
+// EncryptionNone is Open: a key is ignored, close leaves the plaintext
+// file and no .enc, and plain Open reads the events back.
 func TestEncryptionNoneBehavesLikeOpen(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "x.db")
-	s, err := OpenEncrypted(path, EncryptionNone, nil)
+	path := filepath.Join(t.TempDir(), "x.db")
+	s, err := OpenEncrypted(path, EncryptionNone, newKey(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.CloseEncrypted()
-	if _, err := os.Stat(path); err != nil {
-		t.Errorf("file not created in plaintext mode: %v", err)
+	sess := ids.NewSessionID()
+	env, _ := control.EncodeEvent(1, control.TextDelta{Text: "plain-payload"}, sess, ids.NewClientID(), time.Now())
+	if err := s.AppendEvent(context.Background(), env); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CloseEncrypted(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path + ".enc"); !os.IsNotExist(err) {
+		t.Errorf("EncryptionNone wrote %s.enc (stat err %v)", path, err)
+	}
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("plain Open of an EncryptionNone file: %v", err)
+	}
+	defer s2.Close()
+	got, err := s2.EventsSince(context.Background(), sess, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !strings.Contains(string(got[0].Payload), "plain-payload") {
+		t.Errorf("plain Open did not read the event back: %+v", got)
 	}
 }

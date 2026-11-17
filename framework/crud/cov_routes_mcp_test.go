@@ -176,9 +176,24 @@ func TestRegisterCrudRoutes_ReadOnlyAndNoLLMMD(t *testing.T) {
 
 func TestRegisterCrudRoutesFunc(t *testing.T) {
 	ent, db, r := covSimpleEntity(t)
-	ch := RegisterCrudRoutesFunc(r, ent, db, "/widgets")
+	seedRows(t, db, "widgets", []map[string]any{{"id": "w1", "name": "seeded"}})
+	ch := RegisterCrudRoutesFunc(r, ent, db, "/widgets", CrudRouteOptions{ReadOnly: true})
 	if ch == nil || ch.Entity != ent {
 		t.Fatal("RegisterCrudRoutesFunc returned wrong handler")
+	}
+	serve := func(method, path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(`{"name":"x"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req = req.WithContext(handler.SetUser(req.Context(), &testUser{id: "u1"}))
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := serve(http.MethodGet, "/widgets/w1"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"seeded"`) {
+		t.Errorf("GET /widgets/w1 = %d %s, want the seeded row", rec.Code, rec.Body.String())
+	}
+	if rec := serve(http.MethodPost, "/widgets"); rec.Code == http.StatusCreated {
+		t.Error("ReadOnly option was not passed through: POST created a row")
 	}
 }
 

@@ -107,12 +107,6 @@ func TestIsAutoField(t *testing.T) {
 	}
 }
 
-func TestEmitEvent_NoBusIsNoop(t *testing.T) {
-	ch, _ := covNotesHandler(t)
-	// No Events set, must not panic.
-	ch.EmitEvent(context.Background(), event.EntityCreated, map[string]any{"id": "1"})
-}
-
 func TestEmitEvent_StampsTenantAndOwner(t *testing.T) {
 	installOwnerExtractor(t)
 	db := setupDB(t, `CREATE TABLE ev (id TEXT PRIMARY KEY, user_id TEXT, tenant_id TEXT, body TEXT)`)
