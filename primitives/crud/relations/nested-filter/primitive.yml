@@ -37,6 +37,9 @@ invariants:
       - test: framework/crud.TestInProcessNestedFilterEmitsColumn
       - test: framework/crud.TestNestedFilterOrderIsStable
       - test: framework/crud.TestListAll_NestedFilterParity
+    applies:
+      - framework/filter/key.go
+      - framework/filter/typed.go
   - id: nested-filter-identifiers
     rule: A nested field renders only as one plain identifier and a table as an identifier or a schema-qualified one, and a hop whose foreign key does not line up with the key it references joins nothing; anything else renders the filter as 1 = 0.
     enforced_by:

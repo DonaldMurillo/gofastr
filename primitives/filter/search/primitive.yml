@@ -2,3 +2,20 @@ primitive: filter.search
 summary: Turning a free-text ?q= term into AND-composed, LIKE-escaped search conditions over the searchable columns.
 code:
   - framework/filter/search.go
+invariants:
+  - id: tokens-and-fields-or
+    rule: SearchConditions makes one parenthesized OR over the fields per distinct token, at most MaxSearchTerms of them, to be ANDed.
+    enforced_by:
+      - test: framework/filter.TestSearchConditions_ShapeAndParens
+      - test: framework/filter.TestSearchConditions_TokenizationDedupCap
+  - id: search-term-literal-and-lowered
+    rule: Each token is lowered with Unicode rules and its LIKE wildcards escaped, through LikeClause.
+    enforced_by:
+      - test: framework/filter.TestSearchConditions_EscapesWildcards
+      - test: framework/filter.TestSearchWildcardEscaped
+      - test: framework/filter.TestSearchConditions_UnicodeLowering
+      - test: framework/filter.TestSearchConditionsUseLikeClause
+  - id: unstorable-term-refused
+    rule: A term with invalid UTF-8 or a NUL byte is refused naming q.
+    enforced_by:
+      - test: framework/filter.TestSearchConditionsRefusesUnstorableText
