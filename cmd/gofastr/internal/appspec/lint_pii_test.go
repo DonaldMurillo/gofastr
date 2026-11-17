@@ -98,7 +98,7 @@ func TestPIIAnyoneAccessStillFlagged(t *testing.T) {
 	}
 }
 
-// The examples/blog case: auth enabled, users entity with email, no
+// The blog case: auth enabled, users entity with email, no
 // scoping. Auth only mounts pass-through SessionMiddleware: anonymous
 // requests still reach auto-CRUD/MCP, so it must NOT suppress the rule.
 func TestPIIAuthAloneStillFlagged(t *testing.T) {

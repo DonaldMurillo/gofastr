@@ -68,7 +68,7 @@ copying the header into every page. The layout is declared once; every
 screen under it inherits the chrome, and navigation between siblings
 never re-renders it.
 
-The real shape of a build function, from `examples/tracker/main.go`
+The real shape of a build function, from `examples/site/tracker/main.go`
 (`buildShell`): static header and sidebar, a crumbs route area, a
 toolbar outlet, the primary, an aside outlet:
 
@@ -393,9 +393,8 @@ navigation) — see [internationalization](i18n.md).
 Reach for a distinct name when the shape genuinely differs; reach for
 `WithKey` when only the content or context varies. A region that only
 some pages show is neither: it is an outlet that only those pages fill.
-`examples/acme-site` places an `announcement` outlet in its site shell,
-and only the changelog screen fills it (see
-[Outlets and fills](#outlets-and-fills)).
+The site's docs layer has a `rail` outlet that only the docs index
+fills (see [Outlets and fills](#outlets-and-fills)).
 
 ## Resolvers: shared values from the route
 
@@ -445,7 +444,7 @@ status 404, anything else the error page with status 500, no error text
 in the body). First read inside a fill, area, or build → contained to
 that region and logged. `uihost.WithErrorScreen(&ErrorScreen{})` gives
 the 500 page a product surface through the app's layout, like
-`examples/tracker`'s.
+`examples/site/tracker`'s.
 
 A `Requires` key with no visible declaration (the resolver sits on a
 sibling group, or was never declared) panics at mount
@@ -657,11 +656,14 @@ whose two states carry text that must not ghost over itself.
 transitions around it: the fit for a breadcrumb trail, whose root is
 the same on every page and would blink under any fade. Nor does it dim while a slow navigation is in flight, as other busy regions do; it keeps `aria-busy` for screen readers. `Transition{Name: "..."}` assigns a snapshot name without
 generating keyframes; use a framework preset when the region needs a move.
-The host collects every registered layout's generated
-`Layout.TransitionCSS()` into app.css; there is nothing to wire. app.css
-is composed once, at first render, so register screens and groups before
-serving: a layout with transitions that arrives later logs a warning
-naming it and ships no transition CSS. Root-wide
+`NewLayout` registers the layout's generated `Layout.TransitionCSS()`
+as a component sheet of its own (`Layout.TransitionSheet()`), and the
+layer's root names it, so only pages that render the layer load it,
+before the swap that brings the layer in; there is nothing to wire. A
+host lists its component sheets once, at first render, so register
+screens and groups before serving: a layout with transitions that
+arrives later logs a warning naming it, and client navigations into it
+run without its transitions. Root-wide
 presets by name come from `app.ViewTransitionPresetCSS("fade")`. The
 runtime wraps the swap in the View Transitions API with the direction
 type (`forward`/`back`/`reload`), never animates under
@@ -799,8 +801,8 @@ Everything above the plain tree layout is opt-in; the zero value of
 every option does nothing:
 
 - **No outlets, no areas** → navigation is the plain partial swap it
-  always was; the page ships the core runtime only. The marketing pages
-  of `examples/acme-site` declare none of the machinery.
+  always was; the page ships the core runtime only. The site's main
+  layout (`examples/site`, `mainLayout`) declares none of the machinery.
 - **Outlets/areas present** → the client sends the fills header and the
   response is an envelope; the envelope module loads on demand. Costs
   the fill DOM: outlet content belongs to one route and is re-applied
@@ -885,6 +887,8 @@ beside the sidebar. It does not create another toolbar component. The
 row is a `<section>` landmark named by `ToolbarLabel` ("Toolbar" by
 default), so controls placed there sit inside a landmark.
 `Viewport: true` confines desktop scrolling to main, sidebar and aside.
+The aside is then a tab stop (`tabindex="0"`), so a keyboard can scroll
+it even when it holds nothing focusable, such as an activity feed.
 Below the breakpoint it returns to document flow, without hiding either
 pane — and it reads the header band's height from
 `--size-header-height` (`Theme.Layout.HeaderHeight`), so recipes pair it with a page-tall

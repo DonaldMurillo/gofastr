@@ -22,6 +22,7 @@ invariants:
       - framework/uihost/
       - battery/
       - examples/
+      - internal/testapps/
       - cmd/gofastr/
   - id: sse-is-push-only
     rule: Server-sent events travel on the single /__gofastr/sse bus and carry only background events (presence, collaboration, sub-second updates), never the answer to a user action; passive freshness polls with data-cui-poll.
@@ -32,6 +33,7 @@ invariants:
       - framework/
       - battery/
       - examples/
+      - internal/testapps/
       - cmd/gofastr/
   - id: no-list-math-in-js
     rule: Pagination, sort and filter are computed on the server; the runtime only follows the links and swaps the regions the server returns.
@@ -41,6 +43,7 @@ invariants:
       - framework/uihost/
       - battery/
       - examples/
+      - internal/testapps/
       - cmd/gofastr/
   - id: scheme-meta-follows-the-choice
     rule: The color-scheme bootstrap sets the color-scheme meta to the forced mode when the reader chose one and to light dark while the page follows the OS.
@@ -56,7 +59,7 @@ invariants:
     rule: A click the transition module holds because it landed on <html> during a view transition is delivered before any later click is handled, so the page the user clicked last is the page shown.
     enforced_by:
       - test: core-ui/runtime.TestHeldClickNeverLandsAfterALaterClick
-      - test: examples/tracker.TestTrackerSupersedingPointerClicksKeepRingOff
+      - test: examples/site/tracker.TestTrackerSupersedingPointerClicksKeepRingOff
   - id: escape-waits-for-widgetfocus
     rule: An Escape pressed while a modal or popover is open and the demand-loaded widgetfocus module has not registered yet is handed to that module once it loads, so it closes the top layer instead of being lost, unless a layer opened or closed in between; an Escape that belongs to an IME is never forwarded.
     enforced_by:

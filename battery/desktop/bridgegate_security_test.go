@@ -28,7 +28,7 @@ import (
 //
 //	registerBridgeRoutes wires all three in Init, so they answer from
 //	the moment the listener binds. In the documented --serve / --addr /
-//	$PORT mode (examples/desktop-notes/main.go) Run never happens:
+//	$PORT mode (internal/testapps/desktop-notes/main.go) Run never happens:
 //	gateMiddleware is a pass-through, there is no boot cookie and no
 //	Host pin, and handleCall accepts a request with no Sec-Fetch-Site
 //	header at all (what every non-browser client sends). A $PORT

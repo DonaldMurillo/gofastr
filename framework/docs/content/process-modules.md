@@ -332,7 +332,7 @@ binary to ship beside the app. Two things follow:
 line. A report with an unreported probe tells you about the wiring, not
 the backend.
 
-[`examples/processmodule-demo/host`](../../../examples/processmodule-demo/host)
+[`internal/testapps/processmodule-demo/host`](../../../internal/testapps/processmodule-demo/host)
 hosts the demo module as an untrusted module, and its `-check-sandbox`
 flag prints this host's report as JSON. On Linux with bubblewrap it runs
 the module confined; on macOS (no distinct uid, no resource caps) it
@@ -494,7 +494,7 @@ A module child is a plain Go binary that speaks moduleproto over stdio. It
 depends only on [`core/moduleproto`](../../../core/moduleproto) plus the
 standard library: no `framework/*`, no MCP, no DB driver. The canonical,
 runnable example is
-[`examples/processmodule-demo/main.go`](../../../examples/processmodule-demo/main.go),
+[`internal/testapps/processmodule-demo/main.go`](../../../internal/testapps/processmodule-demo/main.go),
 which is also the child the go/no-go gate suite
 (`framework/processmodule_gate_test.go`) drives end to end. Read it alongside
 this section.

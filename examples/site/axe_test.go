@@ -154,6 +154,13 @@ func axePages(t *testing.T) []string {
 		"/", "/get-started", "/docs/", "/examples", "/examples/workspace", "/kiln",
 		"/philosophy", "/seo", "/seo-bundle", "/components/",
 	)
+	// Acme Tracker, the tree-layout showcase: the overview (deferred
+	// aside), a project list and an issue (the project layer and its
+	// fills), and the slow reports page.
+	out = append(out,
+		"/examples/tracker", "/examples/tracker/projects/billing",
+		"/examples/tracker/projects/billing/issues/42", "/examples/tracker/reports",
+	)
 	// The headless showcase pages, derived from the routes the screens
 	// themselves enumerate (landingRoutes): both pages under every
 	// registered theme, so a new theme is scanned, not remembered.

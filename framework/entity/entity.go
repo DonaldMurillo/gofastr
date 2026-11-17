@@ -1184,7 +1184,7 @@ func ValidateDefaults(name string, cfg EntityConfig) (err error) {
 //
 //   - Decimal spelled as a Go number. Decimal travels as a string on the wire
 //     so it keeps exact precision, but `{Type: schema.Decimal, Default: 0}` is
-//     what examples/ecommerce writes and what `gofastr generate` emits for a
+//     what internal/testapps/ecommerce writes and what `gofastr generate` emits for a
 //     app spec `decimal` field with `default: 0`. It renders `DEFAULT 0` in
 //     DDL and binds as a number on insert; both dialects accept it.
 //   - Timestamp/Date spelled as a time.Time. time.Time's String() is not

@@ -42,7 +42,7 @@ func TestPack_AccessAnyoneRoundTrips(t *testing.T) {
 
 // The generator writes a section's label, class and id into its
 // SectionConfig; pack read only heading, eyebrow and description, so a
-// labelled, classed section (examples/lms's Featured Courses) packed bare.
+// labelled, classed section (internal/testapps/lms's Featured Courses) packed bare.
 func TestPack_SectionLabelClassIDRoundTrip(t *testing.T) {
 	src := `ui.Section(ui.SectionConfig{Ctx: ctx, Heading: "", Eyebrow: "", Description: "", Label: "Featured Courses", Class: "featured-courses", ID: "featured"}, ui.Stack(ui.StackConfig{Align: ui.AlignStart}))`
 	e, err := parser.ParseExpr(src)

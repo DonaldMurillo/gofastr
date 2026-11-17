@@ -225,6 +225,12 @@ func Freeze() {
 // re-registration (same StyleFn pointer + same options) is a no-op;
 // any other duplicate panics so misnames surface at startup.
 func RegisterStyle(name string, fn func(style.Theme) string, opts ...Option) *Style {
+	return registerStyle(name, fn, false, opts)
+}
+
+// registerStyle is RegisterStyle's body. With late set, a new name is
+// registered even after the catalog froze.
+func registerStyle(name string, fn func(style.Theme) string, late bool, opts []Option) *Style {
 	if !behaviorName.MatchString(name) {
 		panic(fmt.Sprintf("registry.RegisterStyle: name %q must match ^[a-z][a-z0-9-]{0,63}$ — it is a URL segment and the data-cui-comp marker value", name))
 	}
@@ -248,11 +254,20 @@ func RegisterStyle(name string, fn func(style.Theme) string, opts ...Option) *St
 		}
 		return &Style{e: existing}
 	}
-	if frozen {
+	if frozen && !late {
 		panic(fmt.Sprintf("registry: style %q registered after the component catalog froze; register styles at package init", name))
 	}
 	entries[name] = e
 	return &Style{e: e}
+}
+
+// RegisterRuntimeStyle is RegisterStyle for a sheet built at run time
+// (a layout's transitions) instead of at package init: it registers a
+// new name even after a host froze the catalog, where RegisterStyle
+// panics. A host builds its catalog once, so one that already did does
+// not list the sheet; that host is the caller's to warn about.
+func RegisterRuntimeStyle(name string, fn func(style.Theme) string, opts ...Option) *Style {
+	return registerStyle(name, fn, true, opts)
 }
 
 // Lookup returns the entry registered under name.

@@ -93,6 +93,10 @@ invariants:
     enforced_by:
       - test: framework/ui.TestContentRowNavColumnIsTheSidebarLandmark
       - test: framework/ui.TestContentRowToolbarIsARegion
+  - id: content-row-viewport-aside-focusable
+    rule: A Viewport ContentRow's aside, which scrolls on its own, is a tab stop (tabindex 0), so a keyboard can scroll it when its content holds nothing focusable; a default row's aside adds none.
+    enforced_by:
+      - test: framework/ui.TestContentRowViewportAsideIsFocusable
   - id: content-row-one-scroll-model
     rule: ContentRow panics when Sticky and Viewport are both set.
     enforced_by:

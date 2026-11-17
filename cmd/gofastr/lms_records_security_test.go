@@ -20,13 +20,13 @@ import (
 // on read and write of all three record families. RED today: the default
 // posture lets every session through.
 //
-//gofastr:test-reads examples/lms/gofastr.yml
+//gofastr:test-reads internal/testapps/lms/gofastr.yml
 func TestLmsGatesStudentRecords(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, builds, and boots an app")
 	}
-	clitest.VariantBuild(t, "examples/lms/gofastr.yml")
-	bin, appDir := exampleTree(t, "../../examples/lms/gofastr.yml", "lms")
+	clitest.VariantBuild(t, "internal/testapps/lms/gofastr.yml")
+	bin, appDir := exampleTree(t, "../../internal/testapps/lms/gofastr.yml", "lms")
 
 	// registerAndLogin mints a fresh account exactly the way the portfolio
 	baseURL, appOut, bootDBPath := bootGeneratedApp(t, "lms", bin, appDir)

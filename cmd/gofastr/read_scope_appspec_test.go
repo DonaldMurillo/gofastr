@@ -17,13 +17,13 @@ import (
 // must. It also proves the bool predicate binds: approved eq "true" has to
 // match rows stored as boolean true.
 //
-//gofastr:test-reads examples/portfolio/gofastr.yml
+//gofastr:test-reads internal/testapps/portfolio/gofastr.yml
 func TestExampleReadScopeBoots(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, builds, and boots an app")
 	}
-	clitest.VariantBuild(t, "examples/portfolio/gofastr.yml")
-	bin, appDir := exampleTree(t, "../../examples/portfolio/gofastr.yml", "portfolio")
+	clitest.VariantBuild(t, "internal/testapps/portfolio/gofastr.yml")
+	bin, appDir := exampleTree(t, "../../internal/testapps/portfolio/gofastr.yml", "portfolio")
 	baseURL, _, _ := bootGeneratedApp(t, "portfolio", bin, appDir)
 	page := func(path string) string {
 		t.Helper()

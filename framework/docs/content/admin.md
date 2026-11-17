@@ -824,5 +824,5 @@ the runtime sends `X-CSRF-Token` from `<meta name="csrf-token">`.
 
 ## See also
 
-`examples/backoffice` is a runnable back office: SQLite, entities, a
-demo login, and the admin.
+`examples/meridian` mounts the admin behind its own sign-in, next to
+hand-built admin screens (dashboard, emails, files, queue, revenue).
