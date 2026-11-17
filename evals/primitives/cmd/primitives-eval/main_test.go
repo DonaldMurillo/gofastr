@@ -815,3 +815,39 @@ func TestStopCellProcessesClearsTheLockOfAKilledWriter(t *testing.T) {
 		t.Error("the killed writer's index.lock was left for grading to wait on")
 	}
 }
+
+func TestStopCellProcessesKeepsALockAWriterOutsideTheCellHolds(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("cell processes are found through /proc")
+	}
+	old := stopGrace
+	stopGrace = 300 * time.Millisecond
+	t.Cleanup(func() { stopGrace = old })
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(dir, ".git", "index.lock")
+	ready := filepath.Join(t.TempDir(), "ready")
+	writer := startInCell(t, t.TempDir(), `exec 3>`+lock+`; : > `+ready+`; while :; do sleep 0.05; done`)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the outside writer never took the lock")
+		}
+	}
+	inCell := startInCell(t, dir, `trap '' TERM; while :; do sleep 0.05; done`)
+	time.Sleep(100 * time.Millisecond)
+	stopCellProcesses(dir)
+	waitStopped(t, inCell, "a process inside the cell that ignores SIGTERM survived")
+	select {
+	case <-writer:
+		t.Fatal("the writer outside the cell was stopped")
+	default:
+	}
+	if _, err := os.Stat(lock); err != nil {
+		t.Error("index.lock was removed while a writer outside the cell still held it")
+	}
+}
