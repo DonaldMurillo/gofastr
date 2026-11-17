@@ -25,6 +25,13 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **The SDK docs' example filter names an entity's real key.** An entity with its own `PrimaryKey`
+  and no other filterable column got curl, Go and TypeScript examples filtering on `id`, a column it
+  does not have, so every copy answered 400. The fallback is now the first key column.
+- **The SDK docs page for an entity with several API versions writes each id once.** Every
+  version's section repeated the same heading and table caption ids, so a caption reference named
+  the first version's table. Version sections now carry the version in their ids; a single-version
+  page is unchanged.
 - **`gofastr verify` reports a hard navigation through any chain of frames.** GOFASTR1802 caught
   `location.href = x` and `window.location.href = x`, but missed `window.top.location.href = x` and
   other chains of more than one hop.
