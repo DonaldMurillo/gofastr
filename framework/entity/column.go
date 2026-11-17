@@ -9,23 +9,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// Column-typed query primitives
-//
-// These types power the typed query builder generated alongside each
-// entity's repository. Each column is a small newtype over the underlying
-// DB column name; methods on it produce Condition values that the typed
-// query attaches to its QueryBuilder via Where().
-//
-// Conditions are dialect-agnostic, they always emit "$1" placeholders;
-// the underlying QueryBuilder renumbers them at Build time so a chain of
-// fragments produces "$1 ... $2 ... $3 ..." correctly across both engines.
-
-// Condition is a where-clause fragment plus its bound arguments.
+// Condition is a where-clause fragment, numbered from $1, and its bound arguments.
 type Condition struct {
-	sql  string
-	args []any
-	// timestamps names the TimestampColumn columns the fragment compares
-	// with a bound value, so crud can check their stored layout first.
+	sql        string
+	args       []any
 	timestamps []string
 }
 
@@ -34,18 +21,13 @@ func (c Condition) Apply(qb *query.QueryBuilder) {
 	qb.Where(c.sql, c.args...)
 }
 
-// SQL returns the where-clause fragment. Exported so callers outside the
-// entity package (typed_query, etc.) can compose conditions onto query
-// builders directly.
+// SQL returns the where-clause fragment.
 func (c Condition) SQL() string { return c.sql }
 
-// Args returns the bound arguments for the fragment. Pair with SQL().
+// Args returns the bound arguments for the fragment.
 func (c Condition) Args() []any { return c.args }
 
-// ComparedTimestamps names the columns a TimestampColumn comparison (Eq,
-// Gt, Gte, Lt, Lte) in this fragment compares with a bound value, And, Or
-// and Not included. crud reads it to refuse a comparison on a column that
-// holds text outside schema.TimestampLayout, as its filter surfaces do.
+// ComparedTimestamps names the TimestampColumn columns the fragment compares to a value.
 func (c Condition) ComparedTimestamps() []string { return c.timestamps }
 
 // Order is an order-by-clause fragment.
@@ -59,17 +41,11 @@ func (o Order) Apply(qb *query.QueryBuilder) {
 	qb.Order(o.column, o.dir)
 }
 
-// Term is the order's column and its direction, "ASC" or "DESC".
+// Term is the order's raw column and its direction, "ASC" or "DESC".
 func (o Order) Term() (column, dir string) { return o.column, o.dir }
 
-// rawColumn is the shared base for every typed column, it's just the DB
-// column name. Asc/Desc/IsNull/IsNotNull are the operations that work on any
-// type so they live here.
 type rawColumn string
 
-// name is the column as a condition writes it: bare, or quoted when it is
-// a keyword (query.QuoteKeyword), the spelling the migrator gave the DDL.
-// Order keeps the raw name; the builder's ORDER BY slot quotes it.
 func (c rawColumn) name() string { return query.QuoteKeyword(string(c)) }
 func (c rawColumn) Asc() Order   { return Order{column: string(c), dir: "ASC"} }
 func (c rawColumn) Desc() Order  { return Order{column: string(c), dir: "DESC"} }
@@ -80,24 +56,16 @@ func (c rawColumn) IsNotNull() Condition {
 	return Condition{sql: c.name() + " IS NOT NULL"}
 }
 
-// And combines conditions with AND. Useful inside Or(...) to nest a group
-// of ANDed predicates: Or(And(a, b), And(c, d)).
+// And combines conditions with AND; none is "1 = 1".
 func And(conds ...Condition) Condition {
 	return combineConditions(conds, " AND ", "1 = 1")
 }
 
-// Or combines conditions with OR. Each conjunct keeps its own internal
-// argument order; placeholders are renumbered at QueryBuilder.Build time so
-// "$1" in a fragment doesn't collide with another fragment's "$1".
+// Or combines conditions with OR; none is "1 = 0".
 func Or(conds ...Condition) Condition {
 	return combineConditions(conds, " OR ", "1 = 0")
 }
 
-// combineConditions joins conds with sep inside one parenthesised group,
-// preserving each fragment's argument order. An empty list yields emptySQL
-// (the AND identity "1 = 1", the OR identity "1 = 0") so a vacuous call
-// still binds; a single condition passes through ungrouped. It replaces
-// the former duplicated bodies of And and Or.
 func combineConditions(conds []Condition, sep, emptySQL string) Condition {
 	if len(conds) == 0 {
 		return Condition{sql: emptySQL}
@@ -125,9 +93,6 @@ func Not(c Condition) Condition {
 	return Condition{sql: "NOT (" + c.sql + ")", args: c.args, timestamps: c.timestamps}
 }
 
-// inFragment builds a "col IN ($1, $2, …)" condition from a slice of args.
-// Empty input yields a tautologically-false fragment so the SQL still binds
-// correctly without a special case at every call site.
 func inFragment(col string, args []any) Condition {
 	if len(args) == 0 {
 		return Condition{sql: "1 = 0"}
@@ -142,16 +107,10 @@ func inFragment(col string, args []any) Condition {
 	}
 }
 
-// ----------------------------------------------------------------------------
-// String columns
-// ----------------------------------------------------------------------------
-
-// StringColumn represents a TEXT/VARCHAR column. Use the methods to build
-// Conditions: PostsTitle.Eq("hello"), PostsTitle.Like("%foo%"), etc.
+// StringColumn is a TEXT column of the typed query builder.
 type StringColumn struct{ rawColumn }
 
-// NewStringColumn constructs a StringColumn for the given DB column name.
-// Codegen calls this; user code rarely needs to.
+// NewStringColumn returns the StringColumn for a DB column name.
 func NewStringColumn(name string) StringColumn { return StringColumn{rawColumn: rawColumn(name)} }
 
 func (c StringColumn) Eq(v string) Condition {
@@ -174,17 +133,10 @@ func (c StringColumn) In(values ...string) Condition {
 	return inFragment(c.name(), args)
 }
 
-// ----------------------------------------------------------------------------
-// Enum columns
-// ----------------------------------------------------------------------------
-
-// EnumColumn represents an enum column whose values codegen emits as typed
-// constants of T: PostsStatus.Eq(PostsStatusLive). Stored as TEXT, like
-// StringColumn; T keeps a plain string variable out of the comparison.
+// EnumColumn is an enum column compared with typed constants of T.
 type EnumColumn[T ~string] struct{ rawColumn }
 
-// NewEnumColumn constructs an EnumColumn for the given DB column name.
-// Codegen calls this; user code rarely needs to.
+// NewEnumColumn returns the EnumColumn for a DB column name.
 func NewEnumColumn[T ~string](name string) EnumColumn[T] {
 	return EnumColumn[T]{rawColumn: rawColumn(name)}
 }
@@ -203,11 +155,7 @@ func (c EnumColumn[T]) In(values ...T) Condition {
 	return inFragment(c.name(), args)
 }
 
-// ----------------------------------------------------------------------------
-// Integer columns
-// ----------------------------------------------------------------------------
-
-// IntColumn represents an INTEGER column.
+// IntColumn is an INTEGER column.
 type IntColumn struct{ rawColumn }
 
 func NewIntColumn(name string) IntColumn { return IntColumn{rawColumn: rawColumn(name)} }
@@ -226,11 +174,7 @@ func (c IntColumn) In(values ...int) Condition {
 	return inFragment(c.name(), args)
 }
 
-// ----------------------------------------------------------------------------
-// Float / decimal columns
-// ----------------------------------------------------------------------------
-
-// FloatColumn represents a REAL/DOUBLE PRECISION/DECIMAL column.
+// FloatColumn is a REAL, DOUBLE PRECISION or DECIMAL column.
 type FloatColumn struct{ rawColumn }
 
 func NewFloatColumn(name string) FloatColumn { return FloatColumn{rawColumn: rawColumn(name)} }
@@ -254,11 +198,7 @@ func (c FloatColumn) Lte(v float64) Condition {
 	return Condition{sql: c.name() + " <= $1", args: []any{v}}
 }
 
-// ----------------------------------------------------------------------------
-// Bool columns
-// ----------------------------------------------------------------------------
-
-// BoolColumn represents a BOOLEAN column.
+// BoolColumn is a BOOLEAN column.
 type BoolColumn struct{ rawColumn }
 
 func NewBoolColumn(name string) BoolColumn { return BoolColumn{rawColumn: rawColumn(name)} }
@@ -267,16 +207,8 @@ func (c BoolColumn) Eq(v bool) Condition { return Condition{sql: c.name() + " = 
 func (c BoolColumn) IsTrue() Condition   { return c.Eq(true) }
 func (c BoolColumn) IsFalse() Condition  { return c.Eq(false) }
 
-// ----------------------------------------------------------------------------
-// Timestamp / Date columns
-// ----------------------------------------------------------------------------
-
-// TimestampColumn represents a TIMESTAMP/TIMESTAMPTZ column. Method semantics
-// mirror IntColumn but accept a time.Time, a *time.Time or an RFC 3339
-// string, bound in schema.TimestampLayout as crud stores the column and the
-// filter binder binds it. SQLite compares the column as text, so a value
-// bound as given, "…10:00:00Z", missed the row stored as "…10:00:00.000000Z"
-// and gt/lt compared spellings. Any other value binds as given.
+// TimestampColumn is a TIMESTAMP column. A time.Time, *time.Time or RFC 3339
+// string binds in schema.TimestampLayout; anything else binds as given.
 type TimestampColumn struct{ rawColumn }
 
 func NewTimestampColumn(name string) TimestampColumn {
@@ -289,13 +221,10 @@ func (c TimestampColumn) Gte(v any) Condition { return c.compare(" >= $1", v) }
 func (c TimestampColumn) Lt(v any) Condition  { return c.compare(" < $1", v) }
 func (c TimestampColumn) Lte(v any) Condition { return c.compare(" <= $1", v) }
 
-// compare is the column compared by op with v, naming the column in
-// ComparedTimestamps.
 func (c TimestampColumn) compare(op string, v any) Condition {
 	return Condition{sql: c.name() + op, args: []any{timestampArg(v)}, timestamps: []string{string(c.rawColumn)}}
 }
 
-// timestampArg is v in schema.TimestampLayout when v is an instant.
 func timestampArg(v any) any {
 	switch t := v.(type) {
 	case time.Time:
@@ -312,11 +241,7 @@ func timestampArg(v any) any {
 	return v
 }
 
-// ----------------------------------------------------------------------------
-// UUID columns (treated like strings for identity comparisons)
-// ----------------------------------------------------------------------------
-
-// UUIDColumn represents a UUID/text-shaped identity column.
+// UUIDColumn is a UUID or text identity column.
 type UUIDColumn struct{ rawColumn }
 
 func NewUUIDColumn(name string) UUIDColumn { return UUIDColumn{rawColumn: rawColumn(name)} }

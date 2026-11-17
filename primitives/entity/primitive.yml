@@ -4,3 +4,195 @@ code:
   - framework/entity/
 docs:
   - framework/docs/content/entity-declarations.md
+invariants:
+  - id: scope-columns-are-identifiers
+    rule: Define panics when TenantField or OwnerField is not a safe SQL identifier.
+    enforced_by:
+      - test: framework/entity.TestDefine_RejectsUnsafeOwnerField
+      - test: framework/entity.TestSweepEntityUnsafeTenantFieldPanics
+  - id: masked-field-is-noquery
+    rule: Define marks every field with a Mask NoQuery.
+    enforced_by:
+      - test: framework/entity.TestHidesRelationBehindNoQueryKey
+  - id: cross-owner-read-needs-owner
+    rule: Define panics on CrossOwnerRead without OwnerField.
+    enforced_by:
+      - test: framework/entity.TestCrossOwnerReadRequiresOwnerField
+  - id: search-fields-are-visible-text
+    rule: Define panics on a SearchFields entry that is undeclared, Hidden, NoQuery, or not String or Text.
+    enforced_by:
+      - test: framework/entity.TestSearchFieldsUnknownColumnPanics
+      - test: framework/entity.TestSearchFieldsHiddenColumnPanics
+      - test: framework/entity.TestSweepEntityNoQuerySearchFieldPanics
+      - test: framework/entity.TestSearchFieldsNonTextColumnPanics
+  - id: read-scope-predicates-checked
+    rule: Define panics on a ReadScope predicate naming an undeclared or Hidden field, an unknown op, Values on eq or neq, or a missing Values or stray Value on in or not_in.
+    enforced_by:
+      - test: framework/entity.TestReadScopeUnknownColumnPanics
+      - test: framework/entity.TestReadScopeHiddenColumnPanics
+      - test: framework/entity.TestReadScopeBadOpPanics
+      - test: framework/entity.TestReadScopeEqWithValuesPanics
+      - test: framework/entity.TestReadScopeInWithoutValuesPanics
+      - test: framework/entity.TestReadScopeRefusesStrayValueOnIn
+  - id: read-scope-one-in-per-field
+    rule: Define panics on two in predicates on one field, which the renderer would coalesce into one widened IN list.
+    enforced_by:
+      - test: framework/entity.TestReadScopeRefusesTwoInPredicatesOnOneField
+  - id: cursor-columns-are-servable
+    rule: Every keyset column, the key tiebreak and the default primary-key keyset included, is declared, not Hidden, not NoQuery and cannot hold NULL, and a composite names each column once.
+    enforced_by:
+      - test: framework/entity.TestCursorFieldUndeclaredPanics
+      - test: framework/entity.TestCursorFieldHiddenPanics
+      - test: framework/entity.TestCursorFieldNoQueryPanics
+      - test: framework/entity.TestCursorCompositeTiebreakNoQueryPanics
+      - test: framework/entity.TestCursorFieldHiddenKeyPanics
+      - test: framework/entity.TestCursorDefaultKeysetNoQueryPanics
+      - test: framework/entity.TestCursorNullableColumnPanics
+      - test: framework/entity.TestCursorFieldsListedTwicePanics
+  - id: composite-key-is-served
+    rule: A composite key column is neither Hidden nor NoQuery, checked by Define and by EntityDeclaration.Config.
+    enforced_by:
+      - test: framework/entity.TestSweepEntityDeclarationRefusesHiddenCompositeKey
+  - id: key-columns-checked
+    rule: A primary key that names no column, repeats one, names an undeclared field, or holds a column whose values have several spellings is refused, by Define, by EntityDeclaration.Config and by CheckRecordKey for a raw table.
+    enforced_by:
+      - test: framework/entity.TestPrimaryKeyRefusals
+      - test: framework/entity.TestSweepEntityDeclarationRefusesBadPrimaryKey
+      - test: framework/entity.TestSweepEntityRawTableWithNoKeyNamesNoRecord
+      - test: framework/entity.TestKeyColumnTypes
+      - test: framework/entity.TestKeyColumnRawType
+      - test: framework/entity.TestSweepEntityRawTypeKeysOnlyIntegers
+  - id: relation-field-derives-belongs-to
+    rule: Define derives a belongs_to for each single Relation field with a To, unless a relation of that name is declared.
+    enforced_by:
+      - test: framework/entity.TestDefineOwnsRelationSlices
+      - test: framework/entity.TestRelationFieldDoesNotOverrideExplicitRelation
+      - test: framework/entity.TestSweepEntityManyRelationDerivesNoBelongsTo
+  - id: system-columns-injected
+    rule: Define injects each system column the config needs and Fields does not declare - id when the key uses it, the timestamps, and Hidden ReadOnly tenant, owner and deleted_at columns - and leaves a declared one untouched.
+    enforced_by:
+      - test: framework/entity.TestCompositeKeyNoID
+      - test: framework/entity.TestCursorNonNullColumnsDefine
+      - test: framework/entity.TestSweepEntityInjectsHiddenScopeColumns
+      - test: framework/entity.TestDefine_InjectsUndeclaredOwnerField
+      - test: framework/entity.TestDefine_DeclaredOwnerFieldLeftUntouched
+  - id: define-copies-sub-configs
+    rule: Define deep-copies Scope, Pagination, Exposure, Timestamps, Relations, Display and States, so a caller's later edit changes nothing the app serves.
+    enforced_by:
+      - test: framework/entity.TestSweepEntityDefineCopiesSubConfigs
+      - test: framework/entity.TestDefineOwnsRelationSlices
+      - test: framework/entity.TestDisplayDeepCopiedAtDefine
+      - test: framework/entity.TestStatesDeepCopiedByDefine
+  - id: declaration-config-owns-its-slices
+    rule: EntityDeclaration.Config shares no primary-key, cursor or read-scope slice with the declaration.
+    enforced_by:
+      - test: framework/entity.TestSweepEntityDeclarationConfigOwnsItsSlices
+  - id: declaration-flat-and-grouped-agree
+    rule: A flat shorthand key and its grouped key may both be set only with equal values.
+    enforced_by:
+      - test: framework/entity.TestEntityDeclarationRejectsConflictingFlatAndGroupedJSON
+  - id: declaration-numbers-exact
+    rule: Decoding a declaration keeps integers past 2^53 exact.
+    enforced_by:
+      - test: framework/entity.TestDeclarationKeepsBigIntegers
+  - id: wire-key-addresses-one-column
+    rule: Validate refuses two fields sharing a wire key, a bare column's snake and camel spellings both counted and Hidden fields included, and a wire key that is another field's column name.
+    enforced_by:
+      - test: framework/entity.TestValidate_RejectsWireKeyCollision
+      - test: framework/entity.TestRelationNamesDoNotShadowScalars
+  - id: relation-names-do-not-shadow-scalars
+    rule: A relation named after a scalar field is refused unless it is that field's own non-cascade belongs_to.
+    enforced_by:
+      - test: framework/entity.TestRelationNamesDoNotShadowScalars
+      - test: framework/entity.TestScalarFKRelationNames
+  - id: default-passes-field-validator
+    rule: Validate and ValidateDefaults refuse a Default its field's validator refuses, in wire form, skipping auto-generated fields.
+    enforced_by:
+      - test: framework/entity.TestValidateRejectsMalformedDefaults
+      - test: framework/entity.TestValidateAcceptsWorkingDefaults
+      - test: framework/entity.TestValidateSkipsAutoGeneratedDefaults
+      - test: framework/entity.TestValidateDefaultsMatchesBoot
+  - id: object-names-fit
+    rule: DefaultIndexName and UniqueKeyName leave the schema off and hash past 63 bytes so names stay distinct, and LegacyUniqueKeyName is the plain-trimmed pre-v0.96.0 name.
+    enforced_by:
+      - test: framework/migrate.TestLongIndexNamesStayDistinct
+      - test: framework/migrate.TestFittedIndexNameDropsNothing
+      - test: framework/migrate.TestSQLiteMainQualifiedTable
+      - test: framework/migrate.TestLongUniqueKeyNamesStayDistinct
+      - test: framework/entity.TestSweepEntityUniqueKeyNames
+  - id: record-id-has-one-spelling
+    rule: JoinKey path-escapes a composite key's values, and SplitKey and KeyValues refuse a wrong count, an empty value, a spelling JoinKey would not write, or a non-canonical integer.
+    enforced_by:
+      - test: framework/entity.TestJoinKeyRoundTrip
+      - test: framework/entity.TestSplitKeyRefusesBadIDs
+      - test: framework/entity.TestKeyValues
+  - id: relation-key-shapes
+    rule: CheckRelationKeys refuses a foreign key that repeats a column (ignoring case), names an undeclared or transition-written column, does not match the referenced key's width, or needs a one-column key it lacks.
+    enforced_by:
+      - test: framework/entity.TestCheckRelationKeys
+      - test: framework/entity.TestCompositeForeignKey
+      - test: framework/entity.TestSweepEntityForeignKeyRepeatIgnoresCase
+  - id: value-fields-follow-integer-keys
+    rule: ValueFields types a belongs_to column Int when its target's key holds an integer through any chain of such keys, and a cyclic chain holds none.
+    enforced_by:
+      - test: framework/entity.TestSweepEntityValueFieldsFollowIntegerKeys
+  - id: key-columns-copy
+    rule: Entity.KeyColumns returns a copy.
+    enforced_by:
+      - test: framework/entity.TestSweepEntityKeyColumnsIsACopy
+  - id: hides-relation
+    rule: HidesRelation hides a relation marked Hidden, named after a Hidden field, or a belongs_to whose foreign key holds a Hidden or NoQuery column, and not one merely named after a NoQuery field.
+    enforced_by:
+      - test: framework/entity.TestHidesRelation
+      - test: framework/entity.TestHidesRelationBehindNoQueryKey
+  - id: resolve-target-by-version
+    rule: ResolveTarget and PivotEntity prefer the source's version, then the unversioned entity, then a sole version, and error on ambiguity or a Through spelled with a schema the table leaves off.
+    enforced_by:
+      - test: framework/crud.TestResolveTarget_PrefersSourceVersionOverUnversioned
+      - test: framework/crud.TestEagerLoadScrubsByRequestVersion
+      - test: framework/entity.TestPivotEntityPicksVersion
+      - test: framework/entity.TestPivotEntityRefusesSchemaSpellingMismatch
+  - id: typed-conditions
+    rule: Typed columns quote a keyword name in conditions but not in Order, an empty In or Or matches nothing, and a timestamp comparison binds in schema.TimestampLayout and names its column through And, Or and Not.
+    enforced_by:
+      - test: framework/entity.TestTypedColumnQuotesKeyword
+      - test: framework/entity.TestSweepEntityOrderKeepsRawKeywordName
+      - test: framework/entity.TestConditionCombinators
+      - test: framework/crud.TestTypedTimestampMatchesStored
+      - test: framework/crud.TestTypedQueryRefusesLegacyTimestamps
+  - id: config-defaults
+    rule: AccessControl.Declared counts Read, and TenantColumn defaults to tenant_id.
+    enforced_by:
+      - test: framework/entity.TestSweepEntityAccessAndTenantDefaults
+decisions:
+  - id: declaration-errors-fail-at-boot
+    date: 2026-11-17
+    status: accepted
+    decision: Define and Validate refuse a bad declaration (search, read-scope, cursor, key, Default) at registration, naming the field.
+    rejected:
+      - option: Let the first request fail.
+        why: A per-request 500 or a silently widened row set is reported as a caller's error, or not at all.
+    upholds: [search-fields-are-visible-text, read-scope-predicates-checked, cursor-columns-are-servable, default-passes-field-validator]
+  - id: refuse-two-in-predicates
+    date: 2026-11-17
+    status: accepted
+    decision: Two in predicates on one ReadScope field are refused; authors combine the values or use neq or not_in.
+    rejected:
+      - option: Teach the renderer to keep adjacent in predicates apart.
+        why: The predicates AND to nothing, so the declaration can only be a mistake.
+    upholds: [read-scope-one-in-per-field]
+  - id: renames-are-declared
+    date: 2026-11-17
+    status: accepted
+    decision: A column rename happens only when declared in Renames.
+    rejected:
+      - option: Detect renames from the schema diff.
+        why: A rename and a drop plus add look the same, and guessing wrong loses data.
+  - id: versioned-registry-is-optional
+    date: 2026-11-17
+    status: accepted
+    decision: GetVersioned lives on a separate VersionedRegistry interface.
+    rejected:
+      - option: Add GetVersioned to Registry.
+        why: It would break every test stub and fake, and a registry with no versions cannot be ambiguous.
+    upholds: [resolve-target-by-version]

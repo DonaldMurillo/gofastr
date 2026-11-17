@@ -4,3 +4,78 @@ code:
   - framework/entity/display.go
 docs:
   - framework/docs/content/entityui.md
+invariants:
+  - id: strict-decode
+    rule: The display block and its form items refuse an unknown key, a form item naming the same one on every decode.
+    enforced_by:
+      - test: framework/entity.TestDisplayDeclarationRefusesUnknownKeys
+      - test: framework/entity.TestFormItemUnknownKeyRefusalIsDeterministic
+  - id: form-item-round-trips
+    rule: A field form item marshals as a bare string and decodes back unchanged.
+    enforced_by:
+      - test: framework/entity.TestFormItemRoundTrips
+  - id: shown-names-are-visible
+    rule: Every field name Display shows is declared and not Hidden, and each list (titles, columns, facets, views) names an entry once.
+    enforced_by:
+      - test: framework/entity.TestDisplayNamesUnknownFieldRefused
+      - test: framework/entity.TestDisplayNamesHiddenFieldRefused
+      - test: framework/entity.TestDisplayRefusesDuplicateColumns
+      - test: framework/entity.TestDisplayRefusesDuplicateFacets
+      - test: framework/entity.TestDisplayViewKeysUnique
+  - id: facets-are-queryable-small-sets
+    rule: A facet is an Enum, Bool or Relation field that is not NoQuery.
+    enforced_by:
+      - test: framework/entity.TestDisplayFacetsMustBeEnumBoolOrRelation
+      - test: framework/entity.TestDisplayRefusesNoQueryFacet
+  - id: required-field-stays-submittable
+    rule: A Required field with no Default and no generator cannot be Omit, Locked or behind ShowWhen.
+    enforced_by:
+      - test: framework/entity.TestDisplayOmitRefusedOnRequiredNoDefault
+      - test: framework/entity.TestDisplayLockedRefusedOnRequiredNoDefault
+      - test: framework/entity.TestDisplayShowWhenRefusedOnRequiredNoDefault
+  - id: keys-follow-grammar
+    rule: Every display key (view, section, nav group, input kind) is a lowercase slug with no dots and not all or deleted.
+    enforced_by:
+      - test: framework/entity.TestDisplayKeysMustBeLowercaseSlugs
+      - test: framework/entity.TestDisplayReservedKeysRefused
+      - test: framework/entity.TestDisplayInputMustBeAKey
+  - id: views-well-formed
+    rule: At most one view sets Default, and a view's As is empty, table or cards.
+    enforced_by:
+      - test: framework/entity.TestDisplayAtMostOneDefaultView
+      - test: framework/entity.TestSweepEntityViewAsIsTableOrCards
+  - id: form-well-formed
+    rule: Each form item sets exactly one of Field, Row or Section; a row holds one to three distinct fields; only a non-empty section carries Items, Help or Collapsed; sections nest two deep with unique keys; a field is placed once across Main and Side.
+    enforced_by:
+      - test: framework/entity.TestFormItemsSetExactlyOneShape
+      - test: framework/entity.TestFormRowsHoldOneToThreeDistinctFields
+      - test: framework/entity.TestFormOnlySectionsCarryItemsHelpCollapsed
+      - test: framework/entity.TestDisplayRefusesEmptySection
+      - test: framework/entity.TestFormSectionsNestAtMostTwoDeep
+      - test: framework/entity.TestFormSectionKeysUnique
+      - test: framework/entity.TestFormFieldPlacedOnceAcrossMainAndSide
+  - id: page-sizes-valid
+    rule: Each page size is positive, listed once, and within Pagination.MaxListLimit when set.
+    enforced_by:
+      - test: framework/entity.TestDisplayPageSizesPositiveAndCapped
+      - test: framework/entity.TestDisplayRefusesDuplicatePageSizes
+  - id: validate-display-returns-define-panic
+    rule: ValidateDisplay returns a Define panic as its error.
+    enforced_by:
+      - test: framework/entity.TestSweepEntityValidateDisplayReturnsDefinePanic
+decisions:
+  - id: query-strings-parsed-at-registration
+    date: 2026-11-17
+    status: accepted
+    decision: A view's Where and Sort and a field's ShowWhen are parsed by App.Entity and framework.ValidateDisplay, not by this package.
+    rejected:
+      - option: Parse them in Validate.
+        why: framework/entity cannot import the query DSL.
+  - id: display-never-widens-the-api
+    date: 2026-11-17
+    status: accepted
+    decision: Display is screen hints only; Locked and Omit change what screens draw and submit, never what the API accepts.
+    rejected:
+      - option: Enforce Locked on the API write path.
+        why: It would make a screen hint a second access rule beside ReadOnly and AccessControl.
+    upholds: [required-field-stays-submittable]

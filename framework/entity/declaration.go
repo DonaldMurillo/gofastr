@@ -10,16 +10,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// EntityDeclaration is the grouped JSON/YAML shape used after app spec
-// decoding. The decoder also accepts flat shorthand keys and moves them into
-// Scope, Pagination, or Exposure before returning the declaration.
+// EntityDeclaration is the grouped JSON/YAML shape of an entity.
 type EntityDeclaration struct {
 	Name   string             `json:"name"`
 	Table  string             `json:"table,omitempty"`
 	Fields []FieldDeclaration `json:"fields"`
-	// PrimaryKey is the declaration mirror of EntityConfig.PrimaryKey,
-	// spelled `primary_key`: the key columns in order, each a declared
-	// field. Absent means the generated "id".
+	// PrimaryKey mirrors EntityConfig.PrimaryKey as primary_key.
 	PrimaryKey   []string               `json:"primary_key,omitempty"`
 	Relations    []Relation             `json:"relations,omitempty"`
 	Endpoints    []Endpoint             `json:"endpoints,omitempty"`
@@ -31,25 +27,17 @@ type EntityDeclaration struct {
 	Indices      []Index                `json:"indices,omitempty"`
 	Properties   map[string]any         `json:"properties,omitempty"`
 	Renames      map[string]string      `json:"renames,omitempty"`
-	// Display is the declaration mirror of EntityConfig.Display, spelled
-	// `display` under an entity with the snake_case keys documented on
-	// DisplayConfig. Unlike the other groups it has no flat shorthand:
-	// every key lives under display. Unknown keys inside it are refused.
+	// Display mirrors EntityConfig.Display; it has no flat shorthand.
 	Display *DisplayConfig `json:"display,omitempty"`
-	// States is the declaration mirror of EntityConfig.States, spelled
-	// `states` with the keys documented on StatesConfig. Unknown keys
-	// inside it are refused.
+	// States mirrors EntityConfig.States.
 	States *StatesConfig `json:"states,omitempty"`
 }
 
-// UnmarshalJSON accepts grouped declarations and the documented flat
-// shorthand. A flat key and its grouped key may both be present only when
-// their values match.
+// UnmarshalJSON accepts grouped declarations and the flat shorthand; a flat key
+// and its grouped key must agree. Numbers keep their exact digits.
 func (d *EntityDeclaration) UnmarshalJSON(data []byte) error {
 	type grouped EntityDeclaration
 	var decoded grouped
-	// Exact numbers: a field default or a property past 2^53 keeps its
-	// digits on the way to DDL, inserts and codegen.
 	if err := jsonexact.Unmarshal(data, &decoded); err != nil {
 		return err
 	}
@@ -117,9 +105,6 @@ func (d *EntityDeclaration) UnmarshalJSON(data []byte) error {
 			}
 		}
 	}
-	// read_scope is an exposure concern with its own flat spelling, exactly
-	// like access: a row filter deciding WHICH rows a caller may read, beside
-	// the permission deciding whether they may read the entity at all.
 	if d.Exposure != nil || declarationHasAny(root, "crud", "mcp", "public", "access", "read_scope") {
 		if d.Exposure == nil {
 			d.Exposure = &ExposureDeclaration{}
@@ -213,7 +198,7 @@ func declarationGroupForKey(key string) string {
 	}
 }
 
-// ScopeDeclaration is the JSON/YAML-friendly shape of ScopeConfig.
+// ScopeDeclaration is the JSON/YAML shape of ScopeConfig.
 type ScopeDeclaration struct {
 	SoftDelete     bool   `json:"soft_delete,omitempty"`
 	MultiTenant    bool   `json:"multi_tenant,omitempty"`
@@ -222,14 +207,14 @@ type ScopeDeclaration struct {
 	CrossOwnerRead string `json:"cross_owner_read,omitempty"`
 }
 
-// PaginationDeclaration is the JSON/YAML-friendly shape of PaginationConfig.
+// PaginationDeclaration is the JSON/YAML shape of PaginationConfig.
 type PaginationDeclaration struct {
 	CursorField  string   `json:"cursor_field,omitempty"`
 	CursorFields []string `json:"cursor_fields,omitempty"`
 	MaxListLimit int      `json:"max_list_limit,omitempty"`
 }
 
-// ExposureDeclaration is the JSON/YAML-friendly shape of ExposureConfig.
+// ExposureDeclaration is the JSON/YAML shape of ExposureConfig.
 type ExposureDeclaration struct {
 	CRUD      *bool                 `json:"crud,omitempty"`
 	MCP       bool                  `json:"mcp,omitempty"`
@@ -238,11 +223,7 @@ type ExposureDeclaration struct {
 	ReadScope *ReadScopeDeclaration `json:"read_scope,omitempty"`
 }
 
-// AccessDeclaration is the JSON/YAML-friendly mirror of AccessControl,
-// the per-operation RBAC permissions for a declared entity.
-// "read" covers both List and Get. The CRUD layer enforces these via
-// access.Can against the policy + roles in the request context (403 on
-// missing permission), exactly like a Go-declared EntityConfig.Access.
+// AccessDeclaration is the JSON/YAML shape of AccessControl.
 type AccessDeclaration struct {
 	Read   string `json:"read,omitempty"`
 	Create string `json:"create,omitempty"`
@@ -250,19 +231,13 @@ type AccessDeclaration struct {
 	Delete string `json:"delete,omitempty"`
 }
 
-// ReadScopeDeclaration is the JSON/YAML-friendly mirror of ReadScopeConfig —
-// the row filter narrowing WHICH rows a caller may read, as opposed to
-// Access, which decides whether they may read the entity at all. Unrestricted
-// names a permission that lifts the filter; empty means any caller with a
-// session reads every row while an anonymous caller gets the filter.
+// ReadScopeDeclaration is the JSON/YAML shape of ReadScopeConfig.
 type ReadScopeDeclaration struct {
 	Filter       []RowPredicateDeclaration `json:"filter,omitempty"`
 	Unrestricted string                    `json:"unrestricted,omitempty"`
 }
 
-// RowPredicateDeclaration is the JSON/YAML-friendly mirror of RowPredicate.
-// Op is one of "eq" (the default; empty means eq), "neq", "in", "not_in".
-// Single-value ops carry Value; "in"/"not_in" carry Values.
+// RowPredicateDeclaration is the JSON/YAML shape of RowPredicate.
 type RowPredicateDeclaration struct {
 	Field  string   `json:"field"`
 	Op     string   `json:"op,omitempty"`
@@ -289,7 +264,7 @@ type FieldDeclaration struct {
 	Many         bool     `json:"many,omitempty"`
 }
 
-// Config converts a declaration into an EntityConfig.
+// Config converts d into an EntityConfig sharing no slices, checking a declared primary key.
 func (d EntityDeclaration) Config() (EntityConfig, error) {
 	if d.Name == "" {
 		return EntityConfig{}, fmt.Errorf("name is required")
@@ -330,8 +305,6 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 				Update: d.Exposure.Access.Update, Delete: d.Exposure.Access.Delete,
 			}
 		}
-		// Deep-copy like Pagination.CursorFields: sharing the declaration's
-		// slice would let a later mutation of one silently move the other.
 		if d.Exposure.ReadScope != nil {
 			rs := &ReadScopeConfig{Unrestricted: d.Exposure.ReadScope.Unrestricted}
 			rs.Filter = append([]RowPredicate(nil), readScopePredicates(d.Exposure.ReadScope.Filter)...)
@@ -357,15 +330,9 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 		Indices:      d.Indices,
 		Properties:   d.Properties,
 		Renames:      d.Renames,
-		// Passed as a pointer; Define deep-copies it the way it copies the
-		// groups above, so the declaration and the config never share
-		// backing arrays.
-		Display: d.Display,
-		States:  d.States,
+		Display:      d.Display,
+		States:       d.States,
 	}
-	// A declared key is checked here, the way Define checks it, so a spec
-	// names its mistake at generate time instead of panicking at boot. A
-	// nil key is the "id" Define injects, which Fields does not declare.
 	if primaryKey != nil {
 		if err := cfg.keyColumnsErr(); err != nil {
 			return EntityConfig{}, err
@@ -377,9 +344,6 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 	return cfg, nil
 }
 
-// readScopePredicates converts the declaration shape into the config shape,
-// copying each Values slice so the declaration and the config never share
-// backing arrays.
 func readScopePredicates(preds []RowPredicateDeclaration) []RowPredicate {
 	if len(preds) == 0 {
 		return nil

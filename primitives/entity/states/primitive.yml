@@ -4,3 +4,61 @@ code:
   - framework/entity/states.go
 docs:
   - framework/docs/content/states.md
+on_change:
+  - A new name a generated surface mints for every entity (MCP tool, OpenAPI id, client method, CLI subcommand, JS member) goes into reservedTransitionKeys.
+invariants:
+  - id: strict-decode
+    rule: The states block and its moves refuse an unknown key.
+    enforced_by:
+      - test: framework/entity.TestStatesJSONStrictAndRoundTrip
+  - id: first-initial-is-the-default
+    rule: A state field with no Default takes the first Initial value as its Default, without changing the caller's fields.
+    enforced_by:
+      - test: framework/entity.TestDefineFillsStateDefault
+  - id: move-keys-normalize-injectively
+    rule: A move key is lowercase segments joined by single underscores, each led by a letter, so no two keys map to one generated identifier.
+    enforced_by:
+      - test: framework/entity.TestStatesBootRefusalsNameOffender
+  - id: reserved-move-keys
+    rule: A move key that a generated surface already uses for every entity is refused.
+    enforced_by:
+      - test: framework/entity.TestStatesBootRefusalsNameOffender
+      - test: cmd/gofastr/internal/appgen.TestJSResourceMembersReserved
+  - id: state-field-well-formed
+    rule: The state field is a declared Enum with a string Default, at least one initial value, and a Default among the initial values.
+    enforced_by:
+      - test: framework/entity.TestStatesBootRefusalsNameOffender
+      - test: framework/entity.TestValidateStatesRunsBootChecksOverDeclarations
+  - id: guarded-columns-not-managed
+    rule: The state field and stamps are never the primary key, the owner, tenant or soft-delete column, or an auto-generated column.
+    enforced_by:
+      - test: framework/entity.TestStatesBootRefusalsNameOffender
+      - test: framework/entity.TestSweepEntityStateFieldIsNotTheKey
+  - id: moves-well-formed
+    rule: Each move has a unique key, a non-empty From of distinct field values, a To among them, and a stamp that is a Date or Timestamp field other than the state field with no Default.
+    enforced_by:
+      - test: framework/entity.TestStatesBootRefusalsNameOffender
+  - id: guarded-lists-field-and-stamps
+    rule: Guarded returns the state field followed by each distinct stamp.
+    enforced_by:
+      - test: framework/entity.TestSweepEntityGuardedHoldsFieldAndStamps
+  - id: validate-states-returns-define-panic
+    rule: ValidateStates returns a Define panic as its error.
+    enforced_by:
+      - test: framework/entity.TestValidateStatesRunsBootChecksOverDeclarations
+decisions:
+  - id: strict-move-key-grammar
+    date: 2026-11-17
+    status: accepted
+    decision: Move keys follow transitionKeyGrammar, stricter than the display key grammar.
+    rejected:
+      - option: Reuse displayKeyGrammar.
+        why: The emitters PascalCase a key, so mark__paid and mark_paid, or a_1 and a1, collide.
+    upholds: [move-keys-normalize-injectively]
+  - id: state-override-needs-audit
+    date: 2026-11-17
+    status: accepted
+    decision: A direct write to a guarded column goes through crud.WithStateOverride, refused on an entity MarkAudited never marked.
+    rejected:
+      - option: Allow the override without an audit log.
+        why: The audit row is the override's only trail.
