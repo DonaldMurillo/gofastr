@@ -8,18 +8,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-// LayoutLayerScriptURL serves the dev layout layer: a script that draws
-// the page's layout layers, slots, outlets, areas, owned-style scopes,
-// islands and widgets as labeled outlines, and flags scroll boxes and
-// elements that run past the viewport. Alt+Shift+L toggles it; the choice
-// survives livereload's reloads.
+// LayoutLayerScriptURL serves the dev layout layer, a script that outlines
+// the page's layouts, slots, islands and widgets (Alt+Shift+L toggles it).
 const LayoutLayerScriptURL = "/__devlayout.js"
 
 //go:embed layoutlayer.js
 var layoutLayerJS []byte
 
-// LayoutLayerEnabled reports whether the layout layer should auto-wire:
-// the same gate as livereload, with GOFASTR_DEV_LAYOUT=0 as its opt-out.
+// LayoutLayerEnabled reports whether the layout layer should auto-wire: the
+// livereload gate with GOFASTR_DEV_LAYOUT as its opt-out.
 func LayoutLayerEnabled() bool {
 	return devFeatureEnabled("GOFASTR_DEV_LAYOUT")
 }
@@ -29,10 +26,8 @@ var (
 	layoutRegistered   = map[*router.Router]bool{}
 )
 
-// RegisterLayoutLayer installs the layout layer's script route on r and
-// adds the script to the dev injector, so pages uihost does not render
-// get it too. Idempotent, and a no-op when the host already serves the
-// URL itself.
+// RegisterLayoutLayer serves the layout layer on r and adds it to the HTML
+// injector. It is idempotent and yields to a host route at the URL.
 func RegisterLayoutLayer(r *router.Router) {
 	if r == nil {
 		return
@@ -51,8 +46,6 @@ func RegisterLayoutLayer(r *router.Router) {
 		}
 	}
 	r.Get(LayoutLayerScriptURL, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// The labels carry non-ASCII; a page with no charset would
-		// otherwise decode the script as windows-1252.
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write(layoutLayerJS)
@@ -60,9 +53,7 @@ func RegisterLayoutLayer(r *router.Router) {
 	addDevScript(r, LayoutLayerScriptURL)
 }
 
-// MaybeRegisterLayoutLayer calls RegisterLayoutLayer only when
-// LayoutLayerEnabled reports true. framework.NewApp calls it beside
-// MaybeRegisterLiveReload.
+// MaybeRegisterLayoutLayer calls RegisterLayoutLayer when LayoutLayerEnabled.
 func MaybeRegisterLayoutLayer(r *router.Router) {
 	if LayoutLayerEnabled() {
 		RegisterLayoutLayer(r)
