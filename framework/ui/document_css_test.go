@@ -14,7 +14,8 @@ func TestStandaloneDocumentIncludesOnlyRenderedComponentCSS(t *testing.T) {
 	if !strings.Contains(out, ".fui-button") || strings.Contains(out, ".fui-carousel") {
 		t.Fatalf("incorrect standalone component styles")
 	}
-	if strings.Index(out, ".fui-button") > strings.Index(out, "</head>") {
-		t.Fatal("component CSS was not placed in head")
+	css, head, end := strings.Index(out, ".fui-button"), strings.Index(out, "<head>"), strings.Index(out, "</head>")
+	if !strings.HasPrefix(out, "<!doctype html>") || css < head || css > end {
+		t.Fatalf("component CSS is not inside head: %.120q", out)
 	}
 }

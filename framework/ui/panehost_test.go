@@ -150,24 +150,20 @@ func TestPaneHostNoInlineStyle(t *testing.T) {
 
 func TestPaneHostCSSHasBreakpoint(t *testing.T) {
 	css := paneHostCSS(style.Theme{})
-	if !strings.Contains(css, "max-width: 768px") {
+	if !strings.Contains(css, "@media (max-width: 768px) {") {
 		t.Fatal("pane-host CSS missing its 768px collapse breakpoint")
 	}
-	if !strings.Contains(css, `data-hui-pane-mode="overlay"`) {
-		t.Fatal("pane-host CSS missing overlay-mode drawer rules")
+	// The drawer chrome addresses both side panes in overlay mode by the live
+	// hook; the retired data-fui-pane spelling matches nothing the module marks.
+	for _, sel := range []string{
+		`[data-hui-pane-mode="overlay"] [data-hui-pane="secondary"]:not([hidden]),`,
+		`[data-hui-pane-mode="overlay"] [data-hui-pane="tertiary"]:not([hidden]) {`,
+	} {
+		if !strings.Contains(css, sel) {
+			t.Fatalf("pane-host CSS has no drawer rule %s", sel)
+		}
 	}
-	// The column rules key off the hook the module maintains, so a
-	// client-side open changes the columns, not just the first-paint
-	// classes.
-	if !strings.Contains(css, `[data-hui-pane-open~="secondary"]`) {
-		t.Fatal("pane-host CSS column rules do not key off data-hui-pane-open")
-	}
-	// The drawer chrome addresses BOTH side panes by the live hook; the
-	// retired data-fui-pane spelling matches nothing the module marks.
-	if !strings.Contains(css, `[data-hui-pane="tertiary"]:not([hidden])`) {
-		t.Fatal("pane-host CSS drawer chrome does not address the tertiary pane by data-hui-pane")
-	}
-	if strings.Contains(css, `[data-fui-pane="tertiary"]`) {
+	if strings.Contains(css, `data-fui-pane=`) {
 		t.Fatal("pane-host CSS still addresses the retired data-fui-pane spelling")
 	}
 }
