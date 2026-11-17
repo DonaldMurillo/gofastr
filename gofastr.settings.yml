@@ -38,14 +38,9 @@ contracts:
         - core/openapi/handler.go
         # This package documents the rules, so its source quotes them.
         - framework/contracts/**
-        # The embed demo's `customerPage` is a THIRD-PARTY host page — the
-        # whole point of the example is a GoFastr surface rendering inside
-        # someone else's site. That page is not a GoFastr app and has no
-        # design system to compose; the rules stop at the frame boundary.
-        - examples/embed-demo/main.go
         # Diagnostic region overlay for the layout runtime's test lab,
         # not app UI. Shell structure stays in framework/ui components.
-        - examples/layoutlab/labskin.go
+        - internal/testapps/layoutlab/labskin.go
 
     GOFASTR1802: # rendering/hard-navigation
       exempt:
@@ -137,6 +132,7 @@ contracts:
         # before the app is serving, and showing the repository API for a
         # one-shot fixture load would teach the wrong shape.
         - examples/**
+        - internal/testapps/**
 
   coverage:
     # Route, permission, and entity coverage read
@@ -156,7 +152,7 @@ contracts:
       - name: cmd
         packages: ["cmd/**", "kiln/**"]
       - name: examples
-        packages: ["examples/**", "benchmarks/**"]
+        packages: ["examples/**", "internal/testapps/**", "benchmarks/**"]
       - name: battery
         packages: ["battery/**"]
       - name: framework

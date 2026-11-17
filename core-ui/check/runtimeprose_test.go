@@ -148,12 +148,13 @@ func TestLintRuntimeProseRepoIsClean(t *testing.T) {
 	if _, err := os.Stat(runtimeDir); err != nil {
 		t.Skipf("runtime dir not present: %v", err)
 	}
-	// The example apps are English demos and stay out, as they do for
-	// the rawtext analyzer; Meridian, the flagship, is held to it.
+	// The example apps and test apps are English demos and stay out, as
+	// they do for the rawtext analyzer; Meridian, the flagship, is held to it.
 	examples := filepath.Join(repoRoot, "examples") + string(filepath.Separator)
+	testapps := filepath.Join(repoRoot, "internal", "testapps") + string(filepath.Separator)
 	meridian := filepath.Join(examples, "meridian") + string(filepath.Separator)
 	roots := slices.DeleteFunc(runtimeLintRoots(t, runtimeDir), func(p string) bool {
-		return strings.HasPrefix(p, examples) && !strings.HasPrefix(p, meridian)
+		return strings.HasPrefix(p, testapps) || (strings.HasPrefix(p, examples) && !strings.HasPrefix(p, meridian))
 	})
 	res, err := LintRuntimeProse(roots...)
 	if err != nil {

@@ -64,7 +64,7 @@ func TestModuleCollisionIgnoresNonSubpaths(t *testing.T) {
 // stops colliding is a reader copying it out of the repo into a build error the
 // warning no longer covers.
 //
-//gofastr:test-reads examples/*/gofastr.yml
+//gofastr:test-reads examples/*/gofastr.yml internal/testapps/*/gofastr.yml
 func TestShippedExampleAppSpecsAreTheCollidingCase(t *testing.T) {
 	// ExampleAppSpecPaths, not ExampleAppSpecs, which SKIPS on an empty
 	// match. A skip reads as a pass, so a broken lookup would have retired

@@ -52,7 +52,7 @@ func meridianWithEnv(t *testing.T, bp appspec.AppSpec) string {
 // declares no middleware/plugins/helpers — the fixture guarding the inverse
 // claim was the fixture least able to observe it failing (#318).
 //
-//gofastr:test-reads examples/*/gofastr.yml
+//gofastr:test-reads examples/*/gofastr.yml internal/testapps/*/gofastr.yml
 func TestPack_SerializerRoundTrip(t *testing.T) {
 	matches := clitest.ExampleAppSpecPaths(t)
 	if len(matches) == 0 {

@@ -25,14 +25,14 @@ import (
 // stayed because it hand-constructs a moduleSlot for the second replica,
 // which is unexported supervisor state. Everything else moved.
 //
-// The suite drives the REAL demo module binary (examples/processmodule-demo)
+// The suite drives the REAL demo module binary (internal/testapps/processmodule-demo)
 // against the REAL supervisor + store + broker — not a re-exec'd test
 // binary. The demo is built into a temp dir once per test run; every test
 // spawns it as a genuine out-of-process child over moduleproto/stdio.
 
 // ---- demo binary (built once, shared across the run) ---------------------
 
-// demoPingTool mirrors examples/processmodule-demo/surface.PingTool EXACTLY.
+// demoPingTool mirrors internal/testapps/processmodule-demo/surface.PingTool EXACTLY.
 // The handshake byte-compares ModuleToolDigest(this) against the descriptor's
 // ToolDigest.SHA256, so the two definitions must not drift. If you change the
 // demo's tool, change this too.

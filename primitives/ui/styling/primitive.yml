@@ -26,6 +26,7 @@ invariants:
       - core-ui/
       - battery/
       - examples/
+      - internal/testapps/
       - cmd/gofastr/
   - id: scheme-is-declared-in-css
     rule: "A theme with a dark palette declares color-scheme: light dark on :root and light or dark under each forced scheme, a light-only theme declares light, and a scoped theme declares the scheme each of its blocks paints."

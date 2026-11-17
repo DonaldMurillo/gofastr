@@ -104,7 +104,7 @@ func TestGenerateWarnsOwnerScopedUnique(t *testing.T) {
 // The shipped app specs are what readers copy; none of them may carry
 // the shape this lint warns about.
 //
-//gofastr:test-reads examples/*/gofastr.yml
+//gofastr:test-reads examples/*/gofastr.yml internal/testapps/*/gofastr.yml
 func TestShippedAppSpecsScopeUnique(t *testing.T) {
 	paths := clitest.ExampleAppSpecPaths(t)
 	if len(paths) == 0 {

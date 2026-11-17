@@ -19,7 +19,7 @@ import (
 // example (framework/contracts/catalog.go:645) spelling out all three
 // attributes on the fixed literal. The repo's own mint sites either carry
 // the attributes or a //gofastr:allow(GOFASTR1404) reason
-// (core/middleware/csrf.go:231, examples/backoffice/main.go:221). The
+// (core/middleware/csrf.go:231). The
 // analyzer scans .go only.
 // Property: every Set-Cookie mint site the DOCS teach emits the attributes
 // its threat model requires. Compile-marked snippets are compiled

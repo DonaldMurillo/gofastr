@@ -42,6 +42,21 @@ func TestContentRowNavColumnIsTheSidebarLandmark(t *testing.T) {
 	}
 }
 
+// A Viewport row's aside scrolls on its own, so it is a tab stop: a
+// keyboard reaches and scrolls it even when its content holds nothing
+// focusable (axe scrollable-region-focusable). A default row's aside
+// grows with the page and adds no tab stop.
+func TestContentRowViewportAsideIsFocusable(t *testing.T) {
+	out := renderRow(t, ContentRowConfig{Viewport: true, Aside: render.Text("activity")}, render.Text("main"))
+	if !regexp.MustCompile(`<aside [^>]*tabindex="0"`).MatchString(out) {
+		t.Errorf("a Viewport aside should be focusable:\n%s", out)
+	}
+	out = renderRow(t, ContentRowConfig{Aside: render.Text("activity")}, render.Text("main"))
+	if regexp.MustCompile(`<aside [^>]*tabindex=`).MatchString(out) {
+		t.Errorf("a default aside should add no tab stop:\n%s", out)
+	}
+}
+
 // The end column is an <aside> labelled by AsideLabel (default
 // "Context"), and an absent Aside renders no landmark at all.
 func TestContentRowAsideLandmark(t *testing.T) {
