@@ -1,0 +1,168 @@
+primitive: embed.reach
+summary: The middleware that authenticates grant-carrying requests to app routes, and what a grant may reach.
+code:
+  - framework/embed/middleware.go
+  - framework/embed/reach.go
+  - framework/embed/phrases.go
+invariants:
+  - id: no-grant-passes-untouched
+    rule: Middleware passes a request without GrantHeader through unchanged, cookies included.
+    enforced_by:
+      - test: framework/embed.TestMiddlewarePassesThroughOrdinaryRequests
+      - test: framework/embed.TestOrdinaryRequestsKeepTheirCacheability
+  - id: bad-grant-is-refused
+    rule: Middleware answers 401 for a grant that does not verify and 503 when the host has no keys, never running the handler anonymously.
+    enforced_by:
+      - test: framework/embed.TestMiddlewareRefusesABadGrant
+      - test: framework/embed.TestSweepEmbedMiddlewareWithoutKeysAnswers503
+  - id: decide-on-the-routed-path
+    rule: Middleware decides reach on RoutedPath and answers 400 when a path segment decodes to a separator, a backslash, "." or "..", while ordinary escapes pass.
+    enforced_by:
+      - test: framework/embed.TestMiddlewareRefusesNonCanonicalPaths
+      - test: framework/embed.TestEncodedPathCannotOutrunTheRouter
+      - test: framework/embed.TestRoutedPathRefusesSeparatorDecoding
+      - test: framework/embed.TestRoutedPathKeepsOrdinaryEscapes
+  - id: reserved-prefixes-are-unreachable
+    rule: A route or Reach entry that overlaps a reserved prefix, dynamic segments included, fails boot or AddReservedPrefixes, "/" fails boot, and Middleware answers 403 for any path under a reserved prefix.
+    enforced_by:
+      - test: framework/embed.TestReachRefusesConfigurationsThatCannotBeRight
+      - test: framework/embed.TestAddReservedPrefixesRefusesASurfaceOverAMountedBattery
+      - test: framework/embed.TestDynamicRouteCannotCoverReserved
+      - test: framework/embed.TestRoutesOverlapEitherWay
+      - test: framework/embed.TestGrantRefusedAtReservedPrefix
+  - id: reach-is-default-closed
+    rule: A grant reaches only its surface's route subtree, the listed runtime endpoints and its declared Reach prefixes, on segment boundaries, and Middleware answers anything else 403 naming a Reach entry to add.
+    enforced_by:
+      - test: framework/embed.TestGrantReachesOnlyItsSurfaceAndDeclaredPrefixes
+      - test: framework/embed.TestMayReachBoundaryIsSegmentAligned
+      - test: framework/embed.TestReachMatchesTheCleanedPath
+      - test: framework/embed.TestReachRefusalNamesTheReachEntry
+      - test: framework/embed.TestDynamicSurfaceReach
+  - id: runtime-reach-is-a-list
+    rule: Of /__gofastr a grant reaches only the runtimeEndpoints and the subtrees of runtimePrefixes, never /__gofastr/session or another battery's route.
+    enforced_by:
+      - test: framework/embed.TestGrantRuntimeReachIsAllowlist
+  - id: widget-routes-need-the-surface-hook
+    rule: A grant reaches a widget's style.css, state or chrome route only when the SetWidgetReach hook says the widget is offered on its surface's page.
+    enforced_by:
+      - test: framework/embed.TestWidgetReachNeedsTheHook
+  - id: grant-is-the-only-identity
+    rule: Middleware deletes the Cookie, Authorization and X-API-Key headers of a grant-carrying request before the handler runs.
+    enforced_by:
+      - test: framework/embed.TestMiddlewareDiscardsCookiesOnAnEmbedRequest
+      - test: framework/embed.TestMiddlewareDropsBearerCredentials
+  - id: misordered-middleware-answers-500
+    rule: Middleware answers 500 to a grant-carrying request that already has a user, a tenant or a tenant id on its context.
+    enforced_by:
+      - test: framework/embed.TestMiddlewareRefusesToRunAfterAnAuthenticator
+  - id: grant-responses-are-private
+    rule: A grant-carrying response adds Vary GrantHeader and Cache-Control "private, no-store".
+    enforced_by:
+      - test: framework/embed.TestGrantResponsesAreNotCacheable
+  - id: request-ends-with-the-grant
+    rule: Middleware bounds the request context by the grant's expiry.
+    enforced_by:
+      - test: framework/embed.TestGrantExpiryBoundsTheRequestContext
+  - id: subject-comes-from-the-resolvers
+    rule: The request's tenant and user are only what ResolveTenant and Resolve return for the grant's subject, a typed nil user installs none, and a resolver error answers 403.
+    enforced_by:
+      - test: framework/embed.TestResolveTenantInstallsTheSubjectsTenant
+      - test: framework/embed.TestRequestCannotInfluenceTheResolvedTenant
+      - test: framework/embed.TestResolveTenantErrorFailsClosed
+      - test: framework/embed.TestWithoutResolveTenantNothingIsInstalled
+      - test: framework/embed.TestEmptyTenantIsNotAnError
+      - test: framework/embed.TestMiddlewareFailsClosedWhenTheSubjectVanishes
+      - test: framework/embed.TestTypedNilSubjectIsNotInstalledAsAUser
+  - id: held-requests-recheck-the-subject
+    rule: The principal check Middleware installs repeats both lookups and fails once either errors or the subject stops resolving to a user.
+    enforced_by:
+      - test: framework/embed.TestRecheckRepeatsTheSubjectLookups
+      - test: framework/embed.TestRecheckFailsOnTenantLookupError
+  - id: grant-scopes-are-held-scopes
+    rule: WithGrant installs the grant's scopes as the request's held scopes, an empty list included.
+    enforced_by:
+      - test: framework/embed.TestSweepEmbedWithGrantHoldsOnlyItsScopes
+  - id: require-scope-gates-only-embeds
+    rule: RequireScope answers 403 to a grant lacking the scope and to a grant header Middleware did not verify, and passes requests without a grant.
+    enforced_by:
+      - test: framework/embed.TestRequireScopeRefusesAGrantWithoutIt
+      - test: framework/embed.TestRequireScopeAdmitsADeclaredScope
+      - test: framework/embed.TestRequireScopeLetsOrdinaryTrafficPast
+      - test: framework/embed.TestRequireScopeRefusesAnUncheckedGrantHeader
+decisions:
+  - id: reach-default-closed
+    date: 2026-11-17
+    status: accepted
+    decision: A grant reaches nothing outside its surface, the runtime and its declared Reach.
+    rejected:
+      - option: Reach whatever the subject may reach unless the author gates it.
+        why: The framework itself mounts /mcp, the auth token routes and /admin, so no author could hold that property.
+    upholds: [reach-is-default-closed]
+  - id: reserved-prefixes-at-boot-and-request
+    date: 2026-11-17
+    status: accepted
+    decision: Framework-mounted prefixes are refused for Path and Reach at boot and again for every grant-carrying request.
+    rejected:
+      - option: Check only at boot.
+        why: A reserved route under a runtime prefix, or one reached some other way, would still see a grant.
+      - option: An allowlist alone.
+        why: An author whose embed fails widens the prefix, and the routes that matter most are ones they did not write.
+    upholds: [reserved-prefixes-are-unreachable]
+  - id: refuse-not-clean
+    date: 2026-11-17
+    status: accepted
+    decision: A path whose segments do not survive decoding is refused, and reach is decided on the segments the router dispatches on.
+    rejected:
+      - option: Decide on the cleaned, decoded path.
+        why: The router matches the escaped path, so %2e%2e reached /api/docs past a gate that saw /reports, and %2F reached an app's own /{slug}.
+    upholds: [decide-on-the-routed-path]
+  - id: runtime-endpoints-listed
+    date: 2026-11-17
+    status: accepted
+    decision: The runtime routes a grant reaches without Reach are a list next to the uihost mounts.
+    rejected:
+      - option: The whole /__gofastr subtree.
+        why: Batteries mount there too, and a grant for a surface with no Reach opened an rtc room as its subject.
+    upholds: [runtime-reach-is-a-list]
+  - id: invalid-grant-is-an-error
+    date: 2026-11-17
+    status: accepted
+    decision: A grant that fails verification or reach is refused, never downgraded to an anonymous request.
+    rejected:
+      - option: Fall through as anonymous.
+        why: An expired grant would become a silent logged-out render instead of an error the frame can act on.
+    upholds: [bad-grant-is-refused, reach-is-default-closed]
+  - id: refuse-a-misordered-install
+    date: 2026-11-17
+    status: accepted
+    decision: Middleware refuses with 500 a request on which an authenticator already installed an identity.
+    rejected:
+      - option: Document "install outermost" only.
+        why: Installed inside an authenticator it cannot remove what that authenticator put on the context, and the observed result was the cookie user's tenant under the grant's subject.
+    upholds: [misordered-middleware-answers-500]
+  - id: clear-identity-again-after-the-guard
+    date: 2026-11-17
+    status: accepted
+    decision: Middleware clears the user and tenants after the misorder guard although the guard makes it unreachable.
+    rejected:
+      - option: Drop the clears.
+        why: If the guard is ever wrong the cost is a cross-tenant read; no test can reach the clears while the guard holds.
+    upholds: [misordered-middleware-answers-500]
+  - id: scopes-gated-by-the-app
+    date: 2026-11-17
+    status: accepted
+    decision: Middleware installs the subject's full authority and RequireScope narrows routes the app names.
+    rejected:
+      - option: A framework route-to-scope map.
+        why: Only the app knows which of its routes serve which scope.
+      - option: RequireScope refuses requests without a grant.
+        why: It would break every first-party visitor of the same route.
+    upholds: [require-scope-gates-only-embeds]
+  - id: grant-in-a-header
+    date: 2026-11-17
+    status: accepted
+    decision: The frame sends its grant in GrantHeader on every credentialed request.
+    rejected:
+      - option: A cookie.
+        why: A cookie is ambient, which an embedded surface must not have.
+    upholds: [grant-is-the-only-identity]

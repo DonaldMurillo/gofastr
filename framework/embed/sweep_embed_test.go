@@ -155,3 +155,25 @@ func TestSweepEmbedSQLBurnWithoutRowsAffected(t *testing.T) {
 		t.Fatalf("burn whose row vanished = %q, replay=%v, err=%v; want spent", got, replay, err)
 	}
 }
+
+func TestSweepEmbedReplayReportsTheStoredExpiry(t *testing.T) {
+	h := testHost(t)
+	start := time.Now()
+	h.now = func() time.Time { return start }
+	tok, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := h.Exchange(context.Background(), tok, "https://acme.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.now = func() time.Time { return start.Add(5 * time.Second) }
+	again, err := h.Exchange(context.Background(), tok, "https://acme.com")
+	if err != nil || !again.Replay {
+		t.Fatalf("replay: %+v, %v", again, err)
+	}
+	if !again.Expires.Equal(first.Expires) {
+		t.Fatalf("replay expiry %v, want the stored grant's %v", again.Expires, first.Expires)
+	}
+}
