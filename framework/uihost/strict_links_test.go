@@ -535,13 +535,6 @@ func TestStrictChromeLinkToUIHostEndpointsPass(t *testing.T) {
 			},
 		},
 		{
-			name: "legacy agent.json alias",
-			href: "/.well-known/agent.json",
-			enabled: func(t *testing.T) []Option {
-				return append(strictSiteOptions(), WithAgentCard(AgentCardConfig{Name: "Demo", Description: "d"}))
-			},
-		},
-		{
 			name: "jwks",
 			href: "/.well-known/jwks.json",
 			enabled: func(t *testing.T) []Option {

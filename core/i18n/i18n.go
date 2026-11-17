@@ -618,7 +618,7 @@ func Negotiate(tr *Translator, r *http.Request, opts ...NegotiateOption) Locale 
 		}
 	}
 
-	// 2. X-Locale header: wins outright (backward-compatible), but is
+	// 2. X-Locale header: wins outright (the test and A/B override), but is
 	//    bounded exactly like a resolver value first. X-Locale is just as
 	//    attacker-controlled as a cookie and it short-circuits every
 	//    later check, so an unbounded value here becomes the Locale.Tag

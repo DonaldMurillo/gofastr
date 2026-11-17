@@ -100,7 +100,7 @@ const symbolManifestHeader = `# Symbol manifest for core-ui/runtime/frag/*.js â€
 #
 # This file is the gate's whole point: it is checked in, so DELETING a
 # declaration from a fragment shows up here as a removed line that a human
-# had to write. Regenerating runtime.js does not touch it.
+# had to write.
 #
 # Regenerate (only when the change to the fragments is intentional):
 #   GOFASTR_UPDATE_RUNTIME_SYMBOLS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeIsSymbolComplete
@@ -112,23 +112,15 @@ const symbolManifestHeader = `# Symbol manifest for core-ui/runtime/frag/*.js â€
 // indentation depth, and name in a checked-in manifest.
 //
 // What it catches: deleting or typo-renaming a declaration in any frag/*.js,
-// including declarations nested inside functions or callbacks. Regenerating
-// runtime.js with GOFASTR_UPDATE_RUNTIME_JS=1 does not launder that away, the
-// manifest is a separate artifact with a separate regeneration flag, so the
-// loss stays visible as a removed line in the diff that a reviewer has to
-// accept.
+// including declarations nested inside functions or callbacks. The manifest
+// is a checked-in artifact with its own regeneration flag, so the loss stays
+// visible as a removed line in the diff that a reviewer has to accept.
 //
 // What it does NOT catch, and never claimed to: deleting the BODY of a
 // declaration while keeping its name; object-literal method shorthand on the
 // namespace (the attr/doc parity gate covers those); or any semantic
 // regression. It is a "nothing vanished" check, not a behaviour check, the
 // chromedp e2e suite is what covers behaviour.
-//
-// Its previous reference was `git show HEAD:core-ui/runtime/runtime.js`, which
-// stopped meaning anything the moment runtime.js became a generated artifact
-// that TestComposedRuntimeMatchesOnDiskFile pins byte-for-byte to
-// composeFull(): the gate was comparing the composition against itself and
-// could not fail.
 func TestComposedRuntimeIsSymbolComplete(t *testing.T) {
 	have := fragmentSymbolIndex(t)
 	wantRaw, err := os.ReadFile(symbolManifestPath)
@@ -196,49 +188,6 @@ func manifestLines(s string) []string {
 		out = append(out, l)
 	}
 	return out
-}
-
-// TestComposedRuntimeMatchesOnDiskFile is the drift guard. The gate tests in
-// fragment_map_test.go, integrity_test.go and internal/treegate's
-// attrdoc_test.go scan `runtime.js` on DISK (os.ReadFile),
-// while RuntimeJS() serves the Go composition (composeFull â†’ minify). If the
-// two drift apart, the gates would be certifying content users never receive.
-//
-// This test fails the moment a fragment file is edited without re-assembling
-// runtime.js, keeping the on-disk canonical form honest with the actual
-// composition the binary ships.
-func TestComposedRuntimeMatchesOnDiskFile(t *testing.T) {
-	raw, err := composeFull()
-	if err != nil {
-		t.Fatalf("composeFull: %v", err)
-	}
-	onDisk, err := os.ReadFile("runtime.js")
-	if err != nil {
-		t.Fatalf("read runtime.js: %v", err)
-	}
-	if raw == string(onDisk) {
-		return
-	}
-	// Regenerate on request. Without this the only instruction a developer who
-	// edited a fragment gets is "re-assemble it somehow", there is no
-	// generator, no go:generate, and hand-copying the composition is absurd.
-	// The env var keeps the default behaviour a hard failure (CI must never
-	// silently rewrite a checked-in artifact) while giving the fix a name.
-	if os.Getenv("GOFASTR_UPDATE_RUNTIME_JS") != "" {
-		if err := os.WriteFile("runtime.js", []byte(raw), 0o644); err != nil {
-			t.Fatalf("rewrite runtime.js: %v", err)
-		}
-		t.Logf("runtime.js regenerated from frag/*.js (%d bytes) â€” re-run without "+
-			"GOFASTR_UPDATE_RUNTIME_JS to verify.", len(raw))
-		return
-	}
-	t.Errorf("composeFull() output does NOT match on-disk runtime.js â€” the gate "+
-		"tests scan a file that drifted from the served composition.\n"+
-		"  composeFull: %d bytes\n  runtime.js: %d bytes\n"+
-		"runtime.js is GENERATED from frag/*.js; edit the fragments, not this file.\n"+
-		"Regenerate with:\n"+
-		"  GOFASTR_UPDATE_RUNTIME_JS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeMatchesOnDiskFile",
-		len(raw), len(onDisk))
 }
 
 // TestEmbedCompositionOmitsNav is the structural half of "SPA navigation is
