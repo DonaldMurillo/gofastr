@@ -91,6 +91,11 @@ invariants:
       - test: framework/entityui.TestStatSumPassesAfterListHooks
       - test: framework/entityui.TestStatGroupsOrderAndCap
       - test: framework/entityui.TestCheckStatRefusesWhatCannotCompute
+  - id: last-updated-skips-missing-timestamps
+    rule: LastUpdated reads the newest updated_at after 1970 the caller may read, so a row with no updated_at, which Postgres sorts first in a descending read, never hides the newest date.
+    enforced_by:
+      - test: framework/entityui.TestLastUpdatedStaysInScope
+      - test: framework/entityui.TestSweepPGLastUpdatedSkipsNullTimestamps
 decisions:
   - id: scriptless-edit-through-an-entityui-route
     date: 2026-11-16
