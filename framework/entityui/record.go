@@ -49,11 +49,9 @@ func (u *UI) Create(entity string) *RecordBuilder {
 }
 
 // RecordTitle names one record the way its record screen's heading
-// does, for breadcrumbs and links drawn outside the screen. It reads
-// behind the record's own gate (scope, sign-in, RBAC and a Decider's
-// per-row answer), through the read hooks, and answers false for a
-// record the caller may not see, a missing id and an unknown entity
-// alike.
+// does, read behind the record's own gate and the read hooks. It answers
+// false for a record the caller may not see, a missing id and an unknown
+// entity alike.
 func (u *UI) RecordTitle(ctx context.Context, entityName, id string) (string, bool) {
 	m, err := u.meta(entityName)
 	if err != nil || !canReadRecord(ctx, m.ch, id) {
@@ -67,21 +65,9 @@ func (u *UI) RecordTitle(ctx context.Context, entityName, id string) (string, bo
 }
 
 // RecordHidden reports whether the caller's read hooks keep record id
-// out of sight. A screen that draws a record from a stored copy of its
-// values (an audit row's sides, SnapshotTitle) asks it first: printing
-// that copy for a row the hooks hide shows what the record screen
-// answers not-found for.
-//
-// A stored record is hidden when the hooked read misses it: the
-// BeforeGet chain hides the live row from its record screen, or the
-// BeforeList chain hides the trashed one from the trash view. A record
-// that is no longer stored (hard-deleted or purged) leaves no row to
-// check the hooks' clauses against, so it is hidden from every caller
-// whose BeforeGet or BeforeList hooks append a clause
-// (crud.CrudHandler.ReadHooksRestrict), the rule the _events feed applies
-// to a hard delete. A failed read and a hook error hide the record: it
-// fails closed. An entity with no Before hooks, and an unknown entity,
-// hide nothing.
+// out of sight; a screen that draws a record from a stored copy of its
+// values asks it first. A failed read or hook error hides the record. An
+// entity with no Before hooks, and an unknown entity, hide nothing.
 func (u *UI) RecordHidden(ctx context.Context, entityName, id string) bool {
 	m, err := u.meta(entityName)
 	if err != nil || m.ch.Hooks == nil ||
@@ -110,12 +96,9 @@ func (u *UI) RecordHidden(ctx context.Context, entityName, id string) bool {
 	return m.ch.ReadHooksRestrict(ctx, id)
 }
 
-// SnapshotTitle names a record from a stored copy of its values, an
-// audit row's old or new side, the way RecordTitle names a live one: its
-// title fields, else the entity's singular name. A masked title field
-// is left out. It answers false for an entity this UI does not draw. It
-// reads only the related records a relation title part names, so a
-// deleted record still has a name.
+// SnapshotTitle names a record from a stored copy of its values (an
+// audit row's side) the way RecordTitle names a live one, masked title
+// fields left out. It answers false for an entity this UI does not draw.
 func (u *UI) SnapshotTitle(ctx context.Context, entityName string, row map[string]any) (string, bool) {
 	m, err := u.meta(entityName)
 	if err != nil {
@@ -130,21 +113,15 @@ type RecordMatch struct {
 	Title string
 }
 
-// maxRecordMatches caps one SearchRecords answer.
 const maxRecordMatches = 20
 
-// searchPages bounds how many pages of limit rows one SearchRecords
-// reads looking past rows the caller may not open.
 const searchPages = 5
 
-// SearchRecords finds up to limit records (at most 20) whose
-// SearchFields match q, the way the list's search box does, named as
-// RecordTitle names them, in primary-key order. It reads behind the
-// list's gate and each row's own, through the read hooks; the limit
-// counts records the caller may open, and the read pages past refused
-// rows for at most searchPages pages of limit rows. It answers nothing
-// for an entity without SearchFields, an empty q, a caller who may not
-// list the entity, an unknown entity and a failed read alike.
+// SearchRecords finds up to limit records (at most 20) the caller may
+// open whose SearchFields match q, titled as RecordTitle titles them, in
+// primary-key order. It answers nothing for an entity without
+// SearchFields, an empty q, a caller who may not list the entity, an
+// unknown entity and a failed read alike.
 func (u *UI) SearchRecords(ctx context.Context, entityName, q string, limit int) []RecordMatch {
 	q = strings.TrimSpace(q)
 	m, err := u.meta(entityName)
@@ -163,8 +140,6 @@ func (u *UI) SearchRecords(ctx context.Context, entityName, q string, limit int)
 			return nil
 		}
 		for _, row := range rows {
-			// A Decider may allow the list and refuse one row: a match
-			// names only a record whose own screen would open.
 			id := m.rowID(row)
 			if id == "" || !canReadRecord(ctx, m.ch, id) {
 				continue
@@ -179,8 +154,6 @@ func (u *UI) SearchRecords(ctx context.Context, entityName, q string, limit int)
 			break
 		}
 	}
-	// Named in one batch: a relation title part is one read for every
-	// match, not one per match.
 	for i, t := range u.rowTitles(ctx, m, found, 0) {
 		if t == "" {
 			t = m.singular(ctx)
@@ -222,15 +195,12 @@ func (b *RecordBuilder) Related(entities ...string) *RecordBuilder {
 
 // RelatedAt names one related entity whose list hangs off base instead
 // of the path Related derives. An empty base draws that list with no
-// links and no New (ListBuilder.NoLinks, NoCreate): the entity has no screen of its
-// own on this app.
+// links and no New.
 func (b *RecordBuilder) RelatedAt(entity, base string) *RecordBuilder {
 	b.related = append(b.related, relatedList{name: entity, base: base, fixed: true})
 	return b
 }
 
-// relatedList is one Related tab list: the entity, and the base its
-// record links hang off when fixed (RelatedAt) rather than derived.
 type relatedList struct {
 	name  string
 	base  string
@@ -242,17 +212,14 @@ type relatedList struct {
 func (b *RecordBuilder) Activity() *RecordBuilder { b.activity = true; return b }
 
 // API turns on the API tab: the record as the JSON API's GET returns
-// it, the entity's own REST path with the methods its exposure allows,
-// its MCP tool names, and a link to the API's entity index. Off by
-// default. The tab reads nothing the record screen could not.
+// it, the entity's REST paths and methods, and its MCP tool names. Off
+// by default.
 func (b *RecordBuilder) API() *RecordBuilder { b.apiTab = true; return b }
 
-// Override turns on the status override: a form, inside a disclosure,
-// that writes the state field directly through crud.WithStateOverride
-// for a caller holding <entity>:override_state exactly (a Wildcard
-// grant and a back office's elevation never satisfy it). Off by
-// default, and drawn only for an entity with enforced states on an app
-// that keeps an audit log; UI.OverrideHandler serves its posts.
+// Override turns on the status override: a form that writes the state
+// field directly for a caller holding <entity>:override_state exactly.
+// Off by default; drawn only for an entity with enforced states on an app
+// that keeps an audit log. UI.OverrideHandler serves its posts.
 func (b *RecordBuilder) Override() *RecordBuilder { b.override = true; return b }
 
 // Delete and Duplicate turn on those record actions.
@@ -261,8 +228,7 @@ func (b *RecordBuilder) Duplicate() *RecordBuilder { b.dup = true; return b }
 
 // Undo puts Undo on the toast a Delete leaves, for an entity with
 // Scope.SoftDelete (a no-op otherwise) and a caller who may update the
-// record: it restores the record through the host's RestoreHandler and
-// returns to the list. Off by default.
+// record. Off by default.
 func (b *RecordBuilder) Undo() *RecordBuilder { b.undo = true; return b }
 
 // Prefill sets starting values on a create form (a foreign key when New

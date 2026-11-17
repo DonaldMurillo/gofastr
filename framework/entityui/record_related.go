@@ -10,22 +10,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// The Related tab. Every entity the builder names (the admin passes
-// every entity it exposes; an app page names its own) draws one list
-// of that entity's rows whose relation field points at this record,
-// built by calling the list builder's public API: List(other).
-// Key(other).Where(fk, id).Base(otherBase). Each list passes that
-// entity's own read gate, so a related entity the caller may not read
-// is omitted entirely, never drawn as a failed slot.
-//
-// The list's own New pre-fills the foreign key: a list carries each
-// Where pin into the create screen's ?prefill_<field>= convention, so
-// the link is <otherBase>/create?prefill_<fk>=<id>, and the screen reads
-// every ?prefill_<field> whose field a create may set. A query-param
-// prefill (not a POSTed value, not the bare field name) is the
-// convention because the create URL is public surface: a bare
-// ?<fk>=<id> would let a crafted link collide with any future param,
-// and the prefill_ prefix names its intent.
 func (b *RecordBuilder) relatedTab(ctx context.Context, m *meta, base string) render.HTML {
 	var lists []render.HTML
 	for _, rl := range b.related {
@@ -43,7 +27,6 @@ func (b *RecordBuilder) relatedTab(ctx context.Context, m *meta, base string) re
 			Ctx:     ctx,
 		}, list.RenderCtx(ctx)))
 	}
-	// The stack owns the rhythm between the lists.
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL}, lists...)
 }
 
@@ -64,10 +47,6 @@ func (b *RecordBuilder) hasRelatedTab(ctx context.Context, m *meta, base string)
 	return false
 }
 
-// relatedListFor builds the list the Related tab draws for rl: the other
-// entity's rows pinned to this record, keyed by its name, with its
-// section heading. Its status distinguishes a refused read from a failed
-// entity, relation or metadata resolution.
 func (b *RecordBuilder) relatedListFor(ctx context.Context, m *meta, rl relatedList, base string) (*ListBuilder, *meta, relatedListStatus) {
 	other, err := b.ui.entityFor(rl.name)
 	if err != nil {
@@ -89,8 +68,6 @@ func (b *RecordBuilder) relatedListFor(ctx context.Context, m *meta, rl relatedL
 	if !canReadRelated(ctx, om.ch) {
 		return nil, nil, relatedListRefused
 	}
-	// The list's own header names the section, one level below the
-	// record's title.
 	list := b.ui.List(other.GetName()).
 		Key(other.GetName()).
 		Heading(om.plural(ctx), 2).
@@ -99,7 +76,6 @@ func (b *RecordBuilder) relatedListFor(ctx context.Context, m *meta, rl relatedL
 		list = list.Where(pin.Field, pin.Value)
 	}
 	if otherBase == "" {
-		// No screen of its own: rows without links and no New.
 		list = list.NoLinks().NoCreate()
 	} else {
 		list = list.Base(otherBase)
@@ -107,13 +83,6 @@ func (b *RecordBuilder) relatedListFor(ctx context.Context, m *meta, rl relatedL
 	return list, om, relatedListReady
 }
 
-// relatedCount is the Related tab's count: the rows its lists draw,
-// summed. Each list resolves its read the way it does to draw (the
-// relation pins, its default view, and the filter, search and facets
-// the URL sets on it), and counts through its entity's read gate and
-// scope, so a row the caller could not see, or one the list hides, is
-// never counted; an entity that refuses or fails adds nothing, and
-// none readable is "".
 func (b *RecordBuilder) relatedCount(ctx context.Context, m *meta, base string) string {
 	total, any := 0, false
 	for _, rl := range b.related {
@@ -139,11 +108,6 @@ func (b *RecordBuilder) relatedCount(ctx context.Context, m *meta, base string) 
 	return i18n.Number(ctx, total)
 }
 
-// relatedBase derives the related entity's list path from this
-// record's base: the last segment (this entity's name) is replaced by
-// the related entity's name, the admin's /admin/entities/<entity>
-// shape. A page whose bases do not follow that shape passes its own
-// Related lists rather than relying on the derivation.
 func relatedBase(ctx context.Context, base, otherName string) string {
 	if base == "" || base == "/" {
 		return "/" + otherName

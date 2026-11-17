@@ -2,3 +2,237 @@ primitive: entityui.record
 summary: The record screen - its form, panels, related rows, files, activity, the API tab, the state steps and override, and the scriptless save.
 code:
   - framework/entityui/record*.go
+invariants:
+  - id: record-gate-before-any-read
+    rule: The record screen asks the per-record gate before any read or hook, and a denied id answers the same 404 body a missing id does.
+    enforced_by:
+      - test: framework/entityui.TestRecordDeniedRunsNoHook
+      - test: framework/entityui.TestRecordDeciderDeniedRowNotFoundIdentical
+      - test: framework/entityui.TestRecordNotFoundSets404
+      - test: framework/entityui.TestRecordAnonymousRefusedDefaultPosture
+  - id: edit-prefills-unhooked-displays-hooked
+    rule: Edit inputs prefill from the unhooked read, since they round-trip on submit, and every read-only value, kind callback and the API tab's JSON show the hooked read.
+    enforced_by:
+      - test: framework/entityui.TestRecordEditPrefillSkipsReadHooks
+      - test: framework/entityui.TestKindDetailSeesHookedRow
+      - test: framework/entityui.TestAPITabShowsRecordAsTheGETReturnsIt
+  - id: masked-field-is-write-only
+    rule: A field an AfterGet hook rewrites on the record (its stored and hooked reads differ) never renders its stored value in the edit form; a masked enum or bool is a select with an unchanged choice, and any other masked field is a non-required input in a Replace form of its own that the record form never serializes.
+    enforced_by:
+      - test: framework/entityui.TestDeclaredMaskIsWriteOnly
+      - test: framework/entityui.TestMaskedTextReplaceForm
+      - test: framework/entityui.TestMaskedTextSurvivesUnrelatedSave
+      - test: framework/entityui.TestMaskedRelationReplaceForm
+      - test: framework/entityui.TestSweepRecordMaskedRequiredRelationIsNotRequired
+  - id: duplicate-copies-only-what-the-caller-reads
+    rule: A ?duplicate= create form prefills only from a record the per-record gate and the hooked read both return, copies only fields whose stored and hooked values agree, and answers not-found when the hooked read fails or returns nothing.
+    enforced_by:
+      - test: framework/entityui.TestSweepRecordDuplicateBehindRecordGate
+      - test: framework/entityui.TestSweepRecordDuplicateLeavesMaskedFieldBlank
+      - test: framework/entityui.TestSweepRecordDuplicateRefusedOnFailedHookedRead
+      - test: framework/entityui.TestDuplicateFailsClosedOnHook
+  - id: duplicate-blanks-unique-fields
+    rule: A duplicate leaves blank every Unique field, the primary key and every field of a unique column index, except a relation in an index that also holds a non-relation field.
+    enforced_by:
+      - test: framework/entityui.TestDuplicateBlanksUniqueIndex
+      - test: framework/entityui.TestDuplicateBlanksRelationIndex
+      - test: framework/entityui.TestCompositeDuplicateBlanksKey
+  - id: create-starts-at-defaults
+    rule: A create form starts each field a create may set at its declared Default, and a Prefill, a ?prefill_<field> or a duplicate overrides it.
+    enforced_by:
+      - test: framework/entityui.TestCreateStartsAtDefaults
+  - id: create-returns-to-its-origin
+    rule: A create opened as an intercepted drawer navigates back to the page under it, and otherwise to the list base.
+    enforced_by:
+      - test: framework/entityui.TestCreateReturnsToItsOrigin
+  - id: writes-follow-write-access
+    rule: The record screen draws a write (the edit form, the header Save, a move, an app action, Duplicate, Delete, Undo) only for a caller the matching route would let make it; any other caller gets the fields as read-only values with no form.
+    enforced_by:
+      - test: framework/entityui.TestWriteControlsFollowWriteAccess
+      - test: framework/entityui.TestSweepRecordHeaderSaveNeedsUpdate
+      - test: framework/entityui.TestUndoNeedsUpdatePermission
+      - test: framework/entityui.TestRecordActionPermissionAndFailure
+  - id: move-needs-its-exact-permission
+    rule: A move that names a Permission draws only for a caller holding it exactly on this record, so a Wildcard role without it sees no button.
+    enforced_by:
+      - test: framework/entityui.TestSweepRecordMoveNeedsItsExactPermission
+  - id: danger-goes-in-the-menu
+    rule: A danger move or app action draws only as a menu item behind a confirm, and while the header draws Save no other header button is primary.
+    enforced_by:
+      - test: framework/entityui.TestDangerMoveConfirmsFromMenu
+      - test: framework/entityui.TestRecordSaveIsTheOnePrimary
+  - id: record-form-is-multipart
+    rule: The record form and its Replace forms post multipart/form-data, the body the CRUD route reads natively without the runtime.
+    enforced_by:
+      - test: framework/entityui.TestRecordFormIsMultipart
+  - id: untouched-save-keeps-stored-values
+    rule: Saving the edit form untouched writes back every stored value as stored, whatever its type, NULLs and stale enum values included, and an optional enum offers an empty choice that clears it.
+    enforced_by:
+      - test: framework/entityui.TestUntouchedEditSaveKeepsValues
+      - test: framework/entityui.TestUntouchedSaveKeepsStoredShapes
+      - test: framework/entityui.TestNullBoolDrawsUnsetChoice
+      - test: framework/entityui.TestPortedFormBoolSubmitsTrueFalse
+      - test: framework/entityui.TestRequiredEnumKeepsStaleValue
+      - test: framework/entityui.TestOptionalEnumClears
+      - test: framework/entityui.TestDecimalStepFollowsFinerValue
+      - test: framework/entityui.TestMoneyStepAdmitsStoredValue
+      - test: framework/entityui.TestTimestampInputIsUTC
+      - test: framework/entityui.TestTimestampKeepsMilliseconds
+      - test: framework/entityui.TestColorPickerOnlyForSimpleColor
+      - test: framework/entityui.TestSweepRecordDateInputValueIsDateOnly
+  - id: input-checks-match-the-server
+    rule: A field's Pattern reaches the input wrapped to match anywhere, as the server's unanchored match does, a pattern with inline flags stays server-side only, and an int input's bounds clamp to the integers a browser holds exactly.
+    enforced_by:
+      - test: framework/entityui.TestRecordFormCarriesSchemaValidation
+      - test: framework/entityui.TestIntBoundClampsHugeBounds
+  - id: state-field-is-the-badge
+    rule: The state field and its stamps are never appended to the form; the state shows as the header's badge, and a ShowWhen on the state field is decided on the server against the stored value.
+    enforced_by:
+      - test: framework/entityui.TestRecordStateIsTheBadge
+      - test: framework/entityui.TestRecordFormShowWhen
+  - id: unreadable-relation-renders-muted
+    rule: A relation value whose target the caller may not read through the related entity's gate renders muted, never its id or title, in read-only values, the picker's label and before any kind callback, and its Open link draws only when the caller's hooked read returns the row.
+    enforced_by:
+      - test: framework/entityui.TestRecordRefusedRelationIsMuted
+      - test: framework/entityui.TestRelationLabelSkipsUnreachable
+      - test: framework/entityui.TestRelationLabelSkipsRefusedRow
+      - test: framework/entityui.TestKindRelationRefusedBeforeCallback
+      - test: framework/entityui.TestLockedRelationRefusesUnreachable
+      - test: framework/entityui.TestRelationOpenRefusedRecord
+      - test: framework/entityui.TestRelationOpenDeniedRow
+  - id: picker-answers-as-the-caller
+    rule: PickerHandler answers only for an editable relation field, past the host entity's read gate and the related entity's, lists only rows the related record gate allows, and answers a failed read with a 500, never an empty list.
+    enforced_by:
+      - test: framework/entityui.TestPickerHandlerReadGates
+      - test: framework/entityui.TestPickerHandlerHostGate
+      - test: framework/entityui.TestPickerRefusesTokenWithoutScope
+      - test: framework/entityui.TestPickerReportsReadFailures
+      - test: framework/entityui.TestSweepRecordPickerSkipsRowTheGateDenies
+      - test: framework/entityui.TestSweepRecordPickerRefusesLockedRelation
+  - id: callbacks-run-as-the-caller
+    rule: Every app callback the record screen runs (a tab, a side panel, a replaced body, a kind's Input) and the component it returns get the caller's context with any elevation removed.
+    enforced_by:
+      - test: framework/entityui.TestTabBuildIsNotElevated
+      - test: framework/entityui.TestSidePanelBuildIsNotElevated
+      - test: framework/entityui.TestReplacedBodiesAreNotElevated
+      - test: framework/entityui.TestSweepRecordKindInputIsNotElevated
+  - id: copy-link-trusts-only-trusted-proxies
+    rule: The record's copyable link takes its scheme from X-Forwarded-Proto only when the TCP peer is a trusted proxy and the value is exactly http or https.
+    enforced_by:
+      - test: framework/entityui.TestCopyLinkForwardedProtoTrust
+      - test: framework/entityui.TestCopyLinkRefusesForgedScheme
+  - id: api-tab-names-the-public-api
+    rule: The API tab and Copy API URL name the entity's own REST base, never a write base WithAPIPath swapped in, and the tab reads nothing the record screen did not.
+    enforced_by:
+      - test: framework/entityui.TestAPITabNamesRestBaseAndMethods
+      - test: framework/entityui.TestSweepRecordCopyAPIURLIsThePublicREST
+      - test: framework/entityui.TestAPITabRefusesAnonymous
+  - id: root-base-links-one-slash
+    rule: A record link under a base of "/" starts with one slash, never "//", which a browser reads as a host.
+    enforced_by:
+      - test: framework/entityui.TestRootBaseLinksOneSlash
+  - id: activity-hides-what-the-read-hides
+    rule: The Activity tab and Changes leave out NoQuery fields and every field the caller's AfterGet hooks rewrite on that record, found by diffing its stored and hooked reads and by probing its empty fields as the caller without elevation; a failed probe hides every probed field, and a record the caller's hooked read refuses shows no change.
+    enforced_by:
+      - test: framework/entityui.TestActivityHidesHookMaskedField
+      - test: framework/entityui.TestActivityHidesMaskOfNonEmptyOnly
+      - test: framework/entityui.TestActivityProbeFailureHidesProbed
+      - test: framework/entityui.TestRecordActivityHidesMaskedAndHidden
+      - test: framework/entityui.TestChangesAsksHooksAboutTheRealRecord
+      - test: framework/entityui.TestChangesDeletedRecordFallsBackToProbe
+      - test: framework/entityui.TestSweepRecordActivityHidesFieldMaskedOnlyOnThisRecord
+      - test: framework/entityui.TestSweepRecordChangesHideFieldMaskedOnlyOnThisRecord
+      - test: framework/entityui.TestSweepRecordHookProbeRunsAsCaller
+  - id: change-cache-asks-once-per-record
+    rule: Under WithChangeCache the read hooks run once per record across every Changes call on that context.
+    enforced_by:
+      - test: framework/entityui.TestChangesRunsHooksOncePerRecord
+  - id: empty-update-reads-as-a-save
+    rule: An update entry that changed no field the caller may see reads as a save, never as "made changes" over an empty list.
+    enforced_by:
+      - test: framework/entityui.TestActivityEmptyUpdateReadsAsSave
+  - id: override-needs-every-gate
+    rule: The override form and OverrideHandler need the builder's opt-in, enforced states, an audit log, the exact <entity>:override_state capability on the record (a Wildcard role and elevation never satisfy it) checked before any read, and the caller's read and update access; a record the caller may not read answers 404.
+    enforced_by:
+      - test: framework/entityui.TestOverrideFormDrawnForCapableCaller
+      - test: framework/entityui.TestOverrideFormNeedsStatesAndAudit
+      - test: framework/entityui.TestOverrideNoCapabilityRefused
+      - test: framework/entityui.TestOverrideWildcardRefused
+      - test: framework/entityui.TestOverrideElevationIsNotCapability
+      - test: framework/entityui.TestOverrideWriteRefusalStatus
+      - test: framework/entityui.TestSweepRecordOverrideNeedsEnforcedStates
+      - test: framework/entityui.TestSweepRecordOverrideNeedsRead
+      - test: framework/entityui.TestSweepRecordOverrideFormNeedsExactCapability
+  - id: override-writes-through-crud
+    rule: OverrideHandler refuses a cross-site post, a plain post whose back is not a same-origin path, a state the field does not declare and a reason over 500 characters, and writes through crud UpdateOne under WithStateOverride and WithReadHooks, answering 409 when no audit log records the entity.
+    enforced_by:
+      - test: framework/entityui.TestOverrideCrossSiteRefused
+      - test: framework/entityui.TestOverrideRefusesForeignBack
+      - test: framework/entityui.TestOverrideUnknownStateRefused
+      - test: framework/entityui.TestOverrideReasonTooLongRefused
+      - test: framework/entityui.TestOverrideReasonCapIsCharacters
+      - test: framework/entityui.TestOverrideWriteRunsBeforeGet
+      - test: framework/entityui.TestOverrideNoAuditLogRefused
+  - id: related-tab-omits-refused-entities
+    rule: The Related tab omits an entity the caller may not read, never drawing it as a failed slot, and draws a RelatedAt list with an empty base without row links or New.
+    enforced_by:
+      - test: framework/entityui.TestRelatedRefusedSectionsAreOmitted
+      - test: framework/entityui.TestRelatedMixedAccessKeepsReadableSections
+      - test: framework/entityui.TestRelatedRefusesUnreachable
+      - test: framework/entityui.TestRelatedAtEmptyBaseDrawsNoLinks
+  - id: file-href-stays-safe
+    rule: A stored Image or File value links only as an http(s) URL with a host, a same-origin path or a storage key under FilesURL, never another scheme, a protocol-relative URL or a key with an empty, "." or ".." segment.
+    enforced_by:
+      - test: framework/entityui.TestUploadFileHrefRefusesEscapes
+      - test: framework/entityui.TestSweepRecordFileHrefRefusesProtocolRelative
+  - id: steps-only-over-their-list
+    rule: The drawer's previous and next records draw only when the record opens as a drawer over its own entity's list at Base.
+    enforced_by:
+      - test: framework/entityui.TestDrawerStepsOnlyOverTheList
+  - id: record-lookups-read-behind-the-gate
+    rule: RecordTitle and SearchRecords read behind each record's own gate and the read hooks, and RecordHidden hides a record whose read fails and a purged record from a caller whose read hooks restrict.
+    enforced_by:
+      - test: framework/entityui.TestRecordTitleRefusesDeniedRow
+      - test: framework/entityui.TestSearchRecordsPassesReadGates
+      - test: framework/entityui.TestSearchRecordsReadsPastRefusedRows
+      - test: framework/entityui.TestSweepRecordHiddenFailsClosedOnReadError
+      - test: battery/admin.TestAuditPurgedRecordFollowsHooks
+decisions:
+  - id: masked-text-replaces-in-its-own-form
+    date: 2026-11-17
+    status: accepted
+    decision: A masked text-like field changes only through a Replace form of its own, joined by the form attribute, instead of a blank input in the record form.
+    rejected:
+      - option: A blank input in the record form that means keep the stored value.
+        why: CRUD stores "" for String and Text, so every unrelated save would clear the column.
+      - option: Prefill the input with the hooked (masked) value.
+        why: The mask would round-trip and overwrite the stored value.
+    upholds: [masked-field-is-write-only]
+  - id: prefill-by-query-prefix
+    date: 2026-11-17
+    status: accepted
+    decision: A related list's New prefills the foreign key through ?prefill_<field>=<value> on the create screen.
+    rejected:
+      - option: A bare ?<field>=<value> query parameter.
+        why: The create URL is public surface, and a bare field name would collide with any future parameter.
+      - option: A POSTed value.
+        why: New is a link, and a link cannot post.
+    upholds: [create-starts-at-defaults]
+  - id: tab-is-a-url
+    date: 2026-11-17
+    status: accepted
+    decision: Each record tab is its own URL (?tab=<key>), only the active tab's body is built, and an unknown key shows Edit.
+    rejected:
+      - option: Build every tab and switch on the client.
+        why: It runs every tab's reads on each view and keeps the open tab off the URL.
+    upholds: [uihost/in-page-state-stays-on-its-route]
+  - id: override-is-opt-in-and-audited
+    date: 2026-11-17
+    status: accepted
+    decision: The status override is off unless RecordBuilder.Override turns it on, and refuses an entity no audit log records, since the audit row is its only trail.
+    rejected:
+      - option: Fall back to an unaudited write.
+        why: An override outside the declared moves with no trail cannot be reviewed.
+      - option: Accept a Wildcard role as the capability.
+        why: A superuser role is not a decision to let someone skip the state rules.
+    upholds: [override-needs-every-gate, override-writes-through-crud]
