@@ -25,9 +25,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
-// render draws the record or create screen: the read gates, the header
-// with its actions, and the tabbed body (Edit, Related, extension tabs,
-// Activity). A bad name anywhere in the builder fails this slot.
 func (b *RecordBuilder) render(ctx context.Context) (render.HTML, error) {
 	m, err := b.ui.meta(b.entity)
 	if err != nil {
@@ -36,14 +33,9 @@ func (b *RecordBuilder) render(ctx context.Context) (render.HTML, error) {
 	if err := b.check(m); err != nil {
 		return "", err
 	}
-	// The app's translator rides the context: every chrome string the
-	// screen draws (and every phrase an extension tab draws with
-	// Phrase.Text(ctx)) resolves through it.
 	ctx = i18n.WithTranslator(ctx, m.tr)
 	base := b.base
 	if base == "" {
-		// The create screen's path ends in one segment, a record's in
-		// one per key column.
 		n := len(m.keys)
 		if b.id == "" {
 			n = 1
@@ -56,9 +48,6 @@ func (b *RecordBuilder) render(ctx context.Context) (render.HTML, error) {
 	return b.recordScreen(ctx, m, base)
 }
 
-// check validates the builder's own names against the entity: Omit,
-// Tab keys, Related entities and a Form that replaces Display.Form. A
-// bad name fails the slot, the way entityui.New fails the app at boot.
 func (b *RecordBuilder) check(m *meta) error {
 	for _, name := range b.omit {
 		if _, ok := m.field(name); !ok {
@@ -96,9 +85,6 @@ func (b *RecordBuilder) check(m *meta) error {
 	return nil
 }
 
-// checkRelated reports whether name is a registered entity holding a
-// relation field that points at this one: the Related tab lists that
-// entity's rows whose foreign key holds this record's id.
 func (b *RecordBuilder) checkRelated(m *meta, name string) error {
 	other, err := b.ui.entityFor(name)
 	if err != nil {
@@ -110,10 +96,6 @@ func (b *RecordBuilder) checkRelated(m *meta, name string) error {
 	return nil
 }
 
-// relationTo finds other's relation that points at target: a BelongsTo
-// on the child side or a HasMany/HasOne declared on the parent, both
-// carry the foreign key columns on other's table. A key of several
-// columns has one foreign-key column per key column, in key order.
 func relationTo(other *entity.Entity, target string) (rel entity.Relation, fks []string) {
 	for _, r := range other.Config.Relations {
 		if r.Entity == target && len(r.ForeignKey) > 0 {
@@ -123,9 +105,6 @@ func relationTo(other *entity.Entity, target string) (rel entity.Relation, fks [
 	return entity.Relation{}, nil
 }
 
-// relatedPins pairs each foreign-key column with its value from the
-// record's id: the id itself for one column, its JoinKey parts for
-// several. An id that does not split into that many parts pins nothing.
 func relatedPins(fks []string, id string) ([]filter.Predicate, bool) {
 	parts, err := entity.SplitKey(id, len(fks))
 	if err != nil {
@@ -138,11 +117,6 @@ func relatedPins(fks []string, id string) ([]filter.Predicate, bool) {
 	return pins, true
 }
 
-// requestBase is the record's default base path: the current request
-// path with its last n segments removed, so /admin/entities/invoices/42
-// bases at /admin/entities/invoices, and so does
-// /admin/entities/enrollments/s1/c1 under a two-column key. A trailing
-// slash, which the screen router matches the same, is no segment.
 func requestBase(ctx context.Context, n int) string {
 	r := appui.RequestFromContext(ctx)
 	if r == nil || r.URL == nil || r.URL.Path == "" || r.URL.Path == "/" {
@@ -155,15 +129,10 @@ func requestBase(ctx context.Context, n int) string {
 	return p
 }
 
-// under is tail under base. A list or record mounted at the root bases
-// at "/", and base + "/" + tail would start "//", which a browser reads
-// as a host.
 func under(base, tail string) string {
 	return strings.TrimSuffix(base, "/") + "/" + tail
 }
 
-// currentURL is the page's own URL, path and query, the destination a
-// transition's success navigates back to so the move is visible.
 func currentURL(ctx context.Context) string {
 	r := appui.RequestFromContext(ctx)
 	if r == nil || r.URL == nil {
@@ -172,28 +141,17 @@ func currentURL(ctx context.Context) string {
 	return r.URL.RequestURI()
 }
 
-// recordScreen draws one record: gates, header, tabs.
 func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) (render.HTML, error) {
 	if !canRead(ctx, m.ch) {
 		return accessDenied(ctx, m.plural(ctx), m.plural(ctx), 1), nil
 	}
-	// The per-record gate is asked before any read, so a denied id
-	// runs no query and no hook; it answers the same not-found body a
-	// missing id does.
 	if !canReadRecord(ctx, m.ch, b.id) {
 		return m.notFound(ctx), nil
 	}
-	// Hooked (getRow): the header and every display value show what an
-	// AfterGet redaction shows, never the stored column.
 	row, err := m.getRow(ctx, b.id)
 	if err != nil || row == nil {
 		return m.notFound(ctx), nil
 	}
-	// Deliberately unhooked: the edit form's inputs
-	// round-trip on submit, so prefilling from a redacted read would
-	// write the mask over the stored value. The diff of the two reads
-	// also names the columns a hook rewrites, which the form renders
-	// write-only (see maskedFields).
 	raw, rerr := m.getRowUnhooked(ctx, b.id)
 	if rerr != nil || raw == nil {
 		return m.notFound(ctx), nil
@@ -220,15 +178,9 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 		return "", err
 	}
 	header := b.header(ctx, m, row, base, active == "edit" && canUpdate(ctx, m, b.id))
-	// The override panel rides below the tabs, not inside one: it is an
-	// operator action on the record, not a view of it.
 	return render.Join(header, body, b.overridePanel(ctx, m, row, base)), nil
 }
 
-// notFound is the one answer for a missing id and an id the caller may
-// not see: never say which of the two it was. The page answers 404
-// with it (app.SetStatus), so a crawler, a script and the client's
-// screen cache read the body's verdict, not a 200.
 func (m *meta) notFound(ctx context.Context) render.HTML {
 	appui.SetStatus(ctx, http.StatusNotFound)
 	return ui.EmptyState(ui.EmptyStateConfig{
@@ -238,11 +190,6 @@ func (m *meta) notFound(ctx context.Context) render.HTML {
 	})
 }
 
-// header draws the record's page header: the title, the state badge,
-// when it was created and last updated, and the action row (moves, app
-// actions, the menu, and Save when the Edit tab drew a form). Drawn as
-// an intercepted drawer it sits under the drawer's bar: close, the
-// record's path, copy link.
 func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any, base string, save bool) render.HTML {
 	title := b.ui.recordTitle(ctx, m, row)
 	cfg := ui.PageHeaderConfig{Title: title, Subtitle: stampLine(ctx, m, row)}
@@ -266,15 +213,11 @@ func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any,
 	return render.Join(drawerBar(ctx, prev, next), ui.PageHeader(cfg))
 }
 
-// inDrawer reports whether the record renders as an intercepted drawer.
 func inDrawer(ctx context.Context) bool {
 	as, ok := appui.OverlayFromContext(ctx)
 	return ok && as == appui.ScreenDrawer
 }
 
-// drawerBar is the intercepted drawer's bar: close, the path, the
-// previous and next record when either is given, copy link, open as
-// page. The full page draws none; its breadcrumbs place it.
 func drawerBar(ctx context.Context, prev, next string) render.HTML {
 	if !inDrawer(ctx) {
 		return ""
@@ -283,9 +226,6 @@ func drawerBar(ctx context.Context, prev, next string) render.HTML {
 	return ui.DrawerBar(ui.DrawerBarConfig{Path: p, CopyURL: absoluteURL(ctx), PageURL: p, Prev: prev, Next: next, Ctx: ctx})
 }
 
-// saveButton is the form's submit, drawn in the header: it names the
-// record form by the form attribute, so it submits from outside it,
-// and Mod+S clicks it. It reads as idle until the form has edits.
 func saveButton(ctx context.Context, m *meta, create bool) render.HTML {
 	return ui.Button(ui.ButtonConfig{
 		Ctx:             ctx,
@@ -298,12 +238,8 @@ func saveButton(ctx context.Context, m *meta, create bool) render.HTML {
 	})
 }
 
-// recordFormID is the record form's id, which the header's Save names.
 func recordFormID(m *meta) string { return "eui-" + m.name + "-form" }
 
-// stampLine is "Created Aug 2, 2026 · Updated Sep 2, 2026" from the
-// entity's timestamp columns, each part only when its column is shown
-// and set.
 func stampLine(ctx context.Context, m *meta, row map[string]any) string {
 	var parts []string
 	for _, s := range []struct {
@@ -321,13 +257,8 @@ func stampLine(ctx context.Context, m *meta, row map[string]any) string {
 	return strings.Join(parts, " · ")
 }
 
-// actions are the header's moves, app actions and menu. With save the
-// header also draws Save, its one primary action, so a move or action
-// declared primary draws as secondary beside it.
 func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any, title, base string, save bool) []render.HTML {
 	var out []render.HTML
-	// A danger move or action never sits beside Save as a header
-	// button: it goes in the menu, above Delete, behind a confirm.
 	var danger []ui.MenuItem
 	if m.states != nil && canUpdate(ctx, m, b.id) {
 		current := cell(m.rowValue(row, m.states.Field))
@@ -335,10 +266,6 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 			if t.System || !slices.Contains(t.From, current) {
 				continue
 			}
-			// The checks the transition route runs: the entity's update
-			// access (above), then the move's Permission by name, so a
-			// caller who lacks it (a Wildcard role included) never sees
-			// its button.
 			if t.Permission != "" && !access.CanResourceExact(ctx, access.Permission(t.Permission), access.Ref{Type: m.name, ID: b.id}) {
 				continue
 			}
@@ -358,9 +285,6 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 						"from": m.valueLabel(ctx, m.states.Field, current),
 						"to":   m.valueLabel(ctx, m.states.Field, t.To),
 					}),
-					// The move's label alone can read as the dismiss
-					// button ("Cancel" beside "Cancel"); naming the
-					// record makes the accept unmistakable.
 					Accept: i18nui.EntityMoveAccept.Text(ctx, map[string]any{"action": label, "entity": m.noun(ctx, false)}),
 					Danger: true,
 				})
@@ -379,10 +303,6 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 	return out
 }
 
-// appActions are the Extension actions the caller may run on this
-// record, each posting the record scope to the bulk route: the same
-// route, gates and audit as a bulk run over one record. A danger action
-// comes back as a menu item behind a confirm, the rest as buttons.
 func (b *RecordBuilder) appActions(ctx context.Context, m *meta, title string, save bool) (out []render.HTML, danger []ui.MenuItem) {
 	if !m.hasAPI {
 		return nil, nil
@@ -419,14 +339,7 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta, title string, s
 	return out, danger
 }
 
-// menu is the header's icon-only menu named for the record, the list
-// row menu's shape: Copy link, Duplicate where turned on, the danger
-// moves and actions behind their confirms, and Delete as a confirmed
-// RPC that lands on the list. The other moves and app actions stay
-// buttons beside it. Nothing to offer draws nothing.
 func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, danger []ui.MenuItem) render.HTML {
-	// A drawer's bar carries the copy link, and so does a Panel page's
-	// header; otherwise the full page's menu does.
 	var span render.HTML
 	var items []ui.MenuItem
 	if !inDrawer(ctx) && !b.panelPage(ctx) {
@@ -455,7 +368,6 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, d
 	}
 	if b.delete && canDelete(ctx, m, b.id) {
 		del := deleteAction(ctx, m, b.id, base, b.undo)
-		// Delete joins the danger group when there is one.
 		if len(items) > 0 && len(danger) == 0 {
 			items = append(items, ui.MenuItem{Separator: true})
 		}
@@ -472,10 +384,6 @@ func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, d
 	}))
 }
 
-// copyLink is the record's absolute URL as a hidden span and the menu
-// row that copies it. The span carries the kernel's visually-hidden
-// utility class: present for the copy module, absent to the eye. No
-// request on the context draws neither.
 func (b *RecordBuilder) copyLink(ctx context.Context) (render.HTML, []ui.MenuItem) {
 	abs := absoluteURL(ctx)
 	if abs == "" {
@@ -486,9 +394,6 @@ func (b *RecordBuilder) copyLink(ctx context.Context) (render.HTML, []ui.MenuIte
 		[]ui.MenuItem{{Label: i18nui.EntityCopyLink.Text(ctx), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.CopyCopied.Text(ctx)}}}
 }
 
-// copyAPIURL is the record's REST address on this origin as a hidden
-// span and the menu row that copies it: only for an entity whose REST
-// routes mounted, and only with a request on the context.
 func (b *RecordBuilder) copyAPIURL(ctx context.Context, m *meta) (render.HTML, []ui.MenuItem) {
 	base, ok := b.ui.restBase(m.e)
 	if !ok {
@@ -503,8 +408,6 @@ func (b *RecordBuilder) copyAPIURL(ctx context.Context, m *meta) (render.HTML, [
 		[]ui.MenuItem{{Label: i18nui.EntityCopyAPIURL.Text(ctx), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.CopyCopied.Text(ctx)}}}
 }
 
-// absoluteURL is the request's absolute address without its query:
-// the record's shareable link. No request on the context is "".
 func absoluteURL(ctx context.Context) string {
 	r := appui.RequestFromContext(ctx)
 	if r == nil {
@@ -514,14 +417,6 @@ func absoluteURL(ctx context.Context) string {
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	// X-Forwarded-Proto is a header any client can send, so it counts
-	// only when the TCP peer is a trusted proxy: the
-	// AppConfig.TrustedProxies list the App stamps on every request
-	// context (clientip.WithTrusted). Even then only an exact
-	// "http"/"https" is honored: a value like "https://evil.example/p"
-	// would put another origin in the link the reader copies. The rule
-	// is the one framework/wellknown.go, uihost's resolveBaseURL and
-	// pluginhost's requestOrigin apply (#669).
 	if clientip.TrustedFrom(r.Context()).ContainsAddr(r.RemoteAddr) {
 		if p := r.Header.Get("X-Forwarded-Proto"); p == "http" || p == "https" {
 			scheme = p
@@ -530,7 +425,6 @@ func absoluteURL(ctx context.Context) string {
 	return scheme + "://" + r.Host + r.URL.Path
 }
 
-// requestOrigin is the request's scheme and host, absoluteURL's prefix.
 func requestOrigin(ctx context.Context) string {
 	r := appui.RequestFromContext(ctx)
 	if r == nil {
@@ -539,18 +433,13 @@ func requestOrigin(ctx context.Context) string {
 	return strings.TrimSuffix(absoluteURL(ctx), r.URL.Path)
 }
 
-// tab is one entry of the record's tab strip.
 type tab struct {
 	key   string
 	label string
-	// count is the strip's badge on this tab; empty draws none.
 	count string
 	build func() (render.HTML, error)
 }
 
-// tabbedBody draws the tab strip (query-param navigation) and the
-// active tab's body, and names the active tab. Only the active tab's
-// body is built.
 func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[string]any, masked map[string]bool, base string) (render.HTML, string, error) {
 	editTab := tab{key: "edit", label: i18nui.EntityTabEdit.Text(ctx), build: func() (render.HTML, error) {
 		return b.editTab(ctx, m, raw, row, masked, base), nil
@@ -562,8 +451,6 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 		}})
 	}
 	rec := Record{ID: b.id, Values: row}
-	// Extension tabs, then the builder's own. A panicking, erroring or
-	// empty tab fails that tab alone, never the page.
 	for _, xt := range slices.Concat(m.ext.Tabs, b.tabs) {
 		key, build := xt.Key, xt.Build
 		label := key
@@ -597,7 +484,6 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 		}})
 	}
 
-	// An unknown ?tab= shows Edit: the strip always names a real tab.
 	active := 0
 	if want := appui.QueryFromContext(ctx).Get("tab"); want != "" {
 		for i, t := range tabs {
@@ -608,9 +494,6 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 		}
 	}
 
-	// Each tab is its own URL (?tab=key on this record's path), so only
-	// the active tab's body is built and drawn: a tab switch is a
-	// navigation the client router intercepts.
 	items := make([]ui.TabNavItem, len(tabs))
 	for i, t := range tabs {
 		items[i] = ui.TabNavItem{
@@ -634,8 +517,6 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 	), tabs[active].key, nil
 }
 
-// currentURLPath is the request path with its query stripped: the page
-// a tab link re-opens with its own ?tab= param.
 func currentURLPath(ctx context.Context) string {
 	r := appui.RequestFromContext(ctx)
 	if r == nil || r.URL == nil || r.URL.Path == "" {
@@ -644,9 +525,6 @@ func currentURLPath(ctx context.Context) string {
 	return r.URL.Path
 }
 
-// renderComponent draws an extension component with ctx when it takes
-// one, and through Render when it does not. ctx is the caller's, with
-// any elevation removed.
 func renderComponent(ctx context.Context, c component.Component) render.HTML {
 	if cc, ok := c.(component.ContextComponent); ok {
 		return cc.RenderCtx(ctx)
@@ -654,11 +532,6 @@ func renderComponent(ctx context.Context, c component.Component) render.HTML {
 	return c.Render()
 }
 
-// checkForm re-runs the form's boot shape against this page's entity:
-// every field names a visible one, a row holds one to three distinct
-// fields, a field appears once across Main and Side, and sections nest
-// at most two deep. App.Entity already refused this shape at boot; a
-// builder-supplied form gets the same answer here, as a slot failure.
 func checkForm(m *meta, f *entity.EntityForm) error {
 	seen := map[string]string{}
 	var walk func(items []entity.FormItem, depth int) error
@@ -715,12 +588,6 @@ func checkForm(m *meta, f *entity.EntityForm) error {
 	return walk(f.Side, 0)
 }
 
-// deleteAction is a row's or a record's Delete: the confirm, a toast
-// naming what went, and back to back (the list). A refusal (a row other
-// records still reference) toasts the server's message instead of
-// ending in silence. Under undo, on a soft-deleting entity whose record
-// the caller may update, the toast carries Undo: it restores the record
-// and returns to back, and the restore handler's answer is its toast.
 func deleteAction(ctx context.Context, m *meta, id, back string, undo bool) interactive.Action {
 	vars := map[string]any{"entity": m.singular(ctx)}
 	del := interactive.Delete(m.api + "/" + m.idPath(id)).
@@ -737,9 +604,6 @@ func deleteAction(ctx context.Context, m *meta, id, back string, undo bool) inte
 	return del
 }
 
-// deleteConfirm is the dialog a Delete opens: it names the entity, says
-// whether the delete is final (a soft-deleting entity's record can be
-// restored) and answers in the danger variant.
 func deleteConfirm(ctx context.Context, m *meta) interactive.Confirm {
 	vars := map[string]any{"entity": m.noun(ctx, false)}
 	msg := i18nui.EntityDeleteConfirm

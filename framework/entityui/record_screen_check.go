@@ -8,34 +8,19 @@ import (
 )
 
 // ScreenHost is the optional Host half that answers whether the app's UI
-// routes serve a path. known is false when the host cannot tell (no UI
-// host mounted), and the list then stays quiet. framework.App's host
-// asks the mounted uihost's screen router.
+// routes serve a path. known is false when the host cannot tell.
 type ScreenHost interface {
 	HasScreen(path string) (has, known bool)
 }
 
-// maxCheckedBases caps the bases the check remembers. A list with no
-// Base takes the request path as its base, so on a dynamic route
-// (/u/:name/orders) callers choose new bases; past the cap the check
-// stops instead of growing the set and the log for them.
 const maxCheckedBases = 256
 
-// recordScreens is the state the missing-record-screen check keeps: the
-// host's ScreenHost half, captured at New because WithAPIPath wraps the
-// host in a type that drops it, and the bases already checked, shared by
-// every copy of the UI. Screens register at boot, so one answer per base
-// holds for the process and later renders skip the router match.
 type recordScreens struct {
 	host    ScreenHost
 	checked sync.Map
 	n       atomic.Int64
 }
 
-// checkRecordScreen warns once per base when a list's row links lead
-// nowhere. A list draws <base>/<id> for every row, and until the app
-// registers a record screen there, each link 404s with nothing in the
-// log (#503).
 func (u *UI) checkRecordScreen(ctx context.Context, entityName, base, idPath string) {
 	if u.screens == nil || u.screens.host == nil || idPath == "" {
 		return
