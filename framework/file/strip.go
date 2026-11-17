@@ -15,77 +15,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/internal/jpegcost"
 )
 
-// StripMetadata returns a [ProcessOption] that removes privacy-bearing
-// metadata from stored image originals: EXIF (GPS coordinates, camera
-// serials, embedded thumbnails), XMP, and equivalent segments — JPEG
-// APPn (bar the Adobe APP14 colour marker) and COM segments, PNG tEXt/zTXt/iTXt/eXIf chunks, and WebP EXIF
-// and XMP chunks, plus any trailer after the format's end marker (JPEG
-// EOI, PNG IEND, the WebP RIFF size). A non-trivial EXIF orientation is applied first, so
-// the stripped original still displays upright: JPEG and still PNG
-// re-encode with the orientation baked into the pixels; WebP (no encoder
-// at this layer) and animated PNG (no APNG encoder) are spliced, every
-// frame kept, with an orientation-only EXIF chunk instead.
-//
-// It is OFF by default: originals are stored byte-for-byte, metadata
-// included. That default is deliberate and pinned by
-// TestProcessFileField_KeepsEXIFByDefault; see the uploads doc page.
-//
-// Stripping is gated on the sniffed content, never the filename, and
-// runs before [WithImageDeriver], so renditions are derived from the
-// stripped bytes too. A JPEG, PNG, or WebP whose structure cannot be
-// walked fails the upload rather than being stored unstripped
-// (fail-closed: the caller asked that this object not keep its
-// metadata). Other formats pass through unchanged.
+// StripMetadata removes EXIF, XMP, comments and trailers from JPEG, PNG and
+// WebP originals before they are stored, keeping them upright. A supported
+// image that cannot be walked fails the upload.
 func StripMetadata() ProcessOption {
 	return func(c *processConfig) { c.stripMetadata = true }
 }
 
-// stripJPEGQuality is the re-encode quality used when an EXIF
-// orientation has to be baked into a JPEG's pixels. Stripping without a
-// rotation is a pure segment splice and never re-encodes; only the
-// rotate path pays this, so it is set high enough that the visible cost
-// of one re-encode generation stays small.
 const stripJPEGQuality = 95
 
-// stripMaxPixels caps the decoded raster the strip path may materialise,
-// matching framework/image.DefaultMaxPixels (64 MP). This package cannot
-// import that one (the layering rule that keeps image codecs out of every
-// CRUD binary), so the value is local and pinned to the pipeline's by
-// TestStripMetadataBomb* (which computes the bomb against
-// fwimage.DefaultMaxPixels). Without it, a metadata-carrying PNG or an
-// orientation-baked JPEG decoded here with no DecodeConfig guard let a
-// ~300 KB upload force a ~256 MiB raster per request.
 const stripMaxPixels int64 = 64 * 1024 * 1024
 
-// stripMaxJPEGScans caps the scans a JPEG may carry before the
-// orientation bake decodes it, matching framework/image.DefaultMaxJPEGScans
-// (local for the same layering reason as stripMaxPixels, and pinned to it
-// by TestStripMetadataRefusesJPEGScanBomb). A progressive scan of one
-// end-of-band run costs about ten bytes and makes the decoder walk every
-// block again, so the pixel cap alone let a few KB buy seconds of CPU.
-// Every scan starts at an FF DA marker and entropy data never holds one,
-// so counting the pair cannot miss a scan.
 const stripMaxJPEGScans = 64
 
-// stripMaxJPEGScanPixels caps scans × pixels, the block walks the bake's
-// decode costs, matching framework/image.DefaultMaxJPEGScanPixels (ten
-// walks of a frame at the pixel cap; local for the same layering reason,
-// pinned by TestStripMetadataBudgetsJPEGScansByPixels). The flat scan cap
-// alone let 64 scans of a 64 MP frame cost ~2.8 s of decode.
 const stripMaxJPEGScanPixels = 10 * stripMaxPixels
 
-// stripMaxProgressiveJPEGBytes caps the coefficients the bake's decode
-// keeps for a progressive JPEG, matching framework/image.
-// DefaultMaxProgressiveJPEGBytes (local for the same layering reason,
-// pinned by TestStripMetadataRefusesProgressiveJPEGOverMemoryBudget).
-// image/jpeg holds 256 bytes per block of every component for the whole
-// frame, so a few hundred bytes of 3-component 8192×8192 progressive JPEG
-// allocated ~1 GB inside the pixel cap.
 const stripMaxProgressiveJPEGBytes int64 = 512 << 20
 
-// checkStripPixelCap refuses header dimensions whose decoded raster would
-// exceed stripMaxPixels, before any pixel decode runs. Overflow-safe by
-// division (a multiply of two near-uint32 dimensions wraps int64).
 func checkStripPixelCap(w, h int) error {
 	if w <= 0 || h <= 0 {
 		return errors.New("strip: invalid image dimensions in header")
@@ -96,15 +42,7 @@ func checkStripPixelCap(w, h int) error {
 	return nil
 }
 
-// stripImageMetadata strips metadata segments from data when it is a
-// JPEG, PNG, or WebP, returning the replacement bytes. A nil result
-// with a nil error means "not a supported image type / nothing changed":
-// the caller keeps the original bytes. Everything else is an error and
-// the upload must be refused, the caller opted into stripping, so
-// storing the bytes unstripped is not an outcome.
 func stripImageMetadata(data []byte) ([]byte, error) {
-	// Gate on content, never the filename: a file named photo.jpg whose
-	// bytes are not a JPEG is not this function's business.
 	switch http.DetectContentType(data) {
 	case "image/jpeg":
 		return stripJPEG(data)
@@ -116,24 +54,8 @@ func stripImageMetadata(data []byte) ([]byte, error) {
 	return nil, nil
 }
 
-// adobeAPP14Len is the APP14 "Adobe" payload the decoder reads: the
-// "Adobe" tag, version, two flag words and the colour transform byte.
 const adobeAPP14Len = 12
 
-// stripJPEG removes every APPn (EXIF, XMP, ICC, Photoshop IRB, …) and
-// COM segment from a JPEG and drops any post-EOI trailer, without
-// re-encoding: the scan data is copied verbatim, so nothing that did
-// not carry metadata is re-compressed. The one APPn kept is the Adobe
-// APP14 colour-transform marker, cut to its 12 decoder-read bytes:
-// without it a CMYK JPEG no longer decodes. If the EXIF orientation tag is
-// 2..8 the spliced stream is decoded, rotated into the upright frame,
-// and re-encoded once (quality stripJPEGQuality), because dropping the
-// tag without baking it would leave the photo sideways.
-//
-// The walk is strict: any structural violation (marker expected but
-// absent, segment length past the end of the file) is an error rather
-// than a best-effort copy, since a partial splice could silently keep
-// the segment the caller asked to lose.
 func stripJPEG(data []byte) ([]byte, error) {
 	if len(data) < 4 || data[0] != 0xFF || data[1] != 0xD8 || data[2] != 0xFF {
 		return nil, errors.New("jpeg: missing SOI marker")
@@ -144,10 +66,6 @@ func stripJPEG(data []byte) ([]byte, error) {
 	i, inScan, scans := 2, false, 0
 	for i < len(data) {
 		if inScan {
-			// Entropy-coded scan data: copy bytes until the next
-			// marker. 0xFF is legal here only as byte stuffing
-			// (0xFF00), an RST marker, or the marker that ends the
-			// scan (progressive files repeat this per scan).
 			if data[i] != 0xFF {
 				out = append(out, data[i])
 				i++
@@ -162,30 +80,26 @@ func stripJPEG(data []byte) ([]byte, error) {
 				i += 2
 				continue
 			}
-			// A real marker ends the scan; fall through to marker
-			// handling at i.
 			inScan = false
 		}
 		if i+1 >= len(data) || data[i] != 0xFF {
 			return nil, fmt.Errorf("jpeg: expected marker at offset %d", i)
 		}
 		marker := data[i+1]
-		// Stand-alone markers carry no length field.
 		if marker == 0x00 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7) {
 			out = append(out, data[i], data[i+1])
 			i += 2
 			continue
 		}
 		if marker == 0xFF {
-			// Fill byte before a marker: skip one 0xFF and stay put.
 			i++
 			continue
 		}
-		if marker == 0xD9 { // EOI: done, any trailer after it is dropped
+		if marker == 0xD9 {
 			out = append(out, data[i], data[i+1])
 			break
 		}
-		if marker == 0xD8 { // embedded SOI (shouldn't happen at top level)
+		if marker == 0xD8 {
 			out = append(out, data[i], data[i+1])
 			i += 2
 			continue
@@ -201,32 +115,25 @@ func stripJPEG(data []byte) ([]byte, error) {
 		payload := data[segLenAt+2 : segLenAt+segLen]
 		switch {
 		case marker == 0xEE && len(payload) >= adobeAPP14Len && string(payload[:5]) == "Adobe":
-			// APP14 Adobe: the colour transform the decoder needs to
-			// read a four-component (CMYK/YCCK) JPEG, and to tell RGB
-			// from YCbCr in a three-component one. It is not metadata
-			// about the photo, so it survives, rewritten to the 12
-			// bytes the decoder reads so nothing rides in a trailer.
 			out = append(out, 0xFF, 0xEE, 0x00, adobeAPP14Len+2)
 			out = append(out, payload[:adobeAPP14Len]...)
-		case marker >= 0xE0 && marker <= 0xEF: // APPn: metadata, dropped
+		case marker >= 0xE0 && marker <= 0xEF:
 			if marker == 0xE1 && orient == 0 && len(payload) >= 6 && string(payload[:6]) == "Exif\x00\x00" {
 				orient = exif.ParseTIFFOrientation(payload[6:])
 			}
-		case marker == 0xFE: // COM: comment, dropped
-		case marker == 0xDA: // SOS: header copied, scan data follows
+		case marker == 0xFE:
+		case marker == 0xDA:
 			scans++
 			out = append(out, data[i:segLenAt+segLen]...)
 			i = segLenAt + segLen
 			inScan = true
 			continue
-		default: // DQT, DHT, SOF, DRI, …: image structure, copied
+		default:
 			out = append(out, data[i:segLenAt+segLen]...)
 		}
 		i = segLenAt + segLen
 	}
 	if orient >= 2 && orient <= 8 {
-		// The pixel cap bounds the frame, not how often a progressive
-		// decode walks it; see stripMaxJPEGScans.
 		if scans > stripMaxJPEGScans {
 			return nil, fmt.Errorf("strip: JPEG carries %d scans, over the %d-scan decode cap", scans, stripMaxJPEGScans)
 		}
@@ -244,7 +151,6 @@ func stripJPEG(data []byte) ([]byte, error) {
 		if err := checkStripPixelCap(cfg.Width, cfg.Height); err != nil {
 			return nil, err
 		}
-		// Divide: the pixel cap bounds width×height, so the quotient is exact.
 		if int64(scans) > stripMaxJPEGScanPixels/(int64(cfg.Width)*int64(cfg.Height)) {
 			return nil, fmt.Errorf("strip: JPEG carries %d scans of a %dx%d frame, over the %d pixel-scan decode budget", scans, cfg.Width, cfg.Height, stripMaxJPEGScanPixels)
 		}
@@ -261,27 +167,12 @@ func stripJPEG(data []byte) ([]byte, error) {
 	return out, nil
 }
 
-// stripPNG re-encodes a PNG when it carries any metadata chunk
-// (tEXt/zTXt/iTXt/eXIf), which drops them all: the stdlib encoder
-// writes only the chunks it understands, no text or EXIF survives, and
-// PNG is lossless so the re-encode costs nothing but CPU. A PNG with no
-// metadata chunk is returned unchanged up to the end of its IEND chunk;
-// a trailer after it is cut. An eXIf
-// orientation of 2..8 is baked into the pixels before re-encoding.
-//
-// An animated PNG (an acTL chunk) is spliced instead, see
-// spliceAPNG: image/png decodes only the default image, so a re-encode
-// would store one still frame.
-//
-// The re-encode decode is pixel-capped (checkStripPixelCap) on the
-// header alone: the strip path must not materialise a raster the image
-// pipeline's DefaultMaxPixels guard would refuse.
 func stripPNG(data []byte) ([]byte, error) {
 	if len(data) < 8 || !bytes.Equal(data[:8], []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'}) {
 		return nil, errors.New("png: bad signature")
 	}
 	orient, hasMeta, animated := 0, false, false
-	iendEnd := 0 // offset just past the IEND chunk; 0 when there is none
+	iendEnd := 0
 	pos := 8
 	for pos+8 <= len(data) {
 		length := binary.BigEndian.Uint32(data[pos : pos+4])
@@ -294,17 +185,12 @@ func stripPNG(data []byte) ([]byte, error) {
 			hasMeta = true
 			if typ == "eXIf" && orient == 0 {
 				tiff := data[pos+8 : pos+8+int(length)]
-				// Some writers prefix the TIFF stream with the JPEG
-				// APP1 identifier; tolerate both shapes.
 				tiff = bytes.TrimPrefix(tiff, []byte("Exif\x00\x00"))
 				orient = exif.ParseTIFFOrientation(tiff)
 			}
 		case "acTL":
 			animated = true
 		case "IEND":
-			// Stop like the decoder does. Bytes after IEND are a
-			// trailer readers ignore and tools park data in; they are
-			// cut below, as stripJPEG cuts what follows EOI.
 			iendEnd = pos + 12 + int(length)
 			pos = len(data)
 			continue
@@ -338,14 +224,6 @@ func stripPNG(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// spliceAPNG copies an animated PNG's chunks verbatim minus the
-// metadata ones (tEXt/zTXt/iTXt/eXIf) and anything after IEND, the way
-// stripWebP treats its container: every frame chunk (acTL, fcTL, IDAT,
-// fdAT) is kept and nothing is re-encoded. There is no APNG encoder to
-// bake an orientation of 2..8 into every frame, so the eXIf chunk is
-// rewritten as an orientation-only payload instead, in place of the
-// first one (before the image data, where the format puts it). data
-// has already been walked by stripPNG, so every chunk is in bounds.
 func spliceAPNG(data []byte, orient int) []byte {
 	out := append(make([]byte, 0, len(data)), data[:8]...)
 	keptOrient := false
@@ -371,8 +249,6 @@ func spliceAPNG(data []byte, orient int) []byte {
 	return out
 }
 
-// appendPNGChunk appends one chunk: length, type, payload, CRC-32 of
-// type and payload.
 func appendPNGChunk(out []byte, typ string, payload []byte) []byte {
 	out = binary.BigEndian.AppendUint32(out, uint32(len(payload)))
 	out = append(out, typ...)
@@ -383,21 +259,11 @@ func appendPNGChunk(out []byte, typ string, payload []byte) []byte {
 	return binary.BigEndian.AppendUint32(out, crc.Sum32())
 }
 
-// webpChunk is one chunk of a WebP's RIFF container.
 type webpChunk struct {
 	typ     string
 	payload []byte
 }
 
-// stripWebP drops the EXIF and XMP chunks from a WebP container without
-// touching the image data: the remaining chunks (VP8X, VP8L/VP8, ALPH,
-// ICCP, ANIM, …) are copied verbatim and the RIFF sizes are rebuilt.
-// There is no WebP encoder at this layer (it lives in framework/image,
-// one banned edge away), so an EXIF orientation of 2..8 cannot be baked
-// into pixels; instead the EXIF chunk is rewritten as an orientation-
-// only payload, which keeps the display upright while dropping
-// everything else the original EXIF carried. The VP8X flags are kept
-// consistent with the chunks that remain.
 func stripWebP(data []byte) ([]byte, error) {
 	if len(data) < 12 || string(data[:4]) != "RIFF" || string(data[8:12]) != "WEBP" {
 		return nil, errors.New("webp: bad RIFF header")
@@ -426,8 +292,6 @@ func stripWebP(data []byte) ([]byte, error) {
 		case "EXIF":
 			changed = true
 			if orient == 0 {
-				// libwebp writes the TIFF stream bare; some writers
-				// keep the JPEG APP1 identifier. Accept both.
 				tiff := bytes.TrimPrefix(payload, []byte("Exif\x00\x00"))
 				orient = exif.ParseTIFFOrientation(tiff)
 			}
@@ -438,12 +302,10 @@ func stripWebP(data []byte) ([]byte, error) {
 		}
 		pos += 8 + cl
 		if cl%2 == 1 {
-			pos++ // odd payloads are padded; the pad byte is not in cl
+			pos++
 		}
 	}
 	if !changed {
-		// Bytes past the RIFF size are a trailer no reader looks at;
-		// cut them, as stripJPEG cuts what follows EOI.
 		return data[:riffEnd], nil
 	}
 	keepEXIF := false
@@ -455,7 +317,7 @@ func stripWebP(data []byte) ([]byte, error) {
 
 	var buf bytes.Buffer
 	buf.WriteString("RIFF")
-	buf.Write([]byte{0, 0, 0, 0}) // size patched below
+	buf.Write([]byte{0, 0, 0, 0})
 	buf.WriteString("WEBP")
 	for _, c := range kept {
 		buf.WriteString(c.typ)
@@ -477,9 +339,6 @@ const (
 	webpVP8XXMPFlag  = 0x04
 )
 
-// fixVP8XFlags makes the VP8X feature flags agree with the chunks that
-// are actually present after a strip: a container that still advertises
-// a dropped chunk is malformed for strict readers.
 func fixVP8XFlags(chunks []webpChunk, exifKept bool) {
 	for _, c := range chunks {
 		if c.typ != "VP8X" || len(c.payload) < 1 {
@@ -495,34 +354,19 @@ func fixVP8XFlags(chunks []webpChunk, exifKept bool) {
 	}
 }
 
-// minimalOrientationTIFF builds a TIFF stream whose IFD0 holds exactly
-// one entry, the orientation tag. Byte layout mirrors the test fixture
-// in framework/image (insertExifAPP1) and round-trips through
-// exif.ParseTIFFOrientation (framework/internal/exif), which this package
-// and framework/image both call.
 func minimalOrientationTIFF(orientation int) []byte {
 	return []byte{
-		'I', 'I', 0x2A, 0x00, // little-endian TIFF magic
-		0x08, 0x00, 0x00, 0x00, // IFD0 at offset 8
-		0x01, 0x00, // one entry
-		0x12, 0x01, // tag 0x0112 (orientation)
-		0x03, 0x00, // type SHORT
-		0x01, 0x00, 0x00, 0x00, // count 1
-		byte(orientation), 0x00, 0x00, 0x00, // value in the 4-byte slot
-		0x00, 0x00, 0x00, 0x00, // no next IFD
+		'I', 'I', 0x2A, 0x00,
+		0x08, 0x00, 0x00, 0x00,
+		0x01, 0x00,
+		0x12, 0x01,
+		0x03, 0x00,
+		0x01, 0x00, 0x00, 0x00,
+		byte(orientation), 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
 	}
 }
 
-// applyOrientation returns img with the EXIF orientation tag baked into
-// its pixels. The case mapping is the EXIF standard one and the pixel
-// transforms are twins of framework/image's Rotate/Flip/Flop (pinned by
-// TestStripOrientationBakeMatchesPipeline); they are re-implemented
-// here because this package must not import the image pipeline.
-//
-//	1: identity                 5: transpose (rotate 90 then flop)
-//	2: flop                     6: rotate 90 CW
-//	3: rotate 180               7: transverse (rotate 270 then flop)
-//	4: flip                     8: rotate 270 CW
 func applyOrientation(img image.Image, orient int) image.Image {
 	switch orient {
 	case 2:
@@ -543,7 +387,6 @@ func applyOrientation(img image.Image, orient int) image.Image {
 	return img
 }
 
-// rotate90 returns img rotated 90 degrees clockwise.
 func rotate90(img image.Image) *image.RGBA {
 	b := img.Bounds()
 	sw, sh := b.Dx(), b.Dy()
@@ -556,7 +399,6 @@ func rotate90(img image.Image) *image.RGBA {
 	return dst
 }
 
-// rotate180 returns img rotated 180 degrees.
 func rotate180(img image.Image) *image.RGBA {
 	b := img.Bounds()
 	sw, sh := b.Dx(), b.Dy()
@@ -569,7 +411,6 @@ func rotate180(img image.Image) *image.RGBA {
 	return dst
 }
 
-// rotate270 returns img rotated 270 degrees clockwise (90 CCW).
 func rotate270(img image.Image) *image.RGBA {
 	b := img.Bounds()
 	sw, sh := b.Dx(), b.Dy()
@@ -582,7 +423,6 @@ func rotate270(img image.Image) *image.RGBA {
 	return dst
 }
 
-// flipImage mirrors img vertically (top↔bottom).
 func flipImage(img image.Image) *image.RGBA {
 	b := img.Bounds()
 	sw, sh := b.Dx(), b.Dy()
@@ -595,7 +435,6 @@ func flipImage(img image.Image) *image.RGBA {
 	return dst
 }
 
-// flopImage mirrors img horizontally (left↔right).
 func flopImage(img image.Image) *image.RGBA {
 	b := img.Bounds()
 	sw, sh := b.Dx(), b.Dy()

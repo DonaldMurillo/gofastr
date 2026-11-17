@@ -7,27 +7,12 @@ import (
 	"unicode/utf8"
 )
 
-// wideText describes an upload whose bytes are UTF-16 or UTF-32 text:
-// the code-unit width in bytes, the byte order, and the offset of the
-// first unit past any byte-order mark.
-//
-// An XML parser (and so an SVG renderer) decodes these encodings from
-// the BOM, and decodes BOM-less UTF-16 from a leading "<" (XML 1.0
-// Appendix F). The markup is then NUL-interleaved in the raw bytes, so
-// an ASCII token scan over them finds nothing; rejectWideText scans the
-// code units instead.
 type wideText struct {
 	width int
 	big   bool
 	start int
 }
 
-// detectWideText reports whether data is BOM-marked UTF-16/32 text, or
-// BOM-less UTF-16/32 that opens with "<" followed by an ASCII character
-// (XML Appendix F: 3C 00 3F 00, 00 3C 00 3F, 3C 00 00 00, 00 00 00 3C).
-// UTF-32 LE is checked before UTF-16 LE because its BOM (FF FE 00 00)
-// starts with the UTF-16 LE one; the BOM-less UTF-16 arms need a
-// non-NUL third byte, so they never claim BOM-less UTF-32.
 func detectWideText(b []byte) (wideText, bool) {
 	switch {
 	case len(b) >= 4 && b[0] == 0x00 && b[1] == 0x00 && b[2] == 0xFE && b[3] == 0xFF:
@@ -52,8 +37,6 @@ func detectWideText(b []byte) (wideText, bool) {
 	return wideText{}, false
 }
 
-// unit reads the code unit at byte offset i. The caller keeps
-// i+w.width <= len(b).
 func (w wideText) unit(b []byte, i int) uint32 {
 	if w.width == 2 {
 		if w.big {
@@ -67,11 +50,6 @@ func (w wideText) unit(b []byte, i int) uint32 {
 	return uint32(b[i]) | uint32(b[i+1])<<8 | uint32(b[i+2])<<16 | uint32(b[i+3])<<24
 }
 
-// containsFold reports whether the code units of body hold needle (an
-// ASCII token), comparing ASCII letters case-insensitively. Only
-// unit-aligned offsets are tried, the way a decoder reads the text. It
-// allocates nothing, so the whole-body hard-token scan stays as cheap
-// as containsTokenFold.
 func (w wideText) containsFold(body, needle []byte) bool {
 	span := len(needle) * w.width
 	for i := w.start; i+span <= len(body); i += w.width {
@@ -101,9 +79,6 @@ func (w wideText) containsFold(body, needle []byte) bool {
 	return false
 }
 
-// decodeHead decodes up to the first 512 characters of body to UTF-8,
-// for the windowed soft-token scan and the content sniffer. Unpaired
-// surrogates and out-of-range UTF-32 values become U+FFFD.
 func (w wideText) decodeHead(body []byte) []byte {
 	end := min(len(body), w.start+512*w.width)
 	out := make([]byte, 0, 512)
@@ -127,9 +102,6 @@ func (w wideText) decodeHead(body []byte) []byte {
 	return out
 }
 
-// rejectWideText runs the active-content scan of rejectUnsafeContent
-// over a UTF-16/32 body's characters: the hard tokens over every code
-// unit, the soft tokens and the sniffer over the decoded head.
 func rejectWideText(data []byte) error {
 	w, ok := detectWideText(data)
 	if !ok {
