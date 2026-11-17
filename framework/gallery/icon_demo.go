@@ -20,16 +20,14 @@ func iconDemo() render.HTML {
 type IconCatalogConfig struct {
 	// Action is the GET form's route. Required.
 	Action string
-	// Search matches words in names, aliases, and category labels, ignoring case
-	// and treating hyphens and underscores as spaces.
+	// Search matches words in names, aliases and category labels.
 	Search string
-	// Category is an icons.Category ID. Empty or unknown IDs show all categories.
+	// Category is an icons.Category ID; empty or unknown shows all.
 	Category string
 }
 
-// RenderIconCatalog renders the sourced icon catalog with a sticky search and
-// category toolbar. Hosts read q and category from their request and pass them
-// here so refresh, sharing, and browser history preserve the selected view.
+// RenderIconCatalog renders the icon catalog under a sticky search and
+// category toolbar, filtered by cfg's request values.
 func RenderIconCatalog(cfg IconCatalogConfig) render.HTML {
 	names := icons.Names()
 	categories := icons.Categories()

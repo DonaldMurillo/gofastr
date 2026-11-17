@@ -12,7 +12,7 @@ func TestFieldsTableMarksNoQueryField(t *testing.T) {
 	cfg := entity.EntityConfig{Fields: []schema.Field{
 		{Name: "number", Type: schema.String, NoQuery: true},
 	}}
-	html := (&entityScreen{}).fieldsTable(cfg).String()
+	html := (&entityScreen{}).fieldsTable(cfg, "").String()
 	if !strings.Contains(html, "number") || !strings.Contains(html, "not filterable/sortable") {
 		t.Fatalf("NoQuery field note missing from SDK docs table: %s", html)
 	}

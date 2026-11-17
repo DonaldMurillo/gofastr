@@ -2,8 +2,6 @@ package filter
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The refusals a filter, sort or where parse returns. Each error's
-// Error() is the English below; an error writer translates it.
 var (
 	reasonInListOverCap       = i18n.Define("filter.in_list_over_cap", "in-list on {{field}} has {{count}} entries (max {{max}})")
 	reasonNotFilterable       = i18n.Define("filter.not_filterable", "field {{field}} cannot be filtered")

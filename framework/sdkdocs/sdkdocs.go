@@ -1,20 +1,8 @@
-// Package sdkdocs serves a public SDK documentation site for a GoFastr app:
-// install guides, a live per-entity API reference, auth and error guides,
-// plus download routes for the pregenerated SDK artifacts that
-// `gofastr generate sdk` emits (see framework/sdk for the shared contract).
+// Package sdkdocs serves a public SDK documentation site for a GoFastr
+// app: install guides, a per-entity API reference rendered from the live
+// registry, auth and error guides, and download routes for the artifacts
+// `gofastr generate sdk` emits. Hosts call Mount beside their UI host:
 //
-// The reference pages render from the live entity registry on every request,
-// so they cannot drift from the running API. Only the downloadable artifacts
-// can go stale; the manifest's schema hash is compared against the live
-// registry once and a banner + one WARN surface the mismatch.
-//
-// It is deliberately NOT part of framework/uihost: the screens compose
-// framework/ui, and uihost must never import framework/ui (its LoadAlways
-// styles would leak into every host's CSS bundle). Hosts wire it beside the
-// UI host instead:
-//
-//	coreApp := app.NewApp("My App")
-//	// … screens, uihost.New, fwApp.Mount(host) …
 //	sdkdocs.Mount(coreApp, fwApp.Router(), sdkdocs.Config{
 //	    Registry:        fwApp.Registry,
 //	    CRUDMounted:     fwApp.EntityCRUDMounted,
@@ -52,47 +40,34 @@ type Config struct {
 	// live under BasePath+"/sdk/".
 	BasePath string
 
-	// Registry is the live entity registry (pass fwApp.Registry).
-	// Required, reference pages render from it per request.
+	// Registry is the live entity registry (pass fwApp.Registry). Required.
 	Registry entity.Registry
 
 	// CRUDMounted reports whether an entity's auto-CRUD routes were
-	// actually registered. Pass fwApp.EntityCRUDMounted: Exposure.CRUD
-	// alone misses the no-DB case, where App mounts nothing while every
-	// entity still reads "auto", so the site would document — and hand an
-	// SDK for — paths that answer 404 (#266). Nil keeps the historical
-	// Exposure-only check for direct callers.
+	// registered (pass fwApp.EntityCRUDMounted). Nil documents every
+	// entity whose Exposure allows CRUD.
 	CRUDMounted func(*entity.Entity) bool
 
-	// ReadOnlyMounted reports whether mounted CRUD routes are read-only.
-	// Pass fwApp.EntityReadOnlyMounted alongside CRUDMounted to omit writes
-	// and state moves for App.View entities. Nil assumes writable routes.
+	// ReadOnlyMounted reports whether an entity's mounted CRUD routes are
+	// read-only (pass fwApp.EntityReadOnlyMounted). Nil assumes writable.
 	ReadOnlyMounted func(*entity.Entity) bool
 
-	// Artifacts holds the pregenerated dist directory from
-	// `gofastr generate sdk` (os.DirFS("gen/sdk/dist") or an embed.FS
-	// subtree). Nil mounts the docs site without downloads; pages show
-	// how to generate them instead.
+	// Artifacts holds the dist directory `gofastr generate sdk` wrote.
+	// Nil mounts the site without downloads.
 	Artifacts fs.FS
 
 	// AppName labels the site; defaults to the core-ui app's name.
 	AppName string
-	// BaseURL is the public origin baked into install/usage snippets
-	// (e.g. "https://api.example.com"). Empty renders an honest
-	// placeholder.
+	// BaseURL is the public origin in install and usage snippets. Empty
+	// renders a placeholder origin.
 	BaseURL string
-	// APIPrefix mirrors framework.AppConfig.APIPrefix ("" or "api") so
-	// documented paths match the live mount.
+	// APIPrefix mirrors framework.AppConfig.APIPrefix ("" or "api").
 	APIPrefix string
-	// SnakeCase mirrors a server configured with crud.CaseSnake: example
-	// payload keys render snake_case instead of the camelCase default.
+	// SnakeCase mirrors a server configured with crud.CaseSnake.
 	SnakeCase bool
 
-	// Entities is an explicit allow-list of entity names (or tables) to
-	// document. Nil documents Public entities only; IncludeGated
-	// documents everything registered. Entities outside the included set
-	// 404 on their reference URL and never appear in the nav, the site
-	// must not leak the existence of gated schema.
+	// Entities lists the entity names or tables to document. Nil
+	// documents Public entities, or every entity with IncludeGated.
 	Entities     []string
 	IncludeGated bool
 
@@ -103,20 +78,17 @@ type Config struct {
 	HasAPITokens bool
 
 	// Policy, when set, gates every docs screen, artifact download and
-	// the section-menu drawer's /chrome and /state routes,
-	// for internal/partner deployments. Nil = public site.
+	// the section-menu drawer's routes. Nil is a public site.
 	Policy app.Policy
 }
 
-// site is the resolved, memoized runtime state shared by screens and
-// artifact handlers.
 type site struct {
 	cfg Config
 
 	manifestOnce sync.Once
 	manifest     *sdk.Manifest
 	drift        bool
-	provenance   bool // true = manifest schema version unknown → "unknown provenance", not "stale"
+	provenance   bool
 
 	undocumentedOnce sync.Once
 }
@@ -126,9 +98,7 @@ func (s *site) readOnly(e *entity.Entity) bool {
 }
 
 // Mount registers the docs screens on the core-ui app and the artifact
-// routes on the router. Call it during wiring, alongside (before or after)
-// fwApp.Mount(host), screens resolve per request, so ordering only affects
-// llm.md indexing.
+// routes on r. It errors without the app, the router or Config.Registry.
 func Mount(coreApp *app.App, r *router.Router, cfg Config) error {
 	if coreApp == nil || r == nil {
 		return fmt.Errorf("sdkdocs: Mount requires the core-ui app and the router")
@@ -180,9 +150,6 @@ func Mount(coreApp *app.App, r *router.Router, cfg Config) error {
 		coreApp.RegisterScreen(sc, nil)
 	}
 
-	// Mobile nav drawer for the SectionMenu rail. It lists the same
-	// entities as the screens, so its /chrome and /state routes sit behind
-	// the same Policy: a group with no prefix keeps the widget's URLs.
 	drawerRouter := r
 	if cfg.Policy != nil {
 		drawerRouter = r.Group("", func(next http.Handler) http.Handler { return s.policyGate(false, next) })
@@ -196,9 +163,6 @@ func Mount(coreApp *app.App, r *router.Router, cfg Config) error {
 	return nil
 }
 
-// includedEntities returns the documented entity set, sorted by name. It
-// walks the live registry per call so entities registered after Mount still
-// appear.
 func (s *site) includedEntities() []*entity.Entity {
 	var out []*entity.Entity
 	for _, e := range s.cfg.Registry.AllSorted() {
@@ -206,10 +170,10 @@ func (s *site) includedEntities() []*entity.Entity {
 			continue
 		}
 		if e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
-			continue // no HTTP surface to document
+			continue
 		}
 		if s.cfg.CRUDMounted != nil && !s.cfg.CRUDMounted(e) {
-			continue // declared CRUD, but registration never mounted it
+			continue
 		}
 		if len(s.cfg.Entities) > 0 {
 			if !nameMatches(e, s.cfg.Entities) {
@@ -233,11 +197,6 @@ func nameMatches(e *entity.Entity, names []string) bool {
 	return false
 }
 
-// lookup resolves a reference-URL segment (entity table or name) within the
-// included set only, excluded entities are indistinguishable from
-// nonexistent ones. When several registered versions share the name, the
-// first wins here; the entity page itself documents every version via
-// lookupAll.
 func (s *site) lookup(segment string) (*entity.Entity, bool) {
 	all := s.lookupAll(segment)
 	if len(all) == 0 {
@@ -246,15 +205,7 @@ func (s *site) lookup(segment string) (*entity.Entity, bool) {
 	return all[0], true
 }
 
-// lookupAll resolves a reference-URL segment to EVERY included entity that
-// matches it by table or name. Versions of one entity registered via
-// App.GroupEntity share the segment (and therefore the page); returning
-// only the first (the old behavior) left the other versions' schemas
-// undocumented and unreachable from any reference URL.
 func (s *site) lookupAll(segment string) []*entity.Entity {
-	// ASCII-only fold: strings.ToLower maps look-alikes onto ASCII (the
-	// KELVIN SIGN lowers to k), which made every such spelling a live
-	// duplicate URL of an entity page.
 	segment = asciicase.Lower(segment)
 	var out []*entity.Entity
 	for _, e := range s.includedEntities() {
@@ -265,13 +216,6 @@ func (s *site) lookupAll(segment string) []*entity.Entity {
 	return out
 }
 
-// entityVisibilityPolicy 404s reference URLs whose entity is not in the
-// included set, a gated entity's page must be indistinguishable from a
-// nonexistent one. It reads the segment from the request URL because
-// policies run before route params are injected. With no request in
-// context (SSG / direct RenderPage) it allows: static builds only
-// enumerate included entities via StaticPaths, and the screen itself
-// re-checks inclusion before rendering any schema.
 func (s *site) entityVisibilityPolicy() app.Policy {
 	prefix := s.cfg.BasePath + "/entities/"
 	return app.PolicyFunc(func(ctx context.Context) app.Decision {
@@ -287,9 +231,6 @@ func (s *site) entityVisibilityPolicy() app.Policy {
 	})
 }
 
-// resolved returns the manifest (nil when absent/invalid) and whether the
-// live schema drifted from it. Memoized: the registry is fixed after wiring
-// and the artifacts are regenerated only via redeploy/re-run.
 func (s *site) resolved() (m *sdk.Manifest, drift, unknownProvenance bool) {
 	s.manifestOnce.Do(func() {
 		if s.cfg.Artifacts == nil {
@@ -297,8 +238,6 @@ func (s *site) resolved() (m *sdk.Manifest, drift, unknownProvenance bool) {
 		}
 		mf, err := sdk.ReadManifest(s.cfg.Artifacts)
 		if err != nil {
-			// No manifest AND no artifacts = nothing generated yet, the
-			// "not published" state, not a provenance problem.
 			if !anyArtifactPresent(s.cfg.Artifacts) {
 				return
 			}
@@ -311,10 +250,6 @@ func (s *site) resolved() (m *sdk.Manifest, drift, unknownProvenance bool) {
 			s.provenance = true
 			return
 		}
-		// The digest covers the app's JSONCase (cfg.SnakeCase mirrors a
-		// crud.CaseSnake server): the same entities served snake_case are
-		// a different SDK surface, and the drift check must see that
-		// (#669). "" means the camel default.
 		jsonCase := ""
 		if s.cfg.SnakeCase {
 			jsonCase = "snake_case"
@@ -329,8 +264,6 @@ func (s *site) resolved() (m *sdk.Manifest, drift, unknownProvenance bool) {
 	return s.manifest, s.drift, s.provenance
 }
 
-// anyArtifactPresent reports whether any known artifact file exists in the
-// dist FS (distinguishes "never generated" from "manifest lost").
 func anyArtifactPresent(fsys fs.FS) bool {
 	for _, name := range []string{sdk.GoArtifact, sdk.JSArtifact, sdk.JSTypesArtifact} {
 		if f, err := fsys.Open(name); err == nil {
@@ -341,8 +274,6 @@ func anyArtifactPresent(fsys fs.FS) bool {
 	return false
 }
 
-// artifactHandler serves one dist file. key is the manifest artifact key
-// ("" for the manifest itself).
 func (s *site) artifactHandler(key, file string) http.Handler {
 	contentType := map[string]string{
 		sdk.GoArtifact:      "application/zip",
@@ -372,17 +303,11 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			w.Header().Set("Cache-Control", "private, no-cache")
 		}
 		if key != "" {
-			// The file must be the one the manifest records. A run
-			// with fewer targets rewrites the manifest but leaves an
-			// older artifact in dist, and that file can cover entities
-			// the manifest no longer names.
 			a, ok := m.Artifacts[key]
 			if !ok || a.SHA256 == "" || fmt.Sprintf("%x", sha256.Sum256(data)) != a.SHA256 {
 				i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKArtifactMissing)
 				return
 			}
-			// The recorded hash is the ETag: free revalidation on a
-			// stable URL.
 			etag := `"` + a.SHA256 + `"`
 			w.Header().Set("ETag", etag)
 			if corestatic.IfNoneMatch(r, etag) {
@@ -392,8 +317,6 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 		}
 		w.Header().Set("Content-Type", contentType)
 		if file == sdk.GoArtifact {
-			// The zip downloads; client.js/client.d.ts serve inline so
-			// `import "<url>/client.js"` works straight off the app.
 			name := s.cfg.AppName + "-sdk-go"
 			if m != nil && m.SDKVersion != "" {
 				name += "-" + m.SDKVersion
@@ -408,15 +331,6 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 	}))
 }
 
-// artifactsDocumented reports whether the downloads may be served: the
-// manifest must name only entities this site documents. `gofastr generate
-// sdk` covers every entity unless --only/--exclude narrow it, while the
-// site documents Public entities by default, so serving whole artifacts
-// handed anonymous callers the tables, fields and transitions of gated
-// entities the reference pages 404. A missing or unreadable manifest
-// declares no scope at all, so it refuses too. The site's own visibility
-// rules (Entities, IncludeGated) decide; Policy gates who reaches the
-// routes, not what they cover.
 func (s *site) artifactsDocumented(m *sdk.Manifest) bool {
 	if m == nil {
 		return false
@@ -442,12 +356,6 @@ func (s *site) artifactsDocumented(m *sdk.Manifest) bool {
 	return false
 }
 
-// policyGate runs Config.Policy in front of next, the gate the screens
-// carry through WithPolicy. With no Policy it returns next unchanged.
-// redirect says whether a DecisionRedirect is followed: a download is a
-// navigation and may land on a sign-in page, while the drawer's /chrome
-// and /state are fetched by the runtime, which would paste the sign-in
-// page into the sheet, so there a redirect refuses with 403.
 func (s *site) policyGate(redirect bool, next http.Handler) http.Handler {
 	if s.cfg.Policy == nil {
 		return next
@@ -458,13 +366,6 @@ func (s *site) policyGate(redirect bool, next http.Handler) http.Handler {
 		case d.Kind == app.DecisionAllow:
 			next.ServeHTTP(w, r)
 		case d.Kind == app.DecisionRedirect && redirect:
-			// The DecisionRedirect URL reaches the Location header;
-			// uihost scrubs the identical app.Decision value at all
-			// four of its emit sites (scrubCtl). This is the one
-			// divergent consumer: strip C0/DEL so a policy URL
-			// carrying raw CR/LF cannot forge headers and DEL cannot
-			// break HTTP/2 writes. Clean URLs pass byte-identical
-			// (StripUnsafe's fast path).
 			http.Redirect(w, r, textsafe.StripUnsafe(d.URL), http.StatusSeeOther)
 		default:
 			status := d.Status
@@ -476,7 +377,6 @@ func (s *site) policyGate(redirect bool, next http.Handler) http.Handler {
 	})
 }
 
-// sanitizeFilename keeps Content-Disposition filenames to a safe charset.
 func sanitizeFilename(name string) string {
 	var b strings.Builder
 	for _, r := range name {
@@ -490,15 +390,6 @@ func sanitizeFilename(name string) string {
 	return b.String()
 }
 
-// fenceWord reduces a manifest-derived value to the bytes that are inert
-// inside the copyable ```sh install snippet: the module-path alphabet the
-// SDK generator's own validateSDKModulePath allows (letters, digits, dot,
-// dash, underscore, tilde, slash). Everything else — a newline that would
-// start its own shell line, spaces, pipes, backticks, quotes — is
-// dropped, so manifest junk can only mangle the hint, never restructure
-// the snippet the copy button pastes into an operator's shell. The
-// body-side twin of sanitizeFilename (which holds the same provenance to
-// a safe charset for Content-Disposition).
 func fenceWord(v string) string {
 	var b strings.Builder
 	b.Grow(len(v))
@@ -512,7 +403,6 @@ func fenceWord(v string) string {
 	return b.String()
 }
 
-// sortedNames returns the included entities' display names (for tests/log).
 func (s *site) sortedNames() []string {
 	var out []string
 	for _, e := range s.includedEntities() {

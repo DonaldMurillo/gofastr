@@ -7,35 +7,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// Emission is one event that was published on a bus.
-//
-// This is separate from the bus's internal tap (setTap), which is a
-// single-slot mechanism the outbox/fanout bridge already owns. Coverage
-// recording must not compete for it.
+// Emission is one event published on a bus, as SetObserver reports it.
 type Emission struct {
-	// Type is the event type string, e.g. "order.placed".
+	// Type is the event type.
 	Type string
-	// Subscribers is how many handlers were registered for it at emit
-	// time. Zero means the event went nowhere, published, and nothing
-	// listening. That is worth distinguishing from "never published".
+	// Subscribers is how many handlers the type had at emit time.
 	Subscribers int
 }
 
-// observer is the process-wide emission hook. An atomic pointer because
-// Emit runs on the request path whenever the bus is wired into an
-// AfterCreate hook; an uninstalled observer costs one atomic load.
-//
-// A hook rather than a direct import of the coverage recorder, matching
-// router.SetServeHook, access.SetObserver, and hook.SetObserver: event is
-// a leaf package and the recorder is test tooling.
 var observer atomic.Pointer[func(Emission)]
 
-// SetObserver installs a callback fired for every event published through
-// Emit or EmitStrict. Pass nil to clear. Intended for test tooling, the
-// framework's semantic coverage recorder is the first consumer.
-//
-// The callback runs inline, so it must be cheap, must not block, and must
-// tolerate concurrent calls.
+// SetObserver installs fn to be called inline, from any goroutine, for every
+// Emit and EmitStrict; nil clears it. A panic in fn is logged and ignored.
 func SetObserver(fn func(Emission)) {
 	if fn == nil {
 		observer.Store(nil)
@@ -44,11 +27,6 @@ func SetObserver(fn func(Emission)) {
 	observer.Store(&fn)
 }
 
-// observeEmission reports a publication to the installed observer. The
-// observer is host-installed code running inline on the publish path
-// (including the request path when the bus is wired into an
-// AfterCreate hook), so a panicking observer is recovered and logged,
-// never allowed to take the emission with it.
 func observeEmission(eventType string, subscribers int) {
 	if fn := observer.Load(); fn != nil {
 		func() {

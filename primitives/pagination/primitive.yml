@@ -6,3 +6,70 @@ docs:
   - framework/docs/content/cursor-pagination.md
 on_change:
   - A change to the cursor token's wire format breaks cursors clients already hold; say so in CHANGELOG and in the Wire format section of cursor-pagination.md.
+invariants:
+  - id: offset-never-overflows
+    rule: OffsetForPage returns 0 for page < 2, limit < 1, or a (page-1)*limit that would overflow, and the product otherwise.
+    enforced_by:
+      - test: framework/pagination.TestOffsetForPage
+      - test: framework/pagination.TestParsePagination_OffsetDoesNotOverflowNegative
+  - id: offset-math-goes-through-offsetforpage
+    rule: A caller turning a client page number into a row offset calls OffsetForPage, or bounds the page first (admin's maxUsersPage, sitesearch's maxPage, the audit page count).
+    judge: Does this change multiply a client-supplied page number by a page size without bounding the page or calling pagination.OffsetForPage?
+    applies:
+      - framework/crud/
+      - framework/entityui/
+      - battery/admin/
+      - battery/sitesearch/
+  - id: limit-clamped
+    rule: ParsePagination and ParseCursorPagination read a limit below 1 or unparseable as DefaultPageSize and one over MaxPageSize as MaxPageSize.
+    enforced_by:
+      - test: framework/pagination.TestParsePaginationClampsLimit
+  - id: direction-is-a-static-label
+    rule: ParseCursorPagination returns "forward" or "backward" and nothing else.
+    enforced_by:
+      - test: framework/pagination.TestParseCursorPagination_InvalidDirectionDefaultsForward
+  - id: cursor-names-stripped-values-verbatim
+    rule: A decoded cursor's field names lose C0 controls, DEL and zero-width and bidi codepoints, and its values round-trip byte for byte.
+    enforced_by:
+      - test: framework/pagination.TestDecodeCursor_StripsNewlinesFromFieldName
+      - test: framework/pagination.TestDecodeMultiCursor_StripsNewlinesFromFieldNames
+      - test: framework/pagination.TestDecodeCursor_StripsInvisibles
+      - test: framework/pagination.TestCursorValueRoundTripIsLossless
+      - test: framework/pagination.TestDecodeCursor_ValueIsBoundDataNotSanitized
+  - id: cursor-decodes-strictly
+    rule: The cursor decoders refuse a token with a duplicate or case-folded key at any depth (pagination.cursor_token).
+    enforced_by:
+      - test: framework/pagination.TestCursorRedRefusesAmbiguousKeys
+  - id: cursor-is-bounded
+    rule: The decoders refuse a cursor over 16 KiB before decoding it and a composite cursor of more than 64 fields, and CursorFits applies the same two caps.
+    enforced_by:
+      - test: framework/pagination.TestDecodersRefuseOversizeCursorFirst
+      - test: framework/pagination.TestMultiCursorFieldCapUnderSizeCap
+      - test: framework/pagination.TestCursorFitsCountsFields
+  - id: no-unusable-cursor-minted
+    rule: NewCursorPage mints no cursor, and returns its error, when the next page's key is missing, NULL (nil or a nil pointer) or would make a cursor the decoder refuses; a limit below 1 is DefaultPageSize.
+    enforced_by:
+      - test: framework/pagination.TestNewCursorPageRefusesUnusableCursor
+      - test: framework/pagination.TestNewCursorPageRefusesPastCap
+      - test: framework/pagination.TestCursorPageRejectsNegativeLimitWithoutPanic
+  - id: keyset-time-in-stored-layout
+    rule: A time keyset value is written in schema.TimestampLayout, the layout crud stores timestamps in, so SQLite's text compare matches it.
+    enforced_by:
+      - test: framework/pagination.TestCursorEncodesTimeFixedWidth
+  - id: keyset-encode-failure-logged
+    rule: A keyset value that does not marshal is logged at warn and encodes as "".
+    enforced_by:
+      - test: framework/pagination.TestKeysetStringLogsEncodeFailure
+  - id: total-pages-round-up
+    rule: NewOffsetPage rounds TotalPages up and makes 0 pages for a page size of 0.
+    enforced_by:
+      - test: framework/pagination.TestOffsetPageRoundsTotalPagesUp
+decisions:
+  - id: values-not-scrubbed
+    date: 2026-11-17
+    status: accepted
+    decision: Cursor values are returned verbatim; only field names are scrubbed.
+    rejected:
+      - option: Scrub values as names are scrubbed.
+        why: Values are bound args, so scrubbing hardens nothing, and a key holding U+200B would no longer resume at its own row.
+    upholds: [cursor-names-stripped-values-verbatim]

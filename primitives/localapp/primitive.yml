@@ -6,3 +6,36 @@ docs:
   - framework/docs/content/local-apps.md
 on_change:
   - battery/desktop and battery/service open their state through this package; run their tests too.
+invariants:
+  - id: absolute-dir-only
+    rule: Open refuses an empty or relative data directory and creates a missing one owner-only.
+    enforced_by:
+      - test: framework/localapp.TestOpenRefusesARelativeDir
+      - test: framework/localapp.TestOpenReusesWhatItMinted
+  - id: db-seeded-owner-only
+    rule: "OpenDB creates app.db owner-only before SQLite opens it and spells the path as an escaped file URI, so a directory name holding ?, # or % opens that file."
+    enforced_by:
+      - test: framework/localapp.TestOpenReusesWhatItMinted
+      - test: framework/localapp.TestOpenDBInAnOddlyNamedDir
+  - id: secret-exact-shape
+    rule: A secret file is accepted only as exactly 32 bytes in unpadded base64url with no other byte, and a damaged one is an error naming the file, never a re-mint.
+    enforced_by:
+      - test: framework/localapp.TestSecretRefusesADamagedFile
+  - id: first-boot-converges
+    rule: Two processes minting the secret at once end with one secret, the loser reading the winner's file.
+    enforced_by:
+      - test: framework/localapp.TestFirstBootRaceAgreesOnSecret
+  - id: secret-read-tightened-not-followed
+    rule: A secret file another user can read is tightened to owner-only through its open handle before it is read, and a symlink is refused, never followed.
+    enforced_by:
+      - test: framework/localapp.TestSecretTightensABroadFile
+      - test: framework/localapp.TestSecretRefusesASymlink
+decisions:
+  - id: never-tighten-a-foreign-dir
+    date: 2026-11-17
+    status: accepted
+    decision: Open never changes the mode of a data directory it did not create.
+    rejected:
+      - option: chmod an existing data directory to 0700.
+        why: The directory is the one the platform hands the app (Application Support, an Android files dir), and its mode is the platform's.
+    upholds: [absolute-dir-only]

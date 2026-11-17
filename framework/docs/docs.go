@@ -1,22 +1,7 @@
-// Package docs ships the framework's user-facing markdown docs as an
-// embedded filesystem. Two consumers:
-//
-//  1. `gofastr docs` CLI subcommand: list + show + search.
-//  2. `framework.WithMCPTools(mcptools.Register)` (framework/docs/mcptools): exposes the
-//     framework_docs_list / framework_docs_get / framework_docs_search MCP
-//     tools so agents connected to a running app can answer "how do I
-//     use hooks" without leaving the session.
-//
-// Package framework does not import this package: the corpus is about
-// 2 MB of markdown and a docs-only edit must not widen the
-// affected test set to every framework importer (#470). Anything that
-// needs the corpus at runtime imports it from the leaf, never from the
-// App spine.
-//
-// The embedded tree is the source of truth for shipped docs; the repo's
-// canonical edit location IS framework/docs/content/. There's no
-// generation step: every commit changes the binary's docs the next
-// build.
+// Package docs ships the framework's user docs (framework/docs/content)
+// as an embedded filesystem, read by List, Get and Search for the
+// `gofastr docs` command and the framework_docs_* MCP tools in
+// framework/docs/mcptools.
 package docs
 
 import (
@@ -35,24 +20,20 @@ var contentFS embed.FS
 
 // Topic describes a single doc file in the embedded tree.
 type Topic struct {
-	// Name is the short identifier: the filename without .md.
-	// Use this with Get().
+	// Name is the filename without .md, the name Get takes.
 	Name string
 
-	// Title is the first H1 heading from the file's content, or the
-	// humanised file name when no heading is present.
+	// Title is the first H1 heading, or the humanised file name.
 	Title string
 
-	// Summary is the first paragraph of prose, its wrapped lines joined
-	// and truncated to ~200 bytes. Empty when the file has no prose body.
+	// Summary is the first paragraph of prose, cut to about 200 bytes.
 	Summary string
 
-	// Bytes is the size of the underlying markdown in bytes.
+	// Bytes is the markdown's size.
 	Bytes int
 }
 
-// List enumerates every embedded doc topic. Result is sorted by Name so
-// the order is stable across builds.
+// List returns every embedded doc topic, sorted by Name.
 func List() ([]Topic, error) {
 	entries, err := fs.ReadDir(contentFS, "content")
 	if err != nil {
@@ -80,9 +61,8 @@ func List() ([]Topic, error) {
 	return out, nil
 }
 
-// Get returns the raw markdown body for the named topic. Returns a
-// "not found" error for unknown names. Never panics. Pass the topic
-// name without the .md suffix.
+// Get returns the markdown of the named topic (no .md suffix), or an
+// error for an unknown or malformed name.
 func Get(name string) ([]byte, error) {
 	if name == "" {
 		return nil, fmt.Errorf("docs: get: name required")
@@ -97,49 +77,29 @@ func Get(name string) ([]byte, error) {
 	return body, nil
 }
 
-// SearchHit is a single grep match: which topic, which line, the line
-// text, and a window of surrounding context for the CLI's --grep
-// output.
+// SearchHit is one matching line.
 type SearchHit struct {
-	Topic   string
-	Line    int
-	Heading string // the nearest preceding `# `-level heading, if any
-	Excerpt string // the matching line itself
+	Topic string
+	Line  int
+	// Heading is the nearest heading above the line, if any.
+	Heading string
+	// Excerpt is the matching line, cut around the match.
+	Excerpt string
 }
 
-// minSearchTermLen is the shortest search term Search will accept.
-// Below this, the function returns an error without scanning the
-// corpus: short terms ("a", "of") match noise and would produce
-// thousands of hits.
 const minSearchTermLen = 3
 
-// defaultSearchHitCap bounds Search's response when the caller doesn't
-// supply an explicit limit. Keeps MCP / narrow-context clients safe
-// from oversized responses.
 const defaultSearchHitCap = 50
 
-// ErrSearchTermTooShort is the error Search and SearchWithLimit return
-// for a term under three bytes, the empty term included, so a caller
-// can tell a term too short to search from one that matched nothing.
+// ErrSearchTermTooShort is returned for a term under three bytes.
 var ErrSearchTermTooShort = fmt.Errorf("docs: a search term needs at least %d characters", minSearchTermLen)
 
-// Search returns the matching lines across all topics, up to
-// defaultSearchHitCap hits, ordered by TOPIC RELEVANCE: a topic whose
-// title matches the term first, then topics with more heading matches,
-// then topics with more body matches, alphabetical only as the
-// tie-break. Within a topic the hits keep their line order. Use
-// SearchWithLimit for a caller-supplied cap.
+// Search returns up to 50 case-insensitive matching lines across all
+// topics, the most relevant topics first and each topic's lines in order.
 func Search(term string) ([]SearchHit, error) {
 	return SearchWithLimit(term, defaultSearchHitCap)
 }
 
-// topicScore is one topic's relevance for a term, tiered by WHERE the
-// term matches: a title match beats everything (the term names the
-// topic's subject), a match in the topic's own lede (the summary
-// before the first section heading — what the topic says it is about)
-// beats section headings, a heading match means the topic owns a
-// section on the term, and a body line is a mention. HOW OFTEN counts
-// within each tier; the topic name is the final tie-break.
 type topicScore struct {
 	name     string
 	title    bool
@@ -164,9 +124,7 @@ func (a topicScore) moreRelevant(b topicScore) bool {
 	return a.name < b.name
 }
 
-// SearchWithLimit is the explicit-cap variant. limit <= 0 falls back to
-// defaultSearchHitCap. Every topic is scanned (relevance needs the
-// whole corpus's counts); the ranked result is capped at `limit` hits.
+// SearchWithLimit is Search capped at limit hits; limit <= 0 means 50.
 func SearchWithLimit(term string, limit int) ([]SearchHit, error) {
 	if len(term) < minSearchTermLen {
 		return nil, ErrSearchTermTooShort
@@ -192,9 +150,6 @@ func SearchWithLimit(term string, limit int) ([]SearchHit, error) {
 			scores = append(scores, score)
 		}
 	}
-	// Ranked order: relevance first, alphabetical as the tie-break
-	// (sort.SliceStable over an already name-sorted slice makes the
-	// comparison deterministic).
 	slices.SortStableFunc(scores, func(a, b topicScore) int {
 		if a.moreRelevant(b) {
 			return -1
@@ -216,15 +171,11 @@ func SearchWithLimit(term string, limit int) ([]SearchHit, error) {
 	return out, nil
 }
 
-// scanTopic scores one topic for needle (already lowercased) and
-// returns its matching lines in order. A heading line is never a hit;
-// a `#` line inside a fenced code block is code (a shell or YAML
-// comment), so it is an ordinary line, not a heading.
 func scanTopic(name string, body []byte, needle string) (topicScore, []SearchHit) {
 	score := topicScore{name: name, title: strings.Contains(strings.ToLower(extractTitle(body, name)), needle)}
 	lines := strings.Split(string(body), "\n")
 	var lastHeading string
-	lede := true // lines before the first section heading
+	lede := true
 	var hits []SearchHit
 	inFence := false
 	for i, ln := range lines {
@@ -259,14 +210,11 @@ func scanTopic(name string, body []byte, needle string) (topicScore, []SearchHit
 	return score, hits
 }
 
-// fenceMarker reports whether a line opens or closes a fenced code block.
 func fenceMarker(line string) bool {
 	t := strings.TrimSpace(line)
 	return strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~")
 }
 
-// extractTitle returns the first H1 heading outside a fenced block, or
-// a humanised fallback.
 func extractTitle(body []byte, fallback string) string {
 	inFence := false
 	for ln := range strings.SplitSeq(string(body), "\n") {
@@ -281,12 +229,6 @@ func extractTitle(body []byte, fallback string) string {
 	return humanise(fallback)
 }
 
-// extractSummary returns the first paragraph of prose, its lines joined,
-// cut to about 200 bytes on a rune boundary. Headings, fenced code and
-// HTML comment blocks before it are skipped, and a blockquote's "> "
-// markers are dropped: the docs are hard-wrapped, so the first line
-// alone stopped mid-sentence, and a topic that opens with a code block
-// summarized as "```bash".
 func extractSummary(body []byte) string {
 	var para []string
 	inFence, inComment := false, false
@@ -329,19 +271,13 @@ func extractSummary(body []byte) string {
 	return out
 }
 
-// matchSpan returns the byte span of line whose lowering is the first
-// match of needle in lower (strings.ToLower(line)). The two strings'
-// offsets differ wherever lowering changes a rune's length (U+0130 'İ'
-// is 2 bytes and lowers to 1; an invalid byte becomes the 3-byte
-// U+FFFD), so the span is found by lowering line rune by rune, the way
-// strings.ToLower does, until the lowered length reaches the match.
 func matchSpan(line, lower, needle string) (start, end int) {
 	at := strings.Index(lower, needle)
 	if at < 0 {
 		return 0, 0
 	}
 	start, end = -1, len(line)
-	off := 0 // length of line[:i] once lowered
+	off := 0
 	for i := 0; i < len(line); {
 		if start < 0 && off >= at {
 			start = i
@@ -360,13 +296,6 @@ func matchSpan(line, lower, needle string) (start, end int) {
 	return start, end
 }
 
-// excerptAround returns a substring of `line` centred on the first
-// occurrence of `needle` (matched case-insensitively against `lower`,
-// which must be strings.ToLower(line)): cap/2 chars either side of the
-// match, shifted inward at the line's ends, so a cut line is cap chars
-// plus the needle. Prepends/appends "…" when the cut hits before/after
-// the match. The cut widens to whole runes, so the excerpt is valid
-// UTF-8 whenever line is.
 func excerptAround(line, lower, needle string, cap int) string {
 	if len(line) <= cap {
 		return line
@@ -403,7 +332,6 @@ func excerptAround(line, lower, needle string, cap int) string {
 	return out
 }
 
-// humanise turns "entity-declarations" → "Entity declarations".
 func humanise(s string) string {
 	s = strings.ReplaceAll(s, "-", " ")
 	s = strings.ReplaceAll(s, "_", " ")

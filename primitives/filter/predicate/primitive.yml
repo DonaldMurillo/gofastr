@@ -5,3 +5,45 @@ code:
   - framework/filter/validate.go
 docs:
   - framework/docs/content/entity-declarations.md
+invariants:
+  - id: node-is-one-shape
+    rule: A ?where= node is exactly one of and, or and field; a group carries no leaf member and at least one child, and a leaf carries only the value member its op reads.
+    enforced_by:
+      - test: framework/filter.TestParseWhereDecodesStrictly
+      - test: framework/filter.TestWhereScalarOpRefusesValues
+      - test: framework/filter.TestValidatePredicateRefusesGroupWithField
+  - id: node-decodes-strictly
+    rule: Each node decodes through handler.UnmarshalStrict, so a duplicate, case-folded or unknown member is refused.
+    enforced_by:
+      - test: framework/filter.TestParseWhereDecodesStrictly
+  - id: null-value-refused
+    rule: A scalar leaf with no value or a null one, and an in leaf with a null entry, is refused (filter.where_needs_value).
+    enforced_by:
+      - test: framework/filter.TestWhereRefusesNullValue
+  - id: tree-is-bounded
+    rule: A tree deeper than 8 or with more than 64 nodes is refused.
+    enforced_by:
+      - test: framework/filter.TestWhereDepthBounded
+      - test: framework/filter.TestWhereNodeCountBounded
+  - id: go-built-tree-checked-alike
+    rule: ValidatePredicate applies ParseWhere's leaf checks to a Go-built tree (known field, known op that suits the type, typed values, 1 to MaxINListEntries in values).
+    enforced_by:
+      - test: framework/filter.TestValidatePredicateRefusesUnknownOp
+      - test: framework/filter.TestValidatePredicateRefusesEmptyIn
+      - test: framework/filter.TestValidatePredicateRefusesOverCapIn
+      - test: framework/filter.TestValidatePredicateRefusesNoQueryField
+      - test: framework/filter.TestValidatePredicateResolvesWireAlias
+  - id: validate-never-writes-input
+    rule: ValidatePredicate writes its alias resolution and type marker on a deep copy it returns, never on the caller's tree, which may be shared across goroutines.
+    enforced_by:
+      - test: framework/filter.TestValidatePredicateLeavesInputUntouched
+  - id: one-parenthesized-clause
+    rule: BuildPredicate compiles a tree into one parenthesized clause joining children with AND or OR, whose values are all bound in placeholder order and typed by the leaf's column type.
+    enforced_by:
+      - test: framework/filter.TestWhereNestedOrAnd
+      - test: framework/filter.TestWhereBoolInValuesBindAsBools
+      - test: framework/filter.TestValidatePredicateSetsBoolMarker
+  - id: missing-op-is-eq
+    rule: A leaf with no op, or an empty one, is equality.
+    enforced_by:
+      - test: framework/filter.TestWhereDefaultOpIsEq

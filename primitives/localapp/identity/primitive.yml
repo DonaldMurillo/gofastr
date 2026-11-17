@@ -6,3 +6,48 @@ docs:
   - framework/docs/content/local-apps.md
 on_change:
   - battery/desktop/localuser_security_test.go pins how the fallback identity yields to battery/auth; run battery/desktop's tests on a change here.
+invariants:
+  - id: id-grammar
+    rule: An identity is exactly 32 lowercase hex characters, and LoadOrMint mints 16 crypto/rand bytes as hex, stores it 0600 and refuses a stored id outside the grammar with an error naming the file.
+    enforced_by:
+      - test: framework/localapp.TestLoadOrMintStableOwnerOnly
+      - test: framework/localapp.TestLoadOrMintRefusesCorruptFile
+      - test: framework/localapp.TestLocalUserIsTheAdmin
+  - id: raced-id-validated
+    rule: An identity read back after losing the first-boot race passes the same grammar check as any other read.
+    judge: Does this change return an identity read after a lost create race without checking it with Valid?
+  - id: install-yields-to-auth
+    rule: Install sets Extractor only when no owner extractor is set, and reports auth owning identity only for an extractor other than Extractor.
+    enforced_by:
+      - test: framework/localapp.TestInstallWhenAbsent
+      - test: framework/localapp.TestInstallOwnExtractorIsNotForeign
+      - test: framework/localapp.TestInstallForeignExtractorOwnsIdentity
+  - id: local-user-is-admin
+    rule: The local User's roles are ["admin"] and its email is local@<id>.
+    enforced_by:
+      - test: framework/localapp.TestLocalUserIsTheAdmin
+decisions:
+  - id: fallback-never-override
+    date: 2026-11-17
+    status: accepted
+    decision: The local identity is a fallback for an app with no auth battery; when battery/auth's extractor is installed the host installs no identity.
+    rejected:
+      - option: Put the local user in the context alongside auth.
+        why: handler.GetUser cannot tell a stored nil from no decision, so it would override auth's decision that a request is anonymous.
+    upholds: [install-yields-to-auth]
+  - id: refuse-not-remint
+    date: 2026-11-17
+    status: accepted
+    decision: A corrupt identity file is an error that names the file and the repair.
+    rejected:
+      - option: Mint a new identity.
+        why: Every row the old id owns would silently vanish from owner-scoped queries.
+    upholds: [id-grammar]
+  - id: one-person-is-admin
+    date: 2026-11-17
+    status: accepted
+    decision: The local user holds the admin role.
+    rejected:
+      - option: No roles.
+        why: The one person who can reach a single-user app owns it; Install bounds when the identity is handed out.
+    upholds: [local-user-is-admin]

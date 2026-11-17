@@ -102,7 +102,7 @@ func TestDriftScopedToManifestEntities(t *testing.T) {
 		Fields:   []schema.Field{{Name: "payload", Type: schema.String}},
 	}))
 	srv := mountedServer(t, Config{Registry: reg, Artifacts: testArtifacts(t, reg, true)})
-	_, body := get(t, srv, "/docs/api/")
+	_, body := get(t, srv, "/docs/api")
 	if strings.Contains(body, "out of date") {
 		t.Errorf("drift banner fired for a live entity outside the manifest's declared scope")
 	}

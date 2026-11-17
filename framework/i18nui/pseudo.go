@@ -10,8 +10,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// pseudoLetters maps each ASCII letter to an accented look-alike, so
-// text that skipped the catalog stands out as plain English.
 var pseudoLetters = map[rune]rune{
 	'a': 'á', 'b': 'ƀ', 'c': 'ç', 'd': 'ď', 'e': 'é', 'f': 'ƒ', 'g': 'ĝ',
 	'h': 'ĥ', 'i': 'í', 'j': 'ĵ', 'k': 'ķ', 'l': 'ĺ', 'm': 'ɱ', 'n': 'ñ',
@@ -23,11 +21,9 @@ var pseudoLetters = map[rune]rune{
 	'V': 'Ṽ', 'W': 'Ŵ', 'X': 'Ẋ', 'Y': 'Ý', 'Z': 'Ž',
 }
 
-// Pseudo pseudo-localizes s for overflow testing: every letter
-// accented, every vowel doubled, the whole bracketed, and padded until
-// it is at least a third longer, which is about what German or Spanish
-// adds to English. {placeholders} and {{placeholders}} are kept as
-// written so interpolation still finds them.
+// Pseudo pseudo-localizes s for overflow testing: every letter accented,
+// every vowel doubled, the whole bracketed and padded to at least a third
+// longer, with {placeholders} and {{placeholders}} kept as written.
 func Pseudo(s string) string {
 	if s == "" {
 		return ""
@@ -64,17 +60,11 @@ func Pseudo(s string) string {
 	return b.String()
 }
 
-// pseudoKey marks a catalog locale AddPseudo filled, so the label
-// resolvers know to pseudo-localize their English fallbacks there.
 const pseudoKey = "i18nui.pseudo"
 
 // AddPseudo puts Pseudo of every defined phrase ([i18n.Phrases]) into c
-// under tag (en-XA is the usual pseudo-locale tag), so a page rendered in
-// that locale shows any text that skipped the catalog as plain English
-// and any layout that cannot take longer words as overflow. Entity, field,
-// value and view labels with no catalog entry fall back to their English,
-// and in this locale that English is pseudo-localized as well: it is the
-// text a translator would replace, so it takes the same longer words.
+// under tag (usually en-XA), and pseudo-localizes the entity label
+// fallbacks in that locale too.
 func AddPseudo(c *i18n.MapCatalog, tag string) {
 	phrases := i18n.Phrases()
 	for _, k := range slices.Sorted(maps.Keys(phrases)) {
@@ -83,8 +73,6 @@ func AddPseudo(c *i18n.MapCatalog, tag string) {
 	c.Set(tag, pseudoKey, i18n.Message{Text: "true"})
 }
 
-// fallback returns s, the English a label resolver settled on when the
-// catalog had no entry, pseudo-localized in a locale AddPseudo filled.
 func fallback(ctx context.Context, tr *i18n.Translator, s string) string {
 	if s == "" {
 		return s
