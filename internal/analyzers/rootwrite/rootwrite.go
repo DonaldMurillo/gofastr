@@ -214,8 +214,9 @@ func sinksOf(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast
 // writeHelpers summarizes which parameters of every same-package
 // function reach a write sink inside it unresolved (the fixpoint and
 // its semantics live in pathflow.HelperSinkParams). Bug bash
-// 2026-10-27 I4: framework/static/builder.go:180-184 joins b.OutDir
-// with a route path and writes it through writeFile (:1782-1786);
+// 2026-10-27 I4: framework/static/builder.go's Build joins b.OutDir
+// with a route path and wrote it through writeFile (since replaced by
+// writeUnder in framework/static/output.go);
 // pathflow stopped at writeFile's plain parameter, so the sink one
 // helper deep was invisible.
 func writeHelpers(pass *analysis.Pass, pkgFuncs map[string][]*ast.FuncDecl, isGuard pathflow.GuardFunc) map[*ast.FuncDecl]map[int]bool {
