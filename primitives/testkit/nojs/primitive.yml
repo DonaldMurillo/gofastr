@@ -4,3 +4,48 @@ code:
   - framework/testkit/nojstest/
 docs:
   - framework/docs/content/testkit.md
+on_change:
+  - A new problem kind, or a change to what counts as one, changes the table in testkit.md, and every app's no-JS gate (examples/meridian/nojs_test.go, examples/site/nojs_test.go) sees it.
+invariants:
+  - id: script-off-for-every-navigation
+    rule: NewTab disables script execution through DevTools on the tab before its first navigation, so no page it loads runs the runtime or an inline script, a second page included.
+    enforced_by:
+      - test: framework/testkit/nojstest.TestCleanPagePasses
+      - test: framework/testkit/nojstest.TestSweepResetButtonIsNoSubmitAndScriptStaysOff
+  - id: script-ran-is-reported
+    rule: Inspect reports script-ran whenever window.__gofastr exists.
+    enforced_by:
+      - test: framework/testkit/nojstest.TestScriptRanIsReported
+  - id: empty-main-includes-unrendered
+    rule: An empty-main problem is reported when main, or body without one, is not rendered or shows no text.
+    enforced_by:
+      - test: framework/testkit/nojstest.TestHiddenMainIsEmpty
+      - test: framework/testkit/nojstest.TestBrokenPageReportsEachKind
+  - id: dead-links
+    rule: A visible link to "#" or a javascript URL, after the URL parser's tab, newline and control trimming, or an <a> with no href carrying role=button, onclick or a data-cui- attribute, is a dead-link; hidden links are skipped.
+    enforced_by:
+      - test: framework/testkit/nojstest.TestBrokenPageReportsEachKind
+      - test: framework/testkit/nojstest.TestCleanPagePasses
+  - id: form-needs-a-native-submit
+    rule: A visible form other than method=dialog passes when an enabled submit control, by its reflected type and not inside a disabled fieldset, lands somewhere other than a javascript URL, its formaction overriding the action, or when it has no submit control at all and exactly one text-like input; an action of "#" passes.
+    enforced_by:
+      - test: framework/testkit/nojstest.TestBrokenPageReportsEachKind
+      - test: framework/testkit/nojstest.TestCleanPagePasses
+      - test: framework/testkit/nojstest.TestSweepResetButtonIsNoSubmitAndScriptStaysOff
+  - id: error-status-is-a-problem
+    rule: Check reports http-status, first, when the page answered 400 or above.
+    enforced_by:
+      - test: framework/testkit/nojstest.TestErrorStatusIsReported
+decisions:
+  - id: probe-through-devtools
+    date: 2026-11-17
+    status: accepted
+    decision: The check runs as a DevTools evaluation, which disabled page script does not block, and reads form controls through HTMLFormElement.prototype so a control named elements cannot shadow them.
+    upholds: [form-needs-a-native-submit]
+  - id: budget-per-check
+    date: 2026-11-17
+    status: accepted
+    decision: Each Check and Inspect gets its own 30-second budget, and the tab none, so one tab can walk hundreds of pages.
+    rejected:
+      - option: A deadline on the tab.
+        why: The first Run ties the target's life to its context, so a timeout child would close the tab when it expired.
