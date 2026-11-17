@@ -132,6 +132,11 @@ its list as this step reaches it.
 (thirteen children; `uihost.go` was split into files by job so each has
 one) and `framework/ui` (ten children beside `ui.styling`) are covered
 too, ahead of their sweeps.
+`framework/contracts` (engine, config, report and four analyzer
+families), `framework/entityui` (list, bulk, record), `framework/migrate`
+(diff, constraints, sqlite, objects), `framework/embed` (credential,
+origin, reach), `framework/entity` (display, states) and
+`framework/access` (store) are covered as well.
 
 A rule that spans primitives keeps one home and lists the other files
 it governs under `applies` (settled in step 1: `crud.scope`'s
