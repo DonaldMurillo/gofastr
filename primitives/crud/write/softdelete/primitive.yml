@@ -4,3 +4,51 @@ code:
   - framework/softdelete/
 docs:
   - framework/docs/content/hooks-and-transactions.md
+invariants:
+  - id: with-soft-delete-sets-the-flag
+    rule: WithSoftDelete sets Scope.SoftDelete, creating the scope when the entity has none.
+    enforced_by:
+      - test: framework/softdelete.TestWithSoftDeleteOnAnEntityWithoutScope
+      - test: framework/softdelete.TestTrashedFlagAndFilter
+  - id: helpers-touch-one-row
+    rule: SoftDelete stamps deleted_at, Restore clears it and ForceDelete removes the row, each for the one row whose id matches and no other.
+    enforced_by:
+      - test: framework/softdelete.TestHelpersWriteOnlyTheNamedRow
+      - test: framework/softdelete.TestMixedCaseSoftDeleteRestore
+  - id: helpers-refuse-unsafe-tables
+    rule: The helpers refuse a table name that is not a safe identifier, and quote the safe ones so a mixed-case table resolves.
+    enforced_by:
+      - test: framework/softdelete.TestHelpersRefuseAnUnsafeTable
+      - test: framework/softdelete.TestMixedCaseSoftDeleteRestore
+      - test: framework.TestSoftDelete
+  - id: helpers-join-the-ambient-tx
+    rule: The helpers run on the transaction the context carries, so its rollback undoes them.
+    enforced_by:
+      - test: framework/softdelete.TestHelpersJoinAmbientTx
+  - id: helpers-skip-every-scope
+    rule: The helpers apply no tenant, owner or access filter, so a caller authorises the id before calling one.
+    judge: Does this change call softdelete.SoftDelete, Restore or ForceDelete with an id a client supplied, without first checking the caller may change that row?
+  - id: trashed-is-opt-in
+    rule: WithTrashed is true only for ?trashed=true, and ApplySoftDeleteFilter adds deleted_at IS NULL unless showTrashed.
+    enforced_by:
+      - test: framework/softdelete.TestTrashedFlagAndFilter
+  - id: trashed-needs-authorisation
+    rule: WithTrashed authorises nothing, so its answer reaches a query only after the caller is checked for permission to see deleted rows.
+    judge: Does this change pass softdelete.WithTrashed's result into a query without a permission check on the caller?
+decisions:
+  - id: deleted-at-bound-not-now
+    date: 2026-11-17
+    status: accepted
+    decision: SoftDelete binds the current UTC time as a parameter.
+    rejected:
+      - option: SET deleted_at = NOW().
+        why: SQLite has no NOW().
+    upholds: [helpers-touch-one-row]
+  - id: one-update-body
+    date: 2026-11-17
+    status: accepted
+    decision: SoftDelete and Restore share setDeletedAt, which validates the table and updates one row by id.
+    rejected:
+      - option: A SafeIdent, quote and Exec copy in each.
+        why: Two copies of one write drift.
+    upholds: [helpers-refuse-unsafe-tables]

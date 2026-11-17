@@ -25,6 +25,9 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`softdelete.WithSoftDelete` no longer panics on an entity built without `entity.Define`.** An
+  entity whose `Config.Scope` was nil hit a nil pointer; it now gets a scope, as
+  `tenant.WithMultiTenant` already did.
 - **`gofastr verify` reports a hard navigation through any chain of frames.** GOFASTR1802 caught
   `location.href = x` and `window.location.href = x`, but missed `window.top.location.href = x` and
   other chains of more than one hop.
