@@ -39,7 +39,7 @@
 // The two example apps therefore play different roles, and it is worth
 // keeping them straight:
 //
-//   - examples/ecommerce is the GENERATOR fixture. Its app spec sets
+//   - internal/testapps/ecommerce is the GENERATOR fixture. Its app spec sets
 //     output_dir: app, so the generator owns app/ outright, and
 //     appspec_gate_test.go asserts the committed app/ matches fresh
 //     generator output. If the generator regresses, that test fails.

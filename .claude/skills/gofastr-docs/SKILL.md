@@ -57,8 +57,6 @@ was needed.
 - README's "The code you don't write" table
 - A page under `framework/docs/content/` updated in the same change;
   a reference page of its own if the surface has its own semantics
-- `examples/api-tour/main.go` should exercise it; update the example
-  README
 
 **You added a new `EntityConfig` option** (e.g. `SoftDelete`, `MCP`,
 `CursorField`, `Endpoints`):

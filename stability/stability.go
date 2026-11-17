@@ -64,6 +64,7 @@ type rule struct {
 var manifest = []rule{
 	// --- Not part of the library surface ---
 	{"examples/", Excluded},
+	{"internal/testapps/", Excluded}, // app fixtures the framework's tests drive
 	{"benchmarks/", Excluded},
 	{"evals/", Excluded},
 	{"dist/", Excluded},

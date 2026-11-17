@@ -152,6 +152,7 @@ func examplesSectionMenuConfig() interactive.SectionMenuConfig {
 			{Label: "In-site apps", Items: []interactive.SectionItem{
 				{Label: "Support workspace", Href: "/examples/workspace"},
 				{Label: "Catalog (intercepting route)", Href: "/examples/catalog"},
+				{Label: "Issue tracker (tree layouts)", Href: "/examples/tracker"},
 			}},
 			{Label: "Live data", Items: []interactive.SectionItem{
 				{Label: "Live dashboard", Href: "/examples/live-dashboard"},

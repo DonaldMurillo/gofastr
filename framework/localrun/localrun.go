@@ -1,7 +1,7 @@
 // Package localrun is the machine-local registry of running gofastr
 // apps. Every App writes one record when its listener binds and removes
 // it when the server stops, so a tool on the same machine (the
-// gofastr-runs example, an agent) can list what is running, where, and
+// run tracker, an agent) can list what is running, where, and
 // how to reach its MCP server, with no port scanning.
 //
 // Records live in [Dir], one owner-only JSON file per run, with the

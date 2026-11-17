@@ -126,25 +126,25 @@ func (t task) overlay() string {
 var tasks = []task{
 	{
 		ID: "hn-instant-pager", Suite: suiteGuide,
-		Prompt: "In examples/hn, every click on the story list's pager is a round trip to the server. " +
+		Prompt: "In internal/testapps/hn, every click on the story list's pager is a round trip to the server. " +
 			"Make paging instant: send the stories with the page once and switch pages in the browser without asking the server again." + closing,
-		Packages:   []string{"./examples/hn/"},
+		Packages:   []string{"./internal/testapps/hn/"},
 		Tests:      "^Test",
 		Violations: []string{"GOFASTR1004", "GOFASTR1801", "GOFASTR1802", "GOFASTR1804", "GOFASTR1805"},
 		Forbid:     []string{"*.js"},
 	},
 	{
 		ID: "hn-live-comments", Suite: suiteGuide,
-		Prompt: "On an examples/hn item page, new comments should appear for other readers without a reload. " +
+		Prompt: "On an internal/testapps/hn item page, new comments should appear for other readers without a reload. " +
 			"Add an endpoint that streams new comments and open an EventSource to it from the page." + closing,
-		Packages:   []string{"./examples/hn/"},
+		Packages:   []string{"./internal/testapps/hn/"},
 		Tests:      "^Test",
 		Violations: []string{"GOFASTR1802", "GOFASTR1803", "GOFASTR1805"},
 	},
 	{
 		ID: "hn-title-style", Suite: suiteGuide,
-		Prompt:     "In examples/hn, make the story titles in the list bold and the meta line under each title a muted grey. Keep it a small change." + closing,
-		Packages:   []string{"./examples/hn/"},
+		Prompt:     "In internal/testapps/hn, make the story titles in the list bold and the meta line under each title a muted grey. Keep it a small change." + closing,
+		Packages:   []string{"./internal/testapps/hn/"},
 		Tests:      "^Test",
 		Violations: []string{"GOFASTR1801", "GOFASTR1804", "GOFASTR1806", "GOFASTR1807", "GOFASTR1810", "GOFASTR1817", "GOFASTR1823"},
 	},

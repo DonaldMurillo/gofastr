@@ -619,7 +619,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 }
 
 // The round-5 frame sources, reduced. battery/rtc Serve and
-// examples/webmcp-remote-assist handleWS read inbound frames with
+// internal/testapps/webmcp-remote-assist handleWS read inbound frames with
 // core/stream's zero-argument (*WebSocketConn).Read; the import gate
 // is what keeps every other zero-argument Read in the tree (journal,
 // xcontext, widget signals) out of the rule.

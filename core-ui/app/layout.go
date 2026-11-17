@@ -35,6 +35,9 @@ type Layout struct {
 	// (NewLayout sets both; see layout_tree.go).
 	spec  *LayoutSpec
 	build LayoutFunc
+	// vtSheet names the component sheet carrying the layout's
+	// transition CSS; empty when it declares none or registered too late.
+	vtSheet string
 }
 
 // WithKey sets the layout's layer key, the identity the runtime compares
