@@ -8,26 +8,6 @@ import (
 	"strings"
 )
 
-// reservedPrefixes are paths a Surface.Reach may never cover.
-//
-// Every one is mounted by the framework or one of its batteries rather than by
-// the app author, which is exactly why an allow-list alone is not enough: an
-// author who cannot get an embed working will reach for a wider prefix, and the
-// prefixes that matter most are the ones they did not write and may not know
-// exist. Refusing at boot is the same move New already makes for
-// GrantMaxAge <= GrantTTL. A configuration that cannot be right should not
-// start.
-//
-// This list is deliberately about FRAMEWORK-mounted routes. An app's own
-// privileged routes are the app's to keep out of Reach; there is no way for
-// this package to know them.
-//
-// The DEFAULT prefixes are listed here; several batteries let an app relocate
-// them (admin.Config.PathPrefix, print.Config.PathPrefix, the auth plugin's
-// WithPrefix), and an app that moves one would lose the protection entirely.
-// AddReservedPrefixes closes that: the framework registers each battery's
-// ACTUAL configured prefix at mount, so relocating a battery moves its
-// protection with it.
 var reservedPrefixes = []string{
 	"/mcp",          // framework/app.go: every entity's MCP twin plus the control tools
 	"/openapi.json", // core/openapi: the full route and schema inventory
@@ -41,8 +21,6 @@ var reservedPrefixes = []string{
 	"/metrics",      // framework/app.go: route inventory and traffic shape
 }
 
-// normalizeReach cleans and validates one Path or Reach entry against reserved,
-// the host's effective reserved-prefix list.
 func normalizeReach(surface, field, p string, reserved []string) (string, error) {
 	if p == "" {
 		return "", fmt.Errorf("embed: surface %q: empty %s entry", surface, field)
@@ -68,17 +46,8 @@ func normalizeReach(surface, field, p string, reserved []string) (string, error)
 }
 
 // AddReservedPrefixes registers additional paths no surface may reach, and
-// re-validates every surface already declared against them.
-//
-// The framework calls this at mount time with each privileged battery's ACTUAL
-// configured prefix, because the built-in list can only name defaults: an app
-// that sets admin.Config.PathPrefix = "/back-office" would otherwise keep the
-// protection on "/admin", which it no longer uses, and lose it on the prefix it
-// does.
-//
-// Re-validation is the point. Surfaces are declared before mount, so a Path or
-// Reach that only becomes reserved once a battery is mounted has to be caught
-// here or not at all. The error names both the surface and the prefix.
+// re-validates every declared surface against them. It errors naming the
+// surface and prefix when one already covers a new prefix.
 func (h *Host) AddReservedPrefixes(prefixes ...string) error {
 	added := make([]string, 0, len(prefixes))
 	for _, p := range prefixes {
@@ -117,35 +86,9 @@ func (h *Host) AddReservedPrefixes(prefixes ...string) error {
 	return nil
 }
 
-// RoutedPath returns the path the ROUTER will dispatch on, decoded one segment
-// at a time, or ok=false when the request must be refused before any
-// authorization decision is made.
-//
-// It exists because the gate and the router disagreed about what "the path" is,
-// and the disagreement was exploitable in both directions.
-//
-// MayReach used to decide on r.URL.Path, which is fully percent-decoded, and
-// then cleaned it. net/http's ServeMux matches patterns against
-// r.URL.EscapedPath(), where an encoded separator or an encoded dot segment is
-// an ordinary byte sequence sitting INSIDE one segment. So a request for
-//
-//	GET /api/docs/%2e%2e/%2e%2e/reports
-//
-// decoded to "/api/docs/../../reports", which path.Clean collapsed to
-// "/reports", inside the surface's own subtree, so the gate admitted it. The
-// router collapsed nothing, matched the subtree pattern "/api/docs/", and ran a
-// handler that reservedPrefixes exists to keep grants away from. The mirror
-// image, "/__gofastr%2Fprivate", read as a runtime endpoint to the gate and as
-// a single opaque segment to the router, reaching an app's own "/{slug}".
-//
-// Cleaning cannot fix this. Normalising ONE of the two strings is precisely
-// what opens the gap, so a stricter clean would only move it. The only correct
-// move is to refuse any path whose segments do not survive decoding intact, and
-// then compare on the same segments the router will see.
-//
-// Nothing legitimate is lost: a path segment never needs to contain an encoded
-// "/" or to spell "." or "..". Ordinary escapes (%20, %2B, a UTF-8 name) decode
-// to themselves and pass.
+// RoutedPath returns the path the router will dispatch on, decoded one segment
+// at a time, or ok=false when a segment decodes to a separator, a backslash,
+// "." or "..", or does not decode at all.
 func RoutedPath(u *url.URL) (string, bool) {
 	if u == nil {
 		return "", false
@@ -161,10 +104,6 @@ func RoutedPath(u *url.URL) (string, bool) {
 		if err != nil {
 			return "", false
 		}
-		// An encoded separator or dot segment is the whole attack: it is one
-		// segment to the router and several to anything that decodes first.
-		// Backslash joins it because some proxies normalise it to "/" before
-		// the app ever sees the request.
 		if strings.ContainsAny(dec, `/\`) {
 			return "", false
 		}
@@ -176,9 +115,6 @@ func RoutedPath(u *url.URL) (string, bool) {
 	return strings.Join(out, "/"), true
 }
 
-// pathWithin reports whether p is prefix, or sits beneath it on a segment
-// boundary. It is the whole matching rule, so "/api/orders" admits
-// "/api/orders/42" and refuses "/api/orders-archive".
 func pathWithin(prefix, p string) bool {
 	if prefix == "" || p == "" {
 		return false
@@ -189,16 +125,10 @@ func pathWithin(prefix, p string) bool {
 	if !strings.HasPrefix(p, prefix) {
 		return false
 	}
-	// Boundary: the next byte after the prefix must start a new segment.
 	rest := p[len(prefix):]
 	return strings.HasPrefix(rest, "/")
 }
 
-// routeWithin reports whether p, a decoded path, is a path the route
-// pattern matches, or sits beneath one on a segment boundary: a param
-// segment matches one non-empty segment its constraint admits
-// (":id:int" refuses "abc", which another route may serve), a catch-all
-// one or more, a literal itself. A route with no param is pathWithin.
 func routeWithin(pattern, p string) bool {
 	if !isDynamicRoute(pattern) {
 		return pathWithin(pattern, p)
@@ -227,12 +157,6 @@ func routeWithin(pattern, p string) bool {
 	return true
 }
 
-// routesOverlap reports whether one path can sit under both a and b,
-// either within the other: a param segment matches any param, and a
-// literal its constraint admits. A Path or Reach entry that overlaps a reserved prefix could
-// hand a grant a path under it: "/:section/summary" reaches
-// "/auth/summary". Two literal routes overlap exactly when one is
-// pathWithin the other.
 func routesOverlap(a, b string) bool {
 	if !isDynamicRoute(a) && !isDynamicRoute(b) {
 		return pathWithin(a, b) || pathWithin(b, a)
@@ -262,23 +186,6 @@ func routesOverlap(a, b string) bool {
 	return true
 }
 
-// runtimeEndpoints and runtimePrefixes are the /__gofastr routes framework/uihost
-// mounts for the browser runtime and the embed flow. They are the only part of
-// /__gofastr a grant reaches without a Reach entry. Each one is grant-aware or
-// serves static runtime code; the widget catalog substitutes the grant's own
-// surface path rather than trusting the caller.
-//
-// This is a list on purpose. It used to be the whole /__gofastr subtree, and
-// batteries mount there too: battery/rtc's signalling socket, the desktop
-// bridge, the plugin host, the relay. None of them reads a grant, so a grant
-// for a surface with no Reach at all opened an rtc room as its subject. A new
-// runtime route an embed needs is added here, next to the uihost mount.
-//
-// The widgets' own style, state and chrome routes sit outside /__gofastr, at
-// /core-ui/widget/<name>/; widgetReach admits those per widget.
-//
-// /__gofastr/session is left out deliberately: it mints an anonymous session
-// and refuses a grant itself (see uihost handleCreateSession).
 var runtimeEndpoints = []string{
 	"/__gofastr/runtime.js",
 	"/__gofastr/color-scheme.js",
@@ -305,14 +212,11 @@ var runtimePrefixes = []string{
 	strings.TrimSuffix(SurfacePrefix, "/"),
 }
 
-// runtimeReach reports whether p is one of the runtime endpoints above.
 func runtimeReach(p string) bool {
 	if slices.Contains(runtimeEndpoints, p) {
 		return true
 	}
 	for _, pre := range runtimePrefixes {
-		// The subtree only: "/__gofastr/runtime" itself is not a route, and
-		// "/__gofastr/runtime.js" is matched exactly above.
 		if strings.HasPrefix(p, pre+"/") {
 			return true
 		}
@@ -320,16 +224,8 @@ func runtimeReach(p string) bool {
 	return false
 }
 
-// widgetLeaves are the routes core-ui/widget mounts per widget under
-// /core-ui/widget/<name>/.
 var widgetLeaves = []string{"style.css", "state", "chrome"}
 
-// widgetReach reports whether p is a widget style, state or chrome route
-// for a widget offered on surface's page. The name is checked against the
-// host's widget registry hook, so a grant for one surface never reads the
-// state of a widget scoped to another, whatever gate that widget carries.
-// p is the routed path (RoutedPath refused dot segments), parsed exactly
-// rather than cleaned, so the name checked is the name the router serves.
 func (h *Host) widgetReach(surface *ResolvedSurface, p string) bool {
 	if h.widgetOnSurface == nil {
 		return false
@@ -338,7 +234,6 @@ func (h *Host) widgetReach(surface *ResolvedSurface, p string) bool {
 	if !ok {
 		return false
 	}
-	// No "/" after the name leaves leaf empty, which no widget route is.
 	name, leaf, _ := strings.Cut(rest, "/")
 	if name == "" || !slices.Contains(widgetLeaves, leaf) {
 		return false
@@ -346,7 +241,6 @@ func (h *Host) widgetReach(surface *ResolvedSurface, p string) bool {
 	return h.widgetOnSurface(name, surface.path)
 }
 
-// reservedFor reports the reserved prefix p falls under, if any.
 func reservedFor(reserved []string, p string) (string, bool) {
 	for _, res := range reserved {
 		if pathWithin(res, p) {
@@ -356,20 +250,9 @@ func reservedFor(reserved []string, p string) (string, bool) {
 	return "", false
 }
 
-// MayReach reports whether a grant for this surface may be used on p.
-//
-// Three things are in reach: the surface's own Path subtree (every path a
-// dynamic Path matches, and what lies under it; see routeWithin), the runtime
-// endpoints uihost mounts under /__gofastr (runtimeEndpoints), and each
-// declared Reach prefix. The middleware also refuses any path under a reserved
-// prefix before it asks MayReach.
-//
-// Pass the result of [RoutedPath], never a raw r.URL.Path. The cleaning below
-// is a backstop for direct callers, and cleaning alone is NOT sufficient: it
-// collapses dot segments that the router does not, which is the bug RoutedPath
-// exists to close. It stays because for a caller that skips RoutedPath,
-// cleaning fails closed on "/reports/../admin/users" while not cleaning admits
-// it under the "/reports" prefix.
+// MayReach reports whether a grant for this surface may be used on p: the
+// surface's own route subtree, the runtime endpoints, or a declared Reach
+// prefix. Pass the result of [RoutedPath].
 func (s *ResolvedSurface) MayReach(p string) bool {
 	if p == "" {
 		return false

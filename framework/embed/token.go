@@ -13,31 +13,20 @@ import (
 	"time"
 )
 
-// Token prefixes. They are load-bearing in exactly one way: they let a leaked
-// string be identified at a glance (in a log, a bug report, a customer's page
-// source) as a GoFastr embed credential rather than a session or an API token.
+// Token prefixes, which mark a leaked string as an embed credential.
 const (
-	// NoncePrefix marks a single-use handshake nonce: the credential the app
-	// author renders into a customer's page.
+	// NoncePrefix marks a single-use handshake nonce.
 	NoncePrefix = "emb_"
-	// GrantPrefix marks the short-lived stateless grant the frame receives in
-	// exchange for a nonce. It never leaves the frame.
+	// GrantPrefix marks the stateless grant a nonce is exchanged for.
 	GrantPrefix = "emg_"
 )
 
-// HKDF purposes. Domain separation means a nonce can never verify as a grant
-// (or as a session token) even though all three are HMAC-SHA256 over JSON with
-// keys derived from the same app secret. Versioned so the derivation can change
-// without silently accepting the old form.
+// HKDF purposes the nonce and grant keys are derived under.
 const (
 	NoncePurpose = "gofastr/embed/nonce/v1"
 	GrantPurpose = "gofastr/embed/grant/v1"
 )
 
-// Errors returned by the verify path. They are distinguished so a handler can
-// answer "this was used" differently from "this is not ours", but note that
-// handlers deliberately collapse them into one client-visible response, since
-// telling a caller WHICH check failed is an oracle.
 var (
 	// ErrMalformed means the string is not a token of this kind at all.
 	ErrMalformed = errors.New("embed: malformed token")
@@ -47,10 +36,6 @@ var (
 	ErrExpired = errors.New("embed: token expired")
 )
 
-// nonceClaims is the signed payload of a handshake nonce.
-//
-// Field names are short because this string is pasted into a customer's HTML by
-// hand; the full names live here, once.
 type nonceClaims struct {
 	Surface string   `json:"s"`            // embeddable surface name
 	Subject string   `json:"u"`            // app-side identity the frame acts as
@@ -60,20 +45,13 @@ type nonceClaims struct {
 	Expires int64    `json:"x"`            // unix seconds
 }
 
-// grantClaims is the signed payload of an exchanged grant. It has no ID: the
-// grant is stateless and is deliberately NOT single-use, because the frame
-// presents it on every island RPC for as long as it lives.
 type grantClaims struct {
 	Surface string   `json:"s"`
 	Subject string   `json:"u"`
 	Scopes  []string `json:"sc,omitempty"`
 	Origin  string   `json:"o"`
 	Expires int64    `json:"x"`
-	// Deadline is the absolute end of the credential's life, fixed when the
-	// nonce was exchanged and carried unchanged through every refresh. Without
-	// it a refreshable grant is an immortal one: each refresh would push the
-	// expiry out, and a frame left open in a tab would hold a credential
-	// forever. Refresh past this instant is refused.
+	// Deadline is the absolute end of the credential's life, unchanged by refresh.
 	Deadline int64 `json:"d"`
 }
 
@@ -94,8 +72,7 @@ type Grant struct {
 	Scopes  []string
 	Origin  string
 	Expires time.Time
-	// Deadline is the absolute end of the credential's life. Refreshes move
-	// Expires; they never move Deadline.
+	// Deadline is the absolute end of the credential's life; refreshes never move it.
 	Deadline time.Time
 }
 
@@ -106,9 +83,6 @@ func (g Grant) HasScope(scope string) bool {
 
 var b64 = base64.RawURLEncoding
 
-// newNonceID returns a fresh 128-bit random id. It is the primary key the burn
-// store enforces uniqueness on, so it must be unguessable AND unique; 128 bits
-// of crypto/rand is both.
 func newNonceID() (string, error) {
 	var buf [16]byte
 	if _, err := rand.Read(buf[:]); err != nil {
@@ -117,7 +91,6 @@ func newNonceID() (string, error) {
 	return b64.EncodeToString(buf[:]), nil
 }
 
-// sign encodes claims and appends a MAC, producing prefix + payload + "." + mac.
 func sign(prefix string, key []byte, claims any) (string, error) {
 	payload, err := json.Marshal(claims)
 	if err != nil {
@@ -125,21 +98,12 @@ func sign(prefix string, key []byte, claims any) (string, error) {
 	}
 	encoded := b64.EncodeToString(payload)
 	mac := hmac.New(sha256.New, key)
-	// The prefix goes INTO the MAC. Without it, a nonce payload and a grant
-	// payload with identical fields would produce identical MACs, and the only
-	// thing stopping a nonce from being presented as a grant would be the key
-	// derivation. Two independent barriers is the point.
 	mac.Write([]byte(prefix))
 	mac.Write([]byte(encoded))
 	return prefix + encoded + "." + b64.EncodeToString(mac.Sum(nil)), nil
 }
 
-// verify checks the prefix and MAC and returns the raw payload bytes.
 func verify(prefix string, key []byte, token string) ([]byte, error) {
-	// An empty key is not a key. HMAC accepts one and computes a MAC anybody
-	// can reproduce, so a caller that reached a verifier before its key was set
-	// would authenticate forged claims instead of failing. The minting side has
-	// always refused it; refusing here too makes the two halves agree.
 	if len(key) == 0 {
 		return nil, ErrBadSignature
 	}
@@ -161,8 +125,6 @@ func verify(prefix string, key []byte, token string) ([]byte, error) {
 	if !hmac.Equal(sig, mac.Sum(nil)) {
 		return nil, ErrBadSignature
 	}
-	// Decode AFTER the MAC check so malformed-but-signed is the only decode
-	// path an attacker can reach.
 	payload, err := b64.DecodeString(encoded)
 	if err != nil {
 		return nil, ErrMalformed
@@ -170,8 +132,7 @@ func verify(prefix string, key []byte, token string) ([]byte, error) {
 	return payload, nil
 }
 
-// MintNonce signs a single-use handshake nonce. Nothing is stored. The nonce
-// becomes "used" only when the exchange endpoint burns its id.
+// MintNonce signs a single-use nonce; it errors on an empty key or a bad origin.
 func MintNonce(key []byte, surface, subject, origin string, scopes []string, ttl time.Duration, now time.Time) (string, error) {
 	if len(key) == 0 {
 		return "", errors.New("embed: no signing key")
@@ -194,9 +155,7 @@ func MintNonce(key []byte, surface, subject, origin string, scopes []string, ttl
 	})
 }
 
-// VerifyNonce checks a nonce's signature and expiry. It does NOT check whether
-// the nonce has been used. That is the burn store's job, and the separation is
-// deliberate: signature verification is pure and testable, burning is I/O.
+// VerifyNonce checks a nonce's signature, claims and expiry, not whether it is burned.
 func VerifyNonce(key []byte, token string, now time.Time) (Nonce, error) {
 	payload, err := verify(NoncePrefix, key, token)
 	if err != nil {
@@ -223,15 +182,12 @@ func VerifyNonce(key []byte, token string, now time.Time) (Nonce, error) {
 	}, nil
 }
 
-// MintGrant signs the frame credential a verified nonce is exchanged for.
-// deadline caps the total life of this credential across every later refresh.
+// MintGrant signs a grant whose expiry is clamped to deadline.
 func MintGrant(key []byte, n Nonce, ttl time.Duration, deadline time.Time, now time.Time) (string, error) {
 	if len(key) == 0 {
 		return "", errors.New("embed: no signing key")
 	}
 	exp := now.Add(ttl)
-	// Never mint past the deadline: a grant whose expiry outlived its own
-	// absolute cap would keep verifying after refresh stopped being allowed.
 	if exp.After(deadline) {
 		exp = deadline
 	}
@@ -245,7 +201,7 @@ func MintGrant(key []byte, n Nonce, ttl time.Duration, deadline time.Time, now t
 	})
 }
 
-// VerifyGrant checks a grant's signature and expiry.
+// VerifyGrant checks a grant's signature, required claims and expiry.
 func VerifyGrant(key []byte, token string, now time.Time) (Grant, error) {
 	payload, err := verify(GrantPrefix, key, token)
 	if err != nil {
