@@ -63,11 +63,17 @@ func TestMinify_DoesNotIntroduceScriptCloser(t *testing.T) {
 	}
 	var paths []string
 	srcDir := filepath.Join(root, "core-ui/runtime/src")
-	entries, _ := os.ReadDir(srcDir)
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		t.Fatalf("read src dir: %v", err)
+	}
 	for _, e := range entries {
 		if filepath.Ext(e.Name()) == ".js" {
 			paths = append(paths, filepath.Join(srcDir, e.Name()))
 		}
+	}
+	if len(paths) == 0 {
+		t.Fatalf("no .js modules under %s: the scan would check nothing", srcDir)
 	}
 	for _, p := range paths {
 		raw, err := os.ReadFile(p)

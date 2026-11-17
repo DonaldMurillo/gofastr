@@ -46,6 +46,9 @@ func TestMinifyRuntimeCorpus(t *testing.T) {
 		}
 		files = append(files, file{path: filepath.Join(srcDir, e.Name())})
 	}
+	if len(files) == 0 {
+		t.Fatalf("no .js modules under %s: the corpus would check nothing", srcDir)
+	}
 
 	for _, f := range files {
 		name := filepath.Base(f.path)
