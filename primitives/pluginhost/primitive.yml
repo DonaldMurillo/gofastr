@@ -12,3 +12,64 @@ docs:
   - framework/docs/content/plugin-platform.md
 on_change:
   - The messages host/pluginhost.js and frame/frameclient.js exchange are a contract with every plugin's adapter script, so a change to their shape breaks installed plugins.
+  - BrokerRegistration documents the JavaScript object an adapter passes to window.__gofastrPluginHost.register; change it with host/pluginhost.js and the plugin-platform page.
+invariants:
+  - id: allow-is-grant-and-caller
+    rule: Allow permits a capability only when the plugin's granted set matches it by auth.ScopeMatch and the caller's own scopes allow it, so a nil or empty grant denies even an unscoped session.
+    enforced_by:
+      - test: framework/pluginhost.TestAllow_NilGrantDeniesEvenUnscopedSession
+      - test: framework/pluginhost.TestAllow_PluginGrantIsCeiling
+      - test: framework/pluginhost.TestAllow_ScopedTokenIntersectsGrant
+  - id: guard-fails-closed
+    rule: Guard calls next only when Allow permits, and otherwise answers 403 with a JSON body whose error is E_CAPABILITY_DENIED and names the capability.
+    enforced_by:
+      - test: framework/pluginhost.TestGuard_BlocksDeniedRunsAllowed
+  - id: script-routes-idempotent
+    rule: RegisterBrokerRoute and RegisterFrameClientRoute register their route once however many plugins call them.
+    enforced_by:
+      - test: framework/pluginhost.TestRegisterBrokerRoute_Idempotent
+      - test: framework/pluginhost.TestRegisterFrameClientRoute_Idempotent
+  - id: broker-is-plain-frame-client-is-framed
+    rule: The broker script is served as a host-page script with no CORP or CSP relaxation, and the frame client is served framed so an opaque-origin frame may load it.
+    enforced_by:
+      - test: framework/pluginhost.TestBrokerRouteIsPlainHostScript
+      - test: framework/pluginhost.TestFrameClientRouteServedFramed
+  - id: marker-escapes-values
+    rule: MountMarker HTML-escapes every attribute value and hidden-field value it emits.
+    enforced_by:
+      - test: framework/pluginhost.TestMountMarker_EscapesValues
+  - id: marker-drops-unsafe-attribute-names
+    rule: MountMarker drops an extra attribute whose name is empty, over 128 bytes, starts with "on" in any case, does not start with a letter, or holds a byte other than a letter, digit, '-', '_' or ':'.
+    enforced_by:
+      - test: framework/pluginhost.TestMountMarker_DropsUnsafeAttributeName
+      - test: framework/pluginhost.TestValidAttributeName
+  - id: marker-fallback-inside
+    rule: A Fallback renders verbatim inside the marker in a div carrying data-fui-plugin-fallback, and no wrapper is emitted without one.
+    enforced_by:
+      - test: framework/pluginhost.TestMountMarker_FallbackInsideMarker
+      - test: framework/pluginhost.TestMountMarker_NoFallbackNoWrapper
+  - id: marker-defaults
+    rule: MountMarker fills an empty DocID with DefaultDocID and an empty MinHeight with DefaultMinHeight.
+    enforced_by:
+      - test: framework/pluginhost.TestMountMarkerDefaults
+  - id: fallback-is-host-trusted
+    rule: MountConfig.Fallback is built by the plugin's Go code on the server and never carries content received from the frame.
+    judge: Does this change let bytes posted by a plugin frame reach MountConfig.Fallback or any other render.HTML the marker emits unescaped?
+decisions:
+  - id: upward-edge-to-auth
+    date: 2026-11-17
+    status: accepted
+    decision: Allow imports battery/auth for HasScope, the one upward edge out of framework/, allowed by a GOFASTR1301 directive.
+    rejected:
+      - option: Invert HasScope through an interface defined in pluginhost.
+        why: It changes a security chokepoint's wiring rather than renaming it, and no second caller needs the seam.
+    revisit_if: framework/access grows a context reader for the caller's token scopes.
+    upholds: [allow-is-grant-and-caller]
+  - id: grant-is-the-ceiling
+    date: 2026-11-17
+    status: accepted
+    decision: The plugin's grant set confines it whatever the caller authenticated with, so an unscoped session passes only what the plugin was granted.
+    rejected:
+      - option: Let an unscoped session caller pass every capability, as auth.HasScope alone does.
+        why: The plugin is untrusted code, and a session cookie would then hand it the user's full authority.
+    upholds: [allow-is-grant-and-caller]

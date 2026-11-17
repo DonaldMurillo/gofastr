@@ -12,75 +12,46 @@ const (
 	DefaultMinHeight = "240px"
 )
 
-// Attribute is a single HTML attribute on the mount marker. Plugins use it to
-// add their own data-* attributes (e.g. wysiwyg's data-fui-plugin-for listing
-// the hidden field names to sync).
+// Attribute is an extra attribute on the mount marker.
 type Attribute struct {
 	Name  string
 	Value string
 }
 
-// Field is a hidden input emitted after the mount marker. The generic broker
-// creates the iframe inside the marker; plugins use the hidden inputs so a
-// normal form POST / data-cui-rpc submit round-trips the canonical doc and its
-// markdown sibling (protocol-v1.md §9).
+// Field is a hidden input emitted after the mount marker.
 type Field struct {
 	Name  string
 	Value string
 }
 
-// MountConfig configures [MountMarker]. It is the generic, plugin-agnostic
-// shape; a plugin's own Mount wraps it (see the wysiwyg plugin for the pattern).
+// MountConfig configures [MountMarker].
 type MountConfig struct {
-	// Plugin is the plugin name, the data-fui-plugin attribute the generic
-	// broker dispatches on to find the registered adapter. Required.
+	// Plugin is the data-fui-plugin value the broker dispatches on. Required.
 	Plugin string
 
-	// DocID is the persistence key (data-fui-plugin-docid). Defaults to
-	// [DefaultDocID].
+	// DocID is data-fui-plugin-docid; empty means [DefaultDocID].
 	DocID string
 
-	// MinHeight is the initial iframe height (data-fui-plugin-minheight).
-	// Defaults to [DefaultMinHeight].
+	// MinHeight is data-fui-plugin-minheight; empty means [DefaultMinHeight].
 	MinHeight string
 
-	// Capabilities is an optional CSV grant override
-	// (data-fui-plugin-capabilities). Empty ⇒ adapter manifest default.
+	// Capabilities is an optional CSV grant override.
 	Capabilities string
 
-	// Doc is an optional initial document JSON server-rendered into the marker
-	// (data-fui-plugin-doc) for reload round-trip.
+	// Doc is an optional initial document JSON (data-fui-plugin-doc).
 	Doc string
 
-	// Fallback is server-rendered HTML placed inside the marker as the
-	// pre-hydration state (wrapped in a div carrying
-	// data-fui-plugin-fallback). The broker hides the iframe until the
-	// frame reports ready, then hides the fallback — hidden, never
-	// removed — and shows the frame; on bootError it swaps back, so a
-	// plugin with a Go-side renderer (the chart plugin's SSR SVG)
-	// degrades to its static output instead of an empty box, and works
-	// with JavaScript off. Teardown restores it until SPA nav replaces
-	// the marker.
-	//
-	// TRUST: this is render.HTML in the host page's own trust domain,
-	// emitted verbatim like every render.HTML — the plugin's Go-side
-	// Mount() builds it server-side; it never comes from the frame.
+	// Fallback is shown until the frame is ready; emitted verbatim.
 	Fallback render.HTML
 
-	// Attributes are extra attributes appended to the marker (plugin-specific).
+	// Attributes are extra marker attributes.
 	Attributes []Attribute
 
 	// Fields are hidden inputs emitted after the marker.
 	Fields []Field
 }
 
-// MountMarker renders the generic mount marker div plus any hidden inputs. The
-// generic host broker scans for `[data-fui-plugin]` and, for each marker, looks
-// up the registered adapter by the plugin name to build the sandboxed iframe.
-//
-// All interpolated values are HTML-escaped via [render.Escape]. The marker is
-// intentionally a plain div (the broker creates the iframe inside it) so it
-// drops cleanly into any form.
+// MountMarker renders the escaped marker div and its hidden inputs.
 func MountMarker(cfg MountConfig) render.HTML {
 	if cfg.DocID == "" {
 		cfg.DocID = DefaultDocID
@@ -107,11 +78,6 @@ func MountMarker(cfg MountConfig) render.HTML {
 		b.WriteByte('"')
 	}
 	for _, attr := range cfg.Attributes {
-		// Attribute NAMES can't be HTML-escaped into a safe form (an escaped
-		// name isn't a valid name), so an unsafe name must be dropped, not
-		// emitted raw, otherwise a name like `x" onload="…` breaks out of the
-		// tag. Values are escaped as usual. Names are meant to be static plugin
-		// constants; a non-conforming one is a bug, so skip it.
 		if !validAttributeName(attr.Name) {
 			continue
 		}
@@ -142,19 +108,10 @@ func MountMarker(cfg MountConfig) render.HTML {
 	return render.HTML(b.String())
 }
 
-// validAttributeName reports whether s is safe to emit as an HTML attribute
-// name unescaped: a conservative subset of the HTML name grammar,
-// letters, digits, '-', '_', and ':' (for data-*/namespaced names), starting
-// with a letter. This admits every real plugin marker attribute
-// (data-fui-plugin-*) while rejecting anything that could terminate the
-// attribute or the tag (space, '=', '"', '/', '>', '<', control chars).
 func validAttributeName(s string) bool {
 	if s == "" || len(s) > 128 {
 		return false
 	}
-	// Reject event-handler names (on…): even with an escaped value, emitting
-	// onX="…" installs a live DOM handler. HTML attribute names are
-	// case-insensitive, so match "on" case-insensitively.
 	if len(s) >= 2 && (s[0] == 'o' || s[0] == 'O') && (s[1] == 'n' || s[1] == 'N') {
 		return false
 	}
