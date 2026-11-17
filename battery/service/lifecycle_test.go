@@ -510,3 +510,39 @@ func TestControlServerSurvivesAcceptError(t *testing.T) {
 		t.Fatalf("control channel after an accept error: %v", err)
 	}
 }
+
+func TestTaskSchedulerStopDoesNotKillTheDrainItsFirstAskStarted(t *testing.T) {
+	b, ft, _ := testBattery(t, "windows", Config{})
+	inst, err := b.layoutFor(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := inst.ensure(); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := listenControl(inst.socketPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The daemon answers only the first, unanswered ask, then drains: the retry waiting behind it is reset.
+	s := &controlServer{ln: ln, log: slog.New(slog.DiscardHandler),
+		handle: func(op string) controlResponse {
+			if op == "stop" {
+				ln.Close()
+			}
+			return controlResponse{OK: true}
+		}}
+	t.Cleanup(s.Close)
+	go func() {
+		time.Sleep(controlDeadline + time.Second)
+		if c, err := ln.Accept(); err == nil {
+			s.serveConn(c)
+		}
+	}()
+	if err := (taskScheduler{}).stop(b); err != nil {
+		t.Fatalf("stop of a daemon draining on its first ask: %v", err)
+	}
+	if got := ft.got(); len(got) != 0 {
+		t.Fatalf("stop hard-killed a daemon its first ask had already set draining: %q", got)
+	}
+}
