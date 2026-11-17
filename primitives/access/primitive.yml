@@ -36,7 +36,7 @@ invariants:
     enforced_by:
       - test: framework/access.TestValidScope
   - id: unwired-check-denies
-    rule: Can and CanResource answer false, and GetPermissions nil, for a nil context or one with no policy installed.
+    rule: Can answers false and GetPermissions nil for a nil context or one with no policy installed; CanResource answers false for a nil context, and with no policy installed unless a Decider allows.
     enforced_by:
       - test: framework/access.TestCan_NoPolicyDenies
       - test: framework/access.TestCanNilContextFailsClosed
@@ -96,7 +96,7 @@ invariants:
     enforced_by:
       - test: framework/access.TestResolverSkipsCacheOnCanceledCtx
   - id: resolver-cache-bounded
-    rule: The resolver sweeps expired entries at most once per TTL and sheds settled entries to a low-water mark at the entry cap, leaving in-flight entries alone.
+    rule: The resolver sweeps expired settled entries at most once per TTL, leaving in-flight ones alone, and at the entry cap sheds entries, in-flight ones included, soonest-expiring first to a low-water mark.
     enforced_by:
       - test: framework/access.TestResolverReclaimsExpiredEntries
       - test: framework/access.TestResolverShedsPastEntryCap
