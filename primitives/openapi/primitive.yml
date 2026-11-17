@@ -1,0 +1,9 @@
+primitive: openapi
+summary: Generating the /openapi.json spec for the entity registry, with the CRUD, bulk and custom-endpoint paths, their filter parameters and the request, read and list schemas.
+code:
+  - framework/openapi/openapi.go
+  - framework/openapi/bulk.go
+docs:
+  - framework/docs/content/api-versioning.md
+on_change:
+  - A new CRUD route, query parameter or response shape in framework/crud also needs its path, parameter or schema here, or the spec stops describing the API.

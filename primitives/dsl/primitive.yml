@@ -1,0 +1,9 @@
+primitive: dsl
+summary: The ?dsl= query language, parsed into a DSLQuery and built into a query builder with its where, include, order, limit and after clauses.
+code:
+  - framework/dsl/dsl.go
+  - framework/dsl/phrases.go
+docs:
+  - framework/docs/content/query-dsl.md
+on_change:
+  - A new clause or operator also updates the Grammar, Operators and Clauses sections of query-dsl.md.

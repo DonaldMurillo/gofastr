@@ -1,0 +1,10 @@
+primitive: i18nui.entity
+summary: The entity screens' chrome phrases - the list, record and bulk-bar headings, buttons, notices and toasts framework/entityui says.
+code:
+  - framework/i18nui/entity.go
+  - framework/i18nui/entity_list.go
+  - framework/i18nui/entity_record.go
+  - framework/i18nui/entity_bulk.go
+docs:
+  - framework/docs/content/entityui.md
+  - framework/docs/content/i18n.md

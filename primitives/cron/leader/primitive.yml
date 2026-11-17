@@ -1,0 +1,6 @@
+primitive: cron.leader
+summary: PostgresAdvisoryLease, the leader election that holds a Postgres advisory lock and claims each tick once across replicas.
+code:
+  - framework/cron/leader_pg.go
+docs:
+  - framework/docs/content/cron.md

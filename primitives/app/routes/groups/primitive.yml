@@ -1,0 +1,6 @@
+primitive: app.routes.groups
+summary: Route groups - a shared prefix, middleware stack and access policy for a set of routes, nesting, and the OpenAPI tag and MCP namespace their entities take.
+code:
+  - framework/routegroup/
+docs:
+  - framework/docs/content/api-versioning.md

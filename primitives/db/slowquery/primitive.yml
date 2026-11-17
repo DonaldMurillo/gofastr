@@ -1,0 +1,7 @@
+primitive: db.slowquery
+summary: An Executor wrapper that logs statements slower than a threshold, their SQL shape masked by dialect, and counts them for /metrics.
+code:
+  - framework/slowquery/
+docs:
+  - framework/docs/content/observability.md
+  - framework/docs/content/log.md

@@ -1,0 +1,6 @@
+primitive: static.watch
+summary: Builder.Watch, the polling loop that rebuilds the export whenever a file under the watched directories changes its modification time.
+code:
+  - framework/static/watch.go
+docs:
+  - framework/docs/content/static-export.md

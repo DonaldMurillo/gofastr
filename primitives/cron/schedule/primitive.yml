@@ -1,0 +1,7 @@
+primitive: cron.schedule
+summary: The exported Schedule from Parse - Matches, Next, SkipDay, FixedTime and Satisfiable - and FiresAt's handling of daylight-saving gaps and repeats.
+code:
+  - framework/cron/next.go
+  - framework/cron/dst.go
+docs:
+  - framework/docs/content/cron.md

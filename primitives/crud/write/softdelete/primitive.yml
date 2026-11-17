@@ -1,0 +1,6 @@
+primitive: crud.write.softdelete
+summary: Soft delete outside the CRUD handler - the WithSoftDelete entity decorator, the SoftDelete, Restore and ForceDelete helpers, and the trashed-rows filter.
+code:
+  - framework/softdelete/
+docs:
+  - framework/docs/content/hooks-and-transactions.md

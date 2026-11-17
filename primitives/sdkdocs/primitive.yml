@@ -1,0 +1,9 @@
+primitive: sdkdocs
+summary: The public SDK docs site a host mounts beside its UI host - which entities it documents and who may see them, the artifact download routes, and the manifest drift check against the live registry.
+code:
+  - framework/sdkdocs/sdkdocs.go
+  - framework/sdkdocs/phrases.go
+docs:
+  - framework/docs/content/sdk.md
+on_change:
+  - A changed sdkdocs.Config field or mounted route is documented in framework/docs/content/sdk.md.

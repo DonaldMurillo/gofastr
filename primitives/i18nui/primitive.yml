@@ -1,0 +1,8 @@
+primitive: i18nui
+summary: The phrases framework UI surfaces show, each an i18n.Phrase with an English default, the HTML helper that fills a phrase with markup, and the Entity* helpers that name an entity, field or relation from the catalog, its Display config or its humanized name.
+code:
+  - framework/i18nui/i18nui.go
+docs:
+  - framework/docs/content/i18n.md
+on_change:
+  - Renaming or removing a phrase key breaks the catalogs apps already ship under it; note it in framework/docs/content/upgrading.md.

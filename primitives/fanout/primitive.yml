@@ -1,0 +1,7 @@
+primitive: fanout
+summary: PostgresFanout, the lossy cross-replica message bus on one LISTEN/NOTIFY channel, with a fallback table for payloads too large to NOTIFY.
+code:
+  - framework/fanout/
+docs:
+  - framework/docs/content/scaling.md
+  - framework/docs/content/events.md

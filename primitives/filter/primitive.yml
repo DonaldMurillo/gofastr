@@ -1,0 +1,10 @@
+primitive: filter
+summary: Parsing a list request's flat ?field_op= filters and sort into typed ParsedFilter and ParsedSort values, with the IN-list cap, value coercion and LIKE escaping they share.
+code:
+  - framework/filter/filter.go
+  - framework/filter/typed.go
+  - framework/filter/phrases.go
+docs:
+  - framework/docs/content/entity-declarations.md
+on_change:
+  - A new operator or a changed key or value rule also reaches the nested ?rel.field= filters (framework/crud/nested_filter.go), the filter parameters framework/openapi advertises, and the flat-filter section of entity-declarations.md.
