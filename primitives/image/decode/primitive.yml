@@ -9,7 +9,21 @@ code:
   - framework/image/errors.go
 on_change:
   - A new input format registers its decoder in decoders.go, gets a Sniff case and a row under "Supported formats" in image.md.
+twins:
+  - job: Refuse a JPEG past the pixel cap, the scan cap, the scans-times-pixels budget or the progressive coefficient budget before decoding it.
+    why: framework/file may not link framework/image, and the shared checks have not yet been moved into framework/internal/jpegcost, which both import.
+    sites:
+      - path: framework/image/image.go
+        note: decodeBytes, the JPEG branch.
+      - path: framework/file/strip.go
+        note: stripJPEG and the orientation bake, with its own stripMax* copies of the defaults.
 invariants:
+  - id: strip-path-keeps-decode-budgets
+    rule: StripMetadata's orientation bake refuses every JPEG the decode guards refuse at their defaults, scan cap, scan budget and coefficient cap included, and accepts one at the scan cap.
+    enforced_by:
+      - test: framework/file.TestStripMetadataRefusesJPEGScanBomb
+      - test: framework/file.TestStripMetadataRefusesProgressiveJPEGOverMemoryBudget
+      - test: framework/file.TestStripMetadataBudgetsJPEGScansByPixels
   - id: unknown-format-is-invalid-input
     rule: A source Sniff cannot identify returns ErrInvalidInput before any decoder runs.
     enforced_by:
