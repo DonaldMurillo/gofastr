@@ -664,8 +664,14 @@ func TestRestoreTestsWaitsOutAGitTheCLILeftRunning(t *testing.T) {
 	if err := os.WriteFile(lock, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	seen := make(chan struct{})
+	indexLockSeen = func() { close(seen) }
+	t.Cleanup(func() { indexLockSeen = func() {} })
 	go func() {
-		time.Sleep(300 * time.Millisecond)
+		select {
+		case <-seen:
+		case <-time.After(10 * time.Second):
+		}
 		_ = os.Remove(lock)
 	}()
 	root, err := os.OpenRoot(dir)
