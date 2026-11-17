@@ -637,7 +637,8 @@ same transaction as the deletes. A later erasure of that user reads from
 there every identity its resolvers no longer find, and the row is deleted
 once every store eraser has run without failing. Until then the table
 holds the erased user's email (or other identity) and nothing else; a dry
-run writes nothing.
+run writes nothing. `App.ExportData` leaves the table out: it is bookkeeping for a
+user already erased, and a restore must not bring their email back.
 
 A dry run rolls the transaction back first, then asks each store for its
 count with `dryRun` set, so nothing in the store changes.
