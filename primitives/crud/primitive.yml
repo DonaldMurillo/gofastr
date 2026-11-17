@@ -4,3 +4,6 @@ code:
   - framework/crud/
 docs:
   - framework/docs/content/endpoints.md
+
+on_change:
+  - A new CRUD route, query parameter or response shape also needs its path, parameter or schema in framework/openapi, or /openapi.json stops describing the API.

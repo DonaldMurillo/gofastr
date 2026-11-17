@@ -1,5 +1,5 @@
 primitive: dev.layoutlayer
-summary: The dev layout layer - the /__devlayout.js script that outlines a page's layouts, slots, islands and widgets, its route, and its injection behind the dev gate.
+summary: The dev layout layer - the /__devlayout.js script that outlines a page's layouts, slots, islands and widgets, its route and its injection; MaybeRegisterLayoutLayer checks the dev gate, RegisterLayoutLayer installs unconditionally.
 code:
   - framework/dev/layoutlayer.go
   - framework/dev/layoutlayer.js
