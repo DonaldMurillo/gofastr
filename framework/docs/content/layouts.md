@@ -887,6 +887,8 @@ beside the sidebar. It does not create another toolbar component. The
 row is a `<section>` landmark named by `ToolbarLabel` ("Toolbar" by
 default), so controls placed there sit inside a landmark.
 `Viewport: true` confines desktop scrolling to main, sidebar and aside.
+The aside is then a tab stop (`tabindex="0"`), so a keyboard can scroll
+it even when it holds nothing focusable, such as an activity feed.
 Below the breakpoint it returns to document flow, without hiding either
 pane — and it reads the header band's height from
 `--size-header-height` (`Theme.Layout.HeaderHeight`), so recipes pair it with a page-tall
