@@ -5,5 +5,115 @@ code:
   - framework/openapi/bulk.go
 docs:
   - framework/docs/content/api-versioning.md
-on_change:
-  - A new CRUD route, query parameter or response shape in framework/crud also needs its path, parameter or schema here, or the spec stops describing the API.
+invariants:
+  - id: path-keys-are-mounted-paths
+    rule: Every path key carries the API prefix, the single server entry is "/", and a versioned entity's group prefix replaces the API prefix rather than nesting under it.
+    enforced_by:
+      - test: framework.TestAPIPrefix_OpenAPIPathsMatchLiveRoutes
+      - test: framework/openapi.TestVersionedSpecDoubleAPIPrefix
+  - id: crud-paths-only-when-mounted
+    rule: CRUD paths appear only for an entity CRUDMounted reports (Exposure.CRUD when nil); an unmounted entity keeps its schema component and its declared Endpoints.
+    enforced_by:
+      - test: framework/openapi.TestCRUDDisabledEntityEmitsNoPaths
+      - test: framework/openapi.TestCrudMountedPredicateOverridesExposure
+      - test: framework/openapi.TestCRUDDisabledEntityKeepsEndpoints
+  - id: read-only-mount-lists-reads
+    rule: An entity ReadOnlyMounted reports lists only its List, Get and _events operations, and no bulk routes.
+    enforced_by:
+      - test: framework.TestSpecListsOnlyAViewsReadRoutes
+  - id: bulk-only-when-mounted
+    rule: The _bulk, _export.csv and _pick operations appear only for an entity BulkMounted reports.
+    enforced_by:
+      - test: framework/openapi.TestBulkPathsOnlyForMounted
+      - test: framework/openapi.TestBulkPathsFollowRequestView
+  - id: request-view-shows-readable-only
+    rule: RequestView builds the document from only the entities the caller passes CanReadScoped and the "<table>:read" token scope for, so an unreadable entity's name, paths, columns and relation targets are absent.
+    enforced_by:
+      - test: framework.TestOpenAPISpecHidesUngrantedEntities
+      - test: framework/openapi.TestRequestViewFollowsTokenScopes
+      - test: framework/openapi.TestRequestViewDoesNotNameUnreadableRelationTargets
+  - id: spec-bytes-deterministic
+    rule: Entities are emitted in AllSorted order, so the same registry always builds the same document.
+    enforced_by:
+      - test: framework.TestOpenAPI_DeterministicAcrossBuilds
+  - id: list-envelope-per-entity
+    rule: Each entity gets its own ListResponse and CursorPage components whose data items $ref its schema; a name an entity already owns is emitted inline instead.
+    enforced_by:
+      - test: framework/openapi.TestListEnvelopesRefEntitySchema
+      - test: framework/openapi.TestListEnvelopeNameCollidingEntityGoesInline
+  - id: gated-unless-plainly-public
+    rule: Every generated operation declares 401 and the security schemes unless the entity is Public with no owner field, no tenant scope and no RBAC rule.
+    enforced_by:
+      - test: framework/openapi.TestPublicScopedEntityStillDeclares401
+      - test: framework/openapi.TestOwnerScopedOpsDeclare401
+      - test: framework/openapi.TestUnguardedOpsHaveNo401
+      - test: framework/openapi.TestGatedEntityDeclaresSchemes
+      - test: framework/openapi.TestUngatedEntityHasNoSecurity
+  - id: filter-params-follow-the-parser
+    rule: The list operation advertises a filter parameter for every op OpSuitsType allows on each non-NoQuery field, under its wire name and the KeySpeller spelling, typed as an int for a relation to an integer key.
+    enforced_by:
+      - test: framework/openapi.TestSpecFilterOpsMatchCheckOpType
+      - test: framework/openapi.TestNoQueryFieldOmitsFilterParams
+      - test: framework/openapi.TestFilterParamCollidesWithListControl
+      - test: framework.TestOpenAPI_RelationFieldsTypedByTargetKey
+  - id: list-controls-documented
+    rule: The list operation documents offset, per_page and stream, and trashed only for a soft-delete entity.
+    enforced_by:
+      - test: framework/openapi.TestListParamsDocumentOffsetPerPageStream
+      - test: framework/openapi.TestNonSoftDeleteHasNoTrashed
+  - id: write-schemas-follow-crud-writes
+    rule: A write body omits generated, read-only, owner and tenant fields and a defaulted field leaves required; an update requires nothing.
+    enforced_by:
+      - test: framework/openapi.TestWriteSchemasFollowCrudWrites
+  - id: enforced-states-narrow-writes
+    rule: With enforced states a create narrows the state field's enum to the initial values and drops the stamps, an update drops both, and the response keeps the full enum; an Advisory block changes no write schema.
+    enforced_by:
+      - test: framework/openapi.TestStatesNarrowWriteRequestSchemas
+      - test: framework/openapi.TestStatesAdvisoryKeepsFieldListsMoves
+  - id: one-wire-key
+    rule: Every property, required entry and request exclusion names a field by wireKeyOf, WireName first, else the column name under crud.CaseSnake and its camelCase otherwise.
+    enforced_by:
+      - test: framework/openapi.TestWireNameInFieldsDescAndRequestExclusion
+      - test: framework.TestOpenAPI_SnakeCaseAppDocumentsColumnKeys
+  - id: nullable-only-optional
+    rule: A property is nullable only when its field is optional, not generated and not a key column.
+    enforced_by:
+      - test: framework/openapi.TestEntitySchemaNullsOnlyOptionalFields
+  - id: record-path-per-key
+    rule: A one-column key's record path is {id}; a composite key takes one segment per column under its wire key, and a batch update item requires only those keys.
+    enforced_by:
+      - test: framework/openapi.TestCompositeKeyRecordPaths
+      - test: framework/openapi.TestSingleKeyBatchItemNamesKeyColumn
+      - test: framework/openapi.TestBatchItemRequiresOnlyKey
+  - id: every-refusal-documented
+    rule: Each JSON-body write documents 413 and 415, and every status the routes answer appears on its operation.
+    enforced_by:
+      - test: framework.TestOpenAPI_DocumentsEveryRefusalTheRoutesAnswer
+decisions:
+  - id: prefix-in-path-keys
+    date: 2026-11-17
+    status: accepted
+    decision: The API prefix is written into every path key and servers stays "/".
+    rejected:
+      - option: Relative path keys with servers[0].url set to the prefix.
+        why: Legal and equivalent, but a reader taking paths literally (agents and the backend eval's grader alike) called the wrong URL.
+      - option: The prefix in both.
+        why: A client that composes the two requests /api/api/posts.
+    upholds: [path-keys-are-mounted-paths]
+  - id: spec-is-a-disclosure
+    date: 2026-11-17
+    status: accepted
+    decision: The served spec is per caller and leaves out entities the caller cannot read, as llm.md does; the public opt-in serves the full spec.
+    rejected:
+      - option: One spec for every caller.
+        why: It names the paths and columns of entities that answer the same caller 403.
+    revisit_if: The spec gains a public-only mode that strips every gated entity.
+    upholds: [request-view-shows-readable-only]
+  - id: per-operation-security
+    date: 2026-11-17
+    status: accepted
+    decision: Only gated operations carry a security block; there is no global security requirement.
+    rejected:
+      - option: A global requirement.
+        why: It hides that ungated entities are reachable anonymously.
+    upholds: [gated-unless-plainly-public]
