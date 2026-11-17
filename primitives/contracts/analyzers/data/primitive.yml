@@ -8,3 +8,179 @@ code:
   - framework/contracts/analyzers/settlestamp.go
   - framework/contracts/analyzers/erasecover.go
   - framework/contracts/analyzers/performance.go
+invariants:
+  - id: dialect-twins-pair-by-name-or-branch
+    rule: GOFASTR1414 pairs two declarations of one package whose names differ only by a Postgres/PostgreSQL/PG versus SQLite/SQLite3 token, and the two arms of an if or switch on a dialect value or with dialect case labels, the code after an if that returns counting as its other arm.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestDialectDriftMissingPredicateIsReported
+      - test: framework/contracts/analyzers.TestDialectDriftSQLite3NamesPair
+      - test: framework/contracts/analyzers.TestDialectDriftBranchArmsAreCompared
+      - test: framework/contracts/analyzers.TestDialectDriftSwitchCasesAreCompared
+  - id: dialect-twins-compare-only-comparable-tables
+    rule: GOFASTR1414 compares a pair's WHERE atoms only when one side's table set equals or is a subset of the other's, so twins over different system catalogs stay quiet.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestDialectDriftDifferentCatalogsAreQuiet
+      - test: framework/contracts/analyzers.TestSweepDataDialectDriftReportsThePoorerSideOfASubset
+  - id: dialect-twins-read-the-first-statement
+    rule: Each side contributes its first literal holding a verb that opens a statement and is followed by SQL, so prose that says select or with is skipped; every WHERE of that statement is pooled, and an atom that starts with or holds " select " is not compared.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestDialectDriftSkipsLeadingProse
+      - test: framework/contracts/analyzers.TestDialectDriftSameTableSubsetIsCompared
+      - test: framework/contracts/analyzers.TestDialectDriftEquivalentTwinsAreQuiet
+      - test: framework/contracts/analyzers.TestDialectDriftAliasedUpdate
+  - id: dialect-twins-normalize-spelling
+    rule: GOFASTR1414 compares atoms after lowercasing and removing placeholders ($n, ?, %s), identifier quotes, single-letter alias prefixes and whitespace, with an IN-list of placeholders collapsed to one.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestDialectDriftEquivalentTwinsAreQuiet
+      - test: framework/contracts/analyzers.TestSweepDataDialectDriftNormalizesSpelling
+  - id: dialect-twin-finding-lands-on-the-poorer-side
+    rule: An atom one side has and the other lacks is reported on the side that lacks it.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSweepDataDialectDriftReportsThePoorerSideOfASubset
+  - id: erase-cover-scope-and-evidence
+    rule: GOFASTR1415 reads only files under core/, framework/ and battery/, and a table counts only when its column list or an ALTER TABLE … ADD names an identity or payload column exactly (a verb-spelled column is unread).
+    enforced_by:
+      - test: framework/contracts/analyzers.TestEraseCoverSilentPostures
+      - test: framework/contracts/analyzers.TestVirtualAndMultiStatementTables
+  - id: erase-cover-needs-both-planes-from-the-package
+    rule: A user-data table is covered only by a DataEraser and a DataExporter registered in the same package directory whose Table resolves to the same table, and the finding names each missing plane.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestErasedButNotExportedNamesExportPlane
+      - test: framework/contracts/analyzers.TestCoverageFromAnotherPackageDoesNotCount
+      - test: framework/contracts/analyzers.TestRegisteredTokenTableIsQuiet
+  - id: erase-cover-resolves-names-syntactically
+    rule: GOFASTR1415 resolves a table name through literals, constants, receiver fields, quote/ident wrappers and suffix concatenations, so a `+ "_suffix"` sibling is its own table and a wrong literal covers nothing.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestPayloadTableThroughQuotingMethod
+      - test: framework/contracts/analyzers.TestSuffixedSiblingIsItsOwnTable
+      - test: framework/contracts/analyzers.TestWrongLiteralDoesNotCover
+      - test: framework/contracts/analyzers.TestFieldAssignedTableCovers
+  - id: erase-cover-parameter-written-field-needs-its-own-registration
+    rule: A field the package also assigns from a function parameter is covered only by a registration on the field itself, not by one under its literal default; a field assigned only literals keeps its literal coverage.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestRenamedTableNeedsItsOwnRegistration
+      - test: framework/contracts/analyzers.TestRenamedTableErasedOnlyUnderDefault
+      - test: framework/contracts/analyzers.TestLiteralOnlyFieldKeepsLiteralCoverage
+  - id: erase-cover-alter-reports-once
+    rule: An ALTER TABLE … ADD [COLUMN] of user data reports only when no CREATE TABLE of the same table in the package already does.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestAlterAddColumnIsSeen
+  - id: absolute-attempts-reads-the-set-value
+    rule: GOFASTR1408 reads only the SET clause of an UPDATE, judges a counter assignment by its whole value up to the next top-level comma, and reports it when the value holds a placeholder (or a Sprintf verb in a format literal, %% excluded) and does not read the counter itself as a whole word.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSweepDataAbsoluteAttemptsReadsTheWholeSetValue
+      - test: framework/contracts/analyzers.TestAbsoluteAttemptsWrappedRelativeQuiet
+      - test: framework/contracts/analyzers.TestCounterSQLLikeTextIsNotFormatVerb
+      - test: framework/contracts/analyzers.TestAbsoluteAttemptsWrappedIsReported
+  - id: sql-statements-come-from-literals
+    rule: The queue rules read UPDATE/DELETE statements only from string literals, never comments, and treat a literal as a format when a Sprintf names it directly or through a const or var, including a const that repeats the previous spec.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestAbsoluteAttemptsIgnoresCommentedOutSQL
+      - test: framework/contracts/analyzers.TestNamedSprintfFormatCountsVerbs
+  - id: unfenced-claim-arms-per-package
+    rule: GOFASTR1409 fires only in a package directory where some statement fences on a claim token (claim_token = $n or IS NOT DISTINCT FROM), whichever file holds it.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestUnfencedClaimNeedsAFencedSibling
+      - test: framework/contracts/analyzers.TestUnfencedClaimArmsPerPackage
+  - id: unfenced-claim-postures
+    rule: A claim-state write is fenced by a token predicate, a token IS NULL predicate, a SET minting the token from a host value, a claimed_at/lease staleness bound in either operand order, or a terminal status guard; token IS NOT NULL and clearing the token are not fences, and an upsert arm or a write with no claim vocabulary is never read.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestUnfencedClaimFencedPosturesAreQuiet
+      - test: framework/contracts/analyzers.TestUnfencedClaimReversedAndTerminalQuiet
+      - test: framework/contracts/analyzers.TestUnfencedClaimNotNullIsNoFence
+      - test: framework/contracts/analyzers.TestUnfencedClaimTokenClearIsReported
+      - test: framework/contracts/analyzers.TestUnfencedClaimIgnoresPlainWrites
+      - test: framework/contracts/analyzers.TestUnfencedClaimArmsPerPackage
+  - id: settle-stamp-needs-a-convention
+    rule: GOFASTR1417 reports a status UPDATE with no stamp column only when its table, resolved like GOFASTR1415's, has at least two other status UPDATEs in the package and every one of them writes a stamp.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSettleStampNeedsAConvention
+  - id: settle-stamp-reads-real-transitions
+    rule: GOFASTR1417 ignores an UPDATE that does not assign status as a whole column, or that writes status to the literal its own WHERE requires; it unquotes column names and ends a statement at a semicolon or the next statement's verb.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSettleStampQuietPostures
+      - test: framework/contracts/analyzers.TestSettleStampQuotedColumns
+      - test: framework/contracts/analyzers.TestSettleStampStatementsInOneLiteral
+  - id: ddl-constraint-arms
+    rule: GOFASTR1416 reports a UNIQUE or REFERENCES inside CREATE TABLE IF NOT EXISTS for a table some entity field list of two or more names all matches, and a single-column, non-partial CREATE UNIQUE INDEX on a column the same table already declares UNIQUE inline or in a Unique entity field.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestInlineUniqueBesideEntityNeverRuns
+      - test: framework/contracts/analyzers.TestUniqueDeclaredBesideStandaloneIndex
+      - test: framework/contracts/analyzers.TestPlainCreateTable
+      - test: framework/contracts/analyzers.TestSweepDataDDLConstraintNeedsIfNotExistsAndTwoFields
+  - id: ddl-constraint-quiet-postures
+    rule: GOFASTR1416 stays quiet on verb-spelled columns, partial and composite unique indexes, an index on another table, and a field list naming a column the table lacks.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestDDLConstraintQuietPostures
+  - id: query-in-loop-shape
+    rule: The query-in-loop rule reports a Query/Exec call (or a GetByID/List/… call on a receiver named repo, store or dao) inside a for or range body, outside any nested closure, whose arguments use a loop variable and, for a raw query, include a literal statement.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestQueryInLoopParameterisedByTheItemIsReported
+      - test: framework/contracts/analyzers.TestBatchStatementLoopIsClean
+      - test: framework/contracts/analyzers.TestSweepDataPerformanceQuietShapes
+  - id: regexp-per-call-needs-a-literal
+    rule: The regexp-per-call rule reports a regexp Compile/MustCompile of a string literal inside a function body, and stays quiet on a package-level var and on a pattern built from a variable.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestRegexpCompiledInFunctionIsReported
+      - test: framework/contracts/analyzers.TestPackageLevelRegexpIsClean
+      - test: framework/contracts/analyzers.TestSweepDataPerformanceQuietShapes
+decisions:
+  - id: dialect-drift-reports-not-decides
+    date: 2026-11-17
+    status: accepted
+    decision: GOFASTR1414 reports a predicate one twin lacks on that twin and does not decide which side is right.
+    rejected:
+      - option: Treat the Postgres side as the reference.
+        why: The outbox drift was a predicate missing on SQLite, but nothing makes either dialect the authority, and a real dialect capability is annotated instead.
+    upholds: [dialect-twin-finding-lands-on-the-poorer-side]
+  - id: dialect-drift-table-set-gate
+    date: 2026-11-17
+    status: accepted
+    decision: Twins are compared only when their table sets are equal or one is a subset of the other.
+    rejected:
+      - option: Compare every name or branch pair.
+        why: Catalog queries (pg_tables against sqlite_master, information_schema) are shaped by different tables and owe each other no predicate parity.
+      - option: Require equal table sets.
+        why: The outbox Postgres claim wraps its SQLite twin's SELECT in an UPDATE over the same table plus a sub-select.
+    upholds: [dialect-twins-compare-only-comparable-tables]
+  - id: erase-cover-does-not-exempt-expiry
+    date: 2026-11-17
+    status: accepted
+    decision: GOFASTR1415 does not exempt expiring tables (idempotency bodies, rate-limit keys, spill rows); a site that relies on a TTL says so with an allow directive.
+    rejected:
+      - option: Exempt tables with an expiry column.
+        why: Whether a TTL is short enough to stand in for erasure is a design call a reviewer should see.
+    upholds: [erase-cover-scope-and-evidence]
+  - id: erase-cover-never-guesses
+    date: 2026-11-17
+    status: accepted
+    decision: A table name GOFASTR1415 cannot resolve is uncovered, and coverage registered from another package does not count.
+    rejected:
+      - option: Treat an unresolved name as covered by any registration in the package.
+        why: The rule would then hide exactly the configurable-table stores it was written for.
+    revisit_if: Stores start registering their planes from a different package than the one that creates the table.
+    upholds: [erase-cover-needs-both-planes-from-the-package, erase-cover-parameter-written-field-needs-its-own-registration]
+  - id: unfenced-claim-arms-on-a-fenced-table
+    date: 2026-11-17
+    status: accepted
+    decision: GOFASTR1409 applies only to packages that already fence some write on a claim token.
+    rejected:
+      - option: Require a token fence on every claim-state write anywhere.
+        why: An unfenced, lease-shaped table such as framework/outbox is a different design, not a missed fence.
+    upholds: [unfenced-claim-arms-per-package]
+  - id: settle-stamp-follows-the-siblings
+    date: 2026-11-17
+    status: accepted
+    decision: GOFASTR1417 enforces a stamp only where at least two sibling transitions all write one.
+    rejected:
+      - option: Require a stamp on every status UPDATE.
+        why: A table whose transitions never stamp has no convention to break, and the rule does not invent one.
+    upholds: [settle-stamp-needs-a-convention]
+  - id: query-in-loop-needs-a-literal-statement
+    date: 2026-11-17
+    status: accepted
+    decision: A raw query in a loop reports only when a literal statement sits in the call and a loop variable is among the arguments.
+    rejected:
+      - option: Report any query inside a loop.
+        why: A loop over DDL statements run once at startup is the intended batch shape, and there the loop variable is the statement.
+    upholds: [query-in-loop-shape]

@@ -13,61 +13,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-// ----------------------------------------------------------------------
 // GOFASTR1416: an inline constraint that never runs, or runs twice.
-// ----------------------------------------------------------------------
 
-// Bug class: a store that creates its own table with CREATE TABLE IF NOT
-// EXISTS and declares a constraint INSIDE that statement. Two ways it
-// goes wrong, both found in battery/auth's EntitySessionStore:
-//
-//   - the statement never runs. The documented wiring declares the same
-//     table as an entity (app.Entity("sessions",
-//     SessionEntityConfig())), so AutoMigrate creates it first and the
-//     store's CREATE TABLE IF NOT EXISTS is a no-op: `token TEXT UNIQUE`
-//     never existed, every cookie lookup scanned the table, and token
-//     uniqueness was not enforced (0550be96d);
-//   - it runs beside another spelling. The fix for that added CREATE
-//     UNIQUE INDEX IF NOT EXISTS on token, and SessionEntityFields marked
-//     token Unique, so a table the store created carried the inline
-//     UNIQUE plus the standalone index, and an AutoMigrate-created one
-//     the entity's index plus the standalone one: two unique indexes on
-//     one column, both maintained on every insert (dbe11ba19).
-//
-// Shape, per package (tables resolve the way GOFASTR1415 resolves them:
-// literal, constant, receiver field, quoting wrapper, a helper or local
-// closure that returns the name):
-//
-//   - (a) a column declared UNIQUE or REFERENCES inside a CREATE TABLE
-//     IF NOT EXISTS (inline on the column, or a table-level UNIQUE (…) /
-//     FOREIGN KEY (…) REFERENCES), for a table the package also declares
-//     as an entity: a field list (a []schema.Field literal, or a literal
-//     of elements keyed Name + Type: schema.X) every one of whose two or
-//     more field names is a column of that CREATE TABLE;
-//   - (b) a single-column CREATE UNIQUE INDEX on (table, column) where
-//     the same column is also declared UNIQUE inside a CREATE TABLE of
-//     that table, or marked Unique: true in an entity field list that
-//     matches it. The finding lands on the redundant inline / field
-//     spelling and names the index.
-//
-// Fix spelling: declare the constraint where it runs whoever made the
-// table, once: a standalone CREATE [UNIQUE] INDEX IF NOT EXISTS after the
-// CREATE TABLE (EnsureSchema's idx_<t>_token), and no UNIQUE inline or
-// on the entity field beside it.
-//
-// Deliberately silent on:
-//   - columns spelled through a format verb (`%s TEXT UNIQUE`, the user
-//     table's configurable email column): the rule reads only names it
-//     can see;
-//   - PRIMARY KEY, which AutoMigrate and the store spell alike;
-//   - a CREATE TABLE (no IF NOT EXISTS) — it runs or fails loudly — for
-//     arm (a); and tables no entity field list in the package matches;
-//   - partial unique indexes (… WHERE status = 'queued') and multi-column
-//     ones: neither is the same constraint as a column's UNIQUE;
-//   - an entity field marked Unique with an inline UNIQUE and no
-//     standalone index: whichever creates the table, one index exists;
-//   - _test.go and generated files (AppFiles already excludes both);
-//   - any site annotated //gofastr:allow(GOFASTR1416) <why>.
 func ruleDDLConstraint(p *contracts.Pass, rel string, _ *ast.File) []contracts.Diagnostic {
 	dir := path.Dir(rel)
 	v := p.Memo("ddlconstraint.package:"+dir, func() any {
@@ -152,8 +99,7 @@ type dcFields struct {
 	unique map[string]token.Pos
 }
 
-// matches: every one of the list's two or more field names is a column
-// the CREATE TABLE spells.
+// matches: every one of the list's two or more field names is a column of the table.
 func (fl *dcFields) matches(t *dcTable) bool {
 	if len(fl.names) < 2 {
 		return false
@@ -319,8 +265,6 @@ func (pkg *dcPkg) parseIndexes(pk *ecPkg, rel string, root ast.Expr, text string
 				refs = r
 			}
 		} else {
-			// The name and the ON clause ride one slot (query.IndexOn):
-			// every operand of the slot is a candidate identity.
 			for _, e := range dcSlots(text, m[1], open, holes, args) {
 				refs = append(refs, pk.deepRefs(e, fn, 0)...)
 			}
@@ -332,8 +276,6 @@ func (pkg *dcPkg) parseIndexes(pk *ecPkg, rel string, root ast.Expr, text string
 	}
 }
 
-// dcSlots returns the expressions behind the verb slots and holes in
-// text[from:to].
 func dcSlots(text string, from, to int, holes, args []ast.Expr) []ast.Expr {
 	var out []ast.Expr
 	for i := from; i < to; i++ {
@@ -360,9 +302,7 @@ func dcSlots(text string, from, to int, holes, args []ast.Expr) []ast.Expr {
 	return out
 }
 
-// deepRefs resolves e and every operand inside it, following a call of
-// a local closure into the literal's returns (EnsureSchema's
-// on := func(suffix string) string { return query.IndexOn(…) }).
+// deepRefs resolves e and every operand inside it, following a local closure call into its returns.
 func (pk *ecPkg) deepRefs(e ast.Expr, fn *ast.FuncDecl, depth int) []ecRef {
 	if e == nil || depth > ecMaxDepth {
 		return nil
@@ -401,9 +341,7 @@ func (pk *ecPkg) deepRefs(e ast.Expr, fn *ast.FuncDecl, depth int) []ecRef {
 	return kept
 }
 
-// collectFields records the entity field lists a declaration spells: a
-// composite literal whose elements are field literals keyed Name (a
-// string) and Type (schema.X).
+// collectFields records a declaration's entity field lists: composite literals of elements keyed Name and Type (schema.X).
 func (pkg *dcPkg) collectFields(rel string, d ast.Decl, schemaAlias string) {
 	ast.Inspect(d, func(n ast.Node) bool {
 		lit, ok := n.(*ast.CompositeLit)
@@ -455,7 +393,6 @@ func (pkg *dcPkg) collectFields(rel string, d ast.Decl, schemaAlias string) {
 	})
 }
 
-// dcSplitTop splits a column list on its top-level commas.
 func dcSplitTop(body string) []string {
 	var out []string
 	depth, start := 0, 0
@@ -475,8 +412,6 @@ func dcSplitTop(body string) []string {
 	return append(out, body[start:])
 }
 
-// dcColumns reads a parenthesized column list's bare names; an
-// expression (lower(email)) or a verb slot yields nothing for its item.
 func dcColumns(list string) []string {
 	var out []string
 	for _, it := range strings.Split(list, ",") {
@@ -493,7 +428,6 @@ func dcColumns(list string) []string {
 	return out
 }
 
-// dcAt names a position as file:line for a message.
 func dcAt(p *contracts.Pass, pos token.Pos) string {
 	at := p.Position(pos)
 	return at.Filename + ":" + strconv.Itoa(at.Line)

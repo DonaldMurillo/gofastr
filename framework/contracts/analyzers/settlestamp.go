@@ -12,59 +12,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-// ----------------------------------------------------------------------
 // GOFASTR1417: a status UPDATE that skips the stamps its siblings write.
-// ----------------------------------------------------------------------
 
-// Bug class: a table whose status transitions all record WHEN and WHY
-// (updated_at, last_error, finished_at …) and one transition that sets
-// status alone. The row then lists with the timestamp and error of an
-// earlier transition, and nothing tells the reader which path moved it.
-// 04ac2e5e6: battery/queue's deadLetterExpiredFinalClaims swept a claim
-// whose lease expired on its final attempt with `UPDATE … SET
-// status='failed'` and nothing else, while claim, Ack, Nack, release and
-// Replay all wrote updated_at (and Nack last_error), so ListJobs("failed")
-// showed the claim's updated_at and an earlier attempt's error, and a
-// worker that died holding the claim read as a handler error.
-//
-// Shape, per package: every `UPDATE <table> [AS alias] SET …` statement
-// (a Sprintf format, a plain literal, or a concatenation, the strings
-// GOFASTR1415 reads) whose SET list assigns status. Statements are
-// grouped by table identity, resolved the way GOFASTR1415 resolves a
-// table name (a literal, a constant, a receiver field, a quoting
-// wrapper, a method returning the name: `q.qt()` in every DBQueue
-// method is one table), with dialectdrift's normalization of quoting,
-// placeholders and aliases applied to the assigned columns. A status
-// UPDATE that assigns none of the stamp columns (updated_at, modified_at,
-// changed_at, last_updated, last_error, error, error_message,
-// finished_at, completed_at, failed_at, done_at, settled_at, ended_at,
-// processed_at, canceled_at, cancelled_at, status_changed_at) reports
-// when the table has at least two other status UPDATEs in the package
-// and every one of them assigns a stamp. The finding names the stamps
-// the siblings write.
-//
-// Fix spelling: write the stamps the sibling transitions write, with a
-// reason a reader can tell apart (the queue's leaseExpiredError). A
-// transition that must keep the earlier stamp on purpose says so with
-// //gofastr:allow(GOFASTR1417) <why>.
-//
-// Deliberately silent on:
-//   - tables where any sibling status UPDATE writes no stamp either: no
-//     convention to break, and the rule does not invent one;
-//   - a table with fewer than two other status UPDATEs: one sibling is
-//     not a convention;
-//   - a status written to the literal its own WHERE requires (SET
-//     status='pending' … WHERE … status='pending'): the row does not
-//     change state, so there is no transition to stamp. The outbox's
-//     no-handler requeue re-leases a pending delivery that way, and is
-//     neither a finding nor a sibling;
-//   - UPDATEs that do not assign status (a heartbeat, a lease
-//     extension, a payload rewrite), and ON CONFLICT … DO UPDATE SET,
-//     which is an upsert arm, not a transition;
-//   - a status UPDATE whose table name cannot be resolved: it joins no
-//     group rather than a wrong one;
-//   - _test.go and generated files (AppFiles already excludes both);
-//   - any site annotated //gofastr:allow(GOFASTR1417) <why>.
 func ruleSettleStamp(p *contracts.Pass, rel string, _ *ast.File) []contracts.Diagnostic {
 	dir := path.Dir(rel)
 	v := p.Memo("settlestamp.package:"+dir, func() any {
@@ -140,13 +89,8 @@ func (u *ssUpdate) stamped() bool {
 	return false
 }
 
-// reUpdateSet is the head of an UPDATE up to its table name; the name
-// itself is read by tableNameAt, so a verb slot or an operand resolves
-// like GOFASTR1415's DDL. ON CONFLICT … DO UPDATE SET has no table and
-// is refused by the name check.
 var reUpdateSet = regexp.MustCompile(`(?is)\bUPDATE\s+(?:ONLY\s+)?`)
 
-// reSetAlias is what may sit between the table name and SET: an alias.
 var reSetAlias = regexp.MustCompile(`(?is)^\s*(?:(?:AS\s+)?[a-z_]\w*\s+)?SET\b`)
 
 func settleStampPackage(p *contracts.Pass, dir string) []*ssUpdate {
@@ -194,8 +138,7 @@ func settleStampPackage(p *contracts.Pass, dir string) []*ssUpdate {
 	return out
 }
 
-// ssSetColumns returns the columns a SET list assigns, reading up to the
-// first top-level WHERE / FROM / RETURNING or the statement's end.
+// ssSetColumns returns the columns a SET list assigns, up to the first top-level WHERE, FROM or RETURNING.
 func ssSetColumns(rest string) map[string]bool {
 	cols := map[string]bool{}
 	depth, start := 0, 0
@@ -255,13 +198,7 @@ var (
 
 var reNextStatement = regexp.MustCompile(`(?i)\b(?:UPDATE|INSERT|DELETE|SELECT|CREATE|ALTER)\s`)
 
-// ssStatement cuts the text after SET at the statement's end: a
-// semicolon or the next statement's verb outside parentheses. A WHERE
-// read past it would borrow the next statement's predicates. Quoted
-// identifiers never end a statement — the text here is the unquoted
-// literal CONTENT, so a `"` or backtick inside it is SQL's identifier
-// quoting (`"updated_at"=now()`), not the Go literal closing; cutting
-// at one read a Set list short and hid every quoted column.
+// ssStatement cuts the text after SET at a semicolon or the next statement's verb; identifier quotes inside it do not end it.
 func ssStatement(rest string) string {
 	end := len(rest)
 	if i := strings.IndexByte(rest, ';'); i >= 0 {
@@ -282,11 +219,7 @@ func ssStatement(rest string) string {
 	return rest[:end]
 }
 
-// ssStatusUnchanged reports whether the SET writes status to the literal
-// its own WHERE already requires (SET status='pending' … WHERE
-// status='pending'): the row does not change state, so there is no
-// transition to stamp (framework/outbox's no-handler requeue, which
-// re-leases a pending delivery).
+// ssStatusUnchanged reports whether the SET writes status to the literal its own WHERE requires.
 func ssStatusUnchanged(set string) bool {
 	if i := strings.IndexByte(set, ';'); i >= 0 {
 		set = set[:i]
@@ -300,8 +233,6 @@ func ssStatusUnchanged(set string) bool {
 	return s != nil && w != nil && strings.EqualFold(s[1], w[1])
 }
 
-// matchWordAt reports whether the word w (any case) starts at s[at] as a
-// whole word.
 func matchWordAt(s string, at int, w string) bool {
 	if at+len(w) > len(s) || !strings.EqualFold(s[at:at+len(w)], w) {
 		return false
@@ -312,8 +243,6 @@ func matchWordAt(s string, at int, w string) bool {
 	return at+len(w) == len(s) || !ecIdentByte(s[at+len(w)])
 }
 
-// ecPosIn is the position of byte off of a string expression's text: the
-// exact byte inside a raw literal, the expression's start otherwise.
 func ecPosIn(root ast.Expr, off int) token.Pos {
 	if lit, ok := root.(*ast.BasicLit); ok && strings.HasPrefix(lit.Value, "`") {
 		return lit.Pos() + 1 + token.Pos(off)
