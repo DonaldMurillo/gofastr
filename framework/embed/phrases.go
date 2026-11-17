@@ -2,7 +2,6 @@ package embed
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The refusals this package writes, under their catalog keys.
 var (
 	reasonReservedPath     = i18n.Define("embed.reserved_path", "embed surface {{surface}} may not reach {{path}}: {{reserved}} is mounted by the framework or a battery and no embed grant may reach it")
 	reasonOutsideReach     = i18n.Define("embed.outside_reach", "embed surface {{surface}} may not reach {{path}}: add it to that surface's Reach to allow it, e.g. Reach: {{suggestion}}")

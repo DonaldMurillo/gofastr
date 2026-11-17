@@ -1,0 +1,89 @@
+primitive: embed.origin
+summary: Normalizing origins and building the static and per-customer allowlists that frame a surface.
+code:
+  - framework/embed/origin.go
+  - framework/embed/originsource.go
+invariants:
+  - id: origin-matches-the-browser-serialization
+    rule: NormalizeOrigin lowercases scheme and host by ASCII rules only, drops a default port, prints a port as a number, compresses an IPv6 literal, and is idempotent.
+    enforced_by:
+      - test: framework/embed.TestNormalizeOriginCanonicalizes
+      - test: framework/embed.TestNormalizeOriginMatchesBrowserSerialization
+      - test: framework/embed.TestNormalizeOriginIdempotent
+      - test: framework/embed.TestIPv6SpellingsCollapseToCanonical
+      - test: framework/embed.TestOriginFamiliesNeverCrossMatch
+  - id: only-an-origin-normalizes
+    rule: NormalizeOrigin refuses a non-http(s) scheme, a path, query, fragment or userinfo, a port outside 1 to 65535, and a host with a wildcard, underscore, non-ASCII byte, leading or trailing dot, or a label that is empty, over 63 bytes or edged by a dash.
+    enforced_by:
+      - test: framework/embed.TestNormalizeOriginRejectsNonOrigins
+      - test: framework/embed.TestSweepEmbedNormalizeOriginRefusesMalformedHosts
+  - id: ipv4-mapped-is-refused
+    rule: NormalizeOrigin refuses an IPv4-mapped IPv6 host.
+    enforced_by:
+      - test: framework/embed.TestNormalizeOriginRefusesIPv4Mapped
+  - id: membership-is-by-normalized-origin
+    rule: An origin set matches a candidate by its normalized form, so every spelling of an allowed origin matches.
+    enforced_by:
+      - test: framework/embed.TestOriginSetMatchesNormalized
+  - id: static-allowlist-is-bounded
+    rule: A surface's static allowlist is refused when empty or when its joined frame-ancestors directive exceeds 4 KiB.
+    enforced_by:
+      - test: framework/embed.TestOriginSetRequiresAtLeastOne
+      - test: framework/embed.TestOriginListIsCappedAtBoot
+      - test: framework/embed.TestOrdinaryOriginListsStillBoot
+  - id: customer-origins-fail-closed
+    rule: ResolveCustomerOrigins errors on a nil source, an empty or over-256-byte customer id, a source error, an empty list, any invalid origin, more than 4096 raw rows, or a directive over 4 KiB, and otherwise returns the normalized origins de-duplicated in order.
+    enforced_by:
+      - test: framework/embed.TestResolveCustomerOriginsNormalizesAndDeduplicates
+      - test: framework/embed.TestResolveCustomerOriginsRejectsUntrustedInput
+      - test: framework/embed.TestResolveCustomerOriginsFailsClosedOnUnknownCustomer
+      - test: framework/embed.TestResolveCustomerOriginsFailsClosedOnEmptyCustomerID
+      - test: framework/embed.TestResolveCustomerOriginsFailsClosedOnSourceError
+      - test: framework/embed.TestResolveCustomerOriginsFailsClosedOnOverlongCustomerID
+      - test: framework/embed.TestResolveCustomerOriginsCapsPerResponse
+      - test: framework/embed.TestResolveCustomerOriginsRejectsNilSource
+      - test: framework/embed.TestResolveCustomerOriginsBoundsRawRowCount
+      - test: framework/embed.TestSweepEmbedOneBadSourceOriginFailsTheCustomer
+decisions:
+  - id: compare-normalized-origins
+    date: 2026-11-17
+    status: accepted
+    decision: Every origin, configured or reported, is compared in the browser's serialization, and anything that is not an origin is an error.
+    rejected:
+      - option: Compare the strings as typed.
+        why: A trailing slash, a capital letter or ":443" then never matches and the embed fails with no visible cause.
+      - option: Strip a trailing dot or a path.
+        why: Silent repair splits one origin into several allowlist entries and hides the mistake.
+    upholds: [origin-matches-the-browser-serialization, only-an-origin-normalizes]
+  - id: no-wildcard-origins
+    date: 2026-11-17
+    status: accepted
+    decision: An allowlist holds exact hosts only; every subdomain is listed.
+    rejected:
+      - option: Accept "*.acme.com".
+        why: Compared literally it matches nothing while the author believes subdomains are covered.
+    upholds: [only-an-origin-normalizes]
+  - id: customer-cap-per-response
+    date: 2026-11-17
+    status: accepted
+    decision: A source-backed surface caps each customer's directive when the shell is served, failing that one customer closed.
+    rejected:
+      - option: Cap the whole allowlist at boot.
+        why: One customer's long list breaks the surface for every customer at once.
+    upholds: [customer-origins-fail-closed]
+  - id: bound-raw-rows-before-normalizing
+    date: 2026-11-17
+    status: accepted
+    decision: A source's raw row count is capped at 4096 before any row is normalized.
+    rejected:
+      - option: Rely on the directive's byte cap.
+        why: It counts de-duplicated output, so 100,000 copies of one origin passed after costing tens of milliseconds per unauthenticated request.
+    upholds: [customer-origins-fail-closed]
+  - id: source-answers-two-questions
+    date: 2026-11-17
+    status: accepted
+    decision: OriginSource has Origins for the shell's per-customer list and Allows for the grant path, which knows an origin but not a customer.
+    rejected:
+      - option: Origins alone.
+        why: A customer added through the source could be framed but never granted, so onboarding still needed a deploy.
+    upholds: [embed/origin-source-is-asked-last-and-fails-closed]
