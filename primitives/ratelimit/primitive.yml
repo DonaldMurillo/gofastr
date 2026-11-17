@@ -1,0 +1,8 @@
+primitive: ratelimit
+summary: The general-purpose HTTP rate limiter - a per-key sliding window with lockout, its optional shared Store, client keying and the 429 middleware.
+code:
+  - framework/ratelimit/
+docs:
+  - framework/docs/content/rate-limit.md
+on_change:
+  - The token-bucket limiter is core/middleware's (primitive middleware); a change that blurs the two jobs updates rate-limit.md's comparison of them.

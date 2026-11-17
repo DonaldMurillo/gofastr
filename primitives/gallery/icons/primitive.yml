@@ -1,0 +1,6 @@
+primitive: gallery.icons
+summary: The icon catalog demo - every ui/icons icon under a sticky filter toolbar, searched and narrowed by category on the server from the request's query values.
+code:
+  - framework/gallery/icon_demo.go
+docs:
+  - framework/docs/content/ui-new-components.md

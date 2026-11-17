@@ -1,0 +1,7 @@
+primitive: file.strip
+summary: StripMetadata, the process option that removes EXIF, XMP and other metadata from JPEG, PNG and WebP uploads while keeping their orientation.
+code:
+  - framework/file/strip.go
+docs:
+  - framework/docs/content/uploads.md
+  - framework/docs/content/image.md

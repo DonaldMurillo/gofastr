@@ -22,6 +22,9 @@ invariants:
       - contract: GOFASTR1823
     judge: Does this change add CSS, an inline style or an invented class outside the design system and the owned style sheet, or set a value where a var(--*) token belongs?
     applies:
+      - framework/gallery/
+      - framework/i18nui/
+      - framework/sdkdocs/
       - framework/ui/
       - core-ui/
       - battery/

@@ -1,0 +1,7 @@
+primitive: app.processmodule.testkit
+summary: The process-module test support outside the root package - the shared helpers in internal/pmtestkit and the supervisor and gate suites kept in their own package, out of the root's race gate.
+code:
+  - framework/internal/pmtestkit/
+  - framework/processmoduletest/
+docs:
+  - framework/docs/content/process-modules.md

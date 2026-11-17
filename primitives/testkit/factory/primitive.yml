@@ -1,0 +1,6 @@
+primitive: testkit.factory
+summary: Entity factories for tests and seeders - a base body with caller overrides, created through the entity's in-process CRUD handler so hooks, transactions and events run as they do for HTTP.
+code:
+  - framework/factory/
+docs:
+  - framework/docs/content/factories.md

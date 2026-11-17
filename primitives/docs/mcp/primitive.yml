@@ -1,0 +1,9 @@
+primitive: docs.mcp
+summary: The framework_docs_list, framework_docs_get and framework_docs_search MCP tools a host adds with WithMCPTools(mcptools.Register).
+code:
+  - framework/docs/mcptools/
+docs:
+  - framework/docs/content/agent-ready.md
+  - framework/docs/content/mcp.md
+on_change:
+  - Adding, renaming or changing a framework_docs_* tool updates its description in framework/docs/content/agent-ready.md and mcp.md.

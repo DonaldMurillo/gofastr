@@ -1,0 +1,11 @@
+primitive: image.decode
+summary: Reading a source into an Image - format sniffing, the registered decoders, the source-byte and pixel guards, EXIF orientation and the metadata read off the source.
+code:
+  - framework/image/image.go
+  - framework/image/decoders.go
+  - framework/image/format.go
+  - framework/image/exif.go
+  - framework/image/metadata.go
+  - framework/image/errors.go
+on_change:
+  - A new input format registers its decoder in decoders.go, gets a Sniff case and a row under "Supported formats" in image.md.

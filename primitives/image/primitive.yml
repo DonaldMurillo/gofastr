@@ -1,0 +1,6 @@
+primitive: image
+summary: The pure-Go image pipeline - decode, transform, encode, placeholders and the variant set that turns one upload into its renditions.
+code:
+  - framework/image/
+docs:
+  - framework/docs/content/image.md
