@@ -232,13 +232,8 @@ func (t taskScheduler) stop(b *Battery) error {
 	// A starting daemon has bound its socket and answers once its app is
 	// ready, so silence is not yet a wedge: keep asking for up to
 	// startingWait before a hard kill lands in the middle of a migration.
-	unanswered := errors.Is(err, os.ErrDeadlineExceeded)
 	for deadline := time.Now().Add(startingWait); errors.Is(err, os.ErrDeadlineExceeded) && time.Now().Before(deadline); {
 		resp, err = callControl(inst.socketPath(), "stop")
-	}
-	if unanswered && err != nil && !errors.Is(err, os.ErrDeadlineExceeded) {
-		// An unanswered ask was still delivered: the daemon drains on it and closes the channel the retry finds gone.
-		return b.waitExit(procalive.Identity{})
 	}
 	switch {
 	case errors.Is(err, errNotRunning):
