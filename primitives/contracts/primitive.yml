@@ -4,3 +4,146 @@ code:
   - framework/contracts/
 docs:
   - framework/docs/content/contracts.md
+on_change:
+  - "A rule, an analyzer or a catalog field that changes ships with framework/docs/content/contracts.md, and a changed rule count with README.md (internal/docgate)."
+invariants:
+  - id: run-drops-undeclared-rules
+    rule: Run drops a diagnostic whose rule its analyzer did not declare and records the breach as an analyzer error, so the run does not pass.
+    enforced_by:
+      - test: framework/contracts.TestRunRejectsUndeclaredRule
+  - id: register-refuses-unknown-rules
+    rule: Register panics on an analyzer that declares a rule the catalog does not hold.
+    enforced_by:
+      - test: framework/contracts.TestSweepEngineRegisterRejectsAnUndeclaredCatalogRule
+  - id: run-refuses-an-empty-registry
+    rule: Run errors when no analyzer is registered instead of reporting a clean tree.
+    enforced_by:
+      - test: framework/contracts.TestRunRefusesWhenNoAnalyzersAreRegistered
+  - id: run-refuses-an-incomplete-tree
+    rule: Run errors when discovery could not read a source file or subtree.
+    enforced_by:
+      - test: framework/contracts.TestRunRejectsUnreadableClientSource
+  - id: analyzer-panic-is-an-analyzer-error
+    rule: A panicking analyzer becomes that analyzer's error and the other analyzers still report.
+    enforced_by:
+      - test: framework/contracts.TestPanickingAnalyzerDoesNotKillTheRun
+  - id: catalog-decides-severity
+    rule: Run overwrites a diagnostic's Slug, Capability and Severity from the catalog and config, fills an empty Suggestion with the rule's Fix, and attaches the rule.
+    enforced_by:
+      - test: framework/contracts.TestSweepEngineRunTakesSeverityFromTheCatalog
+  - id: redacted-snippet-stays-empty
+    rule: Run never fills Snippet from source for a diagnostic marked RedactSnippet.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestHardcodedSecretIsRedactedInEveryFormat
+  - id: shared-conclusion-reported-once
+    rule: Two diagnostics with the same rule, file, line and message are reported once.
+    enforced_by:
+      - test: framework/contracts.TestSweepEngineRunReportsAConclusionTwoAnalyzersShareOnce
+      - test: framework/contracts.TestDedupeKeepsFirstOccurrence
+  - id: report-sorts-worst-first
+    rule: Diagnostics sort by severity worst first, then capability order, file, line, rule and message.
+    enforced_by:
+      - test: framework/contracts.TestDiagnosticsSortWorstFirst
+  - id: rule-ids-are-never-recycled
+    rule: A catalog rule ID keeps the slug it was issued with, and a deleted ID moves to the retired list and is never issued again.
+    enforced_by:
+      - test: framework/contracts.TestSweepEngineRuleIDsAreNeverRecycled
+  - id: gofastr-ids-stay-in-their-block
+    rule: A GOFASTR-prefixed ID with a numeric suffix must fall in its capability's hundred-wide block, while any other prefix, GOFASTRA123 included, skips the block check.
+    enforced_by:
+      - test: framework/contracts.TestCustomPrefixSkipsTheBlockCheckGofastrKeepsIt
+      - test: framework/contracts.TestGofastrLookalikePrefixIsALegalCustomPrefix
+  - id: rule-carries-its-lesson
+    rule: RegisterRules refuses a rule with an empty Title, Summary, Why, Fix or Doc, with no Example or an Example missing either half, or with severity off.
+    enforced_by:
+      - test: framework/contracts.TestSweepEngineRegisterRulesRequiresEveryDocField
+      - test: framework/contracts.TestRuleWithoutAnExampleIsRejected
+  - id: lookup-refuses-non-ascii
+    rule: LookupRule resolves no key holding a non-ASCII rune, so a case-fold homoglyph of a rule ID names no rule in a directive or config key.
+    enforced_by:
+      - test: framework/contracts.TestLookupRuleRejectsFoldHomoglyphs
+      - test: framework/contracts.TestSuppressionHomoglyphRefStaysUnknown
+      - test: framework/contracts.TestConfigHomoglyphRuleKeyRejected
+  - id: suggestions-are-bounded-and-ranked
+    rule: SuggestRules falls back to edit distance when no ID or slug contains the needle, ranks those hits closest first, allows at most three edits, and ranks only the first 64 bytes of a needle.
+    enforced_by:
+      - test: framework/contracts.TestSuggestRulesHandlesAMistypedID
+      - test: framework/contracts.TestSweepEngineSuggestRulesKeepsTheDistanceRanking
+      - test: framework/contracts.TestSweepEngineSuggestRulesCapsTheEditBudgetAtThree
+      - test: framework/contracts.TestSuggestRulesBoundedOnHugeNeedle
+  - id: discovery-skips-build-and-tooling-trees
+    rule: Discovery never enters vendor, node_modules, dist, bin, build, tmp, or a directory whose name starts with a dot or an underscore, and it does enter testdata; the one list is sourcewalk's excluded, and Pass.discover keeps no copy.
+    applies:
+      - internal/sourcewalk/walk.go
+    enforced_by:
+      - test: framework/contracts.TestSweepEngineSkipsBuildAndDependencyTreesButNotTestdata
+      - test: framework/contracts.TestUnderscoreDirsAreSkipped
+      - test: framework/contracts.TestStyleFilesAreSeparateFromGoFiles
+      - test: framework/contracts.TestStyleFilesAreSeparateFromGoFiles
+  - id: go-accessors-hand-out-go-only
+    rule: Files, AppFiles and TestFiles never return a stylesheet or a script, and AST refuses both without recording them as unparsed.
+    enforced_by:
+      - test: framework/contracts.TestSweepEngineGoAccessorsNeverHandOutClientFiles
+  - id: minified-scripts-are-skipped
+    rule: ScriptFiles leaves out a script named .min.js, .min.mjs or .min.cjs and one with a line longer than 1000 bytes.
+    enforced_by:
+      - test: framework/contracts.TestSweepEngineMinifiedScriptsAreSkipped
+  - id: generated-needs-the-whole-header
+    rule: A file is generated only when its first 512 bytes hold a whole line reading `// Code generated ... DO NOT EDIT.`.
+    enforced_by:
+      - test: framework/contracts.TestGeneratedSourceNeedsFullHeader
+  - id: parse-failure-is-recorded
+    rule: A Go file that fails to parse is recorded in Unparsed, and a nonzero Unparsed fails the report.
+    enforced_by:
+      - test: framework/contracts.TestUnparsedFilesAreCountedAndReported
+      - test: framework/contracts.TestUnparsedReportCannotPass
+  - id: unreadable-subtree-is-recorded
+    rule: An unreadable file or subtree under the root is recorded in Unparsed while its readable siblings are still discovered.
+    enforced_by:
+      - test: framework/contracts.TestPassRecordsUnreadableSources
+      - test: framework/contracts.TestPassDiscoversSiblingOfUnreadableDirectory
+  - id: module-path-is-parsed-by-modfile
+    rule: ReadModulePath returns the module path unquoted and without a trailing comment.
+    enforced_by:
+      - test: framework/contracts.TestReadModulePathQuotedAndCommented
+  - id: memo-first-value-wins
+    rule: Memo hands every caller of one key the same value, the first one stored, even when two computations race.
+    enforced_by:
+      - test: framework/contracts.TestPassMemoComputesOnce
+      - test: framework/contracts.TestSweepEngineMemoKeepsTheFirstStoredValue
+decisions:
+  - id: catalog-is-data-in-one-file
+    date: 2026-11-17
+    status: accepted
+    decision: Every built-in rule is declared as data in catalog.go, with its Why, Fix and a bad/good example, and the file is exempt from check-csp and the rendering and SQL rules because its counter-examples trip them.
+    rejected:
+      - option: Declare each rule beside the analyzer that emits it.
+        why: What the framework demands of an app would only be answerable by reading a dozen analyzers.
+      - option: Write the bad examples so they do not trip the checks.
+        why: An example that does not show the real mistake teaches nothing.
+    upholds: [rule-carries-its-lesson]
+  - id: ids-are-numbered-by-capability-block
+    date: 2026-11-17
+    status: accepted
+    decision: Each capability owns a hundred-wide block of GOFASTR IDs and a project's own rules use their own uppercase prefix.
+    rejected:
+      - option: Number rules sequentially.
+        why: An ID would say nothing about its area, and a custom rule could collide with a later catalog entry.
+      - option: Reuse a deleted rule's number.
+        why: An old `//gofastr:allow(<id>)` would start silencing a different rule.
+    upholds: [gofastr-ids-stay-in-their-block, rule-ids-are-never-recycled]
+  - id: colon-path-param-has-no-autofix
+    date: 2026-11-17
+    status: accepted
+    decision: GOFASTR1002 (`:param` in a route pattern) ships without an autofix.
+    rejected:
+      - option: Rewrite `:id` to `{id}` mechanically.
+        why: The handler still reads the parameter the old way, so a loud 404 becomes a route that fails quietly; only a human knows what it should read.
+  - id: stale-waivers-are-consumed-eagerly
+    date: 2026-11-17
+    status: accepted
+    decision: Run consumes a GOFASTR0002 waiver before deciding whether the stale finding it covers is reportable on a narrowed run, so Suppressed may count that waiver.
+    rejected:
+      - option: Consume the waiver only when its finding would be reported.
+        why: The waiver stays unused on the narrowed run and is reported stale itself on the next full run.
+    upholds: [contracts.config/stale-directive-is-waivable]

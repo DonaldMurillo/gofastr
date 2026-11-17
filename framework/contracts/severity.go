@@ -5,21 +5,15 @@ import (
 	"strings"
 )
 
-// Severity is how loudly a diagnostic lands. A config may move a rule
-// either way along this list; what the ordering buys is that every move
-// *down* from the catalog default is a relaxation, which the report
-// names out loud (see [Config.Relaxations]), turning a check off is a
-// decision the whole team gets to see, not a line in a YAML file.
+// Severity is how loudly a diagnostic lands, ordered off < info < warn < error.
 type Severity int
 
 const (
-	// SeverityOff suppresses the rule entirely. Only reachable through
-	// configuration: no rule declares it.
+	// SeverityOff suppresses the rule; only config can set it.
 	SeverityOff Severity = iota
 	// SeverityInfo reports without affecting the exit code.
 	SeverityInfo
-	// SeverityWarn reports and affects the exit code only under
-	// `--severity=warn` (or `strict: true` in the AI section).
+	// SeverityWarn fails the run only when FailOn is warn or lower.
 	SeverityWarn
 	// SeverityError fails the verify run.
 	SeverityError
@@ -39,10 +33,8 @@ func (s Severity) String() string {
 	return fmt.Sprintf("severity(%d)", int(s))
 }
 
-// ParseSeverity resolves a config or flag value. `warning` and `err` are
-// accepted alongside the canonical spellings; anything else is an error
-// rather than a silent default, because a typo'd severity that quietly
-// means "error" would make a relaxation look applied when it is not.
+// ParseSeverity resolves a config or flag value, accepting aliases such as
+// `warning`, `err` and `false`. Anything else is an error.
 func ParseSeverity(s string) (Severity, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "off", "none", "disabled", "false":
@@ -70,9 +62,6 @@ func (s *Severity) UnmarshalText(b []byte) error {
 	return nil
 }
 
-// sarifLevel maps a severity onto the SARIF 2.1.0 result level
-// vocabulary. SARIF has no "off": a suppressed diagnostic is dropped
-// before it reaches the writer.
 func (s Severity) sarifLevel() string {
 	switch s {
 	case SeverityError:

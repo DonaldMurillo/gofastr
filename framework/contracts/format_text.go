@@ -12,20 +12,16 @@ import (
 type TextOptions struct {
 	// Color emits ANSI escapes. Callers set this from a TTY check.
 	Color bool
-	// Verbose prints the rule's Why and an example under every finding
-	// rather than only under the first of each rule. The compact default
-	// exists because twenty instances of one rule should teach the lesson
-	// once, not twenty times.
+	// Verbose repeats each instance's suggestion even when it equals the
+	// rule's Fix, and prints an example for single-instance rules too.
 	Verbose bool
 	// Timings appends the per-analyzer wall times.
 	Timings bool
 }
 
-// FormatText renders a report for a terminal. The shape is deliberate:
-// findings grouped by rule rather than by file, because the unit of
-// *action* is the rule, you learn it once and then fix every instance,
-// while a file-grouped list makes the reader re-derive the lesson at each
-// stop.
+// FormatText renders a report for a terminal, findings grouped by rule,
+// then a footer naming everything the run did not check or report.
+// Untrusted text is scrubbed of terminal control bytes.
 func FormatText(r *Report, opts TextOptions) string {
 	var b strings.Builder
 	c := colorizer{on: opts.Color}
@@ -39,8 +35,6 @@ func FormatText(r *Report, opts TextOptions) string {
 		return b.String()
 	}
 
-	// Group by rule, preserving the sorted order of first appearance so
-	// errors still lead.
 	order := []string{}
 	byRule := map[string][]Diagnostic{}
 	for _, d := range r.Diagnostics {
@@ -136,9 +130,6 @@ func writeSummary(b *strings.Builder, r *Report, c colorizer) {
 	}
 }
 
-// writeQuietFooter states what the run did not check. A verify that
-// passes because half of it was switched off should say so: the whole
-// point of "no hidden behavior" is that a clean report is trustworthy.
 func writeQuietFooter(b *strings.Builder, r *Report, c colorizer) {
 	if r.Suppressed > 0 {
 		fmt.Fprintf(b, "\n  %s %d finding%s suppressed by //gofastr:allow directives\n",
@@ -149,25 +140,17 @@ func writeQuietFooter(b *strings.Builder, r *Report, c colorizer) {
 			c.dim("·"), r.Baselined, plural(r.Baselined))
 	}
 	if r.BaselineFixed > 0 {
-		// The ratchet: debt that was paid stays recorded as accepted
-		// until someone re-records, which would let new findings hide in
-		// the slack. Saying so is what keeps the baseline shrinking.
 		fmt.Fprintf(b, "  %s %d baseline entr%s now over-accepting: re-record with %s\n",
 			c.green("·"), r.BaselineFixed,
 			map[bool]string{true: "y is", false: "ies are"}[r.BaselineFixed == 1],
 			c.bold("gofastr verify --baseline-write"))
 	}
-	// A file reading or parsing rejected produced no findings from any analyzer.
-	// Saying so is the difference between "these files are clean" and
-	// "nobody could read these files", mid-edit that is expected, in CI
-	// it is the whole story.
 	if r.Unparsed > 0 {
 		fmt.Fprintf(b, "  %s %d file%s could not be read or parsed and %s not checked\n",
 			c.yellow("·"), r.Unparsed, plural(r.Unparsed),
 			map[bool]string{true: "was", false: "were"}[r.Unparsed == 1])
 	}
 	if r.OutsideChange > 0 {
-		// A narrowed run must never read as a whole-repository all-clear.
 		fmt.Fprintf(b, "  %s %d finding%s outside the changed files: run without %s for the full picture\n",
 			c.yellow("·"), r.OutsideChange, plural(r.OutsideChange), c.bold("--changed"))
 	}
@@ -220,9 +203,6 @@ func truncate(s string, n int) string {
 	return s[:n-1] + "…"
 }
 
-// wrap hard-wraps prose at width, indenting continuation lines. Findings
-// carry multi-sentence explanations; letting a terminal reflow them turns
-// the report into a wall.
 func wrap(s string, width int, indent string) string {
 	words := strings.Fields(s)
 	if len(words) == 0 {
@@ -246,8 +226,6 @@ func wrap(s string, width int, indent string) string {
 	return b.String()
 }
 
-// colorizer keeps the ANSI decision in one place so every helper below
-// degrades to plain text when stdout is redirected.
 type colorizer struct{ on bool }
 
 func (c colorizer) wrap(code, s string) string {
@@ -275,8 +253,8 @@ func (c colorizer) severity(s Severity) string {
 	}
 }
 
-// FormatExplain renders one catalog entry in full: the `--explain` view
-// and the body of the `contracts_explain` MCP tool.
+// FormatExplain renders one catalog entry in full, as `--explain` and the
+// `contracts_explain` MCP tool show it.
 func FormatExplain(r Rule, color bool) string {
 	c := colorizer{on: color}
 	var b strings.Builder

@@ -1,42 +1,7 @@
 //check-csp:ignore-file
-// Every rule ships a deliberately-wrong example, and the one for
-// GOFASTR1804 is an inline style attribute. Same exemption check-csp
-// applies to its own source, and the same reason gofastr.settings.yml
-// exempts this package from the rendering and SQL rules: a catalog of
-// counter-examples trips the checks it documents.
 
 package contracts
 
-// The rule catalog. Every contract GoFastr enforces is declared here, as
-// data, in one file, so "what does this framework actually demand of my
-// app" is answerable by reading, without running anything and without
-// grepping twelve analyzers.
-//
-// # Numbering
-//
-// Each capability owns a hundred-wide block. IDs are permanent: a rule
-// that is deleted leaves its number retired rather than recycled, because
-// a `//gofastr:allow(GOFASTR1403)` written two years ago must never
-// silently start suppressing something else.
-//
-//	0000  meta            1500  performance
-//	1000  routing         1600  data
-//	1100  testing         1700  entities
-//	1200  accessibility   1800  rendering
-//	1300  architecture    1900  permissions
-//	1400  security        2000  ai
-//
-// # Writing a rule
-//
-// Why and Fix are not optional and not decoration. Why must name the
-// consequence and who suffers it; Fix must name the API. If you cannot
-// write a Fix, the finding is an opinion and does not belong in the
-// catalog. Examples are the difference between an agent fixing the code
-// and an agent suppressing the rule.
-
-// capabilityBlocks assigns each capability its hundred-wide ID range.
-// [validateRule] enforces membership, so a rule filed under the wrong
-// capability fails at init rather than confusing a reader later.
 var capabilityBlocks = map[Capability]int{
 	CapMeta:          0,
 	CapRouting:       1000,
@@ -284,10 +249,6 @@ func routingRules() []Rule {
 			"compiles fine, and every real request misses it. This is the single most common habit " +
 			"carried over from Express, Gin, and Chi.",
 		Fix: "Use brace syntax, `/users/{id}`, and read the value with `r.PathValue(\"id\")`. For a trailing catch-all, `{path...}`.",
-		// Not autofixable on purpose: rewriting the pattern alone turns a
-		// loud 404 into a route whose handler still reads the parameter
-		// the old way, which fails quietly. The handler has to change in
-		// the same edit, and only a human knows what it should read.
 		Doc: "project-structure",
 		Examples: []Example{{
 			Bad:  `r.Handle("GET", "/users/:id", showUser)`,

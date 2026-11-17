@@ -4,3 +4,90 @@ code:
   - framework/contracts/report.go
   - framework/contracts/format_json.go
   - framework/contracts/format_text.go
+invariants:
+  - id: a-check-that-did-not-run-fails
+    rule: Passed is false when any analyzer errored, any file was unparsed, the vet stage ran and failed, or a finding is at or above FailOn.
+    enforced_by:
+      - test: framework/contracts.TestRunRejectsUndeclaredRule
+      - test: framework/contracts.TestUnparsedReportCannotPass
+      - test: framework/contracts.TestPassedAccountsForTheVetStage
+      - test: framework/contracts.TestExitCodeAndFailOn
+  - id: skipped-vet-has-no-verdict
+    rule: A VetResult that did not run serialises without "passed", and one that ran always carries it.
+    enforced_by:
+      - test: framework/contracts.TestSweepReportSkippedVetHasNoVerdict
+      - test: framework/contracts.TestFormatJSONCarriesTheVetStage
+  - id: narrowing-keeps-run-wide-facts
+    rule: Only and OnlyFiles keep analyzer errors, unparsed count, relaxations, vet, capability filter and the baseline-applied mark, recompute the tallies, and drop the Suppressed, Baselined, BaselineFixed and OutsideChange counters.
+    enforced_by:
+      - test: framework/contracts.TestNarrowingKeepsRunWideState
+      - test: framework/contracts.TestOnlyRecomputesTheDerivedTallies
+      - test: framework/contracts.TestSweepReportNarrowedCopyCannotReapplyTheBaseline
+  - id: unknown-narrowing-rule-is-an-error
+    rule: Only with a name the catalog does not hold matches nothing and records an analyzer error.
+    enforced_by:
+      - test: framework/contracts.TestOnlyReportsAnUnknownRuleName
+      - test: framework/contracts.TestOnlyUnknownRuleSelectsNothing
+  - id: nil-file-set-is-no-restriction
+    rule: OnlyFiles with a nil set keeps every diagnostic.
+    enforced_by:
+      - test: framework/contracts.TestOnlyFilesTreatsNilAsNoRestriction
+  - id: apply-stays-inside-the-root
+    rule: Apply reads, stats and writes only through an os.Root at the report root, refusing absolute paths, traversal and symlinks that leave it.
+    enforced_by:
+      - test: framework/contracts.TestApplyRefusesSymlinkEscape
+      - test: framework/contracts.TestApplyRefusesLinkedDirEscape
+      - test: framework/contracts.TestApplyRefusesToWriteOutsideTheRoot
+      - test: framework/contracts.TestApplyCleansLocalSpellings
+  - id: apply-refuses-a-stale-edit
+    rule: Apply writes nothing for a file with an edit out of range or inverted, an edit whose Old text no longer matches, overlapping edits, or a Go edit that breaks a file that parsed.
+    enforced_by:
+      - test: framework/contracts.TestSweepReportApplyRefusesAnInvertedEdit
+      - test: framework/contracts.TestReportApplyRejectsChangedContent
+      - test: framework/contracts.TestReportApplyRejectsOverlap
+      - test: framework/contracts.TestReportApplyRefusesAnEditThatBreaksParsing
+  - id: apply-formats-go-and-keeps-crlf
+    rule: Apply gofmts an edited Go file and keeps its CRLF line endings.
+    enforced_by:
+      - test: framework/contracts.TestSweepReportApplyKeepsCRLFLineEndings
+  - id: report-admits-what-it-did-not-report
+    rule: The JSON document and the text footer both carry the suppressed, baselined, over-accepting and outside-the-change counts, and the footer names the unparsed count, analyzer errors and the capability filter.
+    enforced_by:
+      - test: framework/contracts.TestSweepReportJSONAdmitsWhatItDidNotReport
+      - test: framework/contracts.TestSweepReportFooterAdmitsWhatItDidNotReport
+      - test: framework/contracts.TestReportSurfacesUnparsedCount
+      - test: framework/contracts.TestTextFooterCannotForgeLines
+  - id: json-carries-the-whole-rule
+    rule: Every JSON diagnostic carries its full rule, and diagnostics and summary are arrays, never null.
+    enforced_by:
+      - test: framework/contracts.TestFormatJSONCarriesTheWholeRule
+      - test: framework/contracts.TestSweepReportJSONAdmitsWhatItDidNotReport
+  - id: sarif-locations-resolve
+    rule: Every SARIF artifact URI is relative to SRCROOT, which the run declares as the report root, and the driver lists each fired rule once.
+    enforced_by:
+      - test: framework/contracts.TestFormatSARIFDeclaresItsUriBase
+      - test: framework/contracts.TestFormatSARIFIsReferentiallyIntactAcrossRules
+  - id: text-is-scrubbed
+    rule: FormatText scrubs terminal control bytes from locations, messages, snippets, suggestions, relaxations and analyzer errors, and emits no ANSI escape without Color.
+    enforced_by:
+      - test: framework/contracts.TestReportTextFreeOfControlBytes
+      - test: framework/contracts.TestReportFooterScrubsControls
+      - test: framework/contracts.TestFormatTextIsPlainWithoutColor
+decisions:
+  - id: wire-shape-is-its-own-type
+    date: 2026-11-17
+    status: accepted
+    decision: FormatJSON writes a jsonReport, not Report itself, and every diagnostic repeats its whole rule.
+    rejected:
+      - option: Marshal Report directly.
+        why: Renaming an internal field would silently change the contract agents and CI read.
+      - option: Send rule IDs and let the consumer look the rules up.
+        why: An agent would need a second round trip to act on one finding.
+    upholds: [json-carries-the-whole-rule]
+  - id: text-groups-by-rule
+    date: 2026-11-17
+    status: accepted
+    decision: FormatText groups findings by rule and prints the Why and Fix once per rule.
+    rejected:
+      - option: Group by file.
+        why: The reader would re-derive the same lesson at every file instead of learning it once and fixing every instance.

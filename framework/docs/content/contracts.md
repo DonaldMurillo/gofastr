@@ -34,7 +34,10 @@ an empty pass for inspection, but `contracts.Run` refuses to analyze it, so
 both `gofastr verify` and the `gofastr build` contract gate reject it.
 
 Rules are grouped into capabilities, and each capability is also a filter:
-`gofastr verify routing security` runs two of them.
+`gofastr verify routing security` runs two of them. Each also answers to a
+short name, case-insensitively: `a11y`, `sec`, `perf`, `arch`, `test` or
+`coverage`, `perms` or `authz`, `entity`, `route`, `render` or `ui`, `db`,
+and `guidance` for `ai`.
 
 | Capability | Catches |
 |---|---|
@@ -79,7 +82,10 @@ rejected outright: it would absorb every rule added afterwards.
 
 Put the directive at the end of the offending line, or on its own line
 directly above it. `//gofastr:allow-file(RULE) reason` covers a whole
-file.
+file. A directive on its own line above a multi-line string literal
+covers the whole literal. A directive must start its comment: one quoted
+in prose, or written inside a string (raw strings included), silences
+nothing.
 
 `GOFASTR1809` checks `.css` files discovered under the verification
 root outside the styling-owner paths, including embedded stylesheets and
@@ -278,7 +284,12 @@ contracts:
 
 Path globs are slash-separated (`cmd/**`, `**/testdata/**`); a backslash
 is accepted as a separator too, so a path typed on Windows works rather
-than silently matching nothing.
+than silently matching nothing. `**` matches its own root as well:
+`core/**` exempts `core` itself.
+
+A capability takes a severity (`performance: warn`), `false` to switch it
+off, or a map of `enabled`, `severity` and `exempt`. A rule's own entry
+under `rules:` wins over its capability's.
 
 A leading `/` anchors a glob at the analyzed root: `/gen/**` exempts
 the root's generated subtree, not a nested `pkg/gen/` subtree. Coverage
@@ -825,7 +836,8 @@ out of date.
 
 `gofastr verify --fix` applies the mechanical fixes and re-verifies.
 Only unambiguous rewrites carry one; anything needing a judgment call is
-left to you with the fix written out in prose. Today that is `GOFASTR1005`
+left to you with the fix written out in prose. An edited Go file is run
+through gofmt, and a file with CRLF line endings keeps them. Today that is `GOFASTR1005`
 (uppercase a lowercase method), `GOFASTR1404` (add the missing cookie
 attributes), and `GOFASTR0002` (delete a suppression that matches nothing).
 

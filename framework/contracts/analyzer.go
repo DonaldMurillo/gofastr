@@ -11,18 +11,14 @@ import (
 	"time"
 )
 
-// Analyzer is one detector. It is a struct rather than an interface for
-// the same reason golang.org/x/tools/go/analysis uses one: the interesting
-// part is the data (which rules can this emit), and a struct keeps that
-// declaration next to the function instead of scattered across methods.
+// Analyzer is one detector: a name, the rules it may emit, and a Run.
 type Analyzer struct {
 	// Name is the stable identifier used by `--analyzer` and in timings.
 	Name string
 	// Doc is one line describing what the analyzer looks at.
 	Doc string
-	// Rules are the IDs this analyzer may emit. [Run] rejects a
-	// diagnostic naming any other rule. An analyzer cannot smuggle in an
-	// undocumented finding, which is what keeps the catalog honest.
+	// Rules are the IDs this analyzer may emit. [Run] drops a diagnostic
+	// naming any other rule and reports it as an analyzer error.
 	Rules []string
 	// Run inspects the pass. Returning an error aborts only this
 	// analyzer; the rest of the run continues and the error is reported.
@@ -48,9 +44,8 @@ var (
 	analyzers  = map[string]*Analyzer{}
 )
 
-// Register adds analyzers to the process-wide set. Panics on a duplicate
-// name or a rule the catalog does not know. Both are wiring errors that
-// belong at init, not in a user's terminal.
+// Register adds analyzers to the process-wide set. It panics on a missing
+// name or Run, no rules, a duplicate name, or a rule the catalog lacks.
 func Register(as ...*Analyzer) {
 	analyzerMu.Lock()
 	defer analyzerMu.Unlock()
@@ -85,8 +80,7 @@ func Analyzers() []*Analyzer {
 	})
 }
 
-// RunOptions narrows a run. Both filters are additive-empty: an empty
-// slice means "everything", which is the strict default.
+// RunOptions narrows a run. An empty filter means everything.
 type RunOptions struct {
 	// Capabilities restricts the run to analyzers covering at least one
 	// of these. Empty runs them all.
@@ -123,8 +117,7 @@ func (o RunOptions) wants(a *Analyzer) bool {
 	return false
 }
 
-// AnalyzerTiming records how long one analyzer took, for `--json` output
-// and for finding the analyzer that made the pipeline slow.
+// AnalyzerTiming records how long one analyzer took and what it found.
 type AnalyzerTiming struct {
 	Name        string        `json:"name"`
 	Duration    time.Duration `json:"-"`
@@ -135,17 +128,13 @@ type AnalyzerTiming struct {
 
 // Run executes the selected analyzers against the pass and assembles a
 // [Report]: diagnostics normalized against the catalog, relaxed by config,
-// filtered by suppression, deduplicated, and sorted.
+// filtered by suppression, deduplicated, and sorted. It errors when no
+// analyzer is registered, the pass found no files or could not read some,
+// or an unknown analyzer name is requested.
 func Run(p *Pass, opts RunOptions) (*Report, error) {
 	if p == nil {
 		return nil, fmt.Errorf("contracts: nil pass")
 	}
-	// Analyzers self-register from an init() in
-	// framework/contracts/analyzers, so a binary that never imports that
-	// package has an empty registry. Running zero analyzers produces zero
-	// diagnostics, which is indistinguishable from a clean tree. The
-	// worst possible failure for a tool whose whole job is saying "this
-	// is fine". Refuse instead.
 	if len(Analyzers()) == 0 {
 		return nil, fmt.Errorf(`contracts: no analyzers registered: import _ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers" in the binary that calls Run`)
 	}
@@ -194,10 +183,6 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 	sup := collectSuppressions(p)
 	raw = append(raw, sup.issues...)
 
-	// active decides which rules this run actually evaluated. A stale
-	// suppression is only reportable for a rule that ran. Otherwise
-	// `gofastr verify routing` would flag every accessibility suppression
-	// in the tree as dead.
 	active := func(r Rule) bool {
 		if !p.Config.Enabled(r) {
 			return false
@@ -228,14 +213,6 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 			continue
 		}
 		if sup.suppressed(d, rule) {
-			// Every suppressed finding keeps its (rule, file) identity so
-			// the baseline can treat its slot as occupied. Deliberately
-			// NOT filtered by the current fail floor: the baseline being
-			// applied may have been recorded under a different one (a
-			// --strict lane records warn entries a non-strict run still
-			// applies), and a slot is a slot. An unclaimed one absorbs
-			// the next new finding whatever severity it carries. Claims
-			// for rules the baseline never recorded are simply no-ops.
 			report.noteSuppressed(rule.ID, d.File)
 			continue
 		}
@@ -253,23 +230,8 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 		kept = append(kept, d)
 	}
 
-	// Stale suppressions are computed after the filtering loop, when every
-	// directive that matched something has been marked used. Their
-	// findings then go through the SAME contract as every other finding.
-	// Exemptions apply, and a `//gofastr:allow(GOFASTR0002)` waives one.
-	// Skipping those checks made the meta rule the one rule in the
-	// catalog that could not be waived locally, with the waiver itself
-	// reported stale. Two passes because consuming a waiver marks that
-	// directive used: the first pass consumes, the recompute drops the
-	// now-used waivers from the candidate set, and the second pass emits
-	// what survives.
-	//
-	// Consumption is deliberately eager, before the staleReportable
-	// check, so a waiver is marked used even on a capability-narrowed
-	// run where its stale finding would not have been reportable. The
-	// cost is a Suppressed counter that can include those waivers; the
-	// alternative leaves the waiver unused and reports IT stale on the
-	// next full run, which is worse than an over-count.
+	// Two passes: the first consumes GOFASTR0002 waivers, the second
+	// reports the stale directives that survive.
 	for _, d := range sup.stale(p) {
 		if rule, ok := LookupRule(d.RuleID); ok && p.Config.Enabled(rule) && !p.Config.ExemptFor(rule, d.File) {
 			sup.suppressed(d, rule)
@@ -304,8 +266,6 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 	return report, nil
 }
 
-// staleReportable keeps a stale-suppression finding only when every rule
-// the directive names was actually evaluated this run.
 func staleReportable(sup *suppressionSet, d Diagnostic, active func(Rule) bool) bool {
 	for _, s := range sup.byFile[d.File] {
 		if s.Line != d.Line || s.used {
@@ -321,9 +281,6 @@ func staleReportable(sup *suppressionSet, d Diagnostic, active func(Rule) bool) 
 	return true
 }
 
-// runAll executes analyzers concurrently. The pass is safe for concurrent
-// use (its caches are mutex-guarded), and analyzers are pure readers, so
-// the only shared mutable state is the result slice.
 func runAll(p *Pass, selected []*Analyzer, parallel int) ([]Diagnostic, []AnalyzerTiming) {
 	if parallel <= 0 {
 		parallel = runtime.GOMAXPROCS(0)
@@ -350,9 +307,6 @@ func runAll(p *Pass, selected []*Analyzer, parallel int) ([]Diagnostic, []Analyz
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			// An analyzer panic must not take the whole verify run with
-			// it: report it as that analyzer's error and let the other
-			// eleven finish. A half-report beats no report.
 			defer func() {
 				if rec := recover(); rec != nil {
 					results[i] = result{idx: i, timing: AnalyzerTiming{
@@ -372,9 +326,6 @@ func runAll(p *Pass, selected []*Analyzer, parallel int) ([]Diagnostic, []Analyz
 			if err != nil {
 				t.Error = err.Error()
 			}
-			// Guard the catalog contract: an analyzer may only emit rules
-			// it declared. Anything else is dropped with a loud error
-			// rather than silently trusted.
 			declared := map[string]bool{}
 			for _, id := range a.Rules {
 				declared[id] = true
