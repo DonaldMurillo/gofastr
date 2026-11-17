@@ -18,6 +18,9 @@ invariants:
     enforced_by:
       - contract: GOFASTR1802
     applies:
+      - framework/gallery/
+      - framework/i18nui/
+      - framework/sdkdocs/
       - framework/ui/
       - framework/uihost/
       - battery/
@@ -39,6 +42,9 @@ invariants:
     rule: Pagination, sort and filter are computed on the server; the runtime only follows the links and swaps the regions the server returns.
     judge: Does this change compute a page, a sort order or a filter result in JavaScript instead of asking the server?
     applies:
+      - framework/gallery/
+      - framework/i18nui/
+      - framework/sdkdocs/
       - framework/ui/
       - framework/uihost/
       - battery/

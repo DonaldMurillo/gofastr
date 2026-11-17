@@ -1,4 +1,4 @@
-primitive: jpeg
+primitive: image.jpeg
 summary: The leaf JPEG readers framework/image and framework/file share without importing each other - the progressive-JPEG decode-cost estimate, EXIF orientation and the hostile fixtures their tests use.
 code:
   - framework/internal/jpegcost/
