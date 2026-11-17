@@ -6,3 +6,38 @@ docs:
   - framework/docs/content/cli.md
 on_change:
   - A new Kind or Entry field reaches a host's AGENTS.md only once cmd/gofastr/internal/agentscmd, which walks All(), writes it.
+invariants:
+  - id: empty-markdown-is-held-aside
+    rule: Register files an entry with empty Markdown under MissingMarkdown and leaves it out of All, without panicking.
+    enforced_by:
+      - test: framework/agentsinv.TestRegisterRecordsEmptyMarkdownWithoutPanicking
+  - id: framework-first-then-by-name
+    rule: All lists framework entries before battery entries and each kind by Name.
+    enforced_by:
+      - test: framework/agentsinv.TestAllReturnsSortedByKindThenName
+      - test: framework/agentsinv.TestRegisterAndAll
+  - id: results-are-copies
+    rule: All and MissingMarkdown return copies a caller can change without changing the inventory, and Reset empties both.
+    enforced_by:
+      - test: framework/agentsinv.TestSweepAllAndMissingReturnCopies
+  - id: links-no-testing
+    rule: framework/agentsinv does not link the testing package; Reset takes the TestingT interface instead.
+    enforced_by:
+      - test: framework/agentsinv.TestSweepAgentsinvLinksNoTesting
+decisions:
+  - id: registration-by-import
+    date: 2026-11-17
+    status: accepted
+    decision: A package registers its agents.md from init, so importing it includes its snippet and the generator chooses its scope by blank imports.
+    rejected:
+      - option: A central allow-list of snippets.
+        why: It has to be kept in step with every battery by hand.
+    upholds: [framework-first-then-by-name]
+  - id: missing-markdown-warns
+    date: 2026-11-17
+    status: accepted
+    decision: An entry with empty Markdown is a warning that gofastr agents prints, not a panic.
+    rejected:
+      - option: Panic in Register.
+        why: A panic from package init kills every gofastr subcommand because of one mis-shipped battery.
+    upholds: [empty-markdown-is-held-aside]
