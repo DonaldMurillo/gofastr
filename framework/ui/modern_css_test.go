@@ -30,7 +30,7 @@ func TestKitTypography(t *testing.T) {
 		style *registry.Style
 		want  []string
 	}{
-		{"hero", heroStyle, []string{"text-wrap: balance", "calc(1.5rem + 3vw)", "calc(0.875rem + 0.6vw)"}},
+		{"hero", heroStyle, []string{"text-wrap: balance", "calc(var(--text-2xl, 1.5rem) + 3vw)", "calc(var(--text-sm, 0.875rem) + 0.6vw)"}},
 		{"page header", pageHeaderStyle, []string{"text-wrap:balance"}},
 		{"card heading", cardStyle, []string{"text-wrap: balance"}},
 		{"inline code", inlineCodeStyle, []string{"@supports (font-size-adjust: 0.5)", "font-size-adjust: 0.5"}},
