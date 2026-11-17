@@ -1,0 +1,7 @@
+primitive: event
+summary: The in-process live event bus - On, Subscribe, Emit, EmitStrict and EmitAsync, the lifecycle event types, and the emission observer.
+code:
+  - framework/event/event.go
+  - framework/event/observe.go
+docs:
+  - framework/docs/content/events.md
