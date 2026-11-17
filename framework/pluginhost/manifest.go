@@ -64,7 +64,7 @@ func (m Manifest) Validate() error {
 	for _, raw := range m.Sandbox {
 		for token := range strings.FieldsSeq(strings.ToLower(raw)) {
 			if token == "allow-same-origin" {
-				return errors.New("pluginhost: sandbox \"allow-same-origin\" is forbidden: it breaks opaque-origin isolation (protocol-v1.md §1)")
+				return errors.New("pluginhost: sandbox \"allow-same-origin\" is forbidden: it breaks opaque-origin isolation")
 			}
 			norm = append(norm, token)
 		}
