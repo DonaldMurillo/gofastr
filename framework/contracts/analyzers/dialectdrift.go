@@ -11,69 +11,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-// ----------------------------------------------------------------------
 // GOFASTR1414: dialect twin queries whose WHERE predicates diverge.
-// ----------------------------------------------------------------------
 
-// Bug class: sibling SQL queries for Postgres and SQLite whose WHERE
-// clauses select different rows. A dialect twin is written twice
-// because the spelling differs (FOR UPDATE SKIP LOCKED vs a tx, $n vs
-// ?), and the PREDICATES are supposed to be copied verbatim — nothing
-// else reviews them against each other, so an atom present in one and
-// absent from the other ships silently: on one dialect the query lets
-// through exactly the rows the other refuses. The 2026-09-07
-// adversarial round found framework/outbox claimDeliveriesSQLite
-// missing the `next_attempt_at IS NULL OR next_attempt_at <= $`
-// backoff predicate its Postgres twin has (deliveries past their
-// retry deadline were re-claimed on SQLite only, so a poison delivery
-// looped past its backoff on every SQLite app).
-//
-// Pairing heuristics, both implemented:
-//   - (a) two functions or consts in one package whose names differ
-//     only by a Postgres/PostgreSQL/PG vs SQLite/SQLite3 suffix or
-//     infix (claimDeliveriesPostgres / claimDeliveriesSQLite);
-//   - (b) a switch/if on a dialect value (s.dialect, DialectPostgres,
-//     "postgres") with SQL in each arm, including the early-return
-//     spelling whose other arm is the code after the if.
-//
-// Each side's table set is extracted first (every FROM / INTO /
-// UPDATE target, sub-selects included, under the same normalization)
-// and the WHERE atoms are compared ONLY when the two sets are equal
-// or one is a subset of the other. Twins shaped by different tables
-// are shaped by different catalogs — pg_tables vs sqlite_master,
-// information_schema vs sqlite_master (framework/migrate bulk,
-// framework/export_data tableExists) — and owe each other no
-// predicate parity: comparing them reports apples against oranges.
-// The subset arm keeps the outbox oracle, whose Postgres side wraps
-// its SQLite twin's SELECT in an UPDATE over the SAME table.
-//
-// Only the FIRST SQL-bearing literal of each side is compared (the
-// query the function leads with; a twin's write-back UPDATE by
-// primary key is not a selection predicate). A literal is SQL-bearing
-// when a statement verb opens a statement (literal or line start, an
-// opening paren, a semicolon) and SQL follows it, so an error prefix
-// or log line that says "with" or "select" cannot displace the query.
-// Every WHERE clause of it is pooled — the outbox Postgres claim's
-// predicates live in the sub-SELECT under WHERE id IN (SELECT …). Placeholders ($n, ?,
-// %s), quoting, whitespace, and single-letter table aliases are
-// normalized away; IN-lists of placeholders collapse to one; atoms
-// carrying a sub-SELECT are structural (id IN (SELECT …)) and skipped
-// rather than compared as text.
-//
-// The rule does not decide which side is right. It reports the
-// divergence; an atom one side lacks is a finding on that side.
-//
-// Deliberately silent on:
-//   - twins whose table sets diverge (different system catalogs):
-//     no parity is expected, and the pair is not a finding but a
-//     shape the rule refuses to judge;
-//   - pairs where either side has no WHERE-bearing statement (DDL
-//     twins, INSERT/upsert twins: nothing to compare);
-//   - statements whose predicates match after normalization — the
-//     overwhelming majority, and the whole point of normalizing;
-//   - packages with no pairing shape at all;
-//   - _test.go and generated files (AppFiles already excludes both);
-//   - any site annotated //gofastr:allow(GOFASTR1414) <why>.
 func ruleDialectDrift(p *contracts.Pass, rel string, file *ast.File) []contracts.Diagnostic {
 	dir := path.Dir(rel)
 	v := p.Memo("dialectdrift.package:"+dir, func() any {
@@ -86,9 +25,6 @@ func ruleDialectDrift(p *contracts.Pass, rel string, file *ast.File) []contracts
 	return rep.fileDiagnostics(p, rel)
 }
 
-// dialectQuery is one side of a potential twin pair: the flavor, the
-// enclosing name, the first statement's WHERE atoms, and the table
-// set those atoms range over.
 type dialectQuery struct {
 	rel    string
 	flavor string // "postgres" | "sqlite"
@@ -105,14 +41,11 @@ type dialectAtom struct {
 
 type dialectDriftReport struct {
 	queries []*dialectQuery
-	// branchPairs holds heuristic (b)'s arm pairs, matched by
-	// construction: the two arms of one dialect branch never share a
-	// declaration name, so the name grouping cannot pair them.
+	// branchPairs holds heuristic (b)'s pairs: the two arms of one branch share no declaration name to group by.
 	branchPairs [][2]*dialectQuery
 }
 
-// dialectPairs returns the postgres/sqlite query pairs of the package
-// by name heuristic (a).
+// dialectPairs returns heuristic (a)'s pairs, by name, plus the branch pairs.
 func (r *dialectDriftReport) dialectPairs() [][2]*dialectQuery {
 	groups := map[string]map[string][]*dialectQuery{} // base → flavor → queries
 	for _, q := range r.queries {
@@ -137,7 +70,6 @@ func (r *dialectDriftReport) dialectPairs() [][2]*dialectQuery {
 	return out
 }
 
-// fileDiagnostics compares every pair this file takes part in.
 func (r *dialectDriftReport) fileDiagnostics(p *contracts.Pass, rel string) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	for _, pair := range r.dialectPairs() {
@@ -149,18 +81,10 @@ func (r *dialectDriftReport) fileDiagnostics(p *contracts.Pass, rel string) []co
 			if side.rel != rel || len(side.atoms) == 0 || len(other.atoms) == 0 {
 				continue
 			}
-			// Twins shaped by DIFFERENT tables are shaped by different
-			// catalogs (pg_tables vs sqlite_master): predicate parity
-			// is not expected between them, so the comparison stops
-			// before it starts. Only an equal or subset table set
-			// (the outbox Postgres side adds a sub-select on the SAME
-			// table) carries a predicate-parity obligation.
 			if !tablesComparable(side.tables, other.tables) {
 				continue
 			}
-			// Atoms the OTHER side enforces and this side lacks are
-			// findings on THIS side: the poorer query is the one
-			// missing a predicate.
+			// An atom the other side has and this side lacks is a finding on this side.
 			have := map[string]bool{}
 			for _, a := range side.atoms {
 				have[a.text] = true
@@ -185,9 +109,6 @@ func (q *dialectQuery) flavorName() string {
 	return "SQLite"
 }
 
-// dialectDriftPackage builds the report for one directory: one query
-// per dialect-flavored declaration (functions and consts), heuristic
-// (a), plus one per arm of a dialect branch, heuristic (b).
 func dialectDriftPackage(p *contracts.Pass, dir string) *dialectDriftReport {
 	rep := &dialectDriftReport{}
 	for _, f := range p.AppFiles() {
@@ -228,10 +149,7 @@ func dialectDriftPackage(p *contracts.Pass, dir string) *dialectDriftReport {
 					}
 				}
 			case *ast.IfStmt:
-				// Heuristic (b): a dialect if. The then-arm is the
-				// flavor the condition names; the other side is the
-				// else-arm, or — the early-return spelling — the code
-				// that follows the if.
+				// Heuristic (b): a dialect if; the other arm is the else, or the code after an if that returns.
 				cond, pgThen := dialectCondFlavor(v)
 				if cond == "" {
 					return true
@@ -265,9 +183,6 @@ func dialectDriftPackage(p *contracts.Pass, dir string) *dialectDriftReport {
 					rep.branchPairs = append(rep.branchPairs, [2]*dialectQuery{thenQ, otherQ})
 				}
 			case *ast.SwitchStmt:
-				// The tag is usually the dialect value, but a switch on
-				// any value whose CASE LABELS name the dialects
-				// (DialectPostgres / DialectSQLite) is the same branch.
 				if !touchesDialect(v.Tag) && !switchLabelsDialect(v) {
 					return true
 				}
@@ -316,10 +231,7 @@ func dialectDriftPackage(p *contracts.Pass, dir string) *dialectDriftReport {
 	return rep
 }
 
-// queryFromNode reduces one side to its comparable query: the FIRST
-// SQL-bearing string literal under node, its first WHERE clause, and
-// that clause's normalized atoms. Nil when the side has nothing
-// comparable.
+// queryFromNode reduces one side to its first SQL-bearing literal, its pooled WHERE atoms and its table set.
 func queryFromNode(node ast.Node, flavor, name, rel string) *dialectQuery {
 	var lit *ast.BasicLit
 	ast.Inspect(node, func(n ast.Node) bool {
@@ -344,12 +256,6 @@ func queryFromNode(node ast.Node, flavor, name, rel string) *dialectQuery {
 	return &dialectQuery{rel: rel, flavor: flavor, name: name, lit: lit, atoms: atoms, tables: statementTables(unquoteBasicLit(lit))}
 }
 
-// statementTables extracts the table names a statement ranges over:
-// every FROM / INTO / UPDATE target, sub-selects included, after the
-// same placeholder/quoting/case normalization the atoms get (the
-// repo's twins build table names with %s verbs, which normalize to ?
-// on both sides). Keywords caught by the same shape (DO UPDATE SET…)
-// are dropped by name.
 func statementTables(s string) map[string]bool {
 	out := map[string]bool{}
 	stmt, _, ok := firstSQLStatement(s)
@@ -370,23 +276,12 @@ func statementTables(s string) map[string]bool {
 	return out
 }
 
-// reTableTarget matches a table-name position: FROM x, INSERT INTO x,
-// UPDATE x — the verb spellings that introduce a table. Postgres's ONLY
-// (UPDATE ONLY x, DELETE FROM ONLY x) is skipped, so the table matches
-// its SQLite twin's bare name.
 var reTableTarget = regexp.MustCompile(`(?:\bfrom|\binto|\bupdate)(?:\s+only\b)?\s+([a-z_][a-z0-9_$.]*|\?)`)
 
-// sqlKeywords are words the table-target shape can capture that name
-// clauses, not tables (ON CONFLICT DO UPDATE SET …).
 var sqlKeywords = map[string]bool{
 	"set": true, "values": true, "select": true, "where": true, "on": true,
 }
 
-// tablesComparable reports whether two twins owe each other predicate
-// parity: equal table sets, or one a subset of the other (the outbox
-// Postgres claim adds a sub-select on the SAME table its SQLite twin
-// selects from). An empty set means extraction saw nothing — compare
-// rather than forgive, the atoms are the finding either way.
 func tablesComparable(a, b map[string]bool) bool {
 	if len(a) == 0 || len(b) == 0 {
 		return true
@@ -413,13 +308,7 @@ var (
 	reCamelStep   = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 )
 
-// firstSQLStatement returns the first statement-bearing region of a
-// literal: the verb position and the text from it. A verb counts only
-// where a statement can start — the literal's start, a new line, an
-// opening paren or a semicolon, whitespace aside — and only when SQL
-// follows it (reSQLShape): "claim with postgres: select the oldest
-// row" is prose, and taking it as the side's query would displace the
-// real one.
+// firstSQLStatement returns the first verb that opens a statement (at the start, after a newline, "(" or ";") and is followed by SQL.
 func firstSQLStatement(s string) (string, int, bool) {
 	for _, loc := range reDialectVerb.FindAllStringIndex(s, -1) {
 		if !statementBoundary(s[:loc[0]]) || !reSQLShape.MatchString(s[loc[0]:]) {
@@ -430,8 +319,6 @@ func firstSQLStatement(s string) (string, int, bool) {
 	return "", -1, false
 }
 
-// statementBoundary reports whether the text before a verb ends where a
-// statement can begin.
 func statementBoundary(before string) bool {
 	t := strings.TrimRight(before, " \t")
 	if t == "" {
@@ -444,20 +331,10 @@ func statementBoundary(before string) bool {
 	return false
 }
 
-// reSQLShape is what follows a statement verb in SQL: SELECT … FROM or
-// a SELECT of a function call, UPDATE [ONLY] x [[AS] alias] SET, DELETE FROM, INSERT
-// [OR x | IGNORE] INTO, WITH name AS (, or the verb alone ending the
-// literal (a builder head, "UPDATE " + table + " SET …").
 var reSQLShape = regexp.MustCompile(`(?is)^(?:select\s.*\bfrom\b|select\s+[\w.]+\s*\(|update\s+(?:only\s+)?\S+(?:\s+(?:as\s+)?\w+)?\s+set\b|delete\s+from\b|insert\s+(?:or\s+\w+\s+|ignore\s+)?into\b|with\s+(?:recursive\s+)?\S+\s+as\s*\(|(?:select|update|delete|insert|with)\s*$)`)
 
-// whereAtoms extracts every WHERE clause of the first SQL statement
-// in s and pools their normalized top-level atoms. A dialect twin's
-// selection predicates often live in a sub-SELECT under an UPDATE …
-// WHERE id IN (SELECT … WHERE …) (framework/outbox, battery/webhook):
-// the outer WHERE's only atom IS the sub-select — structural, dropped
-// — and the predicates the rule exists to compare sit in the inner
-// clause. Atoms containing a sub-SELECT are dropped (structural, not
-// predicates).
+var reSubSelect = regexp.MustCompile(`(^|[^a-z0-9_])select\s`)
+
 func whereAtoms(s string) []dialectAtom {
 	stmt, _, ok := firstSQLStatement(s)
 	if !ok {
@@ -475,7 +352,7 @@ func whereAtoms(s string) []dialectAtom {
 		clause, off := whereClauseAt(stmt, w)
 		for _, raw := range splitTopLevel(clause) {
 			a := normalizeAtom(raw.text)
-			if a == "" || strings.Contains(a, " select ") || strings.HasPrefix(a, "select ") {
+			if a == "" || reSubSelect.MatchString(a) {
 				continue
 			}
 			out = append(out, dialectAtom{text: a, off: off + raw.off})
@@ -485,10 +362,6 @@ func whereAtoms(s string) []dialectAtom {
 	return out
 }
 
-// whereClauseAt extracts the WHERE clause starting at the keyword
-// index w, scanning depth-aware: the clause ends at a clause stop word
-// at the depth WHERE started at, or when the depth drops below it.
-// Returns the clause text and its offset.
 func whereClauseAt(stmt string, w int) (string, int) {
 	depth := 0
 	for i := 0; i < w; i++ {
@@ -531,8 +404,6 @@ type atomSpan struct {
 	off  int
 }
 
-// splitTopLevel splits a WHERE clause on AND/OR at paren depth 0,
-// honouring single-quoted literals.
 func splitTopLevel(where string) []atomSpan {
 	var out []atomSpan
 	depth, start := 0, 0
@@ -575,8 +446,6 @@ func splitTopLevel(where string) []atomSpan {
 	return out
 }
 
-// matchWord reports whether s[at:] starts the word w (any case)
-// followed by whitespace.
 func matchWord(s string, at int, w string) bool {
 	if at+len(w) >= len(s) {
 		return false
@@ -591,7 +460,6 @@ func matchWord(s string, at int, w string) bool {
 	return false
 }
 
-// normalizeAtom makes two spellings of one predicate comparable.
 func normalizeAtom(raw string) string {
 	s := strings.ToLower(raw)
 	s = rePlaceholder.ReplaceAllString(s, "?")
@@ -602,8 +470,6 @@ func normalizeAtom(raw string) string {
 	return strings.TrimSpace(s)
 }
 
-// dialectNameFlavor reports the dialect a declaration name carries:
-// a Postgres/PostgreSQL/PG vs SQLite/SQLite3 token (suffix or infix).
 func dialectNameFlavor(name string) string {
 	for _, t := range dialectTokens(name) {
 		if f := dialectTokenFlavor(t); f != "" {
@@ -613,7 +479,6 @@ func dialectNameFlavor(name string) string {
 	return ""
 }
 
-// dialectTokenFlavor classifies one lowercased name token.
 func dialectTokenFlavor(t string) string {
 	switch t {
 	case "postgres", "postgresql", "pg":
@@ -624,9 +489,6 @@ func dialectTokenFlavor(t string) string {
 	return ""
 }
 
-// dialectTokens splits a name into lowercased camelCase and snake_case
-// tokens, rejoining the PostgreSQL spelling the camel split cuts in
-// two (Postgre + SQL).
 func dialectTokens(name string) []string {
 	var raw []string
 	for _, part := range strings.Split(name, "_") {
@@ -644,8 +506,6 @@ func dialectTokens(name string) []string {
 	return out
 }
 
-// dialectBaseName strips the dialect tokens from a name so twins land
-// on one key: claimDeliveriesPostgres → claimdeliveries.
 func dialectBaseName(name string) string {
 	var keep []string
 	for _, t := range dialectTokens(name) {
@@ -656,14 +516,11 @@ func dialectBaseName(name string) string {
 	return strings.Join(keep, "")
 }
 
-// splitCamel splits a name into camelCase tokens.
 func splitCamel(name string) []string {
 	s := reCamelStep.ReplaceAllString(name, "${1} ${2}")
 	return strings.Fields(s)
 }
 
-// dialectCondFlavor classifies an if on a dialect value: the flavor
-// tag and whether the THEN arm is that flavor.
 func dialectCondFlavor(v *ast.IfStmt) (string, bool) {
 	if !touchesDialect(v.Cond) {
 		return "", false
@@ -678,8 +535,6 @@ func dialectCondFlavor(v *ast.IfStmt) (string, bool) {
 				return f, true
 			}
 		case "!=":
-			// `if dialect != DialectSQLite { … }` — the then-arm is
-			// the flavor the condition does NOT name.
 			if f := literalFlavor(cmp.X); f != "" {
 				return otherFlavor(f), true
 			}
@@ -691,9 +546,6 @@ func dialectCondFlavor(v *ast.IfStmt) (string, bool) {
 	return "", false
 }
 
-// literalFlavor reports the dialect an operand names: the string
-// "postgres"/"sqlite" or an identifier containing one (DialectPostgres,
-// dialectSQLite).
 func literalFlavor(e ast.Expr) string {
 	switch v := e.(type) {
 	case *ast.BasicLit:
@@ -724,8 +576,6 @@ func otherFlavor(f string) string {
 	return "postgres"
 }
 
-// touchesDialect reports whether e references a dialect value: an
-// identifier or field named dialect (s.dialect, q.dialect, dialect).
 func touchesDialect(e ast.Expr) bool {
 	if e == nil {
 		return false
@@ -747,8 +597,6 @@ func touchesDialect(e ast.Expr) bool {
 	return found
 }
 
-// switchLabelsDialect reports whether any case label of the switch
-// names a dialect.
 func switchLabelsDialect(v *ast.SwitchStmt) bool {
 	if v.Body == nil {
 		return false
@@ -767,7 +615,6 @@ func switchLabelsDialect(v *ast.SwitchStmt) bool {
 	return false
 }
 
-// endsInReturn reports whether the block's last statement returns.
 func endsInReturn(b *ast.BlockStmt) bool {
 	if b == nil || len(b.List) == 0 {
 		return false
@@ -776,9 +623,6 @@ func endsInReturn(b *ast.BlockStmt) bool {
 	return ok
 }
 
-// followingBlock wraps the statements after node in its enclosing
-// block: the early-return spelling's other arm. Nil when node is not
-// a direct statement of some block.
 func followingBlock(node ast.Node, file *ast.File) ast.Stmt {
 	var after *ast.BlockStmt
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -804,7 +648,6 @@ func followingBlock(node ast.Node, file *ast.File) ast.Stmt {
 	return after
 }
 
-// unquoteBasicLit renders a string literal's value.
 func unquoteBasicLit(lit *ast.BasicLit) string {
 	s, _ := stringLit(lit)
 	return s

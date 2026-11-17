@@ -12,7 +12,6 @@ import (
 )
 
 // GOFASTR1418: a hand-written primary key that does not say NOT NULL.
-// The rule, its reasons and its blind spots are the catalog entry.
 func ruleNullableKey(p *contracts.Pass, rel string, file *ast.File) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	for _, d := range file.Decls {
@@ -40,16 +39,12 @@ func ruleNullableKey(p *contracts.Pass, rel string, file *ast.File) []contracts.
 }
 
 var (
-	reInlineKey = regexp.MustCompile(`(?i)\bPRIMARY\s+KEY\b`)
-	reTableKey  = regexp.MustCompile(`(?is)^(?:CONSTRAINT\s+\S+\s+)?PRIMARY\s+KEY\s*\(([^)]*)\)`)
-	reNotNull   = regexp.MustCompile(`(?i)\bNOT\s+NULL\b`)
-	// A lone INTEGER PRIMARY KEY is SQLite's rowid and a SERIAL has a
-	// sequence: both engines fill them, so neither can hold a NULL.
+	reInlineKey  = regexp.MustCompile(`(?i)\bPRIMARY\s+KEY\b`)
+	reTableKey   = regexp.MustCompile(`(?is)^(?:CONSTRAINT\s+\S+\s+)?PRIMARY\s+KEY\s*\(([^)]*)\)`)
+	reNotNull    = regexp.MustCompile(`(?i)\bNOT\s+NULL\b`)
 	reSelfFilled = regexp.MustCompile(`(?i)^\s*(?:INTEGER|(?:SMALL|BIG)?SERIAL)\b`)
 )
 
-// nkTableName reads the one token between CREATE TABLE and its column
-// list, and the offset of the list's opening parenthesis.
 func nkTableName(text string, at int) (string, int, bool) {
 	open := strings.IndexByte(text[at:], '(')
 	if open < 0 {
@@ -66,8 +61,7 @@ func nkTableName(text string, at int) (string, int, bool) {
 	return name, open, true
 }
 
-// nkNullableKeys names the key columns of a column list that lack NOT
-// NULL. base is the list's offset in text, for resolving verb slots.
+// nkNullableKeys names the key columns of a column list that lack NOT NULL; base is the list's offset in text.
 func nkNullableKeys(text string, base int, body string, holes, args []ast.Expr) []string {
 	type column struct{ shown, def string }
 	defs := map[string]column{}
@@ -117,7 +111,6 @@ type nkTok struct {
 	off int
 }
 
-// nkSplitOffsets splits a key's column list, keeping each name's offset.
 func nkSplitOffsets(list string) []nkTok {
 	var out []nkTok
 	off := 0
@@ -130,8 +123,7 @@ func nkSplitOffsets(list string) []nkTok {
 	return out
 }
 
-// nkIdent gives a column token one identity wherever it is spelled: its
-// folded name, or the source of the expression behind a verb or a hole.
+// nkIdent gives a column token one identity: its folded name, or the source behind a verb or hole.
 func nkIdent(text string, at int, tok string, holes, args []ast.Expr) (id, shown string) {
 	switch {
 	case strings.HasPrefix(tok, "%"):

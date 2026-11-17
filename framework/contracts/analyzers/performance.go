@@ -21,17 +21,11 @@ func init() {
 	})
 }
 
-// queryMethods are the calls that reach the database. Names are matched
-// on the selector alone, which is why the set is narrow: `Get` and `Find`
-// are excluded because they belong to a hundred non-database types.
 var queryMethods = map[string]bool{
 	"Query": true, "QueryContext": true, "QueryRow": true, "QueryRowContext": true,
 	"Exec": true, "ExecContext": true,
 }
 
-// repoQueryMethods are the framework repository calls. They are only
-// treated as queries when the receiver name looks like a repository,
-// which keeps `list.Get(i)` out of the results.
 var repoQueryMethods = map[string]bool{
 	"GetByID": true, "FindByID": true, "List": true, "Count": true, "Create": true, "Update": true,
 }
@@ -51,10 +45,6 @@ func runPerformance(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	return out, nil
 }
 
-// regexpInFunc reports regexp compilation anywhere inside a function
-// body. Package-level `var re = regexp.MustCompile(...)` runs once and is
-// the shape being asked for, so it is invisible to this walk by
-// construction. Only FuncDecl and FuncLit bodies are visited.
 func regexpInFunc(p *contracts.Pass, rel string, file *ast.File, aliases map[string]string) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	visitFuncBodies(file, func(body *ast.BlockStmt, _ *ast.FuncType) {
@@ -64,8 +54,6 @@ func regexpInFunc(p *contracts.Pass, rel string, file *ast.File, aliases map[str
 				if !ok {
 					continue
 				}
-				// A pattern built from a variable cannot be hoisted, so
-				// the advice would not apply.
 				if len(call.Args) != 1 {
 					return true
 				}
@@ -83,21 +71,7 @@ func regexpInFunc(p *contracts.Pass, rel string, file *ast.File, aliases map[str
 	return out
 }
 
-// queryInLoop reports the N+1 shape: a query executed once per item,
-// parameterised by the item.
-//
-// The discriminator is which argument the loop variable lands in. Two
-// loops look identical to a naive matcher:
-//
-//	for _, ddl := range schema { db.Exec(ctx, ddl) }        // fine
-//	for _, o := range orders   { db.Query(ctx, q, o.ID) }   // N+1
-//
-// In the first the loop variable *is* the statement, a batch of DDL run
-// once at startup, which is exactly how you are supposed to write it. In
-// the second the statement is fixed and the variable is a parameter. So
-// the rule requires a literal SQL string in the call (proving the
-// statement is not the loop variable) and requires the loop variable to
-// appear somewhere else in the arguments.
+// queryInLoop reports a query whose statement is a literal and whose other arguments use the loop variable.
 func queryInLoop(p *contracts.Pass, rel string, file *ast.File) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	report := func(body ast.Node, loopVars []string) {
@@ -105,8 +79,6 @@ func queryInLoop(p *contracts.Pass, rel string, file *ast.File) []contracts.Diag
 			return
 		}
 		ast.Inspect(body, func(n ast.Node) bool {
-			// A nested closure is usually a goroutine or a callback with
-			// its own lifetime, not the per-row shape.
 			if _, isFunc := n.(*ast.FuncLit); isFunc {
 				return false
 			}
@@ -125,10 +97,6 @@ func queryInLoop(p *contracts.Pass, rel string, file *ast.File) []contracts.Diag
 			if !isQuery {
 				return true
 			}
-			// A raw query needs a literal statement; without one the loop
-			// variable is the statement and this is a batch, not an N+1.
-			// Repository calls carry no SQL, so they are exempt from that
-			// half.
 			if !isRepo && !hasStringLiteralArg(call) {
 				return true
 			}
@@ -184,8 +152,6 @@ func hasStringLiteralArg(call *ast.CallExpr) bool {
 	return false
 }
 
-// usesAnyIdent reports whether any of the named identifiers appears
-// anywhere inside the given expressions.
 func usesAnyIdent(exprs []ast.Expr, names []string) bool {
 	want := make(map[string]bool, len(names))
 	for _, n := range names {
@@ -229,8 +195,6 @@ func reflectInHandler(p *contracts.Pass, rel string, file *ast.File, aliases map
 	return out
 }
 
-// visitFuncBodies calls fn for every function declaration and function
-// literal in the file, with its signature.
 func visitFuncBodies(file *ast.File, fn func(body *ast.BlockStmt, sig *ast.FuncType)) {
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch v := n.(type) {
