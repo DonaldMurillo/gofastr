@@ -1,0 +1,6 @@
+primitive: crud.scope.tenant
+summary: Multi-tenancy - the tenant ID on the context and the middleware that sets it, the WithMultiTenant entity decorator, the tenant query filter and insert stamp, and the server-side cross-tenant bypass.
+code:
+  - framework/tenant/
+docs:
+  - framework/docs/content/multi-tenant.md
