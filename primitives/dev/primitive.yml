@@ -1,0 +1,10 @@
+primitive: dev
+summary: Dev-mode-only helpers that no-op in production - the shared GOFASTR_DEV gate, livereload's SSE route and the middleware that injects dev scripts into HTML responses, and the dev MCP gate.
+code:
+  - framework/dev/livereload.go
+  - framework/dev/htmlinject.go
+  - framework/dev/mcp.go
+docs:
+  - framework/docs/content/dev-livereload.md
+on_change:
+  - DevMCPEnabled decides in framework/app.go whether an App mounts /mcp and exposes CRUD tools with no Exposure.MCP set, so a change to the gate changes what a dev App exposes.
