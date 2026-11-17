@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=a6917b93b045680c
+//gofastr:generated generator=app kind=scaffold version=dev sum=d6641987edb0728d
 
 package main
 

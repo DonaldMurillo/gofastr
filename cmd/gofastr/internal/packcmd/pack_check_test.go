@@ -323,12 +323,12 @@ func TestRenderAppSpecCodeFetchesNoFonts(t *testing.T) {
 func TestPackRecoversEcommerce(t *testing.T) {
 	// The seed password lives in the app's .env, which a checkout does not
 	// carry: copy the app and write the .env generate would.
-	spec, err := appspec.LoadAppSpec(filepath.Join("..", "..", "..", "..", "examples", "ecommerce", "gofastr.yml"))
+	spec, err := appspec.LoadAppSpec(filepath.Join("..", "..", "..", "..", "internal", "testapps", "ecommerce", "gofastr.yml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "..", "..", "..", "examples", "ecommerce", "app"))); err != nil {
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "..", "..", "..", "internal", "testapps", "ecommerce", "app"))); err != nil {
 		t.Fatal(err)
 	}
 	env := "ADMIN_SEED_PASSWORD=" + spec.App.Admin.SeedPassword + "\n" // not-a-secret: the example spec's published placeholder
