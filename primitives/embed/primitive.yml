@@ -102,11 +102,13 @@ invariants:
       - test: framework/embed.TestRefreshRefusesAGrantPastItsDeadline
       - test: framework/embed.TestSweepEmbedRefreshExpiryNeverPassesTheDeadline
   - id: csrf-exempts-only-credential-free-routes
-    rule: CSRFExempt admits only a request carrying GrantHeader, the exchange and refresh paths, and a GET, HEAD or OPTIONS request under SurfacePrefix, judged on the cleaned path.
+    rule: CSRFExempt admits only a request carrying GrantHeader, the exchange and refresh paths, and a GET, HEAD, OPTIONS or empty-method request under SurfacePrefix, judged on the cleaned path.
     enforced_by:
       - test: framework/embed.TestCSRFExemptAdmitsOnlyDocumentedCases
       - test: framework/embed.TestCSRFExemptRejectsPathTraversal
       - test: framework/embed.TestCSRFExemptSurfacePrefixIsSafeMethodsOnly
+      - test: framework/embed.TestSweepEmbedCSRFExemptReadsAnEmptyMethodAsGET
+      - test: framework/embed.TestSweepEmbedCSRFExemptJudgesTheCleanedPath
 decisions:
   - id: refuse-hosts-a-browser-rewrites
     date: 2026-11-16

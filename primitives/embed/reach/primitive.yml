@@ -27,16 +27,19 @@ invariants:
     enforced_by:
       - test: framework/embed.TestReachRefusesConfigurationsThatCannotBeRight
       - test: framework/embed.TestAddReservedPrefixesRefusesASurfaceOverAMountedBattery
+      - test: framework/embed.TestSweepEmbedAddReservedPrefixesChecksReach
       - test: framework/embed.TestDynamicRouteCannotCoverReserved
       - test: framework/embed.TestRoutesOverlapEitherWay
       - test: framework/embed.TestGrantRefusedAtReservedPrefix
       - test: framework/embed.TestSweepEmbedEveryFrameworkPrefixIsReserved
+      - test: framework/embed.TestSweepEmbedReachCoveringAReservedPrefixFailsBoot
   - id: reach-is-default-closed
     rule: A grant reaches only its surface's route subtree, the listed runtime endpoints and its declared Reach prefixes, on segment boundaries, and Middleware answers anything else 403 naming a Reach entry to add.
     enforced_by:
       - test: framework/embed.TestGrantReachesOnlyItsSurfaceAndDeclaredPrefixes
       - test: framework/embed.TestMayReachBoundaryIsSegmentAligned
       - test: framework/embed.TestReachMatchesTheCleanedPath
+      - test: framework/embed.TestSweepEmbedMayReachCleansADirectCallersPath
       - test: framework/embed.TestReachRefusalNamesTheReachEntry
       - test: framework/embed.TestDynamicSurfaceReach
   - id: runtime-reach-is-a-list

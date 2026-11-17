@@ -273,3 +273,61 @@ func TestSweepEmbedEveryFrameworkPrefixIsReserved(t *testing.T) {
 		}
 	}
 }
+
+func TestSweepEmbedAddReservedPrefixesChecksReach(t *testing.T) {
+	h := testHost(t, func(c *Config) { c.Surfaces[0].Reach = []string{"/back-office/api"} })
+	if err := h.AddReservedPrefixes("/back-office"); err == nil {
+		t.Fatal("AddReservedPrefixes accepted a prefix a Reach entry sits under")
+	}
+}
+
+func TestSweepEmbedVerifyGrantRequiresAnOrigin(t *testing.T) {
+	now := time.Now()
+	for _, c := range []grantClaims{
+		{Surface: "dashboard", Expires: now.Add(time.Hour).Unix(), Deadline: now.Add(2 * time.Hour).Unix()},
+		{Origin: "https://acme.com", Expires: now.Add(time.Hour).Unix(), Deadline: now.Add(2 * time.Hour).Unix()},
+	} {
+		tok, err := sign(GrantPrefix, testGrantKey, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := VerifyGrant(testGrantKey, tok, now); !errors.Is(err, ErrMalformed) {
+			t.Errorf("grant %+v verified with err %v, want ErrMalformed", c, err)
+		}
+	}
+}
+
+func TestSweepEmbedCSRFExemptReadsAnEmptyMethodAsGET(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, SurfacePrefix+"dashboard", nil)
+	r.Method = ""
+	if !CSRFExempt(r) {
+		t.Fatal("an empty method, which net/http sends as GET, was not exempt under the surface prefix")
+	}
+}
+
+func TestSweepEmbedMayReachCleansADirectCallersPath(t *testing.T) {
+	s, _ := testHost(t).Lookup("dashboard")
+	for _, p := range []string{"/embed/dashboard/../../admin/users", "/api/posts/../../admin"} {
+		if s.MayReach(p) {
+			t.Errorf("MayReach(%q) admitted a dot-segment escape", p)
+		}
+	}
+}
+
+func TestSweepEmbedCSRFExemptJudgesTheCleanedPath(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/x", nil)
+	r.URL.Path = SurfacePrefix + "../../admin/delete"
+	if CSRFExempt(r) {
+		t.Fatal("a traversal out of the surface prefix was exempt")
+	}
+}
+
+func TestSweepEmbedReachCoveringAReservedPrefixFailsBoot(t *testing.T) {
+	_, err := New(Config{
+		Surfaces:  []Surface{{Name: "d", Screen: testScreen{"/d"}, Origins: []string{"https://acme.com"}, Reach: []string{"/api"}}},
+		BurnStore: NewMemoryBurnStore(),
+	})
+	if err == nil {
+		t.Fatal(`Reach "/api", which covers /api/docs, booted`)
+	}
+}
