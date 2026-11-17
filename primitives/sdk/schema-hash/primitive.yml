@@ -1,0 +1,8 @@
+primitive: sdk.schema-hash
+summary: The schema hash the SDK generator records and the serving app recomputes to detect drift between generated SDKs and the live API.
+code:
+  - framework/sdk/schemahash.go
+docs:
+  - framework/docs/content/sdk.md
+on_change:
+  - A change to what SchemaHash covers makes every SDK generated before it report drift; say so in CHANGELOG and in the Drift detection section of sdk.md.

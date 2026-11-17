@@ -1,0 +1,7 @@
+primitive: sdkdocs.reference
+summary: The SDK docs screens - index and downloads, install and quickstart tabs, the auth and errors guides and the per-entity API reference drawn from the live registry - and the docs page frame they render in.
+code:
+  - framework/sdkdocs/screens.go
+  - framework/sdkdocs/internal/docpage/
+docs:
+  - framework/docs/content/sdk.md

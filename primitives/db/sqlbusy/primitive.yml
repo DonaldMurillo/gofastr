@@ -1,0 +1,6 @@
+primitive: db.sqlbusy
+summary: Recognising SQLite's SQLITE_BUSY and retrying a write that met it with backoff, within the caller's deadline or a default budget.
+code:
+  - framework/db/sqlbusy/
+docs:
+  - framework/docs/content/sqlite-driver.md

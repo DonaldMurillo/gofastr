@@ -1,0 +1,8 @@
+primitive: localapp.identity
+summary: The stable per-installation User an app with no auth battery puts in the request context, minted once on disk, and the owner extractor Install sets up to read it back.
+code:
+  - framework/localapp/identity.go
+docs:
+  - framework/docs/content/local-apps.md
+on_change:
+  - battery/desktop/localuser_security_test.go pins how the fallback identity yields to battery/auth; run battery/desktop's tests on a change here.

@@ -1,0 +1,10 @@
+primitive: sdk
+summary: The contract between gofastr generate sdk and the SDK docs site, covering the artifact manifest, the file type and the deterministic zip packer.
+code:
+  - framework/sdk/sdk.go
+  - framework/sdk/manifest.go
+  - framework/sdk/zip.go
+docs:
+  - framework/docs/content/sdk.md
+on_change:
+  - A change to the Manifest's JSON shape must be written by cmd/gofastr/internal/appgen and read by framework/sdkdocs in the same change.

@@ -1,0 +1,7 @@
+primitive: gallery.mounts
+summary: What a gallery host mounts before its UIHost - the demo modal, drawer, bottom-sheet and sidebar widgets the catalog's triggers open, and the one demo form route that keeps nothing and redirects back to the demo.
+code:
+  - framework/gallery/widgets.go
+  - framework/gallery/demoform.go
+docs:
+  - framework/docs/content/theming.md
