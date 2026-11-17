@@ -17,10 +17,7 @@ build-cmd: $(DIST_DIR)
 build-examples: csp-check embed-check $(DIST_DIR)
 	@SITE_VER=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'); \
 	LDFLAGS=$$( [ -n "$$SITE_VER" ] && echo "-ldflags=-X=main.siteVersion=$$SITE_VER" ); \
-	for dir in examples/api-tour examples/blog examples/semantic-demo \
-	            examples/embed-demo examples/spa examples/static-site \
-	            examples/rtc-call examples/team-builder examples/webmcp-remote-assist examples/site \
-	            examples/hn; do \
+	for dir in examples/site examples/meridian; do \
 		name=$$(basename $$dir); \
 		echo "  building $$name → $(DIST_DIR)/examples/$$name"; \
 		go build $$LDFLAGS -o $(DIST_DIR)/examples/$$name ./$$dir || exit 1; \

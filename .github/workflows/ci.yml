@@ -41,8 +41,8 @@ permissions:
 #
 # Docker is preinstalled on ubuntu-latest (testcontainers spins up
 # Postgres automatically). Chrome is installed in both jobs: several
-# blocking packages (framework, framework/uihost, core-ui/runtime,
-# examples/backoffice) run chromedp tests that have been stable on CI.
+# blocking packages (framework, framework/uihost, core-ui/runtime)
+# run chromedp tests that have been stable on CI.
 
 on:
   push:

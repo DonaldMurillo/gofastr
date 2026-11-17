@@ -47,4 +47,4 @@ unelevated.
 **Don't:** add CSS, hand-roll markup, or re-implement CRUD here; a
 missing piece goes into `framework/ui` or `framework/entityui`.
 
-**Docs:** `gofastr docs admin`. **Example:** `examples/backoffice`.
+**Docs:** `gofastr docs admin`. **Example:** `examples/meridian`.

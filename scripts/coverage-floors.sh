@@ -39,7 +39,7 @@
 # main-branch code measured lower under it (core/openapi 87.4 -> 85.4,
 # core/upload 80.6 -> 77.6, kiln/acp 80.2 -> 78.7), so eight floors were
 # re-baselined from CI's 1.27.2 run at measured - 1.5: core/openapi,
-# core/upload, examples/backoffice, framework (nomatch processmodule),
+# core/upload, examples/backoffice (since deleted), framework (nomatch processmodule),
 # framework/axecov, harness/provider/internal/openai, harness/session and
 # kiln/acp. framework/sdk followed (90.4 -> 86.8 on the same code). No
 # test was removed.
@@ -161,7 +161,6 @@ FLOORS="
 ./core/textsafe/ 97.0
 ./core/upload/ 76.4
 ./core/yaml/ 84.1
-./examples/backoffice/ 69.6
 ./framework/ 80.3 match:/processmodule
 ./framework/ 93.8 nomatch:/processmodule
 ./framework/access/ 80.5

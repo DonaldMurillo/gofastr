@@ -241,11 +241,11 @@ func TestPageTitlesSingleSuffix(t *testing.T) {
 	}
 }
 
-// ── Examples: distinct snippets, source links, no static-site Serve. ────
+// ── Examples: distinct snippets, source links, no app.Serve. ────
 
 func TestExamplesHaveSourceLinksAndAnchors(t *testing.T) {
 	html := body(t, "/examples")
-	slugs := []string{"meridian", "ecommerce", "blog", "site", "api-tour", "semantic-demo", "spa", "embed-demo", "static-site", "backoffice", "processmodule-demo", "webmcp-remote-assist", "rtc-call"}
+	slugs := []string{"meridian", "site"}
 	for _, slug := range slugs {
 		if !strings.Contains(html, `id="`+slug+`"`) {
 			t.Errorf("/examples missing anchor id=%q", slug)
@@ -261,11 +261,6 @@ func TestExamplesHaveSourceLinksAndAnchors(t *testing.T) {
 	// The framework has no app.Serve, every snippet shows the real app.Start.
 	if strings.Contains(html, ">Serve<") {
 		t.Error("/examples shows the nonexistent app.Serve — the API is app.Start")
-	}
-	// static-site is a real server (static.Mount + app.Start); the old
-	// fabricated "gofastr build → CDN bundle" story must stay dead.
-	if strings.Contains(html, "gofastr build") {
-		t.Error("/examples static-site row resurrects the fabricated 'gofastr build' story")
 	}
 }
 

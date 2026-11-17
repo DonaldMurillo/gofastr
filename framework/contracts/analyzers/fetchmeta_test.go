@@ -16,7 +16,7 @@ import (
 // "same-site", a value a sibling-subdomain attack honestly carries.
 // Fixtures reduce the direct readers (battery/setup token.go,
 // battery/auth core.go, battery/admin csrf.go, kiln/chat csrf.go,
-// examples/rtc-call main.go, examples/webmcp-remote-assist session.go)
+// examples/webmcp-remote-assist session.go)
 // and pin the quiet postures: core/handler itself, the helper call,
 // and prose that merely mentions the header.
 

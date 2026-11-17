@@ -1085,9 +1085,9 @@ with no sidebar: a settings window, an about panel. The page and the
 content column paint nothing, so a whole-window material is the
 surface, and the content column reserves the same 52-point
 traffic-light zone at its top. Register a screen that lives in a small
-window on this layout; `examples/desktop-focus` mounts `/settings` on
-it and keeps Settings out of its sidebar, the macOS shape (the app
-menu's Settings… item opens the window).
+window on this layout, such as `/settings`, and keep Settings out of
+the sidebar: the macOS shape, where the app menu's Settings… item
+opens the window.
 
 `desktopui.WidgetLayout()` (named `desktop-widget`) is for a floating
 widget window (`desktop.Widget`): no chrome, a transparent page behind
@@ -1138,7 +1138,7 @@ surface color with no filter.
 
 ### Known gaps
 
-Captured in `examples/desktop-focus` on macOS 26.5, light and dark,
+Captured in a desktop app on macOS 26.5, light and dark,
 active and inactive:
 
 - Web idioms the framework components carry are unchanged: uppercase
@@ -2006,8 +2006,6 @@ d := native.New(desktop.Config{
 })
 ```
 
-`examples/desktop-focus` ships with the flag on.
-
 ### What is stored
 
 One entry in the app state store (the next section): the `windows`
@@ -2111,8 +2109,7 @@ Hosts without a native layer ignore `Frame` and never fire
 - The harness suites cover restore across two batteries on one data
   dir, the redirect, the off flag, the 0600 mode, and the corrupt
   file; a darwin unit suite covers the flip and the screen-gone check
-  as pure functions; native e2e steps (`battery/desktop` and
-  `examples/desktop-focus`, tag `desktop_e2e`) prove the delegate, the
+  as pure functions; native e2e steps (`battery/desktop`, tag `desktop_e2e`) prove the delegate, the
   file, and the page's own `setPath` report on the real window.
 
 ## App state
@@ -2276,7 +2273,7 @@ reads them back typed, and renders them as a form.
 
 ### The declaration
 
-`examples/desktop-focus` declares its five preferences on `Config`:
+A pomodoro timer declares five preferences on `Config`:
 
 <!-- gofastr:compile
 import (
@@ -2314,7 +2311,7 @@ d := native.New(desktop.Config{
 `Key` matches `^[a-z][a-z0-9_]{0,63}$` and is unique (dots are
 refused: they would collide with the app state's namespace
 separators). `Label` and `Help` are `i18n.Phrase` values
-(`examples/desktop-focus/phrases.go` defines them at package level);
+(define them at package level);
 the screen and the capability render them in the request's language.
 `Label` is required. `Default` must match `Kind`: bool,
 int, string, or (choice) a string listed in `Choices`. `Min` and `Max`
@@ -2469,16 +2466,11 @@ In `--serve` mode the route answers 503 naming what is missing (the
 desktop host's app state store); the screen still renders the declared
 defaults.
 
-### The examples
+### The example
 
-`examples/desktop-focus` declares the five preferences above, mounts
-the screen at `/settings`, and reads them through `d.Preferences()`
-(`Engine.Start` sizes a session from `work_minutes`,
-`completeSession` gates the notification on `notify_on_done`, the tray
-countdown on `tray_countdown`). `examples/desktop-notes` declares
-`notify_on_save` and `export_folder` the same way. Both dropped the
-hand-built settings entity, resource config, screen, and
-`/settings/{id}` route they carried before.
+`examples/desktop-notes` declares `notify_on_save` and
+`export_folder` this way, mounts the screen at `/settings`, and reads
+them through `d.Preferences()`.
 
 ### Testing seams
 
@@ -2502,81 +2494,6 @@ hand-built settings entity, resource config, screen, and
   The focus suite also submits a value over the declared Max and
   asserts the route's validation envelope renders into the field (a
   visible role=alert message), not just a status code.
-
-## The desktop-focus example
-`examples/desktop-focus` is the second dogfood app of
-`battery/desktop`. Where `desktop-notes` proves the host (one window,
-one entity, the bridge), desktop-focus uses every app-quality feature
-the battery ships: window styles, secondary windows, the tray, deep
-links, notifications, cross-window messages, a plugin capability, and
-the updater. It is a
-pomodoro timer because a timer exercises all of them at once: a
-countdown wants the menu bar, an ending session wants a notification,
-a floating widget wants window styles, and "start on this task" wants
-a deep link.
-
-### The shape worth copying
-
-The timer's state is in the database, never in server RAM. The current
-session is the newest `sessions` row with `completed == false`; the
-tick loop recomputes everything from that row once a second. A
-crashed or restarted run therefore resumes to the same answer, and the
-interactive layer stays stateless (the architecture's rule) with no
-extra work. Every engine read and write goes through the entities'
-CrudHandlers with the owner's identity context, never raw SQL, so
-owner scoping (hard rule 6) covers the engine the same as the screens.
-
-The loop is started from `app.OnReady` and bounded by a context that
-`app.OnStop` cancels, and each tick is recover-guarded: one panicking
-tick is a Warn, never the end of the timer. In `--serve` mode there is
-no battery window, and every native call in the engine (tray title,
-notification, event emit, widget open) checks `Battery.Window()` first
-and skips itself, so the same binary serves a browser without errors.
-
-### The page contract
-
-The page reaches the engine through exactly one door: the `focus`
-capability a plugin registers from its `Init`
-(`start {taskId}`, `pause`, `resume`, `skip`, `state`). Every mutation
-answer carries the resulting state, and the page script re-renders its
-countdown, phase label, and button visibility from that answer instead
-of guessing locally; `focus_tick` events (one per second while a
-session runs) keep it live afterwards. The server renders the same
-visibility rules into the initial HTML, so the page is correct before
-any script runs.
-
-The floating widget posts `show_task` to the main window through
-`windows.post` and the main page's listener navigates with
-`__gofastr.navigate`: pages never talk to each other directly, only
-through the bridge.
-
-### Where each feature is wired
-
-| Feature | Where |
-|---|---|
-| Hidden-title main window | `Config.Style{Chrome: ChromeHiddenTitle}` in `main.go` |
-| Floating widget | `desktop.Widget("/widget", 320, 300)` + `Style.AllSpaces`, opened by `Engine.Start` and the View menu |
-| Settings window | `Config.Settings` (app menu, File menu, tray row, `windows.openSettings`) |
-| Preferences | `Config.Preferences` (five keys) rendered by `desktop.PreferencesScreen` at `/settings`, read by the engine through `d.Preferences()` |
-| Tray countdown | `Engine.Tick` calls `SetTrayTitle` with `mm:ss` while a session runs, back to the app name when idle (the `tray_countdown` preference) |
-| Notifications | `Engine.completeSession` through `d.Notify`, gated by the `notify_on_done` preference |
-| Deep links | `DeepLinkConfig{Scheme: "gofastr-focus", OnDeepLink: ...}`: `start?task=<id>` starts the task, everything else maps through the default rule |
-| Cross-window | the widget's Open task button (`windows.post`) and the main page's `show_task` listener |
-| Plugin capability | `focusPlugin.Init` registers `focus` v1, ungated |
-| Updater | `Update` from `FOCUS_UPDATE_FEED` / `FOCUS_UPDATE_KEY`, plus the File menu's Check for updates item |
-
-### Testing the app shape
-
-`engine_test.go` drives the engine with an injected clock against the
-real entities. `harness_test.go` runs the real `Run` flow with the
-fake shell: `focus.start` through the chokepoint opens the widget with
-the widget style, a tick sets the tray title and reaches every
-window's events, a completed session notifies and emits `focus_done`,
-`h.OpenURL` plays the OS deep link, and the preferences silence the
-notification and the tray countdown. `native_e2e_test.go` runs the
-dashboard's Start button, the ticked countdown, the widget's post
-into the main window, and the settings checkboxes inside the real
-WKWebView through `desktoptest.NativeMain`.
 
 ## Escape hatches
 

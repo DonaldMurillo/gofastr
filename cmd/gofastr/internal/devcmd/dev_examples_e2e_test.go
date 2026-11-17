@@ -25,22 +25,12 @@ type devExample struct {
 }
 
 var devExamples = []devExample{
-	{"api-tour", "/posts", http.StatusOK},
-	{"backoffice", "/login", http.StatusOK},
-	{"blog", "/posts", http.StatusOK},
 	{"desktop-notes", "/", http.StatusOK},
-	{"desktop-focus", "/", http.StatusOK},
-	{"embed-demo", "/", http.StatusNotFound}, // the app serves embed surfaces only; the customer site is the demo
-	{"semantic-demo", "/semantic/stats", http.StatusUnauthorized},
-	{"spa", "/", http.StatusOK},
-	{"static-site", "/", http.StatusOK},
 	{"webmcp-remote-assist", "/", http.StatusOK},
-	{"rtc-call", "/", http.StatusOK},
 	{"meridian", "/", http.StatusOK},
 	{"ecommerce/app", "/", http.StatusOK},
 	{"site", "/examples", http.StatusOK},
 	{"hn", "/", http.StatusOK},
-	{"gofastr-runs", "/", http.StatusUnauthorized}, // the loopback gate answers: sign in with `gofastr-runs service open --dev`
 }
 
 //gofastr:test-reads examples/
