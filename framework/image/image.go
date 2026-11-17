@@ -1,31 +1,5 @@
-// Package image is a chainable image pipeline: decode → transform → encode,
-// pure Go with only the standard library and golang.org/x/image as
-// dependencies. The API is shaped after Bun.Image; the implementation is
-// independent.
-//
-// Construction:
-//
-//	img, err := image.Decode(r)
-//	img, err := image.DecodeBytes(data)
-//	img, err := image.Open("path/to/file.jpg")
-//	img, err := image.OpenFS(fsys, "name")
-//
-// Chain (each method returns a new *Image):
-//
-//	img.Resize(800, 600, image.Lanczos3).
-//	    AutoOrient().
-//	    Modulate(image.Modulation{Brightness: image.Float64(1.1)})
-//
-// Encode (terminal):
-//
-//	data, err := img.JPEG(image.JPEGOptions{Quality: 80}).Bytes()
-//	err = img.PNG().Write(w)
-//	durl, err := img.WebP().DataURL() // zero-value = lossless
-//
-// Placeholders:
-//
-//	durl, err := img.Placeholder()           // base64-encoded tiny JPEG
-//	hash, err := img.BlurHash(4, 3)          // BlurHash string
+// Package image is a pure-Go chainable pipeline: Decode, transform,
+// encode, and derive placeholders and renditions (VariantSet).
 package image
 
 import (
@@ -42,100 +16,50 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/internal/jpegcost"
 )
 
-// DefaultMaxPixels caps decoded image area at 64 MP, an 8192×8192
-// square. Tightened from Bun.Image's 268 MP default after round-4
-// found a 45-byte PNG declaring 16383×16383 (~268 M pixels) passed
-// the guard and triggered ~1 GiB of stdimage allocation. Callers
-// who need bigger inputs configure Config.MaxPixels explicitly.
+// DefaultMaxPixels caps decoded image area at 64 MP.
 const DefaultMaxPixels int64 = 64 * 1024 * 1024
 
-// DefaultMaxSourceBytes caps how many source bytes DecodeWithConfig
-// buffers before the MaxPixels guard ever runs: the round-5 probe found a
-// peer dribbling PNG-magic garbage forever pinned the decoding goroutine's
-// heap at its own send rate, because the pixel cap only trips after every
-// delivered byte is already resident. Callers with legitimately larger
-// sources configure Config.MaxSourceBytes explicitly.
+// DefaultMaxSourceBytes caps the source bytes decode buffers, 64 MiB.
 const DefaultMaxSourceBytes int64 = 64 << 20
 
-// DefaultMaxJPEGScans caps the scans a JPEG may carry before it is
-// decoded. The pixel cap bounds the frame, not how often the decoder
-// walks it: a progressive scan that is one end-of-band run per 32,767
-// blocks costs about ten bytes and still revisits every block, so at
-// 64 MP each scan was ~37ms of CPU and a 10 KB file of 100 scans took
-// four seconds. Common encoders write at most a few dozen scans (libjpeg's
-// progressive script writes 10 for a color image). Callers with stranger
-// inputs configure Config.MaxJPEGScans.
+// DefaultMaxJPEGScans caps the scans a JPEG may carry.
 const DefaultMaxJPEGScans = 64
 
-// DefaultMaxJPEGScanPixels is the default JPEG scan budget: scans times
-// pixels, the block walks a decode costs. The flat scan cap alone still
-// let a 6.5 KB progressive file of 64 scans hold a core for ~2.8 s at
-// 64 MP, against ~0.38 s for one scan, so the budget gives a small image
-// many scans and a huge one few: ten full walks of a 64 MP frame, or the
-// flat cap's 64 scans of anything up to 10 MP. It is ten times
-// DefaultMaxPixels; with Config.MaxJPEGScanPixels unset the budget is ten
-// times the effective Config.MaxPixels.
+// DefaultMaxJPEGScanPixels is the default JPEG scans-times-pixels budget.
 const DefaultMaxJPEGScanPixels = jpegScanWalksAtPixelCap * DefaultMaxPixels
 
-// jpegScanWalksAtPixelCap is how many full-frame walks the default scan
-// budget allows at the pixel cap.
 const jpegScanWalksAtPixelCap = 10
 
 // Config holds knobs that propagate through a pipeline.
 type Config struct {
-	// MaxPixels caps decoded image area. Inputs whose reported width*height
-	// exceed this return ErrDecompressionBomb at decode time. Zero means
-	// DefaultMaxPixels.
+	// MaxPixels caps decoded and resized area; 0 means DefaultMaxPixels.
 	MaxPixels int64
 
-	// MaxSourceBytes caps the source bytes DecodeWithConfig buffers from
-	// the reader (an unbounded io.ReadAll before this field let a
-	// dribbling peer pin heap at its send rate; the pixel-dims guard
-	// only runs after every byte is resident). A source that delivers
-	// more than the cap returns ErrSourceTooLarge. Zero or negative
-	// means DefaultMaxSourceBytes, mirroring MaxPixels.
+	// MaxSourceBytes caps the bytes read from the source; 0 means
+	// DefaultMaxSourceBytes.
 	MaxSourceBytes int64
 
-	// MaxJPEGScans caps the scans (start-of-scan markers) a JPEG source
-	// may carry; past it decode returns ErrDecompressionBomb before any
-	// pixel is decoded. Zero or negative means DefaultMaxJPEGScans.
-	// It is a flat ceiling: MaxJPEGScanPixels applies as well, so raising
-	// it admits more scans only on frames small enough for the budget.
+	// MaxJPEGScans caps a JPEG's scans; 0 means DefaultMaxJPEGScans.
 	MaxJPEGScans int
 
-	// MaxJPEGScanPixels caps a JPEG's scans times its pixels, the block
-	// walks its decode costs; past it decode returns ErrDecompressionBomb
-	// before any pixel is decoded. Both caps apply: a JPEG is refused when
-	// its scans exceed MaxJPEGScans or its scans × width × height exceed
-	// this budget. Zero or negative means ten times the effective
-	// MaxPixels (DefaultMaxJPEGScanPixels at the default MaxPixels).
+	// MaxJPEGScanPixels caps a JPEG's scans times pixels; 0 means ten
+	// times MaxPixels.
 	MaxJPEGScanPixels int64
 
-	// MaxProgressiveJPEGBytes caps the coefficient buffer a progressive
-	// (SOF2) JPEG makes the decoder allocate, read from the frame header
-	// before any pixel is decoded; past it decode returns
-	// ErrDecompressionBomb. Zero or negative means
-	// DefaultMaxProgressiveJPEGBytes. Baseline JPEGs keep no coefficients
-	// and are not affected.
+	// MaxProgressiveJPEGBytes caps a progressive JPEG's coefficient
+	// buffer; 0 means DefaultMaxProgressiveJPEGBytes.
 	MaxProgressiveJPEGBytes int64
 }
 
-// DefaultMaxProgressiveJPEGBytes caps the coefficients image/jpeg keeps
-// for a progressive JPEG, 512 MiB. The decoder holds 256 bytes (64 int32s)
-// per block of every component for the whole frame, on top of the pixel
-// buffer the pixel cap already bounds: a few-hundred-byte progressive
-// 3-component 8192×8192 file allocated ~1 GB, against ~192 MB for the
-// same frame baseline. At this default a 64 MP frame passes in grayscale
-// (256 MiB) or 4:2:0 color (384 MiB) and is refused at 4:4:4 (768 MiB).
+// DefaultMaxProgressiveJPEGBytes caps a progressive JPEG's coefficients.
 const DefaultMaxProgressiveJPEGBytes int64 = 512 << 20
 
-// Image is the chainable pipeline value. Transformations return a new
-// *Image, so the same source may be branched into independent pipelines.
+// Image is the pipeline value; every transformation returns a new one.
 type Image struct {
 	img    stdimage.Image
 	format Format
-	orient int // EXIF orientation tag (1..8); 0 means unknown / not applicable
-	frames int // animated frame count; 0 or 1 = still image
+	orient int
+	frames int
 	cfg    Config
 }
 
@@ -144,19 +68,12 @@ func Decode(r io.Reader) (*Image, error) {
 	return DecodeWithConfig(r, Config{})
 }
 
-// DecodeWithConfig is Decode with a non-default Config. The source is
-// read through io.LimitReader(r, MaxSourceBytes+1) so buffering stops at
-// the cap and a source that delivers past it returns ErrSourceTooLarge
-// BEFORE the pixel guard allocates anything.
+// DecodeWithConfig is Decode with a non-default Config.
 func DecodeWithConfig(r io.Reader, cfg Config) (*Image, error) {
 	limit := cfg.MaxSourceBytes
 	if limit <= 0 {
 		limit = DefaultMaxSourceBytes
 	}
-	// One byte past the cap distinguishes "exactly at the cap" from
-	// "more behind it" without buffering the whole stream first. At
-	// math.MaxInt64 the +1 would wrap negative and LimitReader would read
-	// nothing, so the cap stays put there: no source is longer anyway.
 	sentinel := limit
 	if limit < math.MaxInt64 {
 		sentinel = limit + 1
@@ -181,14 +98,7 @@ func DecodeBytesWithConfig(data []byte, cfg Config) (*Image, error) {
 	return decodeBytes(data, cfg)
 }
 
-// Open reads an image from a filesystem path. Rejects paths containing
-// ".." segments as a defense-in-depth measure. Callers handling
-// user-supplied paths must validate before this layer, but the
-// framework boundary catches the obvious traversal patterns rather
-// than blindly handing them to os.ReadFile.
-//
-// For paths rooted in an embed.FS or a constrained directory tree,
-// prefer OpenFS: fs.FS implementations reject traversal natively.
+// Open reads an image from a path, refusing a ".." segment.
 func Open(path string) (*Image, error) {
 	if pathTraverses(path) {
 		return nil, fmt.Errorf("image: open %q: path contains traversal (..)", path)
@@ -200,10 +110,6 @@ func Open(path string) (*Image, error) {
 	return decodeBytes(data, Config{})
 }
 
-// pathTraverses returns true if path contains a ".." segment after
-// cleaning. Cleaning collapses redundant separators and resolves
-// in-place "..", so a Cleaned path with ".." in any segment is
-// trying to escape its starting directory.
 func pathTraverses(p string) bool {
 	cleaned := filepath.Clean(p)
 	for _, segment := range strings.Split(cleaned, string(filepath.Separator)) {
@@ -223,14 +129,7 @@ func OpenFS(fsys fs.FS, name string) (*Image, error) {
 	return decodeBytes(data, Config{})
 }
 
-// FromImage wraps an existing image.Image without decoding. Use when
-// you already have pixel data (e.g., generated, not loaded from a
-// file).
-//
-// The returned *Image carries Orientation = 0 and FrameCount = 0;
-// AutoOrient() is a no-op against it. If you need EXIF orientation
-// handling or animated-source detection, route the bytes through
-// Decode / Open / OpenFS instead.
+// FromImage wraps an image.Image, with no orientation or frame count.
 func FromImage(img stdimage.Image, format Format) *Image {
 	return &Image{img: img, format: format}
 }
@@ -243,11 +142,6 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 	if format == FormatUnknown {
 		return nil, ErrInvalidInput
 	}
-	// The stdlib codecs can panic (rather than error) on crafted
-	// geometry, e.g. image.NewGray panics with "huge or negative
-	// dimensions" on an oversized raster. Fail closed: convert any
-	// panic from the decode path into a returned error so malformed
-	// input never crashes the caller's goroutine.
 	defer func() {
 		if r := recover(); r != nil {
 			out = nil
@@ -258,12 +152,6 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("image: decode config: %w", err)
 	}
-	// Reject non-positive or oversized dimensions before computing the
-	// pixel area. A naive `int64(w)*int64(h)` overflows int64 when each
-	// dimension is near the format's uint32 max (e.g. a TIFF declaring
-	// 0xFFFFFFFF×0xFFFFFFFF), wrapping the product negative so the bomb
-	// guard's `> MaxPixels` test silently passes. Dividing avoids the
-	// overflow entirely.
 	if icfg.Width <= 0 || icfg.Height <= 0 {
 		return nil, ErrInvalidInput
 	}
@@ -279,8 +167,6 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 		if scans > maxScans {
 			return nil, fmt.Errorf("%w: JPEG carries %d scans (max %d)", ErrDecompressionBomb, scans, maxScans)
 		}
-		// Divide rather than multiply: width×height is bounded by
-		// MaxPixels, but a host-raised MaxJPEGScans leaves scans open.
 		pixels := int64(icfg.Width) * int64(icfg.Height)
 		if budget := jpegScanBudget(cfg); int64(scans) > budget/pixels {
 			return nil, fmt.Errorf("%w: JPEG carries %d scans of %d pixels (budget %d pixel-scans)", ErrDecompressionBomb, scans, pixels, budget)
@@ -312,9 +198,6 @@ func decodeBytes(data []byte, cfg Config) (out *Image, err error) {
 	return &Image{img: img, format: format, orient: orient, frames: frames, cfg: cfg}, nil
 }
 
-// jpegScanBudget is cfg's scans × pixels budget: MaxJPEGScanPixels, or
-// jpegScanWalksAtPixelCap walks of the (already defaulted) MaxPixels,
-// saturating instead of wrapping for a host MaxPixels near MaxInt64.
 func jpegScanBudget(cfg Config) int64 {
 	if cfg.MaxJPEGScanPixels > 0 {
 		return cfg.MaxJPEGScanPixels
@@ -325,31 +208,22 @@ func jpegScanBudget(cfg Config) int64 {
 	return jpegScanWalksAtPixelCap * cfg.MaxPixels
 }
 
-// countJPEGScans counts the SOS markers image/jpeg would act on: it walks
-// the marker segments from SOI, skips each segment's payload by its length
-// field, steps over entropy-coded data (stuffed FF 00, RSTn, fill bytes)
-// and stops at the first EOI, where the decoder stops. Counting FF DA byte
-// pairs over the whole file instead counted an APPn payload (an ICC
-// profile, a MakerNote preview) and a motion photo's video clip after EOI,
-// and refused a one-scan phone photo as a bomb. A stray FF DA inside
-// entropy data still counts, so the walk over-counts at worst and never
-// misses a scan the decoder runs.
 func countJPEGScans(d []byte) int {
 	n := 0
 	for i := 2; i+1 < len(d); {
 		if d[i] != 0xFF {
-			i++ // entropy-coded data
+			i++
 			continue
 		}
 		m := d[i+1]
 		switch {
-		case m == 0xFF: // fill byte
+		case m == 0xFF:
 			i++
 			continue
-		case m == 0x00 || m == 0x01 || m == 0xD8 || (m >= 0xD0 && m <= 0xD7): // no length field
+		case m == 0x00 || m == 0x01 || m == 0xD8 || (m >= 0xD0 && m <= 0xD7):
 			i += 2
 			continue
-		case m == 0xD9: // EOI
+		case m == 0xD9:
 			return n
 		}
 		if m == 0xDA {
@@ -363,12 +237,6 @@ func countJPEGScans(d []byte) int {
 	return n
 }
 
-// countGIFFrames returns the frame count of a GIF byte stream without
-// materialising any pixel buffer. It walks the GIF block structure
-// (Image Descriptors, Extensions, sub-block chains) and counts 0x2C
-// markers. The previous gif.DecodeAll approach allocated O(frames ×
-// pixels). A 1024×1024×1000-frame GIF cost ~4 GB of heap before
-// returning. The byte-walker is O(bytes) heap-free.
 func countGIFFrames(data []byte) int {
 	const (
 		blockImageDescriptor = 0x2C
@@ -378,10 +246,8 @@ func countGIFFrames(data []byte) int {
 	if len(data) < 13 || !bytes.HasPrefix(data, []byte("GIF")) {
 		return 1
 	}
-	// Logical Screen Descriptor's packed byte at offset 10.
 	p := 13
 	if data[10]&0x80 != 0 {
-		// Global Color Table: 3 bytes × 2^(N+1) entries.
 		p += 3 << ((data[10] & 0x07) + 1)
 	}
 	frames := 0
@@ -400,13 +266,13 @@ func countGIFFrames(data []byte) int {
 			if p >= len(data) {
 				return maxFrameCount(frames, 1)
 			}
-			p++ // LZW minimum code size
+			p++
 			p = skipSubBlocks(data, p)
 		case blockExtension:
 			if p+2 >= len(data) {
 				return maxFrameCount(frames, 1)
 			}
-			p += 2 // marker + label
+			p += 2
 			p = skipSubBlocks(data, p)
 		case blockTrailer:
 			return maxFrameCount(frames, 1)
@@ -417,9 +283,6 @@ func countGIFFrames(data []byte) int {
 	return maxFrameCount(frames, 1)
 }
 
-// skipSubBlocks advances p past a chain of GIF sub-blocks (length byte
-// then payload, terminated by a zero length byte). Returns the index
-// just past the terminator, or len(data) on truncation.
 func skipSubBlocks(data []byte, p int) int {
 	for p < len(data) {
 		n := int(data[p])
@@ -439,23 +302,15 @@ func maxFrameCount(a, b int) int {
 	return b
 }
 
-// GoImage returns the underlying image.Image. Useful for callers that need
-// to pass the pixels into another library or do custom drawing.
+// GoImage returns the underlying image.Image.
 func (i *Image) GoImage() stdimage.Image { return i.img }
 
-// Format returns the source format. May be FormatUnknown when the Image
-// was constructed via FromImage.
+// Format returns the source format.
 func (i *Image) Format() Format { return i.format }
 
 // Bounds returns the current image bounds.
 func (i *Image) Bounds() stdimage.Rectangle { return i.img.Bounds() }
 
-// derive returns a new Image with the same metadata but a fresh underlying
-// image. Used by chain methods so transformations don't mutate the source.
-// Every metadata field that callers can observe via Metadata() must be
-// carried forward. Historically `frames` was dropped here, which
-// silently neutralised VariantSet{RejectAnimated: true} after any chain
-// step (including the documented avatar recipe's AutoOrient).
 func (i *Image) derive(img stdimage.Image) *Image {
 	return &Image{
 		img:    img,

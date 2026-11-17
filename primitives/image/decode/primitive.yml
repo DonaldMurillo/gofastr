@@ -9,3 +9,162 @@ code:
   - framework/image/errors.go
 on_change:
   - A new input format registers its decoder in decoders.go, gets a Sniff case and a row under "Supported formats" in image.md.
+invariants:
+  - id: unknown-format-is-invalid-input
+    rule: A source Sniff cannot identify returns ErrInvalidInput before any decoder runs.
+    enforced_by:
+      - test: framework/image.TestSweepImageUnknownFormatIsInvalidInput
+      - test: framework/image.TestDecodeRejectsGarbage
+  - id: sniff-reads-whole-magic
+    rule: Sniff answers FormatUnknown for input under 12 bytes and for a RIFF container that is not WEBP, and never reads past its input.
+    enforced_by:
+      - test: framework/image.TestSweepImageSniffNeedsAWholeRIFFHeader
+      - test: framework/image.TestSniffDetectsEachFormat
+  - id: format-mime-table
+    rule: Format.MIME gives image/jpeg, image/png, image/gif, image/bmp, image/tiff and image/webp, and application/octet-stream for FormatUnknown.
+    enforced_by:
+      - test: framework/image.TestSweepImageFormatMIME
+  - id: source-bytes-capped
+    rule: DecodeWithConfig reads at most MaxSourceBytes+1 bytes (64 MiB by default) and returns ErrSourceTooLarge past the cap, and a cap of MaxInt64 still reads the source.
+    enforced_by:
+      - test: framework/image.TestDecodeRedCapsSourceBytes
+      - test: framework/image.TestDecodeMaxIntSourceCapStillReads
+  - id: pixel-guard-before-decode
+    rule: A source whose declared width times height exceeds MaxPixels (64 MP by default) returns ErrDecompressionBomb from its header alone, for every sniffed format.
+    enforced_by:
+      - test: framework/image.TestBombGuardCoversEverySniffedFormat
+      - test: framework/image.TestDecodeBombGuardTightenedDefault
+      - test: framework/image.TestDecodeBombGuardTrips
+      - test: framework/image.TestBombDoesNotAllocFullDecode
+  - id: non-positive-dims-fail
+    rule: A source declaring a zero or negative dimension is an error, never an empty image.
+    enforced_by:
+      - test: framework/image.TestBombGuardNonPositiveDims
+  - id: truncated-headers-error
+    rule: Every byte prefix of a crafted header decodes to an error, never a panic or a partial image.
+    enforced_by:
+      - test: framework/image.TestDecodeTruncatedHeadersNeverPanic
+  - id: decoder-panic-is-an-error
+    rule: A panic inside a stdlib decoder is recovered and returned as an error wrapping ErrInvalidInput.
+    judge: Does this change let a panic from stdimage.DecodeConfig or stdimage.Decode escape decodeBytes, for example by removing or moving its recover?
+  - id: jpeg-scans-capped
+    rule: A JPEG with more scans than MaxJPEGScans (64 by default) returns ErrDecompressionBomb before decoding.
+    enforced_by:
+      - test: framework/image.TestDecodeRefusesJPEGScanBomb
+      - test: framework/image.TestDecodeAcceptsJPEGAtScanCap
+  - id: jpeg-scan-budget
+    rule: A JPEG whose scans times width times height exceed MaxJPEGScanPixels, or ten times the effective MaxPixels when unset, saturating at MaxInt64, returns ErrDecompressionBomb.
+    enforced_by:
+      - test: framework/image.TestDecodeBudgetsJPEGScansByPixels
+      - test: framework/image.TestSweepImageJPEGScanBudgetSaturates
+  - id: scans-counted-as-the-decoder-sees-them
+    rule: The scan count walks marker segments from SOI, skipping each segment's payload and fill bytes, and stops at the first EOI, so an APPn payload or bytes after EOI add no scans.
+    enforced_by:
+      - test: framework/image.TestDecodeCountsOnlyScansTheDecoderRuns
+      - test: framework/image.TestSweepImageScanCountSkipsFillBytes
+  - id: progressive-coefficients-capped
+    rule: A progressive JPEG whose coefficient buffer exceeds MaxProgressiveJPEGBytes (512 MiB by default) returns ErrDecompressionBomb, junk before the frame header included.
+    enforced_by:
+      - test: framework/image.TestDecodeRefusesProgressiveJPEGOverMemoryBudget
+      - test: framework/image.TestJPEGJunkCannotBypassBudget
+  - id: unestimable-jpeg-refused
+    rule: A JPEG whose coefficient cost jpegcost cannot read returns ErrDecompressionBomb.
+    judge: Does this change let decodeBytes decode a JPEG for which jpegcost.ProgressiveCoeffBytes reported not ok?
+  - id: open-refuses-traversal
+    rule: Open refuses a path holding a ".." segment after cleaning.
+    enforced_by:
+      - test: framework/image.TestOpenRejectsTraversal
+  - id: jpeg-orientation-read
+    rule: Decoding a JPEG reads its EXIF orientation from the APP1 segment, stepping over fill bytes before a marker.
+    enforced_by:
+      - test: framework/image.TestEXIFOrientationParsedFromJPEG
+      - test: framework/image.TestOrientationAfterFillBytes
+  - id: gif-frames-counted-without-decoding
+    rule: A GIF's frame count is read by walking its blocks, allocating nothing per frame.
+    enforced_by:
+      - test: framework/image.TestAnimatedGIFSurfacesFrameCount
+      - test: framework/image.TestAnimatedGIFFrameCountIsCheap
+  - id: chain-keeps-metadata
+    rule: Every chain step's result keeps the source's format, orientation, frame count and Config.
+    enforced_by:
+      - test: framework/image.TestDerivePreservesFrameCount
+      - test: framework/image.TestRejectAnimatedAfterChainStep
+      - test: framework/image.TestSweepImageChainKeepsOrientationAndConfig
+  - id: from-image-has-no-metadata
+    rule: FromImage carries no orientation and no frame count.
+    enforced_by:
+      - test: framework/image.TestFromImageHasNoOrientation
+  - id: has-alpha-reads-visible-pixels
+    rule: Metadata.HasAlpha on an RGBA or NRGBA image scans every visible pixel, a sub-image's out-of-bounds bytes ignored.
+    enforced_by:
+      - test: framework/image.TestHasAlphaDetectsInteriorPixel
+      - test: framework/image.TestHasAlphaIgnoresOutOfBoundsForSubImage
+decisions:
+  - id: default-pixel-cap-64mp
+    date: 2026-11-17
+    status: accepted
+    decision: The default pixel cap is 64 MP, an 8192 square.
+    rejected:
+      - option: Bun.Image's 268 MP.
+        why: A 45-byte PNG declaring 16383 square passed it and made the decoder allocate about 1 GiB.
+    revisit_if: Hosts routinely need sources over 64 MP and set Config.MaxPixels to get them.
+    upholds: [pixel-guard-before-decode]
+  - id: source-read-through-a-limit
+    date: 2026-11-17
+    status: accepted
+    decision: The source is read through a reader limited to one byte past MaxSourceBytes.
+    rejected:
+      - option: io.ReadAll with only the pixel guard after it.
+        why: A peer dribbling bytes forever pinned heap at its send rate, since the pixel guard runs only once every byte is resident.
+    upholds: [source-bytes-capped]
+  - id: jpeg-scan-budget-by-pixels
+    date: 2026-11-17
+    status: accepted
+    decision: A JPEG is held to a flat scan cap and a scans-times-pixels budget, so a small image may carry many scans and a huge one few.
+    rejected:
+      - option: The pixel cap alone.
+        why: A ten-byte progressive scan revisits every block, so a 10 KB file of 100 scans took four seconds at 64 MP.
+      - option: The flat scan cap alone.
+        why: A 6.5 KB file of 64 scans still held a core for 2.8 s at 64 MP.
+    revisit_if: A common encoder writes more than 64 scans or more than ten full walks of a large frame.
+    upholds: [jpeg-scans-capped, jpeg-scan-budget]
+  - id: scan-count-walks-segments
+    date: 2026-11-17
+    status: accepted
+    decision: Scans are counted by walking marker segments to the first EOI, over-counting a stray FF DA in entropy data at worst.
+    rejected:
+      - option: Count FF DA byte pairs over the whole file.
+        why: It counted ICC profiles, MakerNote previews and a motion photo's video after EOI, and refused one-scan phone photos.
+    upholds: [scans-counted-as-the-decoder-sees-them]
+  - id: progressive-coefficient-cap-512mib
+    date: 2026-11-17
+    status: accepted
+    decision: Progressive JPEG coefficients are capped at 512 MiB, which admits a 64 MP frame in grayscale or 4:2:0 and refuses it at 4:4:4.
+    rejected:
+      - option: Rely on the pixel cap.
+        why: The decoder keeps 256 bytes per block of every component, so a few hundred bytes of progressive 8192 square allocated about 1 GB.
+    upholds: [progressive-coefficients-capped]
+  - id: gif-frames-by-block-walk
+    date: 2026-11-17
+    status: accepted
+    decision: GIF frames are counted by walking image descriptors and sub-block chains.
+    rejected:
+      - option: gif.DecodeAll.
+        why: It allocates every frame, about 4 GB for a 1024 square of 1000 frames.
+    upholds: [gif-frames-counted-without-decoding]
+  - id: orientation-only-exif
+    date: 2026-11-17
+    status: accepted
+    decision: Only the EXIF orientation tag is parsed.
+    rejected:
+      - option: Full EXIF support.
+        why: Nothing in the pipeline reads another tag.
+    upholds: [jpeg-orientation-read]
+  - id: has-alpha-samples-other-types
+    date: 2026-11-17
+    status: accepted
+    decision: For image types other than RGBA and NRGBA, HasAlpha samples the corners and centre and can miss interior alpha.
+    rejected:
+      - option: Scan every pixel through At.
+        why: It is a per-pixel interface call on every Metadata read.
+    upholds: [has-alpha-reads-visible-pixels]

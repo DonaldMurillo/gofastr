@@ -3,3 +3,59 @@ summary: The terminal Encoder for JPEG, PNG, GIF, BMP, TIFF and lossless WebP, w
 code:
   - framework/image/encode.go
   - framework/image/webp_encode.go
+invariants:
+  - id: codec-runs-once
+    rule: An Encoder runs its codec at most once across all terminal calls and goroutines, and later calls reuse the first result.
+    enforced_by:
+      - test: framework/image.TestEncoderMemoizesTerminalCalls
+      - test: framework/image.TestEncoderBytesConcurrentSafe
+  - id: bytes-are-the-callers
+    rule: Each Bytes call returns a fresh copy, so writing into it changes neither the cache nor another caller's slice.
+    enforced_by:
+      - test: framework/image.TestEncoderBytesReturnsIndependentSlice
+  - id: builder-errors-surface-at-terminal
+    rule: An option error found when the Encoder is built (PNG compression outside -3..0, lossy WebP) is returned by every terminal call.
+    enforced_by:
+      - test: framework/image.TestPNGRejectsInvalidCompressionLevel
+      - test: framework/image.TestPNGCompressionInvalid
+      - test: framework/image.TestWebPLossyReturnsErrFormatUnsupported
+  - id: jpeg-quality-defaults-to-80
+    rule: A JPEG Quality of 0 encodes at 80, and a quality outside 1..100 is clamped into it.
+    enforced_by:
+      - test: framework/image.TestSweepImageEncoderOptionDefaultsAndClamps
+  - id: webp-zero-value-is-lossless
+    rule: WebP with zero options encodes lossless VP8L that decodes back to the same pixels.
+    enforced_by:
+      - test: framework/image.TestWebPZeroValueOptionsIsLossless
+      - test: framework/image.TestWebPLosslessRoundTrips
+  - id: data-url-carries-format-mime
+    rule: DataURL prefixes the base64 bytes with data:<the format's MIME>;base64,.
+    enforced_by:
+      - test: framework/image.TestPlaceholderReturnsDataURL
+      - test: framework/image.TestBlurHashDataURL
+decisions:
+  - id: cache-by-encoder-identity
+    date: 2026-11-17
+    status: accepted
+    decision: The encoded bytes are cached on the Encoder, not keyed by pixels, so build a new Encoder after changing pixels through GoImage.
+    rejected:
+      - option: Re-encode on every terminal call.
+        why: A caller asking for Bytes and DataURL would pay the codec twice.
+    upholds: [codec-runs-once]
+  - id: reject-bad-png-compression
+    date: 2026-11-17
+    status: accepted
+    decision: A PNG compression level outside -3..0 is an error.
+    rejected:
+      - option: Pass it to image/png.
+        why: The stdlib treats it as the default and hides the config bug.
+    upholds: [builder-errors-surface-at-terminal]
+  - id: webp-lossless-only
+    date: 2026-11-17
+    status: accepted
+    decision: WebP encoding is lossless VP8L in pure Go, and lossy returns ErrFormatUnsupported.
+    rejected:
+      - option: A cgo libwebp binding.
+        why: The package is pure Go, depending only on the standard library and golang.org/x/image.
+    revisit_if: A pure-Go VP8 lossy encoder is worth carrying.
+    upholds: [webp-zero-value-is-lossless]
