@@ -93,8 +93,7 @@ func TestGenerateFromAppSpecCleanWriteHappy(t *testing.T) {
 	for _, f := range report.Files {
 		listed[f.Path] = true
 		info, err := os.Stat(filepath.Join(dir, ".gen", filepath.FromSlash(f.Path)))
-		// The settings file is merged section-wise, not written as reported.
-		if err != nil || (info.Size() != f.Size && f.Path != "gofastr.settings.yml") {
+		if err != nil || info.Size() != f.Size {
 			t.Fatalf("reported %s (%d bytes) not on disk as written: %v %v", f.Path, f.Size, info, err)
 		}
 	}

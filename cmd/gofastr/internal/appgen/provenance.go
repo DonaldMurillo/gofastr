@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/codegen"
+	"github.com/DonaldMurillo/gofastr/core/settings"
 )
 
 // stampFile formats a generated file and stamps its provenance marker:
@@ -64,6 +65,11 @@ func fileEdited(name, existing, replacement string) bool {
 func StampGeneratedFiles(generator string, files []GeneratedFile) ([]GeneratedFile, error) {
 	out := make([]GeneratedFile, len(files))
 	for i, f := range files {
+		// The settings file is merged into the user's own, never written whole, so it stays unmarked.
+		if f.Name == settings.FileName {
+			out[i] = f
+			continue
+		}
 		content, err := stampFile(generator, f.Name, f.Content)
 		if err != nil {
 			return nil, err

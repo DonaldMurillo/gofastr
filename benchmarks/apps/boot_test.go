@@ -1,6 +1,6 @@
 package apps_test
 
-//gofastr:test-reads minimal/ crud/ full/
+//gofastr:test-reads benchmarks/apps/minimal/ benchmarks/apps/crud/ benchmarks/apps/full/
 
 import (
 	"bytes"

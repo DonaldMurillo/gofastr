@@ -58,7 +58,9 @@ another; a key that two files both set (`app.name`, `app.auth.enabled`,
 `--force` overwrites everything, so it tells you what it is destroying.
 Every file the generator writes in a format with comments carries a
 provenance marker with a sum of its content (JSON and binary files such
-as fonts carry none; see [Codegen](codegen.md#provenance-markers)); before
+as fonts carry none, and neither does `gofastr.settings.yml`, whose
+`endpoints:` section is merged into the file you keep; see
+[Codegen](codegen.md#provenance-markers)); before
 writing, `--force` names every target whose content no longer matches its
 sum, since a mismatch means someone edited that file after scaffolding. A
 marked file you never touched is not listed, even when today's template

@@ -89,10 +89,10 @@ func colorizeTestLine(line string, passed, failed *int) string {
 		return "  " + cli.Bold(line)
 	case strings.HasPrefix(line, "--- PASS"):
 		*passed++
-		return cli.Green("  ✓ " + strings.TrimPrefix(line, "--- PASS:   "))
+		return cli.Green("  ✓ " + strings.TrimLeft(strings.TrimPrefix(line, "--- PASS:"), " "))
 	case strings.HasPrefix(line, "--- FAIL"):
 		*failed++
-		return cli.Red("  ✗ " + strings.TrimPrefix(line, "--- FAIL:   "))
+		return cli.Red("  ✗ " + strings.TrimLeft(strings.TrimPrefix(line, "--- FAIL:"), " "))
 	case strings.HasPrefix(line, "ok"):
 		return cli.Green("  " + line)
 	case strings.HasPrefix(line, "FAIL"):

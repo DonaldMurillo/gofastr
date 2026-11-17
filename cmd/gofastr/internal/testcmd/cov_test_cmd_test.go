@@ -31,7 +31,7 @@ func TestRunTestPassingModule(t *testing.T) {
 	if code != -1 {
 		t.Fatalf("passing tests should not exit, got %d: %s", code, out)
 	}
-	if !regexp.MustCompile(`✓ (--- PASS: )?TestAdd`).MatchString(out) {
+	if !regexp.MustCompile(`✓ TestAdd`).MatchString(out) {
 		t.Fatalf("TestAdd not reported as passed: %s", out)
 	}
 	for _, want := range []string{"coverage:", "All tests passed! (1 passed, 0 failed)"} {
