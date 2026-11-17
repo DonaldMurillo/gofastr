@@ -9,10 +9,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// tableKey is the name two spellings of one table share: lower case, with
-// the schema an unqualified name resolves to dropped (main on SQLite;
-// public on Postgres, the first schema of its default search_path). On
-// SQLite widgets and main.widgets are one table.
+// tableKey is the name two spellings of one table share: lower case, the
+// default schema (main, public) dropped.
 func tableKey(dialect Dialect, table string) string {
 	def := "main."
 	if dialect == DialectPostgres {
@@ -22,10 +20,7 @@ func tableKey(dialect Dialect, table string) string {
 }
 
 // refersTo reports whether ref, the parent a REFERENCES clause in child's
-// CREATE TABLE names, is table. SQLite takes an unqualified parent from
-// the child's schema (a REFERENCES clause cannot name one), so a bare
-// ref in aux.kids is aux.parents; Postgres resolves it like any
-// unqualified name, to public.
+// CREATE TABLE names, is table.
 func refersTo(dialect Dialect, child, ref, table string) bool {
 	if dialect == DialectSQLite && !strings.Contains(ref, ".") {
 		if i := strings.LastIndexByte(child, '.'); i >= 0 {
@@ -35,8 +30,6 @@ func refersTo(dialect Dialect, child, ref, table string) bool {
 	return tableKey(dialect, ref) == tableKey(dialect, table)
 }
 
-// declaredTableNames is every table the plan's entities name: each
-// entity's Table and each many-to-many Through.
 func declaredTableNames(all map[string]*entity.Entity) []string {
 	var out []string
 	for _, name := range slices.Sorted(maps.Keys(all)) {
@@ -52,16 +45,9 @@ func declaredTableNames(all map[string]*entity.Entity) []string {
 }
 
 // respellTables re-keys prev's per-table records to the spelling the plan
-// declares when the two differ by the default schema, so a Table changed
-// from widgets to main.widgets diffs as the table it is. Keyed by the old
-// spelling, the table read as new (a CREATE of a table that exists) and
-// the old one as removed (a DROP of it, rows and all). Recorded index DDL
-// names the table, so each statement is rendered again on the new
-// spelling and compares equal to the declared one. prev's maps are not
+// declares when the two differ by the default schema. prev's maps are not
 // modified.
 func respellTables(prev SchemaSnapshot, declared []string, dialect Dialect) SchemaSnapshot {
-	// A recorded table some declaration already names (case aside) keeps
-	// its key: it is that declaration's, and the lookups fold case.
 	named := map[string]bool{}
 	for _, want := range declared {
 		named[strings.ToLower(want)] = true
@@ -104,7 +90,6 @@ func respellTables(prev SchemaSnapshot, declared []string, dialect Dialect) Sche
 	return out
 }
 
-// rekeyTables copies m with each key in renames moved to its new name.
 func rekeyTables[V any](m map[string]V, renames map[string]string) map[string]V {
 	if m == nil {
 		return nil
