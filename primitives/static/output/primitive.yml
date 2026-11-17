@@ -1,0 +1,7 @@
+primitive: static.output
+summary: The export tree's bookkeeping - the case-folded set of files the build writes, the refusal of case twins, respelling on case-insensitive filesystems, and pruning the pages the last build wrote that this one did not.
+code:
+  - framework/static/fileset.go
+  - framework/static/prune.go
+docs:
+  - framework/docs/content/static-export.md
