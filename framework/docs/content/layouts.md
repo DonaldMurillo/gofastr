@@ -659,10 +659,11 @@ generating keyframes; use a framework preset when the region needs a move.
 `NewLayout` registers the layout's generated `Layout.TransitionCSS()`
 as a component sheet of its own (`Layout.TransitionSheet()`), and the
 layer's root names it, so only pages that render the layer load it,
-before the swap that brings the layer in; there is nothing to wire. The
-component catalog freezes at first render, so build layouts before
-serving: a layout with transitions built later logs a warning naming it
-and ships no transition CSS. Root-wide
+before the swap that brings the layer in; there is nothing to wire. A
+host lists its component sheets once, at first render, so register
+screens and groups before serving: a layout with transitions that
+arrives later logs a warning naming it, and client navigations into it
+run without its transitions. Root-wide
 presets by name come from `app.ViewTransitionPresetCSS("fade")`. The
 runtime wraps the swap in the View Transitions API with the direction
 type (`forward`/`back`/`reload`), never animates under

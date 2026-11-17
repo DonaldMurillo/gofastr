@@ -129,10 +129,10 @@ few lines, and link the PR or the docs page for the rest.
   sheet of its own (`Layout.TransitionSheet()`), and the layer root
   carries its `data-cui-comp` marker, so only pages that render the layer
   load it. Before, every page paid for every layout's transitions in
-  app.css. `registry.TryRegisterStyle` is new: it returns false instead
-  of panicking for a new name after the catalog froze. Nothing to change
-  in an app; a layout with transitions must still be built before the
-  first page renders ([layouts](framework/docs/content/layouts.md#transitions)).
+  app.css. `registry.RegisterRuntimeStyle` is new: it registers a sheet
+  built at run time even after a host froze the catalog. Nothing to
+  change in an app; a layout with transitions must still be registered
+  before the first page renders ([layouts](framework/docs/content/layouts.md#transitions)).
 - **The examples are `examples/meridian` and `examples/site`.** Twelve
   standalone demos are gone; the apps the framework's tests drive moved
   to `internal/testapps/`, and Acme Tracker, the tree-layout showcase,

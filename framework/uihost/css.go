@@ -342,20 +342,26 @@ func (ds *UIHost) appCSSCached() (body, hash string) {
 }
 
 // warnSheetlessTransitions names, once each, the layouts whose
-// transitions have no sheet: NewLayout ran after the component catalog
-// froze, so their transitions do not run.
+// transition sheet the host's catalog does not list: they arrived after
+// the first page render built it, so client navigations into them run
+// without their transitions.
 func (ds *UIHost) warnSheetlessTransitions() {
+	listed := ds.catalogListed.Load()
+	if listed == nil {
+		return
+	}
 	ds.transitionWarnMu.Lock()
 	defer ds.transitionWarnMu.Unlock()
 	for _, l := range ds.App.Layouts() {
-		if l.TransitionSheet() != "" || l.TransitionCSS() == "" || ds.transitionWarned[l] {
+		sheet := l.TransitionSheet()
+		if sheet == "" || (*listed)[sheet] || ds.transitionWarned[l] {
 			continue
 		}
 		if ds.transitionWarned == nil {
 			ds.transitionWarned = map[*app.Layout]bool{}
 		}
 		ds.transitionWarned[l] = true
-		slog.Warn("uihost: layout built after the first page render froze the component catalog, so its transitions do not run; build layouts before Mount",
+		slog.Warn("uihost: layout registered after the first page render built the component catalog, so client navigations into it run without its transitions; register routes before Mount",
 			"layout", l.Name)
 	}
 }

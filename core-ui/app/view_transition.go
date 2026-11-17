@@ -355,10 +355,8 @@ func MustViewTransitionPresetCSS(preset string) string {
 }
 
 // TransitionSheet names the component sheet holding the layout's
-// TransitionCSS, the data-cui-comp marker its layer root carries. It is
-// empty when the layout declares no transition, or when NewLayout ran
-// after the component catalog froze (the host warns about that layout:
-// its transitions do not run).
+// TransitionCSS, the data-cui-comp marker its layer root carries; empty
+// when the layout declares no transition.
 func (l *Layout) TransitionSheet() string {
 	if l == nil {
 		return ""
@@ -368,16 +366,13 @@ func (l *Layout) TransitionSheet() string {
 
 // registerTransitionSheet registers css as a component sheet named by
 // its content, so two layouts declaring the same transitions share one
-// sheet, and returns the name; "" for no CSS or a catalog that froze
-// first.
+// sheet, and returns the name; "" for no CSS.
 func registerTransitionSheet(css string) string {
 	if css == "" {
 		return ""
 	}
 	sum := sha256.Sum256([]byte(css))
 	name := "cui-vt-" + hex.EncodeToString(sum[:8])
-	if _, ok := registry.TryRegisterStyle(name, func(style.Theme) string { return css }); !ok {
-		return ""
-	}
+	registry.RegisterRuntimeStyle(name, func(style.Theme) string { return css })
 	return name
 }

@@ -89,10 +89,14 @@ type UIHost struct {
 	appCSSFrozenWarn    sync.Once
 	appCSSLayoutsSeen   atomic.Uint64
 	transitionWarnMu    sync.Mutex
-	transitionWarned    map[*app.Layout]bool
-	manifests           perLocale[manifestEntry]
-	standalone          *router.Router
-	standaloneOnce      sync.Once
+	// catalogListed is the component names the host's last marshalled
+	// catalog carried; a transition sheet missing from it is one the
+	// client never loads on a soft navigation.
+	catalogListed    atomic.Pointer[map[string]bool]
+	transitionWarned map[*app.Layout]bool
+	manifests        perLocale[manifestEntry]
+	standalone       *router.Router
+	standaloneOnce   sync.Once
 }
 
 // New returns a host for application configured by opts.

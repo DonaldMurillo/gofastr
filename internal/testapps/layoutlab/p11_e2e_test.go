@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -187,7 +188,8 @@ func TestViewTransitionMirrorE2E(t *testing.T) {
 	base := srv.URL
 
 	// JS-off first: the marker is server-rendered, and the generated
-	// CSS (name assignment + back variant) rides app.css.
+	// CSS (name assignment + back variant) rides the items layer's own
+	// transition sheet, which the layer root names.
 	res, err := http.Get(base + "/items/1")
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -197,18 +199,26 @@ func TestViewTransitionMirrorE2E(t *testing.T) {
 	if !strings.Contains(string(body), `data-cui-vt="vt-items-primary"`) {
 		t.Errorf("SSR /items/1 missing data-cui-vt=\"vt-items-primary\"")
 	}
-	cssRes, err := http.Get(base + "/__gofastr/app.css")
-	if err != nil {
-		t.Fatalf("get app.css: %v", err)
+	sheets := regexp.MustCompile(`data-cui-comp="(cui-vt-[0-9a-f]+)"`).FindAllStringSubmatch(string(body), -1)
+	if sheets == nil {
+		t.Fatal("SSR /items/1 names no transition sheet (data-cui-comp=\"cui-vt-…\")")
 	}
-	css, _ := io.ReadAll(cssRes.Body)
-	cssRes.Body.Close()
+	var css []byte
+	for _, sheet := range sheets {
+		cssRes, err := http.Get(base + "/__gofastr/comp/" + sheet[1] + ".css")
+		if err != nil {
+			t.Fatalf("get transition sheet: %v", err)
+		}
+		b, _ := io.ReadAll(cssRes.Body)
+		cssRes.Body.Close()
+		css = append(css, b...)
+	}
 	for _, want := range []string{
 		`[data-cui-vt="vt-items-primary"]`,
 		`:root:active-view-transition-type(back) ::view-transition-new(vt-items-primary)`,
 	} {
 		if !strings.Contains(string(css), want) {
-			t.Errorf("app.css missing generated rule %q", want)
+			t.Errorf("the page's transition sheets miss generated rule %q", want)
 		}
 	}
 

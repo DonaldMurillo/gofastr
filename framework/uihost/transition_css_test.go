@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -68,16 +67,16 @@ func TestLayoutTransitionsLoadWithTheLayer(t *testing.T) {
 	}
 }
 
-// A layout built after the component catalog froze cannot register its
-// transition sheet, so the host names it once instead of failing.
+// A layout registered after the first page render built the host's
+// catalog is missing from it, so the client never loads its sheet on a
+// soft navigation; the host names it once instead of failing.
 func TestLateTransitionLayoutWarns(t *testing.T) {
-	registry.IsolateForTest(t)
 	build := func(_ context.Context, l *app.LayoutTree) render.HTML { return l.Primary() }
 	site := app.NewApp("late")
 	site.RegisterScreen(app.NewScreen("/", transitionStub{}), nil)
 	ds := New(site)
+	catalogJSON(ds, ds.activeTheme(), "")
 	before, _ := ds.appCSSCached()
-	registry.Freeze()
 
 	var logs bytes.Buffer
 	prev := slog.Default()
@@ -85,11 +84,8 @@ func TestLateTransitionLayoutWarns(t *testing.T) {
 	defer slog.SetDefault(prev)
 
 	late := app.NewLayout("late", app.LayoutSpec{
-		Primary: app.PrimaryConfig{Transition: app.Slide(app.Right, 200*time.Millisecond)},
+		Primary: app.PrimaryConfig{Transition: app.Slide(app.Right, 230*time.Millisecond)},
 	}, build)
-	if late.TransitionSheet() != "" {
-		t.Fatal("a layout built after the freeze registered a transition sheet")
-	}
 	site.RegisterScreen(app.NewScreen("/late", transitionStub{}), late)
 	after, _ := ds.appCSSCached()
 	ds.appCSSCached()
