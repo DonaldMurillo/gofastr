@@ -563,8 +563,7 @@ gofastr dev`,
 				Body:     []render.HTML{hubP("Turn on the agent-ready host options and your app serves the files agent scanners look for, an llms.txt and the .well-known endpoints, so an agent can find what your app does.")},
 				CodeLang: "",
 				Code: `GET /llms.txt
-GET /.well-known/agent-card.json
-GET /.well-known/agent.json`,
+GET /.well-known/agent-card.json`,
 				RefSlug: "agent-ready",
 			},
 			{

@@ -39,7 +39,7 @@ func blogReg(extraField *schema.Field) testReg {
 // TestGenerateMigrationFileFirstRun proves the first generation from a
 // registry writes migrations/0001_<name>.sql + schema.snapshot.json whose
 // bytes are byte-identical to what the app generator's primitives
-// (GenerateMigration + RenderMigrationFile + SaveSnapshot) produce, i.e. the
+// (GenerateMigration + renderMigrationFile + SaveSnapshot) produce, i.e. the
 // new entrypoint is format-compatible with the standalone CLI, not a parallel
 // scheme.
 func TestGenerateMigrationFileFirstRun(t *testing.T) {
@@ -78,7 +78,7 @@ func TestGenerateMigrationFileFirstRun(t *testing.T) {
 	if up == "" {
 		t.Fatal("expected non-empty first migration")
 	}
-	want := RenderMigrationFile(1, "initial", up, down)
+	want := renderMigrationFile(1, "initial", up, down)
 	if string(got) != want {
 		t.Errorf("generated file does not match app spec format:\n--- want ---\n%s\n--- got ---\n%s", want, got)
 	}
