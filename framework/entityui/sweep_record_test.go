@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
 )
 
 func TestSweepRecordDuplicateLeavesMaskedFieldBlank(t *testing.T) {
@@ -344,5 +345,82 @@ func TestSweepRecordOverrideFormNeedsExactCapability(t *testing.T) {
 	body := string(w.x.ui.Record("invoices", "inv-1").Base("/rec/invoices").Override().RenderCtx(overrideCtx(policy, "root")))
 	if strings.Contains(body, "_override") {
 		t.Fatalf("SECURITY: a Wildcard role without the exact capability saw the override form:\n%s", body)
+	}
+}
+
+func TestSweepRecordShowWhenParsesOneTerm(t *testing.T) {
+	draw := func(cond string) string {
+		ents := invoiceEntities()
+		inv := ents["invoices"]
+		inv.Display.Fields["memo"] = entity.FieldDisplay{ShowWhen: cond}
+		ents["invoices"] = inv
+		x := newTestUI(t, ents, invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
+		return renderRecord(t, x, "inv-1", nil)
+	}
+	if body := draw(`token = "x"`); !strings.Contains(body, "fui-when") {
+		t.Fatalf("a ShowWhen on a NoQuery controller drew memo unconditioned:\n%s", body)
+	}
+	if body := draw(`customer_id != ""`); !strings.Contains(body, `name="memo"`) || strings.Contains(body, "fui-when") {
+		t.Fatalf("a ShowWhen that is not one = or in term did not draw memo unconditioned:\n%s", body)
+	}
+}
+
+func TestSweepRecordFloatAndStoredUUIDInputs(t *testing.T) {
+	const ref = "0b0c6a52-3c39-4f41-9c8a-4a1d4f9d6a11"
+	ents := invoiceEntities()
+	inv := ents["invoices"]
+	inv.Fields = append(inv.Fields, schema.Field{Name: "rate", Type: schema.Float}, schema.Field{Name: "ref", Type: schema.UUID})
+	ents["invoices"] = inv
+	rows := invoiceRows()
+	rows["invoices"][0]["rate"] = 0.5
+	rows["invoices"][0]["ref"] = ref
+	x := newTestUI(t, ents, rows, withAPI(map[string]string{"invoices": "/api/invoices"}))
+	body := renderRecord(t, x, "inv-1", nil)
+	if !regexp.MustCompile(`name="rate" step="0\.000000001"`).MatchString(body) {
+		t.Errorf("a Float input's step refuses its precision:\n%s", body)
+	}
+	if strings.Contains(body, `name="ref"`) || !strings.Contains(body, ref) {
+		t.Errorf("a stored UUID is not drawn read-only:\n%s", body)
+	}
+}
+
+func TestSweepRecordRelationNewNeedsCreate(t *testing.T) {
+	ents := invoiceEntities()
+	c := ents["customers"]
+	c.Exposure = &entity.ExposureConfig{Access: entity.AccessControl{Create: "customers:create"}}
+	ents["customers"] = c
+	x := newTestUI(t, ents, invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices", "customers": "/api/customers"}))
+	x.ui = x.ui.WithRecordPath(recPath)
+	body := renderRecord(t, x, "inv-1", nil)
+	if !strings.Contains(body, `name="customer_id"`) {
+		t.Fatalf("setup: the caller got no editable picker:\n%s", body)
+	}
+	if strings.Contains(body, `href="/rec/customers/create"`) {
+		t.Fatalf("SECURITY: a caller who may not create customers got New beside the picker:\n%s", body)
+	}
+}
+
+func TestSweepRecordUploadRequiredOnlyWhenEmpty(t *testing.T) {
+	x := newTestUIExt(t,
+		map[string]entity.EntityConfig{"products": {Fields: fields(
+			schema.Field{Name: "name", Type: schema.String, Required: true},
+			schema.Field{Name: "photo", Type: schema.Image, Required: true},
+		), Exposure: &entity.ExposureConfig{Public: true}}},
+		map[string][]map[string]any{"products": {{"id": "p1", "name": "Drill", "photo": "uploads/products/photo/drill.png"}}},
+		Extensions{FilesURL: "/uploads/"},
+		withAPI(map[string]string{"products": "/api/products"}), withStorage(teststorage.New(t, t.TempDir())))
+	body := string(x.ui.Record("products", "p1").RenderCtx(x.ctx("/products/p1", "")))
+	for _, tag := range regexp.MustCompile(`<input[^>]*type="file"[^>]*>`).FindAllString(body, -1) {
+		if strings.Contains(tag, "required") {
+			t.Fatalf("a required upload with a stored file is still required, so an untouched save cannot submit:\n%s", tag)
+		}
+	}
+}
+
+func TestSweepRecordPickerRefusesNonJSON(t *testing.T) {
+	x := newInvoiceUI(t)
+	rec := pickPost(t, x, "customer_id", `q=a`, func(r *http.Request) { r.Header.Set("Content-Type", "application/x-www-form-urlencoded") })
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("a form-encoded picker search = %d, want 415", rec.Code)
 	}
 }

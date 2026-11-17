@@ -80,6 +80,8 @@ invariants:
       - test: framework/entityui.TestTimestampKeepsMilliseconds
       - test: framework/entityui.TestColorPickerOnlyForSimpleColor
       - test: framework/entityui.TestSweepRecordDateInputValueIsDateOnly
+      - test: framework/entityui.TestSweepRecordFloatAndStoredUUIDInputs
+      - test: framework/entityui.TestSweepRecordUploadRequiredOnlyWhenEmpty
   - id: input-checks-match-the-server
     rule: A field's Pattern reaches the input wrapped to match anywhere, as the server's unanchored match does, a pattern with inline flags stays server-side only, and an int input's bounds clamp to the integers a browser holds exactly.
     enforced_by:
@@ -90,6 +92,18 @@ invariants:
     enforced_by:
       - test: framework/entityui.TestRecordStateIsTheBadge
       - test: framework/entityui.TestRecordFormShowWhen
+  - id: stored-uuid-is-read-only
+    rule: A stored UUID draws as a read-only value on the edit form; only a create takes one as input.
+    enforced_by:
+      - test: framework/entityui.TestSweepRecordFloatAndStoredUUIDInputs
+  - id: show-when-is-one-term
+    rule: A ShowWhen of one = or in term wraps its field in a conditional region even when the controller field is NoQuery, and any other shape draws the field unconditioned rather than hiding it.
+    enforced_by:
+      - test: framework/entityui.TestSweepRecordShowWhenParsesOneTerm
+  - id: relation-new-needs-create
+    rule: The New link beside a relation picker draws only for a caller who may create the related entity.
+    enforced_by:
+      - test: framework/entityui.TestSweepRecordRelationNewNeedsCreate
   - id: unreadable-relation-renders-muted
     rule: A relation value whose target the caller may not read through the related entity's gate renders muted, never its id or title, in read-only values, the picker's label and before any kind callback, and its Open link draws only when the caller's hooked read returns the row.
     enforced_by:
@@ -109,6 +123,9 @@ invariants:
       - test: framework/entityui.TestPickerReportsReadFailures
       - test: framework/entityui.TestSweepRecordPickerSkipsRowTheGateDenies
       - test: framework/entityui.TestSweepRecordPickerRefusesLockedRelation
+      - test: framework/entityui.TestSweepRecordPickerRefusesNonJSON
+      - test: framework/entityui.TestPickerHandlerMatchesTitlesWithoutSearchFields
+      - test: framework/entityui.TestPickerHandlerSaysWhenCutOff
   - id: callbacks-run-as-the-caller
     rule: Every app callback the record screen runs (a tab, a side panel, a replaced body, a kind's Input) and the component it returns get the caller's context with any elevation removed.
     enforced_by:
@@ -190,13 +207,14 @@ invariants:
     enforced_by:
       - test: framework/entityui.TestDrawerStepsOnlyOverTheList
   - id: record-lookups-read-behind-the-gate
-    rule: RecordTitle and SearchRecords read behind each record's own gate and the read hooks, and RecordHidden hides a record whose read fails and a purged record from a caller whose read hooks restrict.
+    rule: RecordTitle and SearchRecords read behind each record's own gate and the read hooks, and RecordHidden hides a record its hooked read misses (live or trashed), a record whose read fails, and a purged record from a caller whose read hooks restrict.
     enforced_by:
       - test: framework/entityui.TestRecordTitleRefusesDeniedRow
       - test: framework/entityui.TestSearchRecordsPassesReadGates
       - test: framework/entityui.TestSearchRecordsReadsPastRefusedRows
       - test: framework/entityui.TestSweepRecordHiddenFailsClosedOnReadError
       - test: battery/admin.TestAuditPurgedRecordFollowsHooks
+      - test: battery/admin.TestReadHookParityAdmin
 decisions:
   - id: masked-text-replaces-in-its-own-form
     date: 2026-11-17
