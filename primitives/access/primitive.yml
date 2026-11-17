@@ -96,13 +96,13 @@ invariants:
     enforced_by:
       - test: framework/access.TestResolverSkipsCacheOnCanceledCtx
   - id: resolver-cache-bounded
-    rule: The resolver sweeps expired settled entries at most once per TTL, leaving in-flight ones alone, and at the entry cap sheds entries, in-flight ones included, soonest-expiring first to a low-water mark.
+    rule: The resolver sweeps expired settled entries at most once per TTL (at once when the map reaches the entry cap), leaving in-flight ones alone, and at the cap sheds entries, in-flight ones included, soonest-expiring first to a low-water mark.
     enforced_by:
       - test: framework/access.TestResolverReclaimsExpiredEntries
       - test: framework/access.TestResolverShedsPastEntryCap
       - test: framework/access.TestZeroTTLWaitersShareFlight
   - id: flight-sharing
-    rule: Waiters on an in-flight resolve share its result even at zero TTL, unless the flight was invalidated.
+    rule: Waiters on an in-flight resolve share its result even at zero TTL, unless the flight was invalidated, evicted at the cap or its context ended; then they resolve again.
     enforced_by:
       - test: framework/access.TestZeroTTLWaitersShareFlight
       - test: framework/access.TestInvalidatedFlightNotShared
