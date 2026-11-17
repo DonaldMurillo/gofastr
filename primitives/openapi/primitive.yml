@@ -5,5 +5,3 @@ code:
   - framework/openapi/bulk.go
 docs:
   - framework/docs/content/api-versioning.md
-on_change:
-  - A new CRUD route, query parameter or response shape in framework/crud also needs its path, parameter or schema here, or the spec stops describing the API.

@@ -1,5 +1,5 @@
 primitive: testkit.factory
-summary: Entity factories for tests and seeders - a base body with caller overrides, created through the entity's in-process CRUD handler so hooks, transactions and events run as they do for HTTP.
+summary: Entity factories for tests and seeders - a base body with caller overrides, created through an in-process CRUD handler - by default the one the registry's CrudHandlerFor returns (an App's wires hooks and events as for HTTP), and a bare handler that runs none when the registry has no CrudHandlerFor or it returns nil; WithHandler replaces either.
 code:
   - framework/factory/
 docs:
