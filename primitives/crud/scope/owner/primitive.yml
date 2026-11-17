@@ -5,3 +5,57 @@ code:
 docs:
   - framework/docs/content/entity-declarations.md
   - framework/docs/content/auth.md
+invariants:
+  - id: no-extractor-no-owner
+    rule: Get returns (nil, false) when no extractor is installed or after SetExtractor(nil), and the extractor's answer otherwise.
+    enforced_by:
+      - test: framework/owner.TestGetWithoutExtractor
+      - test: framework/owner.TestSetNilClearsSilently
+      - test: framework/owner.TestRegisterAndGet
+  - id: replace-warns-last-wins
+    rule: SetExtractor warns once when it replaces an installed extractor, not on the first install or a clear, and the last call wins.
+    enforced_by:
+      - test: framework/owner.TestReplaceWarnsAndLastWins
+      - test: framework/owner.TestFirstSetDoesNotWarn
+  - id: extractor-swap-is-atomic
+    rule: The extractor is held in an atomic pointer, so Get racing SetExtractor is not a data race.
+    enforced_by:
+      - test: framework/owner.TestConcurrentSetAndGet
+  - id: extractor-set-only-at-init
+    rule: SetExtractor is called only from init or startup, before requests are served, since one request reading two extractors could scope a row to one owner and stamp it with another.
+    judge: Does this change call owner.SetExtractor anywhere a request may already be in flight?
+  - id: cross-owner-lifts-in-process-scope
+    rule: AllowCrossOwner makes the in-process ListAll and CountAll span every owner's rows.
+    enforced_by:
+      - test: framework/crud.TestCrossOwner_ListSpansOwners
+      - test: framework/crud.TestCrossOwner_CountSpansOwners
+  - id: cross-owner-only-server-side
+    rule: AllowCrossOwner is set only from server-side Go behind the host's own permission check, never from client input and never on an auto-CRUD route's request context.
+    judge: Does this change call owner.AllowCrossOwner on a value or branch a client controls, or put it on the context of an HTTP CRUD route?
+decisions:
+  - id: extractor-is-a-seam
+    date: 2026-11-17
+    status: accepted
+    decision: CRUD reads the owner through an extractor a battery installs, and with none installed OwnerField stays inert.
+    rejected:
+      - option: Import the auth battery into the framework.
+        why: The framework core stays free of any authentication dependency.
+    upholds: [no-extractor-no-owner]
+  - id: warn-on-replace
+    date: 2026-11-17
+    status: accepted
+    decision: Replacing an installed extractor logs a warning and keeps the new one.
+    rejected:
+      - option: Replace silently.
+        why: Two batteries that both register one is an import-order accident, and Go's init order would pick the winner silently.
+      - option: Panic on a second install.
+        why: Tests save and restore the extractor, and a host may wire its own on purpose.
+    upholds: [replace-warns-last-wins]
+  - id: unexported-cross-owner-key
+    date: 2026-11-17
+    status: accepted
+    decision: The cross-owner marker's context key is unexported, so only a call to AllowCrossOwner in process code can set it.
+    rejected:
+      - option: A marker any layer can set, a header or query flag included.
+        why: It becomes an owner-isolation bypass; the declarative, RBAC-checked widening for HTTP and in-process reads is EntityConfig.CrossOwnerRead.
+    upholds: [cross-owner-only-server-side]
