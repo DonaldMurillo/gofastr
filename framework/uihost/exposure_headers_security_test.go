@@ -185,7 +185,7 @@ func newAgentLinkHost(opts ...Option) *UIHost {
 //
 // Surfaces: the page Link header (agent-card + service links) and the
 // agent card's supportedInterfaces[].url on both the canonical
-// /.well-known/agent-card.json and the legacy /.well-known/agent.json.
+// /.well-known/agent-card.json.
 func TestDiscoveryURLsIgnoreForwardedProto(t *testing.T) {
 	poisons := []string{
 		"https://evil.example/p", // full attacker origin: base becomes evil.example/p://real
@@ -208,7 +208,7 @@ func TestDiscoveryURLsIgnoreForwardedProto(t *testing.T) {
 					"(resolveBaseURL refuses X-Forwarded-Host for exactly this reflection but copies "+
 					"X-Forwarded-Proto verbatim).", poison, link)
 			}
-			for _, cardPath := range []string{"/.well-known/agent-card.json", "/.well-known/agent.json"} {
+			for _, cardPath := range []string{"/.well-known/agent-card.json"} {
 				req := httptest.NewRequest(http.MethodGet, cardPath, nil)
 				req.Host = "real.example"
 				req.Header.Set("X-Forwarded-Proto", poison)

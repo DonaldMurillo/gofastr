@@ -264,14 +264,14 @@ func TestAgentCard_A2AEndpointAloneYieldsEmptySkills(t *testing.T) {
 	}
 }
 
-func TestAgentCard_HTTPAndAlias(t *testing.T) {
+func TestAgentCard_HTTPServesOnlyTheCardPath(t *testing.T) {
 	ds := newAgentReadyHost(WithAgentCard(AgentCardConfig{
 		Name: "X", Description: "d", MCPEndpoint: "/mcp",
 	}))
 	srv := httptest.NewServer(ds)
 	t.Cleanup(srv.Close)
 
-	for _, path := range []string{"/.well-known/agent-card.json", "/.well-known/agent.json"} {
+	for _, path := range []string{"/.well-known/agent-card.json"} {
 		body, resp := getBody(t, srv.URL+path)
 		if resp.StatusCode != 200 {
 			t.Errorf("%s: status %d", path, resp.StatusCode)
@@ -288,6 +288,10 @@ func TestAgentCard_HTTPAndAlias(t *testing.T) {
 		if doc["name"] != "X" {
 			t.Errorf("%s: name %v", path, doc["name"])
 		}
+	}
+	// The pre-1.0 A2A path /.well-known/agent.json is not served.
+	if _, resp := getBody(t, srv.URL+"/.well-known/agent.json"); resp.StatusCode == 200 {
+		t.Errorf("/.well-known/agent.json: status 200, want it unserved")
 	}
 }
 

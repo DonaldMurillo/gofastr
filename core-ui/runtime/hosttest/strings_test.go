@@ -49,8 +49,7 @@ func TestRuntimeSayCallsMatchPhrases(t *testing.T) {
 			}
 			return nil
 		}
-		// runtime.js is composed from frag/*.js, which the walk reads.
-		if !strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".min.js") || strings.HasSuffix(path, "core-ui/runtime/runtime.js") {
+		if !strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".min.js") {
 			return nil
 		}
 		src, err := os.ReadFile(path)

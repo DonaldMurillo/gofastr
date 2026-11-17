@@ -232,9 +232,6 @@ func TestTenantDefaultConfig(t *testing.T) {
 	if cfg.Field != "tenant_id" {
 		t.Errorf("expected Field 'tenant_id', got %q", cfg.Field)
 	}
-	if cfg.Header != "X-Tenant-ID" {
-		t.Errorf("expected Header 'X-Tenant-ID', got %q", cfg.Header)
-	}
 	if !cfg.AutoScope {
 		t.Error("expected AutoScope=true by default")
 	}
@@ -245,7 +242,7 @@ func TestTenantWithMultiTenant(t *testing.T) {
 	if ent.Config.Scope.MultiTenant {
 		t.Error("expected MultiTenant=false by default")
 	}
-	tenant.WithMultiTenant(ent, tenant.TenantConfig{Field: "org_id", Header: "X-Org-ID"})
+	tenant.WithMultiTenant(ent, tenant.TenantConfig{Field: "org_id"})
 	if !ent.Config.Scope.MultiTenant {
 		t.Error("expected MultiTenant=true after WithMultiTenant")
 	}

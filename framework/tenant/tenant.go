@@ -43,12 +43,6 @@ type TenantConfig struct {
 	// Defaults to "tenant_id".
 	Field string
 
-	// Header is a legacy field retained for API compatibility. It is NOT
-	// read anywhere, the tenant ID is resolved exclusively from the
-	// server-side authenticated context (never a client-sent header), so
-	// setting this changes no behavior. See TenantMiddleware.
-	Header string
-
 	// AutoScope, when true, automatically adds tenant filtering to all queries.
 	AutoScope bool
 }
@@ -57,7 +51,6 @@ type TenantConfig struct {
 func DefaultTenantConfig() TenantConfig {
 	return TenantConfig{
 		Field:     "tenant_id",
-		Header:    "X-Tenant-ID",
 		AutoScope: true,
 	}
 }

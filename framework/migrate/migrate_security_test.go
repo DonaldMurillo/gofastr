@@ -130,11 +130,11 @@ func TestReadLiveColumnsRejectsBadTable(t *testing.T) {
 // parser (core/migrate parseMigration behind RegisterFromReader) is bufio
 // line-based and quote-blind: any line whose trimmed text starts with
 // `-- +migrate` flips the section, even a line inside an open string
-// literal. The generator (RenderMigrationFile) embeds entity SQL verbatim,
+// literal. The generator (renderMigrationFile) embeds entity SQL verbatim,
 // and quoteSQLLiteral doubles quotes but preserves newlines.
 //
 // Surfaces: SQLDefault case-string -> ColumnDefaultClause -> columnDefs ->
-// GeneratePlan -> RenderMigrationFile -> GenerateMigrationFile -> the
+// GeneratePlan -> renderMigrationFile -> GenerateMigrationFile -> the
 // runner's parseMigration. Reachability: kiln add_entity accepts field
 // defaults over HTTP (only the entity Name is validated, see
 // TestReadLiveColumnsRejectsBadTable above), so a multi-line string default
@@ -455,7 +455,7 @@ func TestDirectiveGuardMatchesParserTrim(t *testing.T) {
 		// CREATE TABLE (parked in the parsed Down section) has executed.
 		db := openMigrateSQLite(t)
 		m := coremig.New(db, coremig.WithDialect(coremig.DialectSQLite))
-		rendered := RenderMigrationFile(1, "n", up, "")
+		rendered := renderMigrationFile(1, "n", up, "")
 		if err := m.RegisterFromReader(strings.NewReader(rendered)); err != nil {
 			t.Fatalf("parse: %v", err)
 		}
