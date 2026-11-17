@@ -8,7 +8,7 @@
 # new binary is up.
 #
 # Usage:   PORT=8082 ./scripts/dev-watch.sh                     # examples/site (default)
-#          TARGET=examples/blog PORT=8083 ./scripts/dev-watch.sh
+#          TARGET=examples/meridian PORT=8083 ./scripts/dev-watch.sh
 # Stop:    Ctrl-C
 set -u
 
@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.."
 TARGET=${TARGET:-examples/site}
 NAME=$(basename "$TARGET")
 # Watch the framework dirs + whatever target dir was passed in. Apps under
-# examples/site, examples/blog, etc. all get the same rebuild + reload loop
+# examples/site, examples/meridian, etc. all get the same rebuild + reload loop
 # without having to fork this script.
 WATCH_DIRS=(core-ui framework "$TARGET" core/render core/markdown)
 BIN=/tmp/$NAME-live

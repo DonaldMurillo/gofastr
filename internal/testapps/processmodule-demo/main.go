@@ -1,0 +1,356 @@
+// Package main is the processmodule-demo: a minimal but real third-party
+// module that speaks the moduleproto protocol over stdio.
+//
+// It is the canonical example of a process-isolated module (see
+// framework/docs/content/process-modules.md → "Building a module") AND the
+// child the §10 go/no-go gate suite drives end to end
+// (framework/processmodule_gate_test.go). It depends only on the gofastr
+// module's [moduleproto] package, its own surface package (the tool
+// definition its host pins) and the standard library.
+//
+// internal/testapps/processmodule-demo/host is the host app that runs it as an
+// UNTRUSTED module under the host's sandbox:
+//
+//	go build -o dist/examples/processmodule-demo ./internal/testapps/processmodule-demo
+//	go run ./internal/testapps/processmodule-demo/host -module dist/examples/processmodule-demo
+//
+// On start it opens a [moduleproto.Codec] over stdin/stdout, constructs a
+// [moduleproto.Peer] in the child role, registers handlers for every host →
+// module method it serves, calls [Peer.Start], and blocks on [Peer.Done]
+// (clean EOF on stdin). Its surface:
+//
+//   - module.handshake → echoes the host's expected identity (instance_id +
+//     desired_generation) and surface digest; a mismatch would be terminal.
+//   - module.ready     → ready:true (after an optional DEMO_READY_DELAY_MS so
+//     the enabled-but-not-Ready → 503 window is exercisable).
+//   - module.health    → ok:true, zero in-flight.
+//   - module.http      → four routes:
+//   - "hello" (GET /hello) → a ui.node.v1 body: a small valid tree.
+//   - "refresh" (POST /refresh) → the same tree; the hello screen's
+//     button names this route as its action_ref.
+//   - "tree"  (GET /tree)  → the SAME tree as a json body, so the host can
+//     run the closed ui.node.v1 validator over the exact bytes the child
+//     would have rendered (the proxy's render path is deferred; this route
+//     makes the validator reachable from a test).
+//   - "items" (GET /items) → makes a REVERSE host.entity.query for the
+//     entity named by DEMO_QUERY_ENTITY and returns the result as json,
+//     proving the reverse broker path end to end.
+//   - module.drain     → zero in-flight.
+//   - module.tool.list / module.tool.call → one tool ("ping") whose call body
+//     also does a reverse host.entity.query (proves the tool → broker path).
+//
+// Misbehave knobs (env), each driving one adversarial gate test:
+//
+//   - DEMO_CRASH_ON=<routeID>  → os.Exit(1) mid module.http handler for that
+//     route, so crash containment + the buffered-503 guarantee are provable.
+//   - DEMO_FORGE_DATAFUI=1     → /hello and /tree return a tree that tries to
+//     smuggle a data-cui-rpc prop; the closed validator must whole-tree
+//     reject it (the host never renders a forged runtime attribute).
+//   - DEMO_EXTRA_TOOL=1        → module.tool.list returns a tool the
+//     descriptor did not approve, so the handshake byte-equality quarantine
+//     fires (terminal Failed, no restart loop).
+//   - DEMO_READY_DELAY_MS=<n>  → module.ready blocks ~n ms before reporting
+//     ready, widening the enabled-but-not-Ready 503 window on demand.
+//   - DEMO_QUERY_ENTITY=<name> → entity the /items route + the ping tool
+//     reverse-query (default "articles").
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"strconv"
+	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/moduleproto"
+	"github.com/DonaldMurillo/gofastr/internal/testapps/processmodule-demo/surface"
+)
+
+func main() {
+	os.Exit(run())
+}
+
+// run wires the codec + peer, serves until EOF, and returns the exit code.
+// A peer fault ends the run too: a faulted peer serves nothing more while
+// its read loop keeps draining stdin, so a child that stayed up would leave
+// every host call to its deadline. Exiting lets the supervisor restart it.
+func run() int {
+	codec, err := moduleproto.NewCodec(os.Stdin, os.Stdout, moduleproto.DefaultMaxFrameBytes)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "demo: codec:", err)
+		return 1
+	}
+	peer := moduleproto.NewPeer(codec, moduleproto.RoleChild)
+
+	if err := registerHandlers(peer); err != nil {
+		fmt.Fprintln(os.Stderr, "demo: register:", err)
+		return 1
+	}
+
+	peer.Start()
+	select {
+	case <-peer.Done():
+		if peer.FatalError() == nil {
+			return 0
+		}
+	case <-peer.FatalDone():
+	}
+	fmt.Fprintln(os.Stderr, "demo: peer fault:", peer.FatalError())
+	return 1
+}
+
+// cfg reads the misbehave knobs once at startup.
+var cfg = struct {
+	crashOn      string
+	forgeDataFUI bool
+	extraTool    bool
+	readyDelayMs int
+	queryEntity  string
+}{
+	crashOn:      os.Getenv("DEMO_CRASH_ON"),
+	forgeDataFUI: os.Getenv("DEMO_FORGE_DATAFUI") != "",
+	extraTool:    os.Getenv("DEMO_EXTRA_TOOL") != "",
+	readyDelayMs: envInt("DEMO_READY_DELAY_MS", 0),
+	queryEntity:  envString("DEMO_QUERY_ENTITY", "articles"),
+}
+
+func envInt(key string, def int) int {
+	if s := os.Getenv(key); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+func envString(key, def string) string {
+	if s := os.Getenv(key); s != "" {
+		return s
+	}
+	return def
+}
+
+// registerHandlers installs every host → module method the demo serves,
+// closing over the peer so the /items route and the ping tool can issue
+// reverse host.entity.query calls. The peer's built-in module.cancel handler
+// is NOT overwritten here.
+func registerHandlers(peer *moduleproto.Peer) error {
+	// module.handshake: this IS the initialize (design §4.7 step 3). Echo the
+	// host's expected identity + surface digest exactly; a divergence is a
+	// terminal integrity fault on the host side.
+	if err := peer.Handle(moduleproto.MethodHandshake, func(_ context.Context, params json.RawMessage) (any, error) {
+		var hp moduleproto.HandshakeParams
+		if err := json.Unmarshal(params, &hp); err != nil {
+			// Refuse malformed params rather than echoing zero values back
+			// as a handshake result: a divergence here is a terminal
+			// integrity fault on the host side either way.
+			return nil, err
+		}
+		return moduleproto.HandshakeResult{
+			Proto: moduleproto.ProtoRange{Min: 1, Max: 1},
+			Identity: moduleproto.Identity{
+				Name:              hp.Expected.Name,
+				Version:           hp.Expected.Version,
+				InstanceID:        hp.Expected.InstanceID,
+				DesiredGeneration: hp.Expected.DesiredGeneration,
+			},
+			SurfaceSHA256: hp.Expected.SurfaceSHA256,
+			Ready:         false,
+		}, nil
+	}); err != nil {
+		return err
+	}
+
+	// module.ready: the warmup gate. The optional delay widens the
+	// enabled-but-not-Ready → 503 window so a test can observe it reliably.
+	if err := peer.Handle(moduleproto.MethodReady, func(context.Context, json.RawMessage) (any, error) {
+		if cfg.readyDelayMs > 0 {
+			time.Sleep(time.Duration(cfg.readyDelayMs) * time.Millisecond)
+		}
+		return moduleproto.ReadyResult{Ready: true}, nil
+	}); err != nil {
+		return err
+	}
+
+	// module.health, ongoing liveness ping.
+	if err := peer.Handle(moduleproto.MethodHealth, func(context.Context, json.RawMessage) (any, error) {
+		return moduleproto.HealthResult{OK: true, Inflight: 0}, nil
+	}); err != nil {
+		return err
+	}
+
+	// module.http: the proxied HTTP surface. DEMO_CRASH_ON matches a RouteID
+	// and os.Exit(1)s mid-call so the host observes an in-flight crash (the
+	// buffered-503 guarantee, design §8).
+	if err := peer.Handle(moduleproto.MethodHTTP, func(ctx context.Context, params json.RawMessage) (any, error) {
+		var p moduleproto.HTTPRequestParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+
+		if cfg.crashOn != "" && (cfg.crashOn == p.RouteID || cfg.crashOn == p.RequestID) {
+			// Sleep briefly so the host's Call is genuinely in-flight when
+			// we die; an instantaneous exit could race the response write.
+			time.Sleep(20 * time.Millisecond)
+			os.Exit(1)
+		}
+
+		switch p.RouteID {
+		case "hello", "refresh":
+			// refresh is the hello screen's own button (its action_ref):
+			// it answers with the screen again.
+			return moduleproto.HTTPResponseResult{
+				Status:  200,
+				Headers: map[string]string{"Cache-Control": "no-cache"},
+				Body: moduleproto.HTTPResponseBody{
+					Kind:  moduleproto.BodyKindUINodeV1,
+					Value: screenTree(),
+				},
+			}, nil
+		case "tree":
+			// Same tree, json body kind, the proxy passes json through, so a
+			// test can run the closed ui.node.v1 validator over the exact
+			// bytes the child would have rendered.
+			return moduleproto.HTTPResponseResult{
+				Status:  200,
+				Headers: map[string]string{"Cache-Control": "no-cache"},
+				Body: moduleproto.HTTPResponseBody{
+					Kind:  moduleproto.BodyKindJSON,
+					Value: screenTree(),
+				},
+			}, nil
+		case "items":
+			rows, total, err := reverseQuery(ctx, peer, p.Caller)
+			if err != nil {
+				// A denial from the broker surfaces as a per-call error;
+				// report it as a 403 so a test can distinguish "denied"
+				// from "unavailable".
+				body, mErr := json.Marshal(map[string]string{"error": err.Error()})
+				if mErr != nil {
+					return moduleproto.HTTPResponseResult{}, fmt.Errorf("encode error body: %w", mErr)
+				}
+				return moduleproto.HTTPResponseResult{
+					Status: 403,
+					Body:   moduleproto.HTTPResponseBody{Kind: moduleproto.BodyKindJSON, Value: body},
+				}, nil
+			}
+			body, err := json.Marshal(map[string]any{"entity": cfg.queryEntity, "total": total, "rows": rows})
+			if err != nil {
+				return moduleproto.HTTPResponseResult{}, fmt.Errorf("encode rows: %w", err)
+			}
+			return moduleproto.HTTPResponseResult{
+				Status: 200,
+				Body:   moduleproto.HTTPResponseBody{Kind: moduleproto.BodyKindJSON, Value: body},
+			}, nil
+		default:
+			body, _ := json.Marshal(map[string]string{"error": "unknown route " + p.RouteID})
+			return moduleproto.HTTPResponseResult{
+				Status: 404,
+				Body:   moduleproto.HTTPResponseBody{Kind: moduleproto.BodyKindJSON, Value: body},
+			}, nil
+		}
+	}); err != nil {
+		return err
+	}
+
+	// module.drain: finish in-flight, report zero.
+	if err := peer.Handle(moduleproto.MethodDrain, func(context.Context, json.RawMessage) (any, error) {
+		return moduleproto.DrainResult{Inflight: 0}, nil
+	}); err != nil {
+		return err
+	}
+
+	// module.tool.list: the optional MCP tool surface. Byte-equality with
+	// the descriptor digests is enforced by the host at handshake; the
+	// DEMO_EXTRA_TOOL knob adds an unapproved tool so that quarantine fires.
+	if err := peer.Handle(moduleproto.MethodToolList, func(context.Context, json.RawMessage) (any, error) {
+		tools := []moduleproto.Tool{surface.PingTool()}
+		if cfg.extraTool {
+			tools = append(tools, moduleproto.Tool{
+				ID:          "rogue",
+				Name:        "module.demo.rogue",
+				Description: "not in the descriptor; must be rejected",
+				InputSchema: json.RawMessage(`{"type":"object"}`),
+			})
+		}
+		return moduleproto.ToolListResult{Tools: tools}, nil
+	}); err != nil {
+		return err
+	}
+
+	// module.tool.call: invoke one tool. The ping tool makes a reverse
+	// host.entity.query (proving the tool → broker path) and returns the row
+	// count as its result.
+	if err := peer.Handle(moduleproto.MethodToolCall, func(ctx context.Context, params json.RawMessage) (any, error) {
+		var p moduleproto.ToolCallParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		if p.ToolID != "ping" {
+			return nil, fmt.Errorf("unknown tool %q", p.ToolID)
+		}
+		rows, total, err := reverseQuery(ctx, peer, p.Caller)
+		if err != nil {
+			return nil, err
+		}
+		result, err := json.Marshal(map[string]any{"entity": cfg.queryEntity, "total": total, "rows": rows, "caller": p.Caller.Subject})
+		if err != nil {
+			return nil, fmt.Errorf("encode result: %w", err)
+		}
+		return moduleproto.ToolCallResult{Result: result}, nil
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// reverseQuery issues a host.entity.query for the configured entity, echoing
+// back the delegation handle so the host re-attaches the originating end-user's
+// context to the CRUD re-dispatch. A broker denial returns as a per-call error.
+//
+// Only the handle goes back. The subject and tenant the host sent us are ours
+// to log and reason about; the host derives authority from the handle alone,
+// which is why the reverse call takes a [moduleproto.CallerRef].
+func reverseQuery(ctx context.Context, peer *moduleproto.Peer, caller moduleproto.Caller) (json.RawMessage, int, error) {
+	qp := moduleproto.EntityQueryParams{
+		Entity: cfg.queryEntity,
+		Limit:  100,
+		Caller: moduleproto.CallerRef{Delegation: caller.Delegation},
+	}
+	raw, err := peer.Call(ctx, moduleproto.MethodHostEntityQuery, qp)
+	if err != nil {
+		return nil, 0, err
+	}
+	var res moduleproto.EntityQueryResult
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, 0, err
+	}
+	return res.Rows, res.Total, nil
+}
+
+// screenTree returns the ui.node.v1 tree the /hello and /tree routes serve.
+// The clean tree is a small valid tree (card → heading + paragraph + button
+// with an action_ref). Under DEMO_FORGE_DATAFUI it returns a tree that tries
+// to smuggle a data-cui-rpc prop through CardProps; the closed validator
+// rejects the whole tree because the prop is unrepresentable.
+func screenTree() json.RawMessage {
+	if cfg.forgeDataFUI {
+		// The data-cui-rpc key is NOT a CardProps field → strictDecode
+		// rejects it → whole-tree fail-closed (design §9).
+		return json.RawMessage(`{` +
+			`"component":"card",` +
+			`"props":{"title":"x","data-cui-rpc":"/auth/logout"},` +
+			`"children":[{"component":"paragraph","props":{"text":"smuggled"}}]` +
+			`}`)
+	}
+	return json.RawMessage(`{` +
+		`"component":"card",` +
+		`"props":{"title":"Demo module"},` +
+		`"children":[` +
+		`{"component":"heading","props":{"level":1,"text":"Hello from the demo module"}},` +
+		`{"component":"paragraph","props":{"text":"This screen came from a validated ui.node.v1 tree returned by an out-of-process child over moduleproto."}},` +
+		`{"component":"button","props":{"label":"Refresh","variant":"primary"},"action_ref":"refresh"}` +
+		`]}`)
+}

@@ -113,7 +113,7 @@ func TestAppSpecStillGenerates(t *testing.T) {
 
 // TestGeneratedTreesMatchGenerator gates the two generator-owned trees,
 // entities/ and cmd/meridian/, for byte drift against today's templates,
-// the meridian twin of examples/ecommerce's
+// the meridian twin of internal/testapps/ecommerce's
 // TestCommittedAppMatchesGeneratorOutput.
 //
 // Everything under those two trees is generator output and must stay

@@ -53,13 +53,13 @@ header copy, or a CSS-only chrome. There is no layout constructor in
 `framework/ui` and no ready-made layout export: declare the layout
 with `uiapp.NewLayout` and compose `ui.Sidebar`, `ui.ContentRow` and
 the app's own header, footer and docs-page packages (copy
-`examples/acme-site/{siteheader,sitefooter,helpdocs}`) in its build
+`examples/site/{siteheader,sitefooter,docpage}`) in its build
 function. The runtime's
 active-link sweep marks the current nav item — never read the route in
 the static chrome (the `layoutfunc` lint flags it). The four page
 shapes are recipes: `gofastr docs ui-composition-recipes`; the
-primitive: `gofastr docs layouts`; real apps: `examples/tracker`,
-`examples/acme-site`.
+primitive: `gofastr docs layouts`; real apps: `examples/site/tracker` and
+`examples/site` itself.
 
 ## `app.WithAuditLog(cfg)`: automatic CRUD audit
 

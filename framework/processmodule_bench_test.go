@@ -74,7 +74,7 @@ func benchSupervisor(tb testing.TB, env map[string]string) (*ProcessModuleSuperv
 var smallJSONBody = mustDemoScreenTree()
 
 func mustDemoScreenTree() []byte {
-	// Mirrors examples/processmodule-demo/main.go screenTree() clean tree.
+	// Mirrors internal/testapps/processmodule-demo/main.go screenTree() clean tree.
 	return []byte(`{` +
 		`"component":"card",` +
 		`"props":{"title":"Demo module"},` +

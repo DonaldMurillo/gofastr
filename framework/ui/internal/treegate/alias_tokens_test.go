@@ -53,7 +53,7 @@ func TestNoRemovedAliasTokenReferences(t *testing.T) {
 
 	// Sources: the design-system trees and every consumer the repo ships.
 	root := filepath.Join("..", "..", "..", "..")
-	for _, dir := range []string{"framework", "core-ui", "battery", "kiln", "cmd/gofastr", "examples"} {
+	for _, dir := range []string{"framework", "core-ui", "battery", "kiln", "cmd/gofastr", "examples", "internal/testapps"} {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err

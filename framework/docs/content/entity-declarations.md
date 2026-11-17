@@ -1300,7 +1300,7 @@ true no-op for every existing entity.
 In a `gofastr.yml` app spec the same scope is declared under the entity,
 beside `access:` (or nested under `exposure:`; the two spellings must
 agree if both appear). This is the `posts` entity of
-`examples/portfolio/gofastr.yml`, trimmed to the relevant keys:
+`internal/testapps/portfolio/gofastr.yml`, trimmed to the relevant keys:
 
 ```yaml
 entities:

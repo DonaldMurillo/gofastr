@@ -50,6 +50,7 @@ invariants:
       - framework/entity/
       - battery/
       - examples/
+      - internal/testapps/
       - cmd/gofastr/
   - id: one-scope-gate
     rule: The routes and the Can*Scoped predicates for an entity's own surface take one decision, scopeGate, so a screen and the route it mirrors give the same answer for every posture; a read reached through a relation also applies relationReachable.
