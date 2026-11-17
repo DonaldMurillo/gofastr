@@ -99,3 +99,12 @@ func f(db *sql.DB, ids []string, pat string, list items, userRepo users) {
 		t.Errorf("query-in-loop lines %v, want [21]: a closure in the loop, a non-repository List and a query without the loop variable stay quiet", got)
 	}
 }
+
+func TestSweepDataDialectDriftSkipsAnUnspacedSubSelect(t *testing.T) {
+	src := "package main\n\n" +
+		"const lockedJobsPostgres = \"SELECT id FROM jobs WHERE status = $1 AND id IN (SELECT job_id FROM locks)\"\n\n" +
+		"const lockedJobsSQLite = \"SELECT id FROM jobs WHERE status = ? AND id IN ( SELECT job_id FROM locks )\"\n"
+	if got := ruleLines(t, contracts.RuleDialectDrift, src); got != nil {
+		t.Errorf("GOFASTR1414 lines %v, want none: a sub-select is skipped however it is spaced", got)
+	}
+}

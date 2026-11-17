@@ -333,6 +333,8 @@ func statementBoundary(before string) bool {
 
 var reSQLShape = regexp.MustCompile(`(?is)^(?:select\s.*\bfrom\b|select\s+[\w.]+\s*\(|update\s+(?:only\s+)?\S+(?:\s+(?:as\s+)?\w+)?\s+set\b|delete\s+from\b|insert\s+(?:or\s+\w+\s+|ignore\s+)?into\b|with\s+(?:recursive\s+)?\S+\s+as\s*\(|(?:select|update|delete|insert|with)\s*$)`)
 
+var reSubSelect = regexp.MustCompile(`(^|[^a-z0-9_])select\s`)
+
 func whereAtoms(s string) []dialectAtom {
 	stmt, _, ok := firstSQLStatement(s)
 	if !ok {
@@ -350,7 +352,7 @@ func whereAtoms(s string) []dialectAtom {
 		clause, off := whereClauseAt(stmt, w)
 		for _, raw := range splitTopLevel(clause) {
 			a := normalizeAtom(raw.text)
-			if a == "" || strings.Contains(a, " select ") || strings.HasPrefix(a, "select ") {
+			if a == "" || reSubSelect.MatchString(a) {
 				continue
 			}
 			out = append(out, dialectAtom{text: a, off: off + raw.off})

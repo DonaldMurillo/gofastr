@@ -22,8 +22,9 @@ invariants:
       - test: framework/contracts/analyzers.TestDialectDriftDifferentCatalogsAreQuiet
       - test: framework/contracts/analyzers.TestSweepDataDialectDriftReportsThePoorerSideOfASubset
   - id: dialect-twins-read-the-first-statement
-    rule: Each side contributes its first literal holding a verb that opens a statement and is followed by SQL, so prose that says select or with is skipped; every WHERE of that statement is pooled, and an atom that starts with or holds " select " is not compared.
+    rule: Each side contributes its first literal holding a verb that opens a statement and is followed by SQL, so prose that says select or with is skipped; every WHERE of that statement is pooled, and an atom holding the word select, whether after a space or an opening parenthesis, is not compared.
     enforced_by:
+      - test: framework/contracts/analyzers.TestSweepDataDialectDriftSkipsAnUnspacedSubSelect
       - test: framework/contracts/analyzers.TestDialectDriftSkipsLeadingProse
       - test: framework/contracts/analyzers.TestDialectDriftSameTableSubsetIsCompared
       - test: framework/contracts/analyzers.TestDialectDriftEquivalentTwinsAreQuiet
