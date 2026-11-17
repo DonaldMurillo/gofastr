@@ -704,6 +704,7 @@ func exampleFilter(cfg entity.EntityConfig) (field, op string) {
 		switch f.Type {
 		case schema.Int, schema.Float, schema.Decimal, schema.Timestamp, schema.Date:
 			return f.Name, "_gte"
+		default:
 		}
 		if filter.OpSuitsType(filter.OpGte, f.Type) && anyGte == "" {
 			anyGte = f.Name
