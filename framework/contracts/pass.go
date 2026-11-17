@@ -19,12 +19,6 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
-var skipDirs = map[string]bool{
-	"vendor": true, "node_modules": true, ".git": true,
-	"dist": true, "bin": true, "build": true, "tmp": true,
-	"testdata": false,
-}
-
 // SourceFile is one file the pass discovered, with its classification.
 type SourceFile struct {
 	// Rel is the slash-separated path from the pass root.
@@ -127,15 +121,8 @@ func (p *Pass) discover() error {
 			return nil
 		}
 		if d.IsDir() {
-			name := d.Name()
 			if path == p.Root {
 				return nil
-			}
-			if skip, known := skipDirs[name]; known && skip {
-				return fs.SkipDir
-			}
-			if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
-				return fs.SkipDir
 			}
 			if buildoutput.StaticExport(os.DirFS(path), ".") {
 				return fs.SkipDir

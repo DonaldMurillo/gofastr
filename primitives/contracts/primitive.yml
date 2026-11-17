@@ -6,14 +6,6 @@ docs:
   - framework/docs/content/contracts.md
 on_change:
   - "A rule, an analyzer or a catalog field that changes ships with framework/docs/content/contracts.md, and a changed rule count with README.md (internal/docgate)."
-twins:
-  - job: Decide which directories source discovery never enters (vendor, node_modules, dist, bin, build, tmp, hidden and underscore trees).
-    why: Nothing but work not yet done; sourcewalk.Walk already skips every one of them, so the copy in Pass.discover is dead and can be deleted.
-    sites:
-      - path: framework/contracts/pass.go
-        note: skipDirs and the hidden or underscore check in Pass.discover.
-      - path: internal/sourcewalk/walk.go
-        note: excluded, which Walk applies before calling the visitor.
 invariants:
   - id: run-drops-undeclared-rules
     rule: Run drops a diagnostic whose rule its analyzer did not declare and records the breach as an analyzer error, so the run does not pass.
@@ -80,10 +72,13 @@ invariants:
       - test: framework/contracts.TestSweepEngineSuggestRulesCapsTheEditBudgetAtThree
       - test: framework/contracts.TestSuggestRulesBoundedOnHugeNeedle
   - id: discovery-skips-build-and-tooling-trees
-    rule: Discovery never enters vendor, node_modules, dist, bin, build, tmp, or a directory whose name starts with a dot or an underscore, and it does enter testdata.
+    rule: Discovery never enters vendor, node_modules, dist, bin, build, tmp, or a directory whose name starts with a dot or an underscore, and it does enter testdata; the one list is sourcewalk's excluded, and Pass.discover keeps no copy.
+    applies:
+      - internal/sourcewalk/walk.go
     enforced_by:
       - test: framework/contracts.TestSweepEngineSkipsBuildAndDependencyTreesButNotTestdata
       - test: framework/contracts.TestUnderscoreDirsAreSkipped
+      - test: framework/contracts.TestStyleFilesAreSeparateFromGoFiles
       - test: framework/contracts.TestStyleFilesAreSeparateFromGoFiles
   - id: go-accessors-hand-out-go-only
     rule: Files, AppFiles and TestFiles never return a stylesheet or a script, and AST refuses both without recording them as unparsed.
