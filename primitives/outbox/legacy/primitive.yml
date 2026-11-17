@@ -1,0 +1,7 @@
+primitive: outbox.legacy
+summary: Reading the outbox's time columns on SQLite, and rewriting legacy timestamp text to the layout the connected driver binds so the relay's time comparisons hold.
+code:
+  - framework/outbox/legacy_normalize.go
+  - framework/outbox/time_compat.go
+docs:
+  - framework/docs/content/sqlite-driver.md

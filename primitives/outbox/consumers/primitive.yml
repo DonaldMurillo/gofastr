@@ -1,0 +1,6 @@
+primitive: outbox.consumers
+summary: Declaring durable consumers with Consume, and the lookups the relay uses to find a consumer's handler and the consumers of an event type.
+code:
+  - framework/outbox/consumer.go
+docs:
+  - framework/docs/content/events.md

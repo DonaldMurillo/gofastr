@@ -1,0 +1,7 @@
+primitive: outbox.delivery
+summary: The per-consumer delivery rows and the relay that expands, claims under a lease, runs, settles, retries, dead-letters and purges them, with ListDeliveries, Replay and ReplayConsumer.
+code:
+  - framework/outbox/delivery.go
+  - framework/outbox/relay.go
+docs:
+  - framework/docs/content/events.md
