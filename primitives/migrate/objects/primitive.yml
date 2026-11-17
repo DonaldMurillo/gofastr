@@ -51,7 +51,7 @@ invariants:
   - id: postgres-view-replace-falls-back
     rule: On Postgres boot drops the plan's views that read a materialized view or a view whose kind changed before recreating it, and a CREATE OR REPLACE VIEW Postgres refuses is retried as drop and create under a savepoint.
     enforced_by:
-      - test: framework/migrate.TestPGChangedMatViewWithDependent
+      - test: framework.TestMatViewWithDependentReboots
       - test: framework/migrate.TestPGViewKindChangeAtBoot
       - test: framework/migrate.TestBootReplacesViewWhoseColumnsChanged
 decisions:

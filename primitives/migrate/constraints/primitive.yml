@@ -46,6 +46,7 @@ invariants:
       - test: framework/migrate.TestSweepConstraintsIncomingKeysReaddOrDefer
       - test: framework/migrate.TestSweepConstraintsPivotKeyNeedsItsColumns
       - test: framework/migrate.TestSweepConstraintsKeyChangedParentKeepsChildKeys
+      - test: framework/migrate.TestSweepPGPivotKeyNeedsItsColumns
   - id: foreign-key-is-its-pairs
     rule: A foreign key is its referenced table, its column to key-column pairs and its ON DELETE action, so a composite key paired the other way round or with another action is a different constraint.
     enforced_by:
@@ -55,6 +56,7 @@ invariants:
     rule: On Postgres a live key on the same columns onto the same table as a missing declared one is swapped in one irreversible change, and a live key nothing declares is a destructive drop.
     enforced_by:
       - test: framework/migrate.TestSweepConstraintsPostgresForeignKeySwapAndDrop
+      - test: framework/migrate.TestSweepPGForeignKeySwapAndDrop
   - id: renames-carry-foreign-keys
     rule: A rename hint on the child's or the parent's column renames the column a live foreign key names, so the rename reports no foreign key change.
     enforced_by:
@@ -91,6 +93,7 @@ invariants:
     rule: A partial or expression unique index does not count as holding a column unique.
     enforced_by:
       - test: framework/migrate.TestSweepConstraintsPartialOrExpressionUniqueCoversNothing
+      - test: framework/migrate.TestSweepPGPartialUniqueCoversNothing
   - id: stale-unique-is-refused-at-boot
     rule: Boot refuses a table holding a column unique alone that the entity declares unique only within a composite index, and a column declared unique alone by a field, a single-column unique index or the only key column is not stale.
     enforced_by:
