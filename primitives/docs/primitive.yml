@@ -1,0 +1,6 @@
+primitive: docs
+summary: The framework's user docs embedded in the binary - topic listing, page lookup and ranked search over framework/docs/content, read by gofastr docs and the docs MCP tools.
+code:
+  - framework/docs/docs.go
+docs:
+  - framework/docs/content/cli.md
