@@ -430,7 +430,8 @@ func TestTaskSchedulerStopWaitsOutStartup(t *testing.T) {
 	s := &controlServer{ln: ln, log: slog.New(slog.DiscardHandler),
 		handle: func(op string) controlResponse {
 			if op == "stop" {
-				go ln.Close() // the drain: the control channel goes away
+				// Like the daemon, the channel closes after the drain, not when the stop arrives.
+				go func() { time.Sleep(500 * time.Millisecond); ln.Close() }()
 			}
 			return controlResponse{OK: true}
 		}}

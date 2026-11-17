@@ -12,7 +12,7 @@ const (
 	RelManyToMany                     // linked through a pivot/join table
 )
 
-// OnDeleteAction defines the referential action when a referenced row is deleted.
+// OnDeleteAction is the referential action when a referenced row is deleted.
 type OnDeleteAction string
 
 const (
@@ -27,24 +27,14 @@ type Relation struct {
 	Type   RelationType `json:"type"`
 	Name   string       `json:"name"`   // logical name for this relation (e.g. "author", "comments")
 	Entity string       `json:"entity"` // target entity/table name
-	// ForeignKey names the foreign key's columns, one per column of the
-	// key it references, in that key's order: []string{"author_id"}, or
-	// []string{"order_store", "order_no"} for an order keyed on two
-	// columns. A many_to_many, whose links live in its pivot, has none.
+	// ForeignKey names one column per column of the referenced key, in its order. A many_to_many has none.
 	ForeignKey       []string       `json:"foreign_key,omitempty"`
 	Through          string         `json:"through,omitempty"`   // pivot table name (ManyToMany only)
 	LocalKey         string         `json:"local_key,omitempty"` // column on the local side of a ManyToMany pivot
 	ForeignKeyTarget string         `json:"foreign_key_target,omitempty"`
 	OnDelete         OnDeleteAction `json:"on_delete,omitempty"`     // referential action on delete (CASCADE, SET NULL, RESTRICT, NO ACTION)
 	CascadeWrite     bool           `json:"cascade_write,omitempty"` // allows atomic parent-child creation/updates
-	// Hidden keeps the relation out of every read surface: ?include= and
-	// nested filters answer it as a relation that does not exist, and
-	// /openapi.json and llm.md leave it out. It is the opt-out for a
-	// relation no Hidden field of this entity covers, such as a has_many
-	// whose foreign key is Hidden on the target: users has_many notes
-	// through a Hidden notes.owner_ref still loads a user's notes unless
-	// the relation sets Hidden. See HidesRelation, which also hides a
-	// belongs_to whose foreign key is Hidden or NoQuery.
+	// Hidden keeps the relation off every read surface: ?include=, nested filters, OpenAPI and llm.md.
 	Hidden bool `json:"hidden,omitempty"`
 }
 
@@ -54,7 +44,7 @@ func (r Relation) OnDeleteAction(action OnDeleteAction) Relation {
 	return r
 }
 
-// OnDeleteCascade configures the relation foreign key with ON DELETE CASCADE.
+// OnDeleteCascade sets ON DELETE CASCADE.
 func (r Relation) OnDeleteCascade() Relation {
 	r.OnDelete = OnDeleteCascade
 	return r
@@ -72,45 +62,23 @@ func (r Relation) WithCascadeWrite(enable bool) Relation {
 	return r
 }
 
-// HasOne declares a one-to-one relationship. The target entity holds a
-// foreign-key column that references the source entity's primary key, or
-// one column per key column when that key has several (more).
+// HasOne declares a one-to-one relation; the target holds the foreign key, one column per source key column.
 func HasOne(name, ent, foreignKey string, more ...string) Relation {
 	return Relation{Type: RelHasOne, Name: name, Entity: ent, ForeignKey: append([]string{foreignKey}, more...)}
 }
 
-// HasMany declares a one-to-many relationship. The target entity holds a
-// foreign-key column that references the source entity's primary key, or
-// one column per key column when that key has several (more).
+// HasMany declares a one-to-many relation; the target holds the foreign key, one column per source key column.
 func HasMany(name, ent, foreignKey string, more ...string) Relation {
 	return Relation{Type: RelHasMany, Name: name, Entity: ent, ForeignKey: append([]string{foreignKey}, more...)}
 }
 
-// BelongsTo declares a many-to-one relationship. The source entity holds a
-// foreign-key column that references the target entity's primary key, or
-// one column per key column when that key has several (more):
-// BelongsTo("order", "order", "order_store", "order_no") references an
-// order keyed on (store, no).
+// BelongsTo declares a many-to-one relation; the source holds the foreign key, one column per target key column.
 func BelongsTo(name, ent, foreignKey string, more ...string) Relation {
 	return Relation{Type: RelManyToOne, Name: name, Entity: ent, ForeignKey: append([]string{foreignKey}, more...)}
 }
 
-// HidesRelation reports whether rel is hidden from reads: it is marked
-// Relation.Hidden, or it sits behind a Hidden field of e (it is named
-// after one, as the belongs_to a Hidden relation field derives, or it is a
-// belongs_to whose foreign key holds a Hidden column). Loading such
-// a relation puts the related record, and with it the hidden key, under
-// the relation's name, so crud answers ?include= and nested filters on it
-// as it answers a relation that does not exist, and neither /openapi.json
-// nor llm.md names it.
-//
-// A belongs_to whose foreign key holds a NoQuery column, which Define
-// makes every field with a Mask, is hidden the same way. The column's stored
-// value is the related record's key: an include would answer it beside
-// the masked column, and a nested filter across the relation
-// (?account.id=) is a filter on the column NoQuery keeps off the query
-// surface. A relation merely named after a NoQuery field is not hidden:
-// the field's name is no secret, only its stored value.
+// HidesRelation reports whether rel is hidden from reads: Hidden, named after a Hidden
+// field, or a belongs_to whose foreign key holds a Hidden or NoQuery column.
 func (e *Entity) HidesRelation(rel Relation) bool {
 	if rel.Hidden {
 		return true
@@ -127,7 +95,7 @@ func (e *Entity) HidesRelation(rel Relation) bool {
 	return false
 }
 
-// ManyToMany declares a many-to-many relationship through a pivot/join table.
+// ManyToMany declares a many-to-many relation through a pivot table.
 func ManyToMany(name, ent, throughTable, sourceFK, targetFK string) Relation {
 	return Relation{
 		Type:             RelManyToMany,

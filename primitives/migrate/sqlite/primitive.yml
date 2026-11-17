@@ -1,0 +1,151 @@
+primitive: migrate.sqlite
+summary: The SQLite table rebuilds - dropping a column and adding an owner foreign key, which SQLite cannot ALTER in place.
+code:
+  - framework/migrate/sqlite_ownerfk.go
+  - framework/migrate/sqlite_drop_column.go
+invariants:
+  - id: owner-key-scan-is-single-column
+    rule: FindStaleOwnerForeignKeys reports a foreign key only when its whole column list is the owner column, inline or table-level; a composite key that includes it is not reported.
+    enforced_by:
+      - test: framework/migrate.TestFindStaleOwnerFKIgnoresACompositeKey
+      - test: framework/migrate.TestFindStaleOwnerFKStillFindsTheSingleColumnKey
+  - id: rebuild-restores-pragmas
+    rule: A SQLite rebuild connection goes back to the pool with foreign_keys on and legacy_alter_table off after success, after fn fails, after the legacy_alter_table pragma fails and after the caller's context is cancelled.
+    enforced_by:
+      - test: framework/migrate.TestRepairRestoresForeignKeyEnforcement
+      - test: framework/migrate.TestRepairRestoresEnforcementOnTheFailurePath
+      - test: framework/migrate.TestRepairRestoresEnforcementWhenTheSecondPragmaFails
+      - test: framework/migrate.TestRepairRestoresEnforcementAfterASuccessfulRun
+      - test: framework/migrate.TestRepairRestoresLegacyAlterTable
+      - test: framework/migrate.TestSweepSQLiteRestoreSurvivesCancel
+  - id: unrestorable-connection-is-retired
+    rule: A rebuild connection whose pragmas cannot be restored is marked bad with driver.ErrBadConn and never serves another query.
+    enforced_by:
+      - test: framework/migrate.TestSweepSQLiteRepairRetiresConnWhenRestoreFails
+  - id: rebuild-survives-dependent-view
+    rule: The owner-key rebuild succeeds on a table a view reads, and the view resolves against the replacement afterwards.
+    enforced_by:
+      - test: framework/migrate.TestRepairSurvivesADependentView
+  - id: repair-keeps-rows-indexes-triggers
+    rule: The owner-key repair keeps every row and replays the table's own indexes and triggers after the rename, but not the automatic indexes SQLite recreates from the CREATE TABLE.
+    enforced_by:
+      - test: framework/migrate.TestRepairOwnerFKUnblocksCreates
+      - test: framework/migrate.TestOwnerRepairKeepsCaseTriggers
+  - id: repair-is-atomic
+    rule: A statement failing anywhere in one table's rebuild leaves the original table and its rows in place and no replacement table behind.
+    enforced_by:
+      - test: framework/migrate.TestSweepSQLiteFailedRebuildLeavesTableIntact
+  - id: repair-refuses-dangling-rows
+    rule: RepairStaleOwnerForeignKeys returns an error when PRAGMA foreign_key_check reports a violation in any schema of the connection after the rebuild.
+    enforced_by:
+      - test: framework/migrate.TestRepairOwnerFKQualifiedTable
+  - id: repair-refuses-key-it-cannot-find
+    rule: A rebuild whose DDL rewrite removes no key returns an error and leaves the table as it was, rather than reporting a repair.
+    enforced_by:
+      - test: framework/migrate.TestSweepSQLiteRepairRefusesWhenKeyNotInDDL
+  - id: repair-keeps-autoincrement-mark
+    rule: The rebuild carries the table's sqlite_sequence high-water mark, so an insert after the repair never reuses a deleted rowid, even when every row was deleted.
+    enforced_by:
+      - test: framework/migrate.TestRepairKeepsTheAutoincrementHighWaterMark
+      - test: framework/migrate.TestSweepSQLiteRepairKeepsMarkWhenAllRowsDeleted
+  - id: repair-keeps-table-options
+    rule: The rebuilt CREATE TABLE keeps the text after the column list (WITHOUT ROWID, STRICT).
+    enforced_by:
+      - test: framework/migrate.TestSweepSQLiteRepairKeepsTableOptions
+  - id: repair-reads-the-stored-table
+    rule: The repair finds the table, its indexes, triggers and sequence row under the stored spelling whatever the entity's case, and in the schema a qualified table names.
+    enforced_by:
+      - test: framework/migrate.TestRepairOwnerFKIgnoresTableCase
+      - test: framework/migrate.TestOwnerRepairKeepsCaseTriggers
+      - test: framework/migrate.TestRepairOwnerFKQualifiedTable
+  - id: rewriter-treats-comments-and-quotes-as-inert
+    rule: The DDL rewriter reads a comment or quoted run as inert wherever SQLite allows one, so commas, keywords and parens inside them neither split a definition nor end a clause, and REFERENCES matches only as a whole word.
+    enforced_by:
+      - test: framework/migrate.TestRepairSurvivesSQLCommentsInStoredDDL
+      - test: framework/migrate.TestRepairHandlesAwkwardButLegalDDL
+      - test: framework/migrate.TestDDLWithoutForeignKeyOnEdgeCases
+      - test: framework/migrate.TestSweepSQLiteCommentBeforeReferencesTarget
+      - test: framework/migrate.TestSweepSQLiteReferencesIsAWholeWord
+  - id: rewriter-keeps-the-rest-verbatim
+    rule: Removing an inline REFERENCES keeps the rest of the column definition byte for byte, including a line comment's newline, and ends a definition left inside a comment with a newline so the next column is not swallowed.
+    enforced_by:
+      - test: framework/migrate.TestRepairHandlesAwkwardButLegalDDL
+  - id: row-copy-quotes-identifiers
+    rule: The row copy names each column with SQLite quoting, a literal double quote doubled.
+    enforced_by:
+      - test: framework/migrate.TestRepairCopiesAColumnNameHoldingAQuote
+  - id: held-column-drops-by-rebuild
+    rule: On SQLite a removed column that is unique, indexed or in a foreign key, read from the snapshot for a generated migration and from the database for the live diff, leaves by a table rebuild, never a bare DROP COLUMN.
+    enforced_by:
+      - test: framework/migrate.TestGeneratedSQLiteColumnDropApplies
+      - test: framework/migrate.TestLiveSQLiteColumnDropApplies
+      - test: framework/migrate.TestLiveSQLiteUnindexedForeignKeyColumnDropApplies
+      - test: framework/migrate.TestGeneratedSQLiteHeldColumnDropOnReferencedTableRefused
+  - id: rebuild-drop-note-is-read-back
+    rule: sqliteRebuildDropNote writes the line migratecmd's rebuildDropNote pattern reads, so migrate generate names each column a rebuild drops in its destructive-change warning.
+    enforced_by:
+      - test: cmd/gofastr/internal/migratecmd.TestGenerateSQLiteColumnDropApplies
+decisions:
+  - id: rebuild-from-stored-ddl
+    date: 2026-11-17
+    status: accepted
+    decision: The owner-key repair rebuilds from the table's stored CREATE TABLE with only the key's clause removed.
+    rejected:
+      - option: Render a fresh CREATE TABLE from the entity declaration.
+        why: A legacy table may carry columns, defaults or constraints the declaration no longer names, and the rebuild would drop them.
+    upholds: [rewriter-keeps-the-rest-verbatim, repair-keeps-table-options]
+  - id: scan-the-pragma-not-the-ddl
+    date: 2026-11-17
+    status: accepted
+    decision: FindStaleOwnerForeignKeys reads PRAGMA foreign_key_list, scanned by position into a slice the size of the reported columns.
+    rejected:
+      - option: Parse the stored CREATE TABLE.
+        why: The pragma reports the inline and table-level spellings the same way.
+      - option: Scan into a fixed struct.
+        why: The pragma's column set has grown across SQLite versions.
+    upholds: [owner-key-scan-is-single-column]
+  - id: pragmas-on-one-dedicated-connection
+    date: 2026-11-17
+    status: accepted
+    decision: The rebuild sets foreign_keys and legacy_alter_table on one sql.Conn that also runs the transaction, restores them on a context that cannot be cancelled, and retires the connection with driver.ErrBadConn when the restore fails.
+    rejected:
+      - option: Set the pragmas on the pool.
+        why: PRAGMA foreign_keys is a no-op inside a transaction and another pooled connection may serve it.
+      - option: Close the connection when the restore fails.
+        why: sql.Conn.Close returns the connection to the pool, still unenforced.
+      - option: Restore on the caller's context.
+        why: Cancelling during the row copy skipped the restore.
+    upholds: [rebuild-restores-pragmas, unrestorable-connection-is-retired]
+  - id: legacy-alter-table-for-the-rename
+    date: 2026-11-17
+    status: accepted
+    decision: The rebuild renames the replacement under legacy_alter_table=ON, so objects naming the table are left alone and resolve against the replacement.
+    rejected:
+      - option: Modern ALTER TABLE RENAME.
+        why: It re-resolves every view that names the dropped original and fails the transaction with no such table.
+    upholds: [rebuild-survives-dependent-view]
+  - id: rewriter-consumes-token-spans
+    date: 2026-11-17
+    status: accepted
+    decision: The REFERENCES modifiers are matched on tokens that carry their source spans and consumed by slicing the original text.
+    rejected:
+      - option: Match whitespace-delimited words.
+        why: A comment is legal anywhere a space is, and a word matcher stopped at it and stranded the modifier.
+      - option: Split with strings.Fields and rejoin.
+        why: It collapses whitespace inside a quoted default that follows.
+    upholds: [rewriter-treats-comments-and-quotes-as-inert, rewriter-keeps-the-rest-verbatim]
+  - id: zero-length-token-guard
+    date: 2026-11-17
+    status: accepted
+    decision: sqlTokens advances one byte on a zero-length token although the comment skip makes that unreachable.
+    rejected:
+      - option: No guard.
+        why: A change that breaks the comment skip then hangs the test binary instead of failing a test.
+  - id: held-columns-leave-by-rebuild
+    date: 2026-11-17
+    status: accepted
+    decision: A removed SQLite column that is unique, indexed or in a foreign key leaves with a table rebuild rendered from the entity, carrying a DROP COLUMN note line.
+    rejected:
+      - option: ALTER TABLE DROP COLUMN.
+        why: SQLite refuses it for those columns, so the migration could never apply.
+    upholds: [held-column-drops-by-rebuild, rebuild-drop-note-is-read-back]

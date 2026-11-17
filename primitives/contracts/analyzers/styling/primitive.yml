@@ -1,0 +1,173 @@
+primitive: contracts.analyzers.styling
+summary: The styling rules - bespoke CSS and hard navigation in rendered code, owned style sheets and their programs, and the design-system declaration checks.
+code:
+  - framework/contracts/analyzers/rendering.go
+  - framework/contracts/analyzers/ownedstyles.go
+  - framework/contracts/analyzers/ownedstyleprograms.go
+  - framework/contracts/analyzers/styleimports.go
+  - framework/contracts/analyzers/baretheme.go
+  - framework/contracts/analyzers/physicalside.go
+  - framework/contracts/analyzers/flexreverse.go
+invariants:
+  - id: css-needs-a-signal-go-cannot-spell
+    rule: Outside the design-system trees a line is bespoke CSS only through an at-rule, a <style> tag, a hyphenated property, or a lowercase single-word property whose value has a unit, a hex colour or var(--) and is not a Go := declaration.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestShortVarDeclarationIsNotCSS
+      - test: framework/contracts/analyzers.TestCSSVarValueInGoStringIsReported
+      - test: framework/contracts/analyzers.TestSweepStylingCapitalisedFieldIsNotCSS
+      - test: framework/contracts/analyzers.TestSweepStylingMaxWidthInMediaIsNotBespokeCSS
+      - test: framework/contracts/analyzers.TestSweepStylingStyleTagWithoutColonIsReported
+  - id: trigger-is-clipped-on-runes
+    rule: A GOFASTR1801 message names the matched text, cut to 45 runes plus an ellipsis past 48, never mid-rune.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSweepStylingLongTriggerIsClippedOnRunes
+  - id: text-rules-read-comment-stripped-lines
+    rule: The rendering rules match comment-stripped text and report the original line at the same line number, in Go source and in scripts.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestCSSInACommentIsNotReported
+      - test: framework/contracts/analyzers.TestScriptNavLookalikesAreClean
+      - test: framework/contracts/analyzers.TestPhysicalSideDirBlockAcrossLines
+  - id: hard-navigation-shapes
+    rule: GOFASTR1802 fires on assigning location, or its href, search or pathname through any chain of window, document, self, top, parent or frames, with = or +=, and on location.reload, assign or replace; a comparison, a hash change and a property named location do not fire, and a bare location = needs a quoted value in Go but not in a script.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestCompoundAssignNavIsReported
+      - test: framework/contracts/analyzers.TestParentLocationChainIsReported
+      - test: framework/contracts/analyzers.TestScriptNavLookalikesAreClean
+      - test: framework/contracts/analyzers.TestSweepStylingDeepQualifiedHrefIsReported
+      - test: framework/contracts/analyzers.TestSweepStylingBareLocationAssignInScript
+  - id: navigation-owners-are-exempt
+    rule: Scripts under core-ui/runtime and framework/headless are not judged by GOFASTR1802 or 1803, and framework/dev and kiln skip the navigation, SSE, physical-side and flex-reverse checks.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestRuntimeScriptOwnsNavigation
+      - test: framework/contracts/analyzers.TestSweepStylingHeadlessScriptOwnsNavigation
+      - test: framework/contracts/analyzers.TestDevSurfaceSkipsScaleArms
+      - test: framework/contracts/analyzers.TestPhysicalSideQuietCases
+      - test: framework/contracts/analyzers.TestFlexReverseQuietCases
+  - id: ownerless-stylesheet-once-at-first-rule
+    rule: A stylesheet outside the design-system trees and testdata that is not a .style.css or .tokens.css and does more than assign custom properties gets one GOFASTR1809 at its first non-blank line and never a GOFASTR1801.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestStylesheetNeverBespokeCSS
+      - test: framework/contracts/analyzers.TestOwnerlessStylesheet
+      - test: framework/contracts/analyzers.TestOwnerlessStylesheetAllow
+      - test: framework/contracts/analyzers.TestOwnerlessStylesheetTokensAndTestdata
+  - id: style-source-hash-matches-generator
+    rule: GOFASTR1814 hashes a sheet without its provenance marker and leading BOM, exactly as gofastr gen styles does, and skips testdata trees.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestStaleStyleSourceStripsBOM
+      - test: framework/contracts/analyzers.TestStaleStyleSourceIgnoresMarker
+      - test: framework/contracts/analyzers.TestStaleStyleSourceSkipsTestdata
+  - id: unknown-token-exemptions
+    rule: A var() reference is GOFASTR1806 only when it has no fallback, its name is not declared in a rule block outside parentheses or by @property in any scanned sheet, carries no ui-, fui-, cui- or hui- prefix and is not a theme token; the function name folds case and the property name does not, and owned sheets get theirs from ownstyle.Check alone.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestUppercaseVarIsReported
+      - test: framework/contracts/analyzers.TestAtPropertyRegistrationCounts
+      - test: framework/contracts/analyzers.TestUppercaseAtPropertyCounts
+      - test: framework/contracts/analyzers.TestRuntimeOwnedPrefixReferenceIsClean
+      - test: framework/contracts/analyzers.TestOwnedUnknownTokenOnce
+      - test: framework/contracts/analyzers.TestSweepStylingSupportsConditionDeclaresNothing
+      - test: framework/contracts/analyzers.TestUnknownThemeTokenIsReported
+  - id: css-blanker-keeps-offsets
+    rule: blankCSSCommentsAndStrings keeps every byte offset and newline, opens a comment or string only in plain text, honours backslash escapes, ends a string at a raw newline, and never treats // as a comment.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestBlankPreservesOffsetsAndLines
+      - test: framework/contracts/analyzers.TestEscapedQuoteDoesNotEndString
+      - test: framework/contracts/analyzers.TestTokenAfterStringWithOpenComment
+      - test: framework/contracts/analyzers.TestSweepStylingQuoteInCSSCommentIsProse
+      - test: framework/contracts/analyzers.TestSweepStylingURLSlashesAreNotACSSComment
+  - id: hardcoded-token-judges-the-whole-value
+    rule: GOFASTR1807 compares a declaration's whole value, minus !important, against the non-keyword token values of the categories its property may read, and a custom property named like a property is not that property.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestBareKeywordValueIsClean
+      - test: framework/contracts/analyzers.TestImportantSuffixStillCompares
+      - test: framework/contracts/analyzers.TestSweepStylingCustomPropertyIsNotATokenBypass
+      - test: framework/contracts/analyzers.TestHardcodedTokenValueInSetPairIsReported
+  - id: hardcoded-token-skips-dark-values
+    rule: A literal equal only to a dark-scheme token value is not a GOFASTR1807, since var() would resolve to the light value.
+    judge: Does this change let a dark.* token value into the GOFASTR1807 value index?
+  - id: fallback-drift-compares-at-scale
+    rule: GOFASTR1808 compares length and time fallbacks at 16px per rem and 1000ms per s, colour fallbacks against the token's value in the enclosing scheme, and leaves keywords, font stacks, nested var(), Go-spliced fallbacks and trees with their own theme alone.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestFallbackMatchingTokenIsQuiet
+      - test: framework/contracts/analyzers.TestColourFallbackMatchingSchemeIsQuiet
+      - test: framework/contracts/analyzers.TestLightValueInDarkBlockIsReported
+      - test: framework/contracts/analyzers.TestSplicedColourFallbackIsQuiet
+      - test: framework/contracts/analyzers.TestDesktopThemeColourFallbacksAreQuiet
+      - test: framework/contracts/analyzers.TestSweepStylingKeywordAndFontFallbacksAreQuiet
+  - id: design-system-trees
+    rule: core-ui, framework/ui, framework/uihost, framework/sdkdocs, framework/pluginhost, framework/dev and battery own styling, matched on a path suffix so a vendored module keeps the split.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestHardcodedTokenValueInSetPairIsReported
+      - test: framework/contracts/analyzers.TestBareThemeLiteralInSetPairIsReported
+  - id: program-scope
+    rule: The owned-style program rules group sheets by the binaries that link them on each shipped platform, honouring build constraints, GOOS and GOARCH file suffixes, ignored _ and . files, test-file exclusion and the nearest go.mod, check unreached sheets as one group, and report a sheet's finding once however many groups reach it.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestDuplicateStyleQuietAcrossPrograms
+      - test: framework/contracts/analyzers.TestUnreachedSheetsGroupTogether
+      - test: framework/contracts/analyzers.TestBuildIgnoreMainIsNoProgram
+      - test: framework/contracts/analyzers.TestPlatformSplitDuplicateIsQuiet
+      - test: framework/contracts/analyzers.TestGroupingFindsModuleAboveRoot
+      - test: framework/contracts/analyzers.TestSharedSheetNeedsEachProgramsTokens
+      - test: framework/contracts/analyzers.TestSweepStylingUnixTagSkipsWindows
+      - test: framework/contracts/analyzers.TestSweepStylingCustomTagCountsAsSet
+      - test: framework/contracts/analyzers.TestSweepStylingUnderscoreFileNeverBuilds
+      - test: framework/contracts/analyzers.TestSweepStylingMalformedConstraintNeverBuilds
+      - test: framework/contracts/analyzers.TestSweepStylingConstraintBelowPackageIsAComment
+      - test: framework/contracts/analyzers.TestSweepStylingLegacyPlusBuildIsRead
+      - test: framework/contracts/analyzers.TestSweepStylingOSArchSuffixPairConstrains
+      - test: framework/contracts/analyzers.TestSweepStylingArchSuffixConstrains
+      - test: framework/contracts/analyzers.TestSweepStylingEveryShippedPlatformIsGrouped
+      - test: framework/contracts/analyzers.TestSweepStylingTestFilesAreNotLinked
+      - test: framework/contracts/analyzers.TestSweepStylingSharedSheetFindingIsReportedOnce
+  - id: app-sheet-is-app-style-css
+    rule: An owned sheet named app.style.css is judged as the app sheet and every other as a scoped one.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestOwnedAppSheetSelector
+  - id: flex-reverse-shapes
+    rule: GOFASTR1826 fires on row-reverse or column-reverse as a flex-direction or flex-flow value, in any letter case, in a design-system tree outside dev tooling, and never on wrap-reverse or another property.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestFlexReverseIsReported
+      - test: framework/contracts/analyzers.TestFlexReverseQuietCases
+      - test: framework/contracts/analyzers.TestSweepStylingReverseKeywordOnAnotherPropertyIsQuiet
+  - id: physical-side-quiet-cases
+    rule: GOFASTR1824 is quiet on 50%, on a value with no number or function, inside a :dir() block from its selector to its closing brace, and on a background position its file mirrors in a :dir(rtl) block.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestPhysicalSideQuietCases
+      - test: framework/contracts/analyzers.TestPhysicalSideDirBlockAcrossLines
+      - test: framework/contracts/analyzers.TestPhysicalSideAfterDirBlockOnSameLine
+      - test: framework/contracts/analyzers.TestLTRBackgroundOverrideDoesNotMirrorRTL
+  - id: bare-theme-literal-reading
+    rule: GOFASTR1823 drops var() spans and the calc()s that read one before judging, treats a length of one pixel or less (rem at 16px) as structural, passes linear and steps(), and ignores a trailing !important.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestBareThemeLiteralsAreReported
+      - test: framework/contracts/analyzers.TestBareThemeLiteralQuietCases
+      - test: framework/contracts/analyzers.TestBareScaleLiteralsAreReported
+      - test: framework/contracts/analyzers.TestSweepStylingImportantIsNotPartOfTheEasing
+decisions:
+  - id: css-detection-is-text-not-ast
+    date: 2026-11-17
+    status: accepted
+    decision: The rendering and design-system CSS rules match regexes over comment-stripped lines, because the CSS lives in Go strings and in builder calls whose property and value are separate literals.
+    rejected:
+      - option: Parse the CSS out of string literals through the Go AST.
+        why: A builder pair Set("gap", "8px") and a stylesheet string are both text on one line, and no AST node unifies them.
+    revisit_if: A non-builder call passing a property and a value literal, such as strings.ReplaceAll(s, "gap", "8px"), is reported in a design-system file; the fix then is a type-aware analyzer under internal/analyzers.
+    upholds: [css-needs-a-signal-go-cannot-spell]
+  - id: one-inline-detector
+    date: 2026-11-17
+    status: accepted
+    decision: GOFASTR1804 and 1805 call core-ui/check's scanners on the pass's cached AST, the same detectors cmd/check-csp runs.
+    rejected:
+      - option: Keep a line-shaped inline-style detector in this package.
+        why: It drifted from the build gate, passing display none and computed style keys that make build refused.
+      - option: Call the recursive check variant.
+        why: It re-walked, re-read and re-parsed every file the pass had loaded, about 200ms per run on this repository.
+  - id: program-grouping-is-shared
+    date: 2026-11-17
+    status: accepted
+    decision: The program-wide owned-style rules judge the sheets one binary links, computed per platform from imports, build constraints and the nearest go.mod, and gofastr gen styles calls the same CheckStylePrograms.
+    rejected:
+      - option: Judge every sheet under the root as one set.
+        why: Two binaries each importing their own copy of one package failed for a name no program registers twice.
+      - option: Let gen styles group sheets on its own.
+        why: The generator and verify would drift on exactly the layouts the rules exist for.
+    upholds: [program-scope]

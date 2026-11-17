@@ -12,49 +12,22 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
 )
 
-// Suppression directives. Both forms demand a written reason, because the
-// value of an escape hatch is entirely in the sentence that justifies it:
-//
-// `allow` covers the line it sits on. When it is the only thing on its
-// line it also covers the next non-blank line — and, when that line
-// opens a multi-line string literal (a raw SQL statement), the whole
-// literal, because a comment cannot sit inside one. Its own line is
-// covered either way: whole-file findings sit at line 1
-// (GOFASTR1814/1815/1816), and a comment is the only thing that can
-// stand there. `allow-file` covers the whole file and is the heavier
-// hammer, deliberately more visible in review.
-//
-// A directive naming several rules separates them with commas or spaces.
-// The bare word `all` is NOT accepted: a suppression that covers rules
-// nobody has written yet is a hole, not a decision.
-// The directive must be the FIRST thing in its comment. That anchor is
-// what separates a live suppression from documentation *about*
-// suppressions: this package's own doc comments are full of the latter,
-// and so is any project that writes down how its linting works:
-//
-//	//gofastr:allow(GOFASTR1403) …      live: starts the comment
-//	// as in `//gofastr:allow(X)` …     prose: the directive is quoted
-//	//	//gofastr:allow(X) …            a doc-comment code block
-//
-// Without the anchor, writing the documentation disables the rule.
 var (
 	reAllowLine = regexp.MustCompile(`^(?:/\*|//|#)\s*gofastr:allow\(([^)]*)\)([^\n]*)`)
 	reAllowFile = regexp.MustCompile(`^(?:/\*|//|#)\s*gofastr:allow-file\(([^)]*)\)([^\n]*)`)
 )
 
-// suppression is one parsed directive.
 type suppression struct {
 	File     string
-	Line     int // the directive's own line, 1-indexed
-	Scope    int // the first line it covers; 0 for file scope
-	ScopeEnd int // the last line it covers: the scope line, or the end of the multi-line literal it opens
+	Line     int
+	Scope    int
+	ScopeEnd int
 	IsFile   bool
 	Rules    []string
 	Reason   string
 	used     bool
 }
 
-// covers reports whether s suppresses a diagnostic for ruleID at line.
 func (s *suppression) covers(rule Rule, line int) bool {
 	if !s.IsFile && (line < s.Scope || line > s.ScopeEnd) {
 		return false
@@ -67,30 +40,13 @@ func (s *suppression) covers(rule Rule, line int) bool {
 	return false
 }
 
-// suppressionSet is every directive found in the tree, plus the
-// meta-diagnostics parsing them produced (missing reasons, unknown rules).
 type suppressionSet struct {
 	byFile map[string][]*suppression
 	issues []Diagnostic
 }
 
-// collectSuppressions scans every discovered file for allow directives:
-// Go source and stylesheets alike, including test and generated files,
-// since a directive may legitimately sit in any of them.
-//
-// Only text inside a *comment* counts. That distinction is load-bearing:
-// a directive spelled out in a string literal is documentation about the
-// system (this package's own rule catalog is full of them), and treating
-// those as live suppressions would silently disable rules across whoever
-// happened to document them. Go files get exact comment ranges from the
-// AST; a file that fails to parse falls back to a line scan, so a project
-// mid-edit still honours its suppressions.
 func collectSuppressions(p *Pass) *suppressionSet {
 	set := &suppressionSet{byFile: map[string][]*suppression{}}
-	// p.files, not p.Files(): that accessor is Go-only, and a stylesheet
-	// needs the same escape hatch as any other source. Without this,
-	// GOFASTR1806 (the one rule that fires on .css) had no way to be
-	// waived in the file it fires in.
 	for _, f := range p.files {
 		body, ok := p.Source(f.Rel)
 		if !ok {
@@ -102,9 +58,6 @@ func collectSuppressions(p *Pass) *suppressionSet {
 				set.add(p, f.Rel, c.line, 0, 0, true, m[1], m[2])
 			}
 			for _, m := range reAllowLine.FindAllStringSubmatch(c.text, -1) {
-				// `allow-file(` cannot also match `allow(`, the regex
-				// requires the paren immediately after "allow", so a line
-				// carrying both forms is counted once each, not twice.
 				scopeStart, scopeEnd := scopeLineFor(lines, c.line-1)
 				scopeEnd = scopeEndFor(p, f.Rel, scopeEnd)
 				set.add(p, f.Rel, c.line, scopeStart, scopeEnd, false, m[1], m[2])
@@ -114,16 +67,11 @@ func collectSuppressions(p *Pass) *suppressionSet {
 	return set
 }
 
-// commentText is one comment's content and the 1-indexed line it starts on.
 type commentText struct {
 	line int
 	text string
 }
 
-// commentRanges returns every comment in a file. Go sources are parsed;
-// anything else (or anything unparsable) falls back to scanning for lines
-// whose first non-space characters open a comment, which is correct for
-// the shapes a directive is actually written in.
 func commentRanges(p *Pass, rel string, lines []string) []commentText {
 	if file, ok := p.AST(rel); ok {
 		out := make([]commentText, 0, len(file.Comments))
@@ -138,9 +86,6 @@ func commentRanges(p *Pass, rel string, lines []string) []commentText {
 		return out
 	}
 	if IsScriptPath(rel) {
-		// A script's comments come from the lexer, so a directive trailing
-		// a statement counts (the line scan below only sees comments that
-		// open a line) and a "//" inside a string does not.
 		var out []commentText
 		for _, c := range codetext.Comments(strings.Join(lines, "\n"), true) {
 			out = append(out, commentText{line: c.Line, text: c.Text})
@@ -150,9 +95,6 @@ func commentRanges(p *Pass, rel string, lines []string) []commentText {
 	var out []commentText
 	for i, raw := range lines {
 		trimmed := strings.TrimSpace(raw)
-		// `/*` belongs here even though the AST path covers it for Go:
-		// this branch is also how a stylesheet's comments are read, and
-		// CSS has no other comment syntax.
 		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") ||
 			strings.HasPrefix(trimmed, "*") || strings.HasPrefix(trimmed, "/*") {
 			out = append(out, commentText{line: i + 1, text: trimmed})
@@ -161,23 +103,10 @@ func commentRanges(p *Pass, rel string, lines []string) []commentText {
 	return out
 }
 
-// scopeLineFor decides the line range a bare `allow` directive covers.
-// A trailing comment covers its own line; a comment occupying the whole
-// line covers itself AND the next line with code on it, so the
-// directive can sit above a long call rather than trailing off the end
-// of it. Covering its own line is what makes a whole-file finding at
-// line 1 waivable at all: GOFASTR1814/1815/1816 sit there, and a
-// comment is the only thing that can stand on that line of a
-// stylesheet.
 func scopeLineFor(lines []string, idx int) (int, int) {
 	trimmed := strings.TrimSpace(lines[idx])
 	standalone := strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#")
 	if !standalone && strings.HasPrefix(trimmed, "/*") {
-		// A block comment is standalone only when nothing follows its
-		// close on the same line. `/*gofastr:allow(X)*/ code` trails the
-		// code it shares the line with, treating it as standalone
-		// waived the NEXT line and then reported the directive stale at
-		// the very line where its match sits.
 		if close := strings.Index(trimmed, "*/"); close < 0 || strings.TrimSpace(trimmed[close+2:]) == "" {
 			standalone = true
 		}
@@ -194,14 +123,6 @@ func scopeLineFor(lines []string, idx int) (int, int) {
 	return idx + 1, idx + 1
 }
 
-// scopeEndFor extends a marker's scope over a multi-line string literal
-// that opens on the scoped line. The SQL rules place their findings on
-// the line INSIDE the literal where the counter or claim sits, and a
-// comment cannot sit inside a raw string, so a marker above the call is
-// the only spelling that waiver can take. Without the extension the
-// finding stays and the marker is itself reported stale. Literal spans
-// come from a parsed AST, so a backtick in prose or an unparsable file
-// never widens a scope.
 func scopeEndFor(p *Pass, rel string, scope int) int {
 	file, ok := p.AST(rel)
 	if !ok {
@@ -249,8 +170,6 @@ func (s *suppressionSet) add(p *Pass, file string, line, scope, scopeEnd int, is
 		return
 	}
 
-	// Reject the catch-all before anything else: an `all` suppression
-	// silently absorbs every rule added to the catalog afterwards.
 	for _, r := range rules {
 		if strings.EqualFold(r, "all") || r == "*" {
 			s.issues = append(s.issues, Diagnostic{
@@ -274,12 +193,6 @@ func (s *suppressionSet) add(p *Pass, file string, line, scope, scopeEnd int, is
 	var known []string
 	for _, r := range rules {
 		if names.Known(r) {
-			// An analyzer marker (//gofastr:allow(worldreadable) …) is
-			// the vettool's business: internal/analyzers/allow drops the
-			// diagnostic (names is the dependency-free list contracts reads,
-			// so no go/analysis import reaches this package), so it is
-			// neither unknown here nor stale when
-			// no contracts rule ever matches it.
 			continue
 		}
 		if _, ok := LookupRule(r); !ok {
@@ -305,8 +218,6 @@ func (s *suppressionSet) add(p *Pass, file string, line, scope, scopeEnd int, is
 	})
 }
 
-// suppressed reports whether any directive in d's file covers it, marking
-// the matching directive used so stale ones can be reported afterwards.
 func (s *suppressionSet) suppressed(d Diagnostic, rule Rule) bool {
 	hit := false
 	for _, sup := range s.byFile[d.File] {
@@ -318,10 +229,6 @@ func (s *suppressionSet) suppressed(d Diagnostic, rule Rule) bool {
 	return hit
 }
 
-// stale returns one diagnostic per directive that never matched anything.
-// These are the residue of fixed bugs and moved code; left alone they
-// accumulate until nobody can tell which suppressions still mean
-// something.
 func (s *suppressionSet) stale(p *Pass) []Diagnostic {
 	var out []Diagnostic
 	files := make([]string, 0, len(s.byFile))
@@ -347,22 +254,11 @@ func (s *suppressionSet) stale(p *Pass) []Diagnostic {
 	return out
 }
 
-// deleteDirectiveFix removes a stale suppression. The rule's documented
-// fix is "delete the directive", which is mechanical in both shapes it
-// takes: on its own line the whole line goes, and trailing a statement
-// only the comment goes, never the code it sat behind.
-//
-// Returns nil rather than guessing when the line no longer looks like a
-// directive: the stale set is computed from a parse that may be one edit
-// behind, and a fix that deletes the wrong bytes is far worse than a
-// finding the reader clears by hand.
 func deleteDirectiveFix(p *Pass, rel string, line int) *SuggestedFix {
 	body, ok := p.Source(rel)
 	if !ok || line < 1 {
 		return nil
 	}
-	// Splitting on \n leaves \r attached under CRLF, so len(line)+1 is the
-	// true byte width either way.
 	lines := strings.Split(string(body), "\n")
 	if line > len(lines) {
 		return nil
@@ -378,8 +274,6 @@ func deleteDirectiveFix(p *Pass, rel string, line int) *SuggestedFix {
 	}
 	before := text[:idx]
 	if strings.TrimSpace(before) == "" {
-		// Whole line, including its newline, leaving a blank line behind
-		// would be a second diff nobody asked for.
 		end := offset + len(text) + 1
 		if end > len(body) {
 			end = len(body)
@@ -389,8 +283,6 @@ func deleteDirectiveFix(p *Pass, rel string, line int) *SuggestedFix {
 			Edits:       []TextEdit{{File: rel, Start: offset, End: end, Old: string(body[offset:end])}},
 		}
 	}
-	// Trailing a statement: cut the comment and the whitespace that
-	// separated it, and keep the line ending.
 	start := offset + len(strings.TrimRight(before, " \t"))
 	end := offset + len(strings.TrimRight(text, "\r"))
 	if end <= start {
@@ -402,8 +294,6 @@ func deleteDirectiveFix(p *Pass, rel string, line int) *SuggestedFix {
 	}
 }
 
-// directiveStart returns the byte index where a gofastr directive comment
-// begins on this line, or -1 when the line carries none.
 func directiveStart(line string) int {
 	for _, marker := range []string{"//gofastr:allow", "// gofastr:allow", "/*gofastr:allow", "/* gofastr:allow", "#gofastr:allow", "# gofastr:allow"} {
 		if i := strings.Index(line, marker); i >= 0 {

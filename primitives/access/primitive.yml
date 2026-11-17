@@ -1,0 +1,133 @@
+primitive: access
+summary: Who may do what - permissions and scopes, the policy and decider a check runs through, the cached role resolver and the evaluation observer.
+code:
+  - framework/access/
+docs:
+  - framework/docs/content/access-control.md
+twins:
+  - job: Ask the Decider, then fall back to the role policy, for one capability.
+    why: Each entrypoint differs in its scope check, its fallback (Can, exact name, unobserved policy) and the path it reports, and no shared helper has been written.
+    sites:
+      - path: framework/access/decider.go
+        note: CanResource, CanResourceExact and requireResource each switch on the Decider's verdict.
+      - path: framework/access/access.go
+        note: RequirePermission reaches the seam through requireResource.
+invariants:
+  - id: can-is-exact-or-global-wildcard
+    rule: RolePolicy.Can matches a held permission by exact string or the global "*" only, never by resource:verb wildcard.
+    enforced_by:
+      - test: framework/access.TestCanWildcardGrantsOnlyGlobalStar
+  - id: scopes-only-narrow
+    rule: Can, CanResource, CanResourceExact and RequirePermission refuse a scope-restricted caller whose scopes do not allow the permission, before any Decider can allow it.
+    enforced_by:
+      - test: framework/access.TestCanFamilyHonorsTokenScopes
+      - test: framework/access.TestRequirePermissionNarrowsByScope
+  - id: empty-scopes-restrict
+    rule: A context carrying an empty or nil held-scope list is scope-restricted and allows nothing.
+    enforced_by:
+      - test: framework/access.TestHeldScopesOnlyNarrow
+  - id: scope-match-fails-closed
+    rule: ScopeMatch denies on empty grants and on a required value that is not resource:verb.
+    enforced_by:
+      - test: framework/access.TestScopeMatch_EmptyGrantsDeny
+      - test: framework/access.TestScopeMatch_InvalidRequiredDenies
+  - id: valid-scope-vocabulary
+    rule: ValidScope accepts only one ':' between two non-empty halves of [a-z0-9_*-].
+    enforced_by:
+      - test: framework/access.TestValidScope
+  - id: unwired-check-denies
+    rule: Can answers false and GetPermissions nil for a nil context or one with no policy installed; CanResource answers false for a nil context, and with no policy installed unless a Decider allows.
+    enforced_by:
+      - test: framework/access.TestCan_NoPolicyDenies
+      - test: framework/access.TestCanNilContextFailsClosed
+      - test: framework/access.TestCanResource_NilContextFailsClosed
+      - test: framework/access.TestContext_NilContext
+  - id: zero-decision-abstains
+    rule: The zero Decision is DecisionAbstain.
+    enforced_by:
+      - test: framework/access.TestDecision_ZeroValueIsAbstain
+  - id: route-gate-consults-decider
+    rule: RequirePermission asks the Decider with the zero Ref, and its deny refuses the route even when the role policy grants.
+    enforced_by:
+      - test: framework/access.TestRequirePermissionHonorsDecider
+  - id: exact-check-ignores-wildcard
+    rule: CanResourceExact does not count a Wildcard grant as holding the capability.
+    enforced_by:
+      - test: framework/access.TestCanResourceExactSkipsWildcard
+  - id: one-evaluation-per-check
+    rule: RequirePermission records exactly one evaluation per request.
+    enforced_by:
+      - test: framework/access.TestRequirePermissionObservesItsCheck
+  - id: observer-panic-keeps-verdict
+    rule: A panicking observer is recovered and the check returns its verdict.
+    enforced_by:
+      - test: framework/access.TestPanickingObserverKeepsVerdict
+  - id: strict-unknown-errors
+    rule: On a strict policy, Grant and ReplaceRole of an unregistered capability return *UnknownCapabilityError and change nothing.
+    enforced_by:
+      - test: framework/access.TestStrictGrantRejects
+      - test: framework/access.TestStrictErrorIsTyped
+      - test: framework/access.TestRolePolicy_ReplaceRoleStrictRejectsUnknown
+  - id: revoke-removes-raw-literal
+    rule: Revoking "res:*" removes the literal wildcard as well as its registered expansion.
+    enforced_by:
+      - test: framework/access.TestNarrowGrantUnderLiteralRevoke
+      - test: framework/access.TestTombstoneWinsOverGrantRow
+  - id: permission-reads-are-copies
+    rule: PermissionsOf returns a copy that a later Grant or Revoke does not change.
+    enforced_by:
+      - test: framework/access.TestRolePolicy_PermissionsOfReturnsCopy
+  - id: middleware-rechecks-roles
+    rule: Middleware registers a principal check that re-resolves the roles, so a long-lived request sees a dropped role.
+    enforced_by:
+      - test: framework/access.TestSweepAccessMiddlewareRolesFollowRecheck
+  - id: resolver-key-is-user-and-tenant
+    rule: CachedResolver keys on the user id, the resolved tenant id and a string auth tenant; a non-string auth tenant is left out of the key.
+    enforced_by:
+      - test: framework/access.TestResolverKeysByTenant
+      - test: framework/access.TestResolverKeysByAuthTenant
+      - test: framework/access.TestSweepAccessNonStringAuthTenantSharesEntry
+  - id: anonymous-never-cached
+    rule: A context with no user exposing a non-empty GetID is resolved on every call and never cached.
+    enforced_by:
+      - test: framework/access.TestResolverSkipsAnonymousCache
+  - id: canceled-lookup-not-cached
+    rule: A resolution whose context ended is neither cached nor shared with waiters.
+    enforced_by:
+      - test: framework/access.TestResolverSkipsCacheOnCanceledCtx
+  - id: resolver-cache-bounded
+    rule: The resolver sweeps expired settled entries at most once per TTL (at once when the map reaches the entry cap), leaving in-flight ones alone, and at the cap sheds entries, in-flight ones included, soonest-expiring first to a low-water mark.
+    enforced_by:
+      - test: framework/access.TestResolverReclaimsExpiredEntries
+      - test: framework/access.TestResolverShedsPastEntryCap
+      - test: framework/access.TestZeroTTLWaitersShareFlight
+  - id: flight-sharing
+    rule: Waiters on an in-flight resolve share its result even at zero TTL, unless the flight was invalidated, evicted at the cap or its context ended; then they resolve again.
+    enforced_by:
+      - test: framework/access.TestZeroTTLWaitersShareFlight
+      - test: framework/access.TestInvalidatedFlightNotShared
+decisions:
+  - id: can-stays-exact
+    date: 2026-11-17
+    status: accepted
+    decision: The RBAC hot path matches exact strings or "*", and resource:verb wildcards live in ScopeMatch and in grant-time expansion.
+    rejected:
+      - option: Let Can match "posts:*" against "posts:read".
+        why: It would silently widen live RBAC for every caller.
+    upholds: [can-is-exact-or-global-wildcard]
+  - id: observer-is-a-hook
+    date: 2026-11-17
+    status: accepted
+    decision: Evaluations reach test tooling through a process-wide atomic hook (SetObserver).
+    rejected:
+      - option: Import framework/semcov here.
+        why: access is a leaf package and the recorder is test tooling; an uninstalled hook costs one atomic load.
+    upholds: [observer-panic-keeps-verdict]
+  - id: invalidate-is-replica-local
+    date: 2026-11-17
+    status: accepted
+    decision: CachedResolver.Invalidate clears only this replica's cache; cross-replica role changes go through GrantStore's fanout or a short TTL.
+    rejected:
+      - option: Fan out invalidations from the resolver.
+        why: The resolver wraps arbitrary role lookups and has no store to re-read, so a fanout would only shorten a TTL the app can already set.
+    revisit_if: Apps need cross-replica role revocation faster than the TTL without a GrantStore.

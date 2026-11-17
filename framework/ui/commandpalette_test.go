@@ -82,11 +82,11 @@ func TestCommandPaletteSlotRendersCombobox(t *testing.T) {
 
 func TestCommandPalettePanicsWithoutRPC(t *testing.T) {
 	defer func() {
-		if recover() == nil {
-			t.Error("expected panic")
+		if r, _ := recover().(string); !strings.Contains(r, "requires RPCPath or Commands") {
+			t.Errorf("panic %q, want the missing RPCPath or Commands named", r)
 		}
 	}()
-	CommandPalette(CommandPaletteConfig{})
+	CommandPalette(CommandPaletteConfig{Name: "palette", FallbackHref: "/search"})
 }
 
 func TestCommandPaletteExtraAttrsOnRoot(t *testing.T) {

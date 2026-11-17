@@ -8,10 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// ValidatorFunc validates entity data and returns field-level errors.
-// The returned map is field name → error message (empty map means valid).
-// The built-in validators write each message in ctx's locale through the
-// core/schema phrases (validation.required, validation.unique_taken).
+// ValidatorFunc validates entity data, returning field name → message; empty means valid.
 type ValidatorFunc func(ctx context.Context, data map[string]any) map[string]string
 
 // ValidationRegistry holds a chain of validator functions.
@@ -29,8 +26,7 @@ func (vr *ValidationRegistry) RegisterValidator(fn ValidatorFunc) {
 	vr.validators = append(vr.validators, fn)
 }
 
-// Validate runs all registered validators and collects every field error.
-// The returned map is field name → error message. A nil/empty map means valid.
+// Validate runs every validator and merges their field errors.
 func (vr *ValidationRegistry) Validate(ctx context.Context, data map[string]any) map[string]string {
 	errors := make(map[string]string)
 	for _, fn := range vr.validators {
@@ -40,14 +36,12 @@ func (vr *ValidationRegistry) Validate(ctx context.Context, data map[string]any)
 	return errors
 }
 
-// Validators returns the number of registered validators (for testing).
+// Validators returns the number of registered validators.
 func (vr *ValidationRegistry) Validators() int {
 	return len(vr.validators)
 }
 
-// --- Built-in validators ---
-
-// Required returns a validator that checks the given fields are present and non-zero.
+// Required returns a validator that checks the fields are present and non-zero.
 func Required(fields ...string) ValidatorFunc {
 	return func(ctx context.Context, data map[string]any) map[string]string {
 		errors := make(map[string]string)
@@ -61,8 +55,7 @@ func Required(fields ...string) ValidatorFunc {
 	}
 }
 
-// Unique returns a validator that checks a field value is unique using the provided check function.
-// The checkFn receives the field value and returns true if the value is unique (not taken).
+// Unique returns a validator that refuses a value checkFn reports taken.
 func Unique(field string, checkFn func(ctx context.Context, value any) bool) ValidatorFunc {
 	return func(ctx context.Context, data map[string]any) map[string]string {
 		errors := make(map[string]string)
@@ -77,15 +70,13 @@ func Unique(field string, checkFn func(ctx context.Context, value any) bool) Val
 	}
 }
 
-// Custom returns a validator with a given name that runs the provided function.
-// The fn returns a map of field→error for any violations found.
+// Custom returns a validator running fn.
 func Custom(name string, fn func(ctx context.Context, data map[string]any) map[string]string) ValidatorFunc {
 	return func(ctx context.Context, data map[string]any) map[string]string {
 		return fn(ctx, data)
 	}
 }
 
-// isZero checks if a value is nil or the zero value for its type.
 func isZero(v any) bool {
 	if v == nil {
 		return true
@@ -106,7 +97,7 @@ func isZero(v any) bool {
 	}
 }
 
-// FormatValidationErrors formats a map of field errors into a user-friendly string slice.
+// FormatValidationErrors formats field errors as "field message" strings.
 func FormatValidationErrors(errors map[string]string) []string {
 	if len(errors) == 0 {
 		return nil

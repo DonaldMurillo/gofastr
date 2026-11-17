@@ -11,20 +11,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// Read gates. Route middleware never runs for a component render, so the
-// checks the JSON API applies live here, at the read itself: a screen for
-// an entity whose GET /api/<entity> answers 401 or 403 must not render
-// its rows (the leak resource.canRead closed in v0.54).
-
-// canRead is the whole read posture for listing an entity: owner and
-// tenant scope, the default-posture sign-in requirement, and RBAC.
 func canRead(ctx context.Context, ch *crud.CrudHandler) bool {
 	return ch != nil && ch.CanReadScoped(ctx)
 }
 
-// requireRead is canRead at an HTTP surface: a refused caller gets the
-// answer the entity's list route gives (crud.CrudHandler.RequireRead),
-// the same status and envelope, the missing permission named.
 func requireRead(w http.ResponseWriter, r *http.Request, ctx context.Context, m *meta) bool {
 	if m.ch == nil {
 		writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
@@ -33,22 +23,14 @@ func requireRead(w http.ResponseWriter, r *http.Request, ctx context.Context, m 
 	return m.ch.RequireRead(w, r.WithContext(ctx))
 }
 
-// canReadRelated is canRead for an entity reached through a relation:
-// it also refuses a target with CRUD off and a token without
-// "<table>:read", as ?include= does.
 func canReadRelated(ctx context.Context, ch *crud.CrudHandler) bool {
 	return ch != nil && ch.CanReadRelatedScoped(ctx)
 }
 
-// canReadRecord is canRead for one record: a resource-aware Decider may
-// allow the list and refuse one row.
 func canReadRecord(ctx context.Context, ch *crud.CrudHandler, id string) bool {
 	return ch != nil && ch.CanReadRecordScoped(ctx, id)
 }
 
-// canCreate, canUpdate and canDelete answer whether a screen may draw a
-// write: the entity mounts write routes and the caller passes the gates
-// that route runs. A builder never draws a write the API would refuse.
 func canCreate(ctx context.Context, m *meta) bool { return m.hasAPI && m.ch.CanCreateScoped(ctx) }
 
 func canUpdate(ctx context.Context, m *meta, id string) bool {
@@ -59,16 +41,9 @@ func canDelete(ctx context.Context, m *meta, id string) bool {
 	return m.hasAPI && m.ch.CanDeleteRecordScoped(ctx, id)
 }
 
-// AccessDeniedTitle is the heading drawn in place of rows the caller may
-// not read. Exported so a test in another package detects the notice by
-// symbol (AccessDeniedTitle.English()), not by copying prose.
+// AccessDeniedTitle is the heading drawn in place of rows the caller may not read.
 var AccessDeniedTitle = i18n.Define("entityui.access_denied_title", "Not available")
 
-// accessDenied is a refused screen: the entity's heading at level, then
-// the notice. It names no data, only that this entity is not available.
-// The heading stays because a refused screen is still a page: drawn as
-// the notice alone it had no <h1>, and a list told to sit under a
-// page's own heading keeps the level it was given.
 func accessDenied(ctx context.Context, title, plural string, level int) render.HTML {
 	return render.Join(
 		ui.PageHeader(ui.PageHeaderConfig{Title: title, HeadingLevel: level}),
@@ -76,8 +51,6 @@ func accessDenied(ctx context.Context, title, plural string, level int) render.H
 			render.Text(i18nui.EntityAccessDenied.Text(ctx, map[string]any{"entity": plural}))))
 }
 
-// slotFailed is a failed slot's generic message; the log line carries the
-// detail.
 func slotFailed(ctx context.Context) render.HTML {
 	return ui.Callout(ui.CalloutConfig{Title: i18nui.EntitySlotFailed.Text(ctx), Variant: ui.StatusDanger},
 		render.Text(i18nui.EntitySlotFailedBody.Text(ctx)))

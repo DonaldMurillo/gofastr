@@ -1,0 +1,125 @@
+primitive: access.store
+summary: The grant store - role grants kept in the database, cached per replica and invalidated across replicas.
+code:
+  - framework/access/store.go
+invariants:
+  - id: empty-role-refused
+    rule: Grant, CheckGrant and Revoke refuse an empty role name, which is the fanout reload-everything signal.
+    enforced_by:
+      - test: framework/access.TestGrantStore_RejectsEmptyRole
+  - id: refused-grant-writes-nothing
+    rule: A grant refused for a strict-mode unknown capability writes no row and leaves the live policy unchanged.
+    enforced_by:
+      - test: framework/access.TestStoreStrictRejectsUnknown
+  - id: grant-under-wildcard-revoke-refused
+    rule: A grant that a surviving wildcard tombstone covers returns ErrRevokedByWildcard and writes nothing.
+    enforced_by:
+      - test: framework/access.TestNarrowGrantUnderWildcardRevoke
+      - test: framework/access.TestNarrowGrantUnderLiteralRevoke
+  - id: rows-and-tombstones-commit-together
+    rule: A grant's rows and the tombstones it lifts, and a revoke's row deletes and the tombstones it writes, commit in one transaction or not at all.
+    enforced_by:
+      - test: framework/access.TestGrantFailedLiftKeepsNoRow
+      - test: framework/access.TestRevokeFailedTombstoneKeepsGrant
+      - test: framework/access.TestGrantStoreFailedWriteLeavesTablesUnchanged
+  - id: revoke-expands-like-grant
+    rule: Revoke deletes and tombstones the expansion of a wildcard against the registry as well as the raw literal.
+    enforced_by:
+      - test: framework/access.TestNarrowGrantUnderWildcardRevoke
+  - id: revoke-leaves-baseline-alone
+    rule: Revoke does not narrow the replica's code baseline, so two replicas reading the same grant and tombstone rows reach the same verdict.
+    enforced_by:
+      - test: framework/access.TestSweepAccessRevokeLeavesBaselineAlone
+  - id: boot-honours-tombstones
+    rule: LoadInto expands wildcard tombstones against the current registry and removes every tombstoned permission from the live policy, code-seeded ones included.
+    enforced_by:
+      - test: framework/access.TestLoadIntoExpandsWildcardTombstone
+      - test: framework/access.TestRevokeSurvivesPeerBoot
+  - id: boot-leaves-baseline-alone
+    rule: LoadInto captures the code baseline without subtracting tombstones, so a replica's verdict depends on the code baseline and the grant and tombstone rows, never on when it booted.
+    enforced_by:
+      - test: framework/access.TestSweepAccessBootUnderTombstoneKeepsBaseline
+  - id: reload-keeps-code-baseline
+    rule: A reload rebuilds a role as (baseline ∪ DB) − tombstones, so a peer's refresh never drops a grant declared in code.
+    enforced_by:
+      - test: framework/access.TestGrantStore_FanoutMergesCodeBaseline
+      - test: framework/access.TestRevokeSurvivesReload
+  - id: reload-expands-before-subtracting
+    rule: A reload expands wildcard grants and tombstones before subtracting, so a capability revoked on its own stays revoked under a wildcard grant row.
+    enforced_by:
+      - test: framework/access.TestReloadKeepsWildcardRevoke
+  - id: reload-drops-only-refused-grant
+    rule: A reload on a strict replica leaves out only the grants its registry refuses and still applies the rest, revokes included.
+    enforced_by:
+      - test: framework/access.TestGrantStoreStrictReplicaAppliesRevokeAcrossUnknownCapability
+  - id: reconcile-reloads-every-role
+    rule: With a positive reconcile interval the fanout worker reloads every role with a baseline, grant row or tombstone once per interval.
+    enforced_by:
+      - test: framework/access.TestGrantStoreReconcileHealsMissedRevoke
+  - id: failed-reload-retries
+    rule: A role whose reload fails is marked dirty again and retried after a delay.
+    enforced_by:
+      - test: framework/access.TestGrantRefreshRetriesAfterOutage
+  - id: drain-takes-a-snapshot
+    rule: One drain pass reloads the roles dirty when it starts, each once, so a database outage cannot spin the worker past its stop signal.
+    enforced_by:
+      - test: framework/access.TestGrantRefreshDownDBStops
+  - id: transitions-serialize
+    rule: Grant, Revoke, LoadInto and every reload hold transitionMu across their whole read-to-mutate span.
+    enforced_by:
+      - test: framework/access.TestSweepAccessTransitionsSerialize
+  - id: lock-order
+    rule: transitionMu is always taken before fanoutMu or dirtyMu, never while holding either.
+    judge: Does this change acquire transitionMu while fanoutMu or dirtyMu is held?
+  - id: delivery-only-marks-dirty
+    rule: The fanout delivery callback only marks the role dirty and never reloads inline.
+    enforced_by:
+      - test: framework/access.TestSweepAccessRemoteSignalDoesNotReloadInline
+  - id: publish-never-blocks
+    rule: Grant and Revoke return while the fanout backend's Publish is stalled.
+    enforced_by:
+      - test: framework/access.TestSweepAccessStalledBusDoesNotBlockGrant
+  - id: failed-subscribe-disarms
+    rule: When SetFanout's Subscribe fails, the store publishes nothing afterwards.
+    enforced_by:
+      - test: framework/access.TestSweepAccessSubscribeFailureDisarmsPublish
+  - id: both-tables-exported
+    rule: EnsureSchema registers the grants table and its tombstone table for data export under their configured names.
+    enforced_by:
+      - test: framework/access.TestSweepAccessExportsBothTables
+  - id: table-name-validated
+    rule: WithGrantTable panics on a name that is not a safe SQL identifier.
+    enforced_by:
+      - test: framework/access.TestSweepAccessGrantTableMustBeSafe
+decisions:
+  - id: tombstones-are-shared-rows
+    date: 2026-11-17
+    status: accepted
+    decision: A revoke writes a tombstone row that every reload and boot subtracts, and only a re-grant deletes it.
+    rejected:
+      - option: Delete the grant row only.
+        why: A permission seeded in code comes back on every peer reload and every fresh boot.
+      - option: Also narrow the revoking replica's code baseline.
+        why: The baseline is per-replica state peers cannot see, so an interleaved grant and revoke left replicas disagreeing forever.
+      - option: Subtract tombstones from the baseline LoadInto captures.
+        why: A replica that booted under a tombstone kept denying a code grant after a re-grant lifted it, while its peers allowed.
+    upholds: [revoke-leaves-baseline-alone, boot-honours-tombstones, boot-leaves-baseline-alone]
+  - id: fanout-is-a-refresh-signal
+    date: 2026-11-17
+    status: accepted
+    decision: A fanout message names only the role, and the receiver re-reads the database on a worker goroutine with a bounded timeout.
+    rejected:
+      - option: Ship the role's grant set in the payload.
+        why: The bus would become a source of authority, and a reordered or forged frame would install it.
+      - option: Reload inside the delivery callback.
+        why: A slow database blocks delivery, the bounded queue overflows and drops a later revoke.
+    revisit_if: The fanout contract guarantees ordered, lossless delivery.
+    upholds: [delivery-only-marks-dirty, publish-never-blocks]
+  - id: reload-drops-refused-grants
+    date: 2026-11-17
+    status: accepted
+    decision: A reload leaves out a grant the replica's strict registry refuses, with a warning; LoadInto still refuses it at boot.
+    rejected:
+      - option: Refuse the whole reload.
+        why: The role froze on that replica during a rolling deploy, so a later revoke never arrived there.
+    upholds: [reload-drops-only-refused-grant]

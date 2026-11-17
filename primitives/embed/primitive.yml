@@ -13,6 +13,102 @@ invariants:
     rule: Exchange answers ErrExpired, never ErrSpent, when the burn store refuses a first claim because the retention deadline passed between verification and the burn, over the memory and SQL burn stores alike.
     enforced_by:
       - test: framework/embed.TestFreshNonceExpiringDuringBurnIsExpired
+  - id: boot-refuses-bad-config
+    rule: New errors on no surfaces, no burn store, a nil screen, a relative route, an empty origin list, or a surface name that is duplicated, over 64 bytes or outside lowercase letters, digits and dashes.
+    enforced_by:
+      - test: framework/embed.TestNewRejectsBadConfig
+      - test: framework/embed.TestSweepEmbedSurfaceNameIsBounded
+      - test: framework/embed.TestSurfaceCarriesAScreenNotAPath
+  - id: grant-max-age-exceeds-ttl
+    rule: New refuses a GrantMaxAge at or below GrantTTL.
+    enforced_by:
+      - test: framework/embed.TestGrantMaxAgeMustExceedGrantTTL
+  - id: route-validated-like-reach
+    rule: New puts a surface's screen route through the same normalization and reserved-prefix check as a Reach entry, so "/reports/" owns the /reports subtree and a route over a reserved prefix fails boot.
+    enforced_by:
+      - test: framework/embed.TestSurfacePathIsValidatedLikeReach
+      - test: framework/embed.TestSurfacePathTrailingSlashStillOwnsItsSubtree
+  - id: dynamic-route-is-a-whole-segment
+    rule: A route is dynamic only when a whole segment is ":name", "{name}" or a catch-all; a brace or colon inside a literal segment is static, and a param segment admits only a non-empty value its constraint accepts.
+    enforced_by:
+      - test: framework/embed.TestEmbedAcceptsLiteralBraceRoutes
+      - test: framework/embed.TestEmbedAcceptsDynamicRoutes
+      - test: framework/embed.TestDynamicSurfaceReach
+      - test: framework/embed.TestRouteWithinRefusesEmptySegment
+  - id: mint-narrows-never-widens
+    rule: MintNonce refuses an origin the surface does not allow and a scope it does not declare, and nil scopes grant the declared set.
+    enforced_by:
+      - test: framework/embed.TestMintNonceEnforcesSurfaceOriginAndScopes
+  - id: no-keys-no-credentials
+    rule: A host without signing keys mints and verifies nothing.
+    enforced_by:
+      - test: framework/embed.TestMintRefusesWithoutKeys
+  - id: previous-keys-verify
+    rule: A nonce or grant signed under a key passed to SetPreviousKeys verifies.
+    enforced_by:
+      - test: framework/embed.TestHost_VerifiesGrantFromPreviousKey
+      - test: framework/embed.TestHost_VerifiesNonceFromPreviousKey
+  - id: unverified-nonce-never-reaches-the-store
+    rule: Exchange calls the burn store only for a nonce whose signature verifies.
+    enforced_by:
+      - test: framework/embed.TestSweepEmbedUnverifiedNonceNeverReachesTheStore
+  - id: exchange-is-idempotent
+    rule: A repeat exchange of a live nonce returns the stored grant with Replay set and the same whole-second expiry, never a second grant.
+    enforced_by:
+      - test: framework/embed.TestExchangeIsSingleUseAndIdempotent
+      - test: framework/embed.TestSweepEmbedReplayReportsTheStoredExpiry
+      - test: framework/embed.TestExchangeAgainstSQLBurnStore
+  - id: spent-after-grant-window
+    rule: An exchange after the stored grant expired answers ErrSpent.
+    enforced_by:
+      - test: framework/embed.TestExchangeRejectsSpentNonceAfterWindow
+  - id: burn-row-outlives-the-nonce
+    rule: Exchange keeps the burn row until the later of the grant's expiry and the nonce's, so a prune cannot un-burn a nonce that still verifies.
+    enforced_by:
+      - test: framework/embed.TestSpentNonceSurvivesAPruneWhenItOutlivesItsGrant
+  - id: expired-nonce-never-mints
+    rule: An expired nonce whose signature verifies passes the same surface and origin checks and gets only the live grant its first exchange stored, verified again, or ErrExpired.
+    enforced_by:
+      - test: framework/embed.TestExpiredNonceReturnsLiveGrant
+      - test: framework/embed.TestExpiredUnusedNonceMintsNothing
+      - test: framework/embed.TestExpiredNonceKeepsOriginChecks
+      - test: framework/embed.TestExpiredNonceAfterGrantExpiry
+      - test: framework/embed.TestExpiredNonceRechecksStoredGrant
+      - test: framework/embed.TestSweepEmbedLiveCredentialsFollowTheConfig
+  - id: framed-origin-must-match
+    rule: Exchange refuses a framedOrigin that is empty or does not normalize to the nonce's origin.
+    enforced_by:
+      - test: framework/embed.TestExchangeRequiresAReportedOrigin
+      - test: framework/embed.TestExchangeChecksFramedOrigin
+  - id: current-config-governs-live-credentials
+    rule: Exchange and VerifyGrant fail once the surface is gone or the origin is no longer allowed, and VerifyGrant drops every scope the surface no longer declares.
+    enforced_by:
+      - test: framework/embed.TestExchangeFailsClosedWhenConfigChanges
+      - test: framework/embed.TestHostVerifyGrantTracksConfig
+      - test: framework/embed.TestVerifyGrantIntersectsWithCurrentScopes
+      - test: framework/embed.TestRemovingASourceOriginRevokesInFlightGrants
+      - test: framework/embed.TestSweepEmbedLiveCredentialsFollowTheConfig
+  - id: origin-source-is-asked-last-and-fails-closed
+    rule: The grant path asks the OriginSource only about an origin outside the static allowlist, and a source error refuses the origin.
+    enforced_by:
+      - test: framework/embed.TestStaticOriginsBypassTheSource
+      - test: framework/embed.TestSourceErrorFailsClosedOnTheGrantPath
+      - test: framework/embed.TestSourceOriginCanObtainAGrantWithoutADeploy
+      - test: framework/embed.TestSourceOriginsAreComparedCanonically
+  - id: refresh-never-moves-the-deadline
+    rule: Refresh keeps the grant's deadline and scopes, clamps the new expiry to the deadline, and answers ErrGrantExhausted once the deadline passes.
+    enforced_by:
+      - test: framework/embed.TestRefreshKeepsDeadlineAndScopes
+      - test: framework/embed.TestRefreshRefusesAGrantPastItsDeadline
+      - test: framework/embed.TestSweepEmbedRefreshExpiryNeverPassesTheDeadline
+  - id: csrf-exempts-only-credential-free-routes
+    rule: CSRFExempt admits only a request carrying GrantHeader, the exchange and refresh paths, and a GET, HEAD, OPTIONS or empty-method request under SurfacePrefix, judged on the cleaned path.
+    enforced_by:
+      - test: framework/embed.TestCSRFExemptAdmitsOnlyDocumentedCases
+      - test: framework/embed.TestCSRFExemptRejectsPathTraversal
+      - test: framework/embed.TestCSRFExemptSurfacePrefixIsSafeMethodsOnly
+      - test: framework/embed.TestSweepEmbedCSRFExemptReadsAnEmptyMethodAsGET
+      - test: framework/embed.TestSweepEmbedCSRFExemptJudgesTheCleanedPath
 decisions:
   - id: refuse-hosts-a-browser-rewrites
     date: 2026-11-16
@@ -24,3 +120,103 @@ decisions:
       - option: Refuse only a host whose every label is decimal digits.
         why: It let 0x7f000001 and example.123 through, and such an entry never matches the origin a browser sends.
     upholds: [number-ending-host-is-a-dotted-quad]
+  - id: single-use-nonce-for-a-stateless-grant
+    date: 2026-11-17
+    status: accepted
+    decision: The app renders a one-minute single-use nonce into the customer's page, and the frame exchanges it for a stateless grant it sends in a header.
+    rejected:
+      - option: A time-window token rendered into the page.
+        why: Customers paste it into a cached template and every visitor arrives as the same identity, which no TTL prevents.
+      - option: The app's session cookie.
+        why: A cross-site frame never sends it, and a same-site frame that honoured it would hand the viewer's full session to a third party's page.
+    upholds: [exchange-is-idempotent, unverified-nonce-never-reaches-the-store]
+  - id: exchange-is-idempotent-within-the-grant
+    date: 2026-11-17
+    status: accepted
+    decision: A repeat exchange of a nonce returns the grant its first exchange stored while that grant lives, including after the nonce itself expired.
+    rejected:
+      - option: Fail every exchange after the first.
+        why: A prefetched iframe, a double-mounted loader or a page reload fires the exchange twice and the embed randomly fails to load.
+    upholds: [exchange-is-idempotent, expired-nonce-never-mints]
+  - id: refreshable-grant-with-a-deadline
+    date: 2026-11-17
+    status: accepted
+    decision: A grant lives GrantTTL and refreshes itself, up to a deadline fixed at exchange, GrantMaxAge later.
+    rejected:
+      - option: One long-lived grant.
+        why: It lives in a page the app does not control, so a short window bounds how long a leaked one works.
+      - option: Refresh without a deadline.
+        why: A frame left open in a tab would hold an immortal credential.
+    upholds: [refresh-never-moves-the-deadline, grant-max-age-exceeds-ttl]
+  - id: retain-burns-for-the-nonce-too
+    date: 2026-11-17
+    status: accepted
+    decision: The burn row's retention deadline is the later of the grant's and the nonce's expiry.
+    rejected:
+      - option: Retain the row until the grant expires.
+        why: With NonceTTL over GrantTTL a prune deletes the row while the nonce still verifies, and the next exchange mints a second grant.
+      - option: Forbid NonceTTL over GrantTTL.
+        why: It bans a configuration instead of closing the window for all of them.
+    upholds: [burn-row-outlives-the-nonce]
+  - id: verify-before-burn
+    date: 2026-11-17
+    status: accepted
+    decision: Exchange verifies the nonce's signature before it touches the burn store, and mints the grant before the burn so the store can keep it.
+    rejected:
+      - option: Burn first.
+        why: Any unsigned string could then probe or fill the store.
+    upholds: [unverified-nonce-never-reaches-the-store]
+  - id: framed-origin-corroborates
+    date: 2026-11-17
+    status: accepted
+    decision: The exchange requires the frame's reported ancestor origin to match the nonce, as a check behind the CSP frame-ancestors directive the browser enforces.
+    rejected:
+      - option: Skip the comparison when no origin is reported.
+        why: The one caller the check can catch, a direct POST that never went through a browser, is the one that reports nothing.
+    upholds: [framed-origin-must-match]
+  - id: live-credentials-follow-config
+    date: 2026-11-17
+    status: accepted
+    decision: Every grant verification rechecks the surface, its origins and its declared scopes against the current config.
+    rejected:
+      - option: Trust the grant's claims until it expires.
+        why: A scope or origin the operator revoked would keep working for up to GrantMaxAge, twelve hours by default.
+    upholds: [current-config-governs-live-credentials]
+  - id: static-origins-before-the-source
+    date: 2026-11-17
+    status: accepted
+    decision: The grant path checks the static allowlist first and asks the OriginSource only about other origins, failing closed on its error.
+    rejected:
+      - option: Treat a source outage as allow.
+        why: An outage would become an open framing policy.
+    upholds: [origin-source-is-asked-last-and-fails-closed]
+  - id: tenant-by-resolver
+    date: 2026-11-17
+    status: accepted
+    decision: A grant's tenant comes from the app's ResolveTenant lookup on the grant's subject.
+    rejected:
+      - option: A tenant claim inside the token.
+        why: It must be right at mint time in a credential living in a stranger's page, and a wrong one is a cross-tenant read.
+      - option: A tenant from the request.
+        why: A stolen grant could then choose its own tenant.
+    upholds: [embed.reach/subject-comes-from-the-resolvers]
+  - id: surface-carries-a-screen
+    date: 2026-11-17
+    status: accepted
+    decision: A Surface names the screen value it renders, behind a one-method Screen interface, rather than a path string.
+    rejected:
+      - option: A path string.
+        why: Neither a reader, an analyzer nor the boot-time server-action walk can follow a string to the component tree it renders.
+      - option: Take *app.Screen directly.
+        why: battery/auth imports this package, and core-ui would then be in its dependency closure.
+    upholds: [boot-refuses-bad-config]
+  - id: csrf-exempt-safe-methods-only
+    date: 2026-11-17
+    status: accepted
+    decision: The surface space is CSRF-exempt for safe methods only; the exchange, refresh and grant-carrying requests are exempt because they carry no ambient credential.
+    rejected:
+      - option: Exempt the whole SurfacePrefix.
+        why: It exempted every POST an app might later mount there, which a same-site frame reaches with the viewer's cookie.
+      - option: No exemption.
+        why: No cookie reaches a frame, so double-submit CSRF would 403 every exchange in the configuration the framework recommends.
+    upholds: [csrf-exempts-only-credential-free-routes]

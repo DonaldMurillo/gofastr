@@ -10,29 +10,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// NOT NULL and DEFAULT on an existing column
-//
-// CREATE TABLE and ADD COLUMN write a column's NOT NULL and DEFAULT, and
-// nothing compared them after that: the snapshot's column sets hold types
-// only. The CREATE TABLE the snapshot records holds both, so generate
-// reads each column's previous NOT NULL and DEFAULT from it and compares
-// them with the declared ones. On Postgres a change is an ALTER COLUMN;
-// SQLite has no ALTER COLUMN, so a change there joins the table rebuild.
-// Boot compares neither: a NOT NULL a hand-written migration put on a
-// column the entity leaves optional is the host's, and boot would remove
-// it.
-
-// colConstraint is the part of a column definition after its type that
-// the diff compares: whether it is NOT NULL, and its " DEFAULT …" clause
-// ("" for none).
+// colConstraint is a column's NOT NULL and " DEFAULT …" clause ("" for none).
 type colConstraint struct {
 	notNull bool
 	dflt    string
 }
 
-// declaredConstraint is f's NOT NULL and DEFAULT as columnDefs writes
-// them, given the entity's key columns and the column's SQL type. SQLite
-// lets NULL into any key column but an INTEGER PRIMARY KEY (the rowid).
+// declaredConstraint is f's NOT NULL and DEFAULT as columnDefs writes them.
 func declaredConstraint(f schema.Field, keys []string, dialect Dialect, colType string) colConstraint {
 	inKey := slices.Contains(keys, f.Name)
 	rowid := len(keys) == 1 && strings.EqualFold(strings.TrimSpace(colType), "INTEGER")
@@ -44,11 +28,7 @@ func declaredConstraint(f schema.Field, keys []string, dialect Dialect, colType 
 }
 
 // recordedConstraints reads the NOT NULL and DEFAULT of each column a
-// buildCreateTableSQL statement defines, keyed by the lower-cased column
-// name. The definitions are joined with ",\n\t", which a default's
-// literal can hold too, so the split skips quoted text. The DEFAULT
-// clause is the last thing columnDefs writes, so it runs to the end of
-// the definition.
+// buildCreateTableSQL statement defines, keyed by lower-cased name.
 func recordedConstraints(ddl string) (map[string]colConstraint, bool) {
 	defs, ok := recordedColumnDefs(ddl)
 	if !ok {
@@ -65,8 +45,6 @@ func recordedConstraints(ddl string) (map[string]colConstraint, bool) {
 	return out, true
 }
 
-// recordedColumnDef is one column line of a recorded CREATE TABLE: its
-// name unquoted, the text after it up to DEFAULT, and the default's text.
 type recordedColumnDef struct {
 	name, head, dflt string
 }
@@ -81,7 +59,6 @@ func recordedColumnDefs(ddl string) ([]recordedColumnDef, bool) {
 	var out []recordedColumnDef
 	for _, def := range splitColumnDefs(strings.TrimSuffix(body, "\n)")) {
 		name, rest, _ := strings.Cut(def, " ")
-		// A column named primary or foreign is a keyword, so it is quoted.
 		if (strings.EqualFold(name, "PRIMARY") || strings.EqualFold(name, "FOREIGN")) && strings.HasPrefix(strings.ToUpper(rest), "KEY") {
 			continue
 		}
@@ -91,8 +68,6 @@ func recordedColumnDefs(ddl string) ([]recordedColumnDef, bool) {
 	return out, true
 }
 
-// splitColumnDefs splits a CREATE TABLE body on the ",\n\t" between its
-// definitions, outside quoted text.
 func splitColumnDefs(body string) []string {
 	var out []string
 	start := 0
@@ -113,13 +88,8 @@ func splitColumnDefs(body string) []string {
 }
 
 // constraintChanges compares each existing column's declared NOT NULL and
-// DEFAULT with prevDDL's (the snapshot's CREATE TABLE for ent's table). A
-// column prevDDL does not define, such as one added in this change, is
-// not compared; a key column is the key diff's, and a renamed one is
-// judged by its old name. defaultOwned names
-// the columns whose Postgres retype already sets the declared default.
-// On Postgres it returns one ALTER per change; on SQLite it returns only
-// the changed columns, which the caller turns into a table rebuild.
+// DEFAULT with prevDDL's: one ALTER per change on Postgres, the changed
+// columns on SQLite.
 func constraintChanges(ent *entity.Entity, dialect Dialect, qtable, prevDDL string, renameOldByNew map[string]string, defaultOwned map[string]bool) (alters []SchemaChange, changed []string, err error) {
 	prev, ok := recordedConstraints(prevDDL)
 	if !ok {
@@ -138,7 +108,7 @@ func constraintChanges(ent *entity.Entity, dialect Dialect, qtable, prevDDL stri
 		if !ok {
 			continue
 		}
-		now := declaredConstraint(f, keys, dialect, "") // key columns were skipped above
+		now := declaredConstraint(f, keys, dialect, "")
 		nullFlip := now.notNull != was.notNull
 		dfltFlip := now.dflt != was.dflt && !defaultOwned[strings.ToLower(f.Name)]
 		if !nullFlip && !dfltFlip {
@@ -180,8 +150,6 @@ func constraintChanges(ent *entity.Entity, dialect Dialect, qtable, prevDDL stri
 	return alters, changed, nil
 }
 
-// alterDefaultSQL sets a Postgres column's default to clause (" DEFAULT
-// …"), or drops it for "".
 func alterDefaultSQL(qtable, qcol, clause string) string {
 	qtable, qcol = ddlIdent(qtable), ddlIdent(qcol)
 	if clause == "" {

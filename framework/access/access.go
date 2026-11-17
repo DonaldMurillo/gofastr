@@ -13,27 +13,22 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
-// Permission represents an action permission string (e.g. "posts:read", "posts:write").
+// Permission is an action permission string, e.g. "posts:read".
 type Permission string
 
-// RoleWithOrigin identifies an effective role and where it came from, such as
-// a direct user assignment or a resolved organization membership.
+// RoleWithOrigin is an effective role and where it came from (a direct
+// assignment, an organization membership).
 type RoleWithOrigin struct {
 	Role   string
 	Origin string
 }
 
-// Policy determines whether the subject in ctx holds a permission.
+// Policy reports whether the subject in ctx holds a permission.
 type Policy interface {
 	Can(ctx context.Context, permission Permission) bool
 }
 
-// RolePolicy implements Policy using role-based permission grants.
-//
-// Grant and Revoke may be called concurrently with Can / GetPermissions:
-// the underlying role→permissions map is guarded by an RWMutex so reads
-// don't block each other and writes won't trigger Go's concurrent-map
-// fatal.
+// RolePolicy is a Policy over role grants, safe for concurrent use.
 type RolePolicy struct {
 	mu                 sync.RWMutex
 	rolePermissions    map[string][]Permission
@@ -41,7 +36,7 @@ type RolePolicy struct {
 	strictCapabilities bool
 }
 
-// NewRolePolicy creates a new empty RolePolicy.
+// NewRolePolicy returns an empty RolePolicy.
 func NewRolePolicy() *RolePolicy {
 	return &RolePolicy{
 		rolePermissions: make(map[string][]Permission),
@@ -49,9 +44,7 @@ func NewRolePolicy() *RolePolicy {
 	}
 }
 
-// Register adds capabilities to the policy's known capability registry.
-// Registration is idempotent and safe to call concurrently with grants and
-// permission checks.
+// Register adds capabilities to the known-capability registry. Idempotent.
 func (rp *RolePolicy) Register(capabilities ...Permission) {
 	rp.mu.Lock()
 	defer rp.mu.Unlock()
@@ -60,8 +53,7 @@ func (rp *RolePolicy) Register(capabilities ...Permission) {
 	}
 }
 
-// Capabilities returns the policy's registered capabilities in sorted order.
-// The returned slice is a defensive copy.
+// Capabilities returns a sorted copy of the registered capabilities.
 func (rp *RolePolicy) Capabilities() []Permission {
 	rp.mu.RLock()
 	capabilities := make([]Permission, 0, len(rp.capabilities))
@@ -73,10 +65,7 @@ func (rp *RolePolicy) Capabilities() []Permission {
 	return capabilities
 }
 
-// Snapshot returns a deep copy of the current role→permissions map. Used by
-// GrantStore to capture the code-defined baseline grants (before DB grants are
-// overlaid) so a cross-replica refresh can merge baseline ∪ DB instead of
-// replacing a role with only its DB rows.
+// Snapshot returns a deep copy of the role→permissions map.
 func (rp *RolePolicy) Snapshot() map[string][]Permission {
 	rp.mu.RLock()
 	defer rp.mu.RUnlock()
@@ -89,8 +78,8 @@ func (rp *RolePolicy) Snapshot() map[string][]Permission {
 	return out
 }
 
-// StrictCapabilities makes unknown capability grants fail instead of warning.
-// It returns the policy so callers can opt in while constructing it.
+// StrictCapabilities makes a grant of an unknown capability an error instead
+// of a warning, and returns rp.
 func (rp *RolePolicy) StrictCapabilities() *RolePolicy {
 	rp.mu.Lock()
 	rp.strictCapabilities = true
@@ -98,12 +87,9 @@ func (rp *RolePolicy) StrictCapabilities() *RolePolicy {
 	return rp
 }
 
-// Grant adds permissions to a role. Duplicate grants are ignored.
-//
-// With a non-empty capability registry, resource wildcards such as "teams:*"
-// expand to all registered capabilities with that prefix. Unknown grants warn
-// by default and remain accepted for backward compatibility; a strict policy
-// rejects them and returns an error.
+// Grant adds permissions to role. With registered capabilities, "res:*"
+// expands to every registered "res:" capability. An unknown capability warns,
+// or errors with *UnknownCapabilityError on a strict policy.
 func (rp *RolePolicy) Grant(role string, permissions ...Permission) error {
 	prepared, err := rp.prepareGrants(permissions)
 	if err != nil {
@@ -202,16 +188,8 @@ func (rp *RolePolicy) grantPrepared(role string, permissions []Permission) {
 	rp.rolePermissions[role] = existing
 }
 
-// prepareRevokes expands wildcard-shaped permissions against the capability
-// registry with the same rule prepareGrants uses for grants, so a revoke of
-// "teams:*" removes at least the set a grant of "teams:*" installed. Two
-// deliberate differences from the grant pass: the RAW permission always
-// stays in the set too (a grant issued while the registry was empty — or
-// against a different registry — persists the wildcard literally, and
-// revoking a permission the role does not hold is a documented no-op, so the
-// extra literal can never over-revoke), and unknown capabilities pass
-// through silently instead of strict-failing (Revoke has no error return,
-// and refusing a revoke is the fail-open direction).
+// prepareRevokes expands like prepareGrants but keeps each raw permission and
+// passes unknown ones through.
 func (rp *RolePolicy) prepareRevokes(permissions []Permission) []Permission {
 	rp.mu.RLock()
 	registered := make([]Permission, 0, len(rp.capabilities))
@@ -247,9 +225,8 @@ func (rp *RolePolicy) prepareRevokes(permissions []Permission) []Permission {
 	return prepared
 }
 
-// UnknownCapabilityError reports a strict-mode grant of a capability that is
-// not in the policy's registry. Handlers can errors.As on it to present the
-// message as a caller mistake (e.g. HTTP 400) rather than a server fault.
+// UnknownCapabilityError is a strict-mode grant of an unregistered capability;
+// Nearest is the closest registered one, or empty.
 type UnknownCapabilityError struct {
 	Grant   Permission
 	Nearest Permission
@@ -290,12 +267,7 @@ func nearestCapability(grant Permission, registered []Permission) Permission {
 	return nearest
 }
 
-// EditDistance returns the Levenshtein distance between a and b: the
-// smallest number of single-character insertions, deletions, and
-// substitutions that turns one into the other. It backs
-// nearestCapability's "did you mean" suggestions here and the theme-token
-// typo hints in contracts/analyzers (closestToken), which formerly carried
-// its own private copy of this loop.
+// EditDistance returns the Levenshtein distance between a and b.
 func EditDistance(a, b string) int {
 	if len(a) < len(b) {
 		a, b = b, a
@@ -323,12 +295,8 @@ func EditDistance(a, b string) int {
 	return previous[len(b)]
 }
 
-// Revoke removes specific permissions from a role. Wildcard-shaped
-// permissions ("teams:*") expand against the capability registry exactly
-// like Grant, so revoking a wildcard removes at least what Granting the
-// same input installed; the raw literal is revoked alongside its expansion
-// (a grant made while the registry was empty persists the wildcard
-// literally, and revoking an unheld permission is a no-op).
+// Revoke removes permissions from role, expanding "res:*" like Grant and also
+// removing the raw literal. Revoking an unheld permission is a no-op.
 func (rp *RolePolicy) Revoke(role string, permissions ...Permission) {
 	prepared := rp.prepareRevokes(permissions)
 	rp.mu.Lock()
@@ -350,14 +318,8 @@ func (rp *RolePolicy) Revoke(role string, permissions ...Permission) {
 	rp.rolePermissions[role] = filtered
 }
 
-// ReplaceRole atomically REPLACES the set of permissions held by role with
-// perms (after the same prepare/validate/dedupe pass Grant uses). Unlike
-// Grant, permissions absent from perms are dropped, the role ends up with
-// exactly perms, nothing more. Use to re-sync a role's grants from an
-// authoritative source (e.g. after a cross-replica invalidation re-reads
-// the access_grants table). Honors strictCapabilities exactly like Grant:
-// an unknown capability in perms is rejected and the role is left
-// unchanged.
+// ReplaceRole sets role's permissions to exactly perms, prepared as Grant
+// prepares them. On a strict-mode error the role is unchanged.
 func (rp *RolePolicy) ReplaceRole(role string, perms ...Permission) error {
 	prepared, err := rp.prepareGrants(perms)
 	if err != nil {
@@ -367,23 +329,14 @@ func (rp *RolePolicy) ReplaceRole(role string, perms ...Permission) error {
 	return nil
 }
 
-// replacePrepared installs an already prepared (expanded, validated,
-// de-duplicated) set as role's permissions. GrantStore's reload paths
-// prepare first so they can subtract tombstones from the EXPANDED set, then
-// install through here instead of preparing a second time.
 func (rp *RolePolicy) replacePrepared(role string, prepared []Permission) {
 	rp.mu.Lock()
 	defer rp.mu.Unlock()
-	// Copy so future append-style mutations of rolePermissions[role] can't
-	// retroactively edit the caller's slice.
 	out := make([]Permission, len(prepared))
 	copy(out, prepared)
 	rp.rolePermissions[role] = out
 }
 
-// permissionsFor returns a defensive snapshot of permissions for the
-// given role. Callers iterate the returned slice without holding the
-// lock so a concurrent Grant/Revoke can't mutate it under them.
 func (rp *RolePolicy) permissionsFor(role string) []Permission {
 	rp.mu.RLock()
 	defer rp.mu.RUnlock()
@@ -396,32 +349,23 @@ func (rp *RolePolicy) permissionsFor(role string) []Permission {
 	return out
 }
 
-// Roles returns the sorted list of all roles that currently have at least
-// one granted permission. The slice is a defensive copy, callers can
-// iterate it without holding the lock. Intended for admin UIs that need
-// to enumerate the grant matrix; not used on the hot Can path.
+// Roles returns the sorted roles that hold at least one permission.
 func (rp *RolePolicy) Roles() []string {
 	rp.mu.RLock()
 	defer rp.mu.RUnlock()
 	return slices.Sorted(maps.Keys(rp.rolePermissions))
 }
 
-// PermissionsOf returns a defensive copy of the permissions granted to
-// the given role. Returns nil when the role has no grants. Callers
-// iterate the returned slice without holding the lock so a concurrent
-// Grant/Revoke can't mutate it under them.
+// PermissionsOf returns a copy of role's permissions, or nil.
 func (rp *RolePolicy) PermissionsOf(role string) []Permission {
 	return rp.permissionsFor(role)
 }
 
-// Wildcard is the superuser permission: a role granted "*" passes every
-// permission check. Grant it deliberately and only to fully-trusted,
-// separately-gated surfaces (e.g. the admin back-office, which has its own
-// Authorize gate), never to an end-user role.
+// Wildcard is the superuser permission: a role granted "*" passes every check.
+// Grant it only to separately gated surfaces, never to an end-user role.
 const Wildcard Permission = "*"
 
-// Can checks if the user from ctx has the given permission via any of their
-// roles. A role holding the Wildcard permission ("*") passes any check.
+// Can reports whether any of the ctx's roles holds permission or Wildcard.
 func (rp *RolePolicy) Can(ctx context.Context, permission Permission) bool {
 	perms := GetPermissions(ctx)
 	for _, p := range perms {
@@ -432,18 +376,8 @@ func (rp *RolePolicy) Can(ctx context.Context, permission Permission) bool {
 	return false
 }
 
-// Can reports whether the request context carries the given permission. It
-// reads the RolePolicy and roles installed via WithPolicy / WithRoles (by
-// access.Middleware or battery/auth). Returns false when no policy is present,
-// the secure-by-default answer for an un-wired request. This is the seam the
-// CRUD layer uses to enforce EntityConfig.Access.
-//
-// A scope-restricted caller (an API token or embed grant, WithHeldScopes)
-// must also hold a scope granting permission (ScopeAllows), as
-// RequirePermission requires: the credential carries its owner's roles, and
-// an "orders:update" token an admin minted must not pass Can on
-// "orders:approve". Sessions and JWTs carry no scopes and are unaffected.
-// A nil context fails closed to false, like GetPermissions and CanResource.
+// Can reports whether ctx's policy and roles grant permission and, for a
+// scope-restricted caller, a held scope allows it. No policy or a nil ctx is false.
 func Can(ctx context.Context, permission Permission) bool {
 	policy := PolicyFromContext(ctx)
 	if policy == nil {
@@ -452,12 +386,8 @@ func Can(ctx context.Context, permission Permission) bool {
 	return observe(ctx, permission, ScopeAllows(ctx, permission) && policy.Can(ctx, permission), "can")
 }
 
-// GetPermissions extracts the user's permissions from context by looking up
-// the user's roles against the RolePolicy.
-//
-// Returns nil if ctx is nil, missing a policy, or missing roles, never
-// panics. A nil context is treated as an anonymous request rather than
-// allowed to crash the handler.
+// GetPermissions returns the permissions ctx's roles hold under its policy, or
+// nil when ctx, the policy or the roles are missing.
 func GetPermissions(ctx context.Context) []Permission {
 	if ctx == nil {
 		return nil
@@ -483,23 +413,8 @@ func GetPermissions(ctx context.Context) []Permission {
 	return result
 }
 
-// RequirePermission returns HTTP middleware that checks if the current user
-// has the specified permission. Returns 403 if denied.
-//
-// The check consults the Decider seam (requireResource with the zero Ref —
-// a route-level gate holds no record, so the check is collection-level):
-// a DecisionDeny fails closed even when the role policy still grants the
-// permission, the deny DeciderMiddleware's doc comment promises. With no
-// decider installed the answer is exactly the role policy's, byte-identical
-// to the previous policy-only check.
-//
-// A scope-restricted caller (an API token or embed grant, WithHeldScopes)
-// must also hold a scope granting permission (ScopeAllows). The credential
-// carries its owner's roles, so without this a token minted for
-// "customers:read" passes RequirePermission("posts:write") on an admin's
-// roles. A Decider's Allow does not lift it: scopes only narrow. A
-// permission that is not "resource:verb" cannot be named by a scope, so a
-// scoped caller never passes it.
+// RequirePermission returns middleware that answers 403 unless the caller's
+// scopes allow permission and the Decider, or on abstain the role policy, grants it.
 func RequirePermission(permission Permission) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -514,21 +429,14 @@ func RequirePermission(permission Permission) func(http.Handler) http.Handler {
 	}
 }
 
-// Middleware installs the RBAC policy and the request's roles into the context
-// so downstream RequirePermission middleware and auto-CRUD permission gates
-// (EntityConfig.Access) can resolve permissions. roles maps a request context
-// to the caller's roles, typically by reading the authenticated user; pass
-// nil to install only the policy (roles resolved elsewhere). Mount this once,
-// app-wide or on a route group, ahead of any permission-gated routes.
+// Middleware installs policy and the roles resolved by roles (nil installs only
+// the policy) into the request context, re-resolving them on a principal recheck.
 func Middleware(policy *RolePolicy, roles func(ctx context.Context) []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := WithPolicy(r.Context(), policy)
 			if roles != nil {
 				ctx = WithRoles(ctx, roles(ctx))
-				// A request that stays open re-resolves its roles for the
-				// refreshed principal (handler.RecheckPrincipal), so a role
-				// dropped mid-stream is seen at the next check.
 				ctx = handler.AddPrincipalCheck(ctx, func(c context.Context) (context.Context, bool) {
 					return WithRoles(c, roles(c)), true
 				})
@@ -537,8 +445,6 @@ func Middleware(policy *RolePolicy, roles func(ctx context.Context) []string) fu
 		})
 	}
 }
-
-// --- Context helpers for roles and policy ---
 
 type policyKey struct{}
 type rolesKey struct{}
@@ -553,14 +459,7 @@ func WithRoles(ctx context.Context, roles []string) context.Context {
 	return context.WithValue(ctx, rolesKey{}, roles)
 }
 
-// GetRoles reads back the roles installed via WithRoles (by
-// access.Middleware or battery/auth). It is the reader half of the
-// role-context seam, without it, role context is one-way (you can put
-// roles in but not read them out), which blocks role-based UI branching
-// (e.g. "show the admin nav only when the caller holds 'admin'").
-//
-// Returns nil when ctx is nil or carries no roles, never panics. A nil
-// context is treated as an anonymous request.
+// GetRoles returns the roles WithRoles installed, or nil.
 func GetRoles(ctx context.Context) []string {
 	if ctx == nil {
 		return nil
@@ -569,15 +468,7 @@ func GetRoles(ctx context.Context) []string {
 	return roles
 }
 
-// PolicyFromContext reads back the *RolePolicy installed via WithPolicy (by
-// access.Middleware or battery/auth). It is the reader half of the
-// policy-context seam, the symmetric pair to GetRoles. The process-module
-// capability broker (framework/processmodule_broker.go, design #37 §5) uses
-// it to snapshot the delegated caller's policy at delegation-mint time so the
-// CrossOwnerRead carve-out can be checked on the reverse path without an
-// app-wide policy reference.
-//
-// Returns nil when ctx is nil or carries no policy, never panics.
+// PolicyFromContext returns the policy WithPolicy installed, or nil.
 func PolicyFromContext(ctx context.Context) *RolePolicy {
 	if ctx == nil {
 		return nil

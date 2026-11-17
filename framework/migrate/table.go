@@ -8,18 +8,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// Non-entity table path
-//
-// Some tables don't want the entity machinery: no auto-CRUD, no HTTP routes,
-// no validation, no auto-injected id/timestamps/tenant columns. Join tables,
-// analytics roll-ups, tables owned by stored procedures, or just a user who is
-// stubborn about declaring entities. Table is a raw schema declaration for
-// exactly those. It carries ONLY the columns you write. Nothing is injected.
-//
-// A Table reconciles with entities because ToEntity adapts it into the same
-// *entity.Entity the migration engine already consumes: register both in one
-// registry and AutoMigrate / DiffSchema / GenerateMigration treat them
-// uniformly, including foreign keys that cross between an entity and a Table.
+// Table is a raw schema declaration: exactly the columns written, with no
+// injected id, timestamps or tenant column and no CRUD. ToEntity adapts it
+// so it migrates beside entities, foreign keys between the two included.
 type Table struct {
 	Name        string   // table name; also the registry key for FK references
 	Columns     []Column // exactly the columns emitted, no auto-injection
@@ -27,8 +18,7 @@ type Table struct {
 	ForeignKeys []ForeignKey
 }
 
-// Index is the secondary-index declaration for a raw Table, aliased from the
-// entity package so raw-table users don't need to import it.
+// Index is the secondary-index declaration for a raw Table.
 type Index = entity.Index
 
 // Column is one column of a raw Table.
@@ -43,9 +33,8 @@ type Column struct {
 	AutoGenerate schema.AutoGenerate // e.g. AutoUUID → DEFAULT gen_random_uuid() on Postgres
 }
 
-// ForeignKey declares a foreign key from a Table column to another table's
-// primary key. RefTable is the registered name of the target (an entity name
-// or another Table's Name); the reference targets that table's primary key.
+// ForeignKey declares a foreign key from Table columns to the primary key
+// of RefTable, a registered entity or Table name.
 type ForeignKey struct {
 	// Columns names the local columns, one per key column of RefTable in
 	// key order: []string{"user_id"}, or two for a table keyed on two.
@@ -53,11 +42,9 @@ type ForeignKey struct {
 	RefTable string // target table/entity name (references its primary key)
 }
 
-// ToEntity adapts the raw Table into an *entity.Entity with no auto-injection,
-// suitable for registering alongside real entities. The columns marked
-// PrimaryKey make the key, in column order. A foreign key names one column
-// per key column of the table it references; a table with no primary key
-// is allowed but cannot be referenced.
+// ToEntity adapts the Table into an *entity.Entity with nothing injected
+// and CRUD off. The PrimaryKey columns make the key, in column order; a
+// table with no key is allowed but cannot be referenced.
 func (t Table) ToEntity() *entity.Entity {
 	fields := make([]schema.Field, 0, len(t.Columns))
 	pk := []string{}
@@ -93,17 +80,9 @@ func (t Table) ToEntity() *entity.Entity {
 		Indices:    t.Indices,
 		Relations:  relations,
 		Timestamps: &timestamps,
-		// Raw table: timestamps / soft-delete / multi-tenant all off, so the
-		// diff engine treats every column as user-owned (no managed-column
-		// skip), exactly what a raw table wants. The groups are materialized
-		// because this constructor bypasses Define()'s normalization. The
-		// diff engine reads Config.Scope directly.
 		Scope:      &entity.ScopeConfig{},
 		Pagination: &entity.PaginationConfig{},
-		// CRUD off: a raw table is registered for migration only, so
-		// nothing that reads Exposure (the admin's AllEntities, the
-		// route index, openapi.json) serves or advertises its rows.
-		Exposure: &entity.ExposureConfig{CRUD: &crud},
+		Exposure:   &entity.ExposureConfig{CRUD: &crud},
 	}}
 	return ent
 }

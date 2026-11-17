@@ -1,0 +1,148 @@
+primitive: migrate.constraints
+summary: Keys and constraints the migrator writes and reads back - primary keys, foreign keys, unique sets and column constraints.
+code:
+  - framework/migrate/primary_key.go
+  - framework/migrate/table_key.go
+  - framework/migrate/foreign_key.go
+  - framework/migrate/unique.go
+  - framework/migrate/column_constraint.go
+invariants:
+  - id: boot-key-change-only-on-empty-tables
+    rule: Boot changes an existing table's primary key only when the table is empty and refuses a table with rows, naming migrate generate and AllowDestructive as the way out.
+    enforced_by:
+      - test: framework/migrate.TestSweepConstraintsBootRefusesPopulatedKeyChange
+  - id: boot-key-change-rereads-under-the-lock
+    rule: convergeKey reads the key again on the lock-holding connection and does nothing when a peer already converged it.
+    enforced_by:
+      - test: framework/migrate.TestConvergeKeyRereadsLiveKey
+  - id: boot-key-rebuild-under-legacy-alter
+    rule: A SQLite boot key rebuild runs under legacy_alter_table=ON, so a view over the table does not stop it, and turns it off again afterwards.
+    enforced_by:
+      - test: framework/migrate.TestConvergeKeyRestoresLegacyAlter
+      - test: framework/migrate.TestBootKeyRebuildWithView
+  - id: sqlite-key-change-refuses-stranded-referrers
+    rule: A SQLite key change refuses when another table's foreign key names columns no key or unique index of the rebuilt table holds, and a bare REFERENCES strands only when the key's width changes.
+    enforced_by:
+      - test: framework/migrate.TestSQLiteKeyChangeRefusesStrandedKeys
+      - test: framework/migrate.TestSQLiteBareReferenceFollowsKey
+  - id: key-names-compare-folded-in-order
+    rule: Two primary keys are the same when they name the same columns in the same order, case ignored.
+    enforced_by:
+      - test: framework/migrate.TestSweepConstraintsSameKeyFoldsCaseKeepsOrder
+  - id: default-pk-name-matches-postgres
+    rule: defaultPKName is the table's base name lower-cased and cut to 58 bytes, then _pkey, the name Postgres gives an unnamed primary key.
+    enforced_by:
+      - test: framework/migrate.TestSweepConstraintsDefaultPKName
+  - id: postgres-key-change-ddl
+    rule: The Postgres key change clears the NOT NULL of a column leaving the key unless the field is Required, and its Down is empty when an old key column leaves the entity or foreign keys were detached.
+    enforced_by:
+      - test: framework/migrate.TestSweepConstraintsPostgresKeyChangeSQL
+      - test: framework/migrate.TestSweepConstraintsKeyChangeDetachIsIrreversible
+  - id: key-change-readds-declared-keys
+    rule: A Postgres key change detaches the foreign keys onto the old key, refuses one outside keep, and re-adds each declared one at once when the child holds its columns and after the child's own changes otherwise; a pivot key is re-added only when the pivot holds its columns.
+    enforced_by:
+      - test: framework/migrate.TestSweepConstraintsKeyChangeDetachIsIrreversible
+      - test: framework/migrate.TestSweepConstraintsDetachRefusesUndeclaredKey
+      - test: framework/migrate.TestSweepConstraintsIncomingKeysReaddOrDefer
+      - test: framework/migrate.TestSweepConstraintsPivotKeyNeedsItsColumns
+      - test: framework/migrate.TestSweepConstraintsKeyChangedParentKeepsChildKeys
+      - test: framework/migrate.TestSweepPGPivotKeyNeedsItsColumns
+  - id: foreign-key-is-its-pairs
+    rule: A foreign key is its referenced table, its column to key-column pairs and its ON DELETE action, so a composite key paired the other way round or with another action is a different constraint.
+    enforced_by:
+      - test: framework/migrate.TestSQLiteKeyChangeRefusesStrandedKeys
+      - test: framework/migrate.TestPivotConstraintDriftRefused
+  - id: redefined-key-swaps-undeclared-key-drops
+    rule: On Postgres a live key on the same columns onto the same table as a missing declared one is swapped in one irreversible change, and a live key nothing declares is a destructive drop.
+    enforced_by:
+      - test: framework/migrate.TestSweepConstraintsPostgresForeignKeySwapAndDrop
+      - test: framework/migrate.TestSweepPGForeignKeySwapAndDrop
+  - id: renames-carry-foreign-keys
+    rule: A rename hint on the child's or the parent's column renames the column a live foreign key names, so the rename reports no foreign key change.
+    enforced_by:
+      - test: framework/migrate.TestSweepConstraintsChildRenameKeepsKey
+      - test: framework/migrate.TestParentKeyRenameKeepsChildKey
+  - id: postgres-reference-matches-schema
+    rule: On Postgres a live foreign key references an entity table only when its schema matches too, the search-path schema for a bare table.
+    enforced_by:
+      - test: framework/migrate.TestSweepConstraintsPostgresRefNamesItsSchema
+  - id: bare-reference-reads-the-parent-key
+    rule: A SQLite REFERENCES naming no columns is read as referencing the parent's primary key columns.
+    enforced_by:
+      - test: framework/migrate.TestSweepConstraintsBareReferenceReadsParentKey
+  - id: default-schema-is-the-same-table
+    rule: tableKey drops main on SQLite and public on Postgres, a bare SQLite REFERENCES resolves in the child's schema, and a recorded table respelled by the default schema keeps its records and index DDL unless a declaration already names it.
+    enforced_by:
+      - test: framework/migrate.TestSQLiteBareReferencesResolve
+      - test: framework/migrate.TestPostgresBareReferencesResolve
+      - test: framework/migrate.TestQualifyingTableIsNoChange
+      - test: framework/migrate.TestQualifyingTableKeepsDiffing
+      - test: framework/migrate.TestNamedSpellingKeepsItsRecords
+  - id: unique-flip-reads-the-snapshot
+    rule: The unique-column diff reads each table's recorded unique columns, recorded as [] when there are none, and the inline UNIQUEs before any DEFAULT of the recorded CREATE TABLE for a snapshot that predates the list.
+    enforced_by:
+      - test: framework/migrate.TestLegacySnapshotReadsUniqueFromDDL
+      - test: framework/migrate.TestNonKeywordSchemaRendersUnchanged
+  - id: boot-unique-index-is-checked
+    rule: Boot adds a unique index only for a present column no single-column unique index covers, and fails rather than skip when an index of that name already exists.
+    enforced_by:
+      - test: framework/migrate.TestBootAddsNoSecondUniqueIndex
+      - test: framework/migrate.TestBootSkipsUniqueRenameTarget
+      - test: framework/migrate.TestSweepConstraintsUniqueIndexNameClashFails
+  - id: partial-unique-covers-nothing
+    rule: A partial or expression unique index does not count as holding a column unique.
+    enforced_by:
+      - test: framework/migrate.TestSweepConstraintsPartialOrExpressionUniqueCoversNothing
+      - test: framework/migrate.TestSweepPGPartialUniqueCoversNothing
+  - id: stale-unique-is-refused-at-boot
+    rule: Boot refuses a table holding a column unique alone that the entity declares unique only within a composite index, and a column declared unique alone by a field, a single-column unique index or the only key column is not stale.
+    enforced_by:
+      - test: framework/migrate.TestBootRefusesStaleUnique
+      - test: framework/migrate.TestBootKeepsDeclaredUnique
+      - test: framework/migrate.TestSweepConstraintsStaleUniqueSkipsDeclaredAlone
+  - id: constraint-diff-reads-recorded-ddl
+    rule: The NOT NULL and DEFAULT diff skips key columns, judges a renamed column by its old name, leaves a default a Postgres retype already sets, and splits the recorded definitions outside quoted text with DEFAULT running to the end.
+    enforced_by:
+      - test: framework/migrate.TestGenerateDefaultAcrossRename
+      - test: framework/migrate.TestRetypeOwnsItsDefault
+      - test: framework/migrate.TestGenerateUnchangedDefaultIsQuiet
+      - test: framework/migrate.TestConstraintLineIsNoColumn
+      - test: framework/migrate.TestSingleColumnKeyRefusesNull
+decisions:
+  - id: key-change-is-destructive
+    date: 2026-11-17
+    status: accepted
+    decision: A primary-key change is a Destructive change, applied at boot only to an empty table; Postgres swaps the constraint and SQLite rebuilds the table.
+    rejected:
+      - option: Apply it at boot on any table.
+        why: Rows keyed one way do not satisfy another, and a table with no key lets a create or update by id touch several rows.
+    upholds: [boot-key-change-only-on-empty-tables]
+  - id: detach-by-catalog-not-by-name
+    date: 2026-11-17
+    status: accepted
+    decision: The Postgres key change detaches the foreign keys onto the key in a DO block that finds them in pg_constraint by the key's index.
+    rejected:
+      - option: Drop them by name.
+        why: The snapshot records no constraint names.
+    upholds: [key-change-readds-declared-keys]
+  - id: unique-drop-by-column
+    date: 2026-11-17
+    status: accepted
+    decision: Dropping a Postgres UNIQUE finds the constraint by its single column when the migration runs, and drops the ADD path's index by name with IF EXISTS.
+    rejected:
+      - option: Drop the constraint by a computed name.
+        why: An older build's table holds it under the name Postgres chose, trimmed past 63 bytes and numbered on a clash.
+  - id: unique-flip-skips-added-columns
+    date: 2026-11-17
+    status: accepted
+    decision: uniqueFlipChanges skips a column added in the same change, leaving its unique index to the ADD path.
+    rejected:
+      - option: Emit it from both paths and rely on GeneratePlan's dedupe.
+        why: One owner per column is clearer; the output is the same.
+  - id: boot-compares-no-column-constraints
+    date: 2026-11-17
+    status: accepted
+    decision: Only generate compares a column's NOT NULL and DEFAULT, from the recorded CREATE TABLE; boot compares neither.
+    rejected:
+      - option: Converge them at boot.
+        why: A NOT NULL a hand-written migration put on a column the entity leaves optional is the host's, and boot would remove it.

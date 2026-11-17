@@ -12,19 +12,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// Image and File fields: a stored value is either a URL (absolute, or a
-// path on this origin) or a storage key the app serves under
-// Extensions.FilesURL. With file storage on the app the form takes an
-// upload; without it the value stays an editable URL.
-
-// uploadMaxMB is the size the upload control announces: the cap
-// framework/file enforces on every upload.
 const uploadMaxMB = int(file.MaxProcessFileSize >> 20)
 
-// fileHref is where a stored Image or File value is fetched from: an
-// http(s) URL or a same-origin path as is, a storage key under
-// FilesURL with each segment escaped, and "" for anything else (a
-// script scheme, a key that climbs with "..", a key with no FilesURL).
 func (u *UI) fileHref(val string) string {
 	val = strings.TrimSpace(val)
 	if val == "" || strings.ContainsAny(val, "\\\x00") {
@@ -52,13 +41,8 @@ func (u *UI) fileHref(val string) string {
 	return u.ext.FilesURL + strings.Join(parts, "/")
 }
 
-// uploads reports whether the entity's writes take a file: its CRUD
-// handler has storage, so a multipart save stores the upload.
 func (m *meta) uploads() bool { return m.hasAPI && m.ch != nil && m.ch.Storage != nil }
 
-// fileValue draws a stored file read-only: a thumbnail for an image, a
-// link named by its file name for a file, the empty mark when it has no
-// address.
 func (u *UI) fileValue(f schema.Field, label, val string, size ui.ThumbnailSize) render.HTML {
 	href := u.fileHref(val)
 	if href == "" {
@@ -74,9 +58,6 @@ func (u *UI) fileValue(f schema.Field, label, val string, size ui.ThumbnailSize)
 	return ui.Link(ui.LinkConfig{Href: href, Text: name})
 }
 
-// uploadInput draws an Image or File field as an upload: the stored
-// file above a file input of the types the field takes. Leaving the
-// input empty keeps the stored file (the runtime sends no part for it).
 func (fb *formBuilder) uploadInput(ctx context.Context, f schema.Field, label, help, id, val string, required bool) render.HTML {
 	accept := ""
 	if f.Type == schema.Image {

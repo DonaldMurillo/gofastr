@@ -92,9 +92,17 @@ more invariants and 151 decisions on `app` and its children.
 `framework/headless` is swept, 31.4% to 6.8% (300 invariants, 124
 decisions); `framework/uihost`, 35.0% to 4.1% (351 and 114);
 `framework/ui`, 24.0% to 6.8% (385 and 123). The replay eval after them
-held every number (`2026-11-16-replay-ui-sweeps.md`). The repository as
-a whole is at the share the script prints. Next: the rest of
-`framework/`.
+held every number (`2026-11-16-replay-ui-sweeps.md`). Six more packages
+are swept: `framework/contracts` 20.8% to 3.1% (163 invariants, 33
+decisions), `framework/migrate` 26.4% to 4.4% (98 and 23),
+`framework/entityui` 22.2% to 3.7% (65 and 6), `framework/embed` 44.5% to
+7.7% (54 and 33), `framework/entity` 31.4% to 7.6% (46 and 8) and
+`framework/access` 35.3% to 7.6% (41 and 6), each with an owner in
+`TestCoveredPackagesHaveNoUnownedFile`. `framework/` as a whole is at
+12.3%; the repository as a whole is at the share the script prints.
+Next: the rest of `framework/` (experimental, image, static, pluginhost,
+outbox, filter, file, cron, openapi, testkit, gallery and the small
+ones).
 
 ### 3. Bring the known twins in, and merge them
 
@@ -124,6 +132,11 @@ its list as this step reaches it.
 (thirteen children; `uihost.go` was split into files by job so each has
 one) and `framework/ui` (ten children beside `ui.styling`) are covered
 too, ahead of their sweeps.
+`framework/contracts` (engine, config, report and four analyzer
+families), `framework/entityui` (list, bulk, record), `framework/migrate`
+(diff, constraints, sqlite, objects), `framework/embed` (credential,
+origin, reach), `framework/entity` (display, states) and
+`framework/access` (store) are covered as well.
 
 A rule that spans primitives keeps one home and lists the other files
 it governs under `applies` (settled in step 1: `crud.scope`'s

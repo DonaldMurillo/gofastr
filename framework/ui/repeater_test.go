@@ -59,11 +59,13 @@ func TestRepeaterMinMaxAttrs(t *testing.T) {
 func TestRepeaterRPCAttrs(t *testing.T) {
 	h := Repeater(RepeaterConfig{
 		Name:    "items",
+		ID:      "items",
 		RPCPath: "/api/items/repeater",
 		Items:   []render.HTML{render.Text("x")},
 	})
 	mustContain(t, h, `data-cui-rpc="/api/items/repeater?op=add"`)
 	mustContain(t, h, `data-cui-rpc="/api/items/repeater?index=0&amp;op=remove`)
+	mustContain(t, h, `data-cui-rpc-signal="items-items"`)
 }
 
 func TestRepeaterHidesRemoveOnMinItems(t *testing.T) {

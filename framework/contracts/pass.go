@@ -19,17 +19,7 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
-// skipDirs are trees no analyzer ever wants: dependency caches, VCS
-// metadata, and every build-output directory the project uses. Findings
-// in `dist/` are noise: nobody edits a build artifact to fix them.
-var skipDirs = map[string]bool{
-	"vendor": true, "node_modules": true, ".git": true,
-	"dist": true, "bin": true, "build": true, "tmp": true,
-	"testdata": false, // kept: fixtures are real source worth linting
-}
-
-// SourceFile is one file the pass discovered, with the classification
-// every analyzer needs before deciding whether to look at it.
+// SourceFile is one file the pass discovered, with its classification.
 type SourceFile struct {
 	// Rel is the slash-separated path from the pass root.
 	Rel string
@@ -37,31 +27,22 @@ type SourceFile struct {
 	Abs string
 	// IsTest is true for _test.go files.
 	IsTest bool
-	// IsCSS is true for stylesheet files (.css). Discovery reads them
-	// like any source file, but they are not Go: Files/AppFiles/
-	// TestFiles exclude them and StyleFiles returns them, so no analyzer
-	// that assumes Go source ever sees one. AST parsing is refused
-	// rather than attempted (and recorded as a parse failure).
+	// IsCSS is true for stylesheets (.css), which only StyleFiles returns.
 	IsCSS bool
-	// IsScript is true for JavaScript files (.js, .mjs, .cjs). Like a
-	// stylesheet it is never handed to a Go analyzer: ScriptFiles returns
-	// it, the text rules that match client code (GOFASTR1802/1803) read
-	// it, and AST parsing is refused.
+	// IsScript is true for JavaScript (.js, .mjs, .cjs), which only
+	// ScriptFiles returns.
 	IsScript bool
-	// IsGenerated is true when the file carries a `Code generated … DO NOT
-	// EDIT` header. Analyzers skip these by default: the developer cannot
-	// fix a finding there, only the generator can.
+	// IsGenerated is true when the file carries the full generated-code
+	// header; the App, Test, Style and Script accessors skip it.
 	IsGenerated bool
 	// Package is the Go import path of the file's directory, derived from
 	// the module path. Empty when the root has no go.mod.
 	Package string
 }
 
-// Pass is the shared context every analyzer runs against. It owns file
-// discovery, source reading, and AST parsing so a twelve-analyzer run
-// parses each file once rather than twelve times, and it carries the
-// resolved [Config] so analyzers can honour path exemptions without each
-// re-implementing the matching.
+// Pass is the shared context every analyzer runs against: discovered
+// files, their sources, cached ASTs, and the resolved [Config]. It is
+// safe for concurrent use.
 type Pass struct {
 	// Root is the absolute directory being analysed.
 	Root string
@@ -72,12 +53,10 @@ type Pass struct {
 
 	files []SourceFile
 
-	mu      sync.Mutex
-	fset    *token.FileSet
-	sources map[string][]byte
-	asts    map[string]*ast.File
-	// unparsed records files reading or parsing rejected, so the report can say
-	// what it could not read instead of implying those files were clean.
+	mu       sync.Mutex
+	fset     *token.FileSet
+	sources  map[string][]byte
+	asts     map[string]*ast.File
 	unparsed map[string]string
 	memo     map[string]any
 }
@@ -128,8 +107,6 @@ func (p *Pass) discover() error {
 			if path == p.Root {
 				return fmt.Errorf("read root %q: %w", p.Root, err)
 			}
-			// Keep readable siblings inspectable, but record skipped subtrees
-			// so Run cannot certify an incomplete source tree.
 			if d != nil && d.IsDir() {
 				if rel, relErr := filepath.Rel(p.Root, path); relErr == nil {
 					p.unparsed[filepath.ToSlash(rel)] = err.Error()
@@ -144,20 +121,8 @@ func (p *Pass) discover() error {
 			return nil
 		}
 		if d.IsDir() {
-			name := d.Name()
 			if path == p.Root {
 				return nil
-			}
-			if skip, known := skipDirs[name]; known && skip {
-				return fs.SkipDir
-			}
-			// Hidden directories are tooling state (.git, .gofastr,
-			// .claude), never app source. A leading underscore is Go's
-			// own ignore marker: `go build ./...` never compiles such a
-			// tree and a directory //go:embed leaves it out, so neither
-			// its Go nor its CSS ships, and the analysis does not read it.
-			if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
-				return fs.SkipDir
 			}
 			if buildoutput.StaticExport(os.DirFS(path), ".") {
 				return fs.SkipDir
@@ -203,9 +168,7 @@ func (p *Pass) discover() error {
 	return nil
 }
 
-// Files returns every discovered Go file, in path order. Stylesheets are
-// excluded: every analyzer in the tree assumes the files handed to it
-// parse as Go.
+// Files returns every discovered Go file, in path order.
 func (p *Pass) Files() []SourceFile {
 	var out []SourceFile
 	for _, f := range p.files {
@@ -243,12 +206,8 @@ func (p *Pass) TestFiles() []SourceFile {
 	return out
 }
 
-// StyleFiles returns the .css files configuration has not exempted.
-// They get the same discovery rules as Go source (skipDirs, hidden
-// directories, generated headers, global exemptions) and are readable
-// through Source; the difference is that no Go accessor will hand them
-// out. Per-rule exemptions are applied later, at diagnostic filtering,
-// exactly as for Go files.
+// StyleFiles returns the non-generated .css files configuration has not
+// exempted.
 func (p *Pass) StyleFiles() []SourceFile {
 	var out []SourceFile
 	for _, f := range p.files {
@@ -261,11 +220,8 @@ func (p *Pass) StyleFiles() []SourceFile {
 }
 
 // ScriptFiles returns the JavaScript files configuration has not
-// exempted, minus generated and minified ones: a hit inside a vendored
-// bundle points at code the app did not write and cannot act on. A
-// script is minified when its name says so (.min.js) or a line runs past
-// maxScriptLine bytes, the same test the upgrade scanner's text matchers
-// use (internal/upgrade/scan).
+// exempted, minus generated and minified ones (a .min.* name, or a line
+// longer than 1000 bytes).
 func (p *Pass) ScriptFiles() []SourceFile {
 	var out []SourceFile
 	for _, f := range p.files {
@@ -282,7 +238,6 @@ func IsScriptPath(path string) bool {
 	return strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".mjs") || strings.HasSuffix(path, ".cjs")
 }
 
-// maxScriptLine is the line length past which a script counts as minified.
 const maxScriptLine = 1000
 
 func isMinifiedScript(rel string, body []byte) bool {
@@ -334,12 +289,9 @@ func (p *Pass) FileSet() *token.FileSet {
 	return p.fset
 }
 
-// AST parses a discovered Go file once and caches the result. Comments are
-// retained because suppression directives live in them. A file that fails
-// to parse returns (nil, false) rather than an error: a project mid-edit
-// should still get findings from every file that *does* parse. A
-// stylesheet is refused outright: parsing CSS as Go would fail and land
-// in Unparsed, reporting every discovered stylesheet as unreadable.
+// AST parses a discovered Go file once, with comments, and caches the
+// result. A file that fails to parse returns (nil, false) and is recorded
+// in [Pass.Unparsed]; a stylesheet or script returns (nil, false) unrecorded.
 func (p *Pass) AST(rel string) (*ast.File, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -357,11 +309,6 @@ func (p *Pass) AST(rel string) (*ast.File, bool) {
 	f, err := parser.ParseFile(p.fset, rel, body, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		p.asts[rel] = nil
-		// Remembered, not merely skipped. Every analyzer that wanted this
-		// file reports nothing for it, and without a record the run reads
-		// as "these files are clean" rather than "these files could not
-		// be read", the same distinction the baseline and --changed
-		// counters exist to preserve.
 		if p.unparsed == nil {
 			p.unparsed = map[string]string{}
 		}
@@ -403,10 +350,8 @@ func (p *Pass) Position(pos token.Pos) token.Position {
 	return p.FileSet().Position(pos)
 }
 
-// Memo computes a value once per pass and shares it across analyzers.
-// This is how the routing analyzer's discovered route table reaches the
-// testing and permissions analyzers without an ordering constraint
-// between them: whoever asks first pays, everyone else reads the cache.
+// Memo computes a value once per pass and shares it across analyzers;
+// the first caller's value wins.
 func (p *Pass) Memo(key string, compute func() any) any {
 	p.mu.Lock()
 	if v, ok := p.memo[key]; ok {
@@ -415,8 +360,6 @@ func (p *Pass) Memo(key string, compute func() any) any {
 	}
 	p.mu.Unlock()
 
-	// Compute outside the lock: a memo body may itself call AST/Source,
-	// which take the same mutex.
 	v := compute()
 
 	p.mu.Lock()
@@ -438,15 +381,8 @@ func (p *Pass) Rel(abs string) string {
 	return filepath.ToSlash(rel)
 }
 
-// IsGeneratedSource reports whether body carries the conventional
-// generated-code header (https://pkg.go.dev/cmd/go#hdr-Generate_Go_files):
-// a line reading `// Code generated … DO NOT EDIT.`. The FULL header is
-// required, not either half: the exemption removes a file from every
-// analyzer, and the header is repo content, so a bare `// DO NOT EDIT`
-// added to the file carrying a violation would buy a whole-tree
-// exemption that reads like a comment in review. Only the first 512
-// bytes are inspected, so a doc comment mentioning the phrase further
-// down does not exempt a hand-written file.
+// IsGeneratedSource reports whether the first 512 bytes of body hold a
+// whole line reading `// Code generated … DO NOT EDIT.`.
 func IsGeneratedSource(body []byte) bool {
 	head := body
 	if len(head) > 512 {
@@ -455,32 +391,20 @@ func IsGeneratedSource(body []byte) bool {
 	return reGeneratedHeader.Match(head)
 }
 
-// reGeneratedHeader is the conventional generated-code marker, the same
-// line shape cmd/go documents. Line-anchored at both ends so the phrase
-// must stand as the whole comment line.
 var reGeneratedHeader = regexp.MustCompile(`(?m)^// Code generated .* DO NOT EDIT\.$`)
 
-// ReadModulePath returns the `module` line from root/go.mod, or "" when the
-// file is missing or declares no module. Pass discovery uses it to derive
-// package import paths from filesystem locations. Formerly duplicated as
-// cmd/gofastr/internal/auditcmd/audit.go:readModulePath; that copy is deleted and calls
-// this one.
+// ReadModulePath returns the module path from root/go.mod, unquoted, or
+// "" when the file is missing or declares no module.
 func ReadModulePath(root string) string {
 	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
 	if err != nil {
 		return ""
 	}
-	// modfile.ModulePath, not a hand-rolled line scan: a module path may
-	// be quoted (`module "example.com/q"`) and the line may trail a
-	// comment; the path is joined into import paths, so a stray quote or
-	// comment must not ride into every one of them.
 	return modfile.ModulePath(body)
 }
 
 // ImportPathFor maps a directory to its Go import path given the module's
-// root and module-path declaration. Formerly duplicated as
-// cmd/gofastr/internal/auditcmd/audit.go:importPathFor; that copy is deleted and calls this
-// one.
+// root and module path.
 func ImportPathFor(modulePath, root, dir string) string {
 	rel, err := filepath.Rel(root, dir)
 	if err != nil {

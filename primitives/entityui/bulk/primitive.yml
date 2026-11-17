@@ -1,0 +1,92 @@
+primitive: entityui.bulk
+summary: Bulk actions on selected list rows and the bulk export.
+code:
+  - framework/entityui/bulk.go
+  - framework/entityui/bulk_export.go
+  - framework/entityui/list_bulk.go
+invariants:
+  - id: selection-resolved-by-the-server
+    rule: The server resolves a bulk selection itself, re-reading posted ids (kept exactly, never trimmed) through the scoped CRUD handler under the caller's context, so an app action is handed only ids the caller may read.
+    enforced_by:
+      - test: framework/entityui.TestBulkRunSeesOnlyReadableIDs
+      - test: framework/entityui.TestBulkJobRereadsEachChunk
+      - test: framework/entityui.TestDedupeIDsKeepsPaddedKeys
+  - id: every-match-runs-only-the-rows-the-screen-drew
+    rule: An every-match run rebuilds the list's narrowing from its query (refusing a filter the list would refuse), reads at most EveryMatchCap ids and runs only when their length-prefixed digest equals the one the bar carried, else 409.
+    enforced_by:
+      - test: framework/entityui.TestBulkEveryMatchStaleRefused
+      - test: framework/entityui.TestEveryMatchRefusesSwappedRows
+      - test: framework/entityui.TestMatchDigestSeparatesIDs
+      - test: framework/entityui.TestBulkEveryMatchBadFilterRefused
+      - test: framework/entityui.TestEveryMatchOverCapNotOffered
+  - id: each-record-asks-its-write-gate
+    rule: Every record of a run is asked its own delete or update gate, plus an action's or move's Permission held exactly about that record, before its write, and a refused record, a move from the wrong state or a refused restore counts as skipped, not failed.
+    enforced_by:
+      - test: framework/entityui.TestBulkDeciderDeniesOneRecord
+      - test: framework/entityui.TestRecordActionPermissionAndFailure
+      - test: framework/entityui.TestBulkMoveNeedsMovePermission
+      - test: framework/entityui.TestBulkMoveSkipsWrongState
+      - test: framework/entityui.TestSweepBulkRefusedRestoreIsSkipped
+  - id: bulk-writes-run-the-read-hooks
+    rule: Bulk writes, the app action's CRUD handle and queued writes run under crud.WithReadHooks, so a row the caller's BeforeGet hides is never written.
+    enforced_by:
+      - test: framework/entityui.TestBulkHonorsBeforeGet
+      - test: framework/entityui.TestBulkAppActionCrudHonorsBeforeGet
+      - test: framework/entityui.TestQueuedWritesHonorBeforeGet
+  - id: bulk-body-is-strict-json
+    rule: BulkHandler reads only a JSON body (a cross-site form can send text/plain with no preflight), offers only the actions this caller is offered on the posted scope, never settable locked, state or stamp fields, answers 404 on a list scope under Display.NoBulk, and caps the deleted scope at InRequestCap and the record scope at one id.
+    enforced_by:
+      - test: framework/entityui.TestBulkRefusesNonJSONBody
+      - test: framework/entityui.TestBulkLockedAndStateNeverSettable
+      - test: framework/entityui.TestBulkNoBulkIsNotFound
+      - test: framework/entityui.TestBulkRestoreScopeBounds
+      - test: framework/entityui.TestRecordScopeRefusals
+      - test: framework/entityui.TestBulkSingleIDAsString
+  - id: undo-restores-only-what-the-run-deleted
+    rule: A delete's toast offers Undo only when the bar asked, for the ids the run deleted that the caller could update before it, and drops the button when it would pass undoActionBudget.
+    enforced_by:
+      - test: framework/entityui.TestBulkUndoOnlyWhenAsked
+      - test: framework/entityui.TestBulkUndoNeedsUpdate
+      - test: framework/entityui.TestBulkUndoNamesDeletedRowsOnly
+      - test: framework/entityui.TestBulkUndoOverBudgetDropped
+  - id: queued-run-regated-per-chunk
+    rule: A queued run needs a named creator, and before each chunk rebuilds the creator's context and stops when it fails or panics, the caller lost read, or the action is no longer offered.
+    enforced_by:
+      - test: framework/entityui.TestBulkQueueRefusesAnonymousCreator
+      - test: framework/entityui.TestBulkQueuedStopsWithoutPrincipal
+      - test: framework/entityui.TestBulkPanickingPrincipalStopsTheRun
+      - test: framework/entityui.TestBulkJobStopsWhenReadRevoked
+  - id: settling-writes-outlive-the-request
+    rule: The audit summary row, a chunk's Settle, a refused job's abandon and a lease hand-back run on a context detached from cancellation and bounded by bulkSettleTimeout.
+    enforced_by:
+      - test: framework/entityui.TestBulkAuditSurvivesHangUp
+      - test: framework/entityui.TestBulkSettleSurvivesCancel
+      - test: framework/entityui.TestRefusedJobSurvivesDisconnect
+      - test: framework/entityui.TestBulkLeaseHandBackBounded
+  - id: queued-job-runs-once
+    rule: A second confirm of a queued run answers that job, a refused or panicking Enqueue abandons the job so nothing resumes it, and the audit row is written before Finish so a failed write leaves the job queued.
+    enforced_by:
+      - test: framework/entityui.TestBulkResubmitAnswersQueuedJob
+      - test: framework/entityui.TestBulkRefusedEnqueueIsNotResumed
+      - test: framework/entityui.TestBulkPanickingEnqueueIsNotResumed
+      - test: framework/entityui.TestBulkAuditFailureKeepsJobQueued
+  - id: export-reads-only-the-lists-own-params
+    rule: ExportHandler refuses an undecodable query and any param that is not the list's own (a facet that is not configured, ?q= on an entity without SearchFields), leaves out NoQuery, omitted and JSON fields, defuses formula cells while keeping plain numbers, and reads at most InRequestCap named ids, each asked its record gate.
+    enforced_by:
+      - test: framework/entityui.TestExportRefusesForeignParams
+      - test: framework/entityui.TestExportRefusesNonFacetParam
+      - test: framework/entityui.TestExportRefusesUnsearchableQ
+      - test: framework/entityui.TestExportDefusesFormulasAndDropsNoQuery
+      - test: framework/entityui.TestExportDropsOmittedField
+      - test: framework/entityui.TestCSVSafeTriggerForms
+      - test: framework/entityui.TestExportKeepsNegativeNumbers
+      - test: framework/entityui.TestExportNamedRows
+decisions:
+  - id: export-refuses-unknown-params
+    date: 2026-11-17
+    status: accepted
+    decision: The export answers 400 for a query param that is not the list's own instead of ignoring it.
+    rejected:
+      - option: Ignore params the list does not own, as the list screen does.
+        why: A REST filter, another list's param or a typo then exported every row the caller may read, wider than the list the reader saw.
+    upholds: [export-reads-only-the-lists-own-params]

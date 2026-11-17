@@ -18,21 +18,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
-// EntityConfig holds the declarative configuration for an entity.
-// Name is set via Define(); Fields declare the schema.
-// Timestamps is nil by default; Define resolves nil to true.
+// EntityConfig is an entity's declaration. Define sets Name, defaults Table to
+// snake_case(Name) and resolves a nil Timestamps to true.
 type EntityConfig struct {
 	Name      string         // entity name (e.g. "users")
 	Table     string         // DB table name (defaults to snake_case of Name)
 	Fields    []schema.Field // typed field definitions
 	Relations []Relation     // entity relationships
 
-	// PrimaryKey names the primary-key columns in order. Nil means the one
-	// column "id", which Define injects as a generated UUID unless Fields
-	// declares it. More than one column is a composite key: a join table
-	// keyed on the rows it links, (student_id, course_id). Define injects
-	// no "id" column when PrimaryKey leaves it out, and panics when a
-	// column is repeated or is not a declared field.
+	// PrimaryKey names the key columns in order; nil means "id", a generated UUID
+	// Define injects. Several columns make a composite key.
 	PrimaryKey []string
 
 	Endpoints  []Endpoint        // custom HTTP endpoints for this entity
@@ -40,100 +35,44 @@ type EntityConfig struct {
 	Pagination *PaginationConfig // list limits and keyset cursor shape
 	Exposure   *ExposureConfig   // generated HTTP/MCP and access posture
 	Timestamps *bool             // add created_at / updated_at columns; nil defaults to true
-	Indices    []Index           // additional CREATE INDEX statements emitted by AutoMigrate
-	Unmanaged  bool              // when true, the migration system never emits DDL for this object (it is created elsewhere, e.g. a view, an FTS virtual table, or a legacy/external table). The ORM still queries it.
+	Indices    []Index           // secondary indices AutoMigrate creates
+	Unmanaged  bool              // no DDL is emitted; the object exists elsewhere
 
-	// Properties holds caller-owned metadata. The framework does not
-	// interpret any key; generators, plugins, and apps define their own keys.
+	// Properties holds caller-owned metadata the framework never interprets.
 	Properties map[string]any
 
-	// SearchFields names the DB columns that ?q= free-text search operates
-	// on (e.g. []string{"title","body"}). When non-empty, a List request
-	// carrying ?q=<term> tokenizes the term on whitespace (deduped, capped
-	// at filter.MaxSearchTerms) and AND-composes one LOWER(col) LIKE
-	// pattern per token across the listed fields. Matching is
-	// ASCII-case-insensitive everywhere (Unicode-folding on Postgres).
-	// Column names must be known, non-Hidden, and String/Text-typed;
-	// Define panics otherwise. An entity WITHOUT SearchFields answers a
-	// non-blank ?q= with 400 search_not_configured, unless it has its own
-	// queryable column (or allowed filter param) named q.
+	// SearchFields names the String or Text columns ?q= matches, one LOWER LIKE per
+	// term AND-ed. Without them a non-blank ?q= answers 400 search_not_configured.
 	SearchFields []string
 
-	// Seed runs once per entity after AutoMigrate creates the table. The
-	// framework tracks completion in the _gofastr_seeded ledger; subsequent
-	// App.Start() calls skip the entity. Errors abort App.Start.
-	//
-	// Go-only: function values cannot be expressed in an app spec
-	// declaration. Apps whose entities come from a gofastr.yml app spec
-	// must wire seeding from Go.
-	//
-	// Concurrency: RunSeeds is NOT safe for concurrent invocation across
-	// multiple processes. The framework assumes serialized startup (one
-	// process / replica calls App.Start at a time). For HA setups, gate
-	// seeding behind an external mechanism (init container, one-shot
-	// job, advisory lock). Seed implementations should be idempotent
-	// (INSERT … ON CONFLICT DO NOTHING) so accidental re-runs cannot
-	// duplicate data.
+	// Seed runs once per entity after AutoMigrate creates the table, recorded in
+	// the _gofastr_seeded ledger; an error aborts App.Start. Go-only, and not safe
+	// across concurrently starting replicas, so keep it idempotent.
 	Seed func(ctx context.Context, db *sql.DB) error
 
-	// SeedFS is an optional fs.FS (typically a //go:embed embed.FS) that
-	// the framework attaches to the Seed function's context. Use with
-	// SeedPath to point at a single file within the FS.
-	//
-	// Go-only: like Seed itself, an fs.FS cannot be expressed in JSON
-	// entity declarations.
+	// SeedFS is an optional fs.FS attached to Seed's context. Go-only.
 	SeedFS fs.FS
 
-	// SeedPath is the path within SeedFS that Seed should consume.
-	// Ignored when SeedFS is nil.
+	// SeedPath is the file within SeedFS that Seed reads; ignored when SeedFS is nil.
 	SeedPath string
 
-	// LenientFilters opts the entity's auto-CRUD List endpoint OUT of strict
-	// filter parsing. By default an unknown top-level filter key (a typo like
-	// ?stauts=active) is REJECTED with a 400 rather than silently dropped,
-	// silently dropping it returns an UNFILTERED result set, which is a
-	// data-exposure and broken-client hazard. Set true only as a migration
-	// escape hatch for an endpoint that must tolerate arbitrary extra query
-	// params (e.g. legacy tracking params); prefer fixing the caller.
-	// Default false (strict).
+	// LenientFilters stops List from refusing unknown filter keys with 400. Default false (strict).
 	LenientFilters bool
 
-	// AllowedFilterParams declares extra query-param keys that are NOT entity
-	// columns but are legitimately consumed elsewhere on the List request,
-	// typically read by a BeforeList hook or custom middleware (e.g. a
-	// bespoke "?region=eu" scope param). Strict filter parsing skips these
-	// instead of rejecting them, so the endpoint keeps typo-protection for
-	// real fields without falling back to LenientFilters (which disables it
-	// entirely). Reserved list controls are always allowed and need not be
-	// listed here.
+	// AllowedFilterParams lists non-column query keys strict filter parsing skips,
+	// such as a param a BeforeList hook reads.
 	AllowedFilterParams []string
 
-	// Display holds the screen hints for this entity: names, columns,
-	// views, form layout, nav placement and per-field drawing hints. It is
-	// a pointer config like Scope: nil means every default, and Define
-	// copies it deeply so a caller that edits its value afterwards changes
-	// nothing the app checked or serves. It never widens what the API
-	// accepts; see DisplayConfig for the boot check over every name it
-	// holds and where the query strings inside it are parsed.
+	// Display holds the screen hints; nil means every default. Define copies it.
 	Display *DisplayConfig
-	// States names the Enum field holding the record's state and the
-	// moves that change it. Unless Advisory is set the CRUD handler
-	// refuses any write that changes the field or a stamp outside a move;
-	// see StatesConfig. Nil means no states. Define copies it deeply.
+	// States names the state field and its moves; nil means none. Define copies it.
 	States *StatesConfig
-	// Renames declares column renames (old name → new name) so the schema
-	// diff emits a non-destructive ALTER TABLE … RENAME COLUMN instead of a
-	// data-losing DROP of the old column + ADD of the new one. Rename is
-	// otherwise indistinguishable from drop+add, so it requires this explicit
-	// declaration; auto-detection is unsafe. A rename only fires when the old
-	// column is present in the live schema and the new name is declared on the
-	// entity. Declare it in Go or under an entity's `renames:` key in a
-	// app spec.
+	// Renames maps old column names to new ones, so the schema diff renames a
+	// column instead of dropping it and adding another.
 	Renames map[string]string
 }
 
-// ScopeConfig groups the rules that constrain which rows a request can read
-// or change. Define always populates EntityConfig.Scope on the resolved entity.
+// ScopeConfig groups the rules that limit which rows a request reads or changes. Define always sets EntityConfig.Scope.
 type ScopeConfig struct {
 	SoftDelete     bool   // add deleted_at and hide deleted rows by default
 	MultiTenant    bool   // scope rows to the tenant in the request context
@@ -142,21 +81,14 @@ type ScopeConfig struct {
 	CrossOwnerRead string // permission that lifts owner scoping for reads only
 }
 
-// PaginationConfig groups list limits and keyset cursor configuration. A
-// non-empty CursorFields composite takes precedence over CursorField.
-// Either way the CRUD list's keyset paging appends each primary-key column
-// the list does not name, as the tiebreak, and the cursor token carries
-// the key (with the sort values when they fit the cursor cap). The query
-// DSL's after() has no tiebreak: it keysets on CursorField alone, so it
-// refuses a CursorField that is neither the only key column nor Unique.
+// PaginationConfig groups list limits and keyset cursor columns; CursorFields beats CursorField.
 type PaginationConfig struct {
 	CursorField  string
 	CursorFields []string
 	MaxListLimit int
 }
 
-// ExposureConfig groups generated routes and their access rules. CRUD is a
-// pointer so nil keeps automatic route generation and false disables it.
+// ExposureConfig groups generated routes and their access rules.
 type ExposureConfig struct {
 	CRUD      *bool            // nil or true generates CRUD routes
 	MCP       bool             // register MCP CRUD tools
@@ -165,8 +97,7 @@ type ExposureConfig struct {
 	ReadScope *ReadScopeConfig // narrows which rows a caller may read; nil = no row filtering
 }
 
-// RowPredicate is one declared condition on the entity's own columns,
-// used by ReadScopeConfig to narrow which rows a caller may read.
+// RowPredicate is one condition on the entity's own columns, for ReadScopeConfig.
 type RowPredicate struct {
 	Field  string   // column name, exactly as declared on the entity
 	Op     string   // "eq", "neq", "in", "not_in"; empty means "eq"
@@ -174,43 +105,16 @@ type RowPredicate struct {
 	Values []string // "in" / "not_in"
 }
 
-// ReadScopeConfig narrows WHICH rows a caller may read, as opposed to
-// Exposure.Access, which decides whether they may read the entity at all.
-// Filter's predicates are AND-ed into every read of the entity's own table
-// (List, Get, count, cursor, stream, the in-process API, typed queries, and
-// the ?include= / eager-load paths when this entity is the relation target)
-// unless the caller is unrestricted. Writes (update, delete, the upsert
-// write) are NOT filtered in this version, but the row an update or upsert
-// hands back is: a row outside the caller's scope comes back as its id only.
-//
-// Unrestricted names a permission: a caller holding it reads every row.
-// When Unrestricted is EMPTY the lift is weaker and deliberate: any caller
-// with a session reads every row, and an anonymous caller gets the filter —
-// the "anonymous visitors see published rows, signed-in editors see
-// drafts" posture. "Any signed-in user" is exactly what it says; it is not
-// an editor role, so say so in the declaration when that matters.
-//
-// The predicates AND together; there is no OR form in this version.
+// ReadScopeConfig narrows which rows a caller may read: Filter's predicates are
+// AND-ed into every read of the table. Writes are not filtered.
 type ReadScopeConfig struct {
 	Filter       []RowPredicate
 	Unrestricted string
 }
 
-// AccessControl declares the RBAC permission required for each CRUD operation
-// on an entity. Each field holds a permission string (e.g. "posts:write").
-// Read covers both List and Get.
-//
-// Once any field is set, a blank Create, Update or Delete is refused to
-// every caller (403), a wildcard role included; only server code that
-// elevated its context (crud.WithElevation) still writes. Set the field to
-// [Anyone] to open that operation on purpose. A blank Read stays open, the
-// "public reads, gated writes" shape. Anyone lifts only this RBAC check:
-// owner and tenant scoping still apply.
-//
-// Permissions are plain strings here so the entity package stays decoupled
-// from framework/access; the CRUD layer converts them to access.Permission and
-// enforces them via access.Can against the policy + roles in the request
-// context.
+// AccessControl names the permission each CRUD operation requires. Once any is
+// set, a blank Create, Update or Delete is refused to every caller; a blank Read
+// stays open. [Anyone] opens an operation on purpose.
 type AccessControl struct {
 	Read   string // List + Get
 	Create string
@@ -218,38 +122,15 @@ type AccessControl struct {
 	Delete string
 }
 
-// Anyone, as an AccessControl operation, opens that operation to every
-// caller, signed in or not. It is not a permission: no role grants it and
-// no scope names it.
+// Anyone, as an AccessControl operation, opens it to every caller.
 const Anyone = "anyone"
 
-// Declared reports whether any per-operation permission is set, i.e.
-// whether the entity opted into RBAC gating at all. Used by
-// framework/crud's secure-by-default session gate to tell "this entity
-// declared an (possibly partial) access: block, defer to it as today"
-// apart from "this entity declared nothing".
+// Declared reports whether any operation's permission is set.
 func (a AccessControl) Declared() bool {
 	return a.Read != "" || a.Create != "" || a.Update != "" || a.Delete != ""
 }
 
-// Index declares a secondary index on an entity. Both dialects accept the
-// same CREATE INDEX syntax; AutoMigrate emits CREATE INDEX IF NOT EXISTS so
-// re-runs are safe.
-//
-// Name is optional, when empty, AutoMigrate synthesises one with
-// DefaultIndexName: "idx_<table>_<col1>_<col2>", with a hashed tail when
-// that passes 63 bytes. Unique indices reject duplicate rows for the
-// chosen column set; for single-column uniqueness prefer the Field-level
-// Unique flag which lives on the column definition.
-//
-// Expression covers the case the column-list form can't express: a
-// functional or partial index, e.g. `UNIQUE(user_id, lower(food))` to
-// dedupe case-insensitively. When non-empty, Expression is rendered
-// verbatim inside the index body (replacing Columns). Name is REQUIRED
-// in that case because there's no safe deterministic slug for an
-// arbitrary expression. Use Columns for plain identifier indices;
-// reach for Expression when SQL functions or constants need to
-// participate in the indexed key.
+// Index declares a secondary index, emitted as CREATE INDEX IF NOT EXISTS.
 type Index struct {
 	Name       string   `json:"name,omitempty"`
 	Columns    []string `json:"columns,omitempty"`
@@ -257,12 +138,7 @@ type Index struct {
 	Expression string   `json:"expression,omitempty"`
 }
 
-// DefaultIndexName is the name an index declared without one gets:
-// "idx_", the table's own name (its schema left off, since a schema there
-// would read as the index's), and its columns, joined by "_". A name past
-// 63 bytes gets a hashed tail (query.FitIdent): Postgres would cut it at
-// 63, and two names sharing those bytes became one index, so CREATE INDEX
-// IF NOT EXISTS skipped the second. Shorter names are returned as they are.
+// DefaultIndexName is "idx_<table>_<cols>", the table's schema left off and a hashed tail past 63 bytes.
 func DefaultIndexName(table string, cols []string) string {
 	if i := strings.LastIndexByte(table, '.'); i >= 0 {
 		table = table[i+1:]
@@ -270,60 +146,23 @@ func DefaultIndexName(table string, cols []string) string {
 	return query.FitIdent("idx_" + table + "_" + strings.Join(cols, "_"))
 }
 
-// UniqueKeyName is the name of a Unique field's constraint or index:
-// <table>_<col>_key, the table's own name (its schema left off), the
-// name Postgres gives the inline UNIQUE constraint CREATE TABLE writes.
-// Past 63 bytes it is query.FitObjectName's: the longer part trimmed and
-// a hash of the whole name before the label, so no two columns share
-// one, and CREATE TABLE names the constraint itself rather than let
-// Postgres number a collision. The index migrate creates for a column
-// made Unique later, the constraint CREATE TABLE made, and the name a
-// unique violation reports all agree.
+// UniqueKeyName is a Unique field's constraint name, <table>_<col>_key with the schema left off, hashed past 63 bytes.
 func UniqueKeyName(table, col string) string {
 	return query.FitObjectName(tableBase(table), col, "key")
 }
 
-// LegacyUniqueKeyName is the name Postgres gave a Unique field's inline
-// constraint in a table a build before v0.96.0 created: UniqueKeyName up
-// to 63 bytes, the plain trimmed name (query.ObjectName) past it. A
-// second column trimmed to the same name got a number from Postgres, so
-// the name may belong to either.
+// LegacyUniqueKeyName is the Unique constraint name of tables built before v0.96.0.
 func LegacyUniqueKeyName(table, col string) string {
 	return query.ObjectName(tableBase(table), col, "key")
 }
 
-// tableBase is a table's own name, without the schema a qualified one
-// carries.
 func tableBase(table string) string {
 	return table[strings.LastIndexByte(table, '.')+1:]
 }
 
-// Endpoint declares a custom route owned by an entity.
-//
-// Path may be absolute ("/posts/{id}/publish") or relative to the entity table
-// path ("{id}/publish"). Both Go 1.22 "{id}" and older ":id" parameter syntax
-// are accepted. Handler is used for HTTP. MCPHandler is optional and is only
-// registered when MCP is true.
-//
-// The route runs Handler behind two gates, as the CRUD routes do: an
-// anonymous caller answers 401 unless Public is set, and a cross-site
-// request a form or a bodyless fetch could forge answers 403 on every
-// method but GET and HEAD. A per-caller response (not Public) also
-// carries Cache-Control: no-store unless Handler sets its own.
-//
-// Under framework.WithAPIPrefix a relative path resolves under the prefixed
-// table path. WithAPIPrefix("/api") mounts "{id}/publish" on entity "posts"
-// at POST /api/posts/{id}/publish, alongside that entity's CRUD routes. An
-// absolute path bypasses the prefix entirely; use it to mount outside the
-// entity's API namespace.
-//
-// InputSchema and OutputSchema are OPTIONAL typed descriptions of the request
-// body and the success (200) response, expressed as []schema.Field, the same
-// representation the entity's own CRUD schema is built from, so OpenAPI and the
-// generated MCP tool both consume one source. When unset (nil), the endpoint
-// renders exactly as before: a shapeless {type:object} request/response in
-// OpenAPI and a {type:object} MCP tool input schema. InputSchema is ignored for
-// GET endpoints (which carry no request body).
+// Endpoint declares a custom route owned by an entity. A relative Path resolves
+// under the entity's table path (and API prefix). The route answers 401 to an
+// anonymous caller unless Public, and 403 to a cross-site unsafe request.
 type Endpoint struct {
 	Method       string          `json:"method"`
 	Path         string          `json:"path"`
@@ -335,47 +174,22 @@ type Endpoint struct {
 	Handler      http.Handler    `json:"-"`
 	MCPHandler   mcp.ToolHandler `json:"-"`
 
-	// MCPGate is an optional per-caller precondition for the MCP twin. It
-	// runs before MCPHandler on every tools/call, and decides whether the
-	// tool is visible to that caller in tools/list.
-	//
-	// It exists because the two front doors of one Endpoint do not get the
-	// same protection for free: Handler inherits the route's middleware
-	// chain, while MCPHandler is registered straight onto the MCP server and
-	// sees none of it. An endpoint behind auth.RequireRole("editor") was
-	// therefore role-checked over HTTP and ungated over MCP.
-	//
-	// When unset, the twin defaults to requiring an authenticated caller
-	// (framework.MCPRequireUser). Set Public to opt out of that default;
-	// set this to something stricter, e.g. auth.MCPRole("editor").
-	//
-	// Whatever decides the twin, a scope-restricted caller (an API token)
-	// must also hold "<table>:read" for a GET or HEAD endpoint and
-	// "<table>:write" for any other method, the scope auth.RequireAPIScopes
-	// asks of the HTTP route.
+	// MCPGate runs before MCPHandler on every call and decides the tool's
+	// visibility; nil requires an authenticated caller unless Public.
 	MCPGate func(ctx context.Context) error `json:"-"`
 
-	// Public opts both front doors out of the default authenticated-caller
-	// gate, for an endpoint that really is anonymous: the HTTP route serves
-	// a caller with no session, and the MCP twin runs without
-	// MCPRequireUser. MCPGate, when set, still decides the twin.
+	// Public serves both doors to anonymous callers.
 	Public bool `json:"public,omitempty"`
 
-	// SDK marks an endpoint declared under endpoints: in
-	// gofastr.settings.yml. The generated Go client, JS SDK and CLI carry a
-	// typed call for it, and the SDK schema hash covers it. The derived
-	// entities/endpoints.gen.go sets it; a hand-registered endpoint leaves
-	// it false and the generated clients reach it through Do.
+	// SDK marks an endpoint the generated clients get a typed call for.
 	SDK bool `json:"sdk,omitempty"`
 
-	// Returns names what a successful call answers with, for the generated
-	// clients: an entity name ("orders"), "[]" and an entity name for a
-	// list of them, or "" for an empty object. Set with SDK.
+	// Returns names a successful call's answer for the clients: an entity name,
+	// "[]"+name for a list, or "" for an empty object.
 	Returns string `json:"returns,omitempty"`
 }
 
-// TenantColumn returns the tenant-scoping column name for this entity:
-// Scope.TenantField when set, otherwise "tenant_id".
+// TenantColumn returns Scope.TenantField, or "tenant_id".
 func (c EntityConfig) TenantColumn() string {
 	if c.Scope != nil && c.Scope.TenantField != "" {
 		return c.Scope.TenantField
@@ -389,41 +203,25 @@ func (c EntityConfig) WithTimestamps(v bool) EntityConfig {
 	return c
 }
 
-// Entity represents a registered domain entity with its config and DB handle.
+// Entity is a registered entity: its config and DB handle.
 type Entity struct {
 	Config EntityConfig
 	DB     *sql.DB
 
-	// Version identifies the API version this entity is mounted under, when
-	// registered via App.GroupEntity. It is the route group's full prefix
-	// (e.g. "/api/v1"). Empty for entities registered via App.Entity, those
-	// keep the historical single-version behaviour. The registry keys on
-	// (Config.Name, Version) so the same entity name can coexist under
-	// different versions; callers that don't care about version resolve the
-	// unversioned or sole entity via Registry.Get.
+	// Version is the route group prefix the entity is mounted under (App.GroupEntity), empty for App.Entity.
 	Version string
 
-	// OpenAPITag is the tag applied to this entity's operations in the
-	// generated OpenAPI document. Set from the route group's OpenAPITag
-	// when registered via App.GroupEntity; empty for App.Entity (the tag
-	// defaults to the entity name in that case).
+	// OpenAPITag tags the entity's OpenAPI operations; empty uses the entity name.
 	OpenAPITag string
 
-	// audited is 1 once an audit log records this entity's writes; see
-	// MarkAudited.
 	audited int32
 }
 
-// Define creates a new Entity with the given name and configuration.
-// It applies defaults (Table, Timestamps=true) and stores the name.
-// It also injects system fields (id, timestamps, and the scope-driven
-// tenant/owner/soft-delete columns) with AutoGenerate flags unless the
-// user has already defined them.
+// Define resolves config into an Entity, injecting system columns; it panics on an invalid declaration.
 func Define(name string, config EntityConfig) *Entity {
 	config = config.normalizeSubConfigs()
 	config.Name = name
 
-	// Apply default table name
 	if config.Table == "" {
 		config.Table = toSnake(name)
 	}
@@ -431,11 +229,6 @@ func Define(name string, config EntityConfig) *Entity {
 	config.PrimaryKey = slices.Clone(config.PrimaryKey)
 	keyCols := config.keyColumns()
 
-	// Validate the scope column names once, here, so a misconfigured
-	// TenantField or OwnerField fails loud at definition with an actionable
-	// message, rather than as an opaque "unsafe SQL identifier" panic on the
-	// first scoped request, where the column name is interpolated into the
-	// WHERE clause.
 	if config.Scope.MultiTenant {
 		if _, err := query.SafeIdent(config.TenantColumn()); err != nil {
 			panic(fmt.Sprintf("entity %q: TenantField %q is not a valid SQL identifier: %v", name, config.TenantColumn(), err))
@@ -447,28 +240,16 @@ func Define(name string, config EntityConfig) *Entity {
 		}
 	}
 	config.Fields = config.systemFields()
-	// A masked field's stored value must stay out of filters, sorts and
-	// search, or a caller recovers it from which rows match.
 	for i := range config.Fields {
 		if config.Fields[i].Mask != nil {
 			config.Fields[i].NoQuery = true
 		}
 	}
 
-	// CrossOwnerRead lifts owner scoping for reads only, so it only makes
-	// sense on an entity that is owner-scoped to begin with. Catch the
-	// misconfiguration here, at definition, with an actionable message,
-	// otherwise the knob silently does nothing.
 	if config.Scope.CrossOwnerRead != "" && config.Scope.OwnerField == "" {
 		panic(fmt.Sprintf("entity %q: CrossOwnerRead %q requires OwnerField (cross-owner read only applies to owner-scoped entities)", name, config.Scope.CrossOwnerRead))
 	}
 
-	// SearchFields must reference known, non-Hidden, non-NoQuery, String/Text
-	// columns. An unknown name would produce a "no such column" error at query
-	// time; a Hidden or NoQuery column would turn ?q= into a value-disclosure
-	// oracle (same rationale as ParseFilters' exclusions); a non-text column
-	// can't meaningfully participate in LOWER() LIKE matching. Catch all four
-	// here, at definition, with an actionable message.
 	if len(config.SearchFields) > 0 {
 		for _, sf := range config.SearchFields {
 			var found *schema.Field
@@ -493,23 +274,7 @@ func Define(name string, config EntityConfig) *Entity {
 		}
 	}
 
-	// ReadScope predicates are a query surface that decides which rows a
-	// caller may see, so a typo'd column or op must fail the declaration:
-	// the alternative is a scope that silently matches nothing (a "no such
-	// column" error per request) or, worse, an op that renders as equality
-	// and narrows to the WRONG rows. A predicate on a Hidden column is
-	// refused for the same reason Hidden exists: the row set itself is a
-	// value oracle ("does a row with password_hash = x exist?"), and a
-	// declared predicate would answer it. All four checks fire here, at
-	// definition, naming the field.
 	if rs := config.Exposure.ReadScope; rs != nil && len(rs.Filter) > 0 {
-		// Two `in` predicates on ONE column are refused. Predicates AND, so
-		// `status in [draft] AND status in [published]` is unsatisfiable and
-		// can only be a mistake, but the renderer coalesces adjacent same-field
-		// IN runs into a single IN list, which turns that AND into an OR and
-		// serves EVERY row. A posture that silently widens is the one shape
-		// this must never accept, so it fails at definition instead. Combine
-		// the values into one predicate, or use neq / not_in to exclude.
 		seenIn := map[string]bool{}
 		for _, p := range rs.Filter {
 			if p.Op != "in" {
@@ -543,9 +308,6 @@ func Define(name string, config EntityConfig) *Entity {
 				if len(p.Values) == 0 {
 					panic(fmt.Sprintf("entity %q: ReadScope op %q on field %q requires a non-empty Values", name, p.Op, p.Field))
 				}
-				// A stray Value alongside Values is ignored by the builder, so
-				// the author's intent and the enforced posture differ with
-				// nothing reporting it. The mirror of the eq/neq check above.
 				if p.Value != "" {
 					panic(fmt.Sprintf("entity %q: ReadScope op %q on field %q must leave Value empty (it takes Values); the stray Value %q would be silently ignored", name, p.Op, p.Field, p.Value))
 				}
@@ -557,29 +319,6 @@ func Define(name string, config EntityConfig) *Entity {
 
 	config.checkKeyColumns()
 
-	// Cursor columns are a query surface too: they land in ORDER BY and in the
-	// keyset WHERE, and the emitted cursor token is base64 JSON of the raw
-	// value, reversible, not secret. A Hidden or NoQuery keyset column
-	// therefore hands the caller back exactly what those flags withhold, and
-	// lets them binary-search it by forging cursors. Fail at definition, the
-	// same way SearchFields does.
-	//
-	// The DEFAULT keyset column (the primary key) is checked too, not just
-	// explicitly declared ones. Keyset paging falls back to the PK when no
-	// cursor field is configured, so a NoQuery primary key is used exactly
-	// as if it had been named, and its stored value ends up in the emitted
-	// token. Checking only declared columns left ?cursor= leaking a value
-	// that ?sort= and every filter refused, and disagreed with the DSL's
-	// after() guard, which resolves the same default before checking.
-	// This mirrors CrudHandler.cursorFields() branch for branch. Anything
-	// less lets a column reach ORDER BY and the token without being checked:
-	// a composite silently gains the primary key as its tiebreak, so
-	// validating only the declared members missed a NoQuery `id` entirely.
-	// The key columns are the tiebreak and the default.
-	// normalizeSubConfigs has populated Pagination by here.
-	// A composite naming one column twice mints a token carrying that
-	// name twice, which the decoder refuses as a duplicate key: every
-	// second page would answer 400.
 	for i, cf := range config.Pagination.CursorFields {
 		if slices.Contains(config.Pagination.CursorFields[:i], cf) {
 			panic(fmt.Sprintf("entity %q: cursor field %q is listed twice", name, cf))
@@ -592,7 +331,6 @@ func Define(name string, config EntityConfig) *Entity {
 		cursorCols = append(cursorCols, keyCols...) // auto-appended tiebreak
 	case config.Pagination.CursorField != "":
 		cursorCols = append(cursorCols, config.Pagination.CursorField)
-		// The key is the tiebreak here too, and the token carries it.
 		cursorCols = append(cursorCols, keyCols...)
 	default:
 		cursorCols = append(cursorCols, keyCols...)
@@ -613,16 +351,10 @@ func Define(name string, config EntityConfig) *Entity {
 			}
 			break
 		}
-		// A cursor column that names no declared field would reach ORDER
-		// BY and the WHERE comparison as an unknown column: every keyset
-		// page then fails at query time, long after Define accepted the
-		// typo. Refuse it here, where SearchFields typos are refused.
 		if !declared {
 			panic(fmt.Sprintf("entity %q: cursor field %q is not a declared field", name, cf))
 		}
 	}
-	// A keyset column must never hold NULL: (a, id) > ($1, $2) is not true
-	// for a row whose a is NULL, so those rows would be skipped.
 	for _, cf := range cursorCols {
 		for _, f := range config.Fields {
 			if f.Name == cf && CanHoldNull(f, keyCols) {
@@ -632,15 +364,6 @@ func Define(name string, config EntityConfig) *Entity {
 	}
 	config.checkKeyServed()
 
-	// Derive a BelongsTo relation for every {Type: Relation} field that points
-	// at a target entity. Without this the field is only consumed for an
-	// OpenAPI x-relation annotation: migrate emits a plain column with no FK
-	// constraint and ?include= (which resolves against Config.Relations) cannot
-	// find the join. Deriving the relation here makes both work from the
-	// single field declaration. The FK column for a BelongsTo lives on the
-	// local table, so it IS the relation field's own column (Name). An
-	// explicit relation already declared for the same name wins, we never
-	// clobber caller-declared relations.
 	for _, f := range config.Fields {
 		if f.Type != schema.Relation || f.To == "" || f.Many {
 			continue
@@ -659,24 +382,14 @@ func Define(name string, config EntityConfig) *Entity {
 	return &Entity{Config: config}
 }
 
-// WithSystemFields returns a copy whose Fields hold the system columns
-// Define injects (the id key, created_at/updated_at, and the tenant,
-// owner and soft-delete scope columns) that Fields does not already
-// declare, in the order Define adds them. Define keeps a declared field
-// as it is, so a caller can adjust one of these columns (hide it, give it
-// a WireName) before Define by adjusting it here. Nothing else in the
-// config changes, and the scope column names are not validated: Define
-// does that.
+// WithSystemFields returns a copy with the system columns Define would inject added to Fields.
 func (c EntityConfig) WithSystemFields() EntityConfig {
 	c.Fields = c.normalizeSubConfigs().systemFields()
 	return c
 }
 
-// systemFields returns c.Fields with the system columns Define
-// injects added. It is called on a normalized config.
 func (c EntityConfig) systemFields() []schema.Field {
 	c.Fields = slices.Clone(c.Fields)
-	// Inject the id field when the key uses it and Fields does not declare it.
 	hasID := false
 	for _, f := range c.Fields {
 		if f.Name == "id" {
@@ -694,7 +407,6 @@ func (c EntityConfig) systemFields() []schema.Field {
 		c.Fields = append([]schema.Field{idField}, c.Fields...)
 	}
 
-	// Inject timestamp fields if enabled and not already defined
 	if *c.Timestamps {
 		hasCreatedAt := false
 		hasUpdatedAt := false
@@ -724,13 +436,6 @@ func (c EntityConfig) systemFields() []schema.Field {
 		}
 	}
 
-	// Inject tenant_id field if multi-tenancy is enabled and not already
-	// declared. Symmetric with deleted_at: the crud layer injects tenant_id
-	// on writes and scopes reads by it, so the column MUST exist in the
-	// table. Without this, AutoMigrate would create a table with no
-	// tenant_id column and the first create request would fail with a
-	// "no such column" error. Hidden + ReadOnly keeps it out of request
-	// bodies and API responses, the framework manages its value.
 	if c.Scope.MultiTenant {
 		tenantCol := c.TenantColumn()
 		hasTenantID := false
@@ -750,7 +455,6 @@ func (c EntityConfig) systemFields() []schema.Field {
 		}
 	}
 
-	// Inject soft delete field if enabled
 	if c.Scope.SoftDelete {
 		hasDeletedAt := false
 		for _, f := range c.Fields {
@@ -769,16 +473,6 @@ func (c EntityConfig) systemFields() []schema.Field {
 		}
 	}
 
-	// Inject the owner column when an owner scope is configured and no
-	// field with that name is declared, symmetric with tenant_id above
-	// and matching the app generator's owner_field semantics. The
-	// crud layer stamps the owner on writes (InjectOwner) and scopes
-	// reads by it (ApplyOwnerScope), so the column MUST exist in the
-	// table; without this, AutoMigrate would create a table with no
-	// owner column, a create would silently persist an unowned row (the
-	// INSERT column list comes from GetFields) and the first scoped read
-	// would fail with "no such column". A field the caller DID declare
-	// with that name is left untouched.
 	if c.Scope.OwnerField != "" {
 		hasOwner := false
 		for _, f := range c.Fields {
@@ -800,9 +494,6 @@ func (c EntityConfig) systemFields() []schema.Field {
 	return c.Fields
 }
 
-// keyColumns is PrimaryKey, or "id" when it is nil. Only a raw
-// migrate.Table, which skips Define, holds an empty non-nil PrimaryKey:
-// a table with no key.
 func (c EntityConfig) keyColumns() []string {
 	if c.PrimaryKey == nil {
 		return []string{"id"}
@@ -810,16 +501,12 @@ func (c EntityConfig) keyColumns() []string {
 	return c.PrimaryKey
 }
 
-// checkKeyColumns panics on keyColumnsErr.
 func (c EntityConfig) checkKeyColumns() {
 	if err := c.keyColumnsErr(); err != nil {
 		panic(err.Error())
 	}
 }
 
-// keyColumnsErr refuses a primary key that names no column, repeats a
-// column, names one Fields does not declare, or cannot name a record
-// (checkRecordKey).
 func (c EntityConfig) keyColumnsErr() error {
 	if c.PrimaryKey != nil && len(c.PrimaryKey) == 0 {
 		return fmt.Errorf("entity %q: PrimaryKey names no column; leave it nil for \"id\"", c.Name)
@@ -837,11 +524,7 @@ func (c EntityConfig) keyColumnsErr() error {
 	return c.checkRecordKey()
 }
 
-// CheckRecordKey reports whether the entity's key can name its records
-// by id: it has one, and every key column is keyable. Define panics on a
-// declared entity that fails it. A raw table registered for migration
-// (App.Table) skips Define and may key on any SQL type, so a surface
-// that serves such an entity's records by id checks it first.
+// CheckRecordKey reports whether the key can name a record by id; Define panics when it cannot.
 func (e *Entity) CheckRecordKey() error { return e.Config.checkRecordKey() }
 
 func (c EntityConfig) checkRecordKey() error {
@@ -858,15 +541,7 @@ func (c EntityConfig) checkRecordKey() error {
 	return nil
 }
 
-// keyable reports whether column f can name a record. A record id is the
-// key's text, so each value needs exactly one spelling: text columns
-// match byte for byte and integer ids must be canonical decimal. A
-// float, decimal, bool, date, timestamp or JSON value does not: Postgres
-// reads 2024-1-2 as a DATE equal to 2024-01-02, and scans it back as a
-// time.Time that prints as neither. A RawType decides equality where
-// the portable type cannot see it (CITEXT folds case, a Postgres UUID
-// reads upper and lower case as one value), so only an integer column
-// may set one, and only to an integer type.
+// keyable reports whether f's values have one spelling each, so an id names one record.
 func keyable(f schema.Field) bool {
 	switch f.Type {
 	case schema.String, schema.Text, schema.Int, schema.Enum, schema.UUID, schema.Relation, schema.Image, schema.File:
@@ -889,22 +564,12 @@ func keyable(f schema.Field) bool {
 	return false
 }
 
-// checkKeyServed refuses a Hidden or NoQuery column in a composite key:
-// the API names such a record by every key value, and reads a set of
-// them back through key filters, so a row served without one, or a
-// filter refused on one, leaves the record unnamed. The default cursor
-// check already refuses one, since the key is its tiebreak; this covers
-// an entity paging on Pagination.CursorField. A one-column key routes by
-// path alone, and keeps its own posture. A MultiTenant table unique per
-// tenant keeps a generated id and enforces (tenant_id, code) with a
-// unique index instead.
 func (c EntityConfig) checkKeyServed() {
 	if err := c.keyServedErr(); err != nil {
 		panic(err.Error())
 	}
 }
 
-// keyServedErr is checkKeyServed's refusal as an error.
 func (c EntityConfig) keyServedErr() error {
 	keys := c.keyColumns()
 	if len(keys) < 2 {
@@ -954,11 +619,6 @@ func (c EntityConfig) normalizeSubConfigs() EntityConfig {
 		timestamps := *c.Timestamps
 		c.Timestamps = &timestamps
 	}
-	// Display is copied deeply, like the groups above, so a caller that
-	// keeps a handle on its value (an app-level var, a declaration struct)
-	// cannot change what the app validated at registration or serves. Nil
-	// stays nil: nil means "every default", it is not a group Define
-	// populates.
 	c.Display = copyDisplayConfig(c.Display)
 	c.States = copyStatesConfig(c.States)
 	c.Fields = c.States.withStateDefault(c.Fields)
@@ -999,7 +659,7 @@ func (e *Entity) String() string {
 	return fmt.Sprintf("Entity(%s/%s)", e.Config.Name, e.Config.Table)
 }
 
-// Validate checks that the entity config is well-formed.
+// Validate checks the resolved config, its Display and States blocks included.
 func (e *Entity) Validate() error {
 	if e.Config.Name == "" {
 		return fmt.Errorf("entity: name must not be empty")
@@ -1011,17 +671,6 @@ func (e *Entity) Validate() error {
 		return fmt.Errorf("entity %q: must have at least one field", e.Config.Name)
 	}
 	seen := make(map[string]bool, len(e.Config.Fields))
-	// wireKeys maps each field's wire key (WireName when set, else the column
-	// name) back to the column that claimed it. A wire key addresses exactly
-	// one column: JSON has no way to express two.
-	//
-	// Without this guard the collision is SILENT and splits reads from writes.
-	// CRUD's refreshFieldCache keeps whichever field it saw first, so a body
-	// posted under the shared key writes to that column, while filters resolve
-	// the same key independently and may target the other, the row written is
-	// then invisible to the filter, with no error anywhere. crud.go documented
-	// this as "a config error that ValidateWireNames catches at Define"; that
-	// function never existed, so nothing caught it.
 	wireKeys := make(map[string]string, len(e.Config.Fields))
 	for _, f := range e.Config.Fields {
 		if f.Name == "" {
@@ -1032,17 +681,6 @@ func (e *Entity) Validate() error {
 		}
 		seen[f.Name] = true
 
-		// Hidden fields are included deliberately: they are excluded from
-		// responses but still resolve on write and filter paths, so letting a
-		// visible field alias a hidden column would be worse, not harmless.
-		//
-		// A bare column does not claim its literal name on the wire, it
-		// claims the CASE-CONVERTED form (crud.wireKeyOfField), camelCase by
-		// default. Validate cannot read JSONCase, which App assigns after
-		// registration, so a bare column claims BOTH spellings and a clash
-		// under either one is refused. Comparing only the literal name let
-		// `author_id` and `WireName: "authorId"` through, which is the same
-		// silent read/write split this guard exists to stop.
 		claims := []string{f.WireName}
 		if f.WireName == "" {
 			claims = []string{f.Name}
@@ -1057,9 +695,6 @@ func (e *Entity) Validate() error {
 					e.Config.Name, owner, f.Name, wk)
 			}
 		}
-		// A column name is a key too: entityui's forms post fields by
-		// name, and a body key resolves through the wire-key map first. A
-		// column named as another field's wire key would write that field.
 		for _, wk := range claims {
 			if wk != f.Name && seen[wk] {
 				return fmt.Errorf(
@@ -1094,37 +729,11 @@ func (e *Entity) Validate() error {
 			return fmt.Errorf("entity %q: enum field %q must specify non-empty Values", e.Config.Name, f.Name)
 		}
 
-		// A Default is the value crud.doCreate substitutes for a field the
-		// request body omitted. It reaches the driver through the same column
-		// as a client-sent value but, before this check, through none of the
-		// same checks: ValidateAll ran over the body and the Default was
-		// applied afterwards. A malformed one therefore surfaced as a
-		// per-request 500 with nothing actionable in it, or, on a dialect
-		// whose column type is looser, as silently wrong data (a non-JSON
-		// Default on a schema.JSON field 500s against Postgres JSONB and
-		// stores fine in SQLite's TEXT).
-		//
-		// The value is static, so it is checked once here rather than on
-		// every request, and a bad one is a bug in the app's own declaration
-		// rather than in a request, so it fails the declaration, naming the
-		// field, instead of reporting an app-authored bug as a caller's 400.
-		//
-		// Auto-generated fields are skipped, exactly as schema.ValidateAll
-		// skips them: doCreate overwrites their body slot with the generated
-		// value, so their Default is never an insert value. It survives only
-		// as the column's DDL DEFAULT (migrate.ColumnDefaultClause), where an
-		// explicit Default deliberately outranks gen_random_uuid().
 		if err := checkDefault(e.Config.Name, f); err != nil {
 			return err
 		}
 	}
 
-	// Display names fields, views, sections and a nav group; every name is
-	// checked here so a typo or a stale name after a rename fails the
-	// app at boot, naming the offender, instead of rendering a blank
-	// column or a broken form per request. Query strings inside Display
-	// (a view's Where, a field's ShowWhen) are parsed by App.Entity,
-	// where the query DSL is in reach.
 	if e.Config.Display != nil {
 		if err := e.Config.Display.validate(e.Config.Name, e.Config.Fields, e.Config.Pagination); err != nil {
 			return err
@@ -1138,9 +747,6 @@ func (e *Entity) Validate() error {
 	return nil
 }
 
-// checkDefault refuses a Default the field's own validator refuses. Auto-
-// generated fields are skipped: their Default is never an insert value
-// (see the comment at its call in Validate).
 func checkDefault(entity string, f schema.Field) error {
 	if f.Default == nil || f.AutoGenerate != schema.AutoNone {
 		return nil
@@ -1151,13 +757,7 @@ func checkDefault(entity string, f schema.Field) error {
 	return nil
 }
 
-// ValidateDefaults runs registration's Default check over an
-// EntityConfig the way App.Entity would, for code generators whose
-// declarations (an app spec, hand-written entities/*.go) never passed
-// registration: a Default the field's validator refuses fails there
-// instead of panicking the generated app at boot. Define runs first,
-// as in ValidateStates, so the check sees the field set the app sees,
-// and a Define panic comes back as the error.
+// ValidateDefaults runs the Default check over cfg after Define, returning a Define panic as the error.
 func ValidateDefaults(name string, cfg EntityConfig) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -1173,23 +773,7 @@ func ValidateDefaults(name string, cfg EntityConfig) (err error) {
 	return nil
 }
 
-// defaultAsWireValue renders a field's Default in the form schema.Validate
-// expects, which is the form a client sends. The two differ because a Default
-// is authored in Go, not JSON, and for a few types the natural Go literal is
-// not the wire literal. Normalizing here keeps the registration check from
-// refusing declarations the write path accepts, a false refusal fires at
-// boot, for every caller at once, which is worse than the bug it guards.
-//
-// The patterns this permits, both of which reach the driver intact today:
-//
-//   - Decimal spelled as a Go number. Decimal travels as a string on the wire
-//     so it keeps exact precision, but `{Type: schema.Decimal, Default: 0}` is
-//     what internal/testapps/ecommerce writes and what `gofastr generate` emits for a
-//     app spec `decimal` field with `default: 0`. It renders `DEFAULT 0` in
-//     DDL and binds as a number on insert; both dialects accept it.
-//   - Timestamp/Date spelled as a time.Time. time.Time's String() is not
-//     RFC 3339, so schema.Validate's generic fmt.Stringer path would reject a
-//     value the driver takes verbatim.
+// defaultAsWireValue renders a Go-authored Default in the form a client sends.
 func defaultAsWireValue(f schema.Field) any {
 	switch f.Type {
 	case schema.Decimal:
@@ -1212,17 +796,10 @@ func defaultAsWireValue(f schema.Field) any {
 			return t.Format(time.DateOnly)
 		}
 	default:
-		// Every other type's default goes to the driver as declared. A
-		// new type whose Go spelling differs from its wire form needs a
-		// case here; reaching this default means it has none.
 	}
 	return f.Default
 }
 
-// toSnake converts CamelCase or kebab-case to snake_case. The camelCase
-// conversion is framework/internal/casing's (cached), only the kebab/space
-// normalization is local: casing.ToSnake leaves those bytes untouched, but a
-// default table name must be a bare SQL identifier.
 func toSnake(s string) string {
 	s = strings.ReplaceAll(s, "-", "_")
 	s = strings.ReplaceAll(s, " ", "_")

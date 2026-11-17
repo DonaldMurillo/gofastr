@@ -1,0 +1,112 @@
+primitive: entityui.list
+summary: The entity list screen - its query, columns, table and cards, the query box, views and saved views, relation filters and the deleted-rows view.
+code:
+  - framework/entityui/list.go
+  - framework/entityui/list_cards.go
+  - framework/entityui/list_columns.go
+  - framework/entityui/list_deleted.go
+  - framework/entityui/list_keys.go
+  - framework/entityui/list_query.go
+  - framework/entityui/list_querybox.go
+  - framework/entityui/list_relations.go
+  - framework/entityui/list_render.go
+  - framework/entityui/list_table.go
+  - framework/entityui/list_views.go
+  - framework/entityui/saved_views*.go
+invariants:
+  - id: list-key-claimed-once-per-request
+    rule: Two lists rendered for one request with the same key (two unkeyed lists included) fail the second slot, a render with no request allows every key, and the per-request key registry drains once its request is collected.
+    enforced_by:
+      - test: framework/entityui.TestDuplicateListKeyFailsSecondSlot
+      - test: framework/entityui.TestSweepListKeyRegistryDrains
+  - id: url-state-never-fails-the-screen
+    rule: A filter text that does not parse, an undecodable own query pair, an unknown or Show-hidden view in the URL, a refused cols value or a stale saved view draws a warning or the default and still lists, while a builder naming an unknown view, column or heading level fails its slot.
+    enforced_by:
+      - test: framework/entityui.TestBadFilterWarnsAndStillLists
+      - test: framework/entityui.TestListWarnsUndecodableQuery
+      - test: framework/entityui.TestUndecodablePairWarnsItsOwnList
+      - test: framework/entityui.TestSweepListURLHiddenViewShowsAll
+      - test: framework/entityui.TestHiddenDefaultViewFallsBackToAll
+      - test: framework/entityui.TestSweepListBuilderUnknownViewFailsSlot
+      - test: framework/entityui.TestBadBuilderNamesFailSlot
+      - test: framework/entityui.TestHeadingLevelOutOfRangeFailsSlot
+  - id: view-func-predicate-validated-every-time
+    rule: A view Filter's predicate passes filter.ValidatePredicate against the entity's fields on every render before it reaches SQL.
+    enforced_by:
+      - test: framework/entityui.TestViewFuncPredicateCheckedBeforeSQL
+  - id: sort-page-and-size-come-from-the-server
+    rule: A sort param is honoured only on a shown, queryable column, per only for a size on offer, a page past the known total clamps to the last page, the size never exceeds Pagination.MaxListLimit, and Top ignores the URL's sort and page.
+    enforced_by:
+      - test: framework/entityui.TestTopPreviewsFirstRows
+      - test: framework/entityui.TestListFooterRangeAndPerPage
+      - test: framework/entityui.TestPageClampsToLast
+      - test: framework/entityui.TestClampPageKeepsPageWhenCountUnknown
+      - test: framework/entityui.TestSweepListPageSizeCappedByMaxListLimit
+      - test: framework/entityui.TestSweepListOneSizeOffersNoMenu
+  - id: links-carry-every-param-they-do-not-own
+    rule: A list's sort, page, view, column, chip and clear links keep every request param the list does not own (another keyed list's state), an f_ param counts as the list's own only when it names one of its fields, and the toolbar's GET form carries those params as hidden fields with every repeated value while hiding Reset.
+    enforced_by:
+      - test: framework/entityui.TestUnkeyedListKeepsFPrefixedKey
+      - test: framework/entityui.TestPortedPagerKeepsActiveSort
+      - test: framework/entityui.TestFilterFormCarriesRepeatedParams
+      - test: framework/entityui.TestSweepListResetHiddenUnderForeignParams
+      - test: framework/entityui.TestSweepListClearSearchDropsPage
+      - test: framework/entityui.TestSavedViewClearedFilterStays
+  - id: no-export-or-every-match-past-the-query
+    rule: A list with Where pins or an open saved view draws no Export, Copy CSV or every-match scope, since the export and bulk routes read only the query and would reach past the pins or the view's filter.
+    enforced_by:
+      - test: framework/entityui.TestExportHiddenOnPinnedList
+      - test: framework/entityui.TestSavedViewOffersNoExportOrEveryMatch
+    applies:
+      - framework/entityui/list_bulk.go
+  - id: inline-edit-only-where-hooks-left-the-value
+    rule: An inline cell editor is drawn only for a plain scalar column that is not system, locked, Hidden or NoQuery, and only where the hooked value equals the stored one.
+    enforced_by:
+      - test: framework/entityui.TestListInlineEdit
+      - test: framework/entityui.TestListInlineEditSkipsMaskedValues
+  - id: row-menus-keyed-by-row
+    rule: Each row's action menu and URL span carry the row's index in their ids, so two rows with one title never share a trigger.
+    enforced_by:
+      - test: framework/entityui.TestRowMenusSameTitleOwnIDs
+  - id: trash-writes-are-the-callers-own
+    rule: RestoreHandler and PurgeHandler refuse a cross-site forgeable post, a caller without read, a body over deletedBodyLimit, a plain post with no safe same-origin back path and a row the caller's hooked read does not reach, write under crud.WithReadHooks, and purge never touches a live row (409); the Deleted view draws Restore and Delete permanently only where the update or delete gate allows.
+    enforced_by:
+      - test: framework/entityui.TestTrashWriteCrossSiteRefused
+      - test: framework/entityui.TestSweepListTrashWriteNeedsRead
+      - test: framework/entityui.TestTrashWriteBodyCapped
+      - test: framework/entityui.TestTrashWriteRefusesAbsoluteBack
+      - test: framework/entityui.TestTrashWritesHonorBeforeListScope
+      - test: framework/entityui.TestTrashWritesHonorBeforeGet
+      - test: framework/entityui.TestPurgeLiveRowAnswers409AndKeepsRow
+      - test: framework/entityui.TestRestoreNeedsUpdatePermission
+      - test: framework/entityui.TestSweepListPurgeNeedsDeleteToDraw
+  - id: saved-views-are-the-callers-and-rechecked
+    rule: SavedViewsHandler refuses a cross-site post, a caller with no user (403) or without read, an oversized body and text Postgres cannot store, and re-checks the filter and columns before storing; opening a view re-checks them every time, and an unknown, foreign or stale view draws the no-longer-applies callout and applies nothing.
+    enforced_by:
+      - test: framework/entityui.TestSavedViewsCrossSiteRefused
+      - test: framework/entityui.TestSweepListAnonymousSaveRefused
+      - test: framework/entityui.TestSavedViewsNeedTheReadGate
+      - test: framework/entityui.TestSaveViewBodyCapped
+      - test: framework/entityui.TestSavedViewUnstorableTextIs400
+      - test: framework/entityui.TestSaveViewRefusesInvalidFilter
+      - test: framework/entityui.TestSavedViewForeignIDDoesNotApply
+      - test: framework/entityui.TestSavedViewStaleFilterShowsCallout
+      - test: framework/entityui.TestSavedViewBadColumnShowsCallout
+      - test: framework/entityui.TestSweepListAnonymousGetsNoSaveForm
+  - id: filter-rows-are-bounded-and-quoted
+    rule: Submitted filter rows read at most maxFilterRows rows over queryable fields and known operators, quote each value with dsl.Quote, and group the box's text in parentheses beside them.
+    enforced_by:
+      - test: framework/entityui.TestFilterRowsWriteTheFilter
+      - test: framework/entityui.TestFilterRowsBindUnspacedOr
+      - test: framework/entityui.TestSweepListFilterRowsCapped
+decisions:
+  - id: bad-url-state-warns
+    date: 2026-11-17
+    status: accepted
+    decision: A list treats bad URL state (filter text, undecodable pair, unknown view, cols, saved view) as a reader's bookmark and warns or falls back, while a bad builder option fails the slot as a configuration bug.
+    rejected:
+      - option: Answer an error page for bad URL state, as the REST list answers 400.
+        why: The reader typed or bookmarked it, so the screen should still list and say what it ignored.
+      - option: Silently drop bad URL state.
+        why: The screen would list wider than the reader asked with no word.
+    upholds: [url-state-never-fails-the-screen]

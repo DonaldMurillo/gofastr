@@ -15,19 +15,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
-// meta is one entity's screen metadata, resolved per render: the entity,
-// its Display (zero value when nil), its visible fields, its CRUD handle
-// and REST base, and the app's translator.
 type meta struct {
 	e      *entity.Entity
 	name   string
 	d      entity.DisplayConfig
 	states *entity.StatesConfig
-	fields []schema.Field // every field the API returns: not Hidden
+	fields []schema.Field
 	byName map[string]schema.Field
-	keys   []string          // the primary-key columns: a record's id is rowID
-	pk     string            // the one key column a relation joins on; "" for a composite key
-	wire   map[string]string // column -> WireName, for the fields that set one
+	keys   []string
+	pk     string
+	wire   map[string]string
 	ch     *crud.CrudHandler
 	api    string
 	hasAPI bool
@@ -57,8 +54,6 @@ func (u *UI) meta(name string) (*meta, error) {
 		m.fields = append(m.fields, f)
 		m.byName[f.Name] = f
 	}
-	// Screens name a record by its whole key; only a relation, refused
-	// onto or off a composite key at boot, reads the one column.
 	m.keys = e.KeyColumns()
 	m.pk, _ = e.KeyColumn()
 	for _, f := range e.GetFields() {
@@ -72,11 +67,8 @@ func (u *UI) meta(name string) (*meta, error) {
 	return m, nil
 }
 
-// isKey reports whether field is a primary-key column.
 func (m *meta) isKey(field string) bool { return slices.Contains(m.keys, field) }
 
-// rowID is a row's record id, entity.JoinKey over its key columns, or ""
-// when a key value is missing.
 func (m *meta) rowID(row map[string]any) string {
 	parts := make([]string, len(m.keys))
 	for i, c := range m.keys {
@@ -87,8 +79,6 @@ func (m *meta) rowID(row map[string]any) string {
 	return entity.JoinKey(parts)
 }
 
-// idPath is a record id as the path segments that name it: the escaped
-// id for a one-column key, each value escaped for a composite key.
 func (m *meta) idPath(id string) string {
 	if len(m.keys) > 1 {
 		if parts, err := entity.SplitKey(id, len(m.keys)); err == nil {
@@ -98,7 +88,6 @@ func (m *meta) idPath(id string) string {
 	return url.PathEscape(id)
 }
 
-// keySorts orders rows by the primary key.
 func (m *meta) keySorts() []filter.ParsedSort {
 	out := make([]filter.ParsedSort, len(m.keys))
 	for i, c := range m.keys {
@@ -107,12 +96,6 @@ func (m *meta) keySorts() []filter.ParsedSort {
 	return out
 }
 
-// keyWheres returns the predicates matching the records ids name: one IN
-// for a one-column key; for a composite key, ORs of per-record ANDs, as
-// many records to each as keep its tree under the filter's 64-node cap.
-// An id entity.KeyValues refuses names no record: one that does not
-// split into the key, or an integer value not in canonical decimal,
-// which the database would coerce onto another record's key.
 func (m *meta) keyWheres(ids []string) []*filter.Predicate {
 	fields := m.e.GetFields()
 	if m.ch != nil {
@@ -147,66 +130,34 @@ func (m *meta) keyWheres(ids []string) []*filter.Predicate {
 	return out
 }
 
-// The screens read rows through the readers below, and each name says
-// whether the entity's read hooks run. The plain names are the hooked
-// read a screen draws from: the BeforeList/BeforeGet scope hides what the
-// JSON API hides and AfterList/AfterGet mask what it masks
-// (crud.WithReadHooks). That is every read that puts a row, a count or a
-// value in front of a caller, or decides an act from one.
-//
-// The *Unhooked names read stored values, and every call says why. They
-// exist for three jobs and no others: prefilling an input whose value
-// round-trips on submit (a masked value would be written back over the
-// stored one), comparing against the hooked read to learn which fields a
-// hook rewrites, and asking whether a row the hooked read missed is
-// stored at all. Never draw from an unhooked row without that
-// comparison. TestReadHookParityAdmin (battery/admin) drives every
-// surface built on these.
-
-// getRow is the record id as the caller's read hooks let it be read.
 func (m *meta) getRow(ctx context.Context, id string) (map[string]any, error) {
 	return m.ch.GetOne(crud.WithReadHooks(ctx), id, nil)
 }
 
-// getRowUnhooked is record id as stored; see the readers' note above.
 func (m *meta) getRowUnhooked(ctx context.Context, id string) (map[string]any, error) {
 	return m.ch.GetOne(ctx, id, nil)
 }
 
-// listRows is ListAll through the caller's read hooks.
 func (m *meta) listRows(ctx context.Context, opts crud.ListOptions) ([]map[string]any, error) {
 	return m.ch.ListAll(crud.WithReadHooks(ctx), opts)
 }
 
-// listRowsUnhooked is ListAll over stored values; see the readers' note.
 func (m *meta) listRowsUnhooked(ctx context.Context, opts crud.ListOptions) ([]map[string]any, error) {
 	return m.ch.ListAll(ctx, opts)
 }
 
-// countRows is CountAll through the caller's read hooks.
 func (m *meta) countRows(ctx context.Context, opts crud.ListOptions) (int, error) {
 	return m.ch.CountAll(crud.WithReadHooks(ctx), opts)
 }
 
-// sumRows is SumAll through the caller's read hooks.
 func (m *meta) sumRows(ctx context.Context, field string, opts crud.ListOptions) (string, error) {
 	return m.ch.SumAll(crud.WithReadHooks(ctx), field, opts)
 }
 
-// groupRows is GroupCountAll through the caller's read hooks.
 func (m *meta) groupRows(ctx context.Context, field string, opts crud.ListOptions, limit int) ([]crud.GroupCount, error) {
 	return m.ch.GroupCountAll(crud.WithReadHooks(ctx), field, opts, limit)
 }
 
-// listByIDs reads the records ids name, with opts' fields and sorts,
-// through the caller's read hooks; listByIDsUnhooked reads them as
-// stored. Each runs one keyWheres predicate at a time: rows come in key
-// order within each. opts' fields must carry the key columns: a row
-// whose own id is not one of ids drops out, since a column type the
-// database chose (a Postgres UUID or CITEXT under a view or an Unmanaged
-// table) matches a second spelling of its key. Each record comes back
-// once: an alias in one predicate reaches the row its own id reaches in
-// another.
 func (m *meta) listByIDs(ctx context.Context, ids []string, opts crud.ListOptions) ([]map[string]any, error) {
 	return m.listByIDsWith(ctx, ids, opts, m.listRows)
 }
@@ -238,7 +189,6 @@ func (m *meta) listByIDsWith(ctx context.Context, ids []string, opts crud.ListOp
 	return out, nil
 }
 
-// field reports a visible field by name.
 func (m *meta) field(name string) (schema.Field, bool) {
 	f, ok := m.byName[name]
 	return f, ok
@@ -258,7 +208,6 @@ func (m *meta) plural(ctx context.Context) string {
 	return i18nui.EntityPlural(ctx, m.tr, m.name, m.d.Plural)
 }
 
-// noun is the entity's name inside a sentence: "11 customers".
 func (m *meta) noun(ctx context.Context, plural bool) string {
 	display := m.d.Singular
 	if plural {
@@ -286,15 +235,6 @@ func (m *meta) valueLabel(ctx context.Context, field, value string) string {
 	return i18nui.FieldValueLabel(ctx, m.tr, m.name, field, value)
 }
 
-// system reports the fields the server owns outright: a one-column
-// primary key, auto-generated fields and ReadOnly fields. The record
-// header shows them; forms never carry them. A composite key's columns
-// name the record the caller creates (the pair a join row links), so a
-// create sets them and every later write leaves them (locked). So does
-// a Required one-column key with no generator (a plan's code): crud
-// fills no such key, so only the caller can supply it. An optional one
-// stays the server's, since a hook may fill it and a blank input would
-// post "" over the absence the hook checks for.
 func (m *meta) system(f schema.Field) bool {
 	if f.AutoGenerate != schema.AutoNone || f.ReadOnly {
 		return true
@@ -302,8 +242,6 @@ func (m *meta) system(f schema.Field) bool {
 	return f.Name == m.pk && !f.Required
 }
 
-// guarded is the state field and every stamp of enforced or advisory
-// States: drawn read-only on every screen, changed only by a move.
 func (m *meta) guarded(field string) bool {
 	if m.states == nil {
 		return false
@@ -311,21 +249,14 @@ func (m *meta) guarded(field string) bool {
 	return slices.Contains(m.states.Guarded(), field)
 }
 
-// locked reports a field drawn read-only on forms and never submitted:
-// Locked, guarded, system, or a key column (a record keeps its key).
 func (m *meta) locked(f schema.Field) bool {
 	return m.createLocked(f) || m.isKey(f.Name)
 }
 
-// createLocked is locked for a create form, which sets a composite key.
 func (m *meta) createLocked(f schema.Field) bool {
 	return m.hint(f.Name).Locked || m.guarded(f.Name) || m.system(f) || m.serverOwned(f.Name)
 }
 
-// serverOwned reports the scope columns crud stamps from the caller and
-// never writes from a body: Scope.OwnerField, and the tenant column of
-// a MultiTenant entity. No form draws an input for one, and no inline
-// editor, bulk set or picker offers it.
 func (m *meta) serverOwned(field string) bool {
 	sc := m.e.Config.Scope
 	if sc == nil {
@@ -337,13 +268,8 @@ func (m *meta) serverOwned(field string) bool {
 	return sc.MultiTenant && field == m.e.Config.TenantColumn()
 }
 
-// omitted reports a field left out of forms and columns on purpose.
 func (m *meta) omitted(field string) bool { return m.hint(field).Omit }
 
-// titleFields are the fields naming a record: Display.TitleFields,
-// else a visible "name" or "title" field, else the first String column
-// that is not system, omitted or NoQuery (an invoice's number), else
-// none (the singular names it). rowTitles joins their values.
 func (m *meta) titleFields() []string {
 	if len(m.d.TitleFields) > 0 {
 		return m.d.TitleFields
@@ -361,9 +287,6 @@ func (m *meta) titleFields() []string {
 	return nil
 }
 
-// titleField is the first title field, "" when there is none: the
-// column that carries a list's record link, stays pinned among the
-// columns and titles a card.
 func (m *meta) titleField() string {
 	if tf := m.titleFields(); len(tf) > 0 {
 		return tf[0]
@@ -371,8 +294,6 @@ func (m *meta) titleField() string {
 	return ""
 }
 
-// columns are the fields a list shows: Display.Columns, else every
-// visible field that is not system, omitted, or JSON, in schema order.
 func (m *meta) columns() []string {
 	if len(m.d.Columns) > 0 {
 		return slices.Clone(m.d.Columns)
@@ -387,10 +308,6 @@ func (m *meta) columns() []string {
 	return out
 }
 
-// rowValue reads a row value by declaration name: under the field's
-// WireName when it sets one (the key the CRUD handler returns it under),
-// then the name itself, then the camelCase spelling the JSON API
-// serializes under camel casing.
 func (m *meta) rowValue(row map[string]any, key string) any {
 	if w, ok := m.wire[key]; ok {
 		if v, ok := row[w]; ok {

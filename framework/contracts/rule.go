@@ -9,13 +9,9 @@ import (
 	"sync"
 )
 
-// Example is a bad/good pair shown under a rule. Both halves are
-// required: "don't do this" without "do this instead" is the failure mode
-// that makes linters feel adversarial, and it is exactly the half an
-// agent needs to produce a fix on the first attempt.
+// Example is a bad/good pair shown under a rule. Both halves are required.
 type Example struct {
-	// Caption is the one-line framing ("a POST route with no access
-	// declaration"). Optional.
+	// Caption is an optional one-line framing.
 	Caption string `json:"caption,omitempty"`
 	// Bad is the code that trips the rule.
 	Bad string `json:"bad"`
@@ -23,52 +19,37 @@ type Example struct {
 	Good string `json:"good"`
 }
 
-// Rule is the documentation half of a contract: everything a human or an
-// agent needs to understand a diagnostic without opening the source of
-// the analyzer that produced it.
-//
-// Every field except Autofix and Examples is mandatory, and
-// [RegisterRules] enforces that. A rule with an empty Fix is a rule that
-// will be suppressed rather than fixed.
+// Rule is the documentation half of a contract. [RegisterRules] requires
+// every field except Caption and Autofix, and at least one Example.
 type Rule struct {
-	// ID is the stable identifier, "GOFASTR1002". Assigned from the
-	// capability's number block (see catalog.go) and never reused, so a
-	// suppression written today keeps meaning the same thing.
+	// ID is the stable identifier, "GOFASTR1002", from the capability's
+	// number block and never reused.
 	ID string `json:"id"`
-	// Slug is the human-readable name, "routing/missing-auth". Accepted
-	// anywhere an ID is, because `//gofastr:allow(routing/missing-auth)`
-	// reads better in a diff than a number.
+	// Slug is the human-readable name, "routing/missing-auth", accepted
+	// anywhere an ID is.
 	Slug string `json:"slug"`
 	// Title is the short noun phrase shown as the finding's headline.
 	Title string `json:"title"`
 	// Capability is the area this rule belongs to.
 	Capability Capability `json:"capability"`
-	// Severity is the default severity. Config may lower it; nothing
-	// raises it.
+	// Severity is the default severity; config may move it either way.
 	Severity Severity `json:"severity"`
 	// Summary is one sentence stating what was detected.
 	Summary string `json:"summary"`
-	// Why explains the consequence: what breaks, for whom, when. This is
-	// the field that turns a lint error into a lesson.
+	// Why explains the consequence: what breaks, for whom, when.
 	Why string `json:"why"`
 	// Fix is the concrete remedy, in imperative voice, naming the exact
 	// API or file to reach for.
 	Fix string `json:"fix"`
-	// Examples are bad/good pairs. Optional but strongly encouraged.
+	// Examples are bad/good pairs; at least one is required.
 	Examples []Example `json:"examples,omitempty"`
-	// Doc is the `gofastr docs` topic that covers this rule in depth
-	// (e.g. "reactivity"). Rendered as a URL by DocURL.
+	// Doc is the `gofastr docs` topic covering this rule, e.g. "reactivity".
 	Doc string `json:"doc"`
 	// Autofix reports whether an analyzer can produce a mechanical edit
-	// for this rule. Advisory: a rule may be marked autofixable and still
-	// decline to fix a particular instance it cannot rewrite safely.
+	// for this rule; it may still decline a particular instance.
 	Autofix bool `json:"autofix"`
 }
 
-// docBaseURL is where the embedded docs are published (the GitHub Pages
-// deployment of examples/site; see .github/workflows/pages.yml).
-// Diagnostics carry a resolvable link even when the reader is nowhere
-// near a checkout.
 const docBaseURL = "https://donaldmurillo.github.io/gofastr/docs/"
 
 // DocURL is the published location of the rule's doc topic.
@@ -79,8 +60,7 @@ func (r Rule) DocURL() string {
 	return docBaseURL + r.Doc
 }
 
-// DocCommand is the offline equivalent of DocURL: the docs are embedded
-// in the binary, so an agent with no network still has the full text.
+// DocCommand is the offline equivalent of DocURL.
 func (r Rule) DocCommand() string {
 	if r.Doc == "" {
 		return ""
@@ -91,22 +71,14 @@ func (r Rule) DocCommand() string {
 var (
 	ruleMu      sync.RWMutex
 	rulesByID   = map[string]Rule{}
-	rulesBySlug = map[string]string{} // slug → ID
+	rulesBySlug = map[string]string{}
 
-	// An ID is an uppercase prefix plus a number: GOFASTR1002, ACME101.
-	// The prefix is the namespace: GOFASTR belongs to the built-in
-	// catalog and its per-capability number blocks; a project registering
-	// its own rules picks its own prefix, which is what makes a custom ID
-	// unable to collide with a future catalog entry.
 	reRuleID   = regexp.MustCompile(`^[A-Z]{2,12}[0-9]{3,4}$`)
 	reRuleSlug = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*/[a-z0-9]+(?:-[a-z0-9]+)*$`)
 )
 
 // RegisterRules adds rules to the process-wide catalog, validating each
-// one. It panics on a malformed or duplicate rule: the catalog is
-// compiled-in data, so a violation is a programming error that should
-// never reach a user's terminal, and failing at init is how it stays that
-// way.
+// one. It panics on a malformed or duplicate rule.
 func RegisterRules(rules ...Rule) {
 	ruleMu.Lock()
 	defer ruleMu.Unlock()
@@ -138,12 +110,6 @@ func validateRule(r Rule) error {
 	if got := strings.SplitN(r.Slug, "/", 2)[0]; got != string(r.Capability) {
 		return fmt.Errorf("rule %s: slug prefix %q does not match capability %q", r.ID, got, r.Capability)
 	}
-	// Block discipline is a GOFASTR-namespace rule: the catalog assigns
-	// each capability a number range so IDs stay stable and greppable.
-	// It applies to GOFASTR + digits EXACTLY: a prefix that merely
-	// starts with the letters (GOFASTRA123) is somebody's custom prefix,
-	// and routing it here panicked a host app at init with a message
-	// about numbers.
 	if rest := strings.TrimPrefix(r.ID, "GOFASTR"); rest != r.ID {
 		if n, err := strconv.Atoi(rest); err == nil {
 			if block, ok := capabilityBlock(r.Capability); ok && (n < block || n >= block+100) {
@@ -169,10 +135,6 @@ func validateRule(r Rule) error {
 			return fmt.Errorf("rule %s: %s is required", r.ID, field)
 		}
 	}
-	// A rule with no example is a rule the reader has to infer from prose.
-	// Twenty of the original forty-seven shipped that way, and each one
-	// was a worse answer from `--explain` and `contracts_explain` than the
-	// same rule with three lines of before/after. Required, not encouraged.
 	if len(r.Examples) == 0 {
 		return fmt.Errorf("rule %s: at least one bad/good Example is required: a rule the reader cannot see is a rule they will not apply", r.ID)
 	}
@@ -193,15 +155,6 @@ func LookupRule(idOrSlug string) (Rule, bool) {
 
 func lookupRuleLocked(idOrSlug string) (Rule, bool) {
 	key := strings.TrimSpace(idOrSlug)
-	// Rule references are repo content (a suppression directive, a
-	// `contracts.rules` key in gofastr.settings.yml), and the catalog's IDs and
-	// slugs are ASCII by construction (reRuleID / reRuleSlug). Unicode
-	// case folding maps look-alikes ONTO ASCII — ſ uppercases to S — so a
-	// fold-equivalent spelling ("gofaſtr1003") resolves GOFASTR1003 and
-	// silently suppresses it while reading like a typo in review. Refuse
-	// any non-ASCII key: it can only be a homoglyph, never a catalog
-	// entry. With the key known ASCII, ToUpper/ToLower cannot fold
-	// anything beyond ASCII letter case.
 	if strings.ContainsFunc(key, func(r rune) bool { return r >= 0x80 }) {
 		return Rule{}, false
 	}
@@ -265,14 +218,7 @@ func SuggestRules(idOrSlug string) []string {
 			out = append(out, fmt.Sprintf("%s (%s)", id, r.Slug))
 		}
 	}
-	// Substring matching cannot help with a mistyped ID, which is the most
-	// likely thing to mistype: IDs are copied out of a report by hand, and
-	// `GOFASTR1oo2` shares no substring with `GOFASTR1002`. Fall back to
-	// edit distance so the one case with no partial-word to match on still
-	// gets an answer.
 	if len(out) == 0 {
-		// Already ranked by distance. Do NOT re-sort alphabetically, or
-		// a close match can be pushed past the cap by distant ones.
 		out = suggestByDistance(needle)
 	} else {
 		sort.Strings(out)
@@ -283,22 +229,11 @@ func SuggestRules(idOrSlug string) []string {
 	return out
 }
 
-// maxSuggestNeedle bounds the needle suggestByDistance will rank. Longest
-// legal catalog key (12-letter prefix + 4 digits, or a kebab slug) plus
-// generous headroom; a needle longer than any key plus the budget can
-// never rank within reach.
 const maxSuggestNeedle = 64
 
 // suggestByDistance ranks catalog entries by edit distance from the
-// needle. The budget scales with length so a short slug does not match
-// half the catalog, and caps at three so a wild guess gets nothing rather
-// than a misleading list. Caller holds ruleMu.
+// needle, within a budget of len/4 clamped to 1..3. Caller holds ruleMu.
 func suggestByDistance(needle string) []string {
-	// Ranking is O(needle × catalog) and the needle is attacker-chosen:
-	// the unknown-rule branches hand it the raw reference from a comment
-	// or YAML key in the verified repo. Cap it before the edit distance —
-	// a multi-megabyte reference would otherwise make one comment cost
-	// seconds of CPU.
 	if len(needle) > maxSuggestNeedle {
 		needle = needle[:maxSuggestNeedle]
 	}
@@ -336,7 +271,6 @@ func suggestByDistance(needle string) []string {
 	return out
 }
 
-// editDistance is Levenshtein, two rows rather than a full matrix.
 func editDistance(a, b string) int {
 	ar, br := []rune(a), []rune(b)
 	if len(ar) == 0 {

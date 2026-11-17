@@ -11,12 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-// GOFASTR1904: a checked permission the capability registry does not
-// hold. Permission names are strings, so a typo in an Access block or a
-// RequirePermission call compiles, and the check then denies every role
-// granted the intended name while the wildcard holder still passes.
-
-// permUse is one place a permission name is checked.
 type permUse struct {
 	Name    string
 	Package string
@@ -24,8 +18,6 @@ type permUse struct {
 	Pos     token.Pos
 }
 
-// permNames is what the static pass recovers about capabilities:
-// the names each package registers, and every checked name.
 type permNames struct {
 	Registered map[string]map[string]bool
 	// Unknown marks a package with a registration the pass cannot read:
@@ -34,17 +26,10 @@ type permNames struct {
 	Checks  []permUse
 }
 
-// permArg is the index of the permission argument of each check call on
-// the access package, the framework facade, or a RolePolicy.
 var permArg = map[string]int{
 	"RequirePermission": 0, "Can": 1, "CanResource": 1, "CanResourceExact": 1,
 }
 
-// permFields are the fields that name a permission, by the struct that
-// holds them: entity.AccessControl's per-operation names, the scope
-// configs' grants, a state transition's and an entityui action's
-// Permission. Transition and Action are common type names, so their
-// value must also look like resource:verb.
 var permFields = map[string]map[string]bool{
 	"AccessControl":   {"Read": true, "Create": true, "Update": true, "Delete": true},
 	"ScopeConfig":     {"CrossOwnerRead": true},
@@ -55,8 +40,6 @@ var permFields = map[string]map[string]bool{
 
 var shapedPermTypes = map[string]bool{"Transition": true, "Action": true}
 
-// permDecl is a package-level const or var initializer, with the import
-// aliases of the file it sits in.
 type permDecl struct {
 	value   ast.Expr
 	aliases map[string]string
@@ -64,15 +47,11 @@ type permDecl struct {
 
 const permNamesKey = "analyzers.permnames"
 
-// The packages whose RolePolicy, Can and RequirePermission the rule
-// reads. Exact paths: an app's own package named framework is not the
-// facade.
 const (
 	frameworkPkg = "github.com/DonaldMurillo/gofastr/framework"
 	accessPkg    = frameworkPkg + "/access"
 )
 
-// recvKind is what the pass knows about a Register receiver.
 type recvKind int
 
 const (
@@ -81,8 +60,6 @@ const (
 	recvOther                   // declared with another type, or a package
 )
 
-// kindOfType classifies a declared type. An interface may hold a
-// policy, and a struct embedding one has its Register.
 func (c *permCollector) kindOfType(e ast.Expr) recvKind {
 	if star, isStar := e.(*ast.StarExpr); isStar {
 		e = star.X
@@ -99,8 +76,6 @@ func (c *permCollector) kindOfType(e ast.Expr) recvKind {
 	return recvOther
 }
 
-// setKind records k for name; a policy reading wins, so a name that is
-// a policy anywhere in scope is never ignored.
 func setKind(m map[string]recvKind, name string, k recvKind) {
 	if m[name] != recvPolicy {
 		m[name] = k
@@ -111,21 +86,13 @@ func permissionNames(p *contracts.Pass) permNames {
 	return p.Memo(permNamesKey, func() any { return collectPermNames(p) }).(permNames)
 }
 
-// permCollector resolves names across the module's packages.
 type permCollector struct {
-	p     *contracts.Pass
-	decls map[string]map[string]permDecl
-	// mutated are package-level variables some function assigns to:
-	// caps = append(caps, ...) in an init makes the initializer a
-	// partial list.
-	mutated map[string]map[string]bool
-	// typeKinds are the module's named types that are not plain other
-	// types, by name: interfaces, and structs embedding a policy.
+	p         *contracts.Pass
+	decls     map[string]map[string]permDecl
+	mutated   map[string]map[string]bool
 	typeKinds map[string]recvKind
 }
 
-// pkgKey is the import-graph node for a file, collapsed to one node
-// without a module path, as AuthWiring does.
 func (c *permCollector) pkgKey(f contracts.SourceFile) string {
 	if c.p.ModulePath == "" {
 		return ""
@@ -133,11 +100,6 @@ func (c *permCollector) pkgKey(f contracts.SourceFile) string {
 	return f.Package
 }
 
-// str evaluates a constant string expression: literals, concatenation,
-// package-level constants (local or pkg.Name), and a conversion such as
-// access.Permission("x"). A name in locals is a function's own variable
-// and never the package-level one, and a package variable some function
-// reassigns is not its initializer.
 func (c *permCollector) str(pkg string, aliases map[string]string, e ast.Expr, locals map[string]bool, depth int) (string, bool) {
 	if depth > 16 {
 		return "", false
@@ -179,7 +141,6 @@ func (c *permCollector) str(pkg string, aliases map[string]string, e ast.Expr, l
 	return "", false
 }
 
-// target resolves pkg.Name's pkg to a module package.
 func (c *permCollector) target(aliases map[string]string, sel *ast.SelectorExpr) (string, bool) {
 	x, isIdent := sel.X.(*ast.Ident)
 	if !isIdent {
@@ -188,13 +149,7 @@ func (c *permCollector) target(aliases map[string]string, sel *ast.SelectorExpr)
 	return modulePackage(c.p.ModulePath, aliases[x.Name])
 }
 
-// list evaluates a spread argument: a slice literal, or a package-level
-// variable holding one, whose every element is a constant string. A
-// slice with one element the pass cannot read is not a list at all, or
-// its other names would be judged as the whole registry.
 func (c *permCollector) list(pkg string, aliases map[string]string, e ast.Expr, locals map[string]bool) ([]string, bool) {
-	// An inline literal's elements are read in the caller's scope; a
-	// package variable's in its own.
 	d, where, scope := permDecl{value: e, aliases: aliases}, pkg, locals
 	switch v := e.(type) {
 	case *ast.Ident:
@@ -237,8 +192,6 @@ func collectPermNames(p *contracts.Pass) permNames {
 		src  contracts.SourceFile
 		file *ast.File
 	}
-	// Named types first, so fields and variables of an interface or a
-	// policy-embedding struct classify correctly.
 	var files []parsed
 	for _, f := range p.AppFiles() {
 		file, ok := p.AST(f.Rel)
@@ -269,11 +222,6 @@ func collectPermNames(p *contracts.Pass) permNames {
 			}
 		}
 	}
-	// Package-level initializers from every file, framework import or
-	// not: a constants file often has none. Struct fields and package
-	// variables are classified too, so a.policy.Register counts, a
-	// policy declared in one file registers from another, and
-	// a.Batteries.Register is known to be something else.
 	fieldKinds := map[string]map[string]recvKind{}
 	pkgIdents := map[string]map[string]recvKind{}
 	for _, pf := range files {
@@ -306,9 +254,6 @@ func collectPermNames(p *contracts.Pass) permNames {
 						if c.decls[pkg] == nil {
 							c.decls[pkg] = map[string]permDecl{}
 						}
-						// Two declarations of one name are build-tag twins: the
-						// pass cannot tell which a binary compiles, so neither
-						// value is read.
 						d := permDecl{value: s.Values[i], aliases: aliases}
 						if _, twin := c.decls[pkg][name.Name]; twin {
 							d.value = nil
@@ -335,10 +280,6 @@ func collectPermNames(p *contracts.Pass) permNames {
 
 	for _, pf := range files {
 		file := pf.file
-		// Register and check calls are read in every file: a policy
-		// declared beside its import registers from a file without one.
-		// Struct literals are judged only where a framework package is
-		// imported, since their field names are common.
 		readsLiterals := importsAny(file, "framework/access", "framework", "framework/entity", "framework/entityui")
 		pkg := c.pkgKey(pf.src)
 		aliases := importAliases(file)
@@ -347,7 +288,6 @@ func collectPermNames(p *contracts.Pass) permNames {
 		for _, path := range aliases {
 			importsPolicy = importsPolicy || path == frameworkPkg || path == accessPkg
 		}
-		// kindOf classifies a Register receiver.
 		kindOf := func(recv ast.Expr) recvKind {
 			switch v := recv.(type) {
 			case *ast.Ident:
@@ -359,8 +299,6 @@ func collectPermNames(p *contracts.Pass) permNames {
 				}
 				return pkgIdents[pkg][v.Name]
 			case *ast.SelectorExpr:
-				// auth.Policy: a package variable reached through its
-				// import, placed by that package's declarations.
 				if target, found := c.target(aliases, v); found {
 					return pkgIdents[target][v.Sel.Name]
 				}
@@ -372,8 +310,6 @@ func collectPermNames(p *contracts.Pass) permNames {
 			}
 			return recvUnknown
 		}
-		// isAccess reports whether a check call's receiver is the access
-		// package, the framework facade, or a RolePolicy.
 		isAccess := func(recv ast.Expr) bool {
 			if id, isIdent := recv.(*ast.Ident); isIdent {
 				if path, imported := aliases[id.Name]; imported {
@@ -407,14 +343,8 @@ func collectPermNames(p *contracts.Pass) permNames {
 			}
 			switch kindOf(recv) {
 			case recvOther:
-				// Register is a common method name: a receiver declared
-				// with another type registers nothing.
 				return
 			case recvUnknown:
-				// A receiver the pass cannot place may still be a policy.
-				// With a spread or a permission-shaped name, in a file that
-				// imports the policy's package, the registry is unknown:
-				// the rule goes quiet rather than wrong.
 				shapedArg := call.Ellipsis.IsValid()
 				for _, n := range names {
 					shapedArg = shapedArg || looksLikePermission(n)
@@ -436,15 +366,11 @@ func collectPermNames(p *contracts.Pass) permNames {
 			}
 		}
 		visit := func(root ast.Node, locals map[string]bool) {
-			// elided holds the element type of a slice or map literal's
-			// untyped elements: []entity.Transition{{...}}.
 			elided := map[*ast.CompositeLit]string{}
 			called := map[ast.Expr]bool{}
 			ast.Inspect(root, func(n ast.Node) bool {
 				switch v := n.(type) {
 				case *ast.SelectorExpr:
-					// p.Register taken as a value registers through a call
-					// the pass does not follow.
 					if v.Sel.Name == "Register" && !called[v] && kindOf(v.X) == recvPolicy {
 						out.Unknown[pkg] = true
 					}
@@ -504,8 +430,6 @@ func collectPermNames(p *contracts.Pass) permNames {
 	return out
 }
 
-// isPolicyType reports whether a type expression is RolePolicy or a
-// pointer to it, bare or package-qualified.
 func isPolicyType(e ast.Expr) bool {
 	if star, isStar := e.(*ast.StarExpr); isStar {
 		e = star.X
@@ -513,8 +437,6 @@ func isPolicyType(e ast.Expr) bool {
 	return typeNamed(e, "RolePolicy")
 }
 
-// callsNewRolePolicy reports whether a call chain starts at
-// NewRolePolicy: framework.NewRolePolicy().StrictCapabilities().
 func callsNewRolePolicy(call *ast.CallExpr) bool {
 	for {
 		switch fn := call.Fun.(type) {
@@ -535,8 +457,6 @@ func callsNewRolePolicy(call *ast.CallExpr) bool {
 	}
 }
 
-// kindOfValue classifies an initializer: NewRolePolicy, new(T), a
-// composite literal, or unknown.
 func (c *permCollector) kindOfValue(e ast.Expr) recvKind {
 	if u, isAddr := e.(*ast.UnaryExpr); isAddr && u.Op == token.AND {
 		e = u.X
@@ -555,11 +475,6 @@ func (c *permCollector) kindOfValue(e ast.Expr) recvKind {
 	return recvUnknown
 }
 
-// identKinds classifies a file's identifiers by their declarations: a
-// parameter or variable with a declared type, or one defined from a
-// value kindOfValue reads. Assigning to a declared variable cannot
-// change its type, so = only upgrades a name to a policy. The map
-// ignores scope; a policy reading anywhere wins.
 func (c *permCollector) identKinds(file *ast.File) map[string]recvKind {
 	out := map[string]recvKind{}
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -598,9 +513,6 @@ func (c *permCollector) identKinds(file *ast.File) map[string]recvKind {
 	return out
 }
 
-// markMutated records the package-level variables fd assigns to,
-// directly or through an index: caps = append(caps, x), caps[0] = x,
-// and another package's through its import: perms.All = append(...).
 func (c *permCollector) markMutated(pkg string, aliases map[string]string, fd *ast.FuncDecl) {
 	locals := localNames(fd)
 	ast.Inspect(fd, func(n ast.Node) bool {
@@ -632,11 +544,6 @@ func (c *permCollector) markMutated(pkg string, aliases map[string]string, fd *a
 	})
 }
 
-// localNames are the names a function declares anywhere in it:
-// receiver, parameters, results, := and var, and range variables. A use
-// of one never means the package-level constant of that name. The set
-// ignores block structure, so a name declared in one branch also hides
-// the constant in another; that only drops findings.
 func localNames(fd *ast.FuncDecl) map[string]bool {
 	out := map[string]bool{}
 	ast.Inspect(fd, func(n ast.Node) bool {
@@ -669,14 +576,10 @@ func localNames(fd *ast.FuncDecl) map[string]bool {
 	return out
 }
 
-// typeNamed reports whether a type expression is name, bare or
-// package-qualified.
 func typeNamed(e ast.Expr, name string) bool {
 	return e != nil && baseTypeName(e) == name
 }
 
-// baseTypeName is a type expression's name without its package, or ""
-// for anything but a bare or qualified name.
 func baseTypeName(e ast.Expr) string {
 	switch v := e.(type) {
 	case *ast.Ident:
@@ -687,8 +590,6 @@ func baseTypeName(e ast.Expr) string {
 	return ""
 }
 
-// elementType names the element type of a slice, array or map literal
-// type, through one pointer: []*entity.Transition is "Transition".
 func elementType(e ast.Expr) string {
 	var elem ast.Expr
 	switch v := e.(type) {
@@ -712,9 +613,6 @@ func runUnregisteredPermissions(p *contracts.Pass) []contracts.Diagnostic {
 	}
 	imports := AuthWiring(p).Imports
 	importers := reverseGraph(imports)
-	// A binary is a package nothing imports. Every binary linking a check
-	// must register the name: a package two binaries share is judged
-	// against each one's own registry, not their union.
 	type registry struct {
 		names   map[string]bool
 		sorted  []string

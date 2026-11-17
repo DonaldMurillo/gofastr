@@ -4,22 +4,10 @@ import "context"
 
 type heldScopesKey struct{}
 
-// heldScopes wraps the granted set so an EMPTY scope list still reads as
-// "scoped" (maximally restricted) rather than as "no scopes installed".
 type heldScopes struct{ grants []Permission }
 
-// WithHeldScopes marks ctx as carrying scoped authority: the resource:verb
-// scopes of an API token or an embed grant. battery/auth's TokenMiddleware
-// (through auth.WithTokenScopes) and the embed middleware (through
-// embed.WithGrant) install it, so packages that cannot import either, the
-// CRUD layer in particular, can see what the request was narrowed to.
-//
-// A scope-restricted request may reach only the resources its scopes name.
-// The route-level gate (auth.RequireAPIScopes) checks the entity in the path;
-// the CRUD layer reads this value to hold the same line when one route
-// reaches ANOTHER entity: ?include=, ?rel.field= filters and cascade writes.
-//
-// An empty or nil scopes slice is maximally restricted, never unrestricted.
+// WithHeldScopes marks ctx as scope-restricted to scopes (resource:verb), as an
+// API token or embed grant is. An empty or nil slice is maximally restricted.
 func WithHeldScopes(ctx context.Context, scopes []string) context.Context {
 	grants := make([]Permission, len(scopes))
 	for i, s := range scopes {
@@ -28,9 +16,8 @@ func WithHeldScopes(ctx context.Context, scopes []string) context.Context {
 	return context.WithValue(ctx, heldScopesKey{}, heldScopes{grants: grants})
 }
 
-// HeldScopes returns the scopes a scope-restricted request holds and true, or
-// (nil, false) when ctx carries no scopes: a session, a JWT, or server code,
-// none of which the scope model narrows.
+// HeldScopes returns ctx's scopes and true, or (nil, false) when ctx is not
+// scope-restricted (a session, a JWT, server code).
 func HeldScopes(ctx context.Context) ([]Permission, bool) {
 	if ctx == nil {
 		return nil, false
@@ -42,19 +29,12 @@ func HeldScopes(ctx context.Context) ([]Permission, bool) {
 	return h.grants, true
 }
 
-// RoleScope is the scope a scope-restricted caller needs to act on role at a
-// role gate: "role:<role>" ("role:*" and "*:*" cover every role). A token
-// carries its owner's roles, so without it a token an admin minted for
-// "customers:read" would pass every gate that asks for "admin". The
-// framework's role gates (framework.MCPRequireRole, /.debug) count a role
-// for a scoped caller only when ScopeAllows(ctx, RoleScope(role)); sessions
-// and JWTs carry no scopes and are unaffected. A role name outside the scope
-// vocabulary ([a-z0-9_-]) cannot be minted by name; "role:*" still covers it.
+// RoleScope is the scope a scope-restricted caller needs to pass a gate on role:
+// "role:<role>". "role:*" and "*:*" cover every role.
 func RoleScope(role string) Permission { return Permission("role:" + role) }
 
-// ScopeAllows reports whether ctx may exercise required under the scope
-// model. An unscoped ctx is allowed: scopes only ever narrow. A scoped ctx is
-// allowed when ScopeMatch finds a granting scope.
+// ScopeAllows reports whether ctx may exercise required: always for an unscoped
+// ctx, otherwise when ScopeMatch finds a granting scope.
 func ScopeAllows(ctx context.Context, required Permission) bool {
 	held, scoped := HeldScopes(ctx)
 	if !scoped {

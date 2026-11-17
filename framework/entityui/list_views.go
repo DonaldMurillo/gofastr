@@ -17,21 +17,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// viewKeyOf resolves which view this render opens on: the URL's, else
-// the builder's .View, else the declared default, else All. A URL
-// naming an unknown or hidden view shows All, never an error — it is
-// someone's bookmark, not a configuration bug. A builder naming an
-// unknown view is a configuration bug and fails the slot. A default
-// view hidden from this caller by its Show falls back to All.
-// allView is the reserved view key (entity.reservedDisplayKeys) that
-// names All when the list would otherwise fall to a default view.
 const allView = "all"
 
 func viewKeyOf(ctx context.Context, m *meta, b *ListBuilder, q url.Values) (string, error) {
 	if key := q.Get(param(b.key, "view")); key != "" {
-		// The trash view is the screens' own, beside the declared ones.
-		// It narrows nothing here — the read inverts its soft-delete
-		// term — so it resolves before the unknown-view fallback.
 		if key == deletedViewKey && b.deleted && m.e.Config.Scope.SoftDelete {
 			return deletedViewKey, nil
 		}
@@ -56,10 +45,6 @@ func viewKeyOf(ctx context.Context, m *meta, b *ListBuilder, q url.Values) (stri
 	return "", nil
 }
 
-// viewable asks the view func's Show, when one is registered: a view
-// whose filter depends on who is looking can also hide itself from
-// callers it does not apply to. A view with no func, or a func with no
-// Show, is shown to everyone.
 func viewable(ctx context.Context, m *meta, key string) bool {
 	vf, ok := m.ext.Views[key]
 	if !ok || vf.Show == nil {
@@ -68,13 +53,10 @@ func viewable(ctx context.Context, m *meta, key string) bool {
 	return vf.Show(asCaller(ctx))
 }
 
-// declaredAndViewable reports whether key is one of the entity's views
-// and shown to this caller.
 func declaredAndViewable(ctx context.Context, m *meta, key string) bool {
 	return m.declaresView(key) && viewable(ctx, m, key)
 }
 
-// declaresView reports whether Display declares a view under key.
 func (m *meta) declaresView(key string) bool {
 	for _, v := range m.d.Views {
 		if v.Key == key {
@@ -84,11 +66,6 @@ func (m *meta) declaresView(key string) bool {
 	return false
 }
 
-// viewPredicate resolves the active view's narrowing term: its declared
-// Where parsed with the DSL, or its registered Filter func. A func's
-// result passes filter.ValidatePredicate before use — every time, never
-// trusting the app's own tree — and the resolved copy is what runs.
-// A view with neither narrows nothing.
 func viewPredicate(ctx context.Context, m *meta, key string) (*filter.Predicate, error) {
 	if key == "" {
 		return nil, nil
@@ -122,8 +99,6 @@ func viewPredicate(ctx context.Context, m *meta, key string) (*filter.Predicate,
 	return resolved, nil
 }
 
-// viewSorts parses the view's declared Sort, the default order when the
-// URL names none.
 func viewSorts(m *meta, key string) ([]filter.ParsedSort, error) {
 	if key == "" {
 		return nil, nil
@@ -141,17 +116,8 @@ func viewSorts(m *meta, key string) ([]filter.ParsedSort, error) {
 	return nil, nil
 }
 
-// viewTabs draws the strip above the list: All, every declared view
-// shown to this caller, then the caller's saved views, with the
-// save/delete view tools at its end. Each tab is a link: a declared one
-// swaps the view param and drops sort, page and any open saved view —
-// a view carries its own default order, and every view starts on page
-// one; a saved one opens that view. With TabCounts each tab carries the
-// count of what its link lists; the open tab reuses the page's total.
 func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, known bool) render.HTML {
 	builtIn := s.savedID == ""
-	// A built-in tab's link keeps the URL's filter param and drops the
-	// open saved view, and with it the saved view's filter.
 	urlFilter := s.filterPred
 	if !s.q.Has(s.p.filter) {
 		urlFilter = nil
@@ -192,8 +158,6 @@ func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, kno
 			}(),
 			Current: current,
 		}
-		// A view whose predicate fails here failed the open list already
-		// when it was the open one; another tab only goes bare.
 		if pred, err := viewPredicate(ctx, s.m, v.Key); err == nil {
 			item.Badge = count(current, pred, urlFilter, false)
 		}
@@ -209,8 +173,6 @@ func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, kno
 				Href:    listHref(s.path, q),
 				Current: current,
 			}
-			// A saved view's link keeps the open view and swaps in its
-			// own filter; one that no longer parses opens as All.
 			var filt *filter.Predicate
 			ok := true
 			if v.Filter != "" {
@@ -223,7 +185,6 @@ func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, kno
 			items = append(items, item)
 		}
 	}
-	// The trash view rides after the others.
 	if s.offeredTab {
 		q := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page, s.p.saved)
 		q.Set(s.p.view, deletedViewKey)
@@ -237,7 +198,6 @@ func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, kno
 	}
 	end := b.viewTools(ctx, s)
 	if len(items) < 2 && end == "" {
-		// All alone is not a strip of tabs; it is the list's only shape.
 		return ""
 	}
 	return ui.TabNav(ui.TabNavConfig{
@@ -247,9 +207,6 @@ func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, kno
 	})
 }
 
-// tabCount counts the rows one tab lists: its view and filter with the
-// page's pins, search and facets, under the same read scope as the
-// list. A refused count is a bare tab, never a failed strip.
 func (b *ListBuilder) tabCount(ctx context.Context, s *listState, view, filt *filter.Predicate, deleted bool) string {
 	where, err := s.narrowed(b, view, filt)
 	if err != nil {
@@ -268,11 +225,6 @@ func (b *ListBuilder) tabCount(ctx context.Context, s *listState, view, filt *fi
 	return i18n.Number(ctx, n)
 }
 
-// filterChips draws what narrows the list: a chip per facet set
-// ("Status: Paid") and per top-level AND term of the typed filter, each
-// a link to the same URL without it, then "Clear all", which drops the
-// facets and the filter (and an open saved view whose filter it is) but
-// keeps the search, the view and the columns.
 func filterChips(ctx context.Context, s *listState, facets []ui.Facet) render.HTML {
 	var chips []render.HTML
 	for _, f := range facets {
@@ -327,11 +279,6 @@ func filterChips(ctx context.Context, s *listState, facets []ui.Facet) render.HT
 	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, chips...)
 }
 
-// topLevelTerms are the filter's top-level AND terms as display text.
-// A lone leaf is its own single term; an OR group is one term (it can
-// only be removed whole), at the top or among the AND terms. Each term
-// is text the kept terms join back with " and " (termText), so removing
-// one never regroups the rest.
 func topLevelTerms(p *filter.Predicate) []string {
 	if p == nil {
 		return nil
@@ -346,9 +293,6 @@ func topLevelTerms(p *filter.Predicate) []string {
 	return out
 }
 
-// termText is predicateText for a term that sits beside others: a group
-// in parentheses, since the DSL binds and tighter than or and a bare
-// "a or b" joined to "c" would read as a or (b and c).
 func termText(p *filter.Predicate) string {
 	if len(p.Children) > 0 {
 		return "(" + predicateText(p) + ")"
@@ -356,9 +300,6 @@ func termText(p *filter.Predicate) string {
 	return predicateText(p)
 }
 
-// predicateText renders one term back as DSL text, the same spelling
-// the ?filter= param accepts, so a rebuilt without-term filter is a
-// value the parser round-trips.
 func predicateText(p *filter.Predicate) string {
 	if p == nil {
 		return ""
@@ -385,8 +326,6 @@ func predicateText(p *filter.Predicate) string {
 	case filter.OpLike:
 		return p.Field + " contains " + quote(p.Value)
 	}
-	// The DSL's symbolic operators, not the FilterOp tokens ("eq"),
-	// so a rebuilt filter parses again.
 	op := map[filter.FilterOp]string{
 		filter.OpEq: "=", filter.OpNe: "!=", filter.OpGt: ">",
 		filter.OpLt: "<", filter.OpGte: ">=", filter.OpLte: "<=",
@@ -394,11 +333,6 @@ func predicateText(p *filter.Predicate) string {
 	return p.Field + " " + op + " " + quote(p.Value)
 }
 
-// removeFilterHref rebuilds the filter text without term i and returns
-// the same URL with that filter. Removing the last term drops the
-// param, and with an open saved view clearFilter keeps the view's
-// filter from coming straight back: an override is carried empty, the
-// view's own text drops the saved param.
 func removeFilterHref(s *listState, terms []string, i int) string {
 	kept := make([]string, 0, len(terms)-1)
 	for j, t := range terms {
@@ -415,9 +349,6 @@ func removeFilterHref(s *listState, terms []string, i int) string {
 	return listHref(s.path, q)
 }
 
-// filterWarning is the callout a bad ?filter= earns: the text could not
-// be applied, and the list below is unfiltered. The error itself is
-// logged, not shown — it carries the raw input.
 func filterWarning(ctx context.Context) render.HTML {
 	return ui.Callout(ui.CalloutConfig{
 		Title:   i18nui.EntityFilterInvalidTitle.Text(ctx),

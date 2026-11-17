@@ -16,6 +16,86 @@ invariants:
       - test: framework/entityui.TestScriptlessEditSavesAndRedirects
       - test: framework/entityui.TestScriptlessSaveRefusals
     judge: Does this change give SaveHandler a write path, body parser or cross-site check of its own instead of running the CRUD Update?
+  - id: read-gate-at-the-render
+    rule: Route middleware never runs for a component render, so a list, create screen, stat or count for a caller the entity's list route refuses (CanReadScoped) draws the access-denied notice or nothing, never a row, count or title.
+    enforced_by:
+      - test: framework/entityui.TestListRefusesAnonymousDefaultPosture
+      - test: framework/entityui.TestCreateScreenNeedsRead
+      - test: framework/entityui.TestCountReportsWhatItCannotRead
+  - id: http-surfaces-answer-the-list-refusal
+    rule: BulkHandler, ExportHandler, the trash handlers and SavedViewsHandler answer a caller who may not read the entity with the list route's own status and envelope (CrudHandler.RequireRead) before reading or writing anything.
+    enforced_by:
+      - test: framework/entityui.TestBulkRefusesWriterWithoutRead
+      - test: framework/entityui.TestExportRefusalMatchesList
+      - test: framework/entityui.TestExportRefusesAnonymous
+  - id: relation-reads-ask-the-related-gate
+    rule: A relation's titles, facet options, picker, links and Related lists are read only when the caller passes the related entity's CanReadRelatedScoped (which also refuses a CRUD-off target and a token without <table>:read), and a refused relation cell draws muted before any kind sees its foreign key, never the raw id.
+    enforced_by:
+      - test: framework/entityui.TestPickerRefusesCRUDOffTarget
+      - test: framework/entityui.TestPickerRefusesTokenWithoutScope
+      - test: framework/entityui.TestRelatedRefusesUnreachable
+      - test: framework/entityui.TestRelationCellMutedWhenRefused
+      - test: framework/entityui.TestKindRelationRefusedBeforeCallback
+  - id: record-named-by-id-asks-the-record-gate
+    rule: A title, export row or record named by id is drawn only when CanReadRecordScoped allows that record, so a Decider that allows the list can still refuse one row.
+    enforced_by:
+      - test: framework/entityui.TestRecordDeniedRunsNoHook
+      - test: framework/entityui.TestListRelationLabelSkipsRefusedRow
+      - test: framework/entityui.TestNamedExportSkipsRefusedRow
+  - id: writes-drawn-only-where-the-route-allows
+    rule: A screen draws a create, edit or delete control only when the entity mounts write routes and the caller passes that route's own gate (canCreate, canUpdate, canDelete).
+    enforced_by:
+      - test: framework/entityui.TestWriteControlsFollowWriteAccess
+  - id: extension-code-runs-without-elevation
+    rule: An action's Run, a tab or side panel Build, a view Filter, a replaced List or Record body and a kind's Cell or Text run on the caller's context with a back office's elevation removed (asCaller).
+    enforced_by:
+      - test: framework/entityui.TestActionRunIsNotElevated
+      - test: framework/entityui.TestTabBuildIsNotElevated
+      - test: framework/entityui.TestReplacedBodiesAreNotElevated
+  - id: slot-failure-is-generic
+    rule: A panicking or erroring slot draws the generic slot-failed callout and logs the entity, slot and only the panic value's type; a panicking kind Text leaves its slot empty; a panicking action counts its records failed and logs only the type.
+    enforced_by:
+      - test: framework/entityui.TestSweepCoreSlotPanicLogsTypeOnly
+      - test: framework/entityui.TestSweepCoreKindTextPanicIsEmpty
+      - test: framework/entityui.TestSweepBulkActionPanicLogsTypeOnly
+  - id: new-checks-and-keeps-its-extensions
+    rule: New refuses a FilesURL that is not a same-origin path starting and ending with /, an extension tab keyed as a built-in tab, an unknown action variant and Jobs on a Host without a BulkStore, and keeps its own clone of the Extensions it checked.
+    enforced_by:
+      - test: framework/entityui.TestSweepCoreNewRefusesBadFilesURL
+      - test: framework/entityui.TestSweepCoreNewRefusesBuiltinTabKey
+      - test: framework/entityui.TestActionVariantChecked
+      - test: framework/entityui.TestNewRefusesJobsWithoutBulkHost
+      - test: framework/entityui.TestSweepCoreNewClonesExtensions
+  - id: screen-reads-run-the-read-hooks
+    rule: Every meta reader without Unhooked in its name runs the caller's read hooks (crud.WithReadHooks), so what a screen draws, counts or acts on is what the JSON API would return.
+    enforced_by:
+      - test: framework/entityui.TestListHonorsBeforeListScope
+      - test: framework/entityui.TestKindDetailSeesHookedRow
+      - test: framework/entityui.TestTabCountsHonorBeforeListScope
+      - test: framework/entityui.TestListInlineEditSkipsMaskedValues
+    judge: Does this change draw or act on a value read through an *Unhooked reader without comparing it to the hooked read, or for anything but prefilling an input that round-trips?
+  - id: server-owned-scope-columns-never-offered
+    rule: The owner field and a MultiTenant tenant column are never a form input, inline editor, bulk set or picker choice, and a record's key columns are locked after create.
+    enforced_by:
+      - test: framework/entityui.TestScopeColumnsNotEditable
+      - test: framework/entityui.TestHandKeySetOnCreate
+      - test: framework/entityui.TestCompositeRecordReadsByTuple
+  - id: id-reads-return-only-asked-records
+    rule: A read by ids drops an id entity.KeyValues refuses (a non-canonical integer, a short composite key) and keeps each returned row only when its own id is one that was asked, once, so a collation or integer alias never reaches another record.
+    enforced_by:
+      - test: framework/entityui.TestExportRefusesCollationAlias
+      - test: framework/entityui.TestExportRefusesIntKeyAlias
+  - id: stats-never-draw-a-partial-figure
+    rule: A sum or grouping that AfterList hooks keep off the database reads the hooked rows up to statRowCap and draws nothing past it, a chart past statGroupCap draws nothing, enum groups keep their declared order, and a filter comparing an enum to a value it does not declare is refused by CheckStat.
+    enforced_by:
+      - test: framework/entityui.TestStatSumPassesAfterListHooks
+      - test: framework/entityui.TestStatGroupsOrderAndCap
+      - test: framework/entityui.TestCheckStatRefusesWhatCannotCompute
+  - id: last-updated-skips-missing-timestamps
+    rule: LastUpdated reads the newest updated_at after 1970 the caller may read, so a row with no updated_at, which Postgres sorts first in a descending read, never hides the newest date.
+    enforced_by:
+      - test: framework/entityui.TestLastUpdatedStaysInScope
+      - test: framework/entityui.TestSweepPGLastUpdatedSkipsNullTimestamps
 decisions:
   - id: scriptless-edit-through-an-entityui-route
     date: 2026-11-16

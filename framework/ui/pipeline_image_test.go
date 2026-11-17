@@ -79,6 +79,9 @@ func TestPipelineImageEmitsOneSourcePerType(t *testing.T) {
 		},
 	})
 	out := string(h)
+	if n := strings.Count(out, "<source"); n != 2 {
+		t.Errorf("<source> elements = %d, want one per type (2):\n%s", n, out)
+	}
 	mustContain(t, h, `type="image/webp"`)
 	mustContain(t, h, `type="image/jpeg"`)
 	mustContain(t, h, "/photo-sm.webp 320w, /photo-md.webp 800w, /photo-lg.webp 1600w")

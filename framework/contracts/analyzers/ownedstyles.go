@@ -16,27 +16,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-// Owned styles (<name>.style.css beside the layout, screen or component
-// that owns it) are checked here, at verify time, by the same
-// core-ui/ownstyle code `gofastr gen styles` runs before it writes Go.
-// This file adds only what gen styles cannot see from one CSS file: the
-// program-wide rules (1815 upstream candidates, 1816 duplicate names,
-// 1822 repeated literals — run per program, grouped in
-// ownedstyleprograms.go) and the Go-side evidence 1817 and 1818 read
-// (which classes land on a kit root; which package attaches a
-// screen's or layout's style).
-//
-// testdata trees are skipped, the convention GOFASTR1809 and 1814
-// share: they hold parser fixtures the generator itself refuses.
-
-// Import paths the Go-side rules resolve. Matched exactly: a host app's
-// own package that happens to be named ui is not the kit.
 const (
 	kitUIImport  = "github.com/DonaldMurillo/gofastr/framework/ui"
 	coreAppImprt = "github.com/DonaldMurillo/gofastr/core-ui/app"
 )
 
-// ownedSheet is one *.style.css the owned-style rules check.
 type ownedSheet struct {
 	rel   string // the CSS file, pass-relative
 	dir   string // its directory
@@ -46,29 +30,19 @@ type ownedSheet struct {
 	sheet *ownstyle.Stylesheet
 	model *ownstyle.SheetModel
 
-	// From the generated sibling, when it parses: the exported var that
-	// holds the handle, and the handle's class methods (method name →
-	// class; "" for the :scope root's Root/RootWith).
 	varName string
 	methods map[string]string
 }
 
-// isOwnedStylePath reports whether rel is an owned style the rules in
-// this file check: a *.style.css outside every testdata tree.
 func isOwnedStylePath(rel string) bool {
 	return strings.HasSuffix(rel, ".style.css") &&
 		!slices.Contains(strings.Split(rel, "/"), "testdata")
 }
 
-// ownedStyleTokens is the built-in token map the CSS checks judge
-// against: the canonical theme, the same one gen styles checks with.
-// The app's own tokens (*.tokens.css) join it per pass (appTokens).
 var ownedStyleTokens = sync.OnceValue(func() map[string]string {
 	return style.ThemeToTokens(style.DefaultTheme())
 })
 
-// collectOwnedSheets parses every owned style once, with its model and
-// the handle facts its generated sibling declares.
 func collectOwnedSheets(p *contracts.Pass) []*ownedSheet {
 	var out []*ownedSheet
 	for _, f := range p.StyleFiles() {
@@ -96,12 +70,6 @@ func collectOwnedSheets(p *contracts.Pass) []*ownedSheet {
 	return out
 }
 
-// readGeneratedHandle fills varName and methods from the sibling
-// <name>_style.gen.go: `var X = h{ownstyle.Must("name", …)}` names the
-// var, and every `func (s h) M() string { return "class" }` maps a
-// method to its class. A With method maps to its base's class. A
-// missing or stale sibling is GOFASTR1814's finding; this reads what is
-// there.
 func readGeneratedHandle(p *contracts.Pass, s *ownedSheet) {
 	file, ok := p.AST(path.Join(s.dir, ownstyle.GeneratedFileName(s.name)))
 	if !ok {
@@ -174,18 +142,11 @@ func readGeneratedHandle(p *contracts.Pass, s *ownedSheet) {
 	}
 }
 
-// isTokensFilePath reports whether rel is an app tokens file the rules
-// read: a *.tokens.css outside every testdata tree.
 func isTokensFilePath(rel string) bool {
 	return strings.HasSuffix(rel, ".tokens.css") &&
 		!slices.Contains(strings.Split(rel, "/"), "testdata")
 }
 
-// checkOwnedStyles runs every owned-style rule over the pass. The
-// program-wide rules (the tokens-file checks, 1816, 1822) run once
-// per program through CheckStylePrograms, the one implementation
-// `gofastr gen styles` shares; the per-sheet and Go-side rules run
-// once per sheet.
 func checkOwnedStyles(p *contracts.Pass) []contracts.Diagnostic {
 	sheets := collectOwnedSheets(p)
 	inputs := make([]SheetInput, len(sheets))
@@ -203,10 +164,6 @@ func checkOwnedStyles(p *contracts.Pass) []contracts.Diagnostic {
 	}
 	checks := CheckStylePrograms(p, inputs, tokensFiles)
 
-	// The tokens-file checks, run per program; a finding two programs
-	// would both report is kept once (identical FileDiagnostics
-	// collapse, genuinely different ones — a duplicate key with a
-	// different partner in each program — survive).
 	var out []contracts.Diagnostic
 	seenTokenFinding := map[ownstyle.FileDiagnostic]bool{}
 	for _, g := range checks.Groups {
@@ -224,9 +181,6 @@ func checkOwnedStyles(p *contracts.Pass) []contracts.Diagnostic {
 		return out
 	}
 
-	// A sheet's own CSS is judged against EACH of its groups' token
-	// maps (SheetFindings): a binary only carries its own tokens, so a
-	// library sheet two programs share must satisfy each program's set.
 	for _, s := range sheets {
 		for _, d := range checks.SheetFindings[s.rel] {
 			if !strings.HasPrefix(d.Rule, "GOFASTR") {
@@ -250,8 +204,6 @@ func checkOwnedStyles(p *contracts.Pass) []contracts.Diagnostic {
 	return out
 }
 
-// checkUpstreamCandidates reports GOFASTR1815: every owned sheet, with
-// its owner name and class count.
 func checkUpstreamCandidates(sheets []*ownedSheet) []contracts.Diagnostic {
 	out := make([]contracts.Diagnostic, 0, len(sheets))
 	for _, s := range sheets {
@@ -275,11 +227,6 @@ func checkUpstreamCandidates(sheets []*ownedSheet) []contracts.Diagnostic {
 	return out
 }
 
-// handleIndex resolves Go expressions to owned-style handles without
-// type information: a bare identifier naming a handle var in the same
-// directory, or pkg.Var where pkg is an import of a directory holding
-// generated style files. A handle copied into a local variable first is
-// not traced; the rules that use this say so in their catalog text.
 type handleIndex struct {
 	byDir    map[string]map[string]*ownedSheet // dir → var name → sheet
 	pkgName  map[string]string                 // dir → Go package name of its generated files
@@ -313,8 +260,6 @@ func newHandleIndex(p *contracts.Pass, sheets []*ownedSheet) *handleIndex {
 	return idx
 }
 
-// fileScope is one Go file's view of the index: its directory and the
-// local names its imports bind.
 type fileScope struct {
 	rel     string
 	dir     string
@@ -364,7 +309,6 @@ func (idx *handleIndex) scope(rel string, file *ast.File) *fileScope {
 	return fs
 }
 
-// resolve returns the owned sheet a handle expression names, or nil.
 func (idx *handleIndex) resolve(fs *fileScope, e ast.Expr) *ownedSheet {
 	switch x := e.(type) {
 	case *ast.Ident:
@@ -383,8 +327,6 @@ func (idx *handleIndex) resolve(fs *fileScope, e ast.Expr) *ownedSheet {
 	return nil
 }
 
-// kitComponent reports whether e is a call to a framework/ui function
-// (ui.Card(…)): a kit component's root.
 func (fs *fileScope) kitComponent(e ast.Expr) (string, bool) {
 	call, ok := e.(*ast.CallExpr)
 	if !ok {
@@ -401,12 +343,6 @@ func (fs *fileScope) kitComponent(e ast.Expr) (string, bool) {
 	return pkg.Name + "." + sel.Sel.Name, true
 }
 
-// checkKitRootStyles reports GOFASTR1817. The Go half finds the
-// classes that land on a kit root: a handle method call inside the
-// Class field of a framework/ui composite literal, and a handle's
-// Scope wrapping a ui.X(…) call (the sheet's :scope is then the kit
-// root). The CSS half is ownstyle.CheckKitRoots, reported at the
-// offending declaration.
 func checkKitRootStyles(p *contracts.Pass, idx *handleIndex, sheets []*ownedSheet) []contracts.Diagnostic {
 	roots := map[*ownedSheet][]ownstyle.KitRoot{}
 	add := func(s *ownedSheet, r ownstyle.KitRoot) {
@@ -508,11 +444,6 @@ func checkKitRootStyles(p *contracts.Pass, idx *handleIndex, sheets []*ownedShee
 	return out
 }
 
-// checkOwnedHandleLeaks reports GOFASTR1818: a handle attached as a
-// layout's (LayoutSpec{Style: h}) or screen's (.WithStyle(h) with a
-// scoped sheet; App.WithStyle takes only the app sheet) style, used —
-// any selector on it, h.Column(), h.Scope(…) — in a directory that is
-// neither the handle's own nor one that attaches it.
 func checkOwnedHandleLeaks(p *contracts.Pass, idx *handleIndex) []contracts.Diagnostic {
 	type use struct {
 		rel    string
@@ -576,9 +507,6 @@ func checkOwnedHandleLeaks(p *contracts.Pass, idx *handleIndex) []contracts.Diag
 		if len(dirs) == 0 {
 			continue
 		}
-		// The handle's home package (where its CSS and generated Go sit,
-		// beside the owner's code) is the owner's, however the app wires
-		// the attachment: main.go may call .WithStyle(board.Style).
 		useDir := path.Dir(u.rel)
 		if useDir == u.sheet.dir {
 			continue

@@ -13,16 +13,8 @@ import (
 )
 
 // StaleOwnerFK is one SQLite table carrying a foreign key on the column its
-// entity declares as Scope.OwnerField.
-//
-// The framework stamps that column from the session identity, which the auth
-// battery stores in auth_users — not in the entity the relation names. So the
-// key references a table where no matching row will ever exist, and every
-// create violates it. Releases before v0.67 emitted the constraint anyway and
-// SQLite never checked it, which is why the contradiction stayed invisible;
-// Postgres has always rejected it. AutoMigrate no longer emits the clause, but
-// that does nothing for a database that already has one, and SQLite has no
-// DROP CONSTRAINT.
+// entity declares as Scope.OwnerField. The column holds the session identity
+// (auth_users), so the key fails every create; SQLite has no DROP CONSTRAINT.
 type StaleOwnerFK struct {
 	Entity     string // the declaring entity's name
 	Table      string // the SQLite table holding the constraint
@@ -36,14 +28,8 @@ func (s StaleOwnerFK) String() string {
 }
 
 // FindStaleOwnerForeignKeys reports every table in the registry whose live
-// SQLite schema carries a foreign key on the entity's owner column.
-//
-// It reads PRAGMA foreign_key_list rather than parsing the stored CREATE TABLE,
-// so an inline `REFERENCES` on the column definition is found as reliably as a
-// table-level FOREIGN KEY clause — SQLite reports both the same way.
-//
-// Non-SQLite databases return no findings: Postgres rejected this shape at
-// CREATE TABLE time, so no Postgres database can be carrying one.
+// SQLite schema carries a single-column foreign key on the entity's owner
+// column, inline or table-level. Non-SQLite databases return no findings.
 func FindStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, registry entity.Registry) ([]StaleOwnerFK, error) {
 	if db == nil || registry == nil {
 		return nil, nil
@@ -77,13 +63,7 @@ func FindStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, registry entity.
 	return out, nil
 }
 
-// staleOwnerKeysForTable returns the referenced tables of every foreign key on
-// ownerCol. A missing table yields nothing rather than an error: AutoMigrate
-// creates tables, and a repair scan that ran first has no finding to make.
 func staleOwnerKeysForTable(ctx context.Context, db *sql.DB, table, ownerCol string) ([]string, error) {
-	// PRAGMA takes no bind parameters, so sqlitePragma validates the name.
-	// A qualified main.tasks puts its schema on the pragma: quoted whole,
-	// "main.tasks" named no table and the scan found nothing.
 	pragma, err := sqlitePragma("foreign_key_list", table)
 	if err != nil {
 		return nil, fmt.Errorf("repair scan: invalid table name %q: %w", table, err)
@@ -102,9 +82,6 @@ func staleOwnerKeysForTable(ctx context.Context, db *sql.DB, table, ownerCol str
 	refOf := map[string]string{}
 	var order []string
 	for rows.Next() {
-		// The column set of this pragma has grown across SQLite versions, so
-		// scan positionally into a slice sized to what the driver reports
-		// rather than into a fixed struct that a newer column count breaks.
 		vals := make([]any, len(cols))
 		ptrs := make([]any, len(cols))
 		for i := range vals {
@@ -117,8 +94,6 @@ func staleOwnerKeysForTable(ctx context.Context, db *sql.DB, table, ownerCol str
 		for i, c := range cols {
 			byName[strings.ToLower(c)] = fmt.Sprintf("%v", vals[i])
 		}
-		// A composite key spans several rows sharing one id, so the columns
-		// are collected per key and judged together below.
 		id := byName["id"]
 		byKey[id] = append(byKey[id], byName["from"])
 		refOf[id] = byName["table"]
@@ -133,13 +108,6 @@ func staleOwnerKeysForTable(ctx context.Context, db *sql.DB, table, ownerCol str
 			continue
 		}
 		seen[id] = true
-		// ONLY a key whose entire column list is the owner column. A composite
-		// key that merely includes it is doing real work on the other columns
-		// and is not the stale shape: the framework never emitted one, and
-		// ddlWithoutForeignKeyOn deliberately refuses to rewrite it. Reporting
-		// it here made AutoMigrate warn that "every create fails" about a
-		// constraint that is working, and made `--apply` abort on a healthy
-		// schema with an error telling the operator to rebuild by hand.
 		if len(byKey[id]) == 1 && strings.EqualFold(byKey[id][0], ownerCol) {
 			out = append(out, refOf[id])
 		}
@@ -148,23 +116,8 @@ func staleOwnerKeysForTable(ctx context.Context, db *sql.DB, table, ownerCol str
 }
 
 // RepairStaleOwnerForeignKeys rebuilds each affected table without the stale
-// key, following SQLite's documented procedure for altering a table it cannot
-// ALTER: create the replacement, copy the rows, drop the original, rename.
-//
-// The replacement DDL is the ORIGINAL DDL with the offending clause removed,
-// not a fresh CREATE TABLE built from the entity declaration. A legacy table
-// may carry columns, defaults, or constraints the declaration no longer
-// mentions, and rebuilding from the declaration would drop them — a repair that
-// loses data is worse than the constraint it removes.
-//
-// Indices and triggers belong to the table and go with the DROP, so their DDL
-// is captured first and replayed after the rename.
-//
-// Foreign keys are disabled for the duration, because the intermediate states
-// violate them by construction. PRAGMA foreign_keys is a no-op inside a
-// transaction, so it is set on a dedicated connection that also runs the
-// rebuild — setting it on the pool and hoping the same connection serves the
-// transaction is the version of this that works until it does not.
+// key from its stored DDL, keeping its rows, indexes and triggers, and returns
+// an error when a foreign key violation remains afterwards.
 func RepairStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, stale []StaleOwnerFK) error {
 	if len(stale) == 0 {
 		return nil
@@ -185,8 +138,6 @@ func RepairStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, stale []StaleO
 				return fmt.Errorf("repair %s: %w", s.Table, err)
 			}
 		}
-		// A rebuild that leaves a violation behind has not repaired anything,
-		// and the next write would be the one to find out.
 		violations, err := foreignKeyViolations(ctx, conn)
 		if err != nil {
 			return fmt.Errorf("verify foreign keys after the rebuild: %w", err)
@@ -200,22 +151,12 @@ func RepairStaleOwnerForeignKeys(ctx context.Context, db *sql.DB, stale []StaleO
 }
 
 // withSQLiteRebuildConn runs fn on one dedicated connection with
-// foreign_keys OFF and legacy_alter_table ON, then restores both. A SQLite
-// table rebuild (create the replacement, copy, drop, rename) needs both:
-// the intermediate states violate foreign keys by construction, and with
-// enforcement on the DROP TABLE runs every ON DELETE action against the
-// rows that reference the table, so CASCADE deletes them and SET NULL
-// clears them. PRAGMA foreign_keys is a no-op inside a transaction, so it
-// is set on a dedicated connection that also runs the rebuild: setting it
-// on the pool and hoping the same connection serves the transaction is the
-// version of this that works until it does not.
+// foreign_keys OFF and legacy_alter_table ON, then restores both.
 func withSQLiteRebuildConn(ctx context.Context, db *sql.DB, fn func(conn *sql.Conn) error) error {
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return err
 	}
-	// closed tracks whether the deferred restore already discarded the
-	// connection, so the normal path does not double-close it.
 	closed := false
 	defer func() {
 		if !closed {
@@ -227,10 +168,6 @@ func withSQLiteRebuildConn(ctx context.Context, db *sql.DB, fn func(conn *sql.Co
 		return fmt.Errorf("disable foreign keys for the rebuild: %w", err)
 	}
 	restore := func() error {
-		// legacy_alter_table goes back first and unconditionally: it changes
-		// how every later ALTER on this pooled connection behaves, and leaving
-		// it on is a quieter defect than an unenforced key because nothing
-		// fails until someone renames a table.
 		restoreCtx := context.WithoutCancel(ctx)
 		_, legacyErr := conn.ExecContext(restoreCtx, "PRAGMA legacy_alter_table=OFF")
 		if _, err := conn.ExecContext(restoreCtx, "PRAGMA foreign_keys=on"); err == nil && legacyErr == nil {
@@ -247,45 +184,12 @@ func withSQLiteRebuildConn(ctx context.Context, db *sql.DB, fn func(conn *sql.Co
 		}
 	}
 
-	// legacy_alter_table=ON for the duration, because a VIEW that references
-	// the table stops the rebuild dead without it. Modern ALTER TABLE RENAME
-	// re-resolves every object that names the table, and at the point of the
-	// rename the original has already been dropped, so SQLite fails the whole
-	// transaction with `error in view <name>: no such table`. Reproduced with
-	// a one-line view over the rebuilt table.
-	//
-	// Legacy rename is the documented mode for exactly this procedure: it
-	// renames the table and leaves referencing objects alone, which is what we
-	// want since the replacement takes the original's name and the view
-	// resolves against it again afterwards.
 	if _, err := conn.ExecContext(ctx, "PRAGMA legacy_alter_table=ON"); err != nil {
-		// restore is already defined above precisely for this: an early return
-		// here used to leave the pool a connection with foreign keys OFF,
-		// because the deferred cleanup only closes and Close returns the
-		// connection to the pool.
 		if rerr := restore(); rerr != nil {
 			return fmt.Errorf("enable legacy_alter_table for the rebuild: %w; additionally: %v", err, rerr)
 		}
 		return fmt.Errorf("enable legacy_alter_table for the rebuild: %w", err)
 	}
-	// Restoring the pragma is not optional: this connection goes back to the
-	// pool and would serve every later write with enforcement silently off,
-	// the exact condition v0.67 exists to end, reintroduced by the tool meant
-	// to fix it.
-	//
-	// Two things make that harder than it looks.
-	//
-	// The restore runs on a context that cannot be cancelled. Using the
-	// caller's ctx meant a cancelled repair skipped the restore entirely and
-	// handed the pool a connection with enforcement off, which is the worst
-	// outcome of the three and the easiest to trigger: cancel during the row
-	// copy.
-	//
-	// And sql.Conn.Close does NOT destroy a connection, it returns it to the
-	// pool. An earlier version of this comment claimed otherwise. Retiring a
-	// connection is what driver.ErrBadConn from Raw is for, so a connection
-	// whose pragma could not be restored is marked bad and never serves
-	// another query.
 	if err := fn(conn); err != nil {
 		if rerr := restore(); rerr != nil {
 			return fmt.Errorf("%w; additionally: %v", err, rerr)
@@ -295,12 +199,8 @@ func withSQLiteRebuildConn(ctx context.Context, db *sql.DB, fn func(conn *sql.Co
 	return restore()
 }
 
-// foreignKeyViolations runs PRAGMA foreign_key_check in every schema the
-// connection has (an unqualified one checks main alone, so a rebuild in an
-// attached schema went unchecked) and names each violation as
-// "child → parent", the child qualified outside main. The pragma reports
-// regardless of whether enforcement is on, and inside a transaction it
-// sees that transaction's writes.
+// foreignKeyViolations runs PRAGMA foreign_key_check in every schema and
+// names each violation as "child → parent", the child qualified outside main.
 func foreignKeyViolations(ctx context.Context, q queryer) ([]string, error) {
 	schemas, err := sqliteSchemas(ctx, q)
 	if err != nil {
@@ -333,8 +233,6 @@ func foreignKeyViolations(ctx context.Context, q queryer) ([]string, error) {
 	return violations, nil
 }
 
-// sqliteSchemas lists the connection's schemas: main, temp when it is in
-// use, and every attached database.
 func sqliteSchemas(ctx context.Context, q queryer) ([]string, error) {
 	rows, err := q.QueryContext(ctx, "PRAGMA database_list")
 	if err != nil {
@@ -354,25 +252,16 @@ func sqliteSchemas(ctx context.Context, q queryer) ([]string, error) {
 	return out, rows.Err()
 }
 
-// rebuildWithoutOwnerFK performs one table's rebuild inside a transaction, so
-// a failure anywhere leaves the original table untouched.
 func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) error {
 	if _, err := query.SafeIdent(s.Table); err != nil {
 		return fmt.Errorf("invalid table name %q: %w", s.Table, err)
 	}
-	// A qualified aux.tasks is tasks in aux: its catalog, its sequence
-	// table and its objects all live in that schema, and SQLite takes the
-	// schema on the table a statement names but never on a RENAME TO.
 	schema, base := splitTable(s.Table)
 	master, seqTable, prefix := "sqlite_master", "sqlite_sequence", ""
 	if schema != "" {
 		master, seqTable, prefix = quoteIdent(schema)+".sqlite_master", quoteIdent(schema)+".sqlite_sequence", quoteIdent(schema)+"."
 	}
 
-	// SQLite resolves table names without case, so the entity's Tasks is
-	// the stored tasks; sqlite_master compares exactly unless told
-	// otherwise. Every lookup below (indexes, triggers, the sequence row)
-	// and the rename back use the stored spelling.
 	var stored, createSQL string
 	err := conn.QueryRowContext(ctx,
 		"SELECT name, sql FROM "+master+" WHERE type='table' AND name = ? COLLATE NOCASE", base).Scan(&stored, &createSQL)
@@ -384,9 +273,6 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 	}
 	qualified := prefix + quoteIdent(stored)
 
-	// Indices and triggers are dropped with the table. sql IS NULL marks an
-	// index SQLite created itself (for UNIQUE or PRIMARY KEY); those come back
-	// with the CREATE TABLE and must not be replayed.
 	var replays []string
 	objRows, err := conn.QueryContext(ctx,
 		"SELECT sql FROM "+master+" WHERE tbl_name = ? COLLATE NOCASE AND type IN ('index','trigger') AND sql IS NOT NULL", stored)
@@ -399,9 +285,6 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 			objRows.Close()
 			return err
 		}
-		// sqlite_master records the DDL without its schema, and an
-		// unqualified CREATE INDEX or TRIGGER lands in main, so a replay
-		// into another schema names it.
 		replays = append(replays, inSchema(ddl, schema))
 	}
 	objRows.Close()
@@ -415,10 +298,6 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 		return err
 	}
 	if !removed {
-		// The pragma said there is a key on this column and the DDL rewriter
-		// could not find it. Refusing is the only safe answer: proceeding would
-		// copy the table and leave the constraint exactly where it was, and
-		// report success.
 		return fmt.Errorf("found a foreign key on %q via PRAGMA foreign_key_list but could not locate it in the stored DDL; "+
 			"rebuild this table by hand:\n%s", s.Column, createSQL)
 	}
@@ -437,12 +316,6 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 	}
 	colList := strings.Join(quoted, ", ")
 
-	// AUTOINCREMENT's high-water mark lives in sqlite_sequence keyed by table
-	// name, and DROP TABLE deletes that row. The rebuild then re-seeds it from
-	// the copied rows, so a table whose highest rows had been DELETEd handed
-	// the next insert a rowid it had already used — the one thing
-	// AUTOINCREMENT exists to prevent. Read before the drop, put back after
-	// the rename.
 	seq, hasSeq, err := autoincrementSeq(ctx, conn, seqTable, stored)
 	if err != nil {
 		return err
@@ -474,9 +347,6 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 	return tx.Commit()
 }
 
-// autoincrementSeq reads the table's AUTOINCREMENT high-water mark, if it has
-// one. An absent sqlite_sequence row, or an absent sqlite_sequence table,
-// means the table does not use AUTOINCREMENT and there is nothing to carry.
 func autoincrementSeq(ctx context.Context, conn *sql.Conn, seqTable, table string) (int64, bool, error) {
 	var seq int64
 	err := conn.QueryRowContext(ctx, `SELECT seq FROM `+seqTable+` WHERE name = ?`, table).Scan(&seq)
@@ -486,17 +356,12 @@ func autoincrementSeq(ctx context.Context, conn *sql.Conn, seqTable, table strin
 	case errors.Is(err, sql.ErrNoRows):
 		return 0, false, nil
 	case strings.Contains(strings.ToLower(err.Error()), "no such table"):
-		// No AUTOINCREMENT table has ever existed in this database.
 		return 0, false, nil
 	default:
 		return 0, false, err
 	}
 }
 
-// restoreAutoincrementSeq puts the saved high-water mark back. The rebuild
-// re-seeds the row from the rows it copied, so the UPDATE normally finds one;
-// the INSERT covers a table whose highest rows were all deleted before the
-// repair, which is exactly the case where the mark matters.
 func restoreAutoincrementSeq(ctx context.Context, tx *sql.Tx, seqTable, table string, seq int64) error {
 	res, err := tx.ExecContext(ctx, `UPDATE `+seqTable+` SET seq = ? WHERE name = ?`, seq, table)
 	if err != nil {
@@ -509,8 +374,6 @@ func restoreAutoincrementSeq(ctx context.Context, tx *sql.Tx, seqTable, table st
 	return err
 }
 
-// tableColumnNames returns the table's columns in declaration order, so the
-// copy names them explicitly instead of relying on SELECT * lining up.
 func tableColumnNames(ctx context.Context, conn *sql.Conn, table string) ([]string, error) {
 	pragma, err := sqlitePragma("table_info", table)
 	if err != nil {
@@ -544,26 +407,9 @@ func tableColumnNames(ctx context.Context, conn *sql.Conn, table string) ([]stri
 	return out, rows.Err()
 }
 
-// ddlWithoutForeignKeyOn rewrites a stored CREATE TABLE statement, removing the
-// foreign key on ownerCol and renaming the table to newName. It reports whether
-// a key was actually removed, so the caller can refuse rather than rebuild a
-// table into the same shape and call it repaired.
-//
-// Two spellings have to be handled, because SQLite accepts both and reports
-// them identically through PRAGMA foreign_key_list:
-//
-//	owner_id TEXT REFERENCES users(id)          -- column-level
-//	FOREIGN KEY (owner_id) REFERENCES users(id) -- table-level
-//
-// AutoMigrate emitted the table-level form; a hand-written legacy schema may
-// use either. The column-level form is stripped from the column definition and
-// the rest of it — type, NOT NULL, DEFAULT, COLLATE — is preserved, because
-// this DDL is the only record of what the table actually is.
-//
-// The scan is quote- and paren-aware. A column named "references", a DEFAULT
-// holding the text 'FOREIGN KEY', and a CHECK constraint containing commas all
-// appear in real schemas, and a split on a naive strings.Split(",") mangles the
-// table instead of repairing it.
+// ddlWithoutForeignKeyOn rewrites a stored CREATE TABLE, removing the foreign
+// key on ownerCol and renaming the table to newName; it reports whether a key
+// was removed.
 func ddlWithoutForeignKeyOn(createSQL, ownerCol, newName string) (string, bool, error) {
 	open := indexAtDepthZero(createSQL, '(')
 	if open < 0 {
@@ -602,9 +448,7 @@ func ddlWithoutForeignKeyOn(createSQL, ownerCol, newName string) (string, bool, 
 	return ddl, true, nil
 }
 
-// skipComment returns the index just past a comment beginning at i, or i when
-// no comment starts there. The comment half of skipInert, without the quoted
-// runs: callers that are looking for an identifier must not have it eaten.
+// skipComment returns the index just past a comment beginning at i, or i.
 func skipComment(s string, i int) int {
 	if i >= len(s) {
 		return i
@@ -624,22 +468,6 @@ func skipComment(s string, i int) int {
 	return i
 }
 
-// stripLeadingComments removes comment runs from the front of a column or
-// constraint definition, so the identifier checks below see the definition
-// itself.
-//
-// Only COMMENTS are skipped, never a quoted run. skipInert treats a quoted
-// identifier as inert too, and at offset zero the first token is the column
-// NAME, so `"user_id" TEXT REFERENCES users(id)` was stripped down to
-// ` TEXT REFERENCES …`; the matcher then compared TEXT against the owner column,
-// found nothing, and the repair refused a table it can perfectly well rebuild.
-//
-// Splitting on top-level commas leaves a comment that preceded a definition
-// attached to the FRONT of it, and both callers identify a definition by its
-// first token. Without this, `-- owner\n user_id TEXT REFERENCES users(id)`
-// reads as a definition named "--" and its inline key is never found, which
-// the caller reports as "could not locate it in the stored DDL" and refuses.
-// Fail-closed, but a refusal on a table the rewriter can handle.
 func stripLeadingComments(item string) string {
 	for {
 		trimmed := strings.TrimLeft(item, " \t\n\r")
@@ -651,21 +479,10 @@ func stripLeadingComments(item string) string {
 	}
 }
 
-// isTableLevelFKOn reports whether item is a table constraint of the form
-// [CONSTRAINT name] FOREIGN KEY (ownerCol) REFERENCES … — and only when the
-// key's column list is exactly ownerCol. A composite key that happens to
-// include the owner column is left alone: dropping it would remove a
-// constraint on the other columns too, which nobody asked for.
 func isTableLevelFKOn(item, ownerCol string) bool {
-	// Token by token, never strings.Fields plus a literal prefix. Fields
-	// splits `CONSTRAINT "fk owner" FOREIGN KEY` inside the quotes, and a
-	// "FOREIGN KEY" prefix test demands exactly one space, so `FOREIGN\nKEY`
-	// missed. Both ended as "found the key via PRAGMA but not in the DDL",
-	// which refuses a table the repair can rebuild.
 	rest := stripLeadingComments(item)
 	tok, after := nextSQLToken(rest)
 	if strings.EqualFold(tok, "CONSTRAINT") {
-		// The constraint's own name, which may be quoted and hold spaces.
 		_, after = nextSQLToken(after)
 		tok, after = nextSQLToken(after)
 	}
@@ -691,11 +508,6 @@ func isTableLevelFKOn(item, ownerCol string) bool {
 	return strings.EqualFold(unquoteIdent(strings.TrimSpace(cols[0])), ownerCol)
 }
 
-// columnDefWithoutReferences strips an inline REFERENCES clause from
-// ownerCol's definition, returning the rewritten definition and whether one was
-// found. Everything before REFERENCES is kept verbatim; everything after it —
-// the target, its optional column list, and any ON DELETE / ON UPDATE /
-// DEFERRABLE modifiers — belongs to the key and goes with it.
 func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 	fields := strings.Fields(stripLeadingComments(item))
 	if len(fields) == 0 || !strings.EqualFold(unquoteIdent(fields[0]), ownerCol) {
@@ -705,24 +517,9 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 	if idx < 0 {
 		return item, false
 	}
-	// Right-trimmed WITHOUT the newline, which is load-bearing: it is what
-	// terminates a `--` comment. TrimSpace ate it, so
-	// `user_id TEXT -- stamped from the session\n  REFERENCES users(id) NOT NULL`
-	// rebuilt as `user_id TEXT -- stamped from the session NOT NULL` and the
-	// NOT NULL fell inside the comment. SQLite ACCEPTS that, so the repair
-	// reported success on a table that had silently lost a constraint. The
-	// list comma the caller joins on lands on that line too, which loses the
-	// following column the same way.
 	head := strings.TrimRight(item[:idx], " \t\r")
 	rest := item[idx+len("REFERENCES"):]
-	// Consume the target table and its optional (col) list. Whitespace AND
-	// comments, because a comment may legally sit between REFERENCES and its
-	// target, and a plain TrimLeft left it in place for the name scan to
-	// swallow as the table name.
 	rest = trimLeadingInert(rest)
-	// Table name: up to whitespace or '(', with a quoted name counting as one
-	// token. `REFERENCES "user table"(id)` stopped at the space INSIDE the
-	// quotes and stranded `table"(id)` in the rebuilt column.
 	i := 0
 	for i < len(rest) {
 		if j := skipQuoted(rest, i); j > i {
@@ -740,30 +537,8 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 			rest = rest[end+1:]
 		}
 	}
-	// Drop the key's own modifiers, keeping anything else on the line VERBATIM.
-	//
-	// Consumed by advancing an index over the original text, never by
-	// strings.Fields plus a rejoin. Tokenizing collapses whitespace inside a
-	// quoted literal that follows: `ON DELETE CASCADE DEFAULT 'guest  account'`
-	// rejoined as `DEFAULT 'guest account'`, and the rebuilt table silently
-	// stored a different default than the one it was asked to preserve.
-	// Comment-aware: `REFERENCES u(id) -- why\n ON DELETE CASCADE` left the
-	// comment at the head, so the modifier loop matched nothing and the
-	// action was stranded without its clause.
 	rest = trimLeadingInert(rest)
 	for {
-		// Matched and consumed on TOKENS carrying their SOURCE SPANS, because
-		// a comment is legal ANYWHERE a space is: `ON /* n */ DELETE CASCADE`
-		// and `ON DELETE /* n */ CASCADE` both parse in SQLite. Every earlier
-		// shape of this loop matched whitespace-delimited words, so it read
-		// `/*` as the action word, matched nothing, broke, and left the
-		// modifier stranded without the REFERENCES clause it belongs to.
-		//
-		// Three review rounds each found one more input this way — a wrapped
-		// modifier, a comment before the first one, a comment between two —
-		// which is the signal that matching on words was the wrong SHAPE,
-		// not that any one case had been missed. Consuming by span takes the
-		// comments out with the modifier they sit inside.
 		toks := sqlTokens(rest)
 		tok := func(i int) string {
 			if i < len(toks) {
@@ -771,10 +546,9 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 			}
 			return ""
 		}
-		var n int // tokens to consume
+		var n int
 		switch {
 		case tok(0) == "ON" && (tok(1) == "DELETE" || tok(1) == "UPDATE"):
-			// "ON", the action word, then one or two words of action.
 			n = 3
 			if tok(2) == "SET" || tok(2) == "NO" {
 				n = 4
@@ -800,17 +574,11 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 	return terminateLineComment(head), true
 }
 
-// sqlToken is one token of a column definition, with the source span it
-// occupies. The span is what the modifier loop consumes, so a comment sitting
-// between the words of a modifier is removed along with it rather than
-// stopping the scan.
 type sqlToken struct {
-	up         string // upper-cased, for keyword matching
-	start, end int    // byte span in the source
+	up         string
+	start, end int
 }
 
-// sqlTokens splits s into tokens, skipping whitespace and comments and
-// treating a quoted identifier as a single token.
 func sqlTokens(s string) []sqlToken {
 	space := func(b byte) bool { return b == ' ' || b == '\t' || b == '\n' || b == '\r' }
 	var out []sqlToken
@@ -838,19 +606,12 @@ func sqlTokens(s string) []sqlToken {
 			if space(s[i]) || s[i] == '(' || s[i] == ',' {
 				break
 			}
-			// A comment ends the word it touches: `CASCADE-- why` is CASCADE
-			// followed by a comment, not one long token.
 			if j := skipComment(s, i); j > i {
 				break
 			}
 			i++
 		}
 		if i == start {
-			// A zero-length token would spin forever. Unreachable while the
-			// comment skip above runs first, which is exactly why it is here:
-			// a mutation that removed that skip hung the test binary rather
-			// than failing it, and a scanner that can hang is worse than one
-			// that is wrong.
 			i++
 		}
 		out = append(out, sqlToken{up: strings.ToUpper(s[start:i]), start: start, end: i})
@@ -858,11 +619,7 @@ func sqlTokens(s string) []sqlToken {
 	return out
 }
 
-// terminateLineComment appends a newline when s ends inside an unterminated
-// comment, because the caller appends to what this returns: the list comma, or
-// the closing paren. Without it a definition ending in a trailing comment
-// swallows that comma and takes the NEXT column with it — the same failure an
-// eaten newline once caused for a NOT NULL.
+// terminateLineComment appends a newline when s ends inside a comment.
 func terminateLineComment(s string) string {
 	i := 0
 	for i < len(s) {
@@ -891,9 +648,6 @@ func terminateLineComment(s string) string {
 	return s
 }
 
-// trimLeadingInert drops leading whitespace AND comments from s. The scanners
-// below are looking for the next real token, and a comment sitting where they
-// expect one is read as that token.
 func trimLeadingInert(s string) string {
 	i := 0
 	for i < len(s) {
@@ -910,9 +664,6 @@ func trimLeadingInert(s string) string {
 	return s[i:]
 }
 
-// nextSQLToken returns the first token of s and the remainder. A quoted
-// identifier is ONE token even when it holds spaces, '(' ends a token and is
-// returned as one itself, and leading whitespace and comments are skipped.
 func nextSQLToken(s string) (string, string) {
 	s = trimLeadingInert(s)
 	if s == "" {
@@ -935,18 +686,12 @@ func nextSQLToken(s string) (string, string) {
 	return s[:i], s[i:]
 }
 
-// quoteIdent wraps an identifier the way SQLite escapes one: a literal double
-// quote is DOUBLED. Go's %q escapes it as \" instead, which SQLite has no
-// notion of, so a column named `we"ird` — legal, written `"we""ird"` in DDL,
-// and preserved correctly by the rewriter — produced a syntax error at the
-// row copy and refused a table the repair had already rebuilt.
+// quoteIdent quotes an identifier the SQLite way, doubling a literal quote.
 func quoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
-// skipQuoted returns the index just past the quoted run opening at i, or i
-// when s[i] does not open one. Unlike skipInert it does not treat `--` or
-// `/*` as a comment: inside a word those are part of the word.
+// skipQuoted returns the index just past the quoted run opening at i, or i.
 func skipQuoted(s string, i int) int {
 	if i >= len(s) {
 		return i
@@ -958,7 +703,6 @@ func skipQuoted(s string, i int) int {
 	return i
 }
 
-// unquoteIdent strips the four quoting styles SQLite accepts on an identifier.
 func unquoteIdent(s string) string {
 	s = strings.TrimSpace(s)
 	if len(s) < 2 {
@@ -977,8 +721,6 @@ func unquoteIdent(s string) string {
 	return s
 }
 
-// indexAtDepthZero returns the index of the first occurrence of c that is
-// outside every quoted string and every nested paren.
 func indexAtDepthZero(s string, c byte) int {
 	depth := 0
 	for i := 0; i < len(s); i++ {
@@ -1003,7 +745,6 @@ func indexAtDepthZero(s string, c byte) int {
 	return -1
 }
 
-// matchingParen returns the index of the ')' closing the '(' at open.
 func matchingParen(s string, open int) int {
 	depth := 0
 	for i := open; i < len(s); i++ {
@@ -1024,8 +765,6 @@ func matchingParen(s string, open int) int {
 	return -1
 }
 
-// splitTopLevel splits a column/constraint list on commas that are outside both
-// quotes and nested parens.
 func splitTopLevel(body string) []string {
 	var out []string
 	start, depth := 0, 0
@@ -1050,9 +789,6 @@ func splitTopLevel(body string) []string {
 	return out
 }
 
-// indexKeywordAtDepthZero finds a bare keyword outside quotes and parens,
-// bounded by non-identifier characters so "REFERENCES" does not match inside
-// "self_references".
 func indexKeywordAtDepthZero(s, keyword string) int {
 	depth := 0
 	up := strings.ToUpper(s)
@@ -1087,19 +823,8 @@ func isIdentByte(c byte) bool {
 	return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
-// skipInert returns the index just past the run starting at i that carries no
-// SQL structure, or i if no such run starts there. Two kinds qualify: a quoted
-// identifier or literal, and a comment.
-//
-// Comments matter as much as quotes and were the omission. SQLite stores the
-// CREATE TABLE text verbatim in sqlite_master, comments included, and a comma
-// inside `-- the pk, obviously` split one column definition into two: the
-// following column was absorbed as type words of a phantom column, and the
-// result was DDL SQLite accepts. A rewriter for real user tables cannot read
-// punctuation it does not know is inert.
-//
-// SQLite doubles a quote character to escape it; a -- comment runs to the
-// newline; a block comment runs to the closing delimiter and does not nest.
+// skipInert returns the index just past a quoted run or comment starting at i,
+// or i.
 func skipInert(s string, i int) int {
 	if i >= len(s) {
 		return i
@@ -1130,7 +855,7 @@ func skipInert(s string, i int) int {
 			continue
 		}
 		if closer != ']' && j+1 < len(s) && s[j+1] == closer {
-			j++ // a doubled quote is an escape, not a terminator
+			j++
 			continue
 		}
 		return j + 1

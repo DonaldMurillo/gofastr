@@ -82,30 +82,18 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	return out, nil
 }
 
-// ----------------------------------------------------------------------
 // GOFASTR1401: SQL built by concatenation.
-// ----------------------------------------------------------------------
 
 var (
-	// The INSERT anchor accepts SQLite's `INSERT OR IGNORE/REPLACE INTO`
-	// and MySQL's `INSERT IGNORE INTO`, all real statement forms.
 	sqlVerb            = `(?:SELECT\s|INSERT\s+(?:(?:OR\s+\w+|IGNORE)\s+)?INTO\s|UPDATE\s|DELETE\s+FROM\s)`
 	reSQLConcatLiteral = regexp.MustCompile(`(?i)"[^"]*\b` + sqlVerb + `[^"]*"\s*\+\s*\w+`)
 	reSQLSprintf       = regexp.MustCompile(`(?i)fmt\.S?(?:print|printf)\(\s*"[^"]*\b(?:` + sqlVerb + `|WHERE\s|HAVING\s)[^"]*%[sv]`)
 	reSQLBuilderConcat = regexp.MustCompile(`\.(?:Where|Having|OrderBy|GroupBy)\(\s*"[^"]*"\s*\+\s*\w+`)
-	// Quote-adjacent interpolation: the variable or directive sits inside
-	// SQL single-quotes. That is a VALUE position. A dynamic identifier
-	// is never quoted, so it is suspicious whatever the variable is named.
-	// An escaped `%%s` (SQLite's strftime('%%s', ...)) is a literal, not
-	// a directive, so the closing-quote arm needs a non-% before it.
+	// A value inside SQL quotes; an escaped %%s is a literal, not a directive.
 	reSQLQuotedInterp = regexp.MustCompile(`'"\s*\+\s*\w+|'%[sv]|(?:^|[^%])%[sv]'`)
 )
 
-// taintMarkers are substrings that advertise request-derived data. An
-// unquoted interpolation is only reported when one appears, because
-// dynamic table and column identifiers are legitimate and cannot use
-// placeholders. Flagging every one of those would train people to
-// ignore the rule.
+// taintMarkers advertise request-derived data; an unquoted interpolation without one is a dynamic identifier and stays quiet.
 var taintMarkers = []string{
 	"userinput", "user_input", "request.", "req.", "form.",
 	"params", "queryparam", "query_param", "filtervalue",
@@ -144,27 +132,15 @@ func ruleSQLConcat(p *contracts.Pass, rel, body string, lines []string) []contra
 	return out
 }
 
-// sqlCallNames are the call targets whose arguments carry statements:
-// the database Query/Exec family and the query-builder clause methods
-// the line scan names.
 var sqlCallNames = map[string]bool{
 	"Query": true, "QueryRow": true, "QueryContext": true, "QueryRowContext": true,
 	"Exec": true, "ExecContext": true,
 	"Where": true, "Having": true, "OrderBy": true, "GroupBy": true,
 }
 
-// reSQLVerbText matches a statement verb in rendered literal text.
 var reSQLVerbText = regexp.MustCompile(`(?i)\b` + sqlVerb)
 
-// ruleSQLConcatAST is GOFASTR1401's AST arm, for the two spellings a
-// one-line regex over source text cannot see: a raw-string literal
-// (“ `SELECT … '` “ + email carries no double quote to anchor on)
-// and a concatenation split across lines. It reads each Query/Exec/
-// builder argument through the AST, renders the statement as the
-// literals joined with %s where the host values sit, and applies the
-// same suspicion gates as the line scan: a value inside SQL quotes, or
-// a request-derived name on the expression. The line scan's findings
-// arrive as already so one expression is reported once.
+// ruleSQLConcatAST covers what the line scan cannot see: raw-string literals and concatenations split across lines.
 func ruleSQLConcatAST(p *contracts.Pass, rel string, file *ast.File, body string, lines []string, already []contracts.Diagnostic) []contracts.Diagnostic {
 	seen := map[int]bool{}
 	for _, d := range already {
@@ -197,9 +173,6 @@ func ruleSQLConcatAST(p *contracts.Pass, rel string, file *ast.File, body string
 			if reported {
 				continue
 			}
-			// Suspicion gates, the line scan's two: a host value inside
-			// SQL quotes (here: a %s hole the quotes enclose), or a
-			// request-derived name anywhere in the expression's source.
 			suspicious := reSQLQuotedInterp.MatchString(text)
 			src := strings.ToLower(body[start.Offset:end.Offset])
 			for _, marker := range taintMarkers {
@@ -224,11 +197,7 @@ func ruleSQLConcatAST(p *contracts.Pass, rel string, file *ast.File, body string
 	return out
 }
 
-// sqlConcatText renders e the way the statement would read: every
-// string literal operand unquoted, every other operand (a host value)
-// as a %s directive. ok is false when e holds no string
-// concatenation — a lone literal or a placeholder argument is not
-// this rule's shape.
+// sqlConcatText renders e with each non-literal operand as %s; ok is false when e is no string concatenation.
 func sqlConcatText(e ast.Expr) (string, bool) {
 	var sb strings.Builder
 	lit, concat := false, false
@@ -260,9 +229,7 @@ func sqlConcatText(e ast.Expr) (string, bool) {
 	return sb.String(), lit && concat
 }
 
-// ----------------------------------------------------------------------
 // GOFASTR1403: render.HTML on a concatenation.
-// ----------------------------------------------------------------------
 
 var reRenderHTMLConcat = regexp.MustCompile(`render\.HTML\([^)]*\+[^)]*\)`)
 
@@ -284,17 +251,7 @@ func ruleHTMLConcat(p *contracts.Pass, rel string, lines []string) []contracts.D
 	return out
 }
 
-// ruleHTMLBuiltAST reports the render.HTML calls the line regex above
-// cannot see: a string built by fmt.Sprintf/Sprint/Sprintln (a
-// non-literal Sprintf format counts as a variable operand) or
-// strings.Join, a concatenation split over lines, one whose first operand
-// is itself a call (render.HTML(esc(a) + b): the regex stops at the first
-// `)`), and a local variable the same function assigned such a build
-// (s := "<p>" + name + "</p>"; render.HTML(s)). Each puts a variable into
-// markup unescaped exactly as the one-line `+` does. It resolves
-// core/render under any alias, and reports only a build with a
-// non-literal operand, so a constant split for width stays quiet. A line
-// the regex already reported is not reported twice.
+// ruleHTMLBuiltAST covers Sprintf/Sprint/Join builds, split or call-led concatenations and locals assigned such a build.
 func ruleHTMLBuiltAST(p *contracts.Pass, rel string, file *ast.File, lines []string, already []contracts.Diagnostic) []contracts.Diagnostic {
 	seen := map[int]bool{}
 	for _, d := range already {
@@ -303,9 +260,6 @@ func ruleHTMLBuiltAST(p *contracts.Pass, rel string, file *ast.File, lines []str
 	aliases := importAliases(file)
 	var out []contracts.Diagnostic
 	for _, decl := range file.Decls {
-		// The file parses without object resolution, so a local is
-		// matched by name across its function: the builds any assignment
-		// in the function gave it.
 		var locals map[string][]ast.Expr
 		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Body != nil {
 			locals = localAssignments(fn.Body)
@@ -341,8 +295,6 @@ func ruleHTMLBuiltAST(p *contracts.Pass, rel string, file *ast.File, lines []str
 	return out
 }
 
-// localAssignments maps each name assigned in body (name := e, name = e,
-// var name = e, one value per name) to the values assigned to it.
 func localAssignments(body *ast.BlockStmt) map[string][]ast.Expr {
 	locals := map[string][]ast.Expr{}
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -377,9 +329,7 @@ func unparen(e ast.Expr) ast.Expr {
 	}
 }
 
-// htmlBuild names how e builds a string around a non-literal value
-// ("concatenation", "fmt.Sprintf", "strings.Join"), or "" when it does
-// not.
+// htmlBuild names how e builds a string around a non-literal value, or "".
 func htmlBuild(e ast.Expr, aliases map[string]string) string {
 	e = unparen(e)
 	if bin, ok := e.(*ast.BinaryExpr); ok && bin.Op == token.ADD {
@@ -415,7 +365,6 @@ func htmlBuild(e ast.Expr, aliases map[string]string) string {
 	return ""
 }
 
-// constantString reports whether e is built from string literals only.
 func constantString(e ast.Expr) bool {
 	switch v := e.(type) {
 	case *ast.BasicLit:
@@ -428,9 +377,7 @@ func constantString(e ast.Expr) bool {
 	return false
 }
 
-// ----------------------------------------------------------------------
 // GOFASTR1402: POST form without a CSRF input.
-// ----------------------------------------------------------------------
 
 var (
 	reFormPOST   = regexp.MustCompile(`(?i)<form\b[^>]*method=["']?POST["']?`)
@@ -439,17 +386,10 @@ var (
 	reCSRFExempt = regexp.MustCompile(`(?i)csrf-exempt:\s*\S`)
 )
 
-// ruleFormCSRF counts POST forms against CSRF wirings in the same file
-// rather than doing a file-level "does it mention CSRF anywhere" grep,
-// so one correct form does not appear to protect four others beside it.
-// Which specific form is unprotected needs real template parsing; naming
-// the file and the count is the honest limit of a text pass.
 func ruleFormCSRF(p *contracts.Pass, rel, body string, lines []string) []contracts.Diagnostic {
 	stripped := stripComments(body)
 	protections := len(reCSRFCall.FindAllString(stripped, -1)) +
 		len(reCSRFField.FindAllString(stripped, -1)) +
-		// The exempt annotation lives in a comment by design, so it is
-		// counted on the raw body.
 		len(reCSRFExempt.FindAllString(body, -1))
 
 	var formLines []int
@@ -474,9 +414,7 @@ func ruleFormCSRF(p *contracts.Pass, rel, body string, lines []string) []contrac
 	return out
 }
 
-// ----------------------------------------------------------------------
 // GOFASTR1404: http.Cookie without security attributes.
-// ----------------------------------------------------------------------
 
 func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []string) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
@@ -490,10 +428,6 @@ func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []s
 		if !ok || sel.Sel.Name != "Cookie" {
 			return true
 		}
-		// net/http under any alias: `nethttp.Cookie{...}` is the same
-		// cookie, and keying on the spelling "http" let an aliased import
-		// past the rule. A bare `http` the file never imports stays in, for
-		// the snippets the catalog checks.
 		pkg, isIdent := sel.X.(*ast.Ident)
 		if !isIdent || (aliases[pkg.Name] != "net/http" && (pkg.Name != "http" || aliases["http"] != "")) {
 			return true
@@ -519,15 +453,11 @@ func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []s
 					negativeMaxAge = true
 				}
 			}
-			// A field present but explicitly false is not protection.
 			if val, isBool := kv.Value.(*ast.Ident); isBool && val.Name == "false" {
 				continue
 			}
 			set[key.Name] = true
 		}
-		// A cookie carrying nothing has nothing to protect. The two shapes
-		// are an unset cookie and the standard deletion, an empty value
-		// with a negative MaxAge. Reporting either is pure noise.
 		if !set["Value"] || (emptyValue && negativeMaxAge) {
 			return true
 		}
@@ -554,8 +484,6 @@ func ruleInsecureCookie(p *contracts.Pass, rel string, file *ast.File, lines []s
 	return out
 }
 
-// httpAlias recovers the import alias the file uses for net/http, so the
-// generated `SameSite:` value names the same package the literal does.
 func httpAlias(sel *ast.SelectorExpr) string {
 	if id, ok := sel.X.(*ast.Ident); ok {
 		return id.Name
@@ -563,13 +491,7 @@ func httpAlias(sel *ast.SelectorExpr) string {
 	return "http"
 }
 
-// cookieFix inserts the missing security attributes just before the
-// literal's closing brace.
-//
-// It does not try to match the surrounding indentation: [contracts.Report.Apply]
-// runs the result through gofmt, so the edit only has to be syntactically
-// correct. That is what makes inserting into a multi-line composite
-// literal safe rather than a formatting guess.
+// cookieFix inserts the missing attributes before the closing brace; Apply gofmts the result.
 func cookieFix(p *contracts.Pass, rel string, lit *ast.CompositeLit, missing []string, alias string) *contracts.SuggestedFix {
 	if len(lit.Elts) == 0 || !lit.Rbrace.IsValid() {
 		return nil
@@ -580,8 +502,6 @@ func cookieFix(p *contracts.Pass, rel string, lit *ast.CompositeLit, missing []s
 		"SameSite": alias + ".SameSiteLaxMode",
 	}
 	var b strings.Builder
-	// A literal whose last element has no trailing comma needs one before
-	// the additions; gofmt cannot repair a missing separator.
 	last := lit.Elts[len(lit.Elts)-1]
 	if !hasTrailingComma(p, rel, last.End(), lit.Rbrace) {
 		b.WriteString(",")
@@ -595,15 +515,6 @@ func cookieFix(p *contracts.Pass, rel string, lit *ast.CompositeLit, missing []s
 	if offset <= 0 {
 		return nil
 	}
-	// The edit consumes the literal's tail, from the end of its last
-	// element through the closing brace, and re-emits it around the
-	// insertions. Same output as inserting before the brace, but it gives
-	// Apply's staleness check a span worth verifying: a lone "}" is the
-	// most common byte in Go source, so after a concurrent edit shifted
-	// the offsets, a one-byte Old matched a coincidental brace and the
-	// fields landed inside whatever now lived there. The exact whitespace
-	// run between the last element and the brace is discriminating in a
-	// way one byte never is.
 	src, ok := p.Source(rel)
 	anchorStart := p.Position(last.End()).Offset
 	if !ok || anchorStart <= 0 || anchorStart > offset || offset+1 > len(src) {
@@ -619,8 +530,6 @@ func cookieFix(p *contracts.Pass, rel string, lit *ast.CompositeLit, missing []s
 	}
 }
 
-// hasTrailingComma reports whether a comma already separates the last
-// element from the closing brace.
 func hasTrailingComma(p *contracts.Pass, rel string, from, to token.Pos) bool {
 	body, ok := p.Source(rel)
 	if !ok {
@@ -633,34 +542,19 @@ func hasTrailingComma(p *contracts.Pass, rel string, from, to token.Pos) bool {
 	return strings.Contains(string(body[start:end]), ",")
 }
 
-// ----------------------------------------------------------------------
 // GOFASTR1405: secret assigned from a literal.
-// ----------------------------------------------------------------------
 
 var reSecretName = regexp.MustCompile(`(?i)(secret|password|passwd|api_?key|apikey|token|private_?key|credential|client_?secret)`)
 
-// secretPrefixes are vendor key formats. A literal starting with one is
-// reported whatever the variable is called. The shape *is* the evidence.
 var secretPrefixes = []string{"sk_live_", "sk-live-", "sk-ant-", "ghp_", "gho_", "AKIA", "xoxb-", "xoxp-", "AIza"}
 
-// reIdentifierish matches a value that is a *name* rather than a secret:
-// a column ("password_hash"), an enum ("TokenExpired"), an i18n key
-// ("ui.auth.password"), an env var ("STRIPE_API_KEY"), a header. These
-// are what a name-only heuristic drowns in. Every one of them lives in
-// a variable called something like `PasswordHash`, and none of them is
-// a credential.
 var reIdentifierish = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)*$`)
 
-// looksLikeCredential is the entropy gate. A real key is long and mixes
-// character classes; an identifier, a path, a sentence, or a format
-// string does not. Being strict here is the whole point. A secret
-// detector that cries wolf is one people switch off, and then it catches
-// nothing at all.
+// looksLikeCredential is the entropy gate: long, and three character classes with a digit.
 func looksLikeCredential(v string) bool {
 	if len(v) < 16 {
 		return false
 	}
-	// Paths, URLs, sentences, and format strings are configuration.
 	if strings.ContainsAny(v, " \t/\\%<>{}()") {
 		return false
 	}
@@ -686,8 +580,6 @@ func looksLikeCredential(v string) bool {
 			classes++
 		}
 	}
-	// Three character classes with digits present: the shape of a
-	// generated key, and not the shape of anything typed by hand.
 	return classes >= 3 && digit > 0
 }
 
@@ -707,11 +599,6 @@ func ruleHardcodedSecret(p *contracts.Pass, rel string, file *ast.File, lines []
 			}
 		}
 		if !byShape {
-			// Name alone is nowhere near enough. A variable called
-			// PasswordHash holds the string "password_hash" far more often
-			// than it holds a password, so the value has to look like a
-			// credential too: long, and drawn from a mixed alphabet no
-			// human-written identifier uses.
 			if !reSecretName.MatchString(name) || !looksLikeCredential(lit) {
 				return
 			}
@@ -723,9 +610,6 @@ func ruleHardcodedSecret(p *contracts.Pass, rel string, file *ast.File, lines []
 		d := diag(p, contracts.RuleHardcodedSecret, rel, value.Pos(),
 			fmt.Sprintf("%s is assigned a literal value", name))
 		d.Evidence = map[string]string{"name": name, "length": fmt.Sprint(len(lit))}
-		// The report must not print the secret back out into a terminal,
-		// a CI log, or a SARIF artifact. That would spread it further
-		// than the commit already did.
 		d.Snippet, d.RedactSnippet = "", true
 		out = append(out, d)
 	}
@@ -757,37 +641,8 @@ func ruleHardcodedSecret(p *contracts.Pass, rel string, file *ast.File, lines []
 	return out
 }
 
-// ----------------------------------------------------------------------
 // GOFASTR1406: X-Forwarded-Proto used as a scheme without an enum check.
-// ----------------------------------------------------------------------
 
-// Bug class: a reverse-proxy scheme header read with Header.Get and
-// spliced into output as a URL scheme. framework/uihost/agentready.go
-// resolveBaseURL shipped it (probe TestDiscoveryURLsIgnoreForwardedProto,
-// fixed a24928c1): the raw value reached the agent card's service URL
-// and the Link header, so one forged `X-Forwarded-Proto:
-// https://evil.example/p` painted an attacker-named origin into cacheable
-// discovery output. The fix — and framework/pluginhost/assets.go, which
-// never had the bug — is an exact "http"/"https" enum.
-//
-// The read is Get("X-Forwarded-Proto") on any receiver ending in .Header
-// AND on any bare identifier (h http.Header: the map handed to a helper
-// is the same header). The argument literal is the whole scope gate; the
-// reflection sink carries the precision, so a read that never reaches
-// output stays quiet.
-//
-// Deliberately silent on:
-//   - any function that compares THE VALUE — the get itself or one of
-//     its holders — against "http"/"https", however spelled: == / !=,
-//     strings.EqualFold, or a switch on the value. The enum is the
-//     contract; its position is not. A scheme comparison on any OTHER
-//     value (an outbound target.Scheme) is not a gate for this header
-//     and does not silence the rule;
-//   - Header.Set (writing the header outbound, as battery/relay does)
-//     and reads that are never reflected (a log line, a boolean);
-//   - values compared against any other literal ("", "HTTPS,http"):
-//     only the two legal schemes silence the rule;
-//   - _test.go and generated files (AppFiles already excludes both).
 func ruleForwardedProto(p *contracts.Pass, rel string, file *ast.File) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	for _, fn := range functionsIn(file) {
@@ -818,9 +673,6 @@ func ruleForwardedProto(p *contracts.Pass, rel string, file *ast.File) []contrac
 	return out
 }
 
-// forwardedProtoGet matches Get("X-Forwarded-Proto") on a receiver
-// expression ending in .Header (r.Header) or on any bare identifier
-// (h http.Header: the header map as a helper parameter).
 func forwardedProtoGet(n ast.Node) (*ast.CallExpr, bool) {
 	recv, method, call, ok := selectorCall(n)
 	if !ok || method != "Get" || len(call.Args) != 1 {
@@ -832,8 +684,6 @@ func forwardedProtoGet(n ast.Node) (*ast.CallExpr, bool) {
 			return nil, false
 		}
 	case *ast.Ident:
-		// h.Get("X-Forwarded-Proto"): the map passed as a parameter.
-		// The reflection sink keeps this precise.
 	default:
 		return nil, false
 	}
@@ -848,11 +698,6 @@ func forwardedProtoGet(n ast.Node) (*ast.CallExpr, bool) {
 	return call, true
 }
 
-// protoEnumChecked reports whether the function body compares the header
-// value — the get call itself or one of its holders — against the
-// literal "http" or "https": == / !=, strings.EqualFold, or a switch
-// whose tag is the value. A scheme comparison on any other value does
-// not count: the gate must gate this value, not a neighbouring one.
 func protoEnumChecked(body ast.Node, call *ast.CallExpr, holders map[string]bool) bool {
 	touches := func(e ast.Expr) bool { return exprTouches(e, call, holders) }
 	checked := false
@@ -915,13 +760,8 @@ func isSchemeLit(lit *ast.BasicLit) bool {
 	return ok && (v == "http" || v == "https")
 }
 
-// reSchemeVar is the reflection sink the probe actually exploited: a
-// variable that ends up spliced where a scheme belongs.
 var reSchemeVar = regexp.MustCompile(`(?i)scheme|proto`)
 
-// assignedIdents collects the identifiers this call's result is assigned
-// to anywhere in the function, including `if u := Get(...)` inits, so the
-// one-hop `u := Get(...); scheme = u` shape is tracked too.
 func assignedIdents(body ast.Node, call *ast.CallExpr) map[string]bool {
 	holders := map[string]bool{}
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -941,12 +781,7 @@ func assignedIdents(body ast.Node, call *ast.CallExpr) map[string]bool {
 	return holders
 }
 
-// reflectedScheme reports whether the header value reaches output: the
-// call itself inside a concatenation, an assignment into a scheme-named
-// variable (directly or one hop through a holder), an argument to a URL
-// builder / the Scheme field of a composite literal, or an argument of
-// fmt.Sprintf/fmt.Fprintf whose format literal splices a scheme
-// position ("%s://%s") — the most common spelling of a built origin.
+// reflectedScheme reports whether the header value reaches output as a scheme.
 func reflectedScheme(body ast.Node, call *ast.CallExpr, holders map[string]bool) bool {
 	touches := func(e ast.Expr) bool { return exprTouches(e, call, holders) }
 	reflected := false
@@ -986,11 +821,6 @@ func reflectedScheme(body ast.Node, call *ast.CallExpr, holders map[string]bool)
 					}
 				}
 			}
-			// fmt.Sprintf("%s://%s", u, host): the concatenation
-			// bug's most common spelling. Only scheme-bearing formats
-			// count — a format that merely logs the value is not a
-			// reflection. fmt.Fprintf(w, ...) included: the w first
-			// argument is never the value.
 			if fun, ok := callFunName(v); ok && (fun == "Sprintf" || fun == "Fprintf") && len(v.Args) > 1 {
 				if lit, ok := v.Args[0].(*ast.BasicLit); ok {
 					if f, ok := stringLit(lit); ok && strings.Contains(f, "://") {
@@ -1018,9 +848,6 @@ func reflectedScheme(body ast.Node, call *ast.CallExpr, holders map[string]bool)
 	return reflected
 }
 
-// callFunName returns the callee name of a call expression: the selector
-// method (fmt.Sprintf → Sprintf) or the bare identifier, honouring
-// import aliases. Dot-imported calls read the same either way.
 func callFunName(call *ast.CallExpr) (string, bool) {
 	switch fun := call.Fun.(type) {
 	case *ast.SelectorExpr:
@@ -1033,8 +860,6 @@ func callFunName(call *ast.CallExpr) (string, bool) {
 	return "", false
 }
 
-// exprTouches reports whether e contains the call node or one of the
-// holder identifiers (in plain identifier position, not as a selector).
 func exprTouches(e ast.Expr, call *ast.CallExpr, holders map[string]bool) bool {
 	switch v := e.(type) {
 	case *ast.Ident:
@@ -1064,80 +889,8 @@ func exprTouches(e ast.Expr, call *ast.CallExpr, holders map[string]bool) bool {
 	return false
 }
 
-// ----------------------------------------------------------------------
-// GOFASTR1407: raw JSON decoding of a request body outside the binder.
-// ----------------------------------------------------------------------
+// GOFASTR1407: raw JSON decoding of a request body or client frame outside the binder.
 
-// Bug class: client-controlled JSON decoded with encoding/json's
-// default semantics anywhere other than core/handler, which owns the
-// strict binder. battery/auth decoded login and register bodies with
-// json.NewDecoder (probe TestLoginJSONStrictTopLevelKeys, fixed
-// 4b7a25d2): stdlib keeps the LAST duplicate key and folds key case,
-// while form parsing keeps the FIRST, so {"email":A,"EMAIL":B}
-// authenticated a different identity depending on Content-Type. The
-// smuggled body resolves by parser accident, which is the whole
-// attack. A websocket frame decoded the same way (control/ws
-// handleText, probes TestHarnessWsRedRejectsDuplicateKeys /
-// TestHarnessMcpRedRejectsDuplicateKeys) dispatches a frame a
-// first-read intermediary parsed differently.
-//
-// Taint is computed package-wide (one directory), because both real
-// sites ferry the bytes across files: the harness mcpserver buffers
-// r.Body in http.go handlePOST, hands the reader to Server.WithIO in
-// server.go, which stores it in a field Server.Serve scans line by
-// line into Server.handle's json.Unmarshal; control/ws Conn.run reads
-// a frame and passes the payload to Conn.handleText's json.Unmarshal.
-// A fixpoint over every function in the package propagates: a request
-// body read (io.ReadAll(r.Body), http.MaxBytesReader chains), a
-// websocket frame read (wsFrameReads), a body-derived argument at a
-// call to a same-package function or method (tainting that callee's
-// parameter), a body-derived value stored into a struct field
-// (tainting that field name), and bare-name helper FUNCTIONS whose
-// return expressions are body-derived (readBody(r) taints its result
-// at every call in the package). Taint reaches a call's RESULT only
-// through readerWrapper calls and that helper ferry: an arbitrary call
-// that merely receives tainted arguments (the module proxy's
-// peer.CallWithID) returns its own output, not the body. A helper
-// whose return calls another helper is not followed further.
-//
-// Deliberately silent on:
-//   - core/handler/**, which owns handler.Bind and its duplicate-key
-//     walk — the strict binder itself decodes raw bytes by design;
-//   - decodes whose bytes never came from a request body or client
-//     frame: resp.Body of an outbound call, queue and pub-sub
-//     payloads, files, JWT segments;
-//   - a decoder used only as a strict top-level key walk: Token/More
-//     iteration whose only Decode targets a json.RawMessage skip
-//     value (battery/auth rejectAmbiguousTopLevelKeys, crud
-//     checkEnvelopeKeys). The walk IS the fix posture, not the bug;
-//     the Unmarshal of the vetted bytes that follows it carries an
-//     allow directive naming why, the repo's recorded convention for
-//     that decision;
-//   - other packages: taint stops at the directory edge, and methods
-//     are matched by name only within it;
-//   - frame sources beyond the spellings this repo actually uses: the
-//     list is deliberately closed. It now covers, besides control/ws
-//     Conn.readFrame, the three spellings the round-5 probes found: a
-//     zero-argument Read() in a file that imports core/stream (whose
-//     (*WebSocketConn).Read returns one inbound frame — battery/rtc,
-//     internal/testapps/webmcp-remote-assist), the child stdout of a spawned
-//     process (cmd.StdoutPipe(), whose result may be ferried through a
-//     struct field — harness mcpclient), os.Stdin, and a bufio.Scanner
-//     built over an io.Reader/net.Conn parameter of a framing
-//     constructor and stored in a field (core/moduleproto Codec.scan,
-//     transport-neutral by contract: the supervisor wires stdin, a
-//     net.Conn, or a pipe into that parameter). A list of guessed
-//     library names would taint by coincidence;
-//   - a call that merely RECEIVES tainted arguments returning its own
-//     output, with one exception: a method whose receiver type holds a
-//     tainted field returns bytes from that source (mcpclient
-//     Client.Call sits on Client.stdout, so its result is the child's
-//     response). The receiver type's OWN fields are the evidence, not
-//     the call's arguments;
-//   - _test.go and generated files (AppFiles already excludes both);
-//   - any site annotated //gofastr:allow(GOFASTR1407) <why>, which is
-//     how a transport that accepts a JSON-RPC envelope object as-is
-//     records that decision.
 func ruleRawJSONBody(p *contracts.Pass, rel string, file *ast.File) []contracts.Diagnostic {
 	if rel == "core/handler" || strings.HasPrefix(rel, "core/handler/") {
 		return nil
@@ -1163,9 +916,6 @@ func ruleRawJSONBody(p *contracts.Pass, rel string, file *ast.File) []contracts.
 					out = append(out, rawJSONDiag(p, rel, call, k))
 				}
 			}
-			// jsonexact keeps numbers exact and nothing more: it is a
-			// json.Decoder underneath, with the same last-duplicate-wins
-			// and case-folded keys, so it is the same sink.
 			for _, name := range []string{"Unmarshal", "Decode"} {
 				if call, ok := qualifiedCall(n, aliases, jsonexactPath, name); ok && len(call.Args) > 0 {
 					if k := exprFromRequestBody(call.Args[0], tainted, reqs, pkg.fields, aliases); k != 0 {
@@ -1179,8 +929,6 @@ func ruleRawJSONBody(p *contracts.Pass, rel string, file *ast.File) []contracts.
 	return out
 }
 
-// jsonexactPath is the lossless-number decoder the floatnum analyzer
-// recommends; GOFASTR1407 treats its byte decoders like json.Unmarshal.
 const jsonexactPath = "github.com/DonaldMurillo/gofastr/internal/jsonexact"
 
 func rawJSONDiag(p *contracts.Pass, rel string, call *ast.CallExpr, k taintKind) contracts.Diagnostic {
@@ -1200,15 +948,11 @@ func rawJSONDiag(p *contracts.Pass, rel string, call *ast.CallExpr, k taintKind)
 	return d
 }
 
-// funcScope is one function declaration or literal with a body.
 type funcScope struct {
 	node ast.Node
 	body *ast.BlockStmt
 }
 
-// functionsIn returns every function and function literal in the file.
-// Literals are included because handlers are closures more often than
-// named methods.
 func functionsIn(file *ast.File) []*funcScope {
 	var out []*funcScope
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -1225,8 +969,6 @@ func functionsIn(file *ast.File) []*funcScope {
 	return out
 }
 
-// httpRequestParamNames returns the names of parameters typed
-// *http.Request, honouring the file's import alias for net/http.
 func httpRequestParamNames(fn ast.Node, aliases map[string]string) map[string]bool {
 	httpAlias := map[string]bool{}
 	for name, path := range aliases {
@@ -1268,8 +1010,6 @@ func httpRequestParamNames(fn ast.Node, aliases map[string]string) map[string]bo
 	return names
 }
 
-// taintKind says which client-controlled source bytes carry: a request
-// body, an inbound websocket frame, or both.
 type taintKind uint8
 
 const (
@@ -1277,46 +1017,19 @@ const (
 	taintFrame
 )
 
-// rawJSONPkg is the package-wide taint context for one Go package (one
-// directory of app files): the parsed files, their import aliases, the
-// bare-name body-reading helpers, the fixpoint-derived taint of
-// function parameters and struct field names, and the type-shape index
-// (struct field names by type, receiver type by method name) the frame
-// ferries need. Computed once per pass, shared by every file of the
-// package.
+// rawJSONPkg is the package-wide taint context for one directory, computed once per pass.
 type rawJSONPkg struct {
-	files      map[string]*ast.File
-	aliases    map[string]map[string]string
-	helpers    map[string]bool
-	paramTaint map[*ast.FuncDecl]map[string]taintKind
-	fields     map[string]taintKind
-	// structFields maps each declared struct type name to its field
-	// names; methodRecv maps a method name to its receivers' base type
-	// names. Both are name-based (no types here), which suffices
-	// because the sink keeps a coincidence cheap.
+	files        map[string]*ast.File
+	aliases      map[string]map[string]string
+	helpers      map[string]bool
+	paramTaint   map[*ast.FuncDecl]map[string]taintKind
+	fields       map[string]taintKind
 	structFields map[string]map[string]bool
 	methodRecv   map[string][]string
-	// sourceFields names the fields that hold a client-controlled
-	// SOURCE directly (a child's stdout, os.Stdin, a seeded scanner),
-	// populated before the general fixpoint and never fed by it. The
-	// method-result ferry reads only these: letting it read the general
-	// field map made every literal built from a decoded frame taint
-	// error-struct field names (Message, cause, fatal…), which made
-	// every method of every such type return taint — one round of
-	// amplification fanned moduleproto Peer.Call and framework
-	// fanout.Unwrap into findings neither site earned.
+	// sourceFields hold a client-controlled source directly; only they feed methodResultTaint.
 	sourceFields map[string]bool
 }
 
-// rawJSONPackageTaint returns the package context for rel's directory,
-// computing it once per pass. The fixpoint: taint originates at
-// request-body reads, frame reads, tainted parameters, and tainted
-// fields; it flows through local assignments (taintFromBody), into the
-// parameters of same-package callees when a tainted value is passed at
-// a call site, and into struct field names when a tainted value is
-// stored in a field. Methods are matched by method name within the
-// package; two types sharing one method name is rare, and the sink (a
-// stdlib json decode of the parameter) keeps a coincidence cheap.
 func rawJSONPackageTaint(p *contracts.Pass, rel string) *rawJSONPkg {
 	dir := path.Dir(rel)
 	v := p.Memo("rawjsonbody.package:"+dir, func() any {
@@ -1353,10 +1066,6 @@ func rawJSONPackageTaint(p *contracts.Pass, rel string) *rawJSONPkg {
 						seeds = pkg.paramTaint[decl]
 					}
 					tainted := taintFromBody(fn.body, reqs, pkg.helpers, seeds, pkg.fields, aliases, pkg)
-					// A tainted argument at a call site taints the
-					// same-package callee's parameter: s.WithIO(in)
-					// with body-derived in, c.handleText(payload)
-					// with frame-derived payload.
 					ast.Inspect(fn.body, func(n ast.Node) bool {
 						call, ok := n.(*ast.CallExpr)
 						if !ok {
@@ -1400,13 +1109,6 @@ func rawJSONPackageTaint(p *contracts.Pass, rel string) *rawJSONPkg {
 						}
 						return true
 					})
-					// A tainted value stored in a field taints that
-					// field name for the whole package: s.in = in is
-					// how the buffered body reaches another file. The
-					// request's OWN Body swap (r.Body = MaxBytesReader)
-					// is not a byte-holding field: recording it would
-					// taint every X.Body read in the package, and an
-					// outbound resp.Body is not a request body.
 					ast.Inspect(fn.body, func(n ast.Node) bool {
 						a, ok := n.(*ast.AssignStmt)
 						if !ok || len(a.Lhs) != len(a.Rhs) {
@@ -1431,12 +1133,6 @@ func rawJSONPackageTaint(p *contracts.Pass, rel string) *rawJSONPkg {
 						}
 						return true
 					})
-					// The composite-literal spelling of the same store:
-					// cl := &Client{stdout: pipe} taints field stdout
-					// exactly like cl.stdout = pipe would. Both real
-					// frame sites (harness mcpclient Client, moduleproto
-					// Codec) ferry the source through a constructor
-					// literal, so the ferry has to see both spellings.
 					ast.Inspect(fn.body, func(n ast.Node) bool {
 						lit, ok := n.(*ast.CompositeLit)
 						if !ok {
@@ -1471,9 +1167,6 @@ func rawJSONPackageTaint(p *contracts.Pass, rel string) *rawJSONPkg {
 	return pkg
 }
 
-// packageCallTargets indexes the package's function declarations by
-// name. Bare functions and methods share the index; a call site picks
-// the side its shape can reach.
 func packageCallTargets(pkg *rawJSONPkg) map[string][]*ast.FuncDecl {
 	targets := map[string][]*ast.FuncDecl{}
 	for _, af := range pkg.files {
@@ -1488,18 +1181,7 @@ func packageCallTargets(pkg *rawJSONPkg) map[string][]*ast.FuncDecl {
 	return targets
 }
 
-// taintFromBody computes which local identifiers hold client-controlled
-// bytes, to a fixpoint: body := MaxBytesReader(w, r.Body, n) then
-// raw, err := io.ReadAll(body) leaves both body and raw tainted. Plain
-// assignments are tracked, plus package-wide helper ferries (helpers,
-// from packageBodyReaders): raw, err := readBody(r) taints raw when
-// readBody's returns are body-derived. seeds carries parameters that
-// arrived tainted at a call site in this package; fields carries
-// struct field names holding tainted bytes somewhere in the package.
-// aliases and pkg carry the frame arms: the import gate for the
-// zero-argument Read() spelling, and the receiver-shape index behind
-// methodResultTaint (pkg may be nil while the package context is still
-// being built).
+// taintFromBody returns the locals holding client-controlled bytes, to a fixpoint.
 func taintFromBody(body ast.Node, reqs map[string]bool, helpers map[string]bool, seeds map[string]taintKind, fields map[string]taintKind, aliases map[string]string, pkg *rawJSONPkg) map[string]taintKind {
 	var assigns []*ast.AssignStmt
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -1542,10 +1224,6 @@ func taintFromBody(body ast.Node, reqs map[string]bool, helpers map[string]bool,
 	return tainted
 }
 
-// indexTypes fills the type-shape index: every struct type's field
-// names, and every method's receiver base type name. Name-based on
-// purpose — the sink keeps a coincidence cheap, and this spares the
-// analyzer a type check it cannot do.
 func (pkg *rawJSONPkg) indexTypes() {
 	pkg.structFields = map[string]map[string]bool{}
 	pkg.methodRecv = map[string][]string{}
@@ -1586,16 +1264,6 @@ func (pkg *rawJSONPkg) indexTypes() {
 	}
 }
 
-// methodResultTaint reports the taint a call's RESULT carries when the
-// callee is a method of a type that holds a client-controlled SOURCE in
-// a field: mcpclient Client stores the child's stdout, so Client.Call's
-// result is the child's response — bytes as client-controlled as a
-// frame. Only sourceFields (seeded before the fixpoint, never fed by
-// it) qualify: the general field map holds decoded values too, and
-// feeding those back made every literal-built error struct taint its
-// field names and every method of every such type return taint.
-// Methods are matched by name within the package, the existing
-// convention; the receiver type's own fields are the evidence.
 func (pkg *rawJSONPkg) methodResultTaint(call *ast.CallExpr) taintKind {
 	if len(pkg.sourceFields) == 0 || pkg.structFields == nil {
 		return 0
@@ -1614,12 +1282,6 @@ func (pkg *rawJSONPkg) methodResultTaint(call *ast.CallExpr) taintKind {
 	return 0
 }
 
-// seedSourceFields records the struct fields that hold a frame source
-// DIRECTLY, before the general fixpoint runs: pipe, err := c.StdoutPipe()
-// then &Client{stdout: pipe} (or cl.stdout = pipe), and a scanner built
-// over os.Stdin stored the same way. One bounded pass over local
-// assignments per function; nothing from the general field map or the
-// method ferry feeds back in.
 func seedSourceFields(pkg *rawJSONPkg) {
 	var direct func(e ast.Expr, tainted map[string]bool, aliases map[string]string) bool
 	direct = func(e ast.Expr, tainted map[string]bool, aliases map[string]string) bool {
@@ -1663,7 +1325,6 @@ func seedSourceFields(pkg *rawJSONPkg) {
 	for rel, af := range pkg.files {
 		aliases := pkg.aliases[rel]
 		for _, fn := range functionsIn(af) {
-			// Locals holding a direct source, to a local fixpoint.
 			tainted := map[string]bool{}
 			for changed := true; changed; {
 				changed = false
@@ -1686,7 +1347,6 @@ func seedSourceFields(pkg *rawJSONPkg) {
 					return true
 				})
 			}
-			// The source (or a local holding it) escaping into a field.
 			ast.Inspect(fn.body, func(n ast.Node) bool {
 				switch v := n.(type) {
 				case *ast.AssignStmt:
@@ -1718,16 +1378,6 @@ func seedSourceFields(pkg *rawJSONPkg) {
 	}
 }
 
-// seedScannerFields seeds frame taint into struct fields that hold a
-// bufio.Scanner built over the framing constructor's own transport
-// parameter: NewCodec(r io.Reader, …) does s := bufio.NewScanner(r)
-// and returns &Codec{scan: s}, transport-neutral by contract — the
-// supervisor wires os.Stdin, a net.Conn, or a pipe into r (the module
-// protocol's documented v1/v2 story). The codec cannot see its
-// transport, so the parameter itself is the source, and ONLY when the
-// scanner escapes into a field: a scanner kept local over an io.Reader
-// parameter (core/mcp ServeStdio, core/acp) reads whatever the CALLER
-// declared, which this rule refuses to guess at.
 func seedScannerFields(pkg *rawJSONPkg) {
 	for rel, af := range pkg.files {
 		aliases := pkg.aliases[rel]
@@ -1736,8 +1386,6 @@ func seedScannerFields(pkg *rawJSONPkg) {
 			if !ok || fd.Type == nil || fd.Type.Params == nil {
 				continue
 			}
-			// Transport parameters: io.Reader / io.ReadCloser /
-			// net.Conn, resolved through the file's import aliases.
 			transport := map[string]bool{}
 			for _, param := range fd.Type.Params.List {
 				sel, ok := param.Type.(*ast.SelectorExpr)
@@ -1761,7 +1409,6 @@ func seedScannerFields(pkg *rawJSONPkg) {
 			if len(transport) == 0 {
 				continue
 			}
-			// scanner := bufio.NewScanner(<transport param>)
 			scanners := map[string]bool{}
 			ast.Inspect(fn.body, func(n ast.Node) bool {
 				a, ok := n.(*ast.AssignStmt)
@@ -1789,8 +1436,6 @@ func seedScannerFields(pkg *rawJSONPkg) {
 			if len(scanners) == 0 {
 				continue
 			}
-			// The scanner escaping into a field is what makes the
-			// parameter a framing source: y.scan = s, or &Codec{scan: s}.
 			mark := func(fieldName string) {
 				if fieldName != "" {
 					pkg.sourceFields[fieldName] = true
@@ -1828,13 +1473,6 @@ func seedScannerFields(pkg *rawJSONPkg) {
 	}
 }
 
-// packageBodyReaders returns the package's FUNCTIONS (bare-name calls
-// only; a method's receiver expression cannot be matched by name)
-// whose return expressions are body-derived given their own
-// *http.Request parameters: readBody(r) { return io.ReadAll(r.Body) }.
-// Functions in every file of the package qualify — the pass parses
-// them all — and a helper whose own return calls another helper is not
-// followed further.
 func packageBodyReaders(pkg *rawJSONPkg) map[string]bool {
 	out := map[string]bool{}
 	for rel, af := range pkg.files {
@@ -1871,10 +1509,6 @@ func packageBodyReaders(pkg *rawJSONPkg) map[string]bool {
 	return out
 }
 
-// helperCallTainted reports the taint of a call to a known package
-// helper whose arguments actually carry this request (the request
-// itself, its body, or an already-tainted value): the ferry must carry
-// bytes, not a coincidental name.
 func helperCallTainted(call *ast.CallExpr, tainted map[string]taintKind, reqs map[string]bool, fields map[string]taintKind, helpers map[string]bool, aliases map[string]string) taintKind {
 	id, ok := call.Fun.(*ast.Ident)
 	if !ok || !helpers[id.Name] {
@@ -1898,14 +1532,7 @@ func helperCallTainted(call *ast.CallExpr, tainted map[string]taintKind, reqs ma
 	return 0
 }
 
-// readerWrapper names the calls whose RESULT is the same client bytes:
-// the reader constructors and readers of the wrapped spellings
-// (NopCloser/TeeReader/NewReader/NewScanner return a reader over the
-// SAME bytes — bufio.NewReader(r.Body), bytes.NewReader(raw),
-// bufio.NewScanner(src)), the byte-preserving transforms (append,
-// TrimSpace), and the receiver-preserving reads (buf.Bytes(),
-// scanner.Bytes()). That is what distinguishes them from a call that
-// returns its own output (peer.CallWithID).
+// readerWrapper names the calls whose result is the same client bytes as their argument or receiver.
 var readerWrapper = map[string]bool{
 	"ReadAll":        true,
 	"MaxBytesReader": true,
@@ -1919,21 +1546,8 @@ var readerWrapper = map[string]bool{
 	"Bytes":          true,
 }
 
-// wsFrameReads names the calls whose RESULT bytes are one inbound
-// client frame. The list holds the reader spellings this repo actually
-// uses: control/ws Conn.readFrame, which this package writes itself.
-// The other inbound-frame spellings are structured and live in
-// [frameReadKind]: a zero-argument Read() (core/stream's
-// (*WebSocketConn).Read) and a child's StdoutPipe. No websocket library
-// appears anywhere else in the tree, and a list of guessed library
-// names would taint by coincidence.
 var wsFrameReads = map[string]bool{"readFrame": true}
 
-// importsStream reports whether the file's import aliases resolve
-// core/stream. The gate keeps the zero-argument Read() arm honest:
-// `conn.Read()` is the websocket frame read only where the file speaks
-// core/stream; every other zero-argument Read in the tree (journal,
-// xcontext, harness Context, widget signals) returns something else.
 func importsStream(aliases map[string]string) bool {
 	for _, p := range aliases {
 		if p == "core/stream" || strings.HasSuffix(p, "/core/stream") {
@@ -1943,11 +1557,6 @@ func importsStream(aliases map[string]string) bool {
 	return false
 }
 
-// frameReadKind reports the taint a call carries as an inbound frame
-// read: a websocket/frame reader call on any receiver — a name in
-// wsFrameReads, or the zero-argument Read()/StdoutPipe() spellings
-// (core/stream's frame read; a spawned child's stdout, which is the
-// peer's side of the wire and just as client-controlled).
 func frameReadKind(call *ast.CallExpr, aliases map[string]string) taintKind {
 	var name string
 	selector := false
@@ -1978,13 +1587,7 @@ func frameReadKind(call *ast.CallExpr, aliases map[string]string) taintKind {
 	return 0
 }
 
-// isKeyWalk reports whether this json.NewDecoder call is a strict
-// top-level KEY walk rather than a value decode: the decoder is held
-// in a local, every use of it is Token/More iteration or a Decode into
-// a json.RawMessage skip value, and nothing else touches it. That is
-// the shape of battery/auth rejectAmbiguousTopLevelKeys and crud
-// checkEnvelopeKeys — the fix posture this rule points at — so it
-// stays quiet even when the walked bytes are tainted.
+// isKeyWalk reports whether this decoder only walks top-level keys (Token/More, Decode into json.RawMessage).
 func isKeyWalk(body ast.Node, call *ast.CallExpr, aliases map[string]string) bool {
 	decoders := map[string]bool{}
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -2009,9 +1612,6 @@ func isKeyWalk(body ast.Node, call *ast.CallExpr, aliases map[string]string) boo
 	if len(decoders) == 0 {
 		return false
 	}
-	// Skip values: locals declared json.RawMessage, the only thing a
-	// walk decodes into (capturing one value's raw bytes to step past
-	// it never binds attacker keys onto fields).
 	skips := map[string]bool{}
 	ast.Inspect(body, func(n ast.Node) bool {
 		spec, ok := n.(*ast.ValueSpec)
@@ -2066,21 +1666,11 @@ func isKeyWalk(body ast.Node, call *ast.CallExpr, aliases map[string]string) boo
 	return clean && walked
 }
 
-// exprFromRequestBody reports which client-controlled taint e carries:
-// a request <req>.Body selector, a tainted identifier (in plain
-// identifier position), a read of a tainted field name, os.Stdin (the
-// process's own inbound wire), or any of those under a readerWrapper
-// call (whose receiver counts too: scanner.Bytes()).
 func exprFromRequestBody(e ast.Expr, tainted map[string]taintKind, reqs map[string]bool, fields map[string]taintKind, aliases map[string]string) taintKind {
 	switch v := e.(type) {
 	case *ast.Ident:
 		return tainted[v.Name]
 	case *ast.CallExpr:
-		// Only reader-wrapping calls propagate taint to their RESULT
-		// (io.ReadAll, MaxBytesReader, LimitReader, and kin): the
-		// result of an arbitrary call that merely receives tainted
-		// arguments is not the body (the module proxy's
-		// peer.CallWithID(ctx, params) returns the child's response).
 		var k taintKind
 		switch fn := v.Fun.(type) {
 		case *ast.SelectorExpr:
@@ -2139,9 +1729,7 @@ func exprFromRequestBody(e ast.Expr, tainted map[string]taintKind, reqs map[stri
 	return 0
 }
 
-// ----------------------------------------------------------------------
 // GOFASTR1601: discarded Exec result.
-// ----------------------------------------------------------------------
 
 var reIgnoredExec = regexp.MustCompile(`(?:^|[\s;{])_,\s*_\s*=\s*\S+\.Exec(?:Context)?\b`)
 
@@ -2181,10 +1769,6 @@ func runData(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	return out, nil
 }
 
-// bareExecStatements returns the position of every Exec or ExecContext
-// call that stands as a statement of its own (plain, deferred or in a
-// goroutine): the result and the error both go nowhere, exactly as with
-// `_, _ =`. The line matcher above only knew the assignment.
 func bareExecStatements(file *ast.File) []token.Pos {
 	var out []token.Pos
 	isExec := func(e ast.Expr) bool {

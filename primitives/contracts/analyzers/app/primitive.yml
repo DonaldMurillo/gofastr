@@ -1,0 +1,182 @@
+primitive: contracts.analyzers.app
+summary: The app-shape rules read from the static route and entity table - routes, auth, entities, permissions, test coverage, accessibility and import direction.
+code:
+  - framework/contracts/analyzers/routes.go
+  - framework/contracts/analyzers/routing.go
+  - framework/contracts/analyzers/entities.go
+  - framework/contracts/analyzers/permnames.go
+  - framework/contracts/analyzers/testing.go
+  - framework/contracts/analyzers/accessibility.go
+  - framework/contracts/analyzers/architecture.go
+invariants:
+  - id: route-discovery-shapes
+    rule: Routes are read only from files importing core/router, framework/routegroup, framework, core-ui/app or net/http, through router-typed parameters, router.New or NewRouter results, and .Router() or .Group() chains.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestColonPathParameterIsReported
+      - test: framework/contracts/analyzers.TestSweepAppRouteFilesNeedARouterImport
+      - test: framework/contracts/analyzers.TestSweepAppConstructedRouterIsSeen
+  - id: group-prefix-and-guard
+    rule: A group's literal prefix joins its parent's with doubled slashes squeezed, and a group given any argument beyond its prefix is guarded.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestGroupPrefixIsAppliedAndGuardsRecognised
+      - test: framework/contracts/analyzers.TestSweepAppGroupPrefixSqueezesDoubleSlashes
+  - id: method-case-finding
+    rule: GOFASTR1005 names an unrecognised verb as such with no fix, and offers the uppercase edit only when the quoted verb appears once on its line.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestNonUppercaseMethodIsReportedWithAFix
+      - test: framework/contracts/analyzers.TestSweepAppUnknownVerbIsNamedUnrecognised
+      - test: framework/contracts/analyzers.TestSweepAppAmbiguousLiteralGetsNoFix
+  - id: colon-param-is-a-segment
+    rule: GOFASTR1002 fires on a path segment that starts with a colon, never on a colon inside a segment or on a screen route.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestScreenColonParameterIsNotReported
+      - test: framework/contracts/analyzers.TestSweepAppColonInsideSegmentIsNotAParam
+  - id: duplicates-are-per-package
+    rule: Two registrations of one method and pattern are a duplicate only within one package.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSameRouteInDifferentPackagesIsNotDuplicate
+  - id: state-route-needs-ui-and-a-literal
+    rule: The in-page-state route rule fires only in a module that renders UI, and only on a literal segment from its state word list, never a {wildcard}.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestInPageStateAsRouteFiresOnlyForUIApps
+      - test: framework/contracts/analyzers.TestStateRouteWordListSparesResourcesAndClientState
+  - id: untested-route-mentions
+    rule: The untested-route rule is silent when no test file holds a string literal with a slash, and the root route counts as mentioned only by an exact / or /?.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestEveryRuleFiresOnItsOwnBadExample
+      - test: framework/contracts/analyzers.TestSweepAppRootRouteNeedsAnExactMention
+  - id: prefix-boundary-haystacks
+    rule: GOFASTR1006 runs without a route table and judges only a HasPrefix whose haystack is path-named (path, route, url, uri or dir in a name, exactly rel, or a .URL selector), never a key- or prefix-named one.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestPrefixWithoutSegmentBoundaryIsReported
+      - test: framework/contracts/analyzers.TestPrefixBoundaryAPIKeyPrefixChecksAreNotPaths
+      - test: framework/contracts/analyzers.TestSweepAppRelIsMatchedExactly
+  - id: prefix-boundary-bounded-values
+    rule: A prefix is bounded when its value is empty or ends in / or :, has no slash against a haystack that is not strongly path-named (a call's callee is not judged), or is a + chain ending in such a literal or the platform separator.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestPrefixBoundarySparesRepoIdioms
+      - test: framework/contracts/analyzers.TestPrefixBoundaryNarrowedLiteralsAndConstants
+      - test: framework/contracts/analyzers.TestPrefixBoundaryConcatenationNeedsRightmostBoundary
+      - test: framework/contracts/analyzers.TestSweepAppCalleeDoesNotMakeAHaystackStrong
+  - id: prefix-boundary-resolution
+    rule: A name holds a known prefix only as a same-directory package const declared with one value or a non-parameter local whose every assignment is that literal; parameters, package vars and build-tag variants with different values stay dynamic, and a third declaration cannot resurrect a conflict.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestPrefixBoundaryResolvesSamePackageConstantsFromOtherFiles
+      - test: framework/contracts/analyzers.TestPrefixBoundaryPackageConstantsDoNotCrossDirectories
+      - test: framework/contracts/analyzers.TestPrefixBoundaryConflictingBuildTagVariantsAreDynamic
+      - test: framework/contracts/analyzers.TestPrefixBoundaryEveryAssignmentMustBeALiteral
+      - test: framework/contracts/analyzers.TestSweepAppThirdDeclarationCannotResurrectAConflict
+      - test: framework/contracts/analyzers.TestSweepAppPackageVarPrefixStaysDynamic
+      - test: framework/contracts/analyzers.TestSweepAppParamShadowsPackageConstant
+      - test: framework/contracts/analyzers.TestSweepAppDefaultedSeparatorParamStaysDynamic
+  - id: registrations-need-the-framework-import
+    rule: Hooks, event subscriptions, role grants and entities are read only from files importing the matching framework package, a Grant needs a resource:verb argument, and an entity config that is not a composite literal records nothing.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestForeignHookFunctionIsIgnored
+      - test: framework/contracts/analyzers.TestSubscribeOnANonEventTypeIsIgnored
+      - test: framework/contracts/analyzers.TestForeignEntityMethodIsIgnored
+      - test: framework/contracts/analyzers.TestSweepAppGrantNeedsTheAccessImport
+      - test: framework/contracts/analyzers.TestSweepAppGrantNeedsAPermissionArgument
+      - test: framework/contracts/analyzers.TestSweepAppVariableEntityConfigRecordsNothing
+  - id: entity-scope-reading
+    rule: An Access block of blank strings scopes nothing, an Access value the pass cannot read counts as scoping, only a literal false disables CRUD, and a relation column is never PII.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestEntityWithBlankAccessBlockIsStillUnscoped
+      - test: framework/contracts/analyzers.TestSweepAppVariableAccessCountsAsScoped
+      - test: framework/contracts/analyzers.TestSweepAppOnlyALiteralFalseDisablesCRUD
+      - test: framework/contracts/analyzers.TestSweepAppRelationColumnIsNotPII
+  - id: pii-is-a-whole-token
+    rule: A field is PII when one of its tokens, split on separators, digits and camelCase with acronyms kept whole, is in the PII list.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestUnscopedPIIEntityIsReported
+      - test: framework/contracts/analyzers.TestSweepAppAcronymStaysOneToken
+      - test: framework/contracts/analyzers.TestSweepAppPIIMatchesWholeTokens
+  - id: auth-wiring-attribution
+    rule: auth.New counts once per package and only when called; a reader counts by selector whether called or passed, through a dot import only as a bare use of a name the file never declares, and a configure is covered by a mount anywhere in the closure of a binary that links it.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestAuthCrossPackageWiringIsStillCovered
+      - test: framework/contracts/analyzers.TestAuthMountInOneAppDoesNotCoverAnother
+      - test: framework/contracts/analyzers.TestAuthMountThroughADotImportIsSeen
+      - test: framework/contracts/analyzers.TestAuthShadowedReaderNameIsNotAMount
+      - test: framework/contracts/analyzers.TestAuthAttributionWithoutAGoModule
+      - test: framework/contracts/analyzers.TestSweepAppSelectorIsNotADotImportedMount
+      - test: framework/contracts/analyzers.TestSweepAppFieldKeyIsNotADotImportedMount
+      - test: framework/contracts/analyzers.TestSweepAppAuthNewMustBeCalledByName
+      - test: framework/contracts/analyzers.TestSweepAppOneAuthSitePerPackage
+  - id: registry-checks-need-no-routes
+    rule: The auth-wiring and unregistered-permission checks run whether or not any route was discovered.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestAuthConfiguredButNeverMounted
+  - id: crud-without-auth-means-no-auth
+    rule: GOFASTR1703 fires only when the module neither configures auth nor mounts a reader.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestCrudEntityWithoutAuthIsReported
+      - test: framework/contracts/analyzers.TestSweepAppMountedReaderCountsAsAuth
+  - id: permissions-judged-per-binary
+    rule: A checked permission is judged against the registry of each binary that links it, and a binary linking an unreadable registration, a Register taken as a value, or an unplaced receiver given a permission-shaped or spread argument in a file importing the policy package is not judged.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestUnregisteredPermPerBinary
+      - test: framework/contracts/analyzers.TestUnregisteredPermSharedPackage
+      - test: framework/contracts/analyzers.TestUnregisteredPermUnreadRegistry
+      - test: framework/contracts/analyzers.TestUnregisteredPermFacadeUnread
+      - test: framework/contracts/analyzers.TestUnregisteredPermUnplacedRegister
+      - test: framework/contracts/analyzers.TestSweepAppSharedLibraryIsJudgedPerBinary
+      - test: framework/contracts/analyzers.TestSweepAppUnplacedRegisterWithoutPolicyImportKeepsTheRegistry
+  - id: permission-name-resolution
+    rule: A permission name resolves through literals, concatenation, Permission() conversions and package constants, never through a local, a package var some function assigns, or a name declared twice, and a spread with one unreadable element is no list.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestUnregisteredPermRegistryShapes
+      - test: framework/contracts/analyzers.TestUnregisteredPermMutatedVar
+      - test: framework/contracts/analyzers.TestUnregisteredPermLocalShadow
+      - test: framework/contracts/analyzers.TestRegisteredPermPartialSlice
+      - test: framework/contracts/analyzers.TestUnregisteredPermNameReusedLater
+  - id: permission-fields
+    rule: Struct-literal permissions come from AccessControl, the scope configs, Transition and Action, elided element types included, the last two only for resource:verb values, and an import alias's Register is never a policy.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestUnregisteredPermOnlyAccessFields
+      - test: framework/contracts/analyzers.TestUnregisteredPermElidedElement
+      - test: framework/contracts/analyzers.TestSweepAppTransitionPermissionMustLookLikeOne
+      - test: framework/contracts/analyzers.TestSweepAppImportedPackageRegisterIsNotAPolicy
+  - id: coverage-manifest-states
+    rule: A missing coverage manifest is GOFASTR1106 and an unreadable one is its own rule, and hooks, subscriptions and roles count as a surface to demand coverage of.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestUnreadableManifestFailsTheRun
+      - test: framework/contracts/analyzers.TestManifestFollowsTheCoverageDirOverride
+      - test: framework/contracts/analyzers.TestUnfiredHookIsReported
+      - test: framework/contracts/analyzers.TestUnexercisedEventSubscriberIsReported
+      - test: framework/contracts/analyzers.TestUnexercisedRoleIsReported
+  - id: declared-permissions
+    rule: A declared permission is a resource:verb string with no space or slash passed to a check call, or named in an entity's Access block.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSweepAppOnlyPermissionShapedArgumentsAreDeclared
+      - test: framework/contracts/analyzers.TestSweepAppEntityAccessPermissionsAreDeclared
+  - id: disabled-test-is-deferred-work
+    rule: A t.Skip is GOFASTR1105 only when its string arguments name deferred work rather than a lane boundary and no testing.Short guard sits in the four lines above.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSweepAppEveryStringArgumentOfASkipIsRead
+      - test: framework/contracts/analyzers.TestSweepAppShortGuardIsALaneBoundary
+  - id: coverage-is-statement-weighted
+    rule: The line-coverage floor compares the statement-weighted percentage of the profile, as go tool cover -func reports it.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestCoverageBelowFloorIsReported
+      - test: framework/contracts/analyzers.TestCoverageAtFloorIsClean
+  - id: layers-and-import-globs
+    rule: An import breaks the layering only when it reaches a strictly higher layer, and a glob matches the full import path or the module-relative one, never another suffix.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSameLayerImportIsClean
+      - test: framework/contracts/analyzers.TestUpwardImportIsReported
+decisions:
+  - id: router-scope-is-per-file
+    date: 2026-11-17
+    status: accepted
+    decision: Router identifiers are tracked per file by name, not per block.
+    rejected:
+      - option: A block-accurate resolver.
+        why: Route wiring is a flat run of statements in one function, and the resolver would cost far more than the precision is worth.
+  - id: architecture-silent-until-declared
+    date: 2026-11-17
+    status: accepted
+    decision: The architecture rules report nothing until the project declares its layers or forbidden imports.
+    rejected:
+      - option: Infer a default layering from the package tree.
+        why: An invented layering is wrong more often than right, and a wrong rule teaches people to ignore the analyzer.

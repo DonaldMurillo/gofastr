@@ -7,45 +7,33 @@ import (
 	"strings"
 )
 
-// JSONSchemaVersion is bumped when the machine-readable shape changes in a
-// way a consumer must notice. It is the first field in the document so a
-// reader can branch on it before parsing anything else.
+// JSONSchemaVersion is bumped when the JSON shape changes in a way a
+// consumer must notice; it is the document's first field.
 const JSONSchemaVersion = 1
 
-// jsonReport is the wire shape. It is deliberately not [Report] itself:
-// the wire format is a contract with agents and CI, and letting it drift
-// every time an internal field is renamed would break them silently.
 type jsonReport struct {
-	Schema       int          `json:"schema"`
-	Tool         string       `json:"tool"`
-	Root         string       `json:"root"`
-	Config       string       `json:"config,omitempty"`
-	Passed       bool         `json:"passed"`
-	FailOn       Severity     `json:"failOn"`
-	Capabilities []Capability `json:"capabilities,omitempty"`
-	Counts       jsonCounts   `json:"counts"`
-	// Vet reports the precondition stage. Absent when the caller ran no
-	// vet at all; present with ran:false when it was deliberately
-	// skipped, so "we did not check" never looks like "it was fine".
-	Vet         *VetResult          `json:"vet,omitempty"`
-	Summary     []CapabilitySummary `json:"summary"`
-	Diagnostics []Diagnostic        `json:"diagnostics"`
-	Suppressed  int                 `json:"suppressed"`
-	// Baselined, BaselineFixed, and OutsideChange tell a machine reader
-	// what the run did NOT report and why. Without them a narrowed or
-	// baselined `--json` run is indistinguishable from a clean whole-tree
-	// one, which is precisely the confusion the text footer exists to
-	// prevent: the wire format has to make the same admission.
-	Baselined     int               `json:"baselined,omitempty"`
-	BaselineFixed int               `json:"baselineFixed,omitempty"`
-	Notices       []string          `json:"notices,omitempty"`
-	Fixed         []FixedDiagnostic `json:"fixed,omitempty"`
-	Unparsed      int               `json:"unparsed,omitempty"`
-	OutsideChange int               `json:"outsideChange,omitempty"`
-	Relaxations   []string          `json:"relaxations,omitempty"`
-	Errors        []string          `json:"analyzerErrors,omitempty"`
-	Timings       []AnalyzerTiming  `json:"timings,omitempty"`
-	DurationMS    float64           `json:"durationMs"`
+	Schema        int                 `json:"schema"`
+	Tool          string              `json:"tool"`
+	Root          string              `json:"root"`
+	Config        string              `json:"config,omitempty"`
+	Passed        bool                `json:"passed"`
+	FailOn        Severity            `json:"failOn"`
+	Capabilities  []Capability        `json:"capabilities,omitempty"`
+	Counts        jsonCounts          `json:"counts"`
+	Vet           *VetResult          `json:"vet,omitempty"`
+	Summary       []CapabilitySummary `json:"summary"`
+	Diagnostics   []Diagnostic        `json:"diagnostics"`
+	Suppressed    int                 `json:"suppressed"`
+	Baselined     int                 `json:"baselined,omitempty"`
+	BaselineFixed int                 `json:"baselineFixed,omitempty"`
+	Notices       []string            `json:"notices,omitempty"`
+	Fixed         []FixedDiagnostic   `json:"fixed,omitempty"`
+	Unparsed      int                 `json:"unparsed,omitempty"`
+	OutsideChange int                 `json:"outsideChange,omitempty"`
+	Relaxations   []string            `json:"relaxations,omitempty"`
+	Errors        []string            `json:"analyzerErrors,omitempty"`
+	Timings       []AnalyzerTiming    `json:"timings,omitempty"`
+	DurationMS    float64             `json:"durationMs"`
 }
 
 type jsonCounts struct {
@@ -56,10 +44,7 @@ type jsonCounts struct {
 }
 
 // FormatJSON renders the report as indented JSON. Every diagnostic
-// carries its full rule, Why, Fix, examples, doc URL, so an agent
-// consuming one finding has everything it needs to make the change
-// without a second call. That redundancy costs bytes and saves round
-// trips, which is the right trade for the consumer this exists for.
+// carries its full rule: Why, Fix, examples and doc URL.
 func FormatJSON(r *Report) ([]byte, error) {
 	doc := jsonReport{
 		Schema:       JSONSchemaVersion,
@@ -99,9 +84,8 @@ func FormatJSON(r *Report) ([]byte, error) {
 	return json.MarshalIndent(doc, "", "  ")
 }
 
-// FormatCatalogJSON renders the rule catalog: what `contracts_list`
-// returns over MCP and what `gofastr verify --list --json` prints. An
-// agent reads this once and knows every contract the framework enforces.
+// FormatCatalogJSON renders the rule catalog, as `gofastr verify --list
+// --json` and the `contracts_list` MCP tool return it.
 func FormatCatalogJSON(rules []Rule) ([]byte, error) {
 	type entry struct {
 		Rule
@@ -124,12 +108,8 @@ func FormatCatalogJSON(rules []Rule) ([]byte, error) {
 	return json.MarshalIndent(out, "", "  ")
 }
 
-// sarifRootBaseID names the URI base every artifact location resolves
-// against. SARIF's own convention for "the root of the analysed tree".
 const sarifRootBaseID = "SRCROOT"
 
-// sarifDirURI renders an absolute directory as a file:// URI with the
-// trailing slash the spec requires for a base.
 func sarifDirURI(dir string) string {
 	if dir == "" {
 		return ""
@@ -144,9 +124,9 @@ func sarifDirURI(dir string) string {
 	return "file://" + slashed
 }
 
-// FormatSARIF renders SARIF 2.1.0, the format GitHub code scanning and
-// every major IDE already consume, which is how `gofastr verify` gets
-// inline squiggles and PR annotations without anyone writing an extension.
+// FormatSARIF renders SARIF 2.1.0. Artifact URIs are relative to the
+// SRCROOT base, declared as the report root; the driver lists only the
+// rules that fired.
 func FormatSARIF(r *Report, version string) ([]byte, error) {
 	type sarifMessage struct {
 		Text string `json:"text"`
@@ -157,11 +137,7 @@ func FormatSARIF(r *Report, version string) ([]byte, error) {
 		EndLine     int `json:"endLine,omitempty"`
 	}
 	type sarifArtifact struct {
-		URI string `json:"uri"`
-		// UriBaseId names what the relative URI is relative TO. Without
-		// it a consumer assumes the repository root, which is wrong the
-		// moment verify analysed a subdirectory, every annotation lands
-		// on a path that does not exist, silently.
+		URI       string `json:"uri"`
 		UriBaseID string `json:"uriBaseId,omitempty"`
 	}
 	type sarifPhysical struct {
@@ -203,10 +179,7 @@ func FormatSARIF(r *Report, version string) ([]byte, error) {
 		Driver sarifDriver `json:"driver"`
 	}
 	type sarifRun struct {
-		Tool sarifTool `json:"tool"`
-		// OriginalUriBaseIds declares the absolute directory the relative
-		// artifact URIs resolve against, so a consumer maps them
-		// correctly however verify was invoked.
+		Tool               sarifTool               `json:"tool"`
 		OriginalUriBaseIds map[string]sarifUriBase `json:"originalUriBaseIds,omitempty"`
 		Results            []sarifResult           `json:"results"`
 	}
@@ -216,9 +189,6 @@ func FormatSARIF(r *Report, version string) ([]byte, error) {
 		Runs    []sarifRun `json:"runs"`
 	}
 
-	// Only rules that actually fired go in the driver's rule list: a
-	// SARIF consumer shows the whole list in its UI, and 36 entries for a
-	// clean file is noise.
 	seen := map[string]bool{}
 	var rules []sarifRule
 	results := make([]sarifResult, 0, len(r.Diagnostics))

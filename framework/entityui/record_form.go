@@ -24,9 +24,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// createScreen draws the create form: the record form, empty, posting
-// a create to the entity's REST base. ?duplicate=<id> prefills from
-// that record; ?prefill_<field>=<value> prefills one field.
 func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) render.HTML {
 	if !canRead(ctx, m.ch) {
 		return accessDenied(ctx, m.plural(ctx), m.plural(ctx), 1)
@@ -34,9 +31,6 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 	if m.hasAPI && !m.ch.CanCreateScoped(ctx) {
 		return accessDenied(ctx, m.plural(ctx), m.plural(ctx), 1)
 	}
-	// A field's declared Default starts the form, so the form shows the
-	// value an omitted field would store; a prefill or a duplicate
-	// overrides it.
 	values := map[string]string{}
 	for _, f := range m.fields {
 		if f.Default != nil && mayCreateSet(m, f) {
@@ -59,15 +53,6 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 		}
 	}
 	if dup := q.Get("duplicate"); dup != "" {
-		// The hooked read comes first and must succeed: it applies the
-		// caller's read scope, and a field its AfterGet rewrites is a
-		// masked one whose stored value a create must not copy. A
-		// failed or empty hooked read refuses the duplicate rather than
-		// fall back to raw values. The prefill itself comes from the
-		// raw read, since the values round-trip on submit. Fields a
-		// create may not set (system, the state field, stamps) and
-		// fields a copy would collide on (uniqueBlank) start blank, so
-		// the normal create hooks and scope apply.
 		if !canReadRecord(ctx, m.ch, dup) {
 			return m.notFound(ctx)
 		}
@@ -107,13 +92,6 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 	return render.Join(drawerBar(ctx, "", ""), ui.PageHeader(cfg), b.drawForm(ctx, m, nil, nil, nil, values, base))
 }
 
-// uniqueBlank names the fields a duplicate leaves blank because the
-// copy would collide on them: a Unique field, and each field of a
-// unique column index. A relation in a mixed index keeps its value,
-// since the other fields alone make the copy distinct (an invoice
-// copied under the same customer needs only a new number); an index
-// of relations alone blanks them all. The primary key counts as one
-// more unique index (a server-owned one never prefills anyway).
 func uniqueBlank(m *meta) map[string]bool {
 	out := map[string]bool{}
 	for _, f := range m.fields {
@@ -144,32 +122,19 @@ func uniqueBlank(m *meta) map[string]bool {
 	return out
 }
 
-// readOnlyNotice is what a create screen draws when the entity mounts
-// no write routes: nothing to fill in, nothing to submit.
 func readOnlyNotice(ctx context.Context, m *meta) render.HTML {
 	return ui.Callout(ui.CalloutConfig{Variant: ui.StatusInfo},
 		render.Text(i18nui.EntityReadOnly.Text(ctx, map[string]any{"entity": m.singular(ctx)})))
 }
 
-// mayCreateSet reports whether a create may set the field: visible,
-// not system, not Locked, not Omit, not guarded (the state field and
-// stamps change only through a move).
 func mayCreateSet(m *meta, f schema.Field) bool {
 	return !f.Hidden && !m.createLocked(f) && !m.omitted(f.Name)
 }
 
-// editTab draws the record's Edit tab: the form, or the read-only
-// field values when the entity mounts no write routes or the caller may
-// not update this record. The form's
-// inputs prefill from the raw row; its read-only values (the header's
-// detail values) show the hooked row.
 func (b *RecordBuilder) editTab(ctx context.Context, m *meta, raw, hooked map[string]any, masked map[string]bool, base string) render.HTML {
 	return b.drawForm(ctx, m, raw, hooked, masked, nil, base)
 }
 
-// form assembles the create/edit form: the declared layout, the fields
-// the layout leaves out appended in schema order, and the RPC contract
-// (create POSTs the base, edit PUTs the record) with the leave guard.
 func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[string]any, masked map[string]bool, createValues map[string]string, base string) render.HTML {
 	editable := b.editableFields(m)
 	form := b.form
@@ -179,10 +144,6 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 	if masked == nil {
 		masked = map[string]bool{}
 	}
-	// The form's field set: editable where the caller may write; on a
-	// read-only mount, or for a caller the route would refuse, every
-	// field draws as a locked value so nothing about it can submit.
-	// A create form is drawn only after createScreen's own gates.
 	writable := createValues != nil || canUpdate(ctx, m, b.id)
 	locked := map[string]bool{}
 	if !writable {
@@ -193,15 +154,8 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 	fb := formBuilder{b: b, m: m, row: raw, displayRow: hooked, masked: masked, locked: locked, create: createValues != nil, values: createValues}
 	main, side, err := fb.walk(ctx, form)
 	if err != nil {
-		// The boot check and checkForm already refused bad layouts; a
-		// Display form that names an omitted field is tolerated by
-		// skipping it there.
 		return slotFailed(ctx)
 	}
-	// The record's facts sit in the side column, after any the layout
-	// put there; the frame stacks them under the fields in a narrow
-	// pane (a drawer, a phone). Beside the fields they are a panel on
-	// the wide rail, which holds a full id without crowding its label.
 	if !fb.create {
 		if d := fb.details(ctx); d != "" {
 			side = append(side, d)
@@ -215,18 +169,12 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		body = render.Join(main...)
 	}
 	if !writable {
-		// No write the caller may make: the tab is the frame of
-		// read-only values, with no form around it — nothing to submit
-		// and no action to point one at.
 		return body
 	}
 
 	action := m.api
 	rpc := interactive.Post(m.api)
 	toast := i18nui.EntityCreated.Text(ctx, map[string]any{"entity": m.singular(ctx)})
-	// A create lands on the list, or, opened as a drawer, back on the
-	// page under it (the list, or the record whose Related tab added
-	// it), which the runtime refreshes in place of leaving the stack.
 	dest := base
 	if o := appui.OverlayOriginFromContext(ctx); o != "" {
 		dest = o
@@ -245,12 +193,6 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		OnSuccessToast(toast).
 		OnSuccess(interactive.Navigate(dest)).
 		Attrs()
-	// The header's Save submits it (saveButton): the form draws none.
-	// Multipart: the CRUD route reads JSON or multipart and refuses the
-	// urlencoded body a browser without the runtime would send, so the
-	// form asks for the one the route reads natively (behind its
-	// cross-site guard). The runtime sends FormData for it, as it does
-	// for any form with a file input.
 	forms := []render.HTML{ui.Form(ui.FormConfig{
 		Action:           native,
 		Method:           "POST",
@@ -264,9 +206,6 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		LeaveGuardTitle:  i18nui.EntityLeaveGuardTitle.Text(ctx),
 		LeaveGuardAccept: i18nui.EntityLeaveGuardAccept.Text(ctx),
 	}, body)}
-	// The masked fields' Replace forms: empty, their input and button
-	// sit in the record form's markup and name them by the form
-	// attribute. Each PUTs the one field it owns.
 	for _, name := range fb.replace {
 		forms = append(forms, ui.Form(ui.FormConfig{
 			Action:     native,
@@ -284,9 +223,6 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 	return render.Join(forms...)
 }
 
-// editableFields is the form's candidate set in schema order: visible,
-// not system, not omitted, not a scope column crud stamps (the owner,
-// the tenant). Locked fields stay: they render read-only.
 func (b *RecordBuilder) editableFields(m *meta) []schema.Field {
 	var out []schema.Field
 	for _, f := range m.fields {
@@ -305,14 +241,10 @@ func submitLabel(ctx context.Context, m *meta, create bool) string {
 	return i18nui.EntitySave.Text(ctx)
 }
 
-// formBuilder walks the declared layout and renders one field at a
-// time, keeping track of what has been placed so the leftovers append
-// in schema order.
 type formBuilder struct {
-	b   *RecordBuilder
-	m   *meta
-	row map[string]any // the raw row: what the inputs prefill from
-	// displayRow is the hooked row: what read-only values show.
+	b          *RecordBuilder
+	m          *meta
+	row        map[string]any // the raw row: what the inputs prefill from
 	displayRow map[string]any
 	masked     map[string]bool
 	locked     map[string]bool
@@ -320,24 +252,14 @@ type formBuilder struct {
 	values     map[string]string
 	placed     map[string]bool
 	err        error
-	// replace lists the masked fields drawn with their own Replace
-	// form, in placement order; drawForm emits those forms after the
-	// record form, which must not submit them.
-	replace []string
-	// compact draws a control for a table cell's editor: its label
-	// hidden from view (the cell names it), an enum as a select and a
-	// whole number with no stepper buttons.
-	compact bool
+	replace    []string
+	compact    bool
 }
 
-// replaceFormID names the form a masked field's input and Replace
-// button belong to.
 func (fb *formBuilder) replaceFormID(field string) string {
 	return "eui-" + fb.m.name + "-replace-" + field
 }
 
-// sidePanels draws the entity's extension side panels, each built as
-// the caller from the record the read hooks left, each failing alone.
 func (fb *formBuilder) sidePanels(ctx context.Context) []render.HTML {
 	m := fb.m
 	row := fb.displayRow
@@ -367,8 +289,6 @@ func (fb *formBuilder) sidePanels(ctx context.Context) []render.HTML {
 	return out
 }
 
-// walk resolves the form layout: Main and Side children. A field the
-// form leaves out goes at the end of Main in schema order.
 func (fb *formBuilder) walk(ctx context.Context, f *entity.EntityForm) (main, side []render.HTML, err error) {
 	fb.placed = map[string]bool{}
 	if f == nil {
@@ -383,8 +303,6 @@ func (fb *formBuilder) walk(ctx context.Context, f *entity.EntityForm) (main, si
 		return nil, nil, err
 	}
 	for _, fl := range fb.b.editableFields(fb.m) {
-		// The state field shows as the header's badge and its stamps
-		// in Details: a layout that places one draws it there instead.
 		if fb.placed[fl.Name] || fb.m.guarded(fl.Name) {
 			continue
 		}
@@ -395,9 +313,6 @@ func (fb *formBuilder) walk(ctx context.Context, f *entity.EntityForm) (main, si
 	return main, side, nil
 }
 
-// details is the record's facts below its fields: the id with a copy
-// button, when it was created and updated, and the workflow's stamps
-// the layout did not place. A field the schema hides stays out.
 func (fb *formBuilder) details(ctx context.Context) render.HTML {
 	m, row := fb.m, fb.displayRow
 	if row == nil {
@@ -441,7 +356,6 @@ func (fb *formBuilder) details(ctx context.Context) render.HTML {
 		ui.DetailList(ui.DetailListConfig{Spread: true, Items: items}))
 }
 
-// items renders one level of form items: fields, rows and sections.
 func (fb *formBuilder) items(ctx context.Context, items []entity.FormItem, depth int) ([]render.HTML, error) {
 	var out []render.HTML
 	for _, it := range items {
@@ -481,15 +395,10 @@ func (fb *formBuilder) items(ctx context.Context, items []entity.FormItem, depth
 	return out, nil
 }
 
-// skipped reports whether a declared field is left out of this page's
-// form: builder Omit, or the Display Omit hint.
 func (fb *formBuilder) skipped(name string) bool {
 	return fb.m.omitted(name) || slices.Contains(fb.b.omit, name)
 }
 
-// section renders a form section: a heading over its items, or a
-// Collapsible that starts closed when declared so. A section whose
-// fields are all hidden by ShowWhen draws nothing.
 func (fb *formBuilder) section(ctx context.Context, it entity.FormItem, depth int) (render.HTML, error) {
 	body, err := fb.items(ctx, it.Items, depth+1)
 	if err != nil {
@@ -509,8 +418,6 @@ func (fb *formBuilder) section(ctx context.Context, it entity.FormItem, depth in
 	return ui.Section(ui.SectionConfig{Ctx: ctx, Heading: heading, Description: it.Help}, body...), nil
 }
 
-// value reads the field's current value as input text: the create
-// prefill, else the (unhooked) stored row.
 func (fb *formBuilder) value(f schema.Field) string {
 	if fb.create {
 		if fb.values != nil {
@@ -524,9 +431,6 @@ func (fb *formBuilder) value(f schema.Field) string {
 	return formValueText(f, fb.m.rowValue(fb.row, f.Name))
 }
 
-// field renders one field: read-only when locked or masked-write-only,
-// wrapped in its ShowWhen condition when it has one, and the input the
-// field's type (or kind) draws otherwise.
 func (fb *formBuilder) field(ctx context.Context, f schema.Field) render.HTML {
 	if fb.placed[f.Name] {
 		return ""
@@ -534,9 +438,6 @@ func (fb *formBuilder) field(ctx context.Context, f schema.Field) render.HTML {
 	fb.placed[f.Name] = true
 	label := fb.m.label(ctx, f.Name)
 
-	// A condition on the state field is decided here, against the
-	// stored value: the field never submits, so the browser has no
-	// controller to watch.
 	if sw := fb.m.hint(f.Name).ShowWhen; sw != "" {
 		cond, err := parseShowWhen(fb.m, sw)
 		if err == nil && fb.m.states != nil && cond.field == fb.m.states.Field {
@@ -568,8 +469,6 @@ func (fb *formBuilder) field(ctx context.Context, f schema.Field) render.HTML {
 	return h
 }
 
-// control draws the field's own row: read-only value, masked write-only
-// input, or the input its type or kind picks.
 func (fb *formBuilder) control(ctx context.Context, f schema.Field, label string) render.HTML {
 	help := fb.m.help(ctx, f.Name)
 	id := "eui-f-" + f.Name
@@ -586,14 +485,8 @@ func (fb *formBuilder) control(ctx context.Context, f schema.Field, label string
 	return fb.typedInput(ctx, f, label, help, id)
 }
 
-// readOnly draws a locked field as a value, never a disabled input:
-// nothing about it is submitted. The stacked list sits where an input
-// would, label above and the value boxed like a control.
 func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label string) render.HTML {
 	if k, ok := fb.kind(f); ok && (k.Detail != nil || k.Cell != nil) {
-		// A display callback gets what the read-only value would show:
-		// the hooked row, and no foreign key the caller may not read.
-		// Only an editable input gets the raw row.
 		row, val := fb.row, fb.value(f)
 		if !fb.create && fb.displayRow != nil {
 			row, val = fb.displayRow, formValueText(f, fb.m.rowValue(fb.displayRow, f.Name))
@@ -624,12 +517,6 @@ func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label strin
 	return ui.DetailList(ui.DetailListConfig{Stacked: true, Items: []ui.DetailItem{{Label: label, Value: value}}})
 }
 
-// maskedControl draws a hook-masked column as write-only: the value
-// never renders, a blank input keeps the stored value, and the help
-// says whether one is set. A masked enum or bool cannot use its native
-// control (it would submit a value the user never saw), so it becomes a
-// select with an explicit "unchanged" option. Every other masked field
-// changes through a Replace form of its own.
 func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label, help, id string) render.HTML {
 	state := i18nui.EntityNotSet.Text(ctx)
 	if v := fb.value(f); v != "" {
@@ -653,9 +540,6 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 			},
 		})
 	case schema.Relation:
-		// The picker's hidden input submits "" until a pick, and a
-		// blank relation clears the column on update, so the picker
-		// belongs to a Replace form, as a masked text input does.
 		if !fb.m.hasAPI {
 			return fb.readOnly(ctx, f, label)
 		}
@@ -666,12 +550,6 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 			fb.relationPicker(ctx, f, label, help, id, "", formID),
 			replaceButton(ctx, formID))
 	default:
-		// A blank text input cannot mean "keep": CRUD stores "" for
-		// String and Text, so a record form that carried this input
-		// would clear the column on every unrelated save. The input
-		// and its Replace button belong to a form of their own (the
-		// form attribute), which the record form never serializes;
-		// that form writes this one field, and only a typed value.
 		formID := fb.replaceFormID(f.Name)
 		fb.replace = append(fb.replace, f.Name)
 		help = state + " · " + i18nui.EntityReplaceHint.Text(ctx)
@@ -700,7 +578,6 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 	}
 }
 
-// replaceButton submits a masked field's Replace form.
 func replaceButton(ctx context.Context, formID string) render.HTML {
 	return ui.Button(ui.ButtonConfig{
 		Ctx:   ctx,
@@ -709,7 +586,6 @@ func replaceButton(ctx context.Context, formID string) render.HTML {
 	})
 }
 
-// typedInput draws the input the field's own type picks.
 func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, help, id string) render.HTML {
 	val := fb.value(f)
 	ph := fb.m.hint(f.Name).Placeholder
@@ -733,9 +609,6 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			Help: help, Required: required, Monospace: true, JSON: true, Ctx: ctx,
 		})
 	case schema.Int:
-		// The stepper always holds a number, so an unset optional int
-		// drew 0 and an untouched save wrote it. A field that may be
-		// blank takes the plain number field.
 		if fb.compact || !required {
 			step := 1.0
 			return ui.NumberField(ui.NumberFieldConfig{Ctx: ctx,
@@ -748,8 +621,6 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			Help: help, Required: required, Min: intBound(f.Min), Max: intBound(f.Max),
 		})
 	case schema.Float, schema.Decimal:
-		// step must let the type's precision through: a bare number
-		// input steps by 1 and refuses 0.5.
 		step := decimalStep(val)
 		if f.Type == schema.Float {
 			step = 1e-9
@@ -760,11 +631,6 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		})
 	case schema.Bool:
 		if !required && !fb.create && val == "" {
-			// A switch has no unset state: its hidden "false" saved a
-			// NULL as false on every save of the record. A stored NULL
-			// draws a select whose selected empty choice submits blank,
-			// which keeps the column NULL on update; yes or no sets it,
-			// and the switch returns on the next edit.
 			return ui.Select(ui.SelectConfig{Ctx: ctx,
 				Name: fb.m.inputName(f.Name), Label: label, ID: id, Help: help, LabelHidden: fb.compact,
 				Options: []ui.SelectOption{
@@ -774,10 +640,6 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 				},
 			})
 		}
-		// The hidden-false pair: the browser submits "on" for a
-		// checked box and nothing for an unchecked one, and the
-		// runtime's serializer folds exactly this pair into one
-		// scalar, so false round-trips.
 		return render.Join(
 			html.Input(html.InputConfig{Type: "hidden", Name: fb.m.inputName(f.Name), Value: "false"}),
 			ui.Switch(ui.ToggleConfig{Ctx: ctx, Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: "true", Checked: truthy(val), Help: help, LabelHidden: fb.compact}),
@@ -794,16 +656,9 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		opts, ph := enumOptions(ctx, fb.m, f, val), ""
 		switch {
 		case stale:
-			// A stored value the field no longer lists matches no
-			// option, and the browser would select the first one. The
-			// disabled placeholder submits nothing, so an optional
-			// field keeps it and a required one asks for a listed
-			// value instead of rewriting it.
 			ph = i18nui.EntitySelect.Text(ctx)
 		case required || len(f.Values) == 0:
 		default:
-			// The empty choice is a real option, not a disabled
-			// placeholder: picking it again clears the column.
 			opts = append([]ui.SelectOption{{
 				Value: "", Text: i18nui.EntitySelect.Text(ctx), Selected: val == "",
 			}}, opts...)
@@ -829,8 +684,6 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		if fb.m.uploads() {
 			return fb.uploadInput(ctx, f, label, help, id, val, required)
 		}
-		// Without storage the stored URL stays editable; a preview sits
-		// above it.
 		field := ui.TextField(ui.TextFieldConfig{Ctx: ctx,
 			Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: val, Placeholder: ph,
 			Help: help, Required: required,
@@ -845,7 +698,6 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 				Name: fb.m.inputName(f.Name), Label: label, ID: id, Value: val, Placeholder: ph, Help: help,
 			})
 		}
-		// A stored UUID is the server's: read-only with a copy affordance.
 		return fb.readOnly(ctx, f, label)
 	default:
 		return ui.FormField(ui.FormFieldConfig{
@@ -857,10 +709,6 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 	}
 }
 
-// relationOpen links to the record a relation names, beside its
-// select: only for a stored value, an entity the UI has record screens
-// for, and a record the caller's own scoped, hooked read returns — the
-// gate alone passes a row another owner holds.
 func (fb *formBuilder) relationOpen(ctx context.Context, f schema.Field, cur string) render.HTML {
 	if cur == "" {
 		return ""
@@ -889,18 +737,12 @@ func (fb *formBuilder) relationOpen(ctx context.Context, f schema.Field, cur str
 	})
 }
 
-// kindInput draws the input a registered kind (or a built-in one)
-// picks for the field. An app kind's Input runs inside a recover: its
-// panic renders the type's default input and logs.
 func (fb *formBuilder) kindInput(ctx context.Context, f schema.Field, label, help, id string, kind Kind) render.HTML {
 	val := fb.value(f)
 	ph := fb.m.hint(f.Name).Placeholder
 	if kind.Input == nil {
 		return fb.typedInput(ctx, f, label, help, id)
 	}
-	// The kind's ctx carries the app's translator so its labels
-	// resolve through the same catalog the form's own fields read, and
-	// Control carries the wiring a FormField would have handed down.
 	kctx := i18n.WithTranslator(asCaller(ctx), fb.m.tr)
 	return contain(kctx, fb.m.name, "input "+f.Name, func() (render.HTML, error) {
 		return kind.Input(InputContext{
@@ -910,9 +752,6 @@ func (fb *formBuilder) kindInput(ctx context.Context, f schema.Field, label, hel
 	})
 }
 
-// kind resolves the field's input kind: an app kind registered under
-// the hint's name, else a built-in one. The second return is false
-// when the field names no kind.
 func (fb *formBuilder) kind(f schema.Field) (Kind, bool) {
 	name := fb.m.hint(f.Name).Input
 	if name == "" {
@@ -927,12 +766,6 @@ func (fb *formBuilder) kind(f schema.Field) (Kind, bool) {
 	return Kind{}, false
 }
 
-// maskedFields reports which of the entity's editable columns an
-// AfterGet hook rewrites, by comparing the stored row against the
-// hooked one — the password-field pattern applied to whatever the app
-// decided to mask. NoQuery is not consulted: it answers the query
-// surface, and an app may mask a column it never marked. A hook
-// failure already failed the screen, so both reads succeeded here.
 func maskedFields(m *meta, raw, hooked map[string]any) map[string]bool {
 	masked := map[string]bool{}
 	for _, f := range m.fields {
@@ -946,10 +779,6 @@ func maskedFields(m *meta, raw, hooked map[string]any) map[string]bool {
 	return masked
 }
 
-// rewrittenFields reports every visible column an AfterGet hook rewrites
-// on this record, locked and system ones included: maskedFields narrowed
-// to what a form edits, this is what a display surface beside the record
-// (the Activity tab's change list) must not draw from stored values.
 func rewrittenFields(m *meta, raw, hooked map[string]any) map[string]bool {
 	out := map[string]bool{}
 	for _, f := range m.fields {
@@ -960,17 +789,11 @@ func rewrittenFields(m *meta, raw, hooked map[string]any) map[string]bool {
 	return out
 }
 
-// showWhenCond is a parsed ShowWhen: the controller field and the
-// values that show the target.
 type showWhenCond struct {
 	field  string
 	values []string
 }
 
-// parseShowWhen parses the ShowWhen DSL the same shape checkShowWhen
-// allowed at registration: one `field = value` or `field in [...]`
-// term. Anything unexpected parses to an error and the field renders
-// unconditioned rather than vanishing.
 func parseShowWhen(m *meta, text string) (showWhenCond, error) {
 	fields := slices.Clone(m.fields)
 	for i := range fields {
@@ -990,8 +813,6 @@ func parseShowWhen(m *meta, text string) (showWhenCond, error) {
 	return showWhenCond{field: p.Field, values: values}, nil
 }
 
-// enumOptions builds a Select's options over the field's values, the
-// current one selected.
 func enumOptions(ctx context.Context, m *meta, f schema.Field, cur string) []ui.SelectOption {
 	opts := make([]ui.SelectOption, 0, len(f.Values))
 	for _, v := range f.Values {
@@ -1002,7 +823,6 @@ func enumOptions(ctx context.Context, m *meta, f schema.Field, cur string) []ui.
 	return opts
 }
 
-// enumSegments builds a SegmentedControl's options.
 func enumSegments(ctx context.Context, m *meta, f schema.Field) []ui.SegmentedOption {
 	opts := make([]ui.SegmentedOption, 0, len(f.Values))
 	for _, v := range f.Values {
@@ -1011,15 +831,7 @@ func enumSegments(ctx context.Context, m *meta, f schema.Field) []ui.SegmentedOp
 	return opts
 }
 
-// formValueText renders a stored value for an <input> of the field's
-// type: dates as YYYY-MM-DD (an input[type=date] silently blanks
-// anything else, and a round-tripped date column came back empty and
-// wiped itself on save), timestamps as datetime-local, bools as
-// true/false, everything else as plain text.
 func formValueText(f schema.Field, v any) string {
-	// The unnamed types (String, Text, UUID, Int, Float, Decimal,
-	// Enum, Relation, JSON, Image, File) all take the plain-text fall
-	// through below.
 	switch f.Type {
 	case schema.Date:
 		switch t := v.(type) {
@@ -1044,14 +856,10 @@ func formValueText(f schema.Field, v any) string {
 	case schema.Bool:
 		return boolText(v)
 	default:
-		// String, Text, UUID, Int, Float, Decimal, Enum, Relation,
-		// JSON, Image and File: the input's value is the plain text
-		// form, whatever the driver handed back.
 	}
 	return cell(v)
 }
 
-// boolText spells a stored bool the way the form submits it.
 func boolText(v any) string {
 	switch t := v.(type) {
 	case bool:
@@ -1065,13 +873,11 @@ func boolText(v any) string {
 		}
 		return "false"
 	case nil:
-		// Unset is not false: the form keeps it unset (typedInput).
 		return ""
 	}
 	return cell(v)
 }
 
-// inputType maps a field type to a plain <input type=...>.
 func inputType(f schema.Field) string {
 	switch f.Type {
 	case schema.Int, schema.Float, schema.Decimal:
@@ -1087,12 +893,6 @@ func inputType(f schema.Field) string {
 	}
 }
 
-// patternAttr carries a field's Pattern to the input. The server's
-// check is an unanchored match (regexp.MatchString) and the browser
-// anchors a pattern attribute to the whole value, so the attribute
-// wraps it to match anywhere; the browser then refuses exactly what
-// the server would. A pattern with inline flags ((?i) and the like) is
-// Go syntax a browser's regex refuses, and stays server-side.
 func patternAttr(p string) html.Attrs {
 	if p == "" || strings.Contains(strings.ReplaceAll(p, "(?:", ""), "(?") {
 		return nil
@@ -1100,16 +900,10 @@ func patternAttr(p string) html.Attrs {
 	return html.Attrs{"pattern": `[\s\S]*(?:` + p + `)[\s\S]*`}
 }
 
-// decimalStep is a Decimal input's step: the column's four fraction
-// digits (DECIMAL(19,4)), or the stored value's own when it has more,
-// as SQLite keeps. A step of 0.01 made a stored 19.995 fail the
-// browser's step check, so the form could not be saved untouched.
 func decimalStep(val string) float64 {
 	return fractionStep(val, defaultScale)
 }
 
-// fractionStep is 10^-digits, or finer when val holds more fraction
-// digits, so a stored value always passes the browser's step check.
 func fractionStep(val string, digits int) float64 {
 	if _, frac, ok := strings.Cut(strings.TrimSpace(val), "."); ok && len(frac) > digits && len(frac) <= 15 {
 		if _, err := strconv.ParseUint(frac, 10, 64); err == nil {
@@ -1124,17 +918,12 @@ func intInputValue(s string) int {
 	return n
 }
 
-// intBound narrows a float bound to the int NumberInput takes, clamped
-// to the integers a browser number input holds exactly (±2^53). A bare
-// int(*b) past the int range is implementation-defined, which put a
-// huge Max below Min and refused every value the API accepts.
 func intBound(b *float64) int {
 	if b == nil || math.IsNaN(*b) {
 		return 0
 	}
 	const limit = 1 << 53
 	v := math.Max(-limit, math.Min(math.Trunc(*b), limit))
-	// A 32-bit int holds less than 2^53.
 	if v >= math.MaxInt {
 		return math.MaxInt
 	}
@@ -1151,11 +940,6 @@ func dateInputValue(s string) string {
 	return ""
 }
 
-// timestampInputValue is a stored timestamp's text as a datetime-local
-// value. The input has no zone and the write reads it as UTC, so the
-// instant is drawn in UTC whatever offset it was stored or scanned with:
-// slicing the stored text showed 12:00 for 12:00+02:00, and an untouched
-// save moved the value two hours.
 func timestampInputValue(s string) string {
 	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02T15:04"} {
 		if t, err := time.Parse(layout, s); err == nil {
@@ -1165,11 +949,6 @@ func timestampInputValue(s string) string {
 	return ""
 }
 
-// timestampInput draws t in UTC to the minute, to the second when it has
-// seconds, or to the millisecond when it has a fraction: dropping any of
-// them moved the instant on every untouched save. Milliseconds are the
-// finest a datetime-local value holds (the browser blanks a longer
-// fraction), so a sub-millisecond part is not drawn.
 func timestampInput(t time.Time) string {
 	t = t.UTC().Truncate(time.Millisecond)
 	switch {
@@ -1181,9 +960,6 @@ func timestampInput(t time.Time) string {
 	return t.Format("2006-01-02T15:04")
 }
 
-// timestampStep is the step a datetime-local value needs to submit: the
-// browser refuses a value finer than its step, and the default step is
-// a minute.
 func timestampStep(v string) float64 {
 	switch {
 	case strings.Contains(v, "."):

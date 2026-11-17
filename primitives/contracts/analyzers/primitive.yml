@@ -1,0 +1,85 @@
+primitive: contracts.analyzers
+summary: The AST detectors behind the catalog's rules, and the comment-stripped code text they read.
+code:
+  - framework/contracts/analyzers/
+  - framework/contracts/internal/codetext/
+invariants:
+  - id: literal-comments-need-a-close-or-a-gap
+    rule: Strip removes a /* inside a literal only when its */ closes in the same literal, and a // inside a literal only at the literal's start or after whitespace or an escaped newline or tab, followed by whitespace or an escape.
+    enforced_by:
+      - test: framework/contracts/internal/codetext.TestStripKeepsGlobStrings
+      - test: framework/contracts/internal/codetext.TestStripCommentsInsideLiterals
+      - test: framework/contracts/internal/codetext.TestSweepCoreEscapedNewlineOpensALiteralComment
+      - test: framework/contracts/internal/codetext.TestSweepCoreTabAfterSlashesOpensALiteralComment
+  - id: template-escape-is-javascript-only
+    rule: A backslash escapes inside a JavaScript template literal and never inside a Go raw string.
+    enforced_by:
+      - test: framework/contracts/internal/codetext.TestStripTemplateEscapeInScript
+  - id: newline-ends-a-quoted-literal
+    rule: A single- or double-quoted literal, and a comment nested in one, ends at a raw newline, so an unterminated quote never swallows the rest of the file.
+    enforced_by:
+      - test: framework/contracts/internal/codetext.TestSweepCoreUnterminatedQuoteEndsAtNewline
+      - test: framework/contracts/internal/codetext.TestSweepCoreOpenQuoteDoesNotSwallowTheFile
+  - id: unterminated-comment-is-returned
+    rule: Comments returns a comment left open at end of file, with the line it starts on.
+    enforced_by:
+      - test: framework/contracts/internal/codetext.TestCommentsCarryStartLine
+  - id: import-suffix-on-a-segment
+    rule: importsAny matches an import path equal to a suffix or ending in / plus it, so example.com/myframework is not framework.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSweepCoreImportSuffixNeedsASegmentBoundary
+  - id: renders-ui-gate
+    rule: A module renders UI when an app file imports core-ui, framework/ui or framework/uihost, and the browser-premised rules stay silent in one that does not.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestInPageStateAsRouteFiresOnlyForUIApps
+      - test: framework/contracts/analyzers.TestSweepCoreUIHostImportRendersUI
+  - id: legacy-annotation-window
+    rule: A legacy escape hatch such as safe-sql or reporting-query counts on the finding's line or within the four non-blank lines above it, in any letter case, and the search stops at a closing brace or a func line.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSweepCoreLegacyAnnotationReachesFourLinesUp
+      - test: framework/contracts/analyzers.TestSweepCoreLegacyAnnotationStopsAtAFunction
+      - test: framework/contracts/analyzers.TestSweepCoreReportingQueryMarkerIsHonoured
+  - id: handrolled-crud-bar
+    rule: GOFASTR handrolled-CRUD needs three of GET, POST, PUT, PATCH and DELETE on one collection path, trailing {param} or :param segments folded into it, with no declared entity of that name and outside /__gofastr, /mcp, /health, /metrics and /.well-known.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestDeclaredEntitySuppressesHandrolledCRUD
+      - test: framework/contracts/analyzers.TestFrameworkInternalRoutesAreNotResources
+      - test: framework/contracts/analyzers.TestSweepCoreTwoVerbsAreNotHandrolledCRUD
+      - test: framework/contracts/analyzers.TestSweepCoreColonParamGroupsWithItsCollection
+      - test: framework/contracts/analyzers.TestSweepCoreFrameworkSurfaceIsNotAResource
+  - id: handrolled-battery-exemptions
+    rule: A file importing a battery's stdlib or vendor signal is not reported under battery/ or framework/, beside an import of that battery, or as an unmounted copy whose marker source is that battery or a package under it.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestUnmountedBatteryCopyIsNotHandrolled
+      - test: framework/contracts/analyzers.TestSweepCoreBatteryTreesAreNotHandrolled
+      - test: framework/contracts/analyzers.TestSweepCoreFileUsingTheBatteryIsComposition
+      - test: framework/contracts/analyzers.TestSweepCoreUnmountedSourceNeedsASegmentBoundary
+  - id: raw-sql-table-positions
+    rule: A raw query names an entity's table only right after FROM, INTO, UPDATE or JOIN.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestRawSQLAgainstADeclaredEntityIsReported
+      - test: framework/contracts/analyzers.TestSweepCoreTableNameOutsideATablePositionIsClean
+decisions:
+  - id: ast-not-types
+    date: 2026-11-17
+    status: accepted
+    decision: The analyzers parse each file's AST and never type-check, buying precision back with narrow patterns and suppression.
+    rejected:
+      - option: Load the module with go/packages and type information.
+        why: It costs seconds and fails outright on a project that does not compile, and verify has to work mid-edit.
+    revisit_if: A rule cannot be written without type identity, as the builder-pair limit in contracts.analyzers.styling describes; that rule then goes to a vet-lane analyzer.
+  - id: catalog-holds-the-rule-text
+    date: 2026-11-17
+    status: accepted
+    decision: Rule IDs, severities, Why and Fix live in the contracts catalog, and this package only finds the code.
+    rejected:
+      - option: Keep each rule's text beside its detector.
+        why: The catalog is served over MCP and in docs, which must not drag in a Go parser, and a detector must be replaceable without touching its documented contract.
+  - id: legacy-annotations-stay
+    date: 2026-11-17
+    status: accepted
+    decision: The pre-contracts comment escape hatches (best-effort, safe-sql, reporting-query, allow-skip) keep working beside gofastr:allow.
+    rejected:
+      - option: Respell every one as a gofastr:allow directive.
+        why: Thousands of sites across the repository and shipped apps already state their reason in the same breath, which is what the directive asks for.
+    upholds: [legacy-annotation-window]

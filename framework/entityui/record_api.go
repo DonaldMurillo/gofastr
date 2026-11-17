@@ -12,21 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// The API tab: what a developer or an agent needs to reach this record
-// from code. Three sections, all composed from framework/ui:
-//
-//   - the record as the JSON API's GET returns it under the caller's own
-//     context (the hooked row the screen already read: Hidden columns
-//     never appear, an AfterGet mask shows the mask), pretty-printed
-//     with deterministic key order;
-//   - the entity's own REST path and the methods its exposure allows,
-//     never the write base a back office swapped in with WithAPIPath;
-//   - the MCP tool names crud registers while Exposure.MCP is on.
-//
-// The tab reads nothing the record screen could not: it re-uses the
-// reads the screen already made and the entity's own declaration.
-
-// apiTabBody draws the API tab's body for the row the record screen read.
 func (b *RecordBuilder) apiTabBody(ctx context.Context, m *meta, row map[string]any) render.HTML {
 	pretty, err := json.MarshalIndent(row, "", "  ")
 	if err != nil {
@@ -47,9 +32,6 @@ func (b *RecordBuilder) apiTabBody(ctx context.Context, m *meta, row map[string]
 	)
 }
 
-// restSection draws the REST half: the entity's own base and the methods
-// its exposure allows, plus the link to the API's entity index, or the
-// notice that the entity mounts no REST routes.
 func (b *RecordBuilder) restSection(ctx context.Context, m *meta) []render.HTML {
 	base, ok := b.ui.restBase(m.e)
 	if !ok {
@@ -76,8 +58,6 @@ func (b *RecordBuilder) restSection(ctx context.Context, m *meta) []render.HTML 
 	}
 }
 
-// mcpSection draws the MCP half: the tool names crud registers for the
-// entity, or the notice that MCP does not expose it.
 func (b *RecordBuilder) mcpSection(ctx context.Context, m *meta) render.HTML {
 	if m.e.Config.Exposure == nil || !m.e.Config.Exposure.MCP {
 		return ui.Section(ui.SectionConfig{Ctx: ctx, Heading: i18nui.EntityApiMcpTitle.Text(ctx)},
@@ -94,10 +74,6 @@ func (b *RecordBuilder) mcpSection(ctx context.Context, m *meta) render.HTML {
 		ui.CodeBlock(ui.CodeBlockConfig{Ctx: ctx, Code: strings.Join(names, "\n"), Language: "text", Scroll: true}))
 }
 
-// restBase is the entity's own REST base: the innermost host's answer,
-// the one UI.WithAPIPath wrapped away when a back office moved the
-// writes to its own routes. The API tab documents the public API, never
-// the write path the forms post to.
 func (u *UI) restBase(e *entity.Entity) (string, bool) {
 	h := u.host
 	for {
@@ -112,10 +88,6 @@ func (u *UI) restBase(e *entity.Entity) (string, bool) {
 	}
 }
 
-// The methods the entity's REST routes serve. The host reports a REST
-// base only for an entity whose CRUD routes mounted (a read-only view or
-// CRUD turned off has none, and the tab says so), so a base always
-// serves every method.
 const (
 	restResourceMethods = "GET, POST"
 	restRecordMethods   = "GET, PUT, PATCH, DELETE"

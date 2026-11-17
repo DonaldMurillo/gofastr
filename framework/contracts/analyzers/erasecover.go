@@ -13,97 +13,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-// ----------------------------------------------------------------------
 // GOFASTR1415: a user-data table the erase and export planes never reach.
-// ----------------------------------------------------------------------
 
-// Bug class: account erasure (App.EraseUserData) and data export
-// (App.ExportData) reach the entity graph plus the tables registered in
-// core/datexport (a DataEraser / DataExporter literal naming the
-// table). A store that creates its own table with raw DDL and registers
-// neither keeps an erased user's rows forever and drops them from every
-// dump. The 2026-10-27 bug bash found fourteen: battery/auth's
-// SQLOAuthTokenStore (oauth_token_store.go:204, S9) keeps live provider
-// tokens keyed by user_id while erase.go registers every other auth
-// table; framework/outbox (outbox.go:296, S10) keeps full record
-// snapshots; core/a2a (store_sql.go:125/140, S20) keeps owner-keyed
-// task and push-config JSON; battery/webhook (sql.go:141,
-// inbound_sql.go:89, S22), battery/search (postgres.go:190,
-// sqlite.go:97, S23), battery/semantic (store_pgvector.go:154, S24),
-// battery/queue's scheduler (durable_scheduler.go:666, S25),
-// framework/entityui_bulk.go:66 (S26), core/featureflag/sql.go:82
-// (S27), core/middleware/idempotency_sql.go:112 (S28) and
-// framework/fanout/postgres.go:217 (S29) keep payloads or user
-// references; framework/audit.go:106 (S32) is anonymized by the
-// built-in audit plane but never exported. Outside core/datexport
-// itself, only battery/auth and battery/queue declared anything.
-//
-// Shape, per package under core/, framework/ and battery/: a CREATE
-// TABLE (or CREATE VIRTUAL TABLE) string whose column list names a
-// user-identifying column (user_id, uid, owner, owner_id, member_id,
-// actor_id, subject, email, creator, principal, users, …) or a
-// record-payload column (payload, body, data, content, snapshot, diff,
-// task_json, config_json, and the text/fields/meta of an index
-// document), or an ALTER TABLE … ADD [COLUMN] adding one, with no
-// DataEraser or no DataExporter in the same package whose Table
-// resolves to the same table. A registration's Table counts whether it
-// is the literal's Table key or a later field assignment on a variable
-// holding one (e := datexport.DataEraser{…}; e.Table = s.table). The
-// finding names which plane is missing; an ALTER reports only when no
-// CREATE of the same table already does.
-//
-// Table identity is resolved syntactically, both sides the same way: a
-// literal name, a package constant, a receiver or type-asserted field
-// (`s.table` in a method on SQLOAuthTokenStore and `ps.table` after
-// `ps, ok := x.(*SQLPasskeyStore)` resolve to the type-qualified field),
-// a parameter bound at its call sites (registerTokenEraser(ms.table, …)),
-// a quoting wrapper (query.QuoteFolded, SafeIdent), a method returning
-// the name (o.qt(), us.oauthLinksTable()), and a `+ "_suffix"`
-// concatenation. A field also carries the literal defaults assigned to
-// it (`&DBQueue{table: "queue_jobs"}`, `t = "oauth_tokens"` flowing into
-// the composite), so an init()-time registration under the canonical
-// literal covers the DDL that spells the field — unless the package
-// also writes the field from a function parameter (a WithTable option,
-// a constructor's table argument). Then the field names whatever table
-// the host chose, the literal covers only the default, and coverage
-// needs a registration whose Table resolves to the field itself
-// (946fccf75: a DBQueue built WithTable("billing_jobs") sat outside
-// both planes behind init's "queue_jobs" registration). A table whose
-// name cannot be resolved is uncovered: the rule never guesses coverage.
-//
-// Fix spelling: declare the table to both planes from the package that
-// creates it, the battery/auth erase.go + export.go pattern: a
-// datexport.DataEraser keyed by the right identity (Column user_id, or
-// IdentityEmail for an email-keyed table, EraseAnonymize for a record
-// that must be retained) and a datexport.DataExporter, re-registered
-// against the configured table name when the store is constructed.
-//
-// Expiring data (idempotency bodies, rate-limit keys, fanout spill rows,
-// burn tombstones) is NOT exempted by the rule: whether a TTL is short
-// enough to stand in for erasure is a design call, so the site states it
-// with //gofastr:allow(GOFASTR1415) <why> where a reviewer can see it.
-//
-// Deliberately silent on:
-//   - tables whose columns name no user identity and no payload
-//     (leases, cron ticks, module flags, role grants, migration
-//     ledgers): coordination state holds no end-user content;
-//   - columns spelled through a format verb (`%s TEXT PRIMARY KEY`, the
-//     entity migrator's and the auth user table's configurable columns):
-//     the rule reads only names it can see, and an entity table is the
-//     entity graph's to erase;
-//   - tables covered on both planes, matched by resolved identity;
-//   - files outside core/, framework/ and battery/ (an app's own tables
-//     are its entities or its own registrations), _test.go and generated
-//     files (AppFiles already excludes both);
-//   - any site annotated //gofastr:allow(GOFASTR1415) <why>.
-//
-// Known blind spots: keyed stores that are not SQL tables (the Redis
-// queue's sorted sets, the semantic file store's snapshot and WAL), a
-// table whose user identity hides inside an opaque key (battery/auth's
-// rl_key = "<scope>|account:" + email, S30, which erase.go now reaches
-// by IdentityEmail and a ValuePrefix) or a signed token column, and
-// coverage registered from a different package than the one creating
-// the table.
 func ruleEraseCover(p *contracts.Pass, rel string, _ *ast.File) []contracts.Diagnostic {
 	if !eraseCoverScope(rel) {
 		return nil
@@ -141,9 +52,6 @@ func ruleEraseCover(p *contracts.Pass, rel string, _ *ast.File) []contracts.Diag
 	return out
 }
 
-// createdWithEvidence reports whether a CREATE TABLE of the same table
-// already carries user-data evidence: that site is the finding, and the
-// ALTER that adds another such column would only repeat it.
 func (pk *ecPkg) createdWithEvidence(alter *ecTable) bool {
 	for _, t := range pk.tables {
 		if !t.alter && ecCovered(alter.refs, [][]ecRef{t.refs}) {
@@ -153,15 +61,7 @@ func (pk *ecPkg) createdWithEvidence(alter *ecTable) bool {
 	return false
 }
 
-// coverageRefs is a table's identities as a registration must match
-// them. A field the package also writes from a parameter (a
-// WithTable-style option, a constructor's table argument) names
-// whatever table the host chose, so its literal defaults stop standing
-// in for it: an init()-time registration under the canonical
-// "queue_jobs" covers the default table and leaves a queue built
-// WithTable("billing_jobs") outside both planes (946fccf75). Such a ref
-// keeps only its resolution key, and coverage then needs a
-// registration whose Table resolves to the field itself.
+// coverageRefs drops the literal defaults of a field the package also writes from a parameter: only a registration on the field itself covers it.
 func (pk *ecPkg) coverageRefs(refs []ecRef) []ecRef {
 	out := make([]ecRef, 0, len(refs))
 	for _, r := range refs {
@@ -176,8 +76,6 @@ func (pk *ecPkg) coverageRefs(refs []ecRef) []ecRef {
 	return out
 }
 
-// paramWritten reports whether field key ("T.f") is assigned, anywhere
-// in the package, a value that resolves through a function parameter.
 func (pk *ecPkg) paramWritten(key string) bool {
 	if v, ok := pk.paramFields[key]; ok {
 		return v
@@ -195,7 +93,6 @@ func (pk *ecPkg) paramWritten(key string) bool {
 	return written
 }
 
-// eraseCoverScope keeps the rule to the framework's own store code.
 func eraseCoverScope(rel string) bool {
 	for _, root := range []string{"core", "framework", "battery"} {
 		if strings.HasPrefix(rel, root+"/") {
@@ -205,7 +102,6 @@ func eraseCoverScope(rel string) bool {
 	return false
 }
 
-// ecIdentityColumns name a user, by id or by email, on the row.
 var ecIdentityColumns = map[string]bool{
 	"user_id": true, "userid": true, "owner": true, "owner_id": true,
 	"actor_id": true, "actor": true, "subject": true, "subject_id": true,
@@ -214,19 +110,13 @@ var ecIdentityColumns = map[string]bool{
 	"uid": true, "member_id": true,
 }
 
-// ecPayloadColumns carry a copy of record data: an event or job
-// payload, a stored response body, a diff or snapshot, a serialized
-// task, or the text/fields/meta of an index document.
 var ecPayloadColumns = map[string]bool{
 	"payload": true, "body": true, "snapshot": true, "diff": true,
 	"task_json": true, "config_json": true, "text": true, "fields": true,
 	"meta": true, "data": true, "content": true,
 }
 
-// ecRef is one possible identity of a table name expression: a
-// resolution key ("field:T.table", "lit:queue_jobs", "param:f.table",
-// concatenations joined by +) and the literal spellings it may carry.
-// An empty key means unresolved; it matches only through names.
+// ecRef is one possible identity of a table-name expression: a resolved key and the literal names it can take.
 type ecRef struct {
 	key   string
 	names []string
@@ -238,9 +128,7 @@ type ecTable struct {
 	display  string
 	refs     []ecRef
 	evidence []string
-	// alter marks a table seen through ALTER TABLE … ADD COLUMN; it
-	// reports only when no CREATE TABLE of the same table already does.
-	alter bool
+	alter    bool
 }
 
 type ecSite struct {
@@ -259,19 +147,17 @@ type ecCtx struct {
 }
 
 type ecPkg struct {
-	consts      map[string]string
-	structs     map[string]map[string]string // type → field → base type name
-	methods     map[string]*ast.FuncDecl     // "T.m"
-	methodNames map[string][]*ast.FuncDecl
-	funcs       map[string]*ast.FuncDecl
-	calls       map[string][]ecCallSite // callee bare name → call sites
-	fieldInits  map[string][]ecSite     // "T.f" → assigned values
-	paramFields map[string]bool         // "T.f" → written from a parameter (memo)
-	tables      []*ecTable
-	erasers     [][]ecRef
-	exporters   [][]ecRef
-	// pendingErasers / pendingExporters hold each literal's Table
-	// expression until pass 2 has seen every call site.
+	consts           map[string]string
+	structs          map[string]map[string]string // type → field → base type name
+	methods          map[string]*ast.FuncDecl     // "T.m"
+	methodNames      map[string][]*ast.FuncDecl
+	funcs            map[string]*ast.FuncDecl
+	calls            map[string][]ecCallSite // callee bare name → call sites
+	fieldInits       map[string][]ecSite     // "T.f" → assigned values
+	paramFields      map[string]bool         // "T.f" → written from a parameter (memo)
+	tables           []*ecTable
+	erasers          [][]ecRef
+	exporters        [][]ecRef
 	pendingErasers   []ecSite
 	pendingExporters []ecSite
 	visiting         map[string]bool
@@ -304,7 +190,6 @@ func eraseCoverPackage(p *contracts.Pass, dir string) *ecPkg {
 			files = append(files, parsed{f.Rel, file})
 		}
 	}
-	// Pass 1: declarations.
 	for _, pf := range files {
 		for _, d := range pf.file.Decls {
 			switch v := d.(type) {
@@ -322,9 +207,6 @@ func eraseCoverPackage(p *contracts.Pass, dir string) *ecPkg {
 			}
 		}
 	}
-	// Pass 2: call sites, field assignments, composite literals and
-	// registrations. Pass 3 resolves registrations and DDL, once every
-	// call site and field default is known.
 	for _, pf := range files {
 		aliases := importAliases(pf.file)
 		var datexportAlias string
@@ -380,14 +262,9 @@ func (pk *ecPkg) indexGenDecl(g *ast.GenDecl) {
 	}
 }
 
-// walkDecl records call sites, field initializations and the
-// datexport literals of one top-level declaration.
 func (pk *ecPkg) walkDecl(d ast.Decl, fn *ast.FuncDecl, datexportAlias string) {
 	var lits []*ast.FuncType
 	var stack []ast.Node
-	// locals maps a variable of this declaration to the datexport type
-	// it holds (e := datexport.DataEraser{…}, var x datexport.DataExporter),
-	// so a later e.Table = … registers like the literal's Table key.
 	locals := map[string]string{}
 	pending := func(kind string, value ast.Expr) {
 		if kind == "DataEraser" {
@@ -496,9 +373,6 @@ func (pk *ecPkg) walkDecl(d ast.Decl, fn *ast.FuncDecl, datexportAlias string) {
 	})
 }
 
-// ecDatexportKind reports which datexport registration type an
-// expression or type spells: datexport.DataEraser / DataExporter, a
-// composite literal of one, or its address.
 func ecDatexportKind(e ast.Expr, datexportAlias string) string {
 	if datexportAlias == "" {
 		return ""
@@ -521,21 +395,13 @@ func ecDatexportKind(e ast.Expr, datexportAlias string) string {
 
 var reCreateTable = regexp.MustCompile(`(?is)\bCREATE\s+(?:VIRTUAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`)
 
-// collectDDL finds every CREATE TABLE string in a declaration: the
-// format of a fmt.Sprintf (the table slot resolves through its
-// argument), a plain literal, or a concatenation whose non-literal
-// operand is the table name.
+// collectDDL finds every CREATE [VIRTUAL] TABLE and ALTER TABLE … ADD [COLUMN] string in a declaration.
 func (pk *ecPkg) collectDDL(rel string, d ast.Decl, fn *ast.FuncDecl) {
 	ecEachSQLString(d, func(root ast.Expr, text string, holes, args []ast.Expr) {
 		pk.parseDDL(rel, root, text, holes, args, fn)
 	})
 }
 
-// ecEachSQLString visits every string expression of a declaration once:
-// the format of a fmt.Sprintf (args are its operands), a plain literal,
-// or a concatenation with a literal operand (holes are its non-literal
-// operands). GOFASTR1416 and GOFASTR1417 read their statements the same
-// way, so a table spelled through a verb or an operand resolves alike.
 func ecEachSQLString(d ast.Decl, visit func(root ast.Expr, text string, holes, args []ast.Expr)) {
 	consumed := map[ast.Node]bool{}
 	ast.Inspect(d, func(n ast.Node) bool {
@@ -579,8 +445,6 @@ func ecEachSQLString(d ast.Decl, visit func(root ast.Expr, text string, holes, a
 
 const ecHole = "\x00"
 
-// ecHolesText renders a string expression with each non-literal operand
-// replaced by a NUL-delimited hole index.
 func ecHolesText(e ast.Expr) (string, []ast.Expr, bool) {
 	var holes []ast.Expr
 	hasLit := false
@@ -630,9 +494,6 @@ func (pk *ecPkg) parseDDL(rel string, root ast.Expr, text string, holes, args []
 		}
 		pk.tables = append(pk.tables, &ecTable{rel: rel, pos: pos(m[0]), display: display, refs: refs, evidence: evidence})
 	}
-	// ALTER TABLE … ADD [COLUMN] adds a column after the CREATE: a
-	// user or payload column added that way puts user data in the
-	// table as surely as one in the column list.
 	for _, m := range reAlterTable.FindAllStringIndex(text, -1) {
 		display, refs, at, ok := pk.tableNameAt(text, m[1], holes, args, fn)
 		if !ok {
@@ -646,17 +507,11 @@ func (pk *ecPkg) parseDDL(rel string, root ast.Expr, text string, holes, args []
 	}
 }
 
-// tableNameAt reads the table name that starts at text[at] — a Sprintf
-// verb slot, a concatenation hole, or a literal (optionally quoted or
-// schema-qualified) name — and returns its display, its resolved
-// identities and the offset just past it.
 func (pk *ecPkg) tableNameAt(text string, at int, holes, args []ast.Expr, fn *ast.FuncDecl) (string, []ecRef, int, bool) {
 	var nameExpr ast.Expr
 	rest := text[at:]
 	switch {
 	case strings.HasPrefix(rest, "%"):
-		// A verb slot with no Sprintf argument behind it is a string
-		// that never runs as written: a quoted example, a doc string.
 		idx, n := ecVerbIndex(text, at)
 		if idx < 0 || idx >= len(args) {
 			return "", nil, 0, false
@@ -691,15 +546,9 @@ func (pk *ecPkg) tableNameAt(text string, at int, holes, args []ast.Expr, fn *as
 
 var (
 	reAlterTable = regexp.MustCompile(`(?is)\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?`)
-	// reAddColumn is one ADD [COLUMN] [IF NOT EXISTS] <name> action of
-	// an ALTER TABLE; Postgres chains several with commas. ADD
-	// CONSTRAINT / PRIMARY KEY / UNIQUE / FOREIGN KEY / CHECK add no
-	// column and are skipped by name.
-	reAddColumn = regexp.MustCompile(`(?is)(?:^|,)\s*ADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?["` + "`" + `]?(\w+)`)
+	reAddColumn  = regexp.MustCompile(`(?is)(?:^|,)\s*ADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?["` + "`" + `]?(\w+)`)
 )
 
-// ecAddedColumns returns the user-identifying and payload columns an
-// ALTER TABLE's ADD actions name, reading up to the statement's end.
 func ecAddedColumns(rest string) []string {
 	if i := strings.IndexByte(rest, ';'); i >= 0 {
 		rest = rest[:i]
@@ -714,8 +563,6 @@ func ecAddedColumns(rest string) []string {
 	return out
 }
 
-// ecVerbIndex returns the Sprintf argument index of the verb at text[at]
-// and the verb's byte length, honouring %% and explicit %[n] indexes.
 func ecVerbIndex(text string, at int) (int, int) {
 	next := 0
 	for i := 0; i < len(text); i++ {
@@ -757,11 +604,6 @@ func ecIdentByte(b byte) bool {
 
 var reUsingModule = regexp.MustCompile(`(?i)^USING\s+\w+\s*`)
 
-// ecColumnList returns the column list right after the table name:
-// the balanced parenthesis group that follows it, past whitespace and,
-// for a virtual table, a `USING module`. Anything else between the
-// name and the parenthesis means the text is prose that happens to say
-// "create table", not a statement.
 func ecColumnList(text string, at int) (string, bool) {
 	rest := strings.TrimLeft(text[at:], " \t\r\n")
 	if m := reUsingModule.FindString(rest); m != "" {
@@ -786,8 +628,6 @@ func ecColumnList(text string, at int) (string, bool) {
 	return "", false
 }
 
-// ecEvidence returns the user-identifying and payload column names a
-// column list declares, in order.
 func ecEvidence(body string) []string {
 	var out []string
 	depth, start := 0, 0
@@ -839,7 +679,7 @@ func ecCovered(refs []ecRef, decls [][]ecRef) bool {
 	return false
 }
 
-// resolve returns the possible identities of a table-name expression.
+// resolve returns the possible identities of a table-name expression; an unresolvable name yields none, so it is uncovered.
 func (pk *ecPkg) resolve(e ast.Expr, c ecCtx, depth int) []ecRef {
 	if depth > ecMaxDepth || e == nil {
 		return nil
@@ -958,8 +798,6 @@ func (pk *ecPkg) resolveCall(call *ast.CallExpr, c ecCtx, depth int) []ecRef {
 	return out
 }
 
-// defaults returns the literal spellings assigned to field key ("T.f")
-// anywhere in the package.
 func (pk *ecPkg) defaults(key string, depth int) []string {
 	if pk.visiting["field:"+key] {
 		return nil
@@ -1004,9 +842,6 @@ func ecConcat(a, b []ecRef) []ecRef {
 	return out
 }
 
-// typeOfExpr names the package type an expression's value has, when
-// the syntax shows it: a receiver, a typed parameter, a local bound by
-// a composite literal or a type assertion, or a field of one of those.
 func (pk *ecPkg) typeOfExpr(e ast.Expr, fn *ast.FuncDecl) string {
 	switch v := e.(type) {
 	case *ast.Ident:
@@ -1078,8 +913,6 @@ func (pk *ecPkg) typeOfIdent(name string, fn *ast.FuncDecl) string {
 	return found
 }
 
-// ecValueType reads the type a value expression spells: &T{…}, T{…},
-// x.(*T), x.(T).
 func ecValueType(e ast.Expr) string {
 	switch v := e.(type) {
 	case *ast.UnaryExpr:
@@ -1162,15 +995,11 @@ func ecParamIndex(fn *ast.FuncDecl, name string) int {
 	return -1
 }
 
-// ecCallMatches reports whether a call site plausibly calls fn: a bare
-// identifier for a plain function, a selector for a method.
 func ecCallMatches(call *ast.CallExpr, fn *ast.FuncDecl) bool {
 	_, isIdent := call.Fun.(*ast.Ident)
 	return isIdent == (fn.Recv == nil)
 }
 
-// ecLocalDefs returns every value assigned to name inside body: :=, =,
-// var, and the elements of a range over a literal slice.
 func ecLocalDefs(body *ast.BlockStmt, name string) ([]ast.Expr, bool) {
 	if body == nil {
 		return nil, false
@@ -1214,7 +1043,6 @@ func ecLocalDefs(body *ast.BlockStmt, name string) ([]ast.Expr, bool) {
 	return out, found
 }
 
-// ecExprText labels a table-name expression for the message.
 func ecExprText(e ast.Expr) string {
 	switch v := e.(type) {
 	case *ast.CallExpr:

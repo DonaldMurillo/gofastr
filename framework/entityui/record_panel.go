@@ -9,25 +9,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// Panel turns on the full page's way back to the drawer. Drawn as its
-// own page (a direct load, or the drawer's Open as page), the record's
-// header offers Copy link and Open in panel: the second returns to the
-// list at the builder's Base with this record open as a drawer over it
-// (data-cui-intercept-panel). Turn it on only when the record's route
-// opens as a drawer over Base (app.InterceptFrom); over any other page
-// the runtime treats the link as a plain move to the list. The drawer,
-// which has its own bar, draws neither. Off by default.
+// Panel turns on the full page's Copy link and Open in panel, which
+// returns to the list at Base with this record open as a drawer over it.
+// Turn it on only when the record's route opens as a drawer over Base
+// (app.InterceptFrom). Off by default.
 func (b *RecordBuilder) Panel() *RecordBuilder { b.panel = true; return b }
 
-// panelPage reports whether the header draws the page tools: Panel
-// on, a Base to return to, and the record drawn as its own page.
 func (b *RecordBuilder) panelPage(ctx context.Context) bool {
 	return b.panel && b.base != "" && !inDrawer(ctx)
 }
 
-// pageTools are the full page's Copy link and Open in panel, or none
-// when panelPage is false. Copy link moves here out of the record's
-// menu, the way the drawer's bar takes it.
 func (b *RecordBuilder) pageTools(ctx context.Context, base string) []render.HTML {
 	if !b.panelPage(ctx) {
 		return nil

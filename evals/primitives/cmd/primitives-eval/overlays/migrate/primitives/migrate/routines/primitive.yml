@@ -1,0 +1,48 @@
+primitive: migrate.routines
+summary: "Stored routines and views in a Plan: RoutinesFS loads them from embedded SQL files, boot reapplies every matching one each run and records it in the gofastr_routines ledger, and GeneratePlan diffs them against the snapshot."
+code:
+  - framework/migrate/routine.go
+  - framework/migrate/routine_ledger.go
+  - framework/migrate/routines_fs.go
+  - framework/migrate/view.go
+docs:
+  - framework/docs/content/migrations.md
+on_change:
+  - "A change to routines, views, dialect scoping or the ledger updates the Stored routines and Views sections of framework/docs/content/migrations.md."
+  - "A change to the gofastr_routines columns or to RoutineChecksum also updates framework/mcp_introspection.go, which reads the table and recomputes the checksum."
+  - "A change to the RoutinesFS file naming (.pg, .sqlite, .down suffixes) is user-visible and gets a CHANGELOG.md entry, and an upgrade note when files that loaded before are now refused."
+twins:
+  - job: "Apply the plan's views in dependency order with the right DDL per dialect and kind."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/view.go
+        note: "applyViews at boot, which on Postgres drops dependents and a stale kind before running View.routine Up."
+      - path: framework/migrate/snapshot.go
+        note: "viewChanges and routineChanges in GeneratePlan, which drop a changed view and its dependents before the table changes and recreate them after."
+  - job: "Decide whether an applied routine is new or changed by comparing RoutineChecksum with the ledger row."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/migrate.go
+        note: "AutoMigratePlanContext counts changed and first_time against readRoutineLedger for its summary log."
+      - path: framework/mcp_introspection.go
+        note: "The app_routines introspection recomputes RoutineChecksum and compares it with the gofastr_routines rows itself."
+  - job: "Keep only the routines whose Dialect matches the target dialect."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/migrate.go
+        note: "partitionRoutinesByDialect, called by AutoMigratePlanContext, which also logs the skipped set."
+      - path: framework/migrate/snapshot.go
+        note: "SnapshotFromPlan and GeneratePlan call partitionRoutinesByDialect so neither the snapshot nor the file records another dialect's routine."
+invariants:
+  - id: routine-up-runs-every-boot
+    rule: "Boot runs every matching routine's Up even when its ledger checksum already matches."
+    enforced_by:
+      - test: framework/migrate.TestRoutineUpRunsDespiteLedgerMatch
+  - id: no-ledger-without-routines
+    rule: "A plan with no routines creates no gofastr_routines table."
+    enforced_by:
+      - test: framework/migrate.TestNoLedgerTableWithoutRoutines
+  - id: one-file-per-routine-name
+    rule: "RoutinesFS refuses a directory holding both a plain and a dialect-suffixed file for one routine name."
+    enforced_by:
+      - test: framework/migrate.TestRoutinesFS_RejectsPlainAndDialectCollision

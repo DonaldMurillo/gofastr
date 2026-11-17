@@ -1,0 +1,114 @@
+package migrate_test
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/internal/testdb"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
+)
+
+type replayReg []*entity.Entity
+
+func (r replayReg) All() map[string]*entity.Entity {
+	out := make(map[string]*entity.Entity, len(r))
+	for _, e := range r {
+		out[e.GetName()] = e
+	}
+	return out
+}
+
+func (r replayReg) AllSorted() []*entity.Entity {
+	out := slices.Clone([]*entity.Entity(r))
+	slices.SortFunc(out, func(a, b *entity.Entity) int { return strings.Compare(a.GetName(), b.GetName()) })
+	return out
+}
+
+func (r replayReg) Get(name string) (*entity.Entity, error) {
+	for _, e := range r {
+		if e.GetName() == name {
+			return e, nil
+		}
+	}
+	return nil, errors.New("no entity " + name)
+}
+
+func replayEntity(name, table string, cols []string, idx ...entity.Index) *entity.Entity {
+	fields := []schema.Field{{Name: "id", Type: schema.String, Required: true}}
+	for _, c := range cols {
+		fields = append(fields, schema.Field{Name: c, Type: schema.String})
+	}
+	return entity.Define(name, entity.EntityConfig{
+		Table: table, Fields: fields, PrimaryKey: []string{"id"}, Indices: idx,
+	}.WithTimestamps(false))
+}
+
+// declaredCollision is two tables declaring a unique index under one name.
+func declaredCollision() replayReg {
+	return replayReg{
+		replayEntity("ra", "rx_a", []string{"code"}, entity.Index{Name: "ux_code", Columns: []string{"code"}, Unique: true}),
+		replayEntity("rb", "rx_b", []string{"code"}, entity.Index{Name: "ux_code", Columns: []string{"code"}, Unique: true}),
+	}
+}
+
+func TestReplayReportedBootRefusesASharedIndexName(t *testing.T) {
+	testdb.ForEachDialect(t, func(t *testing.T, db *sql.DB, _ migrate.Dialect) {
+		if err := migrate.AutoMigrate(db, declaredCollision()); err == nil {
+			t.Fatal("boot accepted two tables declaring an index under one name")
+		}
+	})
+	// Two entities on one table listing one index is not a collision.
+	idx := entity.Index{Name: "ux_code", Columns: []string{"code"}, Unique: true}
+	shared := replayReg{replayEntity("ra", "rx_a", []string{"code"}, idx), replayEntity("rb", "rx_a", []string{"code"}, idx)}
+	testdb.ForEachDialect(t, func(t *testing.T, db *sql.DB, _ migrate.Dialect) {
+		if err := migrate.AutoMigrate(db, shared); err != nil {
+			t.Fatalf("two entities on one table listing one index no longer boot: %v", err)
+		}
+	})
+}
+
+func TestReplayTwinDiffSchemaRefusesASharedIndexName(t *testing.T) {
+	testdb.ForEachDialect(t, func(t *testing.T, db *sql.DB, _ migrate.Dialect) {
+		if _, err := migrate.DiffSchema(context.Background(), db, declaredCollision()); err == nil {
+			t.Fatal("DiffSchema accepted two tables declaring an index under one name")
+		}
+	})
+}
+
+func TestReplayTwinGeneratePlanRefusesASharedIndexName(t *testing.T) {
+	for _, d := range []migrate.Dialect{migrate.DialectSQLite, migrate.DialectPostgres} {
+		if _, _, _, err := migrate.GeneratePlan(migrate.Plan{Registry: declaredCollision()}, migrate.SchemaSnapshot{}, d); err == nil {
+			t.Errorf("%v: GeneratePlan accepted two tables declaring an index under one name", d)
+		}
+	}
+}
+
+func TestReplayTwinBootRefusesACollidingDefaultName(t *testing.T) {
+	// Table rx_b on column c and table rx on column b_c both default to idx_rx_b_c.
+	reg := replayReg{
+		replayEntity("ra", "rx_b", []string{"c"}, entity.Index{Columns: []string{"c"}, Unique: true}),
+		replayEntity("rb", "rx", []string{"b_c"}, entity.Index{Columns: []string{"b_c"}, Unique: true}),
+	}
+	testdb.ForEachDialect(t, func(t *testing.T, db *sql.DB, _ migrate.Dialect) {
+		if err := migrate.AutoMigrate(db, reg); err == nil {
+			t.Fatal("boot accepted two default index names that collide")
+		}
+	})
+}
+
+func TestReplayTwinBootRefusesOneTableReusingAName(t *testing.T) {
+	reg := replayReg{replayEntity("rt", "rt", []string{"a", "b"},
+		entity.Index{Name: "ix", Columns: []string{"a"}},
+		entity.Index{Name: "ix", Columns: []string{"b"}, Unique: true})}
+	testdb.ForEachDialect(t, func(t *testing.T, db *sql.DB, _ migrate.Dialect) {
+		if err := migrate.AutoMigrate(db, reg); err == nil {
+			t.Fatal("boot accepted one table declaring two different indexes under one name")
+		}
+	})
+}

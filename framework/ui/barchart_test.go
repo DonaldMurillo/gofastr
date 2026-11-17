@@ -199,7 +199,7 @@ func TestBarChartAlwaysDrawsBaseline(t *testing.T) {
 func TestBarChartLongLabelsWrap(t *testing.T) {
 	h := string(BarChart(BarChartConfig{
 		Bars: []BarChartBar{
-			{Label: "Waiting On Customer", Value: 5},
+			{Label: "Waiting On The Customer To Reply", Value: 5},
 			{Label: "Resolved", Value: 8},
 			{Label: "In Progress", Value: 6},
 			{Label: "Escalated", Value: 4},
@@ -210,8 +210,13 @@ func TestBarChartLongLabelsWrap(t *testing.T) {
 	if !strings.Contains(h, "<tspan") {
 		t.Errorf("long labels should wrap using <tspan> lines:\n%s", h)
 	}
-	if !strings.Contains(h, "Waiting On Customer") {
+	if !strings.Contains(h, "Waiting On The Customer To Reply") {
 		t.Errorf("full label text should survive in <title>:\n%s", h)
+	}
+	for _, m := range regexp.MustCompile(`(?s)<text[^>]*fui-bar-chart__label[^>]*>(.*?)</text>`).FindAllStringSubmatch(h, -1) {
+		if n := strings.Count(m[1], "<tspan"); n > 2 {
+			t.Errorf("a category label runs to %d lines, want at most two: %s", n, m[1])
+		}
 	}
 }
 

@@ -1,0 +1,116 @@
+primitive: migrate
+summary: "Entity-driven schema migration for SQLite and Postgres: boot-time additive convergence (AutoMigrate), a live diff with an opt-in apply (DiffSchema, ApplySchemaDiff), snapshot-based migration file generation (GeneratePlan), seeds, routines and views, and the SQLite owner-FK repair."
+code:
+  - framework/migrate/
+docs:
+  - framework/docs/content/migrations.md
+on_change:
+  - "An exported API change (AutoMigrate*, MigrateEntity*, DiffSchema, ApplySchemaDiff*, GeneratePlan, SnapshotFromPlan, RunSeeds, Plan, SchemaChange and the other exported types) updates the Programmatic API section of framework/docs/content/migrations.md and the wrappers in framework/reexports_migrate.go in the same commit."
+  - "Every DDL change is made and tested for both SQLite and Postgres; a branch on one dialect states what the other does instead."
+  - "Boot (AutoMigratePlanContext) stays additive: it creates tables, adds columns, adds unique indexes and changes the key of an empty table only, and a change that makes boot drop, rename or retype anything is a design change, not a fix."
+  - "A boot that now refuses a schema it used to accept is BREAKING: add a note to internal/upgrade/releases/<next version>.yml and a BREAKING entry under Unreleased in CHANGELOG.md, and update the Auto-migrate path section of the docs."
+  - "Every user-visible behaviour change gets a CHANGELOG.md entry under Unreleased."
+  - "Every table, column and index name reaching DDL passes query.SafeIdent or sqlitePragma first, because kiln's add_entity and update_entity ops supply table names over HTTP."
+  - "kiln/db/migrate.go runs framework.AutoMigrate and then its own alignColumns and sqlType, so a change to ADD COLUMN or column types checks kiln's copy too."
+  - "A migration decision that depends on the dialect uses detectDialectFailClosed, never DetectDialect, which falls back to SQLite on a probe failure."
+twins:
+  - job: "Converge the registered entities with a schema: union the entity versions, sort them by dependency, skip Unmanaged ones, read or load each table's columns and key, diff each entity, run the deferred foreign keys, then handle generated pivots."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/migrate.go
+        note: "AutoMigratePlanContext and migrateEntity, boot's path against the live DB under the advisory lock, applying only additiveChanges, convergeKey and ensureUniqueIndexes."
+      - path: framework/migrate/schema_diff.go
+        note: "DiffSchema, the live-DB diff that also reads live foreign keys into fkDiffEnv and calls diffEntity per entity."
+      - path: framework/migrate/snapshot.go
+        note: "GeneratePlan, the same walk against SchemaSnapshot instead of the live DB, with its own index diff, dropped-table pass, SQLite rebuild guards and dedupe."
+  - job: "Emit the declared index set of an entity table (declared indices plus the automatic belongs_to ones) through entityIndices and indexDDL."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/migrate.go
+        note: "migrateEntity, the CREATE INDEX IF NOT EXISTS loop after the table and its column adds."
+      - path: framework/migrate/schema_diff.go
+        note: "diffEntity, the create-table branch and the single-column index after each ADD COLUMN; sqliteRebuildChange recreates every index after the DROP TABLE."
+      - path: framework/migrate/snapshot.go
+        note: "SnapshotFromPlan records Indices, and GeneratePlan diffs them with diffTableIndices or, for a legacy snapshot with no Indices, re-emits them all."
+  - job: "Create the many_to_many pivot tables no entity declares, from generatedPivots and buildPivotSpec in the same topological order."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/migrate.go
+        note: "migratePivotTables at boot."
+      - path: framework/migrate/schema_diff.go
+        note: "diffPivotTables, used by DiffSchema and GeneratePlan."
+      - path: framework/migrate/snapshot.go
+        note: "SnapshotFromPlan records each pivot's columns, DDL and index, falling back to name order when topoSortEntities fails."
+  - job: "Rebuild a SQLite table (create the new shape, copy rows, drop the old table, rename, put back indexes and triggers) with foreign keys and legacy_alter_table handled."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/schema_diff.go
+        note: "sqliteRebuildChange renders the rebuild from the entity, execRebuild puts back the table's triggers, and applySQLiteRebuild runs a change set on withSQLiteRebuildConn with a foreign_key_check before commit."
+      - path: framework/migrate/sqlite_ownerfk.go
+        note: "rebuildWithoutOwnerFK rebuilds from the stored DDL minus the owner FK, keeping the autoincrement sequence, on withSQLiteRebuildConn."
+      - path: framework/migrate/primary_key.go
+        note: "convergeKey sets PRAGMA legacy_alter_table itself around execRebuild at boot, inside the migrate transaction."
+      - path: framework/migrate/snapshot.go
+        note: "GeneratePlan splices PRAGMA legacy_alter_table=ON/OFF text around the rename of each rebuild in the generated file."
+      - path: kiln/db/rebuild.go
+        note: "RebuildTable, kiln's own rename-aside, re-migrate and copy rebuild for its SQLite store."
+  - job: "Render an entity field's SQL column type and ADD COLUMN statement, deferring NOT NULL when the field has no default."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/migrate.go
+        note: "SQLType, columnSQLType and ColumnDefaultClause."
+      - path: framework/migrate/schema_diff.go
+        note: "diffEntity, the ADD COLUMN loop that omits NOT NULL for a Required field with no default."
+      - path: kiln/db/migrate.go
+        note: "sqlType, a hand mirror of SQLType for SQLite, and alterAddColumn, which honours only Default and never NOT NULL."
+  - job: "Serialize a boot phase across replicas, with a Postgres advisory lock and a SQLite leased lock row."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/migrate.go
+        note: "AutoMigratePlanContext wraps the whole run in coremig.WithAdvisoryLock."
+      - path: framework/migrate/seed.go
+        note: "RunSeeds takes coremig.WithAdvisoryLockKey with SeedAdvisoryLockKey on Postgres (skipped on a MaxOpenConns(1) pool), and on SQLite sqliteSeedMu plus coremig.AcquireSQLiteLease on _gofastr_seed_lock."
+      - path: core/migrate/lock.go
+        note: "WithAdvisoryLock, WithAdvisoryLockKey, withLeasedLock and AcquireSQLiteLease."
+  - job: "Create and write a framework ledger table with the dialect's NOW() or CURRENT_TIMESTAMP and its placeholder style, conflict-safe."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/seed.go
+        note: "ensureSeedLedger and recordSeeded on _gofastr_seeded."
+      - path: framework/migrate/routine_ledger.go
+        note: "ensureRoutineLedger and upsertRoutineLedger on gofastr_routines."
+      - path: core/migrate/runner.go
+        note: "The tracking table DDL per dialect that both ledgers say they mirror."
+  - job: "Read a Postgres entity table's live columns, matching only the folded table and column names the framework's unquoted DDL creates."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/bulk.go
+        note: "readLiveColumnsBulkPostgres, boot's and DiffSchema's one-query pre-read through pgTableRefs."
+      - path: framework/migrate/schema_diff.go
+        note: "readLiveColumnsPostgresQ with foldedOnly true (readEntityColumnsQ), the per-table re-read under the lock; with foldedOnly false the exported readers match without case."
+  - job: "Look a table up in a snapshot or live map by exact spelling first and then without case."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/snapshot.go
+        note: "lookupTableCols, lookupStringCase, lookupKeyCase and lookupIndicesCase."
+      - path: framework/migrate/foreign_key.go
+        note: "lookupFKsCase."
+invariants:
+  - id: dialect-probe-fails-closed
+    rule: "AutoMigratePlanContext returns an error and runs no DDL when the dialect probe cannot reach the database, instead of assuming SQLite."
+    enforced_by:
+      - test: framework/migrate.TestAutoMigratePlan_DialectDetectFailClosed
+  - id: boot-applies-no-rename
+    rule: "additiveChanges keeps ADD COLUMN and CREATE changes and drops every destructive change and every RENAME COLUMN, without being fooled by a DEFAULT literal that spells one."
+    enforced_by:
+      - test: framework/migrate.TestAdditiveChanges_ExcludesRename
+      - test: framework/migrate.TestAdditiveChanges_NotFooledByRenameInDefault
+  - id: boot-rereads-under-lock
+    rule: "A table or key read before the advisory lock is read again on the lock-holding connection before boot creates the table or changes its key."
+    enforced_by:
+      - test: framework/migrate.TestMigrateEntityRereadsAbsentTable
+      - test: framework/migrate.TestConvergeKeyRereadsLiveKey
+  - id: sqlite-seed-runs-once
+    rule: "Concurrent RunSeeds calls against one SQLite database run each entity's Seed exactly once."
+    enforced_by:
+      - test: framework/migrate.TestRunSeedsSqliteSeedRunsOnce

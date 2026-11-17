@@ -129,6 +129,7 @@ func runCell(cfg config, c *cell) {
 	agent.Stdout = &stream
 	agent.Stderr = &stream
 	runErr := agent.Run()
+	stopCellProcesses(dir)
 	_, writeErr := transcript.Write(stream.Bytes())
 	if err := errors.Join(writeErr, transcript.Close()); err != nil {
 		fail(err)
@@ -307,6 +308,9 @@ func agentFailure(runErr error, timedOut bool, c *cell) (note string, fatal bool
 // removed.
 func restoreTests(dir string, root *os.Root, start string) error {
 	const tests = ":(glob)**/*_test.go"
+	if err := waitIndexUnlocked(root, indexLockWait); err != nil {
+		return err
+	}
 	added, err := gitOutput(dir, "diff", "--name-only", "--diff-filter=A", start, "--", tests)
 	if err != nil {
 		return err
@@ -325,6 +329,29 @@ func restoreTests(dir string, root *os.Root, start string) error {
 		}
 	}
 	return nil
+}
+
+// indexLockWait bounds how long grading waits for a git process the CLI
+// left running after its session to release the cell's index.
+const indexLockWait = 30 * time.Second
+
+// indexLockSeen is called once when grading finds the index locked; tests hook it.
+var indexLockSeen = func() {}
+
+func waitIndexUnlocked(root *os.Root, limit time.Duration) error {
+	seen := false
+	for deadline := time.Now().Add(limit); ; time.Sleep(100 * time.Millisecond) {
+		if _, err := root.Stat(".git/index.lock"); errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if !seen {
+			seen = true
+			indexLockSeen()
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("the cell's .git/index.lock was still held %s after the session ended", limit)
+		}
+	}
 }
 
 // changedSince lists what differs between the cell's first commit and

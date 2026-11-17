@@ -14,19 +14,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-// The program-wide owned-style rules (1816 duplicate names, 1822
-// repeated literals, the cross-file tokens checks) judge sheets that
-// one binary can link, not every sheet under the verification root: a
-// module with two binaries, each importing its own copy of a
-// siteheader package, must not fail for a name no single program
-// registers twice. This file computes those programs from what the
-// pass already knows — the parsed imports, each file's build
-// constraints, and each directory's import path resolved from its
-// nearest enclosing go.mod (styleimports.go) — and publishes the
-// grouping so `gofastr gen styles` judges the very same groups:
-// one implementation, never two, or the generator and the verifier
-// drift apart on exactly the layouts the rules exist for.
-
 // SheetInput is one owned-style sheet the shared program checks read:
 // its pass-relative path and its CSS bytes.
 type SheetInput struct {
@@ -34,72 +21,46 @@ type SheetInput struct {
 	Src  string
 }
 
-// StyleGroup is one program's share of the owned-style universe: the
-// sheets and tokens files whose directories the program's import
-// closure contains, plus (as the final group) what no program reaches —
-// library packages meant to be composed into one app, still checked
-// against each other. Each group carries the target platform its
-// closure was computed for (build constraints are honoured, so one
-// main with platform-specific imports can yield several groups) and
-// the token map that program's sheets are judged against: the built-in
-// theme plus that group's app tokens. Groups come in deterministic
-// order — by main directory, then platform, the unreached group last —
-// and their members are sorted by path.
+// StyleGroup is the sheets and tokens files one program links on one
+// platform, or (the last group) what no program reaches, with the token
+// map its sheets are judged against.
 type StyleGroup struct {
 	// GOOS and GOARCH are the platform the closure was computed for.
 	GOOS, GOARCH string
-	// MainDir is the pass-relative directory of the package main; ""
-	// for the unreached group.
+	// MainDir is the package main's pass-relative directory; "" for the unreached group.
 	MainDir string
-	// Dirs are the pass-relative, slash-separated directories of the
-	// program's import closure, sorted; empty for the unreached group.
+	// Dirs are the closure's pass-relative directories, sorted; empty for the unreached group.
 	Dirs []string
-	// Sheets and TokensFiles are the pass-relative sheet and tokens
-	// file paths under Dirs, sorted.
+	// Sheets and TokensFiles are the sorted file paths under Dirs.
 	Sheets, TokensFiles []string
 	// Tokens is the token map this group's sheets are judged against.
 	Tokens map[string]string
 	// AppTokens is every app token that parsed, in file order.
 	AppTokens []ownstyle.AppTokenAt
-	// ParsedTokens holds each tokens file's parse, keyed by path; a
-	// file two programs reach parses identically in both.
+	// ParsedTokens holds each tokens file's parse, keyed by path.
 	ParsedTokens map[string]*ownstyle.TokensFile
-	// TokenFindings are this group's tokens-file checks (the call
-	// `gofastr gen styles` makes), in check order.
+	// TokenFindings are this group's tokens-file checks, in check order.
 	TokenFindings []ownstyle.FileDiagnostic
 }
 
 // StyleProgramChecks is the per-program owned-style judgement both
-// `gofastr verify` and `gofastr gen styles` run: the groups, each
-// sheet's findings judged against every group that reaches it, the
-// duplicate owner names, and the repeated literals.
+// `gofastr verify` and `gofastr gen styles` run.
 type StyleProgramChecks struct {
 	Groups []StyleGroup
 
-	// SheetFindings maps each input sheet path to its ownstyle.Check
-	// findings across every group that reaches it — a binary only
-	// carries its own tokens, so a sheet two programs share must
-	// satisfy each — with identical findings collapsed to one, sorted
-	// by line, column, rule, message.
+	// SheetFindings maps each sheet path to its ownstyle.Check findings
+	// across every group that reaches it, deduplicated and sorted.
 	SheetFindings map[string][]ownstyle.Diagnostic
 
-	// DuplicateNames maps each sheet whose owner name another sheet of
-	// one program shares to the sorted other sheets of every such
-	// program (GOFASTR1816's shape).
+	// DuplicateNames maps a sheet to the sorted sheets sharing its owner name in one program (GOFASTR1816).
 	DuplicateNames map[string][]string
 
-	// RepeatedLiterals are the GOFASTR1822 occurrences, one per site
-	// with every program's partners merged into the message.
+	// RepeatedLiterals are the GOFASTR1822 findings, one per site.
 	RepeatedLiterals []ownstyle.FileDiagnostic
 }
 
-// CheckStylePrograms runs the shared per-program owned-style checks:
-// the grouping (see OwnedStyleGroups), each sheet's ownstyle.Check
-// findings against every group that reaches it, the duplicate owner
-// names, and the repeated literals. tokensFiles carries the app tokens
-// files the same way. `gofastr verify` renders these as diagnostics;
-// `gofastr gen styles` prints them and lets them decide what
-// generates. One implementation: the two cannot disagree.
+// CheckStylePrograms groups sheets and tokens files by program
+// (OwnedStyleGroups) and runs the per-program owned-style checks.
 func CheckStylePrograms(p *contracts.Pass, sheets, tokensFiles []SheetInput) StyleProgramChecks {
 	groups := OwnedStyleGroups(p, sheets, tokensFiles)
 	srcOf := make(map[string]string, len(sheets)+len(tokensFiles))
@@ -117,10 +78,6 @@ func CheckStylePrograms(p *contracts.Pass, sheets, tokensFiles []SheetInput) Sty
 	}
 }
 
-// sheetFindings judges every sheet against each of its groups' token
-// maps and reports what fails in any of them, identical findings
-// collapsed to one so a sheet two programs reach with the same problem
-// reports once.
 func sheetFindings(groups []StyleGroup, srcOf map[string]string) map[string][]ownstyle.Diagnostic {
 	type key struct {
 		rule      string
@@ -167,8 +124,6 @@ func sheetFindings(groups []StyleGroup, srcOf map[string]string) map[string][]ow
 	return out
 }
 
-// styleKindFor derives the sheet kind from its path: app.style.css is
-// the app sheet, everything else a scoped one.
 func styleKindFor(rel string) ownstyle.Kind {
 	if path.Base(rel) == "app.style.css" {
 		return ownstyle.KindApp
@@ -176,10 +131,6 @@ func styleKindFor(rel string) ownstyle.Kind {
 	return ownstyle.KindScoped
 }
 
-// duplicateStyleNames reports GOFASTR1816's shape per group: two owned
-// sheets of one program (or of the unreached group) sharing a name. A
-// sheet two programs reach is reported once, with the other sheets of
-// every group merged into one sorted list.
 func duplicateStyleNames(groups []StyleGroup) map[string][]string {
 	byFile := map[string]map[string]bool{}
 	for _, g := range groups {
@@ -212,12 +163,6 @@ func duplicateStyleNames(groups []StyleGroup) map[string][]string {
 	return out
 }
 
-// repeatedLiterals runs GOFASTR1822 per group, over each group's
-// sheets and that group's token map, merging per site: a literal two
-// programs each repeat with a different partner is reported once at
-// the shared sheet, with the partners merged; a value repeated only
-// across two programs is no finding at all, since no binary links both
-// sheets.
 func repeatedLiterals(groups []StyleGroup, srcOf map[string]string) []ownstyle.FileDiagnostic {
 	type site struct {
 		file      string
@@ -261,8 +206,6 @@ func repeatedLiterals(groups []StyleGroup, srcOf map[string]string) []ownstyle.F
 	return out
 }
 
-// mergeSortedUnique unions two sorted, duplicate-free lists into one
-// sorted, duplicate-free list.
 func mergeSortedUnique(a, b []string) []string {
 	out := slices.Clone(a)
 	for _, v := range b {
@@ -274,19 +217,13 @@ func mergeSortedUnique(a, b []string) []string {
 	return out
 }
 
-// inTestdataPath reports whether rel sits under a testdata tree, the
-// skip the owned-style rules share (parser fixtures, not programs).
 func inTestdataPath(rel string) bool {
 	return slices.Contains(strings.Split(rel, "/"), "testdata")
 }
 
-// OwnedStyleGroups groups the given owned sheets and tokens files
-// (pass-relative paths) by program, checks each group's tokens files
-// together (the call `gofastr gen styles` makes) and fills each group's
-// token map, and appends one unreached group for what no program
-// reaches. A pass with no buildable main package leaves every sheet in
-// the unreached group — the whole-tree behaviour for library-only
-// repos.
+// OwnedStyleGroups groups owned sheets and tokens files (pass-relative
+// paths) by program, checks each group's tokens files, and appends one
+// group for what no program reaches (every sheet, when no main builds).
 func OwnedStyleGroups(p *contracts.Pass, sheets, tokensFiles []SheetInput) []StyleGroup {
 	sortInputs(sheets)
 	sortInputs(tokensFiles)
@@ -342,27 +279,16 @@ func OwnedStyleGroups(p *contracts.Pass, sheets, tokensFiles []SheetInput) []Sty
 	return groups
 }
 
-// sortInputs sorts file inputs by path, the deterministic group order.
 func sortInputs(in []SheetInput) {
 	slices.SortFunc(in, func(a, b SheetInput) int { return strings.Compare(a.Path, b.Path) })
 }
 
-// styleProgram is one program on one target platform: the set of
-// directories inside the pass that its binary links.
 type styleProgram struct {
 	platform stylePlatform
 	mainDir  string
 	dirs     map[string]bool
 }
 
-// stylePrograms returns every program of the pass per target platform:
-// a package main directory (test files, testdata trees and files whose
-// build constraints exclude them from the platform excluded) plus the
-// transitive closure of its non-test imports that resolve to
-// directories inside the pass. Programs come ordered by main
-// directory, then platform, so grouping output is deterministic. A
-// duplicate reported on any one platform is a duplicate; the group
-// rules merge per file so it is still reported once.
 func stylePrograms(p *contracts.Pass) []styleProgram {
 	resolver := newStyleModuleResolver()
 	filesOfDir := map[string][]styleGoFile{}
@@ -442,18 +368,12 @@ func stylePrograms(p *contracts.Pass) []styleProgram {
 	return out
 }
 
-// styleGoFile is one non-test Go file the grouping reads: its
-// pass-relative path, its package clause ("" when it does not parse),
-// and its build constraints.
 type styleGoFile struct {
 	rel   string
 	pkg   string
 	build styleBuildFilter
 }
 
-// importsOf returns a file's import paths, blank and dot imports
-// included: whatever a non-test file imports is linked into the
-// program.
 func importsOf(file *ast.File) []string {
 	out := make([]string, 0, len(file.Imports))
 	for _, imp := range file.Imports {
@@ -464,8 +384,6 @@ func importsOf(file *ast.File) []string {
 	return out
 }
 
-// renderDuplicateStyleNames renders the shared duplicate-name map as
-// GOFASTR1816 diagnostics, the message `gofastr verify` reports.
 func renderDuplicateStyleNames(dups map[string][]string) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	for _, rel := range slices.Sorted(maps.Keys(dups)) {
@@ -481,8 +399,6 @@ func renderDuplicateStyleNames(dups map[string][]string) []contracts.Diagnostic 
 	return out
 }
 
-// renderRepeatedLiterals renders the shared GOFASTR1822 findings as
-// diagnostics.
 func renderRepeatedLiterals(found []ownstyle.FileDiagnostic) []contracts.Diagnostic {
 	out := make([]contracts.Diagnostic, 0, len(found))
 	for _, d := range found {
