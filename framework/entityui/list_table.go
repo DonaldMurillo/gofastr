@@ -13,10 +13,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// table draws the rows as a DataTable. Sorting and paging are typed
-// props — the active sort, the carried query, the param names — so the
-// namespaced params (?due_sort=, ?due_page=) ride every link the table
-// builds and a second list on the page keeps its own.
 func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, rows []map[string]any, total int, known bool, page int) render.HTML {
 	labels := b.ui.resolveRowLabels(ctx, s, rows, s.columns)
 	linkCol := linkColumn(s)
@@ -31,12 +27,9 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 		if numericField(f) {
 			col.Align = "end"
 		}
-		// Long text wraps; every other cell holds one line.
 		col.Wrap = f.Type == schema.Text
 		cols = append(cols, col)
 	}
-	// The trash view keeps the actions column — its rows carry the
-	// restore and purge forms — while drawing no record link.
 	noLinks := b.noLinks || s.deletedView
 	if (!noLinks && !b.top) || s.deletedView {
 		cols = append(cols, ui.Column{Key: "_a", Header: "", Align: "end", Fit: true, Phone: ui.PhoneEnd})
@@ -59,8 +52,6 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 				}
 			}
 			if name == linkCol && !noLinks {
-				// An empty value links by the id, as a card title does:
-				// ui.Link refuses empty text.
 				text := b.ui.plainText(ctx, s, labels, f, row, name)
 				if text == "" {
 					text = id
@@ -81,21 +72,18 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 	}
 
 	dt := ui.DataTableConfig{
-		Columns:    cols,
-		Rows:       uiRows,
-		Responsive: ui.ResponsiveRows,
-		Flush:      b.flush,
-		SortBy:     s.sortField,
-		SortDir:    ui.SortDir(sortDir(s.sortDesc)),
-		Path:       s.path,
-		Query:      s.carry(),
-		SortParam:  s.p.sort,
-		DirParam:   s.p.dir,
-		Empty:      b.emptyState(ctx, s),
-		Ctx:        ctx,
-		// The heading names the table too, as a hidden caption (the
-		// heading already shows): the scroll region is a named region,
-		// and two lists on one page are told apart.
+		Columns:       cols,
+		Rows:          uiRows,
+		Responsive:    ui.ResponsiveRows,
+		Flush:         b.flush,
+		SortBy:        s.sortField,
+		SortDir:       ui.SortDir(sortDir(s.sortDesc)),
+		Path:          s.path,
+		Query:         s.carry(),
+		SortParam:     s.p.sort,
+		DirParam:      s.p.dir,
+		Empty:         b.emptyState(ctx, s),
+		Ctx:           ctx,
 		Caption:       b.title(ctx, s.m),
 		CaptionHidden: true,
 	}
@@ -120,16 +108,11 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 		dt.FooterTools = b.perPageMenu(ctx, s, total)
 	}
 	if s.inlineDrawn {
-		// The cells look like values; the line under the rows says they
-		// edit where they stand.
 		dt.Note = i18nui.EntityInlineEditHint.Text(ctx)
 	}
 	return ui.DataTable(dt)
 }
 
-// perPageMenu is the footer's rows-per-page menu: one link per size on
-// offer, back to the first page. A list that fits the smallest size
-// needs none.
 func (b *ListBuilder) perPageMenu(ctx context.Context, s *listState, total int) render.HTML {
 	sizes := s.pageSizes(b)
 	if len(sizes) == 0 || total <= sizes[0] {
@@ -153,9 +136,6 @@ func (b *ListBuilder) perPageMenu(ctx context.Context, s *listState, total int) 
 	)
 }
 
-// inlineEditable is whether a cell of f may be edited in place: a plain
-// scalar the record form edits with one control, never a system,
-// locked, hidden or NoQuery column.
 func inlineEditable(m *meta, f schema.Field) bool {
 	if m.system(f) || m.locked(f) || f.Hidden || f.NoQuery {
 		return false
@@ -164,16 +144,10 @@ func inlineEditable(m *meta, f schema.Field) bool {
 	case schema.String, schema.Enum, schema.Bool, schema.Int, schema.Float, schema.Decimal, schema.Date:
 		return true
 	default:
-		// Text, JSON, files, relations, timestamps and UUIDs need the
-		// record form's larger controls.
 		return false
 	}
 }
 
-// inlineEditor wraps a cell in a ui.InlineEdit whose form PUTs the one
-// field to the record's write route and returns to this URL. It draws
-// nothing for a field it may not edit, or whose hooked value differs
-// from the stored one (a mask).
 func (b *ListBuilder) inlineEditor(ctx context.Context, s *listState, f schema.Field, row map[string]any, display render.HTML, id string, i int) render.HTML {
 	if !inlineEditable(s.m, f) || display == "" {
 		return ""
@@ -197,9 +171,6 @@ func (b *ListBuilder) inlineEditor(ctx context.Context, s *listState, f schema.F
 	})
 }
 
-// pagerQuery carries everything a page turn must not drop: the search,
-// the facets, the filter, the view, the active sort — and every foreign
-// param on the URL.
 func (s *listState) pagerQuery() map[string][]string {
 	q := s.carry(s.p.page)
 	if s.sortField != "" {
@@ -213,12 +184,6 @@ func (s *listState) pagerQuery() map[string][]string {
 	return q
 }
 
-// phoneSlots places the shown columns on the two-line phone row: the
-// link column is the title, the card badge (or the first enum) the
-// meta at the end, the card subtitle (or the first other text column)
-// under the title, and the first number (or the next column) under
-// the meta. Every other column stays off the phone row; the record
-// page shows it.
 func phoneSlots(s *listState, linkCol string) map[string]ui.PhoneSlot {
 	out := map[string]ui.PhoneSlot{}
 	if linkCol == "" {
@@ -241,19 +206,16 @@ func phoneSlots(s *listState, linkCol string) map[string]ui.PhoneSlot {
 				}
 			}
 			if slot == ui.PhoneMeta {
-				return // no enum: the row keeps its end clear
+				return
 			}
 		}
 	}
 	pick(ui.PhoneMeta, card.badge, func(f schema.Field) bool { return f.Type == schema.Enum })
-	// Long text is a note, not a line that tells two records apart.
 	pick(ui.PhoneSubtitle, card.subtitle, func(f schema.Field) bool { return !numericField(f) && f.Type != schema.Text })
 	pick(ui.PhoneDetail, "", numericField)
 	return out
 }
 
-// linkColumn is the column whose cell links to the record: the title
-// field when it is shown, else the first column.
 func linkColumn(s *listState) string {
 	tf := s.m.titleField()
 	if tf != "" && s.shownColumn(tf) {
@@ -265,7 +227,6 @@ func linkColumn(s *listState) string {
 	return ""
 }
 
-// shownColumn reports whether name is one of the shown columns.
 func (s *listState) shownColumn(name string) bool {
 	for _, c := range s.columns {
 		if c == name {
@@ -275,8 +236,6 @@ func (s *listState) shownColumn(name string) bool {
 	return false
 }
 
-// resolveRowLabels resolves the relation columns' titles for one page's
-// rows, one IN read per relation.
 func (u *UI) resolveRowLabels(ctx context.Context, s *listState, rows []map[string]any, cols []string) labelResolver {
 	out := labelResolver{}
 	for _, name := range cols {
@@ -301,41 +260,27 @@ func (u *UI) resolveRowLabels(ctx context.Context, s *listState, rows []map[stri
 	return out
 }
 
-// cellHTML draws one field's value: the badges, dates and decimals the
-// kit shapes, the related record's title, or a registered kind's Cell.
 func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f schema.Field, row map[string]any, name string) render.HTML {
 	m := s.m
-	// A relation the caller may not read is muted before any kind sees
-	// its foreign key.
 	if f.Type == schema.Relation && labels.refused(name) {
 		return muted()
 	}
 	if kind, ok := u.kindCell(m, f); ok {
-		// An app's Cell runs behind a recover: a panicking kind degrades
-		// to a muted value, never a failed list.
 		return contain(ctx, m.name, "cell "+f.Name, func() (render.HTML, error) {
 			return kind.Cell(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: m.rowValue(row, name), Row: row}), nil
 		})
 	}
 	val := cell(m.rowValue(row, name))
 	if f.Type == schema.Relation {
-		// nil labels: the caller may not read the related entity. Muted,
-		// never the raw foreign key — a bare id where a name belongs is
-		// useless to a reader and discloses an internal id.
 		if val == "" || labels.refused(name) {
 			return muted()
 		}
 		if t, ok := labels.title(name, val); ok {
-			// A title the caller read links to its record where the UI
-			// knows the related entity's screens.
 			if base, ok := s.relBase[name]; ok {
 				return ui.Tag(ui.TagConfig{Ctx: ctx, Label: t, Href: under(base, url.PathEscape(val))})
 			}
 			return render.Text(t)
 		}
-		// The id names a record of an entity the caller may read, but the
-		// read did not return it (filtered out, or past the facet cap).
-		// Printing the id is a legibility limit, not a disclosure.
 		return render.Text(val)
 	}
 	switch f.Type {
@@ -353,7 +298,6 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 		}
 		return ui.StatusBadge(ui.StatusBadgeConfig{Label: m.valueLabel(ctx, name, val), Variant: enumVariant(val), Dot: true})
 	default:
-		// Textual shapes draw below the empty check.
 	}
 	if val == "" {
 		return muted()
@@ -368,28 +312,20 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 	case schema.Timestamp:
 		return render.Text(formatDate(ctx, m.rowValue(row, name), true))
 	case schema.Image, schema.File:
-		// A value with no safe address draws the empty mark, never the
-		// stored text.
 		if t := u.fileValue(f, m.label(ctx, name), val, ui.ThumbnailSM); t != "" {
 			return t
 		}
 		return muted()
 	default:
-		// Everything else prints its value as text.
 	}
 	return render.Text(val)
 }
 
-// plainText is a value's text form, the same shapes cellHTML draws
-// without the markup: a link label, a card title, a chip.
 func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, f schema.Field, row map[string]any, name string) string {
 	m := s.m
 	if f.Type == schema.Relation && labels.refused(name) {
 		return ""
 	}
-	// A kind's Text fills the slot. Its Cell is markup, and a text slot
-	// would print the tags: with no Text the field type's text below is
-	// the value's text form.
 	if kind, ok := u.kindOf(m, f); ok && kind.Text != nil {
 		return kindText(ctx, m.name, f.Name, func() string {
 			return kind.Text(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: m.rowValue(row, name), Row: row})
@@ -435,14 +371,10 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 	case schema.Timestamp:
 		return formatDate(ctx, raw, true)
 	default:
-		// Everything else prints its value as text.
 	}
 	return val
 }
 
-// kindCell reports the kind that draws this field's cells, when
-// Display.Fields names one and the kind has a Cell: an app kind, else a
-// built-in one. Of the built-ins only money draws its own cell.
 func (u *UI) kindCell(m *meta, f schema.Field) (Kind, bool) {
 	k, ok := u.kindOf(m, f)
 	if !ok || k.Cell == nil {
@@ -451,8 +383,6 @@ func (u *UI) kindCell(m *meta, f schema.Field) (Kind, bool) {
 	return k, true
 }
 
-// kindOf is the kind a field's Display Input names: the app's, else the
-// built-in of that name.
 func (u *UI) kindOf(m *meta, f schema.Field) (Kind, bool) {
 	in := m.hint(f.Name).Input
 	if in == "" {
@@ -465,13 +395,11 @@ func (u *UI) kindOf(m *meta, f schema.Field) (Kind, bool) {
 	return k, ok
 }
 
-// numericField reports whether a column's values right-align.
 func numericField(f schema.Field) bool {
 	switch f.Type {
 	case schema.Int, schema.Float, schema.Decimal:
 		return true
 	default:
-		// Every other type reads as text and aligns to the start.
 		return false
 	}
 }
@@ -483,18 +411,12 @@ func sortDir(desc bool) string {
 	return "asc"
 }
 
-// rowActions draws the row menu, one icon-only trigger named for the
-// record: Open, Copy link, Duplicate where turned on and, where turned
-// on and the entity mounts write routes, Delete as an RPC that confirms,
-// re-fetches the page on success and toasts a refusal.
 func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[string]any, i int) render.HTML {
 	m := s.m
 	id := m.rowID(row)
 	href := s.recordHref(id)
 	title := s.rowTitle(ctx, row)
 
-	// Copy link targets a hidden span holding the URL: the copy module
-	// copies an element's text, so the page carries the link as text.
 	spanID := "eui-url-" + listIDSafe(s.key, m.name) + "-" + strconv.Itoa(i)
 	urlSpan := html.Span(html.TextConfig{
 		Class:      "fui-visually-hidden",
@@ -519,9 +441,6 @@ func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[stri
 			Do:     &del,
 		})
 	}
-	// The menu is keyed by its row, as the URL span is: left to the
-	// label hash, two rows with one title would share trigger and panel
-	// ids, and the second trigger would open the first row's panel.
 	return render.Join(urlSpan, ui.Menu(ui.MenuConfig{
 		ID:       "eui-" + listIDSafe(s.key, m.name) + "-actions-" + strconv.Itoa(i),
 		Label:    i18nui.EntityRowActions.Text(ctx, map[string]any{"title": title}),
@@ -531,7 +450,6 @@ func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[stri
 	}))
 }
 
-// listIDSafe is a fragment safe for an id attribute.
 func listIDSafe(key, entity string) string {
 	if key != "" {
 		return key
@@ -539,17 +457,10 @@ func listIDSafe(key, entity string) string {
 	return entity
 }
 
-// emptyState is the list's empty state: New where the caller may create,
-// the builder's text over the default description, one heading level
-// below the list's own. A list narrowed to nothing says so instead: a
-// search, filter or facet offers to clear them, and a view says the
-// others may hold rows. Neither offers New, since the entity is not
-// empty.
 func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStateConfig {
 	var title, desc string
 	noun := map[string]any{"entity": s.m.noun(ctx, true)}
 	if b.embedded {
-		// The section's header already offers Add.
 		return ui.EmptyStateConfig{
 			Title:        i18nui.EntityEmpty.Text(ctx, noun),
 			HeadingLevel: b.headingLevel() + 1,
@@ -557,8 +468,6 @@ func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStat
 		}
 	}
 	if s.deletedView {
-		// The trash view's own empty state: nothing is deleted, and
-		// there is no New to offer from inside it.
 		title = i18nui.EntityDeletedEmpty.Text(ctx, noun)
 		desc = i18nui.EntityDeletedEmptyBody.Text(ctx)
 		return ui.EmptyStateConfig{Title: title, Description: desc, HeadingLevel: b.headingLevel() + 1}

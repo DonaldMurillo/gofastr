@@ -18,26 +18,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
-// exportKeyParam names the list key on an export link: the list query's
-// own parameters are namespaced by it.
 const exportKeyParam = "_list"
 
-// exportIDParam names one row to export. Repeated, the export holds
-// those rows (a bulk bar's Copy CSV of the checked rows) instead of the
-// list query's, at most InRequestCap.
 const exportIDParam = "_id"
 
-// ExportHandler serves GET <api>/_export.csv for the entity: every row the
-// list's query matches, as CSV, at most EveryMatchCap. The bulk bar links
-// to it with the list's own query, so the file holds what the list
-// narrowed to; a parameter that is not the list's own (a REST filter,
-// another list's param) answers 400 rather than being ignored. Rows are read through the scoped CRUD handler with read
-// hooks, the same values the list shows; NoQuery fields (masked columns
-// among them), omitted and JSON fields are left out. A cell that a
-// spreadsheet would run as a formula is prefixed with a quote. It
-// answers 404 where BulkHandler does, and refuses a caller who may not
-// read the entity as GET <api>/<entity> does (CrudHandler.RequireRead:
-// 401 with no session or tenant, 403 without the permission).
+// ExportHandler serves GET <api>/_export.csv: every row the list's query
+// matches (at most EveryMatchCap), or the rows named by _id, as CSV read
+// through the read hooks, with formula cells defused. A param that is not
+// the list's own answers 400; a caller who may not read the entity gets
+// the list route's refusal.
 func (u *UI) ExportHandler(entityName string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -50,15 +39,9 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		if m.tr != nil {
 			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
-		// The list route's own gate and refusal, so a refused export
-		// answers what GET <api>/<entity> answers for the same caller.
 		if !requireRead(w, r, ctx, m) {
 			return
 		}
-		// Strictly: URL.Query drops a pair that does not decode, so
-		// ?status=paid%ZZ vanished before the refusal below saw it, and
-		// a list filter spelled that way read as no filter. Either way
-		// the file held every row the caller may read.
 		q, err := filter.ParseQueryStrict(r.URL.RawQuery)
 		if err != nil {
 			text, code := i18n.ErrorText(r.Context(), err, reasonExportBadQuery)
@@ -67,13 +50,8 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		}
 		key := q.Get(exportKeyParam)
 		q.Del(exportKeyParam)
-		// The export reads the list's own params only. A REST filter
-		// (?status=paid), another list's param or a typo was ignored, and
-		// the file held every row the caller may read, so it is refused.
 		own := &listState{m: m, key: key, p: listParamsFor(key)}
 		for _, name := range slices.Sorted(maps.Keys(q)) {
-			// A blank ?q= narrows nothing on any entity; crud lets it
-			// through the same way.
 			if name == own.p.q && strings.TrimSpace(q.Get(name)) == "" {
 				continue
 			}
@@ -125,14 +103,6 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 	})
 }
 
-// exportParam reports whether name is a param of this list an export
-// link may carry: its own narrowing and the view state it ignores. A
-// facet param must name a configured facet: ownsParam takes f_ of any
-// field, and the export narrows by facets() alone, so ?f_status=paid on
-// a list with no status facet exported every row. Search is a param
-// only of an entity with SearchFields: the list ignores ?q= on any
-// other, so the export answered every row where the REST list refuses
-// the same ?q= with search_not_configured.
 func (s *listState) exportParam(name string) bool {
 	switch name {
 	case s.p.cols, s.p.saved, s.p.as, s.p.per:
@@ -144,8 +114,6 @@ func (s *listState) exportParam(name string) bool {
 		if slices.Contains(s.facets(), field) {
 			return true
 		}
-		// A keyed list's own param can start with the unkeyed facet
-		// prefix; ownsParam still decides those.
 		if _, isField := s.m.byName[field]; isField {
 			return false
 		}
@@ -153,8 +121,6 @@ func (s *listState) exportParam(name string) bool {
 	return s.ownsParam(name)
 }
 
-// exportColumns are the fields an export carries after the key columns:
-// every field the API returns that is queryable, not omitted, not JSON.
 func exportColumns(m *meta) []string {
 	var out []string
 	for _, f := range m.fields {
@@ -166,9 +132,6 @@ func exportColumns(m *meta) []string {
 	return out
 }
 
-// csvSafe defuses a cell a spreadsheet would evaluate: one starting with
-// a tab, carriage return or line feed, or whose first non-space rune is
-// = + - @ or a full-width form of one, gets a leading quote.
 func csvSafe(v string) string {
 	if v != "" && strings.ContainsRune("\t\r\n", rune(v[0])) {
 		return "'" + v
@@ -180,10 +143,6 @@ func csvSafe(v string) string {
 	return v
 }
 
-// csvCell is one exported cell. A number in an Int, Float or Decimal
-// column is written as it is, so a spreadsheet can sum and sort "-12.5";
-// every other cell, a numeric column's non-number among them, goes
-// through csvSafe.
 func csvCell(m *meta, name, v string) string {
 	if f, ok := m.field(name); ok && (f.Type == schema.Int || f.Type == schema.Float || f.Type == schema.Decimal) && plainNumber(v) {
 		return v
@@ -191,8 +150,6 @@ func csvCell(m *meta, name, v string) string {
 	return csvSafe(v)
 }
 
-// plainNumber reports whether v is a decimal number and nothing else: an
-// optional minus, digits with at most one point, an optional exponent.
 func plainNumber(v string) bool {
 	v = strings.TrimPrefix(v, "-")
 	mant, exp, hasExp := strings.Cut(strings.ToLower(v), "e")
@@ -218,7 +175,6 @@ func allDigits(s string) bool {
 	return true
 }
 
-// exportFilename keeps a table name to filename-safe bytes.
 func exportFilename(table string) string {
 	var b strings.Builder
 	for _, r := range table {
@@ -232,11 +188,6 @@ func exportFilename(table string) string {
 	return b.String()
 }
 
-// namedRows reads the named rows' fields through the scoped CRUD handler
-// with read hooks, in primary-key order: a name the caller may not read
-// drops out, and so does one the Decider refuses by id, as GET
-// <api>/<id> would. More than InRequestCap names, repeats counted, is
-// refused.
 func (u *UI) namedRows(ctx context.Context, m *meta, named, fields []string) ([]map[string]any, error) {
 	if len(named) > InRequestCap {
 		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkOverCap, map[string]any{"cap": InRequestCap})

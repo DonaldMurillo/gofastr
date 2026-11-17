@@ -15,21 +15,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// Saved views on the list. A saved view is the caller's own named
-// narrowing — a filter text and a column list — kept by the host's
-// SavedViewStore. It opens through the namespaced saved param; its
-// filter and columns apply as if they were the filter and cols params,
-// with an explicit param in the URL winning. The filter text is
-// re-parsed and its fields re-checked on every open: a view that no
-// longer parses, or names a field that is now Hidden or unknown, or
-// carries a column that is no longer visible, draws the "no longer
-// applies" callout and lists the All view — never an error page, and an
-// unknown or foreign id draws the same callout, revealing nothing.
-
-// openSaved resolves the saved-view state onto s: the caller's views
-// for the strip, and the open one — its filter text stashed for narrow
-// to merge, its columns applied when the URL names none. A view that no
-// longer applies sets savedGone and nothing of it is used.
 func (b *ListBuilder) openSaved(ctx context.Context, s *listState) error {
 	m := s.m
 	s.savedOn = b.saved && b.ui.views != nil && m.hasAPI
@@ -39,7 +24,6 @@ func (b *ListBuilder) openSaved(ctx context.Context, s *listState) error {
 	if views, err := b.ui.views.List(ctx, m.name); err == nil {
 		s.savedViews = views
 	} else {
-		// A failed store is a degraded strip, not a failed screen.
 		slog.WarnContext(ctx, "entityui: saved views read", "entity", m.name, "error", err)
 	}
 	id := strings.TrimSpace(s.q.Get(s.p.saved))
@@ -48,8 +32,6 @@ func (b *ListBuilder) openSaved(ctx context.Context, s *listState) error {
 	}
 	v, err := b.ui.views.Get(ctx, m.name, id)
 	if err != nil {
-		// An unknown or foreign id is the same answer: the callout, and
-		// nothing of the view applied — it reveals nothing.
 		if errors.Is(err, ErrSavedViewNotFound) {
 			s.savedGone = true
 			return nil
@@ -57,9 +39,6 @@ func (b *ListBuilder) openSaved(ctx context.Context, s *listState) error {
 		slog.WarnContext(ctx, "entityui: saved view read", "entity", m.name, "error", err)
 		return nil
 	}
-	// Re-checked, every time: the filter must still parse against the
-	// entity's fields, and every column must still be a visible,
-	// non-omitted field. One stale piece drops the whole view.
 	if v.Filter != "" {
 		if _, err := dsl.ParsePredicate(v.Filter, m.e.GetFields()); err != nil {
 			s.savedGone = true
@@ -76,8 +55,6 @@ func (b *ListBuilder) openSaved(ctx context.Context, s *listState) error {
 		s.savedFilter = v.Filter
 	}
 	if len(v.Columns) > 0 && !s.q.Has(s.p.cols) {
-		// Views belong to the entity, so one saved on a wider list can
-		// open here: it shows the columns this list offers, in its order.
 		var cols []string
 		for _, c := range v.Columns {
 			if slices.Contains(s.available, c) {
@@ -91,8 +68,6 @@ func (b *ListBuilder) openSaved(ctx context.Context, s *listState) error {
 	return nil
 }
 
-// savedGoneWarning is the callout an unopenable view earns: the view's
-// narrowing is not applied, and the list below is the All view.
 func savedGoneWarning(ctx context.Context) render.HTML {
 	return ui.Callout(ui.CalloutConfig{
 		Title:   i18nui.EntitySavedGoneTitle.Text(ctx),
@@ -100,17 +75,10 @@ func savedGoneWarning(ctx context.Context) render.HTML {
 	}, render.Text(i18nui.EntitySavedGoneBody.Text(ctx)))
 }
 
-// savedViewsOn reports whether this caller gets saved views at all. A
-// caller with no user cannot save or keep views (the store refuses
-// them), so neither the strip nor the save form draws: a builder never
-// draws a write the handler would refuse.
 func savedViewsOn(ctx context.Context, s *listState) bool {
 	return s.savedOn && userID(ctx) != ""
 }
 
-// viewTools are the view strip's end: "Save view" while the list shows
-// something a saved view would keep that is not already one, and
-// "Delete view" while a saved view is open.
 func (b *ListBuilder) viewTools(ctx context.Context, s *listState) render.HTML {
 	if !savedViewsOn(ctx, s) {
 		return ""
@@ -125,11 +93,6 @@ func (b *ListBuilder) viewTools(ctx context.Context, s *listState) render.HTML {
 	return actionCluster(out)
 }
 
-// saveViewTool is the "Save view" dropdown: a name field and Save, the
-// active filter text and columns as hidden fields, and the list's URL
-// to return to. A saved view keeps the filter and the columns, so the
-// tool shows only when one of them is set and is not simply an open
-// saved view's own.
 func (b *ListBuilder) saveViewTool(ctx context.Context, s *listState) render.HTML {
 	changed := s.q.Has(s.p.filter) || s.q.Has(s.p.cols)
 	if s.savedID == "" {
@@ -165,8 +128,6 @@ func (b *ListBuilder) saveViewTool(ctx context.Context, s *listState) render.HTM
 	})
 }
 
-// deleteViewTool is the open saved view's delete form, behind the
-// confirm dialog; it returns to the list without the view.
 func (b *ListBuilder) deleteViewTool(ctx context.Context, s *listState) render.HTML {
 	if s.savedID == "" {
 		return ""
@@ -183,9 +144,6 @@ func (b *ListBuilder) deleteViewTool(ctx context.Context, s *listState) render.H
 	m := s.m
 	action := m.api + "/_views/_delete?id=" + url.QueryEscape(s.savedID)
 	back := listHref(s.path, s.carry(s.p.saved, s.p.filter, s.p.cols, s.p.page))
-	// The handler's toast header says "View deleted"; the success
-	// navigates to the list without the view, the page a plain post's
-	// 303 lands on.
 	del := interactive.Post(action).
 		WithConfirmDialog(interactive.Confirm{
 			Title:   i18nui.EntitySavedDeleteTitle.Text(ctx),

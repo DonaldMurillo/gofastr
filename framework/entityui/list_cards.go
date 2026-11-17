@@ -10,8 +10,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// cards draws the rows as a grid of Cards, from Display.Card or, when
-// the entity declares none, the title field and the first columns.
 func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string]any, total int, known bool, page int) render.HTML {
 	if len(rows) == 0 {
 		return ui.EmptyState(b.emptyState(ctx, s))
@@ -68,8 +66,6 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 		} else if !noLinks && !b.top {
 			footer = b.rowActions(ctx, s, row, i)
 		}
-		// Card's Header replaces its Description block, so the subtitle
-		// rides inside the header, under the title row.
 		head := ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, header...)
 		if desc != "" {
 			head = ui.Stack(ui.StackConfig{Gap: ui.GapXS}, head, ui.Muted(render.Text(desc)))
@@ -93,8 +89,6 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 	return out
 }
 
-// cardFieldSet is the resolved card shape: Display.Card when the entity
-// declares one, else the title field with the first columns as meta.
 func cardFieldsOf(s *listState) (out cardFieldSet) {
 	if s.m.d.Card != nil {
 		out.title = s.m.d.Card.Title
@@ -106,7 +100,6 @@ func cardFieldsOf(s *listState) (out cardFieldSet) {
 		out.title = s.m.titleField()
 	}
 	if s.m.d.Card == nil {
-		// With no Card declared, the first shown enum is the badge.
 		for _, c := range s.columns {
 			if f, ok := s.m.field(c); ok && f.Type == schema.Enum && c != out.title {
 				out.badge = c

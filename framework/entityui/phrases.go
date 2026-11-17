@@ -2,7 +2,6 @@ package entityui
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The refusals this package writes, under their catalog keys.
 var (
 	reasonAccessDenied      = i18n.Define("error.access_denied", "access denied")
 	reasonDeleteFailed      = i18n.Define("entityui.delete_failed", "delete failed")
@@ -36,8 +35,6 @@ var (
 	reasonOverrideNoAudit  = i18n.Define("entityui.override_no_audit", "A status override needs an audit log on this entity.")
 	reasonOverrideDenied   = i18n.Define("entityui.override_denied", "You may not override the status of this {{entity}}.")
 
-	// reasonExportUnknownParam refuses an export query parameter that is not
-	// one of the list's own: a REST filter, another list's param, a typo.
 	reasonExportUnknownParam = i18n.Define("entityui.export_unknown_param", "{{name}} is not a parameter of this list, so the export cannot narrow to it.")
 	reasonExportBadQuery     = i18n.Define("entityui.export_bad_query", "the export query could not be read: {{detail}}")
 )

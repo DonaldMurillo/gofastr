@@ -19,26 +19,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// statRowCap bounds the rows a sum or a grouping reads when the entity's
-// AfterList hooks keep the aggregate off the database (crud's
-// ErrAggregateMasked). Past it the stat draws nothing and logs why; it
-// never draws a partial total.
 const statRowCap = 100000
 
-// statGroupCap bounds the groups a chart draws. A field with more
-// distinct values draws nothing and logs why: a chart of every customer
-// is a list, not a chart.
 const statGroupCap = 100
 
 // StatValue computes one metric over an entity for a stat card: agg
-// "count" (or empty), or "sum" of an Int, Float or Decimal field, both
-// computed by the database over every match. where is filter text in the
-// query DSL (`status = "active"`), checked against the entity's fields;
-// format "money" prints a sum as $1,234.00 (the currency symbol is the
-// i18nui.EntityCurrency entry), anything else as a number. A
-// refused read, a bad filter, an unknown agg or a failed query prints
-// "—": a stat sits beside content the caller can see, and must not
-// announce what it cannot.
+// "count" (or ""), or "sum" of a numeric field, over the rows matching where
+// (query DSL). format "money" prints a currency. A refused read, bad filter,
+// unknown agg or failed query prints "—".
 func (u *UI) StatValue(ctx context.Context, entityName, agg, field, where, format string) string {
 	if agg == "" || agg == "count" {
 		if n, ok := u.Count(ctx, entityName, where); ok {
@@ -72,11 +60,7 @@ func (u *UI) StatValue(ctx context.Context, entityName, agg, field, where, forma
 }
 
 // CheckStat reports why StatValue could never compute this spec: an
-// unknown entity or agg, a sum with no visible, queryable Int, Float or
-// Decimal field (or a count given one), a filter that does not parse
-// against the entity's fields, or a format other than "" or "money"
-// ("money" only on a sum). A host checks a configured stat with it at
-// boot, so a typo fails the start rather than drawing "—" forever. It is
+// unknown entity or agg, a bad sum field, filter or format. It is
 // CheckStatFields over the registered entity's fields.
 func (u *UI) CheckStat(entityName, agg, field, where, format string) error {
 	m, err := u.meta(entityName)
@@ -86,12 +70,8 @@ func (u *UI) CheckStat(entityName, agg, field, where, format string) error {
 	return CheckStatFields(entityName, m.e.GetFields(), agg, field, where, format)
 }
 
-// CheckStatFields is CheckStat's rule over a field list, for a caller
-// that judges a stat before any app exists: the app spec load runs it
-// over the fields the generated entity registers, so a card the load
-// passes passes CheckStat at boot. fields are what entity.Define leaves
-// on the entity (EntityConfig.WithSystemFields), Hidden ones included:
-// they are skipped here as CheckStat skips them.
+// CheckStatFields is CheckStat's rule over a field list, for a caller that
+// judges a stat before any app exists; Hidden fields are skipped.
 func CheckStatFields(entityName string, fields []schema.Field, agg, field, where, format string) error {
 	switch agg {
 	case "", "count":
@@ -125,11 +105,6 @@ func CheckStatFields(entityName string, fields []schema.Field, agg, field, where
 	return nil
 }
 
-// checkEnumValues refuses an =, != or in comparison on an Enum field
-// whose value is not one of the field's Values. The parse takes any
-// text for an enum (the database column is text), so such a filter
-// counts no row, or every row, and the stat draws a figure that never
-// moves. A contains comparison matches text and is not judged.
 func checkEnumValues(p *filter.Predicate, fields []schema.Field) error {
 	if p == nil {
 		return nil
@@ -161,15 +136,9 @@ func checkEnumValues(p *filter.Predicate, fields []schema.Field) error {
 	return nil
 }
 
-// CheckChart reports why GroupBars, GroupSlices and LineChart could
-// never draw groupBy: an unknown entity, or a groupBy that is not a
-// visible, queryable column the database can group (a JSON field, or a
-// many-to-many relation, which is no column). A no_query field is
-// refused too: the chart would print every stored value as a label. A
-// host checks a configured chart with it at boot, as it checks a stat
-// with CheckStat, so a typo fails the start rather than drawing an
-// empty chart forever. It is CheckChartFields over the registered
-// entity's fields.
+// CheckChart reports why GroupBars, GroupSlices and LineChart could never
+// draw groupBy: an unknown entity, or a groupBy that is not a visible,
+// queryable, groupable column. It is CheckChartFields over the entity's fields.
 func (u *UI) CheckChart(entityName, groupBy string) error {
 	m, err := u.meta(entityName)
 	if err != nil {
@@ -178,8 +147,7 @@ func (u *UI) CheckChart(entityName, groupBy string) error {
 	return CheckChartFields(entityName, m.e.GetFields(), groupBy)
 }
 
-// CheckChartFields is CheckChart's rule over a field list, as
-// CheckStatFields is CheckStat's.
+// CheckChartFields is CheckChart's rule over a field list.
 func CheckChartFields(entityName string, fields []schema.Field, groupBy string) error {
 	f, ok := visibleField(fields, groupBy)
 	if !ok {
@@ -194,8 +162,6 @@ func CheckChartFields(entityName string, fields []schema.Field, groupBy string) 
 	return nil
 }
 
-// visibleField finds the field named name that is not Hidden, the lookup
-// meta.field makes over the fields the API returns.
 func visibleField(fields []schema.Field, name string) (schema.Field, bool) {
 	for _, f := range fields {
 		if f.Name == name && !f.Hidden {
@@ -205,12 +171,9 @@ func visibleField(fields []schema.Field, name string) (schema.Field, bool) {
 	return schema.Field{}, false
 }
 
-// Count is how many records of the entity the caller can read that
-// match where (filter text in the query DSL; "" for all), formatted
-// with digit grouping, under the same read gate, scope and read hooks
-// as the entity's list. It reports false when the read is refused, the
-// filter is bad or the query fails, so a nav count or a badge draws
-// nothing rather than a figure the caller may not see.
+// Count is how many records the caller can read match where ("" for all),
+// formatted with digit grouping. It reports false when the read is
+// refused, the filter is bad or the query fails.
 func (u *UI) Count(ctx context.Context, entityName, where string) (string, bool) {
 	n, ok := u.CountInt(ctx, entityName, where)
 	if !ok {
@@ -219,9 +182,7 @@ func (u *UI) Count(ctx context.Context, entityName, where string) (string, bool)
 	return i18n.Number(ctx, n), true
 }
 
-// CountInt is Count as a number, for a figure the caller computes with
-// (a rate drawn on a ui.Gauge): the same read gate, scope, read hooks
-// and false on a refused read, a bad filter or a failed query.
+// CountInt is Count as a number.
 func (u *UI) CountInt(ctx context.Context, entityName, where string) (int, bool) {
 	m, opts, ok := u.statRead(ctx, entityName, where)
 	if !ok {
@@ -235,12 +196,8 @@ func (u *UI) CountInt(ctx context.Context, entityName, where string) (int, bool)
 	return n, true
 }
 
-// CountView counts the records a declared view lists for the caller:
-// its Where, or its registered Filter func, under the same read gate,
-// scope and read hooks as CountInt. ok is false for a view that is not
-// declared or whose Show hides it from the caller (the list would fall
-// back to All), and for a refused read, a failed filter or a failed
-// query.
+// CountView counts the records a declared view lists for the caller. ok
+// is false for an undeclared or hidden view, a refused read or a failure.
 func (u *UI) CountView(ctx context.Context, entityName, view string) (int, bool) {
 	m, opts, ok := u.statRead(ctx, entityName, "")
 	if !ok || view == "" || !declaredAndViewable(ctx, m, view) {
@@ -261,10 +218,7 @@ func (u *UI) CountView(ctx context.Context, entityName, view string) (int, bool)
 }
 
 // CountUpTo counts the records the caller can read that match where, up
-// to limit: a read of at most limit+1 ids, under the same gates and
-// scope as Count, for when an exact count is too slow. more reports
-// that there are more than limit; ok is false when the read is refused
-// or fails.
+// to limit; more reports there are more, ok is false when refused or failed.
 func (u *UI) CountUpTo(ctx context.Context, entityName, where string, limit int) (n int, more, ok bool) {
 	if limit < 1 {
 		return 0, false, false
@@ -286,13 +240,9 @@ func (u *UI) CountUpTo(ctx context.Context, entityName, where string, limit int)
 	return len(rows), false, true
 }
 
-// LastUpdated is when the newest record the caller can read was last
-// written: the greatest updated_at in the caller's scope, read through
-// the entity's read hooks. It reports false when the entity has no
-// readable, sortable updated_at, the read is refused, no row has one, or
-// the newest value is not a time (a masked column): a stat card then
-// prints no date rather than a wrong one. Rows without a value are left
-// out, so a database that sorts NULL first does not hide the newest.
+// LastUpdated is the greatest updated_at the caller can read. It reports
+// false when there is no readable, sortable updated_at, the read is
+// refused, no row has one, or the newest value is not a time.
 func (u *UI) LastUpdated(ctx context.Context, entityName string) (time.Time, bool) {
 	if m, err := u.meta(entityName); err != nil {
 		return time.Time{}, false
@@ -317,8 +267,6 @@ func (u *UI) LastUpdated(ctx context.Context, entityName string) (time.Time, boo
 	return parseTime(m.rowValue(rows[0], "updated_at"))
 }
 
-// statSum totals field exactly: the database's SUM, or, when AfterList
-// hooks would mask what it totals, the masked rows up to statRowCap.
 func (u *UI) statSum(ctx context.Context, m *meta, field string, opts crud.ListOptions) (*big.Rat, bool) {
 	text, err := m.sumRows(ctx, field, opts)
 	if err == nil {
@@ -338,7 +286,6 @@ func (u *UI) statSum(ctx context.Context, m *meta, field string, opts crud.ListO
 	}
 	total := new(big.Rat)
 	for _, r := range rows {
-		// A value a hook masked to text is not a number, and adds nothing.
 		if v, ok := new(big.Rat).SetString(cell(m.rowValue(r, field))); ok {
 			total.Add(total, v)
 		}
@@ -346,8 +293,6 @@ func (u *UI) statSum(ctx context.Context, m *meta, field string, opts crud.ListO
 	return total, true
 }
 
-// statRows reads field over every match through the read hooks, refusing
-// past statRowCap rather than drawing part of the data.
 func (u *UI) statRows(ctx context.Context, m *meta, field string, opts crud.ListOptions) ([]map[string]any, bool) {
 	opts.Fields = []string{field}
 	opts.Limit = statRowCap + 1
@@ -364,8 +309,6 @@ func (u *UI) statRows(ctx context.Context, m *meta, field string, opts crud.List
 	return rows, true
 }
 
-// statRead resolves the entity, checks the caller may list it, and parses
-// where into the read's predicate.
 func (u *UI) statRead(ctx context.Context, entityName, where string) (*meta, crud.ListOptions, bool) {
 	m, err := u.meta(entityName)
 	if err != nil {
@@ -388,11 +331,6 @@ type groupCount struct {
 	n   int
 }
 
-// groupCounts counts rows per distinct value of groupBy, computed by the
-// database (or over the masked rows, as statSum falls back), ordered by
-// value, an enum's in its declared order. A refused read is "no data",
-// the same as an empty result, so a chart never tells a visitor which
-// entities exist; so is a field with more than statGroupCap values.
 func (u *UI) groupCounts(ctx context.Context, entityName, groupBy string) (*meta, []groupCount) {
 	m, opts, ok := u.statRead(ctx, entityName, "")
 	if !ok {
@@ -435,8 +373,6 @@ func (u *UI) groupCounts(ctx context.Context, entityName, groupBy string) (*meta
 	return m, out
 }
 
-// enumRank is v's place in f's declared values; a value the enum no
-// longer declares sorts after them.
 func enumRank(f schema.Field, v string) int {
 	if i := slices.Index(f.Values, v); i >= 0 {
 		return i
@@ -444,8 +380,6 @@ func enumRank(f schema.Field, v string) int {
 	return len(f.Values)
 }
 
-// groupLabel is a group's label: the field's translated value label, or
-// a dash for an empty value.
 func groupLabel(ctx context.Context, m *meta, field, key string) string {
 	if key == "" {
 		return "—"
@@ -473,8 +407,7 @@ func (u *UI) GroupSlices(ctx context.Context, entityName, groupBy string) []ui.P
 	return out
 }
 
-// LineChart draws the grouped counts as a single-series line chart. Fewer
-// than two groups draws ui.LineChart's empty state.
+// LineChart draws the grouped counts as a single-series line chart.
 func (u *UI) LineChart(ctx context.Context, entityName, groupBy string) render.HTML {
 	m, counts := u.groupCounts(ctx, entityName, groupBy)
 	labels := make([]string, 0, len(counts))
