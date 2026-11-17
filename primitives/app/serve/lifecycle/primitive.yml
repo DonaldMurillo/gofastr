@@ -4,3 +4,83 @@ code:
   - framework/lifecycle/
 docs:
   - framework/docs/content/application-hosts.md
+invariants:
+  - id: drain-in-order-one-at-a-time
+    rule: Shutdown runs drainers one at a time in registration order, a PrependDrainer drainer ahead of every earlier one.
+    enforced_by:
+      - test: framework/lifecycle.TestPrependDrainerRunsFirst
+  - id: drain-under-one-shared-timeout
+    rule: All drainers share one drain context whose deadline is the shutdown timeout from Shutdown's start, thirty seconds unless set, and a non-positive timeout keeps the current one.
+    enforced_by:
+      - test: framework/lifecycle.TestDrainTimeout
+      - test: framework/lifecycle.TestSlowDrainerInterrupted
+      - test: framework/lifecycle.TestDefaultDrainTimeoutIsThirtySeconds
+      - test: framework/lifecycle.TestNonPositiveShutdownTimeoutKeepsDefault
+  - id: shutdown-doc-names-the-order
+    rule: Shutdown's doc says drainers run in registration order under one shared timeout and never says concurrently.
+    enforced_by:
+      - test: framework/lifecycle.TestShutdownDocNamesDrainOrder
+  - id: drains-exactly-once
+    rule: A drainer runs at most once however many times, or however concurrently, Shutdown is called.
+    enforced_by:
+      - test: framework/lifecycle.TestShutdownDrainsExactlyOnce
+      - test: framework/lifecycle.TestConcurrentShutdownDrainsAtMostOnce
+  - id: no-registration-after-shutdown
+    rule: Every registration surface returns ErrShuttingDown once Shutdown has begun and adds nothing.
+    enforced_by:
+      - test: framework/lifecycle.TestAllRegisterSurfacesRefuseAfterShutdown
+  - id: registration-rechecks-under-the-lock
+    rule: whileLive checks the shutdown flag again after taking the lock, so a registration racing Shutdown's snapshot is refused rather than added after it.
+    judge: Does this change add to drainers or checkers without whileLive, or drop its check under the lock?
+  - id: first-error-and-panics-are-errors
+    rule: Shutdown returns the first drainer error, and a panicking drainer is recovered into an error while the rest still run.
+    enforced_by:
+      - test: framework/lifecycle.TestShutdownReturnsTheFirstDrainError
+      - test: framework/lifecycle.TestDrainerPanicIsolated
+  - id: unhealthy-from-shutdown-start
+    rule: IsHealthy is false from the moment Shutdown begins, and otherwise false when any checker is unhealthy.
+    enforced_by:
+      - test: framework/lifecycle.TestShutdownMarksUnhealthy
+      - test: framework/lifecycle.TestIsHealthyWithCheckers
+  - id: signals-or-context
+    rule: RunWithSignals runs the shutdown on SIGINT or SIGTERM and returns nil without one when ctx ends first.
+    enforced_by:
+      - test: framework/lifecycle.TestRunWithSignalsTermsOnSIGTERM
+      - test: framework/lifecycle.TestRunWithSignalsReturnsNilWhenContextEnds
+  - id: timeout-read-under-the-lock
+    rule: Shutdown reads the timeout under the same lock SetShutdownTimeout writes it under.
+    enforced_by:
+      - test: framework/lifecycle.TestTimeoutRaceShutdownVsSetter
+decisions:
+  - id: sequential-drain
+    date: 2026-11-17
+    status: accepted
+    decision: Drainers run sequentially; a drainer that wants parallel work starts goroutines inside its own Drain.
+    rejected:
+      - option: Drain concurrently.
+        why: App stop hooks rely on LIFO order through PrependDrainer, so a battery's close runs after the user code that depends on it.
+    upholds: [drain-in-order-one-at-a-time]
+  - id: late-registration-dropped
+    date: 2026-11-17
+    status: accepted
+    decision: A registration after Shutdown has begun is refused with ErrShuttingDown.
+    rejected:
+      - option: Queue it for the running shutdown.
+        why: The drain set is snapshotted at the start, and a late addition would make it depend on timing.
+    upholds: [no-registration-after-shutdown, registration-rechecks-under-the-lock]
+  - id: non-positive-timeout-ignored
+    date: 2026-11-17
+    status: accepted
+    decision: WithTimeout and SetShutdownTimeout ignore d <= 0.
+    rejected:
+      - option: Store the zero.
+        why: context.WithTimeout(ctx, 0) hands every drainer an already expired context, so nothing drains.
+    upholds: [drain-under-one-shared-timeout]
+  - id: app-shutdown-through-signals
+    date: 2026-11-17
+    status: accepted
+    decision: RunWithSignalsUsing takes the shutdown function, so the App's SIGTERM runs App.Shutdown (HTTP drain, batteries, then lifecycle) rather than lifecycle.Shutdown alone.
+    rejected:
+      - option: Call lc.Shutdown on the signal.
+        why: The HTTP server and batteries would not be stopped.
+    upholds: [signals-or-context]
