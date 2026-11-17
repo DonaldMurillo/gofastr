@@ -667,13 +667,17 @@ func TestRestoreTestsWaitsOutAGitTheCLILeftRunning(t *testing.T) {
 	seen := make(chan struct{})
 	indexLockSeen = func() { close(seen) }
 	t.Cleanup(func() { indexLockSeen = func() {} })
+	removed := make(chan struct{})
 	go func() {
+		defer close(removed)
 		select {
 		case <-seen:
 		case <-time.After(10 * time.Second):
+			t.Error("restoreTests never waited on the held index lock")
 		}
 		_ = os.Remove(lock)
 	}()
+	defer func() { <-removed }()
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		t.Fatal(err)
