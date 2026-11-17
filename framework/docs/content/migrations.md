@@ -363,7 +363,7 @@ migration put on a column the entity leaves optional is not removed.
 > [Generating from a host binary](#generating-from-a-host-binary-owned-go-path)
 > below). For finer control, the lower-level
 > `migrate.GeneratePlan(plan, snapshot, dialect)` returns the Up/Down SQL and
-> next snapshot directly (write them with `migrate.RenderMigrationFile` /
+> next snapshot directly (write them with `migrate.RenderMigrationFileChecked` /
 > `SaveSnapshot`).
 
 It then updates the snapshot. The typical loop:
@@ -770,7 +770,7 @@ committed snapshot and writes the next numbered migration file, updating the
 snapshot. It is the same loop the app spec CLI runs, byte-for-byte (same
 `NNNN_<slug>.sql` naming, same `-- +migrate` directives, same
 `schema.snapshot.json`), because both paths share `GeneratePlan` +
-`RenderMigrationFile` + `SaveSnapshot`.
+`RenderMigrationFileChecked` + `SaveSnapshot`.
 
 Migration generation writes and syncs a temporary file in the migration
 directory before atomically publishing the numbered `.sql` entry. Publication
@@ -1055,7 +1055,7 @@ Go-registered routines/views (see the Scope note above):
 ```go
 plan := migrate.Plan{Registry: reg, Routines: routines, Views: views}
 up, down, next, _ := migrate.GeneratePlan(plan, prevSnapshot, migrate.DialectPostgres)
-// then migrate.RenderMigrationFile(version, name, up, down) + migrate.SaveSnapshot(...)
+// then migrate.RenderMigrationFileChecked(version, name, up, down) + migrate.SaveSnapshot(...)
 ```
 
 `GeneratePlan` emits each new/changed routine's body forward and restores the
