@@ -89,7 +89,6 @@ type MagicLinkConfig struct {
 }
 
 func (c *MagicLinkConfig) defaults() {
-	// Deprecated field, defaulted only so it reads what the stores mint.
 	if c.TokenTTL <= 0 {
 		c.TokenTTL = 15 * time.Minute
 	}
