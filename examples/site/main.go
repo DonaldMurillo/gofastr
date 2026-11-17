@@ -803,7 +803,9 @@ func paletteCommands() []ui.PaletteCommand {
 // siteSearchConfig labels results by section and indexes the headless
 // showcase once: its other themes render the default's text.
 func siteSearchConfig() sitesearch.Config {
-	var exclude []string
+	// The tracker's issues are fixture data; indexed, they outrank the
+	// docs for words like "auth".
+	exclude := []string{"/examples/tracker"}
 	for _, r := range landingRoutes[1:] {
 		exclude = append(exclude, "/examples/headless/"+r.Segment)
 	}
