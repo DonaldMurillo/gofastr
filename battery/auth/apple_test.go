@@ -320,3 +320,49 @@ func TestIsFormPostCallback(t *testing.T) {
 		}
 	}
 }
+
+// A host that mounts auth.CSRF itself gets the BFF exemptions from
+// WithCSRFAuthRoutes: Apple's POST reaches the callback and logout
+// passes, while any other POST still needs the token.
+func TestCSRFAuthRoutesLetsFormPostCallbackThrough(t *testing.T) {
+	f := newFakeApple(t)
+	mgr := New(AuthConfig{DevMode: true, UserStore: newMemoryUserStore()})
+	mgr.Use(NewCorePlugin())
+	mgr.Use(NewOAuth2Plugin(OAuth2Config{
+		Providers:   map[string]OAuth2Provider{"apple": f.provider(t)},
+		StateSecret: "test-secret-key-state",
+	}))
+	app := framework.NewApp()
+	app.Use(CSRF(WithCSRFAuthRoutes(mgr)))
+	if err := mgr.Init(nil); err != nil {
+		t.Fatal(err)
+	}
+	mgr.RegisterRoutes(app.Router())
+	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	app.Router().Post("/auth/oauth/apple/other", ok)
+	app.Router().Post("/auth/logout-all", ok)
+	send := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("code=c&state=s"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", f.issuer)
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		w := httptest.NewRecorder()
+		app.Router().ServeHTTP(w, req)
+		return w
+	}
+	if w := send("/auth/oauth/apple/callback"); w.Code != http.StatusOK || w.Header().Get("Refresh") == "" {
+		t.Fatalf("Apple's POST under auth.CSRF(WithCSRFAuthRoutes): %d %s", w.Code, w.Body)
+	}
+	for _, path := range []string{"/auth/oauth/apple/other", "/auth/logout-all"} {
+		if w := send(path); w.Code != http.StatusForbidden {
+			t.Fatalf("%s without a token: %d, want 403", path, w.Code)
+		}
+	}
+	same := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	same.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	app.Router().ServeHTTP(w, same)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("same-origin logout without a token: %d, want 303", w.Code)
+	}
+}

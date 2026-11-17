@@ -73,7 +73,29 @@ invariants:
     rule: Init registers its own IdentityEmail resolver only for an EntityUserStore, and otherwise keeps the registered resolver, adding the manager's canonicalizer only to the battery's auth_users default or a resolver with none.
     enforced_by:
       - test: battery/auth.TestInitKeepsHostEmailResolver
+  - id: logout-clears-site-data
+    rule: A successful POST /logout sends Clear-Site-Data, "cache", "storage" unless CorePlugin.WithLogoutClearSiteData sets other types or none; a logout whose revoke failed sends none.
+    enforced_by:
+      - test: battery/auth.TestLogoutSendsClearSiteData
+      - test: battery/auth.TestLogoutClearSiteDataConfigurable
+  - id: csrf-exempts-only-self-guarded-auth-routes
+    rule: WithBFFPosture and WithCSRFAuthRoutes exempt from auth.CSRF exactly {BasePath}/logout and POST {BasePath}/oauth/{provider}/callback, both of which carry their own cross-site check; a sibling path under BasePath still needs the token.
+    enforced_by:
+      - test: battery/auth.TestCSRFAuthRoutesLetsFormPostCallbackThrough
+      - test: battery/auth.TestBFFPostureLetsFormPostCallbackThrough
+      - test: battery/auth.TestBFFPostureSignOutFormPassesLogoutOriginGuard
+      - test: battery/auth.TestBFFPostureLogoutExemptionStaysSameOriginAndExact
 decisions:
+  - id: logout-clear-site-data-skips-cookies
+    date: 2026-11-17
+    status: accepted
+    decision: Logout's default Clear-Site-Data is "cache", "storage", so the next person at the browser cannot page back into the signed-out account or read its stored state.
+    rejected:
+      - option: Include "cookies".
+        why: Browsers clear it for the whole registrable domain, signing the visitor out of sibling subdomains, and the session cookie is already expired by the same response.
+      - option: Send no Clear-Site-Data by default.
+        why: The back/forward cache and runtime storage keep the signed-in pages after logout (issue 707).
+    upholds: [logout-clears-site-data]
   - id: erasure-canonicalizes-the-stored-address
     date: 2026-11-16
     status: accepted

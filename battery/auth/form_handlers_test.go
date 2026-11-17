@@ -231,3 +231,34 @@ func mustReadBody(t *testing.T, resp *http.Response) string {
 	n, _ := resp.Body.Read(buf)
 	return string(buf[:n])
 }
+
+func TestLogoutSendsClearSiteData(t *testing.T) {
+	srv, _ := setupAuthTestServer(t)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/auth/logout", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("logout status = %d, want 204", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Clear-Site-Data"); got != `"cache", "storage"` {
+		t.Fatalf("Clear-Site-Data = %q, want %q", got, `"cache", "storage"`)
+	}
+}
+
+func TestLogoutClearSiteDataConfigurable(t *testing.T) {
+	if got := NewCorePlugin().WithLogoutClearSiteData("cache", "cookies").clearSiteData; got != `"cache", "cookies"` {
+		t.Fatalf("clearSiteData = %q", got)
+	}
+	if got := NewCorePlugin().WithLogoutClearSiteData().clearSiteData; got != "" {
+		t.Fatalf("WithLogoutClearSiteData() = %q, want none", got)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("unknown type did not panic")
+		}
+	}()
+	NewCorePlugin().WithLogoutClearSiteData(`cache", "x`)
+}

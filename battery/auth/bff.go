@@ -43,13 +43,7 @@ func WithBFFPosture(mgr *AuthManager, cfg BFFPostureConfig) framework.AppOption 
 	}
 	origins := validateBFFOrigins(cfg.AllowedOrigins)
 	csrfOpts := append([]CSRFOption(nil), cfg.CSRFOptions...)
-	// CorePlugin's logout handler performs its own same-origin request check.
-	// Exempting exactly that route keeps the static ui.SignOut form usable
-	// without accidentally exempting a future /logout-all sibling.
-	csrfOpts = append(csrfOpts, withCSRFSkipExactPath(mgr.Config().BasePath+"/logout"))
-	csrfOpts = append(csrfOpts, withCSRFSkip(func(r *http.Request) bool {
-		return r.Method == http.MethodPost && isFormPostCallback(mgr.Config().BasePath, r.URL.Path)
-	}))
+	csrfOpts = append(csrfOpts, WithCSRFAuthRoutes(mgr))
 	csrfOpts = append(csrfOpts, WithCSRFCookieSecure(true))
 
 	return func(app *framework.App) {
@@ -78,8 +72,24 @@ func WithBFFPosture(mgr *AuthManager, cfg BFFPostureConfig) framework.AppOption 
 	}
 }
 
-func withCSRFSkipExactPath(path string) CSRFOption {
-	return withCSRFSkip(func(r *http.Request) bool { return r.URL.Path == path })
+// WithCSRFAuthRoutes exempts the two auth routes that carry their own
+// cross-site check from a hand-mounted auth.CSRF, as WithBFFPosture
+// does: POST {BasePath}/logout, and the form-POST OAuth callback
+// POST {BasePath}/oauth/{provider}/callback that Sign in with Apple
+// answers on. Nothing else under BasePath is exempt.
+//
+//	app.Use(auth.CSRF(auth.WithCSRFAuthRoutes(mgr)))
+func WithCSRFAuthRoutes(mgr *AuthManager) CSRFOption {
+	if mgr == nil {
+		panic("auth: WithCSRFAuthRoutes requires AuthManager")
+	}
+	return withCSRFSkip(func(r *http.Request) bool {
+		base := mgr.Config().BasePath
+		if r.URL.Path == base+"/logout" {
+			return true
+		}
+		return r.Method == http.MethodPost && isFormPostCallback(base, r.URL.Path)
+	})
 }
 
 func withCSRFSkip(skip func(*http.Request) bool) CSRFOption {

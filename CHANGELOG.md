@@ -205,6 +205,15 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr upgrade` finds the Go spellings.
 
 ### Added
+- **Logout sends `Clear-Site-Data`.** A successful `POST /auth/logout`
+  now sends `Clear-Site-Data: "cache", "storage"`, so the back button
+  can't show the signed-out account's pages and the origin's storage is
+  emptied. `NewCorePlugin().WithLogoutClearSiteData(types...)` picks
+  other types; called with none, logout sends no header.
+- **`auth.WithCSRFAuthRoutes(mgr)`.** A host that mounts `auth.CSRF()`
+  itself gets the exemptions `WithBFFPosture` applies: the logout path and
+  the form-POST OAuth callback Sign in with Apple answers on. Replace a
+  hand-written `WithCSRFSkipPaths("/auth/oauth/apple/callback")` with it.
 - **Scriptless record edits, as an opt-in** ([entityui](framework/docs/content/entityui.md)).
   `UI.WithScriptlessEdits()` points the edit form and the masked-field
   Replace forms at `POST <write base>/<id>/_save`, served by the new

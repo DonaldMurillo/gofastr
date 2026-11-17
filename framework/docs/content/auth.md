@@ -173,7 +173,7 @@ with the ordinary invalid-credentials 401 and leaves no session.
 
 | Plugin | Routes | Notes |
 |---|---|---|
-| `CorePlugin` | `POST /auth/{login,register,logout,password}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. Next to a 2FA plugin, `Init` requires `NewCorePlugin().WithTwoFactorURL(path)`: an HTML form login of a 2FA account redirects there instead of to its `next` page, which would refuse the pending session (a JSON login answers `two_factor_required`). `POST /auth/password` is a signed-in user's own password change (see [Changing the password](#changing-the-password)). |
+| `CorePlugin` | `POST /auth/{login,register,logout,password}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. Next to a 2FA plugin, `Init` requires `NewCorePlugin().WithTwoFactorURL(path)`: an HTML form login of a 2FA account redirects there instead of to its `next` page, which would refuse the pending session (a JSON login answers `two_factor_required`). `POST /auth/password` is a signed-in user's own password change (see [Changing the password](#changing-the-password)). A successful logout sends `Clear-Site-Data: "cache", "storage"`, which empties the HTTP and back/forward caches and the origin's storage, so the back button can't show the signed-out account's pages. `WithLogoutClearSiteData(types...)` picks other types; called with none, logout sends no header. `"cookies"` is not in the default because browsers apply it to every subdomain of the site. |
 | `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET /auth/magic-link/verify` | Passwordless email-link sign-in. Auto-creates users on first verify and marks them verified. On an existing account whose address is unverified it claims the account first (see [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account)). Needs `EmailVerifiedChecker` on the store for existing accounts. Refuses to operate without `EmailSender` unless `DevMode` is explicitly set. Next to a 2FA plugin, `Init` requires `TwoFactorURL`: a 2FA account's sign-in is pending and goes there instead of `OnSuccessURL` (see [Following a magic link does not sign you in; confirming does](#following-a-magic-link-does-not-sign-you-in-confirming-does)). The stores mint 32 random bytes per token. |
 | `EmailCodePlugin` | `POST /auth/email-code/{send,verify}` | Passwordless sign-in with an eight-digit code mailed to the address, typed into the browser that asked for it. Same account rules as `MagicLinkPlugin` (auto-create, claim an unverified account, 2FA stays pending). Needs `EmailSender` unless `DevMode`, and `TwoFactorURL` next to a 2FA plugin. See [Emailed sign-in codes](#emailed-sign-in-codes). |
 | `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback`, `POST /auth/oauth/{provider}/callback` (form-post providers only) | OAuth 2.0 (Google, GitHub and Apple built in, any OIDC provider through `OIDCProvider`). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does); it fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. Next to a 2FA plugin, `Init` requires `OAuth2Config.TwoFactorURL`: a 2FA account's sign-in is pending and goes there instead of `/`. See [OAuth identity linking](#oauth-identity-linking). |
@@ -1410,6 +1410,15 @@ is true.
 form is exempt from the generic CSRF token check only at the configured auth
 logout path; the auth handler still rejects cross-origin form submissions.
 All other cookie-authenticated mutations require a CSRF token.
+
+A host that mounts `auth.CSRF()` itself, without `WithBFFPosture`, gets
+the same two exemptions from `auth.WithCSRFAuthRoutes(mgr)`: the logout
+path and the form-POST OAuth callback, which both check the request's
+origin themselves. No other path under `BasePath` is exempt.
+
+```go
+app.Use(auth.CSRF(auth.WithCSRFSecret(secret), auth.WithCSRFAuthRoutes(mgr)))
+```
 
 ## Naming conventions: DB columns vs. wire JSON
 
@@ -2777,8 +2786,9 @@ What it does differently from a plain `OIDCProvider`:
 
 `WithBFFPosture` lets Apple's POST through its CSRF check and origin
 guard on `{BasePath}/oauth/{provider}/callback` only. A host that mounts
-`auth.CSRF()` itself must exempt that path:
-`auth.CSRF(auth.WithCSRFSkipPaths("/auth/oauth/apple/callback"))`.
+`auth.CSRF()` itself must exempt that path with
+`auth.CSRF(auth.WithCSRFAuthRoutes(mgr))`, which reads `BasePath` from
+the manager.
 
 PKCE is sent as with every provider. If Apple ever refuses it, set
 `DisablePKCE`. `Issuer` and `HTTPClient` exist for tests.
