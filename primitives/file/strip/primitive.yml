@@ -13,13 +13,6 @@ twins:
         note: applyOrientation and the rotate and mirror helpers, for the strip path's re-encode.
       - path: framework/image/geometry.go
         note: Image.AutoOrient over Rotate, Flip and Flop, for the image pipeline.
-  - job: Cap the pixels, JPEG scans, scan-pixels and progressive-coefficient bytes a decode may cost.
-    why: The same import rule keeps the strip path's caps as local constants; the bomb tests compute against framework/image's defaults.
-    sites:
-      - path: framework/file/strip.go
-        note: stripMaxPixels, stripMaxJPEGScans, stripMaxJPEGScanPixels and stripMaxProgressiveJPEGBytes.
-      - path: framework/image/image.go
-        note: DefaultMaxPixels and the other Default decode caps.
 invariants:
   - id: off-by-default
     rule: Without StripMetadata an upload is stored byte for byte, EXIF included.
