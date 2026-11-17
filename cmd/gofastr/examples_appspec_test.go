@@ -740,10 +740,17 @@ func generateAndCompileAppSpec(dir, scratchModule, appSpecPath, src, name string
 	// Repoint app.module at the scratch package so the generated self-imports
 	// resolve to the code just emitted rather than to whatever package is
 	// committed next door.
-	realModule := "github.com/DonaldMurillo/gofastr/examples/" + name
-	moduleLine := "module: " + realModule
-	if !strings.Contains(src, moduleLine) {
-		return fmt.Errorf("%s no longer declares %q — update this test's rewrite", appSpecPath, moduleLine)
+	// A spec lives under examples/ (meridian) or internal/testapps/ (the
+	// generator's fixtures), and declares its own path as its module.
+	var moduleLine string
+	for _, parent := range []string{"examples/", "internal/testapps/"} {
+		if l := "module: github.com/DonaldMurillo/gofastr/" + parent + name; strings.Contains(src, l) {
+			moduleLine = l
+			break
+		}
+	}
+	if moduleLine == "" {
+		return fmt.Errorf("%s declares neither examples/%s nor internal/testapps/%s as its module — update this test's rewrite", appSpecPath, name, name)
 	}
 	rewritten := strings.Replace(src, moduleLine, "module: "+scratchModule, 1)
 	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(rewritten), 0o644); err != nil {
