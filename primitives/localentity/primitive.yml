@@ -1,0 +1,9 @@
+primitive: localentity
+summary: Records kept in the visitor's browser - Define declares a core-ui/localdb store with schema fields, and its Form, List, Row and Count render server-side for the localentity and localentity-form behaviours to fill and save.
+code:
+  - framework/localentity/
+docs:
+  - framework/docs/content/local-entities.md
+  - framework/docs/content/localdb.md
+on_change:
+  - agents.md is the package's agentsinv entry (registered in agents.go); keep it in step with Define and its options.

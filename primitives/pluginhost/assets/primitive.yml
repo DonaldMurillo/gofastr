@@ -1,0 +1,7 @@
+primitive: pluginhost.assets
+summary: The AssetServer that serves a plugin's embedded client files with their Content-Type, framing, CSP, worker CSP and cache headers.
+code:
+  - framework/pluginhost/assets.go
+  - framework/pluginhost/assets_worker.go
+docs:
+  - framework/docs/content/plugin-platform.md
