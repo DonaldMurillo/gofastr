@@ -6,3 +6,40 @@ docs:
   - framework/docs/content/testkit.md
 on_change:
   - These helpers only run against a real Postgres cluster; a change here needs a run with a reachable admin DSN, since the short suite without one skips them.
+invariants:
+  - id: admin-dsn-validated
+    rule: ValidateAdminDSN refuses an empty DSN, naming it empty, and one that does not start with postgres:// or postgresql://, with the password redacted from the error.
+    enforced_by:
+      - test: framework/testkit.TestNewIsolatedDBHardFailsWithoutDSN
+      - test: framework/testkit.TestSweepRedactHidesThePassword
+  - id: carved-dsn-names-only-the-carved-db
+    rule: The carved DSN replaces the admin DSN's path with the carved name and drops every dbname and database query parameter, keeping credentials, host and other options, and a DSN that does not parse as a postgres URL is an error, never the admin DSN unchanged.
+    enforced_by:
+      - test: framework/testkit.TestCarvedDSNDropsDatabaseOverrides
+      - test: framework/testkit.TestRewriteDBNamePreservesUserHostQuery
+      - test: framework/testkit.TestRewriteDBNameRejectsParseFailures
+  - id: carved-name-is-a-safe-identifier
+    rule: A carved database name is ftest_, at most 40 lowercased letters, digits and underscores of the test name, and a 12-hex random suffix, so it fits Postgres's 63-byte limit and differs on every call.
+    enforced_by:
+      - test: framework/testkit.TestSweepUniqueDBNameIsAShortLowercaseIdentifier
+  - id: carved-db-dropped-at-cleanup
+    rule: NewIsolatedDB terminates the carved database's backends and drops it at cleanup, and on every early-error path after CREATE DATABASE, reporting a failed drop with t.Errorf as a leaked database.
+    enforced_by:
+      - test: framework/testkit.TestNewIsolatedDBCarvesAndDrops
+    judge: Does this change add a path after CREATE DATABASE that returns or fails without dropping the carved database, or swallow a failed DROP?
+decisions:
+  - id: fail-never-skip
+    date: 2026-11-17
+    status: accepted
+    decision: NewIsolatedDB fails the test on a missing or unusable DSN instead of skipping it.
+    rejected:
+      - option: Skip when no database is configured.
+        why: A skipped integration test passes without proving anything.
+    upholds: [admin-dsn-validated]
+  - id: database-per-test
+    date: 2026-11-17
+    status: accepted
+    decision: The public helper carves a whole database per test, while framework/internal/testdb isolates by schema and stays unexported.
+    rejected:
+      - option: Export the schema-based helper.
+        why: Host apps would couple to the framework's own isolation strategy.
