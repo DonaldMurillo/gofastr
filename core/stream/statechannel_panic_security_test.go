@@ -17,7 +17,7 @@ import (
 // recover), runSnapshot :299 (c.source.SnapshotFor), runEvent :381 → deliver :398
 // (c.source.FilterEvent).
 // Finding: production callers run host code on this loop (battery/rtc/room.go:464,
-// examples/webmcp-remote-assist/session.go:232), so one panicking app callback
+// internal/testapps/webmcp-remote-assist/session.go:232), so one panicking app callback
 // kills the whole app server for every user. Every sibling dispatch loop in the
 // repo already carries the net (log/semantic/notify/webhook/redis, App.Start
 // hooks, cron leader, event bridge, acp loaders) — this one is missing it.
@@ -67,7 +67,7 @@ func scRedGuarded(t *testing.T, seam string, call func()) (panicked any) {
 	defer func() {
 		if r := recover(); r != nil {
 			panicked = r
-			t.Errorf("SECURITY: [statechannel-panicnet] %s panicked on a host-supplied SnapshotSource callback (%v) — Run's dispatch loop has no recover, and production callers (battery/rtc/room.go:464, examples/webmcp-remote-assist/session.go:232) run app code on this loop, so one panicking callback kills the whole app server for every user", seam, r)
+			t.Errorf("SECURITY: [statechannel-panicnet] %s panicked on a host-supplied SnapshotSource callback (%v) — Run's dispatch loop has no recover, and production callers (battery/rtc/room.go:464, internal/testapps/webmcp-remote-assist/session.go:232) run app code on this loop, so one panicking callback kills the whole app server for every user", seam, r)
 		}
 	}()
 	call()

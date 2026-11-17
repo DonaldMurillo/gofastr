@@ -11,10 +11,6 @@ game team, a wishlist, a draft, a checklist. It is built on
 [localdb](localdb.md), which you can use directly when you need
 something a form and a list do not cover.
 
-The runnable example is `examples/team-builder`, a Pokémon team
-builder: `go run ./examples/team-builder` and open
-`http://localhost:8093`.
-
 ## Declare an entity
 
 Fields are `core/schema` fields, the same type an entity on the server

@@ -7,7 +7,7 @@ package rtc
 // One lock (Signaler.mu) serializes every room mutation with the
 // channel Publish that reports it, so event order on the wire equals
 // mutation order. This mirrors applyCommand/relaySignal in
-// examples/webmcp-remote-assist: a relayed signal is not room state,
+// internal/testapps/webmcp-remote-assist: a relayed signal is not room state,
 // but it IS a channel event, and a snapshot whose sequence trailed the
 // events a page had already applied would be rejected by the page's
 // reducer, so every Publish here is paired with one room.seq bump

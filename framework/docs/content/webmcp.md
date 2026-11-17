@@ -521,7 +521,7 @@ evaluating script; the bridge does not depend on it.
 
 ## Reference example
 
-`examples/webmcp-remote-assist` composes this whole page end to end:
+`internal/testapps/webmcp-remote-assist` composes this whole page end to end:
 role-cookie authorization beside a document-scoped mount, one typed
 command behind both the manual button and the agent tools, the
 observer's invocation ids correlated with an operator acknowledgement,

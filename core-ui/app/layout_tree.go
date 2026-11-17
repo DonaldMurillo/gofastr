@@ -314,6 +314,7 @@ func NewLayout(name string, spec LayoutSpec, build LayoutFunc) *Layout {
 	for _, o := range spec.Outlets {
 		o.owner = l
 	}
+	l.vtSheet = registerTransitionSheet(l.TransitionCSS())
 	return l
 }
 
@@ -626,6 +627,9 @@ func (l *Layout) wrapTreeLayer(ctx context.Context, chain []LayoutLayer, i, from
 	}
 	if l.spec != nil && l.spec.Style != nil {
 		attrs["data-cui-scope"] = l.spec.Style.OwnedSheet().Name()
+	}
+	if l.vtSheet != "" {
+		attrs["data-cui-comp"] = l.vtSheet
 	}
 	if i == from {
 		for k, v := range docShellAttrs(ctx) {

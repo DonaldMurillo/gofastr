@@ -359,8 +359,8 @@ func TestDesktopBuildDefaultsNameFromID(t *testing.T) {
 }
 
 func TestDesktopTypesFlagParsing(t *testing.T) {
-	f := typesFlags(t, []string{"--pkg", "./examples/desktop-notes", "--out=/tmp/x.d.ts"})
-	if f.pkg != "./examples/desktop-notes" || f.out != "/tmp/x.d.ts" {
+	f := typesFlags(t, []string{"--pkg", "./internal/testapps/desktop-notes", "--out=/tmp/x.d.ts"})
+	if f.pkg != "./internal/testapps/desktop-notes" || f.out != "/tmp/x.d.ts" {
 		t.Fatalf("flags = %+v", f)
 	}
 	def := typesFlags(t, nil)

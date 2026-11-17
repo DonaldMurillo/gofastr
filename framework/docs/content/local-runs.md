@@ -4,8 +4,7 @@ Every gofastr App writes a small record when its listener binds and
 removes it when the server stops. Together the records answer "which
 gofastr apps are running on this machine, where, and how does an agent
 reach each one" without scanning ports. `framework/localrun` reads and
-writes them; `examples/gofastr-runs` is a tracker built on it that
-lists the runs in the browser and serves them to agents over MCP.
+writes them.
 
 ## What a run writes
 

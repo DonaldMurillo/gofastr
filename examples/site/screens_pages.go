@@ -407,7 +407,7 @@ func exHero() render.HTML {
 		Eyebrow: fmt.Sprintf("Examples · %d apps", len(exRowItems())),
 		Title:   fmt.Sprintf("%d reference apps. Each runs in one command.", len(exRowItems())),
 		Lede: render.Join(
-			render.Text("Clone the one that looks like your problem; swap the entity declarations. Each app's full source is under "),
+			render.Text("Meridian is a whole SaaS app to clone and reshape; this site shows every component. Each app's full source is under "),
 			ui.InlineCode("examples/"),
 			render.Text(" in the repo. Run it with "),
 			ui.InlineCode("gofastr dev"),
@@ -425,17 +425,7 @@ func exHero() render.HTML {
 // badge is more than 20% off, so the numbers are re-measured instead of
 // remembered.
 var exampleLoC = map[string]int{
-	"blog":                 270,
-	"site":                 12000,
-	"api-tour":             160,
-	"semantic-demo":        120,
-	"spa":                  140,
-	"embed-demo":           310,
-	"static-site":          60,
-	"backoffice":           310,
-	"processmodule-demo":   620,
-	"webmcp-remote-assist": 2000,
-	"rtc-call":             700,
+	"site": 12000,
 }
 
 // locBadge renders the "~N LoC" badge for one example row; suffix adds a
@@ -458,26 +448,7 @@ func exRowItems() []render.HTML {
 			// build time, shown verbatim in a scrolling block. Drift-guarded by
 			// TestEmbeddedAppSpecsMatchSource.
 			codeBlockScroll("examples/meridian/gofastr.yml", meridianAppSpecYAML, "yaml")),
-		exRow("02", "examples/ecommerce", "ShopFront: storefront", "app generator", "100% generated",
-			"A complete storefront from one gofastr.yml: five related entities (categories, products, orders, order_items, reviews), a themed eight-screen UI, custom endpoints, and seed data. Nothing under app/ is hand-written.",
-			[]string{"Second app generator beside Meridian", "Owner-scoped orders and reviews", "Exercised by its own end-to-end test"},
-			"cd examples/ecommerce && gofastr dev --dir app",
-			codeBlock("examples/ecommerce/gofastr.yml", []render.HTML{
-				ln(com("# 5 entities, 8 screens, auth, seeds: one YAML")),
-				ln(render.Text("$ gofastr generate   "), com("// emits ./app: plain Go")),
-				ln(render.Text("$ go run ./app")),
-			})),
-		exRow("03", "examples/blog", "Go-declared blog", "smallest", locBadge("blog", ""),
-			"Users, posts, comments. Three entities. Start here: it's the end-to-end story in one file.",
-			[]string{"Three entities declared in Go", "Auto-CRUD + Swagger UI + MCP", "SQLite by default; swap for Postgres in main.go"},
-			"cd examples/blog && gofastr dev",
-			codeBlock("examples/blog/main.go", []render.HTML{
-				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"users"`), pn(","), render.Text(" …"), pn(")")),
-				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" …"), pn(")")),
-				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"comments"`), pn(","), render.Text(" …"), pn(")")),
-				ln(render.Text("app."), fn_("Start"), pn("("), str_(`":8080"`), pn(")")),
-			})),
-		exRow("04", "examples/site", "This site (UI showcase)", "largest", locBadge("site", ""),
+		exRow("02", "examples/site", "This site (UI showcase)", "largest", locBadge("site", ""),
 			"Every core-ui pattern + framework/ui component, one page each, plus the docs, SEO, multi-step wizard, and print-battery demos. The site you're reading right now.",
 			[]string{"Every core-ui pattern + framework/ui component", "Docs, philosophy, examples, Kiln pages", "SEO interfaces, sitemap/robots, wizard, print"},
 			"cd examples/site && gofastr dev",
@@ -486,132 +457,11 @@ func exRowItems() []render.HTML {
 				ln(render.Text("app "), pn(":="), render.Text(" framework."), fn_("NewUIHostApp"), pn("("), render.Text("host"), pn(")")),
 				ln(render.Text("app."), fn_("Start"), pn("("), str_(`":8083"`), pn(")")),
 			})),
-		exRow("05", "examples/api-tour", "API tour", "annotated source", locBadge("api-tour", ""),
-			"Every v2 API feature in one annotated main.go, with the curl commands to exercise each one in the file header.",
-			[]string{"Cursor + offset pagination", "Eager loading (?include=…)", "Batch endpoints, SSE entity events, uploads"},
-			"cd examples/api-tour && gofastr dev",
-			codeBlock("examples/api-tour/main.go", []render.HTML{
-				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" …"), pn(")")),
-				ln(com("// cursor + offset paging, ?include=, batch, SSE")),
-				ln(render.Text("app."), fn_("Start"), pn("("), str_(`":8080"`), pn(")")),
-			})),
-		exRow("06", "examples/semantic-demo", "Local semantic search", "no API key", locBadge("semantic-demo", ""),
-			"A markdown corpus indexed locally via battery/semantic. No external API key; works offline.",
-			[]string{"Brute-force cosine, hybrid keyword fusion", "Snapshot + WAL persistence", "Poll-watch for file changes"},
-			"cd examples/semantic-demo && gofastr dev",
-			codeBlock("examples/semantic-demo/main.go", []render.HTML{
-				ln(render.Text("idx, _ "), pn(":="), render.Text(" semantic."), fn_("Open"), pn("("), render.Text("semantic."), ty("Options"), pn("{…})")),
-				ln(render.Text("idx."), fn_("Add"), pn("("), render.Text("ctx, docs…"), pn(")"), render.Text("   "), com("// local vectors")),
-				ln(render.Text("hits, _ "), pn(":="), render.Text(" idx."), fn_("Query"), pn("("), render.Text("ctx, semantic."), ty("Query"), pn("{"), render.Text("Text: "), str_(`"hooks"`), pn(", "), render.Text("Limit: 5"), pn("})")),
-			})),
-		exRow("07", "examples/spa", "Vue + GoFastr API", "BYO client", locBadge("spa", " server"),
-			"For teams who already have a client app. Shows the framework is happy to just be your typed API.",
-			[]string{"Same auto-CRUD entities", "Vue 3 + Vue Router from a CDN, no npm, no build step", "No SSR: the Go app serves JSON and the static files"},
-			"cd examples/spa && gofastr dev",
-			codeBlock("examples/spa/main.go", []render.HTML{
-				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"articles"`), pn(","), render.Text(" …"), pn(")")),
-				ln(com("// JSON API under /api: your Vue app is the client")),
-				ln(render.Text("app."), fn_("Start"), pn("("), str_(`":3090"`), pn(")")),
-			})),
-		exRow("08", "examples/embed-demo", "Embeddable surfaces", "cross-origin", locBadge("embed-demo", ""),
-			"Two servers on different ports: a GoFastr app, and a customer's website that pastes one script tag and gets a live, themed, authenticated panel from it.",
-			[]string{"Single-use handshake nonce, exact origin allowlist", "Frame runtime with no SPA navigation", "Customer brand token applied to the app's own components"},
-			"cd examples/embed-demo && gofastr dev",
-			codeBlock("examples/embed-demo/main.go", []render.HTML{
-				ln(render.Text("embeds, _ "), pn(":="), render.Text(" embed."), fn_("New"), pn("("), render.Text("embed."), ty("Config"), pn("{…})")),
-				ln(render.Text("nonce, _ "), pn(":="), render.Text(" embeds."), fn_("MintNonce"), pn("("), str_(`"reports"`), render.Text(", user.ID, origin, "), render.Text("nil"), pn(")")),
-				ln(com("// the customer pastes: <script src=\".../__gofastr/embed.js\" data-token=…>")),
-			})),
-		exRow("09", "examples/static-site", "Static file server", "no screens", locBadge("static-site", ""),
-			"A plain file server on the framework router: static.Mount serves the pages/ directory, with HTML and CSS straight from disk, no screens, no runtime JS.",
-			[]string{"static.Mount with SPA mode off: only real files serve", "index.html answers /", "API routes can mount beside it on the same router"},
-			"cd examples/static-site && gofastr dev",
-			codeBlock("examples/static-site/main.go", []render.HTML{
-				ln(render.Text("static."), fn_("Mount"), pn("("), render.Text("app."), fn_("Router"), pn("(), static."), ty("Config"), pn("{")),
-				ln(render.Text("  FS: os."), fn_("DirFS"), pn("("), render.Text("pagesDir"), pn("),")),
-				ln(pn("})")),
-				ln(render.Text("app."), fn_("Start"), pn("("), str_(`":3070"`), pn(")")),
-			})),
-		exRow("10", "examples/backoffice", "Entity admin", "battery/admin", locBadge("backoffice", ""),
-			"Three entities and one admin.New call: the whole back-office (list, create, edit, delete) is generated with defaults, behind a demo login. No bespoke JavaScript anywhere in the app.",
-			[]string{"admin.New with AllEntities: true generates every screen", "DataTable island paginates without a reload", "Delete is a data-cui-confirm button; forms are server-rendered"},
-			"cd examples/backoffice && gofastr dev",
-			codeBlock("examples/backoffice/main.go", []render.HTML{
-				ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"products"`), pn(","), render.Text(" …"), pn(")")),
-				ln(render.Text("app."), fn_("RegisterBattery"), pn("("), render.Text("admin."), fn_("New"), pn("("), render.Text("admin."), ty("Config"), pn("{")),
-				ln(render.Text("  Title: "), str_(`"Backoffice"`), pn(", "), render.Text("AllEntities: true"), pn(",")),
-				ln(pn("}))")),
-			})),
-		exRow("11", "examples/processmodule-demo", "Process-isolated module", "moduleproto", locBadge("processmodule-demo", ""),
-			"A third-party module as its own process, plus the host app that runs it. The module speaks moduleproto over stdio, serves four routes and one tool, and answers a reverse entity query. The host registers it as an untrusted module, so it runs only where the sandbox passes every probe.",
-			[]string{"The module depends only on moduleproto + the standard library", "Handshake, ready, health, http, drain, tool.list, tool.call", "The host refuses the module, with the probe report, where the sandbox does not conform"},
-			"go run ./examples/processmodule-demo/host -module dist/examples/processmodule-demo",
-			codeBlock("examples/processmodule-demo/main.go", []render.HTML{
-				ln(render.Text("codec, _ "), pn(":="), render.Text(" moduleproto."), fn_("NewCodec"), pn("("), render.Text("os.Stdin, os.Stdout, …"), pn(")")),
-				ln(render.Text("peer "), pn(":="), render.Text(" moduleproto."), fn_("NewPeer"), pn("("), render.Text("codec, moduleproto.RoleChild"), pn(")")),
-				ln(render.Text("peer."), fn_("Handle"), pn("("), render.Text("moduleproto.MethodHTTP, serveRoute"), pn(")")),
-				ln(render.Text("peer."), fn_("Start"), pn("(); "), pn("<-"), render.Text("peer."), fn_("Done"), pn("()")),
-			})),
-		exRow("12", "examples/webmcp-remote-assist", "WebMCP remote assist", "WebMCP + WebRTC", locBadge("webmcp-remote-assist", ""),
-			"One binary, one origin, two roles: a support console whose in-browser agent guides an operator through a camera session. Support-only WebMCP tool discovery, one typed command behind the button and the tools, and peer-to-peer video with server-side signaling only.",
-			[]string{"Tools scoped to /support and authorization-wrapped", "Role cookies authorize; the WebMCP header only attributes", "Sequenced realtime state over the ws runtime module"},
-			"cd examples/webmcp-remote-assist && gofastr dev",
-			codeBlock("examples/webmcp-remote-assist/main.go", []render.HTML{
-				ln(render.Text("tools "), pn(":="), render.Text(" webmcp."), fn_("New"), pn("("), render.Text("webmcp."), fn_("WithInstructions"), pn("(…))")),
-				ln(render.Text("group."), fn_("Handle"), pn("("), render.Text("rt, sendInstruction, handler,")),
-				ln(render.Text("  webmcp."), fn_("WithHTTPMiddleware"), pn("("), render.Text("requireSupport"), pn("))")),
-				ln(render.Text("webmcp."), fn_("WithDocumentScope"), pn("("), render.Text("supportScope"), pn(")")),
-			})),
-		exRow("13", "examples/rtc-call", "WebRTC call rooms", "battery/rtc", locBadge("rtc-call", ""),
-			"Anonymous users, rooms by name: the dogfood app for the rtc signaling battery. The lobby trades a display name for a cookie; the room page runs one peer connection per peer with chat on a negotiated data channel, and the Go process relays handshakes only, never media.",
-			[]string{"rtc.New + RegisterPlugin: zero hand-rolled signaling", "Identity server-derived through Config.Authorize", "Peer-to-peer camera and chat; the server sees neither"},
-			"cd examples/rtc-call && gofastr dev",
-			codeBlock("examples/rtc-call/main.go", []render.HTML{
-				ln(render.Text("sig "), pn(":="), render.Text(" rtc."), fn_("New"), pn("("), render.Text("rtc."), ty("Config"), pn("{ … }")),
-				ln(render.Text("app."), fn_("RegisterPlugin"), pn("("), render.Text("sig"), pn(")")),
-			})),
 	}
-}
-
-// exAppSpecs is row 14: the declarative examples that are app specs
-// only, no Go until `gofastr generate` runs. It shares exRowShell with
-// the runnable rows but stays out of exRowItems, whose length is the
-// "runs in one command" count. The source links sit in their own row
-// below the points, never inline in prose, so axe's link-in-text-block
-// rule has nothing to flag.
-func exAppSpecs() render.HTML {
-	items := []struct{ slug, domain string }{
-		{"lms", "courses, lessons, enrollments"},
-		{"portfolio", "projects and case studies"},
-		{"project-manager", "projects, tasks, teams"},
-		{"real-estate", "listings, agents, inquiries"},
-	}
-	points := make([]render.HTML, 0, len(items))
-	links := make([]render.HTML, 0, len(items))
-	for _, it := range items {
-		points = append(points, html.ListItem(html.ListItemConfig{}, render.Text(it.slug+": "+it.domain)))
-		links = append(links, exSourceLink(
-			"https://github.com/DonaldMurillo/gofastr/tree/main/examples/"+it.slug,
-			"examples/"+it.slug+" ↗"))
-	}
-	body := exRowBody(exRowBodyConfig{
-		Tag:     "gofastr.yml only",
-		LoC:     "0 LoC until you generate",
-		Desc:    "Each is one gofastr.yml with no Go beside it. Generate in the directory to get a runnable app you own; every one is validated by the CLI's app spec test suite.",
-		Points:  points,
-		Command: "cd examples/lms && gofastr generate app gofastr.yml",
-		Extra:   ui.Cluster(ui.ClusterConfig{Gap: ui.GapMD}, links...),
-	})
-	code := codeBlock("examples/lms/gofastr.yml", []render.HTML{
-		ln(com("# entities, screens, nav, endpoints, seed: one YAML")),
-		ln(render.Text("$ gofastr generate app gofastr.yml")),
-		ln(render.Text("$ go run .")),
-	})
-	return exRowShell("14", "app-spec", "examples/…", "Four more app specs", body, code)
 }
 
 func exRows() render.HTML {
-	return ui.Stack(ui.StackConfig{Gap: ui.Gap2XL}, append(exRowItems(), exAppSpecs())...)
+	return ui.Stack(ui.StackConfig{Gap: ui.Gap2XL}, exRowItems()...)
 }
 
 // exRowBodyConfig is the left column of one example row. Points are

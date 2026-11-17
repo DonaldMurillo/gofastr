@@ -55,8 +55,8 @@ Composition requirements:
   `Grid` instead of stacking them in a half-width column with an accidental
   empty rail. Reflow that authored desktop composition to one column on phones.
 - The site header, footer and docs page are the app's own packages, not
-  kit components: copy `examples/acme-site/siteheader`, `sitefooter` and
-  `helpdocs` (Go plus an owned `<name>.style.css`, tokens for every
+  kit components: copy `examples/site/siteheader`, `sitefooter` and
+  `docpage` (Go plus an owned `<name>.style.css`, tokens for every
   dimension). If the wordmark is long, give the phone row a shorter mark
   rather than squeezing status, identity, and navigation into one row.
 - Keep the scaffold's `WithTheme(theme.Default())`: it supplies a complete
