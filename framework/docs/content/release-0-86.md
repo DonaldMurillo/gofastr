@@ -268,7 +268,7 @@ from components:
 
 [UI composition recipes](ui-composition-recipes.md) builds the app
 shell, list/detail, marketing site and docs site end to end.
-`examples/tracker` and `examples/acme-site` are the running versions.
+`internal/testapps/tracker` and `internal/testapps/acme-site` are the running versions.
 
 ### What was removed
 

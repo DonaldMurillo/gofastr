@@ -41,8 +41,8 @@ permissions:
 #
 # Docker is preinstalled on ubuntu-latest (testcontainers spins up
 # Postgres automatically). Chrome is installed in both jobs: several
-# blocking packages (framework, framework/uihost, core-ui/runtime,
-# examples/backoffice) run chromedp tests that have been stable on CI.
+# blocking packages (framework, framework/uihost, core-ui/runtime)
+# run chromedp tests that have been stable on CI.
 
 on:
   push:
@@ -120,7 +120,7 @@ jobs:
       # The deterministic test step's scope, shared with the replay gate
       # after it. The Test step's comment says why each one runs in
       # browser-e2e instead.
-      TEST_EXCLUDE: 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime(/hosttest)?|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$'
+      TEST_EXCLUDE: 'gofastr/(examples/site|examples/meridian|examples/site/tracker|internal/testapps/layoutlab|kiln/integration|core-ui/runtime(/hosttest)?|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$'
       TEST_SKIP: 'TestAppSpecCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
     services:
       # pgvector/pgvector:pg16 is stock Postgres 16 plus the `vector`
@@ -292,7 +292,7 @@ jobs:
         #     Chrome-contention class as core-ui/runtime)
         #   - evals/ui-quality/internal/evalrunner (its capture tests drive
         #     a real headless Chrome; same class)
-        #   - examples/tracker, examples/layoutlab (chromedp e2e suites,
+        #   - examples/site/tracker, internal/testapps/layoutlab (chromedp e2e suites,
         #     3 and 2 minutes each; they filled a -p 2 slot here for the
         #     whole step and belong with the other browser suites)
         #   - cmd/gofastr browser tests via -skip (the rest of the
@@ -806,7 +806,7 @@ jobs:
     # The untrusted process-module tier, on each OS with a sandbox backend
     # (issue #608): the P1-P7 conformance suite run through the framework's
     # test binary AND through a real host app binary
-    # (examples/processmodule-demo/host), whose probe child is the app
+    # (internal/testapps/processmodule-demo/host), whose probe child is the app
     # itself, answered by the framework's package init. The tests assert
     # every probe child ran the probe body, then follow the untrusted demo
     # module to whichever outcome the host earns: served where the backend
@@ -850,7 +850,7 @@ jobs:
           # $TMPDIR, not $RUNNER_TEMP: on macOS the runner temp dir is under
           # $HOME, which the sandbox-exec profile denies reads of.
           host="$(mktemp -d)/host"
-          go build -o "$host" ./examples/processmodule-demo/host
+          go build -o "$host" ./internal/testapps/processmodule-demo/host
           {
             echo "### Sandbox conformance on ${{ matrix.suite }}"
             echo '```json'
@@ -864,8 +864,8 @@ jobs:
           -run 'TestSandboxConformance|TestProbeChild|TestApp_Untrusted|TestApp_ProcessModuleSandbox|TestApp_TrustedModuleDoesNotProbe|TestSandboxConformanceError|TestNewSandboxRunner|TestSelectRunner'
           ./framework/
 
-      - name: Untrusted module through a host app (examples/processmodule-demo)
-        run: go test -count=1 -v ./examples/processmodule-demo/...
+      - name: Untrusted module through a host app (internal/testapps/processmodule-demo)
+        run: go test -count=1 -v ./internal/testapps/processmodule-demo/...
 
       - name: Sandbox denials (macOS, on failure)
         # What sandbox-exec refused, by operation and path: the probe
@@ -988,11 +988,11 @@ jobs:
           # Moved out of the blocking job's Test step (2026-10): both are
           # chromedp e2e suites and filled one of its two package slots.
           - suite: tracker
-            pkg: examples/tracker$
-            run: go test -count=1 -timeout=10m ./examples/tracker/
+            pkg: examples/site/tracker$
+            run: go test -count=1 -timeout=10m ./examples/site/tracker/
           - suite: layoutlab
-            pkg: examples/layoutlab$
-            run: go test -count=1 -timeout=10m ./examples/layoutlab/
+            pkg: internal/testapps/layoutlab$
+            run: go test -count=1 -timeout=10m ./internal/testapps/layoutlab/
           - suite: kiln-integration
             pkg: kiln/integration$
             run: go test -count=1 -timeout=15m ./kiln/integration/
@@ -1059,7 +1059,7 @@ jobs:
             # surface need a budget well past the local ~2m runtime.
             run: go test -count=1 -timeout=25m ./examples/meridian/
           - suite: chromium-ui
-            pkg: (framework/ui|framework/pluginhost|core/mcp|battery/auth|battery/service|battery/sitesearch|cmd/gofastr/packages(/.*)?|core-ui/interactive|examples/acme-site/siteheader|examples/meridian/siteheader)$
+            pkg: (framework/ui|framework/pluginhost|core/mcp|battery/auth|battery/service|battery/sitesearch|cmd/gofastr/packages(/.*)?|core-ui/interactive|examples/meridian/siteheader)$
             # Go build tags for cmd/affected's go list; named apart from a
             # git tag trigger on purpose.
             buildtags: chromium
@@ -1096,7 +1096,7 @@ jobs:
             # each package. cmd/repolint fails when a package with
             # chromium-tagged tests is missing from this list or from pkg.
             run: |
-              pkgs="./framework/ui/ ./framework/pluginhost/ ./core/mcp/ ./battery/auth/ ./battery/service/ ./battery/sitesearch/ ./cmd/gofastr/packages/... ./core-ui/interactive/ ./examples/acme-site/siteheader/ ./examples/meridian/siteheader/"
+              pkgs="./framework/ui/ ./framework/pluginhost/ ./core/mcp/ ./battery/auth/ ./battery/service/ ./battery/sitesearch/ ./cmd/gofastr/packages/... ./core-ui/interactive/ ./examples/meridian/siteheader/"
               run_re=$(scripts/tagged-tests.sh chromium $pkgs)
               go test -count=1 -timeout=10m -p 1 -tags chromium -run "$run_re" $pkgs
           - suite: ui-quality-evals

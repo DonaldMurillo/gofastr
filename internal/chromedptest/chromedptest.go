@@ -9,7 +9,7 @@
 // behaviorBrowserCtx; framework/uihost's
 // newEmbedBrowserCtx, newE2EChromeForUIHost, and the PWA Chrome boot;
 // cmd/gofastr's devE2EBrowserCtx; examples/meridian's e2eBrowser;
-// examples/backoffice's backofficeBrowser; framework/uie2e's newE2EChrome;
+// framework/uie2e's newE2EChrome;
 // framework/static's PWA Chrome boot; framework/ui's image-placeholder and
 // srcset browser boots; kiln/integration's newChrome; and
 // battery/print/chromepdf's host-resolver browser boot), each of which

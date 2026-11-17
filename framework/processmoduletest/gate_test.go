@@ -24,7 +24,7 @@ import (
 // This file is the §10 go/no-go gate suite (design #37, wave 4b), split
 // out of the framework root package so the root can run under the CI race
 // gate (issue #208). It drives the REAL demo module binary
-// (examples/processmodule-demo) against the REAL supervisor + store +
+// (internal/testapps/processmodule-demo) against the REAL supervisor + store +
 // broker, not a re-exec'd test binary. The demo is built into a temp dir
 // once per test run; every test spawns it as a genuine out-of-process
 // child over moduleproto/stdio.
@@ -37,7 +37,7 @@ import (
 
 // ---- demo binary (built once, shared across the run) ---------------------
 
-// demoPingTool mirrors examples/processmodule-demo/main.go's pingTool EXACTLY.
+// demoPingTool mirrors internal/testapps/processmodule-demo/main.go's pingTool EXACTLY.
 // The handshake byte-compares framework.ModuleToolDigest(this) against the descriptor's
 // framework.ToolDigest.SHA256, so the two definitions must not drift. If you change the
 // demo's tool, change this too.

@@ -29,8 +29,7 @@ results, err := index.Search(ctx, search.Query{
 })
 ```
 
-The blog example wires this into `GET /posts/search?q=...`. See
-`examples/blog/main.go`.
+Wire it into a custom endpoint such as `GET /posts/search?q=...`.
 
 ## Types
 

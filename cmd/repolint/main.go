@@ -748,52 +748,53 @@ func allowedExampleHost(host string) bool {
 // domain; a deployed one names the host it actually answers on.
 func lintExampleOrigins(root string) ([]finding, error) {
 	var findings []finding
-	examples := filepath.Join(root, "examples")
-	err := filepath.WalkDir(examples, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if os.IsNotExist(err) {
+	for _, dir := range []string{"examples", filepath.Join("internal", "testapps")} {
+		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				if os.IsNotExist(err) {
+					return nil
+				}
+				return err
+			}
+			if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 				return nil
 			}
-			return err
-		}
-		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		body, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			rel = path
-		}
-		seen := map[string]bool{}
-		var lex goLexState
-		for i, raw := range strings.Split(string(body), "\n") {
-			// A URL discussed in a comment is prose, not something the example
-			// emits, so only the code on the line is scanned. One pass strips
-			// both comment forms, because the three lexical contexts define
-			// each other away and cannot be recognised in sequence.
-			var line string
-			line, lex = stripGoComments(raw, lex)
-			for _, m := range exampleAbsoluteURLRe.FindAllStringSubmatch(line, -1) {
-				host := m[1]
-				if allowedExampleHost(host) || seen[host] {
-					continue
-				}
-				seen[host] = true
-				findings = append(findings, finding{
-					File:    filepath.ToSlash(rel),
-					Line:    i + 1,
-					Rule:    "example-dead-origin",
-					Message: "example advertises origin " + host + " : use a reserved documentation domain (example.com) for a demo that is not deployed, or a host the project actually serves",
-				})
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
 			}
+			rel, relErr := filepath.Rel(root, path)
+			if relErr != nil {
+				rel = path
+			}
+			seen := map[string]bool{}
+			var lex goLexState
+			for i, raw := range strings.Split(string(body), "\n") {
+				// A URL discussed in a comment is prose, not something the example
+				// emits, so only the code on the line is scanned. One pass strips
+				// both comment forms, because the three lexical contexts define
+				// each other away and cannot be recognised in sequence.
+				var line string
+				line, lex = stripGoComments(raw, lex)
+				for _, m := range exampleAbsoluteURLRe.FindAllStringSubmatch(line, -1) {
+					host := m[1]
+					if allowedExampleHost(host) || seen[host] {
+						continue
+					}
+					seen[host] = true
+					findings = append(findings, finding{
+						File:    filepath.ToSlash(rel),
+						Line:    i + 1,
+						Rule:    "example-dead-origin",
+						Message: "example advertises origin " + host + " : use a reserved documentation domain (example.com) for a demo that is not deployed, or a host the project actually serves",
+					})
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 	return findings, nil
 }

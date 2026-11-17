@@ -219,7 +219,7 @@ git clone https://github.com/DonaldMurillo/gofastr.git
 cd gofastr
 go test ./...                        # SQLite; the Postgres halves skip without TEST_POSTGRES_DSN
 go run ./cmd/gofastr --help          # CLI overview
-go run ./examples/blog               # minimal blog with auto-CRUD on SQLite
+go run ./examples/meridian          # the flagship SaaS app on SQLite
 ```
 
 Postgres setup and the race pass are under [Contributing](#contributing).
@@ -296,9 +296,7 @@ app.Entity("posts", framework.EntityConfig{
 | Customer CLI     | `gofastr generate cli`: a branded terminal client for your customers, scoped API-token auth |
 | Release downloads | `gofastr release`: cross-built archives, `checksums.txt`, and `install.sh` / `install.ps1` that verify and install a CLI or service binary ([release](framework/docs/content/release.md)) |
 
-Try all of it against a running server: [`examples/api-tour`](examples/api-tour/README.md)
-is the curl tour, covering eager loading, cursor paging, atomic batch, SSE,
-uploads, and sparse updates. Hooks run inside the write's transaction
+Hooks run inside the write's transaction
 ([hooks-and-transactions](framework/docs/content/hooks-and-transactions.md)).
 
 Experimental desktop apps use the OS WebView with `CGO_ENABLED=0`. On Linux,
@@ -338,7 +336,7 @@ scoping. GoFastr renders none of that UI. See
 | `battery/` | Opt-in infrastructure: admin, auth, cache, email, semantic, log, notify, print, queue, relay, rtc, search, setup, storage, webhook, desktop (experimental: the app in the OS WebView, pure Go), service (experimental: the app binary as a per-user OS service with a browser UI on loopback), and telemetry (experimental: logs and traces in plain files on the app's own machine). Each behind a small interface. | you need a real subsystem; import only the ones you use. |
 | `cmd/gofastr` | The CLI: `init`, `generate`, `pack` (lossy app→app spec snapshot), `migrate`, `build`, `dev`, `verify`, `docs`, and more. | you're scaffolding, generating, or checking code. |
 | `kiln` | Experimental agent build-mode runtime (mutate an in-memory IR over HTTP). | you're driving the app from an agent. |
-| `examples/` | Runnable reference apps: the `meridian` app spec flagship (a SaaS billing console + marketing site), the `ecommerce` app generator, plus blog, api-tour, spa, and the docs site. | you want to see it wired end-to-end. |
+| `examples/` | Two reference apps: `meridian`, the flagship SaaS app (a billing console + marketing site, seeded from an app spec), and `site`, the docs and component gallery. | you want to see it wired end-to-end. |
 
 You import `framework` and the batteries you opt into, not each of its subpackages. The
 subpackage split is an internal seam (see `framework/ARCHITECTURE.md`); the
@@ -356,7 +354,7 @@ In production:
 The framework also runs on itself: [`examples/site`](examples/site) is the
 docs site and component gallery, [`examples/meridian`](examples/meridian) is a
 generated SaaS console + marketing site edited by hand ever since,
-and [`examples/ecommerce`](examples/ecommerce) is still owned by the generator
+and [`internal/testapps/ecommerce`](internal/testapps/ecommerce) is still owned by the generator
 and regenerated on every test run. All three import the same `framework`,
 `core-ui`, and batteries a user app does, and each carries an end-to-end
 suite. External production adopters are the part still ahead of us; see

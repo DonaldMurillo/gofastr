@@ -32,7 +32,7 @@ const buildGateScratchPkg = "build_"
 //
 // examples/meridian/appspec_gate_test.go already made exactly this argument
 // for one app spec ("Without this gate, gofastr.yml can rot silently, which is
-// exactly how #131 went unnoticed"), and examples/ecommerce reaches the same
+// exactly how #131 went unnoticed"), and internal/testapps/ecommerce reaches the same
 // guarantee a different way: its committed app/ is compiled by `go build
 // ./...` and a byte-parity test pins the generator to it.
 //
@@ -69,7 +69,7 @@ const buildGateScratchPkg = "build_"
 // checks a generator change. The example's tree is shared (exampleTree):
 // the lms and portfolio security tests boot the same build.
 //
-//gofastr:test-reads examples/*/gofastr.yml
+//gofastr:test-reads examples/*/gofastr.yml internal/testapps/*/gofastr.yml
 func TestExampleAppSpecsBoot(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, compiles, and boots every example app spec; skipped under -short")
@@ -78,7 +78,11 @@ func TestExampleAppSpecsBoot(t *testing.T) {
 		path := path
 		name := filepath.Base(filepath.Dir(path))
 		t.Run(name, func(t *testing.T) {
-			clitest.VariantBuild(t, "examples/"+name+"/gofastr.yml")
+			rel, err := filepath.Rel(clitest.RepoRootDir(t), path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			clitest.VariantBuild(t, filepath.ToSlash(rel))
 			// Each example renders into its own scratch package
 			// (_scratch/appspecs/build_<name>) and boots on a fresh port,
 			// so the seven can overlap.
@@ -720,7 +724,7 @@ func exampleBinName(name string) string {
 }
 
 // exampleAppDir is where the emitted app lives under the scratch package:
-// output_dir moves it one level down (examples/ecommerce uses it), so it is
+// output_dir moves it one level down (internal/testapps/ecommerce uses it), so it is
 // resolved from the app spec rather than assuming a flat layout.
 func exampleAppDir(dir, appSpec string) string {
 	if out := clitest.AppSpecOutputDir(appSpec); out != "" {
@@ -736,10 +740,17 @@ func generateAndCompileAppSpec(dir, scratchModule, appSpecPath, src, name string
 	// Repoint app.module at the scratch package so the generated self-imports
 	// resolve to the code just emitted rather than to whatever package is
 	// committed next door.
-	realModule := "github.com/DonaldMurillo/gofastr/examples/" + name
-	moduleLine := "module: " + realModule
-	if !strings.Contains(src, moduleLine) {
-		return fmt.Errorf("%s no longer declares %q — update this test's rewrite", appSpecPath, moduleLine)
+	// A spec lives under examples/ (meridian) or internal/testapps/ (the
+	// generator's fixtures), and declares its own path as its module.
+	var moduleLine string
+	for _, parent := range []string{"examples/", "internal/testapps/"} {
+		if l := "module: github.com/DonaldMurillo/gofastr/" + parent + name; strings.Contains(src, l) {
+			moduleLine = l
+			break
+		}
+	}
+	if moduleLine == "" {
+		return fmt.Errorf("%s declares neither examples/%s nor internal/testapps/%s as its module — update this test's rewrite", appSpecPath, name, name)
 	}
 	rewritten := strings.Replace(src, moduleLine, "module: "+scratchModule, 1)
 	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(rewritten), 0o644); err != nil {

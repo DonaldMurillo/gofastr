@@ -19,7 +19,7 @@ import (
 // that row does — no 403, so existence is not leaked.
 //
 // This is the framework half of the round-5 finding pinned end-to-end by
-// examples/ecommerce/app/orderitem_relwrite (owned by the examples slice):
+// internal/testapps/ecommerce/app/orderitem_relwrite (owned by the examples slice):
 // a signed-in customer could attach an order_items row to another
 // customer's order by POSTing that orderId; the migrate FK is
 // existence-only, so the real foreign order satisfied it.
