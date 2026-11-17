@@ -25,6 +25,9 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Worktree isolation tightens an existing SQLite state directory to owner-only.** On Unix,
+  `.gofastr/isolation/<id>` kept its mode when it already existed, so one created group- or
+  world-readable stayed that way; it is now set to 0700 on every resolve.
 - **`gofastr verify` reports a hard navigation through any chain of frames.** GOFASTR1802 caught
   `location.href = x` and `window.location.href = x`, but missed `window.top.location.href = x` and
   other chains of more than one hop.
