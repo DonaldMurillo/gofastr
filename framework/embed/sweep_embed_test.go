@@ -177,3 +177,45 @@ func TestSweepEmbedReplayReportsTheStoredExpiry(t *testing.T) {
 		t.Fatalf("replay expiry %v, want the stored grant's %v", again.Expires, first.Expires)
 	}
 }
+
+func TestSweepEmbedLiveCredentialsFollowTheConfig(t *testing.T) {
+	store := NewMemoryBurnStore()
+	h := testHost(t, func(c *Config) { c.BurnStore = store })
+	tok, err := h.MintNonce(context.Background(), "dashboard", "u-1", "https://acme.com", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := h.Exchange(context.Background(), tok, "https://acme.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	delisted := testHost(t, func(c *Config) {
+		c.BurnStore = store
+		c.Surfaces[0].Origins = []string{"https://other.example"}
+	})
+	delisted.now = func() time.Time { return time.Now().Add(90 * time.Second) }
+	if got, err := delisted.Exchange(context.Background(), tok, "https://acme.com"); err == nil || got.Grant != "" {
+		t.Fatalf("an expired nonce for a de-listed origin got %+v", got)
+	}
+	gone := testHost(t, func(c *Config) { c.Surfaces[0].Name = "other" })
+	if _, err := gone.VerifyGrant(context.Background(), res.Grant); err == nil {
+		t.Fatal("a grant for a removed surface still verified")
+	}
+}
+
+func TestSweepEmbedRefreshExpiryNeverPassesTheDeadline(t *testing.T) {
+	h := testHost(t)
+	now := time.Now()
+	deadline := time.Unix(now.Add(time.Minute).Unix(), 0)
+	tok, err := MintGrant(h.grantKey, Nonce{Surface: "dashboard", Subject: "u-1", Origin: "https://acme.com"}, 30*time.Second, deadline, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := h.Refresh(context.Background(), tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Expires.After(deadline) {
+		t.Fatalf("refreshed expiry %v is past the deadline %v", next.Expires, deadline)
+	}
+}

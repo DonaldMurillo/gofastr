@@ -56,6 +56,8 @@ invariants:
     rule: A repeat exchange of a live nonce returns the stored grant with Replay set and the same whole-second expiry, never a second grant.
     enforced_by:
       - test: framework/embed.TestExchangeIsSingleUseAndIdempotent
+      - test: framework/embed.TestSweepEmbedReplayReportsTheStoredExpiry
+      - test: framework/embed.TestExchangeAgainstSQLBurnStore
   - id: spent-after-grant-window
     rule: An exchange after the stored grant expired answers ErrSpent.
     enforced_by:
@@ -72,6 +74,7 @@ invariants:
       - test: framework/embed.TestExpiredNonceKeepsOriginChecks
       - test: framework/embed.TestExpiredNonceAfterGrantExpiry
       - test: framework/embed.TestExpiredNonceRechecksStoredGrant
+      - test: framework/embed.TestSweepEmbedLiveCredentialsFollowTheConfig
   - id: framed-origin-must-match
     rule: Exchange refuses a framedOrigin that is empty or does not normalize to the nonce's origin.
     enforced_by:
@@ -84,6 +87,7 @@ invariants:
       - test: framework/embed.TestHostVerifyGrantTracksConfig
       - test: framework/embed.TestVerifyGrantIntersectsWithCurrentScopes
       - test: framework/embed.TestRemovingASourceOriginRevokesInFlightGrants
+      - test: framework/embed.TestSweepEmbedLiveCredentialsFollowTheConfig
   - id: origin-source-is-asked-last-and-fails-closed
     rule: The grant path asks the OriginSource only about an origin outside the static allowlist, and a source error refuses the origin.
     enforced_by:
@@ -96,6 +100,7 @@ invariants:
     enforced_by:
       - test: framework/embed.TestRefreshKeepsDeadlineAndScopes
       - test: framework/embed.TestRefreshRefusesAGrantPastItsDeadline
+      - test: framework/embed.TestSweepEmbedRefreshExpiryNeverPassesTheDeadline
   - id: csrf-exempts-only-credential-free-routes
     rule: CSRFExempt admits only a request carrying GrantHeader, the exchange and refresh paths, and a GET, HEAD or OPTIONS request under SurfacePrefix, judged on the cleaned path.
     enforced_by:
