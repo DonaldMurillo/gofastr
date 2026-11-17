@@ -1,0 +1,4 @@
+primitive: access.store
+summary: The grant store - role grants kept in the database, cached per replica and invalidated across replicas.
+code:
+  - framework/access/store.go

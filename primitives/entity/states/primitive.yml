@@ -1,0 +1,6 @@
+primitive: entity.states
+summary: An entity's state machine - its states, the transitions between them and what each writes.
+code:
+  - framework/entity/states.go
+docs:
+  - framework/docs/content/states.md

@@ -1,0 +1,6 @@
+primitive: contracts.report
+summary: The verify report and its text and JSON forms.
+code:
+  - framework/contracts/report.go
+  - framework/contracts/format_json.go
+  - framework/contracts/format_text.go

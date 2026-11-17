@@ -1,0 +1,10 @@
+primitive: contracts.analyzers.app
+summary: The app-shape rules read from the static route and entity table - routes, auth, entities, permissions, test coverage, accessibility and import direction.
+code:
+  - framework/contracts/analyzers/routes.go
+  - framework/contracts/analyzers/routing.go
+  - framework/contracts/analyzers/entities.go
+  - framework/contracts/analyzers/permnames.go
+  - framework/contracts/analyzers/testing.go
+  - framework/contracts/analyzers/accessibility.go
+  - framework/contracts/analyzers/architecture.go

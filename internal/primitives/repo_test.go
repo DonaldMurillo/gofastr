@@ -126,6 +126,8 @@ var ownedPackages = []string{
 	"framework/headless",
 	"framework/uihost", "framework/uihost/uinoderender", "framework/uihost/internal/sessiontoken",
 	"framework/ui", "framework/ui/theme", "framework/ui/icons", "framework/ui/icons/internal/generate", "framework/ui/internal/treegate",
+	"framework/contracts", "framework/contracts/analyzers", "framework/contracts/internal/codetext", "framework/contracts/internal/docgate",
+	"framework/entityui", "framework/migrate", "framework/embed", "framework/entity", "framework/access",
 }
 
 //gofastr:test-reads primitives/ *.go

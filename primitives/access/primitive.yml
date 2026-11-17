@@ -1,0 +1,6 @@
+primitive: access
+summary: Who may do what - permissions and scopes, the policy and decider a check runs through, the cached role resolver and the evaluation observer.
+code:
+  - framework/access/
+docs:
+  - framework/docs/content/access-control.md

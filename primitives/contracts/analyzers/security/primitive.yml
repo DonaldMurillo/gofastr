@@ -1,0 +1,8 @@
+primitive: contracts.analyzers.security
+summary: The security rules - SQL and HTML built by concatenation, CSRF, escaping into URL attributes, folded filesystem keys, private Sec-Fetch-Site predicates and Vary written with Set.
+code:
+  - framework/contracts/analyzers/security.go
+  - framework/contracts/analyzers/urlattrescape.go
+  - framework/contracts/analyzers/keyfold.go
+  - framework/contracts/analyzers/fetchmeta.go
+  - framework/contracts/analyzers/varyset.go

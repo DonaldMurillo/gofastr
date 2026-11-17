@@ -1,0 +1,15 @@
+primitive: entityui.list
+summary: The entity list screen - its query, columns, table and cards, the query box, views and saved views, relation filters and the deleted-rows view.
+code:
+  - framework/entityui/list.go
+  - framework/entityui/list_cards.go
+  - framework/entityui/list_columns.go
+  - framework/entityui/list_deleted.go
+  - framework/entityui/list_keys.go
+  - framework/entityui/list_query.go
+  - framework/entityui/list_querybox.go
+  - framework/entityui/list_relations.go
+  - framework/entityui/list_render.go
+  - framework/entityui/list_table.go
+  - framework/entityui/list_views.go
+  - framework/entityui/saved_views*.go

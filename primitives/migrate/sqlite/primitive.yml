@@ -1,0 +1,5 @@
+primitive: migrate.sqlite
+summary: The SQLite table rebuilds - dropping a column and adding an owner foreign key, which SQLite cannot ALTER in place.
+code:
+  - framework/migrate/sqlite_ownerfk.go
+  - framework/migrate/sqlite_drop_column.go

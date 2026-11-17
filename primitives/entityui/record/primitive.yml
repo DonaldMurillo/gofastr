@@ -1,0 +1,4 @@
+primitive: entityui.record
+summary: The record screen - its form, panels, related rows, files, activity, the API tab, the state steps and override, and the scriptless save.
+code:
+  - framework/entityui/record*.go

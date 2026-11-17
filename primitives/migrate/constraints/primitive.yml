@@ -1,0 +1,8 @@
+primitive: migrate.constraints
+summary: Keys and constraints the migrator writes and reads back - primary keys, foreign keys, unique sets and column constraints.
+code:
+  - framework/migrate/primary_key.go
+  - framework/migrate/table_key.go
+  - framework/migrate/foreign_key.go
+  - framework/migrate/unique.go
+  - framework/migrate/column_constraint.go

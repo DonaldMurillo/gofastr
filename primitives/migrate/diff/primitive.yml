@@ -1,0 +1,6 @@
+primitive: migrate.diff
+summary: The schema diff between the declared plan and the live database or the recorded snapshot, and the migration files generated from it.
+code:
+  - framework/migrate/schema_diff.go
+  - framework/migrate/snapshot.go
+  - framework/migrate/generate_file.go

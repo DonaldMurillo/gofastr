@@ -1,0 +1,6 @@
+primitive: entity
+summary: The entity model - an entity's columns, keys, relations, scope and validators, the registry other packages read it through, and the declaration form it is read from.
+code:
+  - framework/entity/
+docs:
+  - framework/docs/content/entity-declarations.md

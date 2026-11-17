@@ -1,0 +1,6 @@
+primitive: entity.display
+summary: How an entity asks to be drawn - its nav entry, list views, record layout and field display options.
+code:
+  - framework/entity/display.go
+docs:
+  - framework/docs/content/entityui.md

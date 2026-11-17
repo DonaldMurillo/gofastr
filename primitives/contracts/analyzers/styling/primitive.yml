@@ -1,0 +1,10 @@
+primitive: contracts.analyzers.styling
+summary: The styling rules - bespoke CSS and hard navigation in rendered code, owned style sheets and their programs, and the design-system declaration checks.
+code:
+  - framework/contracts/analyzers/rendering.go
+  - framework/contracts/analyzers/ownedstyles.go
+  - framework/contracts/analyzers/ownedstyleprograms.go
+  - framework/contracts/analyzers/styleimports.go
+  - framework/contracts/analyzers/baretheme.go
+  - framework/contracts/analyzers/physicalside.go
+  - framework/contracts/analyzers/flexreverse.go

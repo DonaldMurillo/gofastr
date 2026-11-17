@@ -1,0 +1,10 @@
+primitive: contracts.analyzers.data
+summary: The SQL and data rules - dialect twin drift, inline DDL constraints, nullable keys, retry counters, settle stamps, erase coverage and statements run in a loop.
+code:
+  - framework/contracts/analyzers/dialectdrift.go
+  - framework/contracts/analyzers/ddlconstraint.go
+  - framework/contracts/analyzers/nullablekey.go
+  - framework/contracts/analyzers/queuesafety.go
+  - framework/contracts/analyzers/settlestamp.go
+  - framework/contracts/analyzers/erasecover.go
+  - framework/contracts/analyzers/performance.go

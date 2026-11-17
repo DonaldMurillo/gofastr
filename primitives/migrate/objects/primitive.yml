@@ -1,0 +1,7 @@
+primitive: migrate.objects
+summary: Declared views and routines (functions and triggers), their ledger and the routine files read from an fs.FS.
+code:
+  - framework/migrate/view.go
+  - framework/migrate/routine.go
+  - framework/migrate/routine_ledger.go
+  - framework/migrate/routines_fs.go

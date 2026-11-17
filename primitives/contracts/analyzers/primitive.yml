@@ -1,0 +1,5 @@
+primitive: contracts.analyzers
+summary: The AST detectors behind the catalog's rules, and the comment-stripped code text they read.
+code:
+  - framework/contracts/analyzers/
+  - framework/contracts/internal/codetext/

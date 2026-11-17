@@ -1,0 +1,6 @@
+primitive: contracts
+summary: The semantic checks behind gofastr verify - the rule catalog, the analyzer and pass interfaces, and the run that turns diagnostics into a report.
+code:
+  - framework/contracts/
+docs:
+  - framework/docs/content/contracts.md

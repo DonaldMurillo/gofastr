@@ -1,0 +1,6 @@
+primitive: entityui.bulk
+summary: Bulk actions on selected list rows and the bulk export.
+code:
+  - framework/entityui/bulk.go
+  - framework/entityui/bulk_export.go
+  - framework/entityui/list_bulk.go

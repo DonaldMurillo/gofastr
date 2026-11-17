@@ -1,0 +1,8 @@
+primitive: contracts.config
+summary: What relaxes a contract rule - the config file, the inline suppression markers, the per-file baseline and the changed-files scope.
+code:
+  - framework/contracts/config.go
+  - framework/contracts/suppress.go
+  - framework/contracts/baseline.go
+  - framework/contracts/changed.go
+  - framework/contracts/glob.go
