@@ -58,20 +58,6 @@ func TestDefineEntityTimestampsOptOut(t *testing.T) {
 	}
 }
 
-func TestRegisterEntityInRegistry(t *testing.T) {
-	reg := NewRegistry()
-
-	e := entity.Define("posts", entity.EntityConfig{
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-		},
-	})
-
-	if err := reg.Register(e); err != nil {
-		t.Fatalf("failed to register entity: %v", err)
-	}
-}
-
 func TestGetEntityFromRegistry(t *testing.T) {
 	reg := NewRegistry()
 
@@ -80,14 +66,16 @@ func TestGetEntityFromRegistry(t *testing.T) {
 			{Name: "body", Type: schema.Text, Required: true},
 		},
 	})
-	reg.Register(e)
+	if err := reg.Register(e); err != nil {
+		t.Fatalf("failed to register entity: %v", err)
+	}
 
 	got, err := reg.Get("comments")
 	if err != nil {
 		t.Fatalf("failed to get entity: %v", err)
 	}
-	if got.GetName() != "comments" {
-		t.Errorf("expected name %q, got %q", "comments", got.GetName())
+	if got != e {
+		t.Errorf("Get returned %p, want the registered entity %p", got, e)
 	}
 }
 

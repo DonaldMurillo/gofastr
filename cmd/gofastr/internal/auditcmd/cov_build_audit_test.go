@@ -30,9 +30,14 @@ func TestRunAuditUnknownExits(t *testing.T) {
 func TestRunAuditDeps(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, dir, "go.mod", "module audittest\n\ngo 1.21\n")
-	mustWrite(t, dir, "main.go", "package main\n\nfunc main() {}\n")
-	out := clitest.CovT_capStdout(t, func() { RunAudit([]string{"deps", dir}) })
-	_ = out // formatAuditReport always prints something
+	mustWrite(t, dir, "main.go", "package main\n\nimport \"github.com/DonaldMurillo/gofastr/core-ui/style\"\n\nfunc init() { style.Contribute(nil) }\n\nfunc main() {}\n")
+	var out string
+	code := clitest.CovT_capExit(t, func() {
+		out = clitest.CovT_capStdout(t, func() { RunAudit([]string{"deps", dir}) })
+	})
+	if code != -1 || !strings.Contains(out, "audittest\n  style.Contribute ×1\n    main.go:5\n") {
+		t.Fatalf("deps report: exit %d, output %q", code, out)
+	}
 }
 
 func TestRunAuditLintClean(t *testing.T) {

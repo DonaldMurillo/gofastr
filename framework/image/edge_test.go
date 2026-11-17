@@ -77,8 +77,8 @@ func TestMalformedDecodes(t *testing.T) {
 	}
 }
 
-// TestMultiFrameGIF: animated 2-frame GIF -> does Decode return first
-// frame or error?
+// TestMultiFrameGIF: an animated GIF decodes to its first frame (red),
+// not the last (green).
 func TestMultiFrameGIF(t *testing.T) {
 	pal := color.Palette{color.RGBA{255, 0, 0, 255}, color.RGBA{0, 0, 0, 255}}
 	pal2 := color.Palette{color.RGBA{0, 255, 0, 255}, color.RGBA{0, 0, 0, 255}}
@@ -102,30 +102,34 @@ func TestMultiFrameGIF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("animated gif decode: %v", err)
 	}
-	// What was returned?
-	at := img.GoImage().At(0, 0)
-	r, g, b, _ := at.RGBA()
-	t.Logf("animated GIF first decoded pixel: R=%d G=%d B=%d (red would be ~65535,0,0; green ~0,65535,0)", r, g, b)
+	r, g, b, _ := img.GoImage().At(0, 0).RGBA()
+	if r != 0xffff || g != 0 || b != 0 {
+		t.Fatalf("animated GIF pixel = (%d,%d,%d), want first frame red (65535,0,0)", r, g, b)
+	}
 }
 
-// TestResizeNegativeBehaviour documents what Resize does with negative
-// dimensions. Behaviour observed via Bounds afterwards.
+// TestResizeNegativeBehaviour: a side <= 0 is derived from the aspect;
+// both <= 0 returns the source unchanged.
 func TestResizeNegativeBehaviour(t *testing.T) {
 	src := stdimage.NewRGBA(stdimage.Rect(0, 0, 100, 80))
 	img := FromImage(src, FormatPNG)
-	cases := []struct{ w, h int }{
-		{0, 0}, {-1, -1}, {-1, 0}, {0, -1}, {50, -1}, {-1, 50},
-		{50, 0}, {0, 50},
+	cases := []struct{ w, h, wantW, wantH int }{
+		{0, 0, 100, 80}, {-1, -1, 100, 80}, {-1, 0, 100, 80}, {0, -1, 100, 80},
+		{50, -1, 50, 40}, {-1, 50, 62, 50}, {50, 0, 50, 40}, {0, 50, 62, 50},
 	}
 	for _, c := range cases {
 		out := img.Resize(c.w, c.h)
-		b := out.Bounds()
-		t.Logf("Resize(%d,%d) -> %dx%d", c.w, c.h, b.Dx(), b.Dy())
+		if b := out.Bounds(); b.Dx() != c.wantW || b.Dy() != c.wantH {
+			t.Errorf("Resize(%d,%d) = %dx%d, want %dx%d", c.w, c.h, b.Dx(), b.Dy(), c.wantW, c.wantH)
+		}
+		if c.wantW == 100 && out != img {
+			t.Errorf("Resize(%d,%d) allocated a copy, want the source returned", c.w, c.h)
+		}
 	}
 }
 
-// TestChain100Allocations measures how much memory 100 chained
-// Resize+Rotate(0)+Flip+Flop+Modulate{} calls allocate.
+// TestChain100Allocations: after the first Resize(1,1) every step works on
+// a 1x1, so 100 chained calls stay small (~75KB measured).
 func TestChain100Allocations(t *testing.T) {
 	src := stdimage.NewRGBA(stdimage.Rect(0, 0, 16, 16))
 	img := FromImage(src, FormatPNG)
@@ -135,7 +139,12 @@ func TestChain100Allocations(t *testing.T) {
 			img = img.Resize(1, 1).Rotate(0).Flip().Flop().Modulate(Modulation{})
 		}
 	})
-	t.Logf("100x chain alloc delta: %d bytes", delta)
+	if b := img.Bounds(); b.Dx() != 1 || b.Dy() != 1 {
+		t.Fatalf("chain result = %dx%d, want 1x1", b.Dx(), b.Dy())
+	}
+	if delta > 200_000 {
+		t.Errorf("100x chain allocated %d bytes, want <= 200000", delta)
+	}
 }
 
 // TestJPEGQualityExtremes verifies the clamps actually clamp.

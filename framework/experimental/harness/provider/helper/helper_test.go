@@ -43,8 +43,11 @@ func TestInProcessUnknownProvider(t *testing.T) {
 	}
 }
 
-func TestHeartbeat(t *testing.T) {
-	if err := NewInProcess(newStore(t)).Heartbeat(); err != nil {
-		t.Error(err)
+// InProcess is alive while its host process is: Heartbeat never consults
+// the credential store, so a missing store still reports healthy.
+func TestHeartbeatIgnoresTheStore(t *testing.T) {
+	var h Helper = NewInProcess(nil)
+	if err := h.Heartbeat(); err != nil {
+		t.Errorf("Heartbeat with no store = %v, want nil", err)
 	}
 }

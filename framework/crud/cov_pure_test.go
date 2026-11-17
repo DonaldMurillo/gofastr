@@ -88,7 +88,8 @@ func TestRegistryLLMMD_ListsEntities(t *testing.T) {
 func TestRegistryLLMMD_EmptyAndDefaultTitle(t *testing.T) {
 	reg := stubRegistry{byName: map[string]*entity.Entity{}}
 	md := RegistryLLMMD(reg, "", nil, "")
-	if !strings.Contains(md, "API: API Reference") {
+	// An empty app name falls back to "API" so the heading is never "# : API Reference".
+	if !strings.HasPrefix(md, "# API: API Reference\n") {
 		t.Errorf("default title missing: %s", md[:40])
 	}
 	if !strings.Contains(md, "No entities registered.") {

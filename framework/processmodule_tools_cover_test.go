@@ -145,14 +145,19 @@ func TestRegisterTools_shadowedByNonModuleTool(t *testing.T) {
 	}
 }
 
-// ---- errors.Is sentinel compat ----
-
-func TestModuleToolErrors_areSentinels(t *testing.T) {
-	if !errors.Is(ErrModuleToolNotReady, ErrModuleToolNotReady) {
-		t.Error("ErrModuleToolNotReady must satisfy errors.Is on itself")
-	}
-	if errModuleToolUnavailable == nil {
-		t.Error("errModuleToolUnavailable is nil")
+// A tool call with no supervisor, or a not-ready module, answers the
+// retryable unavailable error, never the internal not-ready sentinel.
+func TestModuleToolHandler_notReadyAnswersUnavailable(t *testing.T) {
+	sup := newBareTestSupervisor(t, newTestStore(t), &TrustedProcessRunner{})
+	defer sup.Close(context.Background())
+	for name, r := range map[string]*ModuleToolRegistry{
+		"nil supervisor": NewModuleToolRegistry(nil, nil),
+		"not ready":      NewModuleToolRegistry(nil, sup),
+	} {
+		_, err := r.newToolHandler("demo", "search")(context.Background(), nil)
+		if err != errModuleToolUnavailable || errors.Is(err, ErrModuleToolNotReady) {
+			t.Errorf("%s: err = %v, want errModuleToolUnavailable and not ErrModuleToolNotReady", name, err)
+		}
 	}
 }
 

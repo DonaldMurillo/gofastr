@@ -3,6 +3,7 @@ package stream
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
@@ -52,29 +53,36 @@ func TestSSEBrokerPublishDeliversToSubscriber(t *testing.T) {
 }
 
 func TestSSEBrokerBufferParamFromQuery(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		broker := NewSSEBroker(SSEBrokerConfig{Topic: "test"})
-		ctx, cancel := context.WithCancel(context.Background())
-		w := httptest.NewRecorder()
-		r := httptest.NewRequest("GET", "/events?buffer=256", nil).WithContext(ctx)
-
-		go func() {
-			time.Sleep(50 * time.Millisecond)
-			broker.Publish("test", "data")
-		}()
-
-		done := make(chan struct{})
-		go func() {
-			broker.Subscribe(w, r)
-			close(done)
-		}()
-
-		// Let the delayed publish fire and the subscriber consume it.
-		time.Sleep(100 * time.Millisecond)
-		synctest.Wait()
-		cancel()
-		<-done
-	})
+	for name, set := range map[string]func(*http.Request){
+		"query":  func(r *http.Request) { r.URL.RawQuery = "buffer=256&subscriber_id=sub" },
+		"header": func(r *http.Request) { r.URL.RawQuery = "subscriber_id=sub"; r.Header.Set("X-SSE-Buffer", "256") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				broker := NewSSEBroker(SSEBrokerConfig{Topic: "test"})
+				ctx, cancel := context.WithCancel(context.Background())
+				r := httptest.NewRequest("GET", "/events", nil).WithContext(ctx)
+				set(r)
+				done := make(chan struct{})
+				go func() {
+					broker.Subscribe(httptest.NewRecorder(), r)
+					close(done)
+				}()
+				synctest.Wait()
+				broker.mu.RLock()
+				sub := broker.subscribers["sub"]
+				broker.mu.RUnlock()
+				if sub == nil {
+					t.Fatal("subscriber not registered")
+				}
+				if got := cap(sub.ch); got != 256 {
+					t.Errorf("buffer cap = %d, want 256 from the request, not the default 64", got)
+				}
+				cancel()
+				<-done
+			})
+		})
+	}
 }
 
 func TestSSEBrokerPublishToMultipleSubscribers(t *testing.T) {

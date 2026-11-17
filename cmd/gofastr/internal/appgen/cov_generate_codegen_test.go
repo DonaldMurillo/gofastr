@@ -12,23 +12,32 @@ import (
 )
 
 func TestEnterCodegenProjectDir(t *testing.T) {
-	// "." project dir → no-op restore.
-	restore, err := enterCodegenProjectDir(codegen.Discovery{ProjectDir: "."})
+	start, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
+	clitest.CovT_chdir(t, start)
+	wd := func() string { d, _ := os.Getwd(); return d }
+	restore, err := enterCodegenProjectDir(codegen.Discovery{ProjectDir: "."})
+	if err != nil || wd() != start {
+		t.Fatalf(`"." must not move cwd: err %v, cwd %s`, err, wd())
+	}
 	restore()
-	// Real subdir.
-	dir := t.TempDir()
-	sub := filepath.Join(dir, "proj")
+	sub := filepath.Join(start, "proj")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	restore, err = enterCodegenProjectDir(codegen.Discovery{ProjectDir: sub})
-	if err != nil {
-		t.Fatalf("enter: %v", err)
+	if err != nil || wd() != sub {
+		t.Fatalf("enter: err %v, cwd %s, want %s", err, wd(), sub)
 	}
 	restore()
+	if wd() != start {
+		t.Fatalf("restore left cwd at %s, want %s", wd(), start)
+	}
+	if _, err := enterCodegenProjectDir(codegen.Discovery{ProjectDir: filepath.Join(start, "missing")}); err == nil || wd() != start {
+		t.Fatalf("missing dir: err %v, cwd %s", err, wd())
+	}
 }
 
 // An extension's error diagnostic must fail the run.

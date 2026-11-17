@@ -303,7 +303,7 @@ func TestInclude_SoftDeleteAndHiddenScrub(t *testing.T) {
 }
 
 func TestCursor_WithFiltersAndExtraWhere(t *testing.T) {
-	ch, _ := covItems(t, func(c *entity.EntityConfig) {
+	ch, db := covItems(t, func(c *entity.EntityConfig) {
 		if c.Pagination == nil {
 			c.Pagination = &entity.PaginationConfig{}
 		}
@@ -315,12 +315,18 @@ func TestCursor_WithFiltersAndExtraWhere(t *testing.T) {
 		p.AddWhere("seq >= $1", 1)
 		return nil
 	})
-	// filter on name + extraWhere from hook + cursor mode.
+	// The hook drops a (seq 0) and the name filter drops c.
+	if _, err := db.Exec(`UPDATE items SET name = 'x' WHERE id = 'c'`); err != nil {
+		t.Fatal(err)
+	}
 	req := withTestUser(httptest.NewRequest("GET", "/items?cursor=&limit=2&name=n", nil), "u1")
 	rec := httptest.NewRecorder()
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("cursor+filter+hook = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if got := strings.Join(idsOf(decodeListResponse(t, rec.Body.String()).Data), ","); got != "b,d" {
+		t.Errorf("cursor page ids = %s, want b,d", got)
 	}
 }
 
@@ -329,7 +335,7 @@ func TestStream_WithSortAndExtraWhere(t *testing.T) {
 	ch.Hooks = hook.NewHookRegistry()
 	ch.Hooks.RegisterHook(hook.BeforeList, func(ctx context.Context, data any) error {
 		p := data.(*hook.ListPayload)
-		p.AddWhere("seq >= $1", 0)
+		p.AddWhere("seq >= $1", 2)
 		return nil
 	})
 	req := withTestUser(httptest.NewRequest("GET", "/items?stream=true&sort=-seq", nil), "u1")
@@ -337,6 +343,10 @@ func TestStream_WithSortAndExtraWhere(t *testing.T) {
 	ch.List()(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("stream+sort+hook = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	resp := decodeListResponse(t, rec.Body.String())
+	if got := strings.Join(idsOf(resp.Data), ","); got != "e,d,c" || resp.Total != 3 {
+		t.Errorf("stream ids = %s total = %d, want e,d,c total 3", got, resp.Total)
 	}
 }
 

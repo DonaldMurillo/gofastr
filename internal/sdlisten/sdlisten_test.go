@@ -2,10 +2,12 @@ package sdlisten
 
 import (
 	"bytes"
+	"encoding/json"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -125,17 +127,36 @@ func TestChildServesOnThePassedSocket(t *testing.T) {
 	}
 }
 
-// The marker is in the binary: a deploy reads the file for it.
+// The marker is in a binary that calls only Inherited, never Marker: a
+// deploy reads the file for it. The test binary would pass by construction.
 func TestMarkerIsLinkedIn(t *testing.T) {
-	path, err := os.Executable()
-	if err != nil {
-		t.Skip(err)
+	if testing.Short() {
+		t.Skip("builds a probe binary")
 	}
-	self, err := os.ReadFile(path)
+	dir := t.TempDir()
+	probeDir, err := filepath.Abs("markerprobe")
 	if err != nil {
-		t.Skip(err)
+		t.Fatal(err)
 	}
-	if !bytes.Contains(self, []byte(Marker)) {
+	src := filepath.Join(dir, "main.go")
+	code := "package main\n\nimport \"github.com/DonaldMurillo/gofastr/internal/sdlisten\"\n\nfunc main() { _, _ = sdlisten.Inherited() }\n"
+	if err := os.WriteFile(src, []byte(code), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	overlay, _ := json.Marshal(map[string]any{"Replace": map[string]string{filepath.Join(probeDir, "main.go"): src}})
+	ov := filepath.Join(dir, "overlay.json")
+	if err := os.WriteFile(ov, overlay, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "probe")
+	if out, err := exec.Command("go", "build", "-overlay", ov, "-o", bin, "./markerprobe").CombinedOutput(); err != nil {
+		t.Fatalf("build probe: %v\n%s", err, out)
+	}
+	data, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte(Marker)) {
 		t.Error("the marker is not in a binary that links the package")
 	}
 }

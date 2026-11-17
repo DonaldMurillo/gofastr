@@ -207,12 +207,27 @@ func TestMountRegistersImmediately(t *testing.T) {
 	}
 }
 
-// TestShutdownIsSafeBeforeStart guards against a nil dereference on the
-// "build & exit early" path some CLI flows take.
+// Shutdown before Start (the "build & exit early" CLI path) succeeds, is
+// idempotent, and makes a later Start return without running start hooks.
 func TestShutdownIsSafeBeforeStart(t *testing.T) {
-	app := NewApp()
-	if err := app.Shutdown(context.Background()); err != nil {
-		t.Errorf("Shutdown before Start should be a no-op, got %v", err)
+	app := NewApp(WithoutDefaultMiddleware())
+	app.Config.DisableSignalHandling = true
+	started := false
+	app.OnStart(func(context.Context) error { started = true; return nil })
+	for i := range 2 {
+		if err := app.Shutdown(context.Background()); err != nil {
+			t.Fatalf("Shutdown #%d before Start = %v, want nil", i+1, err)
+		}
+	}
+	done := make(chan error, 1)
+	go func() { done <- app.Start("127.0.0.1:0") }()
+	select {
+	case err := <-done:
+		if err != nil || started {
+			t.Fatalf("Start after Shutdown = %v, start hook ran = %v; want nil, false", err, started)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Start after Shutdown kept serving")
 	}
 }
 

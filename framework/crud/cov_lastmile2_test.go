@@ -116,6 +116,14 @@ func TestApplyIncludeTree_RowWithNilID(t *testing.T) {
 	if err := ch.applyIncludeTree(context.Background(), rows, nodes); err != nil {
 		t.Fatalf("applyIncludeTree: %v", err)
 	}
+	if comments, _ := rows[0]["comments"].([]map[string]any); len(comments) != 2 {
+		t.Errorf("p1 comments = %v, want 2", rows[0]["comments"])
+	}
+	for _, row := range rows[1:] {
+		if v, ok := row["comments"]; ok {
+			t.Errorf("keyless row %v got comments %v, want none attached", row["title"], v)
+		}
+	}
 }
 
 // include.go:331: a node WITH children whose own relation resolves zero rows
@@ -163,17 +171,21 @@ func TestRecurseLoadOnRawRows_CompositeKey(t *testing.T) {
 
 // include.go:366: recurseLoadOnRawRows returns early when no ids gather.
 func TestRecurseLoadOnRawRows_NoIDs(t *testing.T) {
-	ch, _, reg := covRelWorld(t)
+	ch, db, reg := covRelWorld(t)
 	target := reg.byName["users"]
 	child := &IncludeNode{
 		Name:     "profile",
 		Relation: entity.HasOne("profile", "profiles", "post_id"),
 		Target:   reg.byName["profiles"],
 	}
-	// rawRows with no usable id → collectStringIDs returns empty → early nil.
+	// No ids means no query: a closed DB proves the early return skips it.
+	_ = db.Close()
 	rawRows := []map[string]any{{"name": "no-id"}}
 	if err := ch.recurseLoadOnRawRows(context.Background(), target, []*IncludeNode{child}, rawRows, newIncludeBudget()); err != nil {
 		t.Fatalf("recurseLoadOnRawRows no-ids: %v", err)
+	}
+	if _, ok := rawRows[0]["profile"]; ok {
+		t.Errorf("keyless raw row got a profile attached: %v", rawRows[0])
 	}
 }
 
@@ -303,65 +315,69 @@ func covTenantNotesHandler(t *testing.T) (*CrudHandler, *event.EventBus) {
 	return ch, bus
 }
 
-// runEventStream starts an EventStream, runs emit() while subscribed, then
-// cancels and returns. It gives the subscription/emit time to flow.
-func covRunEventStream(t *testing.T, ch *CrudHandler, ctx context.Context, emit func()) {
+type covSSEWriter struct {
+	hdr  http.Header
+	text syncBuffer
+}
+
+func (w *covSSEWriter) Header() http.Header         { return w.hdr }
+func (w *covSSEWriter) WriteHeader(int)             {}
+func (w *covSSEWriter) Flush()                      {}
+func (w *covSSEWriter) Write(b []byte) (int, error) { return w.text.Write(b) }
+
+// covRunEventStream subscribes, runs emit, waits until the body holds want,
+// then cancels and returns the body.
+func covRunEventStream(t *testing.T, ch *CrudHandler, ctx context.Context, emit func(), want string) string {
 	t.Helper()
 	sctx, cancel := context.WithCancel(ctx)
 	req := httptest.NewRequest("GET", "/_events", nil).WithContext(sctx)
-	rec := httptest.NewRecorder()
+	w := &covSSEWriter{hdr: http.Header{}}
 	done := make(chan struct{})
 	go func() {
-		ch.EventStream()(rec, req)
+		ch.EventStream()(w, req)
 		close(done)
 	}()
-	time.Sleep(40 * time.Millisecond)
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("EventStream did not return after cancel")
+		}
+	}()
+	seatWaitUntil(t, func() bool { return strings.Contains(w.text.String(), ": subscribed") })
 	emit()
-	time.Sleep(20 * time.Millisecond)
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("EventStream did not return after cancel")
-	}
+	seatWaitUntil(t, func() bool { return strings.Contains(w.text.String(), want) })
+	return w.text.String()
 }
 
 // crud_events.go:113: event whose Data is not a map[string]any is dropped.
 func TestSSE_NonMapDataDropped(t *testing.T) {
 	ch, bus := covTenantNotesHandler(t)
-	// EventStream requires an authenticated subscriber for non-owner entities.
-	ctx := ctxWithUser("alice")
-	covRunEventStream(t, ch, ctx, func() {
+	// The stream needs an authenticated subscriber and, on a tenant entity, a tenant.
+	ctx := tenant.SetTenantID(ctxWithUser("alice"), "t-alice")
+	body := covRunEventStream(t, ch, ctx, func() {
 		_ = bus.Emit(ctx, event.Event{Type: event.EntityCreated, Data: "not-a-map"})
-	})
+		_ = bus.Emit(ctx, event.Event{Type: event.EntityCreated, Data: map[string]any{eventKeyEntity: "tnotes", eventKeyTenantID: "t-alice", "marker": "kept"}})
+	}, `"marker":"kept"`)
+	if strings.Contains(body, "not-a-map") {
+		t.Errorf("non-map event reached the stream: %s", body)
+	}
 }
 
 // crud_events.go:119: event for a different tenant is dropped.
 func TestSSE_TenantMismatchDropped(t *testing.T) {
 	ch, bus := covTenantNotesHandler(t)
-	// Subscriber request carries tenant "t-alice"; emit an event stamped for
-	// "t-bob" so the tenant-scope drop fires. Needs an authed user too.
 	ctx := tenant.SetTenantID(ctxWithUser("alice"), "t-alice")
-	covRunEventStream(t, ch, ctx, func() {
+	emit := func(tid string) {
 		_ = bus.Emit(ctx, event.Event{Type: event.EntityCreated, Data: map[string]any{
-			eventKeyEntity:   "tnotes",
-			eventKeyTenantID: "t-bob",
+			eventKeyEntity: "tnotes", eventKeyTenantID: tid, "marker": tid,
 		}})
-	})
-}
-
-// crud_events.go:127: buffer-full default drop. Flood matching events before
-// the SSE reader drains the 32-slot channel.
-func TestSSE_BufferFullDrop(t *testing.T) {
-	ch, bus := covTenantNotesHandler(t)
-	ctx := ctxWithUser("alice")
-	covRunEventStream(t, ch, ctx, func() {
-		for range 500 {
-			_ = bus.Emit(ctx, event.Event{Type: event.EntityCreated, Data: map[string]any{
-				eventKeyEntity: "tnotes",
-			}})
-		}
-	})
+	}
+	body := covRunEventStream(t, ch, ctx, func() { emit("t-bob"); emit("t-alice") }, `"marker":"t-alice"`)
+	if strings.Contains(body, "t-bob") {
+		t.Errorf("SECURITY: t-bob's event reached a t-alice subscriber: %s", body)
+	}
 }
 
 // ---------------------------------------------------------------------------

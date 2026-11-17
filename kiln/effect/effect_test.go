@@ -14,9 +14,24 @@ func newEffect(kind string, params map[string]any) world.Action {
 	return world.Action{Kind: kind, Params: params}
 }
 
+// Noop (and the empty kind) does nothing even when its params look like
+// another action's: the entity is untouched and no hook fires.
 func TestNoop(t *testing.T) {
-	if err := effect.Run(context.Background(), newEffect(world.ActionNoop, nil), effect.Scope{}); err != nil {
-		t.Fatalf("noop: %v", err)
+	params := map[string]any{"field": "title", "value_literal": "x", "topic": "t", "message": "'m'"}
+	for _, kind := range []string{world.ActionNoop, ""} {
+		entity := map[string]any{"title": "keep"}
+		var hooks int
+		scope := effect.Scope{
+			Entity: entity,
+			Audit:  func(effect.AuditRecord) { hooks++ },
+			Emit:   func(effect.EventRecord) { hooks++ },
+		}
+		if err := effect.Run(context.Background(), newEffect(kind, params), scope); err != nil {
+			t.Fatalf("kind %q: %v", kind, err)
+		}
+		if len(entity) != 1 || entity["title"] != "keep" || hooks != 0 {
+			t.Errorf("kind %q had side effects: entity=%v hooks=%d", kind, entity, hooks)
+		}
 	}
 }
 

@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"log/slog"
@@ -210,17 +211,35 @@ func TestCovRegistryRegisterErrors(t *testing.T) {
 	}
 }
 
-// SetDB propagates to entities lacking a DB; Register propagates registry DB.
+// SetDB reaches registered entities; a later Register inherits it unless the
+// entity brought its own DB.
 func TestCovRegistrySetDBPropagates(t *testing.T) {
 	r := NewRegistry()
-	e := entity.Define("posts", entity.EntityConfig{Table: "posts"})
-	if err := r.Register(e); err != nil {
+	early := entity.Define("posts", entity.EntityConfig{Table: "posts"})
+	if err := r.Register(early); err != nil {
 		t.Fatal(err)
 	}
-	// SetDB walks the loop body (line 105-107) over the registered entity.
-	r.SetDB(nil) // nil is fine; we only need the loop to execute
-	// Register after SetDB(db) would propagate db; cover the loop with a
-	// fresh registry + a non-nil-ish path is unnecessary, loop ran above.
+	db, _ := sql.Open("sqlite3", ":memory:")
+	own, _ := sql.Open("sqlite3", ":memory:")
+	t.Cleanup(func() { db.Close(); own.Close() })
+	r.SetDB(db)
+	if early.DB != db {
+		t.Fatal("SetDB did not reach an already-registered entity")
+	}
+	late := entity.Define("comments", entity.EntityConfig{Table: "comments"})
+	owned := entity.Define("tags", entity.EntityConfig{Table: "tags"})
+	owned.DB = own
+	for _, e := range []*entity.Entity{late, owned} {
+		if err := r.Register(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if late.DB != db {
+		t.Error("Register after SetDB did not inherit the registry DB")
+	}
+	if owned.DB != own {
+		t.Error("Register replaced an entity's own DB with the registry's")
+	}
 }
 
 // ============================================================================

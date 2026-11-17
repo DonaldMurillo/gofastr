@@ -1,6 +1,7 @@
 package appgen
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,21 +24,31 @@ func covT_writeAppSpec(t *testing.T) (dir, bp string) {
 
 func TestGenerateFromAppSpecWritesFiles(t *testing.T) {
 	dir, bp := covT_writeAppSpec(t)
-	clitest.CovT_capStdout(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: bp, outputDir: "gen", outputSet: true}) })
-	// App generator output lands under the resolved output dir (--out=gen here).
-	matches, _ := filepath.Glob(filepath.Join(dir, "gen", "**", "*.go"))
-	if len(matches) == 0 {
-		// Fall back to a recursive walk; layout may nest deeper.
-		found := false
-		_ = filepath.Walk(filepath.Join(dir, "gen"), func(p string, info os.FileInfo, err error) error {
-			if err == nil && strings.HasSuffix(p, ".go") {
-				found = true
-			}
-			return nil
-		})
-		if !found {
-			t.Fatal("no .go files generated from app spec")
+	out := clitest.CovT_capStdout(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: bp, outputDir: "gen", outputSet: true}) })
+	if top, _ := os.ReadDir(dir); len(top) != 2 {
+		t.Fatalf("generation wrote outside --out=gen: %v", top)
+	}
+	gen := filepath.Join(dir, "gen")
+	for name, want := range map[string]string{
+		"main.go":              "package main",
+		"entities/users.go":    `app.Entity("users", framework.EntityConfig{`,
+		"entities/posts.go":    `app.Entity("posts", framework.EntityConfig{`,
+		"entities/register.go": "func RegisterAll(app *framework.App)",
+	} {
+		b, err := os.ReadFile(filepath.Join(gen, name))
+		if err != nil || !strings.Contains(string(b), want) {
+			t.Fatalf("gen/%s missing %q (err %v)", name, want, err)
 		}
+	}
+	n := 0
+	_ = filepath.WalkDir(gen, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && !strings.Contains(p, ".gofastr"+string(filepath.Separator)) {
+			n++
+		}
+		return nil
+	})
+	if want := fmt.Sprintf("Generated %d file(s) in gen", n); !strings.Contains(out, want) {
+		t.Fatalf("summary should read %q: %s", want, out)
 	}
 }
 
@@ -87,9 +98,22 @@ func TestGenerateFromAppSpecBadOutputDirJSON(t *testing.T) {
 }
 
 func TestFileSetFromGeneratedFiles(t *testing.T) {
-	fs, err := FileSetFromGeneratedFiles([]GeneratedFile{{Name: "a.go", Content: "package a\n"}}, "owner")
-	if err != nil || fs == nil {
+	fs, err := FileSetFromGeneratedFiles([]GeneratedFile{{Name: "a.go", Content: "package a\n"}, {Name: ".env", Content: "K=v\n", Mode: 0o600}}, "owner")
+	if err != nil {
 		t.Fatalf("fileSet err=%v", err)
+	}
+	got := map[string]os.FileMode{}
+	for _, f := range fs.All() {
+		if f.Owner != "owner" {
+			t.Fatalf("%s owner = %q, want the caller's", f.Path, f.Owner)
+		}
+		got[f.Path] = f.Mode
+	}
+	if len(got) != 2 || got[".env"] != 0o600 || got["a.go"] != 0 {
+		t.Fatalf("paths/modes not carried through: %v", got)
+	}
+	if _, err := FileSetFromGeneratedFiles([]GeneratedFile{{Name: "a.go", Content: "package a\n"}, {Name: "a.go", Content: "package b\n"}}, "owner"); err == nil {
+		t.Fatal("a path collision should be an error")
 	}
 }
 
@@ -129,18 +153,5 @@ func TestRenderGeneratedProjectEndpointsRejected(t *testing.T) {
 	}}
 	if _, err := RenderGeneratedProject(decls); err == nil {
 		t.Fatal("expected endpoints rejection")
-	}
-}
-
-func TestRenderGeneratedProjectHappy(t *testing.T) {
-	files, err := RenderGeneratedProject([]framework.EntityDeclaration{{
-		Name:   "users",
-		Fields: []framework.FieldDeclaration{{Name: "email", Type: "string"}},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) == 0 {
-		t.Fatal("no files")
 	}
 }

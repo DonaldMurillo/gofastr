@@ -28,12 +28,23 @@ func TestPool_OversizedDrop(t *testing.T) {
 	// Slice with cap above the pool cap is dropped rather than retained.
 	big := make([]map[string]any, 0, maxPooledMapEntries+1)
 	returnRowSlice(&big)
+	// A Put-then-Get on one P hands back the same item, so a retained big slice shows up here.
+	if got := borrowRowSlice(); cap(*got) > maxPooledMapEntries {
+		t.Errorf("row slice pool retained an oversized slice (cap %d)", cap(*got))
+	} else {
+		returnRowSlice(got)
+	}
 	// Ptr slice grow path: borrow larger than initial cap.
 	p := borrowPtrSlice(maxPooledMapEntries + 1)
 	if len(*p) != maxPooledMapEntries+1 {
 		t.Errorf("borrowPtrSlice grow len = %d", len(*p))
 	}
 	returnPtrSlice(p) // oversized → dropped
+	if got := borrowPtrSlice(0); cap(*got) > maxPooledMapEntries {
+		t.Errorf("ptr slice pool retained an oversized slice (cap %d)", cap(*got))
+	} else {
+		returnPtrSlice(got)
+	}
 }
 
 func TestJsonKeysFor_Mismatch(t *testing.T) {

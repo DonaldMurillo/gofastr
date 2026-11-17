@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -786,19 +785,16 @@ func TestResponseTypes(t *testing.T) {
 	})
 }
 
-// Compile-time check that our types satisfy interfaces
-func TestInterfaceCompliance(t *testing.T) {
-	var _ ResponseType = HTML("")
-	var _ ResponseType = SSE{}
-	var _ ResponseType = RawBytes{}
-	var _ error = (*Error)(nil)
-}
+// Compile-time checks: response types satisfy their interfaces and
+// Handler instantiates with varied I/O types.
+var (
+	_ ResponseType = HTML("")
+	_ ResponseType = SSE{}
+	_ ResponseType = RawBytes{}
+	_ error        = (*Error)(nil)
 
-// Verify the handler type compiles with different I/O types
-func TestGenericHandlerCompiles(t *testing.T) {
 	_ = Handler[createUserReq, userResponse](nil)
 	_ = Handler[string, int](nil)
 	_ = Handler[struct{ Name string }, struct{ OK bool }](nil)
 	_ = Handler[any, any](nil)
-	_ = fmt.Sprintf("handlers compile with various type params")
-}
+)

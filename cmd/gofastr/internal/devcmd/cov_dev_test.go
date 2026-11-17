@@ -72,9 +72,8 @@ func TestKillServerNilAndProcess(t *testing.T) {
 
 func TestBuildAndServeBuildsAndStarts(t *testing.T) {
 	dir := t.TempDir()
-	// A trivial main that exits immediately (so the started process
-	// terminates on its own and we don't leak a server).
-	main := "package main\n\nfunc main() {}\n"
+	// The child writes its env and argv to a cwd-relative file, then exits.
+	main := "package main\n\nimport (\n\t\"os\"\n\t\"strings\"\n)\n\nfunc main() {\n\t_ = os.WriteFile(\"started\", []byte(os.Getenv(\"GOFASTR_DEV\")+\" \"+os.Getenv(\"PORT\")+\" \"+strings.Join(os.Args[1:], \" \")), 0o644)\n}\n"
 	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(main), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -90,18 +89,26 @@ func TestBuildAndServeBuildsAndStarts(t *testing.T) {
 	t.Cleanup(func() { _ = os.Remove(DevServerBinaryPath(rt)) })
 	var mu sync.Mutex
 	var cmd *exec.Cmd
-	ok := clitest.CovT_capStdout(t, func() {
-		_ = buildAndServeResult(dir, "localhost:0", rt, &mu, &cmd)
+	var ok bool
+	clitest.CovT_capStdout(t, func() {
+		ok = buildAndServe(dir, ".", "localhost:0", rt, &mu, &cmd, false, nil, nil)
 	})
-	_ = ok
-	// Give the child a moment, then clean up.
-	time.Sleep(150 * time.Millisecond)
-	KillServer(&mu, &cmd)
-}
-
-// buildAndServeResult is a tiny wrapper so the bool result is observed.
-func buildAndServeResult(dir, addr string, rt *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd) bool {
-	return buildAndServe(dir, ".", addr, rt, mu, cmd, false, nil, nil)
+	defer KillServer(&mu, &cmd)
+	if !ok {
+		t.Fatal("buildAndServe should report success for a valid main package")
+	}
+	if _, err := os.Stat(DevServerBinaryPath(rt)); err != nil {
+		t.Fatalf("dev binary not built: %v", err)
+	}
+	var got []byte
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if got, err = os.ReadFile(filepath.Join(dir, "started")); err == nil && len(got) > 0 {
+			break
+		}
+	}
+	if want := "1 localhost:0 --addr localhost:0"; string(got) != want {
+		t.Fatalf("child in project dir saw %q, want %q", got, want)
+	}
 }
 
 func TestBuildAndServeBuildFails(t *testing.T) {

@@ -89,35 +89,24 @@ func TestStringsForMapsEveryField(t *testing.T) {
 	}
 }
 
-// TestStringsForNoTranslatorIsHeadlessEnglish: without a translator
-// every field is the English default headless itself ships, field by
-// field — the i18nui phrases' English text and headless's
-// defaultStrings cannot drift apart without this failing.
+// TestStringsForNoTranslatorIsHeadlessEnglish: with no translator (or a
+// nil ctx) every field is headless's own English default, field by field.
 func TestStringsForNoTranslatorIsHeadlessEnglish(t *testing.T) {
 	want := headless.DefaultStrings()
-	got := StringsFor(context.Background())
-	if got == want {
-		t.Fatal("StringsFor returned headless.DefaultStrings()'s own pointer — it must build its own value")
+	for name, ctx := range map[string]context.Context{"background": context.Background(), "nil": nil} {
+		t.Run(name, func(t *testing.T) {
+			got := StringsFor(ctx)
+			if got == want {
+				t.Fatal("StringsFor returned headless.DefaultStrings()'s own pointer — it must build its own value")
+			}
+			everyHeadlessStringField(t, got, func(name, val string) {
+				w := reflect.ValueOf(want).Elem().FieldByName(name).String()
+				if val != w {
+					t.Errorf("%s = %q, want headless default %q (i18nui default drifted from headless English)", name, val, w)
+				}
+			})
+		})
 	}
-	everyHeadlessStringField(t, got, func(name, val string) {
-		w := reflect.ValueOf(want).Elem().FieldByName(name).String()
-		if val != w {
-			t.Errorf("%s = %q, want headless default %q (i18nui default drifted from headless English)", name, val, w)
-		}
-	})
-}
-
-// TestStringsForNilCtxIsHeadlessEnglish: nil ctx is the nil-prop
-// case, the English defaults.
-func TestStringsForNilCtxIsHeadlessEnglish(t *testing.T) {
-	want := headless.DefaultStrings()
-	got := StringsFor(nil)
-	everyHeadlessStringField(t, got, func(name, val string) {
-		w := reflect.ValueOf(want).Elem().FieldByName(name).String()
-		if val != w {
-			t.Errorf("%s = %q, want headless default %q", name, val, w)
-		}
-	})
 }
 
 // TestStringsForTranslatesEveryField: a catalog entry for every

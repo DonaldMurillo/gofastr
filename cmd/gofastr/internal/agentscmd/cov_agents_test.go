@@ -3,9 +3,11 @@ package agentscmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+	"github.com/DonaldMurillo/gofastr/framework/agentsinv"
 )
 
 func TestRunAgentsNoSubcmdExits(t *testing.T) {
@@ -32,8 +34,14 @@ func TestRunAgentsInitAndSync(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); err != nil {
 		t.Fatalf("AGENTS.md not written: %v", err)
 	}
-	// sync over existing file.
-	clitest.CovT_capStdout(t, func() { RunAgents([]string{"sync", dir}) })
+	before, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	out := clitest.CovT_capStdout(t, func() { RunAgents([]string{"sync", dir}) })
+	if !strings.Contains(out, "already up to date") {
+		t.Fatalf("sync of a fresh AGENTS.md should report up to date: %s", out)
+	}
+	if after, _ := os.ReadFile(filepath.Join(dir, "AGENTS.md")); string(after) != string(before) {
+		t.Fatal("sync rewrote an up-to-date AGENTS.md")
+	}
 }
 
 func TestRunAgentsInitExistingExits(t *testing.T) {
@@ -67,8 +75,25 @@ func TestRunAgentsSkill(t *testing.T) {
 	}
 }
 
-func TestWarnMissingMarkdownNoCrash(t *testing.T) {
-	clitest.CovT_capStdout(t, warnMissingMarkdown)
+func TestWarnMissingMarkdownNamesEachEntry(t *testing.T) {
+	all, miss := agentsinv.All(), agentsinv.MissingMarkdown()
+	t.Cleanup(func() {
+		agentsinv.Reset(t)
+		for _, e := range append(all, miss...) {
+			agentsinv.Register(e)
+		}
+	})
+	agentsinv.Reset(t)
+	if out := clitest.CovT_capStdout(t, warnMissingMarkdown); out != "" {
+		t.Fatalf("no missing entries should print nothing, got %q", out)
+	}
+	agentsinv.Register(agentsinv.Entry{Name: "ghost", Kind: agentsinv.KindBattery, ImportPath: "example.com/ghost"})
+	out := clitest.CovT_capStdout(t, warnMissingMarkdown)
+	for _, want := range []string{"1 entry registered without agents.md", "battery:ghost (example.com/ghost)"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("warning missing %q: %s", want, out)
+		}
+	}
 }
 
 func TestPluralY(t *testing.T) {

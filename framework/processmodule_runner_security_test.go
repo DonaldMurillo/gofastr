@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 // Pins: the bytes that were hashed are the bytes that exec — no swap window
@@ -42,8 +44,8 @@ const redSwapMarker = "red-swap-swapped-ran"
 // startPreparedChild, the same window SandboxRunner's backend.Wrap occupies).
 func TestRunnerRedSwappedArtifact(t *testing.T) {
 	// Pristine artifact: the test binary copied into a scratch dir, digest
-	// pinned — exactly what buildChildArtifact gives the supervisor tests.
-	path, sha := buildChildArtifact(t)
+	// pinned — exactly what pmtestkit.ChildArtifact gives the supervisor tests.
+	path, sha := pmtestkit.ChildArtifact(t)
 
 	spec := ChildSpec{
 		Descriptor: ProcessModuleDescriptor{

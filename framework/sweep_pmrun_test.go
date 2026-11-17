@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pmtestkit"
 )
 
 type sweepPMRunPanicRunner struct{}
@@ -224,7 +225,7 @@ func TestSweepPMRunExecFailClosesArtifact(t *testing.T) {
 	if !fdExecSupported {
 		t.Skip("exec by path: prepare keeps no artifact fd")
 	}
-	path, sha := buildChildArtifact(t)
+	path, sha := pmtestkit.ChildArtifact(t)
 	prep, err := prepareChildForSpawn(ChildSpec{
 		Descriptor: ProcessModuleDescriptor{Name: "execfail", Version: "1", ArtifactPath: path, ArtifactSHA256: sha},
 		InstanceID: "exec-fail-instance",

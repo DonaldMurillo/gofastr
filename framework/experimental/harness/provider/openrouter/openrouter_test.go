@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
@@ -82,8 +81,8 @@ func TestChatStreamingParse(t *testing.T) {
 	})
 }
 
-// TestChatHTTPError401 asserts a 401 response surfaces as an error
-// whose message contains "401" (mirrors client_test.go).
+// TestChatHTTPError401: the shared client owns the 401 path; what is this
+// adapter's own is the provider name the error carries.
 func TestChatHTTPError401(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -93,7 +92,7 @@ func TestChatHTTPError401(t *testing.T) {
 
 	p := &Provider{APIKey: "bad", BaseURL: srv.URL}
 	_, err := p.Chat(context.Background(), &provider.Request{Model: "m"})
-	if err == nil || !strings.Contains(err.Error(), "401") {
-		t.Fatalf("err = %v, want error containing 401", err)
+	if want := "openrouter: HTTP 401: invalid key"; err == nil || err.Error() != want {
+		t.Fatalf("err = %v, want %q", err, want)
 	}
 }

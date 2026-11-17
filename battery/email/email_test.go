@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -371,16 +373,30 @@ func TestLoadFromDirWithSubjectFile(t *testing.T) {
 
 func TestLoadFromDirEmpty(t *testing.T) {
 	dir := t.TempDir()
-	_, err := LoadFromDir(dir)
-	if err == nil {
-		t.Error("expected error for empty directory")
+	// A non-template file and a subdirectory do not count as templates.
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "sub.txt"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadFromDir(dir)
+	if err == nil || got != nil {
+		t.Fatalf("LoadFromDir(empty) = %v, %v; want nil map and an error", got, err)
+	}
+	if !strings.Contains(err.Error(), "no templates found in "+dir) {
+		t.Errorf("error %q does not name the empty dir %s", err, dir)
 	}
 }
 
 func TestLoadFromDirNonexistent(t *testing.T) {
-	_, err := LoadFromDir("/nonexistent/path")
-	if err == nil {
-		t.Error("expected error for nonexistent directory")
+	dir := filepath.Join(t.TempDir(), "missing")
+	got, err := LoadFromDir(dir)
+	if err == nil || got != nil {
+		t.Fatalf("LoadFromDir(missing) = %v, %v; want nil map and an error", got, err)
+	}
+	if !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), dir) {
+		t.Errorf("error %q should wrap fs.ErrNotExist and name %s", err, dir)
 	}
 }
 
@@ -668,11 +684,11 @@ func TestErrSendFailed(t *testing.T) {
 	}
 }
 
-func TestSenderInterface(t *testing.T) {
-	// Verify both SMTPSender and LogSender implement Sender.
-	var _ Sender = (*SMTPSender)(nil)
-	var _ Sender = (*LogSender)(nil)
-}
+// Both senders implement Sender.
+var (
+	_ Sender = (*SMTPSender)(nil)
+	_ Sender = (*LogSender)(nil)
+)
 
 // IsErrSendFailed checks if an error wraps ErrSendFailed.
 func IsErrSendFailed(err error) bool {
