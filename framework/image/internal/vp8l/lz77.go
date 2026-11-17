@@ -1,41 +1,19 @@
 package vp8l
 
-// Phase C LZ77 + color cache symbol stream construction.
-//
-// Walks the post-transform pixel slice left to right and decides, per
-// pixel, whether to emit a literal, a backward reference, or a colour-
-// cache hit. Output is a slice of `sym` records the caller turns into
-// Huffman codes; histograms for each alphabet are returned alongside
-// so a single pass produces both.
-
-// matchMinLen is the shortest backreference worth emitting.
 const matchMinLen = 2
 
-// matchMaxLen caps backreference lengths. The length-prefix alphabet
-// reaches 2^24 but practical matches are far shorter; this also bounds
-// the inner match-extension loop.
 const matchMaxLen = 4096
 
-// maxBackrefDistance caps pixel-distance backreferences so the distance
-// prefix code (40-symbol alphabet, max representable value 2^20) never
-// overflows. The encoder offsets distances by +120 to skip the spatial
-// LUT region of the spec's distance encoding, so usable raw distances
-// max out at (1<<20) - 120.
 const maxBackrefDistance = (1 << 20) - 120
 
-// hashBits / hashSize control the LZ77 hash table. 14 bits → 16384
-// buckets, good locality, low collision rate for typical inputs.
 const (
 	hashBits = 14
 	hashSize = 1 << hashBits
 	hashMask = hashSize - 1
 )
 
-// chainDepth caps how many hash-chain candidates we inspect per
-// position. Higher = better matches but slower encode.
 const chainDepth = 16
 
-// symKind tags a stream record.
 type symKind uint8
 
 const (
@@ -44,31 +22,23 @@ const (
 	symBackref
 )
 
-// sym is one element of the encoded pixel stream.
 type sym struct {
 	kind symKind
 
-	// Literal payload (kind == symLiteral).
 	g, r, b, a uint8
 
-	// Cache-hit payload (kind == symCacheHit).
 	cacheIdx uint32
 
-	// Backref payload (kind == symBackref).
 	lenSym, distSym             uint32
 	extraLen, extraDist         uint32
 	extraLenBits, extraDistBits uint8
 }
 
-// extra is the extra-bit payload that follows a length or distance
-// prefix code: `value` is the integer; `bits` is the bit width.
 type extra struct {
 	value uint32
 	bits  uint
 }
 
-// buildStream emits the LZ77 + cache symbol stream for pixels.
-// Returns the symbol slice plus per-alphabet frequency histograms.
 func buildStream(pixels [][4]uint8, cacheBits uint) (
 	stream []sym,
 	gFreq, rFreq, bFreq, aFreq, dFreq []int,
@@ -198,8 +168,6 @@ func buildStream(pixels [][4]uint8, cacheBits uint) (
 	return
 }
 
-// hashPair returns a 32-bit hash over pixels[p] and pixels[p+1].
-// Callers must ensure p+1 < len(pixels) (insertHash guards this).
 func hashPair(pixels [][4]uint8, p int) uint32 {
 	a := packARGB(pixels[p][1], pixels[p][0], pixels[p][2], pixels[p][3])
 	b := uint32(0)
@@ -209,9 +177,6 @@ func hashPair(pixels [][4]uint8, p int) uint32 {
 	return a*0x9E3779B1 ^ (b * colorCacheMultiplier)
 }
 
-// lz77Symbol returns the prefix-code symbol and any extra-bit payload
-// for the given value (≥ 1). It is the inverse of x/image/vp8l's
-// lz77Param.
 func lz77Symbol(value uint32) (symbol uint32, e extra) {
 	if value <= 4 {
 		return value - 1, extra{}

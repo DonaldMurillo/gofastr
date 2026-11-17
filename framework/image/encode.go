@@ -15,17 +15,8 @@ import (
 	"golang.org/x/image/tiff"
 )
 
-// Encoder is a configured terminal of an image pipeline. It captures the
-// chosen output format and any per-format options. Call Bytes, Write,
-// Base64, or DataURL to materialise the encoded image. Repeat calls
-// against the same Encoder reuse the first encode's bytes instead of
-// re-running the codec, even across multiple goroutines.
-//
-// Note: the cache is keyed by *Encoder identity, not by source pixels.
-// Mutating the underlying image.Image via Image.GoImage() after the
-// first terminal call will not invalidate the cache; the second call
-// returns the original encoded bytes. Build a fresh Encoder after
-// any direct pixel mutation.
+// Encoder is a pipeline's output format; its codec runs once, on the
+// first of Bytes, Write, Base64 or DataURL.
 type Encoder struct {
 	img    *Image
 	format Format
@@ -43,8 +34,7 @@ func (e *Encoder) Format() Format { return e.format }
 // MIME returns the Content-Type for the chosen format.
 func (e *Encoder) MIME() string { return e.format.MIME() }
 
-// Write encodes the image to w. Goroutine-safe; the underlying codec
-// runs at most once across all terminal calls on this Encoder.
+// Write encodes the image to w.
 func (e *Encoder) Write(w io.Writer) error {
 	if err := e.ensureEncoded(); err != nil {
 		return err
@@ -53,11 +43,7 @@ func (e *Encoder) Write(w io.Writer) error {
 	return err
 }
 
-// Bytes returns a freshly-allocated copy of the encoded image. The codec
-// runs at most once across all terminal calls (goroutine-safe), but each
-// Bytes call hands the caller its own slice so in-place mutation of the
-// returned bytes cannot corrupt the shared cache or another caller's
-// view. Use Write to avoid the copy when streaming to an io.Writer.
+// Bytes returns the encoded image in a slice of the caller's own.
 func (e *Encoder) Bytes() ([]byte, error) {
 	if err := e.ensureEncoded(); err != nil {
 		return nil, err
@@ -67,9 +53,6 @@ func (e *Encoder) Bytes() ([]byte, error) {
 	return out, nil
 }
 
-// ensureEncoded runs the codec once across all goroutines. Returns the
-// codec's error (cached) or any construction-time error captured at
-// builder time.
 func (e *Encoder) ensureEncoded() error {
 	if e.err != nil {
 		return e.err
@@ -83,7 +66,7 @@ func (e *Encoder) ensureEncoded() error {
 	return e.cachedErr
 }
 
-// Base64 returns the encoded image as a raw base64 string (no MIME prefix).
+// Base64 returns the encoded image as base64.
 func (e *Encoder) Base64() (string, error) {
 	data, err := e.Bytes()
 	if err != nil {
@@ -123,9 +106,6 @@ func (i *Image) JPEG(opts ...JPEGOptions) *Encoder {
 	}
 }
 
-// clampInt applies the options-defaulting staircase JPEG (Quality) and
-// GIF (NumColors) used to duplicate inline: 0 becomes def, then the
-// value is clamped into [lo, hi].
 func clampInt(v, def, lo, hi int) int {
 	if v == 0 {
 		v = def
@@ -141,8 +121,7 @@ func clampInt(v, def, lo, hi int) int {
 
 // PNGOptions configures PNG encoding.
 type PNGOptions struct {
-	// Compression maps to image/png.CompressionLevel. Zero is
-	// png.DefaultCompression.
+	// Compression is a png.CompressionLevel, -3..0.
 	Compression png.CompressionLevel
 }
 
@@ -152,9 +131,6 @@ func (i *Image) PNG(opts ...PNGOptions) *Encoder {
 	if len(opts) > 0 {
 		o = opts[0]
 	}
-	// image/png defines CompressionLevel in [-3, 0]; values outside
-	// that range are silently treated as DefaultCompression by
-	// stdlib, which hides config bugs. Reject up front.
 	if o.Compression < -3 || o.Compression > 0 {
 		return &Encoder{
 			img:    i,
@@ -222,17 +198,13 @@ func (i *Image) TIFF(opts ...TIFFOptions) *Encoder {
 	}
 }
 
-// WebPOptions configures WebP encoding. The zero value selects
-// lossless (VP8L), the only mode currently implemented.
+// WebPOptions configures WebP encoding. The zero value is lossless.
 type WebPOptions struct {
-	// Lossy requests VP8 lossy WebP. Not implemented. Setting this
-	// to true returns ErrFormatUnsupported on terminal calls. The
-	// zero value (false) selects lossless.
+	// Lossy is not implemented and returns ErrFormatUnsupported.
 	Lossy bool
 }
 
-// WebP selects WebP output. The default mode is lossless; setting
-// WebPOptions.Lossy = true returns ErrFormatUnsupported.
+// WebP selects lossless WebP output.
 func (i *Image) WebP(opts ...WebPOptions) *Encoder {
 	var o WebPOptions
 	if len(opts) > 0 {
