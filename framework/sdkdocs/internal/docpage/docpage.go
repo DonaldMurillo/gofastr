@@ -6,7 +6,7 @@
 //
 // sdkdocs is framework code and cannot import an example, so it keeps
 // its own copy of the docs page an app draws for itself
-// (examples/acme-site/helpdocs). The package is internal so the
+// (internal/testapps/acme-site/helpdocs). The package is internal so the
 // generated Style handle is not framework API.
 package docpage
 

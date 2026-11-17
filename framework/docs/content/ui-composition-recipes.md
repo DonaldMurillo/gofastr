@@ -33,7 +33,7 @@ are static chrome; a crumbs area follows the route server-side; a
 toolbar outlet and an aside outlet are the page's own regions; the
 primary slot is the route's screen.
 
-From `examples/tracker` (`main.go`, `buildSite` + `buildShell`):
+From `internal/testapps/tracker` (`main.go`, `buildSite` + `buildShell`):
 
 <!-- gofastr:compile
 import "context"
@@ -89,7 +89,7 @@ func buildShell(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
 ```
 
 `nav` is the rendered `ui.Sidebar`. `appBar` is the app's own package,
-not a framework component: `examples/tracker/appbar` is one Go file
+not a framework component: `internal/testapps/tracker/appbar` is one Go file
 that renders the `html.Header` banner landmark (brand, search,
 notifications, theme toggle, the sidebar's drawer trigger) and an
 owned style sheet that holds the bar at `--size-header-height`, the
@@ -113,7 +113,7 @@ layer's primary. The layer key embeds the resolved value, so one
 project's list is kept across its pages and re-rendered when the
 entity changes.
 
-From `examples/tracker` (`screens.go`, `newProjectLayout` +
+From `internal/testapps/tracker` (`screens.go`, `newProjectLayout` +
 `buildProject`):
 
 <!-- gofastr:compile
@@ -247,7 +247,7 @@ sheets and app tokens.
 
 `gofastr generate package siteheader` and `gofastr generate package
 sitefooter` copy the canonical packages into the app as owned code
-(Go, owned sheet, generated class methods, tests); `examples/acme-site`
+(Go, owned sheet, generated class methods, tests); `internal/testapps/acme-site`
 keeps customised copies of the same packages as a worked example. The
 header has the brand, a nav whose Help link stays lit on every page
 under `/help` (`data-cui-match-prefix`), a call to action, a theme
@@ -265,7 +265,7 @@ header's rule. Acme's screens each bring their own container with
 the header; only the changelog fills it, and navigation clears it when
 the visitor leaves the changelog.
 
-From `examples/acme-site` (`main.go`, `buildSite` + `buildSiteShell`):
+From `internal/testapps/acme-site` (`main.go`, `buildSite` + `buildSiteShell`):
 
 <!-- gofastr:compile
 import "context"
@@ -307,7 +307,7 @@ Compose the screen's own rhythm from `ui.Stack` gaps, `ui.Section`, and
 
 A group layout under the section prefix draws the docs page, and the
 page is again the site's own package: `gofastr generate package
-docpage` copies the canonical one into the app (`examples/acme-site/
+docpage` copies the canonical one into the app (`internal/testapps/acme-site/
 helpdocs` is a customised copy of it). Its sheet lays out the nav
 rail, the article and the contents rail on the page measure, keeps
 the rails sticky under the header, sets the article's reading rhythm,
@@ -326,7 +326,7 @@ unset region renders an empty element itself; a page with neither
 rail is one centred column at the prose measure, the shape a blog
 post or a standalone page uses.
 
-From `examples/acme-site` (`main.go`, `buildSite` + `buildHelpDocs`):
+From `internal/testapps/acme-site` (`main.go`, `buildSite` + `buildHelpDocs`):
 
 <!-- gofastr:compile
 import "context"

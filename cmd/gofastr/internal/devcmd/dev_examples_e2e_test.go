@@ -25,12 +25,8 @@ type devExample struct {
 }
 
 var devExamples = []devExample{
-	{"desktop-notes", "/", http.StatusOK},
-	{"webmcp-remote-assist", "/", http.StatusOK},
 	{"meridian", "/", http.StatusOK},
-	{"ecommerce/app", "/", http.StatusOK},
 	{"site", "/examples", http.StatusOK},
-	{"hn", "/", http.StatusOK},
 }
 
 //gofastr:test-reads examples/

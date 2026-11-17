@@ -468,7 +468,7 @@ Keep the document to allow-listed values; it is a status, not a log.
 - [Core packages](core-packages.md) documents `core/stream.StateChannel`,
   the transport under this package.
 - [Horizontal scaling](scaling.md) covers the fanout seam.
-- `examples/webmcp-remote-assist` is the hand-rolled single-session
+- `internal/testapps/webmcp-remote-assist` is the hand-rolled single-session
   reference this package generalizes.
 
 ## Common mistakes

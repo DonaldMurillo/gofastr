@@ -354,7 +354,7 @@ In production:
 The framework also runs on itself: [`examples/site`](examples/site) is the
 docs site and component gallery, [`examples/meridian`](examples/meridian) is a
 generated SaaS console + marketing site edited by hand ever since,
-and [`examples/ecommerce`](examples/ecommerce) is still owned by the generator
+and [`internal/testapps/ecommerce`](internal/testapps/ecommerce) is still owned by the generator
 and regenerated on every test run. All three import the same `framework`,
 `core-ui`, and batteries a user app does, and each carries an end-to-end
 suite. External production adopters are the part still ahead of us; see

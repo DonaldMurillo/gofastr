@@ -122,7 +122,7 @@ type rtcTestPeer struct {
 
 // rtcRoom is one room: its members and its StateChannel. Every
 // mutation bumps seq and publishes under the same lock hold, the
-// relaySignal rule from examples/webmcp-remote-assist/session.go: a
+// relaySignal rule from internal/testapps/webmcp-remote-assist/session.go: a
 // snapshot whose sequence trailed events a page had applied would be
 // rejected by the page's reducer and a reconnect would never hydrate.
 type rtcRoom struct {

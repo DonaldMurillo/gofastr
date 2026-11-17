@@ -68,7 +68,7 @@ copying the header into every page. The layout is declared once; every
 screen under it inherits the chrome, and navigation between siblings
 never re-renders it.
 
-The real shape of a build function, from `examples/tracker/main.go`
+The real shape of a build function, from `internal/testapps/tracker/main.go`
 (`buildShell`): static header and sidebar, a crumbs route area, a
 toolbar outlet, the primary, an aside outlet:
 
@@ -393,7 +393,7 @@ navigation) — see [internationalization](i18n.md).
 Reach for a distinct name when the shape genuinely differs; reach for
 `WithKey` when only the content or context varies. A region that only
 some pages show is neither: it is an outlet that only those pages fill.
-`examples/acme-site` places an `announcement` outlet in its site shell,
+`internal/testapps/acme-site` places an `announcement` outlet in its site shell,
 and only the changelog screen fills it (see
 [Outlets and fills](#outlets-and-fills)).
 
@@ -445,7 +445,7 @@ status 404, anything else the error page with status 500, no error text
 in the body). First read inside a fill, area, or build → contained to
 that region and logged. `uihost.WithErrorScreen(&ErrorScreen{})` gives
 the 500 page a product surface through the app's layout, like
-`examples/tracker`'s.
+`internal/testapps/tracker`'s.
 
 A `Requires` key with no visible declaration (the resolver sits on a
 sibling group, or was never declared) panics at mount
@@ -800,7 +800,7 @@ every option does nothing:
 
 - **No outlets, no areas** → navigation is the plain partial swap it
   always was; the page ships the core runtime only. The marketing pages
-  of `examples/acme-site` declare none of the machinery.
+  of `internal/testapps/acme-site` declare none of the machinery.
 - **Outlets/areas present** → the client sends the fills header and the
   response is an envelope; the envelope module loads on demand. Costs
   the fill DOM: outlet content belongs to one route and is re-applied

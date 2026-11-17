@@ -313,13 +313,13 @@ func TestRenderAppSpecCodeFetchesNoFonts(t *testing.T) {
 	}
 }
 
-// examples/ecommerce/app is generated from its gofastr.yml with hooks,
+// internal/testapps/ecommerce/app is generated from its gofastr.yml with hooks,
 // middleware, a plugin and state moves, so pack has to read all of them
 // back and write them out: the check runs on the spec decoded from the
 // packed YAML, and a regression in any recovery or in the serializer shows
 // up as an unrecovered file.
 //
-//gofastr:test-reads /examples/ecommerce/
+//gofastr:test-reads /internal/testapps/ecommerce/
 func TestPackRecoversEcommerce(t *testing.T) {
 	// The seed password lives in the app's .env, which a checkout does not
 	// carry: copy the app and write the .env generate would.

@@ -26,7 +26,7 @@ import (
 // content row) and the marketing column (banner, reading container,
 // footer). The banners here are stand-ins: a real site's header and
 // footer are its own packages, each with its own geometry test
-// (examples/acme-site/siteheader). Hard rule 9: a frame's guarantees
+// (internal/testapps/acme-site/siteheader). Hard rule 9: a frame's guarantees
 // are layout, invisible to markup and stylesheet checks — each test
 // below renders the recipe and measures the region boxes the retired
 // page shell used to guarantee. (The recipes were proven box-equal to
@@ -35,7 +35,7 @@ import (
 
 // trackerRecipe composes the tracker's app shell (header, sidebar,
 // toolbar, main, aside, viewport scrolling) from the pieces — the
-// spelling examples/tracker/main.go uses.
+// spelling internal/testapps/tracker/main.go uses.
 func trackerRecipe(header, nav, toolbar, aside, main render.HTML) render.HTML {
 	return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
 		html.Header(html.HeaderConfig{Banner: true}, header),

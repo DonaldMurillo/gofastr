@@ -102,7 +102,7 @@ if err := d.Run(app); err != nil {
   window is about to load.
 - An app can also serve itself over HTTP and skip `Run`: set
   `--serve :8080` or `$PORT` and call `app.Start` instead.
-  `examples/desktop-notes` does both behind one flag. In that mode the
+  `internal/testapps/desktop-notes` does both behind one flag. In that mode the
   battery stays registered but its boot gate stays unarmed, so there is
   no window handshake and this battery installs **no identity at all**
   and serves **no** native capability calls (the chokepoint answers 404
@@ -518,7 +518,7 @@ capability's methods.
 ## Writing a capability in a plugin
 
 A plugin registers capabilities from its `Init` through the same seam
-the core uses. `examples/desktop-notes`'s `systeminfo` is the whole
+the core uses. `internal/testapps/desktop-notes`'s `systeminfo` is the whole
 example:
 
 <!-- gofastr:compile
@@ -846,7 +846,7 @@ html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"data-cui-window-drag": ""}},
 
 ### The desktop-notes widget
 
-`examples/desktop-notes` ships the full recipe: a "Quick note…" tray
+`internal/testapps/desktop-notes` ships the full recipe: a "Quick note…" tray
 row opens `desktop.Widget("/widget", 320, 280)`, and `/widget`
 renders a `ui.Card` whose header is the drag handle and whose form
 posts to the same `/api/notes` route the editor uses, resetting after
@@ -2468,7 +2468,7 @@ defaults.
 
 ### The example
 
-`examples/desktop-notes` declares `notify_on_save` and
+`internal/testapps/desktop-notes` declares `notify_on_save` and
 `export_folder` this way, mounts the screen at `/settings`, and reads
 them through `d.Preferences()`.
 
@@ -3053,7 +3053,7 @@ it would for a user; `Battery.ResetGrantsForTest` (exported in test
 builds) clears the table between phases that need fresh prompts.
 
 `battery/desktop/native_e2e_test.go` and
-`examples/desktop-notes/native_e2e_test.go` are the references.
+`internal/testapps/desktop-notes/native_e2e_test.go` are the references.
 
 ## How tests run
 
@@ -3062,7 +3062,7 @@ and run by hand on a Mac with a display. The Linux native tests use the
 separate environment opt-ins described above:
 
 ```bash
-CGO_ENABLED=0 go test -count=1 -tags desktop_e2e ./battery/desktop/ ./examples/desktop-notes/
+CGO_ENABLED=0 go test -count=1 -tags desktop_e2e ./battery/desktop/ ./internal/testapps/desktop-notes/
 ```
 
 On an Apple silicon Mac, put `GOARCH=amd64` in front of the same command

@@ -22,14 +22,6 @@ build-examples: csp-check embed-check $(DIST_DIR)
 		echo "  building $$name → $(DIST_DIR)/examples/$$name"; \
 		go build $$LDFLAGS -o $(DIST_DIR)/examples/$$name ./$$dir || exit 1; \
 	done
-	@# ecommerce is the declaration-driven flagship: its app is scaffolded
-	@# from gofastr.yml into the owned app/ subpackage (output_dir: app — see
-	@# framework/ARCHITECTURE.md).
-	@# --force refreshes the committed scaffold from the current generator.
-	@echo "  scaffolding ecommerce from app spec"
-	@(cd examples/ecommerce && go run github.com/DonaldMurillo/gofastr/cmd/gofastr generate app gofastr.yml --force) || exit 1
-	@echo "  building ecommerce → $(DIST_DIR)/examples/ecommerce"
-	@go build -o $(DIST_DIR)/examples/ecommerce ./examples/ecommerce/app || exit 1
 
 build-all: csp-check embed-check build-cmd build-examples
 

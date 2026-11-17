@@ -210,7 +210,7 @@ Meridian screenshot `on_change` line on `ui` and `ui.styling`).
    + `gofastr gen styles`): scoped to its own markup, tokens only, and
    barred from kit internals. It is how an app draws what the kit
    deliberately does not ship: its site header, footer and docs page
-   (`examples/acme-site/{siteheader,sitefooter,helpdocs}`; the app spec
+   (`internal/testapps/acme-site/{siteheader,sitefooter,helpdocs}`; the app spec
    writes the same packages into generated apps). It is never a patch
    for a component that should have a variant.
 8. **Survey before you build.** Before hand-rolling any UI markup or CSS,

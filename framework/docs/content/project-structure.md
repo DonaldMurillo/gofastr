@@ -48,7 +48,7 @@ small apps never need more than this.
 **`--out=<dir>` (or `output_dir:` in the app spec's `app:` block) scaffolds into
 a subpackage** instead of the module root, useful when the repo is a monorepo or
 an example that also hosts its own Go test package and you want the app to live
-under, say, `app/`. The [`examples/ecommerce`](https://github.com/DonaldMurillo/gofastr/tree/main/examples/ecommerce)
+under, say, `app/`. The [`internal/testapps/ecommerce`](https://github.com/DonaldMurillo/gofastr/tree/main/internal/testapps/ecommerce)
 example app uses `output_dir: app` for exactly this reason; develop it with
 `gofastr dev --dir app` (hot reload) or run it once with `go run ./app`. The
 subpackage is still owned Go; `--out` only changes *where* the scaffold

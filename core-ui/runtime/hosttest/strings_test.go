@@ -44,7 +44,7 @@ func TestRuntimeSayCallsMatchPhrases(t *testing.T) {
 		}
 		if d.IsDir() {
 			switch d.Name() {
-			case ".git", "node_modules", "testdata", "dist", ".gofastr", "examples", "evals":
+			case ".git", "node_modules", "testdata", "testapps", "dist", ".gofastr", "examples", "evals":
 				return filepath.SkipDir
 			}
 			return nil

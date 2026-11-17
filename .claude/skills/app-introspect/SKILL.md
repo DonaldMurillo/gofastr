@@ -20,7 +20,7 @@ automatically (mount + introspection + control automatically, plus
 `GOFASTR_DEV_MCP=0`). The `framework_docs_*` tools are never implied:
 the app adds `framework.WithMCPTools(mcptools.Register)`. Outside the dev loop the app
 must be built with `framework.WithMCPIntrospection()` and expose `/mcp`
-(via `framework.WithMCP()`); `examples/site`, `examples/ecommerce` and
+(via `framework.WithMCP()`); `examples/site`, `internal/testapps/ecommerce` and
 generated apps wire all three. Launch the site with `./scripts/dev-watch.sh` (port
 8082) or `go run ./examples/site` (port 8083; plain go-run has no
 `PORT` set). The curl examples below use 8082; adjust to how the app

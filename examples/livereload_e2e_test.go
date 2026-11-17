@@ -54,14 +54,6 @@ func TestExamplesAreHMRReady(t *testing.T) {
 	surfaces := []exampleSurface{
 		{name: "site", pkg: "./examples/site", page: "/"},
 		{name: "meridian", pkg: "./examples/meridian", page: "/"},
-		{name: "desktop-notes", pkg: "./examples/desktop-notes", page: "/"},
-		{name: "ecommerce", pkg: "./examples/ecommerce/app", page: "/",
-			// The storefront's app spec seeds an admin, and a generated app
-			// refuses to boot on a fresh database when the seed password is
-			// missing rather than coming up with an account nobody can log
-			// into. Every DATABASE_URL here is a fresh temp file, so the seed
-			// runs every time.
-			env: []string{"ADMIN_SEED_PASSWORD=hmr-seed-admin-pw"}},
 	}
 	for _, s := range surfaces {
 		t.Run(s.name, func(t *testing.T) {

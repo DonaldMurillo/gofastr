@@ -1,0 +1,268 @@
+//gofastr:generated generator=app kind=scaffold version=dev sum=6723824bf7e6c0c7
+
+package main
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"sort"
+	"strings"
+
+	"github.com/DonaldMurillo/gofastr/battery/auth"
+	gflog "github.com/DonaldMurillo/gofastr/battery/log"
+	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/dotenv"
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/docs/mcptools"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
+	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
+	_ "github.com/lib/pq"
+
+	"github.com/DonaldMurillo/gofastr/internal/testapps/ecommerce/app/entities"
+)
+
+func main() {
+	// Load .env before anything reads the environment: the DB (and
+	// its DATABASE_URL) opens before NewApp's own dotenv auto-load
+	// would run. Existing process env always wins over the files.
+	//
+	// framework.DefaultDotEnvPaths(), not a hardcoded pair: dotenv.Apply
+	// never overwrites an existing variable, so loading a SHORTER list
+	// here would pin .env's DATABASE_URL and NewApp's higher-precedence
+	// .env.<APP_ENV> could no longer win.
+	_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
+	runtimeIsolation, err := isolation.Resolve(".")
+	if err != nil {
+		log.Fatal(err)
+	}
+	db, err := openDB(runtimeIsolation)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if db != nil {
+		defer db.Close()
+	}
+
+	options := []framework.AppOption{
+		framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}),
+		// The app's translations (i18n.go): locales/<tag>.json, picked
+		// by the browser's Accept-Language.
+		translatorOption(),
+		// Agent-ready MCP surface: WithMCP mounts /mcp (POST JSON-RPC +
+		// GET SSE) plus the discovery well-knowns (/.well-known/mcp/*);
+		// WithMCPIntrospection adds read-only orientation tools
+		// (app_routes, app_readiness, app_config, …). The
+		// introspection tools reveal the app's shape: remove the option
+		// if /mcp is reachable by untrusted callers in production.
+		// WithMCPTools(mcptools.Register) adds framework_docs_list/get/search over the
+		// embedded framework docs; drop it (and the import) to shrink the binary.
+		// Under `gofastr dev` the framework additionally auto-enables the
+		// mutating control tools + log debug tools (opt-out:
+		// GOFASTR_DEV_MCP=0); add framework.WithMCPControl() here to opt a
+		// trusted production /mcp into runtime control.
+		framework.WithMCP(),
+		framework.WithMCPIntrospection(),
+		framework.WithMCPTools(mcptools.Register),
+	}
+	if db != nil {
+		options = append(options, framework.WithDB(db))
+	}
+	fwApp := framework.NewApp(options...)
+	// Structured logging (battery/log zero-value canon): per-app file
+	// sink, access log, panic recovery, colorized dev console. Under
+	// `gofastr dev` its MCP debug tools (log_recent, log_filter,
+	// log_metrics, log_set_level) auto-register so a connected agent
+	// can read recent requests and errors; they stay OFF outside dev,
+	// access logs carry client IPs. Set EnableMCP: true here only when
+	// a production /mcp is reachable solely by trusted callers.
+	fwApp.RegisterPlugin(gflog.New(gflog.Config{}))
+	entities.RegisterAll(fwApp)
+	// An entity declares states and the seed writes rows: seeded rows may
+	// start at any state under the audited state override below, and an
+	// override is refused on an entity with no audit log, so enable it
+	// here (WithAuditLog creates audit_log when it does not exist).
+	fwApp.WithAuditLog(framework.AuditConfig{})
+	fwApp.HookRegistry("orders").RegisterHook(framework.AfterCreate, recomputeOrderTotalsOnCreateHook)
+	fwApp.HookRegistry("orders").RegisterHook(framework.AfterUpdate, recomputeOrderTotalsOnUpdateHook)
+	fwApp.HookRegistry("order_items").RegisterHook(framework.AfterCreate, recomputeOrderFromItemCreateHook)
+	fwApp.HookRegistry("order_items").RegisterHook(framework.AfterUpdate, recomputeOrderFromItemUpdateHook)
+	fwApp.HookRegistry("order_items").RegisterHook(framework.AfterDelete, recomputeOrderFromItemDeleteHook)
+	site := uiapp.NewApp(appName)
+	RegisterGenerated(fwApp, site, db)
+	fwApp.WithSeed(func(ctx context.Context) error {
+		ctx = framework.WithStateOverride(ctx, "seed")
+		// Resolve the bootstrap admin (created by the earlier-registered
+		// admin seed hook) so the demo rows are owned by them; a fresh
+		// signup then starts with an empty workspace and adds its own.
+		// CreateOne stamps the owner column from this user.
+		if u, _, err := auth.NewEntityUserStore(db, "auth_users").FindByEmail(ctx, "admin@shop.example"); err == nil && u != nil {
+			ctx = handler.SetUser(ctx, u)
+		}
+		for _, s := range seedData() {
+			ch, err := fwApp.CrudHandler(s.Entity)
+			if err != nil {
+				return fmt.Errorf("seed %s: no handler: %w", s.Entity, err)
+			}
+			n, err := ch.CountAll(ctx, framework.ListOptions{})
+			if err != nil {
+				return fmt.Errorf("seed %s: count: %w", s.Entity, err)
+			}
+			if n > 0 {
+				continue
+			}
+			for i, row := range s.Rows {
+				resolveSeedRefs(ctx, fwApp, row)
+				if _, err := ch.CreateOne(ctx, row); err != nil {
+					return seedCreateError(s.Entity, i+1, err)
+				}
+			}
+		}
+		return nil
+	})
+	fwApp.Mount(uihost.New(site, uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()), uihost.WithDescription("ShopFront: manage categories, products, orders, order_items, and reviews."), uihost.WithAppIcon(appIconPNG()), uihost.WithSitemap(uihost.SitemapConfig{BaseURL: appBaseURL()}), uihost.WithRobots(uihost.RobotsConfig{Disallow: []string{"/__gofastr/"}}), uihost.WithStrict()))
+	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Banner fires via OnReady: only after auto-migrate, hooks, and the
+	// port bind all succeeded. Printing before Start would announce a
+	// server that may never come up.
+	fwApp.OnReady(func(boundAddr string) {
+		fmt.Printf("Server running at http://%s\n", boundAddr)
+	})
+	if err := fwApp.Start(addr); err != nil && err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
+}
+
+func openDB(runtimeIsolation *isolation.Runtime) (*sql.DB, error) {
+	driver := getEnv("DB_DRIVER", "sqlite")
+	dsn := getEnv("DATABASE_URL", "file:shop.db")
+	resolvedDriver, resolvedDSN, err := runtimeIsolation.Database(driver, dsn)
+	if err != nil {
+		return nil, err
+	}
+	driver, dsn = resolvedDriver, resolvedDSN
+	switch driver {
+	case "", "none":
+		return nil, nil
+	case "sqlite", "sqlite3":
+		return sql.Open("sqlite3", dsn)
+	case "postgres", "postgresql":
+		return sql.Open("postgres", dsn)
+	default:
+		return nil, fmt.Errorf("unsupported db driver %q", driver)
+	}
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// appIconPNG generates the app's icon source at startup: a diagonal
+// gradient in the app spec's primary color. uihost.WithAppIcon derives
+// /favicon.ico, the sized PNGs, and the head links from this one image.
+// Have a real logo? Embed it and return those bytes instead:
+//
+//	//go:embed logo.png
+//	var logo []byte
+func appIconPNG() []byte {
+	img, err := fwimage.NewGradient(512, 512, "#2563EB", "#143681")
+	if err != nil {
+		return nil // WithAppIcon warns and skips on undecodable input
+	}
+	b, err := img.PNG().Bytes()
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// appBaseURL is the canonical origin used in sitemap.xml <loc> entries
+// (they must be absolute URLs). Set APP_BASE_URL when deploying; the
+// fallback keeps local dev and tests working out of the box.
+func appBaseURL() string {
+	return getEnv("APP_BASE_URL", devBaseURL)
+}
+
+// devBaseURL is the local dev origin appBaseURL falls back to; the app
+// spec sets no app.base_url.
+const devBaseURL = "http://localhost:8080"
+
+// resolveSeedRefs rewrites "@entity.field=value" reference strings in a
+// seed row into the resolved primary-key id of the matching row. This lets
+// relational seed data point at rows created earlier in the same pass
+// (e.g. a subscription's customer_id: "@customers.email=ada@acme.io").
+// Unresolvable references are left as-is so the create fails loudly.
+func resolveSeedRefs(ctx context.Context, fwApp *framework.App, row map[string]any) {
+	for k, v := range row {
+		s, ok := v.(string)
+		if !ok || !strings.HasPrefix(s, "@") {
+			continue
+		}
+		rest := s[1:]
+		dot := strings.IndexByte(rest, '.')
+		eq := strings.IndexByte(rest, '=')
+		if dot < 1 || eq <= dot+1 {
+			continue
+		}
+		ent, field, val := rest[:dot], rest[dot+1:eq], rest[eq+1:]
+		ch, err := fwApp.CrudHandler(ent)
+		if err != nil {
+			continue
+		}
+		rows, err := ch.ListAll(ctx, framework.ListOptions{Filters: []filter.ParsedFilter{{Field: field, Op: filter.OpEq, Value: val}}, Limit: 1})
+		if err != nil || len(rows) == 0 {
+			continue
+		}
+		pk, err := ch.Entity.KeyColumn()
+		if err != nil {
+			continue
+		}
+		if id, ok := rows[0][ch.WireKey(pk)]; ok {
+			row[k] = id
+		}
+	}
+}
+
+// seedCreateError renders a failed seed insert with the per-field detail
+// the CRUD validator already computed. ValidationError.Error() is the
+// bare string "validation failed": the messages worth reading live in
+// Fields(), so a plain %w would abort the boot with zero actionable
+// information. Unwrap, print every field message (sorted, so the output
+// is stable), and name the row by its one-based position in the
+// app spec's seed: block. The position, never a row value, is the
+// label: this error aborts boot through log.Fatal, so its text lands
+// in application logs, and seed rows carry admin emails and passwords.
+func seedCreateError(entity string, index int, err error) error {
+	var ve *crud.ValidationError
+	if !errors.As(err, &ve) || len(ve.Fields()) == 0 {
+		return fmt.Errorf("seed %s: %w", entity, err)
+	}
+	names := make([]string, 0, len(ve.Fields()))
+	for name := range ve.Fields() {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	fmt.Fprintf(&b, "seed %s row %d failed validation:", entity, index)
+	for _, name := range names {
+		for _, msg := range ve.Fields()[name] {
+			fmt.Fprintf(&b, "\n  - %s: %s", name, msg)
+		}
+	}
+	return fmt.Errorf("%s\ncause: %w", b.String(), err)
+}
