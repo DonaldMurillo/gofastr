@@ -28,27 +28,13 @@ func init() {
 	})
 }
 
-// canonicalMethods are the verbs ServeMux is given. Anything else in a
-// method position is either a typo or a case mistake, both of which
-// register cleanly and then never match.
 var canonicalMethods = map[string]bool{
 	"GET": true, "HEAD": true, "POST": true, "PUT": true, "PATCH": true,
 	"DELETE": true, "OPTIONS": true, "CONNECT": true, "TRACE": true,
 }
 
-// reColonParam finds an Express-style parameter: a path segment that
-// starts with a colon. Anchored to a slash so a colon inside a segment
-// (a matrix parameter, a port in a proxied absolute URL) is not a match.
 var reColonParam = regexp.MustCompile(`/:([A-Za-z_][A-Za-z0-9_]*)`)
 
-// stateSegments are path segments that describe DISCRETE LIST state,
-// such as sort, page, filter, or tab, rather than a resource. That
-// narrowness is the rule's precision: state verbs only, never nouns
-// ("order" was removed because `GET /order/{id}` is a shop's resource
-// route, not sort state), and nothing from the continuous client-owned
-// class (a map's lat/lng/zoom, a chart's range), where a URL is the
-// deliberate, shareable artifact and neither a route nor an island is
-// the answer. That state lives in the client signal store.
 var stateSegments = map[string]bool{
 	"page": true, "sort": true, "sortby": true,
 	"orderby": true, "filter": true, "tab": true, "perpage": true,
@@ -58,9 +44,6 @@ var stateSegments = map[string]bool{
 func runRouting(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	var out []contracts.Diagnostic
 
-	// The prefix rule needs no route table, so it runs before the
-	// Registered gate: a module that registers no routes can still match
-	// a path against a prefix with no segment boundary.
 	out = append(out, checkPrefixBoundary(p)...)
 
 	table := Routes(p)
@@ -83,8 +66,6 @@ func checkMethodCase(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 		}
 		upper := strings.ToUpper(r.Method)
 		if !canonicalMethods[upper] {
-			// Not a case problem, an unrecognised verb entirely. Still
-			// worth reporting, with a message that says which it is.
 			d := diag(p, contracts.RuleNonUppercaseVerb, r.File, r.Pos,
 				fmt.Sprintf("route %s %s uses an unrecognised HTTP method", r.Method, r.Pattern))
 			d.Evidence = map[string]string{"method": r.Method, "pattern": r.Pattern}
@@ -108,9 +89,6 @@ func checkMethodCase(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 func checkColonParams(p *contracts.Pass, table *RouteTable) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	for _, r := range table.Routes {
-		// Screens are matched by core-ui's router, where `:id` is the
-		// native spelling. Flagging it there would be telling people to
-		// break working code.
 		if r.Screen {
 			continue
 		}
@@ -141,9 +119,6 @@ func checkDuplicates(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 		file string
 		line int
 	}
-	// routeKey is the dedup identity of a registration. A struct, not
-	// package+"\x00"+method+" "+pattern: a joined string is ambiguous when
-	// a part embeds the separator (gofastrcompositekey).
 	type routeKey struct {
 		pkg     string
 		method  string
@@ -153,17 +128,9 @@ func checkDuplicates(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 	order := []routeKey{}
 	byKey := map[routeKey]Route{}
 	for _, r := range table.Routes {
-		// An unresolved group prefix makes the full path unknown, so two
-		// routes that look identical here may well be distinct. Skip them
-		// rather than report a duplicate that is not one.
 		if r.Pattern == "" || strings.Contains(r.Pattern, "{$}") {
 			continue
 		}
-		// Scoped by package. A repository holding several apps, such as
-		// examples, benchmarks, or test fixtures, has many programs that
-		// each serve "/healthz", and none of them collide with each
-		// other. Only a second registration in the same package is a
-		// real conflict.
 		key := routeKey{r.Package, r.Method, r.Pattern}
 		if _, ok := seen[key]; !ok {
 			order = append(order, key)
@@ -192,21 +159,12 @@ func checkDuplicates(p *contracts.Pass, table *RouteTable) []contracts.Diagnosti
 }
 
 func checkStateRoutes(p *contracts.Pass, table *RouteTable) []contracts.Diagnostic {
-	// The rule's premise, that sorting a table is not navigation, is
-	// about browsers: scroll position, focus, history entries. A headless
-	// API has none of those, and `/orders/page/{n}` is an ordinary REST
-	// shape there. Only a module that actually renders UI is speaking
-	// the language this rule polices.
 	if !rendersUI(p) {
 		return nil
 	}
 	var out []contracts.Diagnostic
 	for _, r := range table.Routes {
 		for seg := range strings.SplitSeq(strings.Trim(r.Pattern, "/"), "/") {
-			// Only LITERAL segments carry the rule's evidence. A wildcard
-			// named {page} is a resource identifier, a CMS page slug, not
-			// pagination; stripping the braces before matching erased
-			// exactly that distinction.
 			if strings.HasPrefix(seg, "{") {
 				continue
 			}
@@ -226,17 +184,9 @@ func checkStateRoutes(p *contracts.Pass, table *RouteTable) []contracts.Diagnost
 	return out
 }
 
-// checkUntested is the static half of route coverage: does any test file
-// in the module mention this path at all. It is a weaker claim than
-// GOFASTR1101 (which proves a request reached the route) and it is worth
-// having anyway, because it needs no test run. It catches the route
-// added in the same commit as no test whatsoever.
 func checkUntested(p *contracts.Pass, table *RouteTable) []contracts.Diagnostic {
 	literals := testStringLiterals(p)
 	if len(literals) == 0 {
-		// No test files at all, or none with string literals. Reporting
-		// every route as untested would be technically true and useless.
-		// The project has a bigger problem than this rule describes.
 		return nil
 	}
 	var out []contracts.Diagnostic
@@ -255,9 +205,6 @@ func checkUntested(p *contracts.Pass, table *RouteTable) []contracts.Diagnostic 
 
 const testLiteralsKey = "analyzers.testliterals"
 
-// testStringLiterals collects every string literal in the module's test
-// files. Literal text is the only signal available without running
-// anything, and it is enough: a test that exercises a route names it.
 func testStringLiterals(p *contracts.Pass) []string {
 	return p.Memo(testLiteralsKey, func() any {
 		seen := map[string]bool{}
@@ -286,9 +233,6 @@ func testStringLiterals(p *contracts.Pass) []string {
 	}).([]string)
 }
 
-// routeMentioned matches a route pattern against test literals. A pattern
-// with parameters is matched on the static prefix before the first brace,
-// because the test uses a concrete value where the pattern has a wildcard.
 func routeMentioned(pattern string, literals []string) bool {
 	prefix := pattern
 	if i := strings.IndexAny(pattern, "{:"); i >= 0 {
@@ -296,8 +240,6 @@ func routeMentioned(pattern string, literals []string) bool {
 	}
 	prefix = strings.TrimSuffix(prefix, "/")
 	if prefix == "" {
-		// The root route. Only an exact "/" (or a query on it) counts.
-		// Otherwise every literal path in the suite would match it.
 		for _, l := range literals {
 			if l == "/" || strings.HasPrefix(l, "/?") {
 				return true
@@ -314,10 +256,6 @@ func routeMentioned(pattern string, literals []string) bool {
 	return false
 }
 
-// replaceLiteralFix builds a single-token replacement edit for a quoted
-// literal on a known line. It returns nil unless the old text appears
-// exactly once on that line. An ambiguous match is not something to
-// resolve by guessing.
 func replaceLiteralFix(p *contracts.Pass, rel string, line int, oldText, newText, description string) *contracts.SuggestedFix {
 	body, ok := p.Source(rel)
 	if !ok || line < 1 {
@@ -349,85 +287,9 @@ func replaceLiteralFix(p *contracts.Pass, rel string, line int, oldText, newText
 	}
 }
 
-// ----------------------------------------------------------------------
-// GOFASTR1006: strings.HasPrefix on a path without a segment boundary.
-// ----------------------------------------------------------------------
-
-// Bug class: a `/`-separated path or route matched by HasPrefix against a
-// prefix that carries no boundary. stability.Classify shipped exactly this
-// (probe TestClassifyRequiresSegmentBoundary, fixed e9e50673): manifest
-// entries like {"cmd", Provisional} classified every `cmd*` sibling, so a
-// package the manifest never named silently inherited a tier and the
-// add-it-to-the-manifest gate stayed quiet. framework/uihost's document
-// script scope matched the same shape earlier in v0.80. The rule is
-// shape-based, not stability-based: any path-like operand matched against
-// a boundary-less prefix is the finding.
-//
-// The rule keys on path-NAMED haystacks: an identifier in the first
-// operand matching path/route/url/uri/dir, exactly "rel", or a selection
-// through a .URL field. A path held in a neutrally named variable
-// (HasPrefix(s, p)) is out of reach for a parse-only pass — and key and
-// prefix are deliberately not path names (review 5): API keys, token
-// types, and versions are value spaces where matching every longer
-// sibling is the intent, so prefix checks on them stay quiet.
-//
-// Deliberately silent on:
-//   - a literal prefix that already ends in "/" ("internal/") and "/"
-//     and "" themselves: the boundary is written down — as is a value
-//     ending in ":" ("file:", a URL scheme literal: the colon
-//     terminates the scheme token, so every match has that exact
-//     scheme);
-//   - a prefix identifier that resolves to a package-level CONSTANT
-//
-// (const prefix = "/__gofastr/runtime/"), in this file or any
-// sibling file of the same directory (consts.go / scope.go layout;
-// a same-named package in another directory is a different
-// package and never resolves) — unless the directory declares the
-// name twice with DIFFERENT values, the mutually-exclusive
-// build-tag variant layout: which value compiles in is a build
-// decision, so the name stays dynamic (review 6) — or to a
-// function local that is not a parameter and whose EVERY
-// assignment in the function is a string literal (the same
-// literal): both provably hold that one value at the call. A
-// parameter conditionally defaulted to a bounded literal stays
-// dynamic — the caller's value is what runs (review 5: "/api"
-// claiming /apiary through a defaulted "/api/"), and so does any
-// local with one non-literal or differently-valued assignment
-// anywhere in the function. Cross-package constants stay dynamic
-// (their value is not visible without loading another package's
-// files), and package-level vars too (a var is assignable from any
-// function of the package, which a one-file pass cannot see);
-//   - a binary + chain whose RIGHTMOST operand is a string literal (or
-//     resolves to one) ending in "/" (`root+"/"`): the final value
-//     provably stops at a segment boundary. Every other concatenation
-//     (`root+leaf`, `base+sep`) is runtime-computed and reports —
-//     review 5 ran root+leaf against "/api/users-old" under
-//     "/api/users" and it matched.
-//
-// A literal with no "/" at all ("cmd") fires whenever the haystack is
-// strongly path-named (an identifier matching path/route/url/uri/dir,
-// or exactly rel — judged without the callee of a call, which names
-// the transform: filepath.ToSlash on a filename is a value-space
-// match, not a first segment): a first segment is exactly how the
-// original bug was spelled, HasPrefix(importPath, "cmd").
 func checkPrefixBoundary(p *contracts.Pass) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	// Package-level literals are resolved across every file of the
-	// package: consts.go/scope.go layout is standard, and a bounded
-	// constant must not turn "dynamic" by living in a sibling file.
-	// The key is the DIRECTORY: the pass walks every directory under
-	// the root, two directories can share a package name while being
-	// separate packages, and one directory's constant must never
-	// resolve (or overwrite) for another's identifiers.
 	pkgLits := map[string]map[string]string{}
-	// conflicted records same-directory names whose declarations
-	// disagree (the build-tag variant layout: two files of one
-	// directory, mutually exclusive //go:build lines, different
-	// values). Which variant compiles in is a build decision a
-	// parse-only pass cannot make, and overwriting by file order let
-	// the bounded variant silence the unbounded one's finding (or the
-	// reverse, by order): the name is unresolved and stays dynamic
-	// (review 6).
 	conflicted := map[string]map[string]bool{}
 	for _, f := range p.AppFiles() {
 		file, ok := p.AST(f.Rel)
@@ -486,25 +348,6 @@ func checkPrefixBoundary(p *contracts.Pass) []contracts.Diagnostic {
 	return out
 }
 
-// unboundedPrefix reports whether the prefix argument can name a
-// slash-hierarchical tree while carrying no segment boundary. Dynamic
-// prefixes (params, fields, range variables) are always treated as
-// unbounded: their values are invisible to a parse-only pass, and the
-// stability bug lived in exactly one. Literals and resolvable constants
-// are judged by their value against the haystack: a value with an
-// interior slash and no trailing one is a segment candidate anywhere; a
-// value with no slash at all is a first segment, which only matters when
-// the haystack is strongly path-named (strongPathExpr) — against a
-// key/prefix-named value space a no-slash prefix is the intent, not a
-// boundary bug. A binary + chain is judged by its rightmost operand:
-// only a string literal (or resolvable name) ending in "/", or the
-// platform separator spelled string(os.PathSeparator) /
-// string(filepath.Separator) — directly or through a local whose every
-// assignment is exactly that — proves the final value stops at a
-// boundary (root+"/", absBase+string(os.PathSeparator), the
-// containment idiom the whole-repo run pinned); every other
-// concatenation is dynamic (review 5: root+leaf still matched
-// /api/users-old).
 func unboundedPrefix(e ast.Expr, haystack ast.Expr, local localLits, fileLits map[string]string, aliases map[string]string) bool {
 	strong := strongPathExpr(haystack)
 	switch v := e.(type) {
@@ -547,19 +390,9 @@ func unboundedPrefix(e ast.Expr, haystack ast.Expr, local localLits, fileLits ma
 		}
 		return true
 	}
-	// Selectors (r.prefix, cfg.BasePath), calls, index expressions:
-	// dynamic.
 	return true
 }
 
-// separatorExpr reports whether e spells the platform path separator:
-// string(os.PathSeparator) or string(filepath.Separator), honouring the
-// file's import aliases. A one-byte delimiter on every GOOS, so a
-// chain ending in it ends at a segment boundary exactly like one
-// ending in "/" — the cross-platform containment idiom
-// (absBase+string(os.PathSeparator)) that a hardcoded "/" would break
-// on Windows. os spells the constant PathSeparator; filepath spells it
-// Separator.
 func separatorExpr(e ast.Expr, aliases map[string]string) bool {
 	call, ok := e.(*ast.CallExpr)
 	if !ok || len(call.Args) != 1 {
@@ -586,10 +419,6 @@ func separatorExpr(e ast.Expr, aliases map[string]string) bool {
 	return false
 }
 
-// resolveLit returns the string literal the name provably holds in this
-// function, falling back to the package-level constants. A name the
-// function made dynamic (a parameter, a non-literal or conflicting
-// assignment) never resolves: the local fact beats the file fact.
 func resolveLit(name string, local localLits, fileLits map[string]string) (string, bool) {
 	if local.dyn[name] {
 		return "", false
@@ -601,15 +430,6 @@ func resolveLit(name string, local localLits, fileLits map[string]string) (strin
 	return val, ok
 }
 
-// segmentPrefixCandidate reports whether a known prefix value names part
-// of a slash-separated tree without being bounded to it: it must contain
-// an interior or leading slash and not end in one — or, when the haystack
-// is strongly path-named, carry no slash at all (a first segment: "cmd"
-// matches cmdline the moment the tree is slash-separated). A value
-// ending in ":" is a URL scheme literal ("file:", isolation's DSN
-// check): the colon terminates the scheme token, so every string that
-// matches has that exact scheme — self-delimiting, like a trailing "/" —
-// and never a segment candidate.
 func segmentPrefixCandidate(val string, strongHaystack bool) bool {
 	if val == "" || strings.HasSuffix(val, "/") || strings.HasSuffix(val, ":") {
 		return false
@@ -620,13 +440,6 @@ func segmentPrefixCandidate(val string, strongHaystack bool) bool {
 	return strongHaystack
 }
 
-// fileScopedLits maps the package-level CONST names of ONE file
-// initialized from a single string literal. Callers merge these per
-// package (see checkPrefixBoundary) so a constant resolves from sibling
-// files too. Package-level vars are deliberately not resolved: a var is
-// assignable from any function of the package, and one file's pass
-// cannot see the other files' assignments — review 5's stale-literal
-// finding at file scope.
 func fileScopedLits(file *ast.File) map[string]string {
 	lits := map[string]string{}
 	for _, decl := range file.Decls {
@@ -649,31 +462,12 @@ func fileScopedLits(file *ast.File) map[string]string {
 	return lits
 }
 
-// localLits is the literal resolution of one function body: names that
-// provably hold one string literal at every point of the body, names
-// that are provably dynamic (a parameter, or any assignment that is
-// not that one literal), and names whose every assignment spells the
-// platform separator (sep := string(filepath.Separator)) — a boundary
-// when such a name ends a concatenation.
 type localLits struct {
 	vals map[string]string
 	dyn  map[string]bool
 	seps map[string]bool
 }
 
-// bodyScopedLits resolves the string-literal locals of one function.
-// A name is resolvable only when it is not a parameter and EVERY
-// assignment to it in the function is the same string literal (review
-// 5: collecting literals by spelling let a parameter conditionally
-// defaulted to "/api/" silence the "/api" that actually ran, and a
-// later dynamic reassignment overwrote nothing). Any other fact about
-// the name — a non-literal assignment, a multi-value assignment, two
-// different literals — makes it dynamic, and dynamic is sticky so a
-// file-level constant can never launder it. The same every-assignment
-// rule recognizes separator locals (sep := string(filepath.Separator)).
-// Assignments inside nested function literals count too: name-based
-// resolution cannot tell scopes apart, and the ambiguity must resolve
-// toward dynamic.
 func bodyScopedLits(fn *funcScope, aliases map[string]string) localLits {
 	res := localLits{vals: map[string]string{}, dyn: map[string]bool{}, seps: map[string]bool{}}
 	isParam := map[string]bool{}
@@ -708,14 +502,6 @@ func bodyScopedLits(fn *funcScope, aliases map[string]string) localLits {
 	sepEvery := map[string]bool{} // every assignment so far is a separator call
 	sepNever := map[string]bool{} // one assignment was not a separator: sticky
 	setSep := func(name string, rhs ast.Expr) {
-		// A parameter never becomes a separator: its caller-supplied
-		// value can survive a conditional reassignment. A local that is
-		// merely dyn (its assignment is a call, not a literal) still
-		// counts — that is exactly the separator spelling. A nil rhs is
-		// any non one-to-one assignment and disqualifies. Disqualification
-		// is sticky, like the literal rule's: sep := cfgSep with a later
-		// conditional sep = string(filepath.Separator) must not re-qualify
-		// the name, because cfgSep is what runs when the caller sent one.
 		if isParam[name] {
 			return
 		}
@@ -789,32 +575,13 @@ func bodyScopedLits(fn *funcScope, aliases map[string]string) localLits {
 		return true
 	})
 	for name := range sepEvery {
-		// No !dyn filter: a separator local is dynamic by the
-		// string-literal rule (its assignment is a call), and sepEvery
-		// already holds only names whose every assignment spelled the
-		// separator.
 		res.seps[name] = true
 	}
 	return res
 }
 
-// rePathishName names what the first operand usually carries: a path, a
-// route, a URL, a URI, a directory. Substring match, because real code
-// says importPath, baseURL, routePrefix. key and prefix are deliberately
-// absent (review 5): API keys, token types, and versions are value
-// spaces where matching every longer sibling is the intent, and
-// key/prefix-named haystacks turned every ordinary prefix check into a
-// finding. "rel" is not matched as a substring either — exactly "rel"
-// is Go's conventional spelling for a relative path, while
-// "related"/"release" name nothing of the sort.
 var rePathishName = regexp.MustCompile(`(?i)path|route|url|uri|dir`)
 
-// pathishExpr reports whether e names or reaches something path-like: an
-// identifier in the expression matches rePathishName or is exactly
-// "rel", or the expression selects through a URL field (r.URL.Path,
-// r.URL.Query().Get(...)). This is the rule's reach: a path held in a
-// neutrally named variable (HasPrefix(s, p)) is out of scope for a
-// parse-only pass — declared, not missed.
 func pathishExpr(e ast.Expr) bool {
 	found := false
 	ast.Inspect(e, func(n ast.Node) bool {
@@ -833,16 +600,6 @@ func pathishExpr(e ast.Expr) bool {
 	return found
 }
 
-// strongPathExpr reports whether the haystack is strongly path-named:
-// any identifier in it matches rePathishName or is exactly "rel". The
-// callee of a call is not judged — a call transforms its input, and
-// the package qualifier (filepath.ToSlash, url.PathEscape) names the
-// transform, not the value: the generator's screen_ file-namespace
-// check reads a filename through filepath.ToSlash and is a value-space
-// match, not a first segment. This is the gate for first-segment
-// (no-slash) prefixes — the original bug's literal spelling,
-// HasPrefix(importPath, "cmd") — so that widening the literal posture
-// cannot reach namespace matches.
 func strongPathExpr(e ast.Expr) bool {
 	found := false
 	var scan func(x ast.Expr)

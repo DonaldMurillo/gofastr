@@ -1,18 +1,5 @@
-// Package analyzers holds every detector behind `gofastr verify`.
-//
-// The rules themselves, IDs, severities, the Why and the Fix, live in
-// [github.com/DonaldMurillo/gofastr/framework/contracts]. This package
-// only finds the code. That split is deliberate: the catalog has to be
-// readable and serveable (over MCP, in docs) without dragging in a Go
-// parser, and an analyzer has to be replaceable without touching the
-// documentation contract it satisfies.
-//
-// Analyzers here are AST-based rather than type-checked. The trade is
-// explicit: a type-checked pass would be more precise and would need a
-// full `go/packages` load of the module, which costs seconds and fails
-// outright on a project that does not compile. Verify has to be useful
-// mid-edit, so precision is bought back with narrow patterns and
-// suppression rather than with types.
+// Package analyzers holds every detector behind `gofastr verify`; the
+// rules they report live in the contracts catalog.
 package analyzers
 
 import (
@@ -26,7 +13,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts/internal/codetext"
 )
 
-// importAliases maps each of a file's import aliases to its path.
 func importAliases(f *ast.File) map[string]string {
 	out := make(map[string]string, len(f.Imports))
 	for _, imp := range f.Imports {
@@ -46,10 +32,6 @@ func importAliases(f *ast.File) map[string]string {
 	return out
 }
 
-// rendersUI reports whether any app file in the module imports a UI
-// package (core-ui or framework/ui). Rules whose premise is a browser,
-// such as scroll position, focus, or history, use this to stay silent
-// on headless modules, where the same route shapes are ordinary REST.
 func rendersUI(p *contracts.Pass) bool {
 	const key = "analyzers.rendersui"
 	return p.Memo(key, func() any {
@@ -74,9 +56,6 @@ func rendersUI(p *contracts.Pass) bool {
 	}).(bool)
 }
 
-// importsAny reports whether the file imports any path with one of the
-// given suffixes. Suffix matching keeps the check working for a vendored
-// or forked module path.
 func importsAny(f *ast.File, suffixes ...string) bool {
 	for _, imp := range f.Imports {
 		p, err := strconv.Unquote(imp.Path.Value)
@@ -92,10 +71,6 @@ func importsAny(f *ast.File, suffixes ...string) bool {
 	return false
 }
 
-// stringLit returns the value of a string-literal expression, resolving
-// concatenations of literals ("/api" + "/v1"). Anything with a non-literal
-// operand returns ok=false. Guessing at a runtime-computed path would
-// produce findings nobody can act on.
 func stringLit(e ast.Expr) (string, bool) {
 	switch v := e.(type) {
 	case *ast.BasicLit:
@@ -123,8 +98,6 @@ func stringLit(e ast.Expr) (string, bool) {
 	return "", false
 }
 
-// selectorCall decomposes `x.Method(...)` into the receiver expression and
-// the method name.
 func selectorCall(n ast.Node) (recv ast.Expr, method string, call *ast.CallExpr, ok bool) {
 	c, isCall := n.(*ast.CallExpr)
 	if !isCall {
@@ -137,8 +110,6 @@ func selectorCall(n ast.Node) (recv ast.Expr, method string, call *ast.CallExpr,
 	return sel.X, sel.Sel.Name, c, true
 }
 
-// qualifiedCall matches `alias.Func(...)` where alias resolves to an
-// import whose path ends in pkgSuffix (or equals it, for stdlib).
 func qualifiedCall(n ast.Node, aliases map[string]string, pkgSuffix, funcName string) (*ast.CallExpr, bool) {
 	recv, method, call, ok := selectorCall(n)
 	if !ok || method != funcName {
@@ -158,8 +129,6 @@ func qualifiedCall(n ast.Node, aliases map[string]string, pkgSuffix, funcName st
 	return nil, false
 }
 
-// exprText renders an expression back to source-ish text for evidence
-// fields. Not valid Go for every node. It is a label, not a rewrite.
 func exprText(e ast.Expr) string {
 	switch v := e.(type) {
 	case *ast.Ident:
@@ -181,10 +150,6 @@ func exprText(e ast.Expr) string {
 	}
 }
 
-// isRequestHandler reports whether a function's signature makes it a
-// request handler: the `(http.ResponseWriter, *http.Request)` shape, or
-// a closure returning one. Used by the performance rules, which only care
-// about work that happens per-request.
 func isRequestHandler(fn *ast.FuncType) bool {
 	if fn == nil || fn.Params == nil {
 		return false
@@ -205,8 +170,6 @@ func isRequestHandler(fn *ast.FuncType) bool {
 	return sawWriter && sawRequest
 }
 
-// diag is the shared constructor: it positions a finding against the pass
-// and fills the snippet, so every analyzer produces the same shape.
 func diag(p *contracts.Pass, ruleID, file string, pos token.Pos, msg string) contracts.Diagnostic {
 	position := p.Position(pos)
 	return contracts.Diagnostic{
@@ -219,14 +182,6 @@ func diag(p *contracts.Pass, ruleID, file string, pos token.Pos, msg string) con
 	}
 }
 
-// hasLegacyAnnotation reports whether one of the pre-contracts escape
-// hatches sits on the line or in the four non-blank lines above it.
-//
-// These predate `//gofastr:allow` and are load-bearing across the
-// repository and in shipped apps. Honouring them is not backwards
-// compatibility for its own sake: `// best-effort:` and `// safe-sql:`
-// say *why* in the same breath, which is exactly what the newer directive
-// demands, so re-spelling thousands of them would buy nothing.
 func hasLegacyAnnotation(lines []string, lineNo int, markers ...string) bool {
 	if lineNo < 1 || lineNo > len(lines) {
 		return false
@@ -251,8 +206,6 @@ func hasLegacyAnnotation(lines []string, lineNo int, markers ...string) bool {
 		if check(lines[i]) {
 			return true
 		}
-		// Stop at a block boundary: an annotation three functions up is
-		// not an annotation for this line.
 		trimmed := strings.TrimSpace(lines[i])
 		if trimmed == "}" || strings.HasPrefix(trimmed, "func ") {
 			break
@@ -261,13 +214,6 @@ func hasLegacyAnnotation(lines []string, lineNo int, markers ...string) bool {
 	return false
 }
 
-// stripComments removes // line and /* */ block comments from Go source so
-// a rule counting call sites is not fooled by prose. String, raw-string
-// and rune literals are code: a "*/*" Accept value or a "locales/*.json"
-// glob no longer opens a comment that blanks the rest of the file. Line
-// numbers still match the original.
 func stripComments(src string) string { return codetext.Strip(src, false) }
 
-// stripScriptComments is stripComments for JavaScript, where a backslash
-// escapes inside a template literal.
 func stripScriptComments(src string) string { return codetext.Strip(src, true) }

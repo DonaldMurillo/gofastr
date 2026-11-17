@@ -11,8 +11,7 @@ import (
 
 // Route is one statically discovered registration.
 type Route struct {
-	// Method is the HTTP verb exactly as written, case included, since a
-	// lowercase one is a finding rather than something to normalise away.
+	// Method is the HTTP verb exactly as written, case included.
 	Method string
 	// Pattern is the full path with any resolvable group prefix applied.
 	Pattern string
@@ -20,20 +19,13 @@ type Route struct {
 	RawPattern string
 	// Group is the receiver identifier, "" for a direct router call.
 	Group string
-	// Guarded is true when the route was registered on a group carrying
-	// access or middleware, which is the framework's guarding seam.
+	// Guarded is true when the route's group was given access or middleware.
 	Guarded bool
 	// Handler is the handler expression, for evidence.
 	Handler string
-	// Screen marks a route declared through `app.NewScreen`. Screens are
-	// matched by core-ui's own router, NOT by ServeMux, and that router
-	// takes `:id` parameters natively. It even rewrites `{id}` into
-	// `:id`. Every rule about ServeMux pattern syntax must therefore skip
-	// them, or it reports the correct spelling as a bug.
+	// Screen marks an app.NewScreen route, matched by core-ui's router, where :id is native.
 	Screen bool
-	// Package is the import path of the registering package. Duplicate
-	// detection is scoped by it: two example apps in one repository both
-	// serving "/healthz" are not a conflict, they are two programs.
+	// Package is the import path of the registering package.
 	Package string
 
 	File string
@@ -57,15 +49,10 @@ type EntityDecl struct {
 type RouteTable struct {
 	Routes   []Route
 	Entities []EntityDecl
-	// Registered is true when at least one registration was found,
-	// distinguishing "no routes" from "this project does not register
-	// routes in a way the static pass can see". Analyzers stay quiet in
-	// the second case rather than reporting an empty app.
+	// Registered is true when at least one registration was found.
 	Registered bool
 }
 
-// routeVerbs are the RouteGroup / Router convenience methods, mapped to
-// the verb they register.
 var routeVerbs = map[string]string{
 	"Get": "GET", "Post": "POST", "Put": "PUT",
 	"Patch": "PATCH", "Delete": "DELETE",
@@ -73,8 +60,6 @@ var routeVerbs = map[string]string{
 	"PatchFunc": "PATCH", "DeleteFunc": "DELETE",
 }
 
-// mutatingMethods are the verbs that change state: the ones an access
-// declaration has to cover.
 var mutatingMethods = map[string]bool{
 	"POST": true, "PUT": true, "PATCH": true, "DELETE": true,
 }
@@ -86,11 +71,6 @@ func Routes(p *contracts.Pass) *RouteTable {
 	return p.Memo(routeTableKey, func() any { return buildRouteTable(p) }).(*RouteTable)
 }
 
-// routerScope tracks which identifiers in a file refer to a router or
-// route group, and what prefix and guarding each carries. Scoping is
-// per-file rather than per-block: route wiring is conventionally a flat
-// sequence of statements in one function, and a block-accurate resolver
-// would cost far more than the precision is worth here.
 type routerScope struct {
 	prefix  map[string]string
 	guarded map[string]bool
@@ -112,9 +92,6 @@ func buildRouteTable(p *contracts.Pass) *RouteTable {
 		if !ok {
 			continue
 		}
-		// Route registration only happens in files that can reach the
-		// router. Requiring the import keeps `.Get(` on a cache or a map
-		// from being read as a route.
 		if !importsAny(file, "core/router", "framework/routegroup", "framework", "core-ui/app", "net/http") {
 			continue
 		}
@@ -138,18 +115,7 @@ func buildRouteTable(p *contracts.Pass) *RouteTable {
 	return table
 }
 
-// collectRouterIdents records which identifiers in a file hold a router
-// or a route group, and what prefix and guarding each carries. Three
-// shapes produce one:
-//
-//	r := router.New()          // constructed directly
-//	r := app.Router()          // the app's router
-//	g := app.Group("/admin")   // a prefixed, possibly guarded group
 func collectRouterIdents(file *ast.File, aliases map[string]string, scope *routerScope) {
-	// A router handed in as a parameter, `func wire(r *router.Router)`,
-	// is how most apps split their route registration across files. Miss
-	// it and those files report nothing at all, which reads as a clean
-	// bill of health rather than as "not analysed".
 	ast.Inspect(file, func(n ast.Node) bool {
 		var params *ast.FieldList
 		switch v := n.(type) {
@@ -185,10 +151,6 @@ func collectRouterIdents(file *ast.File, aliases map[string]string, scope *route
 		if !ok || name.Name == "_" {
 			return true
 		}
-		// A router constructed straight from the package. Without this,
-		// a program that does not go through App registers routes the
-		// analyzers cannot see, and reports zero findings, which reads
-		// like a clean bill of health.
 		for _, ctor := range []string{"New", "NewRouter"} {
 			if _, isCtor := qualifiedCall(assign.Rhs[0], aliases, "core/router", ctor); isCtor {
 				scope.known[name.Name] = true
@@ -210,25 +172,16 @@ func collectRouterIdents(file *ast.File, aliases map[string]string, scope *route
 			}
 			prefix, litOK := stringLit(call.Args[0])
 			if !litOK {
-				// A computed prefix means every route under it is
-				// unresolvable. Record the group so its registrations are
-				// still recognised, but leave the prefix unknown.
 				prefix = ""
 			}
 			scope.known[name.Name] = true
 			scope.prefix[name.Name] = joinPath(inheritedPrefix(scope, recv), prefix)
-			// A group is treated as guarded when it was handed anything
-			// beyond its prefix: WithAccess and WithMiddleware are the
-			// options that exist, and both are guards.
 			scope.guarded[name.Name] = inheritedGuard(scope, recv) || len(call.Args) > 1
 		}
 		return true
 	})
 }
 
-// routerTypeNames are the types a parameter can have that make it a
-// routing surface. Matched on the type name alone. The import alias is
-// already established by the file importing the package at all.
 var routerTypeNames = map[string]bool{"Router": true, "RouteGroup": true}
 
 func isRouterType(e ast.Expr) bool {
@@ -257,9 +210,6 @@ func inheritedGuard(scope *routerScope, recv ast.Expr) bool {
 	return false
 }
 
-// routerish reports whether a receiver expression denotes a router or
-// group: a tracked identifier, or a direct `.Router()` / `.Group(...)`
-// chain.
 func routerish(scope *routerScope, recv ast.Expr) (name string, prefix string, guarded bool, ok bool) {
 	switch v := recv.(type) {
 	case *ast.Ident:
@@ -295,8 +245,6 @@ func collectRegistrations(p *contracts.Pass, src contracts.SourceFile, file *ast
 			return true
 		}
 
-		// Entity declarations: app.Entity("name", cfg) and
-		// app.GroupEntity(group, "name", cfg).
 		switch method {
 		case "Entity":
 			if len(call.Args) >= 1 {
@@ -323,8 +271,6 @@ func collectRegistrations(p *contracts.Pass, src contracts.SourceFile, file *ast
 			return true
 		}
 
-		// Screen registration: app.NewScreen("/path", component) is a GET
-		// page route, and it is how most of a UI app's surface is declared.
 		if method == "NewScreen" && len(call.Args) >= 1 {
 			if pattern, litOK := stringLit(call.Args[0]); litOK && strings.HasPrefix(pattern, "/") {
 				pos := p.Position(call.Pos())
@@ -390,8 +336,6 @@ func appendRoute(p *contracts.Pass, table *RouteTable, rel, pkg string, call *as
 	table.Registered = true
 }
 
-// joinPath concatenates a group prefix with a pattern the way the router
-// does: plain concatenation, then a squeeze of any doubled slash.
 func joinPath(prefix, pattern string) string {
 	joined := prefix + pattern
 	for strings.Contains(joined, "//") {

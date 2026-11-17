@@ -24,10 +24,6 @@ func init() {
 	})
 }
 
-// elementRule maps the html element a violation is about onto the rule
-// that describes the class of failure. The underlying linter reports one
-// message shape per element; grouping them here is what lets a reader see
-// "six missing accessible names" instead of six unrelated lines.
 var elementRule = map[string]string{
 	"Image":    contracts.RuleMissingAlt,
 	"Button":   contracts.RuleMissingAccessibleName,
@@ -53,8 +49,6 @@ func runAccessibility(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	for _, f := range p.AppFiles() {
 		res, err := check.LintA11yFile(f.Abs)
 		if err != nil {
-			// Mid-edit parse failures are the normal case for a file that
-			// does not compile yet. The rest of the tree still gets checked.
 			continue
 		}
 		for _, v := range res.Violations {

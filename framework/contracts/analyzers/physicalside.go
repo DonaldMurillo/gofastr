@@ -8,22 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-// GOFASTR1824 reads the same comment-stripped design-system lines as
-// GOFASTR1823 and reports a declaration that names a physical side where
-// a reading-direction one exists: `margin-left`, `left: 8px`,
-// `text-align: right`, `float: left`, a corner radius, a background
-// pinned to one side, or a four-value shorthand whose left and right
-// differ. Under `<html dir="rtl">` each of those stays on the wrong side.
-//
-// Quiet: `left: 50%` and `right: 50%` (centring with a translate is the
-// same box in either direction), `auto` (a reset), a declaration inside a
-// `:dir()` override block (on its selector line or the lines after it,
-// up to its closing brace), and a background-position whose file mirrors
-// it in a `:dir(rtl)` block. Both read the comment-stripped source, so a
-// comment that mentions an override exempts nothing. The background
-// mirror is file-wide: the file that pins the background owns the rule
-// that flips it.
-
 var (
 	rePhysicalCorner = regexp.MustCompile(`^border-(top|bottom)-(left|right)-radius$`)
 	rePhysicalEdge   = regexp.MustCompile(`^(margin|padding|scroll-margin|scroll-padding|border)-(left|right)(-(?:width|style|color))?$`)
@@ -32,9 +16,6 @@ var (
 	reDirOverride    = regexp.MustCompile(`:dir\((?:rtl|ltr)\)`)
 )
 
-// cssTokens splits a declaration value on top-level whitespace, so a
-// calc() or var() with spaces inside stays one token. A trailing
-// !important is dropped.
 func cssTokens(v string) []string {
 	v = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(v), "!important"))
 	var out []string
@@ -62,14 +43,10 @@ func cssTokens(v string) []string {
 	return out
 }
 
-// physicalSide reports the reading-direction spelling for a declaration
-// that names a physical side, or false when it names none.
 func physicalSide(prop, value string, bgMirrored bool) (lit, want string, ok bool) {
 	v := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(value), "!important"))
 	switch prop {
 	case "left", "right":
-		// An offset holds a number or a function. `left := …` in Go and
-		// a `"left", "right"` keyword list hold neither.
 		if v == "50%" || v == "auto" || strings.HasPrefix(v, "=") || !strings.ContainsAny(v, "0123456789({") {
 			return "", "", false
 		}
@@ -117,12 +94,6 @@ func physicalSide(prop, value string, bgMirrored bool) (lit, want string, ok boo
 	return "", "", false
 }
 
-// checkPhysicalSides reports one GOFASTR1824 per declaration on a
-// design-system line that pins a physical side. bgMirrored is true when
-// the file holds a `:dir(rtl)` rule setting a background position.
-// inDir is the line's per-byte :dir() flags (nil when none of it is in
-// a block): a declaration inside the block is the override itself and
-// stays quiet, one after its closing brace is judged.
 func checkPhysicalSides(rel string, lineNo int, scan, orig string, bgMirrored bool, inDir []bool) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	report := func(prop, value string, off int) {
@@ -156,8 +127,6 @@ func checkPhysicalSides(rel string, lineNo int, scan, orig string, bgMirrored bo
 	return out
 }
 
-// mirrorsBackground reports whether the comment-stripped lines hold a
-// `:dir(rtl)` block that sets a background position.
 func mirrorsBackground(scan []string) bool {
 	dir := dirBlock{rtlOnly: true}
 	for _, line := range scan {
@@ -180,18 +149,12 @@ func mirrorsBackground(scan []string) bool {
 	return false
 }
 
-// dirBlock follows `:dir()` override blocks across lines.
 type dirBlock struct {
 	depth   int
 	pending bool // a :dir() selector seen, its '{' not yet
 	rtlOnly bool
 }
 
-// line advances through s and reports, for each byte offset, whether it
-// sits in a :dir() block: from the selector itself until the block's
-// braces close. One line of CSS in a Go string can hold a :dir()
-// override AND an ordinary rule after it; per-byte flags keep the two
-// apart, the way the dark-scheme tracker does.
 func (d *dirBlock) line(s string) []bool {
 	if d.depth == 0 && !d.pending && !strings.Contains(s, ":dir(") {
 		return nil // the common line: no block to open or close

@@ -1,9 +1,6 @@
 // Package codetext separates comments from code in Go and JavaScript
-// source for the contracts text rules. It is a lexer, not a parser: it
-// walks the text left to right and tracks string, raw-string, rune and
-// template literals, so a "*/*" Accept value or a "locales/*.json" glob
-// stays code instead of opening a comment that blanks the rest of the
-// file.
+// source for the contracts text rules, with a lexer that tracks string,
+// raw-string, rune and template literals.
 package codetext
 
 import "strings"
@@ -15,24 +12,9 @@ type Comment struct {
 	Text string
 }
 
-// Strip returns src with every // and /* */ comment removed. Newlines
-// inside a comment are kept, so line numbers still match the original.
-//
-// A string literal is code, but the code it holds may carry its own
-// comments: a generator emits "// fontFaceCSS holds the @font-face
-// rules", and a stylesheet in a raw string has /* knob notes */. Those
-// are prose too, so they go, with two limits that keep the "*/*" class
-// out. A /* inside a literal opens a comment only when its */ closes
-// inside the same literal ("image/*" never does). A // inside a literal
-// opens one only at the literal's start or after whitespace or an
-// escaped newline, with whitespace after it, and runs to the end of the
-// line or the literal, whichever comes first ("https://cdn" and
-// '//cdn.example/x.js' stay).
-//
-// script selects JavaScript literal rules: a backslash escapes inside a
-// template literal, which it never does inside a Go raw string. A
-// regular-expression literal is not tracked; a quote inside one at worst
-// keeps the rest of that line as code.
+// Strip returns src with every // and /* */ comment removed, comments
+// nested inside literals included, keeping newlines so line numbers
+// match. script selects JavaScript literal rules.
 func Strip(src string, script bool) string {
 	var b strings.Builder
 	b.Grow(len(src))
@@ -40,9 +22,8 @@ func Strip(src string, script bool) string {
 	return b.String()
 }
 
-// Comments returns every comment in src, in order. A comment inside a
-// string literal is not one: it belongs to the emitted code, and a
-// directive spelled there is documentation, never a live directive.
+// Comments returns every top-level comment in src, in order; one inside
+// a string literal is not returned.
 func Comments(src string, script bool) []Comment {
 	var out []Comment
 	scan(src, script, nil, func(line int, text string) {
@@ -51,8 +32,6 @@ func Comments(src string, script bool) []Comment {
 	return out
 }
 
-// scan feeds each code byte (newlines inside comments included) to code
-// and each whole top-level comment to comment. Either may be nil.
 func scan(src string, script bool, code func(byte), comment func(line int, text string)) {
 	emit := func(c byte) {
 		if code != nil {
@@ -68,8 +47,6 @@ func scan(src string, script bool, code func(byte), comment func(line int, text 
 		}
 	}
 	var quote byte
-	// litLine/litBlock: inside a comment nested in the current literal.
-	// litSpace: the previous literal byte lets a nested // open.
 	litLine, litBlock, litSpace := false, false, false
 	escapes := func() bool { return quote != '`' || script }
 	for i := 0; i < len(src); i++ {
@@ -92,7 +69,6 @@ func scan(src string, script bool, code func(byte), comment func(line int, text 
 		case quote != 0 && (litLine || litBlock):
 			switch {
 			case c == '\\' && escapes():
-				// An escaped quote does not close the literal.
 				if i+1 < len(src) {
 					i++
 					if src[i] == '\n' {
@@ -121,8 +97,6 @@ func scan(src string, script bool, code func(byte), comment func(line int, text 
 				if i+1 < len(src) {
 					i++
 					emit(src[i])
-					// An escaped newline or tab is whitespace in the
-					// emitted text: "…\n// next line" starts a comment.
 					litSpace = src[i] == 'n' || src[i] == 't' || src[i] == '\n'
 					if src[i] == '\n' {
 						line++
@@ -133,9 +107,6 @@ func scan(src string, script bool, code func(byte), comment func(line int, text 
 				quote = 0
 				emit(c)
 			case c == '\n' && quote != '`':
-				// Only a backtick literal spans lines. A quote left open
-				// here is a syntax error, and closing it at the newline
-				// keeps one bad line from swallowing the file.
 				quote = 0
 				emit(c)
 			case c == '/' && i+1 < len(src) && src[i+1] == '/' && litSpace && commentGap(src, i+2):
@@ -169,8 +140,6 @@ func scan(src string, script bool, code func(byte), comment func(line int, text 
 	}
 }
 
-// closesInLiteral reports whether a "*/" occurs at or after i before the
-// literal opened by quote ends.
 func closesInLiteral(src string, i int, quote byte, escapes bool) bool {
 	for ; i < len(src); i++ {
 		switch c := src[i]; {
@@ -187,8 +156,6 @@ func closesInLiteral(src string, i int, quote byte, escapes bool) bool {
 	return false
 }
 
-// commentGap reports whether the byte at i, just past a "//" inside a
-// literal, is the whitespace (or escape) a comment's text starts with.
 func commentGap(src string, i int) bool {
 	if i >= len(src) {
 		return false
