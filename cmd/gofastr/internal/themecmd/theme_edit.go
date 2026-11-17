@@ -768,7 +768,7 @@ func buildContrastPairs() []contrastPair {
 			contrastPair{tone + "-fg|" + tone, tone + "-fg-" + tone,
 				fillFg, "var(--color-" + tone + ")"},
 			contrastPair{tone + "|" + tone + "-tint", tone + "-tint", "var(--color-" + tone + ")",
-				"color-mix(in srgb, var(--color-" + tone + ") 15%, var(--color-surface))"},
+				"color-mix(in oklab, var(--color-" + tone + ") 15%, var(--color-surface))"},
 		)
 	}
 	return pairs

@@ -24,10 +24,12 @@ const collapsibleChevron = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.
 func collapsibleCSS(_ style.Theme) string {
 	return `[data-cui-comp="fui-collapsible"]{border-bottom:var(--stroke-thin, 1px) solid var(--fui-border, var(--color-border, #E4E4E7));color:var(--fui-foreground, var(--color-text, #09090B))}` +
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary{display:flex;align-items:center;justify-content:space-between;gap:var(--spacing-lg, 16px);min-block-size:var(--spacing-touch-target, 44px);padding:var(--spacing-md, 8px) 0;cursor:pointer;font-size:var(--text-sm, .875rem);font-weight:var(--font-weight-medium);color:var(--fui-foreground, var(--color-text, #09090B));list-style:none;user-select:none}` +
-		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary:hover{text-decoration:underline;text-underline-offset:4px}` +
+		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary:hover{text-decoration:underline;text-underline-offset:0.25em}` +
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::-webkit-details-marker{display:none}` +
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::after{content:"";flex:none;inline-size:var(--ui-collapsible-chevron-size, 16px);block-size:var(--ui-collapsible-chevron-size, 16px);background:var(--fui-muted, var(--color-text-muted, #52525B));-webkit-mask:` + collapsibleChevron + `;mask:` + collapsibleChevron + `;transition:transform var(--duration-fast, 150ms) var(--easing-ease-out, ease)}` +
 		`[data-cui-comp="fui-collapsible"][open] .fui-collapsible__summary::after{transform:rotate(180deg)}` +
+		// Forced colours paint the mask icon's background Canvas; opting out keeps it the text colour.
+		`@media (forced-colors: active){[data-cui-comp="fui-collapsible"] .fui-collapsible__summary::after{forced-color-adjust:none;background:currentColor}}` +
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__summary:focus-visible{outline:var(--stroke-focus, 2px) solid var(--color-text-subtle);outline-offset:var(--stroke-focus-offset, 2px);border-radius:var(--radii-sm, 6px)}` +
 		`[data-cui-comp="fui-collapsible"] .fui-collapsible__content{padding:0 0 var(--spacing-lg, 16px);font-size:var(--text-sm, .875rem);color:var(--fui-foreground, var(--color-text, #09090B))}`
 }

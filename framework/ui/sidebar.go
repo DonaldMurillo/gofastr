@@ -968,6 +968,12 @@ func sidebarCSS(_ style.Theme) string {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
   transition: rotate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
+/* A mask icon is painted by its background, which forced colours turn
+   to Canvas; opting out keeps it in the (forced) text colour. */
+@media (forced-colors: active) {
+  [data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group > summary::after,
+  [data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group-toggle::after { forced-color-adjust: none; background: currentColor; }
+}
 [data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group:not([open]) > summary::after,
 [data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group-toggle[aria-expanded="false"]::after {
   rotate: -90deg;

@@ -91,16 +91,16 @@ func authCardCSS(_ style.Theme) string {
 [data-cui-comp="ui-auth-card"] .fui-auth-card__alert {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-danger, #B91C1C);
-  background: color-mix(in srgb, var(--color-danger, #B91C1C) 8%, transparent);
-  border: var(--stroke-thin, 1px) solid color-mix(in srgb, var(--color-danger, #B91C1C) 28%, transparent);
+  background: color-mix(in oklab, var(--color-danger, #B91C1C) 8%, transparent);
+  border: var(--stroke-thin, 1px) solid color-mix(in oklab, var(--color-danger, #B91C1C) 28%, transparent);
   border-radius: var(--radii-lg, 10px);
   padding: calc(var(--spacing-sm, 4px) * 2.5) calc(var(--spacing-sm, 4px) * 3);
 }
 [data-cui-comp="ui-auth-card"] .fui-auth-card__notice {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-success, #166534);
-  background: color-mix(in srgb, var(--color-success, #166534) 8%, transparent);
-  border: var(--stroke-thin, 1px) solid color-mix(in srgb, var(--color-success, #166534) 28%, transparent);
+  background: color-mix(in oklab, var(--color-success, #166534) 8%, transparent);
+  border: var(--stroke-thin, 1px) solid color-mix(in oklab, var(--color-success, #166534) 28%, transparent);
   border-radius: var(--radii-lg, 10px);
   padding: calc(var(--spacing-sm, 4px) * 2.5) calc(var(--spacing-sm, 4px) * 3);
 }
@@ -112,7 +112,7 @@ func authCardCSS(_ style.Theme) string {
 [data-cui-comp="ui-auth-card"] .fui-auth-card__footer a {
   color: var(--color-text, #09090B);
   text-decoration: underline;
-  text-underline-offset: 4px;
+  text-underline-offset: 0.25em;
 }
 `
 }

@@ -31,7 +31,7 @@ func pageHeaderCSS(t style.Theme) string {
 			"gap", "var(--spacing-md, 8px)", "min-inline-size", "0").
 		End().
 		Rule(".fui-page-header__title").
-		Set("min-inline-size", "0", "overflow-wrap", "anywhere").
+		Set("min-inline-size", "0", "overflow-wrap", "anywhere", "text-wrap", "balance").
 		End().
 		Rule(".fui-page-header__eyebrow").
 		Set(

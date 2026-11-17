@@ -108,7 +108,7 @@ func selectCSS(_ style.Theme) string {
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
   padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   box-shadow: var(--shadow-xs);
   transition: border-color var(--duration-fast, 150ms);
   /* Same field surface as the text inputs (.fui-input): without an

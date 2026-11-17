@@ -88,7 +88,7 @@ func passwordInputCSS(_ style.Theme) string {
 	return `.fui-password {
   display: flex;
   align-items: stretch;
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);

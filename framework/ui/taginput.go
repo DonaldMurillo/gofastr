@@ -97,7 +97,7 @@ func tagInputCSS(_ style.Theme) string {
   min-block-size: var(--spacing-touch-target, 44px);
   padding-block: var(--spacing-sm, 4px);
   padding-inline: var(--spacing-md, 8px) var(--spacing-sm, 4px);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);

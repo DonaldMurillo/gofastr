@@ -99,7 +99,7 @@ func colorPickerCSS(_ style.Theme) string {
   width: var(--spacing-touch-target, 44px);
   height: var(--spacing-touch-target, 44px);
   padding: 0;
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   border-radius: var(--radii-md, 8px);
   background: transparent;
   cursor: pointer;

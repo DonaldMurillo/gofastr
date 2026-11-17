@@ -486,10 +486,10 @@ func validateOptionalToken(path, typ, name, value string, check func(string) err
 // AA floor. Those are the pairs the token system actually guarantees and
 // the filled button paints; borrowing another variant's ink was exactly
 // how the amber-primary sites shipped unreadable danger buttons (an axe
-// failure out of the box). The check only runs when BOTH values parse as
-// plain hex (#RGB / #RRGGBB): oklch(), var() references, rgb()/hsl() and
-// named colours are skipped rather than approximated, so a theme whose
-// colours Go cannot resolve exactly is never refused on a guess.
+// failure out of the box). The refusal only runs when BOTH values are
+// plain hex (#RGB / #RRGGBB); a pair in rgb(), hsl(), oklab() or oklch()
+// that misses the floor is reported by ContrastWarnings instead, so a
+// theme that booted before those syntaxes were read keeps booting.
 //
 // A non-empty DarkColors map re-declares the same variables, so each pair
 // is resolved from it and judged by the same floor: an absent key falls
@@ -537,6 +537,9 @@ func (t Theme) validatePairContrast() error {
 // pair clears the floor or cannot be computed exactly, the refusal
 // otherwise. where names the palette the values came from.
 func inkPairError(where, name, bg, fg string) error {
+	if !isPlainHex(bg) || !isPlainHex(fg) {
+		return nil
+	}
 	ratio, ok := contrastRatio(fg, bg)
 	if !ok || ratio >= 4.5 {
 		return nil
@@ -544,6 +547,66 @@ func inkPairError(where, name, bg, fg string) error {
 	return fmt.Errorf(
 		"%s: %s × %s-fg contrast is %.2f:1 (%s on %s), below the 4.5:1 WCAG AA floor the filled %s button paints; give %s-fg an ink that clears AA over %s",
 		where, name, name, ratio, fg, bg, name, name, name)
+}
+
+// ControlBoundaryFloor is the WCAG 1.4.11 non-text contrast floor a form
+// control's boundary must clear against the surface it sits on.
+const ControlBoundaryFloor = 3.0
+
+// ContrastWarnings reports the contrast pairs a theme misses that Validate
+// does not refuse, one line per pair, for a boot warning:
+//
+//   - a filled-control ink pair (primary, danger) below 4.5:1 written in
+//     rgb(), hsl(), oklab() or oklch(), which Validate skips;
+//   - the input boundary: text fields, selects, checkboxes and radios draw
+//     their edge in --color-text-subtle (through the --ui-control-border
+//     knob), so text-subtle over surface must clear 3:1.
+//
+// Each pair is judged in the light palette and, when DarkColors is set,
+// in the dark one, a missing dark key falling back to its light value.
+// A pair Go cannot resolve exactly (var(), names, translucency) is skipped.
+func ContrastWarnings(t Theme) []string {
+	light := map[string]string{
+		"primary": t.Colors.Primary.Value, "primary-fg": t.Colors.PrimaryFg.Value,
+		"danger": t.Colors.Danger.Value, "danger-fg": t.Colors.DangerFg.Value,
+		"text-subtle": t.Colors.TextSubtle.Value, "surface": t.Colors.Surface.Value,
+	}
+	schemes := []struct {
+		where  string
+		lookup func(string) string
+	}{{"light", func(k string) string { return light[k] }}}
+	if len(t.DarkColors) > 0 {
+		schemes = append(schemes, struct {
+			where  string
+			lookup func(string) string
+		}{"dark", func(k string) string {
+			if v, ok := t.DarkColors[k]; ok {
+				return v
+			}
+			return light[k]
+		}})
+	}
+	var out []string
+	for _, sc := range schemes {
+		for _, p := range []struct {
+			fg, bg     string
+			floor      float64
+			hexRefused bool
+		}{
+			{"primary-fg", "primary", 4.5, true},
+			{"danger-fg", "danger", 4.5, true},
+			{"text-subtle", "surface", ControlBoundaryFloor, false},
+		} {
+			fg, bg := sc.lookup(p.fg), sc.lookup(p.bg)
+			if p.hexRefused && isPlainHex(fg) && isPlainHex(bg) {
+				continue // Validate already refuses this pair
+			}
+			if ratio, ok := contrastRatio(fg, bg); ok && ratio < p.floor {
+				out = append(out, fmt.Sprintf("%s: %s %s on %s %s is %.2f:1, below %.1f:1", sc.where, p.fg, fg, p.bg, bg, ratio, p.floor))
+			}
+		}
+	}
+	return out
 }
 
 // MustValidate panics if validation fails. Wraps Validate.
@@ -886,7 +949,9 @@ func DefaultTheme() Theme {
 			EaseOut:   Easing{Name: "ease-out", Value: "cubic-bezier(0.16, 1, 0.3, 1)"},
 			EaseIn:    Easing{Name: "ease-in", Value: "cubic-bezier(0.4, 0, 1, 1)"},
 			EaseInOut: Easing{Name: "ease-in-out", Value: "cubic-bezier(0.4, 0, 0.2, 1)"},
-			Spring:    Easing{Name: "spring", Value: "cubic-bezier(0.34, 1.56, 0.64, 1)"},
+			// A damped spring sampled into linear(): it overshoots and
+			// settles, which a single cubic-bezier cannot draw.
+			Spring: Easing{Name: "spring", Value: "linear(0, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.077 20.4%, 1.149 24.3%, 1.163 27.6%, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, 0.977 51%, 0.974 53.8%, 0.975 57.1%, 0.997 69.8%, 1.003 76.9%, 1)"},
 		},
 		Typography: FontSizeSet{
 			XS:   FontSize{Name: "xs", Value: "0.75rem"},

@@ -30,6 +30,12 @@ func inlineCodeCSS(_ style.Theme) string {
   color: var(--color-text, #09090B);
   overflow-wrap: anywhere;
 }
+/* A fixed 0.9em only matches one pairing of body and mono font; where
+   font-size-adjust works, the mono face is sized to a set x-height
+   instead, so it sits level with whatever body font the theme picks. */
+@supports (font-size-adjust: 0.5) {
+  [data-cui-comp="ui-code"] { font-size: 1em; font-size-adjust: 0.5; }
+}
 /* The danger tone mixes the hue toward the text colour, as the danger
    badge does, so it keeps AA contrast on either scheme. */
 [data-cui-comp="ui-code"].fui-code--danger {

@@ -254,5 +254,14 @@ func segmentedCSS(_ style.Theme) string {
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-segmented"] .fui-segmented__indicator { transition: none; }
 }
+
+/* Forced colours paint the pill Canvas like the track, so the checked
+   segment takes a Highlight outline instead. */
+@media (forced-colors: active) {
+  [data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:checked) {
+    outline: var(--stroke-thick, 2px) solid Highlight;
+    outline-offset: calc(-1 * var(--stroke-thick, 2px));
+  }
+}
 `
 }

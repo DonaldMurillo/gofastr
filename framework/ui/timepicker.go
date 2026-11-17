@@ -113,7 +113,7 @@ func timePickerCSS(_ style.Theme) string {
 [data-cui-comp="ui-time-picker"] .fui-time-picker__input {
   min-block-size: var(--spacing-touch-target, 44px);
   padding: 0 calc(var(--spacing-sm, 4px) * 3);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);

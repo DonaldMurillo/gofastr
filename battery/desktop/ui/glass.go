@@ -69,7 +69,7 @@ func glassCSS(_ style.Theme) string {
   border-radius: var(--radii-lg, 12px);
   /* Translucent fill: the surface under the blur, not an opaque paint.
      measured, unverified. */
-  background: color-mix(in srgb, var(--color-surface, #FFFFFF) 64%, transparent);
+  background: color-mix(in oklab, var(--color-surface, #FFFFFF) 64%, transparent);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   backdrop-filter: blur(20px) saturate(180%);
   /* The 1px inset rim highlight, light from above; a hairline edge in
@@ -80,18 +80,18 @@ func glassCSS(_ style.Theme) string {
      floating toolbar read as a bare button, an inspector as loose
      rows). measured, unverified. */
   box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--ui-glass-rim, rgba(255, 255, 255, 0.16)),
-    0 0 0 calc(var(--stroke-thin, 1px) / 2) color-mix(in srgb, var(--color-text, #000000) 14%, transparent),
+    0 0 0 calc(var(--stroke-thin, 1px) / 2) color-mix(in oklab, var(--color-text, #000000) 14%, transparent),
     var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.10), 0 2px 4px -2px rgba(0, 0, 0, 0.06));
 }
 [data-cui-comp="desktopui-glass"].desktopui-glass--thick {
   border-radius: var(--radii-xl, 16px);
   /* Thicker material for sheets and popovers: better contrast for fine
      features (HIG Materials). measured, unverified. */
-  background: color-mix(in srgb, var(--color-surface, #FFFFFF) 82%, transparent);
+  background: color-mix(in oklab, var(--color-surface, #FFFFFF) 82%, transparent);
   -webkit-backdrop-filter: blur(40px) saturate(200%);
   backdrop-filter: blur(40px) saturate(200%);
   box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--ui-glass-rim-thick, rgba(255, 255, 255, 0.18)),
-    0 0 0 calc(var(--stroke-thin, 1px) / 2) color-mix(in srgb, var(--color-text, #000000) 14%, transparent),
+    0 0 0 calc(var(--stroke-thin, 1px) / 2) color-mix(in oklab, var(--color-text, #000000) 14%, transparent),
     var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.10), 0 4px 6px -2px rgba(0, 0, 0, 0.05));
 }
 /* Reduce Transparency: the shell pushes the state as a class because
@@ -108,7 +108,7 @@ html.desktop-reduce-transparency [data-cui-comp="desktopui-glass"].desktopui-gla
    when its window resigns key. */
 html.desktop-inactive [data-cui-comp="desktopui-glass"],
 html.desktop-inactive [data-cui-comp="desktopui-glass"].desktopui-glass--thick {
-  background: color-mix(in srgb, var(--color-surface, #FFFFFF) 88%, transparent);
+  background: color-mix(in oklab, var(--color-surface, #FFFFFF) 88%, transparent);
   --color-accent: var(--color-text-muted, #52525B);
 }
 /* The shadow and the blur do not animate: HIG says avoid animating into

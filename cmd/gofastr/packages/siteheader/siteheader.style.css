@@ -18,7 +18,7 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: color-mix(in srgb, var(--color-background) 82%, transparent);
+  background: color-mix(in oklab, var(--color-background) 82%, transparent);
   backdrop-filter: saturate(1.6) blur(12px);
 }
 

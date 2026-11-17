@@ -111,7 +111,7 @@ func colorFieldCSS(_ style.Theme) string {
   inline-size: var(--spacing-touch-target, 44px);
   block-size: var(--spacing-touch-target, 44px);
   padding: var(--spacing-xs, 2px);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   border-radius: var(--fui-field-radius);
   background-color: var(--color-surface, #fff);
   cursor: pointer;
@@ -127,7 +127,7 @@ func colorFieldCSS(_ style.Theme) string {
   min-block-size: var(--fui-density-control-h);
   font-family: var(--font-mono, ui-monospace, monospace);
   padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #fff);
   color: var(--color-text, #09090B);

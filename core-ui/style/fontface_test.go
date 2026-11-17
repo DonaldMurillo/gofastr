@@ -86,3 +86,37 @@ func TestFontFamilies(t *testing.T) {
 		t.Errorf("SortedFontFamilies = %v", sorted)
 	}
 }
+
+// A fallback face stretches a local font to the web font's metrics, so the
+// swap does not move the page (#711); a malformed descriptor is dropped.
+func TestFontFaceCSSFallbackFace(t *testing.T) {
+	f := WebFont{Family: "Hanken Grotesk", Fallback: FontFallback{
+		Local: "Arial", SizeAdjust: "98.5%", AscentOverride: "102%",
+		DescentOverride: "29%; color: red", LineGapOverride: "0%",
+	}}
+	css := FontFaceCSS("", f)
+	want := "@font-face { font-family: 'Hanken Grotesk Fallback'; src: local('Arial'); size-adjust: 98.5%; ascent-override: 102%; line-gap-override: 0%; }"
+	if !strings.Contains(css, want) {
+		t.Errorf("fallback face missing:\n%s\nwant %s", css, want)
+	}
+	if strings.Contains(css, "descent-override") || strings.Contains(css, "red") {
+		t.Errorf("a malformed descriptor reached the sheet:\n%s", css)
+	}
+	if got := f.FallbackFamily(); got != "Hanken Grotesk Fallback" {
+		t.Errorf("FallbackFamily = %q", got)
+	}
+	if strings.Contains(FontFaceCSS("", WebFont{Family: "Inter"}), "Fallback") {
+		t.Error("a font with no Fallback.Local emitted a fallback face")
+	}
+}
+
+func TestFontURLMatchesTheFaceRule(t *testing.T) {
+	f := WebFont{Family: "Bricolage Grotesque"}
+	url := FontURL("/assets/fonts/", f)
+	if url != "/assets/fonts/bricolage-grotesque.woff2" {
+		t.Fatalf("FontURL = %q", url)
+	}
+	if !strings.Contains(FontFaceCSS("/assets/fonts/", f), "url('"+url+"')") {
+		t.Error("the preload URL and the @font-face URL disagree")
+	}
+}

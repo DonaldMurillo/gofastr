@@ -24,6 +24,22 @@ invariants:
     rule: A ui.OneTimeCode is a text input with autocomplete=one-time-code, inputmode=numeric and a digits-only pattern of its length.
     enforced_by:
       - test: framework/ui.TestOneTimeCodeIsAFillableCodeField
+  - id: control-borders-clear-three-to-one
+    rule: Every form control's boundary reads var(--ui-control-border, var(--color-text-subtle)), and the default theme's text-subtle clears 3:1 over surface in both schemes (WCAG 1.4.11).
+    enforced_by:
+      - test: framework/ui.TestControlBordersMeetNonTextContrast
+  - id: forced-colors-keep-state
+    rule: A component that shows state or an icon only through a background, background image or shadow redraws it in system colours under forced-colors.
+    enforced_by:
+      - test: framework/ui.TestForcedColorsFallbacks
+  - id: kit-mixes-in-oklab
+    rule: No registered kit sheet mixes colours in srgb; tints mix in oklab.
+    enforced_by:
+      - test: framework/ui.TestKitMixesColoursInOklab
+  - id: kit-headings-balance
+    rule: Hero, page-header, card and table-header titles use text-wrap balance, the hero's fluid size mixes rem with vw, and inline code is sized by font-size-adjust where supported.
+    enforced_by:
+      - test: framework/ui.TestKitTypography
   - id: component-options-root-floor
     rule: framework/ui registers its component-options compiler at init with the complete theme.DefaultOptions set as the root floor, so an optionless or partial theme still declares every --fui-* option variable at :root and in every scope.
     enforced_by:

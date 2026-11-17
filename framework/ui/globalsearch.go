@@ -148,7 +148,7 @@ func globalSearchCSS(_ style.Theme) string {
 [data-cui-comp="ui-global-search"] .fui-global-search__input {
   width: 100%;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFF);
   color: var(--color-text, #09090B);

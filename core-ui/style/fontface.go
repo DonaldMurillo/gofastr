@@ -30,6 +30,37 @@ type WebFont struct {
 	// immediately in a fallback and swaps when the font arrives, which is
 	// the right default for body copy and headings alike.
 	Display string
+	// Fallback, when its Local font is set, adds a second face named
+	// FallbackFamily(): a local font stretched to this font's metrics,
+	// so the swap to the web font does not move the page. Name it in the
+	// theme's font stack right after Family.
+	Fallback FontFallback
+}
+
+// FontFallback tunes a locally installed font to a web font's metrics
+// with the @font-face descriptors size-adjust, ascent-override,
+// descent-override and line-gap-override. Each override is a percentage
+// ("107.4%"); an empty or malformed one is left out. Tools such as
+// Capsize or fontaine compute the numbers from the two fonts' files.
+type FontFallback struct {
+	// Local names the installed font to tune, e.g. "Arial".
+	Local           string
+	SizeAdjust      string
+	AscentOverride  string
+	DescentOverride string
+	LineGapOverride string
+}
+
+// FallbackFamily is the family name of f's metric-tuned fallback face.
+func (f WebFont) FallbackFamily() string { return f.Family + " Fallback" }
+
+// FontURL is the URL f's woff2 file is served at under dir (empty uses
+// [DefaultFontDir]), the same URL FontFaceCSS writes, for a preload link.
+func FontURL(dir string, f WebFont) string {
+	if dir == "" {
+		dir = DefaultFontDir
+	}
+	return quotedSlotSanitized(strings.TrimSuffix(dir, "/")) + "/" + quotedSlotSanitized(f.fileName()) + ".woff2"
 }
 
 // DefaultFontDir is where the framework's static handler serves
@@ -61,8 +92,42 @@ func FontFaceCSS(dir string, fonts ...WebFont) string {
 			"@font-face { font-family: '%s'; font-style: %s; font-weight: %s; font-display: %s; src: url('%s/%s.woff2') format('woff2'); }\n",
 			family, bareSlotValue(f.Style, "normal"), bareSlotValue(f.Weight, "400 700"),
 			bareSlotValue(f.Display, "swap"), dir, quotedSlotSanitized(f.fileName()))
+		if local := quotedSlotSanitized(f.Fallback.Local); local != "" {
+			fmt.Fprintf(&b, "@font-face { font-family: '%s'; src: local('%s');", quotedSlotSanitized(f.FallbackFamily()), local)
+			for _, d := range []struct{ name, v string }{
+				{"size-adjust", f.Fallback.SizeAdjust},
+				{"ascent-override", f.Fallback.AscentOverride},
+				{"descent-override", f.Fallback.DescentOverride},
+				{"line-gap-override", f.Fallback.LineGapOverride},
+			} {
+				if isPercent(d.v) {
+					b.WriteString(" " + d.name + ": " + d.v + ";")
+				}
+			}
+			b.WriteString(" }\n")
+		}
 	}
 	return b.String()
+}
+
+// isPercent reports whether v is a non-negative CSS percentage such as
+// "107%" or "92.5%", the only grammar the metric descriptors take here.
+func isPercent(v string) bool {
+	num, ok := strings.CutSuffix(v, "%")
+	if !ok || num == "" || num[0] == '.' || num[len(num)-1] == '.' {
+		return false
+	}
+	dot := false
+	for _, r := range num {
+		switch {
+		case r >= '0' && r <= '9':
+		case r == '.' && !dot:
+			dot = true
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // quotedSlotSanitized returns v with every rune that could break out of

@@ -130,6 +130,11 @@ func New(application *app.App, opts ...Option) *UIHost {
 			"uihost: theme declares a dark palette but %d color tokens have no dark value; under a dark preference they keep their light value. Add them to Theme.DarkColors.",
 			len(gaps)), "tokens", gaps)
 	}
+	if pairs := style.ContrastWarnings(ds.activeTheme()); len(pairs) > 0 {
+		slog.Default().Warn(
+			"uihost: theme colour pairs miss their WCAG contrast floor (4.5:1 for button ink, 3:1 for form-control borders drawn in text-subtle).",
+			"pairs", pairs)
+	}
 	return ds
 }
 

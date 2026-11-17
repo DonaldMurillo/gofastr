@@ -136,6 +136,7 @@ func main() {
 	fwApp.Mount(uihost.New(site,
 		uihost.WithStaticDir("static"),
 		uihost.WithAppIcon(appIconPNG()),
+		uihost.WithFontPreload("", meridianFonts...),
 		uihost.WithCustomCSS(fontFaceCSS+appBaseCSS()+uihost.ReadCustomCSSFile("static/app.css")),
 		uihost.WithDescription("Meridian is the revenue console for modern SaaS: customers, subscriptions, invoices, and live MRR in one calm place."),
 		uihost.WithOpenGraph(uihost.OG{Title: "Meridian: billing that runs itself", URL: siteOrigin, Type: "website"}),

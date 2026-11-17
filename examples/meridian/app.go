@@ -270,10 +270,14 @@ var (
 // fontFaceCSS holds the @font-face rules for the app's fonts, shared by
 // the UI host and the admin battery so every surface loads identical fonts.
 // Drop the matching woff2 files into <static>/fonts/.
-var fontFaceCSS = style.FontFaceCSS("",
-	style.WebFont{Family: "Bricolage Grotesque"},
-	style.WebFont{Family: "Hanken Grotesk"},
-)
+var fontFaceCSS = style.FontFaceCSS("", meridianFonts...)
+
+// meridianFonts are the app's self-hosted faces; the host also preloads
+// them so the swap from the system fallback lands with first paint.
+var meridianFonts = []style.WebFont{
+	{Family: "Bricolage Grotesque"},
+	{Family: "Hanken Grotesk"},
+}
 
 // sidebarConfig returns the navigation sidebar configuration.
 //

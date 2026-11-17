@@ -88,6 +88,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 h1, h2, h3, h4 { font-family: var(--font-heading, var(--font-body, inherit)); }
+/* Native checkboxes, radios, ranges and progress bars take the brand
+   colour instead of the browser's blue, and selected text a tint of it. */
+:root { accent-color: var(--color-primary, #18181B); }
+::selection { background-color: color-mix(in oklab, var(--color-primary, #18181B) 22%, transparent); }
 /* Columns of numbers (money, counts) align when figures are tabular. */
 [data-cui-comp="ui-data-table"] td,
 [data-cui-comp="ui-stat-card"],
@@ -194,7 +198,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   }
 }
 @keyframes cui-flash {
-  from { background-color: color-mix(in srgb, var(--color-primary, #18181B) 25%, transparent); }
+  from { background-color: color-mix(in oklab, var(--color-primary, #18181B) 25%, transparent); }
 }
 /* Progress indicator on slow SPA navigation. The bar tracks the theme's
    primary color via the token — a literal hex here would keep the bar

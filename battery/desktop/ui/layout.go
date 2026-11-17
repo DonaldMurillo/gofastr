@@ -174,11 +174,11 @@ html:has(.desktopui-frame) {
    wash of the label color over the zone lands within a couple of
    points of that lift while the material still shows through. */
 :root[data-color-scheme="dark"] .desktopui-frame {
-  --desktop-sidebar-surface: color-mix(in srgb, var(--color-text, #F5F5F7) 2%, transparent);
+  --desktop-sidebar-surface: color-mix(in oklab, var(--color-text, #F5F5F7) 2%, transparent);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-color-scheme="light"]) .desktopui-frame {
-    --desktop-sidebar-surface: color-mix(in srgb, var(--color-text, #F5F5F7) 2%, transparent);
+    --desktop-sidebar-surface: color-mix(in oklab, var(--color-text, #F5F5F7) 2%, transparent);
   }
 }
 /* The content column: the one opaque region, so text sits on a solid

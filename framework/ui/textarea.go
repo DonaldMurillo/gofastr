@@ -120,7 +120,7 @@ func textAreaCSS(_ style.Theme) string {
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
   padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #09090B);
