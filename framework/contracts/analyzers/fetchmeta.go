@@ -8,45 +8,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-// ----------------------------------------------------------------------
 // GOFASTR1411: a private copy of the Sec-Fetch-Site cross-site predicate.
-// ----------------------------------------------------------------------
 
-// Bug class: a file outside core/handler reads the Sec-Fetch-Site
-// header directly. The repo has ONE cross-site predicate —
-// core/handler.IsCrossSiteRequest, Sec-Fetch-Site first with the
-// Origin-host compare as the fallback — and every private copy has
-// been a divergence waiting to be exploited: the 2026-09-06/07
-// adversarial round (red probes TestSetupRedSameSiteOriginRefused,
-// TestCSRFRedSameSiteFallsThrough) found two copies that early-allow
-// "same-site" (a sibling subdomain IS same-site, so the Strict cookie
-// rides and only the Origin compare can refuse the attack), the
-// battery/admin copy that omitted the Origin fallback, and nine
-// surfaces in total whose copies disagreed about which values are
-// trusted. The rule's job is not to judge a copy's cases — it is to
-// keep the tenth copy from appearing: the predicate is
-// security-critical and lives in exactly one place.
-//
-// The read is Get("Sec-Fetch-Site") or Values("Sec-Fetch-Site") on a
-// receiver ending in .Header or on a bare identifier (h http.Header
-// handed to a helper), with the name in any case (both methods
-// canonicalize it), or the canonical-key map form
-// Header["Sec-Fetch-Site"] (a map index does not canonicalize, so only
-// that spelling reads the header). Prose mentioning
-// the header (a ticket body in examples/site) is a string literal in
-// another position and cannot match.
-//
-// Deliberately silent on:
-//   - core/handler/**, which owns the one predicate;
-//   - a file that never reads the header: battery/auth/magiclink.go
-//     and battery/admin/admin.go route through their packages'
-//     rejectCrossSiteForm rather than reading the header themselves,
-//     and examples/site/screen_workspace.go only mentions it in a
-//     display string — the consolidation the fix round performs makes
-//     every one of them call handler.IsCrossSiteRequest, at which
-//     point nothing outside core/handler reads the header at all;
-//   - _test.go and generated files (AppFiles already excludes both);
-//   - any site annotated //gofastr:allow(GOFASTR1411) <why>.
 func ruleFetchMetadata(p *contracts.Pass, rel string, file *ast.File) []contracts.Diagnostic {
 	if rel == "core/handler" || strings.HasPrefix(rel, "core/handler/") {
 		return nil
@@ -62,8 +25,6 @@ func ruleFetchMetadata(p *contracts.Pass, rel string, file *ast.File) []contract
 			if !headerish(sel.X) {
 				return true
 			}
-			// Get and Values canonicalize their key, so the
-			// lowercase spelling reads the same header.
 			name, ok := stringLit(v.Args[0])
 			if !ok || textproto.CanonicalMIMEHeaderKey(name) != "Sec-Fetch-Site" {
 				return true
@@ -83,9 +44,6 @@ func ruleFetchMetadata(p *contracts.Pass, rel string, file *ast.File) []contract
 	return out
 }
 
-// headerish reports whether e is a header map the way the forwarded-
-// proto rule reads it: a selector ending in .Header (r.Header) or a
-// bare identifier (h http.Header passed to a helper — the same map).
 func headerish(e ast.Expr) bool {
 	switch v := e.(type) {
 	case *ast.SelectorExpr:

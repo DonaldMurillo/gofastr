@@ -6,3 +6,247 @@ code:
   - framework/contracts/analyzers/keyfold.go
   - framework/contracts/analyzers/fetchmeta.go
   - framework/contracts/analyzers/varyset.go
+invariants:
+  - id: sql-unquoted-identifier-needs-a-taint-marker
+    rule: GOFASTR1401 reports an unquoted interpolation into a SQL statement only when a request-derived marker (req., params, formvalue and the rest of taintMarkers) appears on the line or in the expression, so a dynamic table name stays quiet.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSweepSecuritySQLDynamicIdentifierStaysQuiet
+  - id: sql-quoted-value-is-always-suspect
+    rule: GOFASTR1401 reports a value interpolated inside SQL single quotes whatever it is named, and an escaped %%s inside quotes is a literal, not a directive.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSQLEscapedPercentIsNotQuotedInterp
+  - id: sql-raw-and-split-concatenations
+    rule: GOFASTR1401 reads Query/Exec/builder arguments through the AST, so a raw-string literal or a concatenation split across lines is reported once, and a placeholder argument is not.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSQLConcatRawStringAndSplitLines
+  - id: sql-insert-variants-are-statements
+    rule: GOFASTR1401's INSERT anchor accepts INSERT OR <action> INTO and INSERT IGNORE INTO.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSweepSecuritySQLInsertOrIgnoreIsAStatement
+  - id: safe-sql-annotation-silences
+    rule: A safe-sql comment just above a statement silences GOFASTR1401 there.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSQLConcatRespectsLegacyAnnotation
+  - id: html-build-of-a-variable-is-reported
+    rule: GOFASTR1403 reports render.HTML (core/render under any alias) over a concatenation, a fmt.Sprint/Sprintf/Sprintln or strings.Join build with a non-literal operand, or a local the function assigned such a build, and stays quiet on a build of literals only.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSecurityRulesFireOnEverySpelling
+  - id: csrf-counts-each-form
+    rule: GOFASTR1402 counts POST forms against CSRF wirings (CSRFInputFromCtx calls, _csrf inputs and csrf-exempt comments) in the same file, so one wired form does not cover a second.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSweepSecurityCSRFCountsEachForm
+  - id: cookie-under-any-net-http-alias
+    rule: GOFASTR1404 reads a Cookie literal of net/http under any import alias, and not one of a local package that is merely named http.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSecurityRulesFireOnEverySpelling
+  - id: cookie-false-is-unset
+    rule: A cookie attribute set to the literal false counts as missing for GOFASTR1404.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSweepSecurityCookieExplicitFalseIsNotProtection
+  - id: cookie-without-value-or-deleted-is-quiet
+    rule: GOFASTR1404 skips a cookie literal with no Value field, and the deletion shape, an empty Value with a negative MaxAge.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestCookieDeletionIsNotReported
+  - id: cookie-fix-anchors-on-the-literal-tail
+    rule: The GOFASTR1404 fix replaces the text from the end of the literal's last element through its closing brace, adds a separating comma when the last element has none, and adds only the attributes that are missing.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSweepSecurityCookieFixAnchorsOnTheLiteralTail
+      - test: framework/contracts/analyzers.TestCookieFixSingleLineLiteral
+      - test: framework/contracts/analyzers.TestCookieFixPreservesAPartialLiteral
+  - id: secret-needs-name-and-shape
+    rule: GOFASTR1405 reports a literal that starts with a vendor key prefix whatever its name, and otherwise only a literal that looks like a credential (16 or more characters, no spaces or path characters, not identifier-shaped, three character classes with a digit) assigned to a secret-named target.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestHardcodedSecretShapeIsReported
+      - test: framework/contracts/analyzers.TestSecretNamedFieldsHoldingIdentifiersAreClean
+  - id: secret-is-never-printed
+    rule: A GOFASTR1405 diagnostic carries no snippet and is marked for redaction, so no output format prints the secret.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestHardcodedSecretShapeIsReported
+      - test: framework/contracts/analyzers.TestHardcodedSecretIsRedactedInEveryFormat
+  - id: forwarded-proto-only-an-http-enum-on-the-value-silences
+    rule: GOFASTR1406 is silenced only by a comparison of the header value or one of its holders against "http" or "https" (==, !=, EqualFold or a switch on the value); a comparison with any other literal, or of any other value, does not silence it.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestForwardedProtoWithoutEnumIsReported
+      - test: framework/contracts/analyzers.TestForwardedProtoEnumOnUnrelatedValueDoesNotSilence
+      - test: framework/contracts/analyzers.TestForwardedProtoEnumCheckIsQuiet
+  - id: forwarded-proto-needs-a-reflection
+    rule: GOFASTR1406 reports a X-Forwarded-Proto read (on a .Header receiver or a bare header identifier) only when the value reaches output, through a concatenation, a scheme- or proto-named variable, a URL builder or Scheme field, or a Sprintf/Fprintf format holding "://"; a read that is only tested or logged, and Header.Set, stay quiet.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestSweepSecurityForwardedProtoUnreflectedReadStaysQuiet
+      - test: framework/contracts/analyzers.TestForwardedProtoSprintfSpliceIsReported
+      - test: framework/contracts/analyzers.TestForwardedProtoHeaderParameterIsReported
+  - id: raw-json-core-handler-is-exempt
+    rule: GOFASTR1407 never reports in core/handler, which owns the strict binder.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestRawJSONBodyDecodeStaysQuiet
+  - id: raw-json-key-walk-is-quiet
+    rule: A json.NewDecoder held in a local and used only for Token/More and Decode into a json.RawMessage is a strict key walk and is not a GOFASTR1407 finding, even on client bytes.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestRawJSONBodyKeyWalkStaysQuiet
+  - id: raw-json-taint-crosses-files-of-one-package
+    rule: GOFASTR1407 taint flows, across every file of one directory and to a fixpoint, into a same-package callee's parameter, into a struct field name a tainted value is stored in, and out of a bare-name helper whose returns are body-derived.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestRawJSONBodyDecodeOnWebsocketFrame
+      - test: framework/contracts/analyzers.TestRawJSONBodyDecodeThroughReplayFerry
+      - test: framework/contracts/analyzers.TestRawJSONBodyDecodeThroughPkgHelper
+  - id: raw-json-only-reader-wrappers-carry-taint
+    rule: A call's result carries GOFASTR1407 taint only when the call is a reader wrapper (io.ReadAll, NewReader, Bytes and the rest of readerWrapper), a known body helper, or a method of a type holding a source field; a call that merely receives tainted arguments returns clean bytes.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestRawJSONBodyDecodeDoesNotTaintThroughArbitraryCalls
+  - id: raw-json-request-body-swap-is-no-field
+    rule: Assigning to the request's own Body (r.Body = MaxBytesReader(...)) does not taint the field name Body, so an outbound resp.Body stays clean.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestRawJSONBodySwapDoesNotTaintRespBody
+  - id: raw-json-frame-sources-are-a-closed-list
+    rule: GOFASTR1407's frame sources are readFrame, a zero-argument Read() in a file importing core/stream, a StdoutPipe() result, os.Stdin, and a bufio.Scanner over an io.Reader/net.Conn parameter that is stored in a field; a zero-argument Read elsewhere is not one.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestRawJSONBodyOnStreamFrameReadIsReported
+      - test: framework/contracts/analyzers.TestSweepSecurityZeroArgReadNeedsCoreStream
+      - test: framework/contracts/analyzers.TestRawJSONBodyOnChildStdoutIsReported
+      - test: framework/contracts/analyzers.TestRawJSONBodyOnTransportScannerFieldIsReported
+  - id: raw-json-method-results-read-only-source-fields
+    rule: A method's result is tainted only when its receiver type has a field that holds a source directly (sourceFields); a field that was fed a decoded or body-derived value does not taint the type's methods.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestRawJSONBodyOnChildStdoutIsReported
+      - test: framework/contracts/analyzers.TestSweepSecurityMethodResultReadsOnlySourceFields
+  - id: raw-json-jsonexact-is-the-same-sink
+    rule: GOFASTR1407 treats internal/jsonexact Unmarshal and Decode like encoding/json, since they keep the last duplicate key and fold key case too.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestJSONExactBodyDecodeIsReported
+  - id: url-attr-credits
+    rule: GOFASTR1412 stays quiet on an escaped value that went through urlsafe.Clean/CleanAnchor/CleanResource (directly or through a local), that an if-condition passed to an allow-list call (urlsafe.OK, an isSafe*URL helper, IsSafeRelativePath), that is a literal-for-literal strings.Replace of such a value, or that is a local assigned a "/"-rooted literal and only appended to.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestURLAttrEscapeCleanedGuardedAndRootedAreQuiet
+      - test: framework/contracts/analyzers.TestURLAttrEscapeSafeRelativeIsQuiet
+      - test: framework/contracts/analyzers.TestURLAttrEscapeComputedReplaceReported
+      - test: framework/contracts/analyzers.TestSweepSecurityURLAttrGlueAndReassignedRoot
+  - id: url-attr-slots
+    rule: GOFASTR1412's slots are href, src, action, formaction, poster and data, single- or double-quoted, with a leading space so data-* and aria-* never match, filled by the next concatenation operand (one punctuation glue literal allowed between) or by the next Sprintf/Fprintf verb with %% not counted.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestURLAttrEscapeQuoteAndVarReported
+      - test: framework/contracts/analyzers.TestURLAttrEscapeFprintfHrefAndSrcAreReported
+      - test: framework/contracts/analyzers.TestSweepSecurityURLAttrSlotsAndVerbIndex
+      - test: framework/contracts/analyzers.TestSweepSecurityURLAttrGlueAndReassignedRoot
+  - id: url-attr-escape-locals
+    rule: A local is judged as the escape call it holds only when every assignment to it in the function is that one escape call.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestURLAttrEscapeQuoteAndVarReported
+      - test: framework/contracts/analyzers.TestURLAttrEscapeCleanVarIsQuiet
+  - id: fold-refusal-is-a-fold-named-call
+    rule: GOFASTR1410 is satisfied by a call whose name contains fold in the Save body or in any package-local function it reaches, except strings/bytes/unicode Fold comparisons; a sanitizer without one does not satisfy it.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestFoldRefusalIsQuiet
+      - test: framework/contracts/analyzers.TestFoldedKeyHelperRefusalReach
+      - test: framework/contracts/analyzers.TestFoldedKeyCrossFileAndEqualFold
+  - id: fold-scope
+    rule: GOFASTR1410 reads only a Save/Put/Write method that has a key, name or filename parameter, on a type of the same directory with a BaseDir/Root/Dir field typed string or *os.Root, and that reaches an os create/write/rename, an atomicfile or fileperm writer, or a Create/OpenFile/WriteFile/Rename method on a non-package receiver.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestFoldedKeySilentPosturesAreQuiet
+      - test: framework/contracts/analyzers.TestSelfNamedWriterIsQuiet
+      - test: framework/contracts/analyzers.TestFoldedKeyRootAndWriteFileSinks
+      - test: framework/contracts/analyzers.TestFoldedKeyCrossFileAndEqualFold
+  - id: fetch-site-read-outside-core-handler
+    rule: GOFASTR1411 reports every Sec-Fetch-Site read outside core/handler, by Get or Values in any letter case on a .Header receiver or a bare identifier, or by the canonical map index.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestFetchMetadataHandlerAndCallersAreQuiet
+      - test: framework/contracts/analyzers.TestFetchMetadataCaseAndValuesReported
+      - test: framework/contracts/analyzers.TestFetchMetadataMapAndHelperFormsAreReported
+  - id: vary-clobbers-are-reported
+    rule: GOFASTR1413 reports Set and Del of Vary in any case and a map write under the canonical key "Vary", and stays quiet on Add, on a map write under a non-canonical key, and on h["Vary"] = append(h["Vary"], …) onto the same map.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestVarySetAnyCaseIsReported
+      - test: framework/contracts/analyzers.TestVaryMapWriteAndDelAreReported
+      - test: framework/contracts/analyzers.TestVaryMapAppendToItselfIsQuiet
+      - test: framework/contracts/analyzers.TestVaryAddAndOtherHeaderSetsAreQuiet
+  - id: ignored-exec-markers
+    rule: GOFASTR1601 reports a discarded Exec/ExecContext result, assigned to _, _ or standing as a plain, deferred or go statement, unless a comment holding best-effort, ignore the error or errors here sits on or just above it.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestBareExecStatementIsReported
+      - test: framework/contracts/analyzers.TestIgnoredExecRespectsBestEffortAnnotation
+      - test: framework/contracts/analyzers.TestCheckedOrAnnotatedBareExecIsQuiet
+decisions:
+  - id: sql-taint-marker-gate
+    date: 2026-11-17
+    status: accepted
+    decision: GOFASTR1401 reports an unquoted interpolation only when a request-derived name appears, and a quoted one always.
+    rejected:
+      - option: Report every interpolation into a statement.
+        why: Dynamic table and column names are legitimate and cannot use placeholders, and a rule that fires on all of them trains people to ignore it.
+    upholds: [sql-unquoted-identifier-needs-a-taint-marker]
+  - id: csrf-count-per-file
+    date: 2026-11-17
+    status: accepted
+    decision: GOFASTR1402 compares the number of POST forms with the number of CSRF wirings in the file and names the file and the count.
+    rejected:
+      - option: Pass a file that mentions CSRF anywhere.
+        why: One correct form then appears to protect every other form beside it.
+      - option: Name the exact unprotected form.
+        why: That needs template parsing, which a text pass over Go source cannot do.
+    upholds: [csrf-counts-each-form]
+  - id: secret-entropy-gate
+    date: 2026-11-17
+    status: accepted
+    decision: A secret-named target must also hold a credential-shaped value before GOFASTR1405 fires.
+    rejected:
+      - option: Report any literal assigned to a secret-named target.
+        why: Such targets mostly hold column names, enum values, i18n keys and env-var names, and a detector that cries wolf gets switched off.
+    upholds: [secret-needs-name-and-shape]
+  - id: cookie-fix-tail-anchor
+    date: 2026-11-17
+    status: accepted
+    decision: The cookie fix's edit spans the whitespace run from the last element through the closing brace and re-emits it around the insertions.
+    rejected:
+      - option: Insert before the closing brace with a one-byte Old of "}".
+        why: A lone brace is the commonest byte in Go source, so after a concurrent edit shifted offsets Apply's staleness check matched a coincidental brace and the fields landed in the wrong literal.
+    upholds: [cookie-fix-anchors-on-the-literal-tail]
+  - id: forwarded-proto-precision-from-the-sink
+    date: 2026-11-17
+    status: accepted
+    decision: GOFASTR1406 matches any receiver ending in .Header and any bare identifier, and gets its precision from the reflection sink and the enum check on the value.
+    rejected:
+      - option: Gate on the receiver's type.
+        why: The analyzers run without type information, and a header map handed to a helper is a bare identifier.
+    upholds: [forwarded-proto-needs-a-reflection, forwarded-proto-only-an-http-enum-on-the-value-silences]
+  - id: raw-json-name-based-package-taint
+    date: 2026-11-17
+    status: accepted
+    decision: GOFASTR1407 computes taint per directory by name, matching methods and fields by name within the package and stopping at the directory edge.
+    rejected:
+      - option: Type-check the package.
+        why: The analyzers run without go/types, and a decode of a coincidentally named parameter is a cheap false positive.
+      - option: Taint per file.
+        why: The real sites ferry the body across files, through a struct field or a same-package callee.
+    upholds: [raw-json-taint-crosses-files-of-one-package]
+  - id: raw-json-closed-frame-sources
+    date: 2026-11-17
+    status: accepted
+    decision: GOFASTR1407's frame sources are the reader spellings this repo uses, gated on core/stream for a zero-argument Read.
+    rejected:
+      - option: A list of websocket library method names.
+        why: No such library appears in the tree, and guessed names taint by coincidence.
+    revisit_if: A new inbound-frame reader appears that none of the listed spellings covers.
+    upholds: [raw-json-frame-sources-are-a-closed-list]
+  - id: raw-json-method-ferry-reads-source-fields-only
+    date: 2026-11-17
+    status: accepted
+    decision: The method-result ferry reads only fields seeded directly from a source before the fixpoint, never the general field map.
+    rejected:
+      - option: Let it read every tainted field name.
+        why: Error-struct literals built from decoded frames tainted their field names, which made every method of those types return taint and produced findings at moduleproto Peer.Call and fanout.Unwrap.
+    upholds: [raw-json-method-results-read-only-source-fields]
+  - id: fold-gate-is-the-refusal
+    date: 2026-11-17
+    status: accepted
+    decision: GOFASTR1410 looks for a fold-named refusal on the path to the write, not for a key sanitizer.
+    rejected:
+      - option: Accept a lexical key check (sanitizeKey, validateKey).
+        why: A fold is the filesystem's resolution of the name, which no check on the string can see.
+    upholds: [fold-refusal-is-a-fold-named-call]
+  - id: fetch-site-has-one-reader
+    date: 2026-11-17
+    status: accepted
+    decision: GOFASTR1411 reports any read of Sec-Fetch-Site outside core/handler rather than judging what a copy does with the value.
+    rejected:
+      - option: Check each copy's accepted values.
+        why: Every private copy so far diverged (early-allowing same-site, dropping the Origin fallback), and one predicate, handler.IsCrossSiteRequest, is the fix.
+    upholds: [fetch-site-read-outside-core-handler]
