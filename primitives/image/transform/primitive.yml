@@ -1,0 +1,6 @@
+primitive: image.transform
+summary: The chainable operations that derive a new Image - resize with its filters and fit modes, rotate, flip, flop, auto-orient, modulate and the gradient generator.
+code:
+  - framework/image/geometry.go
+  - framework/image/modulate.go
+  - framework/image/generate.go

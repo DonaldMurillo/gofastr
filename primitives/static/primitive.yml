@@ -1,0 +1,8 @@
+primitive: static
+summary: The static-site builder behind App.ExportStatic, which renders every route of a UIHost to HTML on disk with the runtime, widget, SEO, PWA and locale assets beside it.
+code:
+  - framework/static/doc.go
+  - framework/static/builder.go
+  - framework/static/phrases.go
+docs:
+  - framework/docs/content/static-export.md

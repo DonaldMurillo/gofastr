@@ -1,0 +1,4 @@
+primitive: app.testing.e2e
+summary: The chromedp browser end-to-end suite for the root package, kept in its own package, out of the root's race gate.
+code:
+  - framework/uie2e/

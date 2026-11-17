@@ -1,0 +1,7 @@
+primitive: crud.scope.owner
+summary: The one seam for who owns a row - the process-wide owner Extractor an auth battery installs, and the server-side cross-owner bypass.
+code:
+  - framework/owner/
+docs:
+  - framework/docs/content/entity-declarations.md
+  - framework/docs/content/auth.md

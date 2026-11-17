@@ -1,0 +1,7 @@
+primitive: testkit.axe
+summary: The axe-core accessibility harness - a reused chromedp browser, a tab per page, the readiness wait, the colour-scheme freeze, and Scan over the embedded axe engine.
+code:
+  - framework/testkit/axetest/
+docs:
+  - framework/docs/content/accessibility.md
+  - framework/docs/content/strict-mode.md

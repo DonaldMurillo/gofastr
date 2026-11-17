@@ -1,0 +1,14 @@
+primitive: pluginhost
+summary: The host side of heavy-JS plugins that run in an opaque-origin sandboxed iframe - the capability gate, the mount marker, and the host broker and frame client scripts with their routes.
+code:
+  - framework/pluginhost/doc.go
+  - framework/pluginhost/gate.go
+  - framework/pluginhost/broker.go
+  - framework/pluginhost/frameclient.go
+  - framework/pluginhost/mount.go
+  - framework/pluginhost/host/
+  - framework/pluginhost/frame/
+docs:
+  - framework/docs/content/plugin-platform.md
+on_change:
+  - The messages host/pluginhost.js and frame/frameclient.js exchange are a contract with every plugin's adapter script, so a change to their shape breaks installed plugins.

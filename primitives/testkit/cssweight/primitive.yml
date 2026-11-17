@@ -1,0 +1,8 @@
+primitive: testkit.cssweight
+summary: Measure, which weighs over plain HTTP the inline and linked CSS a page makes the browser parse, raw and gzipped, for a gate to hold under a cap.
+code:
+  - framework/testkit/cssweight/
+docs:
+  - framework/docs/content/testkit.md
+on_change:
+  - examples/meridian/cssweight_test.go and examples/site/cssweight_test.go are the gates in this repo; a change to how weight is counted moves their caps.

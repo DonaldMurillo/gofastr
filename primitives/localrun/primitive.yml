@@ -1,0 +1,8 @@
+primitive: localrun
+summary: The machine-local registry of running apps - Register writes one owner-only record per run, List reads the live ones back and drops those whose process is gone.
+code:
+  - framework/localrun/
+docs:
+  - framework/docs/content/local-runs.md
+on_change:
+  - A Record is JSON on disk read by other binaries on the same machine, so renaming or removing a field hides runs from tools built against the other version.

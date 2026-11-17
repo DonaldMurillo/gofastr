@@ -1,0 +1,8 @@
+primitive: testkit.semcov
+summary: The semantic-coverage manifest (.gofastr/semantic-coverage.json) recording which routes, permissions, roles, entity operations, hooks and events a test run reached, written through app.testing's observers and read by the contracts testing rules.
+code:
+  - framework/semcov/
+docs:
+  - framework/docs/content/contracts.md
+on_change:
+  - The manifest's file name, location and JSON fields are read by framework/contracts/analyzers/testing.go and written through framework/semanticcoverage.go; change all three in the same commit.

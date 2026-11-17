@@ -1,0 +1,7 @@
+primitive: pluginhost.manifest
+summary: A plugin's Manifest and ClientModule - entry document, sandbox tokens, capabilities and host requirements - their validation, and the boot warning when the Permissions-Policy denies a declared host requirement.
+code:
+  - framework/pluginhost/manifest.go
+  - framework/pluginhost/hostreq.go
+docs:
+  - framework/docs/content/plugin-platform.md
