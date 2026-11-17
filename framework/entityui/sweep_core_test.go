@@ -8,6 +8,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -96,5 +97,33 @@ func TestSweepCoreNewRefusesBuiltinTabKey(t *testing.T) {
 		if _, err := New(x.host, ext); err == nil {
 			t.Errorf("New accepted an extension tab keyed %q", key)
 		}
+	}
+}
+
+// A kind's Cell runs as the caller: under a back office's elevation it still cannot count rows its roles cannot read.
+func TestSweepCoreKindCellIsNotElevated(t *testing.T) {
+	ran, leaked := false, false
+	var x *testUI
+	ext := Extensions{Kinds: map[string]Kind{"probe": {Cell: func(cc CellContext) render.HTML {
+		ran = true
+		if _, ok := x.ui.Count(cc.Ctx, "invoices", ""); ok {
+			leaked = true
+		}
+		return render.HTML(cell(cc.Value))
+	}}}}
+	ents := invoiceEntities()
+	inv := ents["invoices"]
+	inv.Exposure = &entity.ExposureConfig{Access: entity.AccessControl{Read: "invoices:read"}}
+	inv.Display.Fields["memo"] = entity.FieldDisplay{Input: "probe"}
+	ents["invoices"] = inv
+	x = newTestUIExt(t, ents, invoiceRows(), ext, withAPI(map[string]string{"invoices": "/api/invoices"}))
+	policy := access.NewRolePolicy()
+	policy.Register("invoices:read")
+	x.ui.List("invoices").Base("/invoices").Columns("number", "memo").RenderCtx(elevatedClerk(x, policy, "/invoices", ""))
+	if !ran {
+		t.Fatal("setup: the elevated list never drew the kind's cell")
+	}
+	if leaked {
+		t.Fatal("SECURITY: a kind's Cell counted rows with the back office's elevation")
 	}
 }
