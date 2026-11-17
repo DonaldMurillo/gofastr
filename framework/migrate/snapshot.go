@@ -626,12 +626,9 @@ func containsDirectiveLine(sql string) bool {
 	return false
 }
 
-// RenderMigrationFile formats a versioned migration in the `-- +migrate`
+// renderMigrationFile formats a versioned migration in the `-- +migrate`
 // layout the runner parses; down may be empty.
-//
-// Deprecated: use [RenderMigrationFileChecked], which refuses SQL that
-// would synthesize a directive.
-func RenderMigrationFile(version uint64, name, up, down string) string {
+func renderMigrationFile(version uint64, name, up, down string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "-- +migrate Version %d\n", version)
 	fmt.Fprintf(&b, "-- +migrate Name %s\n", name)
@@ -646,7 +643,8 @@ func RenderMigrationFile(version uint64, name, up, down string) string {
 	return b.String()
 }
 
-// RenderMigrationFileChecked is [RenderMigrationFile] that returns
+// RenderMigrationFileChecked formats a versioned migration in the
+// `-- +migrate` layout the runner parses (down may be empty) and returns
 // [ErrDirectiveInSQL] when a line of up, down or name would read as a
 // directive to the runner.
 func RenderMigrationFileChecked(version uint64, name, up, down string) (string, error) {
@@ -659,7 +657,7 @@ func RenderMigrationFileChecked(version uint64, name, up, down string) (string, 
 			return "", fmt.Errorf("%w (in the %s section); a column DEFAULT or other literal spans a line starting with \"-- +migrate\"", ErrDirectiveInSQL, label)
 		}
 	}
-	return RenderMigrationFile(version, name, up, down), nil
+	return renderMigrationFile(version, name, up, down), nil
 }
 
 // LoadSnapshot reads a snapshot JSON file; a missing file is an empty

@@ -153,7 +153,7 @@ func TestSignalURLGuardMirrorsRuntimeAttrs(t *testing.T) {
 
 	// Runtime side: the guard names exactly the same five attrs, and
 	// lowercases the attribute name before comparing.
-	for _, rel := range []string{"../runtime/runtime.js", "../runtime/frag/kernel.js"} {
+	for _, rel := range []string{"../runtime/frag/kernel.js"} {
 		b, err := os.ReadFile(rel)
 		if err != nil {
 			t.Fatalf("read %s: %v", rel, err)

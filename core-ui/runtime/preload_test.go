@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"os"
 	"reflect"
 	"regexp"
 	"sort"
@@ -94,10 +93,7 @@ func TestDemandLoadModuleNamesMatchEmbeddedModules(t *testing.T) {
 // for server-side preload emission. Drift here would mean some
 // modules get preloaded but never executed (or vice-versa).
 func TestDemandLoadMarkersMatchRuntimeJS(t *testing.T) {
-	src, err := os.ReadFile("runtime.js")
-	if err != nil {
-		t.Skipf("can't read runtime.js: %v", err)
-	}
+	src := composedRuntime(t)
 	// Extract module names from the `{ name: 'foo', selector: '...' }`
 	// entries inside the DEMAND-LOAD SCANNERS block.
 	idx := strings.Index(string(src), "DEMAND-LOAD SCANNERS")

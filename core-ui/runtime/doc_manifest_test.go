@@ -15,10 +15,7 @@ import (
 // anchor for the doc-parity check below.
 func docManifest(t *testing.T) map[string][]string {
 	t.Helper()
-	raw, err := os.ReadFile("runtime.js")
-	if err != nil {
-		t.Fatalf("read runtime.js: %v", err)
-	}
+	raw := composedRuntime(t)
 	out := map[string][]string{}
 	for _, key := range []string{"htmlAttrs", "bodyClasses", "singletons"} {
 		// Matches the manifest source form: htmlAttrs: Object.freeze('a b c'.split(' ')),

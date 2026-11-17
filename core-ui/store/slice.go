@@ -194,7 +194,7 @@ func booleanAttrOn(v any) bool {
 
 // urlBearingAttrs are the HTML attributes whose value is a URL the
 // browser will navigate/fetch. They mirror the runtime's
-// _isUnsafeSignalUrl allow-list exactly (core-ui/runtime/runtime.js) so
+// _isUnsafeSignalUrl allow-list exactly (core-ui/runtime/frag/kernel.js) so
 // the SSR initial paint and client-side updates apply the identical
 // scheme guard.
 var urlBearingAttrs = map[string]bool{

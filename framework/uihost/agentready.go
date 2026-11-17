@@ -55,7 +55,7 @@ type LLMsTxtLink struct {
 }
 
 // AgentCardConfig configures the A2A v1.0 card at
-// /.well-known/agent-card.json and its legacy alias /.well-known/agent.json.
+// /.well-known/agent-card.json.
 type AgentCardConfig struct {
 	Name               string                         // defaults to "GoFastr Agent"
 	Description        string                         // short summary
@@ -248,7 +248,7 @@ func WithLLMsFullTxt(content string) Option {
 	}
 }
 
-// WithAgentCard serves /.well-known/agent-card.json and /.well-known/agent.json.
+// WithAgentCard serves /.well-known/agent-card.json.
 func WithAgentCard(cfg AgentCardConfig) Option {
 	return func(ds *UIHost) {
 		if ds.agentReady == nil {
@@ -339,7 +339,6 @@ func (ds *UIHost) mountAgentReady(r *router.Router) {
 			r.Get(jwksPath, http.HandlerFunc(ds.handleJWKS))
 		}
 		r.Get("/.well-known/agent-card.json", http.HandlerFunc(ds.handleAgentCard))
-		r.Get("/.well-known/agent.json", http.HandlerFunc(ds.handleAgentCard))
 	}
 }
 
