@@ -17,25 +17,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// maxDSLLimit caps the value the parser will accept from `limit(N)`.
-// Without a hard cap a malicious or sloppy client can request an
-// arbitrarily large page, turning a single query into a memory /
-// CPU exhaustion vector. Callers can still apply a smaller policy
-// cap on top, this is the parser's last line of defence.
 const maxDSLLimit = 10_000
 
-// dslIdentRe is the allow-list for DSL identifiers: entity names,
-// include (relation) names, and where()/order() field names. SQL
-// metacharacters (`;`, quotes, parens, dashes, spaces) are rejected
-// at the parser so they can never reach the query builder or schema
-// lookup, where a missing-field error would still leak the unsafe
-// string into logs.
-//
-// Deliberately NOT core/query.identRe (already imported here): that
-// regex additionally allows dot-separated schema.table paths, while
-// DSL identifiers are single names, the tighter shape is
-// load-bearing. The two differ on purpose; unifying them would loosen
-// this allow-list.
 var dslIdentRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // DSLQuery is the parsed representation of a GoFastr query DSL string.
@@ -61,14 +44,8 @@ type DSLOrder struct {
 	Direction string
 }
 
-// parseCache caches ParseDSL results. Agents often issue the same query
-// template repeatedly; cached lookups hit ~50ns / 0 allocs vs ~6µs / 7
-// allocs for a fresh parse.
 const maxParseCacheSize = 256
 
-// maxDSLInputSize caps the byte length of input passed to ParseDSL.
-// Without a cap, a single megabyte-class payload could consume parser
-// time AND get cached, amplifying its cost across the whole process.
 const maxDSLInputSize = 8 * 1024
 
 var (
@@ -76,20 +53,12 @@ var (
 	parseCacheMu sync.RWMutex
 )
 
-// ParseDSL parses strings like:
+// ParseDSL parses a query such as
 //
 //	Post.where(status="published").include(author).order(created_at DESC).limit(10)
 //
-// Results are cached by input string. The cache is bounded to 256 entries;
-// when full, a single randomly-chosen entry is evicted (Go map iteration
-// is randomised, so the first key returned by `range` is effectively
-// random, this is not LRU).
-//
-// The returned DSLQuery is caller-isolated: the cache stores the canonical
-// copy and every call (hit or miss) returns a shallow copy with fresh
-// Filters/Includes/Orders slices, the HooksFor posture. A value-typed
-// result invites callers to adjust it in place; sharing the cached backing
-// arrays would turn one caller's edit into every later caller's answer.
+// Results are cached by input in a bounded cache; each call returns its
+// own copy.
 func ParseDSL(input string) (DSLQuery, error) {
 	if len(input) > maxDSLInputSize {
 		return DSLQuery{}, i18n.NewError(reasonInputTooLong, map[string]any{"max": maxDSLInputSize})
@@ -99,7 +68,6 @@ func ParseDSL(input string) (DSLQuery, error) {
 		return DSLQuery{}, i18n.NewError(reasonEmptyQuery)
 	}
 
-	// Fast path: check cache
 	parseCacheMu.RLock()
 	if cached, ok := parseCache[input]; ok {
 		parseCacheMu.RUnlock()
@@ -107,15 +75,11 @@ func ParseDSL(input string) (DSLQuery, error) {
 	}
 	parseCacheMu.RUnlock()
 
-	// Slow path: parse
 	result, err := parseDSLUncached(input)
 	if err != nil {
 		return DSLQuery{}, err
 	}
 
-	// Store in cache (evict a random entry when full). Random eviction
-	// keeps the working set roughly intact for hot queries without the
-	// bookkeeping cost of LRU.
 	parseCacheMu.Lock()
 	if len(parseCache) >= maxParseCacheSize {
 		for k := range parseCache {
@@ -129,8 +93,6 @@ func ParseDSL(input string) (DSLQuery, error) {
 	return cloneDSLQuery(result), nil
 }
 
-// cloneDSLQuery copies the slice-bearing fields of a DSLQuery so the
-// caller's copy never aliases the cache's backing arrays.
 func cloneDSLQuery(q DSLQuery) DSLQuery {
 	q.Filters = append([]DSLFilter(nil), q.Filters...)
 	q.Includes = append([]string(nil), q.Includes...)
@@ -138,7 +100,6 @@ func cloneDSLQuery(q DSLQuery) DSLQuery {
 	return q
 }
 
-// parseDSLUncached does the actual parsing without caching.
 func parseDSLUncached(input string) (DSLQuery, error) {
 	ent, rest, _ := strings.Cut(input, ".")
 	if ent == "" {
@@ -175,12 +136,6 @@ func parseDSLUncached(input string) (DSLQuery, error) {
 				return DSLQuery{}, err
 			}
 			for _, inc := range includes {
-				// include() arguments may have been quoted by the
-				// caller; trimDSLValue strips the wrapping quotes so
-				// the allow-list compares against the bare identifier,
-				// and the bare identifier is what is kept: storing the
-				// quoted spelling made BuildDSLQuery look up a
-				// relation named `"author"`.
 				name := trimDSLValue(inc)
 				if !dslIdentRe.MatchString(name) {
 					return DSLQuery{}, i18n.NewError(reasonInvalidInclude, map[string]any{"name": strconv.Quote(name)})
@@ -206,27 +161,21 @@ func parseDSLUncached(input string) (DSLQuery, error) {
 			}
 			out.Limit = n
 		case "after":
-			// Cursor opacity is enforced downstream by the cursor
-			// decoder; here we only need to strip control bytes so a
-			// CR/LF in an after() literal can't smuggle a forged log
-			// line or break out of a re-encoded DSL string.
 			out.After = textsafe.SanitizeControlBytes(trimDSLValue(args))
 		default:
 			return DSLQuery{}, i18n.NewError(reasonUnknownCall, map[string]any{"name": strconv.Quote(name)})
 		}
 		rest = strings.TrimPrefix(tail, ".")
 	}
-	// The same 16-key bound ?sort= and ParseSort apply: one order()
-	// per clause, so a chain of them is the only way to grow ORDER BY.
+
 	if len(out.Orders) > maxSortTerms {
 		return DSLQuery{}, i18n.NewError(reasonOrderTooMany, map[string]any{"count": len(out.Orders), "max": maxSortTerms})
 	}
 	return out, nil
 }
 
-// BuildDSLQuery validates a DSL query against the app registry and returns a
-// core query builder. Includes are validated; callers can resolve eager loading
-// separately until relationship joins are fully generated.
+// BuildDSLQuery validates a DSL query against registry and returns its
+// query builder. It applies no row scope.
 func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder, error) {
 	parsed, err := ParseDSL(input)
 	if err != nil {
@@ -237,10 +186,7 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		return nil, err
 	}
 	entitySchema := ent.Schema()
-	// Project VisibleFields, not Names(): Names() includes Hidden columns, so
-	// selecting it would hand back the password hashes the HTTP read paths
-	// strip. NoQuery columns stay in the projection, they are meant to be
-	// returned, just not queried on.
+
 	visible := entitySchema.VisibleFields()
 	cols := make([]string, 0, len(visible))
 	for _, f := range visible {
@@ -256,8 +202,6 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 	for _, filter := range parsed.Filters {
 		field, ok := entitySchema.FieldByName(filter.Field)
 		if !ok || field.Hidden {
-			// Hidden folds into not-found so the DSL can't distinguish a
-			// hidden column from an absent one, matching ParseFilters.
 			return nil, i18n.NewError(reasonFieldNotFound, map[string]any{"field": strconv.Quote(filter.Field), "entity": parsed.Entity})
 		}
 		if field.NoQuery {
@@ -282,18 +226,12 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 			return nil, i18n.NewError(reasonFieldNotSortable, map[string]any{"field": strconv.Quote(order.Field), "entity": parsed.Entity})
 		}
 		if cursorField != "" {
-			// after() keysets on the cursor column, so the rows must be
-			// in that column's ascending order. order(seq).after(<id>)
-			// sorted by seq while the predicate cut on id: walking it
-			// skipped and repeated rows. Spelling the cursor's own order
-			// is allowed and adds nothing; the ORDER BY below is the one.
 			if order.Field != cursorField || order.Direction != "ASC" {
 				return nil, i18n.NewError(reasonAfterOrderMismatch, map[string]any{"field": strconv.Quote(cursorField), "order": strconv.Quote(order.Field + " " + order.Direction)})
 			}
 			continue
 		}
-		// No dialect is known here, so a nullable column spells the null
-		// position Postgres defaults to; its plain indexes still serve it.
+
 		if entity.CanHoldNull(orderField, ent.KeyColumns()) {
 			qb.OrderPinNulls(order.Field, order.Direction)
 			continue
@@ -304,31 +242,18 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		qb.Limit(parsed.Limit)
 	}
 	if cursorField != "" {
-		// The keyset predicate and one ORDER BY on the cursor column,
-		// the shape crud's cursor path emits. query.Cursor appended its
-		// own ORDER BY after any order(), so order(id).after(…) ordered
-		// by id twice.
 		qb.Where(query.QuoteKeyword(cursorField)+" > $1", after)
 		qb.Order(cursorField, "ASC")
 	}
 	return qb, nil
 }
 
-// dslAfter resolves after(cursor) to its keyset column and typed value,
-// or ("", nil, nil) when the query has no after(). The DSL is the
-// agent-facing surface: after() carries the bare keyset value (e.g.
-// after(1024) → "rows after id 1024"), NOT the opaque base64 token the
-// HTTP cursor layer round-trips. The keyset column comes from the entity
-// config (CursorField, else the primary key); composite cursors
-// (CursorFields) have no single-value form in the DSL, so they are
-// refused with a clear error rather than silently paging from page 1.
 func dslAfter(ent *entity.Entity, entitySchema schema.Schema, parsed DSLQuery) (string, any, error) {
 	if parsed.After != "" {
 		if len(ent.Config.Pagination.CursorFields) > 0 {
 			return "", nil, i18n.NewError(reasonAfterComposite, map[string]any{"entity": parsed.Entity})
 		}
-		// The default cursor is the primary key; a key of more than one
-		// column is a composite cursor, refused the same way.
+
 		keys := ent.KeyColumns()
 		cursorField := ent.Config.Pagination.CursorField
 		if cursorField == "" {
@@ -344,15 +269,11 @@ func dslAfter(ent *entity.Entity, entitySchema schema.Schema, parsed DSLQuery) (
 		if cf.NoQuery {
 			return "", nil, i18n.NewError(reasonAfterFieldNotQueryable, map[string]any{"field": strconv.Quote(cursorField), "entity": parsed.Entity})
 		}
-		// after() keysets on this one column, so rows tied on its value
-		// with the one it resumes after would never be served. Only the
-		// sole key or a Unique field cannot tie; anything else is refused
-		// rather than paged with silent gaps.
+
 		if !cf.Unique && (len(keys) != 1 || keys[0] != cursorField) {
 			return "", nil, i18n.NewError(reasonAfterNotUnique, map[string]any{"field": strconv.Quote(cursorField), "entity": parsed.Entity})
 		}
-		// after() is a bare keyset value: of the cursor column's type, or
-		// refused, the same as a filter value.
+
 		after, err := filter.CoerceValue(cursorField, cf.Type, parsed.After)
 		if err != nil {
 			return "", nil, err
@@ -411,13 +332,8 @@ func parseDSLFilters(args string) ([]DSLFilter, error) {
 	return filters, nil
 }
 
-// dslFilterOps are the where() operators. At one position the first
-// that matches wins, so >= and <= are tried before > and <.
 var dslFilterOps = []string{" contains ", " in ", ">=", "<=", "!=", "=", ">", "<"}
 
-// parseDSLFilter splits one where() term at its leftmost operator. The
-// field comes first, so an operator inside the value is never the split:
-// title="Drive in Cinema" compares with =, not in.
 func parseDSLFilter(input string) (DSLFilter, error) {
 	for i := range len(input) {
 		for _, op := range dslFilterOps {
@@ -442,8 +358,6 @@ func parseDSLOrder(input string) (DSLOrder, error) {
 	}
 	dir := "ASC"
 	if len(parts) == 2 {
-		// ASCII folding only: strings.ToUpper maps ſ (U+017F) onto S, so
-		// "deſc" read as DESC.
 		switch asciicase.Lower(parts[1]) {
 		case "asc":
 		case "desc":
@@ -455,12 +369,6 @@ func parseDSLOrder(input string) (DSLOrder, error) {
 	return DSLOrder{Field: parts[0], Direction: dir}, nil
 }
 
-// splitDSLArgs splits a call's arguments at the commas that sit outside
-// quotes, parens and brackets. A bracket or paren that closes more than
-// was opened, or one left open at the end, is refused: unquoted, `a]`
-// drove the depth negative and `a[` left it positive, and either way
-// every comma after it stopped splitting, so where(title=a], seq=1)
-// folded the seq predicate into the title value.
 func splitDSLArgs(args string) ([]string, error) {
 	var out []string
 	start := 0
@@ -512,10 +420,6 @@ func trimDSLValue(value string) string {
 	return value
 }
 
-// dslOps maps each where() operator to the filter operator whose type
-// rule it follows, so every DSL operator answers filter.CheckOpType the
-// way ?field_<op>= and ?where= do: an ordered compare on a Bool, or any
-// operator on a JSON column, is refused here too.
 var dslOps = map[string]filter.FilterOp{
 	"=": filter.OpEq, "!=": filter.OpNe,
 	">": filter.OpGt, "<": filter.OpLt, ">=": filter.OpGte, "<=": filter.OpLte,
@@ -538,12 +442,6 @@ func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
 		}
 		return query.QuoteKeyword(field.Name) + " " + op + " $1", []any{value}, nil
 	case "contains":
-		// Case-insensitive on both dialects, the ?q= and ?field_like=
-		// shape (filter.LikeClause). On a non-text column the substring
-		// match means nothing and Postgres refuses LOWER(integer), which
-		// CheckOpType above refused. The substring is not coerced, but it
-		// is a text bind, so CoerceValue on the (textual) column still
-		// refuses bytes Postgres cannot store.
 		if _, err := filter.CoerceValue(field.Name, field.Type, raw); err != nil {
 			return "", nil, err
 		}
@@ -557,8 +455,7 @@ func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
 		if len(values) == 0 {
 			return "", nil, i18n.NewError(reasonInNeedsValue)
 		}
-		// The cap every other in-list surface applies (?f_in=, ?where=,
-		// ?filter=).
+
 		if len(values) > filter.MaxINListEntries {
 			return "", nil, i18n.NewError(reasonInListOverCap, map[string]any{"field": strconv.Quote(field.Name), "count": len(values), "max": filter.MaxINListEntries})
 		}
@@ -578,11 +475,6 @@ func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
 	}
 }
 
-// hasRelation reports whether name is a relation of ent a caller may
-// include. A relation behind a Hidden field (entity.HidesRelation), or a
-// Hidden relation field, is not one, the answer crud's relationByName
-// gives: its include would put the related record, and the hidden key,
-// in the result.
 func hasRelation(ent *entity.Entity, name string) bool {
 	for _, relation := range ent.Config.Relations {
 		if relation.Name == name {
