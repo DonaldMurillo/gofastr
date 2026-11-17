@@ -14,18 +14,22 @@ import (
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 )
 
-// Config declares what to derive from each uploaded image. Each field but
-// MaxPixels means what the same field of framework/image.VariantSet means.
+// Config declares what to derive from each uploaded image.
 type Config struct {
+	// Variants are the renditions stored beside the original.
 	Variants []fwimage.Variant
 
+	// BlurHashX and BlurHashY are the BlurHash components, both 0 for none.
 	BlurHashX int
 	BlurHashY int
 
+	// Placeholder, when non-nil, also stores a data URL placeholder.
 	Placeholder *fwimage.PlaceholderOptions
 
+	// RejectAnimated fails an upload of more than one frame.
 	RejectAnimated bool
 
+	// AllowUpscale allows renditions wider than the source.
 	AllowUpscale bool
 
 	// MaxPixels overrides framework/image's decode pixel cap.
