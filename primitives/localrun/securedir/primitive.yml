@@ -1,5 +1,5 @@
 primitive: localrun.securedir
-summary: The per-OS check that the registry directory and its files belong to the current user and are not open to others, on Unix by mode and owner and on Windows by the token's owner.
+summary: The per-OS check that the registry directory and its files belong to the current user and are not open to others, on Unix the directory by mode and owner and each record by owner only (record modes are not checked), and on Windows by the token's owner.
 code:
   - framework/localrun/securedir.go
   - framework/localrun/securedir_unix.go

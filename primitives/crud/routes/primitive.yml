@@ -8,6 +8,8 @@ code:
   - framework/crud/redispatch.go
 docs:
   - framework/docs/content/mcp.md
+on_change:
+  - A new CRUD route, query parameter or response shape also needs its path, parameter or schema in framework/openapi, or /openapi.json stops describing the API.
 invariants:
   - id: route-patterns-match-registration
     rule: CrudRoutePatterns lists exactly the routes RegisterCrudRoutes mounts for the same options.
