@@ -1,0 +1,9 @@
+primitive: testkit.axe.coverage
+summary: The axe-coverage manifest (.gofastr/axe-coverage.json) that every successful scan records into and uihost strict mode reads to refuse a page route no axe test covers.
+code:
+  - framework/axecov/
+docs:
+  - framework/docs/content/strict-mode.md
+  - framework/docs/content/accessibility.md
+on_change:
+  - The manifest's file name, location and JSON fields are read by framework/uihost/strict.go; change both in the same commit.

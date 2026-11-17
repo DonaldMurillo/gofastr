@@ -1,0 +1,7 @@
+primitive: file.derive
+summary: Image derivatives on a FileField - the DerivedVariant and ImageDerivatives values, the ImageDeriver seam framework/imagefield implements, and the AllowTypes and WithImageDeriver process options.
+code:
+  - framework/file/imagederive.go
+docs:
+  - framework/docs/content/uploads.md
+  - framework/docs/content/image.md

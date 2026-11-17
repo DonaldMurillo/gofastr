@@ -1,0 +1,8 @@
+primitive: isolation
+summary: Worktree isolation - Resolve and ListenAddr give a linked Git worktree its own listen port, database DSN and environment from isolation.env, so it runs beside the main checkout without collisions.
+code:
+  - framework/isolation/
+docs:
+  - framework/docs/content/isolation.md
+on_change:
+  - App.Start remaps the listen address through this package (app holds isolation-remap-warning-only-when-active); run the root framework package's start tests too.

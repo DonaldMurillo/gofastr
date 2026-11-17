@@ -1,0 +1,4 @@
+primitive: filter.search
+summary: Turning a free-text ?q= term into AND-composed, LIKE-escaped search conditions over the searchable columns.
+code:
+  - framework/filter/search.go

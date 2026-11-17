@@ -1,0 +1,9 @@
+primitive: gallery.demos
+summary: The render helpers behind the catalog's stateful and composed demos - kanban, optimistic create and delete lists, section menu, date picker, tag, theme picker and the image-pipeline mockup - shared by the seed view and a host's live per-visitor view.
+code:
+  - framework/gallery/demos.go
+  - framework/gallery/tag_demo.go
+  - framework/gallery/themepicker_demo.go
+  - framework/gallery/pipeline_image_demo.go
+docs:
+  - framework/docs/content/ui-new-components.md

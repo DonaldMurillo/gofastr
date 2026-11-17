@@ -1,0 +1,4 @@
+primitive: entity.casing
+summary: The snake_case and camelCase conversions between column names and JSON keys, with their bounded caches and precomputed row mappings.
+code:
+  - framework/internal/casing/

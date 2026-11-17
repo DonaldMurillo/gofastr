@@ -1,0 +1,7 @@
+primitive: dev.layoutlayer
+summary: The dev layout layer - the /__devlayout.js script that outlines a page's layouts, slots, islands and widgets, its route, and its injection behind the dev gate.
+code:
+  - framework/dev/layoutlayer.go
+  - framework/dev/layoutlayer.js
+docs:
+  - framework/docs/content/dev-livereload.md
