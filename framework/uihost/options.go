@@ -199,7 +199,7 @@ func WithPreconnect(origins ...string) Option {
 func WithFontPreload(dir string, fonts ...style.WebFont) Option {
 	return func(ds *UIHost) {
 		for _, f := range fonts {
-			if f.Family == "" {
+			if !f.Declared() {
 				continue
 			}
 			href := style.FontURL(dir, f)

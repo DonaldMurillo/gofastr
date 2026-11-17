@@ -54,6 +54,10 @@ type FontFallback struct {
 // FallbackFamily is the family name of f's metric-tuned fallback face.
 func (f WebFont) FallbackFamily() string { return f.Family + " Fallback" }
 
+// Declared reports whether FontFaceCSS writes a rule for f: a family
+// that sanitizes to nothing gets none.
+func (f WebFont) Declared() bool { return quotedSlotSanitized(f.Family) != "" }
+
 // FontURL is the URL f's woff2 file is served at under dir (empty uses
 // [DefaultFontDir]), the same URL FontFaceCSS writes, for a preload link.
 func FontURL(dir string, f WebFont) string {
