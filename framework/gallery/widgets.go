@@ -44,7 +44,7 @@ func MountDemoWidgets(routes *router.Router, sidebarPages ...string) {
 				)
 			})).Hidden())
 	}
-	widget.MountBuilder(routes, preset.Drawer("ui-sidebar-drawer").
+	widget.MountBuilder(routes, preset.Drawer(SidebarShowcaseConfig.DrawerName).
 		Slot("body", app.NewStaticComponent(ui.SidebarBody(SidebarShowcaseConfig))).
 		Hidden().Pages(sidebarPages...))
 }

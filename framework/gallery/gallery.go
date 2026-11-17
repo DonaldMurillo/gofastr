@@ -1,59 +1,24 @@
-// Package gallery ships the importable component catalog that powers the
-// /components showcase on the docs site (examples/site) and any other tool
-// that needs to render every design-system component against an arbitrary
-// theme, most notably the theme-configuration tool that will live inside
-// the gofastr CLI binary (cmd/gofastr), which cannot import examples/.
-//
-// The catalog is the single source of truth for which components exist and
-// how each one renders with sensible default configuration. It is a
-// sibling of framework/sdkdocs: both compose framework/ui + core-ui/* into
-// a reusable, importable surface. Like sdkdocs, it is deliberately NOT
-// part of framework/uihost: uihost must never import framework/ui (its
-// always-on styles would leak into every host's CSS bundle), and a gallery
-// of pre-canned demos is the opposite of a host's job.
-//
-// Layering: the package imports only framework/ui, core-ui/*, and
-// core rendering, routing and localization. It does not import the framework
-// root facade, framework/crud, framework/entity, or anything higher up the L1–L5 diagram in
-// framework/ARCHITECTURE.md, so it introduces no cycle and is safely
-// importable from cmd/gofastr, examples/site, and host apps alike.
-//
-// Three entries (sortablelist, optimisticcreate, optimisticdelete)
-// have a live demo that is normally backed by per-visitor session state on
-// the docs site. The gallery catalog ships self-contained seed-rendering
-// Demo closures for them so a theme previewer or static export gets a
-// realistic render out of the box; hosts that wire live session state
-// (like examples/site) call the render helpers in demos.go directly from
-// their own request-bearing SSR path, bypassing the Demo closure.
-// Hosts also call MountDemoWidgets once before mounting the UIHost to back
-// the catalog's modal, drawer, bottom-sheet and sidebar triggers, and
-// MountDemoFormRoute to answer the demo forms.
+// Package gallery is the importable component catalog behind the
+// /components showcase and the theme editor: Catalog holds every
+// design-system component as a self-contained Demo, read through Lookup,
+// Grouped and CodeSnippet. Hosts call MountDemoWidgets and
+// MountDemoFormRoute before mounting their UIHost.
 package gallery
 
 import "github.com/DonaldMurillo/gofastr/core/render"
 
-// Entry describes one component in the catalog. It is the shape every
-// /components/<slug> page iterates over: main.go registers a route per
-// entry, the index screen renders a card per entry, and the showcase screen
-// looks up the active entry by slug.
+// Entry describes one component in the catalog.
 type Entry struct {
 	Slug     string
 	Name     string
 	Category string
 	Desc     string
-	// Demo returns a self-contained render.HTML showing the component live,
-	// configured with sensible defaults so the page works without setup.
-	// Closures that need backend wiring (DataTable's RPC island,
-	// ConfirmAction's modal) render a smaller stand-alone variant or a
-	// static note. IsNoteOnly reports whether a slug renders an
-	// explanatory note instead of a live instance (the set itself is
-	// private; that accessor is the only way in).
+	// Demo renders the component live with default configuration, or a
+	// note when IsNoteOnly reports the slug needs host wiring.
 	Demo func() render.HTML
 }
 
-// Group is a category-grouped slice of entries: the shape the index page
-// and the navigation sidebar iterate over. Groups are returned in catalog
-// (display) order.
+// Group is one category's entries, in catalog order.
 type Group struct {
 	Name    string
 	Entries []Entry
@@ -82,9 +47,7 @@ func ByCategory(category string) []Entry {
 	return out
 }
 
-// Grouped returns the catalog grouped by category in display (catalog)
-// order. The same category ordering is used by the index page's sections
-// and the navigation sidebar, so the two cannot drift.
+// Grouped returns the catalog grouped by category, in catalog order.
 func Grouped() []Group {
 	var groups []Group
 	seen := map[string]int{}
@@ -111,23 +74,14 @@ func Categories() []string {
 }
 
 // IsNoteOnly reports whether the slug's showcase renders an explanatory
-// note instead of a live demo. Those components need per-page backend
-// wiring (an RPC, a mounted widget, image sources) that a self-contained
-// demo cannot provide.
+// note instead of a live demo.
 func IsNoteOnly(slug string) bool { return noteOnlySlugs[slug] }
 
 // CodeSnippet returns the example Go source for a component's showcase
-// page, or "" when no snippet is registered. Read through this accessor
-// rather than the private codeSnippets map so the map is never exposed
-// as a mutable global to request handlers.
+// page, or "" when no snippet is registered.
 func CodeSnippet(slug string) string { return codeSnippets[slug] }
 
 // DemoFor returns the Demo closure for slug, or nil for an unknown slug.
-//
-// Hosts whose live demos need per-request session state (e.g. examples/site
-// renders sortablelist/optimisticcreate/optimisticdelete from the visitor's
-// own demoState) switch on the slug in their own SSR path and call the
-// Render* helpers directly.
 func DemoFor(slug string) func() render.HTML {
 	if e, ok := Lookup(slug); ok {
 		return e.Demo
