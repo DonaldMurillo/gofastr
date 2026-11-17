@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -688,5 +689,39 @@ func TestRestoreTestsWaitsOutAGitTheCLILeftRunning(t *testing.T) {
 	}
 	if got, _ := root.ReadFile("a_test.go"); string(got) != "package a // original\n" {
 		t.Errorf("the weakened test survived grading: %q", got)
+	}
+}
+
+func TestStopCellProcessesEndsWhatTheAgentLeftRunning(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("cell processes are found through /proc")
+	}
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "pkg")
+	if err := os.Mkdir(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	left := exec.Command("sleep", "60")
+	left.Dir = sub
+	if err := left.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- left.Wait() }()
+	outside := exec.Command("sleep", "60")
+	outside.Dir = t.TempDir()
+	if err := outside.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = outside.Process.Kill(); _ = outside.Wait() })
+	stopCellProcesses(dir)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		_ = left.Process.Kill()
+		t.Fatal("a process the agent left running inside the cell survived")
+	}
+	if err := outside.Process.Signal(syscall.Signal(0)); err != nil {
+		t.Errorf("a process outside the cell was stopped: %v", err)
 	}
 }
