@@ -85,12 +85,12 @@ func openDialog(name string) chromedp.Tasks {
 }
 
 // A default-chrome modal opens as a modal <dialog>: in the top layer, no
-// backdrop div, the page scroll locked, and widgetfocus not needed.
+// backdrop div, and the page scroll locked.
 func TestModalWidgetOpensAsNativeDialog(t *testing.T) {
 	url, _ := dialogServer(t, "["+dialogCfg("dlg", true, true)+"]", map[string]string{"dlg": dialogChrome("dlg", "")})
 	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
 	var got struct {
-		Modal, Backdrop, Locked, Focus bool
+		Modal, Backdrop, Locked bool
 	}
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(url+"/"),
@@ -100,7 +100,6 @@ func TestModalWidgetOpensAsNativeDialog(t *testing.T) {
 			Modal: document.querySelector('[data-cui-widget="dlg"]').matches(':modal'),
 			Backdrop: !!document.querySelector('[data-cui-backdrop]'),
 			Locked: document.documentElement.style.overflow === 'hidden',
-			Focus: !!window.__gofastr.loadedModules.widgetfocus,
 		})`, &got),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
@@ -113,9 +112,6 @@ func TestModalWidgetOpensAsNativeDialog(t *testing.T) {
 	}
 	if !got.Locked {
 		t.Error("page scroll is not locked while the dialog is open")
-	}
-	if got.Focus {
-		t.Error("widgetfocus loaded for a <dialog> modal; the browser contains it")
 	}
 }
 

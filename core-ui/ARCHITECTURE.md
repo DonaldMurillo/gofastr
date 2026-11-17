@@ -1061,9 +1061,11 @@ check the contract rests on out alone and requires a scenario to fail.
 **Modal widgets are `<dialog>` elements (#701).** A backdrop'd
 widget's default chrome is `<dialog open>`; `mountWidget` clears `open`
 and calls `showModal()`, so the root sits in the top layer with the page
-inert behind it. It creates no backdrop div (the scrim is `::backdrop`)
-and loads no `widgetfocus`: the browser keeps Tab inside, which also
-closes the Tab-before-the-module-loads race (#753). A `cancel` (Escape,
+inert behind it. It creates no backdrop div (the scrim is `::backdrop`).
+The page is inert before `widgetfocus` loads, so a Tab pressed meanwhile
+reaches only the browser's own UI, never the page (#753); once the
+module loads, its trap wraps Tab from the last control to the first, as
+for any modal. A `cancel` (Escape,
 the back gesture) is always cancelled, then dismisses the widget through
 the one dismiss path when `closeOnEscape` is set and no popover opened
 above it; `widgetfocus` calls `preventDefault` on an Escape it acts on,

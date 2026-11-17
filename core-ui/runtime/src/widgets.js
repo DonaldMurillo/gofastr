@@ -320,8 +320,8 @@
     const isModal = !!cfg.backdrop;
     // A default-chrome modal is a <dialog> (#701): showModal() gives it
     // the top layer, ::backdrop, an inert page and the close requests
-    // (Escape, the back gesture), so it needs no backdrop div and no
-    // focus module. Everything outside the top dialog is inert, so a
+    // (Escape, the back gesture), so it needs no backdrop div; widgetfocus
+    // only wraps Tab inside it. Everything outside the top dialog is inert, so a
     // panel opened over one mounts inside it.
     const dlg = isModal && w.tagName == 'DIALOG';
     const t = own(NS._modalStack.at(-1))?.root;
@@ -347,7 +347,7 @@
     const on = { signal: ac.signal };
     NS.scanAndLoadCSS(w);
     if (w.querySelector('[data-cui-fill-input],[data-cui-tick-elapsed],[data-cui-persist-storage],[data-cui-charcount-source],[data-cui-clear-on-esc],form[data-cui-submit-on-enter],form[data-cui-disable-when-invalid]')) NS.loadModule('widgethelpers');
-    if (!dlg && (cfg.closeOnEscape || cfg.backdrop)) NS.loadModule('widgetfocus');
+    if (cfg.closeOnEscape || cfg.backdrop) NS.loadModule('widgetfocus');
     if (cfg.deepLinkKey) NS.loadModule('widgetlinks');
 
     const pf = isModal ? document.activeElement : null;

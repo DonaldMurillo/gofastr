@@ -49,10 +49,10 @@
       const root = G._widgets && Object.prototype.hasOwnProperty.call(G._widgets, name)
         ? G._widgets[name]?.root
         : undefined;
-      // A modal <dialog> root is contained by the browser (the page is
-      // inert), from the moment it opens: no trap, and no race with this
-      // module's load (#753).
-      if (!root || root.tagName == 'DIALOG' || foreign(root)) return;
+      // A modal <dialog> root keeps the page inert from the moment it
+      // opens, so before this module loads Tab can reach only the browser
+      // UI, never the page (#753); once loaded, Tab wraps inside it.
+      if (!root || foreign(root)) return;
       const nodes = Array.from(root.querySelectorAll(G._focusSel)).filter(G._isTabStop);
       if (!nodes.length) { e.preventDefault(); return; }
       const first = nodes[0], last = nodes[nodes.length - 1];

@@ -135,8 +135,10 @@ The runtime opens it with `showModal()`, so the browser supplies:
 
 - the top layer, above every other surface, with no z-index;
 - the scrim, painted as `::backdrop` in `--ui-scrim`;
-- an inert page: Tab and the screen reader stay inside the dialog from
-  the moment it opens, before any module loads;
+- an inert page: Tab and the screen reader never reach the page behind
+  the dialog, from the moment it opens, before any module loads. Tab
+  wraps from the last control to the first once the runtime's focus
+  module has loaded;
 - close requests: Escape and the Android back gesture close it when
   `CloseOnEscape` is set. With `CloseOnEscape` off the chrome carries
   `closedby="none"`, and the runtime cancels the request.
