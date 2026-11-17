@@ -6,3 +6,164 @@ code:
   - framework/contracts/baseline.go
   - framework/contracts/changed.go
   - framework/contracts/glob.go
+invariants:
+  - id: default-is-strict
+    rule: DefaultConfig enforces every rule at its declared severity, fails on error, and demands route, permission and entity coverage with no line-coverage floor.
+    enforced_by:
+      - test: framework/contracts.TestDefaultConfigEnforcesEverything
+      - test: framework/contracts.TestSweepConfigDefaultDemandsEveryCoverageKind
+  - id: config-moves-severity-either-way
+    rule: A rule override beats a capability override beats the declared default, and an override may raise a severity as well as lower it.
+    enforced_by:
+      - test: framework/contracts.TestConfigCanEscalateNotOnlyRelax
+      - test: framework/contracts.TestSweepConfigRuleOverrideBeatsCapabilityOverride
+      - test: framework/contracts.TestConfigRelaxations
+  - id: every-config-change-is-listed
+    rule: Relaxations lists every severity override, escalations included, and every global, capability and rule path exemption, and the text footer prints each one.
+    enforced_by:
+      - test: framework/contracts.TestRelaxationsListEveryExemptionForm
+      - test: framework/contracts.TestSweepReportFooterListsEveryConfiguredChange
+      - test: framework/contracts.TestFormatTextReportsRelaxations
+  - id: bad-config-is-an-error
+    rule: LoadConfig errors on a malformed file, a contracts section that is not a map, an unknown key, an unknown rule, an unknown severity, a non-finite or out-of-range coverage minimum, and fail-on off; it never falls back to defaults.
+    enforced_by:
+      - test: framework/contracts.TestMalformedConfigIsAnError
+      - test: framework/contracts.TestConfigRefusesNonMapSection
+      - test: framework/contracts.TestSweepConfigUnknownKeyIsAnError
+      - test: framework/contracts.TestConfigRejectsUnknownRule
+      - test: framework/contracts.TestSweepConfigUnknownSeverityIsAnError
+      - test: framework/contracts.TestCoverageMinimumMustBeFinite
+      - test: framework/contracts.TestFailOnOffIsRejected
+  - id: strict-only-lowers-the-floor
+    rule: "`strict: true` sets the fail floor to warn and no setting raises it above error."
+    enforced_by:
+      - test: framework/contracts.TestStrictLowersTheFailFloor
+  - id: capability-spellings
+    rule: A capability takes a severity, a bool (false is off) or a map of enabled, severity and exempt, at the top level or under capabilities.
+    enforced_by:
+      - test: framework/contracts.TestCapabilityBlockFormsParse
+      - test: framework/contracts.TestCapabilityExemptAppliesOnlyToItsCapability
+  - id: directive-needs-a-reason
+    rule: A `//gofastr:allow(<rule>)` or `allow-file` directive with no reason silences nothing and is reported as GOFASTR0001.
+    enforced_by:
+      - test: framework/contracts.TestSuppressionRequiresAReason
+  - id: no-catch-all-directive
+    rule: A directive naming `all` or `*`, in any spelling, silences nothing and is reported as GOFASTR0004.
+    enforced_by:
+      - test: framework/contracts.TestSuppressionRejectsCatchAll
+      - test: framework/contracts.TestSuppressionCatchAllSpellingsInert
+  - id: unknown-directive-rule-is-reported
+    rule: A directive naming a rule neither the catalog nor the analyzer marker list knows is reported as GOFASTR0003, while an analyzer marker name is neither unknown nor stale.
+    enforced_by:
+      - test: framework/contracts.TestSuppressionRejectsUnknownRule
+      - test: framework/contracts.TestSuppressionAcceptsAnalyzerName
+      - test: framework/contracts/analyzers.TestScriptLintMarkerIsKnown
+  - id: only-a-comment-that-starts-with-the-directive-is-live
+    rule: A directive counts only as the first thing in a real comment, so one quoted in prose, inside a string literal or inside a raw string silences nothing.
+    enforced_by:
+      - test: framework/contracts.TestSuppressionInStringLiteralIsNotLive
+      - test: framework/contracts.TestSweepConfigDirectiveInsideARawStringIsNotLive
+  - id: directive-scope
+    rule: A trailing `allow` covers its own line; a standalone one, a block comment with nothing after its close included, covers its own line and the next non-blank line and any multi-line string literal that opens there; `allow-file` covers the file; rules separate by commas or spaces.
+    enforced_by:
+      - test: framework/contracts.TestSuppressionCoversItsLine
+      - test: framework/contracts.TestSweepConfigStandaloneDirectiveCoversItsLineAndTheNextCode
+      - test: framework/contracts.TestLeadingBlockDirectiveCoversItsOwnLine
+      - test: framework/contracts/analyzers.TestAbsoluteAttemptsMarkerCoversLiteral
+      - test: framework/contracts.TestFileScopedSuppression
+  - id: directives-work-in-every-source-kind
+    rule: Directives are read in Go, CSS and JavaScript files alike, a script's trailing comment included.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestCSSAllowDirectiveSuppresses
+      - test: framework/contracts/analyzers.TestCSSAllowFileDirective
+      - test: framework/contracts/analyzers.TestScriptTrailingAllowWaives
+  - id: stale-directive-is-reported
+    rule: A directive that matched nothing is reported as GOFASTR0002 when every rule it names ran, with a fix that deletes only the directive, or no fix when the line no longer holds one.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestStaleSuppressionIsReported
+      - test: framework/contracts.TestSweepEngineNarrowedRunKeepsOtherSuppressionsQuiet
+      - test: framework/contracts.TestStaleSuppressionAutofixDeletesOnlyTheDirective
+      - test: framework/contracts.TestStaleSuppressionAutofixRefusesToGuess
+  - id: stale-directive-is-waivable
+    rule: A GOFASTR0002 finding honours exemptions and a line or file waiver like any other finding, and the waiver is not itself reported stale.
+    enforced_by:
+      - test: framework/contracts.TestStaleSuppressionIsWaivableLikeAnyFinding
+      - test: framework/contracts.TestSweepEngineLineWaiverOfAStaleDirectiveIsNotItselfStale
+  - id: baseline-counts-per-rule-and-file
+    rule: A baseline absorbs up to its recorded count of findings per (rule, file), wherever they move in the file, and the next one fails.
+    enforced_by:
+      - test: framework/contracts.TestBaselineAbsorbsExistingFindings
+      - test: framework/contracts.TestBaselineDoesNotAbsorbNewFindings
+  - id: baseline-records-gating-findings-only
+    rule: NewBaseline records only findings at or above the report's fail-on severity.
+    enforced_by:
+      - test: framework/contracts.TestBaselineRecordsOnlyGatingFindings
+  - id: suppressed-finding-keeps-its-baseline-slot
+    rule: A suppressed finding, a waived stale directive included, still claims its (rule, file) baseline slot whatever the fail floor, and the claimed slot is reported as over-accepting.
+    enforced_by:
+      - test: framework/contracts.TestSuppressedFindingKeepsItsBaselineSlot
+      - test: framework/contracts.TestSuppressedSlotHoldsAcrossFailOnMismatch
+      - test: framework/contracts.TestWaivedStaleDirectiveKeepsItsBaselineSlot
+      - test: framework/contracts.TestSuppressedSlotIsReportedAsOverAccepting
+  - id: baseline-applies-once
+    rule: ApplyBaseline acts once per report, and a narrowed copy of an applied report cannot apply it again.
+    enforced_by:
+      - test: framework/contracts.TestApplyBaselineIsSingleShot
+      - test: framework/contracts.TestSweepReportNarrowedCopyCannotReapplyTheBaseline
+  - id: paid-down-debt-is-reported
+    rule: ApplyBaseline reports every (rule, file) whose allowance exceeds the findings left, in BaselineFixed.
+    enforced_by:
+      - test: framework/contracts.TestBaselineReportsPaidDownDebt
+  - id: baseline-file-is-written-atomically
+    rule: WriteBaseline replaces the file atomically, so a concurrent reader sees the whole old or the whole new baseline.
+    enforced_by:
+      - test: framework/contracts.TestBaselineReadersKeepWholeSnapshot
+  - id: baseline-read-is-strict-about-schema
+    rule: ReadBaseline returns nil without error for a missing file and refuses a newer schema.
+    enforced_by:
+      - test: framework/contracts.TestMissingBaselineIsNotAnError
+      - test: framework/contracts.TestBaselineRejectsAFutureSchema
+  - id: changed-files-are-root-relative
+    rule: ChangedFiles returns paths relative to the analysed root, through a symlinked root too, and includes untracked files.
+    enforced_by:
+      - test: framework/contracts.TestChangedFilesAreRootRelativeInASubdirectory
+      - test: framework/contracts.TestSweepConfigChangedResolvesASymlinkedRoot
+      - test: framework/contracts.TestChangedFilesListsUncommittedAndUntracked
+      - test: framework/contracts.TestChangedFilesRefIncludesUntracked
+  - id: changed-compares-from-the-merge-base
+    rule: ChangedFiles with a ref compares against the merge base with it, so commits made only on the ref are not this change.
+    enforced_by:
+      - test: framework/contracts.TestSweepConfigChangedComparesFromTheMergeBase
+  - id: no-git-means-no-narrowing
+    rule: Outside a git repository ChangedFiles returns a nil set, and RestrictTo with a nil set drops nothing.
+    enforced_by:
+      - test: framework/contracts.TestChangedFilesOutsideAGitRepo
+      - test: framework/contracts.TestRestrictToNilIsANoOp
+  - id: restrict-drops-fileless-findings
+    rule: RestrictTo drops every diagnostic outside the set, those with no file included, and counts them in OutsideChange.
+    enforced_by:
+      - test: framework/contracts.TestRestrictToKeepsOnlyChangedFiles
+  - id: glob-dialect
+    rule: "A glob matches `*` and `?` within a segment, `**` across any number of segments including none, a trailing `/` as a subtree, a leading `/` as root-anchored, `\\` as `/`, and a bare name against any one segment."
+    enforced_by:
+      - test: framework/contracts.TestMatchGlob
+      - test: framework/contracts.TestMatchPathRootAnchors
+decisions:
+  - id: baseline-keys-on-rule-and-file
+    date: 2026-11-17
+    status: accepted
+    decision: Baseline counts are keyed by (rule, file), not by line, and the file lives in the repository at the project root.
+    rejected:
+      - option: Key by line.
+        why: Line numbers churn on every edit, and a baseline that goes stale on a reformat gets deleted.
+      - option: Keep the baseline under .gofastr/.
+        why: It is a reviewed decision about accepted debt and belongs in the diff where it is seen to shrink.
+    upholds: [baseline-counts-per-rule-and-file]
+  - id: double-star-matches-its-root
+    date: 2026-11-17
+    status: accepted
+    decision: "`core/**` matches `core` itself, unlike gitignore."
+    rejected:
+      - option: Follow gitignore and match only the contents.
+        why: Layer and subtree patterns name a tree, and the root package would fall outside its own layer.
+    upholds: [glob-dialect]
