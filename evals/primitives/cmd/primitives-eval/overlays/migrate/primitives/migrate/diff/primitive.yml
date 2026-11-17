@@ -1,0 +1,76 @@
+primitive: migrate.diff
+summary: "diffEntity and its helpers, which compare one entity with a live or snapshot table and emit the rename, add, retype, primary-key, drop, foreign-key, unique and NOT NULL or DEFAULT changes, rendering SQLite's as one table rebuild."
+code:
+  - framework/migrate/schema_diff.go
+  - framework/migrate/column_constraint.go
+  - framework/migrate/unique.go
+  - framework/migrate/foreign_key.go
+  - framework/migrate/primary_key.go
+docs:
+  - framework/docs/content/migrations.md
+on_change:
+  - "A change that can lose data sets Destructive, so ApplySchemaDiff refuses it without AllowDestructive and additiveChanges keeps it out of boot."
+  - "A change with no faithful inverse sets irreversible, so GeneratePlan writes no Down rather than a partial one."
+  - "A newly compared property is also recorded by SnapshotFromPlan in SchemaSnapshot, and a snapshot that lacks it reads as unknown and is not compared, so older snapshots do not produce spurious changes."
+  - "A SQLite change that needs the table rebuilt joins the single sqliteRebuildChange at the end of diffEntity, which must stay last so it sees the renamed, added and dropped columns."
+  - "A change to primary-key or foreign-key handling updates the Primary-key changes and Foreign-key changes sections of framework/docs/content/migrations.md."
+twins:
+  - job: "Change an existing table's primary key, refusing it when another table's foreign key would be stranded."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/primary_key.go
+        note: "convergeKey at boot (empty tables only, re-read under the lock, sqliteStrandedReferrers from the live catalog) and postgresKeyChange, which both paths call on Postgres."
+      - path: framework/migrate/schema_diff.go
+        note: "diffEntity's key branch, which renames key columns first, calls postgresKeyChange with extraKeep from the live FKs, or folds the change into sqliteRebuildChange."
+      - path: framework/migrate/snapshot.go
+        note: "GeneratePlan's stranded-referrer check from recordedReferencesOnto and strandsReference against the snapshot DDL."
+  - job: "Give a field-level Unique column its unique index named by uniqueIndexName."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/schema_diff.go
+        note: "diffEntity adds the index after an ADD COLUMN of a Unique field, since SQLite refuses UNIQUE on ADD COLUMN, while columnDefs writes UNIQUE inline for a new table."
+      - path: framework/migrate/unique.go
+        note: "uniqueFlipChanges for a set or cleared Unique on an existing column in the diff, and ensureUniqueIndexes, boot's add-only half checked against liveUniqueColumns."
+  - job: "Read back what buildCreateTableSQL and columnDefs wrote, splitting the CREATE TABLE body into column definitions."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/schema_diff.go
+        note: "buildCreateTableSQL and columnDefs, the writer, joining definitions with a comma, newline and tab."
+      - path: framework/migrate/column_constraint.go
+        note: "recordedConstraints reads NOT NULL and DEFAULT through splitColumnDefs, which skips quoted text."
+      - path: framework/migrate/unique.go
+        note: "recordedUniqueColumns reads UNIQUE with a plain strings.Split on the same separator, which does not skip quoted text."
+      - path: framework/migrate/foreign_key.go
+        note: "recordedReferencesOnto reads REFERENCES with the reFKReferenceCols regexp over ddlWithoutLiterals."
+      - path: framework/migrate/sqlite_ownerfk.go
+        note: "splitTopLevel and sqlTokens, the quote- and paren-aware splitter the owner-FK repair uses on stored SQLite DDL."
+  - job: "Normalize Postgres and SQLite type names before comparing them."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/schema_diff.go
+        note: "canonicalType and typesEquivalent for retype detection, and isTextType and isIntegerType for the USING cast."
+      - path: framework/migrate/migrate.go
+        note: "typeFamily in checkForeignKeyTypes and integerFKType, a separate upper-case fold of the same names."
+  - job: "Keep the ON DELETE CASCADE or SET NULL actions onto a rebuilt SQLite table from firing on its DROP TABLE."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/migrate/schema_diff.go
+        note: "applySQLiteRebuild runs the change set with foreign keys off and rolls back on newViolations."
+      - path: framework/migrate/snapshot.go
+        note: "GeneratePlan refuses a rebuild that mutatingFKReferrers or snapshotMutatingReferrers finds referenced, since the runner's transaction cannot turn foreign keys off."
+      - path: framework/migrate/migrate.go
+        note: "mutatingFKReferrers, the declared side of that check."
+invariants:
+  - id: rebuild-keeps-referencing-rows
+    rule: "An applied SQLite table rebuild leaves the rows of tables that reference it in place and rolls back when it would add a foreign key violation."
+    enforced_by:
+      - test: framework/migrate.TestRetypeRebuildKeepsDependentRows
+      - test: framework/migrate.TestRebuildRollsBackNewFKViolation
+  - id: rebuild-keeps-triggers
+    rule: "A live SQLite table rebuild recreates the triggers its DROP TABLE removed."
+    enforced_by:
+      - test: framework/migrate.TestLiveSQLiteRebuildKeepsTriggers
+  - id: sqlite-key-change-refuses-stranded-keys
+    rule: "A SQLite primary-key change is refused when another table's foreign key references the old key columns and is not rebuilt with it."
+    enforced_by:
+      - test: framework/migrate.TestSQLiteKeyChangeRefusesStrandedKeys
