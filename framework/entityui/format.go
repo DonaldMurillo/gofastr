@@ -15,8 +15,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// param namespaces a list's query param by its key: "sort" for an unkeyed
-// list, "due_sort" for .Key("due").
 func param(key, name string) string {
 	if key == "" {
 		return name
@@ -24,7 +22,6 @@ func param(key, name string) string {
 	return key + "_" + name
 }
 
-// cell is a value's text form.
 func cell(v any) string {
 	switch t := v.(type) {
 	case nil:
@@ -42,14 +39,10 @@ func cell(v any) string {
 		}
 		return t.Format(time.RFC3339)
 	case float64:
-		// Plain decimal, never Go's 1e+06: the locale formatter reads
-		// digits only.
 		return strconv.FormatFloat(t, 'f', -1, 64)
 	case float32:
 		return strconv.FormatFloat(float64(t), 'f', -1, 32)
 	case map[string]any, []any:
-		// A JSON field reads back decoded. Its text is the document,
-		// never Go's map[k:v], which the form's JSON check refused.
 		if b, err := json.Marshal(t); err == nil {
 			return string(b)
 		}
@@ -67,12 +60,6 @@ func truthy(s string) bool {
 	return false
 }
 
-// formatDate renders a date, or with withTime a timestamp, in the
-// reader's locale: "Mar 5, 2026" and "Mar 5, 2026, 2:05 PM" in English,
-// "5 mars 2026" in French. Every screen prints them this way: list
-// cells, plain-text cells and a record's read-only fields alike.
-// Drivers hand dates back as time.Time or as one of a few string
-// layouts; anything else prints as is.
 func formatDate(ctx context.Context, raw any, withTime bool) string {
 	if t, ok := raw.(time.Time); ok && t.IsZero() {
 		return ""
@@ -86,8 +73,6 @@ func formatDate(ctx context.Context, raw any, withTime bool) string {
 	return cell(raw)
 }
 
-// parseTime reads a date or timestamp in any of the shapes drivers hand
-// back: a time.Time or one of a few string layouts.
 func parseTime(raw any) (time.Time, bool) {
 	if t, ok := raw.(time.Time); ok {
 		return t, !t.IsZero()
@@ -107,17 +92,10 @@ func parseTime(raw any) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// twoPlaces writes a plain decimal string with two places in the
-// reader's locale, exactly: a NUMERIC column's digits never pass
-// through a float64.
 func twoPlaces(ctx context.Context, val string) (string, bool) {
 	return i18n.Decimal(ctx, val, i18n.MinFraction(2), i18n.MaxFraction(2))
 }
 
-// decimal prints a Decimal or Float value in the reader's locale, with
-// at least two places and at most the column's scale (fractionDigits),
-// so 0.0049 in a DECIMAL(19,4) column does not read 0.00. Text that is
-// not a number prints as stored.
 func decimal(ctx context.Context, f schema.Field, val string) string {
 	scale := fractionDigits(f)
 	if s, ok := i18n.Decimal(ctx, val, i18n.MinFraction(min(2, scale)), i18n.MaxFraction(scale)); ok {
@@ -126,12 +104,8 @@ func decimal(ctx context.Context, f schema.Field, val string) string {
 	return val
 }
 
-// defaultScale is the fraction digits of the column AutoMigrate creates
-// for a Decimal, DECIMAL(19,4); a Float shows as many.
 const defaultScale = 4
 
-// fractionDigits is a numeric column's scale: the s of a RawType
-// NUMERIC(p,s) or DECIMAL(p,s), else defaultScale.
 func fractionDigits(f schema.Field) int {
 	t := strings.ToLower(strings.ReplaceAll(f.RawType, " ", ""))
 	for _, name := range []string{"numeric(", "decimal("} {
@@ -153,9 +127,6 @@ func fractionDigits(f schema.Field) int {
 	return defaultScale
 }
 
-// integer writes an integer column's value in the reader's digits with
-// no grouping: years, ids and codes live in int columns, and 2026 must
-// not read as 2,026. A value that is no integer prints as stored.
 func integer(ctx context.Context, val string) string {
 	n, err := strconv.ParseInt(val, 10, 64)
 	if err != nil {
@@ -164,10 +135,6 @@ func integer(ctx context.Context, val string) string {
 	return i18n.Number(ctx, n, i18n.NoGrouping())
 }
 
-// enumVariant picks a badge colour for common status words: settled is
-// success, in flight is information, needing attention is a warning, a
-// failure is danger, and a closed or unstarted record is neutral.
-// Anything else is neutral information.
 func enumVariant(v string) ui.StatusVariant {
 	switch strings.ToLower(v) {
 	case "active", "paid", "succeeded", "completed", "done", "published", "approved":
@@ -186,10 +153,6 @@ func enumVariant(v string) ui.StatusVariant {
 
 func muted() render.HTML { return ui.EmptyValue() }
 
-// money prints an amount as the catalog's currency symbol and two
-// places in the reader's locale: $1,234.00, and -$5.00 for a negative
-// one, the symbol inside the locale's minus sign. Text that is not a
-// number prints as stored.
 func money(ctx context.Context, val string) string {
 	sym := i18nui.EntityCurrency.Text(ctx)
 	mag, neg := strings.CutPrefix(val, "-")
@@ -200,7 +163,6 @@ func money(ctx context.Context, val string) string {
 	if !neg {
 		return sym + abs
 	}
-	// The locale's minus is whatever the signed form adds in front.
 	signed, _ := twoPlaces(ctx, val)
 	return strings.TrimSuffix(signed, abs) + sym + abs
 }

@@ -15,20 +15,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// The query box: the filter typed by hand. The chips narrow what a
-// reader picked; the box is where they write it. It is a field of the
-// toolbar's GET form, inside the Filters dropdown, named the list's
-// filter param, so it submits exactly what the chips and every other
-// link read: one source of truth in the URL, and a bad text keeps the
-// filter-did-not-apply warning instead of failing the page. The page
-// param is dropped with the rest of the toolbar's: a new narrowing
-// starts on page one.
-
-// queryField draws the query box's field, prefilled with the active
-// filter text (an open saved view's included), and under it a short
-// reference: an example built from the entity's own fields (the
-// placeholder too), the operators, the joining words and the queryable
-// field names, each as code.
 func (b *ListBuilder) queryField(ctx context.Context, s *listState) render.HTML {
 	if !b.queryBox {
 		return ""
@@ -68,8 +54,6 @@ func (b *ListBuilder) queryField(ctx context.Context, s *listState) render.HTML 
 	)
 }
 
-// rowOps are the filter rows' operators: the DSL's own spelling, each
-// with its name.
 var rowOps = []struct {
 	op  string
 	key i18n.Phrase
@@ -83,23 +67,14 @@ var rowOps = []struct {
 	{"<=", i18nui.EntityFilterOpLte},
 }
 
-// maxFilterRows caps the rows one submit reads.
 const maxFilterRows = 10
 
-// maxFilterRowValue caps one row's value, in runes.
 const maxFilterRowValue = 200
 
-// rowValue reports whether a row keeps v as it is. rowTerms trims a
-// value and drops an empty or over-long one, so filterRowsOf leaves a
-// term holding any other value in the box, which Apply sends unchanged.
 func rowValue(v string) bool {
 	return v != "" && v == strings.TrimSpace(v) && len([]rune(v)) <= maxFilterRowValue
 }
 
-// rowTerms are the submitted rows as DSL terms: a row whose field is not
-// a queryable field of the entity, whose operator is not a row
-// operator, or whose trimmed value fails rowValue is dropped; at most
-// maxFilterRows are read.
 func rowTerms(m *meta, fields, ops, values []string) []string {
 	var out []string
 	for i := 0; i < len(fields) && i < maxFilterRows; i++ {
@@ -121,10 +96,6 @@ func rowTerms(m *meta, fields, ops, values []string) []string {
 	return out
 }
 
-// composeFilter joins the rows' terms and the box's text with and. The
-// box's text is grouped whenever rows join it, so the and binds the
-// whole box however its or is spelled: the parser reads `"a"or(b)`
-// with no spaces around the or.
 func composeFilter(terms []string, box string) string {
 	if box != "" {
 		if len(terms) > 0 {
@@ -135,11 +106,6 @@ func composeFilter(terms []string, box string) string {
 	return strings.Join(terms, " and ")
 }
 
-// filterRowsOf splits the filter into rows, one per plain top-level
-// term (field, comparison, one value a row keeps: rowValue), and the
-// box's text, the terms a row cannot say (an or group, an in list, an
-// empty or space-padded value). A filter that did not parse stays whole
-// in the box.
 func filterRowsOf(s *listState) (rows []ui.FilterRow, box string) {
 	if s.filterPred == nil {
 		return nil, s.filterText
@@ -159,8 +125,6 @@ func filterRowsOf(s *listState) (rows []ui.FilterRow, box string) {
 		}
 		rest = append(rest, t)
 	}
-	// One term stands alone (composeFilter parenthesizes it beside the
-	// rows); several join with and, each group in parentheses.
 	if len(rest) == 1 {
 		return rows, predicateText(rest[0])
 	}
@@ -171,7 +135,6 @@ func filterRowsOf(s *listState) (rows []ui.FilterRow, box string) {
 	return rows, strings.Join(texts, " and ")
 }
 
-// rowOp is a leaf's row operator, or false for a term a row cannot say.
 func rowOp(p *filter.Predicate) (string, bool) {
 	if len(p.Children) > 0 {
 		return "", false
@@ -183,10 +146,7 @@ func rowOp(p *filter.Predicate) (string, bool) {
 	return op, ok
 }
 
-// filterRowsField draws the rows over the queryable fields.
 func filterRowsField(ctx context.Context, s *listState, queryable []schema.Field, rows []ui.FilterRow) render.HTML {
-	// The entity's own fields first, the system ones (id, timestamps)
-	// after: a new row starts on a field a reader means.
 	fields := make([]ui.SelectOption, 0, len(queryable))
 	var system []ui.SelectOption
 	for _, f := range queryable {
@@ -218,11 +178,8 @@ func filterRowsField(ctx context.Context, s *listState, queryable []schema.Field
 	})
 }
 
-// queryOperators are the comparisons the filter parser takes.
 var queryOperators = []string{"=", "!=", "<", ">", "<=", ">=", "contains", "in [a, b]"}
 
-// codeRun is each text as inline code, separated by spaces so the run
-// wraps.
 func codeRun(texts ...string) render.HTML {
 	parts := make([]render.HTML, 0, 2*len(texts))
 	for i, t := range texts {
@@ -234,12 +191,6 @@ func codeRun(texts ...string) render.HTML {
 	return render.Join(parts...)
 }
 
-// queryExample is a filter the parser accepts, written from the
-// entity's own fields: the first two of an enum against its first
-// value, a number against 100, a text field's contains and a
-// boolean's true, joined with "and". It never names the id, a relation
-// (its value is another record's id), a date or an enum value the
-// quotes would have to escape, and is "" when nothing else is left.
 func queryExample(fields []schema.Field) string {
 	var enum, number, text, flag string
 	for _, f := range fields {

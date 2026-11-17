@@ -2,9 +2,6 @@ package entityui
 
 import "github.com/DonaldMurillo/gofastr/core/schema"
 
-// builtinKinds are the field kinds entityui draws itself, each with the
-// field types it fits; an app kind of the same name replaces the
-// built-in one.
 var builtinKinds = map[string][]schema.FieldType{
 	"email":    {schema.String},
 	"url":      {schema.String},
