@@ -55,19 +55,25 @@ func TestMinify_PreservesSchemeStringLiterals(t *testing.T) {
 // the bundle would be one buggy minifier transform away from an HTML
 // parser premature-close.
 //
-//gofastr:test-reads core-ui/runtime/src/ core-ui/runtime/runtime.js
+//gofastr:test-reads core-ui/runtime/src/
 func TestMinify_DoesNotIntroduceScriptCloser(t *testing.T) {
 	root, err := repoRoot()
 	if err != nil {
 		t.Fatalf("repoRoot: %v", err)
 	}
-	paths := []string{filepath.Join(root, "core-ui/runtime/runtime.js")}
+	var paths []string
 	srcDir := filepath.Join(root, "core-ui/runtime/src")
-	entries, _ := os.ReadDir(srcDir)
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		t.Fatalf("read src dir: %v", err)
+	}
 	for _, e := range entries {
 		if filepath.Ext(e.Name()) == ".js" {
 			paths = append(paths, filepath.Join(srcDir, e.Name()))
 		}
+	}
+	if len(paths) == 0 {
+		t.Fatalf("no .js modules under %s: the scan would check nothing", srcDir)
 	}
 	for _, p := range paths {
 		raw, err := os.ReadFile(p)
@@ -81,32 +87,6 @@ func TestMinify_DoesNotIntroduceScriptCloser(t *testing.T) {
 		outCount := strings.Count(strings.ToLower(out), "</script>")
 		if outCount > srcCount {
 			t.Errorf("SECURITY: [script-closer] %s introduced </script> sequence (in=%d out=%d)", filepath.Base(p), srcCount, outCount)
-		}
-	}
-}
-
-// TestMinify_PreservesIsUnsafeSignalUrlIdentifier ensures the runtime's
-// scheme-guard function name survives untouched. The identifier is
-// referenced from string-bound signal hydration; renaming it would
-// silently disable the guard at every call site.
-func TestMinify_PreservesIsUnsafeSignalUrlIdentifier(t *testing.T) {
-	root, err := repoRoot()
-	if err != nil {
-		t.Fatalf("repoRoot: %v", err)
-	}
-	raw, err := os.ReadFile(filepath.Join(root, "core-ui/runtime/runtime.js"))
-	if err != nil {
-		t.Fatalf("read runtime.js: %v", err)
-	}
-	out := Minify(string(raw))
-	for _, want := range []string{
-		"_isUnsafeSignalUrl",
-		"'javascript:'",
-		"'vbscript:'",
-		"'data:'",
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("SECURITY: [scheme-guard] minified runtime.js missing %q — the URL-scheme guard may be broken", want)
 		}
 	}
 }

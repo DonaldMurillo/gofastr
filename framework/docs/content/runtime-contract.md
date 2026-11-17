@@ -354,7 +354,7 @@ requests carry no content type. Multipart RPC forms let the browser set
 
 
 For the authoritative list, grep `data-cui-` in
-`core-ui/runtime/runtime.js`. Adding a new attribute requires updating
+`core-ui/runtime/frag/` and `core-ui/runtime/src/`. Adding a new attribute requires updating
 `core-ui/ARCHITECTURE.md`, this extract, and a runtime test.
 
 **Component-action attributes** (the compiled `data-action` family, distinct

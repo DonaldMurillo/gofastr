@@ -22,8 +22,11 @@ import (
 
 func readSrc(t *testing.T, rel string) string {
 	t.Helper()
-	// Tests run from the package dir (core-ui/runtime). runtime.js sits
-	// alongside; src/* under src/.
+	// "runtime.js" is the composed full bundle; every other rel is a
+	// file relative to the package dir (core-ui/runtime).
+	if rel == "runtime.js" {
+		return composedRuntime(t)
+	}
 	b, err := os.ReadFile(rel)
 	if err != nil {
 		t.Fatalf("read %s: %v", rel, err)
@@ -468,9 +471,8 @@ func TestSelectorInterpolationEscaped(t *testing.T) {
 		}
 	}
 
-	// The property itself, over the whole runtime (frag/ + src/; the
-	// generated runtime.js is pinned byte-identical to the fragments by
-	// TestComposedRuntimeMatchesOnDiskFile).
+	// The property itself, over the whole runtime (frag/ + src/, the
+	// sources the composed bundle is built from).
 	res, err := check.LintSelectorInterpolation(".")
 	if err != nil {
 		t.Fatal(err)

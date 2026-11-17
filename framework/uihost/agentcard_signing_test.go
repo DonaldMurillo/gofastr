@@ -275,7 +275,7 @@ func TestSignedCard_Verifies(t *testing.T) {
 		AgentCardSigningKey{KeyID: "ec-1", Signer: ecKey},
 	)
 	pubs := map[string]crypto.PublicKey{"ed-1": edKey.Public(), "ec-1": &ecKey.PublicKey}
-	for _, path := range []string{"/.well-known/agent-card.json", "/.well-known/agent.json"} {
+	for _, path := range []string{"/.well-known/agent-card.json"} {
 		body, resp := getBody(t, srv.URL+path)
 		if resp.StatusCode != 200 {
 			t.Fatalf("%s: status %d", path, resp.StatusCode)

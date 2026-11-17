@@ -77,8 +77,8 @@ func SnapshotFromPlan(plan migrate.Plan, dialect migrate.Dialect) migrate.Schema
 	return migrate.SnapshotFromPlan(plan, dialect)
 }
 
-func RenderMigrationFile(version uint64, name string, up string, down string) string {
-	return migrate.RenderMigrationFile(version, name, up, down)
+func RenderMigrationFileChecked(version uint64, name string, up string, down string) (string, error) {
+	return migrate.RenderMigrationFileChecked(version, name, up, down)
 }
 
 func LoadSnapshot(path string) (migrate.SchemaSnapshot, error) { return migrate.LoadSnapshot(path) }
