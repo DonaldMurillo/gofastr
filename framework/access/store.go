@@ -17,99 +17,39 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
-// ErrRevokedByWildcard is returned by [GrantStore.Grant] for a permission
-// that a wildcard revocation the grant does not lift still covers:
-// Revoke("teams:*") then Grant("teams:read"). Every reload expands the
-// wildcard tombstone and subtracts the permission again, so the grant would
-// hold on the calling replica alone until its next reload. Grant the
-// wildcard to lift the revocation, then revoke what the role should not
-// hold.
+// ErrRevokedByWildcard is returned by [GrantStore.Grant] for a permission a
+// wildcard revocation it does not lift still covers. Grant the wildcard to lift it.
 var ErrRevokedByWildcard = errors.New("access: a wildcard revocation covers the permission")
 
-// GrantStore persists role→permission grants to a database table so RBAC
-// edits survive restarts. It wraps a live *RolePolicy: Grant/Revoke write
-// the DB row AND mutate the in-memory policy in one call, keeping the two
-// in sync. The policy's own RWMutex covers concurrent Can checks, so a
-// Grant/Revoke call is "atomic enough", a reader may see the state
-// before or after the change, never a torn map.
-//
-// The store holds a reference to the live *RolePolicy (store-holds-policy
-// shape). Bind the policy at construction with NewGrantStore(db, policy),
-// then call LoadInto once at boot to hydrate the policy from persisted
-// rows. Subsequent Grant/Revoke calls mutate both layers.
-//
-// All role and permission VALUES are passed as $n bound parameters, never
-// interpolated into SQL. The table name is validated via query.SafeIdent
-// at construction time and quoted via query.QuoteFolded in every statement.
-//
-// Both SQLite (mattn/go-sqlite3) and PostgreSQL (lib/pq) accept $N
-// placeholders and ON CONFLICT DO NOTHING, so the same SQL works on both.
+// GrantStore persists role grants and revocation tombstones in the database
+// and mirrors each change into a live *RolePolicy. Call LoadInto once at boot.
 type GrantStore struct {
 	db     *sql.DB
 	table  string
 	policy *RolePolicy
 
-	// transitionMu serialises every policy transition. Grant, Revoke,
-	// reloadRole, reloadAll, LoadInto, across its full read→mutate span,
-	// so a reload that read a stale DB snapshot can never run its
-	// ReplaceRole after a newer local Grant/Revoke and silently undo it.
-	// Deliberately NOT fanoutMu: fanoutMu guards transport state (send
-	// queue, node id) and stays narrow. Lock ordering is always
-	// transitionMu → fanoutMu; never the reverse.
 	transitionMu sync.Mutex
 
-	// baseline holds the CODE-defined grants captured at LoadInto time,
-	// before DB rows are overlaid. Every reload rebuilds a role as
-	// baseline ∪ DB, so a cross-replica refresh (or a local reconcile)
-	// never wipes grants an app declared in code with policy.Grant. Local
-	// revokes remove entries so a later reconcile cannot undo them. Access
-	// under fanoutMu; replacements use fresh slices so reload snapshots remain
-	// safe after releasing the lock.
 	baseline map[string][]Permission
 
-	// Cross-replica fanout plumbing, wired by SetFanout. All of it is nil
-	// until then (single-process deployments pay nothing).
-	//
-	// Propagation is a REFRESH SIGNAL: a grant/revoke enqueues the role
-	// name onto other replicas, which re-read the authoritative DB row.
-	// The payload's data is never trusted.
-	//
-	// Two hard requirements from the fanout contract shape this design:
-	//   - Publish must not block Grant/Revoke on a stalled backend, so we
-	//     publish through fanout.PublishQueue (non-blocking enqueue).
-	//   - The Subscribe callback must not block the delivery goroutine, so
-	//     it only marks the role dirty + wakes a worker; the DB reload runs
-	//     on the worker with a finite timeout. A slow reload can never wedge
-	//     delivery and cause a distinct revoke to be dropped.
 	fanoutMu  sync.Mutex
 	nodeID    string
 	send      func([]byte) // PublishQueue enqueue; nil when no fanout
 	stopQueue func()       // stops the PublishQueue drainer
 
 	dirtyMu  sync.Mutex
-	dirty    map[string]bool // role names awaiting reload ("" = reload all)
+	dirty    map[string]bool // "" reloads every role
 	wake     chan struct{}   // buffered(1); worker wakeups
 	stopWork chan struct{}   // closed by stop() to end the worker
 	workerWG sync.WaitGroup
 
-	// reconcileEvery is how often the fanout worker reloads every role
-	// (WithReconcileInterval); zero or negative turns it off.
 	reconcileEvery time.Duration
 }
 
-// reloadTimeout bounds each background role reload so a stalled DB can never
-// wedge the refresh worker (and thereby drop later invalidations).
 const reloadTimeout = 5 * time.Second
 
-// accessFanoutTopic is the pub/sub lane grant/revoke invalidations ride on.
-// A distinct topic keeps RBAC refresh signals from inter-leaving with the
-// module-toggle and island lanes even when they share one fanout backend.
 const accessFanoutTopic = "gofastr.access"
 
-// accessInvalidateMsg is the fanout payload. Role names the role whose
-// grants changed; an empty Role asks the receiver to reload every role.
-// The body is treated as a refresh SIGNAL only, the receiver re-reads
-// authoritative DB state and never trusts this struct's data.
 type accessInvalidateMsg struct {
 	Role string `json:"role"`
 }
@@ -117,26 +57,19 @@ type accessInvalidateMsg struct {
 // GrantStoreOption configures a GrantStore.
 type GrantStoreOption func(*GrantStore)
 
-// WithGrantTable overrides the default table name ("access_grants").
-// The name is validated via query.SafeIdent, an unsafe identifier
-// panics at construction time, not at query time.
+// WithGrantTable overrides the grants table name (default "access_grants");
+// an unsafe identifier panics.
 func WithGrantTable(name string) GrantStoreOption {
 	return func(gs *GrantStore) {
-		// MustIdent panics on unsafe identifiers; construction-time fail-fast
-		// is the right posture for a config-time value.
 		gs.table = query.MustIdent(name)
 	}
 }
 
-// DefaultReconcileInterval is how often a GrantStore with a fanout reloads
-// every role from the database when no [WithReconcileInterval] is given.
+// DefaultReconcileInterval is the full-reload period of a GrantStore with a fanout.
 const DefaultReconcileInterval = 5 * time.Minute
 
-// WithReconcileInterval sets how often a GrantStore with a fanout reloads
-// every role from the database, so a replica that missed a refresh signal
-// (a stalled bus drops frames) stops honouring a revoked permission within
-// one interval. Zero or negative turns the reconcile off: a missed signal
-// then heals on the next change to that role or a restart.
+// WithReconcileInterval sets how often a fanout-wired store reloads every role;
+// zero or negative turns it off.
 func WithReconcileInterval(d time.Duration) GrantStoreOption {
 	return func(gs *GrantStore) {
 		//gofastr:allow(optzero) zero or negative is the documented "reconcile off"; refreshWorker arms its ticker only when reconcile > 0
@@ -144,14 +77,7 @@ func WithReconcileInterval(d time.Duration) GrantStoreOption {
 	}
 }
 
-// NewGrantStore creates a GrantStore bound to the given policy. The policy
-// reference is retained. Grant/Revoke mutate it directly so concurrent
-// Can checks see the change without a reload. Call LoadInto once at boot
-// to hydrate the policy from persisted rows.
-//
-// A nil policy is allowed only if you intend to call LoadInto with a
-// policy before any Grant/Revoke; Grant/Revoke on a store with a nil
-// policy return an error.
+// NewGrantStore returns a store bound to policy, which may be nil until LoadInto.
 func NewGrantStore(db *sql.DB, policy *RolePolicy, opts ...GrantStoreOption) *GrantStore {
 	gs := &GrantStore{
 		db:             db,
@@ -165,19 +91,12 @@ func NewGrantStore(db *sql.DB, policy *RolePolicy, opts ...GrantStoreOption) *Gr
 	return gs
 }
 
-// Policy returns the live *RolePolicy the store mutates. May be nil if
-// LoadInto has not yet been called and no policy was passed to
-// NewGrantStore.
+// Policy returns the live policy the store mutates, or nil before one is bound.
 func (s *GrantStore) Policy() *RolePolicy {
 	return s.policy
 }
 
-// EnsureSchema creates the grants table (and the revocation-tombstone table
-// that backs cross-replica revocation) if they do not already exist.
-// Idempotent (CREATE TABLE IF NOT EXISTS), so existing deployments need no
-// migration. The column types (TEXT) are portable across SQLite and
-// PostgreSQL. The (role, permission) pair has a UNIQUE constraint so
-// INSERT ... ON CONFLICT DO NOTHING is a no-op for duplicates.
+// EnsureSchema creates the grants and tombstone tables if missing.
 func (s *GrantStore) EnsureSchema(ctx context.Context) error {
 	if query.IsPostgres(s.db) {
 		if err := query.RefuseCaseKeptTables(ctx, s.db, s.table, s.revokedTable()); err != nil {
@@ -191,11 +110,6 @@ func (s *GrantStore) EnsureSchema(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 		return err
 	}
-	// Revocation tombstones share the grants table's shape. A Revoke
-	// inserts a row here; reloads and fresh boots subtract these from the
-	// baseline ∪ DB union so a revoked grant stays revoked on every replica
-	// and survives restarts. Derived from the configured grants table
-	// (WithGrantTable) so a custom name gets a matching tombstone table.
 	revStmt := fmt.Sprintf(
 		"CREATE TABLE IF NOT EXISTS %s (role TEXT NOT NULL, permission TEXT NOT NULL, UNIQUE(role, permission))",
 		query.QuoteFolded(s.revokedTable()),
@@ -207,10 +121,6 @@ func (s *GrantStore) EnsureSchema(ctx context.Context) error {
 	return nil
 }
 
-// registerExport declares both tables to App.ExportData under their
-// configured names. Left out, a restore lost every runtime grant and every
-// tombstone, and the restored app's code seed brought back each permission
-// an admin had revoked. No eraser: the rows name roles, not users.
 func (s *GrantStore) registerExport() {
 	for _, t := range [...]struct{ base, table string }{
 		{"access_grants", s.table},
@@ -223,18 +133,8 @@ func (s *GrantStore) registerExport() {
 	}
 }
 
-// LoadInto reads all persisted grant rows and calls policy.Grant for each,
-// hydrating the live *RolePolicy from the database. The policy is also
-// retained as the store's active policy (overwriting any previously bound
-// one) so subsequent Grant/Revoke calls mutate it. Call once at boot,
-// after constructing the policy and after EnsureSchema.
-//
-// Revocation tombstones are subtracted BOTH from the captured code baseline
-// and from the installed DB grants, so a replica booting after a revoke does
-// not resurrect the permission from its code seed.
-//
-// If the store was constructed with a policy and policy is nil, the
-// store's existing policy is used.
+// LoadInto binds policy (nil keeps the current one), captures its code grants
+// as the baseline and overlays the persisted grants minus the tombstones.
 func (s *GrantStore) LoadInto(ctx context.Context, policy *RolePolicy) error {
 	if policy != nil {
 		s.policy = policy
@@ -245,23 +145,13 @@ func (s *GrantStore) LoadInto(ctx context.Context, policy *RolePolicy) error {
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 
-	// Read tombstones under the transition lock so a concurrent Grant/Revoke
-	// cannot change them between this read and the install (the stale-reload
-	// race): a boot and a transition never interleave.
 	tombstones, err := s.allTombstones(ctx)
 	if err != nil {
 		return err
 	}
-	// Expand wildcard tombstones against today's registry, as mergeBaseline
-	// does on reload: a "reports:*" revoke recorded before reports was
-	// registered persisted only the literal, and every exact match below
-	// would miss the reports:read that code seeded or a row granted.
 	for role, ts := range tombstones {
 		tombstones[role] = s.policy.prepareRevokes(ts)
 	}
-	// Capture the code-defined baseline BEFORE overlaying DB grants, then
-	// subtract tombstones, a code-seeded grant revoked on another replica
-	// must stay revoked on this one too.
 	snap := s.policy.Snapshot()
 	for role, ts := range tombstones {
 		if base, ok := snap[role]; ok {
@@ -282,8 +172,6 @@ func (s *GrantStore) LoadInto(ctx context.Context, policy *RolePolicy) error {
 		if err := rows.Scan(&role, &perm); err != nil {
 			return fmt.Errorf("access: scan grant row: %w", err)
 		}
-		// A grant row with a live tombstone is an inconsistent write,
-		// fail closed: the tombstone wins.
 		if permIn(tombstones[role], Permission(perm)) {
 			continue
 		}
@@ -294,11 +182,6 @@ func (s *GrantStore) LoadInto(ctx context.Context, policy *RolePolicy) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("access: iterate grants: %w", err)
 	}
-	// Apply tombstones to the LIVE policy too: the baseline above already
-	// excludes them for future reloads, but a code-seeded grant is already
-	// in the in-memory policy at boot, a replica booting after a revoke
-	// must not resurrect it. Revoke any tombstoned permission the policy
-	// currently holds.
 	for role, ts := range tombstones {
 		held := s.policy.PermissionsOf(role)
 		toRevoke := make([]Permission, 0, len(ts))
@@ -314,63 +197,34 @@ func (s *GrantStore) LoadInto(ctx context.Context, policy *RolePolicy) error {
 	return nil
 }
 
-// Grant validates and expands permissions, persists the resulting
-// (role, permission) rows to the database (INSERT ... ON CONFLICT DO NOTHING),
-// and then updates the live policy. Idempotent: granting an already-held
-// permission is a no-op in both layers. In strict capability mode, validation
-// happens before any database write.
-//
-// Grant also DELETES the revocation tombstones Revoke would write for the
-// same input (a wildcard's literal and its expansion), so a re-grant is the
-// ONE way to lift a prior revocation. A tombstoned permission stays revoked
-// across replicas and restarts until Grant removes the tombstone, even if
-// the code keeps declaring it. A grant inside a wildcard revocation it does
-// not lift (Revoke("teams:*"), then Grant("teams:read")) returns
-// [ErrRevokedByWildcard] and writes nothing.
-//
-// Role and permission are bound as $n parameters, never interpolated.
+// Grant persists perms for role, lifts their tombstones and updates the live
+// policy. It errors on an empty role, a strict-mode unknown capability, or
+// [ErrRevokedByWildcard], writing nothing.
 func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission) error {
 	if s.policy == nil {
 		return fmt.Errorf("access: GrantStore has no policy: call LoadInto first")
 	}
-	// An empty role name is the fanout "reload everything" sentinel, never a
-	// real grantable role. Reject it so a Grant/Revoke("", …) can't be
-	// mistaken for a full-reload signal (and can't strand a permission that
-	// the additive full-reload path could never remove).
 	if role == "" {
 		return fmt.Errorf("access: Grant requires a non-empty role name")
 	}
 	if len(perms) == 0 {
 		return nil
 	}
-	// Validate + expand up front so a strict-mode rejection never persists a
-	// row it would then refuse in memory. The EXPANDED set is what we persist
-	// (stable across reloads, matches LoadInto), not the raw wildcard input.
 	prepared, err := s.policy.prepareGrants(perms)
 	if err != nil {
 		return err
 	}
-	// Hold the transition lock across the DB writes and the policy mutation
-	// so a concurrent reload reading a stale DB snapshot cannot land its
-	// ReplaceRole after this grant and undo it.
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 	lifted, err := s.refuseCoveredGrant(ctx, role, perms, prepared)
 	if err != nil {
 		return err
 	}
-	// The grant rows and the tombstones they lift are one transaction: a
-	// grant row written behind a tombstone that failed to lift is a grant
-	// every reload cancels, and the caller was told it failed.
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("access: persist grant %q: begin: %w", role, err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	// One INSERT per (role, perm) with ON CONFLICT DO NOTHING. A batch
-	// VALUES clause would be marginally faster but complicates the
-	// placeholder math; the grant matrix is small and admin-driven, so
-	// clarity wins.
 	for _, permission := range prepared {
 		q := fmt.Sprintf(
 			"INSERT INTO %s (role, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING",
@@ -380,9 +234,6 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 			return fmt.Errorf("access: persist grant %q→%q: %w", role, permission, err)
 		}
 	}
-	// A re-grant lifts a prior revocation: delete any tombstone for these
-	// (role, perm) pairs so the next reload (on this replica or a peer) no
-	// longer subtracts them.
 	for _, permission := range lifted {
 		q := fmt.Sprintf(
 			"DELETE FROM %s WHERE role = $1 AND permission = $2",
@@ -395,25 +246,12 @@ func (s *GrantStore) Grant(ctx context.Context, role string, perms ...Permission
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("access: persist grant %q: commit: %w", role, err)
 	}
-	// The DB write succeeded, apply the grant DIRECTLY to the live policy. A
-	// local grant/revoke is an authoritative admin action on THIS replica and
-	// mutates memory directly (an admin may revoke a grant that was seeded in
-	// code and never persisted to the DB). The baseline ∪ DB reconcile is used
-	// ONLY on the remote fanout path (reloadRole), where its job is to stop a
-	// peer's refresh from wiping this replica's code-defined grants, never to
-	// second-guess a local mutation.
 	s.policy.grantPrepared(role, prepared)
-	// Signal other replicas to re-read this role's grants from the DB
-	// (non-blocking; a stalled bus never wedges the grant).
 	s.publish(role)
 	return nil
 }
 
-// CheckGrant reports the error [GrantStore.Grant] would return for the same
-// call before it writes anything: a strict-mode unknown capability or
-// [ErrRevokedByWildcard]. It writes nothing. A caller applying several
-// changes checks each grant first, so a refused one applies none of them;
-// Grant checks again, since a peer may revoke in between.
+// CheckGrant returns the error Grant would return for the same call, writing nothing.
 func (s *GrantStore) CheckGrant(ctx context.Context, role string, perms ...Permission) error {
 	if s.policy == nil {
 		return fmt.Errorf("access: GrantStore has no policy: call LoadInto first")
@@ -432,13 +270,6 @@ func (s *GrantStore) CheckGrant(ctx context.Context, role string, perms ...Permi
 	return err
 }
 
-// refuseCoveredGrant returns the tombstones a grant of perms lifts, the
-// ones Revoke writes for the same input: the raw literal as well as its
-// expansion. Revoke tombstones "teams:*" itself, and a surviving literal
-// expands again on every reload (2026-10-27 D22). A wildcard tombstone the
-// grant does not lift still covers what it expands to, here and on every
-// reload, so a grant inside it would hold on this replica alone; that
-// grant is refused with ErrRevokedByWildcard.
 func (s *GrantStore) refuseCoveredGrant(ctx context.Context, role string, perms, prepared []Permission) ([]Permission, error) {
 	lifted := s.policy.prepareRevokes(perms)
 	tombstones, err := s.tombstonesForRole(ctx, role)
@@ -449,8 +280,6 @@ func (s *GrantStore) refuseCoveredGrant(ctx context.Context, role string, perms,
 		if permIn(lifted, stone) {
 			continue
 		}
-		// lifted holds every granted permission, so stone is a wildcard
-		// here and what it covers is its expansion.
 		for _, covered := range s.policy.prepareRevokes([]Permission{stone}) {
 			if permIn(prepared, covered) {
 				return nil, fmt.Errorf("%w: role %q, %q revokes %q; grant %q, then revoke what the role should not hold",
@@ -461,15 +290,8 @@ func (s *GrantStore) refuseCoveredGrant(ctx context.Context, role string, perms,
 	return lifted, nil
 }
 
-// Revoke deletes (role, permission) rows from the database, records a
-// revocation tombstone for each, and then calls policy.Revoke on the live
-// policy. Idempotent: revoking a permission the role doesn't hold is a
-// no-op in both layers. Wildcard-shaped permissions ("teams:*") expand
-// against the capability registry exactly like Grant, so a revoke removes
-// at least what Granting the same input persisted (the raw literal is
-// revoked and tombstoned alongside its expansion).
-//
-// Role and permission are bound as $n parameters, never interpolated.
+// Revoke deletes perms (wildcards expanded) for role, tombstones each, and
+// updates the live policy. It errors on an empty role.
 func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permission) error {
 	if s.policy == nil {
 		return fmt.Errorf("access: GrantStore has no policy: call LoadInto first")
@@ -480,21 +302,9 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 	if len(perms) == 0 {
 		return nil
 	}
-	// Expand wildcard-shaped revokes with the same pass Grant uses
-	// (prepareGrants' expansion rule), so revoking "teams:*" deletes and
-	// tombstones the exact rows Grant("teams:*") persisted. The raw literal
-	// is included too: a grant made against an empty registry persists the
-	// wildcard literally, and its code-baseline seed must stay revocable —
-	// tombstoning an unheld permission is a no-op, never an over-revoke.
 	prepared := s.policy.prepareRevokes(perms)
-	// Hold the transition lock across the DB writes and the policy mutation
-	// so a concurrent reload cannot land its ReplaceRole after this revoke
-	// and undo it.
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
-	// The row deletes and the tombstones are one transaction: rows deleted
-	// behind a tombstone that failed to write left this replica granting
-	// (its policy is untouched on error) while a fresh boot denied.
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("access: persist revoke %q: begin: %w", role, err)
@@ -509,11 +319,6 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 			return fmt.Errorf("access: persist revoke %q→%q: %w", role, p, err)
 		}
 	}
-	// Record a tombstone for each revoked permission. The tombstone is shared
-	// DB state, so every replica's reload (baseline ∪ DB) − tombstones and
-	// every fresh boot's LoadInto subtracts it, a code-SEEDED grant revoked
-	// here stays revoked on peers and on replicas that boot later. ON CONFLICT
-	// DO NOTHING mirrors Grant's duplicate posture.
 	for _, p := range prepared {
 		q := fmt.Sprintf(
 			"INSERT INTO %s (role, permission) VALUES ($1, $2) ON CONFLICT DO NOTHING",
@@ -526,61 +331,20 @@ func (s *GrantStore) Revoke(ctx context.Context, role string, perms ...Permissio
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("access: persist revoke %q: commit: %w", role, err)
 	}
-	// The captured code baseline is deliberately NOT narrowed here. The
-	// tombstone above is shared state and every reload computes
-	// (baseline ∪ DB) − tombstones, so it already keeps a code-seeded grant
-	// revoked on this replica, on its peers, and on replicas that boot
-	// later. Narrowing the local baseline as well was redundant with that —
-	// and being per-replica, it was the one piece of revoke state peers
-	// could not see, which is how the replicas came apart:
-	//
-	//   A: Grant  → INSERT grant row, then DELETE tombstone
-	//   B: Revoke → DELETE grant row, then INSERT tombstone
-	//
-	// interleaved as G1, R1, R2, G2 leaves no grant row and no tombstone.
-	// From that shared state both replicas must reach the same verdict, and
-	// with a narrowed baseline on B only, they did not: A kept the code seed
-	// and answered true while B answered false, permanently, across every
-	// later reload. Leaving the baseline alone makes the shared rows the
-	// only input, so the last writer wins and both replicas agree.
-	// DB write succeeded, remove from the live policy DIRECTLY. A local
-	// revoke is authoritative and removes the permission from memory even if
-	// it was seeded in code (never in the DB), so an admin revoke takes
-	// effect immediately. NOTE: with revocation tombstones, a code-seeded
-	// grant's revocation DOES propagate to peers and DOES survive peer boots,
-	// the tombstone row is shared DB state, subtracted by every reload and
-	// every fresh LoadInto. Re-granting via GrantStore.Grant deletes the
-	// tombstone and lifts the revocation (the one way to un-revoke); a
-	// tombstoned permission stays revoked even if the code keeps declaring
-	// it, until Grant() is called. DB intent outlives code declarations,
-	// the same precedence the store already gives DB grants over the
-	// baseline.
 	s.policy.Revoke(role, prepared...)
-	// Signal other replicas to re-read (non-blocking).
 	s.publish(role)
 	return nil
 }
 
-// SetFanout attaches a cross-replica fanout so grant/revoke propagate to
-// other replicas and remote grant/revoke re-read authoritative state into
-// the local policy. Mirrors the wiring shape of [island.Manager.SetFanout]
-// and [ModuleManager.subscribeFanout]: store the backend, mint a node id,
-// subscribe to accessFanoutTopic, and return the unsubscribe func as stop.
-// Call once at boot; the returned stop is registered by the framework as
-// an OnStop drainer. A nil fanout makes SetFanout a no-op returning a no-op
-// stop, so callers can unconditionally wire it regardless of topology.
+// SetFanout propagates grants and revokes to other replicas over f and reloads
+// roles they change. A nil f is a no-op. Call stop at shutdown.
 func (s *GrantStore) SetFanout(f fanout.Fanout) (stop func(), err error) {
 	if f == nil {
 		return func() {}, nil
 	}
 	s.fanoutMu.Lock()
 	s.nodeID = fanout.NewNodeID()
-	// Non-blocking publish: a stalled backend must never wedge Grant/Revoke.
 	s.send, s.stopQueue = fanout.PublishQueue(f, accessFanoutTopic, 0)
-	// Dirty-set + worker: the Subscribe callback only marks a role dirty and
-	// wakes the worker (it never blocks the delivery goroutine); the worker
-	// performs the DB reload with a finite timeout, so a slow reload can't
-	// wedge delivery and cause a distinct revoke to be dropped.
 	s.dirty = make(map[string]bool)
 	s.wake = make(chan struct{}, 1)
 	s.stopWork = make(chan struct{})
@@ -616,11 +380,6 @@ func (s *GrantStore) SetFanout(f fanout.Fanout) (stop func(), err error) {
 	return stop, nil
 }
 
-// publish enqueues an invalidation for role onto the non-blocking publish
-// queue. No-op when no fanout is attached. The enqueue never blocks
-// Grant/Revoke; a stalled backend drops frames (the queue's documented
-// behavior), and a missed refresh heals at the worker's next periodic
-// reconcile (WithReconcileInterval), or on the next grant/revoke or restart.
 func (s *GrantStore) publish(role string) {
 	s.fanoutMu.Lock()
 	send := s.send
@@ -633,12 +392,6 @@ func (s *GrantStore) publish(role string) {
 	send(fanout.Wrap(nodeID, payload))
 }
 
-// handleRemote processes an invalidation from another replica. The payload is
-// a REFRESH SIGNAL only: its data is never trusted. It unwraps the envelope,
-// drops its own echoes (nodeID == s.nodeID), and marks the named role dirty
-// for the worker to reload, it does NOT reload inline, so a slow DB can't
-// block the fanout delivery goroutine (which would overflow the bounded queue
-// and drop later, distinct invalidations). Malformed payloads are ignored.
 func (s *GrantStore) handleRemote(raw []byte) {
 	s.fanoutMu.Lock()
 	ownNode := s.nodeID
@@ -657,9 +410,6 @@ func (s *GrantStore) handleRemote(raw []byte) {
 	s.markDirty(msg.Role)
 }
 
-// markDirty records a role needing reload and wakes the worker without
-// blocking (the wake channel is buffered(1); a pending wake already covers a
-// fresh dirty entry).
 func (s *GrantStore) markDirty(role string) {
 	s.dirtyMu.Lock()
 	if s.dirty == nil {
@@ -675,13 +425,6 @@ func (s *GrantStore) markDirty(role string) {
 	}
 }
 
-// refreshWorker drains dirty roles off the fanout delivery path and reloads
-// each with a finite timeout. A failed reload re-marks the role dirty and
-// retries after a delay, so a distinct revoke can never disappear silently
-// under DB pressure. Every reconcile interval (when positive) it reloads
-// every role, so a refresh signal the bus dropped heals within one
-// interval instead of waiting for the next change to that role. Exits when
-// stopWork is closed.
 func (s *GrantStore) refreshWorker(wake, stopWork <-chan struct{}, reconcile time.Duration) {
 	defer s.workerWG.Done()
 	var tick <-chan time.Time
@@ -699,9 +442,6 @@ func (s *GrantStore) refreshWorker(wake, stopWork <-chan struct{}, reconcile tim
 			s.markDirty("") // "" reloads every role
 		}
 		if failed := s.drainDirty(); failed {
-			// Something failed to reload, schedule a retry so the dropped
-			// refresh reconverges rather than waiting for the next unrelated
-			// invalidation.
 			select {
 			case <-stopWork:
 				return
@@ -712,14 +452,6 @@ func (s *GrantStore) refreshWorker(wake, stopWork <-chan struct{}, reconcile tim
 	}
 }
 
-// drainDirty reloads the roles dirty when it starts, each once. Returns true
-// if any reload failed (and was re-marked dirty for the worker's retry).
-//
-// It drains a snapshot, not the live set: looping until the set emptied
-// took a failed role straight back off it, so with the database down the
-// loop retried at once, forever, never reaching the worker's backoff or
-// its stopWork check, and the fanout stop waited on it for good. A role
-// marked dirty during the pass is the next wake's.
 func (s *GrantStore) drainDirty() (anyFailed bool) {
 	s.dirtyMu.Lock()
 	roles := slices.Sorted(maps.Keys(s.dirty))
@@ -743,18 +475,6 @@ func (s *GrantStore) drainDirty() (anyFailed bool) {
 	return anyFailed
 }
 
-// reloadRole rebuilds role's effective permissions as
-// (baseline ∪ DB) − tombstones and atomically replaces the live policy's
-// view via [RolePolicy.ReplaceRole]. The code-defined baseline (captured at
-// LoadInto) is always merged back, so a refresh never drops grants declared
-// in code, but a revocation tombstone subtracts a permission from the
-// union, so a revoke propagates to peers and stays revoked. An empty role
-// triggers a convergent full reload. On DB error the policy is left
-// unchanged and the error is returned (fail-safe: a missed reload is
-// retried by the worker).
-//
-// The whole read→mutate span runs under transitionMu so a reload that read
-// a stale DB snapshot cannot land after a newer local Grant/Revoke.
 func (s *GrantStore) reloadRole(ctx context.Context, role string) error {
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
@@ -776,19 +496,12 @@ func (s *GrantStore) reloadRole(ctx context.Context, role string) error {
 	return nil
 }
 
-// reloadAll rebuilds every role that has a baseline, DB grant or tombstone
-// as (baseline ∪ DB) − tombstones. Convergent (removes deleted DB grants and
-// honours tombstones), unlike additive LoadInto. Never published
-// (Grant/Revoke reject empty roles); the fanout worker's periodic reconcile
-// and its failed-reload retry run it. reloadAll takes transitionMu and delegates to reloadAllLocked so
-// reloadRole's empty-role branch can reuse it without re-locking.
 func (s *GrantStore) reloadAll(ctx context.Context) error {
 	s.transitionMu.Lock()
 	defer s.transitionMu.Unlock()
 	return s.reloadAllLocked(ctx)
 }
 
-// reloadAllLocked is reloadAll assuming transitionMu is already held.
 func (s *GrantStore) reloadAllLocked(ctx context.Context) error {
 	byRole, err := s.allDBPerms(ctx)
 	if err != nil {
@@ -807,8 +520,6 @@ func (s *GrantStore) reloadAllLocked(ctx context.Context) error {
 	for r := range byRole {
 		roles[r] = true
 	}
-	// A role whose last grant row was revoked holds only tombstones now;
-	// left out, it kept the revoked permission in this replica's policy.
 	for r := range tombstones {
 		roles[r] = true
 	}
@@ -818,7 +529,6 @@ func (s *GrantStore) reloadAllLocked(ctx context.Context) error {
 	return nil
 }
 
-// dbPermsForRole reads one role's persisted permissions.
 func (s *GrantStore) dbPermsForRole(ctx context.Context, role string) ([]Permission, error) {
 	q := fmt.Sprintf("SELECT permission FROM %s WHERE role = $1", query.QuoteFolded(s.table))
 	rows, err := s.db.QueryContext(ctx, q, role)
@@ -840,7 +550,6 @@ func (s *GrantStore) dbPermsForRole(ctx context.Context, role string) ([]Permiss
 	return perms, nil
 }
 
-// allDBPerms reads every persisted grant grouped by role.
 func (s *GrantStore) allDBPerms(ctx context.Context) (map[string][]Permission, error) {
 	q := fmt.Sprintf("SELECT role, permission FROM %s", query.QuoteFolded(s.table))
 	rows, err := s.db.QueryContext(ctx, q)
@@ -859,27 +568,7 @@ func (s *GrantStore) allDBPerms(ctx context.Context) (map[string][]Permission, e
 	return out, rows.Err()
 }
 
-// mergeBaseline returns expand(baseline[role] ∪ dbPerms) − expand(tombstones),
-// de-duplicated, baseline first, ready for replacePrepared. If a permission
-// is somehow both granted and tombstoned (inconsistent write), the tombstone
-// wins, fail closed.
-//
-// Expansion runs BEFORE the subtraction, the order LoadInto uses (Grant each
-// row, then Revoke the tombstones). A row persisted as a literal wildcard
-// ("reports:*", granted while the registry did not know the resource) expands
-// to every registered reports capability here; subtracting first and
-// expanding afterwards would hand back a capability that was revoked on its
-// own (reports:delete) the next time any replica reloaded the role.
-//
-// A permission a strict policy refuses (a capability this replica's registry
-// does not know, the normal state of a rolling deploy where a newer replica
-// registered and granted it first) is dropped from the result with a
-// warning, never fatal to the role: refusing the whole reload froze the
-// role here, so a revoke issued after the unknown grant never arrived and
-// this replica kept honoring a permission its peers had dropped. Dropping is
-// the fail-closed direction, since a strict replica never matches a
-// capability it refuses. LoadInto keeps refusing at boot, where an operator
-// sees it.
+// mergeBaseline is expand(baseline ∪ dbPerms) − expand(tombstones).
 func (s *GrantStore) mergeBaseline(role string, dbPerms, tombstones []Permission) []Permission {
 	s.fanoutMu.Lock()
 	base := s.baseline[role]
@@ -901,8 +590,6 @@ func (s *GrantStore) mergeBaseline(role string, dbPerms, tombstones []Permission
 	return subtractPerms(s.prepareReload(role, out), s.policy.prepareRevokes(tombstones))
 }
 
-// prepareReload is prepareGrants for a reload: a permission the policy
-// refuses is left out, with a warning, instead of refusing the whole set.
 func (s *GrantStore) prepareReload(role string, perms []Permission) []Permission {
 	expanded, err := s.policy.prepareGrants(perms)
 	if err == nil {
@@ -927,16 +614,10 @@ func (s *GrantStore) prepareReload(role string, perms []Permission) []Permission
 	return out
 }
 
-// revokedTable is the revocation-tombstone table name, derived from the
-// configured grants table. The grants table is validated at construction
-// (query.MustIdent) and the "_revoked" suffix is all safe-identifier
-// characters, so the result is safe to pass to query.QuoteFolded.
 func (s *GrantStore) revokedTable() string {
 	return s.table + "_revoked"
 }
 
-// tombstonesForRole reads one role's revocation tombstones. Mirrors
-// dbPermsForRole against the <table>_revoked table.
 func (s *GrantStore) tombstonesForRole(ctx context.Context, role string) ([]Permission, error) {
 	q := fmt.Sprintf("SELECT permission FROM %s WHERE role = $1", query.QuoteFolded(s.revokedTable()))
 	rows, err := s.db.QueryContext(ctx, q, role)
@@ -958,8 +639,6 @@ func (s *GrantStore) tombstonesForRole(ctx context.Context, role string) ([]Perm
 	return perms, nil
 }
 
-// allTombstones reads every revocation tombstone grouped by role. Mirrors
-// allDBPerms against the <table>_revoked table.
 func (s *GrantStore) allTombstones(ctx context.Context) (map[string][]Permission, error) {
 	q := fmt.Sprintf("SELECT role, permission FROM %s", query.QuoteFolded(s.revokedTable()))
 	rows, err := s.db.QueryContext(ctx, q)
@@ -978,10 +657,6 @@ func (s *GrantStore) allTombstones(ctx context.Context) (map[string][]Permission
 	return out, rows.Err()
 }
 
-// subtractPerms returns perms with every element also in remove dropped,
-// preserving order. Used to apply revocation tombstones to a merged
-// permission set (baseline ∪ DB). Reuses perms' backing array, so the
-// caller must not keep aliasing the input slice after this returns.
 func subtractPerms(perms, remove []Permission) []Permission {
 	if len(remove) == 0 {
 		return perms
@@ -999,8 +674,6 @@ func subtractPerms(perms, remove []Permission) []Permission {
 	return out
 }
 
-// permIn reports whether want appears in perms (linear scan; grant and
-// tombstone sets are small and admin-driven).
 func permIn(perms []Permission, want Permission) bool {
 	return slices.Contains(perms, want)
 }

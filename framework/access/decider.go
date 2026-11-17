@@ -6,76 +6,41 @@ import (
 	"slices"
 )
 
-// Ref identifies the resource a capability check is about. Type is the entity
-// name (e.g. "projects"); ID is the record id, or "" for a collection-level
-// check (List, Create, the up-front gate of a batch, or the SSE feed). A
-// batch update or delete then asks again for each item with that item's id.
-// The zero Ref carries no
-// resource information, a decider that ignores empty Refs is effectively
-// opting out of resource-awareness for that call.
+// Ref is the resource a check is about: Type is the entity name, ID the record
+// id or "" for a collection-level check. The zero Ref names no resource.
 type Ref struct {
 	Type string
 	ID   string
 }
 
-// RoleGateCapability is the fixed capability name role-scoped gates pass
-// to the Decider: battery/auth's RequireRole and MCPRole, and the
-// framework's MCP gates and /.debug check. A role gate holds no resource,
-// so the Decider is consulted with the zero Ref and can only speak on the
-// caller's roles; resource-aware deciders should abstain on it.
+// RoleGateCapability is the capability role gates pass to the Decider, with the
+// zero Ref. Resource-aware deciders should abstain on it.
 const RoleGateCapability Permission = "auth:role-gate"
 
-// Decision is the verdict a Decider returns for one resource-scoped capability
-// check. The zero value is DecisionAbstain so a decider that forgets to return
-// falls through to the role policy rather than silently allowing or denying.
+// Decision is a Decider's verdict. The zero value is DecisionAbstain.
 type Decision int
 
 const (
-	// DecisionAbstain defers the check to the role policy (Can). Use it when
-	// the decider has no opinion for this resource, e.g. the resource type is
-	// not one it governs, or the caller holds a role it doesn't model.
+	// DecisionAbstain defers the check to the role policy.
 	DecisionAbstain Decision = iota
-	// DecisionAllow permits the check; the role policy is not consulted.
+	// DecisionAllow permits the check without the role policy.
 	DecisionAllow
-	// DecisionDeny refuses the check even when the role policy would allow.
+	// DecisionDeny refuses the check even when the role policy would allow it.
 	DecisionDeny
 )
 
-// Decider is consulted before the role policy on every gated capability
-// check. roles is the caller's resolved roles, the same slice
-// access.Middleware / WithRoles install. The decider receives the capability
-// and the Ref under check so it can express rules the coarse role policy
-// cannot ("a team maintainer may edit their team's projects").
-//
-// The seam binds EVERY gate, not only resource-scoped ones: CanResource
-// call sites (crud's requirePermission, the CrossOwnerRead and read-scope
-// lifts, the SSE feed's per-delivery re-check) AND the role-scoped
-// RequirePermission middleware, which offers the zero Ref because a route
-// gate holds no record. A decider that ignores empty-Type Refs opts out of
-// the route gates only; returning DecisionDeny on them fails the route
-// closed. battery/auth's role gates route through the same seam.
-//
-// Return DecisionAbstain to fall through to the role policy. A nil/missing
-// decider also falls through, so wiring a decider is strictly opt-in.
+// Decider is consulted before the role policy on every gated check, route
+// gates included (with the zero Ref). A nil Decider falls through.
 type Decider func(ctx context.Context, roles []string, capability Permission, resource Ref) Decision
 
-// deciderKey is the context key for a Decider. It lives here, beside the
-// Decider type, so the whole resource-scoped seam is one self-contained
-// addition; access.go (policyKey, rolesKey) stays untouched.
 type deciderKey struct{}
 
-// WithDecider stores a Decider in the context, mirroring the WithPolicy /
-// WithRoles pair. Downstream CanResource calls will consult it before the role
-// policy. Installing a decider is strictly additive: with none in ctx,
-// CanResource answers exactly what Can answers.
+// WithDecider stores a Decider in the context.
 func WithDecider(ctx context.Context, d Decider) context.Context {
 	return context.WithValue(ctx, deciderKey{}, d)
 }
 
-// GetDecider reads back the Decider installed via WithDecider (by
-// DeciderMiddleware or an explicit WithDecider call). It is the reader half of
-// the decider-context seam. Returns nil when ctx is nil or carries no decider,
-// never panics.
+// GetDecider returns the Decider in ctx, or nil.
 func GetDecider(ctx context.Context) Decider {
 	if ctx == nil {
 		return nil
@@ -84,24 +49,8 @@ func GetDecider(ctx context.Context) Decider {
 	return d
 }
 
-// CanResource is the resource-aware capability check. It consults a Decider
-// installed in ctx (via WithDecider / DeciderMiddleware) BEFORE the role
-// policy:
-//
-//   - DecisionAllow  → true (role policy not consulted)
-//   - DecisionDeny   → false (role policy not consulted)
-//   - DecisionAbstain → falls through to Can
-//
-// With no decider in ctx the answer is exactly Can(ctx, capability), the
-// fail-closed semantics of the coarse role policy are unchanged, so existing
-// RBAC-only wiring is byte-identical. A nil context fails closed to false.
-//
-// Can itself is untouched: there is no wildcard/segment logic in the hot path.
-// The resource-aware path is a separate entrypoint the CRUD layer opts into.
-//
-// A scope-restricted caller must hold a scope granting capability
-// (ScopeAllows) before the Decider is asked: scopes only narrow, so a
-// Decider's Allow does not lift a scope the token was never given.
+// CanResource checks capability on resource: a scope-restricted caller needs a
+// scope for it, then the Decider decides, and on abstain Can does. A nil ctx is false.
 func CanResource(ctx context.Context, capability Permission, resource Ref) bool {
 	if ctx == nil {
 		return false
@@ -116,19 +65,13 @@ func CanResource(ctx context.Context, capability Permission, resource Ref) bool 
 		case DecisionDeny:
 			return observe(ctx, capability, false, "can-resource")
 		case DecisionAbstain:
-			// fall through to the role policy, which observes for itself
 		}
 	}
 	return Can(ctx, capability)
 }
 
-// CanResourceExact is CanResource for a capability that must be held by
-// name: the Decider is asked first, as in CanResource, and on abstain the
-// caller's roles must hold capability itself. A role granted the Wildcard
-// does not satisfy it. A move's Permission is checked this way, so a
-// superuser role does not pick up every narrow capability an app declares.
-// A scope-restricted caller must also hold a scope granting capability, as
-// in CanResource.
+// CanResourceExact is CanResource where, on abstain, the roles must hold
+// capability by name: Wildcard does not count.
 func CanResourceExact(ctx context.Context, capability Permission, resource Ref) bool {
 	if ctx == nil {
 		return false
@@ -148,12 +91,7 @@ func CanResourceExact(ctx context.Context, capability Permission, resource Ref) 
 	return observe(ctx, capability, slices.Contains(GetPermissions(ctx), capability), "can-resource-exact")
 }
 
-// requireResource resolves a capability exactly as CanResource does —
-// decider first, then the role policy — without recording an evaluation.
-// RequirePermission observes its one check under its own
-// "require-permission" path (TestRequirePermissionObservesItsCheck pins
-// one evaluation per request), so it consults the seam through this
-// unobserved twin instead of calling CanResource and double-reporting.
+// requireResource is CanResource's decision without recording an evaluation.
 func requireResource(ctx context.Context, capability Permission, resource Ref) bool {
 	if d := GetDecider(ctx); d != nil {
 		switch d(ctx, GetRoles(ctx), capability, resource) {
@@ -167,21 +105,7 @@ func requireResource(ctx context.Context, capability Permission, resource Ref) b
 	return policy != nil && policy.Can(ctx, capability)
 }
 
-// DeciderMiddleware installs a Decider into the request context so every
-// downstream permission gate consults it: resource-scoped checks
-// (CanResource — auto-CRUD permission gates, the SSE feed's per-delivery
-// re-check) and role-scoped ones (RequirePermission, which passes the zero
-// Ref). Mount it alongside access.Middleware:
-//
-//	app.Use(access.Middleware(policy, roles.Resolve))
-//	app.Use(access.DeciderMiddleware(teamMaintainerDecider))
-//
-// This shape, a sibling constructor returning the same
-// func(http.Handler) http.Handler type, matches Middleware's. The package uses
-// positional constructors (Middleware(policy, roles)), not an options pattern,
-// so a DeciderMiddleware(d) wrapper is the consistent way to add the decider
-// without changing Middleware's signature or introducing an options idiom for
-// a single field.
+// DeciderMiddleware installs d into each request's context.
 func DeciderMiddleware(d Decider) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
