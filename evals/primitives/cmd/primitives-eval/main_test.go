@@ -639,3 +639,44 @@ func TestGitErrorsCarryGitsOwnMessage(t *testing.T) {
 		t.Fatalf("gitOutput error = %v, want git's stderr %q in it", err, exit.Stderr)
 	}
 }
+
+func TestRestoreTestsWaitsOutAGitTheCLILeftRunning(t *testing.T) {
+	dir := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		out, err := gitOutput(dir, append([]string{"-c", "user.name=t", "-c", "user.email=t@example.invalid"}, args...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a_test.go"), []byte("package a // original\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git("init", "-q")
+	git("add", "-A")
+	git("commit", "-q", "-m", "start")
+	start := git("rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(dir, "a_test.go"), []byte("package a // weakened\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(dir, ".git", "index.lock")
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		_ = os.Remove(lock)
+	}()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := restoreTests(dir, root, start); err != nil {
+		t.Fatalf("restoreTests while a lingering git held the index: %v", err)
+	}
+	if got, _ := root.ReadFile("a_test.go"); string(got) != "package a // original\n" {
+		t.Errorf("the weakened test survived grading: %q", got)
+	}
+}
