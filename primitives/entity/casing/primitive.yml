@@ -2,3 +2,37 @@ primitive: entity.casing
 summary: The snake_case and camelCase conversions between column names and JSON keys, with their bounded caches and precomputed row mappings.
 code:
   - framework/internal/casing/
+twins:
+  - job: Look a conversion up in a cache under a read lock, else convert, evict one entry at the cap and store it.
+    why: Work not done; each cache's map and mutex are package vars the tests reset by name, so a shared cache type means touching those tests.
+    sites:
+      - path: framework/internal/casing/casing.go
+        note: ToCamel over camelCache.
+      - path: framework/internal/casing/casing.go
+        note: ToSnake over snakeCache, the same steps.
+invariants:
+  - id: caches-are-bounded
+    rule: Each conversion cache holds at most 4096 entries, evicting one before it grows past that.
+    enforced_by:
+      - test: framework/internal/casing.TestSnakeCacheBounded
+      - test: framework/internal/casing.TestCamelCacheBounded
+  - id: conversions
+    rule: ToCamel upper-cases the first letter after each underscore and drops the underscores, and ToSnake puts an underscore before every upper-case letter but a leading one and lower-cases it.
+    enforced_by:
+      - test: framework/internal/casing.TestConversionsAndMappings
+      - test: framework/internal/casing.TestSnakeStillConverts
+  - id: mapping-passes-unknown-keys
+    rule: ApplyMapping renames the keys its mapping knows and keeps every other key as it is.
+    enforced_by:
+      - test: framework/internal/casing.TestConversionsAndMappings
+decisions:
+  - id: bounded-random-eviction
+    date: 2026-11-17
+    status: accepted
+    decision: At the cap a cache evicts the first key map iteration yields, an approximately random entry with no bookkeeping.
+    rejected:
+      - option: An unbounded cache.
+        why: Client JSON keys reach the snake cache through crud's key conversion, so it would leak memory slowly.
+      - option: LRU.
+        why: It adds bookkeeping to every lookup, and the cap already covers real column-name working sets.
+    upholds: [caches-are-bounded]
