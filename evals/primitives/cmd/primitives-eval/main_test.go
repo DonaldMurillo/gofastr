@@ -725,3 +725,93 @@ func TestStopCellProcessesEndsWhatTheAgentLeftRunning(t *testing.T) {
 		t.Errorf("a process outside the cell was stopped: %v", err)
 	}
 }
+
+func startInCell(t *testing.T, dir, script string) chan error {
+	t.Helper()
+	cmd := exec.Command("sh", "-c", script)
+	cmd.Dir = dir
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+	return done
+}
+
+func waitStopped(t *testing.T, done chan error, what string) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal(what)
+	}
+}
+
+func TestStopCellProcessesFollowsASymlinkedCellPath(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("cell processes are found through /proc")
+	}
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "cells-link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	done := startInCell(t, real, "sleep 60")
+	stopCellProcesses(link)
+	waitStopped(t, done, "a process in a cell reached through a symlink survived")
+}
+
+func TestStopCellProcessesLetsGitCleanUpBeforeKilling(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("cell processes are found through /proc")
+	}
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(dir, ".git", "index.lock")
+	cleaned := filepath.Join(t.TempDir(), "cleaned")
+	ready := filepath.Join(t.TempDir(), "ready")
+	done := startInCell(t, dir, `: > .git/index.lock; trap 'rm -f .git/index.lock; : > `+cleaned+`; exit 0' TERM; : > `+ready+`; while :; do sleep 0.05; done`)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the stand-in git never started")
+		}
+	}
+	stopCellProcesses(dir)
+	waitStopped(t, done, "the stand-in git survived")
+	if _, err := os.Stat(cleaned); err != nil {
+		t.Error("the process was killed before it could run its SIGTERM cleanup")
+	}
+	if _, err := os.Stat(lock); err == nil {
+		t.Error("index.lock is still held after the cell was stopped")
+	}
+}
+
+func TestStopCellProcessesClearsTheLockOfAKilledWriter(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("cell processes are found through /proc")
+	}
+	old := stopGrace
+	stopGrace = 300 * time.Millisecond
+	t.Cleanup(func() { stopGrace = old })
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(dir, ".git", "index.lock")
+	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	done := startInCell(t, dir, `trap '' TERM; while :; do sleep 0.05; done`)
+	time.Sleep(100 * time.Millisecond)
+	stopCellProcesses(dir)
+	waitStopped(t, done, "a writer that ignores SIGTERM survived")
+	if _, err := os.Stat(lock); err == nil {
+		t.Error("the killed writer's index.lock was left for grading to wait on")
+	}
+}
