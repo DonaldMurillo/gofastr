@@ -117,7 +117,9 @@ not suppress the finding.
 `EventSource`) also read the app's own `.js`, `.mjs` and `.cjs` files,
 such as `static/app.js`, not only scripts emitted from Go strings.
 Assigning `location.href`, `location.search`, `location.pathname` or
-`window.location` counts whatever the right-hand side is. Minified
+`window.location` counts whatever the right-hand side is, and so does the
+same assignment through a chain of frames such as
+`window.top.location.href`. Minified
 scripts (`.min.js`, or a line over 1000 bytes), generated files and the
 kit's own runtime (`core-ui/runtime`, `framework/headless`, which
 implement navigation and the SSE bus) are skipped. In a script, a
