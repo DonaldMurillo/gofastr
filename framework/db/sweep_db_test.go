@@ -44,6 +44,9 @@ func rowsIn(t *testing.T, tx *sql.Tx) []string {
 		}
 		out = append(out, v)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	return out
 }
 
