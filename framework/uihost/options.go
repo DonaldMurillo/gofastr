@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 // Option configures a UIHost.
@@ -186,6 +187,29 @@ func WithPreconnect(origins ...string) Option {
 				continue
 			}
 			ds.headTags = append(ds.headTags, fmt.Sprintf(`<link rel="preconnect" href="%s">`, stdhtml.EscapeString(o)))
+		}
+	}
+}
+
+// WithFontPreload adds a <link rel="preload" as="font"> per web font, so
+// the browser fetches the woff2 files FontFaceCSS(dir, fonts...) names
+// with the page instead of after the stylesheet: the swap from the
+// fallback lands sooner. Preload only the faces above the fold; a font
+// whose URL fails the head-URL allow-list is dropped.
+func WithFontPreload(dir string, fonts ...style.WebFont) Option {
+	return func(ds *UIHost) {
+		seen := map[string]bool{}
+		for _, f := range fonts {
+			// FontFaceCSS keeps the first rule per family; preload only that file.
+			if !f.Declared() || seen[f.FaceFamily()] {
+				continue
+			}
+			seen[f.FaceFamily()] = true
+			href := style.FontURL(dir, f)
+			if !isSafeHeadURL(href) {
+				continue
+			}
+			ds.headTags = append(ds.headTags, fmt.Sprintf(`<link rel="preload" as="font" type="font/woff2" href="%s" crossorigin>`, stdhtml.EscapeString(href)))
 		}
 	}
 }

@@ -772,7 +772,7 @@ func isHexDigits(s string) bool {
 // balancedParens reports whether every "(" in s is matched by a later ")"
 // and no ")" precedes its "(". The value has already passed the
 // declaration-breaker rejection, so this is a structural sanity check on
-// function-call color values, e.g. color-mix(in srgb, var(--x) 15%, white).
+// function-call color values, e.g. color-mix(in oklab, var(--x) 15%, white).
 func balancedParens(s string) bool {
 	depth := 0
 	for i := range s {

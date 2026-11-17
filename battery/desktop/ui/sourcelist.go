@@ -213,7 +213,7 @@ func sourceListCSS(_ style.Theme) string {
   color: var(--color-text-subtle, #71717A);
 }
 [data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item:hover {
-  background: color-mix(in srgb, var(--color-text, #000000) 3%, transparent);
+  background: color-mix(in oklab, var(--color-text, #000000) 3%, transparent);
 }
 [data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item:focus-visible {
   /* Keyboard focus ring in the accent, the Mac focus-ring read. */
@@ -226,7 +226,7 @@ func sourceListCSS(_ style.Theme) string {
      within a couple of points of a 5% mix of the text color. The text
      and the icon keep their own colors; the accent belongs to the
      focus ring, not the row. */
-  background: color-mix(in srgb, var(--color-text, #000000) 5%, transparent);
+  background: color-mix(in oklab, var(--color-text, #000000) 5%, transparent);
 }
 [data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__icon {
   display: inline-flex;
@@ -241,7 +241,7 @@ func sourceListCSS(_ style.Theme) string {
    list gives when its window resigns key. The runtime module sets the
    class; the page never guesses. */
 html.desktop-inactive [data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item[aria-current="page"] {
-  background: color-mix(in srgb, var(--color-text-muted, #52525B) 3%, transparent);
+  background: color-mix(in oklab, var(--color-text-muted, #52525B) 3%, transparent);
 }
 `
 }

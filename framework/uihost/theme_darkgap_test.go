@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
@@ -103,5 +104,32 @@ func TestBootNoWarnOnCompleteDarkPalette(t *testing.T) {
 
 	if warns := h.warns(); len(warns) != 0 {
 		t.Fatalf("complete dark palette warned at boot: %v", warns)
+	}
+}
+
+// A theme whose form-control edge misses 3:1 is named once at boot, and the
+// default theme raises no contrast warning (#702).
+func TestBootWarnsOnLowContrastPairs(t *testing.T) {
+	boot := func(th style.Theme) []slog.Record {
+		h := installRecordingLogger(t)
+		a := app.NewApp("contrast-test")
+		a.WithTheme(th)
+		a.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
+		New(a)
+		var out []slog.Record
+		for _, r := range h.warns() {
+			if strings.Contains(r.Message, "contrast floor") {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	if w := boot(theme.Default()); len(w) != 0 {
+		t.Fatalf("default theme warned: %v", w)
+	}
+	th := theme.Default()
+	th.Colors.TextSubtle.Value = "oklch(0.92 0 0)"
+	if w := boot(th); len(w) != 1 {
+		t.Fatalf("got %d contrast warnings, want 1", len(w))
 	}
 }

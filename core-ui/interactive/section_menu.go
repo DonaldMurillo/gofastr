@@ -424,7 +424,7 @@ func sectionMenuCSS(_ style.Theme) string {
 	return `[data-cui-comp="cui-section-menu"] {
   --cui-section-menu-inset: var(--ui-section-menu-inset, calc(var(--spacing-sm, 4px) * 3));
   --cui-section-menu-bg: var(--ui-section-menu-bg, var(--color-background, #fff));
-  --cui-section-menu-dot-ring: color-mix(in srgb, var(--color-accent, #2563EB) 20%, transparent);
+  --cui-section-menu-dot-ring: color-mix(in oklab, var(--color-accent, #2563EB) 20%, transparent);
   display: block;
   font-size: var(--text-sm, 0.875rem);
 }
@@ -490,7 +490,7 @@ func sectionMenuCSS(_ style.Theme) string {
   letter-spacing: var(--tracking-wider, 0.08em);
   text-transform: uppercase;
   color: var(--color-text-muted, #52525B);
-  background: color-mix(in srgb, var(--cui-section-menu-bg) 90%, transparent);
+  background: color-mix(in oklab, var(--cui-section-menu-bg) 90%, transparent);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   user-select: none;
@@ -562,7 +562,7 @@ func sectionMenuCSS(_ style.Theme) string {
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__filter-input::placeholder { color: var(--color-text-subtle, #71717A); opacity: 1; }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__mark {
-  background: color-mix(in srgb, var(--color-accent, #2563EB) 16%, transparent);
+  background: color-mix(in oklab, var(--color-accent, #2563EB) 16%, transparent);
   color: inherit;
   border-radius: calc(var(--radii-sm, 6px) / 3);
 }

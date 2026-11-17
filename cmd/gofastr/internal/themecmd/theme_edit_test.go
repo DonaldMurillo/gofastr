@@ -773,7 +773,7 @@ func TestThemeEditContrastProbesAreNotInlineStyled(t *testing.T) {
 		}
 	}
 	// The pair the theme docs call the harder target has to be in there.
-	if !strings.Contains(css, "color-mix(in srgb, var(--color-danger) 15%") {
+	if !strings.Contains(css, "color-mix(in oklab, var(--color-danger) 15%") {
 		t.Error("the status-tone-on-its-own-tint pair is missing from the probe CSS")
 	}
 }

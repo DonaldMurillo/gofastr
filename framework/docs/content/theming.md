@@ -66,6 +66,7 @@ sets them for its own subtree.
 
 | Property | Default | Read by |
 |---|---|---|
+| `--ui-control-border` | `var(--color-text-subtle)` | the edge colour of text fields, textareas, selects, comboboxes, the grouped, password, search, number, tag, colour and time inputs, checkboxes, radios and the switch track; keep it at 3:1 or more against `--color-surface` |
 | `--ui-control-padding-y` | `10px` | the block padding of buttons, text fields, selects, textareas, and the search, password, color, and grouped inputs |
 | `--ui-detail-list-label-track` | `minmax(7rem, 13rem)` | `ui.DetailList`'s label column; a narrow panel caps it so values keep their line |
 | `--ui-grid-min` | set by `GridConfig.Min` | `ui.Grid`'s minimum column width |
@@ -122,6 +123,27 @@ parts reads as one system:
   number and time inputs, search) goes back to `--text-base`, because
   iOS Safari zooms the page into a focused control whose text is under
   16px.
+- **Control edges clear 3:1.** A text field, select, checkbox, radio or
+  switch track draws its edge in `--ui-control-border`, which defaults
+  to `--color-text-subtle`, not the hairline `--color-border`: WCAG
+  1.4.11 asks for 3:1 between a control's boundary and its surface, and
+  the hairline is about 1.3:1. A theme whose `TextSubtle` misses 3:1
+  over `Surface` (or whose `ui-control-border` knob does) gets a boot
+  warning (see `style.ContrastWarnings`).
+- **Forced colours keep their meaning.** Under Windows high contrast
+  (`forced-colors: active`) the browser drops background images and
+  author colours, so the checkbox tick, radio dot, switch thumb,
+  spinner, divider line and mask-drawn chevrons redraw in system
+  colours, the selected tab gets a `Highlight` underline keyed on
+  `aria-selected`, and the checked segment of `ui.SegmentedControl`
+  a `Highlight` outline.
+- **Native accents follow the brand.** The base sheet sets
+  `accent-color` to `--color-primary`, so native range inputs and
+  progress bars match, and tints `::selection` with it.
+- **Type wraps evenly.** The hero title, page-header titles and card
+  headings use `text-wrap: balance`; the hero's fluid
+  size mixes rem with vw, so it follows the reader's font-size setting.
+  Colour tints mix `in oklab`, never `in srgb`.
 
 Two gate tests in `framework/ui` hold the second rule and the token
 spellings: `TestFocusRingIsNeutral` fails on any registered sheet that
@@ -446,6 +468,16 @@ tint. `Theme.Validate` additionally refuses, at boot, a hex
 in the light palette and, key by key with the light token as the
 fallback for an absent key, in a non-empty `DarkColors` map.
 
+`style.ContrastWarnings(theme)` covers what `Validate` does not refuse,
+and the UI host logs its result once at boot: the same two ink pairs
+written in `rgb()`, `hsl()`, `oklab()` or `oklch()`, and the form-control
+edge over `surface` against 3:1: the `ui-control-border` knob when the
+theme sets it (a `var(--color-*)` value resolves per scheme), otherwise
+`text-subtle`. Go resolves hex and
+those four functions exactly (a colour outside sRGB is clipped);
+`var()`, named colours, `color-mix()` and translucent values are
+skipped, never guessed.
+
 **Write-back** emits `%q` string literals, then writes a temporary file in the
 target directory, calls `fsync`, and renames it over the destination. Each
 click re-checks the destination and refuses to replace a **hand-edited** file
@@ -504,6 +536,38 @@ Self-host the font instead:
    t.Fonts.Body.Value = `"Inter", ui-sans-serif, system-ui, sans-serif`
    t.Fonts.Heading.Value = t.Fonts.Body.Value
    ```
+
+4. Preload the faces the first screen uses, so the browser fetches them
+   with the page instead of after the stylesheet:
+
+   ```go
+   fonts := []style.WebFont{{Family: "Inter"}}
+   uihost.WithCustomCSS(style.FontFaceCSS("", fonts...))
+   uihost.WithFontPreload("", fonts...)
+   // → <link rel="preload" as="font" type="font/woff2"
+   //     href="/fonts/inter.woff2" crossorigin>
+   ```
+
+   `style.FontURL(dir, font)` returns the same URL the `@font-face` rule
+   names, so the two cannot disagree.
+
+5. Optionally stop the swap from moving the page. `font-display: swap`
+   paints text in a fallback first; when its metrics differ from the web
+   font's, lines re-wrap on arrival. Set `Fallback` to tune a local font
+   to the web font's size and line metrics:
+
+   ```go
+   style.WebFont{Family: "Inter", Fallback: style.FontFallback{
+       Local: "Arial", SizeAdjust: "107%", AscentOverride: "90%",
+       DescentOverride: "22%", LineGapOverride: "0%",
+   }}
+   ```
+
+   `FontFaceCSS` then adds a second face, `'Inter Fallback'`
+   (`font.FallbackFamily()`); name it in the stack right after the web
+   font: `"Inter", "Inter Fallback", ui-sans-serif, sans-serif`. The
+   numbers come from the two fonts' files (Capsize and fontaine compute
+   them); each override must be a percentage or it is left out.
 
 Same-origin URLs pass the default CSP with no changes needed. If you
 really need to load a font from a third party, you have to override
@@ -852,7 +916,7 @@ where one declaration covers every rule beneath it.
 | `button.radius: round` / `square` / `pill` | `--fui-button-radius: var(--radii-md)` / `0` / `var(--radii-full)` |
 | `button.treatment: filled` | `--fui-button-primary-bg: var(--color-primary)`, `--fui-button-primary-fg: var(--color-primary-fg)`, `--fui-button-primary-border: var(--ui-button-edge, transparent)`, and the same `-danger` trio from `--color-danger` / `--color-danger-fg` |
 | `button.treatment: outline` | `--fui-button-primary-bg: transparent`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--color-primary)`, and the `-danger` trio from `--color-danger` |
-| `button.treatment: soft` | `--fui-button-primary-bg: color-mix(in srgb, var(--color-primary) 15%, transparent)`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--ui-button-edge, transparent)`, and the `-danger` trio likewise |
+| `button.treatment: soft` | `--fui-button-primary-bg: color-mix(in oklab, var(--color-primary) 15%, transparent)`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--ui-button-edge, transparent)`, and the `-danger` trio likewise |
 | `field.layout: stacked` | `--fui-field-columns: minmax(0, 1fr)`, `--fui-field-message-column: 1 / -1` |
 | `field.layout: inline` | `--fui-field-columns: minmax(8rem, 1fr) minmax(0, 3fr)`, `--fui-field-message-column: 2` |
 | `field.radius: round` / `square` | `--fui-field-radius: var(--radii-md)` / `0` |

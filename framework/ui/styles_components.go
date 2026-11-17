@@ -133,7 +133,7 @@ func buttonCSS(t style.Theme) string {
 }
 .fui-button--primary:hover:not(:disabled, [aria-disabled="true"]),
 .fui-button--danger:hover:not(:disabled, [aria-disabled="true"]) {
-  background-image: linear-gradient(color-mix(in srgb, currentColor 12%, transparent), color-mix(in srgb, currentColor 12%, transparent));
+  background-image: linear-gradient(color-mix(in oklab, currentColor 12%, transparent), color-mix(in oklab, currentColor 12%, transparent));
 }
 .fui-button--secondary {
   background: var(--color-surface);
@@ -341,17 +341,17 @@ func codeBlockCSS(_ style.Theme) string {
    same visual spot. Colours derive from the theme's status tokens
    through overridable knobs. */
 [data-cui-comp="ui-code-block"] .fui-code-block__line--highlight {
-  background: var(--ui-code-block-highlight-bg, color-mix(in srgb, var(--color-primary, #18181B) 14%, transparent));
+  background: var(--ui-code-block-highlight-bg, color-mix(in oklab, var(--color-primary, #18181B) 14%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
   padding-inline: var(--spacing-lg, 16px);
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__line--added {
-  background: var(--ui-code-block-added-bg, color-mix(in srgb, var(--color-success, #166534) 12%, transparent));
+  background: var(--ui-code-block-added-bg, color-mix(in oklab, var(--color-success, #166534) 12%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
   padding-inline: var(--spacing-lg, 16px);
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__line--removed {
-  background: var(--ui-code-block-removed-bg, color-mix(in srgb, var(--color-danger, #B91C1C) 12%, transparent));
+  background: var(--ui-code-block-removed-bg, color-mix(in oklab, var(--color-danger, #B91C1C) 12%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
   padding-inline: var(--spacing-lg, 16px);
 }
@@ -373,7 +373,7 @@ func codeBlockCSS(_ style.Theme) string {
    2.96:1. 12% matches the line bands, and the underline carries the
    emphasis the lighter tint gives up. */
 [data-cui-comp="ui-code-block"] .fui-code-block__mark {
-  background: var(--ui-code-block-mark-bg, color-mix(in srgb, var(--color-warning, #854D0E) 12%, transparent));
+  background: var(--ui-code-block-mark-bg, color-mix(in oklab, var(--color-warning, #854D0E) 12%, transparent));
   box-shadow: inset 0 calc(-1 * var(--stroke-thick, 2px)) 0 var(--color-warning, #854D0E);
   color: inherit;
   border-radius: var(--radii-sm, 6px);
@@ -553,7 +553,7 @@ func formFieldCSS(_ style.Theme) string {
      theme's control height (44px comfortable, 36px compact). */
   min-height: var(--fui-density-control-h);
   padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
-  border: var(--stroke-thin, 1px) solid var(--color-border);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   border-radius: var(--fui-field-radius);
   background: var(--color-surface);
   color: var(--color-text);
@@ -1310,7 +1310,7 @@ func dataTableCSS(_ style.Theme) string {
   transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr:hover {
-  background: color-mix(in srgb, var(--color-surface-soft) 50%, transparent);
+  background: color-mix(in oklab, var(--color-surface-soft) 50%, transparent);
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table .is-align-end   { text-align: end; }
 /* A fitted column takes its content's width; the spare width goes to
@@ -1368,6 +1368,11 @@ func dataTableCSS(_ style.Theme) string {
   opacity: var(--opacity-muted, 0.6);
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='7 15 12 20 17 15'/%3E%3Cpolyline points='7 9 12 4 17 9'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='7 15 12 20 17 15'/%3E%3Cpolyline points='7 9 12 4 17 9'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+/* A mask icon is painted by its background, which forced colours turn
+   to Canvas; opting out and painting CanvasText keeps it visible. */
+@media (forced-colors: active) {
+  [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort] .fui-data-table__sort::after { forced-color-adjust: none; background: CanvasText; }
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after {
   opacity: 1;
@@ -1936,7 +1941,7 @@ func backToTopCSS(_ style.Theme) string {
    --ui-press-* knobs. The show/hide slide is transform, so the press
    motion's translate composes with it. */
 [data-cui-comp="ui-back-to-top"]:hover {
-  background: color-mix(in srgb, var(--color-primary) 85%, var(--color-text));
+  background: color-mix(in oklab, var(--color-primary) 85%, var(--color-text));
   box-shadow: var(--ui-back-to-top-hover-shadow, var(--ui-press-hover-shadow, var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.1))));
   translate: var(--ui-back-to-top-hover-translate, var(--ui-press-hover-translate, none));
 }

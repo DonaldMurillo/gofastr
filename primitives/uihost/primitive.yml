@@ -39,6 +39,14 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestBootWarnsOnPartialDarkPalette
       - test: framework/uihost.TestBootNoWarnOnCompleteDarkPalette
+  - id: low-contrast-theme-warns
+    rule: New logs one warning listing every pair style.ContrastWarnings reports for the active theme, and none for the default theme.
+    enforced_by:
+      - test: framework/uihost.TestBootWarnsOnLowContrastPairs
+  - id: font-preload-follows-the-face
+    rule: WithFontPreload adds one font preload link per web font FontFaceCSS declares a rule for, first per family as FontFaceCSS keeps, at the URL FontFaceCSS names, and drops a URL that fails the head-URL allow-list.
+    enforced_by:
+      - test: framework/uihost.TestWithFontPreload
   - id: host-shell-lang-precedence
     rule: A host-built shell takes its language from WithLangFunc, then the app's LangFunc, then the request's negotiated locale, then WithLang, then the app's Lang, then "en".
     enforced_by:

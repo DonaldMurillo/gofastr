@@ -135,6 +135,13 @@ func tabNavCSS(_ style.Theme) string {
 [data-cui-comp="ui-tab-nav"] .fui-tab-nav__link[aria-current="page"]:hover {
   text-decoration: none;
 }
+/* Forced colours repaint the idle tabs' transparent underline in the
+   text colour, so every tab would read as current: idle tabs take
+   Canvas and the current one Highlight. */
+@media (forced-colors: active) {
+  [data-cui-comp="ui-tab-nav"] .fui-tab-nav__link { border-block-end-color: Canvas; }
+  [data-cui-comp="ui-tab-nav"] .fui-tab-nav__link[aria-current="page"] { border-block-end-color: Highlight; }
+}
 [data-cui-comp="ui-tab-nav"] .fui-tab-nav__badge {
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-xs, 0.75rem);

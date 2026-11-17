@@ -108,8 +108,8 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   border: var(--stroke-thin, 1px) solid var(--color-warning, #854D0E);
   border-radius: var(--radii-md, 8px);
-  background: color-mix(in srgb, var(--color-warning) 15%, transparent);
-  color: color-mix(in srgb, var(--color-warning) 80%, var(--color-text));
+  background: color-mix(in oklab, var(--color-warning) 15%, transparent);
+  color: color-mix(in oklab, var(--color-warning) 80%, var(--color-text));
   position: sticky;
   inset-block-start: var(--ui-sticky-top, 0px);
   z-index: var(--z-sticky, 200);

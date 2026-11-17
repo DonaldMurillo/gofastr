@@ -268,9 +268,9 @@ html:not([data-cui-os]) [data-cui-comp="ui-shortcut-hint"] .fui-shortcut-hint__m
 /* Inside a button the chips take the button's own ink, so a hint on
    a primary button reads as part of it rather than a pasted-on key. */
 [data-cui-comp="ui-button"] [data-cui-comp="ui-shortcut-hint"] .fui-shortcut-hint__key {
-  border-color: color-mix(in srgb, currentColor 30%, transparent);
+  border-color: color-mix(in oklab, currentColor 30%, transparent);
   border-bottom-width: var(--stroke-thin, 1px);
-  background: color-mix(in srgb, currentColor 12%, transparent);
+  background: color-mix(in oklab, currentColor 12%, transparent);
   color: inherit;
 }
 

@@ -82,7 +82,7 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 			)
 		case theme.Soft:
 			decls = append(decls,
-				style.Declaration{Name: prefix + "-bg", Value: "color-mix(in srgb, " + colour + " 15%, transparent)"},
+				style.Declaration{Name: prefix + "-bg", Value: "color-mix(in oklab, " + colour + " 15%, transparent)"},
 				style.Declaration{Name: prefix + "-fg", Value: colour},
 				style.Declaration{Name: prefix + "-border", Value: buttonEdge},
 			)

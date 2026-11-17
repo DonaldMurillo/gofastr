@@ -225,7 +225,7 @@ func dropzoneCSS(_ style.Theme) string {
 .fui-drop[data-hui-drop-over] .fui-drop__zone,
 .fui-drop__label-wrap:hover .fui-drop__zone {
   border-color: var(--color-primary, #18181B);
-  background: color-mix(in srgb, var(--color-primary, #18181B) 10%, var(--color-surface, #FFFFFF));
+  background: color-mix(in oklab, var(--color-primary, #18181B) 10%, var(--color-surface, #FFFFFF));
   border-style: solid;
 }
 /* Slight lift for tactile feedback while a drag is over. */

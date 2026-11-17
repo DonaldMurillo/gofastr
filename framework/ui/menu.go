@@ -316,6 +316,11 @@ func menuCSS(_ style.Theme) string {
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
 }
+/* A mask icon is painted by its background, which forced colours turn
+   to Canvas; opting out and painting CanvasText keeps it visible. */
+@media (forced-colors: active) {
+  [data-cui-comp="ui-menu"] .fui-menu__caret { forced-color-adjust: none; background: CanvasText; }
+}
 [data-cui-comp="ui-menu"] .fui-menu__panel {
   /* headless-disclosure shifts a panel that would leave the viewport. */
   translate: var(--hui-panel-shift, 0);
@@ -386,7 +391,7 @@ details[data-cui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
 [data-cui-comp="ui-menu"] .fui-menu__item--danger { color: var(--color-danger, #B91C1C); }
 [data-cui-comp="ui-menu"] .fui-menu__item--danger:hover,
 [data-cui-comp="ui-menu"] .fui-menu__item--danger:focus-visible {
-  background: color-mix(in srgb, var(--color-danger, #B91C1C) 10%, transparent);
+  background: color-mix(in oklab, var(--color-danger, #B91C1C) 10%, transparent);
 }
 [data-cui-comp="ui-menu"] .fui-menu__item--disabled {
   opacity: var(--opacity-disabled, 0.5);

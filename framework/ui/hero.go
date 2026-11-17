@@ -109,15 +109,18 @@ func heroCSS(_ style.Theme) string {
 [data-cui-comp="ui-hero"] .fui-hero__title {
   margin: 0;
   font-family: var(--font-heading, inherit);
-  font-size: clamp(calc(var(--text-3xl, 1.875rem) * 1.333), 6vw, calc(var(--text-3xl, 1.875rem) * 2.133));
+  /* The preferred size mixes rem with vw so it still follows the
+     reader's font-size setting; bare vw would ignore it. */
+  font-size: clamp(calc(var(--text-3xl, 1.875rem) * 1.333), calc(var(--text-2xl, 1.5rem) + 3vw), calc(var(--text-3xl, 1.875rem) * 2.133));
   line-height: calc(var(--leading-tight, 1.2) - 0.16);
+  text-wrap: balance;
   letter-spacing: var(--tracking-tighter, -0.03em);
   font-weight: var(--font-weight-bold);
   color: var(--color-text, inherit);
 }
 [data-cui-comp="ui-hero"] .fui-hero__lede {
   margin: 0;
-  font-size: clamp(var(--text-lg, 1.125rem), 2.2vw, calc(var(--text-2xl, 1.5rem) * 0.917));
+  font-size: clamp(var(--text-lg, 1.125rem), calc(var(--text-sm, 0.875rem) + 0.6vw), calc(var(--text-2xl, 1.5rem) * 0.917));
   line-height: var(--leading-normal, 1.5);
   color: var(--color-text-muted, inherit);
   max-width: 46ch;

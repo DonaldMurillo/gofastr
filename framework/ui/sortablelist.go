@@ -121,7 +121,7 @@ func sortablelistCSS(_ style.Theme) string {
   outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-grabbed {
-  background: color-mix(in srgb, var(--color-primary, #18181B) 12%, transparent);
+  background: color-mix(in oklab, var(--color-primary, #18181B) 12%, transparent);
   border-color: var(--color-primary, #18181B);
   cursor: grabbing;
 }

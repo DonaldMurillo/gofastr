@@ -119,7 +119,7 @@ func searchInputCSS(_ style.Theme) string {
 	return `.fui-search {
   display: inline-flex;
   align-items: stretch;
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);

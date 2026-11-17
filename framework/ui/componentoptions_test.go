@@ -101,7 +101,7 @@ func TestCompilerEmitsTreatmentVariables(t *testing.T) {
 	}{
 		{theme.Filled, "var(--color-primary)", "var(--color-primary-fg)", buttonEdge},
 		{theme.Outline, "transparent", "var(--color-primary)", "var(--color-primary)"},
-		{theme.Soft, "color-mix(in srgb, var(--color-primary) 15%, transparent)", "var(--color-primary)", buttonEdge},
+		{theme.Soft, "color-mix(in oklab, var(--color-primary) 15%, transparent)", "var(--color-primary)", buttonEdge},
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Button: theme.ButtonOptions{Treatment: tc.treatment}})
 		for _, variant := range []struct {

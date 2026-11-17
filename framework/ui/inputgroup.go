@@ -59,7 +59,7 @@ func inputGroupCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: stretch;
   max-inline-size: 100%;
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);

@@ -124,7 +124,7 @@ func multiselectCSS(_ style.Theme) string {
   background: color-mix(in oklab, var(--color-text, #09090B) 8%, transparent);
 }
 [data-cui-comp="ui-multiselect"] details {
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);
@@ -156,6 +156,11 @@ func multiselectCSS(_ style.Theme) string {
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
   transition: transform var(--duration-fast, 150ms) var(--easing-ease-out, ease);
+}
+/* A mask icon is painted by its background, which forced colours turn
+   to Canvas; opting out and painting CanvasText keeps it visible. */
+@media (forced-colors: active) {
+  [data-cui-comp="ui-multiselect"] .fui-multiselect__summary::after { forced-color-adjust: none; background: CanvasText; }
 }
 [data-cui-comp="ui-multiselect"] details[open] .fui-multiselect__summary::after {
   transform: rotate(180deg);

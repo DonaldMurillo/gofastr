@@ -93,7 +93,7 @@ func plain(s string) render.HTML { return render.HTML(s) }
 // rows (the 2026-09-22 captures).
 func TestGlassHasEdgeOverFlatContent(t *testing.T) {
 	css := componentCSS(t, "desktopui-glass")
-	edge := "0 0 0 calc(var(--stroke-thin, 1px) / 2) color-mix(in srgb, var(--color-text, #000000) 14%, transparent)"
+	edge := "0 0 0 calc(var(--stroke-thin, 1px) / 2) color-mix(in oklab, var(--color-text, #000000) 14%, transparent)"
 	if n := strings.Count(css, edge); n != 2 {
 		t.Errorf("glass hairline edge appears %d times, want 2 (regular and thick):\n%s", n, css)
 	}

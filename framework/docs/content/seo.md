@@ -46,6 +46,7 @@ host := uihost.New(site,
 | `WithAppIcon(source)` | every icon file the app needs (see below) |
 | `WithFavicon(href)` | a single `<link rel="icon">` for a hand-managed file |
 | `WithThemeColor`, `WithPreconnect` | `<meta name="theme-color">`, `<link rel="preconnect">` |
+| `WithFontPreload` | `<link rel="preload" as="font">` per self-hosted web font ([theming](theming.md#self-hosting-web-fonts)) |
 
 ## Per-screen interfaces
 

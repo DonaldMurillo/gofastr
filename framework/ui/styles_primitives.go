@@ -241,6 +241,7 @@ func cardCSS(t style.Theme) string {
   line-height: calc(var(--leading-snug, 1.4) - 0.1);
   color: var(--color-text);
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 [data-cui-comp="ui-card"] .fui-card__description {
   margin: 0;
@@ -390,7 +391,7 @@ func toggleCSS(_ style.Theme) string {
   /* An unchecked box is drawn by its border alone, so the border is a
      control boundary (WCAG 1.4.11, 3:1), not a hairline: text-subtle
      clears it in both schemes, border-strong does not. */
-  border: var(--stroke-thin, 1px) solid var(--color-text-subtle);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   background: var(--color-surface);
   box-shadow: var(--shadow-xs);
   cursor: inherit;
@@ -477,7 +478,7 @@ func toggleCSS(_ style.Theme) string {
   inline-size: var(--ui-switch-track-width, 2.25rem);
   block-size: var(--ui-switch-track-height, 1.25rem);
   margin: 0;
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--ui-control-border, var(--color-text-subtle));
   border-radius: var(--radii-full, 9999px);
   background-color: var(--color-surface-soft, #F4F4F5);
   background-image: radial-gradient(circle, var(--color-primary-fg, #FFFFFF) 0 7.5px, var(--ui-switch-thumb-rim, rgba(0, 0, 0, 0.18)) 7.5px 8.5px, transparent 9px);
@@ -571,7 +572,47 @@ func toggleCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
 }
 .fui-choice-group__hint  { color: var(--color-text-muted, #52525B); }
-.fui-choice-group__error { color: var(--color-danger, #B91C1C); }`
+.fui-choice-group__error { color: var(--color-danger, #B91C1C); }
+
+/* Forced colours (Windows high contrast) drop background images and
+   author colours, which is all the tick, the dot and the thumb are
+   drawn with. The controls opt out and redraw in system colours. */
+@media (forced-colors: active) {
+  .fui-choice__input,
+  .fui-switch__input {
+    forced-color-adjust: none;
+    border-color: CanvasText;
+    background-color: Canvas;
+  }
+  .fui-choice__input:focus-visible,
+  .fui-switch__input:focus-visible { outline-color: Highlight; }
+  .fui-choice__input:disabled,
+  .fui-switch__input:disabled { border-color: GrayText; }
+  .fui-choice--checkbox .fui-choice__input:checked {
+    background-color: Highlight;
+    border-color: Highlight;
+    background-image:
+      linear-gradient(to top right, transparent calc(50% - 1px), HighlightText calc(50% - 1px), HighlightText calc(50% + 1px), transparent calc(50% + 1px)),
+      linear-gradient(to bottom right, transparent calc(50% - 1px), HighlightText calc(50% - 1px), HighlightText calc(50% + 1px), transparent calc(50% + 1px));
+  }
+  .fui-choice--checkbox .fui-choice__input:indeterminate {
+    background-color: Highlight;
+    border-color: Highlight;
+    background-image: linear-gradient(HighlightText, HighlightText);
+  }
+  .fui-choice--radio .fui-choice__input:checked {
+    border-color: Highlight;
+    background-image: radial-gradient(circle at center, Highlight 0 5px, transparent 5.5px);
+  }
+  .fui-switch__input {
+    background-image: radial-gradient(circle, CanvasText 0 7.5px, transparent 8.5px);
+  }
+  .fui-switch__input:checked {
+    background-color: Highlight;
+    border-color: Highlight;
+    background-image: radial-gradient(circle, HighlightText 0 7.5px, transparent 8.5px);
+  }
+}`
 }
 
 func tooltipCSS(_ style.Theme) string {
@@ -744,7 +785,7 @@ func tagCSS(t style.Theme) string {
      not link text, so it carries no underline. */
   text-decoration: none;
 }
-[data-cui-comp="ui-tag"] .fui-tag__dismiss:hover { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
+[data-cui-comp="ui-tag"] .fui-tag__dismiss:hover { opacity: 1; background: color-mix(in oklab, currentColor 12%, transparent); }
 [data-cui-comp="ui-tag"] .fui-tag__dismiss:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
@@ -842,6 +883,22 @@ func spinnerCSS(_ style.Theme) string {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* Forced colours paint every border side one colour and every
+   background Canvas, so the ring would not turn and the dots would
+   vanish: system colours keep the motion visible. */
+@media (forced-colors: active) {
+  [data-cui-comp="ui-spinner"] .fui-spinner__ring {
+    forced-color-adjust: none;
+    border-color: GrayText;
+    border-top-color: Highlight;
+  }
+  [data-cui-comp="ui-spinner"] .fui-spinner__dot,
+  [data-cui-comp="ui-spinner"] .fui-spinner__cell {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
 }`
 }
 
@@ -876,6 +933,14 @@ func dividerCSS(_ style.Theme) string {
   flex: 1 1 0;
   block-size: 1px;
   background: var(--color-border, #E4E4E7);
+}
+/* The line is a background, which forced colours paint as Canvas. */
+@media (forced-colors: active) {
+  [data-cui-comp="ui-divider"]:not(.fui-divider--labelled),
+  [data-cui-comp="ui-divider"] .fui-divider__line {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
 }`
 }
 

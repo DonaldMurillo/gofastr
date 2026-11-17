@@ -292,10 +292,10 @@ func diffViewerCSS(_ style.Theme) string {
   overflow-x: auto;
 }
 [data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__line--add {
-  background: color-mix(in srgb, var(--color-success, #166534) 12%, transparent);
+  background: color-mix(in oklab, var(--color-success, #166534) 12%, transparent);
 }
 [data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__line--remove {
-  background: color-mix(in srgb, var(--color-danger, #B91C1C) 12%, transparent);
+  background: color-mix(in oklab, var(--color-danger, #B91C1C) 12%, transparent);
 }
 
 /* Split layout */
@@ -321,9 +321,9 @@ func diffViewerCSS(_ style.Theme) string {
   border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 .fui-diff-viewer--split .fui-diff-viewer__cell--add {
-  background: color-mix(in srgb, var(--color-success, #166534) 12%, transparent);
+  background: color-mix(in oklab, var(--color-success, #166534) 12%, transparent);
 }
 .fui-diff-viewer--split .fui-diff-viewer__cell--remove {
-  background: color-mix(in srgb, var(--color-danger, #B91C1C) 12%, transparent);
+  background: color-mix(in oklab, var(--color-danger, #B91C1C) 12%, transparent);
 }`
 }

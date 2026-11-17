@@ -123,5 +123,16 @@ func segmentedLinksCSS(_ style.Theme) string {
   color: var(--color-text);
   box-shadow: var(--shadow-xs);
   font-weight: var(--font-weight-medium);
+}
+/* Forced colours drop the current segment's fill and shadow, so it
+   takes a Highlight outline, like ui.SegmentedControl's checked one. */
+@media (forced-colors: active) {
+  [data-cui-comp="ui-segmented-links"] .fui-seglinks__item[aria-current="true"] {
+    outline: var(--stroke-thick, 2px) solid Highlight;
+    outline-offset: calc(-1 * var(--stroke-thick, 2px));
+  }
+  [data-cui-comp="ui-segmented-links"] .fui-seglinks__item[aria-current="true"]:focus-visible {
+    outline-offset: var(--stroke-focus-offset, 2px);
+  }
 }`
 }
