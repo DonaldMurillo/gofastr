@@ -107,14 +107,12 @@ beside it.
 ## Configuration
 
 `TenantConfig` / `DefaultTenantConfig()` carry the tenant column and
-`AutoScope`. `Header` is a legacy field retained for API compatibility;
-it is not read anywhere, and setting it changes no behavior. The
-defaults are:
+`AutoScope`. The tenant ID always comes from the authenticated
+server-side context, never from a request header. The defaults are:
 
 | Field        | Default       |
 |--------------|---------------|
 | `Field`      | `tenant_id`   |
-| `Header`     | `X-Tenant-ID` (legacy, ignored) |
 | `AutoScope`  | `true`        |
 
 `AutoScope=false` lets you read across tenants from admin routes

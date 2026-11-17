@@ -21,7 +21,7 @@ import (
 // stronger invariant: the minifier must reach a fixed point in one
 // pass.
 //
-//gofastr:test-reads core-ui/runtime/src/ core-ui/runtime/runtime.js
+//gofastr:test-reads core-ui/runtime/src/
 func TestMinifyRuntimeCorpus(t *testing.T) {
 	root, err := repoRoot()
 	if err != nil {
@@ -32,16 +32,9 @@ func TestMinifyRuntimeCorpus(t *testing.T) {
 		path    string
 		anchors []string
 	}
-	files := []file{
-		{
-			path: filepath.Join(root, "core-ui/runtime/runtime.js"),
-			anchors: []string{
-				// Identifiers and string literals, comments are stripped.
-				"data-cui-os",
-				"__gofastr",
-			},
-		},
-	}
+	// The composed bundle is covered by core-ui/runtime's
+	// TestMinifiedBundle, which can compose it.
+	var files []file
 	srcDir := filepath.Join(root, "core-ui/runtime/src")
 	entries, err := os.ReadDir(srcDir)
 	if err != nil {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -56,17 +55,6 @@ func TestComputeMarkerPreloads(t *testing.T) {
 	got := gofastrruntime.NeededModules(`<div data-cui-compute></div>`)
 	if want := []string{"compute"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("NeededModules=%v want %v", got, want)
-	}
-}
-
-func TestComputeMarkerMatchesRuntimeJS(t *testing.T) {
-	src, err := os.ReadFile("runtime.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(src), `{ name: 'compute',`) ||
-		!strings.Contains(string(src), `selector: '[data-cui-compute]'`) {
-		t.Fatal("runtime scanner missing data-cui-compute marker")
 	}
 }
 
