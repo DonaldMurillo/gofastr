@@ -58,7 +58,7 @@ without hand-writing the glue.*
    v1.0. Drop `v0.x` only when the gate below is green. Every package
    already carries a support tier (`docs/public-api.md`), and none is
    Stable yet.
-2. **Declaration-first proof.** ✓ Shipped: `examples/ecommerce`, a
+2. **Declaration-first proof.** ✓ Shipped: `internal/testapps/ecommerce`, a
    five-entity app spec generated, built, and surface-tested end-to-end
    (`flagship_test.go`, zero hand-written app code).
 3. **Dogfooding.** ✓ Kiln, `examples/site`, and the `examples/meridian`

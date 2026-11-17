@@ -117,7 +117,7 @@ feature that fits in one app. The other generated-app tests call
 - The change touches one of the inputs the test names. `cmd/affected`
   hands the wrapped command its change set in `GOFASTR_AFFECTED_FILES`,
   one path per line, so a pull request that edits
-  `examples/lms/gofastr.yml` still builds and boots the lms app.
+  `internal/testapps/lms/gofastr.yml` still builds and boots the lms app.
 
 When you add a generator feature, add it to the union app spec and let
 `TestUnionApp` compile it. If the feature's own test only needs to know

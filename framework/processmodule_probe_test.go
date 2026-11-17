@@ -344,7 +344,7 @@ const requireConformanceEnv = "GOFASTR_REQUIRE_SANDBOX_CONFORMANCE"
 // applies) and the go test binary sits in a build dir that account cannot
 // traverse. Every probe would fail at the mount, which is the correct
 // refusal for a host binary nobody else may read, and says nothing about
-// the backend. examples/processmodule-demo/host's tests build into a
+// the backend. internal/testapps/processmodule-demo/host's tests build into a
 // readable dir and cover a root host.
 func skipIfSandboxAccountCannotReachTestBinary(t *testing.T, b SandboxBackend) {
 	t.Helper()

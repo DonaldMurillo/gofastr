@@ -1120,7 +1120,7 @@ func exprTouches(e ast.Expr, call *ast.CallExpr, holders map[string]bool) bool {
 //     Conn.readFrame, the three spellings the round-5 probes found: a
 //     zero-argument Read() in a file that imports core/stream (whose
 //     (*WebSocketConn).Read returns one inbound frame — battery/rtc,
-//     examples/webmcp-remote-assist), the child stdout of a spawned
+//     internal/testapps/webmcp-remote-assist), the child stdout of a spawned
 //     process (cmd.StdoutPipe(), whose result may be ferried through a
 //     struct field — harness mcpclient), os.Stdin, and a bufio.Scanner
 //     built over an io.Reader/net.Conn parameter of a framing

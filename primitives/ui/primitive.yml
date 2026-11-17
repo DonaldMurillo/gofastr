@@ -14,6 +14,7 @@ invariants:
     applies:
       - battery/
       - examples/
+      - internal/testapps/
       - cmd/gofastr/
   - id: secret-input-is-never-spellchecked
     rule: A ui.PasswordInput's input carries spellcheck=false and autocapitalize=off, so a revealed password is never sent to a spell checker or capitalised.

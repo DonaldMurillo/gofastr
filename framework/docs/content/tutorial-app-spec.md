@@ -425,7 +425,7 @@ Go you own:
   custom routes.
 - [Comparison](comparison.md): how this pipeline differs from
   PocketBase, Encore, Wasp, and hand-rolling.
-- [`examples/ecommerce`](https://github.com/DonaldMurillo/gofastr/tree/main/examples/ecommerce):
+- [`internal/testapps/ecommerce`](https://github.com/DonaldMurillo/gofastr/tree/main/internal/testapps/ecommerce):
   a five-entity app spec (auth + owner-scoped orders) generated and
   tested end-to-end.
 

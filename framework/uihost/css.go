@@ -39,9 +39,6 @@ func (ds *UIHost) AppCSSFor(t style.Theme) string {
 	if ds.hasInterceptingRoute() {
 		out += app.InterceptOverlayCSS() + "\n"
 	}
-	for _, l := range ds.App.Layouts() {
-		out += l.TransitionCSS()
-	}
 	if overrides := style.AllThemeOverridesCSS(); overrides != "" {
 		out += overrides + "\n"
 	}
@@ -327,11 +324,8 @@ func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 func (ds *UIHost) appCSSCached() (body, hash string) {
 	ds.appCSSOnce.Do(func() {
 		ds.appCSSContribN = style.ContributedCount()
-		ds.appCSSLayoutsGen = ds.App.LayoutsVersion()
-		ds.appCSSTransitionLayouts = map[*app.Layout]bool{}
-		for _, l := range ds.App.Layouts() {
-			ds.appCSSTransitionLayouts[l] = true
-		}
+		ds.appCSSLayoutsSeen.Store(ds.App.LayoutsVersion())
+		ds.warnSheetlessTransitions()
 		ds.appCSSBody = minify.ServedCSS(ds.AppCSS())
 		ds.appCSSHash = style.CSSFingerprint(ds.appCSSBody)
 	})
@@ -340,18 +334,35 @@ func (ds *UIHost) appCSSCached() (body, hash string) {
 			slog.Warn("uihost: style.Contribute called after the first page render: app.css is frozen per process; contribute at package init, before Mount")
 		})
 	}
-	if ds.App.LayoutsVersion() != ds.appCSSLayoutsGen {
-		ds.appCSSLayoutsWarn.Do(ds.warnLateTransitionLayouts)
+	if gen := ds.App.LayoutsVersion(); gen != ds.appCSSLayoutsSeen.Load() {
+		ds.appCSSLayoutsSeen.Store(gen)
+		ds.warnSheetlessTransitions()
 	}
 	return ds.appCSSBody, ds.appCSSHash
 }
 
-func (ds *UIHost) warnLateTransitionLayouts() {
+// warnSheetlessTransitions names, once each, the layouts whose
+// transition sheet the host's catalog does not list: they arrived after
+// the first page render built it, so client navigations into them run
+// without their transitions.
+func (ds *UIHost) warnSheetlessTransitions() {
+	listed := ds.catalogListed.Load()
+	if listed == nil {
+		return
+	}
+	ds.transitionWarnMu.Lock()
+	defer ds.transitionWarnMu.Unlock()
 	for _, l := range ds.App.Layouts() {
-		if !ds.appCSSTransitionLayouts[l] && l.TransitionCSS() != "" {
-			slog.Warn("uihost: layout registered after the first page render: app.css is frozen per process, so its transitions do not run; register routes before Mount",
-				"layout", l.Name)
+		sheet := l.TransitionSheet()
+		if sheet == "" || (*listed)[sheet] || ds.transitionWarned[l] {
+			continue
 		}
+		if ds.transitionWarned == nil {
+			ds.transitionWarned = map[*app.Layout]bool{}
+		}
+		ds.transitionWarned[l] = true
+		slog.Warn("uihost: layout registered after the first page render built the component catalog, so client navigations into it run without its transitions; register routes before Mount",
+			"layout", l.Name)
 	}
 }
 

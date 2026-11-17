@@ -87,7 +87,7 @@ func TestAutoHideVariantShipsRevealCSS(t *testing.T) {
 // TestCalloutHiddenAttributeWins: the callout rule sets display:grid,
 // which outranks the UA's [hidden] { display: none }. Without an
 // explicit [hidden] win a server-rendered, initially hidden notice
-// (the rtc-call example's) shows as an empty warning bar on every
+// (a call page's) shows as an empty warning bar on every
 // page load.
 func TestCalloutHiddenAttributeWins(t *testing.T) {
 	css := calloutCSS(style.Theme{})

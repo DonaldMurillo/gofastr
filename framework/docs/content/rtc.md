@@ -130,8 +130,7 @@ evict every other one. An app whose callers really are anonymous (a
 lobby display name, no account) opts in with
 `AnonymousSeats: rtc.AnonymousPerSocket`: each anonymous socket then
 holds its own seat, outside the per-user cap, and is never displaced by
-another. `MaxPeers` still bounds each room. `examples/rtc-call` runs
-this way.
+another. `MaxPeers` still bounds each room.
 
 The frame envelopes themselves decode strictly: duplicate or
 case-folded keys in a signaling frame are refused, the same
@@ -469,7 +468,7 @@ Keep the document to allow-listed values; it is a status, not a log.
 - [Core packages](core-packages.md) documents `core/stream.StateChannel`,
   the transport under this package.
 - [Horizontal scaling](scaling.md) covers the fanout seam.
-- `examples/webmcp-remote-assist` is the hand-rolled single-session
+- `internal/testapps/webmcp-remote-assist` is the hand-rolled single-session
   reference this package generalizes.
 
 ## Common mistakes
@@ -485,7 +484,7 @@ Keep the document to allow-listed values; it is a status, not a log.
   a machine with no camera, or a device another app holds all reject
   `getUserMedia`, and a page that only records the error name leaves
   the user with a button that did nothing. Render a notice the script
-  fills from the rejection (the `rtc-call` example's `#call-notice`),
+  fills from the rejection (a `#call-notice` element, say),
   and do the same for `closed:refused`.
 - **Expecting the server to see media.** It cannot help with quality,
   record a call, or mute a participant's audio; those are peer-side
