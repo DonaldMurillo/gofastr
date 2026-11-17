@@ -25,26 +25,13 @@ const (
 	AfterGet
 )
 
-// HookFunc is the signature for a lifecycle hook.
-// The data argument varies by hook type (e.g. map[string]any for create/update, string ID for delete).
-// An error stops the hook chain and fails the operation. CRUD write hooks,
-// including After* hooks, run before commit; their errors roll back the write
-// transaction. A read hook error fails the read rather than merely being logged.
+// HookFunc is a lifecycle hook: an error stops the chain, a write hook's error (After too) makes the write roll back, a read hook's error fails the read.
 type HookFunc func(ctx context.Context, data any) error
 
-// HookRegistry stores lifecycle hooks grouped by hook type.
-//
-// Registration is normally a setup-time activity, but two things read a
-// registry on the request path, the CRUD handler's own hook lookups, and
-// ?include= resolving a CHILD entity's registry, while kiln's build-mode
-// runtime registers hooks against a live server. An unguarded map would make
-// that pairing a concurrent read/write, which is an unrecoverable runtime
-// throw rather than a panic a hook recover() could catch.
+// HookRegistry stores lifecycle hooks grouped by hook type, safe for concurrent use.
 type HookRegistry struct {
 	mu    sync.RWMutex
 	hooks map[HookType][]HookFunc
-	// label is the entity this registry belongs to, set by the framework
-	// so a hook firing can be attributed in coverage. See SetLabel.
 	label string
 }
 
@@ -55,34 +42,23 @@ func NewHookRegistry() *HookRegistry {
 	}
 }
 
-// RegisterHook appends a hook function for the given hook type.
-// Hooks execute in registration order.
+// RegisterHook appends fn to the hooks for hookType; hooks run in registration order.
 func (hr *HookRegistry) RegisterHook(hookType HookType, fn HookFunc) {
 	hr.mu.Lock()
 	defer hr.mu.Unlock()
 	hr.hooks[hookType] = append(hr.hooks[hookType], fn)
 }
 
-// ExecuteHooks runs all registered hooks for the given type in registration
-// order. It stops on the first error and returns it. A panic inside a hook
-// is caught and surfaced as an error, without recovery a single buggy or
-// third-party hook would tear down the entire request goroutine.
+// ExecuteHooks runs the hooks for hookType in order and returns the first error, a panic as *PanicError.
 func (hr *HookRegistry) ExecuteHooks(ctx context.Context, hookType HookType, data any) error {
-	// Snapshot under the lock, then run unlocked: a hook may register another
-	// hook, and holding the lock across arbitrary user code would deadlock.
 	hr.mu.RLock()
 	fns := append([]HookFunc(nil), hr.hooks[hookType]...)
 	label := hr.label
 	hr.mu.RUnlock()
 	if len(fns) == 0 {
-		// Nothing registered. Reporting a firing here would credit every
-		// entity with full hook coverage the moment it served one request.
 		return nil
 	}
 	if fn := observer.Load(); fn != nil {
-		// The observer is host-installed code; a fault in it must not
-		// tear down the operation that fired the hook (the same
-		// posture runHookSafely gives the hooks themselves).
 		func() {
 			defer textsafe.LogPanic(ctx, "hook: observer panicked; ignored")
 			(*fn)(Firing{Entity: label, Type: hookType})
@@ -96,13 +72,7 @@ func (hr *HookRegistry) ExecuteHooks(ctx context.Context, hookType HookType, dat
 	return nil
 }
 
-// PanicError is the error ExecuteHooks returns for a hook that panicked.
-// A panic is a fault in the hook, not a refusal it chose: a caller that
-// answers a Before hook's error with its text (crud answers 400 with it)
-// answers this one as a server error instead, because the panic value is
-// whatever the hook held when it faulted (a DSN, a query, request bytes)
-// and was never written for the client. Error renders the value scrubbed
-// of control bytes, for logs.
+// PanicError is a hook's panic, a server error rather than a refusal; Error scrubs control bytes.
 type PanicError struct {
 	// Value is what the hook passed to panic.
 	Value any
@@ -110,10 +80,6 @@ type PanicError struct {
 
 func (e *PanicError) Error() string { return "hook panic: " + textsafe.Recovered(e.Value) }
 
-// runHookSafely calls fn with a deferred recover. A recovered panic
-// becomes a *PanicError so the framework's lifecycle (tx rollback, error
-// chain) handles it deterministically instead of unwinding the http
-// stack. The stack is logged here, the one place it still exists.
 func runHookSafely(ctx context.Context, fn HookFunc, data any) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -127,7 +93,7 @@ func runHookSafely(ctx context.Context, fn HookFunc, data any) (err error) {
 	return fn(ctx, data)
 }
 
-// HooksFor returns a copy of the hooks registered for the given type (for inspection/testing).
+// HooksFor returns a copy of the hooks registered for hookType.
 func (hr *HookRegistry) HooksFor(hookType HookType) []HookFunc {
 	hr.mu.RLock()
 	defer hr.mu.RUnlock()

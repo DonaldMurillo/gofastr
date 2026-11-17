@@ -5,3 +5,87 @@ code:
 docs:
   - framework/docs/content/hooks-and-transactions.md
   - framework/docs/content/plugins.md
+on_change:
+  - A new HookType gets a String case and a crud call site for each surface that serves its shape; the hook-skip matrix in hooks-and-transactions.md lists where it runs.
+invariants:
+  - id: ordered-and-stops-at-first-error
+    rule: ExecuteHooks runs a type's hooks in registration order and returns the first error without running the rest.
+    enforced_by:
+      - test: framework/hook.TestExecuteHooksStopsAtFirstError
+  - id: panic-is-a-panic-error
+    rule: A panicking hook makes ExecuteHooks return a *PanicError holding the panic value, and crud treats it as a server error, never as a hook's refusal.
+    enforced_by:
+      - test: framework/hook.TestExecuteHooksRecoversPanicShapes
+      - test: framework/crud.TestHookPanicIsNotARefusal
+    applies:
+      - framework/crud/crud.go
+  - id: hooks-for-is-a-copy
+    rule: HooksFor returns a copy, so changing the slice it returns never changes what runs.
+    enforced_by:
+      - test: framework/hook.TestHooksForReturnsDefensiveCopy
+  - id: hooks-run-unlocked-on-a-snapshot
+    rule: ExecuteHooks copies the hook list under the read lock and releases it before running any hook, so a hook may register hooks on the same registry.
+    enforced_by:
+      - test: framework/hook.TestRegisterDuringExecuteIsSafe
+  - id: observer-sees-only-registered-hooks
+    rule: The observer receives one Firing per ExecuteHooks call that has at least one hook registered, whether or not the hook fails, and none for a type with no hooks.
+    enforced_by:
+      - test: framework/hook.TestObserverFiresOnlyForRegisteredHooks
+      - test: framework/hook.TestObserverFiresEvenWhenTheHookFails
+  - id: observer-panic-is-contained
+    rule: A panicking observer is logged and ignored, and the hooks still run.
+    enforced_by:
+      - test: framework/hook.TestPanickingObserverDoesNotKillHookExecution
+  - id: cleared-observer-is-gone
+    rule: SetObserver(nil) removes the observer.
+    enforced_by:
+      - test: framework/hook.TestClearedObserverIsNotCalled
+  - id: hook-type-names-are-stable
+    rule: Each HookType's String is its own lower-case name, the spelling coverage manifests store.
+    enforced_by:
+      - test: framework/hook.TestHookTypeStringsAreStableAndDistinct
+  - id: hook-func-doc-states-the-error-contract
+    rule: HookFunc's doc says a write hook's error rolls the write back and a read hook's error fails the read, never that an After error is only logged.
+    enforced_by:
+      - test: framework/hook.TestHookErrorDocs
+  - id: list-clauses-filter-the-count
+    rule: CRUD applies a BeforeList hook's clauses to the count query as well as the page, so totals match the filtered rows.
+    enforced_by:
+      - test: framework/crud.TestBeforeListHookCanFilter
+    applies:
+      - framework/crud/crud.go
+decisions:
+  - id: locked-registry
+    date: 2026-11-17
+    status: accepted
+    decision: The registry's map is guarded by a RWMutex.
+    rejected:
+      - option: An unguarded map filled at setup.
+        why: The request path reads registries (a child's too, for ?include=) while kiln's build mode registers against a live server, and a concurrent map write is an unrecoverable throw, not a recoverable panic.
+    upholds: [hooks-run-unlocked-on-a-snapshot]
+  - id: observer-is-an-atomic-hook
+    date: 2026-11-17
+    status: accepted
+    decision: The firing observer is a process-wide atomic pointer set through SetObserver.
+    rejected:
+      - option: Guard the observer with a mutex.
+        why: ExecuteHooks is on the request path, and an uninstalled observer should cost one atomic load.
+      - option: Import the coverage recorder directly.
+        why: hook is a leaf package and the recorder is test tooling, as with router.SetServeHook and access.SetObserver.
+    upholds: [observer-sees-only-registered-hooks]
+  - id: count-only-hooks-that-ran
+    date: 2026-11-17
+    status: accepted
+    decision: A Firing is reported only when a registered hook runs.
+    rejected:
+      - option: Report every ExecuteHooks call.
+        why: ExecuteHooks is called on every CRUD operation, so an app with no hooks would show full coverage.
+    upholds: [observer-sees-only-registered-hooks]
+  - id: panic-is-not-a-refusal
+    date: 2026-11-17
+    status: accepted
+    decision: A hook panic is a *PanicError that callers answer as a server error.
+    rejected:
+      - option: Answer it like a Before hook's error, 400 with its text.
+        why: The panic value is whatever the hook held when it faulted (a DSN, a query, request bytes) and was never written for a client.
+    upholds: [panic-is-a-panic-error]
