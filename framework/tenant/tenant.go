@@ -1,3 +1,4 @@
+// Package tenant scopes rows to the request's tenant: the tenant on the context, its middleware and WithMultiTenant.
 package tenant
 
 import (
@@ -13,25 +14,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// crossTenantKey marks a context as deliberately cross-tenant. It must ONLY
-// ever be set server-side (admin routes, background jobs), never derived from
-// a client-supplied header, or it becomes a tenant-isolation bypass.
 type crossTenantKey struct{}
 
-// AllowCrossTenant marks ctx as permitted to operate without a tenant id.
-// Multi-tenant CRUD reads then span every tenant (the scope helpers no-op on
-// an empty tenant id) and the secure-by-default RequireTenant gate stops
-// refusing the request.
-//
-// SECURITY: use ONLY on deliberately-admin routes, and gate those routes with
-// your own permission check, there is no built-in role check. Never set this
-// from a request header or any other client-controlled value.
+// AllowCrossTenant marks ctx as reading every tenant; set it only server-side on admin routes you gate yourself.
 func AllowCrossTenant(ctx context.Context) context.Context {
 	return context.WithValue(ctx, crossTenantKey{}, true)
 }
 
-// IsCrossTenant reports whether ctx was explicitly marked for cross-tenant
-// access via AllowCrossTenant.
+// IsCrossTenant reports whether ctx was marked by AllowCrossTenant.
 func IsCrossTenant(ctx context.Context) bool {
 	v, _ := ctx.Value(crossTenantKey{}).(bool)
 	return v
@@ -39,15 +29,14 @@ func IsCrossTenant(ctx context.Context) bool {
 
 // TenantConfig configures multi-tenancy behavior for an entity.
 type TenantConfig struct {
-	// Field is the database column name used for tenant scoping.
-	// Defaults to "tenant_id".
+	// Field is the tenant column, "tenant_id" by default.
 	Field string
 
-	// AutoScope, when true, automatically adds tenant filtering to all queries.
+	// AutoScope adds the tenant filter to every query.
 	AutoScope bool
 }
 
-// DefaultTenantConfig returns a TenantConfig with sensible defaults.
+// DefaultTenantConfig returns tenant_id with AutoScope on.
 func DefaultTenantConfig() TenantConfig {
 	return TenantConfig{
 		Field:     "tenant_id",
@@ -55,18 +44,7 @@ func DefaultTenantConfig() TenantConfig {
 	}
 }
 
-// WithMultiTenant configures an entity for multi-tenancy. It honors a custom
-// tenant column: TenantConfig.Field flows into EntityConfig.TenantField, the
-// single source of the column name used by entity injection, auto-migrate, and
-// the CRUD insert/scope/filter paths. A blank or default "tenant_id" leaves
-// TenantField unset (the default applies).
-//
-// The entity has already been through entity.Define, which adds the tenant
-// column to the fields of an entity declared multi-tenant, so this adds it
-// the same way: a hidden, read-only String. Without it AutoMigrate created
-// no tenant column and the first create failed on the column CRUD writes.
-// The tenant_id column Define injected for a MultiTenant entity is renamed
-// to a custom Field rather than kept beside it.
+// WithMultiTenant makes ent multi-tenant on config.Field, declaring that column hidden and read-only if absent; it panics on an unsafe name.
 func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
 	if ent.Config.Scope == nil {
 		ent.Config.Scope = &entity.ScopeConfig{}
@@ -104,8 +82,6 @@ func WithMultiTenant(ent *entity.Entity, config TenantConfig) *entity.Entity {
 	return ent
 }
 
-// isInjectedTenantField reports whether f is the tenant column entity.Define
-// adds, and nothing an app declared itself.
 func isInjectedTenantField(f schema.Field) bool {
 	return reflect.DeepEqual(f, schema.Field{
 		Name:         f.Name,
@@ -116,45 +92,16 @@ func isInjectedTenantField(f schema.Field) bool {
 	})
 }
 
-// ApplyTenantFilter adds a WHERE tenant_id = ? clause to the query
-// builder. The tenantID is parameterized to prevent SQL injection. An
-// empty tenantID is FAIL-CLOSED, the query is scoped to a guaranteed-
-// empty result set ("WHERE 1 = 0") rather than being left unscoped. Apps
-// that genuinely want cross-tenant queries (admin tooling) must construct
-// them with the tenant filter disabled deliberately, not by handing in
-// an empty string here.
-//
-// This standalone helper always uses the default "tenant_id" column. For an
-// entity with a custom EntityConfig.TenantField, the CRUD auto-scope
-// (CrudHandler.ApplyTenantScope*) already filters by the right column, use
-// that rather than this helper, which has no entity context.
+// ApplyTenantFilter scopes builder to tenantID on tenant_id, and to no rows when tenantID is empty.
 func ApplyTenantFilter(builder *query.QueryBuilder, tenantID string) {
 	if tenantID == "" {
-		// Fail-closed: a missing tenant scopes the query to a tenant
-		// that can never match a real row. Mentions tenant_id explicitly
-		// so a casual reader sees the scope even though the comparison
-		// can never be true.
 		builder.Where("tenant_id IS NULL AND 1=0")
 		return
 	}
 	builder.Where("tenant_id = $1", tenantID)
 }
 
-// TenantMiddleware returns an HTTP middleware that resolves the tenant
-// ID for the request from server-side state.
-//
-// SECURITY: the middleware does NOT trust any client-sent header. Doing
-// so would let any caller impersonate any tenant by setting an HTTP
-// header. The tenant comes exclusively from the server-resolved
-// authenticated context (handler.GetTenant, seeded by the auth layer).
-// Hosts that need a different resolution strategy (subdomain, JWT
-// claim, etc.) should compose their own middleware and call SetTenantID
-// directly.
-//
-// The `header` parameter is IGNORED, it is retained only so existing
-// call sites keep compiling from the era when the header was consulted.
-// Passing a header name here does not (and must not) make the
-// middleware read it.
+// TenantMiddleware sets the tenant from handler.GetTenant, never from a client header; header is ignored.
 func TenantMiddleware(header string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -168,17 +115,7 @@ func TenantMiddleware(header string) func(http.Handler) http.Handler {
 	}
 }
 
-// ResolveMiddleware resolves the request's tenant with resolve, which reads
-// server-side state for the authenticated principal (a membership lookup, a
-// session field) and returns "" when the caller belongs to no tenant. Mount
-// it after the auth middleware.
-//
-// A request that stays open, the CRUD event stream in particular, runs
-// resolve again for the refreshed principal on every handler.RecheckPrincipal,
-// so a member removed from a tenant, or moved to another, stops receiving
-// the old tenant's data at the next check. A middleware that calls SetTenantID
-// itself installs no such re-check: the stream keeps the tenant it read at
-// connect.
+// ResolveMiddleware sets the tenant resolve returns, and again on every handler.RecheckPrincipal; mount it after auth.
 func ResolveMiddleware(resolve func(ctx context.Context) string) func(http.Handler) http.Handler {
 	if resolve == nil {
 		panic("tenant.ResolveMiddleware: nil resolve")
@@ -194,29 +131,17 @@ func ResolveMiddleware(resolve func(ctx context.Context) string) func(http.Handl
 	}
 }
 
-// SetTenantID stores the tenant ID string in the context. The slot is
-// core/handler's (handler.SetTenantID), so packages below this one, such as
-// access.CachedResolver, can read the same tenant.
+// SetTenantID stores the tenant ID in core/handler's context slot.
 func SetTenantID(ctx context.Context, id string) context.Context {
 	return handler.SetTenantID(ctx, id)
 }
 
-// GetTenantID retrieves the tenant ID string from the context.
-// Returns an empty string if no tenant ID is set.
+// GetTenantID returns the context's tenant ID, or "".
 func GetTenantID(ctx context.Context) string {
 	return handler.GetTenantID(ctx)
 }
 
-// InjectTenantID automatically injects the tenant_id field into a data map
-// before insert/update operations. This ensures records are associated with
-// the current tenant from the context. Like ApplyTenantFilter, it uses the
-// default "tenant_id" column; entities with a custom EntityConfig.TenantField
-// are handled by the CRUD layer (CrudHandler.InjectTenant), not this helper.
-//
-// The resolved tenant always wins over a body-supplied value, and with
-// no tenant in ctx the body's value is removed rather than kept: a
-// caller must never be able to name the row's tenant when resolution
-// failed.
+// InjectTenantID sets data's tenant_id to the context's tenant, or deletes it when there is none.
 func InjectTenantID(data map[string]any, ctx context.Context) {
 	tenantID := GetTenantID(ctx)
 	if tenantID == "" {
