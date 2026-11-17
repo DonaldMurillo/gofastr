@@ -1,0 +1,8 @@
+primitive: testkit
+summary: The public test helpers a host app imports to test itself - an isolated Postgres database, a render-panic allowance, the accessibility, no-JS and CSS-weight gates, the coverage manifests they record into, and entity factories.
+code:
+  - framework/testkit/
+docs:
+  - framework/docs/content/testkit.md
+on_change:
+  - framework/testkit and its subpackages are public API for host apps' tests; a changed signature is a breaking change that needs a CHANGELOG line and an upgrading.md note.
