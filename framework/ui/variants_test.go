@@ -188,18 +188,30 @@ func TestReservedVariantNamePanics(t *testing.T) {
 }
 
 func TestBadVariantShapePanics(t *testing.T) {
-	wantPanic(t, "odd Props pair count", func() {
+	wantPanicNaming(t, "odd count", func() {
 		RegisterButtonVariant("odd-props", VariantCSS{Props: []string{"background"}})
 	})
-	wantPanic(t, "empty Props", func() {
+	wantPanicNaming(t, "Props must be non-empty", func() {
 		RegisterButtonVariant("no-props", VariantCSS{})
 	})
-	wantPanic(t, "invalid name characters", func() {
+	wantPanicNaming(t, "name must be", func() {
 		RegisterButtonVariant("Bad Name", VariantCSS{Props: []string{"background", "#111"}})
 	})
-	wantPanic(t, "empty status Color", func() {
+	wantPanicNaming(t, "Color is required", func() {
 		RegisterStatusVariant("no-color", StatusVariantCSS{})
 	})
+}
+
+// wantPanicNaming fails unless fn panics naming want: the sheet is sealed by
+// now, so a bare panic could be the seal's rather than the fault's.
+func wantPanicNaming(t *testing.T, want string, fn func()) {
+	t.Helper()
+	defer func() {
+		if r, _ := recover().(string); !strings.Contains(r, want) {
+			t.Errorf("panic %q, want one naming %q", r, want)
+		}
+	}()
+	fn()
 }
 
 func TestRegisterAfterBuildPanics(t *testing.T) {

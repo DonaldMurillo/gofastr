@@ -10,6 +10,16 @@ invariants:
     enforced_by:
       - test: battery/rtc.TestClosingADisplacedSocketBlocksNoOneElse
     judge: Does this change close a room peer's socket on the goroutine that holds or just held the Signaler's lock, instead of through closeDetached?
+  - id: stale-join-mirror-keeps-the-live-socket
+    rule: A remote join mirror whose seat Order is no newer than the local socket of the same id is dropped and displaces nothing, whenever it is published, because remoteJoinLocked compares the mirror's seat Order and never its publish clock At.
+    enforced_by:
+      - test: battery/rtc.TestLateJoinMirrorDoesNotKickTheMovedPeer
+      - test: battery/rtc.TestJoinMirrorPublishedLateIsStillStale
+    judge: Does this change decide whether a remote join displaces a local socket from the message's publish time At instead of the seat's Order?
+  - id: held-test-lane-keeps-publish-order
+    rule: The tests' heldFanout delivers a released lane in publish order, queueing arrivals during the drain behind the held messages, as the bus delivers one subscriber's messages.
+    enforced_by:
+      - test: battery/rtc.TestHeldFanoutReleaseKeepsOrder
 decisions:
   - id: one-displacement-path
     date: 2026-11-16

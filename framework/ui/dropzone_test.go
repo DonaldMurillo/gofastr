@@ -130,11 +130,15 @@ func TestFileDropzoneRefusesForgedRuntimeHooks(t *testing.T) {
 		ExtraAttrs: html.Attrs{
 			"data-hui-drop-input": "someone-elses-input",
 			"data-hui-drop-one":   "pwned {name}",
+			"data-hui-drop-list":  "someone-elses-list",
 			"data-testid":         "zone",
 		},
 	}))
 	if strings.Contains(h, "someone-elses-input") {
 		t.Errorf("a forged data-hui-drop-input retargeted the zone:\n%s", h)
+	}
+	if strings.Contains(h, "someone-elses-list") {
+		t.Errorf("a forged data-hui-* hook the zone does not set itself reached the root:\n%s", h)
 	}
 	if strings.Contains(h, "pwned") {
 		t.Errorf("a forged data-hui-drop-one rewrote the announcement:\n%s", h)

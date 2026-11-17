@@ -560,4 +560,9 @@ func TestSidebarDrawerTriggerMatchesShellTrigger(t *testing.T) {
 	if !strings.Contains(shell[i:j], `fui-sidebar__hamburger--persistent`) {
 		t.Errorf("shell trigger lost the variant class:\n%s", shell[i:j])
 	}
+	// Outside the NativeMobile wrapper, only --native hides it without script.
+	cfg.NativeMobile = true
+	if native := string(ui.SidebarDrawerTrigger(cfg)); !strings.Contains(native, "fui-sidebar__hamburger--native") {
+		t.Errorf("NativeMobile standalone trigger lacks the --native class:\n%s", native)
+	}
 }
