@@ -334,10 +334,18 @@ func restoreTests(dir string, root *os.Root, start string) error {
 // left running after its session to release the cell's index.
 const indexLockWait = 30 * time.Second
 
+// indexLockSeen is called once when grading finds the index locked; tests hook it.
+var indexLockSeen = func() {}
+
 func waitIndexUnlocked(root *os.Root, limit time.Duration) error {
+	seen := false
 	for deadline := time.Now().Add(limit); ; time.Sleep(100 * time.Millisecond) {
 		if _, err := root.Stat(".git/index.lock"); errors.Is(err, fs.ErrNotExist) {
 			return nil
+		}
+		if !seen {
+			seen = true
+			indexLockSeen()
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("the cell's .git/index.lock was still held %s after the session ended", limit)

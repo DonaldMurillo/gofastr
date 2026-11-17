@@ -25,10 +25,6 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
-- **`service stop` on Windows no longer hard-kills a daemon that is already draining.** When the
-  first stop request timed out on a daemon still starting, the daemon handled it later and began
-  to drain; the retry then found the control channel closed and ran `schtasks /End`, killing the
-  drain (a migration, say) part way.
 - **An embed nonce that expires during its exchange answers `ErrExpired`.**
   `Host.Exchange` reported `ErrSpent` ("nonce already used") for a nonce
   never used whose retention deadline passed between verification and
