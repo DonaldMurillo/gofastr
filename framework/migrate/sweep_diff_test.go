@@ -254,7 +254,7 @@ func sweepPending(t *testing.T) (Plan, string, string) {
 func TestSweepDiffReconcileNeedsTheSameDown(t *testing.T) {
 	dir := t.TempDir()
 	plan, up, _ := sweepPending(t)
-	if err := os.WriteFile(filepath.Join(dir, "0001_old.sql"), []byte(RenderMigrationFile(1, "old", up, "SELECT 'another down'")), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "0001_old.sql"), []byte(renderMigrationFile(1, "old", up, "SELECT 'another down'")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	path, err := GenerateMigrationFile(plan, "next", MigrationFileOptions{MigrationsDir: dir, Dialect: DialectSQLite})
@@ -267,8 +267,8 @@ func TestSweepDiffReconcileReadsTheHighestVersion(t *testing.T) {
 	dir := t.TempDir()
 	plan, up, down := sweepPending(t)
 	files := map[string]string{
-		"9_same.sql":   RenderMigrationFile(9, "same", up, down),
-		"10_other.sql": RenderMigrationFile(10, "other", "SELECT 1;", ""),
+		"9_same.sql":   renderMigrationFile(9, "same", up, down),
+		"10_other.sql": renderMigrationFile(10, "other", "SELECT 1;", ""),
 	}
 	for name, body := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {

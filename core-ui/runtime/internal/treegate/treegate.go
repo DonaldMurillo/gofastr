@@ -45,19 +45,14 @@ func AttrNames(src string, set map[string]struct{}) {
 }
 
 // RuntimeJSAttrs returns every data-cui-* attribute literally referenced
-// in the runtime sources under dir (the core-ui/runtime directory): the
-// bundled runtime.js, every on-demand src/*.js module, and every
-// frag/*.js fragment. Comments count: several attributes are read
+// in the runtime sources under dir (the core-ui/runtime directory): every
+// on-demand src/*.js module and every frag/*.js fragment, including the
+// fragments the full composition omits (boot-embed, rpc-stub,
+// widgets-boot-static). Comments count: several attributes are read
 // through the camelCase dataset API and appear hyphenated only in a
 // documenting comment.
-//
-// frag/*.js is scanned separately from runtime.js even though runtime.js
-// is composed from fragments: runtime.js is only the full composition,
-// so an attribute introduced by a fragment that composition omits
-// (boot-embed, rpc-stub, widgets-boot-static) appeared in no scanned
-// file. data-cui-embed-state shipped that way.
 func RuntimeJSAttrs(dir string) ([]string, error) {
-	files := []string{filepath.Join(dir, "runtime.js")}
+	var files []string
 	for _, sub := range []string{"src", "frag"} {
 		entries, err := os.ReadDir(filepath.Join(dir, sub))
 		if err != nil {

@@ -428,11 +428,6 @@
       document.querySelector(selector)?.classList.toggle(cls);
     },
 
-    /** Legacy toast, kept as a forwarding shim so older callers
-        (string-only arg) continue to work. The real implementation
-        is the cfg-object version defined below; it owns the stack
-        widget + lifecycle. */
-
     /** Fetch partial HTML from server and inject into selector. A
         followed 3xx is another URL's page: nothing injected, ''. */
     async fetchPage(url, selector) {

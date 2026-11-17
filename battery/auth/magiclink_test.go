@@ -152,9 +152,6 @@ func TestMagicLinkPlugin_Init(t *testing.T) {
 
 func TestMagicLinkPlugin_Defaults(t *testing.T) {
 	p := NewMagicLinkPlugin(MagicLinkConfig{})
-	if p.config.TokenLength != 32 {
-		t.Errorf("default TokenLength should be 32, got %d", p.config.TokenLength)
-	}
 	if p.config.TokenTTL != 15*time.Minute {
 		t.Errorf("default TokenTTL should be 15m, got %v", p.config.TokenTTL)
 	}

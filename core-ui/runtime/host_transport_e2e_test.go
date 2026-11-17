@@ -146,11 +146,9 @@ func TestGlobalFetchPattern(t *testing.T) {
 
 // fetchExempt holds the JavaScript that runs where no host transport
 // exists or that is built from checked sources: boot-embed.js runs in a
-// third-party frame and carries embed grants of its own, and runtime.js
-// is the bundle of frag/ and src/.
+// third-party frame and carries embed grants of its own.
 var fetchExempt = map[string]bool{
 	"core-ui/runtime/frag/boot-embed.js": true,
-	"core-ui/runtime/runtime.js":         true,
 }
 
 // TestJSFetchesThroughHost: every request page JavaScript makes goes
