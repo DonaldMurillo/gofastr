@@ -6,3 +6,105 @@ docs:
   - framework/docs/content/isolation.md
 on_change:
   - App.Start remaps the listen address through this package (app holds isolation-remap-warning-only-when-active); run the root framework package's start tests too.
+  - The env built by Runtime.Env becomes the whole environment of the `gofastr dev` child (cmd/gofastr/internal/devcmd), which holds the operator's sessions and secrets; treat a change to it as a security change.
+invariants:
+  - id: active-only-in-a-linked-worktree
+    rule: By default isolation is active only in a linked worktree; mode always or GOFASTR_ISOLATION on, true, 1 or always turns it on, and off, false, 0 or disabled turns it off.
+    enforced_by:
+      - test: framework/isolation.TestResolveActivatesOnlyForLinkedWorktreeByDefault
+      - test: framework/isolation.TestResolveHonorsConfigAndEnvOff
+      - test: framework/isolation.TestIsolationDisabledSpelling
+  - id: settings-bounded-at-root
+    rule: Resolve reads only the isolation section of gofastr.settings.yml, found no higher than the project's Git root, and refuses the retired isolation file.
+    enforced_by:
+      - test: framework/isolation.TestDiscoverConfigBoundedAtGitRoot
+      - test: framework/isolation.TestResolveIgnoresAppSpecSection
+      - test: framework/isolation.TestResolveRefusesRetiredFile
+  - id: repo-dir-by-head
+    rule: A .git directory counts as a repository only when it holds HEAD, and a .git file marks a linked worktree.
+    enforced_by:
+      - test: framework/isolation.TestGitDirWithoutHEADIsNotARepo
+      - test: framework/isolation.TestResolveActivatesOnlyForLinkedWorktreeByDefault
+  - id: settings-env-only-templated-locators
+    rule: A settings env entry is kept only when its value holds a {port}, {port:name}, {id} or {project_dir} marker and its name, in any case, is not a proxy, loader, path, identity, scratch or shell variable and does not start with GOFASTR_ISOLATION.
+    enforced_by:
+      - test: framework/isolation.TestIsolationEnvNoProxyOverride
+      - test: framework/isolation.TestSettingsEnvKeepsOnlyTemplatedResourceNames
+  - id: operator-env-wins
+    rule: Runtime.Env never replaces a variable present in the env it was handed with a settings env value.
+    enforced_by:
+      - test: framework/isolation.TestIsolationEnvNoProxyOverride
+      - test: framework/isolation.TestEnvNeverOverridesOperatorValue
+  - id: rewrite-knob
+    rule: GOFASTR_ISOLATION_REWRITE=0 or false keeps an explicitly assigned port and DATABASE_URL while isolation still separates other resources.
+    enforced_by:
+      - test: framework/isolation.TestAddrHonorsExplicitPortWhenRewriteDisabled
+      - test: framework/isolation.TestEnvCanPreserveExplicitValues
+  - id: one-port-table-per-context
+    rule: Runtimes resolved for one project, id and port config share one port table in which the first recorded mapping stands, and an inactive Resolve joins none.
+    enforced_by:
+      - test: framework/isolation.TestListenAddrThenStartRemapsOnce
+      - test: framework/isolation.TestRecordPortKeepsFirstMapping
+      - test: framework/isolation.TestInactiveResolveSharesNoTable
+      - test: framework/isolation.TestRuntimePortStateIsPerInstance
+  - id: no-double-offset
+    rule: Addr leaves a port that is already a mapped port alone, and Env passes every recorded mapping to the child, so a child never remaps its parent's port.
+    enforced_by:
+      - test: framework/isolation.TestAddrIsStableAndDoesNotDoubleOffsetAppliedPort
+      - test: framework/isolation.TestChildBindsParentResolvedAddr
+  - id: port-scan-clamped
+    rule: A configured port scan is clamped to 64 probes.
+    enforced_by:
+      - test: framework/isolation.TestPortScanIsClamped
+  - id: listen-addr-shapes
+    rule: ListenAddr and Addr accept $PORT as a bare port or host:port, turn a bare port into ":port", fall back when $PORT is empty, and return Resolve's errors.
+    enforced_by:
+      - test: framework/isolation.TestAddrNormalizesBarePort
+      - test: framework/isolation.TestListenAddrHonoursPortShapes
+      - test: framework/isolation.TestListenAddrReturnsResolveErrors
+      - test: framework/isolation.TestListenAddrRemapsInALinkedWorktree
+  - id: sqlite-state-owner-only
+    rule: The SQLite state directory .gofastr/isolation/<id> is 0700 (an owner-only ACL on Windows) after every resolve, also when it already existed.
+    enforced_by:
+      - test: framework/isolation.TestSQLiteStateDirOwnerOnly
+      - test: framework/isolation.TestSQLiteStateDirTightensExistingDir
+  - id: postgres-name-fits
+    rule: A Postgres database name gets a _<id> suffix within 63 bytes, cutting the base on a rune boundary, with a digest suffix for an id too long to fit, and is left alone when it already ends in the suffix.
+    enforced_by:
+      - test: framework/isolation.TestPostgresDSNFitsIdentifierLimit
+      - test: framework/isolation.TestPostgresDSNCutsOnRuneBoundary
+      - test: framework/isolation.TestPostgresDSNLongIDStaysUnique
+      - test: framework/isolation.TestPostgresDSNKeepsFittingIDName
+decisions:
+  - id: settings-file-is-untrusted
+    date: 2026-11-17
+    status: accepted
+    decision: The settings env block may only introduce templated resource locators the operator did not set; it is filtered at load and again in Env.
+    rejected:
+      - option: Let a settings value replace the operator's export when rewriting is on.
+        why: The file comes from the project directory, attacker-authored for a cloned checkout, and it replaced HTTPS_PROXY and PATH in the dev-server child.
+    upholds: [settings-env-only-templated-locators, operator-env-wins]
+  - id: shared-port-table
+    date: 2026-11-17
+    status: accepted
+    decision: Port mappings live in a process-wide table per isolation context.
+    rejected:
+      - option: A table per Runtime.
+        why: ListenAddr and App.Start each resolve, and the second resolve moved the already-mapped port again.
+    upholds: [one-port-table-per-context]
+  - id: head-not-dir-stat
+    date: 2026-11-17
+    status: accepted
+    decision: A repository is recognised by .git/HEAD, as git does.
+    rejected:
+      - option: Stat the .git directory.
+        why: Its mtime moves on every index write, and Go's test cache then re-ran every test that booted an App after a git command.
+    upholds: [repo-dir-by-head]
+  - id: keep-fitting-names
+    date: 2026-11-17
+    status: accepted
+    decision: An id whose suffix fits keeps its literal suffix; only an id too long to fit gets a digest.
+    rejected:
+      - option: Always use a digest suffix.
+        why: Every existing worktree would lose its database.
+    upholds: [postgres-name-fits]

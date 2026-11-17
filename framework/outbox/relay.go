@@ -10,26 +10,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// StartRelay launches the Relay goroutine. The relay delivers each pending
-// outbox row to every declared durable consumer INDEPENDENTLY: it expands
-// per-consumer delivery rows, claims a batch, invokes each consumer's
-// handler directly (the relay no longer touches the live event bus), and
-// settles the delivery, dispatched on success, retried with backoff on
-// error or panic, dead after MaxAttempts. A parent row flips to dispatched
-// once it has no pending deliveries left.
-//
-// The loop runs until ctx is cancelled. The returned stop func blocks
-// until the loop has fully exited, so callers can drain safely on
-// shutdown. Register all consumers via [Outbox.Consume] before calling
-// this; the declared set is read once per pump and must not change after
-// the relay starts.
+// StartRelay starts the relay goroutine, which delivers every pending row to
+// each declared consumer until ctx ends. The returned stop blocks until the
+// loop has exited. Declare every consumer with [Outbox.Consume] first.
 func (o *Outbox) StartRelay(ctx context.Context) (stop func()) {
 	if !o.hasConsumers() {
-		// Zero declared consumers means the durable lane is a no-op: staged
-		// rows get no deliveries and are dropped by the orphan sweep once
-		// they age past the handler grace. That is almost certainly a
-		// misconfiguration, so surface it loudly once at start rather than
-		// silently swallowing events.
 		slog.Default().Warn("outbox: relay started with no declared consumers; staged events will be dropped: declare consumers via Consume / framework.WithOutboxConsumer",
 			"table", o.table)
 	}
@@ -49,10 +34,8 @@ func (o *Outbox) StartRelay(ctx context.Context) (stop func()) {
 	}
 }
 
-// Nudge wakes the Relay immediately (non-blocking send on a cap-1
-// channel). Callers invoke it right after commit so delivery latency is
-// not bound to PollInterval. Extra nudges coalesce, only one wake is
-// buffered regardless of how many arrive between pumps.
+// Nudge wakes the relay at once, so a row committed now need not wait for the
+// poll interval. Nudges that arrive between pumps coalesce into one.
 func (o *Outbox) Nudge() {
 	select {
 	case o.nudge <- struct{}{}:
@@ -63,25 +46,12 @@ func (o *Outbox) Nudge() {
 func (o *Outbox) relayLoop(ctx context.Context, stop <-chan struct{}) {
 	ticker := time.NewTicker(o.pollInterval)
 	defer ticker.Stop()
-	// Normalize any space-separated (legacy mattn/go-sqlite3) timestamp
-	// strings still in the tables before the first claim/sweep, so the
-	// relay's lexicographic time predicates (claimed_until <= $1,
-	// created_at <= cutoff) compare correctly from the first pump. No-op
-	// on Postgres and idempotent; runs here rather than at New so rows
-	// staged between construction and relay start are covered too. A
-	// failure logs once and continues, the relay tolerates a transient
-	// DB outage by polling, and claimErrLogged is the existing surface
-	// for "delivery is stalled".
 	if err := o.normalizeLegacyTimestamps(ctx); err != nil {
 		slog.Default().Error("outbox: legacy timestamp normalization failed; delivery stalled until this clears",
 			"table", o.table, "err", err)
 		o.claimErrLogged = true
 	}
 	for {
-		// A full batch may mean a backlog, drain immediately instead
-		// of waiting for the next tick. Still honour stop/ctx between
-		// pumps: without this check a sustained backlog keeps n > 0
-		// forever and stop() would block until the backlog drains.
 		select {
 		case <-ctx.Done():
 			return
@@ -103,15 +73,7 @@ func (o *Outbox) relayLoop(ctx context.Context, stop <-chan struct{}) {
 	}
 }
 
-// pump runs one relay cycle: reconcile the declared-consumer set against
-// the table (expand + retire + orphan sweep), then claim a batch of
-// deliveries and settle each synchronously. Returns the number of
-// deliveries processed so the loop can decide whether to drain.
 func (o *Outbox) pump(ctx context.Context) int {
-	// Phase 1: reconcile. Any failure here (missing/renamed table under
-	// WithoutEnsureTable, a mid-run DB outage) stalls delivery; the relay
-	// tolerates it by continuing to poll, but logs once on onset (and once
-	// on recovery) so a stalled relay is observable without flooding.
 	if _, err := o.expandDeliveries(ctx); err != nil {
 		o.logClaimErr(ctx, "expand deliveries", err)
 		return 0
@@ -140,22 +102,9 @@ func (o *Outbox) pump(ctx context.Context) int {
 	}
 	for i, d := range deliveries {
 		if ctx.Err() != nil {
-			// Shutdown mid-batch: the rest goes back unstarted with its
-			// attempts refunded. Left leased, the budget sweep could
-			// dead-letter a delivery that never ran once the lease
-			// expired (the claim counted an attempt on every row).
 			release(deliveries[i:])
 			break
 		}
-		// The batch shares one lease and runs one delivery after another.
-		// A delivery started with less lease left than its handler budget
-		// plus its settle can see the lease run out mid-run: another
-		// relay re-claims and runs it too, or its budget sweep
-		// dead-letters it (MaxAttempts reached by the claim alone). The
-		// rest of the batch goes back unstarted, its attempts refunded,
-		// and the next pump (immediately, n > 0) claims it afresh. The
-		// first delivery always runs, so a lease shorter than one budget
-		// still makes progress.
 		if i > 0 && o.now().UTC().Add(o.handlerTimeout+o.settleTimeout).After(d.ClaimedUntil) {
 			release(deliveries[i:])
 			break
@@ -165,14 +114,9 @@ func (o *Outbox) pump(ctx context.Context) int {
 	return len(deliveries)
 }
 
-// processDelivery invokes one claimed delivery's consumer handler and
-// settles the delivery row, then attempts to complete the parent.
 func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
 	handler, ok := o.lookupHandler(d.Type, d.Consumer)
 	if !ok {
-		// Declared on another replica mid rolling-deploy: leave it pending
-		// with a short backoff and log; never dead-letter, another
-		// replica may hold the handler.
 		slog.Default().Debug("outbox: delivery has no handler on this replica; requeued",
 			"row_id", d.RowID, "consumer", d.Consumer, "type", d.Type)
 		settleCtx, cancel := o.settleContext(ctx)
@@ -180,14 +124,6 @@ func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
 		o.requeueNoHandler(settleCtx, d)
 		return
 	}
-	// Event.Data is `any` and the live bus delivers arrays, scalars and
-	// strings untouched, so the durable lane unmarshals into `any` too:
-	// whatever Append accepted and staged inside the business transaction
-	// must be deliverable, a payload that stages cleanly can't be an
-	// undeliverable poison row (objects arrive as map[string]any, numbers
-	// as float64, arrays as []any — the encoding/json shapes). An integer
-	// past 2^53 arrives as a json.Number with the staged digits, which a
-	// float64 would round.
 	var payload any
 	if len(d.Payload) > 0 {
 		if err := jsonexact.Unmarshal(d.Payload, &payload); err != nil {
@@ -204,26 +140,10 @@ func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
 		Data:      payload,
 		Timestamp: d.CreatedAt,
 	}
-	// The handler runs with a per-delivery wall-clock budget
-	// (WithHandlerTimeout, queue parity) on its own goroutine, and the
-	// relay waits at most that budget: a handler that blocks past its
-	// cancelled context settles the delivery as FAILED here, so retries
-	// and the rest of the batch — including sibling consumers of
-	// unrelated event types — proceed. invokeHandler itself recovers a
-	// panic into a delivery error, so a panicking consumer is
-	// retried/dead-lettered, never silently marked dispatched.
 	herr := o.runHandler(ctx, handler, ev, d)
 	settleCtx, cancel := o.settleContext(ctx)
 	defer cancel()
 	if herr != nil && ctx.Err() != nil {
-		// A shutdown cancelled the handler mid-run. The attempt says
-		// nothing about the event, so the delivery is handed back with
-		// the attempt refunded, as the unstarted rest of the batch is
-		// (pump) and as battery/queue hands back an interrupted job.
-		// Settled as a failure, a delivery on its last attempt was
-		// dead-lettered by a restart. The handler may have done part of
-		// its work; the next run is the at-least-once retry a consumer
-		// already has to dedupe.
 		slog.Default().Info("outbox: shutdown interrupted a handler; delivery handed back",
 			"row_id", d.RowID, "consumer", d.Consumer, "type", d.Type, "err", herr)
 		o.releaseUnstarted(settleCtx, []claimedDelivery{d})
@@ -238,38 +158,10 @@ func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
 	o.completeParent(settleCtx, d.RowID, d.Type)
 }
 
-// settleContext returns the context for one delivery's bookkeeping writes
-// (settle + parent completion). They must survive shutdown: the handler
-// may already have run to completion, so its outcome must be recorded
-// durably even if the relay ctx is being cancelled, otherwise a delivery
-// that SUCCEEDED is left pending and needlessly redelivered after the
-// lease expires. The handler itself still runs under ctx (a cooperative
-// handler stops on shutdown); only the bookkeeping writes are detached,
-// bounded by settleTimeout so a dead DB can't hang shutdown. Call it once
-// the handler has returned: the window measures the writes, never the
-// handler (a handler slower than the window would otherwise settle under
-// an expired context, stay pending, and be redelivered until it
-// dead-letters).
 func (o *Outbox) settleContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), o.settleTimeout)
 }
 
-// runHandler invokes one consumer handler with a wall-clock budget
-// (handlerTimeout, default 30s) and returns its error. The invocation runs
-// on its own goroutine because a handler that ignores its context cannot be
-// made to return (Go has no goroutine termination): the relay instead stops
-// WAITING at the deadline, settles the delivery as failed (so retries and
-// sibling consumers proceed), and leaves the abandoned invocation to finish
-// on its own — a completion that lands after a timed-out settle is exactly
-// the duplicate the at-least-once contract already requires handlers to
-// tolerate. The result channel is buffered so a late return never leaks the
-// goroutine on the send; a handler that never returns holds one goroutine
-// per retry cycle, bounded by MaxAttempts.
-//
-// The deadline is armed with a timer rather than selected off the handler
-// context, so a relay SHUTDOWN (parent ctx cancelled) is never mislabelled
-// as a handler timeout: a cooperative handler still returns promptly under
-// the cancelled context and its outcome is settled as usual.
 func (o *Outbox) runHandler(ctx context.Context, h event.EventHandler, ev event.Event, d claimedDelivery) error {
 	hctx, hcancel := context.WithTimeout(ctx, o.handlerTimeout)
 	defer hcancel()
@@ -287,8 +179,6 @@ func (o *Outbox) runHandler(ctx context.Context, h event.EventHandler, ev event.
 	}
 }
 
-// logClaimErr records a claim/reconcile failure once on onset. pump runs
-// only on the single relay goroutine, so claimErrLogged needs no lock.
 func (o *Outbox) logClaimErr(_ context.Context, what string, err error) {
 	if !o.claimErrLogged {
 		slog.Default().Error("outbox: relay "+what+" failed; delivery is stalled until this clears",
@@ -297,7 +187,6 @@ func (o *Outbox) logClaimErr(_ context.Context, what string, err error) {
 	}
 }
 
-// clearClaimErr logs the recovery once after a prior run of failures.
 func (o *Outbox) clearClaimErr() {
 	if o.claimErrLogged {
 		slog.Default().Info("outbox: relay recovered; delivery resumed", "table", o.table)

@@ -5,3 +5,155 @@ code:
   - framework/pluginhost/assets_worker.go
 docs:
   - framework/docs/content/plugin-platform.md
+invariants:
+  - id: framed-csp-shape
+    rule: A framed asset's CSP is sandbox allow-scripts, default, script, style, img, font, frame-ancestors and base-uri keyed to the request origin, connect-src 'none' and form-action 'none'.
+    enforced_by:
+      - test: framework/pluginhost.TestAssetServerFramedIsolationDirectives
+      - test: framework/pluginhost.TestFramedCSPSealsFormAction
+      - test: framework/pluginhost.TestFramedCSPDefaultByteIdentical
+      - test: framework/pluginhost.TestAssetServerFramedHeaders
+  - id: framed-csp-refilters
+    rule: framedCSP appends to script-src only keywords in the manifest allowlist, each once, whatever reached WithCSP.
+    enforced_by:
+      - test: framework/pluginhost.TestFramedCSPWasmTierScriptSrcOnly
+      - test: framework/pluginhost.TestAssetServerWithCSPThreadsToHeader
+  - id: framed-relaxation
+    rule: A framed asset drops X-Frame-Options, sends Cross-Origin-Resource-Policy cross-origin and adds Vary Host, X-Forwarded-Proto, and a non-framed asset gets none of these.
+    enforced_by:
+      - test: framework/pluginhost.TestAssetServerFramedHeaders
+      - test: framework/pluginhost.TestFramedAssetDropsUpstreamXFrameOptions
+      - test: framework/pluginhost.TestAssetServerHostScriptHasNoRelaxation
+      - test: framework/pluginhost.TestAssetServer_NonFramedFSAssetHasNoRelaxation
+  - id: bad-origin-refused
+    rule: A framed asset whose request origin fails validation is answered 400 and never served with a CSP.
+    enforced_by:
+      - test: framework/pluginhost.TestFramedAssetsRefusePoisonedOrigin
+      - test: framework/pluginhost.TestAssetServerRejectsOriginInjection
+  - id: origin-from-trusted-proxy
+    rule: requestOrigin takes https from TLS, honours X-Forwarded-Proto only from a trusted proxy and only as exactly http or https (refusing any other value), reads an empty Host as localhost, and refuses a Host over 253 bytes or holding a byte outside letters, digits and ".-:[]".
+    enforced_by:
+      - test: framework/pluginhost.TestFramedCSPForwardedProtoTrust
+      - test: framework/pluginhost.TestFramedAssetsRefusePoisonedOrigin
+      - test: framework/pluginhost.TestRequestOriginHostRules
+  - id: content-type-never-empty
+    rule: Every asset is sent with nosniff and a Content-Type, the declared one or else static.DetectFromName of its name.
+    enforced_by:
+      - test: framework/pluginhost.TestAssetContentTypeNeverEmptyOrSniffable
+      - test: framework/pluginhost.TestSpecWithoutContentTypeGetsOne
+      - test: framework/pluginhost.TestExplicitContentTypeWins
+  - id: disk-fs-confined
+    rule: An os.DirFS, directly or under fs.Sub, is read through os.Root so a symlink out of the directory answers 404, and any other filesystem is read as given.
+    enforced_by:
+      - test: framework/pluginhost.TestAssetServerConfinesDiskSymlinks
+      - test: framework/pluginhost.TestAssetServerPreservesRootFS
+      - test: framework/pluginhost.TestAssetServerPreservesFilesystemFilters
+      - test: framework/pluginhost.TestPlainDiskAssetFSRejectsOddValues
+  - id: disk-root-identity
+    rule: A disk filesystem whose directory, reopened through os.Root, is not the same file it opened, or that fails to bind, serves 404 for every spec.
+    judge: Does this change let a spec be read from the unconfined filesystem when confinedAssetFS fails or the rebound root is a different directory?
+  - id: nil-fs-with-specs-panics
+    rule: Register panics when the server has specs and a nil fs.FS, and serves a byte-only server with a nil fs.FS.
+    enforced_by:
+      - test: framework/pluginhost.TestNilAssetFSPanicsAtRegister
+      - test: framework/pluginhost.TestNilAssetFSWithoutSpecsServes
+  - id: join-path-one-slash
+    rule: A spec's route is the prefix and its name joined by exactly one slash.
+    enforced_by:
+      - test: framework/pluginhost.TestJoinPathOneSlash
+  - id: add-bytes-validates-at-boot
+    rule: AddBytes panics on a worker profile with framed true, on a worker token outside its allowlists and on an unknown cache profile.
+    enforced_by:
+      - test: framework/pluginhost.TestAddBytesRejectsInvalidWorkerCSP
+  - id: worker-csp-shape
+    rule: A worker's CSP is default-src 'self', script-src 'self' plus its allowlisted keywords and 'wasm-unsafe-eval' when WASM is set, connect-src 'none' unless the profile names 'self', worker-src 'self' and object-src 'none'.
+    enforced_by:
+      - test: framework/pluginhost.TestWorkerCSPPolicyShape
+      - test: framework/pluginhost.TestWorkerCSPDefaultsStrict
+  - id: worker-csp-refilters
+    rule: workerCSP drops any script keyword other than 'unsafe-eval' or 'wasm-unsafe-eval' and any connect source other than 'self', whatever reached the profile.
+    enforced_by:
+      - test: framework/pluginhost.TestWorkerCSPRefiltersSmuggledTokens
+  - id: worker-policy-is-per-response
+    rule: A worker profile sets the CSP of its own response only and leaves every other response's headers untouched.
+    enforced_by:
+      - test: framework/pluginhost.TestWorkerAssetServesNarrowCSP
+      - test: framework/pluginhost.TestHostDocumentUntouchedByWorker
+  - id: cache-profiles-exact
+    rule: Each CacheProfile sends its fixed Cache-Control, and CacheDefault or an out-of-range value sends "no-store, max-age=0".
+    enforced_by:
+      - test: framework/pluginhost.TestCacheProfilesServeExactHeaders
+decisions:
+  - id: explicit-origin-not-self
+    date: 2026-11-17
+    status: accepted
+    decision: The framed CSP names the request's scheme and host instead of 'self'.
+    rejected:
+      - option: "'self'"
+        why: In an opaque-origin frame 'self' is the null origin, and Safari follows the spec and blocks the frame's own scripts and styles.
+    upholds: [framed-csp-shape]
+  - id: sandbox-in-the-header
+    date: 2026-11-17
+    status: accepted
+    decision: The framed CSP carries sandbox allow-scripts, so a frame document opened directly in a tab is still opaque-origin.
+    rejected:
+      - option: Rely on the iframe sandbox attribute alone.
+        why: It sandboxes only the framed load, and a direct navigation would run plugin code as a same-origin document.
+    upholds: [framed-csp-shape]
+  - id: connect-and-form-sealed
+    date: 2026-11-17
+    status: accepted
+    decision: The frame has connect-src 'none' and form-action 'none', so all its traffic goes over postMessage.
+    rejected:
+      - option: Leave form-action unset.
+        why: A frame granted allow-forms could POST what it read to any origin by navigation, which connect-src does not see.
+    upholds: [framed-csp-shape]
+  - id: frame-ancestors-over-xfo
+    date: 2026-11-17
+    status: accepted
+    decision: Framing is permitted by CSP frame-ancestors, and X-Frame-Options is deleted on framed assets.
+    rejected:
+      - option: An X-Frame-Options mode.
+        why: No X-Frame-Options value admits an opaque frame, and browsers honour frame-ancestors over it when a buffering middleware re-adds it.
+    upholds: [framed-relaxation]
+  - id: refuse-bad-origin
+    date: 2026-11-17
+    status: accepted
+    decision: An origin that fails validation refuses the asset with 400.
+    rejected:
+      - option: Serve with a default or no CSP.
+        why: The origin is spliced into the header, and a framed document without its CSP runs untrusted code unconfined.
+    upholds: [bad-origin-refused]
+  - id: nil-fs-panics-at-boot
+    date: 2026-11-17
+    status: accepted
+    decision: Specs with a nil fs.FS panic at Register.
+    rejected:
+      - option: Serve 404 per request.
+        why: Specs with no filesystem are always a wiring mistake, and a 404 frame document fails inside an opaque frame with nothing reported.
+    upholds: [nil-fs-with-specs-panics]
+  - id: worker-csp-per-response
+    date: 2026-11-17
+    status: accepted
+    decision: A trusted worker that needs runtime compilation gets 'unsafe-eval' on its own script response, which a dedicated worker enforces, and the host page keeps the app's policy.
+    rejected:
+      - option: Widen the host document's CSP.
+        why: It would grant string eval to every script on the page.
+    upholds: [worker-policy-is-per-response]
+  - id: worker-connect-self-only
+    date: 2026-11-17
+    status: accepted
+    decision: A worker may widen connect-src only to 'self'; runtimes and models are served from the app's own origin.
+    rejected:
+      - option: Allow CDN or remote sources.
+        why: It turns the asset server into a remote-artifact proxy one URL at a time.
+    revisit_if: An app must load a worker runtime it cannot host itself.
+    upholds: [worker-csp-refilters]
+  - id: cache-profile-enum
+    date: 2026-11-17
+    status: accepted
+    decision: The cache posture is an enum whose header text the server owns.
+    rejected:
+      - option: A Cache-Control string per asset.
+        why: A hand-written value could send "public" on a per-session worker.
+    upholds: [cache-profiles-exact]

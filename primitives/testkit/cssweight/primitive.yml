@@ -6,3 +6,50 @@ docs:
   - framework/docs/content/testkit.md
 on_change:
   - examples/meridian/cssweight_test.go and examples/site/cssweight_test.go are the gates in this repo; a change to how weight is counted moves their caps.
+invariants:
+  - id: counts-inline-and-linked-once
+    rule: Measure counts every <style> element and every <link> whose rel holds the stylesheet token in any letter case, a sheet linked twice once, and no other link.
+    enforced_by:
+      - test: framework/testkit/cssweight.TestMeasureCountsInlineAndLinked
+  - id: gzip-per-sheet
+    rule: Weight.Gzip is the sum of each sheet gzipped on its own.
+    enforced_by:
+      - test: framework/testkit/cssweight.TestSweepGzipSumsEachSheetCompressed
+  - id: only-a-200-is-weighed
+    rule: Measure errors when the page or a sheet answers anything but 200, a redirect included, which it never follows.
+    enforced_by:
+      - test: framework/testkit/cssweight.TestMeasureRefusesMissingSheet
+      - test: framework/testkit/cssweight.TestMeasureRefusesErrorPage
+      - test: framework/testkit/cssweight.TestMeasureRefusesRedirect
+      - test: framework/testkit/cssweight.TestMeasureRefusesSelfRedirect
+  - id: import-refused
+    rule: Measure errors on an inline or linked sheet whose text holds @import in any letter case, a comment included.
+    enforced_by:
+      - test: framework/testkit/cssweight.TestMeasureRefusesImport
+  - id: first-base-href
+    rule: Linked sheets resolve against the document's first <base href>, else the page URL.
+    enforced_by:
+      - test: framework/testkit/cssweight.TestMeasureUsesBaseHref
+      - test: framework/testkit/cssweight.TestSweepFirstBaseHrefWins
+  - id: body-bounded
+    rule: A page or sheet larger than 16 MiB is an error.
+    enforced_by:
+      - test: framework/testkit/cssweight.TestSweepOversizedSheetIsAnError
+decisions:
+  - id: http-not-browser
+    date: 2026-11-17
+    status: accepted
+    decision: Measure reads the HTML over plain HTTP with no browser, so a gate weighs every page an app serves in seconds.
+    rejected:
+      - option: Measure in a headless browser.
+        why: It is slow enough that a gate would weigh a sample instead of every page.
+  - id: inline-gzipped-alone
+    date: 2026-11-17
+    status: accepted
+    decision: An inline sheet is gzipped on its own, though it travels inside the document's one gzip stream, so its figure runs a little high but moves only when the CSS does.
+    upholds: [gzip-per-sheet]
+  - id: refuse-rather-than-weigh-wrong
+    date: 2026-11-17
+    status: accepted
+    decision: An error page, a redirect to a login page and an @import are errors rather than measured, since weighing them would pass a cap for the wrong reason; matching @import inside a comment errs on the safe side.
+    upholds: [only-a-200-is-weighed, import-refused]

@@ -2,7 +2,6 @@ package i18nui
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The entity list's bulk bar and its answers. See entity.go.
 var (
 	EntityBulkSelect   = i18n.Define("ui.entity.bulkSelect", "Select {{title}}")
 	EntityBulkBar      = i18n.Define("ui.entity.bulkBar", "Bulk actions")

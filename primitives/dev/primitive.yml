@@ -1,5 +1,5 @@
 primitive: dev
-summary: Dev-mode-only helpers that no-op in production - the shared GOFASTR_DEV gate, livereload's SSE route and the middleware that injects dev scripts into HTML responses, and the dev MCP gate.
+summary: Dev-mode helpers - the shared GOFASTR_DEV gate, livereload's SSE route and the middleware that injects dev scripts into HTML responses, and the dev MCP gate; MaybeRegisterLiveReload checks the gate, RegisterLiveReload installs unconditionally.
 code:
   - framework/dev/livereload.go
   - framework/dev/htmlinject.go
@@ -7,4 +7,84 @@ code:
 docs:
   - framework/docs/content/dev-livereload.md
 on_change:
-  - DevMCPEnabled decides in framework/app.go whether an App mounts /mcp and exposes CRUD tools with no Exposure.MCP set, so a change to the gate changes what a dev App exposes.
+  - DevMCPEnabled decides in framework/app.go whether an App mounts the dev-implied /mcp and exposes CRUD tools when Exposure.MCP is unset (an explicit WithMCP mount does not consult it), so a change to the gate changes what a dev App exposes.
+invariants:
+  - id: gate-off-in-production
+    rule: Enabled and every per-feature gate are false when GOFASTR_ENV is production, prod, live or staging in any case, and false unless GOFASTR_DEV is ParseBool-truthy.
+    enforced_by:
+      - test: framework/dev.TestEnabledMatrix
+      - test: framework/dev.TestEnabledRefusesProductionEnv
+      - test: framework/dev.TestLayoutLayerGate
+  - id: opt-out-only-when-falsy
+    rule: A feature's opt-out variable (GOFASTR_DEV_LIVERELOAD, GOFASTR_DEV_MCP, GOFASTR_DEV_LAYOUT) turns only that feature off, and only when it parses as false; an unparseable value leaves it on.
+    enforced_by:
+      - test: framework/dev.TestEnabledMatrix
+      - test: framework/dev.TestLayoutLayerGate
+      - test: framework/dev.TestDevMCPHasItsOwnOptOut
+  - id: register-idempotent-and-yields
+    rule: RegisterLiveReload installs once per router and installs nothing when the router already has /__livereload or /__livereload.js.
+    enforced_by:
+      - test: framework/dev.TestRegisterIsIdempotent
+      - test: framework/dev.TestRegisterSkipsWhenRoutePreExists
+  - id: withdraw-answers-404
+    rule: After WithdrawLiveReload the stream answers 404, and it reports HostOwned without touching a host's own route and NotRegistered for a router without livereload.
+    enforced_by:
+      - test: framework/dev.TestWithdrawReportsHostRoute
+  - id: ready-carries-build-id
+    rule: The stream's first event is ready with a build ID unique to the registration, so the client reloads only when the server restarted.
+    enforced_by:
+      - test: framework/dev.TestRegisterSSEReadyEvent
+      - test: framework/dev.TestReadyCarriesBuildID
+  - id: heartbeat-bails-on-error
+    rule: The stream returns when a heartbeat write fails.
+    enforced_by:
+      - test: framework/dev.TestSSEBailsOnHeartbeatWriteError
+  - id: injector-full-documents-only
+    rule: The injector splices each dev script missing from the page's src attributes before the last </body> of a text/html response and fixes Content-Length, and leaves alone non-HTML, encoded bodies other than identity, X-Gofastr-Partial responses, fragments without </body>, HEAD and Range requests.
+    enforced_by:
+      - test: framework/dev.TestInjectorAddsScriptBeforeBodyClose
+      - test: framework/dev.TestInjectorRewritesContentLength
+      - test: framework/dev.TestInjectorLeavesFragmentsAlone
+      - test: framework/dev.TestInjectorSkipsEncodedBodies
+      - test: framework/dev.TestInjectorLeavesHeadAndRangeAlone
+      - test: framework/dev.TestInjectorGuardMatchesScriptTagNotProse
+      - test: framework/dev.TestInjectorIdentityEncodingAndLastBody
+  - id: injector-streams
+    rule: A Flush releases buffered HTML unspliced and streams the rest, 1xx statuses other than 101 are forwarded while waiting, the final status is kept, and Hijack is forwarded with no write after it.
+    enforced_by:
+      - test: framework/dev.TestInjectorStreamsSSEWithFlush
+      - test: framework/dev.TestInjectorFlushSwitchesHTMLToStreaming
+      - test: framework/dev.TestInjectorKeepsPageAfterHints
+      - test: framework/dev.TestInjectorPreservesHTMLStatusCode
+      - test: framework/dev.TestInjectorForwardsHijackForWebSockets
+  - id: one-injector-per-router
+    rule: Livereload and the layout layer share one injector per router, each URL listed once, and a script registered after the injector mounted is still spliced.
+    enforced_by:
+      - test: framework/dev.TestDevScriptsSplicedOnce
+      - test: framework/dev.TestAddDevScriptDedupesURL
+      - test: framework/dev.TestLayoutLayerNotSplicedTwice
+decisions:
+  - id: build-id-reload
+    date: 2026-11-17
+    status: accepted
+    decision: The client reloads only when the ready event's build ID changes.
+    rejected:
+      - option: Reload on every reconnect.
+        why: A network blip or proxy timeout would reload the page and lose its state.
+    upholds: [ready-carries-build-id]
+  - id: withdraw-on-public-bind
+    date: 2026-11-17
+    status: accepted
+    decision: App.Start withdraws the stream on a non-loopback bind unless GOFASTR_DEV_LIVERELOAD_EXPOSE is set.
+    rejected:
+      - option: Keep it on every bind.
+        why: The stream has no seat and no cap, and its single-operator posture does not hold for every peer that can reach the address.
+    upholds: [withdraw-answers-404]
+  - id: inject-outside-uihost
+    date: 2026-11-17
+    status: accepted
+    decision: A response middleware injects the dev scripts into HTML that uihost did not render (static files, widget pages, hand-rolled handlers).
+    rejected:
+      - option: Inject only in uihost pages.
+        why: Edit, rebuild and refresh would then hold only on uihost screens.
+    upholds: [injector-full-documents-only]

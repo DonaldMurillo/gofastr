@@ -2,7 +2,42 @@ primitive: testkit
 summary: The public test helpers a host app imports to test itself - an isolated Postgres database, a render-panic allowance, the accessibility, no-JS and CSS-weight gates, the coverage manifests they record into, and entity factories.
 code:
   - framework/testkit/
+  - internal/coverageroot/
 docs:
   - framework/docs/content/testkit.md
 on_change:
   - framework/testkit and its subpackages are public API for host apps' tests; a changed signature is a breaking change that needs a CHANGELOG line and an upgrading.md note.
+invariants:
+  - id: render-panic-exemption-is-per-test
+    rule: AllowRenderPanics gives only the handler it returns the production status for a recovered render panic, and only until its test's cleanup; any other handler, and that one afterwards, answers the test-only 500.
+    enforced_by:
+      - test: framework.TestAllowRenderPanicsIsolationAndCleanup
+  - id: one-coverage-root
+    rule: axecov.DefaultDir and semcov.DefaultDir both resolve through coverageroot.Resolve, so with no GOFASTR_SEMANTIC_COVERAGE_DIR they name the same directory, the axe override included.
+    enforced_by:
+      - test: framework/semcov.TestSweepDefaultDirMatchesAxecov
+      - test: framework/semcov.TestDefaultDirFallsBackToAxeOverride
+  - id: coverage-root-order
+    rule: coverageroot.Resolve takes the first set variable among its keys, else the nearest ancestor of the working directory holding go.work, else one holding go.mod, else the working directory.
+    enforced_by:
+      - test: framework/axecov.TestDefaultDirPrefersEnvThenModuleRoot
+      - test: framework/axecov.TestDefaultDirResolvesOutermostWorkspaceRoot
+      - test: framework/axecov.TestDefaultDirFallsBackToCwdWithoutModule
+decisions:
+  - id: coverage-root-shared
+    date: 2026-11-17
+    status: accepted
+    decision: The axe and semantic manifests share one root resolver in internal/coverageroot, merged from the two copies axecov and semcov kept.
+    rejected:
+      - option: Keep a resolver in each package.
+        why: The two copies drifted once already (semcov's reader looked at the module root while its writers used go.work).
+    upholds: [one-coverage-root]
+  - id: go-work-before-go-mod
+    date: 2026-11-17
+    status: accepted
+    decision: The coverage root is the nearest go.work before the nearest go.mod, so a test binary in a workspace module and a dev server at the workspace root land on one manifest.
+    rejected:
+      - option: The module root.
+        why: In a workspace the writer and the reader sit in different modules and would read different files.
+    revisit_if: Several strict apps share a module or workspace and need separate manifests without setting GOFASTR_AXE_COVERAGE_DIR per app.
+    upholds: [coverage-root-order]

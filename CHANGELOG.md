@@ -25,6 +25,23 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Worktree isolation tightens an existing SQLite state directory to owner-only.** On Unix,
+  `.gofastr/isolation/<id>` kept its mode when it already existed, so one created group- or
+  world-readable stayed that way; it is now set to 0700 on every resolve.
+- **A static export skips a FIFO or device file in its sources instead of hanging.** A named pipe
+  in the static dir, the static FS or an `ExtraDirs` directory was opened before its type was
+  checked, and the open waited for a writer forever. The build now skips and logs anything that is
+  not a regular file before opening it.
+- **`core/static.Handler` answers 404 for a named pipe or device file instead of hanging.** A
+  request for a FIFO in a served directory opened it and waited for a writer forever; the handler
+  now checks the file's type before opening it.
+- **The SDK docs' example filter names an entity's real key.** An entity with its own `PrimaryKey`
+  and no other filterable column got curl, Go and TypeScript examples filtering on `id`, a column it
+  does not have, so every copy answered 400. The fallback is now the first key column.
+- **The SDK docs page for an entity with several API versions writes each id once.** Every
+  version's section repeated the same heading and table caption ids, so a caption reference named
+  the first version's table. Version sections now carry the version in their ids; a single-version
+  page is unchanged.
 - **`softdelete.WithSoftDelete` no longer panics on an entity built without `entity.Define`.** An
   entity whose `Config.Scope` was nil hit a nil pointer; it now gets a scope, as
   `tenant.WithMultiTenant` already did.

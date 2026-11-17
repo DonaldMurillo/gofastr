@@ -6,3 +6,54 @@ docs:
   - framework/docs/content/local-runs.md
 on_change:
   - A Record is JSON on disk read by other binaries on the same machine, so renaming or removing a field hides runs from tools built against the other version.
+invariants:
+  - id: register-writes-sidecar-then-record
+    rule: Register refuses a record without a URL or with a pid outside the ID pattern, writes the start-value sidecar before the record, each owner-only through a temp file and a rename, and its unregister removes both.
+    enforced_by:
+      - test: framework/localrun.TestRegisterThenUnregister
+      - test: framework/localrun.TestSidecarRemovedWithRun
+      - test: framework/localrun.TestRegisterRefusals
+  - id: proc-start-not-in-json
+    rule: The process start value lives in the sidecar, never in the record JSON, so readers that decode records strictly still read them.
+    enforced_by:
+      - test: framework/localrun.TestOldReaderDecodesRecord
+  - id: list-drops-dead-and-recycled
+    rule: List returns live runs newest first, and removes the record and sidecar of a run whose pid is gone or now held by a process with another start value, reading the sidecar before the record.
+    enforced_by:
+      - test: framework/localrun.TestListDropsDeadRun
+      - test: framework/localrun.TestListDropsRecycledPID
+      - test: framework/localrun.TestListNewestFirst
+      - test: framework/localrun.TestListRaceKeepsRecycledDead
+  - id: list-skips-bad-records
+    rule: List skips a record that is over 16 KiB, has an unknown field, a wrong version, an ID that differs from its file name or pid, a URL that is not http(s) with a host, or an MCPPath without a leading slash, and a missing directory is an empty list.
+    enforced_by:
+      - test: framework/localrun.TestListSkipsMalformedRecords
+      - test: framework/localrun.TestListSkipsOversizedAndLooseRecords
+      - test: framework/localrun.TestListMissingDirIsEmpty
+  - id: orphan-sidecar-only-when-dead
+    rule: A sidecar is removed as an orphan only when its record is not listed and its pid is dead.
+    enforced_by:
+      - test: framework/localrun.TestOrphanSidecarKeptBesideItsRecord
+  - id: tests-stay-out
+    rule: A test binary, and every process it starts, does not register unless GOFASTR_RUNS_DIR is set; GOFASTR_RUNS off, 0, false or no disables registering and on, 1, true or yes forces it.
+    enforced_by:
+      - test: framework/localrun.TestDisabled
+      - test: framework/localrun.TestTestChildrenDoNotRegister
+      - test: framework/localrun.TestForcedSpellings
+decisions:
+  - id: sidecar-for-start-value
+    date: 2026-11-17
+    status: accepted
+    decision: The start value is kept in a <id>.start file beside the record.
+    rejected:
+      - option: A field in the record JSON.
+        why: Readers built before it decode strictly and would drop every record.
+    upholds: [proc-start-not-in-json]
+  - id: best-effort-registration
+    date: 2026-11-17
+    status: accepted
+    decision: A run that cannot write its record serves anyway.
+    rejected:
+      - option: Fail the start.
+        why: The registry is a convenience for local tools, not a condition for serving.
+    upholds: [register-writes-sidecar-then-record]

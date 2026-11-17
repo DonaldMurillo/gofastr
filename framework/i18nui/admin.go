@@ -2,11 +2,6 @@ package i18nui
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The admin back office (battery/admin): its shell, dashboard and ops
-// pages. The entity screens it draws use the phrases in the entity*.go
-// files.
-
-// The shell: brand, sidebar, toolbar, palette and account menu.
 var (
 	AdminTitle        = i18n.Define("ui.admin.title", "Admin")
 	AdminBrandSub     = i18n.Define("ui.admin.brandSub", "Back office")
@@ -25,7 +20,6 @@ var (
 	AdminYourRoles    = i18n.Define("ui.admin.yourRoles", "Roles: {{roles}}")
 )
 
-// The account page: the signed-in user's own settings.
 var (
 	AdminAccountSettings = i18n.Define("ui.admin.accountSettings", "Account settings")
 	AdminAccountSub      = i18n.Define("ui.admin.accountSub", "Your profile, how the admin looks to you, and your password.")
@@ -53,7 +47,6 @@ var (
 	AdminNoPassword      = i18n.Define("ui.admin.noPassword", "Your account signs in without a password. Use \"Forgot password\" on the sign-in page to set one.") // not-a-secret: UI label
 )
 
-// Answers every admin form shares.
 var (
 	AdminRefused  = i18n.Define("ui.admin.refused", "You may not do that.")
 	AdminFailed   = i18n.Define("ui.admin.failed", "That did not work. Check the server logs for details.")
@@ -61,7 +54,6 @@ var (
 	AdminDone     = i18n.Define("ui.admin.done", "Done.")
 )
 
-// The dashboard.
 var (
 	AdminDashboardSub = i18n.Define("ui.admin.dashboardSub", "Everything this admin manages, at a glance.")
 	AdminCardNew      = i18n.Define("ui.admin.cardNew", "New")
@@ -74,13 +66,10 @@ var (
 	AdminNoActivity   = i18n.Define("ui.admin.noActivity", "No activity yet.")
 	AdminViewAll      = i18n.Define("ui.admin.viewAll", "View all")
 
-	// The Needs attention panel and one watched view's heading in it.
 	AdminAttention      = i18n.Define("ui.admin.attention", "Needs attention")
 	AdminAttentionClear = i18n.Define("ui.admin.attentionClear", "Nothing needs attention.")
 	AdminAttentionList  = i18n.Define("ui.admin.attentionList", "{{entity}} · {{view}}")
 
-	// One recent-activity line and its parts: who did what to which
-	// record, and how long ago.
 	AdminActivityLine      = i18n.Define("ui.admin.activityLine", "{{actor}} {{verb}} {{record}}")
 	AdminActivityBulkLine  = i18n.Define("ui.admin.activityBulkLine", "{{actor}} {{verb}} {{count}} {{entity}} in bulk")
 	AdminVerbCreate        = i18n.Define("ui.admin.verbCreate", "created")
@@ -94,7 +83,6 @@ var (
 	AdminUpdatedAgo        = i18n.Define("ui.admin.updatedAgo", "Updated {{ago}}")
 )
 
-// Table columns on the ops pages.
 var (
 	AdminKeyPalette    = i18n.Define("ui.admin.keyPalette", "Open the command palette")
 	AdminKeySearch     = i18n.Define("ui.admin.keySearch", "Search the list")
@@ -128,7 +116,6 @@ var (
 	AdminColLastExit   = i18n.Define("ui.admin.colLastExit", "Last exit")
 )
 
-// The jobs page.
 var (
 	AdminQueue            = i18n.Define("ui.admin.queue", "Jobs")
 	AdminQueueSub         = i18n.Define("ui.admin.queueSub", "Background jobs. Failed jobs ran out of retries and wait for a replay.")
@@ -150,7 +137,6 @@ var (
 	AdminReplayDuplicate  = i18n.Define("ui.admin.replayDuplicate", "A newer job with the same unique key is already queued.")
 )
 
-// The audit log.
 var (
 	AdminAudit           = i18n.Define("ui.admin.audit", "Audit log")
 	AdminAuditSub        = i18n.Define("ui.admin.auditSub", "Who changed what, newest first.")
@@ -180,7 +166,6 @@ var (
 	AdminAuditBulkFailed    = i18n.Define("ui.admin.auditBulkFailed", "{{count}} failed")
 )
 
-// Roles and user roles.
 var (
 	AdminRoles             = i18n.Define("ui.admin.roles", "Roles")
 	AdminRolesSub          = i18n.Define("ui.admin.rolesSub", "What each role may do.")
@@ -214,7 +199,6 @@ var (
 	AdminRevokedByWildcard = i18n.Define("ui.admin.revokedByWildcard", "A wildcard revocation covers that permission. Grant the wildcard, then revoke what the role should not hold.")
 )
 
-// Process modules.
 var (
 	AdminModules        = i18n.Define("ui.admin.modules", "Modules")
 	AdminModulesSub     = i18n.Define("ui.admin.modulesSub", "Process modules and their lifecycle.")
@@ -238,7 +222,6 @@ var (
 	AdminLeaseFailing   = i18n.Define("ui.admin.leaseFailing", "Lease failing")
 )
 
-// Email previews.
 var (
 	AdminEmails         = i18n.Define("ui.admin.emails", "Emails")
 	AdminEmailsSub      = i18n.Define("ui.admin.emailsSub", "Email templates rendered with sample data. Nothing is sent.")

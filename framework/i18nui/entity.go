@@ -2,13 +2,6 @@ package i18nui
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The entity screens' chrome (framework/entityui): headings, buttons,
-// notices and toasts. The record data and the entity, field, view and
-// transition names come from the entity.* keys the Entity* helpers read.
-//
-// Each screen area keeps its phrases in its own file (entity_list.go,
-// entity_record.go, entity_bulk.go, admin.go), so the areas grow without
-// touching one another.
 var (
 	EntityAccessDenied   = i18n.Define("ui.entity.accessDenied", "You do not have permission to view {{entity}}.")
 	EntitySlotFailed     = i18n.Define("ui.entity.slotFailed", "Couldn't load this section")

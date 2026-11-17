@@ -3,33 +3,21 @@ package image
 import "errors"
 
 var (
-	// ErrFormatUnsupported is returned by encoders for formats this package
-	// cannot produce. Currently: WebP lossy, HEIC, AVIF.
+	// ErrFormatUnsupported is returned for an output this package cannot encode.
 	ErrFormatUnsupported = errors.New("image: format not supported for encoding")
 
-	// ErrDecompressionBomb is returned when an input image's reported
-	// dimensions exceed the configured MaxPixels guard.
+	// ErrDecompressionBomb is returned when a source would cost more than a Config cap.
 	ErrDecompressionBomb = errors.New("image: decompression bomb guard tripped")
 
-	// ErrInvalidInput is returned when a source cannot be identified as a
-	// supported image format.
+	// ErrInvalidInput is returned for a source that is not a readable image.
 	ErrInvalidInput = errors.New("image: invalid input")
 
-	// ErrAnimatedSource is returned by VariantSet.Process /
-	// VariantSet.ProcessTo when RejectAnimated is set and the source
-	// has FrameCount > 1. Callers wanting to flatten or split frames
-	// instead must do that explicitly before the variant pipeline.
+	// ErrAnimatedSource is returned by a VariantSet with RejectAnimated.
 	ErrAnimatedSource = errors.New("image: animated source rejected (set VariantSet.RejectAnimated=false to flatten to first frame)")
 
-	// ErrSourceTooLarge is returned when the source reader delivers
-	// more bytes than the configured MaxSourceBytes cap before the
-	// pixel guard ever runs (DecodeWithConfig buffers through
-	// io.LimitReader).
+	// ErrSourceTooLarge is returned past Config.MaxSourceBytes.
 	ErrSourceTooLarge = errors.New("image: source exceeds MaxSourceBytes")
 
-	// ErrTargetTooLarge reports a resize target whose area exceeds the
-	// image's MaxPixels: Resize panics with it, and VariantSet.Process,
-	// VariantSet.ProcessTo and Placeholder return it. NewGradient returns
-	// it past DefaultMaxPixels.
+	// ErrTargetTooLarge reports an output area past MaxPixels.
 	ErrTargetTooLarge = errors.New("image: resize target exceeds MaxPixels")
 )

@@ -209,8 +209,9 @@ go build -o site ./examples/site/
   to the same path, `index.html` files included. Two kinds of file are
   refused: one the UI host would not serve (a path with a dot segment
   such as `.env` or `.git/config`, a server config file name such
-  as `web.config`, or a symlink whose target leaves the static dir or
-  is neither a regular file nor a directory), and one at the path of a
+  as `web.config`, a named pipe, socket or device file, or a symlink
+  whose target leaves the static dir or is neither a regular file nor
+  a directory), and one at the path of a
   page the build rendered, in any case (`about/index.html` or
   `About/index.html` beside an `/about` route). The build log names
   each. A symlinked directory that stays inside the static dir
@@ -225,7 +226,8 @@ go build -o site ./examples/site/
   (`_HEADERS`) is refused: no host reads it, and on a case-insensitive
   filesystem it would replace the generated file.
 - `Builder.ExtraDirs` files under their mount path, minus the dotfiles
-  and config files the static dir also skips. An `os.DirFS` extra
+  and config files the static dir also skips, and anything that is not
+  a regular file, a directory or a symlink to one. An `os.DirFS` extra
   directory is read through `os.Root`, the way the static dir is: a
   symlink whose target leaves the directory, or is not a regular file,
   is skipped and logged, and a symlinked directory inside it is walked.

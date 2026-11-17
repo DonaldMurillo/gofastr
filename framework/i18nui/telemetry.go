@@ -2,10 +2,6 @@ package i18nui
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The request and log screens over battery/telemetry's files
-// (battery/telemetry/telemetryui), on their own or inside the admin.
-
-// Both screens.
 var (
 	TelemetryNav         = i18n.Define("ui.telemetry.nav", "Telemetry")
 	TelemetryRequests    = i18n.Define("ui.telemetry.requests", "Requests")
@@ -30,7 +26,6 @@ var (
 	TelemetryColDuration = i18n.Define("ui.telemetry.colDuration", "Took")
 )
 
-// The requests screen: the list of kept traces.
 var (
 	TelemetryRequestsSub         = i18n.Define("ui.telemetry.requestsSub", "Failed, slow, and a sample of the rest.")
 	TelemetryShow                = i18n.Define("ui.telemetry.show", "Which requests")
@@ -61,7 +56,6 @@ var (
 	TelemetryRequestsEmptyNarrow = i18n.Define("ui.telemetry.requestsEmptyNarrow", "Nothing kept for this route or issue in the time range.")
 )
 
-// One request: its steps and its log lines.
 var (
 	TelemetryRequest          = i18n.Define("ui.telemetry.request", "Request")
 	TelemetryBack             = i18n.Define("ui.telemetry.back", "All requests")
@@ -79,7 +73,6 @@ var (
 	TelemetrySummary          = i18n.Define("ui.telemetry.summary", "Request summary")
 )
 
-// The issues screen, and the notice of an alert that is firing.
 var (
 	TelemetryIssues          = i18n.Define("ui.telemetry.issues", "Issues")
 	TelemetryColError        = i18n.Define("ui.telemetry.colError", "Error")
@@ -101,7 +94,6 @@ var (
 	TelemetryAlertSlow       = i18n.Define("ui.telemetry.alertSlow", "“{{name}}” is firing: {{count}} slow in {{minutes}} min.")
 )
 
-// The logs screen.
 var (
 	TelemetryLevel         = i18n.Define("ui.telemetry.level", "Level")
 	TelemetryLevelAll      = i18n.Define("ui.telemetry.levelAll", "All")
@@ -124,14 +116,12 @@ var (
 	TelemetryLogsCaption   = i18n.Define("ui.telemetry.logsCaption", "Log lines")
 )
 
-// One request's failure.
 var (
 	TelemetryWentWrong  = i18n.Define("ui.telemetry.wentWrong", "Error")
 	TelemetryStack      = i18n.Define("ui.telemetry.stack", "Stack")
 	TelemetryStackLabel = i18n.Define("ui.telemetry.stackLabel", "Call stack")
 )
 
-// The overview screen.
 var (
 	TelemetryOverview         = i18n.Define("ui.telemetry.overview", "Overview")
 	TelemetryOverviewEmpty    = i18n.Define("ui.telemetry.overviewEmpty", "No requests counted yet")
@@ -162,7 +152,6 @@ var (
 	TelemetryCountShare       = i18n.Define("ui.telemetry.countShare", "{{count}} ({{share}})")
 )
 
-// The machine, on the overview screen.
 var (
 	TelemetryAlertDisk    = i18n.Define("ui.telemetry.alertDisk", "“{{name}}” is firing: disk {{share}} full.")
 	TelemetryMachine      = i18n.Define("ui.telemetry.machine", "Machine")
@@ -182,7 +171,6 @@ var (
 	TelemetryBytesMB      = i18n.Define("ui.telemetry.bytesMB", "{{n}} MB")
 )
 
-// Background work, on the overview screen.
 var (
 	TelemetryJobs    = i18n.Define("ui.telemetry.jobs", "Jobs")
 	TelemetryColJob  = i18n.Define("ui.telemetry.colJob", "Job")

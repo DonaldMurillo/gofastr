@@ -11,12 +11,6 @@ import (
 	"strings"
 )
 
-// fileSet is a set of slash paths under OutDir that the build writes
-// itself. has matches case-folded: two paths that differ only in case
-// are one file on a case-insensitive filesystem (APFS, NTFS by
-// default), so a copy that would land on one of these files in another
-// case is refused like an exact match, and the export is the same
-// whichever filesystem built it.
 type fileSet struct {
 	spelled map[string]bool
 	folded  map[string]string // foldPath(p) -> p as written
@@ -31,36 +25,24 @@ func (s *fileSet) add(rel string) {
 	s.folded[foldPath(rel)] = rel
 }
 
-// has reports whether rel, in any case, is in the set.
 func (s *fileSet) has(rel string) bool {
 	_, ok := s.folded[foldPath(rel)]
 	return ok
 }
 
-// hasExact reports whether rel, spelled exactly, is in the set.
 func (s *fileSet) hasExact(rel string) bool { return s.spelled[rel] }
 
-// spelling returns the set's spelling of rel's file, if it has one.
 func (s *fileSet) spelling(rel string) (string, bool) {
 	p, ok := s.folded[foldPath(rel)]
 	return p, ok
 }
 
-// paths returns the set's paths as written, sorted.
 func (s *fileSet) paths() []string { return slices.Sorted(maps.Keys(s.spelled)) }
 
-// caseTwinError refuses two spellings of one file. A case-insensitive
-// filesystem keeps whichever spelling was written first and a
-// case-sensitive host serves only that one, so a page asking for the
-// other gets a 404.
 func caseTwinError(a, b string) error {
 	return fmt.Errorf("static: %s and %s differ only in case and are one file on a case-insensitive filesystem; give one of them another name", a, b)
 }
 
-// refuseSeparatorName refuses an fs.FS name holding a backslash, which
-// fs.ValidPath allows as a literal character but Windows reads as a
-// separator: about\index.html would land on about/index.html there,
-// past every check keyed on the slash path. A NUL names no file.
 func refuseSeparatorName(name string) error {
 	if strings.ContainsAny(name, "\\\x00") {
 		return fmt.Errorf("static: file %q holds a backslash or NUL; name it with / only", name)
@@ -68,11 +50,6 @@ func refuseSeparatorName(name string) error {
 	return nil
 }
 
-// checkCaseTwins fails the build when two files it wrote, or two
-// directories on their paths, differ only in case: a contributor's
-// _HEADERS rewritten later as _headers kept the contributor's spelling
-// on APFS, and a static OFFLINE/ held the worker's offline/index.html.
-// A case-sensitive host then serves neither generated name.
 func checkCaseTwins(res *Result, rendered *fileSet, docs map[string]bool) error {
 	seen := map[string]string{}
 	check := func(rel string) error {
@@ -84,7 +61,6 @@ func checkCaseTwins(res *Result, rendered *fileSet, docs map[string]bool) error 
 		return nil
 	}
 	for _, p := range writtenPaths(res, rendered, docs) {
-		// A directory is keyed with its slash, so it never meets a file.
 		for i := range len(p) {
 			if p[i] == '/' {
 				if err := check(p[:i+1]); err != nil {
@@ -99,8 +75,6 @@ func checkCaseTwins(res *Result, rendered *fileSet, docs map[string]bool) error 
 	return nil
 }
 
-// writtenPaths lists every slash path the build wrote: pages and the
-// host-rule files, docs, and assets.
 func writtenPaths(res *Result, rendered *fileSet, docs map[string]bool) []string {
 	out := rendered.paths()
 	out = append(out, slices.Sorted(maps.Keys(docs))...)
@@ -110,21 +84,6 @@ func writtenPaths(res *Result, rendered *fileSet, docs map[string]bool) []string
 	return out
 }
 
-// respell renames each directory entry on the build's paths to the
-// build's spelling where the filesystem kept another: a case-insensitive
-// one keeps the name an entry was created with, so a rebuild after a
-// case-only route rename, or over a leftover _HEADERS, rewrote the
-// content under the old name. An entry is renamed only when it is the
-// build's file under another name (os.SameFile): on a case-sensitive
-// disk a stale _REDIRECTS is another file and stays. Nothing is renamed
-// past a symlink, so nothing outside the build's own directories moves,
-// but the walk goes on through it (os.Root keeps it inside outDir): an
-// entry there in another spelling fails the build, since the export
-// would not serve that path on a case-sensitive host, and so does a
-// symlink on the paths whose target names a directory in a spelling
-// the disk no longer has. Both checks run after every rename, on fresh
-// listings, so a directory another path renames through its real name
-// passes whatever the path order.
 func respell(outDir string, paths []string) error {
 	root, err := os.OpenRoot(outDir)
 	if err != nil {
@@ -167,7 +126,6 @@ func respell(outDir string, paths []string) error {
 			parent = cur
 		}
 	}
-	// Listed afresh once every rename ran, each directory once.
 	fresh := map[string]*dirNames{}
 	listing := func(dir string) *dirNames {
 		if fresh[dir] == nil {
@@ -181,9 +139,6 @@ func respell(outDir string, paths []string) error {
 			return fmt.Errorf("static: /%s is spelled /%s on disk, behind a symlink the export does not rename through; remove the stale entry", path.Join(parent, name), path.Join(parent, old))
 		}
 	}
-	// A symlink's target is text: one naming a directory in a spelling
-	// the disk no longer has still resolves on a case-insensitive disk
-	// and dangles on a case-sensitive host.
 	for _, link := range links {
 		target, err := root.Readlink(filepath.FromSlash(link))
 		if err != nil || filepath.IsAbs(target) {
@@ -204,15 +159,11 @@ func respell(outDir string, paths []string) error {
 	return nil
 }
 
-// dirNames is one directory's listing, by exact and folded name.
 type dirNames struct {
 	exact  map[string]bool
 	folded map[string]string
 }
 
-// listNames lists dir under root. A directory that cannot be read in
-// full lists nothing: a partial listing could miss the entry to rename,
-// and renaming none leaves the build's other checks to judge the tree.
 func listNames(root *os.Root, dir string) *dirNames {
 	d := &dirNames{exact: map[string]bool{}, folded: map[string]string{}}
 	f, err := root.Open(filepath.FromSlash(dir))
@@ -231,8 +182,6 @@ func listNames(root *os.Root, dir string) *dirNames {
 	return d
 }
 
-// sameFileAs reports the name parent's entry for name goes by when the
-// directory holds it only under another spelling of the same file.
 func (d *dirNames) sameFileAs(root *os.Root, parent, name string) (string, bool) {
 	if d.exact[name] {
 		return "", false
@@ -249,8 +198,6 @@ func (d *dirNames) sameFileAs(root *os.Root, parent, name string) (string, bool)
 	return old, true
 }
 
-// respell renames parent's entry for name to name when the directory
-// holds it only under another spelling of the same file.
 func (d *dirNames) respell(root *os.Root, parent, name string) error {
 	old, ok := d.sameFileAs(root, parent, name)
 	if !ok {

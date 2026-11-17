@@ -1,28 +1,5 @@
-// Package axetest is the axe-core accessibility-testing harness for
-// GoFastr apps, host applications and the framework's own chromedp
-// suites alike.
-//
-// It vendors the axe-core engine (testdata/axe.min.js, embedded) and exposes
-// the primitives every a11y gate needs:
-//
-//   - [NewBrowser], one chromedp browser context reused across all scans;
-//   - [NewTab], a fresh tab per page so the previous page's SSE socket tears down;
-//   - [WaitReady], the post-navigation wait: the page loaded and every
-//     runtime module it requested registered;
-//   - [Prepare], the load-bearing color-scheme freeze + force step;
-//   - [Scan], runs axe against the CURRENT DOM state (so a caller can open a
-//     modal first and then scan), injecting the engine once per document;
-//   - [ScanSchemes], Prepare + Scan per scheme on one loaded page.
-//
-// Each app keeps its own page list, allowlist, and gate Test function, only
-// the reusable machinery lives here. Derive the page list from the same
-// source your screens register from (a catalog, app.Routes()) so new
-// screens are scanned automatically instead of drifting out of the gate.
-//
-// Every successful [Scan] also records the scanned path into the
-// axe-coverage manifest (framework/axecov, .gofastr/axe-coverage.json),
-// which uihost strict mode reads in dev to enforce that every page route
-// has an axe test. GOFASTR_AXE_COVERAGE=0 disables recording.
+// Package axetest runs the embedded axe-core engine against pages in a
+// headless browser; [ScanSchemes] is the entry point.
 package axetest
 
 import (
@@ -42,23 +19,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/axecov"
 )
 
-// axeMinJS is the vendored axe-core engine, embedded so the gate is hermetic
-// (CI never reaches out to a CDN). It is minified JavaScript SOURCE (text),
-// not a compiled binary, so it is exempt from the "never commit binaries" rule.
-//
 //go:embed testdata/axe.min.js
 var axeMinJS string
 
-// Schemes lists the color schemes every page is scanned under, forced via the
-// same <html data-color-scheme> attribute that ui.ThemeToggle flips. Without
-// forcing, the scheme bootstrap follows the host's prefers-color-scheme, a
-// dev machine in Dark appearance only ever audits the dark palette while CI
-// runners (light by default) only audit light, so contrast regressions in the
-// unseen scheme stay invisible locally and surface as CI-only failures.
+// Schemes lists the color schemes every page is scanned under.
 var Schemes = []string{"dark", "light"}
 
-// Violation is one axe-core rule violation. Scheme records which forced color
-// scheme produced it; it is set by [Scan], not part of the axe JSON.
+// Violation is one axe-core rule violation.
 type Violation struct {
 	ID          string         `json:"id"`
 	Impact      string         `json:"impact"`
@@ -68,8 +35,7 @@ type Violation struct {
 	Tags        []string       `json:"tags"`
 	Nodes       []ViolatedNode `json:"nodes"`
 
-	// Scheme is the forced color scheme that produced the violation.
-	// Set by Scan, not part of the axe JSON payload.
+	// Scheme is the forced color scheme, set by Scan.
 	Scheme string `json:"-"`
 }
 
@@ -80,11 +46,7 @@ type ViolatedNode struct {
 	FailureSummary string   `json:"failureSummary"`
 }
 
-// NewBrowser returns one chromedp browser context shared across all axe runs
-// in a single test. Per-page browsers blow the websocket dial deadline when
-// auditing many pages in a row, so reuse one browser and open fresh tabs with
-// [NewTab]. The returned context is long-lived (no per-scan timeout child),
-// a timeout child would kill the browser when it expired and cancel later pages.
+// NewBrowser starts a headless browser that closes at test cleanup.
 func NewBrowser(t *testing.T) context.Context {
 	t.Helper()
 	browserCtx, cancel, err := NewBrowserContext(context.Background())
@@ -95,35 +57,18 @@ func NewBrowser(t *testing.T) context.Context {
 	return browserCtx
 }
 
-// NewBrowserContext is the non-test variant of [NewBrowser], the same
-// tuned headless browser for callers without a *testing.T (the
-// `gofastr audit a11y --url` command). The browser is started eagerly;
-// the caller MUST call the returned cancel to tear it down.
+// NewBrowserContext starts a headless browser, or errors; call cancel.
 func NewBrowserContext(parent context.Context) (context.Context, context.CancelFunc, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
-		// CI Chrome backs raster/screenshot buffers with /dev/shm, which is
-		// undersized on hosted runners; spilling to disk-backed tmp avoids
-		// slow or hung large-viewport captures.
 		chromedp.Flag("disable-dev-shm-usage", true),
-		// CI runners intermittently take >20s (the chromedp default)
-		// to cold-start Chrome; a generous websocket-URL deadline turns
-		// that from a flaky suite failure into a few slow seconds.
 		chromedp.WSURLReadTimeout(90*time.Second),
 		chromedp.WindowSize(1280, 800),
 	)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(parent, opts...)
 	browserCtx, browserCancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)), chromedp.WithErrorf(filteredErrorf))
-	// Allocate the browser NOW, on this context. WithErrorf is a
-	// browser-allocation option: it must bind to the context that
-	// actually starts Chrome. Left lazy, the first tab would allocate
-	// the browser instead, and tabs must not carry browser options
-	// (chromedp panics: "WithBrowserOption can only be used when
-	// allocating a new browser"; this took down the axe gates once).
-	// Eager allocation here means every derived tab inherits the
-	// browser's filtered logger.
 	cancel := func() { browserCancel(); allocCancel() }
 	if err := chromedp.Run(browserCtx); err != nil {
 		cancel()
@@ -132,32 +77,19 @@ func NewBrowserContext(parent context.Context) (context.Context, context.CancelF
 	return browserCtx, cancel, nil
 }
 
-// NewTab opens a FRESH tab derived from browser (so the previous page's SSE
-// socket is torn down) with a per-tab scan timeout. It returns the tab context
-// and a cancel func the caller MUST defer, cancelling tears down both the
-// timeout and the tab target so sockets don't leak across pages.
+// NewTab opens a tab with a 30-second deadline; cancel closes it.
 func NewTab(t *testing.T, browser context.Context) (context.Context, context.CancelFunc) {
 	t.Helper()
 	return NewTabContext(browser, 30*time.Second)
 }
 
-// NewTabContext is the non-test variant of [NewTab]. The caller MUST
-// call the returned cancel, it tears down both the timeout and the tab
-// target so sockets don't leak across pages.
+// NewTabContext is [NewTab] with a chosen deadline.
 func NewTabContext(browser context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	// No options here: WithErrorf is a browser-allocation option and
-	// PANICS on a context whose browser already exists. Tabs inherit
-	// the filtered logger from the browser [NewBrowserContext]
-	// allocated eagerly.
 	tabCtx, tabCancel := chromedp.NewContext(browser)
 	ctx, cancel := context.WithTimeout(tabCtx, timeout)
 	return ctx, func() { cancel(); tabCancel() }
 }
 
-// filteredErrorf is chromedp's default error logger minus the
-// known-benign "unhandled node event *dom.EventAdoptedStyleSheetsModified"
-// noise [Prepare]'s constructed-stylesheet freeze triggers on every page,
-// it would otherwise interleave with audit/test output on stderr.
 func filteredErrorf(format string, args ...any) {
 	if strings.Contains(fmt.Sprintf(format, args...), "unhandled node event") {
 		return
@@ -165,14 +97,6 @@ func filteredErrorf(format string, args ...any) {
 	log.Printf("ERROR: "+format, args...)
 }
 
-// readyJS reports why the current document is not settled yet, or ""
-// once it is: the load event fired, web fonts finished, the GoFastr
-// runtime booted (when the page ships it), no client navigation is in
-// flight (the runtime marks <html aria-busy> for that window), and every
-// split runtime module the page requested has registered itself in
-// window.__gofastr.loadedModules. A module script that failed to load
-// never registers, so the wait names it instead of scanning a page whose
-// behaviour never attached.
 const readyJS = `(() => {
 	if (document.readyState !== 'complete') return 'document.readyState is ' + document.readyState;
 	if (document.fonts && document.fonts.status !== 'loaded') return 'web fonts are still loading';
@@ -187,21 +111,10 @@ const readyJS = `(() => {
 	return '';
 })()`
 
-// readyPoll is how often [WaitReady] and [Prepare] re-check the page.
-// The loop runs in Go, not in the page, so a throttled tab's timers
-// cannot stretch it.
 const readyPoll = 25 * time.Millisecond
 
-// readyTimeout bounds [WaitReady] and the scheme check in [Prepare]: a
-// page that never settles fails with the reason instead of hanging
-// until the caller's tab deadline.
-// A var so the package's own guard test can shorten it.
 var readyTimeout = 10 * time.Second
 
-// pollSettled evaluates js, a script returning "" when the awaited state
-// holds and a reason otherwise, until it returns "" on two consecutive
-// polls. The second poll catches work queued right behind the first
-// (an idle-callback module request, a listener reacting to the change).
 func pollSettled(ctx context.Context, js, what string) error {
 	deadline := time.Now().Add(readyTimeout)
 	hits := 0
@@ -229,41 +142,18 @@ func pollSettled(ctx context.Context, js, what string) error {
 	}
 }
 
-// WaitReady is a chromedp action that waits until the current document
-// has settled: the load event fired, web fonts loaded, the GoFastr
-// runtime booted (when the page ships it), no client navigation is in
-// flight, and every split runtime module the page requested has
-// registered. It holds on two consecutive polls 25ms apart and fails
-// with the unmet condition after 10s. Run it after navigating and
-// before [Prepare]; it replaces a fixed post-navigation sleep.
+// WaitReady waits until the page, its fonts and every runtime module it
+// requested have loaded, failing with the unmet condition after 10s.
 func WaitReady() chromedp.Action {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
 		return pollSettled(ctx, readyJS, "page ready")
 	})
 }
 
-// Prepare is a chromedp action that freezes CSS transitions/animations and
-// forces the given color scheme on the current document and its UA controls.
-// Run it AFTER navigating ([WaitReady]), BEFORE any widget interaction and
-// [Scan]. It may run again on the same document to flip the scheme in
-// place; [ScanSchemes] does exactly that.
-//
-// The freeze is load-bearing AND must be a constructed stylesheet: the scheme
-// flip starts 120–160ms color transitions (header links, search pill), and in
-// throttled headless tabs animation frames may never tick, pinning computed
-// colors at the PREVIOUS scheme's values indefinitely, axe then reports
-// phantom mixed-scheme contrast failures on every page. An injected <style>
-// element cannot fix this when the host ships a `default-src 'self'` CSP,
-// which silently blocks inline styles; adoptedStyleSheets is script-created
-// and not subject to style-src, so it bypasses the CSP.
-//
-// Prepare returns once the scheme took effect: <html data-color-scheme>
-// and <meta name="color-scheme"> both name it, and the body's computed
-// colors read the same on two consecutive polls, so a listener reacting to
-// the attribute has run before axe measures.
+// Prepare freezes transitions and animations and forces scheme on the
+// current document, returning once the scheme has taken effect.
 func Prepare(scheme string) chromedp.Action {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
-		// Freeze transitions via a constructed stylesheet (CSP-safe).
 		if err := chromedp.Evaluate(`(() => {
 			const s = new CSSStyleSheet();
 			s.replaceSync('*, *::before, *::after { transition: none !important; animation: none !important; }');
@@ -271,11 +161,6 @@ func Prepare(scheme string) chromedp.Action {
 		})()`, nil).Do(ctx); err != nil {
 			return err
 		}
-		// Force the scheme through the public bootstrap API when present so the
-		// html attribute, persisted preference, and color-scheme meta stay in
-		// agreement. Falling back still mirrors both DOM signals; setting only
-		// the attribute leaves Chromium's UA link/control palette in the previous
-		// scheme and can create a mixed-palette screenshot.
 		if err := chromedp.Evaluate(fmt.Sprintf(
 			`(() => {
 				const mode = %q;
@@ -298,10 +183,6 @@ func Prepare(scheme string) chromedp.Action {
 	})
 }
 
-// schemeAppliedJS reports why scheme has not taken effect on the current
-// document, or "" once it has. The body's computed colors are kept on
-// window between polls; reading them forces a style recalc, and a change
-// since the previous poll means something is still restyling the page.
 func schemeAppliedJS(scheme string) string {
 	return fmt.Sprintf(`(() => {
 		const mode = %q;
@@ -317,13 +198,8 @@ func schemeAppliedJS(scheme string) string {
 	})()`, scheme)
 }
 
-// ScanSchemes scans the CURRENT document once per scheme: for each it
-// runs [Prepare](scheme), which flips the scheme in place, then [Scan].
-// The page loads once and axe is injected once for every scheme, where a
-// fresh tab per scheme would pay a second navigation, settle and
-// injection for the same DOM. Violations come back tagged with the
-// scheme that produced them; the first error stops the run. An empty
-// scheme list is an error: it would scan nothing and pass.
+// ScanSchemes runs [Prepare] and [Scan] on the current document for each
+// scheme; an empty list is an error.
 func ScanSchemes(ctx context.Context, schemes []string, ruleAllowlist map[string]string, opts ...ScanOption) ([]Violation, error) {
 	if len(schemes) == 0 {
 		return nil, fmt.Errorf("axetest: ScanSchemes got no schemes; an empty list would scan nothing and pass")
@@ -342,57 +218,32 @@ func ScanSchemes(ctx context.Context, schemes []string, ruleAllowlist map[string
 	return kept, nil
 }
 
-// ScanOption modifies how [Scan] configures axe.run(). The nil option is a
-// no-op; construct one with [WithDisabledRules] or [WithEnabledRules].
+// ScanOption changes the rules [Scan] passes to axe.run().
 type ScanOption func(*scanConfig)
 
-// scanConfig is the resolved set of axe.run() `rules` overrides.
 type scanConfig struct {
 	disabledRules []string
 	enabledRules  []string
 }
 
-// WithDisabledRules passes the given axe rule IDs to axe.run() as disabled
-// (not evaluated at all). Use only when a rule can structurally never apply
-// to the host's surfaces; a ruleAllowlist entry is preferred so the skip
-// stays visible in each app's test source.
+// WithDisabledRules turns the given axe rules off.
 func WithDisabledRules(rules ...string) ScanOption {
 	return func(c *scanConfig) { c.disabledRules = append(c.disabledRules, rules...) }
 }
 
-// WithEnabledRules turns ON axe rule IDs that ship disabled-by-default,
-// notably the WCAG 2.2 `target-size` rule (24px minimum tap target, tagged
-// wcag22aa/wcag258), which axe-core evaluates only when explicitly enabled.
-// A caller that passes no options keeps axe's defaults verbatim (target-size
-// stays off), so existing gates are unaffected.
+// WithEnabledRules turns on axe rules that are off by default.
 func WithEnabledRules(rules ...string) ScanOption {
 	return func(c *scanConfig) { c.enabledRules = append(c.enabledRules, rules...) }
 }
 
-// Scan runs axe-core once against the CURRENT DOM state,
-// returning allowlist-filtered [Violation]s tagged with scheme. The caller
-// controls navigation, [Prepare](scheme), and any widget opening before
-// calling. Scan only measures whatever the page looks like right now, which
-// is what lets a gate open a modal first and then scan the open-widget DOM.
-//
-// ruleAllowlist maps axe rule IDs to skip (ID → justification), a Violation
-// for an allowlisted ID is dropped from the result. Behavior modifiers are
-// passed as [ScanOption] values: [WithDisabledRules] (a rule that can
-// structurally never apply, e.g. `region` on a fragment demo) and
-// [WithEnabledRules] (a default-off rule to turn on, e.g. WCAG 2.2
-// `target-size`). A caller that passes neither gets axe's stock behavior.
+// Scan runs axe on the current DOM and returns the violations whose rule
+// ruleAllowlist does not name. It errors on a blank page or a crashed rule.
 func Scan(ctx context.Context, scheme string, ruleAllowlist map[string]string, opts ...ScanOption) ([]Violation, error) {
 	var cfg scanConfig
 	for _, o := range opts {
 		o(&cfg)
 	}
 
-	// Guard against vacuous passes. axe evaluates the CURRENT DOM, so a route
-	// that broke and serves an empty <body> scans as ZERO violations, the gate
-	// turns green on a page that rendered nothing. Before injecting axe, assert
-	// the page actually rendered: a real screen mounts dozens of elements under
-	// <body>; a blank/500 shell sits well under minBodyElements. Fail loudly
-	// (callers t.Fatalf on error) so a broken screen can't hide behind the gate.
 	var elementCount int
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`document.querySelectorAll('body *').length`, &elementCount),
@@ -403,12 +254,6 @@ func Scan(ctx context.Context, scheme string, ruleAllowlist map[string]string, o
 		return nil, fmt.Errorf("axe pre-scan (%s scheme): page rendered only %d elements under <body> (need ≥%d): the page is blank or not rendered; refusing a vacuous pass", scheme, elementCount, minBodyElements)
 	}
 
-	// Inject the 553 KB engine only when this document does not hold the
-	// copy this harness injected: a second scan of the same page
-	// ([ScanSchemes] flipping the scheme in place) reuses it. A window.axe
-	// the page defined itself (an app bundling axe, a stub) is never
-	// trusted: the marker names the vendored engine, and the injection
-	// replaces anything else.
 	var injected bool
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.__axetestEngine !== undefined && window.__axetestEngine === window.axe && typeof window.axe.run === 'function'`, &injected),
@@ -447,11 +292,6 @@ func Scan(ctx context.Context, scheme string, ruleAllowlist map[string]string, o
 	if err := json.Unmarshal([]byte(raw), &res); err != nil {
 		return nil, fmt.Errorf("parse axe violations (%s scheme): %w\nraw=%s", scheme, err, raw)
 	}
-	// A rule that threw checked no node on the page, and axe files it
-	// under incomplete, which a violations-only read never sees. The
-	// docs site's header once carried a color-mix() that serialised to
-	// oklch(... none); axe could not parse it, color-contrast threw on
-	// every page, and the gate passed contrast it never measured.
 	for _, c := range res.Crashed {
 		if _, ok := ruleAllowlist[c.ID]; ok {
 			continue
@@ -470,13 +310,6 @@ func Scan(ctx context.Context, scheme string, ruleAllowlist map[string]string, o
 	return kept, nil
 }
 
-// recordCoverage appends the just-scanned page to the axe-coverage
-// manifest (.gofastr/axe-coverage.json in the working directory, the
-// project root for a normal `go test ./...` run). uihost strict mode
-// reads the manifest in dev to enforce that every page route has an axe
-// test. Recording is best-effort: a manifest problem must never fail the
-// scan itself, so failures are logged and swallowed. Set
-// GOFASTR_AXE_COVERAGE=0 to disable recording entirely.
 func recordCoverage(ctx context.Context, scheme string) {
 	if os.Getenv("GOFASTR_AXE_COVERAGE") == "0" {
 		return
@@ -486,25 +319,13 @@ func recordCoverage(ctx context.Context, scheme string) {
 		log.Printf("axetest: coverage: read page location: %v", err)
 		return
 	}
-	// DefaultDir (module root / GOFASTR_AXE_COVERAGE_DIR), the same
-	// resolution strict mode reads with, so the manifest lands where
-	// enforcement looks even when the test package dir and the server
-	// working directory differ (gofastr dev --dir <root> --pkg ./cmd/app).
 	if err := axecov.Record(axecov.DefaultDir(), loc, scheme); err != nil {
 		log.Printf("axetest: coverage: %v", err)
 	}
 }
 
-// minBodyElements is the floor below which a page is treated as blank / not
-// rendered. A real screen renders far more than this; the threshold is a trip-
-// wire for an empty shell, not a meaningful content minimum.
 const minBodyElements = 5
 
-// axeRulesJS renders the axe.run() `rules` option JS object from a
-// scanConfig: every enabled rule is forced on, every disabled rule is forced
-// off, and every other rule keeps its axe-core default. Empty input → "{}"
-// (axe evaluates every default-enabled rule and skips default-disabled ones
-// like target-size, so a caller with no options is byte-for-byte unchanged).
 func axeRulesJS(c scanConfig) string {
 	if len(c.enabledRules) == 0 && len(c.disabledRules) == 0 {
 		return "{}"
@@ -529,8 +350,6 @@ func axeRulesJS(c scanConfig) string {
 	return b.String()
 }
 
-// evalAwaitPromise makes chromedp.Evaluate await the returned Promise so
-// axe.run() resolves to the violations array, not a Promise handle.
 func evalAwaitPromise(p *runtime.EvaluateParams) *runtime.EvaluateParams {
 	p.AwaitPromise = true
 	return p

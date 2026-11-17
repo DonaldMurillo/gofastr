@@ -1,0 +1,95 @@
+primitive: static.assets
+summary: The generated files an export writes beside its pages - the widget catalog with chrome and styles, sitemap and robots, app icons, extra-script rail entries, and the PWA manifest, full-site service worker and offline page.
+code:
+  - framework/static/assets.go
+  - framework/static/pwa.go
+docs:
+  - framework/docs/content/static-export.md
+  - framework/docs/content/pwa.md
+invariants:
+  - id: widget-files-at-their-urls
+    rule: The widget catalog is written with each style, chrome and state URL under BasePath, and a widget anonymous callers are not offered gets its style sheet and no chrome.
+    enforced_by:
+      - test: framework/static.TestExportWritesWidgetsAtTheirURLs
+      - test: framework/static.TestBuildSkipsGatedWidgetChrome
+      - test: framework/static.TestBuildSkipsUnlistedWidgetChrome
+      - test: framework/static.TestGatedWidgetTestsLeaveNoWidgets
+  - id: widget-chrome-per-locale-tree
+    rule: A widget's root chrome renders in the default locale with the base-path and slash rewrites, and each prefixed locale gets its own copy under /<tag>/.
+    enforced_by:
+      - test: framework/static.TestSweepStaticWidgetChrome
+      - test: framework/static.TestExportWritesLocaleTrees
+      - test: framework/static.TestExportLinksPagesWithSlash
+  - id: sitemap-lists-written-pages
+    rule: The exported sitemap lists only pages this export wrote, keyed by their escaped path, each page URL with its trailing slash.
+    enforced_by:
+      - test: framework/static.TestSitemapListsOnlyExportedPages
+      - test: framework/static.TestSitemapLocalesListOnlyExported
+      - test: framework/static.TestSitemapKeysEntriesByPage
+      - test: framework/static.TestSitemapDropsUnwrittenPages
+      - test: framework/static.TestSitemapKeepsMixedIDPage
+      - test: framework/static.TestBuildWritesSitemapAndRobots
+  - id: user-seo-files-win
+    rule: A sitemap.xml or robots.txt the static source supplies replaces the generated one.
+    enforced_by:
+      - test: framework/static.TestBuildKeepsUserSuppliedRobotsAndSitemap
+  - id: rail-scripts-fetched-through-handler
+    rule: With a Handler set, each same-origin extra-script src is fetched through it with its query and written under its decoded path, and one that does not answer 200, would land on a page file, or differs only in case from a file the build wrote fails the build; with no Handler none is fetched.
+    enforced_by:
+      - test: framework/static.TestBuildExportsAppServedRailScripts
+      - test: framework/static.TestBuildFailsOnUnservedRailScript
+      - test: framework/static.TestBuildPassesRailScriptQuery
+      - test: framework/static.TestBuildWritesDecodedRailScriptName
+      - test: framework/static.TestRailScriptRefusesPageFile
+      - test: framework/static.TestRailScriptRefusesCaseTwin
+      - test: framework/static.TestBuildWithoutHandlerSkipsRailScripts
+  - id: pwa-register-script-is-generated
+    rule: With WithPWA on, the rail's PWA registration script is the builder's base-path-aware copy, never fetched through the Handler.
+    enforced_by:
+      - test: framework/static.TestBuildLeavesPWARegisterToBuilder
+  - id: worker-precaches-the-export
+    rule: The static service worker precaches every exported page under its escaped, slashed URL, the framework assets as required and every later file as optional, each under its escaped URL.
+    enforced_by:
+      - test: framework/static.TestBuildStaticWorkerPrecachesExportedSite
+      - test: framework/static.TestPWAPrecachesEscapedPagePath
+      - test: framework/static.TestSweepStaticWorkerHash
+  - id: worker-hash-skips-pwa-outputs
+    rule: The worker's content hash covers the bytes of every file in OutDir except the PWA outputs and any link to one of them that the static source did not supply.
+    enforced_by:
+      - test: framework/static.TestPWAHashSkipsWorkerAlias
+      - test: framework/static.TestPWAHashKeepsUserManifestAlias
+      - test: framework/static.TestPWAHashesDistinctCaseFile
+      - test: framework/static.TestBuildStaticWorkerPrecachesExportedSite
+  - id: offline-page-like-a-page
+    rule: The offline page carries data-cui-static, the base-path and slash rewrites and the export CSP.
+    enforced_by:
+      - test: framework/static.TestPWAOfflinePageCarriesCSP
+      - test: framework/static.TestSweepStaticWorkerHash
+      - test: framework/static.TestBuildPWABasePath
+      - test: framework/static.TestExportOfflinePageLinksWithSlash
+  - id: user-pwa-files-win
+    rule: A PWA file the static source supplies replaces the generated one, each prefixed locale gets its own manifest, and each generated PWA file joins the set checked for case twins.
+    enforced_by:
+      - test: framework/static.TestBuildKeepsUserSuppliedManifest
+      - test: framework/static.TestExportWritesLocaleManifests
+      - test: framework/static.TestPWARefusesCaseTwin
+  - id: pwa-outputs-respelled-before-hash
+    rule: The PWA outputs are respelled before the tree is hashed, so a leftover in another case that is the same file on a case-insensitive disk drops out of the hash.
+    judge: Does this change hash the export tree before the PWA output paths are respelled?
+decisions:
+  - id: full-site-worker
+    date: 2026-11-17
+    status: accepted
+    decision: A static export ships the full-site service worker that precaches every page and asset, with a hash of the tree as its cache version.
+    rejected:
+      - option: The live server's worker, which caches pages as they are visited.
+        why: The export's page set is closed and immutable, so the whole site can work offline from install, and a content-only redeploy still rotates the cache.
+    upholds: [worker-precaches-the-export, worker-hash-skips-pwa-outputs]
+  - id: pwa-surface-runs-last
+    date: 2026-11-17
+    status: accepted
+    decision: The PWA files are written after every other file, and a static-source copy wins by checking the source, not OutDir.
+    rejected:
+      - option: Write them with the other generated assets and let the static copy overwrite them.
+        why: The worker must fingerprint and precache the complete export, and a reused OutDir's leftovers must not suppress regeneration.
+    upholds: [user-pwa-files-win, worker-precaches-the-export]

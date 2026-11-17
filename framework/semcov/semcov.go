@@ -1,33 +1,4 @@
-// Package semcov is the semantic-coverage manifest: a record of what a
-// test run actually exercised, as opposed to which lines it happened to
-// execute.
-//
-// Line coverage answers "did this statement run". It cannot answer the
-// questions that decide whether a change is safe:
-//
-//   - Did a request ever reach this route through the real router, the
-//     real middleware chain, and the real auth check?
-//   - Was this permission ever evaluated, not just present in a file
-//     that got loaded?
-//   - Did anything ever call this entity's Delete endpoint?
-//
-// A handler can sit at 100% line coverage because a unit test called the
-// function directly, while no request has ever reached it through the
-// router. That handler is untested in every way that matters, and the
-// coverage number says the opposite.
-//
-// # How it works
-//
-// The shape is borrowed wholesale from [framework/axecov], which solves
-// the same problem for accessibility scans and has the operational
-// behaviour already proven: tests write, tooling reads, the file lives
-// under `.gofastr/` (gitignored, wiped by `make clean`) so it never
-// ships, and both sides resolve the same directory through [DefaultDir]
-// even when their working directories differ.
-//
-// Recording is opt-in per process and free when off. `framework/testkit`
-// turns it on for the app under test; production binaries never call
-// [Enable], so the hooks compile to an atomic load and a branch.
+// Package semcov records what a test run reached into a coverage manifest.
 package semcov
 
 import (
@@ -42,46 +13,33 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/DonaldMurillo/gofastr/internal/coverageroot"
 	"github.com/DonaldMurillo/gofastr/internal/filelock"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// FileName is the manifest location relative to the coverage root.
-const FileName = ".gofastr/semantic-coverage.json"
+// FileName is the manifest's path under the coverage root; Version is its schema.
+const (
+	FileName = ".gofastr/semantic-coverage.json"
+	Version  = 1
+)
 
-// lockName is the cross-process lock file beside the manifest.
 const lockName = ".gofastr/semantic-coverage.lock"
 
-// Version is the manifest schema version. A reader that finds a higher
-// version reports the mismatch rather than guessing at the contents.
-const Version = 1
-
-// Manifest is what a test run proved it touched.
+// Manifest is what a test run touched; Permissions lists every permission
+// evaluated, whatever the verdict.
 type Manifest struct {
 	Version int `json:"version"`
-	// Routes maps a route pattern to the HTTP methods exercised against
-	// it. Keyed by *pattern*, not by request path, so one test hitting
-	// /orders/42 credits the /orders/{id} route.
-	Routes map[string][]string `json:"routes"`
-	// Permissions are the permission strings that were evaluated,
-	// whatever the verdict, a denial proves the boundary as well as a
-	// grant does, and arguably better.
-	Permissions []string `json:"permissions"`
-	// Entities maps an entity name to the CRUD operations exercised
-	// (list, get, create, update, delete).
+	// Routes maps a route pattern to the HTTP methods served through it.
+	Routes      map[string][]string `json:"routes"`
+	Permissions []string            `json:"permissions"`
+	// Entities maps an entity name to the CRUD operations exercised.
 	Entities map[string][]string `json:"entities"`
-	// Hooks maps an entity name to the lifecycle hooks that actually
-	// fired (beforecreate, afterupdate, …). A registered hook that never
-	// runs is the classic silent break: the code is there, the tests are
-	// green, and the behaviour it adds has never happened.
+	// Hooks maps an entity name to the lifecycle hooks that fired.
 	Hooks map[string][]string `json:"hooks,omitempty"`
-	// Events are the event types actually published during the run. A
-	// subscriber registered for a type that never appears here has never
-	// run, the same silent break as an unfired hook, one layer out.
+	// Events are the event types published during the run.
 	Events []string `json:"events,omitempty"`
-	// Roles are the roles a caller actually held during a recorded
-	// permission check. A granted role nothing ever authenticates as is an
-	// authorization path no test has walked.
+	// Roles are the roles a caller held during a permission check.
 	Roles []string `json:"roles,omitempty"`
 }
 
@@ -94,23 +52,15 @@ func newManifest() *Manifest {
 	}
 }
 
-// recorder is the process-wide accumulator. Recording is off until
-// [Enable] is called, so the hooks cost one atomic load in production.
 var (
 	enabled atomic.Bool
 	mu      sync.Mutex
 	current *Manifest
 	dir     string
-	// dirty tracks whether anything new arrived since the last write, so
-	// a per-test Flush is free when that test recorded nothing new. Test
-	// binaries can hold thousands of tests; re-serialising the manifest
-	// for each one would be a real cost for no information.
-	dirty bool
+	dirty   bool
 )
 
-// Enable turns recording on and points it at a coverage root. Passing ""
-// uses [DefaultDir]. Calling it twice is safe: the accumulated data is
-// kept, so two test packages in one binary do not erase each other.
+// Enable turns recording on into root, [DefaultDir] for "", keeping data.
 func Enable(root string) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -119,9 +69,6 @@ func Enable(root string) {
 	}
 	dir = root
 	if current == nil {
-		// Start from what is already on disk so a `go test ./...` run
-		// across many packages, each its own process, accumulates
-		// rather than each package overwriting the last.
 		if existing, err := readFrom(root); err == nil {
 			current = existing
 		} else {
@@ -134,12 +81,10 @@ func Enable(root string) {
 // Enabled reports whether recording is on.
 func Enabled() bool { return enabled.Load() }
 
-// Disable stops recording. Data already accumulated is retained so a
-// deferred [Flush] still writes it.
+// Disable stops recording and keeps what was recorded for [Flush].
 func Disable() { enabled.Store(false) }
 
-// RecordRoute notes that a request was served by the given route pattern.
-// The pattern is the router's registered pattern, not the request path.
+// RecordRoute notes that a request was served by the route pattern.
 func RecordRoute(method, pattern string) {
 	if !enabled.Load() || pattern == "" {
 		return
@@ -158,13 +103,12 @@ func RecordRoute(method, pattern string) {
 // RecordPermission notes that a permission was evaluated.
 func RecordPermission(permission string) {
 	if !enabled.Load() {
-		return // current is nil until Enable ran; don't touch it
+		return
 	}
 	recordTrimmed(permission, func(manifest *Manifest) *[]string { return &manifest.Permissions })
 }
 
-// RecordEntityOp notes that an entity's CRUD operation ran. op is one of
-// list, get, create, update, delete.
+// RecordEntityOp notes that an entity's CRUD operation ran.
 func RecordEntityOp(entity, op string) {
 	if !enabled.Load() || entity == "" || op == "" {
 		return
@@ -182,7 +126,7 @@ func RecordEntityOp(entity, op string) {
 // RecordRole notes that a caller held a role during a permission check.
 func RecordRole(role string) {
 	if !enabled.Load() {
-		return // current is nil until Enable ran; don't touch it
+		return
 	}
 	recordTrimmed(role, func(manifest *Manifest) *[]string { return &manifest.Roles })
 }
@@ -190,13 +134,11 @@ func RecordRole(role string) {
 // RecordEvent notes that an event type was published on the bus.
 func RecordEvent(eventType string) {
 	if !enabled.Load() {
-		return // current is nil until Enable ran; don't touch it
+		return
 	}
 	recordTrimmed(eventType, func(manifest *Manifest) *[]string { return &manifest.Events })
 }
 
-// recordTrimmed selects a manifest field only while holding the recorder
-// lock, so Reset cannot invalidate it before the unique sorted insertion.
 func recordTrimmed(value string, field func(*Manifest) *[]string) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -230,7 +172,6 @@ func RecordHook(entity, hookType string) {
 	}
 }
 
-// addTo inserts value under key, reporting whether it was new.
 func addTo(m map[string][]string, key, value string) bool {
 	if key == "" || value == "" {
 		return false
@@ -243,13 +184,7 @@ func addTo(m map[string][]string, key, value string) bool {
 	return true
 }
 
-// Flush writes the accumulated manifest. It merges with whatever is on
-// disk first, because `go test ./...` runs one process per package and
-// each one only knows about its own requests, without the merge, the
-// last package to finish would be the only one recorded. The merge runs
-// under an OS lock on [lockName]: two binaries finishing together would
-// otherwise read the same base, and the later rename would drop what
-// the earlier one wrote.
+// Flush merges what was recorded since the last write into the manifest.
 func Flush() error {
 	mu.Lock()
 	defer mu.Unlock()
@@ -263,7 +198,7 @@ func Flush() error {
 	if err != nil {
 		return fmt.Errorf("semcov: open lock: %w", err)
 	}
-	defer lock.Close() // releases the lock
+	defer lock.Close()
 	if err := filelock.Lock(lock); err != nil {
 		return fmt.Errorf("semcov: lock manifest: %w", err)
 	}
@@ -332,10 +267,6 @@ func writeTo(root string, m *Manifest) error {
 	if err != nil {
 		return fmt.Errorf("semcov: encode manifest: %w", err)
 	}
-	// Write-then-rename so a concurrent reader never sees a torn file.
-	// The temp name carries the pid because `go test ./...` runs packages
-	// in parallel processes, and a shared "manifest.tmp" would let two of
-	// them rename each other's half-written file into place.
 	tmp := fmt.Sprintf("%s.%d.tmp", file, os.Getpid())
 	if err := fileperm.WriteOwnerOnly(tmp, append(data, '\n')); err != nil {
 		return fmt.Errorf("semcov: write manifest: %w", err)
@@ -347,10 +278,7 @@ func writeTo(root string, m *Manifest) error {
 	return nil
 }
 
-// Read loads the manifest under root. A missing manifest returns an error
-// satisfying errors.Is(err, fs.ErrNotExist), so callers can distinguish
-// "never recorded" (fine on a fresh clone) from "recorded and incomplete"
-// (real drift).
+// Read loads the manifest under root; a missing one is fs.ErrNotExist.
 func Read(root string) (*Manifest, error) { return readFrom(root) }
 
 func readFrom(root string) (*Manifest, error) {
@@ -378,9 +306,7 @@ func readFrom(root string) (*Manifest, error) {
 	return &m, nil
 }
 
-// Reset clears in-process state. For tests of this package and of the
-// harness that drives it. Concurrent Record calls are safe; recording stays
-// off until Enable is called again.
+// Reset clears what was recorded and turns recording off, for tests.
 func Reset() {
 	mu.Lock()
 	defer mu.Unlock()
@@ -390,8 +316,7 @@ func Reset() {
 	enabled.Store(false)
 }
 
-// CoveredRoute reports whether the manifest records the method against
-// the pattern.
+// CoveredRoute reports whether method was served through pattern.
 func (m *Manifest) CoveredRoute(method, pattern string) bool {
 	if m == nil {
 		return false
@@ -399,8 +324,7 @@ func (m *Manifest) CoveredRoute(method, pattern string) bool {
 	return slices.Contains(m.Routes[normalizePattern(pattern)], strings.ToUpper(method))
 }
 
-// CoveredEntity reports whether the manifest records any operation on an
-// entity.
+// CoveredEntity reports whether any operation ran on the entity.
 func (m *Manifest) CoveredEntity(name string) bool {
 	if m == nil {
 		return false
@@ -440,8 +364,6 @@ func (m *Manifest) CoveredPermission(p string) bool {
 	return slices.Contains(m.Permissions, p)
 }
 
-// normalizePattern strips a query string and trailing slash so the writer
-// and the reader agree on a key. The root stays "/".
 func normalizePattern(p string) string {
 	if i := strings.IndexAny(p, "?#"); i >= 0 {
 		p = p[:i]
@@ -455,12 +377,7 @@ func normalizePattern(p string) string {
 	return p
 }
 
-// DirFor is the coverage root for the project at root, resolved the way
-// [DefaultDir] resolves it for the tests and server that write the
-// manifest: the GOFASTR_SEMANTIC_COVERAGE_DIR or GOFASTR_AXE_COVERAGE_DIR
-// override when one is set, else the nearest ancestor of root holding
-// go.work, else root. Readers that already know the project root use
-// it, so they look where the writers wrote, in a Go workspace too.
+// DirFor is the coverage root a writer in the project at root resolves.
 func DirFor(root string) string {
 	if v := overrideDir(); v != "" {
 		return v
@@ -469,28 +386,16 @@ func DirFor(root string) string {
 	if abs, err := filepath.Abs(root); err == nil {
 		start = abs
 	}
-	if d, ok := findUp(start, "go.work"); ok {
+	if d, ok := coverageroot.FindUp(start, "go.work"); ok {
 		return d
 	}
 	return root
 }
 
-// findUp returns the nearest directory at or above start holding marker.
-func findUp(start, marker string) (string, bool) {
-	for d := start; ; {
-		if _, err := os.Stat(filepath.Join(d, marker)); err == nil {
-			return d, true
-		}
-		parent := filepath.Dir(d)
-		if parent == d {
-			return "", false
-		}
-		d = parent
-	}
-}
+var overrideKeys = []string{"GOFASTR_SEMANTIC_COVERAGE_DIR", "GOFASTR_AXE_COVERAGE_DIR"}
 
 func overrideDir() string {
-	for _, key := range []string{"GOFASTR_SEMANTIC_COVERAGE_DIR", "GOFASTR_AXE_COVERAGE_DIR"} {
+	for _, key := range overrideKeys {
 		if v := os.Getenv(key); v != "" {
 			return v
 		}
@@ -498,28 +403,7 @@ func overrideDir() string {
 	return ""
 }
 
-// DefaultDir resolves the coverage root the same way [framework/axecov]
-// does, so a project has one place where its coverage artifacts live:
-//
-//  1. GOFASTR_SEMANTIC_COVERAGE_DIR, when set.
-//  2. GOFASTR_AXE_COVERAGE_DIR, when set: sharing the override means an
-//     app that already pinned its axe manifest per-app gets the same
-//     isolation here without configuring it twice.
-//  3. The nearest ancestor holding go.work (Go's own workspace rule).
-//  4. Else the nearest ancestor holding go.mod.
-//  5. Else the working directory.
+// DefaultDir is GOFASTR_SEMANTIC_COVERAGE_DIR, else axecov.DefaultDir.
 func DefaultDir() string {
-	if v := overrideDir(); v != "" {
-		return v
-	}
-	wd, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	for _, marker := range []string{"go.work", "go.mod"} {
-		if d, ok := findUp(wd, marker); ok {
-			return d
-		}
-	}
-	return wd
+	return coverageroot.Resolve(overrideKeys...)
 }

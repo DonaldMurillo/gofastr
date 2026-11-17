@@ -19,8 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/upload"
 )
 
-// Validation errors returned by [FileField.Validate]. Callers can match
-// on these without parsing the message.
+// Errors returned by Validate and ProcessFileField.
 var (
 	ErrFileFieldURLScheme     = errors.New("filefield: URL has unsafe scheme")
 	ErrFileFieldTraversal     = errors.New("filefield: contains path traversal")
@@ -33,15 +32,10 @@ var (
 	ErrFileFieldType          = errors.New("filefield: file type is not allowed here")
 )
 
-// MaxFileFieldStringBytes caps the length of any FileField string field,
-// anything past this is rejected at validation time. A legitimate URL,
-// MIME, or storage ref does not need 8 KB.
+// MaxFileFieldStringBytes caps every FileField string field.
 const MaxFileFieldStringBytes = 8 * 1024
 
-// MaxProcessFileSize caps the in-memory size of a single upload read by
-// [ProcessFileField]. The default protects callers that haven't wired a
-// stricter limit elsewhere from unbounded memory consumption, a hostile
-// client can otherwise stream gigabytes into RAM.
+// MaxProcessFileSize caps the bytes [ProcessFileField] reads.
 const MaxProcessFileSize int64 = 32 << 20 // 32 MiB
 
 // FileField holds metadata about an uploaded file associated with an entity field.
@@ -67,34 +61,9 @@ type FileField struct {
 	Image *ImageDerivatives `json:"image,omitempty"`
 }
 
-// Validate enforces invariants on a FileField that came from an untrusted
-// source (typically JSON unmarshal in a CRUD body). It is NOT called
-// automatically, callers that accept FileField as request input should
-// call it before persisting or rendering. The constructors in this
-// package (ProcessFileField) already produce valid FileFields.
-//
-// Rejected inputs:
-//   - URL with javascript:, vbscript:, or data: scheme, would XSS when
-//     rendered as href/src by a downstream consumer.
-//   - URL, StorageRef, or Filename containing `..` segments, would
-//     escape the storage root on a vulnerable filesystem backend, and
-//     Filename reaches `Content-Disposition: attachment; filename=…`.
-//   - Any C0 control byte or DEL in URL, Filename, or StorageRef. These
-//     are persisted and later echoed into a response header, an HTML
-//     attribute, or a log line, each of which a CR/LF splits. MimeType
-//     is covered by its charset filter, which admits no control byte.
-//   - Any C1 control or invisible/bidi codepoint in URL, Filename, or
-//     StorageRef (see indexForgedRune). Each is a multi-byte rune that
-//     rides through a C0 byte scan, and each forges rather than
-//     decorates the text a header, attribute, or list display renders:
-//     an RLO flips the visible filename, a zero-width space
-//     manufactures visually identical twin refs, and the 8-bit CSI/OSC
-//     forms drive terminal escapes exactly as ESC-[ does.
-//   - MimeType containing characters outside the MIME-safe set,
-//     normal MIME types are `type/subtype` with letters, digits,
-//     `+`, `-`, `.`; angle brackets / quotes indicate an XSS attempt.
-//   - Size < 0, unsigned conventions require non-negative.
-//   - Any string field over MaxFileFieldStringBytes.
+// Validate reports the first rule an untrusted FileField breaks (scheme,
+// traversal, control or forged characters, MIME charset, size, length). It
+// is not called automatically; call it on FileField request input.
 func (f *FileField) Validate() error {
 	if f == nil {
 		return nil
@@ -128,9 +97,6 @@ func (f *FileField) Validate() error {
 	if hasTraversal(f.Filename) {
 		return fmt.Errorf("%w: filename %q", ErrFileFieldTraversal, f.Filename)
 	}
-	// Checked after the scheme guard so a control byte smuggled into a
-	// javascript: URL still reports as ErrFileFieldURLScheme, that is the
-	// actionable diagnosis, and TestFileField_RejectsJavaScriptScheme pins it.
 	for _, entry := range []struct {
 		key string
 		val string
@@ -145,12 +111,6 @@ func (f *FileField) Validate() error {
 		}
 	}
 
-	// The C1 controls and the zero-width/bidi set ride through the C0
-	// byte scan above (each is a multi-byte rune): an RLO in Filename
-	// flips the name Content-Disposition and the file lists render, a
-	// zero-width space manufactures visually identical twin refs, and
-	// the 8-bit CSI/OSC forms drive terminal escapes like ESC-[ does.
-	// They forge text rather than decorate it; same error class.
 	for _, entry := range []struct {
 		key string
 		val string
@@ -168,22 +128,10 @@ func (f *FileField) Validate() error {
 	if !isSafeMIMEString(f.MimeType) {
 		return fmt.Errorf("%w: %q", ErrFileFieldMimeUnsafe, f.MimeType)
 	}
-	// Derived references reach the same sinks as the primary file, so they
-	// are held to the same invariants.
 	return f.Image.Validate()
 }
 
-// isUnsafeURLScheme reports whether url begins with a scheme that should
-// never appear in stored file metadata. Match is case-insensitive and
-// mirrors browser URL normalization. Per the WHATWG URL spec, browsers
-// strip TAB/LF/CR from *anywhere* in the URL, and additionally remove any
-// leading C0-control-or-space bytes (0x00-0x20) before resolving the
-// scheme. We do the same so that neither "java\tscript:" nor a URL led by
-// a stray control byte such as "\x0cjavascript:" slips past while a
-// browser still resolves it as javascript:.
 func isUnsafeURLScheme(url string) bool {
-	// Strip TAB/LF/CR from anywhere (browsers ignore these wherever they
-	// appear inside a URL).
 	cleaned := strings.Map(func(r rune) rune {
 		switch r {
 		case '\t', '\n', '\r':
@@ -191,8 +139,6 @@ func isUnsafeURLScheme(url string) bool {
 		}
 		return r
 	}, url)
-	// Trim every leading C0 control byte (0x00-0x1F) or space (0x20),
-	// matching the spec's "remove leading C0 control or space" rule.
 	cleaned = strings.TrimLeft(cleaned, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f"+
 		"\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f ")
 	lower := strings.ToLower(cleaned)
@@ -204,10 +150,6 @@ func isUnsafeURLScheme(url string) bool {
 	return false
 }
 
-// indexControlByte returns the offset of the first C0 control byte
-// (0x00-0x1F) or DEL (0x7F) in s, or -1 when s is clean. Byte-wise on
-// purpose: every such byte is a single byte in UTF-8, and a multi-byte
-// rune can never contain one, so no decoding is needed.
 func indexControlByte(s string) int {
 	for i := 0; i < len(s); i++ {
 		if s[i] < 0x20 || s[i] == 0x7f {
@@ -217,14 +159,6 @@ func indexControlByte(s string) int {
 	return -1
 }
 
-// indexForgedRune returns the first C1 control or invisible/bidi
-// codepoint in s with its byte offset, or (0, -1) when s is clean.
-// Rune-wise on purpose: every codepoint in this set is a multi-byte
-// UTF-8 sequence, so the byte-wise indexControlByte above cannot see
-// it. The predicate lives in core/textsafe so every gate in the tree
-// names the same set; the constructor side of this seam is
-// upload.SanitizeFilename, which strips the same codepoints before a
-// client filename can become FileField.Filename or a storage key.
 func indexForgedRune(s string) (rune, int) {
 	for i, r := range s {
 		if textsafe.IsC1(r) || textsafe.IsInvisible(r) {
@@ -234,18 +168,10 @@ func indexForgedRune(s string) (rune, int) {
 	return 0, -1
 }
 
-// hasTraversal reports whether s contains a `..` segment. We're
-// deliberately strict, any `..` substring counts, even one tucked
-// inside a filename, because a downstream join may interpret it as a
-// segment.
 func hasTraversal(s string) bool {
 	return strings.Contains(s, "..")
 }
 
-// isSafeMIMEString reports whether s is shaped like a real MIME type
-// (letters, digits, and the small punctuation set used by IANA names).
-// Empty is treated as safe. Validate handles required-field semantics
-// at a higher layer.
 func isSafeMIMEString(s string) bool {
 	if s == "" {
 		return true
@@ -257,7 +183,7 @@ func isSafeMIMEString(s string) bool {
 		case c >= 'A' && c <= 'Z':
 		case c >= '0' && c <= '9':
 		case c == '/' || c == '+' || c == '-' || c == '.' || c == '_':
-		case c == ';' || c == '=' || c == ' ': // parameter syntax: "text/html; charset=utf-8"
+		case c == ';' || c == '=' || c == ' ':
 		default:
 			return false
 		}
@@ -265,29 +191,10 @@ func isSafeMIMEString(s string) bool {
 	return true
 }
 
-// ProcessFileField reads a file from the given reader, saves it via the storage
-// backend, and returns a FileField with all metadata. The file is stored at a
-// path generated by GenerateFilePath.
-//
-// Defaults that protect callers from common upload abuse paths:
-//
-//   - Size is capped at [MaxProcessFileSize]. Anything larger returns
-//     [ErrFileFieldTooLarge] without buffering the rest of the body.
-//   - Content is scanned for active markup in two tiers: HARD tokens
-//     (<script, <svg, <iframe, <html, <!doctype, <object, <embed, <base)
-//     are matched anywhere in the body, and SOFT tokens (<img, <?xml,
-//     <style, <link, javascript:) only in the leading 512 bytes. Executable
-//     magic bytes (MZ for PE, 0x7fELF for ELF, Mach-O headers) are also
-//     rejected. The filename extension and any client-supplied
-//     Content-Type are ignored, attackers can lie about both.
-//
-// The ctx parameter should come from the HTTP request so cancellation and
-// deadlines are respected during slow uploads.
-//
-// The uploaded original is stored byte-for-byte by default, image
-// metadata (EXIF, XMP) included; that is deliberate, not an oversight.
-// Pass [StripMetadata] to have JPEG, PNG, and WebP originals stripped
-// of their metadata segments before they are stored.
+// ProcessFileField reads file (capped at [MaxProcessFileSize]), refuses
+// unsafe content sniffed from its bytes, saves it under [GenerateFilePath]
+// and returns its FileField. Image metadata is kept unless [StripMetadata]
+// is passed.
 func ProcessFileField(ctx context.Context, store upload.Storage, file interface {
 	Read([]byte) (int, error)
 }, filename string, entityName, fieldName string, opts ...ProcessOption) (*FileField, error) {
@@ -299,8 +206,6 @@ func ProcessFileField(ctx context.Context, store upload.Storage, file interface 
 		o(&cfg)
 	}
 
-	// Read at most MaxProcessFileSize+1 bytes so we can detect an
-	// oversize input without ever buffering the full attacker payload.
 	limited := io.LimitReader(readerOf(file), MaxProcessFileSize+1)
 	var buf bytes.Buffer
 	size, err := buf.ReadFrom(limited)
@@ -313,19 +218,12 @@ func ProcessFileField(ctx context.Context, store upload.Storage, file interface 
 
 	data := buf.Bytes()
 
-	// Sniff content from the bytes themselves, never trust the filename
-	// or any supplied Content-Type.
 	if err := rejectUnsafeContent(data); err != nil {
 		return nil, err
 	}
-	// Opt-in metadata stripping (see [StripMetadata]). Runs before the
-	// MIME detection and the deriver so every downstream consumer sees
-	// the bytes that were actually stored.
 	if cfg.stripMetadata {
 		stripped, err := stripImageMetadata(data)
 		if err != nil {
-			// Fail closed: the caller asked that this object not keep
-			// its metadata, so storing it unstripped is not an option.
 			return nil, fmt.Errorf("filefield: stripping image metadata: %w", err)
 		}
 		if stripped != nil {
@@ -338,61 +236,34 @@ func ProcessFileField(ctx context.Context, store upload.Storage, file interface 
 		}
 	}
 
-	// Detect MIME type from content
 	mimeType := http.DetectContentType(data)
-	// The allow list reads the sniffed type, before the filename
-	// fallback below can name an unknown blob "image/png".
 	if cfg.allow != nil && !slices.Contains(cfg.allow, mimeBase(mimeType)) {
 		return nil, fmt.Errorf("%w: %s", ErrFileFieldType, mimeBase(mimeType))
 	}
 	if mimeType == "application/octet-stream" {
-		// Try to detect from filename extension
 		if detected := detectMIMEFromName(filename); detected != "" {
 			mimeType = detected
 		}
 	}
 
-	// Generate a safe, unique storage path
 	path := GenerateFilePath(entityName, fieldName, filename)
 
-	// Save to storage backend using the provided context
 	if err := store.Save(ctx, path, bytes.NewReader(data)); err != nil {
 		return nil, fmt.Errorf("filefield: saving file: %w", err)
 	}
 
 	ff := &FileField{
-		URL: keyURLPath(path),
-		// The SAME sanitizer that produced the storage key. This used to
-		// be filepath.Base(stripControlBytes(...)), which leaves ".."
-		// intact, so ProcessFileField returned a FileField its own
-		// Validate rejects: "v2..final.png" was persisted and went on to
-		// Content-Disposition and host path joins. A constructor must
-		// not produce a value its validator refuses.
+		URL:        keyURLPath(path),
 		Filename:   upload.SanitizeFilename(filename),
 		MimeType:   mimeType,
 		Size:       size,
 		StorageRef: path,
 	}
 
-	// Renditions are derived after the original is safely stored, so a
-	// derive failure never leaves the primary upload half-written.
 	if cfg.deriver != nil {
-		// Hand the deriver a recording view of the store. A deriver
-		// writes renditions incrementally, so one that fails on variant
-		// k has already saved 1..k-1 -- and it returns only an error, so
-		// nothing here could name those keys to clean them up. Watching
-		// the writes works for every deriver, including third-party
-		// ones, without asking the interface to report partial work.
 		rec := &recordingStore{Storage: store}
 		derived, err := cfg.deriver.DeriveImage(ctx, rec, data, path)
 		if err != nil {
-			// The primary is already in storage and this upload is being
-			// rejected, so nothing will ever reference those bytes. They
-			// used to just stay: repeated inert posts against an Image
-			// field failed AND stored a full object every time, growing
-			// storage in a way no row-driven cleanup can see. Roll the
-			// save back, plus any renditions the deriver managed to
-			// write before it failed.
 			cleanupOrphans(ctx, store, path, derived, rec.written())
 			return nil, fmt.Errorf("filefield: deriving image renditions: %w", err)
 		}
@@ -405,16 +276,7 @@ func ProcessFileField(ctx context.Context, store upload.Storage, file interface 
 	return ff, nil
 }
 
-// cleanupOrphans removes objects written for an upload that is being
-// rejected. Best-effort by design: the caller is already returning the
-// real error, and a failed cleanup must not replace it with a less
-// useful one. derived may be non-nil even on a deriver error, since a
-// deriver that fails midway can report what it had already saved.
 func cleanupOrphans(ctx context.Context, store upload.Storage, primary string, derived *ImageDerivatives, written []string) {
-	// Detached from cancellation: a client that disconnected mid-upload
-	// canceled ctx, and a backend refuses a canceled Delete, which would
-	// leave every object this exists to remove. Bounded so a dead backend
-	// cannot pin the request.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	seen := map[string]bool{}
@@ -436,16 +298,6 @@ func cleanupOrphans(ctx context.Context, store upload.Storage, primary string, d
 	del(primary)
 }
 
-// recordingStore is an upload.Storage that remembers every key Saved
-// through it, so a caller can undo a failed multi-write operation whose
-// keys it never chose.
-//
-// Deletes unrecord — but only a delete that actually removed the object
-// (returned nil, or os.ErrNotExist, which means it was never there): a
-// failed delete leaves the bytes in storage, and unrecording the key
-// anyway would hide exactly the rendition whose deriver-issued undo
-// failed transiently, so ProcessFileField's cleanupOrphans would never
-// retry it and the rejected upload orphans the object.
 type recordingStore struct {
 	upload.Storage
 	mu   sync.Mutex
@@ -465,8 +317,6 @@ func (r *recordingStore) Save(ctx context.Context, key string, src io.Reader) er
 func (r *recordingStore) Delete(ctx context.Context, key string) error {
 	err := r.Storage.Delete(ctx, key)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		// The object's fate is unknown or it is still stored; keep the
-		// key on the ledger so the rollback retries the delete.
 		return err
 	}
 	r.mu.Lock()
@@ -475,17 +325,12 @@ func (r *recordingStore) Delete(ctx context.Context, key string) error {
 	return err
 }
 
-// written returns the keys saved through this view and not since
-// deleted.
 func (r *recordingStore) written() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return slices.Clone(r.keys)
 }
 
-// readerOf adapts the narrow Read-only interface accepted by
-// [ProcessFileField] back to an [io.Reader] for use with stdlib helpers
-// like [io.LimitReader].
 func readerOf(r interface {
 	Read([]byte) (int, error)
 }) io.Reader {
@@ -503,28 +348,6 @@ type readerAdapter struct {
 
 func (a readerAdapter) Read(p []byte) (int, error) { return a.r.Read(p) }
 
-// rejectUnsafeContent inspects an upload's bytes and returns
-// [ErrFileFieldUnsafeContent] when the content matches a known-dangerous
-// shape. We do this in addition to [http.DetectContentType] because the
-// stdlib sniffer is permissive, e.g. an SVG body with a leading `<svg`
-// tag is reported as text/plain, but rendered as active content by any
-// browser that resolves the extension or sniffs harder.
-//
-// Active-content scanning is two-tier:
-//
-//   - HARD tokens (hardActiveTokens) are matched across the WHOLE body
-//     case-insensitively, regardless of sniffed type. They never
-//     legitimately appear in raster/PDF/font bytes, so a match anywhere,
-//     including past the 512-byte sniff window or behind valid raster
-//     magic (the GIFAR polyglot class), is markup and is rejected.
-//   - SOFT tokens (softActiveTokens) are matched only in the 512-byte sniff
-//     window and only when the content does not sniff as a confirmed-inert
-//     binary. They genuinely appear in EXIF/XMP/comment metadata of real
-//     images and in PDF/font streams, so a whole-body scan would reject
-//     legitimate uploads.
-//
-// mimeBase is a sniffed type without its parameters: "text/plain;
-// charset=utf-8" is "text/plain".
 func mimeBase(t string) string {
 	if i := strings.IndexByte(t, ';'); i >= 0 {
 		t = t[:i]
@@ -538,9 +361,6 @@ func rejectUnsafeContent(data []byte) error {
 		head = head[:512]
 	}
 
-	// Executable magic bytes. PE/COFF (MZ), ELF, Mach-O (both 32- and
-	// 64-bit, both endians). None of these have a legitimate reason to
-	// be uploaded into a content field by default.
 	if len(head) >= 2 && head[0] == 'M' && head[1] == 'Z' {
 		return fmt.Errorf("%w: executable (PE/MZ) content", ErrFileFieldUnsafeContent)
 	}
@@ -555,27 +375,12 @@ func rejectUnsafeContent(data []byte) error {
 		}
 	}
 
-	// HARD active-content tokens, scan the WHOLE body. These (<script,
-	// <svg, <iframe, <html, <!doctype, <object, <embed, <base) never
-	// legitimately appear in raster/PDF/font bytes, so a match anywhere is
-	// markup: a polyglot that leads with valid raster magic and stashes its
-	// payload past the 512-byte sniff window is still rejected (the GIFAR
-	// class). The body is resident and bounded by MaxProcessFileSize, so a
-	// whole-body scan is affordable; containsTokenFold matches
-	// case-insensitively without lowercasing (and reallocating) the body.
 	for _, tok := range hardActiveTokens {
 		if containsTokenFold(data, tok) {
 			return fmt.Errorf("%w: HTML/XML/SVG content", ErrFileFieldUnsafeContent)
 		}
 	}
 
-	// SOFT active-content tokens, keep the windowed, binary-skipped scan.
-	// These (<img, <?xml, <style, <link, javascript:) genuinely turn up in
-	// EXIF/XMP/comment metadata of real raster images and in PDF/font
-	// streams, so scanning the whole body for them would false-positive. We
-	// scan only the 512-byte sniff window, and only for content that does
-	// NOT sniff as a confirmed-inert binary. SVG, HTML, XML, plain text, and
-	// unknown (application/octet-stream) all still go through this scan.
 	if !isConfirmedInertBinary(head) {
 		trim := trimLeadingSpace(stripBOM(head))
 		for _, tok := range softActiveTokens {
@@ -585,27 +390,17 @@ func rejectUnsafeContent(data []byte) error {
 		}
 	}
 
-	// Final fallback: trust http.DetectContentType for cases it gets
-	// right (real HTML with <html> tag elsewhere, etc.).
 	if ct := mimeBase(http.DetectContentType(head)); isMarkupMIME(ct) {
 		return fmt.Errorf("%w: %s", ErrFileFieldUnsafeContent, ct)
 	}
 
-	// UTF-16/32 text: the scans above read raw bytes, where a wide
-	// body's markup is NUL-interleaved and matches no token. An XML
-	// parser decodes it from the BOM (or a BOM-less leading "<"), so
-	// scan its characters too. See wideText.
 	return rejectWideText(data)
 }
 
-// trimLeadingSpace drops the ASCII whitespace an HTML/XML parser skips
-// before the first token.
 func trimLeadingSpace(b []byte) []byte {
 	return bytes.TrimLeft(b, " \t\r\n\f\v")
 }
 
-// isMarkupMIME reports whether a parameter-free sniffed type is one a
-// browser renders as active markup.
 func isMarkupMIME(ct string) bool {
 	switch ct {
 	case "text/html", "image/svg+xml", "text/xml", "application/xml":
@@ -614,17 +409,8 @@ func isMarkupMIME(ct string) bool {
 	return false
 }
 
-// isConfirmedInertBinary reports whether http.DetectContentType
-// classifies head as a binary type that can never be rendered as active
-// HTML/SVG markup, raster images, PDF, fonts, archives, and audio/video.
-// It gates only the SOFT active-content token scan: the HARD scan runs
-// over the whole body regardless, so a polyglot that leads with valid
-// raster magic cannot stash its markup past the sniff window.
-// It NEVER returns true for SVG, HTML, XML, plain text, or unknown
-// content (application/octet-stream).
 func isConfirmedInertBinary(head []byte) bool {
 	ct := http.DetectContentType(head)
-	// Strip any "; charset=" parameter for prefix matching.
 	if i := strings.IndexByte(ct, ';'); i >= 0 {
 		ct = ct[:i]
 	}
@@ -632,7 +418,6 @@ func isConfirmedInertBinary(head []byte) bool {
 	case ct == "application/pdf":
 		return true
 	case strings.HasPrefix(ct, "image/") && ct != "image/svg+xml":
-		// Raster images: png, jpeg, gif, webp, bmp, ico. SVG is excluded.
 		return true
 	case strings.HasPrefix(ct, "audio/"),
 		strings.HasPrefix(ct, "video/"),
@@ -648,11 +433,6 @@ func isConfirmedInertBinary(head []byte) bool {
 	return false
 }
 
-// stripBOM removes a single leading byte-order mark (UTF-8, UTF-16 LE/BE,
-// UTF-32 LE/BE) so a BOM prefix can't push a dangerous markup token off
-// offset 0 and out of the sniff path. Only the BOM bytes are stripped:
-// a UTF-16/32 body's markup stays NUL-interleaved here, and
-// rejectWideText scans its decoded characters instead.
 func stripBOM(b []byte) []byte {
 	switch {
 	case len(b) >= 4 && b[0] == 0x00 && b[1] == 0x00 && b[2] == 0xFE && b[3] == 0xFF:
@@ -669,10 +449,6 @@ func stripBOM(b []byte) []byte {
 	return b
 }
 
-// hardActiveTokens are active-content markup tokens scanned for across the
-// WHOLE upload body regardless of sniffed type. None of them legitimately
-// appears in raster/PDF/font bytes, so a match anywhere is treated as
-// markup. See rejectUnsafeContent.
 var hardActiveTokens = [][]byte{
 	[]byte("<script"),
 	[]byte("<iframe"),
@@ -682,17 +458,9 @@ var hardActiveTokens = [][]byte{
 	[]byte("<embed"),
 	[]byte("<base"),
 	[]byte("<svg"),
-	// MathML is the other foreign-content root HTML parses as markup, and
-	// it belongs beside <svg for the same reason: neither shows up in
-	// raster, PDF, or font bytes, so a match is never a metadata false
-	// positive.
 	[]byte("<math"),
 }
 
-// softActiveTokens are active-content tokens scanned for only in the
-// 512-byte sniff window and only for content that does not sniff as a
-// confirmed-inert binary. They genuinely appear in image/PDF/font metadata,
-// so a whole-body scan would false-positive. See rejectUnsafeContent.
 var softActiveTokens = [][]byte{
 	[]byte("<img"),
 	[]byte("<?xml"),
@@ -701,10 +469,6 @@ var softActiveTokens = [][]byte{
 	[]byte("javascript:"),
 }
 
-// containsTokenFold reports whether haystack contains needle, comparing
-// ASCII bytes case-insensitively. It allocates nothing, so it is safe for
-// the whole-body hard-token scan where bytes.ToLower would double resident
-// memory for a 32 MiB upload.
 func containsTokenFold(haystack, needle []byte) bool {
 	nl := len(needle)
 	if nl == 0 {
@@ -714,7 +478,6 @@ func containsTokenFold(haystack, needle []byte) bool {
 	if hl < nl {
 		return false
 	}
-	// Fold the first needle byte for a cheap per-byte rejection.
 	first := needle[0]
 	firstUp := first
 	if first >= 'a' && first <= 'z' {
@@ -732,7 +495,6 @@ func containsTokenFold(haystack, needle []byte) bool {
 			if a == b {
 				continue
 			}
-			// Fold ASCII letters to lower; the needles are all ASCII.
 			if a >= 'A' && a <= 'Z' {
 				a += 32
 			}
@@ -751,9 +513,8 @@ func containsTokenFold(haystack, needle []byte) bool {
 	return false
 }
 
-// DeleteFileField removes a previously stored file from the storage backend.
-// Returns nil if the FileField is nil or has no storage reference.
-// The ctx parameter should come from the HTTP request.
+// DeleteFileField deletes ff's renditions and then its stored object; an
+// object already gone is not an error.
 func DeleteFileField(ctx context.Context, store upload.Storage, ff *FileField) error {
 	if store == nil {
 		return fmt.Errorf("filefield: storage backend is required")
@@ -761,16 +522,6 @@ func DeleteFileField(ctx context.Context, store upload.Storage, ff *FileField) e
 	if ff == nil {
 		return nil
 	}
-	// Renditions first, then the primary. Only the primary used to be
-	// deleted, so every derived object outlived the row's cleanup and
-	// kept serving at the documented /uploads/{key...} route --
-	// ImageDerivatives' own doc names "a storage delete" as one of the
-	// sinks a variant ref reaches, and nothing here read Variants.
-	//
-	// A rendition that is already gone is not an error: erasure is
-	// idempotent and a half-finished earlier delete is the normal way to
-	// arrive here. Every failure is collected so one bad key does not
-	// leave the rest behind, and the primary is attempted regardless.
 	var failed []string
 	if ff.Image != nil {
 		for _, v := range ff.Image.Variants {
@@ -794,10 +545,6 @@ func DeleteFileField(ctx context.Context, store upload.Storage, ff *FileField) e
 	return nil
 }
 
-// keyURLPath is a storage key written as a relative URL path: each
-// segment escaped, so a name that kept '#' or '%' is fetched as itself
-// rather than read as a fragment or a broken escape. The key itself
-// (StorageRef) stays literal.
 func keyURLPath(key string) string {
 	parts := strings.Split(key, "/")
 	for i, p := range parts {
@@ -806,28 +553,14 @@ func keyURLPath(key string) string {
 	return strings.Join(parts, "/")
 }
 
-// GenerateFilePath produces a safe, unique file path for storage.
-// The format is: uploads/{entityName}/{fieldName}/{sanitized_name}_{timestamp}_{rand}{ext}
-// Example: "uploads/posts/avatar/photo_1683398400000000000_3f9a1c2b.png"
-//
-// The path carries a crypto/rand component in addition to the timestamp so
-// that two uploads of the same filename to the same field never collide,
-// uniqueness must not depend on clock resolution. Without it, two requests
-// landing within the same nanosecond (or the same clock tick on platforms
-// whose clock does not advance every nanosecond) would resolve to the same
-// path and one upload would silently overwrite the other.
+// GenerateFilePath returns a unique storage key,
+// uploads/{entityName}/{fieldName}/{unique name}.
 func GenerateFilePath(entityName, fieldName, filename string) string {
-	// The unique-name component (sanitized base + timestamp + crypto/rand
-	// suffix) lives in core/upload.UniqueFilename so every upload surface
-	// shares one scheme; this helper just scopes it under the entity and
-	// field so auto-CRUD storage stays organised per field.
 	path := filepath.Join("uploads", entityName, fieldName, upload.UniqueFilename(filename))
 
-	// Normalize to forward slashes for storage consistency
 	return filepath.ToSlash(path)
 }
 
-// detectMIMEFromName attempts to detect MIME type from filename extension.
 func detectMIMEFromName(filename string) string {
 	ext := strings.ToLower(filepath.Ext(filename))
 	mimeMap := map[string]string{

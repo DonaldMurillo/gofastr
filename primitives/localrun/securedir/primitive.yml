@@ -1,5 +1,5 @@
 primitive: localrun.securedir
-summary: The per-OS check that the registry directory and its files belong to the current user and are not open to others, on Unix by mode and owner and on Windows by the token's owner.
+summary: The per-OS check that the registry directory and its files belong to the current user and are not open to others, on Unix the directory by mode and owner and each record by owner only (record modes are not checked), and on Windows by the token's owner.
 code:
   - framework/localrun/securedir.go
   - framework/localrun/securedir_unix.go
@@ -8,3 +8,24 @@ docs:
   - framework/docs/content/local-runs.md
 on_change:
   - "securedir_windows.go builds only on Windows: check it with GOOS=windows go vet ./framework/localrun/."
+invariants:
+  - id: dir-is-owned-real-directory
+    rule: The registry directory is refused when it is a symlink or reparse point, not a directory, owned by none of this process's identities, or a different directory from the one checked when it was opened.
+    enforced_by:
+      - test: framework/localrun.TestSymlinkDirRefused
+      - test: framework/localrun.TestForeignDirRefused
+      - test: framework/localrun.TestSwappedDirRefused
+      - test: framework/localrun.TestCheckOwner
+  - id: loose-dir-tightened
+    rule: On Unix a registry directory reachable by group or others is chmodded to 0700 through the opened root.
+    enforced_by:
+      - test: framework/localrun.TestLooseDirIsTightened
+  - id: records-own-regular-files
+    rule: A record or sidecar is read only when it is a regular file this user owns, opened without blocking on a FIFO.
+    enforced_by:
+      - test: framework/localrun.TestListSkipsForeignRecord
+      - test: framework/localrun.TestListSkipsFIFO
+      - test: framework/localrun.TestListSkipsFIFOWithWriter
+  - id: windows-default-owner
+    rule: On Windows a directory owned by the token's default owner (Administrators for an elevated process) counts as this user's.
+    judge: Does this change refuse a registry directory an elevated Windows process created, or accept one owned by another user?

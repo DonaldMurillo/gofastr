@@ -1,0 +1,67 @@
+primitive: static.copy
+summary: Copying the static source (a directory or an embedded FS) and Builder.ExtraDirs into the export - what is publishable, symlink handling, the precedence of built files over copies, and appending host rule files.
+code:
+  - framework/static/copy.go
+docs:
+  - framework/docs/content/static-export.md
+on_change:
+  - What the export refuses to copy matches what the UI host refuses to serve from the same tree; change both or neither.
+invariants:
+  - id: publish-what-the-host-serves
+    rule: The static source and ExtraDirs publish no path core/static refuses to serve, except that a leading .well-known/ is judged without its prefix and the root .nojekyll is copied.
+    enforced_by:
+      - test: framework/static.TestExportSkipsDotfiles
+  - id: only-regular-files-copied
+    rule: The copy skips and logs, without opening it, any entry that is not a regular file or a symlink to one inside its os.Root-confined tree, and every symlink in an FS os.Root does not confine.
+    enforced_by:
+      - test: framework/static.TestSweepStaticSkipsFIFO
+      - test: framework/static.TestExportRefusesSymlinkOutOfStaticDir
+      - test: framework/static.TestExtraDirsSkipLinksInWrappedDirFS
+  - id: linked-dirs-walked-once
+    rule: A symlinked directory inside an os.Root-confined tree is walked under its own name, and a link to a directory the walk is already inside is skipped.
+    enforced_by:
+      - test: framework/static.TestExportRefusesSymlinkOutOfStaticDir
+  - id: built-files-win
+    rule: A static-source or extra-dir file at the path of a page, redirect page or file the build already wrote, in any case, is not copied, and an extra-dir file also yields to a static-source file and fails the build when it differs only in case from a written file.
+    enforced_by:
+      - test: framework/static.TestStaticSourceIndexHTMLCopied
+      - test: framework/static.TestCopyRefusesCaseFoldedPage
+      - test: framework/static.TestCopyRefusesCaseFoldedHeaders
+      - test: framework/static.TestExtraDirsKeepRenderedPage
+      - test: framework/static.TestExtraDirKeepsFrameworkAsset
+      - test: framework/static.TestExtraDirRefusesCaseTwin
+      - test: framework/static.TestSweepStaticSourceWinsOverExtraDir
+  - id: host-rules-appended
+    rule: A static-source _headers or _redirects spelled exactly is appended to the generated file of that name when the build wrote one.
+    enforced_by:
+      - test: framework/static.TestStaticSourceHostRulesAppend
+      - test: framework/static.TestExtraDirsKeepGeneratedHostRules
+  - id: source-file-matched-by-exact-spelling
+    rule: staticSourceHas counts a static-source file only under the exact spelling asked for, on a case-insensitive filesystem too.
+    enforced_by:
+      - test: framework/static.TestSweepStaticSpelledInNeedsExactName
+  - id: separator-names-refused
+    rule: A static-source or extra-dir file name or mount path holding a backslash or a NUL fails the build.
+    enforced_by:
+      - test: framework/static.TestCopyRefusesBackslash
+      - test: framework/static.TestCopyRefusesBackslashMount
+      - test: framework/static.TestSweepStaticRefusesNULName
+    applies:
+      - framework/static/fileset.go
+decisions:
+  - id: read-through-os-root
+    date: 2026-11-17
+    status: accepted
+    decision: The static dir and each os.DirFS extra dir are read through os.Root, so the kernel refuses a symlink out of the tree.
+    rejected:
+      - option: os.Open on joined paths.
+        why: It followed a symlink anywhere on disk, publishing files the live host answers 404 for.
+    upholds: [only-regular-files-copied]
+  - id: walk-linked-directories
+    date: 2026-11-17
+    status: accepted
+    decision: The copy walks a symlinked directory that stays inside its tree instead of using fs.WalkDir.
+    rejected:
+      - option: fs.WalkDir.
+        why: It does not descend a symlinked directory, so every asset the live host serves through such a link was missing from the export.
+    upholds: [linked-dirs-walked-once]

@@ -5,3 +5,81 @@ code:
   - framework/sdkdocs/internal/docpage/
 docs:
   - framework/docs/content/sdk.md
+invariants:
+  - id: hidden-fields-never-documented
+    rule: The fields table and examples leave out every Hidden field.
+    enforced_by:
+      - test: framework/sdkdocs.TestEntityReferencePage
+  - id: entity-metadata-is-escaped
+    rule: Entity, field and endpoint metadata reaches the page escaped, and still appears.
+    enforced_by:
+      - test: framework/sdkdocs.TestEntityMetadataEscapedOnDocsPage
+  - id: install-hints-keep-the-module-alphabet
+    rule: The Go install snippet's module and directory hints hold only letters, digits, dot, dash, underscore, tilde and slash, whatever the manifest's App and module hold, so manifest text cannot start its own line in the copyable shell block.
+    enforced_by:
+      - test: framework/sdkdocs.TestSweepInstallHintsKeepTheModuleAlphabet
+  - id: versioned-entity-documents-its-path
+    rule: An entity mounted under a version documents its paths and example origin under that version's prefix, and every registered version of a table gets its own section on the one page.
+    enforced_by:
+      - test: framework/sdkdocs.TestVersionedEntityDocumentsRealPath
+      - test: framework/sdkdocs.TestSecondVersionShadowedInDocs
+  - id: one-page-per-table
+    rule: StaticPaths and the section menu list one entry per table, however many versions share it.
+    enforced_by:
+      - test: framework/sdkdocs.TestSweepVersionsShareOneMenuEntryAndPath
+      - test: framework/sdkdocs.TestStaticPathsCoverIncludedEntities
+  - id: versioned-page-ids-are-unique
+    rule: A page holding several versions of an entity writes each id once, its sections' headings, tables and code tabs carrying the version.
+    enforced_by:
+      - test: framework/sdkdocs.TestSweepVersionedPageWritesEachIDOnce
+  - id: unknown-entity-renders-not-found
+    rule: The entity screen rendered for a name outside the documented set shows Not found and no schema.
+    enforced_by:
+      - test: framework/sdkdocs.TestSweepUnknownEntityRendersNotFound
+  - id: read-only-omits-writes
+    rule: For an entity ReadOnlyMounted reports read-only, the reference lists no create, update, delete, batch or transition route and no create example.
+    enforced_by:
+      - test: framework/sdkdocs.TestReadOnlyReferenceOmitsWrites
+  - id: system-moves-have-no-row
+    rule: The endpoints table lists one transition route per non-system move and none for a system move.
+    enforced_by:
+      - test: framework/sdkdocs.TestSweepSystemMovesHaveNoRow
+  - id: typed-endpoint-calls
+    rule: A declared endpoint with SDK set and a name shows its typed Go and TypeScript calls, and any other endpoint points at the SDK's Do.
+    enforced_by:
+      - test: framework/sdkdocs.TestEndpointRowsNameTypedCalls
+  - id: example-filter-is-one-the-server-accepts
+    rule: The example filter skips Hidden, NoQuery, auto-generated and relation fields, uses _gte only on a type filter.OpSuitsType accepts it for, and falls back to a filterable created_at, then the entity's first key column.
+    enforced_by:
+      - test: framework/sdkdocs.TestExampleFilterFieldSkipsNoQueryFields
+      - test: framework/sdkdocs.TestExampleFilterOperatorSuitsPickedField
+      - test: framework/sdkdocs.TestExampleFilterFallsBackToEquality
+      - test: framework/sdkdocs.TestExampleFilterFieldRejectsNoQueryCreatedAtFallback
+      - test: framework/sdkdocs.TestSweepExampleFilterFallsBackToTheRealKey
+      - test: framework/sdkdocs.TestSweepExampleFilterSkipsHidden
+  - id: example-key-as-the-server-reads-it
+    rule: The examples spell the filter key with brackets where the bare key reads two ways, and the curl example query-escapes it.
+    enforced_by:
+      - test: framework/sdkdocs.TestExampleTabsSpellCollidingKey
+  - id: notes-name-what-the-server-reads
+    rule: The fields table marks a NoQuery field, the quickstart omits a sort the entity cannot take, and the listing notes name the trashed value the server reads.
+    enforced_by:
+      - test: framework/sdkdocs.TestFieldsTableMarksNoQueryField
+      - test: framework/sdkdocs.TestQuickstartOmitsUnavailableSort
+      - test: framework/sdkdocs.TestListNotesNameATrashedValueTheServerReads
+  - id: menu-marks-only-the-current-page
+    rule: A screen's menu marks only its own entry, and the drawer, mounted once for every page, marks none.
+    enforced_by:
+      - test: framework/sdkdocs.TestMenuMarksOnlyTheCurrentPage
+      - test: framework/sdkdocs.TestSweepDrawerMarksNoPage
+decisions:
+  - id: own-copy-of-the-docs-page
+    date: 2026-11-17
+    status: accepted
+    decision: The reference keeps its own docs page frame in internal/docpage, an owned style, instead of the one examples/site draws.
+    rejected:
+      - option: Import examples/site/docpage.
+        why: Framework code cannot import an example.
+      - option: An exported framework package.
+        why: The generated Style handle would become framework API.
+    revisit_if: framework/ui ships a docs page layout.

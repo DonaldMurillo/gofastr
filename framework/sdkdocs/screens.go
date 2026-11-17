@@ -20,10 +20,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// ---------------------------------------------------------------------------
-// Shared chrome: nav rail, drift banner, layout
-// ---------------------------------------------------------------------------
-
 const drawerName = "sdkdocs-section-menu"
 
 func (s *site) menuConfig(active string) interactive.SectionMenuConfig {
@@ -34,8 +30,6 @@ func (s *site) menuConfig(active string) interactive.SectionMenuConfig {
 	var ents []interactive.SectionItem
 	seenTable := map[string]bool{}
 	for _, e := range s.includedEntities() {
-		// Registered versions of one entity share the reference URL
-		// (the page documents every version); one menu entry per URL.
 		if seenTable[e.Config.Table] {
 			continue
 		}
@@ -59,14 +53,10 @@ func (s *site) menuConfig(active string) interactive.SectionMenuConfig {
 	}
 }
 
-// The drawer is mounted once for every page, so it marks no page: the
-// runtime's active-link pass marks the one the reader is on.
 func sectionMenuDrawer(s *site) *widget.Builder {
 	return interactive.SectionMenuDrawerFunc(func(context.Context) interactive.SectionMenuConfig { return s.menuConfig("") })
 }
 
-// page wraps a screen body in the standard doc chrome (nav rail, crumbs,
-// drift banner) on the package's own docs page (internal/docpage).
 func (s *site) page(active, title string, body ...render.HTML) render.HTML {
 	crumbs := []ui.Crumb{{Text: "API & SDKs", Href: s.cfg.BasePath}}
 	if title != "" {
@@ -111,11 +101,6 @@ func (s *site) exampleOrigin() string {
 	return strings.TrimRight(base, "/") + s.cfg.APIPrefix
 }
 
-// entityBase returns the live route prefix serving one entity's CRUD
-// surface. A version-mounted entity (App.GroupEntity sets Version to the
-// group's full prefix, e.g. "/api/v1") serves at that prefix, which already
-// carries the api prefix; everything else sits under cfg.APIPrefix.
-// Documenting any other path publishes URLs that 404.
 func (s *site) entityBase(e *entity.Entity) string {
 	if e.Version != "" {
 		return strings.TrimRight(e.Version, "/") + "/" + e.Config.Table
@@ -123,9 +108,6 @@ func (s *site) entityBase(e *entity.Entity) string {
 	return s.cfg.APIPrefix + "/" + e.Config.Table
 }
 
-// entityOrigin is exampleOrigin scoped to one entity: a version-mounted
-// entity's examples must address its group prefix, not the unversioned
-// api root.
 func (s *site) entityOrigin(e *entity.Entity) string {
 	base := s.cfg.BaseURL
 	if base == "" {
@@ -151,10 +133,6 @@ func code(t string) render.HTML {
 func heading(level int, t string) render.HTML {
 	return html.Heading(html.HeadingConfig{Level: level}, render.Text(t))
 }
-
-// ---------------------------------------------------------------------------
-// /, overview: downloads + install + quickstart
-// ---------------------------------------------------------------------------
 
 type indexScreen struct{ site *site }
 
@@ -242,8 +220,6 @@ func humanBytes(n int64) string {
 }
 
 func (s *site) installTabs() render.HTML {
-	// Docs + downloads mount on the app host, NOT under the API prefix,
-	// only API example URLs get exampleOrigin().
 	docsBase := s.exampleHost() + s.cfg.BasePath
 	goInstall := fmt.Sprintf(`curl -LO %s/sdk/go.zip
 unzip go.zip
@@ -266,11 +242,6 @@ curl -H "Authorization: Bearer $API_TOKEN" %s/<entity>`, s.exampleOrigin())
 	)
 }
 
-// goModuleHint/goDirHint read the manifest when present so the install
-// snippet matches the generated module path exactly. Both pass through
-// fenceWord: the manifest is a file in dist/, and its strings land inside
-// the copyable ```sh block, where a newline would put attacker text on
-// its own operator-copyable line (pinned in docs_output_security_test.go).
 func (s *site) goModuleHint() string {
 	if m, _, _ := s.resolved(); m != nil {
 		if a, ok := m.Artifacts["go"]; ok && a.Module != "" {
@@ -316,10 +287,6 @@ console.log(page.total);`, origin, prop)
 	)
 }
 
-// ---------------------------------------------------------------------------
-// /auth
-// ---------------------------------------------------------------------------
-
 type authScreen struct{ site *site }
 
 func (sc *authScreen) ScreenTitle(ctx context.Context) string { return "API authentication" }
@@ -364,8 +331,6 @@ c.Token = os.Getenv("API_TOKEN")`},
 	return s.page("auth", "Authentication", body...)
 }
 
-// exampleHost is the origin WITHOUT the API prefix (auth mounts beside the
-// API, not under it).
 func (s *site) exampleHost() string {
 	base := s.cfg.BaseURL
 	if base == "" {
@@ -373,10 +338,6 @@ func (s *site) exampleHost() string {
 	}
 	return strings.TrimRight(base, "/")
 }
-
-// ---------------------------------------------------------------------------
-// /errors
-// ---------------------------------------------------------------------------
 
 type errorsScreen struct{ site *site }
 
@@ -443,10 +404,6 @@ func errRow(status, meaning string) ui.Row {
 	}}
 }
 
-// ---------------------------------------------------------------------------
-// /entities/:name
-// ---------------------------------------------------------------------------
-
 type entityScreen struct {
 	site   *site
 	params map[string]string
@@ -454,9 +411,6 @@ type entityScreen struct {
 
 func (sc *entityScreen) SetParams(params map[string]string) { sc.params = params }
 
-// StaticPaths exports one page per included entity (keyed by table, the
-// URL segment). Registered versions of one entity share the segment and
-// therefore the page, so the path set dedupes on the table.
 func (sc *entityScreen) StaticPaths(_ context.Context) []map[string]string {
 	seen := map[string]bool{}
 	var out []map[string]string
@@ -489,57 +443,63 @@ func (sc *entityScreen) Render() render.HTML {
 	s := sc.site
 	versions := s.lookupAll(sc.params["name"])
 	if len(versions) == 0 {
-		// The visibility policy 404s before render; this is belt and
-		// braces for direct RenderPage calls.
 		return s.page("", "Not found", heading(1, "Not found"))
 	}
 	primary := versions[0]
 
 	body := []render.HTML{heading(1, primary.Config.Name)}
 	for _, e := range versions {
-		// When several versions share this page, each gets its own
-		// section so every registered version's schema is reachable;
-		// the section headings drop to h3 so the version heading owns
-		// the h2. A single unversioned entity keeps the historical
-		// layout untouched.
-		h := 2
+		h, suffix := 2, ""
 		if len(versions) > 1 {
 			label := e.Version
 			if label == "" {
 				label = "default"
 			}
 			body = append(body, heading(2, "API version "+label))
-			h = 3
+			h, suffix = 3, versionSlug(e)
 		}
-		body = append(body, sc.entitySection(e, h)...)
+		body = append(body, sc.entitySection(e, h, suffix)...)
 	}
 	return s.page("entity:"+primary.Config.Table, primary.Config.Name, body...)
 }
 
-// entitySection renders one entity version's reference body: base path,
-// fields, endpoints, listing notes, examples. h is the heading level for
-// the section headings (see Render).
-func (sc *entityScreen) entitySection(e *entity.Entity, h int) []render.HTML {
+func versionSlug(e *entity.Entity) string {
+	if e.Version == "" {
+		return "default"
+	}
+	return strings.ReplaceAll(strings.Trim(e.Version, "/"), "/", "-")
+}
+
+func sectionID(id, suffix string) string {
+	if suffix == "" {
+		return ""
+	}
+	return id + "-" + suffix
+}
+
+func sectionHeading(level int, id, suffix, t string) render.HTML {
+	return html.Heading(html.HeadingConfig{Level: level, ID: sectionID("heading-"+id, suffix)}, render.Text(t))
+}
+
+func (sc *entityScreen) entitySection(e *entity.Entity, h int, suffix string) []render.HTML {
 	s := sc.site
 	cfg := e.Config
 	return []render.HTML{
 		para(text("Base path "), code(s.entityBase(e)), text(". Responses are "),
 			text(map[bool]string{true: "snake_case", false: "camelCase"}[s.cfg.SnakeCase]),
 			text("; filter and sort query parameters always use the snake_case column names shown below.")),
-		heading(h, "Fields"),
-		sc.fieldsTable(cfg),
-		heading(h, "Endpoints"),
-		sc.endpointsTable(e),
-		heading(h, "Listing, filtering, sorting"),
+		sectionHeading(h, "fields", suffix, "Fields"),
+		sc.fieldsTable(cfg, sectionID("table-"+cfg.Table+"-fields", suffix)),
+		sectionHeading(h, "endpoints", suffix, "Endpoints"),
+		sc.endpointsTable(e, sectionID("table-"+cfg.Table+"-endpoints", suffix)),
+		sectionHeading(h, "listing", suffix, "Listing, filtering, sorting"),
 		sc.listParamsNotes(cfg),
-		heading(h, "Examples"),
+		sectionHeading(h, "examples", suffix, "Examples"),
 		sc.exampleTabs(e),
 	}
 }
 
-// fieldsTable ports the non-Hidden walk from crud.EntityLLMMD: hidden
-// columns must never appear in public documentation.
-func (sc *entityScreen) fieldsTable(cfg entity.EntityConfig) render.HTML {
+func (sc *entityScreen) fieldsTable(cfg entity.EntityConfig, id string) render.HTML {
 	var rows []ui.Row
 	for _, f := range cfg.Fields {
 		if f.Hidden {
@@ -575,6 +535,7 @@ func (sc *entityScreen) fieldsTable(cfg entity.EntityConfig) render.HTML {
 		}})
 	}
 	return ui.DataTable(ui.DataTableConfig{
+		ID:      id,
 		Caption: cfg.Name + " fields",
 		Columns: []ui.Column{
 			{Key: "field", Header: "Field"},
@@ -586,11 +547,9 @@ func (sc *entityScreen) fieldsTable(cfg entity.EntityConfig) render.HTML {
 	})
 }
 
-func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
+func (sc *entityScreen) endpointsTable(e *entity.Entity, id string) render.HTML {
 	cfg := e.Config
 	base := sc.site.entityBase(e)
-	// A record's path has one segment per key column: /{id}, or
-	// /{student_id}/{course_id} for a composite key.
 	keys := e.KeyColumns()
 	record := base + "/{" + strings.Join(keys, "}/{") + "}"
 	type op struct{ method, path, desc string }
@@ -611,8 +570,6 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
 		)
 	}
 	ops = append(ops, op{"GET", base + "/_events", "Live SSE feed: entity.created / updated / deleted"})
-	// One route per non-system move, the same set the transition route
-	// and the SDKs' generated methods serve. System moves have no route.
 	if !readOnly {
 		for _, t := range crud.RoutableTransitions(cfg.States) {
 			desc := "State move " + t.Key + ": " + cfg.States.Field + " " + strings.Join(t.From, "|") + " → " + t.To
@@ -631,8 +588,6 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
 		if desc == "" {
 			desc = "Custom endpoint" + map[bool]string{true: " (" + ep.Name + ")", false: ""}[ep.Name != ""]
 		}
-		// A settings-declared endpoint has a typed call in both SDKs;
-		// a hand-registered one is reached through Do.
 		if ep.SDK && ep.Name != "" {
 			desc += ": Go c." + upperFirst(casing.ToCamel(ep.Name)) + ", TypeScript api." + casing.ToCamel(cfg.Table) + "." + casing.ToCamel(ep.Name)
 		} else {
@@ -650,6 +605,7 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
 		}})
 	}
 	return ui.DataTable(ui.DataTableConfig{
+		ID:      id,
 		Caption: cfg.Name + " endpoints",
 		Columns: []ui.Column{
 			{Key: "method", Header: "Method"},
@@ -695,25 +651,15 @@ func (sc *entityScreen) exampleTabs(e *entity.Entity) render.HTML {
 	origin := s.entityOrigin(e)
 	structName := upperFirst(casing.ToCamel(cfg.Name))
 	prop := casing.ToCamel(cfg.Table)
-	// The example filter is picked from the one type predicate every
-	// filter surface applies (filter.OpSuitsType): a `_gte` snippet on
-	// a column whose type refuses range operators (Bool, JSON) is a
-	// request the server answers 400, published as the canonical
-	// example. When no queryable column accepts a range comparison the
-	// snippets show plain equality.
 	filterField, filterOp := exampleFilter(cfg)
-	// The key as the server reads it: the bracket spelling only where the
-	// bare key reads two ways (a field beside its name plus a suffix).
 	op := filter.OpEq
 	if filterOp == "_gte" {
 		op = filter.OpGte
 	}
 	filterKey := filter.SpellerFor(cfg.Fields).Key(filterField, op)
-	// A versioned entity shares the page with its siblings; the tab
-	// widget name must stay unique per section.
 	tabsName := "sdk-ent-" + cfg.Table
 	if e.Version != "" {
-		tabsName += "-" + strings.ReplaceAll(strings.Trim(e.Version, "/"), "/", "-")
+		tabsName += "-" + versionSlug(e)
 	}
 
 	goCreate, tsCreate := "", ""
@@ -739,7 +685,6 @@ page, err := c.List%s(ctx, params)
 %sawait api.%s.watch((event) => console.log(event), { signal });`,
 		prop, filterField, filterKey, tsCreate, prop)
 
-	// Escaped: curl reads a literal [..] in a URL as a glob range.
 	curlCode := fmt.Sprintf(`curl -H "Authorization: Bearer $API_TOKEN" \
   "%s/%s?%s=10&sort=-%s"`, origin, cfg.Table, url.QueryEscape(filterKey), filterField)
 
@@ -750,31 +695,16 @@ page, err := c.List%s(ctx, params)
 	)
 }
 
-// exampleFilter picks the example filter column and its operator
-// suffix: a queryable, non-auto, non-relation number or date first (a
-// _gte comparison reads best on one), else the first such field whose
-// type accepts a range comparison (filter.OpSuitsType — the one
-// predicate every filter surface applies), else the first such field
-// whose type accepts equality, with "" (a JSON column takes no filter),
-// else created_at, else the primary key.
 func exampleFilter(cfg entity.EntityConfig) (field, op string) {
 	first, anyGte := "", ""
 	for _, f := range cfg.Fields {
-		// NoQuery skipped alongside Hidden: this example exists to show a
-		// filter that works, and the parser answers a NoQuery column with a
-		// 400, so publishing it as the canonical snippet is worse than
-		// publishing nothing.
 		if f.Hidden || f.NoQuery || f.AutoGenerate != schema.AutoNone || f.Type == schema.Relation {
 			continue
 		}
-		// A number or date reads best as the _gte example; any other
-		// type that accepts a range comparison is next best (the
 		switch f.Type {
 		case schema.Int, schema.Float, schema.Decimal, schema.Timestamp, schema.Date:
 			return f.Name, "_gte"
 		default:
-			// Every other type falls through: the predicate below
-			// decides whether it still carries the range example.
 		}
 		if filter.OpSuitsType(filter.OpGte, f.Type) && anyGte == "" {
 			anyGte = f.Name
@@ -789,22 +719,17 @@ func exampleFilter(cfg entity.EntityConfig) (field, op string) {
 	if first != "" {
 		return first, ""
 	}
-	// Fall back to created_at only when the entity actually has it. An entity
-	// built WithTimestamps(false) whose every other column is Hidden, NoQuery,
-	// auto-generated, or a relation has no filterable column of its own, and
-	// naming a column that does not exist publishes three examples (Go, TS,
-	// curl) that every reader copies into a 400. The primary key is always
-	// present and always filterable, so it is the honest last resort.
 	for _, f := range cfg.Fields {
 		if f.Name == "created_at" && !f.Hidden && !f.NoQuery {
 			return "created_at", ""
 		}
 	}
+	if len(cfg.PrimaryKey) > 0 {
+		return cfg.PrimaryKey[0], ""
+	}
 	return "id", ""
 }
 
-// upperFirst turns casing.ToCamel's lowerCamel wire form into the
-// PascalCase Go identifier the generated client exports.
 func upperFirst(s string) string {
 	if s == "" {
 		return s
