@@ -4,3 +4,46 @@ code:
   - framework/factory/
 docs:
   - framework/docs/content/factories.md
+invariants:
+  - id: app-registry-runs-the-app-pipeline
+    rule: A Factory built from a registry with CrudHandlerFor inserts through the handler that registry returns, so the App's hooks, events and JSON casing apply.
+    enforced_by:
+      - test: framework/factory.TestFactoryFromAppRegistryRunsTheAppPipeline
+  - id: with-handler-wins
+    rule: WithHandler replaces whichever handler New chose.
+    enforced_by:
+      - test: framework/factory.TestSweepWithHandlerReplacesTheDefault
+  - id: new-refuses-what-cannot-insert
+    rule: New errors on a nil base, a nil registry, an unknown entity and an entity with no DB.
+    enforced_by:
+      - test: framework/factory.TestFactory_BuildFailsClosedOnNilBase
+      - test: framework/factory.TestFactory_NewRejectsUnknownEntity
+      - test: framework/factory.TestSweepNewRefusesNilRegistryAndDBlessEntity
+  - id: overrides-left-to-right
+    rule: Build calls base afresh and copies overrides over it left to right, so a later override wins and no override outlives its call; a nil base body counts as empty.
+    enforced_by:
+      - test: framework/factory.TestFactory_BuildAppliesOverridesLeftToRight
+      - test: framework/factory.TestSweepBuildToleratesANilBase
+  - id: create-many-per-index
+    rule: CreateMany merges perIndex(i) over each row it inserts, and for n of zero or less inserts nothing and returns nil.
+    enforced_by:
+      - test: framework/factory.TestSweepCreateManyMergesPerIndex
+      - test: framework/factory.TestSweepCreateManyOfNothingWritesNothing
+      - test: framework/factory.TestFactory_CreateManyInsertsN
+  - id: missing-factory-errors
+    rule: Registry.Get errors and MustGet panics for a name nothing registered.
+    enforced_by:
+      - test: framework/factory.TestRegistry_MissingFactoryError
+  - id: sequence-never-repeats
+    rule: Sequence.Next never returns the same value twice, under concurrent calls too.
+    enforced_by:
+      - test: framework/factory.TestSequence_NextIsMonotonicAndConcurrentSafe
+decisions:
+  - id: insert-through-crud
+    date: 2026-11-17
+    status: accepted
+    decision: Factories insert through the in-process CRUD handler's CreateOne, so a seeded row passes the same hooks, transaction and events as an HTTP create.
+    rejected:
+      - option: Insert with SQL directly.
+        why: Rows would skip the hooks and events a test means to exercise.
+    upholds: [app-registry-runs-the-app-pipeline]
