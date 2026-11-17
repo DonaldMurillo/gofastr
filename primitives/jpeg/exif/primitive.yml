@@ -1,0 +1,6 @@
+primitive: jpeg.exif
+summary: Reading the orientation tag out of an EXIF TIFF block.
+code:
+  - framework/internal/exif/
+docs:
+  - framework/docs/content/image.md

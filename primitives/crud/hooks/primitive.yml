@@ -1,0 +1,7 @@
+primitive: crud.hooks
+summary: The hook registry entity hooks run through - the hook types, registration and ordered execution with panic recovery, the firing observer and labels, and the List and Get payloads a hook narrows with AddWhere.
+code:
+  - framework/hook/
+docs:
+  - framework/docs/content/hooks-and-transactions.md
+  - framework/docs/content/plugins.md

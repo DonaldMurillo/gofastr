@@ -1,0 +1,6 @@
+primitive: db
+summary: The shared low-level database seams - the Executor and Beginner interfaces, the transaction on the context, the after-commit queue and nested savepoints.
+code:
+  - framework/db/*.go
+docs:
+  - framework/docs/content/hooks-and-transactions.md

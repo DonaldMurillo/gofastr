@@ -1,0 +1,6 @@
+primitive: app.serve.lifecycle
+summary: The graceful-shutdown engine an App stops through - ordered drainers, health checkers, the shutdown timeout and the signal-driven run.
+code:
+  - framework/lifecycle/
+docs:
+  - framework/docs/content/application-hosts.md
