@@ -12,7 +12,7 @@ it; when nothing does, delete it.
 | `processmodule-demo` | The process-module go/no-go gate (`framework/processmodule*_test.go`, `framework/processmoduletest`) and its CI job. |
 | `desktop-notes` | The `battery/desktop` dogfood app: `cmd/gofastr` desktop tests and the native `desktop_e2e` suite. |
 | `webmcp-remote-assist` | The contract analyzers' fixtures and `core-ui/runtime`'s RTC e2e test; the WebMCP + WebRTC reference in `webmcp.md`. |
-| `tracker`, `acme-site`, `layoutlab` | Tree layouts: `framework/ui`'s recipe tests, `framework/headless`'s e2e, and the code `layouts.md` and `ui-composition-recipes.md` quote. `layoutlab` holds the layout runtime's test fixtures. |
+| `layoutlab` | The tree-layout runtime's test fixtures (outlets, route areas, per-screen and group fills); the showcase app built on the same features is `examples/site/tracker`. |
 | `hn` | The primitives eval's `hn-*` tasks (`evals/primitives`), and the first-load numbers in `runtime-minification.md`. |
 
 Run any of them the same way as an example: `go run ./internal/testapps/<name>`.

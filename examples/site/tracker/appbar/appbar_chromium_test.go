@@ -11,11 +11,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/examples/site/tracker/appbar"
 	"github.com/DonaldMurillo/gofastr/framework"
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
-	"github.com/DonaldMurillo/gofastr/internal/testapps/tracker/appbar"
 	"github.com/chromedp/chromedp"
 )
 

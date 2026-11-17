@@ -6,7 +6,7 @@ breaks one of them, the change is wrong.
 | Example | What it is |
 |---|---|
 | [`meridian`](meridian) | The flagship SaaS app: a billing and revenue console with a marketing site, sign-in, owner-scoped CRUD, roles, an admin back office, scoped API tokens, and a generated customer CLI under `meridian/cmd/meridian` (`go install ./examples/meridian/cmd/meridian`; docs at `gofastr docs app-cli`). It was seeded from [`meridian/gofastr.yml`](meridian/gofastr.yml) and has been hand-evolved since. It is also the design-system screenshot reference (AGENTS.md hard rule 9). |
-| [`site`](site) | The framework's docs site and component gallery: every UI component on its own page, the reference docs, and the gofastr-plugins registry rendered from a vendored `plugins.json` (`scripts/vendor-plugins-json.sh` refreshes it). It is what GitHub Pages serves. |
+| [`site`](site) | The framework's docs site and component gallery: every UI component on its own page, the reference docs, and the gofastr-plugins registry rendered from a vendored `plugins.json` (`scripts/vendor-plugins-json.sh` refreshes it). It also hosts in-site demo apps, among them Acme Tracker (`site/tracker`, at `/examples/tracker`), the tree-layout showcase: outlets, route areas, resolvers, region guards, deferred parts, loading states and transitions in a small issue tracker. It is what GitHub Pages serves. |
 
 Run one under the dev server for rebuild-on-save, livereload, and the dev
 MCP tools your coding agent reads:

@@ -1,4 +1,4 @@
-package main
+package tracker
 
 // TestSidebarKeepsScrollAndOpenGroup (docs/DESIGN-layout-outlets.md
 // "Reactive areas", design L727-734): a sidebar is a STATIC area of a

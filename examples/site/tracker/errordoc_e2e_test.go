@@ -1,4 +1,4 @@
-package main
+package tracker
 
 // Error pages are real pages (2026-09-27 brief): they finish through
 // the same page tail every document runs (session mint, no-store, seed,
@@ -318,7 +318,7 @@ func TestEnterErrorPageFromEveryChain(t *testing.T) {
 
 func crumbContains(s string) string {
 	return fmt.Sprintf(
-		`(() => { const c = document.querySelector('[data-cui-area="l:shell~crumbs"]'); return c && c.textContent.includes(%q); })()`, s)
+		`(() => { const c = document.querySelector('[data-cui-area$=":shell~crumbs"]'); return c && c.textContent.includes(%q); })()`, s)
 }
 
 // TestTrackerCurrentMarksFollowNavigation: after client navigations the

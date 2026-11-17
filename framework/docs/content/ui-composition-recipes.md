@@ -33,7 +33,7 @@ are static chrome; a crumbs area follows the route server-side; a
 toolbar outlet and an aside outlet are the page's own regions; the
 primary slot is the route's screen.
 
-From `internal/testapps/tracker` (`main.go`, `buildSite` + `buildShell`):
+From `examples/site/tracker` (`main.go`, `buildSite` + `buildShell`):
 
 <!-- gofastr:compile
 import "context"
@@ -89,7 +89,7 @@ func buildShell(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
 ```
 
 `nav` is the rendered `ui.Sidebar`. `appBar` is the app's own package,
-not a framework component: `internal/testapps/tracker/appbar` is one Go file
+not a framework component: `examples/site/tracker/appbar` is one Go file
 that renders the `html.Header` banner landmark (brand, search,
 notifications, theme toggle, the sidebar's drawer trigger) and an
 owned style sheet that holds the bar at `--size-header-height`, the
@@ -113,7 +113,7 @@ layer's primary. The layer key embeds the resolved value, so one
 project's list is kept across its pages and re-rendered when the
 entity changes.
 
-From `internal/testapps/tracker` (`screens.go`, `newProjectLayout` +
+From `examples/site/tracker` (`screens.go`, `newProjectLayout` +
 `buildProject`):
 
 <!-- gofastr:compile
@@ -247,9 +247,10 @@ sheets and app tokens.
 
 `gofastr generate package siteheader` and `gofastr generate package
 sitefooter` copy the canonical packages into the app as owned code
-(Go, owned sheet, generated class methods, tests); `internal/testapps/acme-site`
-keeps customised copies of the same packages as a worked example. The
-header has the brand, a nav whose Help link stays lit on every page
+(Go, owned sheet, generated class methods, tests); `examples/site`
+keeps customised copies of the same packages (`siteheader`,
+`sitefooter`, `docpage`) as a worked example. The canonical header has
+the brand, a nav whose Help link stays lit on every page
 under `/help` (`data-cui-match-prefix`), a call to action, a theme
 toggle, and a phone menu that works without JavaScript. Its chromium
 test checks that the brand and the call to action sit on the page
@@ -260,12 +261,12 @@ ContainerPage}`. The container's `Pad` gives the page its block rhythm:
 `ContainerPadPage` pads under the header and above the footer,
 `ContainerPadEnd` only above the footer (for a page whose first block
 sits right under the header). Without it the first block touches the
-header's rule. Acme's screens each bring their own container with
-`Pad: ContainerPadEnd`. Acme also places an announcement outlet above
-the header; only the changelog fills it, and navigation clears it when
-the visitor leaves the changelog.
+header's rule. A region only some pages show, such as an announcement
+above the header, is an outlet only those pages fill; navigation clears
+it when the visitor leaves them.
 
-From `internal/testapps/acme-site` (`main.go`, `buildSite` + `buildSiteShell`):
+From `examples/site` (`layout.go`, `mainLayout`), with the announcement
+outlet added:
 
 <!-- gofastr:compile
 import "context"
@@ -293,8 +294,8 @@ func buildSiteShell(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
 The theme picks up the packages' tokens once, where the site is built:
 
 ```go
-site.WithTheme(theme.Default(theme.Overrides{Primary: "#0F766E"}).
-	Extend(siteheader.Tokens, helpdocs.Tokens))
+site.WithTheme(createTheme().
+	Extend(siteheader.Tokens, sitefooter.Tokens, docpage.Tokens))
 ```
 
 **Avoid:** a page-owned header or footer wrapper, overriding a framework
@@ -307,16 +308,17 @@ Compose the screen's own rhythm from `ui.Stack` gaps, `ui.Section`, and
 
 A group layout under the section prefix draws the docs page, and the
 page is again the site's own package: `gofastr generate package
-docpage` copies the canonical one into the app (`internal/testapps/acme-site/
-helpdocs` is a customised copy of it). Its sheet lays out the nav
+docpage` copies the canonical one into the app (`examples/site/docpage`
+is a customised copy of it). Its sheet lays out the nav
 rail, the article and the contents rail on the page measure, keeps
 the rails sticky under the header, sets the article's reading rhythm,
-and draws the previous/next cards. The nav
-rail is a route area (the current-article mark is re-derived
-server-side on every navigation). Crumbs, toc and pager are outlets each
-article fills; the crumbs are `ui.Breadcrumbs`. An article without
-headings declines the TOC fill (`ErrNoFill`), and the sheet collapses
-the empty column with `:has(> :empty)`, including after client
+and draws the previous/next cards. The nav rail is static chrome the
+layer keeps, scroll included, across doc-to-doc navigations; the
+runtime's active-link sweep marks the current article. (A nav that must
+be re-derived server-side per page is a route area instead.) Crumbs,
+pager and rail are outlets each page fills; the crumbs are `ui.Breadcrumbs`. A page that leaves
+the rail unfilled, or declines its fill (`ErrNoFill`), collapses the
+empty column with `:has(> :empty)`, including after client
 navigation. The pager's own words, its nav label and the "Previous" /
 "Next" defaults, translate through `PagerConfig.Ctx` the way
 siteheader's do through `Config.Ctx` (`i18nui.NavMoreArticles`,
@@ -326,50 +328,53 @@ unset region renders an empty element itself; a page with neither
 rail is one centred column at the prose measure, the shape a blog
 post or a standalone page uses.
 
-From `internal/testapps/acme-site` (`main.go`, `buildSite` + `buildHelpDocs`):
+From `examples/site` (`docs_catalog.go`, `registerDocsGroup`, and
+`layout.go`, `docsLayout`):
 
 <!-- gofastr:compile
 import "context"
 import uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 import "github.com/DonaldMurillo/gofastr/core/render"
-type ArticleScreen struct{}
-func (a *ArticleScreen) Render() render.HTML { return render.Text("Article") }
-type ArticleCrumbs struct{}
-func (c *ArticleCrumbs) Render() render.HTML { return render.Text("Crumbs") }
-type ArticleToc struct{}
-func (t *ArticleToc) Render() render.HTML { return render.Text("TOC") }
-type ArticlePager struct{}
-func (p *ArticlePager) Render() render.HTML { return render.Text("Pager") }
+type DocsIndexScreen struct{}
+func (a *DocsIndexScreen) Render() render.HTML { return render.Text("Index") }
+type DocPageScreen struct{}
+func (a *DocPageScreen) Render() render.HTML { return render.Text("Doc") }
+func (a *DocPageScreen) SetParams(map[string]string) {}
+type DocsIndexRail struct{}
+func (c *DocsIndexRail) Render() render.HTML { return render.Text("Rail") }
+type DocCrumbs struct{}
+func (c *DocCrumbs) Render() render.HTML { return render.Text("Crumbs") }
+type DocPager struct{}
+func (p *DocPager) Render() render.HTML { return render.Text("Pager") }
 var crumbs = uiapp.NewOutlet("crumbs")
-var toc = uiapp.NewOutlet("toc")
 var pager = uiapp.NewOutlet("pager")
-func buildHelpDocs(ctx context.Context, l *uiapp.LayoutTree) render.HTML { return l.Primary() }
+var rail = uiapp.NewOutlet("rail")
+func buildDocs(ctx context.Context, l *uiapp.LayoutTree) render.HTML { return l.Primary() }
 var site *uiapp.App
 -->
 ```go
 docs := uiapp.NewLayout("docs", uiapp.LayoutSpec{
-	Outlets: []*uiapp.Outlet{crumbs, toc, pager},
-}, buildHelpDocs)
-group := uiapp.NewScreenGroup("/help", docs)
-group.Screen(uiapp.NewScreen("/help/{slug}", &ArticleScreen{}).
-	Fill(crumbs, &ArticleCrumbs{}).
-	Fill(toc, &ArticleToc{}).
-	Fill(pager, &ArticlePager{}), nil)
+	Outlets: []*uiapp.Outlet{crumbs, pager, rail},
+}, buildDocs)
+group := uiapp.NewScreenGroup("/docs", docs)
+group.Screen(uiapp.NewScreen("/docs/", &DocsIndexScreen{}).
+	Fill(rail, &DocsIndexRail{}), nil)
+group.Screen(uiapp.NewScreen("/docs/{path...}", &DocPageScreen{}).
+	Fill(crumbs, &DocCrumbs{}).
+	Fill(pager, &DocPager{}), nil)
 site.Router.ScreenGroup(group)
 ```
 
-`buildHelpDocs` hands the layout's parts to the package:
+`buildDocs` hands the layout's parts to the package:
 
 ```go
-func buildHelpDocs(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
-	return helpdocs.Render(helpdocs.Config{
-		Nav: l.RouteArea("helpnav", func(ctx context.Context, m uiapp.Match) render.HTML {
-			return helpNav(ctx, m.Path())
-		}),
-		Crumbs: l.Place(docsCrumbs),
+func buildDocs(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
+	return docpage.Layer(docpage.LayerConfig{
+		Nav:    interactive.SectionMenu(docsSectionMenuConfig()),
+		Crumbs: l.Place(crumbs),
 		Body:   l.Primary(),
-		Pager:  l.Place(docsPager),
-		Toc:    l.Place(docsToc),
+		Pager:  l.Place(pager),
+		Rail:   l.Place(rail),
 	})
 }
 ```

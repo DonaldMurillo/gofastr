@@ -14,7 +14,7 @@ import (
 )
 
 // The trap posture is for a phone drawer: the site header's menu
-// (internal/testapps/acme-site/siteheader, the package the app generator writes
+// (cmd/gofastr/packages/siteheader, the package the app generator writes
 // into every app) is a Disclosure{Trap: true} its sheet hides from a
 // breakpoint up. A trap holds while its disclosure is open AND drawn.
 // When the sheet stops drawing an open one (the window widens, a tablet

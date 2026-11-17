@@ -1,4 +1,4 @@
-package main
+package tracker
 
 import (
 	"context"
@@ -23,9 +23,9 @@ import (
 // these tests pin the PRODUCT behaviours the showcase exists to show.
 
 const (
-	asideSel   = `[data-cui-outlet="l:shell#aside"]`
-	crumbsSel  = `[data-cui-area="l:shell~crumbs"]`
-	toolbarSel = `[data-cui-outlet="l:shell#toolbar"]`
+	asideSel   = `[data-cui-outlet$=":shell#aside"]`
+	crumbsSel  = `[data-cui-area$=":shell~crumbs"]`
+	toolbarSel = `[data-cui-outlet$=":shell#toolbar"]`
 	filterSel  = `#filter-search-filter`
 )
 
@@ -521,7 +521,7 @@ func TestTrackerSwapFocusRingE2E(t *testing.T) {
 // TestTrackerPartFillEventE2E: the runtime dispatches gofastr:fill on
 // window after each applied PART. Navigating to the home page fetches
 // the slow aside fill as its own part request (~900 ms) — exactly one
-// event for l:shell#aside, carrying the destination path and the apply
+// event for g:/:shell#aside, carrying the destination path and the apply
 // time. Streaming's replacement: the same event, a different transport.
 // (The DevTools-level contract — one request per deferred outlet, each
 // with a readable body — is pinned by TestPartsAreSeparateRequestsWithBodies
@@ -557,7 +557,7 @@ func TestTrackerPartFillEventE2E(t *testing.T) {
 	}
 	var aside int
 	for _, ev := range events {
-		if ev["addr"] == "l:shell#aside" {
+		if ev["addr"] == "g:/:shell#aside" {
 			aside++
 			if p, _ := ev["path"].(string); p != "/" {
 				t.Errorf("fill event path = %v, want /", ev["path"])
@@ -569,7 +569,7 @@ func TestTrackerPartFillEventE2E(t *testing.T) {
 		}
 	}
 	if aside != 1 {
-		t.Errorf("gofastr:fill fired %d times for l:shell#aside, want exactly 1 (once per applied part)", aside)
+		t.Errorf("gofastr:fill fired %d times for g:/:shell#aside, want exactly 1 (once per applied part)", aside)
 	}
 }
 
@@ -913,7 +913,7 @@ func TestTrackerAsideCollapseE2E(t *testing.T) {
 	}
 	var mid map[string]any
 	if err := chromedp.Run(ctx,
-		chromedp.Poll(`location.pathname === '/reports' && document.querySelector('[data-cui-outlet="l:shell#aside"]').textContent === ''`, nil),
+		chromedp.Poll(`location.pathname === '/reports' && document.querySelector('[data-cui-outlet$=":shell#aside"]').textContent === ''`, nil),
 		chromedp.Evaluate(`(() => {
 			const a = document.querySelector('.fui-content-row__aside');
 			return {display: getComputedStyle(a).display};
@@ -984,7 +984,7 @@ func TestTrackerPhoneCrumbsSeparatorE2E(t *testing.T) {
 		chromedp.WaitVisible("main", chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond),
 		chromedp.Evaluate(`(() => {
-			const items = document.querySelectorAll('[data-cui-area="l:shell~crumbs"] .fui-breadcrumbs__item');
+			const items = document.querySelectorAll('[data-cui-area$=":shell~crumbs"] .fui-breadcrumbs__item');
 			let firstVisible = null, visibleCount = 0;
 			for (const it of items) {
 				if (getComputedStyle(it).display !== 'none') {
@@ -1149,7 +1149,7 @@ func TestTrackerActiveLinkMarksAtCommitE2E(t *testing.T) {
 		chromedp.Evaluate(`(() => {
 			window.__marks = [];
 			window.addEventListener('gofastr:fill', (e) => {
-				if (!window.__marks.length && e.detail && e.detail.addr === 'l:shell#aside') {
+				if (!window.__marks.length && e.detail && e.detail.addr === 'g:/:shell#aside') {
 					window.__marks = Array.from(document.querySelectorAll('.fui-list-detail__list a[aria-current="page"]'))
 						.map((a) => a.getAttribute('href'));
 				}
@@ -1181,7 +1181,7 @@ func TestTrackerDrawerHeaderE2E(t *testing.T) {
 
 	const (
 		triggerSel = `[data-cui-scope="appbar"] .fui-sidebar__hamburger`
-		drawerSel  = `[data-cui-widget="ui-sidebar-drawer"]`
+		drawerSel  = `[data-cui-widget="tracker-nav-drawer"]`
 		closeSel   = drawerSel + ` .fui-sidebar__drawer-close`
 	)
 	if err := chromedp.Run(ctx,

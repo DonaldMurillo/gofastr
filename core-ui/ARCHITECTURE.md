@@ -2676,7 +2676,7 @@ owned sheets.
 site's own chrome above all, is the app's own package with an owned
 sheet: the framework has no site header, footer or docs-page component,
 because a preset frame steers every site into one look.
-`internal/testapps/acme-site/{siteheader,sitefooter,helpdocs}` are the
+`examples/site/{siteheader,sitefooter,docpage}` are the
 references, and the app generator writes the same header and footer
 packages into a generated app as its own code. An owned sheet never
 reaches into a kit component (`[data-cui-*]` and `.fui-*` selectors
@@ -3577,7 +3577,7 @@ your need:
 | You want | Use | Notes |
 | --- | --- | --- |
 | Primary navigation | `framework/ui.Sidebar` | Inline column ≥ md, hamburger + `preset.Drawer` < md, same content tree, active-route highlighting from the current URL. |
-| Site top bar, footer, docs page | the app's own package with an owned sheet | Copy `internal/testapps/acme-site/{siteheader,sitefooter,helpdocs}`: `html` elements, `headless.Disclosure` for the phone menu, tokens for every dimension. The framework ships no frame component. |
+| Site top bar, footer, docs page | the app's own package with an owned sheet | Copy `examples/site/{siteheader,sitefooter,docpage}`: `html` elements, `headless.Disclosure` for the phone menu, tokens for every dimension. The framework ships no frame component. |
 | Dominant record, incident, or operational summary | `framework/ui.RecordSummary` | Bounded status, next-decision, signal, compact support rail, ownership, and natural-width action slots. Actions stay in the lead region and move ahead of support context on phones. One page summary; do not duplicate it in a Banner. |
 | Compact related signals without a card grid | `framework/ui.MetricBand` | Semantic description list; one flat row wide, two columns on phones, with an odd final signal spanning the row instead of leaving an empty quadrant. |
 | Action menu on a row | `framework/ui.Menu` | Renders headless.Menu: a native `<details>` disclosure (Esc / SPA-nav close come free) whose keyboard contract the registered `headless-menu` module binds. |

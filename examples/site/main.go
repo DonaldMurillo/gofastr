@@ -34,9 +34,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/examples/site/docpage"
 	"github.com/DonaldMurillo/gofastr/examples/site/sitefooter"
 	"github.com/DonaldMurillo/gofastr/examples/site/siteheader"
+	"github.com/DonaldMurillo/gofastr/examples/site/tracker"
+	"github.com/DonaldMurillo/gofastr/examples/site/tracker/appbar"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/docs"
 	"github.com/DonaldMurillo/gofastr/framework/docs/mcptools"
@@ -138,7 +141,7 @@ func setupServer() *framework.App {
 	// The site's chrome packages bring their own tokens (type-ramp
 	// steps, the colophon's 64px, the doc page's 96px, the banner
 	// hairline); Extend adds them to the theme.
-	t := createTheme().Extend(siteheader.Tokens, sitefooter.Tokens, docpage.Tokens)
+	t := createTheme().Extend(siteheader.Tokens, sitefooter.Tokens, docpage.Tokens, appbar.Tokens)
 	site.WithTheme(t)
 
 	// CommandPalette, the global ⌘K palette. We only need the widget
@@ -298,6 +301,8 @@ func setupServer() *framework.App {
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(demoSectionMenuConfig()))
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(examplesSectionMenuConfig()))
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(pluginsSectionMenuConfig()))
+	// The tracker's phone nav drawer and its notification bell.
+	tracker.MountWidgets(widgetMounter{fwApp.Router()})
 	// Kiln panel approve/reject, no-op endpoints. The OptimisticAction
 	// runtime needs a real 2xx response to keep the optimistic label;
 	// these record nothing because the page is a demo, but the round-trip
@@ -868,6 +873,11 @@ func registerScreens(site *app.App) {
 	examples.Screen(groupScreen("/examples/live-dashboard", &LiveDashboardScreen{}), nil)
 	site.Router.ScreenGroup(examples)
 
+	// Acme Tracker, the tree-layout showcase: a whole product app with its
+	// own shell (app bar, sidebar, toolbar, aside), so it is a standalone
+	// group like the headless showcases, outside the examples layer.
+	tracker.Register(site, "/examples/tracker")
+
 	// The headless showcases stay out of the examples layer on purpose:
 	// each renders a whole themed product page (its own theme scope), so a
 	// site nav column beside it would misrepresent the page it demos.
@@ -930,3 +940,9 @@ func registerScreens(site *app.App) {
 	}
 	site.Router.ScreenGroup(componentsGroup)
 }
+
+// widgetMounter adapts the router to ui.WidgetMounter for packages that
+// mount their own widgets (the tracker).
+type widgetMounter struct{ r *router.Router }
+
+func (m widgetMounter) MountWidget(def *widget.Definition) { widget.Mount(m.r, def) }

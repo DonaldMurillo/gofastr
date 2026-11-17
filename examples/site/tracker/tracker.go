@@ -1,25 +1,19 @@
-// Package main is Acme Tracker, the layout showcase as a real app: a
-// small issue tracker built only from the framework's components and
-// typed theme, where every tree-layout feature appears as ordinary
-// product behaviour — no outlined boxes, no marker strings. The lab
-// (internal/testapps/layoutlab) keeps the test fixtures; this is what the
-// features look like worn in.
+// Package tracker is Acme Tracker, the tree-layout showcase as a real
+// app: a small issue tracker built only from the framework's components,
+// where every tree-layout feature appears as ordinary product behaviour,
+// with no outlined boxes and no marker strings. The site mounts it at
+// /examples/tracker (Register); its tests mount it at the root of a host
+// of their own. The lab (internal/testapps/layoutlab) keeps the test
+// fixtures; this is what the features look like worn in.
 //
 // Recent activity follows calendar order within the fixture's single year,
 // not the lexical order of its day-first labels; undated events come last.
-//
-// Run with:
-//
-//	go run ./internal/testapps/tracker        # :8096, or $PORT
-package main
+package tracker
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -30,22 +24,37 @@ import (
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
-	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/core/router"
-	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/framework/isolation"
-	"github.com/DonaldMurillo/gofastr/framework/static"
+	"github.com/DonaldMurillo/gofastr/examples/site/tracker/appbar"
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
-	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
-	"github.com/DonaldMurillo/gofastr/framework/uihost"
-	"github.com/DonaldMurillo/gofastr/internal/testapps/tracker/appbar"
 )
 
-// defaultAddr is the fallback when $PORT is unset; `gofastr dev` and
-// PaaS runtimes inject PORT and isolation.ListenAddr honours it.
-const defaultAddr = ":8096"
+// base is the prefix Register mounts the tracker under: "" at a host's
+// root, "/examples/tracker" in the site. Every href and route goes
+// through at.
+var base string
+
+// at prefixes an in-app path with the mount point. The tracker's home is
+// the bare prefix, so "/" maps to base itself when base is set.
+func at(p string) string {
+	if base != "" && p == "/" {
+		return base
+	}
+	return base + p
+}
+
+// inApp strips the mount point from a request path, so the crumb trail
+// reads the same segments wherever the tracker is mounted.
+func inApp(p string) string {
+	if base == "" {
+		return p
+	}
+	if p == base {
+		return "/"
+	}
+	return strings.TrimPrefix(p, base)
+}
 
 // trackerShell and trackerProject are the two tree layouts, built in
 // buildSite.
@@ -70,110 +79,35 @@ var (
 // per request like every framework refusal.
 var exporterDown = i18n.Define("tracker.exporter_down", "The CSV exporter is down for maintenance.")
 
-func main() {
-	// The slow aside fill is a DEFERRED outlet
-	// it arrives as its own part request beside the page, visible in
-	// DevTools with its body. Fill errors and concurrency need no
-	// configuration: containment and concurrent loading are the only
-	// behaviours the core ships.
-	fwApp := buildApp()
-	if dir := exportDir(os.Args[1:]); dir != "" {
-		if err := exportTo(context.Background(), fwApp, dir); err != nil {
-			log.Fatalf("export: %v", err)
-		}
-		log.Printf("tracker exported to %s", dir)
-		return
-	}
-	listenAddr, err := isolation.ListenAddr(".", defaultAddr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("tracker listening on http://localhost%s", listenAddr)
-	if err := fwApp.Start(listenAddr); err != nil && err != http.ErrServerClosed {
-		log.Fatal(err)
-	}
+// Register mounts the tracker on site under prefix ("" for a host's
+// root): one standalone group carries the shell, so the host's default
+// layout does not wrap it, and a subgroup carries the project layer.
+// Register may run once per process. Mount the widgets with
+// MountWidgets on the same router.
+func Register(site *uiapp.App, prefix string) {
+	base = strings.TrimSuffix(prefix, "/")
+	buildSite(site)
 }
 
-// exportTo renders the app to static HTML + assets, like the other
-// examples. Every dynamic route carries StaticPaths; the Legacy
-// project's issue pages are deliberately absent (see
-// IssueScreen.StaticPaths for why).
-func exportTo(ctx context.Context, fwApp *framework.App, dir string) error {
-	var host *uihost.UIHost
-	for _, m := range fwApp.Mountables() {
-		if h, ok := m.(*uihost.UIHost); ok {
-			host = h
-			break
-		}
-	}
-	if host == nil {
-		return errors.New("no uihost.UIHost mounted")
-	}
-	if _, err := (&static.Builder{Host: host, OutDir: dir}).Build(ctx); err != nil {
-		return err
-	}
-	return nil
-}
-
-// exportDir scans args for `--export <dir>` or `--export=<dir>`, the
-// examples/site spelling: the target directory, or "" to serve live.
-func exportDir(args []string) string {
-	for i := range args {
-		switch {
-		case args[i] == "--export" && i+1 < len(args):
-			return args[i+1]
-		case strings.HasPrefix(args[i], "--export="):
-			return strings.TrimPrefix(args[i], "--export=")
-		}
-	}
-	return ""
-}
-
-// routerMounter adapts *router.Router to ui.MountSidebar's mounter.
-type routerMounter struct{ r *router.Router }
-
-func (m routerMounter) MountWidget(def *widget.Definition) {
-	widget.Mount(m.r, def)
-}
-
-// buildApp wires the app into a framework app without binding a port,
-// so tests drive it in-process.
-func buildApp() *framework.App {
-	site := buildSite()
-	host := uihost.New(site,
-		// An unknown URL renders inside the shell like any other page.
-		uihost.WithNotFoundScreen(&NotFoundScreen{}),
-		// A whole-page failure (LEG-40's store) gets the tracker's own
-		// screen through the shell, matching the not-found page.
-		uihost.WithErrorScreen(&ErrorScreen{}),
-	)
-	fwApp := framework.NewApp(
-		framework.WithConfig(framework.AppConfig{Name: "tracker"}),
-	)
-	ui.MountSidebar(routerMounter{fwApp.Router()}, sidebarNavConfig())
-	fwApp.Use(host.RouteMatchMiddleware())
-	fwApp.Mount(host)
-
-	bellDef := bellPopover.Build()
-	widget.Mount(fwApp.Router(), &bellDef)
-	return fwApp
+// MountWidgets mounts the sidebar's phone drawer and the bell popover.
+func MountWidgets(r ui.WidgetMounter) {
+	ui.MountSidebar(r, sidebarNavConfig())
+	// Built here, after Register set the prefix its item links carry;
+	// buildShell renders the trigger per request.
+	_, pop := ui.NotificationBell(bellConfig())
+	def := pop.Build()
+	r.MountWidget(&def)
 }
 
 func bellConfig() ui.NotificationBellConfig {
 	return ui.NotificationBellConfig{
 		Name:        "tracker-bell",
-		Href:        "/inbox",
+		Href:        at("/inbox"),
 		Label:       "Notifications",
 		UnreadCount: unreadNotificationCount(),
 		Items:       bellItems(),
 	}
 }
-
-// bellPopover mounts once; buildShell renders the trigger per request.
-var bellPopover = func() *widget.Builder {
-	_, pop := ui.NotificationBell(bellConfig())
-	return pop
-}()
 
 // bellItems renders the inbox's latest entries for the popover.
 func bellItems() []ui.NotificationItem {
@@ -193,23 +127,14 @@ func bellItems() []ui.NotificationItem {
 // issueHref links an issue number under its project.
 func issueHref(num int) string {
 	if num == 0 {
-		return "/inbox"
+		return at("/inbox")
 	}
 	p := issueProject(num)
-	return "/projects/" + p.Slug + "/issues/" + strconv.Itoa(num)
+	return at("/projects/" + p.Slug + "/issues/" + strconv.Itoa(num))
 }
 
 // buildSite declares the screens, the shell, and the project layer.
-func buildSite() *uiapp.App {
-	site := uiapp.NewApp("Acme Tracker")
-	site.WithTheme(theme.Default(theme.Overrides{
-		// Acme's own accent over the framework palette: a deep teal
-		// that keeps 4.5:1 on the light surface, with its dark twin.
-		Primary: "#0F766E",
-		Dark:    &theme.Overrides{Primary: "#5EEAD4"},
-		// The app bar's own tokens (the search field's width).
-	}).Extend(appbar.Tokens))
-
+func buildSite(site *uiapp.App) {
 	// The shell: kept everywhere. A top bar (brand, global search,
 	// bell, theme toggle), the sidebar nav, a toolbar row across the
 	// content (breadcrumbs as a route area the server re-renders on
@@ -280,14 +205,14 @@ func buildSite() *uiapp.App {
 			Transition: uiapp.FadeThrough(160 * time.Millisecond),
 		}},
 	}, buildShell)
-	site.SetDefaultLayout(trackerShell)
+	shell := uiapp.NewScreenGroup(at("/"), trackerShell).Standalone()
 
-	site.RegisterScreen(uiapp.NewScreen("/projects", &ProjectsIndexScreen{}).WithTitle("Projects"), nil)
-	site.RegisterScreen(uiapp.NewScreen("/", &HomeScreen{}).WithTitle("Overview").
+	shell.Screen(uiapp.NewScreen(at("/projects"), &ProjectsIndexScreen{}).WithTitle("Projects"), nil)
+	shell.Screen(uiapp.NewScreen(at("/"), &HomeScreen{}).WithTitle("Overview").
 		Fill(trackerAside, &RecentActivityPanel{}), nil)
-	site.RegisterScreen(uiapp.NewScreen("/inbox", &InboxScreen{}).WithTitle("Inbox").
+	shell.Screen(uiapp.NewScreen(at("/inbox"), &InboxScreen{}).WithTitle("Inbox").
 		Fill(trackerToolbar, &InboxToolbar{}), nil)
-	site.RegisterScreen(uiapp.NewScreen("/reports", &ReportsScreen{}).WithTitle("Reports").
+	shell.Screen(uiapp.NewScreen(at("/reports"), &ReportsScreen{}).WithTitle("Reports").
 		// The slow reports page declares its own swap-slot skeleton:
 		// a chart-shaped block, then table rows.
 		WithLoading(&uiapp.Loading{
@@ -300,7 +225,7 @@ func buildSite() *uiapp.App {
 			After: 150 * time.Millisecond,
 			Min:   300 * time.Millisecond,
 		}), nil)
-	site.RegisterScreen(uiapp.NewScreen("/settings", &SettingsScreen{}).WithTitle("Settings"), nil)
+	shell.Screen(uiapp.NewScreen(at("/settings"), &SettingsScreen{}).WithTitle("Settings"), nil)
 
 	// The project layer: ONE group at /projects/{project}. The layer
 	// key embeds the group's RESOLVED prefix, so navigating between
@@ -308,7 +233,7 @@ func buildSite() *uiapp.App {
 	// navigating between one project's issues keeps it — the product
 	// rule, spelled the way the router owns it.
 	trackerProject = newProjectLayout()
-	group := uiapp.NewScreenGroup("/projects/{project}", trackerProject)
+	group := shell.SubGroup("/projects/{project}", trackerProject)
 	group.Resolve(resolvedFilter.From(func(ctx context.Context) (string, error) {
 		return uiapp.QueryFromContext(ctx).Get("filter"), nil
 	}))
@@ -335,16 +260,15 @@ func buildSite() *uiapp.App {
 	// The group fill: every project page carries the toolbar's
 	// primary action unless the screen fills it itself.
 	group.Fill(trackerToolbar, &ProjectToolbar{})
-	group.Screen(uiapp.NewScreen("/projects/{project}", &ProjectIndexScreen{}).
+	group.Screen(uiapp.NewScreen(at("/projects/{project}"), &ProjectIndexScreen{}).
 		Fill(trackerAside, &ProjectOverviewPanel{}), nil)
-	group.Screen(uiapp.NewScreen("/projects/{project}/issues/{n}", &IssueScreen{}).
+	group.Screen(uiapp.NewScreen(at("/projects/{project}/issues/{n}"), &IssueScreen{}).
 		Fill(trackerToolbar, &IssueToolbar{}).
 		// The archived guard: a Legacy issue's activity aside renders
 		// the read-only notice instead of the feed — a REGION decision,
 		// the issue itself renders on.
 		Fill(trackerAside, &ActivityPanel{},
 			uiapp.FillPolicy(uiapp.PolicyFunc(archivedAsideGuard))), nil)
-	site.Router.ScreenGroup(group)
 
 	// The exporter is down: the export route is a real screen whose
 	// policy blocks with 503, so a soft navigation to it answers
@@ -352,13 +276,12 @@ func buildSite() *uiapp.App {
 	// the shell like every other route: a page that answers blocked
 	// kills its deferred parts before any 409 part reset can reload
 	// (commitParts/finish in the parts module).
-	site.RegisterScreen(uiapp.NewScreen("/reports/export", &ExportScreen{}).
+	shell.Screen(uiapp.NewScreen(at("/reports/export"), &ExportScreen{}).
 		WithTitle("Export").
 		WithPolicy(uiapp.PolicyFunc(func(ctx context.Context) app.Decision {
 			return decide.BlockWith(http.StatusServiceUnavailable, exporterDown)
 		})), nil)
-
-	return site
+	site.Router.ScreenGroup(shell)
 }
 
 // archivedAsideGuard is the Legacy project's region guard on an issue
@@ -391,7 +314,7 @@ func buildShell(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
 		// mode subtracts.
 		appbar.Render(appbar.Config{
 			Name:   "Acme Tracker",
-			Href:   "/",
+			Href:   at("/"),
 			Search: ui.SearchInput(ui.SearchInputConfig{Name: "q", ID: "tracker-search", Placeholder: "Search issues and projects"}),
 			Actions: ui.Cluster(ui.ClusterConfig{NoWrap: true},
 				ui.NotificationBellTrigger(ctx, bellConfig()), ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})),
@@ -416,11 +339,12 @@ func buildShell(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
 // crumbsArea is the breadcrumb route area: re-rendered by the server
 // on every navigation the shell survives, from the live match.
 func crumbsArea(_ context.Context, m uiapp.Match) render.HTML {
-	if m.Path() == "/" {
+	path := inApp(m.Path())
+	if path == "/" {
 		return ui.Breadcrumbs(ui.BreadcrumbsConfig{Label: "Breadcrumb", CompactMobile: true}, ui.Crumb{Text: "Home", Current: true})
 	}
-	crumbs := []ui.Crumb{{Text: "Home", Href: "/"}}
-	segs := strings.Split(strings.Trim(m.Path(), "/"), "/")
+	crumbs := []ui.Crumb{{Text: "Home", Href: at("/")}}
+	segs := strings.Split(strings.Trim(path, "/"), "/")
 	switch {
 	case len(segs) >= 2 && segs[0] == "projects":
 		p, ok := projectBySlug(segs[1])
@@ -428,7 +352,7 @@ func crumbsArea(_ context.Context, m uiapp.Match) render.HTML {
 		if ok {
 			name = p.Name
 		}
-		crumbs = append(crumbs, ui.Crumb{Text: "Projects", Href: "/projects"}, ui.Crumb{Text: name, Href: "/projects/" + segs[1]})
+		crumbs = append(crumbs, ui.Crumb{Text: "Projects", Href: at("/projects")}, ui.Crumb{Text: name, Href: at("/projects/" + segs[1])})
 		if len(segs) >= 4 && segs[2] == "issues" {
 			// The trail deepens only for an issue that exists; an unknown
 			// id (LEG-12, any number not in the project) ends at the

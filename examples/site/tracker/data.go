@@ -1,4 +1,4 @@
-package main
+package tracker
 
 // The in-memory model behind Acme Tracker: four projects, six people,
 // twenty-five issues with real descriptions and per-issue activity.

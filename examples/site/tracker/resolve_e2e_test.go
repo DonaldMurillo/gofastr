@@ -1,4 +1,4 @@
-package main
+package tracker
 
 // The resolution-driven tracker cases (spike/layout-resolve): the ONE
 // param group and its project resolver, the per-project transition
@@ -204,7 +204,7 @@ func TestTrackerMalformedActivityBoundary(t *testing.T) {
 	}
 	req, _ := http.NewRequest(http.MethodGet, base+"/projects/billing/issues/63", nil)
 	req.Header.Set("X-Gofastr-Navigate", "1")
-	req.Header.Set("X-Gofastr-Part", "l:shell#aside")
+	req.Header.Set("X-Gofastr-Part", "g:/:shell#aside")
 	res, err := client.Do(req)
 	if err != nil {
 		t.Fatal(err)

@@ -1,4 +1,4 @@
-package main
+package tracker
 
 // Every screen and fill component. Screens render the main slot;
 // fills target the shell's toolbar and aside outlets. Real copy
@@ -19,19 +19,6 @@ import (
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// --- icons -----------------------------------------------------------
-
-// The few line icons the app needs, registered in the framework's
-// icon registry so every consumer styles them through the same
-// stroke/currentColor contract.
-func init() {
-	ui.RegisterIcon("inbox", `<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>`)
-	ui.RegisterIcon("folder", `<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>`)
-	ui.RegisterIcon("bar-chart", `<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>`)
-	ui.RegisterIcon("sliders", `<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>`)
-	ui.RegisterIcon("chevron-left", `<polyline points="15 18 9 12 15 6"/>`)
-}
-
 // --- sidebar ---------------------------------------------------------
 
 // sidebarNavConfig builds the shell's nav: Inbox, the four projects
@@ -44,8 +31,8 @@ func sidebarNavConfig() ui.SidebarConfig {
 	for _, p := range projects {
 		projectItems = append(projectItems, ui.SidebarItem{
 			Label:     p.Name,
-			Href:      "/projects/" + p.Slug,
-			MatchPath: "/projects/" + p.Slug,
+			Href:      at("/projects/" + p.Slug),
+			MatchPath: at("/projects/" + p.Slug),
 		})
 	}
 	return ui.SidebarConfig{
@@ -53,19 +40,20 @@ func sidebarNavConfig() ui.SidebarConfig {
 		// The drawer's header brand: the same name the top bar shows
 		// (the layout does not expose the brand to the shell build).
 		DrawerTitle:           "Acme Tracker",
+		DrawerName:            "tracker-nav-drawer",
 		NativeMobile:          true,
 		SuppressDrawerTrigger: true,
 		Items: []ui.SidebarItem{
-			{Label: "Inbox", Href: "/inbox", Icon: ui.Icon("inbox", ui.IconConfig{}), MatchPath: "/inbox"},
+			{Label: "Inbox", Href: at("/inbox"), Icon: ui.Icon("inbox", ui.IconConfig{}), MatchPath: at("/inbox")},
 			{
 				Label:     "Projects",
 				Icon:      ui.Icon("folder", ui.IconConfig{}),
 				Open:      true,
 				Children:  projectItems,
-				MatchPath: "/projects",
+				MatchPath: at("/projects"),
 			},
-			{Label: "Reports", Href: "/reports", Icon: ui.Icon("bar-chart", ui.IconConfig{}), MatchPath: "/reports"},
-			{Label: "Settings", Href: "/settings", Icon: ui.Icon("sliders", ui.IconConfig{}), MatchPath: "/settings"},
+			{Label: "Reports", Href: at("/reports"), Icon: ui.Icon("bar-chart", ui.IconConfig{}), MatchPath: at("/reports")},
+			{Label: "Settings", Href: at("/settings"), Icon: ui.Icon("sliders", ui.IconConfig{}), MatchPath: at("/settings")},
 		},
 	}
 }
@@ -99,7 +87,7 @@ func projectCards() []render.HTML {
 	for _, p := range projects {
 		p := p
 		cards = append(cards, ui.Card(ui.CardConfig{
-			Href:         "/projects/" + p.Slug,
+			Href:         at("/projects/" + p.Slug),
 			Heading:      p.Name,
 			HeadingLevel: 2,
 			Description:  p.Summary,
@@ -254,7 +242,7 @@ func (s *ReportsScreen) Render() render.HTML {
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Reports")),
 		ui.Muted(render.Text("Issue counts by status for each project, with the opened-per-week trend behind them.")),
 		ui.LinkButton(ui.LinkButtonConfig{
-			Href: "/reports/export", Label: "Export CSV", Icon: "download",
+			Href: at("/reports/export"), Label: "Export CSV", Icon: "download",
 		}),
 		ui.Grid(ui.GridConfig{Min: "19rem", Gap: ui.GapMD}, cards...),
 	)
@@ -271,7 +259,7 @@ func (s *SettingsScreen) Render() render.HTML {
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Settings")),
 		ui.Card(ui.CardConfig{Heading: "Workspace", HeadingLevel: 2},
 			ui.Form(ui.FormConfig{
-				Action:      "/settings",
+				Action:      at("/settings"),
 				Method:      "GET",
 				SubmitLabel: "Save changes",
 			},
@@ -321,7 +309,7 @@ func (s *NotFoundScreen) Render() render.HTML {
 		Title:        "Page not found",
 		HeadingLevel: 1,
 		Description:  "The address you followed does not exist in this workspace. It may have moved, or it never did.",
-		Action:       ui.LinkButton(ui.LinkButtonConfig{Label: "Back to overview", Href: "/"}),
+		Action:       ui.LinkButton(ui.LinkButtonConfig{Label: "Back to overview", Href: at("/")}),
 	})
 }
 
@@ -336,7 +324,7 @@ func (s *ErrorScreen) Render() render.HTML {
 		Title:        "Something went wrong",
 		HeadingLevel: 1,
 		Description:  "This page could not be loaded. Try again in a moment.",
-		Action:       ui.LinkButton(ui.LinkButtonConfig{Label: "Back to overview", Href: "/"}),
+		Action:       ui.LinkButton(ui.LinkButtonConfig{Label: "Back to overview", Href: at("/")}),
 	})
 }
 
@@ -410,7 +398,7 @@ func buildProject(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
 			Badge: ui.StatusBadge(ui.StatusBadgeConfig{Label: p.Health, Variant: p.Tone})}),
 		ui.ListDetail(ui.ListDetailConfig{
 			ListLabel: "Issues", ExtraAttrs: l.VTRegion(), MobileSinglePane: true,
-			BackHref: "/projects/" + p.Slug, BackLabel: "Back to issues",
+			BackHref: at("/projects/" + p.Slug), BackLabel: "Back to issues",
 			List:   l.RouteArea("issues", issueListArea),
 			Detail: l.Primary(),
 		}),
@@ -436,7 +424,7 @@ func issueListArea(ctx context.Context, _ uiapp.Match) render.HTML {
 		}
 	}
 	return ui.Stack(ui.StackConfig{Gap: ui.GapNone},
-		ui.FilterToolbar(ui.FilterToolbarConfig{Compact: true, Action: "/projects/" + p.Slug,
+		ui.FilterToolbar(ui.FilterToolbarConfig{Compact: true, Action: at("/projects/" + p.Slug),
 			Search: &ui.FilterSearch{Name: "filter", Value: filter, Placeholder: "Filter issues", Label: "Filter issues"}}),
 		ui.Stack(ui.StackConfig{Gap: ui.GapNone}, rows...))
 }
@@ -446,7 +434,7 @@ func issueListArea(ctx context.Context, _ uiapp.Match) render.HTML {
 // is the runtime's alone: the activelink sweep stamps
 // aria-current="page" on the exact-href match and CardRow highlights it.
 func issueRow(slug string, iss Issue, filter string) render.HTML {
-	href := "/projects/" + slug + "/issues/" + strconv.Itoa(iss.Number)
+	href := at("/projects/" + slug + "/issues/" + strconv.Itoa(iss.Number))
 	if filter != "" {
 		href += "?filter=" + url.QueryEscape(filter)
 	}
