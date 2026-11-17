@@ -5,3 +5,203 @@ code:
   - framework/outbox/relay.go
 docs:
   - framework/docs/content/events.md
+on_change:
+  - A change to how a pending parent counts as complete is made in completeParent and in sweepParents' backstop together, and in the Semantics section of events.md.
+twins:
+  - job: Decide that a pending parent is complete - older than the handler grace, no pending delivery, and a delivery for every consumer this relay declares for its type.
+    why: completeParent settles one row right after one of its deliveries settles, and the sweep settles every aged row in one UPDATE, so the same conditions are written twice in SQL; no shared builder has been written.
+    sites:
+      - path: framework/outbox/delivery.go
+        note: completeParent, the per-delivery completion.
+      - path: framework/outbox/delivery.go
+        note: sweepParents part (ii), the completion backstop, which also requires at least one delivery row.
+invariants:
+  - id: one-delivery-per-consumer
+    rule: Expansion creates at most one delivery per (row, consumer), and two relays racing to create the same one is a silent no-op (ON CONFLICT DO NOTHING on Postgres, INSERT OR IGNORE on SQLite), never a statement error that stalls the pump.
+    enforced_by:
+      - test: framework/outbox.TestPGExpandRaceIsANoOp
+      - test: framework/outbox.TestExpandConcurrentNeverDuplicates
+  - id: expansion-skips-expanded-parents
+    rule: A batch-limited expansion pass selects only pending parents that lack the consumer's delivery, so a backlog larger than the batch is expanded over successive pumps.
+    enforced_by:
+      - test: framework/outbox.TestExpandReachesNewerParentsPastTheBatch
+  - id: claim-is-exclusive
+    rule: Two relays never claim the same delivery at once - Postgres claims with FOR UPDATE SKIP LOCKED, SQLite under BEGIN IMMEDIATE so the read already holds the write lock.
+    enforced_by:
+      - test: framework/outbox.TestPGClaimDeliveriesConcurrentNoBusy
+      - test: framework/outbox.TestClaimDeliveriesConcurrentNoBusy
+      - test: framework/outbox.TestClaim_DeliveryExclusivity
+      - test: framework/outbox.TestPostgres_ClaimDeliveryExclusivity
+  - id: claim-spends-an-attempt
+    rule: Each claim adds one to the delivery's attempts in SQL and no settle writes the counter, so a relay that dies between claim and settle still spends the attempt and the count never goes back.
+    enforced_by:
+      - test: framework/outbox.TestClaimCrashLoopConsumesAttempts
+      - test: framework/outbox.TestFailureSettleAttemptsMonotonic
+  - id: exhausted-expired-claim-dead-letters
+    rule: Before every claim, a pending delivery whose lease expired with its attempts at MaxAttempts is marked dead with a cause, while one never leased stays pending and claimable at any attempt count.
+    enforced_by:
+      - test: framework/outbox.TestExpiredExhaustedClaimIsDeadLettered
+      - test: framework/outbox.TestNoHandlerRequeueNeverDeadLetters
+  - id: settle-fenced-on-claim
+    rule: Every settle, refund and requeue matches claimed_until to the lease its own claim wrote, so a claimant whose lease expired and was re-claimed changes nothing.
+    enforced_by:
+      - test: framework/outbox.TestStaleSettleKeepsNewLease
+      - test: framework/outbox.TestStaleReleaseKeepsNewClaim
+  - id: terminal-until-replay
+    rule: A dispatched, dead or abandoned delivery changes only through Replay or ReplayConsumer; a late success or failure from a stale claimant leaves it as it is.
+    enforced_by:
+      - test: framework/outbox.TestStaleSuccessKeepsTerminal
+      - test: framework/outbox.TestStaleFailureKeepsTerminal
+  - id: failure-backs-off
+    rule: A failed delivery with attempts left returns to pending with next_attempt_at set by exponential backoff, and one at MaxAttempts is marked dead.
+    enforced_by:
+      - test: framework/outbox.TestOutboxRedSQLiteBackoffIgnored
+      - test: framework/outbox.TestRelay_FailingConsumer_GoesDead
+      - test: framework/outbox.TestFirstFailureDeadWhenMaxAttemptsOne
+  - id: no-handler-requeue
+    rule: A delivery whose consumer has no handler on this replica is requeued at the maximum backoff with its attempt refunded and is never dead-lettered, and is abandoned only once the delivery row itself is older than the handler grace.
+    enforced_by:
+      - test: framework/outbox.TestNoHandlerRequeueNeverDeadLetters
+      - test: framework/outbox.TestNoHandlerRequeueWaitsTheMaxBackoff
+      - test: framework/outbox.TestAddedConsumer_FreshDeliveryNotAbandoned
+      - test: framework/outbox.TestRemovedConsumer_AbandonedSiblingPending
+  - id: parent-completes-only-when-covered
+    rule: A parent is marked dispatched only once it is older than the handler grace, has no pending delivery and holds a delivery for every consumer this relay declares for its type, by completeParent and by the sweep backstop alike.
+    enforced_by:
+      - test: framework/outbox.TestParentWaitsForLaggingConsumer
+      - test: framework/outbox.TestRollingAdd_YoungParentNotCompletedBeforeNewConsumerExpands
+      - test: framework/outbox.TestSweepBackstopCompletesAgedParent
+    judge: Does this change the completion conditions in completeParent without the same change in sweepParents' backstop, or the reverse?
+  - id: orphan-drop-needs-age-and-unconsumed-type
+    rule: The sweep drops a pending parent with no delivery only when it is older than the handler grace and no consumer here declares its type.
+    enforced_by:
+      - test: framework/outbox.TestOrphanType_NotDroppedWithinGrace
+      - test: framework/outbox.TestOrphanType_DroppedAfterGrace
+      - test: framework/outbox.TestConsumedType_OldUnexpandedNotDropped
+  - id: replay-restarts-grace
+    rule: Replay and ReplayConsumer reset a delivery's created_at to now, so a replayed abandoned delivery is not abandoned again at once by a replica that lacks the handler.
+    enforced_by:
+      - test: framework/outbox.TestReplayRestartsHandlerGrace
+      - test: framework/outbox.TestPGReplayRestartsHandlerGrace
+  - id: replay-reopens-only-a-dispatched-parent
+    rule: Replay reopens the parent only when it is dispatched and only when it reset at least one delivery, leaving a pending parent and its other deliveries untouched.
+    enforced_by:
+      - test: framework/outbox.TestReplayPendingParentNotClobbered
+      - test: framework/outbox.TestReplay_ResurrectsAllDeadDeliveries
+  - id: retention-keeps-unsettled-rows
+    rule: Retention deletes only dispatched parents past the cutoff whose deliveries are all dispatched, together with those deliveries, so a dead, abandoned or pending delivery and its payload survive for Replay.
+    enforced_by:
+      - test: framework/outbox.TestRetentionKeepsDeadLetterParent
+      - test: framework/outbox.TestPurgeKeepsPendingChild
+      - test: framework/outbox.TestPGReplayRaceKeepsLiveChild
+      - test: framework/outbox.TestRetention_PurgesDispatchedOnly
+      - test: framework/outbox.TestPostgres_RetentionKeepsDeadLetterParent
+  - id: panic-is-a-failure
+    rule: A consumer handler that panics settles as a failed attempt, retried and then dead-lettered, never as dispatched.
+    enforced_by:
+      - test: framework/outbox.TestRelay_PanickingConsumer_GoesDead
+      - test: framework/outbox.TestPoisonConsumer_DeadLettersWithoutBlockingSibling
+      - test: framework/outbox.TestPostgres_PoisonDeadLetters
+  - id: handler-budget-frees-the-relay
+    rule: The relay waits at most the handler timeout for a handler, then settles the delivery as failed and goes on with the batch, even when the handler ignores its cancelled context.
+    enforced_by:
+      - test: framework/outbox.TestHungConsumerCannotStallSibling
+  - id: settle-outlives-shutdown
+    rule: A delivery's settle and parent completion run on a context detached from the relay's, bounded by the settle window that opens after the handler returns.
+    enforced_by:
+      - test: framework/outbox.TestPumpShutdownRefundsUnstarted
+      - test: framework/outbox.TestPumpShutdownRefundsInterruptedHandler
+      - test: framework/outbox.TestSlowHandlerStillSettles
+  - id: shutdown-hands-back-unrun-deliveries
+    rule: A shutdown mid-batch releases the unstarted rest of the batch, and a delivery whose handler it interrupted, with the claimed attempt refunded.
+    enforced_by:
+      - test: framework/outbox.TestPumpShutdownRefundsUnstarted
+      - test: framework/outbox.TestPumpShutdownRefundsInterruptedHandler
+  - id: batch-runs-inside-its-lease
+    rule: After the first delivery of a batch, the relay releases the rest, attempts refunded, once less lease remains than one handler timeout plus settle window.
+    enforced_by:
+      - test: framework/outbox.TestPumpReleasesClaimsItCannotRun
+      - test: framework/outbox.TestPumpShortLeaseStillDelivers
+  - id: stop-between-pumps
+    rule: The relay loop checks stop and ctx between pumps, so stop returns during a backlog that keeps every pump full.
+    enforced_by:
+      - test: framework/outbox.TestRelay_StopDuringBacklog
+  - id: payload-delivered-as-staged
+    rule: The relay decodes a payload into any with jsonexact, so arrays, scalars and strings arrive as encoding/json shapes and an integer past 2^53 arrives with its staged digits.
+    enforced_by:
+      - test: framework/outbox.TestNonObjectDataReachesConsumer
+      - test: framework/outbox.TestRelayKeepsBigIntegers
+  - id: corrupt-payload-is-a-failure
+    rule: A payload that does not decode never reaches the handler and settles as a failed attempt.
+    enforced_by:
+      - test: framework/outbox.TestCorruptPayloadNeverReachesHandler
+  - id: event-id-is-row-id
+    rule: The relay sets Event.ID to the outbox row ID and Event.Timestamp to the row's created_at.
+    enforced_by:
+      - test: framework/outbox.TestRelay_DeliversAndDispatches
+      - test: framework/outbox.TestPostgres_DeliversAndDispatches
+  - id: no-consumers-warns
+    rule: StartRelay logs a warning when no consumer is declared, since every staged row would then be dropped by the orphan sweep.
+    enforced_by:
+      - test: framework/outbox.TestRelayWithNoConsumersWarns
+  - id: placeholders-first-appear-in-order
+    rule: In every statement the relay builds, $N placeholders first appear in ascending order, because a driver may bind $N by order of first appearance.
+    judge: Does this change add a statement whose $N placeholders first appear out of ascending order?
+decisions:
+  - id: per-consumer-delivery-rows
+    date: 2026-11-17
+    status: accepted
+    decision: Each (row, consumer) pair has its own delivery row, retried, dead-lettered and replayed apart from its siblings.
+    rejected:
+      - option: One status and attempt count on the parent row.
+        why: One failing consumer held back or dead-lettered the event for every sibling consumer.
+    upholds: [terminal-until-replay, failure-backs-off]
+  - id: time-based-grace
+    date: 2026-11-17
+    status: accepted
+    decision: Abandonment and parent completion wait out a handler grace measured from the delivery's or parent's own created_at.
+    rejected:
+      - option: Retire a consumer's deliveries when this replica's declared set lacks it.
+        why: A replica not yet rolled out to a new consumer retired that consumer's deliveries before an updated replica could run them.
+    revisit_if: Replicas share a declared-consumer registry, so a relay can tell a removed consumer from one not deployed here yet.
+    upholds: [no-handler-requeue, parent-completes-only-when-covered, orphan-drop-needs-age-and-unconsumed-type]
+  - id: attempts-counted-at-claim
+    date: 2026-11-17
+    status: accepted
+    decision: The claim spends the attempt in SQL, as battery/queue and battery/webhook do, and settles write state only.
+    rejected:
+      - option: Count the attempt when the failure settles.
+        why: A relay that died between claim and settle re-delivered the row every lease period forever.
+    upholds: [claim-spends-an-attempt, exhausted-expired-claim-dead-letters]
+  - id: lease-is-the-claim-fence
+    date: 2026-11-17
+    status: accepted
+    decision: The claimed_until a claim writes doubles as its fence; a reclaim always writes a later value, and settles bind the same Go time the claim bound.
+    rejected:
+      - option: Settle on (row_id, consumer, status) alone.
+        why: A claimant whose lease expired cleared the newer claim's lease, and a third relay then claimed the delivery while the second still ran it.
+    upholds: [settle-fenced-on-claim]
+  - id: sqlite-claims-begin-immediate
+    date: 2026-11-17
+    status: accepted
+    decision: The SQLite claim opens its transaction with BEGIN IMMEDIATE on a pinned connection.
+    rejected:
+      - option: database/sql's BeginTx.
+        why: It issues a deferred BEGIN, so two relays read the same deliveries and the second UPDATE met SQLITE_BUSY.
+    upholds: [claim-is-exclusive]
+  - id: handler-on-its-own-goroutine
+    date: 2026-11-17
+    status: accepted
+    decision: Each handler runs on its own goroutine and the relay stops waiting at the handler timeout, leaving a handler that ignores its context to finish late.
+    rejected:
+      - option: Run the handler on the relay goroutine.
+        why: One handler that ignores its context wedged the durable lane for every consumer on the replica.
+    upholds: [handler-budget-frees-the-relay]
+  - id: no-handler-waits-max-backoff
+    date: 2026-11-17
+    status: accepted
+    decision: A no-handler requeue waits the maximum backoff.
+    rejected:
+      - option: The base backoff.
+        why: Such a delivery sorts first in the FIFO claim and was re-claimed every poll for the whole grace, amplifying writes and crowding out real work.
+    upholds: [no-handler-requeue]

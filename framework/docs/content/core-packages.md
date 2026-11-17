@@ -526,6 +526,8 @@ extensions, matched in any case, are `.js` `.mjs` `.css` `.map`, `.png`
 `.ttf`, and `.json` `.wasm` `.txt` `.xml`. A client route that ends in
 one of those (`/feeds/latest.json` as a screen) needs a server route of
 its own; any other dot is part of the route.
+A path that names a named pipe, socket or device file gets `404`
+without being opened, so a request never waits on it.
 `NotFoundFile` answers a miss with a
 file from the same `FS` under status 404 (a static export's
 `404.html`; `gofastr docs serve` uses it). For a handler that serves

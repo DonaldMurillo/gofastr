@@ -119,7 +119,7 @@ func TestSecurityDocStaticExportCSPCaveat(t *testing.T) {
 	section := sectionAfter(t, readDoc(t, "security.md"), "### Static exports", 900)
 	if !strings.Contains(section, "frame-ancestors") {
 		t.Errorf("security.md's Static exports section omits the frame-ancestors caveat:\n%s\n"+
-			"framework/static/builder.go says a meta-delivered policy ignores frame-ancestors",
+			"framework/static/csp.go says a meta-delivered policy ignores frame-ancestors",
 			strings.TrimSpace(section))
 	}
 }

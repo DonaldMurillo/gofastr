@@ -1,5 +1,5 @@
 primitive: filter
-summary: Parsing a list request's flat ?field_op= filters and sort into typed ParsedFilter and ParsedSort values, with the IN-list cap, value coercion and LIKE escaping they share.
+summary: Parsing a list request's flat ?field_op= filters and sort into typed ParsedFilter and ParsedSort values, with the field allow-list, IN-list cap, value coercion and LIKE escaping they share.
 code:
   - framework/filter/filter.go
   - framework/filter/typed.go
@@ -8,3 +8,150 @@ docs:
   - framework/docs/content/entity-declarations.md
 on_change:
   - A new operator or a changed key or value rule also reaches the nested ?rel.field= filters (framework/crud/nested_filter.go), the filter parameters framework/openapi advertises, and the flat-filter section of entity-declarations.md.
+invariants:
+  - id: one-field-index
+    rule: Flat filters, sort and ?where= read field names through one newFieldIndex, so a Hidden field is absent under both its names, a NoQuery field is refused under both, and a wire name resolves to its column on every surface.
+    enforced_by:
+      - test: framework/filter.TestNoQueryRefusedUnderItsWireName
+      - test: framework/filter.TestNoQueryWireNameRefusedByName
+      - test: framework/filter.TestWireName_SortAcceptsAliasAndResolvesToColumn
+      - test: framework/filter.TestWireName_WhereAcceptsAliasAndResolvesToColumn
+      - test: framework/filter.TestWireName_HiddenFieldUnreachableUnderAliasOnSortAndWhere
+      - test: framework/filter.TestINKeysOnOneColumnAreANDed
+  - id: hidden-reads-as-absent
+    rule: A Hidden field yields no filter, sort or where leaf, and its refusal has the same shape as an absent field's.
+    enforced_by:
+      - test: framework/filter.TestFilter_HiddenFieldNoPredicate
+      - test: framework/filter.TestStrictRejectsHiddenFilter
+      - test: framework/filter.TestNoQueryErrorNamesFieldHiddenDoesNot
+      - test: framework/filter.TestBracketHiddenFieldParity
+  - id: noquery-refused-by-name
+    rule: A NoQuery field is refused by name (filter.not_filterable, filter.not_sortable, filter.where_not_filterable), reported ahead of an unknown key; Lenient drops it from flat filters only.
+    enforced_by:
+      - test: framework/filter.TestNoQueryFieldNoPredicate
+      - test: framework/filter.TestNoQueryWireNameRefusedByName
+      - test: framework/filter.TestNoQueryWhereRejected
+      - test: framework/filter.TestNoQueryLenientDropsSilently
+  - id: unknown-key-refused-unless-lenient
+    rule: An unknown top-level filter key is refused naming the smallest such key, with a suggestion only for a single close match of a key up to 64 bytes, unless Lenient drops it; list controls, Allow keys and dotted keys are skipped.
+    enforced_by:
+      - test: framework/filter.TestStrictRejectsUnknownFilter
+      - test: framework/filter.TestStrictRejectsUnknownSuffixedFilter
+      - test: framework/filter.TestLenientDropsUnknown
+      - test: framework/filter.TestStrictAllowsDeclaredExtraParams
+      - test: framework/filter.TestStrictAllowsReservedControls
+      - test: framework/filter.TestStrictSkipsNestedDottedKeys
+      - test: framework/filter.TestSuggestionNeedsOneCloseMatch
+      - test: framework/filter.TestUnknownFilterKeyIsBounded
+  - id: field-beats-control-word
+    rule: A key that names a field is read as a filter before the reserved-control skip, so a column named q or stream is filtered.
+    enforced_by:
+      - test: framework/filter.TestStrictFieldWinsOverReservedName
+  - id: repeated-scalar-refused
+    rule: A scalar filter key sent more than once is refused (filter.repeated_filter) even under Lenient; only an _in key reads every occurrence, as one list.
+    enforced_by:
+      - test: framework/filter.TestRepeatedScalarFilterKeyRefused
+      - test: framework/filter.TestRepeatedInKeysUnion
+  - id: in-list-cap-fails-closed
+    rule: An _in key whose values, across all occurrences, exceed MaxINListEntries is refused, never truncated, and SplitINValuesBounded builds at most max+1 entries doing so.
+    enforced_by:
+      - test: framework/filter.TestTopLevelINListOverCapErrors
+      - test: framework/filter.TestRepeatedInKeysOverCapErrors
+      - test: framework/filter.TestTopLevelINListAtCapAccepted
+      - test: framework/filter.TestSplitINValuesBoundedStopsAtCap
+  - id: in-list-is-one-clause-per-key
+    rule: The values of one _in key render as one IN clause, and two keys on one column (a column and its wire name, or the suffix and bracket forms) render as two ANDed clauses.
+    enforced_by:
+      - test: framework/filter.TestINListRendersOneClausePerKey
+      - test: framework/filter.TestINKeysOnOneColumnAreANDed
+      - test: framework/filter.TestSuffixAndBracketInAreTwoKeys
+  - id: keys-walk-sorted
+    rule: ParseFiltersValues walks keys in sorted order and keeps every key as its own predicate, so one query string always yields the same filters and SQL.
+    enforced_by:
+      - test: framework/filter.TestParseFiltersIsDeterministic
+  - id: value-typed-or-refused
+    rule: Every filter value passes CoerceValue for its column type and binds the coerced value (BindValue), so a mistyped value is a 400 naming the field on both dialects, even under Lenient.
+    enforced_by:
+      - test: framework/filter.TestValueSurfacesRefuseWrongType
+      - test: framework/filter.TestBoolFilterValuesBindAsBools
+      - test: framework/filter.TestBoolFilterMatchesSQLiteRows
+      - test: framework/filter.TestCoerceValueByType
+      - test: framework/filter.TestCoerceValueRefusesValuesPostgresCannotBind
+      - test: framework/filter.TestCoerceValueRefusesNonJSON
+      - test: framework/filter.TestYearZeroFilterRefused
+      - test: framework/filter.TestTimestampFilterBindsStoredLayout
+  - id: op-suits-type
+    rule: OpSuitsType is the one operator-type rule, read by the flat parser (equality included), ?where=, the DSL and the OpenAPI spec; no op suits JSON, like suits only text-shaped columns, and no ordered comparison suits Bool.
+    enforced_by:
+      - test: framework/filter.TestFlatFilterRefusesMistypedOp
+      - test: framework/filter.TestBracketOpTypeChecked
+      - test: framework/filter.TestPlainEqualityOnJSONRefused
+      - test: framework/filter.TestWhereLikeOnIntRefused
+      - test: framework/filter.TestWhereComparisonOnBoolRefused
+      - test: framework/crud.TestJSONFilterRefusedOnBothDialects
+      - test: framework/openapi.TestSpecFilterOpsMatchCheckOpType
+      - test: framework/dsl.TestDSLOperatorsHonourOpSuitsType
+  - id: like-is-literal-and-case-folded
+    rule: Every like and contains filter compiles through LikeClause, LOWER on the column with the value lowered and its wildcards escaped, so it matches a literal substring ASCII-case-insensitively on both dialects.
+    enforced_by:
+      - test: framework/filter.TestLike_WildcardEscaped
+      - test: framework/filter.TestLikeClauseFoldsCase
+      - test: framework/filter.TestWhereLikeEscapes
+      - test: framework/filter.TestSearchConditionsUseLikeClause
+  - id: ne-adds-no-null-arm
+    rule: "A _ne filter renders column != value with no IS NULL arm, so a NULL row matches neither = nor !=."
+    enforced_by:
+      - test: framework/filter.TestOpNeNoNullArm
+      - test: framework/filter.TestOpNeBuildsNotEqualSQL
+  - id: strict-query-decode
+    rule: ParseQueryStrict, and so ParseFilters and ParseSort, refuses a query with a malformed percent escape or a ';' separator instead of dropping the pair.
+    enforced_by:
+      - test: framework/filter.TestParseQueryStrictRefusesDrops
+  - id: sort-is-bounded-and-allow-listed
+    rule: ParseSortValues refuses more than 16 fields counted across commas and repeats, a control byte, and a field outside the allow-list, and resolves a wire name to its column.
+    enforced_by:
+      - test: framework/filter.TestSortCommaListsFields
+      - test: framework/filter.TestSortRefusesControlBytesByReason
+      - test: framework/filter.TestWireName_SortAcceptsAliasAndResolvesToColumn
+  - id: control-params-listed-sorted
+    rule: ListControlParams returns a sorted copy of every key the flat parser skips as a list control.
+    enforced_by:
+      - test: framework/filter.TestListControlParamsSortedCopy
+      - test: framework/filter.TestStrictAllowsReservedControls
+decisions:
+  - id: strict-by-default
+    date: 2026-11-17
+    status: accepted
+    decision: An unknown filter key is refused by default; Lenient and Allow are the opt-outs.
+    rejected:
+      - option: Drop an unknown key silently, the old default.
+        why: A dropped filter answers the unfiltered table with a 200, so a typo reads every row and a probe looks like the real query.
+    revisit_if: A host needs a key Allow cannot name in advance.
+    upholds: [unknown-key-refused-unless-lenient]
+  - id: refuse-mistyped-value
+    date: 2026-11-17
+    status: accepted
+    decision: A value that is not of its column's type is a 400, checked in Go before any SQL.
+    rejected:
+      - option: Bind the raw string and let the database compare.
+        why: Postgres refused the bind with a 500 while SQLite compared text and answered an empty 200, so the dialects split.
+    upholds: [value-typed-or-refused]
+  - id: noquery-named-hidden-absent
+    date: 2026-11-17
+    status: accepted
+    decision: A NoQuery field is refused by name and a Hidden one as unknown.
+    rejected:
+      - option: Refuse both as unknown.
+        why: A NoQuery field appears in responses, so naming it discloses nothing and tells the caller why.
+      - option: Let either be filtered or sorted.
+        why: A filter or sort on a column the caller cannot read, or reads masked, recovers its value a character at a time.
+    upholds: [hidden-reads-as-absent, noquery-refused-by-name]
+  - id: json-takes-no-operator
+    date: 2026-11-17
+    status: accepted
+    decision: A JSON column takes no filter operator.
+    rejected:
+      - option: Allow equality on JSON.
+        why: SQLite compares the stored text and Postgres the JSONB value, so a stored {"x":1} matched {"x":1.0} on one engine only.
+    revisit_if: A JSON path operator with one meaning on both dialects is added.
+    upholds: [op-suits-type]

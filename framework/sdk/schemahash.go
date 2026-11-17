@@ -12,54 +12,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// NamedConfig pairs an entity name with its config, the generation-side
-// input to SchemaHash (declarations converted via EntityDeclaration.Config()
-// carry no Name of their own).
+// NamedConfig pairs an entity name with its config, SchemaHash's input.
 type NamedConfig struct {
 	Name string
-	// Version is the route-group prefix the entity is mounted at (e.g.
-	// "/api/v1"), or "" for the unversioned App.Entity path. The serving
-	// side fills it from the entity; the generation side leaves it "",
-	// because a declaration does not know where the app will mount it.
-	//
-	// It is NOT part of the hash. It used to be, and that made the check
-	// unusable for the apps it mattered most to: App.GroupEntity stamps
-	// the group prefix as Version, so any app using a route group reported
-	// drift that regenerating could never clear, and a permanently-on
-	// drift signal is one nobody reads. The hash answers "does the
-	// generated SDK reflect the live schema?", where a thing is mounted
-	// is routing, not schema. Two versions whose schemas genuinely differ
-	// still hash differently, because both projections are included.
+	// Version is the route-group prefix the entity is mounted at, unhashed.
 	Version string
 	Config  entity.EntityConfig
 }
 
-// SchemaHash returns a deterministic "sha256:<hex>" digest of the
-// API-visible schema of the given entities as served under jsonCase (the
-// app's crud.JSONCase; "" means camel, the default). The case is part of
-// the digest because it spells every wire key a generated client sends
-// and reads: the same entities served snake_case are a different SDK
-// surface (#669). Both halves of the SDK feature compute it:
-// `gofastr generate sdk` records it in the manifest at generation time
-// (the case its artifacts speak); sdkdocs.Mount recomputes it from the
-// live registry (the case the app serves, pass fwApp.JSONCasing()) to
-// warn when the downloadable SDKs no longer match the running API.
-//
-// Every config is normalized through entity.Define before projection, so a
-// raw declaration config (no injected id/timestamp columns, empty Table)
-// and an already-registered entity hash identically. Define is idempotent
-// for this purpose.
-//
-// The projection covers exactly what changes a generated client's surface:
-// name, table (route path), the ordered primary-key columns (positional
-// key arguments), Public, SoftDelete (trashed listing), sorted
-// SearchFields (?q=), relations (?include=), the states block (guarded
-// columns and one call per move), the endpoints gofastr.settings.yml
-// declares (one typed call each), and every non-Hidden field's
-// name, type, required/unique/readonly/auto flags, enum values, and
-// default. Hidden fields never appear on the wire, so flipping one is
-// invisible to SDKs and deliberately does not change the hash. Field order
-// is sorted away for the same reason.
+// SchemaHash returns a "sha256:<hex>" digest of the client-visible schema
+// of named under jsonCase ("" is camel).
 func SchemaHash(named []NamedConfig, jsonCase string) string {
 	type hashField struct {
 		Name     string   `json:"name"`
@@ -73,9 +35,7 @@ func SchemaHash(named []NamedConfig, jsonCase string) string {
 		Default  any      `json:"default,omitempty"`
 		To       string   `json:"to,omitempty"`
 		Many     bool     `json:"many,omitempty"`
-		// WireName is part of the hash because it changes the client-facing
-		// JSON key, a version that renames a field produces a different
-		// SDK surface and must signal drift.
+
 		WireName string `json:"wireName,omitempty"`
 	}
 	type hashRelation struct {
@@ -83,9 +43,7 @@ func SchemaHash(named []NamedConfig, jsonCase string) string {
 		Name       string `json:"name"`
 		Entity     string `json:"entity"`
 		ForeignKey string `json:"foreignKey,omitempty"`
-		// A one-column foreign key hashes in ForeignKey and several in
-		// ForeignKeys, so a schema with no composite key hashes as it
-		// did before composite keys.
+
 		ForeignKeys []string `json:"foreignKeys,omitempty"`
 		Through     string   `json:"through,omitempty"`
 	}
@@ -122,25 +80,14 @@ func SchemaHash(named []NamedConfig, jsonCase string) string {
 		Table      string `json:"table"`
 		Public     bool   `json:"public"`
 		SoftDelete bool   `json:"softDelete"`
-		// PrimaryKey is the key columns in declared order, unsorted: a
-		// generated client takes the key as positional arguments in this
-		// order, and Fields below is sorted by name, so reordering a
-		// composite key would otherwise leave the hash unchanged while
-		// every keyed call's arguments swap meaning.
+
 		PrimaryKey   []string       `json:"primaryKey"`
 		SearchFields []string       `json:"searchFields,omitempty"`
 		Fields       []hashField    `json:"fields"`
 		Relations    []hashRelation `json:"relations,omitempty"`
-		// States is in the projection because it changes what writes a
-		// client may send: the guarded columns drop out of create/update
-		// payloads and each non-system move becomes a call. The whole
-		// config participates, Advisory included (an Advisory flip
-		// reopens the field to direct writes).
+
 		States *hashStates `json:"states,omitempty"`
-		// Endpoints holds the settings-declared endpoints (SDK set): each
-		// is a typed call in the generated clients. Hand-registered
-		// endpoints stay out, since the generator never sees them and a
-		// client reaches them through Do.
+
 		Endpoints []hashEndpoint `json:"endpoints,omitempty"`
 	}
 
@@ -170,10 +117,7 @@ func SchemaHash(named []NamedConfig, jsonCase string) string {
 				Unique:   f.Unique,
 				ReadOnly: f.ReadOnly,
 				Auto:     f.AutoGenerate != schema.AutoNone,
-				// NoQuery changes the generated client's filter surface
-				// (CLI flags, the <entity>Fields constant, OpenAPI query
-				// params), so flipping it has to move the hash or the
-				// drift banner reports "in sync" for a stale SDK.
+
 				NoQuery:  f.NoQuery,
 				To:       f.To,
 				Many:     f.Many,
@@ -181,17 +125,9 @@ func SchemaHash(named []NamedConfig, jsonCase string) string {
 			}
 			hf.Values = append(hf.Values, f.Values...)
 			if f.Default != nil {
-				// Round-trip through JSON so equivalent defaults (int 5
-				// vs float64 5 from a decoded declaration) hash the same.
-				// An integer past 2^53 keeps its digits, so two defaults
-				// a float64 would round to one value hash apart.
 				if raw, err := json.Marshal(f.Default); err == nil {
 					var v any
 					if err := jsonexact.Unmarshal(raw, &v); err != nil {
-						// Marshal's own output failing to decode back is
-						// an impossible-state violation, and silently
-						// hashing a zero default would flip the drift
-						// verdict the wrong way. Refuse loudly instead.
 						panic(fmt.Sprintf("sdk: schema hash: default %T failed its own JSON round-trip: %v", f.Default, err))
 					}
 					hf.Default = v
@@ -248,23 +184,11 @@ func SchemaHash(named []NamedConfig, jsonCase string) string {
 
 		entities = append(entities, he)
 	}
-	// Sort and collapse on the entity's CANONICAL JSON, the same encoding the
-	// digest is taken over.
-	//
-	// This used to use fmt.Sprint, which is not an injective encoding: %v
-	// renders []string{"draft ready"} and []string{"draft","ready"} both as
-	// [draft ready]. Enum Values are in the projection (they change the
-	// generated client's constants) and registry.columnSchemaEqual does not
-	// compare them, so two versions may legally declare different enum sets,
-	// and a real divergence collapsed silently. It also made the digest
-	// depend on input order, since the secondary sort key could not separate
-	// the entries it could not tell apart.
+
 	encoded := make([][]byte, len(entities))
 	for i, he := range entities {
 		b, err := json.Marshal(he)
 		if err != nil {
-			// Same fallback as the final marshal below: keep the result
-			// stable rather than panicking on an unmarshalable default.
 			b = []byte(fmt.Sprintf("marshal-error:%v", err))
 		}
 		encoded[i] = b
@@ -281,12 +205,6 @@ func SchemaHash(named []NamedConfig, jsonCase string) string {
 		return bytes.Compare(encoded[i], encoded[j]) < 0
 	})
 
-	// Collapse versions that project to the same schema. The serving side
-	// contributes one entry per registered version of a name while the
-	// generation side has one declaration; without this, an app whose v1 and
-	// v2 expose the same shape could never match its own manifest. Two
-	// versions that genuinely differ survive as separate entries and still
-	// signal drift, which is the case worth reporting.
 	sorted := make([]hashEntity, 0, len(order))
 	var prev []byte
 	for _, idx := range order {
@@ -298,7 +216,7 @@ func SchemaHash(named []NamedConfig, jsonCase string) string {
 	}
 	entities = sorted
 	if jsonCase == "" {
-		jsonCase = "camelCase" // "" means the app default, camel
+		jsonCase = "camelCase"
 	}
 	payload := struct {
 		JSONCase string       `json:"jsonCase"`
@@ -306,32 +224,13 @@ func SchemaHash(named []NamedConfig, jsonCase string) string {
 	}{JSONCase: jsonCase, Entities: entities}
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		// Marshalling plain structs of strings/bools/ints cannot fail;
-		// a non-nil error here means a default value snuck through with
-		// an unmarshalable type, which the round-trip above already
-		// filters. Hash the error text so the result is still stable.
 		raw = []byte(fmt.Sprintf("marshal-error:%v", err))
 	}
 	sum := sha256.Sum256(raw)
 	return fmt.Sprintf("sha256:%x", sum)
 }
 
-// RegistryNamedConfigs adapts a live entity registry to SchemaHash input,
-// restricted to the given entity names (the manifest's Entities list).
-//
-// A name may resolve to MULTIPLE entities when it is registered under
-// several API versions (e.g. /api/v1/posts and /api/v2/posts). Every
-// version is included so the hash reflects the full live surface.
-//
-// The previous implementation called reg.Get(name), which returns an
-// ambiguity error when a name has several versions and none is
-// unversioned, and the error path silently skipped the entity, making a
-// versioned entity look identical to a deleted one. That produced false
-// drift: the live hash omitted the entity and never matched the manifest.
-// Scanning AllSorted() and grouping by name avoids the ambiguity error
-// entirely. Unknown names (no version registered) are still skipped, a
-// genuinely deleted entity changes the hash by omission, which is the
-// drift signal wanted.
+// RegistryNamedConfigs returns SchemaHash input for every version of names.
 func RegistryNamedConfigs(reg entity.Registry, names []string) []NamedConfig {
 	byName := make(map[string][]*entity.Entity)
 	for _, e := range reg.AllSorted() {

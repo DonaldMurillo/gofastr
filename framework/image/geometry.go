@@ -15,13 +15,10 @@ type Filter struct {
 	interp draw.Interpolator
 }
 
-// Name returns the filter's identifier (useful for logging).
+// Name returns the filter's identifier.
 func (f Filter) Name() string { return f.name }
 
-// Resampling kernels. x/image/draw does not ship a Lanczos kernel, so
-// Lanczos3 and Lanczos2 are aliases for the highest-quality interpolators
-// available pure-Go (CatmullRom and BiLinear respectively). Names mirror
-// Bun.Image so callers porting from a JS pipeline find what they expect.
+// Resampling kernels. Lanczos3 is CatmullRom and Lanczos2 is BiLinear.
 var (
 	Nearest        = Filter{"nearest", draw.NearestNeighbor}
 	BiLinear       = Filter{"bilinear", draw.BiLinear}
@@ -35,14 +32,11 @@ var (
 type Fit int
 
 const (
-	// FitFill stretches the source to fill the target exactly. May change
-	// aspect ratio. Default.
+	// FitFill stretches the source to the target exactly. Default.
 	FitFill Fit = iota
-	// FitInside fits the source within the target while preserving aspect
-	// ratio; output may be smaller than the target on one axis.
+	// FitInside keeps the aspect ratio inside the target box.
 	FitInside
-	// FitOutside fills the target while preserving aspect ratio; output
-	// may exceed the target on one axis.
+	// FitOutside keeps the aspect ratio and covers the target box.
 	FitOutside
 )
 
@@ -55,28 +49,17 @@ type resizeOpts struct {
 	withoutEnlarge bool
 }
 
-// WithFilter selects the resampling kernel. Default is Lanczos3 (CatmullRom).
+// WithFilter selects the resampling kernel, Lanczos3 by default.
 func WithFilter(f Filter) ResizeOption { return func(o *resizeOpts) { o.filter = f } }
 
-// WithFit selects the fit strategy. Default is FitFill.
+// WithFit selects the fit, FitFill by default.
 func WithFit(f Fit) ResizeOption { return func(o *resizeOpts) { o.fit = f } }
 
-// WithoutEnlargement skips the resize when the target would enlarge the
-// source on either axis (mirrors Sharp / Bun.Image semantics).
+// WithoutEnlargement skips a resize that would enlarge either axis.
 func WithoutEnlargement() ResizeOption { return func(o *resizeOpts) { o.withoutEnlarge = true } }
 
-// Resize returns a new *Image scaled to the target box. If height is
-// 0 or negative it is computed from width preserving aspect; same for
-// width when height is 0 or negative. The given side is kept, the
-// derived one rounds down to at least 1, and the fit does not change
-// that box. Width and height both 0 (or both negative) return the
-// source unchanged. Use Sharp-style "skip if larger than source" via
-// WithoutEnlargement().
-//
-// A target whose area exceeds the image's MaxPixels (Config.MaxPixels,
-// else DefaultMaxPixels) panics with an error wrapping
-// ErrTargetTooLarge, since Resize returns no error. VariantSet.Process,
-// VariantSet.ProcessTo and Placeholder check first and return it.
+// Resize scales to the target box, deriving a side of 0 or less from the
+// other. It panics with ErrTargetTooLarge past MaxPixels.
 func (i *Image) Resize(width, height int, opts ...ResizeOption) *Image {
 	o := resizeOpts{filter: Lanczos3, fit: FitFill}
 	for _, fn := range opts {
@@ -94,7 +77,6 @@ func (i *Image) Resize(width, height int, opts ...ResizeOption) *Image {
 	return i.derive(dst)
 }
 
-// checkResize reports the error Resize would panic with for this target.
 func (i *Image) checkResize(width, height int, opts ...ResizeOption) error {
 	o := resizeOpts{filter: Lanczos3, fit: FitFill}
 	for _, fn := range opts {
@@ -104,7 +86,6 @@ func (i *Image) checkResize(width, height int, opts ...ResizeOption) error {
 	return err
 }
 
-// maxPixels is the area cap for this image's resize targets.
 func (i *Image) maxPixels() int64 {
 	if i.cfg.MaxPixels > 0 {
 		return i.cfg.MaxPixels
@@ -112,15 +93,6 @@ func (i *Image) maxPixels() int64 {
 	return DefaultMaxPixels
 }
 
-// resizeBox is Resize's target size: keep reports that the source is
-// returned unchanged. The aspect and fit arithmetic cannot overflow, and
-// an area past maxPixels is ErrTargetTooLarge.
-//
-// A derived side already keeps the aspect, so the box is the source's
-// shape and every fit maps it to itself: the fit runs only when both
-// sides were given. Running it on the truncated derived side shrank the
-// given one: 1920x36 at width 16 derives height 0, FitInside's scale
-// became zero, and the clamp returned 1x1 instead of 16x1.
 func (i *Image) resizeBox(width, height int, o resizeOpts) (tw, th int, keep bool, err error) {
 	sb := i.img.Bounds()
 	sw, sh := sb.Dx(), sb.Dy()
@@ -146,14 +118,8 @@ func (i *Image) resizeBox(width, height int, o resizeOpts) (tw, th int, keep boo
 	}
 	tw, th = width, height
 	if !derived && (o.fit == FitInside || o.fit == FitOutside) {
-		// Whole-number arithmetic: the side the fit binds on stays the
-		// one given, and the other is derived from it as a width-only
-		// or height-only resize derives it. A float scale lost a pixel
-		// of both (22*(15/22) is 14.999999999999998, so 22x22 inside
-		// 15x100 came out 14x14).
 		byWidth, fits := mulDiv(sh, width, sw)
 		if o.fit == FitInside {
-			// A height past int is past the box: bind on the height.
 			if fits && byWidth <= height {
 				th = byWidth
 			} else if tw, ok = mulDiv(sw, height, sh); !ok {
@@ -180,14 +146,11 @@ func (i *Image) resizeBox(width, height int, o resizeOpts) (tw, th int, keep boo
 	return tw, th, false, nil
 }
 
-// areaWithin reports whether a w×h box (both positive) holds at most
-// limit pixels, without overflowing.
 func areaWithin(w, h int, limit int64) bool {
 	hi, lo := bits.Mul64(uint64(w), uint64(h))
 	return hi == 0 && lo <= uint64(limit)
 }
 
-// mulDiv is a*b/c for positive ints, false when the result overflows int.
 func mulDiv(a, b, c int) (int, bool) {
 	hi, lo := bits.Mul64(uint64(a), uint64(b))
 	if hi >= uint64(c) {
@@ -200,8 +163,7 @@ func mulDiv(a, b, c int) (int, bool) {
 	return int(q), true
 }
 
-// Rotate returns a new *Image rotated by 0/90/180/270 degrees clockwise.
-// Other values are normalised modulo 360 and rounded down to the nearest 90.
+// Rotate rotates clockwise by degrees rounded down to a multiple of 90.
 func (i *Image) Rotate(degrees int) *Image {
 	n := ((degrees % 360) + 360) % 360
 	n = (n / 90) * 90
@@ -263,18 +225,7 @@ func (i *Image) Flop() *Image {
 	return i.derive(dst)
 }
 
-// AutoOrient applies the EXIF orientation tag from decode time, if
-// any, and clears it. Safe to call when no orientation is known. On
-// the no-op path (orient ≤ 1, or no EXIF metadata) the returned
-// *Image shares the underlying image.Image with the receiver. If a
-// caller plans to mutate via GoImage(), they should clone first.
-//
-// EXIF tag values:
-//
-//	1: identity                 5: transpose (rotate 90 then flop)
-//	2: flop                     6: rotate 90 CW
-//	3: rotate 180               7: transverse (rotate 270 then flop)
-//	4: flip                     8: rotate 270 CW
+// AutoOrient applies and clears the EXIF orientation from decode.
 func (i *Image) AutoOrient() *Image {
 	if i.orient <= 1 {
 		out := i.derive(i.img)

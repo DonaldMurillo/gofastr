@@ -7,3 +7,83 @@ docs:
   - framework/docs/content/query-dsl.md
 on_change:
   - A new clause or operator also updates the Grammar, Operators and Clauses sections of query-dsl.md.
+invariants:
+  - id: identifiers-are-single-names
+    rule: Entity, include, where and order names must match ^[A-Za-z_][A-Za-z0-9_]*$ at parse time, never the dotted schema.table form core/query allows, and a quoted include is kept unquoted.
+    enforced_by:
+      - test: framework/dsl.TestParseDSL_RejectsUnsafeEntityName
+      - test: framework/dsl.TestParseDSL_RejectsUnsafeIncludeName
+      - test: framework/dsl.TestParseDSL_RejectsUnsafeFilterFieldName
+      - test: framework/dsl.TestDSLQuotedIncludeStoredUnquoted
+  - id: input-and-limit-bounded
+    rule: ParseDSL refuses input over maxDSLInputSize, a limit over 10000, more than 16 order() clauses and an in list over filter.MaxINListEntries.
+    enforced_by:
+      - test: framework/dsl.TestParseDSLRejectsHugeInput
+      - test: framework/dsl.TestParseDSL_RejectsExcessiveLimit
+      - test: framework/dsl.TestDSLInListAndOrderBounded
+  - id: cache-bounded-and-isolated
+    rule: The parse cache holds at most 256 entries and every call, hit or miss, returns a copy whose slices the cache does not share.
+    enforced_by:
+      - test: framework/dsl.TestParseDSLCacheBounded
+      - test: framework/dsl.TestParseDSLReturnsCallerIsolated
+      - test: framework/dsl.TestParseDSLCacheHitIsolated
+  - id: after-strips-control-bytes
+    rule: An after() value has its control bytes removed at parse time.
+    enforced_by:
+      - test: framework/dsl.TestParseDSL_AfterStripsControlBytes
+  - id: args-split-outside-brackets
+    rule: Arguments split at commas outside quotes, parens and brackets, and a bracket or paren closed before it opens, or left open, is refused.
+    enforced_by:
+      - test: framework/dsl.TestDSLUnbalancedBracketRefused
+      - test: framework/dsl.TestBracketClosedBeforeOpenedRefused
+  - id: where-splits-at-leftmost-op
+    rule: A where() term splits at its leftmost operator, two-byte operators tried before their one-byte prefixes, so an operator inside the value is never the split.
+    enforced_by:
+      - test: framework/dsl.TestWhereSplitsAtLeftmostOp
+  - id: hidden-reads-as-absent
+    rule: BuildDSLQuery projects only visible columns, and a Hidden where or order field is refused exactly as an absent one; a NoQuery field is refused by name.
+    enforced_by:
+      - test: framework/dsl.TestBuildDSLHiddenReadsAsAbsent
+      - test: framework/dsl.TestBuildDSLSelectsNoHiddenColumn
+      - test: framework/dsl.TestBuildDSLRejectsNoQuerySurfaces
+  - id: hidden-relation-not-includable
+    rule: include() refuses a relation entity.HidesRelation hides.
+    enforced_by:
+      - test: framework/dsl.TestBuildDSLRefusesHiddenRelation
+  - id: conditions-follow-filter
+    rule: Every where() operator passes filter.CheckOpType and filter.CoerceValue for its column, and contains compiles through filter.LikeClause.
+    enforced_by:
+      - test: framework/dsl.TestDSLOperatorsHonourOpSuitsType
+      - test: framework/dsl.TestBuildDSLValueWrongTypeErrs
+      - test: framework/dsl.TestContainsUsesCanonicalLikeEscape
+  - id: after-keysets-one-unique-column
+    rule: after() keysets on CursorField or the single primary key, refuses a composite cursor and a column that is neither the sole key nor Unique, coerces its value to the column type, and allows no order() but that column ascending.
+    enforced_by:
+      - test: framework/dsl.TestBuildDSLAfterUsesCursorField
+      - test: framework/dsl.TestBuildDSLAfterCompositeRejected
+      - test: framework/dsl.TestDSLAfterRefusesNonUniqueCursor
+      - test: framework/dsl.TestDSLAfterRefusesForeignOrder
+      - test: framework/dsl.TestDSLAfterEmitsOneOrderBy
+  - id: direction-folds-ascii-only
+    rule: An order direction is folded with asciicase, so "deſc" is not DESC.
+    enforced_by:
+      - test: framework/dsl.TestDSLDirectionFoldsASCIIOnly
+decisions:
+  - id: own-identifier-regex
+    date: 2026-11-17
+    status: accepted
+    decision: The DSL checks identifiers with its own single-name regex.
+    rejected:
+      - option: Reuse core/query's identifier regex.
+        why: It allows dotted schema.table paths, a looser shape than a DSL name.
+    revisit_if: core/query gains a single-segment identifier check.
+    upholds: [identifiers-are-single-names]
+  - id: random-eviction
+    date: 2026-11-17
+    status: accepted
+    decision: A full parse cache evicts one random entry.
+    rejected:
+      - option: LRU.
+        why: Its bookkeeping costs more than the hit rate it adds for repeated agent query templates.
+    revisit_if: A profile shows cache misses on hot queries.
+    upholds: [cache-bounded-and-isolated]

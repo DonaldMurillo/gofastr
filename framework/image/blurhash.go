@@ -6,26 +6,11 @@ import (
 	"math"
 )
 
-// base83Alphabet is the BlurHash character set, per the reference spec at
-// https://blurha.sh.
 const base83Alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~"
 
-// blurhashMaxSize caps the working dimension fed into the DCT. The
-// hash quantises into a handful of cosine components anyway, so any
-// resolution beyond ~64 px on the longest side is wasted work.
-// Auto-resizing internally turns a 4096² source from a 2-second,
-// 470 MB allocation into a millisecond-scale call.
 const blurhashMaxSize = 64
 
-// BlurHash returns a compact base83 placeholder string for the current
-// image, following the spec at https://blurha.sh. xComp and yComp control
-// the number of DCT components on each axis; both must be in 1..9.
-// Typical values are 4×3 (landscape) or 3×4 (portrait).
-//
-// A source larger than 64 px on its longest side is scaled down inside
-// the call, so a large image needs no resize first. Do not pre-resize:
-// hashing a smaller copy gives a different hash than the direct call that
-// [VariantSet.Process] and [VariantSet.ProcessTo] make for the same image.
+// BlurHash returns the image's BlurHash with xComp by yComp components.
 func (i *Image) BlurHash(xComp, yComp int) (string, error) {
 	if xComp < 1 || xComp > 9 || yComp < 1 || yComp > 9 {
 		return "", errors.New("image: BlurHash components must be in 1..9")
@@ -40,27 +25,13 @@ func (i *Image) BlurHash(xComp, yComp int) (string, error) {
 			xComp, yComp, xComp, yComp, w, h)
 	}
 
-	// Auto-resize down to blurhashMaxSize on the longest side. The
-	// hash output is identical to within rounding noise vs. the full-
-	// resolution computation. BlurHash quantises into a tiny number
-	// of cosine components, so the extra precision doesn't change
-	// the result while the cost scales linearly with pixel count.
 	if w > blurhashMaxSize || h > blurhashMaxSize {
-		// Pass the cap on BOTH axes with FitInside so the longest side
-		// is bounded by blurhashMaxSize regardless of aspect. Passing
-		// (cap, 0) only caps width. For tall portraits the cosine
-		// loop would still walk thousands of rows, and for extreme
-		// aspect ratios FitInside would UPSCALE the short axis.
-		// WithoutEnlargement keeps small inputs (one side under the
-		// cap, the other over) from inflating.
 		small := i.Resize(blurhashMaxSize, blurhashMaxSize, WithFit(FitInside), WithoutEnlargement())
 		b = small.img.Bounds()
 		w, h = b.Dx(), b.Dy()
 		i = small
 	}
 
-	// Pre-convert pixels to linear RGB to avoid redoing the sRGB curve
-	// inside the inner loop.
 	linR := make([]float64, w*h)
 	linG := make([]float64, w*h)
 	linB := make([]float64, w*h)
@@ -139,7 +110,6 @@ func (i *Image) BlurHash(xComp, yComp int) (string, error) {
 	return string(out), nil
 }
 
-// encodeBlurHashDC packs the linear-RGB DC factor into a 24-bit value.
 func encodeBlurHashDC(f [3]float64) int {
 	r := linearToSRGB(f[0])
 	g := linearToSRGB(f[1])
@@ -147,7 +117,6 @@ func encodeBlurHashDC(f [3]float64) int {
 	return (r << 16) | (g << 8) | b
 }
 
-// encodeBlurHashAC packs an AC factor into a 15-bit base-19 triple.
 func encodeBlurHashAC(f [3]float64, maximumValue float64) int {
 	if maximumValue <= 0 {
 		return 9*19*19 + 9*19 + 9

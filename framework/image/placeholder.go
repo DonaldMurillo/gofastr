@@ -2,17 +2,14 @@ package image
 
 // PlaceholderOptions configures Placeholder.
 type PlaceholderOptions struct {
-	// Width is the target placeholder width in pixels. Height is computed
-	// from the source aspect ratio. Default 16.
+	// Width is the placeholder width, 16 when zero.
 	Width int
 
-	// Quality is the JPEG quality for the placeholder (1..100). Default 40.
+	// Quality is the JPEG quality (1..100), 40 when zero.
 	Quality int
 }
 
-// Placeholder returns a small base64 data: URL suitable for use as an
-// LQIP (low-quality image placeholder). The default produces ~500-byte
-// JPEGs that decode instantly and can be inlined into HTML.
+// Placeholder returns a small JPEG data: URL placeholder.
 func (i *Image) Placeholder(opts ...PlaceholderOptions) (string, error) {
 	o := PlaceholderOptions{Width: 16, Quality: 40}
 	if len(opts) > 0 {
