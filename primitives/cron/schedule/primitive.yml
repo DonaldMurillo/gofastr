@@ -5,3 +5,35 @@ code:
   - framework/cron/dst.go
 docs:
   - framework/docs/content/cron.md
+  - framework/docs/content/queue.md
+on_change:
+  - A change to FiresAt or Next changes when battery/queue's Scheduler and DurableScheduler fire too, since both decide firings through this Schedule; run their DST tests.
+invariants:
+  - id: fixed-time-runs-once-across-dst
+    rule: FiresAt fires a fixed-time schedule only in the first pass of a repeated hour, and once at the first minute after a spring-forward that skipped its time, for shifts of any size the zone names.
+    enforced_by:
+      - test: framework/cron.TestFixedTimeJobAcrossDST
+      - test: framework/cron.TestLeaderElectedFallBackRunsOnce
+  - id: wildcard-follows-the-wall-clock
+    rule: FiresAt judges a schedule with a wildcard minute or hour by Matches alone, so it keeps real elapsed time across a clock change.
+    enforced_by:
+      - test: framework/cron.TestWildcardJobKeepsRealTimeAcrossDST
+  - id: fixed-time-is-no-wildcard-minute-or-hour
+    rule: FixedTime is true only when neither the minute nor the hour field begins with "*".
+    enforced_by:
+      - test: framework/cron.TestFixedTimeFromFields
+  - id: next-is-strictly-after
+    rule: Next returns the earliest matching minute strictly after its argument, skipping none, and the zero Time for a schedule that never fires.
+    enforced_by:
+      - test: framework/cron.TestCron_NextStrictlyAfter
+      - test: framework/cron.TestCron_NextIsEarliestMatchNoSkips
+      - test: framework/cron.TestCron_NextUnsatisfiableReturnsZero
+      - test: framework/cron.TestNextFindsRareSpec
+  - id: satisfiable-needs-a-real-date
+    rule: Satisfiable is false for a spec whose month and day-of-month fields name no real date (Feb 30), and true when both day fields are restricted, since either may match.
+    enforced_by:
+      - test: framework/cron.TestSatisfiableFromFields
+  - id: skipday-agrees-with-a-minute-walk
+    rule: A search stepping with SkipDay finds the same firings as one stepping a minute at a time.
+    enforced_by:
+      - test: framework/cron.TestSkipDayMatchesMinuteWalk

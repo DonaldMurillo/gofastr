@@ -5,3 +5,126 @@ code:
   - framework/image/blurhash_decode.go
   - framework/image/blurhash_dataurl.go
   - framework/image/placeholder.go
+invariants:
+  - id: encode-components-bounded
+    rule: BlurHash refuses component counts outside 1..9, an empty image, and an image with fewer pixels than components.
+    enforced_by:
+      - test: framework/image.TestBlurHashRanges
+      - test: framework/image.TestBlurHashRejectsBadComponents
+      - test: framework/image.TestBlurHashRejectsTooFewSamples
+  - id: encode-downscales-longest-side
+    rule: BlurHash scales a source over 64 px on either side to fit inside 64x64 before hashing, never enlarging the short side.
+    enforced_by:
+      - test: framework/image.TestBlurHashAutoResizeCapsLongestSideForPortrait
+      - test: framework/image.TestBlurHashAutoResizeDoesNotUpscaleSkinnyInput
+      - test: framework/image.TestBlurHashAutoResizesLargeInput
+  - id: encode-matches-the-spec
+    rule: Re-encoding the decode of the reference hash gives every component within 0.027 of the reference, and a solid colour hashes to its exact DC value.
+    enforced_by:
+      - test: framework/image.TestSweepImageBlurHashReencodesReference
+      - test: framework/image.TestSweepImageBlurHashKeepsContrast
+      - test: framework/image.TestBlurHashSolidRed1x1
+      - test: framework/image.TestBlurHashLengthIsCorrect
+  - id: decode-validates-before-allocating
+    rule: DecodeBlurHash refuses a hash under 6 or over 166 bytes, one whose length does not match its size header, and one holding any byte outside base83, before allocating from the hash.
+    enforced_by:
+      - test: framework/image.TestDecodeBlurHashRejectsMalformed
+      - test: framework/image.TestBlurHashLengthBoundsAllocations
+      - test: framework/image.TestSweepImageBlurHashInvalidLastByte
+  - id: decode-size-bounded
+    rule: DecodeBlurHash renders DefaultBlurHashRenderSize (20) on a zero axis and refuses a negative axis or one over MaxBlurHashRenderSize (128).
+    enforced_by:
+      - test: framework/image.TestDecodeBlurHashDefaultsDims
+      - test: framework/image.TestDecodeBlurHashEnforcesDimCaps
+  - id: decode-matches-the-spec
+    rule: DecodeBlurHash renders an opaque image whose mean is the DC colour, whose AC components follow the hash's quantisation maximum, and Punch above 1 raises contrast.
+    enforced_by:
+      - test: framework/image.TestDecodeBlurHashDCIsAverage
+      - test: framework/image.TestSweepImageBlurHashReencodesReference
+      - test: framework/image.TestDecodeBlurHashRoundTripsGradient
+      - test: framework/image.TestDecodeBlurHashPunchIncreasesContrast
+  - id: decoder-ac-curve-is-the-reference
+    rule: decodeBlurHashAC dequantises each AC digit as signPow((q-9)/9, 2) times the maximum, the inverse of the encoder's square-root curve, as the reference implementation does.
+    judge: Does this change alter decodeBlurHashAC's curve or scale so that a hash from another BlurHash implementation would render differently?
+  - id: data-url-key-covers-config
+    rule: The BlurHashDataURL memo is keyed by the hash and every BlurHashRenderConfig field, so two configs never share a render.
+    enforced_by:
+      - test: framework/image.TestBlurHashDataURLCachesByKey
+  - id: data-url-defaults
+    rule: BlurHashDataURL encodes JPEG at quality 50 unless Format is FormatPNG or Quality is set.
+    enforced_by:
+      - test: framework/image.TestSweepImageBlurHashDataURLDefaultsAndShrink
+      - test: framework/image.TestBlurHashDataURLPNGFormat
+  - id: failed-renders-not-cached
+    rule: A hash that fails to render returns its error and takes no memo slot.
+    enforced_by:
+      - test: framework/image.TestBlurHashDataURLPropagatesDecodeError
+  - id: memo-bounded
+    rule: The memo never holds more entries than its size, a shrink evicts down to the new size, and a size of 0 or less stores nothing.
+    enforced_by:
+      - test: framework/image.TestBlurHashCacheEvictsAtCapacity
+      - test: framework/image.TestSweepImageBlurHashDataURLDefaultsAndShrink
+      - test: framework/image.TestSetBlurHashCacheSizeZeroDisables
+  - id: memo-concurrent-safe
+    rule: BlurHashDataURL is safe to call from many goroutines at once.
+    enforced_by:
+      - test: framework/image.TestBlurHashDataURLConcurrent
+  - id: placeholder-defaults
+    rule: Placeholder is a JPEG data URL 16 px wide at quality 40 unless the options set them, and returns ErrTargetTooLarge for a width past MaxPixels instead of panicking.
+    enforced_by:
+      - test: framework/image.TestSweepImagePlaceholderQuality
+      - test: framework/image.TestPlaceholderKeepsWidthOnBanner
+      - test: framework/image.TestResizeTargetPastMaxPixels
+decisions:
+  - id: hash-at-64px
+    date: 2026-11-17
+    status: accepted
+    decision: BlurHash hashes a copy no larger than 64 px on its longest side.
+    rejected:
+      - option: Hash the full resolution.
+        why: A 4096 square took two seconds and 470 MB, and the few cosine components cannot tell the difference.
+      - option: Leave the downscale to the caller.
+        why: Pre-resized and direct calls gave different hashes for one image.
+    upholds: [encode-downscales-longest-side]
+  - id: default-render-20px
+    date: 2026-11-17
+    status: accepted
+    decision: A decoded BlurHash is 20 px square by default.
+    rejected:
+      - option: A larger default.
+        why: A hash holds at most 9 components per axis, 20 px already samples the busiest one twice per component, and larger only adds bytes inlined into every page.
+    upholds: [decode-size-bounded]
+  - id: render-size-capped
+    date: 2026-11-17
+    status: accepted
+    decision: Decode output is capped at 128 px per axis.
+    rejected:
+      - option: Trust the requested size.
+        why: Decoding costs width times height times components, and the hash comes from a stored column an upload wrote.
+    upholds: [decode-size-bounded]
+  - id: data-url-jpeg-q50
+    date: 2026-11-17
+    status: accepted
+    decision: A BlurHash data URL is JPEG at quality 50 by default.
+    rejected:
+      - option: PNG.
+        why: PNG is smaller at 20 px but grows with pixel count to about 2.4 KB at 48 px, where JPEG stays near 900 bytes.
+      - option: A lower JPEG quality.
+        why: Below 50 the gradients block, and q40 saved about 12 bytes.
+    upholds: [data-url-defaults]
+  - id: memo-random-eviction
+    date: 2026-11-17
+    status: accepted
+    decision: The memo holds 512 entries and evicts an arbitrary one.
+    rejected:
+      - option: LRU.
+        why: Entries are interchangeable renders of a pure function, and LRU needs bookkeeping on every read.
+    upholds: [memo-bounded]
+  - id: failed-render-uncached
+    date: 2026-11-17
+    status: accepted
+    decision: Only successful renders are memoised.
+    rejected:
+      - option: Cache the error too.
+        why: A hot malformed row would evict good entries.
+    upholds: [failed-renders-not-cached]

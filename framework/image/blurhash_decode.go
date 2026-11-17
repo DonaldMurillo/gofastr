@@ -7,59 +7,29 @@ import (
 	"math"
 )
 
-// DefaultBlurHashRenderSize is the square edge DecodeBlurHash produces
-// when Width/Height are left zero.
-//
-// 20 px is chosen against the information content of the hash, not by
-// eye: a hash holds at most 9×9 cosine components, so 20 px still samples
-// the busiest possible hash about twice per component and a typical 4×3
-// one about five times. Rendering larger cannot recover detail the hash
-// never carried. It only costs bytes inlined into every HTML response.
+// DefaultBlurHashRenderSize is DecodeBlurHash's default square edge.
 const DefaultBlurHashRenderSize = 20
 
-// MaxBlurHashRenderSize caps each output axis. Decoding costs
-// width × height × components, and the hash itself is untrusted input
-// (it comes out of a database column some upload wrote), so the output
-// size a caller may request is bounded rather than trusted.
+// MaxBlurHashRenderSize caps each DecodeBlurHash output axis.
 const MaxBlurHashRenderSize = 128
 
 // BlurHashRenderConfig configures BlurHash decoding.
 type BlurHashRenderConfig struct {
-	// Width and Height are the output pixel dimensions. Zero means
-	// DefaultBlurHashRenderSize; neither may exceed MaxBlurHashRenderSize.
-	//
-	// These need not match the real image's aspect ratio. The output is
-	// stretched to fill whatever box the UI paints it into, and a blur has
-	// no detail for the distortion to spoil.
+	// Width and Height are the output size, 0 for the default.
 	Width, Height int
 
-	// Punch scales the AC (detail) components, raising contrast above the
-	// washed-out look a raw decode produces. Zero means 1.0 (no change);
-	// the reference implementations use the same knob.
+	// Punch scales the detail components, 0 meaning 1.
 	Punch float64
 
-	// Format selects the placeholder encoding used by BlurHashDataURL.
-	// Zero means FormatJPEG, which is the smallest option for the smooth
-	// gradients a decoded blur consists of. FormatPNG is available for
-	// callers who want lossless output for flat-color content.
+	// Format is BlurHashDataURL's encoding, JPEG unless FormatPNG.
 	Format Format
 
-	// Quality is the JPEG quality for BlurHashDataURL (1..100). Zero means
-	// defaultBlurHashQuality. Ignored when Format is FormatPNG.
+	// Quality is BlurHashDataURL's JPEG quality, 0 meaning 50.
 	Quality int
 }
 
-// DecodeBlurHash renders a BlurHash string back into an image, returning
-// it as a pipeline value so it composes with the encoders:
-//
-//	durl, err := image.DecodeBlurHash(hash, image.BlurHashRenderConfig{}).
-//	    JPEG(image.JPEGOptions{Quality: 50}).DataURL()
-//
-// Most callers want BlurHashDataURL instead, which does exactly that and
-// memoises the result.
-//
-// The hash is treated as untrusted: length, alphabet, and component count
-// are all validated before any pixel buffer is allocated.
+// DecodeBlurHash renders a BlurHash string, erroring on a malformed hash
+// or size.
 func DecodeBlurHash(hash string, cfg BlurHashRenderConfig) (*Image, error) {
 	w, h := cfg.Width, cfg.Height
 	if w == 0 {
@@ -81,9 +51,6 @@ func DecodeBlurHash(hash string, cfg BlurHashRenderConfig) (*Image, error) {
 		return nil, err
 	}
 
-	// Precompute the cosine bases per axis. Without this the inner loop
-	// recomputes math.Cos width × height × components times; a 32×32
-	// output at 4×3 components is ~12k redundant Cos calls.
 	cosX := make([]float64, w*comps.numX)
 	for x := 0; x < w; x++ {
 		for i := 0; i < comps.numX; i++ {
@@ -122,8 +89,6 @@ func DecodeBlurHash(hash string, cfg BlurHashRenderConfig) (*Image, error) {
 	return FromImage(out, FormatPNG), nil
 }
 
-// blurHashComponents is the parsed form of a hash: the component counts
-// plus the linear-RGB DCT factors, with Punch already applied.
 type blurHashComponents struct {
 	numX, numY int
 	factors    [][3]float64
@@ -131,7 +96,6 @@ type blurHashComponents struct {
 
 func decodeBlurHashComponents(hash string, punch float64) (blurHashComponents, error) {
 	var zero blurHashComponents
-	// The minimum valid hash is 1×1 components: 1 size + 1 quant + 4 DC.
 	if len(hash) < 6 {
 		return zero, fmt.Errorf("image: BlurHash too short (%d chars, minimum 6)", len(hash))
 	}
@@ -146,8 +110,6 @@ func decodeBlurHashComponents(hash string, punch float64) (blurHashComponents, e
 	sizeFlag := digits[0]
 	numX := sizeFlag%9 + 1
 	numY := sizeFlag/9 + 1
-	// Mirrors the encoder's layout at blurhash.go: 1 size + 1 quant +
-	// 4 DC + 2 per AC term.
 	want := 4 + 2*numX*numY
 	if len(hash) != want {
 		return zero, fmt.Errorf("image: BlurHash length %d does not match its %dx%d component header (want %d)",
@@ -161,8 +123,6 @@ func decodeBlurHashComponents(hash string, punch float64) (blurHashComponents, e
 	}
 
 	factors := make([][3]float64, numX*numY)
-	// The DC term is a 24-bit RGB triple written as four positional base83
-	// digits (see appendBase83 in blurhash.go), not a bit-packed field.
 	dc := base83Value(digits[2:6])
 	factors[0] = [3]float64{
 		srgbToLinear(uint8(dc >> 16)),
@@ -175,8 +135,6 @@ func decodeBlurHashComponents(hash string, punch float64) (blurHashComponents, e
 	return blurHashComponents{numX: numX, numY: numY, factors: factors}, nil
 }
 
-// base83Value folds positional base83 digits into their integer value,
-// inverse of appendBase83 in blurhash.go.
 func base83Value(digits []int) int {
 	v := 0
 	for _, d := range digits {
@@ -185,8 +143,6 @@ func base83Value(digits []int) int {
 	return v
 }
 
-// decodeBlurHashAC unpacks one 15-bit base-19 triple back into a linear-RGB
-// AC factor. Inverse of encodeBlurHashAC in blurhash.go.
 func decodeBlurHashAC(value int, maximumValue float64) [3]float64 {
 	q := 19 * 19
 	return [3]float64{
@@ -196,10 +152,6 @@ func decodeBlurHashAC(value int, maximumValue float64) [3]float64 {
 	}
 }
 
-// decodeBase83 converts every character of s to its base83 digit,
-// rejecting anything outside the alphabet. Decoding the whole string up
-// front means an invalid character is caught before any allocation sized
-// from the hash's own header.
 func decodeBase83(s string) ([]int, error) {
 	out := make([]int, len(s))
 	for i := 0; i < len(s); i++ {
@@ -212,10 +164,6 @@ func decodeBase83(s string) ([]int, error) {
 	return out, nil
 }
 
-// base83Digit returns the base83 value of c, or -1 when c is not in the
-// alphabet. Indexing a byte at a time is deliberate: a multi-byte UTF-8
-// rune can never be a valid base83 digit, and each of its bytes fails
-// this lookup, so non-ASCII input is rejected without a decode pass.
 func base83Digit(c byte) int {
 	for i := 0; i < len(base83Alphabet); i++ {
 		if base83Alphabet[i] == c {

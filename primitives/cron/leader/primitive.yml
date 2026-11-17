@@ -4,3 +4,28 @@ code:
   - framework/cron/leader_pg.go
 docs:
   - framework/docs/content/cron.md
+on_change:
+  - "A change to how the lock's connection is pinned keeps cron.md's Leader election section true, including that plain Acquire holds the connection while the lease is held, so a pool doing database work under it needs two connections."
+invariants:
+  - id: lock-is-exclusive
+    rule: Only one session holds the lease's advisory lock at a time; a second Acquire returns (false, nil, nil) and closes its connection.
+    enforced_by:
+      - test: framework/cron.TestPostgresAdvisoryLease_MutualExclusion
+  - id: tick-claim-is-monotonic
+    rule: AcquireTick holds only for a minute later than the last one any replica claimed under the key, recorded by one conditional upsert, and releases the lock when the claim is refused.
+    enforced_by:
+      - test: framework/cron.TestPGTickClaimFiresOnce
+      - test: framework/cron.TestTickClaimFiresOncePerMinute
+  - id: failed-unlock-retires-the-connection
+    rule: A release whose unlock fails retires the pinned connection instead of returning it to the pool, so ending its session frees the lock for other replicas.
+    enforced_by:
+      - test: framework/cron.TestPostgresAdvisoryLeaseReleasesWhenUnlockFails
+decisions:
+  - id: ticks-table-created-on-first-use
+    date: 2026-11-17
+    status: accepted
+    decision: AcquireTick creates gofastr_cron_ticks on first use and tries a failed CREATE once more.
+    rejected:
+      - option: Fail on the first CREATE error.
+        why: Two leases on different keys race CREATE TABLE IF NOT EXISTS and Postgres reports the loser as a unique violation on pg_type.
+    upholds: [tick-claim-is-monotonic]

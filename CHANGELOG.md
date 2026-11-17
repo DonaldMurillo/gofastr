@@ -25,6 +25,13 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A static export skips a FIFO or device file in its sources instead of hanging.** A named pipe
+  in the static dir, the static FS or an `ExtraDirs` directory was opened before its type was
+  checked, and the open waited for a writer forever. The build now skips and logs anything that is
+  not a regular file before opening it.
+- **`core/static.Handler` answers 404 for a named pipe or device file instead of hanging.** A
+  request for a FIFO in a served directory opened it and waited for a writer forever; the handler
+  now checks the file's type before opening it.
 - **`gofastr verify` reports a hard navigation through any chain of frames.** GOFASTR1802 caught
   `location.href = x` and `window.location.href = x`, but missed `window.top.location.href = x` and
   other chains of more than one hop.
