@@ -69,6 +69,9 @@ func TestSweepCreateManyMergesPerIndex(t *testing.T) {
 		}
 		got = append(got, q)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	if fmt.Sprint(got) != "[1 2 3]" {
 		t.Errorf("qty by row = %v, want [1 2 3] from the per-index overrides", got)
 	}
