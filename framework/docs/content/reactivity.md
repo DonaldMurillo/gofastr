@@ -123,6 +123,10 @@ no fanout, no shared infrastructure, and no held connection.
   polled region an `id` if it should keep focus across refreshes.
 - The interval is jittered so a fleet of tabs does not synchronize on a wall
   clock.
+- A scheduled tick fetches at `priority: 'low'`, so it never holds up a
+  request the user is waiting on. The refresh when the tab becomes
+  visible again, and a widget's refresh after its own RPC succeeds, use
+  the default priority.
 - The poller pauses while the tab is hidden and resumes when it returns.
 - A failed fetch doubles the interval (capped at 5x the base, reset on the
   next success); the runtime keeps polling rather than
