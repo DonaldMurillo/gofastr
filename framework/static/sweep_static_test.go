@@ -456,3 +456,27 @@ func TestSweepStaticWatch(t *testing.T) {
 		t.Error("a failed first build was not reported to onError")
 	}
 }
+
+func TestSweepStaticWorkerHashesUserFileUnderPWADir(t *testing.T) {
+	build := func(body string) string {
+		t.Helper()
+		src := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(src, "__gofastr", "pwa"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(src, "__gofastr", "pwa", "extra.txt"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		a := coreapp.NewApp("Hash")
+		a.Register("/", &homeScreen{}, nil)
+		out := t.TempDir()
+		host := uihost.New(a, uihost.WithStaticDir(src), uihost.WithPWA(uihost.PWAConfig{}))
+		if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		return readOut(t, out, "service-worker.js")
+	}
+	if build("one") == build("two") {
+		t.Error("a user file under __gofastr/pwa/ changed without changing the worker")
+	}
+}

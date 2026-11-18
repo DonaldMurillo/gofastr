@@ -27,8 +27,15 @@ few lines, and link the PR or the docs page for the rest.
 ### Fixed
 - **A static export skips a FIFO or device file in its sources instead of hanging.** A named pipe
   in the static dir, the static FS or an `ExtraDirs` directory was opened before its type was
-  checked, and the open waited for a writer forever. The build now skips and logs anything that is
-  not a regular file before opening it.
+  checked, and the open waited for a writer forever, as did a symlink to one in a static FS or
+  an `ExtraDirs` directory. The build now skips and logs anything that is not a regular file before
+  opening it.
+- **A directory or named pipe in the static source no longer drops a generated file from an
+  export.** A `sitemap.xml`, `robots.txt`, app icon or PWA file of that name that was not a regular
+  file kept the generated one out, and the copy skipped it, so the export held neither.
+- **A static export's service worker changes when a file under `__gofastr/pwa/` does.** The
+  worker's cache version left out every file under that directory, not only the generated ones, so
+  a static-source file there could change while installed clients kept the old copy.
 - **`core/static.Handler` answers 404 for a named pipe or device file instead of hanging.** A
   request for a FIFO in a served directory opened it and waited for a writer forever; the handler
   now checks the file's type before opening it.
