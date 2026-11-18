@@ -1,0 +1,36 @@
+primitive: harness.internal.ulid
+summary: A stdlib-only ULID - 48-bit millisecond time and 80 random bits as 26 Crockford base32 characters - with generate, parse, validate and the prefix_ULID form the harness IDs use.
+code:
+  - framework/experimental/harness/internal/ulid/
+twins:
+  - job: Decode and validate a 26-character ULID string.
+    why: Parse still runs a shift-register decode whose result it discards before returning parseClean, and IsValid repeats parseClean's character and overflow checks; nothing but work keeps them from being parseClean alone.
+    sites:
+      - path: framework/experimental/harness/internal/ulid/ulid.go
+        note: Parse, whose shift-register decode is discarded for parseClean's result.
+      - path: framework/experimental/harness/internal/ulid/ulid.go
+        note: IsValid, which repeats parseClean's character and overflow checks instead of calling it.
+invariants:
+  - id: round-trip-and-time
+    rule: Parse(u.String()) returns u, Time returns the millisecond the ULID was made at, and ULIDs made later sort after earlier ones as strings.
+    enforced_by:
+      - test: framework/experimental/harness/internal/ulid.TestRoundTrip
+      - test: framework/experimental/harness/internal/ulid.TestTimeRecoverable
+      - test: framework/experimental/harness/internal/ulid.TestSortable
+  - id: overflow-refused
+    rule: Parse, SplitPrefixed and IsValid refuse a string whose first character is above 7, because its value does not fit in 128 bits, and refuse I, L, O and U.
+    enforced_by:
+      - test: framework/experimental/harness/internal/ulid.TestParseRefusesOverflowAndAcceptsLowercase
+      - test: framework/experimental/harness/internal/ulid.TestIsValidRejects
+  - id: decode-case-insensitive
+    rule: Parse accepts lowercase Crockford characters and decodes them to the same ULID as uppercase.
+    enforced_by:
+      - test: framework/experimental/harness/internal/ulid.TestParseRefusesOverflowAndAcceptsLowercase
+decisions:
+  - id: stdlib-minimal-ulid
+    date: 2026-11-18
+    status: accepted
+    decision: The harness carries its own ULID with only generate, parse and validate, using crypto/rand for the random part.
+    rejected:
+      - option: A third-party ULID module.
+        why: The harness needs three operations, not a dependency.

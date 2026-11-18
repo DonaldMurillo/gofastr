@@ -1,5 +1,2 @@
-// Package hook is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package hook runs lifecycle hooks: shell commands at fixed points of a session, with per-event deadlines and capped output.
 package hook

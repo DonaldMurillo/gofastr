@@ -1,16 +1,3 @@
-// Package memory implements file-backed auto-memory matching the
-// markdown+frontmatter pattern documented in
-// docs/harness-architecture.md § Memory.
-//
-// Layout under the memory root:
-//
-//	MEMORY.md                index ("- [Title](file.md) — hook")
-//	user_role.md             one file per memory
-//	feedback_testing.md
-//	project_harness.md
-//
-// Frontmatter required: name, description, metadata.type. Four
-// types: user, feedback, project, reference.
 package memory
 
 import (
@@ -25,7 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// Type is the kind of memory.
+// Type is the kind of memory: user, feedback, project or reference.
 type Type string
 
 const (
@@ -37,22 +24,21 @@ const (
 
 // Entry is one memory file.
 type Entry struct {
-	Name        string // slug, used as filename minus ".md"
+	Name        string
 	Description string
 	Type        Type
 	Body        string
-	Path        string // absolute path on disk
+	Path        string
 }
 
-// Store is the file-backed memory store.
+// Store keeps one markdown file per Entry, with frontmatter, plus a MEMORY.md index, under one root directory.
 type Store struct {
 	mu   sync.RWMutex
 	root string
-	by   map[string]*Entry // by name
+	by   map[string]*Entry
 }
 
-// New returns a Store rooted at the given directory. The directory is
-// created if it doesn't exist.
+// New creates root if missing and loads every entry file in it.
 func New(root string) (*Store, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
@@ -98,7 +84,7 @@ func (s *Store) Get(name string) (*Entry, bool) {
 	return e, ok
 }
 
-// Save writes (or overwrites) a memory and updates the index.
+// Save validates e, writes its file owner-only and rewrites the index.
 func (s *Store) Save(e Entry) error {
 	if err := validate(&e); err != nil {
 		return err
@@ -107,10 +93,6 @@ func (s *Store) Save(e Entry) error {
 	defer s.mu.Unlock()
 	e.Path = filepath.Join(s.root, e.Name+".md")
 	content := serialize(&e)
-	// Owner-only on CREATE and on OVERWRITE (internal/fileperm): the
-	// per-entry file carries the same memory set as the index, and
-	// os.WriteFile's mode only applies at create — a pre-existing 0644
-	// entry keeps every memory group/world-readable.
 	if err := fileperm.WriteOwnerOnly(e.Path, []byte(content)); err != nil {
 		return err
 	}
@@ -118,7 +100,7 @@ func (s *Store) Save(e Entry) error {
 	return s.writeIndexLocked()
 }
 
-// Delete removes a memory.
+// Delete removes a memory's file and index line; an unknown name is a no-op.
 func (s *Store) Delete(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -131,9 +113,7 @@ func (s *Store) Delete(name string) error {
 	return s.writeIndexLocked()
 }
 
-// Relevant scores every entry against a query string and returns the
-// top n entries. Scoring is a simple tag/keyword overlap; sufficient
-// for the engine middleware's "inject relevant memories per turn" step.
+// Relevant returns up to n entries ranked by keyword overlap with query, name and description hits first.
 func (s *Store) Relevant(query string, n int) []*Entry {
 	if query == "" || n <= 0 {
 		return nil
@@ -149,8 +129,6 @@ func (s *Store) Relevant(query string, n int) []*Entry {
 	for _, e := range s.by {
 		hay := strings.ToLower(e.Name + " " + e.Description + " " + e.Body)
 		score := 0
-		// Each keyword in the query that appears in the haystack gains 1 point;
-		// matching the name or description gains 3.
 		for _, tok := range tokenize(q) {
 			if strings.Contains(strings.ToLower(e.Name), tok) || strings.Contains(strings.ToLower(e.Description), tok) {
 				score += 3
@@ -237,9 +215,6 @@ func (s *Store) writeIndexLocked() error {
 	for _, e := range entries {
 		fmt.Fprintf(&b, "- [%s](%s.md): %s\n", e.Name, e.Name, e.Description)
 	}
-	// WriteOwnerOnly, not os.WriteFile: the fixed-name MEMORY.md index
-	// is rewritten by every Save, and the mode must tighten a
-	// pre-existing weaker file, not just apply at create.
 	return fileperm.WriteOwnerOnly(filepath.Join(s.root, "MEMORY.md"), []byte(b.String()))
 }
 
@@ -247,11 +222,6 @@ func validate(e *Entry) error {
 	if e.Name == "" {
 		return errors.New("memory: name required")
 	}
-	// Name becomes a filename under the store root, so it must not be
-	// able to walk out of it. Save writes <root>/<name>.md; without
-	// this an entry named "../../../.ssh/authorized_keys" would land
-	// outside the memory directory. Names are slugs by convention, so
-	// the allow-list costs nothing legitimate.
 	if !safeMemoryName(e.Name) {
 		return fmt.Errorf("memory: unsafe name %q (use letters, digits, - and _)", e.Name)
 	}
@@ -266,9 +236,6 @@ func validate(e *Entry) error {
 	return nil
 }
 
-// safeMemoryName reports whether name is usable as a bare filename
-// stem: ASCII letters, digits, '-' and '_' only. That rejects path
-// separators, "..", NUL, and drive-relative Windows shapes in one go.
 func safeMemoryName(name string) bool {
 	for i := 0; i < len(name); i++ {
 		c := name[i]
@@ -319,8 +286,6 @@ func parse(raw string) (*Entry, error) {
 		if trim == "" || strings.HasPrefix(trim, "#") {
 			continue
 		}
-		// metadata: starts a sub-section; following indented lines
-		// are its keys.
 		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
 			inMetadata = false
 			before, after, ok := strings.Cut(line, ":")

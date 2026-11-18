@@ -1,4 +1,2 @@
-// Package logging is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md § Logging.
+// Package logging writes the harness's own JSON-lines operational log, separate from the per-session event log.
 package logging

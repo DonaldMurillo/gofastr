@@ -1,0 +1,23 @@
+primitive: harness.tracing
+summary: Per-turn traces - a Recorder collects a span tree with W3C trace-context IDs and Done writes it as <dir>/<session>/<trace>.json, so traces can be read with any tool without a tracing library.
+code:
+  - framework/experimental/harness/tracing/
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: trace-file-owner-only
+    rule: Done leaves the trace file at mode 0600, tightening a file that already existed with a wider mode.
+    enforced_by:
+      - test: framework/experimental/harness/tracing.TestDoneTightensAPreExistingTraceFile
+  - id: traceparent-shape
+    rule: TraceContextHeader returns "00-<32 hex trace id>-<16 hex span id>-01".
+    enforced_by:
+      - test: framework/experimental/harness/tracing.TestTraceContextHeader
+decisions:
+  - id: json-files-not-a-tracing-library
+    date: 2026-11-18
+    status: accepted
+    decision: Traces are written as plain JSON files per turn.
+    rejected:
+      - option: An OpenTelemetry exporter.
+        why: It pulls a tracing library into the harness, while a JSON file can be fed to jq or imported into Jaeger.
