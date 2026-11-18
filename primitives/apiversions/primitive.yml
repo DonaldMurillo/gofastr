@@ -14,7 +14,7 @@ invariants:
       - test: framework/experimental/apiversions.TestVersionPrefixRejectsSmuggling
       - test: framework/experimental/apiversions.TestVersionNormalize
   - id: unsafe-successor-writes-no-link
-    rule: DeprecationMiddleware and DeprecationHeaders write the successor-version Link only for a relative path or an absolute http(s) URL with no CR, LF or NUL; any other scheme or a protocol-relative URL writes no Link header while Deprecation and Sunset are still set.
+    rule: DeprecationMiddleware and DeprecationHeaders write the successor-version Link only for a relative path or an absolute http(s) URL with no CR, LF or NUL; any other scheme or a protocol-relative URL writes no Link header, while Deprecation is still set and Sunset is set whenever a sunset date was given.
     enforced_by:
       - test: framework/experimental/apiversions.TestDeprecationHeaders_RejectsUnsafeReplacement
       - test: framework/experimental/apiversions.TestDeprecationMiddleware_RejectsUnsafeReplacement
@@ -24,7 +24,7 @@ invariants:
     enforced_by:
       - test: framework/experimental/apiversions.TestSunsetIsAnHTTPDate
   - id: projection-keeps-columns
-    rule: ApplyToEntityConfig changes only Hidden and WireName, never the field set, a field's name or the base config, so every version of an entity shares one table.
+    rule: ApplyToEntityConfig changes only Hidden and WireName and never a column name or the base config, so after entity.Define every version of an entity has the same columns and shares one table; a declared field is never dropped, and an injected column a projection names is returned for Define to adjust.
     enforced_by:
       - test: framework/experimental/apiversions.TestProjectionKeepsColumnsAndBase
   - id: projection-names-checked-at-startup

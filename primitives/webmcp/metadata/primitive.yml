@@ -6,10 +6,11 @@ docs:
   - framework/docs/content/webmcp.md
 invariants:
   - id: examples-match-their-schema
-    rule: Register refuses an example whose input is not a JSON object, lacks a required key, or gives a declared property a value of another JSON type, where integer accepts only whole numbers, a type list accepts any member, and a type keyword outside JSON Schema's seven accepts anything.
+    rule: Register refuses an example whose input is not a JSON object (a literal null included), lacks a required key, or gives a declared property a value of another JSON type, where integer accepts only whole numbers, a type list accepts any member, and a type keyword outside JSON Schema's seven accepts anything.
     enforced_by:
       - test: framework/experimental/webmcp.TestExamplesValidateAgainstSchema
       - test: framework/experimental/webmcp.TestExampleTypeCheckIgnoresUnknownTypeKeywords
+      - test: framework/experimental/webmcp.TestExampleNullInputIsNotAnObject
   - id: output-schema-is-object
     rule: Register refuses an OutputSchema that is not a JSON object and otherwise copies it into the manifest unchanged.
     enforced_by:
