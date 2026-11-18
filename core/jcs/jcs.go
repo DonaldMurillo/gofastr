@@ -64,11 +64,11 @@ func (p *parser) skipWS() {
 }
 
 func (p *parser) parseValue(depth int) ([]byte, error) {
-	if depth > maxDepth {
-		return nil, p.errorf("nesting exceeds %d levels", maxDepth)
-	}
 	if p.pos >= len(p.data) {
 		return nil, p.errorf("unexpected end of input")
+	}
+	if c := p.data[p.pos]; depth >= maxDepth && (c == '{' || c == '[') {
+		return nil, p.errorf("nesting exceeds %d levels", maxDepth)
 	}
 	switch c := p.data[p.pos]; {
 	case c == '{':

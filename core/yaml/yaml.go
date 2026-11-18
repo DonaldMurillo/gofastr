@@ -298,18 +298,14 @@ func (p *parser) parseList(indent int) (*Node, error) {
 				child.Map[normKey] = scalar
 			}
 			if p.pos < len(p.lines) && p.lines[p.pos].indent > indent {
-				seed := make(map[string]int, len(child.Map))
-				for k, v := range child.Map {
-					seed[k] = v.Line
-				}
-				more, err := p.parseMapSeeded(keyCol, seed)
+				more, err := p.parseMapSeeded(keyCol, map[string]int{normKey: line.line})
 				if err != nil {
 					return nil, err
 				}
 				for _, k := range slices.Sorted(maps.Keys(more.Map)) {
-					if first, dup := child.Map[k]; dup {
+					if _, dup := child.Map[k]; dup {
 						v := more.Map[k]
-						return nil, fmt.Errorf("yaml:%d:%d: duplicate mapping key %q (first defined at line %d)", v.Line, v.Column, k, first.Line)
+						return nil, fmt.Errorf("yaml:%d:%d: duplicate mapping key %q (first defined at line %d)", v.Line, v.Column, k, line.line)
 					}
 				}
 				maps.Copy(child.Map, more.Map)
