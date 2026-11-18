@@ -1,7 +1,9 @@
 package builtins
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -115,7 +117,7 @@ func TestBashTimeoutKillsBackgroundedChild(t *testing.T) {
 	proc, _ := os.FindProcess(pid)
 	defer func() { _ = proc.Kill() }()
 	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
-		if proc.Signal(syscall.Signal(0)) != nil {
+		if proc.Signal(syscall.Signal(0)) != nil || isZombie(pid) {
 			return
 		}
 	}
@@ -162,4 +164,13 @@ func TestCappedWriterNotesTruncationAtAnExactBoundary(t *testing.T) {
 	if got := out.String(); got != "abcd\n[output truncated]\n" {
 		t.Fatalf("capped output = %q, want the cap's bytes and one truncation note", got)
 	}
+}
+
+func isZombie(pid int) bool {
+	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return false
+	}
+	i := bytes.LastIndexByte(stat, ')')
+	return i >= 0 && i+2 < len(stat) && stat[i+2] == 'Z'
 }
