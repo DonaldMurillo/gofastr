@@ -2,6 +2,7 @@ package webmcp
 
 import (
 	"bufio"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -201,5 +202,22 @@ func TestObservedPanicIsReportedAndRepanicked(t *testing.T) {
 	}()
 	if len(got) != 1 || got[0].ErrClass != "panic" {
 		t.Fatalf("observer events = %+v, want one with ErrClass panic", got)
+	}
+}
+
+func TestExampleNullInputIsNotAnObject(t *testing.T) {
+	for _, in := range []string{`null`, ` null `} {
+		h := New()
+		tl := validTool()
+		tl.Examples = []Example{{Input: json.RawMessage(in)}}
+		if err := h.Register(tl); err == nil || !strings.Contains(err.Error(), "example 0") {
+			t.Fatalf("example input %q accepted: %v", in, err)
+		}
+	}
+	h := New()
+	tl := validTool()
+	tl.Examples = []Example{{Input: json.RawMessage(`{}`)}, {Summary: "no input"}}
+	if err := h.Register(tl); err != nil {
+		t.Fatalf("an empty object or no input was refused: %v", err)
 	}
 }
