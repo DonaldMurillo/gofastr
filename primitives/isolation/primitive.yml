@@ -64,10 +64,11 @@ invariants:
       - test: framework/isolation.TestListenAddrReturnsResolveErrors
       - test: framework/isolation.TestListenAddrRemapsInALinkedWorktree
   - id: sqlite-state-owner-only
-    rule: Whenever an active SQLite DSN is rewritten (Database, or Runtime.Env through it), the state directory .gofastr/isolation/<id> is set to 0700 (an owner-only ACL on Windows), also when it already existed; a directory this user does not own, which chmod refuses with EPERM, is logged and used as is rather than failing the rewrite.
+    rule: Whenever an active SQLite DSN is rewritten (Database, or Runtime.Env through it), the state directory .gofastr/isolation/<id> is set to 0700 (an owner-only ACL on Windows), also when it already existed; when chmod is refused with a permission error (EPERM or EACCES, for example a directory another user owns) the rewrite logs a warning and uses the directory with its current mode rather than failing.
     enforced_by:
       - test: framework/isolation.TestSQLiteStateDirOwnerOnly
       - test: framework/isolation.TestSQLiteStateDirTightensExistingDir
+      - test: framework/isolation.TestSQLiteStateDirPermissionDeniedStillRewrites
   - id: postgres-name-fits
     rule: A Postgres database name gets a _<id> suffix within 63 bytes, cutting the base on a rune boundary, with a digest suffix for an id too long to fit, and is left alone when it already ends in the suffix.
     enforced_by:
