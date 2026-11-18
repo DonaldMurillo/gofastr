@@ -68,7 +68,7 @@ invariants:
     enforced_by:
       - test: core/yaml.TestInlineListTrailingComma
   - id: list-item-key-column
-    rule: 'In a "- key: value" list item, lines past the key column belong to an empty first value, lines at the key column are the item''s further keys, and a line between the dash and the key column is an error.'
+    rule: 'In a "- key: value" list item, lines past the key column belong to an empty first value, lines at the key column are the item''s further keys unless the first value is empty and the line is a sequence item, which then belongs to that value, and a line between the dash and the key column is an error.'
     enforced_by:
       - test: core/yaml.TestListItemFirstKeyOwnsDeeperLines
       - test: core/yaml.TestListItemKeyColumnLineIsSibling

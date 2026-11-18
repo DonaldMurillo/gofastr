@@ -6,7 +6,7 @@ docs:
   - framework/docs/content/core-packages.md
 invariants:
   - id: strict-parse
-    rule: CanonicalizeJSON returns an error for a duplicate object key, a lone or misordered surrogate escape, invalid UTF-8, a raw control character in a string, a number literal that overflows to Infinity, nesting deeper than 512 levels and any content after the one JSON value.
+    rule: CanonicalizeJSON returns an error for a duplicate object key, a lone or misordered surrogate escape, invalid UTF-8, a raw control character in a string, a number literal that overflows to Infinity, more than 512 nested arrays and objects, whether the innermost is empty or not, and any content after the one JSON value.
     enforced_by:
       - test: core/jcs.TestRejectedJSON
       - test: core/jcs.TestDepthLimit
@@ -17,7 +17,7 @@ invariants:
       - test: core/jcs.TestReferenceSuite
       - test: core/jcs.TestNodeCorpus
   - id: numbers-as-ecmascript
-    rule: Every number is parsed to an IEEE 754 double and written as ECMAScript Number::toString writes it, plain decimal for 1e-7 to below 1e21, exponential without padding outside that range, -0 as 0 and an underflowing literal as 0.
+    rule: Every number is parsed to an IEEE 754 double and written as ECMAScript Number::toString writes it, plain decimal for magnitudes from 1e-6 to below 1e21, exponential without padding outside that range, -0 as 0 and an underflowing literal as 0.
     enforced_by:
       - test: core/jcs.TestRFC8785AppendixB
       - test: core/jcs.TestES6NumberVectors
@@ -65,7 +65,7 @@ decisions:
   - id: depth-bound
     date: 2026-11-18
     status: accepted
-    decision: Nesting is capped at 512 levels so hostile input returns an error instead of overflowing the stack, as RFC 8785 section 5 recommends sanity checks on input.
+    decision: Nesting is capped at 512 levels of arrays and objects, the outermost counting as one and scalars not counting, so hostile input returns an error instead of overflowing the stack, as RFC 8785 section 5 recommends sanity checks on input.
     rejected:
       - option: Recurse without a bound.
         why: A verifier canonicalizes documents it received, and deep nesting would crash it.

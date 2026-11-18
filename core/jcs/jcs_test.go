@@ -361,6 +361,17 @@ func TestDepthLimit(t *testing.T) {
 	if _, err := CanonicalizeJSON([]byte(ok)); err != nil {
 		t.Errorf("depth 100: %v", err)
 	}
+	nest := func(n int, inner string) []byte {
+		return []byte(strings.Repeat("[", n) + inner + strings.Repeat("]", n))
+	}
+	for _, inner := range []string{"[]", "[1]", "{}", `{"a":1}`} {
+		if _, err := CanonicalizeJSON(nest(maxDepth-1, inner)); err != nil {
+			t.Errorf("depth %d ending %s: %v", maxDepth, inner, err)
+		}
+		if _, err := CanonicalizeJSON(nest(maxDepth, inner)); err == nil {
+			t.Errorf("depth %d ending %s: accepted, want nesting error", maxDepth+1, inner)
+		}
+	}
 }
 
 // TestWhitespaceInsensitivity: canonical form is a function of the

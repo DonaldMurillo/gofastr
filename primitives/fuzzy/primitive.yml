@@ -13,10 +13,10 @@ decisions:
   - id: bytewise-two-rows
     date: 2026-11-18
     status: accepted
-    decision: Levenshtein compares bytes and keeps two rolling rows, so memory is O(len(b)), and its callers bound the input length rather than the function.
+    decision: Levenshtein compares bytes and keeps two rolling rows, so memory is O(len(b)); it does not bound its input, and non-ASCII input is compared bytewise, so each byte of a multi-byte character counts as one edit.
     rejected:
       - option: Compare runes.
-        why: The inputs are ASCII identifiers such as command and field names, where byte and rune distance agree, and decoding costs an allocation per call.
+        why: The names suggested against are ASCII identifiers (command and field names), so a non-ASCII typo is already at least one edit off, and decoding costs an allocation per call.
       - option: Fill the full len(a)×len(b) matrix.
         why: Only the previous row is ever read, so the matrix is memory spent for nothing.
-    revisit_if: A caller passes non-ASCII text or input whose length it does not bound; framework/filter caps query keys at 64 bytes (framework/filter.TestUnknownFilterKeyIsBounded).
+    revisit_if: A did-you-mean suggestion for non-ASCII input is reported missing, or an unbounded caller becomes slow. framework/filter caps query keys at 64 bytes (framework/filter.TestUnknownFilterKeyIsBounded) but passes non-ASCII keys bytewise; cmd/gofastr dispatch passes the raw first argument unbounded.
