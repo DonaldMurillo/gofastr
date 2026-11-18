@@ -39,3 +39,18 @@ func TestSweepOversizedSheetIsAnError(t *testing.T) {
 		t.Errorf("Measure of a sheet over maxBody = %v, want an error", err)
 	}
 }
+
+func TestSweepEmptyFirstBaseHrefStillWins(t *testing.T) {
+	base := serve(t, map[string]string{
+		"/":          `<base href=""><base href="/two/"><link rel="stylesheet" href="s.css">`,
+		"/s.css":     "x",
+		"/two/s.css": "yy",
+	})
+	w, err := Measure(http.DefaultClient, base+"/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Bytes() != 1 {
+		t.Errorf("Bytes = %d, want the 1-byte sheet resolved against the page (the first, empty <base href>)", w.Bytes())
+	}
+}

@@ -20,7 +20,7 @@ invariants:
     enforced_by:
       - test: framework/semcov.TestDisableStopsRecordingButKeepsData
   - id: keys-normalized
-    rule: Methods are recorded upper-cased, entity names, operations and hook types lower-cased, values trimmed with blanks ignored, and a route pattern without its query, fragment or trailing slash.
+    rule: Methods are recorded trimmed and upper-cased, entity names, operations and hook types lower-cased but not trimmed, permissions, roles and events trimmed with blanks ignored, and a route pattern without its query, fragment or trailing slash.
     enforced_by:
       - test: framework/semcov.TestRecordAndRead
       - test: framework/semcov.TestSweepHooksAreCaseInsensitive
@@ -43,7 +43,7 @@ invariants:
       - test: framework/semcov.TestReadRejectsCorruptManifest
       - test: framework/semcov.TestReadRejectsFutureVersion
   - id: recording-is-race-free
-    rule: Recording from many goroutines, and Reset while they record, loses nothing and races on nothing.
+    rule: Recording from many goroutines without a Reset loses nothing, and a Reset while they record races on nothing (it clears what was recorded and stops recording, as Reset does).
     enforced_by:
       - test: framework/semcov.TestConcurrentRecordingLosesNothing
       - test: framework/semcov.TestResetDuringRecording

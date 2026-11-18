@@ -13,7 +13,7 @@ invariants:
       - test: framework/testkit/nojstest.TestCleanPagePasses
       - test: framework/testkit/nojstest.TestSweepResetButtonIsNoSubmitAndScriptStaysOff
   - id: script-ran-is-reported
-    rule: Inspect reports script-ran whenever window.__gofastr exists.
+    rule: Inspect reports script-ran whenever window.__gofastr is truthy.
     enforced_by:
       - test: framework/testkit/nojstest.TestScriptRanIsReported
   - id: empty-main-includes-unrendered
@@ -27,7 +27,7 @@ invariants:
       - test: framework/testkit/nojstest.TestBrokenPageReportsEachKind
       - test: framework/testkit/nojstest.TestCleanPagePasses
   - id: form-needs-a-native-submit
-    rule: A visible form other than method=dialog passes when an enabled submit control, by its reflected type and not inside a disabled fieldset, lands somewhere other than a javascript URL, its formaction overriding the action, or when it has no submit control at all and exactly one text-like input; an action of "#" passes.
+    rule: A visible form other than method=dialog passes when an enabled submit control, by its reflected type and not inside a disabled fieldset, lands somewhere other than a javascript URL, its formaction overriding the action, or when it has no submit control at all, exactly one text-like input and an action that is not a javascript URL; an action of "#" passes.
     enforced_by:
       - test: framework/testkit/nojstest.TestBrokenPageReportsEachKind
       - test: framework/testkit/nojstest.TestCleanPagePasses

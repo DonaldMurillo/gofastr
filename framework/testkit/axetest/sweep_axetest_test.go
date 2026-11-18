@@ -122,6 +122,7 @@ func TestSweepScanRecordsCoverageUnlessDisabled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("axe e2e: -short")
 	}
+	t.Setenv("GOFASTR_AXE_COVERAGE", "1")
 	url, _ := schemeFixture(t, "dark", "")
 	browser := NewBrowser(t)
 	scan := func(t *testing.T) string {

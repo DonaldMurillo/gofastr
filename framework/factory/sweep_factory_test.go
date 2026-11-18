@@ -2,6 +2,7 @@ package factory
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -48,12 +49,28 @@ func TestSweepBuildToleratesANilBase(t *testing.T) {
 func TestSweepCreateManyMergesPerIndex(t *testing.T) {
 	reg, db := migratedRegistry(t)
 	f, _ := New(reg, "widget", func() map[string]any { return map[string]any{"name": "w", "qty": 0} })
-	if _, err := f.CreateMany(context.Background(), 3, func(i int) map[string]any { return map[string]any{"qty": i + 1} }); err != nil {
+	var seen []int
+	if _, err := f.CreateMany(context.Background(), 3, func(i int) map[string]any { seen = append(seen, i); return map[string]any{"qty": i + 1} }); err != nil {
 		t.Fatal(err)
 	}
-	var sum int
-	if err := db.QueryRow("SELECT SUM(qty) FROM widgets").Scan(&sum); err != nil || sum != 6 {
-		t.Errorf("sum of qty = %d (%v), want 6 from the per-index overrides", sum, err)
+	if fmt.Sprint(seen) != "[0 1 2]" {
+		t.Errorf("perIndex called with %v, want [0 1 2]", seen)
+	}
+	rows, err := db.Query("SELECT qty FROM widgets ORDER BY rowid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []int
+	for rows.Next() {
+		var q int
+		if err := rows.Scan(&q); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, q)
+	}
+	if fmt.Sprint(got) != "[1 2 3]" {
+		t.Errorf("qty by row = %v, want [1 2 3] from the per-index overrides", got)
 	}
 }
 
