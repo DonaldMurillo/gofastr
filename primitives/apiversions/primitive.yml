@@ -1,0 +1,56 @@
+primitive: apiversions
+summary: Experimental API versioning - Version mounts a route group per version prefix, deprecation headers mark an old version, and a Projection shapes which fields each version shows and under which wire keys.
+code:
+  - framework/experimental/apiversions/
+docs:
+  - framework/docs/content/api-versioning.md
+on_change:
+  - A version is a route group, so a change to how Version mounts one is checked against framework/routegroup's MCP-namespace and OpenAPI-tag behaviour.
+invariants:
+  - id: version-prefix-shape
+    rule: Version accepts "1", "/v1" or "v1" as v1 and panics at mount time on any prefix that is not v<major> or v<major>.<minor>, so a prefix never carries a path separator, query glue or an empty segment.
+    enforced_by:
+      - test: framework/experimental/apiversions.TestVersionRejectsGarbage
+      - test: framework/experimental/apiversions.TestVersionPrefixRejectsSmuggling
+      - test: framework/experimental/apiversions.TestVersionNormalize
+  - id: unsafe-successor-writes-no-link
+    rule: DeprecationMiddleware and DeprecationHeaders write the successor-version Link only for a relative path or an absolute http(s) URL with no CR, LF or NUL; any other scheme or a protocol-relative URL writes no Link header while Deprecation and Sunset are still set.
+    enforced_by:
+      - test: framework/experimental/apiversions.TestDeprecationHeaders_RejectsUnsafeReplacement
+      - test: framework/experimental/apiversions.TestDeprecationMiddleware_RejectsUnsafeReplacement
+      - test: framework/experimental/apiversions.TestDeprecation_SafeReplacementSurvives
+  - id: sunset-is-gmt-http-date
+    rule: The Sunset header is an RFC 9110 HTTP-date in GMT that http.ParseTime reads, whatever the zone of the time given.
+    enforced_by:
+      - test: framework/experimental/apiversions.TestSunsetIsAnHTTPDate
+  - id: projection-keeps-columns
+    rule: ApplyToEntityConfig changes only Hidden and WireName, never the field set, a field's name or the base config, so every version of an entity shares one table.
+    enforced_by:
+      - test: framework/experimental/apiversions.TestProjectionKeepsColumnsAndBase
+  - id: projection-names-checked-at-startup
+    rule: A projection whose Include, Exclude or Rename names a field the entity neither declares nor gets from entity.Define panics in ApplyToEntityConfig, so a typo or a wire key never leaves a column silently visible.
+    enforced_by:
+      - test: framework/experimental/apiversions.TestApplyToEntityConfigRefusesUnknownFieldNames
+      - test: framework/experimental/apiversions.TestProjectionNamingInjectedColumns
+  - id: projection-reaches-injected-columns
+    rule: Exclude and Rename take effect on the columns entity.Define injects (id, timestamps, tenant, owner and soft-delete columns), while Include shapes only the declared fields and never hides an injected column it does not name.
+    enforced_by:
+      - test: framework/experimental/apiversions.TestProjectionNamingInjectedColumns
+      - test: framework/experimental/apiversions.TestProjectionKeepsColumnsAndBase
+decisions:
+  - id: hide-not-drop
+    date: 2026-11-18
+    status: accepted
+    decision: A projection hides a field (Hidden) and renames it on the wire (WireName) instead of removing it or renaming its column.
+    rejected:
+      - option: Drop excluded fields from the version's EntityConfig and rename columns per version.
+        why: Each version would then need its own table, and two versions of one entity could no longer share rows.
+    upholds: [projection-keeps-columns]
+  - id: misconfiguration-panics-at-startup
+    date: 2026-11-18
+    status: accepted
+    decision: A bad version prefix or a projection naming an unknown field panics when the app mounts it, never in the request path.
+    rejected:
+      - option: Ignore the bad name or log a warning.
+        why: An ignored Exclude typo leaves the column on the version's wire output with no sign anything was wrong.
+    upholds: [version-prefix-shape, projection-names-checked-at-startup]

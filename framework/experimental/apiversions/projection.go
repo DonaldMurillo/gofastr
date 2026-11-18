@@ -9,18 +9,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// Projection defines which fields are visible in a specific API version.
+// Projection shapes one version's fields: Include allow-lists field names
+// (empty keeps all), Exclude hides names after that, Rename sets wire keys.
 type Projection struct {
 	Version string
-
-	// Include lists field names to include. If empty, all fields are included.
 	Include []string
-
-	// Exclude lists field names to exclude. Applied after Include.
 	Exclude []string
-
-	// Rename maps field names to different JSON keys for this version.
-	Rename map[string]string
+	Rename  map[string]string
 }
 
 // ProjectionSet groups multiple projections for an entity.
@@ -29,7 +24,7 @@ type ProjectionSet struct {
 	Versions map[string]*Projection
 }
 
-// NewProjectionSet creates a projection set with the given version projections.
+// NewProjectionSet keys each projection by its Version.
 func NewProjectionSet(versions ...*Projection) *ProjectionSet {
 	ps := &ProjectionSet{
 		Versions: make(map[string]*Projection),
@@ -51,23 +46,13 @@ func (ps *ProjectionSet) For(version string) *Projection {
 	return ps.Default
 }
 
-// ApplyToEntityConfig returns a modified EntityConfig with fields' visibility
-// and wire names adjusted according to the projection for the given version.
-// Does not mutate the original, and does NOT change the field set
-// or the DB column names: Exclude hides a field (Hidden=true), Include hides
-// everything not allow-listed, and Rename sets the wire-name override
-// (WireName), the underlying table schema is identical across versions so
-// two versions of one entity can share one table safely.
+// ApplyToEntityConfig returns base with Hidden and WireName set by the version's
+// projection; the columns never change, and an unknown field name panics.
 func ApplyToEntityConfig(base entity.EntityConfig, ps *ProjectionSet, version string) entity.EntityConfig {
 	p := ps.For(version)
 	if p == nil {
 		return base
 	}
-	// The columns Define injects (id, timestamps, scope columns) are
-	// columns of the entity too. A projection that excludes or renames one
-	// declares it here, as Define would, so the adjustment lands on it;
-	// Include shapes only the declared fields, so a version's Include
-	// never hides a system column it did not name before.
 	declared := make(map[string]bool, len(base.Fields))
 	for _, f := range base.Fields {
 		declared[f.Name] = true
@@ -82,7 +67,7 @@ func ApplyToEntityConfig(base entity.EntityConfig, ps *ProjectionSet, version st
 		} else {
 			_, renamed := p.Rename[f.Name]
 			if !renamed && !slices.Contains(p.Exclude, f.Name) {
-				continue // Define injects it unchanged
+				continue
 			}
 			f.Hidden = f.Hidden || slices.Contains(p.Exclude, f.Name)
 		}
@@ -107,12 +92,6 @@ func shouldInclude(fieldName string, p *Projection) bool {
 	return true
 }
 
-// checkProjectionNames panics when p names a column the entity will not
-// have, the way Version panics on a bad prefix: at startup, never in the
-// request path. fields is the base config's Fields plus the columns
-// Define injects. Exclude is how a version hides a column; a name that
-// matched nothing (a typo, or the column's wire key instead of its field
-// name) left that column on the version's wire output silently.
 func checkProjectionNames(fields []schema.Field, p *Projection) {
 	declared := make(map[string]bool, len(fields))
 	for _, f := range fields {
