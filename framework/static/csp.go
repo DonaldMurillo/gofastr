@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-const staticExportCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; " +
-	"form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
+const staticExportCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; " +
+	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 
 func (b *Builder) policy() string {
 	if p := strings.TrimSpace(b.ContentSecurityPolicy); p != "" {
