@@ -74,7 +74,7 @@ func TestExpandReachesNewerParentsPastTheBatch(t *testing.T) {
 
 func TestPGExpandRaceIsANoOp(t *testing.T) {
 	db, o := pgOutbox(t)
-	db.SetMaxOpenConns(2)
+	db.SetMaxOpenConns(3)
 	o.Consume("c", "t", noopHandler)
 	ctx := context.Background()
 	id := appendCommitted(t, db, o, "t")
@@ -87,7 +87,22 @@ func TestPGExpandRaceIsANoOp(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { _, err := o.expandDeliveries(ctx); done <- err }()
-	time.Sleep(300 * time.Millisecond)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var waiting int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_activity
+			WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%INSERT%_delivery%'`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			_ = tx.Rollback()
+			t.Fatal("the expansion never blocked on the uncommitted delivery row")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
