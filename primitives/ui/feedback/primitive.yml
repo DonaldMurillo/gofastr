@@ -154,7 +154,7 @@ decisions:
       - option: Keep the slugged id unchanged without a scope and tell callers to pass the page's ctx.
         why: A caller passing context.Background() got two tooltips with one id, and the second trigger announced the first's text.
       - option: Put the counter fallback in core/render.UniqueID for every caller.
-        why: UniqueID's other callers derive ids that are link targets (section headings as #fragments, form field ids) and promise to keep the derived id without a scope; a counter there would change them on every render.
+        why: "UniqueID's other callers derive ids that are link targets (section headings as #fragments, form field ids) and promise to keep the derived id without a scope; a counter there would change them on every render."
     revisit_if: Every render path that reaches Tooltip carries an id scope, so the counter branch is dead.
     upholds: [tooltip-describes-its-trigger]
   - id: banner-polite-in-every-tone
