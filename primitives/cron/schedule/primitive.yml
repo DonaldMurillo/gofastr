@@ -10,7 +10,7 @@ on_change:
   - A change to FiresAt or Next changes when battery/queue's Scheduler and DurableScheduler fire too, since both decide firings through this Schedule; run their DST tests.
 invariants:
   - id: fixed-time-runs-once-across-dst
-    rule: FiresAt fires a fixed-time schedule only in the first pass of a repeated interval of any size the zone names, and once at the first minute after a spring-forward that skipped its time when the gap is at most 120 minutes; skippedMatchInGap scans no further, so a fixed time inside a longer gap (Antarctica/Casey's three-hour jump on 2020-10-04) does not fire that day.
+    rule: FiresAt fires a fixed-time schedule only in the first pass of a repeated interval of any size the zone names, and once at the first minute after a spring-forward that skipped its time when the gap is at most 120 minutes; skippedMatchInGap scans only the first 120 minutes of a gap, so in a longer gap only a fixed time past the scanned portion is missed (in Antarctica/Casey's three-hour jump on 2020-10-04, 01:30 fires at 03:01 and 02:30 does not fire that day).
     enforced_by:
       - test: framework/cron.TestFixedTimeJobAcrossDST
       - test: framework/cron.TestLeaderElectedFallBackRunsOnce
