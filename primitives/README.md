@@ -130,6 +130,8 @@ the primitive that lists it.
 
 - An unknown key, a missing `summary`, `rule` or `decision`, an id that is
   not kebab-case, or a `primitive` that does not match its directory.
+- An unquoted value that ` #` cuts short: YAML reads the rest of the line
+  as a comment.
 - A child whose parent has no `primitive.yml`.
 - A `code` entry that matches no file, or a file claimed by two primitives
   where neither contains the other.

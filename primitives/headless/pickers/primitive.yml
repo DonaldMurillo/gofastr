@@ -116,7 +116,7 @@ invariants:
     enforced_by:
       - test: framework/headless.TestSweepPickersMultiSelectUnfilledDisclosureIsOwned
   - id: datepicker-refuses-broken-config
-    rule: DatePicker panics on a Path carrying ? or #, a Range with Name, Value or Control, a Control whose ID is not the input's, a Max before Min, or a WeekStart outside Sunday..Saturday.
+    rule: "DatePicker panics on a Path carrying ? or #, a Range with Name, Value or Control, a Control whose ID is not the input's, a Max before Min, or a WeekStart outside Sunday..Saturday."
     enforced_by:
       - test: framework/headless.TestDatePickerRefusals
   - id: datepicker-config-panics-input-falls-back
