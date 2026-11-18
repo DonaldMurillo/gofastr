@@ -120,7 +120,7 @@ decisions:
     status: accepted
     decision: A <dialog> modal keeps the owner-refcounted lock on <html> (NS.doc.lockScroll) and adds overscroll-behavior contain on the dialog.
     rejected:
-      - option: overscroll-behavior contain alone, as #701 suggested.
+      - option: 'overscroll-behavior contain alone, as #701 suggested.'
         why: It only stops scroll chaining out of a scrollable dialog; a wheel over the scrim or over a dialog too short to scroll still scrolls the page behind.
       - option: A CSS :root:has(dialog:modal) rule.
         why: The widget sheet can land after showModal(), so the page scrolls until it does, and drawers and the pane host already share the refcounted lock.
