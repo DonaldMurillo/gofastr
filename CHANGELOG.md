@@ -32,7 +32,8 @@ few lines, and link the PR or the docs page for the rest.
   opening it.
 - **A directory or named pipe in the static source no longer drops a generated file from an
   export.** A `sitemap.xml`, `robots.txt`, app icon or PWA file of that name that was not a regular
-  file kept the generated one out, and the copy skipped it, so the export held neither.
+  file kept the generated one out, and the copy skipped it, so the export held neither. The same
+  held for a symlink in the static dir pointing outside it, which the copy refuses.
 - **A static export's service worker changes when a file under `__gofastr/pwa/` does.** The
   worker's cache version left out every file under that directory, not only the generated ones, so
   a static-source file there could change while installed clients kept the old copy.
