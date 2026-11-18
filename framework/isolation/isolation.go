@@ -704,6 +704,8 @@ func inferDriver(dsn string) string {
 	}
 }
 
+var chmodStateDir = os.Chmod
+
 func (r *Runtime) sqliteDSN(dsn string) (string, error) {
 	if dsn == "" || dsn == ":memory:" {
 		return dsn, nil
@@ -727,11 +729,11 @@ func (r *Runtime) sqliteDSN(dsn string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err := chmodStateDir(dir, 0o700); err != nil {
 		if !errors.Is(err, fs.ErrPermission) {
 			return "", err
 		}
-		slog.Warn("isolation: cannot tighten a state directory this user does not own; using it as is", "dir", dir, "err", err)
+		slog.Warn("isolation: permission denied tightening the SQLite state directory to owner-only; using it as is, so local co-users may read it", "dir", dir, "err", err)
 	}
 	if err := fileperm.Restrict(dir, true); err != nil {
 		return "", err
