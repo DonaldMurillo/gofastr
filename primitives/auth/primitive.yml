@@ -88,9 +88,10 @@ invariants:
       - test: battery/auth.TestBFFPostureSignOutFormPassesLogoutOriginGuard
       - test: battery/auth.TestBFFPostureLogoutExemptionStaysSameOriginAndExact
   - id: init-refuses-non-idempotent-canonicalizer
-    rule: Init refuses an AuthConfig.CanonicalizeEmail override that, over a fixed set of probe addresses, maps an address it accepted to a different address or refuses it on a second pass.
+    rule: Init refuses an AuthConfig.CanonicalizeEmail override that, over a fixed set of probe addresses, maps an address it accepted to a different address or refuses it on a second pass, and every ingestion refuses an address the override moves on a second pass.
     enforced_by:
       - test: battery/auth.TestInitRefusesNonIdempotentCanonicalizer
+      - test: battery/auth.TestNonIdempotentCanonicalizerRefusedAtRuntime
   - id: oidc-tenant-issuer-is-the-tokens-own
     rule: An OIDCProvider accepts a discovery issuer with a {tenantid} slot only when OIDCConfig.Tenants is set and the template is the configured issuer with one path segment open, and then accepts an id_token only when its iss is that template filled with its own tid claim and the tid is listed in Tenants or Tenants holds "*".
     enforced_by:

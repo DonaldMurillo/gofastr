@@ -632,8 +632,9 @@ removes what is left. A panicking eraser counts as a failed one.
 A retry hands an `EraseResolved` store the same identities as the first
 run, though the user row they were read from went with it. When any store
 eraser sets `EraseResolved`, the erasure writes the identities it resolved
-to the `gofastr_erase_identities` table (`user_id`, `kind`, `value`) in the
-same transaction as the deletes. A later erasure of that user reads from
+to the `gofastr_erase_identities` table (`tenant`, `user_id`, `kind`,
+`value`) in the same transaction as the deletes. A later erasure of that
+user in the same tenant reads from
 there every identity its resolvers no longer find, and the row is deleted
 once every store eraser has run without failing. Until then the table
 holds the erased user's email (or other identity) and nothing else; a dry

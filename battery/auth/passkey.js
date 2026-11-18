@@ -199,6 +199,16 @@
   let waiting = null;
   let ceremonies = 0;
   let resumers = [];
+  // leaving: a sign-in succeeded and the page is going away, so nothing
+  // restarts the autofill request. field: the autofill field the
+  // waiting request belongs to.
+  let leaving = false;
+  let field = null;
+  // A navigation that took the field away withdraws its request.
+  window.addEventListener('gofastr:navigate', function () {
+    leaving = false;
+    if (waiting && !(field && field.isConnected)) { waiting.abort(); waiting = null; }
+  });
   function withdrawn() {
     const e = new Error('withdrawn');
     e.name = 'AbortError';
@@ -244,6 +254,7 @@
     // Every cached screen was drawn signed out.
     if (typeof NS.invalidate === 'function') NS.invalidate('*');
     const to = out && typeof out.redirect === 'string' ? out.redirect : '/';
+    leaving = true;
     if (typeof NS.navigate === 'function') NS.navigate(to, { force: true });
   }
 
@@ -295,33 +306,34 @@
     const opts = await post(base + '/passkey/reauth/options', {});
     const cred = await navigator.credentials.get({ publicKey: requestOptions(opts.publicKey) });
     const out = await post(base + '/passkey/reauth', assertionBody(cred));
-    let field = form.querySelector('input[name="' + PROOF_FIELD + '"]');
-    if (!field) {
-      field = document.createElement('input');
-      field.type = 'hidden';
-      field.name = PROOF_FIELD;
-      form.appendChild(field);
+    let proof = form.querySelector('input[name="' + PROOF_FIELD + '"]');
+    if (!proof) {
+      proof = document.createElement('input');
+      proof.type = 'hidden';
+      proof.name = PROOF_FIELD;
+      form.appendChild(proof);
     }
-    field.value = out && typeof out.proof === 'string' ? out.proof : '';
+    proof.value = out && typeof out.proof === 'string' ? out.proof : '';
     form.requestSubmit();
   }
 
-  function failure(err) {
+  function failure(err, kind) {
     // NotAllowedError is the browser's answer to a cancelled or
     // timed-out prompt, AbortError to one this module withdrew: the user
     // already knows, or never saw it.
     if (!err || err.name === 'NotAllowedError' || err.name === 'AbortError') return '';
-    if (err.name === 'InvalidStateError') return say('auth.passkey_exists_here', 'This device already holds a passkey for this account');
+    // Only a create answers InvalidStateError for an excluded credential.
+    if (err.name === 'InvalidStateError' && kind === 'register') return say('auth.passkey_exists_here', 'This device already holds a passkey for this account');
     if (err.name === 'SecurityError') return say('auth.passkey_wrong_site', 'Passkeys do not work on this site address');
     return err.message || say('auth.passkey_failed', 'Passkey request failed');
   }
 
-  function run(btn, fn) {
+  function run(btn, kind, fn) {
     if (btn.getAttribute('aria-busy') === 'true') return;
     btn.setAttribute('aria-busy', 'true');
     btn.disabled = true;
     exclusive(fn).catch(function (err) {
-      const msg = failure(err);
+      const msg = failure(err, kind);
       if (msg) toast(msg, 'error');
     }).finally(function () {
       btn.removeAttribute('aria-busy');
@@ -341,8 +353,10 @@
     if (!ok) return;
     const ac = input.getAttribute('autocomplete') || '';
     if (!/\bwebauthn\b/.test(ac)) input.setAttribute('autocomplete', (ac ? ac + ' ' : 'username ') + 'webauthn');
-    for (let tries = 0; tries < 5 && input.isConnected; tries++) {
+    for (let tries = 0; tries < 5; tries++) {
       await idle();
+      if (leaving || !input.isConnected) return;
+      field = input;
       try {
         await signIn(base, true);
         return;
@@ -351,7 +365,7 @@
           tries--;
           continue;
         }
-        const msg = failure(err);
+        const msg = failure(err, 'login');
         if (msg) toast(msg, 'error');
       }
     }
@@ -364,6 +378,13 @@
     if (!supported) return;
     const c = await caps();
     if (c.conditionalCreate !== true) return;
+    // Once per tab session: every page load asking again would spend
+    // the rate limit and a challenge for an offer already made.
+    const key = 'gofastr.passkey.upgrade:' + base;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+    } catch (_) { /* no storage: ask this once anyway */ }
     try { await exclusive(function () { return create(base, '', true); }); } catch (_) { /* nothing to tell */ }
   }
 
@@ -386,11 +407,11 @@
       el.hidden = false;
       el.addEventListener('click', function (e) {
         e.preventDefault();
-        if (kind === 'login') run(el, function () { return signIn(base, false); });
-        else if (kind === 'register') run(el, function () { return register(el, base); });
-        else if (kind === 'rename') run(el, function () { return rename(el, base); });
-        else if (kind === 'reauth') run(el, function () { return reauth(el, base); });
-        else run(el, function () { return remove(el, base); });
+        if (kind === 'login') run(el, kind, function () { return signIn(base, false); });
+        else if (kind === 'register') run(el, kind, function () { return register(el, base); });
+        else if (kind === 'rename') run(el, kind, function () { return rename(el, base); });
+        else if (kind === 'reauth') run(el, kind, function () { return reauth(el, base); });
+        else run(el, kind, function () { return remove(el, base); });
       });
     };
     if (kind !== 'register') { reveal(); return; }

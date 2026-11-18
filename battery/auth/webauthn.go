@@ -163,8 +163,7 @@ type registrationResult struct {
 // against the RP: RP ID hash, user presence and verification, the backup
 // bits, and attested credential data carrying a supported public key.
 // The attestation statement is not verified (see the file comment).
-// conditional is a create the browser ran without a prompt, after a
-// password sign-in: it may carry neither the UP nor the UV flag.
+// conditional skips the UP and UV checks (auth.passkey/only-conditional-create-skips-presence).
 func (rp webauthnRP) verifyAttestation(attObj []byte, conditional bool) (registrationResult, error) {
 	v, n, err := cborDecode(attObj)
 	if err != nil {

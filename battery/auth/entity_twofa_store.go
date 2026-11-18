@@ -210,38 +210,35 @@ func (s *EntityTwoFAStore) EnsureSchema(ctx context.Context) error {
 }
 
 // ensureBigIntColumn adds a BIGINT NOT NULL DEFAULT 0 column to a
-// pre-existing table that lacks it. On Postgres it uses ADD COLUMN IF NOT
-// EXISTS, which is both schema-correct (resolved via search_path, so it
-// can't be fooled by a same-named table in another schema) and race-safe
-// (concurrent boots on a shared DB don't collide). SQLite has no ADD
-// COLUMN IF NOT EXISTS, so it checks PRAGMA table_info first; a SQLite
-// file is process-local so the check-then-add is not a multi-replica
-// concern.
+// pre-existing table that lacks it.
 func (s *EntityTwoFAStore) ensureBigIntColumn(ctx context.Context, col string) error {
-	if s.dialect.of(s.db) == migrate.DialectPostgres {
-		_, err := s.db.ExecContext(ctx, fmt.Sprintf(
-			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s BIGINT NOT NULL DEFAULT 0",
-			query.QuoteFolded(s.table), query.QuoteFolded(col)))
-		return err
-	}
-	has, err := s.sqliteHasColumn(ctx, col)
-	if err != nil {
-		return err
-	}
-	if !has {
-		if _, err := s.db.ExecContext(ctx, fmt.Sprintf(
-			"ALTER TABLE %s ADD COLUMN %s BIGINT NOT NULL DEFAULT 0",
-			query.QuoteFolded(s.table), query.QuoteFolded(col))); err != nil {
-			return err
-		}
-	}
-	return nil
+	return addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, col, "BIGINT NOT NULL DEFAULT 0")
 }
 
 // sqliteHasColumn reports whether the store's table has the named column,
 // via PRAGMA table_info (SQLite-only).
 func (s *EntityTwoFAStore) sqliteHasColumn(ctx context.Context, col string) (bool, error) {
 	return sqliteTableHasColumn(ctx, s.db, s.table, col)
+}
+
+// addColumnIfMissing adds column col (typ is its type and constraints,
+// "TEXT NOT NULL DEFAULT ”") to a table an older build created without
+// it. Postgres uses ADD COLUMN IF NOT EXISTS, resolved through the
+// search_path and safe for concurrent boots; SQLite, which has no such
+// clause, reads PRAGMA table_info first.
+func addColumnIfMissing(ctx context.Context, db *sql.DB, d migrate.Dialect, table, col, typ string) error {
+	if d == migrate.DialectPostgres {
+		_, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s",
+			query.QuoteFolded(table), query.QuoteFolded(col), typ))
+		return err
+	}
+	has, err := sqliteTableHasColumn(ctx, db, table, col)
+	if err != nil || has {
+		return err
+	}
+	_, err = db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s",
+		query.QuoteFolded(table), query.QuoteFolded(col), typ))
+	return err
 }
 
 // sqliteTableHasColumn reports whether table has the named column, via

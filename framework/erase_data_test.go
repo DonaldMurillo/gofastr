@@ -1166,3 +1166,42 @@ func TestEraseUserData_RetryKeepsResolvedIdentities(t *testing.T) {
 		t.Fatalf("identities still kept after every store erased: %d", n)
 	}
 }
+
+// The identities a failed erasure keeps belong to its tenant: another
+// tenant's erasure of the same user id never reads them.
+func TestEraseUserData_KeptIdentitiesArePerTenant(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users (id, email) VALUES ('u1','u1@a.test')`); err != nil {
+		t.Fatal(err)
+	}
+	registerMagicLinkEraseScenario(t)
+	var got []datexport.ErasedUser
+	fail := true
+	_, _ = datexport.RegisterStoreEraser(datexport.StoreEraser{Name: "flaky", Source: "test",
+		EraseResolved: func(_ context.Context, u datexport.ErasedUser, _ bool) (int, error) {
+			got = append(got, u)
+			if fail {
+				return 0, errors.New("store down")
+			}
+			return 0, nil
+		}})
+	if _, err := app.EraseUserData(ctx, "u1", WithEraseTenant("a")); err == nil {
+		t.Fatal("a failed store eraser did not fail the erasure")
+	}
+	fail = false
+	if _, err := app.EraseUserData(ctx, "u1", WithEraseTenant("b")); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got[1].Identity(datexport.IdentityEmail); ok {
+		t.Fatalf("tenant b's erasure got tenant a's kept identity: %+v", got[1])
+	}
+	if _, err := app.EraseUserData(ctx, "u1", WithEraseTenant("a")); err != nil {
+		t.Fatal(err)
+	}
+	if email, _ := got[2].Identity(datexport.IdentityEmail); email != "u1@a.test" {
+		t.Fatalf("tenant a's retry got %+v", got[2])
+	}
+}

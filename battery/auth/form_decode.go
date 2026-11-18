@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -231,6 +232,14 @@ func canonicalizeEmailWith(canonicalize func(string) (string, error), email stri
 		if !textsafe.Storable(canonical) {
 			return "", i18n.NewError(reasonInvalidEmail)
 		}
+		// The boot probe covers only its sample addresses; an address the
+		// override moves again would miss its own tokens at reset and
+		// erasure, so it is refused here.
+		if again, err := canonicalize(canonical); err != nil || again != canonical {
+			slog.Error("auth: AuthConfig.CanonicalizeEmail is not idempotent; refusing the address",
+				"email_hash", hashedIdentifier(canonical))
+			return "", i18n.NewError(reasonInvalidEmail)
+		}
 		return canonical, nil
 	}
 	canonical := norm.NFC.String(strings.ToLower(strings.TrimSpace(stripInvisibleEmailRunes(email))))
@@ -260,11 +269,11 @@ func checkCanonicalizerIdempotent(canonicalize func(string) (string, error)) err
 		return nil
 	}
 	for _, in := range canonicalizerProbes {
-		once, err := canonicalizeEmailWith(canonicalize, in)
+		once, err := canonicalize(in)
 		if err != nil {
 			continue
 		}
-		twice, err := canonicalizeEmailWith(canonicalize, once)
+		twice, err := canonicalize(once)
 		if err != nil || twice != once {
 			return fmt.Errorf("auth: AuthConfig.CanonicalizeEmail is not idempotent: %q canonicalizes to %q, and that to %q (err %v); a canonical address must map to itself, since erasure and password reset canonicalize the stored address again", in, once, twice, err)
 		}

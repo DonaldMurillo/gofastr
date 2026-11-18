@@ -1226,7 +1226,9 @@ the tokens it was written into. `Init` checks this over a few sample
 addresses (mixed case, padding, dots and plus tags, a decomposed accent,
 a zero-width space, an IDN domain) and refuses to start when an address
 the override accepted moves on a second pass. An address the override
-refuses is skipped.
+refuses is skipped there, so every ingestion checks too: an address the
+override moves on a second pass is refused with `invalid_email` and
+logged.
 
 ```go
 mgr := auth.New(auth.AuthConfig{
@@ -1910,7 +1912,7 @@ the same way.
 |---|---|---|
 | `POST /auth/passkey/login/options` | anyone | A sign-in challenge. No account list: the browser offers whatever passkeys it holds for the RP ID. |
 | `POST /auth/passkey/login` | anyone | Verifies the signed challenge, mints the session cookie, answers `{"redirect": "<OnSuccessURL>"}`. When the account has 2FA it answers `{"redirect": "<TwoFactorURL>", "two_factor_required": true}` instead. |
-| `POST /auth/passkey/register/options` | signed in | A registration challenge bound to the session's account. `excludeCredentials` lists the account's passkeys with their transports. Body `{"conditional": true}` asks for a create the browser runs without a prompt (see [After a password sign-in](#after-a-password-sign-in)); an empty body is a normal registration. |
+| `POST /auth/passkey/register/options` | signed in | A registration challenge bound to the session's account. `excludeCredentials` lists the account's passkeys with their transports. Body `{"conditional": true}` asks for a create the browser runs without a prompt (see [After a password sign-in](#after-a-password-sign-in)); any other body, or none, is a normal registration. |
 | `POST /auth/passkey/register` | signed in | Stores the new passkey, unless the account already holds `MaxPerUser` (409). Body: `name` (optional, at most 64 printable characters), `id`, `clientDataJSON`, `attestationObject`, all binary fields unpadded base64url, and `transports` (optional, what `getTransports()` answered; unknown values are dropped). |
 | `GET /auth/passkey/list` | signed in | `rpId`, `userId` (the base64url user handle), `userName` (the account's email) and `passkeys`: each `id`, `name`, `createdAt`, `lastUsedAt`, `backedUp`, `deviceType` (`multiDevice` when it can sync, else `singleDevice`), `transports` and, when the authenticator sent one, `aaguid` as a UUID. |
 | `POST /auth/passkey/rename` | signed in | Renames one of the account's own passkeys. Body: `id`, `name` (same rules as at registration). 204, or 404 for an id the account does not own. |
@@ -1920,7 +1922,10 @@ the same way.
 
 Every POST takes `Content-Type: application/json`, the options calls
 included, so a cross-site page cannot reach one without a CORS
-preflight. `RateLimit` covers all nine routes.
+preflight. `RateLimit` covers every route. The list route counts
+against a limit of its own (same settings): the browser module reads it
+without a click, and those reads must not use up the limit sign-in
+needs.
 
 "Signed in" means a full session. A session waiting on its second
 factor gets 403, and so does a password-only session of an account
@@ -1963,9 +1968,9 @@ cannot work; keep the password form beside the passkey button. After
 an add or a remove the module re-renders the current page, so a list
 the server drew from `PasskeyStore.ListPasskeys` shows the change.
 Failures show as a toast. A prompt the user cancelled shows nothing.
-Two browser errors get their own message: `InvalidStateError` (this
-device already holds a passkey for the account) and `SecurityError`
-(the page's address does not fit the RP ID).
+Two browser errors get their own message: `InvalidStateError` from
+adding a passkey (this device already holds one for the account) and
+`SecurityError` (the page's address does not fit the RP ID).
 The base path must be a same-origin path such as `/auth`; any other
 value leaves the button inert.
 
@@ -2041,7 +2046,9 @@ conditional UI (`getClientCapabilities().conditionalGet`, or
 `isConditionalMediationAvailable()`), and appends `webauthn` to the
 field's autocomplete if it is missing. A browser runs one WebAuthn
 request at a time, so a passkey button withdraws the waiting autofill
-request and the module starts it again when that ceremony ends. A
+request and the module starts it again when that ceremony ends, unless
+it signed the user in. A navigation that takes the field away
+withdraws the request too. A
 request that times out or is refused is started again, five times at
 most. Keep the password field and the passkey button: they are the way
 in for browsers without conditional UI.
@@ -2051,7 +2058,8 @@ in for browsers without conditional UI.
 Put `PasskeyUpgradeAttrs` on the page a password sign-in lands on. Where
 the browser reports `getClientCapabilities().conditionalCreate`, the
 module asks the password manager to save a passkey for the account
-without showing a prompt. It is silent either way: the password manager
+without showing a prompt, once per tab session (a reload does not ask
+again). It is silent either way: the password manager
 tells the user when it saved one. The registration options ask for user
 verification only as `preferred`, and such a registration is the one
 that may carry neither the user-present nor the user-verified flag; the
@@ -2082,7 +2090,8 @@ if err := passkeys.RedeemReauthProof(r, r.FormValue(auth.PasskeyReauthField)); e
 ```
 
 `RedeemReauthProof` answers `nil` once per proof, and only for a full
-session of the account the proof was issued to; anything else is
+session of the account the proof was issued to (not one waiting on its
+second factor, and not one minted before the account turned 2FA on); anything else is
 `auth.ErrReauthRequired`. The proof is spent on that first call whatever
 it answers, and it expires after `ReauthTTL`. A step-up offers only the
 signed-in account's passkeys, and a passkey of another account answers

@@ -148,7 +148,8 @@ few lines, and link the PR or the docs page for the rest.
   the password manager to drop that passkey.
 - **`AuthConfig.CanonicalizeEmail` must be idempotent, and Init now checks
   it.** An override that moves an address it already canonicalized fails
-  boot with the address named.
+  boot with the address named, and an address it moves at runtime is
+  refused with `invalid_email`.
 - **A layout's view-transition CSS loads with its layer, not in app.css.**
   `app.NewLayout` registers the layout's `TransitionCSS()` as a component
   sheet of its own (`Layout.TransitionSheet()`), and the layer root

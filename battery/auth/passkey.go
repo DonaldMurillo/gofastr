@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -283,6 +285,9 @@ type PasskeyPlugin struct {
 	store      PasskeyStore
 	challenges MagicLinkTokenStore
 	limit      *RateLimiter
+	// listLimit guards GET /passkey/list, which the browser module reads
+	// on its own; it must not spend the ceremonies' budget.
+	listLimit *RateLimiter
 }
 
 // NewPasskeyPlugin builds the plugin. RPID and Origins are checked at Init.
@@ -306,9 +311,10 @@ func NewPasskeyPlugin(cfg PasskeyConfig) *PasskeyPlugin {
 		cfg.RateLimit = &RateLimiterConfig{MaxAttempts: 30, Window: time.Minute, BlockDuration: 5 * time.Minute}
 	}
 	return &PasskeyPlugin{
-		config: cfg,
-		rp:     webauthnRP{ID: cfg.RPID, Origins: slices.Clone(cfg.Origins)},
-		limit:  newScopedRateLimiter(*cfg.RateLimit, "passkey"),
+		config:    cfg,
+		rp:        webauthnRP{ID: cfg.RPID, Origins: slices.Clone(cfg.Origins)},
+		limit:     newScopedRateLimiter(*cfg.RateLimit, "passkey"),
+		listLimit: newScopedRateLimiter(*cfg.RateLimit, "passkey-list"),
 	}
 }
 
@@ -385,27 +391,34 @@ func (p *PasskeyPlugin) requireFullSession(w http.ResponseWriter, r *http.Reques
 	if rejectInProcessAccountOperation(w, r) {
 		return nil, false
 	}
-	sess, err := p.mgr.requestSession(r, false)
-	if err != nil {
-		writeAuthError(w, r, http.StatusUnauthorized, reasonNotAuthenticated)
+	sess, status, reason := p.fullSession(r)
+	if sess == nil {
+		writeAuthError(w, r, status, reason)
 		return nil, false
 	}
+	return sess, true
+}
+
+// fullSession is requireFullSession's judgement without the answer: the
+// session, or the status and reason refusing it.
+func (p *PasskeyPlugin) fullSession(r *http.Request) (*Session, int, i18n.Phrase) {
+	sess, err := p.mgr.requestSession(r, false)
+	if err != nil {
+		return nil, http.StatusUnauthorized, reasonNotAuthenticated
+	}
 	if sess.PendingTwoFactor {
-		writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
-		return nil, false
+		return nil, http.StatusForbidden, reason2faRequired
 	}
 	if !sess.TwoFactorVerified {
 		on, err := p.mgr.twoFactorEnabled(r.Context(), sess.UserID)
 		if err != nil {
-			writeAuthError(w, r, http.StatusInternalServerError, reason2faLookupFailed)
-			return nil, false
+			return nil, http.StatusInternalServerError, reason2faLookupFailed
 		}
 		if on {
-			writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
-			return nil, false
+			return nil, http.StatusForbidden, reason2faRequired
 		}
 	}
-	return sess, true
+	return sess, 0, i18n.Phrase{}
 }
 
 // decodeB64Fields decodes base64url members of a request body, refusing
@@ -443,14 +456,7 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	// conditional asks for a create the browser runs without a prompt,
-	// offered right after a password sign-in.
-	var body struct {
-		Conditional bool `json:"conditional"`
-	}
-	if !decodeOptionalJSON(w, r, &body) {
-		return
-	}
+	conditional := conditionalCreate(w, r)
 	if len(sess.UserID) > maxUserHandleLen {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonUserIdTooLong)
 		return
@@ -479,7 +485,7 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	purpose, uv := purposePasskeyRegister, "required"
-	if body.Conditional {
+	if conditional {
 		purpose, uv = purposePasskeyRegisterQuiet, "preferred"
 	}
 	challenge, err := createPurposeToken(r.Context(), p.challenges, purpose, sess.UserID, p.config.ChallengeTTL)
@@ -503,6 +509,20 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 			"residentKey": "required", "requireResidentKey": true, "userVerification": uv,
 		},
 	}})
+}
+
+// conditionalCreate reports whether a register/options body is
+// {"conditional": true}. The route read no body before, so any other
+// body, unknown members included, is a regular registration.
+func conditionalCreate(w http.ResponseWriter, r *http.Request) bool {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxAuthBodyBytes))
+	if err != nil {
+		return false
+	}
+	var body struct {
+		Conditional bool `json:"conditional"`
+	}
+	return json.Unmarshal(raw, &body) == nil && body.Conditional
 }
 
 // credentialDescriptors lists creds for excludeCredentials or
@@ -806,8 +826,6 @@ func (p *PasskeyPlugin) checkAssertion(w http.ResponseWriter, r *http.Request, c
 			writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
 			return PasskeyCredential{}, false
 		}
-		// 404, not 401: the browser can then drop the passkey with
-		// PublicKeyCredential.signalUnknownCredential.
 		p.refuse(w, r, owner, ceremony, "unknown_credential", errors.New("unknown credential id"))
 		return PasskeyCredential{}, false
 	}
@@ -890,7 +908,7 @@ func passkeyView(c PasskeyCredential) map[string]any {
 }
 
 func (p *PasskeyPlugin) listHandler(w http.ResponseWriter, r *http.Request) {
-	if !p.limit.guard(w, r) {
+	if !p.listLimit.guard(w, r) {
 		return
 	}
 	sess, ok := p.requireFullSession(w, r)
@@ -1087,8 +1105,8 @@ func (p *PasskeyPlugin) RedeemReauthProof(r *http.Request, proof string) error {
 	if err != nil {
 		return ErrReauthRequired
 	}
-	sess, err := p.mgr.requestSession(r, false)
-	if err != nil || sess.PendingTwoFactor || sess.UserID != owner {
+	sess, _, _ := p.fullSession(r)
+	if sess == nil || sess.UserID != owner {
 		return ErrReauthRequired
 	}
 	return nil

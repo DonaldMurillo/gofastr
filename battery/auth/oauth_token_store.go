@@ -19,7 +19,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
-	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // aeadSealer is the auth battery's shared at-rest sealing: AES-GCM under a
@@ -279,24 +278,8 @@ func (s *SQLOAuthTokenStore) ensureTable(ctx context.Context) error {
 // addColumn adds a column to a table created by an older build; a column
 // already there is the goal, not an error.
 func (s *SQLOAuthTokenStore) addColumn(ctx context.Context, def string) error {
-	return addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, def)
-}
-
-// addColumnIfMissing adds a column (def is "name TYPE ...") to table when
-// a table created by an older build lacks it; a column already there is
-// the goal, not an error.
-func addColumnIfMissing(ctx context.Context, db *sql.DB, d migrate.Dialect, table, def string) error {
-	alter := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s`, query.QuoteFolded(table), def)
-	if d == migrate.DialectPostgres {
-		alter = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s`, query.QuoteFolded(table), def)
-	}
-	if _, err := db.ExecContext(ctx, alter); err != nil {
-		if d != migrate.DialectPostgres && strings.Contains(err.Error(), "duplicate column") {
-			return nil
-		}
-		return err
-	}
-	return nil
+	col, typ, _ := strings.Cut(def, " ")
+	return addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, col, typ)
 }
 
 // LeaseRefresh implements OAuthTokenLeaser: one conditional UPDATE, so of
@@ -330,18 +313,8 @@ func (s *SQLOAuthTokenStore) ReleaseRefresh(ctx context.Context, userID, provide
 // fails CAS closed: its refresh writes are refused until a login
 // callback re-persists the row through Save.
 func (s *SQLOAuthTokenStore) migrateRefreshSHA(ctx context.Context) error {
-	alter := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN refresh_sha TEXT NOT NULL DEFAULT ''`, query.QuoteFolded(s.table))
-	if s.dialect.of(s.db) == migrate.DialectPostgres {
-		alter = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS refresh_sha TEXT NOT NULL DEFAULT ''`, query.QuoteFolded(s.table))
-	}
-	if _, err := s.db.ExecContext(ctx, alter); err != nil {
-		// SQLite has no IF NOT EXISTS for columns; a duplicate-column
-		// error is the column already being there, the migration's goal.
-		if s.dialect.of(s.db) != migrate.DialectPostgres && strings.Contains(err.Error(), "duplicate column") {
-			// fall through to the backfill
-		} else {
-			return err
-		}
+	if err := s.addColumn(ctx, "refresh_sha TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
 	}
 	rows, err := s.db.QueryContext(ctx,
 		fmt.Sprintf(`SELECT user_id, provider, refresh_token FROM %s WHERE refresh_sha = ''`, query.QuoteFolded(s.table)))

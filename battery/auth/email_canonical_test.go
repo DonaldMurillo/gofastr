@@ -162,3 +162,26 @@ func TestInitRefusesNonIdempotentCanonicalizer(t *testing.T) {
 		t.Fatalf("a canonicalizer that refuses most probes refused: %v", err)
 	}
 }
+
+// An override that passes the boot probe (it refuses every probe
+// address) but moves an address it accepts is refused per request.
+func TestNonIdempotentCanonicalizerRefusedAtRuntime(t *testing.T) {
+	corpOneDot := func(s string) (string, error) {
+		c, err := CanonicalEmail(s)
+		if err != nil || !strings.HasSuffix(c, "@corp.example") {
+			return "", ErrEmailNotComposed
+		}
+		local, domain, _ := strings.Cut(c, "@")
+		return strings.Replace(local, ".", "", 1) + "@" + domain, nil
+	}
+	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), CanonicalizeEmail: corpOneDot})
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("boot: %v", err)
+	}
+	if _, err := mgr.canonicalizeEmail("f.i.r.s.t@corp.example"); err == nil {
+		t.Fatal("an address the override moves twice was accepted")
+	}
+	if got, err := mgr.canonicalizeEmail("first@corp.example"); err != nil || got != "first@corp.example" {
+		t.Fatalf("a stable address: %q %v", got, err)
+	}
+}

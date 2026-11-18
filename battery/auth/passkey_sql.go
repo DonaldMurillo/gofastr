@@ -59,8 +59,8 @@ func (s *SQLPasskeyStore) EnsureSchema(ctx context.Context) error {
 			return err
 		}
 	}
-	for _, def := range []string{"transports TEXT NOT NULL DEFAULT ''", "aaguid TEXT NOT NULL DEFAULT ''"} {
-		if err := addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, def); err != nil {
+	for _, col := range []string{"transports", "aaguid"} {
+		if err := addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, col, "TEXT NOT NULL DEFAULT ''"); err != nil {
 			return err
 		}
 	}

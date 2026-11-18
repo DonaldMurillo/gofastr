@@ -281,3 +281,43 @@ func TestPasskeyReauthProofNeedsFullSession(t *testing.T) {
 		t.Fatalf("pending session spent a proof: %v", err)
 	}
 }
+
+// A session minted before the account turned 2FA on is not pending, but
+// it never passed the second factor: the step-up routes refuse it, and
+// so must RedeemReauthProof.
+func TestPasskeyReauthProofRefusesPreTwoFactorSession(t *testing.T) {
+	f := newPasskeyFixture(t)
+	a := f.enrol(t, "u-alice")
+	old := f.session(t, "u-alice")
+	w := f.reauth(t, f.session(t, "u-alice"), a, "u-alice")
+	var out struct {
+		Proof string `json:"proof"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	enableTwoFA(t, f, "u-alice")
+	if w := f.do(t, "POST", "/passkey/reauth/options", old, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("pre-2FA session got step-up options: %d", w.Code)
+	}
+	if err := f.redeem(old, out.Proof); !errors.Is(err, ErrReauthRequired) {
+		t.Fatalf("pre-2FA session spent a proof: %v", err)
+	}
+}
+
+// register/options read no body before conditional create; a body with
+// other members, or none that parses, is still a regular registration.
+func TestPasskeyRegisterOptionsToleratesOtherBodies(t *testing.T) {
+	f := newPasskeyFixture(t)
+	cookie := f.session(t, "u-alice")
+	for _, body := range []any{nil, map[string]any{}, map[string]any{"name": "Laptop"}, map[string]any{"conditional": "yes"}} {
+		w := f.do(t, "POST", "/passkey/register/options", cookie, body)
+		var opts struct {
+			PublicKey struct {
+				Sel map[string]any `json:"authenticatorSelection"`
+			} `json:"publicKey"`
+		}
+		_ = json.Unmarshal(w.Body.Bytes(), &opts)
+		if w.Code != http.StatusOK || opts.PublicKey.Sel["userVerification"] != "required" {
+			t.Errorf("body %v: %d %s", body, w.Code, w.Body)
+		}
+	}
+}

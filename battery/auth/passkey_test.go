@@ -490,10 +490,13 @@ func TestPasskeyRoutesAreRateLimited(t *testing.T) {
 	for _, rt := range []struct{ method, path string }{
 		{"POST", "/passkey/login/options"}, {"POST", "/passkey/login"},
 		{"POST", "/passkey/register/options"}, {"POST", "/passkey/register"},
-		{"GET", "/passkey/list"}, {"POST", "/passkey/delete"},
+		{"GET", "/passkey/list"}, {"POST", "/passkey/rename"}, {"POST", "/passkey/delete"},
+		{"POST", "/passkey/reauth/options"}, {"POST", "/passkey/reauth"},
 	} {
 		f := newPasskeyFixture(t)
-		f.pk.limit = newScopedRateLimiter(RateLimiterConfig{MaxAttempts: 2, Window: time.Minute, BlockDuration: time.Minute}, "passkey")
+		tight := RateLimiterConfig{MaxAttempts: 2, Window: time.Minute, BlockDuration: time.Minute}
+		f.pk.limit = newScopedRateLimiter(tight, "passkey")
+		f.pk.listLimit = newScopedRateLimiter(tight, "passkey-list")
 		alice := f.session(t, "u-alice")
 		var last int
 		for range 3 {
@@ -675,5 +678,21 @@ func TestPasskeyResetFailsIfPurgeFails(t *testing.T) {
 	w := f.do(t, "POST", "/reset-password", "", map[string]string{"token": extractTokenFromBody(mail), "password": "brandnewpw1"})
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("reset with a failed purge: %d %s, want 500", w.Code, w.Body)
+	}
+}
+
+// The browser module reads the list on its own (page load, after an add
+// or a remove); those reads must not spend the ceremonies' budget.
+func TestPasskeyListDoesNotSpendCeremonyLimit(t *testing.T) {
+	f := newPasskeyFixture(t)
+	tight := RateLimiterConfig{MaxAttempts: 2, Window: time.Minute, BlockDuration: time.Minute}
+	f.pk.limit = newScopedRateLimiter(tight, "passkey")
+	f.pk.listLimit = newScopedRateLimiter(RateLimiterConfig{MaxAttempts: 50, Window: time.Minute, BlockDuration: time.Minute}, "passkey-list")
+	alice := f.session(t, "u-alice")
+	for range 5 {
+		f.do(t, "GET", "/passkey/list", alice, nil)
+	}
+	if w := f.do(t, "POST", "/passkey/login/options", "", nil); w.Code != http.StatusOK {
+		t.Fatalf("sign-in options after five list reads: %d", w.Code)
 	}
 }
