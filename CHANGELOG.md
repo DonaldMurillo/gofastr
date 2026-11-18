@@ -25,6 +25,18 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **An erasure retried after a store eraser failed hands that store the
+  user's identities again.** The first run's SQL part deleted the user row
+  the email was read from, so the retry's `ErasedUser` carried only the id.
+  When an `EraseResolved` store eraser fails, the erasure keeps the
+  identities it gave that store in `gofastr_erase_identities`, and a retry
+  gives them to that store alone, never when another account now holds the
+  address. A row is deleted when its store succeeds, and 30 days after the
+  first failure at the latest: a running App deletes expired rows at start
+  and every hour, and `App.SweepErasureRetention` does it on demand
+  ([data export](framework/docs/content/data-export.md)). A runtime role
+  that cannot create tables needs the table made first (the docs give the
+  SQL).
 - **`cssweight.Measure` honours an empty first `<base href="">`.** An empty first base let a
   later `<base>` win, so linked sheets resolved against the wrong path; the first base now wins
   whatever its value.
@@ -170,6 +182,54 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **BREAKING: the passkey plugin needs a way to email the account owner
+  when a passkey is added.** Set `PasskeyConfig.NoticeSender`, or
+  `NoAddedNotice: true`; outside `DevMode`, Init fails when neither is set. The
+  email is fixed text, sent best effort, and goes only to an address the
+  user store reports verified: with `NoticeSender` set, Init also refuses
+  a user store that does not implement `auth.EmailVerifiedChecker` (the
+  battery's stores do).
+- **BREAKING: `POST /auth/passkey/register` needs the `binding` from its
+  options answer**, and completes only in the session that asked for the
+  options. The battery's browser module sends it; a client of its own
+  copies `binding` from `register/options` into the register body.
+- **The passkey autofill limit is picked by `?autofill=1` on
+  `/auth/passkey/login/options`**, not by a body member, so a blocked
+  client is refused before its body is read. The battery's module sends
+  it. Under an explicit `RateLimit.Scope`, the list and autofill limits
+  use that scope plus `-list` and `-autofill`.
+- **A step-up accepts an assertion with no `userHandle`**, which an
+  authenticator may send when the options name the passkeys.
+- **The passkey module runs one ceremony at a time**, holds the buttons
+  while an autofill sign-in is on its way, lets one autofill field own
+  the request, retries a failing autofill with growing waits and shows
+  its error once, never signals a passkey list read before a change, and
+  submits a step-up form as its button would.
+- **Adding or removing a passkey needs a step-up** once any of the
+  account's passkeys is an hour old (`ReauthMinAge`), from every session:
+  `register/options` and `delete` answer 403 `passkey_reauth_required`
+  without a `proof`, or `passkey_signin_required` for a session that
+  began before every passkey. The battery's browser
+  module runs the step-up itself; a client of its own sends `proof`.
+- **Only the session that earned a step-up proof can redeem it.** Another
+  session's attempt fails and still uses the proof up.
+- **Under `OIDCConfig.Tenants` an email is verified only with both
+  `xms_edov: true` and `email_verified: true`** in the signed id_token,
+  for its own `email` claim, and a tenant identity with no link never
+  joins an existing account by email: the owner links it while signed
+  in. This closes the multi-tenant "nOAuth" email takeover.
+- **BREAKING: `auth.PasskeyStore` gains `RenamePasskey`.** Both built-in
+  stores implement it. A custom store adds it, and may keep the new
+  `PasskeyCredential.Transports` and `AAGUID`.
+- **A passkey sign-in with a credential the server does not hold answers
+  404, not 401.** The message is the same, and the browser can now tell
+  the password manager to drop that passkey.
+- **`AuthConfig.CanonicalizeEmail` must be idempotent, and Init now checks
+  it.** Init runs the override over a fixed set of probe addresses and
+  fails boot, naming the address, when it moves one it already
+  canonicalized. A clean boot does not prove the override idempotent for
+  every address: one it moves at runtime is refused with
+  `invalid_email`.
 - **A layout's view-transition CSS loads with its layer, not in app.css.**
   `app.NewLayout` registers the layout's `TransitionCSS()` as a component
   sheet of its own (`Layout.TransitionSheet()`), and the layer root
@@ -241,6 +301,27 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr upgrade` finds the Go spellings.
 
 ### Added
+- **Passkeys: autofill sign-in, step-up, rename and password-manager sync
+  ([#708](https://github.com/DonaldMurillo/gofastr/issues/708)).**
+  `auth.PasskeyAutofillAttrs` lists the device's passkeys in the username
+  field's autofill (conditional UI). `PasskeyUpgradeAttrs` saves a passkey
+  without a prompt after a password sign-in, where the browser supports
+  it. `POST /auth/passkey/reauth` and `PasskeyReauthAttrs` confirm a
+  sensitive action with a passkey, and the handler spends the proof with
+  `PasskeyPlugin.RedeemReauthProof`. Only a passkey registered before the
+  session signed in and at least `PasskeyConfig.ReauthMinAge` ago (1 hour
+  by default) can confirm one, so a stolen session cannot add a key and
+  step up with it. `POST /auth/passkey/rename` and
+  `PasskeyRenameAttrs` rename a passkey. Registration stores transports
+  and the AAGUID, and the list answers `rpId`, `userId`, `userName`,
+  `deviceType`, `transports` and `aaguid`. The browser module tells the
+  password manager which passkeys are still valid through the Signal API.
+  See [Passkeys](framework/docs/content/auth.md#passkeys).
+- **`OIDCConfig.Tenants` admits a multi-tenant issuer** such as Microsoft's
+  `common` or `organizations` endpoint: the token's `iss` must be the
+  issuer for its own `tid`, the tenant must be listed (or `"*"`), and a
+  key scoped to another issuer cannot sign it. `Tenants` with an exact
+  issuer fails discovery. The account is keyed by `<tid>/<id claim>`.
 - **Logout sends `Clear-Site-Data`.** A successful `POST /auth/logout`
   now sends `Clear-Site-Data: "cache", "storage"`, which asks the browser
   to empty its caches and the origin's storage. Browsers act on it only

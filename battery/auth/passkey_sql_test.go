@@ -1,11 +1,15 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // passkeyStoreContract is the behaviour every PasskeyStore owes the
@@ -17,7 +21,8 @@ func passkeyStoreContract(t *testing.T, s PasskeyStore) {
 	at := time.Unix(1_700_000_000, 0).UTC()
 	a := PasskeyCredential{ID: []byte{1, 2, 3}, UserID: "u1", PublicKey: []byte{9, 9}, Algorithm: coseAlgES256,
 		SignCount: 4, Name: "Laptop", BackupEligible: true, CreatedAt: at}
-	b := PasskeyCredential{ID: []byte{4, 5}, UserID: "u1", PublicKey: []byte{8}, Algorithm: coseAlgEdDSA, CreatedAt: at.Add(time.Second)}
+	b := PasskeyCredential{ID: []byte{4, 5}, UserID: "u1", PublicKey: []byte{8}, Algorithm: coseAlgEdDSA, CreatedAt: at.Add(time.Second),
+		Transports: []string{"hybrid", "internal"}, AAGUID: []byte{0xea, 0x9b, 0x8d, 0x66, 0x4d, 0x01, 0x1d, 0x21, 0x3c, 0xe4, 0xb6, 0xb4, 0x8c, 0xb5, 0x75, 0xd4}}
 	c := PasskeyCredential{ID: []byte{6}, UserID: "u2", PublicKey: []byte{7}, Algorithm: coseAlgRS256, CreatedAt: at}
 	for _, p := range []PasskeyCredential{a, b, c} {
 		if err := s.AddPasskey(ctx, p, 20); err != nil {
@@ -47,6 +52,27 @@ func passkeyStoreContract(t *testing.T, s PasskeyStore) {
 	}
 	if got, _ := s.GetPasskey(ctx, a.ID); got.SignCount != 9 || !got.BackedUp || !got.LastUsedAt.Equal(at.Add(time.Hour)) {
 		t.Fatalf("after use: %+v", got)
+	}
+	if got, _ := s.GetPasskey(ctx, b.ID); !slices.Equal(got.Transports, b.Transports) || !bytes.Equal(got.AAGUID, b.AAGUID) {
+		t.Fatalf("transports/aaguid round trip: %+v", got)
+	}
+	if got, _ := s.GetPasskey(ctx, a.ID); got.Transports != nil || got.AAGUID != nil {
+		t.Fatalf("a passkey stored without transports or AAGUID read back %v %x", got.Transports, got.AAGUID)
+	}
+	if ok, _ := s.RenamePasskey(ctx, "u2", a.ID, "Stolen"); ok {
+		t.Fatal("u2 renamed u1's passkey")
+	}
+	if got, _ := s.GetPasskey(ctx, a.ID); got.Name != a.Name {
+		t.Fatalf("a refused rename changed the name to %q", got.Name)
+	}
+	if ok, err := s.RenamePasskey(ctx, "u1", a.ID, "Work laptop"); !ok || err != nil {
+		t.Fatalf("rename: %v %v", ok, err)
+	}
+	if got, _ := s.GetPasskey(ctx, a.ID); got.Name != "Work laptop" {
+		t.Fatalf("after rename: %q", got.Name)
+	}
+	if ok, _ := s.RenamePasskey(ctx, "u1", []byte{0xee}, "x"); ok {
+		t.Fatal("renamed a passkey that does not exist")
 	}
 	if ok, _ := s.DeletePasskey(ctx, "u2", a.ID); ok {
 		t.Fatal("u2 deleted u1's passkey")
@@ -97,5 +123,94 @@ func TestPostgresPasskeyStoreContract(t *testing.T) {
 func TestSQLPasskeyStoreRefusesBadTable(t *testing.T) {
 	if _, err := NewSQLPasskeyStore(nil, `x"; DROP TABLE y; --`); err == nil {
 		t.Fatal("unsafe table name accepted")
+	}
+}
+
+// A table an older build created, without the transports and aaguid
+// columns, gains them at EnsureSchema and keeps its rows.
+func TestSQLitePasskeyStoreUpgradesOldTable(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE auth_passkeys (id TEXT PRIMARY KEY NOT NULL, user_id TEXT NOT NULL, public_key TEXT NOT NULL, alg BIGINT NOT NULL, sign_count BIGINT NOT NULL DEFAULT 0, name TEXT NOT NULL DEFAULT '', backup_eligible INTEGER NOT NULL DEFAULT 0, backed_up INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL, last_used_at BIGINT NOT NULL DEFAULT 0)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO auth_passkeys (id, user_id, public_key, alg, created_at) VALUES ('AQID', 'u1', 'CQk', -7, 1700000000)`); err != nil {
+		t.Fatal(err)
+	}
+	s := sqlPasskeyStore(t, db)
+	got, err := s.GetPasskey(context.Background(), []byte{1, 2, 3})
+	if err != nil || got.UserID != "u1" || got.Transports != nil || got.AAGUID != nil {
+		t.Fatalf("old row after upgrade: %+v %v", got, err)
+	}
+}
+
+// Two processes upgrading one SQLite file race between the column check
+// and the ALTER; the loser finds the column there and boots.
+func TestAddColumnIfMissingToleratesALostRace(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE t (id TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := addColumnIfMissing(ctx, db, migrate.DialectSQLite, "t", "x", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		t.Fatal(err)
+	}
+	// The race's second half: the ALTER runs although the column exists.
+	if _, err := db.Exec(`ALTER TABLE t ADD COLUMN x TEXT NOT NULL DEFAULT ''`); err == nil {
+		t.Fatal("setup: SQLite accepted a duplicate column")
+	}
+	if err := addColumnAfterCheck(ctx, db, "t", "x", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		t.Fatalf("lost race: %v", err)
+	}
+}
+
+// A failed ALTER that is not a lost race (here: a NOT NULL column with no
+// default) is reported, and the column stays absent.
+func TestAddColumnAfterCheckReportsARealFailure(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+	if _, err := db.Exec(`CREATE TABLE t (id TEXT); INSERT INTO t VALUES ('a')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := addColumnAfterCheck(ctx, db, "t", "y", "TEXT NOT NULL"); err == nil {
+		t.Fatal("a refused ALTER reported success")
+	}
+	if has, err := sqliteTableHasColumn(ctx, db, "t", "y"); err != nil || has {
+		t.Fatalf("column y after a refused ALTER: %v %v", has, err)
+	}
+}
+
+// SQLite folds only ASCII letters in identifiers: a column spelled with
+// U+017F is not the ASCII one, and an upper-case spelling is.
+func TestSQLiteColumnCheckFoldsASCIIOnly(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+	if _, err := db.Exec(`CREATE TABLE t (id TEXT, "refresh_leaſe_ms" BIGINT, "Display_Name" TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	if has, _ := sqliteTableHasColumn(ctx, db, "t", "refresh_lease_ms"); has {
+		t.Fatal("a U+017F spelling counted as the ASCII column")
+	}
+	if has, _ := sqliteTableHasColumn(ctx, db, "t", "display_name"); !has {
+		t.Fatal("an ASCII case variant did not count as the column")
 	}
 }

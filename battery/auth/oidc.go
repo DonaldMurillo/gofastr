@@ -96,7 +96,21 @@ type OIDCConfig struct {
 	// is what stops a stolen authorization code being redeemed in an
 	// attacker's own flow (see OAuth2PKCEProvider).
 	DisablePKCE bool
+	// Tenants admits a multi-tenant issuer such as Microsoft's
+	// "https://login.microsoftonline.com/common/v2.0" (or
+	// "/organizations/v2.0"). Its discovery document names the issuer
+	// ".../{tenantid}/v2.0", and each id_token carries the user's own
+	// tenant in iss and in its tid claim. With Tenants set, an id_token
+	// is accepted when its iss is that template with its own tid in
+	// place and the tid is listed here; "*" admits every tenant. Empty
+	// (the default) keeps the exact issuer match, which such an issuer
+	// fails at discovery. Set with an issuer whose discovery names an
+	// exact issuer, discovery fails rather than ignore the list.
+	Tenants []string
 }
+
+// tenantPlaceholder is the tenant slot in a multi-tenant issuer.
+const tenantPlaceholder = "{tenantid}"
 
 // OIDCProvider implements OAuth2Provider for a generic OIDC IdP.
 type OIDCProvider struct {
@@ -187,6 +201,9 @@ func NewOIDCProvider(cfg OIDCConfig) (*OIDCProvider, error) {
 	if claims.AvatarClaim == "" {
 		claims.AvatarClaim = "picture"
 	}
+	// The provider keeps its own allowlist: a caller reusing the slice
+	// for another provider must not change this one's tenants.
+	cfg.Tenants = slices.Clone(cfg.Tenants)
 	hc := cfg.HTTPClient
 	if hc == nil {
 		hc = defaultOAuthHTTPClient
@@ -233,6 +250,33 @@ type oidcDiscovery struct {
 	// the spec's default is client_secret_basic, but the body form is
 	// kept for it (tokenAuthMethod).
 	TokenAuthMethods []string `json:"token_endpoint_auth_methods_supported"`
+
+	// tenantIssuer is Issuer when it is a multi-tenant template that
+	// OIDCConfig.Tenants admitted; verifyClaims then reads each token's
+	// tenant into it.
+	tenantIssuer string
+}
+
+// tenantTemplateFits reports whether template (".../{tenantid}/v2.0") is
+// issuer with one path segment, the configured tenant alias, in the
+// placeholder's place.
+func tenantTemplateFits(template, issuer string) bool {
+	before, after, ok := strings.Cut(normalizeIssuer(template), tenantPlaceholder)
+	if !ok || strings.Contains(after, tenantPlaceholder) {
+		return false
+	}
+	// The placeholder fills a whole path segment, past the authority.
+	_, path, ok := strings.Cut(before, "://")
+	if !ok || !strings.Contains(path, "/") || !strings.HasSuffix(before, "/") ||
+		(after != "" && !strings.HasPrefix(after, "/")) {
+		return false
+	}
+	issuer = normalizeIssuer(issuer)
+	if !strings.HasPrefix(issuer, before) || !strings.HasSuffix(issuer, after) || len(issuer) < len(before)+len(after) {
+		return false
+	}
+	seg := issuer[len(before) : len(issuer)-len(after)]
+	return seg != "" && !strings.ContainsAny(seg, "/?#")
 }
 
 // discoveryURL joins the well-known path to the issuer using exactly one slash,
@@ -361,7 +405,15 @@ func (p *OIDCProvider) fetchDiscovery(ctx context.Context) (*oidcDiscovery, erro
 	if err := json.Unmarshal(body, &d); err != nil {
 		return nil, err
 	}
-	if normalizeIssuer(d.Issuer) != normalizeIssuer(p.cfg.Issuer) {
+	if len(p.cfg.Tenants) > 0 {
+		// A multi-tenant issuer: the template is the configured issuer
+		// with the tenant slot open, and each token fills it. Anything
+		// else would leave the allowlist unread.
+		if !tenantTemplateFits(d.Issuer, p.cfg.Issuer) {
+			return nil, errors.New("oidc: OIDCConfig.Tenants needs an issuer whose discovery names a {tenantid} template")
+		}
+		d.tenantIssuer = normalizeIssuer(d.Issuer)
+	} else if normalizeIssuer(d.Issuer) != normalizeIssuer(p.cfg.Issuer) {
 		// Issuer-spoofing guard (OIDC §4.3): a discovery document served from
 		// one origin that claims a different issuer could impersonate the
 		// configured IdP.
@@ -552,6 +604,11 @@ func (p *OIDCProvider) FetchUserInfo(ctx context.Context, token string) (*OAuth2
 	if id == "" {
 		return nil, errors.New("oidc: userinfo missing subject")
 	}
+	// A multi-tenant identity is the tenant and the subject; userinfo
+	// carries no verified tenant.
+	if p.tenantTemplate() != "" {
+		return nil, errors.New("oidc: a multi-tenant issuer needs the id_token's tid; sign in again")
+	}
 	email := claimString(ui, p.cfg.Claims.EmailClaim)
 	return &OAuth2UserInfo{
 		ID:            id,
@@ -631,6 +688,21 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 	if id == "" {
 		return nil, errors.New("oidc: id_token missing subject claim")
 	}
+	// Under a multi-tenant issuer one subject can recur in two tenants,
+	// so the account is keyed by both. checkIssuer already tied tid to
+	// iss and refused one with a '/'.
+	if p.tenantTemplate() != "" {
+		id = claimString(claims, "tid") + "/" + id
+		// Any tenant's admin sets its users' email, so under a multi-tenant
+		// issuer the address proves nothing (the nOAuth takeover class)
+		// unless the signed id_token says the email's domain is one the
+		// tenant verified (xms_edov). Userinfo cannot vouch for it, and
+		// xms_edov speaks for the signed `email` claim only, so the kept
+		// address must be that claim and its flag the signed one.
+		if v, _ := claims["xms_edov"].(bool); !v || !verifiedPresent || email != claimString(claims, "email") {
+			emailVerified = false
+		}
+	}
 	return &OAuth2UserInfo{
 		ID:            id,
 		Email:         email,
@@ -638,6 +710,9 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 		AvatarURL:     avatar,
 		Provider:      p.name,
 		EmailVerified: emailVerified && verifiedFlagCovers(verifiedSrc, email),
+		// A tenant identity never joins an account by its address: the
+		// owner links it while signed in.
+		noEmailLink: p.tenantTemplate() != "",
 	}, nil
 }
 
@@ -764,14 +839,47 @@ func claimString(claims map[string]any, key string) string {
 	return ""
 }
 
+// tenantTemplate is the multi-tenant issuer template discovery admitted,
+// or "" for an exact issuer (or before discovery).
+func (p *OIDCProvider) tenantTemplate() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.discovery == nil {
+		return ""
+	}
+	return p.discovery.tenantIssuer
+}
+
+// checkIssuer matches the id_token's iss to the configured issuer, or,
+// for a multi-tenant issuer, to its template filled with the token's
+// own tid claim, a tenant OIDCConfig.Tenants admits.
+func (p *OIDCProvider) checkIssuer(claims map[string]any) error {
+	iss := normalizeIssuer(claimString(claims, "iss"))
+	template := p.tenantTemplate()
+	if template == "" {
+		if iss != normalizeIssuer(p.cfg.Issuer) {
+			return errors.New("oidc: id_token iss does not match issuer")
+		}
+		return nil
+	}
+	tid := claimString(claims, "tid")
+	if tid == "" || strings.ContainsAny(tid, "/?#{}") || iss != strings.Replace(template, tenantPlaceholder, tid, 1) {
+		return errors.New("oidc: id_token iss does not match the issuer for its tenant")
+	}
+	if !slices.Contains(p.cfg.Tenants, "*") && !slices.Contains(p.cfg.Tenants, tid) {
+		return errors.New("oidc: id_token tenant is not admitted by OIDCConfig.Tenants")
+	}
+	return nil
+}
+
 // verifyClaims enforces the id_token claim checks (iss/aud/exp/iat/sub). It is
 // called by verifyIDToken AFTER the signature has been verified.
 func (p *OIDCProvider) verifyClaims(claims map[string]any) error {
 	const leeway int64 = 60 // seconds, covers clock skew and IdP drift
 	now := time.Now().Unix()
 
-	if normalizeIssuer(claimString(claims, "iss")) != normalizeIssuer(p.cfg.Issuer) {
-		return errors.New("oidc: id_token iss does not match issuer")
+	if err := p.checkIssuer(claims); err != nil {
+		return err
 	}
 
 	aud, ok := claims["aud"]

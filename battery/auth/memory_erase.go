@@ -159,10 +159,9 @@ func (m *MemoryPasskeyStore) eraseUser(userID string, dryRun bool) int {
 
 // eraseUser removes the tokens whose payload names userID or email.
 func (m *MemoryMagicLinkTokenStore) eraseUser(userID, email string, dryRun bool) int {
-	payloads := []string{
-		string(purposeReset) + ":" + userID,
-		string(purposeVerify) + ":" + userID,
-		string(purposePasskeyRegister) + ":" + userID,
+	var payloads []string
+	for _, p := range userPurposes {
+		payloads = append(payloads, string(p)+":"+userID)
 	}
 	if email != "" {
 		payloads = append(payloads, string(purposeMagicLink)+":"+email, string(purposeEmailCode)+":"+email)

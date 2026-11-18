@@ -262,9 +262,11 @@ deployments.
 | `emailcode.locked` | A challenge spent its five guesses (and was dropped), or the address spent its guess budget. |
 | `emailcode.consumed` | A sign-in code was redeemed for a session (`two_factor=pending` when the account still owes its second factor). |
 | `emailcode_tokens.purged` | A password change or completed reset dropped the user's outstanding sign-in codes (`reason`, `count`). |
-| `passkey.registered` | A passkey was added (`alg`, `backup_eligible`). |
+| `passkey.registered` | A passkey was added (`alg`, `backup_eligible`, and `conditional`, true when the registration used a conditional-create challenge; it does not record whether the browser showed a prompt). |
+| `passkey.renamed` | The owner renamed a passkey. |
+| `passkey.reauthenticated` | A step-up with one of the account's passkeys passed and a proof was issued. |
 | `passkey.deleted` | A passkey was removed by its owner, or a completed reset removed all of them (`reason=password_reset`, `count`). |
-| `passkey.refused` | A passkey ceremony failed a check (`ceremony=login` or `register`). `reason` is one of `client_data`, `challenge`, `attestation`, `credential_mismatch`, `unknown_credential`, `user_handle`, `signature`, `backup_eligibility`, `account_gone`. |
+| `passkey.refused` | A passkey ceremony failed a check (`ceremony=login`, `register` or `reauth`). `reason` is one of `client_data`, `challenge`, `attestation`, `credential_mismatch`, `unknown_credential`, `user_handle`, `signature`, `backup_eligibility`, `account_gone`, `too_new`. A sign-in refused before its signature verifies (`user_handle`, `signature`) carries no user id: anyone holding a credential id can send one. |
 | `passkey.clone_suspected` | A sign-in presented a signature counter that did not move past the stored one (`stored`, `presented`). |
 | `account.claimed` | A magic link (`via=magic_link`), an emailed sign-in code (`via=email_code`) or a completed reset (`via=password_reset`) proved the mailbox of an account whose address was unverified. The account's OAuth links, API tokens and sessions were removed (counts in `oauth_links_removed`, `tokens_revoked`, `sessions_revoked`), its password too when `password_cleared=true`, its passkeys (`passkeys_removed`), and it is now verified. |
 
@@ -285,11 +287,15 @@ with no user id (an unknown address, a magic-link request, a refused
 OAuth sign-in) carries `email_hash`, a 12-hex-char sha256 prefix of the
 canonical address, instead of `email`, because erasure scrubs the rows
 a user acted from and cannot reach a row with no actor: a raw address
-there outlived the user. The address is canonicalized with
-`auth.CanonicalEmail`, the default, even on a host that set
-`AuthConfig.CanonicalizeEmail` (the sink has no manager); look a row up
-by `hashedIdentifier`'s rule over that form: the first 12 hex chars of
-its sha256. The digest is a pseudonym, not anonymous data: anyone holding
+there outlived the user. An event the auth manager emits carries the
+address already folded by the manager's rule (`AuthConfig.CanonicalizeEmail`
+when set), and the sink hashes it as given; an event handed to the sink
+directly, or one a wrapping sink rewrote, is folded with
+`auth.CanonicalEmail`, the default. To look up a manager's row, fold the
+address with `mgr.CanonicalEmail(addr)` and take the first 12 hex chars
+of its sha256 (`hashedIdentifier`'s rule); for a row sent to the sink
+directly, fold with `auth.CanonicalEmail`. When the override refuses an
+address, the event carries it as given. The digest is a pseudonym, not anonymous data: anyone holding
 a candidate address can confirm a match.
 
 Every sink, the built-in one and a host's own (`AuthConfig.AuditSink`

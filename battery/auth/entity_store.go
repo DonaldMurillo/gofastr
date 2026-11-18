@@ -622,19 +622,7 @@ func (s *EntityUserStore) HasPassword(ctx context.Context, userID string) (bool,
 // unproven until its owner proves the mailbox (see claimAccount). Postgres
 // uses ADD COLUMN IF NOT EXISTS; SQLite checks PRAGMA table_info first.
 func (s *EntityUserStore) ensureEmailVerifiedColumn(ctx context.Context, boolType, boolFalse string) error {
-	ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s NOT NULL DEFAULT %s",
-		query.QuoteFolded(s.table), query.QuoteFolded(s.fieldMap.EmailVerified), boolType, boolFalse)
-	if s.dialect.of(s.db) == migrate.DialectPostgres {
-		ddl = fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s NOT NULL DEFAULT %s",
-			query.QuoteFolded(s.table), query.QuoteFolded(s.fieldMap.EmailVerified), boolType, boolFalse)
-	} else {
-		has, err := sqliteTableHasColumn(ctx, s.db, s.table, s.fieldMap.EmailVerified)
-		if err != nil || has {
-			return err
-		}
-	}
-	_, err := s.db.ExecContext(ctx, ddl)
-	return err
+	return addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, s.fieldMap.EmailVerified, boolType+" NOT NULL DEFAULT "+boolFalse)
 }
 
 // MarkEmailVerified records that the user proved control of their email
