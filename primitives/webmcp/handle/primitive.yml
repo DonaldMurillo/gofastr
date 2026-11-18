@@ -14,7 +14,7 @@ twins:
         note: The rt.Routes loop and registerRoute in Handle.
 invariants:
   - id: handle-is-atomic
-    rule: A Handle that fails registers neither the manifest entry nor the route, whether the cause is validation, a route already on the router, or a ServeMux overlap panic, which comes back as an error.
+    rule: A Handle that fails on validation, on a route already on the router, or on a ServeMux overlap panic (which comes back as an error) registers neither the manifest entry nor the route; a panic from the router's register hook, which runs after the route is installed, leaves the route without a manifest entry.
     enforced_by:
       - test: framework/experimental/webmcp.TestHandleRejectsDuplicateRoute
       - test: framework/experimental/webmcp.TestHandleRejectsExistingRouterRoute
