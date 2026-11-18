@@ -1,35 +1,16 @@
-// passkey: runs the WebAuthn ceremonies behind the elements the passkey
-// plugin's markup helpers mark. Buttons render hidden, so a page without
-// script, or a browser without WebAuthn, never shows a control that
-// cannot work; this module reveals them when it can drive them.
+// passkey: signs in with a passkey, from a button or from the username
+// field's autofill list, and holds what the passkey-manage module shares
+// (the WebAuthn JSON helpers, the same-origin transport, the one-request
+// lock). Buttons render hidden, so a page without script, or a browser
+// without WebAuthn, never shows a control that cannot work.
 //
 //   data-passkey-login="<auth base>"     sign in, then go where the
 //                                        server says
 //   data-passkey-autofill="<auth base>"  on the username field: offer
 //                                        the device's passkeys in its
 //                                        autofill list (conditional UI)
-//   data-passkey-register="<auth base>"  add a passkey to the signed-in
-//                                        account; the name comes from a
-//                                        [data-passkey-name] field in
-//                                        the same form, when there is one
-//   data-passkey-upgrade="<auth base>"   after a password sign-in, ask
-//                                        the password manager to save a
-//                                        passkey without a prompt
-//   data-passkey-rename="<auth base>"    rename the passkey named by
-//                                        data-passkey-id to the form's
-//                                        [data-passkey-name] value
-//   data-passkey-delete="<auth base>"    remove the passkey named by
-//                                        the button's data-passkey-id
-//   data-passkey-reauth="<auth base>"    confirm with a passkey, put the
-//                                        proof in the form's
-//                                        passkey_reauth field, submit
-//   data-passkey-list="<auth base>"      on a passkey list: tell the
-//                                        password manager which passkeys
-//                                        the account still has
 //
-// Adding, renaming or removing re-renders the current page, so a list of
-// passkeys the server drew shows the change. Failures surface as a
-// toast; a ceremony the user cancelled says nothing.
+// Failures surface as a toast; a ceremony the user cancelled says nothing.
 (function () {
   'use strict';
   const NAME = 'passkey';
@@ -46,14 +27,12 @@
   // battery/auth), so a toast speaks the reader's language.
   const say = function (k, en, p) { return typeof NS.say === 'function' ? NS.say(k, en, p) : en; };
 
-  const KINDS = ['login', 'autofill', 'register', 'upgrade', 'rename', 'delete', 'reauth', 'list'];
+  const KINDS = ['login', 'autofill'];
   const SEL = KINDS.map(function (k) { return '[data-passkey-' + k + ']'; }).join(', ');
   // An auth base is a same-origin path: "/auth", "/api/auth". Anything
   // else leaves the element inert, so injected markup cannot aim a
   // ceremony at another origin.
   const BASE = /^(?:\/[A-Za-z0-9._~-]+)+$/;
-  const ID = /^[A-Za-z0-9_-]+$/;
-  const PROOF_FIELD = 'passkey_reauth';
   const bound = new WeakSet();
   const PKC = window.PublicKeyCredential;
   const supported = typeof PKC === 'function' && !!navigator.credentials;
@@ -170,33 +149,6 @@
     if (typeof NS._toastOrFallback === 'function') NS._toastOrFallback({ title: title, variant: variant });
   }
 
-  // refresh re-renders the current page so server-drawn state (the
-  // passkey list) reflects the change.
-  function refresh() {
-    if (typeof NS.navigate === 'function') NS.navigate(location.pathname + location.search, { replace: true, force: true });
-  }
-
-  // signalList tells the password manager which of the account's
-  // passkeys the server still accepts and what the account is called,
-  // so a removed passkey stops being offered. Browsers without the
-  // Signal API skip it; it never surfaces an error.
-  async function signalList(base) {
-    if (!supported || (typeof PKC.signalAllAcceptedCredentials !== 'function' && typeof PKC.signalCurrentUserDetails !== 'function')) return;
-    try {
-      const list = await send(base + '/passkey/list', { method: 'GET', headers: { 'Accept': 'application/json' } });
-      if (!list || typeof list.rpId !== 'string' || typeof list.userId !== 'string') return;
-      if (typeof PKC.signalAllAcceptedCredentials === 'function') {
-        await PKC.signalAllAcceptedCredentials({
-          rpId: list.rpId, userId: list.userId,
-          allAcceptedCredentialIds: (list.passkeys || []).map(function (p) { return p.id; }),
-        });
-      }
-      if (typeof PKC.signalCurrentUserDetails === 'function' && typeof list.userName === 'string') {
-        await PKC.signalCurrentUserDetails({ rpId: list.rpId, userId: list.userId, name: list.userName, displayName: list.userName });
-      }
-    } catch (_) { /* advisory only */ }
-  }
-
   // A browser runs one WebAuthn request at a time, and the autofill one
   // waits as long as the field is on the page. Every other ceremony
   // withdraws it first (exclusive), and it starts again only once no
@@ -275,84 +227,6 @@
     if (typeof NS.navigate === 'function') NS.navigate(to, { force: true });
   }
 
-  // stepUp runs the step-up ceremony and answers the proof.
-  async function stepUp(base) {
-    const opts = await post(base + '/passkey/reauth/options', {});
-    const cred = await navigator.credentials.get({ publicKey: requestOptions(opts.publicKey) });
-    const out = await post(base + '/passkey/reauth', assertionBody(cred));
-    return out && typeof out.proof === 'string' ? out.proof : '';
-  }
-
-  // guarded posts body, and when the server answers that the account's
-  // existing passkey must confirm first, runs the step-up and posts it
-  // again with the proof. A silent ceremony (quiet) never prompts: it
-  // gives up instead.
-  async function guarded(url, base, body, quiet) {
-    try {
-      return await post(url, body);
-    } catch (err) {
-      if (quiet || err.status !== 403 || err.reason !== 'passkey_reauth_required') throw err;
-    }
-    return post(url, Object.assign({}, body, { proof: await stepUp(base) }));
-  }
-
-  async function create(base, name, conditional) {
-    const opts = await guarded(base + '/passkey/register/options', base, conditional ? { conditional: true } : {}, conditional);
-    const req = { publicKey: creationOptions(opts.publicKey) };
-    if (conditional) req.mediation = 'conditional';
-    const cred = await navigator.credentials.create(req);
-    const j = credJSON(cred), r = j.response;
-    await post(base + '/passkey/register', {
-      name: name, id: j.id, clientDataJSON: r.clientDataJSON, attestationObject: r.attestationObject,
-      transports: Array.isArray(r.transports) ? r.transports : [],
-    });
-  }
-
-  function nameIn(btn) {
-    const form = btn.closest('form');
-    const field = form ? form.querySelector('[data-passkey-name]') : null;
-    return field && typeof field.value === 'string' ? field.value : '';
-  }
-
-  async function register(btn, base) {
-    await create(base, nameIn(btn), false);
-    toast(say('auth.passkey_added', 'Passkey added'), 'success');
-    await signalList(base);
-    refresh();
-  }
-
-  async function rename(btn, base) {
-    const id = btn.getAttribute('data-passkey-id') || '';
-    if (!ID.test(id)) return;
-    await post(base + '/passkey/rename', { id: id, name: nameIn(btn) });
-    toast(say('auth.passkey_renamed', 'Passkey renamed'), 'success');
-    refresh();
-  }
-
-  async function remove(btn, base) {
-    const id = btn.getAttribute('data-passkey-id') || '';
-    if (!ID.test(id)) return;
-    await guarded(base + '/passkey/delete', base, { id: id }, false);
-    toast(say('auth.passkey_removed', 'Passkey removed'), 'success');
-    await signalList(base);
-    refresh();
-  }
-
-  async function reauth(btn, base) {
-    const form = btn.closest('form');
-    if (!form) return;
-    const value = await stepUp(base);
-    let proof = form.querySelector('input[name="' + PROOF_FIELD + '"]');
-    if (!proof) {
-      proof = document.createElement('input');
-      proof.type = 'hidden';
-      proof.name = PROOF_FIELD;
-      form.appendChild(proof);
-    }
-    proof.value = value;
-    form.requestSubmit();
-  }
-
   function failure(err, kind) {
     // NotAllowedError is the browser's answer to a cancelled or
     // timed-out prompt, AbortError to one this module withdrew: the user
@@ -407,50 +281,27 @@
     }
   }
 
-  // upgrade asks for a passkey without a prompt after a password
-  // sign-in, where the browser can (conditionalCreate). It is silent: the
-  // password manager tells the user when it saved one.
-  async function upgrade(base) {
-    if (!supported) return;
-    const c = await caps();
-    if (c.conditionalCreate !== true) return;
-    // Once per tab session: every page load asking again would spend
-    // the rate limit and a challenge for an offer already made.
-    const key = 'gofastr.passkey.upgrade:' + base;
-    try {
-      if (sessionStorage.getItem(key)) return;
-      sessionStorage.setItem(key, '1');
-    } catch (_) { /* no storage: ask this once anyway */ }
-    try { await exclusive(function () { return create(base, '', true); }); } catch (_) { /* nothing to tell */ }
-  }
-
   function bind(el) {
     if (bound.has(el)) return;
     bound.add(el);
-    let kind = '';
-    for (const k of KINDS) {
-      if (el.hasAttribute('data-passkey-' + k)) { kind = k; break; }
-    }
+    const kind = el.hasAttribute('data-passkey-login') ? 'login' : 'autofill';
     const base = el.getAttribute('data-passkey-' + kind);
-    if (!BASE.test(base || '')) return;
+    if (!BASE.test(base || '') || !supported) return;
     if (kind === 'autofill') { autofill(el, base); return; }
-    if (kind === 'upgrade') { upgrade(base); return; }
-    if (kind === 'list') { signalList(base); return; }
-    // Renaming or removing a passkey needs no authenticator; the
-    // ceremonies do. Adding one is offered wherever WebAuthn is: a USB
-    // or NFC security key can hold a passkey on a device that reports no
-    // platform authenticator and no hybrid transport.
-    if (kind !== 'delete' && kind !== 'rename' && !supported) return;
     el.hidden = false;
     el.addEventListener('click', function (e) {
       e.preventDefault();
-      if (kind === 'login') run(el, kind, function () { return signIn(base, false); });
-      else if (kind === 'register') run(el, kind, function () { return register(el, base); });
-      else if (kind === 'rename') run(el, kind, function () { return rename(el, base); });
-      else if (kind === 'reauth') run(el, kind, function () { return reauth(el, base); });
-      else run(el, kind, function () { return remove(el, base); });
+      run(el, kind, function () { return signIn(base, false); });
     });
   }
+
+  // What passkey-manage shares, so the two halves keep one transport,
+  // one set of JSON helpers and one WebAuthn request at a time.
+  NS._passkey = {
+    BASE: BASE, supported: supported, caps: caps, say: say, send: send, post: post, toast: toast,
+    requestOptions: requestOptions, creationOptions: creationOptions, credJSON: credJSON,
+    assertionBody: assertionBody, exclusive: exclusive, run: run,
+  };
 
   function scan(root) {
     const r = root && root.querySelectorAll ? root : document;

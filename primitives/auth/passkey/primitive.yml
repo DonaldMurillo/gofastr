@@ -5,6 +5,7 @@ code:
   - battery/auth/passkey_sql.go
   - battery/auth/passkey_client.go
   - battery/auth/passkey.js
+  - battery/auth/passkey_manage.js
   - battery/auth/webauthn.go
 docs:
   - framework/docs/content/auth.md

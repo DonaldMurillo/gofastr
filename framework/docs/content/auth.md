@@ -1960,9 +1960,13 @@ same proof as changing 2FA.
 
 ### Buttons
 
-The battery ships the browser half as a runtime module that loads when
-a marked button is on the page. Mark a `ui.Button` with the attribute
-helpers:
+The battery ships the browser half as two runtime modules, each loaded
+only on a page that marks one of its elements: `passkey` signs in (the
+login button and the autofill field) and `passkey-manage` adds, renames
+and removes passkeys, runs step-ups and keeps the password manager in
+step, on `passkey`'s helpers, which the loader brings first. A sign-in
+page never downloads the management half. Mark a `ui.Button` with the
+attribute helpers:
 
 ```go
 ui.Button(ui.ButtonConfig{

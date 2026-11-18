@@ -293,8 +293,9 @@ func (m *MemoryPasskeyStore) DeletePasskeysForUser(_ context.Context, userID str
 //
 // Every endpoint speaks JSON (a cross-site page cannot send that without a
 // CORS preflight the battery never answers). The browser half is the
-// "passkey" runtime behaviour (passkey.js), bound to data-passkey-*
-// buttons that stay hidden on a browser without WebAuthn.
+// "passkey" and "passkey-manage" runtime behaviours (passkey.js,
+// passkey_manage.js), bound to data-passkey-* elements; buttons stay
+// hidden on a browser without WebAuthn.
 type PasskeyPlugin struct {
 	config     PasskeyConfig
 	rp         webauthnRP

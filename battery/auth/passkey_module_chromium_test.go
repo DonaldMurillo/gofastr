@@ -60,7 +60,7 @@ navigator.credentials.get = (o) => {
 navigator.credentials.create = () => Promise.resolve(fake);
 </script>
 %s
-<script src="/passkey.js"></script>`
+<script src="/passkey.js"></script><script src="/passkey-manage.js"></script>`
 
 func TestPasskeyModuleRules(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -72,6 +72,10 @@ func TestPasskeyModuleRules(t *testing.T) {
 	mux.HandleFunc("/passkey.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/javascript")
 		fmt.Fprint(w, passkeyJS)
+	})
+	mux.HandleFunc("/passkey-manage.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, passkeyManageJS)
 	})
 	pages := map[string]string{
 		"/signin":  `<input id="who" data-passkey-autofill="/auth"><button id="in" data-passkey-login="/auth" hidden>Sign in</button>`,

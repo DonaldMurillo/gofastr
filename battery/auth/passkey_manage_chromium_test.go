@@ -41,6 +41,10 @@ func TestPasskeyBrowserManageAndReauth(t *testing.T) {
 		w.Header().Set("Content-Type", "text/javascript")
 		fmt.Fprint(w, passkeyJS)
 	})
+	mux.HandleFunc("/passkey-manage.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, passkeyManageJS)
+	})
 	mux.HandleFunc("POST /sensitive", func(w http.ResponseWriter, r *http.Request) {
 		err := f.pk.RedeemReauthProof(r, r.FormValue(PasskeyReauthField))
 		mu.Lock()
@@ -80,7 +84,7 @@ for (const k of ['signalUnknownCredential', 'signalAllAcceptedCredentials', 'sig
 %[3]s
 <button id="in" data-passkey-login="/auth" hidden>Sign in</button>
 <div data-passkey-list="/auth"></div>
-<script src="/passkey.js"></script>`, CSRFToken(r), id, autofill)
+<script src="/passkey.js"></script><script src="/passkey-manage.js"></script>`, CSRFToken(r), id, autofill)
 	})
 	srv := &http.Server{Handler: CSRF()(mux)}
 	go func() { _ = srv.Serve(ln) }()

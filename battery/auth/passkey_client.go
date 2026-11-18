@@ -12,13 +12,22 @@ import (
 //go:embed passkey.js
 var passkeyJS string
 
-// The browser half of the passkey plugin loads when a marked button is
-// on the page. Markers are string literals so the runtime's marker gate
-// can read them.
+//go:embed passkey_manage.js
+var passkeyManageJS string
+
+// The browser half of the passkey plugin is two behaviours, so a page
+// loads only the half it marks: "passkey" signs in (a button, the
+// autofill field) and holds the shared helpers; "passkey-manage" adds,
+// renames and removes passkeys, runs step-ups and syncs the password
+// manager, on those helpers. Markers are string literals so the
+// runtime's marker gate can read them.
 var _ = registry.RegisterBehavior("passkey", passkeyJS,
-	registry.Markers("[data-passkey-login]", "[data-passkey-autofill]", "[data-passkey-register]",
-		"[data-passkey-upgrade]", "[data-passkey-rename]", "[data-passkey-delete]",
-		"[data-passkey-reauth]", "[data-passkey-list]"))
+	registry.Markers("[data-passkey-login]", "[data-passkey-autofill]"))
+
+var _ = registry.RegisterBehavior("passkey-manage", passkeyManageJS,
+	registry.Requires("passkey"),
+	registry.Markers("[data-passkey-register]", "[data-passkey-upgrade]", "[data-passkey-rename]",
+		"[data-passkey-delete]", "[data-passkey-reauth]", "[data-passkey-list]"))
 
 // The toasts passkey.js says, in the reader's language.
 var (
