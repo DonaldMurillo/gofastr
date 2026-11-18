@@ -106,7 +106,7 @@ invariants:
       - test: framework/headless.TestSweepNavigationMenuRPCIsSameOrigin
       - test: framework/headless.TestMenuRowShapesRefused
   - id: menu-copy-target-is-an-id
-    rule: A copy row's Target is an element id, a leading # dropped, and a selector-shaped or empty Target panics.
+    rule: "A copy row's Target is an element id, a leading # dropped, and a selector-shaped or empty Target panics."
     enforced_by:
       - test: framework/headless.TestMenuRowShapesRefused
   - id: menu-auto-id-folds-trigger-and-rows
