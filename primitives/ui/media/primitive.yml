@@ -85,6 +85,11 @@ invariants:
     rule: Gallery clamps Columns into 1 to 12 for the grid and masonry column class, and the strip gets none.
     enforced_by:
       - test: framework/ui.TestGalleryColumnsClassClampedTo12
+  - id: high-priority-image-loads-eagerly
+    rule: OptimizedImage and PipelineImage with HighPriority render fetchpriority="high" and loading="eager", never loading="lazy"; LowPriority renders fetchpriority="low" unless HighPriority is set.
+    enforced_by:
+      - test: framework/ui.TestImageHighPriorityLoadsEagerly
+      - test: framework/ui.TestImageLowPriority
   - id: gallery-thumbs-lazy
     rule: Every Gallery thumbnail renders loading="lazy".
     enforced_by:

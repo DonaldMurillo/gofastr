@@ -106,3 +106,53 @@ func TestOptimizedImageExtraAttrsOnRoot(t *testing.T) {
 		}
 	}
 }
+
+func TestImageHighPriorityLoadsEagerly(t *testing.T) {
+	for name, h := range map[string]render.HTML{
+		"optimized": OptimizedImage(OptimizedImageConfig{
+			Src: "/x.png", Alt: "x", Width: 1, Height: 1, HighPriority: true,
+		}),
+		"pipeline": PipelineImage(PipelineImageConfig{
+			Fallback: "/x.png", Alt: "x", Width: 1, Height: 1, HighPriority: true,
+		}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			mustContain(t, h, `fetchpriority="high"`)
+			mustContain(t, h, `loading="eager"`)
+			if strings.Contains(string(h), `loading="lazy"`) {
+				t.Fatalf("HighPriority image is lazy:\n%s", h)
+			}
+		})
+	}
+}
+
+func TestImageLowPriority(t *testing.T) {
+	for name, h := range map[string]render.HTML{
+		"optimized": OptimizedImage(OptimizedImageConfig{
+			Src: "/x.png", Alt: "x", Width: 1, Height: 1, LowPriority: true,
+		}),
+		"pipeline": PipelineImage(PipelineImageConfig{
+			Fallback: "/x.png", Alt: "x", Width: 1, Height: 1, LowPriority: true,
+		}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			mustContain(t, h, `fetchpriority="low"`)
+			mustContain(t, h, `loading="lazy"`)
+		})
+	}
+	both := OptimizedImage(OptimizedImageConfig{
+		Src: "/x.png", Alt: "x", Width: 1, Height: 1, HighPriority: true, LowPriority: true,
+	})
+	if strings.Contains(string(both), `fetchpriority="low"`) {
+		t.Fatalf("HighPriority must win over LowPriority:\n%s", both)
+	}
+}
+
+func TestAvatarImageHasDimensions(t *testing.T) {
+	for size, px := range map[AvatarSize]string{AvatarSm: "24", AvatarMd: "40", AvatarLg: "48", AvatarXl: "64"} {
+		h := Avatar(AvatarConfig{Name: "Ada", Src: "/a.png", Size: size})
+		mustContain(t, h, `width="`+px+`"`)
+		mustContain(t, h, `height="`+px+`"`)
+		mustContain(t, h, `loading="lazy"`)
+	}
+}

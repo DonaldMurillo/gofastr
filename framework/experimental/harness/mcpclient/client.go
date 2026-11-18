@@ -193,7 +193,7 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-// Call sends a JSON-RPC request and waits for its response, ctx, or a dead transport.
+// Call sends a JSON-RPC request and waits for its response, ctx, or a scanner error that stops the read loop while the call is pending.
 func (c *Client) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	if c.closed.Load() {
 		return nil, ErrClosed

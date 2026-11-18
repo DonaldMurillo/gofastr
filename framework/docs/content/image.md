@@ -305,6 +305,19 @@ would give two uploads the same rendition name.
 `Type` in input order. Put the modern format first so legacy browsers
 fall through to the `<img>` fallback.
 
+### Loading and priority
+
+`ui.OptimizedImage` and `ui.PipelineImage` load lazily by default.
+
+| Field | Renders |
+|---|---|
+| `Eager` | `loading="eager"` |
+| `HighPriority` | `fetchpriority="high"` and `loading="eager"`; use it on the page's main image (the LCP image) |
+| `LowPriority` | `fetchpriority="low"`; for images that matter less than their neighbours, such as carousel slides after the first. Ignored with `HighPriority` |
+
+`HighPriority` always loads eagerly: a lazy image is not fetched until
+layout, so a high priority hint on it would do nothing.
+
 ## Placeholders
 
 A placeholder is a cheap stand-in that paints before the real image
