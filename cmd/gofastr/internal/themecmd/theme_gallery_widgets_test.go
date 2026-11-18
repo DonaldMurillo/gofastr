@@ -24,9 +24,9 @@ func TestPreviewOpensGalleryWidgets(t *testing.T) {
 			visible := fmt.Sprintf(`(() => {
 				const widget = document.querySelector('[data-cui-widget="%s"]');
 				return !!widget && !widget.hidden && getComputedStyle(widget).display !== 'none'
-					&& !!document.querySelector('[data-cui-backdrop="%s"]')
+					&& widget.matches(':modal')
 					&& widget.getAnimations({subtree: true}).every(animation => animation.playState !== 'running');
-			})()`, name, name)
+			})()`, name)
 			if err := chromedp.Run(ctx,
 				chromedp.Navigate(server.URL+"/preview"),
 				axetest.WaitReady(),

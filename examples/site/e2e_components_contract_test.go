@@ -34,20 +34,20 @@ func TestE2E_Modal_OpensWithCorrectARIA(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-modal"]').click()`, nil),
 		waitFor(`(() => {
             const el = document.querySelector('[data-cui-widget="site-demo-modal"]');
-            return !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none' && !!document.querySelector('[data-cui-backdrop="site-demo-modal"]');
+            return !!el && !el.hasAttribute('hidden') && getComputedStyle(el).display !== 'none' && !!document.querySelector('[data-cui-widget="site-demo-modal"]')?.matches(':modal');
         })()`),
-		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-modal"]')?.getAttribute('role')`, &role),
-		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-modal"]')?.getAttribute('aria-modal')`, &ariaModal),
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-modal"]')?.tagName.toLowerCase()`, &role),
+		chromedp.Evaluate(`String(!!document.querySelector('[data-cui-widget="site-demo-modal"]')?.matches(':modal'))`, &ariaModal),
 		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-modal"]')?.getAttribute('aria-labelledby')`, &labelledBy),
-		chromedp.Evaluate(`!!document.querySelector('[data-cui-backdrop="site-demo-modal"]')`, &backdrop),
+		chromedp.Evaluate(`!!document.querySelector('[data-cui-widget="site-demo-modal"]')?.matches(':modal')`, &backdrop),
 	); err != nil {
 		t.Fatalf("modal: %v", err)
 	}
 	if role != "dialog" {
-		t.Errorf("role = %q, want dialog", role)
+		t.Errorf("modal root = <%s>, want <dialog>", role)
 	}
 	if ariaModal != "true" {
-		t.Errorf("aria-modal = %q, want true", ariaModal)
+		t.Errorf(":modal = %q, want true (opened with showModal)", ariaModal)
 	}
 	if labelledBy != "site-demo-modal-heading" {
 		t.Errorf("aria-labelledby = %q, want site-demo-modal-heading", labelledBy)
@@ -150,19 +150,19 @@ func TestE2E_Drawer_OpensWithBackdropAndScrollLock(t *testing.T) {
 		chromedp.Navigate(base+"/components/drawer"),
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-demo-drawer"]').click()`, nil),
-		waitFor(`!!document.querySelector('[data-cui-widget="site-demo-drawer"]') && !!document.querySelector('[data-cui-backdrop="site-demo-drawer"]') && document.documentElement.style.overflow === 'hidden'`),
-		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-drawer"]')?.getAttribute('role')`, &role),
-		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-drawer"]')?.getAttribute('aria-modal')`, &ariaModal),
-		chromedp.Evaluate(`!!document.querySelector('[data-cui-backdrop="site-demo-drawer"]')`, &backdrop),
+		waitFor(`!!document.querySelector('[data-cui-widget="site-demo-drawer"]') && !!document.querySelector('[data-cui-widget="site-demo-drawer"]')?.matches(':modal') && document.documentElement.style.overflow === 'hidden'`),
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="site-demo-drawer"]')?.tagName.toLowerCase()`, &role),
+		chromedp.Evaluate(`String(!!document.querySelector('[data-cui-widget="site-demo-drawer"]')?.matches(':modal'))`, &ariaModal),
+		chromedp.Evaluate(`!!document.querySelector('[data-cui-widget="site-demo-drawer"]')?.matches(':modal')`, &backdrop),
 		chromedp.Evaluate(`document.documentElement.style.overflow`, &overflow),
 	); err != nil {
 		t.Fatalf("drawer: %v", err)
 	}
 	if role != "dialog" {
-		t.Errorf("drawer role = %q", role)
+		t.Errorf("drawer root = <%s>, want <dialog>", role)
 	}
 	if ariaModal != "true" {
-		t.Errorf("drawer aria-modal = %q", ariaModal)
+		t.Errorf("drawer :modal = %q, want true", ariaModal)
 	}
 	if !backdrop {
 		t.Error("drawer should have a backdrop")
@@ -319,8 +319,8 @@ func TestE2E_Sidebar_HamburgerOpensDrawer(t *testing.T) {
 		chromedp.Evaluate(`!!document.querySelector('[data-cui-widget="ui-sidebar-drawer"]')`, &drawerPresent),
 		// Coalesce undefined→'' so an absent drawer fails on the assertion below
 		// rather than a chromedp "undefined value" error.
-		chromedp.Evaluate(`document.querySelector('[data-cui-widget="ui-sidebar-drawer"]')?.getAttribute('role') ?? ''`, &role),
-		chromedp.Evaluate(`document.querySelector('[data-cui-widget="ui-sidebar-drawer"]')?.getAttribute('aria-modal') ?? ''`, &ariaModal),
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="ui-sidebar-drawer"]')?.tagName.toLowerCase() ?? ''`, &role),
+		chromedp.Evaluate(`String(!!document.querySelector('[data-cui-widget="ui-sidebar-drawer"]')?.matches(':modal')) ?? ''`, &ariaModal),
 	); err != nil {
 		t.Fatalf("sidebar hamburger: %v", err)
 	}
@@ -331,10 +331,10 @@ func TestE2E_Sidebar_HamburgerOpensDrawer(t *testing.T) {
 		t.Fatal("hamburger click did not open the sidebar drawer — ui-sidebar-drawer is not mounted")
 	}
 	if role != "dialog" {
-		t.Errorf("sidebar drawer role = %q, want dialog", role)
+		t.Errorf("sidebar drawer root = <%s>, want <dialog>", role)
 	}
 	if ariaModal != "true" {
-		t.Errorf("sidebar drawer aria-modal = %q, want true", ariaModal)
+		t.Errorf("sidebar drawer :modal = %q, want true", ariaModal)
 	}
 }
 

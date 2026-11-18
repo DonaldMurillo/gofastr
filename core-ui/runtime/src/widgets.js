@@ -305,17 +305,6 @@
       NS._insertSheet ? NS._insertSheet(link) : document.head.appendChild(link);
     }
 
-    // Backdrop + chrome.
-    let backdrop = null;
-    if (cfg.backdrop) {
-      backdrop = document.querySelector('[data-cui-backdrop="' + CSS.escape(cfg.name) + '"]');
-      if (!backdrop) {
-        backdrop = document.createElement('div');
-        backdrop.className = 'cui-backdrop overlay-backdrop';
-        backdrop.setAttribute('data-cui-backdrop', cfg.name);
-        NS.doc.appendBody(backdrop);
-      }
-    }
     let w;
     if (existing) {
       w = existing;
@@ -324,10 +313,29 @@
       const tmp = document.createElement('div');
       tmp.innerHTML = html;
       w = tmp.firstElementChild;
-      NS.doc.appendBody(w);
     } else {
       delete NS._widgets[cfg.name];
       return;
+    }
+    const isModal = !!cfg.backdrop;
+    // A default-chrome modal is a <dialog> (#701): showModal() gives it
+    // the top layer, ::backdrop, an inert page and the close requests
+    // (Escape, the back gesture), so it needs no backdrop div; widgetfocus
+    // only wraps Tab inside it. Everything outside the top dialog is inert, so a
+    // panel opened over one mounts inside it.
+    const dlg = isModal && w.tagName == 'DIALOG';
+    const t = own(NS._modalStack.at(-1))?.root;
+    if (!isModal && t?.tagName == 'DIALOG') t.append(w);
+    else if (!existing) NS.doc.appendBody(w);
+    let backdrop = null;
+    if (isModal && !dlg) {
+      backdrop = document.querySelector('[data-cui-backdrop="' + CSS.escape(cfg.name) + '"]');
+      if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.className = 'cui-backdrop overlay-backdrop';
+        backdrop.setAttribute('data-cui-backdrop', cfg.name);
+        NS.doc.appendBody(backdrop);
+      }
     }
     const reg = NS._widgets[cfg.name];
     reg.root = w;
@@ -342,8 +350,12 @@
     if (cfg.closeOnEscape || cfg.backdrop) NS.loadModule('widgetfocus');
     if (cfg.deepLinkKey) NS.loadModule('widgetlinks');
 
-    const isModal = !!cfg.backdrop;
     const pf = isModal ? document.activeElement : null;
+    if (dlg) {
+      // The SSR copy carries open (non-modal); showModal needs it closed.
+      w.open = false;
+      w.showModal();
+    }
     if (isModal) {
       // Owner-refcounted viewport lock (NS.doc), the lock releases only
       // when the LAST owner unlocks, so a second locker (a media
@@ -412,6 +424,14 @@
         w.style.removeProperty('--ui-popover-arrow-x');
         w.style.removeProperty('--ui-popover-arrow-y');
         w.removeAttribute('data-cui-popover-side');
+      }
+      if (dlg) {
+        // Panels held inside this dialog go back to <body> with it.
+        for (const n in NS._widgets) {
+          const r = NS._widgets[n].root;
+          if (r != w && w.contains(r)) NS.doc.appendBody(r);
+        }
+        w.close();
       }
       if (hydrated && w) {
         w.setAttribute('hidden', '');
@@ -534,6 +554,25 @@
 
     if (cfg.closeOnClick && backdrop) backdrop.addEventListener('click', dismiss, on);
     if (isModal) reg.closeOnEscape = !!cfg.closeOnEscape;
+    if (dlg) {
+      // A close request the keyboard module did not take: the back
+      // gesture, or an Escape before that module loads. A popover opened
+      // above this modal owns it, as in widgetfocus.
+      w.addEventListener('cancel', e => {
+        e.preventDefault();
+        const p = own((NS._popoverStack || []).at(-1));
+        if (reg.closeOnEscape && !(p?.seq > reg.seq)) dismiss();
+      }, on);
+      // The browser closed it anyway (a repeated cancel without a user
+      // activation is not cancelable): tear down the same way.
+      w.addEventListener('close', dismiss, on);
+      // A click on the dialog box itself is a click on the backdrop. The
+      // press must start there too, so a text selection dragged out of
+      // the panel does not close it.
+      let down;
+      w.addEventListener('pointerdown', e => { down = e.target; }, on);
+      if (cfg.closeOnClick) w.addEventListener('click', e => { e.target == w && down == w && dismiss(); }, on);
+    }
 
     if (!isModal && (cfg.closeOnEscape || cfg.closeOnClick)) {
       reg.closeOnEscape = !!cfg.closeOnEscape;
