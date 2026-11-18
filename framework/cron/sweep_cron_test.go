@@ -37,11 +37,21 @@ func TestPlainLeaseTickReturnsWhileItsJobRuns(t *testing.T) {
 	}
 	done := make(chan struct{})
 	go func() { s.runTick(context.Background(), time.Now()); close(done) }()
-	<-started
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the tick's job never started")
+	}
 	select {
 	case <-done:
 	case <-time.After(time.Second):
-		close(release)
 		t.Fatal("runTick under a plain lease waited for its job before returning")
 	}
 	select {
@@ -71,5 +81,21 @@ func TestGateSkipsJobOnceJobsAreJoined(t *testing.T) {
 	s.Stop()
 	if ran.Load() {
 		t.Fatal("a job its gate refused ran")
+	}
+}
+
+func TestSpringForwardGapScanIsBounded(t *testing.T) {
+	loc, err := time.LoadLocation("Antarctica/Casey")
+	if err != nil {
+		t.Skip(err)
+	}
+	s, _ := Parse("30 2 * * *")
+	prev := time.Date(2020, 10, 4, 0, 0, 0, 0, loc)
+	after := prev.Add(time.Minute)
+	if _, off := after.Zone(); off != 11*3600 {
+		t.Skipf("tzdata has no three-hour jump here (offset %d)", off)
+	}
+	if s.FiresAt(prev, after) {
+		t.Fatal("a time three hours inside the gap fired; the 120-minute scan bound changed, so update cron.schedule/fixed-time-runs-once-across-dst")
 	}
 }
