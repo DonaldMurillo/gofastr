@@ -55,7 +55,7 @@ decisions:
   - id: bare-with-tx-falls-back-to-polling
     date: 2026-11-17
     status: accepted
-    decision: A caller's own transaction wrapped with bare WithTx carries no queue, and crud falls back to polling it and re-checking the row on the base connection.
+    decision: A caller's own transaction wrapped with bare WithTx, on a ctx that has no queue yet, carries no queue (WithTx keeps a queue ctx already carries), and crud falls back to polling it and re-checking the row on the base connection.
     rejected:
       - option: Refuse a transaction with no queue.
         why: Callers who own their tx and use WithTx would lose live events; WithTxQueue is the way to opt out of the probe.

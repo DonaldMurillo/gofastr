@@ -22,7 +22,7 @@ func TxFromContext(ctx context.Context) (*sql.Tx, bool) {
 	return tx, ok
 }
 
-// WithTx returns ctx carrying tx and no commit queue.
+// WithTx returns ctx carrying tx; it adds no commit queue and keeps one ctx already carries.
 func WithTx(ctx context.Context, tx *sql.Tx) context.Context {
 	return context.WithValue(ctx, txKey{}, tx)
 }
@@ -77,7 +77,7 @@ func WithTxQueue(ctx context.Context, tx *sql.Tx) (context.Context, *CommitQueue
 	return context.WithValue(WithTx(ctx, tx), commitQueueKey{}, q), q
 }
 
-// CommitQueueFromContext returns the ambient transaction's queue; a tx set by bare WithTx has none.
+// CommitQueueFromContext returns the ambient transaction's queue; bare WithTx on a ctx without one leaves none.
 func CommitQueueFromContext(ctx context.Context) (*CommitQueue, bool) {
 	q, ok := ctx.Value(commitQueueKey{}).(*CommitQueue)
 	return q, ok

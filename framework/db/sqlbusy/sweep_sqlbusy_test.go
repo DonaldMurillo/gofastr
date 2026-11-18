@@ -32,18 +32,28 @@ func TestRetryOnAnEndedContextNeverCalls(t *testing.T) {
 }
 
 func TestDefaultBudgetIsTenSeconds(t *testing.T) {
+	if DefaultBudget != 10*time.Second {
+		t.Fatalf("DefaultBudget = %v, want 10s", DefaultBudget)
+	}
 	start := time.Now()
 	calls := 0
-	_ = Retry(context.Background(), func(ctx context.Context) error {
+	err := Retry(context.Background(), func(ctx context.Context) error {
 		calls++
 		if calls == 1 {
 			return codedError(5)
 		}
-		if d, _ := ctx.Deadline(); d.Sub(start) < 9*time.Second {
-			t.Fatalf("retry budget is %v, want ten seconds", d.Sub(start))
+		d, ok := ctx.Deadline()
+		if !ok {
+			t.Fatal("retry context has no deadline")
+		}
+		if lo, hi := start.Add(DefaultBudget), time.Now().Add(DefaultBudget); d.Before(lo) || d.After(hi) {
+			t.Fatalf("retry deadline is %v after start, want %v", d.Sub(start), DefaultBudget)
 		}
 		return nil
 	})
+	if err != nil || calls != 2 {
+		t.Fatalf("Retry = %v after %d calls, want nil after 2", err, calls)
+	}
 }
 
 func TestExecReportsRowsOfTheAttemptThatLanded(t *testing.T) {

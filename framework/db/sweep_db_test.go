@@ -65,7 +65,9 @@ func TestInSavepointUndoesOnlyItsOwnWritesOnError(t *testing.T) {
 			return err
 		}
 		inner := InSavepoint(ctx, tx, func(ctx context.Context, tx *sql.Tx) error {
-			_ = insert("inner")(ctx, tx)
+			if err := insert("inner")(ctx, tx); err != nil {
+				t.Fatal(err)
+			}
 			return boom
 		})
 		if !errors.Is(inner, boom) {
@@ -98,7 +100,9 @@ func TestInSavepointUndoesWritesOnPanic(t *testing.T) {
 	func() {
 		defer func() { _ = recover() }()
 		_ = InSavepoint(context.Background(), tx, func(ctx context.Context, tx *sql.Tx) error {
-			_ = insert("x")(ctx, tx)
+			if err := insert("x")(ctx, tx); err != nil {
+				t.Fatal(err)
+			}
 			panic("hook fault")
 		})
 	}()
@@ -112,7 +116,9 @@ func TestInSavepointRollsBackDespiteACancelledContext(t *testing.T) {
 		_, tx := savepointTx(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		err := InSavepoint(ctx, tx, func(ctx context.Context, tx *sql.Tx) error {
-			_ = insert("x")(ctx, tx)
+			if err := insert("x")(ctx, tx); err != nil {
+				t.Fatal(err)
+			}
 			cancel()
 			if failing {
 				return errors.New("fn failed")

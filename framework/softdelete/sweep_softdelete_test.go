@@ -49,8 +49,9 @@ func TestHelpersWriteOnlyTheNamedRow(t *testing.T) {
 	if err := ForceDelete(ctx, conn, "notes", "a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, b, n := state(); n != 1 || b {
-		t.Fatalf("after ForceDelete(a): rows=%d, want b alone", n)
+	var left string
+	if err := conn.QueryRow(`SELECT id FROM notes`).Scan(&left); err != nil || left != "b" {
+		t.Fatalf("after ForceDelete(a): surviving row = %q, %v; want b alone", left, err)
 	}
 }
 

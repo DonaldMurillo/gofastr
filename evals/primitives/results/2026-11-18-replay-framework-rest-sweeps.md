@@ -11,8 +11,10 @@ pre-fix outbox registry).
 
 ## 1. Is the eval working?
 
-**Yes**: every cell graded, and main scores the same as the head on the
-two numbers that fell (about $24 at the head, $6.74 at main).
+**Yes**: every cell graded. On the two numbers that fell, main scores
+3/12 against the head's 2/12 on the blind twins and 5/6 against 5/6 on
+the upgrade note. One cell in twelve is within run-to-run noise (about
+$24 at the head, $6.74 at main).
 
 ## 2. What is working, and how much
 
