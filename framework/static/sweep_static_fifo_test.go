@@ -69,3 +69,25 @@ func sweepFIFOApp() *coreapp.App {
 	a.Register("/", &homeScreen{}, nil)
 	return a
 }
+
+func TestSweepStaticIrregularSourceKeepsGenerated(t *testing.T) {
+	src := t.TempDir()
+	if err := syscall.Mkfifo(filepath.Join(src, "robots.txt"), 0o644); err != nil {
+		t.Skipf("mkfifo: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(src, "sitemap.xml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	host := uihost.New(sweepFIFOApp(), uihost.WithStaticDir(src),
+		uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://example.com"}),
+		uihost.WithRobots(uihost.RobotsConfig{}))
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"robots.txt", "sitemap.xml"} {
+		if fi, err := os.Stat(filepath.Join(out, name)); err != nil || !fi.Mode().IsRegular() {
+			t.Errorf("%s: a source entry that is not a regular file kept the generated file out (%v)", name, err)
+		}
+	}
+}

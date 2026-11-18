@@ -30,6 +30,9 @@ few lines, and link the PR or the docs page for the rest.
   checked, and the open waited for a writer forever, as did a symlink to one in a static FS or
   an `ExtraDirs` directory. The build now skips and logs anything that is not a regular file before
   opening it.
+- **A directory or named pipe in the static source no longer drops a generated file from an
+  export.** A `sitemap.xml`, `robots.txt`, app icon or PWA file of that name that was not a regular
+  file kept the generated one out, and the copy skipped it, so the export held neither.
 - **`core/static.Handler` answers 404 for a named pipe or device file instead of hanging.** A
   request for a FIFO in a served directory opened it and waited for a writer forever; the handler
   now checks the file's type before opening it.
