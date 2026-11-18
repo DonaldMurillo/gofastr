@@ -26,14 +26,13 @@ func sheetOpen(name string) chromedp.Action {
 		const l=document.querySelector('link[data-cui-style="` + name + `"]');
 		if(l&&!l.sheet)return false;
 		if(getComputedStyle(document.documentElement).overflow!=='hidden')return false;
-		const b=document.querySelector('[data-cui-backdrop="` + name + `"]');
-		return [w,b].every(e=>!e||e.getAnimations().every(a=>a.playState!=='running'))})()`)
+		return w.getAnimations({subtree:true}).every(a=>a.playState!=='running')})()`)
 }
 
 // sheetClosed waits until the named modal widget has been dismissed:
-// no backdrop left and the scroll lock released.
+// its dialog gone from the top layer and the scroll lock released.
 func sheetClosed(name string) chromedp.Action {
-	return waitFor(`!document.querySelector('[data-cui-backdrop="` + name + `"]')&&getComputedStyle(document.documentElement).overflow!=='hidden'`)
+	return waitFor(`!document.querySelector('[data-cui-widget="` + name + `"]:modal')&&getComputedStyle(document.documentElement).overflow!=='hidden'`)
 }
 
 // scrolledTo waits until a programmatic scroll to y (clamped to the
@@ -118,7 +117,7 @@ func TestE2E_SectionMenu_MobileDrawer(t *testing.T) {
 		sheetOpen(drawer), // lazy widget chrome + open
 		chromedp.Evaluate(`document.querySelector('.cui-sheet-pill').getBoundingClientRect().top`, &triggerTopAfter),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowOpen),
-		chromedp.Evaluate(`!!document.querySelector('[data-cui-backdrop="`+drawer+`"]')`, &backdropPresent),
+		chromedp.Evaluate(`!!document.querySelector('[data-cui-widget="`+drawer+`"]:modal')`, &backdropPresent),
 		// Close on OUTSIDE click: tap the dim strip above the bottom sheet
 		// (at most 75vh tall). Clicking the sheet itself would (correctly)
 		// NOT dismiss.
