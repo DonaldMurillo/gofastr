@@ -322,7 +322,7 @@ func TestSecurityHeaders(t *testing.T) {
 		"default-src 'self'",
 		"img-src 'self' data:",
 		"frame-ancestors 'none'",
-		"base-uri 'self'",
+		"base-uri 'none'",
 	} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("CSP missing %q; got %q", want, csp)

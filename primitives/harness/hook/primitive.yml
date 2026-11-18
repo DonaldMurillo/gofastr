@@ -20,10 +20,11 @@ invariants:
       - test: framework/experimental/harness/hook.TestProjectHookSkippedByDefault
       - test: framework/experimental/harness/hook.TestProjectHookAllowedWithFlag
   - id: timeout-signals-process-group
-    rule: On Unix a hook runs in its own process group; at its deadline the group gets SIGTERM, Run returns within the 5s WaitDelay grace even when a descendant holds the output pipe, and the group then gets SIGKILL.
+    rule: On Unix a hook runs in its own process group; at its deadline the group gets SIGTERM, Run returns within the 5s WaitDelay grace even when a descendant holds the output pipe or ignores SIGTERM, and the group then gets SIGKILL, so a TERM-ignoring descendant is gone within 5s of the deadline.
     enforced_by:
       - test: framework/experimental/harness/hook.TestRunTimeoutReturnsPromptly
       - test: framework/experimental/harness/hook.TestRunTimeout
+      - test: framework/experimental/harness/hook.TestRunTimeoutKillsTermIgnoringDescendant
   - id: output-capped-with-one-marker
     rule: A hook's combined stdout and stderr is cut at 64 KiB and carries exactly one truncation marker, whatever the write sizes.
     enforced_by:

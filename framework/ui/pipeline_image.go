@@ -69,7 +69,8 @@ type PipelineImageConfig struct {
 	Placeholder string
 
 	Eager        bool
-	HighPriority bool
+	HighPriority bool // fetchpriority="high"; implies eager
+	LowPriority  bool // fetchpriority="low"; ignored with HighPriority
 	Fit          ImageFit
 	Aspect       ImageAspect
 	Rounded      bool
@@ -109,27 +110,18 @@ func PipelineImage(cfg PipelineImageConfig) render.HTML {
 	}
 	cls := imageRootClass(cfg.Fit, cfg.Aspect, cfg.Rounded, lqip != "", cfg.Class)
 
-	loading := "lazy"
-	if cfg.Eager {
-		loading = "eager"
-	}
 	sizes := cfg.Sizes
 	if sizes == "" {
 		sizes = "100vw"
 	}
 
-	imgAttrs := html.Attrs{
-		"loading":  loading,
-		"decoding": "async",
-	}
+	imgAttrs := html.Attrs{"decoding": "async"}
+	setImagePriority(imgAttrs, cfg.Eager, cfg.HighPriority, cfg.LowPriority)
 	if cfg.Width > 0 {
 		imgAttrs["width"] = strconv.Itoa(cfg.Width)
 	}
 	if cfg.Height > 0 {
 		imgAttrs["height"] = strconv.Itoa(cfg.Height)
-	}
-	if cfg.HighPriority {
-		imgAttrs["fetchpriority"] = "high"
 	}
 
 	img := html.Image(html.ImageConfig{

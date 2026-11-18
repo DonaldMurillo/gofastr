@@ -15,6 +15,10 @@ code:
   - framework/ui/icon.go
   - framework/ui/icons/
 invariants:
+  - id: avatar-image-reserves-its-box
+    rule: An Avatar with Src renders its <img> with width and height equal to its size's CSS default at a 16px root (24, 40, 48, 64), loading="lazy" and decoding="async".
+    enforced_by:
+      - test: framework/ui.TestAvatarImageHasDimensions
   - id: slug-keeps-every-script
     rule: A section id derived from its heading keeps the letters and digits of every script, lowercased, so a non-Latin heading still gets an anchor.
     enforced_by:

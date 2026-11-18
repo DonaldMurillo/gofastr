@@ -21,7 +21,8 @@ func WithHTTPMiddleware(mw ...router.Middleware) HandleOption {
 }
 
 // Handle declares t as Register does and binds handler on rt at t's method
-// and path; on any error it registers neither.
+// and path. An error registers neither, except a panic from the router's
+// register hook, which runs after the route is installed.
 func (h *Host) Handle(rt *router.Router, t Tool, handler http.Handler, opts ...HandleOption) error {
 	var cfg handleConfig
 	for _, opt := range opts {

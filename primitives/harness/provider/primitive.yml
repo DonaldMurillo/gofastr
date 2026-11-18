@@ -20,8 +20,8 @@ twins:
       - path: framework/experimental/harness/provider/zai/zai.go
         note: Provider.Chat, picks the general or Coding Plan base URL.
 invariants:
-  - id: estimate-four-chars-per-token
-    rule: EstimateTokens counts the characters of text blocks, tool-use names and inputs and tool-result text, and divides by four rounding up, so a partial token counts as one.
+  - id: estimate-four-bytes-per-token
+    rule: EstimateTokens counts the bytes of text blocks, tool-use names and inputs and tool-result text, and divides by four rounding up, so a partial token counts as one.
     enforced_by:
       - test: framework/experimental/harness/provider.TestEstimateTokens
   - id: usd-prices-every-token-class
@@ -31,7 +31,7 @@ invariants:
       - test: framework/experimental/harness/provider.TestSweepUSDPricesCacheWrites
       - test: framework/experimental/harness/provider.TestUSDForUsage_ZeroPricingZeroCost
   - id: unknown-model-has-no-price
-    rule: PricingForModel returns false for a provider and model pair outside its static table, so a caller skips cost emission instead of recording a made-up price.
+    rule: PricingForModel returns false for a provider and model pair absent from its static table.
     enforced_by:
       - test: framework/experimental/harness/provider.TestPricingForModel_UnknownReturnsFalse
       - test: framework/experimental/harness/provider.TestPricingForModel_KnownProviders
@@ -39,12 +39,12 @@ decisions:
   - id: estimate-instead-of-tokenizer
     date: 2026-11-18
     status: accepted
-    decision: Both adapters answer TokenCount with the shared four-characters-per-token estimate.
+    decision: Both adapters answer TokenCount with the shared four-bytes-per-token estimate.
     rejected:
       - option: Call a tokenization endpoint or bundle a tokenizer.
         why: Neither OpenRouter nor ZAI exposes a tokenization endpoint, and the harness bundles no model SDK.
     revisit_if: A provider ships a tokenization endpoint, or compaction triggers too late because the estimate undercounts.
-    upholds: [estimate-four-chars-per-token]
+    upholds: [estimate-four-bytes-per-token]
   - id: static-pricing-only-where-no-catalog-prices
     date: 2026-11-18
     status: accepted
