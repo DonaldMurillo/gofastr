@@ -480,3 +480,55 @@ func TestSweepStaticWorkerHashesUserFileUnderPWADir(t *testing.T) {
 		t.Error("a user file under __gofastr/pwa/ changed without changing the worker")
 	}
 }
+
+func TestSweepStaticSourceHasMatchesCopy(t *testing.T) {
+	seo := func(h *uihost.UIHost) string {
+		t.Helper()
+		out := t.TempDir()
+		if _, err := (&Builder{Host: h, OutDir: out}).Build(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := os.ReadFile(filepath.Join(out, "robots.txt"))
+		return string(got)
+	}
+	opts := []uihost.Option{uihost.WithRobots(uihost.RobotsConfig{})}
+
+	src, outside := t.TempDir(), filepath.Join(t.TempDir(), "robots.txt")
+	if err := os.WriteFile(outside, []byte("User-agent: *\nDisallow: /outside\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(src, "robots.txt")); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	if got := seo(uihost.New(sweepSourceApp(), append(opts, uihost.WithStaticDir(src))...)); strings.Contains(got, "/outside") || got == "" {
+		t.Errorf("an escaping symlink kept the generated robots.txt out: %q", got)
+	}
+
+	h := uihost.New(sweepSourceApp(), opts...)
+	h.SetStaticFS(sweepUnstattableFS{fstest.MapFS{"robots.txt": {Mode: fs.ModeNamedPipe}}})
+	if got := seo(h); got == "" {
+		t.Error("an entry that cannot be stat'ed and is listed as a pipe kept the generated robots.txt out")
+	}
+}
+
+func sweepSourceApp() *coreapp.App {
+	a := coreapp.NewApp("Source")
+	a.Register("/", &homeScreen{}, nil)
+	return a
+}
+
+type sweepUnstattableFS struct{ fstest.MapFS }
+
+func (f sweepUnstattableFS) Open(name string) (fs.File, error) {
+	if name == "robots.txt" {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
+	}
+	return f.MapFS.Open(name)
+}
+
+func (f sweepUnstattableFS) Stat(name string) (fs.FileInfo, error) {
+	if name == "robots.txt" {
+		return nil, &fs.PathError{Op: "stat", Path: name, Err: fs.ErrPermission}
+	}
+	return f.MapFS.Stat(name)
+}
