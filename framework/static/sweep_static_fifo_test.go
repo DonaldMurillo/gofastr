@@ -21,6 +21,9 @@ func TestSweepStaticSkipsFIFO(t *testing.T) {
 	if err := syscall.Mkfifo(filepath.Join(src, "pipe"), 0o644); err != nil {
 		t.Skipf("mkfifo: %v", err)
 	}
+	if err := os.Symlink("pipe", filepath.Join(src, "alias")); err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct {
 		name string
 		dir  string
@@ -59,7 +62,7 @@ func TestSweepStaticSkipsFIFO(t *testing.T) {
 	}
 }
 
-var sweepFIFONames = []string{"pipe"}
+var sweepFIFONames = []string{"pipe", "alias"}
 
 func sweepFIFOApp() *coreapp.App {
 	a := coreapp.NewApp("FIFO")
