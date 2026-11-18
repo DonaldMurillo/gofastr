@@ -20,7 +20,7 @@ invariants:
       - test: framework/event.TestAttachFanoutRejectsDoubleAttach
       - test: framework/event.TestAttachFanoutDetachReattach
   - id: tap-never-blocks-an-emitter
-    rule: The tap enqueues onto a bounded queue drained by one publisher goroutine and, when the queue is full, drops the oldest envelope and tries once more, dropping the new one when a concurrent producer refilled the slot, so a stalled fanout stalls no emitter and a single producer's newest events go out.
+    rule: The tap enqueues onto a bounded queue drained by one publisher goroutine and, when the queue is full, drops the oldest envelope and tries once more, dropping the new one when a concurrent producer refilled the slot, so a stalled fanout stalls no emitter and, with a single producer, the retry enqueues the current envelope; an enqueued envelope can still be evicted by later ones, left unsent when the bridge stops, or lost to a failed Publish.
     enforced_by:
       - test: framework/event.TestBridgeEmitDoesNotBlockOnStalledFanout
       - test: framework/event.TestBridgeOverflowDropsOldest
