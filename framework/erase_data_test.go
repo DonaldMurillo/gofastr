@@ -1260,7 +1260,7 @@ func seedRetention(t *testing.T, db *sql.DB, tenant, user, store, email string, 
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO `+eraseIdentitiesTable+` (tenant, user_id, store, kind, value, expires_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		tenant, user, "test/"+store, int64(datexport.IdentityEmail), email, expires.Unix()); err != nil {
+		tenant, user, "4:test/"+store, int64(datexport.IdentityEmail), email, expires.Unix()); err != nil {
 		t.Fatal(err)
 	}
 }

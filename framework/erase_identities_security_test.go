@@ -172,6 +172,11 @@ func TestRetryKeepsTheFirstExpiryAndNeverRestores(t *testing.T) {
 		}})
 	first := time.Now().Add(24 * time.Hour).Truncate(time.Second)
 	seedRetention(t, db, "", "u1", "flaky", "u1@x.test", first)
+	// The same email still resolves live, so the failure's insert meets
+	// the kept row: the conflict must leave its first expiry.
+	if _, err := db.Exec(`INSERT INTO auth_users (id, email) VALUES ('u1','u1@x.test')`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := app.EraseUserData(ctx, "u1"); err == nil {
 		t.Fatal("a failed store did not fail the erasure")
 	}
@@ -328,7 +333,7 @@ func TestInconclusiveHolderCheckKeepsTheRow(t *testing.T) {
 	if _, ok := got.Identity(datexport.IdentityEmail); ok {
 		t.Fatalf("an unchecked kept value reached the store: %+v", got)
 	}
-	if n := countWhere(t, db, eraseIdentitiesTable, "store", "test/b"); n != 1 {
+	if n := countWhere(t, db, eraseIdentitiesTable, "store", "4:test/b"); n != 1 {
 		t.Fatalf("rows for b after an inconclusive check: %d, want 1", n)
 	}
 }
@@ -518,7 +523,7 @@ func TestRetentionIsKeyedBySourceAndName(t *testing.T) {
 	if _, ok := got.Identity(datexport.IdentityEmail); ok {
 		t.Fatalf("another source's store got the kept email: %+v", got)
 	}
-	if n := countWhere(t, db, eraseIdentitiesTable, "store", "test/s"); n != 1 {
+	if n := countWhere(t, db, eraseIdentitiesTable, "store", "4:test/s"); n != 1 {
 		t.Fatalf("rows for test/s after another store succeeded: %d, want 1", n)
 	}
 }
@@ -571,7 +576,7 @@ func TestCanonicalizerPanicIsNoAnswer(t *testing.T) {
 	if _, ok := got.Identity(datexport.IdentityEmail); ok {
 		t.Fatalf("the store got a value whose check panicked: %+v", got)
 	}
-	if n := countWhere(t, db, eraseIdentitiesTable, "store", "test/s"); n != 1 {
+	if n := countWhere(t, db, eraseIdentitiesTable, "store", "4:test/s"); n != 1 {
 		t.Fatalf("rows after a panicking check: %d, want 1", n)
 	}
 }
@@ -666,7 +671,7 @@ func TestRepeatedFailureKeepsEachIdentity(t *testing.T) {
 	if !slices.Equal(got, []string{"a@x.test", "b@x.test"}) {
 		t.Fatalf("the retry gave the store %v, want both kept identities", got)
 	}
-	if n := countWhere(t, db, eraseIdentitiesTable, "store", "test/s"); n != 0 {
+	if n := countWhere(t, db, eraseIdentitiesTable, "store", "4:test/s"); n != 0 {
 		t.Fatalf("rows left after the retry succeeded: %d", n)
 	}
 }
@@ -747,5 +752,91 @@ func TestAppStartSweepsExpiredRetention(t *testing.T) {
 			t.Fatal("App start left an expired kept email stored")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// No two source and name pairs share a retention key.
+func TestStoreKeyIsUnambiguous(t *testing.T) {
+	a := storeKey(datexport.StoreEraser{Source: "app", Name: "cache/profiles"})
+	b := storeKey(datexport.StoreEraser{Source: "app/cache", Name: "profiles"})
+	if a == b {
+		t.Fatalf("two stores share the key %q", a)
+	}
+}
+
+// A kept value deferred because its kind resolves to another value now
+// stays when the store succeeds with the live value.
+func TestDeferredKeptValueSurvivesASuccess(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	if _, err := db.Exec(`INSERT INTO auth_users (id, email) VALUES ('u1','b@x.test')`); err != nil {
+		t.Fatal(err)
+	}
+	registerMagicLinkEraseScenario(t)
+	seedRetention(t, db, "", "u1", "s", "a@x.test", time.Now().Add(time.Hour))
+	regStore(t, datexport.StoreEraser{Name: "s", Source: "test",
+		EraseResolved: func(context.Context, datexport.ErasedUser, bool) (int, error) { return 0, nil }})
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if n := countWhere(t, db, eraseIdentitiesTable, "value", "a@x.test"); n != 1 {
+		t.Fatal("a kept value the store never got was removed by its success")
+	}
+}
+
+// A further run whose kept value expired during an earlier run of the
+// same store does not happen.
+func TestFurtherRunRechecksExpiry(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	registerMagicLinkEraseScenario(t)
+	start := time.Now()
+	clock := fakeRetentionClock(t, start)
+	seedRetention(t, db, "", "u1", "s", "a@x.test", start.Add(10*time.Second))
+	seedRetention(t, db, "", "u1", "s", "b@x.test", start.Add(10*time.Second))
+	var got []string
+	regStore(t, datexport.StoreEraser{Name: "s", Source: "test",
+		EraseResolved: func(_ context.Context, u datexport.ErasedUser, _ bool) (int, error) {
+			e, _ := u.Identity(datexport.IdentityEmail)
+			got = append(got, e)
+			*clock = start.Add(20 * time.Second)
+			return 0, nil
+		}})
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("store runs %v, want one: the second value expired during the first", got)
+	}
+}
+
+// A dry run counts what the store keys by user id once, however many
+// kept values it runs with.
+func TestDryRunCountsIDKeyedRecordsOnce(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	registerMagicLinkEraseScenario(t)
+	seedRetention(t, db, "", "u1", "s", "a@x.test", time.Now().Add(time.Hour))
+	seedRetention(t, db, "", "u1", "s", "b@x.test", time.Now().Add(time.Hour))
+	// One record keyed by the user id, one keyed by each email.
+	regStore(t, datexport.StoreEraser{Name: "s", Source: "test",
+		EraseResolved: func(_ context.Context, u datexport.ErasedUser, _ bool) (int, error) {
+			n := 1
+			if _, ok := u.Identity(datexport.IdentityEmail); ok {
+				n++
+			}
+			return n, nil
+		}})
+	rep, err := app.EraseUserData(context.Background(), "u1", WithEraseDryRun())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range rep.Stores {
+		if st.Name == "s" && st.RowsAffected != 3 {
+			t.Fatalf("dry-run count %d, want 3 (the id-keyed record once, each email once)", st.RowsAffected)
+		}
 	}
 }

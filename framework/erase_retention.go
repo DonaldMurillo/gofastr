@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,11 +52,15 @@ func hasResolvedStoreErasers() bool {
 var retentionNow = time.Now
 
 // storeKey names a store eraser in the retention table: its source and
-// registration name. A process restart registers every store again
+// registration name, the source length-prefixed. A process restart registers every store again
 // under the same name, and a retry must find its rows across one, so
 // the name is the identity; a store that registers under a name another
 // store used before is taken as the same store.
-func storeKey(s datexport.StoreEraser) string { return s.Source + "/" + s.Name }
+func storeKey(s datexport.StoreEraser) string {
+	// The source's length goes first, so no two source and name pairs
+	// share a key ("app" + "cache/x" and "app/cache" + "x" differ).
+	return strconv.Itoa(len(s.Source)) + ":" + s.Source + "/" + s.Name
+}
 
 // keptRow is one kept identity of one store.
 type keptRow struct {
@@ -100,57 +105,6 @@ func (a *App) readRetention(ctx context.Context, dialect migrate.Dialect, tenant
 		out[store] = append(out[store], r)
 	}
 	return out, rows.Err()
-}
-
-// retainedUsersFor answers the users one store eraser is run with: user
-// itself, its kept values filling kinds where nothing resolves now, and
-// one more run for each further kept value of a kind. A value expired
-// by its handoff, or that another account holds, is left out; incomplete
-// reports one left out because that could not be told.
-func (a *App) retainedUsersFor(ctx context.Context, dialect migrate.Dialect, user datexport.ErasedUser, kept []keptRow) (users []datexport.ErasedUser, incomplete bool) {
-	type cand struct {
-		row keptRow
-	}
-	var cands []cand
-	for _, r := range kept {
-		if _, live := user.Identity(r.kind); live || r.expires < retentionNow().Unix() {
-			continue
-		}
-		held, err := a.identityHeldByOther(ctx, dialect, r.kind, r.value, user.ID)
-		if err != nil {
-			incomplete = true
-			continue
-		}
-		if held {
-			continue
-		}
-		cands = append(cands, cand{r})
-	}
-	base := datexport.ErasedUser{ID: user.ID, Identities: maps.Clone(user.Identities)}
-	if base.Identities == nil {
-		base.Identities = map[datexport.IdentityKind]string{}
-	}
-	var extra []keptRow
-	// The holder lookups take time: a value that expired meanwhile is
-	// not handed over.
-	now := retentionNow().Unix()
-	for _, c := range cands {
-		if c.row.expires < now {
-			continue
-		}
-		if _, ok := base.Identity(c.row.kind); ok {
-			extra = append(extra, c.row)
-			continue
-		}
-		base.Identities[c.row.kind] = c.row.value
-	}
-	users = []datexport.ErasedUser{base}
-	for _, r := range extra {
-		u := datexport.ErasedUser{ID: user.ID, Identities: maps.Clone(base.Identities)}
-		u.Identities[r.kind] = r.value
-		users = append(users, u)
-	}
-	return users, incomplete
 }
 
 // identityHeldByOther reports whether a live row of kind's resolver table
@@ -206,14 +160,98 @@ func (a *App) identityHeldByOther(ctx context.Context, dialect migrate.Dialect, 
 	return false, rows.Err()
 }
 
+// storeRun is one run of a store eraser: the user it gets and, for each
+// kind its value came from retention, that kept row (checked for expiry
+// again just before the run).
+type storeRun struct {
+	user datexport.ErasedUser
+	kept map[datexport.IdentityKind]keptRow
+}
+
+// storePlan is how one store eraser is run on a retry.
+type storePlan struct {
+	runs []storeRun
+	// handled is the kept rows this attempt answers for: handed over,
+	// held by another account, or expired. Only these go on success; a
+	// row deferred because the kind resolves to another value now stays.
+	handled []keptRow
+	// incomplete: a kept value was withheld because whether another
+	// account holds it could not be told.
+	incomplete bool
+}
+
+// retainedPlanFor plans one store eraser's runs: user itself, its kept
+// values filling kinds where nothing resolves now, and one more run for
+// each further kept value of a kind. A value expired, or that another
+// account holds, is left out.
+func (a *App) retainedPlanFor(ctx context.Context, dialect migrate.Dialect, user datexport.ErasedUser, kept []keptRow) storePlan {
+	var plan storePlan
+	var cands []keptRow
+	for _, r := range kept {
+		if _, live := user.Identity(r.kind); live {
+			continue // deferred: stays for a run that gets it
+		}
+		if r.expires < retentionNow().Unix() {
+			plan.handled = append(plan.handled, r)
+			continue
+		}
+		held, err := a.identityHeldByOther(ctx, dialect, r.kind, r.value, user.ID)
+		if err != nil {
+			plan.incomplete = true
+			continue
+		}
+		plan.handled = append(plan.handled, r)
+		if !held {
+			cands = append(cands, r)
+		}
+	}
+	base := storeRun{user: datexport.ErasedUser{ID: user.ID, Identities: maps.Clone(user.Identities)}, kept: map[datexport.IdentityKind]keptRow{}}
+	if base.user.Identities == nil {
+		base.user.Identities = map[datexport.IdentityKind]string{}
+	}
+	var extra []keptRow
+	for _, r := range cands {
+		if _, ok := base.user.Identity(r.kind); ok {
+			extra = append(extra, r)
+			continue
+		}
+		base.user.Identities[r.kind] = r.value
+		base.kept[r.kind] = r
+	}
+	plan.runs = []storeRun{base}
+	for _, r := range extra {
+		run := storeRun{user: datexport.ErasedUser{ID: user.ID, Identities: maps.Clone(base.user.Identities)}, kept: maps.Clone(base.kept)}
+		run.user.Identities[r.kind] = r.value
+		run.kept[r.kind] = r
+		plan.runs = append(plan.runs, run)
+	}
+	return plan
+}
+
+// current drops from run the kept values expired by now; ok is false
+// when the run existed only for a value that expired.
+func (run storeRun) current(extra bool) (datexport.ErasedUser, bool) {
+	now := retentionNow().Unix()
+	u := datexport.ErasedUser{ID: run.user.ID, Identities: maps.Clone(run.user.Identities)}
+	for kind, r := range run.kept {
+		if r.expires < now {
+			if extra {
+				return u, false
+			}
+			delete(u.Identities, kind)
+		}
+	}
+	return u, true
+}
+
 // eraseStoresRetained runs the store erasers after the SQL commit, each
 // with what failed erasures kept for it, and records the outcome.
 func (a *App) eraseStoresRetained(ctx context.Context, dialect migrate.Dialect, tenant string, user datexport.ErasedUser, rep *EraseReport) error {
-	ret, rerr, userFor := a.retainedUsers(ctx, dialect, tenant, user)
+	ret, rerr, planFor := a.retainedPlans(ctx, dialect, tenant, user)
 	outcome := map[string]storeOutcome{}
-	storeErr := a.eraseStores(ctx, false, rep, userFor, func(s datexport.StoreEraser, err error, incomplete bool) {
+	storeErr := a.eraseStores(ctx, false, rep, planFor, func(s datexport.StoreEraser, err error, plan storePlan) {
 		if s.EraseResolved != nil {
-			outcome[storeKey(s)] = storeOutcome{err: err, read: ret[storeKey(s)], incomplete: incomplete}
+			outcome[storeKey(s)] = storeOutcome{err: err, read: plan.handled, incomplete: plan.incomplete}
 		}
 	})
 	rerr = errors.Join(rerr, withheldError(outcome))
@@ -235,11 +273,11 @@ func (a *App) eraseStoresRetained(ctx context.Context, dialect migrate.Dialect, 
 // what was kept for it. It writes nothing, and says when a count may be
 // short because a kept value was withheld for want of an answer.
 func (a *App) eraseStoresDry(ctx context.Context, dialect migrate.Dialect, tenant string, user datexport.ErasedUser, rep *EraseReport) error {
-	_, rerr, userFor := a.retainedUsers(ctx, dialect, tenant, user)
+	_, rerr, planFor := a.retainedPlans(ctx, dialect, tenant, user)
 	outcome := map[string]storeOutcome{}
-	storeErr := a.eraseStores(ctx, true, rep, userFor, func(s datexport.StoreEraser, err error, incomplete bool) {
+	storeErr := a.eraseStores(ctx, true, rep, planFor, func(s datexport.StoreEraser, err error, plan storePlan) {
 		if s.EraseResolved != nil {
-			outcome[storeKey(s)] = storeOutcome{err: err, incomplete: incomplete}
+			outcome[storeKey(s)] = storeOutcome{err: err, incomplete: plan.incomplete}
 		}
 	})
 	return errors.Join(rerr, withheldError(outcome), storeErr)
@@ -261,10 +299,10 @@ func withheldError(outcome map[string]storeOutcome) error {
 	return fmt.Errorf("framework: erase: whether another account holds a kept identity could not be told, so it was withheld from %s and kept for a retry", strings.Join(held, ", "))
 }
 
-// retainedUsers reads what failed erasures kept for user and answers the
-// users each store eraser runs with. Each step runs on its own deadline,
-// detached from the request's.
-func (a *App) retainedUsers(ctx context.Context, dialect migrate.Dialect, tenant string, user datexport.ErasedUser) (map[string][]keptRow, error, func(datexport.StoreEraser) ([]datexport.ErasedUser, bool)) {
+// retainedPlans reads what failed erasures kept for user and answers each
+// store eraser's plan. Each step runs on its own deadline, detached from
+// the request's.
+func (a *App) retainedPlans(ctx context.Context, dialect migrate.Dialect, tenant string, user datexport.ErasedUser) (map[string][]keptRow, error, func(datexport.StoreEraser) storePlan) {
 	detached := context.WithoutCancel(ctx)
 	rctx, cancel := context.WithTimeout(detached, retentionWriteTimeout)
 	ret, rerr := a.readRetention(rctx, dialect, tenant, user.ID)
@@ -272,34 +310,47 @@ func (a *App) retainedUsers(ctx context.Context, dialect migrate.Dialect, tenant
 	if rerr != nil {
 		rerr = fmt.Errorf("framework: erase: the identities kept by an earlier failed erasure could not be read, so its failed stores got only what resolves now: %w", rerr)
 	}
-	return ret, rerr, func(s datexport.StoreEraser) ([]datexport.ErasedUser, bool) {
+	return ret, rerr, func(s datexport.StoreEraser) storePlan {
 		hctx, cancel := context.WithTimeout(detached, retentionWriteTimeout)
 		defer cancel()
-		return a.retainedUsersFor(hctx, dialect, user, ret[storeKey(s)])
+		return a.retainedPlanFor(hctx, dialect, user, ret[storeKey(s)])
 	}
 }
 
-// eraseStores runs every store eraser, once for each user userFor gives
-// it, and reports each store's error and whether a kept value was
-// withheld from it for want of an answer.
-func (a *App) eraseStores(ctx context.Context, dryRun bool, rep *EraseReport, userFor func(datexport.StoreEraser) ([]datexport.ErasedUser, bool), done func(datexport.StoreEraser, error, bool)) error {
+// eraseStores runs every store eraser by its plan and reports each
+// store's error. A dry run counts what is keyed by the user id once: a
+// further run's count is less the id-only count.
+func (a *App) eraseStores(ctx context.Context, dryRun bool, rep *EraseReport, planFor func(datexport.StoreEraser) storePlan, done func(datexport.StoreEraser, error, storePlan)) error {
 	var failed []string
 	for _, s := range datexport.AllStoreErasers() {
-		users, incomplete := userFor(s)
+		plan := planFor(s)
 		total := 0
 		var err error
-		for _, u := range users {
+		for i, run := range plan.runs {
+			u, ok := run.current(i > 0)
+			if !ok {
+				continue
+			}
 			n, uerr := runStoreEraser(ctx, s, u, dryRun)
-			total += n
 			if uerr != nil {
 				err = uerr
 				break
 			}
 			if s.EraseResolved == nil {
+				total += n
 				break // an id-keyed store needs one run
 			}
+			if dryRun && i > 0 {
+				idOnly, ierr := runStoreEraser(ctx, s, datexport.ErasedUser{ID: u.ID}, true)
+				if ierr != nil {
+					err = ierr
+					break
+				}
+				n = max(n-idOnly, 0)
+			}
+			total += n
 		}
-		done(s, err, incomplete)
+		done(s, err, plan)
 		if err != nil {
 			failed = append(failed, fmt.Sprintf("%s (%v)", s.Name, err))
 			continue

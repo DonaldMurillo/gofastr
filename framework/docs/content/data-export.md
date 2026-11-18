@@ -635,7 +635,8 @@ first run, though the user row they were read from went with it. When an
 that resolved for the user to the `gofastr_erase_identities` table
 (`tenant`, `user_id`, `store`, `kind`, `value`, `expires_at`), one row per
 store and value, creating it only if it is absent. `store` is the store
-eraser's source and name (`auth/auth_memory`): every restart registers
+eraser's source and name, the source prefixed by its length
+(`4:auth/auth_memory`) so no two pairs collide: every restart registers
 the stores again under the same names, so that is what a retry finds
 them by, and a store registered under a name another store used before
 is taken as the same store. This write runs after the commit and after
@@ -647,7 +648,9 @@ store failed, writes nothing.
 A later erasure of that user in the same tenant gives each store the
 identities kept for that store alone, and only where its resolvers find
 nothing now. A store with more than one kept value of a kind (it failed
-again with a new one) is run once for each. A store that succeeded the
+again with a new one) is run once for each, and each run's kept values
+are checked for expiry just before it; a dry run counts what the store
+keys by user id once across those runs. A store that succeeded the
 first time gets only what resolves now. A kept value another account
 now holds (a new user took the address) is not given: an email-keyed
 store cannot tell the old owner's data from the new owner's. The check
@@ -662,8 +665,11 @@ the next retry, and the erasure (a dry run too) returns an error saying
 so. A value expired by its store's turn, or by the end of its check, is
 not given. The SQL planes never use kept values.
 
-A store's success removes the rows read for it before it ran, and no
-row another erasure wrote meanwhile. A store that fails again keeps its
+A store's success removes the rows read for it before it ran that this
+attempt answered for (handed over, held by another account, or expired),
+and no row another erasure wrote meanwhile. A kept value of a kind that
+resolves to another value now is not handed over, so it stays for a
+later retry or its expiry. A store that fails again keeps its
 rows with their first expiry; identities that resolved on that attempt
 are added beside them with their own 30 days, and a value it got only
 from retention is never written back, so a row a concurrent retry
@@ -687,10 +693,12 @@ is not there to give. Two cases differ:
   erasure by hand, by the address, from your own records.
 - Another account now holds the address. Do not erase that store by the
   address: it would also take the new owner's data. Erase only records
-  the store can tie to the former user (its own user id, or a creation
-  time before the erasure); a store that cannot tell them apart keeps
-  the old records until they expire on their own (magic links and
-  emailed codes expire within their TTL).
+  the store ties to the former user by a stable owner id, or by a time
+  inside a verified interval when only the former user held the address;
+  the erasure date alone is not enough, since the new holder may have
+  used the address before. A store that cannot tell the records apart
+  keeps them until they expire on their own (magic links and emailed
+  codes expire within their TTL).
 
 A runtime role without the right to create tables needs the table made
 ahead of time, once:

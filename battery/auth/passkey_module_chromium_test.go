@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -37,6 +38,9 @@ window.__gofastr = {
     window.bodies.push(path + url.search + ' ' + ((init && init.body) || ''));
     if (path.endsWith('/passkey/list')) {
       const ids = window.listIds.slice();
+      if (window.gateList) return new Promise((r) => {
+        (window.listGates = window.listGates || []).push(() => r(json({rpId: 'localhost', userId: 'AQID', userName: 'a@x', passkeys: ids.map((id) => ({id}))})));
+      });
       return later(window.listDelay || 0, json({rpId: 'localhost', userId: 'AQID', userName: 'a@x', passkeys: ids.map((id) => ({id}))}));
     }
     if (path.endsWith('/login/options') && window.optionsFail)
@@ -127,9 +131,9 @@ func TestPasskeyModuleRules(t *testing.T) {
 		"/serial": `<script>window.holdGet = 500</script><form onsubmit="event.preventDefault()"><button id="re" data-passkey-reauth="/auth" hidden>Confirm</button></form>
 <button id="add" data-passkey-register="/auth" hidden>Add</button>`,
 		"/during":    `<script>window.gateCreate = true; window.gateRegister = true</script><div id="host"></div><button id="add" data-passkey-register="/auth" hidden>Add</button>`,
-		"/cancel":    `<script>window.gateCreate = true</script><div id="host"></div><button id="add" data-passkey-register="/auth" hidden>Add</button>`,
+		"/cancel":    `<script>window.gateCreate = true; window.gateList = true</script><div id="host"></div><button id="add" data-passkey-register="/auth" hidden>Add</button>`,
 		"/stale":     `<script>window.listDelay = 500</script><div data-passkey-list="/auth"></div><button id="add" data-passkey-register="/auth" hidden>Add</button>`,
-		"/submitter": `<form id="f" onsubmit="event.preventDefault(); window.submitted.push(event.submitter ? event.submitter.name + '=' + event.submitter.value + '@' + event.submitter.formAction : 'form')"><button id="re" name="op" value="close" formaction="/close" data-passkey-reauth="/auth" hidden>Confirm</button></form>`,
+		"/submitter": `<form id="f" onsubmit="event.preventDefault(); window.submitted.push((event.submitter ? event.submitter.name + '=' + event.submitter.value + '@' + event.submitter.formAction : 'form') + '|' + new FormData(event.target).get('passkey_reauth'))"><button id="re" name="op" value="close" formaction="/close" data-passkey-reauth="/auth" hidden>Confirm</button></form>`,
 		"/nostorage": `<script>Object.defineProperty(window, 'sessionStorage', {get() { throw new Error('blocked'); }})</script><div data-passkey-upgrade="/auth"></div>`,
 		"/send":      ``,
 	}
@@ -168,11 +172,13 @@ func TestPasskeyModuleRules(t *testing.T) {
 		t.Errorf("login/options requested %d times, want 2 (autofill, then the button): autofill restarted after the sign-in", options)
 	}
 
-	// The silent create runs once per tab session, not on every load.
+	// The silent create runs once per tab session, not on every load, and
+	// once it saved a passkey the password manager gets the fresh list.
 	var registers int
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(origin+"/upgrade"),
 		wait(`window.calls.includes('/auth/passkey/register')`),
+		wait(`window.accepted.includes(1)`),
 		chromedp.Reload(),
 		wait(`!!window.__gofastr.loadedModules && window.__gofastr.loadedModules.passkey`),
 		chromedp.Sleep(300*time.Millisecond),
@@ -391,25 +397,48 @@ func TestPasskeyModuleRules(t *testing.T) {
 		t.Errorf("signals after the add %v, want the fresh list once ([1])", after)
 	}
 
-	// The same overlap, but the user cancels the prompt: the dropped list
-	// is read again once the add has failed.
-	var cancelled []int
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(origin+"/cancel"),
-		wait(`!!window.__gofastr.loadedModules && !document.getElementById('add').hidden`),
-		chromedp.Click(`#add`, chromedp.ByQuery),
-		wait(`!!window.releaseCreate`),
-		mountList,
-		wait(`window.calls.filter(c => c.endsWith('/passkey/list')).length === 1`),
-		chromedp.Sleep(100*time.Millisecond),
-		chromedp.Evaluate(`window.releaseCreate('NotAllowedError')`, nil),
-		wait(`window.accepted.length === 1`),
-		chromedp.Evaluate(`window.accepted`, &cancelled),
-	); err != nil {
-		t.Fatalf("cancel: %v", err)
-	}
-	if !slices.Equal(cancelled, []int{0}) {
-		t.Errorf("signals after a cancelled add %v, want one fresh read ([0])", cancelled)
+	// The same overlap, but the user cancels the prompt. Either order of
+	// the cancel and the first list answer ends in a second list read,
+	// and only that one signals.
+	for _, answerFirst := range []bool{true, false} {
+		var calls int
+		var signals []int
+		steps := []chromedp.Action{
+			chromedp.Navigate(origin + "/cancel"),
+			wait(`!!window.__gofastr.loadedModules && !document.getElementById('add').hidden`),
+			chromedp.Click(`#add`, chromedp.ByQuery),
+			wait(`!!window.releaseCreate`),
+			mountList,
+			wait(`(window.listGates || []).length === 1`),
+		}
+		release := chromedp.Evaluate(`window.listGates.shift()()`, nil)
+		cancel := chromedp.Evaluate(`window.releaseCreate('NotAllowedError')`, nil)
+		if answerFirst {
+			steps = append(steps, release, chromedp.Sleep(100*time.Millisecond))
+			var early []int
+			steps = append(steps, chromedp.Evaluate(`window.accepted.slice()`, &early), chromedp.ActionFunc(func(context.Context) error {
+				if len(early) != 0 {
+					return fmt.Errorf("the list answer during the add signalled %v", early)
+				}
+				return nil
+			}), cancel)
+		} else {
+			steps = append(steps, cancel, chromedp.Sleep(100*time.Millisecond), release)
+		}
+		steps = append(steps,
+			wait(`window.calls.filter(c => c.endsWith('/passkey/list')).length === 2 && (window.listGates || []).length === 1`),
+			chromedp.Evaluate(`window.listGates.shift()()`, nil),
+			wait(`window.accepted.length === 1`),
+			chromedp.Sleep(100*time.Millisecond),
+			chromedp.Evaluate(`window.calls.filter(c => c.endsWith('/passkey/list')).length`, &calls),
+			chromedp.Evaluate(`window.accepted`, &signals),
+		)
+		if err := chromedp.Run(ctx, steps...); err != nil {
+			t.Fatalf("cancel (answer first %v): %v", answerFirst, err)
+		}
+		if calls != 2 || !slices.Equal(signals, []int{0}) {
+			t.Errorf("cancel (answer first %v): %d list reads, signals %v; want 2 reads and one signal from the second", answerFirst, calls, signals)
+		}
 	}
 
 	// The proof goes as the button would have submitted it.
@@ -423,7 +452,7 @@ func TestPasskeyModuleRules(t *testing.T) {
 	); err != nil {
 		t.Fatalf("submitter: %v", err)
 	}
-	if submitted[0] != "op=close@"+origin+"/close" {
+	if submitted[0] != "op=close@"+origin+"/close|p" {
 		t.Errorf("step-up form submitted as %q, want the button's own name, value and formaction", submitted[0])
 	}
 

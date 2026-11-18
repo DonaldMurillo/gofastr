@@ -238,7 +238,7 @@ invariants:
       - test: framework.TestEraseUserData_StoreEraserGetsResolvedIdentities
       - test: core/datexport.TestErasedUserIdentity
   - id: retry-gets-the-first-runs-identities
-    rule: When an EraseResolved store eraser fails, the erasure writes the identities that resolved for the user to gofastr_erase_identities, one row per tenant, user, store (its source and name), kind and value, on a deadline detached from the request's that starts after the stores ran, creating the table only when it is absent; a later erasure (or a dry run of one) of the same user in the same tenant gives each store only the values kept for that store, running it once per further value of a kind, only where nothing resolves now, none expired by its turn or by the end of its holder check, and none that another account's row holds by the same value, a Unicode case variant, or the resolver's Canonicalize (every row read, NULL and empty skipped; checked just before the store, not under a lock with it); a value whose check cannot answer (an error, or a panicking Canonicalize) is withheld and its row kept, with an error, the dry run's too; the SQL planes use only what resolves now; a store's success with nothing withheld removes the rows read for it before it ran and no row written since; nothing is kept when only an id-keyed store fails.
+    rule: When an EraseResolved store eraser fails, the erasure writes the identities that resolved for the user to gofastr_erase_identities, one row per tenant, user, store (its source, length-prefixed, and name, so no two pairs share a key), kind and value, on a deadline detached from the request's that starts after the stores ran, creating the table only when it is absent; a later erasure (or a dry run of one) of the same user in the same tenant gives each store only the values kept for that store, running it once per further value of a kind (each run's kept values checked for expiry just before it, and a dry run counting the id-keyed records once), only where nothing resolves now, none expired by its turn or by the end of its holder check, and none that another account's row holds by the same value, a Unicode case variant, or the resolver's Canonicalize (every row read, NULL and empty skipped; checked just before the store, not under a lock with it); a value whose check cannot answer (an error, or a panicking Canonicalize) is withheld and its row kept, with an error, the dry run's too; the SQL planes use only what resolves now; a store's success with nothing withheld removes the rows read for it before it ran that the attempt answered for (handed over, held by another account, or expired; not one deferred because its kind resolves to another value now) and no row written since; nothing is kept when only an id-keyed store fails.
     enforced_by:
       - test: framework.TestEraseUserData_RetryKeepsResolvedIdentities
       - test: framework.TestEraseUserData_KeptIdentitiesArePerTenant
@@ -263,6 +263,10 @@ invariants:
       - test: framework.TestSuccessKeepsRowsWrittenSinceItsRead
       - test: framework.TestRepeatedFailureKeepsEachIdentity
       - test: framework.TestOneStoresSuccessKeepsAnothersRows
+      - test: framework.TestStoreKeyIsUnambiguous
+      - test: framework.TestDeferredKeptValueSurvivesASuccess
+      - test: framework.TestFurtherRunRechecksExpiry
+      - test: framework.TestDryRunCountsIDKeyedRecordsOnce
   - id: erase-retention-expires
     rule: A kept identity expires 30 days after the failure that first kept it, a failed retry neither extends it nor writes back a value it got only from retention (a row a concurrent retry removed stays removed) but adds the identities that resolved on that attempt with their own 30 days, every erasure that reaches the table deletes expired rows whatever its outcome and before it writes a new failure's rows, and a running App deletes them at start and every hour (App.SweepErasureRetention).
     enforced_by:

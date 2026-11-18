@@ -51,15 +51,14 @@
   // passkeys the server still accepts and what the account is called,
   // so a removed passkey stops being offered. Browsers without the
   // Signal API skip it; it never surfaces an error.
-  // gen counts list reads; a change bumps it, so a read that started
-  // before the change never signals its older list.
-  let gen = 0, changing = 0, missed = [];
-  // change runs an add or a remove: a list read that overlaps it in any
-  // way never signals, and the caller reads a fresh one after. A change
-  // that fails (a cancelled prompt) reads again the lists it dropped.
-  async function change(fn) {
+  // reads counts list reads (a newer one supersedes an older one);
+  // changes counts the starts and ends of adds and removes. A read that
+  // overlapped a change never signals: it is read again once no change
+  // runs, as is base after a change that succeeded.
+  let reads = 0, changes = 0, changing = 0, missed = [];
+  async function change(fn, base) {
     changing++;
-    gen++;
+    changes++;
     let ok = false;
     try {
       const r = await fn();
@@ -67,21 +66,24 @@
       return r;
     } finally {
       changing--;
-      gen++;
+      changes++;
       if (!changing) {
-        const again = ok ? [] : missed;
+        const again = new Set(missed);
         missed = [];
-        new Set(again).forEach(signalList);
+        if (ok) again.add(base);
+        again.forEach(signalList);
       }
     }
   }
   async function signalList(base) {
     if (!P.supported || (typeof PKC.signalAllAcceptedCredentials !== 'function' && typeof PKC.signalCurrentUserDetails !== 'function')) return;
-    const mine = ++gen;
+    const mine = ++reads, seen = changes;
     try {
       const list = await P.send(base + '/passkey/list', { method: 'GET', headers: { 'Accept': 'application/json' } });
-      if (mine !== gen || changing) {
-        missed.push(base);
+      if (mine !== reads) return;
+      if (seen !== changes || changing) {
+        if (changing) missed.push(base);
+        else setTimeout(function () { signalList(base); }, 0);
         return;
       }
       if (!list || typeof list.rpId !== 'string' || typeof list.userId !== 'string') return;
@@ -149,7 +151,7 @@
         name: name, id: j.id, clientDataJSON: r.clientDataJSON, attestationObject: r.attestationObject,
         transports: Array.isArray(r.transports) ? r.transports : [], binding: opts.binding,
       });
-    });
+    }, base);
   }
 
   function nameIn(btn) {
@@ -161,7 +163,6 @@
   async function register(btn, base) {
     await create(base, nameIn(btn), false);
     toast(say('auth.passkey_added', 'Passkey added'), 'success');
-    await signalList(base);
     refresh();
   }
 
@@ -176,9 +177,8 @@
   async function remove(btn, base) {
     const id = btn.getAttribute('data-passkey-id') || '';
     if (!ID.test(id)) return;
-    await change(function () { return guarded(base + '/passkey/delete', base, { id: id }, false); });
+    await change(function () { return guarded(base + '/passkey/delete', base, { id: id }, false); }, base);
     toast(say('auth.passkey_removed', 'Passkey removed'), 'success');
-    await signalList(base);
     refresh();
   }
 
