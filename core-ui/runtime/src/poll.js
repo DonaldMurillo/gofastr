@@ -184,7 +184,9 @@
     };
     stateByEl.set(el, s);
     active.add(el);
-    s.tick = () => {
+    // urgent: a refresh the user is looking at (tab regained) fetches at
+    // the default priority; a cadence tick is background and yields.
+    s.tick = (urgent) => {
       if (s.stopped) return;
       // Self-teardown: element was removed (island swap, SPA nav,
       // or manual removal) without the scanner catching it. The
@@ -201,7 +203,7 @@
       NS.fetch(NS._lp?.(src) ?? src, {
         headers: { 'Accept': 'text/html' },
         credentials: 'same-origin',
-        priority: 'low',
+        ...(urgent === true ? {} : { priority: 'low' }),
       })
         .then((r) => {
           // An HTTP error must reach .catch so back-off applies,
@@ -282,7 +284,7 @@
     s.onVisible = () => {
       if (document.hidden) return;
       if (s.timer) { clearTimeout(s.timer); s.timer = null; }
-      s.tick(); // immediate refresh on regain, cadence resumes after
+      s.tick(true); // immediate refresh on regain, cadence resumes after
     };
     document.addEventListener('visibilitychange', s.onVisible);
     const firstJitter = base * (0.9 + Math.random() * 0.2);
@@ -330,7 +332,9 @@
     let stopped = false;
     let inFlight = false;
     let queued = false; // pollNow landed mid-fetch → re-tick immediately
-    const tick = () => {
+    // urgent: pollNow after the user's own write, or a regained tab,
+    // fetches at the default priority; a cadence tick yields.
+    const tick = (urgent) => {
       if (stopped) return;
       if (document.hidden) return; // visibility handler resumes
       // Single-chain guard: a visibility flip (or pollNow) while a
@@ -338,7 +342,7 @@
       if (inFlight) return;
       inFlight = true;
       if (!NS._originOK?.(cfg.statePath)) { inFlight = false; return; }
-      NS.fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name }, priority: 'low' })
+      NS.fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name }, ...(urgent === true ? {} : { priority: 'low' }) })
         .then((r) => {
           // HTTP errors, and a followed 3xx (another URL's state),
           // must reach .catch so back-off applies.
@@ -380,7 +384,7 @@
             // immediately so the promised authoritative refresh isn't
             // silently absorbed into the stale cadence response.
             queued = false;
-            timer = arm(tick, 0);
+            timer = arm(() => tick(true), 0);
             return;
           }
           // ±10% jitter so a page full of polling widgets doesn't
@@ -392,7 +396,7 @@
     const onVisible = () => {
       if (document.hidden) return;
       if (timer) { clearTimeout(timer); timer = null; }
-      tick(); // immediate refresh on regain, then cadence resumes
+      tick(true); // immediate refresh on regain, then cadence resumes
     };
     document.addEventListener('visibilitychange', onVisible);
     entry.pollStop = () => {
@@ -407,7 +411,7 @@
       if (stopped) return;
       if (inFlight) { queued = true; return; } // coalesce; finally re-ticks
       if (timer) { clearTimeout(timer); timer = null; }
-      tick(); // cadence resumes via the tick's own finally
+      tick(true); // cadence resumes via the tick's own finally
     };
     // Seed the cycle. The initial mount-hydration fetch already ran in
     // widgets.js; this is the first scheduled re-fetch.

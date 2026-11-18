@@ -188,9 +188,10 @@ few lines, and link the PR or the docs page for the rest.
 - **`HighPriority` images load eagerly.** It used to pair
   `fetchpriority="high"` with `loading="lazy"`, which wastes the hint.
   `ui.Avatar` images now carry `width`, `height` and `loading="lazy"`.
-- **Poll fetches and visible or eager prefetches ask for `priority: 'low'`**,
-  so background work yields to what the user is waiting on. A hover
-  prefetch keeps the default priority.
+- **Scheduled poll ticks and visible or eager prefetches ask for
+  `priority: 'low'`**, so background work yields to what the user is
+  waiting on. A hover prefetch, a widget's refresh after its own RPC and
+  the refresh when a tab becomes visible keep the default priority.
 - **BREAKING: the passkey plugin needs a way to email the account owner
   when a passkey is added.** Set `PasskeyConfig.NoticeSender`, or
   `NoAddedNotice: true`; outside `DevMode`, Init fails when neither is set. The

@@ -116,9 +116,9 @@ func TestPollFetchIsLowPriority(t *testing.T) {
 	}
 }
 
-// A widget's scheduled state poll asks for a low priority too. The first
-// state request is the mount hydration, which the user is waiting on, so
-// only the requests after it are checked.
+// A widget's scheduled state poll asks for a low priority too; pollNow,
+// the refresh after the user's own write, keeps the default. The first
+// state request is the mount hydration, so only the ticks after it count.
 func TestWidgetPollFetchIsLowPriority(t *testing.T) {
 	page := `<!doctype html><html><head></head><body>
 <div class="cui-widget cui-pos-bottom-right" data-cui-widget="poller" role="status"><span data-cui-signal="count">0</span></div>
@@ -174,10 +174,38 @@ func TestWidgetPollFetchIsLowPriority(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	mu.Lock()
-	defer mu.Unlock()
-	for i, p := range prios[1:] {
+	ticks := append([]string(nil), prios...)
+	mu.Unlock()
+	for i, p := range ticks[1:] {
 		if !strings.Contains(p, "Low") {
-			t.Errorf("scheduled state poll %d priority = %q, want Low or VeryLow (all: %v)", i+1, p, prios)
+			t.Errorf("scheduled state poll %d priority = %q, want Low or VeryLow (all: %v)", i+1, p, ticks)
 		}
+	}
+
+	// pollNow is the refresh after the user's own write: it must not yield.
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__gofastr._widgets.poller.pollNow()`, nil),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			for {
+				mu.Lock()
+				n := len(prios)
+				mu.Unlock()
+				if n > len(ticks) {
+					return nil
+				}
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("pollNow sent no state request: %w", ctx.Err())
+				case <-time.After(20 * time.Millisecond):
+				}
+			}
+		}),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if p := prios[len(ticks)]; strings.Contains(p, "Low") {
+		t.Errorf("pollNow state request priority = %q; the refresh after a write must not yield", p)
 	}
 }
