@@ -152,6 +152,10 @@ func parseTOML(src string, p *Profile) error {
 				return err
 			}
 		}
+		i = skipWS(src, i)
+		if i < len(src) && src[i] != '\n' && src[i] != '#' {
+			return fmt.Errorf("line %d: unexpected %q after the value of %q", lineNo+1, src[i], key)
+		}
 		for i < len(src) && src[i] != '\n' {
 			i++
 		}
@@ -468,20 +472,27 @@ func appendInlineTable(p *Profile, key string, m map[string]any) error {
 			}
 		}
 		spec := MCPServerSpec{}
-		if v, _ := m["name"].(string); v != "" {
-			spec.Name = v
+		for _, f := range []struct {
+			key string
+			dst *string
+		}{{"name", &spec.Name}, {"cmd", &spec.Cmd}, {"sha256", &spec.SHA256}, {"discovery", &spec.Discovery}} {
+			k := f.key
+			v, ok := m[k]
+			if !ok {
+				continue
+			}
+			str, ok := v.(string)
+			if !ok {
+				return fmt.Errorf("profile: mcp_servers key %q must be a string", k)
+			}
+			*f.dst = str
 		}
-		if v, _ := m["cmd"].(string); v != "" {
-			spec.Cmd = v
-		}
-		if args, _ := m["args"].([]string); args != nil {
+		if v, ok := m["args"]; ok {
+			args, ok := v.([]string)
+			if !ok {
+				return fmt.Errorf("profile: mcp_servers key %q must be an array of strings", "args")
+			}
 			spec.Args = args
-		}
-		if v, _ := m["sha256"].(string); v != "" {
-			spec.SHA256 = v
-		}
-		if v, _ := m["discovery"].(string); v != "" {
-			spec.Discovery = v
 		}
 		p.MCPServers = append(p.MCPServers, spec)
 	default:

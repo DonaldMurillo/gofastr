@@ -12,7 +12,7 @@ twins:
         note: IsValid, which repeats parseClean's character and overflow checks instead of calling it.
 invariants:
   - id: round-trip-and-time
-    rule: Parse(u.String()) returns u, Time returns the millisecond the ULID was made at, and ULIDs made later sort after earlier ones as strings.
+    rule: Parse(u.String()) returns u, Time returns the millisecond the ULID was made at, and a ULID made in a later millisecond sorts after one made in an earlier millisecond as strings; two ULIDs made in the same millisecond have no guaranteed order.
     enforced_by:
       - test: framework/experimental/harness/internal/ulid.TestRoundTrip
       - test: framework/experimental/harness/internal/ulid.TestTimeRecoverable

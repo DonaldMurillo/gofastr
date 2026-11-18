@@ -35,7 +35,7 @@ invariants:
     enforced_by:
       - test: framework/experimental/harness/mcpclient.TestReadLoopRedDupResponseWedge
   - id: dead-transport-fails-pending
-    rule: When the read loop stops on a read error, every pending call returns that error at once instead of waiting for its context.
+    rule: When the read loop stops on a scanner error, every call pending at that moment returns that error at once instead of waiting for its context; a clean EOF fails no call, and a call made after the loop stopped waits for its context.
     enforced_by:
       - test: framework/experimental/harness/mcpclient.TestUnreadableLineFailsPendingCalls
   - id: mcp-tools-are-mutating
