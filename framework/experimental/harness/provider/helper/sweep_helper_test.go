@@ -9,11 +9,13 @@ import (
 func TestSweepUnknownProviderGetsNoHeader(t *testing.T) {
 	s := newStore(t)
 	_ = s.Put("copilot", "default", "gh-secret")
-	req, _ := http.NewRequest("POST", "https://example.com", nil)
-	if err := NewInProcess(s).AttachAuth(req, "copilot", ""); !errors.Is(err, ErrUnknownProvider) {
-		t.Fatalf("err = %v, want ErrUnknownProvider", err)
-	}
-	if got := req.Header.Get("Authorization"); got != "" {
-		t.Fatalf("Authorization = %q for a provider the helper cannot sign", got)
+	for _, provider := range []string{"copilot", "unstored"} {
+		req, _ := http.NewRequest("POST", "https://example.com", nil)
+		if err := NewInProcess(s).AttachAuth(req, provider, ""); !errors.Is(err, ErrUnknownProvider) {
+			t.Fatalf("%s: err = %v, want ErrUnknownProvider", provider, err)
+		}
+		if got := req.Header.Get("Authorization"); got != "" {
+			t.Fatalf("%s: Authorization = %q for a provider the helper cannot sign", provider, got)
+		}
 	}
 }

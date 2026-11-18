@@ -15,7 +15,8 @@ func TestSweepStoreFileIsOwnerOnlyCiphertext(t *testing.T) {
 	if _, err := NewEncryptedFileStore(path, make([]byte, 31)); err == nil {
 		t.Fatal("a 31-byte key was accepted")
 	}
-	s, err := NewEncryptedFileStore(path, DeriveKey([]byte("p"), []byte("s")))
+	key := DeriveKey([]byte("p"), []byte("s"))
+	s, err := NewEncryptedFileStore(path, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,8 +28,16 @@ func TestSweepStoreFileIsOwnerOnlyCiphertext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(raw), "plain-secret") || strings.Contains(string(raw), "zai") {
+	if strings.Contains(string(raw), "plain-secret") {
 		t.Fatalf("store file holds plaintext: %q", raw)
+	}
+	reloaded, _ := NewEncryptedFileStore(path, key)
+	if got, err := reloaded.Get("zai", "default"); err != nil || got != "plain-secret" {
+		t.Fatalf("reload with the right key = %q, %v", got, err)
+	}
+	wrong, _ := NewEncryptedFileStore(path, DeriveKey([]byte("q"), []byte("s")))
+	if got, err := wrong.Get("zai", "default"); err == nil {
+		t.Fatalf("reload with a wrong key decrypted %q", got)
 	}
 	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
 		t.Fatalf("temp file left behind: %v", err)

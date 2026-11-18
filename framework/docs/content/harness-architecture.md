@@ -748,7 +748,9 @@ global rule would let one approval of `go test ./...` in your own repo
 run a cloned repo's tests with no prompt. A rule saved before rules
 carried a directory prompts once more. The user can
 promote a session-scoped allow to a profile-level rule via
-`/permissions:promote <rule>`.
+`/permissions:promote <rule>`. Promotion is refused, and the session
+rule kept, when a persistent rule or an earlier preset rule with a
+different action would still decide the same calls.
 
 ### 3. Event bus
 
@@ -2403,7 +2405,7 @@ Override per-hook in the TOML: `{ event = "PreToolUse", cmd =
 "…", timeout_ms = 60000 }`. `timeout_ms = 0` keeps the per-event
 default; a negative value is rejected at registration. At deadline:
 SIGTERM to the hook's process group (Unix), then SIGKILL to the group
-by deadline+5 s, and the turn goes on without waiting out the grace. Hook stdout/stderr capped at
+by deadline+5 s. A timed-out hook holds the turn at most the 5 s grace past its deadline, less when the whole group exits on SIGTERM and closes its output. Hook stdout/stderr capped at
 64 KB; truncated
 output is logged with a marker. A hook exiting non-zero emits
 `HookTimeout` (when killed) or `HookError{exit_code}` (when it
