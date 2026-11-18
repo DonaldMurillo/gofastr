@@ -48,7 +48,10 @@ window.__gofastr = {
     if (path.endsWith('/register/options')) return Promise.resolve(json({binding: 'B', publicKey: {challenge: 'AAAA', rp: {id: 'localhost', name: 'x'},
       user: {id: 'AQID', name: 'a@x', displayName: 'a@x'}, pubKeyCredParams: [{type: 'public-key', alg: -7}], excludeCredentials: []}}));
     if (path.endsWith('/options')) return Promise.resolve(json({publicKey: Object.assign({}, pk, {timeout: window.optionsTimeout || 60000})}));
-    if (path.endsWith('/passkey/register')) window.listIds = ['AQID'];
+    if (path.endsWith('/passkey/register')) {
+      window.listIds = ['AQID'];
+      if (window.slowRegister) return later(window.slowRegister, json({}));
+    }
     if (path.endsWith('/passkey/login')) {
       if (window.slowLogin) return later(window.slowLogin, json({redirect: '/app'}));
       if (window.loginReason) return Promise.resolve(new Response(JSON.stringify({error: 'passkey sign-in failed', reason: window.loginReason}), {status: 404, headers: {'Content-Type': 'application/json'}}));
@@ -77,6 +80,7 @@ navigator.credentials.get = (o) => {
 };
 navigator.credentials.create = () => {
   window.creates++;
+  if (window.slowCreate) return later(window.slowCreate, fake);
   if (window.holdGet && !window.getDone) window.overlap = true;
   return Promise.resolve(fake);
 };
@@ -118,6 +122,7 @@ func TestPasskeyModuleRules(t *testing.T) {
 		"/racepick":    `<script>window.autoPick = true; window.slowLogin = 600</script><input data-passkey-autofill="/auth"><button id="in" data-passkey-login="/auth" hidden>Sign in</button>`,
 		"/serial": `<script>window.holdGet = 500</script><form onsubmit="event.preventDefault()"><button id="re" data-passkey-reauth="/auth" hidden>Confirm</button></form>
 <button id="add" data-passkey-register="/auth" hidden>Add</button>`,
+		"/during":    `<script>window.slowCreate = 500; window.slowRegister = 1000; window.listDelay = 800</script><div id="host"></div><button id="add" data-passkey-register="/auth" hidden>Add</button>`,
 		"/stale":     `<script>window.listDelay = 500</script><div data-passkey-list="/auth"></div><button id="add" data-passkey-register="/auth" hidden>Add</button>`,
 		"/submitter": `<form id="f" onsubmit="event.preventDefault(); window.submitted.push(event.submitter ? event.submitter.name + '=' + event.submitter.value + '@' + event.submitter.formAction : 'form')"><button id="re" name="op" value="close" formaction="/close" data-passkey-reauth="/auth" hidden>Confirm</button></form>`,
 		"/nostorage": `<script>Object.defineProperty(window, 'sessionStorage', {get() { throw new Error('blocked'); }})</script><div data-passkey-upgrade="/auth"></div>`,
@@ -342,6 +347,17 @@ func TestPasskeyModuleRules(t *testing.T) {
 		wait(`!document.getElementById('add').hidden`),
 		chromedp.Click(`#add`, chromedp.ByQuery), chromedp.Sleep(1500*time.Millisecond)); n != 1 {
 		t.Errorf("stale list signals: empty*10+total = %d, want only the fresh one (1)", n)
+	}
+
+	// A list read that starts during an add and answers before it ends,
+	// with the list from before the add, never signals.
+	if n := num("/during", "", `window.accepted.filter(l => l === 0).length * 10 + window.accepted.length`,
+		wait(`!document.getElementById('add').hidden`),
+		chromedp.Click(`#add`, chromedp.ByQuery),
+		chromedp.Sleep(100*time.Millisecond),
+		chromedp.Evaluate(`const l = document.createElement('div'); l.setAttribute('data-passkey-list', '/auth'); document.getElementById('host').appendChild(l); window.__gofastr._moduleScanners['passkey-manage'](document)`, nil),
+		wait(`window.navs.length === 1`), chromedp.Sleep(1000*time.Millisecond)); n != 1 {
+		t.Errorf("a list read overlapping an add: empty*10+total = %d, want only the fresh one (1)", n)
 	}
 
 	// The proof goes as the button would have submitted it.

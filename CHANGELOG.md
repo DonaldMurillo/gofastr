@@ -148,7 +148,7 @@ few lines, and link the PR or the docs page for the rest.
 ### Changed
 - **BREAKING: the passkey plugin needs a way to email the account owner
   when a passkey is added.** Set `PasskeyConfig.NoticeSender`, or
-  `NoAddedNotice: true`; outside `DevMode`, Init refuses neither. The
+  `NoAddedNotice: true`; outside `DevMode`, Init fails when neither is set. The
   email is fixed text, sent best effort, and goes only to an address the
   user store reports verified: with `NoticeSender` set, Init also refuses
   a user store that does not implement `auth.EmailVerifiedChecker` (the

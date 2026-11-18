@@ -31,9 +31,14 @@ const eraseIdentitiesDDL = `CREATE TABLE IF NOT EXISTS ` + eraseIdentitiesTable 
 // counted from the first failure; a retry never extends it.
 const keptIdentitiesFor = 30 * 24 * time.Hour
 
-// retentionWriteTimeout bounds the post-commit bookkeeping, which runs
-// on a context detached from the request's deadline.
-const retentionWriteTimeout = 30 * time.Second
+// retentionWriteTimeout bounds each step of the post-commit bookkeeping
+// (the read, each holder check, the write), which runs on a context
+// detached from the request's deadline. A var so a test can shorten it.
+var retentionWriteTimeout = 30 * time.Second
+
+// heldCheckFault is a test seam: when set, a holder check fails with its
+// error before it queries.
+var heldCheckFault func() error
 
 // retentionSweepEvery is how often a running App deletes expired rows.
 const retentionSweepEvery = time.Hour
@@ -47,10 +52,17 @@ func hasResolvedStoreErasers() bool {
 type storeOutcome struct {
 	err  error
 	user datexport.ErasedUser
+	// incomplete: a kept value was withheld because whether another
+	// account holds it could not be told, so its rows must stay.
+	incomplete bool
 }
 
-// retained is what one failed store keeps for one user.
-type retained map[datexport.IdentityKind]string
+// retained is what one failed store keeps for one user, and when it
+// expires (Unix seconds; the earliest of its rows).
+type retained struct {
+	ids     map[datexport.IdentityKind]string
+	expires int64
+}
 
 // readRetention answers the unexpired identities kept for tenant and
 // userID, by store; nil when the table does not exist.
@@ -59,7 +71,7 @@ func (a *App) readRetention(ctx context.Context, dialect migrate.Dialect, tenant
 	if err != nil || !exists {
 		return nil, err
 	}
-	rows, err := a.DB.QueryContext(ctx, fmt.Sprintf(`SELECT store, kind, value FROM %s WHERE tenant = $1 AND user_id = $2 AND expires_at >= $3`, quotePhysical(phys)),
+	rows, err := a.DB.QueryContext(ctx, fmt.Sprintf(`SELECT store, kind, value, expires_at FROM %s WHERE tenant = $1 AND user_id = $2 AND expires_at >= $3`, quotePhysical(phys)),
 		tenant, userID, time.Now().Unix())
 	if err != nil {
 		return nil, err
@@ -68,44 +80,59 @@ func (a *App) readRetention(ctx context.Context, dialect migrate.Dialect, tenant
 	out := map[string]retained{}
 	for rows.Next() {
 		var store, val string
-		var kind int64
-		if err := rows.Scan(&store, &kind, &val); err != nil {
+		var kind, expires int64
+		if err := rows.Scan(&store, &kind, &val, &expires); err != nil {
 			return nil, err
 		}
-		if out[store] == nil {
-			out[store] = retained{}
+		r, ok := out[store]
+		if !ok {
+			r = retained{ids: map[datexport.IdentityKind]string{}, expires: expires}
 		}
-		out[store][datexport.IdentityKind(kind)] = val
+		r.ids[datexport.IdentityKind(kind)] = val
+		r.expires = min(r.expires, expires)
+		out[store] = r
 	}
 	return out, rows.Err()
 }
 
 // retainedUserFor is user with the identities kept for one store added
-// where nothing resolves now. A kept value another account now holds is
-// left out: the store would match that account's data by it.
-func (a *App) retainedUserFor(ctx context.Context, dialect migrate.Dialect, user datexport.ErasedUser, kept retained) datexport.ErasedUser {
-	if len(kept) == 0 {
-		return user
+// where nothing resolves now, unless they expired by now. A kept value
+// another account now holds is left out: the store would match that
+// account's data by it. incomplete reports a value left out because
+// that could not be told.
+func (a *App) retainedUserFor(ctx context.Context, dialect migrate.Dialect, user datexport.ErasedUser, kept retained) (out datexport.ErasedUser, incomplete bool) {
+	if len(kept.ids) == 0 || kept.expires < time.Now().Unix() {
+		return user, false
 	}
-	out := datexport.ErasedUser{ID: user.ID, Identities: maps.Clone(user.Identities)}
+	out = datexport.ErasedUser{ID: user.ID, Identities: maps.Clone(user.Identities)}
 	if out.Identities == nil {
 		out.Identities = map[datexport.IdentityKind]string{}
 	}
-	for kind, val := range kept {
+	for kind, val := range kept.ids {
 		if _, ok := out.Identity(kind); ok {
 			continue
 		}
-		if held, err := a.identityHeldByOther(ctx, dialect, kind, val, user.ID); err != nil || held {
+		held, err := a.identityHeldByOther(ctx, dialect, kind, val, user.ID)
+		if err != nil {
+			incomplete = true
+			continue
+		}
+		if held {
 			continue
 		}
 		out.Identities[kind] = val
 	}
-	return out
+	return out, incomplete
 }
 
 // identityHeldByOther reports whether a live row of kind's resolver table
 // other than userID's holds val. An unknown answer reads as held.
 func (a *App) identityHeldByOther(ctx context.Context, dialect migrate.Dialect, kind datexport.IdentityKind, val, userID string) (bool, error) {
+	if heldCheckFault != nil {
+		if err := heldCheckFault(); err != nil {
+			return true, err
+		}
+	}
 	r, ok := datexport.ResolveIdentity(kind)
 	if !ok {
 		return true, errors.New("no resolver")
@@ -119,7 +146,16 @@ func (a *App) identityHeldByOther(ctx context.Context, dialect migrate.Dialect, 
 	}
 	qID := query.QuoteFolded(query.MustIdent(r.IDColumn))
 	qVal := query.QuoteFolded(query.MustIdent(r.ValueColumn))
-	rows, err := a.DB.QueryContext(ctx, fmt.Sprintf(`SELECT %s, %s FROM %s WHERE LOWER(%s) = LOWER($1)`, qID, qVal, quotePhysical(phys), qVal), val)
+	// Identifiers are validated and quoted; the value is a parameter.
+	stmt := fmt.Sprintf(`SELECT %s, %s FROM %s WHERE LOWER(%s) = LOWER($1)`, qID, qVal, quotePhysical(phys), qVal)
+	args := []any{val}
+	if r.Canonicalize != nil {
+		// The resolver's fold can join spellings LOWER keeps apart (NFD
+		// forms, invisible runes, non-ASCII case on SQLite), so every row
+		// is folded here. It runs only on a retry of a failed erasure.
+		stmt, args = fmt.Sprintf(`SELECT %s, %s FROM %s`, qID, qVal, quotePhysical(phys)), nil
+	}
+	rows, err := a.DB.QueryContext(ctx, stmt, args...)
 	if err != nil {
 		return true, err
 	}
@@ -150,7 +186,7 @@ func (a *App) identityHeldByOther(ctx context.Context, dialect migrate.Dialect, 
 func (a *App) updateRetention(ctx context.Context, dialect migrate.Dialect, tenant, userID string, before map[string]retained, outcome map[string]storeOutcome) error {
 	var fresh []string
 	for name, o := range outcome {
-		if o.err != nil && before[name] == nil && len(o.user.Identities) > 0 {
+		if o.err != nil && before[name].ids == nil && len(o.user.Identities) > 0 {
 			fresh = append(fresh, name)
 		}
 	}
@@ -172,8 +208,11 @@ func (a *App) updateRetention(ctx context.Context, dialect migrate.Dialect, tena
 	}
 	defer func() { _ = tx.Rollback() }()
 	now := time.Now()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM `+eraseIdentitiesTable+` WHERE expires_at < $1`, now.Unix()); err != nil {
+		return err
+	}
 	for name, o := range outcome {
-		if o.err == nil {
+		if o.err == nil && !o.incomplete {
 			if _, err := tx.ExecContext(ctx, `DELETE FROM `+eraseIdentitiesTable+` WHERE tenant = $1 AND user_id = $2 AND store = $3`, tenant, userID, name); err != nil {
 				return err
 			}
@@ -190,9 +229,6 @@ func (a *App) updateRetention(ctx context.Context, dialect migrate.Dialect, tena
 				}
 			}
 		}
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM `+eraseIdentitiesTable+` WHERE expires_at < $1`, now.Unix()); err != nil {
-		return err
 	}
 	return tx.Commit()
 }

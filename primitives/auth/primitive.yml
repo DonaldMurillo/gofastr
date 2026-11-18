@@ -116,11 +116,12 @@ invariants:
       - test: battery/auth.TestAddColumnIfMissingToleratesALostRace
       - test: battery/auth.TestAddColumnAfterCheckReportsARealFailure
   - id: manager-canonical-email-follows-the-override
-    rule: AuthManager.CanonicalEmail answers the address under AuthConfig.CanonicalizeEmail when set; every audit event the manager emits carries its email folded the same way, or as given when the override refuses it, and the SQL sink hashes that exact folded value, folding by the default only an address it did not get from the manager's fold (one sent directly, or rewritten by a wrapping sink).
+    rule: AuthManager.CanonicalEmail answers the address under AuthConfig.CanonicalizeEmail when set; every audit event the manager emits carries its email folded the same way, or as given when the override refuses it, and the SQL sink hashes that exact folded value, folding by the default only an address it did not get from the manager's fold (one sent directly, or rewritten by a wrapping sink); the event marks the fold with a sha256 of the folded address, never a second plaintext copy.
     enforced_by:
       - test: battery/auth.TestManagerCanonicalEmailFollowsOverride
       - test: battery/auth.TestAuditEmailHashIsCanonical
       - test: battery/auth.TestAuditDigestFollowsTheManagersFold
+      - test: battery/auth.TestAuditEventKeepsNoSecondAddress
 decisions:
   - id: logout-clear-site-data-skips-cookies
     date: 2026-11-17

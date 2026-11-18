@@ -53,13 +53,25 @@
   // Signal API skip it; it never surfaces an error.
   // gen counts list reads; a change bumps it, so a read that started
   // before the change never signals its older list.
-  let gen = 0;
+  let gen = 0, changing = 0;
+  // change runs an add or a remove: a list read that overlaps it in any
+  // way never signals, and the caller reads a fresh one after.
+  async function change(fn) {
+    changing++;
+    gen++;
+    try {
+      return await fn();
+    } finally {
+      changing--;
+      gen++;
+    }
+  }
   async function signalList(base) {
     if (!P.supported || (typeof PKC.signalAllAcceptedCredentials !== 'function' && typeof PKC.signalCurrentUserDetails !== 'function')) return;
     const mine = ++gen;
     try {
       const list = await P.send(base + '/passkey/list', { method: 'GET', headers: { 'Accept': 'application/json' } });
-      if (mine !== gen || !list || typeof list.rpId !== 'string' || typeof list.userId !== 'string') return;
+      if (mine !== gen || changing || !list || typeof list.rpId !== 'string' || typeof list.userId !== 'string') return;
       if (typeof PKC.signalAllAcceptedCredentials === 'function') {
         await PKC.signalAllAcceptedCredentials({
           rpId: list.rpId, userId: list.userId,
@@ -113,18 +125,18 @@
     return post(url, Object.assign({}, body, { proof: await stepUp(base) }));
   }
 
-  async function create(base, name, conditional) {
-    gen++;
-    const opts = await guarded(base + '/passkey/register/options', base, conditional ? { conditional: true } : {}, conditional);
-    const req = { publicKey: creationOptions(opts.publicKey) };
-    if (conditional) req.mediation = 'conditional';
-    const cred = await navigator.credentials.create(req);
-    const j = createdJSON(cred), r = j.response;
-    await post(base + '/passkey/register', {
-      name: name, id: j.id, clientDataJSON: r.clientDataJSON, attestationObject: r.attestationObject,
-      transports: Array.isArray(r.transports) ? r.transports : [], binding: opts.binding,
+  function create(base, name, conditional) {
+    return change(async function () {
+      const opts = await guarded(base + '/passkey/register/options', base, conditional ? { conditional: true } : {}, conditional);
+      const req = { publicKey: creationOptions(opts.publicKey) };
+      if (conditional) req.mediation = 'conditional';
+      const cred = await navigator.credentials.create(req);
+      const j = createdJSON(cred), r = j.response;
+      await post(base + '/passkey/register', {
+        name: name, id: j.id, clientDataJSON: r.clientDataJSON, attestationObject: r.attestationObject,
+        transports: Array.isArray(r.transports) ? r.transports : [], binding: opts.binding,
+      });
     });
-    gen++;
   }
 
   function nameIn(btn) {
@@ -151,9 +163,7 @@
   async function remove(btn, base) {
     const id = btn.getAttribute('data-passkey-id') || '';
     if (!ID.test(id)) return;
-    gen++;
-    await guarded(base + '/passkey/delete', base, { id: id }, false);
-    gen++;
+    await change(function () { return guarded(base + '/passkey/delete', base, { id: id }, false); });
     toast(say('auth.passkey_removed', 'Passkey removed'), 'success');
     await signalList(base);
     refresh();

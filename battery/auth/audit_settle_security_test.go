@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -230,5 +231,24 @@ func TestAuditDigestFollowsTheManagersFold(t *testing.T) {
 			t.Errorf("%s: email_hash in %s, want the digest of %q", name, diff, c.want)
 		}
 		_ = db.Close()
+	}
+}
+
+// The event keeps no second plaintext copy of the address: a sink that
+// clears Email and logs the whole event prints none.
+func TestAuditEventKeepsNoSecondAddress(t *testing.T) {
+	sink := &recordingSink{}
+	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), AuditSink: sink})
+	if err := mgr.Init(nil); err != nil {
+		t.Fatal(err)
+	}
+	mgr.emitSecurity(context.Background(), SecurityEvent{Kind: "magiclink.requested", Email: "victim@example.com"})
+	ev := sink.findByKind("magiclink.requested")
+	if ev == nil {
+		t.Fatal("no event")
+	}
+	ev.Email = ""
+	if s := fmt.Sprintf("%+v", *ev); strings.Contains(s, "victim@example.com") {
+		t.Fatalf("a cleared event still prints the address: %s", s)
 	}
 }

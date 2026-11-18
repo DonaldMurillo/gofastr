@@ -59,6 +59,12 @@ func newPasskeyFixtureFor(t *testing.T, rpID, origin string) *passkeyFixture {
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
+	// The notice workers live for the test, and are joined after it.
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = pk.OnStop(ctx)
+	})
 	for _, u := range []*BasicUser{
 		{ID: "u-alice", Email: "alice@example.com"},
 		{ID: "u-bob", Email: "bob@example.com"},
@@ -256,6 +262,11 @@ func TestPasskeyChallengePurposes(t *testing.T) {
 	a := newFakeAuthenticator(t, coseAlgES256)
 	if w := f.do(t, "POST", "/passkey/register", alice, registerBody(a, loginCh)); w.Code != http.StatusBadRequest {
 		t.Fatalf("register with a sign-in challenge: %d", w.Code)
+	}
+	// The purpose guard refused it, not the session binding (which a
+	// sign-in challenge also lacks).
+	if ev := f.sink.findByKind("passkey.refused"); ev == nil || ev.Meta["reason"] != "challenge" {
+		t.Fatalf("refusal event %+v, want reason challenge", ev)
 	}
 	b := f.enrol(t, "u-alice")
 	regCh := challengeOf(t, f.do(t, "POST", "/passkey/register/options", alice, nil))

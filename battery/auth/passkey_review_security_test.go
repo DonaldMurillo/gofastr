@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -146,7 +147,23 @@ func TestReauthOptionsLeaveTheStoresSliceAlone(t *testing.T) {
 	old.CreatedAt = time.Now().Add(-48 * time.Hour)
 	shared := &sharedSliceStore{PasskeyStore: f.pk.store, creds: []PasskeyCredential{young, old}}
 	f.pk.store = shared
-	f.do(t, "POST", "/passkey/reauth/options", f.session(t, "u-alice"), nil)
+	w := f.do(t, "POST", "/passkey/reauth/options", f.session(t, "u-alice"), nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("reauth options: %d %s", w.Code, w.Body)
+	}
+	var opts struct {
+		PublicKey struct {
+			AllowCredentials []struct {
+				ID string `json:"id"`
+			} `json:"allowCredentials"`
+		} `json:"publicKey"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &opts); err != nil {
+		t.Fatal(err)
+	}
+	if ac := opts.PublicKey.AllowCredentials; len(ac) != 1 || ac[0].ID != b64url.EncodeToString(old.ID) {
+		t.Fatalf("allowCredentials %+v, want only the old passkey", ac)
+	}
 	if string(shared.creds[0].ID) != "young-passkey-id" || len(shared.creds[1].ID) == 0 {
 		t.Fatalf("the store's slice was rewritten: %+v", shared.creds)
 	}

@@ -67,7 +67,13 @@ func TestOIDCMultiTenantIssuer(t *testing.T) {
 		"no tid":                          {base + "/t-111/v2.0", ""},
 		"another host":                    {"https://evil.example/t-111/v2.0", "t-111"},
 		"tid with a slash":                {base + "/t-1/x/v2.0", "t-1/x"},
-		"the alias itself":                {issuer, ""},
+		// Each iss is the template filled with its tid: only the
+		// character guard refuses these.
+		"tid with a query mark":    {base + "/t-1?x/v2.0", "t-1?x"},
+		"tid with a fragment mark": {base + "/t-1#x/v2.0", "t-1#x"},
+		"tid with an open brace":   {base + "/t-1{x/v2.0", "t-1{x"},
+		"tid with a close brace":   {base + "/t-1}x/v2.0", "t-1}x"},
+		"the alias itself":         {issuer, ""},
 		// Only the empty-tenant guard refuses this one: the template
 		// with an empty slot is exactly the iss.
 		"empty tid, empty slot": {base + "//v2.0", ""},
