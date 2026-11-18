@@ -39,8 +39,9 @@ invariants:
       - test: framework/dsl.TestParsePredicateSyntaxErrors
       - test: framework/dsl.TestQuoteRoundTripsParser
   - id: sort-text-checked
-    rule: ParseSort refuses more than 16 keys, a bad direction or name, an unknown or Hidden field alike, and a NoQuery field by name, and accepts and resolves the same fields filter.ParseSortValues does.
+    rule: ParseSort refuses more than 16 keys, a bad direction or name, an unknown or Hidden field alike, and a NoQuery field by name, and, for a name that matches the DSL identifier syntax, accepts and resolves the same fields filter.ParseSortValues does; a wire name outside that syntax (display-name) is accepted by filter.ParseSortValues and refused by ParseSort.
     enforced_by:
       - test: framework/dsl.TestParseSortRefuses
       - test: framework/dsl.TestParseSortRefusesNoQueryByName
       - test: framework/dsl.TestParseSortAgreesWithFilterSort
+      - test: framework/dsl.TestParseSortRefusesWireNameOutsideIdentSyntax
