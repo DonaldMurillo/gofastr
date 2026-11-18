@@ -55,8 +55,14 @@ type OptimizedImageConfig struct {
 	// Eager sets loading="eager" for above-the-fold images.
 	Eager bool
 
-	// HighPriority sets fetchpriority="high".
+	// HighPriority sets fetchpriority="high" and loads eagerly: a lazy
+	// image is not fetched until layout, so the hint would be wasted.
 	HighPriority bool
+
+	// LowPriority sets fetchpriority="low" for images that matter less
+	// than their neighbours (carousel slides after the first, below-the-
+	// fold decoration). Ignored when HighPriority is set.
+	LowPriority bool
 
 	// Fit selects the object-fit treatment (default cover).
 	Fit ImageFit
@@ -109,20 +115,12 @@ func OptimizedImage(cfg OptimizedImageConfig) render.HTML {
 	}
 	cls := imageRootClass(cfg.Fit, cfg.Aspect, cfg.Rounded, lqip != "", cfg.Class)
 
-	loading := "lazy"
-	if cfg.Eager {
-		loading = "eager"
-	}
-
 	imgAttrs := html.Attrs{
 		"width":    strconv.Itoa(cfg.Width),
 		"height":   strconv.Itoa(cfg.Height),
-		"loading":  loading,
 		"decoding": "async",
 	}
-	if cfg.HighPriority {
-		imgAttrs["fetchpriority"] = "high"
-	}
+	setImagePriority(imgAttrs, cfg.Eager, cfg.HighPriority, cfg.LowPriority)
 
 	imgCfg := html.ImageConfig{
 		Src:        cfg.Src,
@@ -196,4 +194,21 @@ func buildSrcset(sources []ImageSource) string {
 		parts = append(parts, encodeSrcsetURL(s.URL)+" "+strconv.Itoa(s.Width)+"w")
 	}
 	return strings.Join(parts, ", ")
+}
+
+// setImagePriority writes loading and fetchpriority. HighPriority implies
+// eager, since fetchpriority="high" on a lazy image is a contradiction.
+func setImagePriority(attrs html.Attrs, eager, high, low bool) {
+	switch {
+	case high:
+		attrs["loading"] = "eager"
+		attrs["fetchpriority"] = "high"
+	case eager:
+		attrs["loading"] = "eager"
+	default:
+		attrs["loading"] = "lazy"
+	}
+	if low && !high {
+		attrs["fetchpriority"] = "low"
+	}
 }

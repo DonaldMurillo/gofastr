@@ -13,7 +13,7 @@ import (
 // is correct; reported issue k-raw-1 (CSP prong) does not reproduce. While
 // renderFullPage itself sets no CSP, every page is served through
 // app.Router(), whose framework security-headers middleware emits
-// "default-src 'self'; ...; base-uri 'self'" with no unsafe-inline.
+// "default-src 'self'; ...; base-uri 'none'" with no unsafe-inline.
 //
 // TestPageResponseHasStrictCSP asserts every kiln-served page carries a
 // Content-Security-Policy header so the documented strict CSP is actually
