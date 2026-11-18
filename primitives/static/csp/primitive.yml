@@ -9,7 +9,7 @@ on_change:
   - The built-in policy is the default core/middleware.SecurityHeaders serves plus object-src 'none' and form-action 'self'; a change to that default is made here too.
 invariants:
   - id: default-policy
-    rule: With no ContentSecurityPolicy set, the export carries default-src 'self', img-src 'self' data:, object-src 'none', form-action 'self', frame-ancestors 'none' and base-uri 'self'.
+    rule: With no ContentSecurityPolicy set, the export carries default-src 'self', img-src 'self' data:, object-src 'none', worker-src 'self', form-action 'self', frame-ancestors 'none' and base-uri 'none'.
     enforced_by:
       - test: framework/static.TestStaticExportShipsCSP
       - test: framework/static.TestSweepStaticDefaultCSPDirectives
@@ -52,3 +52,13 @@ decisions:
       - option: Keep it in the exported policy.
         why: A file gives every visitor the same nonce, so any injected script can carry it, and the export links every script so no page needs one.
     upholds: [unsafe-policy-refused]
+  - id: base-uri-none
+    date: 2026-11-18
+    status: accepted
+    decision: The default policy, live and exported, sends base-uri 'none' and names worker-src 'self'.
+    rejected:
+      - option: Keep base-uri 'self'.
+        why: No framework page emits a <base> element, and 'self' still lets an injected same-origin <base> move every relative URL on the page.
+      - option: Leave worker-src to fall back to default-src.
+        why: The fallback gives the same answer for the default, but worker-src falls back to script-src, so a policy that adds a CDN to script-src would let workers load from it too. A host policy set with WithSecurityHeaders replaces the default whole and keeps workers same-origin only if it names worker-src 'self' itself.
+    upholds: [default-policy]
