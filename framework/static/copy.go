@@ -17,13 +17,8 @@ import (
 )
 
 func (b *Builder) staticSourceFile(rel string) bool {
-	if dir := b.Host.StaticDir(); dir != "" {
-		return isFile(os.DirFS(dir), rel)
-	}
-	if fsys := b.Host.StaticFS(); fsys != nil {
-		return isFile(fsys, rel)
-	}
-	return false
+	fsys := b.staticSource()
+	return fsys != nil && isFile(fsys, rel)
 }
 
 func isFile(fsys fs.FS, name string) bool {
@@ -35,23 +30,33 @@ func isFile(fsys fs.FS, name string) bool {
 }
 
 func (b *Builder) staticSourceHas(rel string) bool {
+	fsys := b.staticSource()
+	return fsys != nil && spelledIn(fsys, filepath.ToSlash(rel))
+}
+
+// staticSource is the host's static source as the copy reads it: a
+// static dir through os.Root, so a symlink out of it is not there.
+func (b *Builder) staticSource() fs.FS {
 	if dir := b.Host.StaticDir(); dir != "" {
-		return spelledIn(os.DirFS(dir), filepath.ToSlash(rel))
+		return rootfs.ConfineDirFS(os.DirFS(dir))
 	}
-	if fsys := b.Host.StaticFS(); fsys != nil {
-		return spelledIn(fsys, filepath.ToSlash(rel))
-	}
-	return false
+	return b.Host.StaticFS()
 }
 
 func spelledIn(fsys fs.FS, rel string) bool {
-	if fi, err := fs.Stat(fsys, rel); errors.Is(err, fs.ErrNotExist) || (err == nil && !fi.Mode().IsRegular()) {
+	fi, err := fs.Stat(fsys, rel)
+	if errors.Is(err, fs.ErrNotExist) || (err == nil && !fi.Mode().IsRegular()) {
 		return false
 	}
+	names := strings.Split(rel, "/")
 	dir := "."
-	for _, name := range strings.Split(rel, "/") {
+	for i, name := range names {
 		ents, err := fs.ReadDir(fsys, dir)
-		if err != nil || !slices.ContainsFunc(ents, func(e fs.DirEntry) bool { return e.Name() == name }) {
+		if err != nil {
+			return false
+		}
+		j := slices.IndexFunc(ents, func(e fs.DirEntry) bool { return e.Name() == name })
+		if j < 0 || (i == len(names)-1 && fi == nil && !ents[j].Type().IsRegular()) {
 			return false
 		}
 		dir = path.Join(dir, name)
