@@ -9,6 +9,8 @@ invariants:
   - id: engine-sees-only-client
     rule: The engine and the multiplexer drive a controller only through the control.Client interface and never type-assert it to a concrete transport type.
     judge: Does this change make engine or multiplex code type-assert or type-switch a control.Client to a transport's concrete type, or branch on which transport a client came from?
+    applies:
+      - framework/experimental/harness/engine/*.go
 decisions:
   - id: one-client-interface
     date: 2026-11-18

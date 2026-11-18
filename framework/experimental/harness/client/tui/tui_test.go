@@ -1,6 +1,12 @@
 package tui
 
-import "testing"
+import (
+	"context"
+	"os"
+	"syscall"
+	"testing"
+	"time"
+)
 
 func TestTruncate(t *testing.T) {
 	cases := []struct {
@@ -46,5 +52,17 @@ func TestCtrlCWindow(t *testing.T) {
 	clock = 13_000_000_000 // 3s later
 	if exit := tui.handleCtrlC(); exit {
 		t.Fatal("Ctrl-C >2s apart shouldn't exit")
+	}
+}
+
+func TestASecondQuitSignalEndsTheLoop(t *testing.T) {
+	tui, _ := newRenderTestTUI(t)
+	sig := make(chan os.Signal, 2)
+	sig <- syscall.SIGINT
+	sig <- syscall.SIGTERM
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := tui.loop(ctx, nil, nil, sig, nil, nil); err != nil {
+		t.Fatalf("a second quit signal did not end the loop: %v", err)
 	}
 }
