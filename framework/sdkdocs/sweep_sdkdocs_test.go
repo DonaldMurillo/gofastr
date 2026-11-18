@@ -221,10 +221,21 @@ func TestSweepMountNormalizesPaths(t *testing.T) {
 	}
 }
 
-func TestVersionSlugKeepsDistinctPrefixesDistinct(t *testing.T) {
-	a := &entity.Entity{Version: "/api/v1"}
-	b := &entity.Entity{Version: "/api-v1"}
-	if versionSlug(a) == versionSlug(b) {
-		t.Fatalf("/api/v1 and /api-v1 share the section suffix %q", versionSlug(a))
+func TestVersionedPageIDsStayUniqueForLookalikePrefixes(t *testing.T) {
+	for _, versions := range [][]string{{"/api/v1", "/api-v1"}, {"/api-/v1", "/api/-v1"}, {"", "/default"}, {"/api/v1", "/api_v1"}} {
+		ents := make([]*entity.Entity, len(versions))
+		for i, v := range versions {
+			ents[i] = entity.Define("posts", entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}, Fields: []schema.Field{{Name: "views", Type: schema.Int}}})
+			ents[i].Version = v
+		}
+		sc := &entityScreen{site: &site{cfg: Config{Registry: &fakeRegistry{entities: ents}, BasePath: "/docs/api"}}}
+		sc.SetParams(map[string]string{"name": "posts"})
+		seen := map[string]bool{}
+		for _, m := range idAttrRe.FindAllStringSubmatch(string(sc.Render()), -1) {
+			if seen[m[1]] {
+				t.Errorf("versions %q: the page writes id %q twice", versions, m[1])
+			}
+			seen[m[1]] = true
+		}
 	}
 }
