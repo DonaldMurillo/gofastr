@@ -12,8 +12,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 
-	// OpenDB opens app.db under the "sqlite3" driver name; the blank
-	// import registers it so a host needs no import of its own.
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -27,27 +25,18 @@ const (
 type Data struct {
 	// Dir is the absolute data directory.
 	Dir string
-	// DB is app.db, opened through sqlite/stdlib. Pass it to
-	// framework.WithDB. The caller closes it, or calls Close.
+	// DB is app.db; pass it to framework.WithDB. The caller closes it.
 	DB *sql.DB
-	// Secret keeps sessions valid across restarts. Pass it to
-	// framework.WithSecret.
+	// Secret keeps sessions valid across restarts; pass it to framework.WithSecret.
 	Secret string
-	// User is the installation's identity, the owner of every row the
-	// app writes for its one person.
+	// User is the installation's identity, the owner of its rows.
 	User *User
 }
 
 // Close closes the database.
 func (d *Data) Close() error { return d.DB.Close() }
 
-// Open opens the data directory dir, creating it owner-only (0700) when
-// it is missing, and returns its database, secret and identity, minting
-// the secret and the identity on first run. dir must be absolute: it is
-// the directory the platform gives the app (Application Support, an
-// Android app's files dir), never one resolved from the working
-// directory. An existing directory keeps its mode: Open never tightens a
-// directory it did not create.
+// Open opens the absolute data dir (owner-only when it creates it) and its state.
 func Open(dir string) (*Data, error) {
 	if dir == "" || !filepath.IsAbs(dir) {
 		return nil, fmt.Errorf("localapp: data dir %q must be an absolute path", dir)
@@ -72,9 +61,7 @@ func Open(dir string) (*Data, error) {
 	return &Data{Dir: dir, DB: db, Secret: secret, User: user}, nil
 }
 
-// OpenDB opens (creating if needed) the SQLite database dir/app.db. The
-// file is created owner-only before SQLite opens it, so it never exists
-// with the process umask's mode.
+// OpenDB opens dir/app.db, creating it owner-only first.
 func OpenDB(dir string) (*sql.DB, error) {
 	path := filepath.ToSlash(filepath.Join(dir, DBFile))
 	if err := fileperm.SeedOwnerOnly(path); err != nil {
@@ -91,21 +78,13 @@ func OpenDB(dir string) (*sql.DB, error) {
 	return db, nil
 }
 
-// sqliteFileURI spells path as a SQLite file: URI with its characters
-// escaped: the driver cuts the name at '?', and SQLite reads '#' as a
-// fragment and decodes '%', so a directory named my?app would open
-// "my" beside the owner-only file SeedOwnerOnly made.
 func sqliteFileURI(path string) string {
 	return "file:" + (&url.URL{Path: path}).EscapedPath()
 }
 
-// secretBytes is the length of a minted secret before encoding.
 const secretBytes = 32
 
-// LoadOrMintSecret returns the secret stored in dir/secret, minting 32
-// bytes of crypto/rand (base64url) and persisting them 0600 on first
-// run. Two processes racing the first boot converge on one secret: the
-// file is created exclusively, and the loser reads the winner's.
+// LoadOrMintSecret returns dir/secret, minting a 0600 one on first run.
 func LoadOrMintSecret(dir string) (string, error) {
 	path := filepath.Join(dir, SecretFile)
 	if b, err := readOwnerOnly(path); err != nil {
@@ -129,15 +108,8 @@ func LoadOrMintSecret(dir string) (string, error) {
 	return secret, nil
 }
 
-// checkSecret refuses a secret file that is not what LoadOrMintSecret
-// writes, 32 bytes as unpadded base64url, rather than signing sessions
-// with it: an empty, truncated or whitespace-damaged file is refused
-// here instead of panicking in framework.WithSecret.
 func checkSecret(path string, b []byte) (string, error) {
 	s := string(b)
-	// The re-encode check is load-bearing: DecodeString skips CR and LF,
-	// so a valid secret with a line ending decodes cleanly but would sign
-	// with a different key.
 	if raw, err := base64.RawURLEncoding.DecodeString(s); err != nil || len(raw) != secretBytes || base64.RawURLEncoding.EncodeToString(raw) != s {
 		return "", fmt.Errorf("localapp: secret file %s is empty or damaged; delete it to mint a new one (every session signs out)", path)
 	}

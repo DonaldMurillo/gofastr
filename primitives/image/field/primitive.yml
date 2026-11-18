@@ -1,0 +1,73 @@
+primitive: image.field
+summary: The imagefield adapter that makes a VariantSet the file.ImageDeriver behind WithImagePipeline, so a schema.Image upload stores its renditions and BlurHash.
+code:
+  - framework/imagefield/
+docs:
+  - framework/docs/content/uploads.md
+invariants:
+  - id: bad-config-fails-at-wiring
+    rule: New refuses a config that derives nothing, half a BlurHash or components outside 1..9, more than MaxVariantsPerSet variants, a variant without width or format, and colliding variant names.
+    enforced_by:
+      - test: framework/imagefield.TestNewRejectsBadConfig
+      - test: framework/imagefield.TestSweepImagefieldNewRefusesTooManyVariants
+  - id: config-reaches-the-pipeline
+    rule: AllowUpscale, RejectAnimated and MaxPixels reach the VariantSet and the decoder unchanged.
+    enforced_by:
+      - test: framework/imagefield.TestSweepImagefieldPassesSetOptionsThrough
+  - id: renditions-beside-the-original
+    rule: Each rendition is saved in the original's directory, named after the original's base name without its extension, so it keeps the original's unique token.
+    enforced_by:
+      - test: framework/imagefield.TestDeriveImageProducesVariantsAndHash
+      - test: framework/imagefield.TestSweepImagefieldPassesSetOptionsThrough
+      - test: framework/imagefield.TestRenditionNamesFitFilenameLimit
+  - id: renditions-sorted-by-width
+    rule: DeriveImage returns the renditions in ascending width, ready for a srcset.
+    enforced_by:
+      - test: framework/imagefield.TestSweepImagefieldPassesSetOptionsThrough
+      - test: framework/imagefield.TestDeriveImageProducesVariantsAndHash
+  - id: renditions-are-upright
+    rule: Renditions and the placeholder are derived after the upload's EXIF orientation is applied.
+    enforced_by:
+      - test: framework/imagefield.TestRenditionsFollowOrientation
+  - id: failures-fail-the-upload
+    rule: DeriveImage errors when the store is nil, when the upload does not decode as an image, and when saving a rendition fails.
+    enforced_by:
+      - test: framework/imagefield.TestDeriveImageRequiresStore
+      - test: framework/imagefield.TestDeriveImageRejectsNonImage
+      - test: framework/imagefield.TestUploadRejectsNonImageOnImageField
+      - test: framework/imagefield.TestDeriveImagePropagatesStorageFailure
+  - id: placeholder-on-request
+    rule: The data URL placeholder is stored only when Config.Placeholder is set.
+    enforced_by:
+      - test: framework/imagefield.TestDeriveImagePlaceholderOptIn
+decisions:
+  - id: separate-adapter-package
+    date: 2026-11-17
+    status: accepted
+    decision: The adapter lives in its own package that apps opt into with WithImagePipeline.
+    rejected:
+      - option: Implement the deriver in framework/file.
+        why: framework/file is imported by framework/crud, so every app with a CRUD handler would link every image decoder and the WebP encoder.
+  - id: refuse-an-empty-config
+    date: 2026-11-17
+    status: accepted
+    decision: A Config that derives nothing is an error from New.
+    rejected:
+      - option: Treat it as a no-op pipeline.
+        why: A pipeline with no renditions, hash or placeholder is a wiring mistake, better caught at boot than on the first upload.
+    upholds: [bad-config-fails-at-wiring]
+  - id: stream-renditions
+    date: 2026-11-17
+    status: accepted
+    decision: DeriveImage streams renditions to storage through ProcessTo, one in memory at a time.
+    rejected:
+      - option: Process, holding every rendition.
+        why: It runs inside a request on bytes a client chose, so peak memory would be the sum of all renditions.
+  - id: bake-orientation-in
+    date: 2026-11-17
+    status: accepted
+    decision: The upload is auto-oriented before any rendition is derived.
+    rejected:
+      - option: Derive from the raw raster.
+        why: Renditions carry no EXIF, so a phone portrait came out sideways while the original showed upright.
+    upholds: [renditions-are-upright]

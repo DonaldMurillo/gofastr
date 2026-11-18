@@ -8,16 +8,9 @@ import (
 	"slices"
 )
 
-// DeliveryCounts returns per-consumer pending and dead-letter delivery
-// counts for the metrics surface.
-//
-//   - pending: delivery rows still awaiting dispatch (status = "pending").
-//   - dead:    delivery rows that exhausted their retry budget and were
-//     dead-lettered (status = "dead").
-//
-// One GROUP BY query (dialect-agnostic, works on both Postgres and SQLite).
-// The maps are non-nil and empty when there is nothing to report, so callers
-// can iterate them unconditionally.
+// DeliveryCounts returns the number of pending and of dead-lettered deliveries
+// per consumer. On success both maps are non-nil. A query or scan error
+// returns nil maps; an iteration error returns the counts read so far.
 func (o *Outbox) DeliveryCounts(ctx context.Context) (pending, dead map[string]int, err error) {
 	pending = map[string]int{}
 	dead = map[string]int{}
@@ -45,15 +38,10 @@ func (o *Outbox) DeliveryCounts(ctx context.Context) (pending, dead map[string]i
 	return pending, dead, rows.Err()
 }
 
-// MetricsCollector returns a Prometheus text-exposition collector that
-// samples the outbox's per-consumer delivery counts at scrape time, as two
-// gauges: outbox_pending and outbox_dead_letter_deliveries (the dead rows
-// held now, which fall on a Replay, a purge or an erasure). Register it on
-// the app's *middleware.Metrics via RegisterCollector.
-//
-// A transient query error emits nothing for this scrape, the collector must
-// never break /metrics. Consumers are rendered in sorted order for
-// deterministic scrape output.
+// MetricsCollector returns a collector for
+// middleware.Metrics.RegisterCollector that writes the outbox_pending and
+// outbox_dead_letter_deliveries gauges per consumer, in consumer order. A
+// failed count writes nothing.
 func (o *Outbox) MetricsCollector() func(io.Writer) {
 	return func(w io.Writer) {
 		pending, dead, err := o.DeliveryCounts(context.Background())

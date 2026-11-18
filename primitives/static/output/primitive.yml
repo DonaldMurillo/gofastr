@@ -1,0 +1,54 @@
+primitive: static.output
+summary: The export tree's bookkeeping - writes and removals held inside OutDir through os.Root, the case-folded set of files the build writes, the refusal of case twins, respelling on case-insensitive filesystems, and pruning the pages the last build wrote that this one did not.
+code:
+  - framework/static/fileset.go
+  - framework/static/prune.go
+  - framework/static/output.go
+docs:
+  - framework/docs/content/static-export.md
+invariants:
+  - id: writes-through-os-root
+    rule: Every file the export writes or removes goes through an os.Root opened on OutDir, so the write stays inside OutDir and a symlink in it that points outside fails the write instead of redirecting it.
+    enforced_by:
+      - test: framework/static.TestExportRefusesSymlinkInOutDir
+  - id: case-twins-refused
+    rule: Build fails when two files it wrote, or two directories on their paths, differ only in case.
+    enforced_by:
+      - test: framework/static.TestExportRefusesCaseTwinDir
+      - test: framework/static.TestContributorRefusesCaseTwin
+      - test: framework/static.TestPWARefusesCaseTwin
+  - id: respell-only-the-same-file
+    rule: respell renames a directory entry to the build's spelling only when it is the build's own file under another name, renames nothing past a symlink, and fails the build when an entry behind a symlink, or a symlink's target, is spelled otherwise on disk.
+    judge: Does this change let respell rename an entry that os.SameFile does not show to be the build's file, or rename through a symlink?
+  - id: prune-stale-pages
+    rule: A rebuild removes each page and doc file the last build's manifest lists that this build did not write, and keeps any file this build wrote at that path.
+    enforced_by:
+      - test: framework/static.TestRebuildPrunesDroppedPageAndDoc
+      - test: framework/static.TestRebuildPrunesGatedPage
+      - test: framework/static.TestSweepStaticPruneKeepsAssetOnOldPage
+  - id: case-renamed-page-survives-prune
+    rule: On a case-insensitive filesystem a page renamed only by case is kept, not pruned under its old spelling.
+    judge: Does this change let pruneStalePages remove a manifest entry that os.SameFile shows to be a file this build wrote?
+  - id: manifest-beside-outdir
+    rule: The page manifest is written beside OutDir, never inside it, and an OutDir with no parent fails Build before anything is written.
+    enforced_by:
+      - test: framework/static.TestManifestStaysOutOfExportTree
+      - test: framework/static.TestManifestRefusesRootOutDir
+      - test: framework/static.TestRootOutDirFailsBeforeWriting
+decisions:
+  - id: manifest-outside-the-tree
+    date: 2026-11-17
+    status: accepted
+    decision: The list of pages the last build wrote is kept in a dotfile beside OutDir.
+    rejected:
+      - option: A file inside OutDir.
+        why: A static host serves every file in the export tree, and the builder's own state is not one of them.
+    upholds: [manifest-beside-outdir]
+  - id: refuse-case-twins
+    date: 2026-11-17
+    status: accepted
+    decision: Two spellings of one path fail the build, and leftovers are respelled to the build's spelling.
+    rejected:
+      - option: Write both and let the filesystem decide.
+        why: A case-insensitive disk keeps whichever was written first and a case-sensitive host then serves only that one, so the same export differs by the machine that built it.
+    upholds: [case-twins-refused, respell-only-the-same-file]

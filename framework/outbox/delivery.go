@@ -14,13 +14,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
 
-// Delivery is a snapshot of one per-consumer delivery row. Status is one of
-// "pending", "dispatched", "dead" (handler exhausted MaxAttempts), or
-// "abandoned" (no consumer handler existed anywhere within the grace
-// window, a removed consumer). Each (parent row, declared consumer) pair
-// has exactly one delivery row; its lifecycle is independent of every
-// sibling consumer's delivery for the same event (sibling isolation), one
-// consumer failing never blocks another.
+// Delivery is a snapshot of one consumer's delivery of one row. Status is
+// "pending", "dispatched", "dead" (attempts exhausted) or "abandoned" (no
+// replica had the consumer's handler within the grace).
 type Delivery struct {
 	RowID         string
 	Consumer      string
@@ -31,9 +27,8 @@ type Delivery struct {
 	DispatchedAt  *time.Time
 }
 
-// ListDeliveries returns the per-consumer delivery rows for one parent
-// row, ordered by consumer name. Returns an empty slice (not nil) for a
-// parent with no deliveries (e.g. no declared consumer matched its type).
+// ListDeliveries returns a row's deliveries ordered by consumer, an empty
+// slice when it has none.
 func (o *Outbox) ListDeliveries(ctx context.Context, rowID string) ([]Delivery, error) {
 	rows, err := o.db.QueryContext(ctx,
 		fmt.Sprintf(`SELECT consumer, status, attempts, last_error, next_attempt_at, dispatched_at
@@ -68,24 +63,14 @@ func (o *Outbox) ListDeliveries(ctx context.Context, rowID string) ([]Delivery, 
 	return out, rows.Err()
 }
 
-// Replay resurrects ALL dead or abandoned deliveries of a parent row and
-// reopens the parent so the relay re-completes it. Resurrected deliveries
-// have attempts cleared and are scheduled immediately; the parent flips
-// back to pending with dispatched_at cleared. Idempotent: only rows that
-// have at least one dead/abandoned delivery are affected, so replaying a
-// fully-dispatched or unknown row is a no-op. Sibling consumers already
-// dispatched are untouched.
+// Replay sets every dead or abandoned delivery of a row back to pending with
+// its attempts cleared, and reopens the row. A row with none is left alone.
 func (o *Outbox) Replay(ctx context.Context, rowID string) error {
 	tx, err := o.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("outbox: replay: begin: %w", err)
 	}
 	defer tx.Rollback()
-	// created_at restarts the handler grace, which requeueNoHandler
-	// measures from it: kept, a replay of a delivery abandoned while its
-	// consumer was removed is abandoned again on the spot by a replica
-	// that has not picked up the re-added handler yet. Nothing else reads
-	// a delivery's created_at; claim order and retention use the parent's.
 	res, err := tx.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
 			SET status='pending', attempts=0, last_error='', next_attempt_at=NULL, claimed_until=NULL, created_at=$2
@@ -96,11 +81,8 @@ func (o *Outbox) Replay(ctx context.Context, rowID string) error {
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		// No dead/abandoned deliveries → nothing to reopen. Commit empty tx.
 		return tx.Commit()
 	}
-	// Reopen the parent so the relay re-expands/re-completes. Guarded by
-	// status='dispatched' so a still-pending parent isn't clobbered.
 	if _, err := tx.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s SET status='pending', dispatched_at=NULL WHERE id=$1 AND status='dispatched'`, o.qt()),
 		rowID); err != nil {
@@ -112,19 +94,13 @@ func (o *Outbox) Replay(ctx context.Context, rowID string) error {
 	return tx.Commit()
 }
 
-// ReplayConsumer resurrects a single consumer's dead or abandoned delivery
-// for a row and reopens the parent. Like [Replay] but scoped to one
-// consumer, use it to retry just the dead-lettered consumer after fixing
-// its handler, or to re-deliver to a consumer that was removed and
-// re-added (its delivery abandoned in the interim). Idempotent (no-op if
-// the named delivery isn't dead/abandoned).
+// ReplayConsumer is Replay for one consumer's delivery.
 func (o *Outbox) ReplayConsumer(ctx context.Context, rowID, consumer string) error {
 	tx, err := o.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("outbox: replay consumer: begin: %w", err)
 	}
 	defer tx.Rollback()
-	// created_at restarts the handler grace, as in Replay.
 	res, err := tx.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
 			SET status='pending', attempts=0, last_error='', next_attempt_at=NULL, claimed_until=NULL, created_at=$3
@@ -145,32 +121,17 @@ func (o *Outbox) ReplayConsumer(ctx context.Context, rowID, consumer string) err
 	return tx.Commit()
 }
 
-// expandDeliveries creates the missing pending delivery for each declared
-// consumer on every pending parent row whose type matches the consumer's
-// event type. Idempotent via a NOT EXISTS guard, so concurrent replicas or
-// repeated pumps never create duplicate deliveries. Bounded to batchSize
-// pending parents per consumer per pump so a large backlog doesn't turn
-// one pump into a giant insert. Returns the number of deliveries created.
 func (o *Outbox) expandDeliveries(ctx context.Context) (int, error) {
 	snap := o.declaredSnapshot()
 	if len(snap) == 0 {
 		return 0, nil
 	}
-	// The NOT EXISTS guard is a read-time filter, not a concurrency guard:
-	// two relays (different replicas) can both pass it and both INSERT the
-	// same (row_id, consumer), which the PRIMARY KEY would reject with a
-	// unique violation, aborting the whole statement and stalling the pump.
-	// An idempotent upsert turns that benign race into a silent no-op.
 	insertVerb, conflict := "INSERT INTO", ""
 	if o.dialect == dialectPostgres {
 		conflict = " ON CONFLICT (row_id, consumer) DO NOTHING"
 	} else {
 		insertVerb = "INSERT OR IGNORE INTO"
 	}
-	// Placeholders must first-appear in ascending order ($1,$2,…), go-sqlite3
-	// binds $N by first-appearance ordinal, not by the digit, so the delivery
-	// created_at ($2) sits in the SELECT list before the WHERE ($3) and LIMIT
-	// ($4). See the placeholder note in outbox.go.
 	now := o.now().UTC()
 	created := 0
 	for _, c := range snap {
@@ -196,43 +157,14 @@ func (o *Outbox) expandDeliveries(ctx context.Context) (int, error) {
 	return created, nil
 }
 
-// sweepParents settles pending parents that per-delivery completion won't
-// reach on its own. Neither path completes a parent because of the live
-// declared set; (ii) reads it only to hold a parent back, so both are safe
-// across a rolling deploy that changes the consumer set:
-//
-//	(i)  Orphan drop: a pending parent older than handlerGrace, with NO
-//	     delivery rows, whose event type has no declared consumer here.
-//	     Both guards matter: the type guard means a still-consumed type is
-//	     never dropped even when a >grace relay outage left a large backlog
-//	     un-expanded (expand is batch-bounded and oldest-first, so it catches
-//	     up over pumps); the age guard means a rolling deploy that adds a
-//	     type's first consumer is safe (fresh parents are younger than the
-//	     grace, so a lagging replica that lacks the consumer never drops them
-//	     before an up-to-date replica expands them). Events staged more than
-//	     handlerGrace before a type's first consumer is added are not
-//	     back-delivered, a retention-style boundary.
-//
-//	(ii) Completion backstop: a pending parent older than the grace that
-//	     HAS deliveries, all terminal (dispatched/dead/abandoned). Same age
-//	     gate as completeParent (a young parent may still gain a delivery from
-//	     a consumer being rolled out on another replica). This is also what
-//	     actually completes the common case: completeParent no-ops while a
-//	     parent is young, so this sweep finishes it once past the grace.
-//	     EXISTS(delivery) keeps a never-expanded parent out of this path,
-//	     and the per-consumer EXISTS keeps out a parent that some consumer
-//	     declared here for its type has no delivery for yet (see
-//	     declaredFor).
 func (o *Outbox) sweepParents(ctx context.Context) error {
 	now := o.now().UTC()
 	cutoff := now.Add(-o.handlerGrace)
-	// (i) orphan drop: old, never-expanded parents of an unconsumed type.
 	declaredTypes := make(map[string]bool)
 	for _, c := range o.declaredSnapshot() {
 		declaredTypes[c.eventType] = true
 	}
 	if len(declaredTypes) == 0 {
-		// No consumers at all: every old, delivery-less parent is orphan.
 		if _, err := o.db.ExecContext(ctx,
 			fmt.Sprintf(`UPDATE %s AS p SET status='dispatched', dispatched_at=$1
 				WHERE p.status='pending' AND p.created_at <= $2
@@ -260,8 +192,6 @@ func (o *Outbox) sweepParents(ctx context.Context) error {
 			return err
 		}
 	}
-	// (ii) completion backstop: old parent, all deliveries terminal, and
-	// a delivery for every consumer declared here for its type.
 	args := []any{now, cutoff}
 	var covered strings.Builder
 	for _, c := range o.declaredPairs() {
@@ -280,7 +210,6 @@ func (o *Outbox) sweepParents(ctx context.Context) error {
 	return err
 }
 
-// joinPlaceholders joins placeholder tokens with ", " for an IN list.
 func joinPlaceholders(ph []string) string {
 	var out strings.Builder
 	for i, p := range ph {
@@ -292,28 +221,11 @@ func joinPlaceholders(ph []string) string {
 	return out.String()
 }
 
-// purgeExpired deletes fully-settled (dispatched) parent rows and their
-// deliveries once older than the retention window. No-op when retention is
-// unset (0). A parent is eligible only when it is dispatched, past the
-// cutoff, AND has no dead or abandoned delivery, the NOT EXISTS guard on
-// both DELETEs excludes any parent still carrying a terminal delivery, so
-// the dead-letter (its last_error, attempts, and the parent payload) that
-// Replay/ReplayConsumer need to resurrect it is kept. Retention is therefore
-// not a dead-letter TTL: a parent with a terminal delivery is retained
-// indefinitely until that delivery is replayed to completion.
-//
-// The guard excludes a pending child too. A dispatched parent can still
-// hold one: under Postgres READ COMMITTED, completeParent's NOT EXISTS
-// reads the snapshot from before a concurrent Replay commits, so it
-// completes the parent over the delivery Replay just reset. The relay
-// still claims and delivers that child, so retention must leave it alone.
 func (o *Outbox) purgeExpired(ctx context.Context) error {
 	if o.retention <= 0 {
 		return nil
 	}
 	cutoff := o.now().UTC().Add(-o.retention)
-	// Deliveries first: drop a dispatched parent's deliveries only when
-	// every one of them is dispatched.
 	if _, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`DELETE FROM %s WHERE row_id IN (
 			SELECT p.id FROM %s p
@@ -325,8 +237,6 @@ func (o *Outbox) purgeExpired(ctx context.Context) error {
 		cutoff); err != nil {
 		return err
 	}
-	// Parents: same NOT EXISTS guard so the parent payload survives
-	// alongside its dead, abandoned or pending delivery.
 	_, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`DELETE FROM %s WHERE status='dispatched' AND created_at <= $1
 		  AND NOT EXISTS (
@@ -337,16 +247,6 @@ func (o *Outbox) purgeExpired(ctx context.Context) error {
 	return err
 }
 
-// completeParent marks one parent dispatched iff it has no pending
-// deliveries left (all dispatched/dead/abandoned), every consumer this
-// relay declares for eventType holds a delivery (see consumerCoverage),
-// AND it is older than the handler grace. The age gate is essential and symmetric with abandonment:
-// a consumer added on another replica has not yet had its delivery row
-// created, so "no pending delivery" does NOT prove "fully delivered" for a
-// young parent, completing it would let expand (WHERE status='pending')
-// skip the parent forever and lose that consumer's event. Waiting the grace
-// gives every replica time to expand its declared consumers. A parent may
-// complete with some deliveries dead/abandoned; dead ones await Replay.
 func (o *Outbox) completeParent(ctx context.Context, rowID, eventType string) {
 	now := o.now().UTC()
 	args := []any{now, rowID, now.Add(-o.handlerGrace)}
@@ -368,47 +268,17 @@ func (o *Outbox) completeParent(ctx context.Context, rowID, eventType string) {
 	}
 }
 
-// claimedDelivery carries what the relay needs to invoke a consumer's
-// handler and settle its delivery row.
 type claimedDelivery struct {
-	RowID     string
-	Consumer  string
-	Type      string
-	Payload   []byte
-	Attempts  int
-	CreatedAt time.Time
-	// ClaimedUntil is the lease this claim wrote (claimed_until). Every
-	// settle matches on it, so a claimant whose lease expired and was
-	// re-claimed settles nothing: the row's claimed_until now holds the
-	// newer claim's lease. A reclaim always writes a strictly later value
-	// (it needs claimed_until <= now, and writes now+lease), so the lease
-	// doubles as a monotonic claim fence. The settle binds the same Go
-	// value the claim bound, so the driver encodes both identically:
-	// SQLite compares the same text, Postgres rounds both to microseconds.
+	RowID        string
+	Consumer     string
+	Type         string
+	Payload      []byte
+	Attempts     int
+	CreatedAt    time.Time
 	ClaimedUntil time.Time
 }
 
-// claimDeliveries claims up to batchSize eligible deliveries. A delivery
-// is eligible when pending, its backoff window has elapsed, it is not
-// currently leased (or its lease has expired), and it still has attempt
-// budget left (attempts < maxAttempts — each claim CONSUMES one attempt in
-// SQL, `attempts = attempts + 1`, so a relay that dies between claim and
-// settle still spends one; a crash loop terminates at MaxAttempts instead
-// of re-delivering forever). A never-leased row stays claimable at any
-// attempt count: that is the no-handler requeue shape, which refunds the
-// claim and must never be frozen out mid rolling-deploy. Claiming also sets
-// claimed_until = now+lease at the delivery grain so a relay crash
-// mid-batch releases only the unsettled deliveries (sibling isolation
-// survives a crash too). Ordered by parent created_at for FIFO fairness.
-// The returned snapshot's Attempts is the POST-claim count.
 func (o *Outbox) claimDeliveries(ctx context.Context) ([]claimedDelivery, error) {
-	// Budget sweep first, the same "before every claim" placement as
-	// battery/queue's deadLetterExpiredFinalClaims: a delivery whose lease
-	// expired with the attempt budget already spent is a relay that died
-	// between claim and settle on its final claim. Left alone it is
-	// pending-but-unclaimable forever (a silent black hole the parent
-	// sweep can never complete); dead-lettered it is visible to
-	// ListDeliveries and resurrectable via Replay.
 	if err := o.deadLetterExpiredExhaustedClaims(ctx); err != nil {
 		return nil, err
 	}
@@ -420,16 +290,6 @@ func (o *Outbox) claimDeliveries(ctx context.Context) ([]claimedDelivery, error)
 	}
 }
 
-// deadLetterExpiredExhaustedClaims marks 'pending' deliveries whose lease
-// has expired at an already-spent attempt budget (attempts >= maxAttempts)
-// as dead. Those rows are exactly the claim-crash loop: each claim consumed
-// an attempt in SQL, the relay died before settling, and the budget ran out.
-// The expired-lease fence keeps a LIVE claim out of the sweep (its
-// claimed_until is in the future), and the claimed_until IS NOT NULL arm
-// keeps never-leased rows out: an exhausted row that was never claimed is
-// the no-handler requeue shape (requeueNoHandler refunds the claim and
-// never dead-letters on attempts, a lagging replica may still hold the
-// handler).
 func (o *Outbox) deadLetterExpiredExhaustedClaims(ctx context.Context) error {
 	_, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s
@@ -441,11 +301,6 @@ func (o *Outbox) deadLetterExpiredExhaustedClaims(ctx context.Context) error {
 	return err
 }
 
-// claimDeliveriesPostgres claims in one atomic step. FOR UPDATE SKIP
-// LOCKED lets concurrent relays skip each other's deliveries instead of
-// blocking. A CTE carries the RETURNING delivery rows into a join back to
-// the parent for type/payload/created_at (UPDATE RETURNING can't surface
-// columns from a joined table).
 func (o *Outbox) claimDeliveriesPostgres(ctx context.Context) ([]claimedDelivery, error) {
 	now := o.now().UTC()
 	claimUntil := now.Add(o.lease)
@@ -486,18 +341,9 @@ func (o *Outbox) claimDeliveriesPostgres(ctx context.Context) ([]claimedDelivery
 	return out, rows.Err()
 }
 
-// claimDeliveriesSQLite claims via SELECT-then-UPDATE inside a tx. SQLite
-// serialises writers (file-level lock under BEGIN), so the two-step is
-// race-free without SKIP LOCKED. Mirrors the parent claim's SQLite path.
 func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, error) {
 	now := o.now().UTC()
 	claimUntil := now.Add(o.lease)
-	// BEGIN IMMEDIATE, not the driver's default. database/sql issues a
-	// plain BEGIN, which SQLite reads as DEFERRED: the write lock is taken
-	// at the first WRITE, so two relays both run the SELECT, pick the same
-	// deliveries, and the second one's UPDATE meets a held lock and gets
-	// SQLITE_BUSY. The comment above has claimed the file-level lock made
-	// this race-free; nothing took that lock before the read.
 	conn, err := o.db.Conn(ctx)
 	if err != nil {
 		return nil, err
@@ -509,14 +355,6 @@ func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, 
 	committed := false
 	defer func() {
 		if !committed {
-			// Nowhere to return this: the claim already failed and its
-			// error is the one the caller needs. Since SQLite 3.7.11
-			// ROLLBACK aborts pending reads instead of failing, an error
-			// from it means no transaction is left active — nothing holds
-			// the write lock, so the connection needs no retiring (and the
-			// pool would not discard it on its own; modernc drops only
-			// interrupted connections) — but it is still unexpected, so
-			// it is logged.
 			//gofastr:allow(poisonedconn) SQLite BEGIN IMMEDIATE claim: since SQLite 3.7.11 ROLLBACK aborts pending reads instead of failing, so its error here means no transaction is left active, and retiring the conn would only drop a :memory: database
 			if _, err := conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK"); err != nil {
 				slog.Default().Warn("outbox: rolling back an abandoned claim", "err", err)
@@ -557,9 +395,8 @@ func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, 
 		committed = err == nil
 		return nil, err
 	}
-	// UPDATE the picked deliveries in the same tx so the claim is atomic.
 	var clauses []string
-	args := []any{claimUntil} // $1
+	args := []any{claimUntil}
 	for _, pr := range pairs {
 		clauses = append(clauses, fmt.Sprintf("(row_id=$%d AND consumer=$%d)", len(args)+1, len(args)+2))
 		args = append(args, pr[0], pr[1])
@@ -576,8 +413,6 @@ func (o *Outbox) claimDeliveriesSQLite(ctx context.Context) ([]claimedDelivery, 
 	return out, nil
 }
 
-// scanClaimedDelivery materialises a claimedDelivery from a SELECT row in
-// the canonical column order used by both claim queries.
 func scanClaimedDelivery(row interface {
 	Scan(dest ...any) error
 }) (claimedDelivery, error) {
@@ -598,24 +433,6 @@ func scanClaimedDelivery(row interface {
 	return d, nil
 }
 
-// markDeliveryDispatched settles a successful delivery. Only a pending
-// delivery may settle, symmetric with markDeliveryFailure: a dispatched row
-// stays sticky (a pending-only guard still never clobbers one), and dead or
-// abandoned deliveries are terminal until an explicit Replay. This stops a
-// worker whose lease expired from resurrecting a delivery an operator already
-// triaged, flipping it straight to dispatched, clearing last_error, and
-// burying the dead-letter as a clean success. The outbox is at-least-once, so
-// a stale success whose handler genuinely ran is simply lost credit; a later
-// Replay may duplicate, and that is the documented contract, the terminal
-// record wins.
-//
-// Every settle is also fenced on the claim it holds (claimed_until equal to
-// the lease this claim wrote, see claimedDelivery.ClaimedUntil). A claimant
-// whose lease expired and was re-claimed settles nothing: its late write
-// would otherwise clear the newer claim's lease, and after the backoff a
-// third relay would claim the delivery while the second still runs it. The
-// current claimant's outcome decides the row; a stale success is lost credit
-// (the re-claimant delivers again, the at-least-once duplicate).
 func (o *Outbox) markDeliveryDispatched(ctx context.Context, d claimedDelivery) {
 	err := sqlbusy.Retry(ctx, func(ctx context.Context) error {
 		_, err := o.db.ExecContext(ctx,
@@ -631,24 +448,6 @@ func (o *Outbox) markDeliveryDispatched(ctx context.Context, d claimedDelivery) 
 	}
 }
 
-// markDeliveryFailure records a delivery failure on the delivery row. If
-// this attempt exhausts MaxAttempts the delivery is marked dead; otherwise
-// it returns to pending with an exponential backoff (next_attempt_at) so a
-// flapping consumer can't burn through every attempt in a tight loop.
-// Only pending deliveries may record a handler failure; every other state is
-// terminal until an explicit Replay.
-//
-// The attempts counter is OWNED BY THE CLAIM: claimDeliveries consumes one
-// attempt per claim (`attempts = attempts + 1` in the claim UPDATE, the
-// battery/queue and battery/webhook spelling), and d.Attempts is the
-// post-claim count, so THIS settle never writes the counter — it writes
-// state only. That is also what keeps the count monotonic under lease
-// overrun: two overlapping claims both bumped in SQL at claim time, and a
-// stale claimant's settle (which matches no live 'pending' row by then, or
-// a re-claimed one) can neither rewind nor double-count what claims
-// already recorded. The dead-letter decision uses the claim snapshot
-// because it decides what THIS settle does. Both arms carry the claim fence
-// (see markDeliveryDispatched).
 func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cause error) {
 	if d.Attempts >= o.maxAttempts {
 		err := sqlbusy.Retry(ctx, func(ctx context.Context) error {
@@ -680,21 +479,6 @@ func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cau
 	}
 }
 
-// requeueNoHandler handles a delivery whose consumer has no handler on THIS
-// replica. If the delivery has been unhandled since its own creation for
-// longer than handlerGrace, no replica holds the consumer (a genuinely-
-// removed consumer), so it is abandoned, settled terminal, and its parent
-// completed. Otherwise it is requeued with a short backoff for an up-to-date
-// replica to claim; it is never dead-lettered on attempts, because a replica
-// mid-deploy may still hold the handler. The requeue also REFUNDS the claim
-// (attempts = attempts - 1, the battery/queue release() spelling): no
-// handler invocation happened anywhere, so a lagging replica's claim must
-// not burn the budget of a consumer that is merely not declared here yet.
-// Measuring the grace from the delivery's own created_at (not the event's)
-// is what makes a freshly-added consumer's deliveries safe: they are young,
-// so a lagging replica requeues rather than abandons them. Both arms carry
-// the claim fence (see markDeliveryDispatched): a stale refund would
-// otherwise hand back an attempt the newer claim consumed.
 func (o *Outbox) requeueNoHandler(ctx context.Context, d claimedDelivery) {
 	now := o.now().UTC()
 	n, err := sqlbusy.Exec(ctx, func(ctx context.Context) (int64, error) {
@@ -717,11 +501,6 @@ func (o *Outbox) requeueNoHandler(ctx context.Context, d claimedDelivery) {
 		o.completeParent(ctx, d.RowID, d.Type)
 		return
 	}
-	// Requeue at the MAX backoff, not the base: a no-handler delivery may sit
-	// for the whole grace window (a removal drain), and it sorts to the front
-	// of the FIFO claim (oldest parents), so a base-interval requeue would
-	// re-claim it every poll and both amplify writes and crowd out real work.
-	// A coarse retry still picks it up within backoffMax once a handler lands.
 	next := now.Add(o.backoffMax)
 	err = sqlbusy.Retry(ctx, func(ctx context.Context) error {
 		_, err := o.db.ExecContext(ctx,
@@ -739,13 +518,6 @@ func (o *Outbox) requeueNoHandler(ctx context.Context, d claimedDelivery) {
 	}
 }
 
-// releaseUnstarted hands back claims the relay never started (see pump):
-// the lease is cleared and the attempt the claim consumed is refunded, so
-// the delivery is claimable at once and its budget is untouched. Each
-// write carries the claim fence: a claim another relay already took over
-// keeps its lease and its count, and every settle and the budget sweep
-// clear claimed_until, so the fence also keeps the release off a settled
-// row.
 func (o *Outbox) releaseUnstarted(ctx context.Context, ds []claimedDelivery) {
 	for _, d := range ds {
 		err := sqlbusy.Retry(ctx, func(ctx context.Context) error {
@@ -763,10 +535,6 @@ func (o *Outbox) releaseUnstarted(ctx context.Context, ds []claimedDelivery) {
 	}
 }
 
-// invokeHandler calls h with a deferred recover that converts a panic into
-// a delivery error (rather than swallowing it, as the bus's emitSafe does).
-// A panicking consumer is a retryable FAILURE, never a silent dispatched.
-// Mirrors event.emitStrict's panic-surfacing contract.
 func invokeHandler(ctx context.Context, h event.EventHandler, ev event.Event, consumer string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -776,10 +544,6 @@ func invokeHandler(ctx context.Context, h event.EventHandler, ev event.Event, co
 	return h(ctx, ev)
 }
 
-// sqliteConnTx runs statements on the single connection holding an
-// explicitly-issued BEGIN IMMEDIATE. database/sql cannot ask BeginTx for an
-// immediate transaction, and the lock has to be held before the SELECT for
-// the claim to be serialised at all.
 type sqliteConnTx struct{ conn *sql.Conn }
 
 func (t sqliteConnTx) QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error) {

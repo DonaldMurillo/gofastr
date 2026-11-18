@@ -1,0 +1,80 @@
+primitive: i18nui
+summary: The phrases framework UI surfaces show, each an i18n.Phrase with an English default, the HTML helper that fills a phrase with markup, and the Entity* helpers that name an entity, field or relation from the catalog, its Display config or its humanized name.
+code:
+  - framework/i18nui/i18nui.go
+docs:
+  - framework/docs/content/i18n.md
+on_change:
+  - Renaming or removing a phrase key breaks the catalogs apps already ship under it; note it in framework/docs/content/upgrading.md.
+invariants:
+  - id: ui-phrases-use-named-placeholders
+    rule: Every ui.* phrase writes its placeholders as {{name}}, never a printf verb or a single-brace {name} token.
+    enforced_by:
+      - test: framework/i18nui.TestUIPhrasesUseNamedPlaceholders
+  - id: html-escapes-text-not-values
+    rule: HTML escapes the translated text, puts each vars value in its {{name}} as given in one pass, so a value holding a placeholder stays as written, and leaves a placeholder vars does not name as text.
+    enforced_by:
+      - test: framework/i18nui.TestHTMLEscapesTextNotValues
+  - id: catalog-then-display-then-derived
+    rule: Each Entity*, Field*, View, Transition, Section and NavGroup label helper answers the catalog entry under its key, else the Display value passed, else the fallback derived from the key, and "" for a description or help line.
+    enforced_by:
+      - test: framework/i18nui.TestEntityLabelFallbackOrder
+      - test: framework/i18nui.TestEntityLabelHelpersReadTheirKeys
+      - test: framework/i18nui.TestFieldLabelPrecedence
+  - id: nil-translator-reads-the-context
+    rule: A helper passed a nil Translator reads the one on the context, and with neither answers the derived English.
+    enforced_by:
+      - test: framework/i18nui.TestEntityLabelsWithCtxTranslator
+      - test: framework/i18nui.TestFieldLabelNoTranslator
+  - id: catalog-echo-is-a-miss
+    rule: A catalog entry whose text is its own key reads as a miss, so the helper falls through to Display or the derived label.
+    enforced_by:
+      - test: framework/i18nui.TestSweepCatalogEchoOfTheKeyIsAMiss
+  - id: singular-is-singularized
+    rule: EntitySingular's derived fallback singularizes the entity name before title-casing it.
+    enforced_by:
+      - test: framework/i18nui.TestEntitySingularFallbackNotPlural
+  - id: noun-lowers-plain-words-only
+    rule: EntityNoun returns a catalog entry as written, and otherwise lowercases each word of the Display or derived name whose only capital is its first letter.
+    enforced_by:
+      - test: framework/i18nui.TestEntityNounLowersPlainWords
+      - test: framework/i18nui.TestEntityNounKeepsCatalogCasing
+  - id: relation-label-drops-id
+    rule: RelationLabel's humanized fallback drops a trailing _id, Id or ID while its catalog key keeps the full field name.
+    enforced_by:
+      - test: framework/i18nui.TestRelationLabelDropsID
+  - id: slug-labels-are-sentence-case
+    rule: A key-derived label reads hyphens and underscores as spaces and capitalizes only its first letter.
+    enforced_by:
+      - test: framework/i18nui.TestTitleCaseIsSentenceCaseOverTheSlug
+  - id: field-names-humanize-to-title-case
+    rule: FieldLabel's fallback splits a field name at underscores, hyphens and camelCase boundaries and capitalizes each word, keeping multibyte runes.
+    enforced_by:
+      - test: framework/i18nui.TestHumanize
+      - test: framework/i18nui.TestHumanizeMultibyte
+      - test: framework/i18nui.TestSweepHumanizeSplitsCamelCase
+decisions:
+  - id: display-is-not-a-translation
+    date: 2026-11-17
+    status: accepted
+    decision: An entity's Display strings are English fallbacks under a catalog key, and a catalog entry under the key wins.
+    rejected:
+      - option: Treat Display values as the translated text.
+        why: A translator could not override them without changing the entity declaration.
+    upholds: [catalog-then-display-then-derived]
+  - id: singular-fallback-singularizes
+    date: 2026-11-17
+    status: accepted
+    decision: EntitySingular derives its fallback through the shared singularizer, leaving irregular words it does not know title-cased.
+    rejected:
+      - option: Title-case the entity name as it is.
+        why: Entity names are usually plurals, so a heading for one record read "New Invoices".
+    upholds: [singular-is-singularized]
+  - id: one-placeholder-spelling
+    date: 2026-11-17
+    status: accepted
+    decision: Phrases spell every placeholder {{name}}, the spelling the catalog check and the runtime fill both read.
+    rejected:
+      - option: printf verbs where the Go side formats and {name} tokens where the runtime fills.
+        why: A translator had two spellings to learn and could not reorder printf arguments.
+    upholds: [ui-phrases-use-named-placeholders]

@@ -197,7 +197,7 @@ invariants:
     rule: No JSON block the host inlines into a script element holds the two bytes "</".
     judge: Does this change write JSON into a script element without escapeJSONForScript, relying on an encoder that may not escape the less-than sign?
   - id: page-seed-names-its-page-keys
-    rule: A full page's #gofastr-signals-page block lists, sorted, exactly the seed keys that are not app-global.
+    rule: "A full page's #gofastr-signals-page block lists, sorted, exactly the seed keys that are not app-global."
     enforced_by:
       - test: framework/uihost.TestSeedNamesPageScopedKeys
   - id: head-data-blocks

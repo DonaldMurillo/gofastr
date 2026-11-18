@@ -1,25 +1,5 @@
-// Package localentity declares records that live in the visitor's
-// browser and renders the forms and lists that edit them, with no
-// server table and no JavaScript in the app.
-//
-//	var Team = localdb.New("team")
-//	var Members = localentity.Define(Team, "members", []schema.Field{
-//	    {Name: "name", Type: schema.String, Required: true, Max: ptr(20)},
-//	    {Name: "level", Type: schema.Int, Min: ptr(1), Max: ptr(100)},
-//	}, localentity.Indexed("level"), localentity.MaxRecords(6))
-//
-// A declared entity is a core-ui/localdb store with three built-in
-// fields: id (a UUIDv7 string minted in the browser), created_at and
-// updated_at (RFC 3339 strings). Its forms and lists render through
-// the design system on the server, like every other page; the
-// localentity-form behaviour then saves form submissions into
-// IndexedDB, and the localentity behaviour fills each list by cloning
-// its server-rendered row template, setting text only. Every tab of the site re-renders when any tab writes.
-//
-// Nothing here talks to the server after the page loads, and the
-// server never sees the records. A later sync layer can carry them to
-// a real database; the declarations use core/schema field types so
-// the same fields can describe a server entity.
+// Package localentity declares records kept in the visitor's browser (Define)
+// and renders the forms and lists that edit them (Entity.Form, Entity.List).
 package localentity
 
 import (
@@ -55,12 +35,6 @@ var listJS string
 //go:embed localform.js
 var formJS string
 
-// Two behaviours, so a page that only shows records never downloads
-// the form code: the list module loads on a local list or count after
-// the localdb adapter, the form module on a form carrier after localdb
-// and the formerrors module that places refusals beside fields. A
-// list's Edit control hands the record to the form module, which the
-// form carrier it names has loaded.
 var (
 	_ = registry.RegisterBehavior("localentity", listJS,
 		registry.Markers("[data-fui-local-list]", "[data-fui-local-count]"),
@@ -68,21 +42,13 @@ var (
 	_ = registry.RegisterBehavior("localentity-form", formJS,
 		registry.Markers("[data-fui-local-form]"),
 		registry.Requires("localdb", "formerrors"),
-		// A Save clicked while the module is still fetching is held and
-		// replayed once it loads, instead of falling through to a native
-		// POST that reloads the page and loses what was typed.
 		registry.Interactions(registry.Interaction{Event: "click", Selector: `[data-fui-local-form] [type="submit"]`}))
 )
 
-// The list and form carriers are behaviour hooks, not boxes: they lay
-// out as if absent, so a list's rows are direct layout children of
-// the ui.Grid or ui.Stack around it, and a form wrapper adds nothing
-// around the ui.Form inside.
 var carrierStyle = registry.RegisterStyle("local-entity", func(style.Theme) string {
 	return `[data-fui-local-list],[data-fui-local-form]{display:contents}`
 })
 
-// Entity is one declared local entity.
 type Entity struct {
 	target string // "<db>/<store>", the attribute value the behaviour reads
 	store  *localdb.Store
@@ -101,34 +67,22 @@ type options struct {
 	messages Messages
 }
 
-// Indexed adds an IndexedDB index over each named field, so a list can
-// order by it (ListConfig.OrderBy). created_at and updated_at are
-// always indexed. A Bool field cannot be indexed: IndexedDB keys are
-// never booleans.
+// Indexed indexes each named Required, non-Bool field so a list can order by it.
 func Indexed(fields ...string) Option {
 	return func(o *options) { o.indexed = append(o.indexed, fields...) }
 }
 
-// MaxRecords caps how many records the entity holds. A create past
-// the cap is refused with Messages.Full and nothing is written; edits
-// still work. 0 means no cap.
+// MaxRecords caps how many records the entity holds; 0 means no cap.
 func MaxRecords(n int) Option {
 	return func(o *options) { o.max = n }
 }
 
-// WithMessages replaces the validation messages the behaviour shows
-// with the app's own words. Empty fields keep the defaults, which
-// speak the reader's language (the localentity.* phrases). {{n}} is
-// replaced by the bound.
+// WithMessages replaces default validation messages; {{n}} is the bound.
 func WithMessages(m Messages) Option {
 	return func(o *options) { o.messages = m }
 }
 
-// Messages are the words the behaviour places beside a field (or
-// toasts, for Full and Failed) when a submission is refused. The
-// browser's own validation runs first on any control the form renders
-// with required/min/max/maxlength/pattern; these cover the rest and a
-// form rendered without them.
+// Messages are the words shown when a submission is refused.
 type Messages struct {
 	Required string `json:"required,omitempty"`
 	Number   string `json:"number,omitempty"`
@@ -144,9 +98,6 @@ type Messages struct {
 	Failed   string `json:"failed,omitempty"`
 }
 
-// The default messages. The behaviours say them through the page's
-// runtime strings (core-ui/runtime.RegisterStrings), so they arrive in
-// the reader's language; a Messages field the app sets replaces one.
 var (
 	msgRequired = i18n.Define("localentity.required", "This field is required.")
 	msgNumber   = i18n.Define("localentity.number", "Enter a number.")
@@ -167,8 +118,6 @@ func init() {
 		msgMaxLen, msgPattern, msgChoice, msgDate, msgFull, msgFailed)
 }
 
-// fieldSpec is the per-field wire shape the behaviour validates
-// against; the JSON tags are what localentity.js reads.
 type fieldSpec struct {
 	Name     string   `json:"name"`
 	Type     string   `json:"t"`
@@ -186,10 +135,6 @@ type entitySpec struct {
 	Messages Messages    `json:"msgs"` // the app's overrides; the rest are phrases
 }
 
-// typeNames maps the core/schema types a local entity accepts to the
-// behaviour's type tags. Relation, JSON, Decimal, UUID, Image and File
-// need machinery a browser-only record does not have (a target table,
-// exact arithmetic, an upload) and are refused at Define.
 var typeNames = map[schema.FieldType]string{
 	schema.String:    "string",
 	schema.Text:      "text",
@@ -201,14 +146,7 @@ var typeNames = map[schema.FieldType]string{
 	schema.Timestamp: "timestamp",
 }
 
-// Define declares a local entity named name in db, with the given
-// fields, and returns it. It declares the backing store itself (keyed
-// by id, created_at and updated_at indexed, plus Indexed fields), so
-// name must not already be a store in db. Field names are lowercase
-// snake_case ([a-z][a-z0-9_]*, at most 61 bytes, so "by_<name>" is a
-// valid index name), not "constructor" or "prototype", and must not
-// reuse a built-in. An Indexed field must be Required. Every refusal is a
-// panic at startup.
+// Define declares a local entity and its store in db; refusals panic.
 func Define(db *localdb.DB, name string, fields []schema.Field, opts ...Option) *Entity {
 	if db == nil {
 		panic("localentity: Define needs a localdb.DB")
@@ -272,10 +210,6 @@ func Define(db *localdb.DB, name string, fields []schema.Field, opts ...Option) 
 		if def.Type == schema.Bool {
 			panic(fmt.Sprintf("localentity: %s: Bool field %q cannot be indexed", name, f))
 		}
-		// IndexedDB leaves a record out of an index when the indexed
-		// property is missing, so ordering a list by an optional field
-		// would hide every record without it while Count still counted
-		// them.
 		if !def.Required {
 			panic(fmt.Sprintf("localentity: %s: Indexed field %q must be Required: a record without it would vanish from lists ordered by it", name, f))
 		}
@@ -301,8 +235,7 @@ func Define(db *localdb.DB, name string, fields []schema.Field, opts ...Option) 
 // Name returns the entity's store name.
 func (e *Entity) Name() string { return e.store.Name() }
 
-// Store returns the backing localdb store, for page scripts that read
-// the records through __gofastr.localdb directly.
+// Store returns the backing localdb store.
 func (e *Entity) Store() *localdb.Store { return e.store }
 
 // Fields returns a copy of the declared fields (built-ins excluded).
@@ -318,24 +251,15 @@ func (e *Entity) known(field string) bool {
 
 // ListConfig configures a List.
 type ListConfig struct {
-	// OrderBy is the field rows are ordered by: created_at (the
-	// default), updated_at, or a field declared Indexed. IndexedDB
-	// does the ordering through the index; page script never sorts.
+	// OrderBy is created_at (the default), updated_at or an Indexed field.
 	OrderBy string
 	// Desc reverses the order (newest first, highest first).
 	Desc bool
-	// Limit caps how many rows render. 0 renders every record.
+	// Limit caps how many rows render; 0 renders every record.
 	Limit int
 }
 
-// List is a configured list of an entity's records. Compose it inside
-// a layout component: the rows become that component's children.
-//
-//	l := Members.List(localentity.ListConfig{OrderBy: "level", Desc: true})
-//	ui.Grid(ui.GridConfig{Min: "14rem"}, l.Render(
-//	    l.Row(func(r localentity.Row) render.HTML { return ui.Card(...) }),
-//	    l.Empty(ui.EmptyState(...)),
-//	))
+// List is a configured list of an entity's records.
 type List struct {
 	e   *Entity
 	cfg ListConfig
@@ -355,9 +279,7 @@ func (e *Entity) List(cfg ListConfig) List {
 	return List{e: e, cfg: cfg}
 }
 
-// Render returns the list carrier holding its row and empty
-// templates. Until the behaviour fills it, it shows nothing: the
-// server cannot see the visitor's records.
+// Render returns the list carrier holding its row and empty templates.
 func (l List) Render(row, empty render.HTML) render.HTML {
 	attrs := html.Attrs{
 		"data-fui-local-list":  l.e.target,
@@ -375,16 +297,12 @@ func (l List) Render(row, empty render.HTML) render.HTML {
 	return carrierStyle.WrapHTML(html.Div(html.DivConfig{ExtraAttrs: attrs}, row, empty))
 }
 
-// Row renders the row template. fn builds one row from the design
-// system; Row's helpers mark where each record's values go. The
-// template must have exactly one root element, and should carry no
-// id attributes: every record clones it.
+// Row renders the row template: one root element, no id attributes.
 func (l List) Row(fn func(Row) render.HTML) render.HTML {
 	return html.Template(html.TemplateConfig{ExtraAttrs: html.Attrs{"data-fui-local-row": ""}}, fn(Row{e: l.e}))
 }
 
-// Empty renders what the list shows when it has no records. One root
-// element, like Row.
+// Empty renders what the list shows with no records; one root element.
 func (l List) Empty(content render.HTML) render.HTML {
 	return html.Template(html.TemplateConfig{ExtraAttrs: html.Attrs{"data-fui-local-empty": ""}}, content)
 }
@@ -392,9 +310,7 @@ func (l List) Empty(content render.HTML) render.HTML {
 // Row marks where a record's values go inside a row template.
 type Row struct{ e *Entity }
 
-// Text renders a span the behaviour fills with the record's value for
-// field, as text (never markup). Built-ins are allowed: id,
-// created_at, updated_at. An unknown field panics.
+// Text renders a span filled with the record's value for field, as text.
 func (r Row) Text(field string) render.HTML {
 	if !r.e.known(field) {
 		panic(fmt.Sprintf("localentity: %s: Row.Text names unknown field %q", r.e.Name(), field))
@@ -402,16 +318,12 @@ func (r Row) Text(field string) render.HTML {
 	return html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"data-fui-local-text": field}})
 }
 
-// Delete wraps a control (a ui.Button with Type "button") so a click
-// deletes this row's record.
+// Delete wraps a control so a click deletes this row's record.
 func (r Row) Delete(control render.HTML) render.HTML {
 	return html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"data-fui-local-delete": ""}}, control)
 }
 
-// Edit wraps a control so a click loads this row's record into the
-// entity form whose carrier id is formID (Entity.Form); the next save
-// of that form updates the record instead of creating one, and the
-// form's reset button ends the edit.
+// Edit wraps a control that loads this row's record into form formID.
 func (r Row) Edit(formID string, control render.HTML) render.HTML {
 	if formID == "" {
 		panic(fmt.Sprintf("localentity: %s: Row.Edit needs the form carrier's id", r.e.Name()))
@@ -419,17 +331,7 @@ func (r Row) Edit(formID string, control render.HTML) render.HTML {
 	return html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"data-fui-local-edit": formID}}, control)
 }
 
-// Form wraps a design-system form (ui.Form) so its submissions are
-// saved into this entity instead of posted. Each control's name is a
-// field name; controls with other names (the CSRF input, a button)
-// are ignored. id names the carrier, for Row.Edit. The browser's own
-// constraint validation runs first; the behaviour then coerces and
-// checks each value against the field declarations and places any
-// refusal beside its field.
-//
-// ui.Form still needs an Action: without JavaScript the form posts
-// there natively, so point it at a route that explains the page needs
-// script, or at the page itself.
+// Form wraps a ui.Form so its submissions save into this entity.
 func (e *Entity) Form(id string, form render.HTML) render.HTML {
 	return carrierStyle.WrapHTML(html.Div(html.DivConfig{ID: id, ExtraAttrs: html.Attrs{
 		"data-fui-local-form":   e.target,
@@ -437,28 +339,13 @@ func (e *Entity) Form(id string, form render.HTML) render.HTML {
 	}}, form))
 }
 
-// Count renders a span the behaviour fills with how many records the
-// entity holds, kept current across tabs.
+// Count renders a span filled with how many records the entity holds.
 func (e *Entity) Count() render.HTML {
 	return html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"data-fui-local-count": e.target}})
 }
 
 func indexName(field string) string { return "by_" + field }
 
-// checkPattern admits a Pattern only when the browser will read it the
-// way the server does. It must compile as Go (core/schema checks it
-// there), and it is scanned against the subset Go's RE2 and JavaScript's
-// u-mode regexes share: literals; classes with ranges and the escapes
-// below; groups, with (?:…) the only extension; | ^ $ * + ?; {n},
-// {n,} and {n,m}; escapes \d \D \w \W \b \B \n \r \t \f \v, an
-// escaped metacharacter, \- inside a class, and \p{…}/\P{…} naming a
-// general category. \s, \S and a bare . are refused too: JavaScript's
-// \s is Unicode whitespace where Go's is ASCII, and its . skips four
-// line terminators where Go's skips one (#669) — name the characters in
-// a class instead. Everything else (inline flags, (?P<name>), \A, \z,
-// \Q…\E, POSIX classes, octal and other letter escapes, a lone { } or ],
-// script names in \p{…}, a class opening with ]) is refused at startup,
-// because one side would accept what the other refuses.
 func checkPattern(p string) error {
 	if _, err := regexp.Compile(p); err != nil {
 		return fmt.Errorf("Pattern does not compile: %v", err)
@@ -522,8 +409,6 @@ func checkPattern(p string) error {
 
 var quantifier = regexp.MustCompile(`^\{\d+(,\d*)?\}`)
 
-// generalCategory lists the Unicode general categories both engines
-// name the same way; script names (\p{Greek}) differ and are refused.
 var generalCategory = map[string]bool{
 	"L": true, "Lu": true, "Ll": true, "Lt": true, "Lm": true, "Lo": true,
 	"M": true, "Mn": true, "Mc": true, "Me": true,
@@ -543,9 +428,6 @@ func fieldByName(fields []schema.Field, name string) (schema.Field, bool) {
 	return schema.Field{}, false
 }
 
-// validField is lowercase snake_case, 1-61 bytes ("by_" + name stays a
-// valid localdb index name), and never a name an object already
-// carries on its prototype chain.
 func validField(s string) bool {
 	if s == "" || len(s) > 61 || s[0] < 'a' || s[0] > 'z' || s == "constructor" || s == "prototype" {
 		return false

@@ -1,28 +1,4 @@
-// Package factory provides Rails-style fixture / factory helpers for
-// GoFastr tests and dev-time seeders. Each Factory binds to one
-// entity's CRUD handler and produces fresh row bodies, typically by
-// layering caller overrides on top of a base function, so test setup
-// reads "make me a user with admin=true" instead of "construct a map
-// with every required field by hand."
-//
-// The package leans on the in-process [crud.CrudHandler.CreateOne]
-// API so factories run through the exact same Before/After hook
-// chain, transaction, and event emission as real HTTP traffic. That
-// keeps integration-style tests close to production behaviour.
-//
-// Wiring:
-//
-//	users := framework.NewApp(...).Entity("users", ...) // registers CRUD
-//	userFactory := factory.New(app.Registry, "users", func() map[string]any {
-//	    n := userSeq.Next()
-//	    return map[string]any{
-//	        "email": fmt.Sprintf("user%d@example.com", n),
-//	        "name":  fmt.Sprintf("User %d", n),
-//	    }
-//	})
-//
-//	u, _ := userFactory.Create(ctx)
-//	admin, _ := userFactory.Create(ctx, map[string]any{"role": "admin"})
+// Package factory builds and inserts entity rows for tests and seeders.
 package factory
 
 import (
@@ -38,33 +14,19 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// EntityRegistry is the minimal surface the factory needs from the
-// framework's registry, a way to look up an entity by name. The
-// factory accepts the interface so tests can supply a hand-rolled
-// registry; in production this is the App.Registry.
+// EntityRegistry looks up an entity by name; App.Registry satisfies it.
 type EntityRegistry interface {
 	Get(name string) (*entity.Entity, error)
 }
 
-// wiredRegistry is the registry an App owns (framework.Registry): it
-// returns the CRUD handler that App's own routes serve, or nil when no
-// App owns it.
 type wiredRegistry interface {
 	CrudHandlerFor(*entity.Entity) (*crud.CrudHandler, error)
 }
 
-// BaseFunc returns a fresh body map. Called for each Create / Build,
-// returning a new map each time keeps tests independent of each
-// other.
+// BaseFunc returns the base body, called once per Build or Create.
 type BaseFunc func() map[string]any
 
-// Factory builds and persists rows for one entity. Construct via [New].
-//
-// The handler defaults to the one the owning App's routes serve, when
-// reg is an App's registry (app.Registry), and to a bare
-// crud.NewCrudHandler (no hooks, events or app casing) for any other
-// registry. Override it via [WithHandler] when your tests need a different DB connection
-// (sandboxed schema, in-memory fork, …).
+// Factory builds and inserts rows for one entity. Construct it with [New].
 type Factory struct {
 	entityName string
 	base       BaseFunc
@@ -74,18 +36,13 @@ type Factory struct {
 // Option configures a Factory.
 type Option func(*Factory)
 
-// WithHandler overrides the CRUD handler the factory dispatches
-// through. Useful when tests build their own handler with a custom
-// DB connection.
+// WithHandler replaces the CRUD handler the factory inserts through.
 func WithHandler(h *crud.CrudHandler) Option {
 	return func(f *Factory) { f.handler = h }
 }
 
-// New constructs a Factory bound to the named entity in the registry.
-// The base function MUST return a fresh map per call, sharing a map
-// would let later overrides leak into earlier factory results.
-//
-// Returns an error when the entity is unknown or has no DB attached.
+// New binds a Factory to the named entity; base must return a fresh map
+// per call. It errors when the entity is unknown or has no DB.
 func New(reg EntityRegistry, entityName string, base BaseFunc, opts ...Option) (*Factory, error) {
 	if base == nil {
 		return nil, errors.New("factory: nil base func")
@@ -100,10 +57,6 @@ func New(reg EntityRegistry, entityName string, base BaseFunc, opts ...Option) (
 	if e.DB == nil {
 		return nil, fmt.Errorf("factory: entity %q has no DB attached", entityName)
 	}
-	// app.Registry hands out the handler its App wires: hooks, events,
-	// JSON case, storage. A bare NewCrudHandler carries none of them, so
-	// a factory built from the documented factory.New(app.Registry, …)
-	// skipped every hook the app registered.
 	h := crud.NewCrudHandler(e, e.DB)
 	if w, ok := reg.(wiredRegistry); ok {
 		wired, err := w.CrudHandlerFor(e)
@@ -125,10 +78,7 @@ func New(reg EntityRegistry, entityName string, base BaseFunc, opts ...Option) (
 	return f, nil
 }
 
-// Build returns the row body that Create would insert, useful when
-// a test wants to assert on the request shape without actually
-// hitting the database. Overrides apply left-to-right; later
-// overrides win on key conflict.
+// Build returns the body Create would insert; later overrides win.
 func (f *Factory) Build(overrides ...map[string]any) map[string]any {
 	out := f.base()
 	if out == nil {
@@ -140,19 +90,13 @@ func (f *Factory) Build(overrides ...map[string]any) map[string]any {
 	return out
 }
 
-// Create inserts a fresh row through the full CRUD pipeline (Before
-// hooks → INSERT → After hooks → event emission) and returns the
-// persisted record keyed as the handler's API responses are (the app's
-// JSONCase, camelCase by default).
+// Create inserts a row through the handler and returns it as the API would.
 func (f *Factory) Create(ctx context.Context, overrides ...map[string]any) (map[string]any, error) {
 	body := f.Build(overrides...)
 	return f.handler.CreateOne(ctx, body)
 }
 
-// CreateMany inserts n rows. The optional perIndex callback runs
-// once per row and its return is merged on top of base + caller
-// overrides, handy when each row needs a unique value derived from
-// its index (e.g. ordering tests).
+// CreateMany inserts n rows, merging perIndex(i), when given, over each.
 func (f *Factory) CreateMany(ctx context.Context, n int, perIndex func(i int) map[string]any) ([]map[string]any, error) {
 	if n <= 0 {
 		return nil, nil
@@ -172,10 +116,7 @@ func (f *Factory) CreateMany(ctx context.Context, n int, perIndex func(i int) ma
 	return out, nil
 }
 
-// ----- registry -------------------------------------------------------------
-
-// Registry is the optional collection of named factories shared
-// across a test suite.
+// Registry holds named factories shared across a test suite.
 type Registry struct {
 	mu        sync.RWMutex
 	factories map[string]*Factory
@@ -186,8 +127,7 @@ func NewRegistry() *Registry {
 	return &Registry{factories: map[string]*Factory{}}
 }
 
-// Register adds (or replaces) a factory under the supplied name. Use
-// the entity name as the registry key by convention.
+// Register adds or replaces the factory under name.
 func (r *Registry) Register(name string, f *Factory) *Registry {
 	r.mu.Lock()
 	r.factories[name] = f
@@ -195,8 +135,7 @@ func (r *Registry) Register(name string, f *Factory) *Registry {
 	return r
 }
 
-// MustGet returns the factory or panics. Tests are the only
-// real caller; production code should use [Registry.Get] instead.
+// MustGet returns the named factory or panics.
 func (r *Registry) MustGet(name string) *Factory {
 	f, err := r.Get(name)
 	if err != nil {
@@ -216,8 +155,7 @@ func (r *Registry) Get(name string) (*Factory, error) {
 	return f, nil
 }
 
-// Create looks up the named factory and creates one row. Convenience
-// wrapper for tests that don't keep a local Factory reference.
+// Create creates one row with the named factory.
 func (r *Registry) Create(ctx context.Context, name string, overrides ...map[string]any) (map[string]any, error) {
 	f, err := r.Get(name)
 	if err != nil {
@@ -226,11 +164,7 @@ func (r *Registry) Create(ctx context.Context, name string, overrides ...map[str
 	return f.Create(ctx, overrides...)
 }
 
-// ----- Sequence -------------------------------------------------------------
-
-// Sequence is a tiny atomic counter for unique base values inside
-// factory BaseFuncs. Concurrent-test-safe: Next never returns the
-// same integer twice within a process lifetime.
+// Sequence is a counter for unique base values, safe for concurrent use.
 type Sequence struct {
 	n atomic.Int64
 }
@@ -240,8 +174,7 @@ func (s *Sequence) Next() int64 {
 	return s.n.Add(1)
 }
 
-// NextString returns "prefix" + Next() as a string. Useful for
-// per-row unique fields like email addresses.
+// NextString returns prefix followed by Next().
 func (s *Sequence) NextString(prefix string) string {
 	return prefix + strconv.FormatInt(s.Next(), 10)
 }

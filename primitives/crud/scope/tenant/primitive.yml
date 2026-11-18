@@ -1,0 +1,74 @@
+primitive: crud.scope.tenant
+summary: Multi-tenancy - the tenant ID on the context and the middleware that sets it, the WithMultiTenant entity decorator, the tenant query filter and insert stamp, and the server-side cross-tenant bypass.
+code:
+  - framework/tenant/
+docs:
+  - framework/docs/content/multi-tenant.md
+invariants:
+  - id: cross-tenant-is-explicit
+    rule: A context is cross-tenant only when AllowCrossTenant marked it.
+    enforced_by:
+      - test: framework/tenant.TestCrossTenantMarker
+  - id: cross-tenant-only-server-side
+    rule: AllowCrossTenant is called only from server-side code on routes the host gates itself, never from a header, query value or other client input.
+    judge: Does this change call tenant.AllowCrossTenant on a value or branch a client controls, or on a route with no permission check?
+  - id: no-client-tenant-header
+    rule: TenantMiddleware takes the tenant only from handler.GetTenant and never reads the header it is passed.
+    enforced_by:
+      - test: framework/tenant.TestTenantMiddleware_DoesNotTrustClientHeader
+      - test: framework/tenant.TestTenantMiddleware_ServerResolvedTenant
+  - id: resolve-rechecks
+    rule: ResolveMiddleware re-resolves the tenant on every principal re-check, so a member moved or removed loses the old tenant at the next check, and it panics on a nil resolve.
+    enforced_by:
+      - test: framework/tenant.TestResolveMiddlewareRechecksTenant
+      - test: framework/tenant.TestResolveMiddlewareRefusesNilResolve
+  - id: empty-tenant-matches-nothing
+    rule: ApplyTenantFilter with an empty tenant adds a predicate that can never be true, and otherwise binds the tenant as a parameter on tenant_id.
+    enforced_by:
+      - test: framework/tenant.TestApplyTenantFilterWithNoTenantMatchesNothing
+      - test: framework/tenant.TestApplyTenantFilter_EmptyTenantDoesNotLeaveQueryUnscoped
+      - test: framework/tenant.TestApplyTenantFilter_NonEmptyParameterized
+  - id: inject-fails-closed
+    rule: InjectTenantID overwrites a body's tenant_id with the context's tenant, and deletes it when the context has none.
+    enforced_by:
+      - test: framework/tenant.TestInjectTenantIDFailsClosedNoTenant
+  - id: with-multi-tenant-declares-one-column
+    rule: WithMultiTenant leaves TenantField unset for the default column, panics on a name that is not a safe identifier, reuses a column the app declared, renames the tenant_id column entity.Define injected, and otherwise appends a hidden, read-only String column.
+    enforced_by:
+      - test: framework/tenant.TestWithMultiTenant_FieldBranches
+      - test: framework/tenant.TestWithMultiTenantDeclaresTheColumn
+      - test: framework/tenant.TestWithMultiTenantKeepsADeclaredColumn
+decisions:
+  - id: tenant-from-server-state-only
+    date: 2026-11-17
+    status: accepted
+    decision: TenantMiddleware keeps its header parameter for old call sites and ignores it.
+    rejected:
+      - option: Read the tenant from the named header.
+        why: Any caller could name any tenant; hosts that resolve from a subdomain or claim compose their own middleware and call SetTenantID.
+    upholds: [no-client-tenant-header]
+  - id: fail-closed-empty-tenant
+    date: 2026-11-17
+    status: accepted
+    decision: An empty tenant in ApplyTenantFilter scopes to "tenant_id IS NULL AND 1=0".
+    rejected:
+      - option: Leave the query unscoped.
+        why: A failed resolution would read every tenant's rows; cross-tenant reads go through AllowCrossTenant deliberately.
+      - option: Bind the empty string.
+        why: It would match rows stored with an empty tenant.
+    upholds: [empty-tenant-matches-nothing]
+  - id: tenant-slot-in-core-handler
+    date: 2026-11-17
+    status: accepted
+    decision: SetTenantID and GetTenantID use core/handler's context slot.
+    rejected:
+      - option: A context key owned by this package.
+        why: Packages below this one, access.CachedResolver among them, must read the same tenant.
+  - id: standalone-helpers-use-tenant-id
+    date: 2026-11-17
+    status: accepted
+    decision: ApplyTenantFilter and InjectTenantID always use the tenant_id column; an entity with a custom TenantField is scoped by CRUD's own tenant scope and InjectTenant.
+    rejected:
+      - option: Take the column as a parameter.
+        why: The helpers have no entity context, and CRUD already reads the column from EntityConfig.TenantColumn.
+    revisit_if: Hosts call these helpers on custom-column entities.

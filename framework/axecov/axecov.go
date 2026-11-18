@@ -1,20 +1,4 @@
-// Package axecov is the axe-coverage manifest shared between the axe test
-// harness and strict mode. The harness (framework/testkit/axetest) calls
-// [Record] after every successful scan, accumulating which URL paths the
-// app's accessibility tests actually exercised; uihost strict mode reads
-// the result with [Read] and refuses to serve a page route no axe test
-// covers.
-//
-// The manifest lives at .gofastr/axe-coverage.json under the canonical
-// coverage root ([DefaultDir]: GOFASTR_AXE_COVERAGE_DIR, else the module
-// root, else the working directory) so the writer (tests) and the
-// readers (strict mode) agree even when their working directories
-// differ. `.gofastr/` is a local build-artifact directory (gitignored,
-// wiped by `make clean`), so the manifest never ships: strict mode only
-// enforces axe coverage in dev, where the file exists.
-//
-// This package is deliberately dependency-free (no chromedp) so
-// production code can read manifests without linking a headless browser.
+// Package axecov is the manifest of pages the axe harness has scanned.
 package axecov
 
 import (
@@ -26,11 +10,11 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/internal/coverageroot"
 	"github.com/DonaldMurillo/gofastr/internal/filelock"
 )
 
-// FileName is the manifest location relative to the app/test working
-// directory.
+// FileName is the manifest's path under the coverage root.
 const FileName = ".gofastr/axe-coverage.json"
 
 // Manifest maps every scanned URL path to the color schemes it was
@@ -40,19 +24,11 @@ type Manifest struct {
 	Pages   map[string][]string `json:"pages"`
 }
 
-// mu serializes read-merge-write cycles within one process. `go test
-// ./...` runs every package's axe suite as its own binary against the
-// same module-root manifest, so Record also holds an advisory lock on
-// .gofastr/axe-coverage.lock across the cycle.
 var mu sync.Mutex
 
-// lockName is the cross-process lock file beside the manifest.
 const lockName = ".gofastr/axe-coverage.lock"
 
-// Record merges one scanned page into dir's manifest, creating the
-// manifest (and .gofastr/) on first use. path may be a full URL or a
-// bare path, the query string and fragment are stripped, because
-// coverage is per screen, not per parameter combination.
+// Record merges one scanned page, a URL or a path, into dir's manifest.
 func Record(dir, path, scheme string) error {
 	p := normalizePath(path)
 
@@ -67,7 +43,7 @@ func Record(dir, path, scheme string) error {
 	if err != nil {
 		return fmt.Errorf("axecov: open lock: %w", err)
 	}
-	defer lock.Close() // releases the lock
+	defer lock.Close()
 	if err := filelock.Lock(lock); err != nil {
 		return fmt.Errorf("axecov: lock manifest: %w", err)
 	}
@@ -88,9 +64,6 @@ func Record(dir, path, scheme string) error {
 	if err != nil {
 		return fmt.Errorf("axecov: encode manifest: %w", err)
 	}
-	// Write-then-rename so a reader never sees a torn manifest. The temp
-	// name is unique: a shared one let a second writer truncate the file
-	// the first was about to rename into place.
 	tmp, err := os.CreateTemp(filepath.Dir(file), "axe-coverage-*.tmp")
 	if err != nil {
 		return fmt.Errorf("axecov: write manifest: %w", err)
@@ -110,9 +83,7 @@ func Record(dir, path, scheme string) error {
 	return nil
 }
 
-// Read loads dir's manifest. A missing manifest returns an error
-// satisfying errors.Is(err, fs.ErrNotExist), callers decide whether
-// absence is fatal (strict dev) or fine (production).
+// Read loads dir's manifest; a missing one is fs.ErrNotExist.
 func Read(dir string) (*Manifest, error) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -134,9 +105,6 @@ func readLocked(dir string) (*Manifest, error) {
 	return &m, nil
 }
 
-// normalizePath reduces a scanned URL to its screen path: scheme, host,
-// query, and fragment are dropped; empty (including a bare origin with
-// no path, "http://host:port") becomes "/".
 func normalizePath(raw string) string {
 	if u, err := url.Parse(raw); err == nil {
 		if u.Path != "" {
@@ -152,46 +120,8 @@ func normalizePath(raw string) string {
 	return raw
 }
 
-// DefaultDir is the canonical coverage-root both the writer (the axe
-// test harness) and the readers (uihost strict mode, tooling) resolve,
-// so the manifest lands where enforcement looks for it even when the
-// test package dir and the server working directory differ (the
-// `gofastr dev --dir <root> --pkg ./cmd/app` layout):
-//
-//  1. GOFASTR_AXE_COVERAGE_DIR, when set: the explicit override.
-//  2. The nearest ancestor containing go.work: Go's own workspace
-//     rule. A test binary in a workspace's nested module
-//     (/repo/apps/shop) and a dev server at the workspace root
-//     (/repo) both find /repo/go.work, so they resolve the same
-//     directory.
-//  3. Else the nearest ancestor containing go.mod (the module root).
-//  4. Else the working directory itself.
-//
-// Known limitation: several apps sharing one module (or workspace)
-// share one manifest, and coverage is keyed by route path, two strict
-// apps with the same route ("/", "/login") can satisfy each other's
-// check. Set GOFASTR_AXE_COVERAGE_DIR per app (both when running its
-// tests and its server) when that matters; single-app modules, every
-// generated app, are unaffected.
+// DefaultDir is GOFASTR_AXE_COVERAGE_DIR, else the nearest go.work or
+// go.mod directory above the working directory, else the working directory.
 func DefaultDir() string {
-	if v := os.Getenv("GOFASTR_AXE_COVERAGE_DIR"); v != "" {
-		return v
-	}
-	wd, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	for _, marker := range []string{"go.work", "go.mod"} {
-		for dir := wd; ; {
-			if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
-				return dir
-			}
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				break
-			}
-			dir = parent
-		}
-	}
-	return wd
+	return coverageroot.Resolve("GOFASTR_AXE_COVERAGE_DIR")
 }

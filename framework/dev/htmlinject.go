@@ -14,35 +14,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-// LiveReloadHTMLInjector returns dev-only middleware that splices the
-// livereload client into full HTML documents that don't already carry it.
-// uihost pages inject the script themselves; this covers every OTHER way an
-// app serves a page under `gofastr dev`: static.Handler file serving (the
-// SPA and static-site shapes), widget-server pages, hand-rolled handlers
-// that set a text/html Content-Type. So "edit → rebuild → browser
-// refreshes" holds across the whole surface, not only uihost screens.
-//
-// What is deliberately left alone:
-//   - responses without an explicit text/html Content-Type (no sniffing);
-//   - fragments: anything without a closing </body> (island RPC swaps,
-//     SPA-nav partials), an appended script node would corrupt the DOM the
-//     runtime swaps them into;
-//   - encoded bodies (Content-Encoding): opaque bytes even when labeled
-//     HTML;
-//   - HEAD and Range requests: http.ServeFile/ServeContent semantics
-//     (real Content-Length with no body, 206 byte ranges) must survive;
-//   - streams: SSE and anything the handler Flushes pass through
-//     unbuffered, and a Flush mid-HTML abandons injection so progressive
-//     rendering keeps painting;
-//   - hijacked connections (WebSocket upgrades): Hijack is forwarded and
-//     the wrapper never writes afterwards.
+// LiveReloadHTMLInjector returns middleware that splices the livereload
+// client into full HTML documents that lack it.
 func LiveReloadHTMLInjector() router.Middleware {
 	return htmlInjector(func() []string { return []string{LiveReloadScriptURL} })
 }
 
-// htmlInjector splices a <script src> for each URL scripts returns. It is
-// asked per response, so a dev script registered after the middleware
-// mounted (the layout layer after livereload) is still spliced.
 func htmlInjector(scripts func() []string) router.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -57,9 +34,6 @@ func htmlInjector(scripts func() []string) router.Middleware {
 	}
 }
 
-// devScripts holds, per router, the dev script URLs its one injector
-// splices. RegisterLiveReload and RegisterLayoutLayer each add theirs;
-// the first to run mounts the injector.
 var (
 	devScriptsMu sync.Mutex
 	devScripts   = map[*router.Router][]string{}
@@ -95,7 +69,6 @@ type injectWriter struct {
 
 func (w *injectWriter) Header() http.Header { return w.rw.Header() }
 
-// Unwrap lets http.ResponseController reach the underlying writer.
 func (w *injectWriter) Unwrap() http.ResponseWriter { return w.rw }
 
 func (w *injectWriter) decide() {
@@ -109,10 +82,10 @@ func (w *injectWriter) decide() {
 		return
 	}
 	if ce := h.Get("Content-Encoding"); ce != "" && !strings.EqualFold(ce, "identity") {
-		return // opaque compressed bytes, never splice or re-measure
+		return
 	}
 	if h.Get("X-Gofastr-Partial") != "" {
-		return // SPA-nav partial: a fragment by contract
+		return
 	}
 	w.buffering = true
 }
@@ -120,7 +93,7 @@ func (w *injectWriter) decide() {
 func (w *injectWriter) WriteHeader(status int) {
 	if status >= 100 && status < 200 && status != http.StatusSwitchingProtocols {
 		if !w.sentHeader {
-			w.rw.WriteHeader(status) // informational: forward, keep waiting
+			w.rw.WriteHeader(status)
 		}
 		return
 	}
@@ -147,10 +120,6 @@ func (w *injectWriter) Write(p []byte) (int, error) {
 	return w.rw.Write(p)
 }
 
-// Flush is a streaming signal. For buffered HTML it means the handler wants
-// progressive rendering: release the buffered prefix raw, abandon injection
-// for this response, and stream from here on. For everything else forward
-// to the underlying Flusher (SSE heartbeats, chunked APIs).
 func (w *injectWriter) Flush() {
 	if w.hijacked {
 		return
@@ -176,8 +145,6 @@ func (w *injectWriter) Flush() {
 	}
 }
 
-// Hijack forwards connection takeover for WebSocket upgrades; core/stream
-// asserts http.Hijacker directly). After a hijack the wrapper never writes.
 func (w *injectWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	hj, ok := w.rw.(http.Hijacker)
 	if !ok {
@@ -196,10 +163,6 @@ func (w *injectWriter) finish() {
 		return
 	}
 	body := w.buf.Bytes()
-	// Full documents only: splice before the LAST </body>. Fragments pass
-	// through byte-for-byte. The guard matches each script's src attribute,
-	// not the bare URL, so a page that merely mentions the URL in prose
-	// still gets the script, and a page that links it already keeps one.
 	if i := bytes.LastIndex(body, []byte("</body>")); i >= 0 {
 		var tags []byte
 		for _, url := range w.scripts {

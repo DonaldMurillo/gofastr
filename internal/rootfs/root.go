@@ -114,6 +114,16 @@ func (f fileSystem) Open(name string) (fs.File, error) {
 	return f.root.Open(filepath.FromSlash(name))
 }
 
+// Stat answers fs.Stat without opening the file, following a symlink
+// inside the root as Open does, so a FIFO is known before an open that
+// would block on it.
+func (f fileSystem) Stat(name string) (fs.FileInfo, error) {
+	if !fs.ValidPath(name) {
+		return nil, &fs.PathError{Op: "stat", Path: name, Err: fs.ErrInvalid}
+	}
+	return f.root.Stat(filepath.FromSlash(name))
+}
+
 // dirFSType is the dynamic type os.DirFS returns (the unexported
 // os.dirFS, a string type holding the directory), captured by
 // constructing one so reflect can recognize the shape without naming

@@ -1,0 +1,28 @@
+primitive: app.processmodule.testkit
+summary: The process-module test support outside the root package - the shared helpers in internal/pmtestkit and the supervisor and gate suites kept in their own package, out of the root's race gate.
+code:
+  - framework/internal/pmtestkit/
+  - framework/processmoduletest/
+docs:
+  - framework/docs/content/process-modules.md
+imports:
+  - deny: framework
+    from: [framework/internal/pmtestkit]
+    why: The framework root's own tests import pmtestkit, so pmtestkit importing the root is an import cycle.
+    instead: Take what a helper needs from the root as a parameter, or keep the helper in the root's test files.
+invariants:
+  - id: only-tests-import-pmtestkit
+    rule: No non-test Go file under framework/ imports framework/internal/pmtestkit.
+    enforced_by:
+      - test: framework/internal/pmtestkit.TestSweepOnlyTestFilesImportPmtestkit
+decisions:
+  - id: suites-outside-the-race-gate
+    date: 2026-11-17
+    status: accepted
+    decision: The process-module supervisor and gate suites that need only exported API live in framework/processmoduletest, a package with no production code, which the CI race gate on the framework root does not reach.
+    rejected:
+      - option: Keep them in the root test package.
+        why: They spawn real children against compressed supervisor timings (50ms polls, 500ms leases, 3s spawn deadlines) that do not absorb race instrumentation, and TestSupervisor_* flaked under -race while passing in isolation.
+      - option: Export test seams so the remaining suites can move too.
+        why: That would be public API that exists only for tests; the suites that reach unexported supervisor, store, slot, sandbox and probe internals stay in the root.
+    revisit_if: The supervisor's timings can be raised in tests so the suites pass reliably under -race.

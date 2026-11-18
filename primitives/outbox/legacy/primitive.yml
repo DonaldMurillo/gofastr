@@ -1,0 +1,39 @@
+primitive: outbox.legacy
+summary: Reading the outbox's time columns on SQLite, and rewriting legacy timestamp text to the layout the connected driver binds so the relay's time comparisons hold.
+code:
+  - framework/outbox/legacy_normalize.go
+  - framework/outbox/time_compat.go
+docs:
+  - framework/docs/content/sqlite-driver.md
+invariants:
+  - id: relay-start-rewrites-time-text
+    rule: On SQLite the relay, before its first pump, rewrites every time column of the parent and delivery tables to the text layout the connected driver binds, so the relay's text comparisons of leases and ages hold.
+    enforced_by:
+      - test: framework/outbox.TestRelayStartRewritesTimeTextToBindLayout
+  - id: compares-stored-text
+    rule: Normalization reads each column as CAST(col AS TEXT), so a driver that returns a parsed time.Time does not make every row look like it needs a rewrite.
+    enforced_by:
+      - test: framework/outbox.TestNormalizeReadsStoredTextNotDriverParsedTime
+      - test: framework/outbox.TestNormalizeIsIdempotentOnModernc
+  - id: rewrite-guarded-on-read-text
+    rule: Each column is rewritten in its own UPDATE guarded on the text read, so a lease a relay wrote between the read and the write is kept.
+    enforced_by:
+      - test: framework/outbox.TestNormalizeKeepsDeliveryClaimedMeanwhile
+  - id: null-time-reads-nil
+    rule: A NULL time column reads as a nil *time.Time, and any other value through query.ParseDBTime, whose error is returned.
+    enforced_by:
+      - test: framework/outbox.TestList_FilterByStatus
+      - test: framework/outbox.TestOutboxTimeRejectsMalformedValues
+      - test: framework/outbox.TestReplay_ResurrectsAllDeadDeliveries
+  - id: reads-drain-before-writes
+    rule: Normalization closes its SELECT before its first UPDATE, since the outbox commonly runs on a one-connection pool where an UPDATE under an open cursor deadlocks.
+    judge: Does this change issue an UPDATE while a rows cursor on the same pool is still open?
+decisions:
+  - id: normalize-at-relay-start
+    date: 2026-11-17
+    status: accepted
+    decision: Normalization runs when the relay loop starts, and a failure is logged while the relay keeps polling.
+    rejected:
+      - option: Run it in New.
+        why: Rows staged between construction and relay start would keep their legacy text.
+    upholds: [relay-start-rewrites-time-text]

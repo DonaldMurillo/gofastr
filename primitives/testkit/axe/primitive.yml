@@ -1,0 +1,135 @@
+primitive: testkit.axe
+summary: The axe-core accessibility harness - a reused chromedp browser, a tab per page, the readiness wait, the colour-scheme freeze, and Scan over the embedded axe engine.
+code:
+  - framework/testkit/axetest/
+docs:
+  - framework/docs/content/accessibility.md
+  - framework/docs/content/strict-mode.md
+on_change:
+  - Each app keeps its own page list, allowlist and gate test, derived from the source its screens register from; a change to what Scan needs from a page reaches every app's gate, examples/site and examples/meridian among them.
+invariants:
+  - id: empty-scheme-list-refused
+    rule: ScanSchemes with no schemes returns an error rather than an empty, passing result.
+    enforced_by:
+      - test: framework/testkit/axetest.TestScanSchemesRefusesNoSchemes
+  - id: every-scheme-on-one-load
+    rule: ScanSchemes audits every scheme on the one loaded page, requesting it once, and tags each violation with the scheme that produced it.
+    enforced_by:
+      - test: framework/testkit/axetest.TestScanSchemesCatchesSchemeOnlyViolations
+  - id: page-defined-axe-never-trusted
+    rule: Scan runs the vendored engine it injected, marked by window.__axetestEngine, and replaces any window.axe the page defined itself.
+    enforced_by:
+      - test: framework/testkit/axetest.TestScanIgnoresAPageDefinedAxe
+  - id: crashed-rule-fails-the-scan
+    rule: A rule axe reports as incomplete with an error fails Scan unless ruleAllowlist names it.
+    enforced_by:
+      - test: framework/testkit/axetest.TestScanFailsOnACrashedRule
+  - id: allowlist-drops-violations
+    rule: Scan drops every violation whose rule ID ruleAllowlist names.
+    enforced_by:
+      - test: framework/testkit/axetest.TestSweepScanDropsAllowlistedViolations
+  - id: blank-page-refused
+    rule: Scan errors, before injecting axe, on a page with fewer than five elements under body.
+    enforced_by:
+      - test: framework/testkit/axetest.TestSweepScanRefusesABlankPage
+  - id: wait-ready-names-the-unmet-condition
+    rule: WaitReady waits for a requested runtime module to register in window.__gofastr.loadedModules and fails naming it once readyTimeout passes.
+    enforced_by:
+      - test: framework/testkit/axetest.TestWaitReadyNamesAnUnregisteredModule
+  - id: freeze-survives-csp
+    rule: Prepare freezes transitions through an adopted constructed stylesheet, so the freeze holds on a page served with default-src 'self'.
+    enforced_by:
+      - test: framework/testkit/axetest.TestSweepPrepareFreezesTransitionsUnderCSP
+  - id: prepare-sets-attribute-and-meta
+    rule: Prepare forces the scheme through window.__gofastr_colorScheme.set when the page has it, and otherwise sets <html data-color-scheme> and creates or updates <meta name="color-scheme">.
+    enforced_by:
+      - test: framework/testkit/axetest.TestSweepPreparePrefersTheSchemeBootstrap
+      - test: framework/testkit/axetest.TestSweepPrepareFreezesTransitionsUnderCSP
+  - id: scan-records-coverage-best-effort
+    rule: A successful Scan records the page and scheme in the axe-coverage manifest under axecov.DefaultDir, records nothing when GOFASTR_AXE_COVERAGE=0, and a manifest that cannot be written never fails the scan.
+    enforced_by:
+      - test: framework/testkit/axetest.TestSweepScanRecordsCoverageUnlessDisabled
+  - id: no-options-keep-axe-defaults
+    rule: With no ScanOption the axe rules option is {}, and each enabled or disabled rule is forced on or off by ID.
+    enforced_by:
+      - test: framework/testkit/axetest.TestSweepAxeRulesJSKeepsDefaultsAndForcesOverrides
+  - id: tabs-carry-no-browser-options
+    rule: NewTabContext passes no option to chromedp.NewContext, since chromedp panics on a browser option for a browser that already exists.
+    enforced_by:
+      - test: framework/testkit/axetest.TestScanSchemesCatchesSchemeOnlyViolations
+  - id: browser-started-eagerly
+    rule: NewBrowserContext starts the browser before it returns and returns the start error, so every tab inherits the browser's filtered logger.
+    enforced_by:
+      - test: framework/testkit/axetest.TestSweepNewBrowserContextStartsTheBrowserEagerly
+  - id: node-event-noise-filtered
+    rule: The browser's error logger drops chromedp's "unhandled node event" lines, which the stylesheet freeze triggers on every page, and logs every other error.
+    enforced_by:
+      - test: framework/testkit/axetest.TestSweepFilteredErrorfDropsNodeEventNoise
+decisions:
+  - id: vendored-engine
+    date: 2026-11-17
+    status: accepted
+    decision: The axe-core engine is embedded from testdata/axe.min.js, so a gate never fetches it.
+    rejected:
+      - option: Load axe from a CDN at scan time.
+        why: CI would need the network and a scan's engine version would drift with the CDN.
+    revisit_if: axe-core ships in a form Go can depend on with a pinned version.
+  - id: force-both-schemes
+    date: 2026-11-17
+    status: accepted
+    decision: Every page is scanned under both dark and light, forced through <html data-color-scheme>.
+    rejected:
+      - option: Scan under whatever scheme the host's prefers-color-scheme gives.
+        why: A dark-appearance dev machine audits only dark and a light CI runner only light, so a contrast break in the other scheme shows up only in CI.
+    upholds: [every-scheme-on-one-load]
+  - id: one-browser-many-tabs
+    date: 2026-11-17
+    status: accepted
+    decision: A test starts one long-lived browser with no timeout child and opens a fresh tab per page, which also closes the previous page's SSE socket.
+    rejected:
+      - option: A browser per page.
+        why: Starting many browsers in a row overruns the websocket dial deadline.
+      - option: A timeout child on the browser context.
+        why: Its expiry kills the browser and cancels every later page.
+    upholds: [tabs-carry-no-browser-options]
+  - id: constructed-stylesheet-freeze
+    date: 2026-11-17
+    status: accepted
+    decision: Prepare freezes transitions with an adopted constructed stylesheet, because throttled headless tabs may never tick a transition and axe then measures the previous scheme's colours.
+    rejected:
+      - option: Inject a <style> element.
+        why: A default-src 'self' CSP blocks inline styles, and adoptedStyleSheets is not subject to style-src.
+    upholds: [freeze-survives-csp]
+  - id: scheme-bootstrap-first
+    date: 2026-11-17
+    status: accepted
+    decision: Prepare calls the page's scheme bootstrap when present, so the attribute, the stored preference and the color-scheme meta agree.
+    rejected:
+      - option: Set only the data-color-scheme attribute.
+        why: Chromium keeps its built-in link and control colours in the previous scheme, giving a mixed palette.
+    upholds: [prepare-sets-attribute-and-meta]
+  - id: settled-on-two-polls
+    date: 2026-11-17
+    status: accepted
+    decision: WaitReady and Prepare poll from Go every 25ms and count a state settled only after two consecutive passing polls, within a 10s bound.
+    rejected:
+      - option: A fixed sleep after navigation.
+        why: It is too short on a slow runner and wasted time on a fast one.
+      - option: One passing poll.
+        why: Work queued right behind it, an idle-callback module request or a listener reacting to the scheme, has not run yet.
+      - option: Poll inside the page.
+        why: A throttled tab's timers stretch the loop.
+    revisit_if: The runtime exposes one settled signal the harness can wait on.
+  - id: ci-chrome-flags
+    date: 2026-11-17
+    status: accepted
+    decision: The browser runs with disable-dev-shm-usage and a 90-second websocket URL and dial deadline.
+    rejected:
+      - option: The chromedp defaults.
+        why: Hosted runners have an undersized /dev/shm that hangs large captures, and their Chrome can take more than the default 20s to start.
+    revisit_if: CI runners give Chrome a normal /dev/shm and start it within 20s.
+  - id: five-element-floor
+    date: 2026-11-17
+    status: accepted
+    decision: A page with fewer than five elements under body counts as blank; the floor is a tripwire for an empty or error shell, not a content minimum.
+    upholds: [blank-page-refused]

@@ -27,8 +27,9 @@ func TestPseudo(t *testing.T) {
 		t.Fatalf("a double-brace placeholder changed: %q", g)
 	}
 	for _, s := range []string{"Save", "Sort by name", "OK", "Rhythm", "CSV", "Rhythms by Lynch"} {
-		if n, m := utf8.RuneCountInString(Pseudo(s)), utf8.RuneCountInString(s); n*3 < m*4 {
-			t.Errorf("Pseudo(%q) grew %d → %d runes, under a third", s, m, n)
+		got := Pseudo(s)
+		if n, m := utf8.RuneCountInString(strings.TrimSuffix(got, "]")), utf8.RuneCountInString(s); n*3 < (m+1)*4 {
+			t.Errorf("Pseudo(%q) = %q: %d runes before the closing bracket, want at least 4/3 of %d", s, got, n, m+1)
 		}
 	}
 	if Pseudo("") != "" {

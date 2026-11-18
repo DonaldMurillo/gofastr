@@ -1,0 +1,44 @@
+primitive: docs.mcp
+summary: The framework_docs_list, framework_docs_get and framework_docs_search MCP tools a host adds with WithMCPTools(mcptools.Register).
+code:
+  - framework/docs/mcptools/
+docs:
+  - framework/docs/content/agent-ready.md
+  - framework/docs/content/mcp.md
+on_change:
+  - Adding, renaming or changing a framework_docs_* tool updates its description in framework/docs/content/agent-ready.md and mcp.md.
+invariants:
+  - id: three-read-only-tools
+    rule: Register installs exactly framework_docs_list, framework_docs_get and framework_docs_search, and WithMCPIntrospection alone installs none of them.
+    enforced_by:
+      - test: framework/docs/mcptools.TestRegisterInstallsThreeTools
+      - test: framework/docs/mcptools.TestIntrospectionAloneRegistersNoDocsTools
+  - id: search-limit-is-capped
+    rule: framework_docs_search clamps an int, int64 or float64 limit above 200 to 200 and passes a smaller one through.
+    enforced_by:
+      - test: framework/docs/mcptools.TestDocsSearchLimitIsCapped
+      - test: framework/docs/mcptools.TestDocsSearchRespectsLimit
+  - id: lookup-failure-is-a-tool-error
+    rule: An unknown topic or a too-short search term answers a tool error result, never a Go error.
+    enforced_by:
+      - test: framework/docs/mcptools.TestDocsGetNotFound
+      - test: framework/docs/mcptools.TestDocsSearchShortTermIsAToolError
+decisions:
+  - id: clamp-not-reject
+    date: 2026-11-17
+    status: accepted
+    decision: A search limit above the cap is clamped to 200, not refused.
+    rejected:
+      - option: Refuse a limit above the cap.
+        why: Asking for more than the tool gives is not a caller error.
+      - option: Pass any limit to docs.SearchWithLimit.
+        why: A limit of 1e12 returned every matching line, ten thousand hits for "the", to agents with narrow contexts.
+    upholds: [search-limit-is-capped]
+  - id: caller-errors-are-tool-results
+    date: 2026-11-17
+    status: accepted
+    decision: Every docs lookup failure is answered as an IsError tool result, because the tools read only the embedded corpus and every failure is the caller's input.
+    rejected:
+      - option: Return a Go error.
+        why: It is answered as a generic internal error and logged at Error level for a bad topic name.
+    upholds: [lookup-failure-is-a-tool-error]

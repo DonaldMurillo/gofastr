@@ -1,0 +1,42 @@
+primitive: static.redirects
+summary: The page an exact app.Redirect leaves at its old path (a meta refresh and a plain link under the export CSP) and the _redirects rules for hosts that read them.
+code:
+  - framework/static/redirects.go
+docs:
+  - framework/docs/content/static-export.md
+invariants:
+  - id: redirect-page-shape
+    rule: Each exact redirect gets a page at its path with a meta refresh, canonical link and plain link to the chain's final target, a noindex robots meta, the export CSP and no script or style, and a "from to 308" line in _redirects.
+    enforced_by:
+      - test: framework/static.TestExportWritesRedirectPages
+  - id: pattern-redirect-writes-nothing
+    rule: A pattern redirect writes no file and no rule.
+    enforced_by:
+      - test: framework/static.TestExportWritesRedirectPages
+  - id: unsafe-target-is-inert
+    rule: A redirect target the anchor allow-list refuses is written as "#".
+    enforced_by:
+      - test: framework/static.TestRedirectPageRefusesUnsafeScheme
+  - id: no-redirects-no-rules-file
+    rule: A build with no exact redirects removes a _redirects file an earlier build left in OutDir.
+    enforced_by:
+      - test: framework/static.TestExportNoRedirectsNoRulesFile
+  - id: redirect-urls-escaped-and-slashed
+    rule: A redirect URL has its control bytes, spaces and DEL percent-encoded, a target that is an exported page takes its trailing slash, and a page with no locale in its context is lang="en".
+    enforced_by:
+      - test: framework/static.TestSweepStaticRedirectHelpers
+  - id: locale-redirect-follows-link-rule
+    rule: In a locale tree a redirect target takes the tree's prefix unless keepUnprefixed keeps it.
+    enforced_by:
+      - test: framework/static.TestLocaleTreeTargetsFollowLinkRule
+decisions:
+  - id: page-and-rules-file
+    date: 2026-11-17
+    status: accepted
+    decision: An exact redirect exports both a meta-refresh page at its old path and a _redirects rule.
+    rejected:
+      - option: Only the _redirects file.
+        why: GitHub Pages and S3 ignore it, so the old URL would answer 404.
+      - option: Only the page.
+        why: Netlify and Cloudflare Pages can answer with a real 308 from the rule, which crawlers and clients follow without loading a page.
+    upholds: [redirect-page-shape]

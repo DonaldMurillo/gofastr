@@ -18,6 +18,9 @@ invariants:
     enforced_by:
       - contract: GOFASTR1802
     applies:
+      - framework/gallery/
+      - framework/i18nui/
+      - framework/sdkdocs/
       - framework/ui/
       - framework/uihost/
       - battery/
@@ -39,6 +42,9 @@ invariants:
     rule: Pagination, sort and filter are computed on the server; the runtime only follows the links and swaps the regions the server returns.
     judge: Does this change compute a page, a sort order or a filter result in JavaScript instead of asking the server?
     applies:
+      - framework/gallery/
+      - framework/i18nui/
+      - framework/sdkdocs/
       - framework/ui/
       - framework/uihost/
       - battery/
@@ -114,7 +120,7 @@ decisions:
     status: accepted
     decision: A <dialog> modal keeps the owner-refcounted lock on <html> (NS.doc.lockScroll) and adds overscroll-behavior contain on the dialog.
     rejected:
-      - option: overscroll-behavior contain alone, as #701 suggested.
+      - option: 'overscroll-behavior contain alone, as #701 suggested.'
         why: It only stops scroll chaining out of a scrollable dialog; a wheel over the scrim or over a dialog too short to scroll still scrolls the page behind.
       - option: A CSS :root:has(dialog:modal) rule.
         why: The widget sheet can land after showModal(), so the page scrolls until it does, and drawers and the pane host already share the refcounted lock.

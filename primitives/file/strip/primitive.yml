@@ -1,0 +1,97 @@
+primitive: file.strip
+summary: StripMetadata, the process option that removes EXIF, XMP and other metadata from JPEG, PNG and WebP uploads while keeping their orientation.
+code:
+  - framework/file/strip.go
+docs:
+  - framework/docs/content/uploads.md
+  - framework/docs/content/image.md
+twins:
+  - job: Bake an EXIF orientation of 2 to 8 into an image's pixels.
+    why: framework/file may not import framework/image (crud.uploads's import rule), so the transforms are written twice and pinned by a parity test.
+    sites:
+      - path: framework/file/strip.go
+        note: applyOrientation and the rotate and mirror helpers, for the strip path's re-encode.
+      - path: framework/image/geometry.go
+        note: Image.AutoOrient over Rotate, Flip and Flop, for the image pipeline.
+invariants:
+  - id: off-by-default
+    rule: Without StripMetadata an upload is stored byte for byte, EXIF included.
+    enforced_by:
+      - test: framework/file.TestProcessFileField_KeepsEXIFByDefault
+  - id: strip-by-sniffed-type
+    rule: Stripping runs on JPEG, PNG and WebP by sniffed content, before the deriver, passes other types through, and a supported image whose structure cannot be walked fails the upload.
+    enforced_by:
+      - test: framework/file.TestStripMetadataOption_RemovesSegments
+      - test: framework/file.TestStripMetadataRedPngBombRefused
+      - test: framework/file.TestWebPRefusesShortRIFF
+  - id: jpeg-segments
+    rule: stripJPEG drops every APPn and COM segment and everything after EOI, keeps the Adobe APP14 marker cut to its 12 decoder-read bytes, copies scan data verbatim across byte stuffing and restart markers, skips fill bytes, and refuses a segment length under 2 or past the file.
+    enforced_by:
+      - test: framework/file.TestStripMetadataOption_RemovesSegments
+      - test: framework/file.TestStripKeepsAdobeColourMarker
+      - test: framework/file.TestStripJPEGWalk
+  - id: jpeg-orientation-baked
+    rule: A JPEG with EXIF orientation 2 to 8 is decoded, turned upright and re-encoded at quality 95, matching framework/image's orientation for every value.
+    enforced_by:
+      - test: framework/file.TestStripOrientationBakeMatchesPipeline
+      - test: framework/file.TestStripBakesCMYKOrientation
+      - test: framework/file.TestOrientationSevenIsTransverse
+  - id: jpeg-decode-budget
+    rule: Before the orientation bake decodes a JPEG it refuses more than 64 scans, scans times pixels over ten frames of the pixel cap, progressive coefficients over 512 MiB, and a header over 64 MP or with a zero dimension.
+    enforced_by:
+      - test: framework/file.TestStripMetadataRefusesJPEGScanBomb
+      - test: framework/file.TestStripMetadataBudgetsJPEGScansByPixels
+      - test: framework/file.TestStripMetadataRefusesProgressiveJPEGOverMemoryBudget
+      - test: framework/file.TestStripStuffingCannotBypassBudget
+      - test: framework/file.TestStripMetadataRedJpegOrientBombRefused
+      - test: framework/file.TestStripPixelCapRefusesEmptyDimensions
+  - id: png-strip
+    rule: A still PNG with a tEXt, zTXt, iTXt or eXIf chunk is re-encoded under the 64 MP header cap with its eXIf orientation (bare or Exif-prefixed) baked in, and one without is cut at the end of IEND.
+    enforced_by:
+      - test: framework/file.TestStripMetadataOption_RemovesSegments
+      - test: framework/file.TestStripMetadataDropsTrailers
+      - test: framework/file.TestStripMetadataRedPngBombRefused
+      - test: framework/file.TestStripPNGReadsPrefixedEXIFOrientation
+  - id: apng-spliced
+    rule: An animated PNG keeps every non-metadata chunk verbatim, drops text chunks and everything after IEND, and replaces the first eXIf with an orientation-only one when the orientation is 2 to 8.
+    enforced_by:
+      - test: framework/file.TestStripKeepsAPNGFrames
+      - test: framework/file.TestSpliceAPNGDropsTextAndTrailer
+  - id: webp-strip
+    rule: stripWebP drops EXIF and XMP chunks, keeps an orientation-only EXIF for orientation 2 to 8, rewrites the VP8X flags to match, pads odd chunks, cuts bytes past the RIFF size, and refuses a RIFF size under 13 or past the file.
+    enforced_by:
+      - test: framework/file.TestStripMetadataOption_RemovesSegments
+      - test: framework/file.TestStripMetadataDropsTrailers
+      - test: framework/file.TestWebPRefusesShortRIFF
+      - test: framework/file.TestStripWebPContainer
+  - id: strip-regrowth-capped
+    rule: Stripped bytes over MaxProcessFileSize refuse the upload with ErrFileFieldTooLarge.
+    judge: Does this change let a re-encoded stripped image larger than MaxProcessFileSize be stored?
+    applies:
+      - framework/file/filefield.go
+decisions:
+  - id: fail-closed
+    date: 2026-11-17
+    status: accepted
+    decision: A JPEG, PNG or WebP that cannot be walked fails the upload under StripMetadata.
+    rejected:
+      - option: Store it unstripped.
+        why: The caller asked that the object not keep its metadata.
+    upholds: [strip-by-sniffed-type]
+  - id: splice-not-reencode
+    date: 2026-11-17
+    status: accepted
+    decision: JPEG without an orientation, WebP and animated PNG are spliced; only JPEG with an orientation and still PNG with metadata are re-encoded.
+    rejected:
+      - option: Re-encode every stripped image.
+        why: JPEG loses a generation, there is no WebP or APNG encoder at this layer, and image/png keeps only an APNG's default frame.
+    revisit_if: framework/file can reach a WebP or APNG encoder without linking framework/image.
+    upholds: [jpeg-segments, apng-spliced, webp-strip]
+  - id: keep-adobe-marker
+    date: 2026-11-17
+    status: accepted
+    decision: The Adobe APP14 marker survives the strip, cut to 12 bytes.
+    rejected:
+      - option: Drop it with the other APPn segments.
+        why: Without it a CMYK JPEG no longer decodes and RGB cannot be told from YCbCr.
+    upholds: [jpeg-segments]

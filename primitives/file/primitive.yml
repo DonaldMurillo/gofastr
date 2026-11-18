@@ -1,0 +1,166 @@
+primitive: file
+summary: The FileField value an upload column stores, its validation, and ProcessFileField and DeleteFileField, which sniff, refuse unsafe content, save and clean up a file in upload storage.
+code:
+  - framework/file/filefield.go
+  - framework/file/wide_text.go
+docs:
+  - framework/docs/content/uploads.md
+on_change:
+  - framework/crud, framework/entityui and framework/imagefield call ProcessFileField and DeleteFileField; run their upload tests too, and read crud.uploads, which holds the ban on framework/file linking framework/image.
+  - Adding a token to hardActiveTokens is safe only for markup that never appears in raster, PDF or font bytes; anything that can goes to softActiveTokens.
+invariants:
+  - id: validate-string-caps
+    rule: FileField.Validate refuses any string field over MaxFileFieldStringBytes and a negative Size.
+    enforced_by:
+      - test: framework/file.TestFileField_RejectsOversize
+      - test: framework/file.TestFileField_RejectsNegativeSize
+  - id: validate-url-scheme
+    rule: FileField.Validate refuses a URL whose scheme is javascript, vbscript or data after removing tab, LF and CR anywhere and C0 controls or spaces before it, compared case-insensitively, and reports it as ErrFileFieldURLScheme ahead of any control-byte error.
+    enforced_by:
+      - test: framework/file.TestFileField_RejectsJavaScriptScheme
+  - id: validate-traversal
+    rule: FileField.Validate refuses ".." anywhere in URL, StorageRef or Filename.
+    enforced_by:
+      - test: framework/file.TestFileField_RejectsTraversal
+      - test: framework/file.TestFileFieldRejectsFilenameTraversal
+  - id: validate-control-and-forged-runes
+    rule: FileField.Validate refuses a C0 control byte, DEL, a C1 control or an invisible or bidi rune (core/textsafe) in URL, Filename or StorageRef.
+    enforced_by:
+      - test: framework/file.TestFileFieldRejectsControlBytes
+      - test: framework/file.TestFileFieldRejectsInvisibleChars
+  - id: validate-mime-charset
+    rule: FileField.Validate accepts a MimeType only of letters, digits, "/+-._" and the parameter characters ";= ".
+    enforced_by:
+      - test: framework/file.TestFileField_RejectsXSSInMime
+      - test: framework/file.TestFileFieldURLEscapesName
+  - id: validate-covers-derivatives
+    rule: FileField.Validate also runs ImageDerivatives.Validate on its Image.
+    enforced_by:
+      - test: framework/file.TestVariantRefRejectsControlBytes
+  - id: process-size-cap
+    rule: ProcessFileField reads at most MaxProcessFileSize+1 bytes and refuses anything over MaxProcessFileSize with ErrFileFieldTooLarge before saving.
+    enforced_by:
+      - test: framework/file.TestProcessFileField_RejectsOversizeInputByDefault
+      - test: framework/file.TestProcessFileFieldCapBoundary
+  - id: sniff-from-bytes
+    rule: ProcessFileField decides unsafe content and AllowTypes from the bytes, never the filename or a client Content-Type, and takes a type from the filename only when the bytes sniff as application/octet-stream.
+    enforced_by:
+      - test: framework/file.TestProcessFileField_RejectsSVGByDefault
+      - test: framework/file.TestProcessFileField_AllowTypes
+      - test: framework/file.TestProcessFileFieldTypeFromNameOnlyForUnknownBytes
+  - id: executables-refused
+    rule: An upload starting with PE (MZ), ELF or any of the six Mach-O magic numbers is refused as unsafe content.
+    enforced_by:
+      - test: framework/file.TestProcessFileField_RejectsExecutableContentByDefault
+      - test: framework/file.TestRejectUnsafeContentTable
+  - id: hard-tokens-whole-body
+    rule: A hard markup token (<script, <iframe, <html, <!doctype, <object, <embed, <base, <svg, <math) anywhere in the body, in any ASCII case and behind any magic bytes, refuses the upload.
+    enforced_by:
+      - test: framework/file.TestProcessFileField_HardTokenRejected
+      - test: framework/file.TestProcessFileField_RejectsHiddenActiveContent
+      - test: framework/file.TestRejectUnsafeContentTable
+  - id: soft-tokens-windowed
+    rule: A soft token (<img, <?xml, <style, <link, javascript:) refuses the upload only within the first 512 bytes and only when those bytes do not sniff as a raster image, PDF, font, archive, audio or video.
+    enforced_by:
+      - test: framework/file.TestProcessFileField_AcceptsBinaryWithToken
+      - test: framework/file.TestRejectUnsafeContentTable
+  - id: sniffed-markup-refused
+    rule: An upload whose first 512 bytes sniff as text/html, image/svg+xml, text/xml or application/xml is refused.
+    enforced_by:
+      - test: framework/file.TestProcessFileField_RejectsHTMLByDefault
+      - test: framework/file.TestRejectUnsafeContentTable
+  - id: wide-text-scanned
+    rule: A UTF-16 or UTF-32 body, BOM-marked or BOM-less opening with "<", gets the same hard, soft and sniffer scans over its code units, aligned to the unit width, matching only ASCII units case-insensitively, with the soft and sniffer scans over the first 512 characters.
+    enforced_by:
+      - test: framework/file.TestWideTextMarkupRejected
+      - test: framework/file.TestWideTextPlainAccepted
+      - test: framework/file.TestWideTextScanRules
+  - id: constructor-meets-validator
+    rule: ProcessFileField's Filename is upload.SanitizeFilename of the client name, its StorageRef is GenerateFilePath's key and its URL is that key with each segment path-escaped, so the FileField it returns passes Validate.
+    enforced_by:
+      - test: framework/file.TestProcessFileFieldMeetsOwnContract
+      - test: framework/file.TestProcessFileFieldStripsUnicodeBreaks
+      - test: framework/file.TestFileFieldURLEscapesName
+  - id: generated-path-unique
+    rule: GenerateFilePath is uploads/{entity}/{field}/ plus upload.UniqueFilename, so two uploads of one name never share a key and none escapes uploads/.
+    enforced_by:
+      - test: framework/file.TestGenerateFilePath_NoCollision
+      - test: framework/file.TestGenerateFilePathNeverEscapesUploads
+  - id: derive-failure-rolls-back
+    rule: When the deriver fails or returns derivatives Validate refuses, ProcessFileField deletes the primary and every object written through the deriver's store view, on a context detached from the request's cancellation.
+    enforced_by:
+      - test: framework/file.TestProcessFileFieldDeriveFailureOrphans
+      - test: framework/file.TestInvalidDerivativesRollBack
+  - id: ledger-keeps-failed-deletes
+    rule: The recording store forgets a key only when its Delete returned nil or os.ErrNotExist, so the rollback retries a failed delete.
+    enforced_by:
+      - test: framework/file.TestDeriverFailedUndoStillRolledBack
+  - id: delete-removes-renditions
+    rule: DeleteFileField deletes every variant ref except empty ones and the primary's own, then the primary, treats os.ErrNotExist as success, attempts every key after a failure, and returns an error naming each key that survived.
+    enforced_by:
+      - test: framework/file.TestDeleteFileField_RemovesVariants
+      - test: framework/file.TestDeleteFileFieldContract
+  - id: storage-required
+    rule: ProcessFileField and DeleteFileField refuse a nil store, and DeleteFileField returns nil for a nil field.
+    enforced_by:
+      - test: framework/file.TestProcessAndDeleteNeedStorage
+decisions:
+  - id: two-tier-token-scan
+    date: 2026-11-17
+    status: accepted
+    decision: Hard markup tokens are scanned across the whole body and soft tokens only in the sniff window of content that is not a confirmed inert binary.
+    rejected:
+      - option: Scan every token across the whole body.
+        why: Soft tokens appear in EXIF, XMP and comment metadata of real images and in PDF and font streams, so real uploads would be refused.
+      - option: Scan only the 512-byte sniff window.
+        why: A polyglot with valid raster magic hides its markup past the window (the GIFAR class).
+    upholds: [hard-tokens-whole-body, soft-tokens-windowed]
+  - id: math-is-a-hard-token
+    date: 2026-11-18
+    status: accepted
+    decision: <math sits in hardActiveTokens beside <svg, as the other foreign-content root HTML parses as markup.
+    rejected:
+      - option: Move <math to softActiveTokens.
+        why: A raster polyglot could then carry MathML past the 512-byte window, which the soft tier never scans; the cost of the hard tier is refusing an image whose text metadata names <math, which fails closed and has the same exposure <svg already has.
+    revisit_if: Real uploads are refused because their metadata contains <math or <svg.
+    upholds: [hard-tokens-whole-body]
+  - id: own-sniffer-beside-stdlib
+    date: 2026-11-17
+    status: accepted
+    decision: ProcessFileField runs its own token and magic-byte scan in addition to http.DetectContentType.
+    rejected:
+      - option: Trust http.DetectContentType alone.
+        why: It reports a body led by <svg as text/plain, which a browser still renders as active content.
+    upholds: [hard-tokens-whole-body]
+  - id: fold-without-lowering
+    date: 2026-11-17
+    status: accepted
+    decision: Token matching folds ASCII case byte by byte without allocating.
+    rejected:
+      - option: bytes.ToLower the body first.
+        why: It doubles resident memory for a 32 MiB upload.
+    upholds: [hard-tokens-whole-body]
+  - id: watch-deriver-writes
+    date: 2026-11-17
+    status: accepted
+    decision: The deriver gets a recording view of the store, so a failed upload can delete renditions the deriver saved before failing.
+    rejected:
+      - option: Ask ImageDeriver to report partial work.
+        why: A failing deriver returns only an error, and third-party derivers would all have to implement it.
+    upholds: [derive-failure-rolls-back]
+  - id: detached-rollback
+    date: 2026-11-17
+    status: accepted
+    decision: The rollback runs on context.WithoutCancel of the request with a 30-second bound.
+    rejected:
+      - option: Use the request context.
+        why: A client that disconnects cancels it, and backends refuse a canceled Delete, leaving every object behind.
+    upholds: [derive-failure-rolls-back]
+  - id: originals-kept-by-default
+    date: 2026-11-17
+    status: accepted
+    decision: ProcessFileField stores the original byte for byte, metadata included, unless StripMetadata is passed.
+    rejected:
+      - option: Strip metadata by default.
+        why: Stripping re-encodes some images and changes what the uploader sent; it is an opt-in.
+    upholds: [file.strip/off-by-default]

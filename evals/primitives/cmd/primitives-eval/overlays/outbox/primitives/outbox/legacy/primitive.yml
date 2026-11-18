@@ -1,0 +1,69 @@
+primitive: outbox.legacy
+summary: "normalizeLegacyTimestamps, run once at relay start on SQLite, rewrites the parent and delivery time columns to the text layout the connected driver binds, so the relay's lexicographic lease and grace predicates compare correctly."
+code:
+  - framework/outbox/legacy_normalize.go
+docs:
+  - framework/docs/content/sqlite-driver.md
+on_change:
+  - "A time column added to either table is added to the normalizer's column list for that table, or the relay's string comparisons on it break for rows written by another driver."
+  - "Normalization runs in relayLoop before the first pump, not in New, so rows staged between construction and relay start are covered; moving it changes that."
+  - "Every read is drained and closed before the first UPDATE, because the outbox is commonly opened with SetMaxOpenConns(1) and an UPDATE under an open cursor deadlocks."
+  - "A change here is checked against battery/queue/legacy_normalize.go, which does the same job for the queue tables and already collapsed its per-table copies into normalizeTimesFor."
+twins:
+  - job: "Read a table's time columns as stored text, drain the cursor, compute query.SQLiteTimeFixes against the driver's bind layout, and write each fix back guarded on the text read."
+    why: "The outbox keeps one hand-written copy per table, keyed by id and by (row_id, consumer), and queue keeps its own generalised copy keyed by one column; nothing shared takes a composite key yet."
+    sites:
+      - path: framework/outbox/legacy_normalize.go
+        note: "normalizeParentTimes with parentTimeSelect, keyed by id."
+      - path: framework/outbox/legacy_normalize.go
+        note: "normalizeDeliveryTimes, the same loop with its own inline SELECT, keyed by (row_id, consumer), with the columns in a different order."
+      - path: battery/queue/legacy_normalize.go
+        note: "normalizeTimesFor, the single-key generalisation that replaced queue's four per-table copies."
+  - job: "Write one row's time fixes, a statement per column, each guarded on CAST(col AS TEXT) equal to the value read."
+    why: "Queue's version takes one key column and the outbox's takes a list; neither lives in core/query."
+    sites:
+      - path: framework/outbox/legacy_normalize.go
+        note: "applyTimeFixes with keyCols and key slices."
+      - path: battery/queue/legacy_normalize.go
+        note: "applyTimeFixes with one keyCol."
+  - job: "Probe whether a table exists before normalizing it, treating no such table as absent silently and any other error as absent with a warning."
+    why: "Each package wrote its own probe."
+    sites:
+      - path: framework/outbox/legacy_normalize.go
+        note: "tableExists, a SELECT 1 ... LIMIT 1 on the bare name."
+      - path: battery/queue/legacy_normalize.go
+        note: "queueTableExists, on an already-quoted name."
+invariants:
+  - id: rewrites-legacy-layout
+    rule: "A space-separated legacy timestamp in either table is rewritten to the connected driver's bind layout, and NULL time columns stay NULL."
+    enforced_by:
+      - test: framework/outbox.TestNormalize_RewritesLegacyParentAndDelivery
+      - test: framework/outbox.TestNormalize_PreservesNulls
+  - id: idempotent-on-canonical
+    rule: "A row already in the driver's bind layout is not rewritten, on the pure driver and on modernc, which returns DATETIME columns as time.Time unless read as text."
+    enforced_by:
+      - test: framework/outbox.TestNormalize_Idempotent
+      - test: framework/outbox.TestNormalize_NoOpOnCanonical
+      - test: framework/outbox.TestNormalizeIsIdempotentOnModernc
+      - test: framework/outbox.TestNormalizeReadsStoredTextNotDriverParsedTime
+      - test: framework/outbox.TestLegacyTimeSetsDriverAwareIdempotency
+      - test: framework/outbox.TestProbeBindLayoutOnShippedDriver
+  - id: keeps-claim-written-meanwhile
+    rule: "A claimed_until a relay wrote after the normalizer read the row is not overwritten with the stale value."
+    enforced_by:
+      - test: framework/outbox.TestNormalizeKeepsDeliveryClaimedMeanwhile
+  - id: legacy-lease-compares-correctly
+    rule: "After normalization a legacy-format lease still in the future is not reclaimed, and one in the past is delivered."
+    enforced_by:
+      - test: framework/outbox.TestLegacyActiveLeaseNotReclaimed
+      - test: framework/outbox.TestLegacyExpiredLeaseDelivers
+decisions:
+  - id: guard-each-fix-on-read-text
+    date: 2026-11-18
+    status: accepted
+    decision: "Each column fix is its own UPDATE guarded on the text the column held when read."
+    rejected:
+      - option: "Write the row back keyed on its primary key alone."
+        why: "A relay that claimed the delivery between the read and the write had its fresh lease replaced by the stale one, and another relay could claim it at once (2026-10-27 B10)."
+    revisit_if: "SQLite time columns are stored as integers or in one layout every driver binds."
+    upholds: [keeps-claim-written-meanwhile]

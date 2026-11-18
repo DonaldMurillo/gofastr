@@ -1,0 +1,68 @@
+primitive: docs
+summary: The framework's user docs embedded in the binary - topic listing, page lookup and ranked search over framework/docs/content, read by gofastr docs and the docs MCP tools.
+code:
+  - framework/docs/docs.go
+docs:
+  - framework/docs/content/cli.md
+invariants:
+  - id: list-is-sorted-by-name
+    rule: List returns every embedded topic sorted by Name.
+    enforced_by:
+      - test: framework/docs.TestSweepListIsSortedByName
+      - test: framework/docs.TestListNonEmpty
+  - id: get-refuses-malformed-names
+    rule: Get refuses an empty name, and a name holding a slash, backslash or dot, before it reads the corpus, and answers an error for an unknown topic.
+    enforced_by:
+      - test: framework/docs.TestSweepGetRefusesMalformedNamesBeforeReading
+      - test: framework/docs.TestGetRejectsPathTraversal
+      - test: framework/docs.TestGetUnknownTopic
+  - id: title-skips-fences
+    rule: A topic's Title is its first "# " heading outside a fenced code block, else its humanised file name.
+    enforced_by:
+      - test: framework/docs.TestExtractTitleSkipsFences
+  - id: summary-is-the-first-paragraph
+    rule: A topic's Summary joins the lines of its first prose paragraph, skipping headings, fenced code and HTML comments and dropping blockquote markers, and cuts it to about 200 bytes on a rune boundary.
+    enforced_by:
+      - test: framework/docs.TestExtractSummaryIsTheFirstParagraph
+      - test: framework/docs.TestExtractSummaryCutsOnARune
+      - test: framework/docs.TestShippedSummariesAreProse
+  - id: short-term-is-an-error
+    rule: Search and SearchWithLimit answer ErrSearchTermTooShort for a term under three bytes without scanning.
+    enforced_by:
+      - test: framework/docs.TestSearchShortTermIsAnError
+  - id: search-caps-its-hits
+    rule: Search returns at most 50 hits, and SearchWithLimit at most limit, 50 for a limit of zero or less.
+    enforced_by:
+      - test: framework/docs.TestSearchWithLimit
+      - test: framework/docs.TestSweepDefaultHitCapIsFifty
+  - id: search-ranks-by-tier
+    rule: Search orders topics by a title match, then lede matches before the first "##" heading, then heading matches, then body matches, then name, and keeps each topic's hits in line order.
+    enforced_by:
+      - test: framework/docs.TestSweepRelevanceTiers
+      - test: framework/docs.TestSearchRanksRelevantTopicsFirst
+      - test: framework/docs.TestSearchKeepsLineOrderWithinTopic
+  - id: headings-are-not-hits
+    rule: A heading line is never a search hit, and a "#" line inside a fenced code block is an ordinary line.
+    enforced_by:
+      - test: framework/docs.TestScanTopicSkipsFencedHashLines
+  - id: excerpt-centres-on-the-match
+    rule: An excerpt of a line longer than 240 bytes keeps 120 bytes either side of the match, shifted inward at the line's ends and widened to whole runes, with an ellipsis on each cut side, even where lowercasing changes a rune's byte length.
+    enforced_by:
+      - test: framework/docs.TestExcerptAround
+      - test: framework/docs.TestExcerptAroundCutsWholeRunesAroundTheMatch
+decisions:
+  - id: framework-does-not-import-docs
+    date: 2026-11-17
+    status: accepted
+    decision: Package framework never imports framework/docs; the docs MCP tools live in framework/docs/mcptools, which imports core/mcp, and a host opts in with WithMCPTools.
+    rejected:
+      - option: Docs tools inside package framework.
+        why: The affected-package walk counts an embedded asset as a change to its package, so every docs edit would retest every importer of framework.
+    revisit_if: The affected-package walk stops widening on embedded assets.
+  - id: edit-in-place
+    date: 2026-11-17
+    status: accepted
+    decision: framework/docs/content is both the edit location and the embedded source, with no generation step.
+    rejected:
+      - option: Generate the embedded tree from docs written elsewhere.
+        why: The binary's docs could lag the files a contributor edited.

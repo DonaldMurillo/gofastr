@@ -1,6 +1,4 @@
-// Command child prints whether localrun would register it. A test
-// builds and starts it to check what a process started by a test
-// binary inherits.
+// Command child prints whether localrun would register it.
 package main
 
 import (

@@ -11,15 +11,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// ParsePredicate parses the filter text the admin's filter chips, query
-// box, a list view's Where and the ?filter= URL parameter carry, into a
-// [filter.Predicate] that has already passed [filter.ValidatePredicate]
-// against fields. It never builds SQL itself and never touches
-// BuildDSLQuery, which applies no row scope; hand the predicate to a
-// caller that does (the CRUD handler's in-process list), where owner,
-// tenant, soft-delete and read scopes are ANDed around it.
-//
-// Grammar (keywords are case-insensitive):
+// ParsePredicate parses filter text into a predicate that has passed
+// filter.ValidatePredicate against fields. It builds no SQL and applies
+// no row scope. Empty text returns (nil, nil). Keywords are
+// case-insensitive:
 //
 //	expr     := and_expr ("or" and_expr)*
 //	and_expr := term ("and" term)*
@@ -27,17 +22,6 @@ import (
 //	op       := "=" | "!=" | "<" | ">" | "<=" | ">=" | "contains" | "in"
 //	value    := quoted string ("\"" and "\\" escapes) | number | true | false
 //	in value := "[" value ("," value)* "]"
-//
-// `contains` maps to OpLike with the value wrapped for a literal substring
-// match: the `%`, `_` and escape characters in the user's text are escaped
-// and the clause carries an ESCAPE, so `contains "50%"` matches a literal
-// 50%, not a wildcard pattern. `field` must be a bare identifier; whether
-// it names a real, non-Hidden, non-NoQuery column of the right type is
-// ValidatePredicate's question, answered before the tree is returned.
-//
-// Empty or all-whitespace text returns (nil, nil). Input over
-// maxDSLInputSize bytes is refused outright. Errors name the byte offset
-// and quote at most a short, control-byte-scrubbed excerpt of the input.
 func ParsePredicate(text string, fields []schema.Field) (*filter.Predicate, error) {
 	if len(text) > maxDSLInputSize {
 		return nil, i18n.NewError(reasonFilterTooLong, map[string]any{"max": maxDSLInputSize})
@@ -55,32 +39,22 @@ func ParsePredicate(text string, fields []schema.Field) (*filter.Predicate, erro
 	if p.pos < len(p.src) {
 		return nil, p.errorf(reasonUnexpectedInput)
 	}
-	// The returned tree is ValidatePredicate's resolved copy: aliases
-	// resolved and Bool markers set, on memory this call owns.
+
 	return filter.ValidatePredicate(root, fields)
 }
 
-// Quote writes v as a quoted string value of the predicate grammar,
-// the inverse of the parser's quoted-string scan: the backslash is
-// escaped first, then the double quote, so `C:\reports` comes back as
-// `"C:\\reports"` and parses to the same text. Every writer of filter
-// text quotes through it. A CR or LF has no escape in the grammar, so a
-// value holding one cannot be written as a term.
+// Quote writes v as a quoted value, escaping backslashes and double quotes,
+// that ParsePredicate reads back as v. v must not contain CR or LF, which
+// ParsePredicate refuses inside a quoted value.
 func Quote(v string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(v, `\`, `\\`), `"`, `\"`) + `"`
 }
 
-// maxSortTerms bounds how many keys one Sort string may carry. Mirrors
-// filter's maxSortFields cap on ?sort= so a hostile ?sort= cannot inflate
-// the ORDER BY through this surface either.
 const maxSortTerms = 16
 
-// ParseSort parses a view's Sort text — `due_on ASC`,
-// `amount DESC, number ASC` — into [filter.ParsedSort] values. Field names
-// are validated against fields: unknown and Hidden names are refused
-// (indistinguishably, matching ParseSortValues), NoQuery names are refused
-// by name, and a direction must be ASC or DESC, case-insensitive, defaulting
-// to ASC when omitted. Empty or all-whitespace text returns (nil, nil).
+// ParseSort parses Sort text such as "amount DESC, number ASC" into
+// sorts checked against fields; a direction defaults to ASC. Empty text
+// returns (nil, nil).
 func ParseSort(text string, fields []schema.Field) ([]filter.ParsedSort, error) {
 	if len(text) > maxDSLInputSize {
 		return nil, i18n.NewError(reasonSortTooLong, map[string]any{"max": maxDSLInputSize})
@@ -94,8 +68,6 @@ func ParseSort(text string, fields []schema.Field) ([]filter.ParsedSort, error) 
 		return nil, i18n.NewError(reasonSortTooMany, map[string]any{"count": len(parts), "max": maxSortTerms})
 	}
 
-	// The allow-list mirrors ParseSortValues: Hidden folds into unknown,
-	// NoQuery is refused by name, wire aliases resolve to columns.
 	allowed := make(map[string]bool, len(fields))
 	var noQuery map[string]bool
 	alias := make(map[string]string, len(fields))
@@ -136,8 +108,6 @@ func ParseSort(text string, fields []schema.Field) ([]filter.ParsedSort, error) 
 		}
 		desc := false
 		if len(toks) == 2 {
-			// ASCII folding only (asciicase): strings.ToUpper maps ſ
-			// (U+017F) onto S, so "deſc" sorted descending.
 			switch asciicase.Lower(toks[1]) {
 			case "asc":
 			case "desc":
@@ -160,8 +130,6 @@ func ParseSort(text string, fields []schema.Field) ([]filter.ParsedSort, error) 
 	return sorts, nil
 }
 
-// predParser is a recursive-descent parser over one filter string. It
-// walks bytes; every method leaves pos on the first unconsumed byte.
 type predParser struct {
 	src string
 	pos int
@@ -177,10 +145,6 @@ func isPredSpace(b byte) bool {
 	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
 }
 
-// errorf builds an error naming the current offset and a short, scrubbed
-// excerpt around it. Control bytes are stripped and the quote is capped so
-// a hostile ?filter= cannot forge log lines or dump its payload through
-// the error path.
 func (p *predParser) errorf(reason i18n.Phrase) error {
 	lo := p.pos - 16
 	if lo < 0 {
@@ -197,22 +161,14 @@ func (p *predParser) errorf(reason i18n.Phrase) error {
 	return i18n.NewError(reason, map[string]any{"offset": p.pos, "near": strconv.Quote(near)})
 }
 
-// parseExpr implements expr := and_expr ("or" and_expr)*. A chain of ors
-// becomes ONE group with a child per operand, never a left-nested pair per
-// or: nesting would spend a level of the predicate depth cap on every
-// term, so a plain ten-term filter would be refused as too deep.
 func (p *predParser) parseExpr() (*filter.Predicate, error) {
 	return p.parseChain("or", true, p.parseAnd)
 }
 
-// parseAnd implements and_expr := term ("and" term)*, flattened the same
-// way parseExpr flattens ors.
 func (p *predParser) parseAnd() (*filter.Predicate, error) {
 	return p.parseChain("and", false, p.parseTerm)
 }
 
-// parseChain reads operand (kw operand)* and returns the lone operand, or
-// one group holding every operand when the keyword appeared.
 func (p *predParser) parseChain(kw string, or bool, operand func() (*filter.Predicate, error)) (*filter.Predicate, error) {
 	first, err := operand()
 	if err != nil {
@@ -240,8 +196,6 @@ func (p *predParser) parseChain(kw string, or bool, operand func() (*filter.Pred
 	return &filter.Predicate{Or: or, Children: children}, nil
 }
 
-// parseTerm implements term := "(" expr ")" | field op value. Parentheses
-// group; they do not create a node of their own.
 func (p *predParser) parseTerm() (*filter.Predicate, error) {
 	p.skipSpace()
 	if p.pos < len(p.src) && p.src[p.pos] == '(' {
@@ -279,8 +233,6 @@ func (p *predParser) parseTerm() (*filter.Predicate, error) {
 	return &filter.Predicate{Field: field, Op: op, Value: value}, nil
 }
 
-// parseIdent scans one [A-Za-z_][A-Za-z0-9_]* token, the same allow-list
-// dslIdentRe spells for every other DSL identifier.
 func (p *predParser) parseIdent(missing i18n.Phrase) (string, error) {
 	p.skipSpace()
 	start := p.pos
@@ -299,8 +251,6 @@ func (p *predParser) parseIdent(missing i18n.Phrase) (string, error) {
 func isAlpha(b byte) bool { return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' }
 func isAlnum(b byte) bool { return isAlpha(b) || b >= '0' && b <= '9' }
 
-// parseOp scans a symbolic or keyword operator. Two-byte symbols are
-// matched before their one-byte prefixes.
 func (p *predParser) parseOp() (filter.FilterOp, error) {
 	p.skipSpace()
 	rest := p.src[p.pos:]
@@ -335,8 +285,6 @@ func (p *predParser) parseOp() (filter.FilterOp, error) {
 	return "", p.errorf(reasonExpectedOperator)
 }
 
-// peekKeyword reports whether a case-insensitive keyword starts at pos,
-// as a whole word (followed by a delimiter, so `orb` is not `or`).
 func (p *predParser) peekKeyword(kw string) bool {
 	rest := p.src[p.pos:]
 	if len(rest) < len(kw) || !strings.EqualFold(rest[:len(kw)], kw) {
@@ -353,9 +301,6 @@ func (p *predParser) consumeKeyword(kw string) {
 	p.pos += len(kw)
 }
 
-// parseValue scans one scalar: a double-quoted string with \" and \\
-// escapes, a bare number, or true/false (case-insensitive, normalized to
-// lower case so Bool columns bind a Go bool).
 func (p *predParser) parseValue() (string, error) {
 	p.skipSpace()
 	if p.pos >= len(p.src) {
@@ -385,11 +330,8 @@ func (p *predParser) parseValue() (string, error) {
 	}
 }
 
-// parseQuoted scans a double-quoted string. Only \" and \\ are escapes;
-// any other backslash is refused rather than silently reinterpreted, so
-// what matched is what the user typed.
 func (p *predParser) parseQuoted() (string, error) {
-	p.pos++ // opening quote
+	p.pos++
 	var sb strings.Builder
 	for p.pos < len(p.src) {
 		b := p.src[p.pos]
@@ -420,9 +362,6 @@ func (p *predParser) parseQuoted() (string, error) {
 	return "", p.errorf(reasonUnterminatedString)
 }
 
-// parseNumber scans an optionally signed decimal with optional fraction
-// and exponent. The token's text is kept verbatim; the SQL binder owns
-// numeric coercion, as it does for ?field_gt=.
 func (p *predParser) parseNumber() (string, error) {
 	start := p.pos
 	if p.src[p.pos] == '-' || p.src[p.pos] == '+' {
@@ -461,8 +400,6 @@ func (p *predParser) parseNumber() (string, error) {
 	return p.src[start:p.pos], nil
 }
 
-// parseValueList scans ["a", "b", 3] for the in operator: at least one
-// value, values separated by commas, the whole list in brackets.
 func (p *predParser) parseValueList() ([]string, error) {
 	p.skipSpace()
 	if p.pos >= len(p.src) || p.src[p.pos] != '[' {

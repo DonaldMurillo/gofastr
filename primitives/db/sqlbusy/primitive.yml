@@ -1,0 +1,68 @@
+primitive: db.sqlbusy
+summary: Recognising SQLite's SQLITE_BUSY and retrying a write that met it with backoff, within the caller's deadline or a default budget.
+code:
+  - framework/db/sqlbusy/
+docs:
+  - framework/docs/content/sqlite-driver.md
+invariants:
+  - id: busy-by-primary-result-code
+    rule: Is reports true for an error whose Code has primary result code 5 (SQLITE_BUSY) or 6 (SQLITE_LOCKED), extended codes included, and false for anything else.
+    enforced_by:
+      - test: framework/db/sqlbusy.TestIsUsesSQLiteResultCode
+      - test: framework/db/sqlbusy.TestIsMatchesDriverResultCodes
+  - id: retry-until-the-deadline-not-a-count
+    rule: Retry keeps retrying a busy error until the context ends, with no attempt cap, the pause doubling to at most 100ms.
+    enforced_by:
+      - test: framework/db/sqlbusy.TestRetryOutlastsAttemptCap
+  - id: retry-stops-on-anything-else
+    rule: Retry returns at once on success or on a non-busy error, on the first call or a later one, and never calls fn on a context that has already ended.
+    enforced_by:
+      - test: framework/db/sqlbusy.TestRetryStopsOnNonBusyAndContext
+      - test: framework/db/sqlbusy.TestRetryStopsOnALaterNonBusyError
+      - test: framework/db/sqlbusy.TestRetryOnAnEndedContextNeverCalls
+  - id: default-budget-on-a-deadline-free-context
+    rule: The first call runs on the caller's context unchanged, and when it has no deadline the retries run under DefaultBudget, ten seconds.
+    enforced_by:
+      - test: framework/db/sqlbusy.TestRetryPreservesFirstOperationBudget
+      - test: framework/db/sqlbusy.TestRetryHasBoundedOperationContext
+      - test: framework/db/sqlbusy.TestDefaultBudgetIsTenSeconds
+  - id: deadline-keeps-the-busy-cause
+    rule: When the context ends first, Retry returns the context's error wrapped around the last busy error, so both errors.Is and Is match it.
+    enforced_by:
+      - test: framework/db/sqlbusy.TestRetryDeadlineKeepsBusyCause
+  - id: exec-reports-the-landed-rows
+    rule: Exec returns the row count of the attempt that succeeded.
+    enforced_by:
+      - test: framework/db/sqlbusy.TestExecReportsRowsOfTheAttemptThatLanded
+  - id: settles-are-fenced
+    rule: Every settle that retries through sqlbusy is fenced on its claim, so a late retry that lost the race changes nothing.
+    judge: Does this change add a retried settle (an UPDATE or DELETE through sqlbusy.Retry or Exec) whose WHERE does not check the claim it settles?
+    applies:
+      - battery/queue/db.go
+      - battery/webhook/sql.go
+      - battery/webhook/inbound_sql.go
+      - framework/outbox/delivery.go
+decisions:
+  - id: budget-is-a-deadline
+    date: 2026-11-17
+    status: accepted
+    decision: Retries are bounded by the caller's deadline, or DefaultBudget, never by a count of attempts.
+    rejected:
+      - option: Cap at seven attempts (about two seconds).
+        why: The cap ran out on a contended file while workers kept claiming, and each settle that gave up left its row claimed until the lease expired (#669); a failed settle costs a whole lease.
+    upholds: [retry-until-the-deadline-not-a-count, default-budget-on-a-deadline-free-context]
+  - id: match-result-codes
+    date: 2026-11-17
+    status: accepted
+    decision: Busy is recognised by SQLite's primary result code through a Code() method.
+    rejected:
+      - option: Match the error text.
+        why: Result codes tell contention from unrelated SQL errors, and text changes with the driver.
+    upholds: [busy-by-primary-result-code]
+  - id: jittered-backoff
+    date: 2026-11-17
+    status: accepted
+    decision: Each pause is a random point in the upper half of the current delay, starting at 5ms.
+    rejected:
+      - option: A fixed delay.
+        why: Two settles that met the same lock would retry in step and meet again.

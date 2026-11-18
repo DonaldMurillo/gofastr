@@ -1,0 +1,62 @@
+primitive: file.derive
+summary: Image derivatives on a FileField - the DerivedVariant and ImageDerivatives values, the ImageDeriver seam framework/imagefield implements, and the AllowTypes and WithImageDeriver process options.
+code:
+  - framework/file/imagederive.go
+docs:
+  - framework/docs/content/uploads.md
+  - framework/docs/content/image.md
+on_change:
+  - DerivedVariant's snake_case JSON tags are the stored format of every <field>_variants column; renaming one orphans existing rows' renditions.
+  - Keep ImageDeriver image-shaped; a general per-field transform is issue 144.
+twins:
+  - job: Decide whether a placeholder is an inline raster data URL.
+    why: framework/file is a leaf and does not import framework/ui's urlsafe helper; TestPlaceholderAllowListsAgree pins the two lists together.
+    sites:
+      - path: framework/file/imagederive.go
+        note: isRasterDataURL, for ImageDerivatives.Validate.
+      - path: framework/ui/image_placeholder.go
+        note: placeholderUsable, for the render sink.
+invariants:
+  - id: variant-refs-validated
+    rule: ImageDerivatives.Validate refuses a variant StorageRef that is oversize, has an unsafe scheme, holds "..", a control byte or a forged rune, a variant MIME with a control byte, forged rune or unsafe character, and a negative width or height.
+    enforced_by:
+      - test: framework/file.TestVariantRefRejectsControlBytes
+      - test: framework/file.TestImageDerivativesValidateTable
+  - id: placeholder-is-raster-data-url
+    rule: A non-empty Placeholder must be a data:image/ URL, prefix in any case, of jpeg, png, gif, webp or avif, and Placeholder and BlurHash are capped at MaxFileFieldStringBytes.
+    enforced_by:
+      - test: framework/file.TestPlaceholderAllowListsAgree
+      - test: framework/file.TestImageDerivativesValidateTable
+  - id: one-reader-for-variant-refs
+    rule: VariantStorageRefs returns the non-empty storage_ref of each element of a JSON array and ok false for anything else, and IsExternalURL is true only for http or https with a host.
+    enforced_by:
+      - test: framework/file.TestVariantStorageRefsAndExternalURL
+  - id: allow-types-sniffed
+    rule: AllowTypes refuses an upload whose sniffed type is not listed, with ErrFileFieldType and before anything is saved.
+    enforced_by:
+      - test: framework/file.TestProcessFileField_AllowTypes
+decisions:
+  - id: deriver-is-an-interface
+    date: 2026-11-17
+    status: accepted
+    decision: Image derivation is the ImageDeriver interface, implemented in framework/imagefield.
+    rejected:
+      - option: Call framework/image directly.
+        why: framework/crud imports this package, and every app with a CRUD handler would link every image decoder and the WebP encoder.
+    upholds: [crud.uploads/failed-write-leaves-no-upload]
+  - id: derive-failure-fails-upload
+    date: 2026-11-17
+    status: accepted
+    decision: A derive failure fails the upload.
+    rejected:
+      - option: Return the FileField with a nil Image.
+        why: It surfaces much later as a page with no placeholder or srcset and nothing in the logs, and a non-image on an image field should be refused.
+    upholds: [file/derive-failure-rolls-back]
+  - id: placeholder-checked-unconditionally
+    date: 2026-11-17
+    status: accepted
+    decision: The placeholder allowlist runs on every non-empty value.
+    rejected:
+      - option: Run it only on values that look like a scheme attack.
+        why: A remote https tracker URL passed and was persisted through an image column.
+    upholds: [placeholder-is-raster-data-url]

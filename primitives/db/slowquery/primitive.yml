@@ -1,0 +1,76 @@
+primitive: db.slowquery
+summary: An Executor wrapper that logs statements slower than a threshold, their SQL shape masked by dialect, and counts them for /metrics.
+code:
+  - framework/slowquery/
+docs:
+  - framework/docs/content/observability.md
+  - framework/docs/content/log.md
+invariants:
+  - id: threshold-gates-the-line
+    rule: A statement is logged and counted when its duration is at or over a positive threshold, and never with a zero threshold.
+    enforced_by:
+      - test: framework.TestSlowQuery_ZeroThreshold_NoLogging
+      - test: framework.TestSlowQuery_AboveThreshold_Logged
+      - test: framework.TestSlowQuery_AsCrudHandlerDB
+  - id: line-is-shape-only
+    rule: The slow line prints the statement through the dialect's literal masker and the number of bound arguments, never their values, plus the statement's error when it failed.
+    enforced_by:
+      - test: framework/slowquery.TestSlowQueryLineMasksLiteral
+      - test: framework/slowquery.TestTrimSQLMasksEveryDialectsLiterals
+      - test: framework/slowquery.TestSlowLineCountsArgsAndCarriesTheError
+  - id: with-dialect-keeps-identifiers
+    rule: WithDialect masks by that engine's rules, so PostgreSQL quoted identifiers survive, and NewSlowQueryLogger passes its options through.
+    enforced_by:
+      - test: framework/slowquery.TestTrimSQLMasksStringLiterals
+  - id: trim-cuts-on-a-rune
+    rule: TrimSQL caps the shape at 240 bytes, cut back to a rune boundary and followed by an ellipsis.
+    enforced_by:
+      - test: framework/slowquery.TestTrimSQLTruncatesOnRuneBoundary
+  - id: lines-never-vanish
+    rule: With a nil logger, a nil accessor or an accessor that returns nil, the line goes to slog.Default.
+    enforced_by:
+      - test: framework/slowquery.TestNilLoggerFallsBackToDefault
+  - id: begin-tx-forwards
+    rule: BeginTx returns the inner executor's BeginTx answer, and sql.ErrConnDone when the inner executor cannot begin.
+    enforced_by:
+      - test: framework/slowquery.TestBeginTxForwardsToTheInnerExecutor
+  - id: collector-counts-hits
+    rule: MetricsCollector writes slow_queries_total as the logger's hit count, and zero for a nil logger.
+    enforced_by:
+      - test: framework/slowquery.TestSlowQueryMetricsCollector
+      - test: framework/slowquery.TestSlowQueryMetricsCollector_NilLogger
+decisions:
+  - id: mask-under-every-engine-without-a-dialect
+    date: 2026-11-17
+    status: accepted
+    decision: Without WithDialect the line masks under every engine's rules at once, hiding PostgreSQL quoted identifiers too.
+    rejected:
+      - option: Print the statement as written.
+        why: A value spelled inline (ALTER ROLE ... PASSWORD '...') went to every log sink verbatim.
+      - option: Guess one engine.
+        why: Where a literal ends depends on the engine, and a wrong guess leaks the rest of a string.
+    upholds: [line-is-shape-only]
+  - id: accessor-for-a-swappable-logger
+    date: 2026-11-17
+    status: accepted
+    decision: NewSlowQueryLoggerFn reads the logger per line, so battery/log's App.Logger swap during Init takes effect without re-wrapping.
+    rejected:
+      - option: Pin the logger at construction only.
+        why: The wrapper is built before plugins swap the logger, and its lines would miss the new one.
+    upholds: [lines-never-vanish]
+  - id: tx-statements-not-timed
+    date: 2026-11-17
+    status: accepted
+    decision: Statements inside a transaction are not timed, because the framework hands the raw *sql.Tx to the in-tx handler.
+    rejected:
+      - option: Wrap the returned *sql.Tx.
+        why: Not built yet; it was left as a future enhancement, not refused.
+    revisit_if: Slow statements inside transactions need to be seen.
+    upholds: [begin-tx-forwards]
+  - id: clamp-zero-durations
+    date: 2026-11-17
+    status: accepted
+    decision: A measured duration of zero counts as one nanosecond.
+    rejected:
+      - option: Use the timer's zero.
+        why: Very fast calls share a clock tick on Windows, making a 1ns threshold flaky; no test here can show it on Linux.

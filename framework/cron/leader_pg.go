@@ -10,50 +10,28 @@ import (
 	"time"
 )
 
-// cronTicksTable records, per lease key, the last tick minute a replica
-// claimed. PostgresAdvisoryLease.AcquireTick creates it on first use.
 const cronTicksTable = "gofastr_cron_ticks"
 
-// PostgresAdvisoryLease is a [LeaderElection] backed by a Postgres advisory
-// lock (pg_try_advisory_lock / pg_advisory_unlock). Every replica pointing at
-// the same Postgres and using the same Key coordinates on the lock: the holder
-// fires the tick, the others skip. Advisory locks are session-scoped, so each
-// Acquire pins a dedicated connection for the lock's lifetime and unlock reuses
-// that same connection before returning it to the pool.
-//
-// The lease also implements [TickLeaderElection]: AcquireTick records the
-// tick minute it fired in the gofastr_cron_ticks table (created on first
-// use), so a replica whose timer fires for the same minute after the leader
-// released the lock skips it instead of running the jobs a second time. The
-// scheduler uses AcquireTick and releases the lock as soon as the claim is
-// made, so the pinned connection is held for the lock and the claim only,
-// never while the jobs run.
-//
-// Pool sizing: through plain Acquire, the lock's connection stays pinned
-// for as long as the caller holds the lease, so the DB pool should allow at
-// least 2 open connections when the work done under it uses the database,
-// otherwise the holder has the only connection and that work deadlocks.
+// PostgresAdvisoryLease is a [TickLeaderElection] on a Postgres advisory lock
+// on a pinned connection, its claims in gofastr_cron_ticks. Plain Acquire
+// pins the connection while the lease is held, so work under it needs a
+// second pool connection.
 type PostgresAdvisoryLease struct {
 	db  *sql.DB
 	key int64
 
-	// ensureMu guards tableReady: the ticks table is created once per
-	// lease, retried on the next tick when creation fails.
 	ensureMu   sync.Mutex
 	tableReady bool
 }
 
-// NewPostgresAdvisoryLease creates a leader-election lease over a Postgres
-// advisory lock identified by key. Every coordinating replica MUST use the
-// same key; pick a fixed value to avoid colliding with the framework's own
-// advisory locks (see core/migrate's pinned AdvisoryLockKey).
+// NewPostgresAdvisoryLease returns a lease on lock key, shared by every
+// coordinating replica and distinct from core/migrate's AdvisoryLockKey.
 func NewPostgresAdvisoryLease(db *sql.DB, key int64) *PostgresAdvisoryLease {
 	return &PostgresAdvisoryLease{db: db, key: key}
 }
 
-// Acquire tries to take the advisory lock. On success it returns the pinned
-// connection's release function (which unlocks and returns the conn). A
-// non-leader returns (false, nil, nil) and closes its speculative connection.
+// Acquire takes the lock, returning a release that unlocks and returns the
+// connection, or (false, nil, nil) when another session holds it.
 func (p *PostgresAdvisoryLease) Acquire(ctx context.Context) (bool, func(), error) {
 	conn, err := p.lock(ctx)
 	if conn == nil || err != nil {
@@ -62,15 +40,8 @@ func (p *PostgresAdvisoryLease) Acquire(ctx context.Context) (bool, func(), erro
 	return true, p.unlocker(conn), nil
 }
 
-// AcquireTick takes the advisory lock and then claims tick (the minute the
-// scheduler is firing) for this lease key. It holds only when both succeed:
-// a tick minute at or before the last one any replica claimed is refused,
-// the lock released at once, and (false, nil, nil) returned. The claim is a
-// single conditional upsert (INSERT ... ON CONFLICT DO UPDATE ... WHERE
-// last_tick < $2) run on the pinned lock connection, so a one-connection
-// pool cannot deadlock on it, and atomic on its own, so the at-most-once
-// record does not depend on the lock. A claim error releases the lock and
-// is returned; the scheduler reports it and skips the tick.
+// AcquireTick takes the lock and claims tick with one conditional upsert on
+// the lock's connection, holding only when both succeed.
 func (p *PostgresAdvisoryLease) AcquireTick(ctx context.Context, tick time.Time) (bool, func(), error) {
 	conn, err := p.lock(ctx)
 	if conn == nil || err != nil {
@@ -85,9 +56,6 @@ func (p *PostgresAdvisoryLease) AcquireTick(ctx context.Context, tick time.Time)
 	return true, release, nil
 }
 
-// lock pins a connection and tries the advisory lock on it. It returns the
-// pinned connection when the lock is held, and (nil, nil) when another
-// session holds it.
 func (p *PostgresAdvisoryLease) lock(ctx context.Context) (*sql.Conn, error) {
 	conn, err := p.db.Conn(ctx)
 	if err != nil {
@@ -105,8 +73,6 @@ func (p *PostgresAdvisoryLease) lock(ctx context.Context) (*sql.Conn, error) {
 	return conn, nil
 }
 
-// claimTick records tick as this key's last fired minute unless an equal or
-// later minute is already recorded, and reports whether it did.
 func (p *PostgresAdvisoryLease) claimTick(ctx context.Context, conn *sql.Conn, tick time.Time) (bool, error) {
 	if err := p.ensureTicksTable(ctx, conn); err != nil {
 		return false, err
@@ -124,10 +90,6 @@ func (p *PostgresAdvisoryLease) claimTick(ctx context.Context, conn *sql.Conn, t
 	return n == 1, nil
 }
 
-// ensureTicksTable creates the ticks table once per lease. Two leases on
-// different keys can race CREATE TABLE IF NOT EXISTS (Postgres reports the
-// loser as a pg_type unique violation), so a failed create is tried once
-// more, by which point the winner's table exists and the retry is a no-op.
 func (p *PostgresAdvisoryLease) ensureTicksTable(ctx context.Context, conn *sql.Conn) error {
 	p.ensureMu.Lock()
 	defer p.ensureMu.Unlock()
@@ -147,20 +109,8 @@ func (p *PostgresAdvisoryLease) ensureTicksTable(ctx context.Context, conn *sql.
 	return nil
 }
 
-// unlocker returns the release func for a lock held on conn.
 func (p *PostgresAdvisoryLease) unlocker(conn *sql.Conn) func() {
 	return func() {
-		// Unlock on the SAME session-scoped connection, then return it. Use a
-		// background context so shutdown-time release is not cancelled by the
-		// scheduler's parent context being torn down.
-		//
-		// conn.Close returns the connection to the pool; it does not end
-		// the session, and a session-scoped advisory lock lives as long as
-		// the session. An unlock that fails on a live session (a cancelled
-		// statement, a statement timeout) left the lock held by a pooled
-		// connection, so no other replica could lead until this process
-		// exited. Such a connection is retired instead: ending its session
-		// releases the lock.
 		var released bool
 		err := conn.QueryRowContext(context.Background(), "SELECT pg_advisory_unlock($1)", p.key).Scan(&released)
 		if err != nil || !released {

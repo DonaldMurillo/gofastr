@@ -1,0 +1,133 @@
+primitive: outbox.relay
+summary: "The relay goroutine: StartRelay and relayLoop poll or wake on Nudge, and pump reconciles (expand, sweep, purge), claims a batch, and runs each delivery's handler under its own budget before settling it under a detached settle window."
+code:
+  - framework/outbox/relay.go
+docs:
+  - framework/docs/content/events.md
+on_change:
+  - "pump runs reconcile in a fixed order (expandDeliveries, sweepParents, purgeExpired, then claimDeliveries) and any failure returns 0 so the loop waits for the next tick; a new phase joins that sequence and reports through logClaimErr, which logs once on onset and once on recovery."
+  - "claimErrLogged and every other field relayLoop writes are touched only by the one relay goroutine; a second goroutine that writes them needs a lock."
+  - "Every settle write after a handler runs uses settleContext, opened after the handler returned, so a shutdown or a slow handler never leaves a finished delivery unrecorded."
+  - "A change to the handler budget, the settle window or the lease updates the Semantics part of framework/docs/content/events.md and the WithHandlerTimeout doc comment, which describes the lease stretch."
+  - "battery/queue's DBQueue.runHandler and MemoryQueue use the same budget-and-stop-waiting shape; a fix to one handler-timeout path is checked against the other."
+twins:
+  - job: "One delivery's budget, its handler timeout plus its settle window, measured against the claim lease."
+    why: "leaseFloor sizes the lease at construction and pump checks the remaining lease per delivery; both spell the sum themselves."
+    sites:
+      - path: framework/outbox/outbox.go
+        note: "leaseFloor returns twice handlerTimeout+settleTimeout, saturating, and New takes the max of it and the five-minute lease."
+      - path: framework/outbox/relay.go
+        note: "pump releases the rest of the batch when now+handlerTimeout+settleTimeout is after d.ClaimedUntil, for every delivery but the first."
+  - job: "Hand the unstarted rest of a claimed batch back with its attempts refunded."
+    why: "Two exits from pump's loop, shutdown and lease-short, share the release closure but decide separately; nothing else joins them."
+    sites:
+      - path: framework/outbox/relay.go
+        note: "pump's ctx.Err() branch and its lease-remaining branch both call release(deliveries[i:]) and break."
+      - path: framework/outbox/delivery.go
+        note: "releaseUnstarted, the fenced UPDATE both branches end in."
+  - job: "Run one handler under a wall-clock budget on its own goroutine, stop waiting at a timer, and turn a panic into an error."
+    why: "framework may not import battery/queue, and the two packages' handler and job types differ."
+    sites:
+      - path: framework/outbox/relay.go
+        note: "runHandler, with a buffered result channel and a timer rather than the handler context, so shutdown is not reported as a timeout."
+      - path: framework/outbox/delivery.go
+        note: "invokeHandler, the recover that makes a panicking consumer a failure."
+      - path: battery/queue/db.go
+        note: "DBQueue.runHandler, the DBQueue twin under WithDBHandlerTimeout."
+      - path: battery/queue/invoke.go
+        note: "invokeRecovering, queue's panic-to-error wrapper."
+      - path: framework/event/event.go
+        note: "emitStrict, the bus's panic-surfacing call that invokeHandler says it mirrors."
+  - job: "Decode a staged payload into the value a handler receives as Event.Data."
+    why: "The live bus hands handlers the Go value directly and the durable lane decodes the stored JSON; the two cannot share code, only shapes."
+    sites:
+      - path: framework/outbox/relay.go
+        note: "processDelivery decodes with jsonexact.Unmarshal into any, so arrays and scalars pass and integers past 2^53 arrive as json.Number."
+      - path: framework/outbox/outbox.go
+        note: "AppendFor encodes with json.Marshal and stores the text, null for nil data."
+invariants:
+  - id: hung-handler-cannot-stall-sibling
+    rule: "A handler that blocks past its budget has its delivery settled as failed and the next delivery in the batch runs."
+    enforced_by:
+      - test: framework/outbox.TestHungConsumerCannotStallSibling
+  - id: slow-handler-still-settles
+    rule: "A handler that succeeds after the settle window has passed but inside its own budget leaves its delivery dispatched."
+    enforced_by:
+      - test: framework/outbox.TestSlowHandlerStillSettles
+  - id: panic-is-a-failure
+    rule: "A panicking handler is retried and dead-lettered like an erroring one, never marked dispatched."
+    enforced_by:
+      - test: framework/outbox.TestRelay_PanickingConsumer_GoesDead
+      - test: framework/outbox.TestRelay_FailingConsumer_GoesDead
+  - id: stop-returns-during-backlog
+    rule: "The stop func returns while a backlog keeps every pump full, because relayLoop checks stop and ctx between pumps."
+    enforced_by:
+      - test: framework/outbox.TestRelay_StopDuringBacklog
+  - id: full-batch-drains-without-tick
+    rule: "A pump that processed deliveries is followed by another pump at once, without waiting for the poll interval."
+    enforced_by:
+      - test: framework/outbox.TestRelay_DrainsFullBatch
+  - id: nudge-beats-poll
+    rule: "Nudge after a commit delivers the row well before the poll interval elapses."
+    enforced_by:
+      - test: framework/outbox.TestRelay_NudgeFasterThanPoll
+  - id: lease-covers-handler-budget
+    rule: "The claim lease is at least twice the handler timeout plus the settle window, saturating at the Duration limit instead of wrapping negative."
+    enforced_by:
+      - test: framework/outbox.TestLeaseCoversLongHandlerBudget
+      - test: framework/outbox.TestLeaseFloorSaturates
+    applies:
+      - framework/outbox/outbox.go
+  - id: unrunnable-claims-handed-back
+    rule: "A delivery after the first in a batch whose remaining lease cannot cover one handler budget plus its settle is released with its attempt refunded, and the first delivery of a batch always runs."
+    enforced_by:
+      - test: framework/outbox.TestPumpReleasesClaimsItCannotRun
+      - test: framework/outbox.TestPumpShortLeaseStillDelivers
+  - id: shutdown-refunds-unstarted
+    rule: "A shutdown mid-batch releases every delivery it has not started with its attempt refunded, so none is dead-lettered without running."
+    enforced_by:
+      - test: framework/outbox.TestPumpShutdownRefundsUnstarted
+  - id: any-staged-payload-is-deliverable
+    rule: "Any value Append accepted, including arrays, scalars, strings and integers past 2^53, reaches the handler with the shape and digits it was staged with."
+    enforced_by:
+      - test: framework/outbox.TestNonObjectDataReachesConsumer
+      - test: framework/outbox.TestRelayKeepsBigIntegers
+  - id: undecodable-payload-never-reaches-handler
+    rule: "A stored payload that does not decode as JSON is settled as a failure without invoking the handler."
+    enforced_by:
+      - test: framework/outbox.TestCorruptPayloadNeverReachesHandler
+  - id: relay-delivers-end-to-end
+    rule: "A committed row is delivered to its declared consumer and its delivery ends dispatched on SQLite and Postgres."
+    enforced_by:
+      - test: framework/outbox.TestRelay_DeliversAndDispatches
+      - test: framework/outbox.TestPostgres_DeliversAndDispatches
+      - test: framework/outbox.TestSQLiteTypedEventRelay
+decisions:
+  - id: stop-waiting-at-the-budget
+    date: 2026-11-18
+    status: accepted
+    decision: "runHandler stops waiting for a handler at its budget and settles the delivery as failed, leaving the invocation to finish on its own goroutine."
+    rejected:
+      - option: "Wait for the handler to return, relying on it honouring its cancelled context."
+        why: "One handler that ignores its context wedges the durable lane for every consumer on the replica."
+      - option: "Select on the handler context's Done instead of a timer."
+        why: "A relay shutdown cancels that context too and would be reported as a handler timeout."
+    revisit_if: "Go gains a way to terminate a goroutine."
+    upholds: [hung-handler-cannot-stall-sibling]
+  - id: settle-window-after-handler
+    date: 2026-11-18
+    status: accepted
+    decision: "The settle context is detached from the relay ctx and opened only after the handler returns."
+    rejected:
+      - option: "Arm the settle deadline before the handler runs, or settle under the relay ctx."
+        why: "A handler slower than the window, or a shutdown, settled under an expired context, so a finished delivery stayed pending and was redelivered until it dead-lettered."
+    revisit_if: "Settling moves into the handler's own transaction."
+    upholds: [slow-handler-still-settles]
+  - id: durable-lane-skips-live-bus
+    date: 2026-11-18
+    status: accepted
+    decision: "The relay invokes declared consumers directly and never emits on the live event bus, which the caller notifies post-commit."
+    rejected:
+      - option: "Have the relay emit each row on the live bus."
+        why: "Every live subscriber would then see each event twice, once post-commit and once from the relay."
+    revisit_if: "The live bus stops being notified by the caller after commit."

@@ -1,0 +1,87 @@
+primitive: testdb
+summary: The per-test database helpers framework tests share - a single-connection in-memory SQLite or a fresh Postgres schema per test, the dialect loop, Postgres discovery and DSN redaction.
+code:
+  - framework/internal/testdb/
+docs:
+  - framework/docs/content/testkit.md
+invariants:
+  - id: sqlite-is-one-connection-with-foreign-keys
+    rule: "Open on SQLite returns an in-memory database with foreign_keys on and at most one open connection, since each :memory: connection is its own database."
+    enforced_by:
+      - test: framework/internal/testdb.TestOpenSQLiteIsOneConnectionWithForeignKeys
+  - id: postgres-only-from-the-env
+    rule: Postgres comes only from TEST_POSTGRES_DSN, and without it ResolvePostgresOnce returns errNoPostgres and Open skips the test instead of failing it.
+    enforced_by:
+      - test: framework/internal/testdb.TestResolvePostgresWithoutDSNIsAnError
+      - test: framework/internal/testdb.TestOpenPostgresSkipsWithoutDSN
+  - id: schema-name-is-unique-and-fits
+    rule: NewSchemaName embeds the pid and a per-call counter, emits only [a-z0-9_], and stays within Postgres's 63-byte identifier cap by cutting the test name, never the pid or counter.
+    enforced_by:
+      - test: framework/internal/testdb.TestNewSchemaNameCarriesProcessIdentity
+      - test: framework/internal/testdb.TestNewSchemaNameIsUniquePerCall
+      - test: framework/internal/testdb.TestNewSchemaNameFitsPostgresIdentifierLimit
+      - test: framework/internal/testdb.TestNewSchemaNameFitsUnderALongTestName
+  - id: search-path-travels-in-the-dsn
+    rule: A Postgres test database carries its schema as a search_path DSN parameter, so a connection the pool replaces starts in the same schema.
+    enforced_by:
+      - test: framework/internal/testdb.TestSearchPathSurvivesConnectionReplacement
+  - id: dsn-rewrite-keeps-the-dsn
+    rule: withSearchPath replaces any existing search_path in a URL or keyword/value DSN with exactly one, keeps every other pair's text, tokenises quoted values and backslash escapes as libpq does, and refuses a DSN it cannot parse or a schema outside [a-z0-9_].
+    enforced_by:
+      - test: framework/internal/testdb.TestWithSearchPathRewritesBothDSNForms
+      - test: framework/internal/testdb.TestWithSearchPathPreservesQuotedValues
+      - test: framework/internal/testdb.TestWithSearchPathRefusesMalformedDSNs
+      - test: framework/internal/testdb.TestWithSearchPathRefusesUnsafeSchemaNames
+  - id: redact-hides-the-whole-password
+    rule: RedactDSN masks a URL password up to the last "@" before the host and drops a keyword/value password.
+    enforced_by:
+      - test: framework/internal/testdb.TestRedactRedAtInPasswordTotallyMasked
+decisions:
+  - id: env-dsn-no-containers
+    date: 2026-11-17
+    status: accepted
+    decision: Postgres tests use TEST_POSTGRES_DSN (CI's service, or make postgres-up locally) and skip without it.
+    rejected:
+      - option: Start postgres:16-alpine on demand with testcontainers-go.
+        why: A require in this module's go.mod reaches every app that imports the framework, adding the Docker client stack for a convenience only this repo's tests used; cmd/repolint's test-only-dep-in-consumer-graph rule keeps it out.
+    upholds: [postgres-only-from-the-env]
+  - id: one-postgres-canary
+    date: 2026-11-17
+    status: accepted
+    decision: testdb always skips without Postgres, and internal/pgtest is the one canary that fails under PGTEST_REQUIRED or GITHUB_ACTIONS.
+    rejected:
+      - option: Fail here too in CI.
+        why: Both fire on the same missing variable, and one loud failure is enough.
+    upholds: [postgres-only-from-the-env]
+  - id: search-path-in-dsn-not-set
+    date: 2026-11-17
+    status: accepted
+    decision: The schema binding is a DSN startup parameter lib/pq forwards to every connection the pool opens.
+    rejected:
+      - option: Run SET search_path on the open session.
+        why: database/sql silently replaces a dead connection, and the replacement starts at the default search_path, so the tables vanish mid-test.
+    upholds: [search-path-travels-in-the-dsn]
+  - id: libpq-tokeniser
+    date: 2026-11-17
+    status: accepted
+    decision: Keyword/value DSNs are split by a tokeniser that follows libpq's fe-connect.c, and a DSN it cannot parse is an error.
+    rejected:
+      - option: strings.Fields.
+        why: A quoted value with a space splits in two, so dropping the old search_path leaves a stray token and a malformed DSN.
+    upholds: [dsn-rewrite-keeps-the-dsn]
+  - id: pid-in-schema-name
+    date: 2026-11-17
+    status: accepted
+    decision: The schema name carries the pid as well as a counter.
+    rejected:
+      - option: A process-local counter alone.
+        why: go test runs packages as separate processes against one shared Postgres, and two of them reach the same name.
+    upholds: [schema-name-is-unique-and-fits]
+  - id: redact-through-dsnredact
+    date: 2026-11-17
+    status: accepted
+    decision: RedactDSN delegates to internal/dsnredact, the one redactor cmd/gofastr uses too.
+    rejected:
+      - option: A local redactor.
+        why: The local copy cut at the first "@" and logged the tail of a password holding one.
+    upholds: [redact-hides-the-whole-password]

@@ -391,6 +391,10 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	if strings.IndexByte(name, 0) >= 0 {
 		return false
 	}
+	if pre, err := config.stat(name); err == nil && !pre.Mode().IsRegular() && !pre.IsDir() {
+		http.NotFound(w, r)
+		return true
+	}
 	var f fs.File
 	var err error
 	if config.root != nil {
@@ -566,6 +570,9 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 
 // hasFile reports whether name opens, inside the root, as a regular file.
 func (c Config) hasFile(name string) bool {
+	if st, err := c.stat(name); err != nil || !st.Mode().IsRegular() {
+		return false
+	}
 	f, err := c.reopen(name)
 	if err != nil {
 		return false
@@ -573,6 +580,15 @@ func (c Config) hasFile(name string) bool {
 	defer f.Close()
 	st, err := f.Stat()
 	return err == nil && st.Mode().IsRegular()
+}
+
+// stat reports name's file info without opening it, so a FIFO or device
+// is known before an open that would block on it.
+func (c Config) stat(name string) (fs.FileInfo, error) {
+	if c.root != nil {
+		return c.root.Stat(filepath.FromSlash(name))
+	}
+	return fs.Stat(c.FS, name) //gofastr:allow(rootread) type check only, no bytes read: the open after it and fileInRoot contain the read itself
 }
 
 // redirectToDir answers 301 with the request's own path plus a slash,

@@ -1,58 +1,33 @@
 package filter
 
 import (
-	"strconv"
 	"strings"
 
-	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// Condition is a single WHERE fragment (SQL + args) produced by
-// SearchConditions. Convert to a hook.WhereClause and append via
-// qb.Where(c.SQL, c.Args…), the query builder wraps each Where in
-// parens and AND-composes them, so multi-field search clauses combine
-// safely with owner/tenant/soft-delete scopes.
+// Condition is one WHERE fragment and its args, for qb.Where(c.SQL,
+// c.Args...).
 type Condition struct {
 	SQL  string
 	Args []any
 }
 
-// MaxSearchTerms bounds the number of tokens a single ?q= value expands
-// to. A search term is one whitespace-delimited token; beyond this cap,
-// extra tokens are dropped. Keeps statement size bounded against an
-// adversarial input.
+// MaxSearchTerms is the most tokens a ?q= term contributes; the rest
+// are dropped.
 const MaxSearchTerms = 8
 
-// SearchConditions builds a slice of AND-composed search conditions from
-// a free-text term over the given DB column names. Each whitespace-
-// delimited token produces one Condition whose SQL is a parenthesized
-// OR-group: (LOWER(f1) LIKE $1 ESCAPE '\' OR LOWER(f2) LIKE $2 ESCAPE
-// '\'). Every Condition must match (AND); within one Condition, any field
-// may match (OR). A blank/whitespace-only term returns nil (no
-// conditions). A term that is not storable text (invalid UTF-8 or a NUL
-// byte) returns an error naming "q": Postgres refuses it in a text bind.
-//
-// Case contract: LOWER() is ASCII-only on SQLite and locale-aware on
-// Postgres, so matching is ASCII-case-insensitive everywhere. Unicode
-// case folding is a Postgres bonus. The token itself is lowercased before
-// building the LIKE pattern so the comparison is consistent across
-// dialects.
-//
-// LIKE metacharacters (%, _, \) in each token are escaped via the
-// existing escaper so they match literally, a user searching for "50%"
-// finds rows containing "50%", not every row with any character sequence.
-// The args are ordered to match the $N placeholders left-to-right; the
-// crud query builder renumbers $N on Build.
+// SearchConditions returns one Condition per distinct whitespace token
+// of term, each an OR over fields of LikeClause, to be ANDed together.
+// A blank term returns nil; a term that is not storable text errors
+// naming "q".
 func SearchConditions(fields []string, term string) ([]Condition, error) {
 	term = strings.TrimSpace(term)
 	if term == "" || len(fields) == 0 {
 		return nil, nil
 	}
-	// The term binds as text: invalid UTF-8 or a NUL is Postgres's 22021
-	// (a 500) while SQLite answered an empty 200, so it is refused like
-	// every other filter value.
+
 	if !textsafe.Storable(term) {
 		return nil, valueTypeError("q", schema.Text)
 	}
@@ -65,17 +40,11 @@ func SearchConditions(fields []string, term string) ([]Condition, error) {
 	}
 	conditions := make([]Condition, 0, len(tokens))
 	for _, tok := range tokens {
-		// Unicode lowering on purpose: LOWER on Postgres folds Unicode
-		// too, so an accented capital (É) finds a stored é on both
-		// dialects. Compatibility look-alikes fold the same way (the
-		// Kelvin sign finds k); that is documented, not refused.
-		lowered := strings.ToLower(tok)
-		pattern := escapeLikePattern(lowered)
 		parts := make([]string, len(fields))
 		args := make([]any, len(fields))
 		for i, f := range fields {
-			parts[i] = "LOWER(" + query.QuoteKeyword(f) + `) LIKE $` + strconv.Itoa(i+1) + ` ESCAPE '\'`
-			args[i] = pattern
+			clause, arg := LikeClause(f, i+1, tok)
+			parts[i], args[i] = clause, arg
 		}
 		sql := "(" + strings.Join(parts, " OR ") + ")"
 		conditions = append(conditions, Condition{SQL: sql, Args: args})
@@ -83,7 +52,6 @@ func SearchConditions(fields []string, term string) ([]Condition, error) {
 	return conditions, nil
 }
 
-// tokenizeSearch splits term on whitespace, dedupes, and drops empties.
 func tokenizeSearch(term string) []string {
 	seen := make(map[string]bool)
 	var out []string

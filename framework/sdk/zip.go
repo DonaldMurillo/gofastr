@@ -9,14 +9,7 @@ import (
 	"strings"
 )
 
-// PackZip builds a deterministic zip archive: entries are written in sorted
-// path order with zeroed timestamps and fixed permissions, so packing the
-// same files twice yields byte-identical archives (regeneration on an
-// unchanged schema must not churn the artifact or its hash).
-//
-// prefix, when non-empty, becomes the top-level directory every entry is
-// placed under (e.g. "myapp-sdk" → "myapp-sdk/go.mod"), so extracting the
-// archive never splats files into the current directory.
+// PackZip builds a deterministic zip of files under prefix; escaping paths error.
 func PackZip(prefix string, files []File) ([]byte, error) {
 	if prefix != "" {
 		clean := path.Clean(prefix)
@@ -43,7 +36,6 @@ func PackZip(prefix string, files []File) ([]byte, error) {
 		hdr := &zip.FileHeader{
 			Name:   name,
 			Method: zip.Deflate,
-			// Modified left zero: determinism beats mtime fidelity here.
 		}
 		hdr.SetMode(0o644)
 		fw, err := w.CreateHeader(hdr)

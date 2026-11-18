@@ -1,0 +1,121 @@
+primitive: image.transform
+summary: The chainable operations that derive a new Image - resize with its filters and fit modes, rotate, flip, flop, auto-orient, modulate and the gradient generator.
+code:
+  - framework/image/geometry.go
+  - framework/image/modulate.go
+  - framework/image/generate.go
+twins:
+  - job: Apply brightness and saturation to every pixel of a source and store premultiplied RGBA.
+    why: The NRGBA, RGBA and YCbCr loops read Pix directly to avoid an interface allocation per pixel, which the generic At loop cannot.
+    sites:
+      - path: framework/image/modulate.go
+        note: modulateNRGBA, modulateRGBA and modulateYCbCr, the fast paths.
+      - path: framework/image/modulate.go
+        note: The generic At loop at the end of Modulate.
+invariants:
+  - id: modulate-fast-paths-match-generic
+    rule: Modulate's NRGBA, RGBA and YCbCr paths give the generic path's bytes within 3 per channel.
+    enforced_by:
+      - test: framework/image.TestSweepImageModulateFastPathsMatchGeneric
+  - id: modulate-fast-paths-do-not-allocate-per-pixel
+    rule: Modulate on an NRGBA or YCbCr image allocates a bounded number of times, not once per pixel.
+    enforced_by:
+      - test: framework/image.TestModulateNRGBAFastPathAllocsBounded
+      - test: framework/image.TestModulateYCbCrFastPathAllocsBounded
+  - id: modulate-identity-returns-source
+    rule: Modulate returns the receiver when both fields are nil or NaN, or when brightness and saturation are both 1, and a NaN field leaves its channel unchanged.
+    enforced_by:
+      - test: framework/image.TestModulateZeroIsIdentity
+      - test: framework/image.TestSweepImageModulateIdentityAndNaN
+  - id: modulate-clamps
+    rule: Modulated channels clamp to 0..255, an infinite brightness included.
+    enforced_by:
+      - test: framework/image.TestModulateInfBrightnessClampsCorrectly
+  - id: saturation-uses-rec601
+    rule: Saturation interpolates from the Rec. 601 luma, so Saturation 0 is grayscale by 0.299, 0.587 and 0.114 weights.
+    enforced_by:
+      - test: framework/image.TestModulateGrayscale
+  - id: derived-side-keeps-given-side
+    rule: A Resize with one side 0 or less keeps the given side exactly and derives the other, at least 1, and applies no fit.
+    enforced_by:
+      - test: framework/image.TestDerivedSideKeepsGivenWidth
+      - test: framework/image.TestPlaceholderKeepsWidthOnBanner
+  - id: fit-keeps-binding-side
+    rule: FitInside and FitOutside keep the side they bind on equal to the given one, computing the other in whole numbers.
+    enforced_by:
+      - test: framework/image.TestFitKeepsBindingSideExact
+      - test: framework/image.TestGivenBoxStillFits
+      - test: framework/image.TestResizeFitInside
+  - id: resize-identity-cases
+    rule: Resize returns the source unchanged when both sides are 0 or less, when the source has no area, and under WithoutEnlargement when the target exceeds the source on either axis.
+    enforced_by:
+      - test: framework/image.TestResizeNegativeBehaviour
+      - test: framework/image.TestSweepImageResizeOfEmptyImageIsIdentity
+      - test: framework/image.TestResizeWithoutEnlargementNoOp
+      - test: framework/image.TestSweepImageWithoutEnlargementOnEitherAxis
+  - id: resize-target-capped
+    rule: A resize target whose area exceeds the image's MaxPixels, or whose arithmetic overflows int, panics in Resize and is an error from checkResize, wrapping ErrTargetTooLarge.
+    enforced_by:
+      - test: framework/image.TestResizeTargetPastMaxPixels
+      - test: framework/image.TestDerivedSidePastIntRange
+      - test: framework/image.TestSweepImageFitOutsideOverflowIsTooLarge
+  - id: orientations-map-pixels
+    rule: AutoOrient maps pixels for EXIF orientations 2 to 8 as flop, rotate 180, flip, transpose, rotate 90, transverse and rotate 270, and clears the orientation, and Rotate rounds its angle down to a multiple of 90 modulo 360.
+    enforced_by:
+      - test: framework/image.TestSweepImageOrientationsMapPixels
+      - test: framework/image.TestEXIFOrientationParsedFromJPEG
+  - id: gradient-bounds
+    rule: "NewGradient refuses a non-positive size, an area past DefaultMaxPixels and a stop that is not #RRGGBB, gives a 1x1 gradient the first stop, and rounds each channel to nearest."
+    enforced_by:
+      - test: framework/image.TestNewGradientRejectsBadInput
+      - test: framework/image.TestGradientPastMaxPixels
+      - test: framework/image.TestNewGradientCornersMatchStops
+      - test: framework/image.TestSweepImageGradientEdges
+decisions:
+  - id: lanczos-names-alias-catmullrom
+    date: 2026-11-17
+    status: accepted
+    decision: Lanczos3 and Lanczos2 are aliases of CatmullRom and BiLinear, the best pure-Go kernels x/image/draw ships, named as Bun.Image names them.
+    rejected:
+      - option: Implement a Lanczos kernel.
+        why: x/image/draw has none, and the catalogue of names is for callers porting from a JS pipeline.
+  - id: fit-in-whole-numbers
+    date: 2026-11-17
+    status: accepted
+    decision: Fit arithmetic is a 128-bit multiply and divide on integers.
+    rejected:
+      - option: A float scale.
+        why: 22 times 15/22 is 14.999999999999998, so a 22 square inside 15x100 came out 14x14.
+    upholds: [fit-keeps-binding-side]
+  - id: no-fit-on-a-derived-side
+    date: 2026-11-17
+    status: accepted
+    decision: The fit runs only when both sides are given.
+    rejected:
+      - option: Run the fit on the derived box too.
+        why: 1920x36 at width 16 derives height 0, the fit's scale became zero and the result was 1x1 instead of 16x1.
+    upholds: [derived-side-keeps-given-side]
+  - id: resize-panics-on-oversize
+    date: 2026-11-17
+    status: accepted
+    decision: Resize panics on an oversize target, and the callers that take a size from data (VariantSet, Placeholder) check first and return the error.
+    rejected:
+      - option: Give Resize an error return.
+        why: It would break the chain API every caller uses.
+    upholds: [resize-target-capped]
+  - id: modulate-fields-are-pointers
+    date: 2026-11-17
+    status: accepted
+    decision: Modulation's fields are pointers, nil meaning unchanged, so Saturation 0 for grayscale is unambiguous.
+    rejected:
+      - option: Plain floats with 0 as unset.
+        why: Grayscale and black would be impossible to ask for.
+    upholds: [modulate-identity-returns-source]
+  - id: modulate-nan-is-unchanged
+    date: 2026-11-17
+    status: accepted
+    decision: A NaN field is treated as nil.
+    rejected:
+      - option: Pass NaN into the arithmetic.
+        why: NaN usually comes from a config-parsing bug, and it would turn every channel black.
+    upholds: [modulate-identity-returns-source]

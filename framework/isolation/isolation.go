@@ -1,10 +1,15 @@
-// Package isolation resolves worktree-specific local runtime resources.
+// Package isolation gives a linked Git worktree its own listen port, database
+// and environment: Resolve, ListenAddr, Runtime.Addr, Runtime.Env and
+// Runtime.Database.
 package isolation
 
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"maps"
 	"net"
 	"net/url"
@@ -28,35 +33,23 @@ const (
 	envPortPrefix      = "GOFASTR_ISOLATION_PORT_"
 	envRewriteExplicit = "GOFASTR_ISOLATION_REWRITE"
 
-	// portScanMax bounds the linear scan that follows a hashed candidate.
-	// Each iteration costs a net.Listen, so user-set ceilings need a sane cap.
 	portScanMax = 64
 )
 
 // Runtime is the resolved isolation context for a project.
 type Runtime struct {
-	projectDir string
-	gitRoot    string
-	configPath string
-	cfg        Config
-	active     bool
-	id         string
-	// rewriteExplicit governs whether an explicitly-assigned listen
-	// address is remapped. GOFASTR_ISOLATION_REWRITE=0 turns it off so
-	// isolation keeps its DB/worktree separation but honors the port
-	// the operator set (#268); default true.
+	projectDir      string
+	gitRoot         string
+	configPath      string
+	cfg             Config
+	active          bool
+	id              string
 	rewriteExplicit bool
 
-	ports *portTable // base port → mapped port, shared in-process
+	ports *portTable
 }
 
-// portTables holds the recorded port mappings per isolation context, one
-// table shared by every Runtime resolved for the same project, ID and port
-// config in this process. ListenAddr maps the port and App.Start resolves
-// isolation again; with a table per Runtime the second resolve took the
-// mapped port for a base port and moved it again. Runtimes for different
-// contexts still get separate tables.
-var portTables sync.Map // portTableKey → *portTable
+var portTables sync.Map
 
 type portTableKey struct {
 	projectDir string
@@ -104,9 +97,6 @@ func Resolve(projectDir string) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The isolation section of gofastr.settings.yml, looked up to the
-	// project root and never past it: a parent workspace's settings must
-	// not silently apply to a nested project.
 	settingsFile, found, err := settings.Find(start, "isolation")
 	if err != nil {
 		return nil, err
@@ -143,14 +133,8 @@ func Resolve(projectDir string) (*Runtime, error) {
 			return nil, fmt.Errorf("isolation.mode %q is not supported", cfg.Mode)
 		}
 	}
-	// Read the rewrite knob from the process env for Addr (the app's own
-	// listen port). Env() reads it from the child env map it is handed
-	// instead, so a child launched with REWRITE=0 is consistent — the
-	// child's own Resolve sees the same value in its os.Environ.
 	rewriteExplicit := os.Getenv(envRewriteExplicit) != "0" &&
 		!strings.EqualFold(os.Getenv(envRewriteExplicit), "false")
-	// Only an active runtime maps ports, so only it joins the shared
-	// table; an inactive Resolve leaves nothing behind in the process.
 	ports := &portTable{m: map[int]int{}}
 	if active {
 		ports = portTableFor(portTableKey{projectDir: start, id: id, port: cfg.Port})
@@ -167,9 +151,6 @@ func Resolve(projectDir string) (*Runtime, error) {
 	}, nil
 }
 
-// normalizeBarePort turns a bare numeric port ("8088") into ":8088", the form
-// http.Server.Addr expects. Anything already carrying a colon (":8080",
-// "localhost:8080", "[::1]:80") or empty is returned unchanged.
 func normalizeBarePort(addr string) string {
 	if addr == "" || strings.Contains(addr, ":") {
 		return addr
@@ -191,17 +172,13 @@ func (r *Runtime) ID() string {
 	return r.id
 }
 
-// Addr returns addr with its port remapped when isolation is active. It first
-// normalizes a bare numeric port to ":<port>" so a PaaS-injected $PORT (e.g.
-// "8088" from Heroku/Render/Railway/Cloud Run) is a valid http.Server address.
+// Addr returns addr, a bare port normalised to ":port", with its port
+// remapped when isolation is active.
 func (r *Runtime) Addr(addr string) (string, error) {
 	addr = normalizeBarePort(addr)
 	if !r.Active() || addr == "" {
 		return addr, nil
 	}
-	// GOFASTR_ISOLATION_REWRITE=0: honor the assigned listen port
-	// (isolation still separates DB/worktree resources). The operator
-	// then owns port collisions between worktrees (#268).
 	if !r.rewriteExplicit {
 		return addr, nil
 	}
@@ -219,13 +196,8 @@ func (r *Runtime) Addr(addr string) (string, error) {
 	return joinAddr(host, next, shape), nil
 }
 
-// ListenAddr is the one call a hand-written main needs to bind where
-// `gofastr dev`, a PaaS, or worktree isolation says: it resolves isolation
-// for projectDir, reads $PORT (a bare port "8088" or a host:port
-// "localhost:8088", both of which `gofastr dev` and PaaS runtimes inject),
-// falls back to fallback when $PORT is empty, and returns the address
-// with isolation's port remap applied. Pass the result to App.Start or
-// http.ListenAndServe.
+// ListenAddr resolves isolation for projectDir and returns $PORT (or
+// fallback when it is empty) with isolation's port remap applied.
 func ListenAddr(projectDir, fallback string) (string, error) {
 	rt, err := Resolve(projectDir)
 	if err != nil {
@@ -238,13 +210,9 @@ func ListenAddr(projectDir, fallback string) (string, error) {
 	return rt.Addr(addr)
 }
 
-// Env returns env with configured local resources isolated. Entries from
-// the project's isolation.env are limited to template values (ports, id,
-// project dir) for variables the operator has NOT set: an operator
-// export always wins, and process-shaping names never come from the
-// file (loadConfig already dropped both, this is the second half of the
-// same rule). GOFASTR_ISOLATION_REWRITE governs only the PORT and
-// DATABASE_URL remaps.
+// Env returns env with PORT, DATABASE_URL, the port markers and the
+// settings env templates isolated. A variable already in env is never
+// replaced by a settings value.
 func (r *Runtime) Env(env []string) []string {
 	if !r.Active() {
 		return env
@@ -269,14 +237,6 @@ func (r *Runtime) Env(env []string) []string {
 			values["DATABASE_URL"] = rewritten
 		}
 	}
-	// isolation.env entries may only INTRODUCE isolated-resource
-	// variables the operator did not set themselves. Never override an
-	// operator export: the env block comes from the project directory,
-	// which for a cloned checkout is attacker-authored, and with the old
-	// rewriteExplicit=true default a file value REPLACED the operator's
-	// own HTTPS_PROXY/PATH in the dev-server child. GOFASTR_
-	// ISOLATION_REWRITE still governs the listen PORT and DATABASE_URL
-	// remaps; it no longer licenses env-block overrides.
 	operatorSet := make(map[string]bool, len(env))
 	for _, pair := range env {
 		if key, _, ok := strings.Cut(pair, "="); ok {
@@ -291,10 +251,6 @@ func (r *Runtime) Env(env []string) []string {
 	}
 	values[envApplied] = "1"
 	values[envID] = r.id
-	// Every mapping Addr recorded goes to the child too, not only PORT's.
-	// gofastr dev resolves --addr and hands the child that address as
-	// PORT; without its marker the child's own Addr took the mapped port
-	// for a base port and remapped it.
 	for base, mapped := range r.recordedPorts() {
 		values[envPortPrefix+strconv.Itoa(base)] = strconv.Itoa(mapped)
 	}
@@ -424,22 +380,9 @@ func loadConfig(f settings.File, base Config) (Config, error) {
 			return Config{}, err
 		}
 		cfg.Env = map[string]string{}
-		// Sorted so the "ignoring env" warnings print in a stable order
-		// regardless of map iteration (mapwriter).
 		for _, key := range slices.Sorted(maps.Keys(env)) {
 			n := env[key]
 			val := scalarString(n)
-			// The config file is discovered from the project directory,
-			// which for a cloned checkout is attacker-authored. Its env
-			// block exists to template ISOLATED RESOURCE LOCATORS (ports,
-			// ids, dirs) into service URLs; it is not a channel for
-			// anything else. Process-shaping names are refused outright
-			// (proxy selection, PATH, loader, HOME decide where the dev
-			// server's requests and execs go), and a value without a
-			// template marker is refused too — a static value is never
-			// an isolated resource. The operator's own exports stay the
-			// only source of those (Env never overrides a variable the
-			// operator set, whatever GOFASTR_ISOLATION_REWRITE says).
 			if isEnvShapingName(key) || !isTemplateValue(val) {
 				fmt.Fprintf(os.Stderr,
 					"isolation: ignoring env %q from %s: only port/id/dir template values may come from the project settings file\n",
@@ -452,41 +395,24 @@ func loadConfig(f settings.File, base Config) (Config, error) {
 	return cfg, nil
 }
 
-// envShapingNames are the environment names that shape where a process's
-// traffic, binaries, libraries, and writes go. A project-dir isolation
-// file must never set them (case-insensitively: Go's proxy handling
-// honors both HTTPS_PROXY and https_proxy). The operator's shell is the
-// only source for these.
 var envShapingNames = map[string]bool{
-	// proxy selection (upper + lower forms via ToUpper in the predicate)
 	"HTTP_PROXY": true, "HTTPS_PROXY": true, "ALL_PROXY": true,
 	"NO_PROXY": true, "FTP_PROXY": true, "WS_PROXY": true, "WSS_PROXY": true,
-	// executable + loader resolution
 	"PATH": true, "LD_PRELOAD": true, "LD_LIBRARY_PATH": true,
 	"LD_AUDIT": true, "DYLD_INSERT_LIBRARIES": true,
 	"DYLD_LIBRARY_PATH": true, "DYLD_FORCE_FLAT_NAMESPACE": true,
-	// identity + writable scratch, relocate config/credential stores
 	"HOME": true, "SHELL": true, "USER": true, "LOGNAME": true,
 	"TMPDIR": true, "TMP": true, "TEMP": true, "XDG_CONFIG_HOME": true,
 	"XDG_STATE_HOME": true, "XDG_DATA_HOME": true, "XDG_CACHE_HOME": true,
-	// shell execution shaping
 	"IFS": true, "ENV": true, "BASH_ENV": true, "ZDOTDIR": true,
 	"SHELLOPTS": true, "PROMPT_COMMAND": true,
 }
 
-// isEnvShapingName reports whether key (in any case) selects where the
-// process's traffic or exec resolution goes.
 func isEnvShapingName(key string) bool {
-	// The isolation markers themselves are also refused: a project file
-	// planting GOFASTR_ISOLATION_REWRITE=0 or GOFASTR_ISOLATION=off would
-	// shape the child's own isolation posture.
 	return envShapingNames[strings.ToUpper(key)] ||
 		strings.HasPrefix(strings.ToUpper(key), "GOFASTR_ISOLATION")
 }
 
-// isTemplateValue reports whether val carries at least one isolation
-// template marker ({port}, {port:name}, {id}, {project_dir}). Static
-// values are not isolated resources and never come from the file.
 func isTemplateValue(val string) bool {
 	for _, marker := range []string{"{port}", "{port:", "{id}", "{project_dir}"} {
 		if strings.Contains(val, marker) {
@@ -496,21 +422,14 @@ func isTemplateValue(val string) bool {
 	return false
 }
 
-// gitKind is what a directory's .git entry says about it.
 type gitKind int
 
 const (
 	gitNone gitKind = iota
-	gitDir          // .git is a repository directory
-	gitFile         // .git is a file pointing elsewhere: a linked worktree or submodule
+	gitDir
+	gitFile
 )
 
-// gitMarker reports dir's .git entry, returning the file's path for
-// gitFile. A repository directory is recognised by its HEAD, as git
-// itself does, rather than by statting .git: the directory's mtime moves
-// on every index write (any git status), and Go's test cache hashes the
-// mtime of each path a test stats, so every test that booted an App
-// re-ran after a git command.
 func gitMarker(dir string) (gitKind, string) {
 	git := filepath.Join(dir, ".git")
 	if _, err := os.Stat(filepath.Join(git, "HEAD")); err == nil {
@@ -656,9 +575,6 @@ func joinAddr(host string, port int, shape addrShape) string {
 	}
 }
 
-// lookupPort returns a previously recorded mapping for base, checking
-// env first (so child processes inherit parent's mapping) and then the
-// in-process table this Runtime shares with others for the same context.
 func (r *Runtime) lookupPort(base int) (int, bool) {
 	if p, ok := envAppliedPort(strconv.Itoa(base)); ok {
 		return p, true
@@ -669,12 +585,6 @@ func (r *Runtime) lookupPort(base int) (int, bool) {
 	return p, ok
 }
 
-// recordPort stores base → mapped in the shared in-process table and
-// returns the mapping that stands. A mapping already there wins: two
-// first calls for the same base can both miss the table, and the later
-// one, probing after the earlier bound its port, would pick another.
-// Child-process inheritance happens through Env(), which writes the env
-// markers separately.
 func (r *Runtime) recordPort(base, mapped int) int {
 	r.ports.mu.Lock()
 	defer r.ports.mu.Unlock()
@@ -685,16 +595,12 @@ func (r *Runtime) recordPort(base, mapped int) int {
 	return mapped
 }
 
-// recordedPorts copies the mappings Addr recorded for this context.
 func (r *Runtime) recordedPorts() map[int]int {
 	r.ports.mu.Lock()
 	defer r.ports.mu.Unlock()
 	return maps.Clone(r.ports.m)
 }
 
-// isResolvedPort reports whether port is already the mapped form for some
-// base, used by Addr to short-circuit when a child process is handed an
-// already-offset port and re-resolving would double-offset.
 func (r *Runtime) isResolvedPort(port int) bool {
 	if os.Getenv(envApplied) == "1" {
 		for _, pair := range os.Environ() {
@@ -718,8 +624,6 @@ func (r *Runtime) isResolvedPort(port int) bool {
 	return false
 }
 
-// envAppliedPort reads the parent-process port mapping from env (set by
-// Env() in the parent). Always process-wide, that's the inheritance hook.
 func envAppliedPort(base string) (int, bool) {
 	if os.Getenv(envApplied) != "1" {
 		return 0, false
@@ -800,6 +704,8 @@ func inferDriver(dsn string) string {
 	}
 }
 
+var chmodStateDir = os.Chmod
+
 func (r *Runtime) sqliteDSN(dsn string) (string, error) {
 	if dsn == "" || dsn == ":memory:" {
 		return dsn, nil
@@ -820,12 +726,14 @@ func (r *Runtime) sqliteDSN(dsn string) (string, error) {
 		name = "app.db"
 	}
 	dir := filepath.Join(r.projectDir, ".gofastr", "isolation", r.id)
-	// 0700: the isolated app's sqlite (user rows, sessions, password
-	// hashes once the auth battery migrates) lands here at the driver
-	// default; the parent dir is the part this package owns, and it
-	// gets the repo's owner-only discipline (MkdirTemp's 0700 shape).
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
+	}
+	if err := chmodStateDir(dir, 0o700); err != nil {
+		if !errors.Is(err, fs.ErrPermission) {
+			return "", err
+		}
+		slog.Warn("isolation: permission denied tightening the SQLite state directory to owner-only; using it as is, so local co-users may read it", "dir", dir, "err", err)
 	}
 	if err := fileperm.Restrict(dir, true); err != nil {
 		return "", err
@@ -845,14 +753,7 @@ func (r *Runtime) postgresDSN(dsn string) (string, error) {
 	if db == "" {
 		return dsn, nil
 	}
-	// Postgres silently truncates identifiers at NAMEDATALEN-1 (63 bytes by
-	// default). Trim the base name so the suffix survives, two worktrees
-	// must not collide on a truncated form.
 	const pgMaxIdentifier = 63
-	// An operator-set GOFASTR_ISOLATION_ID can be any length. A suffix
-	// that alone passes the limit becomes a digest of the id, so two long
-	// ids sharing a prefix still differ. Every id that fitted keeps its
-	// literal suffix, so an existing worktree keeps its database.
 	suffix := "_" + strings.ReplaceAll(r.id, "-", "_")
 	if len(suffix) > pgMaxIdentifier {
 		sum := sha1.Sum([]byte(r.id))
@@ -862,8 +763,6 @@ func (r *Runtime) postgresDSN(dsn string) (string, error) {
 		return u.String(), nil
 	}
 	if len(db)+len(suffix) > pgMaxIdentifier {
-		// Cut on a rune boundary: a split multibyte rune re-encodes as a
-		// literal %XX byte and names a database nobody can create.
 		cut := pgMaxIdentifier - len(suffix)
 		for cut > 0 && !utf8.RuneStart(db[cut]) {
 			cut--

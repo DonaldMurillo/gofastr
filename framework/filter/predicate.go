@@ -11,53 +11,27 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// Predicate is a node in a boolean filter tree: either a LEAF (one
-// field/op/value comparison) or a GROUP (AND/OR of child predicates).
-// It is the parsed, validated form of a `?where=<json>` request, every
-// field has already been checked against the entity's schema allow-list
-// and every operator against the supported set, so [BuildPredicate] may
-// interpolate field names trusting they are safe while binding all
-// values as placeholders.
-//
-// Groups let callers express nested boolean logic the flat query-param
-// filters cannot, e.g. `status = A OR (priority = high AND assignee =
-// me)`. The whole tree compiles to ONE parenthesized WHERE clause that
-// the query builder AND-composes with the framework's owner/tenant/
-// soft-delete scopes; a user OR-group can never widen past those scopes
-// because each is a separate, individually-parenthesized clause.
+// Predicate is a node in a boolean filter tree: a leaf (one field, op and
+// value) or a group (AND or OR of Children), as ParseWhere or
+// ValidatePredicate return it for BuildPredicate.
 type Predicate struct {
-	// Leaf fields (Children == nil):
 	Field  string
 	Op     FilterOp
 	Value  string   // for scalar ops
 	Values []string // for OpIn
-	// colType is the leaf column's schema type, set by validation (ParseWhere,
-	// ValidatePredicate) after every value passed CoerceValue. BuildPredicate
-	// binds TypedBind(colType, v): a Go bool, int64 or float64 where the
-	// column wants one, same rationale as ParsedFilter's typed value. The
-	// zero value (String) binds the raw text, so an unvalidated tree binds
-	// as it always did.
-	colType schema.FieldType
-
-	// Group fields (Children != nil):
-	Or       bool // false = AND, true = OR
+	// Or joins Children with OR; false joins them with AND.
+	Or       bool
 	Children []Predicate
+	colType  schema.FieldType
 }
 
 func (p *Predicate) isGroup() bool { return len(p.Children) > 0 }
 
-// Predicate-tree bounds. A hostile `?where=` could otherwise nest
-// thousands of nodes to blow up parse time and statement size. Both are
-// fail-closed: exceeding either rejects the whole tree with an error
-// (mirrors ParseSort's fail-closed cap, not ParseFilters' silent skip).
 const (
 	maxPredicateDepth = 8
 	maxPredicateNodes = 64
 )
 
-// whereOps maps the JSON operator token to the internal FilterOp. Only
-// these are accepted; an unknown op rejects the tree. A leaf with no op
-// defaults to equality.
 var whereOps = map[string]FilterOp{
 	"eq":   OpEq,
 	"ne":   OpNe,
@@ -69,10 +43,6 @@ var whereOps = map[string]FilterOp{
 	"in":   OpIn,
 }
 
-// rawPred is the wire shape of one `?where=` node. Exactly one of
-// {and, or, field} is expected per node. The members are pointers so a
-// member that was sent can be told from one that was not: a leaf may
-// carry only the value member its op reads, and a group no leaf member.
 type rawPred struct {
 	And    *[]json.RawMessage `json:"and"`
 	Or     *[]json.RawMessage `json:"or"`
@@ -82,25 +52,17 @@ type rawPred struct {
 	Values *[]*string         `json:"values"`
 }
 
-// ParseWhere parses a `?where=<json>` predicate tree and validates every
-// leaf field against the schema allow-list (Hidden fields excluded, same
-// value-disclosure-oracle rationale as ParseFilters) and every operator
-// against the supported set. Returns (nil, nil) when raw is empty. Any
-// unknown field, unknown operator, malformed JSON, empty/ambiguous node,
-// or a tree that exceeds the depth/node bounds returns an error, the
-// caller maps it to 400. On success the tree is safe for BuildPredicate
-// to compile.
+// ParseWhere parses and validates a ?where=<json> tree against fields.
+// It returns (nil, nil) for an empty raw, and errors on malformed JSON, a
+// node that is not exactly one of and, or and field, an unknown, Hidden
+// or NoQuery field, an unknown or unsuited op, a mistyped value, or a
+// tree past the depth or node bounds.
 func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, nil
 	}
-	// Accept a field's wire key as well as its column name, matching
-	// ParseFiltersValues, ParseSortValues and ?fields= projection; see
-	// newPredicateFieldIndex for the Hidden/NoQuery/alias rules, which
-	// ValidatePredicate shares so the URL surface and the Go surface
-	// cannot drift.
-	idx := newPredicateFieldIndex(fields)
+	idx := newFieldIndex(fields)
 	var msg json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
 		return nil, &i18n.Error{Reason: reasonWhereInvalidJSON, Params: map[string]any{"detail": handler.JSONErrorDetail(err)}, Err: err}
@@ -113,7 +75,7 @@ func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 	return &p, nil
 }
 
-func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) (Predicate, error) {
+func parseNode(msg json.RawMessage, idx *fieldIndex, depth int, count *int) (Predicate, error) {
 	if depth > maxPredicateDepth {
 		return Predicate{}, i18n.NewError(reasonWhereTooDeep, map[string]any{"max": maxPredicateDepth})
 	}
@@ -121,24 +83,11 @@ func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) 
 	if *count > maxPredicateNodes {
 		return Predicate{}, i18n.NewError(reasonWhereTooManyNodes, map[string]any{"max": maxPredicateNodes})
 	}
-	// The tree is client-borne JSON, so each node decodes under the rule
-	// every other client-borne body does (handler.UnmarshalStrict; the
-	// cursor token is checked the same way): stdlib json resolves a
-	// duplicate or case-folded key last-wins and drops an unknown one, so
-	// {"field":"status","value":"a","VALUE":"b"} filtered on b while a
-	// proxy reading the first key saw a, and a typo'd "vaule" compared
-	// status with the empty string. UnmarshalStrict refuses a repeated or
-	// folded key at every depth below the node too, and unknown or
-	// case-folded member names on the node itself.
 	var rp rawPred
 	if err := handler.UnmarshalStrict(msg, &rp); err != nil {
 		return Predicate{}, &i18n.Error{Reason: reasonWhereInvalidNode, Params: map[string]any{"detail": handler.JSONErrorDetail(err)}, Err: err}
 	}
-
-	// A member sent empty counts as sent: {"and":[],"field":"x"} is not
-	// a leaf with a stray member ignored, it is two shapes at once.
 	hasAnd, hasOr, hasField := rp.And != nil, rp.Or != nil, rp.Field != nil && *rp.Field != ""
-	// Exactly one kind per node, and a group carries no leaf member.
 	if btoi(hasAnd)+btoi(hasOr)+btoi(hasField) != 1 {
 		return Predicate{}, i18n.NewError(reasonWhereNodeShape)
 	}
@@ -168,9 +117,6 @@ func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) 
 		return Predicate{Or: or, Children: children}, nil
 	}
 
-	// Leaf. The field/operator/type checks live in validateLeaf, shared
-	// with ValidatePredicate so the URL surface and the Go-built surface
-	// answer identically.
 	opTok := ""
 	if rp.Op != nil {
 		opTok = *rp.Op
@@ -184,15 +130,11 @@ func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) 
 	}
 	leaf := Predicate{Field: *rp.Field, Op: op}
 	if op == OpIn {
-		// in reads "values" or a comma string in "value", never both:
-		// with both sent, one was silently dropped.
 		if rp.Value != nil && rp.Values != nil {
 			return Predicate{}, i18n.NewError(reasonWhereStrayMember, map[string]any{"op": strconv.Quote(opTok), "member": strconv.Quote("value")})
 		}
 		var vals []string
 		if rp.Values != nil {
-			// encoding/json reads a null entry into a string as "", so
-			// [null] compared with the empty string; refuse it instead.
 			vals = make([]string, 0, len(*rp.Values))
 			for _, v := range *rp.Values {
 				if v == nil {
@@ -201,10 +143,6 @@ func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) 
 				vals = append(vals, *v)
 			}
 		} else if rp.Value != nil && *rp.Value != "" {
-			// Count separators before splitting. The where-body is size-bounded,
-			// so this is defence in depth rather than a live DoS, but the
-			// allocate-then-reject shape is the same one SplitINValuesBounded
-			// exists to avoid on the ?field_in= path, keep them consistent.
 			if strings.Count(*rp.Value, ",")+1 > MaxINListEntries {
 				return Predicate{}, i18n.NewError(reasonWhereInOverCap, map[string]any{"max": MaxINListEntries})
 			}
@@ -212,15 +150,9 @@ func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) 
 		}
 		leaf.Values = vals
 	} else {
-		// A scalar op reads "value" alone; "values" sent beside it was
-		// dropped, and the leaf compared against ''.
 		if rp.Values != nil {
 			return Predicate{}, i18n.NewError(reasonWhereStrayMember, map[string]any{"op": strconv.Quote(opTok), "member": strconv.Quote("values")})
 		}
-		// A JSON null decodes into the *string as "not sent", the same
-		// nil an absent member leaves: either one compared a text column
-		// with '' while an int column refused it. Every scalar op reads
-		// its value, so a missing one is an error on any column type.
 		if rp.Value == nil {
 			return Predicate{}, i18n.NewError(reasonWhereNeedsValue, map[string]any{"field": strconv.Quote(*rp.Field), "op": strconv.Quote(opTok)})
 		}
@@ -232,19 +164,9 @@ func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) 
 	return leaf, nil
 }
 
-// BuildPredicate compiles a validated predicate tree into one WHERE
-// [Condition]: a fully-parenthesized SQL string with sequential $N
-// placeholders in depth-first order and a matching, same-order Args
-// slice. Field names are interpolated (they came from the schema
-// allow-list in ParseWhere); every value is a bound arg. Hand the result
-// to qb.Where(c.SQL, c.Args...) ONCE, the builder wraps it in its own
-// parens and AND-joins it to the framework scopes, so the user's boolean
-// logic can never escape to widen a scope.
-//
-// The $N numbers are positional only; core/query.renumberPlaceholders
-// rewrites them left-to-right and advances by len(Args), so the sole
-// invariant is that placeholders appear in the same order as Args, which
-// building both in one DFS pass guarantees.
+// BuildPredicate compiles a validated tree into one parenthesized WHERE
+// Condition whose $N placeholders follow Args in order. Pass it to
+// qb.Where once.
 func BuildPredicate(p *Predicate) Condition {
 	if p == nil {
 		return Condition{}
@@ -266,15 +188,13 @@ func buildPredSQL(p Predicate, args *[]any) string {
 		}
 		return "(" + strings.Join(parts, conj) + ")"
 	}
-	// Leaf, mirror ApplyToQuery's per-op SQL exactly.
 	switch p.Op {
 	case OpIn:
-		ph := make([]string, len(p.Values))
-		for i, v := range p.Values {
+		clause := inClause(p.Field, len(p.Values), len(*args))
+		for _, v := range p.Values {
 			*args = append(*args, TypedBind(p.colType, v))
-			ph[i] = "$" + strconv.Itoa(len(*args))
 		}
-		return "(" + query.QuoteKeyword(p.Field) + " IN (" + strings.Join(ph, ",") + "))"
+		return "(" + clause + ")"
 	case OpLike:
 		clause, arg := LikeClause(p.Field, len(*args)+1, p.Value)
 		*args = append(*args, arg)
@@ -285,8 +205,6 @@ func buildPredSQL(p Predicate, args *[]any) string {
 	}
 }
 
-// sqlOp maps a scalar FilterOp to its SQL comparison operator. IN and
-// LIKE are handled inline in buildPredSQL; this covers the rest.
 func sqlOp(op FilterOp) string {
 	switch op {
 	case OpNe:
@@ -299,7 +217,7 @@ func sqlOp(op FilterOp) string {
 		return ">="
 	case OpLte:
 		return "<="
-	default: // OpEq
+	default:
 		return "="
 	}
 }

@@ -1,7 +1,4 @@
-// Package pmtestkit holds the process-module test helpers shared by the
-// framework root tests and framework/processmoduletest. Tests only: nothing
-// outside a _test.go file imports it. It must never import the framework
-// root, which the root's own tests would see as an import cycle.
+// Package pmtestkit holds process-module test helpers for framework tests.
 package pmtestkit
 
 import (
@@ -29,8 +26,7 @@ type User struct{ ID string }
 // GetID returns the user's id.
 func (u *User) GetID() string { return u.ID }
 
-// InstallOwnerExtractor maps a *User in the context to its owner id for
-// the duration of t, so RequireOwner filters rows to that user.
+// InstallOwnerExtractor maps a *User in the context to its owner id until t ends.
 func InstallOwnerExtractor(t testing.TB) {
 	t.Helper()
 	prev := owner.GetExtractor()
@@ -47,8 +43,8 @@ func InstallOwnerExtractor(t testing.TB) {
 	t.Cleanup(func() { owner.SetExtractor(prev) })
 }
 
-// AuthMiddleware mirrors what battery/auth installs: policy always, plus the
-// user and roles resolved from the session cookie the broker re-injects.
+// AuthMiddleware installs policy, and the user and roles of a "sid=<id>"
+// session cookie, the way battery/auth does.
 func AuthMiddleware(policy *access.RolePolicy, rolesFor func(string) []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -70,8 +66,7 @@ func AuthMiddleware(policy *access.RolePolicy, rolesFor func(string) []string) f
 	}
 }
 
-// SHA256File returns the lowercase hex SHA-256 of the file at path, the
-// digest the process-module runner pins an artifact to.
+// SHA256File returns the lowercase hex SHA-256 of the file at path.
 func SHA256File(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -93,8 +88,7 @@ func ExecutablePath(path string) string {
 	return path
 }
 
-// ChildArtifact copies the running test binary into t.TempDir() and returns
-// (path, sha256): the binary re-executes as a module child.
+// ChildArtifact copies the test binary, to run as a module child, and returns (path, sha256).
 func ChildArtifact(t testing.TB) (string, string) {
 	t.Helper()
 	exe, err := os.Executable()
@@ -131,8 +125,8 @@ var (
 	demoBinErr  error
 )
 
-// DemoBinary builds ./internal/testapps/processmodule-demo once per test binary into a
-// run-wide temp dir (not one test's TempDir) and returns (path, sha256).
+// DemoBinary builds internal/testapps/processmodule-demo once per test
+// binary and returns (path, sha256).
 func DemoBinary(t testing.TB) (string, string) {
 	t.Helper()
 	demoBinOnce.Do(func() {

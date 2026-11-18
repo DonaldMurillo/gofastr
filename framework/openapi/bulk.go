@@ -4,12 +4,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/openapi"
 )
 
-// addBulkPaths documents the routes App.EntityUI mounts beside an
-// entity's CRUD routes: the bulk bar's POST <path>/_bulk, the list's
-// GET <path>/_export.csv and the record form's POST <path>/_pick?field=<field>.
-// Each refuses a caller who may not read the
-// entity with 403, never 401, since the handler asks the read gate rather
-// than the session middleware.
 func addBulkPaths(s *openapi.Spec, path, entityName, schemaName, tagName string, gated bool, errorRef map[string]any) {
 	ids := map[string]any{"oneOf": []any{
 		map[string]any{"type": "string"},

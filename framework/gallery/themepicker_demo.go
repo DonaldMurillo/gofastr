@@ -6,16 +6,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
-// squareTheme is the ThemePicker tile's page theme: the default look
-// with square corners and a warm accent, in light and dark, so picking
-// it visibly restyles the whole showcase page. Registered at init, so
-// its block is in app.css before the first request. It starts from
-// theme.Default because the gallery cannot see its host's theme, so
-// on a host with its own spacing or fonts the switch changes those
-// too (theming → "Page themes", an override is a whole theme).
 var squareTheme = style.RegisterThemeOverride(squareThemeValue())
 
-// squareName is the tile's option label.
 var squareName = i18n.Define("gallery.themepicker.square", "Square")
 
 func squareThemeValue() style.Theme {

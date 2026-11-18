@@ -1,0 +1,50 @@
+primitive: gallery.demos
+summary: The render helpers behind the catalog's stateful and composed demos - kanban, optimistic create and delete lists, section menu, date picker, tag, theme picker and the image-pipeline mockup - shared by the seed view and a host's live per-visitor view.
+code:
+  - framework/gallery/demos.go
+  - framework/gallery/tag_demo.go
+  - framework/gallery/themepicker_demo.go
+  - framework/gallery/pipeline_image_demo.go
+docs:
+  - framework/docs/content/ui-new-components.md
+invariants:
+  - id: every-delete-trigger-has-its-modal
+    rule: Every confirm trigger the optimistic-delete demo renders for InitialOptimisticNotes, the will-fail trigger included, opens a modal OptimisticDeleteModals returns.
+    enforced_by:
+      - test: framework/gallery.TestSweepEveryDeleteTriggerOpensAMountedModal
+  - id: empty-list-still-renders
+    rule: RenderOptimisticCreateList and RenderOptimisticDeleteList render a non-empty empty-state for no notes, so the list region always has content to swap.
+    enforced_by:
+      - test: framework/gallery.TestSweepEmptyOptimisticListsStillRender
+  - id: datepicker-days-follow-the-shown-month
+    rule: DatePickerDemo builds its full and nearly-full days for the month the picker shows, November 2026 for an empty, unparsable or earlier month.
+    enforced_by:
+      - test: framework/gallery.TestDatePickerDemoDaysMatchTheShownMonth
+decisions:
+  - id: seed-and-live-share-one-render
+    date: 2026-11-17
+    status: accepted
+    decision: The stateful demos' render helpers are exported and take the rows to draw, so the catalog's Demo closure renders the seed rows and a host with per-visitor state renders that visitor's rows through the same code.
+    rejected:
+      - option: Per-visitor demo state inside the gallery.
+        why: A theme previewer or static export has no visitor session, and the gallery would carry cookies and stores no consumer but the docs site wants.
+    revisit_if: A second host needs live per-visitor demo state.
+  - id: modals-keyed-off-the-seed
+    date: 2026-11-17
+    status: accepted
+    decision: OptimisticDeleteModals mounts one modal per InitialOptimisticNotes row at startup, because every session's delete list starts from that seed and only shrinks.
+    rejected:
+      - option: Mounting a modal per row on each render.
+        why: Widgets mount once per router at startup, not per request.
+    revisit_if: The delete demo lets a visitor add rows.
+    upholds: [every-delete-trigger-has-its-modal]
+  - id: generated-pipeline-image
+    date: 2026-11-17
+    status: accepted
+    decision: The pipeline-image demo draws a crisp-edged dashboard mock in process and inlines it and its BlurHash placeholder as data URIs, side by side.
+    rejected:
+      - option: A committed binary image.
+        why: The repository commits no binary fixtures for a demo.
+      - option: A gradient.
+        why: A gradient's blur looks like the gradient, so the placeholder would show nothing.
+    revisit_if: The gallery gains a served asset directory.

@@ -1,0 +1,49 @@
+primitive: image.jpeg
+summary: The leaf JPEG readers framework/image and framework/file share without importing each other - the progressive-JPEG decode-cost estimate, EXIF orientation and the hostile fixtures their tests use.
+code:
+  - framework/internal/jpegcost/
+docs:
+  - framework/docs/content/image.md
+invariants:
+  - id: counts-what-the-decoder-keeps
+    rule: ProgressiveCoeffBytes counts 256 bytes for every block of every component of an SOF2 frame, in whole MCUs by each component's sampling, a one-component frame as 1x1.
+    enforced_by:
+      - test: framework/internal/jpegcost.TestProgressiveCoeffBytes
+  - id: sequential-is-free
+    rule: An SOF0 or SOF1 frame costs zero bytes and reports true.
+    enforced_by:
+      - test: framework/internal/jpegcost.TestProgressiveCoeffBytes
+      - test: framework/internal/jpegcost.TestProgressiveCoeffBytesRefusals
+  - id: unreadable-is-false
+    rule: ProgressiveCoeffBytes reports false with no SOI, a scan or EOI before the frame, any other frame type, a truncated segment, a zero dimension or a zero sampling factor.
+    enforced_by:
+      - test: framework/internal/jpegcost.TestProgressiveCoeffBytesRefusals
+      - test: framework/internal/jpegcost.TestProgressiveCoeffBytes
+  - id: walk-skips-like-the-decoder
+    rule: The walk skips bytes between segments, fill bytes, length-less markers and DHT, DAC and JPG segments, and stops at the first frame header.
+    enforced_by:
+      - test: framework/internal/jpegcost.TestJPEGCostSkipsExtraneousBytes
+      - test: framework/internal/jpegcost.TestProgressiveCoeffBytesRefusals
+  - id: callers-refuse-on-false
+    rule: A caller that gets false from ProgressiveCoeffBytes refuses to decode rather than skipping its memory budget.
+    judge: Does this change decode a JPEG after ProgressiveCoeffBytes reported false?
+    applies:
+      - framework/image/image.go
+      - framework/file/strip.go
+decisions:
+  - id: stdlib-leaf
+    date: 2026-11-17
+    status: accepted
+    decision: The cost estimate is a stdlib-only internal leaf, so framework/file applies the image pipeline's budget without linking it.
+    rejected:
+      - option: Keep it in framework/image.
+        why: framework/file must not import the image codecs, which its generated TestPrimitiveImports enforces.
+    upholds: [callers-refuse-on-false]
+  - id: go-int32-coefficients
+    date: 2026-11-17
+    status: accepted
+    decision: A block costs 64 int32s, 256 bytes, as image/jpeg stores it.
+    rejected:
+      - option: libjpeg's 128 bytes a block.
+        why: libjpeg keeps int16 coefficients; Go's decoder keeps int32, twice that.
+    upholds: [counts-what-the-decoder-keeps]

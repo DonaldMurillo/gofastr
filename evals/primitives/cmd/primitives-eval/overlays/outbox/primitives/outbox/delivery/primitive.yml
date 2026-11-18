@@ -1,0 +1,222 @@
+primitive: outbox.delivery
+summary: "The per-consumer delivery state machine in event_outbox_delivery: expandDeliveries creates one row per (parent, declared consumer), claimDeliveries leases a batch with an attempt consumed in SQL, the settles move a claimed row to dispatched, pending with backoff, dead or abandoned under the claim fence, sweepParents and completeParent finish parents after the handler grace, purgeExpired applies retention, and Replay and ReplayConsumer resurrect terminal deliveries."
+code:
+  - framework/outbox/delivery.go
+docs:
+  - framework/docs/content/events.md
+on_change:
+  - "Every write to a claimed delivery (settle, refund, release) matches status='pending' where it moves state and claimed_until equal to d.ClaimedUntil, and clears claimed_until; a new write on a claimed row carries the same fence."
+  - "The attempts counter is written only by the claim (attempts + 1), the two refunds (requeueNoHandler, releaseUnstarted) and the Replay reset to 0; a settle never writes it from a Go value."
+  - "Every time-based decision about a parent (completeParent, both sweepParents arms) waits handlerGrace measured from the parent's created_at, and abandonment waits handlerGrace measured from the delivery's created_at; a new decision picks one of the two clocks on purpose."
+  - "dispatched, dead and abandoned are terminal until Replay or ReplayConsumer; a new status, or a new path out of a terminal one, updates the Delivery doc, DeliveryCounts, purgeExpired's guard and the Semantics part of framework/docs/content/events.md."
+  - "A change to claim eligibility, the dead-letter sweep or the refunds is checked against battery/queue's DBQueue (dequeueSQLite, deadLetterExpiredFinalClaims, release), which the comments here name as the same design."
+twins:
+  - job: "Pick the claimable deliveries: pending, lease null or expired, attempts under budget or never leased, backoff elapsed, oldest parent first, batch-limited, and consume one attempt."
+    why: "Postgres claims in one UPDATE with FOR UPDATE SKIP LOCKED inside a CTE, SQLite in a SELECT then UPDATE under BEGIN IMMEDIATE; only the spelling differs, and GOFASTR1414 compares the predicates."
+    sites:
+      - path: framework/outbox/delivery.go
+        note: "claimDeliveriesPostgres, the WITH claimed AS (UPDATE ... RETURNING) join back to the parent; claimDeliveriesSQLite, the pick SELECT that returns attempts + 1 and the OR-joined UPDATE that writes it."
+      - path: battery/queue/db.go
+        note: "dequeueSQLite, the BEGIN IMMEDIATE claim the SQLite outbox claim mirrors, with the same SQLITE_BUSY history."
+  - job: "Dead-letter a delivery whose lease expired on an already-spent attempt budget."
+    why: "The sweep's predicate is the complement of the claim's budget arm and is spelt separately; queue has its own copy for jobs."
+    sites:
+      - path: framework/outbox/delivery.go
+        note: "deadLetterExpiredExhaustedClaims (attempts >= max AND claimed_until IS NOT NULL AND claimed_until <= now) against the claim's (d.attempts < $max OR d.claimed_until IS NULL) in both claim functions."
+      - path: battery/queue/db.go
+        note: "deadLetterExpiredFinalClaims, the queue sweep run before every claim."
+  - job: "Write a claimed delivery's outcome under the claim fence (status='pending' AND claimed_until = the claim's lease), clearing the lease."
+    why: "Each settle arm hand-writes its own UPDATE; no helper builds the fence."
+    sites:
+      - path: framework/outbox/delivery.go
+        note: "markDeliveryDispatched, and markDeliveryFailure's dead arm and its backoff arm."
+      - path: framework/outbox/delivery.go
+        note: "requeueNoHandler's abandon arm and its requeue arm, and releaseUnstarted, which fences on claimed_until only and has no status guard."
+      - path: framework/outbox/settle_fence_test.go
+        note: "TestStaleSettleKeepsNewLease lists every settle arm by name; a new arm is added to its table."
+  - job: "Refund the attempt a claim consumed."
+    why: "Two hand-written spellings that differ: one clamps at zero, the other does not."
+    sites:
+      - path: framework/outbox/delivery.go
+        note: "requeueNoHandler writes CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END; releaseUnstarted writes a bare attempts - 1."
+      - path: battery/queue/db.go
+        note: "DBQueue.release, the queue refund both comments name as the spelling they follow."
+  - job: "Resurrect dead or abandoned deliveries and reopen a dispatched parent, in one transaction."
+    why: "ReplayConsumer is Replay with one more WHERE term, copied rather than parameterised."
+    sites:
+      - path: framework/outbox/delivery.go
+        note: "Replay resets every dead or abandoned delivery of the row, restarting created_at and clearing attempts, backoff and lease, reopens the parent only WHERE status='dispatched', and alone runs the beforeReplayCommit test seam."
+      - path: framework/outbox/delivery.go
+        note: "ReplayConsumer, the same two statements with AND consumer=$2, so created_at moves to $3."
+      - path: framework/outbox/replay_grace_test.go
+        note: "replaySurfaces lists both entry points; TestReplayPendingParentNotClobbered keeps its own copy of the list."
+  - job: "Mark a pending parent dispatched once it is older than the handler grace and has no pending delivery."
+    why: "completeParent finishes one row after a settle and sweepParents' backstop finishes the rest; the predicate is written in each."
+    sites:
+      - path: framework/outbox/delivery.go
+        note: "completeParent, for one id after each settle: status pending, created_at <= now - grace, NOT EXISTS a pending delivery."
+      - path: framework/outbox/delivery.go
+        note: "sweepParents arm (ii), the same predicate over every parent plus EXISTS a delivery; arm (i), the orphan drop, is itself written twice, once for no declared types and once with a NOT IN list of them."
+  - job: "Keep a dispatched parent and its deliveries while any delivery is not dispatched."
+    why: "Two DELETEs, children first, each carrying the same NOT EXISTS guard."
+    sites:
+      - path: framework/outbox/delivery.go
+        note: "purgeExpired's first DELETE, of deliveries whose row_id is a dispatched parent past the cutoff with NOT EXISTS a delivery whose status <> 'dispatched'."
+      - path: framework/outbox/delivery.go
+        note: "purgeExpired's second DELETE, of the parents, repeating the guard correlated on the table name instead of an alias."
+invariants:
+  - id: one-delivery-per-consumer
+    rule: "Expansion creates exactly one delivery per pending parent and declared consumer of its type, even when relays expand concurrently."
+    enforced_by:
+      - test: framework/outbox.TestExpand_OneDeliveryPerMatchingConsumer
+      - test: framework/outbox.TestExpandConcurrentNeverDuplicates
+  - id: claim-is-exclusive
+    rule: "Concurrent claims hand each delivery to exactly one claimant, without a SQLITE_BUSY error on SQLite."
+    enforced_by:
+      - test: framework/outbox.TestClaim_DeliveryExclusivity
+      - test: framework/outbox.TestPostgres_ClaimDeliveryExclusivity
+      - test: framework/outbox.TestClaimDeliveriesConcurrentNoBusy
+      - test: framework/outbox.TestPGClaimDeliveriesConcurrentNoBusy
+  - id: expired-lease-reclaimed
+    rule: "A delivery whose lease has expired is claimable again; one whose lease has not is not."
+    enforced_by:
+      - test: framework/outbox.TestClaim_DeliveryLeaseExpiry
+      - test: framework/outbox.TestPostgres_ClaimDeliveryLeaseExpiry
+  - id: claim-respects-backoff
+    rule: "A delivery requeued with a future next_attempt_at, after a failure or with no handler, is not claimed until that time, on both dialects."
+    enforced_by:
+      - test: framework/outbox.TestOutboxRedSQLiteBackoffIgnored
+      - test: framework/outbox.TestOutboxRedRequeueBackoffIgnored
+      - contract: GOFASTR1414
+  - id: claim-consumes-attempt
+    rule: "Each claim consumes one attempt in SQL, so a relay that crashes between claim and settle every time stops at MaxAttempts with the delivery dead."
+    enforced_by:
+      - test: framework/outbox.TestClaimCrashLoopConsumesAttempts
+      - contract: GOFASTR1408
+  - id: attempts-count-claims
+    rule: "When two overlapping claims of one delivery both fail, the recorded attempts equal the number of claims, never fewer."
+    enforced_by:
+      - test: framework/outbox.TestFailureSettleAttemptsMonotonic
+      - contract: GOFASTR1408
+  - id: max-attempts-inclusive
+    rule: "With MaxAttempts 1 the first handler failure dead-letters the delivery with attempts 1."
+    enforced_by:
+      - test: framework/outbox.TestFirstFailureDeadWhenMaxAttemptsOne
+  - id: sibling-isolation
+    rule: "A consumer that errors, panics or dead-letters leaves its sibling consumers' deliveries of the same row to be delivered, with their own attempt counts."
+    enforced_by:
+      - test: framework/outbox.TestSiblingIsolation_ErrorDoesNotBlockSibling
+      - test: framework/outbox.TestPoisonConsumer_DeadLettersWithoutBlockingSibling
+      - test: framework/outbox.TestPerDelivery_AttemptsIndependent
+      - test: framework/outbox.TestPostgres_SiblingIsolation
+      - test: framework/outbox.TestPostgres_PoisonDeadLetters
+  - id: stale-settle-is-fenced
+    rule: "A settle, refund or release by a claimant whose lease expired and was re-claimed changes neither the re-claimant's lease nor its attempt count."
+    enforced_by:
+      - test: framework/outbox.TestStaleSettleKeepsNewLease
+      - test: framework/outbox.TestStaleReleaseKeepsNewClaim
+  - id: terminal-wins-over-stale-settle
+    rule: "A late success or failure never moves a dead or abandoned delivery out of its terminal status."
+    enforced_by:
+      - test: framework/outbox.TestStaleSuccessKeepsTerminal
+      - test: framework/outbox.TestStaleFailureKeepsTerminal
+  - id: no-handler-never-dead-letters
+    rule: "A delivery whose consumer has no handler on this replica is requeued at backoffMax with its attempt refunded, never dead-lettered, whatever its attempt count."
+    enforced_by:
+      - test: framework/outbox.TestNoHandlerRequeueNeverDeadLetters
+  - id: removed-consumer-abandoned-after-grace
+    rule: "A delivery left with no handler on any replica for longer than the handler grace, counted from the delivery's created_at, is abandoned and stops blocking its parent."
+    enforced_by:
+      - test: framework/outbox.TestRemovedConsumer_AbandonedSiblingPending
+      - test: framework/outbox.TestRemovedConsumer_AbandonedSiblingDispatched
+  - id: added-consumer-not-abandoned
+    rule: "A fresh delivery for a newly added consumer is not abandoned by a replica that lacks its handler, however old the parent event is."
+    enforced_by:
+      - test: framework/outbox.TestAddedConsumer_FreshDeliveryNotAbandoned
+  - id: young-parent-not-completed
+    rule: "A parent younger than the handler grace stays pending even when it has no pending delivery, so a consumer rolling out on another replica can still expand it."
+    enforced_by:
+      - test: framework/outbox.TestRollingAdd_YoungParentNotCompletedBeforeNewConsumerExpands
+  - id: aged-parent-completed-by-sweep
+    rule: "A parent older than the grace whose deliveries are all terminal is marked dispatched by the sweep, even with some dead."
+    enforced_by:
+      - test: framework/outbox.TestSweepBackstopCompletesAgedParent
+  - id: orphan-dropped-only-when-unconsumed-and-old
+    rule: "A pending parent with no deliveries is dropped only when it is older than the grace and no consumer is declared for its type."
+    enforced_by:
+      - test: framework/outbox.TestOrphanType_DroppedAfterGrace
+      - test: framework/outbox.TestOrphanType_NotDroppedWithinGrace
+      - test: framework/outbox.TestConsumedType_OldUnexpandedNotDropped
+  - id: replay-resurrects-terminal-only
+    rule: "Replay and ReplayConsumer reset only dead or abandoned deliveries to pending with attempts cleared, reopen the parent only when it is dispatched, and change nothing when there is none."
+    enforced_by:
+      - test: framework/outbox.TestReplay_ResurrectsAllDeadDeliveries
+      - test: framework/outbox.TestReplay_ResurrectsAbandoned
+      - test: framework/outbox.TestReplayConsumer_ResurrectsOneDeadDelivery
+      - test: framework/outbox.TestReplay_NoDeadDeliveriesIsNoop
+      - test: framework/outbox.TestReplayConsumer_UnknownIsNoop
+      - test: framework/outbox.TestReplayPendingParentNotClobbered
+      - test: framework/outbox.TestReplay_RedeliversAfterFix
+  - id: replay-restarts-grace
+    rule: "A replayed delivery gets a fresh handler grace, so a replica without the re-added handler requeues it instead of abandoning it again."
+    enforced_by:
+      - test: framework/outbox.TestReplayRestartsHandlerGrace
+      - test: framework/outbox.TestPGReplayRestartsHandlerGrace
+  - id: retention-keeps-unfinished
+    rule: "Retention deletes only dispatched parents past the cutoff whose deliveries are all dispatched, keeping any parent with a dead, abandoned or pending delivery."
+    enforced_by:
+      - test: framework/outbox.TestRetention_PurgesDispatchedOnly
+      - test: framework/outbox.TestRetentionKeepsDeadLetterParent
+      - test: framework/outbox.TestPostgres_RetentionKeepsDeadLetterParent
+      - test: framework/outbox.TestPurgeKeepsPendingChild
+      - test: framework/outbox.TestPGReplayRaceKeepsLiveChild
+decisions:
+  - id: claim-owns-the-attempt-count
+    date: 2026-11-18
+    status: accepted
+    decision: "The claim UPDATE consumes the attempt (attempts = attempts + 1) and settles write state only."
+    rejected:
+      - option: "Have the settle write d.Attempts + 1 computed in Go."
+        why: "A crash between claim and settle wrote nothing, so a crash loop re-delivered forever, and two overlapping claimants both wrote the same N+1 and under-counted."
+    revisit_if: "Claims gain a token that makes each settle the only writer of its row."
+    upholds: [claim-consumes-attempt, attempts-count-claims]
+  - id: lease-is-the-claim-fence
+    date: 2026-11-18
+    status: accepted
+    decision: "Every settle matches on the claimed_until value its own claim wrote, using the lease as a monotonic claim fence."
+    rejected:
+      - option: "Match on (row_id, consumer, status='pending') alone."
+        why: "A stale claimant cleared the re-claimant's lease, and a third relay claimed the delivery while the second still ran it."
+      - option: "Add a claim token column."
+        why: "A reclaim always writes a strictly later claimed_until, so the lease already distinguishes claims without new DDL."
+    revisit_if: "Two claims can write the same claimed_until, for example a clock that does not advance between them."
+    upholds: [stale-settle-is-fenced]
+  - id: grace-not-declared-snapshot
+    date: 2026-11-18
+    status: accepted
+    decision: "Removed consumers are retired by time, abandoning a delivery unhandled past the grace from its own created_at, and parents complete only past the grace."
+    rejected:
+      - option: "Retire deliveries of consumers missing from this replica's declared set."
+        why: "During a rolling deploy a lagging replica lacks a newly added consumer and would retire its deliveries before the up-to-date replica delivers them."
+      - option: "Measure the abandonment grace from the parent event's created_at."
+        why: "A consumer added after an event was staged would see its fresh deliveries abandoned at once by a lagging replica."
+    revisit_if: "Replicas share a registry of declared consumers in the database."
+    upholds: [added-consumer-not-abandoned, young-parent-not-completed, removed-consumer-abandoned-after-grace]
+  - id: sqlite-claim-begin-immediate
+    date: 2026-11-18
+    status: accepted
+    decision: "The SQLite claim runs on one connection under an explicit BEGIN IMMEDIATE."
+    rejected:
+      - option: "database/sql BeginTx, which issues a deferred BEGIN."
+        why: "The write lock is taken only at the UPDATE, so two relays pick the same deliveries and the second gets SQLITE_BUSY."
+    revisit_if: "database/sql or the driver can open an immediate transaction through BeginTx."
+    upholds: [claim-is-exclusive]
+  - id: no-handler-requeue-at-max-backoff
+    date: 2026-11-18
+    status: accepted
+    decision: "A delivery with no handler on this replica is requeued at backoffMax, not the base backoff."
+    rejected:
+      - option: "Requeue at the base interval."
+        why: "Such a delivery can sit for the whole grace and sorts to the front of the FIFO claim, so it would be re-claimed every poll, amplifying writes and crowding out real work."
+    revisit_if: "The claim stops ordering by parent age."
+    upholds: [no-handler-never-dead-letters]

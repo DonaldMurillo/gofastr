@@ -1,13 +1,4 @@
-// Package testkit provides PUBLIC test helpers for host apps that use
-// the GoFastr framework. The framework-internal counterparts live in
-// framework/internal/testdb and are intentionally unexported so outside
-// callers can't accidentally couple to their schema-based isolation
-// strategy.
-//
-// The most common helper is NewIsolatedDB, it carves a fresh, named
-// Postgres database for the duration of a single test and drops it on
-// t.Cleanup. Use it from host apps' integration tests that want true
-// per-test isolation against a real cluster.
+// Package testkit holds public test helpers for host apps' own tests.
 package testkit
 
 import (
@@ -15,6 +6,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -22,31 +14,17 @@ import (
 	"time"
 )
 
-// NewIsolatedDB carves a fresh Postgres database on the cluster that
-// adminDSN points at, runs the supplied migrate callback against it,
-// and returns a connection to the carved DB. The DB is dropped (and
-// any lingering backends terminated) on t.Cleanup.
-//
-// adminDSN must be a connection string with permission to create and
-// drop databases (typically a superuser connecting to a maintenance DB
-// like `postgres`). Use a postgres:// or postgresql:// URL; the carved
-// connection replaces its path and removes dbname/database query overrides,
-// preserving credentials, host and other connection options.
-// The helper hard-fails on missing or unusable DSNs,
-// by design, never t.Skip. Tests that hand-roll t.Skip when a DB is
-// missing pass without proving anything; this helper inverts that.
-//
-// migrate is called exactly once with the connection to the new DB
-// before the helper returns. Pass nil to skip schema setup.
+// NewIsolatedDB creates a fresh database on the Postgres cluster adminDSN
+// (a postgres:// URL allowed to create databases) points at, runs migrate
+// on it once unless nil, and drops it at cleanup. It fails the test, never
+// skips it, when the DSN is missing or unusable.
 func NewIsolatedDB(t *testing.T, adminDSN string, migrate func(*sql.DB) error) *sql.DB {
 	t.Helper()
 	db, _ := NewIsolatedDBWithName(t, adminDSN, migrate)
 	return db
 }
 
-// NewIsolatedDBWithName is NewIsolatedDB but also returns the carved
-// database name. Useful in tests that want to verify the DB exists
-// independently of the returned connection.
+// NewIsolatedDBWithName is [NewIsolatedDB] that also returns the name.
 func NewIsolatedDBWithName(t *testing.T, adminDSN string, migrate func(*sql.DB) error) (*sql.DB, string) {
 	t.Helper()
 	if err := ValidateAdminDSN(adminDSN); err != nil {
@@ -91,15 +69,10 @@ func NewIsolatedDBWithName(t *testing.T, adminDSN string, migrate func(*sql.DB) 
 		_ = carved.Close()
 		dropCtx, dropCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer dropCancel()
-		// Terminate any lingering connections before drop. Postgres
-		// rejects DROP DATABASE while sessions remain open.
 		// best-effort: the checked DROP below reports any remaining leak.
 		_, _ = admin.ExecContext(dropCtx,
 			`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1`, dbName)
 		if _, derr := admin.ExecContext(dropCtx, `DROP DATABASE IF EXISTS "`+dbName+`"`); derr != nil {
-			// Surface drop failures via t.Errorf, silently swallowing
-			// them turns every flaky drop into a leaked database that
-			// accumulates across test runs.
 			t.Errorf("testkit: leaked DB %q (drop failed): %v", dbName, derr)
 		}
 	})
@@ -112,14 +85,13 @@ func NewIsolatedDBWithName(t *testing.T, adminDSN string, migrate func(*sql.DB) 
 	return carved, dbName
 }
 
-// ValidateAdminDSN returns an error if the DSN is empty or obviously
-// malformed. Exposed so tests can check the failure mode directly.
+// ValidateAdminDSN errors on an empty DSN or one that is not postgres://.
 func ValidateAdminDSN(dsn string) error {
 	if strings.TrimSpace(dsn) == "" {
 		return fmt.Errorf("admin DSN is empty: set WTF_TEST_DATABASE_URL or pass a usable DSN")
 	}
 	if !strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://") {
-		return fmt.Errorf("admin DSN must use postgres:// scheme, got %q", redact(dsn))
+		return fmt.Errorf("admin DSN must use postgres:// scheme, got scheme %q", dsnScheme(dsn))
 	}
 	return nil
 }
@@ -140,10 +112,6 @@ func pingWithRetry(db *sql.DB) error {
 	return last
 }
 
-// newUniqueDBName returns a lowercase Postgres identifier safe to use
-// as a database name. The test name supplies a debugging-friendly
-// prefix; an 8-byte random suffix avoids collisions across parallel
-// tests in the same process.
 func newUniqueDBName(t *testing.T) string {
 	t.Helper()
 	buf := make([]byte, 6)
@@ -160,27 +128,23 @@ func newUniqueDBName(t *testing.T) string {
 		}
 		return -1
 	}, t.Name())
-	// Postgres identifiers cap at 63 bytes; keep prefix short.
 	if len(clean) > 40 {
 		clean = clean[:40]
 	}
 	return "ftest_" + clean + "_" + suffix
 }
 
-// rewriteDBName changes the database path component of a Postgres DSN
-// while preserving everything else (user, password, host, options).
-// Hard-fails on parse error or non-postgres scheme so the caller never
-// connects to the wrong database, a silent fallthrough would point
-// the carved connection at the admin DSN's database, where any
-// migrations or fixture writes would land on the operator's
-// maintenance DB.
 func rewriteDBName(dsn, dbName string) (string, error) {
 	u, err := url.Parse(dsn)
 	if err != nil {
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
 		return "", fmt.Errorf("rewriteDBName: parse: %w", err)
 	}
 	if u.Scheme != "postgres" && u.Scheme != "postgresql" {
-		return "", fmt.Errorf("rewriteDBName: expected postgres scheme, got %q in %s", u.Scheme, redact(dsn))
+		return "", fmt.Errorf("rewriteDBName: expected postgres scheme, got %q", u.Scheme)
 	}
 	u.Path = "/" + dbName
 	options := u.Query()
@@ -190,17 +154,11 @@ func rewriteDBName(dsn, dbName string) (string, error) {
 	return u.String(), nil
 }
 
-// RewriteDBNameForTest exposes rewriteDBName to the external test
-// package so the parse-failure contract can be asserted directly.
-// Not intended for production callers.
+// RewriteDBNameForTest returns dsn pointed at dbName, for tests.
 func RewriteDBNameForTest(dsn, dbName string) (string, error) {
 	return rewriteDBName(dsn, dbName)
 }
 
-// dropCarvedDB best-effort terminates lingering backends and drops the
-// carved DB during an early-error path. Logs failures via t.Errorf so
-// leaks are visible, but uses t.Errorf rather than t.Fatalf because
-// the caller is about to t.Fatalf with the underlying err anyway.
 func dropCarvedDB(t *testing.T, admin *sql.DB, dbName string, _ error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -213,13 +171,15 @@ func dropCarvedDB(t *testing.T, admin *sql.DB, dbName string, _ error) {
 	}
 }
 
-func redact(dsn string) string {
-	u, err := url.Parse(dsn)
-	if err != nil {
-		return "<unparseable>"
+func dsnScheme(dsn string) string {
+	scheme, _, ok := strings.Cut(dsn, "://")
+	if !ok || scheme == "" || len(scheme) > 32 {
+		return "none"
 	}
-	if u.User != nil {
-		u.User = url.UserPassword(u.User.Username(), "REDACTED")
+	for i, c := range scheme {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || i > 0 && (c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.')) {
+			return "none"
+		}
 	}
-	return u.String()
+	return scheme
 }

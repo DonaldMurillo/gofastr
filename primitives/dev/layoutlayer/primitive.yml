@@ -1,0 +1,19 @@
+primitive: dev.layoutlayer
+summary: The dev layout layer - the /__devlayout.js script that outlines a page's layouts, slots, islands and widgets, its route and its injection; MaybeRegisterLayoutLayer checks the dev gate, RegisterLayoutLayer installs unconditionally.
+code:
+  - framework/dev/layoutlayer.go
+  - framework/dev/layoutlayer.js
+docs:
+  - framework/docs/content/dev-livereload.md
+invariants:
+  - id: script-route
+    rule: RegisterLayoutLayer serves /__devlayout.js as UTF-8 JavaScript with no-store, once per router, yields to a host route at that URL, and adds the script to the dev injector.
+    enforced_by:
+      - test: framework/dev.TestLayoutLayerServesScript
+      - test: framework/dev.TestLayoutLayerYieldsToHostRoute
+      - test: framework/dev.TestLayoutLayerNotSplicedTwice
+  - id: maybe-checks-gate
+    rule: MaybeRegisterLayoutLayer installs nothing unless LayoutLayerEnabled reports true.
+    enforced_by:
+      - test: framework/dev.TestMaybeRegisterLayoutLayerOff
+      - test: framework/dev.TestLayoutLayerGate

@@ -1,0 +1,86 @@
+primitive: outbox
+summary: The transactional outbox - New and its options, the event_outbox table, Append and AppendFor inside the caller's transaction, List, and the table's export and erasure registration.
+code:
+  - framework/outbox/doc.go
+  - framework/outbox/outbox.go
+docs:
+  - framework/docs/content/events.md
+  - framework/docs/content/data-export.md
+on_change:
+  - A column added to event_outbox is also added to existing tables at New, as addOwnerColumn adds owner, and to registerData's export columns.
+invariants:
+  - id: append-joins-callers-tx
+    rule: Append and AppendFor write the row through the executor they are given, so it commits or rolls back with the caller's transaction.
+    enforced_by:
+      - test: framework/outbox.TestAppend_RollbackDrops
+      - test: framework/outbox.TestAppend_CommitPersists
+  - id: payload-is-json-text
+    rule: Append stores data as its JSON text in a TEXT column, the text null for nil data.
+    enforced_by:
+      - test: framework/outbox.TestAppend_CommitPersists
+      - test: framework/outbox.TestAppend_EmptyDataBecomesNull
+      - test: framework/outbox.TestNonObjectDataReachesConsumer
+  - id: unsafe-table-refused
+    rule: New errors on a table name, or the _delivery name derived from it, that query.SafeIdent refuses, before it runs any SQL.
+    enforced_by:
+      - test: framework/outbox.TestNew_InvalidTable
+  - id: case-kept-table-refused
+    rule: On Postgres New errors when an older build left the parent or delivery table under its case-kept name, instead of starting an empty table beside it.
+    enforced_by:
+      - test: framework/outbox.TestPostgres_CaseKeptTableRefused
+  - id: non-positive-options-keep-defaults
+    rule: WithPollInterval, WithBatchSize, WithMaxAttempts and WithHandlerTimeout keep their defaults (1s, 100, 10, 30s) for a value at or below zero.
+    enforced_by:
+      - test: framework/outbox.TestNonPositivePollIntervalKeepsDefault
+      - test: framework/outbox.TestNonPositiveBatchAndAttemptsKeepDefaults
+      - test: framework/outbox.TestNonPositiveHandlerTimeoutKeepsDefault
+  - id: lease-covers-handler-budget
+    rule: New raises the five-minute claim lease to twice the handler timeout plus the settle window when that is longer, saturating at the largest Duration instead of wrapping.
+    enforced_by:
+      - test: framework/outbox.TestLeaseCoversLongHandlerBudget
+      - test: framework/outbox.TestLeaseFloorSaturates
+  - id: owner-column-upgraded
+    rule: New adds the owner column to an event_outbox table created before the column existed, on SQLite and Postgres.
+    enforced_by:
+      - test: framework/outbox.TestOutboxAddsOwnerColumn
+  - id: erasure-nulls-owned-payload
+    rule: Erasing a user writes JSON null over the payload of every row AppendFor staged for them and keeps the row, so no pending delivery or Replay hands their record to a consumer.
+    enforced_by:
+      - test: framework/outbox.TestEraseBlanksOwnedOutboxPayloads
+  - id: without-ensure-runs-no-ddl
+    rule: With WithoutEnsureTable, New creates no table.
+    enforced_by:
+      - test: framework/outbox.TestNew_WithoutEnsureTable
+  - id: last-error-is-valid-utf8
+    rule: truncateError cuts an error to at most 2000 bytes on a rune boundary, so a Postgres settle never fails on invalid UTF-8 and leaves the delivery re-running forever.
+    enforced_by:
+      - test: framework/outbox.TestTruncateErrorKeepsValidUTF8
+      - test: framework/outbox.TestPGFailureSettleAcceptsMultibyteError
+  - id: list-filters-by-status
+    rule: List returns only rows in the given status when it is not empty, newest first, and at most 100 rows for a limit at or below zero.
+    enforced_by:
+      - test: framework/outbox.TestList_FilterByStatus
+decisions:
+  - id: two-lanes
+    date: 2026-11-17
+    status: accepted
+    decision: The caller feeds the live bus after commit (crud.EmitEvent) and the relay delivers only to consumers declared with Consume, never on the live bus.
+    rejected:
+      - option: The relay also emits each row on the live bus.
+        why: The caller already emits after commit, so SSE streams and On handlers would see every event twice.
+    upholds: [append-joins-callers-tx]
+  - id: vestigial-parent-columns
+    date: 2026-11-17
+    status: accepted
+    decision: The parent table keeps its attempts, last_error, next_attempt_at and claimed_until columns although per-attempt state moved to event_outbox_delivery.
+    rejected:
+      - option: Drop the columns.
+        why: Dropping columns is destructive for deployments that already hold rows.
+    revisit_if: A migration step for the outbox tables exists that can drop them safely.
+  - id: id-panics-without-entropy
+    date: 2026-11-17
+    status: accepted
+    decision: newID panics when crypto/rand fails.
+    rejected:
+      - option: Fall back to a zero or time-based ID.
+        why: Colliding row IDs break the dedup consumers do on Event.ID.

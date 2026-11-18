@@ -1,0 +1,81 @@
+primitive: image.encode.vp8l
+summary: The internal lossless WebP (VP8L) encoder - bit writer, predictor transform, LZ77 backward references and Huffman coding.
+code:
+  - framework/image/internal/vp8l/
+on_change:
+  - The bitstream follows the WebP lossless spec and must decode with golang.org/x/image/webp; check a change against the spec section it touches, not only the round-trip tests.
+invariants:
+  - id: lossless-round-trip
+    rule: Every image Encode accepts decodes through golang.org/x/image/webp to the same straight-alpha pixels, for RGBA, NRGBA, Gray, Paletted, YCbCr, CMYK and custom image types, premultiplied zero-alpha pixels included.
+    enforced_by:
+      - test: framework/image/internal/vp8l.TestRoundTripTypeRGBA
+      - test: framework/image/internal/vp8l.TestRoundTripTypeNRGBA
+      - test: framework/image/internal/vp8l.TestRoundTripTypeYCbCr
+      - test: framework/image/internal/vp8l.TestRoundTripPremultipliedZeroAlphaOddRGB
+  - id: size-limits
+    rule: Encode refuses an empty image and one whose side exceeds 16384, and encodes 16384x1 and 1x16384.
+    enforced_by:
+      - test: framework/image/internal/vp8l.TestEncodeEmptyErrors
+      - test: framework/image/internal/vp8l.TestRoundTripAR16385x1Rejected
+      - test: framework/image/internal/vp8l.TestRoundTripAR16384x1
+  - id: smallest-candidate-wins
+    rule: Encode writes the smallest of the outputs of its candidate predictor modes 1, 2, 11, 12 and 13.
+    enforced_by:
+      - test: framework/image/internal/vp8l.TestSweepVP8LKeepsTheSmallestCandidate
+  - id: uniform-image-one-pass
+    rule: An NRGBA or RGBA image whose pixels are all equal is encoded in one pass instead of one per candidate mode.
+    enforced_by:
+      - test: framework/image/internal/vp8l.TestUniformImageShortCircuitsMultiPass
+  - id: transforms-applied-in-written-order
+    rule: The predictor transform is applied before subtract-green, the order their headers are written, so the decoder's reverse order restores the pixels.
+    enforced_by:
+      - test: framework/image/internal/vp8l.TestRoundTripTypeRGBA
+      - test: framework/image/internal/vp8l.TestEncodeGradientSmall
+  - id: backrefs-stay-encodable
+    rule: A backward reference is at most (1<<20)-120 pixels back and 4096 pixels long, so its distance and length prefix codes never overflow.
+    enforced_by:
+      - test: framework/image/internal/vp8l.TestEncodeLongDistanceBackrefDoesNotPanic
+  - id: prefix-codes-invert-the-decoder
+    rule: The length and distance prefix symbols and extra bits are the inverse of x/image/vp8l's lz77Param for every value.
+    enforced_by:
+      - test: framework/image/internal/vp8l.TestDistanceSymbol_InverseProperty
+  - id: huffman-lengths-are-valid
+    rule: Code lengths satisfy the Kraft inequality within their bound, and canonical codes follow RFC 1951 3.2.2 as x/image/vp8l reads them.
+    enforced_by:
+      - test: framework/image/internal/vp8l.TestSweepVP8LLengthLimitHoldsOnFibonacci
+      - test: framework/image/internal/vp8l.TestCanonicalCodesMatchKraft
+  - id: simple-code-only-below-256
+    rule: A tree of one or two used symbols takes the simple-code form only when every used symbol is below 256, and the normal form otherwise.
+    enforced_by:
+      - test: framework/image/internal/vp8l.TestEncodeTwoColors
+      - test: framework/image/internal/vp8l.TestRoundTripWrapAroundBoundary
+  - id: one-length-tree-writes-no-lengths
+    rule: When every entry of lengths, unused ones included, holds one value, the code-length code has one symbol and no bits are written per primary length; any second value (a 0 beside used lengths counts) makes it write per-length bits.
+    enforced_by:
+      - test: framework/image/internal/vp8l.TestSweepVP8LOneLengthTreeWritesNoPerSymbolBits
+  - id: code-length-code-fits-three-bits
+    rule: The code-length code's own lengths are limited to 7, since each is written in a 3-bit field.
+    judge: Does this change let writeHuffmanTree build the code-length code with a limit above 7?
+  - id: bits-lsb-first
+    rule: The bit writer packs bits LSB-first within each byte, and Huffman codes are written bit-reversed.
+    enforced_by:
+      - test: framework/image/internal/vp8l.TestBitWriterRoundsBytes
+      - test: framework/image/internal/vp8l.TestBitWriterRevHuffmanCode
+decisions:
+  - id: uniform-mode-candidates
+    date: 2026-11-17
+    status: accepted
+    decision: Each candidate encode uses one predictor mode for every block, and Encode keeps the smallest of five.
+    rejected:
+      - option: Choose a mode per block by a residual-count and L1 cost proxy.
+        why: Without a Huffman-aware cost it fragmented the residuals and grew the sub-image, so the unused scorer was deleted.
+    revisit_if: A Huffman-aware cost model is written.
+    upholds: [smallest-candidate-wins]
+  - id: uniform-probe-typed-only
+    date: 2026-11-17
+    status: accepted
+    decision: The uniformity probe reads only NRGBA and RGBA pixels directly, and other types run every candidate.
+    rejected:
+      - option: Probe any image through At.
+        why: An interface conversion per pixel costs more than the passes it saves, and framework/image hands the encoder NRGBA.
+    upholds: [uniform-image-one-pass]

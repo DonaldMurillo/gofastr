@@ -2,90 +2,25 @@ package hook
 
 import "net/http"
 
-// WhereClause is an editable SQL predicate that BeforeList / BeforeGet
-// hooks can append to scope read queries (e.g. inject WHERE user_id = $1).
-// CRUD applies appended clauses to the data query, and, for List, also
-// to the count query, so totals reflect the filtered result.
-//
-// SECURITY: SQL is appended VERBATIM to the query. Never concatenate
-// caller-controlled values into SQL, always use placeholders ($1, $2,
-// …) and pass values as Args. The framework's query builder takes care
-// of parameter binding; user code that bypasses this is the source of
-// every SQL-injection bug a hook can introduce.
-//
-//	// SAFE: parameterised binding
-//	p.AddWhere("status = $1", "published")
-//
-//	// UNSAFE: string concatenation
-//	p.AddWhere("status = '" + userInput + "'") // SQL INJECTION
+// WhereClause is a Before read hook's predicate; SQL is used verbatim, so caller values go in Args behind $N.
 type WhereClause struct {
 	SQL  string
 	Args []any
 }
 
-// ListPayload is the data argument passed to BeforeList and AfterList hooks.
-//
-// BeforeList: Request is non-nil, Where starts empty, Results is nil.
-// Hooks call AddWhere() to attach scope filters.
-//
-// AfterList: Request and Results are non-nil, Where is no longer applied.
-// Hooks may redact, transform or reorder Results, but must preserve the row
-// count. Visibility filtering belongs in BeforeList so counts and pages agree.
-//
-// REDACTION: masking a field here changes what the caller reads, not what
-// the database filtered and sorted on. The stored value is still a live
-// column, so ?field_like=… and ?sort=field recover it from which rows come
-// back and in what order, while every response shows the mask. Mark such a
-// field NoQuery in its schema.Field so the query surface refuses it. See
-// framework/crud/redaction_oracle_security_test.go.
-//
-// Masking here covers every HTTP path that returns the row: List, Get,
-// keyset pages, ?include= children (via the child entity's own hooks),
-// _events deliveries, and create/update response bodies. Register the same
-// mask on AfterGet too, each path runs the hook matching the shape it
-// serves, so a to-one ?include= runs the child's AfterGet, the way its own
-// GET /child/{id} route does.
-//
-// The in-process Go API returns stored values unless the caller passes
-// crud.WithReadHooks, so read-modify-write still works. Every path that runs
-// AfterList refuses a row-count change. On an ?include= payload each row is
-// already keyed to its parent, though sorting Results is harmless there (rows
-// are matched by primary key, so order is free; keep the id when projecting).
-// ?stream=true refuses rather than bypass.
-// A value that must never leave the server raw belongs in a Hidden field,
-// which is enforced in the projection. See the hook-skip matrix in
-// framework/docs/content/hooks-and-transactions.md.
+// ListPayload is the data of BeforeList (AddWhere scopes it) and AfterList (Results; keep the row count, mask only NoQuery fields).
 type ListPayload struct {
 	Request *http.Request
 	Where   []WhereClause
 	Results []map[string]any
 }
 
-// AddWhere appends a parameterised WHERE clause. Use $1, $2, … placeholders,
-// one per argument, in order: when the clause is composed into the final
-// query its placeholders are renumbered positionally (by encounter), so
-// pass exactly one argument per placeholder token and do NOT reuse a number
-// as a back-reference to an earlier bind, write the value twice if you need
-// it twice. The clause is parenthesised when composed, so OR/AND inside it
-// cannot leak past framework-injected scopes, and a $N appearing inside a
-// single-quoted string literal is treated as data and left untouched.
+// AddWhere appends a parenthesised clause; its $N are renumbered in order, one argument each, never reused.
 func (p *ListPayload) AddWhere(sql string, args ...any) {
 	p.Where = append(p.Where, WhereClause{SQL: sql, Args: args})
 }
 
-// GetPayload is the data argument passed to BeforeGet and AfterGet hooks.
-//
-// BeforeGet: Request and ID are populated, Where starts empty, Result is nil.
-// Hooks call AddWhere() to scope the lookup (mismatches → 404). The record
-// writes run the same chain, inside their transaction and before they
-// write: PUT, PATCH, DELETE, a transition, _batch update and delete items,
-// and in process under crud.WithReadHooks, so a row the clauses exclude
-// answers those writes the same 404 and is left untouched.
-//
-// AfterGet: Request, ID, and Result are populated; Where is no longer applied.
-// Hooks may mutate Result in place to redact / transform. The redaction
-// warning on ListPayload applies here too: mark a masked field NoQuery, or
-// the List surface still filters and sorts on the stored value.
+// GetPayload is the data of BeforeGet (AddWhere scopes the lookup and record writes, a miss is 404) and AfterGet (Result).
 type GetPayload struct {
 	Request *http.Request
 	ID      string
@@ -93,7 +28,7 @@ type GetPayload struct {
 	Result  map[string]any
 }
 
-// AddWhere appends a parameterised WHERE clause. Use $1, $2, … placeholders.
+// AddWhere appends a parameterised clause, as ListPayload.AddWhere.
 func (p *GetPayload) AddWhere(sql string, args ...any) {
 	p.Where = append(p.Where, WhereClause{SQL: sql, Args: args})
 }

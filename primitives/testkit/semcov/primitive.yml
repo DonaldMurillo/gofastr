@@ -1,0 +1,91 @@
+primitive: testkit.semcov
+summary: The semantic-coverage manifest (.gofastr/semantic-coverage.json) recording which routes, permissions, roles, entity operations, hooks and events a test run reached, written through app.testing's observers and read by the contracts testing rules.
+code:
+  - framework/semcov/
+docs:
+  - framework/docs/content/contracts.md
+on_change:
+  - The manifest's file name, location and JSON fields are read by framework/contracts/analyzers/testing.go and written through framework/semanticcoverage.go; change all three in the same commit.
+invariants:
+  - id: off-until-enabled
+    rule: Every Record function is a no-op and Flush writes nothing until Enable runs, and after Reset.
+    enforced_by:
+      - test: framework/semcov.TestRecordingIsOffUntilEnabled
+  - id: enable-keeps-data
+    rule: A second Enable keeps what was recorded before it.
+    enforced_by:
+      - test: framework/semcov.TestSweepEnableTwiceKeepsUnflushedData
+  - id: disable-keeps-data
+    rule: Disable stops recording and keeps what was recorded for the next Flush.
+    enforced_by:
+      - test: framework/semcov.TestDisableStopsRecordingButKeepsData
+  - id: keys-normalized
+    rule: Methods are recorded trimmed and upper-cased, entity names, operations and hook types lower-cased but not trimmed, permissions, roles and events trimmed with blanks ignored, and a route pattern without its query, fragment or trailing slash.
+    enforced_by:
+      - test: framework/semcov.TestRecordAndRead
+      - test: framework/semcov.TestSweepHooksAreCaseInsensitive
+      - test: framework/semcov.TestRecordersIgnoreBlankInput
+      - test: framework/semcov.TestNormalizePatternDropsQueryAndTrailingSlash
+  - id: flush-merges-under-lock
+    rule: Flush merges every dimension with the manifest on disk under an OS lock on .gofastr/semantic-coverage.lock, so packages flushing from several processes keep each other's records.
+    enforced_by:
+      - test: framework/semcov.TestFlushMergesWithWhatIsOnDisk
+      - test: framework/semcov.TestMergeKeepsEveryDimension
+      - test: framework/semcov.TestFlushWaitsForOtherProcess
+  - id: flush-skips-when-clean
+    rule: Flush writes nothing when nothing new was recorded since the last write.
+    enforced_by:
+      - test: framework/semcov.TestFlushIsANoOpWhenNothingChanged
+  - id: read-refuses-what-it-cannot-trust
+    rule: Read returns fs.ErrNotExist for a missing manifest and an error for a corrupt one or one whose version is above Version.
+    enforced_by:
+      - test: framework/semcov.TestReadMissingManifestIsNotExist
+      - test: framework/semcov.TestReadRejectsCorruptManifest
+      - test: framework/semcov.TestReadRejectsFutureVersion
+  - id: recording-is-race-free
+    rule: Recording from many goroutines without a Reset loses nothing, and a Reset while they record races on nothing (it clears what was recorded and stops recording, as Reset does).
+    enforced_by:
+      - test: framework/semcov.TestConcurrentRecordingLosesNothing
+      - test: framework/semcov.TestResetDuringRecording
+  - id: manifest-owner-only
+    rule: The manifest is written with mode 0600.
+    enforced_by:
+      - test: framework/semcov.TestSweepManifestIsOwnerOnly
+  - id: nil-manifest-covers-nothing
+    rule: Every Covered method of a nil Manifest answers false.
+    enforced_by:
+      - test: framework/semcov.TestSweepNilManifestAnswersFalseEverywhere
+  - id: reader-finds-the-writers-dir
+    rule: DirFor answers the semantic override, then the axe override, then the nearest go.work above root, then root, so a reader given the project root reads the manifest DefaultDir's writers wrote.
+    enforced_by:
+      - test: framework/semcov.TestDirForPrefersTheOverrides
+      - test: framework/semcov.TestDirForFindsTheWorkspace
+  - id: semantic-override-first
+    rule: DefaultDir takes GOFASTR_SEMANTIC_COVERAGE_DIR before GOFASTR_AXE_COVERAGE_DIR.
+    enforced_by:
+      - test: framework/semcov.TestDefaultDirPrefersExplicitOverride
+      - test: framework/semcov.TestDefaultDirFallsBackToAxeOverride
+decisions:
+  - id: pattern-not-path
+    date: 2026-11-17
+    status: accepted
+    decision: Routes are keyed by the router's pattern, so a request to /orders/42 credits /orders/{id}.
+    rejected:
+      - option: Line coverage.
+        why: A handler a unit test calls directly reaches full line coverage while no request ever reached it through the router, its middleware and its auth check.
+    upholds: [keys-normalized]
+  - id: off-is-an-atomic-load
+    date: 2026-11-17
+    status: accepted
+    decision: Recording is off until Enable, so in a production binary each hook costs one atomic load and a branch.
+    upholds: [off-until-enabled]
+  - id: share-the-axe-override
+    date: 2026-11-17
+    status: accepted
+    decision: DefaultDir also honours GOFASTR_AXE_COVERAGE_DIR, so an app that pinned its axe manifest per app gets the same isolation here without a second setting.
+    upholds: [semantic-override-first]
+  - id: pid-temp-name
+    date: 2026-11-17
+    status: accepted
+    decision: The write-then-rename temp file carries the pid, a second guard beside the flush lock against parallel test processes renaming each other's half-written file.
+    revisit_if: The flush lock is trusted on every platform the tests run on.

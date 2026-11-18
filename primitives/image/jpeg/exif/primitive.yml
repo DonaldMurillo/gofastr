@@ -1,0 +1,27 @@
+primitive: image.jpeg.exif
+summary: Reading the orientation tag out of an EXIF TIFF block.
+code:
+  - framework/internal/exif/
+docs:
+  - framework/docs/content/image.md
+invariants:
+  - id: orientation-or-zero
+    rule: ParseTIFFOrientation returns IFD0's 0x0112 tag in either byte order when it is one SHORT from 1 to 8, and 0 for a bad header, an IFD past the end, another type or count, or a value out of range.
+    enforced_by:
+      - test: framework/internal/exif.TestParseTIFFOrientation
+decisions:
+  - id: one-tiff-walker
+    date: 2026-11-17
+    status: accepted
+    decision: framework/image and framework/file share this one walker, an internal leaf with no gofastr imports.
+    rejected:
+      - option: A copy in each package.
+        why: The two byte-identical copies existed because file cannot import image, and copies drift.
+    upholds: [orientation-or-zero]
+  - id: orientation-only
+    date: 2026-11-17
+    status: accepted
+    decision: Only the orientation tag is parsed.
+    rejected:
+      - option: Full EXIF support.
+        why: Out of scope; auto-orient and the strip bake need the one tag.

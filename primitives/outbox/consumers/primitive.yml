@@ -1,0 +1,11 @@
+primitive: outbox.consumers
+summary: Declaring durable consumers with Consume, and the lookups the relay uses to find a consumer's handler and the consumers of an event type.
+code:
+  - framework/outbox/consumer.go
+docs:
+  - framework/docs/content/events.md
+invariants:
+  - id: consume-refuses-bad-declarations
+    rule: Consume panics on an empty consumer name, an empty event type, a nil handler, or a (name, event type) pair already declared, and declares nothing.
+    enforced_by:
+      - test: framework/outbox.TestConsumeRefusesBadDeclarations

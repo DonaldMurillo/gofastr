@@ -52,9 +52,10 @@ reports one path. The real fix reached others with the same defect.
 | `node-block-entity` | `289df96a^` | an `entity_list` under a node block | `entity_form`, `entity_detail`, `login_form` and `signup_form` there, nested or spelled `type:` |
 | `dup-column-key` | `765ffef4^` | `Validate` accepting repeated data-table column keys | the renderer panicking on a hand-built tree |
 | `index-name-collision` | `366d9a40^` | boot accepting two tables that declare an index under one name | `DiffSchema` and `GeneratePlan` accepting it; colliding default names; one table reusing a name |
+| `outbox-lagging-consumer` | `05aa78e1^` | a dispatched delivery completing its parent before another consumer has a delivery | the same after a dead-lettered or abandoned delivery; the relay's parent sweep |
 
 The registry entries for the first three tasks were written knowing the
-bugs. Those for the last four were written by a separate agent that was
+bugs. Those for the last five were written by a separate agent that was
 given the pre-fix code and the format, and not told what the bugs were.
 
 Conditions are `plain` (the report alone), `nudge` (the report plus one

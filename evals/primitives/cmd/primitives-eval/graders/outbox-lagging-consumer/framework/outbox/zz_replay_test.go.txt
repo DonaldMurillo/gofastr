@@ -1,0 +1,151 @@
+package outbox
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"sync/atomic"
+	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework/event"
+)
+
+var replayDialects = []struct {
+	name string
+	open func(*testing.T, ...Option) (*sql.DB, *Outbox)
+}{
+	{"sqlite", openOutbox},
+	{"postgres", pgOutbox},
+}
+
+// replayLagging declares consumer "a" (unless aHandler is nil) and "b" for
+// type "t", stages one event, and gives the parent one delivery, for first
+// with the given status: another relay's expansion reached the parent for
+// that consumer and not yet for b. It returns the parent id and a count of
+// b's runs.
+func replayLagging(t *testing.T, open func(*testing.T, ...Option) (*sql.DB, *Outbox), first, status string, aHandler event.EventHandler, opts ...Option) (*sql.DB, *Outbox, string, *atomic.Int32) {
+	t.Helper()
+	db, o := open(t, opts...) // zero handler grace: the parent is past it at once
+	if aHandler != nil {
+		o.Consume("a", "t", aHandler)
+	}
+	bRuns := new(atomic.Int32)
+	o.Consume("b", "t", func(context.Context, event.Event) error {
+		bRuns.Add(1)
+		return nil
+	})
+	id := appendCommitted(t, db, o, "t")
+	if _, err := db.Exec("INSERT INTO "+o.qd()+
+		" (row_id, consumer, status, attempts, created_at) VALUES ($1, $2, $3, 0, $4)",
+		id, first, status, o.now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	return db, o, id, bRuns
+}
+
+func replayStatus(t *testing.T, db *sql.DB, query string, args ...any) string {
+	t.Helper()
+	var st string
+	if err := db.QueryRow(query, args...).Scan(&st); err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
+func replayParentStatus(t *testing.T, db *sql.DB, o *Outbox, id string) string {
+	t.Helper()
+	return replayStatus(t, db, "SELECT status FROM "+o.qt()+" WHERE id = $1", id)
+}
+
+// replaySettleFirst claims the one delivery the parent holds and runs it.
+func replaySettleFirst(t *testing.T, o *Outbox) {
+	t.Helper()
+	ctx := context.Background()
+	claimed, err := o.claimDeliveries(ctx)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim: %v (n=%d)", err, len(claimed))
+	}
+	o.processDelivery(ctx, claimed[0])
+}
+
+// replayBGetsItsEvent runs the relay and checks that b, which had no
+// delivery when the parent's other delivery settled, still gets the event.
+func replayBGetsItsEvent(t *testing.T, db *sql.DB, o *Outbox, id string, bRuns *atomic.Int32) {
+	t.Helper()
+	for range 3 {
+		o.pump(context.Background())
+	}
+	if n := bRuns.Load(); n != 1 {
+		t.Fatalf("consumer b ran %d times, want 1: the event was lost for it", n)
+	}
+	if st := replayParentStatus(t, db, o, id); st != "dispatched" {
+		t.Fatalf("parent %q once every consumer settled, want dispatched", st)
+	}
+}
+
+// a's delivery is dispatched while b has none yet.
+func TestReplayReportedDispatchWaitsForLaggingConsumer(t *testing.T) {
+	for _, dl := range replayDialects {
+		t.Run(dl.name, func(t *testing.T) {
+			db, o, id, bRuns := replayLagging(t, dl.open, "a", "pending", noopHandler)
+			replaySettleFirst(t, o)
+			if st := replayParentStatus(t, db, o, id); st != "pending" {
+				t.Fatalf("parent %q after a's delivery was dispatched while b had none, want pending", st)
+			}
+			replayBGetsItsEvent(t, db, o, id, bRuns)
+		})
+	}
+}
+
+// a's delivery is dead-lettered on its last attempt while b has none yet.
+func TestReplayTwinDeadLetterWaitsForLaggingConsumer(t *testing.T) {
+	for _, dl := range replayDialects {
+		t.Run(dl.name, func(t *testing.T) {
+			fail := func(context.Context, event.Event) error { return errors.New("boom") }
+			db, o, id, bRuns := replayLagging(t, dl.open, "a", "pending", fail, WithMaxAttempts(1))
+			replaySettleFirst(t, o)
+			if st := replayStatus(t, db, "SELECT status FROM "+o.qd()+" WHERE row_id = $1 AND consumer = 'a'", id); st != "dead" {
+				t.Fatalf("a's delivery %q, want dead", st)
+			}
+			if st := replayParentStatus(t, db, o, id); st != "pending" {
+				t.Fatalf("parent %q after a's delivery was dead-lettered while b had none, want pending", st)
+			}
+			replayBGetsItsEvent(t, db, o, id, bRuns)
+		})
+	}
+}
+
+// A delivery for "gone", a consumer no replica declares any more, is
+// abandoned while b, declared here, has none yet.
+func TestReplayTwinAbandonWaitsForLaggingConsumer(t *testing.T) {
+	for _, dl := range replayDialects {
+		t.Run(dl.name, func(t *testing.T) {
+			db, o, id, bRuns := replayLagging(t, dl.open, "gone", "pending", nil)
+			replaySettleFirst(t, o)
+			if st := replayStatus(t, db, "SELECT status FROM "+o.qd()+" WHERE row_id = $1 AND consumer = 'gone'", id); st != "abandoned" {
+				t.Fatalf("gone's delivery %q, want abandoned", st)
+			}
+			if st := replayParentStatus(t, db, o, id); st != "pending" {
+				t.Fatalf("parent %q after gone's delivery was abandoned while b had none, want pending", st)
+			}
+			replayBGetsItsEvent(t, db, o, id, bRuns)
+		})
+	}
+}
+
+// The relay's parent sweep, with a's delivery already dispatched and none
+// for b.
+func TestReplayTwinSweepWaitsForLaggingConsumer(t *testing.T) {
+	for _, dl := range replayDialects {
+		t.Run(dl.name, func(t *testing.T) {
+			db, o, id, bRuns := replayLagging(t, dl.open, "a", "dispatched", noopHandler)
+			if err := o.sweepParents(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if st := replayParentStatus(t, db, o, id); st != "pending" {
+				t.Fatalf("parent %q after the sweep while b had no delivery, want pending", st)
+			}
+			replayBGetsItsEvent(t, db, o, id, bRuns)
+		})
+	}
+}
