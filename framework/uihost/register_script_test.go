@@ -125,8 +125,8 @@ func TestExtraScriptEmittedFullPageOnly(t *testing.T) {
 // already covers it, and the header must stay byte-identical (the exact
 // framework default) across registration.
 func TestRegisterScriptKeepsDefaultCSP(t *testing.T) {
-	const defaultCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; " +
-		"form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
+	const defaultCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; " +
+		"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 
 	get := func(ds *UIHost) string {
 		t.Helper()

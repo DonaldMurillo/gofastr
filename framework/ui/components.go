@@ -757,9 +757,14 @@ func Avatar(cfg AvatarConfig) render.HTML {
 
 	var inner []render.HTML
 	if cfg.Src != "" {
+		px := strconv.Itoa(avatarPixels(cfg.Size))
 		inner = append(inner, html.Image(html.ImageConfig{
 			Src: cfg.Src, Alt: cfg.Name, Class: "fui-avatar__img",
-			ExtraAttrs: html.Attrs{"data-cui-internal": ""},
+			ExtraAttrs: html.Attrs{
+				"width": px, "height": px,
+				"loading": "lazy", "decoding": "async",
+				"data-cui-internal": "",
+			},
 		}))
 	} else {
 		inner = append(inner,
@@ -775,6 +780,21 @@ func Avatar(cfg AvatarConfig) render.HTML {
 		inner = append(inner, avatarStatusDot(cfg.Ctx, cfg.Status, cfg.StatusLabel))
 	}
 	return avatarStyle.WrapHTML(html.Span(spanCfg, inner...))
+}
+
+// avatarPixels is the size's CSS default at a 16px root, so the image
+// reserves a square box before it loads; the stylesheet sets the real size.
+func avatarPixels(size AvatarSize) int {
+	switch size {
+	case AvatarSm:
+		return 24
+	case AvatarLg:
+		return 48
+	case AvatarXl:
+		return 64
+	default:
+		return 40
+	}
 }
 
 func avatarStatusDot(ctx context.Context, status AvatarStatus, label string) render.HTML {
