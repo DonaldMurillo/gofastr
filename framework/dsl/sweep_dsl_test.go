@@ -42,7 +42,8 @@ func TestBuildDSLSelectsNoHiddenColumn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sql, _ := qb.Build(); strings.Contains(sql, "pw_hash") {
+	sql, _ := qb.Build()
+	if !strings.HasPrefix(sql, "SELECT id, name, created_at, updated_at FROM ") || strings.Contains(sql, "pw_hash") {
 		t.Fatalf("the projection must leave Hidden columns out: %s", sql)
 	}
 }
@@ -96,5 +97,16 @@ func TestParseSortAgreesWithFilterSort(t *testing.T) {
 		if dslErr == nil && (got[0].Field != want[0].Field || got[0].Desc != want[0].Desc) {
 			t.Errorf("%s: dsl %+v, filter %+v", name, got[0], want[0])
 		}
+	}
+}
+
+func TestParseSortRefusesWireNameOutsideIdentSyntax(t *testing.T) {
+	fields := []schema.Field{{Name: "title", WireName: "display-name", Type: schema.String}}
+	got, err := filter.ParseSortValues(url.Values{"sort": {"-display-name"}}, fields)
+	if err != nil || len(got) != 1 || got[0].Field != "title" {
+		t.Fatalf("filter.ParseSortValues should resolve the wire name to title: %+v, %v", got, err)
+	}
+	if _, err := ParseSort("display-name DESC", fields); err == nil {
+		t.Fatal("ParseSort accepted a name outside the DSL identifier syntax")
 	}
 }
