@@ -29,9 +29,14 @@ few lines, and link the PR or the docs page for the rest.
   user's identities again.** The first run's SQL part deleted the user row
   the email was read from, so the retry's `ErasedUser` carried only the id.
   When an `EraseResolved` store eraser fails, the erasure keeps the
-  identities in `gofastr_erase_identities` (for at most 30 days) until a
-  retry's store erasers all succeed
-  ([data export](framework/docs/content/data-export.md)). Nothing to change.
+  identities it gave that store in `gofastr_erase_identities`, and a retry
+  gives them to that store alone, never when another account now holds the
+  address. A row is deleted when its store succeeds, and 30 days after the
+  first failure at the latest: a running App deletes expired rows at start
+  and every hour, and `App.SweepErasureRetention` does it on demand
+  ([data export](framework/docs/content/data-export.md)). A runtime role
+  that cannot create tables needs the table made first (the docs give the
+  SQL).
 - **`gofastr verify` reports a hard navigation through any chain of frames.** GOFASTR1802 caught
   `location.href = x` and `window.location.href = x`, but missed `window.top.location.href = x` and
   other chains of more than one hop.

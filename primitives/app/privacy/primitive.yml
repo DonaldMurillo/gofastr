@@ -4,6 +4,7 @@ code:
   - framework/export_data.go
   - framework/erase_data.go
   - framework/erase_shared_keys.go
+  - framework/erase_retention.go
   - core/datexport/
 docs:
   - framework/docs/content/data-export.md
@@ -23,7 +24,7 @@ invariants:
     enforced_by:
       - test: framework.TestEraseUserData_RejectsEmptyUserID
   - id: erase-is-one-transaction
-    rule: Every SQL write of an erasure runs in one transaction, so an error at any point, the audit plane included, leaves every row as it was.
+    rule: Every SQL write of an erasure's planes, the audit plane included, runs in one transaction, so an error at any point before the commit leaves every row as it was; the store erasers and the retry bookkeeping in gofastr_erase_identities run after the commit, and their failure returns an error without undoing it.
     enforced_by:
       - test: framework.TestEraseUserData_RollsBackOnMidFlightFailure
   - id: erase-is-hard
@@ -237,13 +238,23 @@ invariants:
       - test: framework.TestEraseUserData_StoreEraserGetsResolvedIdentities
       - test: core/datexport.TestErasedUserIdentity
   - id: retry-gets-the-first-runs-identities
-    rule: When an EraseResolved store eraser fails, the erasure writes the identities it resolved to gofastr_erase_identities under its tenant (creating the table only then), a later erasure of the same user in the same tenant reads from there every identity its resolvers no longer find that is under 30 days old, the row is deleted once every store eraser has run without failing, and every erasure that reaches the table deletes the rows past 30 days.
+    rule: When an EraseResolved store eraser fails, the erasure writes the identities it gave that store to gofastr_erase_identities under its tenant, user and store name, on a context its request's deadline does not end, creating the table only when it is absent; a later erasure of the same user in the same tenant gives each store only the unexpired identities kept for that store, never one another account's row now holds, and only where nothing resolves now; the SQL planes use only what resolves now; a store's rows go once it succeeds; nothing is kept when only an id-keyed store fails.
     enforced_by:
-      - test: framework.TestExpiredKeptIdentityIsSwept
       - test: framework.TestEraseUserData_RetryKeepsResolvedIdentities
       - test: framework.TestEraseUserData_KeptIdentitiesArePerTenant
       - test: framework.TestEraseUserData_SuccessKeepsNoIdentities
       - test: framework.TestEraseUserData_KeptIdentitiesExpire
+      - test: framework.TestRetainedIdentityNeverErasesItsNewOwner
+      - test: framework.TestRetryReplaysOnlyToFailedStores
+      - test: framework.TestIDOnlyStoreFailureKeepsNothing
+      - test: framework.TestRetentionLandsAfterTheRequestEnds
+      - test: framework.TestRetentionFlowEachDialect
+  - id: erase-retention-expires
+    rule: A kept identity expires 30 days after the failure that first kept it, a failed retry neither extends it nor writes back a row a concurrent retry removed, every erasure that reaches the table deletes expired rows whatever its outcome, and a running App deletes them at start and every hour (App.SweepErasureRetention).
+    enforced_by:
+      - test: framework.TestRetryKeepsTheFirstExpiryAndNeverRestores
+      - test: framework.TestEraseFailureWithNothingToKeepSweeps
+      - test: framework.TestExpiredKeptIdentityIsSwept
   - id: resolver-canonicalize-rewrites-value
     rule: A resolver's Canonicalize rewrites the resolved value before it is bound, and an empty result binds the raw value.
     enforced_by:
@@ -256,7 +267,7 @@ decisions:
   - id: keep-identities-until-the-stores-erase
     date: 2026-11-17
     status: accepted
-    decision: After an EraseResolved store eraser fails, the erasure keeps the identities it resolved in one framework table, for at most 30 days, until a retry's store erasers all succeed, so the retry hands them the same values (issue 759).
+    decision: After an EraseResolved store eraser fails, the erasure keeps the identities it gave that store in one framework table, per store, for at most 30 days from that failure, until a retry of that store succeeds, so the retry hands it the same values (issue 759). A retry gives a kept value only to the store that failed and never when another account now holds it, because a store keyed by email cannot tell the old owner's data from the new owner's.
     rejected:
       - option: Make each store find the value again on a retry, as battery/auth's in-memory eraser reads its user store.
         why: A store keyed only by an email has nowhere to read it from once the user row is gone, and every such store would have to solve it again.
@@ -265,7 +276,7 @@ decisions:
       - option: Keep them until a retry, however long that takes.
         why: An erasure nobody retries would leave the erased user's email behind for good.
     revisit_if: An erasure must leave no copy of an identity even while a store eraser is failing, or a retry must work after a crash between the commit and the store erasers.
-    upholds: [retry-gets-the-first-runs-identities]
+    upholds: [retry-gets-the-first-runs-identities, erase-retention-expires]
   - id: erasure-is-hard-delete
     date: 2026-11-16
     status: accepted

@@ -1229,7 +1229,7 @@ func TestEraseUserData_SuccessKeepsNoIdentities(t *testing.T) {
 	}
 }
 
-// A kept identity past keptIdentitiesFor is not handed to a retry.
+// A kept identity past its expiry is not handed to a retry.
 func TestEraseUserData_KeptIdentitiesExpire(t *testing.T) {
 	app, db := newIdentityEraseApp(t)
 	defer db.Close()
@@ -1237,22 +1237,29 @@ func TestEraseUserData_KeptIdentitiesExpire(t *testing.T) {
 	ctx := context.Background()
 	registerMagicLinkEraseScenario(t)
 	var got []datexport.ErasedUser
-	_, _ = datexport.RegisterStoreEraser(datexport.StoreEraser{Name: "late", Source: "test",
+	regStore(t, datexport.StoreEraser{Name: "late", Source: "test",
 		EraseResolved: func(_ context.Context, u datexport.ErasedUser, _ bool) (int, error) {
 			got = append(got, u)
 			return 0, nil
 		}})
-	if err := app.keepIdentities(ctx, "", datexport.ErasedUser{ID: "u1", Identities: map[datexport.IdentityKind]string{datexport.IdentityEmail: "u1@x.test"}}); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-keptIdentitiesFor - time.Hour).Unix()
-	if _, err := db.ExecContext(ctx, `UPDATE `+eraseIdentitiesTable+` SET kept_at = ?`, old); err != nil {
-		t.Fatal(err)
-	}
+	seedRetention(t, db, "", "u1", "late", "u1@x.test", time.Now().Add(-time.Hour))
 	if _, err := app.EraseUserData(ctx, "u1"); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := got[0].Identity(datexport.IdentityEmail); ok {
 		t.Fatalf("an expired kept identity reached the store: %+v", got[0])
+	}
+}
+
+// seedRetention writes one kept identity as a failed erasure would.
+func seedRetention(t *testing.T, db *sql.DB, tenant, user, store, email string, expires time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, eraseIdentitiesDDL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO `+eraseIdentitiesTable+` (tenant, user_id, store, kind, value, expires_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		tenant, user, store, int64(datexport.IdentityEmail), email, expires.Unix()); err != nil {
+		t.Fatal(err)
 	}
 }

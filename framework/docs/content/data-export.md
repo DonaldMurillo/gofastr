@@ -629,19 +629,51 @@ report lists the rows deleted and the stores that succeeded. Erase again
 once the store is reachable: the SQL planes match nothing, and each store
 removes what is left. A panicking eraser counts as a failed one.
 
-A retry hands an `EraseResolved` store the same identities as the first
-run, though the user row they were read from went with it. When an
+A retry hands a failed `EraseResolved` store the same identities as the
+first run, though the user row they were read from went with it. When an
 `EraseResolved` store eraser fails, the erasure writes the identities it
-resolved to the `gofastr_erase_identities` table (`tenant`, `user_id`,
-`kind`, `value`, `kept_at`), creating it then. An erasure whose stores all
-succeed writes nothing and needs no CREATE right. A later erasure of that
-user in the same tenant reads from there every identity its resolvers no
-longer find, and the row is deleted once every store eraser has run
-without failing. A row older than 30 days is never read, and every
-erasure that reaches the table deletes such rows. Until then the table
-holds the erased user's email (or other identity) and nothing else; a dry
-run writes nothing. If the process stops between the commit and the
-store erasers, nothing is kept, and a retry gets only the user id. `App.ExportData` leaves the table out: it is bookkeeping for a
+gave that store to the `gofastr_erase_identities` table (`tenant`,
+`user_id`, `store`, `kind`, `value`, `expires_at`), creating it only if it
+is absent. This write runs after the commit, on its own 30-second
+deadline, so it lands even when the request's deadline has passed. An
+erasure whose stores all succeed, or where only an id-keyed store failed,
+writes nothing.
+
+A later erasure of that user in the same tenant gives each store the
+identities kept for that store alone, and only where its resolvers find
+nothing now. A store that succeeded the first time gets only what
+resolves now. A kept value another account now holds (a new user took
+the address) is never given: an email-keyed store cannot tell the old
+owner's data from the new owner's. The SQL planes never use kept values.
+A store's rows go once it succeeds.
+
+A kept row expires 30 days after the failure that first wrote it; a
+failed retry does not extend it. Expired rows are never read, every
+erasure that reaches the table deletes them, and a running App deletes
+them at start and every hour. A host whose App runs rarely can call
+`App.SweepErasureRetention(ctx)` from its own scheduler. Until a row
+expires or its store succeeds, the table holds the erased user's email
+(or other identity) and nothing else; a dry run writes nothing.
+
+A retry cannot finish an email-keyed store's erasure when the identity
+is not there to give: the process stopped between the commit and the
+store erasers, the write above failed (the erasure's error says so), the
+row expired, or another account now holds the address. The store then
+gets only the user id, and may report success while still holding the
+old address's data. Finish that store's erasure by hand, by the address,
+from your own records.
+
+A runtime role without the right to create tables needs the table made
+ahead of time, once:
+
+```sql
+CREATE TABLE IF NOT EXISTS gofastr_erase_identities (
+  tenant TEXT NOT NULL DEFAULT '', user_id TEXT NOT NULL, store TEXT NOT NULL,
+  kind BIGINT NOT NULL, value TEXT NOT NULL, expires_at BIGINT NOT NULL,
+  PRIMARY KEY (tenant, user_id, store, kind));
+```
+
+The erasure uses an existing table as it is and creates none. `App.ExportData` leaves the table out: it is bookkeeping for a
 user already erased, and a restore must not bring their email back.
 
 A dry run rolls the transaction back first, then asks each store for its
