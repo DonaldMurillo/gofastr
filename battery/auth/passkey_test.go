@@ -263,10 +263,19 @@ func TestPasskeyChallengePurposes(t *testing.T) {
 	if w := f.do(t, "POST", "/passkey/register", alice, registerBody(a, loginCh)); w.Code != http.StatusBadRequest {
 		t.Fatalf("register with a sign-in challenge: %d", w.Code)
 	}
-	// The purpose guard refused it, not the session binding (which a
-	// sign-in challenge also lacks).
-	if ev := f.sink.findByKind("passkey.refused"); ev == nil || ev.Meta["reason"] != "challenge" {
-		t.Fatalf("refusal event %+v, want reason challenge", ev)
+	// A sign-in-purpose token carrying alice's own id passes the owner
+	// check: only the purpose guard can refuse it.
+	ownCh, err := createPurposeToken(context.Background(), f.pk.challenges, purposePasskeyLogin, "u-alice", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := len(f.sink.findByKindAll("passkey.refused"))
+	if w := f.do(t, "POST", "/passkey/register", alice, registerBody(a, ownCh)); w.Code != http.StatusBadRequest {
+		t.Fatalf("register with alice's own sign-in-purpose token: %d", w.Code)
+	}
+	evs := f.sink.findByKindAll("passkey.refused")
+	if len(evs) != before+1 || evs[len(evs)-1].Meta["reason"] != "challenge" {
+		t.Fatalf("refusal events %+v, want one more with reason challenge", evs)
 	}
 	b := f.enrol(t, "u-alice")
 	regCh := challengeOf(t, f.do(t, "POST", "/passkey/register/options", alice, nil))

@@ -53,17 +53,26 @@
   // Signal API skip it; it never surfaces an error.
   // gen counts list reads; a change bumps it, so a read that started
   // before the change never signals its older list.
-  let gen = 0, changing = 0;
+  let gen = 0, changing = 0, missed = [];
   // change runs an add or a remove: a list read that overlaps it in any
-  // way never signals, and the caller reads a fresh one after.
+  // way never signals, and the caller reads a fresh one after. A change
+  // that fails (a cancelled prompt) reads again the lists it dropped.
   async function change(fn) {
     changing++;
     gen++;
+    let ok = false;
     try {
-      return await fn();
+      const r = await fn();
+      ok = true;
+      return r;
     } finally {
       changing--;
       gen++;
+      if (!changing) {
+        const again = ok ? [] : missed;
+        missed = [];
+        new Set(again).forEach(signalList);
+      }
     }
   }
   async function signalList(base) {
@@ -71,7 +80,11 @@
     const mine = ++gen;
     try {
       const list = await P.send(base + '/passkey/list', { method: 'GET', headers: { 'Accept': 'application/json' } });
-      if (mine !== gen || changing || !list || typeof list.rpId !== 'string' || typeof list.userId !== 'string') return;
+      if (mine !== gen || changing) {
+        missed.push(base);
+        return;
+      }
+      if (!list || typeof list.rpId !== 'string' || typeof list.userId !== 'string') return;
       if (typeof PKC.signalAllAcceptedCredentials === 'function') {
         await PKC.signalAllAcceptedCredentials({
           rpId: list.rpId, userId: list.userId,

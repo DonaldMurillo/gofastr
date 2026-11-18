@@ -50,6 +50,7 @@ window.__gofastr = {
     if (path.endsWith('/options')) return Promise.resolve(json({publicKey: Object.assign({}, pk, {timeout: window.optionsTimeout || 60000})}));
     if (path.endsWith('/passkey/register')) {
       window.listIds = ['AQID'];
+      if (window.gateRegister) return new Promise((r) => { window.releaseRegister = () => r(json({})); });
       if (window.slowRegister) return later(window.slowRegister, json({}));
     }
     if (path.endsWith('/passkey/login')) {
@@ -80,6 +81,9 @@ navigator.credentials.get = (o) => {
 };
 navigator.credentials.create = () => {
   window.creates++;
+  if (window.gateCreate) return new Promise((res, rej) => {
+    window.releaseCreate = (err) => err ? rej(new DOMException('x', err)) : res(fake);
+  });
   if (window.slowCreate) return later(window.slowCreate, fake);
   if (window.holdGet && !window.getDone) window.overlap = true;
   return Promise.resolve(fake);
@@ -122,7 +126,8 @@ func TestPasskeyModuleRules(t *testing.T) {
 		"/racepick":    `<script>window.autoPick = true; window.slowLogin = 600</script><input data-passkey-autofill="/auth"><button id="in" data-passkey-login="/auth" hidden>Sign in</button>`,
 		"/serial": `<script>window.holdGet = 500</script><form onsubmit="event.preventDefault()"><button id="re" data-passkey-reauth="/auth" hidden>Confirm</button></form>
 <button id="add" data-passkey-register="/auth" hidden>Add</button>`,
-		"/during":    `<script>window.slowCreate = 500; window.slowRegister = 1000; window.listDelay = 800</script><div id="host"></div><button id="add" data-passkey-register="/auth" hidden>Add</button>`,
+		"/during":    `<script>window.gateCreate = true; window.gateRegister = true</script><div id="host"></div><button id="add" data-passkey-register="/auth" hidden>Add</button>`,
+		"/cancel":    `<script>window.gateCreate = true</script><div id="host"></div><button id="add" data-passkey-register="/auth" hidden>Add</button>`,
 		"/stale":     `<script>window.listDelay = 500</script><div data-passkey-list="/auth"></div><button id="add" data-passkey-register="/auth" hidden>Add</button>`,
 		"/submitter": `<form id="f" onsubmit="event.preventDefault(); window.submitted.push(event.submitter ? event.submitter.name + '=' + event.submitter.value + '@' + event.submitter.formAction : 'form')"><button id="re" name="op" value="close" formaction="/close" data-passkey-reauth="/auth" hidden>Confirm</button></form>`,
 		"/nostorage": `<script>Object.defineProperty(window, 'sessionStorage', {get() { throw new Error('blocked'); }})</script><div data-passkey-upgrade="/auth"></div>`,
@@ -351,13 +356,60 @@ func TestPasskeyModuleRules(t *testing.T) {
 
 	// A list read that starts during an add and answers before it ends,
 	// with the list from before the add, never signals.
-	if n := num("/during", "", `window.accepted.filter(l => l === 0).length * 10 + window.accepted.length`,
-		wait(`!document.getElementById('add').hidden`),
+	// Gated: the list mounts while the authenticator holds the add, so it
+	// reads the old list; its answer arrives before the add settles.
+	mountList := chromedp.Evaluate(`const l = document.createElement('div'); l.setAttribute('data-passkey-list', '/auth'); document.getElementById('host').appendChild(l); window.__gofastr._moduleScanners['passkey-manage'](document)`, nil)
+	var during []int
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(origin+"/during"),
+		wait(`!!window.__gofastr.loadedModules && !document.getElementById('add').hidden`),
 		chromedp.Click(`#add`, chromedp.ByQuery),
+		wait(`!!window.releaseCreate`),
+		mountList,
+		wait(`window.calls.filter(c => c.endsWith('/passkey/list')).length === 1`),
 		chromedp.Sleep(100*time.Millisecond),
-		chromedp.Evaluate(`const l = document.createElement('div'); l.setAttribute('data-passkey-list', '/auth'); document.getElementById('host').appendChild(l); window.__gofastr._moduleScanners['passkey-manage'](document)`, nil),
-		wait(`window.navs.length === 1`), chromedp.Sleep(1000*time.Millisecond)); n != 1 {
-		t.Errorf("a list read overlapping an add: empty*10+total = %d, want only the fresh one (1)", n)
+		chromedp.Evaluate(`window.releaseCreate()`, nil),
+		wait(`!!window.releaseRegister`),
+		chromedp.Sleep(100*time.Millisecond),
+		chromedp.Evaluate(`window.accepted.slice()`, &during),
+	); err != nil {
+		t.Fatalf("during: %v", err)
+	}
+	if len(during) != 0 {
+		t.Errorf("a list read overlapping an add signalled %v before the add settled", during)
+	}
+	var after []int
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.releaseRegister()`, nil),
+		wait(`window.navs.length === 1`),
+		chromedp.Sleep(100*time.Millisecond),
+		chromedp.Evaluate(`window.accepted`, &after),
+	); err != nil {
+		t.Fatalf("during, after release: %v", err)
+	}
+	if !slices.Equal(after, []int{1}) {
+		t.Errorf("signals after the add %v, want the fresh list once ([1])", after)
+	}
+
+	// The same overlap, but the user cancels the prompt: the dropped list
+	// is read again once the add has failed.
+	var cancelled []int
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(origin+"/cancel"),
+		wait(`!!window.__gofastr.loadedModules && !document.getElementById('add').hidden`),
+		chromedp.Click(`#add`, chromedp.ByQuery),
+		wait(`!!window.releaseCreate`),
+		mountList,
+		wait(`window.calls.filter(c => c.endsWith('/passkey/list')).length === 1`),
+		chromedp.Sleep(100*time.Millisecond),
+		chromedp.Evaluate(`window.releaseCreate('NotAllowedError')`, nil),
+		wait(`window.accepted.length === 1`),
+		chromedp.Evaluate(`window.accepted`, &cancelled),
+	); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	if !slices.Equal(cancelled, []int{0}) {
+		t.Errorf("signals after a cancelled add %v, want one fresh read ([0])", cancelled)
 	}
 
 	// The proof goes as the button would have submitted it.

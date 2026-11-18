@@ -1193,8 +1193,7 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, user date
 		}
 		// A dry run counts what a retry would reach: each failed store
 		// with what was kept for it. It writes nothing.
-		_, rerr, userFor := a.retainedUsers(ctx, dialect, cfg.tenant, user)
-		return report, errors.Join(rerr, a.eraseStores(ctx, user, true, &report, userFor, nil))
+		return report, a.eraseStoresDry(ctx, dialect, cfg.tenant, user, &report)
 	}
 	if err := tx.Commit(); err != nil {
 		return report, fmt.Errorf("framework: erase: commit: %w", err)
@@ -1208,86 +1207,6 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, user date
 		objErr = a.eraseStoredObjects(ctx, deletable)
 	}
 	return report, errors.Join(objErr, a.eraseStoresRetained(ctx, dialect, cfg.tenant, user, &report))
-}
-
-// eraseStoresRetained runs the store erasers after the SQL commit. Each
-// store that failed before gets the identities kept for it, and the
-// stores' outcome updates what is kept: see eraseRetention.
-func (a *App) eraseStoresRetained(ctx context.Context, dialect migrate.Dialect, tenant string, user datexport.ErasedUser, rep *EraseReport) error {
-	ret, rerr, userFor := a.retainedUsers(ctx, dialect, tenant, user)
-	outcome := map[string]storeOutcome{}
-	storeErr := a.eraseStores(ctx, user, false, rep, userFor, outcome)
-	var held []string
-	for name, o := range outcome {
-		if o.incomplete {
-			held = append(held, name)
-		}
-	}
-	if len(held) > 0 {
-		slices.Sort(held)
-		rerr = errors.Join(rerr, fmt.Errorf("framework: erase: whether another account holds a kept identity could not be told, so it was withheld from %s and kept for a retry", strings.Join(held, ", ")))
-	}
-	if !hasResolvedStoreErasers() && ret == nil {
-		return errors.Join(rerr, storeErr)
-	}
-	// The SQL erasure has committed: the bookkeeping must land even when
-	// the request's deadline, or the stores' run time, has used it up.
-	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), retentionWriteTimeout)
-	defer cancel()
-	if err := a.updateRetention(wctx, dialect, tenant, user.ID, ret, outcome); err != nil {
-		err = fmt.Errorf("framework: erase: the identities a retry of the failed stores needs could not be updated: %w", err)
-		return errors.Join(rerr, storeErr, err)
-	}
-	return errors.Join(rerr, storeErr)
-}
-
-// retainedUsers reads what failed erasures kept for user and answers
-// the per-store user each store eraser gets. Each step runs on its own
-// deadline, detached from the request's.
-func (a *App) retainedUsers(ctx context.Context, dialect migrate.Dialect, tenant string, user datexport.ErasedUser) (map[string]retained, error, func(datexport.StoreEraser) (datexport.ErasedUser, bool)) {
-	detached := context.WithoutCancel(ctx)
-	rctx, cancel := context.WithTimeout(detached, retentionWriteTimeout)
-	ret, rerr := a.readRetention(rctx, dialect, tenant, user.ID)
-	cancel()
-	if rerr != nil {
-		rerr = fmt.Errorf("framework: erase: the identities kept by an earlier failed erasure could not be read, so its failed stores got only what resolves now: %w", rerr)
-	}
-	return ret, rerr, func(s datexport.StoreEraser) (datexport.ErasedUser, bool) {
-		hctx, cancel := context.WithTimeout(detached, retentionWriteTimeout)
-		defer cancel()
-		return a.retainedUserFor(hctx, dialect, user, ret[s.Name])
-	}
-}
-
-// eraseStores runs every store eraser on the user userFor gives it (user
-// itself when nil) and, when outcome is set, records there each resolved
-// store's error (nil for a success), the user it was given and whether a
-// kept value was withheld for want of an answer.
-func (a *App) eraseStores(ctx context.Context, user datexport.ErasedUser, dryRun bool, rep *EraseReport, userFor func(datexport.StoreEraser) (datexport.ErasedUser, bool), outcome map[string]storeOutcome) error {
-	var failed []string
-	for _, s := range datexport.AllStoreErasers() {
-		u, incomplete := user, false
-		if userFor != nil {
-			u, incomplete = userFor(s)
-		}
-		n, err := runStoreEraser(ctx, s, u, dryRun)
-		if outcome != nil && s.EraseResolved != nil {
-			outcome[s.Name] = storeOutcome{err: err, user: u, incomplete: incomplete}
-		}
-		if err != nil {
-			failed = append(failed, fmt.Sprintf("%s (%v)", s.Name, err))
-			continue
-		}
-		rep.Stores = append(rep.Stores, EraseTableResult{Name: s.Name, Source: s.Source, Mode: "delete", RowsAffected: n})
-	}
-	if len(failed) == 0 {
-		return nil
-	}
-	if dryRun {
-		return fmt.Errorf("framework: erase dry run: %d store(s) could not be counted: %s", len(failed), strings.Join(failed, "; "))
-	}
-	return fmt.Errorf("framework: erase: rows deleted but %d store(s) failed and may still hold the user's data: %s",
-		len(failed), strings.Join(failed, "; "))
 }
 
 func runStoreEraser(ctx context.Context, s datexport.StoreEraser, user datexport.ErasedUser, dryRun bool) (n int, err error) {

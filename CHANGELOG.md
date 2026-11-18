@@ -189,9 +189,11 @@ few lines, and link the PR or the docs page for the rest.
   404, not 401.** The message is the same, and the browser can now tell
   the password manager to drop that passkey.
 - **`AuthConfig.CanonicalizeEmail` must be idempotent, and Init now checks
-  it.** An override that moves an address it already canonicalized fails
-  boot with the address named, and an address it moves at runtime is
-  refused with `invalid_email`.
+  it.** Init runs the override over a fixed set of probe addresses and
+  fails boot, naming the address, when it moves one it already
+  canonicalized. A clean boot does not prove the override idempotent for
+  every address: one it moves at runtime is refused with
+  `invalid_email`.
 - **A layout's view-transition CSS loads with its layer, not in app.css.**
   `app.NewLayout` registers the layout's `TransitionCSS()` as a component
   sheet of its own (`Layout.TransitionSheet()`), and the layer root

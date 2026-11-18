@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -327,7 +328,7 @@ func TestInconclusiveHolderCheckKeepsTheRow(t *testing.T) {
 	if _, ok := got.Identity(datexport.IdentityEmail); ok {
 		t.Fatalf("an unchecked kept value reached the store: %+v", got)
 	}
-	if n := countWhere(t, db, eraseIdentitiesTable, "store", "b"); n != 1 {
+	if n := countWhere(t, db, eraseIdentitiesTable, "store", "test/b"); n != 1 {
 		t.Fatalf("rows for b after an inconclusive check: %d, want 1", n)
 	}
 }
@@ -385,6 +386,16 @@ func TestExpiredRowDoesNotBlockANewFailure(t *testing.T) {
 	}
 }
 
+// fakeRetentionClock pins the retention clock for a test.
+func fakeRetentionClock(t *testing.T, at time.Time) *time.Time {
+	t.Helper()
+	now := at
+	old := retentionNow
+	retentionNow = func() time.Time { return now }
+	t.Cleanup(func() { retentionNow = old })
+	return &now
+}
+
 // A kept value that expires while earlier stores run is not handed to a
 // later store.
 func TestRetentionExpiryIsCheckedAtHandoff(t *testing.T) {
@@ -392,11 +403,14 @@ func TestRetentionExpiryIsCheckedAtHandoff(t *testing.T) {
 	defer db.Close()
 	createMagicLinkTables(t, db)
 	registerMagicLinkEraseScenario(t)
-	seedRetention(t, db, "", "u1", "b-late", "u1@x.test", time.Now().Add(1*time.Second))
-	// Stores run in name order: a-slow first.
+	start := time.Now()
+	clock := fakeRetentionClock(t, start)
+	seedRetention(t, db, "", "u1", "b-late", "u1@x.test", start.Add(10*time.Second))
+	// Stores run in name order: a-slow first, and the clock passes the
+	// row's expiry while it runs.
 	regStore(t, datexport.StoreEraser{Name: "a-slow", Source: "test",
 		EraseResolved: func(context.Context, datexport.ErasedUser, bool) (int, error) {
-			time.Sleep(2100 * time.Millisecond)
+			*clock = start.Add(20 * time.Second)
 			return 0, nil
 		}})
 	var got datexport.ErasedUser
@@ -413,6 +427,32 @@ func TestRetentionExpiryIsCheckedAtHandoff(t *testing.T) {
 	}
 	if _, ok := got.Identity(datexport.IdentityEmail); ok {
 		t.Fatalf("an identity that expired during the run reached a later store: %+v", got)
+	}
+}
+
+// A value whose holder lookup finishes after its expiry is not handed
+// over.
+func TestRetentionExpiryIsRecheckedAfterTheLookup(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	registerMagicLinkEraseScenario(t)
+	start := time.Now()
+	clock := fakeRetentionClock(t, start)
+	seedRetention(t, db, "", "u1", "s", "u1@x.test", start.Add(10*time.Second))
+	heldCheckFault = func() error { *clock = start.Add(20 * time.Second); return nil }
+	t.Cleanup(func() { heldCheckFault = nil })
+	var got datexport.ErasedUser
+	regStore(t, datexport.StoreEraser{Name: "s", Source: "test",
+		EraseResolved: func(_ context.Context, u datexport.ErasedUser, _ bool) (int, error) {
+			got = u
+			return 0, nil
+		}})
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got.Identity(datexport.IdentityEmail); ok {
+		t.Fatalf("a value that expired during its lookup reached the store: %+v", got)
 	}
 }
 
@@ -439,5 +479,218 @@ func TestDryRunRetryUsesKeptIdentities(t *testing.T) {
 	}
 	if n := countWhere(t, db, eraseIdentitiesTable, "user_id", "u1"); n != 1 {
 		t.Fatalf("a dry run changed the kept rows: %d", n)
+	}
+}
+
+// A dry run whose holder check cannot answer says its count may be short.
+func TestDryRunReportsAWithheldValue(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	registerMagicLinkEraseScenario(t)
+	seedRetention(t, db, "", "u1", "s", "u1@x.test", time.Now().Add(time.Hour))
+	heldCheckFault = func() error { return errors.New("connection reset") }
+	t.Cleanup(func() { heldCheckFault = nil })
+	regStore(t, datexport.StoreEraser{Name: "s", Source: "test",
+		EraseResolved: func(context.Context, datexport.ErasedUser, bool) (int, error) { return 0, nil }})
+	if _, err := app.EraseUserData(context.Background(), "u1", WithEraseDryRun()); err == nil || !strings.Contains(err.Error(), "could not be told") {
+		t.Fatalf("dry run with an inconclusive holder check: %v", err)
+	}
+}
+
+// Rows are keyed by the store's source and name: a store of another
+// source under the same name gets nothing kept for the first.
+func TestRetentionIsKeyedBySourceAndName(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	registerMagicLinkEraseScenario(t)
+	seedRetention(t, db, "", "u1", "s", "u1@x.test", time.Now().Add(time.Hour))
+	var got datexport.ErasedUser
+	regStore(t, datexport.StoreEraser{Name: "s", Source: "other",
+		EraseResolved: func(_ context.Context, u datexport.ErasedUser, _ bool) (int, error) {
+			got = u
+			return 0, nil
+		}})
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got.Identity(datexport.IdentityEmail); ok {
+		t.Fatalf("another source's store got the kept email: %+v", got)
+	}
+	if n := countWhere(t, db, eraseIdentitiesTable, "store", "test/s"); n != 1 {
+		t.Fatalf("rows for test/s after another store succeeded: %d, want 1", n)
+	}
+}
+
+// A resolver whose Canonicalize panics on a row gives no answer: the
+// value is withheld and its row kept. NULL and empty values are skipped
+// as resolution skips them.
+func TestCanonicalizerPanicIsNoAnswer(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	datexport.Reset(t)
+	t.Cleanup(func() { datexport.Reset(t) })
+	datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
+		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
+		Canonicalize: func(s string) string {
+			if s == "" || strings.HasPrefix(s, "boom") {
+				panic("bad address")
+			}
+			return strings.ToLower(s)
+		},
+	})
+	datexport.RegisterEraser(datexport.DataEraser{Name: "auth_users", Source: "auth", Table: "auth_users", Column: "id", Mode: datexport.EraseDelete})
+	if _, err := db.Exec(`INSERT INTO auth_users (id, email) VALUES ('u3', '')`); err != nil {
+		t.Fatal(err)
+	}
+	seedRetention(t, db, "", "u1", "s", "u1@x.test", time.Now().Add(time.Hour))
+	var got datexport.ErasedUser
+	regStore(t, datexport.StoreEraser{Name: "s", Source: "test",
+		EraseResolved: func(_ context.Context, u datexport.ErasedUser, _ bool) (int, error) {
+			got = u
+			return 0, nil
+		}})
+	// The empty row is skipped, so the value is handed over.
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatalf("an empty resolver value was folded: %v", err)
+	}
+	if e, _ := got.Identity(datexport.IdentityEmail); e != "u1@x.test" {
+		t.Fatalf("store got %+v, want the kept email", got)
+	}
+	// A panic on a real value is no answer.
+	seedRetention(t, db, "", "u1", "s", "u1@x.test", time.Now().Add(time.Hour))
+	if _, err := db.Exec(`INSERT INTO auth_users (id, email) VALUES ('u4', 'boom@x.test')`); err != nil {
+		t.Fatal(err)
+	}
+	got = datexport.ErasedUser{}
+	if _, err := app.EraseUserData(context.Background(), "u1"); err == nil || !strings.Contains(err.Error(), "could not be told") {
+		t.Fatalf("a panicking Canonicalize: %v, want the withheld error", err)
+	}
+	if _, ok := got.Identity(datexport.IdentityEmail); ok {
+		t.Fatalf("the store got a value whose check panicked: %+v", got)
+	}
+	if n := countWhere(t, db, eraseIdentitiesTable, "store", "test/s"); n != 1 {
+		t.Fatalf("rows after a panicking check: %d, want 1", n)
+	}
+}
+
+// Without a Canonicalize, a case variant outside ASCII counts as held.
+func TestNonASCIICaseVariantIsHeld(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	registerMagicLinkEraseScenario(t)
+	if _, err := db.Exec(`INSERT INTO auth_users (id, email) VALUES ('u2', 'Équipe@x.test')`); err != nil {
+		t.Fatal(err)
+	}
+	seedRetention(t, db, "", "u1", "s", "équipe@x.test", time.Now().Add(time.Hour))
+	var got datexport.ErasedUser
+	regStore(t, datexport.StoreEraser{Name: "s", Source: "test",
+		EraseResolved: func(_ context.Context, u datexport.ErasedUser, _ bool) (int, error) {
+			got = u
+			return 0, nil
+		}})
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got.Identity(datexport.IdentityEmail); ok {
+		t.Fatalf("a non-ASCII case variant another account holds reached the store: %+v", got)
+	}
+}
+
+// A success removes only the rows it read: one a concurrent erasure
+// wrote while the store ran stays.
+func TestSuccessKeepsRowsWrittenSinceItsRead(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	registerMagicLinkEraseScenario(t)
+	seedRetention(t, db, "", "u1", "s", "old@x.test", time.Now().Add(time.Hour))
+	regStore(t, datexport.StoreEraser{Name: "s", Source: "test",
+		EraseResolved: func(context.Context, datexport.ErasedUser, bool) (int, error) {
+			seedRetention(t, db, "", "u1", "s", "new@x.test", time.Now().Add(time.Hour))
+			return 0, nil
+		}})
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if n := countWhere(t, db, eraseIdentitiesTable, "value", "new@x.test"); n != 1 {
+		t.Fatal("a success removed a row a concurrent erasure wrote after its read")
+	}
+	if n := countWhere(t, db, eraseIdentitiesTable, "value", "old@x.test"); n != 0 {
+		t.Fatal("a success left the row it read")
+	}
+}
+
+// A store that fails again with a new identity keeps it beside the old
+// one, without moving the old one's expiry, and the next retry gives the
+// store each.
+func TestRepeatedFailureKeepsEachIdentity(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	if _, err := db.Exec(`INSERT INTO auth_users (id, email) VALUES ('u1','b@x.test')`); err != nil {
+		t.Fatal(err)
+	}
+	registerMagicLinkEraseScenario(t)
+	first := time.Now().Add(time.Hour).Truncate(time.Second)
+	seedRetention(t, db, "", "u1", "s", "a@x.test", first)
+	fail := true
+	var got []string
+	regStore(t, datexport.StoreEraser{Name: "s", Source: "test",
+		EraseResolved: func(_ context.Context, u datexport.ErasedUser, _ bool) (int, error) {
+			e, _ := u.Identity(datexport.IdentityEmail)
+			got = append(got, e)
+			if fail {
+				return 0, errors.New("down")
+			}
+			return 0, nil
+		}})
+	if _, err := app.EraseUserData(context.Background(), "u1"); err == nil {
+		t.Fatal("a failed store did not fail the erasure")
+	}
+	var exp int64
+	if err := db.QueryRow(`SELECT expires_at FROM ` + eraseIdentitiesTable + ` WHERE value = 'a@x.test'`).Scan(&exp); err != nil || exp != first.Unix() {
+		t.Fatalf("the old row's expiry: %d %v, want %d", exp, err, first.Unix())
+	}
+	if n := countWhere(t, db, eraseIdentitiesTable, "value", "b@x.test"); n != 1 {
+		t.Fatal("the new identity the store failed with was not kept")
+	}
+	fail, got = false, nil
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"a@x.test", "b@x.test"}) {
+		t.Fatalf("the retry gave the store %v, want both kept identities", got)
+	}
+	if n := countWhere(t, db, eraseIdentitiesTable, "store", "test/s"); n != 0 {
+		t.Fatalf("rows left after the retry succeeded: %d", n)
+	}
+}
+
+// A kept value already expired at its turn is not looked up at all, so a
+// lookup that would fail does not hold its store's rows.
+func TestExpiredValueIsNotLookedUp(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	registerMagicLinkEraseScenario(t)
+	start := time.Now()
+	clock := fakeRetentionClock(t, start)
+	seedRetention(t, db, "", "u1", "b", "u1@x.test", start.Add(10*time.Second))
+	regStore(t, datexport.StoreEraser{Name: "a", Source: "test",
+		EraseResolved: func(context.Context, datexport.ErasedUser, bool) (int, error) {
+			*clock = start.Add(20 * time.Second)
+			return 0, nil
+		}})
+	regStore(t, datexport.StoreEraser{Name: "b", Source: "test",
+		EraseResolved: func(context.Context, datexport.ErasedUser, bool) (int, error) { return 0, nil }})
+	heldCheckFault = func() error { return errors.New("connection reset") }
+	t.Cleanup(func() { heldCheckFault = nil })
+	if _, err := app.EraseUserData(context.Background(), "u1"); err != nil {
+		t.Fatalf("an expired value was looked up: %v", err)
 	}
 }

@@ -238,7 +238,7 @@ invariants:
       - test: framework.TestEraseUserData_StoreEraserGetsResolvedIdentities
       - test: core/datexport.TestErasedUserIdentity
   - id: retry-gets-the-first-runs-identities
-    rule: When an EraseResolved store eraser fails, the erasure writes the identities it gave that store to gofastr_erase_identities under its tenant, user and store name, on a deadline detached from the request's that starts after the stores ran, creating the table only when it is absent; a later erasure (or a dry run of one) of the same user in the same tenant gives each store only the identities kept for that store that are unexpired at its turn, only where nothing resolves now, and none that a live row of another account holds under the resolver's fold (checked just before the store, not under a lock with it); a value whose check cannot answer is withheld and its row kept, with an error; the SQL planes use only what resolves now; a store's rows go once it succeeds with nothing withheld; nothing is kept when only an id-keyed store fails.
+    rule: When an EraseResolved store eraser fails, the erasure writes the identities that resolved for the user to gofastr_erase_identities, one row per tenant, user, store (its source and name), kind and value, on a deadline detached from the request's that starts after the stores ran, creating the table only when it is absent; a later erasure (or a dry run of one) of the same user in the same tenant gives each store only the values kept for that store, running it once per further value of a kind, only where nothing resolves now, none expired by its turn or by the end of its holder check, and none that another account's row holds by the same value, a Unicode case variant, or the resolver's Canonicalize (every row read, NULL and empty skipped; checked just before the store, not under a lock with it); a value whose check cannot answer (an error, or a panicking Canonicalize) is withheld and its row kept, with an error, the dry run's too; the SQL planes use only what resolves now; a store's success with nothing withheld removes the rows read for it before it ran and no row written since; nothing is kept when only an id-keyed store fails.
     enforced_by:
       - test: framework.TestEraseUserData_RetryKeepsResolvedIdentities
       - test: framework.TestEraseUserData_KeptIdentitiesArePerTenant
@@ -254,8 +254,16 @@ invariants:
       - test: framework.TestHolderCheckUsesTheResolversFold
       - test: framework.TestRetentionExpiryIsCheckedAtHandoff
       - test: framework.TestDryRunRetryUsesKeptIdentities
+      - test: framework.TestRetentionExpiryIsRecheckedAfterTheLookup
+      - test: framework.TestExpiredValueIsNotLookedUp
+      - test: framework.TestDryRunReportsAWithheldValue
+      - test: framework.TestRetentionIsKeyedBySourceAndName
+      - test: framework.TestCanonicalizerPanicIsNoAnswer
+      - test: framework.TestNonASCIICaseVariantIsHeld
+      - test: framework.TestSuccessKeepsRowsWrittenSinceItsRead
+      - test: framework.TestRepeatedFailureKeepsEachIdentity
   - id: erase-retention-expires
-    rule: A kept identity expires 30 days after the failure that first kept it, a failed retry neither extends it nor writes back a row a concurrent retry removed, every erasure that reaches the table deletes expired rows whatever its outcome and before it writes a new failure's rows, and a running App deletes them at start and every hour (App.SweepErasureRetention).
+    rule: A kept identity expires 30 days after the failure that first kept it, a failed retry neither extends it nor writes back a value it got only from retention (a row a concurrent retry removed stays removed) but adds the identities that resolved on that attempt with their own 30 days, every erasure that reaches the table deletes expired rows whatever its outcome and before it writes a new failure's rows, and a running App deletes them at start and every hour (App.SweepErasureRetention).
     enforced_by:
       - test: framework.TestRetryKeepsTheFirstExpiryAndNeverRestores
       - test: framework.TestEraseFailureWithNothingToKeepSweeps
@@ -273,7 +281,7 @@ decisions:
   - id: keep-identities-until-the-stores-erase
     date: 2026-11-17
     status: accepted
-    decision: After an EraseResolved store eraser fails, the erasure keeps the identities it gave that store in one framework table, per store, for at most 30 days from that failure, until a retry of that store succeeds, so the retry hands it the same values (issue 759). A retry gives a kept value only to the store that failed and never when another account now holds it, because a store keyed by email cannot tell the old owner's data from the new owner's. That check runs just before each store, not under a lock with it, so an account that takes the address between the check and the store's delete can lose its tokens for that address. Closing that window would need every store to take part in one lock with the user tables, which arbitrary stores cannot.
+    decision: After an EraseResolved store eraser fails, the erasure keeps the identities it gave that store in one framework table, per store, for at most 30 days from that failure, until a retry of that store succeeds, so the retry hands it the same values (issue 759). A retry gives a kept value only to the store that failed and never when another account now holds it, because a store keyed by email cannot tell the old owner's data from the new owner's. That check runs just before each store, not under a lock with it, so an account that takes the address between the check and the store's delete can lose its tokens for that address. Closing that window would need every store to take part in one lock with the user tables, which arbitrary stores cannot. Rows are keyed by the store's source and registration name, because a restart registers every store again under the same name and a retry must find its rows across one; a different store registered under a freed name is taken as the same store.
     rejected:
       - option: Make each store find the value again on a retry, as battery/auth's in-memory eraser reads its user store.
         why: A store keyed only by an email has nowhere to read it from once the user row is gone, and every such store would have to solve it again.

@@ -1251,7 +1251,8 @@ func TestEraseUserData_KeptIdentitiesExpire(t *testing.T) {
 	}
 }
 
-// seedRetention writes one kept identity as a failed erasure would.
+// seedRetention writes one kept identity as a failed erasure would, for
+// the store registered with Source "test" and Name store.
 func seedRetention(t *testing.T, db *sql.DB, tenant, user, store, email string, expires time.Time) {
 	t.Helper()
 	ctx := context.Background()
@@ -1259,7 +1260,7 @@ func seedRetention(t *testing.T, db *sql.DB, tenant, user, store, email string, 
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO `+eraseIdentitiesTable+` (tenant, user_id, store, kind, value, expires_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		tenant, user, store, int64(datexport.IdentityEmail), email, expires.Unix()); err != nil {
+		tenant, user, "test/"+store, int64(datexport.IdentityEmail), email, expires.Unix()); err != nil {
 		t.Fatal(err)
 	}
 }

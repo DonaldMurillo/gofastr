@@ -130,7 +130,7 @@ invariants:
       - test: battery/auth.TestPasskeyModuleRules
       - test: battery/auth.TestPasskeyBrowserManageAndReauth
   - id: list-signal-is-never-stale
-    rule: The browser module signals a passkey list only when its read overlapped no add or remove (none started after it began, and none was running when it answered), and reads a fresh list after each change.
+    rule: The browser module signals a passkey list only when its read overlapped no add or remove (none started after it began, and none was running when it answered), reads a fresh list after each change, and after a change that failed (a cancelled prompt) reads again each list it dropped.
     enforced_by:
       - test: battery/auth.TestPasskeyModuleRules
   - id: step-up-form-submits-as-its-button
