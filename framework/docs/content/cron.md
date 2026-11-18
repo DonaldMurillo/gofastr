@@ -207,7 +207,8 @@ also records the minute it fired in a `gofastr_cron_ticks` table (one row
 per key, created on first use) with a conditional upsert, and a replica
 that finds the minute, or a later one, already claimed skips the tick.
 That claim is what keeps the minute from running twice, so the scheduler
-releases the lock as soon as the claim is made, before the jobs start. A
+starts releasing the lock as soon as the claim is made, before it
+dispatches the jobs. A
 long job does not hold the lock: a 20-minute `@hourly` report runs while
 the `* * * * *` jobs keep firing every minute, and its own next firing
 starts concurrently if it overruns (see "No overlap protection" above).
@@ -215,7 +216,13 @@ The lock's connection is pinned only for the lock and the claim. When
 the release's `pg_advisory_unlock` fails on a live session (a cancelled
 statement, a statement timeout), the connection is retired rather than
 returned to the pool, so ending its session releases the lock and
-another replica can lead. Each
+another replica can lead.
+
+Called through plain `Acquire`, by the scheduler for a custom lease
+without `AcquireTick` or by your own code, the lock's connection stays
+pinned for as long as the lease is held. Work under the lease that uses
+the same `*sql.DB` then needs a second connection: with
+`db.SetMaxOpenConns(1)` it waits forever on the pinned one. Each
 tick fires **at most once** across replicas:
 
 - It is not exactly once. A replica that claims a minute and then crashes
@@ -234,7 +241,7 @@ instead. A custom lease (Redis, etcd, …) only needs to satisfy the
 implements `TickLeaderElection`, whose `AcquireTick(ctx, tick)` receives
 the tick minute (UTC) and must hold only when it took the lease and
 atomically recorded that minute as newer than the last claim; the
-scheduler releases it as soon as `AcquireTick` holds. A lease with
+scheduler starts releasing it as soon as `AcquireTick` holds. A lease with
 `Acquire` alone keeps mutual exclusion while it is held, and nothing
 more: the scheduler holds it until that tick's jobs finish (never a job
 from an earlier tick), so on such a lease a long job can block the

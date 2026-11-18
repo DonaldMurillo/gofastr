@@ -34,7 +34,7 @@ invariants:
       - test: framework/fanout.TestSubscribeRejectsNilAndNonUTF8Topic
       - test: framework/fanout.TestPostgres_SubscribeRejectsBadUTF8Topic
   - id: subscriber-cannot-stall-the-dispatcher
-    rule: Each subscriber runs on its own goroutine behind a drop-oldest queue and the dispatcher recovers a panic from it, so a slow, stuck or panicking subscriber holds back no other topic.
+    rule: Each subscriber's callback runs on its own goroutine behind a drop-oldest core/fanout.SubscriberQueue, whose worker recovers a panic in the callback, and the dispatcher recovers a panic from a subscriber's send, so a slow, stuck or panicking subscriber holds back no other topic.
     enforced_by:
       - test: framework/fanout.TestDeliverSurvivesStuckSubscriber
       - test: framework/fanout.TestPostgres_SlowSubDoesNotStallOtherTopic
