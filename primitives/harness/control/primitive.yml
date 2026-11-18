@@ -1,0 +1,20 @@
+primitive: harness.control
+summary: The harness control plane - the Client interface every transport (inproc, rest, ws, mcpserver) implements, the transport-neutral wire protocol, and the seat table that caps long-lived control streams per credential.
+code:
+  - framework/experimental/harness/control/client.go
+  - framework/experimental/harness/control/doc.go
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: engine-sees-only-client
+    rule: The engine and the multiplexer drive a controller only through the control.Client interface and never type-assert it to a concrete transport type.
+    judge: Does this change make engine or multiplex code type-assert or type-switch a control.Client to a transport's concrete type, or branch on which transport a client came from?
+decisions:
+  - id: one-client-interface
+    date: 2026-11-18
+    status: accepted
+    decision: Every transport hands the multiplexer a control.Client, and permission middleware reads only its IdentityClass, so adding a transport touches no engine code.
+    rejected:
+      - option: Let the engine special-case transports (for example a direct path for inproc).
+        why: Each transport would then carry its own routing and permission behaviour, and a fix in one would miss the others.
+    upholds: [engine-sees-only-client]

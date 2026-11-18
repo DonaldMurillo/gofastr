@@ -1,5 +1,2 @@
-// Package web is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package web is the harness's bundled browser client: a loopback sidecar that streams a session's events over SSE and takes typed input.
 package web

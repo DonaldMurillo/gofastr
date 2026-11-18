@@ -1,18 +1,8 @@
-// Package ws implements the WebSocket transport for the control
-// plane. Pure stdlib + crypto/sha1; RFC 6455 frame format.
-//
-// Frames carry the canonical event envelope verbatim per the
-// architecture doc § Canonical event envelope:
-//
-//	{"frame":"command","body": <Command envelope>}    client → engine
-//	{"frame":"event","body":   <Event envelope>}      engine → client
-//
-// Reconnect resumes from a `lastEventId` query param on the
-// connection URL.
 package ws
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"crypto/sha1"
 	"encoding/base64"
@@ -39,10 +29,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
 
-// Handshake magic per RFC 6455.
 const handshakeMagic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
-// Opcode constants from RFC 6455 §5.2.
 const (
 	opcodeContinuation = 0x0
 	opcodeText         = 0x1
@@ -52,26 +40,22 @@ const (
 	opcodePong         = 0xA
 )
 
-// Handler is the WebSocket-upgrading HTTP handler. Configure with the
-// mux + auth before mounting.
+// Handler upgrades GET /v1/ws?session=<id>[&lastEventId=N] to a WebSocket control connection.
 type Handler struct {
 	Mux         *multiplex.Mux
 	Encoder     *auth.Encoder
 	Revocations *auth.RevocationList
 
-	// Optional Host/Origin guards (same shape as REST).
-	AllowedHosts   []string
+	// AllowedHosts are the exact Host headers admitted; empty admits any.
+	AllowedHosts []string
+	// AllowedOrigins are the exact browser Origins admitted; empty admits none.
 	AllowedOrigins []string
-
-	// Seats bounds the concurrent upgraded sockets one token principal
-	// may hold (core/stream's seat policy). Nil shares the process-wide
-	// control.DefaultSeatTable with the REST and MCP-HTTP transports,
-	// so the cap counts per credential across all three.
+	// Seats caps the sockets per token; nil uses control.DefaultSeatTable.
 	Seats *control.SeatTable
+
+	recheck time.Duration
 }
 
-// seatTable resolves the seat table: the wired Seats field, else the
-// process-wide table shared with the REST and MCP-HTTP transports.
 func (h *Handler) seatTable() *control.SeatTable {
 	if h.Seats != nil {
 		return h.Seats
@@ -79,7 +63,7 @@ func (h *Handler) seatTable() *control.SeatTable {
 	return control.DefaultSeatTable()
 }
 
-// ServeHTTP implements http.Handler. Path is /v1/ws?session=<id>[&lastEventId=N].
+// ServeHTTP checks Host, Origin, token, session scope and the upgrade request, then upgrades.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !h.hostOK(r) {
 		i18n.HTTPError(w, r, http.StatusForbidden, i18n.ReasonCrossOriginHost)
@@ -90,10 +74,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify token (URL param or X-Harness-Token header; the
-	// WebSocket handshake can't set arbitrary headers from a
-	// browser, so accept the URL param for browser clients and the
-	// header for CLI clients).
 	tok := r.URL.Query().Get("token")
 	if tok == "" {
 		tok = r.Header.Get("X-Harness-Token")
@@ -122,8 +102,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		i18n.HTTPError(w, r, http.StatusForbidden, reasonTokenUnbound)
 		return
 	}
-	// A reconnecting client names the last event id it saw. A malformed
-	// one is refused: reading it as zero would replay the whole window.
 	var since uint64
 	rawSince := r.URL.Query().Get("lastEventId")
 	resume := rawSince != ""
@@ -134,21 +112,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The whole RFC 6455 opening handshake, before the seat and the
-	// hijack: a POST, or a request with no Connection token, version 13
-	// or 16-byte key, got a 101 a proxy in front never expected.
-	// originOK ran above, so the shared check admits any Origin here.
 	if err := stream.CheckUpgradeRequest(r, func(*http.Request) bool { return true }); err != nil {
 		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonWebSocketRequired)
 		return
 	}
-	// Seat the upgrade per token principal BEFORE the Hijack, so a
-	// refusal answers 429 at connect (core/stream's seat policy; the
-	// REST twin seats its SSE stream the same way). Each accepted
-	// socket parks its run/eventPump/revocationWatch goroutines for
-	// the life of the TCP connection, so a 17th same-token dial must
-	// not be as cheap as the 1st. run() releases the seat when the
-	// socket's loops exit.
 	seat, seated := h.seatTable().AcquireSeat(string(claims.JTI), 0, stream.SeatOverflowRefuse)
 	if !seated {
 		w.Header().Set("Retry-After", "1")
@@ -187,12 +154,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		revocations: h.Revocations,
 		seats:       h.seatTable(),
 		seat:        seat,
+		recheck:     cmp.Or(h.recheck, revocationRecheck),
 		resume:      resume,
 		since:       since,
 	}
-	// Use a fresh background context for the goroutine, the
-	// handler returns immediately after Hijack, which would cancel
-	// r.Context() and kill the connection.
 	go wsConn.run(context.Background())
 }
 
@@ -203,16 +168,6 @@ func (h *Handler) hostOK(r *http.Request) bool {
 	return slices.Contains(h.AllowedHosts, r.Host)
 }
 
-// originOK reports whether the request's Origin is permitted.
-//
-// An originless request (curl, the CLI client, a Unix-socket caller)
-// passes: only browsers set Origin, so its absence can't prove an
-// attack. A browser-set Origin must be explicitly allow-listed:
-// an empty AllowedOrigins denies rather than admits, matching the
-// convention core/middleware/cors.go already states ("empty
-// AllowedOrigins means deny-all (not allow-all)"). The inverse
-// default let any web page open a WebSocket to a loopback-bound
-// harness, since WebSocket handshakes get no CORS preflight.
 func (h *Handler) originOK(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
@@ -221,8 +176,6 @@ func (h *Handler) originOK(r *http.Request) bool {
 	return slices.Contains(h.AllowedOrigins, origin)
 }
 
-// completeHandshake writes the 101 Switching Protocols response.
-// ServeHTTP has checked the request with stream.CheckUpgradeRequest.
 func completeHandshake(rw *bufio.ReadWriter, r *http.Request) error {
 	key := r.Header.Get("Sec-WebSocket-Key")
 	h := sha1.New()
@@ -238,7 +191,7 @@ func completeHandshake(rw *bufio.ReadWriter, r *http.Request) error {
 	return rw.Flush()
 }
 
-// Conn is one upgraded WebSocket connection wrapped as a control.Client.
+// Conn is one upgraded WebSocket connection, attached to the multiplexer as a control.Client.
 type Conn struct {
 	netConn  net.Conn
 	reader   *bufio.Reader
@@ -248,46 +201,27 @@ type Conn struct {
 	mux      *multiplex.Mux
 	session  ids.SessionID
 
-	// seats/seat hold this socket's admission against the shared
-	// control-plane seat table; run releases the seat when the
-	// socket's loops exit.
-	seats *control.SeatTable
-	seat  *control.Seat
+	seats   *control.SeatTable
+	seat    *control.Seat
+	recheck time.Duration
 
-	// resume and since come from the lastEventId query param: the
-	// socket first replays what came after since, then goes live.
 	resume bool
 	since  uint64
 
-	// claims is the verified token scope for this connection. Every
-	// inbound command frame is checked against it, not just the
-	// handshake: see handleText.
-	claims auth.Claims
-
-	// The live credential behind those claims: auth.Verify ran in
-	// ServeHTTP before the 101, and both the per-frame gate in
-	// handleText and the periodic revocationWatch re-run it against
-	// these so a Revoke(jti) reaches an ESTABLISHED socket, not just
-	// new handshakes.
+	claims      auth.Claims
 	token       string
 	encoder     *auth.Encoder
 	revocations *auth.RevocationList
 
-	mu sync.Mutex // guards writes
+	mu sync.Mutex
 }
 
-// run pumps frames: client→engine commands inbound, engine→client
-// events outbound. Returns when the socket closes.
 func (c *Conn) run(parentCtx context.Context) {
 	defer c.netConn.Close()
-	// The seat taken at admission is freed exactly when the socket's
-	// loops end (voluntary close, protocol error, or revocation).
 	defer c.seats.ReleaseSeat(c.seat)
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
-	// Displaced by an EvictOldest admission: the only way to unblock
-	// the read loop is to close the socket under it.
 	go func() {
 		select {
 		case <-c.seat.Done:
@@ -296,23 +230,12 @@ func (c *Conn) run(parentCtx context.Context) {
 		}
 	}()
 
-	// Attach to the multiplex.
 	if err := c.mux.Attach(c.session, c); err != nil {
 		c.writeText(controlError("attach failed: " + err.Error()))
 		return
 	}
 	defer c.mux.Detach(c.session, c.clientID)
 
-	// Subscribe to the bus BEFORE entering the read loop. The 101
-	// response already went out in ServeHTTP, so a command frame may
-	// be buffered and ready the moment readFrame runs; if that
-	// command were dispatched before the subscription registered, the
-	// turn's events would broadcast to zero subscribers and be lost:
-	// Bus.broadcast delivers only to current subscribers and the live
-	// path has no replay. Subscribing synchronously here makes
-	// subscribe-before-dispatch a guarantee instead of a scheduling
-	// accident (the old `go subscribePump` lost the whole turn
-	// whenever a loaded runner delayed the pump goroutine).
 	var events <-chan control.EventEnvelope
 	if eng := c.mux.EngineFor(c.session); eng != nil {
 		if c.resume {
@@ -321,17 +244,9 @@ func (c *Conn) run(parentCtx context.Context) {
 			events = eng.Bus.Subscribe(ctx)
 		}
 	}
-	// Engine→client pump.
 	go c.eventPump(ctx, events)
-	// Revocation watch: auth.Verify ran once in ServeHTTP; without a
-	// periodic re-check, Revoke(jti) would terminate nothing until the
-	// client happened to speak (the read loop blocks on input).
 	go c.revocationWatch(ctx)
 
-	// Client→engine read loop. A message may arrive in fragments (RFC
-	// 6455 §5.4): a TEXT frame without FIN opens it, continuation frames
-	// extend it, the one with FIN completes it, and control frames may
-	// fall between them.
 	var msg []byte
 	assembling := false
 	for {
@@ -342,15 +257,12 @@ func (c *Conn) run(parentCtx context.Context) {
 			}
 			return
 		}
-		// A control frame is never fragmented (§5.5).
 		if op >= opcodeClose && !fin {
 			c.writeClose()
 			return
 		}
 		switch op {
 		case opcodeText, opcodeContinuation:
-			// A continuation opens nothing, and a TEXT frame cannot
-			// start while a message is open.
 			if (op == opcodeText) == assembling {
 				c.writeClose()
 				return
@@ -367,20 +279,15 @@ func (c *Conn) run(parentCtx context.Context) {
 		case opcodePing:
 			c.writeFrame(opcodePong, payload)
 		case opcodePong:
-			// ignore
 		default:
-			// Unsupported opcode; close.
 			c.writeClose()
 			return
 		}
 	}
 }
 
-// revocationWatch closes the socket when the token that opened it stops
-// verifying (revoked or expired): the read loop blocks on input, so an
-// idle socket would otherwise outlive its credential indefinitely.
 func (c *Conn) revocationWatch(ctx context.Context) {
-	t := time.NewTicker(10 * time.Second)
+	t := time.NewTicker(c.recheck)
 	defer t.Stop()
 	for {
 		select {
@@ -395,7 +302,6 @@ func (c *Conn) revocationWatch(ctx context.Context) {
 	}
 }
 
-// frame envelopes used over the wire.
 type frame struct {
 	Frame string          `json:"frame"`
 	Body  json.RawMessage `json:"body"`
@@ -403,11 +309,6 @@ type frame struct {
 
 func (c *Conn) handleText(ctx context.Context, payload []byte) {
 	var f frame
-	// Strict decode: duplicate and case-folded top-level keys resolve
-	// last-wins under stdlib json, so {"frame":"event","frame":"command"}
-	// would dispatch as a command while any first-read intermediary saw
-	// an event frame. Refuse the ambiguity (handler.UnmarshalStrict) and
-	// answer through the existing bad-frame arm.
 	if err := handler.UnmarshalStrict(payload, &f); err != nil {
 		c.writeText(controlError("bad frame: " + err.Error()))
 		return
@@ -416,11 +317,6 @@ func (c *Conn) handleText(ctx context.Context, payload []byte) {
 		c.writeText(controlError("expected frame=command, got " + f.Frame))
 		return
 	}
-	// Live credential re-check on every command frame: the handshake's
-	// Verify is long past, and revocation's whole point on this plane
-	// is to cut off a compromised operator session immediately — an
-	// established socket must not keep riding claims the gate would now
-	// refuse. Refuse the frame and drop the socket.
 	if _, err := auth.Verify(c.encoder, c.revocations, c.token, time.Now()); err != nil {
 		c.writeText(controlError("token rejected: " + err.Error()))
 		c.writeClose()
@@ -432,22 +328,10 @@ func (c *Conn) handleText(ctx context.Context, payload []byte) {
 		c.writeText(controlError("decode: " + err.Error()))
 		return
 	}
-	// The upgrade checked AllowsSession, but the connection then
-	// dispatched whatever verb arrived on it. A token minted for
-	// SendInput alone could send CancelTurn down the same socket and
-	// nothing looked, while rest.go enforces AllowsCommand for those
-	// exact verbs on every command route. The claims now travel with the
-	// connection so each frame is checked, not just the handshake.
 	if !c.claims.AllowsCommand(cmd.CommandKind()) {
 		c.writeText(controlError("token is not scoped for " + cmd.CommandKind()))
 		return
 	}
-	// The body names its own target session and the mux routes by it.
-	// The upgrade bound this socket to one session; a body naming
-	// another would drive that session's engine with this token's
-	// scope never having been checked against it. Attach and detach
-	// legitimately name a different session, so those are gated by the
-	// token's session scope instead.
 	if sid, ok := commandSession(cmd); ok {
 		switch cmd.(type) {
 		case control.AttachSession, control.DetachSession:
@@ -467,8 +351,6 @@ func (c *Conn) handleText(ctx context.Context, payload []byte) {
 	}
 }
 
-// commandSession returns the session a command body targets, for every
-// command shape that carries one.
 func commandSession(cmd control.Command) (ids.SessionID, bool) {
 	switch v := cmd.(type) {
 	case control.SendInput:
@@ -493,9 +375,6 @@ func commandSession(cmd control.Command) (ids.SessionID, bool) {
 	return "", false
 }
 
-// eventPump forwards bus events to the client. The subscription is
-// created synchronously by run() before the read loop starts. See
-// the ordering comment there; do not move the Subscribe call in here.
 func (c *Conn) eventPump(ctx context.Context, ch <-chan control.EventEnvelope) {
 	if ch == nil {
 		return
@@ -525,13 +404,9 @@ func (c *Conn) eventPump(ctx context.Context, ch <-chan control.EventEnvelope) {
 	}
 }
 
-// ---------- control.Client implementation ----------
-
 func (c *Conn) ID() ids.ClientID                     { return c.clientID }
 func (c *Conn) IdentityClass() control.IdentityClass { return c.identity }
 func (c *Conn) Subscribe(_ context.Context) <-chan control.EventEnvelope {
-	// External clients consume the event stream directly via the
-	// WebSocket frames; nothing to subscribe to in-process.
 	ch := make(chan control.EventEnvelope)
 	close(ch)
 	return ch
@@ -539,28 +414,17 @@ func (c *Conn) Subscribe(_ context.Context) <-chan control.EventEnvelope {
 func (c *Conn) Send(_ context.Context, _ control.Command) error { return nil }
 func (c *Conn) Close() error                                    { return c.netConn.Close() }
 
-// wsPayloadChunk is the read granularity readFrame grows its payload
-// buffer by, so memory tracks bytes actually delivered rather than the
-// length a header claims (core/stream's grown-reader contract).
 const wsPayloadChunk = 32 << 10
 
-// wsMessageLimit caps one frame and one assembled message alike.
 const wsMessageLimit = 16 << 20
 
-// errFrameTooLarge is readFrame's refusal of a frame past its limit.
 var errFrameTooLarge = errors.New("ws: frame too large")
 
-// wsFrameReadTimeout bounds one frame's payload read: net/http no
-// longer manages this connection after Hijack, so without a deadline a
-// half-sent frame holds its buffer (and its socket's goroutines) for
-// the life of the TCP connection.
 const wsFrameReadTimeout = 60 * time.Second
 
-// wsFrameWriteTimeout bounds one frame write, for the same reason: a
-// client that stops reading would otherwise block the writer, and the
-// event pump behind it, for the life of the connection. A var so a test
-// can shrink it.
 var wsFrameWriteTimeout = 10 * time.Second
+
+const revocationRecheck = 10 * time.Second
 
 func (c *Conn) readFrame(room int) (fin bool, op byte, payload []byte, err error) {
 	b0, err := c.reader.ReadByte()
@@ -588,10 +452,6 @@ func (c *Conn) readFrame(room int) (fin bool, op byte, payload []byte, err error
 		}
 		length = binary.BigEndian.Uint64(ext[:])
 	}
-	// A data frame may carry only what is left of the message it adds
-	// to, so an open message and the frame after it never hold more
-	// than the cap between them. A control frame carries 125 bytes at
-	// most (RFC 6455 §5.5).
 	limit := uint64(room)
 	if op >= opcodeClose {
 		limit = 125
@@ -605,13 +465,6 @@ func (c *Conn) readFrame(room int) (fin bool, op byte, payload []byte, err error
 			return false, 0, nil, err
 		}
 	}
-	// Payload.
-	//
-	// Do NOT allocate `length` up front: the peer declares it in a
-	// handful of header bytes, so an eager make() lets 10 wire bytes
-	// pin the full 16 MiB of heap per socket for the life of the
-	// stall. Grow while reading instead, so memory tracks bytes
-	// actually delivered. A read deadline bounds the stall.
 	var payloadBuf []byte
 	if length > 0 {
 		_ = c.netConn.SetReadDeadline(time.Now().Add(wsFrameReadTimeout))
@@ -680,8 +533,6 @@ func controlError(msg string) []byte {
 		Message: msg,
 	})
 	if err != nil {
-		// control.Error holds two strings and no Details here, so this
-		// cannot fail; answer the fixed frame rather than an empty one.
 		return []byte(`{"frame":"event","body":{"reason":"InvalidCommand","message":"invalid command"}}`)
 	}
 	out, err := json.Marshal(frame{Frame: "event", Body: body})

@@ -1,0 +1,136 @@
+primitive: harness.client.tui
+summary: The raw-mode terminal client - a scrollback of the session's events, a boxed input line, permission prompts, slash-command completion and local slash commands, redrawn in full on every event and key.
+code:
+  - framework/experimental/harness/client/tui/
+docs:
+  - framework/docs/content/harness-architecture.md
+on_change:
+  - The snapshot tests compare whole frames against testdata/snapshots, so a layout change regenerates them and the diff is read, not just accepted.
+twins:
+  - job: Recognise the marker that opens a scrollback entry (prompt, reply, tool call, tool result, separator).
+    why: Each site keeps its own literal list, and they have drifted - tool calls are written as "●" while splitColoredMarker still lists "⚙".
+    sites:
+      - path: framework/experimental/harness/client/tui/style.go
+        note: colorizeMarker, which colours the marker.
+      - path: framework/experimental/harness/client/tui/markdown.go
+        note: splitColoredMarker, which keeps the marker out of markdown styling, and fenceTracker.next, which ends an open code fence at a new entry.
+invariants:
+  - id: permission-queue-answers-oldest
+    rule: Pending permission prompts queue oldest first, submit answers the head under its own call id, and a prompt leaves the queue when it is answered, when its call's ToolResult arrives, or when the turn ends, is cancelled or the session ends.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestPermissionPromptsQueueInOrder
+      - test: framework/experimental/harness/client/tui.TestResolvedPromptFreesInput
+  - id: unknown-permission-answer-denies
+    rule: A permission answer other than y, yes, a, all, session, t or tool, the empty answer included, is sent as a deny for this call only.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestDecodePermissionAnswer
+  - id: own-turn-not-echoed
+    rule: A TurnStarted whose originator is this client draws no prompt line, because submit already echoed it, while one from another client draws its text.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestTurnStartedFromSelfIsSkipped
+      - test: framework/experimental/harness/client/tui.TestTurnStartedFromOtherClientRenders
+  - id: alt-scroll-not-mouse-tracking
+    rule: Entering the alternate screen turns on alternate scroll mode (?1007h) and never mouse tracking, and leaving turns alternate scroll and mouse tracking off before it leaves the alternate screen.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestAltScreenEnablesAltScrollNotMouseTracking
+      - test: framework/experimental/harness/client/tui.TestExitAltScreenDisablesAltScroll
+  - id: ctrl-c-cancels-then-exits
+    rule: The first Ctrl-C (or SIGINT/SIGTERM) sends CancelTurn and a second within 2 seconds exits the TUI.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestCtrlCWindow
+  - id: scrollback-entry-has-no-newline
+    rule: Reply text, thinking text and tool output are split on newlines before they enter the scrollback, so no scrollback entry holds a line feed that would move the raw-mode cursor.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestTextDeltaWithEmbeddedNewlines
+      - test: framework/experimental/harness/client/tui.TestToolResultSplitsEmbeddedNewlines
+  - id: thinking-unquoted-before-scrub
+    rule: A thinking block is unquoted from its JSON string before textsafe.ScrubTerminal runs, so an escape sent as \u001b inside the literal is scrubbed too.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestScrollbackStripsTerminalEscapes
+  - id: tool-result-caps-and-expands
+    rule: A successful tool result shows its first 4 lines and an error its first 8, followed by a "(+N lines, Ctrl-O to expand)" hint, and Ctrl-O replaces the newest hint with the hidden lines in place.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestSnapshot_LongToolResultTruncates
+      - test: framework/experimental/harness/client/tui.TestAnErrorResultShowsEightLines
+      - test: framework/experimental/harness/client/tui.TestSnapshot_CtrlOExpandsTruncated
+  - id: scrollback-cap-keeps-indices
+    rule: The scrollback keeps its newest 1000 lines, and dropping older lines shifts the spinner row, the open thinking burst and every Ctrl-O hint by the same count, forgetting a hint that fell off.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestCtrlOExpandsInPlaceAfterTheScrollbackCapTrims
+      - test: framework/experimental/harness/client/tui.TestThinkingCollapsesWholeAfterTheScrollbackCapTrims
+  - id: truncate-keeps-utf8
+    rule: truncate cuts on a rune boundary, so a truncated tool progress line or status line is valid UTF-8.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestProgressTruncationKeepsUTF8Whole
+  - id: local-slash-commands
+    rule: The slash commands the client claims (clear, help, tasks, web, quit, profile, cost, health, model, compact) are answered without SendInput, and any other slash line is sent to the engine as SendInput.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestSlashCommandsSplitBetweenLocalAndEngine
+      - test: framework/experimental/harness/client/tui.TestDispatchLocalSlashQuit
+  - id: enter-completes-ambiguous-popup
+    rule: Enter completes the highlighted popup candidate while the input is not already exactly a candidate, and submits otherwise.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestEnterCompletesWhenPopupAmbiguous
+      - test: framework/experimental/harness/client/tui.TestEnterSubmitsWhenInputIsExactMatch
+  - id: empty-search-matches-nothing
+    rule: Ctrl-R search is a case-insensitive substring match, and an empty query matches no line.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestScrollbackSearch_EmptyQueryReturnsNothing
+      - test: framework/experimental/harness/client/tui.TestScrollbackSearch_FindsCaseInsensitive
+  - id: wrap-at-last-space
+    rule: wrapLine breaks a line at the last space or tab that fits the width and breaks inside a word only when the word alone is wider than the line.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestWrapLineBreaksAtTheLastSpaceThatFits
+      - test: framework/experimental/harness/client/tui.TestWordWrapHardBreakOnLongToken
+  - id: spinner-drawn-at-draw-time
+    rule: The working row is stored once as spinnerLineMarker and draw substitutes the current frame, so the spinner animates without rewriting the scrollback on each tick.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestTurnStartedShowsSpinnerRow
+decisions:
+  - id: full-redraw-per-event
+    date: 2026-11-18
+    status: accepted
+    decision: draw clears and repaints the whole screen on every event, key and spinner tick.
+    rejected:
+      - option: Diff-based redraw of only the changed rows.
+        why: It needs a model of the terminal's current screen, and a full repaint of at most 1000 scrollback lines is fast enough.
+    revisit_if: Redraw cost shows as flicker or lag on a long session.
+  - id: alternate-scroll-mode
+    date: 2026-11-18
+    status: accepted
+    decision: The wheel scrolls through alternate scroll mode (?1007h), which the terminal turns into Up and Down keys.
+    rejected:
+      - option: SGR mouse tracking (?1000h with ?1006h).
+        why: It takes click and drag from the terminal, so the user can no longer select text in the TUI to copy it.
+    upholds: [alt-scroll-not-mouse-tracking]
+  - id: permission-prompts-queue
+    date: 2026-11-18
+    status: accepted
+    decision: Pending permission prompts are a queue keyed by call id.
+    rejected:
+      - option: One pending-prompt slot.
+        why: One response can ask for several tools, and the slot sent the user's answer to whichever prompt arrived last.
+    upholds: [permission-queue-answers-oldest]
+  - id: substring-search
+    date: 2026-11-18
+    status: accepted
+    decision: Scrollback search is a case-insensitive substring match.
+    rejected:
+      - option: Regular-expression search.
+        why: A half-typed pattern is often invalid or matches everything, and every key re-runs the search.
+    upholds: [empty-search-matches-nothing]
+  - id: text-presentation-markers
+    date: 2026-11-18
+    status: accepted
+    decision: Entry markers are text-presentation glyphs (→ ← ● ⎿ ✓ ✗ …) and only the marker is coloured, so the terminal theme colours the content.
+    rejected:
+      - option: Emoji markers.
+        why: Emoji render in colour at double width in many terminals, which breaks the rune-count column maths and the plain look.
+  - id: compact-forwarded-as-custom-command
+    date: 2026-11-18
+    status: accepted
+    decision: /compact sends a CustomCommand the engine may act on and tells the user compaction is not yet engine-side.
+    rejected:
+      - option: Hide /compact until the engine compacts history.
+        why: The verb is in the slash catalog, so hiding it here would leave a listed command doing nothing visible.
+    revisit_if: The engine implements history compaction for the compact verb.

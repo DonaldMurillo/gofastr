@@ -39,6 +39,12 @@ few lines, and link the PR or the docs page for the rest.
   the error text is now `tool: unknown: "X" not registered`.
 - **harness: a profile refuses an unknown key inside an `mcp_servers`
   entry.** A misspelt `sha256` dropped the binary pin with no error.
+- **harness: the MCP control server reads `harness/v1://profiles`**, which it
+  listed but answered as an unknown URI. MCP command tools answer -32602 for
+  a malformed `sessionId` or `callId` instead of running with an empty one.
+- **harness TUI:** Ctrl-O and the thinking collapse stay on the right lines
+  after the scrollback trims; a progress line is cut on a rune boundary; a
+  tool call ends a code fence a reply left open.
 - **webmcp: `Host.Handle` refuses what `Register` refuses.** Handle took the
   reserved `get_app_instructions` name under `WithInstructions`, putting two
   tools with one name in the manifest, and took a tool tagged with an

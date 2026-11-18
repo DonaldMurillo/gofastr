@@ -1,0 +1,90 @@
+primitive: harness.control.auth
+summary: Capability tokens for the harness control plane - an HMAC-signed claim set naming the sessions, commands and identity class a client may use, a revocation list, and an Issuer that mints a token only after the user types back a code shown out of band.
+code:
+  - framework/experimental/harness/control/auth/
+docs:
+  - framework/docs/content/harness-architecture.md
+twins:
+  - job: Fill a claim set's defaults, a fresh JTI and an expiry 24 hours out.
+    why: Work not yet done; Issuer.Begin and ClaimsFor were never pointed at one helper.
+    sites:
+      - path: framework/experimental/harness/control/auth/auth.go
+        note: Encoder.Encode fills Ver, JTI and ExpiresAt when zero.
+      - path: framework/experimental/harness/control/auth/issuance.go
+        note: Issuer.Begin fills JTI and ExpiresAt on its own clock, and ClaimsFor sets both again.
+invariants:
+  - id: secret-is-32-bytes
+    rule: NewEncoder panics on a secret shorter than 32 bytes.
+    enforced_by:
+      - test: framework/experimental/harness/control/auth.TestNewEncoderRefusesShortSecret
+  - id: signature-is-checked
+    rule: Decode refuses a token whose signature was not made with the encoder's own secret, before it reads the payload.
+    enforced_by:
+      - test: framework/experimental/harness/control/auth.TestDecodeRejectsOtherSecret
+      - test: framework/experimental/harness/control/auth.TestDecodeRejectsTampered
+  - id: unknown-version-fails-closed
+    rule: Decode refuses a token whose Ver is not VerCurrent.
+    enforced_by:
+      - test: framework/experimental/harness/control/auth.TestDecodeRejectsUnknownVersion
+  - id: unknown-critical-claim-fails-closed
+    rule: Decode refuses a token that lists in CriticalClaims a name this verifier does not know, while an unknown claim not listed there is ignored.
+    enforced_by:
+      - test: framework/experimental/harness/control/auth.TestDecodeRejectsUnknownCriticalClaim
+  - id: verify-checks-time-and-revocation
+    rule: Verify refuses a token before its nbf, at or after its exp (as *ExpiredError), and once its JTI is on the revocation list (as *RevokedError).
+    enforced_by:
+      - test: framework/experimental/harness/control/auth.TestVerifyRefusesNotYetValid
+      - test: framework/experimental/harness/control/auth.TestVerifyExpired
+      - test: framework/experimental/harness/control/auth.TestRevocationListBlocksToken
+  - id: empty-scope-allows-all
+    rule: A claim set with no Commands allows every command and one with no Sessions allows every session, while a non-empty list allows only what it names.
+    enforced_by:
+      - test: framework/experimental/harness/control/auth.TestEmptyScopeAllowsAll
+      - test: framework/experimental/harness/control/auth.TestAllowsCommandAndSession
+  - id: mint-needs-a-channel
+    rule: An Issuer with no Channel refuses every Begin with ErrNoChannel, so no token is minted without an out-of-band confirmation.
+    enforced_by:
+      - test: framework/experimental/harness/control/auth.TestIssuerRequiresChannel
+  - id: one-attempt-per-mint
+    rule: Confirm ends the mint on its first attempt, so a right code sent after a wrong one gets ErrUnknownMint.
+    enforced_by:
+      - test: framework/experimental/harness/control/auth.TestWrongCodeBurnsMint
+  - id: code-expires-after-60s
+    rule: Confirm refuses a code more than 60 seconds after Begin with ErrCodeExpired.
+    enforced_by:
+      - test: framework/experimental/harness/control/auth.TestConfirmRefusesExpiredCode
+  - id: code-compare-is-constant-time
+    rule: Confirm compares the user's code to the shown code with a constant-time compare, never a string inequality.
+    enforced_by:
+      - test: framework/experimental/harness/control/auth.TestConfirmComparesCodeConstantTime
+  - id: issue-direct-stays-off-the-network
+    rule: No control transport handler calls Issuer.IssueDirect, so a network client can never get a token without the confirmation code.
+    judge: Does a rest, ws or mcpserver handler call IssueDirect or mint a token without Issuer.Confirm?
+    applies:
+      - framework/experimental/harness/control/rest/
+      - framework/experimental/harness/control/ws/
+      - framework/experimental/harness/control/mcpserver/
+decisions:
+  - id: own-token-format
+    date: 2026-11-18
+    status: accepted
+    decision: Tokens are a JWT-like `<base64 json>.<base64 HMAC-SHA256>` string encoded by this package.
+    rejected:
+      - option: A third-party JWT library.
+        why: The harness takes no third-party dependency, and the token needs one algorithm and one claim set, not JWT's algorithm negotiation.
+    upholds: [signature-is-checked, unknown-critical-claim-fails-closed]
+  - id: burn-is-the-rate-limit
+    date: 2026-11-18
+    status: accepted
+    decision: Confirm deletes the pending mint before it compares the code, and that is the only guess limit.
+    rejected:
+      - option: A separate attempt counter or rate limiter on Confirm.
+        why: One guess per mint already bounds a guesser to one in a million per code the user was shown; a counter adds state for nothing.
+    upholds: [one-attempt-per-mint]
+  - id: revocations-in-memory
+    date: 2026-11-18
+    status: accepted
+    decision: RevocationList is in memory, and persisting it (from Snapshot) is the caller's job.
+    rejected:
+      - option: A RevocationList that writes itself to disk.
+        why: The auth package would then own a file path and a format that the harness composition already owns for its other state.

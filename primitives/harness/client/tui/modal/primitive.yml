@@ -1,0 +1,33 @@
+primitive: harness.client.tui.modal
+summary: The centred overlay panel the info slash commands open (help, tasks, web, profile, cost, health, model), which takes every key until Esc, Enter or q closes it.
+code:
+  - framework/experimental/harness/client/tui/modal.go
+  - framework/experimental/harness/client/tui/sanitize.go
+twins:
+  - job: Remove whole ANSI escape sequences, parameters included, from text that will be shown.
+    why: devcmd's copy lives in an internal package of cmd/gofastr and strips build output for an HTML page, while the TUI's also handles 8-bit C1 introducers; nothing shared holds either.
+    sites:
+      - path: framework/experimental/harness/client/tui/sanitize.go
+        note: stripANSISequences, for modal titles and lines.
+      - path: cmd/gofastr/internal/devcmd/dev_hold.go
+        note: stripANSI, for the dev hold page's build output.
+invariants:
+  - id: modal-text-strips-whole-sequences
+    rule: openModal passes every title and line through sanitizeModalText, which removes whole escape sequences (CSI, OSC, DCS, PM, APC, 7-bit and 8-bit) with their parameters, drops every other textsafe.IsUnsafe rune and turns a newline into a space.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestModalRedEscapesInjectedTasks
+      - test: framework/experimental/harness/client/tui.TestModalLineHoldsNoNewline
+  - id: modal-takes-every-key
+    rule: While a modal is open every key goes to it, Esc, Enter and q close it, and no key reaches the input, scroll or search.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestModalRoutesKeysAway
+      - test: framework/experimental/harness/client/tui.TestModalDismissedByEscape
+decisions:
+  - id: strip-sequences-not-bytes
+    date: 2026-11-18
+    status: accepted
+    decision: Modal text loses whole escape sequences before the byte-level scrub.
+    rejected:
+      - option: textsafe.ScrubTerminal alone, as the scrollback uses.
+        why: It drops the ESC but keeps the parameters, so a model-written TaskList item showed "[?1049h" inside the frame.
+    upholds: [modal-text-strips-whole-sequences]

@@ -1,0 +1,93 @@
+primitive: harness.control.mcpserver
+summary: The harness control plane as an MCP server - JSON-RPC over newline-delimited stdio, with the per-turn command verbs as tools (the agent runner named harness.run_agent_with_shell_access), the catalog and a session's events as resources, and skills as prompts.
+code:
+  - framework/experimental/harness/control/mcpserver/server.go
+  - framework/experimental/harness/control/mcpserver/doc.go
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: advertised-equals-dispatchable
+    rule: Every tool tools/list advertises is one tools/call dispatches, and every resource resources/list advertises is one resources/read answers.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestMCPToolsListDispatchParity
+      - test: framework/experimental/harness/control/mcpserver.TestEveryListedResourceReads
+  - id: honest-agent-tool-name
+    rule: The tool that runs the inner agent is advertised as harness.run_agent_with_shell_access, with a description saying it grants shell access.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestMCPToolsListIncludesHonestlyNamedTool
+  - id: claims-scope-every-verb
+    rule: With Claims set, a tool call is refused unless the claims allow its command kind and the session it names, the session listing holds only allowed sessions, and an events read of a session the claims do not allow is refused.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestMCPTokenScopeEnforced
+      - test: framework/experimental/harness/control/mcpserver.TestMCPCommandScopeEnforced
+      - test: framework/experimental/harness/control/mcpserver.TestMCPSessionListHonoursTokenScope
+      - test: framework/experimental/harness/control/mcpserver.TestEventsResourceHonoursScope
+  - id: malformed-session-is-bad-params
+    rule: A tool call whose sessionId does not parse is refused with -32602 before authorization or dispatch, for every verb.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestMalformedSessionIDIsBadParams
+  - id: required-token-checked
+    rule: With RequiredToken set, Serve refuses to start unless $GOFASTR_HARNESS_TOKEN equals it, compared in constant time.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestMCPRequiredTokenRejected
+  - id: requests-run-concurrently
+    rule: Each request with an id runs on its own goroutine, so a harness.cancel_turn or notifications/cancelled reaches a wait=turn call that is still running.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestCancelTurnReachesRunningTurn
+      - test: framework/experimental/harness/control/mcpserver.TestCancelledNotificationEndsTurn
+  - id: client-cancel-ends-the-turn
+    rule: A wait=turn call withdrawn by notifications/cancelled cancels its turn, while a call whose context ends for any other reason leaves the turn running.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestCancelledNotificationEndsTurn
+  - id: inflight-ids-and-cap
+    rule: A request id the same owner already has running is refused, and one owner holds at most 32 running requests across connections.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestDuplicateInFlightIDRefused
+      - test: framework/experimental/harness/control/mcpserver.TestInflightCapPerOwner
+  - id: no-ambiguous-keys-at-any-depth
+    rule: A request whose envelope has an unknown, duplicate or case-folded key, or whose params or arguments hold a duplicate or case-folded key at any depth, is answered -32602 and not run, while an unknown key inside params is tolerated.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestMcpPostRejectsDuplicateKeys
+      - test: framework/experimental/harness/control/mcpserver.TestMcpPostRejectsCaseFoldedKeys
+      - test: framework/experimental/harness/control/mcpserver.TestMCPArgsRedNestedAmbiguityRefused
+  - id: unencodable-result-still-answers
+    rule: A result that cannot be JSON-encoded is answered with -32603 under the request's id, never with no line.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestWriteAnswersUnencodableResult
+  - id: events-resource-replays
+    rule: resources/read of harness/v1://session/{id}/events?since=N returns the events after N from the bus window and the session log, at most 1000 per read.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestEventsResourceReplaysSince
+twins:
+  - job: Refuse duplicate and case-folded keys in a request's params.
+    why: Belt and braces; decodeRequest's UnmarshalStrict already walks params at every depth, and unmarshalMCPObject walks them again so a caller that skips decodeRequest still gets the check.
+    sites:
+      - path: framework/experimental/harness/control/mcpserver/server.go
+        note: decodeRequest via handler.UnmarshalStrict on the whole line.
+      - path: framework/experimental/harness/control/mcpserver/server.go
+        note: unmarshalMCPObject via handler.CheckObjectKeys on params and arguments.
+decisions:
+  - id: no-session-lifecycle-tools
+    date: 2026-11-18
+    status: accepted
+    decision: tools/list advertises no create, attach or detach session tool.
+    rejected:
+      - option: Advertise the session lifecycle verbs.
+        why: The Mux runs only per-turn commands and the harness composition owns session creation, so the server has no path to them, and an MCP client is per call with nothing durable to attach.
+    upholds: [advertised-equals-dispatchable]
+  - id: nil-claims-means-stdio
+    date: 2026-11-18
+    status: accepted
+    decision: A Server with nil Claims authorizes every command, because stdio's process boundary is the check; the HTTP transport always sets Claims from the verified token.
+    rejected:
+      - option: Require Claims on stdio too.
+        why: Whoever spawns the stdio server already holds the process; a token would add a secret to manage and stop no one.
+    upholds: [claims-scope-every-verb]
+  - id: envelope-strict-params-tolerant
+    date: 2026-11-18
+    status: accepted
+    decision: The JSON-RPC envelope must match its fields exactly, while params and tool arguments tolerate unknown keys.
+    rejected:
+      - option: Strict decoding of params too.
+        why: MCP evolves by adding fields, and a client a version ahead would be refused for a field this server can ignore.
+    upholds: [no-ambiguous-keys-at-any-depth]

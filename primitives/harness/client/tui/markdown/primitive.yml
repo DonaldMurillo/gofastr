@@ -1,0 +1,23 @@
+primitive: harness.client.tui.markdown
+summary: Styles one visual scrollback row as a small markdown subset (headings, **bold**, `code`) and tracks fenced code blocks so their lines are drawn as written.
+code:
+  - framework/experimental/harness/client/tui/markdown.go
+invariants:
+  - id: fenced-code-drawn-as-written
+    rule: Lines inside a fenced code block, fences included, get no markdown styling, even when the opening fence has scrolled above the window.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestDrawLeavesFencedCodeAsWritten
+      - test: framework/experimental/harness/client/tui.TestDrawKnowsAFenceOpenedAboveTheWindow
+  - id: new-entry-ends-open-fence
+    rule: A line that opens a new scrollback entry (prompt, reply, tool call, thinking, separator) ends a fence its message left open.
+    enforced_by:
+      - test: framework/experimental/harness/client/tui.TestDrawLeavesFencedCodeAsWritten
+      - test: framework/experimental/harness/client/tui.TestAToolCallEndsAnUnclosedFence
+decisions:
+  - id: no-italics
+    date: 2026-11-18
+    status: accepted
+    decision: Single-star italics are not styled.
+    rejected:
+      - option: Style *text* as italic.
+        why: A star also opens a bullet and appears in globs and arithmetic, so it would italicise text that was never emphasis.
