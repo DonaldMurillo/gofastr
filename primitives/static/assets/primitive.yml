@@ -54,8 +54,9 @@ invariants:
       - test: framework/static.TestPWAPrecachesEscapedPagePath
       - test: framework/static.TestSweepStaticWorkerHash
   - id: worker-hash-skips-pwa-outputs
-    rule: The worker's content hash covers the bytes of every file in OutDir except the PWA outputs and any link to one of them that the static source did not supply.
+    rule: The worker's content hash covers the bytes of every file in OutDir except the generated PWA files themselves and any link to one of them that the static source did not supply, so a user file under __gofastr/pwa/ is hashed.
     enforced_by:
+      - test: framework/static.TestSweepStaticWorkerHashesUserFileUnderPWADir
       - test: framework/static.TestPWAHashSkipsWorkerAlias
       - test: framework/static.TestPWAHashKeepsUserManifestAlias
       - test: framework/static.TestPWAHashesDistinctCaseFile
