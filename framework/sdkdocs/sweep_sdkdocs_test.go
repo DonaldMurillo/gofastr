@@ -220,3 +220,11 @@ func TestSweepMountNormalizesPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestVersionSlugKeepsDistinctPrefixesDistinct(t *testing.T) {
+	a := &entity.Entity{Version: "/api/v1"}
+	b := &entity.Entity{Version: "/api-v1"}
+	if versionSlug(a) == versionSlug(b) {
+		t.Fatalf("/api/v1 and /api-v1 share the section suffix %q", versionSlug(a))
+	}
+}

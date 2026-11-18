@@ -15,9 +15,10 @@ invariants:
     enforced_by:
       - test: framework/gallery.TestDemoFormRefusesUnknownDemo
   - id: demo-page-must-be-local
-    rule: MountDemoFormRoute panics when demoPage returns, for any slug, a value that is not one slash followed by a non-slash, non-backslash byte, or that holds a control byte or parses with a scheme or host.
+    rule: MountDemoFormRoute panics when demoPage returns, for any slug, a value that is not one slash followed by a non-slash, non-backslash byte, or that holds a control byte anywhere (its fragment too, which url.Parse lets through) or parses with a scheme or host.
     enforced_by:
       - test: framework/gallery.TestDemoFormRouteRefusesForeignPage
+      - test: framework/gallery.TestDemoFormRouteRefusesControlBytesInTheFragment
       - test: framework/gallery.TestSweepDemoFormKeepsNothing
   - id: demo-form-keeps-nothing
     rule: The demo form route never reads the posted body.

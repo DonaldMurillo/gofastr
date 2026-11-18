@@ -49,8 +49,8 @@ few lines, and link the PR or the docs page for the rest.
   does not have, so every copy answered 400. The fallback is now the first key column.
 - **The SDK docs page for an entity with several API versions writes each id once.** Every
   version's section repeated the same heading and table caption ids, so a caption reference named
-  the first version's table. Version sections now carry the version in their ids; a single-version
-  page is unchanged.
+  the first version's table. Version sections now carry the version in their ids, escaped so distinct prefixes such as
+  `/api/v1` and `/api-v1` never share one; a single-version page is unchanged.
 - **`softdelete.WithSoftDelete` no longer panics on an entity built without `entity.Define`.** An
   entity whose `Config.Scope` was nil hit a nil pointer; it now gets a scope, as
   `tenant.WithMultiTenant` already did.
