@@ -16,7 +16,7 @@ invariants:
       - test: framework/dsl.TestParseDSL_RejectsUnsafeFilterFieldName
       - test: framework/dsl.TestDSLQuotedIncludeStoredUnquoted
   - id: input-and-limit-bounded
-    rule: ParseDSL refuses input over maxDSLInputSize, a limit over 10000, more than 16 order() clauses and an in list over filter.MaxINListEntries.
+    rule: ParseDSL refuses input over maxDSLInputSize, a limit over 10000 and more than 16 order() clauses, and BuildDSLQuery (through dslCondition) refuses an in list over filter.MaxINListEntries.
     enforced_by:
       - test: framework/dsl.TestParseDSLRejectsHugeInput
       - test: framework/dsl.TestParseDSL_RejectsExcessiveLimit

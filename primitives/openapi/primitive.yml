@@ -7,7 +7,7 @@ docs:
   - framework/docs/content/api-versioning.md
 invariants:
   - id: path-keys-are-mounted-paths
-    rule: Every path key carries the API prefix, the single server entry is "/", and a versioned entity's group prefix replaces the API prefix rather than nesting under it.
+    rule: Every generated CRUD path key and every relative custom-endpoint path carries the API prefix, an absolute custom path (/health) is kept as written, the single server entry is "/", and a versioned entity's group prefix replaces the API prefix rather than nesting under it.
     enforced_by:
       - test: framework.TestAPIPrefix_OpenAPIPathsMatchLiveRoutes
       - test: framework/openapi.TestVersionedSpecDoubleAPIPrefix
@@ -18,7 +18,7 @@ invariants:
       - test: framework/openapi.TestCrudMountedPredicateOverridesExposure
       - test: framework/openapi.TestCRUDDisabledEntityKeepsEndpoints
   - id: read-only-mount-lists-reads
-    rule: An entity ReadOnlyMounted reports lists only its List, Get and _events operations, and no bulk routes.
+    rule: An entity ReadOnlyMounted reports keeps its generated List, Get and _events operations and omits its generated writes and bulk routes; its declared custom endpoints are still documented.
     enforced_by:
       - test: framework.TestSpecListsOnlyAViewsReadRoutes
   - id: bulk-only-when-mounted
@@ -42,7 +42,7 @@ invariants:
       - test: framework/openapi.TestListEnvelopesRefEntitySchema
       - test: framework/openapi.TestListEnvelopeNameCollidingEntityGoesInline
   - id: gated-unless-plainly-public
-    rule: Every generated operation declares 401 and the security schemes unless the entity is Public with no owner field, no tenant scope and no RBAC rule.
+    rule: Every generated CRUD operation declares 401 and the security schemes unless the entity is Public with no owner field, no tenant scope and no RBAC rule; a custom endpoint declares them unless its own Public is set, whatever the entity's.
     enforced_by:
       - test: framework/openapi.TestPublicScopedEntityStillDeclares401
       - test: framework/openapi.TestOwnerScopedOpsDeclare401
@@ -93,7 +93,7 @@ decisions:
   - id: prefix-in-path-keys
     date: 2026-11-17
     status: accepted
-    decision: The API prefix is written into every path key and servers stays "/".
+    decision: The API prefix is written into every generated and relative path key (an absolute custom path is kept as written) and servers stays "/".
     rejected:
       - option: Relative path keys with servers[0].url set to the prefix.
         why: Legal and equivalent, but a reader taking paths literally (agents and the backend eval's grader alike) called the wrong URL.
