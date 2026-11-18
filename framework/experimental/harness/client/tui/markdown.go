@@ -110,10 +110,26 @@ type fenceTracker struct {
 	open bool
 }
 
+var entryMarkers = []string{"← ", "→ ", "● ", "⚙ ", "✓ ", "✗ ", "… ", "── "}
+
+const bodyLineMarker = "\x00\x02"
+
+func bodyLine(s string) string {
+	if strings.HasPrefix(s, bodyLineMarker) {
+		return s
+	}
+	for _, p := range entryMarkers {
+		if strings.HasPrefix(s, p) {
+			return bodyLineMarker + s
+		}
+	}
+	return s
+}
+
 func (f *fenceTracker) next(line string) bool {
-	content := line
-	for _, p := range []string{"← ", "→ ", "● ", "⚙ ", "✓ ", "✗ ", "… ", "── "} {
-		if rest, ok := strings.CutPrefix(line, p); ok {
+	content, body := strings.CutPrefix(line, bodyLineMarker)
+	for _, p := range entryMarkers {
+		if rest, ok := strings.CutPrefix(content, p); ok && !body {
 			f.open = false
 			content = rest
 			break

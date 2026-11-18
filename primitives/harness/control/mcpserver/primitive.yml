@@ -23,9 +23,10 @@ invariants:
       - test: framework/experimental/harness/control/mcpserver.TestMCPSessionListHonoursTokenScope
       - test: framework/experimental/harness/control/mcpserver.TestEventsResourceHonoursScope
   - id: malformed-session-is-bad-params
-    rule: A tool call whose sessionId does not parse is refused with -32602 before authorization or dispatch, for every verb.
+    rule: A tool call whose sessionId does not parse, or an answer_permission whose callId does not parse, is refused with -32602 before authorization or dispatch, for every verb.
     enforced_by:
       - test: framework/experimental/harness/control/mcpserver.TestMalformedSessionIDIsBadParams
+      - test: framework/experimental/harness/control/mcpserver.TestMalformedCallIDIsBadParams
   - id: required-token-checked
     rule: With RequiredToken set, Serve refuses to start unless $GOFASTR_HARNESS_TOKEN equals it, compared in constant time.
     enforced_by:
