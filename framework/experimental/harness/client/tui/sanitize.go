@@ -23,7 +23,7 @@ func sanitizeModalText(s string) string {
 }
 
 func stripANSISequences(s string) string {
-	if !strings.ContainsAny(s, "\x1b") {
+	if !strings.ContainsAny(s, "\x1b\u0090\u0098\u009b\u009d\u009e\u009f") {
 		return s
 	}
 	rs := []rune(s)
@@ -38,7 +38,7 @@ func stripANSISequences(s string) string {
 			i = skipEscaped(rs, i+1)
 		case 0x9b:
 			i = skipToFinal(rs, i+1)
-		case 0x9d, 0x9e, 0x9f:
+		case 0x90, 0x98, 0x9d, 0x9e, 0x9f:
 			i = skipToStringEnd(rs, i+1)
 		default:
 			b.WriteRune(rs[i])

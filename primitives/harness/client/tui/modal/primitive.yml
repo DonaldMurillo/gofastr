@@ -13,9 +13,10 @@ twins:
         note: stripANSI, for the dev hold page's build output.
 invariants:
   - id: modal-text-strips-whole-sequences
-    rule: openModal passes every title and line through sanitizeModalText, which removes whole escape sequences (CSI, OSC, DCS, PM, APC, 7-bit and 8-bit) with their parameters, drops every other textsafe.IsUnsafe rune and turns a newline into a space.
+    rule: openModal passes every title and line through sanitizeModalText, which removes whole escape sequences (CSI, OSC, DCS, SOS, PM, APC, 7-bit and 8-bit) with their parameters, drops every other textsafe.IsUnsafe rune and turns a newline into a space.
     enforced_by:
       - test: framework/experimental/harness/client/tui.TestModalRedEscapesInjectedTasks
+      - test: framework/experimental/harness/client/tui.TestModalTextStrips8BitStringSequences
       - test: framework/experimental/harness/client/tui.TestModalLineHoldsNoNewline
   - id: modal-takes-every-key
     rule: While a modal is open every key goes to it, Esc, Enter and q close it, and no key reaches the input, scroll or search.
