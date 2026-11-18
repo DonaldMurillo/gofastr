@@ -43,7 +43,9 @@ func ParsePredicate(text string, fields []schema.Field) (*filter.Predicate, erro
 	return filter.ValidatePredicate(root, fields)
 }
 
-// Quote writes v as a quoted value ParsePredicate reads back as v.
+// Quote writes v as a quoted value, escaping backslashes and double quotes,
+// that ParsePredicate reads back as v. v must not contain CR or LF, which
+// ParsePredicate refuses inside a quoted value.
 func Quote(v string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(v, `\`, `\\`), `"`, `\"`) + `"`
 }

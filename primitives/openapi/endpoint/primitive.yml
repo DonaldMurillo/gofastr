@@ -21,7 +21,7 @@ invariants:
     enforced_by:
       - test: framework/openapi.TestEndpointToolNameFoldCollides
   - id: one-endpoint-schema
-    rule: The spec's request body and the MCP tool's input schema both come from EndpointInputSchema, and the 200 body from EndpointOutputSchema, {type:object} when unset.
+    rule: The MCP tool's input schema is EndpointInputSchema, and the spec splits the same fields - a {param} in the path goes to the path, an SDK GET or DELETE puts the rest in the query, and only the remainder is the request body, none on GET or HEAD; the 200 body is EndpointOutputSchema, or the component Returns names when OutputSchema is unset, else {type:object}.
     enforced_by:
       - test: framework/openapi.TestEndpointTypedRequestBody
       - test: framework/openapi.TestEndpointMCPInputSchema
