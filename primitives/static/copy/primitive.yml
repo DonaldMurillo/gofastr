@@ -37,9 +37,10 @@ invariants:
       - test: framework/static.TestStaticSourceHostRulesAppend
       - test: framework/static.TestExtraDirsKeepGeneratedHostRules
   - id: source-file-matched-by-exact-spelling
-    rule: staticSourceHas counts a static-source file only under the exact spelling asked for, on a case-insensitive filesystem too.
+    rule: staticSourceHas counts a static-source entry only when it is a regular file under the exact spelling asked for, on a case-insensitive filesystem too, so a directory or FIFO of that name never keeps a generated file out.
     enforced_by:
       - test: framework/static.TestSweepStaticSpelledInNeedsExactName
+      - test: framework/static.TestSweepStaticIrregularSourceKeepsGenerated
   - id: separator-names-refused
     rule: A static-source or extra-dir file name or mount path holding a backslash or a NUL fails the build.
     enforced_by:
