@@ -68,8 +68,8 @@ that produce them are wired:
 `queue_dead_letter_jobs` is the number of dead-lettered jobs the queue holds
 now, so it falls when one is replayed or erased; alert on its value, not on
 a rate. `outbox_dead_letter_deliveries` is the same for the outbox: the
-dead-lettered deliveries it holds now, which fall on a `Replay`, a purge or
-an erasure. A metric named `_total` is a counter that only rises; every
+dead-lettered deliveries it holds now, which fall when `Replay` or
+`ReplayConsumer` resets one (retention and erasure keep dead deliveries). A metric named `_total` is a counter that only rises; every
 other metric here is a current reading.
 `queue_depth` counts waiting jobs on every backend, delayed ones included:
 `DBQueue` reads its `pending` status count, and `MemoryQueue` and `RedisQueue`

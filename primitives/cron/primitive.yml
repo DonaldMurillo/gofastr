@@ -56,7 +56,7 @@ invariants:
       - test: framework/cron.TestScheduler_StopBeforeStart
       - test: framework/cron.TestConcurrentStopsDontPanic
   - id: tick-lease-released-before-jobs
-    rule: A TickLeaderElection lease is released as soon as AcquireTick holds, before the minute's jobs start, so a long job never holds back the next minute on any replica.
+    rule: Once AcquireTick holds, the scheduler starts the lease's release on its own goroutine and then dispatches the minute's jobs without waiting for them, so a long job never holds back the next minute on any replica.
     enforced_by:
       - test: framework/cron.TestTickLeaseFreedBeforeJobEnds
       - test: framework/cron.TestPGLongJobKeepsNextTick

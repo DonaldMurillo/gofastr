@@ -2,21 +2,26 @@ package event_test
 
 import (
 	"context"
-	"strings"
+	"encoding/json"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
 
 type gateFanout struct {
-	gate chan struct{}
-	mu   sync.Mutex
-	got  []string
+	gate    chan struct{}
+	entered chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	got     []string
 }
 
 func (g *gateFanout) Publish(_ context.Context, _ string, p []byte) error {
+	g.once.Do(func() { close(g.entered) })
 	<-g.gate
 	g.mu.Lock()
 	g.got = append(g.got, string(p))
@@ -33,33 +38,56 @@ func TestAttachFanoutRefusesNil(t *testing.T) {
 }
 
 func TestBridgeOverflowDropsOldest(t *testing.T) {
-	f := &gateFanout{gate: make(chan struct{})}
+	f := &gateFanout{gate: make(chan struct{}), entered: make(chan struct{})}
 	bus := event.NewEventBus()
 	stop, err := event.AttachFanout(bus, f)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := range 400 {
-		_ = bus.Emit(context.Background(), event.Event{Type: "t", Data: i})
+	defer stop()
+	ctx := context.Background()
+	_ = bus.Emit(ctx, event.Event{Type: "t", Data: 0})
+	select {
+	case <-f.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the publisher never took the first envelope")
+	}
+	for i := 1; i < 400; i++ {
+		_ = bus.Emit(ctx, event.Event{Type: "t", Data: i})
 	}
 	close(f.gate)
+	want := []int{0}
+	for i := 400 - 256; i < 400; i++ {
+		want = append(want, i)
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		f.mu.Lock()
-		last := ""
-		if len(f.got) > 0 {
-			last = f.got[len(f.got)-1]
-		}
+		n := len(f.got)
 		f.mu.Unlock()
-		if strings.Contains(last, `:399,`) {
+		if n >= len(want) || time.Now().After(deadline) {
 			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("newest event never published after the queue overflowed; last published %q", last)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	stop()
+	time.Sleep(100 * time.Millisecond)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var got []int
+	for _, raw := range f.got {
+		_, body, err := fanout.Unwrap([]byte(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ev struct{ Data int }
+		if err := json.Unmarshal(body, &ev); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, ev.Data)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("published %d events %v, want the in-flight 0 and the newest 256 (144..399)", len(got), got)
+	}
 }
 
 func TestEmitStampsAZeroTimestamp(t *testing.T) {
