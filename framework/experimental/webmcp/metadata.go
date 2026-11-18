@@ -179,6 +179,9 @@ func checkExample(toolName string, idx int, sk *exampleSchema, ex Example) error
 	if err := json.Unmarshal(ex.Input, &in); err != nil {
 		return fmt.Errorf("webmcp: Register(%q): example %d input must be a JSON object (the bridge always delivers an object); %v", toolName, idx, err)
 	}
+	if in == nil {
+		return fmt.Errorf("webmcp: Register(%q): example %d input must be a JSON object (the bridge always delivers an object), not null", toolName, idx)
+	}
 	for _, req := range sk.Required {
 		if _, ok := in[req]; !ok {
 			return fmt.Errorf("webmcp: Register(%q): example %d is missing required key %q", toolName, idx, req)
