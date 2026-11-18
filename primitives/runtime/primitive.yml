@@ -68,7 +68,7 @@ invariants:
       - test: core-ui/check.TestLintKeyGuard_Repo
       - test: kiln/integration.TestBrowser_EscClosesModals
   - id: modal-widget-is-a-native-dialog
-    rule: A backdrop'd widget with default chrome is a <dialog> opened with showModal(), so Tab and assistive tech never reach the page behind it from the moment it opens; a close request (Escape, the back gesture) or a scrim click dismisses it through the one dismiss path only when the widget allows it, a scrim click only when the press started on the scrim, and a non-modal widget opened over it mounts inside it so it is not inert.
+    rule: A backdrop'd widget with default chrome is a <dialog> opened with showModal(), so Tab and assistive tech never reach the page behind it from the moment it opens; a close request (Escape, the back gesture) or a scrim click dismisses it through the one dismiss path only when the widget allows it, a scrim click only when the press started on the scrim, a non-modal widget opened over it mounts inside it so it is not inert, and a modal opened from inside it stacks on top and closes alone.
     enforced_by:
       - test: core-ui/widget.TestModalChromeIsADialog
       - test: core-ui/runtime.TestModalWidgetOpensAsNativeDialog
@@ -76,6 +76,7 @@ invariants:
       - test: core-ui/runtime.TestDialogEscapeClosesWithoutFocusModule
       - test: core-ui/runtime.TestDialogBackdropClickCloses
       - test: core-ui/runtime.TestPanelOverDialogMountsInside
+      - test: core-ui/runtime.TestStackedDialogsCloseOneAtATime
   - id: confirm-closes-in-the-closing-task
     rule: A closed confirm dialog is removed, its answer resolved and focus handed back in the task that closed it, whatever closed it (a button, Escape, close(), requestClose).
     enforced_by:

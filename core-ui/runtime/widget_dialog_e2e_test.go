@@ -278,3 +278,72 @@ func TestPanelOverDialogMountsInside(t *testing.T) {
 		t.Error("the panel did not move back to <body> when the dialog under it closed")
 	}
 }
+
+// A modal opened from inside a modal stacks: the inner one is on top and
+// owns Tab, Escape and the scrim click, each of which closes it alone and
+// hands focus back to its trigger in the outer modal; the scroll lock
+// holds until the last modal closes.
+func TestStackedDialogsCloseOneAtATime(t *testing.T) {
+	outer := `<dialog class="cui-widget cui-pos-center" data-cui-widget="a" aria-label="a" open><div class="cui-panel"><div class="cui-slot cui-slot-body">` +
+		`<button id="a-a">a</button><button id="a-b" data-cui-open="b">open b</button></div></div></dialog>`
+	url, free := dialogServer(t, "["+dialogCfg("a", true, true)+","+dialogCfg("b", true, true)+"]", map[string]string{"a": outer, "b": dialogChrome("b", "")})
+	free()
+	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+	type state struct {
+		A, B, BOnTop, Locked bool
+		Active               string
+	}
+	const read = `(() => { const A = document.querySelector('[data-cui-widget="a"]'), B = document.querySelector('[data-cui-widget="b"]');
+		const r = B && B.querySelector('#b-a').getBoundingClientRect();
+		return { A: !!A?.matches(':modal'), B: !!B?.matches(':modal'),
+			BOnTop: !!r && !!document.elementFromPoint(r.x + 2, r.y + 2)?.closest('[data-cui-widget="b"]'),
+			Locked: document.documentElement.style.overflow === 'hidden',
+			Active: document.activeElement?.id || '' }; })()`
+	openB := chromedp.Tasks{
+		chromedp.Click(`#a-b`, chromedp.ByID),
+		chromedp.Poll(`document.activeElement?.id === 'b-a'`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+	}
+	var open, tabbed, esc, scrim, last state
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(800, 600),
+		chromedp.Navigate(url+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		openDialog("a"),
+		chromedp.Poll(`!!window.__gofastr.loadedModules.widgetfocus`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		openB,
+		chromedp.Evaluate(read, &open),
+		chromedp.KeyEvent(kb.Tab), chromedp.KeyEvent(kb.Tab), chromedp.KeyEvent(kb.Tab),
+		chromedp.Evaluate(read, &tabbed),
+		chromedp.KeyEvent(kb.Escape),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(read, &esc),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !open.A || !open.B || !open.BOnTop || !open.Locked {
+		t.Fatalf("with b opened from a, want both modal, b on top, page locked; got %+v", open)
+	}
+	if tabbed.Active != "b-b" {
+		t.Errorf("Tab left the inner modal: focus on %q after three Tabs from b-a, want b-b", tabbed.Active)
+	}
+	if !esc.A || esc.B || esc.Active != "a-b" || !esc.Locked {
+		t.Fatalf("Escape must close only b and return focus to its trigger in a; got %+v", esc)
+	}
+	if err := chromedp.Run(ctx,
+		openB,
+		chromedp.MouseClickXY(5, 5),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(read, &scrim),
+		chromedp.KeyEvent(kb.Escape),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(read, &last),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !scrim.A || scrim.B || !scrim.Locked {
+		t.Errorf("a click on b's scrim must close only b; got %+v", scrim)
+	}
+	if last.A || last.Locked || last.Active != "trigger" {
+		t.Errorf("Escape on a alone must close it, release the lock and return focus to the page trigger; got %+v", last)
+	}
+}
