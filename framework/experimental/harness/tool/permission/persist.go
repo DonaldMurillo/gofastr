@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -13,19 +14,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// PresetFile is the on-disk shape of a profile-level permission
-// preset (referenced by Profile.PermissionsPreset).
-//
-// JSON, not TOML, so we don't pull in the TOML writer alongside the
-// reader we already ship. The preset path in the profile remains the
-// caller's responsibility.
+// PresetFile is the JSON form of a profile's permission preset.
 type PresetFile struct {
 	SchemaVersion int    `json:"schema_version"`
 	Rules         []Rule `json:"rules"`
 }
 
-// LoadPreset reads a permission preset from disk. Returns an empty
-// PresetFile if the file doesn't exist.
+// LoadPreset reads the preset at path, or returns an empty one when the file does not exist.
 func LoadPreset(path string) (*PresetFile, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -44,8 +39,7 @@ func LoadPreset(path string) (*PresetFile, error) {
 	return &pf, nil
 }
 
-// SavePreset writes a preset to disk atomically (.tmp + rename).
-// Rules are sorted by (Tool, ArgvGlob) for stable diffs.
+// SavePreset writes pf to path owner-only through a temporary file and a rename, its rules sorted by Tool and ArgvGlob.
 func SavePreset(path string, pf *PresetFile) error {
 	if pf.SchemaVersion == 0 {
 		pf.SchemaVersion = 1
@@ -71,12 +65,7 @@ func SavePreset(path string, pf *PresetFile) error {
 	return os.Rename(tmp, path)
 }
 
-// Promote moves a session-scoped rule to the profile-level preset.
-// Returns the path of the preset file that was updated, plus the
-// rule that landed (de-duplicated against existing rules).
-//
-// `sessionRules` is the engine's current session-scoped rule set;
-// `index` selects which one to promote.
+// Promote moves session's rule at index into the preset at presetPath and the engine's profile rules, replacing the action of a rule with the same Tool, ArgvGlob and Glob.
 func (e *Engine) Promote(presetPath string, session ids.SessionID, index int) (Rule, error) {
 	rules := e.ListSessionRules(session)
 	if index < 0 || index >= len(rules) {
@@ -87,28 +76,37 @@ func (e *Engine) Promote(presetPath string, session ids.SessionID, index int) (R
 	if err != nil {
 		return Rule{}, err
 	}
-	// De-duplicate against existing rules.
-	for _, existing := range pf.Rules {
-		if existing.Tool == rule.Tool && existing.ArgvGlob == rule.ArgvGlob {
-			return rule, nil // already present
+	if upsertRule(&pf.Rules, rule) {
+		if err := SavePreset(presetPath, pf); err != nil {
+			return Rule{}, err
 		}
 	}
-	pf.Rules = append(pf.Rules, rule)
-	if err := SavePreset(presetPath, pf); err != nil {
-		return Rule{}, err
-	}
-	// Reflect the promotion in the in-memory engine as well.
 	e.mu.Lock()
-	e.profileRules = append(e.profileRules, rule)
-	// Remove from session scope.
-	src := e.sessionRules[session]
-	e.sessionRules[session] = append(src[:index], src[index+1:]...)
+	upsertRule(&e.profileRules, rule)
+	if src := e.sessionRules[session]; len(src) > 0 {
+		if i := slices.Index(src, rule); i >= 0 {
+			e.sessionRules[session] = slices.Delete(src, i, i+1)
+		}
+	}
 	e.mu.Unlock()
 	return rule, nil
 }
 
-// PromoteByDescription is a string-based convenience for callers that
-// want to identify the rule by `Tool:ArgvGlob` rather than by index.
+func upsertRule(rules *[]Rule, r Rule) bool {
+	for i, have := range *rules {
+		if have.Tool == r.Tool && have.ArgvGlob == r.ArgvGlob && have.Glob == r.Glob {
+			if have.Action == r.Action {
+				return false
+			}
+			(*rules)[i].Action = r.Action
+			return true
+		}
+	}
+	*rules = append(*rules, r)
+	return true
+}
+
+// PromoteByDescription promotes the session rule named "Tool" or "Tool:ArgvGlob".
 func (e *Engine) PromoteByDescription(presetPath string, session ids.SessionID, desc string) (Rule, error) {
 	parts := strings.SplitN(desc, ":", 2)
 	if len(parts) == 0 || parts[0] == "" {

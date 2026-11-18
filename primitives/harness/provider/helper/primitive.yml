@@ -1,0 +1,33 @@
+primitive: harness.provider.helper
+summary: The credential helper - attaches the stored secret for a provider and account to an outbound request, so a caller never handles the raw token.
+code:
+  - framework/experimental/harness/provider/helper/
+twins:
+  - job: 'Set the "Authorization: Bearer <key>" header on a request to a provider.'
+    why: The providers are handed the raw API key by harness.New and sign their own requests; the helper is built but no provider request goes through it yet.
+    sites:
+      - path: framework/experimental/harness/provider/helper/helper.go
+        note: InProcess.AttachAuth.
+      - path: framework/experimental/harness/provider/internal/openai/client.go
+        note: Client.Chat.
+      - path: framework/experimental/harness/provider/openrouter/openrouter.go
+        note: Provider.Models.
+invariants:
+  - id: bearer-for-known-providers-only
+    rule: AttachAuth sets a bearer Authorization only for openrouter and zai, reading the "default" account when none is given, and returns ErrUnknownProvider without touching the request for any other provider.
+    enforced_by:
+      - test: framework/experimental/harness/provider/helper.TestInProcessAttachesBearer
+      - test: framework/experimental/harness/provider/helper.TestSweepUnknownProviderGetsNoHeader
+  - id: heartbeat-ignores-store
+    rule: InProcess.Heartbeat reports healthy whatever the store holds, since the helper lives as long as its host process.
+    enforced_by:
+      - test: framework/experimental/harness/provider/helper.TestHeartbeatIgnoresTheStore
+decisions:
+  - id: in-process-helper-first
+    date: 2026-11-18
+    status: accepted
+    decision: The helper runs in the harness process and reads the credential store directly.
+    rejected:
+      - option: A separate process holding the tokens and signing requests over a Unix socket.
+        why: Not built yet; until then the agent's Bash tool could read the same store file, and the Bash blocklist and redaction are the defence.
+    revisit_if: Operations hardening needs tokens out of the agent's process memory.

@@ -14,35 +14,19 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
 
-// bashImpl runs a shell command via /bin/sh -c. Defaults:
-//
-//   - 2-minute timeout (configurable per-call up to 10 minutes)
-//   - 1 MiB combined stdout+stderr cap
-//   - Default-blocked credential-exfil commands (security, secret-tool,
-//     keyctl, kwalletcli), defense in depth alongside the permission
-//     middleware. The blocklist runs before any sandbox.
-//
-// Sandbox integration: pluggable via SandboxFn. When non-nil, it
-// wraps the *exec.Cmd before Run. Defaults to identity on platforms
-// without sandbox support.
 type bashImpl struct {
-	// SandboxFn wraps the command for OS-level sandboxing. Engine
-	// wires `sandbox-exec` on macOS / `bwrap` on Linux when
-	// available; nil = no sandbox.
+	// SandboxFn, when set, wraps the command for OS-level sandboxing before it runs.
 	SandboxFn func(*exec.Cmd) *exec.Cmd
-
-	// ExtraBlocklist adds command names to the default blocklist.
+	// ExtraBlocklist adds command names to DefaultBashBlocklist.
 	ExtraBlocklist []string
 }
 
-// DefaultBashBlocklist names the commands the Bash tool refuses to
-// run by default. The threat model rationale is in
-// docs/harness-architecture.md § Threat model → Standing rules.
+// DefaultBashBlocklist names the credential-store commands Bash refuses to run.
 var DefaultBashBlocklist = []string{
-	"security",    // macOS keychain CLI
-	"secret-tool", // Linux libsecret CLI
-	"keyctl",      // Linux kernel keyring
-	"kwalletcli",  // KDE wallet CLI
+	"security",
+	"secret-tool",
+	"keyctl",
+	"kwalletcli",
 	"systemd-ask-password",
 }
 
@@ -81,11 +65,6 @@ func (b bashImpl) Run(ctx context.Context, call tool.ToolCall, sink tool.EventSi
 		return nil, errors.New("Bash: cmd is required")
 	}
 
-	// Blocklist check. Scan the leading binary name of every
-	// pipeline/separator-split segment, normalized via filepath.Base so
-	// an absolute path (`/usr/bin/security`) matches its bare name. The
-	// user is welcome to pass arguments to non-blocked commands. This is
-	// defense in depth behind the authoritative permission middleware.
 	blocklist := append(DefaultBashBlocklist, b.ExtraBlocklist...)
 	for _, leading := range segmentCommands(args.Cmd) {
 		base := filepath.Base(leading)
@@ -99,9 +78,6 @@ func (b bashImpl) Run(ctx context.Context, call tool.ToolCall, sink tool.EventSi
 		}
 	}
 
-	// Bound the milliseconds before they become a Duration: a huge
-	// timeout_ms wrapped in the multiply, and the clamp then saw a few
-	// microseconds and killed the command before it started.
 	const maxBashTimeout = 10 * time.Minute
 	timeout := 2 * time.Minute
 	switch {
@@ -118,16 +94,12 @@ func (b bashImpl) Run(ctx context.Context, call tool.ToolCall, sink tool.EventSi
 	if args.Cwd != "" {
 		cmd.Dir = args.Cwd
 	}
-	// Merge supplemental env onto inherited.
 	if len(args.Env) > 0 {
 		cmd.Env = append(cmd.Environ(), envSlice(args.Env)...)
 	}
 	if b.SandboxFn != nil {
 		cmd = b.SandboxFn(cmd)
 	}
-	// The timeout must end the command, not just sh: a backgrounded
-	// child holding the output pipe kept Run waiting for its whole
-	// life. Kill the process group, and bound Run's wait on the pipe.
 	killGroupOnCancel(cmd)
 	cmd.WaitDelay = 2 * time.Second
 
@@ -146,9 +118,6 @@ func (b bashImpl) Run(ctx context.Context, call tool.ToolCall, sink tool.EventSi
 		)), nil
 	}
 	if ctx.Err() != nil {
-		// Caller-cancelled (e.g. CancelTurn mid-command). Per the
-		// doc's BashCancelledMidCommand error, surface a structured
-		// message about possible side effects.
 		return errorResult(fmt.Sprintf(
 			"Bash: cancelled mid-command after %s. The command may have already modified files.\nPartial output:\n%s",
 			dur, out.String(),
@@ -167,8 +136,6 @@ func (b bashImpl) Run(ctx context.Context, call tool.ToolCall, sink tool.EventSi
 }
 
 func leadingCommand(cmd string) string {
-	// Strip leading shell pipelines / subshells loosely; just take
-	// the first whitespace-delimited token of the trimmed string.
 	trimmed := strings.TrimLeft(cmd, " \t\n;|&(")
 	for i, r := range trimmed {
 		if r == ' ' || r == '\t' || r == '\n' {
@@ -178,20 +145,7 @@ func leadingCommand(cmd string) string {
 	return trimmed
 }
 
-// segmentCommands splits a command line on shell separators
-// (`;`, `|`, `&`, newline, subshell `(` `)`, and command-substitution
-// boundaries backtick / `$(` `)`) and returns the leading command
-// token of each segment. It peels off env-assignment and pass-through
-// prefixes (`command`, `env`, `VAR=val`), strips surrounding quotes
-// and leading backslashes, and collapses intra-token quote-splitting
-// (`sec”urity`) so a banned tool hidden behind quoting or substitution
-// is still detected. This is a blocklist heuristic, not a shell parser,
-// the permission middleware remains the authoritative gate.
 func segmentCommands(cmd string) []string {
-	// Treat command-substitution markers as plain separators: replace
-	// backticks with a separator and the `$(` opener with `(` so the
-	// existing FieldsFunc split on `(`/`)` peels the inner command into
-	// its own segment. This is intentionally syntactic, not a parser.
 	cmd = strings.ReplaceAll(cmd, "`", "\n")
 	cmd = strings.ReplaceAll(cmd, "$(", "(")
 
@@ -205,15 +159,12 @@ func segmentCommands(cmd string) []string {
 	out := make([]string, 0, len(segs))
 	for _, seg := range segs {
 		fields := strings.Fields(seg)
-		// Skip env-assignment and pass-through prefixes to reach the
-		// real command name.
 		for len(fields) > 0 {
 			f := normalizeToken(fields[0])
 			if f == "command" || f == "env" || f == "exec" || f == "nohup" || f == "sudo" {
 				fields = fields[1:]
 				continue
 			}
-			// VAR=value assignment prefix (no slash, contains '=').
 			if i := strings.IndexByte(f, '='); i > 0 && !strings.ContainsRune(f[:i], '/') {
 				fields = fields[1:]
 				continue
@@ -227,11 +178,6 @@ func segmentCommands(cmd string) []string {
 	return out
 }
 
-// normalizeToken strips shell quoting noise from a candidate command
-// token so the blocklist sees the bare name: it removes single/double
-// quotes anywhere in the token (collapsing `sec”urity` → `security`),
-// drops a leading backslash (`\security` → `security`), and unescapes
-// backslash-escaped characters. Best-effort defense in depth.
 func normalizeToken(tok string) string {
 	var b strings.Builder
 	b.Grow(len(tok))
@@ -244,9 +190,8 @@ func normalizeToken(tok string) string {
 		}
 		switch r {
 		case '\\':
-			escaped = true // drop the backslash, keep the next rune literally
+			escaped = true
 		case '\'', '"':
-			// drop quote characters (collapses quote-splitting)
 		default:
 			b.WriteRune(r)
 		}
@@ -262,25 +207,27 @@ func envSlice(m map[string]string) []string {
 	return out
 }
 
-// cappedWriter discards writes after max bytes.
 type cappedWriter struct {
-	w   interface{ Write([]byte) (int, error) }
-	max int
-	n   int
+	w         interface{ Write([]byte) (int, error) }
+	max       int
+	n         int
+	truncated bool
 }
 
 func (c *cappedWriter) Write(p []byte) (int, error) {
-	if c.n >= c.max {
-		return len(p), nil // pretend we wrote (don't error the process)
-	}
 	remaining := c.max - c.n
-	if len(p) > remaining {
-		_, _ = c.w.Write(p[:remaining])
-		_, _ = c.w.Write([]byte("\n[output truncated]\n"))
-		c.n = c.max
-		return len(p), nil
+	if len(p) <= remaining {
+		n, err := c.w.Write(p)
+		c.n += n
+		return n, err
 	}
-	n, err := c.w.Write(p)
-	c.n += n
-	return n, err
+	if remaining > 0 {
+		_, _ = c.w.Write(p[:remaining])
+		c.n = c.max
+	}
+	if !c.truncated {
+		_, _ = c.w.Write([]byte("\n[output truncated]\n"))
+		c.truncated = true
+	}
+	return len(p), nil
 }

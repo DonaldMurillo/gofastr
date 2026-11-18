@@ -1,0 +1,57 @@
+primitive: harness.tool.builtins.bash
+summary: The Bash tool - runs a command through /bin/sh -c with a clamped timeout that kills the whole process group, a 1 MiB output cap and a credential-store command blocklist.
+code:
+  - framework/experimental/harness/tool/builtins/bash*.go
+  - framework/experimental/harness/tool/builtins/procgroup_*.go
+docs:
+  - framework/docs/content/harness-architecture.md
+twins:
+  - job: Reduce a shell word to the text the shell would run, dropping quotes and backslashes, to check it against a command or flag list.
+    why: The blocklist and the quiet-mode gate grew separately in two packages; the shared rule is unquoting, not the lists, and no package holds a shell-word helper yet.
+    sites:
+      - path: framework/experimental/harness/tool/builtins/bash.go
+        note: segmentCommands and normalizeToken, for the Bash blocklist.
+      - path: framework/experimental/harness/tool/permission/permission.go
+        note: shellQuoting in hasExecArg, for quiet mode's exec-flag refusal.
+      - path: framework/experimental/harness/tool/permission/quietpaths.go
+        note: splitWords, for quiet mode's path arguments.
+invariants:
+  - id: blocklist-every-segment
+    rule: Bash refuses a command when any segment split on ; | & newline ( ) or a backtick starts with a blocklisted name, after dropping command, env, exec, nohup, sudo and VAR=value prefixes, quotes, backslashes and the directory part.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestBashBlocklistBypass
+      - test: framework/experimental/harness/tool/builtins.TestBashBlocklistShellForms
+      - test: framework/experimental/harness/tool/builtins.TestBashExtraBlocklistAndPrefixes
+      - test: framework/experimental/harness/tool/builtins.TestBashBlocklist
+  - id: timeout-clamped
+    rule: A timeout_ms over ten minutes runs with the ten-minute ceiling, never a wrapped or shorter duration.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestBashHugeTimeoutTakesTheCeiling
+  - id: timeout-kills-process-group
+    rule: On timeout or cancel Bash kills the command's whole process group, so a backgrounded child neither survives nor holds Run waiting on the output pipe.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestBashTimeoutKillsBackgroundedChild
+      - test: framework/experimental/harness/tool/builtins.TestBashTimeoutEndsPipeHolder
+  - id: output-capped
+    rule: Bash returns at most 1 MiB of combined stdout and stderr, followed by exactly one output truncated line whenever it dropped output, a write that ends on the cap included.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestBashOutputIsCapped
+      - test: framework/experimental/harness/tool/builtins.TestCappedWriterNotesTruncationAtAnExactBoundary
+decisions:
+  - id: blocklist-is-defense-in-depth
+    date: 2026-11-18
+    status: accepted
+    decision: The blocklist is a syntactic heuristic behind the permission middleware, which stays the gate that decides whether a command runs.
+    rejected:
+      - option: A full shell parser in front of Bash.
+        why: Shell grammar, expansions and aliases make a complete parse a project of its own, and a missed form would read as safe; the human prompt already sees the command.
+    revisit_if: Bash runs with no permission middleware in front of it.
+    upholds: [blocklist-every-segment]
+  - id: kill-group-not-shell
+    date: 2026-11-18
+    status: accepted
+    decision: Bash starts the command in its own process group and the cancel kills the group, with WaitDelay bounding the wait on the pipe.
+    rejected:
+      - option: Kill only /bin/sh, the default of exec.CommandContext.
+        why: A child the shell backgrounded kept the output pipe open and Run waited for its whole life.
+    upholds: [timeout-kills-process-group]

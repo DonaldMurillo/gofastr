@@ -1,0 +1,58 @@
+primitive: harness.tool.builtins.fs
+summary: The filesystem tools - Read, Write, Edit, Ls, Glob and Grep.
+code:
+  - framework/experimental/harness/tool/builtins/read*.go
+  - framework/experimental/harness/tool/builtins/write*.go
+  - framework/experimental/harness/tool/builtins/ls.go
+  - framework/experimental/harness/tool/builtins/glob.go
+  - framework/experimental/harness/tool/builtins/grep*.go
+docs:
+  - framework/docs/content/harness-architecture.md
+twins:
+  - job: Open a path only when it, or a symlink's target, is a regular file, and check the open handle again.
+    why: Read and Edit take a path while Grep takes a WalkDir entry; nothing but work keeps them from one helper.
+    sites:
+      - path: framework/experimental/harness/tool/builtins/read.go
+        note: openRegularPath, for Read and Edit.
+      - path: framework/experimental/harness/tool/builtins/grep.go
+        note: openRegular, for each file Grep walks.
+invariants:
+  - id: regular-files-only
+    rule: Read, Edit and Grep refuse or skip a FIFO, a device or a symlink to one instead of opening it, so a quiet-mode call cannot block the turn past CancelTurn.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestReadAndEditRefuseNonRegularFiles
+      - test: framework/experimental/harness/tool/builtins.TestGrepSkipsFIFO
+      - test: framework/experimental/harness/tool/builtins.TestGrepRefusesFIFOPath
+  - id: grep-byte-cap
+    rule: Grep reads at most 8 MiB of one file and says so in the result when the file held more, CRLF lines included.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestGrepCapsBytesPerFile
+      - test: framework/experimental/harness/tool/builtins.TestGrepCRLFFileSaysItWasTruncated
+  - id: grep-match-cap
+    rule: Grep stops at 1000 matching lines across all files.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestGrepStopsAtTheMatchCap
+      - test: framework/experimental/harness/tool/builtins.TestGrepSaysWhenItStoppedAtTheMatchCap
+  - id: grep-stops-on-cancel
+    rule: A cancelled context ends a Grep mid-file and returns the partial output as an error result.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestGrepStopsMidFile
+      - test: framework/experimental/harness/tool/builtins.TestGrepStopsOnCancel
+  - id: grep-follows-symlinked-root
+    rule: A Grep path that is a symlink to a directory searches the directory it points at.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestGrepSearchesASymlinkedDirectory
+  - id: edit-refuses-ambiguous
+    rule: Edit changes nothing when old_string occurs more than once and replace_all is not set.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestEditRefusesAmbiguous
+      - test: framework/experimental/harness/tool/builtins.TestEditReplaceAll
+decisions:
+  - id: containment-is-the-permission-gate
+    date: 2026-11-18
+    status: accepted
+    decision: The file tools take any path; keeping a call inside the working directory is the permission engine's job, which asks before any call quiet mode cannot place.
+    rejected:
+      - option: Confine each file tool to the working directory itself.
+        why: A user who approves a read outside the repo then could not get it, and the rule would live in two places.
+    upholds: [harness.tool.permission/quiet-paths-under-working-dir]

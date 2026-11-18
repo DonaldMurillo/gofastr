@@ -14,9 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
 )
 
-// RequestBody is the subset of an OpenAI Chat Completions request used by the
-// provider adapter tests. It replaces the identical capturedBody types in the
-// openrouter and zai test packages.
+// RequestBody is the subset of an OpenAI Chat Completions request the adapter tests check.
 type RequestBody struct {
 	Model    string `json:"model"`
 	Stream   bool   `json:"stream"`
@@ -26,8 +24,7 @@ type RequestBody struct {
 	} `json:"messages"`
 }
 
-// DecodeRequestBody reads the request body into RequestBody. It replaces the
-// identical decodeBody helpers in the openrouter and zai test packages.
+// DecodeRequestBody reads r into a RequestBody, failing t on error.
 func DecodeRequestBody(t testing.TB, r io.Reader) RequestBody {
 	t.Helper()
 	raw, err := io.ReadAll(r)
@@ -41,16 +38,12 @@ func DecodeRequestBody(t testing.TB, r io.Reader) RequestBody {
 	return body
 }
 
-// StopUsageSSE builds the terminal SSE response used by both provider adapter
-// request-shape tests. It replaces their shared scriptedSSE(stopUsageFrame(...))
-// setup.
+// StopUsageSSE returns an SSE body holding one stop chunk with the given usage, then [DONE].
 func StopUsageSSE(prompt, completion int) string {
 	return scriptedSSE(stopUsageFrame(prompt, completion))
 }
 
-// AssertStreamingParse verifies text, stop, usage, and error events from a
-// streaming provider. It replaces the identical TestChatStreamingParse bodies
-// formerly kept in the openrouter and zai adapter test packages.
+// AssertStreamingParse checks the text, stop and usage events a provider streams from a scripted SSE body.
 func AssertStreamingParse(t testing.TB, newProvider func(baseURL string) provider.Provider) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

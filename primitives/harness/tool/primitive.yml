@@ -1,0 +1,38 @@
+primitive: harness.tool
+summary: The Tool interface every tool source produces, the Registry that merges sources by name, the middleware Chain, and the dispatch-context values (session, registry, spawner, sub-agent depth) tools read.
+code:
+  - framework/experimental/harness/tool/*.go
+docs:
+  - framework/docs/content/harness-architecture.md
+on_change:
+  - A change to the Tool or Middleware signature reaches every source (builtins, mcpclient, plugins) and the engine's dispatcher in the same change.
+invariants:
+  - id: registry-refuses-shadowing
+    rule: Register and Replace return an error and leave the registry unchanged, sources and tools alike, when a tool name is already exposed by another source.
+    enforced_by:
+      - test: framework/experimental/harness/tool.TestRegistryCollisionLeavesRegistryUnchanged
+      - test: framework/experimental/harness/tool.TestRegistryNameCollisionAcrossSources
+  - id: lookup-unknown-is-sentinel
+    rule: Lookup of a name no source exposes returns an error for which errors.Is(err, ErrToolUnknown) holds.
+    enforced_by:
+      - test: framework/experimental/harness/tool.TestLookupUnknownIsErrToolUnknown
+  - id: chain-first-is-outermost
+    rule: Chain wraps the handler so the first middleware listed sees the call first and the result last.
+    enforced_by:
+      - test: framework/experimental/harness/tool.TestChainOrder
+decisions:
+  - id: collision-is-an-error
+    date: 2026-11-18
+    status: accepted
+    decision: Two sources exposing one tool name is an error at Register or Replace.
+    rejected:
+      - option: Let the later source shadow the earlier one.
+        why: An MCP server or plugin could then replace a built-in such as Bash or Read without anyone seeing it.
+    upholds: [registry-refuses-shadowing]
+  - id: dispatch-state-in-context
+    date: 2026-11-18
+    status: accepted
+    decision: The session ID, registry, spawner and sub-agent depth reach a tool through the dispatch context, so one registered tool instance serves every session.
+    rejected:
+      - option: Bind them into each tool's struct fields at registration.
+        why: The registry is shared across sessions, so a bound session goes stale and a tool would need one instance per session.

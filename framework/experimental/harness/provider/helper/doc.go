@@ -1,5 +1,2 @@
-// Package helper is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package helper attaches stored provider credentials to outbound requests.
 package helper
