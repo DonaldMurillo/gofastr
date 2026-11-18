@@ -237,16 +237,18 @@ func (h *tokenPurposeHarness) assertTokenRefusedAtReset(tok, label, where string
 // assertResetTokenRefusedElsewhere pins the other two directions: a reset
 // token must not mark the victim's email verified at /auth/verify-email,
 // nor be redeemed at /auth/magic-link/verify where its userID payload
-// would auto-create a junk account.
-func (h *tokenPurposeHarness) assertResetTokenRefusedElsewhere(tok, where string) {
+// would auto-create a junk account. Each endpoint gets its own freshly
+// minted token: a non-peeking store consumes the token on the first
+// refusal, so a shared one would reach the second endpoint already spent.
+func (h *tokenPurposeHarness) assertResetTokenRefusedElsewhere(where string) {
 	h.t.Helper()
-	if code := h.attemptVerifyEmail(tok); code != http.StatusUnauthorized {
+	if code := h.attemptVerifyEmail(h.mintResetToken()); code != http.StatusUnauthorized {
 		h.t.Errorf("SECURITY: [token-purpose] reset token at /auth/verify-email%s: got %d, want 401", where, code)
 	}
 	if h.store.verifiedIDs[h.victimID] {
 		h.t.Error("SECURITY: [token-purpose] reset token marked the victim's email verified" + where)
 	}
-	if code := h.attemptMagicVerify(tok); code != http.StatusUnauthorized {
+	if code := h.attemptMagicVerify(h.mintResetToken()); code != http.StatusUnauthorized {
 		h.t.Errorf("SECURITY: [token-purpose] reset token at /auth/magic-link/verify%s: got %d, want 401", where, code)
 	}
 	if _, _, err := h.store.FindByEmail(context.Background(), h.victimID); err == nil {
@@ -295,7 +297,7 @@ func TestVerificationTokenCannotResetPassword(t *testing.T) {
 // and auto-creates a junk account — burning the victim's reset link.
 func TestResetTokenCannotDriveOtherFlows(t *testing.T) {
 	h := newTokenPurposeHarness(t)
-	h.assertResetTokenRefusedElsewhere(h.mintResetToken(), "")
+	h.assertResetTokenRefusedElsewhere("")
 }
 
 // A magic-link login token (EMAIL payload) must be refused at the reset

@@ -80,7 +80,7 @@ func TestNonPeekingStoreRefusesVerificationTokenAtReset(t *testing.T) {
 // The other two directions, matching TestResetTokenCannotDriveOtherFlows.
 func TestNonPeekingStoreRefusesResetTokenElsewhere(t *testing.T) {
 	h := newNonPeekingHarness(t)
-	h.assertResetTokenRefusedElsewhere(h.mintResetToken(), " on a non-peeking store")
+	h.assertResetTokenRefusedElsewhere(" on a non-peeking store")
 }
 
 // A magic-link token carries an EMAIL payload; at /auth/reset-password that
