@@ -8,7 +8,7 @@ docs:
   - framework/docs/content/static-export.md
 invariants:
   - id: writes-through-os-root
-    rule: Every file the export writes or removes goes through an os.Root opened on OutDir, so a symlink inside OutDir fails the write instead of redirecting it.
+    rule: Every file the export writes or removes goes through an os.Root opened on OutDir, so the write stays inside OutDir and a symlink in it that points outside fails the write instead of redirecting it.
     enforced_by:
       - test: framework/static.TestExportRefusesSymlinkInOutDir
   - id: case-twins-refused

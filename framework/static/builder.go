@@ -73,8 +73,11 @@ type Contributor interface {
 
 // Result lists what a Build wrote.
 type Result struct {
-	Pages  []string // route paths rendered, dynamic routes expanded
-	Assets []string // URL paths of every other file written
+	Pages []string // route paths rendered, dynamic routes expanded
+	// Assets holds the URL paths of the generated assets, docs,
+	// contributor files and copied files written. Redirect pages,
+	// _headers and _redirects are not listed.
+	Assets []string
 }
 
 // Build renders every route of b.Host into b.OutDir with the assets its

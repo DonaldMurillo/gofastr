@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -60,7 +59,7 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int, written *f
 		}
 	}
 	contentHash, err := hashExportTree(b.OutDir, func(rel string) bool {
-		if generated[rel] || strings.HasPrefix(rel, pwaDir+"/") {
+		if slices.Contains(genPaths, rel) {
 			return true
 		}
 		fi, err := os.Stat(filepath.Join(b.OutDir, filepath.FromSlash(rel))) //gofastr:allow(rootread) rel is enumerated from hashExportTree's own WalkDir of OutDir — nothing caller-controlled — and following a leaf alias is the point: os.SameFile detects generated-file links
