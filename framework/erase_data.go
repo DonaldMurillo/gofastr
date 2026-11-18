@@ -249,6 +249,7 @@ func (a *App) keptIdentities(ctx context.Context, dialect migrate.Dialect, tenan
 // keepIdentities writes user's identities for a retry, after a store
 // eraser failed, and drops every kept row past keptIdentitiesFor.
 func (a *App) keepIdentities(ctx context.Context, tenant string, user datexport.ErasedUser) error {
+	//gofastr:allow(GOFASTR1415) erasure's own bookkeeping: rows are written only after a store eraser fails, removed by the next erasure of the user whose store erasers all succeed, and past keptIdentitiesFor by any erasure; export leaves them out on purpose, since a restore must not bring an erased user's email back
 	if _, err := a.DB.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS `+eraseIdentitiesTable+` (tenant TEXT NOT NULL DEFAULT '', user_id TEXT NOT NULL, kind BIGINT NOT NULL, value TEXT NOT NULL, kept_at BIGINT NOT NULL, PRIMARY KEY (tenant, user_id, kind))`); err != nil {
 		return err
 	}
