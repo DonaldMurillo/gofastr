@@ -45,6 +45,28 @@ func (s *stubEmailSender) Send(_ context.Context, to, body string) error {
 	return nil
 }
 
+// delivered waits up to d for a send and answers it; a send that does
+// not come within d fails the test as a timeout, apart from any check of
+// what was sent.
+func (s *stubEmailSender) delivered(t *testing.T, d time.Duration) (string, string) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for {
+		s.mu.Lock()
+		if s.sendCount > s.observedCount {
+			s.observedCount = s.sendCount
+			to, body := s.lastTo, s.lastBody
+			s.mu.Unlock()
+			return to, body
+		}
+		s.mu.Unlock()
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out after %v waiting for an email", d)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func (s *stubEmailSender) snapshot() (string, string) {
 	deadline := time.After(time.Second)
 	for {

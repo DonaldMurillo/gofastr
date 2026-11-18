@@ -2049,6 +2049,7 @@ func (a *App) runStartHooks() error {
 	if a.processModules != nil {
 		a.processModules.StartLoops()
 	}
+	a.startRetentionSweep(a.appCtx)
 	for _, fn := range a.startHooks {
 		if a.stopRequestedNow() {
 			return context.Canceled

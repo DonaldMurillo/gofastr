@@ -29,7 +29,8 @@ type SecurityEvent struct {
 	// email.verified, 2fa.enrolled, 2fa.challenge_succeeded,
 	// 2fa.challenge_failed, 2fa.challenge_locked, 2fa.disabled,
 	// 2fa.backup_codes_regenerated, passkey.registered, passkey.deleted,
-	// passkey.refused, passkey.clone_suspected,
+	// passkey.renamed, passkey.reauthenticated, passkey.refused,
+	// passkey.clone_suspected,
 	// account.claimed, session.revoked, roles.updated, token.created, token.revoked,
 	// token.auth_failed. Callers MUST use one of the documented kinds so
 	// downstream consumers can match on a closed vocabulary.
@@ -46,6 +47,12 @@ type SecurityEvent struct {
 	// Meta value is a fixed-vocabulary token or a count. Useful for
 	// forensics; never a credential.
 	Email string
+
+	// emailCanonical is the sha256 of the value emitSecurity folded Email
+	// to by the manager's rule, never a second copy of the address; a sink
+	// wrapper that rewrites Email no longer matches it, and the SQL sink
+	// folds that address by the default.
+	emailCanonical string
 
 	// Remote is the client IP (host part of r.RemoteAddr). XFF is NOT
 	// trusted. See the auth threat-model doc. Empty when the request
@@ -107,6 +114,13 @@ func (m *AuthManager) emitSecurity(ctx context.Context, ev SecurityEvent) {
 	}
 	if ev.At.IsZero() {
 		ev.At = time.Now().UTC()
+	}
+	// The sink sees the address under the manager's own rule, so a
+	// pseudonym it derives agrees with the battery's keys.
+	if ev.Email != "" {
+		if c, err := m.canonicalizeEmail(ev.Email); err == nil {
+			ev.Email, ev.emailCanonical = c, sha256hex(c)
+		}
 	}
 	deliverAudit(ctx, sink, ev)
 }
@@ -203,9 +217,15 @@ func (s *sqlAuditSink) SecurityEvent(ctx context.Context, ev SecurityEvent) {
 		// digest still correlates repeated attempts on one address,
 		// across spellings once canonical. It is a pseudonym, not
 		// anonymous: anyone holding a candidate address can confirm it.
+		// emitSecurity folds the address under the manager's rule; folding
+		// it again by the default would disagree with an
+		// AuthConfig.CanonicalizeEmail override. An event handed to the
+		// sink directly is folded by the default here.
 		addr := ev.Email
-		if c, err := CanonicalEmail(addr); err == nil {
-			addr = c
+		if ev.emailCanonical == "" || ev.emailCanonical != sha256hex(addr) {
+			if c, err := CanonicalEmail(addr); err == nil {
+				addr = c
+			}
 		}
 		diff["email_hash"] = hashedIdentifier(addr)
 	}

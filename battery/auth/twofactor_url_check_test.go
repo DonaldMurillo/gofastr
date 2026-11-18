@@ -17,7 +17,7 @@ func TestTwoFactorURLThatCannotBeRedirectedToIsRefusedAtInit(t *testing.T) {
 		"WithTwoFactorURL":             func(u string) AuthPlugin { return NewCorePlugin().WithTwoFactorURL(u) },
 		"MagicLinkConfig.TwoFactorURL": func(u string) AuthPlugin { return NewMagicLinkPlugin(MagicLinkConfig{DevMode: true, TwoFactorURL: u}) },
 		"PasskeyConfig.TwoFactorURL": func(u string) AuthPlugin {
-			return NewPasskeyPlugin(PasskeyConfig{RPID: "example.com", Origins: []string{"https://example.com"}, TwoFactorURL: u})
+			return NewPasskeyPlugin(PasskeyConfig{NoAddedNotice: true, RPID: "example.com", Origins: []string{"https://example.com"}, TwoFactorURL: u})
 		},
 		"OAuth2Config.TwoFactorURL": func(u string) AuthPlugin { return NewOAuth2Plugin(OAuth2Config{TwoFactorURL: u}) },
 	}

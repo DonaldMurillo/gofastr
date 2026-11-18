@@ -1,0 +1,179 @@
+primitive: auth.passkey
+summary: Passkey sign-in, step-up and management, the WebAuthn verifier and the browser module that runs the ceremonies.
+code:
+  - battery/auth/passkey.go
+  - battery/auth/passkey_sql.go
+  - battery/auth/passkey_client.go
+  - battery/auth/passkey.js
+  - battery/auth/passkey_manage.js
+  - battery/auth/webauthn.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: unknown-credential-answers-404
+    rule: A sign-in or step-up whose credential id the store does not hold, or holds for another account, answers 404 with the same message as every failed sign-in and the reason passkey_unknown_credential, and the browser module calls PublicKeyCredential.signalUnknownCredential only for a 404 carrying that reason.
+    enforced_by:
+      - test: battery/auth.TestPasskeyUnknownCredentialIs404
+      - test: battery/auth.TestPasskeyDeleteOnlyOwn
+      - test: battery/auth.TestPasskeyReauthProof
+      - test: battery/auth.TestPasskeyBrowserManageAndReauth
+      - test: battery/auth.TestPasskeyModuleRules
+  - id: transports-kept-and-sent-back
+    rule: Registration stores only the known AuthenticatorTransport values the browser reported, sorted and once each, and the authenticator's AAGUID, and every excludeCredentials and allowCredentials entry carries the stored transports.
+    enforced_by:
+      - test: battery/auth.TestPasskeyKeepsTransportsAndAAGUID
+      - test: battery/auth.TestSQLitePasskeyStoreContract
+      - test: battery/auth.TestSQLitePasskeyStoreUpgradesOldTable
+      - test: battery/auth.TestPasskeyBrowserManageAndReauth
+  - id: only-conditional-create-skips-presence
+    rule: Registration skips the UP and UV checks only for a challenge issued with conditional true, whose options ask for userVerification preferred; every other registration, sign-in and step-up requires both flags.
+    enforced_by:
+      - test: battery/auth.TestPasskeyConditionalCreate
+  - id: management-is-the-owners
+    rule: Rename and delete change only a passkey the signed-in account owns, and answer 404 for any other id.
+    enforced_by:
+      - test: battery/auth.TestPasskeyRenameOnlyOwn
+      - test: battery/auth.TestPasskeyDeleteOnlyOwn
+      - test: battery/auth.TestMemoryPasskeyStoreContract
+      - test: battery/auth.TestSQLitePasskeyStoreContract
+  - id: list-names-the-account
+    rule: GET {base}/passkey/list answers rpId, the base64url user handle and the account's email beside the passkeys, each with its device type, transports and, when known, its AAGUID as a UUID.
+    enforced_by:
+      - test: battery/auth.TestPasskeyListNamesTheAccount
+      - test: battery/auth.TestPasskeyKeepsTransportsAndAAGUID
+  - id: step-up-needs-an-older-passkey
+    rule: A step-up accepts only a passkey of the session's account whose whole second of creation ended before the session signed in and that is at least ReauthMinAge old; the options call lists only those (filtered into a new slice, leaving the store's), answers 404 when the account has no passkey and 403 passkey_too_new when it has some but none qualifies, and the step-up judges the same passkey read its other checks use and refuses any other with the same 403 before its signature is checked.
+    enforced_by:
+      - test: battery/auth.TestPasskeyReauthRefusesNewPasskeys
+      - test: battery/auth.TestPasskeyReauthNeedsAPasskeyOlderThanTheSession
+      - test: battery/auth.TestReauthLookupErrorFailsClosed
+      - test: battery/auth.TestSQLPasskeyKeepsPredateOrder
+      - test: battery/auth.TestReauthOptionsLeaveTheStoresSliceAlone
+  - id: registration-is-the-asking-sessions
+    rule: register/options answers, beside the challenge, a binding token whose payload digests the challenge and the asking session, and register completes only with that binding, redeemed by the same session; the challenge's own payload stays the bare user id erasure finds.
+    enforced_by:
+      - test: battery/auth.TestPasskeyRegistrationIsBoundToItsSession
+      - test: battery/auth.TestPasskeyModuleRules
+  - id: step-up-tolerates-a-null-user-handle
+    rule: A step-up, whose options name the account's passkeys, accepts an assertion with an empty userHandle and still refuses one naming another account; a sign-in without a userHandle is refused 400.
+    enforced_by:
+      - test: battery/auth.TestStepUpAcceptsAMissingUserHandle
+      - test: battery/auth.TestPasskeyUserHandleMustMatch
+  - id: changes-need-a-step-up
+    rule: Once any of the account's passkeys is ReauthMinAge old or has no creation time, register/options and delete refuse unless the body carries an unspent proof this session earned (a delete of an id the account does not hold answers 404 first, without spending it), whenever the session began, answering 403 passkey_signin_required when no passkey can confirm for this session and 403 passkey_reauth_required otherwise; the browser module then runs the step-up and resends with its proof (a silent create gives up instead).
+    enforced_by:
+      - test: battery/auth.TestPasskeyChangesNeedStepUp
+      - test: battery/auth.TestEnrollingSessionIsGated
+      - test: battery/auth.TestZeroSessionTimeIsGated
+      - test: battery/auth.TestStaleDeleteKeepsTheProof
+      - test: battery/auth.TestPasskeyModuleRules
+  - id: added-passkey-is-mailed
+    rule: A registered passkey mails the account's address, best effort and off the request, only when the user store reports it verified, through PasskeyConfig.NoticeSender a fixed text with the time and kind of passkey and no caller-chosen value; Init refuses a plugin without NoticeSender outside DevMode unless NoAddedNotice is set, and a NoticeSender whose user store does not implement EmailVerifiedChecker.
+    enforced_by:
+      - test: battery/auth.TestPasskeyAddedNotifiesTheOwner
+      - test: battery/auth.TestAddedNoticeCarriesNoCallerText
+      - test: battery/auth.TestAddedNoticeSkipsUnverifiedAddress
+      - test: battery/auth.TestNoticeNeedsAVerifiedChecker
+  - id: base-is-a-same-origin-path
+    rule: The browser module accepts an auth base only of one or more non-empty path segments, sends no request whose URL resolves to another origin, and follows no redirect.
+    enforced_by:
+      - test: battery/auth.TestPasskeyBaseStaysSameOrigin
+      - test: battery/auth.TestPasskeyModuleRules
+  - id: unverified-refusals-name-no-account
+    rule: A sign-in refused before its signature verifies (user handle or signature) records passkey.refused with no user id.
+    enforced_by:
+      - test: battery/auth.TestAnonymousRefusalNamesNoAccount
+  - id: register-offered-wherever-webauthn-is
+    rule: The browser module reveals an add-a-passkey button wherever the browser has WebAuthn, whatever getClientCapabilities reports.
+    enforced_by:
+      - test: battery/auth.TestPasskeyModuleRules
+  - id: reauth-proof-is-single-use-and-the-sessions
+    rule: A step-up challenge lists only the signed-in account's passkeys, and RedeemReauthProof answers nil once per proof and only for the full session that earned it, matched by the account and a digest of its token.
+    enforced_by:
+      - test: battery/auth.TestPasskeyReauthProof
+      - test: battery/auth.TestPasskeyReauthProofNeedsFullSession
+      - test: battery/auth.TestPasskeyReauthProofRefusesPreTwoFactorSession
+      - test: battery/auth.TestPasskeyReauthChallengeIsTheSessionsAccount
+      - test: battery/auth.TestReauthProofIsTheSessions
+      - test: battery/auth.TestPasskeyBrowserManageAndReauth
+  - id: user-tokens-reach-erasure
+    rule: Every passkey token whose payload is a user id (registration, conditional registration, step-up challenge) is removed by erasure from the SQL and in-memory token stores; a step-up proof and a registration binding, whose payloads are session digests naming no user, die with the session erasure revokes and expire within ReauthTTL and ChallengeTTL.
+    enforced_by:
+      - test: battery/auth.TestEraseCoversConfiguredStoreTables
+      - test: battery/auth.TestMemoryStoresReachedByErasure
+    applies:
+      - battery/auth/token_purpose.go
+      - battery/auth/erase.go
+      - battery/auth/memory_erase.go
+  - id: one-webauthn-request-at-a-time
+    rule: The browser module runs ceremonies one after another, withdraws its waiting autofill request before each, holds every ceremony while an autofill pick's sign-in POST is on its way, starts the request again only once none is running or queued and never after a sign-in succeeded, lets one connected autofill field own it, starts none for a field gone or replaced by the time its options arrive, withdraws it when a navigation took its field away, renews it before its challenge's timeout, retries a failed one with growing waits and shows its error once.
+    enforced_by:
+      - test: battery/auth.TestPasskeyBrowserManageAndReauth
+      - test: battery/auth.TestPasskeyModuleRules
+    judge: Does this change start a navigator.credentials call in passkey.js outside exclusive() while an autofill request may be waiting?
+  - id: background-reads-spare-the-ceremony-limit
+    rule: GET {base}/passkey/list and POST {base}/passkey/login/options?autofill=1 have rate limiters of their own, chosen before the body is read and kept apart under an explicit RateLimit.Scope by the suffixes -list and -autofill, and the browser module sends that query on every autofill request and no other; a quiet create after a password sign-in spends the ceremonies' limit at its options and its registration, so the module asks for one at most once per tab session and never where sessionStorage cannot record it.
+    enforced_by:
+      - test: battery/auth.TestPasskeyBackgroundLimitsKeepTheirOwnScope
+      - test: battery/auth.TestPasskeyListDoesNotSpendCeremonyLimit
+      - test: battery/auth.TestPasskeyAutofillOptionsHaveTheirOwnLimit
+      - test: battery/auth.TestPasskeyRoutesAreRateLimited
+      - test: battery/auth.TestPasskeyModuleRules
+  - id: register-options-reads-only-conditional
+    rule: POST {base}/passkey/register/options asks for a conditional create only for a body whose conditional member is true, read strictly, and treats every other body, duplicated or case-folded keys and unparsable JSON included, as a regular registration.
+    enforced_by:
+      - test: battery/auth.TestPasskeyRegisterOptionsToleratesOtherBodies
+      - test: battery/auth.TestOptionsFlagDecodeIsStrict
+      - test: battery/auth.TestPasskeyConditionalCreate
+  - id: invalid-state-message-only-for-a-create
+    rule: The browser module shows the already-registered message for an InvalidStateError only from adding a passkey; any other ceremony shows the browser's message.
+    enforced_by:
+      - test: battery/auth.TestPasskeyModuleRules
+      - test: battery/auth.TestPasskeyBrowserManageAndReauth
+  - id: list-signal-is-never-stale
+    rule: The browser module signals a passkey list only from the newest read and only when that read overlapped no add or remove (none started or ended after it began, and none was running when it answered); once no change runs it reads again each list it dropped, plus the change's own list after a success (a quiet upgrade included), and a read that answered after the change ended is read again at once.
+    enforced_by:
+      - test: battery/auth.TestPasskeyModuleRules
+  - id: step-up-form-submits-as-its-button
+    rule: The step-up module submits its form, with the proof in its passkey_reauth field, with the marked submit button as submitter, so the button's formaction, name and value go with the proof.
+    enforced_by:
+      - test: battery/auth.TestPasskeyModuleRules
+decisions:
+  - id: keep-hand-rolled-verifier
+    date: 2026-11-17
+    status: accepted
+    decision: The WebAuthn ceremonies stay verified by webauthn.go on the standard library, with its own bounded CBOR and COSE parsing (issue 708).
+    rejected:
+      - option: Adopt github.com/go-webauthn/webauthn.
+        why: It adds a dependency tree for attestation formats and metadata the battery never verifies (it requests attestation none), and the narrow verifier is covered by its own tests and the browser round trips.
+    revisit_if: The battery starts verifying attestation statements or trusting authenticator metadata, or a WebAuthn level adds checks the verifier would have to grow.
+  - id: step-up-returns-a-proof
+    date: 2026-11-17
+    status: accepted
+    decision: A passed step-up answers a single-use proof token, bound to the session that earned it and spent by the app's handler with RedeemReauthProof, instead of marking the session.
+    rejected:
+      - option: Bind the proof to the account only.
+        why: Any other session of the account, a stolen one included, could spend a proof the owner earned.
+      - option: Stamp a re-authenticated-at time on the session.
+        why: Every SessionStore would need a new extension to write it, and a stamp authorizes every sensitive action in its window rather than the one the user confirmed.
+    upholds: [reauth-proof-is-single-use-and-the-sessions]
+  - id: step-up-refuses-new-passkeys
+    date: 2026-11-18
+    status: accepted
+    decision: A passkey must predate the session and be ReauthMinAge old (one hour by default) to confirm a step-up; once any of the account's passkeys is that old, adding or removing one needs a step-up from every session, and a session that cannot earn one signs in again with a passkey; the owner is mailed when a passkey is added, which covers the first ReauthMinAge after the first passkey.
+    rejected:
+      - option: Require a step-up for every registration.
+        why: The first passkey of an account has nothing to step up with, and a password-only account would be locked out of adding one; so the rule applies only once a passkey able to confirm exists.
+      - option: Gate only when a passkey can confirm for this session.
+        why: A session older than every passkey (the one that enrolled them, or one stolen before) could never step up, so it was never gated, for its whole life.
+      - option: Refuse only passkeys registered by the same session.
+        why: Signing in again with the new passkey makes a session that postdates it, which the predate rule alone then admits.
+    revisit_if: Registration starts requiring a fresh second proof, which would make a new passkey trustworthy on its own.
+    upholds: [step-up-needs-an-older-passkey]
+  - id: device-type-from-backup-eligibility
+    date: 2026-11-17
+    status: accepted
+    decision: A passkey's device type is derived from its backup-eligible flag, which is fixed when the passkey is made, rather than stored in a column of its own.
+    rejected:
+      - option: Store the device type.
+        why: It is the BE flag under another name, and a second column could disagree with it.
