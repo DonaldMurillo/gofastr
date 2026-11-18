@@ -1,0 +1,47 @@
+primitive: dsl.filter-text
+summary: The filter text of admin filter chips, the query box and ?filter=, parsed by ParsePredicate and ParseSort into validated filter predicates and sorts, and written by Quote.
+code:
+  - framework/dsl/predicate.go
+docs:
+  - framework/docs/content/query-dsl.md
+on_change:
+  - A grammar change also updates the filter-text section of query-dsl.md, and Quote must still write text ParsePredicate reads back.
+twins:
+  - job: Check a sort field against the allow-list, Hidden as unknown, NoQuery by name, a wire name resolved to its column.
+    why: The two report under their own phrase keys (dsl.* and filter.*), so merging changes the reason a client reads; nothing else keeps them apart.
+    sites:
+      - path: framework/dsl/predicate.go
+        note: ParseSort builds its own allowed, noQuery and alias maps.
+      - path: framework/filter/filter.go
+        note: ParseSortValues reads newFieldIndex.
+invariants:
+  - id: tree-is-validated
+    rule: ParsePredicate returns only a tree filter.ValidatePredicate accepted against fields, so field, op and value checks are filter's.
+    enforced_by:
+      - test: framework/dsl.TestParsePredicateFieldGuards
+  - id: input-bounded-errors-scrubbed
+    rule: Filter text over maxDSLInputSize is refused, and a parse error names its byte offset and quotes a short control-byte-scrubbed excerpt.
+    enforced_by:
+      - test: framework/dsl.TestParsePredicateOverSizeRefused
+      - test: framework/dsl.TestParsePredicateErrorsScrubbedAndPositioned
+  - id: chains-are-flat
+    rule: A chain of ors or of ands becomes one group with a child per operand, and and binds tighter than or.
+    enforced_by:
+      - test: framework/dsl.TestParsePredicateLongChainIsFlat
+      - test: framework/dsl.TestParsePredicateAndOrPrecedence
+  - id: keyword-is-whole-word
+    rule: A keyword matches only when a space, paren, bracket or comma follows it, so andy is not and.
+    enforced_by:
+      - test: framework/dsl.TestKeywordIsAWholeWord
+  - id: only-two-escapes
+    rule: "A quoted string takes only \\\" and \\\\ as escapes and refuses any other backslash, and Quote writes the inverse."
+    enforced_by:
+      - test: framework/dsl.TestParsePredicateSyntaxErrors
+      - test: framework/dsl.TestQuoteRoundTripsParser
+  - id: sort-text-checked
+    rule: ParseSort refuses more than 16 keys, a bad direction or name, an unknown or Hidden field alike, and a NoQuery field by name, and, for a name that matches the DSL identifier syntax, accepts and resolves the same fields filter.ParseSortValues does; a wire name outside that syntax (display-name) is accepted by filter.ParseSortValues and refused by ParseSort.
+    enforced_by:
+      - test: framework/dsl.TestParseSortRefuses
+      - test: framework/dsl.TestParseSortRefusesNoQueryByName
+      - test: framework/dsl.TestParseSortAgreesWithFilterSort
+      - test: framework/dsl.TestParseSortRefusesWireNameOutsideIdentSyntax

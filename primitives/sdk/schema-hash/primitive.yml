@@ -1,0 +1,61 @@
+primitive: sdk.schema-hash
+summary: The schema hash the SDK generator records and the serving app recomputes to detect drift between generated SDKs and the live API.
+code:
+  - framework/sdk/schemahash.go
+docs:
+  - framework/docs/content/sdk.md
+on_change:
+  - A change to what SchemaHash covers makes every SDK generated before it report drift; say so in CHANGELOG and in the Drift detection section of sdk.md.
+invariants:
+  - id: hash-covers-the-wire-surface
+    rule: The hash moves when a non-Hidden field's type, flags, NoQuery, enum values, default or wire name changes, or the ordered key, JSON case, search fields, relations and their foreign keys, states or an SDK endpoint change.
+    enforced_by:
+      - test: framework/sdk.TestSchemaHashChangesOnFieldType
+      - test: framework/sdk.TestSchemaHashChangesWhenNoQueryChanges
+      - test: framework/sdk.TestSchemaHashCoversWireSurface
+      - test: framework/sdk.TestPrimaryKeyOrderMovesSchemaHash
+      - test: framework/sdk.TestSchemaHashIncludesJSONCase
+      - test: framework/sdk.TestForeignKeysMoveSchemaHash
+      - test: framework/sdk.TestStatesChangeMovesSchemaHash
+      - test: framework/sdk.TestHashKeepsAmbiguousEnumsDistinct
+      - test: framework/sdk.TestSchemaHashSeesBigDefaults
+  - id: hash-ignores-what-clients-cannot-see
+    rule: Hidden fields, field and search-field order, hand-written endpoints, display settings and the mount point never move the hash.
+    enforced_by:
+      - test: framework/sdk.TestSchemaHashIgnoresHiddenFields
+      - test: framework/sdk.TestSchemaHashCoversWireSurface
+      - test: framework/sdk.TestStatesEntityDisplayStillIgnored
+      - test: framework/sdk.TestSchemaHashIgnoresMountPoint
+      - test: framework/sdk.TestNoDriftForGroupMountedEntity
+  - id: declaration-hashes-as-defined-entity
+    rule: Each config passes entity.Define before projection, so a raw declaration and its registered entity hash alike.
+    enforced_by:
+      - test: framework/sdk.TestSchemaHashMatchesDefinedEntity
+  - id: order-independent-and-collapsing
+    rule: Entities sort by name then canonical JSON, so input order never moves the hash, and versions that project to the same JSON collapse to one while divergent ones stay.
+    enforced_by:
+      - test: framework/sdk.TestHashIsInputOrderIndependent
+      - test: framework/sdk.TestSchemaHashCollapsesIdenticalVersions
+      - test: framework/sdk.TestSchemaHashKeepsEveryDivergentVersion
+  - id: registry-includes-every-version
+    rule: RegistryNamedConfigs returns every registered version of each named entity and skips an unknown name.
+    enforced_by:
+      - test: framework/sdk.TestRegistryNamedConfigsResolvesVersionedEntity
+      - test: framework/sdk.TestRegistryNamedConfigsSkipsUnknown
+decisions:
+  - id: mount-point-not-hashed
+    date: 2026-11-17
+    status: accepted
+    decision: NamedConfig.Version is not hashed.
+    rejected:
+      - option: Hash the mount prefix.
+        why: Every App.GroupEntity app then reported drift that regenerating could not clear, since a declaration does not know its mount.
+    upholds: [hash-ignores-what-clients-cannot-see]
+  - id: canonical-json-sort-key
+    date: 2026-11-17
+    status: accepted
+    decision: Entities sort and collapse on their canonical JSON.
+    rejected:
+      - option: fmt.Sprint as the sort key.
+        why: It is not injective ([]string{"a b"} and {"a","b"} print alike), so divergent enums collapsed and the digest depended on input order.
+    upholds: [order-independent-and-collapsing]

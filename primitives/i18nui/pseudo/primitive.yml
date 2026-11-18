@@ -1,0 +1,19 @@
+primitive: i18nui.pseudo
+summary: Pseudo-localization - Pseudo accents, lengthens and brackets a string while keeping its placeholders, and AddPseudo fills a catalog locale with every defined phrase pseudo-localized and marks it so label fallbacks are pseudo-localized too.
+code:
+  - framework/i18nui/pseudo.go
+docs:
+  - framework/docs/content/i18n.md
+invariants:
+  - id: pseudo-keeps-placeholders
+    rule: Pseudo returns an empty string unchanged and, for non-empty input, accents every ASCII letter, doubles every vowel, brackets the result, pads it with middle dots until the text before the closing bracket holds at least four thirds of one more than the input's runes, and keeps {name} and {{name}} placeholders as written.
+    enforced_by:
+      - test: framework/i18nui.TestPseudo
+  - id: add-pseudo-covers-every-phrase
+    rule: AddPseudo writes Pseudo of every defined phrase under the tag.
+    enforced_by:
+      - test: framework/i18nui.TestAddPseudoCoversDefaults
+  - id: pseudo-locale-pseudo-localizes-fallbacks
+    rule: In a locale AddPseudo filled, an entity, field, value or view label with no catalog entry is pseudo-localized as well.
+    enforced_by:
+      - test: framework/i18nui.TestPseudoAccentsLabelFallbacks

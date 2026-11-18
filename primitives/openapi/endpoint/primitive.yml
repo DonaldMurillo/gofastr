@@ -1,0 +1,28 @@
+primitive: openapi.endpoint
+summary: The URL builders, input and output schemas and default tool names for an entity's custom endpoints, shared by routing, the spec and MCP.
+code:
+  - framework/openapi/endpoint.go
+docs:
+  - framework/docs/content/endpoints.md
+invariants:
+  - id: relative-path-takes-the-prefix
+    rule: EntityEndpointRoutePath puts the API prefix before a relative endpoint path of an unversioned entity, never before an absolute path or a versioned entity's group prefix, and the router and the spec both call it.
+    enforced_by:
+      - test: framework.TestAPIPrefixAppliesToRelativeEntityEndpoints
+      - test: framework.TestAPIPrefixSkipsAbsoluteEntityEndpoints
+      - test: framework/openapi.TestVersionedSpecDoubleAPIPrefix
+  - id: path-is-literal
+    rule: An endpoint path drops "." and ".." segments and spells ":name" as "{name}".
+    enforced_by:
+      - test: framework/openapi.TestEndpointPathRejectsDotSegments
+      - test: framework/openapi.TestColonInputStaysInPath
+  - id: tool-names-stay-distinct
+    rule: DefaultEndpointToolName maps distinct routes to distinct names ("/" to "_", a {param} to -param-, hyphens kept).
+    enforced_by:
+      - test: framework/openapi.TestEndpointToolNameFoldCollides
+  - id: one-endpoint-schema
+    rule: The MCP tool's input schema is EndpointInputSchema, and the spec splits the same fields - a {param} in the path goes to the path, an SDK GET or DELETE puts the rest in the query, and only the remainder is the request body, none on GET or HEAD; the 200 body is EndpointOutputSchema, or the component Returns names when OutputSchema is unset, else {type:object}.
+    enforced_by:
+      - test: framework/openapi.TestEndpointTypedRequestBody
+      - test: framework/openapi.TestEndpointMCPInputSchema
+      - test: framework/openapi.TestEndpointSchemaHelpersExcludeHidden

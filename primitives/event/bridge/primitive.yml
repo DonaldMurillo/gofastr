@@ -1,0 +1,50 @@
+primitive: event.bridge
+summary: AttachFanout, which publishes a bus's local events to a fanout and re-emits other replicas' events on it, with no echo and no blocking emitter.
+code:
+  - framework/event/bridge.go
+docs:
+  - framework/docs/content/events.md
+  - framework/docs/content/scaling.md
+invariants:
+  - id: each-replica-sees-an-event-once
+    rule: An event emitted on one bus reaches each other bridged bus's handlers at most once and its own bus's handlers only through the local emit - the origin drops its own node's envelopes and a remote re-emit carries the IsRemote marker, which the tap never republishes; delivery is best-effort, since the queue drops envelopes and a failed Publish is not retried.
+    enforced_by:
+      - test: framework/event.TestBridgeThreeBusExactlyOnce
+      - test: framework/event.TestBridgeTwoBusCrossDelivery
+      - test: framework/event.TestDerivedEventGatedExactlyOnce
+      - test: framework/event.TestIsRemoteReflectsOrigin
+  - id: one-fanout-per-bus
+    rule: AttachFanout errors on a nil fanout and on a bus that already has one attached, and the bus accepts a new fanout once stop has run.
+    enforced_by:
+      - test: framework/event.TestAttachFanoutRefusesNil
+      - test: framework/event.TestAttachFanoutRejectsDoubleAttach
+      - test: framework/event.TestAttachFanoutDetachReattach
+  - id: tap-never-blocks-an-emitter
+    rule: The tap enqueues onto a bounded queue drained by one publisher goroutine and, when the queue is full, drops the oldest envelope and tries once more, dropping the new one when a concurrent producer refilled the slot, so a stalled fanout stalls no emitter and, with a single producer, the retry enqueues the current envelope; an enqueued envelope can still be evicted by later ones, left unsent when the bridge stops, or lost to a failed Publish.
+    enforced_by:
+      - test: framework/event.TestBridgeEmitDoesNotBlockOnStalledFanout
+      - test: framework/event.TestBridgeOverflowDropsOldest
+  - id: bad-payload-skips-only-the-publish
+    rule: An event whose Data fails to marshal, or whose marshaler panics, is not published but is still delivered locally, and later events still publish.
+    enforced_by:
+      - test: framework/event.TestBridgeMarshalFailureSkipsPublish
+      - test: framework/event.TestBridgeMarshalLogKeepsPublishing
+      - test: framework/event.TestBridgeMarshalPanicIsContained
+  - id: publish-panic-is-contained
+    rule: A panic in the fanout's Publish is logged on the publisher goroutine, which goes on draining the queue.
+    enforced_by:
+      - test: framework/event.TestBridgePublishPanicContained
+  - id: remote-data-round-trips-json
+    rule: A remote event's Data arrives as decoded JSON through jsonexact, objects as map[string]any and integers past 2^53 with their digits.
+    enforced_by:
+      - test: framework/event.TestBridgeDataRoundTripsAsMap
+      - test: framework/event.TestBridgeKeepsBigIntegers
+decisions:
+  - id: one-topic-for-the-bus
+    date: 2026-11-17
+    status: accepted
+    decision: Every bridge publishes and subscribes on the one fixed topic gofastr.events, and per-type filtering happens in the bus as on one process.
+    rejected:
+      - option: A fanout topic per event type.
+        why: Each bridge would need to subscribe to every type any replica might emit.
+    upholds: [each-replica-sees-an-event-once]

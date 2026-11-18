@@ -1,0 +1,27 @@
+primitive: filter.keys
+summary: Spelling and reading filter keys in the suffix (field_op) and bracket (field[op]) forms, and finding the keys a field name makes ambiguous.
+code:
+  - framework/filter/key.go
+docs:
+  - framework/docs/content/entity-declarations.md
+invariants:
+  - id: bracket-names-whole-field
+    rule: In name[op] the whole text before the brackets names the field and the op is a BracketOps word, so check_in[eq] filters the column check_in.
+    enforced_by:
+      - test: framework/filter.TestBracketFormEveryOperator
+  - id: ambiguous-bare-key-refused
+    rule: A bare key that is a name and also another name plus a suffix is refused (filter.ambiguous_filter) even under Lenient, naming both bracket spellings; a Hidden name never makes a key ambiguous.
+    enforced_by:
+      - test: framework/filter.TestAmbiguousBareKeyRefused
+      - test: framework/filter.TestHiddenFieldMakesNoAmbiguity
+      - test: framework/filter.TestUnambiguousKeysUnchanged
+      - test: framework/filter.TestSpellerForSkipsHidden
+  - id: unknown-bracket-op-after-name
+    rule: A bracket op outside BracketOps is refused only when the name is named; an unnamed name gets the unknown-field refusal an absent field gets.
+    enforced_by:
+      - test: framework/filter.TestUnknownBracketOpRefused
+      - test: framework/filter.TestBracketHiddenFieldParity
+  - id: speller-brackets-only-ambiguous
+    rule: KeySpeller.Key returns the suffix spelling unless it reads two ways, then the bracket spelling.
+    enforced_by:
+      - test: framework/filter.TestKeySpeller

@@ -1,0 +1,18 @@
+primitive: i18nui.entity
+summary: The entity screens' chrome phrases - the list, record and bulk-bar headings, buttons, notices and toasts framework/entityui says.
+code:
+  - framework/i18nui/entity.go
+  - framework/i18nui/entity_list.go
+  - framework/i18nui/entity_record.go
+  - framework/i18nui/entity_bulk.go
+docs:
+  - framework/docs/content/entityui.md
+  - framework/docs/content/i18n.md
+decisions:
+  - id: one-file-per-screen-area
+    date: 2026-11-17
+    status: accepted
+    decision: Each entity screen area keeps its phrases in its own file (entity.go, entity_list.go, entity_record.go, entity_bulk.go) beside admin.go and telemetry.go.
+    rejected:
+      - option: One file for every entity phrase.
+        why: Changes to one area's phrases collided with every other area's.

@@ -128,6 +128,21 @@ var ownedPackages = []string{
 	"framework/ui", "framework/ui/theme", "framework/ui/icons", "framework/ui/icons/internal/generate", "framework/ui/internal/treegate",
 	"framework/contracts", "framework/contracts/analyzers", "framework/contracts/internal/codetext", "framework/contracts/internal/docgate",
 	"framework/entityui", "framework/migrate", "framework/embed", "framework/entity", "framework/access",
+	"framework/image", "framework/image/internal/vp8l", "framework/imagefield",
+	"framework/static",
+	"framework/outbox", "framework/event", "framework/fanout", "framework/cron",
+	"framework/filter", "framework/pagination", "framework/openapi", "framework/sdk", "framework/dsl",
+	"framework/file", "framework/pluginhost", "framework/isolation", "framework/localrun",
+	"framework/localapp", "framework/localentity", "framework/dev",
+	"framework/gallery", "framework/i18nui", "framework/sdkdocs", "framework/sdkdocs/internal/docpage",
+	"framework/docs", "framework/docs/mcptools",
+	"framework/testkit", "framework/testkit/axetest", "framework/testkit/cssweight", "framework/testkit/nojstest",
+	"framework/semcov", "framework/axecov", "framework/agentsinv", "framework/factory",
+	"framework/processmoduletest", "framework/uie2e", "framework/internal/pmtestkit",
+	"framework/ratelimit", "framework/hook", "framework/db", "framework/db/sqlbusy", "framework/lifecycle",
+	"framework/routegroup", "framework/slowquery", "framework/tenant", "framework/softdelete", "framework/owner",
+	"framework/internal/casing", "framework/internal/exif", "framework/internal/jpegcost",
+	"framework/internal/jpegtest", "framework/internal/testdb",
 }
 
 //gofastr:test-reads primitives/ *.go

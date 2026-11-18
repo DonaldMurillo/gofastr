@@ -1,0 +1,132 @@
+primitive: sdkdocs
+summary: The public SDK docs site a host mounts beside its UI host - which entities it documents and who may see them, the artifact download routes, and the manifest drift check against the live registry.
+code:
+  - framework/sdkdocs/sdkdocs.go
+  - framework/sdkdocs/phrases.go
+docs:
+  - framework/docs/content/sdk.md
+on_change:
+  - A changed sdkdocs.Config field or mounted route is documented in framework/docs/content/sdk.md.
+invariants:
+  - id: mount-needs-app-router-and-registry
+    rule: Mount returns an error and registers nothing when the core-ui app, the router or Config.Registry is nil.
+    enforced_by:
+      - test: framework/sdkdocs.TestMountRequiresRegistry
+  - id: base-path-is-normalized
+    rule: Mount trims slashes off BasePath and prefixes one, and an empty or "/" BasePath mounts the site at /docs/api.
+    enforced_by:
+      - test: framework/sdkdocs.TestSweepMountNormalizesPaths
+  - id: documents-public-by-default
+    rule: The site documents Public entities when Config.Entities is empty, every entity with IncludeGated, and with Entities exactly those whose name or table matches an entry after trimming and ASCII lowercasing.
+    enforced_by:
+      - test: framework/sdkdocs.TestGatedEntity404s
+      - test: framework/sdkdocs.TestIncludeGatedOptIn
+      - test: framework/sdkdocs.TestExplicitAllowList
+      - test: framework/sdkdocs.TestSweepAllowListMatchesNameOrTable
+  - id: documents-only-routes-that-exist
+    rule: An entity whose Exposure.CRUD is false, or for which Config.CRUDMounted answers false, is not documented, so the site never publishes paths that answer 404.
+    enforced_by:
+      - test: framework/sdkdocs.TestIncludedEntitiesHonorsRouteReality
+      - test: framework/sdkdocs.TestSweepCRUDOffIsNotDocumented
+  - id: excluded-entity-is-a-404
+    rule: A reference URL naming an entity outside the documented set answers 404 like a name no entity has, while the visibility policy allows a context with no request, the static-export path whose StaticPaths lists only documented entities.
+    enforced_by:
+      - test: framework/sdkdocs.TestGatedEntity404s
+      - test: framework/sdkdocs.TestSweepVisibilityPolicyAllowsWithoutRequest
+  - id: lookup-folds-ascii-only
+    rule: A reference-URL segment matches an entity's table or name under ASCII case folding only, so a Unicode look-alike such as the Kelvin sign is not a second URL for the page.
+    enforced_by:
+      - test: framework/sdkdocs.TestLookupFoldsASCIIOnly
+  - id: documented-set-is-live
+    rule: The documented set is read from the registry on each call, so an entity registered after Mount appears on the screens' menu and in the drawer.
+    enforced_by:
+      - test: framework/sdkdocs.TestDrawerListsLateEntities
+  - id: drift-compares-the-manifest-scope
+    rule: The drift banner shows when the schema hash of the manifest's own entities, under the site's JSON case, differs from the manifest's hash, and a live entity the manifest does not name never causes drift.
+    enforced_by:
+      - test: framework/sdkdocs.TestDriftBanner
+      - test: framework/sdkdocs.TestDriftScopedToManifestEntities
+      - test: framework/sdkdocs.TestSweepDriftSeesSnakeCase
+  - id: unknown-provenance
+    rule: Artifacts without a readable manifest, or a manifest of another SchemaVersion, read as unknown provenance and never as drift, and an artifact directory with neither manifest nor artifacts reads as neither.
+    enforced_by:
+      - test: framework/sdkdocs.TestSweepProvenance
+  - id: stale-downloads-still-serve
+    rule: Drift shows a banner and does not withhold the downloads.
+    enforced_by:
+      - test: framework/sdkdocs.TestDriftBanner
+  - id: downloads-cover-only-documented-entities
+    rule: Every artifact route answers 404 unless a manifest is present and names only entities the site documents, whatever Config.Policy allows.
+    enforced_by:
+      - test: framework/sdkdocs.TestArtifactsRefuseGatedScope
+      - test: framework/sdkdocs.TestArtifactsRefuseWithoutManifest
+  - id: artifact-is-the-one-the-manifest-records
+    rule: An SDK artifact whose SHA-256 differs from the manifest's record for its key, or has no record, answers 404.
+    enforced_by:
+      - test: framework/sdkdocs.TestArtifactsRefuseFileNotInManifest
+  - id: artifact-revalidates-on-its-hash
+    rule: An SDK artifact carries its recorded hash as a quoted ETag and answers 304 to a matching If-None-Match, with Cache-Control no-cache, or private, no-cache under a Policy.
+    enforced_by:
+      - test: framework/sdkdocs.TestArtifactDownloadHeaders
+      - test: framework/sdkdocs.TestArtifactCachePrivacy
+  - id: zip-filename-keeps-a-safe-charset
+    rule: The Go zip downloads as an attachment whose filename holds only ASCII letters, digits, dot, dash and underscore, whatever the app name and manifest SDKVersion hold.
+    enforced_by:
+      - test: framework/sdkdocs.TestSweepZipFilenameKeepsASafeCharset
+      - test: framework/sdkdocs.TestManifestJunkSanitizedInHeaders
+  - id: policy-gates-every-route
+    rule: Config.Policy gates every docs screen, every artifact route and the section-menu drawer's chrome and state routes.
+    enforced_by:
+      - test: framework/sdkdocs.TestPolicyGatesScreensAndDownloads
+      - test: framework/sdkdocs.TestPolicyGatesSectionDrawer
+      - test: framework/sdkdocs.TestDrawerServesWithoutPolicy
+  - id: redirect-only-for-downloads
+    rule: A redirecting Policy answers a download with 303 to its URL with C0 and DEL bytes stripped, and answers the drawer's fetches with 403.
+    enforced_by:
+      - test: framework/sdkdocs.TestRedirectPolicyRefusesDrawer
+      - test: framework/sdkdocs.TestPolicyRedirectRedScrubbed
+      - test: framework/sdkdocs.TestPolicyRedirectRedCleanRoundTrip
+decisions:
+  - id: not-a-uihost-option
+    date: 2026-11-17
+    status: accepted
+    decision: Hosts call sdkdocs.Mount beside their UI host; the site is not a uihost option.
+    rejected:
+      - option: A uihost option that serves the SDK docs.
+        why: The screens compose framework/ui, and uihost must never import framework/ui, whose always-on styles would leak into every host's CSS bundle.
+    revisit_if: uihost gains a way to serve framework/ui screens without linking its styles.
+  - id: reference-renders-from-the-live-registry
+    date: 2026-11-17
+    status: accepted
+    decision: The reference pages render from the live registry on each request, and only the downloadable artifacts are checked for drift, once, against the manifest's schema hash.
+    rejected:
+      - option: Render the reference from the generated manifest.
+        why: The pages would drift from the running API whenever the artifacts were not regenerated.
+    revisit_if: The registry can change after wiring.
+    upholds: [drift-compares-the-manifest-scope]
+  - id: downloads-follow-site-visibility
+    date: 2026-11-17
+    status: accepted
+    decision: The site's own visibility rules decide whether downloads are served, and Policy decides only who reaches the routes.
+    rejected:
+      - option: Serve whatever `gofastr generate sdk` wrote.
+        why: The generator covers every entity unless --only narrows it, so anonymous callers got the tables, fields and transitions of gated entities whose reference pages 404.
+    revisit_if: The manifest records a visibility per entity.
+    upholds: [downloads-cover-only-documented-entities]
+  - id: drawer-refuses-a-redirect
+    date: 2026-11-17
+    status: accepted
+    decision: A redirecting Policy refuses the drawer's chrome and state fetches with 403 and follows the redirect only for downloads.
+    rejected:
+      - option: Redirect the drawer's fetches too.
+        why: The runtime fetches the drawer and would paste the sign-in page into the sheet, while a download is a navigation that may land on a sign-in page.
+    upholds: [redirect-only-for-downloads]
+  - id: scrub-the-redirect-here
+    date: 2026-11-17
+    status: accepted
+    decision: The download gate strips C0 and DEL from a Policy's redirect URL itself with textsafe.StripUnsafe, the one consumer of app.Decision outside uihost's scrubbed emit sites.
+    rejected:
+      - option: Pass the Policy's URL to http.Redirect unchanged.
+        why: A raw CR or LF could forge headers, and DEL breaks HTTP/2 writes.
+    revisit_if: app.Decision carries a URL that is scrubbed when the decision is made.
+    upholds: [redirect-only-for-downloads]

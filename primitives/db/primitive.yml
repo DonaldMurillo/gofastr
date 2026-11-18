@@ -1,0 +1,78 @@
+primitive: db
+summary: The shared low-level database seams - the Executor and Beginner interfaces, the transaction on the context, the after-commit queue and nested savepoints.
+code:
+  - framework/db/*.go
+docs:
+  - framework/docs/content/hooks-and-transactions.md
+invariants:
+  - id: queue-runs-once-in-order-after-commit
+    rule: RunAfterCommit runs the queued work once in Add order, a second call runs nothing, and work in a queue nobody drains never runs.
+    enforced_by:
+      - test: framework/db.TestCommitQueueDrainsInAddOrder
+      - test: framework/db.TestCommitQueueSecondDrainIsANoOp
+      - test: framework/db.TestCommitQueueUndrainedNeverRuns
+  - id: late-add-runs-at-once
+    rule: An Add after the queue has drained runs its work immediately, and concurrent Adds around a drain each run exactly once.
+    enforced_by:
+      - test: framework/db.TestCommitQueueLateAddRunsImmediately
+      - test: framework/db.TestCommitQueueConcurrentAddsRunExactlyOnce
+  - id: without-tx-hides-tx-and-queue
+    rule: On a context from WithoutTx, TxFromContext and CommitQueueFromContext report absent and every other value survives.
+    enforced_by:
+      - test: framework/db.TestWithoutTxMasksTxAndQueue
+  - id: savepoint-undoes-only-its-writes
+    rule: When fn errors or panics, InSavepoint rolls back to its savepoint and releases it, leaving the outer transaction's earlier writes and the transaction itself usable.
+    enforced_by:
+      - test: framework/db.TestInSavepointUndoesOnlyItsOwnWritesOnError
+      - test: framework/db.TestInSavepointUndoesWritesOnPanic
+      - test: framework/db.TestRolledBackSavepointLeavesTheStack
+  - id: savepoint-rollback-ignores-cancellation
+    rule: The savepoint's writes are undone even when ctx is cancelled, whether fn fails or the release does.
+    enforced_by:
+      - test: framework/db.TestInSavepointRollsBackDespiteACancelledContext
+  - id: savepoint-work-waits-for-the-outer-commit
+    rule: Work staged inside a released savepoint joins the outer queue and runs only when it drains, and work staged inside a rolled-back one never runs.
+    enforced_by:
+      - test: framework/db.TestInSavepointStagesWorkOnTheOuterQueue
+decisions:
+  - id: commit-queue-not-a-probe
+    date: 2026-11-17
+    status: accepted
+    decision: Framework-owned transactions carry a CommitQueue, and live-bus emissions staged in them run after Commit.
+    rejected:
+      - option: Poll the live *sql.Tx from a goroutine until it reports done, then re-check the row.
+        why: The probe's statements interleave with the owner's on the transaction's one connection and each side reads the other's results (#353); a commit queue also knows commit from rollback exactly.
+    revisit_if: database/sql gains a way to learn a transaction's fate passively.
+    upholds: [queue-runs-once-in-order-after-commit, without-tx-hides-tx-and-queue]
+  - id: late-add-runs-not-drops
+    date: 2026-11-17
+    status: accepted
+    decision: An Add after the drain runs its work at once.
+    rejected:
+      - option: Append to the drained queue.
+        why: Nothing reads it again, so the work is lost silently, while the drain happens only after a successful Commit, so running it is correct.
+    upholds: [late-add-runs-at-once]
+  - id: bare-with-tx-falls-back-to-polling
+    date: 2026-11-17
+    status: accepted
+    decision: A caller's own transaction wrapped with bare WithTx, on a ctx that has no queue yet, carries no queue (WithTx keeps a queue ctx already carries), and crud falls back to polling it and re-checking the row on the base connection.
+    rejected:
+      - option: Refuse a transaction with no queue.
+        why: Callers who own their tx and use WithTx would lose live events; WithTxQueue is the way to opt out of the probe.
+    revisit_if: Every caller-owned transaction can be required to use WithTxQueue.
+    upholds: [queue-runs-once-in-order-after-commit]
+  - id: savepoint-names-are-unique
+    date: 2026-11-17
+    status: accepted
+    decision: Savepoints are named from a process-wide counter.
+    rejected:
+      - option: One fixed name.
+        why: Nested savepoints would share a name and rely on ROLLBACK TO and RELEASE picking the innermost one (they do on SQLite; a same-name mutation passes the tests).
+  - id: savepoint-released-after-rollback
+    date: 2026-11-17
+    status: accepted
+    decision: A rollback to the savepoint is followed by its RELEASE.
+    rejected:
+      - option: ROLLBACK TO alone.
+        why: Postgres and SQLite both keep the savepoint after ROLLBACK TO, so it stays on the transaction's stack.
+    upholds: [savepoint-undoes-only-its-writes]

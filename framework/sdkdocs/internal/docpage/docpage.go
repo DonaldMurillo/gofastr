@@ -1,13 +1,4 @@
-// Package docpage is the SDK reference's docs page: the section menu
-// rail, the article column, and an optional contents rail, collapsing
-// to one column on phones. The look lives in
-// sdkdocs-docpage.style.css, an owned style; `gofastr gen styles`
-// writes the class methods in sdkdocs-docpage_style.gen.go.
-//
-// sdkdocs is framework code and cannot import an example, so it keeps
-// its own copy of the docs page an app draws for itself
-// (examples/site/docpage). The package is internal so the
-// generated Style handle is not framework API.
+// Package docpage is the SDK reference's three-column docs page frame.
 package docpage
 
 import (
@@ -20,9 +11,7 @@ import (
 type Config struct {
 	// Nav is the left rail (interactive.SectionMenu).
 	Nav render.HTML
-	// Toc is the optional right rail (an in-page table of contents).
-	// An empty value releases the column, including after a soft
-	// navigation.
+	// Toc is the optional right rail; empty releases the column.
 	Toc render.HTML
 	// Crumbs is the trail above the article body.
 	Crumbs []ui.Crumb

@@ -6,7 +6,7 @@
  * the HOST page with full privileges. It is the reusable core distilled out of
  * the wysiwyg plugin's broker: for each mount marker it creates an
  * opaque-origin sandboxed iframe, runs the versioned postMessage capability RPC
- * (protocol-v1.md §3/§4), and dispatches plugin-specific events to a
+ * (framework/docs/content/plugin-platform.md), and dispatches plugin-specific events to a
  * per-plugin adapter registered via window.__gofastrPluginHost.register.
  *
  * Security invariants (do NOT weaken — these ARE the D3 third-party guarantee):
@@ -16,7 +16,7 @@
  *     We deliberately do NOT check event.origin: an opaque-origin frame's
  *     origin is the literal string "null", so origin-string checks are a trap.
  *
- * Protocol v1 is frozen (protocol-v1.md §3/§4). The envelope, the source check,
+ * Protocol v1 is frozen (framework/docs/content/plugin-platform.md). The envelope, the source check,
  * and the ready→init handshake are EXACTLY as the wysiwyg broker shipped them
  * in Phase 0.
  *
@@ -52,7 +52,7 @@
 (function () {
   'use strict';
 
-  // --- Protocol constants (protocol-v1.md §3 — frozen) ----------------------
+  // --- Protocol constants (framework/docs/content/plugin-platform.md, frozen) ----------------------
   const ENVELOPE_VERSION = 1;
   const RESPONSE_TIMEOUT_MS = 5000;  // request → response (§3)
   const TEARDOWN_TIMEOUT_MS = 200;   // SPA teardown ack budget (§6.9)

@@ -8,18 +8,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// EntityEndpointPath builds the absolute URL path for a custom Endpoint
-// declared on an entity. Relative paths are joined under the entity's table;
-// absolute paths pass through. ":id"-style params are converted to "{id}".
+// EntityEndpointPath builds the absolute path of an entity's custom
+// Endpoint: a relative path joins the entity's table path, ":id" becomes
+// "{id}" and dot segments are dropped.
 func EntityEndpointPath(ent *entity.Entity, path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		path = "/"
 	}
 	if !strings.HasPrefix(path, "/") {
-		// Relative paths resolve under the entity's table path. For a
-		// versioned entity (registered via App.GroupEntity) the table path
-		// carries the group prefix, so the endpoint must too.
 		base := "/" + strings.Trim(ent.GetTable(), "/")
 		if ent.Version != "" {
 			base = ent.Version + base
@@ -30,29 +27,8 @@ func EntityEndpointPath(ent *entity.Entity, path string) string {
 	return crud.NormalizePath(convertColonParams(path))
 }
 
-// EntityEndpointRoutePath is EntityEndpointPath with the app's API prefix
-// applied, the path the endpoint is actually mounted at.
-//
-// A relative Endpoint.Path is documented as resolving against the entity's
-// table path. Under WithAPIPrefix that table path is prefixed, so the endpoint
-// must be too; without this an app using both ends up with its API split
-// across two prefixes (CRUD at /api/licenses, the custom endpoint at
-// /licenses/{id}/revoke) and nothing reports it.
-//
-// An absolute path keeps bypassing the prefix. That is the documented escape
-// hatch for mounting outside the entity's namespace.
-//
-// The OpenAPI spec calls this too, not the unprefixed EntityEndpointPath. It
-// used to use the latter, because the spec carried the prefix in its `servers`
-// entry and its paths were prefix-relative by construction. Path keys are now
-// absolute (see EntityOpenAPI), so the documented endpoint path has to be the
-// mounted one, and routing through the same helper is what keeps the escape
-// hatch behaving identically in both.
-//
-// A versioned entity (App.GroupEntity) carries its group prefix as
-// Version, and the router mounts that prefix absolutely, so the API
-// prefix is not applied on top of it: "/api/v1/posts/revoke", never
-// "/api/api/v1/posts/revoke".
+// EntityEndpointRoutePath is EntityEndpointPath with apiPrefix applied to
+// a relative path of an unversioned entity: the path it is mounted at.
 func EntityEndpointRoutePath(ent *entity.Entity, path, apiPrefix string) string {
 	relative := !strings.HasPrefix(strings.TrimSpace(path), "/")
 	out := EntityEndpointPath(ent, path)
@@ -62,10 +38,6 @@ func EntityEndpointRoutePath(ent *entity.Entity, path, apiPrefix string) string 
 	return out
 }
 
-// dropDotSegments removes "." and ".." path segments. A documented
-// endpoint path is a literal: no client can send "/posts/../admin" as
-// written, and a spec or SDK that carried it would describe a route the
-// server never mounts (or, resolved by a client, a different one).
 func dropDotSegments(p string) string {
 	parts := strings.Split(p, "/")
 	kept := parts[:0]
@@ -92,15 +64,10 @@ func convertColonParams(path string) string {
 	return strings.Join(parts, "/")
 }
 
-// objectSchema is the shapeless fallback emitted when an Endpoint declares no
-// typed Input/Output schema, identical to the historical default.
 func objectSchema() map[string]any { return map[string]any{"type": "object"} }
 
-// EndpointInputSchema returns the JSON-Schema object describing an endpoint's
-// request body. When ep.InputSchema is set it is converted via the same
-// FieldsToSchema machinery the entity CRUD body uses; otherwise the historical
-// {type:object} fallback is returned. This is the single source the OpenAPI
-// requestBody and the generated MCP tool input schema both consume.
+// EndpointInputSchema returns the JSON Schema of an endpoint's request,
+// {type:object} when ep.InputSchema is unset.
 func EndpointInputSchema(ep entity.Endpoint) map[string]any {
 	if len(ep.InputSchema) == 0 {
 		return objectSchema()
@@ -108,9 +75,8 @@ func EndpointInputSchema(ep entity.Endpoint) map[string]any {
 	return coreoa.FieldsToSchema(ep.InputSchema)
 }
 
-// EndpointOutputSchema returns the JSON-Schema object describing an endpoint's
-// success (200) response body, falling back to {type:object} when
-// ep.OutputSchema is unset.
+// EndpointOutputSchema returns the JSON Schema of an endpoint's 200 body,
+// {type:object} when ep.OutputSchema is unset.
 func EndpointOutputSchema(ep entity.Endpoint) map[string]any {
 	if len(ep.OutputSchema) == 0 {
 		return objectSchema()
@@ -118,15 +84,8 @@ func EndpointOutputSchema(ep entity.Endpoint) map[string]any {
 	return coreoa.FieldsToSchema(ep.OutputSchema)
 }
 
-// DefaultEndpointToolName synthesises an MCP tool name from an entity +
-// method + path triple. Used as a fallback when an Endpoint doesn't supply
-// an explicit MCPName.
-//
-// Distinct routes keep distinct names: "/" becomes "_", a hyphen stays a
-// hyphen (MCP tool names allow it), and a {param} segment becomes
-// "-param-", so "/feed/items" and "/feed-items", or "/items/{id}" and
-// "/items/id", never fold together. Only the method is case-folded;
-// entity and path spelling is preserved, since routes are case-sensitive.
+// DefaultEndpointToolName is the MCP tool name for an endpoint with no
+// MCPName: entity, lowered method and path, distinct per route.
 func DefaultEndpointToolName(entityName, method, path string) string {
 	cleaned := strings.Trim(path, "/")
 	cleaned = strings.NewReplacer("/", "_", "{", "-", "}", "-").Replace(cleaned)

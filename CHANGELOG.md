@@ -25,6 +25,42 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`cssweight.Measure` honours an empty first `<base href="">`.** An empty first base let a
+  later `<base>` win, so linked sheets resolved against the wrong path; the first base now wins
+  whatever its value.
+- **testkit's DSN errors no longer quote the DSN.** `ValidateAdminDSN` names only the scheme it
+  refused, and the database-name rewrite drops the URL from its parse error, so a password, in the
+  userinfo or a well-formed or malformed query, never reaches the error text.
+- **Worktree isolation tightens an existing SQLite state directory to owner-only.** On Unix,
+  `.gofastr/isolation/<id>` kept its mode when it already existed, so one created group- or
+  world-readable stayed that way; it is now set to 0700 whenever an active SQLite DSN is rewritten
+  into it. A directory owned by another user, which chmod refuses, is logged and used as before.
+- **A static export skips a FIFO or device file in its sources instead of hanging.** A named pipe
+  in the static dir, the static FS or an `ExtraDirs` directory was opened before its type was
+  checked, and the open waited for a writer forever, as did a symlink to one in a static FS or
+  an `ExtraDirs` directory. The build now skips and logs anything that is not a regular file before
+  opening it.
+- **A directory or named pipe in the static source no longer drops a generated file from an
+  export.** A `sitemap.xml`, `robots.txt`, app icon or PWA file of that name that was not a regular
+  file kept the generated one out, and the copy skipped it, so the export held neither. The same
+  held for a symlink in the static dir pointing outside it, which the copy refuses.
+- **A static export's service worker changes when a file under `__gofastr/pwa/` does.** The
+  worker's cache version left out every file under that directory, not only the generated ones, so
+  a static-source file there could change while installed clients kept the old copy.
+- **`core/static.Handler` answers 404 for a named pipe or device file instead of hanging.** A
+  request for a FIFO in a served directory opened it and waited for a writer forever; the handler
+  now checks the file's type before opening it.
+- **The SDK docs' example filter names an entity's real key.** An entity with its own `PrimaryKey`
+  and no other filterable column got curl, Go and TypeScript examples filtering on `id`, a column it
+  does not have, so every copy answered 400. The fallback is now the first key column.
+- **The SDK docs page for an entity with several API versions writes each id once.** Every
+  version's section repeated the same heading and table caption ids, so a caption reference named
+  the first version's table. Version sections and their headings now carry an encoded version in their ids (`v-api-v2`;
+  `default` for the unversioned entity) that no two distinct prefixes share; a single-version
+  page is unchanged.
+- **`softdelete.WithSoftDelete` no longer panics on an entity built without `entity.Define`.** An
+  entity whose `Config.Scope` was nil hit a nil pointer; it now gets a scope, as
+  `tenant.WithMultiTenant` already did.
 - **`gofastr verify` reports a hard navigation through any chain of frames.** GOFASTR1802 caught
   `location.href = x` and `window.location.href = x`, but missed `window.top.location.href = x` and
   other chains of more than one hop.

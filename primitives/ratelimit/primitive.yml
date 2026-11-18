@@ -1,0 +1,147 @@
+primitive: ratelimit
+summary: The general-purpose HTTP rate limiter - a per-key sliding window with lockout, its optional shared Store, client keying and the 429 middleware.
+code:
+  - framework/ratelimit/
+docs:
+  - framework/docs/content/rate-limit.md
+on_change:
+  - The token-bucket limiter is core/middleware's (primitive middleware); a change that blurs the two jobs updates rate-limit.md's comparison of them.
+twins:
+  - job: Admit an attempt under a sliding window, then block the key for BlockDuration and clear the attempts the block covered once it expires.
+    why: The in-memory window is a map under a mutex and the SQL store is rows other replicas share, decided by SQL; no parity test runs one sequence through both yet.
+    sites:
+      - path: framework/ratelimit/limiter.go
+        note: Limiter.Admit and evictLocked, the in-process window.
+      - path: battery/auth/sql_ratelimit_store.go
+        note: SQLRateLimitStore.Allow, the shared window.
+invariants:
+  - id: window-then-lockout
+    rule: MaxAttempts attempts inside Window are admitted, the next one starts a block of BlockDuration, and attempts older than Window stop counting.
+    enforced_by:
+      - test: framework/ratelimit.TestLimiter_AllowsUpToMaxThenBlocks
+      - test: framework/ratelimit.TestWindowDropsOnlyStaleAttempts
+  - id: zero-config-defaults
+    rule: NewLimiter fills a zero MaxAttempts, Window and BlockDuration with 10, 15 minutes and 30 minutes.
+    enforced_by:
+      - test: framework/ratelimit.TestNewLimiterFillsDefaults
+  - id: store-error-fails-closed
+    rule: A Store error denies the attempt with a 30-second retry hint, and Admit returns that error.
+    enforced_by:
+      - test: framework/ratelimit.TestLimiter_StoreDelegates
+      - test: framework/ratelimit.TestAdmitReportsStoreErrorAndDenies
+  - id: dev-mode-admits-all
+    rule: With DevMode set, every attempt is admitted and neither backend is touched.
+    enforced_by:
+      - test: framework/ratelimit.TestLimiter_DevModeAdmitsAll
+  - id: scope-boundary-is-unambiguous
+    rule: The Store key is NamespaceScope(scope), a "|", then the key, and NamespaceScope escapes "%" and "|" so two scope and key pairs never yield one Store key.
+    enforced_by:
+      - test: framework/ratelimit.TestLimiter_ScopeSeparatorCannotCollide
+  - id: store-admission-is-atomic
+    rule: A Store decides admission atomically per key, recording before counting, so a concurrent burst on one key admits at most MaxAttempts.
+    enforced_by:
+      - test: battery/auth.TestSQLRateLimitBurstCappedSQLite
+    applies:
+      - battery/auth/sql_ratelimit_store.go
+  - id: hostile-keys-are-digested
+    rule: A key longer than 256 bytes, not storable as text, or starting with "sha256:" is replaced by "sha256:" and its hex digest before either backend sees it.
+    enforced_by:
+      - test: framework/ratelimit.TestLimiterBoundsRetainedKeyBytes
+      - test: framework/ratelimit.TestStoreKeyUnstorableIsDigested
+      - test: framework/ratelimit.TestDigestNamespaceDoesNotAliasCallerKeys
+  - id: key-map-is-bounded
+    rule: The in-memory limiter tracks at most 100000 keys, sweeping idle keys at most once per Window and whenever the cap is hit.
+    enforced_by:
+      - test: framework/ratelimit.TestLimiter_BoundedUnderKeyFlood
+      - test: framework/ratelimit.TestLimiter_EvictsIdleStates
+  - id: eviction-never-lifts-an-older-lockout
+    rule: Eviction keeps every active block while there is room, treats an elapsed block as idle, and past the cap sheds unblocked keys first, then the newest blocks (by expiry, then creation order), down to 90% of the cap.
+    enforced_by:
+      - test: framework/ratelimit.TestKeyFloodKeepsActiveBlocks
+      - test: framework/ratelimit.TestLimiter_BlockSurvivesEviction
+      - test: framework/ratelimit.TestEvictKeepsBlockOutlastingWindow
+      - test: framework/ratelimit.TestElapsedBlockIsReclaimed
+      - test: framework/ratelimit.TestShedBreaksExpiryTiesNewestFirstDownToLowWater
+  - id: no-budget-headers
+    rule: The middleware answers a blocked request 429 with Retry-After and never writes RateLimit-* budget headers, and a nil keyFunc keys on ClientKey.
+    enforced_by:
+      - test: framework/ratelimit.TestMiddlewareSendsNoBudgetHeaders
+  - id: retry-after-rounds-up
+    rule: RetryAfterSeconds rounds a positive wait up to whole seconds without overflow, so a blocked client never reads "0", and a non-positive wait is "0".
+    enforced_by:
+      - test: framework/ratelimit.TestMiddlewareRetryAfterNeverZeroWhileLimited
+      - test: framework/ratelimit.TestRetryAfterSecondsEdges
+  - id: forwarded-for-only-when-trusted
+    rule: ClientIP is the TCP peer unless TrustForwardedFor is set, and with TrustedProxies listed an unlisted peer cannot speak for X-Forwarded-For.
+    enforced_by:
+      - test: framework/ratelimit.TestClientIP_XFFHandling
+      - test: framework/ratelimit.TestLimiterClientIPSkipsTrustedTiers
+  - id: ipv6-keys-on-its-slash-64
+    rule: ClientKey collapses an IPv6 client to its /64, so rotating source addresses inside one /64 shares one budget.
+    enforced_by:
+      - test: framework/ratelimit.TestMiddlewareLimitsAWholeSlash64
+      - test: framework/ratelimit.TestIPKeyCollapsesIPv6ToSlash64
+decisions:
+  - id: sliding-window-beside-token-bucket
+    date: 2026-11-17
+    status: accepted
+    decision: framework/ratelimit is a sliding window with lockout for brute-force and write-heavy surfaces, and core/middleware.RateLimit stays the token bucket for steady throughput.
+    rejected:
+      - option: One limiter with both shapes.
+        why: "\"N per period, then block\" and a steady refill answer different questions, and only the refill model suits budget headers."
+    upholds: [no-budget-headers]
+  - id: no-budget-headers-on-a-lockout
+    date: 2026-11-17
+    status: accepted
+    decision: The middleware sends only Retry-After.
+    rejected:
+      - option: Send RateLimit-Limit, -Remaining and -Reset as the token bucket does.
+        why: A live remaining-attempt count on a lockout limiter hands an attacker exact brute-force pacing.
+    upholds: [no-budget-headers]
+  - id: memory-by-default-store-optional
+    date: 2026-11-17
+    status: accepted
+    decision: With no Store the window lives in process memory, so each replica allows MaxAttempts; a Store makes the budget and blocks replica-wide.
+    rejected:
+      - option: Always require a shared store.
+        why: It needs a database for every limiter, including single-replica and local apps.
+    revisit_if: Multi-replica deploys become the default shape.
+    upholds: [store-error-fails-closed, store-admission-is-atomic]
+  - id: fold-long-keys-not-reject
+    date: 2026-11-17
+    status: accepted
+    decision: An over-long or unstorable key is digested, keeping identity one-to-one.
+    rejected:
+      - option: Reject over-long keys.
+        why: A long but real key would be denied or share one bucket with every other long key.
+      - option: Pass unstorable keys to the Store.
+        why: Postgres refuses invalid UTF-8 and NUL with 22021, which reads as a store outage and a 429.
+    upholds: [hostile-keys-are-digested]
+  - id: shed-newest-blocks-first
+    date: 2026-11-17
+    status: accepted
+    decision: Past the key cap, eviction drops the newest blocks first, with creation order breaking same-tick ties.
+    rejected:
+      - option: Drop the soonest-expiring blocks first.
+        why: All blocks share one BlockDuration, so that drops the oldest block, the lockout a flood is trying to shake off.
+      - option: Grow the map without bound.
+        why: Keys are attacker-chosen, so the process runs out of memory.
+    upholds: [eviction-never-lifts-an-older-lockout, key-map-is-bounded]
+  - id: ceil-by-division
+    date: 2026-11-17
+    status: accepted
+    decision: RetryAfterSeconds rounds up by division and remainder.
+    rejected:
+      - option: Round to nearest.
+        why: A block with under half a second left answered "Retry-After 0".
+      - option: Add a second minus one nanosecond, then divide.
+        why: It overflows to a negative wait near the int64 nanosecond ceiling.
+    upholds: [retry-after-rounds-up]
+  - id: short-retry-on-store-outage
+    date: 2026-11-17
+    status: accepted
+    decision: A store error answers with a 30-second retry hint, not the block duration.
+    rejected:
+      - option: Answer with BlockDuration.
+        why: The outage is likely transient, and the hint is not a lockout the client earned.
+    upholds: [store-error-fails-closed]

@@ -1,0 +1,13 @@
+primitive: app.testing.e2e
+summary: The chromedp browser end-to-end suite for the root package, kept in its own package, out of the root's race gate.
+code:
+  - framework/uie2e/
+decisions:
+  - id: browser-suite-outside-the-race-gate
+    date: 2026-11-17
+    status: accepted
+    decision: The chromedp browser suite, which uses only exported API, lives in framework/uie2e, a package with no production code, which the CI race gate on the framework root does not reach.
+    rejected:
+      - option: Keep it in the root test package.
+        why: A full-package -race run timed out TestUIE2E_OwnerScope_CrossUserIsolation from slowdown, not a data race, and a gate that goes red for timing teaches people to ignore it.
+    revisit_if: The browser suite's deadlines hold under -race on the CI runners.

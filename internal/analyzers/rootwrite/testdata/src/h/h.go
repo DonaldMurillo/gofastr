@@ -1,8 +1,9 @@
 // Package h pins bug bash 2026-10-27 I4: the static export
-// (framework/static/builder.go:180-184) joins
+// (Build in framework/static/builder.go) joins
 // dst := filepath.Join(b.OutDir, pathToFile(p)) inside a walk callback,
-// checks it with the lexical ensureContained (:799-806), then hands it
-// to writeFile (:1782-1786: MkdirAll(Dir(dst)) + os.WriteFile(dst)). An
+// checks it with the lexical ensureContained, then handed it to
+// writeFile (MkdirAll(Dir(dst)) + os.WriteFile(dst), since replaced by
+// writeUnder in framework/static/output.go). An
 // existing OutDir/blog symlink gets index.html written through it.
 // pathflow stopped at writeFile's plain parameter, and the callback's
 // own parameter p was not counted as caller data: the sink was

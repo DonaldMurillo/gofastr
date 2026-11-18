@@ -1,29 +1,4 @@
-// Package imagefield connects the image pipeline to the upload path: it
-// turns a framework/image.VariantSet into the file.ImageDeriver that
-// ProcessFileField and the CRUD upload handler call, so declaring a
-// schema.Image field is what makes uploads produce renditions and a
-// BlurHash, no per-entity upload handler.
-//
-// It is a separate package on purpose. framework/file is a leaf that
-// framework/crud imports, so an edge from there to framework/image would
-// link every image decoder plus the WebP encoder into every application
-// with a CRUD handler. Keeping the adapter here means only applications
-// that actually want the pipeline pay for it.
-//
-// Typical wiring, one option on the app:
-//
-//	framework.NewApp(
-//	    framework.WithFileStorage(store),
-//	    framework.WithImagePipeline(imagefield.MustNew(imagefield.Config{
-//	        Variants: []image.Variant{
-//	            {Width: 480, Format: image.FormatWebP, Suffix: "sm"},
-//	            {Width: 960, Format: image.FormatWebP, Suffix: "md"},
-//	            {Width: 480, Format: image.FormatJPEG, Quality: 82, Suffix: "sm"},
-//	            {Width: 960, Format: image.FormatJPEG, Quality: 82, Suffix: "md"},
-//	        },
-//	        BlurHashX: 4, BlurHashY: 3,
-//	    })),
-//	)
+// Package imagefield adapts framework/image to file.ImageDeriver.
 package imagefield
 
 import (
@@ -39,41 +14,25 @@ import (
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 )
 
-// Config declares what to derive from each uploaded image. The zero value
-// derives nothing and New rejects it, an image pipeline that produces no
-// renditions, no hash, and no placeholder is a configuration mistake, not
-// a no-op worth honouring silently.
+// Config declares what to derive from each uploaded image.
 type Config struct {
-	// Variants are the renditions to produce and store. Each entry's
-	// Suffix (or width, when Suffix is empty) distinguishes its storage
-	// key from the original's.
+	// Variants are the renditions stored beside the original.
 	Variants []fwimage.Variant
 
-	// BlurHashX and BlurHashY are the BlurHash component counts (1..9).
-	// Both zero means no BlurHash; setting only one is an error. 4x3 suits
-	// landscape images, 3x4 portrait.
+	// BlurHashX and BlurHashY are the BlurHash components, both 0 for none.
 	BlurHashX int
 	BlurHashY int
 
-	// Placeholder, when non-nil, also stores an LQIP data URL. Redundant
-	// alongside a BlurHash for most callers, a BlurHash costs ~28 bytes
-	// in the column against a few hundred, and framework/image renders
-	// either one the same way.
+	// Placeholder, when non-nil, also stores a data URL placeholder.
 	Placeholder *fwimage.PlaceholderOptions
 
-	// RejectAnimated fails the upload when the source has more than one
-	// frame instead of silently flattening to the first. Worth setting on
-	// avatar and profile-photo fields, where a surprise still frame is
-	// worse than a rejection the user can act on.
+	// RejectAnimated fails an upload of more than one frame.
 	RejectAnimated bool
 
-	// AllowUpscale opts back in to renditions wider than the source. The
-	// default clamps each rendition to the source width, so a small upload
-	// does not fan out into pixel-multiplied storage waste.
+	// AllowUpscale allows renditions wider than the source.
 	AllowUpscale bool
 
-	// MaxPixels overrides the decompression-bomb guard for this pipeline
-	// (default framework/image.DefaultMaxPixels, 64 MP).
+	// MaxPixels overrides framework/image's decode pixel cap.
 	MaxPixels int64
 }
 
@@ -85,9 +44,7 @@ type Deriver struct {
 
 var _ file.ImageDeriver = (*Deriver)(nil)
 
-// New builds a Deriver from cfg. It returns an error for a configuration
-// that could not produce anything, or that framework/image would reject at
-// process time anyway, better at wiring time than on the first upload.
+// New builds a Deriver, erroring on a config that cannot derive anything.
 func New(cfg Config) (*Deriver, error) {
 	if (cfg.BlurHashX == 0) != (cfg.BlurHashY == 0) {
 		return nil, fmt.Errorf("imagefield: BlurHashX and BlurHashY must both be set or both zero")
@@ -136,29 +93,15 @@ func MustNew(cfg Config) *Deriver {
 	return d
 }
 
-// DeriveImage decodes the upload, produces every configured rendition,
-// stores them beside the original, and returns their references plus the
-// placeholder metadata.
-//
-// Renditions stream one at a time through VariantSet.ProcessTo, so peak
-// memory stays near a single rendition rather than all of them summed,
-// this runs inside a request, on bytes a client chose.
+// DeriveImage stores the renditions beside primaryRef and returns them.
 func (d *Deriver) DeriveImage(ctx context.Context, store upload.Storage, data []byte, primaryRef string) (*file.ImageDerivatives, error) {
 	if store == nil {
 		return nil, fmt.Errorf("imagefield: storage backend is required")
 	}
 	src, err := fwimage.DecodeBytesWithConfig(data, d.cfg)
 	if err != nil {
-		// Reached when a non-image (or a format this build cannot decode)
-		// lands on an image field. Surfacing it fails the upload, which is
-		// the point: the column is declared as an image.
 		return nil, fmt.Errorf("imagefield: decoding upload: %w", err)
 	}
-	// Bake the EXIF orientation in: an EXIF-aware viewer shows the
-	// original upright, and the renditions and placeholder carry no EXIF
-	// of their own, so derived from the raw raster they come out
-	// sideways. A no-op when the upload has no orientation (or
-	// StripMetadata already baked it into the stored original).
 	src = src.AutoOrient()
 
 	base := d.set
@@ -185,15 +128,10 @@ func (d *Deriver) DeriveImage(ctx context.Context, store upload.Storage, data []
 	out.BlurHash = sr.BlurHash
 	out.Placeholder = sr.Placeholder
 
-	// Ascending width so the slice drops straight into a srcset.
 	sort.Slice(out.Variants, func(i, j int) bool { return out.Variants[i].Width < out.Variants[j].Width })
 	return out, nil
 }
 
-// baseNameFor derives the rendition name prefix from the original's storage
-// key: "products/cover/a1b2-photo.jpg" becomes "a1b2-photo". Renditions
-// therefore sit beside the original under the same directory and inherit
-// its random suffix, so two uploads of the same filename never collide.
 func baseNameFor(primaryRef string) string {
 	b := path.Base(primaryRef)
 	if b == "." || b == "/" || b == "" {

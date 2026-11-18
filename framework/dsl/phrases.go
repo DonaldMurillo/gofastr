@@ -2,7 +2,6 @@ package dsl
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The refusals a DSL query, ?filter= or ?sort= parse returns.
 var (
 	reasonInputTooLong           = i18n.Define("dsl.input_too_long", "dsl: input exceeds {{max}} bytes")
 	reasonEmptyQuery             = i18n.Define("dsl.empty_query", "dsl: query is empty")
@@ -44,7 +43,6 @@ var (
 	reasonNotSortable      = i18n.Define("dsl.not_sortable", "field {{field}} cannot be sorted on")
 	reasonInvalidSortField = i18n.Define("dsl.invalid_sort_field", "invalid sort field {{field}}")
 
-	// The ?filter= expression parser names where it stopped.
 	reasonUnexpectedInput    = i18n.Define("dsl.unexpected_input", "filter: offset {{offset}}: unexpected input after expression (near {{near}})")
 	reasonExpectedParen      = i18n.Define("dsl.expected_paren", "filter: offset {{offset}}: expected ) (near {{near}})")
 	reasonExpectedFieldName  = i18n.Define("dsl.expected_field_name", "filter: offset {{offset}}: expected field name (near {{near}})")

@@ -1,0 +1,66 @@
+primitive: event
+summary: The in-process live event bus - On, Subscribe, Emit, EmitStrict and EmitAsync, the lifecycle event types, and the emission observer.
+code:
+  - framework/event/event.go
+  - framework/event/observe.go
+docs:
+  - framework/docs/content/events.md
+invariants:
+  - id: nil-handler-never-registered
+    rule: Subscribe and On with a nil handler register nothing and return a no-op cancel.
+    enforced_by:
+      - test: framework/event.TestEventBus_SubscribeNilHandlerDoesNotRetainSubscription
+  - id: cancel-removes-only-its-own
+    rule: A Subscribe cancel removes only its own subscription, clears the vacated slot so the closure can be collected, drops an emptied type's map entry, and is a no-op the second time.
+    enforced_by:
+      - test: framework/event.TestEventBus_CancelRemovesOnlyOwnSubscription
+      - test: framework/event.TestUnsubscribeReleasesHandler
+  - id: emit-stops-at-first-error
+    rule: Emit and EmitStrict run handlers in registration order and return the first handler error without running the rest.
+    enforced_by:
+      - test: framework/event.TestEventBus_EmitStopsAtFirstHandlerError
+  - id: emit-swallows-panics
+    rule: Emit and EmitAsync recover a handler's panic, log it at Error with its stack, and treat it as no error, so a subscriber cannot fail or roll back the write that emitted.
+    enforced_by:
+      - test: framework/event.TestEventBus_EmitPanickingHandlerDoesNotCrash
+      - test: framework/event.TestEventBus_EmitAsyncPanickingHandlerDoesNotCrashProcess
+      - test: framework/event.TestEmitLogsSubscriberPanic
+  - id: emit-strict-returns-panics
+    rule: EmitStrict returns a handler's panic as an error.
+    enforced_by:
+      - test: framework/event.TestEventBus_EmitStrictSurfacesPanicAsError
+  - id: zero-timestamp-is-stamped
+    rule: Emit, EmitStrict and EmitAsync set a zero Timestamp to the time of the emit before any handler or the fanout tap sees the event.
+    enforced_by:
+      - test: framework/event.TestEmitStampsAZeroTimestamp
+  - id: async-handlers-outlive-the-caller
+    rule: EmitAsync gives every handler ctx's values without its cancel and without its transaction, bounded by AsyncHandlerTimeout, each on its own goroutine.
+    enforced_by:
+      - test: framework/event.TestEmitAsyncOutlivesCallerCtx
+      - test: framework/event.TestEmitAsyncSlowHandlerIsolated
+      - test: framework.TestEmitAsyncSubscriberDoesNotJoinEmitterTx
+  - id: observer-sees-emits-and-cannot-break-them
+    rule: The SetObserver callback sees every Emit and EmitStrict with its subscriber count, and a panic in it is logged and does not stop the emit.
+    enforced_by:
+      - test: framework/event.TestObserverSeesEveryEmission
+      - test: framework/event.TestObserverDoesNotDisturbTheInternalTap
+      - test: framework/event.TestPanickingObserverDoesNotKillEmission
+decisions:
+  - id: emit-swallows-strict-returns
+    date: 2026-11-17
+    status: accepted
+    decision: Emit swallows a handler's panic and EmitStrict returns it, two entry points over one emit body.
+    rejected:
+      - option: One Emit that returns panics as errors.
+        why: CRUD wires Emit into AfterCreate and AfterUpdate, where any error rolls back the user's write, so a flaky subscriber would veto real writes.
+    upholds: [emit-swallows-panics, emit-strict-returns-panics]
+  - id: observer-beside-the-tap
+    date: 2026-11-17
+    status: accepted
+    decision: The emission observer is a process-wide atomic hook of its own, separate from the bus's single tap slot that AttachFanout owns.
+    rejected:
+      - option: Record coverage through the tap.
+        why: The tap has one slot and the fanout bridge holds it, so the two would displace each other.
+      - option: Import the coverage recorder.
+        why: event is a leaf package and the recorder is test tooling.
+    upholds: [observer-sees-emits-and-cannot-break-them]

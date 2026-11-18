@@ -1,0 +1,57 @@
+primitive: testkit.axe.coverage
+summary: The axe-coverage manifest (.gofastr/axe-coverage.json) that every successful scan records into and uihost strict mode reads to refuse a page route no axe test covers.
+code:
+  - framework/axecov/
+docs:
+  - framework/docs/content/strict-mode.md
+  - framework/docs/content/accessibility.md
+on_change:
+  - The manifest's file name, location and JSON fields are read by framework/uihost/strict.go; change both in the same commit.
+  - Several strict apps sharing one module or workspace share one manifest keyed by route path, so two apps with the same route satisfy each other's check unless each sets GOFASTR_AXE_COVERAGE_DIR for its tests and its server.
+invariants:
+  - id: record-merges-and-dedupes
+    rule: Record adds a scheme to a page's list once and keeps the list sorted, leaving every other page in the manifest.
+    enforced_by:
+      - test: framework/axecov.TestRecordMergesPathsAndSchemes
+      - test: framework/axecov.TestSweepSchemesAreSorted
+  - id: coverage-is-per-screen
+    rule: Record keys a page by its URL path alone, dropping scheme, host, query and fragment, and records an empty path or a bare origin as /.
+    enforced_by:
+      - test: framework/axecov.TestRecordNormalizesPath
+      - test: framework/axecov.TestNormalizePathDropsBareHost
+  - id: concurrent-writers-lose-nothing
+    rule: Record holds an OS lock on .gofastr/axe-coverage.lock across its read-merge-write, so writers in several processes keep every page.
+    enforced_by:
+      - test: framework/axecov.TestRecordAcrossProcessesKeepsEveryPage
+      - test: framework/axecov.TestRecordConcurrentLosesNothing
+  - id: absent-is-not-corrupt
+    rule: Read of a missing manifest returns an fs.ErrNotExist error, a corrupt one an error that is not fs.ErrNotExist, and Record refuses to overwrite a corrupt manifest.
+    enforced_by:
+      - test: framework/axecov.TestReadMissingManifestReturnsNotExist
+      - test: framework/axecov.TestReadCorruptManifestIsNotNotExist
+      - test: framework/axecov.TestSweepRecordRefusesToOverwriteACorruptManifest
+  - id: manifest-without-pages-is-empty
+    rule: A manifest with no pages field reads as an empty page map that Record can add to.
+    enforced_by:
+      - test: framework/axecov.TestSweepRecordIntoAManifestWithoutPages
+  - id: manifest-at-documented-path
+    rule: The manifest is written at FileName under the directory Record is given.
+    enforced_by:
+      - test: framework/axecov.TestManifestLandsAtDocumentedLocation
+  - id: no-browser-dependency
+    rule: framework/axecov does not link chromedp, so strict mode can read the manifest in any app.
+    enforced_by:
+      - test: framework/axecov.TestSweepAxecovLinksNoBrowser
+decisions:
+  - id: write-then-rename
+    date: 2026-11-17
+    status: accepted
+    decision: Record writes a uniquely named temp file and renames it over the manifest, so a reader never sees a torn file.
+    rejected:
+      - option: One shared temp name.
+        why: A second writer could truncate the file the first was about to rename into place.
+  - id: manifest-never-ships
+    date: 2026-11-17
+    status: accepted
+    decision: The manifest lives under .gofastr/, which is gitignored and wiped by make clean, so strict mode enforces axe coverage only in dev where the file exists.
+    upholds: [manifest-at-documented-path]

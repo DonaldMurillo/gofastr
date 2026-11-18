@@ -1,0 +1,37 @@
+primitive: gallery.mounts
+summary: What a gallery host mounts before its UIHost - the demo modal, drawer, bottom-sheet and sidebar widgets the catalog's triggers open, and the one demo form route that keeps nothing and redirects back to the demo.
+code:
+  - framework/gallery/widgets.go
+  - framework/gallery/demoform.go
+docs:
+  - framework/docs/content/theming.md
+invariants:
+  - id: demo-form-answers-303-to-its-demo
+    rule: A POST to DemoFormPath naming a catalog demo answers 303 to demoPage of that slug, and every POST form a catalog demo renders lands there.
+    enforced_by:
+      - test: framework/gallery.TestDemoFormsRedirectToDemo
+  - id: unknown-demo-is-404
+    rule: A POST to DemoFormPath whose demo query names no catalog entry answers 404 with no Location.
+    enforced_by:
+      - test: framework/gallery.TestDemoFormRefusesUnknownDemo
+  - id: demo-page-must-be-local
+    rule: MountDemoFormRoute panics when demoPage returns, for any slug, a value that is not one slash followed by a non-slash, non-backslash byte, or that holds a control byte anywhere (its fragment too, which url.Parse lets through) or parses with a scheme or host.
+    enforced_by:
+      - test: framework/gallery.TestDemoFormRouteRefusesForeignPage
+      - test: framework/gallery.TestDemoFormRouteRefusesControlBytesInTheFragment
+      - test: framework/gallery.TestSweepDemoFormKeepsNothing
+  - id: demo-form-keeps-nothing
+    rule: The demo form route never reads the posted body.
+    enforced_by:
+      - test: framework/gallery.TestSweepDemoFormKeepsNothing
+decisions:
+  - id: one-route-redirects-every-demo-form
+    date: 2026-11-17
+    status: accepted
+    decision: Every catalog demo form posts to the one DemoFormPath route, which keeps nothing and answers 303 back to the demo.
+    rejected:
+      - option: Posting to the demo's own page or to a docs-site route.
+        why: A screen answered 405 and a host other than the docs site answered 404.
+      - option: A GET form.
+        why: A password typed into a demo would land in the URL.
+    upholds: [demo-form-answers-303-to-its-demo]

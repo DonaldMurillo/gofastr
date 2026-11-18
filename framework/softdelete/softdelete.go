@@ -1,3 +1,4 @@
+// Package softdelete marks rows deleted instead of removing them: WithSoftDelete, and helpers that skip every scope gate.
 package softdelete
 
 import (
@@ -12,48 +13,28 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// SoftDeleteScope is a query scope that filters out soft-deleted records.
-// When applied to a QueryBuilder, it adds WHERE deleted_at IS NULL.
+// SoftDeleteScope names the deleted_at IS NULL scope.
 type SoftDeleteScope struct{}
 
-// WithSoftDelete configures an entity for soft delete support.
-// Sets the SoftDelete flag so the framework knows to use UPDATE instead of DELETE.
+// WithSoftDelete makes ent soft-deleting, so CRUD deletes by setting deleted_at.
 func WithSoftDelete(ent *entity.Entity) *entity.Entity {
+	if ent.Config.Scope == nil {
+		ent.Config.Scope = &entity.ScopeConfig{}
+	}
 	ent.Config.Scope.SoftDelete = true
 	return ent
 }
 
-// SoftDelete marks a record as deleted by setting deleted_at to the
-// current UTC time, bound as a parameter: SQLite has no NOW().
-// The record remains in the database but will be excluded from normal queries.
-//
-// SECURITY. UNSCOPED OPERATION: this function issues UPDATE … WHERE id = $1
-// with NO tenant, owner, or access-control filter. Any id supplied will be
-// soft-deleted regardless of which tenant or user owns it. Call this only after
-// you have independently verified that the caller is authorised to delete that
-// specific record (e.g. behind an admin gate, or after an explicit ownership
-// check). Using this helper in a user-facing endpoint without such a check
-// creates a cross-tenant / IDOR vulnerability.
+// SoftDelete sets the row's deleted_at to now (UTC) with no tenant, owner or access check; authorise the caller first.
 func SoftDelete(ctx context.Context, db *sql.DB, table string, id string) error {
 	return setDeletedAt(ctx, db, table, id, "deleted_at = $2", time.Now().UTC())
 }
 
-// Restore clears the deleted_at field, making a soft-deleted record visible again.
-//
-// SECURITY. UNSCOPED OPERATION: this function issues UPDATE … WHERE id = $1
-// with NO tenant, owner, or access-control filter. Any id supplied will be
-// restored regardless of which tenant or user owns it. Call this only after
-// you have independently verified that the caller is authorised to restore that
-// specific record (e.g. behind an admin gate, or after an explicit ownership
-// check). Using this helper in a user-facing endpoint without such a check
-// creates a cross-tenant / IDOR vulnerability.
+// Restore clears the row's deleted_at with no tenant, owner or access check; authorise the caller first.
 func Restore(ctx context.Context, db *sql.DB, table string, id string) error {
 	return setDeletedAt(ctx, db, table, id, "deleted_at = NULL")
 }
 
-// setDeletedAt is the shared UPDATE body of SoftDelete and Restore: validate
-// the table identifier, then flip deleted_at to setExpr for one row by id.
-// It replaces the two former SafeIdent → quote → Exec copies.
 func setDeletedAt(ctx context.Context, db *sql.DB, table, id, setExpr string, setArgs ...any) error {
 	safeTable, err := query.SafeIdent(table)
 	if err != nil {
@@ -64,9 +45,6 @@ func setDeletedAt(ctx context.Context, db *sql.DB, table, id, setExpr string, se
 	return err
 }
 
-// conn is what a helper runs on: the transaction ctx carries (App.InTx,
-// a CRUD hook's), else db. On the pool the write committed on its own
-// past the caller's rollback.
 func conn(ctx context.Context, db *sql.DB) interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 } {
@@ -76,17 +54,7 @@ func conn(ctx context.Context, db *sql.DB) interface {
 	return db
 }
 
-// ForceDelete permanently removes a record from the database.
-// This bypasses soft delete and performs a real DELETE.
-//
-// SECURITY. UNSCOPED OPERATION: this function issues DELETE … WHERE id = $1
-// with NO tenant, owner, or access-control filter. Any id supplied will be
-// permanently deleted regardless of which tenant or user owns it. Call this
-// only after you have independently verified that the caller is authorised to
-// permanently delete that specific record (e.g. behind an admin gate, or after
-// an explicit ownership check). Using this helper in a user-facing endpoint
-// without such a check creates a cross-tenant / IDOR vulnerability and
-// irreversible data loss.
+// ForceDelete removes the row for good with no tenant, owner or access check; authorise the caller first.
 func ForceDelete(ctx context.Context, db *sql.DB, table string, id string) error {
 	safeTable, err := query.SafeIdent(table)
 	if err != nil {
@@ -98,23 +66,12 @@ func ForceDelete(ctx context.Context, db *sql.DB, table string, id string) error
 	return err
 }
 
-// WithTrashed checks whether the request asks to include soft-deleted records.
-// Returns true when the query parameter ?trashed=true is present.
-//
-// SECURITY. CALLER MUST AUTHORISE: this function only parses the request
-// parameter; it performs no access-control check of its own. If you pass its
-// result to ApplySoftDeleteFilter (or build your own query that omits the
-// deleted_at IS NULL clause), you must first confirm that the caller has
-// permission to view deleted records (e.g. admin-only). Exposing trashed
-// records to unprivileged users leaks data that the application logically
-// treats as deleted.
+// WithTrashed reports whether the request has ?trashed=true; it authorises nothing.
 func WithTrashed(r *http.Request) bool {
 	return r.URL.Query().Get("trashed") == "true"
 }
 
-// ApplySoftDeleteFilter adds a WHERE deleted_at IS NULL clause to the query
-// unless showTrashed is true. Call this when building list/get queries for
-// entities that have soft delete enabled.
+// ApplySoftDeleteFilter adds deleted_at IS NULL unless showTrashed.
 func ApplySoftDeleteFilter(builder *query.QueryBuilder, showTrashed bool) {
 	if !showTrashed {
 		builder.Where("deleted_at IS NULL")

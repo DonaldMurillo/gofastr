@@ -47,8 +47,11 @@ use most, so a boot that "hangs" from a worktree is almost always this.
 - Generated apps from `gofastr init` and app generator output use
   `framework/isolation` to resolve `PORT` and database DSNs.
 - SQLite DSNs move under `.gofastr/isolation/{id}/` (the directory is
-  created owner-only, `0700` or a protected owner-only ACL on Windows, so the isolated app's database state is not
-  readable by local co-users of a shared checkout).
+  created owner-only, or tightened to it when it already exists, `0700` or a protected owner-only ACL on Windows, so the isolated app's database state is not
+  readable by local co-users of a shared checkout). On Unix, when the
+  directory exists and chmod is refused with a permission error (for
+  example, it belongs to another user), isolation logs a warning and uses it with
+  its current mode, so it may stay readable by others.
 - Postgres URL database names get a stable `_{id}` suffix while query params
   are preserved. The result stays within Postgres's 63-byte identifier
   limit: a long base name is cut on a character boundary, and an id longer

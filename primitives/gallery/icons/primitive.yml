@@ -1,0 +1,11 @@
+primitive: gallery.icons
+summary: The icon catalog demo - every ui/icons icon under a sticky filter toolbar, searched and narrowed by category on the server from the request's query values.
+code:
+  - framework/gallery/icon_demo.go
+docs:
+  - framework/docs/content/ui-new-components.md
+invariants:
+  - id: search-and-category-filter-on-the-server
+    rule: RenderIconCatalog keeps an icon when every search word, lowercased with hyphens and underscores read as spaces, occurs in its name and aliases or every one occurs in its category label, and shows every category for an empty or unknown category ID.
+    enforced_by:
+      - test: framework/gallery.TestIconCatalogSearchAndCategory

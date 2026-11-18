@@ -98,11 +98,18 @@ decisions), `framework/migrate` 26.4% to 4.4% (98 and 23),
 `framework/entityui` 22.2% to 3.7% (65 and 6), `framework/embed` 44.5% to
 7.7% (54 and 33), `framework/entity` 31.4% to 7.6% (46 and 8) and
 `framework/access` 35.3% to 7.6% (41 and 6), each with an owner in
-`TestCoveredPackagesHaveNoUnownedFile`. `framework/` as a whole is at
-12.3%; the repository as a whole is at the share the script prints.
-Next: the rest of `framework/` (experimental, image, static, pluginhost,
-outbox, filter, file, cron, openapi, testkit, gallery and the small
-ones).
+`TestCoveredPackagesHaveNoUnownedFile`. The rest of `framework/` outside
+`framework/experimental` is swept too: 53 package directories in eight
+groups (image, static, events, query, local, ui, testing, small), each
+from between 10.9% and 95.8% down to under 8%, except thirteen small packages
+whose remaining comments are one-line docs on exported identifiers
+(`factory`, `agentsinv`, `owner`, `routegroup`, `lifecycle`, `hook`,
+`softdelete`, `db`, `tenant`, `imagefield`, `slowquery`, `db/sqlbusy`,
+`sdkdocs/internal/docpage`). Those groups added 669 invariants, 234
+decisions and 8 twins. `framework/` as a whole is at 7.8%, its tests at
+12.0%; the repository as a whole is at the share the script prints.
+Next: `framework/experimental` (harness, webmcp, apiversions), then
+`core/`.
 
 ### 3. Bring the known twins in, and merge them
 
@@ -137,6 +144,9 @@ families), `framework/entityui` (list, bulk, record), `framework/migrate`
 (diff, constraints, sqlite, objects), `framework/embed` (credential,
 origin, reach), `framework/entity` (display, states) and
 `framework/access` (store) are covered as well.
+Every other package directory under `framework/` outside
+`framework/experimental` is covered too: 91 primitives over 53
+directories, split by job.
 
 A rule that spans primitives keeps one home and lists the other files
 it governs under `applies` (settled in step 1: `crud.scope`'s

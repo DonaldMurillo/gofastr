@@ -1,21 +1,9 @@
-// Package exif holds the leaf EXIF readers shared by the framework's
-// image-adjacent packages. It exists so framework/file (which must not
-// link the image codecs, see the generated TestPrimitiveImports there) and
-// framework/image can share one TIFF walker without either importing
-// the other: it is a leaf with no gofastr imports, sitting beside
-// internal/casing at L1.
+// Package exif reads the orientation tag of an EXIF TIFF block, for framework/image and framework/file.
 package exif
 
 import "encoding/binary"
 
-// ParseTIFFOrientation reads a TIFF stream and returns the orientation
-// tag (0x0112) from IFD0, or 0 if absent. Only the orientation tag is
-// parsed; full EXIF support is intentionally out of scope.
-//
-// It replaces the two byte-identical copies framework/file/strip.go
-// (parseTIFFOrientation, formerly a leaf-local twin kept because file
-// could not import framework/image) and framework/image/exif.go
-// (parseTIFFOrientation, readJPEGOrientation's IFD walker).
+// ParseTIFFOrientation returns IFD0's orientation tag (1 to 8), or 0 when it is absent or malformed.
 func ParseTIFFOrientation(tiff []byte) int {
 	if len(tiff) < 8 {
 		return 0
@@ -46,7 +34,7 @@ func ParseTIFFOrientation(tiff []byte) int {
 		}
 		typ := order.Uint16(e[2:4])
 		count := order.Uint32(e[4:8])
-		if typ != 3 /* SHORT */ || count != 1 {
+		if typ != 3 || count != 1 {
 			return 0
 		}
 		v := int(order.Uint16(e[8:10]))

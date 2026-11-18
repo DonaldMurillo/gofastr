@@ -11,37 +11,21 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// DerivedVariant is one stored rendition of an uploaded image, a single
-// width/format pair produced alongside the original.
-//
-// The JSON tags here are snake_case on purpose: this struct is persisted
-// verbatim into the entity's `<field>_variants` schema.JSON column, so the
-// tags are a stored database format following the snake_case column
-// convention, not an API response shape. Renaming them would orphan every
-// existing row's variants.
+// DerivedVariant is one stored rendition of an uploaded image.
 type DerivedVariant struct {
-	// StorageRef is the storage backend key the rendition was saved under.
-	// Like FileField.StorageRef it is the literal key: escape each
-	// segment before using it as a URL path (FileField.URL does).
+	// StorageRef is the literal storage key; escape each segment for a URL.
 	StorageRef string `json:"storage_ref"`
 
 	// MIME is the rendition's content type (e.g. "image/webp").
 	MIME string `json:"mime"`
 
-	// Width and Height are the rendition's pixel dimensions. They feed a
-	// responsive srcset directly.
+	// Width and Height are the rendition's pixel dimensions.
 	Width  int `json:"width"`
 	Height int `json:"height"`
 }
 
-// VariantStorageRefs reads the storage_ref of every rendition in a stored
-// `<field>_variants` value. ok is false when raw is not a JSON array of
-// rendition objects; such a value names no stored objects.
-//
-// The CRUD write path (which refuses refs this write did not upload) and
-// EraseUserData (which deletes the refs of erased rows) both parse through
-// this one function, so the two can never disagree about which keys a
-// column names.
+// VariantStorageRefs returns the storage_ref of every rendition in a stored
+// <field>_variants value; ok is false when raw is not a JSON array.
 func VariantStorageRefs(raw []byte) (refs []string, ok bool) {
 	var vs []struct {
 		StorageRef string `json:"storage_ref"`
@@ -57,10 +41,7 @@ func VariantStorageRefs(raw []byte) (refs []string, ok bool) {
 	return refs, true
 }
 
-// IsExternalURL reports whether a file-column value is an absolute http(s)
-// URL with a host: a link to somewhere else, never a key in the app's
-// storage. The CRUD write path and EraseUserData share it for the same
-// reason they share VariantStorageRefs.
+// IsExternalURL reports whether s is an absolute http(s) URL with a host.
 func IsExternalURL(s string) bool {
 	u, err := url.Parse(s)
 	if err != nil || u.Host == "" {
@@ -69,26 +50,19 @@ func IsExternalURL(s string) bool {
 	return strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https")
 }
 
-// ImageDerivatives holds everything derived from an uploaded image beyond
-// the original bytes: the stored renditions plus whichever low-fidelity
-// placeholder representations were requested.
+// ImageDerivatives holds an uploaded image's renditions and placeholders.
 type ImageDerivatives struct {
 	// Variants are the stored renditions, ascending by width.
 	Variants []DerivedVariant `json:"variants,omitempty"`
 
-	// BlurHash is a ~28-character base83 string. Cheap to store in a
-	// column; render it with framework/image.BlurHashDataURL.
+	// BlurHash is a short base83 placeholder string.
 	BlurHash string `json:"blurhash,omitempty"`
 
-	// Placeholder is a base64 data: URL (an LQIP). Larger than a BlurHash
-	// but needs no decode step at render time.
+	// Placeholder is an inline raster data: URL (an LQIP).
 	Placeholder string `json:"placeholder,omitempty"`
 }
 
-// Validate enforces the same invariants on derived references that
-// FileField.Validate enforces on the primary file, they reach the same
-// sinks (an <img src>, a storage delete) and arrive from the same
-// untrusted places once persisted and read back.
+// Validate holds derived references to FileField.Validate's rules.
 func (d *ImageDerivatives) Validate() error {
 	if d == nil {
 		return nil
@@ -105,20 +79,10 @@ func (d *ImageDerivatives) Validate() error {
 		if hasTraversal(v.StorageRef) {
 			return fmt.Errorf("%w: variant %d storage_ref %q", ErrFileFieldTraversal, i, v.StorageRef)
 		}
-		// A variant ref reaches the same sinks the primary storage_ref
-		// does -- an <img src>, a storage delete, a Content-Disposition
-		// -- and is persisted in the <field>_variants column. The
-		// primary was checked for control bytes and the variants were
-		// not, so a CR, LF, or NUL rode through on the one path nobody
-		// looked at.
 		if idx := indexControlByte(v.StorageRef); idx >= 0 {
 			return fmt.Errorf("%w: variant %d storage_ref contains %#x at offset %d",
 				ErrFileFieldControlBytes, i, v.StorageRef[idx], idx)
 		}
-		// Same seam as FileField.Validate's forged-rune gate: the C1
-		// controls and the zero-width/bidi set are multi-byte runes a
-		// C0 byte scan cannot see, and a variant ref is rendered in
-		// <img src>/srcset just like the primary URL.
 		if r, off := indexForgedRune(v.StorageRef); off >= 0 {
 			return fmt.Errorf("%w: variant %d storage_ref contains invisible or bidi rune U+%04X at offset %d",
 				ErrFileFieldControlBytes, i, r, off)
@@ -138,8 +102,6 @@ func (d *ImageDerivatives) Validate() error {
 			return fmt.Errorf("%w: variant %d is %dx%d", ErrFileFieldSize, i, v.Width, v.Height)
 		}
 	}
-	// The placeholder is rendered into an <img src>. A BlurHash is not a
-	// URL and is bounded by its own format, so only length is checked.
 	if len(d.Placeholder) > MaxFileFieldStringBytes {
 		return fmt.Errorf("%w: placeholder is %d bytes (max %d)",
 			ErrFileFieldOversize, len(d.Placeholder), MaxFileFieldStringBytes)
@@ -148,15 +110,6 @@ func (d *ImageDerivatives) Validate() error {
 		return fmt.Errorf("%w: blurhash is %d bytes (max %d)",
 			ErrFileFieldOversize, len(d.BlurHash), MaxFileFieldStringBytes)
 	}
-	// An LQIP is an inline raster data: URI and nothing else, that is what
-	// image.Placeholder produces and the only thing the render sink
-	// (framework/ui.placeholderUsable) will paint. Gating this on
-	// isUnsafeURLScheme, as this once did, only ran the allow-list for
-	// values that already looked like a scheme attack, so a remote
-	// "https://tracker.example/px.gif" sailed through: never painted, but
-	// persisted through an image column and handed to any host that renders
-	// the raw value. Check unconditionally; the two allow-lists are pinned
-	// against each other by TestPlaceholderAllowListsAgree.
 	if d.Placeholder != "" && !isRasterDataURL(d.Placeholder) {
 		return fmt.Errorf("%w: placeholder is not an inline raster image", ErrFileFieldURLScheme)
 	}
@@ -164,31 +117,10 @@ func (d *ImageDerivatives) Validate() error {
 }
 
 // ImageDeriver turns uploaded image bytes into stored renditions and
-// placeholder metadata.
-//
-// It is an interface rather than a direct call into framework/image because
-// this package is a leaf that framework/crud imports: an edge to
-// framework/image would link every image decoder plus the WebP encoder into
-// every application that has a CRUD handler, whether or not it processes
-// images. framework/imagefield provides the implementation, so only
-// applications that ask for it pay for the pipeline.
-//
-// Scope note: this is the framework's only per-field transform seam, and it
-// is deliberately image-shaped, it runs on write, for schema.Image fields,
-// and its output goes to sibling columns. The general version (write and read
-// transforms for any field, composed per field) is being designed in
-// https://github.com/DonaldMurillo/gofastr/issues/144. If that lands, this
-// interface is a candidate to become one instance of it rather than its own
-// mechanism; until then, resist growing it sideways into a general hook,
-// widening this interface to cover non-image fields would prejudge the
-// harder half of that design (read transforms versus filter/sort/search).
+// placeholders; framework/imagefield implements it.
 type ImageDeriver interface {
-	// DeriveImage is called with the raw uploaded bytes after the upload
-	// has passed content sniffing but before ProcessFileField returns.
-	//
-	// primaryRef is the storage key the original was saved under;
-	// implementations derive rendition keys from it so everything for one
-	// upload lives together. Renditions must be written through store.
+	// DeriveImage runs after content sniffing. Renditions must be written
+	// through store, keyed from primaryRef.
 	DeriveImage(ctx context.Context, store upload.Storage, data []byte, primaryRef string) (*ImageDerivatives, error)
 }
 
@@ -196,44 +128,27 @@ type ImageDeriver interface {
 type ProcessOption func(*processConfig)
 
 type processConfig struct {
-	deriver ImageDeriver
-	// stripMetadata opts the upload into StripMetadata's metadata
-	// removal; see strip.go.
+	deriver       ImageDeriver
 	stripMetadata bool
-	// allow, when set, is the list of sniffed MIME types the upload may
-	// have; see AllowTypes.
-	allow []string
+	allow         []string
 }
 
 // ImageTypes are the raster types an image field takes: PNG, JPEG, GIF
 // and WebP.
 var ImageTypes = []string{"image/png", "image/jpeg", "image/gif", "image/webp"}
 
-// AllowTypes refuses an upload whose type, sniffed from its bytes (never
-// its filename or a client header), is not one of mimes, with
-// ErrFileFieldType and before anything is saved.
+// AllowTypes refuses an upload whose sniffed type is not one of mimes, with
+// ErrFileFieldType, before anything is saved.
 func AllowTypes(mimes ...string) ProcessOption {
 	return func(c *processConfig) { c.allow = mimes }
 }
 
-// WithImageDeriver runs deriver over the uploaded bytes and attaches the
-// result to FileField.Image.
-//
-// A derive failure fails the whole upload rather than yielding a file with
-// no renditions. The caller asked for renditions; silently returning a
-// FileField whose Image is nil would surface much later as a page with no
-// placeholder and no srcset, with nothing in the logs pointing back here.
-// It also means a non-image uploaded to an image field is rejected, which
-// is the desired behavior for a schema.Image column.
+// WithImageDeriver runs deriver over the upload and sets FileField.Image; a
+// derive failure fails the upload.
 func WithImageDeriver(deriver ImageDeriver) ProcessOption {
 	return func(c *processConfig) { c.deriver = deriver }
 }
 
-// isRasterDataURL reports whether s is a `data:` URL carrying one of the
-// raster media types an LQIP can legitimately use. Deliberately narrow and
-// local: this package is a leaf and does not import the UI tree's
-// urlsafe helper, and the two allow-lists are checked against each other
-// by TestPlaceholderAllowListsAgree.
 func isRasterDataURL(s string) bool {
 	const prefix = "data:image/"
 	if len(s) <= len(prefix) {

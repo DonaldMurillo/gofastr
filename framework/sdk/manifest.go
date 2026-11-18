@@ -9,54 +9,37 @@ import (
 
 // Artifact describes one downloadable file in the dist directory.
 type Artifact struct {
-	// File is the dist-relative file name (one of GoArtifact, JSArtifact,
-	// JSTypesArtifact).
+	// File is the dist-relative file name.
 	File string `json:"file"`
-	// SHA256 is the lowercase hex digest of the file contents at
-	// generation time. The serving side uses it as the ETag.
+	// SHA256 is the lowercase hex digest of the file, served as its ETag.
 	SHA256 string `json:"sha256"`
-	// Bytes is the file size, used for Content-Length and display.
+	// Bytes is the file size.
 	Bytes int64 `json:"bytes"`
-	// Module is the Go module path baked into the Go SDK's go.mod.
-	// Empty for non-Go artifacts.
+	// Module is the Go SDK's module path, empty for other artifacts.
 	Module string `json:"module,omitempty"`
 }
 
-// Manifest is the machine-readable index `gofastr generate sdk` writes as
-// manifest.json beside the artifacts. The serving side reads it to render
-// download links (size, version, generated-at when stamped) and to detect drift between
-// the generated artifacts and the live entity registry via SchemaHash.
+// Manifest is the manifest.json written beside the artifacts.
 type Manifest struct {
 	SchemaVersion int `json:"schemaVersion"`
-	// App is the display/app name the SDKs were generated for.
+	// App is the app name the SDKs were generated for.
 	App string `json:"app"`
-	// SDKVersion is the semver stamped into the SDKs (0.0.0-dev default).
+	// SDKVersion is the semver stamped into the SDKs.
 	SDKVersion string `json:"sdkVersion"`
-	// GofastrVersion is the gofastr toolchain version that generated the
-	// artifacts (from the host app's go.mod require line, or "dev").
+	// GofastrVersion is the gofastr version that generated them, or "dev".
 	GofastrVersion string `json:"gofastrVersion"`
-	// GeneratedAt is when the artifacts were generated, written only by
-	// `gofastr generate sdk --stamp-time`: a rerun over an unchanged
-	// schema is byte-identical without it. Zero means unstamped.
+	// GeneratedAt is set only by --stamp-time; zero means unstamped.
 	GeneratedAt time.Time `json:"generatedAt,omitzero"`
-	// Entities lists the entity names the SDKs cover, sorted. The serving
-	// side restricts its live SchemaHash computation to this set so the
-	// drift check compares like with like even when the SDK was generated
-	// with --only/--exclude.
+	// Entities lists, sorted, the entities the SDKs and the hash cover.
 	Entities []string `json:"entities"`
-	// SchemaHash is SchemaHash() over the covered entities at generation
-	// time ("sha256:<hex>").
+	// SchemaHash is SchemaHash over Entities at generation time.
 	SchemaHash string `json:"schemaHash"`
-	// Artifacts is keyed "go", "js", "js-types", targets that were not
-	// generated are absent.
+	// Artifacts is keyed "go", "js" and "js-types", for those generated.
 	Artifacts map[string]Artifact `json:"artifacts"`
 }
 
-// ReadManifest loads and validates ManifestFile from the root of fsys
-// (the dist directory). It returns an error when the file is missing,
-// malformed, or structurally empty; a SchemaVersion mismatch is NOT an
-// error, callers detect it via Manifest.SchemaVersion and degrade the
-// drift check to "unknown provenance".
+// ReadManifest loads ManifestFile from fsys, erroring when it is missing,
+// malformed, or lacks a version, entities, artifacts or a file or sha256.
 func ReadManifest(fsys fs.FS) (*Manifest, error) {
 	raw, err := fs.ReadFile(fsys, ManifestFile)
 	if err != nil {
@@ -69,12 +52,7 @@ func ReadManifest(fsys fs.FS) (*Manifest, error) {
 	if m.SchemaVersion == 0 {
 		return nil, fmt.Errorf("sdk: %s: missing schemaVersion", ManifestFile)
 	}
-	// A manifest covering zero entities is structurally empty too: the
-	// drift check hashes the registry restricted to this list, so an empty
-	// one compares a constant against the recorded hash and reports
-	// "current" no matter what the live schema holds — a generation run
-	// that lost its entity list (an --only typo, an empty registry at
-	// generate time) must fail loudly here, not pass silently downstream.
+
 	if len(m.Entities) == 0 {
 		return nil, fmt.Errorf("sdk: %s: no entities listed", ManifestFile)
 	}

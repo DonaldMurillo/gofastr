@@ -1,15 +1,6 @@
-// Package localrun is the machine-local registry of running gofastr
-// apps. Every App writes one record when its listener binds and removes
-// it when the server stops, so a tool on the same machine (the
-// run tracker, an agent) can list what is running, where, and
-// how to reach its MCP server, with no port scanning.
-//
-// Records live in [Dir], one owner-only JSON file per run, with the
-// run's process start value in a sidecar file beside it. A run that
-// dies without shutting down leaves its file behind; [List] drops a
-// record whose process is gone, a pid now held by a newer process
-// included. Registration is best-effort: a run that
-// cannot write its record serves anyway.
+// Package localrun is the machine-local registry of running gofastr apps:
+// Register writes one owner-only record per run in [Dir], and List returns
+// the live ones so local tools can find each run and its MCP server.
 package localrun
 
 import (
@@ -36,22 +27,14 @@ import (
 const (
 	// EnvDir overrides the registry directory.
 	EnvDir = "GOFASTR_RUNS_DIR"
-	// EnvRuns set to "off" (or 0/false/no) stops this process from
-	// registering; "on" (or 1/true/yes) makes it register wherever it
-	// binds. Unset, the App decides (see App.Start). Listing is
-	// unaffected.
+	// EnvRuns "off" stops this process registering and "on" forces it.
 	EnvRuns = "GOFASTR_RUNS"
-	// EnvOff is EnvRuns under its older name, from when the variable
-	// could only turn registration off.
+	// EnvOff is EnvRuns under its older name.
 	EnvOff = EnvRuns
 
-	// recordVersion is the Record layout this package writes.
-	recordVersion = 1
-	// maxRecordBytes bounds one record read; a real record is well
-	// under 2 KiB.
+	recordVersion  = 1
 	maxRecordBytes = 16 << 10
-	// maxStartBytes bounds a sidecar read: a decimal uint64.
-	maxStartBytes = 20
+	maxStartBytes  = 20
 
 	recordExt = ".json"
 	startExt  = ".start"
@@ -64,28 +47,15 @@ type Record struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	PID  int    `json:"pid"`
-	// ProcStart is the OS's start value for PID (procalive.Identity),
-	// so List can tell the run from a later process that got its pid.
-	// Zero when the OS would not say; the pid alone decides then. It is
-	// kept in "<id>.start" beside the record, not in the JSON: readers
-	// built before it decode records strictly, and an unknown field
-	// would make them drop every record.
+	// ProcStart is the OS start value for PID, kept in a sidecar file.
 	ProcStart uint64 `json:"-"`
-	// URL is the base URL a local client dials: http://127.0.0.1:<port>
-	// for a wildcard bind.
+	// URL is the base URL a local client dials.
 	URL string `json:"url"`
-	// MCPPath is the path the app serves MCP over HTTP on ("/mcp"),
-	// empty when it serves none. Under `gofastr dev` it answers on
-	// loopback with no credential; elsewhere the app's own auth
-	// applies.
+	// MCPPath is the HTTP MCP path, empty when the run serves none.
 	MCPPath string `json:"mcp_path,omitempty"`
-	// MCPCommand, when set, is an argv that speaks stdio MCP to this
-	// run (battery/service sets `<exe> service mcp --state-dir <dir>`).
-	// An agent should prefer it over MCPPath: it carries its own
-	// credential.
+	// MCPCommand is an argv that speaks stdio MCP to this run.
 	MCPCommand []string `json:"mcp_command,omitempty"`
-	// Service is the battery/service Config.ID when the run is a
-	// service daemon or its dev run.
+	// Service is the battery/service Config.ID of a service run.
 	Service string    `json:"service,omitempty"`
 	Dev     bool      `json:"dev,omitempty"`
 	Dir     string    `json:"dir,omitempty"`
@@ -116,11 +86,6 @@ func Dir() (string, error) {
 	return filepath.Join(base, "gofastr", "runs"), nil
 }
 
-// envUnderTest marks a process started, directly or further down, by a
-// test binary. A test binary that links this package sets it at init,
-// so the apps its tests build and run (the dev-loop and quickstart
-// e2e suites) inherit it and stay out of the real registry, even when
-// the test kills them before they can remove their record.
 const envUnderTest = "GOFASTR_RUNS_UNDER_TEST"
 
 func init() {
@@ -129,10 +94,8 @@ func init() {
 	}
 }
 
-// Disabled reports whether this process must not register: EnvOff says
-// so, or it is a test binary, or a process a test binary started, with
-// no EnvDir (tests that start an App must not litter the real registry;
-// a test that exercises it sets EnvDir to a temp dir).
+// Disabled reports whether this process must not register: EnvRuns says
+// off, or it is or descends from a test binary and EnvDir is unset.
 func Disabled() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvRuns))) {
 	case "off", "0", "false", "no":
@@ -141,17 +104,13 @@ func Disabled() bool {
 	return UnderTest() && os.Getenv(EnvDir) == ""
 }
 
-// UnderTest reports whether this process is a Go test binary or a
-// process one started (it inherits the marker a test binary sets at
-// init): the dev-loop and quickstart e2e suites run real apps that way.
+// UnderTest reports whether this process is or descends from a test binary.
 func UnderTest() bool {
 	return testing.Testing() || os.Getenv(envUnderTest) != ""
 }
 
-// Forced reports whether the environment asks this process to
-// register regardless of where it binds: EnvRuns says "on" (or
-// 1/true/yes). EnvDir only says where the registry is. Disabled still
-// wins.
+// Forced reports whether EnvRuns asks this process to register wherever
+// it binds.
 func Forced() bool {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvRuns))) {
 	case "on", "1", "true", "yes":
@@ -197,8 +156,6 @@ func Register(rec Record) (unregister func(), err error) {
 	defer root.Close()
 	name := rec.ID + recordExt
 	start := rec.ID + startExt
-	// The sidecar first: a reader that sees the record finds its start
-	// value already there.
 	if rec.ProcStart != 0 {
 		if err := writeFile(root, start, strconv.FormatUint(rec.ProcStart, 10)); err != nil {
 			return nil, err
@@ -214,8 +171,6 @@ func Register(rec Record) (unregister func(), err error) {
 	}, nil
 }
 
-// writeFile writes body to name through an owner-only temp file and a
-// rename, so a reader never sees half of it.
 func writeFile(root *os.Root, name, body string) error {
 	tmp := name + ".tmp"
 	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
@@ -236,10 +191,8 @@ func writeFile(root *os.Root, name, body string) error {
 	return nil
 }
 
-// List returns the records of live runs, newest first. A record whose
-// process has exited is removed on the way, and so is one whose pid a
-// newer process now holds (its start value differs from ProcStart). Files that are not records are
-// skipped. A missing directory is an empty list.
+// List returns the records of live runs, newest first, removing those of
+// runs that are gone. A missing directory is an empty list.
 func List() ([]Record, error) {
 	root, err := openDir(false)
 	if errors.Is(err, os.ErrNotExist) {
@@ -269,13 +222,6 @@ func List() ([]Record, error) {
 		if !ok || !idPattern.MatchString(id) {
 			continue
 		}
-		// The sidecar first. A concurrent List that finds this run dead
-		// removes the record and then its sidecar: read in the other
-		// order, the record could arrive with its sidecar already gone,
-		// a missing start value would mean "older tracker, check the pid
-		// alone", and a recycled pid would pass. Read first, a sidecar
-		// gone by now means the record is gone too, and the read below
-		// skips it.
 		start := readStart(root, id+startExt)
 		rec, ok := loadRecord(root, name, id)
 		if !ok {
@@ -295,18 +241,9 @@ func List() ([]Record, error) {
 	return out, nil
 }
 
-// loadRecord is readRecord, a variable so a test can run another List's
-// removals between this one's reads.
 var loadRecord = readRecord
 
-// readRecord decodes one record file, refusing an oversized file, a
-// record whose ID does not match its file name or whose pid disagrees
-// with it, and a URL that is not plain http(s).
 func readRecord(root *os.Root, name, id string) (Record, bool) {
-	// Only a regular file, checked on the opened handle so nothing can
-	// be swapped in after the check. The open does not block on a FIFO
-	// with no writer (openRecordFlags), and the check keeps the read
-	// from waiting on one that has a writer.
 	f, err := root.OpenFile(name, openRecordFlags, 0)
 	if err != nil {
 		return Record{}, false
@@ -330,18 +267,12 @@ func readRecord(root *os.Root, name, id string) (Record, bool) {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return Record{}, false
 	}
-	// MCPURL concatenates, so a path like "@evil.com/" would move the
-	// host. A leading slash ends the authority and keeps it on the run.
 	if rec.MCPPath != "" && !strings.HasPrefix(rec.MCPPath, "/") {
 		return Record{}, false
 	}
 	return rec, true
 }
 
-// dropOrphanStart removes the sidecar of a record that is gone (a
-// reader that predates sidecars deleted it) once its process has
-// exited. A live process's sidecar stays: Register writes it just
-// before the record.
 func dropOrphanStart(root *os.Root, names []string, id string) {
 	if _, found := slices.BinarySearch(names, id+recordExt); found {
 		return
@@ -353,9 +284,6 @@ func dropOrphanStart(root *os.Root, names []string, id string) {
 	_ = root.Remove(id + startExt)
 }
 
-// readStart reads a record's sidecar start value, 0 when there is none
-// or it is not one: the pid alone decides then. The same checks as a
-// record: a regular file of this user's, read without blocking.
 func readStart(root *os.Root, name string) uint64 {
 	f, err := root.OpenFile(name, openRecordFlags, 0)
 	if err != nil {
@@ -376,8 +304,6 @@ func readStart(root *os.Root, name string) uint64 {
 	return v
 }
 
-// openRoot is os.OpenRoot, a variable so a test can swap the directory
-// between the check and the open.
 var openRoot = os.OpenRoot
 
 func remove(name string) error {
@@ -389,9 +315,6 @@ func remove(name string) error {
 	return root.Remove(name)
 }
 
-// openDir opens the registry directory as an os.Root, creating it
-// first when create is set. Either way it must be this user's own
-// directory, and it is left owner-only (checkDir, secureOpened).
 func openDir(create bool) (*os.Root, error) {
 	dir, err := Dir()
 	if err != nil {

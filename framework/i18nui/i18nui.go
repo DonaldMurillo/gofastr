@@ -1,9 +1,6 @@
-// Package i18nui holds the phrases framework UI surfaces show: the
-// pagination, table, form, dialog and widget words, the entity screens'
-// chrome and the admin's. Each is an [i18n.Phrase], so a catalog entry
-// under its key translates it and [i18n.Phrase.Text] falls back to the
-// English otherwise. The Entity* helpers resolve the strings an entity's
-// Display config names.
+// Package i18nui holds the phrases framework UI surfaces show, each an
+// [i18n.Phrase] a catalog entry under its key translates, and the Entity*
+// helpers that resolve the strings an entity's Display config names.
 package i18nui
 
 import (
@@ -17,7 +14,6 @@ import (
 )
 
 var (
-	// Pagination
 	PaginationPrevious = i18n.Define("ui.pagination.previous", "Previous")
 	PaginationNext     = i18n.Define("ui.pagination.next", "Next")
 	PaginationPage     = i18n.Define("ui.pagination.page", "Page")
@@ -26,11 +22,9 @@ var (
 	PaginationResults  = i18n.Define("ui.pagination.results", "results")
 	PaginationLabel    = i18n.Define("ui.pagination.label", "Pagination")
 
-	// Empty state
 	EmptyStateTitle = i18n.Define("ui.empty.title", "Nothing here yet")
 	EmptyStateDesc  = i18n.Define("ui.empty.description", "No items to display.")
 
-	// Dialog / modal
 	DialogConfirm = i18n.Define("ui.dialog.confirm", "Confirm")
 	DialogCancel  = i18n.Define("ui.dialog.cancel", "Cancel")
 	DialogClose   = i18n.Define("ui.dialog.close", "Close")
@@ -40,16 +34,13 @@ var (
 	// data-cui-confirm control opens when it names no title.
 	DialogConfirmTitle = i18n.Define("ui.dialog.confirmTitle", "Are you sure?")
 
-	// Toast
 	ToastSuccess = i18n.Define("ui.toast.success", "Success")
 	ToastError   = i18n.Define("ui.toast.error", "Error")
 	ToastWarning = i18n.Define("ui.toast.warning", "Warning")
 	ToastInfo    = i18n.Define("ui.toast.info", "Info")
 
-	// Banner
 	BannerDismiss = i18n.Define("ui.banner.dismiss", "Dismiss")
 
-	// DataTable
 	TableSortAsc   = i18n.Define("ui.table.sortAscending", "Sort ascending")
 	TableSortDesc  = i18n.Define("ui.table.sortDescending", "Sort descending")
 	TableNoSort    = i18n.Define("ui.table.noSort", "Remove sort")
@@ -57,12 +48,10 @@ var (
 	TableNoResults = i18n.Define("ui.table.noResults", "No results")
 	TableLoading   = i18n.Define("ui.table.loading", "Loading…")
 
-	// File upload
 	FileUploadDrop   = i18n.Define("ui.fileUpload.dropzone", "Drop files here, or click to browse")
 	FileUploadBrowse = i18n.Define("ui.fileUpload.browse", "Browse")
 	FileUploadRemove = i18n.Define("ui.fileUpload.remove", "Remove")
 
-	// Form
 	FormSubmit  = i18n.Define("ui.form.submit", "Submit")
 	FormReset   = i18n.Define("ui.form.reset", "Reset")
 	FormSending = i18n.Define("ui.form.sending", "Sending…")
@@ -71,11 +60,9 @@ var (
 	FormYes     = i18n.Define("ui.form.yes", "Yes")
 	FormNo      = i18n.Define("ui.form.no", "No")
 
-	// Search
 	SearchPlaceholder = i18n.Define("ui.search.placeholder", "Search…")
 	SearchNoResults   = i18n.Define("ui.search.noResults", "No results")
 
-	// Auth
 	AuthLogin      = i18n.Define("ui.auth.login", "Log in")
 	AuthLogout     = i18n.Define("ui.auth.logout", "Log out")
 	AuthSignup     = i18n.Define("ui.auth.signup", "Sign up")
@@ -87,29 +74,24 @@ var (
 	// AuthForgotPassword is the sign-in form's link to the password reset.
 	AuthForgotPassword = i18n.Define("ui.auth.forgotPassword", "Forgot your password?") // nosecret: UI label, not a credential
 
-	// Repeater
 	RepeaterAdd    = i18n.Define("ui.repeater.add", "Add item")
 	RepeaterRemove = i18n.Define("ui.repeater.remove", "Remove")
 
-	// PasswordInput
 	PasswordInputShow = i18n.Define("ui.passwordInput.show", "Show password")
 
-	// Lightbox
 	LightboxLabel    = i18n.Define("ui.lightbox.label", "Image viewer")
 	LightboxPrev     = i18n.Define("ui.lightbox.previous", "Previous image")
 	LightboxNext     = i18n.Define("ui.lightbox.next", "Next image")
 	LightboxDownload = i18n.Define("ui.lightbox.download", "Download image")
 
-	// StepWizard
 	StepWizardBack   = i18n.Define("ui.stepWizard.back", "Back")
 	StepWizardNext   = i18n.Define("ui.stepWizard.next", "Continue")
 	StepWizardSubmit = i18n.Define("ui.stepWizard.submit", "Submit")
-	// DataTable extras
+
 	TableEmptyDesc = i18n.Define("ui.table.emptyDescription", "Adjust your filters or add new entries.")
 	TableSortBy    = i18n.Define("ui.table.sortBy", "Sort by {{column}}")
 	TableSelectAll = i18n.Define("ui.table.selectAll", "Select all rows")
 
-	// FilterToolbar
 	FilterToolbarLabel  = i18n.Define("ui.filterToolbar.label", "Filters")
 	FilterApply         = i18n.Define("ui.filterToolbar.apply", "Apply")
 	FilterReset         = i18n.Define("ui.filterToolbar.reset", "Reset")
@@ -122,7 +104,7 @@ var (
 	SelectionCopy       = i18n.Define("ui.selection.copy", "Copy CSV")
 	SelectionCopied     = i18n.Define("ui.selection.copied", "Copied {{n}} rows as CSV")
 	SelectionCopyFailed = i18n.Define("ui.selection.copyFailed", "The rows could not be copied.")
-	// ColumnPicker's link names.
+
 	ColumnShow     = i18n.Define("ui.columnPicker.show", "Show {{column}}")
 	ColumnHide     = i18n.Define("ui.columnPicker.hide", "Hide {{column}}")
 	ColumnMoveUp   = i18n.Define("ui.columnPicker.moveUp", "Move {{column}} earlier")
@@ -130,16 +112,14 @@ var (
 	FilterAll      = i18n.Define("ui.filterToolbar.all", "All {{label}}")
 	FilterAllPlain = i18n.Define("ui.filterToolbar.allPlain", "All")
 	FilterSortBy   = i18n.Define("ui.filterToolbar.sortBy", "Sort by")
-	// FilterChipBar
+
 	FilterClearAll   = i18n.Define("ui.filterChipBar.clearAll", "Clear all")
 	FilterChipRemove = i18n.Define("ui.filterChipBar.removeFilter", "Remove filter {{label}}")
 
-	// Search extras
 	SearchInputPlaceholder = i18n.Define("ui.search.inputPlaceholder", "Search...")
 	SearchLabel            = i18n.Define("ui.search.label", "Search")
 	SearchClear            = i18n.Define("ui.search.clear", "Clear search")
 
-	// SearchResults
 	SearchResultsCount = i18n.Define("ui.searchResults.count", "{{n}} results for “{{q}}”")
 	SearchResultsOne   = i18n.Define("ui.searchResults.one", "1 result for “{{q}}”")
 	SearchResultsNone  = i18n.Define("ui.searchResults.none", "No pages match “{{q}}”")
@@ -147,7 +127,6 @@ var (
 	SearchResultsMore  = i18n.Define("ui.searchResults.more", "More results")
 	SearchResultsAll   = i18n.Define("ui.searchResults.all", "See all results for “{{q}}”")
 
-	// CommandPalette
 	CommandPalettePlaceholder = i18n.Define("ui.commandPalette.placeholder", "Type a command or search…")
 	CommandPaletteOpen        = i18n.Define("ui.commandPalette.open", "Open command palette")
 	CommandPaletteTitle       = i18n.Define("ui.commandPalette.title", "Command palette")
@@ -158,34 +137,27 @@ var (
 	DiffOld = i18n.Define("ui.diff.old", "Old")
 	DiffNew = i18n.Define("ui.diff.new", "New")
 
-	// Form extras
 	FormErrorsSummary      = i18n.Define("ui.form.errorsSummary", "Please fix the highlighted fields and try again.")
 	FormHasErrors          = i18n.Define("ui.form.hasErrors", "Form has errors")
 	FormSave               = i18n.Define("ui.form.save", "Save")
 	ValidationSummaryTitle = i18n.Define("ui.validationSummary.title", "Please fix the following errors:")
 
-	// Carousel
 	CarouselPrevious   = i18n.Define("ui.carousel.previous", "Previous slide")
 	CarouselNext       = i18n.Define("ui.carousel.next", "Next slide")
 	CarouselGoTo       = i18n.Define("ui.carousel.goTo", "Go to slide {{slide}}")
 	CarouselPagination = i18n.Define("ui.carousel.pagination", "Slide pagination")
 
-	// Counter
 	CounterDecrement = i18n.Define("ui.counter.decrement", "Decrement")
 	CounterIncrement = i18n.Define("ui.counter.increment", "Increment")
 	CounterLabel     = i18n.Define("ui.counter.label", "Counter")
 
-	// NumberInput
 	NumberDecrement = i18n.Define("ui.number.decrement", "Decrement {{label}}")
 	NumberIncrement = i18n.Define("ui.number.increment", "Increment {{label}}")
 
-	// Spinner / common
 	Loading = i18n.Define("ui.loading", "Loading…")
 
-	// Sparkline
 	SparklineNoData = i18n.Define("ui.sparkline.noData", "No trend data")
 
-	// Charts
 	ChartNoData        = i18n.Define("ui.chart.noData", "No data yet")
 	ChartNotEnoughData = i18n.Define("ui.chart.notEnoughData", "Not enough data yet")
 	ChartValue         = i18n.Define("ui.chart.value", "{{label}}: {{value}}")
@@ -197,7 +169,6 @@ var (
 	HeatmapLess        = i18n.Define("ui.heatmap.less", "Less")
 	HeatmapMore        = i18n.Define("ui.heatmap.more", "More")
 
-	// Waterfall, and the latencies it and the request screens write
 	WaterfallStep     = i18n.Define("ui.waterfall.step", "Step")
 	WaterfallStart    = i18n.Define("ui.waterfall.start", "Starts at")
 	WaterfallTook     = i18n.Define("ui.waterfall.took", "Took")
@@ -207,30 +178,23 @@ var (
 	DurationMillis    = i18n.Define("ui.duration.millis", "{{n}} ms")
 	DurationSeconds   = i18n.Define("ui.duration.seconds", "{{n}} s")
 
-	// Auth extras
 	SignOut = i18n.Define("ui.auth.signOut", "Sign out")
 
-	// FileDropzone
 	DropzoneDropFiles     = i18n.Define("ui.dropzone.promptMultiple", "Drop files here or click to browse")
 	DropzoneDropFile      = i18n.Define("ui.dropzone.promptSingle", "Drop a file here or click to browse")
 	DropzoneMaxSize       = i18n.Define("ui.dropzone.maxSize", "Max {{n}} MB.")
 	DropzoneMaxSizeSuffix = i18n.Define("ui.dropzone.maxSizeSuffix", " (max {{n}} MB)")
 
-	// FileUpload extras
 	FileUploadDropSingle = i18n.Define("ui.fileUpload.dropzoneSingle", "Drop a file here, or click to browse")
 	FileMaxSize          = i18n.Define("ui.fileUpload.maxSize", "Max {{n}} MB")
 
-	// SkipLink
 	SkipToMain = i18n.Define("ui.skipLink.toMain", "Skip to main content")
 
-	// Notification
 	NotificationDismiss = i18n.Define("ui.notification.dismiss", "Dismiss notification")
 	NotificationEmpty   = i18n.Define("ui.notification.empty", "No new notifications")
 
-	// PollingIndicator
 	PollingLive = i18n.Define("ui.polling.live", "Live")
 
-	// CopyButton
 	CopyCopy        = i18n.Define("ui.copy.copy", "Copy")
 	CopyCopied      = i18n.Define("ui.copy.copied", "Copied")
 	CopyFailed      = i18n.Define("ui.copy.failed", "Could not copy to the clipboard")
@@ -241,31 +205,23 @@ var (
 	DrawerPrev      = i18n.Define("ui.drawer.prev", "Previous record")
 	DrawerNext      = i18n.Define("ui.drawer.next", "Next record")
 
-	// Ago: how long before now, the way an activity feed says it.
 	AgoNow     = i18n.Define("ui.ago.now", "just now")
 	AgoMinutes = i18n.Define("ui.ago.minutes", "{{n}}m ago")
 	AgoHours   = i18n.Define("ui.ago.hours", "{{n}}h ago")
 	AgoDays    = i18n.Define("ui.ago.days", "{{n}}d ago")
 
-	// ChangeList: the visually hidden words before an edit's old and
-	// new value.
 	ChangeFrom = i18n.Define("ui.change.from", "from")
 	ChangeTo   = i18n.Define("ui.change.to", "to")
 
-	// ProgressSteps
 	ProgressLabel = i18n.Define("ui.progress.label", "Progress")
 
-	// StepRail
 	StepRailLabel = i18n.Define("ui.stepRail.label", "Page steps")
 
-	// Avatar presence dot: its accessible name when the caller sets no
-	// StatusLabel.
 	AvatarStatusOnline  = i18n.Define("ui.avatar.statusOnline", "Online")
 	AvatarStatusAway    = i18n.Define("ui.avatar.statusAway", "Away")
 	AvatarStatusBusy    = i18n.Define("ui.avatar.statusBusy", "Busy")
 	AvatarStatusOffline = i18n.Define("ui.avatar.statusOffline", "Offline")
 
-	// Component landmarks and defaults a caller may leave unnamed
 	AvatarGroupLabel    = i18n.Define("ui.avatarGroup.label", "Avatars")
 	AvatarGroupMore     = i18n.Define("ui.avatarGroup.more", "{{count}} more")
 	ContentRowSidebar   = i18n.Define("ui.contentRow.sidebar", "Sidebar")
@@ -281,48 +237,32 @@ var (
 	NetworkRetryText    = i18n.Define("ui.networkRetry.text", "We're having trouble reaching the server. Your changes are paused until the connection comes back.")
 	NetworkRetryNowText = i18n.Define("ui.networkRetry.retry", "Retry now")
 
-	// Tag
 	TagRemove = i18n.Define("ui.tag.remove", "Remove {{label}}")
 
-	// StepWizard extras
 	StepWizardStep   = i18n.Define("ui.stepWizard.step", "Step {{step}}: {{heading}}")
 	StepWizardStepOf = i18n.Define("ui.stepWizard.stepOf", "Step {{step}} of {{total}}")
 
-	// Section
 	Section = i18n.Define("ui.section.label", "Section")
 
-	// ThemeToggle
 	ThemeToggle      = i18n.Define("ui.themeToggle.toggle", "Toggle color scheme")
 	ThemeLight       = i18n.Define("ui.themeToggle.light", "Light")
 	ThemeDark        = i18n.Define("ui.themeToggle.dark", "Dark")
 	ThemeAuto        = i18n.Define("ui.themeToggle.auto", "Auto")
 	ThemeColorScheme = i18n.Define("ui.themeToggle.colorScheme", "Color scheme")
 
-	// LanguageMenu's trigger, read before the current language's name.
 	LanguageMenu = i18n.Define("ui.languageMenu.label", "Language")
 
-	// ThemePicker
 	ThemePicker  = i18n.Define("ui.themePicker.label", "Theme")
 	ThemeDefault = i18n.Define("ui.themePicker.default", "Default")
 
-	// Site navigation (an app's own header package)
 	NavPrimary       = i18n.Define("ui.nav.primary", "Primary")
 	NavMobilePrimary = i18n.Define("ui.nav.mobilePrimary", "Mobile primary")
 	NavToggle        = i18n.Define("ui.nav.toggle", "Toggle navigation")
-	// The previous/next pager under a help article (an app's docpage).
+
 	NavMoreArticles = i18n.Define("ui.nav.moreArticles", "More articles")
 
-	// Repeater extras
 	RepeaterRemoveItem = i18n.Define("ui.repeater.removeItem", "Remove item {{index}}")
 
-	// Headless component strings. framework/ui's StringsFor bridge
-	// resolves every field of headless.Strings from these, so a
-	// component rebuilt on headless says its words in the reader's
-	// language. Placeholder conventions follow headless, not this
-	// package's {name} style: %s where headless formats at render
-	// (fmt.Sprintf at the site that owns the value), {name} tokens
-	// where the runtime substitutes. A catalog translation keeps the
-	// placeholders and may reorder the words around them.
 	DismissTitled           = i18n.Define("ui.dismiss.titled", "Dismiss: {{title}}")
 	TagRemoveLabelled       = i18n.Define("ui.tag.removeLabelled", "Remove {{label}}")
 	ActionFailed            = i18n.Define("ui.action.failed", "Could not save. Try again.")
@@ -390,8 +330,6 @@ var (
 	HuiMultiSelectPlaceholder    = i18n.Define("ui.multiselect.placeholder", "Choose…")
 )
 
-// DatePicker's nav anchors, a range's default input labels, and what
-// the module says when a day is picked.
 var (
 	HuiDatePickerPrevMonth = i18n.Define("ui.datepicker.prevMonth", "Previous month")
 	HuiDatePickerNextMonth = i18n.Define("ui.datepicker.nextMonth", "Next month")
@@ -405,8 +343,6 @@ var (
 	HuiDatePickerFailed    = i18n.Define("ui.datepicker.monthFailed", "The month could not be loaded.")
 )
 
-// CodeBlock's accessible name, its line count and its copy control,
-// lower-case in the block's header.
 var (
 	CodeBlockSource     = i18n.Define("ui.codeBlock.source", "source code")
 	CodeBlockLangSource = i18n.Define("ui.codeBlock.langSource", "{{language}} source")
@@ -416,15 +352,11 @@ var (
 	CodeBlockCopyOf     = i18n.Define("ui.codeBlock.copyOf", "copy {{what}}")
 )
 
-// PricingCard's badge and its default call to action.
 var (
 	PricingRecommended = i18n.Define("ui.pricing.recommended", "Recommended")
 	PricingChoose      = i18n.Define("ui.pricing.choose", "Choose {{plan}}")
 )
 
-// ShortcutHint's keycaps and the sentence a screen reader hears. The
-// keycap words are the ones printed on the key: a German keyboard says
-// Strg where an English one says Ctrl.
 var (
 	ShortcutLabel = i18n.Define("ui.shortcut.label", "Shortcut: {{keys}}")
 	KeyCtrl       = i18n.Define("ui.key.ctrl", "Ctrl")
@@ -441,12 +373,9 @@ var (
 	KeyRight      = i18n.Define("ui.key.right", "Right")
 )
 
-// HTML is [i18n.Phrase.Text] for a line that carries markup: an activity
-// line with a bold actor and the record as a link. The translated text
-// is escaped and each {{name}} becomes vars[name] as given, in one pass,
-// so a value holding "{{verb}}" stays as written. A placeholder vars does
-// not name is left as text. The caller escapes what it builds each value
-// from.
+// HTML is [i18n.Phrase.Text] for a line that carries markup: the
+// translated text is escaped and each {{name}} becomes vars[name] as
+// given. The caller escapes what it builds each value from.
 func HTML(ctx context.Context, p i18n.Phrase, vars map[string]render.HTML) render.HTML {
 	s := p.Text(ctx)
 	var b strings.Builder
@@ -473,44 +402,21 @@ func HTML(ctx context.Context, p i18n.Phrase, vars map[string]render.HTML) rende
 	return render.HTML(b.String())
 }
 
-// Entity display label helpers resolve the strings an entity's Display
-// config names: its singular and plural names, its description, a field's
-// label, help text and enum values, a view, transition or form-section key,
-// and a nav group. Every one resolves the same way:
-//
-//  1. the catalog key for the locale (the ctx translator is consulted when
-//     the tr argument is nil),
-//  2. the Display value the caller passes, when it is set,
-//  3. a fallback derived from the key itself.
-//
-// Nothing in Display is itself a translation: the key, title-cased, is the
-// English fallback, and a catalog entry under the key wins when it exists.
-// The last-resort fallback for prose with no natural derived text (a
-// description, a help line) is the empty string.
-
-// EntitySingular returns the entity's singular name for headings, buttons
-// and breadcrumbs: entity.<entity>.singular, else the Display singular,
-// else the entity name singularized and title-cased. The singularization
-// matters: entity names are usually plurals ("invoices"), and a heading
-// that read "New Invoices" for ONE record is the bug the derived
-// fallback exists to avoid. Words the shared singularizer leaves alone
-// (irregulars like "people") come back title-cased, same as before.
+// EntitySingular returns entity.<entity>.singular, else display, else the
+// entity name singularized and title-cased. A nil tr reads the ctx's.
 func EntitySingular(ctx context.Context, tr *i18n.Translator, entityName, display string) string {
 	return displayLabel(ctx, tr, "entity."+entityName+".singular", display, inflect.Singular(entityName))
 }
 
-// EntityPlural returns the entity's plural name for nav and list headings:
-// entity.<entity>.plural, else the Display plural, else the entity name
-// title-cased.
+// EntityPlural returns entity.<entity>.plural, else display, else the
+// entity name title-cased.
 func EntityPlural(ctx context.Context, tr *i18n.Translator, entityName, display string) string {
 	return displayLabel(ctx, tr, "entity."+entityName+".plural", display, entityName)
 }
 
-// EntityNoun returns the entity's name for use inside a sentence (the
-// "11 customers" count): the plural or singular catalog entry as written,
-// since the translator owns its casing, else the Display name or the
-// derived name with each word that is capitalized only at its start
-// lowercased. A word with any other capital keeps it ("API keys").
+// EntityNoun returns the entity's name for use inside a sentence: the
+// plural or singular catalog entry as written, else display or the derived
+// name with each word capitalized only at its start lowercased.
 func EntityNoun(ctx context.Context, tr *i18n.Translator, entityName, display string, plural bool) string {
 	key, slug := "entity."+entityName+".singular", inflect.Singular(entityName)
 	if plural {
@@ -541,16 +447,14 @@ func EntityNoun(ctx context.Context, tr *i18n.Translator, entityName, display st
 	return fallback(ctx, tr, strings.Join(words, " "))
 }
 
-// EntityDescription returns the one-line description shown under a list
-// heading: entity.<entity>.description, else the Display description, else
-// the empty string (prose with no derived fallback).
+// EntityDescription returns entity.<entity>.description, else display,
+// else "".
 func EntityDescription(ctx context.Context, tr *i18n.Translator, entityName, display string) string {
 	return displayLabel(ctx, tr, "entity."+entityName+".description", display, "")
 }
 
-// FieldLabel returns a field's label: entity.<entity>.fields.<field>.label,
-// else the Display label (pass "" when there is none), else the humanized
-// field name.
+// FieldLabel returns entity.<entity>.fields.<field>.label, else display,
+// else the humanized field name.
 func FieldLabel(ctx context.Context, tr *i18n.Translator, entityName, fieldName, display string) string {
 	key := "entity." + entityName + ".fields." + fieldName + ".label"
 	if got, ok := catalogString(ctx, tr, key); ok {
@@ -562,10 +466,8 @@ func FieldLabel(ctx context.Context, tr *i18n.Translator, entityName, fieldName,
 	return fallback(ctx, tr, humanize(fieldName))
 }
 
-// RelationLabel is FieldLabel for a Relation field. Its humanized
-// fallback drops a trailing "_id", "Id" or "ID": the field names the
-// record it points at, so customer_id labels as "Customer". The catalog
-// key keeps the real field name.
+// RelationLabel is FieldLabel for a Relation field, whose humanized
+// fallback drops a trailing "_id", "Id" or "ID".
 func RelationLabel(ctx context.Context, tr *i18n.Translator, entityName, fieldName, display string) string {
 	if display == "" {
 		display = humanize(trimIDSuffix(fieldName))
@@ -582,51 +484,42 @@ func trimIDSuffix(name string) string {
 	return name
 }
 
-// FieldHelp returns the help line under a field's input:
-// entity.<entity>.fields.<field>.help, else the Display help, else the
-// empty string.
+// FieldHelp returns entity.<entity>.fields.<field>.help, else display,
+// else "".
 func FieldHelp(ctx context.Context, tr *i18n.Translator, entityName, fieldName, display string) string {
 	return displayLabel(ctx, tr, "entity."+entityName+".fields."+fieldName+".help", display, "")
 }
 
-// FieldValueLabel returns the label for one value of an Enum field:
-// entity.<entity>.fields.<field>.values.<value>, else the value
-// title-cased ("past_due" -> "Past due").
+// FieldValueLabel returns entity.<entity>.fields.<field>.values.<value>,
+// else the value title-cased ("past_due" is "Past due").
 func FieldValueLabel(ctx context.Context, tr *i18n.Translator, entityName, fieldName, value string) string {
 	return displayLabel(ctx, tr, "entity."+entityName+".fields."+fieldName+".values."+value, "", value)
 }
 
-// ViewLabel returns a list view's tab label: entity.<entity>.views.<key>,
-// else the view's Display label, else the key title-cased.
+// ViewLabel returns entity.<entity>.views.<key>, else display, else the
+// key title-cased.
 func ViewLabel(ctx context.Context, tr *i18n.Translator, entityName, key, display string) string {
 	return displayLabel(ctx, tr, "entity."+entityName+".views."+key, display, key)
 }
 
-// TransitionLabel returns a state move's button label:
-// entity.<entity>.transitions.<key>, else the transition's Display label,
-// else the key title-cased ("mark_paid" -> "Mark paid").
+// TransitionLabel returns entity.<entity>.transitions.<key>, else
+// display, else the key title-cased.
 func TransitionLabel(ctx context.Context, tr *i18n.Translator, entityName, key, display string) string {
 	return displayLabel(ctx, tr, "entity."+entityName+".transitions."+key, display, key)
 }
 
-// SectionLabel returns a form section's heading:
-// entity.<entity>.sections.<key>, else the passed label, else the key
-// title-cased. A form section declares Help (prose under the heading), not
-// a label of its own, so callers pass the empty string for now.
+// SectionLabel returns entity.<entity>.sections.<key>, else display, else
+// the key title-cased.
 func SectionLabel(ctx context.Context, tr *i18n.Translator, entityName, key, display string) string {
 	return displayLabel(ctx, tr, "entity."+entityName+".sections."+key, display, key)
 }
 
-// NavGroupLabel returns a sidebar group's heading: nav.groups.<key>, else
-// the group's Display label, else the key title-cased ("billing" ->
-// "Billing").
+// NavGroupLabel returns nav.groups.<key>, else display, else the key
+// title-cased.
 func NavGroupLabel(ctx context.Context, tr *i18n.Translator, key, display string) string {
 	return displayLabel(ctx, tr, "nav.groups."+key, display, key)
 }
 
-// displayLabel resolves one Display string: catalog first, then the Display
-// value, then slug title-cased. An empty slug means prose with no derived
-// fallback (a description, a help line), which resolves to "".
 func displayLabel(ctx context.Context, tr *i18n.Translator, key, display, slug string) string {
 	if got, ok := catalogString(ctx, tr, key); ok {
 		return got
@@ -637,10 +530,6 @@ func displayLabel(ctx context.Context, tr *i18n.Translator, key, display, slug s
 	return fallback(ctx, tr, titleCase(slug))
 }
 
-// catalogString returns the catalog text for key and true when the catalog
-// holds it. A miss returns the bare key from Translator.T, which is
-// indistinguishable from a catalog that maps the key to itself; that shape
-// is refused: it reads as a miss.
 func catalogString(ctx context.Context, tr *i18n.Translator, key string) (string, bool) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -657,11 +546,6 @@ func catalogString(ctx context.Context, tr *i18n.Translator, key string) (string
 	return "", false
 }
 
-// titleCase turns a lowercase slug into its English fallback label:
-// underscores and hyphens become spaces and the first letter is
-// capitalized ("past_due" -> "Past due"). Unlike humanize, later words
-// stay lowercase, which reads as a sentence: the label of a key, not a
-// title of a column.
 func titleCase(slug string) string {
 	if slug == "" {
 		return ""
@@ -672,7 +556,6 @@ func titleCase(slug string) string {
 	return string(runes)
 }
 
-// humanize converts snake_case or camelCase to "Title Case".
 func humanize(s string) string {
 	runes := []rune(s)
 	var out []rune

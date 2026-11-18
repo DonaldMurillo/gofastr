@@ -1,23 +1,5 @@
-// Package cssweight measures the CSS a GoFastr page makes the browser
-// fetch or parse: every <style> element in the document and every
-// <link rel="stylesheet"> it names, fetched once each.
-//
-// [Measure] works over plain HTTP, with no browser, so a gate can weigh
-// every page an app serves in seconds. Sizes are reported raw and
-// gzip-compressed, each sheet compressed on its own. For a linked sheet
-// that is its transfer size. Inline sheets travel inside the document's
-// one gzip stream, so their figure runs a little high, but it moves only
-// when the CSS does, which is what a cap needs. A gate compares
-// [Weight.Gzip] against a cap the app picks
-// from today's numbers, so CSS growth has to raise the cap in the same
-// change instead of arriving unnoticed:
-//
-//	w, err := cssweight.Measure(client, base+"/pricing")
-//	if err != nil { t.Fatal(err) }
-//	if w.Gzip() > 20<<10 { t.Errorf("/pricing ships %s", w) }
-//
-// Each app keeps its own page list and cap, the way axetest and nojstest
-// are used.
+// Package cssweight weighs the CSS a page ships over plain HTTP; [Measure]
+// returns a [Weight] a gate compares against a cap.
 package cssweight
 
 import (
@@ -33,13 +15,11 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-// maxBody bounds one fetched document or stylesheet.
 const maxBody = 16 << 20
 
 // Sheet is one stylesheet the page ships.
 type Sheet struct {
-	// Source is the linked sheet's resolved URL, or "inline #n" for the
-	// n-th <style> element (counting from 1).
+	// Source is the linked sheet's URL, or "inline #n" for the n-th <style>.
 	Source string `json:"source"`
 	Bytes  int    `json:"bytes"`
 	GzipN  int    `json:"gzip"`
@@ -59,8 +39,7 @@ func (w Weight) Bytes() int {
 	return n
 }
 
-// Gzip is the compressed size of every sheet together, each compressed
-// on its own.
+// Gzip is the size of every sheet together, each gzipped on its own.
 func (w Weight) Gzip() int {
 	n := 0
 	for _, s := range w.Sheets {
@@ -69,9 +48,7 @@ func (w Weight) Gzip() int {
 	return n
 }
 
-// Inline is the raw size of the <style> elements: the part a return visit
-// downloads again inside every document, where a linked sheet comes from
-// the cache.
+// Inline is the raw size of the <style> elements.
 func (w Weight) Inline() int {
 	n := 0
 	for _, s := range w.Sheets {
@@ -86,14 +63,8 @@ func (w Weight) String() string {
 	return fmt.Sprintf("%d sheets, %d B (%d B gzip, %d B inline)", len(w.Sheets), w.Bytes(), w.Gzip(), w.Inline())
 }
 
-// Measure fetches pageURL with c and weighs its CSS. A linked sheet is
-// fetched from the URL the page names, resolved against the page's
-// <base href> or the page itself, and a sheet linked twice counts once.
-// Any answer other than 200, for the page or a sheet, is an error, and so
-// is a redirect, which Measure does not follow: a gate that weighed an
-// error page, or the login page a lost session lands on, would pass for
-// the wrong reason. A sheet that uses @import is an error too, since the
-// CSS it pulls in would go unweighed.
+// Measure fetches pageURL with c and weighs its inline and linked CSS. Any
+// answer but 200, a redirect included, and a sheet using @import are errors.
 func Measure(c *http.Client, pageURL string) (Weight, error) {
 	page, err := url.Parse(pageURL)
 	if err != nil {
@@ -148,9 +119,6 @@ func Measure(c *http.Client, pageURL string) (Weight, error) {
 	return w, nil
 }
 
-// refuseImport errors on a sheet that uses @import. It matches the
-// keyword anywhere, comments included, so it can refuse a sheet that only
-// mentions it; that is the safe side for a gate.
 func refuseImport(source string, css []byte) error {
 	if bytes.Contains(bytes.ToLower(css), []byte("@import")) {
 		return fmt.Errorf("%s uses @import, which Measure does not follow", source)
@@ -181,10 +149,8 @@ func fetch(c *http.Client, u string) ([]byte, error) {
 	return body, nil
 }
 
-// collect returns the text of each <style> element and the href of each
-// <link> whose rel includes "stylesheet", in document order, and the
-// first <base href>, the one the browser uses.
 func collect(doc []byte) (inline [][]byte, links []string, baseHref string, err error) {
+	baseSeen := false
 	z := html.NewTokenizer(bytes.NewReader(doc))
 	inStyle := false
 	for {
@@ -201,11 +167,11 @@ func collect(doc []byte) (inline [][]byte, links []string, baseHref string, err 
 				inStyle = true
 				inline = append(inline, nil)
 			case atom.Base:
-				for hasAttr && baseHref == "" {
+				for hasAttr && !baseSeen {
 					var k, v []byte
 					k, v, hasAttr = z.TagAttr()
 					if string(k) == "href" {
-						baseHref = string(v)
+						baseHref, baseSeen = string(v), true
 					}
 				}
 			case atom.Link:
@@ -236,8 +202,6 @@ func collect(doc []byte) (inline [][]byte, links []string, baseHref string, err 
 	}
 }
 
-// hasToken reports whether the space-separated list holds tok, ASCII
-// case-insensitively, the way the HTML spec reads rel.
 func hasToken(list, tok string) bool {
 	for f := range strings.FieldsSeq(list) {
 		if strings.EqualFold(f, tok) {

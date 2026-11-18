@@ -1,0 +1,7 @@
+primitive: i18nui.battery
+summary: The phrases of the battery screens - the admin back office's shell, dashboard and ops pages, and telemetry's request and log screens.
+code:
+  - framework/i18nui/admin.go
+  - framework/i18nui/telemetry.go
+docs:
+  - framework/docs/content/i18n.md

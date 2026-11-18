@@ -1,0 +1,90 @@
+primitive: static
+summary: The static-site builder behind App.ExportStatic, which renders every route of a UIHost to HTML on disk with the runtime, widget, SEO, PWA and locale assets beside it.
+code:
+  - framework/static/doc.go
+  - framework/static/builder.go
+  - framework/static/phrases.go
+docs:
+  - framework/docs/content/static-export.md
+on_change:
+  - A new kind of file the build writes is added to Result.Assets, the rendered set or docs, so the page manifest, the case-twin check and the PWA precache list all see it.
+invariants:
+  - id: build-refuses-missing-host-or-outdir
+    rule: Build refuses a nil Host or a blank OutDir, and Walk a nil host, before rendering anything.
+    enforced_by:
+      - test: framework/static.TestSweepStaticWalkSkipAndNilHost
+  - id: one-page-per-file
+    rule: Build refuses two pages, redirect pages or contributor files whose slash paths are one file after case folding and Unicode normalization.
+    enforced_by:
+      - test: framework/static.TestExportRefusesSharedPageFile
+      - test: framework/static.TestExportRefusesCaseFoldedFile
+      - test: framework/static.TestExportRefusesNormalizedTwin
+      - test: framework/static.TestExportRefusesCaseFoldedRedirect
+      - test: framework/static.TestContributorRefusesPageFile
+  - id: contributor-contract
+    rule: A contributor's ExportStart error fails the build, ExportPage gets each page's HTML before the static rewrites, and a file it returns must be a root-absolute path other than _headers or _redirects in any case, written and recorded under its cleaned path.
+    enforced_by:
+      - test: framework/static.TestSweepStaticContributorContract
+      - test: framework/static.TestContributorRecordsCleanPath
+      - test: framework/static.TestContributorRefusesHostRules
+  - id: runtime-assets-on-disk-query-free
+    rule: Build writes runtime.js, color-scheme.js, every split runtime module and every compute worker and WebAssembly module at its path without the ?v= query, and a WebAssembly module skips the base-path rewrite.
+    enforced_by:
+      - test: framework/static.TestBuildEmitsSplitRuntimeModules
+      - test: framework/static.TestBuildEmitsColorSchemeJS
+      - test: framework/static.TestBuildExportsComputeAssets
+  - id: not-found-page-exported
+    rule: When the host has a not-found page, Build writes it to 404.html through the same static rewrites as a page, slashes its page links and records it in Result.Assets.
+    enforced_by:
+      - test: framework/static.TestSweepStaticNotFoundPage
+  - id: unrenderable-pages-skipped
+    rule: The page walk skips with a warning, never an error, a path an exact redirect takes, a screen whose policy blocks the static render, a 404-outlet route and a page that answers a status other than 200.
+    enforced_by:
+      - test: framework/static.TestExportWritesRedirectPages
+      - test: framework/static.TestGatedScreenSkippedNotFatal
+      - test: framework/static.TestRebuildPrunesGatedPage
+      - test: framework/static.TestStaticBuildSkipsNotFoundOutlet
+      - test: framework/static.TestStaticBuildSkipsSetStatusPage
+  - id: contained-fill-failure-refuses-export
+    rule: A page with a fill that failed and was contained fails the export with an error naming the route and each outlet address, the fill's error text scrubbed by textsafe.StripUnsafe.
+    enforced_by:
+      - test: framework/static.TestSweepStaticFillFailureIsScrubbed
+      - test: internal/testapps/layoutlab.TestP13ExportRefusesContainedFill
+  - id: exclude-routes-by-whole-segment
+    rule: An ExcludeRoutes entry, its trailing slash ignored, covers its route and every route under it by whole path segments, for pages, redirects and llm.md alike.
+    enforced_by:
+      - test: framework/static.TestSweepStaticRouteExcludedIsSegmentAligned
+      - test: framework/static.TestSweepStaticExcludedRedirectAndDoc
+      - test: framework/static.TestSitemapListsOnlyExportedPages
+  - id: dynamic-route-without-paths-skipped
+    rule: A dynamic route whose screen does not implement StaticPaths is skipped with a warning naming the route.
+    enforced_by:
+      - test: framework/static.TestBuildWarnsOnDynamicRouteWithoutStaticPaths
+  - id: staticpaths-value-stays-in-its-directory
+    rule: applyParams refuses a StaticPaths value holding a NUL or a backslash, or whose page file on a static host would have an empty, "." or ".." path component, and lets a slash in a one-segment key export to nested directories.
+    enforced_by:
+      - test: framework/static.TestSSGParamNoTraversal
+      - test: framework/static.TestSweepStaticDiskValueRefusals
+  - id: walk-matches-build
+    rule: Walk hands fn the pages Build would write, skips any route or path its skip func names, and hands fn each render failure with an empty page instead of stopping.
+    enforced_by:
+      - test: framework/static.TestWalkHandsFailuresToFn
+      - test: framework/static.TestSweepStaticWalkSkipAndNilHost
+decisions:
+  - id: contained-fill-failure-refuses
+    date: 2026-11-17
+    status: accepted
+    decision: A contained fill failure fails the export instead of being written into the page.
+    rejected:
+      - option: Write the degraded outlet the way a live server shows it.
+        why: A live server recovers on the next request; an export freezes the degraded bytes into the page for every visitor.
+    revisit_if: The export gains a per-page retry or a way to mark one page as failed without failing the build.
+    upholds: [contained-fill-failure-refuses-export]
+  - id: skip-unrenderable-pages
+    date: 2026-11-17
+    status: accepted
+    decision: A gated screen, a 404-outlet route, a non-200 page and a dynamic route without StaticPaths are skipped with a warning and stay reachable on the live server.
+    rejected:
+      - option: Fail the whole export.
+        why: These pages have no static answer by design, and one of them would block every other page from shipping.
+    upholds: [unrenderable-pages-skipped, dynamic-route-without-paths-skipped]

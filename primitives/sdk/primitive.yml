@@ -1,0 +1,45 @@
+primitive: sdk
+summary: The contract between gofastr generate sdk and the SDK docs site, covering the artifact manifest, the file type and the deterministic zip packer.
+code:
+  - framework/sdk/sdk.go
+  - framework/sdk/manifest.go
+  - framework/sdk/zip.go
+docs:
+  - framework/docs/content/sdk.md
+on_change:
+  - A change to the Manifest's JSON shape must be written by cmd/gofastr/internal/appgen and read by framework/sdkdocs in the same change.
+invariants:
+  - id: manifest-is-complete
+    rule: ReadManifest refuses a manifest that is missing, malformed, or has no schemaVersion, no entities, no artifacts, or an artifact without file or sha256; a different SchemaVersion is not an error.
+    enforced_by:
+      - test: framework/sdk.TestReadManifestValidates
+      - test: framework/sdk.TestReadManifestRejectsEmptyEntities
+      - test: framework/sdk.TestReadManifestRefusesEachMissingPart
+  - id: zip-is-deterministic
+    rule: PackZip writes entries in sorted path order with zero timestamps and mode 0644, so the same files always pack to the same bytes.
+    enforced_by:
+      - test: framework/sdk.TestPackZipDeterministic
+      - test: framework/sdk.TestPackZipSortsAndFixesMode
+  - id: zip-never-escapes
+    rule: PackZip refuses an absolute or parent-relative prefix or entry path, and places every entry under a given prefix.
+    enforced_by:
+      - test: framework/sdk.TestPackZipRejectsUnsafePaths
+      - test: framework/sdk.TestPackZipPrefixCannotEscapeDir
+      - test: framework/sdk.TestPackZipPrefixesEntries
+decisions:
+  - id: unknown-version-is-unknown-provenance
+    date: 2026-11-17
+    status: accepted
+    decision: A manifest with another SchemaVersion reads as unknown provenance, not stale; SchemaVersion went to 2 when the mount point left the hash.
+    rejected:
+      - option: Compare the hashes anyway.
+        why: An older manifest's hash encodes the version prefix, so it would report drift for a schema that did not change.
+    revisit_if: The hash algorithm changes again.
+    upholds: [manifest-is-complete]
+  - id: no-npm-package
+    date: 2026-11-17
+    status: accepted
+    decision: The JS SDK is one ESM file served from the app, with no npm package.
+    rejected:
+      - option: Publish an npm package.
+        why: Publishing is the app owner's call.

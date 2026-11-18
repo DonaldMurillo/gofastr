@@ -1,0 +1,18 @@
+primitive: outbox.metrics
+summary: DeliveryCounts and the metrics collector that reports pending and dead-lettered deliveries per consumer.
+code:
+  - framework/outbox/metrics.go
+docs:
+  - framework/docs/content/observability.md
+on_change:
+  - A metric added, renamed or relabelled here is changed in the metrics table of observability.md too.
+invariants:
+  - id: collector-is-stable-and-quiet
+    rule: On success DeliveryCounts returns two non-nil maps (nil maps on a query or scan error; the counts read so far with a rows.Err error), and MetricsCollector writes consumers in sorted order and writes nothing at all when the count fails.
+    enforced_by:
+      - test: framework/outbox.TestMetricsCollectorOrdersConsumersAndHidesErrors
+      - test: framework/outbox.TestOutbox_MetricsCollector
+  - id: dead-letter-metric-is-a-gauge
+    rule: outbox_dead_letter_deliveries is a gauge of the dead deliveries held now, which falls only when Replay or ReplayConsumer resets one; retention keeps a parent with a dead delivery, and an erasure blanks the parent's payload but keeps its delivery rows.
+    enforced_by:
+      - test: framework/outbox.TestOutboxDeadLetterMetricIsAGauge

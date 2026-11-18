@@ -1,6 +1,4 @@
-// Package casing holds snake_case <-> camelCase helpers used internally by
-// the GoFastr framework. Hook payloads are snake_cased; generated structs
-// use camelCase JSON tags. These helpers translate between the two.
+// Package casing converts column names between snake_case and camelCase JSON keys, with bounded caches.
 package casing
 
 import (
@@ -9,29 +7,18 @@ import (
 	"unicode"
 )
 
-// maxCacheSize bounds both casing caches. User-controlled JSON keys can
-// flow into the snake cache via crud.unconvertMapKeys, so an unbounded
-// map would be a slow memory leak; cap at a size that comfortably covers
-// real-world column-name working sets.
 const maxCacheSize = 4096
 
-// camelCache caches ToCamel results. Agents often issue the same query
-// template repeatedly; cached lookups hit ~50ns / 0 allocs vs ~600ns / 3 allocs
-// for a fresh conversion.
 var (
 	camelCache   = make(map[string]string)
 	camelCacheMu sync.RWMutex
 )
 
-// snakeCache caches ToSnake results.
 var (
 	snakeCache   = make(map[string]string)
 	snakeCacheMu sync.RWMutex
 )
 
-// evictOne removes a single (random) entry from m. Go map iteration order
-// is randomized, so taking the first key approximates random eviction with
-// zero bookkeeping cost. Caller must hold the write lock for m.
 func evictOne(m map[string]string) {
 	for k := range m {
 		delete(m, k)
@@ -39,15 +26,12 @@ func evictOne(m map[string]string) {
 	}
 }
 
-// ToCamel converts a snake_case string to camelCase.
-// e.g. "author_id" -> "authorId", "created_at" -> "createdAt".
-// Results are cached for repeat lookups.
+// ToCamel converts snake_case to camelCase ("author_id" to "authorId").
 func ToCamel(s string) string {
 	if s == "" {
 		return s
 	}
 
-	// Fast path: check cache
 	camelCacheMu.RLock()
 	if v, ok := camelCache[s]; ok {
 		camelCacheMu.RUnlock()
@@ -55,7 +39,6 @@ func ToCamel(s string) string {
 	}
 	camelCacheMu.RUnlock()
 
-	// Slow path: convert and cache
 	parts := strings.Split(s, "_")
 	for i := 1; i < len(parts); i++ {
 		if len(parts[i]) > 0 {
@@ -74,15 +57,12 @@ func ToCamel(s string) string {
 	return result
 }
 
-// ToSnake converts a camelCase string to snake_case.
-// e.g. "authorId" -> "author_id", "createdAt" -> "created_at".
-// Results are cached for repeat lookups.
+// ToSnake converts camelCase to snake_case ("authorId" to "author_id").
 func ToSnake(s string) string {
 	if s == "" {
 		return s
 	}
 
-	// Fast path: check cache
 	snakeCacheMu.RLock()
 	if v, ok := snakeCache[s]; ok {
 		snakeCacheMu.RUnlock()
@@ -90,9 +70,8 @@ func ToSnake(s string) string {
 	}
 	snakeCacheMu.RUnlock()
 
-	// Slow path: convert and cache
 	var b strings.Builder
-	b.Grow(len(s) + 4) // estimate
+	b.Grow(len(s) + 4)
 	for i, r := range s {
 		if unicode.IsUpper(r) {
 			if i > 0 {
@@ -115,8 +94,7 @@ func ToSnake(s string) string {
 	return result
 }
 
-// MapToCamel converts all snake_case keys in a map to camelCase.
-// Reuses the input map's capacity for the result.
+// MapToCamel returns m with every key through ToCamel.
 func MapToCamel(m map[string]any) map[string]any {
 	result := make(map[string]any, len(m))
 	for k, v := range m {
@@ -125,7 +103,7 @@ func MapToCamel(m map[string]any) map[string]any {
 	return result
 }
 
-// MapToSnake converts all camelCase keys in a map to snake_case.
+// MapToSnake returns m with every key through ToSnake.
 func MapToSnake(m map[string]any) map[string]any {
 	result := make(map[string]any, len(m))
 	for k, v := range m {
@@ -134,10 +112,7 @@ func MapToSnake(m map[string]any) map[string]any {
 	return result
 }
 
-// PrecomputeMapping builds a snake→camel mapping for a fixed set of
-// column names. The returned map can be passed to ApplyMapping for
-// zero-alloc key conversion on each row. Call this once at entity
-// Define() time.
+// PrecomputeMapping returns each column's camelCase key, for ApplyMapping.
 func PrecomputeMapping(columns []string) map[string]string {
 	m := make(map[string]string, len(columns))
 	for _, col := range columns {
@@ -146,9 +121,7 @@ func PrecomputeMapping(columns []string) map[string]string {
 	return m
 }
 
-// ApplyMapping converts keys using a precomputed mapping.
-// Skips keys not in the mapping (passes them through as-is).
-// Zero allocations for the mapping lookup; one allocation for the result map.
+// ApplyMapping returns row with mapped keys renamed and other keys kept as they are.
 func ApplyMapping(row map[string]any, mapping map[string]string) map[string]any {
 	result := make(map[string]any, len(row))
 	for k, v := range row {

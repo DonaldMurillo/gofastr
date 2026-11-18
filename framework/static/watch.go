@@ -9,18 +9,10 @@ import (
 	"time"
 )
 
-// Watch invokes b.Build whenever a file under any of watchDirs changes its
-// modification time, using a polling loop with the given interval. It runs
-// one initial build immediately and returns when ctx is cancelled.
-//
-// The loop ignores errors so a transient compile-time mistake in user code
-// (e.g. a half-saved file) does not stop watching; the most recent error is
-// passed to onError if non-nil. interval 0 keeps the 500ms default; a
-// negative interval is rejected — a sign/unit error must not silently
-// become a fast poll loop.
-//
-// Polling avoids a third-party fsnotify dependency. For projects with a
-// large source tree this is fine: we only stat files we already know about.
+// Watch runs Build once, then again whenever a file under watchDirs
+// changes, polling every interval (0 means 500ms), until ctx is done.
+// Build errors go to onError, when set, and the watch goes on. A negative
+// interval is an error.
 func (b *Builder) Watch(ctx context.Context, watchDirs []string, interval time.Duration, onError func(error)) error {
 	if interval < 0 {
 		return fmt.Errorf("static: Watch: interval must be >= 0 (got %v)", interval)
@@ -35,13 +27,9 @@ func (b *Builder) Watch(ctx context.Context, watchDirs []string, interval time.D
 	}
 
 	state := newMtimeMap()
-	// The export is not a source. OutDir under a watched dir (watch ".",
-	// write "./dist") is the common layout, and every rebuild rewrites
-	// every export file: polling them made one edit rebuild forever.
 	if out, err := filepath.Abs(b.OutDir); err == nil && b.OutDir != "" {
 		state.skip = out
 	}
-	// Nor is the page manifest every build rewrites beside OutDir.
 	if dir, name, err := b.pageManifest(); err == nil && b.OutDir != "" {
 		state.skipFile = filepath.Join(dir, name)
 	}
@@ -66,17 +54,12 @@ func (b *Builder) Watch(ctx context.Context, watchDirs []string, interval time.D
 }
 
 type mtimeMap struct {
-	mu    sync.Mutex
-	files map[string]time.Time
-	// skip is an absolute directory left out of every walk: the
-	// builder's OutDir.
-	skip string
-	// skipFile is an absolute file left out of every walk: OutDir's
-	// page manifest, which sits beside OutDir.
+	mu       sync.Mutex
+	files    map[string]time.Time
+	skip     string
 	skipFile string
 }
 
-// skipped reports whether the walk leaves path's subtree out.
 func (m *mtimeMap) skipped(path string, d os.DirEntry) bool {
 	if m.skip == "" || d == nil || !d.IsDir() {
 		return false
@@ -85,7 +68,6 @@ func (m *mtimeMap) skipped(path string, d os.DirEntry) bool {
 	return err == nil && abs == m.skip
 }
 
-// ignored reports whether the walk leaves the file at path out.
 func (m *mtimeMap) ignored(path string) bool {
 	if m.skipFile == "" {
 		return false
@@ -98,7 +80,6 @@ func newMtimeMap() *mtimeMap {
 	return &mtimeMap{files: make(map[string]time.Time)}
 }
 
-// scan rebuilds the snapshot from disk.
 func (m *mtimeMap) scan(dirs []string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -124,9 +105,6 @@ func (m *mtimeMap) scan(dirs []string) {
 	}
 }
 
-// changed returns true if any tracked file's mtime changed, or if a new file
-// appeared under one of the dirs. After detecting a change it refreshes the
-// snapshot so the next call reflects the new baseline.
 func (m *mtimeMap) changed(dirs []string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -159,7 +137,6 @@ func (m *mtimeMap) changed(dirs []string) bool {
 		})
 	}
 
-	// File deleted?
 	for path := range m.files {
 		if _, ok := seen[path]; !ok {
 			delete(m.files, path)

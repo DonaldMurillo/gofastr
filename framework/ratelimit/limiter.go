@@ -1,30 +1,4 @@
-// Package ratelimit is the framework's general-purpose HTTP rate limiter.
-//
-// It enforces a per-key sliding-window policy: up to [Config.MaxAttempts]
-// requests are admitted within [Config.Window]; the next request triggers a
-// hard block lasting [Config.BlockDuration] during which every request for
-// that key gets 429. This is the "N actions per period, then lockout" shape,
-// the right tool for brute-force surfaces, write-heavy endpoints, and any
-// route where a steady refill rate (the token-bucket model) is the wrong
-// abstraction.
-//
-// # Sliding window vs. token bucket
-//
-// GoFastr ships two limiters with deliberately different semantics:
-//
-//   - framework/ratelimit (this package): sliding window + lockout. Use it when
-//     you want "at most N per period, then block". The auth battery builds its
-//     login / register / password-reset limiters on top of it.
-//   - core/middleware.RateLimit: token bucket. Use it for steady API throughput
-//     ("1 req/s sustained, burst of 60") and when you want the RateLimit-*
-//     budget headers so well-behaved clients can self-pace.
-//
-// # Per-replica, not distributed
-//
-// With a nil [Config.Store] the window is held in process memory, so the budget
-// is per-replica: N replicas each allow MaxAttempts. For a replica-wide (or
-// fleet-wide) budget, supply a [Store] such as battery/auth.SQLRateLimitStore.
-// See "Shared store" below.
+// Package ratelimit is a per-key sliding-window rate limiter with lockout: [NewLimiter], [Limiter.AllowContext], [Limiter.Middleware].
 package ratelimit
 
 import (
@@ -45,46 +19,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
-// Config controls a per-key sliding-window limiter.
-//
-// MaxAttempts requests are permitted within Window. The MaxAttempts+1th
-// request triggers a block of BlockDuration during which every request for
-// that key gets 429.
-//
-// Defaults (filled in by NewLimiter when zero): MaxAttempts=10, Window=15m,
-// BlockDuration=30m.
-//
-// TrustForwardedFor: when true, the default (IP-keyed) middleware reads the
-// client IP from X-Forwarded-For. ONLY enable this if the server sits behind
-// a reverse proxy you control, otherwise an attacker rotates the header per
-// request and bypasses every per-IP limit. Default is false (use the
-// connection's RemoteAddr). The header is read from the RIGHT: entries left
-// of the hop your proxy wrote are client-supplied when the proxy appends, so
-// the key is the rightmost hop that is not in TrustedProxies.
-//
-// TrustedProxies lists your own proxy tiers (IPs or CIDRs, CDN ranges
-// included). When set, only a request whose TCP peer is in the list may
-// speak for X-Forwarded-For, and listed hops are skipped on the walk. When
-// empty, the immediate peer is taken to be your one proxy and the rightmost
-// entry is the client; behind more than one tier that entry is your inner
-// proxy, so list the tiers.
-//
-// Store: when non-nil, attempts are recorded in the shared backend instead of
-// process memory, so the budget holds across replicas: MaxAttempts total, not
-// MaxAttempts × N, and a block on one replica blocks on all. On a store error
-// the limiter fails CLOSED (denies), an attacker must never be able to lift
-// the limit by degrading its backend. One store instance can back several
-// limiters: keys are namespaced by Scope.
-//
-// NamespaceScope encodes delimiter bytes in a Store scope so the scope/key
-// boundary stays unambiguous even when a host or caller includes "|" or "%".
+// NamespaceScope escapes "%" and "|" in a Store scope so the scope/key boundary stays unambiguous.
 func NamespaceScope(scope string) string {
 	return strings.NewReplacer("%", "%25", "|", "%7C").Replace(scope)
 }
 
-// Scope namespaces this limiter's keys inside a shared Store. Set it explicitly
-// when several limiters share one Store so their keys never collide. Ignored
-// when Store is nil.
+// Config admits MaxAttempts requests per key within Window, then refuses the key for BlockDuration
+// (defaults 10, 15m, 30m). Store shares it across replicas under Scope; TrustForwardedFor keys on X-Forwarded-For from TrustedProxies.
 type Config struct {
 	MaxAttempts       int
 	Window            time.Duration
@@ -94,76 +35,37 @@ type Config struct {
 	Store             Store
 	Scope             string
 
-	// DevMode relaxes the limiter: when true, AllowContext short-circuits and
-	// admits every attempt without touching either backend. Intended ONLY for
-	// non-production deploys so local tooling that hammers an endpoint from one
-	// IP (localhost) is never locked out. The default (false) keeps the limiter
-	// fail-closed, production must NEVER set this.
+	// DevMode admits every attempt without touching either backend; never set it in production.
 	DevMode bool
 }
 
-// Store is the optional shared backend for a Limiter. When Config.Store is set,
-// every replica consults the same attempt ledger, so the budget stays
-// MaxAttempts total instead of MaxAttempts × replicas and a block on one
-// replica holds on all of them.
-//
-// battery/auth.SQLRateLimitStore implements this over SQLite or PostgreSQL and
-// is the reference implementation; a custom Redis/etcd backend only needs to
-// satisfy this interface. The implementation must derive per-limiter state from
-// the namespaced key alone, it receives the full Config but should treat Scope
-// + key as the identity.
-//
-// AllowContext calls the store outside the limiter's mutex, so concurrent
-// callers on one or many replicas reach Allow together. The admission decision
-// must be atomic per key: a concurrent burst admits at most MaxAttempts.
-// Counting and then recording in separate operations breaks that, since every
-// caller reads the same pre-insert count.
+// Store is a shared attempt ledger for a Limiter (battery/auth.SQLRateLimitStore is one); Allow must
+// decide atomically per namespaced key so a concurrent burst admits at most MaxAttempts.
 type Store interface {
 	Allow(ctx context.Context, key string, cfg Config) (allowed bool, retryAfter time.Duration, err error)
 }
 
-// maxKeys caps the number of distinct keys the in-memory limiter tracks at
-// once. A per-account limiter keys on attacker-chosen input (lowercased email)
-// before the user-store lookup, so an attacker can mint an unbounded number of
-// distinct keys. Without a cap the map grows until OOM. When the cap is hit,
-// idle states (no active block, no in-window attempts) are reclaimed first; if
-// every tracked key is still active the soonest-to-expire are dropped,
-// fail-open for that key is acceptable since the alternative is process death,
-// and the cap is far above any legitimate concurrent caller count.
 const maxKeys = 100_000
 
-// storeErrRetryAfter is the Retry-After hint returned when the shared store
-// errors and the limiter fails closed. Short: the outage is likely transient,
-// and an auth-backed login path is failing on the same backend anyway.
 const storeErrRetryAfter = 30 * time.Second
 
-// Limiter is a sliding-window rate limiter keyed by an arbitrary string
-// (typically the client IP). The zero value is not usable, construct one with
-// NewLimiter.
+// Limiter is a sliding-window rate limiter keyed by an arbitrary string; construct one with NewLimiter.
 type Limiter struct {
 	cfg       Config
 	proxies   clientip.Proxies
 	mu        sync.Mutex
 	states    map[string]*rlState
 	lastSweep time.Time
-
-	// blockSeq numbers blocks in creation order. Expiry alone cannot order
-	// two blocks created in the same clock tick, and map iteration is
-	// randomized, so without this a flood could evict an equally-timed
-	// victim lockout on some runs and not others. Guarded by mu.
-	blockSeq uint64
+	blockSeq  uint64
 }
 
 type rlState struct {
 	attempts     []time.Time
 	blockedUntil time.Time
-	// blockOrder is the blockSeq value assigned when blockedUntil was set;
-	// 0 when not blocked. Breaks expiry ties deterministically.
-	blockOrder uint64
+	blockOrder   uint64
 }
 
-// NewLimiter constructs a Limiter with the given config. Zero fields fall back
-// to the documented defaults.
+// NewLimiter constructs a Limiter, filling zero Config fields with their defaults.
 func NewLimiter(cfg Config) *Limiter {
 	if cfg.MaxAttempts <= 0 {
 		cfg.MaxAttempts = 10
@@ -177,40 +79,13 @@ func NewLimiter(cfg Config) *Limiter {
 	return &Limiter{cfg: cfg, proxies: clientip.ParseProxies(cfg.TrustedProxies), states: make(map[string]*rlState)}
 }
 
-// Allow records an attempt for key and returns whether it is allowed. If not
-// allowed, retryAfter is the duration the caller should communicate in a
-// Retry-After header. Equivalent to AllowContext with a background context,
-// HTTP paths should prefer AllowContext(r.Context(), key) so a shared store can
-// observe request cancellation.
+// Allow is AllowContext with a background context.
 func (rl *Limiter) Allow(key string) (allowed bool, retryAfter time.Duration) {
 	return rl.AllowContext(context.Background(), key)
 }
 
-// maxKeyLen bounds the bytes one limiter key may retain. No legitimate
-// identity, such as IP, email, API token or tenant id, comes close; 256 leaves
-// room for a scope prefix on a long-but-real key.
 const maxKeyLen = 256
 
-// foldKey replaces an over-long key with a digest of itself.
-//
-// maxKeys caps how MANY keys the in-memory limiter tracks, but nothing
-// capped how LARGE one could be, and the keys are attacker-chosen: the
-// per-account login limiter keys on the submitted email
-// (battery/auth.core), which the 1 MiB body cap is the only bound on. A
-// single login POST could therefore park ~1 MiB in the states map for a
-// full block duration, retention amplified ~20,000x over the ~50 bytes
-// a real key costs.
-//
-// Digesting rather than rejecting keeps the identity one-to-one, so a
-// long-but-legitimate key still gets its own budget instead of being
-// denied or sharing a bucket with every other long key.
-//
-// A key a SQL store cannot hold is digested the same way, at any length.
-// The keys are client-chosen (an X-Api-Key header, a signed agent URL),
-// and Go's header and URL parsers pass bytes past 0x7F through, so a
-// key can be invalid UTF-8 or carry a NUL. Postgres answers that bind
-// with 22021, which AllowContext reads as a store outage: a 429 for that
-// client and an outage warning for the operator.
 func foldKey(key string) string {
 	if len(key) <= maxKeyLen && textsafe.Storable(key) && !strings.HasPrefix(key, "sha256:") {
 		return key
@@ -219,16 +94,7 @@ func foldKey(key string) string {
 	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
-// AllowContext records an attempt for key against the configured backend: the
-// shared Store when one is set (replica-wide budget), the in-process sliding
-// window otherwise. A store failure DENIES the attempt, the limiter guards
-// brute-force surfaces, so it must fail closed: degrading its backend must
-// never lift the limit.
-//
-// DevMode (see Config) is an explicit, tested short-circuit: when set, every
-// attempt is admitted without touching either backend. This is the dev-only
-// relaxation that stops local tooling being locked out; production never sets
-// it, so the fail-closed guarantee holds.
+// AllowContext records an attempt for key and reports whether it is allowed and, if not, how long to wait.
 func (rl *Limiter) AllowContext(ctx context.Context, key string) (allowed bool, retryAfter time.Duration) {
 	allowed, retryAfter, err := rl.Admit(ctx, key)
 	if err != nil {
@@ -238,10 +104,7 @@ func (rl *Limiter) AllowContext(ctx context.Context, key string) (allowed bool, 
 	return allowed, retryAfter
 }
 
-// Admit is AllowContext that also returns the shared store's error. A
-// store failure still denies (allowed is false, retryAfter the short
-// outage hint). The error lets a caller that acts on a spent budget, such
-// as ending a session, tell an outage from a budget used up.
+// Admit is AllowContext that also returns the shared store's error; a store error still denies.
 func (rl *Limiter) Admit(ctx context.Context, key string) (allowed bool, retryAfter time.Duration, err error) {
 	if rl.cfg.DevMode {
 		return true, 0, nil
@@ -260,9 +123,6 @@ func (rl *Limiter) Admit(ctx context.Context, key string) (allowed bool, retryAf
 
 	now := time.Now()
 
-	// Amortized sweep of idle states. Runs at most once per Window so the cost
-	// is negligible, and unconditionally when the cap is hit. This keeps the
-	// map bounded under an attacker-key flood instead of growing until OOM.
 	if len(rl.states) >= maxKeys || now.Sub(rl.lastSweep) >= rl.cfg.Window {
 		rl.evictLocked(now)
 		rl.lastSweep = now
@@ -274,18 +134,15 @@ func (rl *Limiter) Admit(ctx context.Context, key string) (allowed bool, retryAf
 		rl.states[key] = state
 	}
 
-	// Honour an active block.
 	if !state.blockedUntil.IsZero() {
 		if now.Before(state.blockedUntil) {
 			return false, state.blockedUntil.Sub(now), nil
 		}
-		// Block has elapsed, clear and continue.
 		state.blockedUntil = time.Time{}
 		state.attempts = state.attempts[:0]
 		state.blockOrder = 0
 	}
 
-	// Drop attempts outside the rolling window before counting.
 	cutoff := now.Add(-rl.cfg.Window)
 	valid := state.attempts[:0]
 	for _, t := range state.attempts {
@@ -306,27 +163,9 @@ func (rl *Limiter) Admit(ctx context.Context, key string) (allowed bool, retryAf
 	return true, 0, nil
 }
 
-// evictLocked reclaims map entries that no longer carry security-relevant
-// state: those with no active block AND no attempts inside the rolling window.
-// Dropping such a state is safe, re-creating it lazily yields the identical
-// "fresh key" behaviour. Callers MUST hold rl.mu.
-//
-// If the map is still at/over the cap after shedding idle entries (i.e. every
-// tracked key is actively blocked or mid-window), entries are dropped to keep
-// the map strictly bounded: unblocked ones first, then the most recently
-// created blocks. An active block is preserved as long as the map has room, so
-// eviction is never a routine block-bypass, and because the newest blocks go
-// first, a key flood can only ever evict the flood's own entries, never the
-// older lockout an attacker is trying to shake off.
 func (rl *Limiter) evictLocked(now time.Time) {
 	cutoff := now.Add(-rl.cfg.Window)
 	for key, st := range rl.states {
-		// Normalize an elapsed block before anything reads blockedUntil.
-		// AllowContext clears it lazily on the key's next touch, so a key
-		// that is not touched again keeps a stale non-zero timestamp, and
-		// the shed below reads exactly that field to decide what is still
-		// protecting someone. Left stale, an expired block outranks a live
-		// one and the live lockout gets dropped first.
 		if !st.blockedUntil.IsZero() && !now.Before(st.blockedUntil) {
 			st.blockedUntil = time.Time{}
 			st.attempts = st.attempts[:0]
@@ -352,25 +191,6 @@ func (rl *Limiter) evictLocked(now time.Time) {
 		return
 	}
 
-	// Still at/over the cap after shedding idle entries. Shed down to a
-	// low-water mark so this expensive path runs at most once per ~10% of the
-	// cap rather than on every insert under sustained flood.
-	//
-	// Order matters for correctness, not just efficiency. Shed unblocked
-	// entries first, then the FRESHEST blocks, never the oldest.
-	//
-	// Sorting by ascending blockedUntil (which reads naturally as "drop the
-	// ones expiring soonest") makes eviction a lockout-lift primitive: every
-	// block shares one BlockDuration, so ascending expiry is creation order,
-	// and the oldest block is the one that existed BEFORE the flood, the
-	// legitimate one. An attacker could burn their login budget, spray keys to
-	// force this path, and have their own block shed first. Dropping the
-	// newest blocks instead means a flood can only evict the flood.
-	//
-	// Two details this ordering depends on: elapsed blocks were normalized
-	// above (a stale timestamp would otherwise outrank a live lockout), and
-	// equal expiries fall back to creation sequence (map iteration is
-	// randomized, so expiry alone leaves same-tick ties to chance).
 	lowWater := maxKeys * 9 / 10
 	type expiring struct {
 		key   string
@@ -384,9 +204,6 @@ func (rl *Limiter) evictLocked(now time.Time) {
 	sort.Slice(pending, func(i, j int) bool {
 		iBlocked, jBlocked := !pending[i].at.IsZero(), !pending[j].at.IsZero()
 		if iBlocked != jBlocked {
-			// Unblocked entries carry no lockout, so they go first. (A
-			// blanket reversal of the old comparison would sink them below
-			// active blocks and shed real lockouts ahead of idle state.)
 			return !iBlocked
 		}
 		if !iBlocked {
@@ -395,10 +212,6 @@ func (rl *Limiter) evictLocked(now time.Time) {
 		if !pending[i].at.Equal(pending[j].at) {
 			return pending[i].at.After(pending[j].at)
 		}
-		// Same expiry: both blocks were created in one clock tick, so
-		// expiry cannot separate them and map order is randomized. Fall
-		// back to creation sequence, newest first, so the shed is
-		// deterministic rather than dropping the victim on some runs.
 		return pending[i].order > pending[j].order
 	})
 	for i := 0; i < len(pending) && len(rl.states) > lowWater; i++ {
@@ -406,27 +219,12 @@ func (rl *Limiter) evictLocked(now time.Time) {
 	}
 }
 
-// Middleware returns an HTTP middleware that rate-limits by client IP (the
-// default key). Blocked requests get 429 with a Retry-After header.
-//
-// It emits ONLY Retry-After and never the RateLimit-Limit /
-// RateLimit-Remaining / RateLimit-Reset budget headers that the token-bucket
-// middleware (core/middleware.RateLimit) exposes: a live remaining-attempt
-// count on a lockout-style limiter would hand an attacker exact brute-force
-// pacing information on security-sensitive routes, and adds nothing useful on
-// non-security routes where Retry-After already lets a client back off. For
-// budget headers and a refill-rate model, use core/middleware.RateLimit.
-//
-// To group by something other than IP (API key, user id, route param), use
-// MiddlewareByKey.
+// Middleware rate-limits by ClientKey, answering a blocked request 429 with Retry-After.
 func (rl *Limiter) Middleware() func(http.Handler) http.Handler {
 	return rl.MiddlewareByKey(rl.ClientKey)
 }
 
-// MiddlewareByKey returns an HTTP middleware that rate-limits using keyFunc to
-// derive the per-request identity. A nil keyFunc falls back to the client IP.
-// Blocked requests get 429 with a Retry-After header; see Middleware for why the
-// budget headers are intentionally omitted.
+// MiddlewareByKey is Middleware keyed by keyFunc; a nil keyFunc means ClientKey.
 func (rl *Limiter) MiddlewareByKey(keyFunc func(*http.Request) string) func(http.Handler) http.Handler {
 	if keyFunc == nil {
 		keyFunc = rl.ClientKey
@@ -444,20 +242,11 @@ func (rl *Limiter) MiddlewareByKey(keyFunc func(*http.Request) string) func(http
 	}
 }
 
-// RetryAfterSeconds formats a blocked limiter's remaining wait as whole
-// seconds, rounded UP. %.0f rounds to nearest, so a window with under
-// half a second left answered "Retry-After: 0" — telling a still-blocked
-// client to retry at once. While a wait remains, one whole second is the
-// honest minimum; a non-positive duration (the limiter saying the block
-// already expired) stays "0". The auth battery's limiters format the
-// header with this helper too.
+// RetryAfterSeconds formats a wait as whole seconds rounded up, "0" for a non-positive one.
 func RetryAfterSeconds(d time.Duration) string {
 	if d <= 0 {
 		return "0"
 	}
-	// Division-and-remainder ceil, not d+time.Second-1: a huge duration
-	// (a misconfigured BlockDuration near the int64 nanosecond ceiling)
-	// would overflow the addition and print a negative wait.
 	secs := d / time.Second
 	if d%time.Second > 0 {
 		secs++
@@ -465,41 +254,22 @@ func RetryAfterSeconds(d time.Duration) string {
 	return strconv.FormatInt(int64(secs), 10)
 }
 
-// ClientIP extracts the request IP. It honours X-Forwarded-For only when
-// trustXFF is true (typically behind a trusted reverse proxy). The default
-// (trustXFF=false) ignores XFF, otherwise a single curl with a rotating
-// X-Forwarded-For header bypasses every per-IP limit.
-//
-// With trustXFF the immediate peer is taken to be the one proxy and the
-// rightmost X-Forwarded-For entry, the address that proxy observed, is the
-// client. Entries to its left are client-supplied behind an appending proxy
-// and are never used. A deployment with more than one proxy tier sets
-// Config.TrustedProxies and calls Limiter.ClientIP instead.
+// ClientIP returns the request's peer address, or with trustXFF the rightmost X-Forwarded-For entry.
 func ClientIP(r *http.Request, trustXFF bool) string {
 	return clientIPFor(r, trustXFF, clientip.Proxies{})
 }
 
-// ClientIP is the package ClientIP under this limiter's TrustForwardedFor
-// and TrustedProxies: with a TrustedProxies list, only a listed peer may
-// speak for X-Forwarded-For and listed hops are skipped from the right.
+// ClientIP is the package ClientIP under this limiter's TrustForwardedFor and TrustedProxies.
 func (rl *Limiter) ClientIP(r *http.Request) string {
 	return clientIPFor(r, rl.cfg.TrustForwardedFor, rl.proxies)
 }
 
-// ClientKey is the per-client rate-limit key: ClientIP with an IPv6
-// address collapsed to its /64 (IPKey). Middleware and the auth battery's
-// per-IP limiters key on it; ClientIP stays the address itself for logs.
+// ClientKey is the per-client rate-limit key: IPKey of ClientIP.
 func (rl *Limiter) ClientKey(r *http.Request) string {
 	return IPKey(rl.ClientIP(r))
 }
 
-// IPKey turns a client address into a per-IP rate-limit key. An IPv4
-// address (an IPv4-mapped IPv6 one included) is itself. An IPv6 address
-// becomes its /64 prefix: one subscriber is routinely handed a whole /64,
-// 2^64 addresses, so keying on the full address let a single client rotate
-// past every per-IP limit (a fresh source address per request). Anything
-// that does not parse as an IP is returned unchanged. core/middleware's
-// RateLimit shares the rule (internal/clientip.RateKey).
+// IPKey is a client address as a rate-limit key: IPv4 as is, IPv6 as its /64, anything else unchanged.
 func IPKey(addr string) string {
 	return clientip.RateKey(addr)
 }

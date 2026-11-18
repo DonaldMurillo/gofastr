@@ -1,0 +1,111 @@
+primitive: gallery
+summary: The importable component catalog behind the /components showcase and the theme editor - every design-system component as a self-contained demo, with its code snippet, category and package, looked up by slug.
+code:
+  - framework/gallery/gallery.go
+  - framework/gallery/catalog.go
+  - framework/gallery/layout.go
+  - framework/gallery/agents.go
+  - framework/gallery/agents.md
+docs:
+  - framework/docs/content/theming.md
+  - framework/docs/content/ui-new-components.md
+on_change:
+  - A change to the gallery's exported API updates framework/gallery/agents.md, the entry agentsinv serves to agents.
+imports:
+  - deny: framework
+    from: [framework/gallery]
+    why: The gallery is imported by cmd/gofastr's theme editor, examples/site and host apps, so it sits below the framework facade and must not pull it in.
+    instead: Take what a demo needs as a parameter from the host, or render it through framework/ui and core-ui.
+  - deny: framework/crud
+    from: [framework/gallery]
+    why: The catalog renders components with seed data and has no entities to serve.
+    instead: Seed the demo with literal rows and let the host wire a live data source.
+  - deny: framework/entity
+    from: [framework/gallery]
+    why: The catalog renders components with seed data and has no entities to describe.
+    instead: Seed the demo with literal rows and let the host wire a live data source.
+  - deny: framework/uihost
+    from: [framework/gallery]
+    why: The host serves the gallery's screens, so the gallery importing it would invert that dependency.
+    instead: Export a render helper or a Mount* function the host calls before mounting its UIHost.
+invariants:
+  - id: grouped-keeps-catalog-order
+    rule: Categories lists each category once in its first appearance in Catalog, Grouped holds the same entries ByCategory returns in catalog order, and ByCategory of an unknown category is nil.
+    enforced_by:
+      - test: framework/gallery.TestSweepGroupedKeepsCatalogOrder
+  - id: category-slug-is-lower-dashed
+    rule: CategorySlug lowercases ASCII letters, keeps ASCII digits, joins every other run of bytes into one dash, and drops leading and trailing dashes.
+    enforced_by:
+      - test: framework/gallery.TestSweepCategorySlugIsLowerDashed
+      - test: framework/gallery.TestAgentsMDAdvertisedAccessorsExist
+  - id: demo-ids-are-unique-and-resolve
+    rule: A catalog demo writes each id once, and every aria-labelledby, aria-describedby, aria-controls, aria-owns, aria-activedescendant, for and list reference in it names an id the demo holds.
+    enforced_by:
+      - test: framework/gallery.TestDemosWriteEachIDOnceAndResolveTheirReferences
+  - id: catalog-emits-no-retired-or-ui-class
+    rule: No catalog demo renders a name the upgrade registry retired, or a class token starting ui-.
+    enforced_by:
+      - test: framework/gallery.TestCatalogEmitsNoRetiredMarkup
+      - test: framework/gallery.TestCatalogRendersNoUIClassTokens
+  - id: ships-no-stylesheet
+    rule: The gallery registers no component stylesheet of its own; its demos lay out through framework/ui's layout components.
+    enforced_by:
+      - test: framework/gallery.TestSweepGalleryRegistersNoStylesheet
+  - id: unknown-slug-reads-zero
+    rule: CodeSnippet answers "" and IsNoteOnly false for a slug with no entry, and DemoFor nil for a slug the catalog does not hold.
+    enforced_by:
+      - test: framework/gallery.TestAccessorsReturnRegisteredValues
+      - test: framework/gallery.TestSweepGroupedKeepsCatalogOrder
+decisions:
+  - id: a-package-not-an-example
+    date: 2026-11-17
+    status: accepted
+    decision: The catalog is a framework package, lifted out of examples/site, so cmd/gofastr's theme editor can render every component against a theme.
+    rejected:
+      - option: Keep the catalog in examples/site/components.go.
+        why: cmd/gofastr cannot import examples/, so the theme editor could not show the components.
+    revisit_if: The theme editor stops rendering the catalog.
+  - id: not-a-uihost-option
+    date: 2026-11-17
+    status: accepted
+    decision: Hosts mount the gallery beside their UI host; it is not a uihost option.
+    rejected:
+      - option: A uihost option that serves the catalog.
+        why: uihost must never import framework/ui, whose always-on styles would leak into every host's CSS bundle, and pre-canned demos are not a host's job.
+    revisit_if: uihost gains a way to serve framework/ui screens without linking its styles.
+    upholds: [ships-no-stylesheet]
+  - id: compose-ui-layout-no-css
+    date: 2026-11-17
+    status: accepted
+    decision: Demos lay out with ui.Cluster, ui.Stack, ui.Box and ui.Callout, so a demo looks the same in any host with that host's theme.
+    rejected:
+      - option: A ContributeCSS sheet for gallery-only .demo-row and .demo-stack classes.
+        why: Every host had to carry the gallery's styling, and a host that forgot it rendered the catalog unstyled.
+    revisit_if: framework/ui lacks a layout a demo needs.
+    upholds: [ships-no-stylesheet]
+  - id: catalog-is-an-exported-slice
+    date: 2026-11-17
+    status: accepted
+    decision: Catalog is an exported slice filled at init and never written after, while the snippet and note-only maps stay private behind CodeSnippet and IsNoteOnly.
+    rejected:
+      - option: A snapshot accessor for Catalog.
+        why: Reads of a slice nobody writes are safe, and a copy per iteration costs an allocation for no gain.
+      - option: Exported snippet and note-only maps.
+        why: A host writing a map while a request reads it is a fatal concurrent map access.
+    revisit_if: Anything appends to or reassigns Catalog after init.
+  - id: checked-control-demos
+    date: 2026-11-17
+    status: accepted
+    decision: The checkbox, radio and switch demos render a checked or on state, because most of those sheets draw only under :checked.
+    rejected:
+      - option: Unchecked demos only.
+        why: The gallery would show none of the checkmark, dot or slid thumb the sheets are mostly made of.
+    revisit_if: Those sheets stop depending on the checked state.
+  - id: combobox-value-differs-from-label
+    date: 2026-11-17
+    status: accepted
+    decision: The static combobox demo gives an option a Value that differs from its Label ("cpp" for "C++"), so examples/site's end-to-end suite sees a chip that shows the Value.
+    rejected:
+      - option: Options whose Value equals their Label.
+        why: A chip rendering the Value would look right and the regression would pass.
+    revisit_if: The combobox gets a unit test of chip text against a differing Value.

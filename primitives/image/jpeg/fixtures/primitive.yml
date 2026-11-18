@@ -1,0 +1,25 @@
+primitive: image.jpeg.fixtures
+summary: Builders for hostile JPEG test fixtures - scan bombs and large progressive frames - used by the image and file tests.
+code:
+  - framework/internal/jpegtest/
+invariants:
+  - id: fixtures-are-valid-jpegs
+    rule: ScanBomb and Progressive build JPEGs image/jpeg decodes at the requested size, byte-stuffing every 0xFF in scan data and covering every block in each scan.
+    enforced_by:
+      - test: framework/internal/jpegtest.TestFixturesDecodeAndCostWhatTheyClaim
+  - id: fixtures-cost-what-they-claim
+    rule: A Progressive fixture's frame costs 256 bytes per block per component by jpegcost's count.
+    enforced_by:
+      - test: framework/internal/jpegtest.TestFixturesDecodeAndCostWhatTheyClaim
+  - id: test-only
+    rule: Only _test.go files import jpegtest, so it never links into a binary.
+    judge: Does this change import framework/internal/jpegtest from a non-test file?
+decisions:
+  - id: eobrun-scans
+    date: 2026-11-17
+    status: accepted
+    decision: Each scan is one end-of-band-run code repeated to cover every block, about ten bytes per 330,000 blocks.
+    rejected:
+      - option: Real image data.
+        why: The point is a file whose decode cost grows with scans times pixels while its size grows with scans alone.
+    upholds: [fixtures-are-valid-jpegs]

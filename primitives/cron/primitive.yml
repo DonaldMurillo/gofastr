@@ -1,0 +1,131 @@
+primitive: cron
+summary: The in-process cron Scheduler - Register, the tick loop with catch-up, gates and leader election, Stop, and the parser for five-field specs and shortcuts.
+code:
+  - framework/cron/cron.go
+docs:
+  - framework/docs/content/cron.md
+  - framework/docs/content/scaling.md
+on_change:
+  - A spec syntax or shortcut added or changed here is changed in the Spec syntax and Shortcuts sections of cron.md too.
+invariants:
+  - id: register-refuses-bad-jobs
+    rule: Register returns ErrInvalidJobName for an empty name or one over MaxJobNameBytes, ErrNilJobRun for a nil Run, and the parse error for a bad spec, and registers nothing.
+    enforced_by:
+      - test: framework/cron.TestCron_EmptyJobName
+      - test: framework/cron.TestCron_VeryLongJobName
+      - test: framework/cron.TestCron_NilJobFunc
+      - test: framework/cron.TestCron_RegisterRejectsBadSpec
+  - id: parser-is-strict
+    rule: ParseCron refuses anything but five fields or a known shortcut, a step that is not a positive integer, a reversed range and a value outside its field, and a large step cannot overflow into unrelated bits.
+    enforced_by:
+      - test: framework/cron.TestCron_Parse_RejectsBadInput
+      - test: framework/cron.TestCron_MalformedSpecRejectedAtParse
+      - test: framework/cron.TestFieldStepLargerThanRangeDoesNotOverflow
+  - id: shortcuts-and-steps
+    rule: Each @ shortcut parses to its five-field spec (@weekly is Sunday 00:00), and "a/n" steps from a to the field's maximum.
+    enforced_by:
+      - test: framework/cron.TestShortcutsExpandToTheirSpecs
+      - test: framework/cron.TestCronStartingValueStep
+  - id: restricted-days-match-either
+    rule: When neither day-of-month nor day-of-week begins with "*", a date matches when either field does, as in standard cron.
+    enforced_by:
+      - test: framework/cron.TestCron_Matches
+  - id: job-faults-reach-onerror
+    rule: A job's error, a job's panic (scrubbed through textsafe.Recovered, with its stack) and a gate's panic go to OnError, or to slog when OnError is nil, and a panicking OnError is logged and goes no further.
+    enforced_by:
+      - test: framework/cron.TestScheduler_JobPanicRecovered
+      - test: framework/cron.TestScheduler_JobPanicScrubbed
+      - test: framework/cron.TestOnErrorPanicNotReentered
+      - test: framework/cron.TestJobErrorLoggedWithoutOnError
+      - test: framework/cron.TestGatePanicLoggedWithoutOnError
+  - id: gate-decides-each-firing
+    rule: A job whose gate answers false, or whose gate panics, does not run that tick; the gate is read once per tick and asked outside the scheduler's lock.
+    enforced_by:
+      - test: framework/cron.TestGateSkipsJobOnceJobsAreJoined
+      - test: framework/cron.TestGatePanicLoggedWithoutOnError
+  - id: each-run-is-a-trace
+    rule: Every job run is its own trace span named "cron <name>".
+    enforced_by:
+      - test: framework/cron.TestEachRunIsATrace
+  - id: stop-joins-or-gives-up
+    rule: Stop and StopContext stop the loop and wait for running jobs; StopContext returns ctx's error at the deadline instead of waiting on a job or loop that will not end; both return at once before Start and are safe to call twice.
+    enforced_by:
+      - test: framework/cron.TestStopWaitsForInflightJobs
+      - test: framework/cron.TestStopContextAbandonsHungJob
+      - test: framework/cron.TestStopDeadlineBoundsLoopJoin
+      - test: framework/cron.TestScheduler_StopBeforeStart
+      - test: framework/cron.TestConcurrentStopsDontPanic
+  - id: tick-lease-released-before-jobs
+    rule: Once AcquireTick holds, the scheduler starts the lease's release on its own goroutine and then dispatches the minute's jobs without waiting for them, so a long job never holds back the next minute on any replica.
+    enforced_by:
+      - test: framework/cron.TestTickLeaseFreedBeforeJobEnds
+      - test: framework/cron.TestPGLongJobKeepsNextTick
+  - id: plain-lease-covers-its-own-jobs
+    rule: A plain LeaderElection lease is taken once per walk and released off the loop goroutine once the jobs that walk started have finished, never waiting on an earlier tick's job, so the tick returns while its jobs run.
+    enforced_by:
+      - test: framework/cron.TestPlainLeaseSkipsOtherTicksJobs
+      - test: framework/cron.TestPlainLeaseTickReturnsWhileItsJobRuns
+  - id: lease-faults-skip-the-minute
+    rule: A panic in Acquire, AcquireTick or a release is recovered and reported, and an Acquire error is reported and asked again at the next walked minute.
+    enforced_by:
+      - test: framework/cron.TestSchedulerAcquirePanicIsolated
+      - test: framework/cron.TestSchedulerReleasePanicIsolated
+      - test: framework/cron.TestCatchUpRetriesLeaseAfterError
+  - id: next-acquire-waits-for-hand-back
+    rule: The scheduler's next acquire waits until its own last jobless release has returned, unless the scheduler stops or ctx ends first.
+    enforced_by:
+      - test: framework/cron.TestBackToBackTicksWaitForHandBack
+      - test: framework/cron.TestCatchUpTickLeaseClaimsEveryMinute
+      - test: framework/cron.TestCatchUpWaitingOnHandBackHonoursStop
+  - id: late-tick-walks-missed-minutes
+    rule: A late tick walks every missed minute boundary oldest first, at most two hours back, replaying only fixed-time jobs for past minutes and judging every job at the last boundary, and stops between minutes when the scheduler stops.
+    enforced_by:
+      - test: framework/cron.TestTickLoopCatchesUpAcrossFallBack
+      - test: framework/cron.TestTickLoopCatchesUpAcrossSpringForward
+      - test: framework/cron.TestCatchUpRunsWildcardJobsOnce
+      - test: framework/cron.TestTickCatchUpIsBounded
+      - test: framework/cron.TestTickCatchUpStopsWhenCancelled
+  - id: ticks-stay-on-the-grid
+    rule: Ticks are armed for the clock's next minute boundary and stamped with that boundary, and a walk fires each boundary once, the current one included.
+    enforced_by:
+      - test: framework/cron.TestTickTimeDoesNotDrift
+      - test: framework/cron.TestTickCatchUpFiresEachMinuteOnce
+      - test: framework/cron.TestTickCatchUpIncludesCurrentBoundary
+  - id: runonce-uses-firesat
+    rule: RunOnce and every tick decide a firing with Schedule.FiresAt, the minute before as prev.
+    enforced_by:
+      - test: framework/cron.TestFixedTimeJobAcrossDST
+      - test: framework/cron.TestLeaderElectedFallBackRunsOnce
+decisions:
+  - id: one-walk-one-plain-lease
+    date: 2026-11-17
+    status: accepted
+    decision: A walk over missed minutes takes a plain lease once for all of them, and a tick lease once per minute after the previous release has returned.
+    rejected:
+      - option: Acquire a plain lease per walked minute.
+        why: The previous minute's release ran on a goroutine, a real try-lock refused the next Acquire, and the minute was dropped without a word.
+    upholds: [plain-lease-covers-its-own-jobs, next-acquire-waits-for-hand-back]
+  - id: wildcards-judged-once-after-a-gap
+    date: 2026-11-17
+    status: accepted
+    decision: After a gap only fixed-time jobs replay past minutes, as vixie cron does, and a wildcard job runs once at the last boundary.
+    rejected:
+      - option: Replay every job for every missed minute.
+        why: A 90-minute sleep would start "* * * * *" ninety times at the same moment.
+    upholds: [late-tick-walks-missed-minutes]
+  - id: arm-on-boundaries
+    date: 2026-11-17
+    status: accepted
+    decision: The loop arms its timer for the clock's next minute boundary and stamps the tick with that boundary.
+    rejected:
+      - option: Rearm one interval after the previous tick's work.
+        why: The delay piled up until a whole minute was skipped.
+    upholds: [ticks-stay-on-the-grid]
+  - id: per-tick-lease-hold
+    date: 2026-11-17
+    status: accepted
+    decision: A plain lease waits only for the jobs its own tick started.
+    rejected:
+      - option: Wait on the scheduler-wide in-flight group.
+        why: One long job held a session-scoped Postgres lock, so every tick of every job skipped cluster-wide until it ended.
+    upholds: [plain-lease-covers-its-own-jobs]

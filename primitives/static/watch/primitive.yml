@@ -1,0 +1,29 @@
+primitive: static.watch
+summary: Builder.Watch, the polling loop that rebuilds the export whenever a file under the watched directories changes its modification time.
+code:
+  - framework/static/watch.go
+docs:
+  - framework/docs/content/static-export.md
+invariants:
+  - id: negative-interval-refused
+    rule: Watch refuses a negative interval instead of polling in a tight loop.
+    enforced_by:
+      - test: framework/static.TestWatchNegativeIntervalRejected
+  - id: ignores-its-own-output
+    rule: The watch leaves OutDir and its page manifest out of every scan, so a rebuild never triggers the next one.
+    enforced_by:
+      - test: framework/static.TestWatchIgnoresItsOwnOutput
+  - id: changes-and-errors
+    rule: A deleted file under a watched directory counts as a change, and a failed first build is handed to onError while the watch goes on.
+    enforced_by:
+      - test: framework/static.TestSweepStaticWatch
+decisions:
+  - id: poll-mtimes
+    date: 2026-11-17
+    status: accepted
+    decision: Watch polls modification times.
+    rejected:
+      - option: fsnotify.
+        why: It is a third-party dependency, and polling only stats files already known.
+    revisit_if: Polling a large source tree costs noticeable CPU between edits.
+    upholds: [ignores-its-own-output]

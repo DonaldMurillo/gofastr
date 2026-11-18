@@ -1,0 +1,145 @@
+primitive: image.variants
+summary: VariantSet - one source decoded once into named width and format renditions, returned in memory by Process or streamed to a sink by ProcessTo.
+code:
+  - framework/image/variants.go
+invariants:
+  - id: one-pipeline-two-deliveries
+    rule: Process and ProcessTo run the same validation, resize, encode, placeholder and BlurHash steps, and differ only in whether each encoded variant is copied into the result or handed to the sink.
+    enforced_by:
+      - test: framework/image.TestBlurHashParityAcrossPaths
+      - test: framework/image.TestVariantSetProcessToStreams
+  - id: process-outputs-own-their-bytes
+    rule: Each VariantOutput.Bytes from Process is its own copy, never the buffer the next variant is encoded into.
+    enforced_by:
+      - test: framework/image.TestVariantSetProducesEachVariant
+  - id: variant-count-capped
+    rule: Process and ProcessTo refuse a set with more than MaxVariantsPerSet (64) variants.
+    enforced_by:
+      - test: framework/image.TestVariantSetRejectsExcessiveVariants
+  - id: half-blurhash-refused
+    rule: A set with exactly one of BlurHashX and BlurHashY set is refused before any variant is encoded.
+    enforced_by:
+      - test: framework/image.TestVariantSetRejectsHalfBlurHash
+      - test: framework/image.TestSweepImageHalfBlurHashRefusedBeforeAnyVariant
+  - id: reject-animated-opt-in
+    rule: With RejectAnimated a source of more than one frame returns ErrAnimatedSource, also after a chain step, and without it the first frame is used.
+    enforced_by:
+      - test: framework/image.TestVariantSetRejectAnimated
+      - test: framework/image.TestRejectAnimatedAfterChainStep
+  - id: whole-set-refused-up-front
+    rule: Colliding names and a resize target past the source's MaxPixels are refused for every variant before the first is encoded, so ProcessTo never hands its sink part of a set it then refuses.
+    enforced_by:
+      - test: framework/image.TestSweepImageProcessToRefusesWholeSetUpFront
+      - test: framework/image.TestVariantSetRefusesDuplicateNames
+      - test: framework/image.TestResizeTargetPastMaxPixels
+  - id: no-upscale-by-default
+    rule: Without AllowUpscale a variant's width is clamped to the source width, and with it the variant is produced at its declared width.
+    enforced_by:
+      - test: framework/image.TestVariantSetDoesNotUpscaleByDefault
+      - test: framework/image.TestProcessToDoesNotUpscaleByDefault
+      - test: framework/image.TestVariantSetAllowUpscaleOptsBackIn
+      - test: framework/image.TestProcessToAllowUpscaleOptsBackIn
+  - id: width-only-resize-keeps-aspect
+    rule: A variant is resized by width alone, so its height follows the source aspect ratio.
+    enforced_by:
+      - test: framework/image.TestVariantSetPreservesAspect
+  - id: variant-needs-width-and-format
+    rule: A variant with Width below 1 or an unknown Format is an error.
+    enforced_by:
+      - test: framework/image.TestVariantSetRejectsZeroWidth
+      - test: framework/image.TestVariantSetRejectsUnknownFormat
+  - id: variant-encoding-follows-format
+    rule: A WebP variant is encoded lossless, and a JPEG variant at its Quality.
+    enforced_by:
+      - test: framework/image.TestVariantSetEmitsWebPLossless
+      - test: framework/image.TestSweepImageVariantQualityReachesJPEG
+  - id: names-are-base-suffix-ext
+    rule: A variant is named <base>-<Suffix or width>.<ext>, the base "image" when BaseName is empty.
+    enforced_by:
+      - test: framework/image.TestVariantSetProducesEachVariant
+      - test: framework/image.TestSweepImageEmptyBaseNameIsImage
+  - id: names-never-collide
+    rule: CheckVariantNames refuses two variants of one Format with the same suffix, a suffix equal to another's width included.
+    enforced_by:
+      - test: framework/image.TestVariantSetRefusesDuplicateNames
+  - id: names-fit-and-keep-the-tail
+    rule: A BaseName too long for MaxVariantNameBytes is cut from the front, on a rune boundary, by one amount for the whole set.
+    enforced_by:
+      - test: framework/image.TestVariantNamesFitNameLimit
+      - test: framework/image.TestShortBaseNameUnchanged
+  - id: suffix-leaves-room-for-the-base
+    rule: CheckVariantNames refuses a variant whose "-<suffix>.<ext>" leaves under MinVariantBaseBytes of MaxVariantNameBytes for the base.
+    enforced_by:
+      - test: framework/image.TestSuffixLeavesRoomForToken
+      - test: framework/image.TestSuffixOverNameLimitRefused
+  - id: sink-reader-is-one-shot
+    rule: The reader ProcessTo hands its sink returns ErrReaderClosed once the sink has returned.
+    enforced_by:
+      - test: framework/image.TestProcessToSinkReaderInvalidAfterReturn
+  - id: sink-error-stops
+    rule: A sink error stops ProcessTo and is returned unchanged.
+    enforced_by:
+      - test: framework/image.TestVariantSetProcessToStopsOnSinkError
+  - id: placeholder-and-hash-on-request
+    rule: The placeholder and BlurHash are produced from the full source only when the set asks for them.
+    enforced_by:
+      - test: framework/image.TestVariantSetPlaceholderAndBlurHash
+      - test: framework/image.TestBlurHashParityAcrossPaths
+decisions:
+  - id: process-is-processto-with-a-collecting-sink
+    date: 2026-11-17
+    status: accepted
+    decision: Process and ProcessTo share one run loop, Process collecting a copy of each variant's bytes.
+    rejected:
+      - option: Two copies of the loop.
+        why: They had already drifted in their comments and would drift in their checks.
+    upholds: [one-pipeline-two-deliveries]
+  - id: variant-cap-64
+    date: 2026-11-17
+    status: accepted
+    decision: A set holds at most 64 variants, enough for 5-10 widths in 3-5 formats.
+    rejected:
+      - option: No cap.
+        why: Each variant is a resize and an encode, so a variant list taken from a request is a CPU and memory lever for an attacker.
+    revisit_if: A real responsive-image setup needs more than 64 renditions of one source.
+    upholds: [variant-count-capped]
+  - id: clamp-upscale-by-default
+    date: 2026-11-17
+    status: accepted
+    decision: Variants never exceed the source width unless AllowUpscale is set.
+    rejected:
+      - option: Produce every declared width.
+        why: A 16 px source asked for 2048 px gives a large, pixel-multiplied file nobody wanted.
+    upholds: [no-upscale-by-default]
+  - id: first-frame-by-default
+    date: 2026-11-17
+    status: accepted
+    decision: An animated source is flattened to its first frame unless RejectAnimated is set.
+    rejected:
+      - option: Always reject animated sources.
+        why: Existing callers rely on the first frame being used.
+    upholds: [reject-animated-opt-in]
+  - id: blurhash-from-full-source
+    date: 2026-11-17
+    status: accepted
+    decision: VariantSet hands the full source to BlurHash, which does its own downscale.
+    rejected:
+      - option: Downscale before calling BlurHash.
+        why: A second downscale changes the hash and costs a resize BlurHash already does.
+    upholds: [placeholder-and-hash-on-request]
+  - id: name-cut-from-the-front
+    date: 2026-11-17
+    status: accepted
+    decision: A long BaseName loses its front, because core/upload.UniqueFilename puts its timestamp and random token at the end.
+    rejected:
+      - option: Cut the end.
+        why: Two uploads would cut to the same name and the later renditions overwrite the earlier.
+    upholds: [names-fit-and-keep-the-tail, suffix-leaves-room-for-the-base]
+  - id: one-shot-sink-reader
+    date: 2026-11-17
+    status: accepted
+    decision: The sink's reader fails after the sink returns.
+    rejected:
+      - option: A plain reader over the shared buffer.
+        why: A sink that kept the reader would read the next variant's bytes without any error.
+    upholds: [sink-reader-is-one-shot]
