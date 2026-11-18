@@ -32,9 +32,6 @@ func TestPasskeyBrowserManageAndReauth(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 	origin := fmt.Sprintf("http://localhost:%d", port)
 	f := newPasskeyFixtureFor(t, "localhost", origin)
-	// The step-up below uses the passkey this test registers moments earlier:
-	// only the predate rule applies, so it signs in again first.
-	f.pk.config.ReauthMinAge = 0
 
 	var mu sync.Mutex
 	var redeemed []error
@@ -138,6 +135,12 @@ for (const k of ['signalUnknownCredential', 'signalAllAcceptedCredentials', 'sig
 	if len(toasts) != 1 || toasts[0] != "This device already holds a passkey for this account" {
 		t.Errorf("second add toasts %v, want the already-registered message", toasts)
 	}
+
+	// The step-up below uses the passkey this test registered moments
+	// earlier: from here only the predate rule applies, so it signs in
+	// again first. (With the age rule on, the second add above ran before
+	// the account's gate applied and met the browser's own refusal.)
+	f.pk.config.ReauthMinAge = 0
 
 	// Rename, then step up: the form posts a proof the handler spends.
 	var listSignals int
