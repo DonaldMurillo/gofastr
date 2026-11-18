@@ -50,8 +50,8 @@ import (
 // wantDefaultCSP is the framework's strict default Content-Security-Policy
 // (core/middleware security.go), the one the analytics integration must
 // live under without any widening.
-const wantDefaultCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; " +
-	"form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
+const wantDefaultCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; " +
+	"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 
 // fakeVendorSDKJS is the tiny "vendor SDK" served by the fake upstream
 // THROUGH the relay. PostHog-shaped surface: window.__fakeVendor with
