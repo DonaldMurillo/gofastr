@@ -131,7 +131,7 @@ middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
 
 | Header                    | Default                                                                          |
 |---------------------------|----------------------------------------------------------------------------------|
-| `Content-Security-Policy` | `default-src 'self'; img-src 'self' data:; object-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'` |
+| `Content-Security-Policy` | `default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'` |
 | `X-Content-Type-Options`  | `nosniff` (always, not configurable)                                            |
 | `Referrer-Policy`         | `no-referrer`                                                                    |
 | `X-Frame-Options`         | `DENY`                                                                           |

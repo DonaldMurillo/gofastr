@@ -201,6 +201,7 @@
       NS.fetch(NS._lp?.(src) ?? src, {
         headers: { 'Accept': 'text/html' },
         credentials: 'same-origin',
+        priority: 'low',
       })
         .then((r) => {
           // An HTTP error must reach .catch so back-off applies,
@@ -337,7 +338,7 @@
       if (inFlight) return;
       inFlight = true;
       if (!NS._originOK?.(cfg.statePath)) { inFlight = false; return; }
-      NS.fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
+      NS.fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name }, priority: 'low' })
         .then((r) => {
           // HTTP errors, and a followed 3xx (another URL's state),
           // must reach .catch so back-off applies.
