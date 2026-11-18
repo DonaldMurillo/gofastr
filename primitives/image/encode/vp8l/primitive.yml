@@ -50,7 +50,7 @@ invariants:
       - test: framework/image/internal/vp8l.TestEncodeTwoColors
       - test: framework/image/internal/vp8l.TestRoundTripWrapAroundBoundary
   - id: one-length-tree-writes-no-lengths
-    rule: When every used primary symbol shares one code length, the code-length code has one symbol and no bits are written per primary length.
+    rule: When every entry of lengths, unused ones included, holds one value, the code-length code has one symbol and no bits are written per primary length; any second value (a 0 beside used lengths counts) makes it write per-length bits.
     enforced_by:
       - test: framework/image/internal/vp8l.TestSweepVP8LOneLengthTreeWritesNoPerSymbolBits
   - id: code-length-code-fits-three-bits
