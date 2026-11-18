@@ -149,6 +149,7 @@ func TestCascadeOnlyUpdateUsesWriteScope(t *testing.T) {
 	if err != nil {
 		t.Skip("sqlite3 driver not available")
 	}
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
 
 	app := NewApp(WithConfig(AppConfig{Name: "xowrite", APIPrefix: "/api"}), WithDB(db))
