@@ -27,8 +27,9 @@ invariants:
     enforced_by:
       - test: framework/testkit/cssweight.TestMeasureRefusesImport
   - id: first-base-href
-    rule: Linked sheets resolve against the document's first <base href>, else the page URL.
+    rule: Linked sheets resolve against the document's first <base href>, even an empty one, else the page URL.
     enforced_by:
+      - test: framework/testkit/cssweight.TestSweepEmptyFirstBaseHrefStillWins
       - test: framework/testkit/cssweight.TestMeasureUsesBaseHref
       - test: framework/testkit/cssweight.TestSweepFirstBaseHrefWins
   - id: body-bounded

@@ -24,6 +24,9 @@ func TestSweepRedactHidesThePassword(t *testing.T) {
 	if strings.Contains(got, "s3cret") || !strings.Contains(got, "admin") {
 		t.Errorf("redact = %q, want the user kept and the password hidden", got)
 	}
+	if err := ValidateAdminDSN("mysql://admin@db/x?password=q3cret&sslmode=disable"); err == nil || strings.Contains(err.Error(), "q3cret") {
+		t.Errorf("ValidateAdminDSN error %v leaks a query-string password or accepts a non-postgres DSN", err)
+	}
 	if err := ValidateAdminDSN("mysql://admin:s3cret@db/x"); err == nil || strings.Contains(err.Error(), "s3cret") {
 		t.Errorf("ValidateAdminDSN error %v leaks the password or accepts a non-postgres DSN", err)
 	}

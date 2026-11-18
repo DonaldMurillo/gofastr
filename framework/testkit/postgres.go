@@ -174,5 +174,9 @@ func redact(dsn string) string {
 	if u.User != nil {
 		u.User = url.UserPassword(u.User.Username(), "REDACTED")
 	}
+	if q := u.Query(); q.Has("password") {
+		q.Set("password", "REDACTED")
+		u.RawQuery = q.Encode()
+	}
 	return u.String()
 }

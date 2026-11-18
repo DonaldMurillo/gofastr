@@ -150,6 +150,7 @@ func fetch(c *http.Client, u string) ([]byte, error) {
 }
 
 func collect(doc []byte) (inline [][]byte, links []string, baseHref string, err error) {
+	baseSeen := false
 	z := html.NewTokenizer(bytes.NewReader(doc))
 	inStyle := false
 	for {
@@ -166,11 +167,11 @@ func collect(doc []byte) (inline [][]byte, links []string, baseHref string, err 
 				inStyle = true
 				inline = append(inline, nil)
 			case atom.Base:
-				for hasAttr && baseHref == "" {
+				for hasAttr && !baseSeen {
 					var k, v []byte
 					k, v, hasAttr = z.TagAttr()
 					if string(k) == "href" {
-						baseHref = string(v)
+						baseHref, baseSeen = string(v), true
 					}
 				}
 			case atom.Link:
