@@ -13,7 +13,7 @@ decisions:
   - id: bytewise-two-rows
     date: 2026-11-18
     status: accepted
-    decision: Levenshtein compares bytes and keeps two rolling rows, so memory is O(len(b)); it does not bound its input, and non-ASCII input is compared bytewise, so each byte of a multi-byte character counts as one edit.
+    decision: Levenshtein compares bytes and keeps two rolling rows, so memory is O(len(b)); it does not bound its input, and non-ASCII input is compared bytewise, so edits are counted in bytes and changing one character can take more than one edit.
     rejected:
       - option: Compare runes.
         why: The names suggested against are ASCII identifiers (command and field names), so a non-ASCII typo is already at least one edit off, and decoding costs an allocation per call.
