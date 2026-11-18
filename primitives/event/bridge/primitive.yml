@@ -7,7 +7,7 @@ docs:
   - framework/docs/content/scaling.md
 invariants:
   - id: each-replica-sees-an-event-once
-    rule: An event emitted on one bus reaches the handlers of every bridged bus exactly once - the origin drops its own node's envelopes and a remote re-emit carries the IsRemote marker, which the tap never republishes.
+    rule: An event emitted on one bus reaches each other bridged bus's handlers at most once and its own bus's handlers only through the local emit - the origin drops its own node's envelopes and a remote re-emit carries the IsRemote marker, which the tap never republishes; delivery is best-effort, since the queue drops envelopes and a failed Publish is not retried.
     enforced_by:
       - test: framework/event.TestBridgeThreeBusExactlyOnce
       - test: framework/event.TestBridgeTwoBusCrossDelivery
@@ -20,7 +20,7 @@ invariants:
       - test: framework/event.TestAttachFanoutRejectsDoubleAttach
       - test: framework/event.TestAttachFanoutDetachReattach
   - id: tap-never-blocks-an-emitter
-    rule: The tap enqueues onto a bounded queue drained by one publisher goroutine and drops the oldest envelope when the queue is full, so a stalled fanout stalls no emitter and the newest event still goes out.
+    rule: The tap enqueues onto a bounded queue drained by one publisher goroutine and, when the queue is full, drops the oldest envelope and tries once more, dropping the new one when a concurrent producer refilled the slot, so a stalled fanout stalls no emitter and a single producer's newest events go out.
     enforced_by:
       - test: framework/event.TestBridgeEmitDoesNotBlockOnStalledFanout
       - test: framework/event.TestBridgeOverflowDropsOldest

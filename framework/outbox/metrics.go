@@ -9,7 +9,7 @@ import (
 )
 
 // DeliveryCounts returns the number of pending and of dead-lettered deliveries
-// per consumer. Both maps are non-nil.
+// per consumer. On success both maps are non-nil; on error both are nil.
 func (o *Outbox) DeliveryCounts(ctx context.Context) (pending, dead map[string]int, err error) {
 	pending = map[string]int{}
 	dead = map[string]int{}
