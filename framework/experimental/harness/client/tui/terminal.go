@@ -49,6 +49,7 @@ type TUI struct {
 	assistantOpen bool
 
 	thinkingOpen bool
+	tailIsBody   bool
 
 	thinkingStartedAt int64
 	thinkingStartIdx  int
@@ -129,12 +130,16 @@ func (t *TUI) Run(ctx context.Context) error {
 	spinTick := time.NewTicker(100 * time.Millisecond)
 	defer spinTick.Stop()
 
+	return t.loop(runCtx, events, keys, sigQuit, winch, spinTick.C)
+}
+
+func (t *TUI) loop(runCtx context.Context, events <-chan control.EventEnvelope, keys <-chan []byte, sigQuit, winch <-chan os.Signal, spin <-chan time.Time) error {
 	t.draw()
 	for {
 		select {
 		case <-runCtx.Done():
 			return runCtx.Err()
-		case <-spinTick.C:
+		case <-spin:
 			t.mu.Lock()
 			active := t.spinnerIdx >= 0 && t.spinnerIdx < len(t.scrollback) &&
 				strings.HasPrefix(t.scrollback[t.spinnerIdx], spinnerLineMarker)
@@ -149,7 +154,10 @@ func (t *TUI) Run(ctx context.Context) error {
 			t.readSize()
 			t.draw()
 		case <-sigQuit:
-			t.handleCtrlC()
+			if t.handleCtrlC() {
+				return nil
+			}
+			t.draw()
 		case env := <-events:
 			t.renderEvent(env)
 			t.draw()
@@ -601,14 +609,16 @@ func (t *TUI) ingestAssistantText(text string) {
 	for i, part := range parts {
 		if i == 0 {
 			if t.assistantOpen && len(t.scrollback) > 0 {
-				t.scrollback[len(t.scrollback)-1] += part
+				t.extendTail(part)
 			} else {
 				t.ensureBlankBefore()
 				t.scrollback = append(t.scrollback, "← "+part)
 				t.assistantOpen = true
+				t.tailIsBody = false
 			}
 		} else {
-			t.scrollback = append(t.scrollback, part)
+			t.scrollback = append(t.scrollback, bodyLine(part))
+			t.tailIsBody = true
 		}
 	}
 	t.capScrollback()
@@ -626,16 +636,18 @@ func (t *TUI) ingestThinkingText(text string) {
 	for i, part := range parts {
 		if i == 0 {
 			if t.thinkingOpen && len(t.scrollback) > 0 {
-				t.scrollback[len(t.scrollback)-1] += part
+				t.extendTail(part)
 			} else {
 				t.ensureBlankBefore()
 				t.thinkingStartedAt = nowUnixNano()
 				t.thinkingStartIdx = len(t.scrollback)
 				t.scrollback = append(t.scrollback, "… "+part)
 				t.thinkingOpen = true
+				t.tailIsBody = false
 			}
 		} else {
-			t.scrollback = append(t.scrollback, part)
+			t.scrollback = append(t.scrollback, bodyLine(part))
+			t.tailIsBody = true
 		}
 	}
 	t.capScrollback()
@@ -650,6 +662,14 @@ func (t *TUI) dismissSpinner() {
 	}
 	t.scrollback = append(t.scrollback[:t.spinnerIdx], t.scrollback[t.spinnerIdx+1:]...)
 	t.spinnerIdx = -1
+}
+
+func (t *TUI) extendTail(part string) {
+	last := len(t.scrollback) - 1
+	t.scrollback[last] += part
+	if t.tailIsBody {
+		t.scrollback[last] = bodyLine(t.scrollback[last])
+	}
 }
 
 func (t *TUI) ensureBlankBefore() {
@@ -723,6 +743,7 @@ func (t *TUI) expandLastTruncated() {
 			sp.hintIdx += delta
 		}
 	}
+	t.capScrollback()
 }
 
 func plural(n int, suffix string) string {
@@ -911,15 +932,19 @@ func (t *TUI) draw() {
 	contentWidth := max(t.width-gutterWidth, 10)
 	visual := make([]string, 0, len(t.scrollback)*2)
 	code := make([]bool, 0, len(t.scrollback)*2)
+	body := make([]bool, 0, len(t.scrollback)*2)
 	var fence fenceTracker
 	for _, line := range t.scrollback {
 		if strings.HasPrefix(line, spinnerLineMarker) {
 			line = string(spinnerGlyph(t.spinnerFrame)) + line[len(spinnerLineMarker):]
 		}
 		inCode := fence.next(line)
-		for _, row := range wrapLine(line, contentWidth) {
+		var isBody bool
+		line, isBody = strings.CutPrefix(line, bodyLineMarker)
+		for j, row := range wrapLine(line, contentWidth) {
 			visual = append(visual, row)
 			code = append(code, inCode)
+			body = append(body, isBody && j == 0)
 		}
 	}
 
@@ -930,7 +955,10 @@ func (t *TUI) draw() {
 	end := max(len(visual)-t.scrollOffset, 0)
 	start := max(end-scrollRows, 0)
 	for i := start; i < end; i++ {
-		styled := colorizeMarker(visual[i])
+		styled := visual[i]
+		if !body[i] {
+			styled = colorizeMarker(styled)
+		}
 		if !code[i] {
 			styled = renderMarkdownInline(styled)
 		}

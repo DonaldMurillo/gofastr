@@ -25,6 +25,17 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **harness TUI: a second SIGINT or SIGTERM exits.** The signal path
+  ignored the double-press check, so only a second Ctrl-C key ended the
+  session; a second signal within 2 seconds now exits too.
+- **harness TUI: a reply line that starts with `● ` stays inside its code
+  block.** A fenced reply holding a line like `● literal` closed the fence,
+  and the lines after it were drawn as markdown.
+- **harness TUI: Ctrl-O keeps the scrollback at 1000 lines.** Expanding a
+  truncated tool result could push it past the cap.
+- **harness TUI: modal text drops 8-bit DCS and SOS sequences, and 8-bit
+  sequences with no ESC in the text.** Their payload used to show in the
+  modal.
 - **harness: promoting a session deny no longer turns it into an allow.**
   `permission.Engine.Promote` used to drop the session rule even when a
   persistent "Allow always" rule or an earlier, wider preset allow would
