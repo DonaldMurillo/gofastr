@@ -84,6 +84,7 @@ func TestYAML_DuplicateKeyErrorNamesKeyAndLines(t *testing.T) {
 		// defined on line 2. The reported line is the point of the error.
 		{"list item then two continuations", "items:\n  - a: 1\n    a: 2\n    a: 3\n", `yaml:3:5: duplicate mapping key "a" (first defined at line 2)`},
 		{"list item then one continuation", "items:\n  - a: 1\n    a: 2\n", `yaml:3:5: duplicate mapping key "a" (first defined at line 2)`},
+		{"list item nested first value", "- a:\n    b: 1\n  a: 2\n", `yaml:3:3: duplicate mapping key "a" (first defined at line 1)`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
