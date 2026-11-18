@@ -115,6 +115,15 @@ decisions:
       - option: Scan only the 512-byte sniff window.
         why: A polyglot with valid raster magic hides its markup past the window (the GIFAR class).
     upholds: [hard-tokens-whole-body, soft-tokens-windowed]
+  - id: math-is-a-hard-token
+    date: 2026-11-18
+    status: accepted
+    decision: <math sits in hardActiveTokens beside <svg, as the other foreign-content root HTML parses as markup.
+    rejected:
+      - option: Move <math to softActiveTokens.
+        why: A raster polyglot could then carry MathML past the 512-byte window, which the soft tier never scans; the cost of the hard tier is refusing an image whose text metadata names <math, which fails closed and has the same exposure <svg already has.
+    revisit_if: Real uploads are refused because their metadata contains <math or <svg.
+    upholds: [hard-tokens-whole-body]
   - id: own-sniffer-beside-stdlib
     date: 2026-11-17
     status: accepted

@@ -60,7 +60,7 @@ func TestReadyCarriesBuildID(t *testing.T) {
 	time.Sleep(time.Millisecond)
 	RegisterLiveReload(b)
 	ida, idb := readyData(t, a), readyData(t, b)
-	if ida == "" || ida == idb {
+	if ida == "" || idb == "" || ida == idb {
 		t.Fatalf("build IDs %q and %q, want non-empty and distinct per registration", ida, idb)
 	}
 }
