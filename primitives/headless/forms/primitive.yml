@@ -155,7 +155,7 @@ invariants:
       - test: framework/headless.TestColorSwatchAndTextCarryOneValue
       - test: framework/headless.TestSweepFormsColorUnpickableValueIsKeptAndMarked
   - id: color-keeps-an-unpickable-value
-    rule: A Color value that is not #rgb or #rrggbb stays verbatim in the text, hands the swatch #000000 and marks the shell data-invalid; a short hex is expanded for the swatch only and is valid.
+    rule: "A Color value that is not #rgb or #rrggbb stays verbatim in the text, hands the swatch #000000 and marks the shell data-invalid; a short hex is expanded for the swatch only and is valid."
     enforced_by:
       - test: framework/headless.TestColorAcceptsShortHexAndExpandsItForThePicker
       - test: framework/headless.TestSweepFormsColorUnpickableValueIsKeptAndMarked
@@ -331,7 +331,7 @@ decisions:
     decision: The Color hex text submits and the swatch is an unnamed picker bound to it, with a value the picker cannot show kept verbatim and the shell marked.
     rejected:
       - option: Let the type=color swatch submit.
-        why: It rewrites a legitimate value such as var(--color-primary) to #000000 on submit.
+        why: "It rewrites a legitimate value such as var(--color-primary) to #000000 on submit."
       - option: Refuse a value the picker cannot show.
         why: The component exists to edit config whose colours are often token references.
     upholds: [color-text-submits, color-keeps-an-unpickable-value]
