@@ -73,6 +73,16 @@ invariants:
       - test: core-ui/runtime.TestHeldEscapeSkipsALaterLayer
       - test: core-ui/check.TestLintKeyGuard_Repo
       - test: kiln/integration.TestBrowser_EscClosesModals
+  - id: modal-widget-is-a-native-dialog
+    rule: A backdrop'd widget with default chrome is a <dialog> opened with showModal(), so Tab and assistive tech never reach the page behind it from the moment it opens; a close request (Escape, the back gesture) or a scrim click dismisses it through the one dismiss path only when the widget allows it, a scrim click only when the press started on the scrim, a non-modal widget opened over it mounts inside it so it is not inert, and a modal opened from inside it stacks on top and closes alone.
+    enforced_by:
+      - test: core-ui/widget.TestModalChromeIsADialog
+      - test: core-ui/runtime.TestModalWidgetOpensAsNativeDialog
+      - test: core-ui/runtime.TestTabBeforeFocusModuleStaysInDialog
+      - test: core-ui/runtime.TestDialogEscapeClosesWithoutFocusModule
+      - test: core-ui/runtime.TestDialogBackdropClickCloses
+      - test: core-ui/runtime.TestPanelOverDialogMountsInside
+      - test: core-ui/runtime.TestStackedDialogsCloseOneAtATime
   - id: confirm-closes-in-the-closing-task
     rule: A closed confirm dialog is removed, its answer resolved and focus handed back in the task that closed it, whatever closed it (a button, Escape, close(), requestClose).
     enforced_by:
@@ -105,6 +115,16 @@ decisions:
       - option: Hold the modal hidden until widgetfocus has loaded.
         why: Every first open would wait an extra request before it shows.
     upholds: [escape-waits-for-widgetfocus]
+  - id: modal-scroll-lock-stays-on-the-root
+    date: 2026-11-17
+    status: accepted
+    decision: A <dialog> modal keeps the owner-refcounted lock on <html> (NS.doc.lockScroll) and adds overscroll-behavior contain on the dialog.
+    rejected:
+      - option: 'overscroll-behavior contain alone, as #701 suggested.'
+        why: It only stops scroll chaining out of a scrollable dialog; a wheel over the scrim or over a dialog too short to scroll still scrolls the page behind.
+      - option: A CSS :root:has(dialog:modal) rule.
+        why: The widget sheet can land after showModal(), so the page scrolls until it does, and drawers and the pane host already share the refcounted lock.
+    upholds: [modal-widget-is-a-native-dialog]
   - id: confirm-teardown-watches-the-open-attribute
     date: 2026-11-16
     status: accepted
