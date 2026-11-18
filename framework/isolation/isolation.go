@@ -6,7 +6,10 @@ package isolation
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"maps"
 	"net"
 	"net/url"
@@ -725,7 +728,10 @@ func (r *Runtime) sqliteDSN(dsn string) (string, error) {
 		return "", err
 	}
 	if err := os.Chmod(dir, 0o700); err != nil {
-		return "", err
+		if !errors.Is(err, fs.ErrPermission) {
+			return "", err
+		}
+		slog.Warn("isolation: cannot tighten a state directory this user does not own; using it as is", "dir", dir, "err", err)
 	}
 	if err := fileperm.Restrict(dir, true); err != nil {
 		return "", err
