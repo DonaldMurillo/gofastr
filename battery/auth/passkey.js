@@ -78,29 +78,17 @@
     if (typeof PKC.parseRequestOptionsFromJSON === 'function') return PKC.parseRequestOptionsFromJSON(pk);
     return Object.assign({}, pk, { challenge: fromB64(pk.challenge), allowCredentials: descriptors(pk.allowCredentials) });
   }
-  function creationOptions(pk) {
-    if (typeof PKC.parseCreationOptionsFromJSON === 'function') return PKC.parseCreationOptionsFromJSON(pk);
-    return Object.assign({}, pk, {
-      challenge: fromB64(pk.challenge),
-      user: Object.assign({}, pk.user, { id: fromB64(pk.user.id) }),
-      excludeCredentials: descriptors(pk.excludeCredentials),
-    });
-  }
+  // credJSON is an assertion's JSON (passkey-manage converts a
+  // registration's).
   function credJSON(cred) {
     if (typeof cred.toJSON === 'function') {
       try { return cred.toJSON(); } catch (_) { /* hand conversion below */ }
     }
     const r = cred.response;
-    const out = { id: toB64(cred.rawId), response: { clientDataJSON: toB64(r.clientDataJSON) } };
-    if (r.attestationObject) {
-      out.response.attestationObject = toB64(r.attestationObject);
-      out.response.transports = typeof r.getTransports === 'function' ? r.getTransports() : [];
-    } else {
-      out.response.authenticatorData = toB64(r.authenticatorData);
-      out.response.signature = toB64(r.signature);
-      out.response.userHandle = r.userHandle ? toB64(r.userHandle) : '';
-    }
-    return out;
+    return { id: toB64(cred.rawId), response: {
+      clientDataJSON: toB64(r.clientDataJSON), authenticatorData: toB64(r.authenticatorData),
+      signature: toB64(r.signature), userHandle: r.userHandle ? toB64(r.userHandle) : '',
+    } };
   }
   function assertionBody(cred) {
     const j = credJSON(cred), r = j.response;
@@ -150,15 +138,15 @@
   }
 
   // A browser runs one WebAuthn request at a time, and the autofill one
-  // waits as long as the field is on the page. Every other ceremony
-  // withdraws it first (exclusive), and it starts again only once no
-  // ceremony is running.
+  // waits as long as the field is on the page. Ceremonies run one after
+  // another (chain); each withdraws the autofill request first
+  // (exclusive), which starts again only once none is running or queued.
   let waiting = null;
   let ceremonies = 0;
-  let resumers = [];
+  let chain = Promise.resolve();
   // leaving: a sign-in succeeded and the page is going away, so nothing
-  // restarts the autofill request. field: the autofill field the
-  // waiting request belongs to.
+  // restarts the autofill request and no queued ceremony runs. field: the
+  // one autofill field that owns the conditional request.
   let leaving = false;
   let field = null;
   // A navigation that took the field away withdraws its request.
@@ -171,23 +159,31 @@
     e.name = 'AbortError';
     return e;
   }
-  async function exclusive(fn) {
+  // hold keeps every other ceremony queued until p settles.
+  function hold(p) {
     ceremonies++;
     if (waiting) { waiting.abort(); waiting = null; }
-    try {
-      return await fn();
-    } finally {
-      if (--ceremonies === 0) resumers.splice(0).forEach(function (r) { r(); });
-    }
+    const done = function () { ceremonies--; };
+    const settled = p.then(done, done);
+    chain = chain.then(function () { return settled; });
+    return p;
   }
-  function idle() {
-    return ceremonies ? new Promise(function (r) { resumers.push(r); }) : Promise.resolve();
+  function exclusive(fn) {
+    return hold(chain.then(function () {
+      if (leaving) throw withdrawn();
+      return fn();
+    }));
+  }
+  async function idle() {
+    while (ceremonies) await chain;
   }
 
-  async function signIn(base, conditional) {
-    const opts = await post(base + '/passkey/login/options', conditional ? { autofill: true } : {});
+  async function signIn(base, conditional, input) {
+    const opts = await post(base + '/passkey/login/options' + (conditional ? '?autofill=1' : ''), {});
     const pk = opts.publicKey;
-    if (conditional && ceremonies) throw withdrawn();
+    // The page may have moved on, or a ceremony started, while the
+    // options were on their way.
+    if (conditional && (ceremonies || leaving || field !== input || !input.isConnected)) throw withdrawn();
     const req = { publicKey: requestOptions(pk) };
     let renew = 0;
     if (conditional) {
@@ -210,7 +206,9 @@
     const body = assertionBody(cred);
     let out;
     try {
-      out = await post(base + '/passkey/login', body);
+      // Until this answers, no other sign-in starts.
+      const sent = post(base + '/passkey/login', body);
+      out = await (conditional ? hold(sent) : sent);
     } catch (err) {
       // The server holds no such passkey: tell the password manager, so
       // it stops offering it. The reason code, not the status alone,
@@ -252,23 +250,25 @@
   }
 
   // autofill keeps one conditional sign-in waiting behind the field's
-  // autofill list while the field is on the page. A request that ends
-  // without signing in (it timed out, or the passkey was refused) is
-  // started again, a few times at most.
+  // autofill list while the field is on the page; one field on the page
+  // owns it. A request that ends without signing in (it timed out, or
+  // the passkey was refused) is started again, a few times at most, each
+  // time later, and its error shows once.
   async function autofill(input, base) {
-    if (!supported) return;
+    if (!supported || (field && field !== input && field.isConnected)) return;
+    field = input;
     const c = await caps();
     const ok = c.conditionalGet === true || (c.conditionalGet === undefined &&
       typeof PKC.isConditionalMediationAvailable === 'function' && await PKC.isConditionalMediationAvailable().catch(function () { return false; }));
     if (!ok) return;
     const ac = input.getAttribute('autocomplete') || '';
     if (!/\bwebauthn\b/.test(ac)) input.setAttribute('autocomplete', (ac ? ac + ' ' : 'username ') + 'webauthn');
+    let told = false;
     for (let tries = 0; tries < 5; tries++) {
       await idle();
-      if (leaving || !input.isConnected) return;
-      field = input;
+      if (leaving || !input.isConnected || field !== input) break;
       try {
-        await signIn(base, true);
+        await signIn(base, true, input);
         return;
       } catch (err) {
         if (err && err.name === 'AbortError') {
@@ -276,9 +276,12 @@
           continue;
         }
         const msg = failure(err, 'login');
-        if (msg) toast(msg, 'error');
+        if (msg && !told) toast(msg, 'error');
+        told = told || !!msg;
+        await new Promise(function (r) { setTimeout(r, 1000 << tries); });
       }
     }
+    if (field === input) field = null;
   }
 
   function bind(el) {
@@ -299,7 +302,7 @@
   // one set of JSON helpers and one WebAuthn request at a time.
   NS._passkey = {
     BASE: BASE, supported: supported, caps: caps, say: say, send: send, post: post, toast: toast,
-    requestOptions: requestOptions, creationOptions: creationOptions, credJSON: credJSON,
+    requestOptions: requestOptions, fromB64: fromB64, toB64: toB64, descriptors: descriptors,
     assertionBody: assertionBody, exclusive: exclusive, run: run,
   };
 

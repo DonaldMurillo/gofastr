@@ -48,8 +48,10 @@ type SecurityEvent struct {
 	// forensics; never a credential.
 	Email string
 
-	// emailCanonical marks Email as already folded by the manager's rule.
-	emailCanonical bool
+	// emailCanonical is the value emitSecurity folded Email to by the
+	// manager's rule; a sink wrapper that rewrites Email no longer
+	// matches it, and the SQL sink folds that address by the default.
+	emailCanonical string
 
 	// Remote is the client IP (host part of r.RemoteAddr). XFF is NOT
 	// trusted. See the auth threat-model doc. Empty when the request
@@ -116,7 +118,7 @@ func (m *AuthManager) emitSecurity(ctx context.Context, ev SecurityEvent) {
 	// pseudonym it derives agrees with the battery's keys.
 	if ev.Email != "" {
 		if c, err := m.canonicalizeEmail(ev.Email); err == nil {
-			ev.Email, ev.emailCanonical = c, true
+			ev.Email, ev.emailCanonical = c, c
 		}
 	}
 	deliverAudit(ctx, sink, ev)
@@ -219,7 +221,7 @@ func (s *sqlAuditSink) SecurityEvent(ctx context.Context, ev SecurityEvent) {
 		// AuthConfig.CanonicalizeEmail override. An event handed to the
 		// sink directly is folded by the default here.
 		addr := ev.Email
-		if !ev.emailCanonical {
+		if ev.emailCanonical == "" || ev.emailCanonical != addr {
 			if c, err := CanonicalEmail(addr); err == nil {
 				addr = c
 			}

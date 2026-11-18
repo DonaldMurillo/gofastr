@@ -42,12 +42,23 @@ invariants:
       - test: battery/auth.TestPasskeyListNamesTheAccount
       - test: battery/auth.TestPasskeyKeepsTransportsAndAAGUID
   - id: step-up-needs-an-older-passkey
-    rule: A step-up accepts only a passkey of the session's account whose whole second of creation ended before the session signed in and that is at least ReauthMinAge old; the options call lists only those and answers 403 passkey_too_new when there are none, and the step-up judges the same passkey read its other checks use and refuses any other with the same 403 before its signature is checked.
+    rule: A step-up accepts only a passkey of the session's account whose whole second of creation ended before the session signed in and that is at least ReauthMinAge old; the options call lists only those (filtered into a new slice, leaving the store's), answers 404 when the account has no passkey and 403 passkey_too_new when it has some but none qualifies, and the step-up judges the same passkey read its other checks use and refuses any other with the same 403 before its signature is checked.
     enforced_by:
       - test: battery/auth.TestPasskeyReauthRefusesNewPasskeys
       - test: battery/auth.TestPasskeyReauthNeedsAPasskeyOlderThanTheSession
       - test: battery/auth.TestReauthLookupErrorFailsClosed
       - test: battery/auth.TestSQLPasskeyKeepsPredateOrder
+      - test: battery/auth.TestReauthOptionsLeaveTheStoresSliceAlone
+  - id: registration-is-the-asking-sessions
+    rule: register/options answers, beside the challenge, a binding token whose payload digests the challenge and the asking session, and register completes only with that binding, redeemed by the same session; the challenge's own payload stays the bare user id erasure finds.
+    enforced_by:
+      - test: battery/auth.TestPasskeyRegistrationIsBoundToItsSession
+      - test: battery/auth.TestPasskeyModuleRules
+  - id: step-up-tolerates-a-null-user-handle
+    rule: A step-up, whose options name the account's passkeys, accepts an assertion with an empty userHandle and still refuses one naming another account; a sign-in without a userHandle is refused 400.
+    enforced_by:
+      - test: battery/auth.TestStepUpAcceptsAMissingUserHandle
+      - test: battery/auth.TestPasskeyUserHandleMustMatch
   - id: changes-need-a-step-up
     rule: Once any of the account's passkeys is ReauthMinAge old or has no creation time, register/options and delete refuse unless the body carries an unspent proof this session earned, whenever the session began, answering 403 passkey_signin_required when no passkey can confirm for this session and 403 passkey_reauth_required otherwise; the browser module then runs the step-up and resends with its proof (a silent create gives up instead).
     enforced_by:
@@ -56,15 +67,17 @@ invariants:
       - test: battery/auth.TestZeroSessionTimeIsGated
       - test: battery/auth.TestPasskeyModuleRules
   - id: added-passkey-is-mailed
-    rule: A registered passkey mails the account's address, when the user store does not report it unverified, through PasskeyConfig.NoticeSender a fixed text with the time and kind of passkey and no caller-chosen value, and Init refuses a plugin without NoticeSender outside DevMode unless NoAddedNotice is set.
+    rule: A registered passkey mails the account's address, best effort and off the request, only when the user store reports it verified, through PasskeyConfig.NoticeSender a fixed text with the time and kind of passkey and no caller-chosen value; Init refuses a plugin without NoticeSender outside DevMode unless NoAddedNotice is set, and a NoticeSender whose user store does not implement EmailVerifiedChecker.
     enforced_by:
       - test: battery/auth.TestPasskeyAddedNotifiesTheOwner
       - test: battery/auth.TestAddedNoticeCarriesNoCallerText
       - test: battery/auth.TestAddedNoticeSkipsUnverifiedAddress
+      - test: battery/auth.TestNoticeNeedsAVerifiedChecker
   - id: base-is-a-same-origin-path
     rule: The browser module accepts an auth base only of one or more non-empty path segments, sends no request whose URL resolves to another origin, and follows no redirect.
     enforced_by:
       - test: battery/auth.TestPasskeyBaseStaysSameOrigin
+      - test: battery/auth.TestPasskeyModuleRules
   - id: unverified-refusals-name-no-account
     rule: A sign-in refused before its signature verifies (user handle or signature) records passkey.refused with no user id.
     enforced_by:
@@ -83,7 +96,7 @@ invariants:
       - test: battery/auth.TestReauthProofIsTheSessions
       - test: battery/auth.TestPasskeyBrowserManageAndReauth
   - id: user-tokens-reach-erasure
-    rule: Every passkey token whose payload is a user id (registration, conditional registration, step-up challenge) is removed by erasure from the SQL and in-memory token stores; a step-up proof, whose payload adds a session digest, dies with the session erasure revokes and expires within ReauthTTL.
+    rule: Every passkey token whose payload is a user id (registration, conditional registration, step-up challenge) is removed by erasure from the SQL and in-memory token stores; a step-up proof and a registration binding, whose payloads are session digests naming no user, die with the session erasure revokes and expire within ReauthTTL and ChallengeTTL.
     enforced_by:
       - test: battery/auth.TestEraseCoversConfiguredStoreTables
       - test: battery/auth.TestMemoryStoresReachedByErasure
@@ -92,14 +105,15 @@ invariants:
       - battery/auth/erase.go
       - battery/auth/memory_erase.go
   - id: one-webauthn-request-at-a-time
-    rule: The browser module withdraws its waiting autofill request before any other ceremony starts, starts it again only once no ceremony is running and never after a sign-in succeeded, withdraws it when a navigation took its field away, and renews it 30 seconds before its challenge's timeout.
+    rule: The browser module runs ceremonies one after another, withdraws its waiting autofill request before each, holds every ceremony while an autofill pick's sign-in POST is on its way, starts the request again only once none is running or queued and never after a sign-in succeeded, lets one connected autofill field own it, starts none for a field gone or replaced by the time its options arrive, withdraws it when a navigation took its field away, renews it before its challenge's timeout, retries a failed one with growing waits and shows its error once.
     enforced_by:
       - test: battery/auth.TestPasskeyBrowserManageAndReauth
       - test: battery/auth.TestPasskeyModuleRules
     judge: Does this change start a navigator.credentials call in passkey.js outside exclusive() while an autofill request may be waiting?
   - id: background-reads-spare-the-ceremony-limit
-    rule: GET {base}/passkey/list and POST {base}/passkey/login/options with autofill true have rate limiters of their own, the browser module sends that flag on every autofill request and no other, and it asks for a conditional create at most once per tab session, so what it does without a click does not spend the ceremonies' per-client limit.
+    rule: GET {base}/passkey/list and POST {base}/passkey/login/options?autofill=1 have rate limiters of their own, chosen before the body is read and kept apart under an explicit RateLimit.Scope by the suffixes -list and -autofill, and the browser module sends that query on every autofill request and no other; a quiet create after a password sign-in spends the ceremonies' limit at its options and its registration, so the module asks for one at most once per tab session and never where sessionStorage cannot record it.
     enforced_by:
+      - test: battery/auth.TestPasskeyBackgroundLimitsKeepTheirOwnScope
       - test: battery/auth.TestPasskeyListDoesNotSpendCeremonyLimit
       - test: battery/auth.TestPasskeyAutofillOptionsHaveTheirOwnLimit
       - test: battery/auth.TestPasskeyRoutesAreRateLimited
@@ -115,6 +129,14 @@ invariants:
     enforced_by:
       - test: battery/auth.TestPasskeyModuleRules
       - test: battery/auth.TestPasskeyBrowserManageAndReauth
+  - id: list-signal-is-never-stale
+    rule: The browser module signals a passkey list only when no add or remove started after its read began.
+    enforced_by:
+      - test: battery/auth.TestPasskeyModuleRules
+  - id: step-up-form-submits-as-its-button
+    rule: The step-up module submits its form with the marked submit button as submitter, so the button's formaction, name and value go with the proof.
+    enforced_by:
+      - test: battery/auth.TestPasskeyModuleRules
 decisions:
   - id: keep-hand-rolled-verifier
     date: 2026-11-17

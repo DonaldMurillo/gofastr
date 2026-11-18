@@ -51,11 +51,15 @@
   // passkeys the server still accepts and what the account is called,
   // so a removed passkey stops being offered. Browsers without the
   // Signal API skip it; it never surfaces an error.
+  // gen counts list reads; a change bumps it, so a read that started
+  // before the change never signals its older list.
+  let gen = 0;
   async function signalList(base) {
     if (!P.supported || (typeof PKC.signalAllAcceptedCredentials !== 'function' && typeof PKC.signalCurrentUserDetails !== 'function')) return;
+    const mine = ++gen;
     try {
       const list = await P.send(base + '/passkey/list', { method: 'GET', headers: { 'Accept': 'application/json' } });
-      if (!list || typeof list.rpId !== 'string' || typeof list.userId !== 'string') return;
+      if (mine !== gen || !list || typeof list.rpId !== 'string' || typeof list.userId !== 'string') return;
       if (typeof PKC.signalAllAcceptedCredentials === 'function') {
         await PKC.signalAllAcceptedCredentials({
           rpId: list.rpId, userId: list.userId,
@@ -66,6 +70,26 @@
         await PKC.signalCurrentUserDetails({ rpId: list.rpId, userId: list.userId, name: list.userName, displayName: list.userName });
       }
     } catch (_) { /* advisory only */ }
+  }
+
+  function creationOptions(pk) {
+    if (typeof PKC.parseCreationOptionsFromJSON === 'function') return PKC.parseCreationOptionsFromJSON(pk);
+    return Object.assign({}, pk, {
+      challenge: P.fromB64(pk.challenge),
+      user: Object.assign({}, pk.user, { id: P.fromB64(pk.user.id) }),
+      excludeCredentials: P.descriptors(pk.excludeCredentials),
+    });
+  }
+
+  function createdJSON(cred) {
+    if (typeof cred.toJSON === 'function') {
+      try { return cred.toJSON(); } catch (_) { /* hand conversion below */ }
+    }
+    const r = cred.response;
+    return { id: P.toB64(cred.rawId), response: {
+      clientDataJSON: P.toB64(r.clientDataJSON), attestationObject: P.toB64(r.attestationObject),
+      transports: typeof r.getTransports === 'function' ? r.getTransports() : [],
+    } };
   }
 
   // stepUp runs the step-up ceremony and answers the proof.
@@ -90,15 +114,17 @@
   }
 
   async function create(base, name, conditional) {
+    gen++;
     const opts = await guarded(base + '/passkey/register/options', base, conditional ? { conditional: true } : {}, conditional);
-    const req = { publicKey: P.creationOptions(opts.publicKey) };
+    const req = { publicKey: creationOptions(opts.publicKey) };
     if (conditional) req.mediation = 'conditional';
     const cred = await navigator.credentials.create(req);
-    const j = P.credJSON(cred), r = j.response;
+    const j = createdJSON(cred), r = j.response;
     await post(base + '/passkey/register', {
       name: name, id: j.id, clientDataJSON: r.clientDataJSON, attestationObject: r.attestationObject,
-      transports: Array.isArray(r.transports) ? r.transports : [],
+      transports: Array.isArray(r.transports) ? r.transports : [], binding: opts.binding,
     });
+    gen++;
   }
 
   function nameIn(btn) {
@@ -125,7 +151,9 @@
   async function remove(btn, base) {
     const id = btn.getAttribute('data-passkey-id') || '';
     if (!ID.test(id)) return;
+    gen++;
     await guarded(base + '/passkey/delete', base, { id: id }, false);
+    gen++;
     toast(say('auth.passkey_removed', 'Passkey removed'), 'success');
     await signalList(base);
     refresh();
@@ -143,7 +171,14 @@
       form.appendChild(proof);
     }
     proof.value = value;
-    form.requestSubmit();
+    // Submitted as the button would have: its formaction and its own
+    // name and value go with the proof.
+    if (btn.type === 'submit' && btn.form === form) {
+      btn.disabled = false;
+      form.requestSubmit(btn);
+    } else {
+      form.requestSubmit();
+    }
   }
 
   // upgrade asks for a passkey without a prompt after a password
@@ -159,7 +194,9 @@
     try {
       if (sessionStorage.getItem(key)) return;
       sessionStorage.setItem(key, '1');
-    } catch (_) { /* no storage: ask this once anyway */ }
+    } catch (_) {
+      return; // no storage: every load would ask again, so never ask
+    }
     try { await P.exclusive(function () { return create(base, '', true); }); } catch (_) { /* nothing to tell */ }
   }
 

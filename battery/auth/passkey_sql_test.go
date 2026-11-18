@@ -62,6 +62,9 @@ func passkeyStoreContract(t *testing.T, s PasskeyStore) {
 	if ok, _ := s.RenamePasskey(ctx, "u2", a.ID, "Stolen"); ok {
 		t.Fatal("u2 renamed u1's passkey")
 	}
+	if got, _ := s.GetPasskey(ctx, a.ID); got.Name != a.Name {
+		t.Fatalf("a refused rename changed the name to %q", got.Name)
+	}
 	if ok, err := s.RenamePasskey(ctx, "u1", a.ID, "Work laptop"); !ok || err != nil {
 		t.Fatalf("rename: %v %v", ok, err)
 	}
@@ -167,5 +170,47 @@ func TestAddColumnIfMissingToleratesALostRace(t *testing.T) {
 	}
 	if err := addColumnAfterCheck(ctx, db, "t", "x", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		t.Fatalf("lost race: %v", err)
+	}
+}
+
+// A failed ALTER that is not a lost race (here: a NOT NULL column with no
+// default) is reported, and the column stays absent.
+func TestAddColumnAfterCheckReportsARealFailure(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+	if _, err := db.Exec(`CREATE TABLE t (id TEXT); INSERT INTO t VALUES ('a')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := addColumnAfterCheck(ctx, db, "t", "y", "TEXT NOT NULL"); err == nil {
+		t.Fatal("a refused ALTER reported success")
+	}
+	if has, err := sqliteTableHasColumn(ctx, db, "t", "y"); err != nil || has {
+		t.Fatalf("column y after a refused ALTER: %v %v", has, err)
+	}
+}
+
+// SQLite folds only ASCII letters in identifiers: a column spelled with
+// U+017F is not the ASCII one, and an upper-case spelling is.
+func TestSQLiteColumnCheckFoldsASCIIOnly(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+	if _, err := db.Exec(`CREATE TABLE t (id TEXT, "refresh_leaſe_ms" BIGINT, "Display_Name" TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	if has, _ := sqliteTableHasColumn(ctx, db, "t", "refresh_lease_ms"); has {
+		t.Fatal("a U+017F spelling counted as the ASCII column")
+	}
+	if has, _ := sqliteTableHasColumn(ctx, db, "t", "display_name"); !has {
+		t.Fatal("an ASCII case variant did not count as the column")
 	}
 }

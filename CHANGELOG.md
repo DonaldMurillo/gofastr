@@ -149,7 +149,26 @@ few lines, and link the PR or the docs page for the rest.
 - **BREAKING: the passkey plugin needs a way to email the account owner
   when a passkey is added.** Set `PasskeyConfig.NoticeSender`, or
   `NoAddedNotice: true`; outside `DevMode`, Init refuses neither. The
-  email is fixed text and goes only to a verified address.
+  email is fixed text, sent best effort, and goes only to an address the
+  user store reports verified: with `NoticeSender` set, Init also refuses
+  a user store that does not implement `auth.EmailVerifiedChecker` (the
+  battery's stores do).
+- **BREAKING: `POST /auth/passkey/register` needs the `binding` from its
+  options answer**, and completes only in the session that asked for the
+  options. The battery's browser module sends it; a client of its own
+  copies `binding` from `register/options` into the register body.
+- **The passkey autofill limit is picked by `?autofill=1` on
+  `/auth/passkey/login/options`**, not by a body member, so a blocked
+  client is refused before its body is read. The battery's module sends
+  it. Under an explicit `RateLimit.Scope`, the list and autofill limits
+  use that scope plus `-list` and `-autofill`.
+- **A step-up accepts an assertion with no `userHandle`**, which an
+  authenticator may send when the options name the passkeys.
+- **The passkey module runs one ceremony at a time**, holds the buttons
+  while an autofill sign-in is on its way, lets one autofill field own
+  the request, retries a failing autofill with growing waits and shows
+  its error once, never signals a passkey list read before a change, and
+  submits a step-up form as its button would.
 - **Adding or removing a passkey needs a step-up** once any of the
   account's passkeys is an hour old (`ReauthMinAge`), from every session:
   `register/options` and `delete` answer 403 `passkey_reauth_required`

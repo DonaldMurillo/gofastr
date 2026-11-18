@@ -342,9 +342,19 @@ func NewPasskeyPlugin(cfg PasskeyConfig) *PasskeyPlugin {
 		rp:            webauthnRP{ID: cfg.RPID, Origins: slices.Clone(cfg.Origins)},
 		notices:       newMailQueue("passkey"),
 		limit:         newScopedRateLimiter(*cfg.RateLimit, "passkey"),
-		listLimit:     newScopedRateLimiter(*cfg.RateLimit, "passkey-list"),
-		autofillLimit: newScopedRateLimiter(*cfg.RateLimit, "passkey-autofill"),
+		listLimit:     newScopedRateLimiter(subScope(*cfg.RateLimit, "-list"), "passkey-list"),
+		autofillLimit: newScopedRateLimiter(subScope(*cfg.RateLimit, "-autofill"), "passkey-autofill"),
 	}
+}
+
+// subScope gives a background limiter its own key under a host's
+// explicit RateLimit.Scope, so its requests never spend the ceremonies'
+// budget in a shared Store; an empty Scope keeps the default.
+func subScope(cfg RateLimiterConfig, suffix string) RateLimiterConfig {
+	if cfg.Scope != "" {
+		cfg.Scope += suffix
+	}
+	return cfg
 }
 
 // Name returns the plugin identifier.
@@ -375,6 +385,11 @@ func (p *PasskeyPlugin) Init(mgr *AuthManager) error {
 	}
 	if p.config.NoticeSender == nil && !p.config.NoAddedNotice && !cfg.DevMode {
 		return errors.New("auth: passkey plugin: set PasskeyConfig.NoticeSender so the account owner is emailed when a passkey is added, or PasskeyConfig.NoAddedNotice: true if the app tells them another way")
+	}
+	if p.config.NoticeSender != nil && !p.config.NoAddedNotice {
+		if _, ok := mgr.UserStore().(EmailVerifiedChecker); !ok {
+			return errors.New("auth: passkey plugin: the added-passkey notice goes only to a verified address, and the user store cannot say which are (it does not implement auth.EmailVerifiedChecker); implement it, or set PasskeyConfig.NoAddedNotice: true and tell the owner another way")
+		}
 	}
 	if err := checkTwoFactorURL("passkey", "PasskeyConfig.TwoFactorURL", p.config.TwoFactorURL); err != nil {
 		return err
@@ -529,11 +544,18 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 		writeAuthError(w, r, http.StatusInternalServerError, reasonChallengeCreateFailed)
 		return
 	}
+	// The challenge's payload stays the bare user id, which erasure finds;
+	// a second token ties it to this session, which earned any step-up.
+	binding, err := createPurposeToken(r.Context(), p.challenges, purposePasskeyRegisterSession, registrationBinding(challenge, sess), p.config.ChallengeTTL)
+	if err != nil {
+		writeAuthError(w, r, http.StatusInternalServerError, reasonChallengeCreateFailed)
+		return
+	}
 	params := make([]map[string]any, 0, len(passkeyAlgs))
 	for _, alg := range passkeyAlgs {
 		params = append(params, map[string]any{"type": "public-key", "alg": alg})
 	}
-	writeAuthJSON(w, r, http.StatusOK, map[string]any{"publicKey": map[string]any{
+	writeAuthJSON(w, r, http.StatusOK, map[string]any{"binding": binding, "publicKey": map[string]any{
 		"rp":                 map[string]string{"id": p.rp.ID, "name": p.config.RPName},
 		"user":               map[string]string{"id": b64url.EncodeToString([]byte(sess.UserID)), "name": user.GetEmail(), "displayName": user.GetEmail()},
 		"challenge":          b64url.EncodeToString([]byte(challenge)),
@@ -545,6 +567,12 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 			"residentKey": "required", "requireResidentKey": true, "userVerification": uv,
 		},
 	}})
+}
+
+// registrationBinding is the payload that ties a registration challenge
+// to the session that asked for it.
+func registrationBinding(challenge string, sess *Session) string {
+	return sha256hex(challenge) + "|" + proofPayload(sess)
 }
 
 // optionsBody is an options route's optional JSON body. The options
@@ -651,6 +679,7 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 		ClientDataJSON    string   `json:"clientDataJSON"`
 		AttestationObject string   `json:"attestationObject"`
 		Transports        []string `json:"transports"`
+		Binding           string   `json:"binding"`
 	}
 	if !decodeJSONLimited(w, r, &body) {
 		return
@@ -675,6 +704,12 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	purpose, owner, err := redeemAnyPurpose(r.Context(), p.challenges, challenge, purposePasskeyRegister, purposePasskeyRegisterQuiet)
 	if err != nil || owner != sess.UserID {
 		p.refuse(w, r, sess.UserID, "register", "challenge", errors.New("challenge unknown, spent, expired or another account's"))
+		return
+	}
+	// Only the session that asked for the challenge, and so passed its
+	// step-up, completes it: another session of the account cannot.
+	if bound, err := redeemPurposeToken(r.Context(), p.challenges, purposePasskeyRegisterSession, body.Binding); body.Binding == "" || err != nil || bound != registrationBinding(challenge, sess) {
+		p.refuse(w, r, sess.UserID, "register", "session", errors.New("challenge was issued to another session"))
 		return
 	}
 	res, err := p.rp.verifyAttestation(f["attestationObject"], purpose == purposePasskeyRegisterQuiet)
@@ -755,10 +790,12 @@ func (p *PasskeyPlugin) noticeAdded(r *http.Request, userID string, cred Passkey
 	}
 	// An address nobody proved may be someone else's: mailing it would let
 	// anyone send that person notices from the app's own domain.
-	if vc, ok := us.(EmailVerifiedChecker); ok {
-		if verified, err := vc.IsEmailVerified(r.Context(), userID); err != nil || !verified {
-			return
-		}
+	vc, ok := us.(EmailVerifiedChecker)
+	if !ok {
+		return
+	}
+	if verified, err := vc.IsEmailVerified(r.Context(), userID); err != nil || !verified {
+		return
 	}
 	to, body := u.GetEmail(), passkeyAddedNoticeBody(cred)
 	p.notices.enqueue(r.Context(), to, func(ctx context.Context) {
@@ -794,8 +831,10 @@ func (p *PasskeyPlugin) loginOptionsHandler(w http.ResponseWriter, r *http.Reque
 	if !requireJSON(w, r) {
 		return
 	}
+	// The autofill field says so in the query, so the request is charged
+	// to its own budget before any of its body is read.
 	limit := p.limit
-	if readOptions(w, r).flag("autofill") {
+	if r.URL.Query().Get("autofill") == "1" {
 		limit = p.autofillLimit
 	}
 	if !limit.guard(w, r) {
@@ -916,10 +955,16 @@ func (p *PasskeyPlugin) readAssertion(w http.ResponseWriter, r *http.Request, ce
 	if !decodeJSONLimited(w, r, &body) {
 		return nil, "", false
 	}
-	f, err := decodeB64Fields(map[string]string{
+	fields := map[string]string{
 		"id": body.ID, "clientDataJSON": body.ClientDataJSON, "authenticatorData": body.AuthenticatorData,
 		"signature": body.Signature, "userHandle": body.UserHandle,
-	})
+	}
+	// An account-bound ceremony names its passkeys in allowCredentials,
+	// and then WebAuthn lets the authenticator leave userHandle null.
+	if userID != "" && body.UserHandle == "" {
+		delete(fields, "userHandle")
+	}
+	f, err := decodeB64Fields(fields)
 	if err != nil {
 		writeAuthErrorFor(w, r, http.StatusBadRequest, err, i18n.StatusPhrase(http.StatusBadRequest))
 		return nil, "", false
@@ -961,7 +1006,9 @@ func (p *PasskeyPlugin) checkAssertion(w http.ResponseWriter, r *http.Request, c
 	claimed := owner
 	// The authenticator names the account it holds the passkey for; it
 	// must be the account the passkey was registered to.
-	if string(f["userHandle"]) != cred.UserID {
+	// readAssertion drops an empty handle only for an account-bound
+	// ceremony; any handle given must be the passkey's account.
+	if handle, given := f["userHandle"]; given && string(handle) != cred.UserID {
 		p.refuse(w, r, claimed, ceremony, "user_handle", errors.New("user handle does not match the passkey's account"))
 		return PasskeyCredential{}, false
 	}
@@ -1176,7 +1223,14 @@ func (p *PasskeyPlugin) reauthOptionsHandler(w http.ResponseWriter, r *http.Requ
 		writeAuthError(w, r, http.StatusNotFound, reasonPasskeyNotFound)
 		return
 	}
-	creds = slices.DeleteFunc(creds, func(c PasskeyCredential) bool { return !p.reauthEligible(c, sess, time.Now()) })
+	now := time.Now()
+	var eligible []PasskeyCredential
+	for _, c := range creds {
+		if p.reauthEligible(c, sess, now) {
+			eligible = append(eligible, c)
+		}
+	}
+	creds = eligible
 	if len(creds) == 0 {
 		writeAuthError(w, r, http.StatusForbidden, reasonPasskeyTooNew)
 		return

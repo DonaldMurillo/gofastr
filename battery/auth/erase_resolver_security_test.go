@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -66,16 +67,24 @@ func TestMemoryEraserCanonicalizesOnce(t *testing.T) {
 	}
 	// Init refuses a canonicalizer that is not idempotent; installed past
 	// that check, the eraser must still fold only once.
-	mgr.config.CanonicalizeEmail = once
+	var calls atomic.Int32
+	mgr.config.CanonicalizeEmail = func(s string) (string, error) {
+		calls.Add(1)
+		return once(s)
+	}
 	t.Cleanup(func() { _ = mgr.OnStop(context.Background()) })
 	canonical, _ := once("Ann@Example.com")
 	if _, err := createPurposeToken(ctx, tokens, purposeEmailCode, canonical, time.Hour); err != nil {
 		t.Fatal(err)
 	}
 	eraser := memoryEraser(t, mgr)
+	calls.Store(0)
 	n, err := eraser.EraseResolved(ctx, datexport.ErasedUser{ID: "u1", Identities: map[datexport.IdentityKind]string{datexport.IdentityEmail: canonical}}, false)
 	if err != nil || n != 1 {
 		t.Fatalf("erased %d, %v; want the one code for %q", n, err, canonical)
+	}
+	if c := calls.Load(); c != 0 {
+		t.Fatalf("the eraser ran the canonicalizer %d times over an already resolved email", c)
 	}
 }
 

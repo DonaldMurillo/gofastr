@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -54,15 +55,16 @@ func TestPasskeyUnknownCredentialIs404(t *testing.T) {
 	a := f.enrol(t, "u-alice")
 	a.credID = slices.Clone(a.credID)
 	a.signer = stranger.signer // a known id with the wrong key is a 401, not a 404
-	if w2 := f.login(t, a, "u-alice"); w2.Code != http.StatusUnauthorized {
+	w2 := f.login(t, a, "u-alice")
+	if w2.Code != http.StatusUnauthorized {
 		t.Fatalf("bad signature on a known credential: %d", w2.Code)
 	}
-	var e1, e2 map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &e1)
-	w3 := f.login(t, stranger, "u-alice")
-	_ = json.Unmarshal(w3.Body.Bytes(), &e2)
-	if e1["error"] == nil || e1["error"] != e2["error"] {
-		t.Fatalf("404 body changed between attempts: %v vs %v", e1, e2)
+	// The 404 says what the 401 says: only the status and reason differ.
+	var e404, e401 map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &e404)
+	_ = json.Unmarshal(w2.Body.Bytes(), &e401)
+	if e404["error"] == nil || e404["error"] != e401["error"] {
+		t.Fatalf("404 message %v differs from the 401's %v", e404["error"], e401["error"])
 	}
 }
 
@@ -173,13 +175,18 @@ func TestPasskeyConditionalCreate(t *testing.T) {
 		t.Fatalf("conditional create without UP/UV: %d %s", w.Code, w.Body)
 	}
 
-	loud := newFakeAuthenticator(t, coseAlgES256)
-	loud.flags &^= flagUP | flagUV
-	ch := challengeOf(t, f.do(t, "POST", "/passkey/register/options", cookie, nil))
-	if w := f.do(t, "POST", "/passkey/register", cookie, registerBody(loud, ch)); w.Code != http.StatusBadRequest {
-		t.Fatalf("regular registration without UP/UV: %d", w.Code)
+	// A regular registration needs each flag: one missing is refused.
+	for name, flag := range map[string]byte{"UP": flagUP, "UV": flagUV} {
+		loud := newFakeAuthenticator(t, coseAlgES256)
+		loud.flags &^= flag
+		ch := challengeOf(t, f.do(t, "POST", "/passkey/register/options", cookie, nil))
+		if w := f.do(t, "POST", "/passkey/register", cookie, registerBody(loud, ch)); w.Code != http.StatusBadRequest {
+			t.Fatalf("regular registration without %s: %d", name, w.Code)
+		}
 	}
-	// The passkey a conditional create stored still needs UV to sign in.
+	// The passkey a conditional create stored still needs UV to sign in,
+	// with UP present.
+	quiet.flags |= flagUP
 	if w := f.login(t, quiet, "u-alice"); w.Code != http.StatusUnauthorized {
 		t.Fatalf("sign-in without UV: %d", w.Code)
 	}
@@ -275,17 +282,13 @@ func TestPasskeyReauthProofNeedsFullSession(t *testing.T) {
 	a := f.enrol(t, "u-alice")
 	f.age(t, a)
 	alice := f.session(t, "u-alice")
-	w := f.reauth(t, alice, a, "u-alice")
-	var out struct {
-		Proof string `json:"proof"`
+	proof := f.proof(t, alice, a, "u-alice")
+	// The same session, now pending: only its pending state can refuse
+	// the proof it earned.
+	if err := f.mgr.SessionStore().(*MemorySessionStore).MarkPendingTwoFactor(context.Background(), alice); err != nil {
+		t.Fatal(err)
 	}
-	_ = json.Unmarshal(w.Body.Bytes(), &out)
-	enableTwoFA(t, f, "u-alice")
-	pending := passkeySessionCookie(f.login(t, a, "u-alice"))
-	if pending == "" {
-		t.Fatal("no pending session")
-	}
-	if err := f.redeem(pending, out.Proof); !errors.Is(err, ErrReauthRequired) {
+	if err := f.redeem(alice, proof); !errors.Is(err, ErrReauthRequired) {
 		t.Fatalf("pending session spent a proof: %v", err)
 	}
 }
@@ -298,16 +301,13 @@ func TestPasskeyReauthProofRefusesPreTwoFactorSession(t *testing.T) {
 	a := f.enrol(t, "u-alice")
 	f.age(t, a)
 	old := f.session(t, "u-alice")
-	w := f.reauth(t, f.session(t, "u-alice"), a, "u-alice")
-	var out struct {
-		Proof string `json:"proof"`
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	// The proof is old's own: only the 2FA turned on since can refuse it.
+	proof := f.proof(t, old, a, "u-alice")
 	enableTwoFA(t, f, "u-alice")
 	if w := f.do(t, "POST", "/passkey/reauth/options", old, nil); w.Code != http.StatusForbidden {
 		t.Fatalf("pre-2FA session got step-up options: %d", w.Code)
 	}
-	if err := f.redeem(old, out.Proof); !errors.Is(err, ErrReauthRequired) {
+	if err := f.redeem(old, proof); !errors.Is(err, ErrReauthRequired) {
 		t.Fatalf("pre-2FA session spent a proof: %v", err)
 	}
 }

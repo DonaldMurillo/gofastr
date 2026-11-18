@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -269,13 +268,35 @@ func sqliteTableHasColumn(ctx context.Context, db *sql.DB, table, col string) (b
 		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
 			return false, err
 		}
-		// SQLite column names have no case, and the store creates a
-		// mapped "DisplayName" as displayname.
-		if strings.EqualFold(name, col) {
+		// SQLite folds only ASCII letters in column names, and the store
+		// creates a mapped "DisplayName" as displayname; a name that
+		// differs elsewhere (U+017F for s) is another column.
+		if asciiEqualFold(name, col) {
 			return true, nil
 		}
 	}
 	return false, rows.Err()
+}
+
+// asciiEqualFold is strings.EqualFold over ASCII letters only, as SQLite
+// compares identifiers.
+func asciiEqualFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		x, y := a[i], b[i]
+		if 'A' <= x && x <= 'Z' {
+			x += 'a' - 'A'
+		}
+		if 'A' <= y && y <= 'Z' {
+			y += 'a' - 'A'
+		}
+		if x != y {
+			return false
+		}
+	}
+	return true
 }
 
 // qTable wraps a statement template with the validated table name.

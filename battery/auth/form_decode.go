@@ -236,8 +236,9 @@ func canonicalizeEmailWith(canonicalize func(string) (string, error), email stri
 		// override moves again would miss its own tokens at reset and
 		// erasure, so it is refused here.
 		if again, err := canonicalize(canonical); err != nil || again != canonical {
-			slog.Error("auth: AuthConfig.CanonicalizeEmail is not idempotent; refusing the address",
-				"email_hash", hashedIdentifier(canonical))
+			// No digest of the address: an unkeyed one would let anyone
+			// reading the log confirm a guess.
+			slog.Error("auth: AuthConfig.CanonicalizeEmail is not idempotent; refusing the address")
 			return "", i18n.NewError(reasonInvalidEmail)
 		}
 		return canonical, nil

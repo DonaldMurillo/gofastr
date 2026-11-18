@@ -493,10 +493,17 @@ notes:
   - change: "BREAKING - the passkey plugin refuses to start outside DevMode without a way to email the owner when a passkey is added"
     breaking: true
     hits: review
-    guidance: "Set PasskeyConfig.NoticeSender to your EmailSender, or NoAddedNotice: true if the app tells users another way. AuthConfig.RegisterEmailSender does not stand in for it."
+    guidance: "Set PasskeyConfig.NoticeSender to your EmailSender, or NoAddedNotice: true if the app tells users another way. AuthConfig.RegisterEmailSender does not stand in for it. With NoticeSender set, the user store must implement auth.EmailVerifiedChecker (the battery's stores do), since the notice goes only to a verified address."
     find:
       uses:
         - gofastr/battery/auth.NewPasskeyPlugin
   - change: "Adding or removing a passkey needs a step-up once the account holds a passkey able to confirm one"
     guidance: "The battery's browser module runs the step-up and resends. A client of its own that calls POST /auth/passkey/register/options or /auth/passkey/delete handles 403 passkey_reauth_required by running /auth/passkey/reauth and sending the proof it answers as \"proof\", and 403 passkey_signin_required by asking the user to sign in again with a passkey."
     nodetect: "the answer depends on the account's passkeys at runtime; no host source spelling distinguishes an affected call"
+  - change: "BREAKING - POST /auth/passkey/register needs the binding its register/options answer carried, and completes only in the session that asked for those options"
+    breaking: true
+    guidance: "The battery's browser module sends it. A client of its own copies \"binding\" from the register/options answer into the register body, from the same session."
+    nodetect: "the register body is built in client JavaScript, which the scanner does not parse"
+  - change: "The passkey autofill limit is chosen by ?autofill=1 on POST /auth/passkey/login/options, not by an autofill body member"
+    guidance: "The battery's browser module sends the query. A client of its own that sent {\"autofill\": true} adds ?autofill=1 to the URL instead; without it the request counts against the ceremonies' limit."
+    nodetect: "the request is built in client JavaScript, which the scanner does not parse"

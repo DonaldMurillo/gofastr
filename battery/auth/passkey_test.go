@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -109,6 +111,7 @@ func challengeOf(t *testing.T, w *httptest.ResponseRecorder) string {
 		t.Fatalf("options: %d %s", w.Code, w.Body)
 	}
 	var out struct {
+		Binding   string `json:"binding"`
 		PublicKey struct {
 			Challenge string `json:"challenge"`
 		} `json:"publicKey"`
@@ -120,7 +123,20 @@ func challengeOf(t *testing.T, w *httptest.ResponseRecorder) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if out.Binding != "" {
+		bindings.Store(string(ch), out.Binding)
+	}
 	return string(ch)
+}
+
+// bindings holds each registration challenge's session binding, as the
+// browser module keeps it from the options answer to the register POST.
+var bindings sync.Map
+
+func bindingOf(challenge string) string {
+	b, _ := bindings.Load(challenge)
+	s, _ := b.(string)
+	return s
 }
 
 func registerBody(a *fakeAuthenticator, challenge string) map[string]string {
@@ -128,6 +144,7 @@ func registerBody(a *fakeAuthenticator, challenge string) map[string]string {
 	return map[string]string{
 		"name": "Laptop", "id": b64url.EncodeToString(a.credID),
 		"clientDataJSON": b64url.EncodeToString(cdj), "attestationObject": b64url.EncodeToString(att),
+		"binding": bindingOf(challenge),
 	}
 }
 
@@ -691,8 +708,10 @@ func TestPasskeyListDoesNotSpendCeremonyLimit(t *testing.T) {
 	f.pk.limit = newScopedRateLimiter(tight, "passkey")
 	f.pk.listLimit = newScopedRateLimiter(RateLimiterConfig{MaxAttempts: 50, Window: time.Minute, BlockDuration: time.Minute}, "passkey-list")
 	alice := f.session(t, "u-alice")
-	for range 5 {
-		f.do(t, "GET", "/passkey/list", alice, nil)
+	for i := range 5 {
+		if w := f.do(t, "GET", "/passkey/list", alice, nil); w.Code != http.StatusOK {
+			t.Fatalf("list read %d: %d", i, w.Code)
+		}
 	}
 	if w := f.do(t, "POST", "/passkey/login/options", "", nil); w.Code != http.StatusOK {
 		t.Fatalf("sign-in options after five list reads: %d", w.Code)
@@ -707,16 +726,31 @@ func TestPasskeyAutofillOptionsHaveTheirOwnLimit(t *testing.T) {
 	tight := RateLimiterConfig{MaxAttempts: 2, Window: time.Minute, BlockDuration: time.Minute}
 	f.pk.limit = newScopedRateLimiter(tight, "passkey")
 	f.pk.autofillLimit = newScopedRateLimiter(RateLimiterConfig{MaxAttempts: 4, Window: time.Minute, BlockDuration: time.Minute}, "passkey-autofill")
-	autofill := map[string]bool{"autofill": true}
+	const autofill = "/passkey/login/options?autofill=1"
 	for range 4 {
-		if w := f.do(t, "POST", "/passkey/login/options", "", autofill); w.Code != http.StatusOK {
+		if w := f.do(t, "POST", autofill, "", nil); w.Code != http.StatusOK {
 			t.Fatalf("autofill options: %d", w.Code)
 		}
 	}
-	if w := f.do(t, "POST", "/passkey/login/options", "", autofill); w.Code != http.StatusTooManyRequests {
-		t.Fatalf("fifth autofill options: %d, want 429", w.Code)
+	// Refused before a byte of the body is read.
+	body := &readSpy{}
+	req := httptest.NewRequest("POST", "https://example.com/auth"+autofill, body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	w := httptest.NewRecorder()
+	f.r.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests || body.read {
+		t.Fatalf("fifth autofill options: %d (body read %v), want 429 before the body", w.Code, body.read)
 	}
 	if w := f.do(t, "POST", "/passkey/login/options", "", nil); w.Code != http.StatusOK {
 		t.Fatalf("button sign-in options after autofill used its own budget: %d", w.Code)
 	}
+}
+
+// readSpy is a request body that records whether anything read it.
+type readSpy struct{ read bool }
+
+func (r *readSpy) Read(p []byte) (int, error) {
+	r.read = true
+	return 0, io.EOF
 }

@@ -48,8 +48,13 @@ func TestReauthLookupErrorFailsClosed(t *testing.T) {
 	rch := challengeOf(t, f.do(t, "POST", "/passkey/reauth/options", alice, nil))
 	flaky.armed.Store(true)
 	w := f.do(t, "POST", "/passkey/reauth", alice, loginBody(fresh, rch, "u-alice"))
-	if w.Code == http.StatusOK {
-		t.Fatalf("a passkey registered in this session confirmed a step-up after one lookup error: %s", w.Body)
+	// The failure was armed, the lookup took it, and the handler answered
+	// with the lookup failure and no proof.
+	if flaky.armed.Load() {
+		t.Fatal("the reauth never reached the lookup the failure was armed for")
+	}
+	if w.Code != http.StatusInternalServerError || strings.Contains(w.Body.String(), `"proof"`) {
+		t.Fatalf("a passkey registered in this session after one lookup error: %d %s, want 500 with no proof", w.Code, w.Body)
 	}
 }
 
@@ -122,10 +127,15 @@ func TestAnonymousRefusalNamesNoAccount(t *testing.T) {
 	if w := f.login(t, a, "u-bob"); w.Code != http.StatusUnauthorized {
 		t.Fatalf("wrong user handle: %d", w.Code)
 	}
+	reasons := map[string]bool{}
 	for _, ev := range f.sink.findByKindAll("passkey.refused") {
 		if ev.UserID != "" {
 			t.Fatalf("an unverified sign-in wrote a refused event for %q (reason %s)", ev.UserID, ev.Meta["reason"])
 		}
+		reasons[ev.Meta["reason"]] = true
+	}
+	if !reasons["signature"] || !reasons["user_handle"] {
+		t.Fatalf("refused events %v, want one for the signature and one for the handle", reasons)
 	}
 }
 

@@ -82,7 +82,10 @@ func TestAddedNoticeCarriesNoCallerText(t *testing.T) {
 	if w := f.do(t, "POST", "/passkey/register", s, body); w.Code != http.StatusCreated {
 		t.Fatalf("register: %d %s", w.Code, w.Body)
 	}
-	_, got := f.notices.snapshot()
+	to, got := f.notices.snapshot()
+	if to != "alice@example.com" {
+		t.Fatalf("no notice delivered (to %q): its body cannot be checked", to)
+	}
 	if strings.Contains(got, "evil.example") || strings.Contains(got, "<a") {
 		t.Fatalf("the added-passkey notice carries caller-chosen text: %q", got)
 	}

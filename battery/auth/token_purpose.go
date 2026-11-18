@@ -55,6 +55,10 @@ const (
 	// is dead with it and expires within PasskeyConfig.ReauthTTL.
 	purposePasskeyReauth tokenPurpose = "passkeyreauth"
 	purposePasskeyProof  tokenPurpose = "passkeyproof"
+	// purposePasskeyRegisterSession ties a registration challenge to the
+	// session that asked for it. Its payload is a digest of the challenge
+	// and the session, no user id, and it lives ChallengeTTL.
+	purposePasskeyRegisterSession tokenPurpose = "passkeyregsess"
 )
 
 // userPurposes are the purposes whose payload is a user id: erasure

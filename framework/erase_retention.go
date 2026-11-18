@@ -23,6 +23,8 @@ const eraseIdentitiesTable = "gofastr_erase_identities"
 
 // eraseIdentitiesDDL creates eraseIdentitiesTable. An operator whose
 // runtime role may not CREATE runs it once ahead of time.
+//
+//gofastr:allow(GOFASTR1415) erasure's own bookkeeping, outside every export and erase plane on purpose: a restore must not bring an erased user's email back; rows live keptIdentitiesFor at most (primitives/app/privacy)
 const eraseIdentitiesDDL = `CREATE TABLE IF NOT EXISTS ` + eraseIdentitiesTable + ` (tenant TEXT NOT NULL DEFAULT '', user_id TEXT NOT NULL, store TEXT NOT NULL, kind BIGINT NOT NULL, value TEXT NOT NULL, expires_at BIGINT NOT NULL, PRIMARY KEY (tenant, user_id, store, kind))`
 
 // keptIdentitiesFor is how long a failed store's identities are kept,
@@ -132,7 +134,7 @@ func (a *App) identityHeldByOther(ctx context.Context, dialect migrate.Dialect, 
 		}
 		// Without the resolver's own fold, a spelling that differs only
 		// in case counts as held: withholding is the safe side.
-		if c := v.String; strings.EqualFold(c, val) || (r.Canonicalize != nil && r.Canonicalize(c) == val) {
+		if c := v.String; strings.EqualFold(c, val) || foldsTo(r.Canonicalize, c, val) {
 			return true, nil
 		}
 	}
@@ -160,7 +162,6 @@ func (a *App) updateRetention(ctx context.Context, dialect migrate.Dialect, tena
 		if len(fresh) == 0 {
 			return nil
 		}
-		//gofastr:allow(GOFASTR1415) erasure's own bookkeeping, outside every export and erase plane on purpose: a restore must not bring an erased user's email back; rows live keptIdentitiesFor at most (primitives/app/privacy)
 		if _, err := a.DB.ExecContext(ctx, eraseIdentitiesDDL); err != nil {
 			return err
 		}
@@ -236,4 +237,18 @@ func (a *App) startRetentionSweep(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// foldsTo reports whether canonicalize maps v to want; a panic in the
+// host's callback reads as a match, the side that withholds the value.
+func foldsTo(canonicalize func(string) string, v, want string) (match bool) {
+	if canonicalize == nil {
+		return false
+	}
+	defer func() {
+		if recover() != nil {
+			match = true
+		}
+	}()
+	return canonicalize(v) == want
 }
