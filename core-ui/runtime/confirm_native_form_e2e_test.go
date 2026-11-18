@@ -102,6 +102,33 @@ func TestConfirmNativeFormAcceptSubmits(t *testing.T) {
 	}
 }
 
+// driveConfirmFixture loads a confirm fixture (form body only; the
+// doctype/script wrapper is added) with the given accept/deny confirm
+// stub, clicks #b, and returns the recorded confirm calls and prompted
+// messages. The caller keeps its own POST-hit assertions via routes.
+func driveConfirmFixture(t *testing.T, accept bool, formBody string, routes map[string]http.HandlerFunc) (int, []string) {
+	t.Helper()
+	base := startPollServer(t, `<!doctype html><html><head></head><body>
+`+formBody+`
+<script src="/__gofastr/runtime.js"></script></body></html>`, routes)
+
+	ctx := chromedptest.Context(t)
+	var confirmCalls int
+	var confirmMsgs []string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		chromedp.WaitVisible(`#b`, chromedp.ByID),
+		chromedp.Evaluate(confirmStubJS(accept), nil),
+		chromedp.Click(`#b`, chromedp.ByID),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(`window.__confirmCalls`, &confirmCalls),
+		chromedp.Evaluate(`window.__confirmMsgs`, &confirmMsgs),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	return confirmCalls, confirmMsgs
+}
+
 // TestConfirmFormLevelMsgGates: the attribute on the FORM, with a bare
 // submit button, gates too. Every other fixture here puts it on the button,
 // and the bridge passing opts.confirmed means dispatchRPC no longer reads the
@@ -110,32 +137,17 @@ func TestConfirmNativeFormAcceptSubmits(t *testing.T) {
 // form-level placement.
 func TestConfirmFormLevelMsgGates(t *testing.T) {
 	var hits atomic.Int32
-	base := startPollServer(t, `<!doctype html><html><head></head><body>
-<form id="f" method="post" action="/act" data-cui-confirm="form-msg">
+	confirmCalls, confirmMsgs := driveConfirmFixture(t, false,
+		`<form id="f" method="post" action="/act" data-cui-confirm="form-msg">
 <button id="b" type="submit">Go</button>
-</form>
-<script src="/__gofastr/runtime.js"></script></body></html>`, map[string]http.HandlerFunc{
-		"/act": func(w http.ResponseWriter, _ *http.Request) {
-			hits.Add(1)
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprint(w, `<span id="done">hit</span>`)
-		},
-	})
-
-	ctx := chromedptest.Context(t)
-	var confirmCalls int
-	var confirmMsgs []string
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/"),
-		chromedp.WaitVisible(`#b`, chromedp.ByID),
-		chromedp.Evaluate(confirmStubJS(false), nil),
-		chromedp.Click(`#b`, chromedp.ByID),
-		chromedp.Sleep(700*time.Millisecond),
-		chromedp.Evaluate(`window.__confirmCalls`, &confirmCalls),
-		chromedp.Evaluate(`window.__confirmMsgs`, &confirmMsgs),
-	); err != nil {
-		t.Fatalf("chromedp: %v", err)
-	}
+</form>`,
+		map[string]http.HandlerFunc{
+			"/act": func(w http.ResponseWriter, _ *http.Request) {
+				hits.Add(1)
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				fmt.Fprint(w, `<span id="done">hit</span>`)
+			},
+		})
 	if confirmCalls != 1 || len(confirmMsgs) != 1 || confirmMsgs[0] != "form-msg" {
 		t.Errorf("confirm prompted with %v (%d call(s)), want exactly [form-msg] — a form-level message must gate a bare submit button", confirmMsgs, confirmCalls)
 	}
@@ -149,32 +161,17 @@ func TestConfirmFormLevelMsgGates(t *testing.T) {
 // form can carry several submit buttons of different destructive weight.
 func TestConfirmSubmitterBeatsFormMsg(t *testing.T) {
 	var hits atomic.Int32
-	base := startPollServer(t, `<!doctype html><html><head></head><body>
-<form id="f" method="post" action="/act" data-cui-confirm="form-msg">
+	confirmCalls, confirmMsgs := driveConfirmFixture(t, false,
+		`<form id="f" method="post" action="/act" data-cui-confirm="form-msg">
 <button id="b" type="submit" data-cui-confirm="button-msg">Go</button>
-</form>
-<script src="/__gofastr/runtime.js"></script></body></html>`, map[string]http.HandlerFunc{
-		"/act": func(w http.ResponseWriter, _ *http.Request) {
-			hits.Add(1)
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprint(w, `<span id="done">hit</span>`)
-		},
-	})
-
-	ctx := chromedptest.Context(t)
-	var confirmCalls int
-	var confirmMsgs []string
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/"),
-		chromedp.WaitVisible(`#b`, chromedp.ByID),
-		chromedp.Evaluate(confirmStubJS(false), nil),
-		chromedp.Click(`#b`, chromedp.ByID),
-		chromedp.Sleep(700*time.Millisecond),
-		chromedp.Evaluate(`window.__confirmCalls`, &confirmCalls),
-		chromedp.Evaluate(`window.__confirmMsgs`, &confirmMsgs),
-	); err != nil {
-		t.Fatalf("chromedp: %v", err)
-	}
+</form>`,
+		map[string]http.HandlerFunc{
+			"/act": func(w http.ResponseWriter, _ *http.Request) {
+				hits.Add(1)
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				fmt.Fprint(w, `<span id="done">hit</span>`)
+			},
+		})
 	if confirmCalls != 1 || len(confirmMsgs) != 1 || confirmMsgs[0] != "button-msg" {
 		t.Errorf("confirm prompted with %v (%d call(s)), want exactly [button-msg] — the submitter's message must win over the form's", confirmMsgs, confirmCalls)
 	}
@@ -190,32 +187,17 @@ func TestConfirmSubmitterBeatsFormMsg(t *testing.T) {
 // prompt with the form's message.
 func TestConfirmRPCFormPromptsOnce(t *testing.T) {
 	var hits atomic.Int32
-	base := startPollServer(t, `<!doctype html><html><head></head><body>
-<form id="f" method="post" action="/rpc/echo" data-cui-rpc="/rpc/echo" data-cui-confirm="form-msg">
+	confirmCalls, confirmMsgs := driveConfirmFixture(t, true,
+		`<form id="f" method="post" action="/rpc/echo" data-cui-rpc="/rpc/echo" data-cui-confirm="form-msg">
 <button id="b" type="submit" data-cui-confirm="button-msg">Go</button>
-</form>
-<script src="/__gofastr/runtime.js"></script></body></html>`, map[string]http.HandlerFunc{
-		"/rpc/echo": func(w http.ResponseWriter, _ *http.Request) {
-			hits.Add(1)
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{"ok":true}`)
-		},
-	})
-
-	ctx := chromedptest.Context(t)
-	var confirmCalls int
-	var confirmMsgs []string
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/"),
-		chromedp.WaitVisible(`#b`, chromedp.ByID),
-		chromedp.Evaluate(confirmStubJS(true), nil),
-		chromedp.Click(`#b`, chromedp.ByID),
-		chromedp.Sleep(700*time.Millisecond),
-		chromedp.Evaluate(`window.__confirmCalls`, &confirmCalls),
-		chromedp.Evaluate(`window.__confirmMsgs`, &confirmMsgs),
-	); err != nil {
-		t.Fatalf("chromedp: %v", err)
-	}
+</form>`,
+		map[string]http.HandlerFunc{
+			"/rpc/echo": func(w http.ResponseWriter, _ *http.Request) {
+				hits.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"ok":true}`)
+			},
+		})
 	if confirmCalls != 1 || len(confirmMsgs) != 1 || confirmMsgs[0] != "button-msg" {
 		t.Errorf("confirm prompted with %v (%d call(s)), want exactly [button-msg] — the RPC submit must not double-prompt", confirmMsgs, confirmCalls)
 	}

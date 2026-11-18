@@ -2472,25 +2472,33 @@ func TestBrowser_NoAgentChipOpensSettings(t *testing.T) {
 // World-snapshot pill links to /kiln/world for IR inspection.
 func TestBrowser_SnapshotPillLinksToWorld(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx := chromedptest.Context(t)
+	attrs := attrValues(t, urlBase, `.kiln-panel-snapshot`, "href", "target")
+	if attrs[0] != "/kiln/world" {
+		t.Errorf("snapshot href = %q, want /kiln/world", attrs[0])
+	}
+	if attrs[1] != "_blank" {
+		t.Errorf("snapshot target = %q, want _blank", attrs[1])
+	}
+}
 
+// attrValues loads the kiln page, waits for sel to appear and returns the
+// values of sel's named attributes, in order.
+func attrValues(t *testing.T, urlBase, sel string, attrs ...string) []string {
+	t.Helper()
+	ctx := chromedptest.Context(t)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
-		chromedp.WaitVisible(`.kiln-panel-snapshot`, chromedp.ByQuery),
+		chromedp.WaitVisible(sel, chromedp.ByQuery),
 	); err != nil {
 		t.Fatal(err)
 	}
-	var href, target string
-	_ = chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.kiln-panel-snapshot').getAttribute('href')`, &href),
-		chromedp.Evaluate(`document.querySelector('.kiln-panel-snapshot').getAttribute('target')`, &target),
-	)
-	if href != "/kiln/world" {
-		t.Errorf("snapshot href = %q, want /kiln/world", href)
+	out := make([]string, len(attrs))
+	for i, name := range attrs {
+		_ = chromedp.Run(ctx,
+			chromedp.Evaluate(`document.querySelector('`+sel+`').getAttribute('`+name+`')`, &out[i]),
+		)
 	}
-	if target != "_blank" {
-		t.Errorf("snapshot target = %q, want _blank", target)
-	}
+	return out
 }
 
 // In-flight indicator splits the tool count into done vs running so
@@ -2834,24 +2842,12 @@ func TestBrowser_PlanCardModifyPrefillsInput(t *testing.T) {
 // Chat log uses aria-live so screen readers announce new messages.
 func TestBrowser_ChatLogIsAriaLive(t *testing.T) {
 	urlBase, _, _ := startKilnExt(t)
-	ctx := chromedptest.Context(t)
-
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(urlBase+"/"),
-		chromedp.WaitVisible(`.kiln-log-wrap`, chromedp.ByQuery),
-	); err != nil {
-		t.Fatal(err)
+	attrs := attrValues(t, urlBase, `.kiln-log-wrap`, "role", "aria-live")
+	if attrs[0] != "log" {
+		t.Errorf("expected role=log, got %q", attrs[0])
 	}
-	var role, ariaLive string
-	_ = chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('.kiln-log-wrap').getAttribute('role')`, &role),
-		chromedp.Evaluate(`document.querySelector('.kiln-log-wrap').getAttribute('aria-live')`, &ariaLive),
-	)
-	if role != "log" {
-		t.Errorf("expected role=log, got %q", role)
-	}
-	if ariaLive != "polite" {
-		t.Errorf("expected aria-live=polite, got %q", ariaLive)
+	if attrs[1] != "polite" {
+		t.Errorf("expected aria-live=polite, got %q", attrs[1])
 	}
 }
 

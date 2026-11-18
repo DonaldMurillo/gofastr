@@ -146,6 +146,17 @@ func (s *Server) listOffset(req Request, method string) (int, error) {
 	return s.decodeListCursor(method, params.Cursor)
 }
 
+// requiredArray answers xs, or an empty slice when xs is nil: a nil
+// slice encodes as null, and these arrays are required by the wire
+// schema. The nil check makes every return proven, so calls to it are
+// never a nullarray finding (contentArray is the []Content spelling).
+func requiredArray[T any](xs []T) []T {
+	if xs == nil {
+		return []T{}
+	}
+	return xs
+}
+
 // pageList cuts one page from items at offset and returns it with the
 // next cursor ("" on the last page). offset must already be validated
 // (listOffset rejects negative and forged values). An offset at or past

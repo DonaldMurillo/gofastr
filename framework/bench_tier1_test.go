@@ -408,34 +408,23 @@ func BenchmarkTier1_StreamingVsBuffered(b *testing.B) {
 
 		const limit = 100 // ceiling enforced by parsePagination
 
-		b.Run("buffered", func(b *testing.B) {
-			req := benchAuthed(b, http.MethodGet,
-				fmt.Sprintf("/posts?limit=%d", limit), nil)
-			b.ResetTimer()
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				rec := httptest.NewRecorder()
-				app.Router().ServeHTTP(rec, req)
-				if rec.Code != http.StatusOK {
-					b.Fatalf("status %d", rec.Code)
+		for _, mode := range []struct{ name, query string }{
+			{"buffered", fmt.Sprintf("/posts?limit=%d", limit)},
+			{"streaming", fmt.Sprintf("/posts?limit=%d&stream=true", limit)},
+		} {
+			b.Run(mode.name, func(b *testing.B) {
+				req := benchAuthed(b, http.MethodGet, mode.query, nil)
+				b.ResetTimer()
+				b.ReportAllocs()
+				for b.Loop() {
+					rec := httptest.NewRecorder()
+					app.Router().ServeHTTP(rec, req)
+					if rec.Code != http.StatusOK {
+						b.Fatalf("status %d", rec.Code)
+					}
+					b.ReportMetric(float64(rec.Body.Len()), "response_bytes")
 				}
-				b.ReportMetric(float64(rec.Body.Len()), "response_bytes")
-			}
-		})
-
-		b.Run("streaming", func(b *testing.B) {
-			req := benchAuthed(b, http.MethodGet,
-				fmt.Sprintf("/posts?limit=%d&stream=true", limit), nil)
-			b.ResetTimer()
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				rec := httptest.NewRecorder()
-				app.Router().ServeHTTP(rec, req)
-				if rec.Code != http.StatusOK {
-					b.Fatalf("status %d", rec.Code)
-				}
-				b.ReportMetric(float64(rec.Body.Len()), "response_bytes")
-			}
-		})
+			})
+		}
 	})
 }

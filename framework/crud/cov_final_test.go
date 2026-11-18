@@ -116,17 +116,8 @@ func TestBatchCreate_EmptyAndTooBig(t *testing.T) {
 		t.Errorf("empty batch = %d, want 400", rec.Code)
 	}
 	// Build > MaxBatchSize items.
-	var sb strings.Builder
-	sb.WriteString(`{"items":[`)
-	for i := 0; i <= MaxBatchSize; i++ {
-		if i > 0 {
-			sb.WriteString(",")
-		}
-		sb.WriteString(`{"title":"x"}`)
-	}
-	sb.WriteString(`]}`)
 	rec = httptest.NewRecorder()
-	ch.BatchCreate()(rec, batchReq("POST", sb.String()))
+	ch.BatchCreate()(rec, batchReq("POST", oversizedBatchBody("items", `{"title":"x"}`)))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("oversized batch = %d, want 400", rec.Code)
 	}

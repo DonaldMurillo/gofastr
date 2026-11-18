@@ -67,23 +67,7 @@ func toastUndo(t *testing.T, rec *httptest.ResponseRecorder) *interactive.ToastA
 // liveNoteIDs reads the notes not in the trash, sorted.
 func liveNoteIDs(t *testing.T, x *testUI) []string {
 	t.Helper()
-	rows, err := x.db.Query(`SELECT id FROM notes WHERE deleted_at IS NULL ORDER BY id`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			t.Fatal(err)
-		}
-		out = append(out, id)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return out
+	return sortedIDs(t, x.db, `SELECT id FROM notes WHERE deleted_at IS NULL ORDER BY id`)
 }
 
 func deleteBody(ids ...string) map[string]any {

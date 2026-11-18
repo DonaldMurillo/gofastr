@@ -250,7 +250,11 @@ func TestRepairOwnerFKKeepsOtherForeignKeys(t *testing.T) {
 // off by necessity, on a pooled connection that goes on to serve ordinary
 // writes; leaving it off there would silently disable the feature the whole
 // v0.67 change exists to turn on.
-func TestRepairRestoresForeignKeyEnforcement(t *testing.T) {
+// repairedTasksDB is the fixture both pragma-restore tests share: a pooled
+// connection to the stale owner-FK schema after Find and Repair have run on
+// it, so each test only asserts the pragma the repair must have restored.
+func repairedTasksDB(t *testing.T) *sql.DB {
+	t.Helper()
 	db := legacyDB(t,
 		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
 		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT, FOREIGN KEY (user_id) REFERENCES users(id))`,
@@ -263,6 +267,11 @@ func TestRepairRestoresForeignKeyEnforcement(t *testing.T) {
 	if err := RepairStaleOwnerForeignKeys(ctx, db, stale); err != nil {
 		t.Fatal(err)
 	}
+	return db
+}
+
+func TestRepairRestoresForeignKeyEnforcement(t *testing.T) {
+	db := repairedTasksDB(t)
 	// MaxOpenConns(1), so this is the very connection the rebuild ran on.
 	var on int
 	if err := db.QueryRow("PRAGMA foreign_keys").Scan(&on); err != nil {
@@ -693,18 +702,7 @@ func TestRepairSurvivesADependentView(t *testing.T) {
 // way out just like foreign_keys. Leaving it on is a quieter defect than an
 // unenforced key: nothing fails until someone renames a table.
 func TestRepairRestoresLegacyAlterTable(t *testing.T) {
-	db := legacyDB(t,
-		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
-		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT, FOREIGN KEY (user_id) REFERENCES users(id))`,
-	)
-	ctx := context.Background()
-	stale, err := FindStaleOwnerForeignKeys(ctx, db, testReg{"tasks": taskEntity(t)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := RepairStaleOwnerForeignKeys(ctx, db, stale); err != nil {
-		t.Fatal(err)
-	}
+	db := repairedTasksDB(t)
 	var legacy int
 	if err := db.QueryRow("PRAGMA legacy_alter_table").Scan(&legacy); err != nil {
 		t.Fatal(err)

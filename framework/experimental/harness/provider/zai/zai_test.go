@@ -85,15 +85,7 @@ func TestChatStreamingParse(t *testing.T) {
 // TestChatHTTPError401: the shared client owns the 401 path; what is this
 // adapter's own is the provider name the error carries.
 func TestChatHTTPError401(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte("invalid key"))
-	}))
-	defer srv.Close()
-
-	p := &Provider{APIKey: "bad", BaseURL: srv.URL}
-	_, err := p.Chat(context.Background(), &provider.Request{Model: "m"})
-	if want := "zai: HTTP 401: invalid key"; err == nil || err.Error() != want {
-		t.Fatalf("err = %v, want %q", err, want)
-	}
+	providertest.AssertChatHTTPError401(t, func(baseURL string) provider.Provider {
+		return &Provider{APIKey: "bad", BaseURL: baseURL}
+	}, "zai")
 }

@@ -120,18 +120,59 @@ func wantFallBackSteps(t *testing.T, zone, spec string, base time.Time, want []i
 	}
 }
 
-// Two firing minutes in the repeated hour: "0,30 1" fires at 01:00 EDT and
-// 01:30 EDT, and the repeat of 01:00 (EST) must not fire. The heartbeat
-// after the 01:30 fire used to remember only 01:30 and fire 01:00 again.
-func TestCronFallBackTwoMinutesStepwise(t *testing.T) {
-	base := time.Date(2026, 10, 31, 16, 0, 0, 0, time.UTC)
-	wantFallBackSteps(t, "America/New_York", "0,30 1 * * *", base, []int{1, 1, 0, 0, 1},
-		time.Date(2026, 11, 1, 5, 0, 0, 0, time.UTC),  // 01:00 EDT
-		time.Date(2026, 11, 1, 5, 30, 0, 0, time.UTC), // 01:30 EDT
-		time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC),  // 01:00 EST, repeat
-		time.Date(2026, 11, 1, 6, 30, 0, 0, time.UTC), // 01:30 EST, repeat
-		time.Date(2026, 11, 2, 6, 0, 0, 0, time.UTC),  // next day, 01:00 EST
-	)
+// Stepwise fall-back scenarios, table-driven over wantFallBackSteps: the
+// repeated hour must not refire an already-fired minute, whether the
+// shift is a full hour or half an hour.
+func TestCronFallBackStepwiseScenarios(t *testing.T) {
+	scenarios := []struct {
+		name  string
+		zone  string
+		spec  string
+		base  time.Time
+		want  []int
+		steps []time.Time
+	}{
+		{
+			// Two firing minutes in the repeated hour: "0,30 1" fires at
+			// 01:00 EDT and 01:30 EDT, and the repeat of 01:00 (EST) must
+			// not fire. The heartbeat after the 01:30 fire used to
+			// remember only 01:30 and fire 01:00 again.
+			name: "two firing minutes in the repeated hour",
+			zone: "America/New_York",
+			spec: "0,30 1 * * *",
+			base: time.Date(2026, 10, 31, 16, 0, 0, 0, time.UTC),
+			want: []int{1, 1, 0, 0, 1},
+			steps: []time.Time{
+				time.Date(2026, 11, 1, 5, 0, 0, 0, time.UTC),  // 01:00 EDT
+				time.Date(2026, 11, 1, 5, 30, 0, 0, time.UTC), // 01:30 EDT
+				time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC),  // 01:00 EST, repeat
+				time.Date(2026, 11, 1, 6, 30, 0, 0, time.UTC), // 01:30 EST, repeat
+				time.Date(2026, 11, 2, 6, 0, 0, 0, time.UTC),  // next day, 01:00 EST
+			},
+		},
+		{
+			// Lord Howe falls back by 30 minutes (02:00 +11 -> 01:30
+			// +10:30) on 2026-04-05, so only 01:30-01:59 repeats and
+			// 02:00 right after it fires.
+			name: "half-hour shift (Lord Howe)",
+			zone: "Australia/Lord_Howe",
+			spec: "0,30,45 1,2 * * *",
+			base: time.Date(2026, 4, 4, 14, 10, 0, 0, time.UTC),
+			want: []int{1, 1, 0, 0, 1},
+			steps: []time.Time{
+				time.Date(2026, 4, 4, 14, 30, 0, 0, time.UTC), // 01:30 +11
+				time.Date(2026, 4, 4, 14, 45, 0, 0, time.UTC), // 01:45 +11
+				time.Date(2026, 4, 4, 15, 0, 0, 0, time.UTC),  // 01:30 +10:30, repeat
+				time.Date(2026, 4, 4, 15, 15, 0, 0, time.UTC), // 01:45 +10:30, repeat
+				time.Date(2026, 4, 4, 15, 30, 0, 0, time.UTC), // 02:00 +10:30
+			},
+		},
+	}
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			wantFallBackSteps(t, sc.zone, sc.spec, sc.base, sc.want, sc.steps...)
+		})
+	}
 }
 
 // One heartbeat after the whole night records both fires, not four. The
@@ -153,19 +194,6 @@ func TestCronFallBackTwoMinutesCatchUp(t *testing.T) {
 	if got["enqueued"] != 1 || got["skipped"] != 1 || len(got) != 2 {
 		t.Fatalf("occurrences = %v, want 1 enqueued + 1 skipped", got)
 	}
-}
-
-// Lord Howe falls back by 30 minutes (02:00 +11 -> 01:30 +10:30) on
-// 2026-04-05, so only 01:30-01:59 repeats and 02:00 right after it fires.
-func TestCronFallBackHalfHourShift(t *testing.T) {
-	base := time.Date(2026, 4, 4, 14, 10, 0, 0, time.UTC)
-	wantFallBackSteps(t, "Australia/Lord_Howe", "0,30,45 1,2 * * *", base, []int{1, 1, 0, 0, 1},
-		time.Date(2026, 4, 4, 14, 30, 0, 0, time.UTC), // 01:30 +11
-		time.Date(2026, 4, 4, 14, 45, 0, 0, time.UTC), // 01:45 +11
-		time.Date(2026, 4, 4, 15, 0, 0, 0, time.UTC),  // 01:30 +10:30, repeat
-		time.Date(2026, 4, 4, 15, 15, 0, 0, time.UTC), // 01:45 +10:30, repeat
-		time.Date(2026, 4, 4, 15, 30, 0, 0, time.UTC), // 02:00 +10:30
-	)
 }
 
 // Lord Howe springs forward by 30 minutes (02:00 +10:30 -> 02:30 +11) on

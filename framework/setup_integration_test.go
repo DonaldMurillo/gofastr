@@ -172,9 +172,11 @@ func TestSetup_HeadlessRunsStepsBeforePort(t *testing.T) {
 	}
 }
 
-// TestSetup_PreSetupNonSetupPath503: during interactive setup, a
-// non-setup path returns 503.
-func TestSetup_PreSetupNonSetupPath503(t *testing.T) {
+// getDuringSetup starts an app whose interactive setup is incomplete and
+// cannot run headless — so the setup handler serves every request — then
+// GETs path on the bound port. The response body is the caller's to close.
+func getDuringSetup(t *testing.T, path string) *http.Response {
+	t.Helper()
 	t.Setenv("GOFASTR_SETUP", "")
 	t.Setenv("GOFASTR_ROLE", "")
 
@@ -186,10 +188,17 @@ func TestSetup_PreSetupNonSetupPath503(t *testing.T) {
 	addr, stop := startOnRandomPort(t, app)
 	defer stop()
 
-	resp, err := http.Get("http://" + addr + "/some/random/path")
+	resp, err := http.Get("http://" + addr + path)
 	if err != nil {
-		t.Fatalf("GET /some/random/path: %v", err)
+		t.Fatalf("GET %s: %v", path, err)
 	}
+	return resp
+}
+
+// TestSetup_PreSetupNonSetupPath503: during interactive setup, a
+// non-setup path returns 503.
+func TestSetup_PreSetupNonSetupPath503(t *testing.T) {
+	resp := getDuringSetup(t, "/some/random/path")
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 for non-setup path, got %d", resp.StatusCode)
@@ -198,21 +207,7 @@ func TestSetup_PreSetupNonSetupPath503(t *testing.T) {
 
 // TestSetup_HealthzDuringSetup: /healthz returns 200 during interactive setup.
 func TestSetup_HealthzDuringSetup(t *testing.T) {
-	t.Setenv("GOFASTR_SETUP", "")
-	t.Setenv("GOFASTR_ROLE", "")
-
-	mock := &mockSetupRunnerSwappable{incomplete: true, canHeadless: false}
-	app := NewApp(
-		WithoutDefaultMiddleware(),
-		WithSetup(mock),
-	)
-	addr, stop := startOnRandomPort(t, app)
-	defer stop()
-
-	resp, err := http.Get("http://" + addr + "/healthz")
-	if err != nil {
-		t.Fatalf("GET /healthz: %v", err)
-	}
+	resp := getDuringSetup(t, "/healthz")
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 for /healthz during setup, got %d", resp.StatusCode)

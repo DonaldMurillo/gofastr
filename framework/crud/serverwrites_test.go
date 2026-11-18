@@ -17,54 +17,45 @@ func swHandler(t *testing.T, cfg entity.EntityConfig, ddl string) (*CrudHandler,
 	return setupSecurityTestHandler(t, cfg, ddl)
 }
 
-// TestServerWritesPersistHiddenField asserts that a Hidden field supplied
-// in an in-process CreateOne body IS persisted when the caller opts in via
-// WithServerWrites.
-func TestServerWritesPersistHiddenField(t *testing.T) {
-	ch, db := swHandler(t, entity.EntityConfig{
-		Table: "sw_widgets",
-		Fields: []schema.Field{
-			{Name: "name", Type: schema.String, Required: true},
-			{Name: "secret_code", Type: schema.String, Hidden: true},
-		},
-	}.WithTimestamps(false),
-		`CREATE TABLE sw_widgets (id TEXT PRIMARY KEY, name TEXT NOT NULL, secret_code TEXT)`)
+// TestServerWritesPersistProtectedFields asserts that fields normally
+// stripped from client bodies — a Hidden field and a ReadOnly field — ARE
+// persisted when an in-process caller opts in via WithServerWrites.
+func TestServerWritesPersistProtectedFields(t *testing.T) {
+	cases := []struct {
+		name  string
+		table string
+		field schema.Field
+		value any
+		want  string
+	}{
+		{"hidden field is persisted", "sw_widgets",
+			schema.Field{Name: "secret_code", Type: schema.String, Hidden: true},
+			"TOPSECRET", "TOPSECRET"},
+		{"read-only field is persisted", "sw_ro",
+			schema.Field{Name: "score", Type: schema.Int, ReadOnly: true},
+			42, "42"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := entity.EntityConfig{
+				Table:  tc.table,
+				Fields: []schema.Field{{Name: "name", Type: schema.String, Required: true}, tc.field},
+			}.WithTimestamps(false)
+			ch, db := swHandler(t, cfg, `CREATE TABLE `+tc.table+
+				` (id TEXT PRIMARY KEY, name TEXT NOT NULL, `+tc.field.Name+` TEXT)`)
 
-	ctx := WithServerWrites(context.Background())
-	if _, err := ch.CreateOne(ctx, map[string]any{"name": "x", "secret_code": "TOPSECRET"}); err != nil {
-		t.Fatalf("CreateOne: %v", err)
-	}
-	var got sql.NullString
-	if err := db.QueryRow("SELECT secret_code FROM sw_widgets LIMIT 1").Scan(&got); err != nil {
-		t.Fatalf("read secret_code: %v", err)
-	}
-	if !got.Valid || got.String != "TOPSECRET" {
-		t.Errorf("hidden field secret_code = %v, want TOPSECRET", got)
-	}
-}
-
-// TestServerWritesPersistReadOnlyField asserts a ReadOnly field is
-// persisted under WithServerWrites.
-func TestServerWritesPersistReadOnlyField(t *testing.T) {
-	ch, db := swHandler(t, entity.EntityConfig{
-		Table: "sw_ro",
-		Fields: []schema.Field{
-			{Name: "name", Type: schema.String, Required: true},
-			{Name: "score", Type: schema.Int, ReadOnly: true},
-		},
-	}.WithTimestamps(false),
-		`CREATE TABLE sw_ro (id TEXT PRIMARY KEY, name TEXT NOT NULL, score INTEGER)`)
-
-	ctx := WithServerWrites(context.Background())
-	if _, err := ch.CreateOne(ctx, map[string]any{"name": "x", "score": 42}); err != nil {
-		t.Fatalf("CreateOne: %v", err)
-	}
-	var got sql.NullInt64
-	if err := db.QueryRow("SELECT score FROM sw_ro LIMIT 1").Scan(&got); err != nil {
-		t.Fatalf("read score: %v", err)
-	}
-	if !got.Valid || got.Int64 != 42 {
-		t.Errorf("read-only field score = %v, want 42", got)
+			ctx := WithServerWrites(context.Background())
+			if _, err := ch.CreateOne(ctx, map[string]any{"name": "x", tc.field.Name: tc.value}); err != nil {
+				t.Fatalf("CreateOne: %v", err)
+			}
+			var got sql.NullString
+			if err := db.QueryRow("SELECT " + tc.field.Name + " FROM " + tc.table + " LIMIT 1").Scan(&got); err != nil {
+				t.Fatalf("read %s: %v", tc.field.Name, err)
+			}
+			if !got.Valid || got.String != tc.want {
+				t.Errorf("field %s = %v, want %s", tc.field.Name, got, tc.want)
+			}
+		})
 	}
 }
 

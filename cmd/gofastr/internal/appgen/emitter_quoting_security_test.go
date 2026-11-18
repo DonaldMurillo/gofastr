@@ -1,9 +1,6 @@
 package appgen
 
 import (
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -59,27 +56,10 @@ func TestIRStringsStayInsideTheirLiteral(t *testing.T) {
 	}
 }
 
+// assertIRStayedData is assertPayloadStayedData under the name this file's
+// rubric uses; the parse-and-inspect logic lives in the sibling test.
 func assertIRStayedData(t *testing.T, site, name, src string) {
-	t.Helper()
-	if !strings.Contains(src, "PWN") {
-		return
-	}
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, name, src, parser.AllErrors)
-	if err != nil {
-		t.Fatalf("SECURITY: [injection] %s: emitted %s does not parse: %v", site, name, err)
-	}
-	var escaped bool
-	ast.Inspect(file, func(n ast.Node) bool {
-		if id, ok := n.(*ast.Ident); ok && strings.Contains(id.Name, "PWN") {
-			escaped = true
-			return false
-		}
-		return true
-	})
-	if escaped {
-		t.Fatalf("SECURITY: [injection] %s: payload became an identifier in %s", site, name)
-	}
+	assertPayloadStayedData(t, site, name, src)
 }
 
 type irSite struct {

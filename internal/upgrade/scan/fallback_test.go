@@ -105,6 +105,18 @@ func runBroken(t *testing.T, src string, n *upgrade.Note) *Result {
 	return res
 }
 
+// runBrokenOver is runBroken over a caller-supplied kit.
+func runBrokenOver(t *testing.T, kit map[string]string, src string, n *upgrade.Note) *Result {
+	t.Helper()
+	root := newWorkspace(t, kit, map[string]string{"main.go": src})
+	testEnv(t)
+	res, err := Run(root, []*upgrade.Note{n}, upgrade.MarkerSinks{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return res
+}
+
 // TestFallbackNestedModulePaths proves a nested module's compile errors
 // land on root-relative paths: the go command echoes them relative to
 // the module the load ran in, tools/ here, not the root module.
@@ -351,14 +363,9 @@ import . "example.com/kit/html"
 
 func main() { _ = DetailsConfig{Title: "t", Disclosure: true} }
 `
-	root := newWorkspace(t, kit, map[string]string{"main.go": src})
-	testEnv(t)
 	sym := upgrade.Symbol{Pkg: "example.com/kit/html", Name: "DetailsConfig", Member: "Disclosure"}
 	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{{Field: sym}}}}
-	res, err := Run(root, []*upgrade.Note{n}, upgrade.MarkerSinks{})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
+	res := runBrokenOver(t, kit, src, n)
 	wantHits(t, res, n, hitAt(src, "Disclosure: true", "main.go", "field "+sym.String()))
 	if len(res.Unexplained) != 0 {
 		t.Fatalf("Unexplained = %v, want none", hitStrs(res.Unexplained))
@@ -430,14 +437,9 @@ type LocalConfig = html.DetailsConfig
 
 func main() { _ = LocalConfig{Title: "t", Disclosure: true} }
 `
-	root := newWorkspace(t, kit, map[string]string{"main.go": src})
-	testEnv(t)
 	sym := upgrade.Symbol{Pkg: "example.com/kit/html", Name: "DetailsConfig", Member: "Disclosure"}
 	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{{Field: sym}}}}
-	res, err := Run(root, []*upgrade.Note{n}, upgrade.MarkerSinks{})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
+	res := runBrokenOver(t, kit, src, n)
 	wantHits(t, res, n, hitAt(src, "Disclosure: true", "main.go", "field "+sym.String()))
 	if len(res.Unexplained) != 0 {
 		t.Fatalf("Unexplained = %v, want none", hitStrs(res.Unexplained))

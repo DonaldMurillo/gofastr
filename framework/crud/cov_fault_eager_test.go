@@ -6,7 +6,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -16,63 +15,7 @@ import (
 // missing-table world only fails the FIRST query).
 func covFaultRelWorld(t *testing.T) (*CrudHandler, *sql.DB, stubRegistry) {
 	t.Helper()
-	db := covSetupFaultDB(t,
-		`CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, password_hash TEXT)`,
-		`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT, author_id TEXT)`,
-		`CREATE TABLE comments (id TEXT PRIMARY KEY, post_id TEXT, body TEXT)`,
-		`CREATE TABLE tags (id TEXT PRIMARY KEY, label TEXT)`,
-		`CREATE TABLE post_tags (post_id TEXT, tag_id TEXT)`,
-		`CREATE TABLE profiles (id TEXT PRIMARY KEY, post_id TEXT, bio TEXT)`,
-	)
-	seedRows(t, db, "users", []map[string]any{{"id": "u1", "name": "alice", "password_hash": "SECRET"}})
-	seedRows(t, db, "posts", []map[string]any{
-		{"id": "p1", "title": "first", "author_id": "u1"},
-		{"id": "p2", "title": "second", "author_id": "u1"},
-	})
-	seedRows(t, db, "comments", []map[string]any{
-		{"id": "c1", "post_id": "p1", "body": "nice"},
-		{"id": "c2", "post_id": "p1", "body": "ok"},
-	})
-	seedRows(t, db, "tags", []map[string]any{{"id": "t1", "label": "go"}, {"id": "t2", "label": "db"}})
-	seedRows(t, db, "post_tags", []map[string]any{
-		{"post_id": "p1", "tag_id": "t1"}, {"post_id": "p1", "tag_id": "t2"},
-	})
-	seedRows(t, db, "profiles", []map[string]any{{"id": "pr1", "post_id": "p1", "bio": "the bio"}})
-
-	usersEnt := entity.Define("users", entity.EntityConfig{
-		Name: "users", Table: "users",
-		Fields: []schema.Field{{Name: "name", Type: schema.String}, {Name: "password_hash", Type: schema.String, Hidden: true}},
-	}.WithTimestamps(false))
-	commentsEnt := entity.Define("comments", entity.EntityConfig{
-		Name: "comments", Table: "comments",
-		Fields: []schema.Field{{Name: "post_id", Type: schema.String}, {Name: "body", Type: schema.String}},
-	}.WithTimestamps(false))
-	tagsEnt := entity.Define("tags", entity.EntityConfig{
-		Name: "tags", Table: "tags", Fields: []schema.Field{{Name: "label", Type: schema.String}},
-	}.WithTimestamps(false))
-	profilesEnt := entity.Define("profiles", entity.EntityConfig{
-		Name: "profiles", Table: "profiles",
-		Fields: []schema.Field{{Name: "post_id", Type: schema.String}, {Name: "bio", Type: schema.String}},
-	}.WithTimestamps(false))
-	postsEnt := entity.Define("posts", entity.EntityConfig{
-		Name: "posts", Table: "posts",
-		Fields: []schema.Field{{Name: "title", Type: schema.String}, {Name: "author_id", Type: schema.String}},
-		Relations: []entity.Relation{
-			entity.BelongsTo("author", "users", "author_id"),
-			entity.HasMany("comments", "comments", "post_id"),
-			entity.HasOne("profile", "profiles", "post_id"),
-			entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id"),
-		},
-	}.WithTimestamps(false))
-	postsEnt.SetDB(db)
-
-	reg := stubRegistry{byName: map[string]*entity.Entity{
-		"users": usersEnt, "comments": commentsEnt, "tags": tagsEnt,
-		"profiles": profilesEnt, "posts": postsEnt,
-	}}
-	ch := NewCrudHandler(postsEnt, db).WithJSONCase(CaseSnake)
-	ch.Registry = reg
-	return ch, db, reg
+	return covRelWorldOver(t, covSetupFaultDB)
 }
 
 // --- eager.go (unfiltered EagerLoad) DB-error branches ---

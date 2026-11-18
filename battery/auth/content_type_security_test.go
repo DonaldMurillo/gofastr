@@ -16,11 +16,7 @@ func TestLogin_RejectsTextPlainJSON(t *testing.T) {
 	seedUser(t, store, "alice@example.com", "password123")
 	r := mountRoutes(mgr)
 
-	body, _ := json.Marshal(map[string]string{"email": "alice@example.com", "password": "password123"})
-	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "text/plain")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	rec := postAuthJSON(r, "/auth/login", map[string]string{"email": "alice@example.com", "password": "password123"}, "text/plain")
 
 	if rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("SECURITY: [auth-content-type] /auth/login accepted JSON body with text/plain content type (%d). Attack: content-type smuggling into login.", rec.Code)

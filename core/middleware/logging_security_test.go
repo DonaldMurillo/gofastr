@@ -148,6 +148,34 @@ func (h *captureHandler) reset() {
 	h.attrs = map[string]string{}
 }
 
+// logSink is one middleware that logs a request-derived path/method
+// attribute. async marks the sinks whose request log fires from a watcher
+// goroutine after ServeHTTP returns (timeout), so a test must poll for the
+// attribute instead of reading it synchronously.
+type logSink struct {
+	name    string
+	handler http.Handler
+	async   bool
+}
+
+// requestLogSinks returns every sink that logs a request-derived value.
+// Shared by the log-injection property tests so a sink added to one is
+// exercised by all of them.
+func requestLogSinks() []logSink {
+	return []logSink{
+		{"logging", Logging()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})), false},
+		{"recovery", Recovery()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+			panic("boom")
+		})), false},
+		{"timeout", Timeout(50 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done() // wait for the deadline, then panic late
+			panic("late")
+		})), true},
+	}
+}
+
 // TestLogSinksScrubAndBound pins the two halves of the log-injection
 // property across EVERY sink that logs a request-derived value: control
 // bytes must be scrubbed (r.URL.Path is percent-DECODED, so %0d%0a is a real
@@ -161,22 +189,7 @@ func TestLogSinksScrubAndBound(t *testing.T) {
 	slog.SetDefault(slog.New(cap))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
-	sinks := []struct {
-		name    string
-		handler http.Handler
-		async   bool // timeout logs from a watcher goroutine after ServeHTTP returns
-	}{
-		{"logging", Logging()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		})), false},
-		{"recovery", Recovery()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-			panic("boom")
-		})), false},
-		{"timeout", Timeout(50 * time.Millisecond)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-			<-r.Context().Done() // wait for the deadline, then panic late
-			panic("late")
-		})), true},
-	}
+	sinks := requestLogSinks()
 
 	// Distinct attack bytes: CR, LF, NUL, DEL.
 	for _, sk := range sinks {
@@ -256,22 +269,7 @@ func TestLogSinks_BoundMethod(t *testing.T) {
 	slog.SetDefault(slog.New(cap))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
-	sinks := []struct {
-		name    string
-		handler http.Handler
-		async   bool
-	}{
-		{"logging", Logging()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		})), false},
-		{"recovery", Recovery()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-			panic("boom")
-		})), false},
-		{"timeout", Timeout(50 * time.Millisecond)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-			<-r.Context().Done()
-			panic("late")
-		})), true},
-	}
+	sinks := requestLogSinks()
 
 	const huge = 10000
 	for _, sk := range sinks {

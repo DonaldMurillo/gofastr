@@ -19,23 +19,30 @@ func trackMiddleware(name string, order *[]string) Middleware {
 	}
 }
 
-func TestPathParams(t *testing.T) {
+// serveParamEcho registers pattern with a handler that writes the param
+// named paramName, serves reqPath, and asserts a 200 whose body is want —
+// the shared shape of the param round-trip tests.
+func serveParamEcho(t *testing.T, pattern, paramName, reqPath, want string) {
+	t.Helper()
 	r := New()
-	r.Get("/users/{id}", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		id := Param(req, "id")
-		w.Write([]byte(id))
+	r.Get(pattern, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Write([]byte(Param(req, paramName)))
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/users/42", nil)
+	req := httptest.NewRequest(http.MethodGet, reqPath, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	if w.Body.String() != "42" {
-		t.Fatalf("expected body '42', got %q", w.Body.String())
+	if got := w.Body.String(); got != want {
+		t.Fatalf("expected body '%s', got %q", want, got)
 	}
+}
+
+func TestPathParams(t *testing.T) {
+	serveParamEcho(t, "/users/{id}", "id", "/users/42", "42")
 }
 
 func TestMultiplePathParams(t *testing.T) {
@@ -348,22 +355,7 @@ func TestConvenienceMethods(t *testing.T) {
 }
 
 func TestWildcardParam(t *testing.T) {
-	r := New()
-	r.Get("/files/{path...}", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		p := Param(req, "path")
-		w.Write([]byte(p))
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/files/docs/readme.md", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Code != 200 {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	if w.Body.String() != "docs/readme.md" {
-		t.Fatalf("expected body 'docs/readme.md', got %q", w.Body.String())
-	}
+	serveParamEcho(t, "/files/{path...}", "path", "/files/docs/readme.md", "docs/readme.md")
 }
 
 func TestHandleFunc(t *testing.T) {

@@ -653,48 +653,42 @@ func newHangServer(t *testing.T, sleep time.Duration) *httptest.Server {
 	}))
 }
 
-func TestGoogleProvider_TimeoutOnSlowTokenEndpoint(t *testing.T) {
+func TestProviders_TimeoutOnSlowTokenEndpoint(t *testing.T) {
 	hang := newHangServer(t, 1*time.Second)
 	defer hang.Close()
 
-	prov := NewGoogleProvider("client-id", "client-secret", "http://localhost/cb")
-	prov.tokenEndpoint = hang.URL
-	prov.userInfoEndpoint = hang.URL
 	// 500ms timeout for fast feedback; production default is 10s.
 	tr := &http.Transport{}
 	t.Cleanup(tr.CloseIdleConnections)
-	prov.httpClient = &http.Client{Timeout: 200 * time.Millisecond, Transport: tr}
+	client := &http.Client{Timeout: 200 * time.Millisecond, Transport: tr}
 
-	start := time.Now()
-	_, err := prov.ExchangeCode(context.Background(), "fake-code")
-	elapsed := time.Since(start)
-	if err == nil {
-		t.Fatalf("expected error from hanging endpoint, got nil")
-	}
-	if elapsed > 1*time.Second {
-		t.Fatalf("ExchangeCode took %v — must time out near the configured 200ms (likely no client timeout)", elapsed)
-	}
-}
+	g := NewGoogleProvider("client-id", "client-secret", "http://localhost/cb")
+	g.tokenEndpoint = hang.URL
+	g.userInfoEndpoint = hang.URL
+	g.httpClient = client
+	gh := NewGitHubProvider("client-id", "client-secret", "http://localhost/cb")
+	gh.tokenEndpoint = hang.URL
+	gh.userInfoEndpoint = hang.URL
+	gh.httpClient = client
 
-func TestGitHubProvider_TimeoutOnSlowTokenEndpoint(t *testing.T) {
-	hang := newHangServer(t, 1*time.Second)
-	defer hang.Close()
-
-	prov := NewGitHubProvider("client-id", "client-secret", "http://localhost/cb")
-	prov.tokenEndpoint = hang.URL
-	prov.userInfoEndpoint = hang.URL
-	tr := &http.Transport{}
-	t.Cleanup(tr.CloseIdleConnections)
-	prov.httpClient = &http.Client{Timeout: 200 * time.Millisecond, Transport: tr}
-
-	start := time.Now()
-	_, err := prov.ExchangeCode(context.Background(), "fake-code")
-	elapsed := time.Since(start)
-	if err == nil {
-		t.Fatalf("expected error from hanging endpoint, got nil")
-	}
-	if elapsed > 1*time.Second {
-		t.Fatalf("ExchangeCode took %v — must time out near the configured 200ms (likely no client timeout)", elapsed)
+	providers := []struct {
+		name string
+		p    interface {
+			ExchangeCode(context.Context, string) (*OAuth2Token, error)
+		}
+	}{{"GoogleProvider", g}, {"GitHubProvider", gh}}
+	for _, tc := range providers {
+		t.Run(tc.name, func(t *testing.T) {
+			start := time.Now()
+			_, err := tc.p.ExchangeCode(context.Background(), "fake-code")
+			elapsed := time.Since(start)
+			if err == nil {
+				t.Fatalf("expected error from hanging endpoint, got nil")
+			}
+			if elapsed > 1*time.Second {
+				t.Fatalf("ExchangeCode took %v — must time out near the configured 200ms (likely no client timeout)", elapsed)
+			}
+		})
 	}
 }
 

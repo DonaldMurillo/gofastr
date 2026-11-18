@@ -13,14 +13,13 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// A <select> change is delivered as an `input` event in every modern
-// browser, so a hand-written island can drive a select-triggered RPC with
-// the documented recipe, wrap the control in
-// `<form data-cui-rpc data-cui-rpc-trigger="input">`, WITHOUT any dedicated
-// data-cui-rpc-trigger="change". This test is the empirical proof behind the
-// recipe in framework/docs/content/interactive-patterns.md: it selects an
-// option and asserts the runtime posted the control's `name` as the JSON key.
-func TestInputTrigger_SelectFiresRPC(t *testing.T) {
+// serveInputTriggerRPC serves the runtime plus one HTML page whose
+// data-cui-rpc carrier posts JSON to endpoint. It returns the server's
+// base URL, the hit counter and the last decoded body, so each
+// input-trigger test drives its own control and asserts on the recorded
+// request.
+func serveInputTriggerRPC(t *testing.T, endpoint, pageHTML string) (string, *atomic.Int32, *atomic.Pointer[map[string]string]) {
+	t.Helper()
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
@@ -35,7 +34,7 @@ func TestInputTrigger_SelectFiresRPC(t *testing.T) {
 		w.Write([]byte(js))
 	})
 	handleRuntimeModules(t, mux)
-	mux.HandleFunc("/filter", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(endpoint, func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		body := map[string]string{}
 		_ = json.NewDecoder(r.Body).Decode(&body)
@@ -45,9 +44,25 @@ func TestInputTrigger_SelectFiresRPC(t *testing.T) {
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		// debounce-ms=1 keeps the test fast; the select still rides the
-		// `input` event the same as any keystroke would.
-		fmt.Fprint(w, `<!doctype html><html><head><title>select-trigger</title></head><body>
+		fmt.Fprint(w, pageHTML)
+	})
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv.URL, &hits, &last
+}
+
+// A <select> change is delivered as an `input` event in every modern
+// browser, so a hand-written island can drive a select-triggered RPC with
+// the documented recipe, wrap the control in
+// `<form data-cui-rpc data-cui-rpc-trigger="input">`, WITHOUT any dedicated
+// data-cui-rpc-trigger="change". This test is the empirical proof behind the
+// recipe in framework/docs/content/interactive-patterns.md: it selects an
+// option and asserts the runtime posted the control's `name` as the JSON key.
+func TestInputTrigger_SelectFiresRPC(t *testing.T) {
+	// debounce-ms=1 keeps the test fast; the select still rides the
+	// `input` event the same as any keystroke would.
+	base, hits, last := serveInputTriggerRPC(t, "/filter", `<!doctype html><html><head><title>select-trigger</title></head><body>
   <form data-cui-rpc="/filter" data-cui-rpc-method="POST"
         data-cui-rpc-trigger="input" data-cui-rpc-debounce-ms="1">
     <select id="cat" name="category">
@@ -58,15 +73,11 @@ func TestInputTrigger_SelectFiresRPC(t *testing.T) {
   </form>
   <script src="/__gofastr/runtime.js"></script>
 </body></html>`)
-	})
-
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
 
 	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#cat`, chromedp.ByID),
 		chromedp.SetValue(`#cat`, "parts", chromedp.ByID),
 		chromedp.Sleep(400*time.Millisecond),
@@ -95,46 +106,18 @@ func TestInputTrigger_SelectFiresRPC(t *testing.T) {
 // a real form. Regression test for the empty-body class the SegmentedControl
 // #194 fix documented.
 func TestInputTrigger_DivCarrierSendsControls(t *testing.T) {
-	js, err := RuntimeJS()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var last atomic.Pointer[map[string]string]
-	var hits atomic.Int32
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/javascript")
-		w.Write([]byte(js))
-	})
-	handleRuntimeModules(t, mux)
-	mux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
-		hits.Add(1)
-		body := map[string]string{}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		last.Store(&body)
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<!doctype html><html><head><title>div-carrier</title></head><body>
+	base, hits, last := serveInputTriggerRPC(t, "/search", `<!doctype html><html><head><title>div-carrier</title></head><body>
   <div data-cui-rpc="/search" data-cui-rpc-method="POST"
        data-cui-rpc-trigger="input" data-cui-rpc-debounce-ms="1">
     <input id="q" name="q" type="text" autocomplete="off">
   </div>
   <script src="/__gofastr/runtime.js"></script>
 </body></html>`)
-	})
-
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
 
 	ctx := chromedptest.Context(t)
 
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#q`, chromedp.ByID),
 		chromedp.SendKeys(`#q`, "acc", chromedp.ByID),
 		chromedp.Sleep(400*time.Millisecond),

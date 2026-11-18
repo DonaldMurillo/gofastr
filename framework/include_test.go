@@ -121,23 +121,48 @@ func runIncludeTest(t *testing.T, body func(t *testing.T, ta *TestApp)) {
 	})
 }
 
+// includeGet fetches path through the harness and decodes the single-object
+// JSON body into a map.
+func includeGet(t *testing.T, ta *TestApp, path string) map[string]any {
+	t.Helper()
+	resp := ta.Get(path)
+	resp.AssertStatus(t, http.StatusOK)
+	var got map[string]any
+	if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return got
+}
+
+// includeObject returns the related object an ?include= pinned at key.
+func includeObject(t *testing.T, ta *TestApp, path, key string) map[string]any {
+	t.Helper()
+	got := includeGet(t, ta, path)
+	obj, ok := got[key].(map[string]any)
+	if !ok {
+		t.Fatalf("expected %s object, got %T (%v)", key, got[key], got[key])
+	}
+	return obj
+}
+
+// includeList returns the related list an ?include= pinned at key.
+func includeList(t *testing.T, ta *TestApp, path, key string) []any {
+	t.Helper()
+	got := includeGet(t, ta, path)
+	list, ok := got[key].([]any)
+	if !ok {
+		t.Fatalf("expected %s list, got %T (%v)", key, got[key], got[key])
+	}
+	return list
+}
+
 // ============================================================================
 // Test: HasMany via ?include=
 // ============================================================================
 
 func TestInclude_HasMany(t *testing.T) {
 	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
-		resp := ta.Get("/posts/p1?include=comments")
-		resp.AssertStatus(t, http.StatusOK)
-
-		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		comments, ok := got["comments"].([]any)
-		if !ok {
-			t.Fatalf("expected comments to be a list, got %T (%v)", got["comments"], got["comments"])
-		}
+		comments := includeList(t, ta, "/posts/p1?include=comments", "comments")
 		if len(comments) != 2 {
 			t.Fatalf("expected 2 comments, got %d: %v", len(comments), comments)
 		}
@@ -175,18 +200,7 @@ func TestInclude_HasMany_EmptyDefault(t *testing.T) {
 
 func TestInclude_BelongsTo(t *testing.T) {
 	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
-
-		resp := ta.Get("/posts/p1?include=author")
-		resp.AssertStatus(t, http.StatusOK)
-
-		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		author, ok := got["author"].(map[string]any)
-		if !ok {
-			t.Fatalf("expected author object, got %T (%v)", got["author"], got["author"])
-		}
+		author := includeObject(t, ta, "/posts/p1?include=author", "author")
 		if author["name"] != "Alice" {
 			t.Fatalf("expected author.name=Alice, got %v", author["name"])
 		}
@@ -199,18 +213,7 @@ func TestInclude_BelongsTo(t *testing.T) {
 
 func TestInclude_HasOne(t *testing.T) {
 	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
-
-		resp := ta.Get("/users/u1?include=profile")
-		resp.AssertStatus(t, http.StatusOK)
-
-		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		profile, ok := got["profile"].(map[string]any)
-		if !ok {
-			t.Fatalf("expected profile object, got %T (%v)", got["profile"], got["profile"])
-		}
+		profile := includeObject(t, ta, "/users/u1?include=profile", "profile")
 		if profile["bio"] != "Hello from Alice" {
 			t.Fatalf("expected profile.bio, got %v", profile["bio"])
 		}
@@ -244,18 +247,7 @@ func TestInclude_HasOne_NilDefault(t *testing.T) {
 
 func TestInclude_ManyToMany(t *testing.T) {
 	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
-
-		resp := ta.Get("/posts/p1?include=tags")
-		resp.AssertStatus(t, http.StatusOK)
-
-		var got map[string]any
-		if err := json.Unmarshal([]byte(resp.Body()), singleMap(&got)); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		tags, ok := got["tags"].([]any)
-		if !ok {
-			t.Fatalf("expected tags list, got %T (%v)", got["tags"], got["tags"])
-		}
+		tags := includeList(t, ta, "/posts/p1?include=tags", "tags")
 		if len(tags) != 2 {
 			t.Fatalf("expected 2 tags, got %d: %v", len(tags), tags)
 		}

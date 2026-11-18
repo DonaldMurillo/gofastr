@@ -21,6 +21,21 @@ func batchReqBN(method, body string) *http.Request {
 	return r
 }
 
+// oversizedBatchBody builds a batch body holding MaxBatchSize+1 copies of
+// item under key ("items" or "ids"), i.e. one past the accepted limit.
+func oversizedBatchBody(key, item string) string {
+	var sb strings.Builder
+	sb.WriteString(`{"` + key + `":[`)
+	for i := 0; i <= MaxBatchSize; i++ {
+		if i > 0 {
+			sb.WriteString(",")
+		}
+		sb.WriteString(item)
+	}
+	sb.WriteString(`]}`)
+	return sb.String()
+}
+
 func TestBatchUpdate_EmptyAndTooBig(t *testing.T) {
 	ch, _ := covBatchHandler(t)
 	rec := httptest.NewRecorder()
@@ -28,17 +43,8 @@ func TestBatchUpdate_EmptyAndTooBig(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("empty update batch = %d, want 400", rec.Code)
 	}
-	var sb strings.Builder
-	sb.WriteString(`{"items":[`)
-	for i := 0; i <= MaxBatchSize; i++ {
-		if i > 0 {
-			sb.WriteString(",")
-		}
-		sb.WriteString(`{"id":"x","title":"y"}`)
-	}
-	sb.WriteString(`]}`)
 	rec = httptest.NewRecorder()
-	ch.BatchUpdate()(rec, batchReqBN("PATCH", sb.String()))
+	ch.BatchUpdate()(rec, batchReqBN("PATCH", oversizedBatchBody("items", `{"id":"x","title":"y"}`)))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("oversized update batch = %d, want 400", rec.Code)
 	}
@@ -56,17 +62,8 @@ func TestBatchUpdate_NonStringID(t *testing.T) {
 
 func TestBatchDelete_TooBig(t *testing.T) {
 	ch, _ := covBatchHandler(t)
-	var sb strings.Builder
-	sb.WriteString(`{"ids":[`)
-	for i := 0; i <= MaxBatchSize; i++ {
-		if i > 0 {
-			sb.WriteString(",")
-		}
-		sb.WriteString(`"x"`)
-	}
-	sb.WriteString(`]}`)
 	rec := httptest.NewRecorder()
-	ch.BatchDelete()(rec, batchReqBN("DELETE", sb.String()))
+	ch.BatchDelete()(rec, batchReqBN("DELETE", oversizedBatchBody("ids", `"x"`)))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("oversized delete batch = %d, want 400", rec.Code)
 	}

@@ -219,6 +219,41 @@ func (h *tokenPurposeHarness) passwordHash() string {
 	return hash
 }
 
+// assertTokenRefusedAtReset pins that a cross-purpose token gets a 401 at
+// /auth/reset-password and leaves the victim's password hash untouched.
+// label names the token kind; where distinguishes the store variant in
+// failure messages (e.g. " on a non-peeking store").
+func (h *tokenPurposeHarness) assertTokenRefusedAtReset(tok, label, where string) {
+	h.t.Helper()
+	before := h.passwordHash()
+	if code := h.attemptReset(tok); code != http.StatusUnauthorized {
+		h.t.Errorf("SECURITY: [token-purpose] %s at /auth/reset-password%s: got %d, want 401 (must not redeem as a password reset)", label, where, code)
+	}
+	if after := h.passwordHash(); after != before {
+		h.t.Errorf("SECURITY: [token-purpose] %s changed the victim's password hash%s", label, where)
+	}
+}
+
+// assertResetTokenRefusedElsewhere pins the other two directions: a reset
+// token must not mark the victim's email verified at /auth/verify-email,
+// nor be redeemed at /auth/magic-link/verify where its userID payload
+// would auto-create a junk account.
+func (h *tokenPurposeHarness) assertResetTokenRefusedElsewhere(tok, where string) {
+	h.t.Helper()
+	if code := h.attemptVerifyEmail(tok); code != http.StatusUnauthorized {
+		h.t.Errorf("SECURITY: [token-purpose] reset token at /auth/verify-email%s: got %d, want 401", where, code)
+	}
+	if h.store.verifiedIDs[h.victimID] {
+		h.t.Error("SECURITY: [token-purpose] reset token marked the victim's email verified" + where)
+	}
+	if code := h.attemptMagicVerify(tok); code != http.StatusUnauthorized {
+		h.t.Errorf("SECURITY: [token-purpose] reset token at /auth/magic-link/verify%s: got %d, want 401", where, code)
+	}
+	if _, _, err := h.store.FindByEmail(context.Background(), h.victimID); err == nil {
+		h.t.Error("SECURITY: [token-purpose] reset token auto-created an account keyed by the victim's userID as its email")
+	}
+}
+
 // Harness sanity (GREEN today, must stay green under any fix): with all
 // three plugins sharing one token store, each flow still serves its OWN
 // token. If this broke, a RED below would be a wiring artifact, not the
@@ -246,15 +281,7 @@ func TestSharedStoreStillServesOwnFlows(t *testing.T) {
 // for up to 24h — vs the 1h window the reset flow deliberately chose.
 func TestVerificationTokenCannotResetPassword(t *testing.T) {
 	h := newTokenPurposeHarness(t)
-	before := h.passwordHash()
-
-	code := h.attemptReset(h.mintVerificationToken())
-	if code != http.StatusUnauthorized {
-		t.Errorf("SECURITY: [token-purpose] verification token at /auth/reset-password: got %d, want 401 (must not redeem as a password reset)", code)
-	}
-	if after := h.passwordHash(); after != before {
-		t.Error("SECURITY: [token-purpose] verification token changed the victim's password hash")
-	}
+	h.assertTokenRefusedAtReset(h.mintVerificationToken(), "verification token", "")
 }
 
 // A reset token must not be consumed by the other two endpoints either:
@@ -263,20 +290,7 @@ func TestVerificationTokenCannotResetPassword(t *testing.T) {
 // and auto-creates a junk account — burning the victim's reset link.
 func TestResetTokenCannotDriveOtherFlows(t *testing.T) {
 	h := newTokenPurposeHarness(t)
-
-	if code := h.attemptVerifyEmail(h.mintResetToken()); code != http.StatusUnauthorized {
-		t.Errorf("SECURITY: [token-purpose] reset token at /auth/verify-email: got %d, want 401", code)
-	}
-	if h.store.verifiedIDs[h.victimID] {
-		t.Error("SECURITY: [token-purpose] reset token marked the victim's email verified")
-	}
-
-	if code := h.attemptMagicVerify(h.mintResetToken()); code != http.StatusUnauthorized {
-		t.Errorf("SECURITY: [token-purpose] reset token at /auth/magic-link/verify: got %d, want 401", code)
-	}
-	if _, _, err := h.store.FindByEmail(context.Background(), h.victimID); err == nil {
-		t.Error("SECURITY: [token-purpose] reset token auto-created an account keyed by the victim's userID as its email")
-	}
+	h.assertResetTokenRefusedElsewhere(h.mintResetToken(), "")
 }
 
 // A magic-link login token (EMAIL payload) must be refused at the reset

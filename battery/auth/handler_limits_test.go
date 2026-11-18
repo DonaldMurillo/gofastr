@@ -43,48 +43,31 @@ func TestHandlerBodyLimit_MagicLinkSend(t *testing.T) {
 	}
 }
 
-func TestHandlerBodyLimit_TwoFAVerify(t *testing.T) {
-	mgr := newTestAuthManagerWithSession(t)
-	r := router.New()
-	mgr.RegisterRoutes(r)
+func TestHandlerBodyLimit_TwoFAEndpoints(t *testing.T) {
+	for _, path := range []string{"/auth/2fa/verify", "/auth/2fa/challenge"} {
+		t.Run(path, func(t *testing.T) {
+			mgr := newTestAuthManagerWithSession(t)
+			r := router.New()
+			mgr.RegisterRoutes(r)
 
-	// Need a valid session so we get past the auth check before hitting the decoder.
-	sess, err := mgr.SessionStore().Create(context.Background(), "user-1", time.Hour)
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
+			// Need a valid session so we get past the auth check before
+			// hitting the decoder.
+			sess, err := mgr.SessionStore().Create(context.Background(), "user-1", time.Hour)
+			if err != nil {
+				t.Fatalf("create session: %v", err)
+			}
 
-	body := makeOversizedBody("code")
-	req := httptest.NewRequest(http.MethodPost, "/auth/2fa/verify", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "session_id", Value: sess.Token})
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+			body := makeOversizedBody("code")
+			req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.AddCookie(&http.Cookie{Name: "session_id", Value: sess.Token})
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("expected 413 for oversized body, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestHandlerBodyLimit_TwoFAChallenge(t *testing.T) {
-	mgr := newTestAuthManagerWithSession(t)
-	r := router.New()
-	mgr.RegisterRoutes(r)
-
-	sess, err := mgr.SessionStore().Create(context.Background(), "user-1", time.Hour)
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
-	body := makeOversizedBody("code")
-	req := httptest.NewRequest(http.MethodPost, "/auth/2fa/challenge", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "session_id", Value: sess.Token})
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("expected 413 for oversized body, got %d: %s", w.Code, w.Body.String())
+			if w.Code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("expected 413 for oversized body, got %d: %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }
 

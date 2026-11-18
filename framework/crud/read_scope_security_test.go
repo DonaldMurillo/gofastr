@@ -232,6 +232,30 @@ func TestReadScope_CountMatchesFilteredRows(t *testing.T) {
 	}
 }
 
+// readScopeListBody lists through ch and fails unless the route answers
+// 200; the returned body carries the payload the leak checks inspect.
+func readScopeListBody(t *testing.T, ch *CrudHandler, path string) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	ch.List()(rec, makeRequest(t, RequestOpts{Method: http.MethodGet, Path: path}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s returned %d (body=%s)", path, rec.Code, rec.Body.String())
+	}
+	return rec.Body.String()
+}
+
+// assertReadScopeHidesDrafts fails when a read-scope sink leaks draft rows
+// or omits the published sentinel "pub one".
+func assertReadScopeHidesDrafts(t *testing.T, body, surface string) {
+	t.Helper()
+	if strings.Contains(body, "draft secret") || strings.Contains(body, "draft hidden") {
+		t.Errorf("SECURITY: [read-scope] %s served the drafts the posts route hides: %s", surface, body)
+	}
+	if !strings.Contains(body, "pub one") {
+		t.Errorf("%s omitted a published post: %s", surface, body)
+	}
+}
+
 // TestReadScope_CursorAgreesWithBufferedList pins the keyset path: paging
 // with ?cursor= never surfaces a filtered-out row.
 func TestReadScope_CursorAgreesWithBufferedList(t *testing.T) {
@@ -256,15 +280,8 @@ func TestReadScope_CursorAgreesWithBufferedList(t *testing.T) {
 func TestReadScope_StreamAgreesWithBufferedList(t *testing.T) {
 	postCh, _, _, _ := setupReadScopeWorld(t, true, "")
 
-	rec := httptest.NewRecorder()
-	postCh.List()(rec, makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/posts?stream=true"}))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("stream list returned %d (body=%s)", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	if strings.Contains(body, "draft secret") || strings.Contains(body, "draft hidden") {
-		t.Errorf("SECURITY: [read-scope] stream list leaked a filtered row: %s", body)
-	}
+	body := readScopeListBody(t, postCh, "/posts?stream=true")
+	assertReadScopeHidesDrafts(t, body, "stream list")
 	if !strings.Contains(body, `"total":2`) {
 		t.Errorf("stream envelope total does not match the filtered count: %s", body)
 	}
@@ -367,18 +384,8 @@ func TestReadScope_EagerLoadHidesScopedRows(t *testing.T) {
 func TestReadScope_NestedIncludeHidesScopedRows(t *testing.T) {
 	_, _, userCh, _ := setupReadScopeWorld(t, true, "")
 
-	rec := httptest.NewRecorder()
-	userCh.List()(rec, makeRequest(t, RequestOpts{Method: http.MethodGet, Path: "/users?include=authors.posts"}))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("users?include=authors.posts returned %d (body=%s)", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	if strings.Contains(body, "draft secret") || strings.Contains(body, "draft hidden") {
-		t.Errorf("SECURITY: [read-scope] nested include served the drafts the posts route hides: %s", body)
-	}
-	if !strings.Contains(body, "pub one") {
-		t.Errorf("nested include omitted a published post: %s", body)
-	}
+	body := readScopeListBody(t, userCh, "/users?include=authors.posts")
+	assertReadScopeHidesDrafts(t, body, "nested include")
 }
 
 // TestReadScope_InProcessAPIScopes pins the in-process sinks: GetOne,

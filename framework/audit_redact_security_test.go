@@ -130,22 +130,30 @@ func TestAudit_DeleteRedactOmittedIDKeepsOriginalRecordID(t *testing.T) {
 	})
 }
 
+// actorStripApp wires a single-field posts app with an audit log whose Actor
+// resolver returns actor, migrates the table, and returns the harness as a
+// signed-in user ready to write the row the audit will record.
+func actorStripApp(t *testing.T, db *sql.DB, actor string) *TestApp {
+	t.Helper()
+	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+	app.Entity("posts", entity.EntityConfig{
+		Table: "posts",
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+		},
+	}.WithTimestamps(false))
+	if err := AutoMigrate(db, app.Registry); err != nil {
+		t.Fatalf("automigrate: %v", err)
+	}
+	app.WithAuditLog(AuditConfig{
+		Actor: func(_ context.Context) string { return actor },
+	})
+	return TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+}
+
 func TestAudit_ActorStripsNewlines(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", entity.EntityConfig{
-			Table: "posts",
-			Fields: []schema.Field{
-				{Name: "title", Type: schema.String, Required: true},
-			},
-		}.WithTimestamps(false))
-		if err := AutoMigrate(db, app.Registry); err != nil {
-			t.Fatalf("automigrate: %v", err)
-		}
-		app.WithAuditLog(AuditConfig{
-			Actor: func(_ context.Context) string { return "alice\nadmin" },
-		})
-		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+		ta := actorStripApp(t, db, "alice\nadmin")
 		ta.Post("/posts", map[string]any{"title": "hello"}).AssertStatus(t, http.StatusCreated)
 
 		rows := readAuditRows(t, db)
@@ -184,20 +192,7 @@ func TestAudit_DeleteRedactStripsNewlinesFromRecordID(t *testing.T) {
 
 func TestAudit_ActorStripsNUL(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", entity.EntityConfig{
-			Table: "posts",
-			Fields: []schema.Field{
-				{Name: "title", Type: schema.String, Required: true},
-			},
-		}.WithTimestamps(false))
-		if err := AutoMigrate(db, app.Registry); err != nil {
-			t.Fatalf("automigrate: %v", err)
-		}
-		app.WithAuditLog(AuditConfig{
-			Actor: func(_ context.Context) string { return "alice\x00admin" },
-		})
-		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+		ta := actorStripApp(t, db, "alice\x00admin")
 		ta.Post("/posts", map[string]any{"title": "hello"}).AssertStatus(t, http.StatusCreated)
 
 		rows := readAuditRows(t, db)

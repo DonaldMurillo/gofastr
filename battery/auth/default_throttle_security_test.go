@@ -251,26 +251,7 @@ func TestTwoFADefaultChallengeThrottle(t *testing.T) {
 	}
 	wrongCode := GenerateTOTP(state.Secret, 0)
 
-	throttled := 0
-	for range 100 {
-		body, _ := json.Marshal(map[string]string{"code": wrongCode})
-		req := httptest.NewRequest(http.MethodPost, "/auth/2fa/challenge", bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.AddCookie(&http.Cookie{Name: "session_id", Value: tok})
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		switch w.Code {
-		case http.StatusTooManyRequests:
-			throttled++
-		case http.StatusUnauthorized, http.StatusBadRequest:
-			// wrong code refused, as it must be
-		default:
-			t.Fatalf("unexpected status %d (body=%s)", w.Code, w.Body.String())
-		}
-	}
-	if throttled == 0 {
-		t.Errorf("100 wrong 6-digit codes from one IP against /auth/2fa/challenge were never throttled (0 of 100 responses were 429); the 2FA endpoints need a default per-IP rate limit like login/register")
-	}
+	hammerTwoFACodeExpectThrottle(t, r, "/auth/2fa/challenge", tok, wrongCode)
 }
 
 // TestTwoFAVerifyDefaultThrottle: the /2fa/verify half of the floor — a
@@ -289,10 +270,18 @@ func TestTwoFAVerifyDefaultThrottle(t *testing.T) {
 	}
 	wrongCode := GenerateTOTP(state.Secret, 0)
 
+	hammerTwoFACodeExpectThrottle(t, r, "/auth/2fa/verify", session, wrongCode)
+}
+
+// hammerTwoFACodeExpectThrottle fires 100 wrong 6-digit codes at one of
+// the 2FA code endpoints from a single session (one IP) and fails unless
+// the default per-IP throttle intervenes at least once.
+func hammerTwoFACodeExpectThrottle(t *testing.T, r *router.Router, path, session, wrongCode string) {
+	t.Helper()
 	throttled := 0
 	for range 100 {
 		body, _ := json.Marshal(map[string]string{"code": wrongCode})
-		req := httptest.NewRequest(http.MethodPost, "/auth/2fa/verify", bytes.NewReader(body))
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.AddCookie(&http.Cookie{Name: "session_id", Value: session})
 		w := httptest.NewRecorder()
@@ -307,6 +296,6 @@ func TestTwoFAVerifyDefaultThrottle(t *testing.T) {
 		}
 	}
 	if throttled == 0 {
-		t.Errorf("100 wrong 6-digit codes from one IP against /auth/2fa/verify were never throttled (0 of 100 responses were 429); the endpoint needs the same default per-IP rate limit as login/register")
+		t.Errorf("100 wrong 6-digit codes from one IP against %s were never throttled (0 of 100 responses were 429); the endpoint needs the same default per-IP rate limit as login/register", path)
 	}
 }

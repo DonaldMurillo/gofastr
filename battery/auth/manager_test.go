@@ -169,6 +169,17 @@ func seedUser(t *testing.T, store *memoryUserStore, email, password string) User
 	return user
 }
 
+// postAuthJSON issues a JSON POST against a mounted auth route and returns
+// the recorded response, sharing the request plumbing across auth tests.
+func postAuthJSON(r *router.Router, path string, payload map[string]string, contentType string) *httptest.ResponseRecorder {
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
 func TestCorePlugin_Register(t *testing.T) {
 	mgr, _ := newTestManager(t)
 	r := mountRoutes(mgr)
@@ -258,14 +269,10 @@ func TestCorePlugin_LoginBadPassword(t *testing.T) {
 	seedUser(t, store, "alice@test.com", "hunter22")
 	r := mountRoutes(mgr)
 
-	body, _ := json.Marshal(map[string]string{"email": "alice@test.com", "password": "wrong"})
-	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+	rec := postAuthJSON(r, "/auth/login", map[string]string{"email": "alice@test.com", "password": "wrong"}, "application/json")
 
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d", w.Code)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
 	}
 }
 

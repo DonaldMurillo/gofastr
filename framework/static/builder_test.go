@@ -94,7 +94,13 @@ func TestBuildWritesIndexHTMLPerRoute(t *testing.T) {
 	}
 }
 
-func TestBuildEmitsRuntimeJS(t *testing.T) {
+// The build must emit the assets every generated page loads from
+// /__gofastr: runtime.js (hydration) and color-scheme.js. Every page loads
+// color-scheme.js synchronously at the top of <head> to set data-color-scheme
+// before first paint (FOUC prevention); headless-navigation reads the stored
+// scheme itself, but only from its own load onward — a missing file means a
+// flash on every reload.
+func TestBuildEmitsBootAssets(t *testing.T) {
 	a := coreapp.NewApp("SSGTest")
 	a.Register("/", &homeScreen{}, nil)
 	host := uihost.New(a)
@@ -103,35 +109,16 @@ func TestBuildEmitsRuntimeJS(t *testing.T) {
 	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(out, "__gofastr", "runtime.js"))
-	if err != nil {
-		t.Fatalf("runtime.js missing: %v", err)
-	}
-	if len(data) == 0 {
-		t.Error("runtime.js is empty")
-	}
-}
-
-func TestBuildEmitsColorSchemeJS(t *testing.T) {
-	a := coreapp.NewApp("SSGTest")
-	a.Register("/", &homeScreen{}, nil)
-	host := uihost.New(a)
-
-	out := t.TempDir()
-	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
-		t.Fatalf("Build: %v", err)
-	}
-
-	// Every page loads /__gofastr/color-scheme.js synchronously at the top of
-	// <head> to set data-color-scheme before first paint (FOUC prevention).
-	// headless-navigation reads the stored scheme itself, but only from its
-	// own load onward — a missing file means a flash on every reload.
-	data, err := os.ReadFile(filepath.Join(out, "__gofastr", "color-scheme.js"))
-	if err != nil {
-		t.Fatalf("color-scheme.js missing: %v", err)
-	}
-	if len(data) == 0 {
-		t.Error("color-scheme.js is empty")
+	for _, name := range []string{"runtime.js", "color-scheme.js"} {
+		t.Run(name, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join(out, "__gofastr", name))
+			if err != nil {
+				t.Fatalf("%s missing: %v", name, err)
+			}
+			if len(data) == 0 {
+				t.Errorf("%s is empty", name)
+			}
+		})
 	}
 }
 
