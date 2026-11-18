@@ -17,12 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// Metrics tracks per-(method, route, status) request counters and per-route
-// latency histograms. Exposes a Prometheus-compatible text endpoint at
-// /metrics (or wherever the caller mounts MetricsHandler).
-//
-// Single instance per process; pass the *Metrics into MetricsMiddleware and
-// MetricsHandler so both share the same store.
+// Metrics holds per-(method, route, status) request counters, per-route latency histograms and subsystem collectors, served by MetricsHandler.
 type Metrics struct {
 	mu         sync.Mutex
 	counters   map[metricKey]*atomic.Uint64
@@ -36,13 +31,11 @@ type metricKey struct {
 	Status int
 }
 
-// latencyHistogram is a fixed-bucket histogram per route. The bucket
-// boundaries are millisecond breakpoints chosen for HTTP server traffic.
 type latencyHistogram struct {
 	mu      sync.Mutex
 	count   uint64
 	sumMS   float64
-	buckets [9]uint64 // <=1ms, <=5, <=10, <=50, <=100, <=250, <=500, <=1000, >1000
+	buckets [9]uint64
 }
 
 var histogramBoundsMS = [...]float64{1, 5, 10, 50, 100, 250, 500, 1000}
@@ -56,21 +49,10 @@ func NewMetrics() *Metrics {
 	}
 }
 
-// CollectorFunc writes Prometheus text exposition lines (HELP / TYPE /
-// samples) for a subsystem into w. It is invoked once per /metrics scrape,
-// after the HTTP metrics, in collector-name order. It must be cheap, must
-// not panic, and must tolerate concurrent calls. A collector that needs a
-// live value (DB count, queue depth) samples it at scrape time.
+// CollectorFunc writes Prometheus text lines for a subsystem into w once per scrape; it must be cheap and safe for concurrent calls.
 type CollectorFunc func(w io.Writer)
 
-// RegisterCollector registers (or, for a known name, replaces) a named
-// metrics collector that contributes subsystem metrics to the single
-// /metrics surface. Intended for batteries and plugins that call it from
-// their Init once they have the app's *Metrics handle (see app.Metrics):
-// this is how subsystem metrics (queue depth, outbox lag, webhook
-// failures, DB pool, …) land on the same endpoint as http_requests_total
-// without a second handler and without any cross-package import cycle.
-// Passing a nil fn removes a previously-registered collector.
+// RegisterCollector adds or replaces a named collector on the /metrics output; a nil fn removes it.
 func (m *Metrics) RegisterCollector(name string, fn CollectorFunc) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -81,10 +63,7 @@ func (m *Metrics) RegisterCollector(name string, fn CollectorFunc) {
 	m.collectors[name] = fn
 }
 
-// MetricsMiddleware returns Middleware that records counters + latency for
-// every served request. Route label uses r.Pattern when available (Go 1.22+
-// ServeMux fills it in), falling back to the URL path so unmatched paths
-// don't explode cardinality with raw user input.
+// MetricsMiddleware returns middleware that counts every request and records its latency, labelled by r.Pattern or "unmatched".
 func MetricsMiddleware(m *Metrics) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -97,9 +76,6 @@ func MetricsMiddleware(m *Metrics) Middleware {
 				}
 				m.record(boundMethod(r.Method), route, status, time.Since(start))
 			}
-			// A panicking handler still answered: Recovery sends a 500,
-			// or, past a committed response, the status already sent
-			// (then a cut connection). Count it, then let the panic go on.
 			defer func() {
 				if v := recover(); v != nil {
 					record(panickedStatus(w, ww.wroteHeader, ww.status))
@@ -112,14 +88,6 @@ func MetricsMiddleware(m *Metrics) Middleware {
 	}
 }
 
-// panickedStatus is the status a panicked request is recorded under:
-// the one already sent when the response was committed, else the 500
-// Recovery writes. w is the writer this middleware was handed. When
-// Recovery is outside it, its writer, reached through Unwrap, saw what
-// actually went to the client: a wrapper between them (Compress) holds
-// a WriteHeader back, so this middleware's own committed flag can name
-// a 201 the client never got. Without Recovery outside, the wrapper's
-// own record is the best there is.
 func panickedStatus(w http.ResponseWriter, committed bool, status int) int {
 	for cur := w; cur != nil; {
 		if rw, ok := cur.(*recoveryWriter); ok {
@@ -129,7 +97,7 @@ func panickedStatus(w http.ResponseWriter, committed bool, status int) int {
 			case rw.status != 0:
 				return rw.status
 			}
-			break // hijacked: no status went out through the writer
+			break
 		}
 		u, ok := cur.(interface{ Unwrap() http.ResponseWriter })
 		if !ok {
@@ -143,11 +111,6 @@ func panickedStatus(w http.ResponseWriter, committed bool, status int) int {
 	return http.StatusInternalServerError
 }
 
-// knownMethods is the set of HTTP methods we keep as distinct metric label
-// values. net/http accepts any RFC 7230 token as a request method, so the
-// method dimension is attacker-controlled; collapsing everything outside this
-// allow-list to a single "other" sentinel bounds metric cardinality and stops
-// an unauthenticated client from growing the in-memory store without limit.
 var knownMethods = map[string]struct{}{
 	http.MethodGet:     {},
 	http.MethodHead:    {},
@@ -160,8 +123,6 @@ var knownMethods = map[string]struct{}{
 	http.MethodTrace:   {},
 }
 
-// boundMethod maps any method outside the known-method allow-list to a single
-// "other" sentinel so the metrics cardinality stays bounded.
 func boundMethod(method string) string {
 	if _, ok := knownMethods[method]; ok {
 		return method
@@ -201,15 +162,12 @@ func (h *latencyHistogram) observe(ms float64) {
 	h.buckets[len(h.buckets)-1]++
 }
 
-// MetricsHandler returns an http.Handler that serves the metrics in
-// Prometheus text exposition format. Mount at /metrics or anywhere the
-// scrape config points.
+// MetricsHandler serves m in Prometheus text exposition format.
 func MetricsHandler(m *Metrics) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		var sb strings.Builder
 
-		// http_requests_total: counter per (method, route, status).
 		sb.WriteString("# HELP http_requests_total Number of HTTP requests served.\n")
 		sb.WriteString("# TYPE http_requests_total counter\n")
 
@@ -233,7 +191,6 @@ func MetricsHandler(m *Metrics) http.Handler {
 				k.Method, k.Route, k.Status, n)
 		}
 
-		// http_request_duration_ms: histogram per route.
 		sb.WriteString("# HELP http_request_duration_ms Request latency in ms.\n")
 		sb.WriteString("# TYPE http_request_duration_ms histogram\n")
 		routes := make([]string, 0, len(m.durations))
@@ -255,11 +212,6 @@ func MetricsHandler(m *Metrics) http.Handler {
 			fmt.Fprintf(&sb, "http_request_duration_ms_count{route=%q} %d\n", r, h.count)
 			h.mu.Unlock()
 		}
-		// Snapshot collectors, names AND funcs, under the lock, then run
-		// them OUTSIDE m.mu: a collector may do I/O (DB count, queue stats)
-		// and must never block request recording or hold the metrics lock.
-		// Reading the live map after Unlock would race a concurrent
-		// RegisterCollector (a runtime fatal, not a recoverable panic).
 		type namedCollector struct {
 			name string
 			fn   CollectorFunc
@@ -280,16 +232,6 @@ func MetricsHandler(m *Metrics) http.Handler {
 	})
 }
 
-// runCollectorSafely runs one metrics collector into an ISOLATED buffer with
-// a per-call recover, mirroring hook.runHookSafely. A third-party
-// CollectorFunc that panics is isolated (logged once) instead of aborting
-// the whole /metrics scrape. The collector writes into its OWN buffer, so a
-// half-written line from a collector that panics mid-write is discarded:
-// only a collector that returns normally contributes its bytes to the
-// scrape. Without the private buffer the partial bytes a panicking collector
-// had already flushed into the shared exposition buffer would survive the
-// recover and corrupt the output (a truncated metric line a parser rejects).
-// Returns nil on panic so the caller appends nothing.
 func runCollectorSafely(name string, fn CollectorFunc) (out []byte) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -305,8 +247,6 @@ func runCollectorSafely(name string, fn CollectorFunc) (out []byte) {
 	return buf.Bytes()
 }
 
-// metricsResponseWriter captures the response status code so the recording
-// middleware can label by it. Wraps the inner ResponseWriter transparently.
 type metricsResponseWriter struct {
 	http.ResponseWriter
 	status      int
@@ -318,13 +258,9 @@ func (w *metricsResponseWriter) WriteHeader(code int) {
 		return
 	}
 	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
-		w.ResponseWriter.WriteHeader(code) // informational: forward, keep waiting
+		w.ResponseWriter.WriteHeader(code)
 		return
 	}
-	// Latch only once the call returned: net/http panics on a code
-	// outside 100-999 before sending anything, and a panicked request
-	// is recorded under the 500 Recovery sends unless this latch says
-	// the response had already started.
 	w.ResponseWriter.WriteHeader(code)
 	w.status = code
 	w.wroteHeader = true
@@ -337,10 +273,6 @@ func (w *metricsResponseWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-// ReadFrom keeps the connection's sendfile path: io.Copy and
-// http.ServeContent use the writer's ReaderFrom when it has one, and
-// embedding http.ResponseWriter does not promote it. It latches the
-// implicit 200 the way Write does.
 func (w *metricsResponseWriter) ReadFrom(src io.Reader) (int64, error) {
 	return copyResponse(w, w.ResponseWriter, src)
 }
@@ -373,25 +305,13 @@ func copyResponse(wrapped io.Writer, underlying http.ResponseWriter, source io.R
 	}
 }
 
-// Flush forwards to the underlying ResponseWriter's Flusher if it has one.
-// Without this, wrapping breaks any handler that streams (SSE, chunked JSON,
-// long-poll), because the SSE constructor type-asserts http.Flusher and
-// panics otherwise. Found the hard way by the full-stack E2E test that
-// exercised /posts/_events through the metrics middleware.
 func (w *metricsResponseWriter) Flush() {
-	// A flush sends the headers: the status is the one set, or 200.
-	// Latch it, so a WriteHeader after the flush (which net/http drops)
-	// does not record a status the client never got.
 	w.wroteHeader = true
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
 }
 
-// Hijack forwards to the underlying ResponseWriter's Hijacker if it has one.
-// Without this, wrapping breaks any handler that performs a WebSocket upgrade
-// or otherwise type-asserts http.Hijacker (e.g. core/stream/websocket.go),
-// because the assertion would see the wrapper instead of the real writer.
 func (w *metricsResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
 		return hj.Hijack()
@@ -399,7 +319,6 @@ func (w *metricsResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, http.ErrNotSupported
 }
 
-// Push forwards to the underlying ResponseWriter's Pusher if it has one.
 func (w *metricsResponseWriter) Push(target string, opts *http.PushOptions) error {
 	if pu, ok := w.ResponseWriter.(http.Pusher); ok {
 		return pu.Push(target, opts)
@@ -407,8 +326,6 @@ func (w *metricsResponseWriter) Push(target string, opts *http.PushOptions) erro
 	return http.ErrNotSupported
 }
 
-// Unwrap exposes the wrapped writer to net/http's ResponseController so it
-// can reach optional interfaces this wrapper doesn't re-expose directly.
 func (w *metricsResponseWriter) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
 }

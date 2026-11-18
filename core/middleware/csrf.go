@@ -22,123 +22,53 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// logSlogWarnDefault routes to slog.Default() so callers passing nil to
-// WarnIfCSRFUnconfigured still get the warning on whatever the host's
-// configured default handler is.
 func logSlogWarnDefault(msg string) {
 	slog.Default().Warn(msg)
 }
 
-// CSRFConfig configures the double-submit-cookie CSRF middleware.
-//
-// CookieName / HeaderName must match what the client sends back; defaults
-// are sensible.
-//
-// Skip is consulted on every request; return true to bypass the check
-// entirely (e.g., for endpoints authenticated by Bearer tokens or API
-// keys, which aren't subject to CSRF since they don't ride on cookies).
-//
-// SecretKey, when non-empty, switches the middleware to a signed-double-
-// submit pattern: the cookie value is "<random>.<HMAC>" and the server
-// rejects any request whose cookie/header lacks a valid signature. Without
-// this, naive double-submit is vulnerable to cookie injection from sibling
-// subdomains. Strongly recommended; defaults to a per-process random key
-// if left empty (rotates on restart).
-//
-// On a request the middleware considers secure (CookieSecure, r.TLS, or
-// X-Forwarded-Proto: https) the cookie name gets the __Host- prefix, a
-// caller-supplied CookieName included. The browser refuses a __Host-
-// cookie set from a sibling subdomain, and the token is not bound to a
-// session, so the prefix is what stops a sibling from planting a token
-// it fetched itself. NoHostPrefix opts out.
+// CSRFConfig configures the signed double-submit-cookie CSRF middleware; on a secure request the cookie name gets the __Host- prefix unless NoHostPrefix is set.
 type CSRFConfig struct {
 	CookieName string
 	HeaderName string
 	CookiePath string
 
-	// CookieSecure marks the CSRF cookie Secure (HTTPS-only). Leave false
-	// for local dev; set true in production.
+	// CookieSecure marks the cookie Secure on every request, not only TLS or X-Forwarded-Proto: https ones.
 	CookieSecure bool
 
-	// NoHostPrefix keeps CookieName as given on secure requests instead
-	// of naming the cookie "__Host-"+CookieName ("__Host-csrf" for the
-	// default). The prefix is resolved PER REQUEST from the same signal
-	// that sets the Secure flag (r.TLS or X-Forwarded-Proto), and a name
-	// that already carries it is left alone. Without the prefix a sibling
-	// subdomain can plant a valid token as a Domain cookie, so set this
-	// only where the cookie must not be host-only, such as a CookiePath
-	// other than "/", which a __Host- cookie cannot carry.
+	// NoHostPrefix keeps CookieName without the __Host- prefix on secure requests, for a CookiePath other than "/".
 	NoHostPrefix bool
 
-	// SecretKey is the HMAC key used to sign the CSRF token. Empty means
-	// the middleware autogenerates a per-process key on first use;
-	// fine for single-instance dev, NOT acceptable for production
-	// (each restart and each fleet replica gets a different key, so
-	// in-flight tokens silently 403). Call WarnIfCSRFUnconfigured at
-	// startup to surface this to operators.
+	// SecretKey signs tokens; empty uses a per-process random key, which does not survive a restart or span replicas.
 	SecretKey []byte
 
-	// AdditionalKeys lets a deploy rotate SecretKey without invalidating
-	// every in-flight form. The middleware signs new tokens with
-	// SecretKey but accepts tokens verified by SecretKey OR any key
-	// listed here. Drain the previous key from this list once all old
-	// tokens have expired.
+	// AdditionalKeys are also accepted when verifying, so SecretKey can rotate; new tokens are signed with SecretKey.
 	AdditionalKeys [][]byte
 
 	// Skip allows the middleware to be bypassed for specific requests.
 	Skip func(*http.Request) bool
 
-	// FormField is the form-body field name read as a fallback when the
-	// request is form-encoded and the header is missing. Defaults to
-	// "_csrf". HTML form flows put the token in a hidden input with
-	// this name so the header doesn't need to be set client-side.
+	// FormField is the form field read when the header is missing on a form-encoded request; default "_csrf".
 	FormField string
 
-	// MaxFormBytes caps how much of a form-encoded request body the
-	// middleware will buffer when probing for FormField. Defaults to
-	// 1 MiB. Bodies above the cap return 413 before any allocation.
-	// Without this, an unauthenticated attacker could force the
-	// process to buffer up to 10 MB (form-urlencoded) or 32 MB
-	// (multipart) per request just to land in the signature-mismatch
-	// branch. Set to a smaller value for endpoints that never carry
-	// large forms; do NOT set to 0 (interpreted as "use default").
+	// MaxFormBytes caps the form body read for FormField, answering 413 above it; zero or less means 1 MiB.
 	MaxFormBytes int64
 }
 
-// defaultCSRFMaxFormBytes is the form-body cap when CSRFConfig.MaxFormBytes
-// is unset. Matches the json-body cap in battery/auth so all body-limit
-// surfaces in the stack agree at 1 MiB.
 const defaultCSRFMaxFormBytes int64 = 1 << 20
 
-// csrfTokenCtxKey types the request-context key the middleware uses to
-// surface a freshly-minted token on the SAME request that received it.
-// Template helpers (e.g. auth.CSRFInputHTML) read this so the hidden
-// input renders correctly on the first GET, before the browser has
-// echoed the cookie back.
 type csrfTokenCtxKey struct{}
 
-// TokenFromContext returns the CSRF token stashed on ctx by the
-// middleware, or "" when no token is available. Template helpers
-// should prefer this over r.Cookie because the cookie isn't in the
-// request on the GET that mints it.
+// TokenFromContext returns the CSRF token the middleware put on ctx, or "" when there is none.
 func TokenFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(csrfTokenCtxKey{}).(string)
 	return v
 }
 
-// csrfSubmissionKey carries the token an unsafe request passed the check
-// with, and the header the check read it from.
 type csrfSubmissionKey struct{}
 
 type csrfSubmission struct{ header, token string }
 
-// VerifiedCSRFSubmission returns the header name and token an unsafe
-// request passed CSRF with, or ok false when no check passed it (a safe
-// method, or a request the check skipped). A server-side re-dispatch of
-// the request, such as an MCP tool's internal write, presents them again:
-// the re-dispatched request carries the same cookie, and its own check
-// compares them once more, so nothing is exempted. The token is the raw
-// cookie value: never render it.
+// VerifiedCSRFSubmission returns the header name and raw token an unsafe request passed CSRF with, or ok false when no check passed it; never render the token.
 func VerifiedCSRFSubmission(ctx context.Context) (header, token string, ok bool) {
 	s, ok := ctx.Value(csrfSubmissionKey{}).(csrfSubmission)
 	return s.header, s.token, ok
@@ -156,7 +86,6 @@ func ensureCSRFKey(cfg *CSRFConfig) {
 	csrfAutoKeyOnce.Do(func() {
 		k := make([]byte, 32)
 		if _, err := rand.Read(k); err != nil {
-			// Crypto-rand never fails in practice; bail loudly.
 			panic("csrf: autogenerating SecretKey: " + err.Error())
 		}
 		csrfAutoKey = k
@@ -164,15 +93,7 @@ func ensureCSRFKey(cfg *CSRFConfig) {
 	cfg.SecretKey = csrfAutoKey
 }
 
-// CSRF returns a Middleware that enforces the double-submit cookie pattern:
-//
-//  1. On safe methods (GET, HEAD, OPTIONS) the middleware sets a cookie
-//     containing a freshly-rotated token if none is present.
-//  2. On unsafe methods (POST, PUT, PATCH, DELETE) the middleware verifies
-//     that the header value matches the cookie value. Mismatch → 403.
-//
-// This protects against cross-site form submissions because attacker-
-// controlled pages can't read the cookie value to populate the header.
+// CSRF returns middleware that sets a signed token cookie on safe methods and answers 403 to an unsafe method whose header or form token does not match a validly signed cookie.
 func CSRF(cfg CSRFConfig) Middleware {
 	if cfg.HeaderName == "" {
 		cfg.HeaderName = "X-CSRF-Token"
@@ -187,15 +108,9 @@ func CSRF(cfg CSRFConfig) Middleware {
 		cfg.MaxFormBytes = defaultCSRFMaxFormBytes
 	}
 	if cfg.CookiePath != "/" && (!cfg.NoHostPrefix || strings.HasPrefix(cfg.CookieName, "__Host-")) {
-		// The browser drops a __Host- cookie whose Path is not "/", so
-		// every secure write would 403 on a missing cookie. A name that
-		// carries the prefix itself keeps it under NoHostPrefix.
 		panic(fmt.Sprintf("csrf: CookiePath %q cannot carry the __Host- prefix, which needs Path=/; set NoHostPrefix to accept a cookie a sibling subdomain can plant", cfg.CookiePath))
 	}
 	ensureCSRFKey(&cfg)
-	// Resolve the cookie name. __Host- prefix requires Path=/, Secure,
-	// and no Domain, all of which we satisfy. The browser refuses to
-	// accept a __Host- cookie set from a sibling subdomain.
 	resolveCookieName := func(secure bool) string {
 		if cfg.CookieName != "" {
 			if secure && !cfg.NoHostPrefix && !strings.HasPrefix(cfg.CookieName, "__Host-") {
@@ -214,36 +129,15 @@ func CSRF(cfg CSRFConfig) Middleware {
 				next.ServeHTTP(w, r)
 				return
 			}
-			// HTTPS detection covers the TLS-terminating-proxy shape: the
-			// app sees plain HTTP but X-Forwarded-Proto says https, and
-			// the cookie must still be Secure/__Host- there.
 			secure := cfg.CookieSecure || r.TLS != nil ||
 				strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 			cookieName := resolveCookieName(secure)
 
 			if isSafeMethod(r.Method) {
-				// Set a signed token cookie if the client doesn't have one
-				// yet. EITHER way, stash the token value on ctx so the
-				// downstream template helper (CSRFInputHTML) can render
-				// the hidden input on the same request. Without that,
-				// the first GET's response has the cookie but the body
-				// has no token (the cookie isn't in r.Cookies() yet).
-				//
-				// Skip the cookie/ctx work entirely when an outer CSRF
-				// middleware already stashed a token on ctx; nested
-				// instances would otherwise emit duplicate Set-Cookie
-				// headers (browser keeps the last, but it's noisy and
-				// can race with operator-rotated keys).
 				if TokenFromContext(r.Context()) != "" {
 					next.ServeHTTP(w, r)
 					return
 				}
-				// Reuse the existing cookie ONLY if its signature still
-				// verifies under the current key set. Otherwise (process
-				// restart rotated the auto-key, operator dropped a key
-				// from AdditionalKeys, attacker tampered with the value),
-				// stamping it into the form's hidden _csrf guarantees the
-				// next POST 403s on signature mismatch. Re-mint instead.
 				var token string
 				if existing, err := r.Cookie(cookieName); err == nil &&
 					verifySignedTokenAny(existing.Value, cfg.SecretKey, cfg.AdditionalKeys) {
@@ -260,7 +154,7 @@ func CSRF(cfg CSRFConfig) Middleware {
 						Name:     cookieName,
 						Value:    tok,
 						Path:     cfg.CookiePath,
-						HttpOnly: false, // client JS must read it to set the header
+						HttpOnly: false,
 						Secure:   secure,
 						SameSite: http.SameSiteLaxMode,
 					})
@@ -270,8 +164,6 @@ func CSRF(cfg CSRFConfig) Middleware {
 				return
 			}
 
-			// Unsafe method: verify header (or form-body fallback) matches
-			// cookie AND signature is valid.
 			cookie, err := r.Cookie(cookieName)
 			if err != nil {
 				i18n.HTTPError(w, r, http.StatusForbidden, reasonCSRFMissingCookie)
@@ -279,10 +171,6 @@ func CSRF(cfg CSRFConfig) Middleware {
 			}
 			submitted := r.Header.Get(cfg.HeaderName)
 			if submitted == "" && isFormContentType(r) {
-				// Buffer the body up to MaxFormBytes, parse for the CSRF
-				// token, then restore r.Body so downstream handlers (which
-				// might want raw r.Body access, e.g. upload streams) still
-				// see the bytes. Over-cap requests return 413 immediately.
 				buf, err := readAndBufferCapped(r, cfg.MaxFormBytes)
 				if err != nil {
 					i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, reasonCSRFFormTooLarge)
@@ -291,35 +179,22 @@ func CSRF(cfg CSRFConfig) Middleware {
 				submitted = parseFormField(buf, r.Header.Get("Content-Type"), cfg.FormField)
 				r.Body = io.NopCloser(bytes.NewReader(buf))
 			}
-			// Rendered tokens arrive masked (MaskCSRFToken); scripts that
-			// read the cookie send it raw. Both unmask to the cookie value.
 			submitted = unmaskCSRFToken(submitted)
 			if submitted == "" || subtle.ConstantTimeCompare([]byte(submitted), []byte(cookie.Value)) != 1 {
 				i18n.HTTPError(w, r, http.StatusForbidden, reasonCSRFTokenMismatch)
 				return
 			}
 			if !verifySignedTokenAny(cookie.Value, cfg.SecretKey, cfg.AdditionalKeys) {
-				// Header matched cookie but the signature is bogus, i.e.
-				// an attacker planted both via a subdomain and didn't
-				// have the signing key (and the additional rotation
-				// keys, if any, also rejected). Reject.
 				i18n.HTTPError(w, r, http.StatusForbidden, reasonCSRFBadSignature)
 				return
 			}
 			ctx := context.WithValue(r.Context(), csrfSubmissionKey{}, csrfSubmission{header: cfg.HeaderName, token: submitted})
-			// The verified token is the page's token too: a handler that
-			// re-renders the form (a validation error) reads it here.
-			// Without it, readers fell back to guessing the cookie name and
-			// rendered no token under a custom CookieName, so the
-			// resubmit answered 403.
 			ctx = context.WithValue(ctx, csrfTokenCtxKey{}, cookie.Value)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
-// isSafeMethod reports whether the HTTP method is considered safe (does not
-// mutate state) under RFC 7231 §4.2.1.
 func isSafeMethod(method string) bool {
 	switch strings.ToUpper(method) {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
@@ -328,10 +203,6 @@ func isSafeMethod(method string) bool {
 	return false
 }
 
-// readAndBufferCapped reads at most cap+1 bytes from r.Body. Returns the
-// buffered bytes when within cap, or an "over-capped" error otherwise.
-// The +1 sentinel lets us distinguish "exactly cap bytes" from "more
-// than cap bytes" without re-reading.
 func readAndBufferCapped(r *http.Request, cap int64) ([]byte, error) {
 	if r.Body == nil {
 		return nil, nil
@@ -347,10 +218,6 @@ func readAndBufferCapped(r *http.Request, cap int64) ([]byte, error) {
 	return buf, nil
 }
 
-// parseFormField extracts the named field from a buffered request body,
-// handling either application/x-www-form-urlencoded or multipart/form-data.
-// Returns "" when the field is missing or the body is malformed;
-// the caller treats either as "no token submitted" and rejects.
 func parseFormField(body []byte, contentType, name string) string {
 	mediaType, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
@@ -369,9 +236,6 @@ func parseFormField(body []byte, contentType, name string) string {
 			return ""
 		}
 		mr := multipart.NewReader(bytes.NewReader(body), boundary)
-		// Cap multipart parsing at the same body length already held;
-		// ReadForm spills above maxMemory but we've already capped at
-		// MaxFormBytes upstream.
 		form, err := mr.ReadForm(int64(len(body)))
 		if err != nil {
 			return ""
@@ -386,9 +250,6 @@ func parseFormField(body []byte, contentType, name string) string {
 	}
 }
 
-// isFormContentType reports whether the request body is form-encoded.
-// Used by the CSRF check to decide whether to look for the token in
-// the form-body fallback field.
 func isFormContentType(r *http.Request) bool {
 	ct := r.Header.Get("Content-Type")
 	if i := strings.IndexByte(ct, ';'); i >= 0 {
@@ -398,8 +259,6 @@ func isFormContentType(r *http.Request) bool {
 	return ct == "application/x-www-form-urlencoded" || ct == "multipart/form-data"
 }
 
-// generateCSRFToken returns 32 bytes of cryptographic randomness, base64-
-// encoded for header / cookie transport.
 func generateCSRFToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -408,10 +267,6 @@ func generateCSRFToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// generateSignedCSRFToken returns "<random>.<HMAC>". The HMAC binds the
-// token to the server's secret so an attacker who can plant a cookie
-// (e.g. via subdomain XSS) but doesn't know the secret cannot forge a
-// value the server accepts.
 func generateSignedCSRFToken(secret []byte) (string, error) {
 	random, err := generateCSRFToken()
 	if err != nil {
@@ -423,23 +278,12 @@ func generateSignedCSRFToken(secret []byte) (string, error) {
 	return random + "." + sig, nil
 }
 
-// verifySignedTokenAny returns true if any of (primary, ...additional)
-// validates value's HMAC. Lets a rolling deploy keep verifying tokens
-// signed by the previous SecretKey while minting new ones under the
-// rolled key.
-//
-// Runs ALL key checks even after a match; early-return on match would
-// leak (via timing) which key signed the token, useful to an attacker
-// who wants to identify sessions signed by the old, soon-to-be-dropped
-// rotation key.
 func verifySignedTokenAny(value string, primary []byte, additional [][]byte) bool {
 	ok := verifySignedCSRFToken(value, primary)
 	for _, k := range additional {
 		if len(k) == 0 {
 			continue
 		}
-		// Don't short-circuit; the cost of one extra HMAC per request
-		// is negligible vs. the cost of a rotation-key timing oracle.
 		if verifySignedCSRFToken(value, k) {
 			ok = true
 		}
@@ -447,8 +291,6 @@ func verifySignedTokenAny(value string, primary []byte, additional [][]byte) boo
 	return ok
 }
 
-// verifySignedCSRFToken returns true if `value` is a well-formed signed
-// CSRF token whose HMAC matches `secret`. Constant-time comparison.
 func verifySignedCSRFToken(value string, secret []byte) bool {
 	random, sig, ok := strings.CutLast(value, ".")
 	if !ok || random == "" || sig == "" {
@@ -460,30 +302,17 @@ func verifySignedCSRFToken(value string, secret []byte) bool {
 	return subtle.ConstantTimeCompare([]byte(sig), []byte(expected)) == 1
 }
 
-// WarnIfCSRFUnconfigured emits a WARN log when the given CSRFConfig
-// relies on the per-process auto-generated SecretKey. Hosts should
-// call this once at startup. Multi-instance deploys silently break
-// without a shared SecretKey because every replica signs tokens with
-// a different per-process key; verification fails when a request
-// lands on a different replica than the one that minted the cookie.
-//
-// Passing nil for logger uses slog.Default. Safe to call with any
-// CSRFConfig; emits nothing when SecretKey is set.
+// WarnIfCSRFUnconfigured logs a warning, to slog.Default when logger is nil, if cfg has no SecretKey.
 func WarnIfCSRFUnconfigured(cfg CSRFConfig, logger interface {
 	Warn(msg string, args ...any)
 }) {
 	if len(cfg.SecretKey) > 0 {
 		return
 	}
-	// A nil *slog.Logger arrives as a non-nil interface holding a nil
-	// pointer: a host passing its own still-unset logger field. Treat it
-	// as nil, or (*slog.Logger).Warn dereferences nil at startup.
 	if l, ok := logger.(*slog.Logger); ok && l == nil {
 		logger = nil
 	}
 	if logger == nil {
-		// stdlib slog default; keeps this package log-implementation-agnostic.
-		// Importing log/slog here is fine; it's stdlib since Go 1.21.
 		logSlogWarnDefault("CSRF SecretKey not configured — auto-generated per-process key will not survive restart and will reject form submits across multi-instance deploys. Set CSRFConfig.SecretKey for production.")
 		return
 	}
@@ -491,15 +320,7 @@ func WarnIfCSRFUnconfigured(cfg CSRFConfig, logger interface {
 		"recommendation", "set CSRFConfig.SecretKey for production")
 }
 
-// SkipBearerAuth returns a Skip predicate suitable for CSRFConfig.Skip that
-// bypasses requests carrying an Authorization: Bearer or X-API-Key header;
-// those don't ride on cookies and so aren't subject to CSRF.
-//
-// Only the Bearer scheme counts. Basic, Digest, Negotiate and NTLM are
-// credentials the browser attaches by itself, to a cross-site form POST
-// too, once a proxy or intranet challenged for them: skipping on any
-// Authorization value let such a form through CSRF behind an HTTP-auth
-// staging gate, riding the session cookie as well.
+// SkipBearerAuth returns a CSRFConfig.Skip predicate that skips requests carrying Authorization: Bearer or X-API-Key, never another Authorization scheme.
 func SkipBearerAuth() func(*http.Request) bool {
 	return func(r *http.Request) bool {
 		if scheme, _, ok := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " "); ok && strings.EqualFold(scheme, "bearer") {

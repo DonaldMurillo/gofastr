@@ -1,0 +1,53 @@
+primitive: middleware.ratelimit
+summary: RateLimit, the in-memory token-bucket limiter keyed by client address, with its trusted-proxy key and bounded bucket store.
+code:
+  - core/middleware/ratelimit.go
+docs:
+  - framework/docs/content/rate-limit.md
+invariants:
+  - id: full-bucket-restarts-its-clock
+    rule: A rate-limit bucket that refills to capacity restarts its tick clock, so a client that was quiet gets one Capacity burst, and a partial refill keeps the clock it had.
+    enforced_by:
+      - test: core/middleware.TestRateLimitFullBucketRestartsClock
+      - test: core/middleware.TestRateLimitPartialRefillKeepsClock
+  - id: retry-after-covers-the-next-tick
+    rule: A refused request's Retry-After and RateLimit-Reset are whole seconds rounded up, and Retry-After reaches the next refill tick, at least one second.
+    enforced_by:
+      - test: core/middleware.TestRateLimit_RetryAfterCoversTick
+      - test: core/middleware.TestSweepCeilSecondsRoundsUp
+  - id: default-key-is-the-peer
+    rule: Without TrustProxyHeaders the key is the TCP peer address, an IPv6 peer collapsed to its /64, and X-Forwarded-For and X-Real-IP are ignored.
+    enforced_by:
+      - test: core/middleware.TestRateLimit_IPv6Slash64SharesOneBucket
+      - test: core/middleware.TestDefaultRateLimitKey_CollapsesIPv6Only
+  - id: forwarded-key-only-from-trusted-peer
+    rule: With TrustProxyHeaders the forwarded client is used only when the peer is in TrustedProxies, X-Forwarded-For is read from the right past trusted hops, and a private, loopback or link-local hop falls back to the peer.
+    enforced_by:
+      - test: core/middleware.TestSweepRateLimitForwardedOnlyFromTrustedPeer
+  - id: reap-only-full-buckets
+    rule: The reap drops only buckets that have refilled to capacity, never one that still owes tokens however long its key was quiet.
+    enforced_by:
+      - test: core/middleware.TestReapKeepsExhaustedBucket
+  - id: bucket-store-bounded
+    rule: The store holds at most MaxKeys buckets (100_000 by default), shedding those with the most tokens left first, so a flood of fresh keys sheds itself before an exhausted key.
+    enforced_by:
+      - test: core/middleware.TestRateLimitBucketStoreCapped
+      - test: core/middleware.TestEvictKeepsExhaustedBucket
+      - test: core/middleware.TestEvictKeepsExhaustedBucketDefaultRefill
+decisions:
+  - id: rank-eviction-by-tokens-left
+    date: 2026-11-18
+    status: accepted
+    decision: Eviction ranks buckets by tokens left, then by time to full.
+    rejected:
+      - option: Rank by time to full alone.
+        why: Time to full is counted in refill ticks, so with RefillBy equal to Capacity an exhausted bucket and a one-token-spent one owe the same tick, and the older exhausted key was shed first.
+    upholds: [bucket-store-bounded]
+  - id: ignore-forwarding-headers-by-default
+    date: 2026-11-18
+    status: accepted
+    decision: Forwarding headers pick the key only with TrustProxyHeaders and a TrustedProxies list naming the peer.
+    rejected:
+      - option: Trust X-Forwarded-For whenever TrustProxyHeaders is set.
+        why: A client talking to the origin directly could send a fresh value per request and get a fresh bucket each time.
+    upholds: [default-key-is-the-peer, forwarded-key-only-from-trusted-peer]
