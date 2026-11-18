@@ -38,6 +38,7 @@ invariants:
     rule: The first Ctrl-C (or SIGINT/SIGTERM) sends CancelTurn and a second within 2 seconds exits the TUI.
     enforced_by:
       - test: framework/experimental/harness/client/tui.TestCtrlCWindow
+      - test: framework/experimental/harness/client/tui.TestASecondQuitSignalEndsTheLoop
   - id: scrollback-entry-has-no-newline
     rule: Reply text, thinking text and tool output are split on newlines before they enter the scrollback, so no scrollback entry holds a line feed that would move the raw-mode cursor.
     enforced_by:
@@ -54,7 +55,7 @@ invariants:
       - test: framework/experimental/harness/client/tui.TestAnErrorResultShowsEightLines
       - test: framework/experimental/harness/client/tui.TestSnapshot_CtrlOExpandsTruncated
   - id: scrollback-cap-keeps-indices
-    rule: The scrollback keeps its newest 1000 lines, and dropping older lines shifts the spinner row, the open thinking burst and every Ctrl-O hint by the same count, forgetting a hint that fell off.
+    rule: The scrollback keeps its newest 1000 lines, a Ctrl-O expansion included, and dropping older lines shifts the spinner row, the open thinking burst and every Ctrl-O hint by the same count, forgetting a hint that fell off.
     enforced_by:
       - test: framework/experimental/harness/client/tui.TestCtrlOExpandsInPlaceAfterTheScrollbackCapTrims
       - test: framework/experimental/harness/client/tui.TestThinkingCollapsesWholeAfterTheScrollbackCapTrims
