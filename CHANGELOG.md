@@ -27,7 +27,8 @@ few lines, and link the PR or the docs page for the rest.
 ### Fixed
 - **Worktree isolation tightens an existing SQLite state directory to owner-only.** On Unix,
   `.gofastr/isolation/<id>` kept its mode when it already existed, so one created group- or
-  world-readable stayed that way; it is now set to 0700 on every resolve.
+  world-readable stayed that way; it is now set to 0700 whenever an active SQLite DSN is rewritten
+  into it. A directory owned by another user, which chmod refuses, is logged and used as before.
 - **A static export skips a FIFO or device file in its sources instead of hanging.** A named pipe
   in the static dir, the static FS or an `ExtraDirs` directory was opened before its type was
   checked, and the open waited for a writer forever, as did a symlink to one in a static FS or
