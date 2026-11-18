@@ -144,6 +144,7 @@ var ownedPackages = []string{
 	"framework/internal/casing", "framework/internal/exif", "framework/internal/jpegcost",
 	"framework/internal/jpegtest", "framework/internal/testdb",
 	"framework/experimental/apiversions", "framework/experimental/webmcp",
+	"core/render",
 	"core/middleware",
 	"core/router",
 	"core/backoff",

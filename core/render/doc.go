@@ -1,3 +1,2 @@
-// Package render is part of the GoFastr framework.
-// See https://github.com/DonaldMurillo/gofastr for documentation.
+// Package render builds auto-escaped HTML fragments in Go code; [Raw] is the only unescaped way in.
 package render
