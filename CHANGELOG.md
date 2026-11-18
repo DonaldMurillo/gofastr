@@ -151,10 +151,13 @@ few lines, and link the PR or the docs page for the rest.
   without a `proof`, or `passkey_signin_required` for a session that
   began before every passkey. The battery's browser
   module runs the step-up itself; a client of its own sends `proof`.
-- **A step-up proof is spent only by the session that earned it.**
-- **Under `OIDCConfig.Tenants` an email is verified only with
-  `xms_edov: true`** in the signed id_token, closing the multi-tenant
-  "nOAuth" email takeover.
+- **Only the session that earned a step-up proof can redeem it.** Another
+  session's attempt fails and still uses the proof up.
+- **Under `OIDCConfig.Tenants` an email is verified only with both
+  `xms_edov: true` and `email_verified: true`** in the signed id_token,
+  for its own `email` claim, and a tenant identity with no link never
+  joins an existing account by email: the owner links it while signed
+  in. This closes the multi-tenant "nOAuth" email takeover.
 - **BREAKING: `auth.PasskeyStore` gains `RenamePasskey`.** Both built-in
   stores implement it. A custom store adds it, and may keep the new
   `PasskeyCredential.Transports` and `AAGUID`.
@@ -254,8 +257,9 @@ few lines, and link the PR or the docs page for the rest.
   See [Passkeys](framework/docs/content/auth.md#passkeys).
 - **`OIDCConfig.Tenants` admits a multi-tenant issuer** such as Microsoft's
   `common` or `organizations` endpoint: the token's `iss` must be the
-  issuer for its own `tid`, and the tenant must be listed (or `"*"`). The
-  account is keyed by `<tid>/<sub>`.
+  issuer for its own `tid`, the tenant must be listed (or `"*"`), and a
+  key scoped to another issuer cannot sign it. `Tenants` with an exact
+  issuer fails discovery. The account is keyed by `<tid>/<id claim>`.
 - **Logout sends `Clear-Site-Data`.** A successful `POST /auth/logout`
   now sends `Clear-Site-Data: "cache", "storage"`, which asks the browser
   to empty its caches and the origin's storage. Browsers act on it only

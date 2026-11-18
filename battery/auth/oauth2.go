@@ -47,6 +47,12 @@ type OAuth2UserInfo struct {
 	// match. Defaults to false, a provider that cannot assert
 	// verification must not be treated as if it had.
 	EmailVerified bool
+
+	// noEmailLink refuses step 2 of resolveOAuthUser: an identity with
+	// no link yet never joins an existing account by its address. Set
+	// for a multi-tenant OIDC issuer, where one address can belong to
+	// identities in many tenants.
+	noEmailLink bool
 }
 
 // ─── Provider interface ─────────────────────────────────────────────────────
@@ -1105,6 +1111,11 @@ func (p *OAuth2Plugin) resolveOAuthUser(ctx context.Context, store UserStore, in
 	existing, _, err := store.FindByEmail(ctx, info.Email)
 	if err != nil && !errors.Is(err, ErrUserNotFound) {
 		return nil, false, fmt.Errorf("%w: FindByEmail: %v", errOAuthLookupFailed, err)
+	}
+	if err == nil && info.noEmailLink {
+		// A tenant identity joins an existing account only through an
+		// explicit link made while signed in.
+		return nil, false, &oauthEmailCollision{userID: existing.GetID()}
 	}
 	if err == nil {
 		// Email matches an existing local account. The decision now rides

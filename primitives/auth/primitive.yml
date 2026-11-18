@@ -93,16 +93,20 @@ invariants:
       - test: battery/auth.TestInitRefusesNonIdempotentCanonicalizer
       - test: battery/auth.TestNonIdempotentCanonicalizerRefusedAtRuntime
   - id: oidc-tenant-issuer-is-the-tokens-own
-    rule: An OIDCProvider accepts a discovery issuer with a {tenantid} slot only when OIDCConfig.Tenants is set and the template is the configured issuer with one path segment open, and then accepts an id_token only when its iss is that template filled with its own tid claim and the tid is listed in Tenants or Tenants holds "*".
+    rule: An OIDCProvider accepts a discovery issuer with a {tenantid} slot only when OIDCConfig.Tenants is set and the template is the configured issuer with one whole path segment open, fails discovery when Tenants is set and the issuer is anything else, keeps its own copy of Tenants, and then accepts an id_token only when its iss is that template filled with its own non-empty tid claim, the tid is listed in Tenants or Tenants holds "*", and its signing key, when the key names an issuer, names that iss or the template.
     enforced_by:
       - test: battery/auth.TestOIDCMultiTenantIssuer
       - test: battery/auth.TestOIDCTenantTemplateMustFitTheIssuer
+      - test: battery/auth.TestOIDCTenantsRefuseAnExactIssuer
+      - test: battery/auth.TestOIDCTenantsAreCopied
+      - test: battery/auth.TestOIDCTenantKeyIssuerScope
   - id: oidc-tenant-identity-is-tenant-and-subject
-    rule: Under a multi-tenant issuer the OAuth2UserInfo ID is the token's tid, a slash and its subject, and FetchUserInfo refuses a sign-in it can answer only from the userinfo endpoint.
+    rule: Under a multi-tenant issuer the OAuth2UserInfo ID is the token's tid, a slash and the claim OIDCClaims.IDClaim names (sub by default), FetchUserInfo refuses a sign-in it can answer only from the userinfo endpoint, and the OAuth callback never joins such an identity with no link to an existing account by email (409 collision); its link signs in.
     enforced_by:
       - test: battery/auth.TestOIDCMultiTenantIdentityCarriesTheTenant
+      - test: battery/auth.TestOIDCTenantIdentityNeverEmailLinks
   - id: oidc-tenant-email-needs-domain-proof
-    rule: Under a multi-tenant issuer an OAuth2UserInfo email is verified only when the signed id_token carries xms_edov true, whatever email_verified or the userinfo endpoint says.
+    rule: Under a multi-tenant issuer an OAuth2UserInfo email is verified only when the signed id_token carries both xms_edov true and email_verified true and the kept address is its own email claim; the userinfo endpoint never makes it verified.
     enforced_by:
       - test: battery/auth.TestOIDCMultiTenantEmailNeedsDomainProof
   - id: manager-canonical-email-follows-the-override

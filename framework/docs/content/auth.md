@@ -2887,15 +2887,21 @@ microsoft, err := auth.NewOIDCProvider(auth.OIDCConfig{
 })
 ```
 
-With `Tenants` set, discovery accepts a `{tenantid}` issuer only when it
-is the configured `Issuer` with one path segment open, and an id_token
+With `Tenants` set, discovery must name a `{tenantid}` issuer that is
+the configured `Issuer` with one whole path segment open; anything else,
+an exact issuer included, fails discovery, so the list is never set and
+left unread. An id_token is accepted
 only when its `iss` is that template filled with its own `tid` and the
 `tid` is listed (`"*"` admits every tenant: any work account, and under
 `/common` any personal Microsoft account too). The account is keyed by
-`<tid>/<sub>`, so one subject in two tenants is two accounts, and a
+`<tid>/<id>`, where `<id>` is the configured `Claims.IDClaim` (`sub` by
+default), so one subject in two tenants is two accounts, and a
 sign-in that has only the userinfo endpoint to go on (no verified
 id_token, as after a restart) is refused. Without `Tenants` nothing changes. A
-single-tenant issuer (`.../<tenant id>/v2.0`) needs no `Tenants`.
+single-tenant issuer (`.../<tenant id>/v2.0`) needs no `Tenants`. A key
+in Microsoft's shared key set that names an `issuer` signs only for that
+issuer (its `{tenantid}` filled with the token's `tid`); a token signed
+by a key scoped to another issuer is refused.
 
 Any tenant's admin sets the `email` of that tenant's users, so under
 `Tenants` an email proves nothing on its own (the "nOAuth" takeover: an
@@ -2903,15 +2909,26 @@ attacker's tenant names a victim's address and is linked to the victim's
 account). The provider marks the email verified only when the signed
 id_token carries `xms_edov: true` (Microsoft's "email domain owner
 verified" optional claim; add it in the app registration's token
-configuration), whatever `email_verified` or the userinfo endpoint says.
-Without it, a sign-in whose email matches an existing account is a
-collision, not a link.
+configuration) and also a signed `email_verified: true`, both for the
+id_token's own `email` claim. Either one alone, or a userinfo answer,
+leaves it unverified.
+
+Even a verified address never joins an existing account under
+`Tenants`: one address can belong to identities in many tenants. A
+sign-in with no link yet whose email matches an existing account is
+refused as a collision (409); the owner signs in another way and links
+the provider from their account. A sign-in through an existing link
+works as before.
 
 Turning `Tenants` on for a provider that already signed people in
-changes their account key from `<sub>` to `<tid>/<sub>`, so existing
-links no longer match. Register the multi-tenant provider under a new
-provider name, or rewrite the stored subjects to `<tid>/<sub>` before
-switching.
+changes their account key from `<id>` to `<tid>/<id>`, so existing
+links no longer match. Either migrate in place, rewriting each stored
+`provider_id` to `<tid>/<id>` (keeping the same mapped id claim) before
+switching, or roll out in parallel: keep the old provider signing in,
+add the multi-tenant one under a new provider name, and let users link
+it from their account while signed in. A new provider name alone does
+not carry links over, and with the old sign-in gone an existing user's
+first sign-in through the new name is a collision.
 
 **What gets verified** before `ExchangeCode` returns:
 
