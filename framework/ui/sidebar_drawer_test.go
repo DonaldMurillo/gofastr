@@ -209,7 +209,7 @@ func TestDrawerFooterResolvesPerRequest(t *testing.T) {
 	}
 }
 
-// The drawer is a role="dialog": with no accessible name a screen
+// The drawer is a <dialog>: with no accessible name a screen
 // reader announces a bare "dialog" when the hamburger opens it. It is
 // named by an element in its own chrome, titled or not.
 func TestSidebarDrawerHasAccessibleName(t *testing.T) {
@@ -219,7 +219,7 @@ func TestSidebarDrawerHasAccessibleName(t *testing.T) {
 	} {
 		def := MountSidebar(&mountRecorder{}, cfg)
 		chrome := string(widget.RenderChrome(&def))
-		if !strings.Contains(chrome, `role="dialog"`) {
+		if !strings.HasPrefix(chrome, `<dialog `) {
 			t.Fatalf("drawer chrome is not a dialog:\n%s", chrome)
 		}
 		const ref = `aria-labelledby="ui-sidebar-drawer-label"`

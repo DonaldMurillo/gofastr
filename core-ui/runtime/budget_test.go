@@ -1742,7 +1742,15 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// module once it registers, if the same layers are still open
 		// (TestEscapeBeforeFocusModuleLoadsClosesModal,
 		// TestHeldEscapeSkipsALaterLayer).
-		"widgets": 3869,
+		// 4061 measured + 2 (2026-11-17, #701): a default-chrome modal is
+		// a <dialog> opened with showModal(); its cancel, close and
+		// scrim-click listeners dismiss it through the one path, and a
+		// panel opened over it mounts inside it and returns to <body>
+		// when it closes (TestModalWidgetOpensAsNativeDialog,
+		// TestDialogBackdropClickCloses, TestPanelOverDialogMountsInside).
+		// Not carvable: showModal() must run in the mount, or the modal
+		// shows outside the top layer until a module loads.
+		"widgets": 4063,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top

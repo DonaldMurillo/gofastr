@@ -10,7 +10,7 @@ render can catch.
 
 `framework/ui` and `core-ui` components carry their ARIA contract
 internally: labelled landmarks, `aria-expanded` on disclosures,
-`aria-selected` mirroring on tabs, focus traps on modals,
+`aria-selected` mirroring on tabs, modals as native `<dialog>` elements (an inert page behind them),
 `aria-live` announcement regions, keyboard navigation on menus, trees,
 carousels, and sortable lists. Composing the design system instead of
 hand-rolling markup is the single biggest accessibility win an app can
