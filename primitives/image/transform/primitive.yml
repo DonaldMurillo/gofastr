@@ -65,7 +65,7 @@ invariants:
       - test: framework/image.TestSweepImageOrientationsMapPixels
       - test: framework/image.TestEXIFOrientationParsedFromJPEG
   - id: gradient-bounds
-    rule: NewGradient refuses a non-positive size, an area past DefaultMaxPixels and a stop that is not #RRGGBB, gives a 1x1 gradient the first stop, and rounds each channel to nearest.
+    rule: "NewGradient refuses a non-positive size, an area past DefaultMaxPixels and a stop that is not #RRGGBB, gives a 1x1 gradient the first stop, and rounds each channel to nearest."
     enforced_by:
       - test: framework/image.TestNewGradientRejectsBadInput
       - test: framework/image.TestGradientPastMaxPixels

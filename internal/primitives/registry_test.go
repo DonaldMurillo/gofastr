@@ -143,6 +143,7 @@ func TestLintRefuses(t *testing.T) {
 		{"applies only to own files", "      - pkg/heavy/\n", "      - pkg/store/*.go\n", `applies "pkg/store/*.go" matches only files store owns`},
 		{"applies is not a list", "    applies:\n      - pkg/heavy/\n", "    applies: pkg/heavy/\n", "applies must be a list"},
 		{"rejected without why", "        why: It was slow.\n", "", "missing why"},
+		{"rule cut by a comment", "rule: Rows keep their order.", "rule: Rows keep their order and #tags.", `an unquoted " #" starts a YAML comment`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if !strings.Contains(validPrimitive, tc.old) {
