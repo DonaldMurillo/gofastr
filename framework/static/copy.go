@@ -45,7 +45,7 @@ func (b *Builder) staticSourceHas(rel string) bool {
 }
 
 func spelledIn(fsys fs.FS, rel string) bool {
-	if _, err := fs.Stat(fsys, rel); errors.Is(err, fs.ErrNotExist) {
+	if fi, err := fs.Stat(fsys, rel); errors.Is(err, fs.ErrNotExist) || (err == nil && !fi.Mode().IsRegular()) {
 		return false
 	}
 	dir := "."
