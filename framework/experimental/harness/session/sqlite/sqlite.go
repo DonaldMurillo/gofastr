@@ -303,6 +303,7 @@ func (s *Store) RecordToolIntent(ctx context.Context, intent session.ToolIntent)
 		intent.StartedAt.UTC().Format(time.RFC3339Nano),
 	)
 	if err == nil && intent.Mutating {
+		// best-effort: the row is durable in WAL; a checkpoint only advances the main file and retries later.
 		_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(FULL)`)
 	}
 	return err
@@ -324,6 +325,7 @@ func (s *Store) RecordToolOutcome(ctx context.Context, outcome session.ToolOutco
 		outcome.ResultRef,
 	)
 	if err == nil {
+		// best-effort: the row is durable in WAL; a checkpoint only advances the main file and retries later.
 		_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(FULL)`)
 	}
 	return err
