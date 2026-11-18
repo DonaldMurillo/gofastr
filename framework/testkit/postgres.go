@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -90,7 +91,7 @@ func ValidateAdminDSN(dsn string) error {
 		return fmt.Errorf("admin DSN is empty: set WTF_TEST_DATABASE_URL or pass a usable DSN")
 	}
 	if !strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://") {
-		return fmt.Errorf("admin DSN must use postgres:// scheme, got %q", redact(dsn))
+		return fmt.Errorf("admin DSN must use postgres:// scheme, got scheme %q", dsnScheme(dsn))
 	}
 	return nil
 }
@@ -136,10 +137,14 @@ func newUniqueDBName(t *testing.T) string {
 func rewriteDBName(dsn, dbName string) (string, error) {
 	u, err := url.Parse(dsn)
 	if err != nil {
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
 		return "", fmt.Errorf("rewriteDBName: parse: %w", err)
 	}
 	if u.Scheme != "postgres" && u.Scheme != "postgresql" {
-		return "", fmt.Errorf("rewriteDBName: expected postgres scheme, got %q in %s", u.Scheme, redact(dsn))
+		return "", fmt.Errorf("rewriteDBName: expected postgres scheme, got %q", u.Scheme)
 	}
 	u.Path = "/" + dbName
 	options := u.Query()
@@ -166,17 +171,15 @@ func dropCarvedDB(t *testing.T, admin *sql.DB, dbName string, _ error) {
 	}
 }
 
-func redact(dsn string) string {
-	u, err := url.Parse(dsn)
-	if err != nil {
-		return "<unparseable>"
+func dsnScheme(dsn string) string {
+	scheme, _, ok := strings.Cut(dsn, "://")
+	if !ok || scheme == "" || len(scheme) > 32 {
+		return "none"
 	}
-	if u.User != nil {
-		u.User = url.UserPassword(u.User.Username(), "REDACTED")
+	for i, c := range scheme {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || i > 0 && (c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.')) {
+			return "none"
+		}
 	}
-	if q := u.Query(); q.Has("password") {
-		q.Set("password", "REDACTED")
-		u.RawQuery = q.Encode()
-	}
-	return u.String()
+	return scheme
 }

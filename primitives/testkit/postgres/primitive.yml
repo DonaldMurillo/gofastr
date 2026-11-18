@@ -8,7 +8,7 @@ on_change:
   - These helpers only run against a real Postgres cluster; a change here needs a run with a reachable admin DSN, since the short suite without one skips them.
 invariants:
   - id: admin-dsn-validated
-    rule: ValidateAdminDSN refuses an empty DSN, naming it empty, and one that does not start with postgres:// or postgresql://, with the password, in the userinfo or a password query parameter, redacted from the error.
+    rule: ValidateAdminDSN refuses an empty DSN, naming it empty, and one that does not start with postgres:// or postgresql://, naming only its scheme; no testkit DSN error, rewriteDBName's parse error included, quotes the DSN, so no password reaches the error in any form.
     enforced_by:
       - test: framework/testkit.TestNewIsolatedDBHardFailsWithoutDSN
       - test: framework/testkit.TestSweepRedactHidesThePassword
