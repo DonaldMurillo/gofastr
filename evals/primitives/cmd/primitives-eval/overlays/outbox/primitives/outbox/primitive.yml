@@ -1,0 +1,124 @@
+primitive: outbox
+summary: "The transactional event outbox: Append and AppendFor stage an event row inside the caller's transaction, Consume declares durable consumers, and a background Relay delivers each committed row to every declared consumer at least once, tracked per consumer in a child delivery table."
+code:
+  - framework/outbox/doc.go
+  - framework/outbox/outbox.go
+  - framework/outbox/consumer.go
+  - framework/outbox/metrics.go
+  - framework/outbox/time_compat.go
+docs:
+  - framework/docs/content/events.md
+  - framework/docs/content/observability.md
+  - framework/docs/content/data-export.md
+on_change:
+  - "An exported API change (New, the With* options, Append, AppendFor, Consume, List, ListDeliveries, Replay, ReplayConsumer, Nudge, StartRelay, DeliveryCounts, MetricsCollector, Row, Delivery) updates the Transactional outbox section of framework/docs/content/events.md and the framework.WithOutbox / WithOutboxConsumer wiring in framework/app.go in the same commit."
+  - "A change to either table's DDL (ensureTable, addOwnerColumn, ensureDeliveryTable) updates the hand-written CREATE TABLE block in the Table creation part of events.md, which hosts using WithoutEnsureTable copy into their own migrations, and adds columns only: dropping or retyping a column is destructive and the vestigial parent columns stay."
+  - "A schema change that an existing database cannot pick up at boot (a new NOT NULL column with no default, a new key) is BREAKING: it needs an additive upgrade path like addOwnerColumn, a CHANGELOG.md entry under Unreleased, and an upgrade note."
+  - "Every SQL statement is written and tested for both SQLite and Postgres, with $N placeholders whose first appearances ascend ($1, $2, ...), because go-sqlite3 binds by first-appearance order, not by the digit."
+  - "Every table and index name reaching SQL goes through query.SafeIdent once in New and is then interpolated only through qt, qd or query.QuoteIndexName, never raw."
+  - "A change to the metric names or labels in MetricsCollector updates the metrics table in framework/docs/content/observability.md."
+  - "A change to the erasure contract in registerData (which column names the owner, which columns are scrubbed, the tombstone) updates the event_outbox row of framework/docs/content/data-export.md."
+  - "The package stays an L3 leaf whose only intra-framework imports are framework/event and framework/db; it never imports a battery, which is why newID is copied from battery/webhook rather than imported."
+twins:
+  - job: "Name the parent table's column set."
+    why: "The DDL, the export declaration and the timestamp normalizer each spell the columns out by hand; nothing derives one list from another."
+    sites:
+      - path: framework/outbox/outbox.go
+        note: "ensureTable's CREATE TABLE and addOwnerColumn define the columns; registerData's DataExporter Columns list repeats all eleven by name for App.ExportData."
+      - path: framework/outbox/legacy_normalize.go
+        note: "parentTimeSelect and normalizeParentTimes list the four time columns (created_at, dispatched_at, next_attempt_at, claimed_until) that must be canonicalized."
+      - path: framework/docs/content/events.md
+        note: "The hand-written CREATE TABLE event_outbox block hosts copy under WithoutEnsureTable."
+  - job: "Name the delivery table's column set."
+    why: "The DDL, the normalizer and the docs each spell the columns out by hand."
+    sites:
+      - path: framework/outbox/outbox.go
+        note: "ensureDeliveryTable's CREATE TABLE and its claim index on (status, next_attempt_at)."
+      - path: framework/outbox/legacy_normalize.go
+        note: "normalizeDeliveryTimes lists the four delivery time columns (created_at, next_attempt_at, claimed_until, dispatched_at)."
+      - path: framework/docs/content/events.md
+        note: "The hand-written CREATE TABLE event_outbox_delivery block and its claim index."
+  - job: "Mint a 32-character hex row id from crypto/rand, panicking on entropy failure."
+    why: "framework packages may not import batteries, and no shared core helper exists yet."
+    sites:
+      - path: framework/outbox/outbox.go
+        note: "newID, the outbox row id that becomes event.Event.ID."
+      - path: battery/webhook/webhook.go
+        note: "newID, the same function with a webhook prefix on the panic."
+invariants:
+  - id: append-joins-caller-tx
+    rule: "A row staged by Append on a transaction that rolls back is not in the table, and one on a transaction that commits is."
+    enforced_by:
+      - test: framework/outbox.TestAppend_CommitPersists
+      - test: framework/outbox.TestAppend_RollbackDrops
+  - id: nil-data-stored-as-json-null
+    rule: "Append with nil data stores the JSON text null as the payload, never an empty or NULL column."
+    enforced_by:
+      - test: framework/outbox.TestAppend_EmptyDataBecomesNull
+  - id: table-name-validated
+    rule: "New returns an error, and runs no SQL, for a table name that query.SafeIdent rejects."
+    enforced_by:
+      - test: framework/outbox.TestNew_InvalidTable
+  - id: case-kept-table-refused
+    rule: "On Postgres New refuses a configured table name whose case-kept twin already exists, with or without WithoutEnsureTable, and names the ALTER TABLE RENAME that fixes it."
+    enforced_by:
+      - test: framework/outbox.TestPostgres_CaseKeptTableRefused
+      - test: framework/outbox.TestPostgres_MixedCaseTable
+  - id: without-ensure-runs-no-ddl
+    rule: "With WithoutEnsureTable, New creates neither table."
+    enforced_by:
+      - test: framework/outbox.TestNew_WithoutEnsureTable
+  - id: owner-column-added-at-boot
+    rule: "New adds the owner column to a parent table created before it existed, and a second New on that table succeeds."
+    enforced_by:
+      - test: framework/outbox.TestOutboxAddsOwnerColumn
+  - id: erase-nulls-owned-payload
+    rule: "Erasing a user writes JSON null over the payload of every row AppendFor staged for that user, keeps the row, and leaves rows staged with Append or for other users untouched."
+    enforced_by:
+      - test: framework/outbox.TestEraseBlanksOwnedOutboxPayloads
+      - contract: GOFASTR1415
+  - id: non-positive-options-keep-defaults
+    rule: "WithPollInterval, WithBatchSize and WithMaxAttempts given zero or a negative value keep the default instead of crashing the ticker, claiming nothing or dead-lettering on the first failure."
+    enforced_by:
+      - test: framework/outbox.TestNonPositivePollIntervalKeepsDefault
+      - test: framework/outbox.TestNonPositiveBatchAndAttemptsKeepDefaults
+  - id: last-error-stays-valid-utf8
+    rule: "truncateError caps an error at 2000 bytes on a rune boundary, so the settle UPDATE that stores it is never rejected by Postgres for invalid UTF-8."
+    enforced_by:
+      - test: framework/outbox.TestTruncateErrorKeepsValidUTF8
+      - test: framework/outbox.TestPGFailureSettleAcceptsMultibyteError
+  - id: malformed-time-is-an-error
+    rule: "A stored timestamp that query.ParseDBTime cannot read makes List and ListDeliveries return an error rather than a zero time."
+    enforced_by:
+      - test: framework/outbox.TestOutboxTimeRejectsMalformedValues
+      - test: framework/outbox.TestOutboxReadsPropagateInvalidTime
+  - id: metrics-count-pending-and-dead
+    rule: "DeliveryCounts returns non-nil per-consumer maps of pending and dead deliveries, and MetricsCollector renders them as outbox_pending and outbox_dead_letter_total lines labelled by consumer."
+    enforced_by:
+      - test: framework/outbox.TestOutbox_MetricsCollector
+      - test: framework/outbox.TestOutbox_DeliveryCountsToleratesEmpty
+  - id: schema-qualified-table-builds
+    rule: "New accepts a schema-qualified table name on SQLite and creates both serving indexes."
+    enforced_by:
+      - test: framework/outbox.TestSQLiteQualifiedTableBuilds
+  - id: dedup-keys-on-consumer-and-id
+    rule: "Every consumer of one row receives the same Event.ID, so the package and its docs tell a deduplicating consumer to key on (consumer name, Event.ID), never on Event.ID alone."
+    judge: "Does the change tell consumers, or assume, that Event.ID alone identifies one consumer's delivery, rather than the pair (consumer name, Event.ID)?"
+decisions:
+  - id: erase-anonymizes-not-deletes
+    date: 2026-11-18
+    status: accepted
+    decision: "An erasure writes JSON null over an owned row's payload and keeps the row."
+    rejected:
+      - option: "Delete the user's outbox rows."
+        why: "Deleting a parent breaks the delivery bookkeeping of its child rows, and the null payload already keeps a pending delivery or a Replay from handing the user's record to a consumer."
+    revisit_if: "The delivery table gains a foreign key with ON DELETE CASCADE, so a delete can no longer strand children."
+    upholds: [erase-nulls-owned-payload]
+  - id: keep-vestigial-parent-columns
+    date: 2026-11-18
+    status: accepted
+    decision: "The parent's attempts, last_error, next_attempt_at and claimed_until columns stay in the DDL after per-attempt state moved to the delivery table."
+    rejected:
+      - option: "Drop them from the parent table."
+        why: "Dropping columns is destructive DDL, which boot-time ensureTable must never run."
+    revisit_if: "The outbox gets a versioned migration path that may run destructive changes."
