@@ -467,7 +467,7 @@ func versionSlug(e *entity.Entity) string {
 	if e.Version == "" {
 		return "default"
 	}
-	return strings.ReplaceAll(strings.Trim(e.Version, "/"), "/", "-")
+	return strings.ReplaceAll(strings.ReplaceAll(strings.Trim(e.Version, "/"), "-", "--"), "/", "-")
 }
 
 func sectionID(id, suffix string) string {
