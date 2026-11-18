@@ -79,11 +79,11 @@ type PasskeyConfig struct {
 	// good for RedeemReauthProof. Default: 5 min.
 	ReauthTTL time.Duration
 
-	// NoticeSender emails the account's address when a passkey is added
-	// to it, so a passkey someone else added does not go unnoticed: the
-	// notice names the passkey and says to remove it if the owner did not
-	// add it. Default: AuthConfig.RegisterEmailSender. Init refuses a
-	// plugin with neither outside DevMode unless NoAddedNotice is set.
+	// NoticeSender emails the account's verified address when a passkey
+	// is added to it, so a passkey someone else added does not go
+	// unnoticed. The body is fixed text with the time and the kind of
+	// passkey, never a caller-chosen value such as its name. Init refuses
+	// a plugin without one outside DevMode unless NoAddedNotice is set.
 	NoticeSender EmailSender
 
 	// NoAddedNotice turns the added-passkey email off, for a host that
@@ -372,11 +372,8 @@ func (p *PasskeyPlugin) Init(mgr *AuthManager) error {
 			p.challenges = NewMemoryMagicLinkTokenStore()
 		}
 	}
-	if p.config.NoticeSender == nil {
-		p.config.NoticeSender = cfg.RegisterEmailSender
-	}
 	if p.config.NoticeSender == nil && !p.config.NoAddedNotice && !cfg.DevMode {
-		return errors.New("auth: passkey plugin: set PasskeyConfig.NoticeSender (or AuthConfig.RegisterEmailSender) so the account owner is emailed when a passkey is added, or PasskeyConfig.NoAddedNotice: true if the app tells them another way")
+		return errors.New("auth: passkey plugin: set PasskeyConfig.NoticeSender so the account owner is emailed when a passkey is added, or PasskeyConfig.NoAddedNotice: true if the app tells them another way")
 	}
 	if err := checkTwoFactorURL("passkey", "PasskeyConfig.TwoFactorURL", p.config.TwoFactorURL); err != nil {
 		return err
@@ -729,7 +726,7 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 		Kind: "passkey.registered", UserID: sess.UserID, Remote: remoteHost(r),
 		Meta: map[string]string{"alg": strconv.FormatInt(res.alg, 10), "backup_eligible": strconv.FormatBool(res.backupEligible), "conditional": strconv.FormatBool(purpose == purposePasskeyRegisterQuiet)},
 	})
-	p.noticeAdded(r, sess.UserID, cred.Name)
+	p.noticeAdded(r, sess.UserID, cred)
 	writeAuthJSON(w, r, http.StatusCreated, passkeyView(cred))
 }
 
@@ -741,7 +738,7 @@ var _ AuthPluginOnStop = (*PasskeyPlugin)(nil)
 // noticeAdded emails the account that a passkey was added, off the
 // request: the sender is host code, so a panic in it is recovered and
 // logged scrubbed, and a slow provider never holds the response.
-func (p *PasskeyPlugin) noticeAdded(r *http.Request, userID, name string) {
+func (p *PasskeyPlugin) noticeAdded(r *http.Request, userID string, cred PasskeyCredential) {
 	sender := p.config.NoticeSender
 	if sender == nil || p.config.NoAddedNotice {
 		return
@@ -755,7 +752,14 @@ func (p *PasskeyPlugin) noticeAdded(r *http.Request, userID, name string) {
 		slog.Warn("auth: no address for the added-passkey notice", "plugin", "passkey", "user_hash", hashedIdentifier(userID), "err", err)
 		return
 	}
-	to, body := u.GetEmail(), passkeyAddedNoticeBody(name)
+	// An address nobody proved may be someone else's: mailing it would let
+	// anyone send that person notices from the app's own domain.
+	if vc, ok := us.(EmailVerifiedChecker); ok {
+		if verified, err := vc.IsEmailVerified(r.Context(), userID); err != nil || !verified {
+			return
+		}
+	}
+	to, body := u.GetEmail(), passkeyAddedNoticeBody(cred)
 	p.notices.enqueue(r.Context(), to, func(ctx context.Context) {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -769,10 +773,16 @@ func (p *PasskeyPlugin) noticeAdded(r *http.Request, userID, name string) {
 	})
 }
 
-// passkeyAddedNoticeBody is the added-passkey email. name passed
-// passkeyName, so it holds no control or format character.
-func passkeyAddedNoticeBody(name string) string {
-	return "A passkey named \"" + name + "\" was added to your account. " +
+// passkeyAddedNoticeBody is the added-passkey email: fixed text and
+// facts the server set, never a value the caller chose (the passkey's
+// name could carry a link or markup into mail from the app's domain).
+func passkeyAddedNoticeBody(cred PasskeyCredential) string {
+	kind := "a passkey kept on one device"
+	if cred.BackupEligible {
+		kind = "a passkey that can sync between your devices"
+	}
+	return "A new passkey (" + kind + ") was added to your account on " +
+		cred.CreatedAt.UTC().Format("2006-01-02 15:04 UTC") + ". " +
 		"If you added it, you can ignore this message. If not, sign in, remove it " +
 		"from your passkeys, and change your password."
 }
@@ -1241,21 +1251,29 @@ func (p *PasskeyPlugin) refuseTooNew(w http.ResponseWriter, r *http.Request, use
 	writeAuthError(w, r, http.StatusForbidden, reasonPasskeyTooNew)
 }
 
-// proofPayload binds a step-up proof to the session that earned it: the
-// account and a digest of the session token, so another session of the
-// same account cannot spend it.
+// proofPayload binds a step-up proof to the session that earned it: a
+// digest of the account and the session token, so another session of
+// the same account cannot spend it and the stored row names no one.
 func proofPayload(sess *Session) string {
-	return sess.UserID + "|" + sha256hex(sess.Token)
+	return sha256hex(sess.UserID + "|" + sha256hex(sess.Token))
 }
 
-// steppedUp lets a passkey be added or removed: without a passkey that
-// could confirm a step-up there is nothing to confirm with, so the
-// session suffices; with one, the request carries a proof this session
-// earned. It answers 403 passkey_reauth_required otherwise. A stolen
-// session can then neither add a key of its own nor remove the owner's.
+// steppedUp lets a passkey be added or removed. The gate is the
+// account's, not the session's: once any of its passkeys is ReauthMinAge
+// old (or has no creation time), the request carries a proof this
+// session earned, whenever the session began, so a session that predates
+// every passkey (the one that enrolled them, or one stolen before) cannot
+// add or remove one either. A session that has no passkey able to confirm
+// for it is told to sign in again with a passkey (403
+// passkey_signin_required); one that has, to step up (403
+// passkey_reauth_required). Before the first passkey is that old, the
+// session suffices, and the owner was mailed when it was added.
 func (p *PasskeyPlugin) steppedUp(w http.ResponseWriter, r *http.Request, sess *Session, creds []PasskeyCredential, proof string) bool {
 	now := time.Now()
-	if !slices.ContainsFunc(creds, func(c PasskeyCredential) bool { return p.reauthEligible(c, sess, now) }) {
+	gated := slices.ContainsFunc(creds, func(c PasskeyCredential) bool {
+		return c.CreatedAt.IsZero() || now.Sub(c.CreatedAt) >= p.config.ReauthMinAge
+	})
+	if !gated {
 		return true
 	}
 	if proof != "" {
@@ -1263,6 +1281,10 @@ func (p *PasskeyPlugin) steppedUp(w http.ResponseWriter, r *http.Request, sess *
 		if err == nil && payload == proofPayload(sess) {
 			return true
 		}
+	}
+	if !slices.ContainsFunc(creds, func(c PasskeyCredential) bool { return p.reauthEligible(c, sess, now) }) {
+		writeAuthError(w, r, http.StatusForbidden, reasonPasskeySignInAgain)
+		return false
 	}
 	writeAuthError(w, r, http.StatusForbidden, reasonPasskeyReauthRequired)
 	return false

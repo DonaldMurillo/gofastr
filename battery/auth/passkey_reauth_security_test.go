@@ -211,7 +211,7 @@ func TestPasskeyAddedNotifiesTheOwner(t *testing.T) {
 	f := newPasskeyFixture(t)
 	f.enrol(t, "u-alice")
 	to, body := f.notices.snapshot()
-	if to != "alice@example.com" || !strings.Contains(body, `"Laptop"`) || !strings.Contains(body, "remove it") {
+	if to != "alice@example.com" || !strings.Contains(body, "A new passkey") || !strings.Contains(body, "remove it") {
 		t.Fatalf("added-passkey notice to %q: %q", to, body)
 	}
 	boot := func(cfg AuthConfig, pk PasskeyConfig) error {
@@ -224,10 +224,15 @@ func TestPasskeyAddedNotifiesTheOwner(t *testing.T) {
 	if err := boot(AuthConfig{}, PasskeyConfig{}); err == nil || !strings.Contains(err.Error(), "NoticeSender") {
 		t.Fatalf("no sender outside DevMode: %v", err)
 	}
+	// The duplicate-register sender may send its own fixed template
+	// whatever the body; it is not taken as the passkey notice sender.
+	if err := boot(AuthConfig{RegisterEmailSender: &stubEmailSender{}}, PasskeyConfig{}); err == nil {
+		t.Fatal("RegisterEmailSender stood in for NoticeSender")
+	}
 	for name, ok := range map[string]error{
-		"RegisterEmailSender": boot(AuthConfig{RegisterEmailSender: &stubEmailSender{}}, PasskeyConfig{}),
-		"NoAddedNotice":       boot(AuthConfig{}, PasskeyConfig{NoAddedNotice: true}),
-		"DevMode":             boot(AuthConfig{DevMode: true}, PasskeyConfig{}),
+		"NoticeSender":  boot(AuthConfig{}, PasskeyConfig{NoticeSender: &stubEmailSender{}}),
+		"NoAddedNotice": boot(AuthConfig{}, PasskeyConfig{NoAddedNotice: true}),
+		"DevMode":       boot(AuthConfig{DevMode: true}, PasskeyConfig{}),
 	} {
 		if ok != nil {
 			t.Errorf("%s: %v", name, ok)

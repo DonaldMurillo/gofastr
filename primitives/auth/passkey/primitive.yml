@@ -48,16 +48,20 @@ invariants:
       - test: battery/auth.TestReauthLookupErrorFailsClosed
       - test: battery/auth.TestSQLPasskeyKeepsPredateOrder
   - id: changes-need-a-step-up
-    rule: When the account holds a passkey that could confirm a step-up, register/options and delete refuse with 403 passkey_reauth_required unless the body carries an unspent proof this session earned, and the browser module then runs the step-up and resends with its proof (a silent create gives up instead).
+    rule: Once any of the account's passkeys is ReauthMinAge old or has no creation time, register/options and delete refuse unless the body carries an unspent proof this session earned, whenever the session began, answering 403 passkey_signin_required when no passkey can confirm for this session and 403 passkey_reauth_required otherwise; the browser module then runs the step-up and resends with its proof (a silent create gives up instead).
     enforced_by:
       - test: battery/auth.TestPasskeyChangesNeedStepUp
+      - test: battery/auth.TestEnrollingSessionIsGated
+      - test: battery/auth.TestZeroSessionTimeIsGated
       - test: battery/auth.TestPasskeyModuleRules
   - id: added-passkey-is-mailed
-    rule: A registered passkey sends its name to the account's address through PasskeyConfig.NoticeSender (default AuthConfig.RegisterEmailSender), and Init refuses a plugin with neither outside DevMode unless NoAddedNotice is set.
+    rule: A registered passkey mails the account's address, when the user store does not report it unverified, through PasskeyConfig.NoticeSender a fixed text with the time and kind of passkey and no caller-chosen value, and Init refuses a plugin without NoticeSender outside DevMode unless NoAddedNotice is set.
     enforced_by:
       - test: battery/auth.TestPasskeyAddedNotifiesTheOwner
+      - test: battery/auth.TestAddedNoticeCarriesNoCallerText
+      - test: battery/auth.TestAddedNoticeSkipsUnverifiedAddress
   - id: base-is-a-same-origin-path
-    rule: The browser module accepts an auth base only of one or more non-empty path segments, and sends no request whose URL resolves to another origin.
+    rule: The browser module accepts an auth base only of one or more non-empty path segments, sends no request whose URL resolves to another origin, and follows no redirect.
     enforced_by:
       - test: battery/auth.TestPasskeyBaseStaysSameOrigin
   - id: unverified-refusals-name-no-account
@@ -132,10 +136,12 @@ decisions:
   - id: step-up-refuses-new-passkeys
     date: 2026-11-18
     status: accepted
-    decision: A passkey must predate the session and be ReauthMinAge old (one hour by default) to confirm a step-up, and once the account holds such a passkey, adding or removing one needs a step-up with it; the owner is mailed when a passkey is added.
+    decision: A passkey must predate the session and be ReauthMinAge old (one hour by default) to confirm a step-up; once any of the account's passkeys is that old, adding or removing one needs a step-up from every session, and a session that cannot earn one signs in again with a passkey; the owner is mailed when a passkey is added, which covers the first ReauthMinAge after the first passkey.
     rejected:
       - option: Require a step-up for every registration.
         why: The first passkey of an account has nothing to step up with, and a password-only account would be locked out of adding one; so the rule applies only once a passkey able to confirm exists.
+      - option: Gate only when a passkey can confirm for this session.
+        why: A session older than every passkey (the one that enrolled them, or one stolen before) could never step up, so it was never gated, for its whole life.
       - option: Refuse only passkeys registered by the same session.
         why: Signing in again with the new passkey makes a session that postdates it, which the predate rule alone then admits.
     revisit_if: Registration starts requiring a fresh second proof, which would make a new passkey trustworthy on its own.

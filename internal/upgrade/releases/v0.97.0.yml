@@ -493,10 +493,10 @@ notes:
   - change: "BREAKING - the passkey plugin refuses to start outside DevMode without a way to email the owner when a passkey is added"
     breaking: true
     hits: review
-    guidance: "Set PasskeyConfig.NoticeSender to your EmailSender (AuthConfig.RegisterEmailSender is used when it is unset), or NoAddedNotice: true if the app tells users another way."
+    guidance: "Set PasskeyConfig.NoticeSender to your EmailSender, or NoAddedNotice: true if the app tells users another way. AuthConfig.RegisterEmailSender does not stand in for it."
     find:
       uses:
         - gofastr/battery/auth.NewPasskeyPlugin
   - change: "Adding or removing a passkey needs a step-up once the account holds a passkey able to confirm one"
-    guidance: "The battery's browser module runs the step-up and resends. A client of its own that calls POST /auth/passkey/register/options or /auth/passkey/delete handles 403 passkey_reauth_required by running /auth/passkey/reauth and sending the proof it answers as \"proof\"."
+    guidance: "The battery's browser module runs the step-up and resends. A client of its own that calls POST /auth/passkey/register/options or /auth/passkey/delete handles 403 passkey_reauth_required by running /auth/passkey/reauth and sending the proof it answers as \"proof\", and 403 passkey_signin_required by asking the user to sign in again with a passkey."
     nodetect: "the answer depends on the account's passkeys at runtime; no host source spelling distinguishes an affected call"

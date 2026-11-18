@@ -1888,12 +1888,19 @@ mgr.Use(auth.NewPasskeyPlugin(auth.PasskeyConfig{
 }))
 ```
 
-`NoticeSender` (an `auth.EmailSender`; default
-`AuthConfig.RegisterEmailSender`) gets one email to the account's address
-whenever a passkey is added to it, naming the passkey and telling the
-owner to remove it if they did not add it, as Google, Apple and GitHub
-do. Outside `DevMode`, Init refuses a plugin with no sender unless
-`NoAddedNotice: true` says the app tells its users another way. The
+`NoticeSender` (an `auth.EmailSender`) gets one email to the account's
+address whenever a passkey is added to it, telling the owner when and
+what kind of passkey was added and to remove it if they did not, as
+Google, Apple and GitHub do. The body is fixed text: it never carries the
+passkey's name or anything else the caller chose, which could put a
+phishing link into mail from the app's own domain. It goes only to an
+address the user store does not report unverified (an
+`EmailVerifiedChecker` store), since an unproven address may be someone
+else's. Outside `DevMode`, Init refuses a plugin with no `NoticeSender`
+unless `NoAddedNotice: true` says the app tells its users another way;
+`AuthConfig.RegisterEmailSender` does not stand in for it, because a
+host's duplicate-registration sender may send its own template whatever
+the body says. The
 email goes out off the request, through a bounded queue the manager's
 `OnStop` drains.
 
@@ -1993,7 +2000,7 @@ adding a passkey (this device already holds one for the account) and
 The base path must be one or more non-empty path segments such as `/auth`
 or `/api/auth`; `/`, a trailing or doubled slash, or anything else leaves
 the element inert, and the module sends no request whose URL resolves to
-another origin.
+another origin and follows no redirect.
 
 Behind `auth.CSRF` or `WithBFFPosture`, render the page's token as
 `<meta name="csrf-token" content="…">` from `auth.CSRFToken(r)`. The
@@ -2133,15 +2140,19 @@ a passkey predates a session only if its second ended before the session
 began.
 
 The same thief could add a key and wait out the hour, or remove the
-owner's passkeys. So once the account holds a passkey that qualifies,
-adding or removing one needs a step-up with it: `register/options` and
-`delete` answer 403 `passkey_reauth_required` unless the body carries a
-`proof` this session earned. The browser module handles it: asked for a
-step-up, it runs one (the user confirms with an existing passkey) and
-resends. A silent create after a password sign-in gives up instead of
-prompting. An account with no qualifying passkey (none yet, or only new
-ones) adds and removes with the session alone, and its owner learns of
-an addition from the `NoticeSender` email.
+owner's passkeys. So once any of the account's passkeys is
+`ReauthMinAge` old, adding or removing one needs a `proof` this session
+earned, from every session, however old: `register/options` and
+`delete` answer 403 `passkey_reauth_required` when the session has a
+passkey that can confirm for it, and 403 `passkey_signin_required` when
+it has none (it began before every passkey, as the session that enrolled
+them did): sign in again with a passkey, then step up. The browser
+module handles the first: it runs the step-up (the user confirms with an
+existing passkey) and resends; the second shows its message. A silent
+create after a password sign-in gives up instead of prompting. Until the
+account's first passkey is `ReauthMinAge` old, adding and removing need
+only the session, and the owner learns of each addition from the
+`NoticeSender` email.
 
 ### Keeping the password manager in step
 

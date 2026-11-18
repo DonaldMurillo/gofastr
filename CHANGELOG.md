@@ -142,12 +142,14 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Changed
 - **BREAKING: the passkey plugin needs a way to email the account owner
-  when a passkey is added.** Set `PasskeyConfig.NoticeSender` (it defaults
-  to `AuthConfig.RegisterEmailSender`), or `NoAddedNotice: true`; outside
-  `DevMode`, Init refuses neither.
-- **Adding or removing a passkey needs a step-up** once the account holds
-  a passkey able to confirm one: `register/options` and `delete` answer
-  403 `passkey_reauth_required` without a `proof`. The battery's browser
+  when a passkey is added.** Set `PasskeyConfig.NoticeSender`, or
+  `NoAddedNotice: true`; outside `DevMode`, Init refuses neither. The
+  email is fixed text and goes only to a verified address.
+- **Adding or removing a passkey needs a step-up** once any of the
+  account's passkeys is an hour old (`ReauthMinAge`), from every session:
+  `register/options` and `delete` answer 403 `passkey_reauth_required`
+  without a `proof`, or `passkey_signin_required` for a session that
+  began before every passkey. The battery's browser
   module runs the step-up itself; a client of its own sends `proof`.
 - **A step-up proof is spent only by the session that earned it.**
 - **Under `OIDCConfig.Tenants` an email is verified only with

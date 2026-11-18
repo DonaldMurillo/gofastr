@@ -142,7 +142,9 @@
   async function send(url, init) {
     // Belt to BASE's braces: nothing leaves the page's origin.
     if (new URL(url, location.href).origin !== location.origin) throw new Error(say('auth.passkey_failed', 'Passkey request failed'));
-    const r = await hostFetch(url, Object.assign({ credentials: 'same-origin' }, init));
+    // redirect 'error': a same-origin path that redirects elsewhere must
+    // not carry the body (an assertion, a proof) or the CSRF token there.
+    const r = await hostFetch(url, Object.assign({ credentials: 'same-origin', redirect: 'error' }, init));
     if (r.status === 204) return null;
     let data = null;
     try { data = await r.json(); } catch (_) { data = null; }
