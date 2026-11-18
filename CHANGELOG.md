@@ -25,6 +25,15 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **webmcp: `Host.Handle` refuses what `Register` refuses.** Handle took the
+  reserved `get_app_instructions` name under `WithInstructions`, putting two
+  tools with one name in the manifest, and took a tool tagged with an
+  undeclared group. Both now fail, through the check Register uses.
+- **webmcp: a bad group declaration fails Mount.** A group with a bad name or
+  declared twice was accepted, though the `Group` contract said Mount fails.
+- **webmcp: a schema type keyword outside JSON Schema's seven accepts any
+  example value**, as documented, instead of rejecting every value
+  ([webmcp](framework/docs/content/webmcp.md)).
 - **An erasure retried after a store eraser failed hands that store the
   user's identities again.** The first run's SQL part deleted the user row
   the email was read from, so the retry's `ErasedUser` carried only the id.

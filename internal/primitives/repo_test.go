@@ -143,7 +143,7 @@ var ownedPackages = []string{
 	"framework/routegroup", "framework/slowquery", "framework/tenant", "framework/softdelete", "framework/owner",
 	"framework/internal/casing", "framework/internal/exif", "framework/internal/jpegcost",
 	"framework/internal/jpegtest", "framework/internal/testdb",
-	"framework/experimental/apiversions",
+	"framework/experimental/apiversions", "framework/experimental/webmcp",
 }
 
 //gofastr:test-reads primitives/ *.go
