@@ -147,9 +147,9 @@ func (s *Server) listOffset(req Request, method string) (int, error) {
 }
 
 // requiredArray answers xs, or an empty slice when xs is nil: a nil
-// slice encodes as null, and these arrays are required by the wire
-// schema. The nil check makes every return proven, so calls to it are
-// never a nullarray finding (contentArray is the []Content spelling).
+// slice encodes as null, and the MCP schema makes these arrays required
+// (tools/call content, the list pages), which a validating client
+// rejects as null.
 func requiredArray[T any](xs []T) []T {
 	if xs == nil {
 		return []T{}

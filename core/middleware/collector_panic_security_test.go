@@ -30,9 +30,6 @@ import (
 // Probe note: the payload embeds the control bytes RAW (panic value),
 // not %q-escaped — %q pre-escapes them and would hide the surface.
 
-// The scrub probe itself (verbatim slog capture) is internal/scrubtest's
-// Sink, shared with this package's other sink call sites.
-
 func TestCollectorPanicRedScrubbed(t *testing.T) {
 	sink := &scrubtest.Sink{}
 	scrubtest.InstallDefault(t, sink)

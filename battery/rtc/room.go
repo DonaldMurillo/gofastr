@@ -863,8 +863,3 @@ func (p *roomPeer) signalGapLocked(from string, seq uint64) bool {
 	p.sigIn[from] = seq
 	return seq > last+1
 }
-
-// The per-socket frame limiter is internal/tokenbucket's Bucket
-// (rate/burst 2x, no initial leniency); newFrameLimiter and
-// frameLimiter.allow moved there so the assist testapp shares the exact
-// bucket instead of mirroring it.

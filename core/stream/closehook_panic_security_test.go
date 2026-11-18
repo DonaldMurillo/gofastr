@@ -32,9 +32,6 @@ import (
 // Probe note: the payload embeds the control bytes RAW (panic value),
 // not %q-escaped — %q pre-escapes them and would hide the surface.
 
-// The scrub probe itself (verbatim slog capture) is internal/scrubtest's
-// Sink; see sink.go for why a minimal handler is needed to see raw bytes.
-
 func TestWSCloseHookRedPanicScrubbed(t *testing.T) {
 	sink := &scrubtest.Sink{}
 	scrubtest.InstallDefault(t, sink)

@@ -11,8 +11,7 @@ import (
 
 // AssertChatHTTPError401 verifies the shared client's 401 path surfaces as
 // an error carrying the adapter's own provider name (name prefixes the
-// message). It replaces the identical TestChatHTTPError401 bodies formerly
-// kept in the openrouter and zai adapter test packages.
+// message).
 func AssertChatHTTPError401(t testing.TB, newProvider func(baseURL string) provider.Provider, name string) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

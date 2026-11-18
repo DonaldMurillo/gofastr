@@ -16,8 +16,7 @@ type CapturedChat struct {
 
 // CaptureChatServer serves a single chat request: it records the named
 // request headers and the decoded JSON body, then answers with the
-// stop+usage SSE stream. It replaces the identical capture handlers in
-// the openrouter and zai request-shape tests.
+// stop+usage SSE stream.
 func CaptureChatServer(t testing.TB, headerNames ...string) (url string, got *CapturedChat) {
 	t.Helper()
 	got = &CapturedChat{Headers: map[string]string{}}
@@ -35,9 +34,7 @@ func CaptureChatServer(t testing.TB, headerNames ...string) (url string, got *Ca
 
 // AssertChatRequestBody checks the wire shape every provider adapter
 // must send: the request's model, streaming mode, the system prompt as
-// the first message, and the user text block as a user message. It
-// replaces the identical assertion tails of the openrouter and zai
-// request-shape tests.
+// the first message, and the user text block as a user message.
 func AssertChatRequestBody(t testing.TB, body RequestBody) {
 	t.Helper()
 	if body.Model != "m" {

@@ -29,10 +29,6 @@ import (
 // Probe note: the panic value embeds the control bytes RAW (fmt %s), not
 // %q-escaped — %q pre-escapes them, which would hide the surface.
 
-// The scrub probe itself (verbatim slog capture) is internal/scrubtest's
-// Sink — the shared shape of middleware's captureHandler, which every
-// red-scrub probe used to replicate per package.
-
 func TestHandlerAdapterRedPanicLogScrub(t *testing.T) {
 	sink := &scrubtest.Sink{}
 	scrubtest.InstallDefault(t, sink)

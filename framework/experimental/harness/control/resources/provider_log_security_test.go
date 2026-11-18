@@ -32,9 +32,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
-// The scrub probe itself (verbatim slog capture) is internal/scrubtest's
-// Sink; see sink.go for why a minimal handler is needed to see raw bytes.
-
 func TestProviderErrRedScrubbed(t *testing.T) {
 	// Hostile peer body: bidi override, C1 CSI, and a raw ESC OSC payload
 	// — the terminal-forgery set — wrapped around visible text.

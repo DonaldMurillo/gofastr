@@ -296,7 +296,7 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 	}
 	if messages == nil {
 		// The schema requires a messages array; null fails a validating
-		// client the way a null tools/call content does (contentArray).
+		// client the way a null tools/call content does (requiredArray).
 		messages = []PromptMessage{}
 	}
 	return newSuccessResponse(req.ID, promptsGetResult{Description: p.Description, Messages: messages})

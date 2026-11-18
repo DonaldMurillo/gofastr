@@ -115,9 +115,6 @@ func TestLogging_LongPathTruncated(t *testing.T) {
 	}
 }
 
-// The verbatim slog capture sink (captureHandler) is internal/scrubtest's
-// Sink, shared with every panic-scrub probe across the tree.
-
 // logSink is one middleware that logs a request-derived path/method
 // attribute. async marks the sinks whose request log fires from a watcher
 // goroutine after ServeHTTP returns (timeout), so a test must poll for the

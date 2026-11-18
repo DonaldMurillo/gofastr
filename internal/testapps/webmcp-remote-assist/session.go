@@ -1052,10 +1052,6 @@ const wsRecheckEvery = 30 * time.Second
 // report on each path change; 64 a second leaves ICE bursts room.
 const wsFramesPerSecond = 64
 
-// The per-socket frame limiter is internal/tokenbucket's Bucket — the
-// same bucket battery/rtc's room read loop uses, shared instead of the
-// mirror this file used to carry while rtc kept the type unexported.
-
 // operatorCookie pulls the operator credential without leaking the
 // error shape into handlers.
 func operatorCookie(r *http.Request) string {

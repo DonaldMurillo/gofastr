@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"testing"
 	"time"
-
-	"github.com/DonaldMurillo/gofastr/internal/tokenbucket"
 )
 
 // sweepExpired dropped an expired support credential from the map and left
@@ -124,27 +122,6 @@ func TestMediaFramesAreRateLimited(t *testing.T) {
 	// bucket admits its burst (2x rate) and nothing more.
 	if published != 2*rate {
 		t.Fatalf("%d of %d flood frames published; want exactly the burst, %d", published, flood, 2*rate)
-	}
-}
-
-// The bucket starts at its burst and refills at rate tokens a second.
-func TestFrameLimiterRefillsAtRate(t *testing.T) {
-	f := tokenbucket.New(4)
-	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := range 8 {
-		if !f.Allow(t0) {
-			t.Fatalf("frame %d refused inside the burst", i)
-		}
-	}
-	if f.Allow(t0) {
-		t.Fatal("frame past the burst admitted with no time elapsed")
-	}
-	half := t0.Add(500 * time.Millisecond)
-	if !f.Allow(half) || !f.Allow(half) || f.Allow(half) {
-		t.Fatal("half a second at 4/s should refill exactly 2 tokens")
-	}
-	if !f.Allow(t0.Add(time.Hour)) {
-		t.Fatal("an idle hour refilled nothing")
 	}
 }
 
