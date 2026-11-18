@@ -3,6 +3,7 @@ package permission
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
@@ -87,5 +88,46 @@ func TestQuietModeAsksForDotDotThroughASymlink(t *testing.T) {
 		if got := e.Evaluate(ids.NewSessionID(), c.tool, c.argv, false); got != DecisionAsk {
 			t.Errorf("%s %q = %v, want ask: the kernel resolves link/.. outside the working dir", c.tool, c.argv, got)
 		}
+	}
+}
+
+func TestPromoteRefusesShadowedRule(t *testing.T) {
+	deny := Rule{Tool: "Bash", ArgvGlob: "make deploy", Action: DecisionDeny}
+	cases := map[string]func(e *Engine, presetPath string){
+		"persistent allow in working dir": func(e *Engine, _ string) {
+			e.WorkingDir = "/repo"
+			if err := e.AddPersistentRule(Rule{Tool: "Bash", ArgvGlob: "make deploy", Action: DecisionAllow}); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"earlier wider allow only in the live profile": func(e *Engine, _ string) {
+			e.profileRules = []Rule{{Tool: "Bash", Action: DecisionAllow}}
+		},
+		"wider allow only in the saved preset": func(_ *Engine, presetPath string) {
+			if err := SavePreset(presetPath, &PresetFile{Rules: []Rule{{Tool: "*", Action: DecisionAllow}}}); err != nil {
+				t.Fatal(err)
+			}
+		},
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			presetPath := filepath.Join(t.TempDir(), "preset.json")
+			e := New(nil)
+			setup(e, presetPath)
+			sess := ids.NewSessionID()
+			e.AddSessionRule(sess, deny)
+			if _, err := e.Promote(presetPath, sess, 0); err == nil {
+				t.Fatal("Promote dropped a session deny that a wider allow would override")
+			}
+			if got := e.ListSessionRules(sess); len(got) != 1 || got[0] != deny {
+				t.Fatalf("session rules after refused promotion = %+v", got)
+			}
+			if d := e.Evaluate(sess, "Bash", "make deploy", true); d != DecisionDeny {
+				t.Fatalf("Evaluate after refused promotion = %v, want deny", d)
+			}
+			if pf, _ := LoadPreset(presetPath); slices.Contains(pf.Rules, deny) {
+				t.Fatalf("refused promotion still wrote the preset: %+v", pf.Rules)
+			}
+		})
 	}
 }

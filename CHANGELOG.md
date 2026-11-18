@@ -25,6 +25,16 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **harness: promoting a session deny no longer turns it into an allow.**
+  `permission.Engine.Promote` used to drop the session rule even when a
+  persistent "Allow always" rule or an earlier, wider preset allow would
+  still decide the same calls; it now returns `ErrPromotionShadowed` and
+  keeps the session rule
+  ([harness architecture](framework/docs/content/harness-architecture.md)).
+- **harness: the credential helper refuses an unknown provider first.**
+  `helper.InProcess.AttachAuth` returns `ErrUnknownProvider` for any
+  provider but openrouter and zai before it reads the credential store,
+  instead of returning the store's not-found error.
 - **harness: a hook that times out takes its children with it.** SIGTERM
   goes to the hook's process group at the deadline and SIGKILL follows
   within 5s, so a timed-out hook holds the turn at most 5s past its

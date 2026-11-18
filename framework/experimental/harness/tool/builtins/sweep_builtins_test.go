@@ -106,7 +106,7 @@ func TestBashTimeoutKillsBackgroundedChild(t *testing.T) {
 	skipNonUnix(t)
 	pidFile := filepath.Join(t.TempDir(), "pid")
 	_, _ = (Bash{}).Run(context.Background(), mustCall(t, map[string]any{
-		"cmd":        "sleep 30 & echo $! > " + pidFile + "; wait",
+		"cmd":        "sleep 30 & echo $! > '" + strings.ReplaceAll(pidFile, "'", `'\''`) + "'; wait",
 		"timeout_ms": 300,
 	}), nil)
 	raw, err := os.ReadFile(pidFile)

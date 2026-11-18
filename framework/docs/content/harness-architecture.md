@@ -748,7 +748,9 @@ global rule would let one approval of `go test ./...` in your own repo
 run a cloned repo's tests with no prompt. A rule saved before rules
 carried a directory prompts once more. The user can
 promote a session-scoped allow to a profile-level rule via
-`/permissions:promote <rule>`.
+`/permissions:promote <rule>`. Promotion is refused, and the session
+rule kept, when a persistent rule or an earlier preset rule with a
+different action would still decide the same calls.
 
 ### 3. Event bus
 

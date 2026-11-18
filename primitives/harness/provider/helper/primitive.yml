@@ -14,7 +14,7 @@ twins:
         note: Provider.Models.
 invariants:
   - id: bearer-for-known-providers-only
-    rule: AttachAuth sets a bearer Authorization only for openrouter and zai, reading the "default" account when none is given, and returns ErrUnknownProvider without touching the request for any other provider.
+    rule: AttachAuth sets a bearer Authorization only for openrouter and zai, reading the "default" account when none is given, and returns ErrUnknownProvider for any other provider before reading the store, without touching the request.
     enforced_by:
       - test: framework/experimental/harness/provider/helper.TestInProcessAttachesBearer
       - test: framework/experimental/harness/provider/helper.TestSweepUnknownProviderGetsNoHeader
