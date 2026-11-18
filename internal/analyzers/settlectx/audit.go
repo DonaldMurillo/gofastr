@@ -95,25 +95,44 @@ var stdlibRoots = map[string]bool{
 	"unicode": true, "unique": true, "unsafe": true, "weak": true,
 }
 
-// auditIndexes returns the argument indexes at which fn hands a live
-// context to an audit sink.
-func (a *analyzer) auditIndexes(fn *types.Func) map[int]bool {
+// factIndexes resolves fn's context-argument indexes for either fact
+// kind: the cached fixed-point result when there is one, else — for a
+// foreign function only, this package's own facts never round-trip
+// through export data — the indexes load decodes from fn's object fact.
+// fn is reduced to its Origin before cache and fact lookup.
+func (a *analyzer) factIndexes(
+	fn *types.Func,
+	cache map[*types.Func]map[int]bool,
+	load func(*types.Func) ([]int, bool),
+) map[int]bool {
 	fn = fn.Origin()
-	if idx, ok := a.audit[fn]; ok {
+	if idx, ok := cache[fn]; ok {
 		return idx
 	}
 	if fn.Pkg() == a.pass.Pkg {
 		return nil
 	}
-	var f audits
-	if !a.pass.ImportObjectFact(fn, &f) {
+	index, ok := load(fn)
+	if !ok {
 		return nil
 	}
 	out := map[int]bool{}
-	for _, i := range f.Index {
+	for _, i := range index {
 		out[i] = true
 	}
 	return out
+}
+
+// auditIndexes returns the argument indexes at which fn hands a live
+// context to an audit sink.
+func (a *analyzer) auditIndexes(fn *types.Func) map[int]bool {
+	return a.factIndexes(fn, a.audit, func(fn *types.Func) ([]int, bool) {
+		var f audits
+		if !a.pass.ImportObjectFact(fn, &f) {
+			return nil, false
+		}
+		return f.Index, true
+	})
 }
 
 // auditCtxArgs returns the context arguments of call that reach an

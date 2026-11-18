@@ -163,30 +163,39 @@ func TestAudit_ActorStripsNewlines(t *testing.T) {
 	})
 }
 
+// deleteRedactStripsRecordID wires an app whose Redact callback rewrites a
+// lone id row to forgedID (carrying control bytes), deletes a post, and
+// asserts the delete audit row's record_id came back with those bytes
+// stripped: the audit row must record the redacted id, not forged lines.
+func deleteRedactStripsRecordID(t *testing.T, db *sql.DB, forgedID, control string) {
+	t.Helper()
+	redact := func(_ string, row map[string]any) map[string]any {
+		if len(row) == 1 && row["id"] != nil {
+			return map[string]any{"id": forgedID}
+		}
+		return row
+	}
+	ta := TestHarness(t, auditAppWithRedact(t, db, redact))
+	create := ta.Post("/posts", map[string]any{"title": "to-delete"})
+	create.AssertStatus(t, http.StatusCreated)
+
+	var created map[string]any
+	if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+
+	ta.Delete("/posts/"+created["id"].(string)).AssertStatus(t, http.StatusNoContent)
+
+	rows := readAuditRows(t, db)
+	last := rows[len(rows)-1]
+	if last["record_id"] != "public-idforged" {
+		t.Fatalf("SECURITY: [audit] delete audit record_id retained %s/control payload %q. Attack: audit-log record_id injection via redact callback.", control, last["record_id"])
+	}
+}
+
 func TestAudit_DeleteRedactStripsNewlinesFromRecordID(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		redact := func(_ string, row map[string]any) map[string]any {
-			if len(row) == 1 && row["id"] != nil {
-				return map[string]any{"id": "public-id\nforged"}
-			}
-			return row
-		}
-		ta := TestHarness(t, auditAppWithRedact(t, db, redact))
-		create := ta.Post("/posts", map[string]any{"title": "to-delete"})
-		create.AssertStatus(t, http.StatusCreated)
-
-		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
-			t.Fatalf("decode create: %v", err)
-		}
-
-		ta.Delete("/posts/"+created["id"].(string)).AssertStatus(t, http.StatusNoContent)
-
-		rows := readAuditRows(t, db)
-		last := rows[len(rows)-1]
-		if last["record_id"] != "public-idforged" {
-			t.Fatalf("SECURITY: [audit] delete audit record_id retained newline/control payload %q. Attack: audit-log record_id injection via redact callback.", last["record_id"])
-		}
+		deleteRedactStripsRecordID(t, db, "public-id\nforged", "newline")
 	})
 }
 
@@ -204,28 +213,7 @@ func TestAudit_ActorStripsNUL(t *testing.T) {
 
 func TestAudit_DeleteRedactStripsNULFromRecordID(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		redact := func(_ string, row map[string]any) map[string]any {
-			if len(row) == 1 && row["id"] != nil {
-				return map[string]any{"id": "public-id\x00forged"}
-			}
-			return row
-		}
-		ta := TestHarness(t, auditAppWithRedact(t, db, redact))
-		create := ta.Post("/posts", map[string]any{"title": "to-delete"})
-		create.AssertStatus(t, http.StatusCreated)
-
-		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
-			t.Fatalf("decode create: %v", err)
-		}
-
-		ta.Delete("/posts/"+created["id"].(string)).AssertStatus(t, http.StatusNoContent)
-
-		rows := readAuditRows(t, db)
-		last := rows[len(rows)-1]
-		if last["record_id"] != "public-idforged" {
-			t.Fatalf("SECURITY: [audit] delete audit record_id retained NUL/control payload %q. Attack: audit-log record_id injection via redact callback.", last["record_id"])
-		}
+		deleteRedactStripsRecordID(t, db, "public-id\x00forged", "NUL")
 	})
 }
 

@@ -419,17 +419,5 @@ func (s *darwinShell) StatusItemTitle() string {
 // external test package can assert the Tooltip phrase reached the
 // status item in the shell's language.
 func (s *darwinShell) StatusItemToolTip() string {
-	s.mu.Lock()
-	item := s.statusItem
-	s.mu.Unlock()
-	if item == 0 {
-		return ""
-	}
-	var tip string
-	_ = s.onMain(func() {
-		if button := objc.ID(objc.Send(item, objc.Sel("button"))); button != 0 {
-			tip = objc.GoString(objc.ID(objc.Send(button, objc.Sel("toolTip"))))
-		}
-	})
-	return tip
+	return s.statusItemButtonAttr("toolTip")
 }

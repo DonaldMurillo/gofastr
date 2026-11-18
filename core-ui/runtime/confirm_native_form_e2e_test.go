@@ -129,80 +129,102 @@ func driveConfirmFixture(t *testing.T, accept bool, formBody string, routes map[
 	return confirmCalls, confirmMsgs
 }
 
-// TestConfirmFormLevelMsgGates: the attribute on the FORM, with a bare
-// submit button, gates too. Every other fixture here puts it on the button,
-// and the bridge passing opts.confirmed means dispatchRPC no longer reads the
-// form as a fallback — so without this case, narrowing the gate to the
-// submitter alone would pass the suite and silently restore #279 for
-// form-level placement.
-func TestConfirmFormLevelMsgGates(t *testing.T) {
-	var hits atomic.Int32
-	confirmCalls, confirmMsgs := driveConfirmFixture(t, false,
-		`<form id="f" method="post" action="/act" data-cui-confirm="form-msg">
+// TestConfirmGating sweeps the fixtures that pin which message one submit
+// prompts with and how many handler hits follow. Every case loads its form
+// through driveConfirmFixture (which clicks #b) and keeps its own POST-hit
+// assertion: counting confirm calls alone would pass even if the form
+// submitted anyway. The cases differ only in fixture, route and expected
+// hits; each case's comment records the break it exists to catch.
+func TestConfirmGating(t *testing.T) {
+	cases := []struct {
+		name     string
+		gateWhy  string // tail of the prompted-message failure
+		hitsWhy  string // tail of the handler-hit failure
+		accept   bool
+		formBody string
+		route    string
+		routeCT  string
+		routeRes string
+		wantMsg  string
+		wantHits int32
+	}{
+		{
+			// The attribute on the FORM, with a bare submit button, gates
+			// too. Every other fixture here puts it on the button, and the
+			// bridge passing opts.confirmed means dispatchRPC no longer
+			// reads the form as a fallback — so without this case,
+			// narrowing the gate to the submitter alone would pass the
+			// suite and silently restore #279 for form-level placement.
+			name:    "FormLevelMsgGates",
+			gateWhy: "a form-level message must gate a bare submit button",
+			hitsWhy: "a declined confirm must keep the form from reaching the server",
+			accept:  false,
+			formBody: `<form id="f" method="post" action="/act" data-cui-confirm="form-msg">
 <button id="b" type="submit">Go</button>
 </form>`,
-		map[string]http.HandlerFunc{
-			"/act": func(w http.ResponseWriter, _ *http.Request) {
-				hits.Add(1)
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				fmt.Fprint(w, `<span id="done">hit</span>`)
-			},
-		})
-	if confirmCalls != 1 || len(confirmMsgs) != 1 || confirmMsgs[0] != "form-msg" {
-		t.Errorf("confirm prompted with %v (%d call(s)), want exactly [form-msg] — a form-level message must gate a bare submit button", confirmMsgs, confirmCalls)
-	}
-	if h := hits.Load(); h != 0 {
-		t.Errorf("POST /act hit %d time(s) after a declined confirm, want 0", h)
-	}
-}
-
-// TestConfirmSubmitterBeatsFormMsg: when both the form and the submit button
-// carry data-cui-confirm, the button's message is the one prompted with. A
-// form can carry several submit buttons of different destructive weight.
-func TestConfirmSubmitterBeatsFormMsg(t *testing.T) {
-	var hits atomic.Int32
-	confirmCalls, confirmMsgs := driveConfirmFixture(t, false,
-		`<form id="f" method="post" action="/act" data-cui-confirm="form-msg">
+			route:    "/act",
+			routeCT:  "text/html; charset=utf-8",
+			routeRes: `<span id="done">hit</span>`,
+			wantMsg:  "form-msg",
+			wantHits: 0,
+		},
+		{
+			// When both the form and the submit button carry
+			// data-cui-confirm, the button's message is the one prompted
+			// with. A form can carry several submit buttons of different
+			// destructive weight.
+			name:    "SubmitterBeatsFormMsg",
+			gateWhy: "the submitter's message must win over the form's",
+			hitsWhy: "a declined confirm must keep the form from reaching the server",
+			accept:  false,
+			formBody: `<form id="f" method="post" action="/act" data-cui-confirm="form-msg">
 <button id="b" type="submit" data-cui-confirm="button-msg">Go</button>
 </form>`,
-		map[string]http.HandlerFunc{
-			"/act": func(w http.ResponseWriter, _ *http.Request) {
-				hits.Add(1)
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				fmt.Fprint(w, `<span id="done">hit</span>`)
-			},
-		})
-	if confirmCalls != 1 || len(confirmMsgs) != 1 || confirmMsgs[0] != "button-msg" {
-		t.Errorf("confirm prompted with %v (%d call(s)), want exactly [button-msg] — the submitter's message must win over the form's", confirmMsgs, confirmCalls)
-	}
-	if h := hits.Load(); h != 0 {
-		t.Errorf("POST /act hit %d time(s) after a declined confirm, want 0", h)
-	}
-}
-
-// TestConfirmRPCFormPromptsOnce: a data-cui-rpc form submit must prompt
-// exactly once. The bridge gates, then dispatches with opts.confirmed so
-// dispatchRPC does not prompt again from the form's own attribute. The form
-// carries data-cui-confirm too, so a dropped opts would surface as a second
-// prompt with the form's message.
-func TestConfirmRPCFormPromptsOnce(t *testing.T) {
-	var hits atomic.Int32
-	confirmCalls, confirmMsgs := driveConfirmFixture(t, true,
-		`<form id="f" method="post" action="/rpc/echo" data-cui-rpc="/rpc/echo" data-cui-confirm="form-msg">
+			route:    "/act",
+			routeCT:  "text/html; charset=utf-8",
+			routeRes: `<span id="done">hit</span>`,
+			wantMsg:  "button-msg",
+			wantHits: 0,
+		},
+		{
+			// A data-cui-rpc form submit must prompt exactly once. The
+			// bridge gates, then dispatches with opts.confirmed so
+			// dispatchRPC does not prompt again from the form's own
+			// attribute. The form carries data-cui-confirm too, so a
+			// dropped opts would surface as a second prompt with the
+			// form's message.
+			name:    "RPCFormPromptsOnce",
+			gateWhy: "the RPC submit must not double-prompt",
+			hitsWhy: "an accepted confirm lets exactly one RPC through",
+			accept:  true,
+			formBody: `<form id="f" method="post" action="/rpc/echo" data-cui-rpc="/rpc/echo" data-cui-confirm="form-msg">
 <button id="b" type="submit" data-cui-confirm="button-msg">Go</button>
 </form>`,
-		map[string]http.HandlerFunc{
-			"/rpc/echo": func(w http.ResponseWriter, _ *http.Request) {
-				hits.Add(1)
-				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprint(w, `{"ok":true}`)
-			},
-		})
-	if confirmCalls != 1 || len(confirmMsgs) != 1 || confirmMsgs[0] != "button-msg" {
-		t.Errorf("confirm prompted with %v (%d call(s)), want exactly [button-msg] — the RPC submit must not double-prompt", confirmMsgs, confirmCalls)
+			route:    "/rpc/echo",
+			routeCT:  "application/json",
+			routeRes: `{"ok":true}`,
+			wantMsg:  "button-msg",
+			wantHits: 1,
+		},
 	}
-	if h := hits.Load(); h != 1 {
-		t.Errorf("/rpc/echo hit %d time(s), want 1 after an accepted confirm", h)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var hits atomic.Int32
+			confirmCalls, confirmMsgs := driveConfirmFixture(t, tc.accept, tc.formBody,
+				map[string]http.HandlerFunc{
+					tc.route: func(w http.ResponseWriter, _ *http.Request) {
+						hits.Add(1)
+						w.Header().Set("Content-Type", tc.routeCT)
+						fmt.Fprint(w, tc.routeRes)
+					},
+				})
+			if confirmCalls != 1 || len(confirmMsgs) != 1 || confirmMsgs[0] != tc.wantMsg {
+				t.Errorf("confirm prompted with %v (%d call(s)), want exactly [%s] — %s", confirmMsgs, confirmCalls, tc.wantMsg, tc.gateWhy)
+			}
+			if h := hits.Load(); h != tc.wantHits {
+				t.Errorf("%s hit %d time(s), want %d — %s", tc.route, h, tc.wantHits, tc.hitsWhy)
+			}
+		})
 	}
 }
 

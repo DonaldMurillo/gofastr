@@ -2,13 +2,12 @@ package cron
 
 import (
 	"context"
-	"errors"
 	"os"
-	"os/exec"
-	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/reexectest"
 )
 
 // Leader-election callback panic isolation: LeaderElection.Acquire and
@@ -58,22 +57,9 @@ func TestSchedulerReleasePanicIsolated(t *testing.T) {
 		return // unreachable; cronReleaseChild exits
 	}
 
-	cmd := exec.Command(os.Args[0],
-		"-test.run", "^TestSchedulerReleasePanicIsolated$",
-		"-test.count=1")
-	cmd.Env = append(os.Environ(), cronReleaseChildEnv+"=1")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() >= 10 {
-			t.Fatalf("release child scenario contract broken (exit %d):\n%s", exitErr.ExitCode(), out)
-		}
-		t.Errorf("SECURITY: [cron-release] release panic escaped the untracked goroutine and killed the process: %v\n--- child output ---\n%s", err, out)
-		return
-	}
-	if strings.Contains(string(out), "panic:") {
-		t.Errorf("SECURITY: [cron-release] child survived but reported a panic:\n%s", out)
-	}
+	reexectest.RunChild(t, "TestSchedulerReleasePanicIsolated", cronReleaseChildEnv,
+		"[cron-release]",
+		"[cron-release] release panic escaped the untracked goroutine and killed the process")
 }
 
 // cronReleaseChild is the child-side scenario. It never returns.

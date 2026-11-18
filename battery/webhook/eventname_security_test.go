@@ -5,8 +5,12 @@ import (
 	"testing"
 )
 
-func TestPublish_RejectsCRLFEventName(t *testing.T) {
-	t.Parallel()
+// assertPublishRefused drives one "Publish must refuse this input"
+// property shared by the publish security tests: a wildcard subscriber is
+// listening (so queued=0 proves refusal, not an empty subscriber list)
+// and Publish must both error and queue nothing.
+func assertPublishRefused(t *testing.T, event string, payload []byte, what, attack string) {
+	t.Helper()
 	mgr := New(NewMemoryStore(), Options{AllowPrivateNetworks: true})
 	if _, err := mgr.Subscribe(context.Background(), Subscriber{
 		URL:    "https://example.com/hook",
@@ -16,27 +20,24 @@ func TestPublish_RejectsCRLFEventName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	queued, err := mgr.Publish(context.Background(), "orders.created\r\nX-Evil: 1", []byte("{}"))
+	queued, err := mgr.Publish(context.Background(), event, payload)
 	if err == nil || queued != 0 {
-		t.Fatalf("SECURITY: [webhook] Publish accepted CR/LF in event name (queued=%d err=%v). Attack: outbound header injection / poisoned delivery retries via X-GoFastr-Event.", queued, err)
+		t.Fatalf("SECURITY: [webhook] Publish accepted %s (queued=%d err=%v). Attack: %s.", what, queued, err, attack)
 	}
+}
+
+func TestPublish_RejectsCRLFEventName(t *testing.T) {
+	t.Parallel()
+	assertPublishRefused(t, "orders.created\r\nX-Evil: 1", []byte("{}"),
+		"CR/LF in event name",
+		"outbound header injection / poisoned delivery retries via X-GoFastr-Event")
 }
 
 func TestPublish_RejectsNULEventName(t *testing.T) {
 	t.Parallel()
-	mgr := New(NewMemoryStore(), Options{AllowPrivateNetworks: true})
-	if _, err := mgr.Subscribe(context.Background(), Subscriber{
-		URL:    "https://example.com/hook",
-		Secret: "x",
-		Events: []string{"*"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	queued, err := mgr.Publish(context.Background(), "orders.created\x00admin", []byte("{}"))
-	if err == nil || queued != 0 {
-		t.Fatalf("SECURITY: [webhook] Publish accepted NUL in event name (queued=%d err=%v). Attack: invalid outbound header value / poison-pill delivery record.", queued, err)
-	}
+	assertPublishRefused(t, "orders.created\x00admin", []byte("{}"),
+		"NUL in event name",
+		"invalid outbound header value / poison-pill delivery record")
 }
 
 func TestSubscribe_RejectsCRLFEventPattern(t *testing.T) {

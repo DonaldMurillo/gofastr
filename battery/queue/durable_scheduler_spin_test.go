@@ -5,9 +5,6 @@ import (
 	"database/sql"
 	"testing"
 	"time"
-
-	"github.com/DonaldMurillo/gofastr/internal/pgtest"
-	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // A schedule the pass skips (a corrupted row, a stored sub-millisecond
@@ -18,18 +15,7 @@ import (
 // wake now ignores a schedule the pass just left due; it is retried at the
 // heartbeat, while a healthy schedule still wakes the loop on time.
 func TestSkippedScheduleDoesNotSpinStart(t *testing.T) {
-	t.Run("sqlite", func(t *testing.T) {
-		db, err := sql.Open("sqlite3", ":memory:")
-		if err != nil {
-			t.Fatal(err)
-		}
-		db.SetMaxOpenConns(1)
-		t.Cleanup(func() { _ = db.Close() })
-		assertSkippedScheduleDoesNotSpin(t, db)
-	})
-	t.Run("postgres", func(t *testing.T) {
-		assertSkippedScheduleDoesNotSpin(t, pgtest.DB(t))
-	})
+	forBackendDBs(t, assertSkippedScheduleDoesNotSpin)
 }
 
 func assertSkippedScheduleDoesNotSpin(t *testing.T, db *sql.DB) {
@@ -78,18 +64,7 @@ func assertSkippedScheduleDoesNotSpin(t *testing.T, db *sql.DB) {
 // pins the pass's time and passDone reports the wait the loop chose, so
 // nothing here is timed.
 func TestSkippedScheduleStartLoopWaitsHeartbeat(t *testing.T) {
-	t.Run("sqlite", func(t *testing.T) {
-		db, err := sql.Open("sqlite3", ":memory:")
-		if err != nil {
-			t.Fatal(err)
-		}
-		db.SetMaxOpenConns(1)
-		t.Cleanup(func() { _ = db.Close() })
-		assertStartLoopWaitsHeartbeat(t, db)
-	})
-	t.Run("postgres", func(t *testing.T) {
-		assertStartLoopWaitsHeartbeat(t, pgtest.DB(t))
-	})
+	forBackendDBs(t, assertStartLoopWaitsHeartbeat)
 }
 
 func assertStartLoopWaitsHeartbeat(t *testing.T, db *sql.DB) {

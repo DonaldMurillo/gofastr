@@ -25,6 +25,28 @@ func writeRuntimeFixture(t *testing.T, name, body string) string {
 	return dir
 }
 
+// lintRuntimeRepo runs one clean-tree lint over the runtime package
+// and every registered behaviour, skipping when this checkout has
+// neither, and fails the test with failMsg when the lint fires.
+func lintRuntimeRepo(t *testing.T, failMsg string, lint func(roots ...string) (*Result, error)) {
+	t.Helper()
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Skipf("can't locate repo root: %v", err)
+	}
+	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
+	if _, err := os.Stat(runtimeDir); err != nil {
+		t.Skipf("runtime dir not present: %v", err)
+	}
+	res, err := lint(runtimeLintRoots(t, runtimeDir)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("%s:\n%s", failMsg, res.Error())
+	}
+}
+
 // selectorFixture uses ~ for JS backticks (Go raw strings cannot carry
 // them); untailed below.
 const selectorFixtureRaw = `// Reduced from the pre-fix sources at 7bd789e9 (real API names):
@@ -166,21 +188,7 @@ func TestLintSelectorInterpolation_SyntheticPositives(t *testing.T) {
 
 //gofastr:test-reads core-ui/runtime/
 func TestLintSelectorInterpolation_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	if _, err := os.Stat(runtimeDir); err != nil {
-		t.Skipf("runtime dir not present: %v", err)
-	}
-	res, err := LintSelectorInterpolation(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS contains unescaped selector interpolations:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS contains unescaped selector interpolations", LintSelectorInterpolation)
 }
 
 // ── LintRegistryOwnProps ───────────────────────────────────────────────
@@ -355,21 +363,7 @@ function onClose(e) {
 }
 
 func TestLintRegistryOwnProps_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	if _, err := os.Stat(runtimeDir); err != nil {
-		t.Skipf("runtime dir not present: %v", err)
-	}
-	res, err := LintRegistryOwnProps(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS contains prototype-chain registry reads:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS contains prototype-chain registry reads", LintRegistryOwnProps)
 }
 
 // ── LintResponseMountedAfterOK ─────────────────────────────────────────
@@ -827,21 +821,7 @@ function bracketLiteral() { // quiet: a literal key
 }
 
 func TestLintResponseMountedAfterOK_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	if _, err := os.Stat(runtimeDir); err != nil {
-		t.Skipf("runtime dir not present: %v", err)
-	}
-	res, err := LintResponseMountedAfterOK(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS mounts fetched text without an .ok check:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS mounts fetched text without an .ok check", LintResponseMountedAfterOK)
 }
 
 // ── LintAttributePathSegments ──────────────────────────────────────────
@@ -928,21 +908,7 @@ func TestLintAttributePathSegments_FiresOnPreFixShape(t *testing.T) {
 }
 
 func TestLintAttributePathSegments_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	if _, err := os.Stat(runtimeDir); err != nil {
-		t.Skipf("runtime dir not present: %v", err)
-	}
-	res, err := LintAttributePathSegments(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS joins attribute-borne values into URL paths ungated:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS joins attribute-borne values into URL paths ungated", LintAttributePathSegments)
 }
 
 // ── review findings (7-14): named .then handlers, statusText gates,
@@ -1153,21 +1119,27 @@ function findAny(name) {
 }
 `
 
-func TestLintRegistryOwnProps_HoistedGuardBoolean(t *testing.T) {
-	dir := writeRuntimeFixture(t, "hoisted.js", registryHoistedFixture)
-	res, err := LintRegistryOwnProps(dir)
+// lintExpectFindings asserts lint fires exactly n findings on dir, each
+// carrying prefix (want names the findings in the failure message).
+func lintExpectFindings(t *testing.T, lint func(roots ...string) (*Result, error), dir string, n int, want, prefix string) {
+	t.Helper()
+	res, err := lint(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Violations) != 2 {
-		t.Fatalf("expected exactly 2 findings (findMixed, findAny), got %d:\n%s",
-			len(res.Violations), res.Error())
+	if len(res.Violations) != n {
+		t.Fatalf("expected exactly %d findings (%s), got %d:\n%s", n, want, len(res.Violations), res.Error())
 	}
 	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[registry-own-prop] catalog[") {
+		if !strings.HasPrefix(v.Message, prefix) {
 			t.Errorf("finding on a fixed/silent spelling: %s:%d: %s", v.File, v.Line, v.Message)
 		}
 	}
+}
+
+func TestLintRegistryOwnProps_HoistedGuardBoolean(t *testing.T) {
+	lintExpectFindings(t, LintRegistryOwnProps, writeRuntimeFixture(t, "hoisted.js", registryHoistedFixture),
+		2, "findMixed, findAny", "[registry-own-prop] catalog[")
 }
 
 const longForInFixture = `// A for-in loop whose body far exceeds any fixed byte window (review
@@ -1369,20 +1341,8 @@ function lookupMultiline(name) {
 `
 
 func TestLintRegistryOwnProps_Review5DeclsIndicesAndIn(t *testing.T) {
-	dir := writeRuntimeFixture(t, "review5reg.js", registryReview5Fixture)
-	res, err := LintRegistryOwnProps(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 3 {
-		t.Fatalf("expected exactly 3 findings (inline decl, member index, in-guarded read), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[registry-own-prop] REGISTRY") {
-			t.Errorf("finding on a fixed/silent spelling: %s:%d: %s", v.File, v.Line, v.Message)
-		}
-	}
+	lintExpectFindings(t, LintRegistryOwnProps, writeRuntimeFixture(t, "review5reg.js", registryReview5Fixture),
+		3, "inline decl, member index, in-guarded read", "[registry-own-prop] REGISTRY")
 }
 
 const responseReview5Fixture = `// Review 5: every compound assignment to innerHTML/outerHTML is a
@@ -2459,21 +2419,7 @@ func TestLintDecodeURIRaw_RepoIsClean(t *testing.T) {
 	// core-ui/runtime/deeplink_decode_red_test.go) are still OPEN in
 	// this worktree, so the live tree fires today. Delete this skip
 	// once the fix worktree merges; the assertion below is the gate.
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	if _, err := os.Stat(runtimeDir); err != nil {
-		t.Skipf("runtime dir not present: %v", err)
-	}
-	res, err := LintDecodeURIRaw(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS decodes data-fui values outside try blocks:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS decodes data-fui values outside try blocks", LintDecodeURIRaw)
 }
 
 // ── LintProtoKeyWrite ──────────────────────────────────────────────────
@@ -2628,21 +2574,7 @@ func TestLintProtoKeyWrite_RepoIsClean(t *testing.T) {
 	// core-ui/runtime/src_animate_proto_red_test.go) are still OPEN in
 	// this worktree, so the live tree fires today. Delete this skip
 	// once the fix worktree merges; the assertion below is the gate.
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	if _, err := os.Stat(runtimeDir); err != nil {
-		t.Skipf("runtime dir not present: %v", err)
-	}
-	res, err := LintProtoKeyWrite(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS writes attribute-borne keys into shared stores with no reserved-key guard:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS writes attribute-borne keys into shared stores with no reserved-key guard", LintProtoKeyWrite)
 }
 
 // The four shape lints below had fixture tests only: nothing ran them
@@ -2651,63 +2583,19 @@ func TestLintProtoKeyWrite_RepoIsClean(t *testing.T) {
 // package and every registered behaviour.
 
 func TestLintSelectorBareArgGuarded_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	res, err := LintSelectorBareArgGuarded(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS builds a selector from an unguarded bare argument:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS builds a selector from an unguarded bare argument", LintSelectorBareArgGuarded)
 }
 
 func TestLintCookieConcat_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	res, err := LintCookieConcat(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS writes a cookie by concatenation:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS writes a cookie by concatenation", LintCookieConcat)
 }
 
 func TestLintModuleURLShape_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	res, err := LintModuleURLShape(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS builds a module URL in a shape the loader does not own:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS builds a module URL in a shape the loader does not own", LintModuleURLShape)
 }
 
 func TestLintStorageKeyRaw_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	res, err := LintStorageKeyRaw(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS builds a storage key from a raw value:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS builds a storage key from a raw value", LintStorageKeyRaw)
 }
 
 // ── review-8 findings (WP9): string-literal assignment prose, regex

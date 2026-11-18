@@ -20,7 +20,11 @@ cd "$(dirname "$0")/.."
 
 DUPL_VERSION=v1.1.0
 BASELINE_FILE=scripts/dupl-baseline.txt
-THRESHOLD=100
+# 90 since the 2026-11 dedup sweep (was 100): the 90-99 token band was
+# cleared too (96 groups then, 33 deliberate residuals now), so the gate
+# guards the finer grain it exposed. dupl stays pinned; moving the
+# threshold re-measures the baseline below.
+THRESHOLD=90
 
 rebaseline=0
 case "${1:-}" in

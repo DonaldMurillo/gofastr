@@ -171,10 +171,14 @@ func seedUser(t *testing.T, store *memoryUserStore, email, password string) User
 
 // postAuthJSON issues a JSON POST against a mounted auth route and returns
 // the recorded response, sharing the request plumbing across auth tests.
+// An empty contentType sends no Content-Type header at all, for the
+// missing-content-type smuggling cases.
 func postAuthJSON(r *router.Router, path string, payload map[string]string, contentType string) *httptest.ResponseRecorder {
 	body, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
-	req.Header.Set("Content-Type", contentType)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	return rec

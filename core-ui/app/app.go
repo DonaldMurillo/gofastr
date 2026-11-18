@@ -595,18 +595,7 @@ func (a *App) RenderNotFoundFromResult(ctx context.Context, path, fromPath strin
 }
 
 func (a *App) renderNotFoundFromResultIDs(ctx context.Context, path, fromPath string, comp component.Component) (RenderResult, error) {
-	target := notFoundScreenFor(ctx, comp)
-	res, err := a.renderScreenPartial(ctx, path, target, nil, nil)
-	if err != nil {
-		return res, err
-	}
-	if res.Title == "" {
-		res.Title = target.Title
-	}
-	if res.Kind != DecisionAllow && res.Kind != DecisionRenderAlt {
-		return res, nil
-	}
-	return a.partialFromShared(ctx, path, fromPath, res, target, nil, false)
+	return a.renderSyntheticFromResultIDs(ctx, path, fromPath, notFoundScreenFor(ctx, comp))
 }
 
 // errorScreenFor builds the synthetic page screen a whole-page error
@@ -639,13 +628,19 @@ func (a *App) RenderErrorFromResult(ctx context.Context, path, fromPath string, 
 }
 
 func (a *App) renderErrorFromResultIDs(ctx context.Context, path, fromPath string, comp component.Component) (RenderResult, error) {
-	target := errorScreenFor(ctx, comp)
+	return a.renderSyntheticFromResultIDs(ctx, path, fromPath, errorScreenFor(ctx, comp))
+}
+
+// renderSyntheticFromResultIDs is the shared body of the not-found and
+// error subtree-partial renders: render the synthetic screen, keep its
+// title when the body left it empty (an empty Title would let the host
+// fall back to the origin route's own registered title), and return the
+// partial under the layers the origin route shares with the root layout.
+func (a *App) renderSyntheticFromResultIDs(ctx context.Context, path, fromPath string, target *Screen) (RenderResult, error) {
 	res, err := a.renderScreenPartial(ctx, path, target, nil, nil)
 	if err != nil {
 		return res, err
 	}
-	// As the not-found twin: an empty Title let the host fall back to
-	// the failed route's own registered title over the error body.
 	if res.Title == "" {
 		res.Title = target.Title
 	}

@@ -3,6 +3,8 @@ package pluginhost
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/jstest"
 )
 
 // The JS channel files are the actual postMessage sinks; like the manifest
@@ -19,7 +21,7 @@ import (
 // mirror of TestFrameClientJS_PostsWithWildcardTargetOrigin, which pins only
 // the frame side.
 func TestBrokerPostsToFrameWithWildcardOrigin(t *testing.T) {
-	code := nonCommentJS(string(brokerJSBytes))
+	code := jstest.NonCommentJS(string(brokerJSBytes))
 
 	if !strings.Contains(code, `frame.contentWindow.postMessage(env, "*")`) {
 		t.Fatal("broker postTo must post to the frame with targetOrigin \"*\" (the frame is opaque)")
@@ -56,8 +58,8 @@ func TestBrokerPostsToFrameWithWildcardOrigin(t *testing.T) {
 // "constructor" id resolves undefined instead of a truthy Object.prototype
 // member that passes the not-pending guard and throws on demand.
 func TestChannelPendingMapsArePrototypeFree(t *testing.T) {
-	client := nonCommentJS(string(frameClientJSBytes))
-	broker := nonCommentJS(string(brokerJSBytes))
+	client := jstest.NonCommentJS(string(frameClientJSBytes))
+	broker := jstest.NonCommentJS(string(brokerJSBytes))
 
 	// Declaration and reset on the frame side.
 	if !strings.Contains(client, "pending = Object.create(null)") {

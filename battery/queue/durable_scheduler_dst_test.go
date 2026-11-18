@@ -120,6 +120,12 @@ func wantFallBackSteps(t *testing.T, zone, spec string, base time.Time, want []i
 	}
 }
 
+// utc builds the UTC instant a DST scenario bases itself at or
+// heartbeats on; every scenario instant in this file is a whole minute.
+func utc(year, month, day, hour, min int) time.Time {
+	return time.Date(year, time.Month(month), day, hour, min, 0, 0, time.UTC)
+}
+
 // Stepwise fall-back scenarios, table-driven over wantFallBackSteps: the
 // repeated hour must not refire an already-fired minute, whether the
 // shift is a full hour or half an hour.
@@ -140,14 +146,14 @@ func TestCronFallBackStepwiseScenarios(t *testing.T) {
 			name: "two firing minutes in the repeated hour",
 			zone: "America/New_York",
 			spec: "0,30 1 * * *",
-			base: time.Date(2026, 10, 31, 16, 0, 0, 0, time.UTC),
+			base: utc(2026, 10, 31, 16, 0),
 			want: []int{1, 1, 0, 0, 1},
 			steps: []time.Time{
-				time.Date(2026, 11, 1, 5, 0, 0, 0, time.UTC),  // 01:00 EDT
-				time.Date(2026, 11, 1, 5, 30, 0, 0, time.UTC), // 01:30 EDT
-				time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC),  // 01:00 EST, repeat
-				time.Date(2026, 11, 1, 6, 30, 0, 0, time.UTC), // 01:30 EST, repeat
-				time.Date(2026, 11, 2, 6, 0, 0, 0, time.UTC),  // next day, 01:00 EST
+				utc(2026, 11, 1, 5, 0),  // 01:00 EDT
+				utc(2026, 11, 1, 5, 30), // 01:30 EDT
+				utc(2026, 11, 1, 6, 0),  // 01:00 EST, repeat
+				utc(2026, 11, 1, 6, 30), // 01:30 EST, repeat
+				utc(2026, 11, 2, 6, 0),  // next day, 01:00 EST
 			},
 		},
 		{
@@ -157,14 +163,14 @@ func TestCronFallBackStepwiseScenarios(t *testing.T) {
 			name: "half-hour shift (Lord Howe)",
 			zone: "Australia/Lord_Howe",
 			spec: "0,30,45 1,2 * * *",
-			base: time.Date(2026, 4, 4, 14, 10, 0, 0, time.UTC),
+			base: utc(2026, 4, 4, 14, 10),
 			want: []int{1, 1, 0, 0, 1},
 			steps: []time.Time{
-				time.Date(2026, 4, 4, 14, 30, 0, 0, time.UTC), // 01:30 +11
-				time.Date(2026, 4, 4, 14, 45, 0, 0, time.UTC), // 01:45 +11
-				time.Date(2026, 4, 4, 15, 0, 0, 0, time.UTC),  // 01:30 +10:30, repeat
-				time.Date(2026, 4, 4, 15, 15, 0, 0, time.UTC), // 01:45 +10:30, repeat
-				time.Date(2026, 4, 4, 15, 30, 0, 0, time.UTC), // 02:00 +10:30
+				utc(2026, 4, 4, 14, 30), // 01:30 +11
+				utc(2026, 4, 4, 14, 45), // 01:45 +11
+				utc(2026, 4, 4, 15, 0),  // 01:30 +10:30, repeat
+				utc(2026, 4, 4, 15, 15), // 01:45 +10:30, repeat
+				utc(2026, 4, 4, 15, 30), // 02:00 +10:30
 			},
 		},
 	}

@@ -118,23 +118,30 @@ func errNoTray() *desktop.Error {
 	return &desktop.Error{Code: desktop.CodeUnsupported, Message: "no tray is configured on this host"}
 }
 
-// statusItemButtonTitle reads the tray button's title natively: the
-// e2e seam for "the status item exists with the configured title" and
-// for tray.setTitle round-trips.
-func (s *darwinShell) statusItemButtonTitle() string {
+// statusItemButtonAttr reads a string attribute off the tray's status
+// item button (its title or toolTip) on the main thread; "" when no
+// tray is configured.
+func (s *darwinShell) statusItemButtonAttr(attr string) string {
 	s.mu.Lock()
 	item := s.statusItem
 	s.mu.Unlock()
 	if item == 0 {
 		return ""
 	}
-	var title string
+	var out string
 	_ = s.onMain(func() {
 		if button := objc.ID(objc.Send(item, objc.Sel("button"))); button != 0 {
-			title = objc.GoString(objc.ID(objc.Send(button, objc.Sel("title"))))
+			out = objc.GoString(objc.ID(objc.Send(button, objc.Sel(attr))))
 		}
 	})
-	return title
+	return out
+}
+
+// statusItemButtonTitle reads the tray button's title natively: the
+// e2e seam for "the status item exists with the configured title" and
+// for tray.setTitle round-trips.
+func (s *darwinShell) statusItemButtonTitle() string {
+	return s.statusItemButtonAttr("title")
 }
 
 // showMainWindow is desktop.RoleShow: order the main window front and

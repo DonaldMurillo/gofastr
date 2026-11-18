@@ -245,19 +245,27 @@ func TestSEOScreenPlusGlobalHead(t *testing.T) {
 
 func TestSEOScreenNoOverride(t *testing.T) {
 	// Screen that doesn't implement SEOScreen should work fine
-	application := app.NewApp("NoSEOTest")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-
-	host := New(application, WithFavicon("/favicon.ico"))
-
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
+	page := serveHomeWithOpts(t, "NoSEOTest", WithFavicon("/favicon.ico"))
 
 	assertContains(t, page, `<link rel="icon" href="/favicon.ico">`)
 	// No crash, no extra head content
 	assertNotContains(t, page, `og:title`)
+}
+
+// serveHomeWithOpts builds the standard one-home-screen app, hosts it with
+// opts, serves "/", and returns the rendered page — the scaffold the
+// head-option tests share.
+func serveHomeWithOpts(t *testing.T, name string, opts ...Option) string {
+	t.Helper()
+	application := app.NewApp(name)
+	application.SetDefaultLayout(bareLayout("main"))
+	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
+
+	host := New(application, opts...)
+
+	rec := httptest.NewRecorder()
+	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	return rec.Body.String()
 }
 
 // ---------------------------------------------------------------------------
@@ -317,15 +325,7 @@ func TestAllTypedHelpersCombined(t *testing.T) {
 
 func TestTypedHelpersEscapeAttrs(t *testing.T) {
 	// Ensure typed helpers escape user-provided values
-	application := app.NewApp("EscapeTest")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-
-	host := New(application, WithDescription(`<script>alert("xss")</script>`))
-
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
+	page := serveHomeWithOpts(t, "EscapeTest", WithDescription(`<script>alert("xss")</script>`))
 
 	// The raw <script> tag must NOT appear in output. It must be escaped
 	assertNotContains(t, page, `<script>alert("xss")</script>`)

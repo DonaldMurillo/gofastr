@@ -433,6 +433,23 @@ type constructSpec struct {
 	at          func(map[string]any) map[string]any
 }
 
+// nestedSpec builds a constructSpec whose zero element is planted by plant
+// (which returns a pointer to the planted element) anywhere inside a fresh
+// spec: a field, relation or index of the first entity, a screen body
+// block, a block's children or actions, a nav item's sub-items. The
+// emitted map is dug at path extended with the element's index 0.
+func nestedSpec[T any](name string, order []string, orderName string, plant func(bp *appspec.AppSpec) *T, path ...any) constructSpec {
+	elemPath := append(path, 0) // path is this call's own slice; extend it once
+	return constructSpec{
+		name: name, order: order, orderName: orderName,
+		build: func() (*appspec.AppSpec, reflect.Value) {
+			bp := &appspec.AppSpec{}
+			return bp, reflect.ValueOf(plant(bp)).Elem()
+		},
+		at: func(out map[string]any) map[string]any { return digEmitted(out, elemPath...) },
+	}
+}
+
 func constructSpecs() []constructSpec {
 	return []constructSpec{
 		{
@@ -443,30 +460,18 @@ func constructSpecs() []constructSpec {
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0) },
 		},
-		{
-			name: "fields", order: fieldOrder, orderName: "fieldOrder",
-			build: func() (*appspec.AppSpec, reflect.Value) {
-				bp := &appspec.AppSpec{Entities: []framework.EntityDeclaration{{Fields: []framework.FieldDeclaration{{}}}}}
-				return bp, reflect.ValueOf(&bp.Entities[0].Fields[0]).Elem()
-			},
-			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "fields", 0) },
-		},
-		{
-			name: "relations", order: relationOrder, orderName: "relationOrder",
-			build: func() (*appspec.AppSpec, reflect.Value) {
-				bp := &appspec.AppSpec{Entities: []framework.EntityDeclaration{{Relations: []framework.Relation{{}}}}}
-				return bp, reflect.ValueOf(&bp.Entities[0].Relations[0]).Elem()
-			},
-			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "relations", 0) },
-		},
-		{
-			name: "indices", order: indexOrder, orderName: "indexOrder",
-			build: func() (*appspec.AppSpec, reflect.Value) {
-				bp := &appspec.AppSpec{Entities: []framework.EntityDeclaration{{Indices: []framework.Index{{}}}}}
-				return bp, reflect.ValueOf(&bp.Entities[0].Indices[0]).Elem()
-			},
-			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "indices", 0) },
-		},
+		nestedSpec("fields", fieldOrder, "fieldOrder", func(bp *appspec.AppSpec) *framework.FieldDeclaration {
+			bp.Entities = []framework.EntityDeclaration{{Fields: []framework.FieldDeclaration{{}}}}
+			return &bp.Entities[0].Fields[0]
+		}, "entities", 0, "fields"),
+		nestedSpec("relations", relationOrder, "relationOrder", func(bp *appspec.AppSpec) *framework.Relation {
+			bp.Entities = []framework.EntityDeclaration{{Relations: []framework.Relation{{}}}}
+			return &bp.Entities[0].Relations[0]
+		}, "entities", 0, "relations"),
+		nestedSpec("indices", indexOrder, "indexOrder", func(bp *appspec.AppSpec) *framework.Index {
+			bp.Entities = []framework.EntityDeclaration{{Indices: []framework.Index{{}}}}
+			return &bp.Entities[0].Indices[0]
+		}, "entities", 0, "indices"),
 		{
 			name: "screens", order: screenOrder, orderName: "screenOrder",
 			build: func() (*appspec.AppSpec, reflect.Value) {
@@ -475,34 +480,22 @@ func constructSpecs() []constructSpec {
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "screens", 0) },
 		},
-		{
-			name: "body", order: blockOrder, orderName: "blockOrder",
-			build: func() (*appspec.AppSpec, reflect.Value) {
-				bp := &appspec.AppSpec{Screens: []appspec.AppSpecScreen{{Body: []appspec.AppSpecBlock{{}}}}}
-				return bp, reflect.ValueOf(&bp.Screens[0].Body[0]).Elem()
-			},
-			at: func(out map[string]any) map[string]any { return digEmitted(out, "screens", 0, "body", 0) },
-		},
-		{
-			name: "children", order: blockOrder, orderName: "blockOrder",
-			build: func() (*appspec.AppSpec, reflect.Value) {
-				bp := &appspec.AppSpec{Screens: []appspec.AppSpecScreen{{Body: []appspec.AppSpecBlock{{Children: []appspec.AppSpecBlock{{}}}}}}}
-				return bp, reflect.ValueOf(&bp.Screens[0].Body[0].Children[0]).Elem()
-			},
-			at: func(out map[string]any) map[string]any {
-				return digEmitted(out, "screens", 0, "body", 0, "children", 0)
-			},
-		},
-		{
-			name: "actions", order: actionOrder, orderName: "actionOrder",
-			build: func() (*appspec.AppSpec, reflect.Value) {
-				bp := &appspec.AppSpec{Screens: []appspec.AppSpecScreen{{Body: []appspec.AppSpecBlock{{Actions: []appspec.AppSpecAction{{}}}}}}}
-				return bp, reflect.ValueOf(&bp.Screens[0].Body[0].Actions[0]).Elem()
-			},
-			at: func(out map[string]any) map[string]any {
-				return digEmitted(out, "screens", 0, "body", 0, "actions", 0)
-			},
-		},
+		nestedSpec("body", blockOrder, "blockOrder", func(bp *appspec.AppSpec) *appspec.AppSpecBlock {
+			bp.Screens = []appspec.AppSpecScreen{{Body: []appspec.AppSpecBlock{{}}}}
+			return &bp.Screens[0].Body[0]
+		}, "screens", 0, "body"),
+		nestedSpec("children", blockOrder, "blockOrder", func(bp *appspec.AppSpec) *appspec.AppSpecBlock {
+			bp.Screens = []appspec.AppSpecScreen{{Body: []appspec.AppSpecBlock{{}}}}
+			b := &bp.Screens[0].Body[0]
+			b.Children = []appspec.AppSpecBlock{{}}
+			return &b.Children[0]
+		}, "screens", 0, "body", 0, "children"),
+		nestedSpec("actions", actionOrder, "actionOrder", func(bp *appspec.AppSpec) *appspec.AppSpecAction {
+			bp.Screens = []appspec.AppSpecScreen{{Body: []appspec.AppSpecBlock{{}}}}
+			b := &bp.Screens[0].Body[0]
+			b.Actions = []appspec.AppSpecAction{{}}
+			return &b.Actions[0]
+		}, "screens", 0, "body", 0, "actions"),
 		{
 			name: "nav", order: navOrder, orderName: "navOrder",
 			build: func() (*appspec.AppSpec, reflect.Value) {
@@ -511,14 +504,10 @@ func constructSpecs() []constructSpec {
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "nav", 0) },
 		},
-		{
-			name: "items", order: navOrder, orderName: "navOrder",
-			build: func() (*appspec.AppSpec, reflect.Value) {
-				bp := &appspec.AppSpec{Nav: []appspec.AppSpecNavItem{{Items: []appspec.AppSpecNavItem{{}}}}}
-				return bp, reflect.ValueOf(&bp.Nav[0].Items[0]).Elem()
-			},
-			at: func(out map[string]any) map[string]any { return digEmitted(out, "nav", 0, "items", 0) },
-		},
+		nestedSpec("items", navOrder, "navOrder", func(bp *appspec.AppSpec) *appspec.AppSpecNavItem {
+			bp.Nav = []appspec.AppSpecNavItem{{Items: []appspec.AppSpecNavItem{{}}}}
+			return &bp.Nav[0].Items[0]
+		}, "nav", 0, "items"),
 		{
 			name: "seed", order: seedOrder, orderName: "seedOrder",
 			build: func() (*appspec.AppSpec, reflect.Value) {

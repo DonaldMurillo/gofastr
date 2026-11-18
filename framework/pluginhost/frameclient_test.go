@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/internal/jstest"
 )
 
 // The frame-side channel client lives in frame/frameclient.js and mirrors
@@ -25,7 +26,7 @@ func TestFrameClientJS_ValidatesMessageSource(t *testing.T) {
 	// Scan CODE lines only: the header comment states the invariant in the
 	// same words, so a whole-file Contains would stay green with the actual
 	// check deleted (caught by mutation during review).
-	code := nonCommentJS(js)
+	code := jstest.NonCommentJS(js)
 	if !strings.Contains(code, "event.source === window.parent") &&
 		!strings.Contains(code, "window.parent === event.source") {
 		t.Error("onMessage must accept only messages whose source is the parent window (in code, not prose)")
@@ -36,26 +37,6 @@ func TestFrameClientJS_ValidatesMessageSource(t *testing.T) {
 	if !strings.Contains(code, `msg.src !== "host"`) {
 		t.Error("onMessage must reject messages not marked src:host")
 	}
-}
-
-// nonCommentJS strips whole-line and trailing // comments, returning the
-// executable lines joined — the same approach as the NoExternalURLs scan,
-// shared so security pins can't be satisfied by prose.
-func nonCommentJS(js string) string {
-	var b strings.Builder
-	for line := range strings.SplitSeq(js, "\n") {
-		code := strings.TrimSpace(line)
-		if strings.HasPrefix(code, "//") || strings.HasPrefix(code, "*") ||
-			strings.HasPrefix(code, "/*") {
-			continue
-		}
-		if idx := strings.Index(code, "//"); idx >= 0 {
-			code = strings.TrimSpace(code[:idx])
-		}
-		b.WriteString(code)
-		b.WriteString("\n")
-	}
-	return b.String()
 }
 
 // (2) The frame→host post uses targetOrigin "*" (the frame is opaque, a

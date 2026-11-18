@@ -50,18 +50,25 @@ func legacyDBOn(t *testing.T, driverName string, ddl ...string) *sql.DB {
 	return db
 }
 
-func taskEntity(t *testing.T) *entity.Entity {
+// defineTaskEntity is the tasks fixture taskEntity (string id) and
+// autoIncTaskEntity (integer id) share, differing only in the id column.
+func defineTaskEntity(t *testing.T, idType schema.FieldType) *entity.Entity {
 	t.Helper()
 	return entity.Define("tasks", entity.EntityConfig{
 		Table: "tasks",
 		Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String},
+			{Name: "id", Type: idType},
 			{Name: "user_id", Type: schema.String},
 			{Name: "title", Type: schema.String},
 		},
 		Relations: []entity.Relation{entity.BelongsTo("user", "users", "user_id")},
 	}.WithTimestamps(false))
+}
+
+func taskEntity(t *testing.T) *entity.Entity {
+	t.Helper()
+	return defineTaskEntity(t, schema.String)
 }
 
 // The whole point of the repair: a database carrying the stale key refuses
@@ -1089,16 +1096,7 @@ func TestRepairKeepsTheAutoincrementHighWaterMark(t *testing.T) {
 // AUTOINCREMENT fixture.
 func autoIncTaskEntity(t *testing.T) *entity.Entity {
 	t.Helper()
-	return entity.Define("tasks", entity.EntityConfig{
-		Table: "tasks",
-		Scope: &entity.ScopeConfig{OwnerField: "user_id"},
-		Fields: []schema.Field{
-			{Name: "id", Type: schema.Int},
-			{Name: "user_id", Type: schema.String},
-			{Name: "title", Type: schema.String},
-		},
-		Relations: []entity.Relation{entity.BelongsTo("user", "users", "user_id")},
-	}.WithTimestamps(false))
+	return defineTaskEntity(t, schema.Int)
 }
 
 // assertColumnType fails when a rebuilt column's declared type is not exactly

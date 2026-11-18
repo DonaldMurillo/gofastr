@@ -11,15 +11,11 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
-
 	acpcore "github.com/DonaldMurillo/gofastr/core/acp"
-	"github.com/DonaldMurillo/gofastr/framework"
 	kilnacp "github.com/DonaldMurillo/gofastr/kiln/acp"
 	"github.com/DonaldMurillo/gofastr/kiln/agent"
-	"github.com/DonaldMurillo/gofastr/kiln/db"
+	"github.com/DonaldMurillo/gofastr/kiln/internal/kilntest"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
-	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
 
@@ -45,17 +41,7 @@ func (p *scriptedProvider) Stream(ctx context.Context, req agent.Request) (agent
 
 func newTools(t *testing.T) *protocol.Tools {
 	t.Helper()
-	d, cleanup, err := db.EphemeralSQLite("kiln-acp-adapter")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(cleanup)
-	factory := func() *framework.App { return framework.NewApp(framework.WithDB(d)) }
-	l, err := live.New(journal.NewMemory(), factory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return protocol.New(l)
+	return kilntest.NewTools(t, "kiln-acp-adapter")
 }
 
 // dialog is a minimal ACP client over pipes, mirroring the core/acp

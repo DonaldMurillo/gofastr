@@ -15,12 +15,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
-func batchReqBN(method, body string) *http.Request {
-	r := withTestUser(httptest.NewRequest(method, "/bn/_batch", strings.NewReader(body)), "u1")
-	r.Header.Set("Content-Type", "application/json")
-	return r
-}
-
 // oversizedBatchBody builds a batch body holding MaxBatchSize+1 copies of
 // item under key ("items" or "ids"), i.e. one past the accepted limit.
 func oversizedBatchBody(key, item string) string {
@@ -36,25 +30,32 @@ func oversizedBatchBody(key, item string) string {
 	return sb.String()
 }
 
-func TestBatchUpdate_EmptyAndTooBig(t *testing.T) {
-	ch, _ := covBatchHandler(t)
+// assertBatchEmptyAndOversized pins the 400s a batch endpoint must answer
+// for an empty items payload and one over MaxBatchSize.
+func assertBatchEmptyAndOversized(t *testing.T, h http.HandlerFunc, method, item string) {
+	t.Helper()
 	rec := httptest.NewRecorder()
-	ch.BatchUpdate()(rec, batchReqBN("PATCH", `{"items":[]}`))
+	h(rec, batchReq(method, `{"items":[]}`))
 	if rec.Code != http.StatusBadRequest {
-		t.Errorf("empty update batch = %d, want 400", rec.Code)
+		t.Errorf("empty %s batch = %d, want 400", method, rec.Code)
 	}
 	rec = httptest.NewRecorder()
-	ch.BatchUpdate()(rec, batchReqBN("PATCH", oversizedBatchBody("items", `{"id":"x","title":"y"}`)))
+	h(rec, batchReq(method, oversizedBatchBody("items", item)))
 	if rec.Code != http.StatusBadRequest {
-		t.Errorf("oversized update batch = %d, want 400", rec.Code)
+		t.Errorf("oversized %s batch = %d, want 400", method, rec.Code)
 	}
+}
+
+func TestBatchUpdate_EmptyAndTooBig(t *testing.T) {
+	ch, _ := covBatchHandler(t)
+	assertBatchEmptyAndOversized(t, ch.BatchUpdate(), http.MethodPatch, `{"id":"x","title":"y"}`)
 }
 
 func TestBatchUpdate_NonStringID(t *testing.T) {
 	ch, _ := covBatchHandler(t)
 	// numeric id → fmt.Sprintf fallback path; row won't exist → rollback 400.
 	rec := httptest.NewRecorder()
-	ch.BatchUpdate()(rec, batchReqBN("PATCH", `{"items":[{"id":123,"title":"y"}]}`))
+	ch.BatchUpdate()(rec, batchReq("PATCH", `{"items":[{"id":123,"title":"y"}]}`))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("numeric-id update batch = %d, want 400 (no such row)", rec.Code)
 	}
@@ -63,7 +64,7 @@ func TestBatchUpdate_NonStringID(t *testing.T) {
 func TestBatchDelete_TooBig(t *testing.T) {
 	ch, _ := covBatchHandler(t)
 	rec := httptest.NewRecorder()
-	ch.BatchDelete()(rec, batchReqBN("DELETE", oversizedBatchBody("ids", `"x"`)))
+	ch.BatchDelete()(rec, batchReq("DELETE", oversizedBatchBody("ids", `"x"`)))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("oversized delete batch = %d, want 400", rec.Code)
 	}

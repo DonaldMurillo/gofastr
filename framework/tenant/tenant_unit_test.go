@@ -64,40 +64,32 @@ func TestTenantMiddleware_ServerResolvedTenant(t *testing.T) {
 }
 
 func TestTenantMiddleware_NoTenant(t *testing.T) {
-	var seen = "sentinel"
-	h := TenantMiddleware("X-Tenant-ID")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = GetTenantID(r.Context())
-	}))
 	// No tenant resolved on the context.
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
-	if seen != "" {
+	if seen := runTenantMiddleware(context.Background()); seen != "" {
 		t.Fatalf("expected empty tenant, got %q", seen)
 	}
 }
 
-func TestTenantMiddleware_NonStringTenantIgnored(t *testing.T) {
+// runTenantMiddleware serves one request through TenantMiddleware with ctx
+// on the request context and returns the tenant ID the handler observed.
+func runTenantMiddleware(ctx context.Context) string {
 	var seen = "sentinel"
 	h := TenantMiddleware("X-Tenant-ID")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = GetTenantID(r.Context())
 	}))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx))
+	return seen
+}
+
+func TestTenantMiddleware_NonStringTenantIgnored(t *testing.T) {
 	// A non-string resolved tenant must not be coerced.
-	req := httptest.NewRequest(http.MethodGet, "/", nil).
-		WithContext(handler.SetTenant(context.Background(), 42))
-	h.ServeHTTP(httptest.NewRecorder(), req)
-	if seen != "" {
+	if seen := runTenantMiddleware(handler.SetTenant(context.Background(), 42)); seen != "" {
 		t.Fatalf("non-string tenant should be ignored, got %q", seen)
 	}
 }
 
 func TestTenantMiddleware_EmptyStringTenantIgnored(t *testing.T) {
-	var seen = "sentinel"
-	h := TenantMiddleware("X-Tenant-ID")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = GetTenantID(r.Context())
-	}))
-	req := httptest.NewRequest(http.MethodGet, "/", nil).
-		WithContext(handler.SetTenant(context.Background(), ""))
-	h.ServeHTTP(httptest.NewRecorder(), req)
-	if seen != "" {
+	if seen := runTenantMiddleware(handler.SetTenant(context.Background(), "")); seen != "" {
 		t.Fatalf("empty resolved tenant should not set, got %q", seen)
 	}
 }

@@ -28,12 +28,12 @@ func makeOversizedBody(field string) []byte {
 	return body
 }
 
-func TestHandlerBodyLimit_MagicLinkSend(t *testing.T) {
-	mgr, _, _ := newMagicLinkManager(t, &mockEmailSender{})
-	r := mountMagicLinkRoutes(mgr)
-
-	body := makeOversizedBody("email")
-	req := httptest.NewRequest(http.MethodPost, "/auth/magic-link/send", bytes.NewReader(body))
+// postOversizedExpect413 posts a body whose field value exceeds the
+// handler body cap and fails unless the route answers 413.
+func postOversizedExpect413(t *testing.T, r *router.Router, path, field string) {
+	t.Helper()
+	body := makeOversizedBody(field)
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -41,6 +41,11 @@ func TestHandlerBodyLimit_MagicLinkSend(t *testing.T) {
 	if w.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("expected 413 for oversized body, got %d: %s", w.Code, w.Body.String())
 	}
+}
+
+func TestHandlerBodyLimit_MagicLinkSend(t *testing.T) {
+	mgr, _, _ := newMagicLinkManager(t, &mockEmailSender{})
+	postOversizedExpect413(t, mountMagicLinkRoutes(mgr), "/auth/magic-link/send", "email")
 }
 
 func TestHandlerBodyLimit_TwoFAEndpoints(t *testing.T) {
@@ -72,35 +77,15 @@ func TestHandlerBodyLimit_TwoFAEndpoints(t *testing.T) {
 }
 
 func TestHandlerBodyLimit_Login(t *testing.T) {
-	mgr := newTestAuthManagerWithSession(t)
 	r := router.New()
-	mgr.RegisterRoutes(r)
-
-	body := makeOversizedBody("email")
-	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("expected 413 for oversized body, got %d: %s", w.Code, w.Body.String())
-	}
+	newTestAuthManagerWithSession(t).RegisterRoutes(r)
+	postOversizedExpect413(t, r, "/auth/login", "email")
 }
 
 func TestHandlerBodyLimit_Register(t *testing.T) {
-	mgr := newTestAuthManagerWithSession(t)
 	r := router.New()
-	mgr.RegisterRoutes(r)
-
-	body := makeOversizedBody("email")
-	req := httptest.NewRequest(http.MethodPost, "/auth/register", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("expected 413 for oversized body, got %d: %s", w.Code, w.Body.String())
-	}
+	newTestAuthManagerWithSession(t).RegisterRoutes(r)
+	postOversizedExpect413(t, r, "/auth/register", "email")
 }
 
 // newTestAuthManagerWithSession builds an AuthManager with the core +
