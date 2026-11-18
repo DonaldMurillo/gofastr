@@ -5,8 +5,7 @@ import (
 	"slices"
 )
 
-// JSONSchema generates a JSON Schema draft-07 object from a slice of Field
-// definitions. The returned map can be marshaled directly to JSON.
+// JSONSchema returns the JSON Schema draft-07 object for fields, keyed by wire name.
 func JSONSchema(fields []Field) map[string]any {
 	properties := make(map[string]any, len(fields))
 	required := make([]string, 0)
@@ -113,7 +112,7 @@ func fieldToJSONSchema(f Field) map[string]any {
 	case UUID:
 		prop["type"] = "string"
 		prop["format"] = "uuid"
-		prop["pattern"] = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+		prop["pattern"] = uuidRe.String()
 
 	case Timestamp:
 		prop["type"] = "string"
@@ -124,8 +123,6 @@ func fieldToJSONSchema(f Field) map[string]any {
 		prop["format"] = "date"
 
 	case JSON:
-		// JSON fields accept any valid JSON value
-		// no "type" constraint, any JSON value is valid
 
 	case Relation:
 		prop["type"] = "string"
