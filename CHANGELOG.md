@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **jcs: `CanonicalizeJSON` refuses 513 nested empty arrays or objects.**
+  The 512-level limit let one more level through when the innermost
+  container was empty; it now counts arrays and objects alike.
+- **yaml: a duplicate key in a list item names the right first line when
+  the first value is nested.** `"- a:\n    b: 1\n  a: 2\n"` reported `a` as
+  first defined on line 2; it now says line 1.
 - **harness TUI: a second SIGINT or SIGTERM exits.** The signal path
   ignored the double-press check, so only a second Ctrl-C key ended the
   session; a second signal within 2 seconds now exits too.
