@@ -1186,6 +1186,12 @@ func (p *PasskeyPlugin) deleteHandler(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
 		return
 	}
+	// An id the account does not hold is answered before the step-up, so
+	// a stale id does not spend the proof.
+	if !slices.ContainsFunc(existing, func(c PasskeyCredential) bool { return string(c.ID) == string(f["id"]) }) {
+		writeAuthError(w, r, http.StatusNotFound, reasonPasskeyNotFound)
+		return
+	}
 	if !p.steppedUp(w, r, sess, existing, body.Proof) {
 		return
 	}

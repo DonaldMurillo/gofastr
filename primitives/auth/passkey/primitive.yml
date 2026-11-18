@@ -60,11 +60,12 @@ invariants:
       - test: battery/auth.TestStepUpAcceptsAMissingUserHandle
       - test: battery/auth.TestPasskeyUserHandleMustMatch
   - id: changes-need-a-step-up
-    rule: Once any of the account's passkeys is ReauthMinAge old or has no creation time, register/options and delete refuse unless the body carries an unspent proof this session earned, whenever the session began, answering 403 passkey_signin_required when no passkey can confirm for this session and 403 passkey_reauth_required otherwise; the browser module then runs the step-up and resends with its proof (a silent create gives up instead).
+    rule: Once any of the account's passkeys is ReauthMinAge old or has no creation time, register/options and delete refuse unless the body carries an unspent proof this session earned (a delete of an id the account does not hold answers 404 first, without spending it), whenever the session began, answering 403 passkey_signin_required when no passkey can confirm for this session and 403 passkey_reauth_required otherwise; the browser module then runs the step-up and resends with its proof (a silent create gives up instead).
     enforced_by:
       - test: battery/auth.TestPasskeyChangesNeedStepUp
       - test: battery/auth.TestEnrollingSessionIsGated
       - test: battery/auth.TestZeroSessionTimeIsGated
+      - test: battery/auth.TestStaleDeleteKeepsTheProof
       - test: battery/auth.TestPasskeyModuleRules
   - id: added-passkey-is-mailed
     rule: A registered passkey mails the account's address, best effort and off the request, only when the user store reports it verified, through PasskeyConfig.NoticeSender a fixed text with the time and kind of passkey and no caller-chosen value; Init refuses a plugin without NoticeSender outside DevMode unless NoAddedNotice is set, and a NoticeSender whose user store does not implement EmailVerifiedChecker.

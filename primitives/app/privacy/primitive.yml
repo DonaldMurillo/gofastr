@@ -262,6 +262,7 @@ invariants:
       - test: framework.TestNonASCIICaseVariantIsHeld
       - test: framework.TestSuccessKeepsRowsWrittenSinceItsRead
       - test: framework.TestRepeatedFailureKeepsEachIdentity
+      - test: framework.TestOneStoresSuccessKeepsAnothersRows
   - id: erase-retention-expires
     rule: A kept identity expires 30 days after the failure that first kept it, a failed retry neither extends it nor writes back a value it got only from retention (a row a concurrent retry removed stays removed) but adds the identities that resolved on that attempt with their own 30 days, every erasure that reaches the table deletes expired rows whatever its outcome and before it writes a new failure's rows, and a running App deletes them at start and every hour (App.SweepErasureRetention).
     enforced_by:
@@ -269,6 +270,7 @@ invariants:
       - test: framework.TestEraseFailureWithNothingToKeepSweeps
       - test: framework.TestExpiredKeptIdentityIsSwept
       - test: framework.TestExpiredRowDoesNotBlockANewFailure
+      - test: framework.TestAppStartSweepsExpiredRetention
   - id: resolver-canonicalize-rewrites-value
     rule: A resolver's Canonicalize rewrites the resolved value before it is bound, and an empty result binds the raw value.
     enforced_by:

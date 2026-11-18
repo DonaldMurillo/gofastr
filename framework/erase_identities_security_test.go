@@ -694,3 +694,58 @@ func TestExpiredValueIsNotLookedUp(t *testing.T) {
 		t.Fatalf("an expired value was looked up: %v", err)
 	}
 }
+
+// One store's success removes only its own rows: another store that
+// failed again keeps its email for the next retry.
+func TestOneStoresSuccessKeepsAnothersRows(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	if _, err := db.Exec(`INSERT INTO auth_users (id, email) VALUES ('u1','u1@x.test')`); err != nil {
+		t.Fatal(err)
+	}
+	registerMagicLinkEraseScenario(t)
+	run := 0
+	var bGot []string
+	regStore(t, datexport.StoreEraser{Name: "a", Source: "test",
+		EraseResolved: func(context.Context, datexport.ErasedUser, bool) (int, error) {
+			if run == 0 {
+				return 0, errors.New("down")
+			}
+			return 0, nil
+		}})
+	regStore(t, datexport.StoreEraser{Name: "b", Source: "test",
+		EraseResolved: func(_ context.Context, u datexport.ErasedUser, _ bool) (int, error) {
+			e, _ := u.Identity(datexport.IdentityEmail)
+			bGot = append(bGot, e)
+			if run < 2 {
+				return 0, errors.New("down")
+			}
+			return 0, nil
+		}})
+	for run = 0; run < 3; run++ {
+		_, _ = app.EraseUserData(context.Background(), "u1")
+	}
+	if len(bGot) != 3 || bGot[2] != "u1@x.test" {
+		t.Fatalf("store b got %v, want the email on every run", bGot)
+	}
+}
+
+// A running App sweeps expired rows at start: Start's hooks wire the
+// sweep, not only a direct call.
+func TestAppStartSweepsExpiredRetention(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	seedRetention(t, db, "", "u1", "s", "u1@x.test", time.Now().Add(-time.Hour))
+	if err := app.runStartHooks(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = app.Shutdown(context.Background()) })
+	deadline := time.Now().Add(5 * time.Second)
+	for countWhere(t, db, eraseIdentitiesTable, "user_id", "u1") != 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("App start left an expired kept email stored")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

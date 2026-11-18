@@ -168,3 +168,20 @@ func TestReauthOptionsLeaveTheStoresSliceAlone(t *testing.T) {
 		t.Fatalf("the store's slice was rewritten: %+v", shared.creds)
 	}
 }
+
+// A delete of an id the account does not hold answers 404 before the
+// step-up, so the proof is still good for the real delete.
+func TestStaleDeleteKeepsTheProof(t *testing.T) {
+	f := newPasskeyFixture(t)
+	a := f.enrol(t, "u-alice")
+	f.age(t, a)
+	s := f.session(t, "u-alice")
+	proof := f.proof(t, s, a, "u-alice")
+	stale := b64url.EncodeToString([]byte("no-such-passkey"))
+	if w := f.do(t, "POST", "/passkey/delete", s, map[string]string{"id": stale, "proof": proof}); w.Code != http.StatusNotFound {
+		t.Fatalf("stale delete: %d, want 404", w.Code)
+	}
+	if w := f.do(t, "POST", "/passkey/delete", s, map[string]string{"id": b64url.EncodeToString(a.credID), "proof": proof}); w.Code != http.StatusNoContent {
+		t.Fatalf("delete with the proof a stale delete left: %d %s", w.Code, w.Body)
+	}
+}
