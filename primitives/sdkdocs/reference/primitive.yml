@@ -29,10 +29,10 @@ invariants:
       - test: framework/sdkdocs.TestSweepVersionsShareOneMenuEntryAndPath
       - test: framework/sdkdocs.TestStaticPathsCoverIncludedEntities
   - id: versioned-page-ids-are-unique
-    rule: A page holding several versions of an entity writes each id once, its sections' headings, tables and code tabs carrying a version slug that escapes - as -- before writing / as -, so distinct prefixes (/api/v1, /api-v1) never share one.
+    rule: A page holding several versions of an entity writes each id once, its sections' headings, tables and code tabs carrying a version slug, the version heading included - default for an unversioned entity, else v followed by the prefix with / written as -, letters and digits kept and every other byte as _ and two hex digits, so no two distinct prefixes (/api/v1 and /api-v1, /api-/v1 and /api/-v1) and no prefix and the unversioned entity share one.
     enforced_by:
       - test: framework/sdkdocs.TestSweepVersionedPageWritesEachIDOnce
-      - test: framework/sdkdocs.TestVersionSlugKeepsDistinctPrefixesDistinct
+      - test: framework/sdkdocs.TestVersionedPageIDsStayUniqueForLookalikePrefixes
   - id: unknown-entity-renders-not-found
     rule: The entity screen rendered for a name outside the documented set shows Not found and no schema.
     enforced_by:

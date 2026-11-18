@@ -455,8 +455,8 @@ func (sc *entityScreen) Render() render.HTML {
 			if label == "" {
 				label = "default"
 			}
-			body = append(body, heading(2, "API version "+label))
 			h, suffix = 3, versionSlug(e)
+			body = append(body, html.Heading(html.HeadingConfig{Level: 2, ID: "heading-api-version-" + suffix}, render.Text("API version "+label)))
 		}
 		body = append(body, sc.entitySection(e, h, suffix)...)
 	}
@@ -467,7 +467,19 @@ func versionSlug(e *entity.Entity) string {
 	if e.Version == "" {
 		return "default"
 	}
-	return strings.ReplaceAll(strings.ReplaceAll(strings.Trim(e.Version, "/"), "-", "--"), "/", "-")
+	var b strings.Builder
+	b.WriteByte('v')
+	for i := 0; i < len(e.Version); i++ {
+		switch c := e.Version[i]; {
+		case c == '/':
+			b.WriteByte('-')
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+			b.WriteByte(c)
+		default:
+			fmt.Fprintf(&b, "_%02x", c)
+		}
+	}
+	return b.String()
 }
 
 func sectionID(id, suffix string) string {
