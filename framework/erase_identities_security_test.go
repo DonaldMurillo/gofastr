@@ -380,7 +380,7 @@ func TestExpiredRowDoesNotBlockANewFailure(t *testing.T) {
 		t.Fatal("a failed store did not fail the erasure")
 	}
 	var exp int64
-	if err := db.QueryRow(`SELECT expires_at FROM `+eraseIdentitiesTable+` WHERE user_id = 'u1'`).Scan(&exp); err != nil || exp < time.Now().Unix() {
+	if err := db.QueryRow(`SELECT expires_at FROM ` + eraseIdentitiesTable + ` WHERE user_id = 'u1'`).Scan(&exp); err != nil || exp < time.Now().Unix() {
 		t.Fatalf("after a new failure over an expired row: expires %d %v, want one unexpired row", exp, err)
 	}
 }
