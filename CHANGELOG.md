@@ -51,6 +51,8 @@ few lines, and link the PR or the docs page for the rest.
   undeclared group. Both now fail, through the check Register uses.
 - **webmcp: a bad group declaration fails Mount.** A group with a bad name or
   declared twice was accepted, though the `Group` contract said Mount fails.
+- **webmcp: an example whose input is the literal `null` fails Register**,
+  like any other input that is not a JSON object.
 - **webmcp: a schema type keyword outside JSON Schema's seven accepts any
   example value**, as documented, instead of rejecting every value
   ([webmcp](framework/docs/content/webmcp.md)).

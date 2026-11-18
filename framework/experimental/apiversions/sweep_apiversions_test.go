@@ -43,6 +43,21 @@ func TestProjectionKeepsColumnsAndBase(t *testing.T) {
 	if cfg.Fields[0].WireName != "headline" {
 		t.Errorf("title WireName = %q, want headline", cfg.Fields[0].WireName)
 	}
+	for _, p := range []*apiversions.Projection{
+		{Version: "v1", Rename: map[string]string{"id": "key"}},
+		{Version: "v1", Exclude: []string{"created_at"}},
+	} {
+		a := entity.Define("posts", apiversions.ApplyToEntityConfig(base, apiversions.NewProjectionSet(p), "v1"))
+		b := entity.Define("posts", base)
+		if len(a.Config.Fields) != len(b.Config.Fields) {
+			t.Fatalf("projection %+v changed the defined columns: %d, want %d", *p, len(a.Config.Fields), len(b.Config.Fields))
+		}
+		for i := range b.Config.Fields {
+			if a.Config.Fields[i].Name != b.Config.Fields[i].Name {
+				t.Errorf("projection %+v column %d = %q, want %q", *p, i, a.Config.Fields[i].Name, b.Config.Fields[i].Name)
+			}
+		}
+	}
 	if got := apiversions.ApplyToEntityConfig(base, ps, "v9"); len(got.Fields) != len(base.Fields) || got.Fields[0].Hidden {
 		t.Errorf("a version with no projection and no default changed the config: %+v", got.Fields)
 	}
