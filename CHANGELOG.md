@@ -27,8 +27,8 @@ few lines, and link the PR or the docs page for the rest.
 ### Fixed
 - **harness: a hook that times out takes its children with it.** SIGTERM
   goes to the hook's process group at the deadline and SIGKILL follows
-  within 5s, so a hook that honours SIGTERM returns at once and one that
-  ignores it holds the turn at most 5s; a timed-out hook used to hold the
+  within 5s, so a timed-out hook holds the turn at most 5s past its
+  deadline (less when the whole group exits on SIGTERM); a timed-out hook used to hold the
   turn about 10s and leave a backgrounded child running
   ([harness architecture](framework/docs/content/harness-architecture.md)).
 - **harness: hook output that fills the cap exactly still says it was
