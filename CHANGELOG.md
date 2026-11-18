@@ -38,7 +38,10 @@ few lines, and link the PR or the docs page for the rest.
 - **harness: `tool.Registry.Lookup` wraps `ErrToolUnknown`**, as documented;
   the error text is now `tool: unknown: "X" not registered`.
 - **harness: a profile refuses an unknown key inside an `mcp_servers`
-  entry.** A misspelt `sha256` dropped the binary pin with no error.
+  entry, a value of the wrong type there, and text after a value.** A
+  misspelt `sha256` dropped the binary pin with no error, `args = "x"` gave
+  a server no arguments, and `schema_version = 1.5` was read as 1. Only
+  whitespace or a `#` comment may follow a value now.
 - **webmcp: `Host.Handle` refuses what `Register` refuses.** Handle took the
   reserved `get_app_instructions` name under `WithInstructions`, putting two
   tools with one name in the manifest, and took a tool tagged with an

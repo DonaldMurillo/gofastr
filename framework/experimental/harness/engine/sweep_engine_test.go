@@ -121,13 +121,20 @@ func TestOnTurnEndRunsBeforeTurnEnded(t *testing.T) {
 	var idAtHook uint64
 	e.OnTurnEnd = func() { idAtHook = e.Bus.NextID() }
 	_ = e.RunTurn(context.Background(), ids.NewClientID(), SimpleInput("hi"))
-	for _, env := range e.Bus.Backlog(context.Background(), 0, 0) {
-		if env.Kind == "TurnEnded" && env.ID < idAtHook {
-			t.Fatalf("OnTurnEnd ran after TurnEnded (id %d, hook saw next id %d)", env.ID, idAtHook)
-		}
-	}
 	if idAtHook == 0 {
 		t.Fatal("OnTurnEnd not called")
+	}
+	var ended []uint64
+	for _, env := range e.Bus.Backlog(context.Background(), 0, 0) {
+		if env.Kind == "TurnEnded" {
+			ended = append(ended, env.ID)
+		}
+	}
+	if len(ended) != 1 {
+		t.Fatalf("published %d TurnEnded events, want exactly 1", len(ended))
+	}
+	if ended[0] < idAtHook {
+		t.Fatalf("OnTurnEnd ran after TurnEnded (id %d, hook saw next id %d)", ended[0], idAtHook)
 	}
 }
 

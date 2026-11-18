@@ -21,7 +21,7 @@ invariants:
       - test: framework/experimental/harness/session/sqlite.TestPEMKeyMaterialRedactedAtPersist
       - test: framework/experimental/harness/session/sqlite.TestHarnessKeyMaterialRedactedAtPersist
   - id: secret-named-member-redacted
-    rule: A JSON string value whose member name ends in API_KEY, TOKEN, SECRET, PASSWORD, PASSPHRASE, ACCESS_KEY or MACHINE_KEY and is at least 6 bytes long is replaced whole, though neither string alone matches a pattern.
+    rule: DefaultRedactor.RedactMember replaces a JSON string value of at least 6 bytes whole when its member name matches ^[A-Z][A-Z0-9_]*_(API_KEY|TOKEN|SECRET|PASSWORD|PASSPHRASE|ACCESS_KEY|MACHINE_KEY)$ - all uppercase, case-sensitive, with at least one character and an underscore before the suffix - though neither string alone matches a pattern; a bare TOKEN or API_KEY, or a lowercase name such as github_token, is not redacted by name.
     enforced_by:
       - test: framework/experimental/harness/session/sqlite.TestSecretKeyedJSONValueRedactedAtPersist
   - id: redaction-keeps-payload-json
