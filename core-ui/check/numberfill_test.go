@@ -1,7 +1,6 @@
 package check
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -54,20 +53,7 @@ func TestLintNumberFill_FiresOnASCIIFill(t *testing.T) {
 //gofastr:test-reads core-ui/runtime/
 //gofastr:test-reads *.js
 func TestLintNumberFill_Repo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("walks the repo")
-	}
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	res, err := LintNumberFill(runtimeLintRoots(t, filepath.Join(repoRoot, "core-ui", "runtime"))...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("a {{n}} fill skips NS.formatNumber:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "a {{n}} fill skips NS.formatNumber", LintNumberFill)
 }
 
 // say() fills {{n}} from its params object: intercept.js's panel-limit

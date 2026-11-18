@@ -2,10 +2,10 @@ package mcp
 
 import (
 	"context"
-	"log/slog"
 	"strings"
-	"sync"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
 // Pins: a recovered panic value embedding gate-derived text reaches the
@@ -28,37 +28,8 @@ import (
 // Probe note: the payload embeds the control bytes RAW (panic value),
 // not %q-escaped — %q pre-escapes them and would hide the surface.
 
-// redGateScrubSink is a minimal slog.Handler storing record attributes
-// verbatim (no JSON/text escaping), so a test can detect raw control
-// bytes a real handler would have escaped away.
-type redGateScrubSink struct {
-	mu    sync.Mutex
-	attrs map[string]string
-}
-
-func (h *redGateScrubSink) Enabled(context.Context, slog.Level) bool { return true }
-
-func (h *redGateScrubSink) Handle(_ context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.attrs == nil {
-		h.attrs = map[string]string{}
-	}
-	r.Attrs(func(a slog.Attr) bool {
-		h.attrs[a.Key] = a.Value.String()
-		return true
-	})
-	return nil
-}
-
-func (h *redGateScrubSink) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *redGateScrubSink) WithGroup(string) slog.Handler      { return h }
-
-func (h *redGateScrubSink) redGet(key string) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.attrs[key]
-}
+// The scrub probe itself (verbatim slog capture) is internal/scrubtest's
+// Sink; see sink.go for why a minimal handler is needed to see raw bytes.
 
 // redGateScrubCheck asserts the scrub contract on a captured panic attr.
 func redGateScrubCheck(t *testing.T, got string) {
@@ -78,10 +49,8 @@ func redGateScrubCheck(t *testing.T, got string) {
 }
 
 func TestCallGatePanicRedScrubbed(t *testing.T) {
-	prev := slog.Default()
-	sink := &redGateScrubSink{}
-	slog.SetDefault(slog.New(sink))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	sink := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, sink)
 
 	malicious := "boom \x1b]0;pwned \u202e and \u009bCSI"
 	s := NewServer()
@@ -94,18 +63,16 @@ func TestCallGatePanicRedScrubbed(t *testing.T) {
 		t.Fatalf("setup broken: panicking call gate did not refuse the call (recovery net missing)")
 	}
 
-	got := sink.redGet("panic")
+	got := sink.Get("panic")
 	if got == "" {
-		t.Fatalf("setup broken: call-gate panic never reached the slog sink (attrs=%v)", sink.attrs)
+		t.Fatalf("setup broken: call-gate panic never reached the slog sink (attrs=%v)", sink.Attrs())
 	}
 	redGateScrubCheck(t, got)
 }
 
 func TestServerGatePanicRedScrubbed(t *testing.T) {
-	prev := slog.Default()
-	sink := &redGateScrubSink{}
-	slog.SetDefault(slog.New(sink))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	sink := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, sink)
 	malicious := "boom \x1b]0;pwned \u202e and \u009bCSI"
 	s := NewServer()
 	s.SetGate(func(context.Context) error { panic(malicious) })
@@ -114,9 +81,9 @@ func TestServerGatePanicRedScrubbed(t *testing.T) {
 	// recover net were missing, the panic would crash the test binary.
 	_ = s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "tools/list"})
 
-	got := sink.redGet("panic")
+	got := sink.Get("panic")
 	if got == "" {
-		t.Fatalf("setup broken: server-gate panic never reached the slog sink (attrs=%v)", sink.attrs)
+		t.Fatalf("setup broken: server-gate panic never reached the slog sink (attrs=%v)", sink.Attrs())
 	}
 	redGateScrubCheck(t, got)
 }

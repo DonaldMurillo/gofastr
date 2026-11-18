@@ -1,14 +1,13 @@
 package stream
 
 import (
-	"context"
-	"log/slog"
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
 // Pins: a recovered panic value embedding hook-derived text reaches the
@@ -33,43 +32,12 @@ import (
 // Probe note: the payload embeds the control bytes RAW (panic value),
 // not %q-escaped — %q pre-escapes them and would hide the surface.
 
-// redWsScrubSink is a minimal slog.Handler storing record attributes
-// verbatim (no JSON/text escaping), so a test can detect raw control
-// bytes a real handler would have escaped away.
-type redWsScrubSink struct {
-	mu    sync.Mutex
-	attrs map[string]string
-}
-
-func (h *redWsScrubSink) Enabled(context.Context, slog.Level) bool { return true }
-
-func (h *redWsScrubSink) Handle(_ context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.attrs == nil {
-		h.attrs = map[string]string{}
-	}
-	r.Attrs(func(a slog.Attr) bool {
-		h.attrs[a.Key] = a.Value.String()
-		return true
-	})
-	return nil
-}
-
-func (h *redWsScrubSink) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *redWsScrubSink) WithGroup(string) slog.Handler      { return h }
-
-func (h *redWsScrubSink) redGet(key string) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.attrs[key]
-}
+// The scrub probe itself (verbatim slog capture) is internal/scrubtest's
+// Sink; see sink.go for why a minimal handler is needed to see raw bytes.
 
 func TestWSCloseHookRedPanicScrubbed(t *testing.T) {
-	prev := slog.Default()
-	sink := &redWsScrubSink{}
-	slog.SetDefault(slog.New(sink))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	sink := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, sink)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -133,13 +101,13 @@ func TestWSCloseHookRedPanicScrubbed(t *testing.T) {
 	var got string
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if got = sink.redGet("panic"); got != "" {
+		if got = sink.Get("panic"); got != "" {
 			break
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
 	if got == "" {
-		t.Fatalf("setup broken: close-hook panic never reached the slog sink (attrs=%v)", sink.attrs)
+		t.Fatalf("setup broken: close-hook panic never reached the slog sink (attrs=%v)", sink.Attrs())
 	}
 	for _, bad := range []string{"\x1b", "\u202e", "\u009b"} {
 		if strings.Contains(got, bad) {

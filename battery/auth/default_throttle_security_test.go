@@ -64,53 +64,23 @@ func setupDefaultResetRouter(t *testing.T) (*userStoreWithPassword, *router.Rout
 func TestResetRequestDefaultThrottle(t *testing.T) {
 	_, r := setupDefaultResetRouter(t)
 
-	throttled := 0
-	for range 100 {
-		body, _ := json.Marshal(map[string]string{"email": "alice@example.com"})
-		req := httptest.NewRequest(http.MethodPost, "/auth/forgot-password", bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		switch w.Code {
-		case http.StatusTooManyRequests:
-			throttled++
-		case http.StatusOK:
-			// anti-enumeration 200, as designed
-		default:
-			t.Fatalf("unexpected status %d (body=%s)", w.Code, w.Body.String())
-		}
-	}
-	if throttled == 0 {
-		t.Errorf("100 rapid forgot-password requests from one IP were never throttled (0 of 100 responses were 429); the endpoint needs a default per-IP rate limit like login/register")
-	}
+	hammerJSONExpectThrottle(t, r, "/auth/forgot-password",
+		map[string]string{"email": "alice@example.com"},
+		http.StatusOK,
+		"100 rapid forgot-password requests from one IP were never throttled (0 of 100 responses were 429); the endpoint needs a default per-IP rate limit like login/register")
 }
 
 // The secret-checking half of the reset flow carries the same floor.
 func TestResetConfirmDefaultThrottle(t *testing.T) {
 	_, r := setupDefaultResetRouter(t)
 
-	throttled := 0
-	for range 100 {
-		body, _ := json.Marshal(map[string]string{
+	hammerJSONExpectThrottle(t, r, "/auth/reset-password",
+		map[string]string{
 			"token":    "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
 			"password": "newpassword123",
-		})
-		req := httptest.NewRequest(http.MethodPost, "/auth/reset-password", bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		switch w.Code {
-		case http.StatusTooManyRequests:
-			throttled++
-		case http.StatusUnauthorized:
-			// wrong token refused, as it must be
-		default:
-			t.Fatalf("unexpected status %d (body=%s)", w.Code, w.Body.String())
-		}
-	}
-	if throttled == 0 {
-		t.Errorf("100 rapid wrong-token reset-password attempts from one IP were never throttled (0 of 100 responses were 429); the token-redemption endpoint needs a default per-IP rate limit like login/register")
-	}
+		},
+		http.StatusUnauthorized,
+		"100 rapid wrong-token reset-password attempts from one IP were never throttled (0 of 100 responses were 429); the token-redemption endpoint needs a default per-IP rate limit like login/register")
 }
 
 // setupDefaultMagicRouter mounts core + magic-link with config left at
@@ -140,25 +110,10 @@ func setupDefaultMagicRouter(t *testing.T) *router.Router {
 func TestMagicLinkSendDefaultThrottle(t *testing.T) {
 	r := setupDefaultMagicRouter(t)
 
-	throttled := 0
-	for range 100 {
-		body, _ := json.Marshal(map[string]string{"email": "alice@example.com"})
-		req := httptest.NewRequest(http.MethodPost, "/auth/magic-link/send", bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-		r.ServeHTTP(w, req)
-		switch w.Code {
-		case http.StatusTooManyRequests:
-			throttled++
-		case http.StatusOK:
-			// link minted + dispatched (DevMode), as designed
-		default:
-			t.Fatalf("unexpected status %d (body=%s)", w.Code, w.Body.String())
-		}
-	}
-	if throttled == 0 {
-		t.Errorf("100 rapid magic-link send requests from one IP were never throttled (0 of 100 responses were 429); the endpoint needs a default per-IP rate limit like login/register")
-	}
+	hammerJSONExpectThrottle(t, r, "/auth/magic-link/send",
+		map[string]string{"email": "alice@example.com"},
+		http.StatusOK,
+		"100 rapid magic-link send requests from one IP were never throttled (0 of 100 responses were 429); the endpoint needs a default per-IP rate limit like login/register")
 }
 
 // Magic-link verify redeems a secret and mints a session: a bound must
@@ -297,5 +252,29 @@ func hammerTwoFACodeExpectThrottle(t *testing.T, r *router.Router, path, session
 	}
 	if throttled == 0 {
 		t.Errorf("100 wrong 6-digit codes from one IP against %s were never throttled (0 of 100 responses were 429); the endpoint needs the same default per-IP rate limit as login/register", path)
+	}
+}
+
+// hammerJSONExpectThrottle fires 100 rapid identical JSON posts of
+// payload at path (via postAuthJSON) and fails unless the default per-IP
+// throttle answers 429 at least once. okStatus is the endpoint's designed
+// non-throttle answer (anti-enumeration 200 or refused 401); failMsg is
+// the verbatim never-throttled regression message.
+func hammerJSONExpectThrottle(t *testing.T, r *router.Router, path string, payload map[string]string, okStatus int, failMsg string) {
+	t.Helper()
+	throttled := 0
+	for range 100 {
+		w := postAuthJSON(r, path, payload, "application/json")
+		switch w.Code {
+		case http.StatusTooManyRequests:
+			throttled++
+		case okStatus:
+			// the endpoint's designed answer, as documented above each test
+		default:
+			t.Fatalf("unexpected status %d (body=%s)", w.Code, w.Body.String())
+		}
+	}
+	if throttled == 0 {
+		t.Errorf("%s", failMsg)
 	}
 }

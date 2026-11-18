@@ -27,6 +27,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/stream"
+	"github.com/DonaldMurillo/gofastr/internal/tokenbucket"
 )
 
 // Event kinds, on the room channel and on the fanout lane.
@@ -113,7 +114,7 @@ type room struct {
 type roomPeer struct {
 	info    PeerInfo
 	conn    *stream.WebSocketConn
-	limiter frameLimiter
+	limiter tokenbucket.Bucket
 	// seat is this socket's entry in its principal's seat FIFO
 	// (seats.go); nil only for peers constructed outside Serve.
 	seat *socketSeat
@@ -391,7 +392,7 @@ func (s *Signaler) serve(w http.ResponseWriter, r *http.Request, join Join, rech
 			Order: time.Now().UnixNano(),
 		},
 		conn:    conn,
-		limiter: newFrameLimiter(s.cfg.MaxFramesPerSecond),
+		limiter: tokenbucket.New(s.cfg.MaxFramesPerSecond),
 		req:     r,
 		recheck: recheck,
 	}
@@ -475,7 +476,7 @@ func (s *Signaler) serve(w http.ResponseWriter, r *http.Request, join Join, rech
 		if rerr != nil {
 			return
 		}
-		if !p.limiter.allow(time.Now()) {
+		if !p.limiter.Allow(time.Now()) {
 			s.logger.Warn("rtc: peer closed", "reason", "frame_rate")
 			conn.Close()
 			return
@@ -863,32 +864,7 @@ func (p *roomPeer) signalGapLocked(from string, seq uint64) bool {
 	return seq > last+1
 }
 
-// frameLimiter is a per-socket token bucket: rate tokens per second,
-// burst 2x rate, no initial leniency beyond the burst.
-type frameLimiter struct {
-	rate   float64
-	burst  float64
-	tokens float64
-	last   time.Time
-}
-
-func newFrameLimiter(perSecond int) frameLimiter {
-	burst := 2 * float64(perSecond)
-	return frameLimiter{rate: float64(perSecond), burst: burst, tokens: burst}
-}
-
-func (f *frameLimiter) allow(now time.Time) bool {
-	if !f.last.IsZero() {
-		if elapsed := now.Sub(f.last).Seconds(); elapsed > 0 {
-			f.tokens = min(f.burst, f.tokens+elapsed*f.rate)
-			f.last = now
-		}
-	} else {
-		f.last = now
-	}
-	if f.tokens >= 1 {
-		f.tokens--
-		return true
-	}
-	return false
-}
+// The per-socket frame limiter is internal/tokenbucket's Bucket
+// (rate/burst 2x, no initial leniency); newFrameLimiter and
+// frameLimiter.allow moved there so the assist testapp shares the exact
+// bucket instead of mirroring it.

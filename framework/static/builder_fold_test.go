@@ -526,21 +526,11 @@ func TestPWAHashesDistinctCaseFile(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(out, "manifest.webmanifest")); err == nil {
 		t.Skip("case-insensitive disk: MANIFEST.webmanifest is the generated file here")
 	}
-	build := func() string {
-		t.Helper()
-		a := coreapp.NewApp("t")
-		a.Register("/", &helloScreen{}, nil)
-		host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{}))
-		if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-		return readOut(t, out, "service-worker.js")
-	}
-	first := build()
+	first := buildPWAWorker(t, out)
 	if err := os.WriteFile(upper, []byte(`{"name":"v2"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if build() == first {
+	if buildPWAWorker(t, out) == first {
 		t.Error("a changed MANIFEST.webmanifest kept the old worker")
 	}
 }
@@ -551,23 +541,26 @@ func TestPWAHashesDistinctCaseFile(t *testing.T) {
 // worker and installed clients re-downloaded the site.
 func TestPWAHashSkipsWorkerAlias(t *testing.T) {
 	out := t.TempDir()
-	build := func() string {
-		t.Helper()
-		a := coreapp.NewApp("t")
-		a.Register("/", &helloScreen{}, nil)
-		host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{}))
-		if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-		return readOut(t, out, "service-worker.js")
-	}
-	build()
+	buildPWAWorker(t, out)
 	if err := os.Symlink("service-worker.js", filepath.Join(out, "sw-alias.js")); err != nil {
 		t.Skip("no symlinks here:", err)
 	}
-	if build() != build() {
+	if buildPWAWorker(t, out) != buildPWAWorker(t, out) {
 		t.Error("an unchanged rebuild beside a worker alias wrote another worker")
 	}
+}
+
+// buildPWAWorker builds the hello-screen app with an empty PWA config
+// into out and returns the exported service worker.
+func buildPWAWorker(t *testing.T, out string) string {
+	t.Helper()
+	a := coreapp.NewApp("t")
+	a.Register("/", &helloScreen{}, nil)
+	host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{}))
+	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return readOut(t, out, "service-worker.js")
 }
 
 // A refusal behind a symlink was judged from a listing cached before a

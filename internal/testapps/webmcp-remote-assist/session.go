@@ -34,6 +34,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/webmcp"
+	"github.com/DonaldMurillo/gofastr/internal/tokenbucket"
 )
 
 // Cookie names and lifetimes. The support cookie is Path=/ because the
@@ -1012,13 +1013,13 @@ func (a *assistApp) handleWS(r role) http.Handler {
 		// Every frame takes the shared mutex and most fan out an event,
 		// so frames pass a per-socket token bucket first; a socket over
 		// it is closed, battery/rtc's posture.
-		limiter := newFrameLimiter(frameRate)
+		limiter := tokenbucket.New(frameRate)
 		for {
 			data, rerr := conn.Read()
 			if rerr != nil {
 				return
 			}
-			if !limiter.allow(frameClock()) {
+			if !limiter.Allow(frameClock()) {
 				return
 			}
 			if !held() {
@@ -1051,36 +1052,9 @@ const wsRecheckEvery = 30 * time.Second
 // report on each path change; 64 a second leaves ICE bursts room.
 const wsFramesPerSecond = 64
 
-// frameLimiter is a per-socket token bucket: rate tokens per second,
-// burst 2x rate, no initial leniency beyond the burst. It is
-// battery/rtc's frameLimiter, which that package does not export.
-type frameLimiter struct {
-	rate   float64
-	burst  float64
-	tokens float64
-	last   time.Time
-}
-
-func newFrameLimiter(perSecond int) frameLimiter {
-	burst := 2 * float64(perSecond)
-	return frameLimiter{rate: float64(perSecond), burst: burst, tokens: burst}
-}
-
-func (f *frameLimiter) allow(now time.Time) bool {
-	if !f.last.IsZero() {
-		if elapsed := now.Sub(f.last).Seconds(); elapsed > 0 {
-			f.tokens = min(f.burst, f.tokens+elapsed*f.rate)
-			f.last = now
-		}
-	} else {
-		f.last = now
-	}
-	if f.tokens >= 1 {
-		f.tokens--
-		return true
-	}
-	return false
-}
+// The per-socket frame limiter is internal/tokenbucket's Bucket — the
+// same bucket battery/rtc's room read loop uses, shared instead of the
+// mirror this file used to carry while rtc kept the type unexported.
 
 // operatorCookie pulls the operator credential without leaking the
 // error shape into handlers.

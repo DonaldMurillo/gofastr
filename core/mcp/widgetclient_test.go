@@ -151,16 +151,8 @@ func TestWidgetClientJS_PostsWithWildcardTargetOrigin(t *testing.T) {
 // read as a comment start and destroy the scheme before the check), so a URL
 // in a trailing comment flags — the safe direction.
 func TestWidgetClientJS_NoExternalURLs(t *testing.T) {
-	js := string(widgetClientJSBytes)
-	for line := range strings.SplitSeq(js, "\n") {
-		code := strings.TrimSpace(line)
-		if strings.HasPrefix(code, "//") || strings.HasPrefix(code, "*") ||
-			strings.HasPrefix(code, "/*") {
-			continue // whole-line comment
-		}
-		if strings.Contains(code, "http://") || strings.Contains(code, "https://") {
-			t.Errorf("external URL in executable code: %q", strings.TrimSpace(line))
-		}
+	for _, line := range jstest.ExternalURLCodeLines(string(widgetClientJSBytes)) {
+		t.Errorf("external URL in executable code: %q", line)
 	}
 }
 

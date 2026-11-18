@@ -384,13 +384,9 @@ func TestInclude_Nested_Mixed(t *testing.T) {
 // ============================================================================
 
 func TestInclude_Nested_UnknownSegment_400(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		seedBlogDB(t, db)
-		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
-
-		resp := ta.Get("/posts/p1?include=author.bogus")
-		resp.AssertStatus(t, http.StatusBadRequest).
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
+		ta.Get("/posts/p1?include=author.bogus").
+			AssertStatus(t, http.StatusBadRequest).
 			AssertBodyContains(t, "bogus")
 	})
 }
@@ -501,13 +497,9 @@ func TestInclude_Scoped_Mixed(t *testing.T) {
 // ============================================================================
 
 func TestInclude_Scoped_UnknownField_400(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		seedBlogDB(t, db)
-		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
-
-		resp := ta.Get("/posts/p1?include=comments(does_not_exist=x)")
-		resp.AssertStatus(t, http.StatusBadRequest).
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
+		ta.Get("/posts/p1?include=comments(does_not_exist=x)").
+			AssertStatus(t, http.StatusBadRequest).
 			AssertBodyContains(t, "does_not_exist")
 	})
 }

@@ -66,17 +66,7 @@ func newNonPeekingHarness(t *testing.T) *tokenPurposeHarness {
 // serves its own token when the store cannot peek. A RED below is then the
 // purpose check, not the missing peeker breaking the wiring.
 func TestNonPeekingStoreStillServesOwnFlows(t *testing.T) {
-	h := newNonPeekingHarness(t)
-
-	if code := h.attemptReset(h.mintResetToken()); code != http.StatusOK {
-		t.Errorf("reset token at /auth/reset-password: got %d, want 200", code)
-	}
-	if code := h.attemptVerifyEmail(h.mintVerificationToken()); code != http.StatusOK {
-		t.Errorf("verification token at /auth/verify-email: got %d, want 200", code)
-	}
-	if code := h.attemptMagicVerify(h.mintMagicLinkToken()); code != http.StatusFound {
-		t.Errorf("magic-link token at /auth/magic-link/verify: got %d, want 302", code)
-	}
+	newNonPeekingHarness(t).assertEachFlowServesOwnToken()
 }
 
 // The account-takeover case on the fallback path: a verification token

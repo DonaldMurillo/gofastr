@@ -49,6 +49,25 @@ func startKiln(t *testing.T) (string, *protocol.Tools) {
 	return srvURL, tools
 }
 
+// addHeadingPage installs the fixture page shape the browser tests
+// share: a div with one h1 and one text paragraph.
+func addHeadingPage(t *testing.T, tools *protocol.Tools, path, title, heading, text string) {
+	t.Helper()
+	res := tools.AddPage(t.Context(), protocol.AddPageArgs{Page: &world.Page{
+		Path:  path,
+		Title: title,
+		Tree: world.Node{Kind: "div", Children: []world.Node{
+			{Kind: "heading", Props: map[string]any{"level": float64(1), "text": heading}},
+			{Kind: "paragraph", Children: []world.Node{
+				{Kind: "text", Props: map[string]any{"value": text}},
+			}},
+		}},
+	}})
+	if !res.OK {
+		t.Fatalf("add_page %s: %+v", path, res)
+	}
+}
+
 // startKilnExt is startKiln + the *live.Live pointer so tests can drive
 // synthetic SSE events (l.Notify) and a flippable in_flight callback so
 // tests can simulate an agent turn.
@@ -246,19 +265,7 @@ func TestBrowser_AgentAddedPageRenders(t *testing.T) {
 	urlBase, tools := startKiln(t)
 	ctx := chromedptest.Context(t)
 
-	res := tools.AddPage(t.Context(), protocol.AddPageArgs{Page: &world.Page{
-		Path:  "/dashboard",
-		Title: "Dashboard",
-		Tree: world.Node{Kind: "div", Children: []world.Node{
-			{Kind: "heading", Props: map[string]any{"level": float64(1), "text": "Dashboard"}},
-			{Kind: "paragraph", Children: []world.Node{
-				{Kind: "text", Props: map[string]any{"value": "agent built me"}},
-			}},
-		}},
-	}})
-	if !res.OK {
-		t.Fatalf("add_page: %+v", res)
-	}
+	addHeadingPage(t, tools, "/dashboard", "Dashboard", "Dashboard", "agent built me")
 
 	var heading, body string
 	if err := chromedp.Run(ctx,

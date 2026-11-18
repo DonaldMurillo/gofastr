@@ -254,22 +254,27 @@ func (h *tokenPurposeHarness) assertResetTokenRefusedElsewhere(tok, where string
 	}
 }
 
+// assertEachFlowServesOwnToken is the GREEN sanity under every purpose
+// refusal below: each flow still redeems its OWN token, so a later RED is
+// the purpose check firing, not broken wiring.
+func (h *tokenPurposeHarness) assertEachFlowServesOwnToken() {
+	if code := h.attemptReset(h.mintResetToken()); code != http.StatusOK {
+		h.t.Errorf("reset token at /auth/reset-password: got %d, want 200", code)
+	}
+	if code := h.attemptVerifyEmail(h.mintVerificationToken()); code != http.StatusOK {
+		h.t.Errorf("verification token at /auth/verify-email: got %d, want 200", code)
+	}
+	if code := h.attemptMagicVerify(h.mintMagicLinkToken()); code != http.StatusFound {
+		h.t.Errorf("magic-link token at /auth/magic-link/verify: got %d, want 302", code)
+	}
+}
+
 // Harness sanity (GREEN today, must stay green under any fix): with all
 // three plugins sharing one token store, each flow still serves its OWN
 // token. If this broke, a RED below would be a wiring artifact, not the
 // vulnerability.
 func TestSharedStoreStillServesOwnFlows(t *testing.T) {
-	h := newTokenPurposeHarness(t)
-
-	if code := h.attemptReset(h.mintResetToken()); code != http.StatusOK {
-		t.Errorf("reset token at /auth/reset-password: got %d, want 200", code)
-	}
-	if code := h.attemptVerifyEmail(h.mintVerificationToken()); code != http.StatusOK {
-		t.Errorf("verification token at /auth/verify-email: got %d, want 200", code)
-	}
-	if code := h.attemptMagicVerify(h.mintMagicLinkToken()); code != http.StatusFound {
-		t.Errorf("magic-link token at /auth/magic-link/verify: got %d, want 302", code)
-	}
+	newTokenPurposeHarness(t).assertEachFlowServesOwnToken()
 }
 
 // The sharpest edge of the shared namespace: an email-verification

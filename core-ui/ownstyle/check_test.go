@@ -154,6 +154,24 @@ func checkCases(t *testing.T, rule string, cases []cssCase) {
 		}
 	}
 }
+
+// checkExact runs Check over each case in kind: "" wants no
+// diagnostics, otherwise exactly one diagnostic, prefix-matching want.
+func checkExact(t *testing.T, kind Kind, cases []cssCase) {
+	t.Helper()
+	for _, tc := range cases {
+		ds := Check("t.style.css", tc.src, kind, defaultTokens(t))
+		if tc.want == "" {
+			if len(ds) != 0 {
+				t.Errorf("%q: unexpected %s", tc.src, joinDiags(ds))
+			}
+			continue
+		}
+		if len(ds) != 1 || !strings.HasPrefix(ds[0].String(), tc.want) {
+			t.Errorf("%q: want %q, got %s", tc.src, tc.want, joinDiags(ds))
+		}
+	}
+}
 func TestCheckHardcodedTokenValues(t *testing.T) {
 	cases := []cssCase{
 		{".a{padding:16px}", "1:12 error GOFASTR1807 16px is --spacing-lg; write var(--spacing-lg)"},
@@ -268,10 +286,7 @@ func TestCheckFallbackDrift(t *testing.T) {
 }
 
 func TestCheckKitClassAndAttributeSelectors(t *testing.T) {
-	cases := []struct {
-		src  string
-		want string
-	}{
+	cases := []cssCase{
 		{".card .fui-card__body { gap: 0; }", "1:7 error GOFASTR1810"},
 		{".a .fui-sidebar__item { color: red; }", "1:4 error GOFASTR1810"},
 		// The attribute form, positioned at the bracket.
@@ -281,18 +296,7 @@ func TestCheckKitClassAndAttributeSelectors(t *testing.T) {
 		// Kit class mentioned in a string never matches.
 		{".a{content:\".fui-card__body\"}", ""},
 	}
-	for _, tc := range cases {
-		ds := Check("t.style.css", tc.src, KindScoped, defaultTokens(t))
-		if tc.want == "" {
-			if len(ds) != 0 {
-				t.Errorf("%q: unexpected %s", tc.src, joinDiags(ds))
-			}
-			continue
-		}
-		if len(ds) != 1 || !strings.HasPrefix(ds[0].String(), tc.want) {
-			t.Errorf("%q: want %q, got %s", tc.src, tc.want, joinDiags(ds))
-		}
-	}
+	checkExact(t, KindScoped, cases)
 }
 
 func TestCheckRawMediaWidths(t *testing.T) {
@@ -343,10 +347,7 @@ func TestCheckAppSheetRules(t *testing.T) {
 	if ds := Check("t.style.css", "h2 { color: red; }\n.a { --x: 1; }", scoped, defaultTokens(t)); len(ds) != 0 {
 		t.Fatalf("scoped sheets may select elements and declare custom properties: %s", joinDiags(ds))
 	}
-	cases := []struct {
-		src  string
-		want string
-	}{
+	cases := []cssCase{
 		{"p { color: red; }", "1:1 error GOFASTR1819"},
 		{"h2.title { color: red; }", "1:1 error GOFASTR1819"},
 		{":scope { color: red; }", "1:1 error GOFASTR1819"},
@@ -354,18 +355,7 @@ func TestCheckAppSheetRules(t *testing.T) {
 		{".priority.level--urgent { color: red; }", ""},
 		{".a { --accent: #B91C1C; }", "1:6 error GOFASTR1819"},
 	}
-	for _, tc := range cases {
-		ds := Check("t.style.css", tc.src, KindApp, defaultTokens(t))
-		if tc.want == "" {
-			if len(ds) != 0 {
-				t.Errorf("%q: unexpected %s", tc.src, joinDiags(ds))
-			}
-			continue
-		}
-		if len(ds) != 1 || !strings.HasPrefix(ds[0].String(), tc.want) {
-			t.Errorf("%q: want %q, got %s", tc.src, tc.want, joinDiags(ds))
-		}
-	}
+	checkExact(t, KindApp, cases)
 }
 
 func TestCheckTokenCustomProperty(t *testing.T) {

@@ -348,18 +348,9 @@ function onClose(e) {
   return [st, cfg];
 }
 `)
-	res, err := LintRegistryOwnProps(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
 	// The detail-borne read fires; the cfg.name member chain stays the
 	// declared catalog-config silence.
-	if len(res.Violations) != 1 {
-		t.Fatalf("expected 1 finding, got %d:\n%s", len(res.Violations), res.Error())
-	}
-	if !strings.Contains(res.Violations[0].Message, "widgetIndex[") {
-		t.Errorf("expected the finding on widgetIndex: %s", res.Violations[0].Message)
-	}
+	lintOneFinding(t, LintRegistryOwnProps, dir, "widgetIndex[")
 }
 
 func TestLintRegistryOwnProps_RepoIsClean(t *testing.T) {
@@ -415,19 +406,7 @@ async function awaitForm(path) {
 
 func TestLintResponseMountedAfterOK_FiresOnPreFixShape(t *testing.T) {
 	dir := writeRuntimeFixture(t, "response.js", responseFixture)
-	res, err := LintResponseMountedAfterOK(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 3 {
-		t.Fatalf("expected exactly 3 findings (conflictRefresh, loadPanel, loadBadge), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintResponseMountedAfterOK, dir, 3, "conflictRefresh, loadPanel, loadBadge", "[response-mounted-unchecked]")
 }
 
 // TestLintResponseMountedAfterOK_MountSpells: the mounts that hand
@@ -642,16 +621,7 @@ function paneFixed(pane) { // quiet: the prefix heads the key
   localStorage.setItem(SIDEBAR_PREFIX + encodeURIComponent(pane.dataset.cuiPaneKey) + '.prefs', '1');
 }
 `)
-	res, err := LintStorageKeyRaw(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 1 {
-		t.Fatalf("expected 1 finding, got %d:\n%s", len(res.Violations), res.Error())
-	}
-	if !strings.Contains(res.Violations[0].Message, "names no namespace") {
-		t.Errorf("expected the unnamed-namespace finding: %s", res.Violations[0].Message)
-	}
+	lintOneFinding(t, LintStorageKeyRaw, dir, "names no namespace")
 }
 
 // TestProtoKeyBareComposite: a template holding one interpolation and
@@ -808,16 +778,7 @@ function bracketLiteral() { // quiet: a literal key
   localStorage['gofastr.seen'] = '1';
 }
 `)
-	res, err := LintStorageKeyRaw(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 1 {
-		t.Fatalf("expected 1 finding, got %d:\n%s", len(res.Violations), res.Error())
-	}
-	if !strings.Contains(res.Violations[0].Message, "el.dataset.prefKey") {
-		t.Errorf("expected the finding on the dataset read: %s", res.Violations[0].Message)
-	}
+	lintOneFinding(t, LintStorageKeyRaw, dir, "el.dataset.prefKey")
 }
 
 func TestLintResponseMountedAfterOK_RepoIsClean(t *testing.T) {
@@ -892,19 +853,7 @@ function encodedFetch(el) {
 
 func TestLintAttributePathSegments_FiresOnPreFixShape(t *testing.T) {
 	dir := writeRuntimeFixture(t, "attrpath.js", attrPathFixture)
-	res, err := LintAttributePathSegments(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 3 {
-		t.Fatalf("expected exactly 3 findings (_kilnPost, mountThumb, fetchNote), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[attr-path-segment]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintAttributePathSegments, dir, 3, "_kilnPost, mountThumb, fetchNote", "[attr-path-segment]")
 }
 
 func TestLintAttributePathSegments_RepoIsClean(t *testing.T) {
@@ -955,19 +904,7 @@ function refreshChecked(el, src) {
 
 func TestLintResponseMountedAfterOK_NamedThenHandler(t *testing.T) {
 	dir := writeRuntimeFixture(t, "named.js", namedThenFixture)
-	res, err := LintResponseMountedAfterOK(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 4 {
-		t.Fatalf("expected 4 findings (refresh, refresh2, refresh3, refreshInline), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintResponseMountedAfterOK, dir, 4, "refresh, refresh2, refresh3, refreshInline", "[response-mounted-unchecked]")
 }
 
 const statusTextFixture = `// .statusText displayed is not a .status check (review finding 14):
@@ -1011,19 +948,7 @@ function loadTern(el, src) {
 
 func TestLintResponseMountedAfterOK_StatusTextIsNotAGate(t *testing.T) {
 	dir := writeRuntimeFixture(t, "statustext.js", statusTextFixture)
-	res, err := LintResponseMountedAfterOK(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 3 {
-		t.Fatalf("expected exactly 3 findings (load, loadCtl, loadOkButton), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintResponseMountedAfterOK, dir, 3, "load, loadCtl, loadOkButton", "[response-mounted-unchecked]")
 }
 
 // attrTplFixtureRaw uses ~ for JS backticks; untailed below.
@@ -1063,19 +988,7 @@ var attrTplFixture = strings.ReplaceAll(attrTplFixtureRaw, "~", "\x60")
 
 func TestLintAttributePathSegments_TemplateLiterals(t *testing.T) {
 	dir := writeRuntimeFixture(t, "tpl.js", attrTplFixture)
-	res, err := LintAttributePathSegments(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 4 {
-		t.Fatalf("expected exactly 4 findings (postTpl, loadNote, mixed, postCat), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[attr-path-segment]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintAttributePathSegments, dir, 4, "postTpl, loadNote, mixed, postCat", "[attr-path-segment]")
 }
 
 const registryHoistedFixture = `// Guard hoisted into a compute-once boolean (review finding 9): a
@@ -1137,6 +1050,22 @@ func lintExpectFindings(t *testing.T, lint func(roots ...string) (*Result, error
 	}
 }
 
+// lintOneFinding asserts lint fires exactly one finding on dir whose
+// message contains want.
+func lintOneFinding(t *testing.T, lint func(roots ...string) (*Result, error), dir, want string) {
+	t.Helper()
+	res, err := lint(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding naming %s, got %d:\n%s", want, len(res.Violations), res.Error())
+	}
+	if !strings.Contains(res.Violations[0].Message, want) {
+		t.Errorf("expected the finding to name %s: %s", want, res.Violations[0].Message)
+	}
+}
+
 func TestLintRegistryOwnProps_HoistedGuardBoolean(t *testing.T) {
 	lintExpectFindings(t, LintRegistryOwnProps, writeRuntimeFixture(t, "hoisted.js", registryHoistedFixture),
 		2, "findMixed, findAny", "[registry-own-prop] catalog[")
@@ -1169,17 +1098,7 @@ after += reg[k];
 
 func TestLintRegistryOwnProps_LongForInBody(t *testing.T) {
 	dir := writeRuntimeFixture(t, "longforin.js", longForInFixture)
-	res, err := LintRegistryOwnProps(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 1 {
-		t.Fatalf("expected exactly 1 finding (the read after the loop), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	if !strings.HasPrefix(res.Violations[0].Message, "[registry-own-prop] reg[") {
-		t.Errorf("unexpected message: %s", res.Violations[0].Message)
-	}
+	lintExpectFindings(t, LintRegistryOwnProps, dir, 1, "the read after the loop", "[registry-own-prop] reg[")
 }
 
 const selReassignFixture = `// window.CSS.escape (review finding 11): the defensive global
@@ -1371,19 +1290,7 @@ function loadSlot(slot, src) {
 
 func TestLintResponseMountedAfterOK_Review5MountsAndChains(t *testing.T) {
 	dir := writeRuntimeFixture(t, "review5resp.js", responseReview5Fixture)
-	res, err := LintResponseMountedAfterOK(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 3 {
-		t.Fatalf("expected exactly 3 findings (+=, ?.then, swapPane), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintResponseMountedAfterOK, dir, 3, "+=, ?.then, swapPane", "[response-mounted-unchecked]")
 }
 
 // attrReview5FixtureRaw uses ~ for JS backticks; untailed below.
@@ -1488,19 +1395,7 @@ function mountStatus2xxRange(target, src) {
 
 func TestLintResponseMountedAfterOK_Review6StatusGates(t *testing.T) {
 	dir := writeRuntimeFixture(t, "review6resp.js", responseReview6Fixture)
-	res, err := LintResponseMountedAfterOK(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 6 {
-		t.Fatalf("expected exactly 6 findings (truthiness, < 400, <= 399, mirrored 399 >=, range < 400, range <= 399), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintResponseMountedAfterOK, dir, 6, "truthiness, < 400, <= 399, mirrored 399 >=, range < 400, range <= 399", "[response-mounted-unchecked]")
 }
 
 const attrReview6Fixture = `// Review 6: a matching validation in an unrelated earlier branch
@@ -2015,16 +1910,7 @@ var cookieTplFixture = strings.ReplaceAll(cookieTplFixtureRaw, "~", "\x60")
 
 func TestCookieConcatTemplateWrites(t *testing.T) {
 	dir := writeRuntimeFixture(t, "cookietpl.js", cookieTplFixture)
-	res, err := LintCookieConcat(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 1 {
-		t.Fatalf("expected exactly 1 finding (the raw ${id} body), got %d:\n%s", len(res.Violations), res.Error())
-	}
-	if !strings.Contains(res.Violations[0].Message, `"id"`) {
-		t.Errorf("expected the finding on id: %s", res.Violations[0].Message)
-	}
+	lintOneFinding(t, LintCookieConcat, dir, `"id"`)
 }
 
 // moduleURLFixtureRaw uses ~ for JS backticks; untailed below.

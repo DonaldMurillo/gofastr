@@ -1,13 +1,10 @@
 package acp_test
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -19,26 +16,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
 
-// scriptedProvider answers each Stream call with the next scripted
-// turn, recording the conversation it was shown.
-type scriptedProvider struct {
-	mu    sync.Mutex
-	turns []agent.Turn
-	seen  []agent.Request
-}
-
-func (p *scriptedProvider) Stream(ctx context.Context, req agent.Request) (agent.Turn, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.seen = append(p.seen, req)
-	if len(p.turns) == 0 {
-		return agent.Turn{StopReason: "end_turn"}, nil
-	}
-	t := p.turns[0]
-	p.turns = p.turns[1:]
-	return t, nil
-}
-
 func newTools(t *testing.T) *protocol.Tools {
 	t.Helper()
 	return kilntest.NewTools(t, "kiln-acp-adapter")
@@ -47,83 +24,27 @@ func newTools(t *testing.T) *protocol.Tools {
 // dialog is a minimal ACP client over pipes, mirroring the core/acp
 // test harness.
 type dialog struct {
-	t       *testing.T
-	writeMu sync.Mutex
-	w       io.WriteCloser
-	frames  chan map[string]any
-	done    chan struct{}
+	*kilntest.PipeDialog
+	t *testing.T
 }
 
 func startDialog(t *testing.T, srv *acpcore.Server) *dialog {
 	t.Helper()
 	srvIn, clientW := io.Pipe()
 	clientR, srvOut := io.Pipe()
-	d := &dialog{
-		t:      t,
-		w:      clientW,
-		frames: make(chan map[string]any, 64),
-		done:   make(chan struct{}),
-	}
+	d := &dialog{PipeDialog: kilntest.StartPipeDialog(t, clientW, clientR), t: t}
 	go func() {
 		_ = srv.Serve(context.Background(), srvIn, srvOut)
 		srvOut.Close()
-		close(d.done)
 	}()
-	go func() {
-		sc := bufio.NewScanner(clientR)
-		for sc.Scan() {
-			var f map[string]any
-			if json.Unmarshal(sc.Bytes(), &f) == nil {
-				d.frames <- f
-			}
-		}
-		if err := sc.Err(); err != nil {
-			t.Errorf("client frame reader: %v", err) // else: silent timeout
-		}
-	}()
-	t.Cleanup(func() { clientW.Close() })
 	return d
-}
-
-func (d *dialog) send(v any) {
-	d.t.Helper()
-	buf, err := json.Marshal(v)
-	if err != nil {
-		d.t.Fatal(err)
-	}
-	d.writeMu.Lock()
-	_, err = d.w.Write(append(buf, '\n'))
-	d.writeMu.Unlock()
-	if err != nil {
-		d.t.Fatalf("write: %v", err)
-	}
-}
-
-func (d *dialog) request(id int, method string, params any) {
-	body := map[string]any{"jsonrpc": "2.0", "id": id, "method": method}
-	if params != nil {
-		body["params"] = params
-	}
-	d.send(body)
-}
-
-func (d *dialog) frame() map[string]any {
-	d.t.Helper()
-	select {
-	case f := <-d.frames:
-		return f
-	case <-time.After(3 * time.Second):
-		d.t.Fatal("timed out waiting for a frame")
-		return nil
-	}
 }
 
 // untilResponse collects notifications until the response with id.
 func (d *dialog) untilResponse(id int) (map[string]any, []map[string]any) {
-	d.t.Helper()
 	var notifs []map[string]any
 	for {
-		f := d.frame()
+		f := d.Frame()
 		if got, ok := f["id"].(float64); ok && int(got) == id {
 			return f, notifs
 		}
@@ -137,12 +58,12 @@ func handshakedDialog(t *testing.T, tools *protocol.Tools, opts ...kilnacp.Optio
 	t.Helper()
 	srv := kilnacp.NewServer(tools, opts...)
 	d := startDialog(t, srv)
-	d.request(1, "initialize", map[string]any{"protocolVersion": 1})
+	d.Request(1, "initialize", map[string]any{"protocolVersion": 1})
 	f := d.untilResponseID(1)
 	if f["error"] != nil {
 		t.Fatalf("initialize: %v", f["error"])
 	}
-	d.request(2, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
+	d.Request(2, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
 	return d, d.untilResponseID(2)["result"].(map[string]any)["sessionId"].(string)
 }
 
@@ -177,7 +98,7 @@ func TestPromptWithoutProviderRefusesLoudly(t *testing.T) {
 	tools := newTools(t)
 	d, sid := handshakedDialog(t, tools)
 
-	d.request(3, "session/prompt", promptParams(sid, "build me a blog"))
+	d.Request(3, "session/prompt", promptParams(sid, "build me a blog"))
 	resp, notifs := d.untilResponse(3)
 	if resp["error"] != nil {
 		t.Fatalf("prompt errored: %v", resp["error"])
@@ -205,7 +126,7 @@ func TestPromptWithoutProviderRefusesLoudly(t *testing.T) {
 // tool_call_update frames with the result attached.
 func TestPromptStreamsToolCallFrames(t *testing.T) {
 	tools := newTools(t)
-	prov := &scriptedProvider{turns: []agent.Turn{
+	prov := &kilntest.ScriptedProvider{Turns: []agent.Turn{
 		{ToolCalls: []agent.ToolCall{{
 			CallID: "c1",
 			Name:   "add_entity",
@@ -220,7 +141,7 @@ func TestPromptStreamsToolCallFrames(t *testing.T) {
 	}}
 	d, sid := handshakedDialog(t, tools, kilnacp.WithProvider(prov))
 
-	d.request(3, "session/prompt", promptParams(sid, "add a posts entity"))
+	d.Request(3, "session/prompt", promptParams(sid, "add a posts entity"))
 	resp, notifs := d.untilResponse(3)
 	if resp["error"] != nil {
 		t.Fatalf("prompt errored: %v", resp["error"])
@@ -255,7 +176,7 @@ func TestPromptStreamsToolCallFrames(t *testing.T) {
 		t.Error("posts entity missing after the turn")
 	}
 	// The follow-up text was journaled as the assistant reply.
-	if prov.seen[len(prov.seen)-1].Messages[len(prov.seen[len(prov.seen)-1].Messages)-1].Role != "tool_result" {
+	if prov.Seen[len(prov.Seen)-1].Messages[len(prov.Seen[len(prov.Seen)-1].Messages)-1].Role != "tool_result" {
 		t.Error("second turn should have seen the tool result")
 	}
 	// ...under this session, so session/load replays it.
@@ -271,7 +192,7 @@ func TestPromptStreamsToolCallFrames(t *testing.T) {
 // and feed the error back to the model.
 func TestFailedToolCallMarksFrameFailed(t *testing.T) {
 	tools := newTools(t)
-	prov := &scriptedProvider{turns: []agent.Turn{
+	prov := &kilntest.ScriptedProvider{Turns: []agent.Turn{
 		{ToolCalls: []agent.ToolCall{{
 			CallID: "c1", Name: "add_field",
 			Args: map[string]any{"entity": "missing", "field": map[string]any{"name": "x", "type": "string"}},
@@ -280,7 +201,7 @@ func TestFailedToolCallMarksFrameFailed(t *testing.T) {
 	}}
 	d, sid := handshakedDialog(t, tools, kilnacp.WithProvider(prov))
 
-	d.request(3, "session/prompt", promptParams(sid, "add a field"))
+	d.Request(3, "session/prompt", promptParams(sid, "add a field"))
 	resp, notifs := d.untilResponse(3)
 	if resp["error"] != nil {
 		t.Fatalf("prompt errored: %v", resp["error"])
@@ -307,10 +228,10 @@ func TestFailedToolCallMarksFrameFailed(t *testing.T) {
 // response waiter.
 func (d *dialog) promptAnsweringPermission(id int, params map[string]any, answerKind string) (map[string]any, []map[string]any) {
 	d.t.Helper()
-	d.request(id, "session/prompt", params)
+	d.Request(id, "session/prompt", params)
 	var notifs []map[string]any
 	for {
-		f := d.frame()
+		f := d.Frame()
 		if f["method"] == "session/request_permission" {
 			var optID string
 			for _, o := range f["params"].(map[string]any)["options"].([]any) {
@@ -321,7 +242,7 @@ func (d *dialog) promptAnsweringPermission(id int, params map[string]any, answer
 			if optID == "" {
 				d.t.Fatalf("no %s option in %v", answerKind, f["params"])
 			}
-			d.send(map[string]any{
+			d.Send(map[string]any{
 				"jsonrpc": "2.0", "id": int(f["id"].(float64)),
 				"result": map[string]any{"outcome": map[string]any{"outcome": acpcore.OutcomeSelected, "optionId": optID}},
 			})
@@ -338,7 +259,7 @@ func (d *dialog) promptAnsweringPermission(id int, params map[string]any, answer
 // the client; a rejection is fed back to the model as needs_plan.
 func TestApprovePlanGatedOnUserPermission(t *testing.T) {
 	tools := newTools(t)
-	prov := &scriptedProvider{turns: []agent.Turn{
+	prov := &kilntest.ScriptedProvider{Turns: []agent.Turn{
 		{ToolCalls: []agent.ToolCall{{CallID: "c1", Name: "approve_plan", Args: map[string]any{"plan_id": "p1"}}}, StopReason: "tool_use"},
 		{StopReason: "end_turn"},
 	}}
@@ -356,7 +277,7 @@ func TestApprovePlanGatedOnUserPermission(t *testing.T) {
 		t.Errorf("rejected approve_plan status = %v, want failed", ups[1]["status"])
 	}
 	// The model sees the rejection as a tool result.
-	last := prov.seen[len(prov.seen)-1]
+	last := prov.Seen[len(prov.Seen)-1]
 	tr := last.Messages[len(last.Messages)-1]
 	if tr.Role != "tool_result" || tr.Result == nil || tr.Result.Kind != "needs_plan" {
 		t.Errorf("model feedback = %+v, want needs_plan tool_result", tr)
@@ -366,7 +287,7 @@ func TestApprovePlanGatedOnUserPermission(t *testing.T) {
 // The allow path really dispatches approve_plan after the user allows.
 func TestApprovePlanAllowedByUserDispatches(t *testing.T) {
 	tools := newTools(t)
-	prov := &scriptedProvider{turns: []agent.Turn{
+	prov := &kilntest.ScriptedProvider{Turns: []agent.Turn{
 		{ToolCalls: []agent.ToolCall{{CallID: "c1", Name: "approve_plan", Args: map[string]any{"plan_id": "p1"}}}, StopReason: "tool_use"},
 		{StopReason: "end_turn"},
 	}}
@@ -397,10 +318,10 @@ func TestLoadSessionReplaysKilnChat(t *testing.T) {
 	tools := newTools(t)
 	d, sid := handshakedDialog(t, tools)
 
-	d.request(3, "session/prompt", promptParams(sid, "hello"))
+	d.Request(3, "session/prompt", promptParams(sid, "hello"))
 	d.untilResponseID(3) // refusal path journals user + assistant note
 
-	d.request(4, "session/load", map[string]any{"sessionId": sid, "cwd": t.TempDir(), "mcpServers": []any{}})
+	d.Request(4, "session/load", map[string]any{"sessionId": sid, "cwd": t.TempDir(), "mcpServers": []any{}})
 	resp, notifs := d.untilResponse(4)
 	if resp["error"] != nil {
 		t.Fatalf("session/load errored: %v", resp["error"])
@@ -421,14 +342,14 @@ func TestLoadSessionReplaysKilnChat(t *testing.T) {
 func TestLoadReplaysOnlyOwnSession(t *testing.T) {
 	tools := newTools(t)
 	d, a := handshakedDialog(t, tools)
-	d.request(3, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
+	d.Request(3, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
 	b := d.untilResponseID(3)["result"].(map[string]any)["sessionId"].(string)
 
-	d.request(4, "session/prompt", promptParams(a, "secret plan for A"))
+	d.Request(4, "session/prompt", promptParams(a, "secret plan for A"))
 	d.untilResponseID(4)
 	tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: "typed in the panel"})
 
-	d.request(5, "session/load", map[string]any{"sessionId": b, "cwd": t.TempDir(), "mcpServers": []any{}})
+	d.Request(5, "session/load", map[string]any{"sessionId": b, "cwd": t.TempDir(), "mcpServers": []any{}})
 	resp, notifs := d.untilResponse(5)
 	if resp["error"] != nil {
 		t.Fatalf("session/load errored: %v", resp["error"])
@@ -437,7 +358,7 @@ func TestLoadReplaysOnlyOwnSession(t *testing.T) {
 		t.Errorf("loading untouched session B replayed %v", ups)
 	}
 
-	d.request(6, "session/load", map[string]any{"sessionId": a, "cwd": t.TempDir(), "mcpServers": []any{}})
+	d.Request(6, "session/load", map[string]any{"sessionId": a, "cwd": t.TempDir(), "mcpServers": []any{}})
 	_, notifs = d.untilResponse(6)
 	ups := updatesOf(t, notifs)
 	if len(ups) != 2 || ups[0]["content"].(map[string]any)["text"] != "secret plan for A" {
@@ -459,11 +380,11 @@ func TestChatToolCannotTagSession(t *testing.T) {
 		}}}, StopReason: "tool_use"}, nil
 	}}
 	d, sid := handshakedDialog(t, tools, kilnacp.WithProvider(prov))
-	d.request(3, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
+	d.Request(3, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
 	victim = d.untilResponseID(3)["result"].(map[string]any)["sessionId"].(string)
-	d.request(4, "session/prompt", promptParams(sid, "say something"))
+	d.Request(4, "session/prompt", promptParams(sid, "say something"))
 	d.untilResponseID(4)
-	d.request(5, "session/load", map[string]any{"sessionId": victim, "cwd": t.TempDir(), "mcpServers": []any{}})
+	d.Request(5, "session/load", map[string]any{"sessionId": victim, "cwd": t.TempDir(), "mcpServers": []any{}})
 	_, notifs := d.untilResponse(5)
 	if ups := updatesOf(t, notifs); len(ups) != 0 {
 		t.Errorf("a chat tool call reached session %s's replay: %v", victim, ups)
@@ -479,13 +400,13 @@ func TestLoadStalledClientKeepsApply(t *testing.T) {
 	d, sid := handshakedDialog(t, tools)
 	// More messages than the harness buffers, so the replay blocks on a
 	// client that is not reading.
-	for i := range 2 * cap(d.frames) {
+	for i := range 2 * cap(d.Frames) {
 		if res := tools.Chat(context.Background(), protocol.ChatArgs{Role: "user", Text: fmt.Sprintf("m%d", i), ACPSession: sid}); !res.OK {
 			t.Fatalf("seed chat: %+v", res)
 		}
 	}
-	d.request(3, "session/load", map[string]any{"sessionId": sid, "cwd": t.TempDir(), "mcpServers": []any{}})
-	for deadline := time.Now().Add(3 * time.Second); len(d.frames) < cap(d.frames); time.Sleep(time.Millisecond) {
+	d.Request(3, "session/load", map[string]any{"sessionId": sid, "cwd": t.TempDir(), "mcpServers": []any{}})
+	for deadline := time.Now().Add(3 * time.Second); len(d.Frames) < cap(d.Frames); time.Sleep(time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatal("the replay never filled the client's buffer")
 		}
@@ -532,9 +453,9 @@ func TestCancelAfterStreamRunsNoTools(t *testing.T) {
 	tools := newTools(t)
 	prov := &cancelProvider{started: make(chan struct{})}
 	d, sid := handshakedDialog(t, tools, kilnacp.WithProvider(prov))
-	d.request(3, "session/prompt", promptParams(sid, "add posts"))
+	d.Request(3, "session/prompt", promptParams(sid, "add posts"))
 	<-prov.started
-	d.send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sid}})
+	d.Send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sid}})
 	resp := d.untilResponseID(3)
 	if got := resp["result"].(map[string]any)["stopReason"]; got != acpcore.StopCancelled {
 		t.Errorf("stopReason = %v, want cancelled", got)
@@ -580,12 +501,12 @@ func TestCancelBetweenToolCalls(t *testing.T) {
 		}, StopReason: "tool_use"}, nil
 	}}
 	d, sid := handshakedDialog(t, tools, kilnacp.WithProvider(prov))
-	d.request(3, "session/prompt", promptParams(sid, "two calls"))
+	d.Request(3, "session/prompt", promptParams(sid, "two calls"))
 	<-held
 	// Wait for the first call's in_progress frame: the turn is past
 	// every check before it, inside the blocked dispatch.
 	for {
-		f := d.frame()
+		f := d.Frame()
 		if f["method"] != "session/update" {
 			continue
 		}
@@ -594,10 +515,10 @@ func TestCancelBetweenToolCalls(t *testing.T) {
 			break
 		}
 	}
-	d.send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sid}})
+	d.Send(map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sid}})
 	// Requests are handled in read order, so this answer means the
 	// cancel above has been acted on.
-	d.request(4, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
+	d.Request(4, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
 	d.untilResponseID(4)
 	close(release)
 	resp := d.untilResponseID(3)
@@ -612,7 +533,7 @@ func TestCancelBetweenToolCalls(t *testing.T) {
 func TestLoadUnknownSessionIsResourceNotFound(t *testing.T) {
 	tools := newTools(t)
 	d, _ := handshakedDialog(t, tools)
-	d.request(4, "session/load", map[string]any{"sessionId": "from-a-previous-run", "cwd": t.TempDir(), "mcpServers": []any{}})
+	d.Request(4, "session/load", map[string]any{"sessionId": "from-a-previous-run", "cwd": t.TempDir(), "mcpServers": []any{}})
 	resp := d.untilResponseID(4)
 	e, ok := resp["error"].(map[string]any)
 	if !ok {

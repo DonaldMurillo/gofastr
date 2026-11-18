@@ -115,10 +115,7 @@ func main() {
 	_ = ui.FormConfig{Action: "/safe/path"}
 }
 `
-	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{{
-		Field: upgrade.Symbol{Pkg: "example.com/kit/ui", Name: "FormConfig", Member: "Action"},
-		Value: regexp.MustCompile(`^(javascript:|//)`),
-	}}}}
+	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{valueWantField()}}}
 	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
 	wantHits(t, res, n,
 		hitAt(src, `"javascript:alert(1)"`, "main.go", "field example.com/kit/ui.FormConfig.Action value"))
@@ -133,18 +130,26 @@ func main() {
 	_ = ui.OtherConfig{Action: "javascript:alert(1)"}
 }
 `
-	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{{
-		Field: upgrade.Symbol{Pkg: "example.com/kit/ui", Name: "FormConfig", Member: "Action"},
-		Value: regexp.MustCompile(`^(javascript:|//)`),
-	}}}}
+	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{valueWantField()}}}
 	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
 	wantHits(t, res, n)
 }
 
+// keyWantField is the note's ButtonConfig.ExtraAttrs match on the
+// map key "disabled".
 func keyWantField() upgrade.FieldMatch {
 	return upgrade.FieldMatch{
 		Field: upgrade.Symbol{Pkg: "example.com/kit/ui", Name: "ButtonConfig", Member: "ExtraAttrs"},
 		Key:   "disabled",
+	}
+}
+
+// valueWantField is the note's FormConfig.Action match on the value
+// regex, the value counterpart of keyWantField.
+func valueWantField() upgrade.FieldMatch {
+	return upgrade.FieldMatch{
+		Field: upgrade.Symbol{Pkg: "example.com/kit/ui", Name: "FormConfig", Member: "Action"},
+		Value: regexp.MustCompile(`^(javascript:|//)`),
 	}
 }
 
@@ -209,10 +214,7 @@ func main() {
 	cfg.Action = "javascript:alert(1)"
 }
 `
-	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{{
-		Field: upgrade.Symbol{Pkg: "example.com/kit/ui", Name: "FormConfig", Member: "Action"},
-		Value: regexp.MustCompile(`^(javascript:|//)`),
-	}}}}
+	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{valueWantField()}}}
 	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
 	wantHits(t, res, n,
 		hitAt(src, `"javascript:alert(1)"`, "main.go", "field example.com/kit/ui.FormConfig.Action value"))
@@ -284,10 +286,7 @@ func main() {
 }
 `
 	// A variable has no constant value of its own; its initialiser does.
-	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{{
-		Field: upgrade.Symbol{Pkg: "example.com/kit/ui", Name: "FormConfig", Member: "Action"},
-		Value: regexp.MustCompile(`^(javascript:|//)`),
-	}}}}
+	n := &upgrade.Note{Find: upgrade.Find{Fields: []upgrade.FieldMatch{valueWantField()}}}
 	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{"main.go": src}), n)
 	wantHits(t, res, n,
 		hitAt(src, "action}", "main.go", "field example.com/kit/ui.FormConfig.Action value"))

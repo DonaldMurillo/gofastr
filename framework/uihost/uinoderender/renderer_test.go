@@ -19,6 +19,18 @@ func mustContain(t *testing.T, got render.HTML, want string) {
 	}
 }
 
+// renderNode renders one single-node tree through a fresh renderer,
+// failing the test on the error every happy-path mapping treats as
+// fatal.
+func renderNode(t *testing.T, n uinodev1.Node) render.HTML {
+	t.Helper()
+	h, err := New(context.Background(), nil).Render(tree(n))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return h
+}
+
 // staticResolver returns a resolver that maps every ref to a fixed namespaced
 // URL; mirrors the shape the host's installed-route table produces.
 func staticResolver(url string) ActionResolver {
@@ -41,110 +53,74 @@ func keyResolver(m map[string]string) ActionResolver {
 // --- Per-component golden-ish: assert on the real design-system marker ---
 
 func TestRenderStackMapsToLayoutPrimitive(t *testing.T) {
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(uinodev1.Node{
+	h := renderNode(t, uinodev1.Node{
 		Component: uinodev1.CompStack,
 		Props:     uinodev1.StackProps{Direction: "vertical", Gap: "md"},
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	})
 	mustContain(t, h, `data-cui-comp="ui-layout"`)
 	mustContain(t, h, "fui-stack")
 }
 
 func TestRenderStackHorizontalMapsToCluster(t *testing.T) {
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(uinodev1.Node{
+	h := renderNode(t, uinodev1.Node{
 		Component: uinodev1.CompStack,
 		Props:     uinodev1.StackProps{Direction: "horizontal"},
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	})
 	mustContain(t, h, "fui-cluster")
 	mustContain(t, h, "fui-cluster--nowrap")
 }
 
 func TestRenderClusterMapsToLayoutPrimitive(t *testing.T) {
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(uinodev1.Node{
+	h := renderNode(t, uinodev1.Node{
 		Component: uinodev1.CompCluster, Props: uinodev1.ClusterProps{Gap: "sm"},
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	})
 	mustContain(t, h, "fui-cluster")
 }
 
 func TestRenderGridMapsToLayoutPrimitive(t *testing.T) {
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(uinodev1.Node{
+	h := renderNode(t, uinodev1.Node{
 		Component: uinodev1.CompGrid, Props: uinodev1.GridProps{Columns: 3, Gap: "md"},
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	})
 	mustContain(t, h, "fui-grid")
 	mustContain(t, h, `data-min="18rem"`)
 }
 
 func TestRenderSectionMapsToHtmlSection(t *testing.T) {
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(uinodev1.Node{
+	h := renderNode(t, uinodev1.Node{
 		Component: uinodev1.CompSection,
 		Props:     uinodev1.SectionProps{Title: "Dashboard", Subtitle: "sub"},
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	})
 	mustContain(t, h, "<section")
 	mustContain(t, h, `aria-label="Dashboard"`)
 	mustContain(t, h, `role="region"`)
 }
 
 func TestRenderSectionFallbackLabel(t *testing.T) {
-	r := New(context.Background(), nil)
 	// A section with no title must still get an a11y label (html.Section
 	// panics without one); the host supplies "Section".
-	h, err := r.Render(tree(uinodev1.Node{
+	h := renderNode(t, uinodev1.Node{
 		Component: uinodev1.CompSection, Props: uinodev1.SectionProps{},
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	})
 	mustContain(t, h, `aria-label="Section"`)
 }
 
 func TestRenderCardMapsToCardPrimitive(t *testing.T) {
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(uinodev1.Node{
+	h := renderNode(t, uinodev1.Node{
 		Component: uinodev1.CompCard, Props: uinodev1.CardProps{Title: "C", Elevation: "flat"},
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	})
 	mustContain(t, h, `data-cui-comp="ui-card"`)
 	mustContain(t, h, ">C<")
 }
 
 func TestRenderDividerMapsToDividerPrimitive(t *testing.T) {
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(uinodev1.Node{Component: uinodev1.CompDivider, Props: uinodev1.DividerProps{}}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	h := renderNode(t, uinodev1.Node{Component: uinodev1.CompDivider, Props: uinodev1.DividerProps{}})
 	mustContain(t, h, `data-cui-comp="ui-divider"`)
 }
 
 func TestRenderHeadingUsesHtmlHeading(t *testing.T) {
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(uinodev1.Node{
+	h := renderNode(t, uinodev1.Node{
 		Component: uinodev1.CompHeading, Props: uinodev1.HeadingProps{Level: 3, Text: "Hi"},
-	}))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	})
 	mustContain(t, h, "<h3")
 	mustContain(t, h, ">Hi<")
 }
@@ -199,41 +175,29 @@ func TestRenderBadgeToneMapsToStatusVariant(t *testing.T) {
 }
 
 func TestRenderDetailListMapsToPrimitive(t *testing.T) {
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(node(uinodev1.CompDetailList, uinodev1.DetailListProps{
+	h := renderNode(t, node(uinodev1.CompDetailList, uinodev1.DetailListProps{
 		Items: []uinodev1.DetailItem{{Label: "Name", Value: "Ada"}},
-	})))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	}))
 	mustContain(t, h, `data-cui-comp="ui-detail-list"`)
 	mustContain(t, h, ">Name<")
 	mustContain(t, h, ">Ada<")
 }
 
 func TestRenderKeyValueReusesDetailList(t *testing.T) {
-	r := New(context.Background(), nil)
 	// key-value reuses the <dl> DetailList primitive (no distinct KV
 	// component exists; both render label/value description rows).
-	h, err := r.Render(tree(node(uinodev1.CompKeyValue, uinodev1.KeyValueProps{
+	h := renderNode(t, node(uinodev1.CompKeyValue, uinodev1.KeyValueProps{
 		Items: []uinodev1.KeyValueItem{{Key: "K", Value: "V"}},
-	})))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	}))
 	mustContain(t, h, `data-cui-comp="ui-detail-list"`)
 	mustContain(t, h, ">K<")
 	mustContain(t, h, ">V<")
 }
 
 func TestRenderStatCardMapsToPrimitive(t *testing.T) {
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(node(uinodev1.CompStatCard, uinodev1.StatCardProps{
+	h := renderNode(t, node(uinodev1.CompStatCard, uinodev1.StatCardProps{
 		Label: "MRR", Value: "$1k", Unit: "USD", Trend: "up",
-	})))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	}))
 	mustContain(t, h, `data-cui-comp="ui-stat-card"`)
 	mustContain(t, h, ">MRR<")
 	mustContain(t, h, ">$1k USD<")
@@ -241,13 +205,9 @@ func TestRenderStatCardMapsToPrimitive(t *testing.T) {
 }
 
 func TestRenderImageMapsToHtmlImage(t *testing.T) {
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(node(uinodev1.CompImage, uinodev1.ImageProps{
+	h := renderNode(t, node(uinodev1.CompImage, uinodev1.ImageProps{
 		Src: "/assets/logo.png", Alt: "Logo",
-	})))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	}))
 	mustContain(t, h, "<img")
 	mustContain(t, h, `src="/assets/logo.png"`)
 	mustContain(t, h, `alt="Logo"`)
@@ -256,14 +216,10 @@ func TestRenderImageMapsToHtmlImage(t *testing.T) {
 // --- DataTable panic-safety (design §9 named hazard) --------------------
 
 func TestRenderDataTableMapsToPrimitive(t *testing.T) {
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(node(uinodev1.CompDataTable, uinodev1.DataTableProps{
+	h := renderNode(t, node(uinodev1.CompDataTable, uinodev1.DataTableProps{
 		Columns: []uinodev1.DataColumn{{Key: "name", Label: "Name"}},
 		Rows:    []uinodev1.DataRow{{Cells: []uinodev1.DataCell{{Text: "Ada"}}}},
-	})))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	}))
 	mustContain(t, h, `data-cui-comp="ui-data-table"`)
 	mustContain(t, h, ">Name<")
 	mustContain(t, h, ">Ada<")
@@ -273,13 +229,9 @@ func TestRenderDataTableEmptyColumns(t *testing.T) {
 	// The validator rejects empty columns, but the renderer must be
 	// panic-safe for a hand-built Tree too: empty columns render an
 	// empty-state, never a panic (datatable.go:154).
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(node(uinodev1.CompDataTable, uinodev1.DataTableProps{
+	h := renderNode(t, node(uinodev1.CompDataTable, uinodev1.DataTableProps{
 		Columns: nil,
-	})))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	}))
 	mustContain(t, h, "fui-empty-state")
 }
 
@@ -304,13 +256,9 @@ func TestDataTableDupKeysErrNoPanic(t *testing.T) {
 func TestRenderDataTableEmptyRows(t *testing.T) {
 	// Empty rows are handled by ui.DataTable itself; the renderer passes
 	// them through and must not panic.
-	r := New(context.Background(), nil)
-	h, err := r.Render(tree(node(uinodev1.CompDataTable, uinodev1.DataTableProps{
+	h := renderNode(t, node(uinodev1.CompDataTable, uinodev1.DataTableProps{
 		Columns: []uinodev1.DataColumn{{Key: "name", Label: "Name"}},
-	})))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	}))
 	mustContain(t, h, "ui-data-table")
 	mustContain(t, h, "is-empty")
 }

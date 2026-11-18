@@ -20,11 +20,13 @@ cd "$(dirname "$0")/.."
 
 DUPL_VERSION=v1.1.0
 BASELINE_FILE=scripts/dupl-baseline.txt
-# 90 since the 2026-11 dedup sweep (was 100): the 90-99 token band was
-# cleared too (96 groups then, 33 deliberate residuals now), so the gate
-# guards the finer grain it exposed. dupl stays pinned; moving the
-# threshold re-measures the baseline below.
-THRESHOLD=90
+# 90 after the 2026-11 waves 1-3, 80 after wave 4: each wave cleared the
+# band below the old threshold too (100->16 keeps, 90 band 96->33, 80
+# band 149->68), so the gate guards the finest grain the tree holds.
+# The residual count is the documented keeps (i18n catalogs, generated
+# output, ported shims, mirrors, bespoke security pins). dupl stays
+# pinned; moving the threshold re-measures the baseline below.
+THRESHOLD=80
 
 rebaseline=0
 case "${1:-}" in

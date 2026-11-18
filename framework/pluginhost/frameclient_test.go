@@ -55,23 +55,11 @@ func TestFrameClientJS_PostsWithWildcardTargetOrigin(t *testing.T) {
 // home would defeat the point of the isolation. Scan non-comment lines
 // (same comment-stripping approach as TestBrokerJS_NeverEmitsAllowSameOrigin).
 func TestFrameClientJS_NoExternalURLs(t *testing.T) {
-	// Deliberately NO trailing-comment strip here: a URL's own "//"
-	// would be read as a comment start and the scheme destroyed before
-	// the check, leaving the pin unable to fire on the exact thing it
-	// exists for (found by mutation: an injected fetch("https://…")
-	// stayed green). Whole comment lines are skipped; a URL in a
-	// trailing comment flags as a false positive, which is the safe
-	// direction — keep URLs out of trailing comments in this file.
-	js := string(frameClientJSBytes)
-	for line := range strings.SplitSeq(js, "\n") {
-		code := strings.TrimSpace(line)
-		if strings.HasPrefix(code, "//") || strings.HasPrefix(code, "*") ||
-			strings.HasPrefix(code, "/*") {
-			continue // whole-line comment
-		}
-		if strings.Contains(code, "http://") || strings.Contains(code, "https://") {
-			t.Errorf("external URL in executable code: %q", strings.TrimSpace(line))
-		}
+	// Scan semantics (whole comment lines skipped, trailing comments
+	// NOT stripped, so a URL in a trailing comment flags — the safe
+	// direction) live in jstest.ExternalURLCodeLines.
+	for _, line := range jstest.ExternalURLCodeLines(string(frameClientJSBytes)) {
+		t.Errorf("external URL in executable code: %q", line)
 	}
 }
 

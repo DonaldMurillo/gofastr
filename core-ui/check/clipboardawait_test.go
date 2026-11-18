@@ -1,7 +1,6 @@
 package check
 
 import (
-	"path/filepath"
 	"testing"
 )
 
@@ -85,18 +84,5 @@ func TestLintClipboardAwait_FiresOnDroppedWrite(t *testing.T) {
 //gofastr:test-reads core-ui/runtime/
 //gofastr:test-reads *.js
 func TestLintClipboardAwait_Repo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("walks the repo")
-	}
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	res, err := LintClipboardAwait(runtimeLintRoots(t, filepath.Join(repoRoot, "core-ui", "runtime"))...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("a copy is announced before the clipboard write settles:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "a copy is announced before the clipboard write settles", LintClipboardAwait)
 }

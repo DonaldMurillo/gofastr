@@ -1,12 +1,11 @@
 package middleware
 
 import (
-	"context"
 	"io"
-	"log/slog"
 	"strings"
-	"sync"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
 // Pins: a recovered panic value embedding collector-derived text reaches
@@ -31,43 +30,12 @@ import (
 // Probe note: the payload embeds the control bytes RAW (panic value),
 // not %q-escaped — %q pre-escapes them and would hide the surface.
 
-// redMwScrubSink is a minimal slog.Handler storing record attributes
-// verbatim (no JSON/text escaping), so a test can detect raw control
-// bytes a real handler would have escaped away.
-type redMwScrubSink struct {
-	mu    sync.Mutex
-	attrs map[string]string
-}
-
-func (h *redMwScrubSink) Enabled(context.Context, slog.Level) bool { return true }
-
-func (h *redMwScrubSink) Handle(_ context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.attrs == nil {
-		h.attrs = map[string]string{}
-	}
-	r.Attrs(func(a slog.Attr) bool {
-		h.attrs[a.Key] = a.Value.String()
-		return true
-	})
-	return nil
-}
-
-func (h *redMwScrubSink) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *redMwScrubSink) WithGroup(string) slog.Handler      { return h }
-
-func (h *redMwScrubSink) redGet(key string) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.attrs[key]
-}
+// The scrub probe itself (verbatim slog capture) is internal/scrubtest's
+// Sink, shared with this package's other sink call sites.
 
 func TestCollectorPanicRedScrubbed(t *testing.T) {
-	prev := slog.Default()
-	sink := &redMwScrubSink{}
-	slog.SetDefault(slog.New(sink))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	sink := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, sink)
 
 	malicious := "boom \x1b]0;pwned \u202e and \u009bCSI"
 	out := runCollectorSafely("red_probe", func(io.Writer) { panic(malicious) })
@@ -76,9 +44,9 @@ func TestCollectorPanicRedScrubbed(t *testing.T) {
 	}
 
 	// This surface logs the recovered value under the "error" key.
-	got := sink.redGet("error")
+	got := sink.Get("error")
 	if got == "" {
-		t.Fatalf("setup broken: collector panic never reached the slog sink (attrs=%v)", sink.attrs)
+		t.Fatalf("setup broken: collector panic never reached the slog sink (attrs=%v)", sink.Attrs())
 	}
 	for _, bad := range []string{"\x1b", "\u202e", "\u009b"} {
 		if strings.Contains(got, bad) {

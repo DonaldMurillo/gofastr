@@ -7,6 +7,19 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
+// wantOneFinding asserts the dialect-drift run reports exactly one
+// finding, naming want; why says which side the finding is on.
+func wantOneFinding(t *testing.T, ds []contracts.Diagnostic, want, why string) {
+	t.Helper()
+	found := countRule(t, ds, contracts.RuleDialectDrift)
+	if len(found) != 1 {
+		t.Fatalf("want 1 finding (%s), got %d: %v", why, len(found), found)
+	}
+	if !strings.Contains(found[0].Message, want) {
+		t.Errorf("finding must name %s: %q", want, found[0].Message)
+	}
+}
+
 // GOFASTR1414 exists because framework/outbox claimDeliveriesSQLite
 // shipped without the `next_attempt_at IS NULL OR next_attempt_at
 // <= $` backoff predicate its Postgres twin claimDeliveriesPostgres
@@ -139,13 +152,7 @@ func (s *Store) subUpsert(db *sql.DB) error {
 }
 `,
 	})
-	found := countRule(t, ds, contracts.RuleDialectDrift)
-	if len(found) != 1 {
-		t.Fatalf("want 1 finding (the divergent settle arms; the upsert has no WHERE), got %d: %v", len(found), found)
-	}
-	if !strings.Contains(found[0].Message, "attempts") {
-		t.Errorf("finding must name the missing predicate: %q", found[0].Message)
-	}
+	wantOneFinding(t, ds, "attempts", "the divergent settle arms; the upsert has no WHERE")
 }
 
 // The switch spelling (framework/migrate's DialectPostgres /
@@ -178,13 +185,7 @@ func prune(db *sql.DB, d Dialect, cutoff string) error {
 }
 `,
 	})
-	found := countRule(t, ds, contracts.RuleDialectDrift)
-	if len(found) != 1 {
-		t.Fatalf("want 1 finding (the SQLite arm lacks status='skipped'), got %d: %v", len(found), found)
-	}
-	if !strings.Contains(found[0].Message, "status = 'skipped'") {
-		t.Errorf("finding must name the missing predicate: %q", found[0].Message)
-	}
+	wantOneFinding(t, ds, "status = 'skipped'", "the SQLite arm lacks status='skipped'")
 }
 
 // The different-catalog posture, reduced from framework/migrate
@@ -270,13 +271,7 @@ func claimSqlite(db *sql.DB) error {
 }
 `,
 	})
-	found := countRule(t, ds, contracts.RuleDialectDrift)
-	if len(found) != 1 {
-		t.Fatalf("want exactly 1 finding on the SQLite side, got %d: %v", len(found), found)
-	}
-	if !strings.Contains(found[0].Message, "next_attempt_at") {
-		t.Errorf("finding must name the missing predicate: %q", found[0].Message)
-	}
+	wantOneFinding(t, ds, "next_attempt_at", "on the SQLite side")
 }
 
 // A prose literal ahead of the query (an error prefix that says

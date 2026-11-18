@@ -12,23 +12,7 @@ import (
 )
 
 func TestSoftDelete_PublicListDoesNotExposeDeletedRecords(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, makeEntityConfig("announcements", "announcements", "", []schema.Field{
-		{Name: "title", Type: schema.String},
-	}, func(c *entity.EntityConfig) {
-		if c.Scope == nil {
-			c.Scope = &entity.ScopeConfig{}
-		}
-		if c.Exposure == nil {
-			c.Exposure = &entity.ExposureConfig{}
-		}
-		c.Scope.SoftDelete = true
-		c.Exposure.Public = true
-	}),
-		`CREATE TABLE announcements (id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT)`)
-
-	seedRows(t, db, "announcements", []map[string]any{
-		{"id": "ann-1", "title": "deleted announcement", "deleted_at": "2024-01-01T00:00:00Z"},
-	})
+	ch, _ := setupSoftDeletePublicAnnouncements(t)
 
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,
@@ -49,23 +33,7 @@ func TestSoftDelete_PublicListDoesNotExposeDeletedRecords(t *testing.T) {
 }
 
 func TestSoftDelete_PublicGetWithTrashedReturnsNotFound(t *testing.T) {
-	ch, db := setupSecurityTestHandler(t, makeEntityConfig("announcements", "announcements", "", []schema.Field{
-		{Name: "title", Type: schema.String},
-	}, func(c *entity.EntityConfig) {
-		if c.Scope == nil {
-			c.Scope = &entity.ScopeConfig{}
-		}
-		if c.Exposure == nil {
-			c.Exposure = &entity.ExposureConfig{}
-		}
-		c.Scope.SoftDelete = true
-		c.Exposure.Public = true
-	}),
-		`CREATE TABLE announcements (id TEXT PRIMARY KEY, title TEXT, deleted_at TEXT)`)
-
-	seedRows(t, db, "announcements", []map[string]any{
-		{"id": "ann-1", "title": "deleted announcement", "deleted_at": "2024-01-01T00:00:00Z"},
-	})
+	ch, _ := setupSoftDeletePublicAnnouncements(t)
 
 	req := makeRequest(t, RequestOpts{
 		Method: http.MethodGet,

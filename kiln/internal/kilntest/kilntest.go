@@ -1,5 +1,6 @@
-// Package kilntest holds the protocol.Tools fixture shared by the kiln
-// adapter tests (protocol, acp, agent/mcp). Tests only: nothing outside a
+// Package kilntest holds the fixtures shared by the kiln adapter tests
+// (protocol, acp, agent/mcp): the protocol.Tools harness and the ACP
+// scripted-provider / pipe-dialog client. Tests only: nothing outside a
 // _test.go file imports it.
 package kilntest
 

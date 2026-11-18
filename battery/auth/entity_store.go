@@ -599,21 +599,28 @@ func (s *EntityUserStore) SwapPassword(ctx context.Context, userID, oldHash, new
 	return n > 0, nil
 }
 
-// HasPassword reports whether the user has a real password set vs the
-// placeholder hash. Implements PasswordChecker.
-func (s *EntityUserStore) HasPassword(ctx context.Context, userID string) (bool, error) {
+// userBoolFlag reads one folded boolean column for a user, mapping a
+// missing row to ErrUserNotFound — the shared shape of HasPassword and
+// IsEmailVerified.
+func (s *EntityUserStore) userBoolFlag(ctx context.Context, userID, column string) (bool, error) {
 	q := fmt.Sprintf(
 		"SELECT %s FROM %s WHERE %s = $1",
-		query.QuoteFolded(s.fieldMap.PasswordSet),
+		query.QuoteFolded(column),
 		query.QuoteFolded(s.table),
 		query.QuoteFolded(s.fieldMap.ID),
 	)
-	var has bool
-	err := s.db.QueryRowContext(ctx, q, userID).Scan(&has)
+	var v bool
+	err := s.db.QueryRowContext(ctx, q, userID).Scan(&v)
 	if err == sql.ErrNoRows {
 		return false, ErrUserNotFound
 	}
-	return has, err
+	return v, err
+}
+
+// HasPassword reports whether the user has a real password set vs the
+// placeholder hash. Implements PasswordChecker.
+func (s *EntityUserStore) HasPassword(ctx context.Context, userID string) (bool, error) {
+	return s.userBoolFlag(ctx, userID, s.fieldMap.PasswordSet)
 }
 
 // ensureEmailVerifiedColumn adds the email_verified column to a table that
@@ -658,17 +665,7 @@ func (s *EntityUserStore) MarkEmailVerified(ctx context.Context, userID string) 
 // IsEmailVerified reports whether the user's address is proven. Implements
 // EmailVerifiedChecker.
 func (s *EntityUserStore) IsEmailVerified(ctx context.Context, userID string) (bool, error) {
-	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1",
-		query.QuoteFolded(s.fieldMap.EmailVerified),
-		query.QuoteFolded(s.table),
-		query.QuoteFolded(s.fieldMap.ID),
-	)
-	var v bool
-	err := s.db.QueryRowContext(ctx, q, userID).Scan(&v)
-	if err == sql.ErrNoRows {
-		return false, ErrUserNotFound
-	}
-	return v, err
+	return s.userBoolFlag(ctx, userID, s.fieldMap.EmailVerified)
 }
 
 // ClearPassword replaces the user's hash with a new unusable one and

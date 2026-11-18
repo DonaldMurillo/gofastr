@@ -450,6 +450,21 @@ func nestedSpec[T any](name string, order []string, orderName string, plant func
 	}
 }
 
+// nestedStruct is nestedSpec's leaveOneOut sibling: the zero element is a
+// nested struct planted by plant (a pointer to the planted struct) rather
+// than a slice element — App.Auth, Screen.Access, Entity.Scope, … — so the
+// emitted map is dug at path as-is, with no index to append. The remaining
+// constructSpec fields (order, key, orderSubset, …) come from spec.
+func nestedStruct[T any](spec constructSpec, plant func(bp *appspec.AppSpec) *T, path ...any) constructSpec {
+	spec.leaveOneOut = true
+	spec.build = func() (*appspec.AppSpec, reflect.Value) {
+		bp := &appspec.AppSpec{}
+		return bp, reflect.ValueOf(plant(bp)).Elem()
+	}
+	spec.at = func(out map[string]any) map[string]any { return digEmitted(out, path...) }
+	return spec
+}
+
 func constructSpecs() []constructSpec {
 	return []constructSpec{
 		{
@@ -533,32 +548,20 @@ func constructSpecs() []constructSpec {
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "middleware", 0) },
 		},
 		// ----- nested structs, probed leave-one-out (see constructSpec) -----
-		{
-			name: "auth", order: authOrder, orderName: "authOrder", key: "auth", leaveOneOut: true,
-			build: func() (*appspec.AppSpec, reflect.Value) {
-				bp := &appspec.AppSpec{App: appspec.AppSpecApp{Auth: appspec.AppSpecAuth{}}}
-				return bp, reflect.ValueOf(&bp.App.Auth).Elem()
-			},
-			at: func(out map[string]any) map[string]any { return digEmitted(out, "app", "auth") },
-		},
-		{
-			name: "admin", order: adminOrder, orderName: "adminOrder", key: "admin", leaveOneOut: true,
-			build: func() (*appspec.AppSpec, reflect.Value) {
-				bp := &appspec.AppSpec{App: appspec.AppSpecApp{Admin: appspec.AppSpecAdmin{}}}
-				return bp, reflect.ValueOf(&bp.App.Admin).Elem()
-			},
-			at: func(out map[string]any) map[string]any { return digEmitted(out, "app", "admin") },
-		},
-		{
-			// No order list exists for pwa: orderFor("pwa") is nil and the
-			// writer sorts its keys alphabetically.
-			name: "pwa", key: "pwa", leaveOneOut: true,
-			build: func() (*appspec.AppSpec, reflect.Value) {
-				bp := &appspec.AppSpec{App: appspec.AppSpecApp{PWA: appspec.AppSpecPWA{}}}
-				return bp, reflect.ValueOf(&bp.App.PWA).Elem()
-			},
-			at: func(out map[string]any) map[string]any { return digEmitted(out, "app", "pwa") },
-		},
+		nestedStruct(constructSpec{name: "auth", order: authOrder, orderName: "authOrder", key: "auth"}, func(bp *appspec.AppSpec) *appspec.AppSpecAuth {
+			bp.App = appspec.AppSpecApp{Auth: appspec.AppSpecAuth{}}
+			return &bp.App.Auth
+		}, "app", "auth"),
+		nestedStruct(constructSpec{name: "admin", order: adminOrder, orderName: "adminOrder", key: "admin"}, func(bp *appspec.AppSpec) *appspec.AppSpecAdmin {
+			bp.App = appspec.AppSpecApp{Admin: appspec.AppSpecAdmin{}}
+			return &bp.App.Admin
+		}, "app", "admin"),
+		// No order list exists for pwa: orderFor("pwa") is nil and the
+		// writer sorts its keys alphabetically.
+		nestedStruct(constructSpec{name: "pwa", key: "pwa"}, func(bp *appspec.AppSpec) *appspec.AppSpecPWA {
+			bp.App = appspec.AppSpecApp{PWA: appspec.AppSpecPWA{}}
+			return &bp.App.PWA
+		}, "app", "pwa"),
 		{
 			// accessOrder is shared with exposure.access below: subset check.
 			name: "access", order: accessOrder, orderName: "accessOrder", key: "access",
@@ -569,30 +572,21 @@ func constructSpecs() []constructSpec {
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "screens", 0, "access") },
 		},
-		{
-			name: "scope", key: "scope", leaveOneOut: true, // orderFor("scope") is nil: sorted
-			build: func() (*appspec.AppSpec, reflect.Value) {
-				bp := &appspec.AppSpec{Entities: []framework.EntityDeclaration{{Scope: &framework.ScopeDeclaration{}}}}
-				return bp, reflect.ValueOf(bp.Entities[0].Scope).Elem()
-			},
-			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "scope") },
-		},
-		{
-			name: "pagination", key: "pagination", leaveOneOut: true, // orderFor("pagination") is nil: sorted
-			build: func() (*appspec.AppSpec, reflect.Value) {
-				bp := &appspec.AppSpec{Entities: []framework.EntityDeclaration{{Pagination: &framework.PaginationDeclaration{}}}}
-				return bp, reflect.ValueOf(bp.Entities[0].Pagination).Elem()
-			},
-			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "pagination") },
-		},
-		{
-			name: "exposure", key: "exposure", leaveOneOut: true, // orderFor("exposure") is nil: sorted
-			build: func() (*appspec.AppSpec, reflect.Value) {
-				bp := &appspec.AppSpec{Entities: []framework.EntityDeclaration{{Exposure: &framework.ExposureDeclaration{}}}}
-				return bp, reflect.ValueOf(bp.Entities[0].Exposure).Elem()
-			},
-			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "exposure") },
-		},
+		// orderFor("scope") is nil: sorted
+		nestedStruct(constructSpec{name: "scope", key: "scope"}, func(bp *appspec.AppSpec) *framework.ScopeDeclaration {
+			bp.Entities = []framework.EntityDeclaration{{Scope: &framework.ScopeDeclaration{}}}
+			return bp.Entities[0].Scope
+		}, "entities", 0, "scope"),
+		// orderFor("pagination") is nil: sorted
+		nestedStruct(constructSpec{name: "pagination", key: "pagination"}, func(bp *appspec.AppSpec) *framework.PaginationDeclaration {
+			bp.Entities = []framework.EntityDeclaration{{Pagination: &framework.PaginationDeclaration{}}}
+			return bp.Entities[0].Pagination
+		}, "entities", 0, "pagination"),
+		// orderFor("exposure") is nil: sorted
+		nestedStruct(constructSpec{name: "exposure", key: "exposure"}, func(bp *appspec.AppSpec) *framework.ExposureDeclaration {
+			bp.Entities = []framework.EntityDeclaration{{Exposure: &framework.ExposureDeclaration{}}}
+			return bp.Entities[0].Exposure
+		}, "entities", 0, "exposure"),
 		{
 			name: "exposure.access", order: accessOrder, orderName: "accessOrder", key: "access",
 			leaveOneOut: true, orderSubset: true,

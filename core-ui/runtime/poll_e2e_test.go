@@ -70,6 +70,56 @@ func startPollServer(t *testing.T, pageHTML string, extra map[string]http.Handle
 	return srv.URL
 }
 
+// pollManifest serves the widget manifest for a polling widget: always
+// mounted bottom-right with no backdrop or close handlers, its style,
+// chrome and state routes under /core-ui/widget/<name>/, polling every
+// pollMs.
+func pollManifest(name string, pollMs int) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		enc := json.NewEncoder(w)
+		enc.SetEscapeHTML(false)
+		_ = enc.Encode([]map[string]any{{
+			"hidden": false,
+			"cfg": map[string]any{
+				"name":          name,
+				"position":      "bottom-right",
+				"backdrop":      false,
+				"closeOnEscape": false,
+				"closeOnClick":  false,
+				"stylePath":     "/core-ui/widget/" + name + "/style.css",
+				"chromePath":    "/core-ui/widget/" + name + "/chrome",
+				"statePath":     "/core-ui/widget/" + name + "/state",
+				"pollMs":        pollMs,
+			},
+		}})
+	}
+}
+
+// spaPartial answers a runtime navigation (X-Gofastr-Navigate) with the
+// partial-document headers — swap, when non-empty, names the layout
+// slot the client swaps — and any other request with the full page.
+// fetches, when non-nil, counts the navigations served.
+func spaPartial(fetches *atomic.Int32, title, swap, partial, full string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Gofastr-Navigate") == "1" {
+			if fetches != nil {
+				fetches.Add(1)
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("X-Gofastr-Partial", "true")
+			w.Header().Set("X-Gofastr-Title", title)
+			if swap != "" {
+				w.Header().Set("X-Gofastr-Swap", swap)
+			}
+			fmt.Fprint(w, partial)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, full)
+	}
+}
+
 // TestPoll_SwapsRegion proves the load-bearing behavior: a
 // data-cui-poll element fetches data-cui-poll-src on the (clamped)
 // cadence and the response HTML replaces the element's innerHTML.
@@ -227,27 +277,7 @@ func TestWidgetPoll_OverwritesSignalsAndStopsOnDismiss(t *testing.T) {
 </body></html>`
 	widgetsJS, _ := Module("widgets")
 	base := startPollServer(t, page, map[string]http.HandlerFunc{
-		"/__gofastr/widgets": func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			enc := json.NewEncoder(w)
-			enc.SetEscapeHTML(false)
-			_ = enc.Encode([]map[string]any{
-				{
-					"hidden": false,
-					"cfg": map[string]any{
-						"name":          "poller",
-						"position":      "bottom-right",
-						"backdrop":      false,
-						"closeOnEscape": false,
-						"closeOnClick":  false,
-						"stylePath":     "/core-ui/widget/poller/style.css",
-						"chromePath":    "/core-ui/widget/poller/chrome",
-						"statePath":     "/core-ui/widget/poller/state",
-						"pollMs":        pollMs,
-					},
-				},
-			})
-		},
+		"/__gofastr/widgets": pollManifest("poller", pollMs),
 		"/core-ui/widget/poller/state": func(w http.ResponseWriter, r *http.Request) {
 			mu.Lock()
 			stateHits++
@@ -359,27 +389,7 @@ func TestWidgetPollNow_RefreshesAfterRPC(t *testing.T) {
 <script src="/__gofastr/runtime.js"></script>
 </body></html>`
 	base := startPollServer(t, page, map[string]http.HandlerFunc{
-		"/__gofastr/widgets": func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			enc := json.NewEncoder(w)
-			enc.SetEscapeHTML(false)
-			_ = enc.Encode([]map[string]any{
-				{
-					"hidden": false,
-					"cfg": map[string]any{
-						"name":          "bumper",
-						"position":      "bottom-right",
-						"backdrop":      false,
-						"closeOnEscape": false,
-						"closeOnClick":  false,
-						"stylePath":     "/core-ui/widget/bumper/style.css",
-						"chromePath":    "/core-ui/widget/bumper/chrome",
-						"statePath":     "/core-ui/widget/bumper/state",
-						"pollMs":        60000,
-					},
-				},
-			})
-		},
+		"/__gofastr/widgets": pollManifest("bumper", 60000),
 		"/core-ui/widget/bumper/state": func(w http.ResponseWriter, r *http.Request) {
 			mu.Lock()
 			stateHits++
@@ -448,21 +458,7 @@ func TestWidgetPollLargeIntervalNoOverflow(t *testing.T) {
 
 	page := `<!doctype html><html><head></head><body><script src="/__gofastr/runtime.js"></script></body></html>`
 	base := startPollServer(t, page, map[string]http.HandlerFunc{
-		"/__gofastr/widgets": func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			enc := json.NewEncoder(w)
-			enc.SetEscapeHTML(false)
-			_ = enc.Encode([]map[string]any{{
-				"hidden": false,
-				"cfg": map[string]any{
-					"name": "slow", "position": "bottom-right", "backdrop": false,
-					"closeOnEscape": false, "closeOnClick": false,
-					"stylePath":  "/core-ui/widget/slow/style.css",
-					"chromePath": "/core-ui/widget/slow/chrome",
-					"statePath":  "/core-ui/widget/slow/state", "pollMs": bigMs,
-				},
-			}})
-		},
+		"/__gofastr/widgets": pollManifest("slow", bigMs),
 		"/core-ui/widget/slow/state": func(w http.ResponseWriter, r *http.Request) {
 			mu.Lock()
 			stateHits++
@@ -575,27 +571,7 @@ func TestWidgetPoll_StopsOnTerminalHeader(t *testing.T) {
 </body></html>`
 	widgetsJS, _ := Module("widgets")
 	base := startPollServer(t, page, map[string]http.HandlerFunc{
-		"/__gofastr/widgets": func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			enc := json.NewEncoder(w)
-			enc.SetEscapeHTML(false)
-			_ = enc.Encode([]map[string]any{
-				{
-					"hidden": false,
-					"cfg": map[string]any{
-						"name":          "jobpoll",
-						"position":      "bottom-right",
-						"backdrop":      false,
-						"closeOnEscape": false,
-						"closeOnClick":  false,
-						"stylePath":     "/core-ui/widget/jobpoll/style.css",
-						"chromePath":    "/core-ui/widget/jobpoll/chrome",
-						"statePath":     "/core-ui/widget/jobpoll/state",
-						"pollMs":        pollMs,
-					},
-				},
-			})
-		},
+		"/__gofastr/widgets": pollManifest("jobpoll", pollMs),
 		"/core-ui/widget/jobpoll/state": func(w http.ResponseWriter, r *http.Request) {
 			mu.Lock()
 			stateHits++

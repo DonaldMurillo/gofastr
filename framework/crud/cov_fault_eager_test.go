@@ -20,56 +20,40 @@ func covFaultRelWorld(t *testing.T) (*CrudHandler, *sql.DB, stubRegistry) {
 
 // --- eager.go (unfiltered EagerLoad) DB-error branches ---
 
-func TestEagerHasMany_NextErr(t *testing.T) {
-	ch, db, reg := covFaultRelWorld(t)
-	rel := entity.HasMany("comments", "comments", "post_id")
-	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM comments " })
-	_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{rel}, []string{"p1"}, reg)
-	if !errors.Is(err, errCovInjected) {
-		t.Fatalf("hasMany rows.Err = %v, want injected", err)
-	}
-}
-
-func TestEagerBelongsTo_SrcNextErr(t *testing.T) {
-	ch, db, reg := covFaultRelWorld(t)
-	rel := entity.BelongsTo("author", "users", "author_id")
-	// Source query selects from posts; fail iteration of it.
-	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM posts " })
-	_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{rel}, []string{"p1"}, reg)
-	if !errors.Is(err, errCovInjected) {
-		t.Fatalf("belongsTo src rows.Err = %v, want injected", err)
-	}
-}
-
-func TestEagerBelongsTo_TgtQueryErr(t *testing.T) {
-	ch, db, reg := covFaultRelWorld(t)
-	rel := entity.BelongsTo("author", "users", "author_id")
-	// Source query (posts) runs; target query (users) fails.
-	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM users " })
-	_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{rel}, []string{"p1"}, reg)
-	if !errors.Is(err, errCovInjected) {
-		t.Fatalf("belongsTo tgt query = %v, want injected", err)
-	}
-}
-
-func TestEagerBelongsTo_TgtNextErr(t *testing.T) {
-	ch, db, reg := covFaultRelWorld(t)
-	rel := entity.BelongsTo("author", "users", "author_id")
-	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM users " })
-	_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{rel}, []string{"p1"}, reg)
-	if !errors.Is(err, errCovInjected) {
-		t.Fatalf("belongsTo tgt rows.Err = %v, want injected", err)
-	}
-}
-
-func TestEagerManyToMany_NextErr(t *testing.T) {
-	ch, db, reg := covFaultRelWorld(t)
+// TestEagerLoad_DBFaults walks each relation shape over the fault-injectable
+// world: the flagged query (source or target) fails, or its rows iteration
+// does, and EagerLoad must surface the injected error. The BelongsTo
+// source-query case is eager.go's source scan, whose error path none of the
+// other fault worlds reach.
+func TestEagerLoad_DBFaults(t *testing.T) {
 	m2m := entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id")
 	m2m.ForeignKey = []string{"tag_id"}
-	covFault.set(func(c *covFaults) { c.nextErrOn = "FROM tags " })
-	_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{m2m}, []string{"p1"}, reg)
-	if !errors.Is(err, errCovInjected) {
-		t.Fatalf("m2m rows.Err = %v, want injected", err)
+	for _, tc := range []struct {
+		name  string
+		rel   entity.Relation
+		fault func(*covFaults)
+	}{
+		{"HasMany_NextErr", entity.HasMany("comments", "comments", "post_id"),
+			func(c *covFaults) { c.nextErrOn = "FROM comments " }},
+		{"BelongsTo_SrcQueryErr", entity.BelongsTo("author", "users", "author_id"),
+			func(c *covFaults) { c.queryErrOn = "FROM posts " }},
+		{"BelongsTo_SrcNextErr", entity.BelongsTo("author", "users", "author_id"),
+			func(c *covFaults) { c.nextErrOn = "FROM posts " }},
+		{"BelongsTo_TgtQueryErr", entity.BelongsTo("author", "users", "author_id"),
+			func(c *covFaults) { c.queryErrOn = "FROM users " }},
+		{"BelongsTo_TgtNextErr", entity.BelongsTo("author", "users", "author_id"),
+			func(c *covFaults) { c.nextErrOn = "FROM users " }},
+		{"ManyToMany_NextErr", m2m,
+			func(c *covFaults) { c.nextErrOn = "FROM tags " }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ch, db, reg := covFaultRelWorld(t)
+			covFault.set(tc.fault)
+			_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{tc.rel}, []string{"p1"}, reg)
+			if !errors.Is(err, errCovInjected) {
+				t.Fatalf("%s = %v, want injected", tc.name, err)
+			}
+		})
 	}
 }
 

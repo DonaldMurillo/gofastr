@@ -39,18 +39,7 @@ func TestIRStringsStayInsideTheirLiteral(t *testing.T) {
 		label := strings.NewReplacer("\n", "N", "`", "BT", `"`, "Q", "*", "S", "/", "SL", " ", "_").Replace(payload)
 		for _, tc := range irQuotingSites(payload) {
 			t.Run(tc.site+"/"+label, func(t *testing.T) {
-				if err := appspec.ValidateAppSpec(tc.bp); err != nil {
-					return // rejected at the boundary
-				}
-				files, err := RenderAppSpecFiles(tc.bp)
-				if err != nil {
-					return // emitter refused
-				}
-				for _, f := range files {
-					if strings.HasSuffix(f.Name, ".go") {
-						assertIRStayedData(t, tc.site, f.Name, f.Content)
-					}
-				}
+				renderBreakerSite(t, tc.site, tc.bp)
 			})
 		}
 	}

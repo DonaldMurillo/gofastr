@@ -1,7 +1,6 @@
 package check
 
 import (
-	"path/filepath"
 	"testing"
 )
 
@@ -69,18 +68,5 @@ func TestLintDateUTCYear_FiresOnYearParts(t *testing.T) {
 //gofastr:test-reads core-ui/runtime/
 //gofastr:test-reads *.js
 func TestLintDateUTCYear_Repo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("walks the repo")
-	}
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	res, err := LintDateUTCYear(runtimeLintRoots(t, filepath.Join(repoRoot, "core-ui", "runtime"))...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("a date built from parts reads years 0-99 as 1900-1999:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "a date built from parts reads years 0-99 as 1900-1999", LintDateUTCYear)
 }

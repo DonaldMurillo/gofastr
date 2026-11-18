@@ -26,3 +26,26 @@ func NonCommentJS(js string) string {
 	}
 	return b.String()
 }
+
+// ExternalURLCodeLines returns the lines of js that carry an http://
+// or https:// URL in what is not a whole-line comment. Trailing
+// comments are deliberately NOT stripped the way NonCommentJS strips
+// them: a URL's own "//" would be read as a comment start and destroy
+// the scheme before the check, leaving a pin unable to fire on the
+// exact thing it exists for (found by mutation: an injected
+// fetch("https://…") stayed green). A URL in a trailing comment flags —
+// the safe direction.
+func ExternalURLCodeLines(js string) []string {
+	var hits []string
+	for line := range strings.SplitSeq(js, "\n") {
+		code := strings.TrimSpace(line)
+		if strings.HasPrefix(code, "//") || strings.HasPrefix(code, "*") ||
+			strings.HasPrefix(code, "/*") {
+			continue // whole-line comment
+		}
+		if strings.Contains(code, "http://") || strings.Contains(code, "https://") {
+			hits = append(hits, strings.TrimSpace(line))
+		}
+	}
+	return hits
+}

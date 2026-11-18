@@ -3,30 +3,16 @@
 package macos
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
-	"os"
-	"os/exec"
 	"testing"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
 )
 
 func TestSidebarCanStartAtZero(t *testing.T) {
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, executable, "-test.run=^$")
-	command.Env = append(os.Environ(), "GOFASTR_TEST_SIDEBAR_ZONE=1")
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("native sidebar: %v\n%s", err, output)
-	}
+	nativeCheck(t, "GOFASTR_TEST_SIDEBAR_ZONE", "native sidebar")
 }
 
 func sidebarZoneCheck() int {
