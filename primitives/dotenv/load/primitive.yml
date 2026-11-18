@@ -17,7 +17,7 @@ invariants:
       - test: core/dotenv.TestLoad_FileMissingIsNonError
       - test: core/dotenv.TestLoad_MalformedFileReturnsError
   - id: lookup-follows-applied-value
-    rule: Under Load a ${NAME} reads the process environment first, then the value an earlier file set, then the same file's earlier keys, so a value is built from the one Apply leaves in effect.
+    rule: Under Load a ${NAME} looks up, at the moment it is expanded, the process environment first, then the value an earlier file set, then the assignments above it in the same file.
     enforced_by:
       - test: core/dotenv.TestLoad_ExpandFallsBackToEnviron
       - test: core/dotenv.TestLoad_ExpandReadsEarlierFileValue
