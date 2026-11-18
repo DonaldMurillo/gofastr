@@ -35,7 +35,7 @@ invariants:
       - test: framework/experimental/harness/provider/openrouter.TestModelsRefusesRedirect
       - test: framework/experimental/harness/provider/openrouter.TestChatRefusesRedirect
   - id: models-body-bounded
-    rule: The /models body is read through a 1 MiB limit, and a larger catalog fails to decode instead of being buffered.
+    rule: The /models body is read through a 1 MiB limit.
     enforced_by:
       - test: framework/experimental/harness/provider/openrouter.TestModelsCatalogDecodeIsBounded
   - id: models-strict-keys

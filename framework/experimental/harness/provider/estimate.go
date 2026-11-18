@@ -1,6 +1,6 @@
 package provider
 
-// EstimateTokens estimates the tokens in msgs at four characters per token, rounded up.
+// EstimateTokens estimates the tokens in msgs at four bytes per token, rounded up.
 func EstimateTokens(msgs []Message) int {
 	total := 0
 	for _, m := range msgs {

@@ -29,6 +29,9 @@ func NewInProcess(store credstore.Store) *InProcess {
 
 // AttachAuth implements Helper; it signs openrouter and zai with a bearer token and returns ErrUnknownProvider for any other provider.
 func (h *InProcess) AttachAuth(req *http.Request, provider, account string) error {
+	if provider != "openrouter" && provider != "zai" {
+		return ErrUnknownProvider
+	}
 	if account == "" {
 		account = "default"
 	}
@@ -38,12 +41,8 @@ func (h *InProcess) AttachAuth(req *http.Request, provider, account string) erro
 	if err != nil {
 		return err
 	}
-	switch provider {
-	case "openrouter", "zai":
-		req.Header.Set("Authorization", "Bearer "+secret)
-		return nil
-	}
-	return ErrUnknownProvider
+	req.Header.Set("Authorization", "Bearer "+secret)
+	return nil
 }
 
 // Heartbeat implements Helper and always returns nil.
