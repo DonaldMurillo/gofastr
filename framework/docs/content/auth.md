@@ -1922,10 +1922,12 @@ the same way.
 
 Every POST takes `Content-Type: application/json`, the options calls
 included, so a cross-site page cannot reach one without a CORS
-preflight. `RateLimit` covers every route. The list route counts
-against a limit of its own (same settings): the browser module reads it
-without a click, and those reads must not use up the limit sign-in
-needs.
+preflight. `RateLimit` covers every route. Two kinds of request count
+against limits of their own (same settings), because the browser module
+sends them without a click and they must not use up the limit sign-in
+needs: `GET /auth/passkey/list`, and `POST /auth/passkey/login/options`
+with body `{"autofill": true}`. The sign-in that follows an autofill
+pick still counts against the main limit.
 
 "Signed in" means a full session. A session waiting on its second
 factor gets 403, and so does a password-only session of an account
@@ -1949,7 +1951,7 @@ ui.Button(ui.ButtonConfig{
 | Helper | The button |
 |---|---|
 | `PasskeyLoginAttrs(base)` | Signs in, then navigates where the server says. |
-| `PasskeyRegisterAttrs(base)` | Adds a passkey to the signed-in account. Inside a form, a text field carrying `PasskeyNameAttrs()` names it. Stays hidden where `getClientCapabilities()` says the device can make no passkey (no platform authenticator and no phone over hybrid). |
+| `PasskeyRegisterAttrs(base)` | Adds a passkey to the signed-in account. Inside a form, a text field carrying `PasskeyNameAttrs()` names it. Shown wherever the browser has WebAuthn: a USB or NFC security key can hold a passkey on a device with no platform authenticator. |
 | `PasskeyRenameAttrs(base, id)` | Renames passkey `id` to the value of the form's `PasskeyNameAttrs()` field. |
 | `PasskeyDeleteAttrs(base, id)` | Removes passkey `id` (a `PasskeyCredential.ID`). |
 | `PasskeyReauthAttrs(base)` | Inside a form: runs a step-up, puts the proof in the form's `PasskeyReauthField` and submits it. |
@@ -2048,9 +2050,11 @@ field's autocomplete if it is missing. A browser runs one WebAuthn
 request at a time, so a passkey button withdraws the waiting autofill
 request and the module starts it again when that ceremony ends, unless
 it signed the user in. A navigation that takes the field away
-withdraws the request too. A
-request that times out or is refused is started again, five times at
-most. Keep the password field and the passkey button: they are the way
+withdraws the request too. A conditional request has no timer of its
+own but its challenge expires after `ChallengeTTL`, so the module
+withdraws it 30 seconds before and asks for a fresh one; a pick never
+meets an expired challenge. A request that is refused is started again,
+five times at most. Keep the password field and the passkey button: they are the way
 in for browsers without conditional UI.
 
 ### After a password sign-in
@@ -2097,14 +2101,26 @@ it answers, and it expires after `ReauthTTL`. A step-up offers only the
 signed-in account's passkeys, and a passkey of another account answers
 404.
 
+A stolen session can register a passkey of its own, so not every
+passkey on the account may confirm a step-up. It must have been
+registered before the session signed in, and at least `ReauthMinAge`
+ago (default 1 hour; a negative value keeps only the first rule). The
+options call lists only the passkeys that qualify and answers 403
+`passkey_too_new` when none does; `POST /auth/passkey/reauth` with a
+passkey that does not qualify answers the same. A session store that
+returns no `CreatedAt` qualifies no passkey. Send the user an email on
+the `passkey.registered` audit event, so a passkey someone else added
+does not go unnoticed for the hour it has to wait.
+
 ### Keeping the password manager in step
 
 A passkey removed on the server stays in the user's password manager
 until something tells it. Where the browser has the Signal API (not
 Firefox), the module does:
 
-- a sign-in that answers 404 calls
-  `PublicKeyCredential.signalUnknownCredential` for that credential;
+- a sign-in answered 404 with reason `passkey_unknown_credential` calls
+  `PublicKeyCredential.signalUnknownCredential` for that credential (a
+  404 from a proxy or a deploy, which carries no such reason, does not);
 - after an add or a remove, and when a `PasskeyListAttrs` element loads,
   it reads `GET /auth/passkey/list` and calls
   `signalAllAcceptedCredentials` with the account's passkey ids and
@@ -2113,7 +2129,11 @@ Firefox), the module does:
 Only a credential the server does not hold, or holds for another
 account, answers 404. A known passkey whose check fails is 401 as
 before, so a failed signature never makes the password manager drop a
-working passkey.
+working passkey. Two limits remain: a replica that has not yet seen a
+passkey registered on another one answers 404 for it, so put the
+passkey store on one database every replica reads; and the 404 tells
+anyone whether a credential id exists, which reveals little, since ids
+are random and name no account.
 
 ### The verifier
 
@@ -2824,8 +2844,11 @@ microsoft, err := auth.NewOIDCProvider(auth.OIDCConfig{
 With `Tenants` set, discovery accepts a `{tenantid}` issuer only when it
 is the configured `Issuer` with one path segment open, and an id_token
 only when its `iss` is that template filled with its own `tid` and the
-`tid` is listed (`"*"` admits every tenant, which means any Microsoft
-work account can sign in). Without `Tenants` nothing changes. A
+`tid` is listed (`"*"` admits every tenant: any work account, and under
+`/common` any personal Microsoft account too). The account is keyed by
+`<tid>/<sub>`, so one subject in two tenants is two accounts, and a
+sign-in that has only the userinfo endpoint to go on (no verified
+id_token, as after a restart) is refused. Without `Tenants` nothing changes. A
 single-tenant issuer (`.../<tenant id>/v2.0`) needs no `Tenants`.
 
 **What gets verified** before `ExchangeCode` returns:

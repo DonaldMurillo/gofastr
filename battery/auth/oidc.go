@@ -590,6 +590,11 @@ func (p *OIDCProvider) FetchUserInfo(ctx context.Context, token string) (*OAuth2
 	if id == "" {
 		return nil, errors.New("oidc: userinfo missing subject")
 	}
+	// A multi-tenant identity is the tenant and the subject; userinfo
+	// carries no verified tenant.
+	if p.tenantTemplate() != "" {
+		return nil, errors.New("oidc: a multi-tenant issuer needs the id_token's tid; sign in again")
+	}
 	email := claimString(ui, p.cfg.Claims.EmailClaim)
 	return &OAuth2UserInfo{
 		ID:            id,
@@ -668,6 +673,12 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 	}
 	if id == "" {
 		return nil, errors.New("oidc: id_token missing subject claim")
+	}
+	// Under a multi-tenant issuer one subject can recur in two tenants,
+	// so the account is keyed by both. checkIssuer already tied tid to
+	// iss and refused one with a '/'.
+	if p.tenantTemplate() != "" {
+		id = claimString(claims, "tid") + "/" + id
 	}
 	return &OAuth2UserInfo{
 		ID:            id,
@@ -802,17 +813,23 @@ func claimString(claims map[string]any, key string) string {
 	return ""
 }
 
+// tenantTemplate is the multi-tenant issuer template discovery admitted,
+// or "" for an exact issuer (or before discovery).
+func (p *OIDCProvider) tenantTemplate() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.discovery == nil {
+		return ""
+	}
+	return p.discovery.tenantIssuer
+}
+
 // checkIssuer matches the id_token's iss to the configured issuer, or,
 // for a multi-tenant issuer, to its template filled with the token's
 // own tid claim, a tenant OIDCConfig.Tenants admits.
 func (p *OIDCProvider) checkIssuer(claims map[string]any) error {
 	iss := normalizeIssuer(claimString(claims, "iss"))
-	p.mu.Lock()
-	template := ""
-	if p.discovery != nil {
-		template = p.discovery.tenantIssuer
-	}
-	p.mu.Unlock()
+	template := p.tenantTemplate()
 	if template == "" {
 		if iss != normalizeIssuer(p.cfg.Issuer) {
 			return errors.New("oidc: id_token iss does not match issuer")

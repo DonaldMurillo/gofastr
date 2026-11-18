@@ -483,7 +483,7 @@ notes:
       uses:
         - gofastr/battery/auth.PasskeyStore
   - change: "A passkey sign-in with a credential the server does not hold answers 404 instead of 401, with the same message"
-    guidance: "A client of POST /auth/passkey/login that treats only 401 as a failed sign-in treats 404 the same. The battery's passkey module also calls PublicKeyCredential.signalUnknownCredential on it."
+    guidance: "A client of POST /auth/passkey/login that treats only 401 as a failed sign-in treats 404 the same. Its reason is passkey_unknown_credential, and the battery's passkey module calls PublicKeyCredential.signalUnknownCredential only for that reason."
     nodetect: "the status depends on which credential a browser presents; no host source spelling distinguishes it"
   - change: "Init refuses an AuthConfig.CanonicalizeEmail override that is not idempotent, and an address it moves on a second pass is refused with invalid_email"
     guidance: "An override must map a canonical address to itself, as the docs already required: make the fold total (strip every dot, not one), or refuse the addresses it will not fold. The boot error names the address that moved."

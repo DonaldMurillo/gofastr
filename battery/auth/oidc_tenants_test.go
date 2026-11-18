@@ -94,3 +94,47 @@ func TestOIDCTenantTemplateMustFitTheIssuer(t *testing.T) {
 		t.Error("a two-segment alias fit the template")
 	}
 }
+
+// Under a multi-tenant issuer the account is the tenant and the subject:
+// one sub in two tenants is two accounts. An exact issuer keeps sub.
+func TestOIDCMultiTenantIdentityCarriesTheTenant(t *testing.T) {
+	f, issuer := multiTenantIdP(t)
+	base := strings.TrimSuffix(issuer, "/common/v2.0")
+	ids := map[string]string{}
+	for _, tid := range []string{"t-111", "t-222"} {
+		c := standardIDClaims(base+"/"+tid+"/v2.0", f.clientID)
+		c["tid"] = tid
+		f.claims = c
+		p := tenantProvider(t, f, issuer, "*")
+		tok, err := p.ExchangeCode(ctxBg(), "code")
+		if err != nil {
+			t.Fatalf("%s: %v", tid, err)
+		}
+		info, err := p.FetchUserInfo(ctxBg(), tok.AccessToken)
+		if err != nil {
+			t.Fatalf("%s: %v", tid, err)
+		}
+		ids[tid] = info.ID
+	}
+	if ids["t-111"] != "t-111/user-123" || ids["t-222"] != "t-222/user-123" {
+		t.Fatalf("multi-tenant ids %v, want the tenant before the subject", ids)
+	}
+	// Without verified claims (a restart), userinfo has no tenant.
+	p := tenantProvider(t, f, issuer, "*")
+	if _, err := p.ensureDiscovery(ctxBg()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.FetchUserInfo(ctxBg(), "unknown-token"); err == nil {
+		t.Fatal("a multi-tenant sign-in from userinfo alone was accepted")
+	}
+
+	plain := newFakeIdP(t)
+	pp := newTestProvider(t, plain)
+	tok, err := pp.ExchangeCode(ctxBg(), "code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := pp.FetchUserInfo(ctxBg(), tok.AccessToken); err != nil || info.ID != "user-123" {
+		t.Fatalf("exact issuer id: %+v %v", info, err)
+	}
+}

@@ -32,6 +32,9 @@ func TestPasskeyBrowserManageAndReauth(t *testing.T) {
 	port := ln.Addr().(*net.TCPAddr).Port
 	origin := fmt.Sprintf("http://localhost:%d", port)
 	f := newPasskeyFixtureFor(t, "localhost", origin)
+	// The step-up below uses the passkey this test registers moments earlier:
+	// only the predate rule applies, so it signs in again first.
+	f.pk.config.ReauthMinAge = 0
 
 	var mu sync.Mutex
 	var redeemed []error
@@ -139,7 +142,7 @@ for (const k of ['signalUnknownCredential', 'signalAllAcceptedCredentials', 'sig
 	// Rename, then step up: the form posts a proof the handler spends.
 	var listSignals int
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(origin+"/"),
+		chromedp.Navigate(origin+"/?as=alice"),
 		wait(`!!window.__gofastr.loadedModules.passkey && !document.getElementById('ren').hidden`),
 		// The page's list told the password manager what is current.
 		wait(`window.signals.some(s => s[0] === 'signalAllAcceptedCredentials')`),

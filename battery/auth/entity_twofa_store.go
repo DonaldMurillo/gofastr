@@ -236,8 +236,20 @@ func addColumnIfMissing(ctx context.Context, db *sql.DB, d migrate.Dialect, tabl
 	if err != nil || has {
 		return err
 	}
-	_, err = db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s",
+	return addColumnAfterCheck(ctx, db, table, col, typ)
+}
+
+// addColumnAfterCheck is SQLite's ALTER once the check found no column.
+func addColumnAfterCheck(ctx context.Context, db *sql.DB, table, col, typ string) error {
+	_, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s",
 		query.QuoteFolded(table), query.QuoteFolded(col), typ))
+	if err != nil {
+		// Another process on the same file may have added it between the
+		// check and the ALTER: the column being there is the goal.
+		if has, herr := sqliteTableHasColumn(ctx, db, table, col); herr == nil && has {
+			return nil
+		}
+	}
 	return err
 }
 

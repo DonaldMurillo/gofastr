@@ -28,8 +28,9 @@ few lines, and link the PR or the docs page for the rest.
 - **An erasure retried after a store eraser failed hands that store the
   user's identities again.** The first run's SQL part deleted the user row
   the email was read from, so the retry's `ErasedUser` carried only the id.
-  The erasure now keeps the identities in `gofastr_erase_identities` until
-  every `EraseResolved` store eraser has run once without failing
+  When an `EraseResolved` store eraser fails, the erasure keeps the
+  identities in `gofastr_erase_identities` (for at most 30 days) until a
+  retry's store erasers all succeed
   ([data export](framework/docs/content/data-export.md)). Nothing to change.
 - **`gofastr verify` reports a hard navigation through any chain of frames.** GOFASTR1802 caught
   `location.href = x` and `window.location.href = x`, but missed `window.top.location.href = x` and
@@ -228,7 +229,10 @@ few lines, and link the PR or the docs page for the rest.
   without a prompt after a password sign-in, where the browser supports
   it. `POST /auth/passkey/reauth` and `PasskeyReauthAttrs` confirm a
   sensitive action with a passkey, and the handler spends the proof with
-  `PasskeyPlugin.RedeemReauthProof`. `POST /auth/passkey/rename` and
+  `PasskeyPlugin.RedeemReauthProof`. Only a passkey registered before the
+  session signed in and at least `PasskeyConfig.ReauthMinAge` ago (1 hour
+  by default) can confirm one, so a stolen session cannot add a key and
+  step up with it. `POST /auth/passkey/rename` and
   `PasskeyRenameAttrs` rename a passkey. Registration stores transports
   and the AAGUID, and the list answers `rpId`, `userId`, `userName`,
   `deviceType`, `transports` and `aaguid`. The browser module tells the
@@ -236,7 +240,8 @@ few lines, and link the PR or the docs page for the rest.
   See [Passkeys](framework/docs/content/auth.md#passkeys).
 - **`OIDCConfig.Tenants` admits a multi-tenant issuer** such as Microsoft's
   `common` or `organizations` endpoint: the token's `iss` must be the
-  issuer for its own `tid`, and the tenant must be listed (or `"*"`).
+  issuer for its own `tid`, and the tenant must be listed (or `"*"`). The
+  account is keyed by `<tid>/<sub>`.
 - **Logout sends `Clear-Site-Data`.** A successful `POST /auth/logout`
   now sends `Clear-Site-Data: "cache", "storage"`, which asks the browser
   to empty its caches and the origin's storage. Browsers act on it only

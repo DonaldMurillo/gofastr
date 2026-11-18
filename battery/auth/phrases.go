@@ -164,7 +164,14 @@ var (
 	reasonComposedEmail = i18n.Define("auth.composed_email", "email must be in composed Unicode form (NFC)")
 	// reasonPasskeySignIn is the one answer every failed passkey sign-in
 	// gets: which check failed is in the audit trail, not the response.
-	reasonPasskeySignIn              = i18n.Define("auth.passkey_sign_in", "passkey sign-in failed")
+	reasonPasskeySignIn = i18n.Define("auth.passkey_sign_in", "passkey sign-in failed")
+	// reasonPasskeyUnknown answers a credential the server does not hold:
+	// the same words as every failed sign-in, its own code so the browser
+	// module knows it may tell the password manager to drop the passkey.
+	reasonPasskeyUnknown = i18n.Define("auth.passkey_unknown_credential", "passkey sign-in failed")
+	// reasonPasskeyTooNew refuses a step-up with a passkey registered
+	// after the session signed in, or within PasskeyConfig.ReauthMinAge.
+	reasonPasskeyTooNew              = i18n.Define("auth.passkey_too_new", "that passkey is too new to confirm this; use one added earlier, or sign in again later")
 	reasonResetIncomplete            = i18n.Define("auth.reset_incomplete", "password updated, but securing the account failed: request another reset link")
 	reasonChangeIncomplete           = i18n.Define("auth.change_incomplete", "password updated, but signing out your other sessions failed: change it again")
 	reasonTwoFactorStateLookupFailed = i18n.Define("auth.two_factor_state_lookup_failed", "two-factor state lookup failed")

@@ -8,6 +8,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // passkeyStoreContract is the behaviour every PasskeyStore owes the
@@ -140,5 +142,30 @@ func TestSQLitePasskeyStoreUpgradesOldTable(t *testing.T) {
 	got, err := s.GetPasskey(context.Background(), []byte{1, 2, 3})
 	if err != nil || got.UserID != "u1" || got.Transports != nil || got.AAGUID != nil {
 		t.Fatalf("old row after upgrade: %+v %v", got, err)
+	}
+}
+
+// Two processes upgrading one SQLite file race between the column check
+// and the ALTER; the loser finds the column there and boots.
+func TestAddColumnIfMissingToleratesALostRace(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE t (id TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := addColumnIfMissing(ctx, db, migrate.DialectSQLite, "t", "x", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		t.Fatal(err)
+	}
+	// The race's second half: the ALTER runs although the column exists.
+	if _, err := db.Exec(`ALTER TABLE t ADD COLUMN x TEXT NOT NULL DEFAULT ''`); err == nil {
+		t.Fatal("setup: SQLite accepted a duplicate column")
+	}
+	if err := addColumnAfterCheck(ctx, db, "t", "x", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		t.Fatalf("lost race: %v", err)
 	}
 }

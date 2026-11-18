@@ -78,6 +78,12 @@ type PasskeyConfig struct {
 	// ReauthTTL is how long the proof a passed step-up returns stays
 	// good for RedeemReauthProof. Default: 5 min.
 	ReauthTTL time.Duration
+
+	// ReauthMinAge is how old a passkey must be to confirm a step-up;
+	// it must also predate the session. A stolen session can register a
+	// passkey, so a new one proves nothing. Default: 1 hour; negative
+	// drops the age rule and keeps only the predate rule.
+	ReauthMinAge time.Duration
 }
 
 // PasskeyCredential is one registered passkey.
@@ -285,9 +291,11 @@ type PasskeyPlugin struct {
 	store      PasskeyStore
 	challenges MagicLinkTokenStore
 	limit      *RateLimiter
-	// listLimit guards GET /passkey/list, which the browser module reads
-	// on its own; it must not spend the ceremonies' budget.
-	listLimit *RateLimiter
+	// listLimit guards GET /passkey/list and autofillLimit the autofill
+	// field's login/options requests: the browser module sends both
+	// without a click, so they must not spend the ceremonies' budget.
+	listLimit     *RateLimiter
+	autofillLimit *RateLimiter
 }
 
 // NewPasskeyPlugin builds the plugin. RPID and Origins are checked at Init.
@@ -307,14 +315,21 @@ func NewPasskeyPlugin(cfg PasskeyConfig) *PasskeyPlugin {
 	if cfg.ReauthTTL <= 0 {
 		cfg.ReauthTTL = 5 * time.Minute
 	}
+	switch {
+	case cfg.ReauthMinAge == 0:
+		cfg.ReauthMinAge = time.Hour
+	case cfg.ReauthMinAge < 0:
+		cfg.ReauthMinAge = 0
+	}
 	if cfg.RateLimit == nil {
 		cfg.RateLimit = &RateLimiterConfig{MaxAttempts: 30, Window: time.Minute, BlockDuration: 5 * time.Minute}
 	}
 	return &PasskeyPlugin{
-		config:    cfg,
-		rp:        webauthnRP{ID: cfg.RPID, Origins: slices.Clone(cfg.Origins)},
-		limit:     newScopedRateLimiter(*cfg.RateLimit, "passkey"),
-		listLimit: newScopedRateLimiter(*cfg.RateLimit, "passkey-list"),
+		config:        cfg,
+		rp:            webauthnRP{ID: cfg.RPID, Origins: slices.Clone(cfg.Origins)},
+		limit:         newScopedRateLimiter(*cfg.RateLimit, "passkey"),
+		listLimit:     newScopedRateLimiter(*cfg.RateLimit, "passkey-list"),
+		autofillLimit: newScopedRateLimiter(*cfg.RateLimit, "passkey-autofill"),
 	}
 }
 
@@ -456,7 +471,7 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	conditional := conditionalCreate(w, r)
+	conditional := optionalFlag(w, r, "conditional")
 	if len(sess.UserID) > maxUserHandleLen {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonUserIdTooLong)
 		return
@@ -511,18 +526,20 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 	}})
 }
 
-// conditionalCreate reports whether a register/options body is
-// {"conditional": true}. The route read no body before, so any other
-// body, unknown members included, is a regular registration.
-func conditionalCreate(w http.ResponseWriter, r *http.Request) bool {
+// optionalFlag reports whether an options body holds {name: true}. The
+// options routes read no body before these flags, so any other body,
+// unknown members and unparsable JSON included, reads as false.
+func optionalFlag(w http.ResponseWriter, r *http.Request, name string) bool {
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxAuthBodyBytes))
 	if err != nil {
 		return false
 	}
-	var body struct {
-		Conditional bool `json:"conditional"`
+	var body map[string]json.RawMessage
+	if json.Unmarshal(raw, &body) != nil {
+		return false
 	}
-	return json.Unmarshal(raw, &body) == nil && body.Conditional
+	var on bool
+	return json.Unmarshal(body[name], &on) == nil && on
 }
 
 // credentialDescriptors lists creds for excludeCredentials or
@@ -678,7 +695,14 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 // ─── sign-in ──────────────────────────────────────────────────────────
 
 func (p *PasskeyPlugin) loginOptionsHandler(w http.ResponseWriter, r *http.Request) {
-	if !p.limit.guard(w, r) || !requireJSON(w, r) {
+	if !requireJSON(w, r) {
+		return
+	}
+	limit := p.limit
+	if optionalFlag(w, r, "autofill") {
+		limit = p.autofillLimit
+	}
+	if !limit.guard(w, r) {
 		return
 	}
 	challenge, err := createPurposeToken(r.Context(), p.challenges, purposePasskeyLogin, "", p.config.ChallengeTTL)
@@ -882,7 +906,7 @@ func (p *PasskeyPlugin) refuse(w http.ResponseWriter, r *http.Request, userID, c
 		"detail", textsafe.Truncate(textsafe.ScrubControlBytes(why.Error()), 200))
 	switch {
 	case ceremony != "register" && reason == "unknown_credential":
-		writeAuthError(w, r, http.StatusNotFound, reasonPasskeySignIn)
+		writeAuthError(w, r, http.StatusNotFound, reasonPasskeyUnknown)
 	case ceremony != "register":
 		writeAuthError(w, r, http.StatusUnauthorized, reasonPasskeySignIn)
 	default:
@@ -1037,6 +1061,11 @@ func (p *PasskeyPlugin) reauthOptionsHandler(w http.ResponseWriter, r *http.Requ
 		writeAuthError(w, r, http.StatusNotFound, reasonPasskeyNotFound)
 		return
 	}
+	creds = slices.DeleteFunc(creds, func(c PasskeyCredential) bool { return !p.reauthEligible(c, sess, time.Now()) })
+	if len(creds) == 0 {
+		writeAuthError(w, r, http.StatusForbidden, reasonPasskeyTooNew)
+		return
+	}
 	challenge, err := createPurposeToken(r.Context(), p.challenges, purposePasskeyReauth, sess.UserID, p.config.ChallengeTTL)
 	if err != nil {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonChallengeCreateFailed)
@@ -1071,6 +1100,12 @@ func (p *PasskeyPlugin) reauthHandler(w http.ResponseWriter, r *http.Request) {
 		p.refuse(w, r, sess.UserID, "reauth", "challenge", errors.New("challenge unknown, spent, expired or another account's"))
 		return
 	}
+	// Eligibility is judged before the assertion is checked, so a passkey
+	// too new for a step-up does not spend its sign count on one.
+	if c, err := p.store.GetPasskey(r.Context(), f["id"]); err == nil && c.UserID == sess.UserID && !p.reauthEligible(c, sess, time.Now()) {
+		p.refuseTooNew(w, r, sess.UserID)
+		return
+	}
 	if _, ok := p.checkAssertion(w, r, "reauth", f, sess.UserID); !ok {
 		return
 	}
@@ -1081,6 +1116,24 @@ func (p *PasskeyPlugin) reauthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{Kind: "passkey.reauthenticated", UserID: sess.UserID, Remote: remoteHost(r)})
 	writeAuthJSON(w, r, http.StatusOK, map[string]any{"proof": proof})
+}
+
+// reauthEligible reports whether c may confirm a step-up for sess: it
+// was registered before sess signed in, and at least ReauthMinAge ago.
+// A session or passkey with no creation time is refused.
+func (p *PasskeyPlugin) reauthEligible(c PasskeyCredential, sess *Session, now time.Time) bool {
+	if c.CreatedAt.IsZero() || sess.CreatedAt.IsZero() || !c.CreatedAt.Before(sess.CreatedAt) {
+		return false
+	}
+	return now.Sub(c.CreatedAt) >= p.config.ReauthMinAge
+}
+
+func (p *PasskeyPlugin) refuseTooNew(w http.ResponseWriter, r *http.Request, userID string) {
+	p.mgr.emitSecurity(r.Context(), SecurityEvent{
+		Kind: "passkey.refused", UserID: userID, Remote: remoteHost(r),
+		Meta: map[string]string{"ceremony": "reauth", "reason": "too_new"},
+	})
+	writeAuthError(w, r, http.StatusForbidden, reasonPasskeyTooNew)
 }
 
 // ErrReauthRequired is RedeemReauthProof's answer when the request has

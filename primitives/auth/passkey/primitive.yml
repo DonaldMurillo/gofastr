@@ -10,12 +10,13 @@ docs:
   - framework/docs/content/auth.md
 invariants:
   - id: unknown-credential-answers-404
-    rule: A sign-in or step-up whose credential id the store does not hold, or holds for another account, answers 404 with the same message as every failed sign-in, and the browser module then calls PublicKeyCredential.signalUnknownCredential for that id where the browser has it.
+    rule: A sign-in or step-up whose credential id the store does not hold, or holds for another account, answers 404 with the same message as every failed sign-in and the reason passkey_unknown_credential, and the browser module calls PublicKeyCredential.signalUnknownCredential only for a 404 carrying that reason.
     enforced_by:
       - test: battery/auth.TestPasskeyUnknownCredentialIs404
       - test: battery/auth.TestPasskeyDeleteOnlyOwn
       - test: battery/auth.TestPasskeyReauthProof
       - test: battery/auth.TestPasskeyBrowserManageAndReauth
+      - test: battery/auth.TestPasskeyModuleRules
   - id: transports-kept-and-sent-back
     rule: Registration stores only the known AuthenticatorTransport values the browser reported, sorted and once each, and the authenticator's AAGUID, and every excludeCredentials and allowCredentials entry carries the stored transports.
     enforced_by:
@@ -39,12 +40,22 @@ invariants:
     enforced_by:
       - test: battery/auth.TestPasskeyListNamesTheAccount
       - test: battery/auth.TestPasskeyKeepsTransportsAndAAGUID
+  - id: step-up-needs-an-older-passkey
+    rule: A step-up accepts only a passkey of the session's account registered before the session signed in and at least ReauthMinAge ago; the options call lists only those and answers 403 passkey_too_new when there are none, and the step-up refuses any other passkey with the same 403 before its signature is checked.
+    enforced_by:
+      - test: battery/auth.TestPasskeyReauthRefusesNewPasskeys
+      - test: battery/auth.TestPasskeyReauthNeedsAPasskeyOlderThanTheSession
+  - id: register-offered-wherever-webauthn-is
+    rule: The browser module reveals an add-a-passkey button wherever the browser has WebAuthn, whatever getClientCapabilities reports.
+    enforced_by:
+      - test: battery/auth.TestPasskeyModuleRules
   - id: reauth-proof-is-single-use-and-the-sessions
     rule: A step-up challenge lists only the signed-in account's passkeys, and RedeemReauthProof answers nil once per proof and only for a full session of the account the proof was issued to.
     enforced_by:
       - test: battery/auth.TestPasskeyReauthProof
       - test: battery/auth.TestPasskeyReauthProofNeedsFullSession
       - test: battery/auth.TestPasskeyReauthProofRefusesPreTwoFactorSession
+      - test: battery/auth.TestPasskeyReauthChallengeIsTheSessionsAccount
       - test: battery/auth.TestPasskeyBrowserManageAndReauth
   - id: user-tokens-reach-erasure
     rule: Every passkey token whose payload names a user (registration, conditional registration, step-up challenge, step-up proof) is removed by erasure from the SQL and in-memory token stores.
@@ -56,15 +67,16 @@ invariants:
       - battery/auth/erase.go
       - battery/auth/memory_erase.go
   - id: one-webauthn-request-at-a-time
-    rule: The browser module withdraws its waiting autofill request before any other ceremony starts, starts it again only once no ceremony is running and never after a sign-in succeeded, and withdraws it when a navigation took its field away.
+    rule: The browser module withdraws its waiting autofill request before any other ceremony starts, starts it again only once no ceremony is running and never after a sign-in succeeded, withdraws it when a navigation took its field away, and renews it 30 seconds before its challenge's timeout.
     enforced_by:
       - test: battery/auth.TestPasskeyBrowserManageAndReauth
       - test: battery/auth.TestPasskeyModuleRules
     judge: Does this change start a navigator.credentials call in passkey.js outside exclusive() while an autofill request may be waiting?
   - id: background-reads-spare-the-ceremony-limit
-    rule: GET {base}/passkey/list has a rate limiter of its own, and the browser module asks for a conditional create at most once per tab session, so what it does without a click does not spend the ceremonies' per-client limit.
+    rule: GET {base}/passkey/list and POST {base}/passkey/login/options with autofill true have rate limiters of their own, the browser module sends that flag on every autofill request and no other, and it asks for a conditional create at most once per tab session, so what it does without a click does not spend the ceremonies' per-client limit.
     enforced_by:
       - test: battery/auth.TestPasskeyListDoesNotSpendCeremonyLimit
+      - test: battery/auth.TestPasskeyAutofillOptionsHaveTheirOwnLimit
       - test: battery/auth.TestPasskeyRoutesAreRateLimited
       - test: battery/auth.TestPasskeyModuleRules
   - id: register-options-reads-only-conditional
@@ -94,6 +106,17 @@ decisions:
       - option: Stamp a re-authenticated-at time on the session.
         why: Every SessionStore would need a new extension to write it, and a stamp authorizes every sensitive action in its window rather than the one the user confirmed.
     upholds: [reauth-proof-is-single-use-and-the-sessions]
+  - id: step-up-refuses-new-passkeys
+    date: 2026-11-18
+    status: accepted
+    decision: A passkey must predate the session and be ReauthMinAge old (one hour by default) to confirm a step-up, since registration needs only a full session and a thief holding one could otherwise register a key and step up with it.
+    rejected:
+      - option: Require a step-up to register a passkey.
+        why: The first passkey of an account has nothing to step up with, and a password-only account would be locked out of adding one.
+      - option: Refuse only passkeys registered by the same session.
+        why: Signing in again with the new passkey makes a session that postdates it, which the predate rule alone then admits.
+    revisit_if: Registration starts requiring a fresh second proof, which would make a new passkey trustworthy on its own.
+    upholds: [step-up-needs-an-older-passkey]
   - id: device-type-from-backup-eligibility
     date: 2026-11-17
     status: accepted

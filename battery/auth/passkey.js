@@ -148,6 +148,7 @@
       const msg = data && typeof data.error === 'string' ? data.error : say('runtime.request_failed_status', 'Request failed ({{status}})', { status: r.status });
       const err = new Error(msg);
       err.status = r.status;
+      err.reason = data && typeof data.reason === 'string' ? data.reason : '';
       throw err;
     }
     return data;
@@ -228,25 +229,37 @@
   }
 
   async function signIn(base, conditional) {
-    const opts = await post(base + '/passkey/login/options', {});
+    const opts = await post(base + '/passkey/login/options', conditional ? { autofill: true } : {});
     const pk = opts.publicKey;
     if (conditional && ceremonies) throw withdrawn();
     const req = { publicKey: requestOptions(pk) };
+    let renew = 0;
     if (conditional) {
-      waiting = new AbortController();
-      req.signal = waiting.signal;
+      const ac = waiting = new AbortController();
+      req.signal = ac.signal;
       req.mediation = 'conditional';
+      // A conditional request has no timer of its own, but its challenge
+      // expires: withdraw it shortly before, so autofill asks for a fresh
+      // one instead of offering a passkey the server will refuse.
+      const ttl = typeof pk.timeout === 'number' && pk.timeout > 0 ? pk.timeout : 300000;
+      renew = setTimeout(function () { if (waiting === ac) { waiting = null; ac.abort(); } }, Math.max(ttl - 30000, ttl / 2));
     }
-    const cred = await navigator.credentials.get(req);
+    let cred;
+    try {
+      cred = await navigator.credentials.get(req);
+    } finally {
+      clearTimeout(renew);
+    }
     if (conditional) waiting = null;
     const body = assertionBody(cred);
     let out;
     try {
       out = await post(base + '/passkey/login', body);
     } catch (err) {
-      // 404: the server holds no such passkey. Tell the password
-      // manager, so it stops offering it.
-      if (err.status === 404 && typeof PKC.signalUnknownCredential === 'function') {
+      // The server holds no such passkey: tell the password manager, so
+      // it stops offering it. The reason code, not the status alone,
+      // says so; a 404 from a proxy or a deploy must not drop a passkey.
+      if (err.status === 404 && err.reason === 'passkey_unknown_credential' && typeof PKC.signalUnknownCredential === 'function') {
         PKC.signalUnknownCredential({ rpId: pk.rpId, credentialId: body.id }).catch(function () {});
       }
       throw err;
@@ -401,26 +414,18 @@
     if (kind === 'upgrade') { upgrade(base); return; }
     if (kind === 'list') { signalList(base); return; }
     // Renaming or removing a passkey needs no authenticator; the
-    // ceremonies do.
+    // ceremonies do. Adding one is offered wherever WebAuthn is: a USB
+    // or NFC security key can hold a passkey on a device that reports no
+    // platform authenticator and no hybrid transport.
     if (kind !== 'delete' && kind !== 'rename' && !supported) return;
-    const reveal = function () {
-      el.hidden = false;
-      el.addEventListener('click', function (e) {
-        e.preventDefault();
-        if (kind === 'login') run(el, kind, function () { return signIn(base, false); });
-        else if (kind === 'register') run(el, kind, function () { return register(el, base); });
-        else if (kind === 'rename') run(el, kind, function () { return rename(el, base); });
-        else if (kind === 'reauth') run(el, kind, function () { return reauth(el, base); });
-        else run(el, kind, function () { return remove(el, base); });
-      });
-    };
-    if (kind !== 'register') { reveal(); return; }
-    // Adding a passkey needs an authenticator this device can create
-    // one on: its own, or a phone over hybrid. Where the browser cannot
-    // say, offer it.
-    caps().then(function (c) {
-      if (c.passkeyPlatformAuthenticator === false && c.hybridTransport === false) return;
-      reveal();
+    el.hidden = false;
+    el.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (kind === 'login') run(el, kind, function () { return signIn(base, false); });
+      else if (kind === 'register') run(el, kind, function () { return register(el, base); });
+      else if (kind === 'rename') run(el, kind, function () { return rename(el, base); });
+      else if (kind === 'reauth') run(el, kind, function () { return reauth(el, base); });
+      else run(el, kind, function () { return remove(el, base); });
     });
   }
 

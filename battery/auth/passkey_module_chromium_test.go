@@ -20,24 +20,29 @@ import (
 // every request is counted in window.calls.
 const passkeyStubPage = `<!doctype html><html><meta charset=utf-8>
 <script>
-window.calls = []; window.toasts = []; window.navs = []; window.aborts = 0;
+window.calls = []; window.toasts = []; window.navs = []; window.aborts = 0; window.bodies = []; window.signals = [];
 const json = (v) => new Response(JSON.stringify(v), {status: 200, headers: {'Content-Type': 'application/json'}});
 const pk = {challenge: 'AAAA', rpId: 'localhost', allowCredentials: [], userVerification: 'required', timeout: 60000};
 window.__gofastr = {
   navigate: (p) => window.navs.push(p), invalidate: () => {},
   _toastOrFallback: (c) => window.toasts.push(c.title),
-  fetch: (u) => {
+  fetch: (u, init) => {
     const path = new URL(u, location.href).pathname;
     window.calls.push(path);
+    window.bodies.push(path + ' ' + ((init && init.body) || ''));
     if (path.endsWith('/register/options')) return Promise.resolve(json({publicKey: {challenge: 'AAAA', rp: {id: 'localhost', name: 'x'},
       user: {id: 'AQID', name: 'a@x', displayName: 'a@x'}, pubKeyCredParams: [{type: 'public-key', alg: -7}], excludeCredentials: []}}));
-    if (path.endsWith('/options')) return Promise.resolve(json({publicKey: pk}));
-    if (path.endsWith('/passkey/login')) return Promise.resolve(json({redirect: '/app'}));
+    if (path.endsWith('/options')) return Promise.resolve(json({publicKey: Object.assign({}, pk, {timeout: window.optionsTimeout || 60000})}));
+    if (path.endsWith('/passkey/login')) {
+      if (window.loginReason) return Promise.resolve(new Response(JSON.stringify({error: 'passkey sign-in failed', reason: window.loginReason}), {status: 404, headers: {'Content-Type': 'application/json'}}));
+      return Promise.resolve(json({redirect: '/app'}));
+    }
     if (path.endsWith('/passkey/reauth')) return Promise.resolve(json({proof: 'p'}));
     return Promise.resolve(json({}));
   },
 };
-PublicKeyCredential.getClientCapabilities = () => Promise.resolve({conditionalGet: true, conditionalCreate: true});
+PublicKeyCredential.getClientCapabilities = () => Promise.resolve(window.caps || {conditionalGet: true, conditionalCreate: true});
+PublicKeyCredential.signalUnknownCredential = (o) => { window.signals.push(o.credentialId); return Promise.resolve(); };
 const fake = {toJSON: () => ({id: 'AQID', response: {clientDataJSON: 'AQID', authenticatorData: 'AQID', signature: 'AQID', userHandle: 'AQID', attestationObject: 'AQID', transports: []}})};
 navigator.credentials.get = (o) => {
   if (o.mediation === 'conditional') {
@@ -69,6 +74,11 @@ func TestPasskeyModuleRules(t *testing.T) {
 		"/signin":  `<input id="who" data-passkey-autofill="/auth"><button id="in" data-passkey-login="/auth" hidden>Sign in</button>`,
 		"/upgrade": `<div data-passkey-upgrade="/auth"></div>`,
 		"/reauth":  `<form onsubmit="event.preventDefault()"><button id="re" data-passkey-reauth="/auth" hidden>Confirm</button></form>`,
+		// A security-key-only device: no platform authenticator, no hybrid.
+		"/add": `<script>window.caps = {passkeyPlatformAuthenticator: false, hybridTransport: false}</script><button id="add" data-passkey-register="/auth" hidden>Add</button>`,
+		// A short challenge life, so the autofill request renews within the test.
+		"/renew":   `<script>window.optionsTimeout = 2000</script><input data-passkey-autofill="/auth">`,
+		"/unknown": `<button id="in" data-passkey-login="/auth" hidden>Sign in</button>`,
 	}
 	for path, body := range pages {
 		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
@@ -138,5 +148,65 @@ func TestPasskeyModuleRules(t *testing.T) {
 	}
 	if toasts[0] == "This device already holds a passkey for this account" {
 		t.Errorf("a step-up's InvalidStateError was reported as an already-registered passkey")
+	}
+
+	// Autofill's options say so, and the button's do not.
+	var bodies []string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(origin+"/signin"),
+		wait(`window.calls.filter(c => c.endsWith('/login/options')).length === 1 && !document.getElementById('in').hidden`),
+		chromedp.Click(`#in`, chromedp.ByQuery),
+		wait(`window.navs.length === 1`),
+		chromedp.Evaluate(`window.bodies.filter(b => b.startsWith('/auth/passkey/login/options'))`, &bodies),
+	); err != nil {
+		t.Fatalf("options bodies: %v", err)
+	}
+	if len(bodies) != 2 || bodies[0] != `/auth/passkey/login/options {"autofill":true}` || bodies[1] != `/auth/passkey/login/options {}` {
+		t.Errorf("login/options bodies %q, want the autofill flag on the first only", bodies)
+	}
+
+	// The waiting autofill request is renewed before its challenge expires.
+	var renewals int
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(origin+"/renew"),
+		wait(`window.calls.filter(c => c.endsWith('/login/options')).length >= 3`),
+		chromedp.Evaluate(`window.calls.filter(c => c.endsWith('/login/options')).length`, &renewals),
+	); err != nil {
+		t.Fatalf("renew: %v (requests %d)", err, renewals)
+	}
+
+	// A device that reports no platform authenticator and no hybrid
+	// transport may still hold a security key: the add button shows.
+	var addShown bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(origin+"/add"),
+		wait(`!!window.__gofastr.loadedModules && window.__gofastr.loadedModules.passkey`),
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Evaluate(`!document.getElementById('add').hidden`, &addShown),
+	); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if !addShown {
+		t.Error("the add button stayed hidden on a device without a platform authenticator or hybrid")
+	}
+
+	// Only the unknown-credential reason drops a passkey from the
+	// password manager; another 404 leaves it.
+	for reason, want := range map[string]int{"passkey_unknown_credential": 1, "not_found": 0} {
+		var signals int
+		if err := chromedp.Run(ctx,
+			chromedp.Navigate(origin+"/unknown"),
+			wait(`!document.getElementById('in').hidden`),
+			chromedp.Evaluate(`window.loginReason = `+fmt.Sprintf("%q", reason), nil),
+			chromedp.Click(`#in`, chromedp.ByQuery),
+			wait(`window.toasts.length === 1`),
+			chromedp.Sleep(100*time.Millisecond),
+			chromedp.Evaluate(`window.signals.length`, &signals),
+		); err != nil {
+			t.Fatalf("404 %s: %v", reason, err)
+		}
+		if signals != want {
+			t.Errorf("404 with reason %q: %d signalUnknownCredential calls, want %d", reason, signals, want)
+		}
 	}
 }

@@ -237,10 +237,12 @@ invariants:
       - test: framework.TestEraseUserData_StoreEraserGetsResolvedIdentities
       - test: core/datexport.TestErasedUserIdentity
   - id: retry-gets-the-first-runs-identities
-    rule: When a store eraser sets EraseResolved, an erasure writes the identities it resolved to gofastr_erase_identities under its tenant in its own transaction, a later erasure of the same user in the same tenant reads from there every identity its resolvers no longer find, and the row is deleted once every store eraser has run without failing.
+    rule: When an EraseResolved store eraser fails, the erasure writes the identities it resolved to gofastr_erase_identities under its tenant (creating the table only then), a later erasure of the same user in the same tenant reads from there every identity its resolvers no longer find that is under 30 days old, and the row is deleted once every store eraser has run without failing.
     enforced_by:
       - test: framework.TestEraseUserData_RetryKeepsResolvedIdentities
       - test: framework.TestEraseUserData_KeptIdentitiesArePerTenant
+      - test: framework.TestEraseUserData_SuccessKeepsNoIdentities
+      - test: framework.TestEraseUserData_KeptIdentitiesExpire
   - id: resolver-canonicalize-rewrites-value
     rule: A resolver's Canonicalize rewrites the resolved value before it is bound, and an empty result binds the raw value.
     enforced_by:
@@ -253,13 +255,15 @@ decisions:
   - id: keep-identities-until-the-stores-erase
     date: 2026-11-17
     status: accepted
-    decision: An erasure keeps the identities it resolved in one framework table until every EraseResolved store eraser has run once without failing, so a retry hands them the same values (issue 759).
+    decision: After an EraseResolved store eraser fails, the erasure keeps the identities it resolved in one framework table, for at most 30 days, until a retry's store erasers all succeed, so the retry hands them the same values (issue 759).
     rejected:
       - option: Make each store find the value again on a retry, as battery/auth's in-memory eraser reads its user store.
         why: A store keyed only by an email has nowhere to read it from once the user row is gone, and every such store would have to solve it again.
-      - option: Write the identities only after a store eraser fails.
-        why: A crash between the commit and that write would lose them; writing inside the erasure's transaction commits them with the delete they outlive.
-    revisit_if: An erasure must leave no copy of an identity even while a store eraser is failing.
+      - option: Write the identities inside the erasure's transaction, before any store eraser runs.
+        why: Every erasure then needed the right to create a table and wrote the email even when nothing failed; only a crash between the commit and the store erasers is lost by writing after a failure.
+      - option: Keep them until a retry, however long that takes.
+        why: An erasure nobody retries would leave the erased user's email behind for good.
+    revisit_if: An erasure must leave no copy of an identity even while a store eraser is failing, or a retry must work after a crash between the commit and the store erasers.
     upholds: [retry-gets-the-first-runs-identities]
   - id: erasure-is-hard-delete
     date: 2026-11-16

@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 )
 
 // listOf reads GET /passkey/list for cookie.
@@ -45,6 +47,9 @@ func TestPasskeyUnknownCredentialIs404(t *testing.T) {
 	w := f.login(t, stranger, "u-alice")
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("unknown credential: %d %s", w.Code, w.Body)
+	}
+	if !strings.Contains(w.Body.String(), `"reason":"passkey_unknown_credential"`) {
+		t.Fatalf("unknown credential reason: %s", w.Body)
 	}
 	a := f.enrol(t, "u-alice")
 	a.credID = slices.Clone(a.credID)
@@ -203,6 +208,8 @@ func TestPasskeyReauthProof(t *testing.T) {
 	f := newPasskeyFixture(t)
 	a := f.enrol(t, "u-alice")
 	b := f.enrol(t, "u-bob")
+	f.age(t, a)
+	f.age(t, b)
 	alice, bob := f.session(t, "u-alice"), f.session(t, "u-bob")
 
 	w := f.do(t, "POST", "/passkey/reauth/options", alice, nil)
@@ -266,6 +273,7 @@ func TestPasskeyReauthProof(t *testing.T) {
 func TestPasskeyReauthProofNeedsFullSession(t *testing.T) {
 	f := newPasskeyFixture(t)
 	a := f.enrol(t, "u-alice")
+	f.age(t, a)
 	alice := f.session(t, "u-alice")
 	w := f.reauth(t, alice, a, "u-alice")
 	var out struct {
@@ -288,6 +296,7 @@ func TestPasskeyReauthProofNeedsFullSession(t *testing.T) {
 func TestPasskeyReauthProofRefusesPreTwoFactorSession(t *testing.T) {
 	f := newPasskeyFixture(t)
 	a := f.enrol(t, "u-alice")
+	f.age(t, a)
 	old := f.session(t, "u-alice")
 	w := f.reauth(t, f.session(t, "u-alice"), a, "u-alice")
 	var out struct {
@@ -319,5 +328,101 @@ func TestPasskeyRegisterOptionsToleratesOtherBodies(t *testing.T) {
 		if w.Code != http.StatusOK || opts.PublicKey.Sel["userVerification"] != "required" {
 			t.Errorf("body %v: %d %s", body, w.Code, w.Body)
 		}
+	}
+}
+
+// age backdates a's passkey by two hours, past ReauthMinAge and before
+// any session the test mints next.
+func (f *passkeyFixture) age(t *testing.T, a *fakeAuthenticator) {
+	t.Helper()
+	ms := f.pk.store.(*MemoryPasskeyStore)
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	c, ok := ms.creds[string(a.credID)]
+	if !ok {
+		t.Fatal("age: no such passkey")
+	}
+	c.CreatedAt = c.CreatedAt.Add(-2 * time.Hour)
+	ms.creds[string(a.credID)] = c
+}
+
+// A stolen session can register a passkey, so a step-up refuses one
+// added after the session signed in or within ReauthMinAge, and its
+// options offer only the passkeys that qualify.
+func TestPasskeyReauthRefusesNewPasskeys(t *testing.T) {
+	f := newPasskeyFixture(t)
+	old := f.enrol(t, "u-alice")
+	f.age(t, old)
+	alice := f.session(t, "u-alice")
+	fresh := newFakeAuthenticator(t, coseAlgES256)
+	fresh.flags &^= flagBE | flagBS
+	ch := challengeOf(t, f.do(t, "POST", "/passkey/register/options", alice, nil))
+	if w := f.do(t, "POST", "/passkey/register", alice, registerBody(fresh, ch)); w.Code != http.StatusCreated {
+		t.Fatalf("register: %d", w.Code)
+	}
+	w := f.do(t, "POST", "/passkey/reauth/options", alice, nil)
+	var opts struct {
+		PublicKey struct {
+			Allow []struct {
+				ID string `json:"id"`
+			} `json:"allowCredentials"`
+		} `json:"publicKey"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &opts)
+	if len(opts.PublicKey.Allow) != 1 || opts.PublicKey.Allow[0].ID != b64url.EncodeToString(old.credID) {
+		t.Fatalf("allowCredentials offered the new passkey: %s", w.Body)
+	}
+	if w := f.reauth(t, alice, fresh, "u-alice"); w.Code != http.StatusForbidden {
+		t.Fatalf("step-up with a passkey registered in this session: %d %s", w.Code, w.Body)
+	}
+	// Signed in again after registering, the passkey predates the session
+	// but is still within ReauthMinAge.
+	later := f.session(t, "u-alice")
+	if w := f.reauth(t, later, fresh, "u-alice"); w.Code != http.StatusForbidden {
+		t.Fatalf("step-up with a passkey younger than ReauthMinAge: %d", w.Code)
+	}
+	if w := f.reauth(t, later, old, "u-alice"); w.Code != http.StatusOK {
+		t.Fatalf("step-up with the old passkey: %d %s", w.Code, w.Body)
+	}
+	// Only new passkeys on the account: the options call refuses.
+	f2 := newPasskeyFixture(t)
+	f2.enrol(t, "u-bob")
+	if w := f2.do(t, "POST", "/passkey/reauth/options", f2.session(t, "u-bob"), nil); w.Code != http.StatusForbidden {
+		t.Fatalf("options with only a new passkey: %d", w.Code)
+	}
+}
+
+// A step-up challenge belongs to the session's account: Bob's challenge
+// signed by Bob's passkey does not pass on Alice's session.
+func TestPasskeyReauthChallengeIsTheSessionsAccount(t *testing.T) {
+	f := newPasskeyFixture(t)
+	a := f.enrol(t, "u-alice")
+	f.age(t, a)
+	b := f.enrol(t, "u-bob")
+	f.age(t, b)
+	alice, bob := f.session(t, "u-alice"), f.session(t, "u-bob")
+	bobs := challengeOf(t, f.do(t, "POST", "/passkey/reauth/options", bob, nil))
+	if w := f.do(t, "POST", "/passkey/reauth", alice, loginBody(a, bobs, "u-alice")); w.Code != http.StatusUnauthorized {
+		t.Fatalf("bob's challenge passed on alice's session: %d %s", w.Code, w.Body)
+	}
+}
+
+// With the age rule off, a passkey registered during the session still
+// cannot confirm a step-up for that session.
+func TestPasskeyReauthNeedsAPasskeyOlderThanTheSession(t *testing.T) {
+	f := newPasskeyFixture(t)
+	f.pk.config.ReauthMinAge = 0
+	alice := f.session(t, "u-alice")
+	fresh := newFakeAuthenticator(t, coseAlgES256)
+	fresh.flags &^= flagBE | flagBS
+	ch := challengeOf(t, f.do(t, "POST", "/passkey/register/options", alice, nil))
+	if w := f.do(t, "POST", "/passkey/register", alice, registerBody(fresh, ch)); w.Code != http.StatusCreated {
+		t.Fatalf("register: %d", w.Code)
+	}
+	if w := f.do(t, "POST", "/passkey/reauth/options", alice, nil); w.Code != http.StatusForbidden {
+		t.Fatalf("options offered a passkey newer than the session: %d", w.Code)
+	}
+	if w := f.reauth(t, f.session(t, "u-alice"), fresh, "u-alice"); w.Code != http.StatusOK {
+		t.Fatalf("a later session with the age rule off: %d %s", w.Code, w.Body)
 	}
 }

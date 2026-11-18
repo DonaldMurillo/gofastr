@@ -97,6 +97,10 @@ invariants:
     enforced_by:
       - test: battery/auth.TestOIDCMultiTenantIssuer
       - test: battery/auth.TestOIDCTenantTemplateMustFitTheIssuer
+  - id: oidc-tenant-identity-is-tenant-and-subject
+    rule: Under a multi-tenant issuer the OAuth2UserInfo ID is the token's tid, a slash and its subject, and FetchUserInfo refuses a sign-in it can answer only from the userinfo endpoint.
+    enforced_by:
+      - test: battery/auth.TestOIDCMultiTenantIdentityCarriesTheTenant
 decisions:
   - id: logout-clear-site-data-skips-cookies
     date: 2026-11-17

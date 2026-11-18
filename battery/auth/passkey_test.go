@@ -696,3 +696,25 @@ func TestPasskeyListDoesNotSpendCeremonyLimit(t *testing.T) {
 		t.Fatalf("sign-in options after five list reads: %d", w.Code)
 	}
 }
+
+// The autofill field asks for sign-in options on every page view, without
+// a click: those requests count against a limit of their own, and are
+// still limited.
+func TestPasskeyAutofillOptionsHaveTheirOwnLimit(t *testing.T) {
+	f := newPasskeyFixture(t)
+	tight := RateLimiterConfig{MaxAttempts: 2, Window: time.Minute, BlockDuration: time.Minute}
+	f.pk.limit = newScopedRateLimiter(tight, "passkey")
+	f.pk.autofillLimit = newScopedRateLimiter(RateLimiterConfig{MaxAttempts: 4, Window: time.Minute, BlockDuration: time.Minute}, "passkey-autofill")
+	autofill := map[string]bool{"autofill": true}
+	for range 4 {
+		if w := f.do(t, "POST", "/passkey/login/options", "", autofill); w.Code != http.StatusOK {
+			t.Fatalf("autofill options: %d", w.Code)
+		}
+	}
+	if w := f.do(t, "POST", "/passkey/login/options", "", autofill); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("fifth autofill options: %d, want 429", w.Code)
+	}
+	if w := f.do(t, "POST", "/passkey/login/options", "", nil); w.Code != http.StatusOK {
+		t.Fatalf("button sign-in options after autofill used its own budget: %d", w.Code)
+	}
+}
