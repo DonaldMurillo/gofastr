@@ -101,6 +101,15 @@ invariants:
     rule: Under a multi-tenant issuer the OAuth2UserInfo ID is the token's tid, a slash and its subject, and FetchUserInfo refuses a sign-in it can answer only from the userinfo endpoint.
     enforced_by:
       - test: battery/auth.TestOIDCMultiTenantIdentityCarriesTheTenant
+  - id: oidc-tenant-email-needs-domain-proof
+    rule: Under a multi-tenant issuer an OAuth2UserInfo email is verified only when the signed id_token carries xms_edov true, whatever email_verified or the userinfo endpoint says.
+    enforced_by:
+      - test: battery/auth.TestOIDCMultiTenantEmailNeedsDomainProof
+  - id: manager-canonical-email-follows-the-override
+    rule: AuthManager.CanonicalEmail answers the address under AuthConfig.CanonicalizeEmail when set, and every audit event the manager emits carries its email folded the same way.
+    enforced_by:
+      - test: battery/auth.TestManagerCanonicalEmailFollowsOverride
+      - test: battery/auth.TestAuditEmailHashIsCanonical
 decisions:
   - id: logout-clear-site-data-skips-cookies
     date: 2026-11-17

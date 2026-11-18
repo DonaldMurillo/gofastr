@@ -221,7 +221,7 @@ func resolveEraseTables(mgr *AuthManager) {
 			// Login challenges carry no user; every other passkey token
 			// names the user it was issued to.
 			if ms, ok := pp.challenges.(*SQLMagicLinkTokenStore); ok {
-				for _, p := range []tokenPurpose{purposePasskeyRegister, purposePasskeyRegisterQuiet, purposePasskeyReauth, purposePasskeyProof} {
+				for _, p := range []tokenPurpose{purposePasskeyRegister, purposePasskeyRegisterQuiet, purposePasskeyReauth} {
 					registerTokenEraser(ms.table, p)
 				}
 			}

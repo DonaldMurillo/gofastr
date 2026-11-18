@@ -679,6 +679,13 @@ func (p *OIDCProvider) userInfoFromClaims(ctx context.Context, token string, cla
 	// iss and refused one with a '/'.
 	if p.tenantTemplate() != "" {
 		id = claimString(claims, "tid") + "/" + id
+		// Any tenant's admin sets its users' email, so under a multi-tenant
+		// issuer the address proves nothing (the nOAuth takeover class)
+		// unless the signed id_token says the email's domain is one the
+		// tenant verified (xms_edov). Userinfo cannot vouch for it.
+		if v, _ := claims["xms_edov"].(bool); !v {
+			emailVerified = false
+		}
 	}
 	return &OAuth2UserInfo{
 		ID:            id,

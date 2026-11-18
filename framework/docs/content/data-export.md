@@ -637,8 +637,8 @@ resolved to the `gofastr_erase_identities` table (`tenant`, `user_id`,
 succeed writes nothing and needs no CREATE right. A later erasure of that
 user in the same tenant reads from there every identity its resolvers no
 longer find, and the row is deleted once every store eraser has run
-without failing. A row older than 30 days is neither read nor kept: it is
-deleted the next time any erasure keeps identities. Until then the table
+without failing. A row older than 30 days is never read, and every
+erasure that reaches the table deletes such rows. Until then the table
 holds the erased user's email (or other identity) and nothing else; a dry
 run writes nothing. If the process stops between the commit and the
 store erasers, nothing is kept, and a retry gets only the user id. `App.ExportData` leaves the table out: it is bookkeeping for a

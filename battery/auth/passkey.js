@@ -51,7 +51,7 @@
   // An auth base is a same-origin path: "/auth", "/api/auth". Anything
   // else leaves the element inert, so injected markup cannot aim a
   // ceremony at another origin.
-  const BASE = /^\/(?!\/)[A-Za-z0-9._~\/-]*$/;
+  const BASE = /^(?:\/[A-Za-z0-9._~-]+)+$/;
   const ID = /^[A-Za-z0-9_-]+$/;
   const PROOF_FIELD = 'passkey_reauth';
   const bound = new WeakSet();
@@ -140,6 +140,8 @@
   }
 
   async function send(url, init) {
+    // Belt to BASE's braces: nothing leaves the page's origin.
+    if (new URL(url, location.href).origin !== location.origin) throw new Error(say('auth.passkey_failed', 'Passkey request failed'));
     const r = await hostFetch(url, Object.assign({ credentials: 'same-origin' }, init));
     if (r.status === 204) return null;
     let data = null;
@@ -271,8 +273,29 @@
     if (typeof NS.navigate === 'function') NS.navigate(to, { force: true });
   }
 
+  // stepUp runs the step-up ceremony and answers the proof.
+  async function stepUp(base) {
+    const opts = await post(base + '/passkey/reauth/options', {});
+    const cred = await navigator.credentials.get({ publicKey: requestOptions(opts.publicKey) });
+    const out = await post(base + '/passkey/reauth', assertionBody(cred));
+    return out && typeof out.proof === 'string' ? out.proof : '';
+  }
+
+  // guarded posts body, and when the server answers that the account's
+  // existing passkey must confirm first, runs the step-up and posts it
+  // again with the proof. A silent ceremony (quiet) never prompts: it
+  // gives up instead.
+  async function guarded(url, base, body, quiet) {
+    try {
+      return await post(url, body);
+    } catch (err) {
+      if (quiet || err.status !== 403 || err.reason !== 'passkey_reauth_required') throw err;
+    }
+    return post(url, Object.assign({}, body, { proof: await stepUp(base) }));
+  }
+
   async function create(base, name, conditional) {
-    const opts = await post(base + '/passkey/register/options', conditional ? { conditional: true } : {});
+    const opts = await guarded(base + '/passkey/register/options', base, conditional ? { conditional: true } : {}, conditional);
     const req = { publicKey: creationOptions(opts.publicKey) };
     if (conditional) req.mediation = 'conditional';
     const cred = await navigator.credentials.create(req);
@@ -307,7 +330,7 @@
   async function remove(btn, base) {
     const id = btn.getAttribute('data-passkey-id') || '';
     if (!ID.test(id)) return;
-    await post(base + '/passkey/delete', { id: id });
+    await guarded(base + '/passkey/delete', base, { id: id }, false);
     toast(say('auth.passkey_removed', 'Passkey removed'), 'success');
     await signalList(base);
     refresh();
@@ -316,9 +339,7 @@
   async function reauth(btn, base) {
     const form = btn.closest('form');
     if (!form) return;
-    const opts = await post(base + '/passkey/reauth/options', {});
-    const cred = await navigator.credentials.get({ publicKey: requestOptions(opts.publicKey) });
-    const out = await post(base + '/passkey/reauth', assertionBody(cred));
+    const value = await stepUp(base);
     let proof = form.querySelector('input[name="' + PROOF_FIELD + '"]');
     if (!proof) {
       proof = document.createElement('input');
@@ -326,7 +347,7 @@
       proof.name = PROOF_FIELD;
       form.appendChild(proof);
     }
-    proof.value = out && typeof out.proof === 'string' ? out.proof : '';
+    proof.value = value;
     form.requestSubmit();
   }
 

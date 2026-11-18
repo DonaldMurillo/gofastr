@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
@@ -30,6 +31,8 @@ window.__gofastr = {
     const path = new URL(u, location.href).pathname;
     window.calls.push(path);
     window.bodies.push(path + ' ' + ((init && init.body) || ''));
+    if (path.endsWith('/register/options') && window.needStepUp && !String(init.body).includes('"proof"'))
+      return Promise.resolve(new Response(JSON.stringify({error: 'confirm', reason: 'passkey_reauth_required'}), {status: 403, headers: {'Content-Type': 'application/json'}}));
     if (path.endsWith('/register/options')) return Promise.resolve(json({publicKey: {challenge: 'AAAA', rp: {id: 'localhost', name: 'x'},
       user: {id: 'AQID', name: 'a@x', displayName: 'a@x'}, pubKeyCredParams: [{type: 'public-key', alg: -7}], excludeCredentials: []}}));
     if (path.endsWith('/options')) return Promise.resolve(json({publicKey: Object.assign({}, pk, {timeout: window.optionsTimeout || 60000})}));
@@ -79,6 +82,7 @@ func TestPasskeyModuleRules(t *testing.T) {
 		// A short challenge life, so the autofill request renews within the test.
 		"/renew":   `<script>window.optionsTimeout = 2000</script><input data-passkey-autofill="/auth">`,
 		"/unknown": `<button id="in" data-passkey-login="/auth" hidden>Sign in</button>`,
+		"/guarded": `<script>window.needStepUp = true</script><button id="add" data-passkey-register="/auth" hidden>Add</button>`,
 	}
 	for path, body := range pages {
 		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
@@ -208,5 +212,21 @@ func TestPasskeyModuleRules(t *testing.T) {
 		if signals != want {
 			t.Errorf("404 with reason %q: %d signalUnknownCredential calls, want %d", reason, signals, want)
 		}
+	}
+
+	// Asked for a step-up, adding a passkey runs one and sends its proof.
+	var seq []string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(origin+"/guarded"),
+		wait(`!document.getElementById('add').hidden`),
+		chromedp.Click(`#add`, chromedp.ByQuery),
+		wait(`window.calls.includes('/auth/passkey/register')`),
+		chromedp.Evaluate(`window.bodies.map(b => b.split(' ')[0] + (b.includes('"proof":"p"') ? '+proof' : ''))`, &seq),
+	); err != nil {
+		t.Fatalf("guarded add: %v", err)
+	}
+	want := []string{"/auth/passkey/register/options", "/auth/passkey/reauth/options", "/auth/passkey/reauth", "/auth/passkey/register/options+proof", "/auth/passkey/register"}
+	if !slices.Equal(seq[:min(len(seq), len(want))], want) {
+		t.Errorf("guarded add requests %v, want %v", seq, want)
 	}
 }

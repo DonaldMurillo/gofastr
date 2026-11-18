@@ -1,5 +1,3 @@
-//go:build red
-
 package framework
 
 import (
@@ -13,7 +11,7 @@ import (
 // A kept identity lives at most keptIdentitiesFor: an expired row must
 // not outlive the next erasure just because that erasure succeeded
 // (primitives app.privacy keep-identities-until-the-stores-erase).
-func TestRedExpiredKeptIdentityIsSwept(t *testing.T) {
+func TestExpiredKeptIdentityIsSwept(t *testing.T) {
 	app, db := newIdentityEraseApp(t)
 	defer db.Close()
 	createMagicLinkTables(t, db)

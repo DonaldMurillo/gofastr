@@ -142,6 +142,9 @@ for (const k of ['signalUnknownCredential', 'signalAllAcceptedCredentials', 'sig
 	// Rename, then step up: the form posts a proof the handler spends.
 	var listSignals int
 	if err := chromedp.Run(ctx,
+		// Stores keep whole seconds: the new session must start in a
+		// later second than the passkey for the passkey to predate it.
+		chromedp.Sleep(1100*time.Millisecond),
 		chromedp.Navigate(origin+"/?as=alice"),
 		wait(`!!window.__gofastr.loadedModules.passkey && !document.getElementById('ren').hidden`),
 		// The page's list told the password manager what is current.

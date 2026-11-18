@@ -169,6 +169,9 @@ var (
 	// the same words as every failed sign-in, its own code so the browser
 	// module knows it may tell the password manager to drop the passkey.
 	reasonPasskeyUnknown = i18n.Define("auth.passkey_unknown_credential", "passkey sign-in failed")
+	// reasonPasskeyReauthRequired asks for a step-up before a passkey is
+	// added or removed on an account that has one able to confirm it.
+	reasonPasskeyReauthRequired = i18n.Define("auth.passkey_reauth_required", "confirm with a passkey you already have first")
 	// reasonPasskeyTooNew refuses a step-up with a passkey registered
 	// after the session signed in, or within PasskeyConfig.ReauthMinAge.
 	reasonPasskeyTooNew              = i18n.Define("auth.passkey_too_new", "that passkey is too new to confirm this; use one added earlier, or sign in again later")

@@ -237,8 +237,9 @@ invariants:
       - test: framework.TestEraseUserData_StoreEraserGetsResolvedIdentities
       - test: core/datexport.TestErasedUserIdentity
   - id: retry-gets-the-first-runs-identities
-    rule: When an EraseResolved store eraser fails, the erasure writes the identities it resolved to gofastr_erase_identities under its tenant (creating the table only then), a later erasure of the same user in the same tenant reads from there every identity its resolvers no longer find that is under 30 days old, and the row is deleted once every store eraser has run without failing.
+    rule: When an EraseResolved store eraser fails, the erasure writes the identities it resolved to gofastr_erase_identities under its tenant (creating the table only then), a later erasure of the same user in the same tenant reads from there every identity its resolvers no longer find that is under 30 days old, the row is deleted once every store eraser has run without failing, and every erasure that reaches the table deletes the rows past 30 days.
     enforced_by:
+      - test: framework.TestExpiredKeptIdentityIsSwept
       - test: framework.TestEraseUserData_RetryKeepsResolvedIdentities
       - test: framework.TestEraseUserData_KeptIdentitiesArePerTenant
       - test: framework.TestEraseUserData_SuccessKeepsNoIdentities

@@ -356,7 +356,7 @@ func TestPasskeyReauthRefusesNewPasskeys(t *testing.T) {
 	alice := f.session(t, "u-alice")
 	fresh := newFakeAuthenticator(t, coseAlgES256)
 	fresh.flags &^= flagBE | flagBS
-	ch := challengeOf(t, f.do(t, "POST", "/passkey/register/options", alice, nil))
+	ch := challengeOf(t, f.do(t, "POST", "/passkey/register/options", alice, map[string]string{"proof": f.proof(t, alice, old, "u-alice")}))
 	if w := f.do(t, "POST", "/passkey/register", alice, registerBody(fresh, ch)); w.Code != http.StatusCreated {
 		t.Fatalf("register: %d", w.Code)
 	}
@@ -422,7 +422,22 @@ func TestPasskeyReauthNeedsAPasskeyOlderThanTheSession(t *testing.T) {
 	if w := f.do(t, "POST", "/passkey/reauth/options", alice, nil); w.Code != http.StatusForbidden {
 		t.Fatalf("options offered a passkey newer than the session: %d", w.Code)
 	}
+	// Stores keep whole seconds, so "before" means an earlier second.
+	f.age(t, fresh)
 	if w := f.reauth(t, f.session(t, "u-alice"), fresh, "u-alice"); w.Code != http.StatusOK {
 		t.Fatalf("a later session with the age rule off: %d %s", w.Code, w.Body)
 	}
+}
+
+// proof runs a step-up for cookie with a and answers its proof.
+func (f *passkeyFixture) proof(t *testing.T, cookie string, a *fakeAuthenticator, userID string) string {
+	t.Helper()
+	w := f.reauth(t, cookie, a, userID)
+	var out struct {
+		Proof string `json:"proof"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || out.Proof == "" {
+		t.Fatalf("step-up: %d %s", w.Code, w.Body)
+	}
+	return out.Proof
 }

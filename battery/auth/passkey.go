@@ -79,6 +79,17 @@ type PasskeyConfig struct {
 	// good for RedeemReauthProof. Default: 5 min.
 	ReauthTTL time.Duration
 
+	// NoticeSender emails the account's address when a passkey is added
+	// to it, so a passkey someone else added does not go unnoticed: the
+	// notice names the passkey and says to remove it if the owner did not
+	// add it. Default: AuthConfig.RegisterEmailSender. Init refuses a
+	// plugin with neither outside DevMode unless NoAddedNotice is set.
+	NoticeSender EmailSender
+
+	// NoAddedNotice turns the added-passkey email off, for a host that
+	// tells its users some other way.
+	NoAddedNotice bool
+
 	// ReauthMinAge is how old a passkey must be to confirm a step-up;
 	// it must also predate the session. A stolen session can register a
 	// passkey, so a new one proves nothing. Default: 1 hour; negative
@@ -290,6 +301,7 @@ type PasskeyPlugin struct {
 	mgr        *AuthManager
 	store      PasskeyStore
 	challenges MagicLinkTokenStore
+	notices    *mailQueue
 	limit      *RateLimiter
 	// listLimit guards GET /passkey/list and autofillLimit the autofill
 	// field's login/options requests: the browser module sends both
@@ -327,6 +339,7 @@ func NewPasskeyPlugin(cfg PasskeyConfig) *PasskeyPlugin {
 	return &PasskeyPlugin{
 		config:        cfg,
 		rp:            webauthnRP{ID: cfg.RPID, Origins: slices.Clone(cfg.Origins)},
+		notices:       newMailQueue("passkey"),
 		limit:         newScopedRateLimiter(*cfg.RateLimit, "passkey"),
 		listLimit:     newScopedRateLimiter(*cfg.RateLimit, "passkey-list"),
 		autofillLimit: newScopedRateLimiter(*cfg.RateLimit, "passkey-autofill"),
@@ -358,6 +371,12 @@ func (p *PasskeyPlugin) Init(mgr *AuthManager) error {
 		if p.challenges == nil {
 			p.challenges = NewMemoryMagicLinkTokenStore()
 		}
+	}
+	if p.config.NoticeSender == nil {
+		p.config.NoticeSender = cfg.RegisterEmailSender
+	}
+	if p.config.NoticeSender == nil && !p.config.NoAddedNotice && !cfg.DevMode {
+		return errors.New("auth: passkey plugin: set PasskeyConfig.NoticeSender (or AuthConfig.RegisterEmailSender) so the account owner is emailed when a passkey is added, or PasskeyConfig.NoAddedNotice: true if the app tells them another way")
 	}
 	if err := checkTwoFactorURL("passkey", "PasskeyConfig.TwoFactorURL", p.config.TwoFactorURL); err != nil {
 		return err
@@ -471,7 +490,8 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	conditional := optionalFlag(w, r, "conditional")
+	opts := readOptions(w, r)
+	conditional := opts.flag("conditional")
 	if len(sess.UserID) > maxUserHandleLen {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonUserIdTooLong)
 		return
@@ -497,6 +517,9 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 	}
 	if len(existing) >= p.config.MaxPerUser {
 		writeAuthError(w, r, http.StatusConflict, reasonPasskeyLimit)
+		return
+	}
+	if !p.steppedUp(w, r, sess, existing, opts.text("proof")) {
 		return
 	}
 	purpose, uv := purposePasskeyRegister, "required"
@@ -526,20 +549,37 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 	}})
 }
 
-// optionalFlag reports whether an options body holds {name: true}. The
-// options routes read no body before these flags, so any other body,
-// unknown members and unparsable JSON included, reads as false.
-func optionalFlag(w http.ResponseWriter, r *http.Request, name string) bool {
+// optionsBody is an options route's optional JSON body. The options
+// routes read no body before these members, so any other body, unknown
+// members and unparsable JSON included, reads as empty.
+type optionsBody map[string]json.RawMessage
+
+func readOptions(w http.ResponseWriter, r *http.Request) optionsBody {
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxAuthBodyBytes))
 	if err != nil {
-		return false
+		return nil
 	}
-	var body map[string]json.RawMessage
-	if json.Unmarshal(raw, &body) != nil {
-		return false
+	var body optionsBody
+	// Strict: a duplicated or case-folded key reads as no body at all.
+	if handler.UnmarshalStrict(raw, &body) != nil {
+		return nil
 	}
+	return body
+}
+
+// flag reports whether the body holds {name: true}.
+func (b optionsBody) flag(name string) bool {
 	var on bool
-	return json.Unmarshal(body[name], &on) == nil && on
+	return json.Unmarshal(b[name], &on) == nil && on
+}
+
+// text is the body's string member name, or "".
+func (b optionsBody) text(name string) string {
+	var s string
+	if json.Unmarshal(b[name], &s) != nil {
+		return ""
+	}
+	return s
 }
 
 // credentialDescriptors lists creds for excludeCredentials or
@@ -689,7 +729,52 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 		Kind: "passkey.registered", UserID: sess.UserID, Remote: remoteHost(r),
 		Meta: map[string]string{"alg": strconv.FormatInt(res.alg, 10), "backup_eligible": strconv.FormatBool(res.backupEligible), "conditional": strconv.FormatBool(purpose == purposePasskeyRegisterQuiet)},
 	})
+	p.noticeAdded(r, sess.UserID, cred.Name)
 	writeAuthJSON(w, r, http.StatusCreated, passkeyView(cred))
+}
+
+// OnStop cancels the added-passkey notices in flight and waits for them.
+func (p *PasskeyPlugin) OnStop(ctx context.Context) error { return p.notices.stop(ctx) }
+
+var _ AuthPluginOnStop = (*PasskeyPlugin)(nil)
+
+// noticeAdded emails the account that a passkey was added, off the
+// request: the sender is host code, so a panic in it is recovered and
+// logged scrubbed, and a slow provider never holds the response.
+func (p *PasskeyPlugin) noticeAdded(r *http.Request, userID, name string) {
+	sender := p.config.NoticeSender
+	if sender == nil || p.config.NoAddedNotice {
+		return
+	}
+	us := p.mgr.UserStore()
+	if us == nil {
+		return
+	}
+	u, err := us.FindByID(r.Context(), userID)
+	if err != nil || u.GetEmail() == "" {
+		slog.Warn("auth: no address for the added-passkey notice", "plugin", "passkey", "user_hash", hashedIdentifier(userID), "err", err)
+		return
+	}
+	to, body := u.GetEmail(), passkeyAddedNoticeBody(name)
+	p.notices.enqueue(r.Context(), to, func(ctx context.Context) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Warn("added-passkey notice sender panicked", "plugin", "passkey",
+					"email_hash", hashedIdentifier(to), "panic", textsafe.Recovered(rec))
+			}
+		}()
+		if err := sender.Send(ctx, to, body); err != nil {
+			slog.Warn("added-passkey notice send failed", "plugin", "passkey", "email_hash", hashedIdentifier(to), "err", err)
+		}
+	})
+}
+
+// passkeyAddedNoticeBody is the added-passkey email. name passed
+// passkeyName, so it holds no control or format character.
+func passkeyAddedNoticeBody(name string) string {
+	return "A passkey named \"" + name + "\" was added to your account. " +
+		"If you added it, you can ignore this message. If not, sign in, remove it " +
+		"from your passkeys, and change your password."
 }
 
 // ─── sign-in ──────────────────────────────────────────────────────────
@@ -699,7 +784,7 @@ func (p *PasskeyPlugin) loginOptionsHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	limit := p.limit
-	if optionalFlag(w, r, "autofill") {
+	if readOptions(w, r).flag("autofill") {
 		limit = p.autofillLimit
 	}
 	if !limit.guard(w, r) {
@@ -734,7 +819,7 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 		p.refuse(w, r, "", "login", "challenge", errors.New("challenge unknown, spent or expired"))
 		return
 	}
-	cred, ok := p.checkAssertion(w, r, "login", f, "")
+	cred, ok := p.checkAssertion(w, r, "login", f, "", nil)
 	if !ok {
 		return
 	}
@@ -838,9 +923,11 @@ func (p *PasskeyPlugin) readAssertion(w http.ResponseWriter, r *http.Request, ce
 
 // checkAssertion verifies an assertion against the stored passkey and
 // records its use: the passkey exists (and, when owner is set, belongs
-// to owner), the user handle names its account, the signature verifies,
-// backup eligibility is unchanged and the counter moved forward.
-func (p *PasskeyPlugin) checkAssertion(w http.ResponseWriter, r *http.Request, ceremony string, f map[string][]byte, owner string) (PasskeyCredential, bool) {
+// to owner), eligible (when set) accepts it, the user handle names its
+// account, the signature verifies, backup eligibility is unchanged and
+// the counter moved forward. eligible runs on the one read the rest of
+// the checks use, so a lookup error cannot skip it.
+func (p *PasskeyPlugin) checkAssertion(w http.ResponseWriter, r *http.Request, ceremony string, f map[string][]byte, owner string, eligible func(PasskeyCredential) bool) (PasskeyCredential, bool) {
 	cred, err := p.store.GetPasskey(r.Context(), f["id"])
 	if err == nil && owner != "" && cred.UserID != owner {
 		err = ErrPasskeyNotFound
@@ -853,15 +940,23 @@ func (p *PasskeyPlugin) checkAssertion(w http.ResponseWriter, r *http.Request, c
 		p.refuse(w, r, owner, ceremony, "unknown_credential", errors.New("unknown credential id"))
 		return PasskeyCredential{}, false
 	}
+	if eligible != nil && !eligible(cred) {
+		p.refuseTooNew(w, r, cred.UserID)
+		return PasskeyCredential{}, false
+	}
+	// Until the signature verifies, an anonymous caller may be anyone
+	// holding the credential id: its refusals name no account, so no one
+	// can write refused events under another user's id.
+	claimed := owner
 	// The authenticator names the account it holds the passkey for; it
 	// must be the account the passkey was registered to.
 	if string(f["userHandle"]) != cred.UserID {
-		p.refuse(w, r, cred.UserID, ceremony, "user_handle", errors.New("user handle does not match the passkey's account"))
+		p.refuse(w, r, claimed, ceremony, "user_handle", errors.New("user handle does not match the passkey's account"))
 		return PasskeyCredential{}, false
 	}
 	res, err := p.rp.verifyAssertion(cred.PublicKey, f["clientDataJSON"], f["authenticatorData"], f["signature"])
 	if err != nil {
-		p.refuse(w, r, cred.UserID, ceremony, "signature", err)
+		p.refuse(w, r, claimed, ceremony, "signature", err)
 		return PasskeyCredential{}, false
 	}
 	// Backup eligibility is fixed when the credential is made; a flip
@@ -1017,7 +1112,8 @@ func (p *PasskeyPlugin) deleteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ID string `json:"id"`
+		ID    string `json:"id"`
+		Proof string `json:"proof"`
 	}
 	if !decodeJSONLimited(w, r, &body) {
 		return
@@ -1025,6 +1121,14 @@ func (p *PasskeyPlugin) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	f, err := decodeB64Fields(map[string]string{"id": body.ID})
 	if err != nil {
 		writeAuthErrorFor(w, r, http.StatusBadRequest, err, i18n.StatusPhrase(http.StatusBadRequest))
+		return
+	}
+	existing, err := p.store.ListPasskeys(r.Context(), sess.UserID)
+	if err != nil {
+		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
+		return
+	}
+	if !p.steppedUp(w, r, sess, existing, body.Proof) {
 		return
 	}
 	deleted, err := p.store.DeletePasskey(r.Context(), sess.UserID, f["id"])
@@ -1100,16 +1204,11 @@ func (p *PasskeyPlugin) reauthHandler(w http.ResponseWriter, r *http.Request) {
 		p.refuse(w, r, sess.UserID, "reauth", "challenge", errors.New("challenge unknown, spent, expired or another account's"))
 		return
 	}
-	// Eligibility is judged before the assertion is checked, so a passkey
-	// too new for a step-up does not spend its sign count on one.
-	if c, err := p.store.GetPasskey(r.Context(), f["id"]); err == nil && c.UserID == sess.UserID && !p.reauthEligible(c, sess, time.Now()) {
-		p.refuseTooNew(w, r, sess.UserID)
+	eligible := func(c PasskeyCredential) bool { return p.reauthEligible(c, sess, time.Now()) }
+	if _, ok := p.checkAssertion(w, r, "reauth", f, sess.UserID, eligible); !ok {
 		return
 	}
-	if _, ok := p.checkAssertion(w, r, "reauth", f, sess.UserID); !ok {
-		return
-	}
-	proof, err := createPurposeToken(r.Context(), p.challenges, purposePasskeyProof, sess.UserID, p.config.ReauthTTL)
+	proof, err := createPurposeToken(r.Context(), p.challenges, purposePasskeyProof, proofPayload(sess), p.config.ReauthTTL)
 	if err != nil {
 		writeAuthError(w, r, http.StatusInternalServerError, reasonChallengeCreateFailed)
 		return
@@ -1122,7 +1221,13 @@ func (p *PasskeyPlugin) reauthHandler(w http.ResponseWriter, r *http.Request) {
 // was registered before sess signed in, and at least ReauthMinAge ago.
 // A session or passkey with no creation time is refused.
 func (p *PasskeyPlugin) reauthEligible(c PasskeyCredential, sess *Session, now time.Time) bool {
-	if c.CreatedAt.IsZero() || sess.CreatedAt.IsZero() || !c.CreatedAt.Before(sess.CreatedAt) {
+	if c.CreatedAt.IsZero() || sess.CreatedAt.IsZero() {
+		return false
+	}
+	// SQLPasskeyStore keeps whole seconds, so a passkey read back as x.0
+	// may have been made at x.9: it predates the session only if its
+	// whole second ended before the session began.
+	if c.CreatedAt.Truncate(time.Second).Add(time.Second).After(sess.CreatedAt) {
 		return false
 	}
 	return now.Sub(c.CreatedAt) >= p.config.ReauthMinAge
@@ -1136,6 +1241,33 @@ func (p *PasskeyPlugin) refuseTooNew(w http.ResponseWriter, r *http.Request, use
 	writeAuthError(w, r, http.StatusForbidden, reasonPasskeyTooNew)
 }
 
+// proofPayload binds a step-up proof to the session that earned it: the
+// account and a digest of the session token, so another session of the
+// same account cannot spend it.
+func proofPayload(sess *Session) string {
+	return sess.UserID + "|" + sha256hex(sess.Token)
+}
+
+// steppedUp lets a passkey be added or removed: without a passkey that
+// could confirm a step-up there is nothing to confirm with, so the
+// session suffices; with one, the request carries a proof this session
+// earned. It answers 403 passkey_reauth_required otherwise. A stolen
+// session can then neither add a key of its own nor remove the owner's.
+func (p *PasskeyPlugin) steppedUp(w http.ResponseWriter, r *http.Request, sess *Session, creds []PasskeyCredential, proof string) bool {
+	now := time.Now()
+	if !slices.ContainsFunc(creds, func(c PasskeyCredential) bool { return p.reauthEligible(c, sess, now) }) {
+		return true
+	}
+	if proof != "" {
+		payload, err := redeemPurposeToken(r.Context(), p.challenges, purposePasskeyProof, proof)
+		if err == nil && payload == proofPayload(sess) {
+			return true
+		}
+	}
+	writeAuthError(w, r, http.StatusForbidden, reasonPasskeyReauthRequired)
+	return false
+}
+
 // ErrReauthRequired is RedeemReauthProof's answer when the request has
 // no full session or the proof is missing, spent, expired or another
 // account's.
@@ -1143,8 +1275,8 @@ var ErrReauthRequired = errors.New("auth: passkey re-authentication required")
 
 // RedeemReauthProof spends the proof a passed step-up returned
 // (POST {base}/passkey/reauth), for the handler of a sensitive action.
-// It answers nil only when r carries a full session of the account the
-// proof was issued to; the proof is spent either way, so it works once.
+// It answers nil only when r carries the full session the proof was
+// issued to; the proof is spent either way, so it works once.
 //
 //	if err := passkeys.RedeemReauthProof(r, r.FormValue("passkey_reauth")); err != nil {
 //		http.Error(w, "confirm with your passkey first", http.StatusForbidden)
@@ -1154,12 +1286,12 @@ func (p *PasskeyPlugin) RedeemReauthProof(r *http.Request, proof string) error {
 	if p.mgr == nil || proof == "" {
 		return ErrReauthRequired
 	}
-	owner, err := redeemPurposeToken(r.Context(), p.challenges, purposePasskeyProof, proof)
+	payload, err := redeemPurposeToken(r.Context(), p.challenges, purposePasskeyProof, proof)
 	if err != nil {
 		return ErrReauthRequired
 	}
 	sess, _, _ := p.fullSession(r)
-	if sess == nil || sess.UserID != owner {
+	if sess == nil || payload != proofPayload(sess) {
 		return ErrReauthRequired
 	}
 	return nil

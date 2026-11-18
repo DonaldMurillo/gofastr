@@ -528,6 +528,14 @@ func (m *AuthManager) allowMailAddress(ctx context.Context, email string) bool {
 // the package default (CanonicalEmail) otherwise, so the override is
 // total: every email ingestion point in the battery funnels through
 // here.
+// CanonicalEmail is the canonical form of email under this manager's
+// rule: AuthConfig.CanonicalizeEmail when set, else the package default
+// (auth.CanonicalEmail). Host code that keys anything on an address
+// calls this one, so its keys agree with the battery's.
+func (m *AuthManager) CanonicalEmail(email string) (string, error) {
+	return m.canonicalizeEmail(email)
+}
+
 func (m *AuthManager) canonicalizeEmail(email string) (string, error) {
 	return canonicalizeEmailWith(m.config.CanonicalizeEmail, email)
 }

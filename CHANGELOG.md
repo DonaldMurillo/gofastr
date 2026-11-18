@@ -141,6 +141,18 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **BREAKING: the passkey plugin needs a way to email the account owner
+  when a passkey is added.** Set `PasskeyConfig.NoticeSender` (it defaults
+  to `AuthConfig.RegisterEmailSender`), or `NoAddedNotice: true`; outside
+  `DevMode`, Init refuses neither.
+- **Adding or removing a passkey needs a step-up** once the account holds
+  a passkey able to confirm one: `register/options` and `delete` answer
+  403 `passkey_reauth_required` without a `proof`. The battery's browser
+  module runs the step-up itself; a client of its own sends `proof`.
+- **A step-up proof is spent only by the session that earned it.**
+- **Under `OIDCConfig.Tenants` an email is verified only with
+  `xms_edov: true`** in the signed id_token, closing the multi-tenant
+  "nOAuth" email takeover.
 - **BREAKING: `auth.PasskeyStore` gains `RenamePasskey`.** Both built-in
   stores implement it. A custom store adds it, and may keep the new
   `PasskeyCredential.Transports` and `AAGUID`.

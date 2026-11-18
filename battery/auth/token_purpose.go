@@ -49,15 +49,17 @@ const (
 	// A registration challenge for a create the browser runs without a
 	// prompt (conditional create), carrying the user id.
 	purposePasskeyRegisterQuiet tokenPurpose = "passkeyregc"
-	// A step-up challenge, and the proof a passed step-up hands back;
-	// both carry the user id.
+	// A step-up challenge, carrying the user id, and the proof a passed
+	// step-up hands back, carrying the user id and a digest of the
+	// session that earned it. Erasure revokes that session, so a proof
+	// is dead with it and expires within PasskeyConfig.ReauthTTL.
 	purposePasskeyReauth tokenPurpose = "passkeyreauth"
 	purposePasskeyProof  tokenPurpose = "passkeyproof"
 )
 
 // userPurposes are the purposes whose payload is a user id: erasure
 // removes their outstanding tokens.
-var userPurposes = []tokenPurpose{purposeReset, purposeVerify, purposePasskeyRegister, purposePasskeyRegisterQuiet, purposePasskeyReauth, purposePasskeyProof}
+var userPurposes = []tokenPurpose{purposeReset, purposeVerify, purposePasskeyRegister, purposePasskeyRegisterQuiet, purposePasskeyReauth}
 
 // errTokenPurpose is returned when a token is valid but belongs to another
 // flow. Callers answer it exactly as they answer an unknown token: telling

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -183,5 +184,28 @@ func TestNonIdempotentCanonicalizerRefusedAtRuntime(t *testing.T) {
 	}
 	if got, err := mgr.canonicalizeEmail("first@corp.example"); err != nil || got != "first@corp.example" {
 		t.Fatalf("a stable address: %q %v", got, err)
+	}
+}
+
+// AuthManager.CanonicalEmail and the audit pseudonym follow the
+// manager's override, so host keys and audit digests agree with the
+// battery's own.
+func TestManagerCanonicalEmailFollowsOverride(t *testing.T) {
+	noDots := func(s string) (string, error) {
+		c, err := CanonicalEmail(s)
+		local, domain, _ := strings.Cut(c, "@")
+		return strings.ReplaceAll(local, ".", "") + "@" + domain, err
+	}
+	sink := &recordingSink{}
+	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), CanonicalizeEmail: noDots, AuditSink: sink})
+	if err := mgr.Init(nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := mgr.CanonicalEmail("A.Lice@Example.com"); err != nil || got != "alice@example.com" {
+		t.Fatalf("manager CanonicalEmail: %q %v", got, err)
+	}
+	mgr.emitSecurity(context.Background(), SecurityEvent{Kind: "magiclink.requested", Email: "A.Lice@Example.com"})
+	if ev := sink.findByKind("magiclink.requested"); ev == nil || ev.Email != "alice@example.com" {
+		t.Fatalf("audit sink saw %+v, want the override's canonical address", ev)
 	}
 }

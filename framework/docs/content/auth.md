@@ -1230,6 +1230,12 @@ refuses is skipped there, so every ingestion checks too: an address the
 override moves on a second pass is refused with `invalid_email` and
 logged.
 
+Host code that keys anything on an address calls
+`mgr.CanonicalEmail(addr)`, which applies the override; the package
+function `auth.CanonicalEmail` is the default rule only. Audit events the
+manager emits carry the address folded by the override, so the SQL
+sink's `email_hash` agrees with the battery's keys.
+
 ```go
 mgr := auth.New(auth.AuthConfig{
     // ...
@@ -1878,8 +1884,18 @@ mgr.Use(auth.NewPasskeyPlugin(auth.PasskeyConfig{
 	ChallengeStore: challenges,
 	OnSuccessURL:   "/app",
 	TwoFactorURL:   "/login/2fa", // required when a 2FA plugin is registered
+	NoticeSender:   mailer,       // emails the owner when a passkey is added
 }))
 ```
+
+`NoticeSender` (an `auth.EmailSender`; default
+`AuthConfig.RegisterEmailSender`) gets one email to the account's address
+whenever a passkey is added to it, naming the passkey and telling the
+owner to remove it if they did not add it, as Google, Apple and GitHub
+do. Outside `DevMode`, Init refuses a plugin with no sender unless
+`NoAddedNotice: true` says the app tells its users another way. The
+email goes out off the request, through a bounded queue the manager's
+`OnStop` drains.
 
 `RPID` is the domain the passkeys belong to. Every origin in `Origins`
 must be that host or a subdomain of it, over `https` (or
@@ -1895,8 +1911,9 @@ a pending sign-in posts its code to `/auth/2fa/challenge`.
 
 Other knobs: `RPName` (shown by the browser, default `RPID`),
 `ChallengeTTL` (default 5 minutes), `MaxPerUser` (default 20),
-`ReauthTTL` (how long a step-up proof stays good, default 5 minutes)
-and `RateLimit` (default 30 requests a minute per client, then a
+`ReauthTTL` (how long a step-up proof stays good, default 5 minutes),
+`ReauthMinAge` (see [Step-up](#step-up-confirm-with-a-passkey), default
+1 hour) and `RateLimit` (default 30 requests a minute per client, then a
 5-minute block).
 
 `MaxPerUser` holds when registrations race: the plugin passes it to
@@ -1912,11 +1929,11 @@ the same way.
 |---|---|---|
 | `POST /auth/passkey/login/options` | anyone | A sign-in challenge. No account list: the browser offers whatever passkeys it holds for the RP ID. |
 | `POST /auth/passkey/login` | anyone | Verifies the signed challenge, mints the session cookie, answers `{"redirect": "<OnSuccessURL>"}`. When the account has 2FA it answers `{"redirect": "<TwoFactorURL>", "two_factor_required": true}` instead. |
-| `POST /auth/passkey/register/options` | signed in | A registration challenge bound to the session's account. `excludeCredentials` lists the account's passkeys with their transports. Body `{"conditional": true}` asks for a create the browser runs without a prompt (see [After a password sign-in](#after-a-password-sign-in)); any other body, or none, is a normal registration. |
+| `POST /auth/passkey/register/options` | signed in | A registration challenge bound to the session's account. `excludeCredentials` lists the account's passkeys with their transports. Body `{"conditional": true}` asks for a create the browser runs without a prompt (see [After a password sign-in](#after-a-password-sign-in)); any other body, or none, is a normal registration. Once the account holds a passkey able to confirm a step-up, the body must also carry `"proof"` from this session's step-up, or the answer is 403 `passkey_reauth_required`. |
 | `POST /auth/passkey/register` | signed in | Stores the new passkey, unless the account already holds `MaxPerUser` (409). Body: `name` (optional, at most 64 printable characters), `id`, `clientDataJSON`, `attestationObject`, all binary fields unpadded base64url, and `transports` (optional, what `getTransports()` answered; unknown values are dropped). |
 | `GET /auth/passkey/list` | signed in | `rpId`, `userId` (the base64url user handle), `userName` (the account's email) and `passkeys`: each `id`, `name`, `createdAt`, `lastUsedAt`, `backedUp`, `deviceType` (`multiDevice` when it can sync, else `singleDevice`), `transports` and, when the authenticator sent one, `aaguid` as a UUID. |
 | `POST /auth/passkey/rename` | signed in | Renames one of the account's own passkeys. Body: `id`, `name` (same rules as at registration). 204, or 404 for an id the account does not own. |
-| `POST /auth/passkey/delete` | signed in | Removes one of the account's own passkeys by `id`. |
+| `POST /auth/passkey/delete` | signed in | Removes one of the account's own passkeys by `id`. Needs `proof` under the same rule as adding one. |
 | `POST /auth/passkey/reauth/options` | signed in | A step-up challenge whose `allowCredentials` lists only the account's passkeys. 404 when it has none. |
 | `POST /auth/passkey/reauth` | signed in | Verifies the step-up with one of the account's passkeys and answers `{"proof": "..."}`. See [Step-up](#step-up-confirm-with-a-passkey). |
 
@@ -1973,8 +1990,10 @@ Failures show as a toast. A prompt the user cancelled shows nothing.
 Two browser errors get their own message: `InvalidStateError` from
 adding a passkey (this device already holds one for the account) and
 `SecurityError` (the page's address does not fit the RP ID).
-The base path must be a same-origin path such as `/auth`; any other
-value leaves the button inert.
+The base path must be one or more non-empty path segments such as `/auth`
+or `/api/auth`; `/`, a trailing or doubled slash, or anything else leaves
+the element inert, and the module sends no request whose URL resolves to
+another origin.
 
 Behind `auth.CSRF` or `WithBFFPosture`, render the page's token as
 `<meta name="csrf-token" content="…">` from `auth.CSRFToken(r)`. The
@@ -2093,9 +2112,10 @@ if err := passkeys.RedeemReauthProof(r, r.FormValue(auth.PasskeyReauthField)); e
 }
 ```
 
-`RedeemReauthProof` answers `nil` once per proof, and only for a full
-session of the account the proof was issued to (not one waiting on its
-second factor, and not one minted before the account turned 2FA on); anything else is
+`RedeemReauthProof` answers `nil` once per proof, and only for the full
+session that earned it (not another session of the same account, not
+one waiting on its second factor, and not one minted before the account
+turned 2FA on); anything else is
 `auth.ErrReauthRequired`. The proof is spent on that first call whatever
 it answers, and it expires after `ReauthTTL`. A step-up offers only the
 signed-in account's passkeys, and a passkey of another account answers
@@ -2108,9 +2128,20 @@ ago (default 1 hour; a negative value keeps only the first rule). The
 options call lists only the passkeys that qualify and answers 403
 `passkey_too_new` when none does; `POST /auth/passkey/reauth` with a
 passkey that does not qualify answers the same. A session store that
-returns no `CreatedAt` qualifies no passkey. Send the user an email on
-the `passkey.registered` audit event, so a passkey someone else added
-does not go unnoticed for the hour it has to wait.
+returns no `CreatedAt` qualifies no passkey. Stores keep whole seconds, so
+a passkey predates a session only if its second ended before the session
+began.
+
+The same thief could add a key and wait out the hour, or remove the
+owner's passkeys. So once the account holds a passkey that qualifies,
+adding or removing one needs a step-up with it: `register/options` and
+`delete` answer 403 `passkey_reauth_required` unless the body carries a
+`proof` this session earned. The browser module handles it: asked for a
+step-up, it runs one (the user confirms with an existing passkey) and
+resends. A silent create after a password sign-in gives up instead of
+prompting. An account with no qualifying passkey (none yet, or only new
+ones) adds and removes with the session alone, and its owner learns of
+an addition from the `NoticeSender` email.
 
 ### Keeping the password manager in step
 
@@ -2850,6 +2881,22 @@ only when its `iss` is that template filled with its own `tid` and the
 sign-in that has only the userinfo endpoint to go on (no verified
 id_token, as after a restart) is refused. Without `Tenants` nothing changes. A
 single-tenant issuer (`.../<tenant id>/v2.0`) needs no `Tenants`.
+
+Any tenant's admin sets the `email` of that tenant's users, so under
+`Tenants` an email proves nothing on its own (the "nOAuth" takeover: an
+attacker's tenant names a victim's address and is linked to the victim's
+account). The provider marks the email verified only when the signed
+id_token carries `xms_edov: true` (Microsoft's "email domain owner
+verified" optional claim; add it in the app registration's token
+configuration), whatever `email_verified` or the userinfo endpoint says.
+Without it, a sign-in whose email matches an existing account is a
+collision, not a link.
+
+Turning `Tenants` on for a provider that already signed people in
+changes their account key from `<sub>` to `<tid>/<sub>`, so existing
+links no longer match. Register the multi-tenant provider under a new
+provider name, or rewrite the stored subjects to `<tid>/<sub>` before
+switching.
 
 **What gets verified** before `ExchangeCode` returns:
 

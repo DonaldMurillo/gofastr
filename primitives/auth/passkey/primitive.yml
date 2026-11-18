@@ -41,24 +41,44 @@ invariants:
       - test: battery/auth.TestPasskeyListNamesTheAccount
       - test: battery/auth.TestPasskeyKeepsTransportsAndAAGUID
   - id: step-up-needs-an-older-passkey
-    rule: A step-up accepts only a passkey of the session's account registered before the session signed in and at least ReauthMinAge ago; the options call lists only those and answers 403 passkey_too_new when there are none, and the step-up refuses any other passkey with the same 403 before its signature is checked.
+    rule: A step-up accepts only a passkey of the session's account whose whole second of creation ended before the session signed in and that is at least ReauthMinAge old; the options call lists only those and answers 403 passkey_too_new when there are none, and the step-up judges the same passkey read its other checks use and refuses any other with the same 403 before its signature is checked.
     enforced_by:
       - test: battery/auth.TestPasskeyReauthRefusesNewPasskeys
       - test: battery/auth.TestPasskeyReauthNeedsAPasskeyOlderThanTheSession
+      - test: battery/auth.TestReauthLookupErrorFailsClosed
+      - test: battery/auth.TestSQLPasskeyKeepsPredateOrder
+  - id: changes-need-a-step-up
+    rule: When the account holds a passkey that could confirm a step-up, register/options and delete refuse with 403 passkey_reauth_required unless the body carries an unspent proof this session earned, and the browser module then runs the step-up and resends with its proof (a silent create gives up instead).
+    enforced_by:
+      - test: battery/auth.TestPasskeyChangesNeedStepUp
+      - test: battery/auth.TestPasskeyModuleRules
+  - id: added-passkey-is-mailed
+    rule: A registered passkey sends its name to the account's address through PasskeyConfig.NoticeSender (default AuthConfig.RegisterEmailSender), and Init refuses a plugin with neither outside DevMode unless NoAddedNotice is set.
+    enforced_by:
+      - test: battery/auth.TestPasskeyAddedNotifiesTheOwner
+  - id: base-is-a-same-origin-path
+    rule: The browser module accepts an auth base only of one or more non-empty path segments, and sends no request whose URL resolves to another origin.
+    enforced_by:
+      - test: battery/auth.TestPasskeyBaseStaysSameOrigin
+  - id: unverified-refusals-name-no-account
+    rule: A sign-in refused before its signature verifies (user handle or signature) records passkey.refused with no user id.
+    enforced_by:
+      - test: battery/auth.TestAnonymousRefusalNamesNoAccount
   - id: register-offered-wherever-webauthn-is
     rule: The browser module reveals an add-a-passkey button wherever the browser has WebAuthn, whatever getClientCapabilities reports.
     enforced_by:
       - test: battery/auth.TestPasskeyModuleRules
   - id: reauth-proof-is-single-use-and-the-sessions
-    rule: A step-up challenge lists only the signed-in account's passkeys, and RedeemReauthProof answers nil once per proof and only for a full session of the account the proof was issued to.
+    rule: A step-up challenge lists only the signed-in account's passkeys, and RedeemReauthProof answers nil once per proof and only for the full session that earned it, matched by the account and a digest of its token.
     enforced_by:
       - test: battery/auth.TestPasskeyReauthProof
       - test: battery/auth.TestPasskeyReauthProofNeedsFullSession
       - test: battery/auth.TestPasskeyReauthProofRefusesPreTwoFactorSession
       - test: battery/auth.TestPasskeyReauthChallengeIsTheSessionsAccount
+      - test: battery/auth.TestReauthProofIsTheSessions
       - test: battery/auth.TestPasskeyBrowserManageAndReauth
   - id: user-tokens-reach-erasure
-    rule: Every passkey token whose payload names a user (registration, conditional registration, step-up challenge, step-up proof) is removed by erasure from the SQL and in-memory token stores.
+    rule: Every passkey token whose payload is a user id (registration, conditional registration, step-up challenge) is removed by erasure from the SQL and in-memory token stores; a step-up proof, whose payload adds a session digest, dies with the session erasure revokes and expires within ReauthTTL.
     enforced_by:
       - test: battery/auth.TestEraseCoversConfiguredStoreTables
       - test: battery/auth.TestMemoryStoresReachedByErasure
@@ -80,9 +100,10 @@ invariants:
       - test: battery/auth.TestPasskeyRoutesAreRateLimited
       - test: battery/auth.TestPasskeyModuleRules
   - id: register-options-reads-only-conditional
-    rule: POST {base}/passkey/register/options asks for a conditional create only for a body whose conditional member is true, and treats every other body, unknown members and unparsable JSON included, as a regular registration.
+    rule: POST {base}/passkey/register/options asks for a conditional create only for a body whose conditional member is true, read strictly, and treats every other body, duplicated or case-folded keys and unparsable JSON included, as a regular registration.
     enforced_by:
       - test: battery/auth.TestPasskeyRegisterOptionsToleratesOtherBodies
+      - test: battery/auth.TestOptionsFlagDecodeIsStrict
       - test: battery/auth.TestPasskeyConditionalCreate
   - id: invalid-state-message-only-for-a-create
     rule: The browser module shows the already-registered message for an InvalidStateError only from adding a passkey; any other ceremony shows the browser's message.
@@ -101,18 +122,20 @@ decisions:
   - id: step-up-returns-a-proof
     date: 2026-11-17
     status: accepted
-    decision: A passed step-up answers a single-use proof token, bound to the account and spent by the app's handler with RedeemReauthProof, instead of marking the session.
+    decision: A passed step-up answers a single-use proof token, bound to the session that earned it and spent by the app's handler with RedeemReauthProof, instead of marking the session.
     rejected:
+      - option: Bind the proof to the account only.
+        why: Any other session of the account, a stolen one included, could spend a proof the owner earned.
       - option: Stamp a re-authenticated-at time on the session.
         why: Every SessionStore would need a new extension to write it, and a stamp authorizes every sensitive action in its window rather than the one the user confirmed.
     upholds: [reauth-proof-is-single-use-and-the-sessions]
   - id: step-up-refuses-new-passkeys
     date: 2026-11-18
     status: accepted
-    decision: A passkey must predate the session and be ReauthMinAge old (one hour by default) to confirm a step-up, since registration needs only a full session and a thief holding one could otherwise register a key and step up with it.
+    decision: A passkey must predate the session and be ReauthMinAge old (one hour by default) to confirm a step-up, and once the account holds such a passkey, adding or removing one needs a step-up with it; the owner is mailed when a passkey is added.
     rejected:
-      - option: Require a step-up to register a passkey.
-        why: The first passkey of an account has nothing to step up with, and a password-only account would be locked out of adding one.
+      - option: Require a step-up for every registration.
+        why: The first passkey of an account has nothing to step up with, and a password-only account would be locked out of adding one; so the rule applies only once a passkey able to confirm exists.
       - option: Refuse only passkeys registered by the same session.
         why: Signing in again with the new passkey makes a session that postdates it, which the predate rule alone then admits.
     revisit_if: Registration starts requiring a fresh second proof, which would make a new passkey trustworthy on its own.

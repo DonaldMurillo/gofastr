@@ -15,13 +15,14 @@ import (
 )
 
 type passkeyFixture struct {
-	mgr   *AuthManager
-	users *memoryUserStore
-	pk    *PasskeyPlugin
-	twofa *TwoFAPlugin
-	sink  *recordingSink
-	mail  *stubEmailSender
-	r     *router.Router
+	mgr     *AuthManager
+	users   *memoryUserStore
+	pk      *PasskeyPlugin
+	twofa   *TwoFAPlugin
+	sink    *recordingSink
+	mail    *stubEmailSender
+	notices *stubEmailSender
+	r       *router.Router
 }
 
 func newPasskeyFixture(t *testing.T) *passkeyFixture {
@@ -45,9 +46,10 @@ func newPasskeyFixtureFor(t *testing.T, rpID, origin string) *passkeyFixture {
 		UserStore:           store,
 		AuditSink:           sink,
 	})
-	pk := NewPasskeyPlugin(PasskeyConfig{RPID: rpID, Origins: []string{origin}, OnSuccessURL: "/app", TwoFactorURL: "/2fa"})
-	twofa := NewTwoFAPlugin(TwoFAConfig{})
 	mail := &stubEmailSender{}
+	notices := &stubEmailSender{}
+	pk := NewPasskeyPlugin(PasskeyConfig{NoticeSender: notices, RPID: rpID, Origins: []string{origin}, OnSuccessURL: "/app", TwoFactorURL: "/2fa"})
+	twofa := NewTwoFAPlugin(TwoFAConfig{})
 	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(twofa)
 	mgr.Use(pk)
@@ -64,7 +66,7 @@ func newPasskeyFixtureFor(t *testing.T, rpID, origin string) *passkeyFixture {
 	}
 	r := router.New()
 	mgr.RegisterRoutes(r)
-	return &passkeyFixture{mgr: mgr, users: users, pk: pk, twofa: twofa, sink: sink, mail: mail, r: r}
+	return &passkeyFixture{mgr: mgr, users: users, pk: pk, twofa: twofa, sink: sink, mail: mail, notices: notices, r: r}
 }
 
 // session mints a full session for userID and returns its cookie value.
@@ -385,7 +387,7 @@ type durableSessions struct{ *MemorySessionStore }
 
 func TestPasskeyProdRefusesMemoryStores(t *testing.T) {
 	mgr := New(AuthConfig{JWTSecret: "s", SessionTTL: time.Hour, SessionCookie: "sid", UserStore: newMemoryUserStore(), SessionStore: durableSessions{NewMemorySessionStore()}})
-	mgr.Use(NewPasskeyPlugin(PasskeyConfig{RPID: "example.com", Origins: []string{"https://example.com"}}))
+	mgr.Use(NewPasskeyPlugin(PasskeyConfig{NoAddedNotice: true, RPID: "example.com", Origins: []string{"https://example.com"}}))
 	err := mgr.Init(nil)
 	if err == nil || !strings.Contains(err.Error(), "in-memory stores") {
 		t.Fatalf("Init: %v", err)
@@ -394,7 +396,7 @@ func TestPasskeyProdRefusesMemoryStores(t *testing.T) {
 
 func TestPasskeyBadOriginFailsInit(t *testing.T) {
 	mgr := New(AuthConfig{JWTSecret: "s", AllowInMemoryStores: true, SessionTTL: time.Hour, SessionCookie: "sid", UserStore: newMemoryUserStore()})
-	mgr.Use(NewPasskeyPlugin(PasskeyConfig{RPID: "example.com", Origins: []string{"https://evil.example"}}))
+	mgr.Use(NewPasskeyPlugin(PasskeyConfig{NoAddedNotice: true, RPID: "example.com", Origins: []string{"https://evil.example"}}))
 	if err := mgr.Init(nil); err == nil {
 		t.Fatal("Init accepted an origin outside the RP ID")
 	}
@@ -427,7 +429,7 @@ func TestPasskeyPerUserCap(t *testing.T) {
 func TestPasskeyTwoFactorNeedsURL(t *testing.T) {
 	mgr := New(AuthConfig{JWTSecret: "s", AllowInMemoryStores: true, SessionTTL: time.Hour, SessionCookie: "sid", UserStore: newMemoryUserStore()})
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{}))
-	mgr.Use(NewPasskeyPlugin(PasskeyConfig{RPID: "example.com", Origins: []string{"https://example.com"}}))
+	mgr.Use(NewPasskeyPlugin(PasskeyConfig{NoAddedNotice: true, RPID: "example.com", Origins: []string{"https://example.com"}}))
 	if err := mgr.Init(nil); err == nil || !strings.Contains(err.Error(), "TwoFactorURL") {
 		t.Fatalf("Init: %v", err)
 	}

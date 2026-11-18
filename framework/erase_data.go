@@ -272,13 +272,17 @@ func (a *App) keepIdentities(ctx context.Context, tenant string, user datexport.
 }
 
 // dropKeptIdentities removes the user's kept identities once every store
-// eraser succeeded; with no table there is nothing to drop.
+// eraser succeeded, and every kept row past keptIdentitiesFor; with no
+// table there is nothing to drop.
 func (a *App) dropKeptIdentities(ctx context.Context, dialect migrate.Dialect, tenant, userID string) error {
 	phys, exists, err := physicalTable(ctx, a.DB, eraseIdentitiesTable, dialect, false)
 	if err != nil || !exists {
 		return err
 	}
-	_, err = a.DB.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE tenant = $1 AND user_id = $2`, quotePhysical(phys)), tenant, userID)
+	// The sweep rides every erasure: nothing else runs on this table, so
+	// an expired row would otherwise wait for a failure that may not come.
+	_, err = a.DB.ExecContext(ctx, fmt.Sprintf(`DELETE FROM %s WHERE (tenant = $1 AND user_id = $2) OR kept_at < $3`, quotePhysical(phys)),
+		tenant, userID, time.Now().Add(-keptIdentitiesFor).Unix())
 	return err
 }
 

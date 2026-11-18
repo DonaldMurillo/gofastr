@@ -138,3 +138,40 @@ func TestOIDCMultiTenantIdentityCarriesTheTenant(t *testing.T) {
 		t.Fatalf("exact issuer id: %+v %v", info, err)
 	}
 }
+
+// Under a multi-tenant issuer any tenant's admin sets its users' email,
+// so an email is verified only when the signed token carries xms_edov
+// true, whatever email_verified or the userinfo endpoint says.
+func TestOIDCMultiTenantEmailNeedsDomainProof(t *testing.T) {
+	f, issuer := multiTenantIdP(t)
+	base := strings.TrimSuffix(issuer, "/common/v2.0")
+	for name, c := range map[string]struct {
+		claims map[string]any
+		want   bool
+	}{
+		"email_verified alone": {map[string]any{"email_verified": true}, false},
+		"xms_edov false":       {map[string]any{"email_verified": true, "xms_edov": false}, false},
+		"xms_edov as a string": {map[string]any{"email_verified": true, "xms_edov": "true"}, false},
+		"xms_edov true":        {map[string]any{"email_verified": true, "xms_edov": true}, true},
+	} {
+		claims := standardIDClaims(base+"/t-111/v2.0", f.clientID)
+		claims["tid"] = "t-111"
+		for k, v := range c.claims {
+			claims[k] = v
+		}
+		f.claims = claims
+		f.userinfo = map[string]any{"email_verified": true, "email": "alice@example.com"}
+		p := tenantProvider(t, f, issuer, "*")
+		tok, err := p.ExchangeCode(ctxBg(), "code")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		info, err := p.FetchUserInfo(ctxBg(), tok.AccessToken)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if info.EmailVerified != c.want {
+			t.Errorf("%s: EmailVerified = %v, want %v", name, info.EmailVerified, c.want)
+		}
+	}
+}

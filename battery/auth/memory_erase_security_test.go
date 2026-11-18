@@ -37,8 +37,8 @@ func TestMemoryStoresReachedByErasure(t *testing.T) {
 		if err := twofa.store.SetTwoFA(ctx, id, &TwoFAState{Secret: "S", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
-		// Reset, plus the four passkey tokens that name a user.
-		for _, p := range []tokenPurpose{purposeReset, purposePasskeyRegister, purposePasskeyRegisterQuiet, purposePasskeyReauth, purposePasskeyProof} {
+		// Reset, plus the three passkey tokens that name a user.
+		for _, p := range []tokenPurpose{purposeReset, purposePasskeyRegister, purposePasskeyRegisterQuiet, purposePasskeyReauth} {
 			if _, err := createPurposeToken(ctx, resetTokens, p, id, time.Hour); err != nil {
 				t.Fatal(err)
 			}
@@ -68,11 +68,11 @@ func TestMemoryStoresReachedByErasure(t *testing.T) {
 		}
 		return n
 	}
-	if got := erase(u.GetID(), true); got != 9 {
-		t.Fatalf("dry run counted %d items, want 9 (session, 2FA state, reset, four passkey, magic-link and email-code tokens)", got)
+	if got := erase(u.GetID(), true); got != 8 {
+		t.Fatalf("dry run counted %d items, want 8 (session, 2FA state, reset, three passkey, magic-link and email-code tokens)", got)
 	}
-	if got := erase(u.GetID(), false); got != 9 {
-		t.Fatalf("erased %d items, want 9", got)
+	if got := erase(u.GetID(), false); got != 8 {
+		t.Fatalf("erased %d items, want 8", got)
 	}
 	if got := erase(u.GetID(), false); got != 0 {
 		t.Errorf("a re-run erased %d more", got)
@@ -81,8 +81,8 @@ func TestMemoryStoresReachedByErasure(t *testing.T) {
 		t.Error("SECURITY: the erased user's 2FA seed survives")
 	}
 	// The other user is untouched.
-	if got := erase(other.GetID(), true); got != 9 {
-		t.Errorf("another user's items: %d, want 9 untouched", got)
+	if got := erase(other.GetID(), true); got != 8 {
+		t.Errorf("another user's items: %d, want 8 untouched", got)
 	}
 	// A stopped manager's stores leave the process-wide registry, so
 	// another app's erasure of the same id never reaches them.
