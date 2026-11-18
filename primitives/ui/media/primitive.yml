@@ -98,7 +98,7 @@ invariants:
     enforced_by:
       - test: framework/ui.TestSweepMediaHighlightUnterminatedQuoteStopsAtLineEnd
   - id: highlight-hash-comment-at-word-boundary
-    rule: In shell and YAML a # opens a comment only at the start of a line or after a blank, so a#b and ${#x} are not comments.
+    rule: "In shell and YAML a # opens a comment only at the start of a line or after a blank, so a#b and ${#x} are not comments."
     enforced_by:
       - test: framework/ui.TestSweepMediaHighlightHashCommentNeedsWordBoundary
   - id: highlight-prose-apostrophe
