@@ -66,11 +66,10 @@ func TestArchSSR_DeepLinkWidgetInlined(t *testing.T) {
 	if !strings.Contains(page, `data-cui-widget="site-demo-modal"`) {
 		t.Error("contract violation: deep-link-matched widget must be SSR-inlined; was absent from the page response")
 	}
-	if !strings.Contains(page, `role="dialog"`) {
-		t.Error("contract violation: SSR-inlined dialog widget should carry role='dialog'")
-	}
-	if !strings.Contains(page, `aria-modal="true"`) {
-		t.Error("contract violation: SSR-inlined modal widget should carry aria-modal='true'")
+	// A modal is an open <dialog>, so it shows before the runtime promotes
+	// it with showModal(); the element implies role and modality.
+	if !strings.Contains(page, `<dialog class="cui-widget cui-pos-center" data-cui-widget="site-demo-modal" open`) {
+		t.Error("contract violation: SSR-inlined modal widget should be an open <dialog>")
 	}
 }
 

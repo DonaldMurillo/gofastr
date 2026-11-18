@@ -618,15 +618,23 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 		// The root is the panel: see the surface rule in widgetCSS.
 		cls += " cui-surface"
 	}
-	b.WriteString(`<div class="` + cls + `" data-cui-widget="` + render.Escape(def.Name) + `"`)
-	if def.Role != "" {
+	// A backdrop'd widget is a modal: a <dialog> the runtime opens with
+	// showModal(), so the browser supplies the top layer, the inert page,
+	// ::backdrop, Escape and the platform back gesture. The SSR copy
+	// carries open, so a deep-linked modal shows before the runtime loads.
+	tag := "div"
+	if def.Backdrop {
+		tag = "dialog"
+	}
+	b.WriteString(`<` + tag + ` class="` + cls + `" data-cui-widget="` + render.Escape(def.Name) + `"`)
+	if def.Role != "" && (tag == "div" || def.Role != "dialog") {
 		b.WriteString(` role="` + render.Escape(def.Role) + `"`)
 	}
 	if def.Backdrop {
-		// aria-modal=true tells assistive tech the rest of the page is
-		// not currently interactive. Only meaningful for backdrop'd
-		// surfaces; plain panels/banners shouldn't claim it.
-		b.WriteString(` aria-modal="true"`)
+		b.WriteString(` open`)
+		if !def.CloseOnEscape {
+			b.WriteString(` closedby="none"`)
+		}
 	}
 	if def.LabelledBy != "" {
 		b.WriteString(` aria-labelledby="` + render.Escape(def.LabelledBy) + `"`)
@@ -681,7 +689,7 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 	if def.Position == Center {
 		b.WriteString(`</div>`)
 	}
-	b.WriteString(`</div>`)
+	b.WriteString(`</` + tag + `>`)
 	return render.HTML(b.String())
 }
 
@@ -827,9 +835,33 @@ func widgetCSS(def Definition) string {
 		Set("pointer-events", "auto").
 		End()
 
-	// Backdrop overlay sits behind any widget that requested it. The
-	// bootstrap script appends a <div class="cui-backdrop"> sibling to
-	// the widget root when def.Backdrop is true.
+	// A <dialog> root (every default-chrome modal) drops the UA dialog
+	// box, so the position rules alone lay it out. :where keeps the reset
+	// at zero specificity: any .cui-pos-* value wins over it.
+	ss.Rule(":where(dialog.cui-widget)").
+		Set(
+			"margin", "0", "padding", "0", "border", "0",
+			"background", "transparent",
+			"inset", "auto",
+			"inline-size", "auto", "block-size", "auto",
+			"max-inline-size", "none", "max-block-size", "none",
+			"overflow", "visible",
+			"overscroll-behavior", "contain",
+		).
+		End()
+	// The centered dialog is the whole viewport, so a click on it outside
+	// the panel is the backdrop click; it takes the pointer itself.
+	ss.Rule("dialog.cui-pos-center").Set("pointer-events", "auto").End()
+	ss.Rule("dialog.cui-widget::backdrop").
+		Set(
+			"background", "var(--ui-scrim, rgba(0,0,0,0.45))",
+			"animation", "cui-backdrop-in {durations.overlay-enter} {easings.ease-out}",
+		).
+		End()
+
+	// Backdrop overlay for a custom-Skeleton modal whose root is not a
+	// <dialog>: the runtime appends a <div class="cui-backdrop"> sibling
+	// to the widget root when def.Backdrop is true.
 	ss.Rule(".cui-backdrop").
 		Set(
 			"position", "fixed", "inset", "0",
