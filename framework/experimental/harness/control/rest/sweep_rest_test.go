@@ -7,8 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 )
 
 func TestRestOriginDeniedWhenUnconfigured(t *testing.T) {
@@ -59,30 +62,34 @@ func TestRestProfilesFromCatalog(t *testing.T) {
 	}
 }
 
+type publishOnFlush struct {
+	header  http.Header
+	body    streamBuf
+	once    sync.Once
+	publish func()
+}
+
+func (w *publishOnFlush) Header() http.Header         { return w.header }
+func (w *publishOnFlush) Write(p []byte) (int, error) { return w.body.Write(p) }
+func (w *publishOnFlush) WriteHeader(int)             {}
+func (w *publishOnFlush) Flush()                      { w.once.Do(w.publish) }
+
 func TestSSESubscribedBeforeHeaders(t *testing.T) {
 	s, sess, eng, tok := newWiredTestServer(t)
-	srv := httptest.NewServer(s.Handler())
-	defer srv.Close()
+	w := &publishOnFlush{header: http.Header{}, publish: func() {
+		_, _ = eng.Bus.Publish(control.TurnStarted{Turn: 1}, "")
+	}}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/v1/sessions/"+string(sess)+"/events", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/sessions/"+string(sess)+"/events", nil).WithContext(ctx)
 	req.Header.Set("X-Harness-Token", tok)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stream := &streamBuf{}
 	done := make(chan struct{})
-	go func() { _, _ = io.Copy(stream, resp.Body); close(done) }()
-	if code := postTestInput(t, s, eng, sess, tok, `{"content":[{"type":"text","text":"hi"}]}`); code != 202 {
-		t.Fatalf("input: %d", code)
-	}
-	ok := waitUntil(2*time.Second, func() bool { return strings.Contains(stream.snapshot(), "event: TurnStarted") })
+	go func() { s.Handler().ServeHTTP(w, req); close(done) }()
+	ok := waitUntil(2*time.Second, func() bool { return strings.Contains(w.body.snapshot(), "event: TurnStarted") })
 	cancel()
-	_ = resp.Body.Close()
 	<-done
 	if !ok {
-		t.Fatalf("a turn started once the headers arrived never reached the stream: %s", stream.snapshot())
+		t.Fatalf("an event published as the headers were flushed never reached the stream: %q", w.body.snapshot())
 	}
 }
 

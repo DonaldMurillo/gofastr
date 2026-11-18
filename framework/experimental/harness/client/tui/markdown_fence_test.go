@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 )
 
 // Lines inside a fenced code block are code, shown as written. Styled as
@@ -61,5 +63,19 @@ func TestDrawKnowsAFenceOpenedAboveTheWindow(t *testing.T) {
 	tui.draw()
 	if out := stripANSI(buf.String()); strings.Count(out, "# step") == 0 {
 		t.Errorf("code under a fence that scrolled off drew as headings:\n%s", out)
+	}
+}
+
+func TestAMarkerLineInsideAFencedReplyStaysCode(t *testing.T) {
+	tui, buf := newRenderTestTUI(t)
+	tui.height = 40
+	pushEvent(t, tui, 1, control.TextDelta{Text: "Output:\n```\n● literal\n# keep this hash\n```\n# After"})
+	tui.draw()
+	raw := buf.String()
+	if strings.Contains(raw, ansiBold+"keep this hash") {
+		t.Errorf("a code line after a ● line in a fenced reply drew as a heading:\n%q", raw)
+	}
+	if !strings.Contains(raw, ansiBold+"After") {
+		t.Errorf("the heading after the fenced reply lost its style:\n%q", raw)
 	}
 }

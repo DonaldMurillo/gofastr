@@ -9,10 +9,11 @@ invariants:
       - test: framework/experimental/harness/client/tui.TestDrawLeavesFencedCodeAsWritten
       - test: framework/experimental/harness/client/tui.TestDrawKnowsAFenceOpenedAboveTheWindow
   - id: new-entry-ends-open-fence
-    rule: A line that opens a new scrollback entry (prompt, reply, tool call, thinking, separator) ends a fence its message left open.
+    rule: A line that opens a new scrollback entry (prompt, reply, tool call, thinking, separator) ends a fence its message left open, and a reply or thinking line that only starts with such a marker is stored behind bodyLineMarker and does not.
     enforced_by:
       - test: framework/experimental/harness/client/tui.TestDrawLeavesFencedCodeAsWritten
       - test: framework/experimental/harness/client/tui.TestAToolCallEndsAnUnclosedFence
+      - test: framework/experimental/harness/client/tui.TestAMarkerLineInsideAFencedReplyStaysCode
 decisions:
   - id: no-italics
     date: 2026-11-18
