@@ -44,7 +44,7 @@ var bearerPattern = regexp.MustCompile(`(?i)Bearer\s+\S+`)
 // a token / code / key / secret / password parameter, and any Bearer token
 // substring. Exported so sibling dev-log surfaces (notify.LoggerChannel)
 // redact the same shapes instead of forking the patterns; pinned by
-// TestLogSender_DoesNotExposeLiveResetLinksInTextBody and
+// TestLogSender_DoesNotExposeLiveResetLinks/text_body and
 // TestLoggerChannelRedactsCredentialURLs.
 func RedactBody(s string) string {
 	s = urlWithSecretPattern.ReplaceAllString(s, "[REDACTED-URL]")

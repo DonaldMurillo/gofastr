@@ -139,7 +139,7 @@ func TestHiddenFieldAbsentFromEverySurface(t *testing.T) {
 	// entirely. Walking every body's schema for property NAMES also stops a
 	// hidden key from hiding inside a nested allOf branch, which is exactly
 	// the shape the batch-patch body uses.
-	bodies := forEachOpPayload(t, doc, "requestBody", "request body accepts", true)
+	bodies := forEachOpPayload(t, doc, "requestBody", "request body", "accepts")
 	if bodies == 0 {
 		t.Fatal("no request bodies found — the exclusion check proves nothing")
 	}
@@ -151,7 +151,7 @@ func TestHiddenFieldAbsentFromEverySurface(t *testing.T) {
 	// responses reference the (filtered) component schema, so the only
 	// inline field properties under "responses" come from the endpoint
 	// path — the surface this section pins.
-	responses := forEachOpPayload(t, doc, "responses", "response schema publishes", false)
+	responses := forEachOpPayload(t, doc, "responses", "response schema", "publishes")
 	if responses == 0 {
 		t.Fatal("no responses found — the exclusion check proves nothing")
 	}
@@ -159,10 +159,10 @@ func TestHiddenFieldAbsentFromEverySurface(t *testing.T) {
 
 // forEachOpPayload walks every operation under paths carrying a payload
 // named key (requestBody or responses), fails when it exposes a hidden
-// field, and returns how many payloads it visited. With requireVisible it
-// also fails unless some payload exposes the visible field — the positive
-// control that proves the schema walk reads properties at all.
-func forEachOpPayload(t *testing.T, doc map[string]any, key, exposeVerb string, requireVisible bool) int {
+// field, and returns how many payloads it visited. It also fails unless
+// some payload exposes the visible field — the positive control that
+// proves the schema walk reads properties at all.
+func forEachOpPayload(t *testing.T, doc map[string]any, key, noun, verb string) int {
 	t.Helper()
 	seen := 0
 	sawVisible := false
@@ -185,7 +185,7 @@ func forEachOpPayload(t *testing.T, doc map[string]any, key, exposeVerb string, 
 			for _, hidden := range hiddenKeys {
 				if slices.Contains(names, hidden) {
 					t.Errorf("SECURITY: [openapi] %s %s %s hidden field %q",
-						strings.ToUpper(method), path, exposeVerb, hidden)
+						strings.ToUpper(method), path, noun+" "+verb, hidden)
 				}
 			}
 			if slices.Contains(names, "title") {
@@ -193,8 +193,8 @@ func forEachOpPayload(t *testing.T, doc map[string]any, key, exposeVerb string, 
 			}
 		}
 	}
-	if requireVisible && !sawVisible {
-		t.Error("no request body exposed the visible field — the schema walk is not reading properties")
+	if !sawVisible {
+		t.Errorf("no %s exposed the visible field — the schema walk is not reading properties", noun)
 	}
 	return seen
 }

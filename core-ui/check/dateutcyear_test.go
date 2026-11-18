@@ -68,5 +68,8 @@ func TestLintDateUTCYear_FiresOnYearParts(t *testing.T) {
 //gofastr:test-reads core-ui/runtime/
 //gofastr:test-reads *.js
 func TestLintDateUTCYear_Repo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("walks the repo")
+	}
 	lintRuntimeRepo(t, "a date built from parts reads years 0-99 as 1900-1999", LintDateUTCYear)
 }

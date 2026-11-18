@@ -196,10 +196,11 @@ func TestHTTPGETClearsWriteDeadline(t *testing.T) {
 }
 
 // assertMCPPostContentTypeRefused POSTs one JSON-RPC envelope to /mcp
-// with the given Content-Type and demands a 415, so the transport never
-// decodes bodies outside application/json. attack names the smuggling
-// vector the refusal forecloses.
-func assertMCPPostContentTypeRefused(t *testing.T, contentType, attack string) {
+// with the given Content-Type ("" sends none) and demands a 415, so the
+// transport never decodes bodies outside application/json. label names
+// the content type in the failure; attack names the smuggling vector the
+// refusal forecloses.
+func assertMCPPostContentTypeRefused(t *testing.T, contentType, label, attack string) {
 	s, _, _ := newTestServer(t)
 	h, bearer := newAuthedHandler(t, s)
 	srv := httptest.NewServer(h)
@@ -212,16 +213,16 @@ func assertMCPPostContentTypeRefused(t *testing.T, contentType, attack string) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnsupportedMediaType {
-		t.Fatalf("SECURITY: [mcp-http] POST /mcp accepted %s with status %d. Attack: %s.", contentType, resp.StatusCode, attack)
+		t.Fatalf("SECURITY: [mcp-http] POST /mcp accepted %s with status %d. Attack: %s.", label, resp.StatusCode, attack)
 	}
 }
 
 func TestHTTPPOSTRejectsTextPlain(t *testing.T) {
-	assertMCPPostContentTypeRefused(t, "text/plain", "content-type smuggling into JSON-RPC transport")
+	assertMCPPostContentTypeRefused(t, "text/plain", "text/plain", "content-type smuggling into JSON-RPC transport")
 }
 
 func TestHTTPPOSTRejectsMissingContentType(t *testing.T) {
-	assertMCPPostContentTypeRefused(t, "missing Content-Type", "CSRF/cross-protocol smuggling into JSON-RPC transport")
+	assertMCPPostContentTypeRefused(t, "", "a body with no Content-Type", "CSRF/cross-protocol smuggling into JSON-RPC transport")
 }
 
 func TestHTTPGETReplayStripsInjectedSecondEvent(t *testing.T) {

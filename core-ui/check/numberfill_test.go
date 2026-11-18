@@ -53,6 +53,9 @@ func TestLintNumberFill_FiresOnASCIIFill(t *testing.T) {
 //gofastr:test-reads core-ui/runtime/
 //gofastr:test-reads *.js
 func TestLintNumberFill_Repo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("walks the repo")
+	}
 	lintRuntimeRepo(t, "a {{n}} fill skips NS.formatNumber", LintNumberFill)
 }
 

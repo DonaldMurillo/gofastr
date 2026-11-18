@@ -84,5 +84,8 @@ func TestLintClipboardAwait_FiresOnDroppedWrite(t *testing.T) {
 //gofastr:test-reads core-ui/runtime/
 //gofastr:test-reads *.js
 func TestLintClipboardAwait_Repo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("walks the repo")
+	}
 	lintRuntimeRepo(t, "a copy is announced before the clipboard write settles", LintClipboardAwait)
 }

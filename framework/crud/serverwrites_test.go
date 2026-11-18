@@ -25,14 +25,15 @@ func TestServerWritesPersistProtectedFields(t *testing.T) {
 		name  string
 		table string
 		field schema.Field
+		col   string // the column's SQL type
 		value any
 		want  string
 	}{
 		{"hidden field is persisted", "sw_widgets",
-			schema.Field{Name: "secret_code", Type: schema.String, Hidden: true},
+			schema.Field{Name: "secret_code", Type: schema.String, Hidden: true}, "TEXT",
 			"TOPSECRET", "TOPSECRET"},
 		{"read-only field is persisted", "sw_ro",
-			schema.Field{Name: "score", Type: schema.Int, ReadOnly: true},
+			schema.Field{Name: "score", Type: schema.Int, ReadOnly: true}, "INTEGER",
 			42, "42"},
 	}
 	for _, tc := range cases {
@@ -42,7 +43,7 @@ func TestServerWritesPersistProtectedFields(t *testing.T) {
 				Fields: []schema.Field{{Name: "name", Type: schema.String, Required: true}, tc.field},
 			}.WithTimestamps(false)
 			ch, db := swHandler(t, cfg, `CREATE TABLE `+tc.table+
-				` (id TEXT PRIMARY KEY, name TEXT NOT NULL, `+tc.field.Name+` TEXT)`)
+				` (id TEXT PRIMARY KEY, name TEXT NOT NULL, `+tc.field.Name+` `+tc.col+`)`)
 
 			ctx := WithServerWrites(context.Background())
 			if _, err := ch.CreateOne(ctx, map[string]any{"name": "x", tc.field.Name: tc.value}); err != nil {

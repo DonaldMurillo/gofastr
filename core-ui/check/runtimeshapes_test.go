@@ -26,8 +26,9 @@ func writeRuntimeFixture(t *testing.T, name, body string) string {
 }
 
 // lintRuntimeRepo runs one clean-tree lint over the runtime package
-// and every registered behaviour, skipping when this checkout has
-// neither, and fails the test with failMsg when the lint fires.
+// and every registered behaviour, and fails the test with failMsg when
+// the lint fires. A missing core-ui/runtime is a failure, not a skip: it
+// ships in every checkout, so a gate that cannot find it guards nothing.
 func lintRuntimeRepo(t *testing.T, failMsg string, lint func(roots ...string) (*Result, error)) {
 	t.Helper()
 	repoRoot, err := findRepoRoot()
@@ -36,7 +37,7 @@ func lintRuntimeRepo(t *testing.T, failMsg string, lint func(roots ...string) (*
 	}
 	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
 	if _, err := os.Stat(runtimeDir); err != nil {
-		t.Skipf("runtime dir not present: %v", err)
+		t.Fatalf("runtime dir not present: %v", err)
 	}
 	res, err := lint(runtimeLintRoots(t, runtimeDir)...)
 	if err != nil {

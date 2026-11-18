@@ -213,5 +213,8 @@ func TestLintKeyGuard_RTLArrowInHelper(t *testing.T) {
 //gofastr:test-reads core-ui/runtime/
 //gofastr:test-reads *.js
 func TestLintKeyGuard_Repo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("walks the repo")
+	}
 	lintRuntimeRepo(t, "a keydown listener misses the IME or right-to-left guard", LintKeyGuard)
 }
