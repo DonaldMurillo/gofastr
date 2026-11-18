@@ -232,6 +232,7 @@ func depth(id string) int { return strings.Count(id, ".") + 1 }
 
 type decoder struct {
 	file     string
+	lines    []string
 	findings *[]Finding
 }
 
@@ -259,13 +260,29 @@ func (d decoder) scalar(n *coreyaml.Node, what string) string {
 	}
 	switch v := n.Value.(type) {
 	case string:
-		return strings.TrimSpace(v)
+		v = strings.TrimSpace(v)
+		if d.cutByComment(n.Line, v) {
+			d.errf(n.Line, "%s: an unquoted \" #\" starts a YAML comment and cuts the value short; quote it", what)
+		}
+		return v
 	case int64:
 		return strconv.FormatInt(v, 10)
 	default:
 		d.errf(n.Line, "%s must be a quoted string (YAML read it as %T)", what, n.Value)
 		return ""
 	}
+}
+
+func (d decoder) cutByComment(line int, v string) bool {
+	if v == "" || line < 1 || line > len(d.lines) {
+		return false
+	}
+	raw := d.lines[line-1]
+	i := strings.Index(raw, v)
+	if i <= 0 || raw[i-1] == '"' || raw[i-1] == '\'' {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(raw[i+len(v):]), "#")
 }
 
 func (d decoder) str(n *coreyaml.Node, key string, required bool) string {
@@ -319,7 +336,7 @@ func (d decoder) id(n *coreyaml.Node, what string) string {
 }
 
 func parsePrimitive(file, id string, src []byte, findings *[]Finding) *Primitive {
-	d := decoder{file: file, findings: findings}
+	d := decoder{file: file, lines: strings.Split(string(src), "\n"), findings: findings}
 	root, err := coreyaml.Parse(string(src))
 	if err != nil {
 		line := 1
