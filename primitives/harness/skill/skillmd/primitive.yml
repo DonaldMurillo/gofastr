@@ -1,0 +1,19 @@
+primitive: harness.skill.skillmd
+summary: Parses SKILL.md files - a "---" frontmatter of scalars and string lists (name, description, triggers, anything else into Extra) followed by a markdown body.
+code:
+  - framework/experimental/harness/skill/skillmd/
+invariants:
+  - id: spec-limits
+    rule: ParseBytes refuses content that does not start with "---", a name that is empty, over 64 bytes or outside a-z, 0-9 and "-", and a description that is empty or over 1024 bytes.
+    enforced_by:
+      - test: framework/experimental/harness/skill/skillmd.TestParseBytesEnforcesSpecLimits
+      - test: framework/experimental/harness/skill/skillmd.TestValidateRejectsBadName
+      - test: framework/experimental/harness/skill/skillmd.TestValidateRequiresName
+decisions:
+  - id: hand-parsed-frontmatter
+    date: 2026-11-18
+    status: accepted
+    decision: The frontmatter is parsed by hand as top-level key-value pairs and "- item" lists.
+    rejected:
+      - option: A YAML library.
+        why: SKILL.md frontmatter is shallow scalars and string lists, which does not justify the dependency.

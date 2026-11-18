@@ -1,30 +1,17 @@
-// Package profile loads and validates harness profile TOML files.
-// Per § Profiles, a profile is config not code; new profiles ship as
-// new .toml files without touching the engine.
-//
-// We use a minimal stdlib-only TOML reader covering exactly the
-// subset the v0.1 schema requires:
-//
-//   - top-level scalars: schema_version, name, default_model,
-//     prompt_header, permissions, allow_project_hooks
-//   - top-level string arrays: context_sources, skill_packs, tool_packs
-//   - inline tables in an array: mcp_servers = [{...}, {...}]
-//
-// More complex TOML (deeply nested tables, table arrays with multiple
-// lines, datetime types) is intentionally rejected, keep the
-// surface tight, fail loudly on overreach.
 package profile
 
 import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 )
 
-// Profile is the parsed schema.
+// Profile is a parsed schema_version 1 profile.
 type Profile struct {
 	SchemaVersion     int
 	Name              string
@@ -43,11 +30,11 @@ type MCPServerSpec struct {
 	Name      string
 	Cmd       string
 	Args      []string
-	SHA256    string // required when loaded from project scope
-	Discovery string // "eager" | "lazy"
+	SHA256    string
+	Discovery string
 }
 
-// Validate checks invariants the loader enforces beyond syntax.
+// Validate requires schema_version 1, a name, a default_model, and a name, cmd and eager or lazy discovery on every MCP server.
 func (p *Profile) Validate() error {
 	if p.SchemaVersion != 1 {
 		return fmt.Errorf("profile: schema_version %d unsupported (this binary supports 1)", p.SchemaVersion)
@@ -71,7 +58,7 @@ func (p *Profile) Validate() error {
 	return nil
 }
 
-// Load reads and parses a profile from disk.
+// Load parses and validates the profile file at path.
 func Load(path string) (*Profile, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -81,7 +68,7 @@ func Load(path string) (*Profile, error) {
 	return Parse(f)
 }
 
-// Parse reads a profile from any io.Reader.
+// Parse parses and validates a profile, rejecting unknown keys and TOML outside the supported subset.
 func Parse(r io.Reader) (*Profile, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
@@ -97,13 +84,10 @@ func Parse(r io.Reader) (*Profile, error) {
 	return p, nil
 }
 
-// --- Minimal TOML parser (single-pass, no allocations beyond results) ---
-
 func parseTOML(src string, p *Profile) error {
 	lineNo := 0
 	i := 0
 	for i < len(src) {
-		// Skip whitespace and comments.
 		i = skipWS(src, i)
 		if i >= len(src) {
 			break
@@ -119,7 +103,6 @@ func parseTOML(src string, p *Profile) error {
 			}
 			continue
 		}
-		// Key = ...
 		key, rest, err := readKey(src, i)
 		if err != nil {
 			return fmt.Errorf("line %d: %w", lineNo+1, err)
@@ -131,7 +114,6 @@ func parseTOML(src string, p *Profile) error {
 		}
 		i++
 		i = skipWS(src, i)
-		// Determine value type by leading character.
 		if i >= len(src) {
 			return fmt.Errorf("line %d: missing value for %q", lineNo+1, key)
 		}
@@ -155,14 +137,12 @@ func parseTOML(src string, p *Profile) error {
 				return err
 			}
 		case '[':
-			// Could be an array of strings or an array of inline tables.
 			next, err := readArray(src, i, key, p)
 			if err != nil {
 				return fmt.Errorf("line %d: %w", lineNo+1, err)
 			}
 			i = next
 		default:
-			// Numbers (only schema_version uses one).
 			n, next, err := readInt(src, i)
 			if err != nil {
 				return fmt.Errorf("line %d: %w", lineNo+1, err)
@@ -172,7 +152,6 @@ func parseTOML(src string, p *Profile) error {
 				return err
 			}
 		}
-		// Skip rest of line.
 		for i < len(src) && src[i] != '\n' {
 			i++
 		}
@@ -209,10 +188,8 @@ func readString(s string, i int) (string, int, error) {
 	if i >= len(s) || s[i] != '"' {
 		return "", i, errors.New("expected string")
 	}
-	// Triple-quoted multi-line.
 	if i+2 < len(s) && s[i+1] == '"' && s[i+2] == '"' {
 		i += 3
-		// Skip optional immediate newline.
 		if i < len(s) && s[i] == '\n' {
 			i++
 		}
@@ -284,10 +261,8 @@ func readArray(s string, i int, key string, p *Profile) (int, error) {
 		return i, errors.New("expected [")
 	}
 	i++
-	// Look ahead: an array of inline tables starts with `{`.
 	j := skipArrayWS(s, i)
 	if j < len(s) && s[j] == '{' {
-		// Array of inline tables.
 		for {
 			j = skipArrayWS(s, j)
 			if j >= len(s) {
@@ -315,7 +290,6 @@ func readArray(s string, i int, key string, p *Profile) (int, error) {
 			return j, fmt.Errorf("unexpected character %q in array", s[j])
 		}
 	}
-	// Array of strings.
 	var out []string
 	for {
 		j = skipArrayWS(s, j)
@@ -349,7 +323,6 @@ func skipArrayWS(s string, i int) int {
 	for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r') {
 		i++
 	}
-	// Comments inside arrays.
 	for i < len(s) && s[i] == '#' {
 		for i < len(s) && s[i] != '\n' {
 			i++
@@ -434,8 +407,6 @@ func readInlineTable(s string, i int, dst map[string]any) (int, error) {
 	}
 }
 
-// --- Field assignment ---
-
 func assignScalar(p *Profile, key, val string) error {
 	switch key {
 	case "name":
@@ -489,6 +460,13 @@ func assignStringArray(p *Profile, key string, vs []string) error {
 func appendInlineTable(p *Profile, key string, m map[string]any) error {
 	switch key {
 	case "mcp_servers":
+		for _, k := range slices.Sorted(maps.Keys(m)) {
+			switch k {
+			case "name", "cmd", "args", "sha256", "discovery":
+			default:
+				return fmt.Errorf("profile: unknown mcp_servers key %q", k)
+			}
+		}
 		spec := MCPServerSpec{}
 		if v, _ := m["name"].(string); v != "" {
 			spec.Name = v

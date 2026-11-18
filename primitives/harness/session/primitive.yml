@@ -1,0 +1,67 @@
+primitive: harness.session
+summary: The durable session event log contract - the Store interface every implementation satisfies, its v1 schema, and ExportBundle, which writes one session's events to an owner-only zip at a chosen redaction level.
+code:
+  - framework/experimental/harness/session/*.go
+docs:
+  - framework/docs/content/harness-architecture.md
+twins:
+  - job: Recognise secret-shaped strings (AWS keys, GitHub tokens, provider keys, bearer tokens, JWTs, private keys) with regexes and replace them with a «redacted:KIND» marker.
+    why: The export deep pass is deliberately broader than the on-write set, and package session cannot import session/sqlite where the on-write list lives; no parity test pins the shared patterns, so a fix to one list does not reach the other.
+    sites:
+      - path: framework/experimental/harness/session/export.go
+        note: deepPatterns and deepRedact, run only at RedactMaintainer.
+      - path: framework/experimental/harness/session/sqlite/redact.go
+        note: redactionSubs and redactSecretMember, run by AppendEvent on every payload.
+  - job: Return a session's events with id greater than a cursor, in id order, for stream resume.
+    why: The bus keeps a bounded RAM window of recent events so a reconnect does not hit the database, and falls back to the log only for ids it evicted; no test compares the window's answer with the SQLite store's for the same events.
+    sites:
+      - path: framework/experimental/harness/engine/events.go
+        note: Bus.windowSince over the in-memory replay window (hist).
+      - path: framework/experimental/harness/session/sqlite/sqlite.go
+        note: Store.EventsSince, the durable copy that Bus.fromLog pages through.
+invariants:
+  - id: export-reads-every-page
+    rule: ExportBundle.Write calls EventsSince page by page until a page comes back empty, so a store that caps or shortens one call still exports every event of the session.
+    enforced_by:
+      - test: framework/experimental/harness/session.TestExportPagesPastAStoreCap
+      - test: framework/experimental/harness/session/sqlite.TestExportHoldsEveryEvent
+  - id: export-refuses-a-store-that-ignores-since
+    rule: When a page's last event id is not above the cursor, Write returns an error instead of reading the same page again.
+    enforced_by:
+      - test: framework/experimental/harness/session.TestExportRefusesAStuckStore
+  - id: export-bundle-owner-only
+    rule: The bundle is written to OutPath.tmp created 0600 with its open handle tightened to 0600, then renamed, so neither a fresh file nor a leftover world-readable tmp leaves the bundle readable by others.
+    enforced_by:
+      - test: framework/experimental/harness/session.TestExportZipIsOwnerOnly
+      - test: framework/experimental/harness/session.TestExportTightensLeftoverTmp
+  - id: export-counts-skipped-events
+    rule: An event whose stored payload does not marshal is left out of events.jsonl and counted in the manifest's skipped_events.
+    enforced_by:
+      - test: framework/experimental/harness/session.TestExportCountsSkippedEvents
+  - id: strict-export-carries-no-content
+    rule: At RedactStrict every exported payload is exactly {"redacted":"strict"}.
+    enforced_by:
+      - test: framework/experimental/harness/session.TestExportStrictReplacesPayload
+  - id: maintainer-export-stays-valid-json
+    rule: At RedactMaintainer the deep patterns run over each decoded JSON string of a payload, never over the serialized bytes, so every exported event still parses, and redactions.json counts the hits per pattern.
+    enforced_by:
+      - test: framework/experimental/harness/session.TestDeepRedactKeepsEventsValid
+      - test: framework/experimental/harness/session.TestExportMaintainerIncludesReport
+      - test: framework/experimental/harness/session.TestDeepRedactCountsHits
+decisions:
+  - id: redact-decoded-strings
+    date: 2026-11-18
+    status: accepted
+    decision: Redaction, on write and at export, walks the payload's decoded JSON strings and re-encodes them, falling back to the raw text only for a payload that is not JSON.
+    rejected:
+      - option: Run the regexes over the serialized JSON bytes.
+        why: A match that starts inside an escape such as < or runs into a closing quote leaves the stored or exported event unparseable.
+    upholds: [maintainer-export-stays-valid-json, harness.session.sqlite/redaction-keeps-payload-json]
+  - id: standard-export-trusts-on-write-redaction
+    date: 2026-11-18
+    status: accepted
+    decision: RedactStandard exports payloads exactly as the store holds them, relying on the store's on-write redaction.
+    rejected:
+      - option: Re-run the on-write redactors at export.
+        why: The on-write list lives in session/sqlite, which imports session, so the export cannot call it without an import cycle.
+    revisit_if: A Store implementation can persist payloads without on-write redaction, or callers clear sqlite.Store.Redactors.

@@ -25,6 +25,20 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **harness: a hook that times out returns at its deadline and takes its
+  children with it.** SIGTERM goes to the hook's process group at the
+  deadline and SIGKILL follows within 5s; a timed-out hook used to hold the
+  turn about 10s and leave a backgrounded child running
+  ([harness architecture](framework/docs/content/harness-architecture.md)).
+- **harness: hook and Bash output that fills the cap exactly still says it
+  was truncated.** Later output was dropped with no note.
+- **harness: promoting a session deny over a preset allow takes effect.**
+  `permission.Promote` kept the preset's allow for the same tool and argv
+  glob, and could remove the wrong session rule under a concurrent revoke.
+- **harness: `tool.Registry.Lookup` wraps `ErrToolUnknown`**, as documented;
+  the error text is now `tool: unknown: "X" not registered`.
+- **harness: a profile refuses an unknown key inside an `mcp_servers`
+  entry.** A misspelt `sha256` dropped the binary pin with no error.
 - **webmcp: `Host.Handle` refuses what `Register` refuses.** Handle took the
   reserved `get_app_instructions` name under `WithInstructions`, putting two
   tools with one name in the manifest, and took a tool tagged with an

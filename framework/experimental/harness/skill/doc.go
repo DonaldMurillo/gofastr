@@ -1,5 +1,2 @@
-// Package skill is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package skill indexes SKILL.md skills and discloses them in three tiers: name and description, body, supporting files.
 package skill

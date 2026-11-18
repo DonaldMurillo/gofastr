@@ -1,5 +1,2 @@
-// Package builtins is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package builtins implements the harness's built-in tools and the Source that exposes them.
 package builtins

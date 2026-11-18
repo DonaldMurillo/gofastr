@@ -1,0 +1,65 @@
+primitive: harness.session.sqlite.encryption
+summary: At-rest encryption of the SQLite session log - the whole file is AES-GCM encrypted to <path>.enc while closed, under a random data key (DEK) wrapped by a key-encryption key (KEK) in <path>.dek.
+code:
+  - framework/experimental/harness/session/sqlite/encrypted.go
+  - framework/experimental/harness/session/sqlite/dek.go
+docs:
+  - framework/docs/content/harness-architecture.md
+twins:
+  - job: AES-GCM wrap a DEK under a 32-byte key and write the DEKHeader JSON owner-only through a temp file and rename.
+    why: Nothing but work not yet done; ExportDEK repeats writeDEKHeader's body with a different key, path and metadata string.
+    sites:
+      - path: framework/experimental/harness/session/sqlite/dek.go
+        note: writeDEKHeader, used by LoadOrCreateDEK, RotateKEK and ImportDEK.
+      - path: framework/experimental/harness/session/sqlite/dek.go
+        note: ExportDEK, which wraps under the recipient key.
+invariants:
+  - id: closed-log-is-ciphertext-only
+    rule: CloseEncrypted writes <path>.enc owner-only through a temp file and rename, then removes the plaintext database.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestEncryptedRoundTrip
+      - test: framework/experimental/harness/session/sqlite.TestEncryptedFileIsOwnerOnly
+  - id: decrypted-log-owner-only
+    rule: OpenEncrypted writes the decrypted database owner-only through a temp file and rename, so a leftover world-readable plaintext path is tightened before the transcript lands in it.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestDecryptRedOwnerOnlyAtomic
+  - id: wrong-key-refuses-to-open
+    rule: OpenEncrypted fails when the key does not authenticate <path>.enc, and rejects a key that is not 32 bytes.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestEncryptedWrongKeyFails
+      - test: framework/experimental/harness/session/sqlite.TestEncryptedRejectsBadKeyLength
+  - id: rotation-rewraps-only
+    rule: RotateKEK rewrites only the .dek header, leaves <path>.enc untouched, and afterwards the old KEK no longer unwraps the DEK.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestRotateKEKDoesNotRewriteDB
+  - id: exported-dek-owner-only
+    rule: ExportDEK writes the exported DEK owner-only through a temp file and rename, tightening an existing weaker export, and ImportDEK with the same recipient key recovers a database that opens.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestExportDEKRedOwnerOnly
+      - test: framework/experimental/harness/session/sqlite.TestExportImportDEK
+decisions:
+  - id: whole-file-encryption
+    date: 2026-11-18
+    status: accepted
+    decision: EncryptionAtRest encrypts the whole database file on close and decrypts it on open.
+    rejected:
+      - option: Page-level encryption through a custom SQLite VFS.
+        why: A VFS is a much larger project, and whole-file encryption already defends a stolen laptop.
+    revisit_if: Session logs grow large enough that rewriting the whole file on every close is too slow.
+    upholds: [closed-log-is-ciphertext-only]
+  - id: dek-wrapped-by-kek
+    date: 2026-11-18
+    status: accepted
+    decision: The database is encrypted under a random DEK, and only the DEK is wrapped under the passphrase- or machine-derived KEK.
+    rejected:
+      - option: Encrypt the database directly under the KEK.
+        why: Rotating the KEK would re-encrypt the whole database instead of rewriting a small header.
+    upholds: [rotation-rewraps-only]
+  - id: symmetric-escrow-key
+    date: 2026-11-18
+    status: accepted
+    decision: ExportDEK wraps the DEK under a 32-byte symmetric recipient key with AES-GCM.
+    rejected:
+      - option: X25519 or age public-key recipients.
+        why: The harness stays standard-library only, and no age integration exists.
+    revisit_if: Escrow must work for a recipient who shares only a public key.

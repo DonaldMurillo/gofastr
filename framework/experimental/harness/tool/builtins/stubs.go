@@ -1,17 +1,13 @@
 package builtins
 
-// Type aliases for the public catalog. The Tool implementations live
-// next to their behavior (write.go, bash.go, webfetch.go). Aliasing
-// here keeps a single place to look up the catalog shape.
-
-// Write is the public alias for the file-write tool implementation.
+// Write creates or overwrites a file, making its parent directories.
 type Write = writeImpl
 
-// Edit is the public alias for the file-edit tool implementation.
+// Edit replaces an exact string in a regular file, refusing an ambiguous match unless replace_all is set.
 type Edit = editImpl
 
-// Bash is the public alias for the shell-execution tool implementation.
+// Bash runs a command through /bin/sh -c with a timeout, an output cap and a credential-tool blocklist.
 type Bash = bashImpl
 
-// WebFetch is the public alias for the HTTP-GET tool implementation.
+// WebFetch fetches an http(s) URL with GET, refusing any internal address on every hop.
 type WebFetch = webFetchImpl

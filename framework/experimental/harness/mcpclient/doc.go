@@ -1,5 +1,2 @@
-// Package mcpclient is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package mcpclient is the harness's MCP client: it spawns an MCP server as a child process and calls its tools over stdio.
 package mcpclient

@@ -1,6 +1,3 @@
-// Package builtins implements the v0.1 default tool set: Read, Write,
-// Edit, Bash, Grep, Glob, Ls, WebFetch. Each tool is small, focused,
-// and declares is_mutating per the persistence layer's contract.
 package builtins
 
 import (
@@ -17,11 +14,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
 
-// Read is the file-read tool. Reads up to MaxBytes from a file (default
-// 1 MiB) and returns the text. Optional Offset (byte) and Limit (lines)
-// for partial reads.
+// Read returns a regular file's text, from an optional byte offset and up to an optional line count.
 type Read struct {
-	// MaxBytes caps a single Read response. 0 means use the default (1 MiB).
+	// MaxBytes caps the bytes read; 0 means 1 MiB.
 	MaxBytes int64
 }
 
@@ -74,7 +69,6 @@ func (r Read) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*t
 		}
 	}
 	if args.Limit > 0 {
-		// Line-limited read.
 		var b strings.Builder
 		scanner := bufio.NewScanner(io.LimitReader(f, maxBytes))
 		scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
@@ -89,7 +83,6 @@ func (r Read) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*t
 		}
 		return textResult(b.String()), nil
 	}
-	// Byte-limited read.
 	data, err := io.ReadAll(io.LimitReader(f, maxBytes))
 	if err != nil {
 		return errorResult(fmt.Sprintf("Read: %v", err)), nil
@@ -97,16 +90,8 @@ func (r Read) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*t
 	return textResult(string(data)), nil
 }
 
-// errNotRegular refuses a Read or Edit path that is not a regular file.
 var errNotRegular = errors.New("not a regular file")
 
-// openRegularPath opens path only when it is a regular file, Grep's
-// openRegular rule for a named path. Opening a FIFO blocks until a
-// writer appears and ignores the turn's context, so a quiet-mode Read
-// of one wedged the turn past CancelTurn; /dev/tty and /dev/zero never
-// end. A symlink counts when its target is a regular file, and the
-// open handle is checked again so a path swapped after the first check
-// is still refused.
 func openRegularPath(path string) (*os.File, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -126,14 +111,12 @@ func openRegularPath(path string) (*os.File, error) {
 	return f, nil
 }
 
-// textResult wraps a string into a successful ToolResult.
 func textResult(s string) *tool.ToolResult {
 	return &tool.ToolResult{
 		Content: []control.ContentBlock{{Type: "text", Text: s}},
 	}
 }
 
-// errorResult wraps a string into a failed ToolResult.
 func errorResult(s string) *tool.ToolResult {
 	return &tool.ToolResult{
 		Content: []control.ContentBlock{{Type: "text", Text: s}},

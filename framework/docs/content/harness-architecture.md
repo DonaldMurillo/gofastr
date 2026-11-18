@@ -1638,7 +1638,7 @@ Transport-specific framing:
 | `Command` body fields | **Ignore unknown** (additive evolution) |
 | `Event` body fields | **Ignore unknown** |
 | Token claim set | **Reject token if any claim listed in its own `critical_claims: []` is unrecognized; ignore other unknowns.** Fail-closed on capability-restricting claims. |
-| Profile TOML | **Warn, do not error** on unknown keys (forward-compat for downgrades). Require explicit `schema_version` bump for breaking renames. |
+| Profile TOML | **Error** on unknown keys, top-level and inside `mcp_servers` entries, so a misspelled `sha256` never drops a pin. Require explicit `schema_version` bump for breaking renames. |
 | MCP resource bodies | **Ignore unknown** |
 
 Field-name reservations:
@@ -2402,7 +2402,8 @@ Hooks are shell commands with explicit deadlines:
 Override per-hook in the TOML: `{ event = "PreToolUse", cmd =
 "…", timeout_ms = 60000 }`. `timeout_ms = 0` keeps the per-event
 default; a negative value is rejected at registration. At deadline:
-SIGTERM, then SIGKILL at deadline+5 s. Hook stdout/stderr capped at
+SIGTERM to the hook's process group (Unix), then SIGKILL to the group
+by deadline+5 s, and the turn goes on without waiting out the grace. Hook stdout/stderr capped at
 64 KB; truncated
 output is logged with a marker. A hook exiting non-zero emits
 `HookTimeout` (when killed) or `HookError{exit_code}` (when it

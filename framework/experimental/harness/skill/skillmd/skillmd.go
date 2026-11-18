@@ -1,12 +1,3 @@
-// Package skillmd parses SKILL.md files per the open spec at
-// https://agentskills.io/specification.
-//
-// Frontmatter: YAML between "---" delimiters. Required fields: name
-// (≤64 chars, lowercase + hyphens) and description (≤1024 chars).
-// Optional: triggers (list of strings).
-//
-// We parse YAML by hand for the tiny subset SKILL.md uses
-// (frontmatter is shallow: scalar strings and string lists).
 package skillmd
 
 import (
@@ -19,31 +10,29 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/markdown"
 )
 
-// Skill is the parsed representation of a SKILL.md file (tier-1 +
-// tier-2 from the progressive-disclosure model).
+// Skill is a parsed SKILL.md.
 type Skill struct {
 	Name        string
 	Description string
 	Triggers    []string
-	Body        string            // markdown after frontmatter
-	Dir         string            // absolute path to the directory containing SKILL.md
-	SHA256      string            // hash of the SKILL.md file for TOFU
-	Extra       map[string]string // pass-through frontmatter fields
+	Body        string
+	Dir         string
+	SHA256      string
+	Extra       map[string]string
 }
 
-// Tier1 returns just the name + description; this is what the loader
-// surfaces at startup (the ~100 tokens/skill cost the spec markets).
+// Tier1 is a skill's name and description.
 type Tier1 struct {
 	Name        string
 	Description string
 }
 
-// Tier1 returns the lightweight metadata.
+// Tier1 returns the skill's name and description.
 func (s *Skill) Tier1() Tier1 {
 	return Tier1{Name: s.Name, Description: s.Description}
 }
 
-// Parse reads a SKILL.md file at the given path.
+// Parse reads and parses the SKILL.md at path, setting Dir and SHA256.
 func Parse(path string) (*Skill, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -58,15 +47,13 @@ func Parse(path string) (*Skill, error) {
 	return s, nil
 }
 
-// ParseBytes parses SKILL.md content directly.
+// ParseBytes parses SKILL.md content: "---" frontmatter, then the body.
 func ParseBytes(data []byte) (*Skill, error) {
 	src := string(data)
-	// Frontmatter required.
 	if !strings.HasPrefix(src, "---") {
 		return nil, errors.New("missing frontmatter (file must start with '---')")
 	}
 	rest := src[3:]
-	// Skip optional newline after opening fence.
 	rest = strings.TrimPrefix(rest, "\n")
 	end := strings.Index(rest, "\n---")
 	if end < 0 {
@@ -87,7 +74,7 @@ func ParseBytes(data []byte) (*Skill, error) {
 	return s, nil
 }
 
-// Validate enforces the spec's required-field constraints.
+// Validate checks name (1-64 of a-z, 0-9, -) and description (1-1024 bytes).
 func (s *Skill) Validate() error {
 	if s.Name == "" {
 		return errors.New("frontmatter missing required 'name'")
@@ -120,8 +107,6 @@ func validNameChars(s string) bool {
 	return true
 }
 
-// parseFrontmatter handles the YAML subset SKILL.md uses: top-level
-// `key: value` pairs and `key:` followed by `- item` lines.
 func parseFrontmatter(src string, s *Skill) error {
 	lines := strings.Split(src, "\n")
 	for i := 0; i < len(lines); i++ {
@@ -139,10 +124,8 @@ func parseFrontmatter(src string, s *Skill) error {
 		}
 		key := strings.TrimSpace(before)
 		val := strings.TrimSpace(after)
-		// Strip surrounding quotes on scalars.
 		val = markdown.Unquote(val)
 		if val == "" {
-			// Either a list follows, or it's just empty.
 			items, consumed := readList(lines[i+1:])
 			i += consumed
 			if items != nil {
@@ -170,9 +153,6 @@ func startsAtCol0(s string) bool {
 	return s[0] != ' ' && s[0] != '\t'
 }
 
-// readList consumes `- item` lines from the start of the slice.
-// Returns the items (nil if no list found) and how many lines were
-// consumed.
 func readList(rest []string) (items []string, consumed int) {
 	for i, line := range rest {
 		trim := strings.TrimLeft(line, " \t")
@@ -205,7 +185,6 @@ func assignList(s *Skill, key string, items []string) error {
 	case "triggers":
 		s.Triggers = items
 	default:
-		// Store joined for round-trip visibility.
 		s.Extra[key] = strings.Join(items, ",")
 	}
 	return nil

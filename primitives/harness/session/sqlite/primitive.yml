@@ -1,0 +1,118 @@
+primitive: harness.session.sqlite
+summary: The SQLite session.Store - an owner-only WAL database of redacted events and the tool-call intent and outcome ledger, plus retention, monthly rollover, provider-attempt cost reconciliation and a separate cost ledger.
+code:
+  - framework/experimental/harness/session/sqlite/
+docs:
+  - framework/docs/content/harness-architecture.md
+twins:
+  - job: Record the USD cost and token counts of each provider call, keyed by session, provider and model.
+    why: provider_attempts lives in the event database for reconciliation against provider billing, while CostLedger is its own unencrypted file that outlives VACUUM of the event log; nothing writes both or checks they agree.
+    sites:
+      - path: framework/experimental/harness/session/sqlite/attempts.go
+        note: RecordAttempt into provider_attempts, summed by LocalCostInPeriod.
+      - path: framework/experimental/harness/session/sqlite/retention.go
+        note: CostLedger.Record into cost_rows, summed by CostByProvider and CostBySession.
+invariants:
+  - id: payload-redacted-before-write
+    rule: AppendEvent runs every Redactor over the payload before the INSERT, so AWS keys, GitHub tokens, bare sk- provider keys, PEM private-key bodies and SECRET_SUFFIXED=value assignments never reach events.payload.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestRedactionOnAppend
+      - test: framework/experimental/harness/session/sqlite.TestBareProviderKeyRedacted
+      - test: framework/experimental/harness/session/sqlite.TestPEMKeyMaterialRedactedAtPersist
+      - test: framework/experimental/harness/session/sqlite.TestHarnessKeyMaterialRedactedAtPersist
+  - id: secret-named-member-redacted
+    rule: A JSON string value whose member name ends in API_KEY, TOKEN, SECRET, PASSWORD, PASSPHRASE, ACCESS_KEY or MACHINE_KEY and is at least 6 bytes long is replaced whole, though neither string alone matches a pattern.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestSecretKeyedJSONValueRedactedAtPersist
+  - id: redaction-keeps-payload-json
+    rule: A JSON payload is still valid JSON after on-write redaction.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestRedactKeepsPayloadValidJSON
+      - test: framework/experimental/harness/session/sqlite.TestRedactedPayloadStaysDecodable
+  - id: database-files-owner-only
+    rule: Open and OpenCostLedger seed the database file 0600 in a 0700 directory before the driver opens it, tightening a weaker existing file, so the database and its WAL sidecar are owner-only.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestSessionsDBRedOwnerOnly
+      - test: framework/experimental/harness/session/sqlite.TestCostLedgerOwnerOnlyModes
+  - id: open-upgrades-old-schema
+    rule: Open adds the events.sub_agent column to a database created without it.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestOpenAddsSubAgentColumn
+  - id: past-sessions-filter-before-limit
+    rule: ListPastSessions applies the only filter in SQL before LIMIT, so an old session named in only is found behind newer ones.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestListPastSessionsOnlyBeforeLimit
+      - test: framework/experimental/harness/session/sqlite.TestListPastSessions_LimitRespected
+  - id: first-message-is-the-users
+    rule: A past session's FirstMessage is the text of its first TurnStarted with no sub_agent, truncated to 80 bytes, never a sub-agent's brief.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestFirstMessageSkipsSubAgentTurns
+      - test: framework/experimental/harness/session/sqlite.TestListPastSessions
+  - id: orphan-is-intent-without-outcome
+    rule: OrphanIntents returns exactly the intents that have no outcome row.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestIntentOutcomeLedger
+  - id: retention-keeps-metadata
+    rule: ApplyRetention replaces only the payload of events older than ttl with "«ttl-expired»" and leaves newer events and every row's metadata untouched.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestRetention
+  - id: drop-metadata-spares-exempt-sessions
+    rule: DropMetadata deletes old rows of every session except those listed as exempt.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestDropMetadataExemptsPinnedSessions
+      - test: framework/experimental/harness/session/sqlite.TestDropMetadata
+  - id: one-file-per-month
+    rule: MonthlyRollover opens sessions-YYYYMM.db for the current UTC month and ListArchives lists those files oldest first.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestMonthlyRolloverOpensFile
+  - id: variance-is-upstream-minus-local
+    rule: A reconciliation's VarianceUSD is the upstream-billed USD minus the local estimate.
+    enforced_by:
+      - test: framework/experimental/harness/session/sqlite.TestReconcileNow
+decisions:
+  - id: tight-on-write-patterns
+    date: 2026-11-18
+    status: accepted
+    decision: The on-write redaction list stays narrow and anchors assignments on secret-suffixed variable names, and the broader detector runs only at maintainer export.
+    rejected:
+      - option: Run the broad export patterns (emails, hex runs, any long base64) on every write.
+        why: They run on every event payload, and a false positive destroys transcript content for good, while export can be re-run.
+    upholds: [payload-redacted-before-write]
+  - id: checkpoint-is-best-effort
+    date: 2026-11-18
+    status: accepted
+    decision: After a mutating intent and after every outcome the store runs PRAGMA wal_checkpoint(FULL) and ignores its error.
+    rejected:
+      - option: Fail RecordToolIntent or RecordToolOutcome when the checkpoint fails.
+        why: The row is already durable in the WAL; a checkpoint only advances the main database file and can run later.
+  - id: orphans-not-session-scoped
+    date: 2026-11-18
+    status: accepted
+    decision: OrphanIntents ignores its session argument and returns orphans across all sessions, because tool_call_intents has no session column.
+    rejected:
+      - option: Add a session column to tool_call_intents.
+        why: It needs a schema migration and nothing calls OrphanIntents yet.
+    revisit_if: A caller resumes one session and must see only that session's orphaned tool calls.
+  - id: cost-ledger-own-file
+    date: 2026-11-18
+    status: accepted
+    decision: The cost ledger is its own unencrypted SQLite file.
+    rejected:
+      - option: A cost table inside the session event database.
+        why: It would be encrypted with the event log and rewritten by its VACUUM, and the cost dashboard reads it directly.
+  - id: monthly-files
+    date: 2026-11-18
+    status: accepted
+    decision: MonthlyRollover splits the log into one file per month.
+    rejected:
+      - option: One ever-growing database.
+        why: VACUUM and whole-file encryption would rewrite the whole history instead of the current month.
+  - id: subagent-column-by-alter
+    date: 2026-11-18
+    status: accepted
+    decision: Open adds events.sub_agent with ALTER TABLE when pragma_table_info lacks it, without bumping SchemaVersion.
+    rejected:
+      - option: A versioned migration file and SchemaVersion 2.
+        why: No migration runner exists; CREATE TABLE IF NOT EXISTS leaves an old table as it was.
+    revisit_if: A second schema change lands and a migration runner pays for itself.
+    upholds: [open-upgrades-old-schema]

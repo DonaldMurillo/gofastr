@@ -1,0 +1,63 @@
+primitive: harness.engine.bus
+summary: The per-session event bus - numbers every event, fans it out to client subscribers and to the lossless session-log subscriber, keeps a bounded replay window, and replays from the session log for a resuming client.
+code:
+  - framework/experimental/harness/engine/events.go
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: sub-bus-shares-root-ids
+    rule: A sub-agent bus takes every event id from its root bus, so one session has one monotonic id sequence.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestSubBusSharesParentIDs
+      - test: framework/experimental/harness/engine.TestBusPublishMonotonic
+  - id: client-subscribers-drop-when-slow
+    rule: Publish never waits for a Subscribe or SubscribeSince live reader; an event a full channel has no room for is dropped for that reader.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestBusSlowSubscriberDoesntBlock
+  - id: subscribe-all-is-lossless
+    rule: A SubscribeAll channel gets every event, Publish waiting for room, and the wait ends when the subscription's context ends or Close starts.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestSubscribeAllNeverDrops
+      - test: framework/experimental/harness/engine.TestCloseFreesBlockedPublish
+  - id: sub-agent-events-private-to-clients
+    rule: A sub-agent bus's events reach the parent's SubscribeAll subscribers tagged with SubAgent, and never the parent's Subscribe readers or its replay window.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestSpawnEventsDoNotLeakToParentBus
+      - test: framework/experimental/harness/engine.TestSpawnEventsReachAuditSubscribers
+      - test: framework/experimental/harness/engine.TestSubAgentEventsStayOutOfParentReplay
+  - id: resume-never-has-a-silent-hole
+    rule: SubscribeSince and Backlog deliver every event after the given id from the session log and the replay window, and an id range neither holds arrives as one StreamGap with id 0.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestSubscribeSinceReplaysThenLive
+      - test: framework/experimental/harness/engine.TestSubscribeSinceReadsLog
+      - test: framework/experimental/harness/engine.TestSubscribeSinceMarksGap
+  - id: log-panic-is-a-gap
+    rule: A panic in the session log's EventsSince is recovered and the unread range is reported as a StreamGap.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestSubscribeSinceLogPanicContained
+  - id: backlog-pages-to-its-limit
+    rule: Backlog stops reading log pages once it holds limit events or its context ends.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestBacklogStopsPagingAtLimit
+      - test: framework/experimental/harness/engine.TestBacklogStopsOnCancel
+decisions:
+  - id: lossless-only-for-the-log
+    date: 2026-11-18
+    status: accepted
+    decision: Only SubscribeAll, the session log's subscription, makes Publish wait; client subscriptions drop and resume through SubscribeSince.
+    rejected:
+      - option: Drop for every subscriber.
+        why: A burst past the buffer left holes in the session log that resume and audit read.
+      - option: Make every subscription lossless.
+        why: One slow client would stall the session's publishers.
+    upholds: [client-subscribers-drop-when-slow, subscribe-all-is-lossless]
+  - id: sub-agents-on-private-bus
+    date: 2026-11-18
+    status: accepted
+    decision: A sub-agent publishes on its own bus that shares the root's ids and forwards to SubscribeAll only.
+    rejected:
+      - option: Publish sub-agent events on the session bus.
+        why: The parent chat filled with every thought and tool call of each sub-agent.
+      - option: A bus with no forwarding.
+        why: A Bash or Write a sub-agent ran reached no session log.
+    upholds: [sub-agent-events-private-to-clients, sub-bus-shares-root-ids]

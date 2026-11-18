@@ -1,0 +1,49 @@
+primitive: harness.context
+summary: Reads the project-instruction files a profile lists (AGENTS.md up to the repo root, and vendor files such as CLAUDE.md or .cursorrules) into sections for the system prompt.
+code:
+  - framework/experimental/harness/context/
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: agents-md-deepest-first-to-repo-root
+    rule: AGENTS.md is read from the working directory and each parent, deepest first, and the walk stops at the first directory holding .git, so a file above the repo root is never read.
+    enforced_by:
+      - test: framework/experimental/harness/context.TestReadAGENTSMDWalkUpward
+      - test: framework/experimental/harness/context.TestReadStopsAtRepoRoot
+  - id: no-read-through-escaping-symlink
+    rule: A context file is opened through an os.Root over its directory, so a symlinked file or a linked .github directory that points outside that directory is not read.
+    enforced_by:
+      - test: framework/experimental/harness/context.TestReadRefusesSymlinkEscape
+      - test: framework/experimental/harness/context.TestReadRefusesLinkedGithubDir
+      - test: framework/experimental/harness/context.TestReadFollowsSymlinkInsideDir
+  - id: only-regular-files
+    rule: A context path that is not a regular file, checked on the path before the open and on the handle after it, is refused, so a FIFO never blocks a turn.
+    enforced_by:
+      - test: framework/experimental/harness/context.TestReadSkipsFIFO
+  - id: size-capped
+    rule: A context file over 256 KiB is refused and never read whole into memory or into the prompt.
+    enforced_by:
+      - test: framework/experimental/harness/context.TestReadSkipsOversizedFile
+  - id: refused-file-is-skipped
+    rule: A missing or refused file is skipped like an absent one and the other sources are still read; only an unknown source name makes Read fail.
+    enforced_by:
+      - test: framework/experimental/harness/context.TestReadSkipsRefusedFileKeepsRest
+      - test: framework/experimental/harness/context.TestReadMissingFilesSilent
+      - test: framework/experimental/harness/context.TestReadRejectsUnknownSource
+decisions:
+  - id: rooted-open
+    date: 2026-11-18
+    status: accepted
+    decision: Context files are opened through os.OpenRoot on their directory, with a regular-file check on the handle after the open.
+    rejected:
+      - option: Resolve the path with filepath.EvalSymlinks and check it stays under the directory before a plain os.Open.
+        why: The path can be swapped between the check and the open, and a repo's AGENTS.md pointing at a private key would then reach the provider.
+    upholds: [no-read-through-escaping-symlink, only-regular-files]
+  - id: sources-are-a-closed-list
+    date: 2026-11-18
+    status: accepted
+    decision: Sources is a list of known file names switched on inside Read.
+    rejected:
+      - option: A pluggable reader interface per source.
+        why: Every source is a file read the same way; an interface would add a polymorphism point with one implementation.
+    upholds: [refused-file-is-skipped]
