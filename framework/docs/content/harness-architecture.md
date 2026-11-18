@@ -2220,6 +2220,11 @@ allow_project_hooks = false
 Selection: `gofastr harness --framework` or `gofastr harness` (default).
 Override: `--profile <path>`.
 
+`resources.Catalog.ListProfiles()` returns the names of the built-in
+profiles, `framework` and `default`. Both `GET /v1/profiles` and the
+MCP resource `harness/v1://profiles` return this list. A profile
+loaded with `--profile <path>` is not in it.
+
 ### Mid-session profile switching
 
 `/profiles:framework` (or any other profile) **does not morph the

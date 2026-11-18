@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control/auth"
+	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
 
 func TestEveryListedResourceReads(t *testing.T) {
@@ -38,6 +39,18 @@ func TestMalformedSessionIDIsBadParams(t *testing.T) {
 		if errObj == nil || errObj["code"] != float64(-32602) {
 			t.Errorf("%s with a malformed sessionId: %v, want -32602", tool, resp)
 		}
+	}
+}
+
+func TestMalformedCallIDIsBadParams(t *testing.T) {
+	s, _, _ := newTestServer(t)
+	resp := runMCPRequest(t, s, map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "harness.answer_permission", "arguments": map[string]any{"sessionId": string(ids.NewSessionID()), "callId": "nope", "decision": "allow"}},
+	})
+	errObj, _ := resp["error"].(map[string]any)
+	if errObj == nil || errObj["code"] != float64(-32602) {
+		t.Errorf("harness.answer_permission with a valid sessionId and a malformed callId: %v, want -32602", resp)
 	}
 }
 
@@ -70,8 +83,7 @@ func TestGETStreamsCappedPerToken(t *testing.T) {
 	tok := mintHTTPScopeToken(t, enc, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var last int
-	for range 17 {
+	for i := 1; i <= 17; i++ {
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/mcp", nil)
 		req.Header.Set("Authorization", "Bearer "+tok)
 		resp, err := http.DefaultClient.Do(req)
@@ -79,9 +91,12 @@ func TestGETStreamsCappedPerToken(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer resp.Body.Close()
-		last = resp.StatusCode
-	}
-	if last != http.StatusTooManyRequests {
-		t.Fatalf("17th GET stream for one token: status = %d, want 429", last)
+		want := http.StatusOK
+		if i == 17 {
+			want = http.StatusTooManyRequests
+		}
+		if resp.StatusCode != want {
+			t.Fatalf("GET stream %d for one token: status = %d, want %d", i, resp.StatusCode, want)
+		}
 	}
 }

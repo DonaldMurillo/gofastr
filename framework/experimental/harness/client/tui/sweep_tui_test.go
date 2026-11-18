@@ -24,7 +24,13 @@ func TestCtrlOExpandsInPlaceAfterTheScrollbackCapTrims(t *testing.T) {
 	pushEvent(t, tui, 1, control.ToolCallStarted{CallID: ids.NewCallID(), Tool: "Bash", Args: json.RawMessage(`{}`)})
 	pushEvent(t, tui, 2, control.ToolResult{CallID: ids.NewCallID(), Content: []control.ContentBlock{{Type: "text", Text: numbered("file", 10)}}})
 	pushEvent(t, tui, 3, control.TextDelta{Text: numbered("line", 996)})
+	if len(tui.scrollback) != maxScrollback {
+		t.Fatalf("scrollback holds %d lines before Ctrl-O, want the cap %d", len(tui.scrollback), maxScrollback)
+	}
 	tui.handleKey([]byte{0x0f})
+	if len(tui.scrollback) > maxScrollback {
+		t.Fatalf("Ctrl-O grew the scrollback to %d lines, past the cap %d", len(tui.scrollback), maxScrollback)
+	}
 	all := strings.Join(tui.scrollback, "\n")
 	for i := range 996 {
 		if want := fmt.Sprintf("line-%04d", i); !strings.Contains(all, want) {
@@ -42,6 +48,9 @@ func TestThinkingCollapsesWholeAfterTheScrollbackCapTrims(t *testing.T) {
 	pushEvent(t, tui, 2, control.TurnEnded{})
 	block, _ := json.Marshal(numbered("think", 995))
 	pushEvent(t, tui, 3, control.ThinkingDelta{Block: block})
+	if len(tui.scrollback) != maxScrollback {
+		t.Fatalf("scrollback holds %d lines before the collapse, want the cap %d", len(tui.scrollback), maxScrollback)
+	}
 	pushEvent(t, tui, 4, control.TextDelta{Text: "answer"})
 	for _, line := range tui.scrollback {
 		if strings.Contains(line, "think-") {
