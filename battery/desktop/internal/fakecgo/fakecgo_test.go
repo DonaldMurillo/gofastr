@@ -5,6 +5,8 @@ package fakecgo_test
 import (
 	"os"
 	"testing"
+	// //go:linkname below requires unsafe to be imported, even unused.
+	_ "unsafe"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/fakecgo"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
