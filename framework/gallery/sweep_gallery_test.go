@@ -118,3 +118,17 @@ func TestSweepGalleryRegistersNoStylesheet(t *testing.T) {
 		}
 	}
 }
+
+func TestDemoFormRouteRefusesControlBytesInTheFragment(t *testing.T) {
+	for _, page := range []string{"/components/form#x\ny", "/components/form#x\ty", "/components/form#x\x7fy"} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("demo page %q with a control byte in its fragment was accepted", page)
+				}
+			}()
+			MountDemoFormRoute(router.New(), func(string) string { return page })
+		}()
+	}
+	MountDemoFormRoute(router.New(), func(string) string { return "/components/form#details" })
+}

@@ -6,7 +6,7 @@ docs:
   - framework/docs/content/i18n.md
 invariants:
   - id: pseudo-keeps-placeholders
-    rule: Pseudo accents every ASCII letter, doubles every vowel, brackets the result, pads it with middle dots until the text before the closing bracket holds at least four thirds of one more than the input's runes, and keeps {name} and {{name}} placeholders as written.
+    rule: Pseudo returns an empty string unchanged and, for non-empty input, accents every ASCII letter, doubles every vowel, brackets the result, pads it with middle dots until the text before the closing bracket holds at least four thirds of one more than the input's runes, and keeps {name} and {{name}} placeholders as written.
     enforced_by:
       - test: framework/i18nui.TestPseudo
   - id: add-pseudo-covers-every-phrase

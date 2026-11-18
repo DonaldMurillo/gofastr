@@ -41,6 +41,11 @@ func localPath(p string) bool {
 	if len(p) == 0 || p[0] != '/' || strings.HasPrefix(p, "//") || strings.HasPrefix(p, `/\`) {
 		return false
 	}
+	for i := 0; i < len(p); i++ {
+		if p[i] < 0x20 || p[i] == 0x7f {
+			return false
+		}
+	}
 	u, err := url.Parse(p)
 	return err == nil && u.Scheme == "" && u.Host == ""
 }
