@@ -2403,7 +2403,7 @@ Override per-hook in the TOML: `{ event = "PreToolUse", cmd =
 "…", timeout_ms = 60000 }`. `timeout_ms = 0` keeps the per-event
 default; a negative value is rejected at registration. At deadline:
 SIGTERM to the hook's process group (Unix), then SIGKILL to the group
-by deadline+5 s. A hook that exits on SIGTERM returns at once; one that ignores it holds the turn at most the 5 s grace. Hook stdout/stderr capped at
+by deadline+5 s. A timed-out hook holds the turn at most the 5 s grace past its deadline, less when the whole group exits on SIGTERM and closes its output. Hook stdout/stderr capped at
 64 KB; truncated
 output is logged with a marker. A hook exiting non-zero emits
 `HookTimeout` (when killed) or `HookError{exit_code}` (when it
