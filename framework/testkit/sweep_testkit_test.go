@@ -20,12 +20,15 @@ func TestSweepUniqueDBNameIsAShortLowercaseIdentifier(t *testing.T) {
 }
 
 func TestSweepRedactHidesThePassword(t *testing.T) {
-	got := redact("postgres://admin:s3cret@db:5432/postgres")
-	if strings.Contains(got, "s3cret") || !strings.Contains(got, "admin") {
-		t.Errorf("redact = %q, want the user kept and the password hidden", got)
+	for _, dsn := range []string{"mysql://admin:s3cret@db/x", "postgres://admin:s3cret@db/x\x7f"} {
+		if _, err := rewriteDBName(dsn, "ftest_x"); err == nil || strings.Contains(err.Error(), "s3cret") {
+			t.Errorf("rewriteDBName(%q) error %v leaks the password or accepts the DSN", dsn, err)
+		}
 	}
-	if err := ValidateAdminDSN("mysql://admin@db/x?password=q3cret&sslmode=disable"); err == nil || strings.Contains(err.Error(), "q3cret") {
-		t.Errorf("ValidateAdminDSN error %v leaks a query-string password or accepts a non-postgres DSN", err)
+	for _, dsn := range []string{"mysql://admin@db/x?password=q3cret&sslmode=disable", "mysql://admin@db/x?password=q3cret;sslmode=disable", "mysql:/\\x%zz?password=q3cret"} {
+		if err := ValidateAdminDSN(dsn); err == nil || strings.Contains(err.Error(), "q3cret") {
+			t.Errorf("ValidateAdminDSN(%q) error %v leaks a query-string password or accepts a non-postgres DSN", dsn, err)
+		}
 	}
 	if err := ValidateAdminDSN("mysql://admin:s3cret@db/x"); err == nil || strings.Contains(err.Error(), "s3cret") {
 		t.Errorf("ValidateAdminDSN error %v leaks the password or accepts a non-postgres DSN", err)

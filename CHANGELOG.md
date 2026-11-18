@@ -28,8 +28,9 @@ few lines, and link the PR or the docs page for the rest.
 - **`cssweight.Measure` honours an empty first `<base href="">`.** An empty first base let a
   later `<base>` win, so linked sheets resolved against the wrong path; the first base now wins
   whatever its value.
-- **`testkit.ValidateAdminDSN` redacts a `password` query parameter in its error**, not only the
-  password in the URL's userinfo.
+- **testkit's DSN errors no longer quote the DSN.** `ValidateAdminDSN` names only the scheme it
+  refused, and the database-name rewrite drops the URL from its parse error, so a password, in the
+  userinfo or a well-formed or malformed query, never reaches the error text.
 - **Worktree isolation tightens an existing SQLite state directory to owner-only.** On Unix,
   `.gofastr/isolation/<id>` kept its mode when it already existed, so one created group- or
   world-readable stayed that way; it is now set to 0700 whenever an active SQLite DSN is rewritten
