@@ -209,7 +209,7 @@ func TestE2ECommandPaletteOpensAndHydrates(t *testing.T) {
 		pageReady(),
 		chromedp.Click(`[data-cui-scope="docsite-header"] a.cmd`, chromedp.ByQuery),
 		chromedp.WaitVisible(`#site-command-palette-input`, chromedp.ByQuery),
-		chromedp.Evaluate(`!!document.querySelector('[role="dialog"]')`, &dialogVisible),
+		chromedp.Evaluate(`!!document.querySelector('dialog[data-cui-widget]:modal')`, &dialogVisible),
 	); err != nil {
 		t.Fatalf("palette should open + hydrate on click (was 401-blocked): %v", err)
 	}
