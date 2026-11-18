@@ -415,8 +415,12 @@ UTF-8, and Infinity-overflowing literals are errors) and `Canonicalize`
 handles in-memory Go values. Keys sort by UTF-16 code unit and numbers
 serialize exactly as ECMAScript `Number::toString`. Indirect: the
 framework signs A2A agent cards with it. Direct when you need to hash or
-sign JSON in your own code — read the package doc for the I-JSON number
-caveats first. Start at `core/jcs/jcs.go`: `CanonicalizeJSON`.
+sign JSON in your own code. Numbers follow I-JSON: every number becomes
+an IEEE 754 double, so carry an integer beyond 2^53 as a string; a
+literal that underflows becomes `0`. `Canonicalize` inherits
+`encoding/json`'s replacement of invalid UTF-8 with U+FFFD, so put
+untrusted strings through `CanonicalizeJSON`. Start at
+`core/jcs/jcs.go`: `CanonicalizeJSON`.
 
 ## Content and rendering
 

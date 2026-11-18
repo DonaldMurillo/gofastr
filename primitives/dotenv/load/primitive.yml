@@ -1,0 +1,43 @@
+primitive: dotenv.load
+summary: Load merges several .env files by precedence and Apply writes them into the process environment without overwriting a set variable.
+code:
+  - core/dotenv/loader.go
+docs:
+  - framework/docs/content/dotenv.md
+invariants:
+  - id: environment-wins
+    rule: Apply sets only keys that are not already in the process environment and reports the rest as skipped.
+    enforced_by:
+      - test: core/dotenv.TestApply_ExistingEnvWins
+      - test: core/dotenv.TestApply_Idempotent
+  - id: earlier-file-wins
+    rule: Load keeps the value of the earliest path that sets a key and skips a path that does not exist, while any other open or parse error fails naming the file.
+    enforced_by:
+      - test: core/dotenv.TestLoad_EarlierFileWins
+      - test: core/dotenv.TestLoad_FileMissingIsNonError
+      - test: core/dotenv.TestLoad_MalformedFileReturnsError
+  - id: lookup-follows-applied-value
+    rule: Under Load a ${NAME} reads the process environment first, then the value an earlier file set, then the same file's earlier keys, so a value is built from the one Apply leaves in effect.
+    enforced_by:
+      - test: core/dotenv.TestLoad_ExpandFallsBackToEnviron
+      - test: core/dotenv.TestLoad_ExpandReadsEarlierFileValue
+      - test: core/dotenv.TestLoad_EnvironBeatsFileKeys
+      - test: core/dotenv.TestLoad_EnvironBeatsEarlierFile
+    applies:
+      - core/dotenv/expand.go
+decisions:
+  - id: existing-env-wins
+    date: 2026-11-18
+    status: accepted
+    decision: The process environment beats every dotfile, as operators expect their explicit configuration to override a file.
+    rejected:
+      - option: Let a .env value override the environment, as some loaders do.
+        why: An operator's DATABASE_URL would be silently replaced by a committed default.
+    upholds: [environment-wins, lookup-follows-applied-value]
+  - id: apply-swallows-setenv-error
+    date: 2026-11-18
+    status: accepted
+    decision: Apply skips a key os.Setenv refuses instead of failing startup, since the parser already refuses empty keys and NUL bytes.
+    rejected:
+      - option: Return the Setenv error.
+        why: The only cases left are platform edges, and a typo should not stop the app from booting.

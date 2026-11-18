@@ -46,7 +46,13 @@ Hard rules:
 - Inline comments after an UNQUOTED value are preserved as part of
   the value. Write a quoted value if you need to embed `#`.
 - The parser fails fast on malformed input rather than skipping the
-  bad line (loud-by-default).
+  bad line (loud-by-default). The error names the file and line, never
+  the line's text, since a `.env` line holds a secret.
+- A key repeated in one file keeps its last value. A UTF-8 BOM at the
+  start of the file is ignored; a NUL byte is an error.
+- A file's values together may hold at most 10 times the bytes read so
+  far, a value pulled from the environment or an earlier file counting
+  as read once; the line that passes it is an error.
 
 ## Variable expansion `${VAR}`
 

@@ -5,44 +5,16 @@ import (
 	"strings"
 )
 
-// Expand performs ${VAR} substitution in s, drawing values from local
-// first then envFn. Bracket form ONLY. Bare $VAR is left verbatim
-// (less ambiguous, fewer footguns).
-//
-// Rules:
-//   - A looked-up value goes in verbatim, the way a shell substitutes
-//     a variable: it is never expanded again. Parse stores each value
-//     already resolved, so re-expanding it would turn a single-quoted
-//     literal or an escaped `\$` back into a lookup; an environment
-//     value holding `${x}` is data, not a template. A self-reference
-//     (`A=${A}`) therefore yields A's stored text, and no cycle can form.
-//   - Undefined names → empty string (consistent with shell behavior).
-//   - `\$` is an escape: it emits a literal `$` that starts no lookup.
-//   - Malformed `${...` without closing `}` is left verbatim, better
-//     than silently dropping bytes.
-//
-// envFn may be nil. In that case the only lookup source is local.
+// Expand substitutes ${NAME} in s from local, then envFn (which may be nil); undefined names are empty,
+// looked-up values go in verbatim, \$ is a literal $, and bare $NAME or an unclosed ${ is left as is.
 func Expand(s string, local map[string]string, envFn func(string) (string, bool)) string {
 	e := &expander{local: local, envFn: envFn, limit: -1}
 	e.expand(s)
 	return e.b.String()
 }
 
-// errTrailingBackslash reports a double-quoted value ending in an
-// unpaired backslash.
 var errTrailingBackslash = errors.New("trailing backslash in double-quoted value")
 
-// expandDouble interprets the inside of a double-quoted .env value in
-// one pass: the escapes \n \t \r \" \\ \$ and ${VAR} lookups against
-// local. One pass is what keeps `\\${DIR}` a backslash followed by an
-// expansion: unescaping first turned `\\` into `\`, which the expander
-// then paired with the `$` as an escape. Any other character after `\`
-// is kept with its backslash.
-//
-// It stops writing as soon as the value would pass limit bytes and
-// reports ok=false: Parse's expansion budget refuses a value while it is
-// being built, not after a single line of many references to a large
-// key has already allocated gigabytes.
 func expandDouble(s string, src *sources, limit int) (out string, ok bool, err error) {
 	e := &expander{local: src.local, limit: limit, quoted: true, src: src}
 	e.expand(s)
@@ -55,14 +27,12 @@ func expandDouble(s string, src *sources, limit int) (out string, ok bool, err e
 	return e.b.String(), true, nil
 }
 
-// expander writes an expansion into one builder, so the cap counts each
-// output byte once, at the point it is written.
 type expander struct {
 	local  map[string]string
 	envFn  func(string) (string, bool)
 	limit  int
-	quoted bool     // interpret the double-quoted escapes (expandDouble)
-	src    *sources // Parse/Load lookups, in place of local+envFn (expandDouble)
+	quoted bool
+	src    *sources
 	over   bool
 	err    error
 	b      strings.Builder
@@ -104,9 +74,6 @@ func (e *expander) expand(s string) {
 			lit = i
 			continue
 		}
-		// `\$` is an escape: emit a literal $ and DO NOT treat the
-		// next char as part of an expansion marker. Order matters:
-		// check this before the ${ probe below.
 		if i+1 < len(s) && s[i] == '\\' && s[i+1] == '$' {
 			e.write(s[lit:i])
 			e.write("$")
@@ -114,12 +81,9 @@ func (e *expander) expand(s string) {
 			lit = i
 			continue
 		}
-		// Look for the next ${
 		if i+1 < len(s) && s[i] == '$' && s[i+1] == '{' {
 			end := strings.IndexByte(s[i+2:], '}')
 			if end < 0 {
-				// No closing brace: the rest is verbatim, except that a
-				// double-quoted value still has its escapes to read.
 				if !e.quoted {
 					break
 				}
@@ -129,12 +93,11 @@ func (e *expander) expand(s string) {
 			e.write(s[lit:i])
 			name := s[i+2 : i+2+end]
 			if name == "" {
-				// Empty ${}: keep literal.
 				e.write("${}")
 			} else {
 				e.lookup(name)
 			}
-			i = i + 2 + end + 1 // past the '}'
+			i = i + 2 + end + 1
 			lit = i
 			continue
 		}
@@ -145,7 +108,6 @@ func (e *expander) expand(s string) {
 	}
 }
 
-// lookup writes name's value verbatim (see Expand).
 func (e *expander) lookup(name string) {
 	if e.src != nil {
 		e.lookupSources(name)
@@ -163,12 +125,6 @@ func (e *expander) lookup(name string) {
 	}
 }
 
-// lookupSources resolves name in the order Load documents, the order
-// Apply keeps values in: the process environment first (Apply never
-// overwrites it), then the value a higher-precedence file set (the one
-// Load keeps), then this file's earlier keys. A value from outside the
-// file counts as input for the budget, once per name (see parse), so the
-// limit grows with it before the value is written.
 func (e *expander) lookupSources(name string) {
 	src := e.src
 	outside := func(v string) {
