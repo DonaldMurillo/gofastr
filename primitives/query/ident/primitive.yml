@@ -1,0 +1,103 @@
+primitive: query.ident
+summary: Identifier validation, keyword detection, folding, quoting and fitting to Postgres's 63-byte limit, shared by the migrator, the stores and the builders, plus the boot refusal for case-kept tables.
+code:
+  - core/query/safe.go
+  - core/query/keyword.go
+  - core/query/casekept.go
+docs:
+  - framework/docs/content/migrations.md
+on_change:
+  - A change to the keyword set, the folding or the name fitting changes DDL the migrator writes, so check framework/migrate's tests and existing databases' object names.
+twins:
+  - job: Fold the ASCII letters of an identifier to lower case.
+    why: Two loops in safe.go predate internal/asciicase; nothing but work not yet done keeps them apart.
+    sites:
+      - path: core/query/safe.go
+        note: QuoteFolded and identHash each lowercase A-Z inline.
+      - path: internal/asciicase/asciicase.go
+        note: Lower, which IsKeyword uses.
+invariants:
+  - id: safe-ident-charset
+    rule: SafeIdent accepts only non-empty dot-separated parts that start with a letter or underscore and hold only ASCII letters, digits and underscores.
+    enforced_by:
+      - test: core/query.TestSafeIdent_Invalid
+      - test: core/query.TestSafeIdent_Valid
+      - test: core/query.TestMustIdent
+      - test: core/query.TestSafeQuote
+  - id: fold-before-quote
+    rule: QuoteFolded lowercases ASCII letters and quotes each dot-separated part, naming the table unquoted DDL created on Postgres and SQLite alike.
+    enforced_by:
+      - test: core/query.TestQuoteFolded
+  - id: quote-only-keywords
+    rule: QuoteKeyword quotes and folds each part IsKeyword names, writes every other part bare, and leaves its own output unchanged.
+    enforced_by:
+      - test: core/query.TestQuoteKeyword
+  - id: long-names-hash-not-truncate
+    rule: FitIdent returns a name of at most 63 bytes unchanged and otherwise its first 54 bytes, an underscore and 8 hex digits of the SHA-256 of the case-folded whole, so two long names that share 63 bytes stay distinct.
+    enforced_by:
+      - test: core/query.TestFitIdentKeepsShortNames
+      - test: core/query.TestFitIdentHashesLongNames
+  - id: object-name-trims-like-postgres
+    rule: ObjectName trims the longer of its two parts one byte at a time, the second on a tie, until name1_name2_label fits 63 bytes, as Postgres's makeObjectName does.
+    enforced_by:
+      - test: core/query.TestObjectNameTrimsLongerPart
+      - test: core/query.TestSweepQueryObjectNameTrimsLongerColumn
+  - id: fit-object-name-hashes-length-prefixed-parts
+    rule: FitObjectName returns Postgres's own name when it fits and otherwise puts 8 hex digits of a hash of the length-prefixed parts before the label, so names that trim or join to one string stay distinct.
+    enforced_by:
+      - test: core/query.TestFitObjectNameKeepsLongNames
+      - test: core/query.TestFitObjectNameHashesParts
+  - id: index-name-is-bare-and-fitted
+    rule: QuoteIndexName keeps only the part after the last dot, fits it with FitIdent and folds and quotes it.
+    enforced_by:
+      - test: core/query.TestQuoteIndexName
+      - test: core/query.TestQuoteIndexNameFitsBarePart
+  - id: schema-on-the-side-each-engine-takes
+    rule: IndexOn puts a table's schema on the table for Postgres and on the index name for SQLite, and SQLitePragma puts it on the pragma, never inside the parentheses.
+    enforced_by:
+      - test: core/query.TestIndexOn
+      - test: core/query.TestIndexOnSQLiteQualifiedRuns
+      - test: core/query.TestSQLitePragma
+  - id: safe-table-name
+    rule: SafeTableName accepts only a dotless SafeIdent of at most 64 bytes that is not a ReservedIdent keyword or system-table name.
+    enforced_by:
+      - test: core/query.TestSafeTableName
+  - id: refuse-case-kept-table
+    rule: RefuseCaseKeptTables errors with the rename statements when Postgres holds the case-kept spelling of a configured table, and runs no query for a name QuoteIdent and QuoteFolded spell alike.
+    enforced_by:
+      - test: core/query.TestRefuseCaseKeptTables
+decisions:
+  - id: quote-keywords-only
+    date: 2026-11-18
+    status: accepted
+    decision: Only names that are keywords on either engine are quoted, folded; every other name stays bare.
+    rejected:
+      - option: Quote every identifier.
+        why: The SQL every schema without keyword names produces would change, and the migrator's DDL folds bare names anyway.
+    upholds: [quote-only-keywords]
+  - id: fold-not-keep-case
+    date: 2026-11-18
+    status: accepted
+    decision: Stores quote configured names with QuoteFolded, and refuse to boot past a table an older build made with QuoteIdent.
+    rejected:
+      - option: Keep QuoteIdent's case-kept spelling.
+        why: AutoMigrate's DDL is unquoted, so Postgres folds the name and a case-kept quoted name names no table.
+      - option: Boot on and create the folded table.
+        why: Every row would stay in the old table while the store reads an empty one.
+    upholds: [fold-before-quote, refuse-case-kept-table]
+  - id: hash-long-names
+    date: 2026-11-18
+    status: accepted
+    decision: A generated name past 63 bytes ends in a hash of the whole instead of being cut.
+    rejected:
+      - option: Let Postgres truncate at 63 bytes.
+        why: Two names sharing their first 63 bytes named one object, and CREATE INDEX IF NOT EXISTS skipped the second.
+    upholds: [long-names-hash-not-truncate, fit-object-name-hashes-length-prefixed-parts]
+  - id: refuse-reserved-table-names
+    date: 2026-11-18
+    status: accepted
+    decision: SafeTableName refuses a small set of SQL keywords and common system-table names as a store's table.
+    rejected:
+      - option: Accept any SafeIdent.
+        why: Such a name is almost always a configuration mistake, and CREATE TABLE IF NOT EXISTS against a real system table silently does nothing.
+    upholds: [safe-table-name]

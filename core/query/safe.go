@@ -8,17 +8,9 @@ import (
 	"strings"
 )
 
-// identRe matches a safe SQL identifier: one or more alphanumeric/underscore
-// characters, optionally dot-separated (for schema.table). Must start with a
-// letter or underscore. Rejects empty strings, quotes, semicolons, spaces, etc.
 var identRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$`)
 
-// SafeIdent validates that s is a safe SQL identifier and returns it
-// unchanged (QuoteIdent adds the quotes).
-// This prevents SQL injection when table or column names must be interpolated
-// into queries (they can't be parameterized with $1 placeholders).
-//
-// Returns an error if s contains characters outside [a-zA-Z0-9_.].
+// SafeIdent returns s unchanged when it is dot-separated parts of [A-Za-z_][A-Za-z0-9_]*, and an error otherwise.
 func SafeIdent(s string) (string, error) {
 	if s == "" {
 		return "", fmt.Errorf("query: empty SQL identifier")
@@ -30,16 +22,9 @@ func SafeIdent(s string) (string, error) {
 }
 
 // MaxIdentBytes is the longest identifier Postgres keeps (NAMEDATALEN-1).
-// It cuts a longer one to this length with only a NOTICE.
 const MaxIdentBytes = 63
 
-// FitIdent fits a generated object name (an index, a constraint) into
-// MaxIdentBytes. A name that fits is returned as it is. A longer one keeps
-// its first 54 bytes and ends in "_" plus 8 hex digits of the SHA-256 of
-// the whole name, ASCII-folded as unquoted DDL folds it. Postgres would
-// cut it at 63 bytes instead, and two names sharing those bytes named one
-// object: CREATE INDEX IF NOT EXISTS then skipped the second. The name is
-// a validated identifier (ASCII), so the cut never splits a character.
+// FitIdent returns name when it fits MaxIdentBytes, else its first 54 bytes, "_" and 8 hex digits of the SHA-256 of the folded whole.
 func FitIdent(name string) string {
 	if len(name) <= MaxIdentBytes {
 		return name
@@ -47,8 +32,6 @@ func FitIdent(name string) string {
 	return name[:MaxIdentBytes-9] + "_" + identHash(name)
 }
 
-// identHash is 8 hex digits of the SHA-256 of name, ASCII-folded as
-// unquoted DDL folds it.
 func identHash(name string) string {
 	folded := []byte(name)
 	for i, c := range folded {
@@ -60,16 +43,7 @@ func identHash(name string) string {
 	return hex.EncodeToString(sum[:4])
 }
 
-// ObjectName is the name Postgres gives an object it names itself from
-// two parts and a label, name1_name2_label (makeObjectName): the inline
-// UNIQUE constraint of column c on table t is ObjectName(t, c, "key").
-// When the whole is past MaxIdentBytes it trims the longer part one byte
-// at a time until it fits, so a short column name survives a long table
-// name and two columns of one table keep distinct names. The parts are
-// validated identifiers (ASCII), so a cut never splits a character.
-// Postgres adds a digit to the label when the name is already taken;
-// ObjectName does not, so two long names can trim to one. FitObjectName
-// names an object this code creates.
+// ObjectName is the name Postgres gives an object it names itself, name1_name2_label, trimming the longer part until it fits MaxIdentBytes.
 func ObjectName(name1, name2, label string) string {
 	avail := MaxIdentBytes - len(label) - 2
 	n1, n2 := len(name1), len(name2)
@@ -83,16 +57,7 @@ func ObjectName(name1, name2, label string) string {
 	return name1[:n1] + "_" + name2[:n2] + "_" + label
 }
 
-// FitObjectName names an object this code creates from two parts and a
-// label. A name that fits MaxIdentBytes is name1_name2_label, the name
-// Postgres gives it (ObjectName). A longer one is trimmed the way
-// ObjectName trims it, with 8 hex digits of a SHA-256 of the three parts
-// before the label, so two long names that trim to one prefix stay
-// distinct: x…xa and x…xb (60 x's) both trim to t_x…x_key, where
-// Postgres numbers the second by what already exists and CREATE INDEX IF
-// NOT EXISTS skipped it. The hash covers each part with its length, not
-// the underscore join: t_a + x…xb and t + a_x…xb join to one string, and
-// index names share a schema.
+// FitObjectName is ObjectName for an object this code creates, with a hash of the length-prefixed parts before the label when the name is too long.
 func FitObjectName(name1, name2, label string) string {
 	whole := name1 + "_" + name2 + "_" + label
 	if len(whole) <= MaxIdentBytes {
@@ -102,8 +67,7 @@ func FitObjectName(name1, name2, label string) string {
 	return ObjectName(name1, name2, identHash(parts)+"_"+label)
 }
 
-// MustIdent is like SafeIdent but panics on invalid identifiers.
-// Use in init/config-time code where the identifier is a hard-coded constant.
+// MustIdent is SafeIdent that panics on an invalid identifier.
 func MustIdent(s string) string {
 	ident, err := SafeIdent(s)
 	if err != nil {
@@ -112,8 +76,7 @@ func MustIdent(s string) string {
 	return ident
 }
 
-// QuoteIdent wraps an identifier in double-quotes with internal quotes escaped.
-// The caller is responsible for validating the identifier first (via SafeIdent).
+// QuoteIdent wraps an identifier in double quotes, doubling any quote inside; validate it first.
 //
 //	QuoteIdent("users")       → "users"
 //	QuoteIdent(`weird"name`)  → "weird""name"
@@ -121,14 +84,7 @@ func QuoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
-// QuoteFolded quotes a declared identifier the way the schema stores it.
-// AutoMigrate writes its DDL unquoted, so Postgres folds a declared
-// "Widgets" to widgets, and a quoted "Widgets" then names no table. Folding
-// ASCII letters before quoting keeps the quotes (a reserved word such as
-// order still works) and names what the DDL created. SQLite compares
-// identifiers without case, so the folded spelling names the same table
-// there. Each dot-separated part is quoted on its own. The caller validates
-// the identifier first (via SafeIdent), so it is ASCII.
+// QuoteFolded lowercases ASCII letters and quotes each dot-separated part, naming what unquoted DDL created.
 //
 //	QuoteFolded("Widgets")        → "widgets"
 //	QuoteFolded("app.UserEvents") → "app"."userevents"
@@ -146,11 +102,7 @@ func QuoteFolded(s string) string {
 	return strings.Join(parts, ".")
 }
 
-// QuoteIndexName quotes the name of an index or trigger built from a
-// table name. Postgres puts an index in its table's schema and refuses a
-// schema-qualified name, so only the part after the last dot is kept,
-// folded the way QuoteFolded folds it and fitted to 63 bytes (FitIdent),
-// so two long names that share their first 63 bytes stay two indexes.
+// QuoteIndexName keeps the part after the last dot, fits it with FitIdent and quotes it with QuoteFolded.
 //
 //	QuoteIndexName("app.UserEvents_idx") → "userevents_idx"
 func QuoteIndexName(s string) string {
@@ -160,14 +112,7 @@ func QuoteIndexName(s string) string {
 	return QuoteFolded(FitIdent(s))
 }
 
-// IndexOn renders the "<index> ON <table>" part of a CREATE INDEX for an
-// index named name on table, both already validated and quoted (or both
-// left bare). The index lives in its table's schema, and the two engines
-// spell that on opposite sides: Postgres refuses a schema on the index
-// name and takes it on the table, SQLite takes it on the index name and
-// refuses it on the indexed table. sqlite picks the SQLite spelling. name
-// is the bare index name, as [QuoteIndexName] returns it; a schema on
-// table moves onto it on SQLite.
+// IndexOn renders "<index> ON <table>" for CREATE INDEX, moving table's schema onto the index name when sqlite is true.
 //
 //	IndexOn(false, `"x_idx"`, `"main"."events"`) → "x_idx" ON "main"."events"
 //	IndexOn(true, `"x_idx"`, `"main"."events"`)  → "main"."x_idx" ON "events"
@@ -178,9 +123,7 @@ func IndexOn(sqlite bool, name, table string) string {
 	return name + " ON " + table
 }
 
-// SQLitePragma renders PRAGMA fn(table) for a table already validated and
-// quoted (or left bare). SQLite takes a schema on the pragma, PRAGMA
-// "main".table_info("events"), and refuses one inside the parentheses.
+// SQLitePragma renders PRAGMA fn(table) with table's schema moved onto the pragma.
 //
 //	SQLitePragma("table_info", `"main"."events"`) → PRAGMA "main".table_info("events")
 func SQLitePragma(fn, table string) string {
@@ -202,39 +145,19 @@ func SafeQuote(s string) (string, error) {
 	return strings.Join(parts, "."), nil
 }
 
-// reservedSQLIdents are tokens refused as bare table names regardless of
-// character class: naming a table after a reserved word or a real system
-// table is almost always a configuration mistake and can silently no-op
-// CREATE TABLE IF NOT EXISTS against a real table. This is the union of the
-// two formerly package-local copies (core/middleware's reservedSQLIdentsMW
-// and core/featureflag's reservedSQLIdents), which were identical: nine SQL
-// keywords plus five common system-table names.
 var reservedSQLIdents = map[string]struct{}{
 	"select": {}, "insert": {}, "update": {}, "delete": {},
 	"drop": {}, "create": {}, "table": {}, "from": {}, "where": {},
 	"users": {}, "user": {}, "migrations": {}, "sessions": {}, "accounts": {},
 }
 
-// ReservedIdent reports whether name, case-insensitively, is a SQL reserved
-// word or common system-table name that must not be used as a bare table
-// name. It replaces the reserved-word checks formerly inlined in the
-// package-local safeIdent validators of core/middleware, core/featureflag,
-// and battery/webhook.
+// ReservedIdent reports whether name, case-insensitively, is a SQL keyword or common system-table name refused as a store's table.
 func ReservedIdent(name string) bool {
 	_, bad := reservedSQLIdents[strings.ToLower(name)]
 	return bad
 }
 
-// SafeTableName reports whether name is acceptable as a bare (single-
-// segment) table name: it must pass [SafeIdent]'s character class and
-// leading-letter rule, contain no dot (schema.table is not a bare name),
-// be at most 64 bytes, and not be [ReservedIdent].
-//
-// It replaces the package-local safeIdent validators formerly duplicated in
-// core/middleware (idempotency store), core/featureflag (SQL store), and
-// battery/webhook (subscriber/delivery/inbound stores). The webhook
-// validator was weaker (no leading-character rule, no reserved words); all
-// three now share this one contract.
+// SafeTableName reports whether name is a dotless SafeIdent of at most 64 bytes that is not ReservedIdent.
 func SafeTableName(name string) bool {
 	if name == "" || len(name) > 64 || strings.Contains(name, ".") {
 		return false
@@ -245,24 +168,8 @@ func SafeTableName(name string) bool {
 	return !ReservedIdent(name)
 }
 
-// dangerousSeqs are SQL meta-sequences that should never appear in a
-// caller-supplied identifier, table name, predicate, or column list.
-// Each is stripped (replaced with a single space for readability) by
-// sanitizeFragment / sanitizeColumn before the value is interpolated
-// into a built statement.
 var dangerousSeqs = []string{";", "--", "/*", "*/"}
 
-// sanitizeFragment scrubs the obvious SQL-injection metacharacters
-// from a caller-supplied SQL fragment that the builder must
-// interpolate (table name, JOIN predicate, ORDER column, cursor
-// field). NUL/CR/LF are removed outright; semicolons, comment
-// sequences, and unbalanced parens are replaced with a space so a
-// payload like "users; DROP TABLE audit_logs; --" can never round-trip
-// into the final SQL as a semicolon-separated second statement.
-//
-// This is defense in depth: callers must still pass *real* identifiers
-// (the builders do not quote on the caller's behalf), but a hostile
-// or fuzzed input will not produce an exploitable statement.
 func sanitizeFragment(s string) string {
 	if fragmentIsClean(s) {
 		return s
@@ -270,10 +177,7 @@ func sanitizeFragment(s string) string {
 	return scrubFragment(s)
 }
 
-// scrubFragment is sanitizeFragment's rewrite for input that is not
-// already clean.
 func scrubFragment(s string) string {
-	// Strip C0 controls + DEL first.
 	var b strings.Builder
 	b.Grow(len(s))
 	for i := 0; i < len(s); i++ {
@@ -284,9 +188,7 @@ func scrubFragment(s string) string {
 		b.WriteByte(c)
 	}
 	out := b.String()
-	// Strip parens: legitimate uses never put them in identifier slots.
 	out = parenReplacer.Replace(out)
-	// Strip the dangerous SQL meta-sequences.
 	for _, seq := range dangerousSeqs {
 		out = strings.ReplaceAll(out, seq, " ")
 	}
@@ -295,11 +197,6 @@ func scrubFragment(s string) string {
 
 var parenReplacer = strings.NewReplacer("(", " ", ")", " ")
 
-// fragmentIsClean reports whether sanitizeFragment would return s
-// unchanged: no control byte, no paren, and none of dangerousSeqs. Every
-// builder runs each identifier through the scrub on every query, and the
-// identifiers are almost always clean, so this keeps the common case
-// free of allocations.
 func fragmentIsClean(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
@@ -316,20 +213,11 @@ func fragmentIsClean(s string) bool {
 	return true
 }
 
-// sanitizeColumn is the column-list variant of sanitizeFragment. In
-// addition to the meta-sequence scrub, it collapses every whitespace
-// run to nothing, which neutralises payloads like
-// `name, (SELECT secret FROM api_keys LIMIT 1) AS leaked`. After
-// sanitisation the keywords are mashed together into a single token
-// and cannot form a valid sub-query. Column slots in the builders
-// never carry meaningful whitespace (they're dotted identifiers or
-// `*`), so this is safe to apply globally.
 func sanitizeColumn(s string) string {
 	out := sanitizeFragment(s)
 	if !strings.ContainsAny(out, " \t") {
 		return out
 	}
-	// Remove all whitespace.
 	var b strings.Builder
 	b.Grow(len(out))
 	for i := 0; i < len(out); i++ {
@@ -342,10 +230,6 @@ func sanitizeColumn(s string) string {
 	return b.String()
 }
 
-// sanitizeDirection clamps an ORDER BY direction to the SQL standard
-// set. Anything outside ASC/DESC (case-insensitive), including a
-// CRLF-smuggled payload, is dropped to the empty string so the
-// builder emits no direction keyword rather than the attacker's text.
 func sanitizeDirection(s string) string {
 	switch strings.ToUpper(strings.TrimSpace(s)) {
 	case "ASC", "DESC":
