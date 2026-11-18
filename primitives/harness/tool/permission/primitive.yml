@@ -75,6 +75,10 @@ invariants:
     enforced_by:
       - test: framework/experimental/harness/tool/permission.TestPromoteDenyOverridesPresetAllow
       - test: framework/experimental/harness/tool/permission.TestPromoteDeduplicates
+  - id: promote-keeps-the-decision
+    rule: Promote returns ErrPromotionShadowed and leaves the session rule, the preset file and the profile untouched when a persistent rule for WorkingDir, or a profile or saved-preset rule ahead of the promoted one, overlaps it with another action.
+    enforced_by:
+      - test: framework/experimental/harness/tool/permission.TestPromoteRefusesShadowedRule
 decisions:
   - id: literal-by-default
     date: 2026-11-18

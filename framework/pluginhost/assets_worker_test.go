@@ -122,8 +122,8 @@ func TestWorkerAssetServesNarrowCSP(t *testing.T) {
 // default byte-for-byte, keeps CORP same-origin and XFO DENY; the framed
 // asset keeps the framed policy.
 func TestHostDocumentUntouchedByWorker(t *testing.T) {
-	const strictCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; " +
-		"form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
+	const strictCSP = "default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; " +
+		"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 	fsys := fstest.MapFS{"editor.html": &fstest.MapFile{Data: []byte("<!doctype html><p>frame")}}
 	srv := NewAssetServer(fsys, "/__p", []AssetSpec{
 		{Name: "editor.html", ContentType: "text/html; charset=utf-8", Framed: true},

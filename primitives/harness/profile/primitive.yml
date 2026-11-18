@@ -16,6 +16,14 @@ invariants:
       - test: framework/experimental/harness/profile.TestParseRejectsTableHeader
       - test: framework/experimental/harness/profile.TestParseTripleQuoted
       - test: framework/experimental/harness/profile.TestParseMCPServersWithArgs
+  - id: value-ends-the-line
+    rule: After a top-level value only whitespace or a comment may follow on its line; anything else, such as the .5 of schema_version = 1.5, fails Parse instead of being skipped.
+    enforced_by:
+      - test: framework/experimental/harness/profile.TestParseRejectsTrailingContentAfterValue
+  - id: mcp-server-key-types-checked
+    rule: Inside an mcp_servers entry, name, cmd, sha256 and discovery must be strings and args an array of strings; a value of another type fails Parse with an error naming the key instead of leaving the field empty.
+    enforced_by:
+      - test: framework/experimental/harness/profile.TestParseRejectsMCPServerKeyOfWrongType
   - id: schema-version-one
     rule: Validate fails a profile whose schema_version is not 1, or that lacks name or default_model.
     enforced_by:
@@ -35,7 +43,7 @@ decisions:
       - option: A third-party TOML library.
         why: The harness stays standard-library only, and a full parser would accept nested tables and types the schema never uses without complaint.
     revisit_if: The profile schema needs nested tables, datetimes or multi-line table arrays.
-    upholds: [only-the-supported-subset, unknown-keys-fail]
+    upholds: [only-the-supported-subset, unknown-keys-fail, value-ends-the-line, mcp-server-key-types-checked]
   - id: embedded-built-ins
     date: 2026-11-18
     status: accepted

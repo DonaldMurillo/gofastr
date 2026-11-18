@@ -18,7 +18,7 @@ twins:
         note: openRegular, for each file Grep walks.
 invariants:
   - id: regular-files-only
-    rule: Read, Edit and Grep refuse or skip a FIFO, a device or a symlink to one instead of opening it, so a quiet-mode call cannot block the turn past CancelTurn.
+    rule: Read, Edit and Grep refuse or skip a path that their stat before opening, or their check of the open handle, finds to be a FIFO, a device or a symlink to one.
     enforced_by:
       - test: framework/experimental/harness/tool/builtins.TestReadAndEditRefuseNonRegularFiles
       - test: framework/experimental/harness/tool/builtins.TestGrepSkipsFIFO
