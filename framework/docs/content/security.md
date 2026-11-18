@@ -138,6 +138,11 @@ middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
 | `Permissions-Policy`      | `geolocation=(), microphone=(), camera=()`                                       |
 | `Strict-Transport-Security` | `max-age=31536000` (1 year), **HTTPS responses only** |
 
+A `ContentSecurityPolicy` you set replaces the default whole. Keep
+`worker-src 'self'` and `base-uri 'none'` in it: without `worker-src`,
+workers follow `script-src`, so a CDN added there could also serve
+workers.
+
 `object-src` and `form-action` are named explicitly because `default-src`
 does not cover them: CSP never let `form-action` fall back, and
 `object-src`'s fallback was removed in CSP3. A policy of just

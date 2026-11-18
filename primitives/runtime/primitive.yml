@@ -92,6 +92,7 @@ invariants:
     rule: A poll fetch (data-cui-poll and a widget's state poll) and a visible or eager prefetch ask for priority 'low'; a hover prefetch keeps the default, since a click usually follows.
     enforced_by:
       - test: core-ui/runtime.TestPollFetchIsLowPriority
+      - test: core-ui/runtime.TestWidgetPollFetchIsLowPriority
       - test: core-ui/runtime.TestPrefetchPriorityFollowsIntent
 decisions:
   - id: poll-before-push

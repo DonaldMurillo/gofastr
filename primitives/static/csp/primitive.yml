@@ -60,5 +60,5 @@ decisions:
       - option: Keep base-uri 'self'.
         why: No framework page emits a <base> element, and 'self' still lets an injected same-origin <base> move every relative URL on the page.
       - option: Leave worker-src to fall back to default-src.
-        why: The fallback gives the same answer, but a host that widens script-src for a CDN would widen workers with it; naming worker-src keeps workers same-origin.
+        why: The fallback gives the same answer for the default, but worker-src falls back to script-src, so a policy that adds a CDN to script-src would let workers load from it too. A host policy set with WithSecurityHeaders replaces the default whole and keeps workers same-origin only if it names worker-src 'self' itself.
     upholds: [default-policy]
