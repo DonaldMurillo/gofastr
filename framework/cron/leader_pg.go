@@ -13,7 +13,9 @@ import (
 const cronTicksTable = "gofastr_cron_ticks"
 
 // PostgresAdvisoryLease is a [TickLeaderElection] on a Postgres advisory lock
-// on a pinned connection, its claims in gofastr_cron_ticks.
+// on a pinned connection, its claims in gofastr_cron_ticks. Plain Acquire
+// pins the connection while the lease is held, so work under it needs a
+// second pool connection.
 type PostgresAdvisoryLease struct {
 	db  *sql.DB
 	key int64

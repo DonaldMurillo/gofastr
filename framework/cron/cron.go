@@ -41,7 +41,7 @@ type LeaderElection interface {
 }
 
 // TickLeaderElection also records each minute it fires, so a minute fires at
-// most once across replicas; it is released before the jobs start.
+// most once across replicas; its release starts before the jobs are dispatched.
 type TickLeaderElection interface {
 	LeaderElection
 	// AcquireTick holds only when it took the lease and no replica claimed tick

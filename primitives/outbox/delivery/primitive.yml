@@ -33,7 +33,7 @@ invariants:
       - test: framework/outbox.TestClaim_DeliveryExclusivity
       - test: framework/outbox.TestPostgres_ClaimDeliveryExclusivity
   - id: claim-spends-an-attempt
-    rule: Each claim adds one to the delivery's attempts in SQL and no settle writes the counter, so a relay that dies between claim and settle still spends the attempt and the count never goes back.
+    rule: Each claim adds one to the delivery's attempts in SQL and neither the success nor the failure settle writes the counter, so a relay that dies between claim and settle still spends the attempt; the count goes back only where no handler ran or an operator asked - a no-handler requeue and releaseUnstarted (shutdown hand-back, the batch lease check) refund the claim's attempt, and Replay and ReplayConsumer reset it to zero.
     enforced_by:
       - test: framework/outbox.TestClaimCrashLoopConsumesAttempts
       - test: framework/outbox.TestFailureSettleAttemptsMonotonic
