@@ -58,7 +58,7 @@ invariants:
       - test: core/textsafe.TestScrubControlBytesStrayHighBytes
       - test: core/textsafe.TestNeedsControlScrubIsSupersetOfEncoder
   - id: recovered-is-scrubbed-and-capped
-    rule: Recovered strips every IsUnsafe codepoint from the rendered panic value and cuts it at 4 KiB on a rune boundary with the marker "…(truncated)", and LogPanic logs that value and the stack once per panic and nothing without one.
+    rule: Recovered applies StripUnsafe to the rendered panic value, keeping a valid subdivision flag's tags and dropping every other IsUnsafe codepoint, then cuts it at 4 KiB on a rune boundary with the marker "…(truncated)", and LogPanic logs that value and the stack once per panic and nothing without one.
     enforced_by:
       - test: core/textsafe.TestRecoveredStripsControlBytes
       - test: core/textsafe.TestRecoveredCapsAtFourKiBOnARuneBoundary
@@ -66,7 +66,7 @@ invariants:
       - test: core/textsafe.TestLogPanicWithoutPanicIsSilent
       - analyzer: recoverlog
   - id: truncate-shape
-    rule: Truncate returns "" for a cap of zero or less, s unchanged within the cap, a hard cut at max bytes when the marker does not fit, and otherwise exactly max bytes ending in " … (truncated)".
+    rule: Truncate returns "" for a cap of zero or less, s unchanged within the cap, a hard cut at max bytes when max is at most the marker's byte length, and otherwise exactly max bytes ending in " … (truncated)".
     enforced_by:
       - test: core/textsafe.TestTruncateNegativeCap
       - test: core/textsafe.TestTruncateLeavesShortStringsAlone

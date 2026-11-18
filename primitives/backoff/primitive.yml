@@ -4,7 +4,7 @@ code:
   - core/backoff/
 invariants:
   - id: exponential-never-overflows
-    rule: Exponential returns base*2^(attempts-1) capped at a positive max, and with no cap stops doubling at the largest value whose next doubling would overflow int64, so any attempt count returns a non-negative delay.
+    rule: For a base of zero or more, Exponential returns base*2^(attempts-1) capped at a positive max, and with no cap stops doubling at the largest value whose next doubling would overflow int64, so any attempt count returns a non-negative delay; callers pass a non-negative base.
     enforced_by:
       - test: core/backoff.TestExponential
       - test: core/backoff.TestExponentialMonotone
@@ -23,7 +23,7 @@ invariants:
     enforced_by:
       - test: core/backoff.TestAt
   - id: jitter-stays-in-range
-    rule: Jitter clamps fraction to [0, 1] with NaN as 0 and r into [0, 1], and returns a value in d×(1-fraction) to d×(1+fraction) that is never negative and never above the largest Duration.
+    rule: Jitter clamps fraction to [0, 1] with NaN as 0 and r into [0, 1], and returns a value in d×(1-fraction) to d×(1+fraction) that is never above the largest Duration and, for a non-negative d, never negative; a negative d comes back unchanged.
     enforced_by:
       - test: core/backoff.TestJitterBounds
 decisions:

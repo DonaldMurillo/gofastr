@@ -3,7 +3,7 @@ package backoff
 
 import "time"
 
-// Exponential returns base*2^(attempts-1), clamped to max when max is positive and never overflowing.
+// Exponential returns base*2^(attempts-1) for a base of zero or more, clamped to a positive max and never overflowing.
 func Exponential(base, max time.Duration, attempts int) time.Duration {
 	if base == 0 {
 		return 0

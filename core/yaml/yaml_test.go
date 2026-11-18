@@ -144,6 +144,13 @@ body:
 	if _, flat := item["href"]; flat {
 		t.Fatalf("href flattened into the item: %#v", item)
 	}
+	seq, err := Parse("- a:\n  - x\n")
+	if err != nil {
+		t.Fatalf("Parse key-column sequence: %v", err)
+	}
+	if a := seq.List[0].Map["a"]; a == nil || a.Kind != List || len(a.List) != 1 || a.List[0].Value != "x" {
+		t.Fatalf("a = %#v, want the list [x] at the key column", a)
+	}
 }
 
 // A continuation line between the dash and the item's key column, or
