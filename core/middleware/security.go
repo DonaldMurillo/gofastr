@@ -32,8 +32,8 @@ type SecurityHeadersConfig struct {
 func SecurityHeaders(cfg SecurityHeadersConfig) Middleware {
 	csp := cfg.ContentSecurityPolicy
 	if csp == "" {
-		csp = "default-src 'self'; img-src 'self' data:; object-src 'none'; " +
-			"form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
+		csp = "default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; " +
+			"form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 	}
 	referrer := cfg.ReferrerPolicy
 	if referrer == "" {

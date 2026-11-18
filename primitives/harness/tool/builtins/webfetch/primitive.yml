@@ -11,14 +11,14 @@ invariants:
       - test: framework/experimental/harness/tool/builtins.TestWebFetchRefusesSchemeBeforeAnyRequest
       - test: framework/experimental/harness/tool/builtins.TestWebFetchRejectsNonHTTP
   - id: internal-address-refused
-    rule: WebFetch reaches no loopback, link-local, private, CGNAT, unspecified or IPv4-mapped internal address - the host is checked before the request, on every redirect hop whatever AllowPrivateHosts says, and at dial time on the connected IP.
+    rule: With AllowPrivateHosts false, WebFetch reaches no loopback, link-local, private, CGNAT, unspecified or IPv4-mapped internal address - the host is checked before the request and at dial time on the connected IP; every redirect hop is checked whatever AllowPrivateHosts says.
     enforced_by:
       - test: framework/experimental/harness/tool/builtins.TestAssertPublicHostRefusesInternal
       - test: framework/experimental/harness/tool/builtins.TestWebFetchSSRFGuard
       - test: framework/experimental/harness/tool/builtins.TestWebFetchRebindDialReject
       - test: framework/experimental/harness/tool/builtins.TestInternalIPRanges
   - id: host-transport-guarded
-    rule: A host-supplied *http.Transport is used only through a clone carrying the dial-time guard, and any other RoundTripper is refused.
+    rule: With AllowPrivateHosts false, a host-supplied *http.Transport is used only through a clone carrying the dial-time guard, and any other RoundTripper is refused.
     enforced_by:
       - test: framework/experimental/harness/tool/builtins.TestWebFetchGuardsHostTransport
   - id: no-environment-proxy

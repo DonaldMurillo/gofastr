@@ -47,13 +47,7 @@ func SavePreset(path string, pf *PresetFile) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	sort.Slice(pf.Rules, func(i, j int) bool {
-		a, b := pf.Rules[i], pf.Rules[j]
-		if a.Tool != b.Tool {
-			return a.Tool < b.Tool
-		}
-		return a.ArgvGlob < b.ArgvGlob
-	})
+	sortRules(pf.Rules)
 	data, err := json.MarshalIndent(pf, "", "  ")
 	if err != nil {
 		return err
@@ -65,7 +59,21 @@ func SavePreset(path string, pf *PresetFile) error {
 	return os.Rename(tmp, path)
 }
 
+func sortRules(rules []Rule) {
+	sort.SliceStable(rules, func(i, j int) bool {
+		a, b := rules[i], rules[j]
+		if a.Tool != b.Tool {
+			return a.Tool < b.Tool
+		}
+		return a.ArgvGlob < b.ArgvGlob
+	})
+}
+
+// ErrPromotionShadowed is returned by Promote when a persistent rule, or a profile or preset rule ahead of it, would decide the promoted rule's calls differently.
+var ErrPromotionShadowed = errors.New("permission: an earlier rule with another action covers the promoted rule")
+
 // Promote moves session's rule at index into the preset at presetPath and the engine's profile rules, replacing the action of a rule with the same Tool, ArgvGlob and Glob.
+// It returns ErrPromotionShadowed and keeps the session rule when a persistent rule, or an earlier profile or preset rule, would decide its calls differently.
 func (e *Engine) Promote(presetPath string, session ids.SessionID, index int) (Rule, error) {
 	rules := e.ListSessionRules(session)
 	if index < 0 || index >= len(rules) {
@@ -76,25 +84,64 @@ func (e *Engine) Promote(presetPath string, session ids.SessionID, index int) (R
 	if err != nil {
 		return Rule{}, err
 	}
-	if upsertRule(&pf.Rules, rule) {
+	changed := upsertRule(&pf.Rules, rule)
+	sortRules(pf.Rules)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	profile := slices.Clone(e.profileRules)
+	upsertRule(&profile, rule)
+	persistent := slices.DeleteFunc(slices.Clone(e.persistentRules), func(r Rule) bool { return r.Dir != e.WorkingDir })
+	if shadowed(persistent, rule) || shadowed(profile, rule) || shadowed(pf.Rules, rule) {
+		return Rule{}, fmt.Errorf("%w: %s:%s", ErrPromotionShadowed, rule.Tool, rule.ArgvGlob)
+	}
+	if changed {
 		if err := SavePreset(presetPath, pf); err != nil {
 			return Rule{}, err
 		}
 	}
-	e.mu.Lock()
-	upsertRule(&e.profileRules, rule)
+	e.profileRules = profile
 	if src := e.sessionRules[session]; len(src) > 0 {
 		if i := slices.Index(src, rule); i >= 0 {
 			e.sessionRules[session] = slices.Delete(src, i, i+1)
 		}
 	}
-	e.mu.Unlock()
 	return rule, nil
+}
+
+func sameKey(a, b Rule) bool {
+	return a.Tool == b.Tool && a.ArgvGlob == b.ArgvGlob && a.Glob == b.Glob
+}
+
+func shadowed(rules []Rule, p Rule) bool {
+	for _, r := range rules {
+		if sameKey(r, p) {
+			return r.Action != p.Action
+		}
+		if r.Action != p.Action && overlaps(r, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func overlaps(a, b Rule) bool {
+	if a.Tool != "*" && b.Tool != "*" && a.Tool != b.Tool {
+		return false
+	}
+	switch {
+	case a.ArgvGlob == "" || b.ArgvGlob == "" || (a.Glob && b.Glob):
+		return true
+	case a.Glob:
+		return a.Match(a.Tool, b.ArgvGlob)
+	case b.Glob:
+		return b.Match(b.Tool, a.ArgvGlob)
+	}
+	return a.ArgvGlob == b.ArgvGlob
 }
 
 func upsertRule(rules *[]Rule, r Rule) bool {
 	for i, have := range *rules {
-		if have.Tool == r.Tool && have.ArgvGlob == r.ArgvGlob && have.Glob == r.Glob {
+		if sameKey(have, r) {
 			if have.Action == r.Action {
 				return false
 			}
