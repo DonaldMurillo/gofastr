@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
 )
 
@@ -35,7 +36,7 @@ func DecodeRequestBody(t testing.TB, r io.Reader) RequestBody {
 		t.Fatalf("read request body: %v", err)
 	}
 	var body RequestBody
-	if err := json.Unmarshal(raw, &body); err != nil {
+	if err := handler.UnmarshalStrict(raw, &body); err != nil {
 		t.Fatalf("unmarshal request body %q: %v", raw, err)
 	}
 	return body
