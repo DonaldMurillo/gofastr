@@ -9,7 +9,7 @@ on_change:
   - The env built by Runtime.Env becomes the whole environment of the `gofastr dev` child (cmd/gofastr/internal/devcmd), which holds the operator's sessions and secrets; treat a change to it as a security change.
 invariants:
   - id: active-only-in-a-linked-worktree
-    rule: By default isolation is active only in a linked worktree; mode always or GOFASTR_ISOLATION on, true, 1 or always turns it on, and off, false, 0 or disabled turns it off.
+    rule: By default isolation is active only in a linked worktree. GOFASTR_ISOLATION on, true, 1 or always only lets the configured mode decide - mode worktree still needs a linked worktree and mode off stays off - and off, false, 0 or disabled turns it off; mode always turns it on anywhere.
     enforced_by:
       - test: framework/isolation.TestResolveActivatesOnlyForLinkedWorktreeByDefault
       - test: framework/isolation.TestResolveHonorsConfigAndEnvOff
@@ -64,7 +64,7 @@ invariants:
       - test: framework/isolation.TestListenAddrReturnsResolveErrors
       - test: framework/isolation.TestListenAddrRemapsInALinkedWorktree
   - id: sqlite-state-owner-only
-    rule: The SQLite state directory .gofastr/isolation/<id> is 0700 (an owner-only ACL on Windows) after every resolve, also when it already existed.
+    rule: Whenever an active SQLite DSN is rewritten (Database, or Runtime.Env through it), the state directory .gofastr/isolation/<id> is set to 0700 (an owner-only ACL on Windows), also when it already existed; a directory this user does not own, which chmod refuses with EPERM, is logged and used as is rather than failing the rewrite.
     enforced_by:
       - test: framework/isolation.TestSQLiteStateDirOwnerOnly
       - test: framework/isolation.TestSQLiteStateDirTightensExistingDir
