@@ -131,12 +131,17 @@ middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
 
 | Header                    | Default                                                                          |
 |---------------------------|----------------------------------------------------------------------------------|
-| `Content-Security-Policy` | `default-src 'self'; img-src 'self' data:; object-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'` |
+| `Content-Security-Policy` | `default-src 'self'; img-src 'self' data:; object-src 'none'; worker-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'` |
 | `X-Content-Type-Options`  | `nosniff` (always, not configurable)                                            |
 | `Referrer-Policy`         | `no-referrer`                                                                    |
 | `X-Frame-Options`         | `DENY`                                                                           |
 | `Permissions-Policy`      | `geolocation=(), microphone=(), camera=()`                                       |
 | `Strict-Transport-Security` | `max-age=31536000` (1 year), **HTTPS responses only** |
+
+A `ContentSecurityPolicy` you set replaces the default whole. Keep
+`worker-src 'self'` and `base-uri 'none'` in it: without `worker-src`,
+workers follow `script-src`, so a CDN added there could also serve
+workers.
 
 `object-src` and `form-action` are named explicitly because `default-src`
 does not cover them: CSP never let `form-action` fall back, and

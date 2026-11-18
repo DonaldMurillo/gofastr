@@ -25,9 +25,20 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
-- **harness: a hook that times out returns at its deadline and takes its
-  children with it.** SIGTERM goes to the hook's process group at the
-  deadline and SIGKILL follows within 5s; a timed-out hook used to hold the
+- **harness: promoting a session deny no longer turns it into an allow.**
+  `permission.Engine.Promote` used to drop the session rule even when a
+  persistent "Allow always" rule or an earlier, wider preset allow would
+  still decide the same calls; it now returns `ErrPromotionShadowed` and
+  keeps the session rule
+  ([harness architecture](framework/docs/content/harness-architecture.md)).
+- **harness: the credential helper refuses an unknown provider first.**
+  `helper.InProcess.AttachAuth` returns `ErrUnknownProvider` for any
+  provider but openrouter and zai before it reads the credential store,
+  instead of returning the store's not-found error.
+- **harness: a hook that times out takes its children with it.** SIGTERM
+  goes to the hook's process group at the deadline and SIGKILL follows
+  within 5s, so a timed-out hook holds the turn at most 5s past its
+  deadline (less when the whole group exits on SIGTERM); a timed-out hook used to hold the
   turn about 10s and leave a backgrounded child running
   ([harness architecture](framework/docs/content/harness-architecture.md)).
 - **harness: hook and Bash output that fills the cap exactly still says it
@@ -38,7 +49,10 @@ few lines, and link the PR or the docs page for the rest.
 - **harness: `tool.Registry.Lookup` wraps `ErrToolUnknown`**, as documented;
   the error text is now `tool: unknown: "X" not registered`.
 - **harness: a profile refuses an unknown key inside an `mcp_servers`
-  entry.** A misspelt `sha256` dropped the binary pin with no error.
+  entry, a value of the wrong type there, and text after a value.** A
+  misspelt `sha256` dropped the binary pin with no error, `args = "x"` gave
+  a server no arguments, and `schema_version = 1.5` was read as 1. Only
+  whitespace or a `#` comment may follow a value now.
 - **harness: the MCP control server reads `harness/v1://profiles`**, which it
   listed but answered as an unknown URI. MCP command tools answer -32602 for
   a malformed `sessionId` or `callId` instead of running with an empty one.
@@ -213,6 +227,16 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **The default Content-Security-Policy sends `base-uri 'none'` and
+  `worker-src 'self'`**, live and in static exports. An app that renders a
+  `<base>` element sets its own policy with `framework.WithSecurityHeaders`.
+- **`HighPriority` images load eagerly.** It used to pair
+  `fetchpriority="high"` with `loading="lazy"`, which wastes the hint.
+  `ui.Avatar` images now carry `width`, `height` and `loading="lazy"`.
+- **Scheduled poll ticks and visible or eager prefetches ask for
+  `priority: 'low'`**, so background work yields to what the user is
+  waiting on. A hover prefetch, a widget's refresh after its own RPC and
+  the refresh when a tab becomes visible keep the default priority.
 - **BREAKING: the passkey plugin needs a way to email the account owner
   when a passkey is added.** Set `PasskeyConfig.NoticeSender`, or
   `NoAddedNotice: true`; outside `DevMode`, Init fails when neither is set. The
@@ -332,6 +356,8 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr upgrade` finds the Go spellings.
 
 ### Added
+- **`LowPriority` on `ui.OptimizedImage` and `ui.PipelineImage`** renders
+  `fetchpriority="low"`. See [image](framework/docs/content/image.md#loading-and-priority).
 - **Passkeys: autofill sign-in, step-up, rename and password-manager sync
   ([#708](https://github.com/DonaldMurillo/gofastr/issues/708)).**
   `auth.PasskeyAutofillAttrs` lists the device's passkeys in the username
