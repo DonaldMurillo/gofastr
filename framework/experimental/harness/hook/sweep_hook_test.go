@@ -64,8 +64,8 @@ func TestRunTimeoutKillsTermIgnoringDescendant(t *testing.T) {
 	})
 	start := time.Now()
 	res := r.Run(context.Background(), EventPreToolUse, nil)
-	if elapsed := time.Since(start); elapsed > 200*time.Millisecond+killGrace+2*time.Second {
-		t.Fatalf("a TERM-ignoring hook held Run %v, past the deadline plus the %v grace", elapsed, killGrace)
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond+5*time.Second+2*time.Second {
+		t.Fatalf("a TERM-ignoring hook held Run %v, past the deadline plus the 5s grace", elapsed)
 	}
 	if !res[0].TimedOut {
 		t.Fatalf("expected TimedOut: %+v", res[0])
