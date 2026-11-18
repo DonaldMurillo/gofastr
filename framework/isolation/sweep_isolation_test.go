@@ -3,6 +3,7 @@ package isolation
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
@@ -81,5 +82,20 @@ func TestGitDirWithoutHEADIsNotARepo(t *testing.T) {
 	}
 	if kind, _ := gitMarker(dir); kind != gitNone {
 		t.Fatalf("gitMarker = %v for a .git directory with no HEAD, want gitNone", kind)
+	}
+}
+
+func TestSQLiteStateDirPermissionDeniedStillRewrites(t *testing.T) {
+	r := &Runtime{projectDir: t.TempDir(), id: "notmine"}
+	orig := chmodStateDir
+	t.Cleanup(func() { chmodStateDir = orig })
+	chmodStateDir = func(string, os.FileMode) error { return &os.PathError{Op: "chmod", Err: syscall.EPERM} }
+	dsn, err := r.sqliteDSN("app.db")
+	if err != nil || dsn != filepath.Join(r.projectDir, ".gofastr", "isolation", r.id, "app.db") {
+		t.Fatalf("sqliteDSN = %q, %v; want the isolated path and no error", dsn, err)
+	}
+	chmodStateDir = func(string, os.FileMode) error { return &os.PathError{Op: "chmod", Err: syscall.EIO} }
+	if _, err := r.sqliteDSN("app.db"); err == nil {
+		t.Fatal("a non-permission chmod error must still fail the rewrite")
 	}
 }
