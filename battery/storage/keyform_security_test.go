@@ -73,6 +73,46 @@ func TestS3RefusesUnformedKeys(t *testing.T) {
 	}
 }
 
+// TestLocalRefusesUnformedKeys: LocalStorage must refuse the same unformed
+// keys as S3 (checkObjectKey) with upload.ErrInvalidKey, and Save must wrap
+// its Windows-portability refusals in it too.
+func TestLocalRefusesUnformedKeys(t *testing.T) {
+	ctx := context.Background()
+	ls := newTestLocalStorage(t, t.TempDir())
+	ops := map[string]func(string) error{
+		"Save":     func(k string) error { return ls.Save(ctx, k, bytes.NewReader([]byte("x"))) },
+		"Get":      func(k string) error { _, err := ls.Get(ctx, k); return err },
+		"GetRange": func(k string) error { _, err := ls.GetRange(ctx, k); return err },
+		"Delete":   func(k string) error { return ls.Delete(ctx, k) },
+		"Exists":   func(k string) error { _, err := ls.Exists(ctx, k); return err },
+	}
+	for name, op := range ops {
+		for _, k := range append([]string{""}, unformedKeys...) {
+			if err := op(k); !errors.Is(err, upload.ErrInvalidKey) {
+				t.Errorf("%s(%q) = %v, want upload.ErrInvalidKey", name, k, err)
+			}
+		}
+	}
+	for _, k := range unportableButExistingKeys {
+		if err := ls.Save(ctx, k, bytes.NewReader([]byte("x"))); !errors.Is(err, upload.ErrInvalidKey) {
+			t.Errorf("Save(%q) = %v, want upload.ErrInvalidKey", k, err)
+		}
+	}
+	for _, k := range formedKeys {
+		if err := ls.Save(ctx, k, bytes.NewReader([]byte("x"))); err != nil {
+			t.Errorf("Save(%q) refused a clean key: %v", k, err)
+		}
+	}
+}
+
+// TestMemorySaveEmptyKeyIsInvalidKey: MemoryStorage's empty-key refusal must
+// wrap upload.ErrInvalidKey, not a plain error ServeHandler would call a 500.
+func TestMemorySaveEmptyKeyIsInvalidKey(t *testing.T) {
+	if err := NewMemoryStorage().Save(context.Background(), "", bytes.NewReader([]byte("x"))); !errors.Is(err, upload.ErrInvalidKey) {
+		t.Errorf("Save(\"\") = %v, want upload.ErrInvalidKey", err)
+	}
+}
+
 // A zero or negative expiry is no expiry a presigner can honor: an SDK
 // that clamps it to its own default signs a URL for far longer than the
 // caller asked, and one that passes it through signs a URL that is dead

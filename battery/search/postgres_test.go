@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
@@ -180,6 +181,24 @@ func TestPostgresWeightedFieldMatches(t *testing.T) {
 	}
 	if len(res) != 1 || res[0].Document.ID != "1" {
 		t.Fatalf("weighted-field-only term not found: %#v", res)
+	}
+}
+
+// TestPostgresWeightedFieldNonStringFailsIndex: a configured weighted field
+// present with a non-string value makes Index return an error (the docs
+// wrongly said "skipped" until 2026-11).
+func TestPostgresWeightedFieldNonStringFailsIndex(t *testing.T) {
+	ctx := context.Background()
+	idx := newSearchIndex(t, map[string]byte{"title": 'B'})
+
+	err := idx.Index(ctx, Document{
+		ID: "1", Text: "body", Fields: map[string]any{"title": 42},
+	})
+	if err == nil {
+		t.Fatal("Index accepted a non-string weighted field; want a refusal naming the field")
+	}
+	if !strings.Contains(err.Error(), "title") {
+		t.Errorf("refusal does not name the offending field: %v", err)
 	}
 }
 

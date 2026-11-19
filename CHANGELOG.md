@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`LocalStorage` refuses a key with a control byte, as S3 and the
+  default key validator do.** All three now share one check.
+- **A storage key the backend refuses answers 400, not 500 or 404.** An
+  empty key and `LocalStorage`'s Windows-portability refusals now wrap
+  `upload.ErrInvalidKey`, so `ServeHandler` reports them as a bad
+  request.
 - **`App.View` list and record routes run the view's read hooks.**
   `BeforeList` and `BeforeGet` registered under the view's name now
   scope its routes; the view used to build its CRUD handler without

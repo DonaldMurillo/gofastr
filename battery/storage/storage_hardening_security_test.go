@@ -74,10 +74,11 @@ func TestServeHandlerErrorContractBackends(t *testing.T) {
 	}
 
 	cases := []struct {
-		name string
-		make func(*testing.T) storage.Storage
-		key  string
-		want int
+		name    string
+		make    func(*testing.T) storage.Storage
+		key     string
+		want    int
+		rawPath bool
 	}{
 		{
 			name: "battery LocalStorage missing key is 404",
@@ -119,6 +120,27 @@ func TestServeHandlerErrorContractBackends(t *testing.T) {
 			key:  "reports/missing.txt",
 			want: http.StatusNotFound,
 		},
+		{
+			name: "battery LocalStorage empty key is 400",
+			make: func(t *testing.T) storage.Storage {
+				ls := newTestLocalStorage(t, t.TempDir())
+				seed(t, ls)
+				return ls
+			},
+			key:  "",
+			want: http.StatusBadRequest,
+		},
+		{
+			name: "battery LocalStorage control-byte key is 400",
+			make: func(t *testing.T) storage.Storage {
+				ls := newTestLocalStorage(t, t.TempDir())
+				seed(t, ls)
+				return ls
+			},
+			key:     "a\nb.png",
+			want:    http.StatusBadRequest,
+			rawPath: true,
+		},
 	}
 
 	for _, tc := range cases {
@@ -126,7 +148,17 @@ func TestServeHandlerErrorContractBackends(t *testing.T) {
 			t.Parallel()
 			handler := upload.ServeHandler(tc.make(t))
 			rec := httptest.NewRecorder()
-			handler(rec, httptest.NewRequest(http.MethodGet, "/"+tc.key, nil))
+			target := "/" + tc.key
+			if tc.rawPath {
+				target = "/"
+			}
+			req := httptest.NewRequest(http.MethodGet, target, nil)
+			if tc.rawPath {
+				// net/url refuses a control byte in a parsed target; the
+				// router can still hand the handler such a path.
+				req.URL.Path = "/" + tc.key
+			}
+			handler(rec, req)
 
 			if rec.Code != tc.want {
 				t.Fatalf("SECURITY: [upload-serve-contract] GET %q through %s: got %d, want %d (body %q). Attack surface: the documented 404/400 classification of ServeHandler is false for the documented battery/storage wiring — untyped backend errors fall to the 500 arm, so gone and broken are indistinguishable to clients and caches (serveStoreError matches only upload.ErrNotFound/upload.ErrInvalidKey sentinels).", tc.key, tc.name, rec.Code, tc.want, rec.Body.String())

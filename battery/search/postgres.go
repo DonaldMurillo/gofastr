@@ -68,8 +68,9 @@ type PostgresConfig struct {
 
 	// WeightedFields maps Document.Fields keys (string values only) to a
 	// tsvector weight in the range 'A'..'D'. The matched field's string value
-	// is indexed at that weight; Document.Text is always weight 'A'. A field
-	// whose value is not a string is skipped, even if configured here.
+	// is indexed at that weight; Document.Text is always weight 'A'. A
+	// configured field present with a non-string value makes Index
+	// return an error.
 	WeightedFields map[string]byte
 }
 

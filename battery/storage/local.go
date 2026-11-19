@@ -97,11 +97,14 @@ func (ls *LocalStorage) Close() error {
 // New writes are still held to the portable rules.
 func (ls *LocalStorage) validateKey(key string) error {
 	if key == "" {
-		return fmt.Errorf("storage: empty key")
+		return fmt.Errorf("%w: empty key", upload.ErrInvalidKey)
 	}
 	// Check for path traversal sequences
 	if strings.Contains(key, "..") {
 		return fmt.Errorf("%w: key %q contains a path traversal sequence", upload.ErrInvalidKey, key)
+	}
+	if err := checkControlBytes(key); err != nil {
+		return err
 	}
 	// Reject absolute paths and volume-qualified paths on every platform.
 	// filepath.IsAbs handles Unix roots and Windows roots such as /tmp and
@@ -138,11 +141,11 @@ func (ls *LocalStorage) validateWritableKey(key string) error {
 func validateWindowsCompatibleKey(key string) error {
 	for _, part := range strings.FieldsFunc(key, func(r rune) bool { return r == '/' || r == '\\' }) {
 		if strings.ContainsRune(part, ':') {
-			return fmt.Errorf("storage: key %q contains a Windows alternate-data-stream separator", key)
+			return fmt.Errorf("%w: key %q contains a Windows alternate-data-stream separator", upload.ErrInvalidKey, key)
 		}
 		trimmed := strings.TrimRight(part, " .")
 		if trimmed == "" || trimmed != part {
-			return fmt.Errorf("storage: key %q contains a Windows-invalid path component", key)
+			return fmt.Errorf("%w: key %q contains a Windows-invalid path component", upload.ErrInvalidKey, key)
 		}
 		base := strings.ToUpper(trimmed)
 		if dot := strings.IndexByte(base, '.'); dot >= 0 {
@@ -152,7 +155,7 @@ func validateWindowsCompatibleKey(key string) error {
 		case "CON", "PRN", "AUX", "NUL",
 			"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
 			"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9":
-			return fmt.Errorf("storage: key %q contains reserved Windows device name %q", key, part)
+			return fmt.Errorf("%w: key %q contains reserved Windows device name %q", upload.ErrInvalidKey, key, part)
 		}
 	}
 	return nil

@@ -631,7 +631,7 @@ Built-in implementations:
   can't execute as script in a victim's browser (stored-XSS guard).
   Suitable for tests and single-host deployments.
 - `battery/storage`: local, S3, and in-memory backends behind the same
-  interface, plus a declarative factory registry.
+  interface.
 - (Add GCS / Azure adapters in your own code by implementing
   `Storage`.)
 
