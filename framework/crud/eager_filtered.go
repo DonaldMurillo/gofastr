@@ -75,7 +75,7 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable string, par
 		if err != nil {
 			return fmt.Errorf("eager filtered: %w", err)
 		}
-		safeTargetKey, err := safeColumns(targetKey)
+		safeTargetKey, err := query.SafeColumns(targetKey, "column")
 		if err != nil {
 			return fmt.Errorf("eager filtered: invalid target key: %w", err)
 		}

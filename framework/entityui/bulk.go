@@ -516,11 +516,7 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 		r.Body = http.MaxBytesReader(w, r.Body, bulkBodyLimit)
 		var body bulkBody
 		if err := handler.DecodeStrict(r.Body, &body); err != nil {
-			if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-				writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return
-			}
-			writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+			writeBodyError(w, r, err)
 			return
 		}
 		record := body.Scope == bulkScopeRecord
@@ -548,12 +544,7 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 			err = refuse(http.StatusUnprocessableEntity, reasonBulkNone)
 		}
 		if err != nil {
-			if ref, ok := errors.AsType[*bulkRefusal](err); ok {
-				writeBulkError(w, r, ref.status, ref.reason, ref.params)
-				return
-			}
-			slog.ErrorContext(ctx, "entityui: bulk selection", "entity", m.name, "error", err)
-			writeBulkError(w, r, http.StatusInternalServerError, reasonBulkFailed)
+			writeBulkRefusal(ctx, w, r, m, "entityui: bulk selection", err)
 			return
 		}
 		if len(ids) > InRequestCap {
@@ -653,7 +644,7 @@ func (u *UI) queueBulk(ctx context.Context, w http.ResponseWriter, r *http.Reque
 		writeBulkError(w, r, http.StatusUnprocessableEntity, reasonBulkOverCap, map[string]any{"cap": InRequestCap})
 		return
 	}
-	creator := userID(ctx)
+	creator := access.UserID(ctx)
 	if creator == "" {
 		writeBulkError(w, r, http.StatusUnprocessableEntity, reasonBulkNeedsUser, map[string]any{"cap": InRequestCap})
 		return
@@ -865,17 +856,6 @@ func (u *UI) PruneBulkJobs(ctx context.Context, keep time.Duration) (int, error)
 // BulkRetention is how long a finished bulk job's row is kept.
 const BulkRetention = 30 * 24 * time.Hour
 
-func userID(ctx context.Context) string {
-	u, ok := handler.GetUser(ctx)
-	if !ok || u == nil {
-		return ""
-	}
-	if id, ok := u.(interface{ GetID() string }); ok {
-		return id.GetID()
-	}
-	return ""
-}
-
 func writeBulkJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -886,6 +866,18 @@ func writeBulkJSON(w http.ResponseWriter, status int, v any) {
 
 func writeBulkError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, params ...map[string]any) {
 	writeBulkJSON(w, status, map[string]string{"error": reason.Text(r.Context(), params...), "reason": reason.Code()})
+}
+
+// writeBulkRefusal answers err on the bulk envelope: a *bulkRefusal
+// with its own status, anything else logged under label and answered
+// with the generic 500 bulk failure.
+func writeBulkRefusal(ctx context.Context, w http.ResponseWriter, r *http.Request, m *meta, label string, err error) {
+	if ref, ok := errors.AsType[*bulkRefusal](err); ok {
+		writeBulkError(w, r, ref.status, ref.reason, ref.params)
+		return
+	}
+	slog.ErrorContext(ctx, label, "entity", m.name, "error", err)
+	writeBulkError(w, r, http.StatusInternalServerError, reasonBulkFailed)
 }
 
 // refuseCrossSitePost answers a cross-site request with the 403 reason its

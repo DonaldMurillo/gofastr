@@ -173,19 +173,12 @@ func Run(w io.Writer, args []string, now time.Time, r runner) error {
 	fs.IntVar(&o.sshPort, "ssh-port", 0, "")
 	fs.StringVar(&o.identity, "i", "", "")
 	// The server may come before or after the flags.
-	var positional []string
-	for len(args) > 0 {
-		if err := fs.Parse(args); err != nil {
-			if errors.Is(err, flag.ErrHelp) {
-				return flag.ErrHelp
-			}
-			return fmt.Errorf("%w: %v", errUsage, err)
+	positional, err := cli.ParsePositionals(fs, args)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return flag.ErrHelp
 		}
-		args = fs.Args()
-		if len(args) > 0 {
-			positional = append(positional, args[0])
-			args = args[1:]
-		}
+		return fmt.Errorf("%w: %v", errUsage, err)
 	}
 	if len(positional) != 1 {
 		return fmt.Errorf("%w: name one server", errUsage)

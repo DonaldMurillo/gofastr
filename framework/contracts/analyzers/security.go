@@ -327,6 +327,20 @@ func localAssignments(body *ast.BlockStmt) map[string][]ast.Expr {
 	return locals
 }
 
+// isOSStdin reports whether v reads os's Stdin under any import
+// spelling: the package name, an alias, or a suffixed path.
+func isOSStdin(v *ast.SelectorExpr, aliases map[string]string) bool {
+	if v.Sel == nil || v.Sel.Name != "Stdin" {
+		return false
+	}
+	id, ok := v.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	p := aliases[id.Name]
+	return p == "os" || strings.HasSuffix(p, "/os") || id.Name == "os"
+}
+
 func unparen(e ast.Expr) ast.Expr {
 	for {
 		paren, ok := e.(*ast.ParenExpr)
@@ -1311,12 +1325,8 @@ func seedSourceFields(pkg *rawJSONPkg) {
 				}
 			}
 		case *ast.SelectorExpr:
-			if v.Sel != nil && v.Sel.Name == "Stdin" {
-				if id, ok := v.X.(*ast.Ident); ok {
-					if p := aliases[id.Name]; p == "os" || strings.HasSuffix(p, "/os") || id.Name == "os" {
-						return true
-					}
-				}
+			if isOSStdin(v, aliases) {
+				return true
 			}
 		case *ast.ParenExpr:
 			return direct(v.X, tainted, aliases)
@@ -1700,12 +1710,8 @@ func exprFromRequestBody(e ast.Expr, tainted map[string]taintKind, reqs map[stri
 		if id, ok := v.X.(*ast.Ident); ok && reqs[id.Name] && v.Sel != nil && v.Sel.Name == "Body" {
 			return taintBody
 		}
-		if v.Sel != nil && v.Sel.Name == "Stdin" {
-			if id, ok := v.X.(*ast.Ident); ok {
-				if p := aliases[id.Name]; p == "os" || strings.HasSuffix(p, "/os") || id.Name == "os" {
-					return taintFrame
-				}
-			}
+		if isOSStdin(v, aliases) {
+			return taintFrame
 		}
 		if v.Sel != nil {
 			if k := fields[v.Sel.Name]; k != 0 {

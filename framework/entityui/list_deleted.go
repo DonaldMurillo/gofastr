@@ -118,21 +118,13 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 				Back string `json:"back"`
 			}
 			if err := handler.DecodeStrict(r.Body, &body); err != nil {
-				if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-					writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-					return
-				}
-				writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+				writeBodyError(w, r, err)
 				return
 			}
 			back, haveBack = scrubBackPath(body.Back)
 		} else {
 			if err := r.ParseForm(); err != nil {
-				if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-					writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-					return
-				}
-				writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+				writeBodyError(w, r, err)
 				return
 			}
 			back, haveBack = scrubBackPath(r.PostFormValue("back"))

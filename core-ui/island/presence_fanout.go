@@ -422,10 +422,9 @@ func (m *Manager) haltPresenceHeartbeat() {
 
 // ─── roster helpers (lock-held) ─────────────────────────────────────
 
-// localRosterLocked returns this replica's LOCAL-only roster for a topic
-// (deduped by UserID, sorted). Caller holds mu. This is the data broadcast
-// to peers; it never includes remote contributions.
-func localRosterLocked(m *Manager, topic string) []PresenceMember {
+// localSeenLocked returns this replica's local members for a topic as a
+// dedup-by-UserID display-name map. Caller holds mu.
+func localSeenLocked(m *Manager, topic string) map[string]string {
 	seen := make(map[string]string)
 	for _, c := range m.presenceConns {
 		if c.identity.UserID == "" {
@@ -437,7 +436,14 @@ func localRosterLocked(m *Manager, topic string) []PresenceMember {
 			}
 		}
 	}
-	return buildSortedMembers(seen)
+	return seen
+}
+
+// localRosterLocked returns this replica's LOCAL-only roster for a topic
+// (deduped by UserID, sorted). Caller holds mu. This is the data broadcast
+// to peers; it never includes remote contributions.
+func localRosterLocked(m *Manager, topic string) []PresenceMember {
+	return buildSortedMembers(localSeenLocked(m, topic))
 }
 
 // localTopicsLocked returns the distinct topic strings this replica currently
@@ -470,17 +476,7 @@ func shownRosterLocked(m *Manager, topic string) []PresenceMember {
 // roster read between sweeps never surfaces stale members. A zero now
 // keeps them (shownRosterLocked).
 func mergedRosterLocked(m *Manager, topic string, now time.Time) []PresenceMember {
-	seen := make(map[string]string)
-	for _, c := range m.presenceConns {
-		if c.identity.UserID == "" {
-			continue
-		}
-		if c.hasTopic(topic) {
-			if _, ok := seen[c.identity.UserID]; !ok {
-				seen[c.identity.UserID] = c.identity.DisplayName
-			}
-		}
-	}
+	seen := localSeenLocked(m, topic)
 	if reps, ok := m.remoteRosters[topic]; ok {
 		for _, entry := range reps {
 			if !now.IsZero() && now.After(entry.expiresAt) {

@@ -1723,6 +1723,11 @@ value with `filter.CoerceValue` and binds it as that type:
 | Timestamp | RFC 3339; a zone-less `YYYY-MM-DDTHH:MM[:SS[.fff]]` (what `<input type=datetime-local>` sends) or the same with a space for the `T`; or a bare `YYYY-MM-DD`. A value with no zone reads as UTC, a bare date as midnight UTC. The UTC year must be 1 or later: Postgres refuses year 0000 | text in the layout crud stores (`schema.TimestampLayout` in `core/schema`: UTC, six fraction digits; `schema.FormatTimestamp` writes it), so `…Z` and `…+02:00` match the stored row on SQLite |
 | Date | `YYYY-MM-DD`, year 0001 or later | the text sent |
 
+In Go, `schema.TimestampArg(v)` converts a `time.Time`, a non-nil
+`*time.Time`, or a parseable RFC 3339 string to `schema.TimestampLayout`.
+Other values pass through unchanged. CRUD writes and typed timestamp columns
+use this conversion when binding values.
+
 A Relation column that is a belongs_to's foreign key to an integer key
 holds that integer and is checked as an Int (`entity.ValueFields`).
 `/openapi.json` types it the same way: an `integer` property and an

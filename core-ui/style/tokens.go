@@ -158,6 +158,21 @@ func TokenCategory(key string) string {
 	return key
 }
 
+// BareKeyword reports whether v contains none of the characters the token
+// lints reject here: ASCII digits, #, comma, (, single quote or double quote.
+func BareKeyword(v string) bool {
+	if v == "" {
+		return true
+	}
+	for _, r := range v {
+		switch {
+		case r >= '0' && r <= '9', r == '#', r == ',', r == '(', r == '\'', r == '"':
+			return false
+		}
+	}
+	return true
+}
+
 // ResolveColor returns `var(--color-<name>)` for a named color.
 // Always a CSS variable reference, never the literal value.
 func (t Theme) ResolveColor(name string) string {

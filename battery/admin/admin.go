@@ -255,6 +255,19 @@ func (b *Battery) logger() *slog.Logger {
 	return slog.Default()
 }
 
+// loadFailed logs a list read that failed and draws the screen's
+// failure notice: a danger callout, under the page's header when the
+// screen has one. logAttrs carry any extra log attributes.
+func (b *Battery) loadFailed(ctx context.Context, label string, phrase i18n.Phrase, err error, header []render.HTML, logAttrs ...any) render.HTML {
+	args := append(logAttrs, "error", err)
+	b.logger().Error(label, args...)
+	callout := ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(phrase.Text(ctx)))
+	if len(header) == 0 {
+		return callout
+	}
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, append(header, callout)...)
+}
+
 // Name implements framework.Battery.
 func (b *Battery) Name() string { return "admin" }
 
@@ -602,7 +615,7 @@ func (b *Battery) headers(next http.Handler) http.Handler {
 // rely on it.
 func (b *Battery) gate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !isSafeAdminMethod(r.Method) && rejectCrossSiteForm(w, r) {
+		if !isSafeAdminMethod(r.Method) && auth.RejectCrossSiteForm(w, r) {
 			return
 		}
 		if !b.authorized(r.Context()) {

@@ -190,7 +190,7 @@ func breakpointsFromTokens(tokens map[string]string) []breakpoint {
 func buildValueIndex(tokens map[string]string) map[string][]string {
 	out := map[string][]string{}
 	for k, v := range tokens {
-		if strings.Contains(k, ".") || bareKeyword(v) {
+		if strings.Contains(k, ".") || style.BareKeyword(v) {
 			continue
 		}
 		lv := normalizeNumber(strings.ToLower(v))
@@ -223,27 +223,6 @@ func normalizeNumber(v string) string {
 	}
 	return strconv.FormatFloat(n, 'f', -1, 64) + m[3]
 }
-
-// bareKeyword reports whether v is a single CSS identifier and nothing
-// else: no digit, hex marker, string quote, comma, or parenthesis
-// anywhere. Such a value cannot be distinctive evidence of a token
-// bypass.
-func bareKeyword(v string) bool {
-	if v == "" {
-		return true
-	}
-	for _, r := range v {
-		switch {
-		case r >= '0' && r <= '9', r == '#', r == ',', r == '(', r == '\'', r == '"':
-			return false
-		}
-	}
-	return true
-}
-
-// tokenCategory is style.TokenCategory: the longest token-type prefix
-// of a key, so font-weight-bold is a weight and never a font family.
-func tokenCategory(key string) string { return style.TokenCategory(key) }
 
 // PropTokenCategories maps a CSS property to the theme-token
 // categories whose value can legally replace that property's through
@@ -874,7 +853,7 @@ func runtimeOwnedVarPrefix(name string) bool {
 
 // checkFallbackDrift is GOFASTR1808.
 func (c *checker) checkFallbackDrift(d *Decl, varTok Token, name, fallback string) {
-	if !driftCategories[tokenCategory(name)] {
+	if !driftCategories[style.TokenCategory(name)] {
 		return
 	}
 	declared, ok := c.lightTokenValue(name)
@@ -917,7 +896,7 @@ func (c *checker) checkHardcodedValue(d *Decl) {
 	}
 	var toks []string
 	for _, k := range c.valueIndex[normalizeNumber(strings.ToLower(val))] {
-		if allowed[tokenCategory(k)] {
+		if allowed[style.TokenCategory(k)] {
 			toks = append(toks, k)
 		}
 	}

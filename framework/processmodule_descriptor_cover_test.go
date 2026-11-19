@@ -104,9 +104,7 @@ func TestNonGrantableReason_carveOuts(t *testing.T) {
 	}
 }
 
-// ---- splitResourceVerb ----
-
-func TestSplitResourceVerb(t *testing.T) {
+func TestSplitScope(t *testing.T) {
 	cases := []struct {
 		in   string
 		res  string
@@ -120,9 +118,9 @@ func TestSplitResourceVerb(t *testing.T) {
 		{"resource:", "", "", false}, // empty verb
 	}
 	for _, c := range cases {
-		res, verb, ok := splitResourceVerb(c.in)
+		res, verb, ok := access.SplitScope(c.in)
 		if res != c.res || verb != c.verb || ok != c.ok {
-			t.Errorf("splitResourceVerb(%q) = %q,%q,%t want %q,%q,%t",
+			t.Errorf("access.SplitScope(%q) = %q,%q,%t want %q,%q,%t",
 				c.in, res, verb, ok, c.res, c.verb, c.ok)
 		}
 	}

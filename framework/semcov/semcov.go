@@ -110,7 +110,13 @@ func RecordPermission(permission string) {
 
 // RecordEntityOp notes that an entity's CRUD operation ran.
 func RecordEntityOp(entity, op string) {
-	if !enabled.Load() || entity == "" || op == "" {
+	recordLowercased(entity, op, func(m *Manifest) map[string][]string { return m.Entities })
+}
+
+// recordLowercased notes an (a, b) pair, both lower-cased, into the
+// manifest map the selector picks, following recordTrimmed's pattern.
+func recordLowercased(a, b string, m func(*Manifest) map[string][]string) {
+	if !enabled.Load() || a == "" || b == "" {
 		return
 	}
 	mu.Lock()
@@ -118,7 +124,7 @@ func RecordEntityOp(entity, op string) {
 	if current == nil || !enabled.Load() {
 		return
 	}
-	if addTo(current.Entities, strings.ToLower(entity), strings.ToLower(op)) {
+	if addTo(m(current), strings.ToLower(a), strings.ToLower(b)) {
 		dirty = true
 	}
 }
@@ -159,17 +165,7 @@ func recordTrimmed(value string, field func(*Manifest) *[]string) {
 
 // RecordHook notes that a registered lifecycle hook ran for an entity.
 func RecordHook(entity, hookType string) {
-	if !enabled.Load() || entity == "" || hookType == "" {
-		return
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	if current == nil || !enabled.Load() {
-		return
-	}
-	if addTo(current.Hooks, strings.ToLower(entity), strings.ToLower(hookType)) {
-		dirty = true
-	}
+	recordLowercased(entity, hookType, func(m *Manifest) map[string][]string { return m.Hooks })
 }
 
 func addTo(m map[string][]string, key, value string) bool {

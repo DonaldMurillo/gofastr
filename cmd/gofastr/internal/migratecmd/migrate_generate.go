@@ -72,16 +72,9 @@ func runMigrateGenerate(args []string) {
 		cli.OsExit(1)
 	}
 	reg := framework.NewRegistry()
-	for _, decl := range decls {
-		cfg, err := decl.Config()
-		if err != nil {
-			cli.Fail("entity %q: %v", decl.Name, err)
-			cli.OsExit(1)
-		}
-		if err := reg.Register(framework.Define(decl.Name, cfg)); err != nil {
-			cli.Fail("entity %q: %v", decl.Name, err)
-			cli.OsExit(1)
-		}
+	if err := registerSpecEntities(reg, decls); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
 	}
 
 	// Both generation paths, this CLI and a host binary calling
@@ -320,6 +313,21 @@ func generateDialect(driver string) (framework.Dialect, error) {
 		return framework.DialectPostgres, nil
 	}
 	return "", fmt.Errorf("migrate generate writes SQLite or Postgres DDL; --db=%q is neither (use sqlite or postgres)", driver)
+}
+
+// registerSpecEntities defines and registers the app spec's entities in
+// declaration order, qualifying a failure with the entity's name.
+func registerSpecEntities(reg *framework.Registry, decls []framework.EntityDeclaration) error {
+	for _, decl := range decls {
+		cfg, err := decl.Config()
+		if err != nil {
+			return fmt.Errorf("entity %q: %w", decl.Name, err)
+		}
+		if err := reg.Register(framework.Define(decl.Name, cfg)); err != nil {
+			return fmt.Errorf("entity %q: %w", decl.Name, err)
+		}
+	}
+	return nil
 }
 
 // specDriver is the driver an app spec names for its database: its

@@ -190,21 +190,9 @@ func (b *DurableScheduleBuilder) Job(jobType string, payload any) *DurableSchedu
 		b.payload = json.RawMessage("null")
 		return b
 	}
-	switch v := payload.(type) {
-	case json.RawMessage:
-		b.payload = v
-	case []byte:
-		b.payload = json.RawMessage(v)
-	case string:
-		b.payload = json.RawMessage(v)
-	default:
-		data, err := json.Marshal(payload)
-		if err != nil {
-			b.payload = nil
-			b.payloadErr = fmt.Errorf("queue: marshal durable schedule payload: %w", err)
-			return b
-		}
-		b.payload = data
+	b.payload, b.payloadErr = encodeSchedulePayload(payload, "queue: marshal durable schedule payload")
+	if b.payloadErr != nil {
+		return b
 	}
 	// An EMPTY payload is "no payload", not malformed JSON, a nil or empty
 	// []byte / json.RawMessage / "" is what the common conditional-marshal

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
 )
 
@@ -128,7 +129,7 @@ func RepeatedLiteralsIn(sheets []SheetSource, tokens map[string]string) []Repeat
 					}
 					v := strings.TrimSpace(d.ValueSrc)
 					lv := strings.ToLower(v)
-					if v == "" || bareKeyword(v) || strings.Contains(lv, "var(") || strings.Contains(v, "{") || structuralLiteral(prop, lv) {
+					if v == "" || style.BareKeyword(v) || strings.Contains(lv, "var(") || strings.Contains(v, "{") || structuralLiteral(prop, lv) {
 						continue
 					}
 					if tokenValueFor(valueIndex[normalizeNumber(lv)], cats) {
@@ -200,7 +201,7 @@ func structuralLiteral(prop, lv string) bool {
 // belongs to a category the property can read.
 func tokenValueFor(holders []string, cats []string) bool {
 	for _, h := range holders {
-		if slices.Contains(cats, tokenCategory(h)) {
+		if slices.Contains(cats, style.TokenCategory(h)) {
 			return true
 		}
 	}

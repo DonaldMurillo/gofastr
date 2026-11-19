@@ -1058,7 +1058,13 @@ func selectorOperandSafe(op string, safe, numeric func(string) bool) bool {
 // result is falsy (the empty string), so it is not an escape (review
 // 6).
 func isEscapeCall(op string) bool {
-	loc := reEscapeCall.FindStringIndex(op)
+	return isWholeCall(reEscapeCall, op)
+}
+
+// isWholeCall reports whether op is exactly one call matched by re,
+// nothing after the closing paren but space.
+func isWholeCall(re *regexp.Regexp, op string) bool {
+	loc := re.FindStringIndex(op)
 	if loc == nil {
 		return false
 	}
@@ -3331,12 +3337,7 @@ var reEncodeCall = regexp.MustCompile(`^(?:\w+\.)*encodeURIComponent\s*\(`)
 // call, nothing after the closing paren but space — the same
 // whole-operand rule isEscapeCall applies to CSS.escape.
 func isEncodedCall(op string) bool {
-	loc := reEncodeCall.FindStringIndex(op)
-	if loc == nil {
-		return false
-	}
-	close := matchDelimForward(op, loc[1]-1)
-	return close >= 0 && strings.TrimSpace(op[close+1:]) == ""
+	return isWholeCall(reEncodeCall, op)
 }
 
 // ── lint 7: module URL built from an ungated identifier ──────────────

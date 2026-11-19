@@ -206,16 +206,8 @@ func resolverUserID(ctx context.Context) (string, bool) {
 	if ctx == nil {
 		return "", false
 	}
-	user, ok := handler.GetUser(ctx)
-	if !ok || user == nil {
-		return "", false
-	}
-	identified, ok := user.(interface{ GetID() string })
-	if !ok {
-		return "", false
-	}
-	userID := identified.GetID()
-	return userID, userID != ""
+	id := UserID(ctx)
+	return id, id != ""
 }
 
 func resolverAuthTenant(ctx context.Context) string {

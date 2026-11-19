@@ -692,6 +692,17 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			}
 			return Job{}, fmt.Errorf("dequeue: pop: %w", err)
 		}
+		// restoreAndRequeue returns a popped entry to the main list and
+		// re-enqueues the skipped jobs, joining every failure onto err.
+		restoreAndRequeue := func(err error, restoreBytes, restoreLabel string) error {
+			if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", restoreBytes, true); restoreErr != nil {
+				err = errors.Join(err, fmt.Errorf("%s: %w", restoreLabel, restoreErr))
+			}
+			if rerr := requeueSkipped(); rerr != nil {
+				return errors.Join(err, rerr)
+			}
+			return err
+		}
 
 		var job Job
 		if err := json.Unmarshal([]byte(data), &job); err != nil {
@@ -703,12 +714,9 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			resultErr := fmt.Errorf("unmarshal job: %w", err)
 			if _, qerr := q.homePopped(ctx, rec, data, q.deadLetterQueue, "", data, true); qerr != nil {
 				resultErr = errors.Join(resultErr, fmt.Errorf("quarantine malformed job: %w", qerr))
-				if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", data, true); restoreErr != nil {
-					resultErr = errors.Join(resultErr, fmt.Errorf("restore malformed job: %w", restoreErr))
-				}
+				return Job{}, restoreAndRequeue(resultErr, data, "restore malformed job")
 			}
-			rerr := requeueSkipped()
-			if rerr != nil {
+			if rerr := requeueSkipped(); rerr != nil {
 				resultErr = errors.Join(resultErr, rerr)
 			}
 			return Job{}, resultErr
@@ -742,26 +750,14 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 				// The bumped job cannot be re-encoded: restore the
 				// original bytes and surface the loss, the same
 				// contract a failed DLQ push holds.
-				resultErr := fmt.Errorf("dequeue: marshal exhausted job: %w", err)
-				if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", data, true); restoreErr != nil {
-					resultErr = errors.Join(resultErr, fmt.Errorf("restore exhausted job: %w", restoreErr))
-				}
-				rerr := requeueSkipped()
-				if rerr != nil {
-					resultErr = errors.Join(resultErr, rerr)
-				}
-				return Job{}, resultErr
+				return Job{}, restoreAndRequeue(
+					fmt.Errorf("dequeue: marshal exhausted job: %w", err),
+					data, "restore exhausted job")
 			}
 			if _, err := q.homePopped(ctx, rec, data, q.deadLetterQueue, "", string(dlqData), true); err != nil {
-				resultErr := fmt.Errorf("dequeue: dead-letter exhausted job: %w", err)
-				if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", string(dlqData), true); restoreErr != nil {
-					resultErr = errors.Join(resultErr, fmt.Errorf("restore exhausted job: %w", restoreErr))
-				}
-				rerr := requeueSkipped()
-				if rerr != nil {
-					resultErr = errors.Join(resultErr, rerr)
-				}
-				return Job{}, resultErr
+				return Job{}, restoreAndRequeue(
+					fmt.Errorf("dequeue: dead-letter exhausted job: %w", err),
+					string(dlqData), "restore exhausted job")
 			}
 			continue
 		}
@@ -774,15 +770,9 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// The bumped record cannot be re-encoded: restore the
 			// original bytes and surface the loss, the same
 			// no-silent-loss contract the processing push below holds.
-			resultErr := fmt.Errorf("dequeue: marshal bumped job: %w", err)
-			if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", data, true); restoreErr != nil {
-				resultErr = errors.Join(resultErr, fmt.Errorf("restore popped job: %w", restoreErr))
-			}
-			rerr := requeueSkipped()
-			if rerr != nil {
-				resultErr = errors.Join(resultErr, rerr)
-			}
-			return Job{}, resultErr
+			return Job{}, restoreAndRequeue(
+				fmt.Errorf("dequeue: marshal bumped job: %w", err),
+				data, "restore popped job")
 		}
 
 		// Track in processing queue for visibility timeout. The job was
@@ -800,15 +790,9 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// on a later Dequeue. If the restore itself fails the job is
 			// unrecoverable, but the common single-failure case (pop ok,
 			// processing write blip) no longer loses it.
-			resultErr := fmt.Errorf("dequeue: track in processing: %w", err)
-			if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", string(bumped), true); restoreErr != nil {
-				resultErr = errors.Join(resultErr, fmt.Errorf("restore popped job: %w", restoreErr))
-			}
-			rerr := requeueSkipped()
-			if rerr != nil {
-				resultErr = errors.Join(resultErr, rerr)
-			}
-			return Job{}, resultErr
+			return Job{}, restoreAndRequeue(
+				fmt.Errorf("dequeue: track in processing: %w", err),
+				string(bumped), "restore popped job")
 		}
 		if !claimedIt {
 			// The pop record was gone: an erasure removed the job while this

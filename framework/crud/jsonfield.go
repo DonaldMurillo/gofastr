@@ -22,7 +22,7 @@ func (ch *CrudHandler) bindJSONValue(col string, v any) any {
 	}
 	snap := ch.snapshot()
 	if _, ok := snap.timestampColumns[col]; ok {
-		return storedTime(v)
+		return schema.TimestampArg(v)
 	}
 	if _, ok := snap.boolColumns[col]; ok {
 		if b, ok := boolSpelling(v); ok {
@@ -34,22 +34,6 @@ func (ch *CrudHandler) bindJSONValue(col string, v any) any {
 		return v
 	}
 	return marshalJSONColumn(v)
-}
-
-func storedTime(v any) any {
-	switch t := v.(type) {
-	case time.Time:
-		return schema.FormatTimestamp(t)
-	case *time.Time:
-		if t != nil {
-			return schema.FormatTimestamp(*t)
-		}
-	case string:
-		if parsed, err := time.Parse(time.RFC3339, t); err == nil {
-			return schema.FormatTimestamp(parsed)
-		}
-	}
-	return v
 }
 
 // marshalJSONColumn encodes a JSON value as text; a string is already the

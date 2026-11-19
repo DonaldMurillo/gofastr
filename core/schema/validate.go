@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -317,29 +318,25 @@ func validateJSON(value any) error {
 }
 
 func validateRelation(value any) error {
-	s, ok := toString(value)
-	if !ok {
-		return violate(ReasonNotReference, nil)
-	}
-	if !textsafe.Storable(s) {
-		return violate(ReasonInvalidText, nil)
-	}
-	if s == "" {
-		return violate(ReasonEmptyReference, nil)
-	}
-	return nil
+	return validateStorableString(value, ReasonNotReference, ReasonEmptyReference)
 }
 
 func validateImageOrFile(value any) error {
+	return validateStorableString(value, ReasonNotPath, ReasonEmptyPath)
+}
+
+// validateStorableString is the shared rule of Relation, Image and File
+// values: a string, storable as text, and non-empty.
+func validateStorableString(value any, notString, empty i18n.Phrase) error {
 	s, ok := toString(value)
 	if !ok {
-		return violate(ReasonNotPath, nil)
+		return violate(notString, nil)
 	}
 	if !textsafe.Storable(s) {
 		return violate(ReasonInvalidText, nil)
 	}
 	if s == "" {
-		return violate(ReasonEmptyPath, nil)
+		return violate(empty, nil)
 	}
 	return nil
 }

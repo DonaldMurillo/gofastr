@@ -153,11 +153,7 @@ func (u *UI) OverrideHandler(entityName string) http.Handler {
 		r.Body = http.MaxBytesReader(w, r.Body, overrideBodyLimit)
 		state, reason, back, err := readOverrideBody(r, plain)
 		if err != nil {
-			if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-				writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return
-			}
-			writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+			writeBodyError(w, r, err)
 			return
 		}
 		if plain {

@@ -264,16 +264,9 @@ func runMigrateRepair(args []string) {
 		cli.Fail("App spec %s declares no entities.", from)
 		cli.OsExit(1)
 	}
-	for _, decl := range bp.Entities {
-		cfg, err := decl.Config()
-		if err != nil {
-			cli.Fail("entity %q: %v", decl.Name, err)
-			cli.OsExit(1)
-		}
-		if err := reg.Register(framework.Define(decl.Name, cfg)); err != nil {
-			cli.Fail("entity %q: %v", decl.Name, err)
-			cli.OsExit(1)
-		}
+	if err := registerSpecEntities(reg, bp.Entities); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
 	}
 
 	stale, err := fwmigrate.FindStaleOwnerForeignKeys(context.Background(), db, reg)

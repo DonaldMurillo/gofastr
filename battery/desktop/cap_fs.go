@@ -44,19 +44,11 @@ func (b *Battery) fsCapability() Capability {
 					if derr != nil {
 						return nil, derr
 					}
-					mapErr := fsError
-					var f *os.File
-					var err error
-					if b.pathAllowed(req.Path) {
-						f, err = os.Open(req.Path)
-					} else if root, rel, ok := b.folderGrant(req.Path); ok {
-						f, err = root.Open(rel)
-						root.Close()
-						mapErr = folderError
-					} else {
-						return nil, errPathNotAllowed
-					}
+					f, mapErr, err := resolveFS(b, req.Path, os.Open, (*os.Root).Open)
 					if err != nil {
+						if mapErr == nil {
+							return nil, err
+						}
 						return nil, mapErr(err)
 					}
 					defer f.Close()
@@ -105,19 +97,11 @@ func (b *Battery) fsCapability() Capability {
 					if derr != nil {
 						return nil, derr
 					}
-					var info fs.FileInfo
-					var err error
-					mapErr := fsError
-					if b.pathAllowed(req.Path) {
-						info, err = os.Stat(req.Path)
-					} else if root, rel, ok := b.folderGrant(req.Path); ok {
-						info, err = root.Stat(rel)
-						root.Close()
-						mapErr = folderError
-					} else {
-						return nil, errPathNotAllowed
-					}
+					info, mapErr, err := resolveFS(b, req.Path, os.Stat, (*os.Root).Stat)
 					if err != nil {
+						if mapErr == nil {
+							return nil, err
+						}
 						return nil, mapErr(err)
 					}
 					return fsStatOutput{
@@ -184,6 +168,24 @@ func fsError(err error) *Error {
 		return &Error{Code: CodeDenied, Message: "path is not accessible"}
 	}
 	return &Error{Code: CodeInternal, Message: InternalErrorMsg}
+}
+
+// resolveFS runs the one filesystem call an allowed path permits: an
+// allow-listed path through the OS, a picked folder's path through its
+// root, closed after the call. It answers the call's error mapper, nil
+// only for the refusal, whose error needs none.
+func resolveFS[T any](b *Battery, path string, plain func(string) (T, error), rooted func(*os.Root, string) (T, error)) (T, func(error) *Error, error) {
+	if b.pathAllowed(path) {
+		v, err := plain(path)
+		return v, fsError, err
+	}
+	if root, rel, ok := b.folderGrant(path); ok {
+		v, err := rooted(root, rel)
+		root.Close()
+		return v, folderError, err
+	}
+	var zero T
+	return zero, nil, errPathNotAllowed
 }
 
 // AllowPath puts p on the fs allow-list: p must be absolute; the list

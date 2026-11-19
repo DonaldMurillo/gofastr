@@ -108,18 +108,10 @@ func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 			s.columnOfWire[wk] = f.Name
 		}
 		for _, key := range []string{casing.ToCamel(f.Name), casing.ToCamel(wk)} {
-			if prev, exists := s.columnOfCamel[key]; exists && prev != f.Name {
-				s.columnOfCamel[key] = ""
-				continue
-			}
-			s.columnOfCamel[key] = f.Name
+			markKey(s.columnOfCamel, key, f.Name)
 		}
 		for _, key := range []string{casing.ToSnake(f.Name), casing.ToSnake(wk)} {
-			if prev, exists := s.columnOfSnake[key]; exists && prev != f.Name {
-				s.columnOfSnake[key] = ""
-				continue
-			}
-			s.columnOfSnake[key] = f.Name
+			markKey(s.columnOfSnake, key, f.Name)
 		}
 		if f.Type == schema.JSON {
 			s.jsonColumns[f.Name] = struct{}{}
@@ -176,4 +168,14 @@ func (ch *CrudHandler) queryField(name string) schema.Field {
 		}
 	}
 	return schema.Field{Name: name}
+}
+
+// markKey maps key to field, blanking it when another field already
+// claimed the key: a blank means the key is ambiguous, not absent.
+func markKey(m map[string]string, key, field string) {
+	if prev, exists := m[key]; exists && prev != field {
+		m[key] = ""
+		return
+	}
+	m[key] = field
 }

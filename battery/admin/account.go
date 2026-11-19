@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -130,7 +131,7 @@ func (b *Battery) handleName(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *Battery) nameEditor(ctx context.Context) (string, auth.NameStore) {
-	id := callerUserID(ctx)
+	id := access.UserID(ctx)
 	if id == "" {
 		return "", nil
 	}
@@ -222,7 +223,7 @@ func (b *Battery) emailVerified(ctx context.Context) (verified, known bool) {
 	if !ok {
 		return false, false
 	}
-	id := callerUserID(ctx)
+	id := access.UserID(ctx)
 	if id == "" {
 		return false, false
 	}
@@ -241,7 +242,7 @@ func (b *Battery) hasPassword(ctx context.Context) (has, known bool) {
 	if !ok {
 		return false, false
 	}
-	id := callerUserID(ctx)
+	id := access.UserID(ctx)
 	if id == "" {
 		return false, false
 	}
@@ -260,7 +261,7 @@ func (b *Battery) userName(ctx context.Context) string {
 			return name
 		}
 	}
-	store, actor := b.nameStore(), callerUserID(ctx)
+	store, actor := b.nameStore(), access.UserID(ctx)
 	if store == nil || actor == "" {
 		return ""
 	}

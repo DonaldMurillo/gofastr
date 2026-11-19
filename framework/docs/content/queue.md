@@ -656,6 +656,9 @@ if err := sched.Cron("0 2 * * *").
 go sched.Start(ctx) // blocks until ctx is cancelled
 ```
 
+Each `Job` call replaces the previous job type and payload. Passing
+`nil` clears the in-memory schedule's payload.
+
 ```go
 // Lane / Priority / MaxAttempts on a schedule are carried verbatim into
 // every Job the scheduler fires; set them to tag the fired job's lane

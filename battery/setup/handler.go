@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -216,7 +217,7 @@ func (r *Runner) handleSetup(w http.ResponseWriter, req *http.Request) {
 		r.renderStep(w, req)
 	case http.MethodPost:
 		// CSRF: reject cross-site form posts (login-CSRF convention).
-		if rejectCrossSiteForm(w, req) {
+		if auth.RejectCrossSiteForm(w, req) {
 			return
 		}
 		r.handleSubmit(w, req)

@@ -17,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -558,7 +559,7 @@ func (b *Battery) displayName(ctx context.Context) string {
 	if handlerUser(ctx) == nil {
 		return ""
 	}
-	return cmp.Or(b.userName(ctx), userEmail(ctx), callerUserID(ctx))
+	return cmp.Or(b.userName(ctx), userEmail(ctx), access.UserID(ctx))
 }
 
 // handlerUser is the signed-in user the auth middleware set, or nil.

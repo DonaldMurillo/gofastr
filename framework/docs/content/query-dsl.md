@@ -284,6 +284,10 @@ sel, args := del.Matching("slug") // SELECT slug FROM notes WHERE (slug = $1) AN
 
 Raw SQL that names a declared table or column quotes it with
 `query.QuoteFolded`, after `query.SafeIdent` has checked it.
+`query.SafeColumns(cols, label)` validates a column list through that
+check. It wraps the first error as `invalid <label> "<name>": <why>`.
+Relation key predicates pass `"key column"`. Other CRUD and migration
+callers pass `"column"`.
 AutoMigrate writes its DDL with names unquoted, so Postgres stores an
 entity declared as `Widgets` under `widgets`. `QuoteFolded("Widgets")`
 gives `"widgets"`, which finds it; `QuoteIdent("Widgets")` gives

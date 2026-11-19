@@ -82,7 +82,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 		if err := entity.CheckRelationKeys(ent, rel, target); err != nil {
 			return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 		}
-		targetKey, err := safeColumns(target.KeyColumns())
+		targetKey, err := query.SafeColumns(target.KeyColumns(), "column")
 		if err != nil {
 			return nil, fmt.Errorf("eager load %s: invalid key column: %w", rel.Name, err)
 		}

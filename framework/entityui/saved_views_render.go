@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -76,7 +77,7 @@ func savedGoneWarning(ctx context.Context) render.HTML {
 }
 
 func savedViewsOn(ctx context.Context, s *listState) bool {
-	return s.savedOn && userID(ctx) != ""
+	return s.savedOn && access.UserID(ctx) != ""
 }
 
 func (b *ListBuilder) viewTools(ctx context.Context, s *listState) render.HTML {

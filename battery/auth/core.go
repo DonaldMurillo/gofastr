@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
@@ -166,14 +165,11 @@ func (c *CorePlugin) RegisterRoutes(r *router.Router, basePath string) {
 // the attacker's own token, auto-submitted from their page, minted a
 // session in the victim's browser.
 func rejectCrossSiteForm(w http.ResponseWriter, r *http.Request) bool {
-	if !handler.IsForgeableRequest(r) {
+	if !crossSiteForm(r) {
 		return false
 	}
-	if handler.IsCrossSiteRequest(r) {
-		writeFormAuthError(w, r, http.StatusForbidden, reasonCrossSiteRequest)
-		return true
-	}
-	return false
+	writeFormAuthError(w, r, http.StatusForbidden, reasonCrossSiteRequest)
+	return true
 }
 
 // guardAuthLimit applies a per-IP limiter with the response shape matched

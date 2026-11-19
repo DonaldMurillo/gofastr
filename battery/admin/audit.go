@@ -154,9 +154,7 @@ func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.H
 	if err != nil {
 		// A missing audit table is the usual cause; driver text stays in
 		// the log.
-		b.logger().Error("admin: load audit rows", "table", b.cfg.AuditTable, "error", err)
-		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header,
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminAuditLoadFailed.Text(ctx))))
+		return b.loadFailed(ctx, "admin: load audit rows", i18nui.AdminAuditLoadFailed, err, []render.HTML{header}, "table", b.cfg.AuditTable)
 	}
 	above := []render.HTML{header, b.auditFilterForm(ctx, f)}
 	if dropped {

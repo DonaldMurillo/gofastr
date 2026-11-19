@@ -123,19 +123,12 @@ func Run(w io.Writer, args []string, now time.Time) error {
 		return fmt.Errorf("%w: unknown subcommand %q", errUsage, sub)
 	}
 	// A trace ID may come before or after the flags.
-	var positional []string
-	for len(rest) > 0 {
-		if err := fs.Parse(rest); err != nil {
-			if errors.Is(err, flag.ErrHelp) {
-				return flag.ErrHelp
-			}
-			return fmt.Errorf("%w: %v", errUsage, err)
+	positional, err := cli.ParsePositionals(fs, rest)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return flag.ErrHelp
 		}
-		rest = fs.Args()
-		if len(rest) > 0 {
-			positional = append(positional, rest[0])
-			rest = rest[1:]
-		}
+		return fmt.Errorf("%w: %v", errUsage, err)
 	}
 	if o.since < 0 || o.slow < 0 {
 		return fmt.Errorf("%w: --since and --slow take a duration of zero or more", errUsage)

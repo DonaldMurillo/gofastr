@@ -165,20 +165,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 			isPalette = true
 		}
 
-		pts := make([]string, 0, len(s.Values))
-		firstX, lastX := -1.0, 0.0
-		for j, v := range s.Values {
-			if !finite(v) {
-				continue
-			}
-			x := float64(j) * plotW / float64(longest-1)
-			y := linePad + inner - chartFrac(v, min, max)*inner
-			pts = append(pts, ftoa(x)+","+ftoa(y))
-			if firstX < 0 {
-				firstX = x
-			}
-			lastX = x
-		}
+		pts, firstX, lastX := chartPoints(s.Values, longest-1, plotW, linePad, inner, min, max)
 		var pathD strings.Builder
 		pathD.WriteString("M" + pts[0])
 		for j := 1; j < len(pts); j++ {

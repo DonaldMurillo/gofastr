@@ -354,6 +354,11 @@ one package can read a token declared in another.
   `--opacity-*` (`line-height: 1.6` is `var(--leading-relaxed)`). A `border` shorthand is judged whole,
   so `1px solid …` passes this rule; write `var(--stroke-thin) solid …`
   anyway, so a theme's line weight reaches it.
+
+  Both checks use `style.BareKeyword` to skip values that contain no
+  ASCII digit, `#`, quote, comma or opening parenthesis (`(`) when building
+  the value index. This skips values such as `none` in `box-shadow: none`.
+  The checks read each key's type through `style.TokenCategory`.
 - **GOFASTR1821**: an app token whose value is already another token's
   value of the same type, built-in or app (`--color-brand: #18181B`
   where `--color-primary` is `#18181B`). Read the other token, or give

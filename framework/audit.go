@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
-	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -324,7 +324,7 @@ func AuditDigestID(recordID string) bool {
 func (c AuditConfig) actor(ctx context.Context) string {
 	resolve := c.Actor
 	if resolve == nil {
-		resolve = requestUserID
+		resolve = access.UserID
 	}
 	var out string
 	func() {
@@ -336,17 +336,6 @@ func (c AuditConfig) actor(ctx context.Context) string {
 		out = resolve(ctx)
 	}()
 	return sanitizeAuditField(out)
-}
-
-func requestUserID(ctx context.Context) string {
-	u, ok := handler.GetUser(ctx)
-	if !ok || u == nil {
-		return ""
-	}
-	if id, ok := u.(interface{ GetID() string }); ok {
-		return id.GetID()
-	}
-	return ""
 }
 
 func sanitizeAuditField(s string) string {

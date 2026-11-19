@@ -101,20 +101,7 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 	plotW := float64(w)
 	plotH := float64(h) - 2*pad
 	n := len(cfg.Values)
-	pts := make([]string, 0, n)
-	firstX, lastX := -1.0, 0.0
-	for i, v := range cfg.Values {
-		if !finite(v) {
-			continue
-		}
-		x := float64(i) * plotW / float64(n-1)
-		y := pad + plotH - chartFrac(v, min, max)*plotH
-		pts = append(pts, ftoa(x)+","+ftoa(y))
-		if firstX < 0 {
-			firstX = x
-		}
-		lastX = x
-	}
+	pts, firstX, lastX := chartPoints(cfg.Values, n-1, plotW, pad, plotH, min, max)
 
 	cls := "fui-sparkline"
 	if cfg.Color != "" {

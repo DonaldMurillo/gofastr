@@ -24,23 +24,9 @@ import (
 
 // adminActorID names the signed-in admin in an audit row: their user
 // id, else "unknown". It is a label, never a key: a lookup or a write
-// for the caller's own account takes callerUserID.
+// for the caller's own account takes access.UserID.
 func adminActorID(ctx context.Context) string {
-	return cmp.Or(callerUserID(ctx), "unknown")
-}
-
-// callerUserID is the signed-in user's id, or "" when there is no user
-// or the user type carries none. The gate admits a caller by roles, so
-// an id-less admin reaches the account routes.
-func callerUserID(ctx context.Context) string {
-	u, ok := handler.GetUser(ctx)
-	if !ok || u == nil {
-		return ""
-	}
-	if id, ok := u.(interface{ GetID() string }); ok {
-		return id.GetID()
-	}
-	return ""
+	return cmp.Or(access.UserID(ctx), "unknown")
 }
 
 // ----- roles ------------------------------------------------------------------
@@ -229,9 +215,7 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 		users, total, err = b.cfg.Auth.ListUsers(ctx, opts)
 	}
 	if err != nil {
-		b.logger().Error("admin: list users", "error", err)
-		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header,
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminUsersLoadFailed.Text(ctx))))
+		return b.loadFailed(ctx, "admin: list users", i18nui.AdminUsersLoadFailed, err, []render.HTML{header})
 	}
 	page := b.cfg.PathPrefix + "/rbac/users"
 	if encoded := query.Encode(); encoded != "" {
@@ -614,7 +598,7 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 	// leaves the deployment with none, and nonAssignableRole then
 	// refuses granting it back from the tier that remains. Another admin
 	// may still remove it. A custom Authorize gates on something else.
-	if b.cfg.Authorize == nil && userID == callerUserID(r.Context()) &&
+	if b.cfg.Authorize == nil && userID == access.UserID(r.Context()) &&
 		slices.Contains(current, b.adminRole()) && !slices.Contains(roles, b.adminRole()) {
 		b.appendAudit(r.Context(), "access", "assign-roles-refused", userID, actor,
 			map[string]any{"roles": roles, "refused_role": b.adminRole()})

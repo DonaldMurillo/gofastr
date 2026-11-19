@@ -24,20 +24,11 @@ func scaffoldApp(t *testing.T, args ...string) string {
 	return filepath.Join(dir, args[0])
 }
 
-func readScaffold(t *testing.T, root, rel string) string {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join(root, rel))
-	if err != nil {
-		t.Fatalf("read %s: %v", rel, err)
-	}
-	return string(b)
-}
-
 var jwtSecretLine = regexp.MustCompile(`(?m)^JWT_SECRET=([0-9a-f]{64})$`)
 
 func TestInitWiresAuthAndAPIPrefix(t *testing.T) {
 	root := scaffoldApp(t, "authapp")
-	mainGo := readScaffold(t, root, "main.go")
+	mainGo := clitest.ReadFile(t, root, "main.go")
 	for _, want := range []string{
 		`framework.WithAPIPrefix("/api")`,
 		`auth.NewEntityUserStore(db, "auth_users")`,
@@ -55,7 +46,7 @@ func TestInitWiresAuthAndAPIPrefix(t *testing.T) {
 		}
 	}
 
-	env := readScaffold(t, root, ".env")
+	env := clitest.ReadFile(t, root, ".env")
 	m := jwtSecretLine.FindStringSubmatch(env)
 	if m == nil {
 		t.Fatalf(".env must carry a 32-byte hex JWT_SECRET:\n%s", env)
@@ -69,12 +60,12 @@ func TestInitWiresAuthAndAPIPrefix(t *testing.T) {
 		t.Errorf(".env must not switch auth into dev mode:\n%s", env)
 	}
 	filepermtest.AssertOwnerOnly(t, filepath.Join(root, ".env"), 0o600)
-	other := jwtSecretLine.FindStringSubmatch(readScaffold(t, scaffoldApp(t, "authapp2"), ".env"))
+	other := jwtSecretLine.FindStringSubmatch(clitest.ReadFile(t, scaffoldApp(t, "authapp2"), ".env"))
 	if other == nil || other[1] == m[1] {
 		t.Error("each scaffold must mint its own JWT secret")
 	}
 
-	screens := readScaffold(t, root, "screens_auth.go")
+	screens := clitest.ReadFile(t, root, "screens_auth.go")
 	for _, want := range []string{
 		"type LoginScreen struct",
 		"type RegisterScreen struct",
@@ -95,7 +86,7 @@ func TestInitWiresAuthAndAPIPrefix(t *testing.T) {
 		t.Errorf("screens_auth.go must not tell a caller an email is taken:\n%s", screens)
 	}
 
-	home := readScaffold(t, root, "screens.go")
+	home := clitest.ReadFile(t, root, "screens.go")
 	for _, want := range []string{`Href: "/login"`, `Href: "/register"`, "/api/posts"} {
 		if !strings.Contains(home, want) {
 			t.Errorf("screens.go missing %s:\n%s", want, home)
@@ -108,13 +99,13 @@ func TestInitNoEntitySkipsAuth(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "screens_auth.go")); !os.IsNotExist(err) {
 		t.Errorf("--no-entity has no database for auth: screens_auth.go must not exist (%v)", err)
 	}
-	mainGo := readScaffold(t, root, "main.go")
+	mainGo := clitest.ReadFile(t, root, "main.go")
 	for _, unwanted := range []string{"battery/auth", `framework.WithAPIPrefix(`, "LoginScreen"} {
 		if strings.Contains(mainGo, unwanted) {
 			t.Errorf("--no-entity main.go must not contain %s", unwanted)
 		}
 	}
-	if strings.Contains(readScaffold(t, root, ".env"), "JWT_SECRET") {
+	if strings.Contains(clitest.ReadFile(t, root, ".env"), "JWT_SECRET") {
 		t.Error("--no-entity .env must not carry a JWT secret")
 	}
 }

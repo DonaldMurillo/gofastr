@@ -2,7 +2,6 @@ package entityui
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -197,11 +196,7 @@ func (u *UI) PickerHandler(entityName string) http.Handler {
 		r.Body = http.MaxBytesReader(w, r.Body, pickerBodyLimit)
 		var body pickerBody
 		if err := handler.DecodeStrict(r.Body, &body); err != nil {
-			if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-				writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return
-			}
-			writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+			writeBodyError(w, r, err)
 			return
 		}
 		opts, more, refused, err := u.pickerOptions(ctx, f, body.Q)

@@ -114,6 +114,21 @@ func TestQueueLoadFailureHidesDriverText(t *testing.T) {
 	}
 }
 
+// A dashboard fragment whose list failed names itself: the failed-jobs
+// notice sits in a titled card like the recent-audit one, not loose in
+// the Needs-attention strip.
+func TestDashboardFailedJobsLoadFailureIsTitledCard(t *testing.T) {
+	q := &fakeQueue{listErr: errors.New("dial tcp db.internal:5432")}
+	x := setup(t, nil, Config{Queue: q}, nil)
+	dash := get(x.as(theAdmin), "/admin").Body.String()
+	if !strings.Contains(dash, "Could not load jobs") {
+		t.Fatalf("the dashboard shows no load-failure notice:\n%s", dash)
+	}
+	if !strings.Contains(dash, ">Failed jobs</h2>") {
+		t.Errorf("the failed-jobs failure is an untitled callout; it should sit in a titled card like the recent-audit one:\n%s", dash)
+	}
+}
+
 // Stats can come back partly filled beside its error; no count shows.
 func TestQueueStatsErrorDropsCounts(t *testing.T) {
 	q := &fakeQueue{stats: queue.JobStats{"pending": 7, "failed": 4}, statsErr: errors.New("rows error mid-scan")}

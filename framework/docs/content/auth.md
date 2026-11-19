@@ -1372,6 +1372,11 @@ user's second factor or replace their backup codes. `/2fa/verify` accepts
 only JSON and returns 415 for any other content type. `/2fa/challenge`
 accepts either JSON or a form.
 
+Batteries that refuse the same forgeable shape with `i18n.HTTPError`
+share `auth.RejectCrossSiteForm(w, r)` — the admin battery's gate and
+the setup wizard's POST handler both call it — while auth's own form
+routes keep their redirect-shaped refusal.
+
 ## Browser-backend (BFF) posture
 
 For an application whose browser talks directly to the same GoFastr backend,

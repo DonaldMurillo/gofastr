@@ -3,7 +3,6 @@ package entity
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -222,23 +221,7 @@ func (c TimestampColumn) Lt(v any) Condition  { return c.compare(" < $1", v) }
 func (c TimestampColumn) Lte(v any) Condition { return c.compare(" <= $1", v) }
 
 func (c TimestampColumn) compare(op string, v any) Condition {
-	return Condition{sql: c.name() + op, args: []any{timestampArg(v)}, timestamps: []string{string(c.rawColumn)}}
-}
-
-func timestampArg(v any) any {
-	switch t := v.(type) {
-	case time.Time:
-		return schema.FormatTimestamp(t)
-	case *time.Time:
-		if t != nil {
-			return schema.FormatTimestamp(*t)
-		}
-	case string:
-		if parsed, err := time.Parse(time.RFC3339, t); err == nil {
-			return schema.FormatTimestamp(parsed)
-		}
-	}
-	return v
+	return Condition{sql: c.name() + op, args: []any{schema.TimestampArg(v)}, timestamps: []string{string(c.rawColumn)}}
 }
 
 // UUIDColumn is a UUID or text identity column.

@@ -945,3 +945,12 @@ home. Use `access.ValidScope(s)` to reject malformed scope strings at
 mint/install time under the same closed vocabulary. New capability gates
 that hold `[]Permission` should call `access.ScopeMatch` directly rather
 than reimplementing a weaker string matcher.
+
+`access.SplitScope(s)` is the one parser of the `resource:verb` shape
+the matcher reads; ok is false when the colon is missing, leading or
+trailing.
+
+`access.UserID(ctx)` returns the signed-in user's id as a string — ""
+when the context carries no user or the user type has none — so code
+that keys data or audit rows on the caller shares one extractor
+instead of each spelling the `GetID` assertion.

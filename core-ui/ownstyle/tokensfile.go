@@ -499,7 +499,7 @@ func DuplicateTokenValues(app []AppTokenAt, builtins map[string]string) []FileDi
 	type slot struct{ cat, value string }
 	owners := map[slot]string{}
 	for _, k := range slices.Sorted(maps.Keys(builtins)) {
-		if strings.Contains(k, ".") || bareKeyword(builtins[k]) {
+		if strings.Contains(k, ".") || style.BareKeyword(builtins[k]) {
 			continue
 		}
 		s := slot{style.TokenCategory(k), strings.ToLower(strings.TrimSpace(builtins[k]))}
@@ -510,7 +510,7 @@ func DuplicateTokenValues(app []AppTokenAt, builtins map[string]string) []FileDi
 	var out []FileDiagnostic
 	for _, a := range app {
 		v := strings.TrimSpace(a.Token.Light)
-		if bareKeyword(v) {
+		if style.BareKeyword(v) {
 			continue
 		}
 		s := slot{style.TokenCategory(a.Token.Key), strings.ToLower(v)}

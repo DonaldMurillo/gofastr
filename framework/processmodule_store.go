@@ -473,11 +473,17 @@ func (s *SQLProcessModuleStore) ListDesired(ctx context.Context) ([]DesiredState
 
 // SetEnabled toggles enabled without bumping generation.
 func (s *SQLProcessModuleStore) SetEnabled(ctx context.Context, module string, enabled bool) error {
-	q := fmt.Sprintf(`UPDATE %s SET enabled = %s WHERE module = %s`,
-		query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2))
-	res, err := s.db.ExecContext(ctx, q, boolToInt(enabled), module)
+	return s.updateDesired(ctx, "SetEnabled", module, "enabled", boolToInt(enabled))
+}
+
+// updateDesired writes one column of a module's desired row and checks
+// the module was there.
+func (s *SQLProcessModuleStore) updateDesired(ctx context.Context, label, module, setCol string, val any) error {
+	q := fmt.Sprintf(`UPDATE %s SET %s = %s WHERE module = %s`,
+		query.QuoteFolded(desiredTable), setCol, place(s.dialect, 1), place(s.dialect, 2))
+	res, err := s.db.ExecContext(ctx, q, val, module)
 	if err != nil {
-		return fmt.Errorf("processmodule: SetEnabled %q: %w", module, err)
+		return fmt.Errorf("processmodule: %s %q: %w", label, module, err)
 	}
 	return AssertRow(res, module)
 }
@@ -628,13 +634,7 @@ func (s *SQLProcessModuleStore) RemoveEffectiveGrants(ctx context.Context, modul
 
 // SetMigrationsAppliedAt records (or clears) the migrations-applied timestamp.
 func (s *SQLProcessModuleStore) SetMigrationsAppliedAt(ctx context.Context, module string, at *time.Time) error {
-	q := fmt.Sprintf(`UPDATE %s SET migrations_applied_at = %s WHERE module = %s`,
-		query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2))
-	res, err := s.db.ExecContext(ctx, q, timeToMillis(at), module)
-	if err != nil {
-		return fmt.Errorf("processmodule: SetMigrationsAppliedAt %q: %w", module, err)
-	}
-	return AssertRow(res, module)
+	return s.updateDesired(ctx, "SetMigrationsAppliedAt", module, "migrations_applied_at", timeToMillis(at))
 }
 
 func (s *SQLProcessModuleStore) setMigrationsAppliedFor(ctx context.Context, module, artifactSHA256 string, at time.Time) (bool, error) {

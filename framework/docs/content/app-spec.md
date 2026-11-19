@@ -215,6 +215,10 @@ not silently disabled constraints. Omitted flags still default to false.
   `!!str` and a local `!env HOME` alike. Quote it (`"!important"`) for
   the string.
 
+`yaml.BoolValue(node, label)` is available to Go callers that need a YAML
+boolean scalar. It returns `<label> must be a boolean` for a missing node
+or any other value, including a quoted boolean.
+
 Unsupported syntax fails with line/column errors. Inline maps, anchors, aliases,
 block scalars, tabs for indentation, a nested list on its parent's dash line
 (`- - a`), and mixed advanced YAML forms are not part of the app spec format.

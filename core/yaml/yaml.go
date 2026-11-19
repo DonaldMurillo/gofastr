@@ -53,6 +53,28 @@ func Parse(input string) (*Node, error) {
 	return node, nil
 }
 
+// BoolValue is node's required boolean: a scalar holding a genuine YAML
+// bool. Anything else answers "<label> must be a boolean".
+func BoolValue(node *Node, label string) (bool, error) {
+	if node == nil || node.Kind != Scalar {
+		return false, fmt.Errorf("%s must be a boolean", label)
+	}
+	v, ok := node.Value.(bool)
+	if !ok {
+		return false, fmt.Errorf("%s must be a boolean", label)
+	}
+	return v, nil
+}
+
+// ExpectMap is node's required mapping: a present map node. Anything
+// else answers "<label> must be a map".
+func ExpectMap(node *Node, label string) (map[string]*Node, error) {
+	if node == nil || node.Kind != Map {
+		return nil, fmt.Errorf("%s must be a map", label)
+	}
+	return node.Map, nil
+}
+
 func lexLines(input string) ([]line, error) {
 	raw := strings.Split(strings.ReplaceAll(input, "\r\n", "\n"), "\n")
 	lines := make([]line, 0, len(raw))

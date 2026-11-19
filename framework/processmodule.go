@@ -268,7 +268,7 @@ func nonGrantableReason(p access.Permission) string {
 	if s == "*" {
 		return "a bare wildcard (subsumes every scope)"
 	}
-	res, verb, ok := splitResourceVerb(s)
+	res, verb, ok := access.SplitScope(s)
 	if !ok {
 		return ""
 	}
@@ -276,14 +276,6 @@ func nonGrantableReason(p access.Permission) string {
 		return "a wildcard broad enough to subsume cross-owner reads"
 	}
 	return ""
-}
-
-func splitResourceVerb(s string) (resource, verb string, ok bool) {
-	idx := strings.IndexByte(s, ':')
-	if idx <= 0 || idx == len(s)-1 {
-		return "", "", false
-	}
-	return s[:idx], s[idx+1:], true
 }
 
 func intersectGrants(requested []access.Permission, approved ApprovedGrants) []access.Permission {

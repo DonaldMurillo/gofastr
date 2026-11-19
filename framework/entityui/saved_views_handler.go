@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -43,7 +44,7 @@ func (u *UI) SavedViewsHandler(entityName string) http.Handler {
 		if m.tr != nil {
 			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
-		if userID(ctx) == "" {
+		if access.UserID(ctx) == "" {
 			writeBulkError(w, r, http.StatusForbidden, reasonViewSignIn)
 			return
 		}
@@ -53,11 +54,7 @@ func (u *UI) SavedViewsHandler(entityName string) http.Handler {
 		r.Body = http.MaxBytesReader(w, r.Body, savedViewBodyLimit)
 		body, jsonCall, err := decodeSavedViewBody(r)
 		if err != nil {
-			if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-				writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return
-			}
-			writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+			writeBodyError(w, r, err)
 			return
 		}
 		back, ok := scrubBackPath(body.Back)

@@ -185,8 +185,8 @@ func (b *Battery) canCreateEntity(ctx context.Context, e *entity.Entity) bool {
 func (b *Battery) failedJobs(ctx context.Context) render.HTML {
 	jobs, err := b.cfg.Queue.ListJobs(ctx, "failed", dashboardRows, 0)
 	if err != nil {
-		b.logger().Error("admin: list failed jobs", "error", err)
-		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminQueueLoadFailed.Text(ctx)))
+		return ui.Card(ui.CardConfig{Heading: i18nui.AdminFailedJobs.Text(ctx), HeadingLevel: 2},
+			b.loadFailed(ctx, "admin: list failed jobs", i18nui.AdminQueueLoadFailed, err, nil))
 	}
 	if len(jobs) == 0 {
 		return ""
@@ -214,9 +214,8 @@ func (b *Battery) recentCard(ctx context.Context) render.HTML {
 	all := headerLink(i18nui.AdminAudit.Text(ctx), b.cfg.PathPrefix+"/audit")
 	rows, err := b.queryAudit(ctx, dashboardRows)
 	if err != nil {
-		b.logger().Error("admin: load audit rows", "table", b.cfg.AuditTable, "error", err)
 		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminAuditLoadFailed.Text(ctx))))
+			b.loadFailed(ctx, "admin: load audit rows", i18nui.AdminAuditLoadFailed, err, nil, "table", b.cfg.AuditTable))
 	}
 	if len(rows) == 0 {
 		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},

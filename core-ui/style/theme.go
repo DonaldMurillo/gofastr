@@ -305,26 +305,9 @@ func autofillTokens(v reflect.Value, path []string) {
 	if v.Kind() != reflect.Struct {
 		return
 	}
-	// CodeColor is the one OPTIONAL token type: a fully-unset token
-	// stays zero (skipped by validation + emission, component CSS
-	// falls back), so only autofill the Name once a Value was set.
-	if v.Type() == reflect.TypeFor[CodeColor]() {
-		nameField := v.FieldByName("Name")
-		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
-			len(path) > 0 && nameField.CanSet() {
-			nameField.SetString(derivedTokenName(path[len(path)-1]))
-		}
-		return
-	}
-	// Stroke, LineHeight, LetterSpacing and Opacity are optional too: a
-	// fully-unset token stays zero here, and the emitter and token map
-	// give it the default theme's value.
-	if isOptionalStringToken(v.Type()) {
-		nameField := v.FieldByName("Name")
-		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
-			len(path) > 0 && nameField.CanSet() {
-			nameField.SetString(derivedTokenName(path[len(path)-1]))
-		}
+	// Autofill leaves fully unset CodeColor and optional string tokens zero.
+	if v.Type() == reflect.TypeFor[CodeColor]() || isOptionalStringToken(v.Type()) {
+		autofillName(v, path)
 		return
 	}
 	// Token leaf? Fill Name if empty.
@@ -356,6 +339,16 @@ func autofillTokens(v reflect.Value, path []string) {
 			continue
 		}
 		autofillTokens(f, append(path, fieldName))
+	}
+}
+
+// autofillName fills an optional token's Name from its path once a
+// Value was set; a fully-unset token stays zero.
+func autofillName(v reflect.Value, path []string) {
+	nameField := v.FieldByName("Name")
+	if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
+		len(path) > 0 && nameField.CanSet() {
+		nameField.SetString(derivedTokenName(path[len(path)-1]))
 	}
 }
 

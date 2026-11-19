@@ -306,13 +306,13 @@ func loadConfig(f settings.File, base Config) (Config, error) {
 	if section == nil {
 		return base, nil
 	}
-	m, err := expectMap(section, "isolation")
+	m, err := coreyaml.ExpectMap(section, "isolation")
 	if err != nil {
 		return Config{}, err
 	}
 	cfg := base
 	if v := m["enabled"]; v != nil {
-		enabled, err := boolValue(v, "isolation.enabled")
+		enabled, err := coreyaml.BoolValue(v, "isolation.enabled")
 		if err != nil {
 			return Config{}, err
 		}
@@ -322,7 +322,7 @@ func loadConfig(f settings.File, base Config) (Config, error) {
 		cfg.Mode = scalarString(v)
 	}
 	if v := m["port"]; v != nil {
-		port, err := expectMap(v, "isolation.port")
+		port, err := coreyaml.ExpectMap(v, "isolation.port")
 		if err != nil {
 			return Config{}, err
 		}
@@ -352,7 +352,7 @@ func loadConfig(f settings.File, base Config) (Config, error) {
 		}
 	}
 	if v := m["database"]; v != nil {
-		db, err := expectMap(v, "isolation.database")
+		db, err := coreyaml.ExpectMap(v, "isolation.database")
 		if err != nil {
 			return Config{}, err
 		}
@@ -361,7 +361,7 @@ func loadConfig(f settings.File, base Config) (Config, error) {
 		}
 	}
 	if v := m["services"]; v != nil {
-		services, err := expectMap(v, "isolation.services")
+		services, err := coreyaml.ExpectMap(v, "isolation.services")
 		if err != nil {
 			return Config{}, err
 		}
@@ -375,7 +375,7 @@ func loadConfig(f settings.File, base Config) (Config, error) {
 		}
 	}
 	if v := m["env"]; v != nil {
-		env, err := expectMap(v, "isolation.env")
+		env, err := coreyaml.ExpectMap(v, "isolation.env")
 		if err != nil {
 			return Config{}, err
 		}
@@ -773,29 +773,11 @@ func (r *Runtime) postgresDSN(dsn string) (string, error) {
 	return u.String(), nil
 }
 
-func expectMap(node *coreyaml.Node, label string) (map[string]*coreyaml.Node, error) {
-	if node == nil || node.Kind != coreyaml.Map {
-		return nil, fmt.Errorf("%s must be a map", label)
-	}
-	return node.Map, nil
-}
-
 func scalarString(node *coreyaml.Node) string {
 	if node == nil {
 		return ""
 	}
 	return fmt.Sprint(node.Value)
-}
-
-func boolValue(node *coreyaml.Node, label string) (bool, error) {
-	if node == nil || node.Kind != coreyaml.Scalar {
-		return false, fmt.Errorf("%s must be a boolean", label)
-	}
-	v, ok := node.Value.(bool)
-	if !ok {
-		return false, fmt.Errorf("%s must be a boolean", label)
-	}
-	return v, nil
 }
 
 func intValue(node *coreyaml.Node, label string) (int, error) {

@@ -455,6 +455,8 @@ func ddlWithoutForeignKeyOn(createSQL, ownerCol, newName string) (string, bool, 
 }
 
 // skipComment returns the index just past a comment beginning at i, or i.
+// A line comment stops at the newline, leaving it in place: it separates
+// tokens.
 func skipComment(s string, i int) int {
 	if i >= len(s) {
 		return i
@@ -526,18 +528,8 @@ func columnDefWithoutReferences(item, ownerCol string) (string, bool) {
 	head := strings.TrimRight(item[:idx], " \t\r")
 	rest := item[idx+len("REFERENCES"):]
 	rest = trimLeadingInert(rest)
-	i := 0
-	for i < len(rest) {
-		if j := skipQuoted(rest, i); j > i {
-			i = j
-			continue
-		}
-		if rest[i] == ' ' || rest[i] == '\t' || rest[i] == '\n' || rest[i] == '\r' || rest[i] == '(' {
-			break
-		}
-		i++
-	}
-	rest = trimLeadingInert(rest[i:])
+	_, rest = nextSQLToken(rest)
+	rest = trimLeadingInert(rest)
 	if strings.HasPrefix(rest, "(") {
 		if end := matchingParen(rest, 0); end >= 0 {
 			rest = rest[end+1:]
@@ -830,17 +822,8 @@ func skipInert(s string, i int) int {
 	if i >= len(s) {
 		return i
 	}
-	if s[i] == '-' && i+1 < len(s) && s[i+1] == '-' {
-		if nl := strings.IndexByte(s[i:], '\n'); nl >= 0 {
-			return i + nl // leave the newline in place: it separates tokens
-		}
-		return len(s)
-	}
-	if s[i] == '/' && i+1 < len(s) && s[i+1] == '*' {
-		if end := strings.Index(s[i+2:], "*/"); end >= 0 {
-			return i + 2 + end + 2
-		}
-		return len(s)
+	if next := skipComment(s, i); next > i {
+		return next
 	}
 	var closer byte
 	switch s[i] {

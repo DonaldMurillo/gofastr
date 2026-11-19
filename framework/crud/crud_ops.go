@@ -394,7 +394,7 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, r *http.Request,
 			return fmt.Errorf("check belongs_to %q: %w", rel.Name, err)
 		}
 		targetKey := target.KeyColumns()
-		keyCols, err := safeColumns(targetKey)
+		keyCols, err := query.SafeColumns(targetKey, "column")
 		if err != nil {
 			return fmt.Errorf("relation %q target key: %w", rel.Name, err)
 		}

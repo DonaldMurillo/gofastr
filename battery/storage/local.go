@@ -362,24 +362,36 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 		}
 		// The rename is the commit: a save canceled during the copy
 		// leaves the stored object as it was.
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := upload.CommitUnfolded(key, root, rt, func() error {
-			if err := rt.Rename(tmpRel, rel); err != nil {
-				return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
-			}
-			return nil
+		if err := ls.commitTail(ctx, key, root, dstPath, rt, func() error {
+			return rt.Rename(tmpRel, rel)
 		}); err != nil {
 			return err
-		}
-		if err := fileperm.Restrict(dstPath, false); err != nil {
-			return fmt.Errorf("storage: restrict file for %q: %w", key, scrubPathError(err))
 		}
 		success = true
 		return nil
 	}
 	return ls.saveResolveThenOpen(ctx, key, dstPath, tempDir, root, r)
+}
+
+// commitTail is the shared commit sequence of both save paths: refuse a
+// canceled context, rename the staged temp over the destination inside
+// CommitUnfolded, then restrict the destination's permissions.
+func (ls *LocalStorage) commitTail(ctx context.Context, key, root, dstPath string, rt *os.Root, rename func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := upload.CommitUnfolded(key, root, rt, func() error {
+		if err := rename(); err != nil {
+			return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := fileperm.Restrict(dstPath, false); err != nil {
+		return fmt.Errorf("storage: restrict file for %q: %w", key, scrubPathError(err))
+	}
+	return nil
 }
 
 // saveResolveThenOpen is the pre-root staging path: CreateTemp in the
@@ -425,19 +437,10 @@ func (ls *LocalStorage) saveResolveThenOpen(ctx context.Context, key, dstPath, t
 	}
 
 	// The rename is the commit; see Save.
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := upload.CommitUnfolded(key, root, nil, func() error {
-		if err := os.Rename(tmpPath, dstPath); err != nil {
-			return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
-		}
-		return nil
+	if err := ls.commitTail(ctx, key, root, dstPath, nil, func() error {
+		return os.Rename(tmpPath, dstPath)
 	}); err != nil {
 		return err
-	}
-	if err := fileperm.Restrict(dstPath, false); err != nil {
-		return fmt.Errorf("storage: restrict file for %q: %w", key, scrubPathError(err))
 	}
 
 	success = true

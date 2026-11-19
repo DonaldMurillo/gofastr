@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/storage"
 	"github.com/DonaldMurillo/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
 )
 
 // saveAndStatPerm saves a secret through a fresh LocalStorage rooted at a
@@ -113,7 +114,7 @@ func TestServeHandlerErrorContractBackends(t *testing.T) {
 		{
 			name: "core/upload LocalStorage missing key is 404 (control)",
 			make: func(t *testing.T) storage.Storage {
-				ls := newTestUploadStorage(t, t.TempDir())
+				ls := teststorage.New(t, t.TempDir())
 				seed(t, ls)
 				return ls
 			},

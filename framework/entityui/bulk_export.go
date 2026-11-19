@@ -3,7 +3,6 @@ package entityui
 import (
 	"context"
 	"encoding/csv"
-	"errors"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -69,12 +68,7 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 			rows, err = u.matchRows(crud.WithReadHooks(ctx), m, key, q, fields)
 		}
 		if err != nil {
-			if ref, ok := errors.AsType[*bulkRefusal](err); ok {
-				writeBulkError(w, r, ref.status, ref.reason, ref.params)
-				return
-			}
-			slog.ErrorContext(ctx, "entityui: export read", "entity", m.name, "error", err)
-			writeBulkError(w, r, http.StatusInternalServerError, reasonBulkFailed)
+			writeBulkRefusal(ctx, w, r, m, "entityui: export read", err)
 			return
 		}
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")

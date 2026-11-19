@@ -25,6 +25,13 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A second in-memory `ScheduleBuilder.Job` call with a `nil` payload
+  clears the first call's payload.** It used to keep the earlier
+  payload.
+- **The admin dashboard shows a failed-jobs load error in a card titled
+  "Failed jobs"**, like the recent-activity card, instead of a loose
+  callout. A migration that refuses an unsafe foreign-key column now
+  names it (`invalid column "…"`).
 - **Local entity defaults are validated at `Define`.**
   `localentity.Define` refuses a `Default` the form would reject: wrong
   type, out of bounds, not a listed choice, an empty required string, a
@@ -876,6 +883,16 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr upgrade` finds the Go spellings.
 
 ### Added
+- **`schema.TimestampArg` and `yaml.BoolValue`.** `TimestampArg`
+  converts a `time.Time`, a non-nil `*time.Time` or an RFC 3339 string
+  to the stored timestamp layout; CRUD writes and typed timestamp
+  columns bind through it. `BoolValue` reads a YAML boolean scalar and
+  refuses anything else, quoted booleans included.
+- **One shared helper for six rules that were written twice:**
+  `access.UserID` and `access.SplitScope` in `framework/access`,
+  `query.SafeColumns` in `core/query`, `yaml.ExpectMap` in `core/yaml`,
+  `style.BareKeyword` in `core-ui/style`, and `auth.RejectCrossSiteForm`
+  in `battery/auth`.
 - **`testkit.NewIsolatedDBDSN`** provisions a disposable Postgres
   database for a subprocess and drops it at test cleanup. See
   [testkit](framework/docs/content/testkit.md).

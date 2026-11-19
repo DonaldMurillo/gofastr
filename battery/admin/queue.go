@@ -109,9 +109,7 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 	jobs, err := b.cfg.Queue.ListJobs(ctx, status, limit, (pageNo-1)*limit)
 	if err != nil {
 		// Driver text can carry DSNs and hosts: it goes to the log only.
-		b.logger().Error("admin: list jobs", "error", err)
-		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header,
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminQueueLoadFailed.Text(ctx))))
+		return b.loadFailed(ctx, "admin: list jobs", i18nui.AdminQueueLoadFailed, err, []render.HTML{header})
 	}
 	_, canReplay := b.replayable()
 	if failed := stats["failed"]; canReplay && failed > 0 {
