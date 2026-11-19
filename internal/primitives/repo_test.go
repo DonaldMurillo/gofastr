@@ -156,6 +156,7 @@ var ownedPackages = []string{
 	"core/jcs",
 	"core/textsafe",
 	"core/yaml",
+	"core/acp",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",

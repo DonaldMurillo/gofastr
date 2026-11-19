@@ -18,93 +18,69 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// ErrSessionNotFound reports a session/load (or session/prompt) for a
-// session ID this agent does not know. The server maps it to the ACP
-// resource-not-found error (-32002).
+// ErrSessionNotFound reports a session/load (or session/prompt) for a session
+// ID this agent does not know.
 var ErrSessionNotFound = errors.New("acp: session not found")
 
-// Agent is the embedder-supplied brain of the ACP server. Methods may
-// be called concurrently; the server serializes prompt turns per
-// session.
+// Agent is the embedder-supplied brain of the ACP server. Methods may be
+// called concurrently; the server serializes prompt turns per session.
 type Agent interface {
 	// Info identifies the agent in the initialize response.
 	Info() Implementation
 
-	// NewSession creates one conversation. cwd is the absolute working
-	// directory the client asked for. The returned Session's ID()
-	// becomes the sessionId on the wire; an empty ID fails the
-	// session/new request with an internal error.
+	// NewSession creates one conversation in the absolute directory cwd; an
+	// empty Session ID fails session/new with an internal error.
 	NewSession(ctx context.Context, cwd string) (Session, error)
 }
 
 // Session is one ACP conversation.
 type Session interface {
-	// ID is the wire sessionId. It must be stable for the session's
-	// lifetime and unique within the agent.
+	// ID is the wire sessionId, stable for the session and unique per agent.
 	ID() string
 
-	// Prompt runs one prompt turn to completion. It streams progress
-	// by writing session/update notifications through out and may call
-	// out.RequestPermission to gate a tool call on the user. ctx is
-	// canceled when the client sends session/cancel; implementations
-	// MUST return promptly (with any reason) when it fires, because
-	// the server answers the client with stopReason "cancelled" only
-	// after Prompt returns.
+	// Prompt runs one prompt turn, streaming through out; it must return
+	// promptly once session/cancel cancels ctx.
 	Prompt(ctx context.Context, prompt []ContentBlock, out *Client) (string, error)
 }
 
-// SessionLoader is the optional second interface an Agent may
-// implement to support session/load. When present, the server
-// advertises the loadSession capability.
+// SessionLoader is the optional second interface an Agent may implement to
+// support session/load.
 type SessionLoader interface {
-	// LoadSession restores a session previously created on this agent
-	// and replays its conversation as user/agent message chunks
-	// through out BEFORE returning. Return ErrSessionNotFound (wrapped
-	// is fine) for an unknown ID.
+	// LoadSession restores a session previously created on this agent and
+	// replays its conversation as user/agent message chunks through out
+	// BEFORE returning; an unknown ID returns ErrSessionNotFound.
 	LoadSession(ctx context.Context, sessionID, cwd string, out *Client) (Session, error)
 }
 
 // Options configures a Server. The zero value is usable.
 type Options struct {
-	// AuthMethods are advertised in the initialize response. Empty
-	// means the agent requires no authentication and authenticate
-	// rejects every methodId. Non-empty means it is required:
-	// session/new, session/load and session/prompt answer
-	// ErrAuthRequired until one authenticate call on the connection
-	// succeeds.
+	// AuthMethods are advertised at initialize; when non-empty, session
+	// methods answer ErrAuthRequired until authenticate succeeds.
 	AuthMethods []AuthMethod
 
-	// Authenticate runs one protocol-driven authentication attempt for
-	// a methodId the client picked from AuthMethods. Required when
-	// AuthMethods is non-empty; an error fails the call with the
-	// auth-required code (-32000).
+	// Authenticate runs one protocol-driven authentication attempt for a
+	// methodId the client picked from AuthMethods.
 	Authenticate func(ctx context.Context, methodID string) error
 
-	// MaxSessions caps the live sessions ONE connection may hold;
-	// session/new and session/load past the cap follow
-	// SessionOverflow. 0 = 1024 (the documented default; an ACP client
-	// legitimately mints one session per task over a long-lived
-	// connection, so the bound is generous — but it exists, because
-	// session/new is otherwise a frame-cheap unbounded write into
-	// per-connection state). Negative lifts the cap.
+	// MaxSessions caps the live sessions ONE connection may hold; session/new
+	// and session/load past the cap follow SessionOverflow. 0 means 1024;
+	// negative lifts the cap.
 	MaxSessions int
 
-	// SessionOverflow selects what a connection at MaxSessions does
-	// with its next session: refuse with an invalid-params error (the
-	// default), or evict the connection's oldest session (canceling
-	// its in-flight prompt turn, if any).
+	// SessionOverflow selects what a connection at MaxSessions does with its
+	// next session.
 	SessionOverflow SessionOverflowPolicy
 }
 
 // Server speaks ACP v1 over newline-delimited JSON-RPC 2.0 for one
-// connection. Build one with NewServer and run it with Serve.
+// connection.
 type Server struct {
 	agent  Agent
 	opts   Options
 	loader SessionLoader
 }
 
-// NewServer binds an Agent to a new Server. agent must be non-nil.
+// NewServer binds an Agent to a new Server.
 func NewServer(agent Agent, opts *Options) *Server {
 	o := Options{}
 	if opts != nil {
@@ -119,17 +95,13 @@ func NewServer(agent Agent, opts *Options) *Server {
 	return &Server{agent: agent, opts: o, loader: loader}
 }
 
-// --- wire frames --------------------------------------------------------
-
 type wireRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id,omitempty"`
 	Method  string          `json:"method,omitempty"`
 	Params  json.RawMessage `json:"params,omitempty"`
-	// Result/Error are only set on frames from the CLIENT answering a
-	// server-to-client request (session/request_permission).
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  *wireRespError  `json:"error,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *wireRespError  `json:"error,omitempty"`
 }
 
 type wireRespError struct {
@@ -145,30 +117,25 @@ type wireResponse struct {
 	Error   *wireRespError  `json:"error,omitempty"`
 }
 
-// updateParams is the session/update notification body.
 type updateParams struct {
 	SessionID string `json:"sessionId"`
 	Update    Update `json:"update"`
 }
 
-// permissionParams is the session/request_permission request body.
 type permissionParams struct {
 	SessionID string             `json:"sessionId"`
 	ToolCall  ToolCallUpdate     `json:"toolCall"`
 	Options   []PermissionOption `json:"options"`
 }
 
-// pendingResp is a client answer to one of our outbound requests.
 type pendingResp struct {
 	Result json.RawMessage
 	Error  *wireRespError
 }
 
-// Client is the embedder's handle for talking to the connected ACP
-// client during a prompt turn or a session replay: it writes
-// session/update notifications and issues session/request_permission
-// calls. It is safe for concurrent use. A Client is bound to one
-// session; the server creates it per turn.
+// Client is the embedder's handle for talking to the connected ACP client
+// during a prompt turn or a session replay: it writes session/update
+// notifications and issues session/request_permission calls.
 type Client struct {
 	conn      *conn
 	sessionID string
@@ -185,11 +152,9 @@ func (c *Client) Update(u Update) error {
 	})
 }
 
-// RequestPermission asks the user to approve a tool call and blocks
-// until the client answers, ctx ends, or the connection dies. It works
-// from any handler, session/load included. The outcome is the user's
-// decision; on a transport error the caller should treat the turn as
-// failed.
+// RequestPermission asks the user to approve a tool call and blocks until the
+// client answers, ctx ends, or the connection dies. A malformed answer
+// reads as OutcomeCancelled.
 func (c *Client) RequestPermission(ctx context.Context, toolCall ToolCallUpdate, options []PermissionOption) (RequestPermissionOutcome, error) {
 	var zero RequestPermissionOutcome
 	id := c.conn.nextID.Add(1)
@@ -231,12 +196,6 @@ func (c *Client) RequestPermission(ctx context.Context, toolCall ToolCallUpdate,
 				return zero, fmt.Errorf("acp: session/request_permission: decode outcome: %w", err)
 			}
 		}
-		// Fail closed: RequestPermissionOutcome is a two-value protocol
-		// type (protocol.go), and the client is the untrusted peer on
-		// this wire. A result that carries neither a selection nor a
-		// cancellation — null, {}, an unknown outcome — is coerced to
-		// OutcomeCancelled so a malformed or hostile answer can never
-		// read as "no objection" downstream.
 		if out.Outcome.Outcome != OutcomeSelected && out.Outcome.Outcome != OutcomeCancelled {
 			out.Outcome = RequestPermissionOutcome{Outcome: OutcomeCancelled}
 		}
@@ -251,14 +210,7 @@ func (c *Client) RequestPermission(ctx context.Context, toolCall ToolCallUpdate,
 	}
 }
 
-// --- connection ---------------------------------------------------------
-
-// conn serializes writes on the output stream and routes responses to
-// pending server-to-client requests.
 type conn struct {
-	// wslot is the one-slot write lock. A channel rather than a mutex so a
-	// writer queued behind a stalled one can give up when the connection
-	// closes.
 	wslot     chan struct{}
 	w         io.Writer
 	werr      error // set once a frame is cut short; guarded by wslot
@@ -273,18 +225,10 @@ func newConn(w io.Writer) *conn {
 	return &conn{wslot: make(chan struct{}, 1), w: w, pending: map[int64]chan pendingResp{}, closed: make(chan struct{})}
 }
 
-// errConnClosed is what a Client call made after Serve returned gets.
 var errConnClosed = errors.New("acp: connection closed")
 
-// errWriterPanicked breaks the stream after the output writer panicked
-// mid-frame: how much of the frame went out is unknown.
 var errWriterPanicked = errors.New("acp: output writer panicked; the stream is broken")
 
-// writeFrame refuses once the connection is closed: Serve has returned
-// and its caller owns w again, and a write to an output nobody reads
-// any more would block the turn that a retained Client is writing for.
-// A writer waiting behind one stuck on such an output gives up at close
-// too, instead of queueing on it forever.
 func (c *conn) writeFrame(v any) error {
 	buf, err := json.Marshal(v)
 	if err != nil {
@@ -299,13 +243,6 @@ func (c *conn) writeFrame(v any) error {
 	return c.writeHeld(buf)
 }
 
-// writeFrameCtx is writeFrame for a caller with a context: it gives up
-// when ctx ends or the connection closes, whether it is queued for the
-// slot or its own write is stuck on an output the client stopped
-// reading. A Write cannot be interrupted, so a write abandoned that way
-// runs on in its own goroutine and keeps the slot until it returns; the
-// frame still goes out whole or breaks the stream, never interleaves
-// with the next one.
 func (c *conn) writeFrameCtx(ctx context.Context, v any) error {
 	buf, err := json.Marshal(v)
 	if err != nil {
@@ -319,17 +256,12 @@ func (c *conn) writeFrameCtx(ctx context.Context, v any) error {
 		return ctx.Err()
 	}
 	if err := ctx.Err(); err != nil {
-		// The slot and the cancel were both ready and select took the
-		// slot: a cancelled call sends nothing.
 		<-c.wslot
 		return err
 	}
 	done := make(chan error, 1)
 	go func() {
 		defer func() { <-c.wslot }()
-		// The write left the caller's goroutine, so a panicking output
-		// writer is recovered here, as runPrompt recovered it before.
-		// How much of the frame went out is unknown: the stream is broken.
 		defer func() {
 			if rec := recover(); rec != nil {
 				slog.Error("panic in ACP writer recovered", "operation", "write",
@@ -350,7 +282,6 @@ func (c *conn) writeFrameCtx(ctx context.Context, v any) error {
 	}
 }
 
-// writeHeld writes one frame. The caller holds the write slot.
 func (c *conn) writeHeld(buf []byte) error {
 	select {
 	case <-c.closed:
@@ -365,8 +296,6 @@ func (c *conn) writeHeld(buf []byte) error {
 		err = io.ErrShortWrite
 	}
 	if err != nil && n > 0 {
-		// Part of a frame reached the peer; anything written after it
-		// would read as the rest of that frame.
 		c.werr = fmt.Errorf("acp: stream broken by a partial frame: %w", err)
 	}
 	return err
@@ -384,8 +313,6 @@ func (c *conn) writeNotification(method string, params any) error {
 	}{"2.0", method, params})
 }
 
-// deliver routes a client frame that answers one of our requests.
-// It reports whether id matched a pending call.
 func (c *conn) deliver(id int64, resp pendingResp) bool {
 	c.pmu.Lock()
 	ch, ok := c.pending[id]
@@ -400,72 +327,33 @@ func (c *conn) deliver(id int64, resp pendingResp) bool {
 	return true
 }
 
-// close signals teardown to everything selecting on c.closed. The channel
-// is never set to nil: Client.RequestPermission selects on it without
-// holding the write slot, so nilling it would both race that read and kill the arm
-// (a select on a nil channel never fires), leaving a permission request
-// issued after teardown blocked until its own context expires.
 func (c *conn) close() {
 	c.closeOnce.Do(func() { close(c.closed) })
 }
 
-// --- per-connection server state ----------------------------------------
-
 type session struct {
 	impl Session
 
-	mu     sync.Mutex
-	busy   bool
-	cancel context.CancelFunc
-	// responding is closed once the last turn's response is written;
-	// nil when no response is pending. The next prompt on the session
-	// waits for it (startPrompt).
+	mu         sync.Mutex
+	busy       bool
+	cancel     context.CancelFunc
 	responding chan struct{}
 }
 
-// serverState is per-Serve state; a Server may serve sequential
-// connections, each with fresh sessions.
 type serverState struct {
-	srv  *Server
-	conn *conn
-	mu   sync.Mutex
-	// sessions maps this connection's live session ids to their state.
-	sessions map[string]*session
-	// sessionOrder is the same set as a FIFO of ids (mint order) the
-	// EvictOldest session policy pops; guarded by mu like sessions.
-	sessionOrder []string
-	// draining holds sessions EvictOldest dropped mid-turn until the
-	// turn returns, so a reload of the id still sees it busy; guarded
-	// by mu.
-	draining map[string]*session
-	ready    bool
-	// authenticated is set by a successful authenticate; guarded by mu.
-	// It gates the session methods only when the agent advertises
-	// AuthMethods (see sessionGate).
+	srv           *Server
+	conn          *conn
+	mu            sync.Mutex
+	sessions      map[string]*session
+	sessionOrder  []string
+	draining      map[string]*session
+	ready         bool
 	authenticated bool
 }
 
 // Serve reads newline-delimited JSON-RPC 2.0 frames from in and writes
 // responses, notifications, and server-to-client requests to out. It
 // returns nil on EOF of in and ctx.Err() if ctx is canceled first.
-//
-// Requests other than session/prompt are answered one at a time in read
-// order; while one runs, the reader still delivers permission answers
-// and holds every other frame until it is answered (runRequest). A
-// session/cancel is acted on at once and held too. At most 256 frames
-// or 16 MiB wait; past that a request is refused with an internal
-// error. EOF cancels the running request's context. session/prompt runs in its own goroutine so the reader keeps
-// accepting session/cancel notifications and permission responses
-// while the turn is in flight; its response is written when the turn
-// ends, after every update the turn produced.
-//
-// Prompt turns run under a context Serve cancels when it returns, so
-// a turn still in flight at EOF ends with the connection instead of
-// outliving it for as long as the caller's ctx lives.
-//
-// A cancel returns while a read is still blocked: the read runs in its
-// own goroutine, which ends when in next yields a line, EOF or an
-// error. Close in (a pipe, a socket) to end it sooner.
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -482,9 +370,6 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		var line []byte
 		switch {
 		case r.ended:
-			// Frames still held were read before the input ended, but
-			// nobody is left to answer them, and a handler run now
-			// would hold Serve open on a live context.
 			return r.endErr
 		case len(r.held) > 0:
 			line, r.held = r.held[0], r.held[1:]
@@ -505,32 +390,13 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			continue
 		}
 		var frame wireRequest
-		// The no-ambiguity rule applies to the envelope's own boundary
-		// here (no key may repeat; no two keys may fold to one name;
-		// unknown envelope keys refused): stdlib keeps the last
-		// duplicate and folds key case, so a first-occurrence parser —
-		// proxy, logger, audit trail — could otherwise disagree with
-		// the dispatcher's decode. The walk stops at the top level
-		// because the full-depth rule is each params decoder's to apply
-		// (handler.UnmarshalStrict at every method handler): a folded
-		// pair inside params is an invalid-params refusal answered WITH
-		// the request id, which a frame-level refusal here cannot be —
-		// it would answer id-less and hang the client's matching. The
-		// 4 MiB scanner buffer in readLines is the size cap.
 		if err := decodeEnvelope(line, &frame); err != nil {
 			st.respond(frame.ID, wireResponse{
 				JSONRPC: "2.0",
-				// encoding/json's own text names the agent's Go types;
-				// the phrase names the JSON path and type instead.
-				Error: &wireRespError{Code: ErrParseError, Message: handler.JSONErrorDetail(err).Error()},
+				Error:   &wireRespError{Code: ErrParseError, Message: handler.JSONErrorDetail(err).Error()},
 			})
 			continue
 		}
-		// A frame carrying a method must be a JSON-RPC 2.0 Request
-		// object (§4): jsonrpc exactly "2.0", and an id that is absent
-		// (a notification), a string, a number, or null. Anything else
-		// is refused before dispatch with -32600 and a null id, since
-		// an id of the wrong type cannot be echoed back as one (§5).
 		if frame.Method != "" && !validRequestEnvelope(frame) {
 			st.respond(json.RawMessage("null"), wireResponse{
 				JSONRPC: "2.0",
@@ -538,8 +404,6 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			})
 			continue
 		}
-		// A frame with no method is the client ANSWERING one of our
-		// requests (session/request_permission).
 		if frame.Method == "" {
 			st.deliverAnswer(frame)
 			continue
@@ -556,8 +420,6 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	}
 }
 
-// reader is Serve's input: the line channels, the lines read while a
-// request ran and still to be handled, and the read's end once seen.
 type reader struct {
 	lines     <-chan []byte
 	readErr   <-chan error
@@ -567,15 +429,7 @@ type reader struct {
 	endErr    error
 }
 
-// runRequest answers one request in read order, while the reader keeps
-// going: the handler may ask the client for permission (a load, or
-// any handler through a Client kept from a turn), and only this loop
-// reads the answer. Answers are delivered as they arrive; any other
-// frame waits in r.held until the request is answered, so requests
-// still run one at a time in the order they were read.
 func (st *serverState) runRequest(ctx context.Context, frame wireRequest, r *reader) wireResponse {
-	// The handler's context also ends at EOF: Serve's own cancel runs
-	// only after this returns, which waits for the handler.
 	hctx, hcancel := context.WithCancel(ctx)
 	defer hcancel()
 	done := make(chan wireResponse, 1)
@@ -591,10 +445,7 @@ func (st *serverState) runRequest(ctx context.Context, frame wireRequest, r *rea
 		case resp := <-done:
 			return resp
 		case <-stop:
-			// The handler runs under ctx, so it ends; wait for it.
 		case err := <-readErr:
-			// No answer can arrive now: fail a pending permission
-			// request rather than wait for one.
 			r.ended, r.endErr = true, err
 			hcancel()
 			st.conn.close()
@@ -604,16 +455,11 @@ func (st *serverState) runRequest(ctx context.Context, frame wireRequest, r *rea
 	}
 }
 
-// maxHeldFrames and maxHeldBytes bound what a running request holds
-// back. Past either, a request is refused at once instead of held, and
-// reading goes on, so a permission answer behind it still arrives.
 const (
 	maxHeldFrames = 256
 	maxHeldBytes  = 16 << 20
 )
 
-// holdLine takes one frame read while a request runs: an answer is
-// delivered, anything else waits in r.held for its turn.
 func (st *serverState) holdLine(line []byte, r *reader) {
 	var f wireRequest
 	parsed := decodeEnvelope(line, &f) == nil
@@ -621,9 +467,6 @@ func (st *serverState) holdLine(line []byte, r *reader) {
 		st.deliverAnswer(f)
 		return
 	}
-	// A cancel stops a running turn now, or it waits as long as the
-	// request does. It is held as well, so a prompt still waiting here
-	// that the client sent before it is cancelled once it starts.
 	if parsed && f.ID == nil && f.Method == "session/cancel" && validRequestEnvelope(f) {
 		st.handleNotification(f)
 	}
@@ -637,8 +480,6 @@ func (st *serverState) holdLine(line []byte, r *reader) {
 	r.heldBytes += len(line)
 }
 
-// deliverAnswer routes a client frame with no method, an answer to one
-// of our requests, to the request waiting on it.
 func (st *serverState) deliverAnswer(frame wireRequest) {
 	if frame.ID == nil {
 		return // neither a valid request nor a response
@@ -649,18 +490,11 @@ func (st *serverState) deliverAnswer(frame wireRequest) {
 	}
 	resp := pendingResp{Result: frame.Result, Error: frame.Error}
 	if frame.JSONRPC != "2.0" {
-		// Not a JSON-RPC 2.0 Response object (§5). It still settles the
-		// request it names, as a refusal: dropping it would leave the
-		// request waiting, and its result must never read as an approval.
 		resp = pendingResp{Error: &wireRespError{Code: ErrInvalidRequest, Message: "invalid response: not a JSON-RPC 2.0 response object"}}
 	}
 	st.conn.deliver(id, resp)
 }
 
-// readLines scans in on its own goroutine so Serve can stop on ctx
-// while a read blocks. Each line is a copy (the scanner reuses its
-// buffer). The error channel carries the scan's end, nil on EOF, and is
-// sent only after every line was taken, so no line is lost behind it.
 func readLines(ctx context.Context, in io.Reader) (<-chan []byte, <-chan error) {
 	lines := make(chan []byte)
 	readErr := make(chan error, 1)
@@ -679,13 +513,6 @@ func readLines(ctx context.Context, in io.Reader) (<-chan []byte, <-chan error) 
 	return lines, readErr
 }
 
-// decodeEnvelope applies the strict decode to the frame's own boundary:
-// CheckTopLevelKeys refuses repeated and case-folded envelope keys, the
-// decoder refuses unknown envelope keys and exactly-one-value bodies.
-// Depth is deliberately NOT walked here — every params decode runs
-// handler.UnmarshalStrict, which applies the full-depth rule and can
-// answer with the request's id and the invalid-params code; see the
-// comment at the Serve call site.
 func decodeEnvelope(line []byte, frame *wireRequest) error {
 	if err := handler.CheckTopLevelKeys(line, handler.FoldJSONKey); err != nil {
 		return err
@@ -702,9 +529,6 @@ func decodeEnvelope(line []byte, frame *wireRequest) error {
 	return nil
 }
 
-// validRequestEnvelope reports whether a frame that names a method is
-// a JSON-RPC 2.0 Request object: jsonrpc is exactly "2.0" and the id,
-// when present, is a string, a number, or null.
 func validRequestEnvelope(frame wireRequest) bool {
 	if frame.JSONRPC != "2.0" {
 		return false
@@ -718,19 +542,11 @@ func validRequestEnvelope(frame wireRequest) bool {
 	}
 	switch id[0] {
 	case '"', 'n', '-', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-		// The envelope decode already proved the value is valid JSON,
-		// so its first byte names its type: string, null, or number.
 		return true
 	}
 	return false
 }
 
-// decodeParams applies the no-ambiguity rule to one frame's params at
-// every depth — the a2a decodeParams grammar: a duplicate or
-// case-folded key pair is refused wherever it sits (a nested ambiguity
-// resolves by parser accident exactly like a top-level one), while
-// unknown fields stay tolerated because the protocol reserves the right
-// to add them.
 func decodeParams(raw json.RawMessage, v any) error {
 	if err := handler.CheckObjectKeys(raw, handler.FoldJSONKey); err != nil {
 		return err
@@ -738,7 +554,6 @@ func decodeParams(raw json.RawMessage, v any) error {
 	return json.Unmarshal(raw, v)
 }
 
-// respond writes one response, stamping the request id.
 func (st *serverState) respond(id json.RawMessage, resp wireResponse) {
 	resp.ID = id
 	if resp.JSONRPC == "" {
@@ -751,8 +566,6 @@ func (st *serverState) errResp(code int, format string, args ...any) wireRespons
 	return wireResponse{Error: &wireRespError{Code: code, Message: fmt.Sprintf(format, args...)}}
 }
 
-// handleRequest dispatches one client request (anything except
-// session/prompt, which startPrompt owns).
 func (st *serverState) handleRequest(ctx context.Context, frame wireRequest) wireResponse {
 	switch frame.Method {
 	case "initialize":
@@ -775,11 +588,6 @@ func (st *serverState) handleNotification(frame wireRequest) {
 	var p struct {
 		SessionID string `json:"sessionId"`
 	}
-	// Notifications get no response, so a malformed body cannot be
-	// refused on the wire — but it must not march on as zero-value
-	// data either: an unparseable session/cancel is dropped here,
-	// explicitly, rather than cancelling (or not) by accident of the
-	// zero sessionId.
 	if err := decodeParams(frame.Params, &p); err != nil {
 		return
 	}
@@ -812,8 +620,6 @@ func (st *serverState) handleInitialize(frame wireRequest) wireResponse {
 	st.ready = true
 	st.mu.Unlock()
 
-	// Version negotiation: echo the client's version when we speak it,
-	// otherwise answer with ours and let the client decide.
 	version := ProtocolVersion
 	if p.ProtocolVersion == ProtocolVersion {
 		version = p.ProtocolVersion
@@ -827,9 +633,6 @@ func (st *serverState) handleInitialize(frame wireRequest) wireResponse {
 		ProtocolVersion: version,
 		AgentCapabilities: AgentCapabilities{
 			LoadSession: st.srv.loader != nil,
-			// promptCapabilities image/audio/embeddedContext and
-			// mcpCapabilities http/sse marshal as explicit false here:
-			// the client learns these absences at initialize.
 		},
 		AgentInfo:   st.srv.agent.Info(),
 		AuthMethods: st.srv.opts.AuthMethods,
@@ -846,13 +649,6 @@ func (st *serverState) requireReady() bool {
 	return st.ready
 }
 
-// sessionGate refuses a session method (session/new, session/load,
-// session/prompt) on a connection that has not finished the handshake:
-// initialize first, then, when the agent advertises AuthMethods, a
-// successful authenticate. A skipped or failed authenticate answers
-// ErrAuthRequired, the code the ACP spec gives session/new for an agent
-// that requires authentication. Without it the AuthMethods an embedder
-// set were advertised and never enforced. nil means the method may run.
 func (st *serverState) sessionGate(method string) *wireRespError {
 	st.mu.Lock()
 	ready, authed := st.ready, st.authenticated
@@ -866,70 +662,36 @@ func (st *serverState) sessionGate(method string) *wireRespError {
 	return nil
 }
 
-// runAuthenticate invokes the app-supplied auth callback under a
-// recover guard: the transport loop that reaches here has no
-// per-request net, so a panicking authenticator must become a protocol
-// error, not a process crash (the contract core/mcp's checkToolGate
-// established for gates).
+func recoverCallback(operation, failure string, attrs []any, err *error) {
+	if rec := recover(); rec != nil {
+		args := append([]any{"operation", operation}, attrs...)
+		args = append(args, "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
+		slog.Error("panic in ACP callback recovered", args...)
+		*err = errors.New(failure)
+	}
+}
+
 func (st *serverState) runAuthenticate(ctx context.Context, methodID string) (err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			slog.Error("panic in ACP callback recovered", "operation", "authenticate",
-				"method", textsafe.SanitizeControlBytes(methodID), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
-			err = fmt.Errorf("authenticate panicked")
-		}
-	}()
+	defer recoverCallback("authenticate", "authenticate panicked", []any{"method", textsafe.SanitizeControlBytes(methodID)}, &err)
 	return st.srv.opts.Authenticate(ctx, methodID)
 }
 
-// runNewSession, runLoadSession and runPrompt invoke the embedder's
-// Agent, SessionLoader and Session implementations under the same
-// recover guard runAuthenticate gives the auth callback: Serve is a
-// bare read loop with no per-request net (and the prompt goroutine has
-// none at all), so a panic in embedder code must become a protocol
-// error answered to that one request — never a process crash. The
-// recovered value is not echoed to the client.
 func (st *serverState) runNewSession(ctx context.Context, cwd string) (impl Session, err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			slog.Error("panic in ACP callback recovered", "operation", "session/new",
-				"panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
-			impl = nil
-			err = errors.New("agent NewSession panicked")
-		}
-	}()
+	defer recoverCallback("session/new", "agent NewSession panicked", nil, &err)
 	return st.srv.agent.NewSession(ctx, cwd)
 }
 
 func (st *serverState) runLoadSession(ctx context.Context, sessionID, cwd string, client *Client) (impl Session, err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			slog.Error("panic in ACP callback recovered", "operation", "session/load",
-				"session", textsafe.SanitizeControlBytes(sessionID), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
-			impl = nil
-			err = errors.New("agent LoadSession panicked")
-		}
-	}()
+	defer recoverCallback("session/load", "agent LoadSession panicked", []any{"session", textsafe.SanitizeControlBytes(sessionID)}, &err)
 	return st.srv.loader.LoadSession(ctx, sessionID, cwd, client)
 }
 
 func runPrompt(sess *session, ctx context.Context, prompt []ContentBlock, client *Client) (reason string, err error) {
-	defer func() {
-		if rec := recover(); rec != nil {
-			slog.Error("panic in ACP callback recovered", "operation", "session/prompt",
-				"panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
-			reason = ""
-			err = errors.New("session Prompt panicked")
-		}
-	}()
+	defer recoverCallback("session/prompt", "session Prompt panicked", nil, &err)
 	return sess.impl.Prompt(ctx, prompt, client)
 }
 
 func (st *serverState) handleAuthenticate(ctx context.Context, frame wireRequest) wireResponse {
-	// authenticate establishes credentials, which makes it exactly as
-	// session-scoped as session/new: a connection that never sent
-	// initialize has agreed to no protocol version and no capabilities,
-	// and must not reach the embedder's auth callback.
 	if !st.requireReady() {
 		return st.errResp(ErrInvalidRequest, "authenticate before initialize: initialize the connection first")
 	}
@@ -960,12 +722,6 @@ type mcpServerName struct {
 	Name string `json:"name"`
 }
 
-// checkSessionSetup validates the session/new and session/load
-// arguments this server has opinions about: cwd must be absolute,
-// mcpServers must be empty (no mcpCapabilities are advertised, so
-// accepting servers would promise a connection that never happens),
-// and additionalDirectories must be empty (capability not advertised
-// either).
 func (st *serverState) checkSessionSetup(cwd string, mcpServers []mcpServerName, additionalDirs []string) *wireRespError {
 	if cwd == "" {
 		return &wireRespError{Code: ErrInvalidParams, Message: "cwd is required"}
@@ -1008,16 +764,11 @@ func (st *serverState) handleNewSession(ctx context.Context, frame wireRequest) 
 	if e != nil {
 		return wireResponse{Error: e}
 	}
-	// Refuse a frame that cannot be seated BEFORE the embedder mints a
-	// session for it (the per-connection session cap; see Options).
 	if e := st.refuseFullSessions(""); e != nil {
 		return wireResponse{Error: e}
 	}
 	impl, err := st.runNewSession(ctx, p.CWD)
 	if err != nil {
-		// The embedder's error text is internal detail (paths, driver
-		// text) and must not cross to the client on the internal-error
-		// code.
 		return st.errResp(ErrInternalError, "session/new: internal error")
 	}
 	if impl == nil || impl.ID() == "" {
@@ -1042,18 +793,9 @@ func (st *serverState) handleLoadSession(ctx context.Context, frame wireRequest)
 	if e != nil {
 		return wireResponse{Error: e}
 	}
-	// A session with a prompt turn in flight cannot be reloaded:
-	// replacing its entry would clear the busy flag (a second prompt
-	// would then run concurrently with the first) and drop the turn's
-	// cancel handle (session/cancel would no longer reach it). The
-	// check is race-free because turns start only on this reader loop,
-	// which is busy with this frame.
 	if st.sessionBusy(p.SessionID) {
 		return st.errResp(ErrInvalidRequest, "session/load: a prompt turn is in progress for session %q", p.SessionID)
 	}
-	// Same pre-check as session/new: never make the embedder load a
-	// session this connection cannot seat. Reloading an id this
-	// connection already holds replaces it and stays seated.
 	if e := st.refuseFullSessions(p.SessionID); e != nil {
 		return wireResponse{Error: e}
 	}
@@ -1063,15 +805,11 @@ func (st *serverState) handleLoadSession(ctx context.Context, frame wireRequest)
 		if errors.Is(err, ErrSessionNotFound) {
 			return st.errResp(ErrResourceNotFound, "session/load: %v", err)
 		}
-		// Same posture as session/new: embedder error text stays internal.
 		return st.errResp(ErrInternalError, "session/load: internal error")
 	}
 	if impl == nil || impl.ID() == "" {
 		return st.errResp(ErrInternalError, "session/load: agent returned an empty session ID")
 	}
-	// The busy and seat checks above ran for the requested id. A loader
-	// answering with a different one would be recorded over that other
-	// session, replacing its state mid-turn.
 	if impl.ID() != p.SessionID {
 		return st.errResp(ErrInternalError, "session/load: agent returned a different session ID than the one requested")
 	}
@@ -1081,9 +819,6 @@ func (st *serverState) handleLoadSession(ctx context.Context, frame wireRequest)
 	return wireResponse{Result: map[string]any{}}
 }
 
-// startPrompt validates and launches one session/prompt turn on its
-// own goroutine. The reader loop must stay free while the turn runs so
-// session/cancel notifications and permission responses keep flowing.
 func (st *serverState) startPrompt(ctx context.Context, frame wireRequest) {
 	if e := st.sessionGate("session/prompt"); e != nil {
 		st.respond(frame.ID, wireResponse{Error: e})
@@ -1117,13 +852,6 @@ func (st *serverState) startPrompt(ctx context.Context, frame wireRequest) {
 	}
 
 	sess.mu.Lock()
-	// The last turn released busy before its response went out (see
-	// below), and that response may still be waiting on a write the
-	// client is not reading. Deciding this prompt only once it is
-	// written keeps one parked responder per session: a client that
-	// stopped reading and kept sending prompts parked one goroutine per
-	// prompt. A stalled write holds this reader loop instead, as a
-	// refusal written from here already does.
 	if pending := sess.responding; pending != nil {
 		sess.mu.Unlock()
 		select {
@@ -1150,12 +878,8 @@ func (st *serverState) startPrompt(ctx context.Context, frame wireRequest) {
 		resp := func() wireResponse {
 			switch {
 			case promptCtx.Err() != nil:
-				// session/cancel fired: the spec requires the cancelled
-				// stop reason even if the implementation errored out.
 				return wireResponse{Result: promptResult{StopReason: StopCancelled}}
 			case err != nil:
-				// As in session/new: the embedder's error text stays
-				// inside.
 				return st.errResp(ErrInternalError, "session/prompt: internal error")
 			default:
 				if reason == "" {
@@ -1164,12 +888,6 @@ func (st *serverState) startPrompt(ctx context.Context, frame wireRequest) {
 				return wireResponse{Result: promptResult{StopReason: reason}}
 			}
 		}()
-		// Release the turn BEFORE the response goes out: a client may
-		// send its next session/prompt the moment it reads this
-		// response, and a still-set busy flag refuses it spuriously.
-		// The next prompt waits on written instead, so it is never
-		// refused for this turn and never decided before this response
-		// is out.
 		written := make(chan struct{})
 		sess.mu.Lock()
 		sess.busy = false
