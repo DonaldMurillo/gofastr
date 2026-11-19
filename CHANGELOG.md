@@ -34,6 +34,13 @@ few lines, and link the PR or the docs page for the rest.
   missing one of the three hints ChatGPT's directory review requires. See
   [MCP server](framework/docs/content/mcp.md#tool-annotations).
   [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **settings: MCP hints on custom endpoints.** An `endpoints:` entry with
+  `mcp: true` takes an optional `hints:` block (`title`, `read_only`,
+  `destructive`, `idempotent`, `open_world`), and `gofastr generate` now
+  writes `MCPAnnotations` for every MCP endpoint, filling unset hints from
+  the method. Regenerate to pick them up. See
+  [custom endpoints](framework/docs/content/endpoints.md#mcp-tool-hints).
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
 - **mcp: server instructions.** `Server.SetInstructions` and
   `framework.WithMCPInstructions` set the `instructions` that `initialize`
   returns. [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
@@ -67,7 +74,10 @@ few lines, and link the PR or the docs page for the rest.
 ### Fixed
 - **A server action on a static page whose policy phase answers not-found
   refuses with 404 when it names no page.** It answered 403, which said
-  the route exists; naming the page already answered 404.
+  the route exists; naming the page already answered 404. The exported
+  `PatternPolicy` now returns a 404 Block with `NotFound` set for such a
+  static route (it was a Block with status 0), and `PagePolicy` returns
+  a Block, never a zero Allow, beside its error.
 - **A screen's `ErrNotFound` 404 no longer lists the route's hreflang
   alternates.** When a screen's `Load` or resolver answered
   `app.ErrNotFound`, or a not-found outlet went unfilled, the themed 404
@@ -75,7 +85,8 @@ few lines, and link the PR or the docs page for the rest.
   pointing search engines at more 404s and telling it apart from an
   unknown URL. Every not-found page now gets the head an unmatched URL
   gets, and so do a static export's `404.html` (which listed the home
-  page's alternates) and the error page of a failed render.
+  page's alternates), the error page of a failed render, the 405 page
+  and `host.RenderScreen` at a 4xx or 5xx status.
   ([#823](https://github.com/DonaldMurillo/gofastr/issues/823))
 - **gofastr dev: saves no longer run git in your repository.** The
   dev loop's `go list` and `go build` stamped version control info, which
@@ -375,6 +386,11 @@ few lines, and link the PR or the docs page for the rest.
 - **mcp: a `tools/call` with a malformed `_meta` is refused.** A `_meta`
   that is a string, array or number, or longer than 64 KiB, was ignored;
   it now answers `-32602` and the tool does not run.
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **kiln: `undo` is a destructive tool.** Nothing redoes it, so its
+  descriptor is now `Destructive`: its MCP tool says `destructiveHint: true`
+  and `kiln acp` asks `session/request_permission` before running it. It
+  still needs no plan.
   [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
 - **process modules: a tool's `annotations` key is read and pinned.** A
   module that already sent `annotations` in `module.tool.list` had it

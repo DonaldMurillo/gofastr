@@ -277,3 +277,32 @@ func TestStaticRenderSkipsDecideNotFound(t *testing.T) {
 		t.Fatalf("RenderStaticPage err = %v, want *PolicyBlockedError not found", err)
 	}
 }
+
+// PagePolicy never hands a caller that reads only the Decision an Allow
+// for a hidden page: beside the error stands the not-found Block.
+func TestPagePolicyNotFoundIsABlock(t *testing.T) {
+	ds := notFoundDecisionApp(t)
+	d, ok, err := ds.App.PagePolicy(context.Background(), "/nfd-admin")
+	if !ok || err == nil {
+		t.Fatalf("ok=%v err=%v, want a matched page and its not-found error", ok, err)
+	}
+	if d.Kind != app.DecisionBlock || d.Status != http.StatusNotFound || !d.NotFound {
+		t.Errorf("Decision = %+v, want the 404 Block with NotFound", d)
+	}
+}
+
+// NotFound counts only on a 404 Block: a hand-built 403 carrying the
+// flag stays a plain 403 refusal everywhere, never the not-found page.
+func TestNotFoundFlagNeeds404(t *testing.T) {
+	a := app.NewApp("nf403")
+	a.SetDefaultLayout(app.NewLayout("root", app.LayoutSpec{}, func(_ context.Context, l *app.LayoutTree) render.HTML { return l.Primary() }))
+	odd := app.PolicyFunc(func(context.Context) app.Decision {
+		return app.Decision{Kind: app.DecisionBlock, Status: http.StatusForbidden, NotFound: true}
+	})
+	a.RegisterScreen(app.NewScreen("/odd", adminComp{}).WithPolicy(odd), nil)
+	ds := New(a, WithNotFoundScreen(nfMetaBody{}))
+	rec := serveShape(ds, "/odd", nfShape{})
+	if rec.Code != http.StatusForbidden || strings.Contains(rec.Body.String(), "themed-404") {
+		t.Fatalf("status %d, want the plain 403:\n%s", rec.Code, rec.Body.String())
+	}
+}

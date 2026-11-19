@@ -146,7 +146,7 @@ func TestEveryToolCarriesListingHints(t *testing.T) {
 				tool.Name, *a.ReadOnlyHint, *a.DestructiveHint, *a.OpenWorldHint, d.Destructive)
 		}
 	}
-	for _, name := range []string{"delete_entity", "update_entity", "reset_session"} {
+	for _, name := range []string{"delete_entity", "update_entity", "reset_session", "undo"} {
 		if d, _ := tools.Describe(name); !d.Destructive {
 			t.Fatalf("setup: %s is no longer a destructive descriptor", name)
 		}

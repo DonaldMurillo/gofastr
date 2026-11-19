@@ -234,8 +234,9 @@ var descriptors = map[string]Descriptor{
 	},
 	"undo": {
 		Name:        "undo",
-		Description: "Truncate the journal by one entry, reverting the most recent change.",
+		Description: "Truncate the journal by one entry, reverting the most recent change. Destructive: nothing redoes it, but it does not require a plan: it's a user-initiated step back.",
 		Schema:      object(nil, nil),
+		Destructive: true,
 	},
 	"reset_session": {
 		Name:        "reset_session",

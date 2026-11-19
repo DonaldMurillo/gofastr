@@ -265,7 +265,9 @@ Useful options:
   pages, an embed surface) refuses with a plain 404. A resolver that
   fails before the policy decides still answers the error page, as it
   does on any route, so keep a hidden route's resolvers behind its
-  policy. `decide.Block(404)` is different: it answers the
+  policy. A group's `Requires` resolvers run before the policy, so on a
+  hidden route either declare none or have them answer `ErrNotFound`
+  for a caller who may not see the route. `decide.Block(404)` is different: it answers the
   status phrase as a plain body. Middleware gets the same answer from
   `host.ServeNotFound(w, r)` on the `*uihost.UIHost` the app mounted:
 
