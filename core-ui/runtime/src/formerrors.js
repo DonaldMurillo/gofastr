@@ -41,23 +41,38 @@
   // back to reserved.
   function clear(form) {
     if (!form) return;
-    // The form, plus the field of every control associated from outside
-    // it (form="id"), which report() marks like any other.
-    const scopes = [form];
-    for (const e of form.elements) if (!form.contains(e) && e.closest(FIELD)) scopes.push(e.closest(FIELD));
-    const all = (sel) => scopes.flatMap((s) => [...s.querySelectorAll(sel)]);
-    all('[data-hui-field-error="live"]').forEach((e) => {
-      if (e.id) all('[aria-describedby]').forEach((c) => describe(c, e.id, false));
-      e.remove();
-    });
-    all(ERR).forEach((e) => {
-      e.textContent = '';
-      e.setAttribute('data-hui-field-error', '');
-    });
-    for (const e of [...all('[aria-invalid="true"]'), ...form.elements]) {
+    // The form's own error nodes and described controls, plus those of
+    // every control associated from outside it (form="id"), which
+    // report() marks like any other: its field's, or the node right after
+    // a bare choice.
+    const errs = [...form.querySelectorAll(ERR)];
+    const ctrls = [...form.querySelectorAll('[aria-describedby]')];
+    for (const e of form.elements) {
+      if (form.contains(e)) continue;
+      ctrls.push(e);
+      const f = e.closest(FIELD);
+      const c = !f && e.closest(CHOICE);
+      if (f) {
+        errs.push(...f.querySelectorAll(ERR));
+        ctrls.push(...f.querySelectorAll('[aria-describedby]'));
+      } else if (c && c.nextElementSibling && c.nextElementSibling.matches(ERR)) {
+        errs.push(c.nextElementSibling);
+      }
+    }
+    for (const e of new Set(errs)) {
+      if (e.matches('[data-hui-field-error="live"]')) {
+        if (e.id) ctrls.forEach((c) => describe(c, e.id, false));
+        e.remove();
+      } else {
+        e.textContent = '';
+        e.setAttribute('data-hui-field-error', '');
+      }
+    }
+    for (const e of [...form.querySelectorAll('[aria-invalid="true"]'), ...form.elements]) {
       if (e.getAttribute('aria-invalid') === 'true') e.removeAttribute('aria-invalid');
     }
   }
+
 
   // renderedNode finds the error node the server shipped for this
   // control: a field's is its own child, a bare choice's follows the
@@ -126,13 +141,13 @@
       const a = document.activeElement;
       // form.elements, not a descendant query: it is in tree order and
       // holds a control associated from outside the form (form="id").
-      // A hidden input (a combobox's value) or a disabled control cannot
-      // take focus.
-      let first = [...form.elements].find((e) => e.type !== 'hidden' && !e.disabled && e.getAttribute('aria-invalid') === 'true');
+      // A hidden input (a combobox's value) or a disabled control (its own
+      // attribute or a disabled fieldset's) cannot take focus.
+      let first = [...form.elements].find((e) => e.type !== 'hidden' && !e.matches(':disabled') && e.getAttribute('aria-invalid') === 'true');
       // A radio group is marked on its last radio; the reader lands on
       // the checked one, or the first.
       if (first && first.type === 'radio') {
-        const g = [...form.elements].filter((e) => e.type === 'radio' && e.name === first.name && !e.disabled);
+        const g = [...form.elements].filter((e) => e.type === 'radio' && e.name === first.name && !e.matches(':disabled'));
         first = g.find((e) => e.checked) || g[0];
       }
       if (first && (!a || a === document.body || form.contains(a) || a.form === form)) first.focus();

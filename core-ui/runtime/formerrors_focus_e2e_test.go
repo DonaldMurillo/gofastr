@@ -160,39 +160,58 @@ func TestRefusedSubmitSkipsADisabledControl(t *testing.T) {
 }
 
 // A retry clears what the last refusal marked on a control associated
-// from outside the form, so focus follows only the newest refusal.
+// from outside the form, so focus follows only the newest refusal: in a
+// field, or as a bare choice whose error sits right after its label.
 func TestRetryClearsAnExternalControlsError(t *testing.T) {
-	page := `<!doctype html><html><head><title>focus</title></head><body>
-<div data-hui-field=""><label for="code">Code</label><input id="code" name="code" form="f" value=""></div>
+	for name, outside := range map[string]string{
+		"field":       `<div data-hui-field=""><label for="code">Code</label><input id="code" name="code" form="f" value=""></div>`,
+		"bare choice": `<label data-hui-choice=""><input type="checkbox" id="code" name="code" form="f" value="yes"> Agree</label>`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			page := `<!doctype html><html><head><title>focus</title></head><body>` + outside + `
 <form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
   <div data-hui-field=""><label for="email">Email</label><input id="email" name="email" value=""></div>
   <button type="submit" id="go">Save</button>
 </form>
 <script src="/__gofastr/runtime.js"></script></body></html>`
-	srv := formErrorsServer(t, page, func(n int32) (int, string) {
-		if n == 1 {
-			return http.StatusUnprocessableEntity, `{"error":"validation failed","fields":{"code":["is required"]}}`
-		}
-		return http.StatusUnprocessableEntity, `{"error":"validation failed","fields":{"email":["is required"]}}`
-	})
-	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
-	var focused string
-	var codeState string
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/"),
-		clickSave(),
-		chromedp.Poll(`!!document.getElementById('code-error')`, nil, chromedp.WithPollingTimeout(10*time.Second)),
-		chromedp.Click(`#go`, chromedp.ByID),
-		chromedp.Poll(`!!document.getElementById('email-error')`, nil, chromedp.WithPollingTimeout(10*time.Second)),
-		chromedp.Evaluate(`document.activeElement && document.activeElement.id`, &focused),
-		chromedp.Evaluate(`(document.getElementById('code').getAttribute('aria-invalid') || '') + '|' + !!document.getElementById('code-error')`, &codeState),
-	); err != nil {
-		t.Fatalf("chromedp: %v", err)
+			srv := formErrorsServer(t, page, func(n int32) (int, string) {
+				if n == 1 {
+					return http.StatusUnprocessableEntity, `{"error":"validation failed","fields":{"code":["is required"]}}`
+				}
+				return http.StatusUnprocessableEntity, `{"error":"validation failed","fields":{"email":["is required"]}}`
+			})
+			ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+			var focused, codeState string
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(srv.URL+"/"),
+				clickSave(),
+				chromedp.Poll(`!!document.getElementById('code-error')`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+				chromedp.Click(`#go`, chromedp.ByID),
+				chromedp.Poll(`!!document.getElementById('email-error')`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+				chromedp.Evaluate(`document.activeElement && document.activeElement.id`, &focused),
+				chromedp.Evaluate(`const c = document.getElementById('code'); (c.getAttribute('aria-invalid') || '') + '|' + !!document.getElementById('code-error') + '|' + (c.getAttribute('aria-describedby') || '')`, &codeState),
+			); err != nil {
+				t.Fatalf("chromedp: %v", err)
+			}
+			if focused != "email" {
+				t.Errorf("focus after the retry is on %q, want %q, the only field the newest answer refused", focused, "email")
+			}
+			if codeState != "|false|" {
+				t.Errorf("the external control after the retry reads %q (aria-invalid|error node|describedby), want all cleared", codeState)
+			}
+		})
 	}
-	if focused != "email" {
-		t.Errorf("focus after the retry is on %q, want %q, the only field the newest answer refused", focused, "email")
-	}
-	if codeState != "|false" {
-		t.Errorf("the external control after the retry reads %q (aria-invalid|error node), want both cleared", codeState)
+}
+
+// A control in a disabled fieldset is disabled though its own disabled
+// property is false, so focus skips it too.
+func TestRefusedSubmitSkipsADisabledFieldset(t *testing.T) {
+	got := focusAfterRefusal(t, `<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
+  <fieldset disabled><div data-hui-field=""><label for="owner">Owner</label><input id="owner" name="owner" value=""></div></fieldset>
+  <div data-hui-field=""><label for="email">Email</label><input id="email" name="email" value=""></div>
+  <button type="submit" id="go">Save</button>
+</form>`, `{"owner":["is required"],"email":["is required"]}`, "email-error", nil, clickSave())
+	if got != "email" {
+		t.Errorf("focus after the refused submit is on %q, want the first enabled refused field %q", got, "email")
 	}
 }
