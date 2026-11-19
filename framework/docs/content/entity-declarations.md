@@ -845,8 +845,9 @@ affinity because it contains `INT`, while `REAL TEXT` has TEXT affinity.
 `schema.SQLiteDecimalRefusal` returns the reason and
 `schema.DecimalExactOnSQLite` the yes/no.
 
-A create or update refuses a `decimal` its column cannot store as sent,
-with a 400 naming the field, on both dialects:
+`schema.DecimalRegexp` matches decimal literal syntax for writes and
+numeric filters. A create or update also refuses a `decimal` its column
+cannot store as sent, with a 400 naming the field, on both dialects:
 
 | Value | Refused when | Code |
 | --- | --- | --- |

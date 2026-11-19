@@ -7,21 +7,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// Cursor columns are a declared query surface exactly like SearchFields
-// and ReadScope: they reach ORDER BY and the keyset WHERE, and the
-// emitted cursor token carries the stored value verbatim. The property
-// family pinned here: a column named by the cursor configuration must
-// be a DECLARED, non-Hidden, non-NoQuery field, checked at Define,
-// across every spelling of the configuration (CursorField, CursorFields
-// composite, and the implicit primary-key default / auto tiebreak).
-//
-// The Hidden/NoQuery halves of this family are implemented in Define
-// (entity.go, cursorCols loop) but had no test. The declared-half is
-// NOT implemented: a CursorField naming an unknown column is silently
-// accepted and surfaces as a per-request "no such column" 500 — the
-// exact failure mode the SearchFields and ReadScope checks exist to
-// prevent. Those tests live in define_validation_test.go; this file
-// extends the same property to the cursor surface.
+// Define requires cursor columns to be declared, queryable, and visible,
+// including composite members and implicit primary-key columns.
 
 // expectCursorPanic asserts Define panics with wantSubstr, reusing the
 // shape of expectDefinePanic from define_validation_test.go.
@@ -147,15 +134,7 @@ func TestCursorNonNullColumnsDefine(t *testing.T) {
 	}
 }
 
-// TestCursorFieldUndeclaredPanics: a CursorField naming a column the
-// entity does not declare must fail Define, mirroring SearchFields
-// ("is not a declared field") and ReadScope ("is not a declared
-// field"). Today it is silently accepted and every keyset request
-// fails at query time with "no such column" — a per-request 500 that
-// nothing at definition time reported. The cursor column is
-// developer-declared, but so are SearchFields entries, and Define
-// already treats THOSE as fail-loud misconfiguration. The parity, not
-// the threat model, is the contract being pinned.
+// Like SearchFields and ReadScope, CursorField must name a declared column.
 func TestCursorFieldUndeclaredPanics(t *testing.T) {
 	expectCursorPanic(t, "is not a declared field", EntityConfig{
 		Fields: []schema.Field{

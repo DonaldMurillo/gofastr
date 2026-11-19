@@ -17,7 +17,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-var decimalRe = regexp.MustCompile(`^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$`)
+// DecimalRegexp matches a decimal literal with an optional sign and exponent.
+var DecimalRegexp = regexp.MustCompile(`^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$`)
 
 func validateField(f Field, value any) error {
 	if value == nil {
@@ -158,7 +159,7 @@ func validateDecimal(f Field, value any) error {
 	if s == "" {
 		return nil
 	}
-	if !decimalRe.MatchString(s) {
+	if !DecimalRegexp.MatchString(s) {
 		return violate(ReasonNotDecimal, nil)
 	}
 	if !DecimalExponentFits(s) {

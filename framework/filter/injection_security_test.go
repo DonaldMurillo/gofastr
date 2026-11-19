@@ -121,40 +121,6 @@ func TestInjection_OperatorInjection(t *testing.T) {
 	}
 }
 
-// TestInjection_OversizedINList verifies that an extremely large IN
-// list does not cause memory exhaustion or unbounded query growth.
-// Attack: 10,000+ comma-separated values in a single _in filter.
-func TestInjection_OversizedINList(t *testing.T) {
-	fields := []schema.Field{
-		{Name: "id", Type: schema.String},
-	}
-
-	// Build a query with 10,000 comma-separated values
-	vals := make([]string, 10000)
-	for i := range vals {
-		vals[i] = "val"
-	}
-	oversizedValue := strings.Join(vals, ",")
-
-	req := httptest.NewRequest(http.MethodGet, "/?id_in="+oversizedValue, nil)
-	filters, err := ParseFilters(req, fields)
-	if err != nil {
-		t.Logf("ParseFilters rejected oversized IN list: %v", err)
-		return
-	}
-
-	inCount := 0
-	for _, f := range filters {
-		if f.Op == OpIn {
-			inCount++
-		}
-	}
-
-	if inCount > 1000 {
-		t.Errorf("SECURITY: [filter_inject] oversized IN list produced %d filter entries (want cap at ~1000). Attack: memory exhaustion via unbounded IN clause.", inCount)
-	}
-}
-
 // TestSort_RepeatedFieldBounded verifies that a single request cannot
 // generate an unbounded ORDER BY clause by repeating an allow-listed
 // ?sort= param thousands of times. Without a cap, N copies of

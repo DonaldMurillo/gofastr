@@ -79,26 +79,53 @@ func TestCovGroupEndpointsHappy(t *testing.T) {
 	g := app.Group("/api", routegroup.WithMCPNamespace("api"))
 	app.GroupEntity(g, "posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: new(false)}, Endpoints: []entity.Endpoint{{
 		Method:     http.MethodPost,
-		Path:       "{id}/publish",
+		Path:       "./{id}/../publish",
 		MCP:        true,
 		Public:     true,
 		Handler:    http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) }),
-		MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
+		MCPHandler: func(context.Context, map[string]any) (any, error) { return "published", nil },
 	}},
 	})
-	// Namespaced tool name "api.<derived>" must be present.
-	found := false
-	for _, tool := range app.MCP.ListTools() {
-		if len(tool.Name) > 4 && tool.Name[:4] == "api." {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected an api.* namespaced tool, tools=%v", app.MCP.ListTools())
+	result, err := app.MCP.CallTool(t.Context(), "api.posts_post_api_posts_-id-_publish", nil)
+	if err != nil || result != "published" {
+		t.Fatalf("call grouped endpoint tool = %v, %v; want published", result, err)
 	}
 	// Route is reachable through the group prefix.
 	TestHarness(t, app).Request(http.MethodPost, "/api/posts/p1/publish", nil).
 		Execute().AssertStatus(t, http.StatusOK).AssertBodyContains(t, "ok")
+}
+
+func TestGroupAbsoluteEndpointMatchesPublishedOpenAPI(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware(), WithPublicOpenAPI())
+	group := app.Group("/v1", routegroup.WithMCPNamespace("v1"), routegroup.WithAccess(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Group-Access", "checked")
+			next.ServeHTTP(w, r)
+		})
+	}))
+	const path = "/health/posts"
+	app.GroupEntity(group, "posts", entity.EntityConfig{
+		Exposure: &entity.ExposureConfig{CRUD: new(false)},
+		Endpoints: []entity.Endpoint{{
+			Method:     http.MethodGet,
+			Path:       path,
+			Public:     true,
+			Handler:    http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+			MCP:        true,
+			MCPHandler: func(context.Context, map[string]any) (any, error) { return "healthy", nil },
+		}},
+	})
+
+	paths, methods, _ := servedOpenAPI(t, app)
+	if len(paths) != 1 || paths[0] != path || len(methods[path]) != 1 || methods[path][0] != http.MethodGet {
+		t.Fatalf("published OpenAPI operations = %v, want only GET %s", methods, path)
+	}
+	TestHarness(t, app).Get(paths[0]).AssertStatus(t, http.StatusOK).AssertHeader(t, "X-Group-Access", "checked")
+	TestHarness(t, app).Get(group.Prefix()+path).AssertStatus(t, http.StatusNotFound)
+	result, err := app.MCP.CallTool(t.Context(), "v1.posts_get_health_posts", nil)
+	if err != nil || result != "healthy" {
+		t.Fatalf("call absolute endpoint tool = %v, %v; want healthy", result, err)
+	}
 }
 
 func TestEndpointToolValidationMatchesRegistration(t *testing.T) {

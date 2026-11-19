@@ -499,13 +499,20 @@ handler)` + `ob.StartRelay(ctx)`.
       id              TEXT PRIMARY KEY NOT NULL,
       type            TEXT NOT NULL,
       payload         TEXT,
+      owner           TEXT NOT NULL DEFAULT '',
       status          TEXT NOT NULL DEFAULT 'pending',  -- pending|dispatched
-      created_at      TIMESTAMPTZ NOT NULL,             -- DATETIME on SQLite
-      dispatched_at   TIMESTAMPTZ
-      -- (attempts/last_error/next_attempt_at/claimed_until are vestigial;
-      --  per-attempt state lives in event_outbox_delivery below)
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      last_error      TEXT,
+      created_at      TIMESTAMPTZ NOT NULL,              -- DATETIME on SQLite
+      dispatched_at   TIMESTAMPTZ,
+      next_attempt_at TIMESTAMPTZ,
+      claimed_until   TIMESTAMPTZ
   );
   CREATE INDEX event_outbox_status_created_idx ON event_outbox (status, created_at);
+
+  -- List and data export still read the parent attempts and last_error.
+  -- The parent next_attempt_at and claimed_until are vestigial.
+  -- Per-attempt state lives in event_outbox_delivery.
 
   CREATE TABLE event_outbox_delivery (
       row_id          TEXT NOT NULL,                       -- FK event_outbox.id

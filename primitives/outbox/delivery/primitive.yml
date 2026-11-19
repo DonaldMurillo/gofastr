@@ -6,15 +6,7 @@ code:
 docs:
   - framework/docs/content/events.md
 on_change:
-  - A change to how a pending parent counts as complete is made in completeParent and in sweepParents' backstop together, and in the Semantics section of events.md.
-twins:
-  - job: Decide that a pending parent is complete - older than the handler grace, no pending delivery, and a delivery for every consumer this relay declares for its type.
-    why: completeParent settles one row right after one of its deliveries settles, and the sweep settles every aged row in one UPDATE, so the same conditions are written twice in SQL; no shared builder has been written.
-    sites:
-      - path: framework/outbox/delivery.go
-        note: completeParent, the per-delivery completion.
-      - path: framework/outbox/delivery.go
-        note: sweepParents part (ii), the completion backstop, which also requires at least one delivery row.
+  - A change to parentCompletionCondition is reflected in the Semantics section of events.md.
 invariants:
   - id: one-delivery-per-consumer
     rule: Expansion creates at most one delivery per (row, consumer), and two relays racing to create the same one is a silent no-op (ON CONFLICT DO NOTHING on Postgres, INSERT OR IGNORE on SQLite), never a statement error that stalls the pump.
@@ -66,12 +58,12 @@ invariants:
       - test: framework/outbox.TestAddedConsumer_FreshDeliveryNotAbandoned
       - test: framework/outbox.TestRemovedConsumer_AbandonedSiblingPending
   - id: parent-completes-only-when-covered
-    rule: A parent is marked dispatched only once it is older than the handler grace, has no pending delivery and holds a delivery for every consumer this relay declares for its type, by completeParent and by the sweep backstop alike.
+    rule: completeParent and the sweep backstop use parentCompletionCondition to require an age past the handler grace, no pending delivery and a delivery for every declared consumer of the parent's type. The sweep backstop also requires at least one delivery.
     enforced_by:
       - test: framework/outbox.TestParentWaitsForLaggingConsumer
       - test: framework/outbox.TestRollingAdd_YoungParentNotCompletedBeforeNewConsumerExpands
       - test: framework/outbox.TestSweepBackstopCompletesAgedParent
-    judge: Does this change the completion conditions in completeParent without the same change in sweepParents' backstop, or the reverse?
+    judge: Do completeParent and the sweep backstop get their shared completion conditions from parentCompletionCondition?
   - id: orphan-drop-needs-age-and-unconsumed-type
     rule: The sweep drops a pending parent with no delivery only when it is older than the handler grace and no consumer here declares its type.
     enforced_by:

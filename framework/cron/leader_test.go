@@ -133,29 +133,27 @@ func TestRunTick_DoesNotBlockOnInflightJobs(t *testing.T) {
 	close(release)
 }
 
-// TestRunTick_ReleasesLeaseOnRunOncePanic: a panic inside RunOnce (here, a
-// panicking gate) must still schedule the lease release, the release is
-// deferred, not run only after RunOnce returns. Without the defer the lease
-// and its pinned connection would leak past the panic.
-func TestRunTick_ReleasesLeaseOnRunOncePanic(t *testing.T) {
+// A recovered gate panic skips the job and the tick releases its lease.
+func TestRunTick_ReleasesLeaseAfterGatePanic(t *testing.T) {
 	lease := newStubLease(true)
 	s := NewScheduler()
 	s.WithLeaderElection(lease)
 	s.SetGate(func(string) bool { panic("gate boom") })
+	var gateErr error
+	s.OnError = func(_ string, err error) { gateErr = err }
 	if err := s.Register(CronJob{
 		Name: "j", Spec: "* * * * *",
 		Run: func(context.Context) error { return nil },
 	}); err != nil {
 		t.Fatal(err)
 	}
-	func() {
-		defer func() { _ = recover() }() // runTick propagates the gate panic
-		s.runTick(context.Background(), time.Now())
-	}()
+	s.runTick(context.Background(), time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
+	if gateErr == nil {
+		t.Fatal("gate panic did not reach OnError")
+	}
 	select {
 	case <-lease.released:
-		// good: lease released despite the panic
 	case <-time.After(time.Second):
-		t.Fatal("lease was not released after runTick panicked — release must be deferred")
+		t.Fatal("lease was not released after a recovered gate panic")
 	}
 }

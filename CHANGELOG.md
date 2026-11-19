@@ -25,6 +25,16 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Grouped entity endpoints serve the path OpenAPI publishes.** Under
+  `app.GroupEntity`, an absolute `Endpoint.Path` was mounted under the
+  group prefix while the spec showed it without, and `.`/`..` segments
+  reached the route pattern. Absolute paths now bypass the group prefix
+  and keep the group's middleware, and dot segments are dropped, as for
+  ungrouped entities. `Router.HandleAbsolute` registers a full path with
+  a router's middleware.
+- **The `outbox.WithoutEnsureTable` schema in the events guide works.**
+  The documented parent table lacked the `owner`, `attempts` and
+  `last_error` columns, so the first append and every list failed on it.
 - **Embed grant responses stay `private, no-store` whatever the handler
   sets.** The grant middleware set `Cache-Control` and `Vary:
   X-Gofastr-Embed` before calling the handler, so a handler that set its

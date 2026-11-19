@@ -192,22 +192,37 @@ func (o *Outbox) sweepParents(ctx context.Context) error {
 			return err
 		}
 	}
-	args := []any{now, cutoff}
-	var covered strings.Builder
-	for _, c := range o.declaredPairs() {
-		args = append(args, c.eventType, c.name)
-		fmt.Fprintf(&covered, "\n\t\t\t  AND (p.type <> $%d OR EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id AND d.consumer = $%d))",
-			len(args)-1, o.qd(), len(args))
-	}
+	condition, args := o.parentCompletionCondition([]any{now, cutoff}, nil)
 	_, err := o.db.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s AS p SET status='dispatched', dispatched_at=$1
-			WHERE p.status='pending'
-			  AND p.created_at <= $2
-			  AND EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id)
-			  AND NOT EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id AND d.status='pending')%s`,
-			o.qt(), o.qd(), o.qd(), covered.String()),
+			WHERE %s
+			  AND EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id)`,
+			o.qt(), condition, o.qd()),
 		args...)
 	return err
+}
+
+// parentCompletionCondition expects the grace cutoff as the last bound argument.
+func (o *Outbox) parentCompletionCondition(args []any, eventType *string) (string, []any) {
+	table := o.qd()
+	const deliveryExists = "EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id AND d.consumer = $%d)"
+	var condition strings.Builder
+	fmt.Fprintf(&condition, `p.status='pending'
+			  AND p.created_at <= $%d
+			  AND NOT EXISTS (SELECT 1 FROM %s d WHERE d.row_id = p.id AND d.status='pending')`,
+		len(args), table)
+	if eventType != nil {
+		for _, name := range o.declaredFor(*eventType) {
+			args = append(args, name)
+			fmt.Fprintf(&condition, "\n\t\t\t  AND "+deliveryExists, table, len(args))
+		}
+	} else {
+		for _, c := range o.declaredPairs() {
+			args = append(args, c.eventType, c.name)
+			fmt.Fprintf(&condition, "\n\t\t\t  AND (p.type <> $%d OR "+deliveryExists+")", len(args)-1, table, len(args))
+		}
+	}
+	return condition.String(), args
 }
 
 func joinPlaceholders(ph []string) string {
@@ -249,19 +264,10 @@ func (o *Outbox) purgeExpired(ctx context.Context) error {
 
 func (o *Outbox) completeParent(ctx context.Context, rowID, eventType string) {
 	now := o.now().UTC()
-	args := []any{now, rowID, now.Add(-o.handlerGrace)}
-	var covered strings.Builder
-	for _, c := range o.declaredFor(eventType) {
-		args = append(args, c)
-		fmt.Fprintf(&covered, "\n\t\t\t  AND EXISTS (SELECT 1 FROM %s WHERE row_id=$2 AND consumer=$%d)", o.qd(), len(args))
-	}
+	condition, args := o.parentCompletionCondition([]any{now, rowID, now.Add(-o.handlerGrace)}, &eventType)
 	if _, err := o.db.ExecContext(ctx,
-		fmt.Sprintf(`UPDATE %s SET status='dispatched', dispatched_at=$1
-			WHERE id=$2 AND status='pending'
-			  AND created_at <= $3
-			  AND NOT EXISTS (
-			      SELECT 1 FROM %s WHERE row_id=$2 AND status='pending'
-			  )%s`, o.qt(), o.qd(), covered.String()),
+		fmt.Sprintf(`UPDATE %s AS p SET status='dispatched', dispatched_at=$1
+			WHERE p.id=$2 AND %s`, o.qt(), condition),
 		args...); err != nil {
 		slog.Default().Error("outbox: complete parent failed; relay will retry the pending row",
 			"row_id", rowID, "error", err)

@@ -3,7 +3,6 @@ package filter
 import (
 	"encoding/json"
 	"math"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -13,8 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
-
-var decimalLiteral = regexp.MustCompile(`^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$`)
 
 var timestampLayouts = []string{
 	time.RFC3339,
@@ -44,7 +41,7 @@ func CoerceValue(field string, t schema.FieldType, raw string) (any, error) {
 		}
 		return n, nil
 	case schema.Float:
-		if !decimalLiteral.MatchString(raw) {
+		if !schema.DecimalRegexp.MatchString(raw) {
 			return nil, valueTypeError(field, t)
 		}
 		f, err := strconv.ParseFloat(raw, 64)
@@ -55,7 +52,7 @@ func CoerceValue(field string, t schema.FieldType, raw string) (any, error) {
 		return f, nil
 	case schema.Decimal:
 
-		if !decimalLiteral.MatchString(raw) || !schema.DecimalExponentFits(raw) {
+		if !schema.DecimalRegexp.MatchString(raw) || !schema.DecimalExponentFits(raw) {
 			return nil, valueTypeError(field, t)
 		}
 		return raw, nil

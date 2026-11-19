@@ -983,20 +983,10 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	return a
 }
 
-func groupEndpointPath(ent *entity.Entity, endpoint entity.Endpoint) string {
-	path := "/" + strings.Trim(ent.GetTable(), "/")
-	if !strings.HasPrefix(strings.TrimSpace(endpoint.Path), "/") {
-		path += "/" + strings.TrimPrefix(endpoint.Path, "/")
-	} else {
-		path = strings.TrimSpace(endpoint.Path)
-	}
-	return crud.NormalizePath(convertGroupEndpointPath(path))
-}
-
 type registrationMount struct {
 	endpointPaths func(entity.Endpoint) (route, toolPath string)
 	mcpNamespace  string
-	routePrefix   string
+	grouped       bool
 }
 
 func (a *App) plainMount(ent *entity.Entity) registrationMount {
@@ -1009,11 +999,10 @@ func groupMount(g *routegroup.RouteGroup, ent *entity.Entity) registrationMount 
 	prefix := g.Prefix()
 	return registrationMount{
 		endpointPaths: func(ep entity.Endpoint) (string, string) {
-			p := prefix + groupEndpointPath(ent, ep)
-			return p, p
+			return openapi.EntityEndpointRoutePath(ent, ep.Path, prefix), openapi.EntityEndpointPath(ent, ep.Path)
 		},
 		mcpNamespace: g.MCPNamespace(),
-		routePrefix:  prefix,
+		grouped:      true,
 	}
 }
 
@@ -1022,16 +1011,6 @@ func (m registrationMount) entityTool(ent, action string) string {
 		return ent + "_" + action
 	}
 	return m.mcpNamespace + "." + ent + "." + action
-}
-
-func convertGroupEndpointPath(path string) string {
-	parts := strings.Split(path, "/")
-	for i, part := range parts {
-		if strings.HasPrefix(part, ":") && len(part) > 1 {
-			parts[i] = "{" + strings.TrimPrefix(part, ":") + "}"
-		}
-	}
-	return strings.Join(parts, "/")
 }
 
 // WrapServer wraps everything Start serves, not only the router; the first
@@ -1734,6 +1713,11 @@ func endpointToolName(ent *entity.Entity, m registrationMount, method string, ep
 }
 
 func (a *App) registerEntityEndpoints(r *router.Router, ent *entity.Entity, endpoints []entity.Endpoint, m registrationMount) error {
+	routes := crud.EntityRouter(r, ent)
+	mount := routes.Handle
+	if m.grouped {
+		mount = routes.HandleAbsolute
+	}
 	for _, endpoint := range endpoints {
 		method, err := validateEndpoint(endpoint)
 		if err != nil {
@@ -1741,7 +1725,7 @@ func (a *App) registerEntityEndpoints(r *router.Router, ent *entity.Entity, endp
 		}
 		path, _ := m.endpointPaths(endpoint)
 		if endpoint.Handler != nil {
-			crud.EntityRouter(r, ent).Handle(method, strings.TrimPrefix(path, m.routePrefix), endpointRoute(endpoint))
+			mount(method, path, endpointRoute(endpoint))
 		}
 		if endpoint.MCP {
 			name := endpointToolName(ent, m, method, endpoint)

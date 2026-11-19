@@ -86,6 +86,12 @@ and MCP namespace, so the two versions are independently gated and
 independently described. Register each entity into a version with
 `app.GroupEntity(group, name, config)`.
 
+A relative custom `Endpoint.Path` resolves under the group's table path.
+An absolute path bypasses the group prefix and keeps the group's
+middleware and access policy. Both forms use the same path in the router
+and in OpenAPI. For a custom router registration, `Router.HandleAbsolute`
+likewise takes the full path and keeps the router's middleware and resource.
+
 ### What you must set for versioned entities
 
 Two things do **not** auto-disambiguate when the same entity name lives

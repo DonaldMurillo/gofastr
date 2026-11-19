@@ -72,7 +72,12 @@ func New() *Router {
 // Handle registers handler for method and pattern (ServeMux syntax under r's prefix); middleware added later still wraps it.
 // It panics on a pattern conflict or a malformed pattern.
 func (r *Router) Handle(method, pattern string, handler http.Handler) {
-	fullPath := r.prefix + pattern
+	r.HandleAbsolute(method, r.prefix+pattern, handler)
+}
+
+// HandleAbsolute registers a full ServeMux path without adding r's prefix.
+// The route still uses r's middleware chain and resource.
+func (r *Router) HandleAbsolute(method, fullPath string, handler http.Handler) {
 	fullPattern := method + " " + fullPath
 	route := newCachedRoute(handler, r, method, fullPath)
 	route.gateKey = fullPattern
