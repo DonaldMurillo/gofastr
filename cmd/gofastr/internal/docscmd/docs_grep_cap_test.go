@@ -35,7 +35,7 @@ func countGrepHits(out string) int {
 // A term with more hits than --grep prints says the list was cut,
 // instead of printing the cap as the match total.
 func TestDocsGrepSaysWhenCut(t *testing.T) {
-	out := clitest.CaptureStdout(t, func() { RunDocs([]string{"--grep", "the"}) })
+	out := clitest.CovT_capStdout(t, func() { RunDocs([]string{"--grep", "the"}) })
 	if !strings.Contains(out, `More than 50 matches for "the"`) {
 		t.Fatalf("a cut list must say so:\n%.400s", out)
 	}
@@ -46,7 +46,7 @@ func TestDocsGrepSaysWhenCut(t *testing.T) {
 
 // A term with fewer hits than the cap prints its exact count.
 func TestDocsGrepCountsAnUncutList(t *testing.T) {
-	out := clitest.CaptureStdout(t, func() { RunDocs([]string{"--grep", "owner scoping"}) })
+	out := clitest.CovT_capStdout(t, func() { RunDocs([]string{"--grep", "owner scoping"}) })
 	n := countGrepHits(out)
 	if n == 0 || n >= grepHitCap {
 		t.Fatalf("precondition: want a term with 1..%d hits, got %d", grepHitCap-1, n)

@@ -1,5 +1,5 @@
-// Package toolargs is the one decode for a kiln tool call's arguments,
-// shared by every transport: the chat panel's HTTP endpoint and
+// Package toolargs is the one decode and dispatch table for a kiln tool
+// call, shared by every transport: the chat panel's HTTP endpoint and
 // agent.Dispatch (the native loop, MCP and ACP adapters).
 package toolargs
 
