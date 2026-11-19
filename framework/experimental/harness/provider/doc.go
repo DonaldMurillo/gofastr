@@ -1,5 +1,2 @@
-// Package provider is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package provider defines the Provider interface the harness engine uses to talk to language models.
 package provider

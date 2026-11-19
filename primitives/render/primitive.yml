@@ -1,0 +1,32 @@
+primitive: render
+summary: The core/render package, the HTML value every server render returns, with its response helpers and the process-wide component, layout and template-function registries.
+code:
+  - core/render/doc.go
+  - core/render/render.go
+  - core/render/component.go
+  - core/render/layout.go
+  - core/render/funcs.go
+docs:
+  - framework/docs/content/core-packages.md
+on_change:
+  - core/render is imported by nearly every package that emits markup, so an exported signature change here is a change to core-ui, framework/ui and every battery that renders.
+invariants:
+  - id: respond-html-content-type
+    rule: RespondHTML writes 200 with Content-Type text/html; charset=utf-8 and the fragment's bytes unchanged.
+    enforced_by:
+      - test: core/render.TestRespondHTML
+      - test: core/render.TestHTMLHandler
+  - id: registries-refuse-nil
+    rule: RegisterComponent, RegisterLayout and RegisterFunc panic on a nil function, and RenderWithLayout panics on a layout name nothing registered.
+    enforced_by:
+      - test: core/render.TestSweepRenderRegistriesRefuseNil
+  - id: register-func-replaces
+    rule: RegisterFunc under a name already in FuncMap replaces the earlier function, built-ins included, so a host can override a built-in.
+    enforced_by:
+      - test: core/render.TestRegisterFuncReplaces
+  - id: truncate-counts-runes
+    rule: The Truncate template function cuts at a rune count, appends an ellipsis when it cuts, and returns the empty string for a negative count instead of panicking.
+    enforced_by:
+      - test: core/render.TestFuncMapTruncate
+      - test: core/render.TestTemplateTruncateNegativeCap
+      - test: core/render.TestTemplateTruncateZeroKeepsMarker

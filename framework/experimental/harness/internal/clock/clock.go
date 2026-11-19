@@ -1,13 +1,8 @@
-// Package clock provides a swap-able clock for tests. The
-// conformance suite uses a fake clock for disconnect/reconnect/timeout
-// scenarios so PR-gating tests don't depend on wall-clock waits.
 package clock
 
 import "time"
 
-// Clock is the interface anything that needs time-of-day or Sleep
-// uses. System returns the wall-clock implementation; Fake returns a
-// manually-advanced one for tests.
+// Clock is the time source: System for the wall clock, Fake for tests.
 type Clock interface {
 	Now() time.Time
 	Sleep(d time.Duration)
@@ -38,5 +33,4 @@ func (f *Fake) Sleep(d time.Duration) { f.now = f.now.Add(d) }
 // Advance moves the fake clock forward by d.
 func (f *Fake) Advance(d time.Duration) { f.now = f.now.Add(d) }
 
-// Compile-time assertion.
 var _ Clock = (*Fake)(nil)

@@ -1,0 +1,92 @@
+primitive: harness.engine.loop
+summary: The turn loop - RunTurn sends the history to the provider, collects the stream, runs the tool calls the model made and repeats until it stops, and Spawn runs a sub-agent the same way on a fresh history.
+code:
+  - framework/experimental/harness/engine/loop.go
+  - framework/experimental/harness/engine/stream.go
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: provider-rounds-capped
+    rule: One RunTurn makes at most 25 provider rounds, and at most SubAgentMaxIterations (8, below the top-level cap) inside a sub-agent, then publishes Error IterationLimit and ends the turn with reason iteration_limit.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestRunTurnStopsAtIterationCap
+      - test: framework/experimental/harness/engine.TestSpawnEnforcesTighterCap
+      - test: framework/experimental/harness/engine.TestSubAgentMaxIterationsIsTighter
+  - id: tool-calls-run-concurrently
+    rule: The tool calls of one model reply run concurrently and their results go back in the order the model made the calls.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestDispatchRunsToolUsesConcurrently
+      - test: framework/experimental/harness/engine.TestLoopToolUseCycle
+  - id: empty-reply-is-an-error
+    rule: A reply with no text, no thinking and no tool call publishes Error EmptyResponse and ends the turn with reason empty.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestRunTurnEmptyResponseIsAnError
+  - id: cancel-ends-turn-cancelled
+    rule: A turn whose context is cancelled, before a round or mid-stream, ends with reason cancelled, not error.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestRunTurnCancelledBeforeStartEndsCancelled
+      - test: framework/experimental/harness/engine.TestRunTurnCancelledMidStreamEndsCancelled
+  - id: turn-number-counts-user-input
+    rule: The turn number counts user input messages only, never the tool_result messages of a multi-round turn.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestTurnNumberSkipsToolResultRounds
+  - id: on-turn-end-before-turn-ended
+    rule: OnTurnEnd runs before TurnEnded is published, so a client reacting to TurnEnded can send the next input at once.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestOnTurnEndRunsBeforeTurnEnded
+  - id: tool-result-block-capped
+    rule: Every text block of a tool result is cut at 64 KiB with a notice before it enters the history.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestToolResultTextIsCappedPerBlock
+  - id: cost-priced-from-table
+    rule: A round that reports usage publishes CostIncremented, with USD from the provider pricing table and 0 for an unknown model.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestEngineEmitsNonZeroUSDForKnownModel
+      - test: framework/experimental/harness/engine.TestEngineEmitsZeroUSDForUnknownProvider
+  - id: stream-bytes-capped
+    rule: A provider round that buffers more than its cap of text, thinking and tool-argument bytes fails with ErrStreamCapExceeded, the crossing delta dropped and the partial text kept.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestCollectStreamCapsTurnBytes
+  - id: bare-close-is-not-complete
+    rule: A provider stream that closes without a stop event returns ErrStreamClosed, so a cut-off reply is never recorded as a complete turn.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestCollectStreamFailsClosedOnBareClose
+      - test: framework/experimental/harness/engine.TestRunTurnBareCloseNotRecordedComplete
+  - id: truncated-tool-input-stays-json
+    rule: Tool-call arguments that are not valid JSON are stored as an object holding the raw text under __gofastr_truncated_input, so history always marshals.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestTruncatedToolInputKeepsHistoryValid
+  - id: sub-agent-cannot-orchestrate
+    rule: A sub-agent's catalog leaves out TaskList and Agent and its dispatcher refuses them by name, its history starts with the focus hint, and its tools see a spawn depth one above the parent's.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestSpawnStripsMetaToolsFromSubAgent
+      - test: framework/experimental/harness/engine.TestSubAgentCannotCallHiddenMetaTools
+      - test: framework/experimental/harness/engine.TestSpawnPrependsFocusHint
+      - test: framework/experimental/harness/engine.TestSpawnIncrementsSpawnDepth
+decisions:
+  - id: wrap-truncated-arguments
+    date: 2026-11-18
+    status: accepted
+    decision: Arguments that are not valid JSON are wrapped in an object under a conspicuous key.
+    rejected:
+      - option: Store the raw fragment as the tool input.
+        why: Every later marshal of the history failed, so the next provider request errored and the session stuck.
+      - option: Replace it with an empty object.
+        why: The model could not see that its call was cut off.
+    upholds: [truncated-tool-input-stays-json]
+  - id: tight-sub-agent-cap-and-hint
+    date: 2026-11-18
+    status: accepted
+    decision: Sub-agents get an 8-round cap and an automatic focus hint.
+    rejected:
+      - option: The top-level 25-round cap and no hint.
+        why: Sub-agents made 19 or more web fetches each, trying to be helpful.
+    upholds: [provider-rounds-capped, sub-agent-cannot-orchestrate]
+  - id: concurrent-tool-calls
+    date: 2026-11-18
+    status: accepted
+    decision: The tool calls of one reply run in parallel into a pre-sized result slice.
+    rejected:
+      - option: Run them one after another.
+        why: Three 60-second Agent calls took three minutes instead of one.
+    upholds: [tool-calls-run-concurrently]

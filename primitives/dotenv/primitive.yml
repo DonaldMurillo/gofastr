@@ -1,0 +1,109 @@
+primitive: dotenv
+summary: The .env file format - Parse reads keys, quoting and escapes, and Expand substitutes ${NAME} - with no third-party dependency.
+code:
+  - core/dotenv/dotenv.go
+  - core/dotenv/expand.go
+docs:
+  - framework/docs/content/dotenv.md
+invariants:
+  - id: errors-echo-no-content
+    rule: A Parse error names the line number and the shape of the problem but never the line's text, the key or an expanded value.
+    enforced_by:
+      - test: core/dotenv.TestParseErrorDoesNotEchoValue
+      - test: core/dotenv.TestInvalidKeyErrorsDoNotEchoSecrets
+      - test: core/dotenv.TestParseErrorNamesShapeNotContent
+      - test: core/dotenv.TestParseBudgetErrorEchoesNoValues
+  - id: key-grammar
+    rule: A key matches [A-Za-z_][A-Za-z0-9_]* in ASCII after an optional export prefix (space or tab), and any other key is a parse error.
+    enforced_by:
+      - test: core/dotenv.TestKeysFollowASCIIGrammar
+      - test: core/dotenv.TestParse_ExportTabPrefix
+  - id: bom-and-nul
+    rule: Parse drops a UTF-8 BOM at the start of the first line and refuses a line holding a NUL byte, which the process environment cannot store.
+    enforced_by:
+      - test: core/dotenv.TestParseStripsLeadingBOM
+      - test: core/dotenv.TestParserRejectsNULValues
+  - id: quoting
+    rule: 'A single-quoted value is taken verbatim with no escapes or expansion, a double-quoted value reads the escapes \n \t \r \" \\ \$ and ${NAME} in one pass and refuses a trailing lone backslash, and an unquoted value is kept as written, an inline # included.'
+    enforced_by:
+      - test: core/dotenv.TestParse_SingleQuotedIsLiteral
+      - test: core/dotenv.TestParse_SingleQuotedDoesNotExpand
+      - test: core/dotenv.TestParse_DoubleQuotedEscapes
+      - test: core/dotenv.TestParse_BackslashThenRefExpands
+      - test: core/dotenv.TestParse_TrailingBackslashRefused
+      - test: core/dotenv.TestParse_BlankLinesAndComments
+  - id: lookups-are-verbatim
+    rule: A looked-up value is written as stored and never expanded again, so a self-reference cannot loop and a stored ${x} stays text.
+    enforced_by:
+      - test: core/dotenv.TestExpand_StoredValueNotReexpanded
+      - test: core/dotenv.TestExpandEnvRecursionBounded
+      - test: core/dotenv.TestParse_RefKeepsStoredValue
+      - test: core/dotenv.TestExpand_EnvValueVerbatim
+  - id: expansion-syntax
+    rule: Only the bracket form ${NAME} expands; bare $NAME, an empty ${} and an unclosed ${ are left verbatim and an undefined name expands to empty.
+    enforced_by:
+      - test: core/dotenv.TestExpand_BareDollarVarNotExpanded
+      - test: core/dotenv.TestExpand_MalformedUnclosedLeftVerbatim
+      - test: core/dotenv.TestExpand_EmptyBraceLeftVerbatim
+      - test: core/dotenv.TestExpand_UndefinedIsEmpty
+  - id: parse-reads-no-environment
+    rule: Parse resolves ${NAME} only against keys set earlier in the same input and never reads the process environment.
+    enforced_by:
+      - test: core/dotenv.TestParse_ReadsNoEnvironment
+  - id: expansion-budget
+    rule: The values of one file together may hold at most 10 bytes per byte read, a value from the environment or an earlier file counting as read once per name, and a value is refused while it is being built, before it passes the budget.
+    enforced_by:
+      - test: core/dotenv.TestParseExpansionOutputBounded
+      - test: core/dotenv.TestParseBudgetStopsWhileBuilding
+      - test: core/dotenv.TestParseLinearChainStillExpands
+      - test: core/dotenv.TestLoad_EnvValueCountsAsBudgetInput
+      - test: core/dotenv.TestLoad_EnvCreditCarriesToLaterLines
+decisions:
+  - id: no-dotenv-dependency
+    date: 2026-11-18
+    status: accepted
+    decision: The framework parses .env files with its own strict subset of the dotenv format instead of a third-party loader.
+    rejected:
+      - option: Depend on a dotenv library.
+        why: Every app boot runs it, and its multi-line values, re-expansion and permissive errors are behaviour the framework would then have to defend.
+  - id: one-line-values
+    date: 2026-11-18
+    status: accepted
+    decision: Multi-line values are not supported; a newline is written \n inside a double-quoted value.
+    rejected:
+      - option: Allow a quoted value to span lines.
+        why: An unclosed quote would then swallow the rest of the file instead of failing on its own line.
+  - id: brackets-only
+    date: 2026-11-18
+    status: accepted
+    decision: Only ${NAME} expands, never bare $NAME.
+    rejected:
+      - option: Expand $NAME as a shell does.
+        why: A secret holding a $ would be silently cut, and where the name ends is ambiguous.
+    upholds: [expansion-syntax]
+  - id: substitute-verbatim
+    date: 2026-11-18
+    status: accepted
+    decision: A looked-up value goes in verbatim, as a shell substitutes a variable, because Parse stores each value already resolved.
+    rejected:
+      - option: Expand looked-up values recursively.
+        why: It turns a single-quoted literal or an escaped \$ back into a lookup and lets a reference chain loop or compound.
+    upholds: [lookups-are-verbatim]
+  - id: budget-ten-times-input
+    date: 2026-11-18
+    status: accepted
+    decision: Expansion is capped at 10x the input, since k references per line over n lines grow as k^n and every app boot parses .env from its working directory, while a real reference chain stays under 3x.
+    rejected:
+      - option: Check the length after building the value.
+        why: One line of 65536 references to a 64 KiB key allocated 4 GiB before the check ran.
+      - option: Count environment values as output only.
+        why: One ${PATH} in a two-line file would then trip the budget.
+    upholds: [expansion-budget]
+  - id: errors-hide-the-line
+    date: 2026-11-18
+    status: accepted
+    decision: A malformed-line error carries the line number only, because a .env holds credentials and hosts wrap LoadAndApply in log.Fatal.
+    rejected:
+      - option: Echo the bad line for context.
+        why: The typo the missing-= branch catches, API_TOKEN sk-live-..., would land in stderr and logs.
+    upholds: [errors-echo-no-content]

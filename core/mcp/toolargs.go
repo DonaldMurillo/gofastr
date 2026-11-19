@@ -13,39 +13,6 @@ import (
 	"strings"
 )
 
-// Minimal JSON Schema validation for tools/call arguments, enforced at
-// the dispatch chokepoint (callTool) before any handler runs. The
-// declared inputSchema is the contract tools/list advertises; until the
-// 2026-09-04 red-probe round it was purely descriptive, and every
-// handler received attacker-typed JSON (float64-for-int,
-// nested-object-for-scalar) it had to defend against itself.
-//
-// This is deliberately NOT a full JSON Schema implementation. It
-// supports exactly the keywords the repo's declared schemas use —
-// type, enum, properties, required, additionalProperties, items — plus
-// recursive descent, per the maintainer's 2026-09-04 decision. Bounds
-// keywords (minimum, maximum, minLength, maxLength) appear in some
-// declared schemas but are NOT enforced here; handlers that document
-// clamp semantics (framework_docs_search's limit) keep them. No
-// third-party validator dependency: unknown keywords are ignored, and
-// a schema that declares nothing validates anything (the handler stays
-// responsible, as before).
-//
-// additionalProperties follows JSON Schema semantics, which is also the
-// convention every schema in this repo is authored under: explicit
-// `false` closes the object (unknown arguments are refused with
-// invalid-params), an explicit subschema validates them, and ABSENT
-// means extras are allowed. Schemas that mean closed say so — the
-// harness builtins and kiln descriptors spell `additionalProperties:
-// false` when they want it, and `additionalProperties: {type: string}`
-// (bash env, webfetch headers, kiln stringMap) when they want an open
-// map.
-
-// validateToolArgs validates a tools/call arguments object against a
-// tool's declared inputSchema. It returns nil when the arguments
-// conform, or an error describing the first violation. A nil or empty
-// schema validates anything: nothing was declared, so there is nothing
-// to enforce.
 func validateToolArgs(schema map[string]any, args map[string]any) error {
 	if len(schema) == 0 {
 		return nil
@@ -53,21 +20,17 @@ func validateToolArgs(schema map[string]any, args map[string]any) error {
 	return validateValue(schema, any(args), "arguments")
 }
 
-// validateValue checks one decoded-JSON value against one schema node.
-// path names the value for the error message.
 func validateValue(node map[string]any, value any, path string) error {
 	if len(node) == 0 {
 		return nil
 	}
 
-	// type: a string or a list of strings; the value must match one.
 	if t, ok := node["type"]; ok {
 		if err := validateType(t, value, path); err != nil {
 			return err
 		}
 	}
 
-	// enum: the value must equal one of the declared constants.
 	if e, ok := node["enum"]; ok {
 		if err := validateEnum(e, value, path); err != nil {
 			return err
@@ -83,7 +46,6 @@ func validateValue(node map[string]any, value any, path string) error {
 	return nil
 }
 
-// jsonTypeOf maps a decoded-JSON value to its JSON Schema type name.
 func jsonTypeOf(v any) string {
 	switch n := v.(type) {
 	case map[string]any:
@@ -97,25 +59,16 @@ func jsonTypeOf(v any) string {
 	case nil:
 		return "null"
 	case json.Number:
-		// The wire decode uses UseNumber (tools.go), so a numeric
-		// argument arrives as json.Number to keep its exact decimal
-		// above 2^53, or a fraction float64 would round to an integer.
-		// Its digits decide: 9007199254740993e0 and 9007199254740993.0
-		// are integers, 9007199254740993.5 is not.
 		if integralNumber(n.String()) {
 			return "integer"
 		}
 		return "number"
 	case float64:
-		// JSON integers decode as float64; a value with no fractional
-		// part satisfies both "number" and "integer" (draft-06+).
 		if n == math.Trunc(n) && !math.IsInf(n, 0) {
 			return "integer"
 		}
 		return "number"
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		// In-process callers (Server.CallTool, host tests) pass Go
-		// natives; the wire path only ever sees float64.
 		return "integer"
 	case float32:
 		if f := float64(n); f == math.Trunc(f) && !math.IsInf(f, 0) {
@@ -127,17 +80,12 @@ func jsonTypeOf(v any) string {
 	}
 }
 
-// integralNumber reports whether s, a JSON number literal, names an
-// integer. It counts digits instead of parsing: a float64 rounds
-// 1.0000000000000001 to 1, and big.Rat would build the 10^999999999 an
-// attacker's 1e-999999999 asks for. The value is digits × 10^(exp −
-// len(frac)), and each trailing zero of the digits adds one back.
 func integralNumber(s string) bool {
 	mant, exp, _ := strings.Cut(strings.ToLower(s), "e")
 	whole, frac, _ := strings.Cut(strings.TrimLeft(mant, "+-"), ".")
 	digits := whole + frac
 	if strings.Trim(digits, "0") == "" {
-		return true // zero, at any exponent
+		return true
 	}
 	scale := len(digits) - len(strings.TrimRight(digits, "0")) - len(frac)
 	if exp == "" {
@@ -145,8 +93,6 @@ func integralNumber(s string) bool {
 	}
 	e, err := strconv.Atoi(exp)
 	if err != nil || e > 1<<30 || e < -(1<<30) {
-		// An exponent this size outweighs any literal's digits: a
-		// positive one leaves an integer, a negative one a fraction.
 		return !strings.HasPrefix(exp, "-")
 	}
 	return e+scale >= 0
@@ -163,12 +109,12 @@ func validateType(t any, value any, path string) error {
 		for _, e := range tv {
 			s, ok := e.(string)
 			if !ok {
-				continue // malformed schema: ignore that entry
+				continue
 			}
 			allowed = append(allowed, s)
 		}
 	default:
-		return nil // malformed or unsupported type declaration: ignore
+		return nil
 	}
 	got := jsonTypeOf(value)
 	for _, want := range allowed {
@@ -190,7 +136,7 @@ func validateEnum(e any, value any, path string) error {
 			list[i] = s
 		}
 	default:
-		return nil // malformed enum: ignore rather than fail every call
+		return nil
 	}
 	for _, cand := range list {
 		if jsonEqual(value, cand) {
@@ -208,10 +154,6 @@ func jsonEqual(a, b any) bool {
 		}
 		return false
 	}
-	// Objects and arrays recurse, so a number inside one compares the way a
-	// scalar does: the wire's json.Number or float64 against a declared Go
-	// int. Declared members may be typed Go values (map[string]int,
-	// []string), hence reflect rather than a []any/map[string]any switch.
 	av, bv := reflect.ValueOf(a), reflect.ValueOf(b)
 	switch {
 	case isJSONArray(av) && isJSONArray(bv):
@@ -247,27 +189,16 @@ func isJSONObject(v reflect.Value) bool {
 	return v.IsValid() && v.Kind() == reflect.Map && v.Type().Key().Kind() == reflect.String
 }
 
-// decimal is a number's exact value as 0.digits × 10^exp, with no
-// leading or trailing zero in digits; zero has no digits. Two numbers
-// are equal exactly when their decimals are, so comparison reads text
-// and never builds the number: big.Rat.SetString on an argument like
-// 1e999999 built a 10^999999 per enum member. Comparing through float64
-// was the other wrong answer: it rounded integers above 2^53 onto their
-// neighbours, so a neighbour of an enum member matched it.
 type decimal struct {
 	neg    bool
 	digits string
-	exp    *big.Int // the exponent's own digits, as many as the text has
+	exp    *big.Int
 }
 
 func (d decimal) equal(o decimal) bool {
 	return d.neg == o.neg && d.digits == o.digits && d.exp.Cmp(o.exp) == 0
 }
 
-// decimalOf reads v's exact decimal. A float64 holds a dyadic fraction,
-// and 767 significant digits spell any of them exactly, so 'e' at that
-// precision is the float's true value, not its shortest spelling: the
-// float 0.1 is not one tenth.
 func decimalOf(v any) (decimal, bool) {
 	switch n := v.(type) {
 	case json.Number:
@@ -280,7 +211,6 @@ func decimalOf(v any) (decimal, bool) {
 	case float32:
 		return decimalOf(float64(n))
 	}
-	// In-process callers pass any Go integer type.
 	switch rv := reflect.ValueOf(v); rv.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return parseDecimal(strconv.FormatInt(rv.Int(), 10))
@@ -290,8 +220,6 @@ func decimalOf(v any) (decimal, bool) {
 	return decimal{}, false
 }
 
-// parseDecimal normalizes a JSON number literal. Its cost is the
-// literal's length: the exponent stays the digits it was written with.
 func parseDecimal(s string) (decimal, bool) {
 	mant, expText, hasExp := strings.Cut(strings.ToLower(s), "e")
 	neg := strings.HasPrefix(mant, "-")
@@ -309,10 +237,8 @@ func parseDecimal(s string) (decimal, bool) {
 	trimmed := strings.TrimLeft(all, "0")
 	digits := strings.TrimRight(trimmed, "0")
 	if digits == "" {
-		return decimal{exp: new(big.Int)}, true // zero, whatever its sign or exponent
+		return decimal{exp: new(big.Int)}, true
 	}
-	// 0.digits × 10^exp: the point moves to just before the first
-	// nonzero digit, which sits len(whole) − leading zeros places in.
 	exp.Add(exp, big.NewInt(int64(len(whole)-(len(all)-len(trimmed)))))
 	return decimal{neg: neg, digits: digits, exp: exp}, true
 }
@@ -320,9 +246,6 @@ func parseDecimal(s string) (decimal, bool) {
 func validateObject(node map[string]any, obj map[string]any, path string) error {
 	props, _ := node["properties"].(map[string]any)
 
-	// required: every named key must be present. Declared schemas hold
-	// either a Go []string literal (in-process registration) or []any
-	// (JSON round-trip); both spell the same contract.
 	var reqNames []string
 	switch req := node["required"].(type) {
 	case []string:
@@ -347,10 +270,6 @@ func validateObject(node map[string]any, obj map[string]any, path string) error 
 		}
 	}
 
-	// properties: present keys must conform to their declared subschema.
-	// Every walk below goes in sorted key order, so arguments with two
-	// faults are refused naming the same one on every call; ranging the
-	// maps named whichever the iteration reached first.
 	for _, name := range slices.Sorted(maps.Keys(props)) {
 		sub := props[name]
 		val, present := obj[name]
@@ -366,9 +285,6 @@ func validateObject(node map[string]any, obj map[string]any, path string) error 
 		}
 	}
 
-	// additionalProperties: absent = allow extras (JSON Schema default,
-	// and the convention this repo's schemas are authored under);
-	// explicit false = refuse unknown keys; a subschema = validate them.
 	if ap, ok := node["additionalProperties"]; ok {
 		switch apv := ap.(type) {
 		case bool:
@@ -400,7 +316,7 @@ func validateArray(node map[string]any, arr []any, path string) error {
 	}
 	items, ok := raw.(map[string]any)
 	if !ok || len(items) == 0 {
-		return nil // malformed items declaration: ignore
+		return nil
 	}
 	for i, el := range arr {
 		if err := validateValue(items, el, fmt.Sprintf("%s[%d]", path, i)); err != nil {

@@ -1,0 +1,38 @@
+primitive: harness.control.resources
+summary: The read-only catalog behind the control plane's listings - live sessions, profiles, providers with their models, tools, skills and slash commands - shared by the rest and mcpserver transports so neither imports the subsystems itself.
+code:
+  - framework/experimental/harness/control/resources/
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: failed-model-listing-shows-none
+    rule: When a provider's Models call errors, ListProviders logs the error and lists that provider with no models, dropping any partial list returned with the error.
+    enforced_by:
+      - test: framework/experimental/harness/control/resources.TestListProvidersClearsPartialModelsOnError
+  - id: provider-error-scrubbed-in-log
+    rule: The provider error ListProviders logs carries no bidi, C0 or C1 control bytes from the provider's response body.
+    enforced_by:
+      - test: framework/experimental/harness/control/resources.TestProviderErrRedScrubbed
+  - id: session-listing-is-scoped
+    rule: SessionsAllowed keeps only the sessions the claims allow, and both rest and mcpserver list live sessions through it.
+    enforced_by:
+      - test: framework/experimental/harness/control/rest.TestSessionListHonoursTokenScope
+      - test: framework/experimental/harness/control/mcpserver.TestMCPSessionListHonoursTokenScope
+  - id: one-catalog-per-listing
+    rule: Every listing rest and mcpserver serve comes from one Catalog method, so a resource one transport lists is never missing or different on the other.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestEveryListedResourceReads
+    applies:
+      - framework/experimental/harness/control/rest/rest.go
+      - framework/experimental/harness/control/mcpserver/server.go
+decisions:
+  - id: providers-listing-degrades
+    date: 2026-11-18
+    status: accepted
+    decision: A provider whose model listing fails still appears in ListProviders, with no models, and the error goes to the log.
+    rejected:
+      - option: Fail the whole listing.
+        why: The catalog is display-only, and one unreachable provider would blank the page for every other one.
+      - option: Keep the models returned alongside the error.
+        why: A partial list returned with an error is not vouched for.
+    upholds: [failed-model-listing-shows-none]

@@ -1,18 +1,5 @@
-// Package secrets locates and loads the repo-local
-// .harness-secrets/env file. The file format is a tiny KEY=VALUE
-// subset of dotenv: one assignment per line, `#` for comments,
-// optional surrounding quotes on values.
-//
-// The package walks upward from a starting directory until it finds
-// .harness-secrets/env, so it works whether tests run from the
-// module root or from a subpackage.
-//
-// The file may only deliver PROVIDER CREDENTIALS: keys ending in
-// _API_KEY or _TOKEN (never GOFASTR_*). A cloned repo's secrets file
-// is attacker-authored, so anything that shapes the process — proxy
-// selection, PATH, LD_PRELOAD, HOME — or that derives the credential
-// store's own key is refused. Env vars already set in the process take
-// priority; the file is a fallback, not an override.
+// Package secrets loads provider API keys from a repository's .harness-secrets/env file
+// (KEY=VALUE lines, # comments, optional quotes) into environment variables not already set.
 package secrets
 
 import (
@@ -24,8 +11,7 @@ import (
 	"strings"
 )
 
-// LoadRepo finds and loads .harness-secrets/env. Returns the path it
-// loaded from (or empty if none found). Missing file is not an error.
+// LoadRepo is LoadFrom the working directory.
 func LoadRepo() (string, error) {
 	start, err := os.Getwd()
 	if err != nil {
@@ -34,8 +20,7 @@ func LoadRepo() (string, error) {
 	return LoadFrom(start)
 }
 
-// LoadFrom walks upward from `dir` until it finds
-// .harness-secrets/env. Returns the path loaded (or "" if missing).
+// LoadFrom walks up from dir to the repository root for .harness-secrets/env, loads it, and returns its path, or "" when there is none.
 func LoadFrom(dir string) (string, error) {
 	path, ok := findSecretsFile(dir)
 	if !ok {
@@ -47,8 +32,6 @@ func LoadFrom(dir string) (string, error) {
 	return path, nil
 }
 
-// findSecretsFile walks upward looking for .harness-secrets/env.
-// Stops at the filesystem root or when a .git directory is seen.
 func findSecretsFile(start string) (string, bool) {
 	dir := start
 	for {
@@ -56,12 +39,10 @@ func findSecretsFile(start string) (string, bool) {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 			return candidate, true
 		}
-		// Stop at filesystem root.
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			return "", false
 		}
-		// Stop at repo root (.git dir signals it).
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 			return "", false
 		}
@@ -77,10 +58,8 @@ func loadFile(path string) error {
 	return apply(pending)
 }
 
-// pair is one assignment the file would make.
 type pair struct{ key, val string }
 
-// apply sets each pending key the process has not set by now.
 func apply(pending []pair) error {
 	for _, p := range pending {
 		if _, present := os.LookupEnv(p.key); present {
@@ -93,9 +72,6 @@ func apply(pending []pair) error {
 	return nil
 }
 
-// pendingFromFile returns, in file order, the provider credentials the
-// file at path would set: allowed keys with a value that the process
-// environment does not already hold.
 func pendingFromFile(path string) ([]pair, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -119,28 +95,11 @@ func pendingFromFile(path string) ([]pair, error) {
 		val := strings.TrimSpace(after)
 		val = trimQuotes(val)
 		if val == "" {
-			continue // empty value → don't set; lets shell env stay authoritative
+			continue
 		}
-		// The file is found by walking UP from the working directory, so
-		// on a cloned repo it is attacker-authored. Delivering provider
-		// API keys from it is the documented contract; that is ALL it
-		// may deliver. A positive allow-list, not a deny-list: anything
-		// that shapes the process — proxy selection (HTTPS_PROXY,
-		// all_proxy route every provider request, each carrying the
-		// operator's real key, through a host the repo author chose),
-		// PATH/LD_PRELOAD (binary and library resolution at the next
-		// exec), HOME and XDG_* (where the credential store lives) — is
-		// one forgotten deny entry away from planting, and
-		// GOFASTR_HARNESS_* key material must never come from it either
-		// (a planted MACHINE_KEY/PASSPHRASE seals the operator's first
-		// stored credential under an attacker-known key). Only keys that
-		// name a provider credential (suffix _API_KEY or _TOKEN) pass;
-		// the real environment stays authoritative for everything else,
-		// as it already is for any key the process has set.
 		if !isProviderCredentialKey(key) {
 			continue
 		}
-		// Env vars already set in the process take priority.
 		if _, present := os.LookupEnv(key); present {
 			continue
 		}
@@ -152,16 +111,6 @@ func pendingFromFile(path string) ([]pair, error) {
 	return pending, nil
 }
 
-// isProviderCredentialKey reports whether key names a provider
-// credential — the only thing a walked secrets file may deliver. The
-// WHOLE name must be an environment variable name,
-// ^[A-Z][A-Z0-9_]*$, ending in _API_KEY or _TOKEN (ZAI_API_KEY,
-// OPENROUTER_API_KEY, GITHUB_TOKEN, ...); a suffix match alone let
-// "\x1b…ZAI_API_KEY" and other non-names count, which the CLI then had
-// to unset after the fact when no prompt ran (#669). Anything else,
-// including process-shaping names and every GOFASTR_HARNESS_* variable
-// (the credential store's own key material), does not qualify. The real
-// environment stays authoritative for everything the file may not set.
 func isProviderCredentialKey(key string) bool {
 	if !isEnvVarName(key) {
 		return false
@@ -172,9 +121,6 @@ func isProviderCredentialKey(key string) bool {
 	return strings.HasSuffix(key, "_API_KEY") || strings.HasSuffix(key, "_TOKEN")
 }
 
-// isEnvVarName reports whether k is shaped like an environment variable
-// name: ^[A-Z][A-Z0-9_]*$, byte-wise, so multi-byte lookalikes (a
-// Turkish dotted capital) do not pass.
 func isEnvVarName(k string) bool {
 	if k == "" || k[0] < 'A' || k[0] > 'Z' {
 		return false
@@ -198,5 +144,5 @@ func trimQuotes(s string) string {
 	return s
 }
 
-// ErrInvalid is returned when the secrets file is malformed.
+// ErrInvalid reports a malformed secrets file.
 var ErrInvalid = errors.New("secrets: invalid file format")

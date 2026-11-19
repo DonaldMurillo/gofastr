@@ -1,21 +1,3 @@
-// Package tracing emits W3C trace-context-shaped span trees per turn.
-//
-// Span trees are written as JSON files at
-// ~/.local/state/gofastr/harness/traces/<SessionID>/<TraceID>.json
-// so the user can pipe them into a tool of their choice (jq, Jaeger
-// import, etc.) without the harness pulling in a tracing library.
-//
-// Span hierarchy mirrors the agent loop:
-//
-//	turn (root span)
-//	├── request-middleware-chain
-//	├── provider.chat
-//	│   └── stream-collect
-//	├── tool-call (one span per dispatch)
-//	│   ├── permission-gate
-//	│   ├── sandbox-wrap
-//	│   └── tool.run
-//	└── persist-events
 package tracing
 
 import (
@@ -33,10 +15,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// TraceID and SpanID are W3C trace-context-compliant: TraceID is 16
-// bytes (32 hex chars), SpanID is 8 bytes (16 hex chars).
-type TraceID [16]byte
-type SpanID [8]byte
+// TraceID and SpanID are W3C trace-context IDs.
+type (
+	TraceID [16]byte
+	SpanID  [8]byte
+)
 
 func (t TraceID) String() string { return hex.EncodeToString(t[:]) }
 func (s SpanID) String() string  { return hex.EncodeToString(s[:]) }
@@ -55,7 +38,7 @@ func NewSpanID() SpanID {
 	return s
 }
 
-// Span is one node in the trace tree.
+// Span is one node of a trace tree; Status is "ok" or "error".
 type Span struct {
 	TraceID    string         `json:"trace_id"`
 	SpanID     string         `json:"span_id"`
@@ -64,11 +47,11 @@ type Span struct {
 	StartedAt  time.Time      `json:"started_at"`
 	EndedAt    time.Time      `json:"ended_at"`
 	DurationNS int64          `json:"duration_ns"`
-	Status     string         `json:"status,omitempty"` // "ok" | "error"
+	Status     string         `json:"status,omitempty"`
 	Attributes map[string]any `json:"attributes,omitempty"`
 }
 
-// Trace is one full per-turn span tree.
+// Trace is one turn's span tree as written to disk.
 type Trace struct {
 	TraceID   string    `json:"trace_id"`
 	SessionID string    `json:"session_id"`
@@ -77,8 +60,7 @@ type Trace struct {
 	Spans     []Span    `json:"spans"`
 }
 
-// Recorder collects spans for one turn and writes the trace to disk
-// when Done is called.
+// Recorder collects one turn's spans and writes them with Done.
 type Recorder struct {
 	dir       string
 	session   ids.SessionID
@@ -87,11 +69,10 @@ type Recorder struct {
 	spans     []Span
 	rootSpan  SpanID
 	startedAt time.Time
-	active    map[SpanID]int // spanID → index in spans (for End)
+	active    map[SpanID]int
 }
 
-// NewRecorder constructs a Recorder rooted at `dir`. The actual file
-// is written to <dir>/<SessionID>/<TraceID>.json on Done.
+// NewRecorder returns a Recorder whose Done writes <dir>/<session>/<TraceID>.json.
 func NewRecorder(dir string, session ids.SessionID) *Recorder {
 	return &Recorder{
 		dir:       dir,
@@ -105,8 +86,7 @@ func NewRecorder(dir string, session ids.SessionID) *Recorder {
 // TraceID returns the recorder's trace ID.
 func (r *Recorder) TraceID() TraceID { return r.traceID }
 
-// Start opens a span. Returns the span's ID; pass it to End. If
-// parent is the zero SpanID, the new span is rooted at the trace.
+// Start opens a span under parent, or at the root for the zero SpanID, and returns its ID for End.
 func (r *Recorder) Start(parent SpanID, name string, attrs map[string]any) SpanID {
 	id := NewSpanID()
 	r.mu.Lock()
@@ -130,7 +110,7 @@ func (r *Recorder) Start(parent SpanID, name string, attrs map[string]any) SpanI
 	return id
 }
 
-// End closes a previously-started span.
+// End closes an open span, setting status when non-empty and merging attrs; an unknown ID is ignored.
 func (r *Recorder) End(id SpanID, status string, attrs map[string]any) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -153,7 +133,7 @@ func (r *Recorder) End(id SpanID, status string, attrs map[string]any) {
 	}
 }
 
-// Done writes the trace tree to disk.
+// Done writes the trace file owner-only and returns its path.
 func (r *Recorder) Done() (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -173,25 +153,16 @@ func (r *Recorder) Done() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// WriteOwnerOnly: trace spans carry request-derived attribute text,
-	// and the mode must tighten a pre-existing weaker file, not just
-	// apply at create.
 	if err := fileperm.WriteOwnerOnly(path, data); err != nil {
 		return "", err
 	}
 	return path, nil
 }
 
-// TraceContextHeader returns the W3C `traceparent` header value for
-// the given span: `00-<TraceID>-<SpanID>-01` (sampled).
-//
-// Useful when the harness calls out to external services that
-// understand W3C trace context (so a Copilot or OpenRouter
-// request can be correlated back to the harness turn).
+// TraceContextHeader returns the W3C traceparent value "00-<trace>-<span>-01" (sampled).
 func TraceContextHeader(traceID TraceID, spanID SpanID) string {
 	return fmt.Sprintf("00-%s-%s-01", traceID.String(), spanID.String())
 }
 
-// ErrNoRecorder is returned when API calls expect a recorder bound
-// to a context but none is present.
+// ErrNoRecorder reports that no Recorder is bound where one is expected.
 var ErrNoRecorder = errors.New("tracing: no recorder bound")

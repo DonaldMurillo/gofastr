@@ -1,0 +1,99 @@
+primitive: mcp.notifications
+summary: Server-initiated notifications on the SSE GET stream - the subscriber registry and its seat caps, list_changed and resources/updated fan-out with delivery-time gates, and resources/subscribe bookkeeping.
+code:
+  - core/mcp/notifications.go
+  - core/mcp/seats.go
+docs:
+  - framework/docs/content/mcp.md
+twins:
+  - job: Admit a per-principal stream against a seat cap whose 0 means 16, refusing or evicting the oldest past it.
+    why: addSSESubscriber must also delete the evicted subscriber from sseSubs and run expireResourceSubsIfIdleLocked, which stream.AdmitSeat (splice plus closing a done channel) cannot reach; the splice itself is shared through stream.SpliceSeat.
+    sites:
+      - path: core/mcp/notifications.go
+        note: addSSESubscriber with seatCapLocked in seats.go.
+      - path: core/stream/seats.go
+        note: AdmitSeat and seatsFor.
+      - path: framework/experimental/harness/control/seats.go
+        note: SeatTable.AcquireSeat and DefaultStreamSeats.
+invariants:
+  - id: list-changed-carries-item-gate
+    rule: The list_changed a RegisterTool, UnregisterTool, UnregisterDevImpliedTools, RegisterResource, RegisterResourceTemplate or RegisterPrompt raises carries that item's gate, and a subscriber the gate refuses does not receive it.
+    enforced_by:
+      - test: core/mcp.TestGatedRegistrationWithholdsListChanged
+  - id: delivery-time-gates
+    rule: Each notification is checked against the server-wide gate and its item gate in the subscriber's own write loop at delivery time, with the identity re-established for that delivery.
+    enforced_by:
+      - test: core/mcp.TestGateRevokedMidStreamStopsDelivery
+      - test: core/mcp.TestGatedResourceUpdatedRespectsGate
+  - id: publisher-never-blocks
+    rule: notifySubscribers never blocks and never runs a gate; a subscriber whose buffer of 16 is full is dropped, its seat spliced and its stream closed.
+    enforced_by:
+      - test: core/mcp.TestStalledSubscriberDroppedNotBlocking
+  - id: updated-needs-subscription
+    rule: NotifyResourceUpdated sends nothing unless at least one resources/subscribe is active for the uri.
+    enforced_by:
+      - test: core/mcp.TestUpdatedRequiresActiveSubscription
+  - id: subscriptions-bounded
+    rule: resources/subscribe refuses with -32602 a uri over 2048 bytes, a new uri past 1024 distinct uris, a new caller-uri pair past 4096 pairs, and a caller's new uri past 256 of its own, grouping IPv6 peers by /64, while re-subscribing a held uri always works.
+    enforced_by:
+      - test: core/mcp.TestSubscribeRejectsOversizedURI
+      - test: core/mcp.TestSweepDistinctURICapAppliesAcrossCallers
+      - test: core/mcp.TestSubscriptionRecordBounded
+      - test: core/mcp.TestSubscribePerCallerDistinctURICap
+      - test: core/mcp.TestSubscribePerCallerCapGroupsIPv6ByPrefix
+  - id: unsubscribe-releases-only-own
+    rule: resources/unsubscribe releases only a count the same caller subscribed, and is a successful no-op otherwise.
+    enforced_by:
+      - test: core/mcp.TestUnsubscribeReleasesOnlyOwn
+      - test: core/mcp.TestUnsubscribeKeepsOtherCallers
+  - id: last-stream-clears-subscriptions
+    rule: When the last subscriber stream leaves, by disconnect, eviction or backpressure drop, every resource subscription count is cleared.
+    enforced_by:
+      - test: core/mcp.TestLastDisconnectClearsResourceSubscriptions
+  - id: seat-caps
+    rule: One caller (the resolved user id, else the peer host without port) holds at most SetSSESeatCap streams, 16 by default, refused 429 or evicting its oldest under SeatOverflowEvictOldest, and the server holds at most SetSSEStreamLimit streams, 1024 by default, where an EvictOldest replacement is still admitted at the limit.
+    enforced_by:
+      - test: core/mcp.TestSweepDefaultSeatCapIsSixteen
+      - test: core/mcp.TestSSESubscriberSeatsRefusePastCap
+      - test: core/mcp.TestSSESubscriberSeatsEvictOldest
+      - test: core/mcp.TestSSEGlobalSubscriberBound
+      - test: core/mcp.TestSSEStreamLimitIsConfigurable
+      - test: core/mcp.TestLoweredSSELimitDoesNotEvictRefusedReplacement
+decisions:
+  - id: connection-agnostic-subscriptions
+    date: 2026-11-18
+    status: accepted
+    decision: A resources/subscribe is a per-uri count delivered to every eligible stream, recorded per caller only so unsubscribe releases its own, and expired when the last stream leaves.
+    rejected:
+      - option: Per-stream subscription sets.
+        why: The transport has no session id linking the POST that subscribes to the GET stream that receives, so tying the count to either breaks delivery to the other.
+    revisit_if: The transport gains an Mcp-Session-Id linking a POST to its GET stream.
+    upholds: [last-stream-clears-subscriptions, unsubscribe-releases-only-own]
+  - id: separate-notification-lock
+    date: 2026-11-18
+    status: accepted
+    decision: The subscriber registry and subscription counts sit under sseMu, never s.mu, and registry methods release s.mu before they notify.
+    rejected:
+      - option: Guard them with the registry lock.
+        why: Fan-out happens on every registration and update and would contend with or nest inside the registry lock.
+    upholds: [publisher-never-blocks]
+  - id: drop-slow-subscribers
+    date: 2026-11-18
+    status: accepted
+    decision: A subscriber that stops draining its buffer is dropped and its stream closed; the client reconnects and re-lists.
+    rejected:
+      - option: Block the publisher.
+        why: The publisher is whatever server code raised the notification, and every other subscriber would stall too.
+      - option: Grow the buffer.
+        why: A stalled client would grow server memory without bound.
+    upholds: [publisher-never-blocks]
+  - id: sixteen-seats-host-keyed
+    date: 2026-11-18
+    status: accepted
+    decision: The seat cap defaults to 16 streams per caller, keyed by user id or peer host, with a server-wide limit of 1024.
+    rejected:
+      - option: Key anonymous callers by host and port.
+        why: Each HTTP/1.1 stream has its own source port, so every stream got its own bucket and the cap never applied.
+      - option: Only a per-caller cap.
+        why: Anonymous callers are keyed by host, and one client can hold many IPv6 addresses.
+    upholds: [seat-caps]

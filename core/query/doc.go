@@ -1,3 +1,2 @@
-// Package query is part of the GoFastr framework.
-// See https://github.com/DonaldMurillo/gofastr for documentation.
+// Package query builds parameterized SQL for Postgres and SQLite and validates and quotes identifiers.
 package query

@@ -1,9 +1,3 @@
-// Package sqlite is the SQLite-backed implementation of session.Store.
-//
-// Uses GoFastr's pure-Go SQLite adapter. Per the architecture doc,
-// at-rest encryption is on the v0.2 roadmap; v0.1
-// stores plaintext and relies on the redaction middleware on the
-// write path to keep secrets out of the file.
 package sqlite
 
 import (
@@ -33,13 +27,9 @@ type Store struct {
 	db   *sql.DB
 	path string
 
-	// Redactors run on every event payload before it lands in the
-	// `events.payload` column. The default redactor uses common
-	// secret regexes; profiles can swap in tighter sets.
+	// Redactors run over every event payload before AppendEvent stores it.
 	Redactors []Redactor
 
-	// Encryption state when opened via OpenEncrypted. Zero values
-	// mean plaintext.
 	encMode EncryptionMode
 	encKey  []byte
 
@@ -51,28 +41,17 @@ type Redactor interface {
 	Redact(text string) string
 }
 
-// MemberRedactor is a Redactor that also judges a JSON string by the
-// object member it is the value of: key is the member name, or "" for
-// an object key or an array element. DefaultRedactor implements it, so
-// {"ZAI_API_KEY": "<v>"} loses its value although neither string alone
-// matches a pattern.
+// MemberRedactor is a Redactor that also sees the member name a JSON string value belongs to.
 type MemberRedactor interface {
 	Redactor
 	RedactMember(key, value string) string
 }
 
-// Open opens (or creates) the SQLite session log at path. Creates
-// the parent directory and applies the v1 schema on first use.
+// Open opens or creates the owner-only SQLite session log at path and applies the schema.
 func Open(path string) (*Store, error) {
 	if err := fileperm.MkdirPrivate(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
-	// Seed the file 0600 BEFORE the driver opens it: the event log
-	// carries full plaintext session transcripts, the SQLite driver
-	// creates a missing database (and its -wal sidecar, which inherits
-	// the main db's mode) 0666&~umask, and a pre-existing weaker file
-	// must be tightened too. OpenCostLedger seeds its ledger the same
-	// way.
 	if err := fileperm.SeedOwnerOnly(path); err != nil {
 		return nil, err
 	}
@@ -80,8 +59,6 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	// WAL mode (idempotent; sqlite3 driver honors the URL flag, but
-	// double-check for clarity).
 	if _, err := db.Exec(session.PragmaWAL); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("sqlite: enable WAL: %w", err)
@@ -94,7 +71,6 @@ func Open(path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("sqlite: add events.sub_agent: %w", err)
 	}
-	// Record the schema migration if it's not already there.
 	if _, err := db.Exec(
 		`INSERT OR IGNORE INTO schema_migrations(version, applied_at, sha256) VALUES (?, ?, ?)`,
 		session.SchemaVersion, time.Now().UTC().Format(time.RFC3339),
@@ -108,7 +84,7 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
-// AppendEvent persists one envelope with redactors applied.
+// AppendEvent stores one envelope after running the Redactors over its payload.
 func (s *Store) AppendEvent(ctx context.Context, env control.EventEnvelope) error {
 	payload := s.redactPayload(env.Payload)
 	s.mu.Lock()
@@ -124,10 +100,6 @@ func (s *Store) AppendEvent(ctx context.Context, env control.EventEnvelope) erro
 	return err
 }
 
-// redactPayload runs the redactors over each decoded string of a JSON
-// payload, so a pattern that reaches a closing quote or an escape cannot
-// leave the stored event unparseable. A payload that is not JSON gets
-// the redactors on its raw text.
 func (s *Store) redactPayload(raw []byte) string {
 	apply := func(text string) string {
 		for _, r := range s.Redactors {
@@ -149,7 +121,7 @@ func (s *Store) redactPayload(raw []byte) string {
 	return apply(string(raw))
 }
 
-// EventsSince returns events with id > since for a session.
+// EventsSince returns up to limit (default 10,000) events of sess with id > since, in id order.
 func (s *Store) EventsSince(ctx context.Context, sess ids.SessionID, since uint64, limit int) ([]control.EventEnvelope, error) {
 	if limit <= 0 {
 		limit = 10_000
@@ -193,9 +165,6 @@ func (s *Store) EventsSince(ctx context.Context, sess ids.SessionID, since uint6
 	return out, rows.Err()
 }
 
-// addSubAgentColumn adds events.sub_agent to a database created before
-// sub-agent events were persisted. CREATE TABLE IF NOT EXISTS leaves an
-// existing table as it was.
 func addSubAgentColumn(db *sql.DB) error {
 	rows, err := db.Query(`SELECT name FROM pragma_table_info('events')`)
 	if err != nil {
@@ -219,10 +188,7 @@ func addSubAgentColumn(db *sql.DB) error {
 	return err
 }
 
-// ListPastSessions aggregates the events table into per-session
-// summaries. Newest-last-seen first. Uses two passes, one for the
-// counts/timestamps (fast), one for the first user-message text per
-// session (slower; bounded by `limit`).
+// ListPastSessions returns one summary row per session, newest last-seen first, with the first root TurnStarted text.
 func (s *Store) ListPastSessions(ctx context.Context, limit int, only []ids.SessionID) ([]session.PastSession, error) {
 	stmt := `SELECT session, MIN(ts), MAX(ts), COUNT(*) FROM events`
 	var args []any
@@ -265,7 +231,6 @@ func (s *Store) ListPastSessions(ctx context.Context, limit int, only []ids.Sess
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	// Best-effort: enrich with first user-input text per session.
 	for i := range out {
 		var payload string
 		err := s.db.QueryRowContext(ctx, `
@@ -275,10 +240,8 @@ func (s *Store) ListPastSessions(ctx context.Context, limit int, only []ids.Sess
 			string(out[i].SessionID),
 		).Scan(&payload)
 		if err != nil {
-			continue // missing TurnStarted is fine, sessions log other events too
+			continue
 		}
-		// TurnStarted payload contains {"content":[{"type":"text","text":"..."}]}
-		// Cheap extraction without unmarshaling the full schema.
 		if text := extractFirstText(payload); text != "" {
 			if len(text) > 80 {
 				text = text[:80] + "…"
@@ -289,9 +252,6 @@ func (s *Store) ListPastSessions(ctx context.Context, limit int, only []ids.Sess
 	return out, nil
 }
 
-// extractFirstText pulls the first "text":"..." value out of a
-// TurnStarted payload without paying for a full JSON unmarshal of
-// the ContentBlock schema. Tolerant of escaping.
 func extractFirstText(payload string) string {
 	const marker = `"text":"`
 	i := strings.Index(payload, marker)
@@ -299,12 +259,10 @@ func extractFirstText(payload string) string {
 		return ""
 	}
 	start := i + len(marker)
-	// Walk to the matching unescaped closing quote.
 	var out []byte
 	for j := start; j < len(payload); j++ {
 		c := payload[j]
 		if c == '\\' && j+1 < len(payload) {
-			// Skip escape pair, decode common ones.
 			next := payload[j+1]
 			switch next {
 			case 'n':
@@ -329,7 +287,7 @@ func extractFirstText(payload string) string {
 	return string(out)
 }
 
-// RecordToolIntent writes an intent row.
+// RecordToolIntent upserts an intent row; a mutating intent also checkpoints the WAL.
 func (s *Store) RecordToolIntent(ctx context.Context, intent session.ToolIntent) error {
 	mut := 0
 	if intent.Mutating {
@@ -345,13 +303,13 @@ func (s *Store) RecordToolIntent(ctx context.Context, intent session.ToolIntent)
 		intent.StartedAt.UTC().Format(time.RFC3339Nano),
 	)
 	if err == nil && intent.Mutating {
-		// Best-effort fsync via a WAL checkpoint after the write.
+		// best-effort: the row is durable in WAL; a checkpoint only advances the main file and retries later.
 		_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(FULL)`)
 	}
 	return err
 }
 
-// RecordToolOutcome writes an outcome row.
+// RecordToolOutcome upserts an outcome row and checkpoints the WAL.
 func (s *Store) RecordToolOutcome(ctx context.Context, outcome session.ToolOutcome) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -367,15 +325,13 @@ func (s *Store) RecordToolOutcome(ctx context.Context, outcome session.ToolOutco
 		outcome.ResultRef,
 	)
 	if err == nil {
-		// best-effort: the row is durable in WAL; a checkpoint only advances
-		// the main database file and can safely retry later.
+		// best-effort: the row is durable in WAL; a checkpoint only advances the main file and retries later.
 		_, _ = s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(FULL)`)
 	}
 	return err
 }
 
-// OrphanIntents returns intents without matching outcomes. v0.1 returns
-// all intents for the given LogID; the higher layer narrows by session.
+// OrphanIntents returns every intent with no outcome row, in any session.
 func (s *Store) OrphanIntents(ctx context.Context, sess ids.SessionID) ([]session.ToolIntent, error) {
 	rows, err := s.db.QueryContext(ctx, `
         SELECT i.call_id, i.log_id, i.tool_name, i.args_hash, i.is_mutating, i.started_at
@@ -409,8 +365,7 @@ func (s *Store) OrphanIntents(ctx context.Context, sess ids.SessionID) ([]sessio
 	return out, rows.Err()
 }
 
-// ApplyRetention drops the payload column for events older than ttl,
-// leaving metadata-only rows.
+// ApplyRetention replaces the payload of events older than ttl with "«ttl-expired»".
 func (s *Store) ApplyRetention(ctx context.Context, ttl time.Duration) (int64, error) {
 	cutoff := time.Now().Add(-ttl).UTC().Format(time.RFC3339Nano)
 	res, err := s.db.ExecContext(ctx, `
@@ -425,15 +380,14 @@ func (s *Store) ApplyRetention(ctx context.Context, ttl time.Duration) (int64, e
 	return res.RowsAffected()
 }
 
-// Close closes the underlying DB.
+// Close closes the database.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.db.Close()
 }
 
-// HashArgs returns the SHA-256 hex of tool arguments, used to fill
-// tool_call_intents.args_hash.
+// HashArgs returns the SHA-256 hex of tool arguments.
 func HashArgs(args []byte) string {
 	sum := sha256.Sum256(args)
 	return hex.EncodeToString(sum[:])
@@ -447,10 +401,7 @@ func hashStr(s string) string {
 // DefaultRedactor replaces common secret patterns with «redacted:KIND».
 type DefaultRedactor struct{}
 
-// Redact applies a list of canned regex replacements. The list is
-// intentionally tight in v0.1, false positives are worse than false
-// negatives here because the regex runs on *every event payload*.
-// Roadmap OBS-EXPORT-BUNDLE adds a deeper-pass detector for export.
+// Redact replaces every match of the on-write secret patterns.
 func (DefaultRedactor) Redact(text string) string {
 	for _, sub := range redactionSubs {
 		text = sub.regex.ReplaceAllString(text, sub.repl)
@@ -458,8 +409,7 @@ func (DefaultRedactor) Redact(text string) string {
 	return text
 }
 
-// RedactMember replaces a JSON member's value when the member name is a
-// secret-suffixed variable name (ZAI_API_KEY, GOFASTR_HARNESS_PASSPHRASE).
+// RedactMember replaces value when key is a secret-suffixed variable name such as ZAI_API_KEY.
 func (DefaultRedactor) RedactMember(key, value string) string {
 	out, _ := redactSecretMember(key, value)
 	return out
@@ -467,18 +417,13 @@ func (DefaultRedactor) RedactMember(key, value string) string {
 
 var _ MemberRedactor = DefaultRedactor{}
 
-// Compile-time assertion that Store satisfies session.Store.
 var _ session.Store = (*Store)(nil)
 
-// SnapshotPath returns the on-disk path the store was opened with.
-// Useful for diagnostics + the /health endpoint.
+// SnapshotPath returns the path the store was opened with.
 func (s *Store) SnapshotPath() string { return s.path }
 
-// makeAbsPath helps callers build the default location.
+// DefaultPath returns ~/.local/share/gofastr/harness/sessions.db.
 func DefaultPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".local", "share", "gofastr", "harness", "sessions.db")
 }
-
-// Helper to keep imports honest in test contexts.
-var _ = strings.Builder{}

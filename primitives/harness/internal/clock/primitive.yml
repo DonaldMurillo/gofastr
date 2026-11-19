@@ -1,0 +1,4 @@
+primitive: harness.internal.clock
+summary: The harness clock - System is the wall clock and Fake is a manually advanced clock whose Sleep returns at once, so tests of timeouts and reconnects never wait.
+code:
+  - framework/experimental/harness/internal/clock/

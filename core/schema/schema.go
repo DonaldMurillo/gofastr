@@ -32,22 +32,9 @@ const (
 	AutoIncrement                     // auto-incrementing integer
 )
 
-// Field defines a single field in an entity schema.
-//
-// Hidden and NoQuery both restrict a field, at different layers. Hidden
-// removes it from responses AND from every query surface, so its value and
-// its existence stay server-side. NoQuery keeps the field in responses but
-// bars it from filters, sorting, and search.
-//
-// NoQuery exists for values the caller may see only in transformed form,
-// a card read back as its last four digits, say. Without it the stored
-// value is still a live column in WHERE and ORDER BY, so a caller recovers
-// it a character at a time (?card_like=4111) while every response reads
-// "****1111". Declare the transform as Mask and the field is NoQuery too;
-// a field an AfterGet/AfterList hook masks is marked NoQuery by hand. See
-// framework/crud/redaction_oracle_security_test.go.
-//
-// Hidden implies NoQuery; setting both is redundant but harmless.
+// Field defines a single field in an entity schema. Hidden removes it from
+// responses and every query surface; NoQuery keeps it in responses but bars
+// it from filters, sorting and search.
 type Field struct {
 	Name         string       // field name (must be unique within a Schema)
 	Type         FieldType    // field type
@@ -66,32 +53,12 @@ type Field struct {
 	Many         bool         // has-many relation flag
 	RawType      string       // explicit SQL column type, overrides Type→SQL mapping (e.g. "NUMERIC(10,2)", "INET")
 
-	// WireName overrides the JSON key this field is exposed under. When
-	// empty, the wire key is derived from Name via the entity's JSONCase
-	// (camelCase → "authorId", snake_case → "author_id"). When set, it is
-	// used verbatim as the JSON output key, the accepted input key, and the
-	// filter parameter name. The DB column (Name) is never changed. This is
-	// how an API version renames or aliases a field without altering the
-	// underlying table: v2 exposes column "author_id" as "authorId" (the
-	// JSONCase default) or as a custom "writer" (WireName), while v1 keeps
-	// the bare column shape. Both read and write the same column.
+	// WireName is the JSON key the field is read, written and filtered under;
+	// empty derives it from Name by the entity's JSONCase. The column stays Name.
 	WireName string
 
 	// Mask rewrites the value a read returns; the stored value stays as
-	// written. CRUD runs it on every read path (a get, a list or cursor
-	// page, a streamed list, an included row, a write's response, an SSE
-	// event record, and the in-process reads under crud.WithReadHooks)
-	// before the app's AfterGet/AfterList hooks, which see the masked
-	// value. A NULL is not passed to it. entity.Define marks a field with a
-	// Mask NoQuery, so no filter, sort or search reads the stored value.
-	// Return a placeholder for a value it cannot read: a Mask that panics
-	// reads as null, and the panic is logged. An update that sends back
-	// Mask(stored value) leaves the column alone.
-	//
-	// The tag keeps Field encodable: encoding/json refuses a func-typed
-	// struct field even when it is nil, and entity.Endpoint publishes
-	// []Field as its inputSchema/outputSchema. A func has no JSON form, so
-	// an encoded Field carries no Mask and a decoded one has none.
+	// written. An encoded Field carries no Mask.
 	Mask func(ctx context.Context, v any) any `json:"-"`
 }
 
@@ -164,8 +131,7 @@ func (s Schema) VisibleFields() []Field {
 	return out
 }
 
-// Validate checks a single value against a Field definition.
-// Returns nil on success or a descriptive error on failure.
+// Validate checks one value against a Field and returns nil or a Violation.
 func Validate(field Field, value any) error {
 	return validateField(field, value)
 }
@@ -176,15 +142,14 @@ type ValidationResult struct {
 	Errors map[string][]Violation // field name → its violations
 }
 
-// ValidateAll validates a map of values against every Field in the Schema.
-// Unknown keys are ignored; missing required fields produce errors.
+// ValidateAll validates values against every non-auto-generated Field: unknown
+// keys are ignored, an absent required field without a Default is a violation.
 func ValidateAll(s Schema, values map[string]any) ValidationResult {
 	result := ValidationResult{
 		Errors: make(map[string][]Violation),
 	}
 
 	for _, f := range s.Fields {
-		// Auto-generated fields are created server-side, skip validation
 		if f.AutoGenerate != AutoNone {
 			continue
 		}
@@ -204,11 +169,8 @@ func ValidateAll(s Schema, values map[string]any) ValidationResult {
 	return result
 }
 
-// ValidatePartial validates only the fields that are present in `values`.
-// Missing fields, required or not, are not reported. Use this for
-// partial-update flows (PUT/PATCH with only the fields the caller wants
-// to change) so a sparse update doesn't fail because some other required
-// field happens not to be in the body.
+// ValidatePartial validates only the fields present in values, for partial
+// updates: an absent field, required or not, is not reported.
 func ValidatePartial(s Schema, values map[string]any) ValidationResult {
 	result := ValidationResult{
 		Errors: make(map[string][]Violation),

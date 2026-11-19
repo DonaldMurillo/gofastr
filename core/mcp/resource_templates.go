@@ -6,13 +6,7 @@ import (
 	"strings"
 )
 
-// ResourceTemplate is a registered MCP resource template: an RFC 6570 URI
-// template (e.g. "help://docs/{topic}") a client expands with its own
-// parameters to derive concrete resource URIs, instead of listing them
-// one by one. Templates are advertised by resources/templates/list; the
-// concrete resources they expand to are served through resources/read
-// like any other resource (a template registration does not create a
-// readable resource by itself).
+// ResourceTemplate is a registered RFC 6570 URI template, listed by resources/templates/list and never expanded server-side.
 type ResourceTemplate struct {
 	URITemplate string         `json:"uriTemplate"`
 	Name        string         `json:"name"`
@@ -23,31 +17,20 @@ type ResourceTemplate struct {
 	gate func(ctx context.Context) error
 }
 
-// ResourceTemplateOption customizes a resource template at registration
-// time.
+// ResourceTemplateOption customizes a resource template at registration.
 type ResourceTemplateOption func(*ResourceTemplate)
 
-// WithResourceTemplateDescription sets a human/agent-readable
-// description, shown in resources/templates/list.
+// WithResourceTemplateDescription sets the description resources/templates/list shows.
 func WithResourceTemplateDescription(desc string) ResourceTemplateOption {
 	return func(t *ResourceTemplate) { t.Description = desc }
 }
 
-// WithResourceTemplateMeta attaches a `_meta` object to a template,
-// serialized verbatim in resources/templates/list. Symmetric with
-// [WithResourceMeta] on the resource side.
+// WithResourceTemplateMeta sets the template's `_meta`, serialized verbatim.
 func WithResourceTemplateMeta(meta map[string]any) ResourceTemplateOption {
 	return func(t *ResourceTemplate) { t.Meta = meta }
 }
 
-// WithResourceTemplateGate attaches a per-caller precondition to a
-// template. A template has no read path of its own: the listing entry is
-// the whole disclosure. So the gate filters resources/templates/list,
-// the contract [WithResourceGate] and [WithPromptGate] follow too: a
-// caller the gate refuses never sees the template, and pagination walks
-// the post-filter set.
-//
-// battery/auth's MCPUser() / MCPRole("admin") are ready-made gates.
+// WithResourceTemplateGate attaches a per-caller gate that hides the template from resources/templates/list. It panics on a nil gate.
 func WithResourceTemplateGate(gate func(ctx context.Context) error) ResourceTemplateOption {
 	if gate == nil {
 		panic("mcp.WithResourceTemplateGate: nil gate — a nil precondition would silently allow every caller")
@@ -55,14 +38,7 @@ func WithResourceTemplateGate(gate func(ctx context.Context) error) ResourceTemp
 	return func(t *ResourceTemplate) { t.gate = gate }
 }
 
-// RegisterResourceTemplate adds a resource template to the server,
-// mirroring [Server.RegisterResource]. Registering at least one template
-// makes the server advertise the `resources` capability in initialize
-// (the spec has one capability for both surfaces). Returns an error on
-// empty uriTemplate/name or a duplicate uriTemplate.
-//
-// The uriTemplate must be an RFC 6570 URI template; it is stored and
-// advertised verbatim, not expanded server-side.
+// RegisterResourceTemplate adds a template and advertises the resources capability; it errors on an empty uriTemplate or name or a duplicate uriTemplate.
 func (s *Server) RegisterResourceTemplate(uriTemplate, name, mimeType string, opts ...ResourceTemplateOption) error {
 	if uriTemplate == "" {
 		return fmt.Errorf("mcp: resource template uriTemplate must not be empty")
@@ -87,12 +63,6 @@ func (s *Server) RegisterResourceTemplate(uriTemplate, name, mimeType string, op
 	s.templates[uriTemplate] = tpl
 	s.mu.Unlock()
 
-	// The spec folds templates under the one `resources` capability and
-	// has no separate template list_changed, so a template registration
-	// fires the resources one: connected clients re-list both surfaces.
-	// The notification carries the template's own gate: a caller the
-	// gate refuses never sees the template in resources/templates/list,
-	// and must not be told it appeared either.
 	s.notifySubscribers(sseNotification{
 		method:   "notifications/resources/list_changed",
 		itemGate: tpl.gate,
@@ -100,36 +70,22 @@ func (s *Server) RegisterResourceTemplate(uriTemplate, name, mimeType string, op
 	return nil
 }
 
-// hasTemplates reports whether any resource template is registered
-// (drives the `resources` capability advertisement together with
-// hasResources).
 func (s *Server) hasTemplates() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.templates) > 0
 }
 
-// resourceTemplatesListResult is the result shape for
-// resources/templates/list. The nextCursor key is absent on the final
-// page, and on every page when the whole listing fits (the
-// pre-pagination wire shape).
 type resourceTemplatesListResult struct {
 	ResourceTemplates []ResourceTemplate `json:"resourceTemplates"` //gofastr:required-array
 	NextCursor        string             `json:"nextCursor,omitempty"`
 }
 
-// handleResourcesTemplatesList returns one page of the templates visible
-// to the caller, in uriTemplate order. The gate runs BEFORE the page is
-// cut, so pagination walks the post-filter set: a gated template never
-// surfaces on a page and never bends the page sizes or cursor arithmetic
-// that would otherwise count it.
 func (s *Server) handleResourcesTemplatesList(ctx context.Context, req Request) Response {
 	offset, err := s.listOffset(req, "resources/templates/list")
 	if err != nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
 	}
-	// A template the caller cannot use is not listed to them: the
-	// uriTemplate and description are the disclosure.
 	page, next := gatedListPage(s, ctx, "resources/templates/list", offset,
 		func() map[string]ResourceTemplate { return s.templates },
 		func(tpl ResourceTemplate) func(context.Context) error { return tpl.gate },

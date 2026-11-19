@@ -1,0 +1,23 @@
+primitive: schema.jsonschema
+summary: JSONSchema, the draft-07 object for a field list that entity endpoints and MCP tools publish.
+code:
+  - core/schema/jsonschema.go
+docs:
+  - framework/docs/content/entity-declarations.md
+invariants:
+  - id: keyed-by-wire-name
+    rule: JSONSchema keys each property and each required entry by the field's WireName when it has one, else its Name.
+    enforced_by:
+      - test: core/schema.TestWireAliasJSONSchema
+  - id: schema-owns-its-slices
+    rule: An Enum property's enum list is a copy, so mutating the returned schema never changes the Field's Values.
+    enforced_by:
+      - test: core/schema.TestEnumJSONSchemaOwnsValues
+  - id: json-field-untyped
+    rule: A JSON field's property has no type keyword, so any JSON value validates.
+    enforced_by:
+      - test: core/schema.TestSweepSchemaJSONFieldHasNoTypeConstraint
+  - id: uuid-pattern-is-the-validator
+    rule: A UUID property's pattern is the validator's own UUID regexp.
+    enforced_by:
+      - test: core/schema.TestSweepSchemaUUIDPatternMatchesValidator

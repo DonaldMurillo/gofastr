@@ -7,9 +7,6 @@ import (
 	"syscall"
 )
 
-// killGroupOnCancel runs cmd in its own process group and makes the
-// context's cancel kill the whole group, so a child the shell
-// backgrounded dies with it instead of holding the output pipe open.
 func killGroupOnCancel(cmd *exec.Cmd) {
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}

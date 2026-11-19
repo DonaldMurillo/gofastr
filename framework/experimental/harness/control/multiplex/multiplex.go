@@ -1,18 +1,3 @@
-// Package multiplex implements the multi-client routing layer that
-// sits between transports and the engine. Per hard rule 7, this is
-// where "engine knows about clients, not transports" lives.
-//
-// Responsibilities:
-//
-//   - Track all attached clients per session.
-//   - Total-order SendInput across all transports (mid-turn input
-//     rejected with TurnInProgress; rule 9).
-//   - Track originator for each turn so PermissionRequested events
-//     carry the right ClientID.
-//   - Enforce permission arbitration: agents cannot self-approve
-//     (rule 11); at least one human ack required by default.
-//   - Broadcast events to all attached clients of a session.
-//   - Route AnswerPermission deliveries to the engine.
 package multiplex
 
 import (
@@ -27,8 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
 
-// Mux is the multiplexer. One per harness process; manages multiple
-// EngineRuns simultaneously.
+// Mux routes every transport's commands to the session engines it holds, one per harness process.
 type Mux struct {
 	mu      sync.RWMutex
 	engines map[ids.SessionID]*engineState
@@ -40,31 +24,19 @@ type engineState struct {
 	clientsMu sync.RWMutex
 	clients   map[ids.ClientID]control.Client
 
-	// Total-ordering: turnBusy is atomic; turnOriginator is stored
-	// atomically too, the rejection path and the pending-permission
-	// path read it from other goroutines while the turn goroutine's
-	// release() clears it, so a plain field is a data race. A slightly
-	// stale originator in a rejection message is acceptable; a torn
-	// read is not.
 	turnBusy       atomic.Bool
-	turnOriginator atomic.Value // ids.ClientID
+	turnOriginator atomic.Value
 
-	// turnCancel ends the turn that set it and nothing else, so a
-	// CancelTurn with no turn running reaches only a finished turn's
-	// context instead of one every later turn inherits.
 	turnMu     sync.Mutex
 	turnCancel context.CancelCauseFunc
 
-	// Permission arbitration: pending permission calls awaiting answers.
 	pendingMu    sync.Mutex
 	pendingPerms map[ids.CallID]*pendingPermission
 }
 
 type pendingPermission struct {
-	originator ids.ClientID
-	answerCh   chan engine.PermissionAnswer
-	// AutoApprove disables the human-ack requirement (the
-	// --auto-approve flag's effect on this prompt only).
+	originator  ids.ClientID
+	answerCh    chan engine.PermissionAnswer
 	autoApprove bool
 }
 
@@ -76,8 +48,7 @@ func New() *Mux {
 	}
 }
 
-// RegisterEngine binds an EngineRun to the multiplexer. Subsequent
-// Attach calls for the same session can connect clients to it.
+// RegisterEngine adds a session's engine so clients can Attach to it.
 func (m *Mux) RegisterEngine(e *engine.Engine) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -88,8 +59,7 @@ func (m *Mux) RegisterEngine(e *engine.Engine) {
 	}
 }
 
-// UnregisterEngine removes a session from the mux. Attached clients
-// receive SessionEnded as the engine shuts down separately.
+// UnregisterEngine removes a session; it does not stop the engine.
 func (m *Mux) UnregisterEngine(session ids.SessionID) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -106,8 +76,7 @@ func (m *Mux) EngineFor(session ids.SessionID) *engine.Engine {
 	return nil
 }
 
-// Attach registers a client with the mux for one session. The client
-// will receive broadcast events and can issue commands via Dispatch.
+// Attach adds a client to a session; it errors on an unknown session or a client already attached.
 func (m *Mux) Attach(session ids.SessionID, c control.Client) error {
 	m.mu.RLock()
 	st, ok := m.engines[session]
@@ -124,8 +93,7 @@ func (m *Mux) Attach(session ids.SessionID, c control.Client) error {
 	return nil
 }
 
-// Detach removes a client. Non-destructive at the engine level, the
-// EngineRun continues, events still flow to other attached clients.
+// Detach removes a client from a session; the engine keeps running.
 func (m *Mux) Detach(session ids.SessionID, clientID ids.ClientID) {
 	m.mu.RLock()
 	st, ok := m.engines[session]
@@ -157,12 +125,7 @@ func (m *Mux) HasHumanAttached(session ids.SessionID) bool {
 	return false
 }
 
-// Dispatch is the single entry point for client → engine commands.
-// All transports call this; the mux enforces total ordering, identity
-// rules, and routes the command.
-//
-// Returns an error event Reason on failure (caller wraps as
-// control.Error and sends to the originating client).
+// Dispatch runs SendInput, CancelTurn and AnswerPermission and returns ErrUnhandledCommand for any other command.
 func (m *Mux) Dispatch(ctx context.Context, c control.Client, cmd control.Command) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -175,9 +138,6 @@ func (m *Mux) Dispatch(ctx context.Context, c control.Client, cmd control.Comman
 	case control.AnswerPermission:
 		return m.handleAnswer(ctx, c, v)
 	}
-	// Other commands (CreateSession, AttachSession, SetModel, etc.)
-	// are handled by the harness composition layer; the mux only
-	// arbitrates the session-scoped per-turn commands above.
 	return ErrUnhandledCommand
 }
 
@@ -186,21 +146,10 @@ func (m *Mux) handleSendInput(_ context.Context, c control.Client, cmd control.S
 	if !ok {
 		return ErrUnknownSession
 	}
-	// Acquire turn slot. If already busy, reject with TurnInProgress.
 	if !st.turnBusy.CompareAndSwap(false, true) {
 		return &TurnInProgressError{OriginatorID: st.originatorID()}
 	}
 	st.turnOriginator.Store(c.ID())
-	// Release the slot via the engine's OnTurnEnd hook so it happens
-	// BEFORE the TurnEnded event is published, prevents a subscriber
-	// reacting to TurnEnded from racing into the slot. The deferred
-	// fallback below catches the case where RunTurn returns without
-	// going through publishTurnEnd (shouldn't happen but defends).
-	// The turn runs on its own context under the engine's CancelTree,
-	// NOT the caller's ctx: that may be a short-lived HTTP request
-	// context that would cancel the turn the instant the POST handler
-	// returns. CancelTurn cancels this context alone; cancelling the
-	// tree itself would end every later turn too.
 	turnCtx, cancelTurn := context.WithCancelCause(st.engine.Tree.Context())
 	st.turnMu.Lock()
 	st.turnCancel = cancelTurn
@@ -214,8 +163,8 @@ func (m *Mux) handleSendInput(_ context.Context, c control.Client, cmd control.S
 	}
 	st.engine.OnTurnEnd = release
 	go func() {
-		defer cancelTurn(nil) // free the context once RunTurn returns
-		defer release()       // fallback if OnTurnEnd never fired
+		defer cancelTurn(nil)
+		defer release()
 		_ = st.engine.RunTurn(turnCtx, c.ID(), cmd.Content)
 	}()
 	return nil
@@ -235,8 +184,6 @@ func (m *Mux) handleCancel(ctx context.Context, c control.Client, cmd control.Ca
 	return nil
 }
 
-// handleAnswer enforces identity-class rules and routes the answer to
-// the engine's pending permission middleware.
 func (m *Mux) handleAnswer(ctx context.Context, c control.Client, cmd control.AnswerPermission) error {
 	st, ok := m.engines[cmd.SessionID]
 	if !ok {
@@ -248,10 +195,6 @@ func (m *Mux) handleAnswer(ctx context.Context, c control.Client, cmd control.An
 	if !ok {
 		return ErrNoPendingPermission
 	}
-	// Identity-class rules:
-	//   - Agents cannot self-approve their own turn (rule 11).
-	//   - Other agents can answer if AutoApprove is set; otherwise a
-	//     human is required.
 	if c.ID() == pend.originator && c.IdentityClass() == control.IdentityAgent {
 		return ErrAgentCannotSelfApprove
 	}
@@ -269,8 +212,7 @@ func (m *Mux) handleAnswer(ctx context.Context, c control.Client, cmd control.An
 	}
 }
 
-// Subscribe implements engine.AnswerRouter, the permission middleware
-// calls Subscribe to wait for answers.
+// Subscribe implements engine.AnswerRouter: it returns the channel a permission answer for callID arrives on.
 func (m *Mux) Subscribe(session ids.SessionID, callID ids.CallID) <-chan engine.PermissionAnswer {
 	m.mu.RLock()
 	st, ok := m.engines[session]
@@ -290,8 +232,7 @@ func (m *Mux) Subscribe(session ids.SessionID, callID ids.CallID) <-chan engine.
 	return ch
 }
 
-// Unsubscribe is called by the middleware when the permission resolves
-// (allowed, denied, or timed out).
+// Unsubscribe implements engine.AnswerRouter: it drops the pending prompt for callID.
 func (m *Mux) Unsubscribe(session ids.SessionID, callID ids.CallID) {
 	m.mu.RLock()
 	st, ok := m.engines[session]
@@ -304,7 +245,7 @@ func (m *Mux) Unsubscribe(session ids.SessionID, callID ids.CallID) {
 	st.pendingMu.Unlock()
 }
 
-// Errors. These are wire-format Reason codes for control.Error events.
+// The Mux's refusals.
 var (
 	ErrUnknownSession         = errors.New("multiplex: unknown session")
 	ErrNoPendingPermission    = errors.New("multiplex: no pending permission")
@@ -323,8 +264,6 @@ func (e *TurnInProgressError) Error() string {
 	return "multiplex: another client is sending input (originator " + string(e.OriginatorID) + ")"
 }
 
-// engineState's mu is the per-session lock guarding clients map. The
-// pendingPerms map has its own lock for tighter granularity.
 func (s *engineState) mu() *sessionLock {
 	return &sessionLock{s: s}
 }
@@ -336,8 +275,6 @@ func (l *sessionLock) Unlock()  { l.s.clientsMu.Unlock() }
 func (l *sessionLock) RLock()   { l.s.clientsMu.RLock() }
 func (l *sessionLock) RUnlock() { l.s.clientsMu.RUnlock() }
 
-// originatorID returns the current turn's originating client, or the
-// zero ClientID when no turn has ever run on this session.
 func (st *engineState) originatorID() ids.ClientID {
 	if v := st.turnOriginator.Load(); v != nil {
 		return v.(ids.ClientID)

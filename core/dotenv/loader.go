@@ -8,17 +8,8 @@ import (
 	"sort"
 )
 
-// Load reads one or more .env files and returns the merged key/value
-// map. EARLIER paths take precedence on key conflict, and a ${NAME} in
-// a double-quoted value reads the value that ends up applied: os.Environ
-// first (Apply never overwrites it), then an earlier file's value, then
-// the same file's earlier keys, then empty. With DB_HOST=prod in the
-// environment, DATABASE_URL="postgres://${DB_HOST}/app" is built on
-// prod, and a later file's ${DB_HOST} matches the DB_HOST that is
-// applied, not the one an earlier file shadowed. The convention
-// is to pass most-specific first (e.g. .env.local, .env.<APP_ENV>,
-// .env). Missing files are silently skipped; a malformed file returns
-// an error naming the file.
+// Load merges the .env files at paths, earlier paths winning, skipping missing files.
+// A ${NAME} reads os.Environ first, then an earlier file, then the same file's earlier keys.
 func Load(paths ...string) (map[string]string, error) {
 	merged := map[string]string{}
 	for _, p := range paths {
@@ -36,7 +27,6 @@ func Load(paths ...string) (map[string]string, error) {
 		}
 		for k, v := range parsed {
 			if _, set := merged[k]; set {
-				// Earlier file already set this; keep its value.
 				continue
 			}
 			merged[k] = v
@@ -45,22 +35,13 @@ func Load(paths ...string) (map[string]string, error) {
 	return merged, nil
 }
 
-// Apply writes vals into the process environment via os.Setenv, but
-// ONLY for keys not already present in os.Environ. Returns the keys
-// actually set (loaded) and those skipped because env already had a
-// value. Both slices are sorted for stable test output.
-//
-// Existing env wins. Operators expect their explicit configuration
-// to override dotfiles. (Some loaders flip this; do not.)
+// Apply sets each key of vals not already in the environment and returns the sorted keys it set and skipped.
 func Apply(vals map[string]string) (loaded, skipped []string) {
 	for k, v := range vals {
 		if _, exists := os.LookupEnv(k); exists {
 			skipped = append(skipped, k)
 			continue
 		}
-		// Setenv error path is only platform-edge, empty key, NUL,
-		// our parser already filters those. Swallow defensively
-		// rather than fail the whole startup on a typo.
 		if err := os.Setenv(k, v); err == nil {
 			loaded = append(loaded, k)
 		}
@@ -70,8 +51,7 @@ func Apply(vals map[string]string) (loaded, skipped []string) {
 	return loaded, skipped
 }
 
-// LoadAndApply is Load + Apply in one call, the common shape for
-// boot-time wiring.
+// LoadAndApply is Load followed by Apply.
 func LoadAndApply(paths ...string) error {
 	vals, err := Load(paths...)
 	if err != nil {

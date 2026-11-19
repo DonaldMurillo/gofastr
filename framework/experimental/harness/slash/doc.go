@@ -1,4 +1,2 @@
-// Package slash is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md § Slash commands.
+// Package slash parses slash commands typed at a client and lists the built-in commands.
 package slash

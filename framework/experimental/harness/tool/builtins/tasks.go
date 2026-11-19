@@ -1,25 +1,5 @@
 package builtins
 
-// TaskList, the harness equivalent of Claude Code's TodoWrite. The
-// model maintains a structured plan as it works through a multi-step
-// task. Each call REPLACES the whole list (the model thinks holistically
-// about what's left); the harness keeps the latest snapshot per session
-// so clients (TUI, web) can render it in a sidebar.
-//
-// Design choices vs Claude Code:
-//
-//   - Single tool, single action ("write the new list"). Atomic-replace
-//     is simpler than create/update/delete/list, and matches how LLMs
-//     actually think about plans.
-//   - State is per-session, kept in a mutex-protected package map
-//     keyed by SessionID. Persisting to SQLite is a roadmap item; the
-//     in-memory store is enough for v0.1 since the model re-emits the
-//     list on every change (so it's never the source of truth).
-//   - Tasks have three statuses: pending, in_progress, completed.
-//     Exactly one task at a time SHOULD be in_progress; we don't
-//     enforce this (the model is free to violate it for valid
-//     parallel-work patterns).
-
 import (
 	"context"
 	"encoding/json"
@@ -35,23 +15,18 @@ import (
 
 // TaskItem is one entry in the plan.
 type TaskItem struct {
-	Content    string `json:"content"`              // imperative form, "Read x.go"
-	Status     string `json:"status"`               // pending|in_progress|completed
-	ActiveForm string `json:"activeForm,omitempty"` // present-progressive, "Reading x.go"
+	Content    string `json:"content"`
+	Status     string `json:"status"`
+	ActiveForm string `json:"activeForm,omitempty"`
 }
 
-// taskStore is the in-memory per-session list. Plain map + mutex; the
-// state is tiny (≤ N tasks per session, ≤ 1KB total) so we don't need
-// anything fancier.
 var (
 	taskMu    sync.RWMutex
 	taskStore = map[ids.SessionID][]TaskItem{}
-	taskUpd   = map[ids.SessionID]time.Time{} // last-write timestamp, for UI
+	taskUpd   = map[ids.SessionID]time.Time{}
 )
 
-// TaskListSnapshot returns the current list for a session. Exported
-// so transports (REST, WS, web sidecar) can surface it without
-// dispatching the tool, the tool is the WRITE path; this is the read.
+// TaskListSnapshot returns a copy of a session's task list and when it was last written.
 func TaskListSnapshot(sess ids.SessionID) ([]TaskItem, time.Time) {
 	taskMu.RLock()
 	defer taskMu.RUnlock()
@@ -59,8 +34,7 @@ func TaskListSnapshot(sess ids.SessionID) ([]TaskItem, time.Time) {
 	return items, taskUpd[sess]
 }
 
-// ResetTasks clears a session's task list. Used by /clear-style
-// commands or explicit test teardown.
+// ResetTasks clears a session's task list.
 func ResetTasks(sess ids.SessionID) {
 	taskMu.Lock()
 	defer taskMu.Unlock()
@@ -68,10 +42,7 @@ func ResetTasks(sess ids.SessionID) {
 	delete(taskUpd, sess)
 }
 
-// TaskList is the tool the model calls to rewrite its plan. The
-// active session is resolved from the dispatch ctx via
-// tool.SessionFromContext, so a single registered instance serves
-// all sessions without stale-binding bugs.
+// TaskList replaces the calling session's task list, the session read from the dispatch context.
 type TaskList struct{}
 
 func (TaskList) Name() string { return "TaskList" }
@@ -80,7 +51,7 @@ func (TaskList) Description() string {
 		"Use to break a multi-step task into trackable items, mark the current one in_progress, and mark items completed as you finish them. " +
 		"Each item: content (imperative, what TODO), status (pending|in_progress|completed), activeForm (optional, present-progressive description of the in-flight work)."
 }
-func (TaskList) Mutating() bool { return false } // plan changes are stateless from the tool's POV
+func (TaskList) Mutating() bool { return false }
 func (TaskList) InputSchema() []byte {
 	return []byte(`{
   "type": "object",
@@ -117,7 +88,6 @@ func (TaskList) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (
 	if err := json.Unmarshal(call.Input, &args); err != nil {
 		return nil, fmt.Errorf("TaskList: invalid arguments: %w", err)
 	}
-	// Validate status values.
 	for i, t := range args.Tasks {
 		if t.Content == "" {
 			return errorResult(fmt.Sprintf("TaskList: tasks[%d].content is required", i)), nil
@@ -129,14 +99,11 @@ func (TaskList) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (
 				i, t.Status)), nil
 		}
 	}
-	// Replace the list atomically.
 	taskMu.Lock()
 	taskStore[sess] = append([]TaskItem(nil), args.Tasks...)
 	taskUpd[sess] = time.Now()
 	taskMu.Unlock()
 
-	// Echo a compact summary to the model, it doesn't need the full
-	// list back, just confirmation of what's recorded.
 	var lines []string
 	var pending, inProgress, done int
 	for i, t := range args.Tasks {

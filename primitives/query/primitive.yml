@@ -1,0 +1,37 @@
+primitive: query
+summary: The core/query package, which builds parameterized SQL for Postgres and SQLite, validates and quotes identifiers, and probes the dialect; this root owns the dialect probe and the transaction helper.
+code:
+  - core/query/doc.go
+  - core/query/dialect.go
+  - core/query/transaction.go
+docs:
+  - framework/docs/content/migrations.md
+twins:
+  - job: Decide whether a database is Postgres by asking it for SELECT version() and looking for the PostgreSQL banner.
+    why: The migrator must fail closed and retries on an unreachable database, and crud reports whether its answer is certain and caches it per executor, while IsPostgres is one best-effort shot; nothing yet shares the banner check between them.
+    sites:
+      - path: core/query/dialect.go
+        note: IsPostgres, one shot, any error reads as not Postgres.
+      - path: framework/migrate/migrate.go
+        note: detectDialectFailClosed, retried and failing closed.
+      - path: framework/crud/key.go
+        note: probeDialect and isPostgres, with a certainty flag and a cache.
+invariants:
+  - id: probe-error-is-not-postgres
+    rule: IsPostgres reports true only when SELECT version() succeeds with a banner containing postgresql, and false on any error or other banner.
+    enforced_by:
+      - test: core/query.TestIsPostgres
+  - id: transaction-rolls-back-unless-fn-succeeds
+    rule: Transaction commits only when fn returns nil and rolls the transaction back when fn errors or panics.
+    enforced_by:
+      - test: core/query.TestTransactionRollsBackOnPanic
+decisions:
+  - id: dialect-probe-is-best-effort
+    date: 2026-11-18
+    status: accepted
+    decision: IsPostgres asks once and reads any failure as the SQLite-compatible path.
+    rejected:
+      - option: Retry the probe and fail closed on an unreachable database.
+        why: Most callers pick SQL text at construction and must not block or fail there; boot-critical callers use the migrator's retrying probe instead.
+    revisit_if: A caller of IsPostgres must refuse to start when the database cannot be reached.
+    upholds: [probe-error-is-not-postgres]
