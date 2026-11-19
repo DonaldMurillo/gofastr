@@ -619,7 +619,7 @@ The single "is this IP internal" predicate (loopback, private,
 link-local, site-local IPv6, CGNAT, cloud-metadata), normalizing
 IPv4-mapped IPv6 first and checking IPv4 addresses carried by NAT64,
 6to4, IPv4-compatible IPv6, and Teredo. Teredo is refused if either
-its server or its decoded client IPv4 is internal, with a `Reason` helper. Tiny: two exported funcs. Indirect:
+its server or its decoded client IPv4 is internal, with a `Reason` helper. Indirect:
 outbound-fetch surfaces (webhooks, A2A push, the harness WebFetch tool,
 the Web Bot Auth directory fetch) enforce it at dial time;
 app authors do not call it. Start at `core/netguard/netguard.go`:
@@ -635,6 +635,11 @@ own and gives the clone the guarded dialer, so a custom TLS or pool
 setting keeps the dial-time check. A transport that would speak HTTP/2
 on its own still does after the swap. Any other transport gets the
 weaker per-request check.
+`OriginAllowed(r, allowed)` is the cross-origin check core/mcp and core/a2a
+share: it passes a request with no Origin, one whose Origin names the
+request's own Host, and one whose Origin matches an allow-list entry
+case-insensitively. `IsLoopbackAuthority` is the Host pin for loopback-only
+servers.
 
 ### textsafe
 

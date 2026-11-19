@@ -4,7 +4,144 @@ code:
   - core/a2a/
 docs:
   - framework/docs/content/a2a.md
+on_change:
+  - The agent card in framework/uihost copies Skills() and Capabilities(); a change to either reaches the card.
+twins:
+  - job: Refuse a browser request whose Origin names another authority than the request's Host.
+    why: Work not yet done; core/mcp and core/a2a share netguard.OriginAllowed, while core/stream lets a custom check win and refuses an unparseable Origin only when the Host differs, and framework/uihost answers through i18n with no allow list.
+    sites:
+      - path: core/netguard/origin.go
+        note: OriginAllowed, for core/mcp's and core/a2a's originOK.
+      - path: core/stream/websocket.go
+        note: checkOrigin, for the WebSocket upgrade.
+      - path: framework/uihost/session.go
+        note: rejectCrossOrigin, for the session endpoints.
+  - job: Refuse a caller-registered outbound URL that targets internal infrastructure, and guard the delivery client against SSRF at dial time.
+    why: Work not yet done; core/a2a and battery/webhook each validate the URL and wrap a supplied client the same way, but a2a bounds its registration DNS lookup by pushLookupTimeout and refuses credentials over plain http, while webhook calls an unbounded net.LookupIP and checks the URL is storable text.
+    sites:
+      - path: core/a2a/push.go
+        note: validatePushURL, guardedClient and guardedRoundTripper.
+      - path: battery/webhook/ssrf.go
+        note: validateSubscriberURL, ssrfGuardClient and ssrfGuardedRoundTripper.
 invariants:
+  - id: transport-refusals
+    rule: ServeHTTP answers a non-POST 405, a foreign Origin not on the allow list 403, a non-JSON content type 415, an oversized body 413, a body that is not valid UTF-8 or not one strict JSON object 400 with -32700, a batch -32600, an id that is absent, null or not a string or number -32600 with a null id, and jsonrpc other than "2.0" -32600, all before the owner is resolved or a method runs.
+    enforced_by:
+      - test: core/a2a.TestPOSTOnly405
+      - test: core/a2a.TestA2AServerRejectsForeignOrigin
+      - test: core/a2a.TestWrongContentType415
+      - test: core/a2a.TestBodyOverLimit413
+      - test: core/a2a.TestRawInvalidUTF8BodyRefused
+      - test: core/a2a.TestBatchArray32600
+      - test: core/a2a.TestRequestIDTypeRefused
+      - test: core/a2a.TestWrongJSONRPCVersion
+  - id: strict-json-everywhere
+    rule: The body's keys at every depth may not repeat or case-fold onto each other (handler.UnmarshalStrict on the envelope, handler.CheckObjectKeys in decodeParams), and params decode through jsonexact so integers past 2^53 reach handlers and stores exactly.
+    enforced_by:
+      - test: core/a2a.TestRejectsDuplicateEnvelopeKeys
+      - test: core/a2a.TestRejectsCaseFoldedEnvelopeKeys
+      - test: core/a2a.TestSendMetadataKeepsBigIntegers
+      - test: core/a2a.TestPartKeepsBigIntegers
+  - id: owner-before-every-method
+    rule: NewServer refuses a nil Config.Owner, and every method, the extended card included, answers 401 with -31401 when Owner refuses the caller, returns an owner SQL cannot store, or Tenant returns a tenant SQL cannot store.
+    enforced_by:
+      - test: core/a2a.TestNewServerValidation
+      - test: core/a2a.TestUnauthenticatedAllMethods
+      - test: core/a2a.TestUnstorableOwnerAndTenantRefused
+  - id: responses-not-cached
+    rule: Every JSON-RPC response and every SSE stream is sent with Cache-Control no-store.
+    enforced_by:
+      - test: core/a2a.TestA2APostRedNoStore
+  - id: caller-tier-sees-own-tasks
+    rule: A scoped caller reaches only tasks made under its own ScopeKey and, with Config.Tenant, only tasks made in its current tenant; any other task reads as not found, and ListTasks drops another tier's row even from a store that claims ScopeFilter or TenantFilter, or walks the owner's tasks through a store that claims neither.
+    enforced_by:
+      - test: core/a2a.TestNarrowTokenCannotReadSessionTask
+      - test: core/a2a.TestTaskHiddenFromOtherTenant
+      - test: core/a2a.TestLyingScopeStoreLeaksNoTask
+      - test: core/a2a.TestListFiltersScopeOverLaxStore
+      - test: core/a2a.TestLaxStorePagesOnlyCallerTier
+  - id: history-length-trims-copies
+    rule: historyLength trims the history of the task a response carries on every task surface, never the stored history.
+    enforced_by:
+      - test: core/a2a.TestHistoryLengthEveryTaskSurface
+  - id: run-claims
+    rule: A run is claimed before the task's WORKING write; after Shutdown no run is claimed, an owner past MaxConcurrentRunsPerOwner is refused -32004, a send to a SUBMITTED or WORKING task is refused -32004, and of concurrent resumes of one paused task exactly one wins.
+    enforced_by:
+      - test: core/a2a.TestShutdownCancelsAndWaitsForRuns
+      - test: core/a2a.TestOwnerCannotExceedConcurrentRunLimit
+      - test: core/a2a.TestResumeRefusedAtConcurrentRunLimit
+      - test: core/a2a.TestConcurrentResumeExactlyOneWinner
+      - test: core/a2a.TestSendToRunningTask32004
+  - id: resume-push-config-matches-task
+    rule: A resume whose push config names a different taskId than the addressed task is refused -32602 before anything is stored.
+    enforced_by:
+      - test: core/a2a.TestResumeMismatchedPushTaskID32602
+  - id: run-outlives-its-request
+    rule: A run's context drops the request's cancellation and ends at TaskTimeout or Shutdown, so a blocking SendMessage whose client hangs up returns at once while the run carries on, and a run CancelTask halted before it started never calls its handler.
+    enforced_by:
+      - test: core/a2a.TestSendReturnsWhenClientHangsUp
+      - test: core/a2a.TestCancelBeforeStartRunSkipsHandler
+      - test: core/a2a.TestShutdownHonoursItsDeadline
+  - id: finalize-panic-contained
+    rule: A panic in the run goroutine outside the handler (finalize's Store calls, publishing, trims) is recovered and logged, and the run is still released.
+    enforced_by:
+      - test: core/a2a.TestFinalizeStorePanicContained
+  - id: remote-cancel-reaches-local-run
+    rule: With a shared store, a live run polls the store, and a terminal state it did not write (or a missing row) halts the run, cuts its handler's context and tells its local subscribers.
+    enforced_by:
+      - test: core/a2a.TestCancelCrossReplica
+      - test: core/a2a.TestCancelTrimmedCrossReplica
+  - id: cancel-halts-then-writes
+    rule: CancelTask halts the local run before its CANCELED write so the run's later writes are refused, wakes the run only after, reads and writes on the request's values without its cancellation, and answers a run that settled as CANCELED with the task rather than -32002.
+    enforced_by:
+      - test: core/a2a.TestCancelPersistsBeforeWakingRun
+      - test: core/a2a.TestCancelAnswersRunFinalizedCanceled
+      - test: core/a2a.TestCancelTaskUsesRequestValues
+  - id: retention-bounds
+    rule: After each settle and each pause the tier's oldest terminal rows past TerminalTaskRetention are deleted and its oldest paused rows past PausedTaskRetention canceled, never touching another tier even through a store whose ListTasks ignores scope and tenant, a task moving between paused states counts once, push configs past MaxPushConfigsPerTask are deleted after each create, and NewServer refuses a store with a trim method that does not implement RetentionTrimmer.
+    enforced_by:
+      - test: core/a2a.TestRetentionStaysInTier
+      - test: core/a2a.TestSweepPausedTrimStaysInTierOverBlindStore
+      - test: core/a2a.TestPausedTaskMovingCountsOnce
+      - test: core/a2a.TestTaskRowsBoundedForOneOwner
+      - test: core/a2a.TestStaleTrimmerRefused
+  - id: stream-admission
+    rule: A stream is refused -32004 without a flushing writer and 429 past MaxStreamSeatsPerOwner, both before a task is created or a run claimed, and once a run is claimed every path out of streamSend starts it.
+    enforced_by:
+      - test: core/a2a.TestStreamWithoutFlusher32004
+      - test: core/a2a.TestStreamSeatRefusalNoStrandedRun
+      - test: core/a2a.TestStreamSnapshotFailNoStrandedRun
+      - test: core/a2a.TestSubscribeRedSeatCapEnforced
+      - test: core/a2a.TestStreamSendRedSeatCapEnforced
+  - id: stream-sends-each-change-once
+    rule: A stream skips a bus event at or below the version of the snapshot it opened with, and follows the store instead of a local run that paused a task another replica resumed.
+    enforced_by:
+      - test: core/a2a.TestResubscribeNoDuplicateAppend
+      - test: core/a2a.TestSubscribeSeesRemotePauseUnderStaleRun
+  - id: subscribe-before-snapshot
+    rule: SubscribeToTask and SendStreamingMessage join the run's bus before they read or send the snapshot.
+    enforced_by:
+      - test: core/a2a.TestCancelDuringSnapshotReachesStream
+    judge: Does this change read or send a stream's snapshot before subscribing to the run's bus?
+  - id: stream-rechecks-caller
+    rule: At every event and keep-alive a stream re-establishes the principal and ends when Owner no longer resolves to the stream's owner or Tenant to its tenant at connect.
+    enforced_by:
+      - test: core/a2a.TestStreamEndsWhenOwnerRevoked
+      - test: core/a2a.TestPollStreamEndsWhenOwnerRevoked
+      - test: core/a2a.TestStreamEndsOnTenantSwitch
+  - id: sse-write-deadlines
+    rule: Each SSE write and keep-alive runs under a 10s write deadline that is cleared once it is flushed.
+    enforced_by:
+      - test: core/a2a.TestSSEWriteClearsDeadline
+      - test: core/a2a.TestKeepAliveSetsWriteDeadline
+  - id: poll-store-panic-ends-stream
+    rule: A panic in Store.GetTask during the polling fallback or the remote-cancel watch ends that stream or watch instead of the process.
+    enforced_by:
+      - test: core/a2a.TestPollStorePanicEndsStreamCleanly
+  - id: router-names-no-skills
+    rule: DefaultRouter's errors never list the registered skill ids.
+    enforced_by:
+      - test: core/a2a.TestRouterMissListsNoSkills
   - id: refused-send-leaves-no-push-config
     rule: A send that is refused after its push config was stored, a new task whose insert fails and a resume that loses its version race alike, deletes that config through dropSendPushConfig, so the retry can register it again.
     enforced_by:
@@ -19,3 +156,43 @@ decisions:
       - option: Copy the inline delete into prepareResume.
         why: The resume path had been missed once already, and a second copy would be the next one to miss a refusal.
     upholds: [refused-send-leaves-no-push-config]
+  - id: shared-origin-check
+    date: 2026-11-19
+    status: accepted
+    decision: core/a2a's and core/mcp's originOK both call netguard.OriginAllowed; the Origin parse and allow-list loop each server carried, and both originAllowListed methods, are removed.
+    rejected:
+      - option: Keep a copy per server.
+        why: The a2a copy said it mirrored core/mcp's, and nothing failed when one of them changed.
+    upholds: [transport-refusals]
+  - id: shared-seat-admission
+    date: 2026-11-19
+    status: accepted
+    decision: streamSeatRegistry admits and releases through stream.AdmitSeat and stream.SpliceSeat; its own FIFO, its untracked unlimited seats and the unused liveStreamSeats are removed.
+    rejected:
+      - option: Keep a2a's own admit and splice.
+        why: They were a fourth copy of the bodies core/stream already shares with framework/crud and the harness.
+    upholds: [stream-admission]
+  - id: plain-offset-page-tokens
+    date: 2026-11-19
+    status: accepted
+    decision: ListTasks and ListTaskPushNotificationConfigs page tokens are base64 of the plain offset into the caller's own filtered listing, unlike core/mcp's signed cursors.
+    rejected:
+      - option: core/mcp's HMAC cursors.
+        why: A forged offset only reaches tasks the caller may already list, and ListTasks already answers totalSize, so a signature hides nothing.
+    revisit_if: A list method starts serving rows the caller's tier cannot see, or stops reporting a total.
+    upholds: [caller-tier-sees-own-tasks]
+  - id: own-json-rpc-codes
+    date: 2026-11-19
+    status: accepted
+    decision: core/a2a exports its own JSON-RPC code constants and accepts only application/json and application/a2a+json, beside core/mcp's and core/acp's own codes and media types.
+    rejected:
+      - option: One shared set of constants and one content-type check.
+        why: Each is exported API of its package, the A2A spec names its own media type, and core/mcp accepts any +json type.
+  - id: requests-need-an-id
+    date: 2026-11-19
+    status: accepted
+    decision: A request with no id or a null id is refused -32600, where core/mcp and core/acp treat an id-less message as a notification.
+    rejected:
+      - option: Accept notifications.
+        why: A2A v1.0 defines no notification methods, so an id-less request could only be a client error answered with nowhere to go.
+    upholds: [transport-refusals]

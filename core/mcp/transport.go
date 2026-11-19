@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -125,18 +124,14 @@ func errorAsMaxBytes(err error, target **http.MaxBytesError) bool {
 }
 
 func (s *Server) originOK(r *http.Request) bool {
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		if err != nil || u.Host == "" || !strings.EqualFold(u.Host, r.Host) {
-			if !s.originAllowListed(origin) {
-				return false
-			}
-		}
-	}
 	s.mu.RLock()
+	origins := s.allowedOrigins
 	hosts := s.allowedHosts
 	loopbackOnly := s.requireLoopbackHost
 	s.mu.RUnlock()
+	if !netguard.OriginAllowed(r, origins) {
+		return false
+	}
 	if loopbackOnly && !netguard.IsLoopbackAuthority(r.Host) {
 		return false
 	}
@@ -145,17 +140,6 @@ func (s *Server) originOK(r *http.Request) bool {
 	}
 	for _, h := range hosts {
 		if strings.EqualFold(r.Host, h) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Server) originAllowListed(origin string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, o := range s.allowedOrigins {
-		if strings.EqualFold(origin, o) {
 			return true
 		}
 	}
