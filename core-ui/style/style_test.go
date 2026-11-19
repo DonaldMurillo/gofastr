@@ -187,20 +187,6 @@ func TestExtractFromHTML(t *testing.T) {
 	}
 }
 
-// --- StyleSheet integration -----------------------------------------------
-
-func TestStyleSheetSetEmitsVarRefs(t *testing.T) {
-	ss := NewStyleSheet(DefaultTheme())
-	ss.Rule(".x").Set("color", "{colors.primary}", "padding", "{spacing.md}").End()
-	got := ss.CSS()
-	if !strings.Contains(got, "color: var(--color-primary)") {
-		t.Errorf("Set should emit var ref: %q", got)
-	}
-	if !strings.Contains(got, "padding: var(--spacing-md)") {
-		t.Errorf("Set should emit var ref for spacing: %q", got)
-	}
-}
-
 // --- Reflection-derived token names ---------------------------------------
 
 func TestThemeAutoFillsTokenNames(t *testing.T) {

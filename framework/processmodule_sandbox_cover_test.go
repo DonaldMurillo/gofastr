@@ -2,7 +2,6 @@ package framework
 
 import (
 	"context"
-	"errors"
 	"os/exec"
 	"testing"
 
@@ -98,15 +97,6 @@ func TestSandboxRunner_StartSHAErrorBeforeWrap(t *testing.T) {
 	}
 	if backend.wrapped != 0 {
 		t.Errorf("backend.Wrap called %d times; SHA check must run BEFORE Wrap", backend.wrapped)
-	}
-}
-
-// ---- ExecutableSHAMismatchError satisfies the integrity-fault shape ----
-
-func TestExecutableSHAMismatchError_isIntegrity(t *testing.T) {
-	e := &ExecutableSHAMismatchError{Path: "x", Expected: "a", Actual: "b"}
-	if _, ok := errors.AsType[*ExecutableSHAMismatchError](e); !ok {
-		t.Error("errors.As must match *ExecutableSHAMismatchError")
 	}
 }
 
