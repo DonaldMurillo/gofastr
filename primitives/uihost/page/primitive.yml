@@ -215,7 +215,7 @@ invariants:
       - test: framework/uihost.TestModulePreloadsAreLowPriority
       - test: framework/uihost.TestModuleHintIsClassicPreload
   - id: caller-head-html-is-scrubbed
-    rule: "stripInlineScripts removes script, active-content and void resource tags, meta refresh, on* handlers and autofocus (with a / as well as a space before them), and preload-family or unsafe-URL links from caller head HTML, repeats until nothing changes, and returns nothing for HTML still changing after eight passes."
+    rule: "stripInlineScripts removes script, active-content and void resource tags, meta refresh, on* handlers and autofocus (after a space, a / or the quote that closes the previous value), and preload-family or unsafe-URL links, judged on the link's real attributes as the HTML tokenizer reads them, from caller head HTML, repeats until nothing changes, and returns nothing for HTML still changing after eight passes."
     enforced_by:
       - test: framework/uihost.TestWithHeadHTML_StripsDangerousTags
       - test: framework/uihost.TestHeadHTML_NeutralisesAutofocusXSS
@@ -223,6 +223,8 @@ invariants:
       - test: framework/uihost.TestSweepPageHeadLinkNeedsSafeHref
       - test: framework/uihost.TestHeadScrubDoesNotReassembleTags
       - test: framework/uihost.TestHeadScrubFailsClosedAtPassCap
+      - test: framework/uihost.TestHeadScrubReadsRealAttributesOnly
+      - test: framework/uihost.TestHeadScrubKeepsSafeLinks
   - id: inline-block-cannot-escape-its-element
     rule: An inline head block whose body holds NUL, a case-insensitive </style or </script, or <!-- is refused, and CR LF and lone CR are turned into LF before the block is hashed.
     enforced_by:
