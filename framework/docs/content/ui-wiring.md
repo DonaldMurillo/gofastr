@@ -248,8 +248,17 @@ Useful options:
   the `WithNotFoundScreen` page, the client-navigation partial, problem
   JSON or markdown, as the request asks, with status 404 and no title,
   content, hreflang or other meta from the route. Its server actions
-  refuse with 404 too, and `gofastr export` skips the page as it skips
-  any page a policy refuses. `decide.Block(404)` is different: it answers the
+  refuse with 404 too, the `/llm-pages.md` index leaves the route out,
+  and `gofastr export` skips the page as it skips any page a policy
+  refuses. A method the page does not take (POST, OPTIONS) still
+  answers 405 with `Allow: GET, HEAD`, because no screen code runs for
+  it, the policy included; to hide the route from every method, call
+  `ServeNotFound` from middleware instead. The guarantee covers the pages the UI host
+  serves: another handler that reuses the same policy (the SDK docs
+  pages, an embed surface) refuses with a plain 404. A resolver that
+  fails before the policy decides still answers the error page, as it
+  does on any route, so keep a hidden route's resolvers behind its
+  policy. `decide.Block(404)` is different: it answers the
   status phrase as a plain body. Middleware gets the same answer from
   `host.ServeNotFound(w, r)` on the `*uihost.UIHost` the app mounted:
 
