@@ -5,7 +5,6 @@ code:
   - framework/erase_data.go
   - framework/erase_shared_keys.go
   - framework/erase_retention.go
-  - core/datexport/
 docs:
   - framework/docs/content/data-export.md
 on_change:
@@ -279,10 +278,6 @@ invariants:
     rule: A resolver's Canonicalize rewrites the resolved value before it is bound, and an empty result binds the raw value.
     enforced_by:
       - test: framework.TestEraseUserData_EmailIdentityCanonicalizes
-  - id: store-eraser-has-one-erase-func
-    rule: RegisterStoreEraser panics unless exactly one of Erase and EraseResolved is set.
-    enforced_by:
-      - test: core/datexport.TestStoreEraserNeedsExactlyOneEraseFunc
 decisions:
   - id: keep-identities-until-the-stores-erase
     date: 2026-11-17
