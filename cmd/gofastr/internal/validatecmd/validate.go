@@ -77,42 +77,10 @@ func RunValidate(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	// A module path that collides with the framework's own produces code that
-	// cannot build anywhere outside this repo. Warned (not failed) for the same
-	// reason `generate` warns: the in-repo examples legitimately declare such
-	// paths. Surfaced here because validate → fix → generate is the loop the
-	// CLI documents, and a finding that only appears at the last step is a
-	// finding the loop is designed to skip past.
-	for _, f := range appgen.LintModuleCollision(bp) {
-		cli.Warn("%s: %s", path, f.Message())
-	}
-	// Uniqueness that spans owners on an owner-scoped entity: a warning,
-	// since a value unique across all accounts can be deliberate.
-	for _, f := range appgen.LintOwnerScopedUnique(bp) {
-		cli.Warn("%s: %s", path, f.Message())
-	}
-	// A screen over an entity that needs a session, in an app with no
-	// sign-in: the screen draws "Not available" for every visitor.
-	for _, f := range appgen.LintSignedOutScreens(bp) {
-		cli.Warn("%s: %s", path, f.Message())
-	}
-	// A custom_form that POSTs to a screen route: screens answer GET only.
-	for _, f := range appgen.LintPostFormsOnScreens(bp) {
-		cli.Warn("%s: %s", path, f.Message())
-	}
-	// Image or file fields with no file storage wired: uploads answer 400.
-	for _, f := range appgen.LintUploadFields(bp) {
-		cli.Warn("%s: %s", path, f.Message())
-	}
-	// A nav link to a path nothing in the spec serves: the generated
-	// app's strict boot refuses it, but owned Go code can add routes
-	// validate cannot see, so this only warns.
-	for _, f := range appgen.LintNavHrefs(bp, anchor) {
-		cli.Warn("%s: %s", path, f.Message())
-	}
-	// A route under a locale-shaped first segment with locale_prefixes on.
-	for _, f := range appgen.LintLocaleRoutes(bp) {
-		cli.Warn("%s: %s", path, f.Message())
+	// Seven warnings `gofastr generate` also prints; each lint's own doc
+	// says why it warns rather than fails.
+	for _, msg := range appgen.CommonLintFindings(bp, anchor, appgen.ModuleCollisionsFirst) {
+		cli.Warn("%s: %s", path, msg)
 	}
 	cli.Success("App spec %s is valid: %d entity(ies), %d screen(s), %d endpoint(s), %d hook(s)",
 		path, len(bp.Entities), len(bp.Screens), len(bp.Endpoints), len(bp.Hooks))
@@ -152,8 +120,10 @@ Checks:
   unscoped PII exposure
   a complete in-memory render of generated files
 
-Exit status is 0 when valid, 1 when any check fails, and 2 for a usage
-error such as a second path (validate one app spec per run).`)
+Exit status is 0 for a valid app spec or when --help or -h appears in any
+position. Otherwise, a failed check, no arguments, or a first argument
+starting with -- exits 1. An extra path or flag after the app spec path
+exits 2 (validate one app spec per run).`)
 }
 
 // failAppSpecValidation prints a validation failure prefixed with the

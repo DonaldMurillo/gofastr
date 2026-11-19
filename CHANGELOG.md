@@ -25,6 +25,23 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A slow `QueryRowContext` warning names its error without leaking
+  query values.** The log line shows `err=database_error` plus the
+  SQLSTATE or driver code when the driver gives one, never the driver's
+  message, which can quote a bound value. The row still returns the
+  original error.
+- **`gofastr test` prints a child's last stderr line even when it has no
+  newline**, on success and on failure. The scrubber held that fragment
+  and dropped it at exit.
+- **A theme editor or harness sidecar bound to a loopback address such
+  as `127.0.0.2` accepts its own printed Host and Origin.** Wildcard
+  binds keep the standard loopback names and no longer add the wildcard
+  authority itself.
+- **On Linux and macOS, a run that exited but was never reaped reads as
+  gone** when its process state can be read, so service waits finish and
+  the local-run registry deletes its record.
+- **The render-diagnostics test wrapper keeps `http.Flusher`** when the
+  wrapped writer has it, and passes flush errors through.
 - **Generated site headers show the theme focus ring on their brand and
   navigation links**, like the footer and doc page already did. Before,
   keyboard focus on those links fell back to the browser default.

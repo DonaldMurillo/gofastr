@@ -49,7 +49,7 @@ func startFakeDaemon(t *testing.T, b *Battery, obeyStop bool) *fakeDaemon {
 	}
 	d := &fakeDaemon{pid: child.Process.Pid}
 	var once sync.Once
-	// Reap the child: a zombie still answers kill(pid, 0).
+	// Reap the child so nothing is left behind.
 	d.kill = func() {
 		once.Do(func() {
 			ln.Close()

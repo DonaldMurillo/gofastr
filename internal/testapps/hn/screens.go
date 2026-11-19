@@ -36,7 +36,7 @@ func buildSite(st *store) *uiapp.App {
 		site.Register(l.Path, &listScreen{st: st, l: l}, nil)
 	}
 	// /news is the top list under its other name, like the original.
-	site.Register("/news", &listScreen{st: st, l: listTop, self: "/news"}, nil)
+	site.Register("/news", &listScreen{st: st, l: listTop}, nil)
 	site.Register("/item/{id}", &itemScreen{st: st}, nil)
 	site.Register("/user/{id}", &userScreen{st: st}, nil)
 	return site
@@ -94,9 +94,6 @@ type listScreen struct {
 	component.ContextOnly
 	st *store
 	l  list
-	// self is the path the pager links to, when it is not the list's
-	// own (/news).
-	self string
 
 	page, pages int
 	stories     []*Story
@@ -134,14 +131,14 @@ func (s *listScreen) RenderCtx(ctx context.Context) render.HTML {
 	for i, st := range s.stories {
 		entries[i] = storyEntry(ctx, st)
 	}
-	path := s.l.Path
-	if s.self != "" {
-		path = s.self
-	}
+	// The pager always links the list's own path, /news included: the
+	// top link's href is "/" and active-link matching is exact, so a
+	// pager that kept /news would drop Top's mark after a client
+	// navigation within the alias.
 	var pager render.HTML
 	if s.pages > 1 {
 		pager = ui.Pagination(ui.PaginationConfig{
-			Ctx: ctx, Page: s.page, Pages: s.pages, Path: path, PageParam: "page",
+			Ctx: ctx, Page: s.page, Pages: s.pages, Path: s.l.Path, PageParam: "page",
 		})
 	}
 	return column(

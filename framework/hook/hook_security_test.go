@@ -117,6 +117,10 @@ func TestHooksForReturnsDefensiveCopy(t *testing.T) {
 	hr := NewHookRegistry()
 	hr.RegisterHook(BeforeDelete, func(context.Context, any) error { return nil })
 
+	if empty := hr.HooksFor(AfterDelete); empty == nil || len(empty) != 0 {
+		t.Fatalf("HooksFor on an unregistered type = %#v, want a non-nil empty slice", empty)
+	}
+
 	got := hr.HooksFor(BeforeDelete)
 	got[0] = func(context.Context, any) error {
 		t.Error("SECURITY: [hook] injected hook via mutated HooksFor slice ran")

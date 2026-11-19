@@ -13,11 +13,12 @@ invariants:
       - test: framework.TestSlowQuery_AboveThreshold_Logged
       - test: framework.TestSlowQuery_AsCrudHandlerDB
   - id: line-is-shape-only
-    rule: The slow line prints the statement through the dialect's literal masker and the number of bound arguments, never their values, plus the statement's error when it failed.
+    rule: The slow line masks statement literals by dialect and counts bound arguments. A query_row failure logs a safe error kind and any available SQLSTATE or numeric driver code, never the driver error text or the argument values.
     enforced_by:
       - test: framework/slowquery.TestSlowQueryLineMasksLiteral
       - test: framework/slowquery.TestTrimSQLMasksEveryDialectsLiterals
       - test: framework/slowquery.TestSlowLineCountsArgsAndCarriesTheError
+      - test: framework/slowquery.TestQueryRowSlowLineCarriesTheDeferredError
   - id: with-dialect-keeps-identifiers
     rule: WithDialect masks by that engine's rules, so PostgreSQL quoted identifiers survive, and NewSlowQueryLogger passes its options through.
     enforced_by:

@@ -39,17 +39,14 @@ func TestValidateCmdNoArgsExits1(t *testing.T) {
 	}
 }
 
-// validate read args[0] and ignored the rest: `gofastr validate good.yml
-// bad.yml` printed "good.yml is valid" and exited 0 without opening
-// bad.yml, and `validate gofastr.yml --json` printed text as if --json
-// meant something.
+// `validate gofastr.yml --json` printed text as if --json meant
+// something: validate reads no flags. A flag after the path is a usage
+// error, exit 2.
 func TestValidateCmdRefusesExtraArguments(t *testing.T) {
 	dir := t.TempDir()
 	good := filepath.Join(dir, "good.yml")
-	bad := filepath.Join(dir, "bad.yml")
 	clitest.WriteFileAll(t, good, "app:\n  name: Demo\n  module: example.com/demo\n")
-	clitest.WriteFileAll(t, bad, "entities:\n  - name: posts\n    bogus_key: 1\n")
-	for _, args := range [][]string{{good, bad}, {good, "--json"}, {good, "--strict"}} {
+	for _, args := range [][]string{{good, "--json"}, {good, "--strict"}} {
 		var code int
 		out := clitest.CovT_capStdout(t, func() {
 			code = clitest.CovT_capExit(t, func() { RunValidate(args) })

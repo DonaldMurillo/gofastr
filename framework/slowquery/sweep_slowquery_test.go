@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"log/slog"
 	"strings"
 	"testing"
+
+	"github.com/lib/pq"
 )
 
 var errFake = errors.New("fake failure")
@@ -52,5 +55,52 @@ func TestNilLoggerFallsBackToDefault(t *testing.T) {
 func TestBeginTxForwardsToTheInnerExecutor(t *testing.T) {
 	if _, err := NewSlowQueryLogger(fakeExec{}, 0, nil).BeginTx(context.Background(), nil); !errors.Is(err, errFake) {
 		t.Fatalf("BeginTx = %v, want the inner executor's answer", err)
+	}
+}
+
+type failConnector struct{ err error }
+
+func (c failConnector) Connect(context.Context) (driver.Conn, error) { return nil, c.err }
+func (failConnector) Driver() driver.Driver                          { return nil }
+
+type fakeCodedError struct{ error }
+
+func (fakeCodedError) Code() int { return 19 }
+
+func TestQueryRowSlowLineCarriesTheDeferredError(t *testing.T) {
+	const secret = "bound-secret"
+	for _, tc := range []struct {
+		name     string
+		err      error
+		wantCode string
+	}{
+		{"sqlstate", &pq.Error{Code: "22P02", Message: "invalid integer: " + secret}, `"sqlstate":"22P02"`},
+		{"numeric", fakeCodedError{errors.New(secret)}, `"driver_code":19`},
+		{"untyped", errors.New(secret), ""},
+		{"invalid sqlstate", &pq.Error{Code: secret, Message: secret}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			inner := sql.OpenDB(failConnector{err: tc.err})
+			t.Cleanup(func() { _ = inner.Close() })
+			s := NewSlowQueryLogger(inner, 1, slog.New(slog.NewJSONHandler(&buf, nil)))
+			row := s.QueryRowContext(context.Background(), "SELECT $1::int, '"+secret+"'", secret)
+			if err := row.Err(); !errors.Is(err, tc.err) {
+				t.Fatalf("row.Err() = %v, want the driver error", err)
+			}
+			if err := row.Scan(); !errors.Is(err, tc.err) {
+				t.Fatalf("row.Scan() = %v, want the driver error", err)
+			}
+			line := buf.String()
+			if strings.Contains(line, secret) {
+				t.Errorf("slow query_row line exposed the value: %s", line)
+			}
+			if !strings.Contains(line, `"err":"database_error"`) {
+				t.Errorf("slow query_row line missing the safe error kind: %s", line)
+			}
+			if tc.wantCode != "" && !strings.Contains(line, tc.wantCode) {
+				t.Errorf("slow query_row line missing %s: %s", tc.wantCode, line)
+			}
+		})
 	}
 }

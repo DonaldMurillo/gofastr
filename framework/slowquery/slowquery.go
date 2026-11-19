@@ -4,13 +4,14 @@ package slowquery
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/internal/sqlredact"
+	"github.com/DonaldMurillo/gofastr/internal/textcut"
 )
 
 // SlowQueryLogger is a db.Executor that logs a warning for each statement at or over its threshold; zero disables it.
@@ -63,11 +64,15 @@ func (s *SlowQueryLogger) QueryContext(ctx context.Context, query string, args .
 	return rows, err
 }
 
-// QueryRowContext mirrors sql.DB.QueryRowContext, timing the call.
+// QueryRowContext mirrors sql.DB.QueryRowContext and logs safe metadata for deferred errors.
 func (s *SlowQueryLogger) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	t := time.Now()
 	row := s.inner.QueryRowContext(ctx, query, args...)
-	s.observe(ctx, "query_row", query, args, elapsedSince(t), nil)
+	var err error
+	if row != nil {
+		err = row.Err()
+	}
+	s.observe(ctx, "query_row", query, args, elapsedSince(t), err)
 	return row
 }
 
@@ -89,9 +94,7 @@ func elapsedSince(start time.Time) time.Duration {
 
 // BeginTx forwards to the inner executor, or returns sql.ErrConnDone when it cannot begin; statements on the tx are not timed.
 func (s *SlowQueryLogger) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
-	if b, ok := s.inner.(interface {
-		BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
-	}); ok {
+	if b, ok := s.inner.(db.Beginner); ok {
 		return b.BeginTx(ctx, opts)
 	}
 	return nil, sql.ErrConnDone
@@ -102,47 +105,64 @@ func (s *SlowQueryLogger) observe(ctx context.Context, kind, query string, args 
 		return
 	}
 	s.hits.Add(1)
-	attrs := []any{
+	attrs := []slog.Attr{
 		slog.String("kind", kind),
 		slog.Duration("dur", dur),
 		slog.String("sql", trimSQL(query, s.dialect)),
 		slog.Int("args", len(args)),
 	}
 	if err != nil {
-		attrs = append(attrs, slog.String("err", err.Error()))
+		if kind == "query_row" {
+			attrs = appendRowError(attrs, err)
+		} else {
+			attrs = append(attrs, slog.String("err", err.Error()))
+		}
 	}
 	logger := s.getLogger()
 	if logger == nil {
 		logger = slog.Default()
 	}
-	logger.LogAttrs(ctx, slog.LevelWarn, "slow query", asSlogAttrs(attrs)...)
+	logger.LogAttrs(ctx, slog.LevelWarn, "slow query", attrs...)
+}
+
+func appendRowError(attrs []slog.Attr, err error) []slog.Attr {
+	attrs = append(attrs, slog.String("err", "database_error"))
+	if state, ok := errors.AsType[interface {
+		error
+		SQLState() string
+	}](err); ok {
+		if code := state.SQLState(); validSQLState(code) {
+			attrs = append(attrs, slog.String("sqlstate", code))
+		}
+	}
+	if coded, ok := errors.AsType[interface {
+		error
+		Code() int
+	}](err); ok {
+		attrs = append(attrs, slog.Int("driver_code", coded.Code()))
+	}
+	return attrs
+}
+
+func validSQLState(code string) bool {
+	if len(code) != 5 {
+		return false
+	}
+	for _, c := range code {
+		if !(c >= '0' && c <= '9' || c >= 'A' && c <= 'Z') {
+			return false
+		}
+	}
+	return true
 }
 
 const maxLoggedSQL = 240
 
-// TrimSQL returns a statement's shape under every engine's quoting: literals as ?, comments dropped, whitespace collapsed, at most 240 bytes.
+// TrimSQL returns a statement's shape under every engine's quoting: literals as ?, comments dropped, whitespace collapsed; a longer shape is cut at 240 bytes back to a rune boundary and ends in an ellipsis.
 func TrimSQL(q string) string {
 	return trimSQL(q, sqlredact.Unknown)
 }
 
 func trimSQL(q string, d sqlredact.Dialect) string {
-	out := sqlredact.Text(q, d)
-	if len(out) <= maxLoggedSQL {
-		return out
-	}
-	cut := maxLoggedSQL
-	for cut > 0 && !utf8.RuneStart(out[cut]) {
-		cut--
-	}
-	return out[:cut] + "…"
-}
-
-func asSlogAttrs(a []any) []slog.Attr {
-	out := make([]slog.Attr, 0, len(a))
-	for _, v := range a {
-		if attr, ok := v.(slog.Attr); ok {
-			out = append(out, attr)
-		}
-	}
-	return out
+	return textcut.Ellipsis(sqlredact.Text(q, d), maxLoggedSQL)
 }
