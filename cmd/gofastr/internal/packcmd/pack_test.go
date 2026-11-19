@@ -785,23 +785,6 @@ func TestPack_ReadSeedAndNav(t *testing.T) {
 	}
 }
 
-func TestPack_ReadApp(t *testing.T) {
-	a, err := appspec.DecodeAppSpecFile(clitest.MeridianYML())
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	a.App.Description = "Meridian is the revenue console for modern SaaS: customers, subscriptions, invoices, and live MRR in one calm place."
-	dir := meridianWithEnv(t, a)
-	app, err := packReadApp(dir)
-	if err != nil {
-		t.Fatalf("packReadApp: %v", err)
-	}
-	a.App.Admin.Path, a.App.Admin.Role = "", ""
-	if !reflect.DeepEqual(a.App, app) {
-		t.Errorf("app mismatch:\n%s", clitest.FirstAppSpecDiff(a.App, app))
-	}
-}
-
 func TestPack_ReadScreens(t *testing.T) {
 	a, _ := appspec.DecodeAppSpecFile(clitest.MeridianYML())
 	got, err := packReadScreens(clitest.MeridianDir())

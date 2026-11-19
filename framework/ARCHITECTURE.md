@@ -72,16 +72,13 @@ authority. `migrate diff` was deleted not because it read the app spec,
 but because it *applied* it, reconciling the live database to the
 app spec. Reading is fine; applying-as-source-of-truth is not.
 
-### The IR is the hub
+### The in-memory app spec
 
-`generate` and `pack` both pivot on one primitive: **extract the
-declarable shape (entities, screens, nav, access, seed) from a
-compiled/live app → in-memory IR.** `generate` goes IR → files (forward);
-`pack` goes app → IR → YAML (backward). Build "app → IR" once and both
-land. Kiln already maintains an in-memory world IR; that extraction
-primitive is a reuse candidate, not net-new. (`migrate generate` is a
-separate concern, covered below, though it could *optionally* take its
-schema from that same IR one day; it is not load-bearing for this hub.)
+App generation loads YAML into an `appspec.AppSpec` and emits owned Go.
+Pack reads the Go AST, the app's `.env` and its endpoint settings to
+recover an `appspec.AppSpec`, then serializes it to YAML. Its fidelity
+check decodes that YAML and regenerates into memory for comparison
+with the original Go files.
 
 ### Schema migration is a separate action, not part of the app spec's authority
 

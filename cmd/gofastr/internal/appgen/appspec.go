@@ -98,18 +98,6 @@ func appSpecLoginRoute(bp appspec.AppSpec) string {
 	return "/login"
 }
 
-// appSpecAppHome returns the post-login landing route: the first app-layout
-// screen, defaulting to "/". Used for the auth-aware header's "Dashboard" link
-// and to bounce already-signed-in visitors off the login/signup screens.
-func appSpecAppHome(bp appspec.AppSpec) string {
-	for _, s := range bp.Screens {
-		if s.Layout == "app" {
-			return s.Route
-		}
-	}
-	return "/"
-}
-
 // appSpecMarketingLink is one entry of the marketing chrome's canonical
 // link table. The header nav and the footer columns both project out of it,
 // so the two surfaces cannot drift apart again.
@@ -2675,7 +2663,7 @@ func AppSpecScreenMountStmt(screen appspec.AppSpecScreen, bp appspec.AppSpec) st
 		case screen.Access.Auth:
 			policy = fmt.Sprintf(".WithPolicy(authPolicy(%q, %q))", appSpecLoginRoute(bp), screen.Access.Role)
 		case guestRedirect && screenHasAuthForm(screen):
-			policy = fmt.Sprintf(".WithPolicy(guestPolicy(%q))", appSpecAppHome(bp))
+			policy = fmt.Sprintf(".WithPolicy(guestPolicy(%q))", appspec.AppHome(bp.Screens))
 		}
 		return fmt.Sprintf("\trecord := %s%s\n%s\tsite.RegisterScreen(record, %s)", build, policy, intercept, layoutExpr)
 	}
@@ -2683,7 +2671,7 @@ func AppSpecScreenMountStmt(screen appspec.AppSpecScreen, bp appspec.AppSpec) st
 	case screen.Access.Auth:
 		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(authPolicy(%q, %q)), %s)", build, appSpecLoginRoute(bp), screen.Access.Role, layoutExpr)
 	case guestRedirect && screenHasAuthForm(screen):
-		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(guestPolicy(%q)), %s)", build, appSpecAppHome(bp), layoutExpr)
+		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(guestPolicy(%q)), %s)", build, appspec.AppHome(bp.Screens), layoutExpr)
 	default:
 		return fmt.Sprintf("\tsite.Register(%q, &%s{}, %s)", route, typeName, layoutExpr)
 	}
@@ -3968,7 +3956,7 @@ func renderAppSpecSignupFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock)
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
 	action := propStr("action")
 	if action == "" {
-		action = appSpecAuthBase(bp) + "/register"
+		action = appSpecAuthBase(bp) + "/" + appspec.AuthRegisterSegment
 	}
 	next := propStr("next")
 	if next == "" {
@@ -3988,7 +3976,7 @@ func renderAppSpecLoginFormExpr(bp appspec.AppSpec, block appspec.AppSpecBlock) 
 	propStr := func(k string) string { s, _ := block.Props[k].(string); return s }
 	action := propStr("action")
 	if action == "" {
-		action = appSpecAuthBase(bp) + "/login"
+		action = appSpecAuthBase(bp) + "/" + appspec.AuthLoginSegment
 	}
 	next := propStr("next")
 	if next == "" {
@@ -4658,7 +4646,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 			// Pricing/About, and it collapses into the phone menu like them); the
 			// single auth action, Sign out when signed in and Sign in when not, is the
 			// one button, sized to match. No "Sign in" loop for users already past it.
-			appHome := appSpecAppHome(bp)
+			appHome := appspec.AppHome(bp.Screens)
 			sb.WriteString("func marketingHeader(ctx context.Context) render.HTML {\n")
 			// links holds only registered chrome links; with none it starts
 			// empty (valid Go for the Dashboard append below).

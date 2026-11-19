@@ -1,10 +1,12 @@
 package appgen
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -27,6 +29,40 @@ func RootReadDirEntries(root *os.Root, rel string) ([]os.DirEntry, error) {
 	}
 	defer dir.Close()
 	return dir.ReadDir(-1)
+}
+
+// IsProductionGoSource identifies Go source files outside the test build.
+func IsProductionGoSource(name string) bool {
+	return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
+}
+
+// IsPerScreenSource identifies leaf names belonging to the per-screen layout.
+func IsPerScreenSource(name string) bool {
+	return IsProductionGoSource(name) && strings.HasPrefix(name, "screen_") && name != "screen_shared.go"
+}
+
+var ErrNonRegularSource = errors.New("not a regular source file")
+
+// OpenRegularSource opens a source leaf under root, rejecting symlinks and special files.
+func OpenRegularSource(root *os.Root, name string) (*os.File, error) {
+	info, err := root.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s: %w", name, ErrNonRegularSource)
+	}
+	return root.Open(name)
+}
+
+// ReadRegularSource reads a regular source leaf under root.
+func ReadRegularSource(root *os.Root, name string) ([]byte, error) {
+	file, err := OpenRegularSource(root, name)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return io.ReadAll(file)
 }
 
 // FuncBody returns the statements of the named top-level func, or nil.
@@ -80,7 +116,7 @@ func PackReadEntities(dir string) ([]framework.EntityDeclaration, error) {
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || name == "register.go" || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+		if entry.IsDir() || name == "register.go" || !IsProductionGoSource(name) {
 			continue
 		}
 		decls, err := packReadLegacyRegister(root, "entities/"+name)
@@ -111,11 +147,11 @@ func packReadPerEntityFiles(root *os.Root, entRel string) ([]framework.EntityDec
 	}
 	var found []ordered
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || skip[entry.Name()] {
+		if entry.IsDir() || !IsProductionGoSource(entry.Name()) || skip[entry.Name()] {
 			continue
 		}
 		rel := entRel + "/" + entry.Name()
-		src, rerr := root.ReadFile(rel)
+		src, rerr := ReadRegularSource(root, rel)
 		if rerr != nil {
 			continue // unreadable leaf (e.g. symlink outside the root): skip
 		}
@@ -212,7 +248,7 @@ func packEntityOrder(file *ast.File) int {
 // symlink outside the root counts as absent. Returns (nil, nil) when
 // register.go is absent.
 func packReadLegacyRegister(root *os.Root, rel string) ([]framework.EntityDeclaration, error) {
-	src, err := root.ReadFile(rel)
+	src, err := ReadRegularSource(root, rel)
 	if err != nil {
 		return nil, nil // no register.go (or unreachable through the root)
 	}
@@ -243,37 +279,42 @@ func packReadLegacyRegister(root *os.Root, rel string) ([]framework.EntityDeclar
 	return out, nil
 }
 
-// packScreenFileOrders returns the declaration orders carried by the
-// screenRegistrar{order: N, …} literals in one per-screen file. Used by
-// additive generation to continue screen orders after the existing set.
-func packScreenFileOrders(file *ast.File) []int {
-	var orders []int
+// ScreenRegistrar holds the order and mount function named in a registrar literal.
+type ScreenRegistrar struct {
+	Order    int
+	HasOrder bool
+	Func     string
+}
+
+// ScreenRegistrars reads the screenRegistrar literals in file.
+func ScreenRegistrars(file *ast.File) []ScreenRegistrar {
+	var registrars []ScreenRegistrar
 	ast.Inspect(file, func(n ast.Node) bool {
 		cl, ok := n.(*ast.CompositeLit)
-		if !ok {
+		if !ok || IdentName(cl.Type) != "screenRegistrar" {
 			return true
 		}
-		id, ok := cl.Type.(*ast.Ident)
-		if !ok || id.Name != "screenRegistrar" {
-			return true
-		}
+		var reg ScreenRegistrar
 		for _, elt := range cl.Elts {
 			kv, ok := elt.(*ast.KeyValueExpr)
 			if !ok {
 				continue
 			}
-			if IdentName(kv.Key) != "order" {
-				continue
-			}
-			if lit, ok := kv.Value.(*ast.BasicLit); ok && lit.Kind == token.INT {
-				if n, err := strconv.Atoi(lit.Value); err == nil {
-					orders = append(orders, n)
+			switch IdentName(kv.Key) {
+			case "order":
+				if lit, ok := kv.Value.(*ast.BasicLit); ok && lit.Kind == token.INT {
+					if order, err := strconv.Atoi(lit.Value); err == nil {
+						reg.Order, reg.HasOrder = order, true
+					}
 				}
+			case "fn":
+				reg.Func = IdentName(kv.Value)
 			}
 		}
+		registrars = append(registrars, reg)
 		return false
 	})
-	return orders
+	return registrars
 }
 
 // packHasPerScreenFiles reports whether dir uses the per-screen layout
@@ -284,11 +325,7 @@ func packHasPerScreenFiles(dir string) bool {
 		return false
 	}
 	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		if name != "screen_shared.go" && strings.HasPrefix(name, "screen_") {
+		if !e.IsDir() && IsPerScreenSource(e.Name()) {
 			return true
 		}
 	}

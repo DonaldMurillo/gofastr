@@ -5152,19 +5152,46 @@ func relationTypeFromString(value string) (framework.RelationType, error) {
 	}
 }
 
+var screenTypeConsts = map[string]string{
+	"page":   "app.ScreenPage",
+	"drawer": "app.ScreenDrawer",
+	"sheet":  "app.ScreenSheet",
+	"dialog": "app.ScreenDialog",
+}
+
+// ScreenTypeConst returns the generated Go constant for an app-spec screen type.
 func ScreenTypeConst(value string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "page":
-		return "app.ScreenPage", nil
-	case "drawer":
-		return "app.ScreenDrawer", nil
-	case "sheet":
-		return "app.ScreenSheet", nil
-	case "dialog", "modal":
-		return "app.ScreenDialog", nil
-	default:
-		return "", fmt.Errorf("app spec: unknown screen type %q", value)
+	kind := strings.ToLower(strings.TrimSpace(value))
+	switch kind {
+	case "":
+		kind = "page"
+	case "modal":
+		kind = "dialog"
 	}
+	if constant, ok := screenTypeConsts[kind]; ok {
+		return constant, nil
+	}
+	return "", fmt.Errorf("app spec: unknown screen type %q", value)
+}
+
+// ScreenTypeFromConst recovers the canonical type, omitting the default page.
+func ScreenTypeFromConst(constant string) string {
+	for kind, name := range screenTypeConsts {
+		if name == constant && kind != "page" {
+			return kind
+		}
+	}
+	return ""
+}
+
+// AppHome returns the first app-layout screen's route, or "/" if absent.
+func AppHome(screens []AppSpecScreen) string {
+	for _, s := range screens {
+		if s.Layout == "app" {
+			return s.Route
+		}
+	}
+	return "/"
 }
 
 func expectMap(node *coreyaml.Node, label string) (map[string]*coreyaml.Node, error) {

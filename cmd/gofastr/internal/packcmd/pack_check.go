@@ -61,7 +61,7 @@ func checkPack(dir string, bp appspec.AppSpec) (packCheck, error) {
 		// The renderer joins with the OS separator; the check walks the
 		// app with slash paths.
 		name := filepath.ToSlash(f.Name)
-		if !packCheckScope(name) || !slices.Contains(packCheckDirs, path.Dir(name)) || handlers[name] {
+		if !appgen.IsProductionGoSource(name) || !slices.Contains(packCheckDirs, path.Dir(name)) || handlers[name] {
 			continue
 		}
 		want[name] = codegen.StripMarker(name, f.Content)
@@ -159,7 +159,7 @@ const packCheckHeader = 64 << 10
 // full only when its header carries a marker: an unmarked one is
 // hand-written whatever follows, so its first bytes are enough.
 func readPackCheckFile(root *os.Root, rel string, generated bool) (string, error) {
-	f, err := root.Open(rel)
+	f, err := appgen.OpenRegularSource(root, rel)
 	if err != nil {
 		return "", packReadErr(err)
 	}
@@ -194,17 +194,11 @@ func normalizePackSource(s string) string {
 	return strings.ReplaceAll(s, "\r\n", "\n")
 }
 
-// packCheckScope reports whether the check compares rel: Go source, not a
-// test. Tests are not part of the spec.
-func packCheckScope(rel string) bool {
-	return strings.HasSuffix(rel, ".go") && !strings.HasSuffix(rel, "_test.go")
-}
-
 // packCheckDirs are the directories pack reads Go files from.
 var packCheckDirs = []string{".", "entities"}
 
 // packCheckFiles lists the files the check compares, sorted: those in
-// packCheckScope at the app root and directly under entities/, the layout
+// scope at the app root and directly under entities/, the layout
 // pack reads. An entry in scope that is not a regular file (a symlink)
 // is skipped, as pack skips it, and returned with why.
 func packCheckFiles(root *os.Root) (files []string, skipped []packFileNote) {
@@ -215,7 +209,7 @@ func packCheckFiles(root *os.Root) (files []string, skipped []packFileNote) {
 		}
 		for _, e := range entries {
 			rel := path.Join(d, e.Name())
-			if !packCheckScope(rel) || e.IsDir() {
+			if !appgen.IsProductionGoSource(rel) || e.IsDir() {
 				continue
 			}
 			if e.Type().IsRegular() {

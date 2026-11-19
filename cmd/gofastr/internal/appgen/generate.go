@@ -871,7 +871,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		bp.Entities = merged
 		// The project's endpoints join the fragment's the same way: the
 		// settings section is rewritten whole, so it must hold both.
-		projectEndpoints, eerr := ExistingEndpoints(writeRoot)
+		projectEndpoints, _, eerr := ExistingEndpoints(writeRoot)
 		if eerr != nil {
 			failGenerate(options.json, fmt.Errorf("Failed to load app spec: %v", eerr))
 			cli.OsExit(1)
@@ -2752,10 +2752,10 @@ func maxExistingEntityOrder(writeRoot string) int {
 	skip := map[string]bool{"register.go": true, "events.go": true, "shared.go": true, "doc.go": true}
 	maxOrder := -1
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || skip[entry.Name()] {
+		if entry.IsDir() || !IsProductionGoSource(entry.Name()) || skip[entry.Name()] {
 			continue
 		}
-		src, rerr := root.ReadFile("entities/" + entry.Name())
+		src, rerr := ReadRegularSource(root, "entities/"+entry.Name())
 		if rerr != nil {
 			continue // unreadable leaf (symlink outside the root): skip
 		}
@@ -2789,13 +2789,10 @@ func maxExistingScreenOrder(writeRoot string) int {
 	maxOrder := -1
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+		if entry.IsDir() || !IsPerScreenSource(name) {
 			continue
 		}
-		if name == "screen_shared.go" || name == "screens_register.go" || !strings.HasPrefix(name, "screen_") {
-			continue
-		}
-		src, rerr := root.ReadFile(name)
+		src, rerr := ReadRegularSource(root, name)
 		if rerr != nil {
 			continue // unreadable leaf (symlink outside the root): skip
 		}
@@ -2803,9 +2800,9 @@ func maxExistingScreenOrder(writeRoot string) int {
 		if perr != nil {
 			continue
 		}
-		for _, o := range packScreenFileOrders(file) {
-			if o > maxOrder {
-				maxOrder = o
+		for _, reg := range ScreenRegistrars(file) {
+			if reg.HasOrder && reg.Order > maxOrder {
+				maxOrder = reg.Order
 			}
 		}
 	}

@@ -311,8 +311,16 @@
 - Trigger: a supported data table packs successfully but its rows become strings and cannot validate/regenerate.
 - Approach: build a fresh CLI under /tmp and exercise validate → generate → pack → validate → generate, with a no-row control.
 - Evidence: [C11 fix](reviews/2026-11-07-fixes-codegen.md); nested lists now use empty/scalar-flow/complex-block forms. Coordinator passed full packcmd and public generate→pack→load→regenerate regressions, including quoted cells and nested maps.
-- Next time: parse and validate the exact serialized YAML during round-trip checks, not just the pre-serialization spec.
+- Pack now decodes the emitted YAML before comparing regenerated Go or writing output. The regression fixtures include an out-of-range float spelling stored as text and a quoted property key.
+- Next time: run pack through its CLI entry point and decode its stdout when testing YAML fidelity. For source recovery, exercise both screen layouts and keep the file selection aligned with the fidelity check.
 - Status: active
+
+## 2026-11-19 - Preserve declared field names when form IDs change
+
+- Scope: appgen and packcmd create forms
+- Trigger: form-specific control IDs caused pack to write the form prefix into the YAML field names.
+- Evidence: `TestPackFormKeepsMultiWordFields` compares regenerated screens. `TestEntityFormControlFieldIDs` covers scoped IDs, a legacy name that resembles a scoped ID, and the wire-name fallback.
+- Next time: update the pack reader when changing generated form markup, and run the generate–pack–generate checks against both the union spec and the committed ecommerce fixture.
 
 ## 2026-11-07 - Separate signal-store retention from post-swap DOM rendering
 - Scope: core-ui/runtime

@@ -323,7 +323,11 @@ func warnVersionMismatch(cmd string, args []string) {
 	if err != nil {
 		return
 	}
-	if dir := projectDirFlag(cmd, args); dir != "" {
+	dir := projectDirFlag(cmd, args)
+	if cmd == "pack" && dir == "" {
+		return
+	}
+	if dir != "" {
 		if !filepath.IsAbs(dir) {
 			dir = filepath.Join(wd, dir)
 		}
@@ -334,10 +338,15 @@ func warnVersionMismatch(cmd string, args []string) {
 	}
 }
 
-// projectDirFlag is the project directory a command was pointed at
-// with --dir (`gofastr dev --dir=../app`), or "" when it works in the
-// current directory.
+// projectDirFlag returns the directory selected by dev or pack arguments.
 func projectDirFlag(cmd string, args []string) string {
+	if cmd == "pack" {
+		dir, err := packcmd.AppDir(args)
+		if err != nil {
+			return ""
+		}
+		return dir
+	}
 	if cmd != "dev" {
 		return ""
 	}

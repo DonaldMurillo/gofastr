@@ -25,6 +25,20 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`gofastr pack` keeps more of the app.** It preserves drawer, sheet
+  and dialog screen types, recognizes auth forms under a custom auth
+  base path, reads both generated line-chart call shapes, and keeps
+  declared create-form field names now that control IDs are scoped to
+  their form.
+- **`gofastr pack` writes YAML that loads.** Numeric-looking strings and
+  mapping keys that need quoting are quoted, and pack decodes its own
+  output before the fidelity check or writing.
+- **`gofastr pack` skips test and symlinked Go files.** Recovery ignores
+  them and reports a symlink that stands in for required source.
+  Additive `gofastr generate app` skips the same files when it assigns
+  declaration order.
+- **`gofastr pack` takes one app directory.** A second directory is
+  refused, and the CLI version check reads the selected app's `go.mod`.
 - **`gofastr build --pkg ./cmd/<name>` works on a first build.** The
   package check now runs after code generation, so a command the
   generation step creates can be built.
