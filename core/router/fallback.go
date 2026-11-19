@@ -285,7 +285,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	if r != r.root {
+	if r != r.root || req.Context().Value(dispatcherKey{}) != nil {
 		req = req.WithContext(context.WithValue(req.Context(), dispatcherKey{}, r))
 	}
 	allowed := r.allowedMethods(req)
