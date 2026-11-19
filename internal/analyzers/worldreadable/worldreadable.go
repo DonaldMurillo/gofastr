@@ -176,7 +176,7 @@ func run(pass *analysis.Pass) (any, error) {
 		calledNames: map[string]bool{},
 	}
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
@@ -217,7 +217,7 @@ func run(pass *analysis.Pass) (any, error) {
 		})
 	}
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
@@ -1151,7 +1151,7 @@ func isParamOf(pass *analysis.Pass, fn *ast.FuncDecl, v *types.Var) bool {
 func bindingHistory(pass *analysis.Pass, obj types.Object, _ token.Pos) []ast.Expr {
 	var out []ast.Expr
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {

@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 // The print-key arm (2026-11, bug 5ade7a35 in battery/auth). A cache
@@ -59,7 +61,7 @@ type printKey struct {
 func runPrintKey(pass *analysis.Pass) {
 	helpers := printKeyHelpers(pass)
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		bound := boundExprs(pass, f)

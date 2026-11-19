@@ -25,6 +25,14 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Analyzers catch a few more spellings.** `nonfinite` recognizes
+  aliased standard-library `math` imports, `keytrim` checks identity
+  keys bound in a declaration, `recoverlog` checks logs written through
+  local stdout and stderr bindings, and `controlbytes` checks direct
+  `Write` and `WriteString` calls on stdout and stderr.
+- **Repo scripts run on macOS.** `repolint` reads module directives with
+  tabs, trailing comments or quoted paths, and the Go cache pruner and
+  test sharder run under macOS Bash 3.2 and BSD tools.
 - **An unknown custom media query in an owned stylesheet is caught
   before the app starts.** `gofastr gen styles` and `gofastr verify`
   passed `@media (--typo)` and the generated initializer panicked at

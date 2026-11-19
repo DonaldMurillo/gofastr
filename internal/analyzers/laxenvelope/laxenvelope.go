@@ -107,6 +107,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -380,7 +381,7 @@ func reportCross(pass *analysis.Pass, pos token.Pos, hits []strictEntry) {
 func prodFiles(pass *analysis.Pass) []*ast.File {
 	var out []*ast.File
 	for _, f := range pass.Files {
-		if isTest(pass, f) {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		out = append(out, f)
@@ -1306,8 +1307,4 @@ func typeLabel(pass *analysis.Pass, t types.Type) string {
 		}
 		return p.Name()
 	})
-}
-
-func isTest(pass *analysis.Pass, f *ast.File) bool {
-	return strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go")
 }

@@ -37,18 +37,22 @@
 // Reported at the write, unless the same deferred body reads, at a
 // position before the write, a variable, field or method whose name
 // says the response state: started, wrote/written, wroteHeader,
-// committed, sent/headerSent, flushed, hijacked (camel-case words, so
-// `rw.started`, `w.Written()`, `headerSent` all count). The guard must
-// READ the state: writing the latch (`started = true` in the recover,
-// recording it for the log) is not a check that the response had not
-// started. The read counts anywhere earlier in the deferred body,
-// whether or not it dominates the write: `cut = cut || rw.started;
-// ...; if cut { panic(...) }` is Recovery's spelling, and following
-// the flag through locals buys nothing a reviewer cannot see;
+// committed, sent/headerSent, flushed, hijacked, streamed (camel-case
+// words, so `rw.started`, `w.Written()`, `headerSent` all count). The
+// guard must READ the state: writing the latch (`started = true` in
+// the recover, recording it for the log) is not a check that the
+// response had not started. The read counts anywhere earlier in the
+// deferred body, whether or not it dominates the write: `cut = cut ||
+// rw.started; ...; if cut { panic(...) }` is Recovery's spelling, and
+// following the flag through locals buys nothing a reviewer cannot
+// see;
 //   - a deferred recover that only logs, records a metric or re-panics
 //     (metrics, tracing, idempotency): no write, no splice;
 //   - a deferred function with no recover() in it: it answers no
-//     panic (a deferred write after an early return is doublewrite's);
+//     panic (a write in a no-recover deferred LITERAL after an
+//     earlier write is doublewrite's; a non-literal defer such as
+//     `defer w.WriteHeader(...)` is neither rule's — doublewrite
+//     reads literals only);
 //   - a write inside a nested function literal in the deferred body (a
 //     callback built there and run later): not this recover's write;
 //   - _test.go files: a test's recover is asserting the panic, not
@@ -171,13 +175,11 @@ func check(pass *analysis.Pass, body *ast.BlockStmt, helpers rwcall.HelperIndex,
 		case *ast.FuncLit:
 			return false
 		case *ast.CallExpr:
-			if id, ok := ast.Unparen(n.Fun).(*ast.Ident); ok {
-				if b, ok := pass.TypesInfo.Uses[id].(*types.Builtin); ok && b.Name() == "recover" {
-					if !recoverAt.IsValid() {
-						recoverAt = n.Pos()
-					}
-					return true
+			if astx.IsRecover(pass, n) {
+				if !recoverAt.IsValid() {
+					recoverAt = n.Pos()
 				}
+				return true
 			}
 			if rwcall.Target(pass, n, helpers) != nil {
 				writes = append(writes, n)

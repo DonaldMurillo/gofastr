@@ -140,6 +140,8 @@ import (
 	"sync"
 
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -183,7 +185,7 @@ func run(pass *analysis.Pass) (any, error) {
 	forwarders := phraseForwarders(pass)
 	texts := textParams(pass)
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		bodies := funcBodies(f)
@@ -622,7 +624,7 @@ func packageProse(pass *analysis.Pass) map[*types.Var]string {
 	}
 	out := map[*types.Var]string{}
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
@@ -715,7 +717,7 @@ func localVars(pass *analysis.Pass, cache *sync.Map, every bool, classify func(a
 		}
 	}
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {

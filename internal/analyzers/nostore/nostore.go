@@ -1072,13 +1072,15 @@ func isErrorStatusStmt(pass *analysis.Pass, fam *family, st ast.Stmt) bool {
 	return status2xx(pass, call.Args[0]) == statusNo
 }
 
-// parentMap maps every node in body to its parent.
+// parentMap tracks statement containers and the expressions attached
+// to them. Branch credit does not cross expression forms this walk
+// does not traverse, such as function literals.
 func parentMap(body *ast.BlockStmt) map[ast.Node]ast.Node {
 	m := map[ast.Node]ast.Node{}
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch p := n.(type) {
 		case *ast.IfStmt:
-			for _, c := range subNodes(p) {
+			for _, c := range containerChildren(p) {
 				if _, seen := m[c]; !seen {
 					m[c] = p
 				}
@@ -1100,8 +1102,6 @@ func parentMap(body *ast.BlockStmt) map[ast.Node]ast.Node {
 	walk(body)
 	return m
 }
-
-func subNodes(n ast.Node) []ast.Node { return containerChildren(n) }
 
 func containerChildren(n ast.Node) []ast.Node {
 	var out []ast.Node

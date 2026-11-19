@@ -1147,7 +1147,7 @@ func directRecover(pass *analysis.Pass, body *ast.BlockStmt) bool {
 					return false
 				}
 			case ast.Expr:
-				if isBuiltin(x, "recover") {
+				if astx.IsRecover(pass, x) {
 					found = true
 				}
 			}
@@ -1299,7 +1299,7 @@ func isPrintfType(t types.Type) bool {
 	if !ok || !sig.Variadic() || sig.Params().Len() != 2 || sig.Results().Len() != 0 {
 		return false
 	}
-	if !isString(sig.Params().At(0).Type()) {
+	if !astx.IsString(sig.Params().At(0).Type()) {
 		return false
 	}
 	sl, ok := sig.Params().At(1).Type().Underlying().(*types.Slice)
@@ -1308,11 +1308,6 @@ func isPrintfType(t types.Type) bool {
 	}
 	e, ok := sl.Elem().Underlying().(*types.Interface)
 	return ok && e.Empty()
-}
-
-func isString(t types.Type) bool {
-	b, ok := t.Underlying().(*types.Basic)
-	return ok && b.Info()&types.IsString != 0
 }
 
 // isLoggerAccessor: `func() *slog.Logger`, the owning App's logger

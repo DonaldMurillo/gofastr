@@ -64,6 +64,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
@@ -137,7 +138,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 		}
 		return true
 	})
-	parents := astParents(fn.Body)
+	parents := dominance.Parents(fn.Body)
 
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		st, ok := n.(*ast.AssignStmt)
@@ -145,7 +146,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 			return true
 		}
 		call, ok := st.Rhs[0].(*ast.CallExpr)
-		if !ok || qualifiedFunc(pass, call.Fun) != "strconv.ParseFloat" || len(call.Args) != 2 {
+		if !ok || packageFunc(pass, call.Fun) != "strconv.ParseFloat" || len(call.Args) != 2 {
 			return true
 		}
 		if tv, ok := pass.TypesInfo.Types[call.Args[0]]; ok && tv.Value != nil {
@@ -214,7 +215,7 @@ func targetChecked(pass *analysis.Pass, target ast.Expr, body *ast.BlockStmt) bo
 		if !ok {
 			return true
 		}
-		switch qualifiedFunc(pass, call.Fun) {
+		switch packageFunc(pass, call.Fun) {
 		case "math.IsNaN", "math.IsInf":
 		default:
 			return true
@@ -255,7 +256,7 @@ func paramRooted(pass *analysis.Pass, e ast.Expr, params map[types.Object]bool, 
 		}
 		return false
 	case *ast.CallExpr:
-		switch qualifiedFunc(pass, x.Fun) {
+		switch packageFunc(pass, x.Fun) {
 		case "strings.TrimSpace", "strings.TrimSuffix", "strings.TrimPrefix", "strings.Trim", "strings.TrimLeft", "strings.TrimRight", "strings.Join", "strings.ToUpper", "strings.ToLower", "strings.ReplaceAll", "fmt.Sprint", "fmt.Sprintf":
 			for _, a := range x.Args {
 				if paramRooted(pass, a, params, assigns, depth+1) {
@@ -287,7 +288,7 @@ func checkedInFunc(pass *analysis.Pass, obj types.Object, body *ast.BlockStmt) b
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CallExpr:
-			qf := qualifiedFunc(pass, x.Fun)
+			qf := packageFunc(pass, x.Fun)
 			if qf == "math.IsNaN" || qf == "math.IsInf" {
 				for _, a := range x.Args {
 					if isObj(pass, a, obj) {
@@ -345,7 +346,7 @@ func bodyChecksFinite(pass *analysis.Pass, body *ast.BlockStmt) bool {
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		if call, ok := n.(*ast.CallExpr); ok {
-			qf := qualifiedFunc(pass, call.Fun)
+			qf := packageFunc(pass, call.Fun)
 			if qf == "math.IsNaN" || qf == "math.IsInf" {
 				found = true
 			}
@@ -395,7 +396,7 @@ func charsetTest(pass *analysis.Pass, e ast.Expr, pf *ast.CallExpr) bool {
 	if !ok {
 		return false
 	}
-	switch qualifiedFunc(pass, call.Fun) {
+	switch packageFunc(pass, call.Fun) {
 	case "regexp.MatchString", "strings.Contains", "strings.ContainsAny", "strings.ContainsRune":
 	default:
 		// A compiled *regexp.Regexp's own MatchString method.
@@ -534,18 +535,22 @@ func isObj(pass *analysis.Pass, e ast.Expr, obj types.Object) bool {
 	return ok && pass.TypesInfo.ObjectOf(id) == obj
 }
 
-func qualifiedFunc(pass *analysis.Pass, e ast.Expr) string {
-	switch x := e.(type) {
-	case *ast.SelectorExpr:
-		if id, ok := x.X.(*ast.Ident); ok {
-			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-				if _, ok := obj.(*types.PkgName); ok {
-					return id.Name + "." + x.Sel.Name
-				}
-			}
-		}
+// packageFunc resolves aliases of the standard packages this rule
+// recognizes. Other imports retain their source qualifier.
+func packageFunc(pass *analysis.Pass, fun ast.Expr) string {
+	sel, ok := fun.(*ast.SelectorExpr)
+	if !ok {
+		return ""
 	}
-	return ""
+	path := astx.PkgPathOf(pass, sel)
+	switch path {
+	case "":
+		return ""
+	case "fmt", "math", "regexp", "strconv", "strings":
+		return path + "." + sel.Sel.Name
+	default:
+		return types.ExprString(sel)
+	}
 }
 
 func renderOperand(e ast.Expr) string {
@@ -554,33 +559,6 @@ func renderOperand(e ast.Expr) string {
 		s = s[:21] + "..."
 	}
 	return s
-}
-
-// astParents maps every node in body to its parent node.
-func astParents(body ast.Node) map[ast.Node]ast.Node {
-	parents := map[ast.Node]ast.Node{}
-	var walk func(n ast.Node)
-	walk = func(n ast.Node) {
-		for _, child := range childNodes(n) {
-			parents[child] = n
-			walk(child)
-		}
-	}
-	walk(body)
-	return parents
-}
-
-// childNodes returns n's direct AST children (nil-free).
-func childNodes(n ast.Node) []ast.Node {
-	var out []ast.Node
-	ast.Inspect(n, func(child ast.Node) bool {
-		if child == nil || child == n {
-			return true
-		}
-		out = append(out, child)
-		return false
-	})
-	return out
 }
 
 func rangeIdent(e ast.Expr) *ast.Ident {

@@ -61,6 +61,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -83,8 +84,7 @@ var writeFuncs = map[string]bool{
 
 func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
-		filename := pass.Fset.Position(f.Pos()).Filename
-		if strings.HasSuffix(filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		guarded := singleEntryGuards(pass, f)

@@ -67,7 +67,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/readsrc"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -95,20 +97,8 @@ func run(pass *analysis.Pass) (any, error) {
 		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
-		parents := map[ast.Node]ast.Node{}
-		var stack []ast.Node
-		ast.Inspect(f, func(n ast.Node) bool {
-			if n == nil {
-				stack = stack[:len(stack)-1]
-				return true
-			}
-			if len(stack) > 0 {
-				parents[n] = stack[len(stack)-1]
-			}
-			stack = append(stack, n)
-			return true
-		})
-		bound := singleBindings(pass, f)
+		parents := dominance.Parents(f)
+		bound := readsrc.BindingsPreferringAssignments(pass, f)
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
@@ -217,35 +207,6 @@ func rawJSON(pass *analysis.Pass, e ast.Expr) bool {
 		t = a.Rhs()
 	}
 	return false
-}
-
-// singleBindings maps each local bound exactly once in f to its value,
-// so `raw := vals.Get("user_id")` then strings.TrimSpace(raw) reads as
-// the request read it is.
-func singleBindings(pass *analysis.Pass, f *ast.File) map[types.Object]ast.Expr {
-	out := map[types.Object]ast.Expr{}
-	count := map[types.Object]int{}
-	ast.Inspect(f, func(n ast.Node) bool {
-		as, ok := n.(*ast.AssignStmt)
-		if !ok || len(as.Lhs) != len(as.Rhs) {
-			return true
-		}
-		for i, lhs := range as.Lhs {
-			if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
-				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
-					count[obj]++
-					out[obj] = as.Rhs[i]
-				}
-			}
-		}
-		return true
-	})
-	for obj, n := range count {
-		if n > 1 {
-			delete(out, obj)
-		}
-	}
-	return out
 }
 
 // isIdentity reports whether e is an identity-named value or a request

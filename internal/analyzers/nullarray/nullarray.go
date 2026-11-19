@@ -63,6 +63,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -98,7 +100,7 @@ func (p *passThrough) String() string { return "passThrough(" + strconv.Itoa(p.P
 func run(pass *analysis.Pass) (any, error) {
 	var files []*ast.File
 	for _, f := range pass.Files {
-		if !strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if !pathflow.IsTestFile(pass, f) {
 			files = append(files, f)
 		}
 	}
@@ -270,21 +272,7 @@ func checkBody(pass *analysis.Pass, body *ast.BlockStmt) {
 		}
 		pass.Reportf(val.Pos(), "%s is a required JSON array, and this value may be nil, which encodes as null; a validating client rejects it. Guard it (if x == nil { x = []T{} }) or route it through a helper that never returns nil", field.Name())
 	}
-	parents := map[ast.Node]ast.Node{}
-	var stack []ast.Node
-	ast.Inspect(body, func(n ast.Node) bool {
-		if n == nil {
-			if len(stack) > 0 {
-				stack = stack[:len(stack)-1]
-			}
-			return true
-		}
-		if len(stack) > 0 {
-			parents[n] = stack[len(stack)-1]
-		}
-		stack = append(stack, n)
-		return true
-	})
+	parents := dominance.Parents(body)
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CompositeLit:

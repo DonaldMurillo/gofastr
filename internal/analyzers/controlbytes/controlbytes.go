@@ -25,9 +25,11 @@
 // a *slog.Logger receiver AND package-level slog.* (the default logger
 // writes to stderr); the log MESSAGE as well as the values — a CRLF in
 // a message forges log lines exactly like one in a value; fmt print
-// calls — Fprint* to os.Stdout/os.Stderr and Print/Printf/Println,
-// which write to os.Stdout unconditionally; and the std log package's
-// Print/Printf/Println, package-level or on a *log.Logger receiver.
+// calls — Fprint* to os.Stdout/os.Stderr or to a local bound to those
+// streams, and Print/Printf/Println, which write to os.Stdout
+// unconditionally; direct Write and WriteString on os.Stdout/os.Stderr;
+// and the std log package's Print*, Fatal*, and Panic* families,
+// package-level or on a *log.Logger receiver.
 //
 // A value counts as scrubbed when it passes through a callee whose name
 // says so (scrub/sanitize/escape/quote/redact — r.URL.EscapedPath
@@ -196,6 +198,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/logsink"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
@@ -233,7 +236,7 @@ func scrubTrusted(name string) bool {
 // path/filepath packages. Clean/Base/Dir/Join there reorder separators
 // and dots; they never remove a control byte, so they clear nothing.
 func isStdlibNormalizer(pass *analysis.Pass, sel *ast.SelectorExpr) bool {
-	p := pkgPathOf(pass, sel)
+	p := astx.PkgPathOf(pass, sel)
 	return p == "path" || p == "path/filepath"
 }
 
@@ -327,7 +330,7 @@ func walkStmt(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, carryin
 				if !s.matches(t, n) {
 					continue
 				}
-				for _, arg := range s.args(t, n) {
+				for _, arg := range s.args(n) {
 					if id, ok := ast.Unparen(arg).(*ast.Ident); ok {
 						if testedAt(guards[pass.TypesInfo.ObjectOf(id)], n.Pos()) {
 							// The value already passed a validator or
@@ -346,7 +349,7 @@ func walkStmt(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, carryin
 					if tainted {
 						pass.Reportf(n.Pos(),
 							"controlbytes: request-derived value reaches %s unscrubbed; C0/DEL bytes forge log lines and header values (scrub or escape at the sink)",
-							s.name)
+							s.diagnosticName(pass, n))
 						break
 					}
 				}
@@ -585,7 +588,7 @@ func markMembership(out map[types.Object][]guard, pass *analysis.Pass, cond ast.
 // positive spellings (`if seen[p] { return }`) stay unguarded: there
 // the sink runs only for values the map has never vetted.
 func markNegatedDenial(out map[types.Object][]guard, pass *analysis.Pass, ifst *ast.IfStmt) {
-	if ifst.Body == nil || !diverges(ifst.Body) {
+	if ifst.Body == nil || !containsDenialExit(ifst.Body) {
 		return
 	}
 	var idx *ast.IndexExpr
@@ -629,10 +632,9 @@ func markNegatedDenial(out map[types.Object][]guard, pass *analysis.Pass, ifst *
 	}
 }
 
-// diverges: the block exits the function here (return or panic), so
-// code AFTER the enclosing statement runs only when the condition was
-// false.
-func diverges(body *ast.BlockStmt) bool {
+// containsDenialExit looks for a syntactic return or panic outside
+// nested functions. This is the denial check's historical criterion.
+func containsDenialExit(body *ast.BlockStmt) bool {
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch x := n.(type) {
@@ -708,8 +710,8 @@ func carryingStructs(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl) 
 
 type sink struct {
 	name    string
-	args    func(t *taint, call *ast.CallExpr) []ast.Expr
 	matches func(t *taint, call *ast.CallExpr) bool
+	args    func(call *ast.CallExpr) []ast.Expr
 	// seam: the sink cannot see who built the struct it was handed, so
 	// every same-package struct-parameter field counts as untrusted
 	// here (the message sinks).
@@ -721,22 +723,35 @@ type sink struct {
 	location bool
 }
 
-var sinks = []sink{
-	{
-		name: "slog.String/slog.Any",
-		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-			if !ok {
-				return false
-			}
-			switch astx.PkgFuncName(t.pass, sel) {
-			case "slog.String", "slog.Any":
-				return true
-			}
-			return false
-		},
-		args: valueArg1,
-	},
+// diagnosticName preserves the wording for receiver calls that share
+// a sink shape with the package-level slog functions.
+func (s sink) diagnosticName(pass *analysis.Pass, call *ast.CallExpr) string {
+	if s.name == logsink.SlogLevels {
+		if sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr); ok && pass.TypesInfo.Selections[sel] != nil {
+			return "logger.Debug/Info/Warn/Error key-value"
+		}
+	}
+	return s.name
+}
+
+// logSinks adapts the shared log-sink shapes (logsink.Shapes, the same
+// table recoverlog reports the recover() side on) to this rule's
+// taint-carrying matches interface.
+var logSinks = func() []sink {
+	out := make([]sink, 0, len(logsink.Shapes))
+	for _, s := range logsink.Shapes {
+		out = append(out, sink{
+			name:    s.Name,
+			matches: func(t *taint, call *ast.CallExpr) bool { return s.Matches(t.pass, call) },
+			args:    s.Args,
+		})
+	}
+	return out
+}()
+
+// messageSinks are this rule's own seams: the surfaces that carry
+// request bytes to a parser or a wire, not to the operator tail.
+var messageSinks = []sink{
 	{
 		name: "attribute.String",
 		matches: func(t *taint, call *ast.CallExpr) bool {
@@ -746,77 +761,7 @@ var sinks = []sink{
 			}
 			return astx.PkgFuncName(t.pass, sel) == "attribute.String"
 		},
-		args: valueArg1,
-	},
-	{
-		name: "logger.Debug/Info/Warn/Error key-value",
-		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-			if !ok {
-				return false
-			}
-			switch sel.Sel.Name {
-			case "Debug", "Info", "Warn", "Error",
-				"DebugContext", "InfoContext", "WarnContext", "ErrorContext":
-			default:
-				return false
-			}
-			tv, ok := t.pass.TypesInfo.Types[sel.X]
-			if !ok {
-				return false
-			}
-			return astx.IsNamed(astx.Deref(tv.Type), "log/slog", "Logger")
-		},
-		// Warn(msg, k1, v1, k2, v2): the message and the values sit at
-		// even offsets — msg at 0 for the plain form, 1 for *Context.
-		args: func(t *taint, call *ast.CallExpr) []ast.Expr {
-			return astx.EvenOffsetArgs(call)
-		},
-	},
-	{
-		// Package-level slog.* writes to the default logger (stderr).
-		name: "slog.Debug/Info/Warn/Error key-value",
-		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-			if !ok {
-				return false
-			}
-			switch sel.Sel.Name {
-			case "Debug", "Info", "Warn", "Error",
-				"DebugContext", "InfoContext", "WarnContext", "ErrorContext":
-			default:
-				return false
-			}
-			return pkgPathOf(t.pass, sel) == "log/slog"
-		},
-		// msg, k1, v1: message and values at even offsets from 0; the
-		// *Context forms shift one for ctx.
-		args: func(t *taint, call *ast.CallExpr) []ast.Expr {
-			return astx.EvenOffsetArgs(call)
-		},
-	},
-	{
-		// Log(ctx, level, msg, k1, v1) on a receiver or package-level:
-		// message and values at even offsets from 2.
-		name: "slog.Log key-value",
-		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != "Log" {
-				return false
-			}
-			if pkgPathOf(t.pass, sel) == "log/slog" {
-				return true
-			}
-			tv, ok := t.pass.TypesInfo.Types[sel.X]
-			return ok && astx.IsNamed(astx.Deref(tv.Type), "log/slog", "Logger")
-		},
-		args: func(t *taint, call *ast.CallExpr) []ast.Expr {
-			var out []ast.Expr
-			for i := 2; i < len(call.Args); i += 2 {
-				out = append(out, call.Args[i])
-			}
-			return out
-		},
+		args: logsink.ValueArg1,
 	},
 	{
 		name: "http.Header.Set/Add",
@@ -840,32 +785,7 @@ var sinks = []sink{
 			// at write time. See outboundHeaderMap.
 			return !t.outboundHeaderMap(sel.X)
 		},
-		args: valueArg1,
-	},
-	{
-		name: "std log print",
-		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-			if !ok {
-				return false
-			}
-			switch sel.Sel.Name {
-			case "Print", "Printf", "Println",
-				// Fatal* and Panic* print the same message through the
-				// logger before they exit or panic.
-				"Fatal", "Fatalf", "Fatalln", "Panic", "Panicf", "Panicln":
-			default:
-				return false
-			}
-			// Package-level log.Print* (default logger → stderr), or
-			// the same methods on a *log.Logger receiver.
-			if pkgPathOf(t.pass, sel) == "log" {
-				return true
-			}
-			tv, ok := t.pass.TypesInfo.Types[sel.X]
-			return ok && astx.IsNamed(astx.Deref(tv.Type), "log", "Logger")
-		},
-		args: func(t *taint, call *ast.CallExpr) []ast.Expr { return call.Args },
+		args: logsink.ValueArg1,
 	},
 	{
 		// net/smtp writes the envelope arguments onto the wire verbatim;
@@ -884,7 +804,7 @@ var sinks = []sink{
 			}
 			return astx.IsNamed(astx.Deref(s.Recv()), "net/smtp", "Client")
 		},
-		args: func(t *taint, call *ast.CallExpr) []ast.Expr {
+		args: func(call *ast.CallExpr) []ast.Expr {
 			if len(call.Args) >= 1 {
 				return call.Args[:1]
 			}
@@ -914,7 +834,7 @@ var sinks = []sink{
 			}
 			return len(call.Args) > 0 && headerShaped(call.Args[0])
 		},
-		args: func(t *taint, call *ast.CallExpr) []ast.Expr { return call.Args[:1] },
+		args: func(call *ast.CallExpr) []ast.Expr { return call.Args[:1] },
 	},
 	{
 		// http.Redirect sets the Location header from its URL argument;
@@ -926,59 +846,18 @@ var sinks = []sink{
 			if !ok || sel.Sel.Name != "Redirect" {
 				return false
 			}
-			return pkgPathOf(t.pass, sel) == "net/http"
+			return astx.PkgPathOf(t.pass, sel) == "net/http"
 		},
-		args: func(t *taint, call *ast.CallExpr) []ast.Expr {
+		args: func(call *ast.CallExpr) []ast.Expr {
 			if len(call.Args) >= 3 {
 				return call.Args[2:3]
 			}
 			return nil
 		},
 	},
-	{
-		name: "stdout/stderr print",
-		matches: func(t *taint, call *ast.CallExpr) bool {
-			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-			if !ok {
-				return false
-			}
-			switch astx.PkgFuncName(t.pass, sel) {
-			case "fmt.Print", "fmt.Printf", "fmt.Println":
-				// No writer argument: these write to os.Stdout
-				// outright, which is the terminal sink.
-				return true
-			case "fmt.Fprint", "fmt.Fprintf", "fmt.Fprintln":
-			default:
-				return false
-			}
-			if len(call.Args) == 0 {
-				return false
-			}
-			// os.Stdout is itself a selector on the os package; a
-			// local bound to it (every binding) is the same stream,
-			// while a parameter that merely shares the name is not
-			// the terminal sink this rule means.
-			if wsel, ok := ast.Unparen(call.Args[0]).(*ast.SelectorExpr); ok {
-				if wsel.Sel.Name != "Stdout" && wsel.Sel.Name != "Stderr" {
-					return false
-				}
-				return pkgPathOf(t.pass, wsel) == "os"
-			}
-			if id, ok := ast.Unparen(call.Args[0]).(*ast.Ident); ok {
-				return stdStreamLocals(t.pass)[t.pass.TypesInfo.ObjectOf(id)]
-			}
-			return false
-		},
-		// The F forms carry the writer at offset 0; the bare Print
-		// forms check every argument, format string included.
-		args: func(t *taint, call *ast.CallExpr) []ast.Expr {
-			if sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr); ok && strings.HasPrefix(sel.Sel.Name, "F") {
-				return call.Args[1:]
-			}
-			return call.Args
-		},
-	},
 }
+
+var sinks = append(logSinks, messageSinks...)
 
 // checkDetailValue reports a tainted value committed to a Detail
 // diagnostic field, honouring the tested-value guards like any sink.
@@ -1019,13 +898,6 @@ func headerShaped(e ast.Expr) bool {
 	}
 	walk(e)
 	return crlf && colon
-}
-
-func valueArg1(t *taint, call *ast.CallExpr) []ast.Expr {
-	if len(call.Args) >= 2 {
-		return call.Args[1:2]
-	}
-	return nil
 }
 
 // ---- taint -------------------------------------------------------------
@@ -1136,7 +1008,7 @@ func bindAssign(t *taint, pass *analysis.Pass, assign *ast.AssignStmt) {
 			// The recover() value is `any`, not a string carrier, but
 			// its bytes are exactly what the reporter seam must
 			// scrub, so the binding is kept for the provenance walk.
-			if i < len(assign.Rhs) && isRecoverCallExpr(pass, assign.Rhs[i]) {
+			if i < len(assign.Rhs) && astx.IsRecover(pass, assign.Rhs[i]) {
 				if obj, ok := pass.TypesInfo.ObjectOf(id).(*types.Var); ok {
 					t.bind[obj] = append(t.bind[obj], assign.Rhs[i])
 				}
@@ -1232,7 +1104,7 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 		}
 		return false
 	case *ast.CallExpr:
-		if t.carryingPass && t.isRecoverCall(e) {
+		if t.carryingPass && astx.IsRecover(t.pass, e) {
 			// A handler that panicked on request data hands request
 			// bytes to recover(); the seam catching it cannot tell
 			// which panic did, so the value marks the struct it lands
@@ -1250,7 +1122,7 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 		// renders the recover() value. A package-qualified call has
 		// no receiver, and a same-package struct receiver is a
 		// payload, like an argument.
-		if sel, ok := ast.Unparen(e.Fun).(*ast.SelectorExpr); ok && pkgPathOf(t.pass, sel) == "" {
+		if sel, ok := ast.Unparen(e.Fun).(*ast.SelectorExpr); ok && astx.PkgPathOf(t.pass, sel) == "" {
 			if !t.structPayload(sel.X) && t.orig(sel.X, seen, depth+1) {
 				return true
 			}
@@ -1372,7 +1244,7 @@ func (t *taint) callCleared(call *ast.CallExpr, seen map[types.Object]bool, dept
 			break
 		}
 		p := params.At(i)
-		if !isString(p.Type()) || !(c0FilterBody(decl, t.pass, p) || returnsScrubOf(decl, t.pass, p)) {
+		if !astx.IsString(p.Type()) || !(c0FilterBody(decl, t.pass, p) || returnsScrubOf(decl, t.pass, p)) {
 			cleared = false
 			break
 		}
@@ -1861,7 +1733,7 @@ func isChildOutputParam(obj types.Object) bool {
 	default:
 		return false
 	}
-	if isString(v.Type()) {
+	if astx.IsString(v.Type()) {
 		return true
 	}
 	if sl, ok := astx.Deref(v.Type()).(*types.Slice); ok {
@@ -1869,25 +1741,6 @@ func isChildOutputParam(obj types.Object) bool {
 		return ok && b.Kind() == types.Byte
 	}
 	return false
-}
-
-// isRecoverCallExpr: e is a recover() call, for the binding pass.
-func isRecoverCallExpr(pass *analysis.Pass, e ast.Expr) bool {
-	call, ok := ast.Unparen(e).(*ast.CallExpr)
-	if !ok {
-		return false
-	}
-	id, ok := ast.Unparen(call.Fun).(*ast.Ident)
-	if !ok || id.Name != "recover" {
-		return false
-	}
-	_, ok = pass.TypesInfo.ObjectOf(id).(*types.Builtin)
-	return ok
-}
-
-// isRecoverCall: the builtin recover().
-func (t *taint) isRecoverCall(call *ast.CallExpr) bool {
-	return isRecoverCallExpr(t.pass, call)
 }
 
 // isRequestCookiesCall: r.Cookies() — every *http.Cookie it returns
@@ -1936,73 +1789,6 @@ func (t *taint) cookieValue(e ast.Expr) bool {
 // isCookieType: *http.Cookie (or an http.Cookie value).
 func isCookieType(t types.Type) bool {
 	return astx.IsNamed(astx.Deref(t), "net/http", "Cookie")
-}
-
-// stdLocalsMemo caches stdStreamLocals per pass.
-var stdLocalsMemo = struct {
-	sync.Mutex
-	byPass map[*analysis.Pass]map[types.Object]bool
-}{byPass: map[*analysis.Pass]map[types.Object]bool{}}
-
-// stdStreamLocals maps each local EVERY binding of which is os.Stdout
-// or os.Stderr: fmt.Fprintf(w, …) through such a local is the terminal
-// sink. A local re-bound to some other writer is not, and a parameter
-// that merely shares the name never was.
-func stdStreamLocals(pass *analysis.Pass) map[types.Object]bool {
-	stdLocalsMemo.Lock()
-	defer stdLocalsMemo.Unlock()
-	if m, ok := stdLocalsMemo.byPass[pass]; ok {
-		return m
-	}
-	out := map[types.Object]bool{}
-	nonStd := map[types.Object]bool{}
-	isStdStream := func(e ast.Expr) bool {
-		sel, ok := ast.Unparen(e).(*ast.SelectorExpr)
-		if !ok || (sel.Sel.Name != "Stdout" && sel.Sel.Name != "Stderr") {
-			return false
-		}
-		return pkgPathOf(pass, sel) == "os"
-	}
-	bind := func(id *ast.Ident, rhs ast.Expr) {
-		obj := pass.TypesInfo.ObjectOf(id)
-		if obj == nil {
-			return
-		}
-		if isStdStream(rhs) {
-			out[obj] = true
-		} else {
-			nonStd[obj] = true
-		}
-	}
-	for _, f := range pass.Files {
-		if pathflow.IsTestFile(pass, f) {
-			continue
-		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			switch x := n.(type) {
-			case *ast.FuncLit:
-				return true
-			case *ast.AssignStmt:
-				for i, l := range x.Lhs {
-					if id, ok := l.(*ast.Ident); ok && i < len(x.Rhs) {
-						bind(id, x.Rhs[i])
-					}
-				}
-			case *ast.ValueSpec:
-				for i, name := range x.Names {
-					if i < len(x.Values) {
-						bind(name, x.Values[i])
-					}
-				}
-			}
-			return true
-		})
-	}
-	for obj := range nonStd {
-		delete(out, obj)
-	}
-	stdLocalsMemo.byPass[pass] = out
-	return out
 }
 
 // structPayload: e is a value of a same-package struct type (a record
@@ -2184,25 +1970,6 @@ func carriesStrings(t types.Type) bool {
 	return false
 }
 
-func isString(t types.Type) bool {
-	b, ok := t.Underlying().(*types.Basic)
-	return ok && b.Info()&types.IsString != 0
-}
-
-// pkgPathOf renders the imported package path behind a selector's X,
-// "" when X is not a package identifier.
-func pkgPathOf(pass *analysis.Pass, sel *ast.SelectorExpr) string {
-	id, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	pkg, ok := pass.TypesInfo.Uses[id].(*types.PkgName)
-	if !ok {
-		return ""
-	}
-	return pkg.Imported().Path()
-}
-
 // ---- guard, then scrub ---------------------------------------------------
 
 // stripName: a callee that removes bytes, so its result can be shorter
@@ -2310,17 +2077,17 @@ func nonEmptyTest(pass *analysis.Pass, cond ast.Expr) ast.Expr {
 	switch b.Op {
 	case token.NEQ:
 		for _, pair := range [][2]ast.Expr{{b.X, b.Y}, {b.Y, b.X}} {
-			if k, ok := astx.StringConstant(pass, pair[1]); ok && k == "" && isString(pass.TypesInfo.TypeOf(pair[0])) {
+			if k, ok := astx.StringConstant(pass, pair[1]); ok && k == "" && astx.IsString(pass.TypesInfo.TypeOf(pair[0])) {
 				return ast.Unparen(pair[0])
 			}
 			if x := lenOf(pair[0]); x != nil {
-				if n, ok := intConst(pair[1]); ok && n == 0 && isString(pass.TypesInfo.TypeOf(x)) {
+				if n, ok := intConst(pair[1]); ok && n == 0 && astx.IsString(pass.TypesInfo.TypeOf(x)) {
 					return x
 				}
 			}
 		}
 	case token.GTR, token.GEQ:
-		if x := lenOf(b.X); x != nil && isString(pass.TypesInfo.TypeOf(x)) {
+		if x := lenOf(b.X); x != nil && astx.IsString(pass.TypesInfo.TypeOf(x)) {
 			if n, ok := intConst(b.Y); ok && (b.Op == token.GTR && n == 0 || b.Op == token.GEQ && n == 1) {
 				return x
 			}

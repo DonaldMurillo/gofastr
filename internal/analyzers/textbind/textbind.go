@@ -168,7 +168,9 @@ import (
 	"golang.org/x/tools/go/analysis"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/allow"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -334,7 +336,7 @@ func (c *checker) fieldHolds(field *types.Var) bool {
 func (c *checker) scanFills() {
 	info := c.pass.TypesInfo
 	for _, f := range c.pass.Files {
-		if strings.HasSuffix(c.pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(c.pass, f) {
 			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
@@ -423,7 +425,7 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 	var order []*types.Func
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {
@@ -759,7 +761,7 @@ func (st *fnState) callSinks(call *ast.CallExpr) {
 				st.sink(a, "")
 			}
 			return
-		case whereNames[name] && sig.Variadic() && sig.Params().Len() == 2 && isString(sig.Params().At(0).Type()):
+		case whereNames[name] && sig.Variadic() && sig.Params().Len() == 2 && astx.IsString(sig.Params().At(0).Type()):
 			for _, a := range call.Args[1:] {
 				st.sink(a, "")
 			}
@@ -797,7 +799,7 @@ func (st *fnState) callSinks(call *ast.CallExpr) {
 func calleeLabel(fn *types.Func, sig *types.Signature, i int) string {
 	name := fn.Name()
 	if recv := sig.Recv(); recv != nil {
-		if n := namedOf(recv.Type()); n != nil {
+		if n, ok := types.Unalias(astx.Deref(recv.Type())).(*types.Named); ok {
 			name = n.Obj().Name() + "." + name
 		}
 	} else if fn.Pkg() != nil {
@@ -813,7 +815,7 @@ func calleeLabel(fn *types.Func, sig *types.Signature, i int) string {
 // before it is the query string.
 func queryThenArgs(sig *types.Signature) bool {
 	n := sig.Params().Len()
-	if n < 2 || !isString(sig.Params().At(n-2).Type()) {
+	if n < 2 || !astx.IsString(sig.Params().At(n-2).Type()) {
 		return false
 	}
 	sl, ok := sig.Params().At(n - 1).Type().(*types.Slice)
@@ -857,7 +859,7 @@ func sqlArgsStruct(s *types.Struct) bool {
 		f := s.Field(i)
 		switch f.Name() {
 		case "SQL":
-			sqlField = isString(f.Type())
+			sqlField = astx.IsString(f.Type())
 		case "Args":
 			sl, ok := f.Type().(*types.Slice)
 			argsField = ok && isEmptyInterface(sl.Elem())
@@ -1436,7 +1438,7 @@ func isBuilder(t types.Type) bool {
 	if p, ok := t.Underlying().(*types.Pointer); ok {
 		t = p.Elem()
 	}
-	return isNamed(t, "strings", "Builder")
+	return astx.IsNamed(types.Unalias(t), "strings", "Builder")
 }
 
 // hostCallbackTaint is the taint of a call through a func-typed struct
@@ -1617,7 +1619,7 @@ func (st *fnState) sourceCall(sel *ast.SelectorExpr) (taint, bool) {
 		case "FormValue", "PostFormValue", "PathValue", "Referer", "UserAgent", "Cookie", "Cookies":
 			return taint{src: true}, true
 		}
-	case isNamed(recv, "net/url", "URL") || isPtrNamed(recv, "net/url", "URL"):
+	case astx.IsNamed(types.Unalias(recv), "net/url", "URL") || isPtrNamed(recv, "net/url", "URL"):
 		if sel.Sel.Name == "Query" {
 			if inner, ok := ast.Unparen(sel.X).(*ast.SelectorExpr); ok && isRequest(typeOf(pass, inner.X)) {
 				return taint{src: true}, true
@@ -1689,7 +1691,7 @@ func (st *fnState) cookieFromRequest(e ast.Expr) bool {
 
 // isCookie: *http.Cookie (or an http.Cookie value).
 func isCookie(t types.Type) bool {
-	return isPtrNamed(t, "net/http", "Cookie") || isNamed(t, "net/http", "Cookie")
+	return isPtrNamed(t, "net/http", "Cookie") || astx.IsNamed(types.Unalias(t), "net/http", "Cookie")
 }
 
 // vetted reports whether a storable check or an allow-list test of v
@@ -2194,11 +2196,6 @@ func stringish(t types.Type) bool {
 	return false
 }
 
-func isString(t types.Type) bool {
-	b, ok := t.Underlying().(*types.Basic)
-	return ok && b.Info()&types.IsString != 0
-}
-
 func isEmptyInterface(t types.Type) bool {
 	i, ok := t.Underlying().(*types.Interface)
 	return ok && i.Empty()
@@ -2213,20 +2210,7 @@ func isPtrNamed(t types.Type, pkg, name string) bool {
 		return false
 	}
 	p, ok := t.(*types.Pointer)
-	return ok && isNamed(p.Elem(), pkg, name)
-}
-
-func isNamed(t types.Type, pkg, name string) bool {
-	n, ok := types.Unalias(t).(*types.Named)
-	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == pkg && n.Obj().Name() == name
-}
-
-func namedOf(t types.Type) *types.Named {
-	if p, ok := t.(*types.Pointer); ok {
-		t = p.Elem()
-	}
-	n, _ := types.Unalias(t).(*types.Named)
-	return n
+	return ok && astx.IsNamed(types.Unalias(p.Elem()), pkg, name)
 }
 
 // fieldWrite records a write of rhs into field: request text marks the

@@ -56,7 +56,14 @@ func CollectFuncs(pass *analysis.Pass) map[string][]*ast.FuncDecl {
 
 // IsTestFile reports whether f is a _test.go file.
 func IsTestFile(pass *analysis.Pass, f *ast.File) bool {
-	return strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go")
+	return InTestFile(pass, f)
+}
+
+// InTestFile reports whether n's position sits in a _test.go file, for
+// callers that hold a node (an identifier, a declaration) rather than
+// the file itself.
+func InTestFile(pass *analysis.Pass, n ast.Node) bool {
+	return strings.HasSuffix(pass.Fset.Position(n.Pos()).Filename, "_test.go")
 }
 
 // FuncsWithBodies returns every non-test FuncDecl with a body, for the

@@ -93,6 +93,17 @@ func compositeLit() {
 	}()
 }
 
+// stderrLocal: the terminal stream through a local bound to it — the
+// same stream fmt would write to (controlbytes' spelling).
+func stderrLocal() {
+	defer func() {
+		if r := recover(); r != nil {
+			w := os.Stderr
+			fmt.Fprintln(w, "panic:", r) // want `recover\(\) value reaches stdout/stderr print unscrubbed`
+		}
+	}()
+}
+
 // localHelper: the sink is a package-local function called by its bare
 // name, not a selector; qualifiedFunc must still name it a helper.
 func localHelper() {
@@ -105,4 +116,12 @@ func localHelper() {
 
 func emitPanic(v any) {
 	log.Printf("panic: %v", v)
+}
+
+func parenthesizedSprintf() {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panic", "value", (fmt.Sprintf)("%q", r))
+		}
+	}()
 }

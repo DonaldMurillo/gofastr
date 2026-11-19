@@ -42,7 +42,7 @@ func lintChromiumShard(root string) ([]finding, error) {
 		}
 		return nil, err
 	}
-	module := modulePath(modBody)
+	module := moduleLine(modBody)
 	if module == "" {
 		return nil, nil
 	}
@@ -212,14 +212,4 @@ func exprNames(e constraint.Expr, tag string, negated bool) bool {
 		return exprNames(e.X, tag, negated) || exprNames(e.Y, tag, negated)
 	}
 	return false
-}
-
-// modulePath reads the module line of a go.mod.
-func modulePath(goMod []byte) string {
-	for line := range strings.SplitSeq(string(goMod), "\n") {
-		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
-			return strings.Trim(strings.TrimSpace(rest), `"`)
-		}
-	}
-	return ""
 }

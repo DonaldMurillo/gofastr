@@ -139,6 +139,8 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/typeutil"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -199,7 +201,7 @@ func run(pass *analysis.Pass) (any, error) {
 		pass.ExportObjectFact(obj, &audits{Index: slices.Sorted(maps.Keys(a.audit[obj]))})
 	}
 	for _, fn := range fns {
-		if strings.HasSuffix(pass.Fset.Position(fn.Pos()).Filename, "_test.go") {
+		if pathflow.InTestFile(pass, fn) {
 			continue
 		}
 		r := a.newResolver(fn.Body)
@@ -217,7 +219,7 @@ func run(pass *analysis.Pass) (any, error) {
 	// the same check; they export no facts — there is no *types.Func to
 	// hang one on.
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {

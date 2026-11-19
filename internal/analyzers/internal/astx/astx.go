@@ -4,12 +4,6 @@
 // answers one syntactic or type question and decides nothing. The
 // analyzers pick their sinks and postures; this package only names
 // callees, strips parentheses of type structure, and splits words.
-//
-// Users today: asciifold, compositekey, controlbytes, discardmutator,
-// divlimit, emitident, hygiene, intwrap, laxenvelope, mapwriter,
-// nonfinite, nostore, recovercallback, recoverlog, reqparamlimit,
-// secretcompare, timestampid, unboundedbody, unboundedresp, unseated,
-// worldreadable.
 // (Parenthesis stripping lives in the standard library's ast.Unparen
 // and is not duplicated here.)
 package astx
@@ -82,8 +76,7 @@ func BodyOf(fn ast.Node) *ast.BlockStmt {
 }
 
 // CalleeFunc resolves a callee expression to its *types.Func through
-// the type checker, for a plain identifier or a selector. It replaces
-// calleeFunc in asciifold, compositekey, and emitident.
+// the type checker, for a plain identifier or a selector.
 func CalleeFunc(pass *analysis.Pass, fun ast.Expr) (*types.Func, bool) {
 	switch f := fun.(type) {
 	case *ast.Ident:
@@ -167,8 +160,8 @@ func FlipComparison(op token.Token) token.Token {
 	return op
 }
 
-// IsNamed reports whether t is the named type pkgPath.name. It
-// replaces isNamed in controlbytes, recovercallback, and recoverlog.
+// IsNamed reports whether t is the named type pkgPath.name. Callers
+// that accept aliases unwrap them with types.Unalias.
 func IsNamed(t types.Type, pkgPath, name string) bool {
 	n, ok := t.(*types.Named)
 	if !ok {
@@ -176,6 +169,35 @@ func IsNamed(t types.Type, pkgPath, name string) bool {
 	}
 	obj := n.Obj()
 	return obj.Pkg() != nil && obj.Pkg().Path() == pkgPath && obj.Name() == name
+}
+
+// IsRecover reports whether e is the builtin recover() call,
+// parentheses stripped. It replaces isRecoverCallExpr in controlbytes,
+// isRecoverCall in recoverlog, and the inline spellings in
+// recoverwrite and recovercallback.
+func IsRecover(pass *analysis.Pass, e ast.Expr) bool {
+	call, ok := ast.Unparen(e).(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	id, ok := ast.Unparen(call.Fun).(*ast.Ident)
+	if !ok || id.Name != "recover" {
+		return false
+	}
+	_, ok = pass.TypesInfo.ObjectOf(id).(*types.Builtin)
+	return ok
+}
+
+// IsString reports whether t's underlying type is a string, untyped
+// strings included (the types.IsString bit, not Kind() == String). It
+// replaces isString in controlbytes, recovercallback, textbind,
+// listheader and ratelimitkey.
+func IsString(t types.Type) bool {
+	if t == nil {
+		return false
+	}
+	b, ok := t.Underlying().(*types.Basic)
+	return ok && b.Info()&types.IsString != 0
 }
 
 // MapUnderlying returns x's underlying *types.Map. It replaces
@@ -190,18 +212,10 @@ func MapUnderlying(pass *analysis.Pass, x ast.Expr) (*types.Map, bool) {
 }
 
 // NamedOf returns the named type behind t, or the named type behind
-// one pointer level (*T), or nil. It replaces namedOf in nostore and
-// unseated.
+// one pointer level (*T), or nil.
 func NamedOf(t types.Type) *types.Named {
-	if named, ok := t.(*types.Named); ok {
-		return named
-	}
-	if p, ok := t.(*types.Pointer); ok {
-		if named, ok := p.Elem().(*types.Named); ok {
-			return named
-		}
-	}
-	return nil
+	n, _ := Deref(t).(*types.Named)
+	return n
 }
 
 // PkgFuncName renders a selector callee as "pkg.Func", resolving the
@@ -225,6 +239,21 @@ func PkgFuncName(pass *analysis.Pass, fun ast.Expr) string {
 		return ""
 	}
 	return pkg.Imported().Name() + "." + sel.Sel.Name
+}
+
+// PkgPathOf renders the imported package path behind a selector's X,
+// "" when X is not a package identifier. It replaces pkgPathOf in
+// controlbytes and recoverlog.
+func PkgPathOf(pass *analysis.Pass, sel *ast.SelectorExpr) string {
+	id, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return ""
+	}
+	pkg, ok := pass.TypesInfo.Uses[id].(*types.PkgName)
+	if !ok {
+		return ""
+	}
+	return pkg.Imported().Path()
 }
 
 // QualifiedCallee renders a call target as "pkg.Func" through the

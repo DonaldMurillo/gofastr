@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/types/typeutil"
 )
 
@@ -246,7 +247,7 @@ func isRequest(obj types.Object) bool {
 // uncancellable context with no bound handed to a host interface
 // (d799883c).
 func (a *analyzer) checkAudit(r *resolver, body *ast.BlockStmt) {
-	if strings.HasSuffix(a.pass.Fset.Position(body.Pos()).Filename, "_test.go") {
+	if pathflow.InTestFile(a.pass, body) {
 		return
 	}
 	info := a.pass.TypesInfo

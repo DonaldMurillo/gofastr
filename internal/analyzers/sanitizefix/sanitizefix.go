@@ -56,13 +56,13 @@ import (
 	"go/types"
 	"regexp"
 	"regexp/syntax"
-	"strings"
 	"unicode/utf8"
 
 	"golang.org/x/tools/go/analysis"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
 var Analyzer = &analysis.Analyzer{
@@ -77,7 +77,7 @@ func run(pass *analysis.Pass) (any, error) {
 	var decls []*ast.FuncDecl
 	byObj := map[types.Object]*ast.FuncDecl{}
 	for _, f := range pass.Files {
-		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
 		for _, d := range f.Decls {

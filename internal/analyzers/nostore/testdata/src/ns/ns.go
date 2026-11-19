@@ -453,3 +453,17 @@ func dynamicCCQuiet(w http.ResponseWriter, r *http.Request, cc string) {
 	w.Header().Set("Cache-Control", cc)
 	w.Write([]byte(u))
 }
+
+func uncalledHeaderSetter(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	if r.URL.Path != "" {
+		_ = func() {
+			if r.URL.RawQuery != "" {
+				w.Header().Set("Cache-Control", "no-store")
+			}
+		}
+		w.Write([]byte("account")) // want `2xx response for a resolved principal`
+	}
+}
