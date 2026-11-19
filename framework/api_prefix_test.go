@@ -12,12 +12,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// TestAPIPrefix_MountsEntityRoutesUnderPrefix verifies WithAPIPrefix("/api")
+// TestAPIPrefix_MountsEntityRoutesUnderPrefix verifies WithAPIPrefix("//api/./")
 // moves the whole auto-CRUD surface (list/get/create + _batch + _events) under
 // the prefix and leaves the bare path unrouted.
 func TestAPIPrefix_MountsEntityRoutesUnderPrefix(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		app := NewApp(WithDB(db), WithAPIPrefix("/api"), WithoutDefaultMiddleware())
+		app := NewApp(WithDB(db), WithAPIPrefix("//api/./"), WithoutDefaultMiddleware())
 		app.Entity("posts", entity.EntityConfig{
 			Table:  "posts",
 			Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}},
@@ -77,21 +77,23 @@ func TestAPIPrefix_DefaultIsBareMount(t *testing.T) {
 	})
 }
 
-// TestAPIPrefix_Normalization checks "api", "/api", and "/api/" all behave the
-// same via apiPrefix().
 func TestAPIPrefix_Normalization(t *testing.T) {
-	for _, in := range []string{"api", "/api", "/api/", "//api//"} {
-		a := NewApp(WithAPIPrefix(in))
-		if got := a.apiPrefix(); got != "/api" {
-			t.Errorf("apiPrefix() for input %q = %q, want %q", in, got, "/api")
+	for _, tc := range []struct{ input, prefix string }{
+		{"api", "/api"},
+		{"/api", "/api"},
+		{"/api/", "/api"},
+		{"//api//", "/api"},
+		{"/api//v1", "/api/v1"},
+		{"\\api\\./staging/../v1\x7f/", "/api/v1"},
+		{"/api/..", ""},
+		{"", ""},
+	} {
+		a := NewApp(WithAPIPrefix(tc.input))
+		if got := a.apiPrefix(); got != tc.prefix {
+			t.Errorf("apiPrefix() for input %q = %q, want %q", tc.input, got, tc.prefix)
 		}
-		if got := a.entityMountPath("posts"); got != "/api/posts" {
-			t.Errorf("entityMountPath for input %q = %q, want /api/posts", in, got)
+		if got, want := a.entityMountPath("posts"), tc.prefix+"/posts"; got != want {
+			t.Errorf("entityMountPath for input %q = %q, want %q", tc.input, got, want)
 		}
-	}
-	// empty → historical bare mount
-	a := NewApp()
-	if got := a.entityMountPath("posts"); got != "/posts" {
-		t.Errorf("entityMountPath (no prefix) = %q, want /posts", got)
 	}
 }

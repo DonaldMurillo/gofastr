@@ -324,7 +324,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 
 		listOp.AddParameter("per_page", "query", "Alias for limit (items per page); limit wins when both are sent, and the same max applies.", false, map[string]any{"type": "integer", "default": defLimit})
 
-		listOp.AddParameter("offset", "query", fmt.Sprintf("Rows to skip, replacing the page-derived skip (offset mode; with ?cursor the skip itself is ignored, but the ceiling is still enforced before cursor mode is chosen). Refused with 400 past the offset ceiling (max %d rows, or the handler's MaxOffset).", maxLimit*1000), false, map[string]any{"type": "integer", "minimum": 0})
+		listOp.AddParameter("offset", "query", fmt.Sprintf("Rows to skip, replacing the page-derived skip (offset mode only; ignored with ?cursor). Refused with 400 past the offset ceiling (max %d rows, or the handler's MaxOffset).", maxLimit*1000), false, map[string]any{"type": "integer", "minimum": 0})
 
 		listOp.AddParameter("stream", "query", "Stream the response (chunked) instead of buffering it; refused with 400 when combined with ?include= or an AfterList hook.", false, map[string]any{"type": "boolean", "default": false})
 		listOp.AddParameter("sort", "query", "Sort field (offset mode only; ignored when ?cursor is present)", false, map[string]any{"type": "string"})

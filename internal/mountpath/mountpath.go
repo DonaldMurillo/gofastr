@@ -1,11 +1,30 @@
-// Package mountpath holds the one mount-path validator shared by the
-// batteries that register routes on the ServeMux-backed router.
+// Package mountpath validates literal mount paths and canonicalizes path prefixes.
 package mountpath
 
 import (
 	"fmt"
+	"path"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
+
+// NormalizePrefix canonicalizes a path-only prefix and represents the root as empty.
+func NormalizePrefix(prefix string) string {
+	if prefix == "" {
+		return ""
+	}
+	prefix = textsafe.SanitizeControlBytes(prefix)
+	prefix = strings.ReplaceAll(prefix, "\\", "/")
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	prefix = path.Clean(prefix)
+	if prefix == "/" {
+		return ""
+	}
+	return prefix
+}
 
 // reservedGoFastrSegments are the path segments directly under
 // /__gofastr that the framework and its batteries already serve

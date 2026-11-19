@@ -1,5 +1,5 @@
 primitive: mountpath
-summary: The one literal mount-path validator and reserved /__gofastr segment set shared by the batteries that register routes.
+summary: Literal mount-path validation for batteries and path-only prefix normalization for App CRUD and route groups.
 code:
   - internal/mountpath/
 invariants:

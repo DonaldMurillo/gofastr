@@ -2548,13 +2548,12 @@ app.Entity("posts", framework.EntityConfig{ /* … */ })
 // → GET /api/posts, POST /api/posts/_batch, GET /api/posts/_events
 ```
 
-This is the clean fix when a page/screen wants the same path as an entity (a
-home page at `/posts` vs. the `posts` CRUD): put the data routes under `/api`
-and let the UI own the bare paths. The generated OpenAPI spec expresses the
-prefix via its server URL, so `/openapi.json` stays consistent, and **MCP tool
-names are unchanged** (`posts_list`, not `api_posts_list`). `GroupEntity`
-routes are unaffected: a route group owns its own prefix. Leaving `APIPrefix`
-empty keeps the bare mounts, so adding it is never a breaking change.
+Use a prefix when the UI needs the bare paths. For example, a page can
+serve at `/posts` while CRUD serves at `/api/posts`. The generated
+OpenAPI operation paths include the prefix, and the MCP tool
+`posts_list` dispatches to the prefixed route. `GroupEntity` uses the
+group's own prefix. See [API versioning](api-versioning.md#1-a-single-global-prefix-withapiprefix)
+for prefix normalization and examples.
 
 > **Common mistake:** registering a screen at `/posts` while a `posts` entity
 > mounts there too. Without `APIPrefix` you'll get a route-conflict panic naming

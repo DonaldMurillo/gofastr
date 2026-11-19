@@ -23,6 +23,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/internal/mcpname"
 )
 
 // RegisterEntityMCPTools registers crud's list, get, create, update and
@@ -41,10 +42,7 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 	}
 	ent := crud.Entity.GetName()
 	toolName := func(action string) string {
-		if crud.MCPNamespace == "" {
-			return ent + "_" + action
-		}
-		return crud.MCPNamespace + "." + ent + "." + action
+		return mcpname.EntityTool(crud.MCPNamespace, ent, action)
 	}
 	devImplied := crud.Entity.Config.Exposure == nil || !crud.Entity.Config.Exposure.MCP
 	type toolDef struct {

@@ -25,6 +25,29 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A cursor request serves its keyset page even with a stale page or
+  offset in the URL.** CRUD List picked cursor mode only after the
+  offset cap, so `?cursor=…&page=999999` got a 400; the cap now applies
+  to offset reads only.
+- **`RouteGroup.MCPToolName` returns the name CRUD registers.** Without
+  a namespace it gave `posts.list` while the tool was registered as
+  `posts_list`; App, CRUD and route groups now share one formatter.
+  Update callers that expected the dotted form.
+- **App-wide `APIPrefix` is normalized like a route group prefix.**
+  Doubled slashes, backslashes, dot segments and control bytes are
+  cleaned, and a prefix that cleans to `/` mounts at the root.
+- **Entity lists count pages correctly for very large totals.** The page
+  count rounded up with an addition that overflowed; CRUD, streaming
+  lists and entity UI now share `pagination.TotalPages`.
+- **Cursor field names drop the same invisible characters as the rest of
+  the framework.** Word joiners, Hangul fillers and Unicode tag
+  characters survived in decoded keyset field names; values still
+  round-trip verbatim.
+- **Pagination, rate-limit and versioning guides match the code.**
+  Cursor mode is opt-in and still refuses a malformed sort; rate-limit
+  eviction sheds unblocked keys before the newest blocks; both
+  rate-limit examples use one router; versioned groups get distinct
+  OpenAPI tags and schema names by default.
 - **`gofastr validate` refuses `kind: raw` screen blocks.** The renderer
   has no raw kind, so such a block passed validation and then vanished
   from the page; the error now names supported kinds such as `paragraph`

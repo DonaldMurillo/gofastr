@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
 type listParams struct {
@@ -186,20 +186,16 @@ func (s *listState) resolvePage(b *ListBuilder) {
 		limit = s.m.d.PageSizes[0]
 	}
 	if limit <= 0 {
-		limit = 25
+		limit = defaultPageSizes[0]
 	}
-	if n, err := strconv.Atoi(s.q.Get(s.p.per)); err == nil && slices.Contains(s.pageSizes(b), n) {
+	if n := pagination.ParsePositiveInt(s.q.Get(s.p.per), 0); n > 0 && slices.Contains(s.pageSizes(b), n) {
 		limit = n
 	}
-	if max := s.maxListLimit(); max > 0 && limit > max {
-		limit = max
+	s.limit = pagination.ClampLimit(limit, s.maxListLimit())
+	s.page = 1
+	if !b.top {
+		s.page = pagination.ParsePositiveInt(s.q.Get(s.p.page), 1)
 	}
-	s.limit = limit
-	page := 1
-	if n, err := strconv.Atoi(s.q.Get(s.p.page)); err == nil && n > 1 && !b.top {
-		page = n
-	}
-	s.page = page
 }
 
 func (s *listState) maxListLimit() int {
@@ -217,10 +213,7 @@ func clampPage(page, total, limit int, known bool) int {
 }
 
 func pagesFor(total, limit int) int {
-	if limit <= 0 {
-		return 1
-	}
-	return max((total+limit-1)/limit, 1)
+	return max(pagination.TotalPages(total, limit), 1)
 }
 
 func (s *listState) readFields() []string {

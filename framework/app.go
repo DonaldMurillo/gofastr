@@ -53,6 +53,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/internal/mcpname"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/lifecycle"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -61,6 +62,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
+	"github.com/DonaldMurillo/gofastr/internal/mountpath"
 	"github.com/DonaldMurillo/gofastr/internal/retired"
 )
 
@@ -393,11 +395,7 @@ func WithHTTPServerTimeouts(cfg HTTPServerTimeoutsConfig) AppOption {
 }
 
 func (a *App) apiPrefix() string {
-	p := strings.Trim(a.Config.APIPrefix, "/")
-	if p == "" {
-		return ""
-	}
-	return "/" + p
+	return mountpath.NormalizePrefix(a.Config.APIPrefix)
 }
 
 // OpenAPISpec builds the /openapi.json document from the registry as it stands; title defaults to Config.Name.
@@ -1007,10 +1005,7 @@ func groupMount(g *routegroup.RouteGroup, ent *entity.Entity) registrationMount 
 }
 
 func (m registrationMount) entityTool(ent, action string) string {
-	if m.mcpNamespace == "" {
-		return ent + "_" + action
-	}
-	return m.mcpNamespace + "." + ent + "." + action
+	return mcpname.EntityTool(m.mcpNamespace, ent, action)
 }
 
 // WrapServer wraps everything Start serves, not only the router; the first

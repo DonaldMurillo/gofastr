@@ -3,6 +3,7 @@ summary: "The App's MCP server wiring: introspection, control and contract tools
 code:
   - framework/mcp_*.go
   - framework/devmcp_bind.go
+  - framework/internal/mcpname/
 docs:
   - framework/docs/content/mcp.md
   - framework/docs/content/contracts.md

@@ -3,21 +3,22 @@
 Cursor responses contain `data`, `cursor`, and `hasMore`, not `total`.
 The registry `/api/llm.md` index and per-entity reference describe this same shape.
 
-Cursor (keyset) pagination is the default for high-volume entities and
-the only way to page consistently when rows are being inserted while
-the user pages.
+Use cursor (keyset) pagination for high-volume entities or for lists that
+change while users page through them.
 
 ## Two pagination modes
 
-Both are exposed on every CRUD list endpoint. The mode is chosen by
-which query parameters you send.
+Every CRUD list endpoint uses offset mode by default. Send the `cursor`
+query key to select cursor mode. Use an empty value for the first page.
 
 | Mode    | Query parameters         | Response shape   |
 |---------|--------------------------|------------------|
 | Offset  | `?page=2&limit=20`       | `ListResponse`   |
 | Cursor  | `?cursor=<opaque>&limit=20` | `CursorPage`  |
 
-If both are sent, `cursor` wins.
+Cursor mode ignores `page` and `offset`, including values above the
+offset cap. Buffered and streaming offset reads both return 400 when
+the requested skip exceeds the cap.
 
 `ListResponse` always carries `data`, `total`, `page`, `perPage` and
 `totalPages`; `CursorPage` always carries `data`, `cursor` and
@@ -52,6 +53,12 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
   1000), on the cursor path as on the offset and streaming list paths.
   (An oversized `limit` is clamped, never reset to the default; a cap
   below 20 also lowers the default to the cap.)
+- For custom pagination, `pagination.ParseLimit` reads a positive page
+  size with your fallback and cap. `pagination.ParsePositiveInt` reads
+  other positive query integers with a fallback. `pagination.ClampLimit`
+  applies a cap to an already selected size. A nonpositive cap leaves the
+  selected size unchanged. `pagination.TotalPages` rounds up without
+  overflow for nonnegative counts and returns zero for a nonpositive size.
 - A `cursor` longer than 16 KiB, or a multi-field cursor carrying more
   than 64 fields, is rejected as invalid (400 on the list routes).
   Cursors are client-echoed input, so decode work is bounded by these
@@ -197,9 +204,9 @@ first-read intermediary parsed differently.
   the new value, so rows between the old and the new position are
   skipped (moved forward) or served again (moved back). Keep sort
   columns short enough for the cap when a feed must see every row.
-- **`?sort=` is ignored in cursor mode.** Keyset pagination requires
-  the ORDER BY to match the cursor key. Configure cursor fields
-  instead.
+- **Cursor fields set keyset ordering.** The endpoint validates `?sort=`
+  in both modes and returns 400 for invalid sort input. In cursor mode,
+  a valid sort has no effect on the keyset ordering.
 - **No total count.** `CursorPage.Total` is reserved but not
   populated. Cursor mode's point is avoiding the table scan a count
   requires. Use offset mode if you need a total.
