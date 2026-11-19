@@ -76,8 +76,10 @@ itself after any successful RPC whose method is not `GET`, so Back to it
 fetches the page instead of replaying the copy from before the write.
 
 The screen cache is why Back and Forward inside an app are instant,
-even though every page document is `Cache-Control: no-store` and so
-never enters the browser's own back/forward cache (bfcache). The
+even though every page document the UI host serves is
+`Cache-Control: no-store` and so never enters the browser's own
+back/forward cache (bfcache). Static exports are cached however their
+host decides, and the runtime handles a bfcache restore there. The
 runtime keeps the last 20 screens per tab and shows them on `popstate`
 without asking the server. bfcache would only help when the user
 leaves the site and comes back, which isn't worth caching per-user
