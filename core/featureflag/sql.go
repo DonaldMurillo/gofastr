@@ -11,24 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
-// SQLStore is a SQL-backed MutableStore. Flags are persisted as
-// individual rows; allow lists (Users, Tenants, Envs) live in JSON
-// columns so the schema stays a single table.
-//
-// Dialect is either set explicitly via WithSQLDialect or detected at
-// construction via SELECT version() (matches Postgres; everything else
-// is treated as sqlite-compatible).
-//
-// Schema:
-//
-//	feature_flags(
-//	    key      TEXT PRIMARY KEY NOT NULL,
-//	    enabled  INTEGER NOT NULL,
-//	    rollout  INTEGER NOT NULL,
-//	    users    TEXT NOT NULL,    -- JSON array
-//	    tenants  TEXT NOT NULL,    -- JSON array
-//	    envs     TEXT NOT NULL     -- JSON array
-//	)
+// SQLStore is a MutableStore on one table, allow lists as JSON arrays.
 type SQLStore struct {
 	db              *sql.DB
 	table           string
@@ -44,10 +27,7 @@ func WithSQLTable(name string) SQLOption {
 	return func(s *SQLStore) { s.table = name }
 }
 
-// WithSQLDialect pins the dialect ("postgres" or "sqlite") instead of
-// running the SELECT version() probe. Use this when the probe is known
-// to fail (e.g. embedded sqlite with restricted features) or when you
-// want construction to avoid any DB read at all.
+// WithSQLDialect pins the dialect, "postgres" or "sqlite", unprobed.
 func WithSQLDialect(dialect string) SQLOption {
 	return func(s *SQLStore) {
 		s.dialect = dialect
@@ -55,7 +35,7 @@ func WithSQLDialect(dialect string) SQLOption {
 	}
 }
 
-// NewSQLStore constructs a SQLStore and ensures the table exists.
+// NewSQLStore opens a SQLStore, creating and registering its table.
 func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 	if db == nil {
 		return nil, errors.New("featureflag: nil DB")
@@ -80,17 +60,6 @@ func NewSQLStore(db *sql.DB, opts ...SQLOption) (*SQLStore, error) {
 	return s, nil
 }
 
-// registerData declares the flag table to App.ExportData and
-// App.EraseUserData under its configured name. A flag's user allow list
-// is shared by everyone on it, so an erasure removes the user from the
-// list and keeps the flag. An entry names the user after its first ':'
-// ("acme:42", see UserEntry). Erasing tenant acme's user 42
-// (framework.WithEraseTenant, or the request's tenant) removes "42",
-// ":42" and "acme:42", and leaves "beta:42", another tenant's user;
-// erasing user 42 with no tenant removes every tenant's "<tenant>:42".
-// An entry equal to the whole erased id always goes, so a pre-upgrade
-// bare "google:42" goes with user google:42. The tenants list names
-// tenants, not users.
 func (s *SQLStore) registerData() {
 	datexport.Register(datexport.DataExporter{
 		Name: datexport.ScopedName("feature_flags", s.table), Source: "featureflag", Table: s.table, PrimaryKey: "key",
@@ -122,41 +91,44 @@ func (s *SQLStore) Get(ctx context.Context, key string) (*Flag, error) {
 			s.table, s.placeholder(1)),
 		key,
 	)
-	var f Flag
-	var enabled int
-	var usersJSON, tenantsJSON, envsJSON string
-	switch err := row.Scan(&f.Key, &enabled, &f.Rollout, &usersJSON, &tenantsJSON, &envsJSON); {
-	case errors.Is(err, sql.ErrNoRows):
+	f, err := scanFlag(row)
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
-	case err != nil:
+	}
+	if err != nil {
 		return nil, err
-	}
-	f.Enabled = enabled != 0
-	if err := decodeJSONList(usersJSON, &f.Users); err != nil {
-		return nil, fmt.Errorf("featureflag: malformed users JSON for %q: %w", key, err)
-	}
-	if err := decodeJSONList(tenantsJSON, &f.Tenants); err != nil {
-		return nil, fmt.Errorf("featureflag: malformed tenants JSON for %q: %w", key, err)
-	}
-	if err := decodeJSONList(envsJSON, &f.Envs); err != nil {
-		return nil, fmt.Errorf("featureflag: malformed envs JSON for %q: %w", key, err)
 	}
 	return &f, nil
 }
 
-// Set implements MutableStore. Upserts the flag definition.
+func scanFlag(row interface{ Scan(...any) error }) (Flag, error) {
+	var f Flag
+	var enabled int
+	var users, tenants, envs string
+	if err := row.Scan(&f.Key, &enabled, &f.Rollout, &users, &tenants, &envs); err != nil {
+		return Flag{}, err
+	}
+	f.Enabled = enabled != 0
+	for _, list := range []struct {
+		name string
+		raw  string
+		dst  *[]string
+	}{{"users", users, &f.Users}, {"tenants", tenants, &f.Tenants}, {"envs", envs, &f.Envs}} {
+		if list.raw == "" {
+			continue
+		}
+		if err := json.Unmarshal([]byte(list.raw), list.dst); err != nil {
+			return Flag{}, fmt.Errorf("featureflag: malformed %s JSON for %q: %w", list.name, f.Key, err)
+		}
+	}
+	return f, nil
+}
+
+// Set upserts f, checked and clamped as MemoryStore.Set does.
 func (s *SQLStore) Set(f Flag) error {
-	if f.Key == "" {
-		return errors.New("featureflag: empty key")
-	}
-	if err := validUsers(f.Users); err != nil {
-		return fmt.Errorf("featureflag: flag %q: %w", f.Key, err)
-	}
-	if f.Rollout < 0 {
-		f.Rollout = 0
-	}
-	if f.Rollout > 100 {
-		f.Rollout = 100
+	f, err := checkFlag(f)
+	if err != nil {
+		return err
 	}
 	usersJSON, _ := json.Marshal(orEmpty(f.Users))
 	tenantsJSON, _ := json.Marshal(orEmpty(f.Tenants))
@@ -166,8 +138,7 @@ func (s *SQLStore) Set(f Flag) error {
 		enabled = 1
 	}
 
-	upsert := s.upsertStmt()
-	_, err := s.db.Exec(upsert, f.Key, enabled, f.Rollout, string(usersJSON), string(tenantsJSON), string(envsJSON))
+	_, err = s.db.Exec(s.upsertStmt(), f.Key, enabled, f.Rollout, string(usersJSON), string(tenantsJSON), string(envsJSON))
 	return err
 }
 
@@ -180,11 +151,7 @@ func (s *SQLStore) Delete(key string) error {
 	return err
 }
 
-// All returns every defined flag, used by admin tooling.
-//
-// SECURITY: as with [MemoryStore.All], the rows carry each flag's raw
-// Users / Tenants allow-lists. Gate this behind admin auth; cohort
-// membership is PII and a signal in its own right.
+// All returns every flag by key; gate it as [MemoryStore.All].
 func (s *SQLStore) All(ctx context.Context) ([]Flag, error) {
 	rows, err := s.db.QueryContext(ctx,
 		fmt.Sprintf("SELECT key, enabled, rollout, users, tenants, envs FROM %s ORDER BY key", s.table),
@@ -195,21 +162,9 @@ func (s *SQLStore) All(ctx context.Context) ([]Flag, error) {
 	defer rows.Close()
 	var out []Flag
 	for rows.Next() {
-		var f Flag
-		var enabled int
-		var u, ten, env string
-		if err := rows.Scan(&f.Key, &enabled, &f.Rollout, &u, &ten, &env); err != nil {
+		f, err := scanFlag(rows)
+		if err != nil {
 			return nil, err
-		}
-		f.Enabled = enabled != 0
-		if err := decodeJSONList(u, &f.Users); err != nil {
-			return nil, fmt.Errorf("featureflag: malformed users JSON for %q: %w", f.Key, err)
-		}
-		if err := decodeJSONList(ten, &f.Tenants); err != nil {
-			return nil, fmt.Errorf("featureflag: malformed tenants JSON for %q: %w", f.Key, err)
-		}
-		if err := decodeJSONList(env, &f.Envs); err != nil {
-			return nil, fmt.Errorf("featureflag: malformed envs JSON for %q: %w", f.Key, err)
 		}
 		out = append(out, f)
 	}
@@ -249,14 +204,4 @@ func orEmpty(xs []string) []string {
 		return []string{}
 	}
 	return xs
-}
-
-// decodeJSONList accepts empty string as "no entries" but returns an
-// error for malformed payloads. Silent JSON failures previously left
-// allow lists empty and silently changed flag behavior.
-func decodeJSONList(s string, dst *[]string) error {
-	if s == "" {
-		return nil
-	}
-	return json.Unmarshal([]byte(s), dst)
 }

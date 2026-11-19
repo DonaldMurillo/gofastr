@@ -269,6 +269,11 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **featureflag: `MemoryStore.Set` errors read like `SQLStore.Set`'s.** Both
+  stores now check a flag through one function, so an empty key reads
+  `featureflag: empty key` (was `flag: empty key`) and a bad `Users` entry
+  `featureflag: flag "k": users[0]: ...`. Code that matched the old text
+  matches the new prefix. ([feature flags](framework/docs/content/feature-flags.md#stores))
 - **The default Content-Security-Policy sends `base-uri 'none'` and
   `worker-src 'self'`**, live and in static exports. An app that renders a
   `<base>` element sets its own policy with `framework.WithSecurityHeaders`.
