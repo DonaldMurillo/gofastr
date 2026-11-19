@@ -25,6 +25,9 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Generated site headers show the theme focus ring on their brand and
+  navigation links**, like the footer and doc page already did. Before,
+  keyboard focus on those links fell back to the browser default.
 - **A second in-memory `ScheduleBuilder.Job` call with a `nil` payload
   clears the first call's payload.** It used to keep the earlier
   payload.

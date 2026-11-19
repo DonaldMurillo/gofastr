@@ -42,7 +42,6 @@
   text-decoration: none;
 }
 .brand:hover { color: var(--color-primary); }
-.brand:focus-visible { outline: var(--stroke-focus) solid var(--color-text-subtle); outline-offset: var(--stroke-focus-offset); }
 
 .links {
   display: flex;
@@ -83,7 +82,6 @@
 }
 .toggle::-webkit-details-marker { display: none; }
 .toggle:hover { background: var(--color-surface-soft); }
-.toggle:focus-visible { outline: var(--stroke-focus) solid var(--color-text-subtle); outline-offset: var(--stroke-focus-offset); }
 /* The three bars turn into the cross: both icons share one cell and
    swap with a quarter turn. */
 .icon-open,
@@ -126,6 +124,10 @@
   text-decoration: none;
 }
 .panel-links a[aria-current="page"] { color: var(--color-text); }
+.brand:focus-visible,
+.links a:focus-visible,
+.panel-links a:focus-visible,
+.toggle:focus-visible { outline: var(--stroke-focus) solid var(--color-text-subtle); outline-offset: var(--stroke-focus-offset); }
 /* The bar's actions land here on phones, over a rule that separates
    them from the rows. */
 .panel-actions {

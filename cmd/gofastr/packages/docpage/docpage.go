@@ -2,8 +2,9 @@
 // the left, the article in the middle, the table of contents on the
 // right, and a previous/next pager under the article. It is built the
 // way siteheader and sitefooter are: plain html elements composed
-// here, the look in docpage.style.css (an owned style), and every
-// dimension a theme token. The grid sits on the page measure the
+// here and the look in docpage.style.css (an owned style). Spacing,
+// the page measure and the prose measure use theme tokens. The grid
+// tracks use literal sizes. The grid sits on the page measure the
 // header and footer use.
 //
 // The regions are whatever the app passes in, so a layout can hand

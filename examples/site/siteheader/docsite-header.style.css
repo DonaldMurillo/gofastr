@@ -269,6 +269,9 @@
 }
 .panel-links a:hover,
 .panel-links a:focus-visible { background: var(--color-surface-soft); }
+.brand:focus-visible,
+.links a:focus-visible,
+.panel-links a:focus-visible { outline: var(--stroke-focus) solid var(--color-text-subtle); outline-offset: var(--stroke-focus-offset); }
 /* The entry points above the sections, set off by a hairline. */
 .panel-lead {
   display: flex;
