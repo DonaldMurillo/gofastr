@@ -224,3 +224,31 @@ func TestRootServesAbsolutePaths(t *testing.T) {
 		t.Fatalf("GET /elsewhere: %d", rec.Code)
 	}
 }
+
+func TestGroupFallbackMatchesEscapedSegments(t *testing.T) {
+	r := New()
+	r.NotFound(status(404))
+	r.Group("/files/{id}/edit").NotFound(status(418))
+	if got := fallbackServe(r, http.MethodGet, "", "/files/a%2Fb/edit/missing").Code; got != 418 {
+		t.Errorf("/files/a%%2Fb/edit/missing = %d, want 418 from /files/{id}/edit", got)
+	}
+}
+
+func TestGroupWrapDelegationStaysInsideTheServedRouter(t *testing.T) {
+	identity := func(next http.Handler) http.Handler { return next }
+	r := New()
+	a, b := r.Group("/x"), r.Group("/x")
+	a.Post("/item", status(200))
+	a.WrapNotFound(identity)
+	a.WrapMethodNotAllowed(identity)
+	b.NotFound(status(418))
+	b.MethodNotAllowed(status(418))
+	for _, path := range []string{"/x/missing", "/x/item"} {
+		if got := fallbackServe(a, http.MethodGet, "", path).Code; got == 418 {
+			t.Errorf("serving /x group a: %s ran sibling b's fallback", path)
+		}
+		if got := fallbackServe(r, http.MethodGet, "", path).Code; got != 418 {
+			t.Errorf("serving the root: %s = %d, want 418 delegated to sibling b", path, got)
+		}
+	}
+}

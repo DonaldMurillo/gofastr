@@ -1,9 +1,11 @@
 package router
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -110,7 +112,7 @@ func prefixCovers(prefix string, req *http.Request) bool {
 		prefix = "/" + rest
 	}
 	want := strings.Split(strings.TrimSuffix(prefix, "/"), "/")
-	got := strings.Split(req.URL.Path, "/")
+	got := strings.Split(req.URL.EscapedPath(), "/")
 	if len(got) < len(want) {
 		return false
 	}
@@ -122,11 +124,18 @@ func prefixCovers(prefix string, req *http.Request) bool {
 			if got[i] == "" {
 				return false
 			}
-		case seg != got[i]:
+		case unescapeSegment(seg) != unescapeSegment(got[i]):
 			return false
 		}
 	}
 	return true
+}
+
+func unescapeSegment(seg string) string {
+	if s, err := url.PathUnescape(seg); err == nil {
+		return s
+	}
+	return seg
 }
 
 func ownNotFound(r *Router) http.Handler {
@@ -180,17 +189,7 @@ func (r *Router) WrapNotFound(mw func(next http.Handler) http.Handler) {
 			next = prev
 		}
 	case r.parent != nil:
-		g := r
-		next = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			h := g.root.fallbackFor(req, ownNotFound, g)
-			if cr, ok := h.(*cachedRoute); ok {
-				h = cr.raw
-			}
-			if h == nil {
-				h = http.NotFoundHandler()
-			}
-			h.ServeHTTP(w, req)
-		})
+		next = r.delegateFallback(ownNotFound, http.NotFoundHandler())
 	}
 	r.notFound = newCachedRoute(mw(next), r, "", "")
 	r.mu.Unlock()
@@ -210,21 +209,30 @@ func (r *Router) WrapMethodNotAllowed(mw func(next http.Handler) http.Handler) {
 			next = prev
 		}
 	case r.parent != nil:
-		g := r
-		next = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			h := g.root.fallbackFor(req, ownMethodNotAllowed, g)
-			if cr, ok := h.(*cachedRoute); ok {
-				h = cr.raw
-			}
-			if h == nil {
-				h = http.HandlerFunc(plainMethodNotAllowed)
-			}
-			h.ServeHTTP(w, req)
-		})
+		next = r.delegateFallback(ownMethodNotAllowed, http.HandlerFunc(plainMethodNotAllowed))
 	}
 	r.methodNotAllowed = newCachedRoute(mw(next), r, "", "")
 	r.mu.Unlock()
 	r.registerFallback()
+}
+
+type dispatcherKey struct{}
+
+func (g *Router) delegateFallback(pick func(*Router) http.Handler, def http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		origin := g.root
+		if d, ok := req.Context().Value(dispatcherKey{}).(*Router); ok {
+			origin = d
+		}
+		h := origin.fallbackFor(req, pick, g)
+		if cr, ok := h.(*cachedRoute); ok {
+			h = cr.raw
+		}
+		if h == nil {
+			h = def
+		}
+		h.ServeHTTP(w, req)
+	})
 }
 
 func plainMethodNotAllowed(w http.ResponseWriter, req *http.Request) {
@@ -277,13 +285,18 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	if r != r.root {
+		req = req.WithContext(context.WithValue(req.Context(), dispatcherKey{}, r))
+	}
 	allowed := r.allowedMethods(req)
 	if len(allowed) > 0 {
 		w.Header().Set("Allow", strings.Join(allowed, ", "))
 		owner := r.sharedOwner(req, allowed)
 		if mna := r.fallbackFor(req, ownMethodNotAllowed, nil); mna != nil {
-			if cr, ok := mna.(*cachedRoute); ok && cr.router != owner && owner.servedBy(cr.router) {
-				mna = newCachedRoute(cr.raw, owner, "", "")
+			if cr, ok := mna.(*cachedRoute); ok && cr.router != owner && !cr.router.servedBy(owner) {
+				shared := newCachedRoute(cr.raw, owner, "", "")
+				shared.branch = cr.router
+				mna = shared
 			}
 			mna.ServeHTTP(w, req)
 			return
