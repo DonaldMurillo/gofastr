@@ -18,7 +18,7 @@ invariants:
       - test: framework.TestModuleToolRegistry_DisabledGate
       - test: framework.TestGateForModule_nilSupervisorErrors
   - id: tool-digest-is-canonical
-    rule: ModuleToolDigest hashes the JSON of id, name, description and input_schema in that order, then annotations only when the tool sets them, so any change to one of them changes the digest and a tool without annotations hashes as it did before they existed.
+    rule: ModuleToolDigest hashes the JSON of id, name, description and input_schema in that order, then annotations only when the tool sets them, so any change to one of them changes the digest and a tool that sends no annotations key hashes as it did before the key was read.
     enforced_by:
       - test: framework.TestModuleToolDigest_Canonical
       - test: framework.TestModuleToolDigestPinsAnnotations
@@ -97,5 +97,5 @@ decisions:
       - option: Leave annotations out of the digest.
         why: A child could mark a destructive tool read-only after the operator approved it, and clients skip their confirmation for read-only tools.
       - option: Always hash an annotations key.
-        why: Every installed module's pinned digest would change and its handshake fail.
+        why: Every installed module's pinned digest would change and its handshake fail; with omitempty only a module that already sent the key, which the host used to ignore, must recompute its digests.
     upholds: [tool-digest-is-canonical]

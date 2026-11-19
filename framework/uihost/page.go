@@ -96,7 +96,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, scrubCtl(carryQuery(target, r.URL.RawQuery)), http.StatusPermanentRedirect)
 		return
 	}
-	if ds.agentReady != nil && ds.agentReady.contentNeg && ds.llmMDPublic {
+	if ds.negotiatesMarkdown() {
 		if acceptsMarkdown(r) {
 			if ds.serveMarkdownForPage(w, r) {
 				return
@@ -132,6 +132,12 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ds.finishPageDocument(w, r, withOutcome(ctx, res), res.HTML, path, res.Component, pageStatus(res, recorded()))
+}
+
+// negotiatesMarkdown reports whether a page answers text/markdown to a
+// request that asks for it.
+func (ds *UIHost) negotiatesMarkdown() bool {
+	return ds.agentReady != nil && ds.agentReady.contentNeg && ds.llmMDPublic
 }
 
 type renderAltKey struct{}

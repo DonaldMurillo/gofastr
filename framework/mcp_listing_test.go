@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -148,16 +149,50 @@ func TestBuiltinMCPToolsCarryListingHints(t *testing.T) {
 		}
 	}
 
-	ent := entity.Define("orders", entity.EntityConfig{Name: "orders", Fields: []schema.Field{{Name: "n", Type: schema.String}}})
-	ep := entity.Endpoint{Method: http.MethodGet, Path: "summary", MCPAnnotations: &mcp.Annotations{
-		ReadOnlyHint: mcp.Bool(true), DestructiveHint: mcp.Bool(false), OpenWorldHint: mcp.Bool(true),
-	}}
-	var tool mcp.Tool
-	for _, opt := range endpointMCPOptions(ent, ep) {
-		opt(&tool)
+}
+
+func TestEndpointMCPAnnotationsServed(t *testing.T) {
+	endpoint := func(name string) []entity.Endpoint {
+		return []entity.Endpoint{{
+			Method: http.MethodGet, Path: "summary", Name: name, MCP: true, Public: true,
+			MCPHandler: func(context.Context, map[string]any) (any, error) { return "ok", nil },
+			MCPAnnotations: &mcp.Annotations{
+				ReadOnlyHint: mcp.Bool(true), DestructiveHint: mcp.Bool(false), OpenWorldHint: mcp.Bool(true),
+			},
+		}}
 	}
-	if h := hintString(tool.Annotations); h != "readOnly=true destructive=false idempotent=- openWorld=true" {
-		t.Fatalf("endpoint MCPAnnotations reached the tool as %q", h)
+	noCRUD := &entity.ExposureConfig{CRUD: new(false)}
+	fields := []schema.Field{{Name: "n", Type: schema.String}}
+	app := NewApp()
+	app.Entity("orders", entity.EntityConfig{Fields: fields, Exposure: noCRUD, Endpoints: endpoint("orders_summary")})
+	app.GroupEntity(app.Group("/v2"), "invoices", entity.EntityConfig{Fields: fields, Exposure: noCRUD, Endpoints: endpoint("invoices_summary")})
+
+	resp := app.MCP.HandleRequest(context.Background(), mcp.Request{JSONRPC: "2.0", ID: 1, Method: "tools/list"})
+	if resp.Error != nil {
+		t.Fatalf("tools/list: %v", resp.Error)
+	}
+	raw, err := json.Marshal(resp.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed struct {
+		Tools []struct {
+			Name        string          `json:"name"`
+			Annotations json.RawMessage `json:"annotations"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, tool := range listed.Tools {
+		got[tool.Name] = string(tool.Annotations)
+	}
+	const want = `{"readOnlyHint":true,"destructiveHint":false,"openWorldHint":true}`
+	for _, name := range []string{"orders_summary", "invoices_summary"} {
+		if got[name] != want {
+			t.Errorf("%s: tools/list annotations %s, want %s", name, got[name], want)
+		}
 	}
 }
 

@@ -177,13 +177,33 @@ func TestErrorPageCarriesNoRouteMeta(t *testing.T) {
 	ds := New(a, WithSitemap(SitemapConfig{BaseURL: "https://example.com"}), WithDescription("Site wide"))
 	set := i18n.PathLocales{Default: "en", Prefixed: []string{"es"}}
 	ds.SetPathLocales(set)
-	for _, partial := range []bool{false, true} {
-		rec := serveNF(ds, set, "/boom/qr", partial)
-		if rec.Code != http.StatusInternalServerError {
-			t.Fatalf("partial=%v: status %d, want 500", partial, rec.Code)
-		}
-		if got := routeMeta(rec.Body.String()); len(got) != 0 {
-			t.Errorf("partial=%v: error page carries route meta %q", partial, got)
+	a.Register("/panics/:type", &panicSEOComp{}, nil)
+	for _, path := range []string{"/boom/qr", "/panics/qr"} {
+		for _, partial := range []bool{false, true} {
+			rec := serveNF(ds, set, path, partial)
+			if rec.Code != http.StatusInternalServerError {
+				t.Fatalf("%s partial=%v: status %d, want 500", path, partial, rec.Code)
+			}
+			if got := routeMeta(rec.Body.String()); len(got) != 0 {
+				t.Errorf("%s partial=%v: error page carries route meta %q", path, partial, got)
+			}
 		}
 	}
+	// A method the screen does not take answers the 405 page, which
+	// carries none of the route's meta either.
+	req := httptest.NewRequest(http.MethodPut, "/boom/qr", nil)
+	req = req.WithContext(i18n.WithPathLocale(req.Context(), set, "en"))
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("PUT: status %d, want 405", rec.Code)
+	}
+	if got := routeMeta(rec.Body.String()); len(got) != 0 {
+		t.Errorf("PUT: 405 page carries route meta %q", got)
+	}
 }
+
+// panicSEOComp declares SEO and panics on render: a failed render.
+type panicSEOComp struct{ barcodeComp }
+
+func (*panicSEOComp) Render() render.HTML { panic("render failed") }

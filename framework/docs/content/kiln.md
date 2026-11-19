@@ -62,7 +62,13 @@ no-store`. `Live.ServeHTTP` sets an `X-Kiln-Server` header; the
 `waitReady` probe requires it and fails when serve exits, instead of
 hanging on a port held by something else.
 
-`kiln mcp` exposes the same tools over stdio MCP. `kiln acp` speaks the
+`kiln mcp` exposes the same tools over stdio MCP. Each MCP tool carries
+annotations (see [tool annotations](mcp.md#tool-annotations)): `world_get`
+is read-only and idempotent, every tool whose descriptor is `Destructive`
+(the `delete_*` tools, `update_entity`, `reset_session`) is
+`destructiveHint: true`, the rest are `destructiveHint: false` because the
+journal can undo them, and none reaches outside the project
+(`openWorldHint: false`). `kiln acp` speaks the
 published Agent Client Protocol v1 instead (see
 [ACP](/docs/acp)): `initialize` → `session/new` → `session/prompt`, with
 tool invocations streamed as `session/update` `tool_call` frames and

@@ -507,3 +507,6 @@ notes:
   - change: "The passkey autofill limit is chosen by ?autofill=1 on POST /auth/passkey/login/options, not by an autofill body member"
     guidance: "The battery's browser module sends the query. A client of its own that sent {\"autofill\": true} adds ?autofill=1 to the URL instead; without it the request counts against the ceremonies' limit."
     nodetect: "the request is built in client JavaScript, which the scanner does not parse"
+  - change: "A process module's module.tool.list entry is read with its annotations key (MCP tool hints): ModuleToolDigest hashes it when present and a malformed value fails decoding; it used to be ignored"
+    guidance: "Nothing to change for a module that sends no annotations key: its tool digests are unchanged. A module that already sent one must recompute its tool digests with framework.ModuleToolDigest and re-approve the descriptor, or its handshake fails and the module is quarantined."
+    nodetect: "the key lives in the module child's module.tool.list answer at runtime, not in host source"

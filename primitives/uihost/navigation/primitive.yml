@@ -238,7 +238,7 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestDefaultErrorPagesStyleHomeLink
   - id: decide-not-found-is-an-unmatched-url
-    rule: A policy answering decide.NotFound, and middleware calling ServeNotFound, answer what a URL no route matches gets on every shape (page, partial, problem JSON, markdown, llm.md, a deferred part request), with no content or meta from the route, ServeNotFound does so for a method the page does not take too, the llm.md index leaves the route out, a server action on that page refuses with 404, and a static export skips the page as it skips any page a policy refuses.
+    rule: A policy answering decide.NotFound, and middleware calling ServeNotFound, answer what a URL no route matches gets on every shape (page, partial and its session step, prefetch, problem JSON, markdown, llm.md, a deferred part request), status and headers included, with no content or meta from the route, ServeNotFound does so for a method the page does not take too, the llm.md index leaves the route out, a server action on that page refuses with 404, and a static export skips the page as it skips any page a policy refuses.
     enforced_by:
       - test: framework/uihost.TestDecideNotFoundHiddenFromLLMIndex
       - test: framework/uihost.TestStaticRenderSkipsDecideNotFound
