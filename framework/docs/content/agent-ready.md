@@ -251,7 +251,10 @@ The markdown answers with the status the HTML would: a page that draws
 its not-found state answers 404 in either, a page whose policy blocks
 answers the block's status over the withheld doc, and a page whose
 policy redirects answers the same 303. The per-screen `/llm.md` route is
-a catalog entry and keeps answering 200 with the withheld doc.
+a catalog entry and keeps answering 200 with the withheld doc, except
+for a screen whose policy answers `decide.NotFound()` (or a static page
+whose resolver answers `ErrNotFound`), which answers 404 as an unknown
+URL does.
 
 Every page-markdown answer is per caller: the negotiated twin, the
 per-screen `/llm.md` (exact, pattern and concrete dynamic URLs) and the
@@ -371,7 +374,9 @@ request: a non-Allow decision, or a region guard (an outlet's, an area's,
 or a fill's policy) that redirects, serves a metadata-free "withheld" doc
 (route path and type only: no title, description, SEO front matter, or
 content),
-and the `/llm-pages.md` index lists policy-gated screens path-only. An
+and the `/llm-pages.md` index lists policy-gated screens path-only. A
+screen whose pattern policy answers not-found is left out of the index
+entirely, and its pattern doc answers 404. An
 authenticated agent whose request passes the policy sees the full docs.
 The pattern-level surfaces (the index, the `/llm.md` beside a route
 pattern, `ScreenLLMMDHandler`) ask `(*App).PatternPolicy`: a static
@@ -759,7 +764,8 @@ check: the portal gives you a token and fetches it back from
 trimmed, so a value read from a file with a trailing newline works. An
 empty token mounts nothing, so you can pass an unset environment variable.
 A token longer than 1024 bytes, or one holding a space, a control byte or
-a non-ASCII byte, panics at `NewApp`; the message does not quote the token.
+a non-ASCII byte, makes `WithOpenAIAppsChallenge` panic when it is called;
+the message does not quote the token.
 
 ```go
 framework.WithOpenAIAppsChallenge(os.Getenv("OPENAI_APPS_CHALLENGE"))

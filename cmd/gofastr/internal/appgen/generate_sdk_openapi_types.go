@@ -47,6 +47,47 @@ type oaTypeSet struct {
 	// inline holds the refs being typed in place (a component that is
 	// not a named struct): one met again inside itself is raw JSON.
 	inline map[string]bool
+	// inlineTypes holds each component already typed in place.
+	inlineTypes map[string]oaInlineType
+}
+
+type oaInlineType struct {
+	t        *oaType
+	nullable bool
+}
+
+// oaMaxStructs caps the struct types one document may derive: a document
+// past it is refused rather than generated into a package nobody can
+// build, or a process out of memory.
+var oaMaxStructs = 5000
+
+// singleAllOf types {allOf: [one member]} as that member, the nullable
+// reference Swashbuckle and NSwag write ({allOf: [{$ref: X}], nullable:
+// true}), keeping the wrapper's nullability. ok is false for any other
+// schema, and for an allOf whose wrapper adds properties.
+func (ts *oaTypeSet) singleAllOf(schema map[string]any, hint string) (t *oaType, nullable, ok bool, err error) {
+	raw, present := schema["allOf"]
+	if !present {
+		return nil, false, false, nil
+	}
+	members, isList := raw.([]any)
+	if !isList {
+		return nil, false, true, fmt.Errorf("allOf: want a list, got %T", raw)
+	}
+	if len(members) != 1 {
+		return nil, false, false, nil
+	}
+	member, isMap := members[0].(map[string]any)
+	if !isMap {
+		return nil, false, false, nil
+	}
+	for _, k := range []string{"properties", "additionalProperties", "items", "oneOf", "anyOf"} {
+		if _, has := schema[k]; has {
+			return nil, false, false, nil
+		}
+	}
+	t, n, err := ts.typeOf(member, hint)
+	return t, n || oaNullable(schema), true, err
 }
 
 // oaReservedTypes are the package-level names the generated SDKs declare
@@ -57,7 +98,7 @@ var oaReservedTypes = []string{
 }
 
 func newOATypeSet(root map[string]any) *oaTypeSet {
-	ts := &oaTypeSet{root: root, structs: map[string]*oaStruct{}, byRef: map[string]string{}, refNullable: map[string]bool{}, owner: map[string]string{}, inline: map[string]bool{}}
+	ts := &oaTypeSet{root: root, structs: map[string]*oaStruct{}, byRef: map[string]string{}, refNullable: map[string]bool{}, owner: map[string]string{}, inline: map[string]bool{}, inlineTypes: map[string]oaInlineType{}}
 	for _, n := range oaReservedTypes {
 		ts.owner[n] = "the SDK itself"
 	}
@@ -105,12 +146,28 @@ func (ts *oaTypeSet) typeOf(schema map[string]any, hint string) (t *oaType, null
 				return &oaType{Kind: "struct", Name: name}, oaNullable(resolved), nil
 			}
 		}
+		if cached, typed := ts.inlineTypes[ref]; typed {
+			return cached.t, cached.nullable, nil
+		}
 		if ts.inline[ref] {
 			return oaRaw, false, nil
 		}
+		// A component typed in place is typed once, its inline objects
+		// named after it, so every use shares one type and a document
+		// whose components fan out does not mint a type per path.
+		if comp, ok := strings.CutPrefix(ref, "#/components/schemas/"); ok && oaValidIdent(oaGoName(comp)) {
+			hint = oaGoName(comp)
+		}
 		ts.inline[ref] = true
-		defer delete(ts.inline, ref)
-		return ts.typeOf(resolved, hint)
+		t, nullable, err := ts.typeOf(resolved, hint)
+		delete(ts.inline, ref)
+		if err == nil {
+			ts.inlineTypes[ref] = oaInlineType{t, nullable}
+		}
+		return t, nullable, err
+	}
+	if t, nullable, ok, err := ts.singleAllOf(schema, hint); ok {
+		return t, nullable, err
 	}
 	for _, union := range []string{"oneOf", "anyOf"} {
 		raw, present := schema[union]
@@ -228,6 +285,9 @@ func oaFieldsNameable(s map[string]any) bool {
 }
 
 func (ts *oaTypeSet) addStruct(name string, s map[string]any) error {
+	if len(ts.structs) >= oaMaxStructs {
+		return fmt.Errorf("the document derives more than %d types; the SDK refuses it rather than generate a package that size", oaMaxStructs)
+	}
 	props, _ := s["properties"].(map[string]any)
 	required := map[string]bool{}
 	if rq, ok := s["required"].([]any); ok {

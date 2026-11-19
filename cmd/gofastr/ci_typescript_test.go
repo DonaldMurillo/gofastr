@@ -8,9 +8,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// The CI test job installs one pinned TypeScript and sets
-// GOFASTR_REQUIRE_TSC, so TestOpenAPISDKTypesCompile type-checks the
-// generated SDK declarations there instead of skipping.
+// The CI test job installs one pinned TypeScript, the version its
+// GOFASTR_TSC_VERSION names, and sets GOFASTR_REQUIRE_TSC, so
+// TestOpenAPISDKTypesCompile type-checks the generated SDK declarations
+// there instead of skipping, against the tsc the variable records.
 func TestCITypeScriptIsPinned(t *testing.T) {
 	var wf struct {
 		Jobs map[string]struct {
@@ -30,13 +31,16 @@ func TestCITypeScriptIsPinned(t *testing.T) {
 	if job.Env["GOFASTR_REQUIRE_TSC"] != "1" {
 		t.Errorf("the test job does not set GOFASTR_REQUIRE_TSC: \"1\", so the d.ts check skips in CI")
 	}
-	pinned := regexp.MustCompile(`npm install -g typescript@[0-9]+\.[0-9]+\.[0-9]+(\s|$)`)
+	version := job.Env["GOFASTR_TSC_VERSION"]
+	if !regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`).MatchString(version) {
+		t.Errorf("the test job's GOFASTR_TSC_VERSION is %q, want one exact version", version)
+	}
 	installs := 0
 	for _, s := range job.Steps {
 		if strings.Contains(s.Run, "typescript") {
 			installs++
-			if !pinned.MatchString(s.Run) {
-				t.Errorf("TypeScript install is not one exact version: %q", s.Run)
+			if !strings.Contains(s.Run, `npm install -g "typescript@${GOFASTR_TSC_VERSION}"`) && !strings.Contains(s.Run, "npm install -g typescript@"+version+" ") {
+				t.Errorf("the TypeScript install does not install GOFASTR_TSC_VERSION (%s): %q", version, s.Run)
 			}
 		}
 	}

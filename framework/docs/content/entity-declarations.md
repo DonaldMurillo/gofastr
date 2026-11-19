@@ -2805,6 +2805,8 @@ See [plugins](plugins.md) → MCP tool gating.
 (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`;
 see [MCP server](mcp.md#tool-annotations)). A twin without them gets
 none, and in dev mode the app logs a warning naming the missing hints.
+An endpoint declared in `gofastr.settings.yml` gets them from its method
+and its `hints:` block; see [custom endpoints](endpoints.md#mcp-tool-hints).
 
 ```go
 entity.Endpoint{

@@ -618,6 +618,19 @@ func endpointToMap(e settings.Endpoint) map[string]any {
 	putStr(m, "description", e.Description)
 	putBool(m, "mcp", e.MCP)
 	putBool(m, "public", e.Public)
+	if h := e.Hints; h != (settings.EndpointHints{}) {
+		hm := map[string]any{}
+		putStr(hm, "title", h.Title)
+		for _, hint := range []struct {
+			key string
+			v   settings.Hint
+		}{{"read_only", h.ReadOnly}, {"destructive", h.Destructive}, {"idempotent", h.Idempotent}, {"open_world", h.OpenWorld}} {
+			if hint.v != settings.HintUnset {
+				hm[hint.key] = hint.v == settings.HintTrue
+			}
+		}
+		m["hints"] = hm
+	}
 	return m
 }
 
@@ -1074,7 +1087,8 @@ var (
 	dbOrder        = []string{"driver", "url"}
 	authOrder      = []string{"enabled", "dev_mode", "base_path", "jwt_secret"}
 	adminOrder     = []string{"path", "role", "enabled", "login_path", "seed_email", "seed_password"}
-	endpointOrder  = []string{"name", "entity", "method", "path", "handler", "description", "mcp", "public"}
+	endpointOrder  = []string{"name", "entity", "method", "path", "handler", "description", "mcp", "public", "hints"}
+	hintOrder      = []string{"title", "read_only", "destructive", "idempotent", "open_world"}
 	actionOrder    = []string{"name", "event", "client_js"}
 	stubOrder      = []string{"name", "description"}
 	seedOrder      = []string{"entity", "count", "weights", "rows"}
@@ -1112,6 +1126,8 @@ func orderFor(key string) []string {
 		return adminOrder
 	case "endpoints":
 		return endpointOrder
+	case "hints":
+		return hintOrder
 	case "actions":
 		return actionOrder
 	case "seed":

@@ -306,8 +306,9 @@ _ = handler
 
 `RequestMeta` returns nil when the call sent no `_meta` (or `null`), and a
 fresh copy of the object on every call, so a gate or wrapper that edits its
-copy changes nothing the handler sees. Numbers arrive as `float64`, as in
-`arguments`. A `_meta` that is not an object, or is longer than 64 KiB, is
+copy changes nothing the handler sees. Numbers arrive as they do in
+`arguments`: a `float64`, except an integer past ±2^53, which stays the
+`json.Number` the caller sent. A `_meta` that is not an object, or is longer than 64 KiB, is
 refused with `-32602` before the handler runs. Only `tools/call` carries it;
 `prompts/get` and `resources/read` do not.
 

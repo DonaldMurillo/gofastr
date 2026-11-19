@@ -496,7 +496,14 @@ is `json.RawMessage`, so no value is dropped or rounded. A component that
 refers to itself is typed once and then as raw JSON: `Json:
 {additionalProperties: {$ref: Json}}` is `map[string]json.RawMessage`,
 while an object component refers to its own named struct (`Tree` holding
-`[]Tree`).
+`[]Tree`). A component that is not itself an object (a list of inline
+objects, say) is typed once and shared by every use, its objects named
+after it (`Pets`, a list, holds `PetsItem`). An `allOf` of one member
+with no properties of its own is that member, nullable when the wrapper
+says so (`{allOf: [{$ref: Person}], nullable: true}`, as Swashbuckle and
+NSwag write a nullable reference, is a nullable `Person`); an `allOf`
+of several members, or one beside properties, is the merged object. A
+document deriving more than 5000 struct types is refused.
 
 **JS/TS.** `client.js` has one async method per operation, named by the
 `operationId` (or the Go name with its first letter lowered when the

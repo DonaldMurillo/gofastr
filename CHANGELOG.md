@@ -122,6 +122,13 @@ few lines, and link the PR or the docs page for the rest.
   text at `/.well-known/openai-apps-challenge`. See
   [agent-readiness](framework/docs/content/agent-ready.md).
   [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **settings: MCP hints on custom endpoints.** An `endpoints:` entry with
+  `mcp: true` takes an optional `hints:` block (`title`, `read_only`,
+  `destructive`, `idempotent`, `open_world`), and `gofastr generate` now
+  writes `MCPAnnotations` for every MCP endpoint, filling unset hints from
+  the method. Regenerate to pick them up. See
+  [custom endpoints](framework/docs/content/endpoints.md#mcp-tool-hints).
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
 - **`gofastr generate sdk --from-openapi <path|url>`, and `from_openapi`
   on the `sdk` settings entry.** It writes the Go and JS/TS SDKs and
   `dist/` from an OpenAPI 3 document: one typed method per `operationId`,
@@ -522,6 +529,11 @@ few lines, and link the PR or the docs page for the rest.
   observers use it.
 
 ### Changed
+- **kiln: `undo` is a destructive tool.** Nothing redoes it, so its
+  descriptor is now `Destructive`: its MCP tool says `destructiveHint: true`
+  and `kiln acp` asks `session/request_permission` before running it. It
+  still needs no plan.
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
 - **BREAKING: `gofastr generate sdk` with two or more `sdk` entries in
   `gofastr.settings.yml` needs `--out` or `--from-openapi` to pick one.**
   It took the first entry. Each flag picks the entry it names, or none;
@@ -1085,7 +1097,7 @@ more than one fix. Each bullet names the PRs it came from.
   banner and tooltip ids, erasure retries, `gofastr dev` running no git,
   a handler's invalid status under Recovery answering 500 (it answered
   200), and not-found, error, 405 and static `404.html` pages carrying no
-  route meta.
+  route meta, `host.RenderScreen` at an error status included.
 
 Areas with the most fixes: CRUD query parsing, filters and paging;
 migrations on both dialects; the app spec, the app generator and
@@ -1137,7 +1149,7 @@ the guidance for each.
 - `EmailChannel` refuses a send whose `Extra["attachments"]` is not `[]email.Attachment` (`notify.ErrInvalidAttachments`).
 - A relay prefix or mount path holding `{`, `}` or `$` is refused at construction.
 - `gofastr agents skill` refuses to overwrite a hand-written `SKILL.md` without `--force`.
-- A server action that names no page, on a static page whose policy or resolver answers not-found, refuses with 404 where it answered 403.
+- A server action that names no page, on a static page whose policy or resolver answers not-found, refuses with 404 where it answered 403; the exported `PatternPolicy` returns a 404 Block with `NotFound` for such a route, and `PagePolicy` returns a Block, never a zero Allow, beside its error.
 
 The full per-fix list, with what changed and why, is in
 [CHANGELOG.md at the v0.97.0 roll](https://github.com/DonaldMurillo/gofastr/blob/efae3ba5162fdef4c5993f6cb486c19c40fe994d/CHANGELOG.md#0970---2026-11-19).

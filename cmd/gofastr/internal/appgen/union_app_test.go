@@ -102,6 +102,11 @@ func TestUnionApp(t *testing.T) {
 			t.Errorf("%s does not route BlogPost on %s", f, want)
 		}
 	}
+	if b, err := os.ReadFile(filepath.Join(dir, "entities", "endpoints.gen.go")); err != nil {
+		t.Errorf("read endpoints.gen.go: %v", err)
+	} else if !strings.Contains(strings.Join(strings.Fields(string(b)), " "), `Title: "Clear a post's cache", ReadOnlyHint: mcp.Bool(false), DestructiveHint: mcp.Bool(false), IdempotentHint: mcp.Bool(true), OpenWorldHint: mcp.Bool(false),`) {
+		t.Errorf("clear_cache's hints: block did not reach its MCPAnnotations:\n%s", b)
+	}
 	if t.Failed() {
 		return
 	}

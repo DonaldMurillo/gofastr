@@ -94,15 +94,24 @@ func TestDroppedRemoteSignalClosesSender(t *testing.T) {
 	// on the parked publish.
 	t.Cleanup(func() { close(trap.stall) })
 	// The first signal parks in Publish; the queue behind it holds 256.
+	// The socket closes mid-burst, so the sender stops at its first failed
+	// write, and the test waits for it: a write failing after the test
+	// returned used to call t.Fatalf from this goroutine and panic.
+	sent := make(chan struct{})
 	go func() {
+		defer close(sent)
 		for range 300 {
-			b.send(map[string]any{"kind": "signal", "to": "pA", "type": "ice",
-				"data": map[string]any{"candidate": "c"}})
+			if b.trySend(map[string]any{"kind": "signal", "to": "pA", "type": "ice",
+				"data": map[string]any{"candidate": "c"}}) != nil {
+				return
+			}
 		}
 	}()
 	// Well inside the queue's 5s publish timeout, so the close is the
 	// overflow's, not the stalled publish failing.
-	if !waitSocketClosed(b, 3*time.Second) {
+	closed := waitSocketClosed(b, 3*time.Second)
+	<-sent
+	if !closed {
 		t.Fatal("sender's socket stayed open after the queue dropped its signal")
 	}
 }
