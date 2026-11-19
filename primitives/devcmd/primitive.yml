@@ -12,6 +12,8 @@ invariants:
   - id: one-dev-build-command
     rule: BuildCommand is the one go build of the gofastr dev and gofastr desktop watch loops; neither builds its own.
     judge: Does this change make the gofastr dev or gofastr desktop watch loop run a go build of its own instead of calling devcmd.BuildCommand?
+    applies:
+      - cmd/gofastr/internal/desktopcmd/desktop.go
 decisions:
   - id: no-vcs-stamp-in-dev
     date: 2026-11-19

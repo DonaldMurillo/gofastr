@@ -37,11 +37,13 @@ func TestDevGoCommandsRunNoGit(t *testing.T) {
 	}
 	bin := t.TempDir()
 	calls := filepath.Join(t.TempDir(), "calls")
-	recorder := "#!/bin/sh\necho \"$@\" >> " + calls + "\nexec " + realGit + " \"$@\"\n"
+	recorder := "#!/bin/sh\necho \"$@\" >> \"$GIT_RECORDER_CALLS\"\nexec \"$GIT_RECORDER_REAL\" \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(recorder), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GIT_RECORDER_CALLS", calls)
+	t.Setenv("GIT_RECORDER_REAL", realGit)
 	t.Setenv("GOFLAGS", "")
 	t.Setenv("TMPDIR", t.TempDir())
 
