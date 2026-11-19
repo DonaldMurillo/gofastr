@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/contractsrun"
 )
 
 func RunBuild(args []string) {
@@ -153,33 +153,15 @@ func RunBuild(args []string) {
 // `gofastr verify` does, so a developer who has only ever run `build`
 // still learns the rule and the fix rather than a bare rejection.
 func buildContractsGate(root string) bool {
-	cfg, err := contracts.LoadConfig(root, "")
-	if err != nil {
-		cli.Fprintf(os.Stderr, "contracts: %v\n", err)
-		return false
-	}
-	pass, err := contracts.NewPass(root, cfg)
-	if err != nil {
-		cli.Fprintf(os.Stderr, "contracts: %v\n", err)
-		return false
-	}
-	report, err := contracts.Run(pass, contracts.RunOptions{})
-	if err != nil {
-		cli.Fprintf(os.Stderr, "contracts: %v\n", err)
-		return false
-	}
 	// `gofastr verify --baseline-write` is how an existing app adopts
 	// contracts: accept what is there, fail on what is added. The build
 	// gate has to honour the same file, or recording a baseline fixes
 	// `verify` and leaves `build` permanently red, and the only exit a
 	// user finds from that is --no-contracts, which turns everything off.
-	baseline, baselineErr := contracts.ReadBaseline(filepath.Join(root, contracts.BaselineFileName))
-	if baselineErr != nil {
-		cli.Fprintf(os.Stderr, "contracts: %v\n", baselineErr)
+	report, err := contractsrun.RunPipeline(root, "", contracts.RunOptions{}, true)
+	if err != nil {
+		cli.Fprintf(os.Stderr, "contracts: %v\n", err)
 		return false
-	}
-	if baseline != nil {
-		report.ApplyBaseline(baseline)
 	}
 	if report.Passed() && report.Counts.Warnings == 0 {
 		return true

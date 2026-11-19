@@ -91,8 +91,8 @@ func parseUnmountArgs(cmd string, args []string) (pkg, outDir string, dryRun, fo
 		case strings.HasPrefix(arg, "--out=") && cmd == "unmount":
 			outDir = strings.TrimPrefix(arg, "--out=")
 		case arg == "--out" && cmd == "unmount":
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				cli.Fail("--out requires a directory argument")
+			if i+1 >= len(args) || cli.IsFlagToken(args[i+1]) {
+				cli.Fail("%v", cli.NeedsValue("--out"))
 				cli.Info("%s", usage)
 				return "", "", false, false, false
 			}
@@ -228,6 +228,14 @@ func gofastrModuleSource(ctx context.Context, moduleRoot string) (dir, version s
 	return dir, version, nil
 }
 
+// skipUnmountDir reports whether a module walk skips the directory:
+// vendor, testdata, node_modules, hidden and _-prefixed trees are not
+// part of what the app builds.
+func skipUnmountDir(name string) bool {
+	return name == "vendor" || name == "testdata" || name == "node_modules" ||
+		strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")
+}
+
 // readUnmountTree reads the package at source and every package under
 // it from the module directory, through an os.Root so nothing outside
 // the tree is read. Tests, testdata, vendor, hidden and _-prefixed
@@ -255,8 +263,7 @@ func readUnmountTree(moduleDir, source, version string) (appgen.UnmountTree, err
 			if p == "." {
 				return nil
 			}
-			if (name == "vendor" || name == "testdata" || name == "node_modules" ||
-				strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")) && !embeddedDir(root, path.Dir(p), name, embeds) {
+			if skipUnmountDir(name) && !embeddedDir(root, path.Dir(p), name, embeds) {
 				return fs.SkipDir
 			}
 			if _, err := root.Stat(path.Join(p, "go.mod")); err == nil {
@@ -451,8 +458,7 @@ func planImportRewire(moduleRoot, skip, from, to string) ([]importRewire, error)
 			if p == "." {
 				return nil
 			}
-			if p == skip || name == "vendor" || name == "testdata" || name == "node_modules" ||
-				strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+			if p == skip || skipUnmountDir(name) {
 				return fs.SkipDir
 			}
 			if _, err := root.Stat(path.Join(p, "go.mod")); err == nil {
@@ -572,7 +578,7 @@ func RunUnmount(args []string) {
 	}
 	arg, outDir, dryRun, _, ok := parseUnmountArgs("unmount", args)
 	if !ok {
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	wd, err := os.Getwd()
@@ -721,7 +727,7 @@ func RunRemount(args []string) {
 	}
 	arg, _, dryRun, force, ok := parseUnmountArgs("remount", args)
 	if !ok {
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	if err := remountPackage(arg, dryRun, force); err != nil {

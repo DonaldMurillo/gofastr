@@ -77,8 +77,8 @@ func TestAddAndForceMutuallyExclusive(t *testing.T) {
 			RunGenerateApp([]string{bp, "--add", "--force"})
 		})
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1 for --add --force, got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2 for --add --force, got %d", code)
 	}
 }
 
@@ -91,8 +91,8 @@ func TestAddOnlyOnGenerateApp(t *testing.T) {
 			GenerateProject([]string{"--add"})
 		})
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1 for --add on plain generate, got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2 for --add on plain generate, got %d", code)
 	}
 }
 

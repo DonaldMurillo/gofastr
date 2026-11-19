@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
+	"github.com/DonaldMurillo/gofastr/internal/contractsrun"
 	"golang.org/x/mod/modfile"
 )
 
@@ -292,19 +293,16 @@ func RunVerify(args []string) {
 	}
 	// An explicit --baseline must exist; the conventional file is optional,
 	// so a project without one is not nagged.
-	baseline, baselineErr := contracts.ReadBaseline(baselineFile)
+	applied, baselineErr := contractsrun.ReadAndApplyBaseline(report, baselineFile)
 	if baselineErr != nil {
 		failRun(opts.json, "%v", baselineErr)
 		cli.OsExit(2)
 		return
 	}
-	if baseline == nil && opts.baselineSet {
+	if !applied && opts.baselineSet {
 		failRun(opts.json, "baseline %s does not exist: record one with `gofastr verify --baseline-write`", baselineFile)
 		cli.OsExit(2)
 		return
-	}
-	if baseline != nil {
-		report.ApplyBaseline(baseline)
 	}
 
 	// Narrowing happens last, so a finding is only hidden by --changed or

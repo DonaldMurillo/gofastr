@@ -53,7 +53,7 @@ func runGeneratePackage(args []string) {
 	}
 	name, outDir, dryRun, ok := parsePackageArgs(args)
 	if !ok {
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	infos, err := canonicalPackageInfos()
@@ -353,8 +353,8 @@ func parsePackageArgs(args []string) (name, outDir string, dryRun, ok bool) {
 		case strings.HasPrefix(arg, "--out="):
 			outDir = strings.TrimPrefix(arg, "--out=")
 		case arg == "--out":
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				failGenerateArgs(args, fmt.Errorf("--out requires a directory argument"), packageUsage)
+			if i+1 >= len(args) || cli.IsFlagToken(args[i+1]) {
+				failGenerateArgs(args, cli.NeedsValue("--out"), packageUsage)
 				return "", "", false, false
 			}
 			i++

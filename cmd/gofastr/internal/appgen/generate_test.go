@@ -194,6 +194,13 @@ entities:
 	}
 }
 
+func TestParseGenerateOptionsRefusesFlagLikeOutValue(t *testing.T) {
+	_, err := ParseGenerateOptions([]string{"--out", "-dir"})
+	if err == nil || !strings.Contains(err.Error(), "write --out=") {
+		t.Fatalf("--out -dir: err = %v, want the --out=-dir refusal", err)
+	}
+}
+
 func floatPtrTest(v float64) *float64 {
 	return &v
 }

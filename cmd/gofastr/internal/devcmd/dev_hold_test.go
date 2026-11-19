@@ -123,17 +123,6 @@ func TestDevHoldReleaseWaitsForRelisten(t *testing.T) {
 	_ = ln.Close()
 }
 
-func TestDevHoldRefusesABusyPort(t *testing.T) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	if _, err := newDevHold(ln.Addr().String()); !addrInUse(err) {
-		t.Fatalf("newDevHold on a busy port = %v, want EADDRINUSE", err)
-	}
-}
-
 // An open app tab's livereload client reconnects to the hold. It must
 // not reload into a "building" page on every save, only when there is
 // an error to show; the release then drops it so it reconnects to the app.

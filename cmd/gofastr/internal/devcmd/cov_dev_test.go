@@ -14,6 +14,7 @@ import (
 
 func TestScanModTimesAndChanged(t *testing.T) {
 	dir := t.TempDir()
+	empty := ScanModTimes(dir)
 	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -28,8 +29,11 @@ func TestScanModTimesAndChanged(t *testing.T) {
 	if len(prev) != 1 {
 		t.Fatalf("expected 1 go file (skipping .git), got %d", len(prev))
 	}
-	if Changed(prev, prev) {
-		t.Fatal("identical maps should not be changed")
+	if !Changed(empty, prev) {
+		t.Fatal("adding the first file should be detected")
+	}
+	if Changed(prev, ScanModTimes(dir)) {
+		t.Fatal("a second scan of unchanged files should not be changed")
 	}
 	// Add a file → changed (length differs).
 	if err := os.WriteFile(filepath.Join(dir, "c.go"), []byte("package x\n"), 0o644); err != nil {

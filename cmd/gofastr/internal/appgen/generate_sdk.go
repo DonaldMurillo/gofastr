@@ -173,7 +173,7 @@ func RunGenerateSDK(args []string) {
 	opts, err := parseSDKOptions(args)
 	if err != nil {
 		failGenerateArgs(args, err, usage)
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	if err := ApplySDKConfigDefaults(&opts); err != nil {
@@ -262,13 +262,15 @@ func RunGenerateSDK(args []string) {
 
 func parseSDKOptions(args []string) (SdkOptions, error) {
 	opts := SdkOptions{set: map[string]bool{}}
+	var flagErr error
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		nextValue := func() (string, bool) {
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+			if i+1 < len(args) && !cli.IsFlagToken(args[i+1]) {
 				i++
 				return args[i], true
 			}
+			flagErr = cli.NeedsValue(arg)
 			return "", false
 		}
 		value := func(prefix string) (string, bool) {
@@ -308,6 +310,8 @@ func parseSDKOptions(args []string) (SdkOptions, error) {
 				opts.only = splitCommaList(v)
 			} else if v, ok := value("--exclude"); ok {
 				opts.exclude = splitCommaList(v)
+			} else if flagErr != nil {
+				return opts, flagErr
 			} else {
 				return opts, fmt.Errorf("unknown flag: %s", arg)
 			}

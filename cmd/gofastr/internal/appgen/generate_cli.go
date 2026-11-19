@@ -242,7 +242,7 @@ func RunGenerateCLI(args []string) {
 	opts, err := parseCLIOptions(args)
 	if err != nil {
 		failGenerateArgs(args, err, usage, "--force only matters once, to replace an edited CLI written before the CLI became derived.")
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	used, err := ApplyCLIConfigDefaults(&opts)
@@ -500,13 +500,15 @@ func splitCommaList(v string) []string {
 
 func parseCLIOptions(args []string) (CliOptions, error) {
 	opts := CliOptions{ApiPrefix: "api", flagSet: map[string]bool{}}
+	var flagErr error
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		nextValue := func() (string, bool) {
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+			if i+1 < len(args) && !cli.IsFlagToken(args[i+1]) {
 				i++
 				return args[i], true
 			}
+			flagErr = cli.NeedsValue(arg)
 			return "", false
 		}
 		value := func(prefix string) (string, bool) {
@@ -545,6 +547,8 @@ func parseCLIOptions(args []string) (CliOptions, error) {
 			} else if v, ok := value("--from-openapi"); ok {
 				opts.FromOpenAPI = v
 				opts.flagSet["from-openapi"] = true
+			} else if flagErr != nil {
+				return opts, flagErr
 			} else {
 				return opts, fmt.Errorf("unknown flag: %s", arg)
 			}

@@ -241,7 +241,6 @@ func TestJSONHelpIsUsage(t *testing.T) {
 	cases := [][]string{
 		{"generate", "--json", "--help"},
 		{"gen", "--json", "-h"},
-		{"generate", "all", "--json", "--help"},
 		{"verify", "--json", "--help"},
 		{"semantic", "query", "--help"},
 		{"semantic", "stats", "--json", "--help"},

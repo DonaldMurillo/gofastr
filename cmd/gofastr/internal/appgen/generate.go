@@ -44,7 +44,7 @@ func GenerateScaffoldEntity(args []string) {
 	}
 	name, opts, ok := ParseScaffoldArgs(args, "entity")
 	if !ok {
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	bp := appspec.AppSpec{
@@ -72,7 +72,7 @@ func GenerateScaffoldScreen(args []string) {
 	}
 	name, opts, ok := ParseScaffoldArgs(args, "screen")
 	if !ok {
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	title := appspec.ToDisplayName(name)
@@ -141,8 +141,8 @@ func ParseScaffoldArgs(args []string, kind string) (name string, opts GenerateOp
 			opts.outputDir = strings.TrimPrefix(arg, "--out=")
 			opts.outputSet = true
 		case arg == "--out":
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				failGenerateArgs(args, fmt.Errorf("--out requires a directory argument"), scaffoldUsage(kind))
+			if i+1 >= len(args) || cli.IsFlagToken(args[i+1]) {
+				failGenerateArgs(args, cli.NeedsValue("--out"), scaffoldUsage(kind))
 				return "", opts, false
 			}
 			i++
@@ -193,7 +193,7 @@ func GenerateProject(args []string) {
 	options, err := ParseGenerateOptions(args)
 	if err != nil {
 		failGenerateArgs(args, err, usage)
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	discovered, err := DiscoverGenerateConfig(options)
@@ -282,11 +282,11 @@ func ParseGenerateOptions(args []string) (GenerateOptions, error) {
 		arg := args[i]
 		// Space form for the value-taking flags: `--config x` ≡ `--config=x`.
 		nextValue := func() (string, error) {
-			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
+			if i+1 < len(args) && !cli.IsFlagToken(args[i+1]) {
 				i++
 				return args[i], nil
 			}
-			return "", fmt.Errorf("%s requires a value", arg)
+			return "", cli.NeedsValue(arg)
 		}
 		switch {
 		case arg == "--dry-run":
@@ -339,12 +339,12 @@ func RunGenerateApp(args []string) {
 	options, err := parseAppGenerateArgs(args)
 	if err != nil {
 		failGenerateArgs(args, err, appUsage)
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	if options.add && options.force {
 		failGenerateArgs(args, fmt.Errorf("--add and --force are mutually exclusive (--add never overwrites; --force overwrites everything)"))
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	GenerateFromAppSpec(options)
@@ -368,8 +368,8 @@ func parseAppGenerateArgs(args []string) (GenerateOptions, error) {
 			options.outputDir = strings.TrimPrefix(arg, "--out=")
 			options.outputSet = true
 		case arg == "--out":
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				return options, fmt.Errorf("--out requires a directory argument")
+			if i+1 >= len(args) || cli.IsFlagToken(args[i+1]) {
+				return options, cli.NeedsValue("--out")
 			}
 			i++
 			options.outputDir = args[i]
@@ -758,35 +758,14 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		for _, f := range lintPublicEntities(bp) {
 			cli.Warn("%s", f.Message())
 		}
-		for _, f := range LintOwnerScopedUnique(bp) {
-			cli.Warn("%s", f.Message())
-		}
-		for _, f := range LintSignedOutScreens(bp) {
-			cli.Warn("%s", f.Message())
-		}
-		for _, f := range LintPostFormsOnScreens(bp) {
-			cli.Warn("%s", f.Message())
-		}
-		for _, f := range LintUploadFields(bp) {
-			cli.Warn("%s", f.Message())
-		}
 		// The app's static dir sits under the directory the app is
 		// written to, not the shell's cwd.
 		navRoot := outDir
 		if navRoot == "" {
 			navRoot = "."
 		}
-		for _, f := range LintNavHrefs(bp, navRoot) {
-			cli.Warn("%s", f.Message())
-		}
-		for _, f := range LintLocaleRoutes(bp) {
-			cli.Warn("%s", f.Message())
-		}
-		// Surfaced before the "Next steps" block below, which would otherwise
-		// print `go mod init <colliding path>` as the remedy for a build that
-		// the collision makes impossible.
-		for _, f := range LintModuleCollision(bp) {
-			cli.Warn("%s", f.Message())
+		for _, msg := range CommonLintFindings(bp, navRoot) {
+			cli.Warn("%s", msg)
 		}
 		// dev_mode defaults to true (plain-HTTP cookies + per-process JWT
 		// secret) because a fresh generated app has no HTTPS. Loudly say

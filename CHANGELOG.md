@@ -670,6 +670,18 @@ few lines, and link the PR or the docs page for the rest.
   them.
 
 ### Changed
+- **Usage errors exit 2 for `gofastr generate` and its generators.**
+  `generate`, `generate --watch`, and the `app`, `entity`, `screen`,
+  `package`, `cli` and `sdk` parsers, plus `unmount`, `remount` and
+  `release`, now exit 2 on a bad argument, like every other subcommand.
+  Scripts that check for exit 1 on invalid arguments should check for 2.
+  Runtime failures still exit 1.
+- **A flag-like value after a space-form flag is refused.** `gofastr
+  generate --out -dir` and `gofastr unmount` with the same shape fail
+  and point at the `--out=-dir` spelling, instead of using `-dir` as the
+  directory.
+- **`gofastr generate all` is gone.** It was an undocumented alias;
+  plain `gofastr generate` runs the same generators.
 - **Postgres fanout folds its fallback table name to lowercase.** The
   table and the LISTEN/NOTIFY channel now use one folded name, so
   `App.Msgs` and `app.msgs` share a channel. Replace every replica

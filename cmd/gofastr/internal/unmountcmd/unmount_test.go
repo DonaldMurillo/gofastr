@@ -255,6 +255,48 @@ func TestParseUnmountArgs(t *testing.T) {
 	}
 }
 
+// `--out -dir` must be refused with the --out=-dir remedy, not silently
+// taken as the output directory (cli.IsFlagToken's rule).
+func TestParseUnmountArgsRefusesFlagLikeOutValue(t *testing.T) {
+	msg := clitest.CovT_capStdout(t, func() {
+		if _, out, _, _, ok := parseUnmountArgs("unmount", []string{"core/yaml", "--out", "-dir"}); ok || out != "" {
+			t.Errorf("--out -dir accepted (ok=%v out=%q); want the --out=-dir refusal", ok, out)
+		}
+	})
+	if !strings.Contains(msg, "write --out=<value>") {
+		t.Errorf("--out -dir diagnostic = %q, want the equals-form remedy", msg)
+	}
+	if _, out, _, _, ok := parseUnmountArgs("unmount", []string{"core/yaml", "--out=-dir"}); !ok || out != "-dir" {
+		t.Errorf("--out=-dir: ok=%v out=%q, want true and -dir", ok, out)
+	}
+}
+
+// Usage errors exit 2, as every sibling command does, so a script can
+// tell a bad flag from a failed run.
+func TestUnmountUsageErrorsExitTwo(t *testing.T) {
+	cases := []struct {
+		name string
+		run  func()
+	}{
+		{"unmount unknown flag", func() { RunUnmount([]string{"--bogus"}) }},
+		{"unmount flag-like output value", func() { RunUnmount([]string{"core/yaml", "--out", "-dir"}) }},
+		{"unmount two packages", func() { RunUnmount([]string{"a", "b"}) }},
+		{"unmount flag without package", func() { RunUnmount([]string{"--dry-run"}) }},
+		{"remount unknown flag", func() { RunRemount([]string{"--bogus"}) }},
+		{"remount without package", func() { RunRemount(nil) }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			code := clitest.CovT_capExit(t, func() {
+				clitest.CovT_capStdout(t, tc.run)
+			})
+			if code != 2 {
+				t.Errorf("exit %d, want 2", code)
+			}
+		})
+	}
+}
+
 // writeUnmountModule writes a temp app module that builds against this
 // checkout, with main.go as given.
 func writeUnmountModule(t *testing.T, mainGo string) string {

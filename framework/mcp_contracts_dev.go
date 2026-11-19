@@ -2,6 +2,7 @@ package framework
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
+	"github.com/DonaldMurillo/gofastr/internal/contractsrun"
 )
 
 // getwd is a test seam: a dev server can outlive its working directory.
@@ -82,29 +84,29 @@ func runContractsPass(capability string, applyBaseline bool) (*contracts.Report,
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := contracts.LoadConfig(root, "")
+	report, err := contractsrun.RunPipeline(root, "", opts, applyBaseline)
 	if err != nil {
-		return nil, fmt.Errorf("load contracts config: %w", err)
-	}
-	pass, err := contracts.NewPass(root, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("scan %s: %w", root, err)
-	}
-	report, err := contracts.Run(pass, opts)
-	if err != nil {
-		return nil, err
-	}
-	if !applyBaseline {
-		return report, nil
-	}
-	baseline, baselineErr := contracts.ReadBaseline(filepath.Join(root, contracts.BaselineFileName))
-	if baselineErr != nil {
-		return nil, fmt.Errorf("read baseline: %w", baselineErr)
-	}
-	if baseline != nil {
-		report.ApplyBaseline(baseline)
+		return nil, pipelineErrWithStage(root, err)
 	}
 	return report, nil
+}
+
+// pipelineErrWithStage restores the per-stage context runContractsPass
+// prefixes its errors with: which step of the pipeline failed.
+func pipelineErrWithStage(root string, err error) error {
+	var pe *contractsrun.PipelineError
+	if !errors.As(err, &pe) {
+		return err
+	}
+	switch pe.Stage {
+	case contractsrun.PipelineLoadConfig:
+		return fmt.Errorf("load contracts config: %w", pe.Err)
+	case contractsrun.PipelineScan:
+		return fmt.Errorf("scan %s: %w", root, pe.Err)
+	case contractsrun.PipelineReadBaseline:
+		return fmt.Errorf("read baseline: %w", pe.Err)
+	}
+	return pe.Err
 }
 
 func (a *App) toolContractsVerify(ctx context.Context, params map[string]any) (any, error) {

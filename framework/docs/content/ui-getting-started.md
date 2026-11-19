@@ -16,7 +16,7 @@ go mod tidy   # resolves github.com/DonaldMurillo/gofastr from the module proxy
 gofastr dev   # dev server with hot reload; edit a screen, the browser refreshes
 ```
 
-`gofastr dev` is the development loop: it watches `.go/.js/.css/.html`,
+`gofastr dev` is the development loop: it watches `.go/.js/.css/.html/.md`,
 rebuilds, and auto-refreshes the browser. Plain `go run .` also works but
 never reloads; use it for one-shot checks, not iteration.
 

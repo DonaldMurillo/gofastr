@@ -53,8 +53,8 @@ func TestScaffoldEntityMissingNameUsage(t *testing.T) {
 			RunGenerate([]string{"entity"})
 		})
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1 for `generate entity` with no name, got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2 for `generate entity` with no name, got %d", code)
 	}
 }
 
@@ -74,7 +74,7 @@ func TestScaffoldEntityExtraArgsUsage(t *testing.T) {
 			RunGenerate([]string{"entity", "a", "b"})
 		})
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1 for `generate entity a b` (extra arg), got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2 for `generate entity a b` (extra arg), got %d", code)
 	}
 }
