@@ -34,7 +34,7 @@ func TestREPLTranscriptScrubTerminal(t *testing.T) {
 	}
 
 	// Happy path: plain text must still stream through unchanged.
-	clean := clitest.CaptureStdout(t, func() {
+	clean := clitest.CovT_capStdout(t, func() {
 		ch := make(chan control.EventEnvelope, 2)
 		ch <- envelope(control.TextDelta{Text: "Hello world 100%"})
 		ch <- envelope(control.TurnEnded{})
@@ -46,7 +46,7 @@ func TestREPLTranscriptScrubTerminal(t *testing.T) {
 	}
 
 	for _, shape := range shapes {
-		out := clitest.CaptureStdout(t, func() {
+		out := clitest.CovT_capStdout(t, func() {
 			ch := make(chan control.EventEnvelope, 2)
 			ch <- envelope(control.TextDelta{Text: shape.payload})
 			ch <- envelope(control.TurnEnded{})

@@ -1,44 +1,5 @@
-// Package markdown is a small, dependency-free Markdown renderer.
-//
-// It parses a constrained subset of Markdown, enough for project docs and
-// website content, and emits HTML directly. It is not CommonMark-strict;
-// the goal is predictable output for the inputs we actually write, not
-// edge-case fidelity.
-//
-// Supported block elements:
-//   - ATX headings (#, ##, … up to ######)
-//   - Paragraphs
-//   - Fenced code blocks (three or more ` or ~, with an optional info string:
-//     a language, then options this package passes through in data-meta)
-//   - Unordered lists (-, *, +)
-//   - Ordered lists (1., 2., …; one that does not begin at 1 carries start;
-//     a number of ten or more digits is paragraph text, as in CommonMark)
-//   - Nested lists, fenced code and further paragraphs under a list item,
-//     on lines indented two or more spaces past the item's marker
-//   - Blockquotes (>)
-//   - Horizontal rules (---, ***, ___)
-//   - GFM-style tables (| col | col |; \| is a literal pipe in a cell)
-//   - YAML-ish frontmatter (--- key: value --- at the top of the document;
-//     an indented or `- item` line after a key continues that key and is
-//     skipped, so the key reads as empty; a block holding any other line
-//     that is neither a pair nor a # comment is body, a thematic break
-//     and its text)
-//
-// Supported inline elements:
-//   - Bold (**…** or __…__)
-//   - Italic (*…* or _…_)
-//   - Inline code (`…`)
-//   - Links ([text](url)) and images (![alt](url))
-//   - Line breaks: a plain newline is a soft break and stays a newline;
-//     two or more trailing spaces or a trailing backslash is a hard break
-//     and renders as <br>
-//
-// HTML in source is escaped, never passed through. The one exception is an
-// HTML comment block (a line opening with "<!--", closed by a line ending
-// in "-->"), which renders as nothing, as a browser would hide it. Docs use
-// it for tooling directives. An unclosed comment, or one with text after
-// its close, stays escaped text. A comment block hides the same way under
-// a list item or in a blockquote. Code blocks and inline
-// code are rendered without syntax highlighting; callers can post-process if
-// they want highlighted output.
+// Package markdown renders a dependency-free subset of Markdown to HTML:
+// ATX headings, paragraphs, fenced code, lists, blockquotes, rules, GFM
+// tables, frontmatter, emphasis, code spans, links and images. Source HTML
+// is escaped; an HTML comment block renders as nothing.
 package markdown

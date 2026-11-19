@@ -19,7 +19,7 @@ twins:
       - path: core/mcp/notifications.go
         note: gateAllows, for delivery-time notification gates.
   - job: Refuse JSON-RPC messages whose envelope or params hold duplicate or case-folded keys.
-    why: core/mcp and the harness control plane are separate MCP servers with their own request types; both call handler.UnmarshalStrict and handler.CheckObjectKeys, but answer a refused envelope differently (core/mcp -32700 or -32600 with a null id, the harness -32602).
+    why: core/mcp, core/acp, core/a2a and the harness control plane are separate JSON-RPC servers with their own request types; all call handler.CheckTopLevelKeys or UnmarshalStrict and handler.CheckObjectKeys, but answer a refused envelope differently (core/mcp -32700 or -32600 with a null id, core/acp -32700, core/a2a HTTP 400 with -32700, the harness -32602), and core/a2a decodes params with jsonexact to keep big integers.
     sites:
       - path: core/mcp/transport.go
         note: decodeEnvelope, the envelope decode every core/mcp transport runs.
@@ -29,6 +29,12 @@ twins:
         note: decodeRequest on the envelope and unmarshalMCPObject on params and arguments.
       - path: framework/experimental/harness/mcpclient/client.go
         note: readLoop on every line a spawned server sends.
+      - path: core/moduleproto/codec.go
+        note: Codec.ReadFrame on every host-to-module frame, refused as ErrInvalidFrame.
+      - path: core/acp/server.go
+        note: decodeEnvelope on each line and decodeParams on every params object.
+      - path: core/a2a/server.go
+        note: ServeHTTP's UnmarshalStrict on the body and decodeParams on params.
 invariants:
   - id: one-callback-error-rule
     rule: tools/call, prompts/get and resources/read decide which callback error crosses the transport in one function, callerFacingError, so an RPCError (wrapped or not) crosses as itself, a typed 4xx handler.Error crosses as invalid params with its code, and every other error is answered with a generic message.

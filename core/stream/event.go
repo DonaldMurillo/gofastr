@@ -3,6 +3,8 @@ package stream
 import (
 	"fmt"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/sseframe"
 )
 
 // EventType represents the kind of SSE event.
@@ -27,60 +29,21 @@ type Event struct {
 	ID   string // optional Last-Event-ID value
 }
 
-// Encode formats an Event as a W3C-compliant SSE frame.
-//
-// The output uses the following fields:
-//   - "id:" when Event.ID is non-empty
-//   - "event:" for Error, Done, and Custom types
-//   - "data:" for the payload (multi-line data splits on \n)
-//   - terminated by a blank line ("\n\n")
-//
-// ID and custom event names are truncated at the first CR/LF/NUL; those
-// bytes terminate an SSE field and would let a caller-supplied value
-// inject forged directives ("event: forged", "data: pwned"…) below it.
-// Multi-line data is split on '\n' and each line is re-prefixed with
-// "data: " so an injected blank line ("\n\n") still appears as a single
-// event frame to the client. CRs and NULs in data are stripped for the
-// same reason.
+// Encode formats an Event as one SSE frame. The ID and a Custom name are
+// cut at their first CR, LF or NUL, CR and NUL are removed from Data, and
+// each line of Data gets its own "data:" field.
 func Encode(e Event) string {
-	var b strings.Builder
-
-	// id field
-	if id := stripSSEControlChars(e.ID); id != "" {
-		b.WriteString("id: ")
-		b.WriteString(id)
-		b.WriteByte('\n')
-	}
-
-	// event field
+	var name string
 	switch e.Type {
 	case Error:
-		b.WriteString("event: error\n")
+		name = "error"
 	case Done:
-		b.WriteString("event: done\n")
+		name = "done"
 	case Custom:
-		if name := stripSSEControlChars(e.Name); name != "" {
-			b.WriteString("event: ")
-			b.WriteString(name)
-			b.WriteByte('\n')
-		}
-	case Message:
-		// W3C spec: omit event field → defaults to "message"
+		name = e.Name
 	}
-
-	// data field: split on newlines per spec; strip CR/NUL per line so
-	// no caller-supplied bytes can re-introduce a field boundary inside
-	// a single emitted line.
-	data := strings.ReplaceAll(e.Data, "\r", "")
-	data = strings.ReplaceAll(data, "\x00", "")
-	for line := range strings.SplitSeq(data, "\n") {
-		b.WriteString("data: ")
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
-
-	// blank line terminates the event
-	b.WriteByte('\n')
+	var b strings.Builder
+	sseframe.Append(&b, e.ID, name, false, e.Data)
 	return b.String()
 }
 

@@ -7,37 +7,22 @@ import (
 	"golang.org/x/text/language"
 )
 
-// WeekdayName is d's name in the context's locale: "Thursday" in
-// English, "jeudi" in French. A calendar's column header says it to a
-// screen reader beside the short form it shows.
+// WeekdayName is d's name in ctx's locale, "jeudi" in French.
 func WeekdayName(ctx context.Context, d time.Weekday) string {
 	return cldrFor(ctx).loc.days[weekdayIndex(d)]
 }
 
-// WeekdayAbbr is d's abbreviated name: "Thu" in English, "jeu." in
-// French. It is what a calendar's column header shows.
+// WeekdayAbbr is d's abbreviated name in ctx's locale, "jeu." in French.
 func WeekdayAbbr(ctx context.Context, d time.Weekday) string {
 	return cldrFor(ctx).loc.daysAbbr[weekdayIndex(d)]
 }
 
-// weekdayIndex keeps an out-of-range Weekday off the end of the
-// tables: Go's Weekday is an int, and time.Weekday(9) is a value a
-// caller can write.
 func weekdayIndex(d time.Weekday) int {
 	return ((int(d) % 7) + 7) % 7
 }
 
-// FirstWeekday is the day a week starts on where the context's reader
-// lives: Sunday in the United States, Monday in France, Saturday in
-// Egypt. A tag's own -u-fw- extension wins ("en-GB-u-fw-sun"); else
-// the region decides, the tag's own ("en-GB" starts on Monday) or the
-// language's likely one ("en" reads as en-US, "ar" as ar-EG). No
-// locale on ctx, or a tag that does not parse, is English — the
-// language every other formatter here falls back to — and so Sunday.
-//
-// The table is CLDR's supplemental weekData firstDay, generated with
-// the locale tables (cldrFirstDay); a region it does not name starts on
-// CLDR's world default, Monday.
+// FirstWeekday is the first day of the week where ctx's reader lives, from
+// the tag's -u-fw- extension, else its region or its language's likely one.
 func FirstWeekday(ctx context.Context) time.Weekday {
 	tag := FromContext(ctx).Tag
 	if tag == "" || len(tag) > maxCLDRTag {
@@ -57,7 +42,6 @@ func FirstWeekday(ctx context.Context) time.Weekday {
 	return cldrWorldFirstDay
 }
 
-// weekdayByCode reads a -u-fw- value, CLDR's three-letter day codes.
 var weekdayByCode = map[string]time.Weekday{
 	"sun": time.Sunday, "mon": time.Monday, "tue": time.Tuesday, "wed": time.Wednesday,
 	"thu": time.Thursday, "fri": time.Friday, "sat": time.Saturday,

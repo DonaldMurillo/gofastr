@@ -2,13 +2,11 @@ package acp
 
 import "encoding/json"
 
-// ProtocolVersion is the ACP major version this package speaks. ACP
-// responds with the client's version when it matches, otherwise with
-// this one.
+// ProtocolVersion is the ACP major version this package speaks.
 const ProtocolVersion = 1
 
-// JSON-RPC 2.0 error codes plus the ACP-specific reserved range
-// (-32000 to -32099). See the ErrorCode section of the ACP v1 schema.
+// JSON-RPC 2.0 error codes plus the ACP-specific reserved range (-32000 to
+// -32099).
 const (
 	ErrParseError       = -32700
 	ErrInvalidRequest   = -32600
@@ -29,9 +27,6 @@ type Implementation struct {
 }
 
 // FileSystemCapabilities is what the CLIENT advertised for fs access.
-// Per the spec these are client-side methods (fs/read_text_file,
-// fs/write_text_file) the agent may call; this server never calls
-// them, so the values are recorded for embedders and nothing else.
 type FileSystemCapabilities struct {
 	ReadTextFile  bool `json:"readTextFile"`
 	WriteTextFile bool `json:"writeTextFile"`
@@ -39,42 +34,33 @@ type FileSystemCapabilities struct {
 
 // AuthClientCapabilities is the client's auth-related capability set.
 type AuthClientCapabilities struct {
-	// Terminal means the client can reproduce the agent's invocation
-	// interactively, which would license terminal-type auth methods.
-	// This server advertises no auth methods, so it is unused.
+	// Terminal licenses terminal-type auth methods.
 	Terminal bool `json:"terminal"`
 }
 
-// ClientCapabilities is what the client offered at initialize. All
-// fields default to false: per the spec, capabilities omitted by the
-// peer are UNSUPPORTED.
+// ClientCapabilities is what the client offered at initialize.
 type ClientCapabilities struct {
 	Auth     *AuthClientCapabilities `json:"auth,omitempty"`
 	FS       *FileSystemCapabilities `json:"fs,omitempty"`
 	Terminal bool                    `json:"terminal,omitempty"`
 }
 
-// PromptCapabilities declares which extra content types the agent
-// accepts in session/prompt. All agents must accept text and
-// resource_link; the rest is opt-in and this server opts out of every
-// one, emitting the false values explicitly so the client learns the
-// absence at initialize instead of by sending a rejected block later.
+// PromptCapabilities declares which extra content types the agent accepts in
+// session/prompt.
 type PromptCapabilities struct {
 	Image           bool `json:"image"`
 	Audio           bool `json:"audio"`
 	EmbeddedContext bool `json:"embeddedContext"`
 }
 
-// McpCapabilities declares whether the agent can connect to MCP
-// servers on the client's behalf. This server cannot; the explicit
-// false values are part of the initialize declaration.
+// McpCapabilities declares whether the agent can connect to MCP servers on
+// the client's behalf.
 type McpCapabilities struct {
 	HTTP bool `json:"http"`
 	SSE  bool `json:"sse"`
 }
 
-// AgentCapabilities is the capability block this server returns at
-// initialize.
+// AgentCapabilities is the capability block initialize returns.
 type AgentCapabilities struct {
 	// LoadSession is true only when the embedded agent implements
 	// SessionLoader.
@@ -84,10 +70,7 @@ type AgentCapabilities struct {
 	McpCapabilities    McpCapabilities    `json:"mcpCapabilities"`
 }
 
-// AuthMethod describes one way the client could authenticate. Methods
-// without a Type are protocol-driven ("agent"): the client picks them
-// by calling authenticate with the ID. This server advertises none by
-// default; Options.AuthMethods adds them.
+// AuthMethod describes one way the client could authenticate.
 type AuthMethod struct {
 	ID          string            `json:"id"`
 	Name        string            `json:"name"`
@@ -97,10 +80,7 @@ type AuthMethod struct {
 	Env         map[string]string `json:"env,omitempty"`  // terminal methods only
 }
 
-// ContentBlock is one displayable piece of a message. Prompt input is
-// limited to Type "text" and "resource_link" (the baseline every ACP
-// agent must accept); the server rejects image, audio, and resource
-// blocks with invalid params because initialize declared them absent.
+// ContentBlock is one displayable piece of a message.
 type ContentBlock struct {
 	Type string `json:"type"` // "text" | "resource_link"
 	Text string `json:"text,omitempty"`
@@ -108,9 +88,7 @@ type ContentBlock struct {
 	Name string `json:"name,omitempty"` // resource_link
 }
 
-// MarshalJSON writes the fields the block's type requires even when
-// empty: omitempty would turn an empty text block into {"type":"text"},
-// which the schema refuses.
+// MarshalJSON writes the fields the block's type requires even when empty.
 func (b ContentBlock) MarshalJSON() ([]byte, error) {
 	type plain ContentBlock
 	switch b.Type {
@@ -135,8 +113,7 @@ const (
 	ContentResourceLink = "resource_link"
 )
 
-// Tool call kinds (ToolKind in the ACP schema). They only guide client
-// icons and display.
+// Tool call kinds (ToolKind in the ACP schema).
 const (
 	ToolKindRead       = "read"
 	ToolKindEdit       = "edit"
@@ -158,11 +135,8 @@ const (
 	ToolStatusFailed     = "failed"
 )
 
-// ToolCallContent is one content item attached to a tool call: a
-// wrapped content block, a file diff, or a terminal reference. Only
-// the "content" variant is produced by this package; the other
-// variants exist so embedders can construct every frame the schema
-// allows.
+// ToolCallContent is one content item attached to a tool call: a wrapped
+// content block, a file diff, or a terminal reference.
 type ToolCallContent struct {
 	Type       string        `json:"type"` // "content" | "diff" | "terminal"
 	Content    *ContentBlock `json:"content,omitempty"`
@@ -172,8 +146,7 @@ type ToolCallContent struct {
 	TerminalID string        `json:"terminalId,omitempty"`
 }
 
-// MarshalJSON writes the fields the item's type requires even when
-// empty, as ContentBlock does: a diff that clears a file has newText "".
+// MarshalJSON writes the fields the item's type requires even when empty.
 func (c ToolCallContent) MarshalJSON() ([]byte, error) {
 	type plain ToolCallContent
 	switch c.Type {
@@ -197,8 +170,7 @@ func TextToolContent(text string) ToolCallContent {
 	return ToolCallContent{Type: "content", Content: &ContentBlock{Type: ContentText, Text: text}}
 }
 
-// ToolCall reports a tool invocation starting (sessionUpdate
-// "tool_call").
+// ToolCall reports a tool invocation starting (sessionUpdate "tool_call").
 type ToolCall struct {
 	ToolCallID string            `json:"toolCallId"`
 	Title      string            `json:"title"`
@@ -209,10 +181,8 @@ type ToolCall struct {
 	RawOutput  map[string]any    `json:"rawOutput,omitempty"`
 }
 
-// ToolCallUpdate patches a previously reported tool call
-// (sessionUpdate "tool_call_update"). Every field except ToolCallID is
-// optional; omitted fields keep their previous value. Nil pointers
-// mean "no change", which marshals to absent.
+// ToolCallUpdate patches a previously reported tool call (sessionUpdate
+// "tool_call_update"); a nil field is left unchanged.
 type ToolCallUpdate struct {
 	ToolCallID string            `json:"toolCallId"`
 	Title      *string           `json:"title,omitempty"`
@@ -223,8 +193,8 @@ type ToolCallUpdate struct {
 	RawOutput  map[string]any    `json:"rawOutput,omitempty"`
 }
 
-// Plan entry priorities and statuses (PlanEntryPriority /
-// PlanEntryStatus in the ACP schema).
+// Plan entry priorities and statuses (PlanEntryPriority / PlanEntryStatus in
+// the ACP schema).
 const (
 	PlanPriorityHigh   = "high"
 	PlanPriorityMedium = "medium"
@@ -235,9 +205,7 @@ const (
 	PlanStatusCompleted  = "completed"
 )
 
-// PlanEntry is one task in an execution plan. Every plan update must
-// carry the complete entry list; the client replaces the plan
-// wholesale.
+// PlanEntry is one task in an execution plan.
 type PlanEntry struct {
 	Content  string `json:"content"`
 	Priority string `json:"priority"`
@@ -269,15 +237,6 @@ const (
 // RequestPermissionOutcome is the user's decision on a
 // session/request_permission call: either OutcomeCancelled, or
 // OutcomeSelected with the chosen OptionID.
-//
-// The zero value is not a legal decision, and Client.RequestPermission
-// never returns it as one: a client answer that carries neither a
-// valid selection (OutcomeSelected plus a non-empty OptionID) nor a
-// cancellation — a null or empty result, an unknown outcome, a
-// selection with no optionId — is coerced to OutcomeCancelled. The
-// client is the untrusted peer on this wire, and the outcome is the
-// agent-side authorization for the tool call being approved, so a
-// malformed answer must read as "no approval", never as no objection.
 type RequestPermissionOutcome struct {
 	Outcome  string `json:"outcome"`
 	OptionID string `json:"optionId,omitempty"`
@@ -293,9 +252,6 @@ const (
 )
 
 // Update is one session/update body, discriminated by SessionUpdate.
-// Content holds a ContentBlock for message chunks and a
-// []ToolCallContent for tool calls; the constructors keep the two
-// shapes type-safe.
 type Update struct {
 	SessionUpdate string         `json:"sessionUpdate"`
 	MessageID     string         `json:"messageId,omitempty"`
@@ -308,18 +264,13 @@ type Update struct {
 	RawInput      map[string]any `json:"rawInput,omitempty"`
 	RawOutput     map[string]any `json:"rawOutput,omitempty"`
 
-	// set marks patch fields ToolCallUpdateFrame received as empty but
-	// present: a tool_call_update omits a field to mean "unchanged", so
-	// clearing one has to send the empty value.
 	set patchFields
 }
 
 type patchFields struct{ title, content, rawInput, rawOutput bool }
 
-// MarshalJSON emits the sessionUpdate discriminator first, then the
-// fields in schema order, omitting everything the constructor left
-// unset. A typed-nil Content (e.g. an empty []ToolCallContent) is
-// omitted rather than serialized as null.
+// MarshalJSON emits the sessionUpdate discriminator first, then the fields in
+// schema order, omitting everything the constructor left unset.
 func (u Update) MarshalJSON() ([]byte, error) {
 	var buf []byte
 	appendKV := func(key string, val any) error {
@@ -369,7 +320,6 @@ func (u Update) MarshalJSON() ([]byte, error) {
 	}
 	switch c := u.Content.(type) {
 	case nil:
-		// omit
 	case []ToolCallContent:
 		if len(c) > 0 || u.set.content {
 			if err := appendKV("content", c); err != nil {
@@ -386,8 +336,6 @@ func (u Update) MarshalJSON() ([]byte, error) {
 		}
 	}
 	if u.SessionUpdate == UpdatePlan {
-		// A plan frame always carries entries, [] for an empty plan: the
-		// schema requires the field, and its absence cleared nothing.
 		entries := u.Entries
 		if entries == nil {
 			entries = []PlanEntry{}
@@ -423,8 +371,7 @@ const (
 )
 
 // UserMessageChunk streams one chunk of the user's message (used when
-// replaying a loaded session). Chunks sharing a MessageID belong to
-// one message.
+// replaying a loaded session).
 func UserMessageChunk(messageID, text string) Update {
 	return Update{
 		SessionUpdate: UpdateUserMessageChunk,
@@ -442,8 +389,7 @@ func AgentMessageChunk(messageID, text string) Update {
 	}
 }
 
-// PlanUpdate replaces the session's execution plan. entries must be
-// the complete plan; clients discard the previous one.
+// PlanUpdate replaces the session's execution plan with the complete entries.
 func PlanUpdate(entries []PlanEntry) Update {
 	return Update{SessionUpdate: UpdatePlan, Entries: entries}
 }
@@ -463,9 +409,8 @@ func NewToolCall(call ToolCall) Update {
 	}
 }
 
-// ToolCallUpdateFrame patches a tool call reported earlier. Only the
-// fields set on u are transmitted; a title, content, rawInput or
-// rawOutput set to an empty value is sent empty, which clears it.
+// ToolCallUpdateFrame patches a tool call reported earlier; a field set to
+// an empty value is sent empty, which clears it.
 func ToolCallUpdateFrame(u ToolCallUpdate) Update {
 	return Update{
 		set: patchFields{
@@ -485,8 +430,6 @@ func ToolCallUpdateFrame(u ToolCallUpdate) Update {
 	}
 }
 
-// strOrEmpty dereferences a nil-able string pointer for the omitempty
-// Update fields; nil stays "" so the key is omitted.
 func strOrEmpty(s *string) string {
 	if s == nil {
 		return ""
@@ -494,10 +437,8 @@ func strOrEmpty(s *string) string {
 	return *s
 }
 
-// PromptText flattens prompt blocks the way the baseline allows: text
-// blocks contribute their text, resource_link blocks contribute their
-// URI. The server has already rejected other block types by the time
-// an embedder sees them.
+// PromptText flattens prompt blocks the way the baseline allows: text blocks
+// contribute their text, resource_link blocks contribute their URI.
 func PromptText(blocks []ContentBlock) string {
 	out := ""
 	for _, b := range blocks {

@@ -104,11 +104,8 @@ func AttachFanout(bus *EventBus, f fanout.Fanout) (stop func(), err error) {
 	clearTap := bus.setTap(tap)
 
 	cancel, subErr := f.Subscribe(fanoutTopic, func(raw []byte) {
-		origin, body, uerr := fanout.Unwrap(raw)
-		if uerr != nil {
-			return
-		}
-		if origin == nodeID {
+		_, body, ok := fanout.UnwrapForeign(nodeID, raw)
+		if !ok {
 			return
 		}
 		var ev Event

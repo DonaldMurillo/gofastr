@@ -7,14 +7,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// FieldToSchema converts a single schema.Field into an OpenAPI-compatible
-// JSON Schema object.
+// FieldToSchema returns the OpenAPI 3.1 schema object for one field.
 func FieldToSchema(field schema.Field) map[string]any {
 	prop := map[string]any{}
 
 	switch field.Type {
-	case schema.String:
+	case schema.String, schema.Text:
 		prop["type"] = "string"
+		if field.Type == schema.Text {
+			prop["format"] = "textarea"
+		}
 		if field.Min != nil {
 			if n, ok := schema.LengthBound(*field.Min, math.Ceil); ok {
 				prop["minLength"] = n
@@ -25,24 +27,6 @@ func FieldToSchema(field schema.Field) map[string]any {
 				prop["maxLength"] = n
 			}
 		}
-		if field.Pattern != "" {
-			prop["pattern"] = field.Pattern
-		}
-
-	case schema.Text:
-		prop["type"] = "string"
-		prop["format"] = "textarea"
-		if field.Min != nil {
-			if n, ok := schema.LengthBound(*field.Min, math.Ceil); ok {
-				prop["minLength"] = n
-			}
-		}
-		if field.Max != nil {
-			if n, ok := schema.LengthBound(*field.Max, math.Floor); ok {
-				prop["maxLength"] = n
-			}
-		}
-
 		if field.Pattern != "" {
 			prop["pattern"] = field.Pattern
 		}
@@ -91,15 +75,8 @@ func FieldToSchema(field schema.Field) map[string]any {
 		prop["format"] = "date"
 
 	case schema.JSON:
-		// Accept any JSON value, no type constraint.
 
 	case schema.Relation:
-		// A Many relation field stores one target id in its own column,
-		// as a single relation does (schema.Validate refuses anything but
-		// a string for either, and crud reads the column as one id). It
-		// was documented as an array of ids, a body the API answers with
-		// 400 not_reference. x-many carries the flag, as it does in
-		// schema.Schema.JSONSchema.
 		prop["type"] = "string"
 		prop["format"] = "uuid"
 		if field.To != "" {
@@ -122,9 +99,6 @@ func FieldToSchema(field schema.Field) map[string]any {
 		prop["default"] = field.Default
 	}
 
-	// Mirror the runtime contract into the spec: ReadOnly fields and any
-	// AutoGenerate variant are server-managed; clients must not be told
-	// they can write them via the generated SDK.
 	if field.ReadOnly || field.AutoGenerate != schema.AutoNone {
 		prop["readOnly"] = true
 	}
@@ -132,10 +106,8 @@ func FieldToSchema(field schema.Field) map[string]any {
 	return prop
 }
 
-// Nullable widens prop to accept null as well: a type T becomes
-// [T, "null"] (OpenAPI 3.1), and an enum gains null, which it must
-// list for a null to pass. A prop with no type, such as a JSON
-// field's, accepts null already.
+// Nullable widens prop to accept null: a type T becomes [T, "null"] and
+// an enum gains null.
 func Nullable(prop map[string]any) {
 	if t, ok := prop["type"].(string); ok {
 		prop["type"] = []any{t, "null"}
@@ -149,22 +121,13 @@ func Nullable(prop map[string]any) {
 	}
 }
 
-// FieldsToSchema converts a slice of Fields into a JSON Schema object
-// suitable for use as an OpenAPI schema.
+// FieldsToSchema returns the object schema for fields, keyed by wire name,
+// leaving out every Hidden field.
 func FieldsToSchema(fields []schema.Field) map[string]any {
 	properties := make(map[string]any, len(fields))
 	required := make([]string, 0)
 
 	for _, f := range fields {
-		// A Hidden field is never part of a published schema. The CRUD
-		// generators filter through VisibleFields before they get here,
-		// but a custom entity.Endpoint hands its InputSchema straight in
-		// -- and entity.Endpoint's own docs invite reusing the entity's
-		// field slice for it. That published the hidden column's name to
-		// every caller allowed to see the tool at all, and listed it as
-		// required, which is worse: it tells the caller to send a value
-		// for a column it is not supposed to know exists. Filtering here
-		// means no future caller of this function can reintroduce it.
 		if f.Hidden {
 			continue
 		}

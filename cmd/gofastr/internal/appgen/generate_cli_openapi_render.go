@@ -40,46 +40,7 @@ const (
 	maxBodyBytes = 1 << 20
 )
 
-// Client sends requests against the API's base URL. Pass any
-// *http.Client (httptest, retryable wrapper, ...): Client never closes
-// it. Token, when set, is sent on every request via the header above.
-type Client struct {
-	BaseURL string
-	HTTP    *http.Client
-	Token   string
-}
-
-// NewClient constructs a Client with a deadline-bearing default when one
-// is not supplied (a zero-timeout client waits forever on an unresponsive
-// peer). BaseURL should NOT include a trailing slash. The default refuses
-// redirects: every request carries the token, and Go re-sends
-// Authorization to a redirect on the same host at another port and any
-// other header (an apiKey one) to any host at all. A 3xx comes back as an
-// *APIError. Pass your own *http.Client to keep a redirect policy.
-func NewClient(baseURL string, httpClient *http.Client) *Client {
-	if httpClient == nil {
-		httpClient = &http.Client{
-			Timeout: 30 * time.Second,
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
-	}
-	return &Client{BaseURL: baseURL, HTTP: httpClient}
-}
-
-// APIError is returned for non-2xx responses. Status is the HTTP code;
-// Body holds the raw response so callers can decode application-level
-// error fields.
-type APIError struct {
-	Status int
-	Body   []byte
-}
-
-func (e *APIError) Error() string {
-	return fmt.Sprintf("api: %d: %s", e.Status, string(e.Body))
-}
-
+` + cliSelfClientCore.render() + `
 // BatchResponse / BatchResult mirror the entity SDK's batch envelope.
 // The OpenAPI CLI generates no batch verbs; the shared output helpers
 // reference the types, so they exist for compatibility (and for

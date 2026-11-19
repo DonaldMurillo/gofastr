@@ -1,0 +1,55 @@
+primitive: a2a.store
+summary: The two built-in Stores - the in-process MemoryStore and the SQLite or Postgres SQLStore - with owner scoping, version-checked updates and tier-scoped retention.
+code:
+  - core/a2a/store_memory.go
+  - core/a2a/store_sql.go
+docs:
+  - framework/docs/content/a2a.md
+twins:
+  - job: Store tasks and push configs scoped by owner, with version-checked updates and per-tier retention.
+    why: A map store and a SQL store cannot share their queries; TestStoreContract and the per-store subtests of the retention and scope tests run one contract against both.
+    sites:
+      - path: core/a2a/store_memory.go
+        note: MemoryStore.
+      - path: core/a2a/store_sql.go
+        note: SQLStore.
+invariants:
+  - id: owner-scoped
+    rule: No Store call returns or touches another owner's rows, and another owner's task reads exactly as an unknown id.
+    enforced_by:
+      - test: core/a2a.TestListTasksOtherOwnerEmpty
+      - test: core/a2a.TestGetTaskOtherOwnerIs32001
+      - test: core/a2a.TestStoreOwnerKeyDelimiterNoLeak
+  - id: tier-fixed-at-create
+    rule: UpdateTask never changes a task's Tenant or Scope, and MemoryStore hands back a clone that shares nothing with what it stores.
+    enforced_by:
+      - test: core/a2a.TestStoreUpdateKeepsScope
+      - test: core/a2a.TestMemoryUpdateNoAlias
+  - id: trim-takes-configs
+    rule: TrimTerminalTasks counts and deletes only the tier's terminal rows, deletes the push configs of every task it deletes, and sweeps the owner's configs whose task has been gone longer than orphanPushGrace.
+    enforced_by:
+      - test: core/a2a.TestRetentionStaysInTier
+      - test: core/a2a.TestTrimDropsTrimmedTaskPushConfigs
+      - test: core/a2a.TestTrimSweepsOrphanPushConfigs
+  - id: sql-schema-upgrades
+    rule: NewSQLStore adds the scope and tenant columns to a task table an earlier release created without them, and registers both tables for data export and user erasure.
+    enforced_by:
+      - test: core/a2a.TestSQLStoreAddsScopeColumn
+      - test: core/a2a.TestSQLStoreAddsTenantColumn
+      - test: core/a2a.TestEraseRemovesA2AState
+decisions:
+  - id: struct-map-keys
+    date: 2026-11-19
+    status: accepted
+    decision: MemoryStore keys its maps by structs of owner and ids, and matches owners by field equality.
+    rejected:
+      - option: owner+"\x00"+id string keys with a prefix scan.
+        why: An owner holding a NUL collided with another owner's key and matched its list prefix, leaking that owner's tasks.
+    upholds: [owner-scoped]
+  - id: task-json-column
+    date: 2026-11-19
+    status: accepted
+    decision: SQLStore keeps the wire Task in one task_json column, with scalar columns only for scoping, filtering and paging.
+    rejected:
+      - option: A column per Task field.
+        why: Every change to the wire shape would need a migration.

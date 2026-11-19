@@ -1,0 +1,68 @@
+primitive: handler
+summary: core/handler's typed handlers - HandlerAdapter, Respond, the one error envelope, context slots and the principal re-check.
+code:
+  - core/handler/doc.go
+  - core/handler/handler.go
+  - core/handler/respond.go
+  - core/handler/context.go
+  - core/handler/principal.go
+docs:
+  - framework/docs/content/core-packages.md
+invariants:
+  - id: panic-is-a-generic-500
+    rule: A panic in a typed handler is logged scrubbed and truncated and answers a generic 500 that carries none of the panic value, and one after the response started aborts the connection with http.ErrAbortHandler.
+    enforced_by:
+      - test: core/handler.TestHandlerAdapter_PanicNoLeak
+      - test: core/handler.TestHandlerAdapter_PanicAfterResponseStartedAborts
+      - test: core/handler.TestHandlerAdapterRedPanicLogScrub
+  - id: one-error-envelope
+    rule: WriteError sends error, code, reason, fields, field_reasons and success false with nosniff, translates a Reason into the request's locale, sends any error that is not a *Error as a generic 500 without its text, and sends a nil *Error or a code outside 400-599 as 500.
+    enforced_by:
+      - test: core/handler.TestWriteError_FlatEnvelope
+      - test: core/handler.TestWriteError_FlatEnvelopeCarriesFields
+      - test: core/handler.TestWriteError_WrappedErrorGeneric500
+      - test: core/handler.TestWriteError_NilOrOutOfRangeCodeIs500
+      - test: core/handler.TestWriteErrorTranslatesForRequest
+      - test: core/handler.TestWriteError_SetsNoSniff
+  - id: respond-shapes
+    rule: Respond answers nil or a typed nil pointer 204, a nil slice or map 200 null, a ResponseType with its control-stripped Content-Type (octet-stream when empty) and nosniff, and any other value as JSON encoded before the status, so a value JSON cannot encode is a 500.
+    enforced_by:
+      - test: core/handler.TestRespondNil
+      - test: core/handler.TestRespondTypedNilIs204
+      - test: core/handler.TestRespond_SanitizesContentType
+      - test: core/handler.TestRespond_SetsNosniffOnCustomTypes
+      - test: core/handler.TestRespondEncodeFailureIs500
+      - test: core/handler.TestRespondJSON_SetsNoSniff
+  - id: principal-recheck
+    rule: RecheckPrincipal runs the identity check then each added step on the context the last returned, fails when any refuses or returns nil, keeps the checks on the refreshed context, and SetUser drops the checks installed for the previous user.
+    enforced_by:
+      - test: core/handler.TestRecheckPrincipalRunsAndResets
+  - id: typed-context-keys
+    rule: Each context slot has its own unexported key type, so no setter's value reads through another getter.
+    enforced_by:
+      - test: core/handler.TestContext_TypedKeysNeverCrossRead
+decisions:
+  - id: unknown-errors-are-internal
+    date: 2026-11-19
+    status: accepted
+    decision: WriteError sends only a *Error's own text; any other error is a generic 500.
+    rejected:
+      - option: Send err.Error().
+        why: Driver and wrapped errors carry passwords, paths and SQL to the client.
+    upholds: [one-error-envelope]
+  - id: success-field-kept
+    date: 2026-11-19
+    status: accepted
+    decision: The envelope keeps "success":false although the status already says it.
+    rejected:
+      - option: Drop the field.
+        why: crud's routes and this writer both sent it before their envelopes became one, and clients branch on it.
+    upholds: [one-error-envelope]
+  - id: abort-after-start
+    date: 2026-11-19
+    status: accepted
+    decision: A panic after the status went out aborts the connection.
+    rejected:
+      - option: Write the 500 document anyway.
+        why: It would be spliced onto a 200 and part of a body as if it were that body.
+    upholds: [panic-is-a-generic-500]

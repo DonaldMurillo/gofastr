@@ -1,0 +1,40 @@
+primitive: openapi.fieldschema
+summary: FieldToSchema, FieldsToSchema and Nullable, which turn entity fields into the OpenAPI 3.1 schema objects of request, read and endpoint bodies.
+code:
+  - core/openapi/schema.go
+twins:
+  - job: Map one schema.Field to a JSON Schema property - its type, length and numeric bounds, pattern, enum, default and relation flags.
+    why: FieldToSchema speaks OpenAPI 3.1 (format uuid for a relation, binary for a file, readOnly for server-managed fields) while JSONSchema is the exported draft-07 form with relation and uri formats and a UUID pattern; merging would change one published output, and JSONSchema has no caller in the repo.
+    sites:
+      - path: core/openapi/schema.go
+        note: FieldToSchema, the OpenAPI property.
+      - path: core/schema/jsonschema.go
+        note: fieldToJSONSchema behind JSONSchema, the draft-07 property.
+invariants:
+  - id: hidden-field-never-published
+    rule: FieldsToSchema leaves out every Hidden field from properties and required, so a custom endpoint that reuses an entity's field slice never names a hidden column.
+    enforced_by:
+      - test: framework/openapi.TestHiddenFieldAbsentFromEverySurface
+      - test: framework/openapi.TestEndpointSchemaHelpersExcludeHidden
+  - id: server-managed-field-is-read-only
+    rule: FieldToSchema marks a ReadOnly field and any AutoGenerate field readOnly.
+    enforced_by:
+      - test: framework.TestFieldToSchema_MarksReadOnly
+  - id: many-relation-is-one-id
+    rule: A relation field, Many or not, is a uuid string carrying x-relation, and a Many relation adds x-many instead of becoming an array.
+    enforced_by:
+      - test: core/openapi.TestFieldToSchema
+  - id: nullable-adds-null
+    rule: Nullable turns a type T into [T, "null"] and appends null to an enum.
+    enforced_by:
+      - test: framework/openapi.TestEntitySchemaNullsOnlyOptionalFields
+  - id: schema-owns-its-enum
+    rule: An Enum property's enum list is a copy, so changing the returned schema never changes the field's Values.
+    enforced_by:
+      - test: core/openapi.TestEnumSchemaOwnsValues
+  - id: bounds-agree-with-json-schema
+    rule: FieldToSchema and schema.JSONSchema give every field type the same type keyword, length and numeric bounds, pattern, enum, default and relation flags, apart from a decimal's bounds, a UUID's pattern and an Enum with no Values, for which FieldToSchema emits no enum while JSONSchema emits one that encodes as null for nil Values and as [] for an empty slice.
+    enforced_by:
+      - test: core/openapi.TestSweepOpenAPIFieldSchemaAgreesWithJSONSchema
+    applies:
+      - core/schema/jsonschema.go

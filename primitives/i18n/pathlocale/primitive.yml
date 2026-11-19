@@ -1,0 +1,18 @@
+primitive: i18n.pathlocale
+summary: Locale prefixes in the URL - PathLocales, the default locale at plain paths and every other catalog locale under /<tag>/ - and the context record that lets the URL alone decide the language.
+code:
+  - core/i18n/pathlocale.go
+docs:
+  - framework/docs/content/i18n.md
+invariants:
+  - id: prefix-is-an-exact-lowercase-tag
+    rule: NewPathLocales needs a fallback and lowercase catalog tags of letters, digits and single hyphens, and Split matches the first path segment exactly, returning the rest of the path or the path itself when it names no locale.
+    enforced_by:
+      - test: core/i18n.TestNewPathLocales
+      - test: core/i18n.TestPathLocaleRejectsOddTags
+      - test: core/i18n.TestSplitLocalePrefix
+  - id: url-decides
+    rule: A request whose URL named a locale negotiates that locale over every other source, and Path, PathPrefix and LocalePath leave the default locale's paths unprefixed.
+    enforced_by:
+      - test: core/i18n.TestPrefixWinsOverCookie
+      - test: core/i18n.TestPathPrefixAndLocalePath

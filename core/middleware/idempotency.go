@@ -210,8 +210,7 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			}
 
 			rec := &idempotencyRecorder{
-				ResponseWriter: w,
-				status:         http.StatusOK,
+				statusRecorder: statusRecorder{ResponseWriter: w, status: http.StatusOK},
 				headers:        w.Header(),
 				upstreamKeys:   upstreamKeys,
 				maxBody:        cfg.MaxResponseBytes,
@@ -320,14 +319,12 @@ func writeReplay(w http.ResponseWriter, replay *IdempotentResponse) {
 }
 
 type idempotencyRecorder struct {
-	http.ResponseWriter
-	status       int
+	statusRecorder
 	headers      http.Header
 	upstreamKeys map[string]bool
 	body         bytes.Buffer
 	maxBody      int64
 	bodyOverflow bool
-	wroteHeader  bool
 	streamed     bool
 }
 
@@ -341,21 +338,6 @@ func (r *idempotencyRecorder) Flush() { _ = r.FlushError() }
 func (r *idempotencyRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	r.streamed = true
 	return http.NewResponseController(r.ResponseWriter).Hijack()
-}
-
-func (r *idempotencyRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
-
-func (r *idempotencyRecorder) WriteHeader(status int) {
-	if r.wroteHeader {
-		return
-	}
-	if status >= 100 && status < 200 && status != http.StatusSwitchingProtocols {
-		r.ResponseWriter.WriteHeader(status)
-		return
-	}
-	r.status = status
-	r.wroteHeader = true
-	r.ResponseWriter.WriteHeader(status)
 }
 
 func (r *idempotencyRecorder) Write(p []byte) (int, error) {

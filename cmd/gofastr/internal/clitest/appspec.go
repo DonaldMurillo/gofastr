@@ -72,8 +72,3 @@ func AssertContains(t *testing.T, haystack, needle string) {
 		t.Fatalf("missing %q in:\n%s", needle, haystack)
 	}
 }
-
-// CaptureStdout is CovT_capStdout under the name the appspec-era tests use.
-func CaptureStdout(t *testing.T, fn func()) string {
-	return CovT_capStdout(t, fn)
-}

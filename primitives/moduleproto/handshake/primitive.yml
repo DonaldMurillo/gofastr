@@ -1,0 +1,58 @@
+primitive: moduleproto.handshake
+summary: Version negotiation, the module.handshake round-trip check, the warmup poll, and the value types of the method catalog.
+code:
+  - core/moduleproto/handshake.go
+  - core/moduleproto/version.go
+  - core/moduleproto/methods.go
+invariants:
+  - id: negotiate-highest-common
+    rule: Negotiate returns min(host.Max, child.Max) when it is at least max(host.Min, child.Min), and ErrNegotiation otherwise or when either range has Min below 1 or above Max.
+    enforced_by:
+      - test: core/moduleproto.TestNegotiatePicksMinOfMaxes
+      - test: core/moduleproto.TestNegotiateRejectsBelowFloor
+      - test: core/moduleproto.TestNegotiateRejectsEmptyIntersection
+      - test: core/moduleproto.TestNegotiateRejectsMalformedRange
+  - id: critical-features-required
+    rule: CheckCritical and Handshake refuse with ErrCriticalFeature a required name the other side's list lacks.
+    enforced_by:
+      - test: core/moduleproto.TestCheckCriticalRejectsUnknown
+      - test: core/moduleproto.TestHandshakeCriticalMissingTerminal
+  - id: feature-ack-intersects
+    rule: FeatureAck returns the names in both lists in the first list's order, each once, and nil when either is empty.
+    enforced_by:
+      - test: core/moduleproto.TestSweepFeatureAckKeepsFirstOrderOnce
+  - id: handshake-round-trips-identity
+    rule: Handshake returns HandshakeMismatchError unless the child echoes name, version, instance_id, desired_generation and surface_sha256 exactly as Expected holds them.
+    enforced_by:
+      - test: core/moduleproto.TestHandshakeInstanceIDMismatch
+      - test: core/moduleproto.TestHandshakeGenerationMismatch
+      - test: core/moduleproto.TestHandshakeDigestMismatchTerminal
+  - id: unanswered-is-not-a-mismatch
+    rule: A module.handshake call that got no reply returns an error wrapping ErrHandshakeUnanswered, and an RPC error reply does not.
+    enforced_by:
+      - test: core/moduleproto.TestHandshakeUnansweredWhenChildGone
+      - test: core/moduleproto.TestHandshakeErrorReplyIsAnswered
+  - id: negative-poll-refused
+    rule: WaitForReady returns an error for a negative poll interval instead of polling at the default.
+    enforced_by:
+      - test: core/moduleproto.TestWaitForReadyNegativePollRejected
+  - id: inbound-caller-has-no-subject
+    rule: The caller on an inbound host.* call is CallerRef, which holds only the delegation handle.
+    enforced_by:
+      - test: core/moduleproto.TestInboundCallerCarriesNoSubject
+decisions:
+  - id: artifact-digest-not-echoed
+    date: 2026-11-19
+    status: accepted
+    decision: ArtifactSHA256 is sent in the handshake but never compared; the supervisor hashes the executable before spawn.
+    rejected:
+      - option: Make the child echo the hash of its own binary.
+        why: A substituted binary echoes whatever it is handed, so the check proves nothing.
+  - id: inbound-caller-is-a-handle
+    date: 2026-11-19
+    status: accepted
+    decision: Inbound reverse calls carry CallerRef, a delegation handle and nothing else.
+    rejected:
+      - option: Reuse Caller, with Subject and Tenant documented as untrusted.
+        why: A broker that read a child-supplied Subject would be a confused deputy, and a field on the decoded struct gets read whatever its comment says.
+    upholds: [inbound-caller-has-no-subject]

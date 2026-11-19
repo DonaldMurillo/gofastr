@@ -1,0 +1,59 @@
+primitive: markdown.inline
+summary: The inline parser of core/markdown - code spans, emphasis, links, images, escapes and line breaks, with the indexes that keep it linear on hostile input.
+code:
+  - core/markdown/inline.go
+invariants:
+  - id: inline-nesting-is-bounded
+    rule: Past 64 levels of nested link text or emphasis the rest renders as escaped text instead of recursing.
+    enforced_by:
+      - test: core/markdown.TestMarkdown_NestedInlineBounded
+  - id: inline-scans-are-linear
+    rule: Unmatched emphasis, unpaired backtick runs of any lengths and unclosed links render in linear time, through the no-closer memo, the backtick-run index and the bracket index, and a giant backtick run does not overflow an offset.
+    enforced_by:
+      - test: core/markdown.TestMarkdown_UnmatchedEmphasisBounded
+      - test: core/markdown.TestMarkdown_UnpairedBacktickTailBounded
+      - test: core/markdown.TestMarkdown_UnpairedBacktickTailScaling
+      - test: core/markdown.TestMarkdown_DistinctBacktickRunLengthsBounded
+      - test: core/markdown.TestMarkdown_GiantBacktickRunNoInt32Wrap
+      - test: core/markdown.TestMarkdown_UnclosedLinkLinear
+  - id: code-span-matches-its-run
+    rule: A code span closes only on a backtick run of the same length, and an unmatched run is literal text as a whole.
+    enforced_by:
+      - test: core/markdown.TestCodeSpanBacktickRuns
+  - id: link-binds-in-its-window
+    rule: A link inside link text or emphasis matches only a ] and ) within that window, a link binds tighter than emphasis, and a link URL ends at the first ) that closes its nested parentheses among the first 33 ) after the URL starts, or at its first ) when none of those does, so [x](a(b) links to a(b.
+    enforced_by:
+      - test: core/markdown.TestNestedLinksShareIndex
+      - test: core/markdown.TestLinkWindowStopsAtItsEnd
+      - test: core/markdown.TestSweepMarkdownLinkParenPastWindowIsNoLink
+      - test: core/markdown.TestEmphasisCloserSkipsLinks
+      - test: core/markdown.TestLinkURLBalancedParens
+      - test: core/markdown.TestSweepMarkdownLinkURLNestsParens
+  - id: urls-pass-the-shared-allow-list
+    rule: A link href passes urlsafe's Anchor policy and an image src its ImageSource policy, after removing tab, newline, carriage return and NUL as a browser would, and anything refused becomes the bare fragment "#".
+    enforced_by:
+      - test: core/markdown.TestMarkdownAnchorSchemeAllowlist
+      - test: core/markdown.TestMarkdownImageSchemeAllowlist
+      - test: core/markdown.TestMarkdown_SchemeInteriorControlChar
+      - test: core/markdown.TestSweepMarkdownImagePolicyIsImageSource
+      - test: core/markdown.TestSweepMarkdownLinkURLDropsControlBytes
+      - test: core/markdown.TestMarkdown_XSSInLinkTarget
+  - id: emphasis-needs-flanking-text
+    rule: A * or _ run followed by whitespace opens nothing, one preceded by whitespace closes nothing, and an underscore run inside a word is text.
+    enforced_by:
+      - test: core/markdown.TestEmphasisNeedsFlankingText
+      - test: core/markdown.TestIntrawordUnderscoreIsText
+  - id: breaks
+    rule: A plain newline is a soft break kept as a newline, and two or more trailing spaces or a trailing backslash is a hard break rendered as <br>.
+    enforced_by:
+      - test: core/markdown.TestSoftBreakRendersAsNewline
+      - test: core/markdown.TestHardBreaksRenderAsBr
+decisions:
+  - id: strip-control-bytes-before-the-policy
+    date: 2026-11-19
+    status: accepted
+    decision: A URL loses its tab, newline, carriage return and NUL bytes before the urlsafe check, so the check and the href see the string a browser resolves.
+    rejected:
+      - option: Hand the raw URL to urlsafe, which refuses any control byte.
+        why: A link URL wrapped across a source line would then become a bare fragment although the browser would follow it.
+    upholds: [urls-pass-the-shared-allow-list]

@@ -5,22 +5,17 @@ code:
   - core/middleware/middleware.go
   - core/middleware/phrases.go
   - core/middleware/requestid.go
+  - core/middleware/statuswriter.go
 docs:
   - framework/docs/content/security.md
 twins:
   - job: Record the final status a response sent, forwarding a 1xx other than 101 without recording it and latching the first final status, an implicit 200 from a write or flush included.
-    why: Logging, metrics, tracing, recovery and the idempotency recorder each wrap the writer for their own extra state (a body buffer, a started flag, an optional-interface mask), and no shared base writer has been extracted yet.
+    why: Logging, metrics, tracing and the idempotency recorder share statusRecorder; Recovery keeps its own writer because it forwards every WriteHeader and tracks whether anything started, which panickedStatus reads, and folding it in has not been designed.
     sites:
-      - path: core/middleware/logging.go
-        note: responseWriter.WriteHeader, Write and ReadFrom.
-      - path: core/middleware/metrics.go
-        note: metricsResponseWriter.WriteHeader, Write and Flush.
-      - path: core/middleware/tracing.go
-        note: tracingResponseWriter.WriteHeader, Write and Flush.
+      - path: core/middleware/statuswriter.go
+        note: statusRecorder.WriteHeader and Write, embedded by logging, metrics, tracing and idempotency.
       - path: core/middleware/recovery.go
         note: recoveryWriter.WriteHeader and markStarted.
-      - path: core/middleware/idempotency.go
-        note: idempotencyRecorder.WriteHeader and Write.
   - job: Decide whether a request arrived over HTTPS from TLS, an X-Forwarded-Proto of https in any case, or a configured override.
     why: SecurityHeaders and CSRF each inline the same three-way test against their own config flag (Secure, CookieSecure); nothing shared names it yet.
     sites:

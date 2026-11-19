@@ -28,6 +28,15 @@ invariants:
       - test: core-ui/runtime.TestRefusedSubmitSkipsADisabledFieldset
       - test: core-ui/runtime.TestRefusedRadioGroupWithADisabledLastRadio
       - test: core-ui/runtime.TestRefusedPlainFormSubmitFocusesFirstInvalidField
+  - id: off-screen-poll-waits
+    rule: A data-cui-poll region more than 200px outside the viewport is not fetched, and the tick that came due while it was away fetches once the region comes near.
+    enforced_by:
+      - test: core-ui/runtime.TestPoll_PausesOffScreen
+  - id: scroll-store-persists-per-gesture
+    rule: The router writes its scroll store to sessionStorage once per scroll gesture, on scrollend, and whenever the page goes hidden, so a reloaded page, or a background tab the browser discards, keeps its position even where scrollend never fires.
+    enforced_by:
+      - test: core-ui/runtime.TestScrollPersistsOncePerGesture
+      - test: core-ui/runtime.TestReloadRestoresScrollWithoutScrollEnd
   - id: no-hard-navigation
     rule: Navigation goes through the client router; nothing assigns location.href or reloads the page to move between pages or to refresh one.
     enforced_by:

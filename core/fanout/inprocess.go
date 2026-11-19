@@ -5,14 +5,9 @@ import (
 	"sync"
 )
 
-// defaultInProcessQueue is the per-subscriber queue depth. A subscriber that
-// can't keep up drops oldest, matching [stream.SSEBroker]'s lossy contract.
 const defaultInProcessQueue = 256
 
-// InProcess is an in-memory [Fanout]. Its primary purpose is tests: wiring
-// two buses / two island managers / two brokers to one InProcess simulates
-// two replicas inside a single test binary. It is fully concurrency-safe and
-// delivers per-subscriber in publish order.
+// InProcess is an in-memory [Fanout]; two buses wired to one act as two replicas.
 type InProcess struct {
 	mu         sync.RWMutex
 	nextSubID  uint64
@@ -20,8 +15,6 @@ type InProcess struct {
 	queueDepth int
 }
 
-// ipSubscriber pairs a registration identity with its per-subscriber queue;
-// the dedicated goroutine + drop-oldest machinery lives in [SubscriberQueue].
 type ipSubscriber struct {
 	id    uint64
 	topic string
@@ -32,9 +25,7 @@ type ipSubscriber struct {
 // InProcessOption configures an [InProcess].
 type InProcessOption func(*InProcess)
 
-// WithInProcessQueue overrides the per-subscriber bounded queue depth
-// (default 256). A depth of 0 keeps the default. Mainly useful in tests that
-// need to exercise the drop-oldest overflow path quickly.
+// WithInProcessQueue sets the per-subscriber queue depth; depth <= 0 keeps 256.
 func WithInProcessQueue(depth int) InProcessOption {
 	return func(ip *InProcess) {
 		if depth > 0 {
@@ -55,9 +46,7 @@ func NewInProcess(opts ...InProcessOption) *InProcess {
 	return ip
 }
 
-// Publish broadcasts payload to every subscriber of topic. It never blocks:
-// a subscriber whose queue is full has its oldest queued message dropped to
-// make room (mirroring [stream.SSEBroker]).
+// Publish hands payload to every subscriber of topic without blocking.
 func (ip *InProcess) Publish(_ context.Context, topic string, payload []byte) error {
 	ip.mu.RLock()
 	subs := make([]*ipSubscriber, 0, len(ip.topics[topic]))
@@ -72,9 +61,7 @@ func (ip *InProcess) Publish(_ context.Context, topic string, payload []byte) er
 	return nil
 }
 
-// Subscribe registers fn for topic. fn runs on a dedicated goroutine per
-// subscriber with a bounded queue; delivery is in publish order. The returned
-// cancel unregisters fn and stops the goroutine; safe to call multiple times.
+// Subscribe registers fn for topic behind a [SubscriberQueue].
 func (ip *InProcess) Subscribe(topic string, fn func(payload []byte)) (cancel func(), err error) {
 	send, stop := SubscriberQueue(fn, ip.queueDepth)
 
@@ -102,7 +89,6 @@ func (ip *InProcess) Subscribe(topic string, fn func(payload []byte)) (cancel fu
 	}, nil
 }
 
-// allocIDLocked returns the next subscriber id. Caller holds ip.mu.
 func (ip *InProcess) allocIDLocked() uint64 {
 	ip.nextSubID++
 	return ip.nextSubID

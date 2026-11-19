@@ -15,6 +15,9 @@
 //   - ±10% jitter per tick (desynchronise multiple polls on one page)
 //   - pause while document.hidden; on visibilitychange → fetch
 //     immediately and resume the cadence
+//   - page regions only: pause while the region is far off-screen
+//     (an IntersectionObserver with a margin); a tick that came due
+//     meanwhile fetches as soon as the region nears the viewport
 //   - on fetch failure: double the interval, cap at 5× base, reset
 //     to base on the next success
 //   - tear down on element removal (self-check each tick) and on
@@ -48,6 +51,27 @@
   };
   const stateByEl = new WeakMap();
   const active = new Set();
+
+  // NEAR is how close to the viewport a region counts as on screen, so
+  // a region scrolled to is fresh by the time it arrives.
+  const NEAR = '200px';
+  let seen = null;
+  // watch observes el's distance from the viewport. A browser without
+  // IntersectionObserver keeps polling as if every region were on screen.
+  function watch(el, s) {
+    if (typeof IntersectionObserver !== 'function') return;
+    if (!seen) {
+      seen = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          const st = stateByEl.get(e.target);
+          if (!st || st.stopped) continue;
+          st.offscreen = !e.isIntersecting;
+          if (!st.offscreen && st.parked) { st.parked = false; st.tick(true); }
+        }
+      }, { rootMargin: NEAR });
+    }
+    seen.observe(el);
+  }
 
   // parseGoDuration parses a Go-style duration string into milliseconds.
   // Supports ns, us, µs, ms, s, m, h, fractions ("1.5m"), and compounds
@@ -107,6 +131,7 @@
     s.stopped = true;
     if (s.timer) { clearTimeout(s.timer); s.timer = null; }
     if (s.onVisible) document.removeEventListener('visibilitychange', s.onVisible);
+    if (seen) seen.unobserve(el);
     stateByEl.delete(el);
     active.delete(el);
     // A region reclaimed because it left the page is unmarked, so the
@@ -181,6 +206,7 @@
     const s = {
       base, cap: base * 5, current: base,
       timer: null, stopped: false, onVisible: null, tick: null, held: 0,
+      offscreen: false, parked: false,
     };
     stateByEl.set(el, s);
     active.add(el);
@@ -193,6 +219,9 @@
       // timer holds a closure reference to el until we clear it.
       if (!el.isConnected) { teardown(el); return; }
       if (document.hidden) return; // visibility handler resumes
+      // Far off-screen: no fetch and no re-arm. The observer ticks
+      // once the region nears the viewport again.
+      if (s.offscreen) { s.parked = true; return; }
       // Single-chain guard: a hidden→visible flip while a fetch is
       // pending must not start a second chain, both would reach
       // .finally and each would arm its own timer, multiplying the
@@ -287,6 +316,7 @@
       s.tick(true); // immediate refresh on regain, cadence resumes after
     };
     document.addEventListener('visibilitychange', s.onVisible);
+    watch(el, s);
     const firstJitter = base * (0.9 + Math.random() * 0.2);
     s.timer = arm(s.tick, firstJitter);
   }

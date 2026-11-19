@@ -19,15 +19,8 @@ func NewOperation() *Operation {
 	}
 }
 
-// AddParameter appends a parameter to the operation.
-// location is one of "path", "query", "header", "cookie".
-//
-// A parameter is identified by (name, in); declaring one that already
-// exists is a no-op, so the first declaration wins. The entity list
-// operation relies on this: its fixed controls (sort, page, cursor, q,
-// trashed) are declared before the per-field filters, and a field that
-// happens to share a control's name, or a field whose _in suffix lands on
-// another field's exact name, cannot declare the same parameter twice.
+// AddParameter appends a parameter in location (path, query, header or
+// cookie); the first declaration of a name and location wins.
 func (o *Operation) AddParameter(name, location, description string, required bool, schema map[string]any) {
 	for _, existing := range o.Parameters {
 		if existing["name"] == name && existing["in"] == location {
@@ -74,10 +67,7 @@ func (o *Operation) AddResponse(status int, description string, schema map[strin
 	o.Responses[status] = resp
 }
 
-// AddSecurity appends a security requirement to the operation: the named
-// scheme (with the given OAuth scopes, or no scopes for bearer/cookie
-// auth) authorises the call. A nil scopes slice is normalised to an
-// empty slice so JSON serialises as [] rather than null.
+// AddSecurity appends a security requirement; nil scopes encode as [].
 func (o *Operation) AddSecurity(name string, scopes []string) {
 	if scopes == nil {
 		scopes = []string{}
@@ -85,8 +75,7 @@ func (o *Operation) AddSecurity(name string, scopes []string) {
 	o.Security = append(o.Security, map[string][]string{name: scopes})
 }
 
-// ToMap converts the Operation into a map suitable for inclusion in the
-// OpenAPI paths object.
+// ToMap returns the operation as an OpenAPI paths entry.
 func (o *Operation) ToMap() map[string]any {
 	m := map[string]any{}
 

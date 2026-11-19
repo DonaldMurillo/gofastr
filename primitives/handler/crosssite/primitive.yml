@@ -1,0 +1,44 @@
+primitive: handler.crosssite
+summary: The one cross-site request guard, the same-site hop, the session-refusal mark and the safe relative redirect check.
+code:
+  - core/handler/fetchmeta.go
+  - core/handler/safepath.go
+docs:
+  - framework/docs/content/core-packages.md
+invariants:
+  - id: fetch-metadata-first
+    rule: IsCrossSiteRequest is true for Sec-Fetch-Site cross-site, false for same-origin and none, and otherwise compares the Origin host with Host, where under same-site an absent, null or hostless Origin is cross-site and without Fetch Metadata it is not.
+    enforced_by:
+      - test: core/handler.TestIsCrossSiteRequest
+      - test: core/handler.TestIsCrossSiteRequestStrictRefusesBareNullOrigin
+  - id: forged-write-refused
+    rule: RefuseCrossSite answers 403 to a method other than GET, HEAD and OPTIONS with a CORS-simple or absent Content-Type from a cross-site origin, and passes everything else.
+    enforced_by:
+      - test: core/handler.TestRefuseCrossSite
+      - test: core/handler.TestIsForgeableRequest
+  - id: hop-ends
+    rule: NeedsSameSiteHop is true for a cross-site request and for one with no Sec-Fetch-Site and no hop marker, and SameSiteHopTarget adds the marker only when the request had no Sec-Fetch-Site and the target lacks it.
+    enforced_by:
+      - test: core/handler.TestNeedsSameSiteHop
+      - test: core/handler.TestSameSiteHopTarget
+  - id: safe-relative-path
+    rule: IsSafeRelativePath accepts only a single-slash path with no scheme, host, backslash, NUL, CR, LF or tab, raw or percent-decoded.
+    enforced_by:
+      - test: core/handler.TestSweepSafeRelativePath
+decisions:
+  - id: same-site-is-not-same-origin
+    date: 2026-11-19
+    status: accepted
+    decision: Sec-Fetch-Site same-site falls through to the Origin comparison.
+    rejected:
+      - option: Trust same-site.
+        why: A sibling subdomain or port is same-site; two copies that trusted it were driven to an attacker-owned admin and an approved destructive plan.
+    upholds: [fetch-metadata-first]
+  - id: hop-for-missing-fetch-metadata
+    date: 2026-11-19
+    status: accepted
+    decision: A request with no Fetch Metadata gets the hop page.
+    rejected:
+      - option: Decide on IsCrossSiteRequest alone.
+        why: A browser sends no Fetch Metadata to a plain-HTTP LAN address, so a link there spent the setup token and landed on 403.
+    upholds: [hop-ends]
