@@ -55,6 +55,17 @@ func p9Probe(t *testing.T, ctx context.Context, sel string) (text, state string,
 	return v.T, v.S, v.P
 }
 
+// p9LoadingReady waits for the loading module. A navigation's After
+// timer starts only once the module is in, so a first navigation that
+// beats its download shows nothing at the probe on a slow runner. The
+// poll runs on an interval: a background tab never runs rAF.
+func p9LoadingReady() chromedp.Tasks {
+	return chromedp.Tasks{
+		chromedp.Evaluate(`window.__gofastr.loadModule('loading')`, nil),
+		chromedp.Poll(`!!window.__gofastr._navHooks.loading`, nil, chromedp.WithPollingInterval(20*time.Millisecond)),
+	}
+}
+
 // TestP9AreaLoadingShowAndParkE2E: an AREA takes loading content the
 // way an outlet does (2026-09-26, "Areas take loading content"): a
 // slow navigation that will re-render the crumbs area shows the
@@ -73,6 +84,7 @@ func TestP9AreaLoadingShowAndParkE2E(t *testing.T) {
 	if err := chromedp.Run(tctx,
 		chromedp.Navigate(srv.URL+"/inbox"),
 		chromedp.WaitVisible(`#lab-SCREEN-INBOX`, chromedp.ByQuery),
+		p9LoadingReady(),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -137,6 +149,7 @@ func TestP9LoadingShowAndParkE2E(t *testing.T) {
 	if err := chromedp.Run(tctx,
 		chromedp.Navigate(srv.URL+"/inbox"),
 		chromedp.WaitVisible(`#lab-SCREEN-INBOX`, chromedp.ByQuery),
+		p9LoadingReady(),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -218,6 +231,7 @@ func TestP9LoadingFastPaintsNothingE2E(t *testing.T) {
 	if err := chromedp.Run(tctx,
 		chromedp.Navigate(srv.URL+"/inbox"),
 		chromedp.WaitVisible(`#lab-SCREEN-INBOX`, chromedp.ByQuery),
+		p9LoadingReady(),
 		chromedp.Evaluate(`(() => {
 			window.__s = { shown: 0, frames: 0, done: false };
 			const tick = () => {
@@ -274,6 +288,7 @@ func TestP9LoadingMinHoldE2E(t *testing.T) {
 	if err := chromedp.Run(tctx,
 		chromedp.Navigate(srv.URL+"/inbox"),
 		chromedp.WaitVisible(`#lab-SCREEN-INBOX`, chromedp.ByQuery),
+		p9LoadingReady(),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -333,6 +348,7 @@ func TestP9LoadingRestoreOnFailureE2E(t *testing.T) {
 	if err := chromedp.Run(tctx,
 		chromedp.Navigate(srv.URL+"/items"),
 		chromedp.WaitVisible(`#lab-SCREEN-ITEMS`, chromedp.ByQuery),
+		p9LoadingReady(),
 		chromedp.Sleep(200*time.Millisecond),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
@@ -416,6 +432,7 @@ func TestP9LoadingSupersededSettlesE2E(t *testing.T) {
 	if err := chromedp.Run(tctx,
 		chromedp.Navigate(srv.URL+"/inbox"),
 		chromedp.WaitVisible(`#lab-SCREEN-INBOX`, chromedp.ByQuery),
+		p9LoadingReady(),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -458,6 +475,7 @@ func TestP9ItemsSkeletonE2E(t *testing.T) {
 	if err := chromedp.Run(tctx,
 		chromedp.Navigate(srv.URL+"/items/1"),
 		chromedp.WaitVisible(`#lab-SCREEN-DETAIL-1`, chromedp.ByQuery),
+		p9LoadingReady(),
 		chromedp.Sleep(200*time.Millisecond),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
@@ -503,6 +521,7 @@ func TestP9PageLoadingComponentE2E(t *testing.T) {
 	if err := chromedp.Run(tctx,
 		chromedp.Navigate(srv.URL+"/inbox"),
 		chromedp.WaitVisible(`#lab-SCREEN-INBOX`, chromedp.ByQuery),
+		p9LoadingReady(),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
@@ -578,6 +597,7 @@ func TestP9LoadingAnimStatesE2E(t *testing.T) {
 	if err := chromedp.Run(tctx,
 		chromedp.Navigate(srv.URL+"/inbox"),
 		chromedp.WaitVisible(`#lab-SCREEN-INBOX`, chromedp.ByQuery),
+		p9LoadingReady(),
 		chromedp.Evaluate(`(() => {
 			window.__states = [];
 			const el = document.querySelector('[data-cui-outlet="l:shell#toolbar"]');
@@ -625,6 +645,7 @@ func TestP9BManifestLoadingE2E(t *testing.T) {
 	if err := chromedp.Run(tctx,
 		chromedp.Navigate(srv.URL+"/inbox"),
 		chromedp.WaitVisible(`#lab-SCREEN-INBOX`, chromedp.ByQuery),
+		p9LoadingReady(),
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}

@@ -1,0 +1,33 @@
+primitive: devcmd
+summary: The `gofastr dev` loop - it watches the app's package graph, rebuilds the dev server binary on save and restarts it.
+code:
+  - cmd/gofastr/internal/devcmd/dev.go
+docs:
+  - framework/docs/content/cli.md
+invariants:
+  - id: dev-loop-runs-no-git
+    rule: The dev loop's go list and go build run with -buildvcs=false, so a save never runs git in the app's repository.
+    enforced_by:
+      - test: cmd/gofastr/internal/devcmd.TestDevGoCommandsRunNoGit
+  - id: one-dev-build-command
+    rule: BuildCommand is the one go build of the gofastr dev and gofastr desktop watch loops; neither builds its own.
+    judge: Does this change make the gofastr dev or gofastr desktop watch loop run a go build of its own instead of calling devcmd.BuildCommand?
+    applies:
+      - cmd/gofastr/internal/desktopcmd/desktop.go
+decisions:
+  - id: no-vcs-stamp-in-dev
+    date: 2026-11-19
+    status: accepted
+    decision: The dev loop's go list and go build pass -buildvcs=false.
+    rejected:
+      - option: Keep Go's default VCS stamping.
+        why: It runs git status in the app's repository on every save, which takes .git/index.lock while the developer commits, and a dev server killed mid-query left the lock behind; the eval's cells failed grading on that stale lock.
+    upholds: [dev-loop-runs-no-git]
+  - id: desktop-loop-shares-dev-build
+    date: 2026-11-19
+    status: accepted
+    decision: The gofastr desktop watch loop builds through devcmd.BuildCommand.
+    rejected:
+      - option: Keep the desktop loop's own go build.
+        why: It was the same build written twice, and it kept stamping VCS info after the dev loop stopped.
+    upholds: [one-dev-build-command]

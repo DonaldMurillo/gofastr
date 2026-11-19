@@ -107,7 +107,13 @@ whose remaining comments are one-line docs on exported identifiers
 `softdelete`, `db`, `tenant`, `imagefield`, `slowquery`, `db/sqlbusy`,
 `sdkdocs/internal/docpage`). Those groups added 669 invariants, 234
 decisions and 8 twins. `framework/experimental` (harness, webmcp,
-apiversions) is swept too, at 4.5%; `framework/` as a whole is at 5.5%.
+apiversions) is swept too, at 4.5%: `harness` 4.3% (286 invariants, 112
+decisions, 38 twins, one primitive per job), `webmcp` 7.3% and
+`apiversions` 11.8%, all of it exported docs. The replay eval after it and
+the first twelve `core/` packages held every number it can see, but no
+replay task reads those packages
+(`2026-11-19-replay-step2-experimental-core.md`). `framework/` as a whole
+is at 5.5%.
 
 `core/` is swept, 23.4% to 5.3%, its tests 12.9% to 12.6%. Every one of its
 32 package directories is in `TestCoveredPackagesHaveNoUnownedFile`.

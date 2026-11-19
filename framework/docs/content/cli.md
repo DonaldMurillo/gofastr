@@ -324,7 +324,10 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   (`-p abc`, `-p 99999`, `--addr localhost:`), or a `--dir` that is not
   an existing directory. While the app is building, failed to build, or exited,
   the address answers 503 with what happened (the build error
-  included) instead of refusing connections.
+  included) instead of refusing connections. The dev loop's `go list` and
+  `go build` run with `-buildvcs=false`: they never run git in your
+  repository, so a save cannot hold `.git/index.lock` while you commit,
+  and the dev binary carries no `vcs.*` build settings.
 - `gofastr build`: codegen + `go vet` + accessibility lint + the embed
   server-action gate + contract verification + `go build`. Only
   error-severity contract findings stop the build (`gofastr verify` is
