@@ -63,6 +63,7 @@ invariants:
       - test: core/router.TestGroupWrapNotFoundResolvesNextPerRequest
       - test: core/router.TestWrapMethodNotAllowedDelegates
       - test: core/router.TestGroupWrapDelegationStaysInsideTheServedRouter
+      - test: core/router.TestRootRedispatchResetsFallbackScope
   - id: notfound-replacement-warns
     rule: NotFound logs a warning when it replaces a handler already set on the same router, and WrapNotFound does not.
     enforced_by:
