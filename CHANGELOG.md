@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A malformed `.env` file now stops `NewApp`.** The docs promised a
+  malformed file fails fast with its name and line number, but `NewApp`
+  dropped the load error and booted without the file's values. It now
+  panics with that error before any option runs, like its other startup
+  errors. Missing files are still skipped, and `GOFASTR_DOTENV=off`
+  still turns the load off.
 - **A misspelled plugin host requirement is named in the build error.**
   `permissions-policy:camrea` reported `"" is not a known
   permissions-policy feature`; the error now quotes `camrea`.

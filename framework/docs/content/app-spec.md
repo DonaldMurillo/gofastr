@@ -1748,8 +1748,10 @@ When the app spec holds any of these values, the generator also emits a
 `.gitignore` it always emits excludes `.env` and `.env.local`, `.gofastr/`,
 `bin/` (the `gofastr build` output) and the SQLite database files
 (`*.db`, `*.db-shm`, `*.db-wal`). The generated `main.go` loads
-`.env.local`/`.env` before opening the DB; a real process env var
-always wins over the files. `generate` is one-shot and refuses to
+`framework.DefaultDotEnvPaths()` before opening the DB. Process environment
+variables take precedence over values in those files. During construction,
+`NewApp` skips missing files and panics on load errors when automatic loading
+is enabled. See [dotenv](dotenv.md). `generate` is one-shot and refuses to
 overwrite an existing `.env` (or any other file) unless you pass `--force`.
 
 #### `dev_mode`

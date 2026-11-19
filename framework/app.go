@@ -1049,11 +1049,13 @@ func defaultDotEnvPaths() []string {
 	return append(paths, ".env")
 }
 
-// NewApp creates an App, first loading DefaultDotEnvPaths unless
-// GOFASTR_DOTENV=off. Panics on an invalid combination of options.
+// NewApp loads DefaultDotEnvPaths unless GOFASTR_DOTENV=off, then creates an App.
+// It panics if dotenv loading fails or options are invalid.
 func NewApp(opts ...AppOption) *App {
 	if os.Getenv("GOFASTR_DOTENV") != "off" {
-		_ = dotenv.LoadAndApply(defaultDotEnvPaths()...)
+		if err := dotenv.LoadAndApply(defaultDotEnvPaths()...); err != nil {
+			panic("framework: " + err.Error())
+		}
 	}
 
 	a := &App{

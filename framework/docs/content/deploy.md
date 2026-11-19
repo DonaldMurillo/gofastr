@@ -170,9 +170,9 @@ ENTRYPOINT ["/app"]
 ## Configuration (env)
 
 GoFastr reads config from the environment. `NewApp` also loads `.env`
-files at boot in every environment, not just development; set
-`GOFASTR_DOTENV=off` to suppress it, see [dotenv](dotenv.md); real env
-always wins. Common vars:
+files in every environment and gives process environment variables precedence.
+It skips missing files and panics on load errors, including malformed files.
+Set `GOFASTR_DOTENV=off` to disable this automatic load. See [dotenv](dotenv.md).
 
 | Var | Purpose |
 |-----|---------|

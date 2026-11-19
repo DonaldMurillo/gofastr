@@ -13,8 +13,9 @@ Files are probed in this order (earlier wins on conflict):
    (e.g. `.env.production`).
 3. `.env`: committed defaults shared by all environments.
 
-Missing files are silently skipped; a malformed file fails fast with
-the file name and line number.
+`NewApp` skips missing files. If loading fails, `NewApp` panics before
+applying any file values or running app options. The error names the file
+and includes the line number for malformed assignments.
 
 ## Precedence
 
@@ -163,7 +164,9 @@ before constructing the app, has to load them first, and must load the **same
 set in the same order**:
 
 ```go
-_ = dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...)
+if err := dotenv.LoadAndApply(framework.DefaultDotEnvPaths()...); err != nil {
+    log.Fatal(err)
+}
 
 db, err := sql.Open(driver, getEnv("DATABASE_URL", "file:app.db"))
 ```
@@ -177,4 +180,4 @@ lower-precedence file's value, and `NewApp`'s later load of
 `.env.<APP_ENV>` can no longer win: a deployment using tiered env files
 silently gets its base `.env` value.
 
-The scaffold `gofastr init` emits does exactly this.
+The scaffold `gofastr init` emits uses the same file order.
