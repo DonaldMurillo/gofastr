@@ -14,9 +14,10 @@ twins:
         note: Conn.readFrame, Conn.writeFrame and completeHandshake.
 invariants:
   - id: close-frame-has-its-own-deadline
-    rule: WebSocketConn.Close writes its Close frame under a deadline of its own, so a negative WriteTimeout and a peer that stopped reading cannot block Close for good.
+    rule: Once WebSocketConn.Close starts, every frame write before its Close frame (a keepalive Ping or a Pong included) carries Close's drain bound and the Close frame a fresh deadline of its own, so a negative WriteTimeout and a peer that stopped reading cannot block Close for good.
     enforced_by:
       - test: core/stream.TestCloseFrameIsBoundedAfterDrainWhenWriteTimeoutDisabled
+      - test: core/stream.TestCloseReturnsWhenPingFollowsDrainedFrame
   - id: handshake-checked-before-hijack
     rule: CheckUpgradeRequest refuses, before anything is hijacked, a request that is not GET, not HTTP/1.1 or later, has no websocket token on any Upgrade line or no upgrade token on any Connection line, is not version 13, or carries a key that is not base64 of 16 bytes.
     enforced_by:
@@ -64,9 +65,10 @@ invariants:
       - test: core/stream.TestReadDrainsBufferedThenError
       - test: core/stream.TestReadDoneStillDrainsLastMessage
   - id: close-drains-what-write-accepted
-    rule: Close writes the queued messages before its Close frame within WriteTimeout (10s when unset or disabled), cutting a stalled pump write at that bound, and skips the drain when the peer closed first or a write already failed.
+    rule: Close writes the queued messages before its Close frame within WriteTimeout (10s when unset or disabled), cutting a stalled pump write at that bound, and skips the drain when the peer closed first or a write already failed. Write's admission and Close's drain share one sync point, so a Write that returns nil is queued before the drain starts, a Write not admitted by then returns ErrClosed, and a Write blocked on a full queue is released by Close rather than holding it.
     enforced_by:
       - test: core/stream.TestCloseWritesQueuedMessagesBeforeCloseFrame
+      - test: core/stream.TestWriteAcceptedDuringCloseIsWritten
       - test: core/stream.TestCloseDrainBoundedByWriteTimeout
       - test: core/stream.TestCloseCutsStalledPumpWriteWhenWriteTimeoutDisabled
       - test: core/stream.TestPeerInitiatedCloseSkipsDrain
