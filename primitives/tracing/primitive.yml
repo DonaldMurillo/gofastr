@@ -1,0 +1,57 @@
+primitive: tracing
+summary: The core/tracing package, which records OpenTelemetry spans on the global TracerProvider for an app's SQL statements, outbound HTTP requests and background jobs; this root owns the shared span helpers and Job.
+code:
+  - core/tracing/tracing.go
+  - core/tracing/job.go
+docs:
+  - framework/docs/content/observability.md
+twins:
+  - job: Name the Go type of a failed call's error as a span's error.type, seeing through fmt.Errorf wrapping.
+    why: errorType is unexported in core/tracing and battery/queue builds its consumer span itself, so its %T reads a wrapped error as *fmt.wrapError; moving errorType to a shared package is work not yet done.
+    sites:
+      - path: core/tracing/tracing.go
+        note: errorType, which unwraps fmt's wrapper types.
+      - path: battery/queue/invoke.go
+        note: invokeRecovering, fmt.Sprintf("%T", err) on the handler's error.
+invariants:
+  - id: tracer-looked-up-per-span
+    rule: Every span is started from the global TracerProvider as it is when the span opens, so a provider installed after a wrapper was built receives that wrapper's spans.
+    enforced_by:
+      - test: core/tracing.TestSweepTracingProviderInstalledAfterWrap
+  - id: client-error-is-a-type
+    rule: A failed SQL or HTTP client span carries the error's Go type as error.type and an empty status description, never the error's message.
+    enforced_by:
+      - test: core/tracing.TestSweepTracingErrorTypeNotMessage
+      - test: core/tracing.TestSQLSpanMarksErrors
+  - id: error-type-sees-through-fmt
+    rule: error.type is the type under any fmt.Errorf %w wrapping, and the first wrapped error's type for a wrapper with several %w verbs.
+    enforced_by:
+      - test: core/tracing.TestErrorTypeSeesThroughWrapping
+  - id: job-is-its-own-trace
+    rule: Job opens an internal root span named by the scrubbed name, parents fn's spans under it, sets fn's error text, scrubbed and capped, as its status, and on a panic records the value and the panicking function's stack, ends the span and panics on.
+    enforced_by:
+      - test: core/tracing.TestJobIsATraceOfItsOwn
+      - test: core/tracing.TestJobWithNoTracerIsACall
+  - id: span-text-is-scrubbed
+    rule: A span name or attribute built from a request, a statement or a job name has its control bytes scrubbed.
+    enforced_by:
+      - analyzer: controlbytes
+      - test: core/tracing.TestJobIsATraceOfItsOwn
+decisions:
+  - id: client-spans-record-types
+    date: 2026-11-19
+    status: accepted
+    decision: SQL and HTTP client spans record a failure as the error's Go type, not its message.
+    rejected:
+      - option: Put the error message in the span status.
+        why: Driver and transport messages routinely quote row values, constraint keys and URLs, and a span store is not where those belong.
+    upholds: [client-error-is-a-type]
+  - id: job-records-error-text
+    date: 2026-11-19
+    status: accepted
+    decision: Job sets fn's error text as its span status, since a scheduled run's operator needs to see what failed and nobody else reads the trace store.
+    rejected:
+      - option: Record only the error type, as the client spans do.
+        why: A failed nightly job would show *errors.errorString and nothing an operator could act on.
+    revisit_if: A Job caller's errors quote data that must not be stored; that caller sets its own span today.
+    upholds: [job-is-its-own-trace]
