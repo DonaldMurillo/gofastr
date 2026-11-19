@@ -687,7 +687,9 @@ way with a 409 (`GrantStore.CheckGrant`, see
 With `Config.ProcessModules` set to `app.ProcessModules()` (see
 [process-modules](process-modules.md)), `/admin/modules` lists each
 module's state, restart count, and the circuit-open and lease-failing
-flags. Its levers (enable, disable, bump generation, revoke a grant,
+flags. The Generation column shows desired / observed. When the desired
+generation is unavailable, the column shows a dash for it and omits the
+lag badge. Its levers (enable, disable, bump generation, revoke a grant,
 which takes that one grant away and keeps the rest) post
 to `/admin/modules/_enable`, `_disable`, `_bump` and `_revoke`, and need
 the `modules:manage` permission on top of the gate, held through the

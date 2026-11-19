@@ -25,6 +25,18 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`App.View` list and record routes run the view's read hooks.**
+  `BeforeList` and `BeforeGet` registered under the view's name now
+  scope its routes; the view used to build its CRUD handler without
+  hooks.
+- **The dev bind guard withdraws the contract catalog tools too.** On a
+  non-loopback listener without `GOFASTR_DEV_MCP_EXPOSE=1`, dev-implied
+  `contracts_list`, `contracts_explain` and `contracts_capabilities` go
+  with the `app_*` tools. An explicit `WithMCPIntrospection()` keeps
+  them.
+- **The admin Modules table shows an unknown desired generation as a
+  dash.** When the module store cannot be read, the Generation cell
+  reads `— / observed` with no lag badge, instead of `0 / observed`.
 - **`gofastr deploy` rollback runs the earlier release with its own
   environment and health check.** A failed deploy or a manual rollback no
   longer keeps the new release's env file or health port.

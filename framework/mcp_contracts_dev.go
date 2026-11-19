@@ -25,12 +25,7 @@ func contractsSourceRoot() (string, error) {
 }
 
 func (a *App) registerContractDevTools() error {
-	tools := []struct {
-		name        string
-		description string
-		schema      map[string]any
-		handler     func(ctx context.Context, params map[string]any) (any, error)
-	}{
+	tools := []mcpToolSpec{
 		{
 			name: "contracts_verify",
 			description: "Run the GoFastr contract analyzers over this app's source tree and return " +
@@ -71,16 +66,7 @@ func (a *App) registerContractDevTools() error {
 			handler: a.toolContractsFix,
 		},
 	}
-	for _, t := range tools {
-		if a.skipDevEntityMCPCollision(t.name) {
-			continue
-		}
-		opts := []mcp.ToolOption{mcp.WithDevImplied()}
-		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
-			return fmt.Errorf("framework: register MCP contract dev tool %q: %w", t.name, err)
-		}
-	}
-	return nil
+	return a.registerBuiltinTools("contract dev tool", tools, mcp.WithDevImplied())
 }
 
 func runContractsPass(capability string, applyBaseline bool) (*contracts.Report, error) {

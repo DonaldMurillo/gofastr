@@ -943,7 +943,8 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 			panic("framework: " + msg)
 		}
 	}
-	if err := a.validateEntityRegistration(e, config.Endpoints, mcpTools, crudMount, groupMount(g, e)); err != nil {
+	mount := groupMount(g, e)
+	if err := a.validateEntityRegistration(e, config.Endpoints, mcpTools, crudMount, mount); err != nil {
 		panic(fmt.Sprintf("framework: failed to register entity %q in group %q: %v", name, g.Prefix(), err))
 	}
 	if a.DB != nil {
@@ -969,50 +970,17 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, g.Router()); err != nil {
 			panic(fmt.Sprintf("framework: failed to register MCP tools for entity %q in group %q: %v", name, g.Prefix(), err))
 		}
-		a.rememberDevEntityMCPTools(e, groupMount(g, e))
+		a.rememberDevEntityMCPTools(e, mount)
 	}
 
 	if len(config.Endpoints) > 0 {
-		if err := a.registerGroupEndpoints(g, e, config.Endpoints); err != nil {
+		if err := a.registerEntityEndpoints(g.Router(), e, config.Endpoints, mount); err != nil {
 			panic(fmt.Sprintf("framework: failed to register endpoints for entity %q in group %q: %v", name, g.Prefix(), err))
 		}
 	}
 
 	a.claimQueuedEndpoints(name)
 	return a
-}
-
-func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entity, endpoints []entity.Endpoint) error {
-	for _, endpoint := range endpoints {
-		method := strings.ToUpper(strings.TrimSpace(endpoint.Method))
-		if method == "" {
-			return fmt.Errorf("endpoint %q: method is required", endpoint.Path)
-		}
-		path := groupEndpointPath(ent, endpoint)
-		if endpoint.Handler != nil {
-			crud.EntityRouter(g.Router(), ent).Handle(method, path, endpointRoute(endpoint))
-		}
-		if endpoint.MCP {
-			if endpoint.MCPHandler == nil {
-				return fmt.Errorf("endpoint %q: MCPHandler is required when MCP is true", endpoint.Path)
-			}
-			toolName := endpoint.Name
-			if toolName == "" {
-				toolName = openapi.DefaultEndpointToolName(ent.GetName(), method, g.Prefix()+path)
-			}
-			if ns := g.MCPNamespace(); ns != "" {
-				toolName = ns + "." + toolName
-			}
-			description := endpoint.Description
-			if description == "" {
-				description = method + " " + g.Prefix() + path
-			}
-			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpointMCPTwin(g.Prefix()+path, endpoint.MCPHandler), endpointMCPOptions(ent, endpoint)...); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 func groupEndpointPath(ent *entity.Entity, endpoint entity.Endpoint) string {
@@ -1028,6 +996,7 @@ func groupEndpointPath(ent *entity.Entity, endpoint entity.Endpoint) string {
 type registrationMount struct {
 	endpointPaths func(entity.Endpoint) (route, toolPath string)
 	mcpNamespace  string
+	routePrefix   string
 }
 
 func (a *App) plainMount(ent *entity.Entity) registrationMount {
@@ -1037,12 +1006,14 @@ func (a *App) plainMount(ent *entity.Entity) registrationMount {
 }
 
 func groupMount(g *routegroup.RouteGroup, ent *entity.Entity) registrationMount {
+	prefix := g.Prefix()
 	return registrationMount{
 		endpointPaths: func(ep entity.Endpoint) (string, string) {
-			p := g.Prefix() + groupEndpointPath(ent, ep)
+			p := prefix + groupEndpointPath(ent, ep)
 			return p, p
 		},
 		mcpNamespace: g.MCPNamespace(),
+		routePrefix:  prefix,
 	}
 }
 
@@ -1051,13 +1022,6 @@ func (m registrationMount) entityTool(ent, action string) string {
 		return ent + "_" + action
 	}
 	return m.mcpNamespace + "." + ent + "." + action
-}
-
-func (m registrationMount) endpointTool(name string) string {
-	if m.mcpNamespace == "" {
-		return name
-	}
-	return m.mcpNamespace + "." + name
 }
 
 func convertGroupEndpointPath(path string) string {
@@ -1407,7 +1371,8 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	}
 
 	mcpToolsEnabled := (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil
-	if verr := a.validateEntityRegistration(e, config.Endpoints, mcpToolsEnabled, mountPath, a.plainMount(e)); verr != nil {
+	mount := a.plainMount(e)
+	if verr := a.validateEntityRegistration(e, config.Endpoints, mcpToolsEnabled, mountPath, mount); verr != nil {
 		return fmt.Errorf("entity %q: %w", name, verr)
 	}
 
@@ -1431,11 +1396,11 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, a.router); err != nil {
 			return fmt.Errorf("failed to register MCP tools for entity %q: %w", name, err)
 		}
-		a.rememberDevEntityMCPTools(e, a.plainMount(e))
+		a.rememberDevEntityMCPTools(e, mount)
 	}
 
 	if len(config.Endpoints) > 0 {
-		if err := a.registerEntityEndpoints(e, config.Endpoints); err != nil {
+		if err := a.registerEntityEndpoints(a.router, e, config.Endpoints, mount); err != nil {
 			return fmt.Errorf("failed to register endpoints for entity %q: %w", name, err)
 		}
 	}
@@ -1457,12 +1422,8 @@ func (a *App) CrudHandler(name string) (*crud.CrudHandler, error) {
 	return a.wireCrudHandler(ent), nil
 }
 
-// wireCrudHandler is the one constructor behind every entity's CRUD handler:
-// the mounted routes (App.Entity, App.GroupEntity), CrudHandler and
-// CrudHandlerForEntity. Each used to copy the field list, and
-// CrudHandlerForEntity's copy dropped ChildHooks, the image pipeline and the
-// metadata strip, so the entityui back office saved images with no renditions
-// and cascaded without child hooks. Callers set BasePath for their own mount.
+// wireCrudHandler builds the app's handlers for entities and views.
+// Callers set BasePath for their own mount.
 func (a *App) wireCrudHandler(ent *entity.Entity) *crud.CrudHandler {
 	name := ent.GetName()
 	ch := crud.NewCrudHandler(ent, a.DB).WithJSONCase(a.JSONCasing())
@@ -1566,10 +1527,7 @@ func (a *App) View(v migrate.View) *App {
 		panic(fmt.Sprintf("framework: failed to register view %q: %v", v.Name, err))
 	}
 	if a.DB != nil {
-		ch := crud.NewCrudHandler(ent, a.DB).WithJSONCase(a.JSONCasing())
-		ch.Registry = a.Registry
-		ch.ChildHooks = a.lookupHookRegistry
-		ch.Events = a.Events()
+		ch := a.wireCrudHandler(ent)
 		ch.BasePath = a.apiPrefix()
 		crud.RegisterCrudRoutes(a.router, ch, a.entityMountPath(ent.GetTable()),
 			crud.CrudRouteOptions{ReadOnly: true, NoLLMMD: a.Config.NoLLMMD})
@@ -1732,20 +1690,12 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 		}
 	}
 	for _, endpoint := range endpoints {
-		method := strings.ToUpper(strings.TrimSpace(endpoint.Method))
-		if method == "" {
-			return fmt.Errorf("endpoint %q: method is required", endpoint.Path)
+		method, err := validateEndpoint(endpoint)
+		if err != nil {
+			return err
 		}
 		if endpoint.MCP {
-			if endpoint.MCPHandler == nil {
-				return fmt.Errorf("endpoint %q: MCPHandler is required when MCP is true", endpoint.Path)
-			}
-			toolName := endpoint.Name
-			if toolName == "" {
-				_, toolPath := m.endpointPaths(endpoint)
-				toolName = openapi.DefaultEndpointToolName(ent.GetName(), method, toolPath)
-			}
-			toolName = m.endpointTool(toolName)
+			toolName := endpointToolName(ent, m, method, endpoint)
 			if claimed[toolName] {
 				return fmt.Errorf("endpoint %q: MCP tool name %q is already claimed by this entity", endpoint.Path, toolName)
 			}
@@ -1760,25 +1710,41 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 	return nil
 }
 
-func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.Endpoint) error {
+func validateEndpoint(ep entity.Endpoint) (string, error) {
+	method := strings.ToUpper(strings.TrimSpace(ep.Method))
+	if method == "" {
+		return "", fmt.Errorf("endpoint %q: method is required", ep.Path)
+	}
+	if ep.MCP && ep.MCPHandler == nil {
+		return "", fmt.Errorf("endpoint %q: MCPHandler is required when MCP is true", ep.Path)
+	}
+	return method, nil
+}
+
+func endpointToolName(ent *entity.Entity, m registrationMount, method string, ep entity.Endpoint) string {
+	name := ep.Name
+	if name == "" {
+		_, toolPath := m.endpointPaths(ep)
+		name = openapi.DefaultEndpointToolName(ent.GetName(), method, toolPath)
+	}
+	if m.mcpNamespace != "" {
+		name = m.mcpNamespace + "." + name
+	}
+	return name
+}
+
+func (a *App) registerEntityEndpoints(r *router.Router, ent *entity.Entity, endpoints []entity.Endpoint, m registrationMount) error {
 	for _, endpoint := range endpoints {
-		method := strings.ToUpper(strings.TrimSpace(endpoint.Method))
-		if method == "" {
-			return fmt.Errorf("endpoint %q: method is required", endpoint.Path)
+		method, err := validateEndpoint(endpoint)
+		if err != nil {
+			return err
 		}
-		path := openapi.EntityEndpointRoutePath(ent, endpoint.Path, a.apiPrefix())
-		specPath := openapi.EntityEndpointPath(ent, endpoint.Path)
+		path, _ := m.endpointPaths(endpoint)
 		if endpoint.Handler != nil {
-			crud.EntityRouter(a.router, ent).Handle(method, path, endpointRoute(endpoint))
+			crud.EntityRouter(r, ent).Handle(method, strings.TrimPrefix(path, m.routePrefix), endpointRoute(endpoint))
 		}
 		if endpoint.MCP {
-			if endpoint.MCPHandler == nil {
-				return fmt.Errorf("endpoint %q: MCPHandler is required when MCP is true", endpoint.Path)
-			}
-			name := endpoint.Name
-			if name == "" {
-				name = openapi.DefaultEndpointToolName(ent.GetName(), method, specPath)
-			}
+			name := endpointToolName(ent, m, method, endpoint)
 			description := endpoint.Description
 			if description == "" {
 				description = method + " " + path

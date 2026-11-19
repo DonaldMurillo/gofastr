@@ -1212,8 +1212,9 @@ app.View(migrate.View{
   `GET /active_users/_events` — and no write routes. The view's
   `/active_users/llm.md` lists exactly those (no write, batch, or
   Create/Update columns), and the `/api/llm.md` index counts the same
-  three, labelled `read-only`. The query layer is not one of them: it is
-  a Go surface, not an HTTP route, so it never appears in either count.
+  three, labelled `read-only`. Register `BeforeList` and `BeforeGet` hooks
+  under the view's name to scope the list and record routes. The query
+  layer is a Go surface, so it never appears in either HTTP route count.
   The event stream uses the app event bus and the view's own resource
   name. It does not infer view changes from writes to underlying tables;
   without events published for the view it remains open and quiet.

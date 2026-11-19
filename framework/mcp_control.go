@@ -3,7 +3,6 @@ package framework
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 
@@ -46,15 +45,8 @@ func WithMCPGate(gate func(ctx context.Context) error) AppOption {
 	}
 }
 
-type controlToolSpec struct {
-	name        string
-	description string
-	schema      map[string]any
-	handler     func(ctx context.Context, params map[string]any) (any, error)
-}
-
-func (a *App) controlToolSpecs() []controlToolSpec {
-	return []controlToolSpec{
+func (a *App) controlToolSpecs() []mcpToolSpec {
+	return []mcpToolSpec{
 		{
 			name:        "app_module_enable",
 			description: "Enable a registered module on the running app. Persists through the module store and re-serves the module's routes/tools. Fails if a declared dependency is disabled. Use app_modules to list modules and their current state.",
@@ -92,21 +84,11 @@ func (a *App) controlToolNames() []string {
 }
 
 func (a *App) registerControlTools() error {
-	tools := a.controlToolSpecs()
-	gate := controlToolGate(a.mcpControlDevImplied, a.mcpControlGate)
-	for _, t := range tools {
-		if a.skipDevEntityMCPCollision(t.name) {
-			continue
-		}
-		var opts []mcp.ToolOption
-		if gate != nil {
-			opts = append(opts, mcp.WithToolGate(gate))
-		}
-		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
-			return fmt.Errorf("framework: register MCP control tool %q: %w", t.name, err)
-		}
+	var opts []mcp.ToolOption
+	if gate := controlToolGate(a.mcpControlDevImplied, a.mcpControlGate); gate != nil {
+		opts = append(opts, mcp.WithToolGate(gate))
 	}
-	return nil
+	return a.registerBuiltinTools("control tool", a.controlToolSpecs(), opts...)
 }
 
 // MCPRequireUser returns a gate that refuses a caller with no resolved user,
