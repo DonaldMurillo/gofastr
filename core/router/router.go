@@ -151,12 +151,17 @@ func (r *Router) RoutesFiltered(hide func(RegisteredRoute) bool) []RegisteredRou
 type cachedRoute struct {
 	raw       http.Handler
 	router    *Router
+	branch    *Router
 	method    string
 	pattern   string
 	gateKey   string
-	cached    atomic.Pointer[http.Handler]
-	cachedV   atomic.Uint64
+	cached    atomic.Pointer[chainEntry]
 	composeMu sync.Mutex
+}
+
+type chainEntry struct {
+	h       http.Handler
+	version uint64
 }
 
 func newCachedRoute(h http.Handler, r *Router, method, pattern string) *cachedRoute {
@@ -190,19 +195,18 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		req = req.WithContext(context.WithValue(req.Context(), routeResourceKey{}, c.router.resource))
 	}
 	curVer := c.router.root.chainVersion.Load()
-	if h := c.cached.Load(); h != nil && c.cachedV.Load() == curVer {
-		(*h).ServeHTTP(w, req)
+	if e := c.cached.Load(); e != nil && e.version == curVer {
+		e.h.ServeHTTP(w, req)
 		return
 	}
 	c.composeMu.Lock()
-	if h := c.cached.Load(); h != nil && c.cachedV.Load() == curVer {
+	if e := c.cached.Load(); e != nil && e.version == curVer {
 		c.composeMu.Unlock()
-		(*h).ServeHTTP(w, req)
+		e.h.ServeHTTP(w, req)
 		return
 	}
-	composed := c.router.wrap(c.raw)
-	c.cached.Store(&composed)
-	c.cachedV.Store(curVer)
+	composed := c.router.wrapBranch(c.raw, c.branch)
+	c.cached.Store(&chainEntry{h: composed, version: curVer})
 	c.composeMu.Unlock()
 	composed.ServeHTTP(w, req)
 }
@@ -214,7 +218,7 @@ func (r *Router) Prefix() string { return r.prefix }
 func (r *Router) Root() *Router { return r.root }
 
 // Group returns a sub-router under prefix with mw added to the inherited chain.
-// A top-level prefix must start with "/" or name a host without a port, else it panics.
+// A top-level prefix is empty, starts with "/", or is a portless host whose first segment has a dot or is localhost; else it panics.
 func (r *Router) Group(prefix string, mw ...Middleware) *Router {
 	if r.prefix == "" {
 		checkHostPrefix(prefix)
@@ -294,11 +298,23 @@ func (r *Router) effectiveChain() []Middleware {
 }
 
 func (r *Router) wrap(handler http.Handler) http.Handler {
+	return r.wrapBranch(handler, nil)
+}
+
+func (r *Router) wrapBranch(handler http.Handler, branch *Router) http.Handler {
 	r.root.mu.RLock()
 	inner := slices.Clone(r.root.inner)
 	r.root.mu.RUnlock()
 	for _, c := range slices.Backward(inner) {
 		handler = c(handler)
+	}
+	for cur := branch; cur != nil && !r.servedBy(cur); cur = cur.parent {
+		cur.mu.RLock()
+		own := slices.Clone(cur.middlewares)
+		cur.mu.RUnlock()
+		for _, c := range slices.Backward(own) {
+			handler = c(handler)
+		}
 	}
 	chain := r.effectiveChain()
 	for _, c := range slices.Backward(chain) {
