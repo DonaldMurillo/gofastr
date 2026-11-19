@@ -205,6 +205,17 @@ If you embed third-party scripts, fonts, or frames you must override
 `ContentSecurityPolicy` explicitly; do not relax it with
 `'unsafe-inline'` globally.
 
+**Why hashes, not nonces or `'strict-dynamic'`.** The default allows
+scripts from your own origin plus the hashed inline blocks above, and
+no other host. Browser guidance pairs hashes with `'strict-dynamic'`
+to close bypasses through allowlisted third-party hosts, and the
+default allows none. Adding `'strict-dynamic'` would make CSP3
+browsers ignore `'self'`, so `<script src="/__gofastr/runtime.js">`
+would stop loading. A per-response nonce would make every page body
+unique. Leave both out unless your override adds third-party script
+hosts. In that case, `'strict-dynamic'` with nonces or hashes is the
+way to keep those hosts from becoming a bypass.
+
 ### Configuring the default chain's headers
 
 The example above constructs the middleware by hand. The default chain

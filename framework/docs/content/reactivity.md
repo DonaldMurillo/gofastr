@@ -75,6 +75,15 @@ re-renders anything. The runtime drops the current screen's cached copy
 itself after any successful RPC whose method is not `GET`, so Back to it
 fetches the page instead of replaying the copy from before the write.
 
+The screen cache is why Back and Forward inside an app are instant,
+even though every page document is `Cache-Control: no-store` and so
+never enters the browser's own back/forward cache (bfcache). The
+runtime keeps the last 20 screens per tab and shows them on `popstate`
+without asking the server. bfcache would only help when the user
+leaves the site and comes back, which isn't worth caching per-user
+pages in the browser's history. See [Security defaults](security.md),
+"Recovery screens and cache policy".
+
 See [Interactive patterns](interactive-patterns.md) for the full attribute
 vocabulary and [Optimistic UI](optimistic-ui.md) for the mutation lifecycle.
 
