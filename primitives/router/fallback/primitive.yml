@@ -31,13 +31,14 @@ invariants:
       - test: core/router.TestAllowNamesImplicitHead
       - test: core/router.TestMethodNotAllowedKeepsAllowHeader
   - id: 405-runs-the-shared-group-chain
-    rule: A 405, default or custom, runs the chain of the deepest router holding every live route at the path, a root-level handler included, and runs it once.
+    rule: A 405, default or custom, runs the chain of the deepest router holding every live route at the path, a root-level handler included, plus the own middleware of a handler's Group on another branch, each once.
     enforced_by:
       - test: core/router.TestGroupCORSAnswersPreflight
       - test: core/router.TestDefault405RunsSharedGroupChain
       - test: core/router.TestDefault405SiblingGroupsShareOnlyTheirParent
       - test: core/router.TestCustomRoot405RunsGroupChain
       - test: core/router.TestGroup405HandlerRunsChainOnce
+      - test: core/router.TestSibling405HandlerRunsSharedOwnerChain
   - id: default-fallbacks-run-the-chain
     rule: The default 404 and 405 run the router's middleware chain like a custom handler does.
     enforced_by:
@@ -45,21 +46,23 @@ invariants:
       - test: core/router.TestNotFoundSeesLateMiddleware
       - test: core/router.TestMethodNotAllowedSeesLateMiddleware
   - id: group-fallback-by-specificity
-    rule: A miss runs the NotFound or MethodNotAllowed of the most specific covering Group under the served router that set one (host first, then longer prefix, then literal over wildcard, then registration order), else the nearest up the parent chain.
+    rule: A miss runs the NotFound or MethodNotAllowed of the most specific covering Group under the served router that set one (host first, then longer prefix, then literal over wildcard, then registration order), else the nearest up the parent chain; a prefix covers the escaped path segment by segment, as the mux matches.
     enforced_by:
       - test: core/router.TestGroupNotFoundAnswersMissesUnderItsPrefix
       - test: core/router.TestGroupMethodNotAllowedAnswersUnderItsPrefix
       - test: core/router.TestGroupFallbackRanksBySpecificity
       - test: core/router.TestGroupFallbackStaysInsideTheServedRouter
       - test: core/router.TestHostGroupNotFound
+      - test: core/router.TestGroupFallbackMatchesEscapedSegments
   - id: wrap-delegates-without-rerunning-chain
-    rule: WrapNotFound and WrapMethodNotAllowed hand the wrapper the previous handler without its chain, so a delegated miss runs the chain once, and on a Group with none they resolve the next less specific handler per request.
+    rule: WrapNotFound and WrapMethodNotAllowed hand the wrapper the previous handler without its chain, so a delegated miss runs the chain once, and on a Group with none they resolve the next less specific handler per request, under the router that served it.
     enforced_by:
       - test: core/router.TestWrapNotFound_MiddlewareRunsOnce
       - test: core/router.TestWrapNotFound_DelegatesToPreviousHandler
       - test: core/router.TestGroupWrapNotFoundDelegatesToInherited
       - test: core/router.TestGroupWrapNotFoundResolvesNextPerRequest
       - test: core/router.TestWrapMethodNotAllowedDelegates
+      - test: core/router.TestGroupWrapDelegationStaysInsideTheServedRouter
   - id: notfound-replacement-warns
     rule: NotFound logs a warning when it replaces a handler already set on the same router, and WrapNotFound does not.
     enforced_by:

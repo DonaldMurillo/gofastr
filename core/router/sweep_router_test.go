@@ -40,6 +40,22 @@ func TestSweepRouterHooksSetOnGroupGovernTree(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("gate set on a Group: root route answered %d, want 404", rec.Code)
 	}
+	var served string
+	g.SetServeHook(func(m, p string) { served = m + " " + p })
+	g.PreRoute(func(req *http.Request) (*http.Request, string) {
+		if req.URL.Path != "/alias" {
+			return nil, ""
+		}
+		next := req.Clone(req.Context())
+		next.URL.Path = "/users/7"
+		return next, ""
+	})
+	r.Get("/users/{id}", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/alias", nil))
+	if rec.Code != http.StatusOK || served != "GET /users/{id}" {
+		t.Fatalf("hooks set on a Group: root answered %d, serve hook saw %q; want 200 and GET /users/{id}", rec.Code, served)
+	}
 }
 
 func TestSweepRouterServeHookOrder(t *testing.T) {
