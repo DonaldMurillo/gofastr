@@ -241,7 +241,6 @@ nav	2	_pushURL
 nav	2	_routeMatch
 nav	2	_routeSeg
 nav	2	_scrollStore
-nav	2	_scrollTimer
 nav	2	_segTest
 nav	2	_settleScroll
 nav	2	_showNavToast
