@@ -196,7 +196,7 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 			ctx := app.WithRequest(req.Context(), req)
 			d := coreApp.PatternPolicy(ctx, sc)
 			if d.Kind == app.DecisionBlock && d.NotFound {
-				ds.serveNotFound(w, req, app.RoutePath(req.URL.EscapedPath()))
+				ds.ServeNotFound(w, req)
 				return
 			}
 			setPageMarkdownHeaders(w)

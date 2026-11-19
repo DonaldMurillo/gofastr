@@ -112,6 +112,13 @@ func (ds *UIHost) ServeNotFound(w http.ResponseWriter, r *http.Request) {
 		ds.writePartReset(w, reason)
 		return
 	}
+	if r.Header.Get("X-Gofastr-Navigate") == "1" {
+		if _, done := ds.partialSession(w, r); done {
+			return
+		}
+	} else if ds.negotiatesMarkdown() {
+		w.Header().Add("Vary", "Accept")
+	}
 	ds.serveNotFound(w, r, routePath(r))
 }
 

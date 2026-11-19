@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -36,23 +37,34 @@ func normalizeNF(body, path string) string {
 	return notFoundNoise.ReplaceAllString(body, "{session}")
 }
 
+// hiddenPolicyRuns counts the decide.NotFound policy's runs, so a test
+// can tell a shape that reached the policy from one refused before it.
+var hiddenPolicyRuns atomic.Int64
+
 func notFoundDecisionApp(t *testing.T) *UIHost {
 	t.Helper()
 	a := app.NewApp("nfdecide")
-	a.SetDefaultLayout(app.NewLayout("root", app.LayoutSpec{}, func(_ context.Context, l *app.LayoutTree) render.HTML { return l.Primary() }))
-	hidden := app.PolicyFunc(func(context.Context) app.Decision { return decide.NotFound() })
-	a.RegisterScreen(app.NewScreen("/nfd-admin", adminComp{}).WithTitle("Admin").WithPolicy(hidden), nil)
-	a.RegisterScreen(app.NewScreen("/nfd-dyn/:type", &barcodeComp{}).WithTitle("Dyn").WithPolicy(hidden), nil)
+	aside := app.NewOutlet("aside", app.OutletOptions{Deferred: true})
+	a.SetDefaultLayout(app.NewLayout("root", app.LayoutSpec{Outlets: []*app.Outlet{aside}}, func(_ context.Context, l *app.LayoutTree) render.HTML {
+		return render.Join(l.Primary(), l.Place(aside))
+	}))
+	hidden := app.PolicyFunc(func(context.Context) app.Decision {
+		hiddenPolicyRuns.Add(1)
+		return decide.NotFound()
+	})
+	a.RegisterScreen(app.NewScreen("/nfd-admin", adminComp{}).WithTitle("Admin").WithPolicy(hidden).Fill(aside, statusFillComp("ASIDE")), nil)
+	a.RegisterScreen(app.NewScreen("/nfd-dyn/:type", &barcodeComp{}).WithTitle("Dyn").WithPolicy(hidden).Fill(aside, statusFillComp("ASIDE")), nil)
 	a.Register("/origin", statusScreenComp("origin"), nil)
 	return New(a, WithNotFoundScreen(nfMetaBody{}), WithDescription("Site wide"),
 		WithPublicLLMMD(), WithMarkdownNegotiation())
 }
 
 type nfShape struct {
-	name   string
-	method string
-	header map[string]string
-	suffix string
+	name    string
+	method  string
+	header  map[string]string
+	suffix  string
+	session bool // send a live session cookie
 }
 
 var nfShapes = []nfShape{
@@ -62,6 +74,9 @@ var nfShapes = []nfShape{
 	{name: "markdown", header: map[string]string{"Accept": "text/markdown"}},
 	{name: "llm.md", suffix: "/llm.md"},
 	{name: "part", header: map[string]string{"X-Gofastr-Part": "l:root#aside"}},
+	{name: "live part", header: map[string]string{"X-Gofastr-Part": "l:root#aside"}, session: true},
+	{name: "prefetch", header: map[string]string{"X-Gofastr-Navigate": "1", "X-Gofastr-From": "/origin", "X-Gofastr-Prefetch": "1"}},
+	{name: "live prefetch", header: map[string]string{"X-Gofastr-Navigate": "1", "X-Gofastr-From": "/origin", "X-Gofastr-Prefetch": "1"}, session: true},
 }
 
 // nfMethodShapes are the methods a screen does not take. A policy does
@@ -81,6 +96,13 @@ func serveShape(h http.Handler, path string, s nfShape) *httptest.ResponseRecord
 	for k, v := range s.header {
 		req.Header.Set(k, v)
 	}
+	if s.session {
+		mint := httptest.NewRecorder()
+		h.ServeHTTP(mint, httptest.NewRequest(http.MethodPost, "/__gofastr/session", nil))
+		for _, c := range mint.Result().Cookies() {
+			req.AddCookie(c)
+		}
+	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
@@ -88,12 +110,17 @@ func serveShape(h http.Handler, path string, s nfShape) *httptest.ResponseRecord
 
 func assertSameNotFound(t *testing.T, shape string, got, want *httptest.ResponseRecorder, gotPath, wantPath string) {
 	t.Helper()
-	if got.Code != want.Code || (!strings.HasSuffix(shape, "part") && got.Code != http.StatusNotFound) {
-		t.Fatalf("%s: status %d, unmatched URL %d; want the same, 404 but for a part reset", shape, got.Code, want.Code)
+	if got.Code != want.Code {
+		t.Fatalf("%s: status %d, unmatched URL %d", shape, got.Code, want.Code)
 	}
-	for _, h := range []string{"Allow", "X-Gofastr-Part-Reset"} {
-		if g, w := got.Header().Get(h), want.Header().Get(h); g != w {
+	for _, h := range []string{"Allow", "X-Gofastr-Part-Reset", "Vary", "Cache-Control"} {
+		if g, w := strings.Join(got.Header().Values(h), ","), strings.Join(want.Header().Values(h), ","); g != w {
 			t.Errorf("%s: %s %q, unmatched URL %q", shape, h, g, w)
+		}
+	}
+	for _, h := range []string{"Set-Cookie", "X-Gofastr-Session"} {
+		if g, w := got.Header().Get(h) != "", want.Header().Get(h) != ""; g != w {
+			t.Errorf("%s: sends %s = %v, unmatched URL %v", shape, h, g, w)
 		}
 	}
 	if g, w := got.Header().Get("Content-Type"), want.Header().Get("Content-Type"); g != w {
@@ -112,7 +139,11 @@ func assertSameNotFound(t *testing.T, shape string, got, want *httptest.Response
 func TestDecideNotFoundMatchesUnmatchedURL(t *testing.T) {
 	ds := notFoundDecisionApp(t)
 	for _, s := range nfShapes {
+		before := hiddenPolicyRuns.Load()
 		got := serveShape(ds, "/nfd-admin", s)
+		if s.name == "live part" && hiddenPolicyRuns.Load() == before {
+			t.Errorf("live part: the part request never reached the policy")
+		}
 		want := serveShape(ds, "/zz-nope", s)
 		assertSameNotFound(t, s.name, got, want, "/nfd-admin", "/zz-nope")
 		got = serveShape(ds, "/nfd-dyn/qr", s)
