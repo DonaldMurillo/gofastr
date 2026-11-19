@@ -2,11 +2,13 @@ package appgen
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/codegen"
 )
@@ -386,5 +388,95 @@ func TestOpenAPISDKEntryOutputsDoNotOverlap(t *testing.T) {
 				t.Fatalf("out %q module %q err %v, want %q %q", opts.OutDir, opts.module, err, tc.wantOut, tc.wantModule)
 			}
 		})
+	}
+}
+
+// oaChainDoc is a document whose component i is a list of objects naming
+// component i+1 twice, so typing each use in place would double the
+// types at every step: 2^n structs from n components.
+func oaChainDoc(n int) string {
+	schemas := map[string]any{}
+	for i := 0; i < n; i++ {
+		next := map[string]any{"type": "string"}
+		if i+1 < n {
+			next = map[string]any{"$ref": fmt.Sprintf("#/components/schemas/C%d", i+1)}
+		}
+		schemas[fmt.Sprintf("C%d", i)] = map[string]any{"type": "array", "items": map[string]any{
+			"type": "object", "properties": map[string]any{"a": next, "b": next},
+		}}
+	}
+	doc := map[string]any{
+		"openapi":    "3.1.0",
+		"components": map[string]any{"schemas": schemas},
+		"paths": map[string]any{
+			"/a": map[string]any{"get": map[string]any{"operationId": "getA", "responses": map[string]any{"200": map[string]any{
+				"description": "ok", "content": map[string]any{"application/json": map[string]any{"schema": map[string]any{"$ref": "#/components/schemas/C0"}}}}}}},
+			"/b": map[string]any{"get": map[string]any{"operationId": "getB", "responses": map[string]any{"200": map[string]any{
+				"description": "ok", "content": map[string]any{"application/json": map[string]any{"schema": map[string]any{"$ref": "#/components/schemas/C0"}}}}}}},
+		},
+	}
+	raw, _ := json.Marshal(doc)
+	return string(raw)
+}
+
+// A component typed in place (here a list of inline objects) is typed
+// once, its objects named after it, and shared by every use: a fan-out
+// chain of 28 components derives 28 types, and two operations returning
+// the component share one.
+func TestOpenAPISDKInlineComponentTypedOnce(t *testing.T) {
+	start := time.Now()
+	spec, err := oaSDKSpecFor(t, oaChainDoc(28))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(spec.Types.structs); n != 28 {
+		t.Fatalf("the chain derived %d struct types, want 28", n)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Fatalf("typing the chain took %s", d)
+	}
+	a, b := spec.Ops[0].ResultType, spec.Ops[1].ResultType
+	if a.goExpr() != "[]C0Item" || b.goExpr() != a.goExpr() {
+		t.Fatalf("results %s and %s, want one shared []C0Item", a.goExpr(), b.goExpr())
+	}
+	if _, err := renderOASDKGoFiles(spec); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A document deriving more struct types than oaMaxStructs is refused
+// with an error naming the cap.
+func TestOpenAPISDKStructCap(t *testing.T) {
+	defer func(n int) { oaMaxStructs = n }(oaMaxStructs)
+	oaMaxStructs = 10
+	if _, err := oaSDKSpecFor(t, oaChainDoc(9)); err != nil {
+		t.Fatalf("9 types under a cap of 10: %v", err)
+	}
+	_, err := oaSDKSpecFor(t, oaChainDoc(11))
+	if err == nil || !strings.Contains(err.Error(), "more than 10 types") {
+		t.Fatalf("11 types under a cap of 10: %v, want the cap refusal", err)
+	}
+}
+
+// {allOf: [{$ref: X}], nullable: true}, the nullable reference
+// Swashbuckle and NSwag write, is X and nullable, in both SDKs.
+func TestOpenAPISDKSingleAllOfIsTheMember(t *testing.T) {
+	doc := oaSDKDoc(`{"/a":{"get":{"operationId":"a","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"object","properties":{
+		"owner":{"allOf":[{"$ref":"#/components/schemas/Person"}],"nullable":true},
+		"kind":{"allOf":[{"$ref":"#/components/schemas/Kind"}],"nullable":true},
+		"extra":{"allOf":[{"$ref":"#/components/schemas/Person"}],"properties":{"x":{"type":"string"}}}}}}}}}}}}`,
+		`{"schemas":{"Person":{"type":"object","properties":{"name":{"type":"string"}}},"Kind":{"type":"string","enum":["a","b"]}}}`)
+	spec, err := oaSDKSpecFor(t, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, f := range spec.Types.structs["AResponse"].Fields {
+		got[f.Wire] = fmt.Sprintf("%s %s %v", f.Type.goExpr(), f.Type.tsExpr(), f.Nullable)
+	}
+	for wire, want := range map[string]string{"owner": "Person Person true", "kind": "string string true", "extra": "AResponseExtra AResponseExtra false"} {
+		if got[wire] != want {
+			t.Errorf("%s: %q, want %q", wire, got[wire], want)
+		}
 	}
 }

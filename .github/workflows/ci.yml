@@ -107,8 +107,13 @@ jobs:
       # The OpenAPI SDK's client.d.ts is type-checked with tsc
       # (TestOpenAPISDKTypesCompile). Locally the test skips without tsc;
       # here it fails instead, so a declaration regression cannot pass
-      # behind a skip. The TypeScript step below installs the pinned tsc.
+      # behind a skip. The TypeScript step below installs the version
+      # GOFASTR_TSC_VERSION names, and the test reads the variable and
+      # fails unless tsc --version reports it: go test does not see the
+      # tsc binary, so the variable is what makes a TypeScript bump a new
+      # test-cache input.
       GOFASTR_REQUIRE_TSC: "1"
+      GOFASTR_TSC_VERSION: "6.0.2"
       # Affected scope (cmd/affected). On a pull request, vet, the
       # deterministic test step and the coverage floors run over the
       # import-graph closure of the PR's changes: the checkout is the PR's
@@ -238,11 +243,12 @@ jobs:
           install-dependencies: true
 
       - name: Install TypeScript (type-checks the generated SDK declarations)
-        # A pinned release, installed into the runner's own Node, whose bin
-        # directory is already on PATH: a moving version would change the
-        # tsc the cached test results saw. TestCITypeScriptIsPinned holds
-        # the pin and GOFASTR_REQUIRE_TSC together.
-        run: npm install -g typescript@6.0.2 && tsc --version
+        # The release GOFASTR_TSC_VERSION pins, installed into the runner's
+        # own Node, whose bin directory is already on PATH. The test cache
+        # does not see the tsc binary, only the variable, which the test
+        # reads and checks against tsc --version. TestCITypeScriptIsPinned
+        # holds the install, the variable and GOFASTR_REQUIRE_TSC together.
+        run: npm install -g "typescript@${GOFASTR_TSC_VERSION}" && tsc --version
 
       - name: Install bubblewrap (linux sandbox backend + P1-P7 probes)
         # The process-module SandboxRunner (framework) shells to `bwrap` for

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -53,13 +54,25 @@ export async function use(): Promise<void> {
 // parameter object is declared optional), and its JSON results admit the
 // null an empty answer resolves to. tsc comes from the machine's PATH: the
 // repo has no node toolchain of its own, so the test skips without one.
+// GOFASTR_TSC_VERSION, read whether or not tsc is found so it is always a
+// test-cache input, names the version tsc must report (CI sets it).
 func TestOpenAPISDKTypesCompile(t *testing.T) {
+	wantVersion := os.Getenv("GOFASTR_TSC_VERSION")
 	tsc, err := exec.LookPath("tsc")
 	if err != nil {
 		if os.Getenv("GOFASTR_REQUIRE_TSC") != "" {
 			t.Fatal("tsc is not on PATH and GOFASTR_REQUIRE_TSC is set")
 		}
 		t.Skip("tsc is not on PATH")
+	}
+	if wantVersion != "" {
+		got, err := exec.Command(tsc, "--version").Output()
+		if err != nil {
+			t.Fatalf("tsc --version: %v", err)
+		}
+		if strings.TrimSpace(string(got)) != "Version "+wantVersion {
+			t.Fatalf("tsc reports %q, but GOFASTR_TSC_VERSION is %s", strings.TrimSpace(string(got)), wantVersion)
+		}
 	}
 	out := oaSDKGenerate(t, oaSDKFixture)
 	dir := t.TempDir()

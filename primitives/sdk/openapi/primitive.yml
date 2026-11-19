@@ -54,6 +54,15 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKNullableRefPerUse
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
+  - id: inline-component-typed-once
+    rule: A component typed in place is typed once, its inline objects named after it, so every use shares one type and the number of types grows with the document, and a document deriving more than oaMaxStructs struct types is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKInlineComponentTypedOnce
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKStructCap
+  - id: single-allof-is-its-member
+    rule: An allOf of one member with no properties of its own is typed as that member, nullable when the wrapper is.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKSingleAllOfIsTheMember
   - id: self-reference-is-typed-once
     rule: A component met again while it is being typed in place is raw JSON, and an object component refers to its own named struct, so a recursive document generates in both SDKs and the CLI.
     enforced_by:
@@ -68,7 +77,7 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKClientBodiesBounded
   - id: js-types-compile
-    rule: The generated client.d.ts passes tsc --strict, declares an all-optional parameter object before a required body as P | undefined, and types a JSON result T | null; the check skips without tsc only when GOFASTR_REQUIRE_TSC is unset, and CI's test job sets it and installs one pinned TypeScript.
+    rule: The generated client.d.ts passes tsc --strict, declares an all-optional parameter object before a required body as P | undefined, and types a JSON result T | null; the check skips without tsc only when GOFASTR_REQUIRE_TSC is unset, and fails when tsc reports another version than GOFASTR_TSC_VERSION, which CI's test job sets beside GOFASTR_REQUIRE_TSC and installs, so a TypeScript bump is a test-cache input.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKTypesCompile
       - test: cmd/gofastr.TestCITypeScriptIsPinned
