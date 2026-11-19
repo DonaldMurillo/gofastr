@@ -154,7 +154,7 @@ func passwordInputCSS(_ style.Theme) string {
    form-errors runtime places a server's refusal after a submit. The
    input has no border of its own to colour, so either marks the shell. */
 .fui-password[data-invalid],
-.fui-password:has(> .fui-password__input[aria-invalid="true"]) {
+.fui-password:has(> .fui-password__input:is(:user-invalid, [aria-invalid="true"])) {
   border-color: var(--color-danger, #B91C1C);
   box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #B91C1C);
 }`

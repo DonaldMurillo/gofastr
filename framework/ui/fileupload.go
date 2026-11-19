@@ -159,7 +159,7 @@ func fileUploadCSS(_ style.Theme) string {
 .fui-upload[data-hui-drop-over] .fui-upload__zone {
   background: color-mix(in oklab, var(--color-primary, #18181B) 10%, var(--color-surface, #FFFFFF) 90%);
 }
-.fui-upload-field:has(.fui-upload__input[aria-invalid="true"]) .fui-upload__zone {
+.fui-upload-field:has(.fui-upload__input:is(:user-invalid, [aria-invalid="true"])) .fui-upload__zone {
   border-color: var(--color-danger, #B91C1C);
 }
 .fui-upload__label {

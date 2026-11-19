@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -44,5 +45,28 @@ func TestKitTypography(t *testing.T) {
 	}
 	if css := heroStyle.Entry().CSSFor(th); strings.Contains(css, ", 6vw,") || strings.Contains(css, ", 2.2vw,") {
 		t.Error("hero clamp still prefers a bare vw size")
+	}
+}
+
+// Every kit rule that draws a control's invalid state also matches
+// :user-invalid, so a required or mistyped field shows the error once
+// the user has left it, not only after the server answers (#704).
+func TestKitInvalidStateFollowsUserInvalid(t *testing.T) {
+	th := theme.Default()
+	// Every spelling of the attribute match: quoted either way or bare.
+	invalidRe := regexp.MustCompile(`\[aria-invalid=["']?true["']?\]`)
+	pairedRe := regexp.MustCompile(`:is\(:user-invalid,\[aria-invalid=["']?true["']?\]\)`)
+	found := 0
+	for _, e := range registry.All() {
+		css := strings.Join(strings.Fields(e.CSSFor(th)), "")
+		all := len(invalidRe.FindAllString(css, -1))
+		paired := len(pairedRe.FindAllString(css, -1))
+		found += paired
+		if all != paired {
+			t.Errorf("style %q styles [aria-invalid=\"true\"] %d times without :user-invalid", e.Name, all-paired)
+		}
+	}
+	if found == 0 {
+		t.Fatal("no kit sheet styles :user-invalid")
 	}
 }

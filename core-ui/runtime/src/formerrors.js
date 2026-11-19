@@ -41,16 +41,38 @@
   // back to reserved.
   function clear(form) {
     if (!form) return;
-    form.querySelectorAll('[data-hui-field-error="live"]').forEach((e) => {
-      if (e.id) form.querySelectorAll('[aria-describedby]').forEach((c) => describe(c, e.id, false));
-      e.remove();
-    });
-    form.querySelectorAll(ERR).forEach((e) => {
-      e.textContent = '';
-      e.setAttribute('data-hui-field-error', '');
-    });
-    form.querySelectorAll('[aria-invalid="true"]').forEach((e) => e.removeAttribute('aria-invalid'));
+    // The form's own error nodes and described controls, plus those of
+    // every control associated from outside it (form="id"), which
+    // report() marks like any other: its field's, or the node right after
+    // a bare choice.
+    const errs = [...form.querySelectorAll(ERR)];
+    const ctrls = [...form.querySelectorAll('[aria-describedby]')];
+    for (const e of form.elements) {
+      if (form.contains(e)) continue;
+      ctrls.push(e);
+      const f = e.closest(FIELD);
+      const c = !f && e.closest(CHOICE);
+      if (f) {
+        errs.push(...f.querySelectorAll(ERR));
+        ctrls.push(...f.querySelectorAll('[aria-describedby]'));
+      } else if (c && c.nextElementSibling && c.nextElementSibling.matches(ERR)) {
+        errs.push(c.nextElementSibling);
+      }
+    }
+    for (const e of new Set(errs)) {
+      if (e.matches('[data-hui-field-error="live"]')) {
+        if (e.id) ctrls.forEach((c) => describe(c, e.id, false));
+        e.remove();
+      } else {
+        e.textContent = '';
+        e.setAttribute('data-hui-field-error', '');
+      }
+    }
+    for (const e of [...form.querySelectorAll('[aria-invalid="true"]'), ...form.elements]) {
+      if (e.getAttribute('aria-invalid') === 'true') e.removeAttribute('aria-invalid');
+    }
   }
+
 
   // renderedNode finds the error node the server shipped for this
   // control: a field's is its own child, a bare choice's follows the
@@ -72,8 +94,13 @@
 
   // report renders the envelope into the form. status and txt are the
   // response's; a body that is not the envelope falls back to a toast
-  // naming the status.
-  function report(form, status, txt) {
+  // naming the status. opts are the dispatch's. Only a submit carries
+  // a submitter key (the submit bridges set it, null or a button), and
+  // only a submit moves focus: never a click on a control or an
+  // as-you-type dispatch, and only while focus is still in the form or
+  // nowhere, so a late answer never pulls the reader out of what they
+  // moved on to.
+  function report(form, status, txt, opts) {
     if (!form) return;
     // The first refusal in a document loads this module after the
     // request, so rpc.js could not clear the server's own messages.
@@ -109,6 +136,22 @@
       if (p.id) describe(el, p.id, true);
       p.textContent = [].concat(fields[name]).join(', ');
       placed++;
+    }
+    if (placed && opts && 'submitter' in opts) {
+      const a = document.activeElement;
+      // form.elements, not a descendant query: it is in tree order and
+      // holds a control associated from outside the form (form="id").
+      // A hidden input (a combobox's value) or a disabled control (its own
+      // attribute or a disabled fieldset's) cannot take focus.
+      // A refused radio group is marked on its last radio only, which may
+      // be disabled or sit after another field, so every radio of a
+      // marked group counts as refused; the reader lands on the group's
+      // checked radio, or its first, among those that can take focus.
+      const groups = new Set([...form.elements].filter((r) => r.type === 'radio' && r.getAttribute('aria-invalid') === 'true').map((r) => r.name));
+      const enabled = [...form.elements].filter((e) => e.type !== 'hidden' && !e.matches(':disabled'));
+      let first = enabled.find((e) => (e.type === 'radio' ? groups.has(e.name) : e.getAttribute('aria-invalid') === 'true'));
+      if (first && first.type === 'radio') first = enabled.find((r) => r.type === 'radio' && r.name === first.name && r.checked) || first;
+      if (first && (!a || a === document.body || form.contains(a) || a.form === form)) first.focus();
     }
     if (!placed && typeof NS._toastOrFallback === 'function') {
       const title = (d && typeof d.error === 'string' && d.error) || NS.say('runtime.request_failed_status', 'Request failed ({{status}})', { status });
