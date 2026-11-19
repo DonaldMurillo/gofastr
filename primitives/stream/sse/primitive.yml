@@ -17,9 +17,10 @@ twins:
         note: sanitizeSSEData and defangSSEDirectives.
 invariants:
   - id: one-sse-encoder
-    rule: stream.Encode, SSEWriter.WriteEvent, SSEWriter.WriteData and handler.SSE write a frame through sseframe.Append and emit the same bytes for the same id, name and data.
+    rule: stream.Encode, SSEWriter.WriteEvent, SSEWriter.WriteData and handler.SSE write a frame through sseframe.Append and emit the same bytes for the same id, name and data, with one exception kept for the existing wire bytes - a name that is empty once cut gives WriteEvent an empty event line that Encode and handler.SSE omit (a browser dispatches both as "message"), so for such a name WriteData is the match.
     enforced_by:
       - test: core/stream.TestSweepSSEEncodersAgree
+      - test: core/stream.TestWriteEventEmptyNameKeepsEventLine
     judge: Does this change build an SSE id, event or data line anywhere but internal/sseframe?
     applies:
       - core/handler/respond.go

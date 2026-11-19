@@ -44,6 +44,15 @@ few lines, and link the PR or the docs page for the rest.
   resolver retried. It now shares `netguard.CheckOutboundURL` with A2A
   push registration, which bounds the lookup; a hostless URL such as
   `http://:8080/` is refused by A2A push too. ([webhooks](framework/docs/content/webhooks.md))
+- **stream: `WebSocketConn.Close` returns when a keepalive Ping slips in
+  after the drain.** With a negative `WriteTimeout`, a Ping written after
+  a drained frame cleared the socket's deadline could block on a peer
+  that stopped reading and hold `Close` forever. Every frame written once
+  `Close` starts now carries its bound. See
+  [core packages](framework/docs/content/core-packages.md).
+- **stream: a `Write` racing `Close` is no longer accepted and dropped.**
+  A `Write` that returns nil is now always queued before `Close` drains;
+  one that loses the race returns `ErrClosed`.
 - **router: Group fallbacks match escaped segments, stay in the served
   subtree, and keep the shared 405 chain.** A `%2F` in a request path no
   longer shifts which Group's `NotFound` or `MethodNotAllowed` covers it;
