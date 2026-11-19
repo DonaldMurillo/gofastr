@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -111,10 +110,7 @@ func (b *Battery) entityCards(ctx context.Context) []render.HTML {
 // entityCard is one entity's card inside the element that polls it:
 // the poll answer replaces the card with a fresh one.
 func (b *Battery) entityCard(ctx context.Context, e *entity.Entity) render.HTML {
-	return html.Div(html.DivConfig{ExtraAttrs: html.Attrs{
-		"data-cui-poll":     countPoll,
-		"data-cui-poll-src": b.cfg.PathPrefix + "/_count/" + url.PathEscape(e.GetName()),
-	}}, b.entityStat(ctx, e))
+	return polled(b.cfg.PathPrefix+"/_count/"+url.PathEscape(e.GetName()), countPoll, b.entityStat(ctx, e))
 }
 
 // probeCount is a late count's fallback: a bounded read of at most
@@ -293,10 +289,7 @@ func (b *Battery) appCards(ctx context.Context) render.HTML {
 	for i, c := range b.cfg.Cards {
 		body := b.buildSlot(ctx, "card "+c.Key, c.Build)
 		if c.Poll > 0 {
-			body = html.Div(html.DivConfig{ExtraAttrs: html.Attrs{
-				"data-cui-poll":     c.Poll.String(),
-				"data-cui-poll-src": b.cardPath(c.Key),
-			}}, body)
+			body = polled(b.cardPath(c.Key), c.Poll.String(), body)
 		}
 		cards[i] = ui.Card(ui.CardConfig{Heading: c.Title.Text(ctx), HeadingLevel: 2}, body)
 	}

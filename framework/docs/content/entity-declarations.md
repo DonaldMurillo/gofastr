@@ -1088,9 +1088,10 @@ app.Use(access.Middleware(policy, func(ctx context.Context) []string {
 }))
 ```
 
-The admin battery's wildcard grant (`*`) passes any permission check, so
-an entity opted in via `CrossOwnerRead` is fully visible in the back
-office automatically.
+The back office uses the same owner scope. To read across owners there,
+grant the permission named by `CrossOwnerRead` to a role the caller holds
+in the request's role policy. The admin role grants access to the back
+office, and cross-owner reads require that separate permission check.
 
 **Fail-closed.** When no access policy is in the request context (an
 un-wired request, or the caller's roles don't include the permission),

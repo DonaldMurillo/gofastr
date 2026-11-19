@@ -17,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/listfilter"
 )
 
 // queueStatuses are the states the Jobs page filters by: DBQueue's
@@ -36,11 +37,8 @@ var queueStatuses = []struct {
 
 // queueStatus reads ?status= as one of queueStatuses, or "". unknown
 // reports a value that names none, which the page lists as All and warns of.
-func queueStatus(r *http.Request) (status string, unknown bool) {
-	if r == nil {
-		return "", false
-	}
-	s := r.URL.Query().Get("status")
+func queueStatus(q url.Values) (status string, unknown bool) {
+	s := q.Get("status")
 	for _, st := range queueStatuses {
 		if st.value == s {
 			return s, false
@@ -55,12 +53,6 @@ func (b *Battery) replayable() (queue.Replayable, bool) {
 	return rq, ok
 }
 
-// replayNothing tells a Replay click that the job was not failed any more.
-var replayNothing = i18n.Define("admin.replay_nothing", "That job is no longer failed. Nothing was queued.")
-
-// queuePageParam is the Jobs page's page number in its query.
-const queuePageParam = "p"
-
 // maxReplayAll bounds the jobs one Replay all click re-queues, so the
 // request's work has an end however many jobs have failed.
 const maxReplayAll = 10_000
@@ -69,23 +61,20 @@ const maxReplayAll = 10_000
 // jobs, newest first, with a pager when they run past one page. The
 // failed view of a replayable queue replays one job or every failed job.
 func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.HTML {
-	r := appui.RequestFromContext(ctx)
-	status, unknownStatus := queueStatus(r)
-	limit := b.cfg.QueueListLimit
-	pageNo := 1
+	dropped := false
+	var query url.Values
+	if r := appui.RequestFromContext(ctx); r != nil {
+		query = r.URL.Query()
+		dropped = listfilter.DroppedNarrowing(r.URL.RawQuery, func(name string) bool { return name == "status" })
+	}
+	status, unknownStatus := queueStatus(query)
+	pageNo, limit := decodePage(query, b.cfg.QueueListLimit, opsMaxLimit)
 	carry := url.Values{}
 	if status != "" {
 		carry.Set("status", status)
 	}
-	if r != nil {
-		q := r.URL.Query()
-		limit = parseLimit(q.Get("limit"), b.cfg.QueueListLimit)
-		if q.Has("limit") {
-			carry.Set("limit", strconv.Itoa(limit))
-		}
-		if n, err := strconv.Atoi(q.Get(queuePageParam)); err == nil && n > 1 {
-			pageNo = n
-		}
+	if query.Has("limit") {
+		carry.Set("limit", strconv.Itoa(limit))
 	}
 	header := ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.AdminQueue.Text(ctx),
@@ -111,7 +100,7 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 		q[k] = v
 	}
 	if pageNo > 1 {
-		q.Set(queuePageParam, strconv.Itoa(pageNo))
+		q.Set(pageParam, strconv.Itoa(pageNo))
 	}
 	page := b.cfg.PathPrefix + "/queue"
 	if len(q) > 0 {
@@ -137,25 +126,15 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 			}),
 		})
 	}
-	var pager *ui.PaginationConfig
-	if pages > 1 {
-		pager = &ui.PaginationConfig{
-			Page:      pageNo,
-			Pages:     pages,
-			Path:      b.cfg.PathPrefix + "/queue",
-			Query:     carry,
-			PageParam: queuePageParam,
-			Ctx:       ctx,
-		}
-	}
-	var dropped render.HTML
-	if unknownStatus || droppedNarrowing(r, "status") {
-		dropped = filterNotApplied(ctx)
+	pager := pagePager(ctx, b.cfg.PathPrefix+"/queue", carry, pageNo, pages)
+	var warning render.HTML
+	if unknownStatus || dropped {
+		warning = listfilter.Warning(ctx)
 	}
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		header,
 		resultNotice(ctx),
-		dropped,
+		warning,
 		b.queueFilter(ctx, status, stats),
 		b.jobsTable(ctx, jobs, status, page, canReplay, 2, pager, false),
 	)
@@ -345,6 +324,7 @@ func (b *Battery) handleReplayAll(w http.ResponseWriter, r *http.Request) {
 	}
 	actor := adminActorID(r.Context())
 	skipped := false
+	queued := 0
 	for _, id := range ids {
 		replayed, err := replayJob(r.Context(), rq, id)
 		if err != nil {
@@ -358,8 +338,13 @@ func (b *Battery) handleReplayAll(w http.ResponseWriter, r *http.Request) {
 		}
 		// A job someone else replayed since the list was read is not this run's.
 		if replayed {
+			queued++
 			b.appendAudit(r.Context(), "queue", "replay", id, actor, nil)
 		}
+	}
+	if queued == 0 {
+		b.refuse(w, r, page, http.StatusConflict, "replay-all-nothing")
+		return
 	}
 	if skipped {
 		b.done(w, r, page, "replayed-some")

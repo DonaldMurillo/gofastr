@@ -120,10 +120,10 @@ func listViews(e *entity.Entity) []entity.ListView {
 func (b *Battery) metricStrip(ctx context.Context) render.HTML {
 	cells := make([]render.HTML, 0, len(b.cfg.Metrics)+1)
 	for i, m := range b.cfg.Metrics {
-		cells = append(cells, polled(b.cfg.PathPrefix+"/_metric/"+strconv.Itoa(i), b.metricStat(ctx, m)))
+		cells = append(cells, polled(b.cfg.PathPrefix+"/_metric/"+strconv.Itoa(i), countPoll, b.metricStat(ctx, m)))
 	}
 	if b.cfg.Queue != nil && platformCaller(ctx) {
-		cells = append(cells, polled(b.cfg.PathPrefix+"/_metric/jobs", b.jobsFigure(ctx)))
+		cells = append(cells, polled(b.cfg.PathPrefix+"/_metric/jobs", countPoll, b.jobsFigure(ctx)))
 	}
 	if len(cells) == 0 {
 		return ""
@@ -131,12 +131,12 @@ func (b *Battery) metricStrip(ctx context.Context) render.HTML {
 	return ui.StatStrip(ui.StatStripConfig{Label: i18nui.AdminMetrics.Text(ctx), Cells: cells})
 }
 
-// polled is a figure inside the element that re-reads it from src.
-func polled(src string, figure render.HTML) render.HTML {
+// polled wraps content in the element that re-reads it from src.
+func polled(src, interval string, body render.HTML) render.HTML {
 	return html.Div(html.DivConfig{ExtraAttrs: html.Attrs{
-		"data-cui-poll":     countPoll,
+		"data-cui-poll":     interval,
 		"data-cui-poll-src": src,
-	}}, figure)
+	}}, body)
 }
 
 // metricStat is one figure, read under countDeadline.

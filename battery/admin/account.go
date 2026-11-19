@@ -30,6 +30,7 @@ func (b *Battery) renderAccount(ctx context.Context, _ map[string]string) render
 			Title:    i18nui.AdminAccountSettings.Text(ctx),
 			Subtitle: i18nui.AdminAccountSub.Text(ctx),
 		}),
+		resultNotice(ctx),
 		b.profileCard(ctx),
 		b.appearanceCard(ctx),
 	}
@@ -44,8 +45,9 @@ func (b *Battery) renderAccount(ctx context.Context, _ map[string]string) render
 // state when the store records one) and roles.
 func (b *Battery) profileCard(ctx context.Context) render.HTML {
 	var items []ui.DetailItem
+	_, nameStore := b.nameEditor(ctx)
 	// With a name form the form shows the name; a row would repeat it.
-	if name := b.userName(ctx); name != "" && b.nameStore() == nil {
+	if name := b.userName(ctx); name != "" && nameStore == nil {
 		items = append(items, ui.DetailItem{Label: i18nui.AdminName.Text(ctx), Value: render.Text(name)})
 	}
 	if email := userEmail(ctx); email != "" {
@@ -69,7 +71,7 @@ func (b *Battery) profileCard(ctx context.Context) render.HTML {
 	}
 	items = append(items, ui.DetailItem{Label: i18nui.AdminRoles.Text(ctx), Value: roles})
 	body := []render.HTML{ui.DetailList(ui.DetailListConfig{Items: items})}
-	if b.nameStore() != nil {
+	if nameStore != nil {
 		body = append(body, b.nameForm(ctx))
 	}
 	return ui.Card(ui.CardConfig{
@@ -105,9 +107,8 @@ func (b *Battery) handleName(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	store := b.nameStore()
-	actor := callerUserID(r.Context())
-	if store == nil || actor == "" {
+	actor, store := b.nameEditor(r.Context())
+	if store == nil {
 		b.refuse(w, r, page, http.StatusNotImplemented, "failed")
 		return
 	}
@@ -126,6 +127,14 @@ func (b *Battery) handleName(w http.ResponseWriter, r *http.Request) {
 	stored, _ := auth.CleanName(name)
 	b.appendAudit(r.Context(), "account", "set-name", actor, actor, map[string]any{"name": stored})
 	b.done(w, r, page, "name-saved")
+}
+
+func (b *Battery) nameEditor(ctx context.Context) (string, auth.NameStore) {
+	id := callerUserID(ctx)
+	if id == "" {
+		return "", nil
+	}
+	return id, b.nameStore()
 }
 
 // nameStore is the auth store's NameStore, or nil without Auth or a

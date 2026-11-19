@@ -361,14 +361,14 @@ func TestAssignSetsRoles(t *testing.T) {
 	r := newRBACEnv(t, Config{})
 	id := r.editor.GetID()
 	// The multi-select sends one value per role; text sends a comma list.
-	vals := url.Values{"user_id": {id}, "roles": {"editor", "support,editor"}}
+	vals := url.Values{"user_id": {id}, "selected_roles": {"editor"}, "roles": {"support,editor"}}
 	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_assign", vals)); got != "roles-saved" {
 		t.Fatalf("result = %q", got)
 	}
 	if got := r.rolesOf(id); !slices.Equal(got, []string{"editor", "support"}) {
 		t.Fatalf("roles = %v", got)
 	}
-	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_assign", url.Values{"user_id": {id}, "roles": {""}})); got != "roles-saved" {
+	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_assign", url.Values{"user_id": {id}})); got != "roles-saved" {
 		t.Fatalf("clear result = %q", got)
 	}
 	if got := r.rolesOf(id); len(got) != 0 {
@@ -379,6 +379,69 @@ func TestAssignSetsRoles(t *testing.T) {
 	}
 	if got := resultOf(t, post(r.as(theAdmin), "/admin/rbac/_assign", url.Values{"roles": {"editor"}})); got != "bad-input" {
 		t.Fatalf("no user_id result = %q", got)
+	}
+}
+
+func TestAssignKeepsCommaInRoleCheckbox(t *testing.T) {
+	r := newRBACEnv(t, Config{})
+	const role = "billing,read"
+	u, err := r.mgr.UserStore().CreateUser(context.Background(), "billing@example.com", "$2a$10$hash", []string{role})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := r.as(theAdmin)
+	body := get(h, "/admin/rbac/users").Body.String()
+	checkbox := regexp.MustCompile(`<input[^>]*value="billing,read"[^>]*>`).FindString(body)
+	field := regexp.MustCompile(`\bname="([^"]+)"`).FindStringSubmatch(checkbox)
+	if field == nil || !strings.Contains(checkbox, `type="checkbox"`) || !strings.Contains(checkbox, " checked") {
+		t.Fatal("the stored role has no checked checkbox")
+	}
+	vals := url.Values{"user_id": {u.GetID()}, field[1]: {role}}
+	if got := resultOf(t, post(h, "/admin/rbac/_assign", vals)); got != "roles-saved" {
+		t.Fatalf("save checked role = %q", got)
+	}
+	if got := r.rolesOf(u.GetID()); !slices.Equal(got, []string{role}) {
+		t.Errorf("saved roles = %q, want one role %q", got, role)
+	}
+}
+
+func TestAssignAndGrantChangesHonorDeciderDeny(t *testing.T) {
+	for _, c := range []struct {
+		name, path string
+		data       map[string]any
+		before     []string
+	}{
+		{"assign", "_assign", map[string]any{"roles": "editor"}, nil},
+		{"remove", "_assign", map[string]any{"roles": ""}, []string{"editor"}},
+		{"grant", "_grant", map[string]any{"role": "support", "permission": "posts:read"}, nil},
+		{"revoke", "_permissions", map[string]any{"role": "editor", "permission": "posts:read"}, nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRBACEnv(t, Config{})
+			id := r.editor.GetID()
+			if err := r.mgr.SetUserRoles(context.Background(), id, c.before); err != nil {
+				t.Fatal(err)
+			}
+			h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				ctx := access.WithDecider(req.Context(), func(_ context.Context, _ []string, p access.Permission, _ access.Ref) access.Decision {
+					if p == "posts:read" {
+						return access.DecisionDeny
+					}
+					return access.DecisionAbstain
+				})
+				r.as(theAdmin).ServeHTTP(w, req.WithContext(ctx))
+			})
+			c.data["user_id"] = id
+			if rr := rpc(h, "/admin/rbac/"+c.path, c.data); rr.Code != http.StatusForbidden {
+				t.Errorf("%s with denied permission = %d, want 403", c.name, rr.Code)
+			}
+			if got := r.rolesOf(id); !slices.Equal(got, c.before) {
+				t.Errorf("roles changed from %v to %v", c.before, got)
+			}
+			if canAs(r.policy, "support", "posts:read") || !canAs(r.policy, "editor", "posts:read") {
+				t.Error("the denied permission change reached the policy")
+			}
+		})
 	}
 }
 

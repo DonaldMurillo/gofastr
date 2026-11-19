@@ -44,24 +44,7 @@ func (b *Battery) mount() {
 	b.screen(group, "/search", i18nui.AdminSearch, true, b.renderSearch)
 	b.screen(group, "/shortcuts", i18nui.ShortcutSheetTitle, false, b.renderShortcuts)
 	b.screen(group, "/account", i18nui.AdminAccountSettings, false, b.renderAccount)
-	if b.cfg.Queue != nil {
-		b.screen(group, "/queue", i18nui.AdminQueue, false, b.renderQueue).WithPolicy(platformPolicy())
-	}
-	if b.db != nil {
-		b.screen(group, "/audit", i18nui.AdminAudit, false, b.renderAudit)
-	}
-	if b.cfg.Policy != nil {
-		b.screen(group, "/rbac/roles", i18nui.AdminRoles, false, b.renderRoles).WithPolicy(platformPolicy())
-	}
-	if b.cfg.Auth != nil {
-		b.screen(group, "/rbac/users", i18nui.AdminUserRoles, false, b.renderUsers).WithPolicy(platformPolicy())
-	}
-	if b.cfg.ProcessModules != nil {
-		b.screen(group, "/modules", i18nui.AdminModules, false, b.renderModules).WithPolicy(platformPolicy())
-	}
-	if len(b.cfg.EmailPreviews) > 0 {
-		b.screen(group, "/emails", i18nui.AdminEmails, false, b.renderEmails)
-	}
+	b.mountOpsPages(group)
 	b.mountEntities(group, r)
 	b.mountPages(group)
 	b.host.App.Router.ScreenGroup(group)
@@ -81,6 +64,33 @@ func (b *Battery) mount() {
 	widget.MountBuilder(r, palette.PagesMatch(b.underPrefix).ListedFor(b.offered))
 	keys := ui.ShortcutSheetFunc(b.keysConfig)
 	widget.MountBuilder(r, keys.PagesMatch(b.underPrefix).ListedFor(b.offered))
+}
+
+type opsPage struct {
+	path, icon string
+	title      i18n.Phrase
+	draw       func(context.Context, map[string]string) render.HTML
+	platform   bool
+}
+
+func (b *Battery) mountOpsPages(group *appui.ScreenGroup) {
+	b.ops = nil
+	mount := func(enabled bool, p opsPage) {
+		if !enabled {
+			return
+		}
+		s := b.screen(group, p.path, p.title, false, p.draw)
+		if p.platform {
+			s.WithPolicy(platformPolicy())
+		}
+		b.ops = append(b.ops, p)
+	}
+	mount(b.cfg.Queue != nil, opsPage{"/queue", "layers", i18nui.AdminQueue, b.renderQueue, true})
+	mount(b.db != nil, opsPage{"/audit", "activity", i18nui.AdminAudit, b.renderAudit, false})
+	mount(b.cfg.Policy != nil, opsPage{"/rbac/roles", "shield", i18nui.AdminRoles, b.renderRoles, true})
+	mount(b.cfg.Auth != nil, opsPage{"/rbac/users", "users", i18nui.AdminUserRoles, b.renderUsers, true})
+	mount(b.cfg.ProcessModules != nil, opsPage{"/modules", "cpu", i18nui.AdminModules, b.renderModules, true})
+	mount(len(b.cfg.EmailPreviews) > 0, opsPage{"/emails", "mail", i18nui.AdminEmails, b.renderEmails, false})
 }
 
 // offered reports whether the admin's widgets are listed to r's caller:
@@ -415,19 +425,13 @@ func (b *Battery) navGroups(ctx context.Context, count func(*entity.Entity) rend
 // has what it needs to draw.
 func (b *Battery) opsItems(ctx context.Context) []ui.SidebarItem {
 	var out []ui.SidebarItem
-	add := func(ok bool, key i18n.Phrase, path, icon string) {
-		if ok {
-			href := b.cfg.PathPrefix + path
-			out = append(out, ui.SidebarItem{Label: key.Text(ctx), Href: href, MatchPath: href, Icon: navIcon(icon)})
+	platform := platformCaller(ctx)
+	for _, p := range b.ops {
+		if !p.platform || platform {
+			href := b.cfg.PathPrefix + p.path
+			out = append(out, ui.SidebarItem{Label: p.title.Text(ctx), Href: href, MatchPath: href, Icon: navIcon(p.icon)})
 		}
 	}
-	platform := platformCaller(ctx)
-	add(platform && b.cfg.Queue != nil, i18nui.AdminQueue, "/queue", "layers")
-	add(b.db != nil, i18nui.AdminAudit, "/audit", "activity")
-	add(platform && b.cfg.Policy != nil, i18nui.AdminRoles, "/rbac/roles", "shield")
-	add(platform && b.cfg.Auth != nil, i18nui.AdminUserRoles, "/rbac/users", "users")
-	add(platform && b.cfg.ProcessModules != nil, i18nui.AdminModules, "/modules", "cpu")
-	add(len(b.cfg.EmailPreviews) > 0, i18nui.AdminEmails, "/emails", "mail")
 	return out
 }
 
@@ -584,18 +588,11 @@ func (b *Battery) trail(ctx context.Context, m appui.Match) []ui.Crumb {
 		return []ui.Crumb{{Text: i18nui.AdminSearch.Text(ctx)}}
 	case "/account":
 		return []ui.Crumb{{Text: i18nui.AdminAccountSettings.Text(ctx)}}
-	case "/queue":
-		return []ui.Crumb{{Text: i18nui.AdminQueue.Text(ctx)}}
-	case "/audit":
-		return []ui.Crumb{{Text: i18nui.AdminAudit.Text(ctx)}}
-	case "/rbac/roles":
-		return []ui.Crumb{{Text: i18nui.AdminRoles.Text(ctx)}}
-	case "/rbac/users":
-		return []ui.Crumb{{Text: i18nui.AdminUserRoles.Text(ctx)}}
-	case "/modules":
-		return []ui.Crumb{{Text: i18nui.AdminModules.Text(ctx)}}
-	case "/emails":
-		return []ui.Crumb{{Text: i18nui.AdminEmails.Text(ctx)}}
+	}
+	for _, p := range b.ops {
+		if rest == p.path {
+			return []ui.Crumb{{Text: p.title.Text(ctx)}}
+		}
 	}
 	for _, p := range b.cfg.Pages {
 		if rest == p.Path {

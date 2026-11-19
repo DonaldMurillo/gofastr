@@ -1850,11 +1850,12 @@ app:
     seed_password: change-me
 ```
 
-With `enabled: true` the generated app registers the [admin battery](../../../battery/admin/),
-an auto-generated HTML back-office at `path`: an overview and audit page,
-and an editable CRUD screen for every registered entity at `<path>/e/<table>`
-(View / Edit / Delete / Create), all proxying each entity's own CrudHandler so
-validation, owner/tenant scope, hooks, and events apply. Access is gated by
+With `enabled: true` the generated app registers the [admin battery](../../../battery/admin/).
+The back office adds an overview, an audit page and a screen at
+`<path>/entities/<name>` for each entity with mounted CRUD. It skips entities
+with CRUD off and shows read-only views without write controls. Writes go
+through the entity's own CrudHandler, so validation, owner and tenant scope,
+hooks, and events apply. Access is gated by
 `role`; an unauthenticated GET is redirected to `login_path` (pair it with a
 `login_form` screen) instead of a bare 401, and a signed-in user without the
 role gets 403. When `seed_email`/`seed_password` are set, the app bootstraps
@@ -2108,8 +2109,9 @@ The generator rejects:
   and `/api/docs`; with `pwa`, `/manifest.webmanifest` and
   `/service-worker.js`; with `llm_md`, `/llm-pages.md` and any route
   ending in `/llm.md`; with `admin`, anything at or under the admin path
-  (default `/admin`), where the back-office serves every entity at
-  `<path>/e/<table>`. The framework's route answers instead of the
+  (default `/admin`). Entity screens live at `<path>/entities/<name>` for
+  entities with mounted CRUD. Entities with CRUD off are excluded, and
+  read-only views have no write controls. The framework's route answers instead of the
   screen, or, where it answers only some callers, the screen takes it
   over: a screen at `/openapi.json` served HTML to anonymous callers in
   place of the gated schema

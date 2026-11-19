@@ -419,26 +419,6 @@ func (s *listState) narrowsParam(name string) bool {
 	return own
 }
 
-func (s *listState) ownPairUndecodable(rawQuery string) bool {
-	for pair := range strings.SplitSeq(rawQuery, "&") {
-		if pair == "" {
-			continue
-		}
-		k, v, _ := strings.Cut(pair, "=")
-		name, err := url.QueryUnescape(k)
-		if err != nil || strings.Contains(k, ";") {
-			return true
-		}
-		if !s.narrowsParam(name) {
-			continue
-		}
-		if _, err := url.QueryUnescape(v); err != nil || strings.Contains(v, ";") {
-			return true
-		}
-	}
-	return false
-}
-
 var defaultPageSizes = []int{25, 50, 100}
 
 func (s *listState) pageSizes(b *ListBuilder) []int {

@@ -126,6 +126,9 @@ func TestAccountNameNamesTheShell(t *testing.T) {
 	if rr.Code != http.StatusSeeOther || !strings.Contains(rr.Header().Get("Location"), "result=name-saved") {
 		t.Fatalf("save name: %d %s", rr.Code, rr.Header().Get("Location"))
 	}
+	if notice := get(h, rr.Header().Get("Location")); !strings.Contains(notice.Body.String(), "Name saved") {
+		t.Error("Account settings is missing the confirmation after a plain post")
+	}
 	if name, _ := users.UserName(ctx, u.GetID()); name != "Ada Lovelace" {
 		t.Errorf("the caller's name is %q", name)
 	}
@@ -143,6 +146,9 @@ func TestAccountNameNamesTheShell(t *testing.T) {
 	rr = post(h, "/admin/account/_name", url.Values{"name": {"Ada\nLovelace"}})
 	if !strings.Contains(rr.Header().Get("Location"), "result=name-refused") {
 		t.Errorf("a name with a newline: %d %s", rr.Code, rr.Header().Get("Location"))
+	}
+	if notice := get(h, rr.Header().Get("Location")); !strings.Contains(notice.Body.String(), "with no control characters") {
+		t.Error("Account settings is missing the refusal after a plain post")
 	}
 	if name, _ := users.UserName(ctx, u.GetID()); name != "Ada Lovelace" {
 		t.Errorf("a refused name changed the stored one to %q", name)

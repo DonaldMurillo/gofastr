@@ -66,7 +66,7 @@ it, and draws no New, edit, delete or bulk control.
 | `GET /admin/entities/<name>/:id` | Record (opens as a drawer from the list, whose bar steps to the previous and next row, and as a drawer stacked over a related record; as a full page it offers Open in panel, back to the list with the record in a drawer) |
 | `GET /admin/queue` | Jobs, with `?status=` links and counts (needs `Queue`) |
 | `GET /admin/audit` | Audit log, newest first |
-| `GET /admin/rbac/roles` | Role permissions (needs `Policy` + `GrantStore`) |
+| `GET /admin/rbac/roles` | Role permissions (needs `Policy`, and `GrantStore` for editing) |
 | `GET /admin/rbac/users` | User roles (needs `Auth`) |
 | `GET /admin/modules` | Process modules (needs `ProcessModules`) |
 | `GET /admin/emails?name=` | Email previews, one tab per mail (needs `EmailPreviews`) |
@@ -203,9 +203,8 @@ scoped to a tenant: the files hold every tenant's lines together.
 A page's and a card's `Title`, a link's `Label` and a metric's `Label`
 are `i18n.Phrase` values, so the admin draws them in the request's
 language and a catalog entry for the key translates them (see
-`gofastr docs i18n`). A command's `Label` is the text itself: build the
-command list per request with the phrase's `Text(ctx)` when it needs
-translating.
+`gofastr docs i18n`). Entries in `Config.Commands` use the fixed label
+text supplied at configuration time.
 
 - A **Page** draws in the shell under `<PathPrefix><Path>` with a crumb
   and a palette entry. Its path may not take one of the admin's own
@@ -384,9 +383,12 @@ failed" skips such a job without a row. The queue says which it was
 through `queue.ReplayReporter`, which `DBQueue`, `MemoryQueue` and
 `RedisQueue` implement; a custom queue with `Replay` alone cannot say,
 so each of its replays is reported and audited. A failed job whose `UniqueKey` a newer live job holds
-is not replayed: one replay answers 409 with a notice, and "Replay N
-failed" leaves it failed, replays the rest, and says some were skipped. A failed list or stats read shows a generic notice and
-logs the driver error; the page never prints it. A queue that cannot count
+stays failed. One replay answers 409 with a notice, and "Replay N failed"
+reports skipped unique keys when it queues other jobs. If it queues
+nothing, it answers 409 with a no-change notice. A failed job list read
+shows a generic notice and logs the driver error. A failed stats read
+logs the error and lists the first page without counts, a pager or a
+"Replay N failed" button. A queue that cannot count
 (a `RedisQueue` whose client has no `LLEN`, see
 [queue](queue.md#optional-listlengther)) lists its first page of jobs with
 no counts, no pager and no "Replay N failed" button, and the dashboard's
@@ -417,8 +419,10 @@ under it, as the audit page's Changes column does. On an entity with an
 `OwnerField`, both pages name a record and list its values only when
 the caller could read it: its stored copy names the caller as owner,
 the live record reads under the caller's owner scope, or the request
-allows cross-owner reads (`owner.AllowCrossOwner`). Another owner's
-record shows by its id alone, with no title and no changes. A bulk run's summary
+allows cross-owner reads (`owner.AllowCrossOwner`). When the owner scope
+hides a record, the Audit log shows the entity's singular name and the
+record ID. Recent activity shows the singular name alone. Both omit the
+title and changes. A bulk run's summary
 row reads "**ada** deleted 2 payments in bulk": a delete or a restore by
 its own verb, a set or a move as an update, counting the records it went
 through on; an app's own bulk action, and a run that went through on
@@ -452,17 +456,16 @@ app's own bulk action keeps the run id. On a phone each row is a card.
 Both read elevated: the page is behind the admin gate, and the trail
 names records whatever the entity's own read permission says.
 
-**Hidden records stay hidden.** The Audit log page and the dashboard's
-activity feed show only the id, operation and time of a record that is
-still stored (live or in the trash) but hidden from the admin by its
-`BeforeGet`/`BeforeList` hooks (`entityui.UI.RecordHidden`): its title
-and changed values stay out of the page, the answer the owner-scope check
-already gave. A record that is no longer stored (hard-deleted or purged)
+**Hidden records stay hidden.** If `BeforeGet` or `BeforeList` hooks
+hide a stored record (live or in the trash), both surfaces omit its title
+and changed values. The Audit log identifies the record by its ID after
+the entity's singular name. Recent activity identifies it by the singular
+name alone. Both still show the operation and time. A hard-deleted or purged record
 has no row left to check, so it follows the `_events` rule for a hard
 delete: its title and changes show only when the viewer's `BeforeGet`
 and `BeforeList` hooks append no clause
-(`crud.CrudHandler.ReadHooksRestrict`). A viewer the hooks restrict, or
-a hook that fails, gets the id, operation and time.
+(`crud.CrudHandler.ReadHooksRestrict`). Restricted viewers and failed
+hooks get the same fallbacks as hidden stored records.
 
 **Audit filters.** The audit page carries a GET filter form, the list
 toolbar's Filters dropdown (`ui.FilterToolbar` with `Dropdown`), so a
@@ -499,22 +502,23 @@ admin.New(admin.Config{SavedViews: true, DB: db})
 ```
 
 `Config.SavedViews` turns on the admin's saved-view store over the
-admin's database (`Config.DB`, default the app's): one named
-filter/columns set per user per entity, in `admin_saved_views`
+admin's database (`Config.DB`, default the app's). It keeps named sets of
+filters and columns in `admin_saved_views`
 (`Config.SavedViewsTable`; a lowercase identifier). The admin's lists
 offer it; `(*Battery).SavedViews()` returns the store for an app's own
 screens (`UI.WithSavedViews`). The store reads the owner and the tenant from the caller's
-context only, keeps every owner's and tenant's views apart, caps a user
-at `entityui.SavedViewCap` views per entity, and refuses blank, duplicate
-and over-long names, filters and column lists with the errors the
-`SavedViewStore` contract names. A generated app's admin config sets
+context only and allows up to `entityui.SavedViewCap` views per owner,
+tenant and entity. Within that scope it refuses blank, duplicate and
+overlong names. Filters and column lists can be empty and have separate
+size limits. The `SavedViewStore` contract names the errors. A generated app's admin config sets
 `SavedViews: true`.
 
 ### Bulk jobs in the background
 
 A bulk action over more than `entityui.InRequestCap` (100) records runs
-outside the request, on `Config.Queue`'s queue, through
-`admin.NewBulkJobs`:
+outside the request on the queue passed to `admin.NewBulkJobs`. Set
+`Config.Queue` to a browsable queue to enable the Jobs page. It can be
+the same queue instance if the queue implements `queue.Browsable`.
 
 <!-- gofastr:compile
 import "database/sql"
@@ -638,8 +642,10 @@ select. Under `StrictCapabilities` a grant of an undeclared permission
 is refused.
 The User roles page lists each user's roles once, as tags; the row's
 Edit roles dropdown holds the form that replaces them. It shows 50
-accounts a page (`?limit=`, up to 500), and the pager under the table
-turns pages through `?p=`.
+accounts a page, clamps `?limit=` to 500 and turns pages through `?p=`.
+The form posts exact checkbox values in `selected_roles`, with commas
+preserved inside role names. The text field uses `roles` and splits on
+commas.
 
 Role and permission names must be valid UTF-8 without NUL bytes. A grant,
 grid save or role assignment containing such text is refused before any
@@ -673,9 +679,9 @@ roles (after the save) with it or the wildcard, is refused with
 `own-permission-refused` and a `revoke-refused` row. The caller could
 never grant it back, since a caller grants only what their roles hold.
 Grant it to a second role the caller holds first. An
-`access.Decider` on the request is asked about each permission first: its
-`DecisionDeny` refuses the change even when the policy grants it, and its
-`DecisionAllow` admits nothing the policy does not. A grid save is checked whole
+`access.Decider` on the request can veto a grant, a revoke or a change to
+a role that grants the denied permission. `DecisionAllow` leaves the
+caller's tier checks in effect. A grid save is checked whole
 before it writes: one refused change refuses the save, and nothing in
 it is applied. A grant inside a wildcard revocation (the role's
 `teams:*` was revoked, and the save grants `teams:read`) is refused that
@@ -729,8 +735,9 @@ SAMEORIGIN`. The `<iframe>` carries an empty `sandbox` attribute too, so
 the mail gets an opaque origin with no scripts, forms or navigation of
 the admin page. Nothing is sent from the page.
 
-`Name` is lowercase letters, digits, `-` and `_`, unique; a bad or
-repeated name, or a preview with no `Render`, fails `Init`. `Render`
+`Name` is unique and uses 1–64 lowercase letters, digits, `-` or `_`.
+It starts with a lowercase letter or digit. An invalid or repeated
+name, or a preview with no `Render`, fails `Init`. `Render`
 runs with the admin's context, never elevated. An error or a panic draws
 a generic notice on the page, answers the frame with a 500, and logs the
 preview's name and the error's type, not its text.

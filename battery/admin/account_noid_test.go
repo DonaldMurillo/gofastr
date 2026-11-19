@@ -31,6 +31,9 @@ func TestAccountNameNeedsUserID(t *testing.T) {
 	if _, err := x.db.Exec(`UPDATE users SET id = 'unknown'`); err != nil {
 		t.Fatal(err)
 	}
+	if body := get(x.as(idlessAdmin{}), "/admin/account").Body.String(); strings.Contains(body, `id="admin-name-form"`) {
+		t.Error("Account settings offers a name form to a caller without a user ID")
+	}
 	rr := post(x.as(idlessAdmin{}), "/admin/account/_name", url.Values{"name": {"Mallory"}})
 	if strings.Contains(rr.Header().Get("Location"), "name-saved") || !strings.Contains(rr.Header().Get("Location"), "result=failed") {
 		t.Errorf("an id-less caller's name post = %d %s, want result=failed", rr.Code, rr.Header().Get("Location"))

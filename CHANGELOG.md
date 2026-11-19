@@ -25,6 +25,22 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Admin role assignment honours a Decider's deny.** Adding or removing
+  a role is refused when the request's Decider denies any permission the
+  role grants, as grant and revoke already were.
+- **Admin keeps a role whose name contains a comma.** The User roles
+  checkboxes post `selected_roles`, taken literally; the `roles` text
+  field still splits on commas.
+- **Admin "Replay all" says so when it queued nothing.** An empty, stale
+  or fully conflicting failed list answers 409 with "No failed jobs were
+  queued again." instead of reporting success.
+- **Admin Account settings shows the result of a plain name post, and
+  offers the name form only to an account with an ID.**
+- **The admin Audit log ignores an actor filter that is not valid
+  UTF-8,** with the ignored-filter warning, instead of failing the page
+  load.
+- **The admin User roles page clamps `limit` to 500** instead of
+  dropping a larger value back to 50.
 - **`notify`'s email channel refuses every custom header `battery/email`
   refuses.** It used to check only CR, LF and NUL; it now shares the
   SMTP header rules (reserved names such as `Resent-Bcc`, empty,
@@ -384,6 +400,9 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **The admin "nothing to replay" phrase moved to
+  `ui.admin.replayNothing`** (was `admin.replay_nothing`), beside the
+  other replay phrases. Apps that translate it rename the catalog key.
 - **`gofastr deploy` stores each release's env file with the release**
   and loads it through `/opt/<name>/current/env`; units written before
   this keep `/etc/<name>/env`. Release ids are unique within a second.

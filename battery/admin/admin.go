@@ -110,10 +110,8 @@ type Config struct {
 	// under the table reaches older rows. Default 50.
 	AuditListLimit int
 
-	// SavedViews turns on per-user saved views over the admin's
-	// database (Config.DB or the app's): one named filter/columns set
-	// per user per entity, kept apart by owner and tenant. The store is
-	// SavedViews(); the UI wiring is the host's (UI.WithSavedViews).
+	// SavedViews enables the admin database's saved filters and columns, up to
+	// entityui.SavedViewCap named views per user, tenant and entity.
 	SavedViews bool
 
 	// SavedViewsTable is the saved views table. Defaults to
@@ -192,7 +190,7 @@ type Config struct {
 	// Links are extra sidebar links, each in a nav group.
 	Links []Link
 
-	// Commands are extra palette entries that go to a URL.
+	// Commands are extra palette entries with fixed labels and URLs.
 	Commands []ui.PaletteCommand
 
 	// EmailPreviews are the mails the Emails page renders with sample
@@ -216,6 +214,7 @@ type Battery struct {
 	ents   []*entity.Entity
 	names  []string     // the names of ents, the set the admin elevates
 	ui     *entityui.UI // cfg.UI with writes pointed at the admin's routes
+	ops    []opsPage
 
 	savedViews entityui.SavedViewStore // nil unless Config.SavedViews
 }
@@ -532,15 +531,7 @@ func (b *Battery) authorized(ctx context.Context) bool {
 	}
 	// battery/auth seeds a nil user on every request, so ok alone is true
 	// for an anonymous caller; the nil check is what refuses one.
-	u, ok := handler.GetUser(ctx)
-	if !ok || u == nil {
-		return false
-	}
-	rh, ok := u.(interface{ GetRoles() []string })
-	if !ok {
-		return false
-	}
-	return slices.Contains(rh.GetRoles(), b.adminRole())
+	return slices.Contains(callerHeldRoles(ctx), b.adminRole())
 }
 
 // admitJob is the gate a queued bulk run's rebuilt context passes, the
@@ -754,7 +745,8 @@ var results = map[string]result{
 	"queue-load-failed":      {i18nui.AdminQueueLoadFailed, false},
 	"replay-unsupported":     {i18nui.AdminFailed, false},
 	"replay-duplicate":       {i18nui.AdminReplayDuplicate, false},
-	"replay-nothing":         {replayNothing, false},
+	"replay-nothing":         {i18nui.AdminReplayNothing, false},
+	"replay-all-nothing":     {i18nui.AdminReplayAllNothing, false},
 }
 
 // done answers a successful ops post. A form RPC gets 204 and a toast;

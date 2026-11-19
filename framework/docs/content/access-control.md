@@ -713,9 +713,9 @@ keeps every revoke of a permission the code declares. Restart after
 Capability validation happens before `GrantStore` writes. A strict rejection
 therefore leaves both the database and live policy unchanged. In warning mode,
 unknown concrete grants remain persisted for compatibility. The admin roles
-screen uses `Policy.Capabilities()` as a datalist when the registry is
-non-empty and marks existing non-global grants outside the registry as
-`unknown/dead`.
+screen offers the values from `Policy.Capabilities()` in a select when the
+registry is non-empty and marks existing non-global grants outside the
+registry with a “Not declared” badge.
 
 ### Security
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/queue"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // fakeQueue is a Browsable and Replayable queue with scripted answers.
@@ -264,6 +265,29 @@ func TestReplayHeldKeyIsConflict(t *testing.T) {
 	}
 	if ops := x.auditOps("queue"); len(ops) != 0 {
 		t.Fatalf("a refused replay audited %v", ops)
+	}
+}
+
+func TestReplayNoLongerFailedIsTranslated(t *testing.T) {
+	const spanish = "Ese trabajo ya no está en estado fallido. No se puso nada en cola."
+	cat := i18n.NewMapCatalog()
+	cat.Set("es", "ui.admin.replayNothing", i18n.Message{Text: spanish})
+	q := struct {
+		*fakeQueue
+		queue.ReplayReporter
+	}{&fakeQueue{}, reporterFunc(func(context.Context, string) (bool, error) { return false, nil })}
+	x := queueEnv(t, q)
+	h := inSpanish(x.as(theAdmin), cat)
+	const path = "/admin/queue/_replay/j1"
+	if rr := rpc(h, path, map[string]any{}); rr.Code != http.StatusConflict || !strings.Contains(rr.Body.String(), spanish) {
+		t.Errorf("obsolete Replay RPC = %d %s, want Spanish refusal", rr.Code, rr.Body.String())
+	}
+	rr := post(h, path, nil)
+	if got := resultOf(t, rr); got != "replay-nothing" {
+		t.Fatalf("obsolete Replay result = %q", got)
+	}
+	if body := get(h, rr.Header().Get("Location")).Body.String(); !strings.Contains(body, spanish) {
+		t.Error("Jobs page is missing the Spanish replay refusal")
 	}
 }
 

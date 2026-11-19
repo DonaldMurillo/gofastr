@@ -135,6 +135,8 @@ var (
 	AdminReplayedAll      = i18n.Define("ui.admin.replayedAll", "Failed jobs queued again.")
 	AdminReplayedSome     = i18n.Define("ui.admin.replayedSome", "Failed jobs queued again, except those whose unique key a newer job holds.")
 	AdminReplayDuplicate  = i18n.Define("ui.admin.replayDuplicate", "A newer job with the same unique key is already queued.")
+	AdminReplayNothing    = i18n.Define("ui.admin.replayNothing", "That job is no longer failed. Nothing was queued.")
+	AdminReplayAllNothing = i18n.Define("ui.admin.replayAllNothing", "No failed jobs were queued again.")
 )
 
 var (
