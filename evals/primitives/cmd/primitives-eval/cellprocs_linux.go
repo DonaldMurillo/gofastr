@@ -76,7 +76,8 @@ func lockAbandoned(cell, path string) bool {
 	return !gitRunning() && len(cellPIDs(filepath.Clean(cell))) == 0 && !fileHeldOpen(path)
 }
 
-func gitRunning() bool {
+// gitRunning is a variable so tests can stub out other git processes on the host.
+var gitRunning = func() bool {
 	procs, err := os.ReadDir("/proc")
 	if err != nil {
 		return true

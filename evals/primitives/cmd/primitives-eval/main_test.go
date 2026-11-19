@@ -642,6 +642,7 @@ func TestGitErrorsCarryGitsOwnMessage(t *testing.T) {
 }
 
 func TestRestoreTestsWaitsOutAGitTheCLILeftRunning(t *testing.T) {
+	noHostGit(t)
 	dir := t.TempDir()
 	git := func(args ...string) string {
 		t.Helper()
@@ -859,6 +860,7 @@ func TestStopCellProcessesKeepsALockAWriterOutsideTheCellHolds(t *testing.T) {
 }
 
 func TestWaitIndexUnlockedClearsALockNoProcessHolds(t *testing.T) {
+	noHostGit(t)
 	if runtime.GOOS != "linux" {
 		t.Skip("lock holders are found through /proc")
 	}
@@ -874,7 +876,7 @@ func TestWaitIndexUnlockedClearsALockNoProcessHolds(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
-	if err := waitIndexUnlocked(root, 10*time.Second); err != nil {
+	if err := waitIndexUnlocked(root, time.Second); err != nil {
 		t.Fatalf("a lock left by a killed git failed the cell: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".git", "index.lock")); !errors.Is(err, fs.ErrNotExist) {
@@ -883,6 +885,7 @@ func TestWaitIndexUnlockedClearsALockNoProcessHolds(t *testing.T) {
 }
 
 func TestWaitIndexUnlockedKeepsALockWhileACellProcessLives(t *testing.T) {
+	noHostGit(t)
 	if runtime.GOOS != "linux" {
 		t.Skip("cell processes are found through /proc")
 	}
@@ -963,4 +966,12 @@ func TestWaitIndexUnlockedKeepsALockAGitOutsideTheCellOwns(t *testing.T) {
 	if _, err := os.Stat(lock); err != nil {
 		t.Errorf("index.lock was removed while its git was alive: %v", err)
 	}
+}
+
+// noHostGit stubs out git processes elsewhere on the host, so a guard test
+// sees only the process it starts.
+func noHostGit(t *testing.T) {
+	saved := gitRunning
+	gitRunning = func() bool { return false }
+	t.Cleanup(func() { gitRunning = saved })
 }
