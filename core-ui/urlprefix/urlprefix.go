@@ -95,11 +95,12 @@ func Path(u string, rule Rule) string {
 	if i := strings.IndexAny(seg, "/?#"); i >= 0 {
 		seg = seg[:i]
 	}
-	// The router splits the locale off the decoded path, so /%65s/ is
-	// /es/ to it: compare the segment as the router reads it, or the
-	// link gets a second prefix (/es/%65s/about).
+	// The router splits the locale off the decoded path, so /%65s/ and
+	// /es%2Fpricing both read as /es/ to it: unescape the segment, then
+	// cut it at the decoded separator too, or the link gets a second
+	// prefix (/es/es%2Fpricing).
 	if dec, err := url.PathUnescape(seg); err == nil {
-		seg = dec
+		seg, _, _ = strings.Cut(dec, "/")
 	}
 	if seg == "__gofastr" || slices.Contains(rule.Locales, seg) || "/"+seg == rule.Prefix {
 		return u

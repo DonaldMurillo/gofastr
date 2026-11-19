@@ -277,11 +277,6 @@ func enforceComponentRules(comp Component, props Props, actionRef string, childr
 	return nil
 }
 
-// defaultCapForChildren is a placeholder that returns the per-node child
-// cap lookup; the actual cap is enforced in decodeNode via walker.lim.
-// (Kept as a named helper so the rule is discoverable.)
-func defaultCapForChildren(Props) int { return DefaultMaxChildrenPerNode }
-
 // hasTrailingBytes reports whether trimmed has non-whitespace bytes
 // beyond the first consumed JSON value.
 func hasTrailingBytes(trimmed []byte, consumed int) bool {

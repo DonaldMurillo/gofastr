@@ -37,10 +37,11 @@
 //     module descriptor's installed routes (see [Renderer]).
 //
 // ActionRef values are OPAQUE STRINGS here. The validator checks only their
-// shape. Resolution against installed routes is a host-side concern that
-// lands in a later wave alongside the [Renderer] implementation, because
-// route resolution requires the descriptor + router plumbing that does not
-// exist yet in this package's dependency graph.
+// shape. Resolution against installed routes belongs to the host renderer:
+// framework/uihost/uinoderender looks each ref up in the module
+// descriptor's route table, and the process proxy validates a module's
+// tree with [Validate] before handing the resulting [Tree] to that
+// renderer.
 //
 // # Input framing
 //
@@ -73,8 +74,9 @@ import "github.com/DonaldMurillo/gofastr/core/render"
 //     the renderer still owns the mapping table and may further restrict it.
 //
 // The Renderer interface is defined here so the validator and the renderer
-// share a single typed [Tree]. No implementation ships in this package yet;
-// it lands with the framework/ui serialization wave (design §9).
+// share a single typed [Tree]. The implementation that ships is
+// framework/uihost/uinoderender's Renderer, which resolves ActionRefs
+// through the host's installed route table.
 type Renderer interface {
 	// Render converts a validated tree to HTML. The returned HTML is
 	// trusted by the host's renderer pipeline (it produced it); callers

@@ -293,6 +293,8 @@ func (r *Renderer) renderLink(n uinodev1.Node) (render.HTML, error) {
 	}), nil
 }
 
+// resolveActionRef resolves ref through the installed resolver; an
+// unresolved ref is an error, never an improvised URL.
 func (r *Renderer) resolveActionRef(ref string) (string, error) {
 	if ref == "" {
 		return "", errActionRef("empty action_ref")

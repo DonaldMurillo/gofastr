@@ -1,9 +1,6 @@
 package uinodev1
 
-import (
-	"encoding/json"
-	"fmt"
-)
+import "fmt"
 
 // truncateErrInput clips s to at most maxErrInputLen bytes for safe
 // inclusion in an error message. It never panics on multi-byte rune
@@ -133,16 +130,4 @@ func errDecode(underlying error) error {
 		return &validationErr{op: "decode", reason: msg}
 	}
 	return &validationErr{op: "decode", reason: truncateErrInput(msg)}
-}
-
-// asJSONError extracts the underlying json error type so callers can
-// branch on it (used internally; not part of the public API).
-func asJSONError(err error) (je *json.UnmarshalTypeError, ok bool) {
-	if err == nil {
-		return nil, false
-	}
-	if ue, uok := err.(*json.UnmarshalTypeError); uok {
-		return ue, true
-	}
-	return nil, false
 }

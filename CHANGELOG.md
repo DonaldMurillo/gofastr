@@ -25,6 +25,26 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Local entity defaults are validated at `Define`.**
+  `localentity.Define` refuses a `Default` the form would reject: wrong
+  type, out of bounds, not a listed choice, an empty required string, a
+  bad date, or a timestamp the form cannot read back (comma fractions,
+  no time zone, a UTC year outside 0000–9999). Timestamp defaults are
+  stored as RFC 3339 in UTC with milliseconds, so a record filled by a
+  default no longer drops out of lists ordered by that field.
+- **A checked checkbox saves `true` whatever its `value` attribute
+  says**, and early-year timestamps survive an untouched edit save in
+  local entity forms.
+- **URL-locale rewriting no longer double-prefixes encoded separators.**
+  A link like `/es%2Fpricing` on a Spanish page keeps its bytes instead
+  of becoming `/es/es%2Fpricing`.
+- **Enum-valued UI node props honour `MaxPropString`**, after the enum
+  or URL check, so a bad choice still reports the choice.
+- **`localrun.Register` refuses records the registry would hide.** A
+  non-http(s) URL, an MCP path without a leading slash, or a record over
+  16 KiB is an error before anything is written, and the unregister func
+  removes its record even if `GOFASTR_RUNS_DIR` changes while the run is
+  live.
 - **Retired-markup checks match what the browser sees.** Dev and test
   checks use the most specific retired BEM class, fold HTML attribute
   names by ASCII case only, scan JSON string values (never keys) for
