@@ -32,9 +32,10 @@ invariants:
       - test: framework/ui.TestColorFieldNamesBothInputs
       - test: framework/ui.TestColorFieldDoesNotOverrideACallerSuppliedName
   - id: color-field-wiring-lands-on-the-text
-    rule: A ColorField's Field id, described-by chain and invalid state land on the text input, and Field.ID wins over TextID.
+    rule: A ColorField's Field id, described-by chain and invalid state land on the text input, Field.ID wins over TextID, and either Required flag makes the text input required.
     enforced_by:
       - test: framework/ui.TestColorFieldCarriesTheFieldsWiring
+      - test: framework/ui.TestColorFieldStandaloneRequired
   - id: color-picker-swatch-before-label
     rule: ColorPicker renders its colour input before its label, the reading order Checkbox uses.
     enforced_by:

@@ -248,7 +248,9 @@ every value the picker can show — the short `#abc` form included,
 expanded to `#aabbcc` for the swatch and never an error; a value the
 picker cannot show stays verbatim in the text while the swatch falls
 back to black and the shell is marked `data-invalid` — the theme
-editor's own sync was deleted for it).
+editor's own sync was deleted for it). Set `ColorFieldConfig.Required`
+or pass a required `Field` to enable native validation on the submitted
+text input. In headless code, set `ColorProps.Required`.
 
 The bespoke-behaviour family renders through headless too:
 `ui.FileUpload` is `headless.FileUpload` (the drop zone a label for
@@ -339,6 +341,11 @@ validates on the server, moves focus to the summary on a failed
 submit, carries a password field and an upload, and nests conditional
 regions two deep. Its browser proofs live in
 `examples/site/e2e_headless_dashboard_test.go`.
+
+`ui.Toolbar` and `ui.FilterChipBar` use labelled groups with ordinary
+Tab navigation. For `ui.FilterChipBar`, each dismiss action and Clear all
+target `RPCSignal` when set. Otherwise they target `SignalName`, or
+`"filter-bar"` when the bar has no signal binding.
 
 ## The spec and the harness
 

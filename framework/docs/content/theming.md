@@ -751,6 +751,9 @@ back before first paint on the next load, so a themed page never
 flashes the default. Client-side navigation keeps the class, since it
 never replaces `<html>`. Two pickers on one page show the same choice.
 
+Both `ThemePicker` and `ThemeToggle` reserve the `data-hui-theme-*`
+attributes for their own hooks.
+
 The override CSS names `:root.cui-theme-<hash>` beside the descendant
 selector in each block, so the class works on `<html>` as well as on a
 `ui.Themed` wrapper. On `<html>` the override's light tokens outrank

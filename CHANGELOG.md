@@ -25,6 +25,18 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **ui: command palette search results with a safe `Href` are real
+  links,** like the palette's initial rows, so middle-click and
+  open-in-new-tab work.
+- **ui: `Tooltip` wires `aria-describedby` when the trigger's quoted title
+  contains the text `aria-describedby=`.**
+- **ui: `FilterChipBar` sends dismiss and Clear all responses to its own
+  `SignalName`** when `RPCSignal` is unset, so a renamed bar refreshes
+  after a dismiss.
+- **ui: `SignalToggle` renders `type="button"`,** so it no longer submits
+  a surrounding form before the runtime loads or without JavaScript.
+- **ui: a required `ColorField` marks its text input `required`,** so the
+  browser refuses a blank colour.
 - **uihost: sitemaps list literal routes that contain a colon,** such as
   `/time/12:30`, without a static-path provider.
 - **uihost: the bare fallback 404 and 500 pages carry the same styled
@@ -269,6 +281,10 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **ui: `Toolbar` and `FilterChipBar` render a labelled `role="group"`
+  instead of `role="toolbar"`.** The toolbar role promises arrow-key
+  movement with one Tab stop, which neither component has; Tab now visits
+  each control as the group role says.
 - **schema: a required field sent as `""` answers `required` for every
   supported field type.** Int, Float, Bool, Enum, UUID, Timestamp, Date,
   JSON, Relation, Image and File used to answer a type reason such as

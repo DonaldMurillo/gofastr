@@ -84,9 +84,13 @@ invariants:
       - test: framework/ui.TestCommandPalettePlaceholderPerRequest
       - test: framework/ui.TestCommandPaletteFuncBuildsPerRequest
   - id: palette-result-rows-safe
-    rule: PaletteResults escapes labels, writes data-cui-push-state only for an href urlsafe accepts, and gives each row an id under the palette's name.
+    rule: PaletteResults uses the initial list's combobox renderer and classes to escape labels, give each row an explicit result ID under the palette's name and render option anchors with data-cui-push-state only for destinations urlsafe accepts.
     enforced_by:
       - test: framework/ui.TestPaletteResultsRows
+  - id: palette-empty-result-is-a-disabled-option
+    rule: PaletteResults with no commands renders one disabled option with the caller's empty label or the request's localized default.
+    enforced_by:
+      - test: framework/ui.TestPaletteResultsEmptyRow
   - id: palette-search-marks-listbox
     rule: With Search the listbox carries data-search with its loading and empty words, plus data-search-all and its label when SearchPage is set; without Search it carries none.
     enforced_by:
@@ -212,6 +216,11 @@ invariants:
       - test: framework/ui.TestSignalToggleLabelEscaped
       - test: framework/ui.TestSweepActionsSignalToggleEscapesClass
       - test: framework/ui.TestSweepActionsSignalToggleOwnsTheSwitch
+  - id: signal-toggle-is-a-non-submitting-button
+    rule: SignalToggle renders type="button" and ignores any type in ExtraAttrs.
+    enforced_by:
+      - test: framework/ui.TestSignalToggleBasic
+      - test: framework/ui.TestSignalToggleExtraAttrsOnRoot
   - id: toggle-first-paint-from-the-request
     rule: A SignalToggle over a Slice paints the value seeded on Ctx, and the declared default with no Ctx.
     enforced_by:
@@ -222,7 +231,22 @@ invariants:
       - test: framework/ui.TestToolbarRejectsUnknownAlign
       - test: framework/ui.TestSweepActionsToolbarSkipsEmptyGroups
       - test: framework/ui.TestToolbarGroupRoleEmittedWhenLabeled
+  - id: action-strips-are-labelled-groups
+    rule: The root of ui.Toolbar and ui.FilterChipBar carries role="group" and an accessible label.
+    enforced_by:
+      - test: framework/ui.TestToolbarEmitsLabelledGroup
+      - test: framework/ui.TestFilterChipBarRendersChips
+    applies:
+      - framework/ui/filterchipbar.go
 decisions:
+  - id: action-strips-use-ordinary-tab-order
+    date: 2026-11-19
+    status: accepted
+    decision: The styled Toolbar and FilterChipBar use labelled groups with ordinary Tab navigation.
+    rejected:
+      - option: Use role toolbar.
+        why: The toolbar role promises arrow-key roving and a single Tab stop, as headless.navigation/toolbar-claims-no-role records.
+    upholds: [action-strips-are-labelled-groups]
   - id: palette-close-at-every-breakpoint
     date: 2026-11-16
     status: accepted

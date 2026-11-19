@@ -251,6 +251,7 @@ type ColorProps struct {
 	Value    string
 	Disabled bool
 	Invalid  bool
+	Required bool
 
 	// ID and Extra land on the hex text input.
 	ID          string
@@ -298,6 +299,7 @@ func Color(p ColorProps, s Classes) render.HTML {
 	attrsSet(hex, "id", p.ID)
 	attrsSet(hex, "aria-describedby", p.DescribedBy)
 	Flag(hex, "disabled", p.Disabled)
+	Flag(hex, "required", p.Required)
 	if p.Invalid {
 		hex["aria-invalid"] = "true"
 	}

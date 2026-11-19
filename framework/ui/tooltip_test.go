@@ -103,6 +103,20 @@ func TestTooltipIdempotentWhenRootCarriesDescribedBy(t *testing.T) {
 	}
 }
 
+func TestTooltipWiresTriggerWithDescribedByInTitle(t *testing.T) {
+	trigger := render.HTML(`<button title="example aria-describedby=help">Help</button>`)
+	h := Tooltip(TooltipConfig{Text: "Need help?", ID: "tip-help"}, trigger)
+	mustContain(t, h, `<button title="example aria-describedby=help" aria-describedby="tip-help">`)
+}
+
+func TestTooltipKeepsTextOnlyTrigger(t *testing.T) {
+	h := Tooltip(TooltipConfig{Text: "Need help?", ID: "tip-help"}, render.Text("Help & support"))
+	mustContain(t, h, `>Help &amp; support<span`)
+	if strings.Contains(string(h), "aria-describedby=") {
+		t.Errorf("unexpected trigger attribute in %s", h)
+	}
+}
+
 // TestTooltipsWithoutAScopeGetDistinctIDs: with no id scope on Ctx (or
 // no Ctx), two same-text tooltips still get two ids.
 func TestTooltipsWithoutAScopeGetDistinctIDs(t *testing.T) {

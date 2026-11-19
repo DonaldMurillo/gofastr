@@ -2,9 +2,9 @@ package ui
 
 import (
 	"context"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -63,7 +63,7 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	triggerWithDescribedBy := injectTriggerDescribedBy(trigger, id)
+	triggerWithDescribedBy, _ := registry.InjectAttribute(trigger, "aria-describedby", id)
 
 	pop := html.Span(html.TextConfig{
 		Class:      "fui-tooltip__pop",
@@ -75,75 +75,4 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 		Class:      cls,
 		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}, triggerWithDescribedBy, pop))
-}
-
-func injectTriggerDescribedBy(trigger render.HTML, id string) render.HTML {
-	s := string(trigger)
-	start := skipToFirstTag(s)
-	if start < 0 {
-		return trigger
-	}
-	end := findFirstTagClose(s[start:])
-	if end < 0 {
-		return trigger
-	}
-	end += start
-	tag := s[start:end]
-	if strings.Contains(tag, ` aria-describedby=`) {
-		return trigger
-	}
-	insertAt := end
-	if end > 0 && s[end-1] == '/' {
-		insertAt = end - 1
-	}
-	attr := ` aria-describedby="` + string(render.Escape(id)) + `"`
-	// safe-html: attr is assembled from render.Escape output only.
-	return render.HTML(s[:insertAt] + attr + s[insertAt:])
-}
-
-func skipToFirstTag(s string) int {
-	i := 0
-	for i < len(s) {
-		for i < len(s) {
-			c := s[i]
-			if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
-				i++
-				continue
-			}
-			break
-		}
-		if i+4 <= len(s) && s[i:i+4] == "<!--" {
-			nc := strings.Index(s[i+4:], "-->")
-			if nc < 0 {
-				return -1
-			}
-			i = i + 4 + nc + 3
-			continue
-		}
-		break
-	}
-	if i >= len(s) || s[i] != '<' {
-		return -1
-	}
-	return i
-}
-
-func findFirstTagClose(s string) int {
-	var quote byte
-	for i := range len(s) {
-		c := s[i]
-		if quote != 0 {
-			if c == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch c {
-		case '"', '\'':
-			quote = c
-		case '>':
-			return i
-		}
-	}
-	return -1
 }

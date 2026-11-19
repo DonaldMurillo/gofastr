@@ -100,9 +100,9 @@ byte-identical):
 
 ### Toggle switch
 
-`framework/ui.SignalToggle` renders a `role=switch` with
+`framework/ui.SignalToggle` renders a `type="button"` switch with
 `aria-checked` bound to a boolean signal. Clicking toggles the signal
-between `"true"` and `"false"`.
+between `"true"` and `"false"` without submitting the enclosing form.
 
 ### Collapsible
 
@@ -910,9 +910,9 @@ size it; on a phone it fills the screen.
 A palette with `RPCPath` searches on the server. The endpoint reads `q`
 from the form body and answers option rows built by
 `ui.PaletteResults(ctx, name, cmds, empty)`, where `name` is the
-palette's `Name`. Each row navigates to its command's `Href` on pick;
-an href that is not a safe link (a `javascript:` URL) renders no
-navigation. With no commands it answers one disabled row reading
+palette's `Name`. A command with a safe `Href` renders an anchor,
+so readers can also use the browser's usual link actions.
+With no commands it answers one disabled row reading
 `empty`, or the localized "No matches" when `empty` is `""`.
 
 A palette with `Search: true` searches the pages instead: the

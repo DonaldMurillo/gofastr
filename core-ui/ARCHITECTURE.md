@@ -3606,7 +3606,7 @@ your need:
 | Page-width wrapper | `framework/ui.Container` | Max-width page wrapper with breakpoint-aware padding. Narrow / default / wide / full variants. |
 | Vertical/horizontal spacing | `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box` | Six spatial primitives sharing one stylesheet (all in `layout.go`). `Cluster` wraps by default; `ClusterConfig.NoWrap` is the explicit compact-chrome opt-out. `BoxConfig.Bounded` caps a Box's height (`--ui-box-bounded-size`) and scrolls the rest. Replace hand-rolled `display:flex` divs. |
 | Labelled content surface | `framework/ui.Card` | Header / body / footer regions, elevated / outlined / flat variants, optional interactive (whole surface is an `<a>`) form. |
-| Toolbar of action buttons | `framework/ui.Toolbar` | `role="toolbar"` wrapper with optional named groups. Horizontal strip of buttons/links with visual separators. |
+| Toolbar of action buttons | `framework/ui.Toolbar` | Labelled `role="group"` around a horizontal strip of controls with visual separators and optional named subgroups. |
 | Step progress indicator | `framework/ui.ProgressSteps` | Linear step indicator (upcoming / current / complete). Horizontal or vertical. `<ol>` with `aria-current="step"`. |
 | Table of contents | `framework/ui.TableOfContents` | Server-rendered from explicit `Items` (required — the no-script contract is the rendered list). `headless-toc` marks the active entry through the observer `headless-rail` owns. |
 | In-page rail | `framework/ui.AnchoredRail` | Sticky `<aside>` of fragment links with optional eyebrow/count chips; `headless-rail` marks the entry whose section is in view (`aria-current` + class). Both initial selection and scroll updates skip targets not rendered by the browser, including hidden sections and closed-details content (which can still report rectangles). With no rendered targets at bootstrap, every link stays unmarked. |
@@ -3644,7 +3644,7 @@ your need:
 | Hover/focus hint on a control | `framework/ui.Tooltip` | CSS-only reveal, `aria-describedby` auto-wired. No JavaScript. |
 | Dismissible banner | `framework/ui.Banner` | Full-width banner with optional session-persisted dismiss (`data-hui-system-dismiss`). |
 | Pill: filter chip / applied filter / selection | `framework/ui.Tag` | Status variants, optional `Href` (filter link) or `Dismiss` (× RPC). Distinct from `StatusBadge` (read-only). |
-| Active filter chip toolbar | `framework/ui.FilterChipBar` | Toolbar of removable filter chips. Optional "Clear all" action. Island-driven, signal-swapped. |
+| Active filters | `framework/ui.FilterChipBar` | Labelled `role="group"` of removable filter chips and an optional "Clear all" action. Both actions default their RPC target to the bar's bound signal when set. |
 | Copy-to-clipboard button | `framework/ui.CopyButton` | Targets any element by id (`data-hui-copy-target`); no clipboard mutation without script. |
 
 ### Visual primitives

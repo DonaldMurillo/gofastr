@@ -160,8 +160,7 @@ func TestColorFieldShipsTheHeadlessHooks(t *testing.T) {
 }
 
 // The field's wiring reaches the text input: the id the outer label
-// points at, the described-by chain, the invalid state — and it wins
-// over TextID.
+// points at, the described-by chain, and the invalid and required states.
 func TestColorFieldCarriesTheFieldsWiring(t *testing.T) {
 	out := string(ColorField(ColorFieldConfig{
 		Name:        "accent",
@@ -176,9 +175,23 @@ func TestColorFieldCarriesTheFieldsWiring(t *testing.T) {
 	idx := strings.Index(out, `data-hui-affix-input`)
 	start := strings.LastIndex(out[:idx], "<")
 	hex := out[start : idx+strings.Index(out[idx:], ">")+1]
-	for _, want := range []string{`id="f1"`, `aria-describedby="f1-error f1-hint"`, `aria-invalid="true"`} {
+	for _, want := range []string{`id="f1"`, `aria-describedby="f1-error f1-hint"`, `aria-invalid="true"`, " required"} {
 		if !strings.Contains(hex, want) {
 			t.Errorf("text input missing %q:\n%s", want, hex)
+		}
+	}
+	if strings.Contains(out[:start], " required") {
+		t.Errorf("only the text input should be required:\n%s", out)
+	}
+}
+
+func TestColorFieldStandaloneRequired(t *testing.T) {
+	for _, required := range []bool{false, true} {
+		out := string(ColorField(ColorFieldConfig{Name: "accent", SwatchLabel: "Accent", Required: required}))
+		_, afterHook, _ := strings.Cut(out, "data-hui-affix-input")
+		attrs, _, _ := strings.Cut(afterHook, ">")
+		if got := strings.Contains(attrs, " required"); got != required {
+			t.Errorf("Required = %t, text input has required = %t:\n%s", required, got, out)
 		}
 	}
 }

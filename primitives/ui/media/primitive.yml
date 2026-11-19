@@ -33,10 +33,11 @@ invariants:
       - test: framework/ui.TestKitMarksInternalSubtrees
       - test: framework/ui.TestSweepMediaCommentThreadMarksAnEmptyCommentAboveHeldReplies
   - id: extra-attrs-keep-owned-keys
-    rule: A component's ExtraAttrs land on its root and never override a key it owns, ThemePicker's data-hui-theme-* hooks included.
+    rule: A component's ExtraAttrs land on its root and never override a key it owns, and ThemePicker and every ThemeToggle variant drop all data-hui-theme-* extras.
     enforced_by:
       - test: framework/ui.TestMarkdownExtraAttrsCannotOverrideOwned
       - test: framework/ui.TestThemePickerRendersOneOptionPerTheme
+      - test: framework/ui.TestThemeToggleExtraAttrsOnEveryRootShape
   - id: required-names-panic
     rule: AvatarGroup without avatars, Carousel or CommentThread or TerminalBlock without Label, Collapsible without Summary, CodeTabs or Lightbox without Name and Markdown without Source panic at render.
     enforced_by:
@@ -233,7 +234,7 @@ invariants:
     enforced_by:
       - test: framework/ui.TestSweepMediaThemeToggleButtonsCarryLoaderMarker
   - id: theme-radios-first-visit
-    rule: ThemePicker ships Default and the pill ships Auto as the one checked option and the one Tab stop.
+    rule: ThemePicker and the ThemeToggle pill share their radio group and option markup, with Default and Auto respectively as the one checked option and the one Tab stop.
     enforced_by:
       - test: framework/ui.TestThemeRadiosSSRCheckFirstVisit
   - id: comment-thread-list-roles

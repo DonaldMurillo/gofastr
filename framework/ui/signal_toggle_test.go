@@ -16,6 +16,7 @@ func TestSignalToggleBasic(t *testing.T) {
 		`data-cui-signal-attr="aria-checked"`,
 		`role="switch"`,
 		`aria-checked="false"`,
+		`type="button"`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("toggle missing %q:\n%s", want, s)
@@ -100,9 +101,15 @@ func TestSignalToggleCarriesCompMarker(t *testing.T) {
 }
 
 func TestSignalToggleExtraAttrsOnRoot(t *testing.T) {
-	s := string(SignalToggle(SignalToggleConfig{SignalName: "dark", ExtraAttrs: map[string]string{"data-test": "hook"}}))
+	s := string(SignalToggle(SignalToggleConfig{
+		SignalName: "dark",
+		ExtraAttrs: map[string]string{"data-test": "hook", "type": "submit", "TYPE": "reset"},
+	}))
 	root := s[:strings.Index(s, ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
 		t.Errorf("SignalToggle root missing data-test:\n%s", root)
+	}
+	if !strings.Contains(root, `type="button"`) || strings.Count(strings.ToLower(root), " type=") != 1 {
+		t.Errorf("SignalToggle root must own its button type:\n%s", root)
 	}
 }
