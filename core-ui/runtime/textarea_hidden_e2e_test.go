@@ -86,7 +86,9 @@ window.ResizeObserver = class extends NativeResizeObserver {
 // height, no observer), and a textarea revealed from a hidden panel
 // still fits its prefilled value (#704).
 func TestAutogrowUsesFieldSizing(t *testing.T) {
-	markup := `<section id="container" hidden><textarea id="draft" data-cui-autogrow>` + strings.Repeat("prefilled text\n", 12) + `</textarea></section>`
+	markup := `<section id="container" hidden><textarea id="draft" data-cui-autogrow>` + strings.Repeat("prefilled text\n", 12) + `</textarea></section>` +
+		`<textarea id="empty" rows="5" data-cui-autogrow style="padding:8px;border:1px solid;box-sizing:border-box"></textarea>` +
+		`<textarea id="plain" rows="5" style="padding:8px;border:1px solid;box-sizing:border-box"></textarea>`
 	server := widgetHelpersServer(t, markup)
 	ctx := chromedptest.Context(t)
 	var supported bool
@@ -114,6 +116,8 @@ window.ResizeObserver = class extends NativeResizeObserver {
 		Observed int    `json:"observed"`
 		Fits     bool   `json:"fits"`
 		Grew     bool   `json:"grew"`
+		Empty    [2]int `json:"empty"`
+		Plain    [2]int `json:"plain"`
 	}
 	if err := chromedp.Run(ctx,
 		chromedp.Poll(`!!window.__gofastr?.loadedModules?.textarea`, nil),
@@ -124,13 +128,19 @@ window.ResizeObserver = class extends NativeResizeObserver {
 			const before = ta.clientHeight;
 			const fits = ta.clientHeight >= ta.scrollHeight && ta.clientHeight > 100;
 			ta.value += 'one more line\nand another\n';
-			return { sizing: ta.style.fieldSizing, height: ta.style.height, observed: window.__observedTextareas, fits, grew: ta.clientHeight > before };
+			const box = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; };
+			return { sizing: ta.style.fieldSizing, height: ta.style.height, observed: window.__observedTextareas, fits, grew: ta.clientHeight > before, empty: box('empty'), plain: box('plain') };
 		})()`, &got),
 	); err != nil {
 		t.Fatal(err)
 	}
 	if got.Sizing != "content" || got.Height != "" || got.Observed != 0 {
 		t.Errorf("the module measured instead of handing the textarea to field-sizing: %+v", got)
+	}
+	// Height exact; width within the scrollbar gutter Chrome adds to a
+	// cols-sized box, which a ch floor does not carry.
+	if got.Empty[1] != got.Plain[1] || got.Empty[0] < got.Plain[0]*4/5 {
+		t.Errorf("an empty autogrow textarea is %v, want about the %v its rows and cols render: field-sizing ignores both, so they must stay the floor", got.Empty, got.Plain)
 	}
 	if !got.Fits || !got.Grew {
 		t.Errorf("the revealed textarea does not fit or follow its value: %+v", got)

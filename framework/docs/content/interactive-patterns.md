@@ -176,10 +176,10 @@ on-screen keyboard starts in, one of `ui.AutoCapitalizeOff`,
 ### Textarea auto-resize
 
 `framework/ui.TextArea` accepts `Autogrow: true`. Where the browser
-supports `field-sizing: content` (`CSS.supports`), the kit's sheet and
-the runtime module (`textarea.js`) hand the textarea to it: the
-browser fits it to its content from first paint and the module
-measures nothing. Elsewhere the module is the fallback: it listens for
+supports `field-sizing: content` (`CSS.supports`), the runtime module
+(`textarea.js`) hands the textarea to it, with its `rows` and `cols`
+as the minimum size (the browser ignores both under `field-sizing`),
+and measures nothing after. Elsewhere the module is the fallback: it listens for
 input and resizes the textarea to fit its content, and refits after
 reset or focus. A textarea wired in a hidden
 panel keeps its height until it can be measured. ResizeObserver fits it

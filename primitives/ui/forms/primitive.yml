@@ -226,7 +226,7 @@ invariants:
     enforced_by:
       - test: framework/ui.TestKitMarksInternalSubtrees
   - id: choice-error-sits-outside-the-label
-    rule: A standalone Checkbox, Radio or Switch with Error wraps its run in fui-choice-field with a role=alert paragraph of id ID+"-error" carrying data-hui-field-error outside the label, marks the input aria-invalid, describes it by that id and renders no Help.
+    rule: A standalone Checkbox, Radio or Switch with Error wraps its run in fui-choice-field with a paragraph (no role of its own) of id ID+"-error" carrying data-hui-field-error outside the label, marks the input aria-invalid, describes it by that id and renders no Help.
     enforced_by:
       - test: framework/ui.TestCheckboxErrorWiresAriaAndAlertOutsideTheRun
       - test: framework/ui.TestSwitchMessageWiresDescribedBy
@@ -275,6 +275,11 @@ invariants:
     rule: Below 33rem every ui field is one column whatever the theme's field layout, its hint and error in that column (no implicit second track) and a hinted label in its own row, label then hint then control then error from top to bottom.
     enforced_by:
       - test: examples/site.TestE2E_HeadlessLanding_FieldLayoutsUnderConstraint
+  - id: search-input-is-a-search-landmark
+    rule: A SearchInput with an Action wraps its form in a <search> element, the component root, and the form carries no role=search.
+    enforced_by:
+      - test: framework/ui.TestSearchInputWithActionWrapsForm
+      - test: framework/ui.TestSearchInputActionVariantKeepsBoxStyle
 decisions:
   - id: form-frame-is-its-own-component
     date: 2026-11-16

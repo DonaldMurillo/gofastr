@@ -26,23 +26,32 @@
   NS.loadedModules[NAME] = true;
   try { document.documentElement.matches(':user-invalid'); } catch (_) { return; }
 
-  // told reports whether a server's words describe the control.
-  const told = (el) => (el.getAttribute('aria-describedby') || '').split(/\s+/).some((id) => {
-    const n = id && document.getElementById(id);
-    return n && n.matches('[data-hui-field-error]') && n.textContent.trim() !== '';
-  });
+  // told reports whether a server's words stand for the control: an
+  // error node it is described by, or its field's own, or the one after
+  // its bare choice, still holding text.
+  const said = (n) => !!n && n.matches('[data-hui-field-error]') && n.textContent.trim() !== '';
+  const told = (el) => {
+    if ((el.getAttribute('aria-describedby') || '').split(/\s+/).some((id) => said(id && document.getElementById(id)))) return true;
+    const f = el.closest('[data-hui-field]');
+    if (f) return [...f.querySelectorAll('[data-hui-field-error]')].some(said);
+    const c = el.closest('[data-hui-choice]');
+    return said(c && c.nextElementSibling);
+  };
+
+  // group is a radio's whole group (one verdict for all of it), or the
+  // control alone.
+  const group = (el) => el.type !== 'radio' || !el.name ? [el]
+    : [...(el.form ? el.form.elements : document.querySelectorAll('input[type="radio"]'))].filter((r) => r.type === 'radio' && r.name === el.name);
 
   // mirror copies the browser's verdict, and only once it has one.
   function mirror(el) {
     if (!el || !el.willValidate || !el.matches('input,select,textarea')) return;
     // Only a control in a Field or a Choice, the markup that loaded this.
     if (!el.closest('[data-hui-field],[data-hui-choice]')) return;
-    const cur = el.getAttribute('aria-invalid');
-    if (el.matches(':user-invalid')) {
-      if (cur !== 'true') el.setAttribute('aria-invalid', 'true');
-    } else if (el.matches(':user-valid') && cur !== 'false' && !told(el)) {
-      el.setAttribute('aria-invalid', 'false');
-    }
+    const all = group(el);
+    const bad = all.some((r) => r.matches(':user-invalid'));
+    if (!bad && (!all.some((r) => r.matches(':user-valid')) || all.some(told))) return;
+    for (const r of all) r.setAttribute('aria-invalid', bad ? 'true' : 'false');
   }
 
   for (const type of ['focusout', 'change', 'input']) document.addEventListener(type, (e) => mirror(e.target), true);

@@ -110,12 +110,13 @@ invariants:
       - test: core-ui/runtime.TestWidgetPollFetchIsLowPriority
       - test: core-ui/runtime.TestPrefetchPriorityFollowsIntent
   - id: refusal-read-from-one-polite-region
-    rule: A refused form submission is read from the one cui-form-errors region (role=status, aria-live=polite), one sentence per refused field (its label, a colon, its messages), and no error node the module places is an alert of its own; a successful retry empties the region.
+    rule: A refused form submission is read from the one cui-form-errors region (role=status, aria-live=polite), one sentence per refused field (its label, a radio's group legend, a colon, its messages), every live node it places has an id the control is described by and is no alert of its own, and a successful retry or a client navigation empties the region.
     enforced_by:
       - test: core-ui/runtime.TestRefusalIsReadFromOnePoliteRegion
+      - test: core-ui/runtime.TestRefusalNamesTheGroupAndClearsOnNavigation
       - test: core-ui/runtime.TestRuntimeModule_FormErrors
   - id: autogrow-defers-to-field-sizing
-    rule: Where CSS.supports reports field-sizing content, the textarea module sets field-sizing content on each autogrow textarea and measures nothing (no inline height, no ResizeObserver); elsewhere its scrollHeight fallback grows it, a hidden textarea included.
+    rule: Where CSS.supports reports field-sizing content, the textarea module sets field-sizing content on each autogrow textarea, with its rows and cols as minimum block and inline size so an empty one keeps its rendered size, and measures nothing after (no inline height, no ResizeObserver); elsewhere its scrollHeight fallback grows it, a hidden textarea included.
     enforced_by:
       - test: core-ui/runtime.TestAutogrowUsesFieldSizing
       - test: core-ui/runtime.TestHiddenTextareaGrowsOnReveal

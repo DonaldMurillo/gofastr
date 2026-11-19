@@ -105,6 +105,12 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 
 	kids := []render.HTML{
 		b.El("label", PartLabel, Internal(Attrs(map[string]string{"for": id})), render.Text(p.Label)),
+	}
+	if p.Help != "" {
+		kids = append(kids, b.El("p", PartHint,
+			Internal(Attrs(map[string]string{"id": hintID})), render.Text(p.Help)))
+	}
+	kids = append(kids,
 		b.El("div", PartFieldRow, Internal(nil),
 			stepper(PartNumberDecrement, "data-hui-number-input-decrement",
 				w.fill(w.NumberDecrement, "label", p.Label), "−"),
@@ -112,14 +118,10 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 			stepper(PartNumberIncrement, "data-hui-number-input-increment",
 				w.fill(w.NumberIncrement, "label", p.Label), "+"),
 		),
-	}
+	)
 	if p.Error != "" {
 		kids = append(kids, b.El("p", PartError,
-			Internal(Attrs(map[string]string{"id": errID, "role": "alert"})), render.Text(p.Error)))
-	}
-	if p.Help != "" {
-		kids = append(kids, b.El("p", PartHint,
-			Internal(Attrs(map[string]string{"id": hintID})), render.Text(p.Help)))
+			Internal(Attrs(map[string]string{"id": errID})), render.Text(p.Error)))
 	}
 
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label", "type", "name", "step",

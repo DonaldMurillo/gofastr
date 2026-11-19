@@ -143,7 +143,6 @@ func erroredRun(run render.HTML, helpText, errText, id string) render.HTML {
 			render.Tag("p", map[string]string{
 				"id":                   id + "-error",
 				"class":                "fui-choice-field__error",
-				"role":                 "alert",
 				"data-cui-internal":    "",
 				"data-hui-field-error": "",
 			}, render.Text(errText)))
@@ -322,7 +321,6 @@ func renderToggleGroup(spec toggleGroupSpec) render.HTML {
 		msg = string(render.Tag("p", map[string]string{
 			"id":                id + "-error",
 			"class":             "fui-choice-group__error",
-			"role":              "alert",
 			"data-cui-internal": "",
 		}, render.Text(spec.errText)))
 		extra["aria-describedby"] = id + "-error"

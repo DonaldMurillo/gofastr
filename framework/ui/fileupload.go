@@ -84,7 +84,6 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 		children = append(children, render.Tag("p", html.Attrs{
 			"id":                id + "-error",
 			"class":             "fui-upload__error",
-			"role":              "alert",
 			"data-cui-internal": "",
 		}, render.Text(cfg.Error)))
 	}

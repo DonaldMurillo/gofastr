@@ -30,6 +30,7 @@
   // say writes text into the one polite region, emptied first and
   // filled a beat later so the same words twice are read twice.
   let sayTimer = 0;
+  let seq = 0;
   function say(text) {
     clearTimeout(sayTimer);
     let r = document.getElementById('cui-form-errors');
@@ -151,14 +152,17 @@
       } else {
         p = document.createElement('p');
         p.setAttribute('data-hui-field-error', 'live');
-        if (el.id) p.id = el.id + '-error';
+        // Always an id, so the control is described by its message.
+        p.id = (el.id || 'cui-fe-' + ++seq) + '-error';
         if (field) field.appendChild(p);
         else choice.after(p);
       }
       if (p.id) describe(el, p.id, true);
       p.textContent = [].concat(fields[name]).join(', ');
-      const l = (field && field.querySelector(':scope > legend')) || (el.labels && el.labels[0]);
-      said.push(((l && l.textContent.trim()) || name) + ': ' + p.textContent);
+      // A radio is named by its group's legend, never one option.
+      const g = el.type === 'radio' && el.closest('fieldset');
+      const l = (g && g.querySelector(':scope > legend')) || (el.labels && el.labels[0]);
+      said.push(((l && l.textContent.trim()) || el.getAttribute('aria-label') || name) + ': ' + p.textContent);
       placed++;
     }
     if (placed) say(said.join('. '));
@@ -184,6 +188,8 @@
     }
   }
 
+  // A page the reader navigated to keeps no other page's refusal.
+  window.addEventListener('gofastr:navigate', () => say(''));
   NS._formErrors = { clear, report };
   (NS.loadedModules ||= {}).formerrors = true;
 })();

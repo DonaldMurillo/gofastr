@@ -113,3 +113,49 @@ func TestE2E_ServerVerdictStandsOverNativeValid(t *testing.T) {
 		t.Errorf("a native valid overwrote the server's verdict: aria-invalid=%q, want true", got)
 	}
 }
+
+// A radio group has one verdict: after a blocked submit every radio is
+// "true", and picking one makes every radio "false" (#704 review).
+func TestE2E_RadioGroupSharesOneVerdict(t *testing.T) {
+	run := validityPage(t, `<form id="f">
+  <fieldset data-hui-field=""><legend>Plan</legend>
+    <label data-hui-choice=""><input type="radio" id="pa" name="plan" value="a" required> Alpha</label>
+    <label data-hui-choice=""><input type="radio" id="pb" name="plan" value="b"> Beta</label>
+    <label data-hui-choice=""><input type="radio" id="pc" name="plan" value="c"> Gamma</label>
+  </fieldset>
+  <button id="go">Save</button>
+</form>`)
+	var refused, picked string
+	all := `['pa','pb','pc'].map((id) => String(document.getElementById(id).getAttribute('aria-invalid'))).join(',')`
+	run(
+		chromedp.Click(`#go`, chromedp.ByID),
+		waitFor(all+` === 'true,true,true'`),
+		chromedp.Evaluate(all, &refused),
+		chromedp.Click(`#pb`, chromedp.ByID),
+		waitFor(all+` === 'false,false,false'`),
+		chromedp.Evaluate(all, &picked),
+	)
+	if refused != "true,true,true" || picked != "false,false,false" {
+		t.Errorf("radio verdicts: after the blocked submit %s, after a pick %s; want all true, then all false", refused, picked)
+	}
+}
+
+// A control with no id is not described by its error node, so the
+// server's verdict is read from its field's own error node instead.
+func TestE2E_ServerVerdictStandsWithoutAnID(t *testing.T) {
+	run := validityPage(t, `<form id="f">
+  <div data-hui-field=""><label>Slug <input name="slug" aria-invalid="true" value="taken"></label><p data-hui-field-error="live">Already in use.</p></div>
+  <div data-hui-field=""><label for="other">Other</label><input id="other" name="other"></div>
+</form>`)
+	var got string
+	run(
+		chromedp.Click(`[name=slug]`, chromedp.ByQuery),
+		chromedp.SendKeys(`[name=slug]`, "-2", chromedp.ByQuery),
+		chromedp.Click(`#other`, chromedp.ByID),
+		chromedp.Sleep(100*time.Millisecond),
+		chromedp.Evaluate(`String(document.querySelector('[name=slug]').getAttribute('aria-invalid'))`, &got),
+	)
+	if got != "true" {
+		t.Errorf("a native valid overwrote the server's verdict on a control with no id: aria-invalid=%q", got)
+	}
+}

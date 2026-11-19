@@ -150,7 +150,7 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 	}
 	if cfg.Error != "" {
 		children = append(children, render.Tag("p", map[string]string{
-			"id": id + "-error", "class": "fui-drop__error", "role": "alert", "data-cui-internal": "",
+			"id": id + "-error", "class": "fui-drop__error", "data-cui-internal": "",
 		}, render.Text(cfg.Error)))
 	}
 

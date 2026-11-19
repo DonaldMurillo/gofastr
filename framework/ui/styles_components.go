@@ -510,6 +510,8 @@ func formFieldCSS(_ style.Theme) string {
   border: 0;
 }
 .fui-field--label-hidden { grid-template-columns: minmax(0, 1fr); }
+/* One column: the messages sit in it, never in an implicit second one. */
+.fui-field--label-hidden > :is(.fui-field__hint, .fui-field__error, [data-hui-field-error]) { grid-column: 1 / -1; }
 /* The required mark is drawn from the state attribute: an asterisk
    whose alternative text is empty, so the label's accessible name
    stays clean (the parser is told the rule by the control's own

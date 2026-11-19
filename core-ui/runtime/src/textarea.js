@@ -6,8 +6,9 @@
 // Loaded on-demand when a [data-cui-autogrow] textarea is on the page.
 //
 // Where the engine sizes a field to its content (field-sizing:
-// content), the module hands each textarea to it and measures nothing:
-// no observer, no listener, no inline height. Everywhere else the
+// content), the module hands each textarea to it, with its rows and
+// cols as the floor, and measures nothing after: no observer, no
+// listener, no inline height. Everywhere else the
 // scrollHeight fallback below grows it.
 (function () {
   'use strict';
@@ -41,6 +42,12 @@
   function wire(ta) {
     if (!ta) return;
     if (native) {
+      // field-sizing ignores rows and cols, so they become the floor:
+      // an empty box keeps the size it was rendered at.
+      const cs = getComputedStyle(ta);
+      const px = (a, b, c, d) => cs.boxSizing === 'border-box' ? ' + ' + (parseFloat(cs[a]) + parseFloat(cs[b]) + parseFloat(cs[c]) + parseFloat(cs[d])) + 'px' : '';
+      ta.style.minBlockSize = 'calc(' + ta.rows + 'lh' + px('paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth') + ')';
+      ta.style.minInlineSize = 'calc(' + ta.cols + 'ch' + px('paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth') + ')';
       ta.style.fieldSizing = 'content';
       return;
     }
