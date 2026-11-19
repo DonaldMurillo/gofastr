@@ -874,7 +874,7 @@ func TestWaitIndexUnlockedClearsALockNoProcessHolds(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
-	if err := waitIndexUnlocked(root, time.Second); err != nil {
+	if err := waitIndexUnlocked(root, 10*time.Second); err != nil {
 		t.Fatalf("a lock left by a killed git failed the cell: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".git", "index.lock")); !errors.Is(err, fs.ErrNotExist) {
@@ -913,5 +913,54 @@ func TestWaitIndexUnlockedKeepsALockWhileACellProcessLives(t *testing.T) {
 	}
 	if _, err := os.Stat(lock); err != nil {
 		t.Errorf("index.lock was removed while a git in the cell was alive: %v", err)
+	}
+}
+
+func TestWaitIndexUnlockedKeepsALockAGitOutsideTheCellOwns(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("git processes are found through /proc")
+	}
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh")
+	}
+	bin := filepath.Join(t.TempDir(), "git")
+	data, err := os.ReadFile(sh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(dir, ".git", "index.lock")
+	ready := filepath.Join(t.TempDir(), "ready")
+	cmd := exec.Command(bin, "-c", `: > `+lock+`; : > `+ready+`; while :; do sleep 0.05; done`)
+	cmd.Dir = t.TempDir()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the stand-in git never started")
+		}
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := waitIndexUnlocked(root, 300*time.Millisecond); err == nil {
+		t.Error("grading went ahead while a git outside the cell still owned index.lock")
+	}
+	if _, err := os.Stat(lock); err != nil {
+		t.Errorf("index.lock was removed while its git was alive: %v", err)
 	}
 }

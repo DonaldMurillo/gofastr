@@ -64,16 +64,33 @@ func cellPIDs(dir string) []int {
 	return pids
 }
 
-// lockAbandoned reports whether the lock at path can be removed: no
-// process has its working directory in cell and none has path open. Git
-// closes index.lock before running commit hooks and renames it afterwards,
-// so a closed lock alone does not mean its writer is gone; a git working
-// on the cell runs with its working directory there.
+// lockAbandoned reports whether the lock at path can be removed: no git
+// process is running, no process has its working directory in cell and
+// none has path open. Git closes index.lock before running commit hooks
+// and renames it afterwards, and a writer can work on the cell from
+// outside it, so only a git that has exited has given the lock up.
 func lockAbandoned(cell, path string) bool {
 	if real, err := filepath.EvalSymlinks(cell); err == nil {
 		cell = real
 	}
-	return len(cellPIDs(filepath.Clean(cell))) == 0 && !fileHeldOpen(path)
+	return !gitRunning() && len(cellPIDs(filepath.Clean(cell))) == 0 && !fileHeldOpen(path)
+}
+
+func gitRunning() bool {
+	procs, err := os.ReadDir("/proc")
+	if err != nil {
+		return true
+	}
+	for _, p := range procs {
+		if _, err := strconv.Atoi(p.Name()); err != nil {
+			continue
+		}
+		comm, err := os.ReadFile(filepath.Join("/proc", p.Name(), "comm"))
+		if err == nil && strings.HasPrefix(strings.TrimSpace(string(comm)), "git") {
+			return true
+		}
+	}
+	return false
 }
 
 func fileHeldOpen(path string) bool {
