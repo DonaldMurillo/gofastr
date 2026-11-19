@@ -1,6 +1,7 @@
 package static
 
 import (
+	"bytes"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -158,13 +159,13 @@ func TestStatic_ContentSniffingPrevented(t *testing.T) {
 // across deployments.
 func TestStatic_ETagNotLeakHashState(t *testing.T) {
 	data := []byte("hello world")
-	etag := generateETag(data)
+	etag, _ := hashETag(bytes.NewReader(data))
 	// ETag should be a hash, not raw content
 	if strings.Contains(etag, "hello world") {
 		t.Errorf("SECURITY: [etag] ETag contains raw content: %q. Attack: content oracle via ETag.", etag)
 	}
 	// ETag should be consistent for same content
-	etag2 := generateETag(data)
+	etag2, _ := hashETag(bytes.NewReader(data))
 	if etag != etag2 {
 		t.Errorf("ETag inconsistent for same content: %q vs %q", etag, etag2)
 	}

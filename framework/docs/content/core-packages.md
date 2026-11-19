@@ -40,6 +40,10 @@ one error envelope every route shares, crud's included:
 absent with no violations.
 
 `Bind` applies header, query, path, then JSON values in that priority order.
+Its JSON body goes through `UnmarshalStrict` (below), so a duplicate or
+case-folded key is refused in any object at any depth and into a map
+destination too, exactly as `ToolAdapter` refuses it for the same
+handler's MCP twin.
 Its destination must be a non-nil pointer; an invalid destination returns
 an error rather than panicking.
 A present higher-priority value replaces an earlier value, including a JSON
@@ -667,8 +671,18 @@ own and gives the clone the guarded dialer, so a custom TLS or pool
 setting keeps the dial-time check. A transport that would speak HTTP/2
 on its own still does after the swap. Any other transport gets the
 weaker per-request check.
-`OriginAllowed(r, allowed)` is the cross-origin check core/mcp and core/a2a
-share: it passes a request with no Origin, one whose Origin names the
+`CheckOutboundURL(raw, prefix, allowPrivate)` is the registration-time
+check battery/webhook and core/a2a share for a caller-supplied URL:
+http(s) only, a host, no userinfo and, unless `allowPrivate`, no
+`localhost`, `*.localhost` or `*.internal` name (`IsInternalName`, which
+the Web Bot Auth directory fetch checks too) and no internal literal or
+resolved address, with the DNS lookup bounded to 3 seconds.
+`GuardRoundTripper(rt, prefix)` guards a supplied client's transport:
+`nil` gets `GuardedTransport`, a plain transport its `GuardPlainTransport`
+clone, and anything else a `*ResolveGuard` that checks the target per
+request.
+`OriginAllowed(r, allowed)` is the cross-origin check core/mcp, core/a2a
+and the UI host's session and action endpoints share: it passes a request with no Origin, one whose Origin names the
 request's own Host, and one whose Origin matches an allow-list entry
 case-insensitively. `IsLoopbackAuthority` is the Host pin for loopback-only
 servers.

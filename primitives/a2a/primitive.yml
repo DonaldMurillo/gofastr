@@ -8,21 +8,12 @@ on_change:
   - The agent card in framework/uihost copies Skills() and Capabilities(); a change to either reaches the card.
 twins:
   - job: Refuse a browser request whose Origin names another authority than the request's Host.
-    why: Work not yet done; core/mcp and core/a2a share netguard.OriginAllowed, while core/stream lets a custom check win and refuses an unparseable Origin only when the Host differs, and framework/uihost answers through i18n with no allow list.
+    why: Work not yet done; core/mcp, core/a2a and framework/uihost's rejectCrossOrigin share netguard.OriginAllowed, while core/stream lets a custom check win and refuses an unparseable Origin only when the Host differs.
     sites:
       - path: core/netguard/origin.go
-        note: OriginAllowed, for core/mcp's and core/a2a's originOK.
+        note: OriginAllowed, for core/mcp's and core/a2a's originOK and framework/uihost's rejectCrossOrigin.
       - path: core/stream/websocket.go
         note: checkOrigin, for the WebSocket upgrade.
-      - path: framework/uihost/session.go
-        note: rejectCrossOrigin, for the session endpoints.
-  - job: Refuse a caller-registered outbound URL that targets internal infrastructure, and guard the delivery client against SSRF at dial time.
-    why: Work not yet done; core/a2a and battery/webhook each validate the URL and wrap a supplied client the same way, but a2a bounds its registration DNS lookup by pushLookupTimeout and refuses credentials over plain http, while webhook calls an unbounded net.LookupIP and checks the URL is storable text.
-    sites:
-      - path: core/a2a/push.go
-        note: validatePushURL, guardedClient and guardedRoundTripper.
-      - path: battery/webhook/ssrf.go
-        note: validateSubscriberURL, ssrfGuardClient and ssrfGuardedRoundTripper.
 invariants:
   - id: transport-refusals
     rule: ServeHTTP answers a non-POST 405, a foreign Origin not on the allow list 403, a non-JSON content type 415, an oversized body 413, a body that is not valid UTF-8 or not one strict JSON object 400 with -32700, a batch -32600, an id that is absent, null or not a string or number -32600 with a null id, and jsonrpc other than "2.0" -32600, all before the owner is resolved or a method runs.
@@ -159,7 +150,7 @@ decisions:
   - id: shared-origin-check
     date: 2026-11-19
     status: accepted
-    decision: core/a2a's and core/mcp's originOK both call netguard.OriginAllowed; the Origin parse and allow-list loop each server carried, and both originAllowListed methods, are removed.
+    decision: core/a2a's and core/mcp's originOK and framework/uihost's rejectCrossOrigin all call netguard.OriginAllowed; the Origin parse and allow-list loop each server carried, both originAllowListed methods and uihost's own parse are removed.
     rejected:
       - option: Keep a copy per server.
         why: The a2a copy said it mirrored core/mcp's, and nothing failed when one of them changed.

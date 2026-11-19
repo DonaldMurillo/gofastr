@@ -30,6 +30,20 @@ few lines, and link the PR or the docs page for the rest.
   Postgres subscriber) or a `PublishQueue` after `stop` returned could
   still reach the callback or the backend about half the time. It is now
   always dropped. See [core packages](framework/docs/content/core-packages.md#fanout).
+- **BREAKING: handler: `Bind` refuses duplicate and case-folded keys at every
+  depth.** The JSON body was checked at the top level of a struct only,
+  so `{"user":{"role":"member","role":"admin"}}` bound last-wins, and a
+  map destination took `{"name":"a","name":"c"}`, while `ToolAdapter`
+  refused both for the same handler's MCP twin. `Bind` now decodes
+  through `UnmarshalStrict`; a body with such keys answers 400
+  `json_duplicate_key` or `json_folded_keys`.
+  ([core packages](framework/docs/content/core-packages.md))
+- **webhook: `Subscribe` waits at most 3 seconds on DNS.** The
+  registration-time URL check looked the host up with no deadline, so a
+  slow or unanswering DNS server held `Subscribe` for as long as the
+  resolver retried. It now shares `netguard.CheckOutboundURL` with A2A
+  push registration, which bounds the lookup; a hostless URL such as
+  `http://:8080/` is refused by A2A push too. ([webhooks](framework/docs/content/webhooks.md))
 - **router: Group fallbacks match escaped segments, stay in the served
   subtree, and keep the shared 405 chain.** A `%2F` in a request path no
   longer shifts which Group's `NotFound` or `MethodNotAllowed` covers it;

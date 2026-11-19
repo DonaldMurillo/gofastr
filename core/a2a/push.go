@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -46,8 +45,6 @@ const (
 )
 
 const pushDeliveryTimeout = 10 * time.Second
-
-const pushLookupTimeout = 3 * time.Second
 
 type pusher struct {
 	client       *http.Client
@@ -263,59 +260,10 @@ func (p *pusher) post(cfg PushNotificationConfig, payload []byte) error {
 }
 
 func validatePushURL(raw string, credentialed, allowPrivate bool) error {
-	if raw == "" {
-		return fmt.Errorf("a2a: push URL required")
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("a2a: parse push URL: %w", err)
-	}
-	scheme := strings.ToLower(u.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return fmt.Errorf("a2a: scheme %q not allowed (need http or https)", u.Scheme)
-	}
-	if scheme == "http" && credentialed && !allowPrivate {
+	if strings.EqualFold(schemeOf(raw), "http") && credentialed && !allowPrivate {
 		return fmt.Errorf("a2a: push URL %q carries credentials over plain http; use https (or set AllowPrivate for an internal receiver)", raw)
 	}
-	if u.Host == "" {
-		return fmt.Errorf("a2a: push URL missing host")
-	}
-	if u.User != nil {
-		return fmt.Errorf("a2a: push URL with embedded userinfo not allowed (credential leakage)")
-	}
-	if allowPrivate {
-		return nil
-	}
-	host := u.Hostname()
-	lower := strings.ToLower(host)
-	if lower == "localhost" ||
-		strings.HasSuffix(lower, ".localhost") ||
-		strings.HasSuffix(lower, ".internal") ||
-		lower == "metadata.google.internal" {
-		return fmt.Errorf("a2a: host %q targets internal infrastructure", host)
-	}
-	if ip := net.ParseIP(host); ip != nil {
-		return rejectInternal(ip)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), pushLookupTimeout)
-	defer cancel()
-	ipAddrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-	if err != nil {
-		return nil
-	}
-	for _, ip := range ipAddrs {
-		if err := rejectInternal(ip.IP); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func rejectInternal(ip net.IP) error {
-	if netguard.IsInternal(ip) {
-		return fmt.Errorf("a2a: %s not allowed as push target", netguard.Reason(ip))
-	}
-	return nil
+	return netguard.CheckOutboundURL(raw, "a2a", allowPrivate)
 }
 
 func guardedClient(c *http.Client, allowPrivate bool) *http.Client {
@@ -323,48 +271,10 @@ func guardedClient(c *http.Client, allowPrivate bool) *http.Client {
 	cc.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	if allowPrivate {
-		return &cc
-	}
-	if c.Transport == nil {
-		cc.Transport = netguard.GuardedTransport(false, "a2a")
-	} else if guarded, ok := plainGuarded(c.Transport); ok {
-		cc.Transport = guarded
-	} else {
-		cc.Transport = &guardedRoundTripper{inner: c.Transport}
+	if !allowPrivate {
+		cc.Transport = netguard.GuardRoundTripper(c.Transport, "a2a")
 	}
 	return &cc
-}
-
-func plainGuarded(rt http.RoundTripper) (*http.Transport, bool) {
-	tr, ok := rt.(*http.Transport)
-	if !ok {
-		return nil, false
-	}
-	return netguard.GuardPlainTransport(tr, "a2a")
-}
-
-type guardedRoundTripper struct{ inner http.RoundTripper }
-
-func (g *guardedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	host := r.URL.Hostname()
-	if ip := net.ParseIP(host); ip != nil {
-		if err := rejectInternal(ip); err != nil {
-			return nil, err
-		}
-		return g.inner.RoundTrip(r)
-	}
-	ips, err := net.DefaultResolver.LookupIPAddr(r.Context(), host)
-	if err != nil {
-		return nil, fmt.Errorf("a2a: resolve %q: %w", host, err)
-	}
-	for _, ip := range ips {
-		if err := rejectInternal(ip.IP); err != nil {
-			return nil, err
-		}
-	}
-	//gofastr:allow(resolvedial) fallback for a transport with its own proxy or dialer, which cannot be swapped; a plain one gets netguard.GuardPlainTransport
-	return g.inner.RoundTrip(r)
 }
 
 func hasCredentials(cfg PushNotificationConfig) bool {

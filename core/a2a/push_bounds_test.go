@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/netguard"
 )
 
 // blockingTransport holds every request until release closes.
@@ -121,14 +123,14 @@ func TestPushPlainTransportDialGuarded(t *testing.T) {
 	// resolve-and-check wrapper: swapping its dialer would break an
 	// egress proxy or unix-socket transport.
 	proxied := &http.Transport{Proxy: http.ProxyURL(&url.URL{Scheme: "http", Host: "proxy.test:3128"})}
-	if _, ok := guardedClient(&http.Client{Transport: proxied}, false).Transport.(*guardedRoundTripper); !ok {
+	if _, ok := guardedClient(&http.Client{Transport: proxied}, false).Transport.(*netguard.ResolveGuard); !ok {
 		t.Error("proxied transport lost the resolve-and-check wrapper")
 	}
 	var d net.Dialer
 	dialer := &http.Transport{DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 		return d.DialContext(ctx, network, addr)
 	}}
-	if _, ok := guardedClient(&http.Client{Transport: dialer}, false).Transport.(*guardedRoundTripper); !ok {
+	if _, ok := guardedClient(&http.Client{Transport: dialer}, false).Transport.(*netguard.ResolveGuard); !ok {
 		t.Error("custom-dialer transport lost the resolve-and-check wrapper")
 	}
 

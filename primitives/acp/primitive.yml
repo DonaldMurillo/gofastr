@@ -14,7 +14,7 @@ invariants:
       - test: core/acp.TestSweepEnvelopeRefusesUnknownKey
       - test: core/acp.TestEnvelopeRefusesInvalidRequest
   - id: params-refuse-ambiguous-keys
-    rule: Every params decode runs decodeParams, which refuses a duplicate or case-folded key pair at any depth with -32602 under the request's id, and tolerates unknown fields.
+    rule: Every params decode runs decodeParams, which refuses a duplicate or case-folded key pair at any depth and tolerates unknown fields; a refused request is answered -32602 under its id, and a session/cancel notification whose params are refused is ignored.
     enforced_by:
       - test: core/acp.TestACPParamsRedRefuseFoldedKeys
   - id: handshake-gates-sessions
