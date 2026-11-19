@@ -1047,7 +1047,7 @@ few lines, and link the PR or the docs page for the rest.
 
 This release carries the bug-hunt rounds since v0.96.0: about 270
 entries across the framework, batteries, CLI and runtime, many holding
-more than one fix. Each round is one PR.
+more than one fix. Each bullet names the PRs it came from.
 
 - **The #669 decided items** (#690): one batch. MCP gates and argument
   schemas, field masks, read hooks on admin writes and audit rows,
@@ -1081,10 +1081,11 @@ more than one fix. Each round is one PR.
   found while moving package comments into `primitives/`. The harness
   and its TUI, webmcp, router `Group` fallbacks, fanout, streams,
   static export of pipes and device files, UI ids, and audit redaction.
-- **Smaller PRs** (#751, #758, #760, #788, #821) and issue #823: banner
-  and tooltip ids, erasure retries, `gofastr dev` running no git, and
-  not-found, error, 405 and static `404.html` pages carrying no route
-  meta.
+- **Smaller PRs** (#751, #758, #760, #788, #816, #821) and issue #823:
+  banner and tooltip ids, erasure retries, `gofastr dev` running no git,
+  a handler's invalid status under Recovery answering 500 (it answered
+  200), and not-found, error, 405 and static `404.html` pages carrying no
+  route meta.
 
 Areas with the most fixes: CRUD query parsing, filters and paging;
 migrations on both dialects; the app spec, the app generator and
@@ -1182,6 +1183,7 @@ an event handler written right after a closing quote.
 
 #### Security fixes that may need a change in your app
 
+- The admin account page refuses a caller whose user type has no `GetID` (it saved a display name for the user whose id is `unknown`); give your user type an id.
 - `rootwrite`, `rootread` and `tightenshared` no longer accept `filepath.EvalSymlinks` alone as a guard; code that passed `gofastr verify` or `make analyze` can fail, and the messages name the fix.
 - `gofastr verify --fix`, `contracts_fix` and `gofastr gen styles` refuse an absolute symlink, even one pointing inside the project; make it relative.
 - The Linux desktop shell checks every navigation before its request, iframes included, so a foreign iframe stays blank on Linux.

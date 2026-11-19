@@ -172,14 +172,16 @@ was needed.
   with a merge commit (the summary links the roll commit, which must
   stay on main), then push `vX.Y.Z` on the current head of main once
   its CI is green. The tag push runs `.github/workflows/release.yml`:
-  `scripts/release-gate.sh` refuses unless the tag is main's head, every
-  check in `scripts/release-required-checks.txt` passed on that commit,
-  and no release exists yet; then the workflow creates the release from
-  the CHANGELOG section and deploys the docs site. Never run
-  `gh release create` yourself: it bypasses the gate (how v0.61.0
-  shipped a red commit). A gate that refused once CI settled is re-run
-  with the workflow's `workflow_dispatch`. The release is done when the
-  Releases page shows `vX.Y.Z` as `Latest`.
+  `scripts/release-gate.sh` refuses unless SECURITY.md's Supported
+  versions names `X.Y.x`, the tag is main's head, every check in
+  `scripts/release-required-checks.txt` passed on that commit, and no
+  release exists yet; then the workflow creates the release from the
+  CHANGELOG section and deploys the docs site. Never run
+  `gh release create` yourself: it bypasses the gate, which exists
+  because v0.61.0 published a red commit. If the gate timed out waiting
+  for checks, re-run it with the workflow's `workflow_dispatch` once CI
+  finishes; if main moved, tag the new head instead. The release is done
+  when the Releases page shows `vX.Y.Z` as `Latest`.
 
 ## Hard rules
 
