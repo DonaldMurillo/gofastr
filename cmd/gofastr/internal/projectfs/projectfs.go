@@ -152,14 +152,19 @@ func Read(root *os.Root, name string) ([]byte, error) {
 // root.
 func Lstat(root *os.Root, name string) (fs.FileInfo, error) {
 	dir, base := path.Split(filepath.ToSlash(name))
-	resolved := "."
-	if dir != "" {
-		var err error
-		if resolved, err = Resolve(root, dir); err != nil {
-			return nil, err
-		}
+	p, err := resolveParent(root, dir, base)
+	if err != nil {
+		return nil, err
 	}
-	return root.Lstat(filepath.FromSlash(path.Join(resolved, base)))
+	return root.Lstat(filepath.FromSlash(p))
+}
+
+func resolveParent(root *os.Root, dir, base string) (string, error) {
+	resolved, err := Resolve(root, dir)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(resolved, base), nil
 }
 
 // Replace replaces name under root with data through a temporary file
@@ -210,18 +215,14 @@ func ReplaceOwnerOnly(root *os.Root, name string, data []byte) error {
 // symlink at name is refused whatever it points at, as is a directory or
 // any other kind of file.
 func RegularLeaf(root *os.Root, name string) (string, error) {
-	dir, base := path.Split(path.Clean(filepath.ToSlash(name)))
+	dir, base := path.Split(strings.TrimRight(filepath.ToSlash(name), "/"))
 	if base == "" || base == "." || base == ".." {
 		return "", fmt.Errorf("%q names no file", name)
 	}
-	resolved := "."
-	if dir != "" {
-		var err error
-		if resolved, err = Resolve(root, dir); err != nil {
-			return "", err
-		}
+	p, err := resolveParent(root, dir, base)
+	if err != nil {
+		return "", err
 	}
-	p := path.Join(resolved, base)
 	fi, err := root.Lstat(filepath.FromSlash(p))
 	switch {
 	case errors.Is(err, fs.ErrNotExist):

@@ -9,13 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
-func TestNewUsagePrints(t *testing.T) {
-	out := clitest.CovT_capStdout(t, newUsage)
-	if !strings.Contains(out, "Usage:") {
-		t.Fatalf("newUsage output: %s", out)
-	}
-}
-
 func TestRunNewDispatchesAllResources(t *testing.T) {
 	dir := t.TempDir()
 	clitest.CovT_chdir(t, dir)

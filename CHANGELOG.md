@@ -25,6 +25,21 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`gofastr build --pkg ./cmd/<name>` works on a first build.** The
+  package check now runs after code generation, so a command the
+  generation step creates can be built.
+- **`gofastr build` flag values.** `-o` and `--output` accept the spaced
+  form and refuse an empty path; `--pkg` refuses an empty or option-like
+  value before generation runs.
+- **`gofastr new handler http` is refused before writing.** The name
+  collided with the `net/http` import. Overwriting the only Go file in a
+  handler package now keeps that file's package clause.
+- **`gofastr new route` refuses malformed patterns.** A path
+  `http.ServeMux` would reject is reported before the registration
+  snippet is printed.
+- **Secret-file writes under a linked directory.** The parent path
+  resolves its symlinks before `..` is applied, as ordinary project
+  lookups do.
 - **A cursor request serves its keyset page even with a stale page or
   offset in the URL.** CRUD List picked cursor mode only after the
   offset cap, so `?cursor=…&page=999999` got a 400; the cap now applies

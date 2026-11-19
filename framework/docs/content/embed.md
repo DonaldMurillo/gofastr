@@ -731,10 +731,10 @@ Neither gate is total on its own. The boot walk reads values, so it sees a
 child a component *holds* but not one it *builds* inside `Render`; that child
 does not exist when the walk runs. The analyzer reads syntax, so it sees a
 child built in `Render` but not one whose `Actions()` body is in another
-package. The shapes they each miss are covered by the other, which is why an
-unresolved note is fatal rather than advisory: a note is the analyzer saying
-the boot walk is on its own here, and for a render-built child it is not
-there either. The standalone `check-embed` command checks every supplied
+package. The build prints every unresolved note and fails by default on
+blocking notes, where neither gate can verify the action.
+`--allow-unverified-embeds` makes those notes advisory. The standalone
+`check-embed` command checks every supplied
 package pattern and refuses a pattern that matches no packages.
 
 They fail differently, and it is worth knowing which you are looking at. The

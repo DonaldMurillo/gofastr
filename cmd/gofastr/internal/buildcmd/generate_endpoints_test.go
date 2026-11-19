@@ -1,11 +1,10 @@
 package buildcmd
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+	"github.com/DonaldMurillo/gofastr/codegen"
 )
 
 // gofastr build regenerates for a settings file that has endpoints and
@@ -15,10 +14,18 @@ func TestBuildGeneratesForEndpointsOnly(t *testing.T) {
 	if buildGenerates(false, dir) {
 		t.Fatal("an empty project ran codegen")
 	}
-	if err := os.WriteFile(filepath.Join(dir, "gofastr.settings.yml"), []byte(clitest.EndpointsSettings), 0o600); err != nil {
-		t.Fatal(err)
+	clitest.WriteSettings(t, dir, `endpoints:
+  - name: feature_post
+    entity: posts
+    method: POST
+    path: "{id}/feature"
+    handler: entities/featured.go#FeaturePost
+`)
+	discovery, err := codegen.DiscoverConfig(dir)
+	if err != nil || discovery.Found {
+		t.Fatalf("expected settings with no codegen section, got Found=%t, %v", discovery.Found, err)
 	}
-	if !buildGenerates(false, dir) {
+	if !buildGenerates(discovery.Found, dir) {
 		t.Fatal("build skipped codegen for a settings file with endpoints")
 	}
 }

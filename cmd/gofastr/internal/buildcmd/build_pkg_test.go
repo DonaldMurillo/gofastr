@@ -48,6 +48,39 @@ func TestBuildPkgAcceptsEqualsForm(t *testing.T) {
 	}
 }
 
+func TestBuildPkgBuildsCommandCreatedByCodegen(t *testing.T) {
+	dir := t.TempDir()
+	clitest.WriteFileAll(t, filepath.Join(dir, "go.mod"), "module example.com/buildpkgtest\n\ngo 1.21\n")
+	clitest.WriteSettings(t, dir, `codegen:
+  generators:
+    - name: cli
+      output: cmd/shop
+      config:
+        binary: shop
+        from_openapi: openapi.json
+`)
+	clitest.WriteFileAll(t, filepath.Join(dir, "openapi.json"), `{
+  "openapi": "3.0.3",
+  "info": {"title": "Shop", "version": "1.0.0"},
+  "paths": {"/items": {"get": {"operationId": "listItems", "responses": {"200": {"description": "OK"}}}}}
+}`)
+	clitest.CovT_chdir(t, dir)
+
+	output := clitest.TestExecutablePath(filepath.Join(dir, "shop"))
+	var code int
+	out := clitest.CovT_capStdout(t, func() {
+		code = clitest.CovT_capExit(t, func() {
+			RunBuild([]string{"--pkg", "./cmd/shop", "--output=" + output, "--no-a11y", "--no-embed-check", "--no-contracts"})
+		})
+	})
+	if code != -1 {
+		t.Fatalf("first build exited %d:\n%s", code, out)
+	}
+	if _, err := os.Stat(output); err != nil {
+		t.Fatalf("expected generated command binary at %s: %v", output, err)
+	}
+}
+
 func TestBuildPkgMissingValueIsTargetSpecific(t *testing.T) {
 	_, err := parseBuildOptions([]string{"--pkg"})
 	if err == nil {

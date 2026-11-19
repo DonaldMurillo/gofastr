@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 // `gofastr new handler type` wrote `func type(...)`, which does not parse;
@@ -73,5 +75,41 @@ func writeGo(t *testing.T, dir, name, src string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNewHandlerRefusesItsImportName(t *testing.T) {
+	dir := t.TempDir()
+	clitest.CovT_chdir(t, dir)
+	var code int
+	out := clitest.CovT_capStdout(t, func() {
+		code = clitest.CovT_capExit(t, func() { RunNew([]string{"handler", "http"}) })
+	})
+	if code != 1 || !strings.Contains(out, "net/http") {
+		t.Errorf("new handler http exited %d, want an import collision refusal:\n%s", code, out)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "http_handler.go")); !os.IsNotExist(err) {
+		t.Errorf("refused scaffold should leave no file, got %v", err)
+	}
+}
+
+func TestNewHandlerOverwriteKeepsTheOnlyFilesPackage(t *testing.T) {
+	dir := t.TempDir()
+	const leaf = "ping_handler.go"
+	writeGo(t, dir, leaf, "package handlers\n\nfunc Ping() {}\n")
+	clitest.CovT_chdir(t, dir)
+	var code int
+	out := clitest.CovT_capStdout(t, func() {
+		code = clitest.CovT_capExit(t, func() { RunNew([]string{"handler", "Ping", "-overwrite"}) })
+	})
+	if code != -1 {
+		t.Fatalf("new handler -overwrite exited %d:\n%s", code, out)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, leaf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "\npackage handlers\n") || !strings.Contains(string(got), "func Ping(w http.ResponseWriter") {
+		t.Errorf("expected a rewritten handler in package handlers:\n%s", got)
 	}
 }

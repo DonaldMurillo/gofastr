@@ -17,6 +17,18 @@ func runRoute(t *testing.T, args ...string) (int, string) {
 	return code, out
 }
 
+func TestNewRouteRefusesMalformedPattern(t *testing.T) {
+	for _, path := range []string{"things", "/things/{id}/{id}", "/things/{rest...}/child"} {
+		code, out := runRoute(t, path)
+		if code != 1 || !strings.Contains(out, "invalid route") || strings.Contains(out, "app.Router()") {
+			t.Errorf("new route %q exited %d, want a route refusal without a snippet:\n%s", path, code, out)
+		}
+	}
+	if code, out := runRoute(t, "example.com/things/{rest...}"); code != -1 || !strings.Contains(out, "app.Router()") {
+		t.Errorf("valid host and wildcard pattern exited %d:\n%s", code, out)
+	}
+}
+
 // The handler lands at an expression slot of the printed Go line and the
 // method in its route pattern, so both are checked before printing.
 func TestNewRouteRefusesBadHandler(t *testing.T) {

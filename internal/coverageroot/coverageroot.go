@@ -3,7 +3,8 @@ package coverageroot
 
 import (
 	"os"
-	"path/filepath"
+
+	"github.com/DonaldMurillo/gofastr/internal/ancestor"
 )
 
 // Resolve returns the first set variable in keys, else the go.work, go.mod or working directory.
@@ -25,16 +26,19 @@ func Resolve(keys ...string) string {
 	return wd
 }
 
-// FindUp returns the nearest directory at or above start holding marker.
+// FindUp returns the nearest directory at or above start holding marker within that directory.
 func FindUp(start, marker string) (string, bool) {
-	for d := start; ; {
-		if _, err := os.Stat(filepath.Join(d, marker)); err == nil {
-			return d, true
+	dir, found, _ := ancestor.Find(start, func(dir string) (bool, error) {
+		root, err := os.OpenRoot(dir)
+		if err != nil {
+			return false, nil
 		}
-		parent := filepath.Dir(d)
-		if parent == d {
-			return "", false
-		}
-		d = parent
+		defer root.Close()
+		_, err = root.Stat(marker)
+		return err == nil, nil
+	})
+	if !found {
+		return "", false
 	}
+	return dir, true
 }

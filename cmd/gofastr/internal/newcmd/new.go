@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/projectfs"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"golang.org/x/net/http/httpguts"
 )
 
 // validateScaffoldName rejects names that would escape the project root.
@@ -44,6 +46,8 @@ func newUsage() {
 	fmt.Println("Resources:")
 	fmt.Println("  handler  <Name> [--method=GET] [--path=/x] [-overwrite]   Scaffold an HTTP handler")
 	fmt.Println("  route    <path>  [--method=GET] [--handler=Name]   Print a route registration snippet")
+	fmt.Println("Use a handler name other than http. Overwriting a handler preserves its package.")
+	fmt.Println("Route paths use Go's http.ServeMux pattern syntax.")
 	fmt.Println("Flags:")
 	fmt.Println("  -overwrite   Rewrite the target file if it already exists")
 	fmt.Println("  -h, --help   Show this help")
@@ -119,15 +123,12 @@ func runNewHandler(args []string, overwrite bool) {
 		cli.OsExit(1)
 		return
 	}
-	// Check before the fold: strings.ToUpper maps ı to I and ſ to S,
-	// so a non-ASCII method would pass as a different token.
-	if err := checkRouteMethod(method); err != nil {
+	method, err := normalizeRouteMethod(method)
+	if err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
 		return
 	}
-	method = strings.ToUpper(method)
-
 	if err := scaffoldHandler(".", name, method, path, overwrite); err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
@@ -150,18 +151,21 @@ func runNewRoute(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	// Check before the fold: strings.ToUpper maps ı to I and ſ to S,
-	// so a non-ASCII method would pass as a different token.
-	if err := checkRouteMethod(method); err != nil {
+	method, err := normalizeRouteMethod(method)
+	if err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
 		return
 	}
-	method = strings.ToUpper(method)
 	// The handler lands at an expression slot of the printed Go line: a
 	// name that is not an identifier, or a selector of them (h.List),
 	// prints a line that does not compile.
 	if err := checkRouteHandler(handler); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
+	if err := checkRoutePattern(method, path); err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
 		return
@@ -175,21 +179,21 @@ func runNewRoute(args []string) {
 	cli.Info("If %s is a func(http.ResponseWriter, *http.Request), such as one new handler wrote, pass http.HandlerFunc(%s).", handler, handler)
 }
 
-// checkRouteMethod refuses a method that is not an HTTP token (RFC 9110
-// section 5.6.2): the router builds a "METHOD /path" pattern from it, and
-// net/http's ServeMux panics on a pattern whose method is no token.
-// Extension methods such as PROPFIND are tokens and pass.
-func checkRouteMethod(method string) error {
-	if method == "" {
-		return fmt.Errorf("invalid method %q: must be an HTTP method such as GET or PROPFIND", method)
+func normalizeRouteMethod(method string) (string, error) {
+	// Validate before case folding, which maps some non-ASCII letters to ASCII.
+	if !httpguts.ValidHeaderFieldName(method) {
+		return "", fmt.Errorf("invalid method %q: must be an HTTP method such as GET or PROPFIND", method)
 	}
-	for i := 0; i < len(method); i++ {
-		c := method[i]
-		if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || strings.IndexByte("!#$%&'*+-.^_`|~", c) >= 0 {
-			continue
+	return strings.ToUpper(method), nil
+}
+
+func checkRoutePattern(method, path string) (err error) {
+	defer func() {
+		if cause := recover(); cause != nil {
+			err = fmt.Errorf("invalid route %q: %v", path, cause)
 		}
-		return fmt.Errorf("invalid method %q: must be an HTTP method such as GET or PROPFIND", method)
-	}
+	}()
+	http.NewServeMux().Handle(method+" "+path, http.NotFoundHandler())
 	return nil
 }
 
@@ -246,6 +250,9 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 	if reason := unusableFuncName(rawName); reason != "" {
 		return fmt.Errorf("invalid handler name %q: %s; pick another name", rawName, reason)
 	}
+	if rawName == "http" {
+		return fmt.Errorf("invalid handler name %q: it conflicts with the net/http import; pick another name", rawName)
+	}
 	name := rawName
 	// Resolve the base dir before joining: a symlinked component would
 	// otherwise redirect the scaffolded file outside it undetected
@@ -275,7 +282,7 @@ func scaffoldHandler(baseDir, rawName, method, path string, overwrite bool) erro
 	// beside main.go, package entities under entities/); writing package
 	// main everywhere broke the build with "found packages entities and
 	// main". A name that package already declares would be redeclared.
-	pkg, declared := dirPackage(realDir, filepath.Base(filename))
+	pkg, declared := dirPackage(root, leaf)
 	if declared[name] {
 		return fmt.Errorf("package %s in %s already declares %s: pick another handler name", pkg, realDir, name)
 	}
@@ -317,12 +324,10 @@ func unusableFuncName(name string) string {
 	return ""
 }
 
-// dirPackage returns the package the non-test Go files in dir declare
-// ("main" when there are none) and the names that package declares at
-// top level. skip, the file being scaffolded, is left out: -overwrite
-// rewrites it. A file that does not parse is skipped, as go build would
-// report it on its own.
-func dirPackage(dir, skip string) (string, map[string]bool) {
+// dirPackage finds the package and its top-level names. The scaffold target
+// contributes only its package clause when no other file supplies one.
+func dirPackage(root *os.Root, skip string) (string, map[string]bool) {
+	dir := root.Name()
 	pkg := ""
 	declared := map[string]bool{}
 	entries, _ := os.ReadDir(dir)
@@ -362,7 +367,23 @@ func dirPackage(dir, skip string) (string, map[string]bool) {
 		}
 	}
 	if pkg == "" {
-		pkg = "main"
+		pkg = scaffoldTargetPackage(root, skip)
 	}
 	return pkg, declared
+}
+
+func scaffoldTargetPackage(root *os.Root, leaf string) string {
+	info, err := root.Stat(leaf)
+	if err != nil || !info.Mode().IsRegular() {
+		return "main"
+	}
+	src, err := projectfs.Read(root, leaf)
+	if err != nil {
+		return "main"
+	}
+	f, err := parser.ParseFile(token.NewFileSet(), leaf, src, parser.PackageClauseOnly)
+	if err != nil {
+		return "main"
+	}
+	return f.Name.Name
 }

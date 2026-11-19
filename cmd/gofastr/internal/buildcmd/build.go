@@ -1,6 +1,7 @@
 package buildcmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -32,11 +33,6 @@ func RunBuild(args []string) {
 		cli.OsExit(1)
 	}
 
-	if err := project.ValidateBuildTarget(opts.pkg); err != nil {
-		cli.Fail("Build target %q is invalid: %v", opts.pkg, err)
-		cli.OsExit(1)
-	}
-
 	// Step 1: run the codegen extension protocol when a gofastr.settings.yml
 	// is present, and rebuild entities/client and entities/endpoints.gen.go
 	// when the app has them. App generation (gofastr generate app) is an
@@ -63,6 +59,11 @@ func RunBuild(args []string) {
 			cli.Info("Generating code...")
 			appgen.GenerateProject(nil)
 		}
+	}
+
+	if err := project.ValidateBuildTarget(context.Background(), opts.pkg); err != nil {
+		cli.Fail("Build target %q is invalid: %v", opts.pkg, err)
+		cli.OsExit(1)
 	}
 
 	// Step 2: go vet

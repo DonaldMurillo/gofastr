@@ -15,10 +15,13 @@ CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o app ./
 ./app                 # listens on :8080 (or $PORT)
 ```
 
-The CLI runs generation, project-wide vet, and the accessibility gate before
-building. It targets the project root by default; when the executable lives
-under `cmd/`, select only the final main package with `--pkg`. Vet and
-accessibility checks still run from the project root, matching `gofastr dev`:
+Run `gofastr build` from the project root. It runs code generation when
+configured or when the app has derived client or endpoint files. It runs
+`go vet ./...`, the accessibility and `.ui.go` hydration sandbox checks, the
+embed server-action check, and contract verification from the invoking
+directory. The final build compiles the current package by default. Use
+`--pkg` to select a main package under `cmd/`, including one created by
+code generation. Set a binary path with `-o=<path>` or `--output=<path>`.
 
 ```bash
 gofastr build
