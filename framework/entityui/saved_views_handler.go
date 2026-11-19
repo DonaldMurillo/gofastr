@@ -31,8 +31,7 @@ func (u *UI) SavedViewsHandler(entityName string) http.Handler {
 			writeBulkError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
-		if handler.IsForgeableRequest(r) && handler.IsCrossSiteRequest(r) {
-			writeBulkError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
+		if refuseCrossSitePost(w, r, i18n.StatusPhrase(http.StatusForbidden)) {
 			return
 		}
 		ctx := r.Context()

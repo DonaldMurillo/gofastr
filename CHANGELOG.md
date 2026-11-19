@@ -25,6 +25,11 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **entityui: cross-site JSON writes to trash and saved views are refused.**
+  Restore, Purge and Saved Views now refuse a cross-site POST of any
+  content type with 403, like the other entityui write routes. A
+  cross-site JSON purge used to run. The 403 body each route sends is
+  unchanged.
 - **router: Group fallbacks match escaped segments, stay in the served
   subtree, and keep the shared 405 chain.** A `%2F` in a request path no
   longer shifts which Group's `NotFound` or `MethodNotAllowed` covers it;

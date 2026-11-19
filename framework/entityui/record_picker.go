@@ -170,8 +170,7 @@ func (u *UI) PickerHandler(entityName string) http.Handler {
 			writeBulkError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
-		if handler.IsCrossSiteRequest(r) {
-			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
+		if refuseCrossSitePost(w, r, reasonAccessDenied) {
 			return
 		}
 		m, err := u.meta(entityName)

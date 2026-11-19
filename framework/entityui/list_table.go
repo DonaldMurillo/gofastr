@@ -272,7 +272,7 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 	}
 	val := cell(m.rowValue(row, name))
 	if f.Type == schema.Relation {
-		if val == "" || labels.refused(name) {
+		if val == "" {
 			return muted()
 		}
 		if t, ok := labels.title(name, val); ok {
@@ -334,7 +334,7 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 	raw := m.rowValue(row, name)
 	val := cell(raw)
 	if f.Type == schema.Relation {
-		if val == "" || labels.refused(name) {
+		if val == "" {
 			return ""
 		}
 		if t, ok := labels.title(name, val); ok {

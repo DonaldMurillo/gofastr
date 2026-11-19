@@ -888,6 +888,16 @@ func writeBulkError(w http.ResponseWriter, r *http.Request, status int, reason i
 	writeBulkJSON(w, status, map[string]string{"error": reason.Text(r.Context(), params...), "reason": reason.Code()})
 }
 
+// refuseCrossSitePost answers a cross-site request with the 403 reason its
+// handler names, and reports whether it did.
+func refuseCrossSitePost(w http.ResponseWriter, r *http.Request, reason i18n.Phrase) bool {
+	if !handler.IsCrossSiteRequest(r) {
+		return false
+	}
+	writeBulkError(w, r, http.StatusForbidden, reason)
+	return true
+}
+
 func (u *UI) enqueueJob(ctx context.Context, job BulkJob) (err error) {
 	defer func() {
 		if recover() != nil {

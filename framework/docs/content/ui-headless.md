@@ -378,16 +378,20 @@ technology will be told.
 Button, Field, FieldRow, ConditionalField, Input, Textarea, Select,
 Password, Color, Choice, Switch, Group, Form, InputGroup, FileUpload,
 Fieldset, ValidationSummary, Card, Stack, Cluster, Grid, Container,
-Section, Divider, Spacer, Spinner, Skeleton, Alert, SystemBanner,
+Section, Divider, Spacer, Spinner, Skeleton, Progress, Alert, SystemBanner,
 Badge, Tag, Selection, Toolbar, ToolbarGroup, ToolbarSpacer, ToolbarSearch,
 Pagination, Table, Steps, Timeline, PageHeader, EmptyState, StatCard,
 DetailList, OptimisticAction and ToggleAction, plus the stateful
 family: Counter, NumberInput, Slider, RangeSlider, Rating, TagInput,
 Repeater, Toast, ToastStack, ToastTemplate, NotificationBell,
-StepWizard and BackToTop. The navigation-behaviour members: Rail, TableOfContents,
-Disclosure, Menu, Combobox, DatePicker (with DatePickerMonth, its
-island answer), Tabs, Carousel, PaneHost, Sidebar and SidebarRegion,
-and the two pure-render trees JSONTree and Gallery.
+StepWizard, BackToTop and SortableList with SortableItems, its
+reconciliation fragment. The navigation-behaviour members: Rail,
+TableOfContents, Breadcrumbs, Disclosure, Menu, Combobox, DatePicker
+(with DatePickerMonth, its island answer), Tabs, Carousel, PaneHost,
+Sidebar and SidebarRegion, and the two pure-render trees JSONTree and
+Gallery. LightboxViewer ships the overlay anatomy a zoom modal mounts;
+its hooks serve the host page or framework/ui, which write the viewer's
+behaviour.
 
 A stateful control with no `ID` builds its ids from its `Name`.
 `MultiSelect`, `NumberInput`, `Slider`, `RangeSlider`, `Rating` and
