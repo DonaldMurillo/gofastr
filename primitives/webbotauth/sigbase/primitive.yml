@@ -1,0 +1,26 @@
+primitive: webbotauth.sigbase
+summary: The RFC 9421 signature base and the RFC 9651 Structured Fields subset it parses and serializes.
+code:
+  - core/webbotauth/base.go
+  - core/webbotauth/sfv.go
+docs:
+  - framework/docs/content/web-bot-auth.md
+invariants:
+  - id: base-matches-vectors
+    rule: The signature base is byte-identical to the RFC 9421 and draft vectors, and a component it cannot resolve fails the whole base.
+    enforced_by:
+      - test: core/webbotauth.TestRFC9421_Ed25519Vector
+      - test: core/webbotauth.TestGateB_BaseShape
+      - test: core/webbotauth.TestGateB_NodeSignedBase
+  - id: components-as-sent
+    rule: "@path is the escaped path as sent, @authority keeps IPv6 brackets and drops only the scheme's default port, and a field sent on several lines serializes as one list."
+    enforced_by:
+      - test: core/webbotauth.TestBaseSignsEncodedPath
+      - test: core/webbotauth.TestAuthorityKeepsIPv6Brackets
+      - test: core/webbotauth.TestFieldValue_MultiValueSerializesAsList
+  - id: sfv-strict
+    rule: Structured fields keep parameter order, serialize decimals from their digits, and refuse truncated input without panicking.
+    enforced_by:
+      - test: core/webbotauth.TestSFDecimalSerializesCanonically
+      - test: core/webbotauth.TestParseSFDictionary_TruncatedMemberIsRejected
+      - test: core/webbotauth.TestVerifyRequest_TruncatedHeadersDoNotPanic

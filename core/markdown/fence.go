@@ -5,28 +5,11 @@ import (
 	"unicode"
 )
 
-// Fenced code blocks, per CommonMark's two rules the original three-backtick
-// scan got wrong.
-//
-// The info string is a language followed by options, not one opaque language
-// name. Folding the whole line into the class attribute produced
-// class="language-go title=&quot;main.go&quot;", which matches no language, so
-// writing any fence option silently cost the block its syntax highlighting.
-//
-// A fence is three OR MORE of the same character, and it closes only on a run
-// at least as long. That is the only way to write a markdown example that
-// itself contains a ``` block: reading exactly three characters tore such an
-// example apart at its first inner fence.
-
 // FenceInfo is a parsed fence info string, the text after a fence's opening run.
 type FenceInfo struct {
-	// Lang is the first whitespace-delimited token, the language name
-	// ("go", "bash"). Empty when no language is supplied, including option-only fences.
+	// Lang is the first token, empty when the info string has no language.
 	Lang string
-	// Meta is everything after Lang, verbatim and trimmed: `title="main.go"`,
-	// `{1,3-5}`, `showLineNumbers`. The renderer decides what those mean; this
-	// package only carries them through, in the <code> tag's data-meta
-	// attribute. Empty for a plain fence.
+	// Meta is the rest, trimmed, carried through in data-meta.
 	Meta string
 }
 
@@ -38,8 +21,6 @@ func ParseFenceInfo(info string) FenceInfo {
 	if i >= 0 {
 		first = info[:i]
 	}
-	// Options may name an untyped source block. Keep the complete string so
-	// a quoted filename containing spaces remains one metadata value.
 	if strings.Contains(first, "=") || strings.HasPrefix(first, "{") {
 		return FenceInfo{Meta: info}
 	}
@@ -49,15 +30,12 @@ func ParseFenceInfo(info string) FenceInfo {
 	return FenceInfo{Lang: first, Meta: strings.TrimSpace(info[i:])}
 }
 
-// fenceDelim is an opening code fence: the character that runs it, how long
-// that run is, and the info string trailing it.
 type fenceDelim struct {
 	char byte
 	n    int
 	info string
 }
 
-// openFence parses line as an opening code fence.
 func openFence(line string) (fenceDelim, bool) {
 	t := strings.TrimLeft(line, " ")
 	if t == "" || (t[0] != '`' && t[0] != '~') {
@@ -74,10 +52,6 @@ func openFence(line string) (fenceDelim, bool) {
 	return fenceDelim{char: ch, n: n, info: strings.TrimSpace(t[n:])}, true
 }
 
-// closes reports whether line closes the block d opened: a run of at least as
-// many of the same character, with nothing but whitespace after it. The length
-// test is what lets a ```` fence hold a ``` block, and the trailing test is
-// what keeps an inner opening fence (```go) from closing the outer one.
 func (d fenceDelim) closes(line string) bool {
 	t := strings.TrimLeft(line, " ")
 	n := 0

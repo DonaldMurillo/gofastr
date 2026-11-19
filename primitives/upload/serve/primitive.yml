@@ -1,0 +1,53 @@
+primitive: upload.serve
+summary: ServeHandler, which streams a stored object with a sniffed type, the stored-XSS downgrade and Range through RangeGetter.
+code:
+  - core/upload/serve.go
+  - core/upload/range.go
+docs:
+  - framework/docs/content/uploads.md
+invariants:
+  - id: get-and-head-only
+    rule: ServeHandler answers any method but GET and HEAD 405 with Allow GET, HEAD.
+    enforced_by:
+      - test: core/upload.TestServeHandlerMethodNotAllowed
+  - id: sniffed-type-and-nosniff
+    rule: Every served object carries X-Content-Type-Options nosniff and a Content-Type sniffed from its first 512 bytes, which scriptable-downgraded may then replace with application/octet-stream, on the whole-body and the range path alike.
+    enforced_by:
+      - test: core/upload.TestServeHandlerSniffsContentType
+      - test: core/upload.TestRangeServingKeepsScriptableGuard
+  - id: scriptable-downgraded
+    rule: Content that sniffs as HTML or XML, or whose key ends in html, htm, xhtml, svg, xml, xsl or xslt in any case, is sent as application/octet-stream with Content-Disposition attachment, HEAD included.
+    enforced_by:
+      - test: core/upload.TestServeHandlerNeutralizesHTML
+      - test: core/upload.TestServeGuard_XMLNeutralization
+      - test: core/upload.TestServeGuard_ExtCaseFolding
+      - test: core/upload.TestServeGuardAppliesToHeadRequests
+  - id: store-errors-mapped
+    rule: ServeHandler answers ErrNotFound 404, ErrInvalidKey 400 and any other store error 500, with no filesystem path in the body.
+    enforced_by:
+      - test: core/upload.TestServeHandlerMissingKey404
+      - test: core/upload.TestServeHandlerBlocksTraversal
+  - id: ranges-through-capability
+    rule: A store that implements RangeGetter answers Range with 206 and advertises Accept-Ranges, and one that does not sends the whole body.
+    enforced_by:
+      - test: core/upload.TestServeHandlerAnswersRangeRequest
+      - test: core/upload.TestServeHandlerAdvertisesAcceptRanges
+      - test: core/upload.TestServeHandlerFallsBackWithoutRangeGetter
+      - test: core/upload.TestGetRangeRejectsTraversal
+decisions:
+  - id: range-as-capability
+    date: 2026-11-19
+    status: accepted
+    decision: Seekable reads are the optional RangeGetter interface, not a method on Storage.
+    rejected:
+      - option: Widen Storage.Get to return a ReadSeeker.
+        why: A network-backed store would have to buffer the whole object to seek.
+    upholds: [ranges-through-capability]
+  - id: xml-is-scriptable
+    date: 2026-11-19
+    status: accepted
+    decision: XML and XSLT are downgraded like HTML.
+    rejected:
+      - option: Serve XML as sniffed.
+        why: An XML file naming an XSLT sheet uploaded beside it renders arbitrary HTML with script.
+    upholds: [scriptable-downgraded]

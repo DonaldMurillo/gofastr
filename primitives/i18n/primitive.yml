@@ -4,11 +4,92 @@ code:
   - core/i18n/
 docs:
   - framework/docs/content/i18n.md
+twins:
+  - job: Fill a phrase's {{name}} placeholders from named values, trimming the name and leaving an unknown placeholder as written.
+    why: say() is the browser's copy and cannot share Go code, and i18nui.HTML escapes the text around each value so it does not call Fill; the JS copy is pinned by TestRuntimeSayFillsLikeGo, and folding HTML onto Fill's scanner is work not yet done.
+    sites:
+      - path: core/i18n/i18n.go
+        note: fill, behind Fill, FillContext and Phrase.Text.
+      - path: framework/i18nui/i18nui.go
+        note: HTML, which escapes the text and writes each value as given.
+      - path: core-ui/runtime/frag/kernel.js
+        note: say(), the runtime's fill of a catalog string.
 invariants:
   - id: bare-tag-never-widens
     rule: Negotiate shortens a requested tag along its fallback chain and never lengthens one, so a bare tag such as fr never matches a regional catalog such as fr-CA.
     enforced_by:
       - test: core/i18n.TestNegotiateBareTagNeverWidens
+  - id: lookup-order
+    rule: T renders key in ctx's locale along its tag fallbacks, then in the fallback locale, else returns the key, and a plural entry with neither the count's form, other nor Text is a miss.
+    enforced_by:
+      - test: core/i18n.TestTranslator_LooksUpInLocaleThenFallback
+      - test: core/i18n.TestTranslator_LanguageBaseFallback
+      - test: core/i18n.TestTranslator_MissingKeyReturnsKey
+      - test: core/i18n.TestTranslator_PluralNoCountUsesOther
+      - test: core/i18n.TestPluralWithNoFormFallsBack
+      - test: core/i18n.TestNilSurfacesReturnBareKey
+  - id: fill-is-one-pass
+    rule: Fill writes each value as given without rescanning it, and leaves an unknown or unclosed placeholder as written.
+    enforced_by:
+      - test: core/i18n.TestInterpolatedValueNotReexpanded
+      - test: core/i18n.TestInterpolate_LeavesUnknownPlaceholdersIntact
+      - test: core/i18n.TestInterpolate_PreservesUnbalancedBraces
+  - id: catalog-owns-its-maps
+    rule: MapCatalog stores and returns copies of a message's plural map, and LoadJSONCatalog flattens nested keys with dots and reads an object of only plural categories as a plural message.
+    enforced_by:
+      - test: core/i18n.TestCatalogOwnsPluralMaps
+      - test: core/i18n.TestLoadJSONCatalog_FlattensNestedKeysAndDetectsPluralBuckets
+  - id: request-tags-are-bounded
+    rule: Every tag read from a request, a resolver's, X-Locale and each Accept-Language range, is normalized and refused unless it is at most 35 bytes of lowercase letters, digits and single inner hyphens.
+    enforced_by:
+      - test: core/i18n.TestNegotiate_ResolverOversizedValueRejected
+      - test: core/i18n.TestNegotiate_ResolverGarbageCharsRejected
+      - test: core/i18n.TestNegotiatedTagIsBounded
+      - test: core/i18n.TestAcceptLangTagLengthBounded
+      - test: core/i18n.TestTagBoundRunsAfterNormalising
+      - test: core/i18n.TestLocaleTagsRejectEmptySegments
+  - id: accept-language-work-bounded
+    rule: Accept-Language is scanned in place, examining at most 512 segments, keeping at most 32 entries and reading at most 8 parameters per entry.
+    enforced_by:
+      - test: core/i18n.TestAcceptLanguageBounded
+      - test: core/i18n.TestAcceptLangWorkIsBounded
+      - test: core/i18n.TestSweepI18nAcceptLanguageSegmentsCapped
+  - id: negotiation-order
+    rule: Negotiate answers the URL's locale, then a resolver value the catalog has, then X-Locale, then the highest-q Accept-Language range the catalog has, then the fallback.
+    enforced_by:
+      - test: core/i18n.TestPrefixWinsOverCookie
+      - test: core/i18n.TestNegotiate_ResolverCookieWinsOverHeaders
+      - test: core/i18n.TestNegotiate_ResolverUnknownValueFallsThrough
+      - test: core/i18n.TestNegotiate_XLocaleHeaderWins
+      - test: core/i18n.TestNegotiate_PicksHighestQMatchingLocale
+  - id: q-zero-refuses
+    rule: A range with q=0 refuses that locale and its canonical alias for truncation and for *, and a range whose q is not a number in [0, 1] is dropped.
+    enforced_by:
+      - test: core/i18n.TestWildcardSkipsRefusedLocale
+      - test: core/i18n.TestTruncationSkipsRefusedLocale
+      - test: core/i18n.TestRefusedAliasStaysRefused
+      - test: core/i18n.TestMalformedQDropsEntry
+  - id: vary-on-read-headers
+    rule: Middleware adds Vary for Accept-Language, X-Locale and every header a resolver names, and none when the URL named the locale.
+    enforced_by:
+      - test: core/i18n.TestMiddlewareVariesOnLocaleHeaders
+      - test: core/i18n.TestCookieResolverVariesOnCookie
+  - id: script-keeps-its-catalog
+    rule: A tag's fallback chain tries its language-script form before the bare language and never reaches a bare language written in another script, and a deprecated code reaches its modern catalog.
+    enforced_by:
+      - test: core/i18n.TestChineseRegionsPickScript
+      - test: core/i18n.TestTraditionalTextSkipsSimplified
+      - test: core/i18n.TestRegionTagFindsScriptCatalog
+      - test: core/i18n.TestDeprecatedTagsFindModernCatalog
+      - test: core/i18n.TestUnspecifiedTagsKeepPlainChain
+  - id: page-language-from-catalog
+    rule: DocLang and CatalogLocale answer only a catalog locale or the fallback whatever the request carried, Dir reads the script, and EnvLocale reads LANGUAGE, LC_ALL, LC_MESSAGES then LANG with a script modifier kept.
+    enforced_by:
+      - test: core/i18n.TestDocLang
+      - test: core/i18n.TestCatalogLocale
+      - test: core/i18n.TestDirFromScript
+      - test: core/i18n.TestEnvLocale
+      - test: core/i18n.TestEnvLocaleScriptModifier
 decisions:
   - id: negotiate-is-rfc4647-lookup
     date: 2026-11-16
@@ -19,3 +100,19 @@ decisions:
         why: It changes which catalog every app serves for every bare tag, and which region wins would depend on declaration order.
     revisit_if: Apps routinely ship regional-only catalogs and the alias step keeps being missed.
     upholds: [bare-tag-never-widens]
+  - id: bound-every-request-tag
+    date: 2026-11-19
+    status: accepted
+    decision: The cookie, X-Locale and Accept-Language values all pass one bound before any match, since each can become the key a host's Catalog.Get receives.
+    rejected:
+      - option: Bound only the cookie resolver.
+        why: X-Locale short-circuits every later check, so a lazily loading catalog received ../../etc/passwd as a lookup key.
+    upholds: [request-tags-are-bounded]
+  - id: scan-accept-language-in-place
+    date: 2026-11-19
+    status: accepted
+    decision: Accept-Language is scanned in place with a cap on segments examined.
+    rejected:
+      - option: strings.Split and cap the entries kept.
+        why: A 600 KB header still allocated about 3 MB and 500k strings per request before the cap was consulted.
+    upholds: [accept-language-work-bounded]

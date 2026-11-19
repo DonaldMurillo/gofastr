@@ -194,6 +194,9 @@ func TestCancelBeforeStartRunSkipsHandler(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("stream did not end after the canceled run")
 	}
+	for deadline := time.Now().Add(2 * time.Second); ownerRuns(h.srv, "alice") != 0 && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+	}
 	if n := invoked.Load(); n != 0 {
 		t.Errorf("handler ran %d times for a task canceled before its run started, want 0", n)
 	}

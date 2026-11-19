@@ -1,3 +1,3 @@
-// Package openapi is part of the GoFastr framework.
-// See https://github.com/DonaldMurillo/gofastr for documentation.
+// Package openapi builds OpenAPI 3.1 documents and serves them, gated or
+// public, as JSON and as a server-rendered reference page.
 package openapi

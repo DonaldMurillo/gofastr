@@ -391,12 +391,9 @@ func (s *GrantStore) handleRemote(raw []byte) {
 	s.fanoutMu.Lock()
 	ownNode := s.nodeID
 	s.fanoutMu.Unlock()
-	fromNode, body, err := fanout.Unwrap(raw)
-	if err != nil {
+	_, body, ok := fanout.UnwrapForeign(ownNode, raw)
+	if !ok {
 		return
-	}
-	if fromNode == ownNode {
-		return // own publish, drop the echo
 	}
 	var msg accessInvalidateMsg
 	if err := json.Unmarshal(body, &msg); err != nil {

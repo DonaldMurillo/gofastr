@@ -10,30 +10,22 @@ import (
 type CatalogProblem string
 
 const (
-	// ProblemUnknown is a key no [Define] call registered: nothing
-	// reads it, so a rename left it behind or a typo hides it.
+	// ProblemUnknown is a key no [Define] call registered.
 	ProblemUnknown CatalogProblem = "unknown key"
-	// ProblemPlaceholders is a translation naming a {{placeholder}} its
-	// English does not fill (it renders as written), or dropping one the
-	// English has (the value never shows).
+	// ProblemPlaceholders is a translation whose placeholders differ from the English.
 	ProblemPlaceholders CatalogProblem = "placeholders differ"
-	// ProblemMissing is a phrase under a [Require]d prefix that the
-	// locale does not translate.
+	// ProblemMissing is a [Require]d phrase the locale does not translate.
 	ProblemMissing CatalogProblem = "missing"
-	// ProblemNoOther is a plural translation with no "other" form. Every
-	// locale's plural rules end in other, so a count whose form the
-	// entry lacks renders the fallback locale's text or the English.
+	// ProblemNoOther is a plural translation with no "other" form.
 	ProblemNoOther CatalogProblem = "plural without other"
 )
 
-// CatalogIssue is one place a locale's catalog disagrees with the
-// phrases the program defines.
+// CatalogIssue is one entry where a catalog disagrees with the defined phrases.
 type CatalogIssue struct {
 	Locale  string
 	Key     string
 	Problem CatalogProblem
-	// English is the phrase's text, Text the locale's (a plural
-	// message's forms joined with " | ").
+	// English is the phrase's text, Text the locale's (plural forms joined by " | ").
 	English string
 	Text    string
 }
@@ -46,28 +38,18 @@ type checkConfig struct {
 	require []string
 }
 
-// Skip leaves keys under the prefixes alone: the app's own families
-// ("entity.", "nav.") that name its data rather than a defined phrase,
-// and phrases that are code rather than words.
+// Skip leaves keys under the prefixes unchecked.
 func Skip(prefixes ...string) CheckOption {
 	return func(c *checkConfig) { c.skip = append(c.skip, prefixes...) }
 }
 
-// Require reports every phrase under the prefixes whose English holds a
-// letter and that the locale lacks. Without it a partial catalog is
-// fine: a miss renders the English.
+// Require reports every lettered phrase under the prefixes the locale lacks.
 func Require(prefixes ...string) CheckOption {
 	return func(c *checkConfig) { c.require = append(c.require, prefixes...) }
 }
 
-// CheckCatalog compares locale's entries in c with every phrase the
-// program defined ([Phrases]) and returns the disagreements, sorted by
-// key. Run it in a test for each locale an app ships and fail on a
-// non-empty result: a catalog slip is otherwise invisible, one English
-// sentence among translated ones.
-//
-// Only phrases linked into the binary are known, so run it from a test
-// in the package that wires the whole app (its main package).
+// CheckCatalog returns, sorted by key, where locale's entries in c disagree
+// with the phrases linked into the binary ([Phrases]).
 func CheckCatalog(c *MapCatalog, locale string, opts ...CheckOption) []CatalogIssue {
 	var cfg checkConfig
 	for _, o := range opts {
@@ -128,11 +110,6 @@ func CheckCatalog(c *MapCatalog, locale string, opts ...CheckOption) []CatalogIs
 
 func isLetter(r rune) bool { return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' }
 
-// placeholdersAgree reports whether m fills exactly the English's
-// placeholders. A plain translation names the same set. A plural one may
-// leave the count out of a form ("one" reads "a result"), but every form
-// keeps the English's other placeholders and names nothing it lacks, and
-// the forms together name them all.
 func placeholdersAgree(english string, m Message) bool {
 	want := Placeholders(english)
 	if len(m.Plural) == 0 {
@@ -157,17 +134,12 @@ func placeholdersAgree(english string, m Message) bool {
 	return slices.Equal(want, slices.Compact(union))
 }
 
-// isCountParam reports whether name is a param plural selection reads
-// its count from (see countOperands).
 func isCountParam(name string) bool {
 	return slices.Contains(countParams, name)
 }
 
-// Placeholders returns the distinct {{name}} placeholder names in s,
-// sorted: the set a translation of s must keep. A name is taken as
-// written, spaces included: headless component fills match {{name}}
-// exactly, so the catalog keeps "{{ name }}" distinct even though Fill
-// and the runtime's say() trim whitespace around parameter names.
+// Placeholders returns the distinct {{name}} names in s, sorted, taken as
+// written.
 func Placeholders(s string) []string {
 	var out []string
 	for {

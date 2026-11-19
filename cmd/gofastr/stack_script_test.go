@@ -1,22 +1,26 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
 
 // fakeStackGH stands in for gh: every call prints $BODY through its
-// --jq expression with the real jq, and $CALLS records that gh ran. A
+// --jq expression with the real jq, $CALLS records that gh ran, and a
+// request body read from stdin (--input -) is saved to $STDIN. A
 // poll of a running merge (merge-async/<id>) prints $POLL instead, and a
 // call that starts a merge exits $PUT_EXIT after printing, as gh does on
 // an HTTP error.
 const fakeStackGH = `#!/usr/bin/env bash
 args="$*"
 echo "$args" >> "$CALLS"
+case "$args" in *"--input -"*) cat > "$STDIN" ;; esac
 case "$args" in *merge-async/*) BODY="$POLL" ;; esac
 jqexpr=""
 while [ $# -gt 0 ]; do
@@ -31,6 +35,15 @@ func runStackScript(t *testing.T, body string, args ...string) (out string, code
 	return runStackScriptEnv(t, body, nil, args...)
 }
 
+// stackCalls runs stack.sh and returns its output and the gh command lines it ran.
+func stackCalls(t *testing.T, body string, args ...string) (out string, code int, calls string) {
+	t.Helper()
+	out, code, _ = runStackScript(t, body, args...)
+	return out, code, lastCalls
+}
+
+var lastCalls, lastStdin string
+
 func runStackScriptEnv(t *testing.T, body string, env []string, args ...string) (out string, code int, called bool) {
 	t.Helper()
 	for _, tool := range []string{"bash", "jq"} {
@@ -43,6 +56,7 @@ func runStackScriptEnv(t *testing.T, body string, env []string, args ...string) 
 		t.Fatal(err)
 	}
 	calls := filepath.Join(bin, "calls")
+	stdin := filepath.Join(bin, "stdin")
 	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "stack.sh"))
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +64,7 @@ func runStackScriptEnv(t *testing.T, body string, env []string, args ...string) 
 	cmd := exec.Command("bash", append([]string{script}, args...)...)
 	cmd.Env = append(os.Environ(),
 		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"BODY="+body, "CALLS="+calls)
+		"BODY="+body, "CALLS="+calls, "STDIN="+stdin)
 	cmd.Env = append(cmd.Env, env...)
 	raw, err := cmd.CombinedOutput()
 	var exit *exec.ExitError
@@ -59,7 +73,10 @@ func runStackScriptEnv(t *testing.T, body string, env []string, args ...string) 
 	} else if err != nil {
 		t.Fatal(err)
 	}
-	_, statErr := os.Stat(calls)
+	logged, statErr := os.ReadFile(calls)
+	lastCalls = string(logged)
+	sent, _ := os.ReadFile(stdin)
+	lastStdin = string(sent)
 	return string(raw), code, statErr == nil
 }
 
@@ -71,6 +88,7 @@ func TestStackScriptRefusesBadArguments(t *testing.T) {
 	for _, args := range [][]string{
 		{}, {"bogus"}, {"create"}, {"create", "1"}, {"view"}, {"view", "1", "2"},
 		{"merge"}, {"merge", "1", "merge", "extra"},
+		{"add"}, {"add", "5"}, {"unstack"}, {"unstack", "5", "6"},
 	} {
 		out, code, called := runStackScript(t, "[]", args...)
 		if code != 2 || called || !strings.Contains(out, "stack.sh create") {
@@ -117,5 +135,42 @@ func TestStackScriptMergeResumesARunningMerge(t *testing.T) {
 	out, code, _ = runStackScriptEnv(t, `{"message":"Not mergeable"}`, []string{"PUT_EXIT=1"}, "merge", "9")
 	if code == 0 || !strings.Contains(out, "Not mergeable") {
 		t.Fatalf("a refusal with no id: exit %d, output:\n%s", code, out)
+	}
+}
+
+// add posts the new PRs to the stack's add route and prints the stack
+// GitHub returns; a series opened later joins its stack this way, since
+// create refuses a PR already in one.
+//
+//gofastr:test-reads scripts/stack.sh
+func TestStackScriptAddsPRsToAStack(t *testing.T) {
+	stack := `{"number":5,"base":{"ref":"main"},"pull_requests":[{"number":1},{"number":2},{"number":3},{"number":4}]}`
+	out, code, calls := stackCalls(t, stack, "add", "5", "3", "4")
+	if code != 0 || strings.TrimSpace(out) != "stack #5 on main: #1 -> #2 -> #3 -> #4" {
+		t.Fatalf("add: exit %d, output:\n%s", code, out)
+	}
+	if !strings.Contains(calls, "-X POST repos/DonaldMurillo/gofastr/stacks/5/add") {
+		t.Fatalf("add called gh as:\n%s", calls)
+	}
+	var sent struct {
+		PullRequests []int `json:"pull_requests"`
+	}
+	if err := json.Unmarshal([]byte(lastStdin), &sent); err != nil || !slices.Equal(sent.PullRequests, []int{3, 4}) {
+		t.Fatalf("add sent %q (%v), want pull_requests [3 4] in that order", lastStdin, err)
+	}
+}
+
+// unstack reports a stack GitHub dissolved (204, no body) and one it kept
+// because some PRs could not leave it.
+//
+//gofastr:test-reads scripts/stack.sh
+func TestStackScriptUnstacks(t *testing.T) {
+	out, code, calls := stackCalls(t, "", "unstack", "5")
+	if code != 0 || strings.TrimSpace(out) != "stack #5 dissolved" || !strings.Contains(calls, "-X POST repos/DonaldMurillo/gofastr/stacks/5/unstack") {
+		t.Fatalf("unstack of a whole stack: exit %d, output:\n%s\ncalls:\n%s", code, out, calls)
+	}
+	out, code, _ = stackCalls(t, `{"number":5,"pull_requests":[{"number":1}]}`, "unstack", "5")
+	if code != 0 || strings.TrimSpace(out) != "stack #5 kept: #1" {
+		t.Fatalf("unstack that keeps a merged PR: exit %d, output:\n%s", code, out)
 	}
 }

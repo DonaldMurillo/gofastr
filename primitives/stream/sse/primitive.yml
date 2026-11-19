@@ -1,0 +1,72 @@
+primitive: stream.sse
+summary: Server-Sent Event framing - SSEWriter, Encode, ChunkedWriter and the one frame encoder in internal/sseframe that core/handler's SSE response type shares.
+code:
+  - core/stream/sse.go
+  - core/stream/event.go
+  - core/stream/chunked.go
+  - internal/sseframe/
+docs:
+  - framework/docs/content/events.md
+twins:
+  - job: Write an SSE data payload as one "data:" line per LF-separated line with CR and NUL removed.
+    why: "Work not yet done; the harness MCP transport also defangs event:, id:, retry: and data: inside each line and writes bytes, so it would call sseframe.Append on the defanged text."
+    sites:
+      - path: internal/sseframe/sseframe.go
+        note: Append, behind stream.Encode, SSEWriter and handler.SSE.
+      - path: framework/experimental/harness/control/mcpserver/http.go
+        note: sanitizeSSEData and defangSSEDirectives.
+invariants:
+  - id: one-sse-encoder
+    rule: stream.Encode, SSEWriter.WriteEvent, SSEWriter.WriteData and handler.SSE write a frame through sseframe.Append and emit the same bytes for the same id, name and data, with one exception kept for the existing wire bytes - a name that is empty once cut gives WriteEvent an empty event line that Encode and handler.SSE omit (a browser dispatches both as "message"), so for such a name WriteData is the match.
+    enforced_by:
+      - test: core/stream.TestSweepSSEEncodersAgree
+      - test: core/stream.TestWriteEventEmptyNameKeepsEventLine
+    judge: Does this change build an SSE id, event or data line anywhere but internal/sseframe?
+    applies:
+      - core/handler/respond.go
+  - id: field-values-cut-at-control-bytes
+    rule: An id, an event name, a comment and LastEventID's value are cut at their first CR, LF or NUL, so no caller-supplied value can start a new SSE field.
+    enforced_by:
+      - test: core/stream.TestEventEncode_StripsNewlinesFromID
+      - test: core/stream.TestSSE_EventNameInjection
+      - test: core/stream.TestSSE_CommentInjection
+      - test: core/stream.TestSSE_LastEventIDHeaderStripsNewlines
+  - id: data-lines-reprefixed
+    rule: Data loses every CR and NUL and each LF-separated line is written as its own data field, so an embedded blank line cannot end the frame.
+    enforced_by:
+      - test: core/stream.TestSSE_DataStripsCRandNUL
+      - test: core/stream.TestSSE_DataInjection
+  - id: control-only-id-writes-no-id
+    rule: An id that is empty once cut writes no "id:" line, because an empty id field resets the client's Last-Event-ID.
+    enforced_by:
+      - test: core/stream.TestSSE_ControlOnlyIDEmitsNoIDField
+  - id: each-write-has-its-own-deadline
+    rule: SSEWriter arms a write deadline (sseWriteTimeout) before every write and flush and clears it after, and writes without one when the writer chain answers http.ErrNotSupported.
+    enforced_by:
+      - test: core/stream.TestSSEWriterArmsWriteDeadline
+      - test: core/stream.TestSSEWriterSurvivesIdleOnHTTP2
+      - test: core/stream.TestSSEWriterWritesWithoutDeadlineSupport
+  - id: retry-is-positive-milliseconds
+    rule: SetRetry writes nothing for a non-positive value and otherwise writes seconds times 1000, capped at MaxInt64.
+    enforced_by:
+      - test: core/stream.TestSSE_SetRetryDropsNonPositive
+      - test: core/stream.TestSetRetryCapsAtMaxInt64
+decisions:
+  - id: sse-frames-in-one-package
+    date: 2026-11-19
+    status: accepted
+    decision: The frame encoder lives once in internal/sseframe; core/handler.SSE, stream.Encode and SSEWriter call it.
+    rejected:
+      - option: Keep the encoder in core/handler (writeSSEFrame) and in core/stream (Encode, WriteEvent, WriteData) as separate copies.
+        why: Four copies of one injection rule had to change together and only a reviewer noticed when they did not.
+      - option: Export the encoder from core/handler for core/stream to call.
+        why: It adds public API to core/handler for an internal concern.
+    upholds: [one-sse-encoder]
+  - id: cut-not-delete-control-bytes
+    date: 2026-11-19
+    status: accepted
+    decision: A single-line field is cut at its first CR, LF or NUL rather than having those bytes deleted.
+    rejected:
+      - option: Delete the control bytes and keep the rest.
+        why: The bytes around them rejoin into the payload being neutralised, so "X\r\nSet-Cookie:" still carries "Set-Cookie:".
+    upholds: [field-values-cut-at-control-bytes]

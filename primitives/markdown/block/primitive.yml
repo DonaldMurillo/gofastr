@@ -1,0 +1,91 @@
+primitive: markdown.block
+summary: The block parser of core/markdown - headings and their ids, fences, lists, blockquotes, tables, rules and comment blocks.
+code:
+  - core/markdown/parser.go
+  - core/markdown/fence.go
+invariants:
+  - id: fence-is-three-or-more
+    rule: A fence opens on three or more backticks or tildes and closes only on a run of the same character at least as long with nothing after it, so a longer fence holds a shorter one and an inner opening fence with info does not close it.
+    enforced_by:
+      - test: core/markdown.TestShortRunsAreNotFences
+      - test: core/markdown.TestLongFenceHoldsAnInnerFence
+      - test: core/markdown.TestFenceClosesOnlyOnALongEnoughRun
+      - test: core/markdown.TestInnerOpeningFenceDoesNotClose
+      - test: core/markdown.TestFenceCharsDoNotCross
+  - id: fence-info-is-lang-then-meta
+    rule: ParseFenceInfo takes the first token as the language unless it holds = or opens with {, the rest being Meta, and the renderer writes the language as class language-<lang> and Meta as data-meta, both HTML-escaped.
+    enforced_by:
+      - test: core/markdown.TestParseFenceInfo
+      - test: core/markdown.TestOptionOnlyFenceInfo
+      - test: core/markdown.TestFenceOptionsKeepTheLanguageClass
+      - test: core/markdown.TestFenceMetaAttrEscaped
+      - test: core/markdown.TestMarkdown_FenceInfoAttrEscaped
+  - id: nesting-is-bounded
+    rule: Past 32 levels of blockquote or list nesting the rest renders as escaped inline text instead of recursing, so nested input renders in linear time.
+    enforced_by:
+      - test: core/markdown.TestMarkdown_NestedBlockquoteBounded
+      - test: core/markdown.TestListNestingIsBounded
+  - id: comment-scan-is-linear
+    rule: Finding a comment block's close scans each line once, the close line cached across openers, so a document of unclosed openers renders in linear time.
+    enforced_by:
+      - test: core/markdown.TestMarkdown_UnclosedCommentsLinear
+  - id: comment-hides-under-a-list-item
+    rule: A comment block under a list item renders as nothing, its body lines included whatever their indent, and the item continues after it.
+    enforced_by:
+      - test: core/markdown.TestCommentInListItemRendersNothing
+      - test: core/markdown.TestSweepMarkdownListCommentMaySpanUnindentedLines
+  - id: heading-ids-unique-per-document
+    rule: Each heading gets a slug id unique across the whole document, nested blockquotes and list items included, suffixing -2, -3 and skipping any id already emitted, and the count restarts for every Render.
+    enforced_by:
+      - test: core/markdown.TestRepeatedHeadingIDsAreUniqueWithinDocument
+      - test: core/markdown.TestHeadingIDsAvoidCrossSlugCollisions
+      - test: core/markdown.TestHeadingIDCountsResetForEachDocument
+      - test: core/markdown.TestMarkdown_HeadingIDSanitized
+  - id: heading-text-keeps-its-hashes
+    rule: "Only the opening run of hashes and a closing run set off by a space are heading syntax, so a heading \"## #1\" keeps its text \"#1\" and \"# C#\" keeps its last hash."
+    enforced_by:
+      - test: core/markdown.TestHeadingKeepsLeadingHashInText
+  - id: ordinal-is-at-most-nine-digits
+    rule: An ordered item's number has at most nine digits, a longer one being paragraph text, and a list whose first number is not 1 carries it in start.
+    enforced_by:
+      - test: core/markdown.TestTenDigitOrdinalIsNotAList
+      - test: core/markdown.TestOrderedListStart
+  - id: list-item-owns-indented-lines
+    rule: A list item owns the following lines indented two or more spaces past its marker, blank lines between them included, so it holds nested lists, fences and paragraphs, and items separated by blank lines stay one list.
+    enforced_by:
+      - test: core/markdown.TestNestedListRendersAsList
+      - test: core/markdown.TestFenceUnderListItem
+      - test: core/markdown.TestBlankLineBetweenItemsKeepsOneList
+      - test: core/markdown.TestIndentedListSiblings
+  - id: table-cells-are-safe
+    rule: A table splits rows on unescaped pipes only, ignores separator cells past the header's count, and writes alignment as class md-align-left, -right or -center, never an inline style.
+    enforced_by:
+      - test: core/markdown.TestTableEscapedPipe
+      - test: core/markdown.TestMarkdown_MalformedTableNoPanic
+      - test: core/markdown.TestMarkdown_TableAlignClassFixedSet
+      - test: core/markdown.TestTableWithAlignment
+decisions:
+  - id: align-by-class
+    date: 2026-11-19
+    status: accepted
+    decision: Table alignment is a md-align-* class the host stylesheet maps to text-align.
+    rejected:
+      - option: An inline style="text-align:..." attribute.
+        why: The framework's default Content-Security-Policy refuses inline styles.
+    upholds: [table-cells-are-safe]
+  - id: cap-renders-text
+    date: 2026-11-19
+    status: accepted
+    decision: Past a nesting cap the renderer emits the rest as escaped text.
+    rejected:
+      - option: Drop the content past the cap or fail the render.
+        why: Render has no error channel and dropping text loses content a writer meant to show.
+    upholds: [nesting-is-bounded, markdown.inline/inline-nesting-is-bounded]
+  - id: own-heading-slug
+    date: 2026-11-19
+    status: accepted
+    decision: Markdown heading ids come from the renderer's own Unicode slug, unique per document, with no prefix.
+    rejected:
+      - option: Reuse core-ui/html's heading slug.
+        why: It keeps only ASCII letters and digits, caps at 64 bytes and prefixes heading-, which would change every docs anchor and drop non-ASCII headings; it has no document to dedupe against.
+    upholds: [heading-ids-unique-per-document]

@@ -4,7 +4,6 @@ import (
 	"context"
 	"runtime/debug"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -18,19 +17,10 @@ const (
 	maxJobStackLen = 8 << 10
 )
 
-// Job runs fn inside a span of its own trace, named name: a piece of
-// background work nobody asked for over HTTP, such as a scheduled run.
-// The span fails when fn returns an error, with the error's text as its
-// status, or when fn panics, with the panic's value as its status and
-// the stack from the function that panicked as exception.stacktrace.
-// A panic goes on to the caller, which owns the recovery.
-//
-// With no TracerProvider installed the span is a no-op and Job is a
-// plain call. The error's text is the span's status as written: a
-// caller whose errors quote data that must not be stored sets its own
-// span.
+// Job runs fn inside a root span named name, failed with fn's error text or
+// with a panic's value and stack; the panic goes on to the caller.
 func Job(ctx context.Context, name string, fn func(context.Context) error) (err error) {
-	ctx, span := otel.Tracer("github.com/DonaldMurillo/gofastr/core/tracing").Start(ctx, textsafe.ScrubControlBytes(name),
+	ctx, span := tracer().Start(ctx, textsafe.ScrubControlBytes(name),
 		trace.WithSpanKind(trace.SpanKindInternal), trace.WithNewRoot())
 	defer func() {
 		if r := recover(); r != nil {

@@ -161,6 +161,10 @@ Two stores are bundled:
   pin the dialect when the runtime probe is unreliable. Also implements
   `MutableStore` and `All(ctx)` for admin tooling.
 
+Both stores check a flag the same way on `Set`: an empty key or a
+malformed `Users` entry is refused with a `featureflag:` error, and
+`Rollout` is clamped to 0..100.
+
 The SQL store registers its table with `App.ExportData` and
 `App.EraseUserData`. Erasing a user removes their id from every flag's
 `users` list and keeps the flag. With a tenant (`WithEraseTenant`, or

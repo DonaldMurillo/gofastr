@@ -14,9 +14,7 @@ import (
 // Major.Minor form the agent card's supportedInterfaces expects.
 const ProtocolVersion = "1.0"
 
-// JSON-RPC method names of the A2A v1.0 JSON-RPC binding. Pinned as the
-// PascalCase RPC names from specification/a2a.proto (§5.3 method mapping);
-// the v0.x slash forms are wire-incompatible, not merely outdated.
+// JSON-RPC method names of the A2A v1.0 JSON-RPC binding.
 const (
 	MethodSendMessage                      = "SendMessage"
 	MethodSendStreamingMessage             = "SendStreamingMessage"
@@ -39,8 +37,7 @@ var Methods = []string{
 	MethodDeleteTaskPushNotificationConfig, MethodGetExtendedAgentCard,
 }
 
-// TaskState is the lifecycle state of a task. Values serialize as the
-// proto enum names (ProtoJSON), e.g. "TASK_STATE_COMPLETED".
+// TaskState is the lifecycle state of a task.
 type TaskState string
 
 const (
@@ -65,9 +62,8 @@ func (s TaskState) Terminal() bool {
 	return false
 }
 
-// Interrupted reports whether the task is paused waiting on the client:
-// input or authentication. A message addressed to an interrupted task
-// resumes it; a stream closes when a task enters one of these states.
+// Interrupted reports whether the task is paused waiting on the client: input
+// or authentication.
 func (s TaskState) Interrupted() bool {
 	return s == TaskStateInputRequired || s == TaskStateAuthRequired
 }
@@ -105,15 +101,8 @@ type Message struct {
 	ReferenceTaskIDs []string       `json:"referenceTaskIds,omitempty"`
 }
 
-// Part is one unit of content in a message or artifact. Exactly one of
-// Text, Raw, URL, or Data is set; the JSON form is flat, with the set field
-// as the discriminator: {"text": "…"}, {"raw": "<base64>"}, {"url": "…"},
-// {"data": <any JSON value>}. Filename, MediaType and Metadata are
-// optional on every kind.
-//
-// Data is a pointer so that a JSON false or 0 data payload is
-// distinguishable from "no data part". A payload that encodes as null is
-// no data part.
+// Part is one unit of content in a message or artifact: exactly one of Text,
+// Raw, URL or Data, with the set field as the flat JSON discriminator.
 type Part struct {
 	Text      *string        `json:"text,omitempty"`
 	Raw       []byte         `json:"raw,omitempty"`
@@ -127,8 +116,7 @@ type Part struct {
 // TextPart builds a text part.
 func TextPart(s string) Part { return Part{Text: &s} }
 
-// DataPart builds a structured-data part. MediaType defaults to
-// application/json at the caller's discretion; the spec leaves it optional.
+// DataPart builds a structured-data part.
 func DataPart(v any) Part { return Part{Data: &v} }
 
 // URLPart builds a file-by-reference part.
@@ -158,15 +146,10 @@ func (p Part) Kind() string {
 }
 
 // Validate enforces the exactly-one-content rule the spec states for Part.
-// A data payload that encodes as null is no content: {"data":null} reads
-// back as absent.
 func (p Part) Validate() error {
 	return exactlyOne("part", "text, raw, url, data", p.Text != nil, p.Raw != nil, p.URL != nil, p.hasData())
 }
 
-// hasData reports whether Data encodes as something other than null. A
-// typed nil (a nil map, slice or pointer) and a Marshaler writing null
-// encode as null just as an untyped nil does.
 func (p Part) hasData() bool {
 	if p.Data == nil || *p.Data == nil {
 		return false
@@ -202,8 +185,6 @@ func (p *Part) UnmarshalJSON(b []byte) error {
 	if err := jsonexact.Unmarshal(b, &v); err != nil {
 		return err
 	}
-	// A present-but-null "raw" decodes to a nil slice, indistinguishable
-	// from absent; that is acceptable — null raw is not a valid part either.
 	*p = Part(v)
 	return p.Validate()
 }
@@ -241,8 +222,7 @@ type TaskStatus struct {
 }
 
 // Timestamp serializes as RFC 3339 in UTC with millisecond precision, the
-// form the spec shows ("2025-10-28T14:25:33.142Z"). Decoding accepts any
-// RFC 3339 string.
+// form the spec shows ("2025-10-28T14:25:33.142Z").
 type Timestamp struct{ time.Time }
 
 // Now returns the current time as a Timestamp, truncated to milliseconds so
@@ -301,7 +281,7 @@ type TaskArtifactUpdateEvent struct {
 
 // StreamResponse is the streaming result and push-notification payload: an
 // object carrying exactly one of task / message / statusUpdate /
-// artifactUpdate. Construct with one field set; Validate rejects the rest.
+// artifactUpdate.
 type StreamResponse struct {
 	Task           *Task                    `json:"task,omitempty"`
 	Message        *Message                 `json:"message,omitempty"`
@@ -315,10 +295,6 @@ func (r StreamResponse) Validate() error {
 		r.Task != nil, r.Message != nil, r.StatusUpdate != nil, r.ArtifactUpdate != nil)
 }
 
-// exactlyOne returns nil when precisely one of the set flags is set,
-// and otherwise the error naming what and its alternatives. It
-// replaces the two verbatim copies of this shape in Part.Validate and
-// StreamResponse.Validate.
 func exactlyOne(what, alternatives string, set ...bool) error {
 	n := 0
 	for _, s := range set {
@@ -375,8 +351,7 @@ type ListTasksRequest struct {
 	IncludeArtifacts     *bool      `json:"includeArtifacts,omitempty"`
 }
 
-// ListTasksResponse is the result of ListTasks. Tasks is never null on the
-// wire: an empty page encodes as [].
+// ListTasksResponse is the result of ListTasks.
 type ListTasksResponse struct {
 	Tasks         []Task `json:"tasks"` //gofastr:required-array
 	NextPageToken string `json:"nextPageToken"`
@@ -398,16 +373,12 @@ type SubscribeToTaskRequest struct {
 }
 
 // AuthenticationInfo tells the agent how to authenticate to a push URL.
-// Scheme "Bearer" or "Basic" become an Authorization header built from
-// Credentials verbatim; other schemes are stored and ignored on send.
 type AuthenticationInfo struct {
 	Scheme      string `json:"scheme"`
 	Credentials string `json:"credentials,omitempty"`
 }
 
 // PushNotificationConfig is a webhook the agent notifies about one task.
-// It is both the params object of CreateTaskPushNotificationConfig and the
-// result of the create/get calls.
 type PushNotificationConfig struct {
 	Tenant         string              `json:"tenant,omitempty"`
 	ID             string              `json:"id,omitempty"`
@@ -435,14 +406,14 @@ type ListTaskPushNotificationConfigsRequest struct {
 }
 
 // ListTaskPushNotificationConfigsResponse is the result of
-// ListTaskPushNotificationConfigs. Configs is never null on the wire.
+// ListTaskPushNotificationConfigs.
 type ListTaskPushNotificationConfigsResponse struct {
 	Configs       []PushNotificationConfig `json:"configs"` //gofastr:required-array
 	NextPageToken string                   `json:"nextPageToken,omitempty"`
 }
 
 // DeleteTaskPushNotificationConfigRequest is the params object of
-// DeleteTaskPushNotificationConfig. The result is an empty object.
+// DeleteTaskPushNotificationConfig.
 type DeleteTaskPushNotificationConfigRequest struct {
 	Tenant string `json:"tenant,omitempty"`
 	TaskID string `json:"taskId"`

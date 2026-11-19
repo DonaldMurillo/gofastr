@@ -1,0 +1,72 @@
+primitive: migrate.lock
+summary: The cross-process migration lock of core/migrate - a Postgres advisory lock or a fenced SQLite lease row, held on one pinned connection - and the SQLite lease the seed runner shares.
+code:
+  - core/migrate/lock.go
+docs:
+  - framework/docs/content/migrations.md
+invariants:
+  - id: lock-keys-are-frozen
+    rule: AdvisoryLockKey and SeedAdvisoryLockKey keep their values across releases and differ from each other.
+    enforced_by:
+      - test: core/migrate.TestSweepMigrateLockKeysAreFrozen
+      - test: core/migrate.TestDistinctLockKeysForDdlAndSeed
+  - id: lock-runs-on-the-pinned-connection
+    rule: fn runs on the one connection that holds the lock, a nil db running fn(nil), so the lock works on a one-connection pool.
+    enforced_by:
+      - test: core/migrate.TestWithAdvisoryLock_NilDBStillRunsFn
+      - test: core/migrate.TestWithAdvisoryLock_PostgresLockUnlockOrder
+      - test: core/migrate.TestPoolOneRunKeepsLease
+  - id: postgres-wait-honors-ctx
+    rule: On Postgres the lock polls pg_try_advisory_lock and returns once ctx is done instead of blocking in pg_advisory_lock.
+    enforced_by:
+      - test: core/migrate.TestWithAdvisoryLock_PostgresRetriesUntilAcquired
+      - test: core/migrate.TestWithAdvisoryLock_PostgresCtxCancelWhileWaiting
+      - test: core/migrate.TestPG_AdvisoryLockCtxCancelWhileWaiting
+  - id: unlock-always-releases
+    rule: The unlock runs on a background context, and a connection whose unlock fails is retired so its session ends and releases the lock.
+    enforced_by:
+      - test: core/migrate.TestUnlockAfterCancelDuringFn
+      - test: core/migrate.TestPG_LockReleasedAfterAbortedNoTxMigration
+  - id: lease-is-fenced
+    rule: A SQLite lease holder renews and releases only the row whose expiry it last wrote, so a holder whose lease expired and was taken cannot extend or delete the new holder's row.
+    enforced_by:
+      - test: core/migrate.TestStaleLeaseCannotTouchNewer
+      - test: core/migrate.TestStaleReleaseKeepsNewerRow
+  - id: heartbeat-keeps-the-lease
+    rule: AcquireSQLiteLease renews its row every third of the lease until release, so work longer than the lease keeps it.
+    enforced_by:
+      - test: core/migrate.TestSweepMigrateHeartbeatOutlivesTheLease
+decisions:
+  - id: poll-not-block
+    date: 2026-11-19
+    status: accepted
+    decision: The Postgres lock polls pg_try_advisory_lock every 200ms.
+    rejected:
+      - option: Block in pg_advisory_lock.
+        why: lib/pq does not interrupt it on context cancellation, so a stuck holder would hang every other boot.
+    upholds: [postgres-wait-honors-ctx]
+  - id: fence-on-expiry
+    date: 2026-11-19
+    status: accepted
+    decision: The SQLite lease is fenced on the expires_at its holder last wrote.
+    rejected:
+      - option: A holder token column.
+        why: It needs a schema change to every existing lock table, and an older binary taking the row in a rolling deploy would leave the previous token in place.
+    upholds: [lease-is-fenced]
+  - id: separate-seed-key
+    date: 2026-11-19
+    status: accepted
+    decision: Seeding takes its own advisory key.
+    rejected:
+      - option: Seed under the migration lock.
+        why: A replica seeding would hold back every other replica's DDL, and the reverse.
+    upholds: [lock-keys-are-frozen]
+  - id: migrate-renews-between-migrations
+    date: 2026-11-19
+    status: accepted
+    decision: The migration lease is renewed on the pinned connection between migrations, while the seed lease uses AcquireSQLiteLease's heartbeat through the pool.
+    rejected:
+      - option: A pool heartbeat for the migration lease too.
+        why: On a one-connection pool the heartbeat waits for the very connection the run holds, so nothing renewed and the lease expired mid-run.
+    revisit_if: A single migration must run longer than the lease.
+    upholds: [lock-runs-on-the-pinned-connection]

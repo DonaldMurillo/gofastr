@@ -1,0 +1,17 @@
+primitive: migrate.ensuredb
+summary: EnsureDatabase, which creates a missing Postgres database before the first migration and does nothing for any other target.
+code:
+  - core/migrate/ensure.go
+docs:
+  - framework/docs/content/migrations.md
+invariants:
+  - id: ensure-creates-once
+    rule: EnsureDatabase does nothing for a target that is not Postgres, connects to the postgres maintenance database for the URL and keyword DSN forms, retries the first pings, creates the database with its name's case kept only when pg_database lacks it, and treats a lost creation race (42P04, or 23505 with the database now present) as already there.
+    enforced_by:
+      - test: core/migrate.TestEnsureDatabase_SQLiteNoop
+      - test: core/migrate.TestPostgresAdminDSN_URLForm
+      - test: core/migrate.TestPostgresAdminDSN_KeywordForm
+      - test: core/migrate.TestSweepMigrateEnsureRidesOutAStartingServer
+      - test: core/migrate.TestEnsureDatabaseKeepsNameCase
+      - test: core/migrate.TestCreateDatabaseRaceSucceeds
+      - test: core/migrate.TestCreateDatabaseUniqueRace

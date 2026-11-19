@@ -13,36 +13,27 @@ import (
 )
 
 // Endpoint is one entry of the endpoints section: a custom route on an
-// entity, served by a typed handler the entry links to. `gofastr generate`
-// reads the handler's input and output types from the Go source and writes
-// the registration, and the generated Go client, JS SDK and CLI each get a
-// typed call for it.
+// entity, served by the typed handler the entry links to.
 type Endpoint struct {
-	// Name is the endpoint's snake_case name. The generated calls are named
-	// after it: RefundOrder in Go, refundOrder in JS, refund-order in the
-	// CLI.
+	// Name is the endpoint's snake_case name.
 	Name string
 	// Entity is the entity the route hangs under.
 	Entity string
 	// Method is the HTTP method, upper case.
 	Method string
-	// Path is relative to the entity's route: "{id}/refund" on orders
-	// serves /orders/{id}/refund.
+	// Path is relative to the entity's route, such as "{id}/refund".
 	Path string
-	// Handler links the Go handler: a file in the entities package and the
-	// func or var in it, "entities/refunds.go#RefundOrder".
+	// Handler links the Go handler, "entities/refunds.go#RefundOrder".
 	Handler string
 	// Description is one line of prose for docs, OpenAPI and the MCP tool.
 	Description string
 	// MCP also registers the endpoint as an MCP tool.
 	MCP bool
 	// Public serves callers with no session, over HTTP and as an MCP tool.
-	// Without it both answer only a signed-in caller.
 	Public bool
 }
 
-// HandlerFile is the linked file, slash-separated and relative to the
-// settings file.
+// HandlerFile is the linked file, relative to the settings file.
 func (e Endpoint) HandlerFile() string {
 	file, _, _ := strings.Cut(e.Handler, "#")
 	return file
@@ -74,9 +65,7 @@ var (
 	goExportedRe    = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
 )
 
-// Endpoints decodes the endpoints section, nil when the file has none.
-// Every key is checked: an entry lands in generated Go, so a value outside
-// its shape is refused here rather than escaped later.
+// Endpoints decodes and checks the endpoints section, or returns nil.
 func (f File) Endpoints() ([]Endpoint, error) {
 	section := f.Section("endpoints")
 	if section == nil {
@@ -85,10 +74,7 @@ func (f File) Endpoints() ([]Endpoint, error) {
 	return DecodeEndpoints(section, f.Path+": endpoints")
 }
 
-// DecodeEndpoints decodes an endpoints list, checking it the way the
-// settings file's section is checked. at names the list in errors. The
-// app spec's endpoints: key decodes through it, so an app spec holds
-// exactly what the settings section holds.
+// DecodeEndpoints decodes and checks an endpoints list named at in errors.
 func DecodeEndpoints(section *coreyaml.Node, at string) ([]Endpoint, error) {
 	if section.Kind != coreyaml.List {
 		return nil, fmt.Errorf("%s must be a list of endpoints", at)
@@ -149,8 +135,7 @@ func DecodeEndpoints(section *coreyaml.Node, at string) ([]Endpoint, error) {
 	return out, nil
 }
 
-// CheckEndpoints checks entries the way DecodeEndpoints checks a decoded
-// list: each entry's shape, then that no two share a name or a route.
+// CheckEndpoints checks each entry and that no two share a name or route.
 func CheckEndpoints(entries []Endpoint) error {
 	names := map[string]bool{}
 	routes := map[string]string{}
@@ -162,8 +147,6 @@ func CheckEndpoints(entries []Endpoint) error {
 	return nil
 }
 
-// checkEndpoint checks e against the endpoints before it, recording its
-// name and route in names and routes.
 func checkEndpoint(e Endpoint, names map[string]bool, routes map[string]string) error {
 	if err := e.Validate(); err != nil {
 		return err
@@ -180,8 +163,6 @@ func checkEndpoint(e Endpoint, names map[string]bool, routes map[string]string) 
 	return nil
 }
 
-// routeShape erases parameter names, so {id}/x and {order}/x compare
-// equal: the router cannot tell them apart.
 func routeShape(p string) string {
 	segs := strings.Split(p, "/")
 	for i, seg := range segs {
@@ -192,8 +173,7 @@ func routeShape(p string) string {
 	return strings.Join(segs, "/")
 }
 
-// Validate checks one entry's shape. Whether the entity exists and the
-// handler's types fit is the generator's check: it needs the source.
+// Validate checks one entry's shape.
 func (e Endpoint) Validate() error {
 	if !snakeNameRe.MatchString(e.Name) {
 		return fmt.Errorf("name %q must be snake_case: lower-case letters and digits, words joined by one underscore", e.Name)
@@ -222,8 +202,6 @@ func (e Endpoint) Validate() error {
 	return nil
 }
 
-// checkEndpointPath accepts a relative route under the entity: literal
-// segments of lower-case words, and {name} parameters, each named once.
 func checkEndpointPath(p string) error {
 	if p == "" || strings.HasPrefix(p, "/") || strings.HasSuffix(p, "/") {
 		return fmt.Errorf("path %q must be relative to the entity's route, with no leading or trailing slash: {id}/refund", p)
@@ -256,12 +234,9 @@ func checkEndpointPath(p string) error {
 	return nil
 }
 
-// endpointsHeader is the comment gofastr writes above the endpoints
-// section.
 const endpointsHeader = "# Written by gofastr generate app. Each entry links a typed handler in entities/."
 
-// FormatEndpoints renders entries as the endpoints section, the bytes
-// SetEndpoints writes.
+// FormatEndpoints renders entries as SetEndpoints writes the section.
 func FormatEndpoints(entries []Endpoint) string {
 	if len(entries) == 0 {
 		return ""
@@ -276,8 +251,6 @@ func formatEndpointsBody(entries []Endpoint) string {
 	var b strings.Builder
 	b.WriteString("endpoints:\n")
 	for _, e := range entries {
-		// Every string is quoted: a plain true, false or null reads back
-		// as a bool or nil, and true is a valid endpoint or entity name.
 		fmt.Fprintf(&b, "  - name: %s\n    entity: %s\n    method: %s\n    path: %s\n    handler: %s\n",
 			strconv.Quote(e.Name), strconv.Quote(e.Entity), e.Method, strconv.Quote(e.Path), strconv.Quote(e.Handler))
 		if e.Description != "" {
@@ -293,10 +266,8 @@ func formatEndpointsBody(entries []Endpoint) string {
 	return b.String()
 }
 
-// SetEndpoints writes entries as the endpoints section of the settings
-// file at p, the way SetUnmounted writes its section: the rest of the file
-// keeps its bytes, the section is replaced whole, and the result must read
-// back as exactly entries before it is written.
+// SetEndpoints replaces the endpoints section of the settings file at p with
+// entries, as SetUnmounted does for its section.
 func SetEndpoints(p string, entries []Endpoint) error {
 	if err := CheckEndpoints(entries); err != nil {
 		return err

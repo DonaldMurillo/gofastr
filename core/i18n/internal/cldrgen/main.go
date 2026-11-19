@@ -1,24 +1,7 @@
-// Command cldrgen writes core/i18n's CLDR table (cldr_tables.gen.go) from the
-// Unicode CLDR JSON release named by cldrVersion: for every locale CLDR
-// rates "modern", its date and time patterns, month, weekday, era and
-// day-period names, the flexible day periods a "B" pattern reads, GMT
-// formats, list patterns, number symbols (NaN included) and patterns, and
-// its cardinal plural rules; plus the plural rules of the languages CLDR
-// has rules for but no modern locale, each currency's standard fraction
-// digits, and each region's first day of the week. golang.org/x/text
-// carries currency symbols, but no date or list data, and its number,
-// plural and currency-digit data predate CLDR 47 (Arabic digits for ar,
-// grouping "1.234" for es, French's million read as "other", no fraction
-// digits for AMD), so this table holds the rest. It
-// also writes every plural rule's CLDR samples into
-// cldr_plural_samples_test.go, which checks the rules against them.
-//
-// Run from the repo root (go generate ./core/i18n/ runs it):
+// Command cldrgen writes core/i18n's CLDR table, cldr_tables.gen.go, and its
+// plural samples test from the CLDR JSON release named by cldrVersion.
 //
 //	go run ./core/i18n/internal/cldrgen
-//
-// Downloads are cached under the user cache dir, so a second run reads
-// no network. Bumping cldrVersion and re-running is the whole upgrade.
 package main
 
 import (
@@ -48,19 +31,13 @@ const (
 	baseURL     = "https://raw.githubusercontent.com/unicode-org/cldr-json/" + cldrVersion + "/cldr-json/"
 	outFile     = "core/i18n/cldr_tables.gen.go"
 	samplesFile = "core/i18n/cldr_plural_samples_test.go"
-	// maxBody caps one downloaded JSON file; the largest CLDR file read
-	// here is under 100 KB.
-	maxBody = 4 << 20
+	maxBody     = 4 << 20
 )
 
-// skeletons are the flexible formats the table keeps, in cldrLocale's
-// field order: year-month, month-day, weekday-month-day.
 var skeletons = []string{"yMMM", "MMMd", "MMMEd", "yMMMM"}
 
 var weekdays = []string{"sun", "mon", "tue", "wed", "thu", "fri", "sat"}
 
-// pluralCategories are the categories a rule set names, in the order
-// cldrLocale.plural holds them; "other" is what none of them match.
 var pluralCategories = []string{"zero", "one", "two", "few", "many"}
 
 var client = &http.Client{Timeout: 60 * time.Second}
@@ -142,8 +119,6 @@ func main() {
 	log.Printf("cldrgen: %d locales from CLDR %s → %s, %s", len(locales), cldrVersion, outFile, samplesFile)
 }
 
-// record is one locale's slice of CLDR. Its fields are cldrLocale's,
-// and render writes them by these names.
 type record struct {
 	date, time, dateTime [4]string // full, long, medium, short
 	skeletons            [4]string // yMMM, MMMd, MMMEd, yMMMM
@@ -168,9 +143,6 @@ type record struct {
 	periodNames          map[string]string
 }
 
-// period is one flexible day period: minutes from midnight it starts
-// at and ends before, and its abbreviated name. An "at" period (CLDR's
-// midnight, noon) starts and ends at the same minute.
 type period struct {
 	from, before int
 	name         string
@@ -308,7 +280,6 @@ type field struct {
 	value any
 }
 
-// fields lists the record in cldrLocale's field order.
 func (r *record) fields() []field {
 	return []field{
 		{"date", r.date[:]},
@@ -344,9 +315,6 @@ func (r *record) fields() []field {
 	}
 }
 
-// supplemental is the locale-independent CLDR data: plural rules by
-// CLDR id, the parent locale map, the day-period rule sets, currency
-// fraction digits and week data.
 type supplemental struct {
 	rules   map[string]pluralRules // lower-cased id → rules
 	ids     []string               // the rule ids, as CLDR spells them
@@ -356,19 +324,12 @@ type supplemental struct {
 		From   string `json:"_from"`
 		Before string `json:"_before"`
 	}
-	// currencyDigits is each currency CLDR lists a fraction for, by ISO
-	// 4217 code; defaultDigits is every other code's.
 	currencyDigits map[string]int
 	defaultDigits  int
-	// firstDay is each region whose week starts on another day than
-	// worldFirstDay, CLDR's world default (region 001); both are indexes
-	// into weekdays.
-	firstDay      map[string]int
-	worldFirstDay int
+	firstDay       map[string]int
+	worldFirstDay  int
 }
 
-// pluralRules is one id's rule set: each category's condition, and
-// each category's samples (other's last).
 type pluralRules struct {
 	conds   [5]string
 	samples [6]string
@@ -457,13 +418,8 @@ func loadSupplemental(cache string) (*supplemental, error) {
 	return sup, nil
 }
 
-// maxCurrencyDigits bounds a currency's fraction digits; CLDR's most is
-// four (CLF, UYW), and core/i18n caps fraction digits at 20.
 const maxCurrencyDigits = 20
 
-// loadCurrencyDigits reads CLDR's currencyData fractions: the standard
-// digits of each currency it lists, and DEFAULT's for every other code.
-// Cash digits are not read; Currency writes standard amounts.
 func (s *supplemental) loadCurrencyDigits(cache string) error {
 	var data struct {
 		Supplemental struct {
@@ -509,15 +465,10 @@ func currencyDigits(code, digits string) (int, error) {
 	return count, nil
 }
 
-// upperLetters reports whether s is exactly size ASCII capital letters:
-// an ISO 4217 code at 3, an ISO 3166 region at 2.
 func upperLetters(s string, size int) bool {
 	return len(s) == size && strings.Trim(s, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") == ""
 }
 
-// loadFirstDays reads CLDR's weekData firstDay. A key with an -alt-
-// suffix (GB-alt-variant) is a variant no plain region asks for, and
-// is skipped.
 func (s *supplemental) loadFirstDays(cache string) error {
 	var data struct {
 		Supplemental struct {
@@ -554,10 +505,6 @@ func (s *supplemental) loadFirstDays(cache string) error {
 	return nil
 }
 
-// chain is loc and its ancestors, most specific first: CLDR's explicit
-// parent where it names one (pt-AO → pt-PT, en-AU → en-001), else the
-// id with its last subtag cut. A parent of root falls back to the cut,
-// so zh-Hant reaches zh and sr-Latn reaches sr, whose rules they share.
 func (s *supplemental) chain(loc string) []string {
 	id := strings.ToLower(loc)
 	var out []string
@@ -576,9 +523,6 @@ func (s *supplemental) chain(loc string) []string {
 	return out
 }
 
-// pluralID is the rule id the locale's plurals come from: the nearest
-// on its chain, else root's ("und", where every count is other; kok has
-// no rules of its own).
 func (s *supplemental) pluralID(loc string) (string, bool) {
 	for _, id := range s.chain(loc) {
 		if _, ok := s.rules[id]; ok {
@@ -589,9 +533,6 @@ func (s *supplemental) pluralID(loc string) (string, bool) {
 	return "und", ok
 }
 
-// periodsFor is the locale's flexible day periods: its language's rule
-// set (the rule sets are kept by language) with the locale's own
-// abbreviated names.
 func (s *supplemental) periodsFor(loc string, names map[string]string) ([]period, error) {
 	var set map[string]struct {
 		At     string `json:"_at"`
@@ -644,7 +585,6 @@ func (s *supplemental) periodsFor(loc string, names map[string]string) ([]period
 	return out, nil
 }
 
-// minutes reads "HH:MM" (24:00 included) as minutes from midnight.
 func minutes(hm string) (int, error) {
 	h, m, ok := strings.Cut(hm, ":")
 	hh, err1 := strconv.Atoi(h)
@@ -655,8 +595,6 @@ func minutes(hm string) (int, error) {
 	return hh*60 + mm, nil
 }
 
-// usesFlexiblePeriod reports a "B" field outside quoted literal text in
-// any of the record's time patterns.
 func usesFlexiblePeriod(r *record) bool {
 	pats := append(append(append([]string{}, r.time[:]...), r.dateTime[:]...), r.skeletons[:]...)
 	for _, p := range pats {
@@ -697,8 +635,6 @@ type eras struct {
 	EraAbbr map[string]string `json:"eraAbbr"`
 }
 
-// dateTimeFormats holds the four combining patterns as strings and the
-// availableFormats object beside them, so it decodes through raw values.
 type dateTimeFormats map[string]string
 
 func (d *dateTimeFormats) UnmarshalJSON(b []byte) error {
@@ -749,8 +685,6 @@ func cacheDir() (string, error) {
 	return dir, os.MkdirAll(dir, 0o700)
 }
 
-// fetchJSON decodes one CLDR JSON file into v, from the cache when an
-// earlier run stored it.
 func fetchJSON(cache, rel string, v any) error {
 	local := filepath.Join(cache, filepath.FromSlash(rel))
 	b, err := os.ReadFile(local) //gofastr:allow(rootread) rel is a CLDR path this command builds from CLDR's own locale list
@@ -791,9 +725,6 @@ func download(url string) ([]byte, error) {
 	return b, nil
 }
 
-// render writes the table: each distinct record once, and every locale
-// pointing at its record, so the many regional locales that repeat
-// their parent cost one map entry.
 func render(locales []string, records []record, sup *supplemental, modern map[string]bool) ([]byte, error) {
 	var uniq []record
 	index := map[string]int{}
@@ -870,14 +801,10 @@ func render(locales []string, records []record, sup *supplemental, modern map[st
 	return format.Source(b.Bytes())
 }
 
-// weekdayConst spells an index into weekdays (Sunday first, as
-// time.Weekday counts) as its time constant.
 func weekdayConst(index int) string {
 	return "time." + time.Weekday(index).String()
 }
 
-// renderSamples writes every rule set's CLDR samples, by lower-cased id,
-// in the order zero, one, two, few, many, other.
 func renderSamples(sup *supplemental) ([]byte, error) {
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "// Code generated by core/i18n/internal/cldrgen from CLDR %s; DO NOT EDIT.\n\npackage i18n\n\n", cldrVersion)
