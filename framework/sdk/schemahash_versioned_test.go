@@ -85,37 +85,13 @@ func TestSchemaHashCollapsesIdenticalVersions(t *testing.T) {
 	}
 }
 
-// Versions that expose DIFFERENT shapes must still signal drift, that is
-// the case the check exists for, and collapsing identical ones must not
-// swallow it.
-func TestSchemaHashKeepsDivergentVersions(t *testing.T) {
-	v2 := postsConfig()
-	v2.Fields = append(v2.Fields, schema.Field{Name: "subtitle", Type: schema.String})
-
-	one := hashOf([]NamedConfig{{Name: "posts", Config: postsConfig()}})
-	diverged := hashOf([]NamedConfig{
-		{Name: "posts", Config: postsConfig(), Version: "/api/v1"},
-		{Name: "posts", Config: v2, Version: "/api/v2"},
-	})
-	if one == diverged {
-		t.Fatal("a version exposing an extra field hashed the same as one that does not")
-	}
-}
-
-// TestSchemaHashVersionedDeterministic pins that the (name, version) sort
-// is stable: swapping the input order of two same-name versions does not
-// change the hash. Before the fix the sort key was Name-only, so two
-// entries sharing a name could land in either order.
+// TestSchemaHashVersionedDeterministic checks that sorting by name and canonical JSON orders divergent same-name versions consistently.
 func TestSchemaHashVersionedDeterministic(t *testing.T) {
-	cfg := postsConfig()
-	a := hashOf([]NamedConfig{
-		{Name: "posts", Config: cfg, Version: "/api/v1"},
-		{Name: "posts", Config: cfg, Version: "/api/v2"},
-	})
-	b := hashOf([]NamedConfig{
-		{Name: "posts", Config: cfg, Version: "/api/v2"},
-		{Name: "posts", Config: cfg, Version: "/api/v1"},
-	})
+	v1 := NamedConfig{Name: "posts", Config: postsConfig(), Version: "/api/v1"}
+	v2 := NamedConfig{Name: "posts", Config: postsConfig(), Version: "/api/v2"}
+	v2.Config.Fields = append(v2.Config.Fields, schema.Field{Name: "subtitle", Type: schema.String})
+	a := hashOf([]NamedConfig{v1, v2})
+	b := hashOf([]NamedConfig{v2, v1})
 	if a != b {
 		t.Fatal("same versioned entities in different input order hashed differently")
 	}

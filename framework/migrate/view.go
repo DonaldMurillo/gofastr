@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"maps"
 	"slices"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	fwdb "github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -90,35 +92,35 @@ func (v View) ToEntity() *entity.Entity {
 
 // applyViews runs every view's Up at boot, a view after the views it
 // depends on.
-func applyViews(ctx context.Context, exec execQueryer, views []View, dialect Dialect) error {
+func applyViews(ctx context.Context, tx *sql.Tx, views []View, dialect Dialect) error {
 	ordered := topoSortViews(views)
 	dependents := viewDependents(ordered)
 	for _, v := range ordered {
 		if dialect == DialectPostgres {
-			stale, err := pgStaleViewKind(ctx, exec, v)
+			stale, err := pgStaleViewKind(ctx, tx, v)
 			if err != nil {
 				return fmt.Errorf("migrate view %s: %w", v.Name, err)
 			}
 			if v.Materialized || stale != "" {
 				for _, d := range slices.Backward(dependents[v.Name]) {
-					if err := pgDropView(ctx, exec, d); err != nil {
+					if err := pgDropView(ctx, tx, d); err != nil {
 						return fmt.Errorf("migrate view %s: drop dependent view %s: %w", v.Name, d.Name, err)
 					}
 				}
 			}
 			if stale != "" {
-				if _, err := exec.ExecContext(ctx, stale); err != nil {
+				if _, err := tx.ExecContext(ctx, stale); err != nil {
 					return fmt.Errorf("migrate view %s: drop the old kind: %w", v.Name, err)
 				}
 			}
 		}
 		if dialect == DialectPostgres && !v.Materialized {
-			if err := pgReplaceView(ctx, exec, v, dependents[v.Name]); err != nil {
+			if err := pgReplaceView(ctx, tx, v, dependents[v.Name]); err != nil {
 				return fmt.Errorf("migrate view %s: %w", v.Name, err)
 			}
 			continue
 		}
-		if _, err := exec.ExecContext(ctx, v.routine(dialect).Up); err != nil {
+		if _, err := tx.ExecContext(ctx, v.routine(dialect).Up); err != nil {
 			return fmt.Errorf("migrate view %s: %w", v.Name, err)
 		}
 	}
@@ -127,39 +129,37 @@ func applyViews(ctx context.Context, exec execQueryer, views []View, dialect Dia
 
 // pgReplaceView runs a plain Postgres view's CREATE OR REPLACE VIEW and, when
 // Postgres refuses it, drops the view and creates it again.
-func pgReplaceView(ctx context.Context, exec execQueryer, v View, dependents []View) error {
+func pgReplaceView(ctx context.Context, tx *sql.Tx, v View, dependents []View) error {
 	up, down := v.render(DialectPostgres)
-	if _, err := exec.ExecContext(ctx, "SAVEPOINT gofastr_view"); err != nil {
-		return err
-	}
-	_, replaceErr := exec.ExecContext(ctx, up)
-	if replaceErr == nil {
-		_, err := exec.ExecContext(ctx, "RELEASE SAVEPOINT gofastr_view")
-		return err
-	}
-	if _, err := exec.ExecContext(ctx, "ROLLBACK TO SAVEPOINT gofastr_view"); err != nil {
+	var replaceErr error
+	err := fwdb.InSavepoint(ctx, tx, func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, up); err != nil {
+			// Give the statement error its own identity for the retry check.
+			replaceErr = fmt.Errorf("%w", err)
+		}
 		return replaceErr
+	})
+	if err == nil || err != replaceErr || ctx.Err() != nil {
+		return err
 	}
-	recreate := func() error {
-		for _, d := range slices.Backward(dependents) {
-			if err := pgDropView(ctx, exec, d); err != nil {
+	return fwdb.InSavepoint(ctx, tx, func(ctx context.Context, tx *sql.Tx) error {
+		recreate := func() error {
+			for _, d := range slices.Backward(dependents) {
+				if err := pgDropView(ctx, tx, d); err != nil {
+					return err
+				}
+			}
+			if _, err := tx.ExecContext(ctx, down); err != nil {
 				return err
 			}
-		}
-		if _, err := exec.ExecContext(ctx, down); err != nil {
+			_, err := tx.ExecContext(ctx, strings.Replace(up, "CREATE OR REPLACE VIEW", "CREATE VIEW", 1))
 			return err
 		}
-		_, err := exec.ExecContext(ctx, strings.Replace(up, "CREATE OR REPLACE VIEW", "CREATE VIEW", 1))
-		return err
-	}
-	if err := recreate(); err != nil {
-		if _, rbErr := exec.ExecContext(ctx, "ROLLBACK TO SAVEPOINT gofastr_view"); rbErr != nil {
-			return fmt.Errorf("%w (dropping the view to recreate it also failed: %v; rolling back to the savepoint failed: %v)", replaceErr, err, rbErr)
+		if err := recreate(); err != nil {
+			return fmt.Errorf("%w (dropping the view to recreate it also failed: %v)", replaceErr, err)
 		}
-		return fmt.Errorf("%w (dropping the view to recreate it also failed: %v)", replaceErr, err)
-	}
-	_, err := exec.ExecContext(ctx, "RELEASE SAVEPOINT gofastr_view")
-	return err
+		return nil
+	})
 }
 
 // pgLiveViewKind returns "v", "m", or "" for the live relation named like v.

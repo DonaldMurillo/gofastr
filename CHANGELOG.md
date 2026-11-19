@@ -25,6 +25,10 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Postgres view replacement rolls back even when the boot context is
+  cancelled.** It runs through `db.InSavepoint`, and boot drops and
+  recreates a plain view only after the failed replace rolled back and
+  released cleanly.
 - **SDK reference pages match the mounted HTTP API.** Record and
   custom-endpoint rows use the paths the server mounts, MCP-only
   endpoints are left out, filter examples use values the server accepts,
