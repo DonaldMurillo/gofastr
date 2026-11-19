@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -29,7 +30,11 @@ func TestSweepOpenAPIFieldSchemaAgreesWithJSONSchema(t *testing.T) {
 			}
 		}
 	}
-	for _, values := range [][]string{nil, {}} {
+	for _, c := range []struct {
+		values   []string
+		wantJSON string
+	}{{nil, "null"}, {[]string{}, "[]"}} {
+		values := c.values
 		f := schema.Field{Name: "f", Type: schema.Enum, Values: values}
 		oa := FieldToSchema(f)
 		js := schema.JSONSchema([]schema.Field{f})["properties"].(map[string]any)["f"].(map[string]any)
@@ -38,6 +43,9 @@ func TestSweepOpenAPIFieldSchemaAgreesWithJSONSchema(t *testing.T) {
 		}
 		if e, ok := js["enum"].([]string); !ok || len(e) != 0 {
 			t.Errorf("Values %#v: JSONSchema enum = %#v, want an empty list", values, js["enum"])
+		}
+		if b, err := json.Marshal(js["enum"]); err != nil || string(b) != c.wantJSON {
+			t.Errorf("Values %#v: JSONSchema enum encodes as %s (%v), want %s", values, b, err, c.wantJSON)
 		}
 		if oa["type"] != js["type"] {
 			t.Errorf("Values %#v: type %v in OpenAPI, %v in JSONSchema", values, oa["type"], js["type"])
