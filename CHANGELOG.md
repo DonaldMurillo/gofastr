@@ -25,6 +25,17 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **The theme editor previews every gallery component.** FormRepeater,
+  Repeater and PipelineImage were missing from its preview, and its
+  StepWizard submitted to a route the editor does not serve; the wizard
+  is now a static preview. Gallery overlays (modal, drawer, bottom
+  sheet, mobile sidebar) stay on their own showcase pages instead of
+  loading on every page. `gallery.MountDemoWidgets` now takes a
+  `gallery.DemoWidgetPages` with one page list per overlay.
+- **The optimistic-delete gallery example shows a ConfirmAction that
+  works when copied.** The printed sample now fills every required field
+  and mounts with `widget.MountBuilder`, and the gallery guides say
+  which entries are wiring references rather than drop-in components.
 - **A malformed `.env` file now stops `NewApp`.** The docs promised a
   malformed file fails fast with its name and line number, but `NewApp`
   dropped the load error and booted without the file's values. It now

@@ -136,7 +136,7 @@ re-render.
   **[Print documents](/docs/print)**: print-friendly HTML and PDF.
   **[Runtime modules](/docs/runtime-minification)**: split per feature, so a
   page ships only the JS it uses.
-- Browse every component live in the **[gallery](/components/)**.
+- Browse component demos and wiring notes in the **[gallery](/components/)**.
 - **[Porting an app with an existing frontend](/docs/porting)**: the escape
   hatch for a foreign DOM contract — html/template screens plus
   `static.Mount` for a compiled design system. Possible, deliberately

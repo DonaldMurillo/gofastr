@@ -590,7 +590,9 @@ Mobile detail should keep identity, price, availability, and the primary
 action close to the first useful image. Do not make the user traverse a full
 desktop gallery before reaching the action.
 
-**Live proof:** [Gallery](/components/gallery), [Lightbox](/components/lightbox), and [FilterToolbar](/components/filtertoolbar) in the component gallery.
+**Live proof:** [FilterToolbar](/components/filtertoolbar) in the component gallery.
+
+For wiring notes, see [Gallery](/components/gallery) and [Lightbox](/components/lightbox).
 
 ---
 
@@ -637,7 +639,7 @@ missing.
 
 - [Layouts](layouts.md) — the primitive these page shapes are built from.
 - [UI capability map](ui-capability-map.md) chooses the state, mutation, delivery, and scaling boundaries before a page recipe.
-- [UI components index](ui-new-components.md) lists every constructor and live gallery route.
+- [UI components index](ui-new-components.md) lists constructors and gallery routes.
 - [Runtime contract](runtime-contract.md) defines SSR, RPC islands, and SSE.
 - [Signal store](signal-store.md) covers typed client projection and derived state.
 - [Optimistic UI](optimistic-ui.md) for the mutation lifecycle and how optimistic recipes compose into each page grammar.

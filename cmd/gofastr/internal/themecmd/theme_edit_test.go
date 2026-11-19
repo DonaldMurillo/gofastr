@@ -649,6 +649,18 @@ func TestThemeEditGalleryPreviewRenders(t *testing.T) {
 	if !strings.Contains(html, `data-cui-comp="ui-layout"`) {
 		t.Errorf("preview does not use ui.Stack for its rhythm:\n%s", clitest.Truncate(html, 400))
 	}
+	for _, marker := range []string{
+		`action="/__gallery/demo-form?demo=formrepeater"`,
+		`action="/__gallery/demo-form?demo=repeater"`,
+		"BlurHash decoded to a placeholder",
+	} {
+		if !strings.Contains(html, marker) {
+			t.Errorf("preview is missing %q", marker)
+		}
+	}
+	if !strings.Contains(html, `<div inert=""><form action="/forms/wizard"`) {
+		t.Error("StepWizard preview needs an inert container around the form")
+	}
 	// Each demo sits in a plain block box after its name, as on the docs
 	// site, so a lone button keeps its own width instead of stretching
 	// across the stack's column.
@@ -945,6 +957,24 @@ func TestThemeEditServeHTTPDelegatesPreviewToHost(t *testing.T) {
 	// X-Frame-Options must be stripped so the iframe can embed it.
 	if rec.Header().Get("X-Frame-Options") != "" {
 		t.Errorf("preview page still carries X-Frame-Options: %q", rec.Header().Get("X-Frame-Options"))
+	}
+	cookies := rec.Result().Cookies()
+	for _, page := range []string{"/preview", "/other"} {
+		req := httptest.NewRequest(http.MethodGet, "/__gofastr/widgets?page="+page, nil)
+		req.Host = "127.0.0.1:0"
+		for _, cookie := range cookies {
+			req.AddCookie(cookie)
+		}
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("widget catalog for %s: status %d", page, rec.Code)
+		}
+		for _, name := range []string{"site-demo-modal", "site-demo-drawer", "site-demo-bottomsheet", "ui-sidebar-drawer"} {
+			if got := strings.Contains(rec.Body.String(), `"name":"`+name+`"`); got != (page == "/preview") {
+				t.Errorf("widget catalog for %s contains %s = %v", page, name, got)
+			}
+		}
 	}
 }
 

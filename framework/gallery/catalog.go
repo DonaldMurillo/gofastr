@@ -1799,10 +1799,9 @@ ui.SortableList(ui.SortableListConfig{
 }
 
 var noteOnlySlugs = map[string]bool{
-	"datatable":    true,
-	"formrepeater": true, "repeater": true,
-	"gallery": true, "lightbox": true, "commandpalette": true,
-	"globalsearch": true, "notificationbell": true, "pipelineimage": true,
+	"datatable": true,
+	"gallery":   true, "lightbox": true, "commandpalette": true,
+	"globalsearch": true, "notificationbell": true,
 	"confirmaction": true,
 }
 

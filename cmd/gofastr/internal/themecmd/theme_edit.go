@@ -323,7 +323,10 @@ func (s *ThemeEditServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			routes := router.New()
 			routes.Use(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{}))
 			routes.Use(retired.Middleware(dev.Enabled))
-			gallery.MountDemoWidgets(routes, "/preview")
+			pages := []string{"/preview"}
+			gallery.MountDemoWidgets(routes, gallery.DemoWidgetPages{
+				Modal: pages, Drawer: pages, BottomSheet: pages, Sidebar: pages,
+			})
 			gallery.MountDemoFormRoute(routes, func(string) string { return "/preview" })
 			s.Host.Mount(routes)
 			s.previewHandler = routes
@@ -656,10 +659,7 @@ func (f *frameFriendlyWriter) serveHost(host http.Handler, r *http.Request) {
 	host.ServeHTTP(f, r)
 }
 
-// GalleryPreviewScreen is the component the UIHost renders at /preview. It
-// renders the same gallery demos used by /components/<slug>, plus the contrast
-// probes. The page composes previewChromeCSS and framework/ui
-// primitives.
+// GalleryPreviewScreen renders the gallery previews and contrast probes at /preview.
 type GalleryPreviewScreen struct{}
 
 func (g *GalleryPreviewScreen) ScreenTitle(ctx context.Context) string { return "Theme Preview" }
@@ -672,12 +672,17 @@ func (g *GalleryPreviewScreen) Render() render.HTML {
 			if gallery.IsNoteOnly(entry.Slug) || entry.Demo == nil {
 				continue
 			}
+			name, demo := entry.Name, entry.Demo()
+			if entry.Slug == "stepwizard" {
+				name += " (static preview)"
+				demo = html.Div(html.DivConfig{ExtraAttrs: html.Attrs{"inert": ""}}, demo)
+			}
 			// The demo sits in a block box, as on the docs site: a demo
 			// that returns a lone button keeps the button's own width
 			// instead of being stretched across the stack's column.
 			demos = append(demos, ui.Stack(ui.StackConfig{Gap: ui.GapSM},
-				ui.Muted(render.Text(entry.Name)),
-				html.Div(html.DivConfig{}, entry.Demo()),
+				ui.Muted(render.Text(name)),
+				html.Div(html.DivConfig{}, demo),
 			))
 		}
 		if len(demos) == 0 {
