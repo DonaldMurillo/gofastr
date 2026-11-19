@@ -17,7 +17,7 @@ invariants:
     rule: List returns every registered copy sorted by Source, then Path.
     enforced_by:
       - test: core/unmounted.TestListIsSortedBySource
-      - test: core/unmounted.TestSweepUnmountedListSortsSourceBeforePath
+      - test: core/unmounted.TestListIsSortedBySource
 decisions:
   - id: binary-record-apart-from-settings-record
     date: 2026-11-19
