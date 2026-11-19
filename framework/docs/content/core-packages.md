@@ -40,6 +40,10 @@ one error envelope every route shares, crud's included:
 absent with no violations.
 
 `Bind` applies header, query, path, then JSON values in that priority order.
+Its JSON body goes through `UnmarshalStrict` (below), so a duplicate or
+case-folded key is refused in any object at any depth and into a map
+destination too, exactly as `ToolAdapter` refuses it for the same
+handler's MCP twin.
 Its destination must be a non-nil pointer; an invalid destination returns
 an error rather than panicking.
 A present higher-priority value replaces an earlier value, including a JSON

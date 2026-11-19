@@ -161,6 +161,7 @@ var ownedPackages = []string{
 	"core/netguard",
 	"core/upload",
 	"core/static",
+	"core/handler",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",

@@ -41,18 +41,13 @@ type ResponseType interface {
 	WriteBody(w http.ResponseWriter) error
 }
 
-// Respond writes out the response based on out's type:
-//   - nil, or a nil pointer → 204 No Content (a nil slice or map is
-//     still JSON "null", 200: a list handler's empty result is content)
-//   - ResponseType → delegates to the custom type
-//   - any other value → JSON serialization, 200 OK
+// Respond answers nil or a nil pointer 204, a ResponseType with its own
+// type and body, and any other value, a nil slice or map included, as
+// JSON with 200.
 func Respond(w http.ResponseWriter, r *http.Request, out any) {
 	respond(w, r, out, nil)
 }
 
-// respond is Respond that sets *started (when non-nil) just before the
-// status goes out, so HandlerAdapter's recover knows a later panic (in a
-// ResponseType's WriteBody) came after the response began.
 func respond(w http.ResponseWriter, r *http.Request, out any, started *bool) {
 	begin := func(code int) {
 		if started != nil {
@@ -60,17 +55,11 @@ func respond(w http.ResponseWriter, r *http.Request, out any, started *bool) {
 		}
 		w.WriteHeader(code)
 	}
-	// A Handler[I, *Out] returning (nil, nil) hands over a typed nil,
-	// which is not == nil inside an any: it is still no content, not a
-	// 200 "null".
 	if isNilValue(out) {
 		begin(http.StatusNoContent)
 		return
 	}
 	if rt, ok := out.(ResponseType); ok {
-		// Caller-supplied Content-Type is sanitized (C0/DEL removed)
-		// before it reaches the ResponseWriter so it cannot smuggle a
-		// new header line or terminal-control mischief.
 		ct := textsafe.SanitizeControlBytes(rt.ContentType())
 		if ct == "" {
 			ct = "application/octet-stream"
@@ -82,8 +71,6 @@ func respond(w http.ResponseWriter, r *http.Request, out any, started *bool) {
 		return
 	}
 
-	// Default: JSON, encoded before the status goes out: a value JSON
-	// cannot encode (NaN, a channel) is a 500, not an empty 200.
 	body, err := json.Marshal(out)
 	if err != nil {
 		WriteError(w, r, err)
@@ -95,10 +82,6 @@ func respond(w http.ResponseWriter, r *http.Request, out any, started *bool) {
 	_, _ = w.Write(append(body, '\n'))
 }
 
-// isNilValue reports whether out is nil or a nil pointer or interface
-// held in an any. A nil slice or map is deliberately not "no content":
-// a list handler that found no rows returns one, and turning its 200 into
-// a bodyless 204 would break every client that parses the body.
 func isNilValue(out any) bool {
 	if out == nil {
 		return true

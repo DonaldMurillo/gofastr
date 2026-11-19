@@ -25,6 +25,14 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **handler: `Bind` refuses duplicate and case-folded keys at every
+  depth.** The JSON body was checked at the top level of a struct only,
+  so `{"user":{"role":"member","role":"admin"}}` bound last-wins, and a
+  map destination took `{"name":"a","name":"c"}`, while `ToolAdapter`
+  refused both for the same handler's MCP twin. `Bind` now decodes
+  through `UnmarshalStrict`; a body with such keys answers 400
+  `json_duplicate_key` or `json_folded_keys`.
+  ([core packages](framework/docs/content/core-packages.md))
 - **webhook: `Subscribe` waits at most 3 seconds on DNS.** The
   registration-time URL check looked the host up with no deadline, so a
   slow or unanswering DNS server held `Subscribe` for as long as the
