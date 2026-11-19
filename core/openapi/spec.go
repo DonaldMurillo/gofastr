@@ -16,15 +16,8 @@ type Spec struct {
 	security []map[string][]string
 	schemes  map[string]map[string]any
 
-	// RequestView optionally produces the spec served to ONE request.
-	// The framework's entity spec sets it so the auth-gated serving paths
-	// (Handler, GatedHandler, and DocsHandler's gated nested spec route)
-	// omit every entity the caller holds no read grant for — the same
-	// per-request read-scope filter /api/llm.md runs; an authenticated caller who
-	// would only ever see 401/403 on an entity's rows never learns its
-	// name, paths, or columns from the spec (2026-09-05 red-probe
-	// round). PublicHandler — the WithPublicOpenAPI full-disclosure
-	// opt-in — deliberately ignores it.
+	// RequestView, when set, returns the spec the gated handlers serve to
+	// one request; PublicHandler ignores it.
 	RequestView func(*http.Request) *Spec
 }
 
@@ -41,10 +34,7 @@ func NewSpec(title, version string) *Spec {
 	}
 }
 
-// SetDescription sets info.description: what the API is for. OpenAPI
-// 3.1 reads it as CommonMark; DocsHandler's page shows it as plain text,
-// one paragraph per blank-line-separated block. An empty string removes
-// it.
+// SetDescription sets info.description; an empty string removes it.
 func (s *Spec) SetDescription(description string) {
 	if description == "" {
 		delete(s.info, "description")
@@ -53,11 +43,16 @@ func (s *Spec) SetDescription(description string) {
 	s.info["description"] = description
 }
 
-// withInheritedInfo returns s with every info field base set that s did
-// not, so a per-request view (RequestView) keeps the description and
-// anything else the host set on the spec it serves. It returns a shallow
-// copy with its own info map: a RequestView may hand back a spec it
-// shares between requests, and writing into that map would race.
+func (s *Spec) viewFor(r *http.Request) *Spec {
+	if s.RequestView == nil {
+		return s
+	}
+	if v := s.RequestView(r); v != nil {
+		return v.withInheritedInfo(s)
+	}
+	return s
+}
+
 func (s *Spec) withInheritedInfo(base *Spec) *Spec {
 	if s == base || s.info == nil {
 		return s
@@ -73,11 +68,8 @@ func (s *Spec) withInheritedInfo(base *Spec) *Spec {
 	return &c
 }
 
-// AddServer registers a server URL with an optional description. URLs
-// that don't begin with a relative path ("/", "./") or one of http(s)/
-// ws(s) are dropped: a `javascript:`/`data:`/`file:` entry in a publicly
-// served spec turns the docs page into a phishing platform when a viewer
-// clicks the "Servers" picker.
+// AddServer registers a server URL, dropping one that is neither relative
+// nor http, https, ws or wss.
 func (s *Spec) AddServer(url, description string) {
 	if !isSafeServerURL(url) {
 		return
@@ -93,7 +85,6 @@ func isSafeServerURL(u string) bool {
 	if u == "" {
 		return false
 	}
-	// Relative URLs (path-only) are fine. They inherit the docs origin.
 	if strings.HasPrefix(u, "/") || strings.HasPrefix(u, "./") || strings.HasPrefix(u, "../") {
 		return true
 	}
@@ -109,25 +100,19 @@ func isSafeServerURL(u string) bool {
 			}
 		}
 		if c == '/' || c == '?' || c == '#' {
-			// No scheme delimiter before path-ish char. Treat as relative.
 			return true
 		}
 	}
-	// No colon at all. Treat as a relative path.
 	return true
 }
 
-// AddPath registers a path + method with an Operation.
-// Path parameters in GoFastr format (/users/:id) are automatically converted
-// to OpenAPI format (/users/{id}) and path parameters are added to the
-// operation.
+// AddPath registers op at method and path, writing :id segments as {id}
+// and declaring each path parameter op lacks. It panics when the method
+// and path are already registered.
 func (s *Spec) AddPath(method, path string, op Operation) {
 	openapiPath := toOpenAPIPath(path)
 	pathParams := extractPathParams(path)
 
-	// Add path params to the operation if not already present. A query
-	// parameter of the same name (?fields= beside a {fields} key segment)
-	// is a different parameter.
 	existing := pathParamNames(op.Parameters)
 	for _, p := range pathParams {
 		if _, found := existing[p]; !found {
@@ -151,11 +136,8 @@ func (s *Spec) AddPath(method, path string, op Operation) {
 	s.paths[openapiPath][method] = op.ToMap()
 }
 
-// AddSchema registers a reusable schema component. Registering the same
-// name twice panics: a collision means two entities (or two versions of
-// one entity) produced the same component key, and silent overwrite would
-// leave $ref pointing at the wrong schema. The caller must disambiguate
-// before building the spec (e.g. via a version slug in the component name).
+// AddSchema registers a reusable schema component and panics on a name
+// already registered.
 func (s *Spec) AddSchema(name string, schema map[string]any) {
 	if _, exists := s.schemas[name]; exists {
 		panic(fmt.Sprintf("openapi: AddSchema: component %q is already registered — schema component names must be unique across entities and versions", name))
@@ -219,23 +201,16 @@ func (s *Spec) Build() map[string]any {
 	return doc
 }
 
-// toOpenAPIPath converts path params to OpenAPI style ({name}).
-// Both GoFastr style (:name) and Go 1.22 style ({name}) are accepted;
-// the result is always OpenAPI {name} style.
 func toOpenAPIPath(p string) string {
 	parts := strings.Split(p, "/")
 	for i, part := range parts {
 		if strings.HasPrefix(part, ":") {
-			// :name → {name}
 			parts[i] = "{" + part[1:] + "}"
 		}
-		// {name} is already OpenAPI style; no transformation needed.
 	}
 	return strings.Join(parts, "/")
 }
 
-// extractPathParams returns the parameter names from path segments.
-// Both GoFastr style (:id) and Go 1.22 style ({id}) are recognised.
 func extractPathParams(path string) []string {
 	var params []string
 	for part := range strings.SplitSeq(path, "/") {
@@ -248,7 +223,6 @@ func extractPathParams(path string) []string {
 	return params
 }
 
-// pathParamNames returns the set of path parameter names already present.
 func pathParamNames(params []map[string]any) map[string]struct{} {
 	names := make(map[string]struct{}, len(params))
 	for _, p := range params {
