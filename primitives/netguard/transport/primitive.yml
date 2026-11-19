@@ -13,6 +13,7 @@ invariants:
       - test: core/netguard.TestSweepCheckOutboundURLRefusals
       - test: battery/webhook.TestSSRF_AllowPrivateStillEnforcesScheme
       - test: core/a2a.TestSweepInternalHostNamesRefused
+      - test: core/webbotauth.TestCheckHostPublic_RefusesInternal
   - id: registration-lookup-bounded
     rule: CheckOutboundURL's DNS lookup ends after 3s, and a lookup that fails or times out passes, leaving the verdict to the dial-time guard.
     enforced_by:
@@ -53,6 +54,14 @@ decisions:
       - option: Keep a copy per surface.
         why: The copies had drifted, and webhook's registration lookup had no deadline while a2a's had 3s.
     upholds: [outbound-url-check, registration-lookup-bounded, round-tripper-shapes]
+  - id: one-guarded-transport
+    date: 2026-11-19
+    status: accepted
+    decision: core/webbotauth's guardedTransport wraps GuardedTransport and adds only its 3s dial, TLS and header timeouts, and its internal-name check calls IsInternalName; its own dial Control hook, proxy drop and name list are removed.
+    rejected:
+      - option: Keep webbotauth's own transport.
+        why: It was a third copy of the dial-time guard GuardedTransport replaced in core/a2a and battery/webhook.
+    upholds: [dial-time-check, guarded-transport-uses-no-proxy]
   - id: no-proxy-under-the-guard
     date: 2026-11-19
     status: accepted

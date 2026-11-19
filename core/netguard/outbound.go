@@ -40,8 +40,7 @@ func CheckOutboundURL(raw, prefix string, allowPrivate bool) error {
 	if host == "" {
 		return fmt.Errorf("%s: URL missing host", prefix)
 	}
-	lower := strings.ToLower(host)
-	if lower == "localhost" || strings.HasSuffix(lower, ".localhost") || strings.HasSuffix(lower, ".internal") {
+	if IsInternalName(host) {
 		return fmt.Errorf("%s: host %q targets internal infrastructure", prefix, host)
 	}
 	if ip := net.ParseIP(host); ip != nil {
@@ -59,6 +58,13 @@ func CheckOutboundURL(raw, prefix string, allowPrivate bool) error {
 		}
 	}
 	return nil
+}
+
+// IsInternalName reports whether host is localhost or ends in .localhost
+// or .internal, in any case.
+func IsInternalName(host string) bool {
+	lower := strings.ToLower(host)
+	return lower == "localhost" || strings.HasSuffix(lower, ".localhost") || strings.HasSuffix(lower, ".internal")
 }
 
 func refuse(prefix string, ip net.IP) error {

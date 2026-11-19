@@ -162,6 +162,7 @@ var ownedPackages = []string{
 	"core/upload",
 	"core/static",
 	"core/handler",
+	"core/webbotauth",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",

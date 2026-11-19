@@ -642,7 +642,8 @@ weaker per-request check.
 `CheckOutboundURL(raw, prefix, allowPrivate)` is the registration-time
 check battery/webhook and core/a2a share for a caller-supplied URL:
 http(s) only, a host, no userinfo and, unless `allowPrivate`, no
-`localhost`, `*.localhost` or `*.internal` name and no internal literal or
+`localhost`, `*.localhost` or `*.internal` name (`IsInternalName`, which
+the Web Bot Auth directory fetch checks too) and no internal literal or
 resolved address, with the DNS lookup bounded to 3 seconds.
 `GuardRoundTripper(rt, prefix)` guards a supplied client's transport:
 `nil` gets `GuardedTransport`, a plain transport its `GuardPlainTransport`
