@@ -17,12 +17,19 @@ func focusAfterRefusal(t *testing.T, body, fields, waitErr string, hold <-chan s
 	t.Helper()
 	page := `<!doctype html><html><head><title>focus</title></head><body>` + body +
 		`<script src="/__gofastr/runtime.js"></script></body></html>`
+	// done unblocks a held answer when the test ends early, so the
+	// server's Close, registered first and run last, never waits on it.
+	done := make(chan struct{})
 	srv := formErrorsServer(t, page, func(int32) (int, string) {
 		if hold != nil {
-			<-hold
+			select {
+			case <-hold:
+			case <-done:
+			}
 		}
 		return http.StatusUnprocessableEntity, `{"error":"validation failed","fields":` + fields + `}`
 	})
+	t.Cleanup(func() { close(done) })
 	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
 	var focused string
 	steps := append([]chromedp.Action{chromedp.Navigate(srv.URL + "/")}, act...)
@@ -136,5 +143,56 @@ func TestRefusedSubmitFocusesTheCheckedRadio(t *testing.T) {
 </form>`, `{"plan":["is not available"]}`, "p-team-error", nil, clickSave())
 	if got != "p-pro" {
 		t.Errorf("focus after the refused submit is on %q, want the checked radio %q", got, "p-pro")
+	}
+}
+
+// A refused disabled control cannot take focus, so focus goes to the
+// next refused control that can.
+func TestRefusedSubmitSkipsADisabledControl(t *testing.T) {
+	got := focusAfterRefusal(t, `<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
+  <div data-hui-field=""><label for="owner">Owner</label><input id="owner" name="owner" value="ann" disabled></div>
+  <div data-hui-field=""><label for="email">Email</label><input id="email" name="email" value=""></div>
+  <button type="submit" id="go">Save</button>
+</form>`, `{"owner":["is required"],"email":["is required"]}`, "email-error", nil, clickSave())
+	if got != "email" {
+		t.Errorf("focus after the refused submit is on %q, want the first enabled refused field %q", got, "email")
+	}
+}
+
+// A retry clears what the last refusal marked on a control associated
+// from outside the form, so focus follows only the newest refusal.
+func TestRetryClearsAnExternalControlsError(t *testing.T) {
+	page := `<!doctype html><html><head><title>focus</title></head><body>
+<div data-hui-field=""><label for="code">Code</label><input id="code" name="code" form="f" value=""></div>
+<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
+  <div data-hui-field=""><label for="email">Email</label><input id="email" name="email" value=""></div>
+  <button type="submit" id="go">Save</button>
+</form>
+<script src="/__gofastr/runtime.js"></script></body></html>`
+	srv := formErrorsServer(t, page, func(n int32) (int, string) {
+		if n == 1 {
+			return http.StatusUnprocessableEntity, `{"error":"validation failed","fields":{"code":["is required"]}}`
+		}
+		return http.StatusUnprocessableEntity, `{"error":"validation failed","fields":{"email":["is required"]}}`
+	})
+	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+	var focused string
+	var codeState string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		clickSave(),
+		chromedp.Poll(`!!document.getElementById('code-error')`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Click(`#go`, chromedp.ByID),
+		chromedp.Poll(`!!document.getElementById('email-error')`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Evaluate(`document.activeElement && document.activeElement.id`, &focused),
+		chromedp.Evaluate(`(document.getElementById('code').getAttribute('aria-invalid') || '') + '|' + !!document.getElementById('code-error')`, &codeState),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if focused != "email" {
+		t.Errorf("focus after the retry is on %q, want %q, the only field the newest answer refused", focused, "email")
+	}
+	if codeState != "|false" {
+		t.Errorf("the external control after the retry reads %q (aria-invalid|error node), want both cleared", codeState)
 	}
 }

@@ -14,7 +14,7 @@ invariants:
       - test: core-ui/runtime/internal/treegate.TestRuntimeAttrsAreDocumented
       - test: core-ui/runtime/internal/treegate.TestPrivilegedAttrsAreDocumented
   - id: refused-submit-focuses-first-invalid
-    rule: A refused form submit moves focus to the first refused control in form.elements order that can take it, a control associated from outside the form included and a hidden input skipped, a radio group on its checked or first radio, while focus is still on the body, in the form or on one of its controls; a click-dispatched control or an as-you-type dispatch never moves focus.
+    rule: A refused form submit moves focus to the first refused control in form.elements order that can take it, a control associated from outside the form included and a hidden input or disabled control skipped, a radio group on its checked or first radio, while focus is still on the body, in the form or on one of its controls; a click-dispatched control or an as-you-type dispatch never moves focus.
     enforced_by:
       - test: core-ui/runtime.TestRefusedSubmitFocusesFirstInvalidField
       - test: core-ui/runtime.TestRefusedInputDispatchKeepsFocus
@@ -23,6 +23,8 @@ invariants:
       - test: core-ui/runtime.TestRefusedClickDispatchKeepsFocus
       - test: core-ui/runtime.TestRefusedSubmitSkipsAHiddenInput
       - test: core-ui/runtime.TestRefusedSubmitFocusesTheCheckedRadio
+      - test: core-ui/runtime.TestRefusedSubmitSkipsADisabledControl
+      - test: core-ui/runtime.TestRetryClearsAnExternalControlsError
   - id: no-hard-navigation
     rule: Navigation goes through the client router; nothing assigns location.href or reloads the page to move between pages or to refresh one.
     enforced_by:

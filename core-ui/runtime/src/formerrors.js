@@ -41,15 +41,22 @@
   // back to reserved.
   function clear(form) {
     if (!form) return;
-    form.querySelectorAll('[data-hui-field-error="live"]').forEach((e) => {
-      if (e.id) form.querySelectorAll('[aria-describedby]').forEach((c) => describe(c, e.id, false));
+    // The form, plus the field of every control associated from outside
+    // it (form="id"), which report() marks like any other.
+    const scopes = [form];
+    for (const e of form.elements) if (!form.contains(e) && e.closest(FIELD)) scopes.push(e.closest(FIELD));
+    const all = (sel) => scopes.flatMap((s) => [...s.querySelectorAll(sel)]);
+    all('[data-hui-field-error="live"]').forEach((e) => {
+      if (e.id) all('[aria-describedby]').forEach((c) => describe(c, e.id, false));
       e.remove();
     });
-    form.querySelectorAll(ERR).forEach((e) => {
+    all(ERR).forEach((e) => {
       e.textContent = '';
       e.setAttribute('data-hui-field-error', '');
     });
-    form.querySelectorAll('[aria-invalid="true"]').forEach((e) => e.removeAttribute('aria-invalid'));
+    for (const e of [...all('[aria-invalid="true"]'), ...form.elements]) {
+      if (e.getAttribute('aria-invalid') === 'true') e.removeAttribute('aria-invalid');
+    }
   }
 
   // renderedNode finds the error node the server shipped for this
@@ -119,12 +126,13 @@
       const a = document.activeElement;
       // form.elements, not a descendant query: it is in tree order and
       // holds a control associated from outside the form (form="id").
-      // A hidden input (a combobox's value) cannot take focus.
-      let first = [...form.elements].find((e) => e.type !== 'hidden' && e.getAttribute('aria-invalid') === 'true');
+      // A hidden input (a combobox's value) or a disabled control cannot
+      // take focus.
+      let first = [...form.elements].find((e) => e.type !== 'hidden' && !e.disabled && e.getAttribute('aria-invalid') === 'true');
       // A radio group is marked on its last radio; the reader lands on
       // the checked one, or the first.
       if (first && first.type === 'radio') {
-        const g = [...form.elements].filter((e) => e.type === 'radio' && e.name === first.name);
+        const g = [...form.elements].filter((e) => e.type === 'radio' && e.name === first.name && !e.disabled);
         first = g.find((e) => e.checked) || g[0];
       }
       if (first && (!a || a === document.body || form.contains(a) || a.form === form)) first.focus();
