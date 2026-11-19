@@ -61,12 +61,25 @@ func resolveCLDR(tag string) cldrMatch {
 		return m.(cldrMatch)
 	}
 	m := matchCLDR(tag)
-	if cldrCacheSize.Load() < cldrCacheMax {
-		if _, loaded := cldrCache.LoadOrStore(tag, m); !loaded {
-			cldrCacheSize.Add(1)
+	cacheBounded(&cldrCache, &cldrCacheSize, tag, m)
+	return m
+}
+
+// cacheBounded stores v under key unless the cache is full. A slot is
+// reserved before the store, so concurrent misses never pass the cap.
+func cacheBounded(m *sync.Map, size *atomic.Int32, key string, v any) {
+	for {
+		n := size.Load()
+		if n >= cldrCacheMax {
+			return
+		}
+		if size.CompareAndSwap(n, n+1) {
+			break
 		}
 	}
-	return m
+	if _, loaded := m.LoadOrStore(key, v); loaded {
+		size.Add(-1)
+	}
 }
 
 const maxCLDRTag = 64
@@ -122,11 +135,7 @@ func scriptFallback(tag, base string) (form string, keepBase bool) {
 			}
 		}
 	}
-	if scriptCacheSize.Load() < cldrCacheMax {
-		if _, loaded := scriptCache.LoadOrStore(tag, s); !loaded {
-			scriptCacheSize.Add(1)
-		}
-	}
+	cacheBounded(&scriptCache, &scriptCacheSize, tag, s)
 	return s.form, s.keepBase
 }
 

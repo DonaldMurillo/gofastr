@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -92,9 +93,43 @@ func TestSweepTracingStatusMarksError(t *testing.T) {
 		if _, err := Transport(&stubRT{status: tc.status}).RoundTrip(req); err != nil {
 			t.Fatal(err)
 		}
-		if got := onlySpan(t, rec).Status().Code == codes.Error; got != tc.failed {
+		span := onlySpan(t, rec)
+		if got := span.Status().Code == codes.Error; got != tc.failed {
 			t.Errorf("status %d: span failed = %v, want %v", tc.status, got, tc.failed)
 		}
+		want := ""
+		if tc.failed {
+			want = strconv.Itoa(tc.status)
+		}
+		if got := sweepAttr(span, "error.type"); got != want {
+			t.Errorf("status %d: error.type = %q, want %q", tc.status, got, want)
+		}
+		if d := span.Status().Description; d != "" {
+			t.Errorf("status %d: status description = %q, want empty", tc.status, d)
+		}
+	}
+}
+
+type headerRT struct{ got http.Header }
+
+func (h *headerRT) RoundTrip(r *http.Request) (*http.Response, error) {
+	h.got = r.Header.Clone()
+	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("")), Request: r}, nil
+}
+
+func TestSweepTracingCallerTraceparentForwardedUnchanged(t *testing.T) {
+	recordSpans(t)
+	const caller = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+	base := &headerRT{}
+	ctx, parent := otel.Tracer("test").Start(context.Background(), "request")
+	defer parent.End()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.test/", nil)
+	req.Header.Set("traceparent", caller)
+	if _, err := Transport(base).RoundTrip(req); err != nil {
+		t.Fatal(err)
+	}
+	if got := base.got.Get("traceparent"); got != caller {
+		t.Fatalf("traceparent = %q, want the caller's %q", got, caller)
 	}
 }
 
@@ -134,10 +169,18 @@ func TestSweepTracingCommitUnderBeginContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	parent.End()
+	commits := 0
 	for _, s := range rec.Ended() {
-		if s.Name() == "COMMIT" && s.Parent().SpanID() != parent.SpanContext().SpanID() {
+		if s.Name() != "COMMIT" {
+			continue
+		}
+		commits++
+		if s.Parent().SpanID() != parent.SpanContext().SpanID() {
 			t.Fatal("COMMIT is not under the context BeginTx was given")
 		}
+	}
+	if commits != 1 {
+		t.Fatalf("%d COMMIT spans, want 1", commits)
 	}
 }
 

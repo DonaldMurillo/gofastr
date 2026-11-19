@@ -361,7 +361,7 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 		}
 
 		if cf.shadowed {
-			if err := applyDefaults(fieldVal, field); err != nil {
+			if err := applyDefaults(fieldVal, field, secrets); err != nil {
 				return err
 			}
 			continue
@@ -423,7 +423,7 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 	return nil
 }
 
-func applyDefaults(v reflect.Value, sf reflect.StructField) error {
+func applyDefaults(v reflect.Value, sf reflect.StructField, secrets *[]string) error {
 	if isNestedStruct(sf.Type) {
 		if v.Kind() == reflect.Pointer {
 			return nil
@@ -437,7 +437,7 @@ func applyDefaults(v reflect.Value, sf reflect.StructField) error {
 			if !ok || !fv.CanSet() {
 				continue
 			}
-			if err := applyDefaults(fv, f.sf); err != nil {
+			if err := applyDefaults(fv, f.sf, secrets); err != nil {
 				return err
 			}
 		}
@@ -447,8 +447,12 @@ func applyDefaults(v reflect.Value, sf reflect.StructField) error {
 	if def == "" {
 		return nil
 	}
+	sensitive := sf.Tag.Get("sensitive") == "true"
+	if sensitive {
+		*secrets = append(*secrets, def)
+	}
 	if err := setField(v, def, sf.Name); err != nil {
-		if sf.Tag.Get("sensitive") == "true" {
+		if sensitive {
 			return fmt.Errorf("config: field %s: invalid sensitive default (redacted)", sf.Name)
 		}
 		return err

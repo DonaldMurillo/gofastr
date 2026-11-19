@@ -24,7 +24,7 @@ invariants:
       - test: core/i18n.TestCountOperandsRefusesNonNumbers
       - test: core/i18n.TestPluralCountHostileShapesSafe
   - id: locale-resolution-bounded
-    rule: A tag resolves to its most specific CLDR locale without crossing scripts or inferring a region it does not name, and the resolution caches hold at most 1024 tags.
+    rule: A tag resolves to its most specific CLDR locale without crossing scripts or inferring a region it does not name, and the resolution caches hold at most 1024 tags, concurrent misses included.
     enforced_by:
       - test: core/i18n.TestMatchCLDR
       - test: core/i18n.TestCLDRCacheBounded

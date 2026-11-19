@@ -348,7 +348,7 @@ func waitIndexUnlocked(root *os.Root, limit time.Duration) error {
 			seen = true
 			indexLockSeen()
 		}
-		if lock := filepath.Join(root.Name(), ".git", "index.lock"); !fileHeldOpen(lock) {
+		if lock := filepath.Join(root.Name(), ".git", "index.lock"); lockAbandoned(root.Name(), lock) {
 			if err := root.Remove(".git/index.lock"); err == nil || errors.Is(err, fs.ErrNotExist) {
 				return nil
 			}

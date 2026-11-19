@@ -27,10 +27,11 @@ invariants:
       - test: core/settings.TestSetEndpointsRefusesBadEntry
       - test: core/settings.TestSweepSettingsEndpointsQuotedKeyRefused
   - id: app-spec-decodes-through-settings
-    rule: The app spec's endpoints key is decoded and checked only by settings.DecodeEndpoints.
-    judge: Does the app spec decode or check an endpoints entry anywhere other than through settings.DecodeEndpoints?
+    rule: The app spec's endpoints key is decoded only by settings.DecodeEndpoints, and an entry's shape is checked only by the settings package's Endpoint.Validate, while checks against the rest of the spec, such as a missing entity, a shared handler or a route clash, run after decoding.
+    judge: Does the app spec decode an endpoints entry other than through settings.DecodeEndpoints, or check an entry's field shapes with rules of its own rather than Endpoint.Validate from the settings package (checks against the rest of the spec, such as ValidateAppSpecEndpoints, do not count)?
     applies:
       - cmd/gofastr/internal/appspec/appspec.go
+      - cmd/gofastr/internal/appspec/appspec_endpoints.go
 decisions:
   - id: check-shape-at-decode
     date: 2026-11-19

@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **config: a shadowed field's sensitive default stays out of validator
+  errors.** An embedded field hidden by an outer field with the same key
+  takes its `default` tag; when that field was `sensitive`, a
+  `ConfigValidator` error quoting it printed the default in clear. It is
+  now redacted like any other sensitive value. See
+  [core packages](framework/docs/content/core-packages.md).
 - **fanout: the go-redis adapter in the docs confirms its subscription.**
   go-redis's `Client.Subscribe` drops the error of a refused `SUBSCRIBE`
   (a Redis ACL that allows `PUBLISH` only, say), so the documented

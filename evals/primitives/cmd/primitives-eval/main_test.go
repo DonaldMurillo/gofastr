@@ -881,3 +881,37 @@ func TestWaitIndexUnlockedClearsALockNoProcessHolds(t *testing.T) {
 		t.Fatalf("the stale lock is still there: %v", err)
 	}
 }
+
+func TestWaitIndexUnlockedKeepsALockWhileACellProcessLives(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("cell processes are found through /proc")
+	}
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(dir, ".git", "index.lock")
+	ready := filepath.Join(t.TempDir(), "ready")
+	// Git closes index.lock before running commit hooks and renames it
+	// afterwards: the lock exists, no descriptor holds it, the writer lives.
+	startInCell(t, dir, `: > .git/index.lock; : > `+ready+`; while :; do sleep 0.05; done`)
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the stand-in git never started")
+		}
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := waitIndexUnlocked(root, 300*time.Millisecond); err == nil {
+		t.Error("grading went ahead while a git in the cell still owned index.lock")
+	}
+	if _, err := os.Stat(lock); err != nil {
+		t.Errorf("index.lock was removed while a git in the cell was alive: %v", err)
+	}
+}

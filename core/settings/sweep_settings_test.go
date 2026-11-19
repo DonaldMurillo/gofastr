@@ -3,6 +3,7 @@ package settings
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -24,6 +25,9 @@ func TestSweepSettingsWriteIsOwnerOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows reports no Unix permission bits")
+	}
 	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Fatalf("settings file mode = %o, want 600", perm)
 	}
@@ -41,7 +45,11 @@ func TestSweepSettingsUnmountedWrittenSorted(t *testing.T) {
 	}
 	data, _ := os.ReadFile(p)
 	s := string(data)
-	if !(strings.Index(s, `"y"`) < strings.Index(s, `"z"`) && strings.Index(s, `"z"`) < strings.Index(s, `"a"`)) {
+	y, z, a := strings.Index(s, `"y"`), strings.Index(s, `"z"`), strings.Index(s, `"a"`)
+	if y < 0 || z < 0 || a < 0 {
+		t.Fatalf("an entry is missing:\n%s", s)
+	}
+	if !(y < z && z < a) {
 		t.Fatalf("entries not sorted by source then path:\n%s", s)
 	}
 	if in[0].Path != "a" {

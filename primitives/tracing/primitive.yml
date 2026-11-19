@@ -19,8 +19,9 @@ invariants:
     enforced_by:
       - test: core/tracing.TestSweepTracingProviderInstalledAfterWrap
   - id: client-error-is-a-type
-    rule: A failed SQL or HTTP client span carries the error's Go type as error.type and an empty status description, never the error's message.
+    rule: A SQL or HTTP client span whose call returned a Go error carries that error's Go type as error.type, an HTTP response of 400 or more without one carries its status code, and both have an empty status description, never the error's message.
     enforced_by:
+      - test: core/tracing.TestSweepTracingStatusMarksError
       - test: core/tracing.TestSweepTracingErrorTypeNotMessage
       - test: core/tracing.TestSQLSpanMarksErrors
   - id: error-type-sees-through-fmt
@@ -41,7 +42,7 @@ decisions:
   - id: client-spans-record-types
     date: 2026-11-19
     status: accepted
-    decision: SQL and HTTP client spans record a failure as the error's Go type, not its message.
+    decision: SQL and HTTP client spans record a returned error as its Go type and a failing HTTP status as its code, never a message.
     rejected:
       - option: Put the error message in the span status.
         why: Driver and transport messages routinely quote row values, constraint keys and URLs, and a span store is not where those belong.

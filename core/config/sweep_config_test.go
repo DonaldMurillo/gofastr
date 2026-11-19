@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -90,5 +91,29 @@ func TestSweepConfigShadowedNestedPointerStaysNil(t *testing.T) {
 	}
 	if cfg.DB.Host != "db.internal" || cfg.sweepBase.DB != nil {
 		t.Fatalf("outer DB = %+v, shadowed DB = %v; the shadowed pointer must stay nil", cfg.DB, cfg.sweepBase.DB)
+	}
+}
+
+type shadowedSecretBase struct {
+	Token string `config:"TOKEN" default:"sh4dow-secret" sensitive:"true"`
+}
+
+type shadowedSecretCfg struct {
+	shadowedSecretBase
+	Token string `config:"TOKEN"`
+}
+
+func (c *shadowedSecretCfg) Validate() error {
+	return fmt.Errorf("token %q rejected", c.shadowedSecretBase.Token)
+}
+
+func TestSweepConfigShadowedSensitiveDefaultRedactedInValidator(t *testing.T) {
+	var cfg shadowedSecretCfg
+	err := Load(&cfg, MapSource{"TOKEN": "x"})
+	if cfg.shadowedSecretBase.Token != "sh4dow-secret" {
+		t.Fatalf("shadowed Token = %q, want its default", cfg.shadowedSecretBase.Token)
+	}
+	if err == nil || strings.Contains(err.Error(), "sh4dow-secret") {
+		t.Fatalf("Load = %v, want a validator error that does not quote the shadowed sensitive default", err)
 	}
 }

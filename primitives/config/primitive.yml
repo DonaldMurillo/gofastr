@@ -31,6 +31,7 @@ invariants:
       - test: core/config.TestRedactLongestSecretFirst
       - test: core/config.TestRedactEscapedSecretSpellings
       - test: core/config.TestSweepConfigSensitiveBadDefaultRedacted
+      - test: core/config.TestSweepConfigShadowedSensitiveDefaultRedactedInValidator
   - id: key-naming
     rule: A leaf reads its config tag or else its upper-cased field name, a named nested struct reads its fields under NAME_, and a nested pointer is allocated only when one of its keys is present.
     enforced_by:

@@ -8,4 +8,4 @@ var stopGrace = 5 * time.Second
 
 func stopCellProcesses(string) {}
 
-func fileHeldOpen(string) bool { return true }
+func lockAbandoned(string, string) bool { return false }
