@@ -69,21 +69,32 @@ func (ds *UIHost) writePartReset(w http.ResponseWriter, reason string) {
 	w.WriteHeader(http.StatusConflict)
 }
 
-func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path string) {
+// partialSession is a client navigation's session step: a prefetch with
+// a dead session answers 204 (done), any other request with one gets a
+// fresh session, and a prefetch with a live one reports when it was
+// minted.
+func (ds *UIHost) partialSession(w http.ResponseWriter, r *http.Request) (minted time.Time, done bool) {
 	w.Header().Set("Cache-Control", "no-store")
 	token := readSessionCookie(r)
-	var sessionMinted time.Time
 	if _, live := ds.verifySessionToken(token); !live {
 		if r.Header.Get("X-Gofastr-Prefetch") == "1" {
 			w.WriteHeader(http.StatusNoContent)
-			return
+			return time.Time{}, true
 		}
 		if sess := ds.CreateSession(); sess.Token != "" {
 			setSessionCookie(w, r, sess.Token)
 			w.Header().Set("X-Gofastr-Session", sess.ID)
 		}
 	} else if r.Header.Get("X-Gofastr-Prefetch") == "1" {
-		sessionMinted, _ = sessiontoken.MintedAt(token)
+		minted, _ = sessiontoken.MintedAt(token)
+	}
+	return minted, false
+}
+
+func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path string) {
+	sessionMinted, done := ds.partialSession(w, r)
+	if done {
+		return
 	}
 	if target, ok := ds.App.ResolveRedirect(path); ok && handler.IsSafeRelativePath(target) {
 		w.Header().Set("X-Gofastr-Location", escapeNonASCII(scrubCtl(carryQuery(target, r.URL.RawQuery))))

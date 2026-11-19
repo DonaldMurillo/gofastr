@@ -253,7 +253,14 @@ Useful options:
   refuses. A method the page does not take (POST, OPTIONS) still
   answers 405 with `Allow: GET, HEAD`, because no screen code runs for
   it, the policy included; to hide the route from every method, call
-  `ServeNotFound` from middleware instead. The guarantee covers the pages the UI host
+  `ServeNotFound` from middleware instead. Two things still name the
+  route's pattern: the client route manifest (`/__gofastr/manifest.js`)
+  lists every route, so set `NoSPA` on a screen whose path itself is
+  secret (its links then load full pages), and a route registered with
+  a trailing slash redirects the slashless URL to it. On a dynamic
+  route, a region guard's `NotFound` hides each URL but not the pattern
+  in the llm.md docs, since a guard needs a URL to decide; hide a
+  dynamic route with a screen or group policy. The guarantee covers the pages the UI host
   serves: another handler that reuses the same policy (the SDK docs
   pages, an embed surface) refuses with a plain 404. A resolver that
   fails before the policy decides still answers the error page, as it
