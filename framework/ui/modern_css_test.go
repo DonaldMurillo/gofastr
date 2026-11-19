@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -52,12 +53,14 @@ func TestKitTypography(t *testing.T) {
 // the user has left it, not only after the server answers (#704).
 func TestKitInvalidStateFollowsUserInvalid(t *testing.T) {
 	th := theme.Default()
-	const both = `:is(:user-invalid,[aria-invalid="true"])`
+	// Every spelling of the attribute match: quoted either way or bare.
+	invalidRe := regexp.MustCompile(`\[aria-invalid=["']?true["']?\]`)
+	pairedRe := regexp.MustCompile(`:is\(:user-invalid,\[aria-invalid=["']?true["']?\]\)`)
 	found := 0
 	for _, e := range registry.All() {
 		css := strings.Join(strings.Fields(e.CSSFor(th)), "")
-		all := strings.Count(css, `[aria-invalid="true"]`)
-		paired := strings.Count(css, both)
+		all := len(invalidRe.FindAllString(css, -1))
+		paired := len(pairedRe.FindAllString(css, -1))
 		found += paired
 		if all != paired {
 			t.Errorf("style %q styles [aria-invalid=\"true\"] %d times without :user-invalid", e.Name, all-paired)

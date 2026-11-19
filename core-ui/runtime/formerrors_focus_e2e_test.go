@@ -96,3 +96,45 @@ func TestLateRefusalLeavesFocusOutsideTheForm(t *testing.T) {
 		t.Errorf("focus after a late refusal is on %q, want it left on %q", got, "search")
 	}
 }
+
+// A control that dispatches on click (a segmented choice inside a form)
+// is not a submit: a refusal does not move focus to the refused field.
+func TestRefusedClickDispatchKeepsFocus(t *testing.T) {
+	got := focusAfterRefusal(t, `<form id="f">
+  <div data-hui-field=""><label for="email">Email</label><input id="email" name="email" value=""></div>
+  <button type="button" id="plan" data-cui-rpc="/rpc/save" name="plan" value="pro">Pro</button>
+</form>`, `{"email":["is required"]}`, "email-error", nil,
+		chromedp.WaitVisible(`#plan`, chromedp.ByID), chromedp.Click(`#plan`, chromedp.ByID))
+	if got == "email" {
+		t.Errorf("a click-dispatched refusal moved focus to the refused field %q", got)
+	}
+}
+
+// A refused hidden value (a combobox's) cannot take focus, so focus
+// goes to the next refused control that can.
+func TestRefusedSubmitSkipsAHiddenInput(t *testing.T) {
+	got := focusAfterRefusal(t, `<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
+  <div data-hui-field=""><label for="owner-q">Owner</label><input id="owner-q" value=""><input type="hidden" id="owner" name="owner" value=""></div>
+  <div data-hui-field=""><label for="email">Email</label><input id="email" name="email" value=""></div>
+  <button type="submit" id="go">Save</button>
+</form>`, `{"owner":["is required"],"email":["is required"]}`, "email-error", nil, clickSave())
+	if got != "email" {
+		t.Errorf("focus after the refused submit is on %q, want the first focusable refused field %q", got, "email")
+	}
+}
+
+// A refused radio group takes focus on its checked radio, not on the
+// last one, which is the radio report marks.
+func TestRefusedSubmitFocusesTheCheckedRadio(t *testing.T) {
+	got := focusAfterRefusal(t, `<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
+  <fieldset data-hui-field=""><legend>Plan</legend>
+    <input type="radio" id="p-free" name="plan" value="free">
+    <input type="radio" id="p-pro" name="plan" value="pro" checked>
+    <input type="radio" id="p-team" name="plan" value="team">
+  </fieldset>
+  <button type="submit" id="go">Save</button>
+</form>`, `{"plan":["is not available"]}`, "p-team-error", nil, clickSave())
+	if got != "p-pro" {
+		t.Errorf("focus after the refused submit is on %q, want the checked radio %q", got, "p-pro")
+	}
+}

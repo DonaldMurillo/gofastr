@@ -203,7 +203,7 @@
         // A refusal is never silent: the server's field errors go in place,
         // or a toast names the status, as on a data-cui-rpc form.
         const txt = await resp.text();
-        NS.loadModule('formerrors').then(() => NS._formErrors.report(form, resp.status, txt)).catch(() => {});
+        NS.loadModule('formerrors').then(() => NS._formErrors.report(form, resp.status, txt, opts)).catch(() => {});
         return;
       }
       if (form.querySelector('[aria-invalid="true"]')) {

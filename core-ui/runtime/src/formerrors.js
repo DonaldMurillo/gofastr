@@ -72,10 +72,12 @@
 
   // report renders the envelope into the form. status and txt are the
   // response's; a body that is not the envelope falls back to a toast
-  // naming the status. opts are the dispatch's: a submit moves focus to
-  // the first refused control, an as-you-type dispatch (opts.input)
-  // never does, and only while focus is still in the form or nowhere,
-  // so a late answer never pulls the reader out of what they moved on to.
+  // naming the status. opts are the dispatch's. Only a submit carries
+  // a submitter key (the submit bridges set it, null or a button), and
+  // only a submit moves focus: never a click on a control or an
+  // as-you-type dispatch, and only while focus is still in the form or
+  // nowhere, so a late answer never pulls the reader out of what they
+  // moved on to.
   function report(form, status, txt, opts) {
     if (!form) return;
     // The first refusal in a document loads this module after the
@@ -113,11 +115,18 @@
       p.textContent = [].concat(fields[name]).join(', ');
       placed++;
     }
-    if (placed && !(opts && opts.input)) {
+    if (placed && opts && 'submitter' in opts) {
       const a = document.activeElement;
       // form.elements, not a descendant query: it is in tree order and
       // holds a control associated from outside the form (form="id").
-      const first = [...form.elements].find((e) => e.getAttribute('aria-invalid') === 'true');
+      // A hidden input (a combobox's value) cannot take focus.
+      let first = [...form.elements].find((e) => e.type !== 'hidden' && e.getAttribute('aria-invalid') === 'true');
+      // A radio group is marked on its last radio; the reader lands on
+      // the checked one, or the first.
+      if (first && first.type === 'radio') {
+        const g = [...form.elements].filter((e) => e.type === 'radio' && e.name === first.name);
+        first = g.find((e) => e.checked) || g[0];
+      }
       if (first && (!a || a === document.body || form.contains(a) || a.form === form)) first.focus();
     }
     if (!placed && typeof NS._toastOrFallback === 'function') {
