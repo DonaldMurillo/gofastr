@@ -601,7 +601,9 @@ func (m *Migrator) Force(ctx context.Context, version uint64, applied bool, grou
 }
 
 // Status reports the applied, pending, modified and unregistered
-// migrations of groups (all when none) without changing the table's shape.
+// migrations of groups (all when none). It creates a missing tracking table
+// and adds a missing checksum or dirty column, but never adds group_name or
+// changes the key.
 func (m *Migrator) Status(ctx context.Context, groups ...string) (*Status, error) {
 	groups = normalizeGroupSelection(groups)
 	if err := m.validateGroupSelection(groups, false); err != nil {

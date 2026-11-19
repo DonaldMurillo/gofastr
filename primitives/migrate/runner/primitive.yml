@@ -40,12 +40,13 @@ invariants:
       - test: core/migrate.TestMissingUpDirectiveFailsLoud
       - test: framework/migrate.TestGeneratorGuardCoversNearMissDirectives
   - id: tracking-table-shape
-    rule: The tracking table gains group_name and a (group_name, version) key only in an Up, Down or Force that registers or selects a named group, older tables gain the checksum and dirty columns, Status never adds a column or changes the key, and reads follow the columns the table has.
+    rule: The tracking table gains group_name and a (group_name, version) key only in an Up, Down or Force that registers or selects a named group, older tables gain the checksum and dirty columns in any call including Status, Status never adds group_name or changes the key, and reads follow the columns the table has.
     enforced_by:
       - test: core/migrate.TestStatusNeverAddsGroupColumn
       - test: core/migrate.TestStatusDoesNotUpgradePK
       - test: core/migrate.TestLegacyTableUpgradedToGroups
       - test: core/migrate.TestBackfillTrackingColumns
+      - test: core/migrate.TestSweepMigrateStatusBackfillsIntegrityColumnsOnly
       - test: core/migrate.TestDeregisteredGroupDoesNotShadowNewDefaultVersion
       - test: core/migrate.TestPG_SiblingSchemaDoesNotFalsePositive
       - test: core/migrate.TestRebuildSQLitePreservesGroupName
@@ -115,7 +116,7 @@ decisions:
   - id: status-does-no-ddl
     date: 2026-11-19
     status: accepted
-    decision: Status creates a missing table in the plain shape and never adds group_name or changes the key.
+    decision: Status creates a missing table in the plain shape and adds a missing checksum or dirty column, but never adds group_name or changes the key.
     rejected:
       - option: Upgrade the key in Status too.
         why: Status takes no lock, and the SQLite rebuild is a check-then-act that is not safe against a concurrent Up.

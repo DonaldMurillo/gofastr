@@ -67,3 +67,25 @@ func TestSweepFanoutPublishQueueDeadlineAndCopy(t *testing.T) {
 		t.Fatalf("published %q, want the bytes as of send", got)
 	}
 }
+
+func TestSweepFanoutStopDropsWithoutReporting(t *testing.T) {
+	f := newStalledFanout()
+	send, stop := PublishQueueReporting(f, "t", 8)
+	var reported atomic.Int32
+	failed := func(error) { reported.Add(1) }
+	send([]byte("in flight"), failed)
+	send([]byte("queued"), failed)
+	time.Sleep(20 * time.Millisecond)
+	stopped := make(chan struct{})
+	go func() { stop(); close(stopped) }()
+	time.Sleep(10 * time.Millisecond)
+	close(f.release)
+	<-stopped
+	for range 20 {
+		send([]byte("late"), failed)
+	}
+	time.Sleep(10 * time.Millisecond)
+	if n := reported.Load(); n != 0 {
+		t.Fatalf("payloads dropped by stop reported %d failures, want none", n)
+	}
+}

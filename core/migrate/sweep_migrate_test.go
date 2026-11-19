@@ -53,9 +53,33 @@ func TestSweepMigrateHeartbeatOutlivesTheLease(t *testing.T) {
 	time.Sleep(3500 * time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	if rel, err := AcquireSQLiteLease(ctx, other, "_sweep_lock", 2*time.Second, "sweep"); err == nil {
+	rel, err := AcquireSQLiteLease(ctx, other, "_sweep_lock", 2*time.Second, "sweep")
+	if err == nil {
 		rel()
 		t.Fatal("another process took a lease its holder was still renewing")
+	}
+	if ctx.Err() == nil {
+		t.Fatalf("the contender failed before its context expired: %v", err)
+	}
+}
+
+func TestSweepMigrateStatusBackfillsIntegrityColumnsOnly(t *testing.T) {
+	m, db := newSQLiteMigrator(t)
+	if _, err := db.Exec(`CREATE TABLE _migrations (version BIGINT NOT NULL PRIMARY KEY, name TEXT NOT NULL DEFAULT '', applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)`); err != nil {
+		t.Fatal(err)
+	}
+	mustReg(t, m, Migration{Group: "kb", Version: 1, Up: "CREATE TABLE sbi (id INT)"})
+	if _, err := m.Status(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for col, want := range map[string]int{"checksum": 1, "dirty": 1, "group_name": 0} {
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('_migrations') WHERE name = ?`, col).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != want {
+			t.Errorf("after Status, column %s present %d times, want %d", col, n, want)
+		}
 	}
 }
 

@@ -33,7 +33,7 @@ invariants:
     enforced_by:
       - test: core/openapi.TestEnumSchemaOwnsValues
   - id: bounds-agree-with-json-schema
-    rule: FieldToSchema and schema.JSONSchema give every field type the same type keyword, length and numeric bounds, pattern, enum, default and relation flags, apart from a decimal's bounds and a UUID's pattern.
+    rule: FieldToSchema and schema.JSONSchema give every field type the same type keyword, length and numeric bounds, pattern, enum, default and relation flags, apart from a decimal's bounds, a UUID's pattern and an Enum with no Values, which JSONSchema gives an empty enum and FieldToSchema none.
     enforced_by:
       - test: core/openapi.TestSweepOpenAPIFieldSchemaAgreesWithJSONSchema
     applies:

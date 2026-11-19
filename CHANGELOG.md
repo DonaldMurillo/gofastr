@@ -25,6 +25,13 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **fanout: the go-redis adapter in the docs confirms its subscription.**
+  go-redis's `Client.Subscribe` drops the error of a refused `SUBSCRIBE`
+  (a Redis ACL that allows `PUBLISH` only, say), so the documented
+  adapter reported success and the replica heard nothing on that topic.
+  It now waits on `sub.Receive(ctx)` and returns its error. The docs also
+  say that `PublishQueueReporting` calls no callback for a payload
+  dropped by `stop`. See [core packages](framework/docs/content/core-packages.md#fanout).
 - **fanout: nothing is delivered after a queue's `stop`.** A payload
   sent to a `SubscriberQueue` (and so to an `InProcess`, Redis or
   Postgres subscriber) or a `PublishQueue` after `stop` returned could

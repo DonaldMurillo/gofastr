@@ -21,7 +21,7 @@ invariants:
     enforced_by:
       - test: core/markdown.TestCodeSpanBacktickRuns
   - id: link-binds-in-its-window
-    rule: A link inside link text or emphasis matches only a ] and ) within that window, a link binds tighter than emphasis, and a link URL's ) closes it once nested parentheses, up to 32 deep, have closed.
+    rule: A link inside link text or emphasis matches only a ] and ) within that window, a link binds tighter than emphasis, and a link URL ends at the first ) that closes its nested parentheses, up to 32 deep, or at its first ) when none does, so [x](a(b) links to a(b.
     enforced_by:
       - test: core/markdown.TestNestedLinksShareIndex
       - test: core/markdown.TestLinkWindowStopsAtItsEnd

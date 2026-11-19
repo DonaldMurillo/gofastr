@@ -340,7 +340,8 @@ envelope that stops broadcasts from re-broadcasting. `PublishQueue`
 publishes from hot paths without blocking; `PublishQueueReporting` is
 the same queue with a per-payload callback that runs when the payload
 is not published (backend error, timeout, or `ErrPublishDropped` on
-overflow), for a caller that must act on a loss. Indirect by
+overflow), for a caller that must act on a loss. A payload still queued,
+or sent, when `stop` runs is dropped without a callback. Indirect by
 default: the framework wires it under the event bus, the island
 manager, and `SSEBroker`. Reach for it directly only to span a new
 real-time surface across replicas. Start at `core/fanout/fanout.go`:
@@ -364,6 +365,10 @@ func (a goRedisPubSub) Publish(ctx context.Context, ch string, p []byte) error {
 
 func (a goRedisPubSub) Subscribe(ctx context.Context, ch string, fn func([]byte)) (func(), error) {
 	sub := a.c.Subscribe(ctx, ch)
+	if _, err := sub.Receive(ctx); err != nil { // Subscribe drops a refused SUBSCRIBE
+		_ = sub.Close()
+		return nil, err
+	}
 	msgs := sub.Channel(redis.WithChannelSize(64))
 	done := make(chan struct{})
 	go func() {
