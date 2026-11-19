@@ -37,6 +37,14 @@ func (a Annotations) clone() Annotations {
 	}
 }
 
+func clonedAnnotations(a *Annotations) *Annotations {
+	if a == nil {
+		return nil
+	}
+	c := a.clone()
+	return &c
+}
+
 func missingListingHints(a *Annotations) []string {
 	if a == nil {
 		return []string{"readOnlyHint", "destructiveHint", "openWorldHint"}

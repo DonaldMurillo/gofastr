@@ -84,13 +84,15 @@ invariants:
       - test: core/mcp.TestImageResult_EmitsImageBlock
       - test: core/mcp.TestEmbeddedResource_EmptyKeepsUnionKey
   - id: annotations-serve-set-hints
-    rule: "A tool registered WithAnnotations serves them as `annotations` in tools/list with every set hint, false included, and no key for a nil hint; a tool without them serves no annotations key, and WithAnnotations copies the hints so the caller's bools cannot change them later."
+    rule: "A tool registered WithAnnotations serves them as `annotations` in tools/list with every set hint, false included, and no key for a nil hint; a tool without them serves no annotations key; WithAnnotations copies the hints so the caller's bools cannot change them later, and ListTools and ListToolsFor hand out copies so a write to a listed tool's annotations never reaches the stored tool."
     enforced_by:
       - test: core/mcp.TestToolAnnotationsServedInToolsList
+      - test: core/mcp.TestListedToolsCarryAnnotationCopies
   - id: unhinted-tool-warns-when-asked
-    rule: With SetAnnotationWarnings on, RegisterTool logs one warning naming each of readOnlyHint, destructiveHint and openWorldHint a tool leaves unset, and logs nothing for a fully hinted tool, a WithDevImplied tool, or with the setting off.
+    rule: SetAnnotationWarnings(true) logs one warning, naming each of readOnlyHint, destructiveHint and openWorldHint left unset, for every tool already registered and, through RegisterTool, for every later one; each tool is warned about once until it is unregistered, and nothing is logged for a fully hinted tool, a WithDevImplied tool, or with the setting off.
     enforced_by:
       - test: core/mcp.TestAnnotationWarningsNameMissingHints
+      - test: core/mcp.TestAnnotationWarningsCoverEarlierTools
   - id: request-meta-is-the-calls-own
     rule: "tools/call puts the call's own `_meta` object on the context its gates and handler see, nil when the call sent none or null even if the incoming context carried one, and RequestMeta returns a fresh deep copy each time, so no reader's writes reach another."
     enforced_by:

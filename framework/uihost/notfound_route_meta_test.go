@@ -2,6 +2,8 @@ package uihost
 
 import (
 	"context"
+	"errors"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -36,10 +38,11 @@ func (nfMetaBody) Render() render.HTML { return "<p>themed-404</p>" }
 var routeMetaRe = regexp.MustCompile(`<(?:link|meta)[^>]*data-cui-page-meta[^>]*>`)
 
 // routeMeta returns the page-meta tags of a response, minus the site
-// description, which every page carries.
+// description, which every page carries. A partial carries its head
+// escaped in a template attribute, so the body is unescaped first.
 func routeMeta(body string) []string {
 	var out []string
-	for _, tag := range routeMetaRe.FindAllString(body, -1) {
+	for _, tag := range routeMetaRe.FindAllString(html.UnescapeString(body), -1) {
 		if strings.Contains(tag, `name="description"`) && strings.Contains(tag, "Site wide") {
 			continue
 		}
@@ -107,23 +110,80 @@ func serveNF(ds *UIHost, set i18n.PathLocales, path string, partial bool) *httpt
 	return rec
 }
 
-// The 404-outlet outcome is a not-found page too: no route meta.
+// seoOutletComp is a route whose own SEO names a description and a
+// canonical, rendered as the 404-outlet outcome.
+type seoOutletComp struct{}
+
+func (seoOutletComp) Render() render.HTML { return "<p>outlet route</p>" }
+func (seoOutletComp) ScreenSEO(context.Context) SEO {
+	return SEO{Description: "Outlet route", Canonical: "/missing-seo"}
+}
+
+// The 404-outlet outcome is a not-found page too: none of the route's
+// meta, though the route's own component declares some.
 func TestNotFoundOutletCarriesNoRouteMeta(t *testing.T) {
 	a := outlet404App()
+	a.RegisterScreen(app.NewScreen("/missing-seo", seoOutletComp{}).WithDescription("Outlet route"), nil)
 	a.Register("/origin", statusScreenComp("origin"), nil)
-	ds := New(a, WithSitemap(SitemapConfig{BaseURL: "https://example.com"}))
+	ds := New(a, WithSitemap(SitemapConfig{BaseURL: "https://example.com"}), WithDescription("Site wide"))
 	set := i18n.PathLocales{Default: "en", Prefixed: []string{"es"}}
 	ds.SetPathLocales(set)
 	if rec := serveNF(ds, set, "/present", false); !strings.Contains(rec.Body.String(), `hreflang="es"`) {
 		t.Fatalf("present: %d, want hreflang alternates", rec.Code)
 	}
-	for _, partial := range []bool{false, true} {
-		rec := serveNF(ds, set, "/missing", partial)
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("partial=%v: status %d, want 404", partial, rec.Code)
+	for _, path := range []string{"/missing", "/missing-seo"} {
+		for _, partial := range []bool{false, true} {
+			rec := serveNF(ds, set, path, partial)
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("%s partial=%v: status %d, want 404", path, partial, rec.Code)
+			}
+			if got := routeMeta(rec.Body.String()); len(got) != 0 {
+				t.Errorf("%s partial=%v: 404-outlet page carries route meta %q", path, partial, got)
+			}
 		}
-		if strings.Contains(rec.Body.String(), "hreflang") {
-			t.Errorf("partial=%v: 404-outlet page carries hreflang", partial)
+	}
+}
+
+// A static export's 404.html renders at "/", which resolves to the home
+// route; it carries none of the home page's meta.
+func TestStaticNotFoundPageCarriesNoRouteMeta(t *testing.T) {
+	a := app.NewApp("nfstatic")
+	a.SetDefaultLayout(app.NewLayout("root", app.LayoutSpec{}, func(_ context.Context, l *app.LayoutTree) render.HTML { return l.Primary() }))
+	a.RegisterScreen(app.NewScreen("/", statusScreenComp("home")).WithDescription("Home page"), nil)
+	ds := New(a, WithSitemap(SitemapConfig{BaseURL: "https://example.com"}), WithNotFoundScreen(nfMetaBody{}))
+	ds.SetPathLocales(i18n.PathLocales{Default: "en", Prefixed: []string{"es"}})
+	page, ok := ds.RenderStaticNotFoundPage(context.Background(), "/")
+	if !ok || !strings.Contains(page, "themed-404") {
+		t.Fatalf("ok=%v, want the themed 404:\n%s", ok, page)
+	}
+	if got := routeMeta(page); len(got) != 0 {
+		t.Errorf("404.html carries route meta %q", got)
+	}
+}
+
+// The error page of a matched route carries none of its meta either.
+func TestErrorPageCarriesNoRouteMeta(t *testing.T) {
+	a := app.NewApp("errmeta")
+	a.SetDefaultLayout(app.NewLayout("root", app.LayoutSpec{}, func(_ context.Context, l *app.LayoutTree) render.HTML { return l.Primary() }))
+	key := app.NewKey[string]("errmeta-row")
+	a.RegisterScreen(app.NewScreen("/boom/:type", &barcodeComp{}).
+		WithDescription("Boom page").
+		Resolve(key.From(func(context.Context) (string, error) { return "", errors.New("db down") })).
+		WithPolicy(app.PolicyFunc(func(ctx context.Context) app.Decision {
+			_, _ = key.Get(ctx)
+			return app.Decision{Kind: app.DecisionAllow}
+		})), nil)
+	a.Register("/origin", statusScreenComp("origin"), nil)
+	ds := New(a, WithSitemap(SitemapConfig{BaseURL: "https://example.com"}), WithDescription("Site wide"))
+	set := i18n.PathLocales{Default: "en", Prefixed: []string{"es"}}
+	ds.SetPathLocales(set)
+	for _, partial := range []bool{false, true} {
+		rec := serveNF(ds, set, "/boom/qr", partial)
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("partial=%v: status %d, want 500", partial, rec.Code)
+		}
+		if got := routeMeta(rec.Body.String()); len(got) != 0 {
+			t.Errorf("partial=%v: error page carries route meta %q", partial, got)
 		}
 	}
 }

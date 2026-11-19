@@ -193,10 +193,15 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 				w.Write([]byte(md))
 				return
 			}
+			ctx := app.WithRequest(req.Context(), req)
+			d := coreApp.PatternPolicy(ctx, sc)
+			if d.Kind == app.DecisionBlock && d.NotFound {
+				ds.serveNotFound(w, req, app.RoutePath(req.URL.EscapedPath()))
+				return
+			}
 			setPageMarkdownHeaders(w)
 			var md string
-			ctx := app.WithRequest(req.Context(), req)
-			if coreApp.PatternPolicy(ctx, sc).Kind != app.DecisionAllow {
+			if d.Kind != app.DecisionAllow {
 				md = app.ScreenLLMMDWithheld(sc)
 			} else {
 				seo := ds.localizeSEO(ctx, base, resolveScreenSEO(ctx, sc))
@@ -441,7 +446,7 @@ func (ds *UIHost) RenderStaticNotFoundPage(ctx context.Context, path string) (st
 			ctx = app.WithRequest(ctx, req)
 		}
 	}
-	ctx = store.WithValues(ctx)
+	ctx = withoutRouteMeta(store.WithValues(ctx))
 	res, err := ds.App.RenderNotFoundPageResult(ctx, path, ds.notFoundBodyComponent(""))
 	if err != nil {
 		slog.Warn("uihost: static not-found render failed; exporting no 404.html", "err", err)

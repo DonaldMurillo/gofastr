@@ -124,7 +124,7 @@ type Decision struct {
 
 // Decision values are constructed via the helpers in subpackage
 // core-ui/app/decide (decide.Allow, decide.Redirect, decide.RenderAlt,
-// decide.Block). The subpackage exists to avoid shadowing common
+// decide.Block, decide.BlockWith, decide.NotFound). The subpackage exists to avoid shadowing common
 // variable names like `redirect` and `block` at call sites.
 
 // Policy decides what to do with a request before screen render.

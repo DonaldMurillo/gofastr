@@ -250,9 +250,11 @@ rather than sent as `false`; `mcp.Bool(v)` makes the pointer.
 changes nothing. `AppConfig.Annotations` does the same for `RegisterApp`,
 and `entity.Endpoint.MCPAnnotations` for an endpoint's MCP twin.
 
-`SetAnnotationWarnings(true)` makes `RegisterTool` log a warning for each
-tool that leaves any of `readOnlyHint`, `destructiveHint` or `openWorldHint`
-unset, naming the missing ones. A tool registered `WithDevImplied` is
+`SetAnnotationWarnings(true)` logs a warning for each tool that leaves any
+of `readOnlyHint`, `destructiveHint` or `openWorldHint` unset, naming the
+missing ones: once for every tool already registered when it is turned on,
+and at `RegisterTool` for every later one. Each tool is warned about once,
+however often the setting is toggled. A tool registered `WithDevImplied` is
 skipped: it never leaves a loopback bind. A framework app turns the warnings
 on in dev mode (`GOFASTR_DEV`), so `gofastr dev` names every tool that would
 fail the directory scan before you submit. Registration never refuses a tool
@@ -269,8 +271,11 @@ The framework sets the hints on its own tools. Entity CRUD tools get:
 
 An update or a move overwrites values the caller cannot get back, which the
 MCP spec counts as destructive. The introspection, contract, docs, log and
-telemetry tools are read-only; `app_module_enable` / `app_module_disable`
-and `log_set_level` change state but destroy nothing.
+telemetry tools are read-only, except the dev-only `contracts_fix`, which
+rewrites source files and is marked destructive; `app_module_enable` /
+`app_module_disable` and `log_set_level` change state but destroy nothing.
+A process module's tools carry the hints the module sends; see
+[process modules](process-modules.md#mcp-tools).
 
 ### Request `_meta`
 

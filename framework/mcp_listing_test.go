@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -96,28 +97,80 @@ func TestDevModeWarnsOnUnannotatedTools(t *testing.T) {
 	}
 }
 
+// hintString renders a tool's four behaviour hints, "-" for an unset one.
+func hintString(a *mcp.Annotations) string {
+	if a == nil {
+		return "none"
+	}
+	one := func(p *bool) string {
+		if p == nil {
+			return "-"
+		}
+		return strconv.FormatBool(*p)
+	}
+	return "readOnly=" + one(a.ReadOnlyHint) + " destructive=" + one(a.DestructiveHint) +
+		" idempotent=" + one(a.IdempotentHint) + " openWorld=" + one(a.OpenWorldHint)
+}
+
 func TestBuiltinMCPToolsCarryListingHints(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "1")
+	t.Setenv("GOFASTR_DEV_MCP", "")
+	t.Setenv("GOFASTR_ENV", "")
+	const (
+		read   = "readOnly=true destructive=false idempotent=true openWorld=false"
+		toggle = "readOnly=false destructive=false idempotent=true openWorld=false"
+		write  = "readOnly=false destructive=true idempotent=false openWorld=false"
+	)
+	want := map[string]string{
+		"app_routes": read, "app_plugins": read, "app_batteries": read, "app_modules": read,
+		"app_config": read, "app_readiness": read, "app_goroutine_leaks": read,
+		"app_routines": read, "app_unmounted": read,
+		"contracts_list": read, "contracts_explain": read, "contracts_capabilities": read,
+		"contracts_verify": read, "contracts_fix": write,
+		"app_module_enable": toggle, "app_module_disable": toggle,
+	}
 	app := NewApp(WithMCPIntrospection(), WithMCPControl())
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("InitPlugins: %v", err)
 	}
-	tools := app.MCP.ListTools()
-	if len(tools) == 0 {
-		t.Fatal("setup: no built-in tools registered")
+	got := map[string]string{}
+	for _, tool := range app.MCP.ListTools() {
+		got[tool.Name] = hintString(tool.Annotations)
 	}
-	for _, tool := range tools {
-		if a := tool.Annotations; a == nil || a.ReadOnlyHint == nil || a.DestructiveHint == nil || a.OpenWorldHint == nil {
-			t.Errorf("%s: annotations %+v, want readOnlyHint, destructiveHint and openWorldHint set", tool.Name, a)
+	for name, hints := range want {
+		if got[name] != hints {
+			t.Errorf("%s: hints %q, want %q", name, got[name], hints)
+		}
+	}
+	for name := range got {
+		if _, listed := want[name]; !listed {
+			t.Errorf("built-in tool %s is not in this test's table; add its expected hints", name)
 		}
 	}
 
 	ent := entity.Define("orders", entity.EntityConfig{Name: "orders", Fields: []schema.Field{{Name: "n", Type: schema.String}}})
-	ep := entity.Endpoint{Method: http.MethodGet, Path: "summary", MCPAnnotations: &mcp.Annotations{ReadOnlyHint: mcp.Bool(true)}}
+	ep := entity.Endpoint{Method: http.MethodGet, Path: "summary", MCPAnnotations: &mcp.Annotations{
+		ReadOnlyHint: mcp.Bool(true), DestructiveHint: mcp.Bool(false), OpenWorldHint: mcp.Bool(true),
+	}}
 	var tool mcp.Tool
 	for _, opt := range endpointMCPOptions(ent, ep) {
 		opt(&tool)
 	}
-	if tool.Annotations == nil || tool.Annotations.ReadOnlyHint == nil || !*tool.Annotations.ReadOnlyHint {
-		t.Fatalf("endpoint MCPAnnotations did not reach the tool: %+v", tool.Annotations)
+	if h := hintString(tool.Annotations); h != "readOnly=true destructive=false idempotent=- openWorld=true" {
+		t.Fatalf("endpoint MCPAnnotations reached the tool as %q", h)
+	}
+}
+
+func TestDevWarningsCoverToolsOnACustomServer(t *testing.T) {
+	sink := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, sink)
+	t.Setenv("GOFASTR_DEV", "1")
+	custom := mcp.NewServer()
+	if err := custom.RegisterTool("early_bare", "", nil, func(context.Context, map[string]any) (any, error) { return nil, nil }); err != nil {
+		t.Fatal(err)
+	}
+	NewApp(WithMCPServer(custom))
+	if sink.Get("tool") != "early_bare" {
+		t.Fatalf("a tool registered on the custom server before NewApp was not warned about: %#v", sink.Attrs())
 	}
 }

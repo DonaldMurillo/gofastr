@@ -134,12 +134,21 @@ invariants:
     enforced_by:
       - test: framework.TestWithMCPInstructionsReachesInitialize
       - test: framework.TestDevModeWarnsOnUnannotatedTools
+      - test: framework.TestDevWarningsCoverToolsOnACustomServer
     applies:
       - framework/app.go
   - id: builtin-tools-carry-hints
-    rule: Every introspection, contract and control tool the framework registers sets readOnlyHint, destructiveHint and openWorldHint, and an entity Endpoint's MCPAnnotations reach its tool.
+    rule: Every introspection, contract and control tool the framework registers, the dev-only contracts_verify and contracts_fix included, sets all four hints with openWorldHint false, read-only and idempotent except contracts_fix (destructive, not idempotent) and the control tools (not read-only, not destructive), and an entity Endpoint's MCPAnnotations reach its tool unchanged.
     enforced_by:
       - test: framework.TestBuiltinMCPToolsCarryListingHints
+  - id: battery-tools-carry-hints
+    rule: The battery/log and battery/telemetry MCP tools set all four hints with openWorldHint false, read-only and idempotent except log_set_level, which is not read-only, whether they were opted into or implied by dev mode.
+    enforced_by:
+      - test: battery/log.TestMCPToolsCarryListingHints
+      - test: battery/telemetry.TestMCPToolsCarryListingHints
+    applies:
+      - battery/log/mcp.go
+      - battery/telemetry/mcp.go
 decisions:
   - id: control-separate-from-introspection
     date: 2026-11-16
