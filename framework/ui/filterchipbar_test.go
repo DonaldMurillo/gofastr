@@ -129,10 +129,7 @@ func TestFilterChipBarExtraAttrsOnRoot(t *testing.T) {
 		},
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("filter bar root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "filter bar root")
 }
 
 // TestFilterChipBarIslandSwapContract: the bar's chips clear through

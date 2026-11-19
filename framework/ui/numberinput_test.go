@@ -103,6 +103,27 @@ func extraAttrsOpeningTag(t *testing.T, h string, tag string) string {
 	return h[i : i+end+1]
 }
 
+// rootOpeningTag returns h through its first ">": the root element's
+// opening tag, attributes included.
+func rootOpeningTag(t *testing.T, h string) string {
+	t.Helper()
+	end := strings.Index(h, ">")
+	if end < 0 {
+		t.Fatalf("unterminated root element:\n%s", h)
+	}
+	return h[:end+1]
+}
+
+// wantRootHook proves an ExtraAttrs data-test hook lands on the root
+// opening tag; label names the root in the failure message.
+func wantRootHook(t *testing.T, h string, label string) {
+	t.Helper()
+	root := rootOpeningTag(t, h)
+	if !strings.Contains(root, `data-test="hook"`) {
+		t.Errorf("%s missing data-test:\n%s", label, root)
+	}
+}
+
 // ExtraAttrs land on the <input> but never override what the component
 // owns (#262): step/value/min/max (and the other owned keys) keep their
 // framework values; class/id/data-cui-* case-variants are dropped.

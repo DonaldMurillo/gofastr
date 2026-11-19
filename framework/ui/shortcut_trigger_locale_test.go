@@ -10,7 +10,7 @@ import (
 )
 
 func TestShortcutTriggerRequestLocale(t *testing.T) {
-	french := frenchCtx(map[i18n.Phrase]string{i18nui.ShortcutSheetTitle: "Raccourcis clavier"})
+	french := frenchWords(map[i18n.Phrase]string{i18nui.ShortcutSheetTitle: "Raccourcis clavier"})
 	for _, visible := range []bool{false, true} {
 		cfg := ShortcutSheetConfig{Name: "keys", Shortcut: "Alt+H", FallbackHref: "/keys",
 			Items: []ShortcutItem{{Chord: "/", Label: "Search"}}, TriggerVisible: visible, Ctx: french}
@@ -43,7 +43,7 @@ func TestShortcutTriggerRequestLocale(t *testing.T) {
 func TestShortcutTriggerKeepsCallerLabel(t *testing.T) {
 	cfg := ShortcutSheetConfig{FallbackHref: "/keys", TriggerLabel: "Help & keys", TriggerVisible: true,
 		Items: []ShortcutItem{{Chord: "/", Label: "Search"}}}
-	ctx := frenchCtx(map[i18n.Phrase]string{i18nui.ShortcutSheetTitle: "Raccourcis clavier"})
+	ctx := frenchWords(map[i18n.Phrase]string{i18nui.ShortcutSheetTitle: "Raccourcis clavier"})
 	trigger := string(ShortcutSheetTrigger(ctx, cfg))
 	if !strings.Contains(trigger, `aria-label="Help &amp; keys"`) || !strings.Contains(trigger, ">Help &amp; keys<") {
 		t.Errorf("request trigger discarded the caller's label: %s", trigger)

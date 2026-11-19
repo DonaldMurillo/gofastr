@@ -12,11 +12,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-func sweepCaptureLog(t *testing.T) *bytes.Buffer {
+// captureLogs swaps the process logger for a text handler writing at min
+// into the returned buffer, restoring the previous logger on cleanup.
+func captureLogs(t *testing.T, min slog.Level) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
 	old := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: min})))
 	t.Cleanup(func() { slog.SetDefault(old) })
 	return &buf
 }
@@ -37,7 +39,7 @@ func sweepKindUI(t *testing.T, k Kind, mutate func(*Extensions)) *testUI {
 
 // A panicking kind Cell fails its slot with the generic message, and the log names only the panic's type.
 func TestSweepCoreSlotPanicLogsTypeOnly(t *testing.T) {
-	buf := sweepCaptureLog(t)
+	buf := captureLogs(t, slog.LevelDebug)
 	x := sweepKindUI(t, Kind{Cell: func(CellContext) render.HTML { panic("secret-cell-text") }}, nil)
 	body := string(x.ui.List("deals").Base("/deals").Columns("name", "amount").RenderCtx(x.userCtx("/deals", "", "u1")))
 	if strings.Contains(body, "secret-cell-text") || strings.Contains(buf.String(), "secret-cell-text") {
@@ -50,7 +52,7 @@ func TestSweepCoreSlotPanicLogsTypeOnly(t *testing.T) {
 
 // A panicking kind Text leaves its text slot empty, so the row link falls back to the id.
 func TestSweepCoreKindTextPanicIsEmpty(t *testing.T) {
-	buf := sweepCaptureLog(t)
+	buf := captureLogs(t, slog.LevelDebug)
 	x := sweepKindUI(t, Kind{
 		Cell: func(cc CellContext) render.HTML { return render.HTML(cell(cc.Value)) },
 		Text: func(CellContext) string { panic("secret-text") },

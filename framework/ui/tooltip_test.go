@@ -52,10 +52,7 @@ func TestTooltipExtraAttrsOnRoot(t *testing.T) {
 		Text:       "tip",
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	}, render.Text("trigger"))
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("wrapper span missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "wrapper span")
 }
 
 // The idempotence check is scoped to the trigger's FIRST OPEN TAG: a

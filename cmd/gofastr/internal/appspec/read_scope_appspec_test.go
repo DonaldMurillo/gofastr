@@ -29,6 +29,24 @@ func writeReadScopeAppSpec(t *testing.T, yml string) AppSpec {
 	return bp
 }
 
+// refuseReadScope loads an app spec whose entity body is body and proves
+// LoadAppSpec fails with every substring in its error; want names the
+// refusal in failure messages.
+func refuseReadScope(t *testing.T, body, want string, substrings ...string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "gofastr.yml")
+	clitest.WriteTestFile(t, path, readScopeYAML(body))
+	_, err := LoadAppSpec(path)
+	if err == nil {
+		t.Fatalf("err = %v, want %s", err, want)
+	}
+	for _, sub := range substrings {
+		if !strings.Contains(err.Error(), sub) {
+			t.Fatalf("err = %v, want %s", err, want)
+		}
+	}
+}
+
 func readScopeFields() string {
 	return "    fields:\n      - name: title\n        type: string\n      - name: status\n        type: enum\n        values: [draft, published]\n        default: draft\n      - name: approved\n        type: bool\n        default: false\n"
 }
@@ -91,97 +109,63 @@ func TestAppSpecReadScopeDefaultNil(t *testing.T) {
 }
 
 func TestAppSpecRejectsBadReadScopeKey(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gofastr.yml")
-	clitest.WriteTestFile(t, path, readScopeYAML(
-		"    read_scope:\n      filters:\n        - field: status\n"+readScopeFields()))
-	_, err := LoadAppSpec(path)
-	if err == nil || !strings.Contains(err.Error(), `unknown key "filters"`) || !strings.Contains(err.Error(), "entities[0].read_scope") {
-		t.Fatalf("err = %v, want unknown key naming entities[0].read_scope", err)
-	}
+	refuseReadScope(t,
+		"    read_scope:\n      filters:\n        - field: status\n"+readScopeFields(),
+		"unknown key naming entities[0].read_scope",
+		`unknown key "filters"`, "entities[0].read_scope")
 }
 
 func TestAppSpecRejectsBadReadScopePredicateKey(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gofastr.yml")
-	clitest.WriteTestFile(t, path, readScopeYAML(
-		"    read_scope:\n      filter:\n        - field: status\n          valeu: published\n"+readScopeFields()))
-	_, err := LoadAppSpec(path)
-	if err == nil || !strings.Contains(err.Error(), `unknown key "valeu"`) || !strings.Contains(err.Error(), "entities[0].read_scope.filter[0]") {
-		t.Fatalf("err = %v, want unknown key naming entities[0].read_scope.filter[0]", err)
-	}
+	refuseReadScope(t,
+		"    read_scope:\n      filter:\n        - field: status\n          valeu: published\n"+readScopeFields(),
+		"unknown key naming entities[0].read_scope.filter[0]",
+		`unknown key "valeu"`, "entities[0].read_scope.filter[0]")
 }
 
 func TestAppSpecRejectsUnknownReadScopeOp(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gofastr.yml")
-	clitest.WriteTestFile(t, path, readScopeYAML(
-		"    read_scope:\n      filter:\n        - field: status\n          op: equals\n          value: published\n"+readScopeFields()))
-	_, err := LoadAppSpec(path)
-	if err == nil || !strings.Contains(err.Error(), "op is \"equals\"") {
-		t.Fatalf("err = %v, want unknown op refused", err)
-	}
+	refuseReadScope(t,
+		"    read_scope:\n      filter:\n        - field: status\n          op: equals\n          value: published\n"+readScopeFields(),
+		"unknown op refused", "op is \"equals\"")
 }
 
 func TestAppSpecRejectsReadScopeValueWithValues(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gofastr.yml")
-	clitest.WriteTestFile(t, path, readScopeYAML(
-		"    read_scope:\n      filter:\n        - field: status\n          op: in\n          value: published\n          values: [draft, published]\n"+readScopeFields()))
-	_, err := LoadAppSpec(path)
-	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Fatalf("err = %v, want value+values refused", err)
-	}
+	refuseReadScope(t,
+		"    read_scope:\n      filter:\n        - field: status\n          op: in\n          value: published\n          values: [draft, published]\n"+readScopeFields(),
+		"value+values refused", "mutually exclusive")
 }
 
 func TestAppSpecRejectsReadScopePredicateWithoutField(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gofastr.yml")
-	clitest.WriteTestFile(t, path, readScopeYAML(
-		"    read_scope:\n      filter:\n        - op: eq\n          value: published\n"+readScopeFields()))
-	_, err := LoadAppSpec(path)
-	if err == nil || !strings.Contains(err.Error(), "field is required") {
-		t.Fatalf("err = %v, want missing field refused", err)
-	}
+	refuseReadScope(t,
+		"    read_scope:\n      filter:\n        - op: eq\n          value: published\n"+readScopeFields(),
+		"missing field refused", "field is required")
 }
 
 func TestAppSpecRejectsReadScopeInWithoutValues(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gofastr.yml")
-	clitest.WriteTestFile(t, path, readScopeYAML(
-		"    read_scope:\n      filter:\n        - field: status\n          op: in\n"+readScopeFields()))
-	_, err := LoadAppSpec(path)
-	if err == nil || !strings.Contains(err.Error(), "non-empty values") {
-		t.Fatalf("err = %v, want in without values refused", err)
-	}
+	refuseReadScope(t,
+		"    read_scope:\n      filter:\n        - field: status\n          op: in\n"+readScopeFields(),
+		"in without values refused", "non-empty values")
 }
 
 func TestAppSpecRejectsReadScopeEqWithValueList(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gofastr.yml")
-	clitest.WriteTestFile(t, path, readScopeYAML(
-		"    read_scope:\n      filter:\n        - field: status\n          op: eq\n          values: [draft, published]\n"+readScopeFields()))
-	_, err := LoadAppSpec(path)
-	if err == nil || !strings.Contains(err.Error(), "must not set values") {
-		t.Fatalf("err = %v, want eq with values refused", err)
-	}
+	refuseReadScope(t,
+		"    read_scope:\n      filter:\n        - field: status\n          op: eq\n          values: [draft, published]\n"+readScopeFields(),
+		"eq with values refused", "must not set values")
 }
 
 // An empty read_scope block filters nothing; accepting it would let a typo'd
 // indentation pass validation and change no behaviour while looking guarded.
 func TestAppSpecRejectsEmptyReadScope(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gofastr.yml")
-	clitest.WriteTestFile(t, path, readScopeYAML(
-		"    read_scope:\n      unrestricted: \"\"\n"+readScopeFields()))
-	_, err := LoadAppSpec(path)
-	if err == nil || !strings.Contains(err.Error(), "filters nothing") {
-		t.Fatalf("err = %v, want empty read_scope refused", err)
-	}
+	refuseReadScope(t,
+		"    read_scope:\n      unrestricted: \"\"\n"+readScopeFields(),
+		"empty read_scope refused", "filters nothing")
 }
 
 // The framework panics at registration for these; the app spec must fail at
 // decode instead, naming the entity and column.
 func TestAppSpecRejectsUndeclaredReadScopeField(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gofastr.yml")
-	clitest.WriteTestFile(t, path, readScopeYAML(
-		"    read_scope:\n      filter:\n        - field: statuz\n          value: published\n"+readScopeFields()))
-	_, err := LoadAppSpec(path)
-	if err == nil || !strings.Contains(err.Error(), `entity "posts" read_scope field "statuz" is not a declared field`) {
-		t.Fatalf("err = %v, want undeclared field refused", err)
-	}
+	refuseReadScope(t,
+		"    read_scope:\n      filter:\n        - field: statuz\n          value: published\n"+readScopeFields(),
+		"undeclared field refused", `entity "posts" read_scope field "statuz" is not a declared field`)
 }
 
 func TestAppSpecRejectsHiddenReadScopeField(t *testing.T) {

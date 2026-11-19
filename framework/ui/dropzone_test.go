@@ -113,10 +113,7 @@ func TestFileDropzoneExtraAttrsOnRoot(t *testing.T) {
 		Label:      "x",
 		ExtraAttrs: map[string]string{"data-test": "hook"},
 	})
-	root := string(h)[:strings.Index(string(h), ">")+1]
-	if !strings.Contains(root, `data-test="hook"`) {
-		t.Errorf("dropzone root missing data-test:\n%s", root)
-	}
+	wantRootHook(t, string(h), "dropzone root")
 }
 
 // The drop hooks are the runtime's contract. A caller's ExtraAttrs

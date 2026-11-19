@@ -97,7 +97,7 @@ func TestLinkExtraAttrsCarriesWiring(t *testing.T) {
 	h := Link(LinkConfig{Href: "/m/mod/act", Text: "Act", ExtraAttrs: map[string]string{
 		"data-cui-rpc": "/m/mod/act",
 	}})
-	root := string(h)[:strings.Index(string(h), ">")+1]
+	root := rootOpeningTag(t, string(h))
 	if !strings.Contains(root, `data-cui-rpc="/m/mod/act"`) {
 		t.Errorf("wiring attr dropped from carrier link:\n%s", root)
 	}
