@@ -1,9 +1,12 @@
 package atomicfile
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 )
 
@@ -29,6 +32,48 @@ func WriteFile(path string, data []byte, prepare func(*os.File) error) (err erro
 	}
 	_, err = writeFile(path, "."+filepath.Base(path)+".tmp-*", data, prepare, true)
 	return err
+}
+
+// WriteFileAt replaces name (slash-separated, already resolved inside
+// root) with data through a sibling temporary file created, synced and
+// renamed through root: the rooted twin of WriteFile, with confinement
+// and leaf checks left to the caller that resolved the name. createMode
+// is the mode a new file is created with; prepare runs on the temporary
+// file before a byte lands. On Windows the rename retries transient
+// failures the way Replace does.
+func WriteFileAt(root *os.Root, name string, data []byte, createMode os.FileMode, prepare func(*os.File) error) (err error) {
+	var nonce [8]byte
+	if _, nerr := rand.Read(nonce[:]); nerr != nil {
+		return nerr
+	}
+	tmp := filepath.FromSlash(path.Join(path.Dir(name), "."+path.Base(name)+".tmp-"+hex.EncodeToString(nonce[:])))
+	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, createMode)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = root.Remove(tmp)
+		}
+	}()
+	if prepare != nil {
+		if err = prepare(f); err != nil {
+			_ = f.Close()
+			return err
+		}
+	}
+	if _, err = f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	return ReplaceAt(root, tmp, filepath.FromSlash(name))
 }
 
 // WriteStage identifies the operation that failed during atomic replacement.

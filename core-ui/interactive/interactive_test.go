@@ -483,32 +483,30 @@ func TestLiveSearchInjectsRPCAttrs(t *testing.T) {
 	}
 }
 
-func TestLiveSearchDefaultDebounce(t *testing.T) {
-	form := render.Tag("form", nil,
-		render.Tag("input", map[string]string{"name": "q", "type": "text"}),
-	)
-	result := LiveSearch(form, Post("/api/search"), 0)
-	s := string(result)
-	if !strings.Contains(s, `data-cui-rpc-debounce-ms="250"`) {
-		t.Fatalf("expected default 250ms debounce attr data-cui-rpc-debounce-ms: %s", s)
+func TestLiveSearchDebounce(t *testing.T) {
+	cases := []struct {
+		name   string
+		action Action
+		input  int
+		want   string
+	}{
+		{"default 250ms", Post("/api/search"), 0, `data-cui-rpc-debounce-ms="250"`},
+		{"custom 500ms", Get("/api/search"), 500, `data-cui-rpc-debounce-ms="500"`},
 	}
-	// old wrong name must NOT appear
-	if strings.Contains(s, `data-cui-rpc-debounce="`) {
-		t.Fatalf("emitted stale data-cui-rpc-debounce (without -ms suffix): %s", s)
-	}
-}
-
-func TestLiveSearchCustomDebounce(t *testing.T) {
-	form := render.Tag("form", nil,
-		render.Tag("input", map[string]string{"name": "q", "type": "text"}),
-	)
-	result := LiveSearch(form, Get("/api/search"), 500)
-	s := string(result)
-	if !strings.Contains(s, `data-cui-rpc-debounce-ms="500"`) {
-		t.Fatalf("expected custom 500ms attr data-cui-rpc-debounce-ms: %s", s)
-	}
-	if strings.Contains(s, `data-cui-rpc-debounce="`) {
-		t.Fatalf("should not emit stale data-cui-rpc-debounce (without -ms suffix): %s", s)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			form := render.Tag("form", nil,
+				render.Tag("input", map[string]string{"name": "q", "type": "text"}),
+			)
+			s := string(LiveSearch(form, c.action, c.input))
+			if !strings.Contains(s, c.want) {
+				t.Fatalf("expected debounce attr %s: %s", c.want, s)
+			}
+			// old wrong name must NOT appear
+			if strings.Contains(s, `data-cui-rpc-debounce="`) {
+				t.Fatalf("emitted stale data-cui-rpc-debounce (without -ms suffix): %s", s)
+			}
+		})
 	}
 }
 

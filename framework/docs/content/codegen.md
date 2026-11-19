@@ -165,6 +165,10 @@ generators:
 
 Go embedders that link `github.com/DonaldMurillo/gofastr/codegen` directly can
 also register in-process generators with `Registry.RegisterGenerator`.
+Use `CheckCommandExtensions` before running generators from a discovered
+config. `Discovery.CommandExtensionDetails` gives the config path and
+declared commands for a diagnostic. It returns an empty string when
+the config declares no commands.
 
 ## Sources
 

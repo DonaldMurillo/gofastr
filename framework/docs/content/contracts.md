@@ -891,14 +891,18 @@ obvious. Changing `/users/:id` to `/users/{id}` on its own turns a loud
 fails quietly; the handler has to change in the same edit, and only you
 know what it should read.
 
-`gofastr build` runs the analyzers too, but fails only on error-severity
-findings: a build that fails on "this route has no test" is a build
-people learn to bypass. `--no-contracts` skips it.
+`gofastr build` runs the analyzers too, and fails on findings at or above
+the configured severity floor — error by default, so a build that fails on
+"this route has no test" is a build people learn to bypass.
+`contracts: {strict: true}` lowers the floor to warnings. An analyzer error
+or an unparsed file also fails the contract gate. Build runs `go vet` as a
+separate, earlier stage. `--no-contracts` skips the contract gate and leaves
+`go vet` enabled.
 
 The build gate reads the same baseline `verify` does. Recording one has
 to fix both, or adopting a baseline leaves `build` permanently red and
-the only exit a user finds is `--no-contracts`, which turns every check
-off. New findings the baseline never recorded still stop the build.
+the only exit a user finds is `--no-contracts`, which skips the contract
+checks. New findings the baseline never recorded still stop the build.
 
 Every rule carries at least one bad/good example pair, required rather
 encouraged: `RegisterRules` rejects a rule without one at init, the same

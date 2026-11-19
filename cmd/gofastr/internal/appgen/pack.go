@@ -351,10 +351,3 @@ func IdentName(e ast.Expr) string {
 	}
 	return ""
 }
-
-func RecvTypeName(e ast.Expr) string {
-	if star, ok := e.(*ast.StarExpr); ok {
-		return IdentName(star.X)
-	}
-	return IdentName(e)
-}

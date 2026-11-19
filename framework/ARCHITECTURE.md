@@ -782,8 +782,9 @@ Why a registry instead of file globs:
 - `cmd/gofastr/internal/agentscmd` blank-imports the batteries it
   inventories, then walks `agentsinv.All()` to write `AGENTS.md` (see
   `framework/agentsinv/inventory.go`).
-- An empty `agents.md` panics at init: the file is missing or the
-  `//go:embed` directive is stale.
+- An empty `agents.md` is filed under `MissingMarkdown`; `gofastr agents`
+  prints it as a nonfatal warning. A file the `//go:embed` directive
+  names but that is missing is a Go build error before init ever runs.
 
 Per-battery `agents.md` content lives next to the code it documents.
 Treat it as a short "use this when / shape / don't reinvent" reference

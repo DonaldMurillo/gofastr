@@ -3,12 +3,9 @@ package unmountcmd
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"go/format"
 	"go/parser"
 	"go/token"
@@ -26,8 +23,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appgen"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/projectfs"
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core/settings"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"golang.org/x/mod/module"
 )
 
@@ -507,53 +506,11 @@ func applyImportRewire(moduleRoot string, plan []importRewire, undo bool) (int, 
 		if undo {
 			content = r.old
 		}
-		if err := replaceInRoot(root, r.name, []byte(content), r.mode); err != nil {
+		if err := projectfs.ReplaceFixedMode(root, r.name, []byte(content), r.mode); err != nil {
 			return i + 1, fmt.Errorf("%s: %w", r.name, err)
 		}
 	}
 	return len(plan), nil
-}
-
-// replaceInRoot replaces name under root with data at mode through a
-// temporary file beside it, synced and renamed over it: a crash or a full
-// disk mid-rewire leaves each source file whole, old or new, where a
-// truncate-then-write left it empty with the undo never run. The plan
-// holds regular files only, so the rename never replaces a symlink, and
-// a read-only file is refused, as opening it for writing was.
-func replaceInRoot(root *os.Root, name string, data []byte, mode fs.FileMode) (err error) {
-	if fi, serr := root.Stat(name); serr == nil && fi.Mode().Perm()&0o200 == 0 {
-		return &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
-	}
-	var nonce [8]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		return err
-	}
-	tmp := path.Join(path.Dir(name), "."+path.Base(name)+".tmp-"+hex.EncodeToString(nonce[:]))
-	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = root.Remove(tmp)
-		}
-	}()
-	if err = f.Chmod(mode); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if _, err = f.Write(data); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return root.Rename(tmp, name)
 }
 
 // checkUnmountRegistry refuses a gofastr version that predates
@@ -593,7 +550,7 @@ func RunUnmount(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	settingsPath, entries, err := appgen.UnmountedEntries(moduleRoot)
+	settingsPath, entries, err := project.UnmountedSettings(moduleRoot)
 	if err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
@@ -745,7 +702,7 @@ func remountPackage(arg string, dryRun, force bool) error {
 	if modulePath == "" {
 		return appgen.ErrPackageNoModule
 	}
-	settingsPath, entries, err := appgen.UnmountedEntries(moduleRoot)
+	settingsPath, entries, err := project.UnmountedSettings(moduleRoot)
 	if err != nil {
 		return err
 	}

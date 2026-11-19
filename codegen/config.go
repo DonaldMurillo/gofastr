@@ -50,6 +50,21 @@ var ErrCommandExtensionNotAllowed = errors.New("codegen: discovered config decla
 // from a config nobody named on the command line.
 const commandOptInEnv = "GOFASTR_CODEGEN_ALLOW_COMMANDS"
 
+// CommandExtensionDetails describes the config path and its command extensions.
+// It returns an empty string when the config declares no commands.
+func (d Discovery) CommandExtensionDetails() string {
+	var named []string
+	for _, ext := range d.Config.Codegen.Extensions {
+		if len(ext.Command) > 0 {
+			named = append(named, ext.Name+": "+strings.Join(ext.Command, " "))
+		}
+	}
+	if len(named) == 0 {
+		return ""
+	}
+	return d.Path + " runs\n  " + strings.Join(named, "\n  ")
+}
+
 // CheckCommandExtensions refuses to run `command` extensions that came
 // from a DISCOVERED config unless the operator opted in.
 //
@@ -60,13 +75,8 @@ func CheckCommandExtensions(d Discovery) error {
 	if !d.Found || !d.Discovered {
 		return nil
 	}
-	var named []string
-	for _, ext := range d.Config.Codegen.Extensions {
-		if len(ext.Command) > 0 {
-			named = append(named, ext.Name+": "+strings.Join(ext.Command, " "))
-		}
-	}
-	if len(named) == 0 {
+	details := d.CommandExtensionDetails()
+	if details == "" {
 		return nil
 	}
 	if v := os.Getenv(commandOptInEnv); v != "" {
@@ -74,8 +84,8 @@ func CheckCommandExtensions(d Discovery) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: %s runs\n  %s\nRun it with --config %s, or set %s=1 to allow commands from a discovered config",
-		ErrCommandExtensionNotAllowed, d.Path, strings.Join(named, "\n  "), d.Path, commandOptInEnv)
+	return fmt.Errorf("%w: %s\nRun it with --config %s, or set %s=1 to allow commands from a discovered config",
+		ErrCommandExtensionNotAllowed, details, d.Path, commandOptInEnv)
 }
 
 // LoadConfig reads the codegen section of the settings file at path.

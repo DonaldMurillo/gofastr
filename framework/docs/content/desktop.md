@@ -308,8 +308,10 @@ the local user. The window keeps its JS bridge, because it never leaves
 the app's origin. The listener stays on `127.0.0.1`; a caller in a
 container needs `battery/service` and its `BindAddress`.
 
-The match is on whole segments of the clean, unescaped path, so
-`/apix`, `/api//x`, `/api/../admin` and `/api%2Fx` stay gated. `New`
+The match is on whole segments of the cleaned, decoded path: `/apix`,
+`/api//x`, `/api/../admin` and `/api%2Fx` stay gated, while a bare
+trailing slash (`/api/`) matches and canonically-escaped paths
+(`/api/caf%C3%A9`) are matched decoded. `New`
 panics on `/`, on anything under `/__gofastr/` (the bridge, the runtime,
 the handshake) and on a malformed entry. `Run` logs the open prefixes
 as a warning.

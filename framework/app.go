@@ -2001,17 +2001,19 @@ func (a *App) runStartHooks() error {
 		if a.stopRequestedNow() {
 			return context.Canceled
 		}
-		if err := a.runStartHookSafe(fn); err != nil {
+		if err := a.runHookSafe("start hook", fn); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (a *App) runStartHookSafe(fn func(ctx context.Context) error) (err error) {
+// runHookSafe calls a start or seed hook on the app lifecycle context,
+// turning a panic into an error that names the hook kind.
+func (a *App) runHookSafe(kind string, fn func(ctx context.Context) error) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			err = recoveredPanic(a.Logger(), "start hook", fmt.Sprintf("%T", v))
+			err = recoveredPanic(a.Logger(), kind, fmt.Sprintf("%T", v))
 		}
 	}()
 	return fn(a.appCtx)

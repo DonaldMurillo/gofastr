@@ -178,13 +178,8 @@ func ParseScaffoldArgs(args []string, kind string) (name string, opts GenerateOp
 	return positionals[0], opts, true
 }
 
-// GenerateProject is plain `gofastr generate`: it runs the derived
-// generators and extensions the `codegen:` section of gofastr.settings.yml
-// lists. `gofastr build` calls it on every build, which
-// is why the config may not list a scaffold generator (see
-// checkConfigGenerators). Generating an app from an app spec is the
-// explicit `gofastr generate app`, never discovered: a project may hold a
-// gofastr.yml it already generated from.
+// GenerateProject runs plain `gofastr generate` for derived generators and
+// extensions. App scaffolding runs through `gofastr generate app`.
 func GenerateProject(args []string) {
 	const usage = "Usage: gofastr generate [--config=<gofastr.settings.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch], or gofastr generate <generator>. See `gofastr generate --help`."
 	if showGenerateHelp(args, usage) {
@@ -196,11 +191,49 @@ func GenerateProject(args []string) {
 		cli.OsExit(2)
 		return
 	}
-	discovered, err := DiscoverGenerateConfig(options)
+	plan, err := PlanGenerate(options)
 	if err != nil {
 		failGenerate(options.json, fmt.Errorf("Failed to load codegen config: %v", err))
 		cli.OsExit(1)
+		return
 	}
+	if !plan.HasWork() {
+		failGenerate(options.json, fmt.Errorf("Nothing to generate: no codegen config found."))
+		cli.Fprintf(os.Stderr, "Derived generators (%s) run from gofastr.settings.yml, entities/endpoints.gen.go is rebuilt from its endpoints section, and entities/client whenever it exists. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
+		cli.OsExit(1)
+		return
+	}
+	plan.Run()
+}
+
+// GeneratePlan carries the resolved inputs for plain generate and build.
+type GeneratePlan struct {
+	Discovery codegen.Discovery
+	options   GenerateOptions
+	hasWork   bool
+}
+
+// PlanGenerate discovers codegen once and checks whether derived files need work.
+func PlanGenerate(options GenerateOptions) (GeneratePlan, error) {
+	discovery, err := DiscoverGenerateConfig(options)
+	plan := GeneratePlan{Discovery: discovery, options: options}
+	if err == nil {
+		plan.hasWork = discovery.Found || AppEndpointsWanted(".") || AppClientPresent(".")
+	}
+	return plan, err
+}
+
+// HasWork reports whether a successfully resolved plan has generation work.
+func (p GeneratePlan) HasWork() bool {
+	return p.hasWork
+}
+
+// Run executes a successfully resolved plan with generation work.
+func (p GeneratePlan) Run() {
+	if !p.HasWork() {
+		return
+	}
+	discovered, options := p.Discovery, p.options
 	if discovered.Found {
 		files := generateFromCodegenConfig(options, discovered)
 		// Discovery's project dir is absolute and the writer takes only a
@@ -218,16 +251,7 @@ func GenerateProject(args []string) {
 		}
 		return
 	}
-	// entities/endpoints.gen.go and entities/client need no config entry:
-	// an app with settings endpoints or a client gets them rebuilt by
-	// every plain generate and build.
-	if AppEndpointsWanted(".") || AppClientPresent(".") {
-		rebuildAppClient(options, true)
-		return
-	}
-	failGenerate(options.json, fmt.Errorf("Nothing to generate: no codegen config found."))
-	cli.Fprintf(os.Stderr, "Derived generators (%s) run from gofastr.settings.yml, entities/endpoints.gen.go is rebuilt from its endpoints section, and entities/client whenever it exists. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
-	cli.OsExit(1)
+	rebuildAppClient(options, true)
 }
 
 // rebuildAppClient runs refreshAppEndpoints and then refreshAppClient,
@@ -415,10 +439,7 @@ func DiscoverGenerateConfig(options GenerateOptions) (codegen.Discovery, error) 
 	// `command` extension: that binary is chosen by whoever wrote the
 	// file, which may be a cloned repo or a teammate's branch, and
 	// generate executes it as the developer.
-	if err := codegen.CheckCommandExtensions(d); err != nil {
-		return codegen.Discovery{}, err
-	}
-	return d, nil
+	return d, codegen.CheckCommandExtensions(d)
 }
 
 func applyGenerateOverrides(cfg *codegen.Config, options GenerateOptions) {

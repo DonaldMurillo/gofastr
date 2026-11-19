@@ -66,7 +66,7 @@ func RunNew(args []string) {
 
 	if len(args) == 0 {
 		newUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 	}
 
 	resource := args[0]
@@ -87,7 +87,7 @@ func RunNew(args []string) {
 	default:
 		cli.Fail("Unknown resource: %s", resource)
 		cli.Info("Supported: handler, route")
-		cli.OsExit(1)
+		cli.OsExit(2)
 	}
 }
 
@@ -328,7 +328,7 @@ func unusableFuncName(name string) string {
 // contributes only its package clause when no other file supplies one.
 func dirPackage(root *os.Root, skip string) (string, map[string]bool) {
 	dir := root.Name()
-	pkg := ""
+	pkg, _, _ := project.FirstGoPackageName(dir, skip)
 	declared := map[string]bool{}
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
@@ -337,13 +337,7 @@ func dirPackage(root *os.Root, skip string) (string, map[string]bool) {
 			continue
 		}
 		f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, n), nil, parser.SkipObjectResolution)
-		if err != nil {
-			continue
-		}
-		if pkg == "" {
-			pkg = f.Name.Name
-		}
-		if f.Name.Name != pkg {
+		if err != nil || f.Name.Name != pkg {
 			continue
 		}
 		for _, d := range f.Decls {

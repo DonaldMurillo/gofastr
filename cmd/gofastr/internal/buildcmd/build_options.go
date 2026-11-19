@@ -13,8 +13,9 @@ type buildOptions struct {
 	noGenerate   bool
 	noA11y       bool
 	noEmbedCheck bool
-	// noContracts skips the contract analyzers. The gate only fails on
-	// error-severity findings, so this exists for a build that must ship
+	// noContracts skips the contract analyzers. The gate fails on findings
+	// at or above the configured severity floor (error by default) and on a
+	// run that cannot finish, so this exists for a build that must ship
 	// while a rule is being addressed, not as a routine flag.
 	noContracts bool
 	// allowUnverifiedEmbeds downgrades check-embed's unresolved notes from

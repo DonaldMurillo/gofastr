@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/bom"
 )
 
 // packCheck is what pack reports beside the spec it writes: the Go files it
@@ -190,8 +191,7 @@ func packReadErr(err error) error {
 // normalizePackSource drops a UTF-8 byte order mark and turns CRLF line
 // endings into LF.
 func normalizePackSource(s string) string {
-	s = strings.TrimPrefix(s, "\uFEFF")
-	return strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.ReplaceAll(bom.Trim(s), "\r\n", "\n")
 }
 
 // packCheckDirs are the directories pack reads Go files from.

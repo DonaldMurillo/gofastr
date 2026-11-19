@@ -27,6 +27,7 @@ import (
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/astbase"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 	"github.com/DonaldMurillo/gofastr/kiln/freeze"
@@ -1184,7 +1185,7 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 			}
 			key := fn.Name.Name
 			if fn.Recv != nil && len(fn.Recv.List) == 1 {
-				key = appspec.AstSelLast(fn.Recv.List[0].Type) + "." + key
+				key = astbase.RecvBaseNameGeneric(fn) + "." + key
 			}
 			stubs[key] = fn
 			if fn.Doc != nil {
@@ -1229,11 +1230,22 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 					bp.Middleware = append(bp.Middleware, appspec.AppSpecNamedStub{Name: packStubName(root)})
 				}
 			case "RegisterPlugin":
-				lit, ok := call.Args[0].(*ast.CompositeLit)
+				arg := ast.Unparen(call.Args[0])
+				if ptr, ok := arg.(*ast.UnaryExpr); ok && ptr.Op == token.AND {
+					arg = ast.Unparen(ptr.X)
+				}
+				lit, ok := arg.(*ast.CompositeLit)
 				if !ok {
 					return true
 				}
-				typ := appspec.AstSelLast(lit.Type)
+				literalType := lit.Type
+				switch inst := literalType.(type) {
+				case *ast.IndexExpr:
+					literalType = inst.X
+				case *ast.IndexListExpr:
+					literalType = inst.X
+				}
+				typ := appspec.AstSelLast(literalType)
 				root, isStub := strings.CutSuffix(typ, "Plugin")
 				if !isStub || stubs[typ+".Init"] == nil {
 					return true
@@ -1737,7 +1749,7 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 			if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 {
 				continue
 			}
-			recv := appgen.RecvTypeName(fn.Recv.List[0].Type)
+			recv := astbase.RecvBaseName(fn)
 			switch fn.Name.Name {
 			case "ScreenTitle":
 				titles[recv] = returnString(fn)
@@ -1762,7 +1774,7 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 				continue
 			}
 			if fn.Name.Name == "Render" || fn.Name.Name == "RenderCtx" {
-				recv := appgen.RecvTypeName(fn.Recv.List[0].Type)
+				recv := astbase.RecvBaseName(fn)
 				bodies[recv] = reverseRenderBody(fn, helpers)
 			}
 		}
@@ -1897,7 +1909,7 @@ func packReadLegacyScreens(dir string) ([]appspec.AppSpecScreen, error) {
 		if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 {
 			continue
 		}
-		recv := appgen.RecvTypeName(fn.Recv.List[0].Type)
+		recv := astbase.RecvBaseName(fn)
 		switch fn.Name.Name {
 		case "ScreenTitle":
 			titles[recv] = returnString(fn)
@@ -3280,6 +3292,13 @@ func parsePackArgs(args []string) (packArgs, error) {
 		case "-h", "--help":
 			return packArgs{help: true}, nil
 		default:
+			if name, value, ok := strings.Cut(arg, "="); ok && (name == "-o" || name == "--out") {
+				if value == "" {
+					return packArgs{}, fmt.Errorf("%s needs a file name", name)
+				}
+				opts.out = value
+				continue
+			}
 			if strings.HasPrefix(arg, "-") {
 				return packArgs{}, fmt.Errorf("unknown flag %s (%s)", arg, packUsage)
 			}

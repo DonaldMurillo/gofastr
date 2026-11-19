@@ -30,6 +30,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/markdown"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/astbase"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 )
 
@@ -497,7 +498,7 @@ func assertAppSpecDeclsUnique(files []parsedGoFile) error {
 			case *ast.FuncDecl:
 				name, what := d.Name.Name, "func"
 				if d.Recv != nil && len(d.Recv.List) > 0 {
-					name, what = goRecvTypeName(d.Recv.List[0].Type)+"."+name, "method"
+					name, what = astbase.RecvBaseNameGeneric(d)+"."+name, "method"
 				}
 				if err := claim(name, what); err != nil {
 					return err
@@ -555,27 +556,6 @@ func goImportName(imp *ast.ImportSpec) string {
 		last = elems[len(elems)-2]
 	}
 	return last
-}
-
-// goRecvTypeName is a method receiver's base type name: T for T, *T, T[K]
-// and *T[K].
-func goRecvTypeName(e ast.Expr) string {
-	for {
-		switch t := e.(type) {
-		case *ast.StarExpr:
-			e = t.X
-		case *ast.IndexExpr:
-			e = t.X
-		case *ast.IndexListExpr:
-			e = t.X
-		case *ast.ParenExpr:
-			e = t.X
-		case *ast.Ident:
-			return t.Name
-		default:
-			return ""
-		}
-	}
 }
 
 // appSpecGitignore keeps the generated .env (and local overrides), the dev
@@ -3702,10 +3682,6 @@ func renderAppSpecBlockForScreen(bp appspec.AppSpec, screen appspec.AppSpecScree
 	}
 }
 
-func renderAppSpecNodeExpression(block appspec.AppSpecBlock) string {
-	return renderAppSpecNodeExpressionForScreen(appspec.AppSpec{}, appspec.AppSpecScreen{}, block, nil, nil, "")
-}
-
 // appSpecNodeTextProps are the node props a reader sees or hears: the
 // node renderer's text and the attributes assistive technology reads.
 var appSpecNodeTextProps = map[string]bool{
@@ -4520,7 +4496,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	// screens); every build fn is func(ctx context.Context, l
 	// *app.LayoutTree) render.HTML, so the three imports below follow it.
 	hasShell := len(bp.Nav) > 0 || hasMarketing
-	if adminSeed || hasAccess || roleNav || authHeader || guestRedirect || rbac || authSidebar || hasShell {
+	if adminSeed || hasAccess || authHeader || guestRedirect || authSidebar || hasShell {
 		sb.WriteString("\t\"context\"\n")
 	}
 	sb.WriteString("\t\"database/sql\"\n")
@@ -4578,7 +4554,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	if len(bp.Nav) > 0 {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/router\"\n")
 	}
-	if rbac || roleNav || authHeader || guestRedirect || authSidebar {
+	if authHeader || guestRedirect || authSidebar {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core/handler\"\n")
 	}
 	if needUI {
@@ -4588,7 +4564,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 		// appTheme seeds the dark palette from the framework theme.
 		sb.WriteString("\tuitheme \"github.com/DonaldMurillo/gofastr/framework/ui/theme\"\n")
 	}
-	if rbac {
+	if rbac || roleNav {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/access\"\n")
 	}
 	if bp.App.Auth.Enabled || hasAccess {
@@ -5051,14 +5027,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 			// Role-aware nav: the sidebar/drawer filter role-restricted items
 			// (e.g. an admin-only link) by the signed-in user's roles, so a
 			// link the user can't use never appears.
-			sb.WriteString("\t\tui.SetRolesExtractor(func(ctx context.Context) []string {\n")
-			sb.WriteString("\t\t\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
-			sb.WriteString("\t\t\t\tif rh, ok := u.(interface{ GetRoles() []string }); ok {\n")
-			sb.WriteString("\t\t\t\t\treturn rh.GetRoles()\n")
-			sb.WriteString("\t\t\t\t}\n")
-			sb.WriteString("\t\t\t}\n")
-			sb.WriteString("\t\t\treturn nil\n")
-			sb.WriteString("\t\t})\n")
+			sb.WriteString("\t\tui.SetRolesExtractor(access.RequestUserRoles)\n")
 		}
 		if appSpecHasEntityAccess(bp) {
 			adminRole := bp.App.Admin.Role
@@ -5073,14 +5042,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 			sb.WriteString("\t\t// now that rolePolicy is package-level. Without this, every write 403s.\n")
 			sb.WriteString("\t\trolePolicy = access.NewRolePolicy()\n")
 			sb.WriteString(fmt.Sprintf("\t\trolePolicy.Grant(%q, access.Wildcard)\n", adminRole))
-			sb.WriteString("\t\tfwApp.Use(access.Middleware(rolePolicy, func(ctx context.Context) []string {\n")
-			sb.WriteString("\t\t\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
-			sb.WriteString("\t\t\t\tif rh, ok := u.(interface{ GetRoles() []string }); ok {\n")
-			sb.WriteString("\t\t\t\t\treturn rh.GetRoles()\n")
-			sb.WriteString("\t\t\t\t}\n")
-			sb.WriteString("\t\t\t}\n")
-			sb.WriteString("\t\t\treturn nil\n")
-			sb.WriteString("\t\t}))\n")
+			sb.WriteString("\t\tfwApp.Use(access.Middleware(rolePolicy, access.RequestUserRoles))\n")
 		}
 		sb.WriteString("\t\t// auth.CSRF is intentionally NOT mounted: this generated surface\n")
 		sb.WriteString("\t\t// is JSON-first (REST CRUD + /mcp), and the CSRF middleware 403s\n")

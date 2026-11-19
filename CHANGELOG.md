@@ -25,6 +25,14 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`gofastr pack` keeps plugins registered as `&T{...}`, as a generic
+  literal, or as the address of a generic literal.** These plugins used
+  to be dropped from the packed spec without a word.
+- **`gofastr build` refuses a discovered command extension before
+  running any generator,** with the same remedy text, and skips
+  generation quietly when there is nothing to generate.
+- **Unmount and remount refuse a symlink found at a planned file** and
+  keep the planned file mode under any umask.
 - **Large SQLite outbox claims no longer fail past 1,000 deliveries,**
   and Postgres claim checks accept attempt budgets above the 32-bit
   range.

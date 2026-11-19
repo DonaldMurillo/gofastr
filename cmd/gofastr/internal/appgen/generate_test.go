@@ -1,6 +1,7 @@
 package appgen
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,8 +9,29 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
+
+func TestDiscoverGenerateConfigKeepsRefusedConfig(t *testing.T) {
+	t.Setenv("GOFASTR_CODEGEN_ALLOW_COMMANDS", "")
+	t.Chdir(t.TempDir())
+	clitest.WriteSettings(t, ".", `codegen:
+  output: gen
+  extensions:
+    - name: report
+      command: ["./report-generator"]
+`)
+	discovery, err := DiscoverGenerateConfig(GenerateOptions{})
+	if !errors.Is(err, codegen.ErrCommandExtensionNotAllowed) {
+		t.Fatalf("error = %v, want command extension refusal", err)
+	}
+	exts := discovery.Config.Codegen.Extensions
+	if !discovery.Found || !discovery.Discovered || filepath.Base(discovery.Path) != "gofastr.settings.yml" ||
+		len(exts) != 1 || exts[0].Name != "report" || strings.Join(exts[0].Command, " ") != "./report-generator" {
+		t.Fatalf("discovery lost the refused config: %+v", discovery)
+	}
+}
 
 func TestRenderGeneratedProjectFromDeclarations(t *testing.T) {
 	crud := true

@@ -315,6 +315,11 @@ on an un-wired (anonymous) request. Permission checks should still go
 through `GetPermissions` / `Can`; `GetRoles` is for role-shaped
 branching where the permission grant map isn't the right granularity.
 
+`access.RequestUserRoles(ctx)` reads roles from the user in the request
+context. It returns `nil` when there is no user or the user does not
+implement `GetRoles() []string`. Generated apps use it as the role
+callback for `access.Middleware` and `ui.SetRolesExtractor`.
+
 ### Caching role resolution
 
 `access.NewCachedResolver` wraps the role lookup function passed to
@@ -644,6 +649,11 @@ instead of keeping it until the next change to that role or a restart.
 Set the interval with `access.WithReconcileInterval(d)`; zero or negative
 turns the reconcile off. The timer starts with `SetFanout` and stops with
 the stop function it returns, so a store without a fanout runs none.
+
+Calling `SetFanout` again with a new fanout stops the previous attachment
+once the new subscription succeeds. If subscription fails, the previous
+attachment stays active. Each returned stop function applies to its own
+attachment and can be called repeatedly.
 
 ### Revocation tombstones
 

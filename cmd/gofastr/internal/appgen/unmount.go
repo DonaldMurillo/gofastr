@@ -1,16 +1,13 @@
 package appgen
 
 import (
-	"errors"
 	"fmt"
 	"go/build/constraint"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"maps"
 	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -212,21 +209,6 @@ func unmountHook(pkg string, tree UnmountTree, targetImport string, files map[st
 		strconv.Quote(tree.Source), strconv.Quote(tree.Version), strconv.Quote(targetImport))
 	b.WriteString("}\n")
 	return FormatGenerated(UnmountHookFile, b.String()), nil
-}
-
-// UnmountedEntries reads the unmounted section of the settings file at
-// the module root.
-func UnmountedEntries(moduleRoot string) (string, []settings.Unmounted, error) {
-	p := filepath.Join(moduleRoot, settings.FileName)
-	f, err := settings.Load(p)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return p, nil, nil
-		}
-		return p, nil, err
-	}
-	entries, err := f.Unmounted()
-	return p, entries, err
 }
 
 // WritePackageCopy writes a copy's files into its resolved target and

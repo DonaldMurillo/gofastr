@@ -119,7 +119,7 @@ func runGeneratePackage(args []string) {
 	// tree: same markers, same hook, same settings entry, so verify,
 	// upgrade and remount see it like any other copy.
 	source := CanonicalPackageImport + name
-	settingsPath, entries, err := UnmountedEntries(tgt.AnchorDir)
+	settingsPath, entries, err := project.UnmountedSettings(tgt.AnchorDir)
 	if err == nil {
 		err = CheckUnmountOverlap(settings.Unmounted{Source: source, Path: filepath.ToSlash(tgt.Root)}, entries, false)
 	}

@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=dddb83b35f08ccc9
+//gofastr:generated generator=app kind=scaffold version=dev sum=c80703ec0131a277
 
 package main
 
@@ -208,14 +208,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// now that rolePolicy is package-level. Without this, every write 403s.
 		rolePolicy = access.NewRolePolicy()
 		rolePolicy.Grant("admin", access.Wildcard)
-		fwApp.Use(access.Middleware(rolePolicy, func(ctx context.Context) []string {
-			if u, ok := handler.GetUser(ctx); ok && u != nil {
-				if rh, ok := u.(interface{ GetRoles() []string }); ok {
-					return rh.GetRoles()
-				}
-			}
-			return nil
-		}))
+		fwApp.Use(access.Middleware(rolePolicy, access.RequestUserRoles))
 		// auth.CSRF is intentionally NOT mounted: this generated surface
 		// is JSON-first (REST CRUD + /mcp), and the CSRF middleware 403s
 		// any unsafe-method request that doesn't echo the csrf cookie as

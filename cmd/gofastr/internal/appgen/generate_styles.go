@@ -2,8 +2,6 @@ package appgen
 
 import (
 	"fmt"
-	"go/parser"
-	"go/token"
 	"io/fs"
 	"maps"
 	"os"
@@ -13,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -50,7 +49,7 @@ func runGenerateStyles(args []string) {
 	for _, a := range args {
 		if strings.HasPrefix(a, "-") {
 			failGenerateArgs(args, fmt.Errorf("Unknown flag: %s (generate styles takes package patterns, not flags)", a))
-			cli.OsExit(1)
+			cli.OsExit(2)
 			return
 		}
 	}
@@ -318,15 +317,11 @@ func generateStyleFile(wd *os.Root, f styleFile, src, body string, checkDiags []
 	return nil
 }
 
-// stylePatternDirs resolves Go-style package patterns relative to the
-// working directory to the set of directories to scan: "./..." and
-// "foo/..." walk their root, "foo" is the single directory. vendor/,
-// testdata/, node_modules/, dot directories and _-prefixed
-// directories are skipped, the same trees the go tool ignores.
-func stylePatternDirs(patterns []string) ([]string, error) {
-	return stylePatternDirsAt(".", patterns)
-}
-
+// stylePatternDirsAt resolves Go-style package patterns relative to base
+// to the set of directories to scan: "./..." and "foo/..." walk their
+// root, "foo" is the single directory. vendor/, testdata/, node_modules/,
+// dot directories and _-prefixed directories are skipped, the same trees
+// the go tool ignores.
 func stylePatternDirsAt(base string, patterns []string) ([]string, error) {
 	var dirs []string
 	seen := map[string]bool{}
@@ -406,24 +401,12 @@ func stylePatternDirsAt(base string, patterns []string) ([]string, error) {
 // no Go source has nothing for the generated file to belong to: an
 // error naming the directory.
 func stylePackageName(dir string) (string, error) {
-	entries, err := os.ReadDir(dir)
+	name, ok, err := project.FirstGoPackageName(dir, "")
 	if err != nil {
 		return "", fmt.Errorf("read %s: %w", dir, err)
 	}
-	var names []string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
-			continue
-		}
-		names = append(names, e.Name())
-	}
-	slices.Sort(names)
-	for _, name := range names {
-		fset := token.NewFileSet()
-		f, perr := parser.ParseFile(fset, filepath.Join(dir, name), nil, parser.PackageClauseOnly)
-		if perr == nil && f.Name != nil {
-			return f.Name.Name, nil
-		}
+	if ok {
+		return name, nil
 	}
 	return "", fmt.Errorf("directory %s holds a style sheet but no non-test Go files; a generated file must join an existing package", filepath.ToSlash(dir))
 }
