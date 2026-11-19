@@ -160,6 +160,14 @@ func TestRoundTripAR16385x1Rejected(t *testing.T) {
 	}
 }
 
+func TestRejectsHeightOver16384(t *testing.T) {
+	src := image.NewNRGBA(image.Rect(0, 0, 1, 16385))
+	var buf bytes.Buffer
+	if err := Encode(&buf, src); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("Encode(1x16385) = %v, want an image too large error", err)
+	}
+}
+
 // ---- alpha variations ----
 
 func TestRoundTripAlphaAllZero(t *testing.T) {

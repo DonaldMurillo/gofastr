@@ -24,7 +24,7 @@ twins:
       - path: framework/ui/shortcutsheet.go
         note: checkShortcutSheet, for FallbackHref.
       - path: framework/ui/inlineedit.go
-        note: The Endpoint check in InlineEdit.
+        note: The same-origin checks on Action and Return in InlineEdit.
       - path: framework/headless/island.go
         note: checkSameOrigin, for every headless endpoint.
   - job: Refuse a signal name the runtime cannot write before it is emitted.
