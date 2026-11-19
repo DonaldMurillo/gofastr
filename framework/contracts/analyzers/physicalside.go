@@ -2,6 +2,8 @@ package analyzers
 
 import (
 	"fmt"
+	"go/ast"
+	"go/token"
 	"regexp"
 	"strings"
 
@@ -93,6 +95,122 @@ func physicalSide(prop, value string, bgMirrored bool) (lit, want string, ok boo
 		}
 	}
 	return "", "", false
+}
+
+func checkGoPhysicalSides(p *contracts.Pass, rel string, body []byte, lines []string) []contracts.Diagnostic {
+	file, ok := p.AST(rel)
+	if !ok {
+		return nil
+	}
+	positions := p.FileSet().File(file.Pos())
+	css := make([]byte, len(body))
+	for i, c := range body {
+		css[i] = ' '
+		if c == '\n' {
+			css[i] = c
+		}
+	}
+	for node := range ast.Preorder(file) {
+		if lit, ok := node.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+			start, end := positions.Offset(lit.Pos()), positions.Offset(lit.End())
+			copy(css[start:end], body[start:end])
+		}
+	}
+	return scanPhysicalSides(rel, strings.Split(stripComments(string(css)), "\n"), lines, physicalBuilderPairs(file, positions))
+}
+
+func physicalBuilderPairs(file *ast.File, positions *token.File) map[int][]cssDeclaration {
+	type builderCall struct {
+		scope ast.Node
+		call  *ast.CallExpr
+		recv  ast.Expr
+		first int
+	}
+	type receiver struct {
+		scope ast.Node
+		name  string
+	}
+	ruleReceivers := make(map[receiver]bool)
+	var calls []builderCall
+	ast.PreorderStack(file, nil, func(node ast.Node, stack []ast.Node) bool {
+		recv, method, call, ok := selectorCall(node)
+		if !ok {
+			return true
+		}
+		scope := cssBuilderScope(file, stack)
+		var first int
+		switch method {
+		case "Rule":
+			if id, ok := recv.(*ast.Ident); ok {
+				ruleReceivers[receiver{scope, id.Name}] = true
+			}
+			return true
+		case "Set":
+		case "Pseudo", "Child":
+			first = 1
+		default:
+			return true
+		}
+		calls = append(calls, builderCall{scope, call, recv, first})
+		return true
+	})
+	pairs := make(map[int][]cssDeclaration)
+	for _, candidate := range calls {
+		id, isIdent := candidate.recv.(*ast.Ident)
+		if !(isIdent && ruleReceivers[receiver{candidate.scope, id.Name}]) && !hasStyleRule(candidate.recv) {
+			continue
+		}
+		args := candidate.call.Args
+		for i := candidate.first; i+1 < len(args); i += 2 {
+			name, nameOK := stringLit(args[i])
+			value, valueOK := stringLit(args[i+1])
+			if nameOK && valueOK {
+				line := positions.PositionFor(args[i].Pos(), false).Line
+				pairs[line] = append(pairs[line], cssDeclaration{property: strings.ToLower(name), value: value})
+			}
+		}
+	}
+	return pairs
+}
+
+func hasStyleRule(recv ast.Expr) bool {
+	for {
+		next, method, _, ok := selectorCall(recv)
+		if !ok {
+			return false
+		}
+		switch method {
+		case "Rule":
+			return true
+		case "Set", "Pseudo", "Child", "End":
+			recv = next
+		default:
+			return false
+		}
+	}
+}
+
+func cssBuilderScope(file *ast.File, stack []ast.Node) ast.Node {
+	for i := len(stack) - 1; i >= 0; i-- {
+		switch stack[i].(type) {
+		case *ast.FuncDecl, *ast.FuncLit:
+			return stack[i]
+		}
+	}
+	return file
+}
+
+func scanPhysicalSides(rel string, scan, lines []string, pairs map[int][]cssDeclaration) []contracts.Diagnostic {
+	var out []contracts.Diagnostic
+	bgMirrored := mirrorsBackground(scan)
+	var dir dirBlock
+	for i, line := range scan {
+		inDir := dir.line(line)
+		decls := appendCSSDeclarations(nil, line, ":", reDeclCSS)
+		out = append(out, checkPhysicalSides(rel, i+1, decls, lines[i], bgMirrored, inDir)...)
+		out = append(out, checkPhysicalSides(rel, i+1, pairs[i+1], lines[i], bgMirrored, nil)...)
+	}
+	return out
 }
 
 func checkPhysicalSides(rel string, lineNo int, decls []cssDeclaration, orig string, bgMirrored bool, inDir []bool) []contracts.Diagnostic {

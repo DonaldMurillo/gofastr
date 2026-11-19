@@ -219,7 +219,9 @@ an app theme's.
 page in Arabic, Hebrew or Persian renders `<html dir="rtl">`, and a
 physical side stays where it was: the sidebar border, the list indent
 and the select chevron all stay on the left-to-right side. The rule
-refuses `left`/`right` offsets, `margin-`, `padding-`, `scroll-margin-`,
+reads CSS declarations in stylesheets and Go strings, plus property/value
+arguments to the style builder. It refuses `left`/`right` offsets,
+`margin-`, `padding-`, `scroll-margin-`,
 `scroll-padding-` and `border-left`/`-right` (with their `-width`,
 `-style` and `-color`), the four corner radii, `text-align`, `float` and
 `clear` set to `left` or `right`, a background position on a side with

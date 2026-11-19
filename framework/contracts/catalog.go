@@ -1319,7 +1319,8 @@ func renderingRules() []Rule {
 	}, {
 		ID: RulePhysicalSide, Slug: "rendering/physical-side",
 		Title: "Kit CSS pins a physical side where a reading-direction one exists", Capability: CapRendering, Severity: SeverityError,
-		Summary: "Design-system CSS names left or right: a left/right offset, a margin, padding, scroll margin or border on one side, " +
+		Summary: "CSS in design-system stylesheets, Go strings or style builder property/value arguments names left or right: " +
+			"a left/right offset, a margin, padding, scroll margin or border on one side, " +
 			"a corner radius, text-align, float or clear set to left or right, a background position on a side with no " +
 			"`:dir(rtl)` mirror in the file, or a four-value margin, padding, inset or border shorthand whose left and right differ. " +
 			"left: 50% and right: 50% (centring), auto, and a line that is itself a :dir() override pass. Dev tooling " +

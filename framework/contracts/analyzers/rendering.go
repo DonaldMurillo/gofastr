@@ -137,18 +137,18 @@ type cssDeclaration struct {
 	offset          int
 }
 
-func scanCSSDeclarations(source string) []cssDeclaration {
-	var out []cssDeclaration
-	scan := func(delimiter string, pattern *regexp.Regexp) {
-		if strings.Contains(source, delimiter) {
-			for _, m := range pattern.FindAllStringSubmatchIndex(source, -1) {
-				out = append(out, cssDeclaration{strings.ToLower(source[m[2]:m[3]]), source[m[4]:m[5]], m[2]})
-			}
+func appendCSSDeclarations(out []cssDeclaration, source, delimiter string, pattern *regexp.Regexp) []cssDeclaration {
+	if strings.Contains(source, delimiter) {
+		for _, m := range pattern.FindAllStringSubmatchIndex(source, -1) {
+			out = append(out, cssDeclaration{strings.ToLower(source[m[2]:m[3]]), source[m[4]:m[5]], m[2]})
 		}
 	}
-	scan(":", reDeclCSS)
-	scan(`",`, reDeclPair)
 	return out
+}
+
+func scanCSSDeclarations(source string) []cssDeclaration {
+	decls := appendCSSDeclarations(nil, source, ":", reDeclCSS)
+	return appendCSSDeclarations(decls, source, `",`, reDeclPair)
 }
 
 func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
@@ -163,16 +163,13 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		ownsStyling := hasPrefixAny(f.Rel, designSystemPrefixes)
 		devSurface := hasPrefixAny(f.Rel, devOnlyPrefixes)
 		ownTheme := hasPrefixAny(f.Rel, ownThemePrefixes)
-		bgMirrored := ownsStyling && mirrorsBackground(scan)
 		var dark darkScheme
-		var dir dirBlock
+		if ownsStyling && !devSurface {
+			out = append(out, checkGoPhysicalSides(p, f.Rel, body, lines)...)
+		}
 
 		for i, line := range scan {
 			lineNo := i + 1
-			var inDir []bool
-			if ownsStyling {
-				inDir = dir.line(line)
-			}
 
 			if ownsStyling && (strings.Contains(line, ":") || strings.Contains(line, `",`)) {
 				out = append(out, checkHardcodedTokenValues(f.Rel, lineNo, line, lines[i])...)
@@ -187,7 +184,6 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 				decls := scanCSSDeclarations(line)
 				out = append(out, checkBareThemeLiterals(f.Rel, lineNo, decls, lines[i], devSurface)...)
 				if !devSurface {
-					out = append(out, checkPhysicalSides(f.Rel, lineNo, decls, lines[i], bgMirrored, inDir)...)
 					out = append(out, checkFlexReverse(f.Rel, lineNo, decls, lines[i])...)
 				}
 			}
@@ -257,8 +253,11 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		}
 	}
 	for _, f := range p.StyleFiles() {
-		if hasPrefixAny(f.Rel, designSystemPrefixes) || slices.Contains(strings.Split(f.Rel, "/"), "testdata") ||
-			strings.HasSuffix(f.Rel, ".style.css") || strings.HasSuffix(f.Rel, ".tokens.css") {
+		if slices.Contains(strings.Split(f.Rel, "/"), "testdata") {
+			continue
+		}
+		ownsStyling := hasPrefixAny(f.Rel, designSystemPrefixes)
+		if !ownsStyling && (strings.HasSuffix(f.Rel, ".style.css") || strings.HasSuffix(f.Rel, ".tokens.css")) {
 			continue
 		}
 		body, ok := p.Source(f.Rel)
@@ -266,6 +265,12 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			continue
 		}
 		clean := blankCSSCommentsAndStrings(string(body))
+		if ownsStyling {
+			if !hasPrefixAny(f.Rel, devOnlyPrefixes) {
+				out = append(out, scanPhysicalSides(f.Rel, strings.Split(clean, "\n"), strings.Split(string(body), "\n"), nil)...)
+			}
+			continue
+		}
 		if stylesheetOnlyCustomProperties(clean) {
 			continue
 		}
@@ -592,7 +597,7 @@ var (
 var tokenValueIndex = sync.OnceValue(func() map[string][]string {
 	out := map[string][]string{}
 	for k, v := range style.ThemeToTokens(style.DefaultTheme()) {
-		if strings.HasPrefix(k, "dark.") || bareKeyword(v) {
+		if strings.HasPrefix(k, "dark.") || style.BareKeyword(v) {
 			continue
 		}
 		lv := strings.ToLower(v)
@@ -600,21 +605,6 @@ var tokenValueIndex = sync.OnceValue(func() map[string][]string {
 	}
 	return out
 })
-
-func bareKeyword(v string) bool {
-	if v == "" {
-		return true
-	}
-	for _, r := range v {
-		switch {
-		case r >= '0' && r <= '9', r == '#', r == ',', r == '(', r == '\'', r == '"':
-			return false
-		}
-	}
-	return true
-}
-
-func tokenCategory(key string) string { return style.TokenCategory(key) }
 
 func checkHardcodedTokenValues(rel string, lineNo int, scan, orig string) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
@@ -634,7 +624,7 @@ func checkHardcodedTokenValues(rel string, lineNo int, scan, orig string) []cont
 		}
 		var toks []string
 		for _, k := range tokenValueIndex()[strings.ToLower(val)] {
-			if allowed[tokenCategory(k)] {
+			if allowed[style.TokenCategory(k)] {
 				toks = append(toks, k)
 			}
 		}
@@ -647,7 +637,7 @@ func checkHardcodedTokenValues(rel string, lineNo int, scan, orig string) []cont
 			dashed[i] = "--" + k
 		}
 		first := toks[0]
-		ref := "{" + tokenCategory(first) + "." + strings.TrimPrefix(first, tokenCategory(first)+"-") + "}"
+		ref := "{" + style.TokenCategory(first) + "." + strings.TrimPrefix(first, style.TokenCategory(first)+"-") + "}"
 		out = append(out, contracts.Diagnostic{
 			RuleID: contracts.RuleHardcodedTokenValue,
 			File:   rel,
@@ -850,7 +840,7 @@ func checkFallbackDrift(rel string, lineNo int, scan, orig string, ownTheme bool
 	for _, m := range reVarFallback.FindAllStringSubmatch(scan, -1) {
 		name, fallback := m[1], strings.TrimSpace(m[2])
 		declared, ok := declaredTokenValues()[name]
-		if !driftCategories[tokenCategory(name)] || !ok || ownstyle.SameScaleValue(fallback, declared) {
+		if !driftCategories[style.TokenCategory(name)] || !ok || ownstyle.SameScaleValue(fallback, declared) {
 			continue
 		}
 		report(name, fallback, declared, "")
@@ -861,7 +851,7 @@ func checkFallbackDrift(rel string, lineNo int, scan, orig string, ownTheme bool
 	for _, ix := range reColourFallback.FindAllStringSubmatchIndex(scan, -1) {
 		name, fallback := scan[ix[2]:ix[3]], strings.TrimSpace(scan[ix[4]:ix[5]])
 		inDark := ix[0] < len(dark) && dark[ix[0]]
-		if !colourCategories[tokenCategory(name)] || strings.HasPrefix(fallback, "var(") || strings.Contains(fallback, `"`) {
+		if !colourCategories[style.TokenCategory(name)] || strings.HasPrefix(fallback, "var(") || strings.Contains(fallback, `"`) {
 			continue
 		}
 		want, fine := colourFallback(name, fallback, inDark)

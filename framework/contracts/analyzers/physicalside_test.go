@@ -83,6 +83,50 @@ func TestPhysicalSideInSetPairIsReported(t *testing.T) {
 	}
 }
 
+func TestPhysicalSideIgnoresGoCompositeFields(t *testing.T) {
+	ds := designFixture(t, "battery/desktop/windows/shell_windows.go", "package windows\n\n"+
+		"func resize(width, height int) {\n"+
+		"\tbounds := struct{ Left, Top, Right, Bottom int32 }{Right: int32(width), Bottom: int32(height)}\n"+
+		"\t_ = bounds\n"+
+		"}\n")
+	if found := countRule(t, ds, contracts.RulePhysicalSide); len(found) != 0 {
+		t.Fatalf("Go composite literal reported as CSS: %v", found)
+	}
+}
+
+func TestPhysicalSideIgnoresGoStringPairsOutsideBuilders(t *testing.T) {
+	ds := designFixture(t, "framework/ui/x.go", "package ui\n\nimport \"net/url\"\n\n"+
+		"var coordinates = []string{\"right\", \"12px\"}\n"+
+		"func update(q url.Values) { q.Set(\"left\", \"12px\") }\n")
+	if found := countRule(t, ds, contracts.RulePhysicalSide); len(found) != 0 {
+		t.Fatalf("Non-style string pairs reported as CSS: %v", found)
+	}
+}
+
+func TestPhysicalSideInSeparateBuilderCall(t *testing.T) {
+	ds := designFixture(t, "core-ui/widget/page.go", "package widget\n\nfunc f(ss *Sheet) {\n"+
+		"\tss.Rule(\".a\")\n"+
+		"\tss.Set(\n"+
+		"\t\t\"right\",\n"+
+		"\t\t\"12px\",\n"+
+		"\t)\n"+
+		"}\n")
+	findings := countRule(t, ds, contracts.RulePhysicalSide)
+	if len(findings) != 1 || findings[0].Line != 6 {
+		t.Fatalf("want the physical side at line 6: %v", findings)
+	}
+}
+
+func TestPhysicalSideInDesignSystemStylesheet(t *testing.T) {
+	ds := designFixture(t, "framework/ui/panel.style.css", "/* .a { left: 0; } */\n"+
+		".a { right: 0; }\n"+
+		".a:dir(rtl) { left: 0; }\n")
+	findings := countRule(t, ds, contracts.RulePhysicalSide)
+	if len(findings) != 1 || findings[0].Line != 2 {
+		t.Fatalf("want the physical side at line 2: %v", findings)
+	}
+}
+
 // What stays legal: logical properties, centring at 50%, an auto
 // reset, symmetric shorthands, a :dir() override, a background mirrored
 // under :dir(rtl), Go code and keyword lists, dev tooling, and CSS

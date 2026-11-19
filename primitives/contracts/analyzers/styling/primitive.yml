@@ -28,13 +28,21 @@ invariants:
       - test: framework/contracts/analyzers.TestScriptNavLookalikesAreClean
       - test: framework/contracts/analyzers.TestPhysicalSideDirBlockAcrossLines
   - id: one-declaration-scan
-    rule: The bare-theme, physical-side and flex-reverse checks share one CSS and builder declaration scan with case-insensitive property names and original byte offsets for the dir override.
+    rule: The bare-theme, physical-side and flex-reverse checks share the CSS declaration pattern with case-insensitive property names, and the bare-theme and flex-reverse checks also share the text scan for builder pairs.
     enforced_by:
       - test: framework/contracts/analyzers.TestBareThemeLiteralsAreReported
       - test: framework/contracts/analyzers.TestBareThemeLiteralInSetPairIsReported
       - test: framework/contracts/analyzers.TestPhysicalSideAfterDirBlockOnSameLine
       - test: framework/contracts/analyzers.TestPhysicalSideInSetPairIsReported
       - test: framework/contracts/analyzers.TestFlexReverseIsReported
+  - id: physical-side-reads-css-inputs
+    rule: GOFASTR1824 reads declarations from design-system stylesheets, Go string literals and property/value arguments on a style builder with a Rule call in the chain or on the same receiver in the function.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestPhysicalSideIgnoresGoCompositeFields
+      - test: framework/contracts/analyzers.TestPhysicalSideIgnoresGoStringPairsOutsideBuilders
+      - test: framework/contracts/analyzers.TestPhysicalSideInDesignSystemStylesheet
+      - test: framework/contracts/analyzers.TestPhysicalSideInSetPairIsReported
+      - test: framework/contracts/analyzers.TestPhysicalSideInSeparateBuilderCall
   - id: hard-navigation-shapes
     rule: GOFASTR1802 fires on assigning location, or its href, search or pathname through any chain of window, document, self, top, parent or frames, with = or +=, and on location.reload, assign or replace; a comparison, a hash change and a property named location do not fire, and a bare location = needs a quoted value in Go but not in a script.
     enforced_by:
@@ -154,7 +162,7 @@ decisions:
   - id: css-detection-is-text-not-ast
     date: 2026-11-17
     status: accepted
-    decision: The rendering and design-system CSS rules match regexes over comment-stripped lines, because the CSS lives in Go strings and in builder calls whose property and value are separate literals.
+    decision: The rendering and design-system CSS rules match regexes over comment-stripped lines; GOFASTR1824 uses the Go AST to select string literals and builder arguments first.
     rejected:
       - option: Parse the CSS out of string literals through the Go AST.
         why: A builder pair Set("gap", "8px") and a stylesheet string are both text on one line, and no AST node unifies them.

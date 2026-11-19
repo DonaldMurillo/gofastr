@@ -25,6 +25,10 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **GOFASTR1824 judges only CSS.** The physical-side rule scanned whole
+  Go source lines, so a Go struct literal with a `Right` field was
+  reported as a CSS declaration. It now reads CSS in stylesheets and Go
+  string literals, plus property/value arguments to the style builder.
 - **The seo package example ships its JSON-LD.** The package doc put
   `seo.Render` in a screen's `HeadHTML`, which the host strips of every
   `<script>`; it now uses the `ScreenSchema` hook. `seo.md` lists all
