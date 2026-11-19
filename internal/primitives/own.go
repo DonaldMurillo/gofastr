@@ -24,21 +24,17 @@ func (c *Registry) Chain(file string) []*Primitive {
 
 func (p *Primitive) Owns(file string) bool { return matchAny(p.Code, file) }
 
-// matchAny reports whether file is covered by one of refs: a trailing
-// slash is a directory tree, anything else a path.Match pattern.
 func matchAny(refs []Ref, file string) bool {
-	for _, ref := range refs {
-		if strings.HasSuffix(ref.Value, "/") {
-			if strings.HasPrefix(file, ref.Value) {
-				return true
-			}
-			continue
-		}
-		if ok, _ := path.Match(ref.Value, file); ok {
-			return true
-		}
+	return slices.ContainsFunc(refs, func(ref Ref) bool { return matchesPath(ref.Value, file) })
+}
+
+// matchesPath treats an entry ending in a slash as a directory tree.
+func matchesPath(entry, file string) bool {
+	if strings.HasSuffix(entry, "/") {
+		return strings.HasPrefix(file, entry)
 	}
-	return false
+	ok, _ := path.Match(entry, file)
+	return ok
 }
 
 // Applied is an invariant that governs a file its primitive does not own.

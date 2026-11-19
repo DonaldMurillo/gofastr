@@ -9,6 +9,7 @@ import (
 	"maps"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -90,10 +91,12 @@ func related(a, b string) bool {
 }
 
 type linter struct {
-	c     *Registry
-	p     *Primitive
-	out   []Finding
-	tests map[string]map[string]bool
+	c         *Registry
+	p         *Primitive
+	out       []Finding
+	tests     map[string]map[string]bool
+	analyzers map[string]bool
+	contracts map[string]bool
 }
 
 func (l *linter) errf(line int, format string, args ...any) {
@@ -119,7 +122,7 @@ func (l *linter) expand(entry string) ([]string, error) {
 				if unread == nil && !errors.Is(err, fs.ErrNotExist) {
 					unread = err
 				}
-			case !d.IsDir():
+			case !d.IsDir() && matchesPath(entry, p):
 				out = append(out, p)
 			}
 			return nil
@@ -128,7 +131,7 @@ func (l *linter) expand(entry string) ([]string, error) {
 	}
 	matches, err := fs.Glob(l.c.fsys, entry)
 	for _, m := range matches {
-		if l.isFile(m) {
+		if l.isFile(m) && matchesPath(entry, m) {
 			out = append(out, m)
 		}
 	}
@@ -137,23 +140,20 @@ func (l *linter) expand(entry string) ([]string, error) {
 
 func (l *linter) imports(p *Primitive) {
 	for _, rule := range p.Imports {
-		if rule.Deny != "" && !l.hasGo(rule.Deny) {
-			l.errf(rule.Line, "deny %q is not a Go package directory", rule.Deny)
+		if rule.Deny != "" {
+			if _, _, err := resolveGoPackage(l.c.fsys, rule.Deny); err != nil {
+				l.errf(rule.Line, "deny %v", err)
+			}
 		}
 		if len(rule.From) == 0 {
 			l.errf(rule.Line, "missing from: name the packages the ban applies to")
 		}
 		for _, from := range rule.From {
-			if !l.hasGo(from.Value) {
-				l.errf(from.Line, "from %q is not a Go package directory", from.Value)
+			if _, _, err := resolveGoPackage(l.c.fsys, from.Value); err != nil {
+				l.errf(from.Line, "from %v", err)
 			}
 		}
 	}
-}
-
-func (l *linter) hasGo(dir string) bool {
-	matches, _ := fs.Glob(l.c.fsys, path.Join(dir, "*.go"))
-	return len(matches) > 0
 }
 
 func (l *linter) invariants(p *Primitive) {
@@ -201,20 +201,76 @@ func (l *linter) enforcer(e Enforcer) {
 			l.errf(e.Line, "test %s does not exist in %s", name, dir)
 		}
 	case KindAnalyzer:
-		if !l.hasGo(path.Join("internal/analyzers", e.Ref)) {
+		if _, _, err := resolveGoPackage(l.c.fsys, path.Join("internal/analyzers", e.Ref)); err != nil {
 			l.errf(e.Line, "analyzer %q has no package under internal/analyzers", e.Ref)
 			return
 		}
-		suite, _ := fs.ReadFile(l.c.fsys, "internal/analyzers/suite/suite.go")
-		if !strings.Contains(string(suite), "/internal/analyzers/"+e.Ref+`"`) {
+		if l.analyzers == nil {
+			l.analyzers = analyzerImports(l.c.fsys)
+		}
+		if !l.analyzers[e.Ref] {
 			l.errf(e.Line, "analyzer %q is not registered in internal/analyzers/suite", e.Ref)
 		}
 	case KindContract:
-		catalog, _ := fs.ReadFile(l.c.fsys, "framework/contracts/catalog.go")
-		if !strings.Contains(string(catalog), `"`+e.Ref+`"`) {
+		if l.contracts == nil {
+			l.contracts = catalogRuleIDs(l.c.fsys)
+		}
+		if !l.contracts[e.Ref] {
 			l.errf(e.Line, "contract rule %q is not in framework/contracts/catalog.go", e.Ref)
 		}
 	}
+}
+
+func analyzerImports(fsys fs.FS) map[string]bool {
+	imports := map[string]bool{}
+	module, err := modulePath(fsys)
+	if err != nil {
+		return imports
+	}
+	file, err := parseGoFile(fsys, "internal/analyzers/suite/suite.go", parser.ImportsOnly)
+	if err != nil {
+		return imports
+	}
+	prefix := path.Join(module, "internal/analyzers") + "/"
+	for _, spec := range file.Imports {
+		importPath, err := strconv.Unquote(spec.Path.Value)
+		if name, ok := strings.CutPrefix(importPath, prefix); err == nil && ok {
+			imports[name] = true
+		}
+	}
+	return imports
+}
+
+func catalogRuleIDs(fsys fs.FS) map[string]bool {
+	ids := map[string]bool{}
+	file, err := parseGoFile(fsys, "framework/contracts/catalog.go", 0)
+	if err != nil {
+		return ids
+	}
+	for _, decl := range file.Decls {
+		constants, ok := decl.(*ast.GenDecl)
+		if !ok || constants.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range constants.Specs {
+			for _, value := range spec.(*ast.ValueSpec).Values {
+				if lit, ok := value.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					if id, err := strconv.Unquote(lit.Value); err == nil {
+						ids[id] = true
+					}
+				}
+			}
+		}
+	}
+	return ids
+}
+
+func parseGoFile(fsys fs.FS, filename string, mode parser.Mode) (*ast.File, error) {
+	src, err := fs.ReadFile(fsys, filename)
+	if err != nil {
+		return nil, err
+	}
+	return parser.ParseFile(token.NewFileSet(), filename, src, mode|parser.SkipObjectResolution)
 }
 
 func (l *linter) testsIn(dir string) map[string]bool {
@@ -224,12 +280,8 @@ func (l *linter) testsIn(dir string) map[string]bool {
 	names := map[string]bool{}
 	files, _ := fs.Glob(l.c.fsys, path.Join(dir, "*_test.go"))
 	for _, f := range files {
-		src, err := fs.ReadFile(l.c.fsys, f)
-		if err != nil {
-			continue
-		}
 		// Parsed, not matched: a test inside a block comment is not a test.
-		file, err := parser.ParseFile(token.NewFileSet(), f, src, parser.SkipObjectResolution)
+		file, _ := parseGoFile(l.c.fsys, f, 0)
 		if file == nil {
 			continue
 		}

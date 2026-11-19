@@ -25,6 +25,15 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`primitives lint` and `gen` agree on paths.** A trailing slash after a
+  file name claims nothing, import rules take only literal Go package
+  directories, and a commented-out analyzer import or a rule ID in a
+  comment no longer counts as registered.
+- **The primitives Stop hook blocks when it cannot check the generated
+  import tests,** as `gen --check` fails, and its applied-rule notices
+  cover changed test files.
+- **The `primitive.yml` example in `primitives/README.md` passes lint,**
+  and a test keeps it that way.
 - **App-spec catch-all screen routes mount with the router's syntax,** and
   `generate --add` refuses a route equal in shape to one already mounted,
   including entity-list screens.
