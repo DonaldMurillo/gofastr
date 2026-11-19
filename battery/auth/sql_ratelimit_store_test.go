@@ -206,28 +206,33 @@ func TestSQLRateLimit_RecoversAfterTransientSchemaError(t *testing.T) {
 // attempt rows, which would silently collapse the longer window.
 func TestSQLRateLimit_SweepScopedNotCrossWindow(t *testing.T) {
 	s, db := newRLStore(t)
-	ctx := context.Background()
-
-	// A login-account attempt 30 min old, inside its 1h window, must survive.
-	thirtyMinAgo := time.Now().Add(-30 * time.Minute).UnixMilli()
-	if _, err := db.Exec("INSERT INTO auth_rate_limits_attempts (rl_key, attempted_at_ms) VALUES ('login_account|bob', $1)", thirtyMinAgo); err != nil {
-		t.Fatalf("seed long-window attempt: %v", err)
-	}
-
 	// A fresh store's lastSweep is zero, so this first Allow sweeps, but
 	// with the SHORT-window 2FA limiter's config (Window=1m). Pre-fix, the
 	// unscoped sweep would delete bob's 30-min-old row.
-	shortCfg := RateLimiterConfig{MaxAttempts: 3, Window: time.Minute, BlockDuration: time.Hour, Scope: "twofa"}
-	if _, _, err := s.Allow(ctx, "twofa|attacker", shortCfg); err != nil {
-		t.Fatalf("2FA Allow: %v", err)
-	}
+	sweepMustPreserveSeed(t, s, db, "login_account|bob", "twofa|attacker",
+		RateLimiterConfig{MaxAttempts: 3, Window: time.Minute, BlockDuration: time.Hour, Scope: "twofa"},
+		"short-window (1m) sweep deleted a long-window (1h) co-tenant's still-valid attempt")
+}
 
+// sweepMustPreserveSeed seeds one 30-minute-old attempt row under seedKey
+// (inside a long limiter's window), runs one Allow through a SHORT-window
+// limiter (allowKey/shortCfg) whose sweep fires, and fails unless the
+// seeded row survived — failMsg says which regression deleted it.
+func sweepMustPreserveSeed(t *testing.T, s *SQLRateLimitStore, db *sql.DB, seedKey, allowKey string, shortCfg RateLimiterConfig, failMsg string) {
+	t.Helper()
+	thirtyMinAgo := time.Now().Add(-30 * time.Minute).UnixMilli()
+	if _, err := db.Exec("INSERT INTO auth_rate_limits_attempts (rl_key, attempted_at_ms) VALUES ($1, $2)", seedKey, thirtyMinAgo); err != nil {
+		t.Fatalf("seed long-window attempt: %v", err)
+	}
+	if _, _, err := s.Allow(context.Background(), allowKey, shortCfg); err != nil {
+		t.Fatalf("short-window Allow: %v", err)
+	}
 	var n int
-	if err := db.QueryRow("SELECT COUNT(*) FROM auth_rate_limits_attempts WHERE rl_key = 'login_account|bob'").Scan(&n); err != nil {
+	if err := db.QueryRow("SELECT COUNT(*) FROM auth_rate_limits_attempts WHERE rl_key = $1", seedKey).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 1 {
-		t.Fatalf("short-window (1m) sweep deleted a long-window (1h) co-tenant's still-valid attempt: %d remain, want 1", n)
+		t.Fatalf("%s: %d remain, want 1", failMsg, n)
 	}
 }
 
@@ -309,29 +314,12 @@ func TestSQLRateLimit_SweepNotStarvedByBusyScope(t *testing.T) {
 // scope and deletes its still-valid rows.
 func TestSQLRateLimit_SweepEscapesScopeMetacharacters(t *testing.T) {
 	s, db := newRLStore(t)
-	ctx := context.Background()
-
-	// Long-window scope "abc" has a still-valid attempt 30 min old.
-	thirtyMinAgo := time.Now().Add(-30 * time.Minute).UnixMilli()
-	if _, err := db.Exec("INSERT INTO auth_rate_limits_attempts (rl_key, attempted_at_ms) VALUES ('abc|victim', $1)", thirtyMinAgo); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-
 	// Short-window scope "a_c" sweeps (cutoff now-1m). Unescaped, "a_c|%"
 	// treats "_" as a wildcard and matches "abc|victim", wrongly deleting a
 	// row that belongs to the unrelated 1h "abc" scope.
-	shortCfg := RateLimiterConfig{MaxAttempts: 3, Window: time.Minute, BlockDuration: time.Hour, Scope: "a_c"}
-	if _, _, err := s.Allow(ctx, "a_c|attacker", shortCfg); err != nil {
-		t.Fatalf("a_c Allow: %v", err)
-	}
-
-	var n int
-	if err := db.QueryRow("SELECT COUNT(*) FROM auth_rate_limits_attempts WHERE rl_key = 'abc|victim'").Scan(&n); err != nil {
-		t.Fatalf("count: %v", err)
-	}
-	if n != 1 {
-		t.Fatalf("unescaped LIKE metacharacter in scope deleted a sibling scope's row: %d remain, want 1", n)
-	}
+	sweepMustPreserveSeed(t, s, db, "abc|victim", "a_c|attacker",
+		RateLimiterConfig{MaxAttempts: 3, Window: time.Minute, BlockDuration: time.Hour, Scope: "a_c"},
+		"unescaped LIKE metacharacter in scope deleted a sibling scope's row")
 }
 
 func TestSQLRateLimit_PipeInKeyCannotCrossScope(t *testing.T) {

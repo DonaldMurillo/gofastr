@@ -74,17 +74,7 @@ func openAnchorServer(t *testing.T, spaFetches *atomic.Int32) *httptest.Server {
   <script src="/__gofastr/runtime.js"></script>
 </body></html>`)
 	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		if r.Header.Get("X-Gofastr-Navigate") == "1" {
-			spaFetches.Add(1)
-			w.Header().Set("X-Gofastr-Partial", "true")
-			w.Header().Set("X-Gofastr-Title", "inbox")
-			fmt.Fprint(w, `<p>inbox screen</p>`)
-			return
-		}
-		fmt.Fprint(w, openAnchorPage())
-	})
+	mux.HandleFunc("/", spaPartial(spaFetches, "inbox", "", `<p>inbox screen</p>`, openAnchorPage()))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

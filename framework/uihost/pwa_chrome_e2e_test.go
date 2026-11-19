@@ -1,7 +1,6 @@
 package uihost
 
 import (
-	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -60,22 +59,7 @@ func TestPWAChromeE2E(t *testing.T) {
 
 	ctx := chromedptest.Context(t, chromedptest.Timeout(120*time.Second))
 
-	poll := func(expr string, timeout time.Duration) error {
-		deadline := time.Now().Add(timeout)
-		for {
-			var ok bool
-			if err := chromedp.Run(ctx, chromedp.Evaluate(expr, &ok)); err != nil {
-				return err
-			}
-			if ok {
-				return nil
-			}
-			if time.Now().After(deadline) {
-				return fmt.Errorf("timeout waiting for %s", expr)
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
-	}
+	poll := func(expr string, timeout time.Duration) error { return chromedptest.Poll(ctx, expr, timeout) }
 
 	// ── Phase 1: registration + installability metadata ─────────────
 	if err := chromedp.Run(ctx,

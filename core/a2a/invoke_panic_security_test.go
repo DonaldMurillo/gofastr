@@ -4,8 +4,9 @@ import (
 	"context"
 	"log/slog"
 	"strings"
-	"sync"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
 // Pins: a recovered panic value embedding handler-derived text reaches
@@ -30,40 +31,11 @@ import (
 // Probe note: the payload embeds the control bytes RAW (panic value),
 // not %q-escaped — %q pre-escapes them and would hide the surface.
 
-// redA2AScrubSink is a minimal slog.Handler storing record attributes
-// verbatim (no JSON/text escaping), so a test can detect raw control
-// bytes a real handler would have escaped away.
-type redA2AScrubSink struct {
-	mu    sync.Mutex
-	attrs map[string]string
-}
-
-func (h *redA2AScrubSink) Enabled(context.Context, slog.Level) bool { return true }
-
-func (h *redA2AScrubSink) Handle(_ context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.attrs == nil {
-		h.attrs = map[string]string{}
-	}
-	r.Attrs(func(a slog.Attr) bool {
-		h.attrs[a.Key] = a.Value.String()
-		return true
-	})
-	return nil
-}
-
-func (h *redA2AScrubSink) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *redA2AScrubSink) WithGroup(string) slog.Handler      { return h }
-
-func (h *redA2AScrubSink) redGet(key string) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.attrs[key]
-}
+// a2a captures its logger from Config.Logger at NewServer time, so the
+// sink is installed via the config, not SetDefault.
 
 func TestA2AInvokeRedPanicScrubbed(t *testing.T) {
-	sink := &redA2AScrubSink{}
+	sink := &scrubtest.Sink{}
 	h := newHarness(t, func(c *Config) { c.Logger = slog.New(sink) })
 
 	malicious := "boom \x1b]0;pwned \u202e and \u009bCSI"
@@ -73,9 +45,9 @@ func TestA2AInvokeRedPanicScrubbed(t *testing.T) {
 		t.Fatalf("setup broken: handler panic did not fail the task (state=%s)", task.Status.State)
 	}
 
-	got := sink.redGet("panic")
+	got := sink.Get("panic")
 	if got == "" {
-		t.Fatalf("setup broken: handler panic never reached the a2a logger (attrs=%v)", sink.attrs)
+		t.Fatalf("setup broken: handler panic never reached the a2a logger (attrs=%v)", sink.Attrs())
 	}
 	for _, bad := range []string{"\x1b", "\u202e", "\u009b"} {
 		if strings.Contains(got, bad) {

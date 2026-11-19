@@ -254,14 +254,20 @@ func TestDataTable_ConcurrentRender(t *testing.T) {
 	wg.Wait()
 }
 
-func TestDataTable_ClassInjection(t *testing.T) {
-	t.Parallel()
-	h := ui.DataTable(ui.DataTableConfig{
+// oneColumnTable is the minimal DataTableConfig the attribute-injection
+// tests poison: one column, one row, then a Class or ID payload.
+func oneColumnTable() ui.DataTableConfig {
+	return ui.DataTableConfig{
 		Columns: []ui.Column{{Key: "x", Header: "X"}},
 		Rows:    []ui.Row{{Cells: map[string]render.HTML{"x": render.Text("v")}}},
-		Class:   `"><script>alert("class-xss")</script><div class="`,
-	})
-	s := string(h)
+	}
+}
+
+func TestDataTable_ClassInjection(t *testing.T) {
+	t.Parallel()
+	cfg := oneColumnTable()
+	cfg.Class = `"><script>alert("class-xss")</script><div class="`
+	s := string(ui.DataTable(cfg))
 	if strings.Contains(s, `<script>alert("class-xss")</script>`) {
 		t.Errorf("SECURITY: [datatable-class] class attribute with script tag not escaped:\n  %s", truncate(s, 300))
 	}
@@ -270,12 +276,9 @@ func TestDataTable_ClassInjection(t *testing.T) {
 
 func TestDataTable_IDInjection(t *testing.T) {
 	t.Parallel()
-	h := ui.DataTable(ui.DataTableConfig{
-		Columns: []ui.Column{{Key: "x", Header: "X"}},
-		Rows:    []ui.Row{{Cells: map[string]render.HTML{"x": render.Text("v")}}},
-		ID:      `" onclick="alert('id-xss')" data-x="`,
-	})
-	s := string(h)
+	cfg := oneColumnTable()
+	cfg.ID = `" onclick="alert('id-xss')" data-x="`
+	s := string(ui.DataTable(cfg))
 	// Attribute values should be escaped by render.Tag.
 	if strings.Contains(s, `onclick="alert('id-xss')"`) {
 		t.Errorf("SECURITY: [datatable-id] ID attribute with event handler not escaped:\n  %s", truncate(s, 300))

@@ -536,30 +536,70 @@ func TestCursor_ConcurrentCursorRequests(t *testing.T) {
 // Batch operation attacks (Tests 21–30)
 // ============================================================================
 
-// TestBatchCreate_EmptyArray verifies that an empty items array is
-// rejected rather than silently creating nothing or returning 200.
-func TestBatchCreate_EmptyArray(t *testing.T) {
+// batchEmptyPayloadRejected builds an owner-scoped items table and
+// asserts the given batch surface refuses an empty items/ids payload
+// with 400 rather than a silent 200.
+func batchEmptyPayloadRejected(t *testing.T, table, method, path, body, desc string, serve func(ch *CrudHandler) http.HandlerFunc) {
+	t.Helper()
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "bc_items",
-		Table: "bc_items",
+	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: table,
+		Table: table,
 		Fields: []schema.Field{
 			{Name: "user_id", Type: schema.String, Required: true},
 			{Name: "title", Type: schema.String},
 		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
-	}.WithTimestamps(false), `CREATE TABLE bc_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
+	}.WithTimestamps(false), `CREATE TABLE `+table+` (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
 
 	req := makeRequest(t, RequestOpts{
-		Method: http.MethodPost,
-		Path:   "/bc_items/_batch",
-		Body:   `{"items":[]}`,
+		Method: method,
+		Path:   path,
+		Body:   body,
 		UserID: "alice",
 	})
 	rr := httptest.NewRecorder()
-	ch.BatchCreate()(rr, req)
+	serve(ch)(rr, req)
 
-	assertStatus(t, rr, http.StatusBadRequest, "batch",
-		"empty items array in batch create returns 200")
+	assertStatus(t, rr, http.StatusBadRequest, "batch", desc)
+}
+
+// sqlInjectionLeavesTableIntact builds an owner-scoped items table,
+// issues the list path carrying an injection payload, and fails when the
+// target table can no longer be counted — the tell that the payload ran.
+func sqlInjectionLeavesTableIntact(t *testing.T, table, path, category, via, attack, label string) {
+	t.Helper()
+	t.Parallel()
+	installSecurityOwnerExtractor(t)
+	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: table,
+		Table: table,
+		Fields: []schema.Field{
+			{Name: "user_id", Type: schema.String, Required: true},
+			{Name: "title", Type: schema.String},
+		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
+	}.WithTimestamps(false), `CREATE TABLE `+table+` (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
+
+	req := makeRequest(t, RequestOpts{
+		Method: http.MethodGet,
+		Path:   path,
+		UserID: "alice",
+	})
+	rr := httptest.NewRecorder()
+	ch.List()(rr, req)
+
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count)
+	if err != nil {
+		t.Errorf("SECURITY: [%s] SQL injection via %s dropped table: %v. Attack: %s", category, via, err, attack)
+	}
+	t.Logf("NOTE: SQL injection %s → status %d, table intact", label, rr.Code)
+}
+
+// TestBatchCreate_EmptyArray verifies that an empty items array is
+// rejected rather than silently creating nothing or returning 200.
+func TestBatchCreate_EmptyArray(t *testing.T) {
+	batchEmptyPayloadRejected(t, "bc_items", http.MethodPost, "/bc_items/_batch",
+		`{"items":[]}`, "empty items array in batch create returns 200",
+		func(ch *CrudHandler) http.HandlerFunc { return ch.BatchCreate() })
 }
 
 // TestBatchCreate_OversizedArray verifies that a batch with more than
@@ -744,27 +784,9 @@ func TestBatchUpdate_NonexistentIDs(t *testing.T) {
 // TestBatchDelete_EmptyIDList verifies that an empty ids array is
 // rejected.
 func TestBatchDelete_EmptyIDList(t *testing.T) {
-	t.Parallel()
-	installSecurityOwnerExtractor(t)
-	ch, _ := setupSecurityTestHandler(t, entity.EntityConfig{Name: "bd_items",
-		Table: "bd_items",
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "title", Type: schema.String},
-		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
-	}.WithTimestamps(false), `CREATE TABLE bd_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
-
-	req := makeRequest(t, RequestOpts{
-		Method: http.MethodDelete,
-		Path:   "/bd_items/_batch",
-		Body:   `{"ids":[]}`,
-		UserID: "alice",
-	})
-	rr := httptest.NewRecorder()
-	ch.BatchDelete()(rr, req)
-
-	assertStatus(t, rr, http.StatusBadRequest, "batch",
-		"empty ids array in batch delete returns 200")
+	batchEmptyPayloadRejected(t, "bd_items", http.MethodDelete, "/bd_items/_batch",
+		`{"ids":[]}`, "empty ids array in batch delete returns 200",
+		func(ch *CrudHandler) http.HandlerFunc { return ch.BatchDelete() })
 }
 
 // TestBatchDelete_NonexistentIDs verifies that deleting nonexistent
@@ -980,31 +1002,9 @@ func TestInclude_NonexistentRelation(t *testing.T) {
 // TestInclude_SQLInjectionInRelationName verifies that SQL injection
 // payloads in the include parameter don't execute.
 func TestInclude_SQLInjectionInRelationName(t *testing.T) {
-	t.Parallel()
-	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "sqli_items",
-		Table: "sqli_items",
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "title", Type: schema.String},
-		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
-	}.WithTimestamps(false), `CREATE TABLE sqli_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
-
-	req := makeRequest(t, RequestOpts{
-		Method: http.MethodGet,
-		Path:   "/sqli_items?include=users%3BDROP%20TABLE%20sqli_items",
-		UserID: "alice",
-	})
-	rr := httptest.NewRecorder()
-	ch.List()(rr, req)
-
-	// Table must still exist
-	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM sqli_items").Scan(&count)
-	if err != nil {
-		t.Errorf("SECURITY: [include] SQL injection via include parameter may have dropped table: %v. Attack: relation name contains SQL payload", err)
-	}
-	t.Logf("NOTE: SQL injection include → status %d, table intact", rr.Code)
+	sqlInjectionLeavesTableIntact(t, "sqli_items",
+		"/sqli_items?include=users%3BDROP%20TABLE%20sqli_items",
+		"include", "include parameter", "relation name contains SQL payload", "include")
 }
 
 // TestInclude_SensitiveRelationNotExposed verifies that including
@@ -1430,59 +1430,17 @@ func TestList_SortInjection(t *testing.T) {
 // TestList_FilterInjection verifies that SQL injection in filter values
 // is handled safely via parameterized queries.
 func TestList_FilterInjection(t *testing.T) {
-	t.Parallel()
-	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "fi_items",
-		Table: "fi_items",
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "title", Type: schema.String},
-		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
-	}.WithTimestamps(false), `CREATE TABLE fi_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
-
-	req := makeRequest(t, RequestOpts{
-		Method: http.MethodGet,
-		Path:   "/fi_items?title=Robert%27%29%3BDROP%20TABLE%20fi_items%3B--",
-		UserID: "alice",
-	})
-	rr := httptest.NewRecorder()
-	ch.List()(rr, req)
-
-	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM fi_items").Scan(&count)
-	if err != nil {
-		t.Errorf("SECURITY: [list] SQL injection via ?title= dropped table: %v. Attack: filter value contains SQL payload", err)
-	}
-	t.Logf("NOTE: SQL injection filter → status %d, table intact", rr.Code)
+	sqlInjectionLeavesTableIntact(t, "fi_items",
+		"/fi_items?title=Robert%27%29%3BDROP%20TABLE%20fi_items%3B--",
+		"list", "?title=", "filter value contains SQL payload", "filter")
 }
 
 // TestList_FieldsParameterSQLInjection verifies that SQL injection
 // in the ?fields= parameter is handled safely.
 func TestList_FieldsParameterSQLInjection(t *testing.T) {
-	t.Parallel()
-	installSecurityOwnerExtractor(t)
-	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "fpi_items",
-		Table: "fpi_items",
-		Fields: []schema.Field{
-			{Name: "user_id", Type: schema.String, Required: true},
-			{Name: "title", Type: schema.String},
-		}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
-	}.WithTimestamps(false), `CREATE TABLE fpi_items (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT)`)
-
-	req := makeRequest(t, RequestOpts{
-		Method: http.MethodGet,
-		Path:   "/fpi_items?fields=id%2Ctitle%3BDROP%20TABLE%20fpi_items",
-		UserID: "alice",
-	})
-	rr := httptest.NewRecorder()
-	ch.List()(rr, req)
-
-	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM fpi_items").Scan(&count)
-	if err != nil {
-		t.Errorf("SECURITY: [list] SQL injection via ?fields= dropped table: %v. Attack: fields parameter contains SQL payload", err)
-	}
-	t.Logf("NOTE: SQL injection fields → status %d, table intact", rr.Code)
+	sqlInjectionLeavesTableIntact(t, "fpi_items",
+		"/fpi_items?fields=id%2Ctitle%3BDROP%20TABLE%20fpi_items",
+		"list", "?fields=", "fields parameter contains SQL payload", "fields")
 }
 
 // TestList_WhereClauseFromHook verifies that a BeforeList hook that

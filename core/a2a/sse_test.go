@@ -160,6 +160,23 @@ func TestSubscribeMidRun(t *testing.T) {
 	r.eof(2 * time.Second)
 }
 
+// newReplica returns a harness sharing store with its peers:
+// cross-replica tests point every replica at ONE SQL store, dispatch
+// through the current handler, and poll the store fast so the
+// fallback path runs within test deadlines.
+func newReplica(t *testing.T, store *SQLStore) *harness {
+	var h *harness
+	h = newHarness(t, func(c *Config) {
+		c.Store = store
+		c.Skills = []Skill{{
+			ID: "echo", Name: "Echo", Description: "echo",
+			Handler: func(ctx context.Context, tc TaskContext) error { return h.current()(ctx, tc) },
+		}}
+	})
+	h.srv.pollEvery = 20 * time.Millisecond
+	return h
+}
+
 // A subscribe on the replica whose run asked for input, after another
 // replica resumed the task, follows the task to its end: it attached to
 // the stale local run, and when that run's handler returned the stream
@@ -170,19 +187,7 @@ func TestSubscribeOutlivesStaleLocalRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSQLStore: %v", err)
 	}
-	newReplica := func() *harness {
-		var h *harness
-		h = newHarness(t, func(c *Config) {
-			c.Store = store
-			c.Skills = []Skill{{
-				ID: "echo", Name: "Echo", Description: "echo",
-				Handler: func(ctx context.Context, tc TaskContext) error { return h.current()(ctx, tc) },
-			}}
-		})
-		h.srv.pollEvery = 20 * time.Millisecond
-		return h
-	}
-	a, b := newReplica(), newReplica()
+	a, b := newReplica(t, store), newReplica(t, store)
 	asked, aReturn, finish := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	a.setHandler(func(_ context.Context, tc TaskContext) error {
 		err := tc.RequireInput(TextPart("need input"))
@@ -236,21 +241,8 @@ func TestSubscribeCrossReplicaPoll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSQLStore: %v", err)
 	}
-
-	newReplica := func() *harness {
-		var h *harness
-		h = newHarness(t, func(c *Config) {
-			c.Store = store
-			c.Skills = []Skill{{
-				ID: "echo", Name: "Echo", Description: "echo",
-				Handler: func(ctx context.Context, tc TaskContext) error { return h.current()(ctx, tc) },
-			}}
-		})
-		h.srv.pollEvery = 20 * time.Millisecond
-		return h
-	}
-	a := newReplica()
-	b := newReplica()
+	a := newReplica(t, store)
+	b := newReplica(t, store)
 
 	release := make(chan struct{})
 	a.setHandler(func(_ context.Context, tc TaskContext) error {
@@ -298,20 +290,8 @@ func TestCancelCrossReplica(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSQLStore: %v", err)
 	}
-	newReplica := func() *harness {
-		var h *harness
-		h = newHarness(t, func(c *Config) {
-			c.Store = store
-			c.Skills = []Skill{{
-				ID: "echo", Name: "Echo", Description: "echo",
-				Handler: func(ctx context.Context, tc TaskContext) error { return h.current()(ctx, tc) },
-			}}
-		})
-		h.srv.pollEvery = 20 * time.Millisecond
-		return h
-	}
-	a := newReplica()
-	b := newReplica()
+	a := newReplica(t, store)
+	b := newReplica(t, store)
 
 	cut := make(chan struct{})
 	a.setHandler(func(ctx context.Context, tc TaskContext) error {

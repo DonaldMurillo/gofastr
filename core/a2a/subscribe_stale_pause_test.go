@@ -19,19 +19,7 @@ func TestSubscribeSeesRemotePauseUnderStaleRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSQLStore: %v", err)
 	}
-	newReplica := func() *harness {
-		var h *harness
-		h = newHarness(t, func(c *Config) {
-			c.Store = store
-			c.Skills = []Skill{{
-				ID: "echo", Name: "Echo", Description: "echo",
-				Handler: func(ctx context.Context, tc TaskContext) error { return h.current()(ctx, tc) },
-			}}
-		})
-		h.srv.pollEvery = 20 * time.Millisecond
-		return h
-	}
-	a, b := newReplica(), newReplica()
+	a, b := newReplica(t, store), newReplica(t, store)
 	asked, aReturn, pause := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	t.Cleanup(func() { close(aReturn) })
 	a.setHandler(func(_ context.Context, tc TaskContext) error {

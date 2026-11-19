@@ -39,41 +39,34 @@ func TestGrantScopesGateLikeTokenScopes(t *testing.T) {
 		}
 	})
 
-	t.Run("RequireScope refuses a grant lacking the scope", func(t *testing.T) {
-		reached := false
-		h := RequireScope("orders:write")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-			reached = true
-		}))
-		req := httptest.NewRequest(http.MethodDelete, "/api/orders/42", nil)
-		req = req.WithContext(embed.WithGrant(req.Context(), readOnly))
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
+	// Both scope middlewares must refuse a write from a read-only grant
+	// with 403, before the handler runs.
+	refusals := []struct {
+		name string
+		wrap func(http.Handler) http.Handler
+	}{
+		{"RequireScope refuses a grant lacking the scope", RequireScope("orders:write")},
+		{"RequireAPIScopes refuses a write from a read-only grant", RequireAPIScopes("/api")},
+	}
+	for _, rf := range refusals {
+		t.Run(rf.name, func(t *testing.T) {
+			reached := false
+			h := rf.wrap(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				reached = true
+			}))
+			req := httptest.NewRequest(http.MethodDelete, "/api/orders/42", nil)
+			req = req.WithContext(embed.WithGrant(req.Context(), readOnly))
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
 
-		if reached {
-			t.Fatal("a read-only grant reached a write-gated handler")
-		}
-		if rec.Code != http.StatusForbidden {
-			t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
-		}
-	})
-
-	t.Run("RequireAPIScopes refuses a write from a read-only grant", func(t *testing.T) {
-		reached := false
-		h := RequireAPIScopes("/api")(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-			reached = true
-		}))
-		req := httptest.NewRequest(http.MethodDelete, "/api/orders/42", nil)
-		req = req.WithContext(embed.WithGrant(req.Context(), readOnly))
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-
-		if reached {
-			t.Fatal("a read-only grant deleted through RequireAPIScopes")
-		}
-		if rec.Code != http.StatusForbidden {
-			t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
-		}
-	})
+			if reached {
+				t.Fatal("a read-only grant reached a write-gated handler")
+			}
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+			}
+		})
+	}
 
 	t.Run("a read stays allowed", func(t *testing.T) {
 		reached := false

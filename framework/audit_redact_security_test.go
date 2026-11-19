@@ -130,22 +130,30 @@ func TestAudit_DeleteRedactOmittedIDKeepsOriginalRecordID(t *testing.T) {
 	})
 }
 
+// actorStripApp wires a single-field posts app with an audit log whose Actor
+// resolver returns actor, migrates the table, and returns the harness as a
+// signed-in user ready to write the row the audit will record.
+func actorStripApp(t *testing.T, db *sql.DB, actor string) *TestApp {
+	t.Helper()
+	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+	app.Entity("posts", entity.EntityConfig{
+		Table: "posts",
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String, Required: true},
+		},
+	}.WithTimestamps(false))
+	if err := AutoMigrate(db, app.Registry); err != nil {
+		t.Fatalf("automigrate: %v", err)
+	}
+	app.WithAuditLog(AuditConfig{
+		Actor: func(_ context.Context) string { return actor },
+	})
+	return TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+}
+
 func TestAudit_ActorStripsNewlines(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", entity.EntityConfig{
-			Table: "posts",
-			Fields: []schema.Field{
-				{Name: "title", Type: schema.String, Required: true},
-			},
-		}.WithTimestamps(false))
-		if err := AutoMigrate(db, app.Registry); err != nil {
-			t.Fatalf("automigrate: %v", err)
-		}
-		app.WithAuditLog(AuditConfig{
-			Actor: func(_ context.Context) string { return "alice\nadmin" },
-		})
-		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+		ta := actorStripApp(t, db, "alice\nadmin")
 		ta.Post("/posts", map[string]any{"title": "hello"}).AssertStatus(t, http.StatusCreated)
 
 		rows := readAuditRows(t, db)
@@ -155,49 +163,45 @@ func TestAudit_ActorStripsNewlines(t *testing.T) {
 	})
 }
 
+// deleteRedactStripsRecordID wires an app whose Redact callback rewrites a
+// lone id row to forgedID (carrying control bytes), deletes a post, and
+// asserts the delete audit row's record_id came back with those bytes
+// stripped: the audit row must record the redacted id, not forged lines.
+func deleteRedactStripsRecordID(t *testing.T, db *sql.DB, forgedID, control string) {
+	t.Helper()
+	redact := func(_ string, row map[string]any) map[string]any {
+		if len(row) == 1 && row["id"] != nil {
+			return map[string]any{"id": forgedID}
+		}
+		return row
+	}
+	ta := TestHarness(t, auditAppWithRedact(t, db, redact))
+	create := ta.Post("/posts", map[string]any{"title": "to-delete"})
+	create.AssertStatus(t, http.StatusCreated)
+
+	var created map[string]any
+	if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+
+	ta.Delete("/posts/"+created["id"].(string)).AssertStatus(t, http.StatusNoContent)
+
+	rows := readAuditRows(t, db)
+	last := rows[len(rows)-1]
+	if last["record_id"] != "public-idforged" {
+		t.Fatalf("SECURITY: [audit] delete audit record_id retained %s/control payload %q. Attack: audit-log record_id injection via redact callback.", control, last["record_id"])
+	}
+}
+
 func TestAudit_DeleteRedactStripsNewlinesFromRecordID(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		redact := func(_ string, row map[string]any) map[string]any {
-			if len(row) == 1 && row["id"] != nil {
-				return map[string]any{"id": "public-id\nforged"}
-			}
-			return row
-		}
-		ta := TestHarness(t, auditAppWithRedact(t, db, redact))
-		create := ta.Post("/posts", map[string]any{"title": "to-delete"})
-		create.AssertStatus(t, http.StatusCreated)
-
-		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
-			t.Fatalf("decode create: %v", err)
-		}
-
-		ta.Delete("/posts/"+created["id"].(string)).AssertStatus(t, http.StatusNoContent)
-
-		rows := readAuditRows(t, db)
-		last := rows[len(rows)-1]
-		if last["record_id"] != "public-idforged" {
-			t.Fatalf("SECURITY: [audit] delete audit record_id retained newline/control payload %q. Attack: audit-log record_id injection via redact callback.", last["record_id"])
-		}
+		deleteRedactStripsRecordID(t, db, "public-id\nforged", "newline")
 	})
 }
 
 func TestAudit_ActorStripsNUL(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		app.Entity("posts", entity.EntityConfig{
-			Table: "posts",
-			Fields: []schema.Field{
-				{Name: "title", Type: schema.String, Required: true},
-			},
-		}.WithTimestamps(false))
-		if err := AutoMigrate(db, app.Registry); err != nil {
-			t.Fatalf("automigrate: %v", err)
-		}
-		app.WithAuditLog(AuditConfig{
-			Actor: func(_ context.Context) string { return "alice\x00admin" },
-		})
-		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
+		ta := actorStripApp(t, db, "alice\x00admin")
 		ta.Post("/posts", map[string]any{"title": "hello"}).AssertStatus(t, http.StatusCreated)
 
 		rows := readAuditRows(t, db)
@@ -209,28 +213,7 @@ func TestAudit_ActorStripsNUL(t *testing.T) {
 
 func TestAudit_DeleteRedactStripsNULFromRecordID(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		redact := func(_ string, row map[string]any) map[string]any {
-			if len(row) == 1 && row["id"] != nil {
-				return map[string]any{"id": "public-id\x00forged"}
-			}
-			return row
-		}
-		ta := TestHarness(t, auditAppWithRedact(t, db, redact))
-		create := ta.Post("/posts", map[string]any{"title": "to-delete"})
-		create.AssertStatus(t, http.StatusCreated)
-
-		var created map[string]any
-		if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
-			t.Fatalf("decode create: %v", err)
-		}
-
-		ta.Delete("/posts/"+created["id"].(string)).AssertStatus(t, http.StatusNoContent)
-
-		rows := readAuditRows(t, db)
-		last := rows[len(rows)-1]
-		if last["record_id"] != "public-idforged" {
-			t.Fatalf("SECURITY: [audit] delete audit record_id retained NUL/control payload %q. Attack: audit-log record_id injection via redact callback.", last["record_id"])
-		}
+		deleteRedactStripsRecordID(t, db, "public-id\x00forged", "NUL")
 	})
 }
 

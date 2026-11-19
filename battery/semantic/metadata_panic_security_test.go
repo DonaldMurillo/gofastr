@@ -1,11 +1,10 @@
 package semantic
 
 import (
-	"context"
-	"log/slog"
 	"strings"
-	"sync"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
 // Pins: a recovered panic value embedding metadata-derived text reaches the
@@ -28,43 +27,9 @@ import (
 // Probe note: the payload embeds the control bytes RAW (panic value),
 // not %q-escaped — %q pre-escapes them and would hide the surface.
 
-// redSemScrubSink is a minimal slog.Handler storing record attributes
-// verbatim (no JSON/text escaping), so a test can detect raw control
-// bytes a real handler would have escaped away.
-type redSemScrubSink struct {
-	mu    sync.Mutex
-	attrs map[string]string
-}
-
-func (h *redSemScrubSink) Enabled(context.Context, slog.Level) bool { return true }
-
-func (h *redSemScrubSink) Handle(_ context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.attrs == nil {
-		h.attrs = map[string]string{}
-	}
-	r.Attrs(func(a slog.Attr) bool {
-		h.attrs[a.Key] = a.Value.String()
-		return true
-	})
-	return nil
-}
-
-func (h *redSemScrubSink) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *redSemScrubSink) WithGroup(string) slog.Handler      { return h }
-
-func (h *redSemScrubSink) redGet(key string) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.attrs[key]
-}
-
 func TestSemanticRedMetaPanicScrubbed(t *testing.T) {
-	prev := slog.Default()
-	sink := &redSemScrubSink{}
-	slog.SetDefault(slog.New(sink))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	sink := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, sink)
 
 	malicious := "boom \x1b]0;pwned \u202e and \u009bCSI"
 	w := NewWatcher(nil, WatchOptions{
@@ -72,9 +37,9 @@ func TestSemanticRedMetaPanicScrubbed(t *testing.T) {
 	})
 	_ = w.safeMetadata("/tmp/red-probe.md")
 
-	got := sink.redGet("panic")
+	got := sink.Get("panic")
 	if got == "" {
-		t.Fatalf("setup broken: MetadataFunc panic never reached the slog sink (attrs=%v)", sink.attrs)
+		t.Fatalf("setup broken: MetadataFunc panic never reached the slog sink (attrs=%v)", sink.Attrs())
 	}
 	for _, bad := range []string{"\x1b", "\u202e", "\u009b"} {
 		if strings.Contains(got, bad) {

@@ -49,13 +49,15 @@ func metaHas(m map[string]any, want string) bool {
 	return false
 }
 
-// TestTypedHookRedRefAliasMutationDrop: a BeforeCreate hook that mutates *T
-// in place (map delete, slice element write, write through a pointer field)
-// must have every one of those mutations land in the pending body — that body
-// is what the crud layer INSERTs.
-func TestTypedHookRedRefAliasMutationDrop(t *testing.T) {
+// runRedRefBefore pins the typedhook-refalias property on one Before phase:
+// the hook deletes a map key, rewrites a slice element and zeroes a pointer
+// field in place, and every one of those mutations must land in the pending
+// body the crud layer writes. tag names the SECURITY finding in the failure
+// messages, noun the INSERT/UPDATE body it must land in.
+func runRedRefBefore(t *testing.T, tag, noun string, phase hook.HookType, register func(*App, string, func(context.Context, *redHookPost) error)) {
+	t.Helper()
 	app := NewApp(WithoutDefaultMiddleware())
-	OnBeforeCreate[redHookPost](app, "posts", func(_ context.Context, v *redHookPost) error {
+	register(app, "posts", func(_ context.Context, v *redHookPost) error {
 		delete(v.Meta, "isAdmin")
 		v.Tags[0] = "redacted"
 		if v.Profile != nil {
@@ -70,24 +72,32 @@ func TestTypedHookRedRefAliasMutationDrop(t *testing.T) {
 		"tags":    []any{"a", "b"},
 		"profile": map[string]any{"secret": "s3cr3t"},
 	}
-	if err := app.HookRegistry("posts").ExecuteHooks(context.Background(), hook.BeforeCreate, body); err != nil {
+	if err := app.HookRegistry("posts").ExecuteHooks(context.Background(), phase, body); err != nil {
 		t.Fatalf("setup broken: ExecuteHooks: %v", err)
 	}
 
 	if meta, ok := body["meta"].(map[string]any); ok && metaHas(meta, "isAdmin") {
-		t.Errorf("SECURITY: [typedhook-refalias-before] in-place delete of v.Meta[\"isAdmin\"] was dropped by the merge-back; the client's privileged meta (%v) survives into the INSERT body", meta)
+		t.Errorf("SECURITY: [%s] in-place delete of v.Meta[\"isAdmin\"] was dropped by the merge-back; the client's privileged meta (%v) survives into the %s body", tag, meta, noun)
 	}
 	if tags, ok := body["tags"].([]any); ok && len(tags) > 0 && tags[0] != "redacted" {
-		t.Errorf("SECURITY: [typedhook-refalias-before] in-place v.Tags[0]=\"%s\" was dropped by the merge-back; body still carries %v — a slice rewrite a hook believes it performed never reaches the row", "redacted", tags)
+		t.Errorf("SECURITY: [%s] in-place v.Tags[0]=\"%s\" was dropped by the merge-back; body still carries %v — a slice rewrite a hook believes it performed never reaches the row", tag, "redacted", tags)
 	}
 	if prof, ok := body["profile"].(map[string]any); ok {
 		// The forced zero lands as the omitempty-dropped inner key
 		// ({"profile":{}}); both the empty string and the absent key
 		// satisfy the property, any other surviving value is the bug.
 		if sec, present := prof["secret"]; present && sec != "" {
-			t.Errorf("SECURITY: [typedhook-refalias-before] in-place v.Profile.Secret=\"\" was dropped by the merge-back; the client's nested secret %q survives into the INSERT body", sec)
+			t.Errorf("SECURITY: [%s] in-place v.Profile.Secret=\"\" was dropped by the merge-back; the client's nested secret %q survives into the %s body", tag, sec, noun)
 		}
 	}
+}
+
+// TestTypedHookRedRefAliasMutationDrop: a BeforeCreate hook that mutates *T
+// in place (map delete, slice element write, write through a pointer field)
+// must have every one of those mutations land in the pending body — that body
+// is what the crud layer INSERTs.
+func TestTypedHookRedRefAliasMutationDrop(t *testing.T) {
+	runRedRefBefore(t, "typedhook-refalias-before", "INSERT", hook.BeforeCreate, OnBeforeCreate[redHookPost])
 }
 
 // TestTypedHookRedRefAliasAfterResp: the same aliasing drop on the After
@@ -160,35 +170,5 @@ func TestTypedHookRedRefAliasAfterResp(t *testing.T) {
 // body while the host believes its hook redacted them. Fix direction:
 // deep-copy (or deep-compare) the snapshot before running the callback.
 func TestTypedHookRedRefAliasBeforeUpdate(t *testing.T) {
-	app := NewApp(WithoutDefaultMiddleware())
-	OnBeforeUpdate[redHookPost](app, "posts", func(_ context.Context, v *redHookPost) error {
-		delete(v.Meta, "isAdmin")
-		v.Tags[0] = "redacted"
-		if v.Profile != nil {
-			v.Profile.Secret = ""
-		}
-		return nil
-	})
-	body := map[string]any{
-		"id":      "1",
-		"title":   "t",
-		"meta":    map[string]any{"isAdmin": true},
-		"tags":    []any{"a", "b"},
-		"profile": map[string]any{"secret": "s3cr3t"},
-	}
-	if err := app.HookRegistry("posts").ExecuteHooks(context.Background(), hook.BeforeUpdate, body); err != nil {
-		t.Fatalf("setup broken: ExecuteHooks: %v", err)
-	}
-
-	if meta, ok := body["meta"].(map[string]any); ok && metaHas(meta, "isAdmin") {
-		t.Errorf("SECURITY: [typedhook-refalias-beforeupdate] in-place delete of v.Meta[\"isAdmin\"] was dropped by the merge-back; the client's privileged meta (%v) survives into the UPDATE body", meta)
-	}
-	if tags, ok := body["tags"].([]any); ok && len(tags) > 0 && tags[0] != "redacted" {
-		t.Errorf("SECURITY: [typedhook-refalias-beforeupdate] in-place v.Tags[0]=\"%s\" was dropped by the merge-back; body still carries %v — a slice rewrite a hook believes it performed never reaches the row", "redacted", tags)
-	}
-	if prof, ok := body["profile"].(map[string]any); ok {
-		if sec, present := prof["secret"]; present && sec != "" {
-			t.Errorf("SECURITY: [typedhook-refalias-beforeupdate] in-place v.Profile.Secret=\"\" was dropped by the merge-back; the client's nested secret %q survives into the UPDATE body", sec)
-		}
-	}
+	runRedRefBefore(t, "typedhook-refalias-beforeupdate", "UPDATE", hook.BeforeUpdate, OnBeforeUpdate[redHookPost])
 }

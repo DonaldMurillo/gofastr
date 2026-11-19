@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
 // ----- Set-Cookie / Authorization stripped from cache -----------------------
@@ -783,7 +784,7 @@ func (finishFailStore) Finish(context.Context, string, string, *IdempotentRespon
 }
 
 func TestIdempotencyFinishLogKeyScrubbed(t *testing.T) {
-	sink := &captureHandler{}
+	sink := &scrubtest.Sink{}
 	mw := Idempotency(IdempotencyConfig{
 		Store:     finishFailStore{},
 		Principal: testPrincipal,
@@ -793,12 +794,12 @@ func TestIdempotencyFinishLogKeyScrubbed(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	for _, key := range []string{"k\x01quiet", "k\x1b[31mred", "k\x7fdel"} {
-		sink.reset()
+		sink.Reset()
 		req := httptest.NewRequest(http.MethodPost, "/pay", nil)
 		req.Header.Set("X-Caller", "u1")
 		req.Header.Set(IdempotencyKeyHeader, key)
 		srv.ServeHTTP(httptest.NewRecorder(), req)
-		if got := sink.get("key"); textsafe.ContainsUnsafe(got) {
+		if got := sink.Get("key"); textsafe.ContainsUnsafe(got) {
 			t.Errorf("raw Idempotency-Key logged on Finish failure: %q", got)
 		}
 	}

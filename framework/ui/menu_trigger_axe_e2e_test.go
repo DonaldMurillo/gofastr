@@ -1,6 +1,7 @@
 package ui_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -165,54 +166,45 @@ func TestMenuTriggerAxeClean(t *testing.T) {
 	srv := menuTriggerAxeServer(t, renderTriggerMenu())
 	browser := axetest.NewBrowser(t)
 	for _, scheme := range axetest.Schemes {
-		ctx, cancel := axetest.NewTab(t, browser)
-		if err := chromedp.Run(ctx,
-			chromedp.Navigate(srv.URL+"/"),
-			chromedp.WaitVisible(`#ready`, chromedp.ByID),
-			chromedp.Sleep(700*time.Millisecond),
-			axetest.Prepare(scheme),
-		); err != nil {
-			cancel()
-			t.Fatalf("axe setup (%s): %v", scheme, err)
-		}
-		vs, err := axetest.Scan(ctx, scheme, nil)
-		cancel()
-		if err != nil {
-			t.Fatalf("axe scan closed (%s): %v", scheme, err)
-		}
-		for _, v := range vs {
-			if reason, ok := menuTriggerAxeAllowlist[v.ID]; ok {
-				t.Logf("(%s, closed) allowlisted %s: %s", scheme, v.ID, reason)
-				continue
-			}
-			t.Errorf("closed menu (%s scheme): [%s] %s", scheme, v.ID, v.Help)
-		}
-
+		menuAxeScan(t, browser, srv.URL, scheme, "closed menu")
 		// Same page with the menu OPEN: panel rows are in the tree now.
-		ctx2, cancel2 := axetest.NewTab(t, browser)
-		if err := chromedp.Run(ctx2,
-			chromedp.Navigate(srv.URL+"/"),
-			chromedp.WaitVisible(`#ready`, chromedp.ByID),
-			chromedp.Sleep(700*time.Millisecond),
-			axetest.Prepare(scheme),
-			chromedp.Click(`button.rounded-full`, chromedp.ByQuery),
-			chromedp.Sleep(250*time.Millisecond),
-		); err != nil {
-			cancel2()
-			t.Fatalf("axe open setup (%s): %v", scheme, err)
+		menuAxeScan(t, browser, srv.URL, scheme, "open menu",
+			chromedp.Click(`button.rounded-full`, chromedp.ByQuery))
+	}
+}
+
+// menuAxeScan loads the menu test server under scheme, optionally runs open
+// (e.g. the trigger click that opens the panel), scans the page with axe and
+// fails on any violation that is not allowlisted. label names the state
+// ("closed menu", "open lazy menu", ...) in the failure messages.
+func menuAxeScan(t *testing.T, browser context.Context, srvURL, scheme, label string, open ...chromedp.Action) {
+	t.Helper()
+	ctx, cancel := axetest.NewTab(t, browser)
+	acts := []chromedp.Action{
+		chromedp.Navigate(srvURL + "/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Sleep(700 * time.Millisecond),
+		axetest.Prepare(scheme),
+	}
+	if len(open) > 0 {
+		acts = append(acts, open...)
+		acts = append(acts, chromedp.Sleep(250*time.Millisecond))
+	}
+	if err := chromedp.Run(ctx, acts...); err != nil {
+		cancel()
+		t.Fatalf("axe setup %s (%s): %v", label, scheme, err)
+	}
+	vs, err := axetest.Scan(ctx, scheme, nil)
+	cancel()
+	if err != nil {
+		t.Fatalf("axe scan %s (%s): %v", label, scheme, err)
+	}
+	for _, v := range vs {
+		if reason, ok := menuTriggerAxeAllowlist[v.ID]; ok {
+			t.Logf("(%s, %s) allowlisted %s: %s", scheme, label, v.ID, reason)
+			continue
 		}
-		vs2, err := axetest.Scan(ctx2, scheme, nil)
-		cancel2()
-		if err != nil {
-			t.Fatalf("axe scan open (%s): %v", scheme, err)
-		}
-		for _, v := range vs2 {
-			if reason, ok := menuTriggerAxeAllowlist[v.ID]; ok {
-				t.Logf("(%s, open) allowlisted %s: %s", scheme, v.ID, reason)
-				continue
-			}
-			t.Errorf("open menu (%s scheme): [%s] %s", scheme, v.ID, v.Help)
-		}
+		t.Errorf("%s (%s scheme): [%s] %s", label, scheme, v.ID, v.Help)
 	}
 }
 
@@ -262,53 +254,9 @@ func TestMenuLazyAxeClean(t *testing.T) {
 	srv := menuTriggerAxeServer(t, renderLazyMenu())
 	browser := axetest.NewBrowser(t)
 	for _, scheme := range axetest.Schemes {
-		ctx, cancel := axetest.NewTab(t, browser)
-		if err := chromedp.Run(ctx,
-			chromedp.Navigate(srv.URL+"/"),
-			chromedp.WaitVisible(`#ready`, chromedp.ByID),
-			chromedp.Sleep(700*time.Millisecond),
-			axetest.Prepare(scheme),
-		); err != nil {
-			cancel()
-			t.Fatalf("axe setup closed (%s): %v", scheme, err)
-		}
-		vs, err := axetest.Scan(ctx, scheme, nil)
-		cancel()
-		if err != nil {
-			t.Fatalf("axe scan closed (%s): %v", scheme, err)
-		}
-		for _, v := range vs {
-			if reason, ok := menuTriggerAxeAllowlist[v.ID]; ok {
-				t.Logf("(%s, closed) allowlisted %s: %s", scheme, v.ID, reason)
-				continue
-			}
-			t.Errorf("closed lazy menu (%s scheme): [%s] %s", scheme, v.ID, v.Help)
-		}
-
-		ctx2, cancel2 := axetest.NewTab(t, browser)
-		if err := chromedp.Run(ctx2,
-			chromedp.Navigate(srv.URL+"/"),
-			chromedp.WaitVisible(`#ready`, chromedp.ByQuery),
-			chromedp.Sleep(700*time.Millisecond),
-			axetest.Prepare(scheme),
-			chromedp.Click(`button#lz-open`, chromedp.ByQuery),
-			chromedp.Sleep(250*time.Millisecond),
-		); err != nil {
-			cancel2()
-			t.Fatalf("axe open setup (%s): %v", scheme, err)
-		}
-		vs2, err := axetest.Scan(ctx2, scheme, nil)
-		cancel2()
-		if err != nil {
-			t.Fatalf("axe scan open (%s): %v", scheme, err)
-		}
-		for _, v := range vs2 {
-			if reason, ok := menuTriggerAxeAllowlist[v.ID]; ok {
-				t.Logf("(%s, open) allowlisted %s: %s", scheme, v.ID, reason)
-				continue
-			}
-			t.Errorf("open lazy menu (%s scheme): [%s] %s", scheme, v.ID, v.Help)
-		}
+		menuAxeScan(t, browser, srv.URL, scheme, "closed lazy menu")
+		menuAxeScan(t, browser, srv.URL, scheme, "open lazy menu",
+			chromedp.Click(`button#lz-open`, chromedp.ByQuery))
 	}
 }
 

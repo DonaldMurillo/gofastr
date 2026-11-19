@@ -74,54 +74,68 @@ func elevatedClerk(x *testUI, policy *access.RolePolicy, path, query string) con
 	return crud.WithElevation(access.WithRoles(access.WithPolicy(ctx, policy), []string{"clerk"}), "invoices")
 }
 
+// buildFunc is the Build-callback body the record-screen elevation pins
+// share, made seam-agnostic: record that the build ran, try the gated
+// record title with the context it was handed, and return the peek
+// component that draws the same way.
+type buildFunc func(ui *UI, ctx context.Context) (component.Component, error)
+
+func buildPeek(ran, titled, drawn, drawTitled *bool) buildFunc {
+	return func(ui *UI, ctx context.Context) (component.Component, error) {
+		*ran = true
+		_, *titled = ui.RecordTitle(ctx, "invoices", "inv-1")
+		return peek{ui, drawn, drawTitled}, nil
+	}
+}
+
+// tabPeek mounts the peek build as a record tab.
+func tabPeek(build buildFunc) Extensions {
+	return Extensions{Entities: map[string]Extension{"invoices": {Tabs: []Tab{{
+		Key: "peek", Label: testPhrase("Peek"),
+		Build: func(tc TabContext) (component.Component, error) { return build(tc.UI, tc.Ctx) },
+	}}}}}
+}
+
+// sidePeek mounts the peek build as a record side panel.
+func sidePeek(build buildFunc) Extensions {
+	return Extensions{Entities: map[string]Extension{"invoices": {Side: []SidePanel{{
+		Key: "peek", Title: testPhrase("Peek"),
+		Build: func(rc RecordContext) (component.Component, error) { return build(rc.UI, rc.Ctx) },
+	}}}}}
+}
+
+// assertBuildRunsAsCaller pins that a record-screen Build callback runs on
+// the caller's context and so does the render of the component it
+// returns: mount registers the peek build at its seam, query is what the
+// record route needs to draw it, and what names the seam in the failure
+// messages.
+func assertBuildRunsAsCaller(t *testing.T, what, query string, mount func(buildFunc) Extensions) {
+	t.Helper()
+	titled, ran := true, false
+	var drawn, drawTitled bool
+	x, policy := readGatedInvoices(t, mount(buildPeek(&ran, &titled, &drawn, &drawTitled)))
+	x.ui.Record("invoices", "inv-1").Base("/rec/invoices").RenderCtx(elevatedClerk(x, policy, "/rec/invoices/inv-1", query))
+	if !ran || !drawn {
+		t.Fatalf("setup: the elevated record never drew the %s", what)
+	}
+	if titled {
+		t.Fatalf("SECURITY: a %s read a record title its caller's roles cannot read", what)
+	}
+	if drawTitled {
+		t.Fatalf("SECURITY: a %s's component drew with the back office's elevation", what)
+	}
+}
+
 // A record tab's Build runs as the caller too, and so does the render of
 // the component it returns.
 func TestTabBuildIsNotElevated(t *testing.T) {
-	titled, ran := true, false
-	var drawn, drawTitled bool
-	x, policy := readGatedInvoices(t, Extensions{Entities: map[string]Extension{"invoices": {Tabs: []Tab{{
-		Key: "peek", Label: testPhrase("Peek"),
-		Build: func(tc TabContext) (component.Component, error) {
-			ran = true
-			_, titled = tc.UI.RecordTitle(tc.Ctx, "invoices", "inv-1")
-			return peek{tc.UI, &drawn, &drawTitled}, nil
-		},
-	}}}}})
-	x.ui.Record("invoices", "inv-1").Base("/rec/invoices").RenderCtx(elevatedClerk(x, policy, "/rec/invoices/inv-1", "?tab=peek"))
-	if !ran || !drawn {
-		t.Fatal("setup: the elevated record never drew the tab")
-	}
-	if titled {
-		t.Fatal("SECURITY: a tab read a record title its caller's roles cannot read")
-	}
-	if drawTitled {
-		t.Fatal("SECURITY: a tab's component drew with the back office's elevation")
-	}
+	assertBuildRunsAsCaller(t, "tab", "?tab=peek", tabPeek)
 }
 
 // A record side panel's Build runs as the caller, and so does the render
 // of the component it returns.
 func TestSidePanelBuildIsNotElevated(t *testing.T) {
-	titled, ran := true, false
-	var drawn, drawTitled bool
-	x, policy := readGatedInvoices(t, Extensions{Entities: map[string]Extension{"invoices": {Side: []SidePanel{{
-		Key: "peek", Title: testPhrase("Peek"),
-		Build: func(rc RecordContext) (component.Component, error) {
-			ran = true
-			_, titled = rc.UI.RecordTitle(rc.Ctx, "invoices", "inv-1")
-			return peek{rc.UI, &drawn, &drawTitled}, nil
-		},
-	}}}}})
-	x.ui.Record("invoices", "inv-1").Base("/rec/invoices").RenderCtx(elevatedClerk(x, policy, "/rec/invoices/inv-1", ""))
-	if !ran || !drawn {
-		t.Fatal("setup: the elevated record never drew the side panel")
-	}
-	if titled {
-		t.Fatal("SECURITY: a side panel read a record title its caller's roles cannot read")
-	}
-	if drawTitled {
-		t.Fatal("SECURITY: a side panel's component drew with the back office's elevation")
-	}
+	assertBuildRunsAsCaller(t, "side panel", "", sidePeek)
 }
 
 // A replaced record body and a replaced list body draw as the caller.

@@ -506,19 +506,8 @@ func TestPG_AutoIncrementSerial(t *testing.T) {
 	}.WithTimestamps(false)
 	ch, _ := pgCrudSetup(t, cfg, `CREATE TABLE counters (id SERIAL PRIMARY KEY, label TEXT)`)
 
-	create := func(label string) string {
-		req := withTestUser(httptest.NewRequest(http.MethodPost, "/counters",
-			strings.NewReader(`{"label":"`+label+`"}`)), "u1")
-		req.Header.Set("Content-Type", "application/json")
-		rec := httptest.NewRecorder()
-		ch.Create()(rec, req)
-		if rec.Code != http.StatusCreated {
-			t.Fatalf("create %q = %d, body=%s", label, rec.Code, rec.Body.String())
-		}
-		return rec.Body.String()
-	}
-	first := create("a")
-	second := create("b")
+	first := createCounter(t, ch, "a")
+	second := createCounter(t, ch, "b")
 	if !strings.Contains(first, `"id":1`) {
 		t.Errorf("first create: expected sequence-assigned id 1, got %s", first)
 	}

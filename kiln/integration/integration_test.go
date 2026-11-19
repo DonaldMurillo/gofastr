@@ -23,6 +23,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/chat"
 	"github.com/DonaldMurillo/gofastr/kiln/db"
 	"github.com/DonaldMurillo/gofastr/kiln/freeze"
+	"github.com/DonaldMurillo/gofastr/kiln/internal/kilntest"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
@@ -353,19 +354,19 @@ func TestTransportParityNativeMCPAndACP(t *testing.T) {
 			// startACPStdio owns the reader goroutine, which must be
 			// running before the first request: io.Pipe is unbuffered,
 			// so the server's first response write blocks until read.
-			prov := &scriptedProvider{turns: []agent.Turn{{
+			prov := &kilntest.ScriptedProvider{Turns: []agent.Turn{{
 				ToolCalls:  []agent.ToolCall{{CallID: "c1", Name: "add_entity", Args: entityArgs}},
 				StopReason: "tool_use",
 			}}}
 			c := startACPStdio(t, h, prov)
-			c.request(1, "initialize", map[string]any{"protocolVersion": 1})
-			c.request(2, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
+			c.Request(1, "initialize", map[string]any{"protocolVersion": 1})
+			c.Request(2, "session/new", map[string]any{"cwd": t.TempDir(), "mcpServers": []any{}})
 			newResp, _ := c.untilResponse(2)
 			if newResp["error"] != nil {
 				t.Fatalf("ACP session/new errored: %v", newResp["error"])
 			}
 			sid := newResp["result"].(map[string]any)["sessionId"].(string)
-			c.request(3, "session/prompt", map[string]any{
+			c.Request(3, "session/prompt", map[string]any{
 				"sessionId": sid,
 				"prompt":    []any{map[string]any{"type": "text", "text": "add posts"}},
 			})

@@ -23,35 +23,23 @@ import (
 // loadstate attribute, and whether a parked copy of the old nodes
 // exists (the hidden park div).
 func p9ToolbarProbe(t *testing.T, ctx context.Context) (text, state string, parked int) {
-	t.Helper()
-	var out string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({
-		t: document.querySelector('[data-cui-outlet="l:shell#toolbar"]').textContent.trim(),
-		s: document.querySelector('[data-cui-outlet="l:shell#toolbar"]').getAttribute('data-cui-loadstate') || '',
-		p: document.querySelectorAll('body > div[hidden]').length,
-	})`, &out)); err != nil {
-		t.Fatalf("probe: %v", err)
-	}
-	var v struct {
-		T string `json:"t"`
-		S string `json:"s"`
-		P int    `json:"p"`
-	}
-	if err := json.Unmarshal([]byte(out), &v); err != nil {
-		t.Fatal(err)
-	}
-	return v.T, v.S, v.P
+	return p9Probe(t, ctx, `[data-cui-outlet="l:shell#toolbar"]`)
 }
 
 // p9CrumbsProbe reads the crumbs AREA's loading state: its text, its
 // loadstate attribute, and whether a parked copy of the old nodes
 // exists (the hidden park div).
 func p9CrumbsProbe(t *testing.T, ctx context.Context) (text, state string, parked int) {
+	return p9Probe(t, ctx, `[data-cui-area="l:shell~crumbs"]`)
+}
+
+// p9Probe reads sel's text, loadstate attribute, and parked-copy count.
+func p9Probe(t *testing.T, ctx context.Context, sel string) (text, state string, parked int) {
 	t.Helper()
 	var out string
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({
-		t: document.querySelector('[data-cui-area="l:shell~crumbs"]').textContent.trim(),
-		s: document.querySelector('[data-cui-area="l:shell~crumbs"]').getAttribute('data-cui-loadstate') || '',
+		t: document.querySelector('`+sel+`').textContent.trim(),
+		s: document.querySelector('`+sel+`').getAttribute('data-cui-loadstate') || '',
 		p: document.querySelectorAll('body > div[hidden]').length,
 	})`, &out)); err != nil {
 		t.Fatalf("probe: %v", err)

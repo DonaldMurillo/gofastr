@@ -42,19 +42,28 @@ func TestAppSpecEmittersRejectOrNeutralizeLiteralBreakers(t *testing.T) {
 		label := strings.NewReplacer("\n", "N", "\r", "R", "`", "BT", `"`, "Q").Replace(payload)
 		for _, tc := range appSpecPayloadSites(payload) {
 			t.Run(tc.site+"/"+label, func(t *testing.T) {
-				if err := appspec.ValidateAppSpec(tc.bp); err != nil {
-					return // rejected at the boundary, the documented fix
-				}
-				files, err := RenderAppSpecFiles(tc.bp)
-				if err != nil {
-					return // the emitter refused; also fine
-				}
-				for _, f := range files {
-					if strings.HasSuffix(f.Name, ".go") {
-						assertPayloadStayedData(t, tc.site, f.Name, f.Content)
-					}
-				}
+				renderBreakerSite(t, tc.site, tc.bp)
 			})
+		}
+	}
+}
+
+// renderBreakerSite renders one breaker-planted spec and asserts the payload
+// stayed data in every emitted Go file. A validate-time rejection or an
+// emitter refusal passes too: reject, refuse, or emit inertly are the three
+// acceptable outcomes.
+func renderBreakerSite(t *testing.T, site string, bp appspec.AppSpec) {
+	t.Helper()
+	if err := appspec.ValidateAppSpec(bp); err != nil {
+		return // rejected at the boundary, the documented fix
+	}
+	files, err := RenderAppSpecFiles(bp)
+	if err != nil {
+		return // the emitter refused; also fine
+	}
+	for _, f := range files {
+		if strings.HasSuffix(f.Name, ".go") {
+			assertPayloadStayedData(t, site, f.Name, f.Content)
 		}
 	}
 }

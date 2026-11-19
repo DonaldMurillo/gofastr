@@ -132,30 +132,34 @@ func TestEventsPinsLoopbackHost(t *testing.T) {
 // a first-read intermediary parsed a different request
 // (handler.DecodeStrict parity with core/handler Bind surfaces).
 
+// postInput POSTs body at /input on a fresh wired stack and returns the
+// recorded status with the response body, so each strict-key leg below
+// demands its 400 against plumbing the happy guard already proved.
+func postInput(t *testing.T, body string) (int, string) {
+	s := newWiredServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(body))
+	req.Host = "127.0.0.1:8901"
+	rec := httptest.NewRecorder()
+	s.handleInput(rec, req)
+	return rec.Code, rec.Body.String()
+}
+
 // TestWebInputRejectsDuplicateKeys: exact duplicate top-level "text"
 // keys — wire-level last-wins.
 func TestWebInputRejectsDuplicateKeys(t *testing.T) {
 	// Happy guard on its own stack (multiplex allows one originator per
 	// session): the well-formed body is accepted (202), so the 400
 	// demanded below can only come from key strictness, not plumbing.
-	hs := newWiredServer(t)
-	req := httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(`{"text":"hello"}`))
-	req.Host = "127.0.0.1:8901"
-	rec := httptest.NewRecorder()
-	hs.handleInput(rec, req)
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("happy path: well-formed body must reach the engine (status %d: %.200s)", rec.Code, rec.Body.String())
+	code, respBody := postInput(t, `{"text":"hello"}`)
+	if code != http.StatusAccepted {
+		t.Fatalf("happy path: well-formed body must reach the engine (status %d: %.200s)", code, respBody)
 	}
 
-	s := newWiredServer(t)
-	req = httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(`{"text":"first","text":"second"}`))
-	req.Host = "127.0.0.1:8901"
-	rec = httptest.NewRecorder()
-	s.handleInput(rec, req)
-	if rec.Code != http.StatusBadRequest {
+	code, _ = postInput(t, `{"text":"first","text":"second"}`)
+	if code != http.StatusBadRequest {
 		t.Errorf("SECURITY: [web-strict-keys] POST /input accepted a body with a duplicate "+
 			"top-level text key: status %d, want 400 — duplicate top-level keys resolve last-wins, "+
-			"so the prompt enters the session at model authority; decode via handler.DecodeStrict", rec.Code)
+			"so the prompt enters the session at model authority; decode via handler.DecodeStrict", code)
 	}
 }
 
@@ -163,23 +167,15 @@ func TestWebInputRejectsDuplicateKeys(t *testing.T) {
 // "text" field via stdlib json's tag-insensitive match — a duplicate
 // modulo folding; survives a dedup-only fix.
 func TestWebInputRejectsCaseFoldedKeys(t *testing.T) {
-	hs := newWiredServer(t)
-	req := httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(`{"text":"hello"}`))
-	req.Host = "127.0.0.1:8901"
-	rec := httptest.NewRecorder()
-	hs.handleInput(rec, req)
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("happy path: well-formed body must reach the engine (status %d: %.200s)", rec.Code, rec.Body.String())
+	code, respBody := postInput(t, `{"text":"hello"}`)
+	if code != http.StatusAccepted {
+		t.Fatalf("happy path: well-formed body must reach the engine (status %d: %.200s)", code, respBody)
 	}
 
-	s := newWiredServer(t)
-	req = httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(`{"TEXT":"hello"}`))
-	req.Host = "127.0.0.1:8901"
-	rec = httptest.NewRecorder()
-	s.handleInput(rec, req)
-	if rec.Code != http.StatusBadRequest {
+	code, _ = postInput(t, `{"TEXT":"hello"}`)
+	if code != http.StatusBadRequest {
 		t.Errorf("SECURITY: [web-strict-keys] POST /input accepted a body with a case-folded "+
 			"top-level key: status %d, want 400 — case-folded keys still match the tag, "+
-			"so the prompt enters the session at model authority; decode via handler.DecodeStrict", rec.Code)
+			"so the prompt enters the session at model authority; decode via handler.DecodeStrict", code)
 	}
 }

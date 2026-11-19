@@ -237,19 +237,7 @@ func TestVisual_LivePageHotReload(t *testing.T) {
 	ctx := chromedptest.Context(t)
 
 	// Initial: page with heading "Version One"
-	addV1 := tools.AddPage(t.Context(), protocol.AddPageArgs{Page: &world.Page{
-		Path:  "/draft",
-		Title: "Draft",
-		Tree: world.Node{Kind: "div", Children: []world.Node{
-			{Kind: "heading", Props: map[string]any{"level": float64(1), "text": "Version One"}},
-			{Kind: "paragraph", Children: []world.Node{
-				{Kind: "text", Props: map[string]any{"value": "first cut"}},
-			}},
-		}},
-	}})
-	if !addV1.OK {
-		t.Fatal(addV1)
-	}
+	addHeadingPage(t, tools, "/draft", "Draft", "Version One", "first cut")
 
 	// Navigate user to the page.
 	var bodyV1 string
@@ -288,18 +276,7 @@ func TestVisual_LivePageHotReload(t *testing.T) {
 	if r := tools.DeletePage(t.Context(), protocol.DeletePageArgs{Path: "/draft", PlanID: "rewrite-draft"}); !r.OK {
 		t.Fatal(r)
 	}
-	if r := tools.AddPage(t.Context(), protocol.AddPageArgs{Page: &world.Page{
-		Path:  "/draft",
-		Title: "Draft",
-		Tree: world.Node{Kind: "div", Children: []world.Node{
-			{Kind: "heading", Props: map[string]any{"level": float64(1), "text": "Version Two"}},
-			{Kind: "paragraph", Children: []world.Node{
-				{Kind: "text", Props: map[string]any{"value": "agent rewrote me hot"}},
-			}},
-		}},
-	}}); !r.OK {
-		t.Fatal(r)
-	}
+	addHeadingPage(t, tools, "/draft", "Draft", "Version Two", "agent rewrote me hot")
 
 	// Browser should refresh through the GoFastr SPA runtime after the SSE edit.
 	deadline := time.Now().Add(8 * time.Second)

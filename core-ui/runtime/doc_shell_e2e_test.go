@@ -135,32 +135,33 @@ func newDocShellSite(t *testing.T) *docShellSite {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, keyedPage("es", "l:docs-es", skipES, "es-screen", "to-en", "/en/x", "EN"))
 	})
-	mux.HandleFunc("/g/en/x", func(w http.ResponseWriter, r *http.Request) {
-		partial := r.Header.Get("X-Gofastr-Navigate") == "1"
-		c.record("/g/en/x", partial)
-		w.Header().Set("Content-Type", "text/html")
-		if partial {
-			w.Header().Set("X-Gofastr-Partial", "true")
-			w.Header().Set("X-Gofastr-Title", "g-en")
-			w.Header().Set("X-Gofastr-Swap", "l:site")
-			fmt.Fprint(w, sharedRootPartial("en", skipEN, "/g/en/", "g:/g/en/:docs", "g-en-screen"))
-			return
+	// Shared-root shells: one site shell (l:site), per-language group
+	// layers; a partial swaps the group layer only.
+	sharedRootShell := func(path, lang, linkID, linkText string) {
+		skip := skipEN
+		if lang != "en" {
+			skip = skipES
 		}
-		fmt.Fprint(w, sharedRootPage("en", "/g/en/", "g:/g/en/:docs", skipEN, "g-en-screen", "g-to-es", "ES"))
-	})
-	mux.HandleFunc("/g/es/x", func(w http.ResponseWriter, r *http.Request) {
-		partial := r.Header.Get("X-Gofastr-Navigate") == "1"
-		c.record("/g/es/x", partial)
-		w.Header().Set("Content-Type", "text/html")
-		if partial {
-			w.Header().Set("X-Gofastr-Partial", "true")
-			w.Header().Set("X-Gofastr-Title", "g-es")
-			w.Header().Set("X-Gofastr-Swap", "l:site")
-			fmt.Fprint(w, sharedRootPartial("es", skipES, "/g/es/", "g:/g/es/:docs", "g-es-screen"))
-			return
-		}
-		fmt.Fprint(w, sharedRootPage("es", "/g/es/", "g:/g/es/:docs", skipES, "g-es-screen", "g-to-en", "EN"))
-	})
+		prefix := "/g/" + lang + "/"
+		key := "g:" + prefix + ":docs"
+		screen := "g-" + lang + "-screen"
+		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+			partial := r.Header.Get("X-Gofastr-Navigate") == "1"
+			c.record(path, partial)
+			w.Header().Set("Content-Type", "text/html")
+			if partial {
+				w.Header().Set("X-Gofastr-Partial", "true")
+				w.Header().Set("X-Gofastr-Title", "g-"+lang)
+				w.Header().Set("X-Gofastr-Swap", "l:site")
+				fmt.Fprint(w, sharedRootPartial(lang, skip, prefix, key, screen))
+				return
+			}
+			fmt.Fprint(w, sharedRootPage(lang, prefix, key, skip, screen, linkID, linkText))
+		})
+	}
+	sharedRootShell("/g/en/x", "en", "g-to-es", "ES")
+	sharedRootShell("/g/es/x", "es", "g-to-en", "EN")
+
 	mux.HandleFunc("/p/en", func(w http.ResponseWriter, r *http.Request) {
 		c.record("/p/en", r.Header.Get("X-Gofastr-Navigate") == "1")
 		w.Header().Set("Content-Type", "text/html")

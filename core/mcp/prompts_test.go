@@ -20,19 +20,9 @@ func mustRegisterPrompt(t *testing.T, s *Server, name string, handler PromptHand
 // returns the visible prompt names (nil on an error response).
 func listPromptNames(t *testing.T, s *Server, ctx context.Context) []string {
 	t.Helper()
-	resp := s.HandleRequest(ctx, Request{JSONRPC: "2.0", ID: 1, Method: "prompts/list"})
-	if resp.Error != nil {
-		return nil
-	}
-	res, ok := resp.Result.(promptsListResult)
-	if !ok {
-		t.Fatalf("prompts/list result type %T", resp.Result)
-	}
-	names := make([]string, 0, len(res.Prompts))
-	for _, p := range res.Prompts {
-		names = append(names, p.Name)
-	}
-	return names
+	return listField(t, s, ctx, "prompts/list",
+		func(r promptsListResult) []Prompt { return r.Prompts },
+		func(p Prompt) string { return p.Name })
 }
 
 // callPromptsGet issues prompts/get with raw JSON params.

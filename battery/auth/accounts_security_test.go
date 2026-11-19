@@ -15,8 +15,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,17 +22,13 @@ import (
 )
 
 // rendezvousUnlinkStore pins the old list→delete race window open
-// deterministically: when armed, the FIRST ListAccounts call blocks until
-// the SECOND arrives. Under the atomic path the handler never consults
+// deterministically: under the atomic path the handler never consults
 // ListAccounts for the guard, so the rendezvous simply never fires; under
 // a regression to check-then-act, both handlers hold the 2-link snapshot
-// before either UnlinkOAuth can run — no scheduling luck involved.
+// before either UnlinkOAuth can run.
 type rendezvousUnlinkStore struct {
 	*linkingStore
-	armed     atomic.Bool
-	entered   atomic.Int64
-	release   chan struct{}
-	closeOnce sync.Once
+	rendezvous
 }
 
 func (s *rendezvousUnlinkStore) ListAccounts(ctx context.Context, userID string) ([]Account, error) {
@@ -42,19 +36,8 @@ func (s *rendezvousUnlinkStore) ListAccounts(ctx context.Context, userID string)
 	if err != nil {
 		return nil, err
 	}
-	if s.armed.Load() {
-		if s.entered.Add(1) == 1 {
-			select {
-			case <-s.release:
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(10 * time.Second):
-				// Fall through rather than hang forever; the assertions
-				// below report whatever actually happened.
-			}
-		} else {
-			s.closeOnce.Do(func() { close(s.release) })
-		}
+	if err := s.gate(ctx); err != nil {
+		return nil, err
 	}
 	return accts, nil
 }
@@ -72,7 +55,7 @@ func TestUnlinkAtomicMethodCount(t *testing.T) {
 	if err := store.LinkOAuth(ctx, user.GetID(), "github", "gh-1"); err != nil {
 		t.Fatalf("LinkOAuth github: %v", err)
 	}
-	rendezvous := &rendezvousUnlinkStore{linkingStore: store, release: make(chan struct{})}
+	rendezvous := &rendezvousUnlinkStore{linkingStore: store, rendezvous: rendezvous{release: make(chan struct{})}}
 
 	mgr := New(AuthConfig{
 		SessionTTL:    time.Hour,

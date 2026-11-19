@@ -36,14 +36,7 @@ func TestParseFilters_ValuesEquiv(t *testing.T) {
 			viaReq, reqErr := ParseFilters(r, fields)
 			viaValues, valuesErr := ParseFiltersValues(r.URL.Query(), fields)
 
-			// Error equivalence: either both succeed or both fail with the
-			// same message (the wrapper passes the same opts through).
-			if (reqErr != nil) != (valuesErr != nil) {
-				t.Fatalf("error divergence: req=%v values=%v", reqErr, valuesErr)
-			}
-			if reqErr != nil && reqErr.Error() != valuesErr.Error() {
-				t.Fatalf("error message divergence: req=%q values=%q", reqErr, valuesErr)
-			}
+			requireSameOutcome(t, reqErr, valuesErr)
 			if !filtersEqualAsSet(viaReq, viaValues) {
 				t.Fatalf("filter divergence:\n  req:    %v\n  values: %v", viaReq, viaValues)
 			}
@@ -72,16 +65,24 @@ func TestParseSort_ValuesEquiv(t *testing.T) {
 			viaReq, reqErr := ParseSort(r, fields)
 			viaValues, valuesErr := ParseSortValues(r.URL.Query(), fields)
 
-			if (reqErr != nil) != (valuesErr != nil) {
-				t.Fatalf("error divergence: req=%v values=%v", reqErr, valuesErr)
-			}
-			if reqErr != nil && reqErr.Error() != valuesErr.Error() {
-				t.Fatalf("error message divergence: req=%q values=%q", reqErr, valuesErr)
-			}
+			requireSameOutcome(t, reqErr, valuesErr)
 			if !sortsEqual(viaReq, viaValues) {
 				t.Fatalf("sort divergence:\n  req:    %v\n  values: %v", viaReq, viaValues)
 			}
 		})
+	}
+}
+
+// requireSameOutcome pins the wrapper contract both equivalence tests share:
+// either both paths succeed or both fail with the same message (the wrapper
+// passes the same opts through).
+func requireSameOutcome(t *testing.T, reqErr, valuesErr error) {
+	t.Helper()
+	if (reqErr != nil) != (valuesErr != nil) {
+		t.Fatalf("error divergence: req=%v values=%v", reqErr, valuesErr)
+	}
+	if reqErr != nil && reqErr.Error() != valuesErr.Error() {
+		t.Fatalf("error message divergence: req=%q values=%q", reqErr, valuesErr)
 	}
 }
 

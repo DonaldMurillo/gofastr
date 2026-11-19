@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/cdproto/webauthn"
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
@@ -91,16 +90,7 @@ for (const k of ['signalUnknownCredential', 'signalAllAcceptedCredentials', 'sig
 	t.Cleanup(func() { _ = srv.Close() })
 
 	ctx := chromedptest.Context(t)
-	if err := chromedp.Run(ctx, webauthn.Enable(), chromedp.ActionFunc(func(ctx context.Context) error {
-		_, err := webauthn.AddVirtualAuthenticator(&webauthn.VirtualAuthenticatorOptions{
-			Protocol: webauthn.AuthenticatorProtocolCtap2, Ctap2version: webauthn.Ctap2versionCtap21,
-			Transport: webauthn.AuthenticatorTransportInternal, HasResidentKey: true,
-			HasUserVerification: true, IsUserVerified: true, AutomaticPresenceSimulation: true,
-		}).Do(ctx)
-		return err
-	})); err != nil {
-		t.Fatalf("virtual authenticator: %v", err)
-	}
+	enableVirtualAuthenticator(t, ctx)
 	wait := func(expr string) chromedp.Action {
 		return chromedp.Poll(expr, nil, chromedp.WithPollingTimeout(10*time.Second))
 	}

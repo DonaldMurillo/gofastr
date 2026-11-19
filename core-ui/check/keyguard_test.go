@@ -1,7 +1,6 @@
 package check
 
 import (
-	"path/filepath"
 	"testing"
 )
 
@@ -217,15 +216,5 @@ func TestLintKeyGuard_Repo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("walks the repo")
 	}
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	res, err := LintKeyGuard(runtimeLintRoots(t, filepath.Join(repoRoot, "core-ui", "runtime"))...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("a keydown listener misses the IME or right-to-left guard:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "a keydown listener misses the IME or right-to-left guard", LintKeyGuard)
 }

@@ -271,43 +271,34 @@ func TestOwnerScope_UpdateRejectsOtherUsersRow(t *testing.T) {
 	}
 }
 
-// TestOwnerScope_AnonymousCursorListIsRejected covers the cursor
-// pagination branch (?cursor=...). RequireOwner fires at the top of
-// List() before the cursor branch, so this should 401 like the
-// standard list.
-func TestOwnerScope_AnonymousCursorListIsRejected(t *testing.T) {
-	installOwnerExtractor(t)
-	ch, db := setupOwnerScopedHandler(t)
-	seedRow(t, db, "log-a1", "alice", "alice secret")
+// TestOwnerScope_AnonymousVariantListsAreRejected covers the cursor
+// pagination branch (?cursor=...) and the streaming branch (?stream=true):
+// RequireOwner fires at the top of List() before either branch, so both
+// must 401 like the standard list.
+func TestOwnerScope_AnonymousVariantListsAreRejected(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{"cursor list", "/api/logs?cursor="},
+		{"stream list", "/api/logs?stream=true"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			installOwnerExtractor(t)
+			ch, db := setupOwnerScopedHandler(t)
+			seedRow(t, db, "log-a1", "alice", "alice secret")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?cursor=", nil)
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+			ch.List()(rec, req)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("anonymous cursor List status = %d (want 401). body=%s", rec.Code, rec.Body.String())
-	}
-	if strings.Contains(rec.Body.String(), "alice secret") {
-		t.Errorf("anonymous cursor List leaked row data: %s", rec.Body.String())
-	}
-}
-
-// TestOwnerScope_AnonymousStreamListIsRejected covers the streaming
-// list branch (?stream=true).
-func TestOwnerScope_AnonymousStreamListIsRejected(t *testing.T) {
-	installOwnerExtractor(t)
-	ch, db := setupOwnerScopedHandler(t)
-	seedRow(t, db, "log-a1", "alice", "alice secret")
-
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?stream=true", nil)
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("anonymous stream List status = %d (want 401). body=%s", rec.Code, rec.Body.String())
-	}
-	if strings.Contains(rec.Body.String(), "alice secret") {
-		t.Errorf("anonymous stream List leaked row data: %s", rec.Body.String())
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("anonymous %s status = %d (want 401). body=%s", tc.name, rec.Code, rec.Body.String())
+			}
+			if strings.Contains(rec.Body.String(), "alice secret") {
+				t.Errorf("anonymous %s leaked row data: %s", tc.name, rec.Body.String())
+			}
+		})
 	}
 }
 
