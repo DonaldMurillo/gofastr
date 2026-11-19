@@ -1,5 +1,14 @@
 # Implementation regression notes
 
+## 2026-11-19 - Test cached Postgres DSNs in a fresh process
+
+- Scope: internal/pgtest, testdb, and auth fixtures.
+- Trigger: the required-mode canary cached a live DSN before the selector regression could set its own DSN.
+- Approach: run the assertion in the current test binary with an explicit child environment and require a log marker after the assertions.
+- Evidence: `TestUnusedDSNDropsCompetingDBNameSelector` catches both retained selectors with the old implementation, even after the canary runs first.
+- Next time: verify URL and keyword/value fixtures against the same live server with a startup option set, and check that a scoped pool can close before the admin connection drops its schema.
+- Status: active
+
 ## 2026-11-13 - Reserve stdout once for JSON commands
 - Scope: gofastr command registry, cli JSON sessions, appgen, verify and semantic output
 - Trigger: unknown and removed generator names bypassed the JSON-aware failure path.

@@ -48,7 +48,7 @@ invariants:
       - test: framework/pluginhost.TestAssetServerConfinesDiskSymlinks
       - test: framework/pluginhost.TestAssetServerPreservesRootFS
       - test: framework/pluginhost.TestAssetServerPreservesFilesystemFilters
-      - test: framework/pluginhost.TestPlainDiskAssetFSRejectsOddValues
+      - test: framework/pluginhost.TestDiskFSRecognitionRejectsOddValues
   - id: disk-root-identity
     rule: A disk filesystem whose directory, reopened through os.Root, is not the same file it opened, or that fails to bind, serves 404 for every spec.
     judge: Does this change let a spec be read from the unconfined filesystem when confinedAssetFS fails or the rebound root is a different directory?

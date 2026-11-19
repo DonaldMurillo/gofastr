@@ -83,27 +83,32 @@ var (
 // attrs to render.Tag / html.Attrs literals. Returns one violation
 // per offending source location.
 func LintNoInlineStyles(dir string) (*Result, error) {
-	return lintGoDir(dir, func(fset *token.FileSet, file *ast.File, filename string, raw []byte, result *Result) {
-		// One deliberate inline style carries the marker gofastr verify
-		// already honours for this rule, GOFASTR1804, rather than opting
-		// the whole file out with ignore-file. ScanInlineStylesIn leaves
-		// the marker alone: the contracts pass applies it, and reports
-		// it stale when it matches nothing — the same split the script
-		// lane made for GOFASTR1805.
-		allowed := allowedLines(goComments(fset, file, raw), "GOFASTR1804")
-		for index, line := range strings.Split(string(raw), "\n") {
-			if allowed[index+1] && strings.TrimSpace(line) == "" {
-				allowed[index+2] = true
-			}
+	res, err := lintGoDir(dir, lintInlineStyles)
+	if err != nil {
+		return nil, err
+	}
+	return res[0], nil
+}
+
+// lintInlineStyles is the style lane's directory scan: it applies the
+// GOFASTR1804 allow marker (one deliberate inline style) rather than
+// opting the whole file out with ignore-file, and lets the marker sit
+// alone on the line above the violation, whose source line is blank —
+// the same split the script lane made for GOFASTR1805.
+func lintInlineStyles(fset *token.FileSet, file *ast.File, filename string, raw []byte, result *Result) {
+	allowed := allowedLines(goComments(fset, file, raw), "GOFASTR1804")
+	for index, line := range strings.Split(string(raw), "\n") {
+		if allowed[index+1] && strings.TrimSpace(line) == "" {
+			allowed[index+2] = true
 		}
-		sub := &Result{}
-		scanInlineStyles(fset, file, filename, sub)
-		for _, v := range sub.Violations {
-			if !allowed[v.Line] {
-				result.Violations = append(result.Violations, v)
-			}
+	}
+	sub := &Result{}
+	scanInlineStyles(fset, file, filename, sub)
+	for _, v := range sub.Violations {
+		if !allowed[v.Line] {
+			result.Violations = append(result.Violations, v)
 		}
-	})
+	}
 }
 
 // ScanInlineStylesIn is the single-file entry point a contracts pass

@@ -10,7 +10,9 @@ invariants:
     enforced_by:
       - test: framework/internal/testdb.TestOpenSQLiteIsOneConnectionWithForeignKeys
   - id: postgres-only-from-the-env
-    rule: Postgres comes only from TEST_POSTGRES_DSN, and without it ResolvePostgresOnce returns errNoPostgres and Open skips the test instead of failing it.
+    rule: Postgres comes only from TEST_POSTGRES_DSN, and without it ResolvePostgresOnce returns an empty DSN and pgtest.ErrNoPostgres, and Open skips the test.
+    applies:
+      - internal/pgtest/pgtest.go
     enforced_by:
       - test: framework/internal/testdb.TestResolvePostgresWithoutDSNIsAnError
       - test: framework/internal/testdb.TestOpenPostgresSkipsWithoutDSN
@@ -25,8 +27,12 @@ invariants:
     enforced_by:
       - test: framework/internal/testdb.TestSearchPathSurvivesConnectionReplacement
   - id: dsn-rewrite-keeps-the-dsn
-    rule: withSearchPath replaces any existing search_path in a URL or keyword/value DSN with exactly one, keeps every other pair's text, tokenises quoted values and backslash escapes as libpq does, and refuses a DSN it cannot parse or a schema outside [a-z0-9_].
+    rule: pgtest.DSNWithSearchPath replaces any existing search_path in a URL or keyword/value DSN with exactly one, keeps every other pair's text, tokenises quoted values and backslash escapes as libpq does, and refuses a DSN it cannot parse or a schema outside [a-z0-9_].
+    applies:
+      - internal/pgtest/searchpath.go
     enforced_by:
+      - test: internal/pgtest.TestDSNWithSearchPathRedactsMalformedDSNs
+      - test: internal/pgtest.TestDSNWithSearchPathPreservesStartupOptions
       - test: framework/internal/testdb.TestWithSearchPathRewritesBothDSNForms
       - test: framework/internal/testdb.TestWithSearchPathPreservesQuotedValues
       - test: framework/internal/testdb.TestWithSearchPathRefusesMalformedDSNs

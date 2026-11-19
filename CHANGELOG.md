@@ -25,6 +25,13 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **The embed build and boot gates no longer stop on a harmless regex
+  literal** at the start of an `if` body or after nested control
+  headers, and they now see a server action call in a division after a
+  member call such as `obj.if(ready)`.
+- **Copied CRUD hook payloads, event records and semantic metadata keep
+  JSON `null`.** A nested nil map or slice used to become `{}` or `[]`
+  in the copy, and a non-nil empty byte slice became nil.
 - **`notify` refuses a pre-rendered payload of the wrong type.** A
   `Data["_rendered_<channel>"]` or `Data["_rendered"]` value that is not
   a `notify.Rendered` now fails that channel with `notify: <key> must be
@@ -716,6 +723,9 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Removed
+- **`TenantConfig.AutoScope` is gone.** It was never read: multi-tenant
+  scoping is always on, and `tenant.AllowCrossTenant` on a context with
+  no tenant ID stays the cross-tenant opt-in.
 - **`store.RouteSlices` is gone.** Read the route through `store.Route`
   instead: `Path`, `Pattern`, `Title`, `Param(name)` and `Query(key)`.
 

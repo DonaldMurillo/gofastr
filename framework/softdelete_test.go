@@ -232,9 +232,6 @@ func TestTenantDefaultConfig(t *testing.T) {
 	if cfg.Field != "tenant_id" {
 		t.Errorf("expected Field 'tenant_id', got %q", cfg.Field)
 	}
-	if !cfg.AutoScope {
-		t.Error("expected AutoScope=true by default")
-	}
 }
 
 func TestTenantWithMultiTenant(t *testing.T) {

@@ -3,15 +3,15 @@ package auth
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 	_ "github.com/lib/pq"
 )
 
@@ -21,60 +21,43 @@ import (
 // store code against a real Postgres backend (lib/pq, which does NOT
 // accept ? placeholders and requires explicit time.Time bindings).
 //
-// Postgres comes from $TEST_POSTGRES_DSN if set; otherwise an ephemeral
-// testcontainer. If neither is reachable the subtest skips, it does
-// not fail (same convention as framework/auth/dialect_test.go).
+// Postgres comes from $TEST_POSTGRES_DSN if set; without one the test
+// skips, it does not fail (same convention as framework/auth/dialect_test.go).
 
-var (
-	batteryPGOnce    sync.Once
-	batteryPGBaseDSN string
-	batteryPGErr     error
-	batteryPGUsing   string
-	batteryPGLogged  atomic.Bool
-)
+var batteryPGLogged atomic.Bool
 
 func resolveBatteryPG() (string, error) {
-	batteryPGOnce.Do(func() {
-		if dsn := strings.TrimSpace(os.Getenv("TEST_POSTGRES_DSN")); dsn != "" {
-			batteryPGBaseDSN = dsn
-			batteryPGUsing = "env"
-			return
-		}
-		batteryPGErr = errNoPG
-	})
-	return batteryPGBaseDSN, batteryPGErr
+	dsn, _, err := pgtest.ResolveEnv()
+	return dsn, err
 }
 
 func openPGForBattery(t *testing.T) *sql.DB {
 	t.Helper()
-	dsn, err := resolveBatteryPG()
+	base, source, err := pgtest.ResolveEnv()
 	if err != nil {
 		t.Skipf("Postgres unavailable: %v", err)
 	}
 	if !batteryPGLogged.Swap(true) {
-		t.Logf("battery/auth Postgres tests using %s", batteryPGUsing)
+		t.Logf("battery/auth Postgres tests using %s", source)
+	}
+	schema := fmt.Sprintf("battery_auth_%d", time.Now().UnixNano())
+	dsn, err := pgtest.DSNWithSearchPath(base, schema)
+	if err != nil {
+		t.Fatalf("battery/auth: invalid TEST_POSTGRES_DSN: %v", err)
 	}
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		t.Fatalf("open pg: %v", err)
 	}
+	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(1)
-	for range 25 {
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		if err := db.PingContext(ctx); err == nil {
-			cancel()
-			break
-		}
-		cancel()
-		time.Sleep(200 * time.Millisecond)
+	if err := pgtest.PingRetry(db, 25, 500*time.Millisecond, 200*time.Millisecond); err != nil {
+		t.Fatalf("ping pg: %v", err)
 	}
-	schema := fmt.Sprintf("battery_auth_%d", time.Now().UnixNano())
 	if _, err := db.Exec("CREATE SCHEMA " + schema); err != nil {
 		t.Fatalf("create schema: %v", err)
 	}
-	if _, err := db.Exec("SET search_path TO " + schema); err != nil {
-		t.Fatalf("set search_path: %v", err)
-	}
+	t.Cleanup(func() { dropBatteryPGSchema(t, db, schema) })
 	if _, err := db.Exec(`CREATE TABLE users (
 		id TEXT PRIMARY KEY,
 		email TEXT UNIQUE NOT NULL,
@@ -95,11 +78,16 @@ func openPGForBattery(t *testing.T) *sql.DB {
 	)`); err != nil {
 		t.Fatalf("create sessions: %v", err)
 	}
-	t.Cleanup(func() {
-		db.Exec("DROP SCHEMA " + schema + " CASCADE")
-		db.Close()
-	})
 	return db
+}
+
+func dropBatteryPGSchema(t *testing.T, admin *sql.DB, schema string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := admin.ExecContext(ctx, "DROP SCHEMA "+schema+" CASCADE"); err != nil {
+		t.Errorf("drop test schema %s: %v", schema, err)
+	}
 }
 
 func TestEntityUserStore_Postgres_RoundTrip(t *testing.T) {
@@ -350,8 +338,64 @@ func TestSessionStorePGLegacyBools(t *testing.T) {
 	}
 }
 
-// errNoPG is what the auth Postgres suite reports when no server is supplied.
-// The testcontainers fallback that used to sit here was removed so the Docker
-// client stack stays out of every consumer's module graph. See cmd/repolint's
-// test-only-dep-in-consumer-graph rule.
-var errNoPG = errors.New("TEST_POSTGRES_DSN is not set — `make postgres-up` starts one")
+func TestBatteryPostgresFixturesFailOnInvalidDSN(t *testing.T) {
+	const child = "GOFASTR_BATTERY_AUTH_INVALID_DSN_CHILD"
+	const secret = "fake-secret-marker"
+	switch os.Getenv(child) {
+	case "single":
+		openPGForBattery(t)
+		return
+	case "multi":
+		openPGMultiConn(t)
+		return
+	}
+	for _, tc := range []struct{ name, dsn string }{
+		{"single", "postgres://test:" + secret + "@localhost/%"},
+		{"multi", "password='" + secret},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestBatteryPostgresFixturesFailOnInvalidDSN$", "-test.v")
+			cmd.Env = append(os.Environ(), child+"="+tc.name, "TEST_POSTGRES_DSN="+tc.dsn)
+			out, err := cmd.CombinedOutput()
+			if err == nil || !strings.Contains(string(out), "invalid TEST_POSTGRES_DSN") || strings.Contains(string(out), secret) {
+				t.Fatalf("fixture did not fail with a redacted DSN error: %v\n%s", err, out)
+			}
+		})
+	}
+}
+
+func TestBatteryPostgresFixturesPreserveStartupOptions(t *testing.T) {
+	base, err := resolveBatteryPG()
+	if err != nil {
+		t.Skipf("Postgres unavailable: %v", err)
+	}
+	admin, err := sql.Open("postgres", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	var want string
+	if err := admin.QueryRow("SHOW statement_timeout").Scan(&want); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		open func(*testing.T) *sql.DB
+	}{{"single", openPGForBattery}, {"multi", openPGMultiConn}} {
+		ran := false
+		t.Run(tc.name, func(t *testing.T) {
+			db := tc.open(t)
+			ran = true
+			var got string
+			if err := db.QueryRow("SHOW statement_timeout").Scan(&got); err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Errorf("statement_timeout = %q, want admin DSN setting %q", got, want)
+			}
+		})
+		if !ran {
+			t.Errorf("configured Postgres fixture %s skipped", tc.name)
+		}
+	}
+}

@@ -42,11 +42,11 @@ func Register(srv *mcp.Server) error {
 		},
 		{
 			name:        "framework_docs_search",
-			description: "Search across every framework doc topic for a substring (case-insensitive, min 3 chars). Returns matching lines with nearest-heading context, capped at `limit` hits (default 50). Use when you don't know which topic owns the answer.",
+			description: "Search across every framework doc topic for a substring (case-insensitive, min 3 UTF-8 bytes). Returns matching lines with nearest-heading context, capped at `limit` hits (default 50). Use when you don't know which topic owns the answer.",
 			schema: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"term":  map[string]any{"type": "string", "description": "Search term (min 3 chars)"},
+					"term":  map[string]any{"type": "string", "description": "Search term (min 3 UTF-8 bytes)"},
 					"limit": map[string]any{"type": "integer", "description": "Max hits to return (default 50, hard cap 200 to protect narrow-context clients)", "maximum": maxDocsSearchHits},
 				},
 				"required": []string{"term"},

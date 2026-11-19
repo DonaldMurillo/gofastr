@@ -3,10 +3,12 @@ package testkit_test
 import (
 	"context"
 	"database/sql"
+	"net"
 	"net/url"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	_ "github.com/lib/pq"
 
@@ -171,5 +173,25 @@ func TestNewIsolatedDBDSNCarvesAndDrops(t *testing.T) {
 	}
 	if exists {
 		t.Errorf("database %q still exists after subtest cleanup", name)
+	}
+}
+
+func TestNewIsolatedDBDSNRetriesRefusedConnectionsForThreeSeconds(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dsn := "postgres://test@" + addr + "/postgres?sslmode=disable&connect_timeout=1"
+	start := time.Now()
+	t.Run("refused", func(t *testing.T) {
+		testkit.NewIsolatedDBDSN(t, dsn)
+		t.Fatal("unreachable admin should skip provisioning")
+	})
+	if elapsed := time.Since(start); elapsed < 3*time.Second {
+		t.Errorf("readiness retries stopped after %s, want at least 3s", elapsed)
 	}
 }

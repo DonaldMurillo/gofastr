@@ -58,9 +58,13 @@ func scanCode(src string, i int, inInterpolation bool) (bool, int) {
 	// prev is the last significant byte outside comments (0 at the
 	// start), and word the identifier or keyword that ended there, if
 	// one did: together they tell a regular expression's "/" from a
-	// division's.
+	// division's. parenCtrl remembers, per open "(", whether it opened
+	// an if/while/for/with header: the ")" closing one leaves the scanner
+	// in a statement position, where "/" begins a regular expression
+	// rather than a division.
 	var prev byte
 	word := ""
+	var parenCtrl []bool
 	for i < len(src) {
 		if size := spaceLen(src[i:]); size > 0 {
 			i += size
@@ -86,12 +90,16 @@ func scanCode(src string, i int, inInterpolation bool) (bool, int) {
 			i, prev, word = end, '`', ""
 		case c == '\'' || c == '"':
 			i, prev, word = skipString(src, i+1, c), c, ""
-		case c == '(' && (regexAllowed(prev, word) || prev == ')'):
-			if receiverEnd, ok := parenthesizedReceiverEnd(src, i); ok {
-				if after, called := serverActionEnd(src, receiverEnd); called {
-					return true, after
+		case c == '(':
+			ctrl := controlHeader(word)
+			if regexAllowed(prev, word) || prev == ')' || ctrl {
+				if receiverEnd, ok := parenthesizedReceiverEnd(src, i); ok {
+					if after, called := serverActionEnd(src, receiverEnd); called {
+						return true, after
+					}
 				}
 			}
+			parenCtrl = append(parenCtrl, ctrl)
 			i, prev, word = i+1, c, ""
 		case inInterpolation && c == '{':
 			depth++
@@ -112,7 +120,24 @@ func scanCode(src string, i int, inInterpolation bool) (bool, int) {
 			for j < len(src) && isIdentByte(src[j]) {
 				j++
 			}
-			i, prev, word = j, src[j-1], src[i:j]
+			word = src[i:j]
+			if prev == '.' && controlHeader(word) {
+				word = ""
+			}
+			i, prev = j, src[j-1]
+		case c == ')':
+			ctrl := false
+			if n := len(parenCtrl); n > 0 {
+				ctrl, parenCtrl = parenCtrl[n-1], parenCtrl[:n-1]
+			}
+			if ctrl {
+				// The ")" closed an if/while/for/with header: a "/"
+				// here begins a regular expression, so keep the scanner
+				// in a statement position (prev an opening bracket).
+				i, prev, word = i+1, '(', ""
+				continue
+			}
+			i, prev, word = i+1, c, ""
 		default:
 			i, prev, word = i+1, c, ""
 		}
@@ -161,6 +186,17 @@ func serverActionEnd(src string, start int) (int, bool) {
 		after = skipTrivia(src, after+2)
 	}
 	return after, after < len(src) && src[after] == '('
+}
+
+// controlHeader reports whether word is the keyword whose parenthesized
+// group is a condition rather than a value: after it closes, a "/"
+// begins a regular expression.
+func controlHeader(word string) bool {
+	switch word {
+	case "if", "while", "for", "with":
+		return true
+	}
+	return false
 }
 
 // regexAllowed reports whether a "/" after prev (and word, when prev

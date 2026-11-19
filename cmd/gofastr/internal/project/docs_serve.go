@@ -4,13 +4,15 @@ import (
 	"strings"
 
 	"golang.org/x/mod/module"
-	"golang.org/x/mod/semver"
+
+	relver "github.com/DonaldMurillo/gofastr/internal/semver"
 )
 
 // IsReleaseTag reports whether v names a tag that can carry a release
-// archive: a pseudo-version (an untagged commit, `go install ...@main`), a
-// version with build metadata (a `+dirty` local build) or a word such as
-// the `dev` marker version cannot.
+// archive: the three-number semver the shared validator demands, with
+// no pseudo-version (an untagged commit, `go install ...@main`) and no
+// build metadata (a `+dirty` local build); a word such as the `dev`
+// marker version or an abbreviated `v1.2` cannot.
 func IsReleaseTag(v string) bool {
-	return semver.IsValid(v) && !strings.Contains(v, "+") && !module.IsPseudoVersion(v)
+	return relver.Validate(v) == nil && !strings.Contains(v, "+") && !module.IsPseudoVersion(v)
 }

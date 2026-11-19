@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 func TestOpenSQLiteIsOneConnectionWithForeignKeys(t *testing.T) {
@@ -32,8 +33,9 @@ func TestResolvePostgresWithoutDSNIsAnError(t *testing.T) {
 	if os.Getenv("TEST_POSTGRES_DSN") != "" {
 		t.Skip("TEST_POSTGRES_DSN is set")
 	}
-	if dsn, err := ResolvePostgresOnce(); err != errNoPostgres || dsn != "" {
-		t.Fatalf("ResolvePostgresOnce() = %q, %v; want errNoPostgres", dsn, err)
+	dsn, err := ResolvePostgresOnce()
+	if dsn != "" || err != pgtest.ErrNoPostgres {
+		t.Fatalf("ResolvePostgresOnce() = %q, %v; want empty dsn and the shared no-Postgres error", dsn, err)
 	}
 }
 

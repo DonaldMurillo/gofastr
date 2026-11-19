@@ -6,12 +6,12 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
-	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 // NewIsolatedDB creates a fresh database on the Postgres cluster adminDSN
@@ -37,7 +37,7 @@ func NewIsolatedDBWithName(t *testing.T, adminDSN string, migrate func(*sql.DB) 
 		t.Fatalf("testkit: open carved DB %q: %v", dbName, err)
 	}
 	t.Cleanup(func() { _ = carved.Close() })
-	if err := pingWithRetry(carved); err != nil {
+	if err := pgtest.PingRetryFor(carved, 3*time.Second, 500*time.Millisecond, 100*time.Millisecond); err != nil {
 		t.Fatalf("testkit: ping carved DB %q: %v", dbName, err)
 	}
 	if migrate != nil {
@@ -70,12 +70,12 @@ func provisionIsolatedDB(t *testing.T, adminDSN string) (name, dsn string, unava
 	}
 	t.Cleanup(func() { _ = admin.Close() })
 	admin.SetMaxOpenConns(2)
-	if err := pingWithRetry(admin); err != nil {
+	if err := pgtest.PingRetryFor(admin, 3*time.Second, 500*time.Millisecond, 100*time.Millisecond); err != nil {
 		return "", "", fmt.Errorf("cannot reach Postgres via adminDSN: %w", err)
 	}
 
 	dbName := newUniqueDBName(t)
-	carvedDSN, err := rewriteDBName(adminDSN, dbName)
+	carvedDSN, err := pgtest.RewriteDBName(adminDSN, dbName)
 	if err != nil {
 		t.Fatalf("testkit: rewrite carved DSN: %v", err)
 	}
@@ -97,22 +97,6 @@ func ValidateAdminDSN(dsn string) error {
 		return fmt.Errorf("admin DSN must use postgres:// scheme, got scheme %q", dsnScheme(dsn))
 	}
 	return nil
-}
-
-func pingWithRetry(db *sql.DB) error {
-	deadline := time.Now().Add(3 * time.Second)
-	var last error
-	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		err := db.PingContext(ctx)
-		cancel()
-		if err == nil {
-			return nil
-		}
-		last = err
-		time.Sleep(100 * time.Millisecond)
-	}
-	return last
 }
 
 func newUniqueDBName(t *testing.T) string {
@@ -137,29 +121,11 @@ func newUniqueDBName(t *testing.T) string {
 	return "ftest_" + clean + "_" + suffix
 }
 
-func rewriteDBName(dsn, dbName string) (string, error) {
-	u, err := url.Parse(dsn)
-	if err != nil {
-		var ue *url.Error
-		if errors.As(err, &ue) {
-			err = ue.Err
-		}
-		return "", fmt.Errorf("rewriteDBName: parse: %w", err)
-	}
-	if u.Scheme != "postgres" && u.Scheme != "postgresql" {
-		return "", fmt.Errorf("rewriteDBName: expected postgres scheme, got %q", u.Scheme)
-	}
-	u.Path = "/" + dbName
-	options := u.Query()
-	options.Del("dbname")
-	options.Del("database")
-	u.RawQuery = options.Encode()
-	return u.String(), nil
-}
-
-// RewriteDBNameForTest returns dsn pointed at dbName, for tests.
+// RewriteDBNameForTest returns dsn pointed at dbName, for tests, through
+// the shared pgtest rewrite (which also drops competing dbname/database
+// query selectors).
 func RewriteDBNameForTest(dsn, dbName string) (string, error) {
-	return rewriteDBName(dsn, dbName)
+	return pgtest.RewriteDBName(dsn, dbName)
 }
 
 func dropCarvedDB(t *testing.T, admin *sql.DB, dbName string) {

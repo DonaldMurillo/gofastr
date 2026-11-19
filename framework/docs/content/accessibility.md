@@ -173,7 +173,9 @@ target-size pass).
 Every successful `Scan` also records the scanned path into
 `.gofastr/axe-coverage.json` (the axe-coverage manifest,
 `framework/axecov`) under the canonical coverage root:
-`GOFASTR_AXE_COVERAGE_DIR` when set, else the module root. The result
+`GOFASTR_AXE_COVERAGE_DIR` when set, else Go's own root rule (nearest
+`go.work` ancestor, else nearest `go.mod`, else the working directory).
+The result
 is a per-project record of which pages the axe suite actually
 exercised. The manifest is a local build artifact: gitignored, wiped by
 `make clean`, never shipped. `GOFASTR_AXE_COVERAGE=0` disables
