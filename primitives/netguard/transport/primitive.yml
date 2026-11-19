@@ -8,9 +8,10 @@ docs:
   - framework/docs/content/webhooks.md
 invariants:
   - id: outbound-url-check
-    rule: CheckOutboundURL refuses an empty URL, a scheme other than http or https, a missing host and userinfo in every mode, and unless allowPrivate a localhost, .localhost or .internal name in any case and a literal internal address, each error starting with the caller's prefix.
+    rule: CheckOutboundURL refuses an empty URL, a scheme other than http or https, a missing host and userinfo in every mode, and unless allowPrivate a localhost, .localhost or .internal name in any case and a literal internal address or a name that resolves to one, each error starting with the caller's prefix.
     enforced_by:
       - test: core/netguard.TestSweepCheckOutboundURLRefusals
+      - test: core/netguard.TestSweepResolvedNamesAreCheckedByAddress
       - test: battery/webhook.TestSSRF_AllowPrivateStillEnforcesScheme
       - test: core/a2a.TestSweepInternalHostNamesRefused
       - test: core/webbotauth.TestCheckHostPublic_RefusesInternal
@@ -30,6 +31,7 @@ invariants:
     enforced_by:
       - test: core/netguard.TestGuardedTransportIgnoresEnvProxy
       - test: core/netguard.TestSweepGuardRoundTripperShapes
+      - test: core/netguard.TestSweepResolvedNamesAreCheckedByAddress
   - id: plain-transport-only
     rule: GuardPlainTransport clones only a transport whose proxy is nil or ProxyFromEnvironment and whose dialer is nil or http.DefaultTransport's own func value, with no DialTLSContext, Dial or DialTLS, keeping its settings and its HTTP/2 offer, and refuses any other.
     enforced_by:
