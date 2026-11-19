@@ -3,9 +3,9 @@ package yaml
 import (
 	"fmt"
 	"maps"
-	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -173,7 +173,7 @@ func (p *parser) parseMapSeeded(indent int, seed map[string]int) (*Node, error) 
 		if strings.HasPrefix(line.text, "- ") || line.text == "-" {
 			break
 		}
-		key, value, ok := splitMapping(line.text)
+		key, value, valueOffset, ok := splitMapping(line.text)
 		if !ok || strings.TrimSpace(key) == "" {
 			return nil, fmt.Errorf("yaml:%d:%d: expected key: value", line.line, line.indent+1)
 		}
@@ -185,7 +185,6 @@ func (p *parser) parseMapSeeded(indent int, seed map[string]int) (*Node, error) 
 			return nil, fmt.Errorf("yaml:%d:%d: duplicate mapping key %q (first defined at line %d)", line.line, line.indent+1, key, first)
 		}
 		seen[key] = line.line
-		value = strings.TrimSpace(value)
 		p.pos++
 		if value == "" {
 			if p.pos >= len(p.lines) || p.lines[p.pos].indent < indent ||
@@ -200,7 +199,7 @@ func (p *parser) parseMapSeeded(indent int, seed map[string]int) (*Node, error) 
 			out.Map[key] = child
 			continue
 		}
-		node, err := parseScalar(value, line.line, strings.Index(line.text, value)+line.indent+1, 0)
+		node, err := parseScalar(value, line.line, line.indent+valueOffset+1, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -271,14 +270,13 @@ func (p *parser) parseList(indent int) (*Node, error) {
 			out.List = append(out.List, child)
 			continue
 		}
-		if key, value, ok := splitMapping(item); ok && strings.TrimSpace(key) != "" && !strings.HasPrefix(item, "[") {
+		if key, value, valueOffset, ok := splitMapping(item); ok && strings.TrimSpace(key) != "" && !strings.HasPrefix(item, "[") {
 			child := &Node{Kind: Map, Line: line.line, Column: line.indent + 1, Map: map[string]*Node{}}
 			normKey, kErr := normalizeKey(key, line.line, line.indent+3)
 			if kErr != nil {
 				return nil, kErr
 			}
 			keyCol := line.indent + 1 + (len(line.text) - 1 - len(strings.TrimLeft(line.text[1:], " ")))
-			value = strings.TrimSpace(value)
 			if value == "" {
 				if p.pos < len(p.lines) && (p.lines[p.pos].indent > keyCol ||
 					(p.lines[p.pos].indent == keyCol && (strings.HasPrefix(p.lines[p.pos].text, "- ") || p.lines[p.pos].text == "-"))) {
@@ -291,7 +289,8 @@ func (p *parser) parseList(indent int) (*Node, error) {
 					child.Map[normKey] = &Node{Kind: Map, Map: map[string]*Node{}, Line: line.line, Column: keyCol + 1}
 				}
 			} else {
-				scalar, err := parseScalar(value, line.line, strings.Index(line.text, value)+line.indent+1, 0)
+				itemOffset := len(line.text) - len(item)
+				scalar, err := parseScalar(value, line.line, line.indent+itemOffset+valueOffset+1, 0)
 				if err != nil {
 					return nil, err
 				}
@@ -301,12 +300,6 @@ func (p *parser) parseList(indent int) (*Node, error) {
 				more, err := p.parseMapSeeded(keyCol, map[string]int{normKey: line.line})
 				if err != nil {
 					return nil, err
-				}
-				for _, k := range slices.Sorted(maps.Keys(more.Map)) {
-					if _, dup := child.Map[k]; dup {
-						v := more.Map[k]
-						return nil, fmt.Errorf("yaml:%d:%d: duplicate mapping key %q (first defined at line %d)", v.Line, v.Column, k, line.line)
-					}
 				}
 				maps.Copy(child.Map, more.Map)
 			}
@@ -543,7 +536,7 @@ func decodeDoubleQuoted(body string) (string, error) {
 	return b.String(), nil
 }
 
-func splitMapping(s string) (string, string, bool) {
+func splitMapping(s string) (key, value string, valueOffset int, ok bool) {
 	var quote byte
 	for i := 0; i < len(s); i++ {
 		c := s[i]
@@ -566,8 +559,9 @@ func splitMapping(s string) (string, string, bool) {
 			continue
 		}
 		if c == ':' && (i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t') {
-			return s[:i], s[i+1:], true
+			value := strings.TrimLeftFunc(s[i+1:], unicode.IsSpace)
+			return s[:i], value, len(s) - len(value), true
 		}
 	}
-	return "", "", false
+	return "", "", 0, false
 }

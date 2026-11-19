@@ -25,6 +25,20 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A route group's fallback honours the `{$}` end marker.** `/a/{$}` no
+  longer claims `/a/b` when picking which group's 404 or 405 handler
+  answers, including next to a catch-all group. Screen routes refuse
+  `{$}` at registration with a panic that names the route.
+- **The route gate sees only registered route keys.** Custom 404 and 405
+  handlers are no longer gated under synthetic keys, so an allowlist
+  gate keeps a custom 405 a 405. A CONNECT slash redirect checks the
+  target route's registered key.
+- **`render` region IDs keep their child suffixes when the caller reuses
+  the slice.** The region log copies the suffixes as it records each
+  operation.
+- **YAML errors report the column of the value, not of the key.**
+  Mapping values, compact sequence items and quoted keys with a colon
+  now point at the scalar itself.
 - **`LocalStorage` refuses a key with a control byte, as S3 and the
   default key validator do.** All three now share one check.
 - **A storage key the backend refuses answers 400, not 500 or 404.** An

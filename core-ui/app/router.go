@@ -52,8 +52,13 @@ func NewRouter() *Router {
 // generation all see one shape (issue #71). A trailing catch-all
 // segment ("{path...}" or ":path*") captures one or more remaining
 // path segments into a single joined param; it must be the final
-// segment.
+// segment. Screen registration rejects the HTTP router's "{$}" end marker.
 func (r *Router) Screen(screen *Screen, layout *Layout) {
+	for segment := range strings.SplitSeq(screen.Path, "/") {
+		if segment == "{$}" {
+			panic(fmt.Sprintf("app: screen route %q does not support the {$} end marker", screen.Path))
+		}
+	}
 	r.layoutsGen.Add(1)
 	if layout != nil {
 		screen.Layout = layout

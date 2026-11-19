@@ -14,9 +14,10 @@ yourself. You own the drift.
 
 ## A screen is anything that returns render.HTML
 
-There is no special template feature to enable. A screen component's
-render is a `render.HTML` string; executing an `html/template` into one
-is plain Go:
+A screen component returns `render.HTML`. `render.Raw` is the named
+constructor for trusted markup. A direct conversion to `render.HTML`
+also requires trusted markup, such as the output of executing a trusted
+`html/template`.
 
 <!-- gofastr:compile
 stmt: _ = render.HTML(buf.String())

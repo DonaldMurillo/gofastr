@@ -12,9 +12,6 @@ func Exponential(base, max time.Duration, attempts int) time.Duration {
 		attempts = 1
 	}
 	exp := attempts - 1
-	if exp < 0 {
-		exp = 0
-	}
 	d := base
 	for range exp {
 		if max > 0 && d >= max {

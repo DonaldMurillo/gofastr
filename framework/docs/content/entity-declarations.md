@@ -451,18 +451,17 @@ entities:
 
 ### Booleans that gate access are not guessed
 
-Most boolean keys accept anything YAML calls false-ish. Six do not, because
-for them a mis-read value opens something up rather than closing it:
-`scope.multi_tenant`, `scope.soft_delete`, a field's `hidden`, `no_query`,
-`read_only`, and a screen's `access.auth`. These require a real `true` or
-`false` and error on anything else.
+The app-spec decoder reads access flags such as `scope.multi_tenant`,
+`scope.soft_delete`, a field's `hidden`, `no_query` and `read_only`,
+and a screen's `access.auth` strictly. It accepts YAML booleans and
+the quoted strings `"true"` and `"false"`. Other values produce an error.
 
-The reason is YAML 1.2, which `core/yaml` implements: `yes`, `on`, `y`, and
-`1` are **strings**, not booleans. Written `auth: yes`, the value used to
-read as false and the screen was registered with no policy: publicly
-reachable, with no error to say so. `multi_tenant: yes` dropped tenant
-scoping the same way. Keys where false is the inert direction (`public`,
-`mcp`, `crud`, `enabled`) keep the lax reading.
+YAML 1.2 reads bare `yes`, `on` and `y` as strings and bare `1` as an
+integer. Before strict decoding, `auth: yes` silently registered a
+public screen and `multi_tenant: yes` silently dropped tenant scoping.
+Flags such as `exposure.public`, `exposure.mcp`, `exposure.crud` and
+`pwa.enabled` keep the lax reading. `app.auth.enabled` uses strict
+decoding because a false value disables authentication for the whole app.
 
 ### Field keys
 

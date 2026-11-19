@@ -67,6 +67,42 @@ func TestGroupMethodNotAllowedAnswersUnderItsPrefix(t *testing.T) {
 	}
 }
 
+func TestGroupFallbackHonorsExactEndMarker(t *testing.T) {
+	r := New()
+	r.Group("/exact/{id}/{rest...}").NotFound(status(http.StatusGone))
+	exact := r.Group("/exact/{id}/{$}")
+	exact.Get("", status(http.StatusOK))
+	exact.NotFound(status(http.StatusTeapot))
+	exact.MethodNotAllowed(status(http.StatusUnprocessableEntity))
+	for _, tt := range []struct {
+		method string
+		path   string
+		want   int
+	}{
+		{http.MethodGet, "/exact/7/", http.StatusOK},
+		{http.MethodPost, "/exact/7/", http.StatusUnprocessableEntity},
+		{http.MethodGet, "/exact/7/topic", http.StatusGone},
+		{http.MethodGet, "/exact/7/%2F", http.StatusOK},
+		{http.MethodPost, "/exact/7/%2F", http.StatusUnprocessableEntity},
+		{http.MethodGet, "/exact/7/%2F/", http.StatusGone},
+		{http.MethodGet, "/exact/7", http.StatusTemporaryRedirect},
+	} {
+		if got := fallbackServe(r, tt.method, "", tt.path).Code; got != tt.want {
+			t.Errorf("%s %s = %d, want %d", tt.method, tt.path, got, tt.want)
+		}
+	}
+
+	r = New()
+	r.Group("/exact/{id}/{rest...}").NotFound(status(http.StatusGone))
+	r.Group("/exact/{id}/{$}").NotFound(status(http.StatusTeapot))
+	if got := fallbackServe(r, http.MethodGet, "", "/exact/7/").Code; got != http.StatusTeapot {
+		t.Errorf("exact-end fallback = %d, want %d", got, http.StatusTeapot)
+	}
+	if got := fallbackServe(r, http.MethodGet, "", "/exact/7").Code; got != http.StatusNotFound {
+		t.Errorf("fallback without terminal slash = %d, want %d", got, http.StatusNotFound)
+	}
+}
+
 // A Group served standalone keeps its own and its parents' handlers and
 // never borrows a sibling's.
 func TestGroupFallbackStaysInsideTheServedRouter(t *testing.T) {

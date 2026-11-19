@@ -75,6 +75,7 @@ func (r *Router) Handle(method, pattern string, handler http.Handler) {
 	fullPath := r.prefix + pattern
 	fullPattern := method + " " + fullPath
 	route := newCachedRoute(handler, r, method, fullPath)
+	route.gateKey = fullPattern
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -165,7 +166,7 @@ type chainEntry struct {
 }
 
 func newCachedRoute(h http.Handler, r *Router, method, pattern string) *cachedRoute {
-	return &cachedRoute{raw: h, router: r, method: method, pattern: pattern, gateKey: method + " " + pattern}
+	return &cachedRoute{raw: h, router: r, method: method, pattern: pattern}
 }
 
 func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -173,7 +174,7 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	gate := c.router.root.routeGate
 	served := c.router.root.serveHook
 	c.router.root.mu.RUnlock()
-	if gate != nil {
+	if gate != nil && c.gateKey != "" {
 		if !routeGateSafely(req.Context(), gate, c.gateKey) {
 			http.NotFound(w, req)
 			return
