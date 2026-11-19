@@ -63,3 +63,32 @@ func cellPIDs(dir string) []int {
 	}
 	return pids
 }
+
+// fileHeldOpen reports whether any process has path open. Git keeps its
+// lock file open until it renames it into place, so an index.lock no
+// process holds was left by a git that was killed, and nothing will
+// remove it.
+func fileHeldOpen(path string) bool {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	}
+	procs, err := os.ReadDir("/proc")
+	if err != nil {
+		return true
+	}
+	for _, p := range procs {
+		if _, err := strconv.Atoi(p.Name()); err != nil {
+			continue
+		}
+		fds, err := os.ReadDir(filepath.Join("/proc", p.Name(), "fd"))
+		if err != nil {
+			continue
+		}
+		for _, fd := range fds {
+			if target, err := os.Readlink(filepath.Join("/proc", p.Name(), "fd", fd.Name())); err == nil && target == path {
+				return true
+			}
+		}
+	}
+	return false
+}

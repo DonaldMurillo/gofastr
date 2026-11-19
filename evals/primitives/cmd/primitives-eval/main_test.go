@@ -662,7 +662,8 @@ func TestRestoreTestsWaitsOutAGitTheCLILeftRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 	lock := filepath.Join(dir, ".git", "index.lock")
-	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+	held, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
 	seen := make(chan struct{})
@@ -676,7 +677,12 @@ func TestRestoreTestsWaitsOutAGitTheCLILeftRunning(t *testing.T) {
 		case <-time.After(10 * time.Second):
 			t.Error("restoreTests never waited on the held index lock")
 		}
+		time.Sleep(300 * time.Millisecond)
+		if _, err := os.Stat(lock); err != nil {
+			t.Errorf("grading removed an index lock a live git still held: %v", err)
+		}
 		_ = os.Remove(lock)
+		_ = held.Close()
 	}()
 	defer func() { <-removed }()
 	root, err := os.OpenRoot(dir)
@@ -849,5 +855,29 @@ func TestStopCellProcessesKeepsALockAWriterOutsideTheCellHolds(t *testing.T) {
 	}
 	if _, err := os.Stat(lock); err != nil {
 		t.Error("index.lock was removed while a writer outside the cell still held it")
+	}
+}
+
+func TestWaitIndexUnlockedClearsALockNoProcessHolds(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("lock holders are found through /proc")
+	}
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git", "index.lock"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := waitIndexUnlocked(root, time.Second); err != nil {
+		t.Fatalf("a lock left by a killed git failed the cell: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git", "index.lock")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the stale lock is still there: %v", err)
 	}
 }
