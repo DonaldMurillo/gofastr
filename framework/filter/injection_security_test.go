@@ -13,9 +13,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// TestInjection_SQLCommentPayload verifies that SQL comment injection
-// in filter values is handled safely. Attack: attacker injects SQL
-// comments like "foo'--" into filter parameters to manipulate queries.
+// TestInjection_SQLCommentPayload verifies that SQL payloads in filter
+// values reach the filter unchanged: the parser does no SQL validation,
+// the security boundary is the query builder. Attack: SQL comments like
+// "foo'--" injected into filter parameters.
 func TestInjection_SQLCommentPayload(t *testing.T) {
 	fields := []schema.Field{
 		{Name: "title", Type: schema.String},
@@ -23,32 +24,28 @@ func TestInjection_SQLCommentPayload(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		param   string
-		value   string
-		wantErr bool
-		desc    string
+		name  string
+		param string
+		value string
+		desc  string
 	}{
 		{
-			name:    "sql_comment_in_eq",
-			param:   "title",
-			value:   "foo'--",
-			wantErr: false, // filter parsing doesn't validate SQL; returns raw value
-			desc:    "SQL comment appended to value",
+			name:  "sql_comment_in_eq",
+			param: "title",
+			value: "foo'--",
+			desc:  "SQL comment appended to value",
 		},
 		{
-			name:    "sql_union_in_value",
-			param:   "title",
-			value:   "x UNION SELECT * FROM users",
-			wantErr: false,
-			desc:    "UNION-based SQL injection in filter value",
+			name:  "sql_union_in_value",
+			param: "title",
+			value: "x UNION SELECT * FROM users",
+			desc:  "UNION-based SQL injection in filter value",
 		},
 		{
-			name:    "semicolon_injection",
-			param:   "status",
-			value:   "active'; DROP TABLE notes;--",
-			wantErr: false,
-			desc:    "semicolon-based injection",
+			name:  "semicolon_injection",
+			param: "status",
+			value: "active'; DROP TABLE notes;--",
+			desc:  "semicolon-based injection",
 		},
 	}
 
@@ -57,29 +54,22 @@ func TestInjection_SQLCommentPayload(t *testing.T) {
 			url := "/?" + tc.param + "=" + url.QueryEscape(tc.value)
 			req := httptest.NewRequest(http.MethodGet, url, nil)
 			filters, err := ParseFilters(req, fields)
-
-			// ParseFilters returns filters without SQL validation,
-			// the security boundary is at the query builder layer.
-			// This test documents that raw values pass through.
-			if err != nil && tc.wantErr {
-				return // expected error
-			}
-			if err != nil && !tc.wantErr {
+			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-
-			for _, f := range filters {
-				if strings.Contains(f.Value, "'") || strings.Contains(f.Value, "--") {
-					t.Logf("SECURITY: [filter_inject] raw filter value %q passed through without sanitization. Attack: %s. Note: security boundary is at the query builder, not the parser.", f.Value, tc.desc)
-				}
+			// The parser does no SQL validation; raw values must reach
+			// the filter unchanged. The security boundary is the query builder.
+			if len(filters) != 1 || filters[0].Field != tc.param || filters[0].Value != tc.value {
+				t.Errorf("SECURITY: [filter_inject] %s=%q parsed as %+v, want the raw value passed through unchanged. Attack: %s.", tc.param, tc.value, filters, tc.desc)
 			}
 		})
 	}
 }
 
-// TestInjection_OperatorInjection verifies that crafted operator suffixes
-// like "title[gte]=1 OR 1=1" don't cause SQL injection through operator
-// parsing. Attack: operator injection to bypass WHERE clause logic.
+// TestInjection_OperatorInjection verifies the two parser outcomes for
+// SQL-laden values: a typed column refuses a mistyped value, a string
+// column passes the raw value through to the query builder. Attack:
+// operator injection to bypass WHERE clause logic.
 func TestInjection_OperatorInjection(t *testing.T) {
 	fields := []schema.Field{
 		{Name: "title", Type: schema.String},
@@ -87,19 +77,23 @@ func TestInjection_OperatorInjection(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		query string
-		desc  string
+		name      string
+		query     string
+		wantErr   bool
+		wantValue string
+		desc      string
 	}{
 		{
-			name:  "or_injection_in_gte",
-			query: "priority_gte=1 OR 1=1",
-			desc:  "OR injection through operator suffix value",
+			name:    "or_injection_in_gte",
+			query:   "priority_gte=1 OR 1=1",
+			wantErr: true, // an int column refuses the mistyped value
+			desc:    "OR injection through operator suffix value",
 		},
 		{
-			name:  "union_injection_in_value",
-			query: "title=hello' UNION SELECT * FROM users--",
-			desc:  "UNION injection through plain filter value",
+			name:      "union_injection_in_value",
+			query:     "title=hello' UNION SELECT * FROM users--",
+			wantValue: "hello' UNION SELECT * FROM users--",
+			desc:      "UNION injection through plain filter value",
 		},
 	}
 
@@ -109,17 +103,19 @@ func TestInjection_OperatorInjection(t *testing.T) {
 			// Parse the raw query ourselves since httptest won't parse the encoded form
 			req.URL.RawQuery = tc.query
 			filters, err := ParseFilters(req, fields)
-			if err != nil {
-				t.Logf("ParseFilters rejected malicious input: %v", err)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("SECURITY: [filter_inject] %q accepted; a value its column's type refuses must be refused. Attack: %s.", tc.query, tc.desc)
+				}
 				return
 			}
-
-			for _, f := range filters {
-				// Values containing SQL keywords are passed through raw
-				if strings.Contains(strings.ToUpper(f.Value), "OR") ||
-					strings.Contains(strings.ToUpper(f.Value), "UNION") {
-					t.Logf("SECURITY: [filter_inject] value %q with SQL keyword passed to filter (op=%s). Attack: %s.", f.Value, f.Op, tc.desc)
-				}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			// The parser does no SQL validation; raw values must reach
+			// the filter unchanged. The security boundary is the query builder.
+			if len(filters) != 1 || filters[0].Field != "title" || filters[0].Value != tc.wantValue {
+				t.Errorf("SECURITY: [filter_inject] %q parsed as %+v, want the raw value passed through unchanged. Attack: %s.", tc.query, filters, tc.desc)
 			}
 		})
 	}

@@ -53,17 +53,19 @@ func TestCreate_UnderscorePrefixFields(t *testing.T) {
 	req := makeRequest(t, RequestOpts{Method: http.MethodPost, Path: "/items", Body: `{"name":"test","_internal_flag":"true","_role":"admin"}`, UserID: "alice"})
 	rr := httptest.NewRecorder()
 	ch.Create()(rr, req)
-	if rr.Code == http.StatusCreated {
-		var resp map[string]any
-		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err == nil {
-			for k := range resp {
-				if strings.HasPrefix(k, "_internal") || strings.HasPrefix(k, "_role") {
-					t.Errorf("SECURITY: [create] underscore-prefixed field %q leaked into response. Attack: underscore-prefix field injection.", k)
-				}
-			}
+	// Unknown keys are silently dropped: the row is still created.
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("SECURITY: [create] underscore-prefixed unknown keys returned %d, want 201 (dropped). Attack: underscore-prefix field injection. Body: %s", rr.Code, rr.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	for k := range resp {
+		if strings.HasPrefix(k, "_internal") || strings.HasPrefix(k, "_role") {
+			t.Errorf("SECURITY: [create] underscore-prefixed field %q leaked into response. Attack: underscore-prefix field injection.", k)
 		}
 	}
-	t.Logf("NOTE: [create] underscore-prefixed fields should be rejected or silently dropped, not persisted.")
 }
 
 func TestCreate_ReadOnlyFieldIgnored(t *testing.T) {
