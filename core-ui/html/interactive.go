@@ -272,16 +272,17 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 	if cfg.Content == "" {
 		return render.Tag("textarea", attrs)
 	}
-	// The HTML parser drops ONE newline straight after <textarea>, so
-	// content that opens on a line break lost it on every render and
-	// save. One extra newline is what the parser eats. CR and CRLF
-	// count: the tokenizer folds both to LF before the drop. The same
-	// rule as framework/headless.Textarea.
-	content := cfg.Content
+	return render.Tag("textarea", attrs, render.Text(TextAreaContent(cfg.Content)))
+}
+
+// TextAreaContent preserves a leading line break when text is rendered
+// inside a textarea. It adds an LF for the parser to discard when content
+// starts with LF, CR, or CRLF. Pass the result to render.Text for escaping.
+func TextAreaContent(content string) string {
 	if strings.HasPrefix(content, "\n") || strings.HasPrefix(content, "\r") {
-		content = "\n" + content
+		return "\n" + content
 	}
-	return render.Tag("textarea", attrs, render.Text(content))
+	return content
 }
 
 // ButtonGroup produces a <div> with role="group" containing buttons.

@@ -25,6 +25,10 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`gofastr validate` refuses `kind: raw` screen blocks.** The renderer
+  has no raw kind, so such a block passed validation and then vanished
+  from the page; the error now names supported kinds such as `paragraph`
+  and `markdown`.
 - **Interactive wrappers wire the real root.** `OnClick`, `SetLocal`,
   `Dropdown` and the other wrappers attach their attributes after
   leading comments and before a self-closing slash, instead of stamping
@@ -578,6 +582,8 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Removed
+- **`store.RouteSlices` is gone.** Read the route through `store.Route`
+  instead: `Path`, `Pattern`, `Title`, `Param(name)` and `Query(key)`.
 
 - **Unused `core-ui/component` APIs are gone.** The lifecycle API
   (`Lifecycle`, `LifecycleHook`, `NewLifecycle` and its hook methods),

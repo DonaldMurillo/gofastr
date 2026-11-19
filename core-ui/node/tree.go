@@ -3,7 +3,6 @@ package node
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"maps"
 )
 
@@ -24,19 +23,11 @@ func AssignNodeIDs(n *Node, idGen func() string) {
 }
 
 // NewElementID produces a fresh stable handle for a new node. The
-// format ("el_" + 12 hex chars) is intentionally short for terminal
-// readability and short tool calls; collisions inside a single page
-// would require ~10^14 IDs to be likely, far beyond any plausible
-// page size. Falls back to a counter-derived id on rand failure so
-// callers never see an empty ID.
+// format ("el_" + 12 hex chars) is short enough for terminal output and
+// tool calls.
 func NewElementID() string {
 	var buf [6]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		// rand.Read should never fail on supported platforms; keep
-		// a defensive fallback so element-id assignment can't fail
-		// silently and produce duplicate "" IDs.
-		return fmt.Sprintf("el_fallback_%x", &buf)
-	}
+	rand.Read(buf[:]) // never returns an error since Go 1.24
 	return "el_" + hex.EncodeToString(buf[:])
 }
 

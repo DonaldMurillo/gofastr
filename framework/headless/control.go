@@ -114,11 +114,7 @@ func Textarea(p TextareaProps, s Classes) render.HTML {
 	if p.Invalid {
 		attrs["aria-invalid"] = "true"
 	}
-	value := p.Value
-	if strings.HasPrefix(value, "\n") || strings.HasPrefix(value, "\r") {
-		value = "\n" + value
-	}
-	return El("textarea", s, PartRoot, attrs, render.Text(value))
+	return El("textarea", s, PartRoot, attrs, render.Text(html.TextAreaContent(p.Value)))
 }
 
 // Option is one entry in a Select's list.

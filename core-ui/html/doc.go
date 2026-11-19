@@ -12,9 +12,9 @@
 //
 // # Usage
 //
-// Elements accept an Attrs map (which may be nil) and variadic children:
+// Elements take a config struct and variadic children:
 //
-//	heading := html.Heading(2, html.Attrs{"class": "title"},
+//	heading := html.Heading(html.HeadingConfig{Level: 2, Class: "title"},
 //	    render.Text("Welcome"))
 //	// <h2 class="title" id="heading-welcome">Welcome</h2>
 package html

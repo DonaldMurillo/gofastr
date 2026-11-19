@@ -126,13 +126,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 
 	// --- text leaves -----------------------------------------------
 	case "text":
-		s := propString(props, "value")
-		if s == "" {
-			s = propString(props, "text")
-		}
-		if s == "" {
-			s = propString(props, "content")
-		}
+		s := textContentProp(props)
 		if s == "" && len(children) > 0 {
 			return render.Join(children...)
 		}
@@ -336,12 +330,10 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 		// urlencoded (which the CRUD handlers don't decode).
 		attrs := extraAttrs(props, "id", "class", "method", "action")
 		if _, set := attrs["enctype"]; !set {
-			if propString(props, "enctype") == "" {
-				if attrs == nil {
-					attrs = map[string]string{}
-				}
-				attrs["enctype"] = "application/json"
+			if attrs == nil {
+				attrs = map[string]string{}
 			}
+			attrs["enctype"] = "application/json"
 		}
 		return html.Form(html.FormConfig{
 			Method: method, Action: propString(props, "action"),
@@ -373,17 +365,10 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			name = "field"
 		}
 		// The value is the element's text, not an attribute (a value=""
-		// attribute is ignored and the box renders empty), spelled as
-		// the text kind spells it. Children are not rendered: a textarea
-		// child would close this element early and turn the children
-		// after it into live markup.
-		content := propString(props, "value")
-		if content == "" {
-			content = propString(props, "text")
-		}
-		if content == "" {
-			content = propString(props, "content")
-		}
+		// attribute is ignored and the box renders empty). Children are
+		// not rendered: a textarea child would close this element early
+		// and turn the children after it into live markup.
+		content := textContentProp(props)
 		return html.TextArea(html.TextAreaConfig{
 			Name: name, Content: content,
 			ID: propString(props, "id"), Class: propString(props, "class"),
@@ -474,6 +459,19 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 }
 
 // --- helpers ----------------------------------------------------------
+
+// textContentProp is the value → text → content fallback the text leaf
+// and the textarea body share.
+func textContentProp(props map[string]any) string {
+	s := propString(props, "value")
+	if s == "" {
+		s = propString(props, "text")
+	}
+	if s == "" {
+		s = propString(props, "content")
+	}
+	return s
+}
 
 func textConfig(props map[string]any) html.TextConfig {
 	return html.TextConfig{

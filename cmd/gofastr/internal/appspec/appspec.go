@@ -3593,7 +3593,12 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		}
 	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "", "text", "p", "paragraph", "section", "div", "article", "main", "header", "footer", "nav", "aside", "span", "strong", "em", "code", "pre", "small", "blockquote", "button", "input", "label", "form", "select", "option", "textarea", "fieldset", "image", "img", "list", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "raw":
+	case "raw":
+		// noderender has no raw kind (the IR is untrusted; a raw
+		// passthrough would be an XSS sink), so the block would render
+		// as an escaped "unknown kind" comment and vanish from the page.
+		return fmt.Errorf("app spec: screen %q raw is not a render kind. Use a supported block kind such as paragraph or markdown", screenName)
+	case "", "text", "p", "paragraph", "section", "div", "article", "main", "header", "footer", "nav", "aside", "span", "strong", "em", "code", "pre", "small", "blockquote", "button", "input", "label", "form", "select", "option", "textarea", "fieldset", "image", "img", "list", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td":
 	case "heading", "h1", "h2", "h3", "h4", "h5", "h6":
 		level := block.Level
 		if level == 0 {

@@ -108,29 +108,24 @@ func settleSeed(ctx context.Context, v any) any {
 	return v
 }
 
-// SeedFor is the host convenience: scan the page for referenced names,
-// add all app-global names, and resolve the combined seed in one call.
-//
-// every DECLARED route.* name joins the
-// full-page seed as well. A route value can be named ONLY inside a
-// data-cui-computed-deps list (route.path in a breadcrumb computed),
-// which the scan reads as one comma-joined name it cannot decompose;
-// without the unconditional inclusion the boot recompute of such a
-// computed finds no value and clobbers the correct SSR stamp.
-func SeedFor(ctx context.Context, html string) map[string]any {
-	names := ScanReferenced(html)
-	names = append(names, GlobalNames()...)
+// referencedNames gathers every name a seed resolves: the names the
+// html references, all app-global names, and every DECLARED route.*
+// name once routeSeedDue opts the family in. The route family joins
+// unconditionally (not only when the scan sees it) because the scan
+// cannot decompose a data-cui-computed-deps list naming route.path,
+// and a partial's scanned html cannot see a binding in a KEPT layer.
+func referencedNames(ctx context.Context, html string) []string {
+	names := append(ScanReferenced(html), GlobalNames()...)
 	if routeSeedDue(ctx, html) {
-		// Every DECLARED route.* name joins the full-page seed as well.
-		// A route value can be named ONLY inside a
-		// data-cui-computed-deps list (route.path in a breadcrumb
-		// computed), which the scan reads as one comma-joined name it
-		// cannot decompose; without the unconditional inclusion the
-		// boot recompute of such a computed finds no value and
-		// clobbers the correct SSR stamp.
 		names = append(names, RouteNames()...)
 	}
-	return ResolveSeed(ctx, names)
+	return names
+}
+
+// SeedFor is the host convenience: scan the page for referenced names,
+// add all app-global names, and resolve the combined seed in one call.
+func SeedFor(ctx context.Context, html string) map[string]any {
+	return ResolveSeed(ctx, referencedNames(ctx, html))
 }
 
 // routeSeedDue is the wire gate for the route.* family (the opt-in
@@ -182,28 +177,12 @@ func ScopeOf(name string) Scope {
 // SeedSplit resolves the seed for a partial (SPA-nav) render, split by
 // scope. The client merges page-scoped values unconditionally (fresh
 // page) but only seeds a global the first time it is seen (preserving
-// any value the user mutated on a previous page).
-//
-// every DECLARED route.* name
-// joins the seed unconditionally. A partial's scanned HTML cannot see
-// a binding in a KEPT layer (the route-bound header of a kept shell
-// travels in no payload), so the scan alone would leave those names
-// unseeded and the kept bindings stale; and because SeedRoute writes
-// absent params as ”, the unconditional page-scoped merge also erases
-// the previous route's values on the client.
+// any value the user mutated on a previous page). Every DECLARED
+// route.* name joins unconditionally, so a binding in a KEPT layer
+// never goes stale and the page-scoped merge erases the previous
+// route's values (SeedRoute writes absent params as ”).
 func SeedSplit(ctx context.Context, html string) (page, global map[string]any) {
-	names := append(ScanReferenced(html), GlobalNames()...)
-	if routeSeedDue(ctx, html) {
-		//: every DECLARED route.* name joins the seed.
-		// A partial's scanned HTML cannot see a binding in a KEPT
-		// layer (the route-bound header of a kept shell travels in no
-		// payload), so the scan alone would leave those names unseeded
-		// and the kept bindings stale; and because SeedRoute writes
-		// absent params as '', the unconditional page-scoped merge
-		// also erases the previous route's values on the client.
-		names = append(names, RouteNames()...)
-	}
-	all := ResolveSeed(ctx, names)
+	all := ResolveSeed(ctx, referencedNames(ctx, html))
 	page = map[string]any{}
 	global = map[string]any{}
 	for n, v := range all {

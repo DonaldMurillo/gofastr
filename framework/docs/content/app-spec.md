@@ -2022,7 +2022,7 @@ Screen body blocks support the legacy sugar keys (`type`, `text`, `level`,
 as that `kind`, so it draws the same component. `type: section` is the
 exception: it stays the plain `<section>` tag (`kind: section` is
 `ui.Section`). Supported render kinds include structural tags, text tags, forms,
-buttons, links, inputs, images, lists, tables, and raw nodes. `island` wraps a
+buttons, links, inputs, images, lists, and tables. `island` wraps a
 block in `island.NewIsland`; `widget` wraps it in `component.NewWidget`.
 `actions` generate GoFastr screen actions and add the required `data-action`
 attributes to the rendered node.
