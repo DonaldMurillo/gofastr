@@ -166,11 +166,8 @@ func (b *SSEBroker) attachFanout(f fanout.Fanout) {
 	}
 	nodeID := fanout.NewNodeID()
 	cancel, err := f.Subscribe(b.fanoutTopic, func(raw []byte) {
-		origin, body, uerr := fanout.Unwrap(raw)
-		if uerr != nil {
-			return
-		}
-		if origin == nodeID {
+		_, body, ok := fanout.UnwrapForeign(nodeID, raw)
+		if !ok {
 			return
 		}
 		var msg sseFanoutMsg

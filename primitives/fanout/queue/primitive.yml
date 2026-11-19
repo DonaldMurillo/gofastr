@@ -1,0 +1,54 @@
+primitive: fanout.queue
+summary: The bounded drop-oldest queues that fanout backends and publishers share - SubscriberQueue for delivery and PublishQueue for publishing from hot paths.
+code:
+  - core/fanout/subscriber_queue.go
+  - core/fanout/publish_queue.go
+invariants:
+  - id: subscriber-send-never-blocks
+    rule: A SubscriberQueue send copies the payload and returns without waiting for fn, and a full queue drops its oldest payload so the newest is delivered.
+    enforced_by:
+      - test: core/fanout.TestSubscriberQueueSendNeverBlocksOnSlowFn
+      - test: core/fanout.TestSubscriberQueueDropOldestKeepsNewest
+      - test: core/fanout.TestSubscriberQueueCopiesPayloadOnSend
+  - id: subscriber-panic-is-contained
+    rule: A panic in a subscriber callback is recovered and logged, drops that payload only, and the queue's goroutine keeps delivering.
+    enforced_by:
+      - test: core/fanout.TestSubscriberPanicDoesNotKillProcess
+  - id: nothing-delivered-after-stop
+    rule: A payload sent to a SubscriberQueue or PublishQueue after its stop has returned is never delivered or published.
+    enforced_by:
+      - test: core/fanout.TestSweepFanoutSendAfterStopDeliversNothing
+  - id: publish-send-never-blocks
+    rule: A PublishQueue send copies the payload and returns at once while the backend is stalled, and each backend Publish runs under a 5 second deadline.
+    enforced_by:
+      - test: core/fanout.TestPublishQueueSendNeverBlocks
+      - test: core/fanout.TestSweepFanoutPublishQueueDeadlineAndCopy
+  - id: publish-stop-is-ordered
+    rule: PublishQueue's stop returns only after a publish in flight finishes and no publish starts after it returns, so a message sent directly after stop lands after every earlier one.
+    enforced_by:
+      - test: core/fanout.TestStopWaitsForInflightPublish
+      - test: core/fanout.TestNoPublishStartsAfterStop
+  - id: publish-failure-is-reported-once
+    rule: PublishQueueReporting calls failed once for each payload not published, with the backend's error, ErrPublishDropped on overflow, or a panic error when Publish panicked, and contains a panic in failed.
+    enforced_by:
+      - test: core/fanout.TestPublishQueueReportsFailure
+      - test: core/fanout.TestPublishQueueReportsOverflow
+      - test: core/fanout.TestPublishQueueCallbackPanicContained
+      - test: core/fanout.TestPublishPanicDoesNotKillProcess
+decisions:
+  - id: stop-drops-the-queue
+    date: 2026-11-19
+    status: accepted
+    decision: stop drops what is still queued instead of draining it.
+    rejected:
+      - option: Deliver every queued payload before stop returns.
+        why: fn must not block, and waiting on a callback that does would deadlock the caller; the lane is lossy, so a few dropped messages on unsubscribe cost nothing.
+    upholds: [nothing-delivered-after-stop]
+  - id: publish-off-the-hot-path
+    date: 2026-11-19
+    status: accepted
+    decision: Hot paths mirror to a backend through PublishQueue's goroutine and never call Fanout.Publish inline.
+    rejected:
+      - option: Call Publish inline from the handler or emitter.
+        why: A slow or wedged backend would stall every request that publishes.
+    upholds: [publish-send-never-blocks]

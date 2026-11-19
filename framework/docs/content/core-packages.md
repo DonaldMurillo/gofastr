@@ -344,6 +344,38 @@ manager, and `SSEBroker`. Reach for it directly only to span a new
 real-time surface across replicas. Start at `core/fanout/fanout.go`:
 `Fanout`.
 
+A receiver unwraps each message with `UnwrapForeign(self, raw)`, which
+returns `ok` false for a malformed envelope and for one its own node
+sent, so a replica never re-applies its own broadcast. A payload sent to
+a `SubscriberQueue` or `PublishQueue` after its `stop` has returned is
+dropped.
+
+`NewRedis` imports no Redis library; adapt your client to `RedisPubSub`.
+For go-redis:
+
+```go
+type goRedisPubSub struct{ c *redis.Client }
+
+func (a goRedisPubSub) Publish(ctx context.Context, ch string, p []byte) error {
+	return a.c.Publish(ctx, ch, p).Err()
+}
+
+func (a goRedisPubSub) Subscribe(ctx context.Context, ch string, fn func([]byte)) (func(), error) {
+	sub := a.c.Subscribe(ctx, ch)
+	msgs := sub.Channel(redis.WithChannelSize(64))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for m := range msgs {
+			fn([]byte(m.Payload))
+		}
+	}()
+	return func() { _ = sub.Close(); <-done }, nil
+}
+
+f := fanout.NewRedis(goRedisPubSub{c: client})
+```
+
 ## API surface
 
 ### mcp

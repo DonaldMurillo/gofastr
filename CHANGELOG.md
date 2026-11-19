@@ -25,6 +25,11 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **fanout: nothing is delivered after a queue's `stop`.** A payload
+  sent to a `SubscriberQueue` (and so to an `InProcess`, Redis or
+  Postgres subscriber) or a `PublishQueue` after `stop` returned could
+  still reach the callback or the backend about half the time. It is now
+  always dropped. See [core packages](framework/docs/content/core-packages.md#fanout).
 - **BREAKING: handler: `Bind` refuses duplicate and case-folded keys at every
   depth.** The JSON body was checked at the top level of a struct only,
   so `{"user":{"role":"member","role":"admin"}}` bound last-wins, and a
@@ -403,6 +408,11 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr upgrade` finds the Go spellings.
 
 ### Added
+- **fanout: `UnwrapForeign(self, raw)`.** Unwraps a fanout envelope and
+  reports `ok` false for a malformed one or one this node sent. The event
+  bridge, SSE broker, island manager, access store and module manager use
+  it in place of their own origin checks. See
+  [core packages](framework/docs/content/core-packages.md#fanout).
 - **`netguard.OriginAllowed`** is the one cross-origin check `core/mcp`
   and `core/a2a` share: no Origin, the request's own Host, or a
   case-insensitive allow-list match passes. Neither server's answers

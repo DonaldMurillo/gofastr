@@ -1,0 +1,50 @@
+primitive: openapi.spec
+summary: The core/openapi Spec and Operation builders that every generated OpenAPI document is assembled with.
+code:
+  - core/openapi/doc.go
+  - core/openapi/spec.go
+  - core/openapi/operation.go
+docs:
+  - framework/docs/content/api-versioning.md
+invariants:
+  - id: one-operation-per-method-and-path
+    rule: AddPath panics when its method and path are already registered, and AddSchema panics on a component name already registered, instead of overwriting either.
+    enforced_by:
+      - test: core/openapi.TestAddPathPanicsOnDuplicateMethod
+      - test: core/openapi.TestAddSchemaPanicsOnDuplicateName
+  - id: path-params-declared-once
+    rule: AddPath writes each :name segment as {name} and declares a path parameter for every segment op does not already declare in the path, a query parameter of the same name not counting.
+    enforced_by:
+      - test: core/openapi.TestPathParamConversion
+      - test: core/openapi.TestMixedPathParamStyles
+      - test: framework/openapi.TestCompositeKeyRecordPaths
+  - id: first-parameter-declaration-wins
+    rule: AddParameter ignores a parameter whose name and location the operation already declares, so a list operation's fixed controls are never declared twice by a field filter of the same name.
+    enforced_by:
+      - test: framework/openapi.TestFilterParamCollidesWithListControl
+  - id: security-scopes-are-an-array
+    rule: AddSecurity records nil scopes as an empty slice, so the requirement encodes as [] and never null.
+    enforced_by:
+      - test: core/openapi.TestOperationSecurity
+  - id: server-url-scheme-allow-list
+    rule: AddServer drops a URL with a scheme other than http, https, ws or wss, and keeps a relative one.
+    enforced_by:
+      - test: core/openapi.TestAddServer_RejectsUnsafeSchemes
+  - id: empty-description-removes-it
+    rule: SetDescription with an empty string removes info.description.
+    enforced_by:
+      - test: core/openapi.TestSetDescription
+  - id: view-inherits-info-without-writing-it
+    rule: A RequestView spec is served with every info field of the base spec it does not set, written into a copy so the view's own spec is never changed.
+    enforced_by:
+      - test: core/openapi.TestRequestViewKeepsDescription
+      - test: core/openapi.TestRequestViewSpecIsNotMutated
+decisions:
+  - id: collision-panics
+    date: 2026-11-19
+    status: accepted
+    decision: A duplicate operation or schema component panics at build time.
+    rejected:
+      - option: Let the later registration overwrite the earlier one.
+        why: Two entities or versions resolving to one key would leave a $ref or an operation silently pointing at the wrong one.
+    upholds: [one-operation-per-method-and-path]
