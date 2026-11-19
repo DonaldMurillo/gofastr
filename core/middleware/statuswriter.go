@@ -24,6 +24,8 @@ func (w *statusRecorder) WriteHeader(code int) {
 		w.ResponseWriter.WriteHeader(code)
 		return
 	}
+	// Latch only once the call returned: net/http panics on a code outside
+	// 100-999 before sending anything, and Recovery still owes that 500.
 	w.ResponseWriter.WriteHeader(code)
 	w.status = code
 	w.wroteHeader = true

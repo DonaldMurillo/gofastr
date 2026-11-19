@@ -172,7 +172,7 @@ func (rw *countingResponseWriter) ReadFrom(src io.Reader) (int64, error) {
 // Without this, any SSE / chunked-JSON / long-poll handler downstream of
 // battery/log returns 500 "streaming unsupported", its
 // `w.(http.Flusher)` assertion fails against the wrapper. Mirrors the
-// fix already present on core/middleware.metricsResponseWriter.
+// fix already present on core/middleware.statusWriter.
 func (rw *countingResponseWriter) Flush() {
 	// A flush sends the headers: the status is the one set, or 200.
 	// Latch it, so a WriteHeader after the flush (which net/http drops)
@@ -188,7 +188,7 @@ func (rw *countingResponseWriter) Flush() {
 // or otherwise type-asserts http.Hijacker (e.g. core/stream/websocket.go),
 // because the assertion would see the wrapper instead of the real writer and
 // fail with "does not support hijacking". Mirrors the fix on
-// core/middleware.metricsResponseWriter.
+// core/middleware.statusWriter.
 func (rw *countingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hj, ok := rw.ResponseWriter.(http.Hijacker); ok {
 		return hj.Hijack()
