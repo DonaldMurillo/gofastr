@@ -35,9 +35,9 @@ func TestJSONStdoutParity(t *testing.T) {
 		"generate": {
 			{name: "failure", args: []string{"--json", "--unknown-json-parity"}, code: 2},
 			{name: "success", args: []string{"--json", "--dry-run"}, setup: jsonParityProject},
-			{name: "unknown", args: []string{"frobnicate", "--json"}, code: 1},
-			{name: "removed-ts", args: []string{"ts", "--json"}, code: 1},
-			{name: "removed-typescript", args: []string{"typescript", "--json"}, code: 1},
+			{name: "unknown", args: []string{"frobnicate", "--json"}, code: 2},
+			{name: "removed-ts", args: []string{"ts", "--json"}, code: 2},
+			{name: "removed-typescript", args: []string{"typescript", "--json"}, code: 2},
 			{name: "openapi-success", args: []string{"cli", "--from-openapi=spec.json", "--json", "--dry-run"}, setup: jsonParityProject},
 		},
 		"verify": {
@@ -401,8 +401,8 @@ func TestGenerateUnknownJSON(t *testing.T) {
 					dispatch([]string{"generate", name, "--json"})
 				})
 			})
-			if code != 1 {
-				t.Errorf("exit = %d, want 1", code)
+			if code != 2 {
+				t.Errorf("exit = %d, want 2", code)
 			}
 			assertOneJSON(t, output)
 		})

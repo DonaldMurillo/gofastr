@@ -59,7 +59,7 @@ func TestDesktopBuildProducesLinuxELF(t *testing.T) {
 			t.Setenv("GOARCH", test.arch)
 			out := filepath.Join(fixture, "dist", test.arch)
 			var code int
-			clitest.CovT_capStdout(t, func() {
+			clitest.CovT_capOutput(t, func() {
 				code = clitest.CovT_capExit(t, func() {
 					runDesktopBuildForOS([]string{"--id=dev.gofastr.linux", "--name=Linux Fixture", "-o", out}, "linux")
 				})

@@ -34,7 +34,7 @@ func TestDesktopTypesAgainstExample(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "desktop-notes.d.ts")
 
 	var code int
-	captured := clitest.CovT_capStdout(t, func() {
+	captured := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			runDesktopTypes([]string{
 				"--pkg", "./internal/testapps/desktop-notes",

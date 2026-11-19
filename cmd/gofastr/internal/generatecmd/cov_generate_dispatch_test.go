@@ -11,29 +11,29 @@ import (
 
 func TestRunGenerateTSRemovedExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() { RunGenerate([]string{"ts"}) })
+		clitest.CovT_capOutput(t, func() { RunGenerate([]string{"ts"}) })
 	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("want 2 got %d", code)
 	}
 }
 
 func TestRunGenerateUnknownResourceExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() { RunGenerate([]string{"frobnicate"}) })
+		clitest.CovT_capOutput(t, func() { RunGenerate([]string{"frobnicate"}) })
 	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("want 2 got %d", code)
 	}
 }
 
 func TestRunGenerateAllIsNotAGenerator(t *testing.T) {
 	clitest.CovT_chdir(t, t.TempDir())
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunGenerate([]string{"all"}) })
 	})
-	if code != 1 || !strings.Contains(out, "Unknown generator: all") {
+	if code != 2 || !strings.Contains(out, "Unknown generator: all") {
 		t.Fatalf("generate all: exit %d, out %q; want the unknown-generator refusal", code, out)
 	}
 }
@@ -56,7 +56,7 @@ func TestRunGenerateUsageErrorsExitTwo(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var code int
-			out := clitest.CovT_capStdout(t, func() {
+			out := clitest.CovT_capOutput(t, func() {
 				code = clitest.CovT_capExit(t, func() { RunGenerate(tc.args) })
 			})
 			if code != 2 || !strings.Contains(out, tc.want) {
@@ -73,7 +73,7 @@ func TestRunGenerateAppSpecDryRunJSON(t *testing.T) {
 	if err := os.WriteFile(bp, []byte(clitest.TestAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		RunGenerate([]string{"app", bp, "--dry-run", "--json"})
 	})
 	if !strings.Contains(out, `"files"`) {

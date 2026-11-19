@@ -17,7 +17,7 @@ func TestMacBuildRefusesNonSemverVersion(t *testing.T) {
 		t.Run(v, func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "dist")
 			var code int
-			captured := clitest.CovT_capStdout(t, func() {
+			captured := clitest.CovT_capOutput(t, func() {
 				code = clitest.CovT_capExit(t, func() {
 					runDesktopBuildForOS([]string{"--id", "dev.example.notes", "--version", v, "--pkg", "./does/not/exist", "-o", out}, "darwin")
 				})

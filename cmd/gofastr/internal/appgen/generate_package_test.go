@@ -49,8 +49,8 @@ func TestGeneratePackageUnknownNameRefused(t *testing.T) {
 			runGeneratePackage([]string{"banner"})
 		})
 	})
-	if code != 1 {
-		t.Fatalf("exit = %d, want 1", code)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
 	}
 	for _, want := range []string{"unknown package", "banner", "siteheader", "sitefooter", "docpage"} {
 		if !strings.Contains(out, want) {

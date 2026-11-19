@@ -83,7 +83,7 @@ func RunDev(args []string) {
 	if err != nil {
 		cli.Fail("%v", err)
 		printDevUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 

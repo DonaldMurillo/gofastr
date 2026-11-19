@@ -187,8 +187,7 @@ func runMigrateForce(args []string) {
 		}
 	}
 	if !haveVersion {
-		cli.Fail("Usage: gofastr migrate force <version> [--not-applied]")
-		cli.OsExit(1)
+		cli.UsageFail("Usage: gofastr migrate force <version> [--not-applied]")
 	}
 
 	cli.Printf("\n  "+cli.Bold("Forcing migration %d → applied=%t...")+"\n\n", version, applied)
@@ -231,7 +230,7 @@ func runMigrateRepair(args []string) {
 	if from == "" {
 		cli.Fail("Usage: gofastr migrate repair --from=<gofastr.yml> [--apply] [--db-url=<url>]")
 		cli.Info("The scan reads the entity declarations to know each table's owner column.")
-		cli.OsExit(1)
+		cli.OsExit(2)
 	}
 	dbURL := getMigrateDBURL(args)
 	if dbURL == "" {

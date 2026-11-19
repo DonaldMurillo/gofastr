@@ -24,7 +24,7 @@ func RunValidate(args []string) {
 	if len(args) == 0 || strings.HasPrefix(args[0], "--") {
 		cli.Fail("Usage: gofastr validate <gofastr.yml|dir>")
 		cli.Info("Parses the app spec and runs every generate-time validation. Exit 0 = valid.")
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	// One app spec per run. A second path was never read, so

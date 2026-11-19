@@ -301,7 +301,7 @@ func dispatch(args []string) {
 			}
 		}
 		printHelp()
-		cli.OsExit(1)
+		cli.OsExit(2)
 	}
 }
 

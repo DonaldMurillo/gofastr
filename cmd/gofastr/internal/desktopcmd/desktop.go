@@ -29,7 +29,7 @@ import (
 func RunDesktop(args []string) {
 	if len(args) == 0 {
 		printDesktopUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	switch args[0] {
@@ -49,7 +49,7 @@ func RunDesktop(args []string) {
 		}
 		cli.Fail("Unknown desktop verb: %s (want run, build, install, uninstall, types, keygen, or feed)", args[0])
 		printDesktopUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 	}
 }
 
@@ -78,7 +78,7 @@ func runDesktopRun(args []string) {
 	if err != nil {
 		cli.Fail("%v", err)
 		printDesktopUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 
@@ -398,7 +398,7 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 	if err != nil {
 		cli.Fail("%v", err)
 		printDesktopUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 	if f.formatSet && (targetOS != "linux" || (f.format != "executable" && f.format != "tar.gz")) {
@@ -792,7 +792,7 @@ func runDesktopTypes(args []string) {
 	if err != nil {
 		cli.Fail("%v", err)
 		printDesktopUsage()
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 

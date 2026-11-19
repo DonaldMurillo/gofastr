@@ -14,7 +14,7 @@ import (
 func TestGenerateScreenDispatches(t *testing.T) {
 	dir := clitest.ScaffoldEmptyDir(t)
 	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() { RunGenerate([]string{"screen", "contact"}) })
+		clitest.CovT_capOutput(t, func() { RunGenerate([]string{"screen", "contact"}) })
 	})
 	if code != -1 {
 		t.Fatalf("`generate screen contact` exited %d", code)
@@ -40,7 +40,7 @@ func TestGenerateScreenFromA11yErrors(t *testing.T) {
 		{[]string{"entity", "x", "--from-a11y=" + bad}, 2},
 	} {
 		code := clitest.CovT_capExit(t, func() {
-			clitest.CovT_capStdout(t, func() { RunGenerate(tc.args) })
+			clitest.CovT_capOutput(t, func() { RunGenerate(tc.args) })
 		})
 		if code != tc.exit {
 			t.Errorf("%v: exit %d, want %d", tc.args, code, tc.exit)

@@ -161,8 +161,8 @@ func TestMigrateRepairAppliesAndIsClean(t *testing.T) {
 func TestMigrateRepairNeedsAppSpec(t *testing.T) {
 	_, dbPath := repairT_setup(t) // also chdirs into the scratch dir
 	out, code := repairT_run(t, "repair", "--db-url="+dbPath)
-	if code != 1 {
-		t.Fatalf("missing --from exited %d, want 1:\n%s", code, out)
+	if code != 2 {
+		t.Fatalf("missing --from exited %d, want 2:\n%s", code, out)
 	}
 	if !strings.Contains(out, "--from") {
 		t.Fatalf("missing --from error does not name the flag:\n%s", out)

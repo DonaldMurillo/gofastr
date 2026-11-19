@@ -13,7 +13,7 @@ func TestValidateCmdParseErrorHasLine(t *testing.T) {
 	path := filepath.Join(dir, "gofastr.yml")
 	clitest.WriteFileAll(t, path, "entities:\n  - name: posts\n    bogus_key: 1\n")
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunValidate([]string{path}) })
 	})
 	if code != 1 {
@@ -26,13 +26,13 @@ func TestValidateCmdParseErrorHasLine(t *testing.T) {
 	}
 }
 
-func TestValidateCmdNoArgsExits1(t *testing.T) {
+func TestValidateCmdNoArgsExits2(t *testing.T) {
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunValidate(nil) })
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1, got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2, got %d", code)
 	}
 	if !strings.Contains(out, "Usage") {
 		t.Fatalf("expected usage text, got:\n%s", out)
@@ -48,7 +48,7 @@ func TestValidateCmdRefusesExtraArguments(t *testing.T) {
 	clitest.WriteFileAll(t, good, "app:\n  name: Demo\n  module: example.com/demo\n")
 	for _, args := range [][]string{{good, "--json"}, {good, "--strict"}} {
 		var code int
-		out := clitest.CovT_capStdout(t, func() {
+		out := clitest.CovT_capOutput(t, func() {
 			code = clitest.CovT_capExit(t, func() { RunValidate(args) })
 		})
 		if code != 2 {
@@ -66,7 +66,7 @@ func TestValidateCmdModuleMismatchExits1(t *testing.T) {
 	path := filepath.Join(dir, "gofastr.yml")
 	clitest.WriteFileAll(t, path, "app:\n  name: Demo\n  module: example.com/other\n")
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunValidate([]string{path}) })
 	})
 	if code != 1 {
@@ -87,7 +87,7 @@ func TestValidateRefusesSecondPath(t *testing.T) {
 	bad := filepath.Join(dir, "b.yml")
 	clitest.WriteFileAll(t, bad, "entities:\n  - name: posts\n    bogus_key: 1\n")
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunValidate([]string{good, bad}) })
 	})
 	if code != 2 {

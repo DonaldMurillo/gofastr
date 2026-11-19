@@ -94,7 +94,7 @@ func TestBuildAndServeBuildsAndStarts(t *testing.T) {
 	var mu sync.Mutex
 	var cmd *exec.Cmd
 	var ok bool
-	clitest.CovT_capStdout(t, func() {
+	clitest.CovT_capOutput(t, func() {
 		ok = buildAndServe(dir, ".", "localhost:0", rt, &mu, &cmd, false, nil, nil)
 	})
 	defer KillServer(&mu, &cmd)
@@ -131,7 +131,7 @@ func TestBuildAndServeBuildFails(t *testing.T) {
 	var mu sync.Mutex
 	var cmd *exec.Cmd
 	var ok bool
-	clitest.CovT_capStdout(t, func() {
+	clitest.CovT_capOutput(t, func() {
 		ok = buildAndServe(dir, ".", "localhost:0", rt, &mu, &cmd, false, nil, nil)
 	})
 	if ok {

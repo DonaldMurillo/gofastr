@@ -104,7 +104,7 @@ func TestDesktopBuildNameValidation(t *testing.T) {
 
 func TestDesktopBuildRejectsBadIDBeforeBuilding(t *testing.T) {
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			runDesktopBuild([]string{"--id", "no-dot", "--pkg", "./does/not/exist"})
 		})
@@ -145,7 +145,7 @@ func TestDesktopBuildProducesBundleLayout(t *testing.T) {
 
 	out := filepath.Join(fixture, "dist")
 	var code int
-	clitest.CovT_capStdout(t, func() {
+	clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			runDesktopBuildForOS([]string{
 				"--id", "dev.gofastr.fixture",
@@ -414,7 +414,7 @@ func TestDesktopBuildAdhocSignsBundle(t *testing.T) {
 
 	out := filepath.Join(fixture, "dist")
 	var code int
-	clitest.CovT_capStdout(t, func() {
+	clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			runDesktopBuild([]string{"--id", "dev.gofastr.signed", "--name", "Signed", "--pkg", ".", "-o", out})
 		})

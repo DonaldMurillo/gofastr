@@ -109,8 +109,7 @@ func extractOverwriteFlag(args []string) (bool, []string) {
 // runNewHandler is the CLI wrapper around scaffoldHandler.
 func runNewHandler(args []string, overwrite bool) {
 	if len(args) == 0 {
-		cli.Fail("Usage: gofastr new handler <Name> --method <GET|POST> --path <path>")
-		cli.OsExit(1)
+		cli.UsageFail("Usage: gofastr new handler <Name> --method <GET|POST> --path <path>")
 	}
 
 	name := args[0]
@@ -119,8 +118,7 @@ func runNewHandler(args []string, overwrite bool) {
 	// Both --method POST and --method=POST: the usage line shows the
 	// space form, which this loop once ignored, scaffolding GET /<name>.
 	if _, err := cli.ParseFlags(args[1:], map[string]*string{"--method": &method, "--path": &path}, nil); err != nil {
-		cli.Fail("%v", err)
-		cli.OsExit(1)
+		cli.UsageFail("%v", err)
 		return
 	}
 	method, err := normalizeRouteMethod(method)
@@ -139,16 +137,14 @@ func runNewHandler(args []string, overwrite bool) {
 // runNewRoute is the CLI wrapper that prints a route registration snippet.
 func runNewRoute(args []string) {
 	if len(args) == 0 {
-		cli.Fail("Usage: gofastr new route <path> --method <GET|POST> --handler <name>")
-		cli.OsExit(1)
+		cli.UsageFail("Usage: gofastr new route <path> --method <GET|POST> --handler <name>")
 	}
 
 	path := args[0]
 	method := "GET"
 	handler := "handler"
 	if _, err := cli.ParseFlags(args[1:], map[string]*string{"--method": &method, "--handler": &handler}, nil); err != nil {
-		cli.Fail("%v", err)
-		cli.OsExit(1)
+		cli.UsageFail("%v", err)
 		return
 	}
 	method, err := normalizeRouteMethod(method)

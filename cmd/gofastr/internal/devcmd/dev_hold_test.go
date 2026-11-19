@@ -178,7 +178,7 @@ func TestBuildAndServeHoldShowsCompileError(t *testing.T) {
 	var mu sync.Mutex
 	var cmd *exec.Cmd
 	var ok bool
-	clitest.CovT_capStdout(t, func() { ok = buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h, nil) })
+	clitest.CovT_capOutput(t, func() { ok = buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h, nil) })
 	if ok {
 		KillServer(&mu, &cmd)
 		t.Fatal("broken build reported success")
@@ -198,7 +198,7 @@ func TestBuildAndServeHoldShowsA11yFindings(t *testing.T) {
 	h := newTestHold(t)
 	var mu sync.Mutex
 	var cmd *exec.Cmd
-	clitest.CovT_capStdout(t, func() { buildAndServe(root, ".", h.addr, rt, &mu, &cmd, false, h, nil) })
+	clitest.CovT_capOutput(t, func() { buildAndServe(root, ".", h.addr, rt, &mu, &cmd, false, h, nil) })
 	_, body := holdGet(t, h.addr, "")
 	if !strings.Contains(body, "screen.go") || !strings.Contains(body, "Accessibility lint failed") {
 		t.Fatalf("hold page lacks the a11y findings: %q", body)
@@ -262,7 +262,7 @@ func TestBuildAndServeHandsThePortToTheApp(t *testing.T) {
 	var mu sync.Mutex
 	var cmd *exec.Cmd
 	var ok bool
-	clitest.CovT_capStdout(t, func() { ok = buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h, nil) })
+	clitest.CovT_capOutput(t, func() { ok = buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h, nil) })
 	defer KillServer(&mu, &cmd)
 	if !ok {
 		t.Fatal("build failed")
@@ -279,7 +279,7 @@ func TestBuildAndServeKillIsNotAnExit(t *testing.T) {
 	var mu sync.Mutex
 	var cmd *exec.Cmd
 	var ok bool
-	clitest.CovT_capStdout(t, func() { ok = buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h, nil) })
+	clitest.CovT_capOutput(t, func() { ok = buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h, nil) })
 	if !ok {
 		KillServer(&mu, &cmd)
 		t.Fatal("build failed")
@@ -298,7 +298,7 @@ func TestBuildAndServeHoldShowsAppExit(t *testing.T) {
 	h := newTestHold(t)
 	var mu sync.Mutex
 	var cmd *exec.Cmd
-	clitest.CovT_capStdout(t, func() { buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h, nil) })
+	clitest.CovT_capOutput(t, func() { buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h, nil) })
 	defer KillServer(&mu, &cmd)
 	pollHold(t, h.addr, "exit status 3")
 }

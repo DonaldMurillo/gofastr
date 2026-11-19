@@ -13,7 +13,7 @@ func TestReleaseOutputNeedsValue(t *testing.T) {
 						parseDesktopFeedFlags(args)
 					}
 				})
-				if code != 1 {
+				if code != 2 {
 					t.Errorf("%s %v exited %d, want refusal", verb, args, code)
 				}
 			})

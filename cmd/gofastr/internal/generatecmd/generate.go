@@ -32,10 +32,10 @@ func RunGenerate(args []string) {
 	switch name {
 	case "ts", "typescript":
 		appgen.ReportGenerateFailure(args, fmt.Errorf("TypeScript codegen has been removed. Use `gofastr generate sdk` for the typed JS/TS client, or gofastr.settings.yml with a project extension for custom frontend artifacts."), "See framework/docs/content/sdk.md and codegen.md.")
-		cli.OsExit(1)
+		cli.OsExit(2)
 	default:
 		appgen.ReportGenerateFailure(args, fmt.Errorf("Unknown generator: %s", name), "Generators: "+generatorNames())
-		cli.OsExit(1)
+		cli.OsExit(2)
 	}
 }
 

@@ -82,7 +82,7 @@ func runGeneratePackage(args []string) {
 		}
 		cli.Fail("unknown package %q; available: %s", name, strings.Join(names, ", "))
 		cli.Info("Usage: gofastr generate package <name> [--out=DIR] [--dry-run]")
-		cli.OsExit(1)
+		cli.OsExit(2)
 		return
 	}
 
