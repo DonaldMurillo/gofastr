@@ -116,7 +116,9 @@ exported docs (6 and 2). In `core/`, twelve packages are swept:
 6.4%, `yaml` 0.0%, `router` 5.1%, `middleware` 2.9%, `render` 4.2%,
 `query` 7.7%, `schema` 5.7% and `mcp` 3.8%; the `core/` primitives hold
 277 invariants, 106 decisions and 21 twins. `core/` as a whole is still
-at 23.4%. Next: the rest of
+at 23.4%. The replay eval after them held every number it can see, but
+no replay task reads these packages
+(`2026-11-19-replay-step2-experimental-core.md`). Next: the rest of
 `core/` (`a2a`, `acp`, `config`, `datexport`, `fanout`, `featureflag`,
 `handler`, `i18n`, `markdown`, `migrate`, `moduleproto`, `netguard`,
 `openapi`, `settings`, `static`, `stream`, `tracing`, `unmounted`,
