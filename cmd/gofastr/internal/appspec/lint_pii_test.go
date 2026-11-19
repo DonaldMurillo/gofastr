@@ -1,10 +1,15 @@
 package appspec
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -168,5 +173,68 @@ func TestPIINoPIIFieldsPasses(t *testing.T) {
 	}}
 	if got := LintUnscopedPII(bp); len(got) != 0 {
 		t.Fatalf("no PII fields, want no findings: %+v", got)
+	}
+}
+
+func TestPIIAgreesWithPermissionsContract(t *testing.T) {
+	for _, tc := range []struct {
+		name, field, permission, goPermission string
+		want                                  bool
+	}{
+		{"leading acronym", "SSNBackup", "", `""`, true},
+		{"anyone literal", "email", "anyone", `"anyone"`, true},
+		{"anyone constant", "SSNBackup", "anyone", "fw.Anyone", true},
+		{"permission gate", "SSNBackup", "people:read", `"people:read"`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			decl := piiEntity("people", tc.field)
+			decl.Exposure.Access = &fwentity.AccessDeclaration{Read: tc.permission}
+			got := LintUnscopedPII(AppSpec{Entities: []framework.EntityDeclaration{decl}})
+			if tc.want {
+				if len(got) != 1 || len(got[0].Fields) != 1 || got[0].Fields[0] != tc.field {
+					t.Errorf("app-spec lint should flag %s: %+v", tc.field, got)
+				}
+			} else if len(got) != 0 {
+				t.Errorf("app-spec lint should accept the permission gate: %+v", got)
+			}
+
+			dir := t.TempDir()
+			src := fmt.Sprintf(`package app
+import (
+	fw "github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+)
+func wire(app *fw.App) {
+	app.Entity("people", fw.EntityConfig{
+		Fields: []schema.Field{{Name: %q, Type: schema.String}},
+		Exposure: &fw.ExposureConfig{Access: fw.AccessControl{Read: %s}},
+	})
+}
+`, tc.field, tc.goPermission)
+			if err := os.WriteFile(filepath.Join(dir, "people.go"), []byte(src), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			pass, err := contracts.NewPass(dir, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			report, err := contracts.Run(pass, contracts.RunOptions{Capabilities: []contracts.Capability{contracts.CapPermissions}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields []string
+			for _, d := range report.Diagnostics {
+				if d.RuleID == contracts.RuleUnscopedPII {
+					fields = append(fields, d.Evidence["fields"])
+				}
+			}
+			if tc.want {
+				if len(fields) != 1 || fields[0] != tc.field {
+					t.Errorf("verify permissions should flag %s: %v", tc.field, fields)
+				}
+			} else if len(fields) != 0 {
+				t.Errorf("verify permissions should accept the permission gate: %v", fields)
+			}
+		})
 	}
 }

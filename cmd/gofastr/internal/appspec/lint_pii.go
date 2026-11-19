@@ -3,22 +3,10 @@ package appspec
 import (
 	"fmt"
 	"strings"
-	"unicode"
 
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/piicheck"
 )
-
-// piiFieldTokens are field-name tokens that suggest a column holds
-// personally identifiable or secret data. Matching is per-token (split on
-// `_`, `-`, digits, and camelCase boundaries), not substring, so
-// "cardinality" does not trip "card".
-var piiFieldTokens = map[string]bool{
-	"email": true, "phone": true, "mobile": true, "address": true,
-	"street": true, "ssn": true, "password": true, "passwd": true,
-	"token": true, "secret": true, "card": true, "iban": true,
-	"dob": true, "birthday": true, "birthdate": true, "passport": true,
-	"salary": true,
-}
 
 // piiFinding is one entity flagged by lintUnscopedPII.
 type piiFinding struct {
@@ -45,7 +33,7 @@ func LintUnscopedPII(bp AppSpec) []piiFinding {
 		if !EntityDeclarationCRUDEnabled(decl) && !exposure.MCP {
 			continue
 		}
-		if scope.OwnerField != "" || scope.MultiTenant || HasAccessGate(exposure.Access) {
+		if piicheck.Scoped(scope.OwnerField, scope.MultiTenant, HasAccessGate(exposure.Access)) {
 			continue
 		}
 		var pii []string
@@ -55,7 +43,7 @@ func LintUnscopedPII(bp AppSpec) []piiFinding {
 			if strings.EqualFold(strings.TrimSpace(field.Type), "relation") {
 				continue
 			}
-			if fieldLooksPII(field.Name) {
+			if piicheck.Field(field.Name) {
 				pii = append(pii, field.Name)
 			}
 		}
@@ -66,57 +54,15 @@ func LintUnscopedPII(bp AppSpec) []piiFinding {
 	return out
 }
 
-// HasAccessGate reports whether the access declaration actually gates at
-// least one operation: an access: map with only blank or anyone entries
-// gates nothing and must not count as a remedy. anyone opens its operation
-// to every caller, and a blank read beside it stays open too.
+// HasAccessGate reports whether the access declaration gates at least one operation.
 func HasAccessGate(a *fwentity.AccessDeclaration) bool {
 	if a == nil {
 		return false
 	}
 	for _, perm := range []string{a.Read, a.Create, a.Update, a.Delete} {
-		if p := strings.TrimSpace(perm); p != "" && p != fwentity.Anyone {
+		if piicheck.GatesAccess(perm) {
 			return true
 		}
 	}
 	return false
-}
-
-func fieldLooksPII(name string) bool {
-	for _, tok := range splitFieldTokens(name) {
-		if piiFieldTokens[tok] {
-			return true
-		}
-	}
-	return false
-}
-
-// splitFieldTokens lowercases and splits a column name on `_`, `-`, `.`,
-// digits, and lower→upper camelCase boundaries. Consecutive uppercase runs
-// stay one token, so "userSSN" yields ["user", "ssn"].
-func splitFieldTokens(name string) []string {
-	var tokens []string
-	var cur []rune
-	flush := func() {
-		if len(cur) > 0 {
-			tokens = append(tokens, strings.ToLower(string(cur)))
-			cur = nil
-		}
-	}
-	prevLower := false
-	for _, r := range name {
-		switch {
-		case unicode.IsLetter(r):
-			if unicode.IsUpper(r) && prevLower {
-				flush()
-			}
-			cur = append(cur, r)
-			prevLower = unicode.IsLower(r)
-		default:
-			flush()
-			prevLower = false
-		}
-	}
-	flush()
-	return tokens
 }

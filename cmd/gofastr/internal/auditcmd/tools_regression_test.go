@@ -1,9 +1,82 @@
 package auditcmd
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
+
+func TestAuditLintTracksContractDetectors(t *testing.T) {
+	for _, tc := range []struct {
+		name, file, source, slug, rule string
+		want                           int
+	}{
+		{"raw SQL", "app.go", "package app\nfunc query(userInput string) { db.Query(`SELECT ` + userInput) }",
+			"sql-concat-user-input", contracts.RuleSQLStringConcat, 1},
+		{"split SQL", "app.go", "package app\nfunc query(userInput string) { db.Query(\"SELECT \" +\n userInput) }",
+			"sql-concat-user-input", contracts.RuleSQLStringConcat, 1},
+		{"CSRF inside literal comment", "app.go", "package app\nconst page = `<form method=\"POST\"></form> /* name=\"_csrf\" */`",
+			"form-without-csrf", contracts.RuleFormWithoutCSRF, 1},
+		{"formatted HTML", "app.go", `package app
+import "fmt"
+import "github.com/DonaldMurillo/gofastr/core/render"
+func view(input string) { render.HTML(fmt.Sprintf("<p>%s</p>", input)) }`,
+			"render-html-concat", contracts.RuleHTMLConcat, 1},
+		{"discarded Exec", "app.go", "package app\nfunc cleanup() { db.Exec(\"DELETE FROM sessions\") }",
+			"ignored-exec", contracts.RuleIgnoredExec, 1},
+		{"annotated Exec", "app.go", "package app\nfunc cleanup() { db.Exec(\"DELETE FROM sessions\") } // ignore the error: shutdown cleanup",
+			"ignored-exec", contracts.RuleIgnoredExec, 0},
+		{"lane phrase outside arguments", "app_test.go", `package app
+import "testing"
+func TestDebt(t *testing.T) {
+	t.Skip("temporarily disabled") // Postgres unavailable in another lane
+}
+func TestLane(t *testing.T) {
+	t.Skip(
+		"Postgres unavailable")
+}`,
+			"test-skip", contracts.RuleDisabledTest, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, tc.file), []byte(tc.source), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			audit, err := auditLint(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pass, err := contracts.NewPass(dir, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			verify, err := contracts.Run(pass, contracts.RunOptions{Analyzers: []string{"security", "data", "testing"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var auditLines, verifyLines []int
+			for _, f := range audit {
+				if f.Rule == tc.slug {
+					auditLines = append(auditLines, f.Line)
+				}
+			}
+			for _, d := range verify.Diagnostics {
+				if d.RuleID == tc.rule {
+					verifyLines = append(verifyLines, d.Line)
+				}
+			}
+			if len(auditLines) != tc.want || len(verifyLines) != tc.want {
+				t.Fatalf("want %d finding(s) in both commands, got audit lines %v and verify lines %v", tc.want, auditLines, verifyLines)
+			}
+			if tc.want == 1 && auditLines[0] != verifyLines[0] {
+				t.Fatalf("audit reported line %d, verify reported line %d", auditLines[0], verifyLines[0])
+			}
+		})
+	}
+}
 
 func TestAuditSQLAnnotationSurvivesCommentFiltering(t *testing.T) {
 	got := lintRules(t, "package app\nfunc query(userInput string) { db.Query(\"SELECT \" + userInput) } // safe-sql: allowlisted column identifier\n")
@@ -34,15 +107,6 @@ func TestAuditCRLFCommentsDoNotLeakSQL(t *testing.T) {
 	} {
 		body := comment + "package app\r\n"
 		mustNotHaveRule(t, lintRules(t, body), "sql-concat-user-input")
-		masked := stripGoComments([]byte(body))
-		if len(masked) != len(body) {
-			t.Fatalf("mask changed byte length: got %d want %d", len(masked), len(body))
-		}
-		for offset, character := range []byte(body) {
-			if (character == '\n' || character == '\r') && masked[offset] != character {
-				t.Fatalf("mask changed newline byte at %d", offset)
-			}
-		}
 		live := body + "func query(userInput string) { db.Query(\"SELECT \" + userInput) }\r\n"
 		findings := lintRules(t, live)
 		mustHaveRule(t, findings, "sql-concat-user-input")

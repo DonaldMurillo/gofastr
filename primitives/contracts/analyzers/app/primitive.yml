@@ -8,6 +8,8 @@ code:
   - framework/contracts/analyzers/testing.go
   - framework/contracts/analyzers/accessibility.go
   - framework/contracts/analyzers/architecture.go
+  - internal/piicheck/
+  - cmd/gofastr/internal/appspec/lint_pii.go
 invariants:
   - id: route-discovery-shapes
     rule: Routes are read only from files importing core/router, framework/routegroup, framework, core-ui/app or net/http, through router-typed parameters, router.New or NewRouter results, and .Router() or .Group() chains.
@@ -79,15 +81,17 @@ invariants:
       - test: framework/contracts/analyzers.TestSweepAppGrantNeedsAPermissionArgument
       - test: framework/contracts/analyzers.TestSweepAppVariableEntityConfigRecordsNothing
   - id: entity-scope-reading
-    rule: An Access block of blank strings scopes nothing, an Access value the pass cannot read counts as scoping, only a literal false disables CRUD, and a relation column is never PII.
+    rule: An Access block holding only blanks or anyone scopes nothing, an Access value the Go pass cannot read counts as scoping, only a literal false disables CRUD, and a relation column is never PII.
     enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestPIIAgreesWithPermissionsContract
       - test: framework/contracts/analyzers.TestEntityWithBlankAccessBlockIsStillUnscoped
       - test: framework/contracts/analyzers.TestSweepAppVariableAccessCountsAsScoped
       - test: framework/contracts/analyzers.TestSweepAppOnlyALiteralFalseDisablesCRUD
       - test: framework/contracts/analyzers.TestSweepAppRelationColumnIsNotPII
   - id: pii-is-a-whole-token
-    rule: A field is PII when one of its tokens, split on separators, digits and camelCase with acronyms kept whole, is in the PII list.
+    rule: The Go and app-spec PII lints share one scope predicate and one field classifier that matches whole tokens, splitting on separators, digits and camelCase with acronyms kept whole.
     enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestPIIAgreesWithPermissionsContract
       - test: framework/contracts/analyzers.TestUnscopedPIIEntityIsReported
       - test: framework/contracts/analyzers.TestSweepAppAcronymStaysOneToken
       - test: framework/contracts/analyzers.TestSweepAppPIIMatchesWholeTokens
@@ -146,13 +150,18 @@ invariants:
       - test: framework/contracts/analyzers.TestUnexercisedEventSubscriberIsReported
       - test: framework/contracts/analyzers.TestUnexercisedRoleIsReported
   - id: declared-permissions
-    rule: A declared permission is a resource:verb string with no space or slash passed to a check call, or named in an entity's Access block.
+    rule: Permission coverage uses the registry check's receiver-aware permission collection and string resolution without requiring a policy registration, and also includes entity Access names and permission-shaped values passed to Require, HasScope or RequireAPIScopes.
     enforced_by:
+      - test: framework/contracts/analyzers.TestPermissionCoverageUsesResolvedAccessChecks
       - test: framework/contracts/analyzers.TestSweepAppOnlyPermissionShapedArgumentsAreDeclared
       - test: framework/contracts/analyzers.TestSweepAppEntityAccessPermissionsAreDeclared
   - id: disabled-test-is-deferred-work
-    rule: A t.Skip is GOFASTR1105 only when its string arguments name deferred work rather than a lane boundary and no testing.Short guard sits in the four lines above.
+    rule: Audit and verify share skip-call detection, allow-skip annotations, lane phrases from the actual arguments and nearby testing.Short guards, while audit reports every remaining skip and GOFASTR1105 requires deferred-work wording.
+    applies:
+      - cmd/gofastr/internal/auditcmd/audit_lint.go
     enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestAuditLintTracksContractDetectors
+      - test: cmd/gofastr/internal/auditcmd.TestAuditSkipDoesNotRequireDebtVocabulary
       - test: framework/contracts/analyzers.TestSweepAppEveryStringArgumentOfASkipIsRead
       - test: framework/contracts/analyzers.TestSweepAppShortGuardIsALaneBoundary
   - id: coverage-is-statement-weighted

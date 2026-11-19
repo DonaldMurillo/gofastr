@@ -25,6 +25,9 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **verify: the permissions PII rule (GOFASTR1901) and the app-spec PII
+  check agree.** Both flag acronym-led fields such as `SSNBackup`, and
+  neither counts an access block holding only `anyone` as a gate.
 - **ui: command palette search results with a safe `Href` are real
   links,** like the palette's initial rows, so middle-click and
   open-in-new-tab work.
@@ -281,6 +284,12 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **cli: `gofastr audit lint` uses the same detectors as `gofastr verify`.**
+  It now reports raw-string and multiline SQL concatenation, `render.HTML`
+  built with `Sprintf`, `Join` or a local string, and CSRF deficits that a
+  comment inside a template literal used to hide. It honors verify's
+  annotations, such as `// ignore the error` on a discarded Exec, and reads
+  test-lane reasons from the skip call's arguments.
 - **ui: `Toolbar` and `FilterChipBar` render a labelled `role="group"`
   instead of `role="toolbar"`.** The toolbar role promises arrow-key
   movement with one Tab stop, which neither component has; Tab now visits

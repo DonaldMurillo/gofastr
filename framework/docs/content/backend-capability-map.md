@@ -72,7 +72,7 @@ route, marks which need auth, and names the option that ungates them.
 | Job to be done | Compose | Prove it | Docs |
 |---|---|---|---|
 | CRUD over a table | `framework.App.Entity` with `entity.EntityConfig` | `curl localhost:8080/api/tickets` | [Entity declarations](entity-declarations.md) |
-| Scope rows to the signed-in user | `EntityConfig.Scope.OwnerField`, **not** a hand-written filter | `gofastr verify data` fails when an entity with user data lacks it | [Entity declarations](entity-declarations.md), [Access control](access-control.md) |
+| Scope rows to the signed-in user | `EntityConfig.Scope.OwnerField` | `gofastr verify permissions` runs `GOFASTR1901` for auto-exposed entities with PII-shaped fields | [Entity declarations](entity-declarations.md), [Access control](access-control.md) |
 | Login, signup, sessions, password reset | `battery/auth`: `auth.New`, `auth.SessionMiddleware` | `curl -i -X POST localhost:8080/auth/login -d '{...}'` → `Set-Cookie` | [Auth](auth.md) |
 | Roles and permissions | `access.NewRolePolicy`, `access.Middleware`, `access.Wildcard` | `gofastr verify permissions` | [Access control](access-control.md) |
 | Signed sessions across replicas | `framework.WithSecret` / `GOFASTR_SECRET`, `framework.WithSecretRotation` | restart the process; an existing cookie still authenticates | [Scaling](scaling.md), [Auth](auth.md) |
@@ -112,9 +112,15 @@ an app ends up with a bug the framework would have prevented:
 
 - **Reading topic docs before this page.** They are references, not
   orientation. Land on the row first, then open the one link it points at.
-- **Hand-writing a filter for per-user data.** `Scope.OwnerField` is enforced on
-  every generated surface: REST, batch, MCP, includes. A hand-written `WHERE`
-  covers the one handler you remembered. `gofastr verify data` flags the gap.
+- **Hand-writing a filter for per-user data.** `Scope.OwnerField` scopes rows on
+  generated REST, batch, MCP, and include surfaces. Under
+  `gofastr verify permissions`, `GOFASTR1901` inspects non-public Go entities
+  exposed by auto-CRUD or MCP. It looks for whole name tokens such as
+  `email`, `phone`, and `ssn` in statically readable fields and skips relation
+  fields. The check accepts an owner field, tenant scope, or a permission
+  that gates at least one operation. Access entries containing only blanks
+  or `anyone` leave the check active. An access value the rule cannot read
+  statically is treated as a gate.
 - **Trusting `paths` in a stale mental model of the spec.** Under
   `framework.WithAPIPrefix` the OpenAPI path keys carry the prefix, so a
   documented path is the path you request. See

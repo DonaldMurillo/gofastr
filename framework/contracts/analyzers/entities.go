@@ -6,9 +6,9 @@ import (
 	"go/token"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/piicheck"
 )
 
 func init() {
@@ -61,7 +61,7 @@ type EntityInfo struct {
 
 // Scoped reports whether the entity limits which rows a caller can reach.
 func (e EntityInfo) Scoped() bool {
-	return e.OwnerField != "" || e.MultiTenant || e.HasAccess
+	return piicheck.Scoped(e.OwnerField, e.MultiTenant, e.HasAccess)
 }
 
 // Exposed reports whether the entity has a generated surface at all.
@@ -264,6 +264,7 @@ func collectEntities(p *contracts.Pass) []EntityInfo {
 		if !ok || !importsAny(file, "framework", "framework/entity") {
 			continue
 		}
+		aliases := importAliases(file)
 		ast.Inspect(file, func(n ast.Node) bool {
 			_, method, call, isCall := selectorCall(n)
 			if !isCall {
@@ -294,7 +295,7 @@ func collectEntities(p *contracts.Pass) []EntityInfo {
 			}
 			pos := p.Position(call.Pos())
 			info := EntityInfo{Name: name, File: f.Rel, Line: pos.Line, Pos: call.Pos()}
-			readEntityConfig(lit, &info)
+			readEntityConfig(lit, &info, aliases)
 			out = append(out, info)
 			return true
 		})
@@ -302,7 +303,7 @@ func collectEntities(p *contracts.Pass) []EntityInfo {
 	return out
 }
 
-func readEntityConfig(lit *ast.CompositeLit, info *EntityInfo) {
+func readEntityConfig(lit *ast.CompositeLit, info *EntityInfo, aliases map[string]string) {
 	for _, elt := range lit.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
 		if !ok {
@@ -318,7 +319,7 @@ func readEntityConfig(lit *ast.CompositeLit, info *EntityInfo) {
 		case "Scope":
 			readScope(kv.Value, info)
 		case "Exposure":
-			readExposure(kv.Value, info)
+			readExposure(kv.Value, info, aliases)
 		}
 	}
 }
@@ -348,7 +349,7 @@ func readScope(e ast.Expr, info *EntityInfo) {
 	}
 }
 
-func readExposure(e ast.Expr, info *EntityInfo) {
+func readExposure(e ast.Expr, info *EntityInfo, aliases map[string]string) {
 	lit := compositeOf(e)
 	if lit == nil {
 		return
@@ -370,45 +371,41 @@ func readExposure(e ast.Expr, info *EntityInfo) {
 		case "CRUD":
 			info.CRUDDisabled = pointsToFalse(kv.Value)
 		case "Access":
-			info.AccessPermissions = accessPermissions(kv.Value)
-			info.HasAccess = accessDeclared(kv.Value)
+			info.AccessPermissions, info.HasAccess = readAccess(kv.Value, aliases)
 		}
 	}
 }
 
-func accessDeclared(e ast.Expr) bool {
+func readAccess(e ast.Expr, aliases map[string]string) (permissions []string, gated bool) {
 	lit := compositeOf(e)
 	if lit == nil {
-		return true
+		return nil, true
 	}
 	for _, elt := range lit.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
 		if !ok {
 			continue
 		}
-		if s, litOK := stringLit(kv.Value); !litOK || strings.TrimSpace(s) != "" {
-			return true
+		value := unparen(kv.Value)
+		if s, isString := stringLit(value); isString {
+			if strings.TrimSpace(s) != "" {
+				permissions = append(permissions, s)
+			}
+			gated = gated || piicheck.GatesAccess(s)
+		} else if !isAnyoneConstant(value, aliases) {
+			gated = true
 		}
 	}
-	return false
+	return permissions, gated
 }
 
-func accessPermissions(e ast.Expr) []string {
-	lit := compositeOf(e)
-	if lit == nil {
-		return nil
+func isAnyoneConstant(e ast.Expr, aliases map[string]string) bool {
+	sel, ok := e.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Anyone" {
+		return false
 	}
-	var out []string
-	for _, elt := range lit.Elts {
-		kv, ok := elt.(*ast.KeyValueExpr)
-		if !ok {
-			continue
-		}
-		if s, litOK := stringLit(kv.Value); litOK && strings.TrimSpace(s) != "" {
-			out = append(out, s)
-		}
-	}
-	return out
+	pkg, ok := sel.X.(*ast.Ident)
+	return ok && (aliases[pkg.Name] == frameworkPkg || aliases[pkg.Name] == frameworkPkg+"/entity")
 }
 
 func compositeOf(e ast.Expr) *ast.CompositeLit {
@@ -484,51 +481,6 @@ func readFieldNames(e ast.Expr) ([]string, bool) {
 	return names, true
 }
 
-var piiTokens = map[string]bool{
-	"email": true, "phone": true, "mobile": true, "address": true,
-	"street": true, "ssn": true, "password": true, "passwd": true,
-	"token": true, "secret": true, "card": true, "iban": true,
-	"dob": true, "birthday": true, "birthdate": true, "passport": true,
-	"salary": true,
-}
-
-func fieldLooksPII(name string) bool {
-	for _, tok := range splitIdentifier(name) {
-		if piiTokens[tok] {
-			return true
-		}
-	}
-	return false
-}
-
-func splitIdentifier(s string) []string {
-	var tokens []string
-	var cur strings.Builder
-	flush := func() {
-		if cur.Len() > 0 {
-			tokens = append(tokens, strings.ToLower(cur.String()))
-			cur.Reset()
-		}
-	}
-	runes := []rune(s)
-	for i, r := range runes {
-		switch {
-		case r == '_' || r == '-' || r == '.' || unicode.IsDigit(r):
-			flush()
-		case unicode.IsUpper(r):
-			if i > 0 && (unicode.IsLower(runes[i-1]) ||
-				(i+1 < len(runes) && unicode.IsLower(runes[i+1]))) {
-				flush()
-			}
-			cur.WriteRune(unicode.ToLower(r))
-		default:
-			cur.WriteRune(r)
-		}
-	}
-	flush()
-	return tokens
-}
-
 func runEntities(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	var out []contracts.Diagnostic
 	auth := AuthWiring(p)
@@ -557,7 +509,7 @@ func runEntities(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		}
 		var pii []string
 		for _, f := range e.Fields {
-			if fieldLooksPII(f) {
+			if piicheck.Field(f) {
 				pii = append(pii, f)
 			}
 		}

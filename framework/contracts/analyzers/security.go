@@ -53,15 +53,11 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		if !ok {
 			continue
 		}
-		lines := strings.Split(string(body), "\n")
-		sqlConcat := ruleSQLConcat(p, f.Rel, string(body), lines)
-		out = append(out, sqlConcat...)
-		htmlConcat := ruleHTMLConcat(p, f.Rel, lines)
-		out = append(out, htmlConcat...)
-		out = append(out, ruleFormCSRF(p, f.Rel, string(body), lines)...)
-		if file, parsed := p.AST(f.Rel); parsed {
-			out = append(out, ruleSQLConcatAST(p, f.Rel, file, string(body), lines, sqlConcat)...)
-			out = append(out, ruleHTMLBuiltAST(p, f.Rel, file, lines, htmlConcat)...)
+		file, _ := p.AST(f.Rel)
+		src := newLintSource(f.Rel, string(body), p.FileSet(), file)
+		out = append(out, sharedSecurityRules(src)...)
+		if file != nil {
+			lines := src.lines
 			out = append(out, ruleInsecureCookie(p, f.Rel, file, lines)...)
 			out = append(out, ruleHardcodedSecret(p, f.Rel, file, lines)...)
 			out = append(out, ruleForwardedProto(p, f.Rel, file)...)
@@ -80,6 +76,18 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		}
 	}
 	return out, nil
+}
+
+func sharedSecurityRules(src lintSource) []contracts.Diagnostic {
+	sql := ruleSQLConcat(src)
+	html := ruleHTMLConcat(src)
+	out := append(ruleFormCSRF(src), sql...)
+	out = append(out, html...)
+	if src.file != nil {
+		out = append(out, ruleSQLConcatAST(src, sql)...)
+		out = append(out, ruleHTMLBuiltAST(src, html)...)
+	}
+	return out
 }
 
 // GOFASTR1401: SQL built by concatenation.
@@ -101,15 +109,15 @@ var taintMarkers = []string{
 	"pathvalue", "formvalue",
 }
 
-func ruleSQLConcat(p *contracts.Pass, rel, body string, lines []string) []contracts.Diagnostic {
+func ruleSQLConcat(src lintSource) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	for i, line := range strings.Split(stripComments(body), "\n") {
+	for i, line := range strings.Split(stripComments(src.body), "\n") {
 		if !reSQLConcatLiteral.MatchString(line) &&
 			!reSQLSprintf.MatchString(line) &&
 			!reSQLBuilderConcat.MatchString(line) {
 			continue
 		}
-		if hasLegacyAnnotation(lines, i+1, "safe-sql:") {
+		if hasLegacyAnnotation(src.lines, i+1, "safe-sql:") {
 			continue
 		}
 		lower := strings.ToLower(line)
@@ -124,9 +132,9 @@ func ruleSQLConcat(p *contracts.Pass, rel, body string, lines []string) []contra
 			continue
 		}
 		out = append(out, contracts.Diagnostic{
-			RuleID: contracts.RuleSQLStringConcat, File: rel, Line: i + 1,
+			RuleID: contracts.RuleSQLStringConcat, File: src.rel, Line: i + 1,
 			Message: "request-derived value concatenated into a SQL statement",
-			Snippet: strings.TrimSpace(lines[min(i, len(lines)-1)]),
+			Snippet: strings.TrimSpace(src.lines[min(i, len(src.lines)-1)]),
 		})
 	}
 	return out
@@ -141,13 +149,13 @@ var sqlCallNames = map[string]bool{
 var reSQLVerbText = regexp.MustCompile(`(?i)\b` + sqlVerb)
 
 // ruleSQLConcatAST covers what the line scan cannot see: raw-string literals and concatenations split across lines.
-func ruleSQLConcatAST(p *contracts.Pass, rel string, file *ast.File, body string, lines []string, already []contracts.Diagnostic) []contracts.Diagnostic {
+func ruleSQLConcatAST(src lintSource, already []contracts.Diagnostic) []contracts.Diagnostic {
 	seen := map[int]bool{}
 	for _, d := range already {
 		seen[d.Line] = true
 	}
 	var out []contracts.Diagnostic
-	ast.Inspect(file, func(n ast.Node) bool {
+	ast.Inspect(src.file, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok || len(call.Args) == 0 {
 			return true
@@ -161,11 +169,11 @@ func ruleSQLConcatAST(p *contracts.Pass, rel string, file *ast.File, body string
 			if !isConcat || !reSQLVerbText.MatchString(text) {
 				continue
 			}
-			start := p.Position(arg.Pos())
-			end := p.Position(arg.End())
+			start := src.fset.Position(arg.Pos())
+			end := src.fset.Position(arg.End())
 			reported := false
-			for ln := start.Line; ln <= end.Line && ln <= len(lines); ln++ {
-				if seen[ln] || hasLegacyAnnotation(lines, ln, "safe-sql:") {
+			for ln := start.Line; ln <= end.Line && ln <= len(src.lines); ln++ {
+				if seen[ln] || hasLegacyAnnotation(src.lines, ln, "safe-sql:") {
 					reported = true
 					break
 				}
@@ -174,9 +182,9 @@ func ruleSQLConcatAST(p *contracts.Pass, rel string, file *ast.File, body string
 				continue
 			}
 			suspicious := reSQLQuotedInterp.MatchString(text)
-			src := strings.ToLower(body[start.Offset:end.Offset])
+			expression := strings.ToLower(src.body[start.Offset:end.Offset])
 			for _, marker := range taintMarkers {
-				if strings.Contains(src, marker) {
+				if strings.Contains(expression, marker) {
 					suspicious = true
 					break
 				}
@@ -186,10 +194,10 @@ func ruleSQLConcatAST(p *contracts.Pass, rel string, file *ast.File, body string
 			}
 			out = append(out, contracts.Diagnostic{
 				RuleID:  contracts.RuleSQLStringConcat,
-				File:    rel,
+				File:    src.rel,
 				Line:    start.Line,
 				Message: "request-derived value concatenated into a SQL statement",
-				Snippet: strings.TrimSpace(lines[min(start.Line-1, len(lines)-1)]),
+				Snippet: strings.TrimSpace(src.lines[min(start.Line-1, len(src.lines)-1)]),
 			})
 		}
 		return true
@@ -233,17 +241,17 @@ func sqlConcatText(e ast.Expr) (string, bool) {
 
 var reRenderHTMLConcat = regexp.MustCompile(`render\.HTML\([^)]*\+[^)]*\)`)
 
-func ruleHTMLConcat(p *contracts.Pass, rel string, lines []string) []contracts.Diagnostic {
+func ruleHTMLConcat(src lintSource) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	for i, line := range lines {
+	for i, line := range src.lines {
 		if !reRenderHTMLConcat.MatchString(line) {
 			continue
 		}
-		if hasLegacyAnnotation(lines, i+1, "safe-html:") {
+		if hasLegacyAnnotation(src.lines, i+1, "safe-html:") {
 			continue
 		}
 		out = append(out, contracts.Diagnostic{
-			RuleID: contracts.RuleHTMLConcat, File: rel, Line: i + 1,
+			RuleID: contracts.RuleHTMLConcat, File: src.rel, Line: i + 1,
 			Message: "render.HTML receives a concatenated string: the interpolated half is not escaped",
 			Snippet: strings.TrimSpace(line),
 		})
@@ -252,14 +260,14 @@ func ruleHTMLConcat(p *contracts.Pass, rel string, lines []string) []contracts.D
 }
 
 // ruleHTMLBuiltAST covers Sprintf/Sprint/Join builds, split or call-led concatenations and locals assigned such a build.
-func ruleHTMLBuiltAST(p *contracts.Pass, rel string, file *ast.File, lines []string, already []contracts.Diagnostic) []contracts.Diagnostic {
+func ruleHTMLBuiltAST(src lintSource, already []contracts.Diagnostic) []contracts.Diagnostic {
 	seen := map[int]bool{}
 	for _, d := range already {
 		seen[d.Line] = true
 	}
-	aliases := importAliases(file)
+	aliases := importAliases(src.file)
 	var out []contracts.Diagnostic
-	for _, decl := range file.Decls {
+	for _, decl := range src.file.Decls {
 		var locals map[string][]ast.Expr
 		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Body != nil {
 			locals = localAssignments(fn.Body)
@@ -281,12 +289,12 @@ func ruleHTMLBuiltAST(p *contracts.Pass, rel string, file *ast.File, lines []str
 			if how == "" {
 				return true
 			}
-			line := p.Position(call.Pos()).Line
-			if seen[line] || hasLegacyAnnotation(lines, line, "safe-html:") {
+			line := src.fset.Position(call.Pos()).Line
+			if seen[line] || hasLegacyAnnotation(src.lines, line, "safe-html:") {
 				return true
 			}
 			seen[line] = true
-			d := diag(p, contracts.RuleHTMLConcat, rel, call.Pos(),
+			d := src.diagnostic(contracts.RuleHTMLConcat, call.Pos(),
 				"render.HTML receives a string built by "+how+": the interpolated value is not escaped")
 			out = append(out, d)
 			return true
@@ -386,14 +394,14 @@ var (
 	reCSRFExempt = regexp.MustCompile(`(?i)csrf-exempt:\s*\S`)
 )
 
-func ruleFormCSRF(p *contracts.Pass, rel, body string, lines []string) []contracts.Diagnostic {
-	stripped := stripComments(body)
+func ruleFormCSRF(src lintSource) []contracts.Diagnostic {
+	stripped := stripComments(src.body)
 	protections := len(reCSRFCall.FindAllString(stripped, -1)) +
 		len(reCSRFField.FindAllString(stripped, -1)) +
-		len(reCSRFExempt.FindAllString(body, -1))
+		len(reCSRFExempt.FindAllString(src.body, -1))
 
 	var formLines []int
-	for i, line := range lines {
+	for i, line := range src.lines {
 		if reFormPOST.MatchString(line) {
 			formLines = append(formLines, i)
 		}
@@ -404,10 +412,10 @@ func ruleFormCSRF(p *contracts.Pass, rel, body string, lines []string) []contrac
 	var out []contracts.Diagnostic
 	for _, idx := range formLines[:len(formLines)-protections] {
 		out = append(out, contracts.Diagnostic{
-			RuleID: contracts.RuleFormWithoutCSRF, File: rel, Line: idx + 1,
+			RuleID: contracts.RuleFormWithoutCSRF, File: src.rel, Line: idx + 1,
 			Message: fmt.Sprintf("this file renders %d POST form(s) but wires CSRF %d time(s)",
 				len(formLines), protections),
-			Snippet:  strings.TrimSpace(lines[idx]),
+			Snippet:  strings.TrimSpace(src.lines[idx]),
 			Evidence: map[string]string{"forms": fmt.Sprint(len(formLines)), "protections": fmt.Sprint(protections)},
 		})
 	}
@@ -1740,33 +1748,39 @@ func runData(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		if !ok {
 			continue
 		}
-		lines := strings.Split(string(body), "\n")
-		flagged := map[int]bool{}
-		report := func(lineNo int) {
-			if flagged[lineNo] || hasLegacyAnnotation(lines, lineNo, "best-effort", "ignore the error", "errors here") {
-				return
-			}
-			flagged[lineNo] = true
-			out = append(out, contracts.Diagnostic{
-				RuleID: contracts.RuleIgnoredExec, File: f.Rel, Line: lineNo,
-				Message: "both the result and the error of this write are discarded",
-				Snippet: strings.TrimSpace(lines[lineNo-1]),
-			})
+		file, _ := p.AST(f.Rel)
+		out = append(out, ruleIgnoredExec(newLintSource(f.Rel, string(body), p.FileSet(), file))...)
+	}
+	return out, nil
+}
+
+func ruleIgnoredExec(src lintSource) []contracts.Diagnostic {
+	var out []contracts.Diagnostic
+	flagged := map[int]bool{}
+	report := func(lineNo int) {
+		if flagged[lineNo] || hasLegacyAnnotation(src.lines, lineNo, "best-effort", "ignore the error", "errors here") {
+			return
 		}
-		for i, line := range lines {
-			if reIgnoredExec.MatchString(line) {
-				report(i + 1)
-			}
+		flagged[lineNo] = true
+		out = append(out, contracts.Diagnostic{
+			RuleID: contracts.RuleIgnoredExec, File: src.rel, Line: lineNo,
+			Message: "both the result and the error of this write are discarded",
+			Snippet: strings.TrimSpace(src.lines[lineNo-1]),
+		})
+	}
+	for i, line := range src.lines {
+		if reIgnoredExec.MatchString(line) {
+			report(i + 1)
 		}
-		if file, parsed := p.AST(f.Rel); parsed {
-			for _, pos := range bareExecStatements(file) {
-				if line := p.Position(pos).Line; line >= 1 && line <= len(lines) {
-					report(line)
-				}
+	}
+	if src.file != nil {
+		for _, pos := range bareExecStatements(src.file) {
+			if line := src.fset.Position(pos).Line; line >= 1 && line <= len(src.lines) {
+				report(line)
 			}
 		}
 	}
-	return out, nil
+	return out
 }
 
 func bareExecStatements(file *ast.File) []token.Pos {

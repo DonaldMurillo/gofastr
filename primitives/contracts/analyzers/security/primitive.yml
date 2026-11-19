@@ -7,6 +7,13 @@ code:
   - framework/contracts/analyzers/fetchmeta.go
   - framework/contracts/analyzers/varyset.go
 invariants:
+  - id: legacy-audit-shares-security-detectors
+    rule: Audit lint and verify use one implementation for SQL and render.HTML construction, POST-form CSRF counting, and discarded Exec, including legacy annotations.
+    applies:
+      - cmd/gofastr/internal/auditcmd/audit_lint.go
+      - framework/contracts/analyzers/audit.go
+    enforced_by:
+      - test: cmd/gofastr/internal/auditcmd.TestAuditLintTracksContractDetectors
   - id: sql-unquoted-identifier-needs-a-taint-marker
     rule: GOFASTR1401 reports an unquoted interpolation into a SQL statement only when a request-derived marker (req., params, formvalue and the rest of taintMarkers) appears on the line or in the expression, so a dynamic table name stays quiet.
     enforced_by:

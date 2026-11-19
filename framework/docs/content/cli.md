@@ -647,8 +647,8 @@ the registry — the check has no serving cost and no link on
 
 ## Audit
 
-The `audit` subcommands predate `verify` and remain for the two things it
-does not cover: a runtime browser scan, and the dependency report.
+The `audit` subcommands provide a runtime browser scan, a dependency
+report, and static lint findings in the original audit format.
 
 - `gofastr audit a11y --url <base>`: axe-core scan of a running app in
   both color schemes (`--email`/`--password` log in first). The
@@ -657,13 +657,14 @@ does not cover: a runtime browser scan, and the dependency report.
   works but warns that argv is visible to every local process via
   ps. The *static* accessibility rules are part of
   `gofastr verify accessibility`.
-- `gofastr audit lint`: the original AI-mistake scanner. Superseded by
-  `gofastr verify security data`, which covers the same rules with a
-  reason and a fix attached to each. The legacy scanner still reports
-  malformed test files, unannotated skips, and discarded Exec results
-  (including bare, deferred, and goroutine calls). Explicit test-lane
-  boundaries remain accepted. A `// safe-sql: <why>` comment suppresses
-  that line's SQL heuristic, and comments preserve diagnostic line numbers.
+- `gofastr audit lint` reports malformed Go files and uses the same
+  detectors as `gofastr verify` for SQL concatenation, missing CSRF inputs,
+  strings built for `render.HTML`, discarded Exec results, and test skips.
+  Audit reports all unannotated skips outside recognized test lanes.
+  Lane detection reads skip arguments and recognizes nearby
+  `testing.Short()` guards. The shared detectors honor legacy annotations
+  such as `// safe-sql: <why>`, `// allow-skip: <why>`, and
+  `// ignore the error` for Exec.
 - `gofastr audit deps`: list dependencies that perform init-time
   global registrations, then the [unmounted](unmount.md) packages.
 
