@@ -1,3 +1,2 @@
-// Package stream is part of the GoFastr framework.
-// See https://github.com/DonaldMurillo/gofastr for documentation.
+// Package stream serves Server-Sent Events and WebSocket connections.
 package stream

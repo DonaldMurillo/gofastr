@@ -2,35 +2,14 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"reflect"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/sseframe"
 )
-
-// stripSSEField truncates a single-line SSE field value at the first
-// CR/LF/NUL. Those bytes terminate an SSE field and would otherwise let
-// a caller-supplied event name or id inject forged directives below it.
-func stripSSEField(s string) string {
-	if i := strings.IndexAny(s, "\r\n\x00"); i >= 0 {
-		return s[:i]
-	}
-	return s
-}
-
-// sanitizeSSEData removes CR and NUL bytes from a multi-line SSE data
-// payload and ensures each '\n'-separated line is re-prefixed with
-// "data: " by the caller. Collapsing consecutive newlines prevents a
-// blank line ("\n\n") inside the payload from terminating the event
-// frame and letting following bytes appear as a forged second frame.
-func sanitizeSSEData(s string) string {
-	s = strings.ReplaceAll(s, "\r", "")
-	s = strings.ReplaceAll(s, "\x00", "")
-	return s
-}
 
 // ResponseType is an interface for custom response types that control
 // how they are serialized and what Content-Type is used.
@@ -138,26 +117,11 @@ func (s SSE) WriteBody(w http.ResponseWriter) error {
 	return nil
 }
 
-// writeSSEFrame emits a single SSE frame with id/event/data fields,
-// stripping control bytes from id/event (so they can't terminate the
-// field and forge a new directive) and re-prefixing every newline-split
-// line of data with "data: " (so an embedded blank line can't end the
-// frame and inject a second event).
 // writeSSEFrame writes one event in a single Write, so a failed write
-// is reported once and never leaves half a frame behind a good one.
+// leaves no half frame behind.
 func writeSSEFrame(w http.ResponseWriter, evt SSE) error {
 	var b strings.Builder
-	if id := stripSSEField(evt.ID); id != "" {
-		fmt.Fprintf(&b, "id: %s\n", id)
-	}
-	if event := stripSSEField(evt.Event); event != "" {
-		fmt.Fprintf(&b, "event: %s\n", event)
-	}
-	data := sanitizeSSEData(evt.Data)
-	for line := range strings.SplitSeq(data, "\n") {
-		fmt.Fprintf(&b, "data: %s\n", line)
-	}
-	b.WriteString("\n")
+	sseframe.Append(&b, evt.ID, evt.Event, false, evt.Data)
 	_, err := io.WriteString(w, b.String())
 	return err
 }
