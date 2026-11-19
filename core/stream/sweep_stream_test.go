@@ -261,3 +261,28 @@ func TestSweepHubNeverWaitsOnAFullConnection(t *testing.T) {
 		}
 	}
 }
+
+// WriteEvent always writes an event line, so a name that is empty, or
+// empty once cut, gives "event: " where Encode and handler.SSE write
+// none. Both dispatch as "message" in a browser; the bytes are pinned.
+func TestWriteEventEmptyNameKeepsEventLine(t *testing.T) {
+	for _, name := range []string{"", "\r", "\nevent: forged"} {
+		rec := httptest.NewRecorder()
+		if err := NewSSEWriter(rec).WriteEvent(name, "x"); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := rec.Body.String(), "event: \ndata: x\n\n"; got != want {
+			t.Errorf("WriteEvent(%q) wrote %q, want %q", name, got, want)
+		}
+		if got, want := Encode(Event{Type: Custom, Name: name, Data: "x"}), "data: x\n\n"; got != want {
+			t.Errorf("Encode(Custom %q) = %q, want %q", name, got, want)
+		}
+		rec = httptest.NewRecorder()
+		if err := (handler.SSE{Event: name, Data: "x"}).WriteBody(rec); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := rec.Body.String(), "data: x\n\n"; got != want {
+			t.Errorf("handler.SSE{Event: %q} wrote %q, want %q", name, got, want)
+		}
+	}
+}

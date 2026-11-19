@@ -53,6 +53,10 @@ type WebSocketConn struct {
 
 	takeMu sync.Mutex
 
+	admitMu   sync.Mutex
+	admitting sync.WaitGroup
+	closeBy   atomic.Int64
+
 	writeFailed atomic.Bool
 
 	readMsgs       chan []byte
@@ -378,11 +382,16 @@ func (c *WebSocketConn) WriteBinary(data []byte) error {
 }
 
 func (c *WebSocketConn) enqueue(msg wsMessage) error {
+	c.admitMu.Lock()
 	select {
 	case <-c.closed:
+		c.admitMu.Unlock()
 		return ErrClosed
 	default:
 	}
+	c.admitting.Add(1)
+	c.admitMu.Unlock()
+	defer c.admitting.Done()
 	select {
 	case <-c.closed:
 		return ErrClosed
@@ -432,10 +441,14 @@ func (c *WebSocketConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		by := time.Now().Add(c.drainBound())
+		c.closeBy.Store(by.UnixNano())
+		c.admitMu.Lock()
 		close(c.closed)
+		c.admitMu.Unlock()
 		if sd, ok := c.conn.(interface{ SetWriteDeadline(time.Time) error }); ok {
 			_ = sd.SetWriteDeadline(by)
 		}
+		c.admitting.Wait()
 		c.takeMu.Lock()
 		if c.peerClosePayload.Load() == nil && !c.writeFailed.Load() {
 			c.drainQueued(by)
@@ -764,6 +777,9 @@ func (c *WebSocketConn) writeFrameBy(opcode byte, payload []byte, by time.Time) 
 		c.closeSent = true
 	}
 
+	if cb := c.closeBy.Load(); by.IsZero() && cb != 0 {
+		by = time.Unix(0, cb)
+	}
 	if by.IsZero() && c.config.WriteTimeout > 0 {
 		by = time.Now().Add(c.config.WriteTimeout)
 	}

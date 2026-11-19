@@ -42,7 +42,7 @@ invariants:
     enforced_by:
       - test: core/stream.TestSweepAdmitSeatPolicies
   - id: eviction-cuts-a-parked-write
-    rule: Evicting or replacing a stream cuts a write its handler is parked in, after the broker lock is released, and never once that handler has returned.
+    rule: Evicting or replacing a stream cuts a write its handler is parked in by setting the response's write deadline, after the broker lock is released, and never once that handler has returned. A response writer that cannot set write deadlines (http.ErrNotSupported) is not cut, so there a parked write ends only at the http.Server's WriteTimeout, which such a deployment must set.
     enforced_by:
       - test: core/stream.TestEvictionEndsBlockedHandler
       - test: core/stream.TestLateCutSkipsReturnedHandler

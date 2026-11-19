@@ -547,7 +547,9 @@ The callback fires synchronously, after the pending entry is registered and
 before the frame is written, so a watcher armed inside it cannot miss a
 response. It must not block — the write is waiting on it. It is not called
 when no id was allocated (the peer is closed, the method is empty, the
-context has already ended, or the in-flight cap is reached). Plain `Call` is unchanged and still correct
+context has already ended, the params fail to marshal, or the in-flight cap
+is reached). It does not promise a write: a context that ends after the
+callback returns `ctx.Err()` with nothing sent. Plain `Call` is unchanged and still correct
 wherever the caller has nothing to cancel.
 
 Either call returns once its context ends, even while its request frame
