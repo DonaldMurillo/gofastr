@@ -28,7 +28,10 @@ func renderSDKJSFiles(spec sdkSpec) []GeneratedFile {
 	js.WriteString(header)
 	dts.WriteString(header)
 
+	js.WriteString(jsParsePrelude)
 	js.WriteString(fmt.Sprintf(jsRuntimePrelude, file.MaxProcessFileSize, crud.MaxMultipartBodyBytes))
+	js.WriteString(jsPathEscape)
+	js.WriteString(jsRuntimeTail)
 
 	dts.WriteString(dtsRuntimePrelude)
 
@@ -196,7 +199,7 @@ func isJSIdentifier(s string) bool { return jsIdentRe.MatchString(s) }
 // jsClientMembers are the names the client.js Client class defines: the
 // fields its constructor sets and its methods. A resource property binds
 // on the Client itself, so a table deriving one of these overwrites it.
-var jsClientMembers = []string{"baseURL", "token", "_fetch", "do", "_readBody", "_sse"}
+var jsClientMembers = []string{"baseURL", "token", "_fetch", "do", "_readBody", "_readBytes", "_sse"}
 
 // writeJSEntity emits one entity's typed surface into both builders: the
 // d.ts interfaces (walking the declaration exactly like renderClientEntity,
@@ -469,10 +472,9 @@ func renderSDKJSReadme(spec sdkSpec) string {
 	return sb.String()
 }
 
-// jsRuntimePrelude is the shared, entity-independent part of client.js.
-// Kept as one literal so the emitted file reads top-to-bottom like
-// handwritten code.
-const jsRuntimePrelude = `/**
+// jsParsePrelude opens every generated client.js, the entity SDK's and the
+// OpenAPI SDK's: parseJSON, which keeps big integers exact, and ApiError.
+const jsParsePrelude = `/**
  * parseJSON is JSON.parse that keeps an integer past 2^53 exact: it
  * arrives as its decimal string, the digits the server sent, where
  * JSON.parse would round it (a snowflake id, a big counter). client.d.ts
@@ -544,7 +546,12 @@ export class ApiError extends Error {
   }
 }
 
-function encodeParams(params, filterable) {
+`
+
+// jsRuntimePrelude is the entity SDK's part of client.js between
+// jsParsePrelude and jsPathEscape. Kept as one literal so the emitted
+// file reads top-to-bottom like handwritten code.
+const jsRuntimePrelude = `function encodeParams(params, filterable) {
   const q = new URLSearchParams();
   if (!params) return q;
   const { filters, ...rest } = params;
@@ -644,18 +651,24 @@ function toFormData(body, columns) {
   return form;
 }
 
-/**
+`
+
+// jsPathEscape is the generated pathEscape, shared by both JS SDKs.
+const jsPathEscape = `/**
  * pathEscape spells one key value the way Go's url.PathEscape does: the
  * spelling the server requires of each value inside a composite record
  * id, where encodeURIComponent's differs ("@" stays, "!" escapes).
  */
 function pathEscape(value) {
   return encodeURIComponent(String(value))
-    .replace(/[!'()*]/g, (c) => "%%" + c.charCodeAt(0).toString(16).toUpperCase())
-    .replace(/%%(24|26|2B|3A|3D|40)/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    .replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())
+    .replace(/%(24|26|2B|3A|3D|40)/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 }
 
-/** recordID joins a composite key's values into the record id the server uses. */
+`
+
+// jsRuntimeTail is the entity SDK's part of client.js after jsPathEscape.
+const jsRuntimeTail = `/** recordID joins a composite key's values into the record id the server uses. */
 function recordID(values) {
   return values.map(pathEscape).join("/");
 }
@@ -817,6 +830,46 @@ class Resource {
 
 `
 
+// jsReadBody is the Client methods that read a response body under a
+// cap, shared by both JS SDKs. _readBody reads at most 1 MiB, the cap
+// the Go clients enforce via io.LimitReader.
+const jsReadBody = `  /**
+   * Reads the response body as text, buffering at most 1 MiB (the same
+   * cap the Go client enforces via io.LimitReader). A larger body is a
+   * hostile or misbehaving endpoint, not a payload to buffer to EOF:
+   * the read is aborted and throws instead.
+   */
+  async _readBody(resp) {
+    return new TextDecoder().decode(await this._readBytes(resp, 1 << 20));
+  }
+
+  /** Reads the response body's bytes, throwing past cap bytes. */
+  async _readBytes(resp, cap) {
+    if (!resp.body) return new Uint8Array(0);
+    const reader = resp.body.getReader();
+    const parts = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > cap) {
+        try { await reader.cancel(); } catch { /* stream already closed */ }
+        throw new ApiError(resp.status, "response body exceeded " + cap + " bytes");
+      }
+      parts.push(value);
+    }
+    const bytes = new Uint8Array(size);
+    let at = 0;
+    for (const part of parts) {
+      bytes.set(part, at);
+      at += part.byteLength;
+    }
+    return bytes;
+  }
+
+`
+
 // jsClientMethods is the body of the Client class after the generated
 // resource-property assignments.
 const jsClientMethods = `  async do(method, path, body) {
@@ -838,38 +891,7 @@ const jsClientMethods = `  async do(method, path, body) {
     return parseJSON(text);
   }
 
-  /**
-   * Reads the response body as text, buffering at most maxBodyBytes
-   * (1 MiB, the same cap the Go client enforces via io.LimitReader).
-   * A larger body is a hostile or misbehaving endpoint, not a payload
-   * to buffer to EOF: the read is aborted and throws instead.
-   */
-  async _readBody(resp) {
-    const cap = 1 << 20;
-    if (!resp.body) return "";
-    const reader = resp.body.getReader();
-    const parts = [];
-    let size = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > cap) {
-        try { await reader.cancel(); } catch { /* stream already closed */ }
-        throw new ApiError(resp.status, "response body exceeded " + cap + " bytes");
-      }
-      parts.push(value);
-    }
-    const bytes = new Uint8Array(size);
-    let at = 0;
-    for (const part of parts) {
-      bytes.set(part, at);
-      at += part.byteLength;
-    }
-    return new TextDecoder().decode(bytes);
-  }
-
-  async _sse(path, onEvent, { signal } = {}) {
+` + jsReadBody + `  async _sse(path, onEvent, { signal } = {}) {
     const cap = 1 << 20;
     const headers = { Accept: "text/event-stream" };
     if (this.token) headers.Authorization = "Bearer " + this.token;
