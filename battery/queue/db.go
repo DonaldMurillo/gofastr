@@ -891,7 +891,7 @@ func (q *DBQueue) dequeuePostgres(ctx context.Context, lane string, types []stri
 	// $1 is the claim timestamp (claimed_at = now) and $2 the fresh claim
 	// token that fences this claim's later Ack/Nack; eligibleWhere starts
 	// its own placeholders at $3.
-	token := redisRandomID()
+	token := randomID()
 	claimArgs := append([]any{q.now().UTC(), token}, args...)
 	// FOR UPDATE SKIP LOCKED is the canonical Postgres pattern: holds a
 	// row lock for the surrounding UPDATE, lets concurrent workers skip
@@ -965,7 +965,7 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string
 	if err != nil {
 		return Job{}, err
 	}
-	token := redisRandomID()
+	token := randomID()
 	if _, err := tx.ExecContext(ctx,
 		fmt.Sprintf(`UPDATE %s SET status='claimed', claimed_at=$1, updated_at=$1, claim_token=$2, attempts = attempts + 1 WHERE id = $3`, q.qt()),
 		q.now().UTC(), token, job.ID,

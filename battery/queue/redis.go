@@ -2,9 +2,7 @@ package queue
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -561,17 +559,8 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job Job) (err error) {
 		// is claimed, so nothing can hold a key's later jobs back.
 		return ErrSequenceUnsupported
 	}
-	if job.MaxAge < 0 {
-		return errNegativeMaxAge
-	}
-	if job.ID == "" {
-		job.ID = redisRandomID()
-	}
-	if job.CreatedAt.IsZero() {
-		job.CreatedAt = q.now()
-	}
-	if job.MaxAttempts == 0 {
-		job.MaxAttempts = 3
+	if err := normalizeJob(&job, func(job *Job) { defaultCreatedAt(job, q.now) }); err != nil {
+		return err
 	}
 	data, err := json.Marshal(job)
 	if err != nil {
@@ -684,7 +673,7 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		// The pop's token names its record, and it becomes the claim token
 		// if this entry is the one claimed: Reclaim tells a record whose
 		// claim reached the processing hash by it.
-		token := redisRandomID()
+		token := randomID()
 		data, rec, err := q.pop(ctx, token)
 		if err != nil {
 			// Distinguish a genuinely empty queue (sentinel) from a real
@@ -1513,11 +1502,4 @@ func (q *RedisQueue) Close() error {
 		q.unregisterErase()
 	}
 	return nil
-}
-
-// redisRandomID generates a 16-byte hex string ID.
-func redisRandomID() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
 }

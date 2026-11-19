@@ -852,25 +852,21 @@ type contextExecer interface {
 }
 
 func (q *DBQueue) enqueueWith(ctx context.Context, exec contextExecer, job Job) error {
-	if job.MaxAge < 0 {
-		return errNegativeMaxAge
-	}
-	if job.ID == "" {
-		job.ID = randomID()
-	}
-	now := q.now().UTC()
-	if job.CreatedAt.IsZero() {
-		job.CreatedAt = now
-	} else {
-		job.CreatedAt = job.CreatedAt.UTC()
-	}
-	if job.ScheduledAt.IsZero() {
-		job.ScheduledAt = now
-	} else {
-		job.ScheduledAt = job.ScheduledAt.UTC()
-	}
-	if job.MaxAttempts == 0 {
-		job.MaxAttempts = 3
+	var now time.Time
+	if err := normalizeJob(&job, func(job *Job) {
+		now = q.now().UTC()
+		if job.CreatedAt.IsZero() {
+			job.CreatedAt = now
+		} else {
+			job.CreatedAt = job.CreatedAt.UTC()
+		}
+		if job.ScheduledAt.IsZero() {
+			job.ScheduledAt = now
+		} else {
+			job.ScheduledAt = job.ScheduledAt.UTC()
+		}
+	}); err != nil {
+		return err
 	}
 	payload := string(job.Payload)
 	if payload == "" {

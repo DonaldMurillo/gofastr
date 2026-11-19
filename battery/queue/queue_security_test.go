@@ -360,21 +360,21 @@ func TestRedisReclaimRedeliversExpired(t *testing.T) {
 // dead-letter/failed record or a log. Silent destruction permanently loses
 // durable work during producer-first rolling deploys and job-type typos.
 // Surfaces: DBQueue.workerLoop claim path (the eligibleTypes filter must keep
-// unknown types unclaimed), MemoryQueue.processJob (heap pop, no trace).
+// unknown types unclaimed), MemoryQueue.processJob (retains the job as
+// terminally failed with an ERROR log).
 //
-// CONTRACT-CONFLICT (flagged, not silently asserted as settled): DBQueue's
-// unknown-type branch (db.go "No handler, drop the row so it doesn't loop
-// forever") documents deletion as intended, so this test does NOT assert the
-// DB worker dead-letters unknown types; it pins the claim filter that today
-// keeps that branch unreachable through Start(). The memory surface has no
-// such defence and is the RED demonstration: the job vanishes with no log,
-// no dead-store entry, and no Stats signal.
+// DBQueue's claim filter keeps handler-less types pending (the fallback
+// dead-letter in db.go's "No handler" branch only covers a handler gone
+// between claim and run); MemoryQueue.processJob retains the popped job in
+// the dead set, where ListJobs/Stats see it and Replay can re-run it once
+// the handler ships. Both subtests pin that retention.
 // ============================================================================
 
 // TestUnknownTypeJobDropIsObservable covers the property at both worker
 // surfaces: the DB subtest pins that the worker claim path can never claim
-// (hence never Ack-destroy) a handler-less type; the memory subtest
-// demonstrates the silent destruction and asserts the observability contract.
+// (hence never Ack-destroy) a handler-less type; the memory subtest pins
+// that the worker retains a handler-less job as terminally failed instead
+// of silently dropping it.
 func TestUnknownTypeJobDropIsObservable(t *testing.T) {
 	t.Run("db claim filter keeps unknown types pending", func(t *testing.T) {
 		db, q := openDBQueue(t, 1)
@@ -417,7 +417,7 @@ func TestUnknownTypeJobDropIsObservable(t *testing.T) {
 		}
 	})
 
-	t.Run("memory worker drop leaves no trace", func(t *testing.T) {
+	t.Run("memory worker retains unknown types as failed", func(t *testing.T) {
 		q := NewMemoryQueue(1)
 		t.Cleanup(func() { _ = q.Close() })
 		ctx := context.Background()
@@ -430,8 +430,8 @@ func TestUnknownTypeJobDropIsObservable(t *testing.T) {
 		q.Start()
 
 		// Equal priority, FIFO order: the worker pops the unknown-type job
-		// first, silently drops it in processJob, then runs the sentinel.
-		// Sentinel completion is the deterministic proof the drop happened.
+		// first, retains it as terminally failed in processJob, then runs
+		// the sentinel. Sentinel completion proves the pop happened.
 		if err := q.Enqueue(ctx, Job{ID: "ghost", Type: "email.send"}); err != nil {
 			t.Fatalf("enqueue unknown-type job: %v", err)
 		}
@@ -439,7 +439,7 @@ func TestUnknownTypeJobDropIsObservable(t *testing.T) {
 			t.Fatalf("enqueue sentinel: %v", err)
 		}
 		waitFor(t, func() bool { return sentinelDone.Load() >= 1 }, 5*time.Second,
-			"sentinel job never processed; unknown-type drop not observed")
+			"sentinel job never processed; unknown-type handling not observed")
 
 		failed, err := q.ListJobs(ctx, "failed", 100, 0)
 		if err != nil {
@@ -450,8 +450,8 @@ func TestUnknownTypeJobDropIsObservable(t *testing.T) {
 			t.Fatalf("stats: %v", err)
 		}
 		if len(failed) == 0 && stats["failed"] == 0 {
-			t.Fatalf("unknown-type job %q was destroyed by the worker with no observable trace: "+
-				"ListJobs(failed)=%d, Stats[failed]=%d — a producer-first deploy loses every such job",
+			t.Fatalf("unknown-type job %q was dropped instead of retained: "+
+				"ListJobs(failed)=%d, Stats[failed]=%d — a producer-first deploy would lose every such job",
 				"ghost", len(failed), stats["failed"])
 		}
 	})
@@ -601,27 +601,15 @@ func TestSQLiteDequeueConcurrentNoBusy(t *testing.T) {
 // Surface: DBQueue.Nack claim fencing (redis twin pinned by
 // TestRedisStaleNackCannotTouchReclaimant).
 //
-// DB-NACK-UNFENCED: the DB backend's lease-expiry clause (eligibleWhere:
-// "status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $cutoff AND
-// attempts < max_attempts") re-claims a row whose worker is still running,
-// so a stale claimant is a designed state on this backend — exactly the
-// condition queue.go's Nack contract describes ("Backends with lease fencing
-// (RedisQueue) verify Job.ClaimToken and treat a stale claim's Nack as a
-// no-op"). RedisQueue.Nack enforces it via ownsClaim/Job.ClaimToken
-// (redis.go); DBQueue.Nack does not: both arms UPDATE by bare job ID
-// (db.go: no-backoff "SET status = CASE WHEN attempts >= max_attempts THEN
-// 'failed' ELSE 'pending' END WHERE id = $1"; backoff "SET status='pending',
-// scheduled_at=$1 WHERE id = $2") — no claim identity, and not even the
-// status='claimed' guard its own Ack carries. A stale W1 Nack therefore
-// flips W2's LIVE row to 'pending' (a third worker claims it and the handler
-// runs concurrently with W2 — duplicate emails/webhooks/charges) or to
-// 'failed' (dead-letters a job a live worker is executing).
-//
-// Note: db.go's Ack doc acknowledges "DBQueue has no per-claim fencing (no
-// ClaimToken column), so a stale Ack ... still deletes that claim, within
-// the at-least-once contract". That rationale covers Ack's delete direction
-// (lossy completion); the Nack arms go the opposite way — they manufacture a
-// duplicate in-flight delivery — and no doc blesses that.
+// The DB backend's lease-expiry clause (eligibleWhere: "status='claimed' AND
+// claimed_at IS NOT NULL AND claimed_at <= $cutoff AND attempts <
+// max_attempts") re-claims a row whose worker is still running, so a stale
+// claimant is a designed state on this backend. DBQueue.Nack settles through
+// settleFailure, whose SELECT and both UPDATE arms carry
+// "status='claimed' AND claim_token = $N": a stale claimant's Nack matches
+// no row and is the fenced no-op queue.go's Nack contract describes
+// ("Backends with lease fencing ... verify Job.ClaimToken and treat a stale
+// claim's Nack as a no-op").
 // ============================================================================
 
 // TestDBStaleNackCannotTouchReclaimant is the DB twin of
@@ -683,13 +671,9 @@ func TestDBStaleNackCannotTouchReclaimant(t *testing.T) {
 				t.Fatalf("row vanished under stale nack: %v", err)
 			}
 			if status != "claimed" {
-				t.Fatalf("SECURITY: [queue] stale claimant's Nack mutated the live "+
-					"claim: row status = %q, want \"claimed\" (W2 in flight, attempts=%d/%d). "+
-					"The DB Nack arms UPDATE by bare job ID with no claim fence, so a "+
-					"stale worker re-enqueues or dead-letters the re-claimant's job and "+
-					"the handler runs concurrently twice. The redis twin fences this via "+
-					"Job.ClaimToken (TestRedisStaleNackCannotTouchReclaimant).",
-					status, w2.Attempts, tc.maxAttempts)
+				t.Fatalf("SECURITY: [queue] after stale Nack, job %q has status %q, want \"claimed\". "+
+					"The stale Nack must leave the current claim intact (attempt %d of %d).",
+					w2.ID, status, w2.Attempts, tc.maxAttempts)
 			}
 
 			// The stale nack must not have made the row re-claimable while W2
