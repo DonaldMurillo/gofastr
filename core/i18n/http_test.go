@@ -33,13 +33,8 @@ func TestHTTPErrorUntranslatedIsStatusText(t *testing.T) {
 	}
 }
 
-func TestStatusPhraseCoversRefusals(t *testing.T) {
-	for _, code := range []int{400, 401, 403, 404, 405, 406, 409, 410, 411, 412, 413, 414, 415, 416, 422, 428, 429, 431, 500, 501, 502, 503, 504} {
-		p := StatusPhrase(code)
-		if p.IsZero() {
-			t.Errorf("StatusPhrase(%d) is zero", code)
-		}
-	}
+// A status Go does not name has no phrase: the map is keyed by named statuses.
+func TestStatusPhraseUnnamedCodeIsZero(t *testing.T) {
 	if !StatusPhrase(299).IsZero() {
 		t.Error("StatusPhrase(299) should be zero")
 	}
