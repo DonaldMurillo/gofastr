@@ -77,8 +77,8 @@ the existing fallback HTML and HTTP status behavior do not change.
 ## Retired markup
 
 `TestHarness` also fails `t` when a rendered response carries markup
-the upgrade registry has retired: a class name or `data-cui-*`
-attribute no longer emitted by the kit. This is what catches the names
+the upgrade registry has retired. The check covers kit class and
+attribute names named by breaking migration notes. It catches names
 a source scan cannot see — a class built at run time
 (`fmt.Sprintf("ui-%s", kind)`), one read from the database, a template
 value. The failure reads:
@@ -93,13 +93,17 @@ Attribute values never match — `data-cui-comp="ui-sidebar"` is a kept
 component marker, not the retired `ui-sidebar` class — and a migrated
 spelling reports nothing.
 
+Class variants with a `--modifier` or `__element` suffix match the
+most specific retired class. Attribute names are matched using
+ASCII case folding.
+
 Every response on the app router is read by its `Content-Type`: full
 pages, navigation partials, deferred parts, 404/405/error documents,
 island RPC answers, and widget chrome are scanned as markup (`text/html`
 and `text/plain`, which the runtime applies to an html-mode signal as
-markup). JSON answers and widget `/state` snapshots are walked string
-by string, and each string holding a tag is scanned, so an island that
-renders a retired class only after a click still fails the test.
+markup). JSON answers and widget `/state` snapshots are scanned for
+markup in string values, including array entries and top-level strings.
+An island that renders a retired class only after a click still fails the test.
 Stylesheets, scripts, event streams, and downloads are not read, and a
 hijacked connection is dropped from the scan.
 

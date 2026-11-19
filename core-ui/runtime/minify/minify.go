@@ -67,6 +67,14 @@ import (
 	"unicode/utf8"
 )
 
+// ServedJS returns JavaScript as it goes on the wire, applying Minify when Enabled.
+func ServedJS(src string) string {
+	if !Enabled() {
+		return src
+	}
+	return Minify(src)
+}
+
 // Minify returns a shrunk-but-equivalent JavaScript source. The output
 // preserves the semantics of the input across every construct the
 // embedded runtime currently uses. Inputs that aren't valid JS produce

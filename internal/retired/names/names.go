@@ -6,7 +6,11 @@
 // stale, so it imports this package, never internal/retired.
 package names
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
+)
 
 // Note is the breaking migration note that retired a name: the release
 // that retired it and the change it describes.
@@ -40,7 +44,7 @@ func Keep(entries []Entry) []Entry {
 			}
 			classes[e.Name] = true
 		case "attr":
-			lower := strings.ToLower(e.Name)
+			lower := asciicase.Lower(e.Name)
 			if !kitAttr(lower) || attrs[lower] {
 				continue
 			}
@@ -59,10 +63,21 @@ func Keep(entries []Entry) []Entry {
 // only names in these namespaces are read as retired in rendered
 // markup; the source scan still reports the rest.
 func kitClass(name string) bool {
-	return strings.HasPrefix(name, "ui-") || strings.HasPrefix(name, "fui-")
+	return strings.HasPrefix(name, "ui-") || strings.HasPrefix(name, "fui-") || strings.HasPrefix(name, "cui-")
 }
 
 // kitAttr takes a lowercased attribute name.
 func kitAttr(lower string) bool {
 	return strings.HasPrefix(lower, "data-cui-") || strings.HasPrefix(lower, "data-fui-") || strings.HasPrefix(lower, "data-hui-")
+}
+
+// ClassMatches reports whether token is name or one of its BEM forms.
+func ClassMatches(token, name string) bool {
+	rest, ok := strings.CutPrefix(token, name)
+	return ok && (rest == "" || IsBEMSuffix(rest))
+}
+
+// IsBEMSuffix reports whether s starts at a BEM element or modifier boundary.
+func IsBEMSuffix(s string) bool {
+	return strings.HasPrefix(s, "__") || strings.HasPrefix(s, "--")
 }

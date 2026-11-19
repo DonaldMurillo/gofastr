@@ -39,10 +39,6 @@ var colorSchemeFS embed.FS
 //go:embed src/*.js
 var modulesFS embed.FS
 
-// nominify reports whether this process serves code unminified; the
-// rule (production wins, GOFASTR_DEV keeps it raw) is minify.Enabled.
-func nominify() bool { return !minify.Enabled() }
-
 // Cached minified payloads. Computed lazily on first read so the
 // minify pass runs at most once per source per process; subsequent
 // reads (and there are many, every page render) are pure map lookups.
@@ -111,11 +107,7 @@ func RuntimeJS() (string, error) {
 			bundleErr = err
 			return
 		}
-		if nominify() {
-			bundleData = raw
-			return
-		}
-		bundleData = minify.Minify(raw)
+		bundleData = minify.ServedJS(raw)
 	})
 	return bundleData, bundleErr
 }
@@ -181,11 +173,7 @@ func StaticJS() (string, error) {
 			staticErr = err
 			return
 		}
-		if nominify() {
-			staticData = raw
-			return
-		}
-		staticData = minify.Minify(raw)
+		staticData = minify.ServedJS(raw)
 	})
 	return staticData, staticErr
 }
@@ -242,11 +230,7 @@ func EmbedJS() (string, error) {
 			embedErr = err
 			return
 		}
-		if nominify() {
-			embedData = raw
-			return
-		}
-		embedData = minify.Minify(raw)
+		embedData = minify.ServedJS(raw)
 	})
 	return embedData, embedErr
 }
@@ -282,11 +266,7 @@ func EmbedLoaderJS() (string, error) {
 			embedLoaderErr = err
 			return
 		}
-		if nominify() {
-			embedLoaderData = string(raw)
-			return
-		}
-		embedLoaderData = minify.Minify(string(raw))
+		embedLoaderData = minify.ServedJS(string(raw))
 	})
 	return embedLoaderData, embedLoaderErr
 }
@@ -326,10 +306,7 @@ func ColorSchemeJS() (string, error) {
 			colorSchemeErr = err
 			return
 		}
-		colorSchemeSrc = string(data)
-		if !nominify() {
-			colorSchemeSrc = minify.Minify(colorSchemeSrc)
-		}
+		colorSchemeSrc = minify.ServedJS(string(data))
 	})
 	return colorSchemeSrc, colorSchemeErr
 }
@@ -362,7 +339,6 @@ func loadModules() {
 		modulesData = map[string]string{}
 		return
 	}
-	skip := nominify()
 	modulesData = make(map[string]string, len(entries))
 	for _, e := range entries {
 		n := e.Name()
@@ -374,11 +350,7 @@ func loadModules() {
 			continue
 		}
 		name := strings.TrimSuffix(n, ".js")
-		if skip {
-			modulesData[name] = string(raw)
-		} else {
-			modulesData[name] = minify.Minify(string(raw))
-		}
+		modulesData[name] = minify.ServedJS(string(raw))
 	}
 }
 

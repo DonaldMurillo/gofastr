@@ -8,6 +8,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -33,7 +34,7 @@ func TestRegisteredBehaviorIsAModule(t *testing.T) {
 	if !ok || !strings.Contains(src, "__probe") {
 		t.Fatalf("Module() = %q, %v", src, ok)
 	}
-	if nominify() {
+	if !minify.Enabled() {
 		if src != probeJS {
 			t.Fatalf("with minification off the source must be served as registered")
 		}

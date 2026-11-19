@@ -27,8 +27,8 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 	// budget therefore discovers their sources through the walk every
 	// clean-tree gate uses — check.RegisteredBehaviorSources follows the
 	// //go:embed beside each RegisterBehavior call in the tree — and
-	// holds each FILE to the same goal, minified through the production
-	// minifier under the same gate. A registration that escapes the
+	// holds each FILE to the same goal, using the production minifier
+	// regardless of the serving mode. A registration that escapes the
 	// inventory fails rather than skirting the budget: check's own
 	// TestRegisteredBehaviorSources_RefusesWhatItCannotRead pins that
 	// a source the walk cannot follow is an error (asserted below by
@@ -112,22 +112,22 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		t.Fatal("no registered behaviour sources found under the repo root: the walk is broken, not the tree empty")
 	}
 	for _, f := range sources {
-		raw, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatalf("read %s: %v", f, err)
-		}
-		src := string(raw)
-		if minify.Enabled() {
-			src = minify.Minify(src)
-		}
-		budget := ModuleGoalGZ
 		rel, _ := filepath.Rel(repoRoot, f)
-		if o, ok := behaviorOverrides[filepath.ToSlash(rel)]; ok {
-			budget = o
-		}
-		if got := gzipSize(t, src); got > budget {
-			t.Errorf("registered behaviour %s gzip = %d bytes — exceeds %d byte budget (goal %d): split or shrink the module", filepath.Base(f), got, budget, ModuleGoalGZ)
-		}
+		rel = filepath.ToSlash(rel)
+		t.Run(rel, func(t *testing.T) {
+			raw, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatalf("read %s: %v", f, err)
+			}
+			src := minify.Minify(string(raw))
+			budget := ModuleGoalGZ
+			if o, ok := behaviorOverrides[rel]; ok {
+				budget = o
+			}
+			if got := gzipSize(t, src); got > budget {
+				t.Errorf("gzip = %d bytes — exceeds %d byte budget (goal %d): split or shrink the module", got, budget, ModuleGoalGZ)
+			}
+		})
 	}
 }
 

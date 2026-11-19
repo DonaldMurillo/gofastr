@@ -1,11 +1,10 @@
 # Runtime JS and CSS minification
 
-GoFastr embeds its client-side runtime (`runtime.js` and the
-on-demand modules under `core-ui/runtime/src/*.js`) directly into the
-host-app binary via `//go:embed`. By default, every deployed binary
-ships the **minified** form of those scripts, typically 50% smaller
-raw and 50% smaller gzipped than the embedded source. The stylesheets
-the framework composes are minified under the same switch; see
+GoFastr embeds the JavaScript source for its runtime fragments and
+on-demand modules in the host-app binary. On first read it assembles
+the fragments into `runtime.js`, minifies the scripts by default, and
+caches the resulting payloads. The stylesheets the framework composes
+are minified under the same switch. See
 [Stylesheets](#stylesheets).
 
 The minifier is a token-aware JavaScript pass implemented in
@@ -19,9 +18,9 @@ a developer can still read in browser devtools, just compactly.
 
 ## When it runs
 
-The minifier is invoked once per source on first read (`sync.Once`),
-so the cost is paid at most once per process. Subsequent reads, and
-every page render hits the runtime, are pure map lookups.
+The runtime caches the served JavaScript after first use. Each serving
+path calls `minify.ServedJS` to apply the process-wide switch, and
+subsequent requests reuse the cached bytes.
 
 Whether the minifier runs at all is gated by env vars:
 
@@ -33,14 +32,13 @@ Whether the minifier runs at all is gated by env vars:
 | `RUNTIME_NOMINIFY=1`                                   | raw      |
 | `RUNTIME_MINIFY=1`                                     | minify   |
 
-`RUNTIME_NOMINIFY` and `RUNTIME_MINIFY` are manual overrides that
-trump the env detection, useful for reproducing a prod-only issue
-from a dev workstation, or for debugging an end-user app that
-otherwise auto-detects as production.
+`RUNTIME_NOMINIFY` and `RUNTIME_MINIFY` are manual overrides for
+debugging in either serving mode. If both are truthy,
+`RUNTIME_NOMINIFY` wins.
 
 The defaults follow a **"production wins"** rule: an end-user who
 simply `go build`s their app and runs the binary in production,
-without setting any env vars, and gets the minified runtime
+without setting any env vars gets the minified runtime
 automatically. Dev mode opts OUT via `GOFASTR_DEV=1`, the same env
 flag that already enables [livereload](dev-livereload.md).
 
@@ -55,7 +53,7 @@ Two HTTP routes are affected:
   route serves under the same gate
 
 Both return whichever form (raw or minified) the gating contract
-selected at process startup. The minified output is still a valid
+selected on first use. The minified output is still a valid
 ES2020+ IIFE; no source maps are emitted, but the code remains
 human-readable enough to set breakpoints in.
 
@@ -126,8 +124,12 @@ After minification (typical end-user deploy):
   level-1 gate sits 5,252 B past the 14 KiB initial congestion window,
   so a cold first load of the core takes a second round trip; each
   byte over 14 KiB is a named entry in that test
-- Every on-demand module: ≤ 3 KB gz each; a page only fetches the
-  modules whose markers it renders
+- On-demand modules have a default production goal of 3 KiB gzipped. Embedded
+  modules with individual ceilings are listed in `moduleOverrides` in
+  `core-ui/runtime/budget_test.go`. Registered behaviours with individual
+  ceilings are listed in `behaviorOverrides` in
+  `core-ui/runtime/internal/treegate/budget_test.go`. The registered-behaviour
+  gate measures minified bytes regardless of the serving mode.
 
 The SSE module is pinned more tightly at 1,128 B gz (1,126 measured)
 and 2,605 B minified (2,603 measured). Those bytes include capped,
@@ -158,8 +160,8 @@ A quick sanity check after deploying:
 curl -s https://your-app.example.com/__gofastr/runtime.js | head -c 80
 ```
 
-- Minified: starts with `(()=>{'use strict';try{const ua=…`
-- Raw:      starts with `// GoFastr Core-UI Runtime v0.4 — ES2020+…`
+- Minified starts with `(()=>{'use strict';let docEl=document.documentElement;`.
+- Raw starts with `// GoFastr Core-UI Runtime v0.4, ES2020+`.
 
 `/__gofastr/app.css` answers the same question for CSS: minified
 starts with `:root{--`, raw with `:root {` and a newline.

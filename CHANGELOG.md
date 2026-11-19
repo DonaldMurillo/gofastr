@@ -25,6 +25,15 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Retired-markup checks match what the browser sees.** Dev and test
+  checks use the most specific retired BEM class, fold HTML attribute
+  names by ASCII case only, scan JSON string values (never keys) for
+  markup, and a nil retired set no longer panics.
+- **The retired-markup table accepts retired `cui-*` classes** named by
+  a breaking note's `find:` block.
+- **Registered-behaviour size and loaded-flag checks use minified
+  JavaScript** in both development and production serving, and every
+  dev-mode check reads one `GOFASTR_ENV`/`GOFASTR_DEV` rule.
 - **Postgres view replacement rolls back even when the boot context is
   cancelled.** It runs through `db.InSavepoint`, and boot drops and
   recreates a plain view only after the failed replace rolled back and

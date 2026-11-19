@@ -4,13 +4,15 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 )
 
 // The color-scheme bootstrap is the one script that blocks first paint,
 // so it ships minified like every runtime module: its comments are
 // source documentation, not bytes a visitor waits on.
 func TestColorSchemeJSShipsMinified(t *testing.T) {
-	if nominify() {
+	if !minify.Enabled() {
 		t.Skip("minification disabled by the environment")
 	}
 	raw, err := os.ReadFile("colorscheme.js")

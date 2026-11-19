@@ -64,10 +64,7 @@ func behaviorModule(e *registry.BehaviorEntry) *servedBehavior {
 			return sb
 		}
 	}
-	src := e.Source
-	if !nominify() {
-		src = minify.Minify(src)
-	}
+	src := minify.ServedJS(e.Source)
 	sum := sha256.Sum256([]byte(src))
 	sb := &servedBehavior{sourceHash: e.SourceHash(), served: src, hash: hex.EncodeToString(sum[:8])}
 	behaviorCache.Store(e.Name, sb)
