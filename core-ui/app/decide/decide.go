@@ -16,6 +16,8 @@
 package decide
 
 import (
+	"net/http"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -44,6 +46,15 @@ func RenderAlt(factory func() component.Component) app.Decision {
 // locale.
 func Block(status int) app.Decision {
 	return app.Decision{Kind: app.DecisionBlock, Status: status}
+}
+
+// NotFound returns a Decision that answers 404 with exactly what a URL
+// no route matches gets: the host's not-found page, partial, problem
+// JSON or markdown, with no meta from the route. Use it to make a route
+// the caller may not see look like one that does not exist. Returned by
+// a region guard, it takes the whole page to 404.
+func NotFound() app.Decision {
+	return app.Decision{Kind: app.DecisionBlock, Status: http.StatusNotFound, NotFound: true}
 }
 
 // BlockWith is Block with the body naming reason, translated per

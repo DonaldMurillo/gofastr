@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -114,6 +116,10 @@ type Decision struct {
 	Status     int                        // populated for DecisionBlock
 	Reason     i18n.Phrase                // optional, for DecisionBlock
 	Params     map[string]any             // Reason's params
+	// NotFound marks a DecisionBlock (Status 404) that renders the
+	// not-found page an unmatched URL gets, instead of the status
+	// phrase. Set by decide.NotFound.
+	NotFound bool
 }
 
 // Decision values are constructed via the helpers in subpackage
@@ -233,8 +239,14 @@ func runPolicyPhase(ctx context.Context, screen *Screen, path string, chain []La
 		o.guards, o.redirect = ensureRegionGuards(ctx, screen, chain)
 	}
 	o.err = resolverPageError(ctx, path)
+	if o.err == nil && (o.decision.notFound() || o.redirect.notFound()) {
+		o.err = &PageError{Path: path, Err: ErrNotFound, NotFound: true, Policy: true}
+	}
 	return ctx, o
 }
+
+// notFound reports whether d is decide.NotFound's Block.
+func (d Decision) notFound() bool { return d.Kind == DecisionBlock && d.NotFound }
 
 // PatternPolicy decides a document about screen's route pattern rather
 // than one URL: the llm.md page index, a pattern doc, an action the
@@ -258,6 +270,9 @@ func (a *App) PatternPolicy(ctx context.Context, screen *Screen) Decision {
 	if len(extractParamNames(screen.Path)) == 0 {
 		ctx = WithMatch(ctx, newMatch(screen.Path, screen.Path, nil))
 		d, err := a.policyPhase(ctx, screen, screen.Path, nil)
+		if errors.Is(err, ErrNotFound) {
+			return Decision{Kind: DecisionBlock, Status: http.StatusNotFound, NotFound: true}
+		}
 		if err != nil {
 			return Decision{Kind: DecisionBlock}
 		}

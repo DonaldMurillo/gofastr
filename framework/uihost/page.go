@@ -131,10 +131,28 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		writeBlock(w, r, res)
 		return
 	}
-	ds.finishPageDocument(w, r, withRenderAlt(ctx, res), res.HTML, path, res.Component, pageStatus(res, recorded()))
+	ds.finishPageDocument(w, r, withOutcome(ctx, res), res.HTML, path, res.Component, pageStatus(res, recorded()))
 }
 
 type renderAltKey struct{}
+
+type notFoundPageKey struct{}
+
+func withNotFoundPage(ctx context.Context) context.Context {
+	return context.WithValue(ctx, notFoundPageKey{}, true)
+}
+
+func isNotFoundPage(ctx context.Context) bool {
+	nf, _ := ctx.Value(notFoundPageKey{}).(bool)
+	return nf
+}
+
+func withOutcome(ctx context.Context, res app.RenderResult) context.Context {
+	if res.NotFoundOutlet {
+		ctx = withNotFoundPage(ctx)
+	}
+	return withRenderAlt(ctx, res)
+}
 
 type staticExportKey struct{}
 
@@ -285,7 +303,7 @@ func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp comp
 }
 
 func (ds *UIHost) screenOwnHead(ctx context.Context, pagePath string, comp component.Component) string {
-	if ds.App == nil || pagePath == "" {
+	if ds.App == nil || pagePath == "" || isNotFoundPage(ctx) {
 		return ""
 	}
 	screen, _, ok := ds.App.Router.Resolve(pagePath)

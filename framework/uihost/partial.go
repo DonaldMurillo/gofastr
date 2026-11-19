@@ -143,7 +143,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		left := max(time.Until(sessionMinted.Add(sessionMaxAge)), 0)
 		w.Header().Set("X-Gofastr-Session-Expires-In", strconv.FormatInt(int64(left/time.Second), 10))
 	}
-	ds.writePartialResult(w, r, ctx, path, res, overlay, pageStatus(res, recorded()))
+	ds.writePartialResult(w, r, withOutcome(ctx, res), path, res, overlay, pageStatus(res, recorded()))
 }
 
 func (ds *UIHost) partialHead(ctx context.Context, path string, comp component.Component) render.HTML {

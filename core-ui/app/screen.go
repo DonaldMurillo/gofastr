@@ -184,6 +184,8 @@ type Screen struct {
 	// notFoundOutcome identifies the synthetic 404 page. A missing layout
 	// outlet must not replace its path-aware body with a pathless fallback.
 	notFoundOutcome bool
+	// errorOutcome identifies the synthetic error page.
+	errorOutcome bool
 
 	// NoLLMMD disables auto-generated /path/llm.md for this screen.
 	NoLLMMD bool

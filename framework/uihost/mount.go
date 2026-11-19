@@ -2,6 +2,7 @@ package uihost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -405,6 +406,9 @@ func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (stri
 	ctx = store.WithValues(ctx)
 	ctx, recorded := app.TrackStatus(ctx)
 	res, err := ds.App.RenderPageResult(ctx, path)
+	if pe, ok := errors.AsType[*app.PageError](err); ok && pe.Policy {
+		return "", nil, &PolicyBlockedError{Path: path, Decision: "not found"}
+	}
 	if err != nil {
 		return "", nil, err
 	}
