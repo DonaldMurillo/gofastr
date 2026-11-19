@@ -12,32 +12,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
-// ensurePingAttempts/ensurePingDelay bound the cold-start retry when EnsureDatabase
-// connects to the maintenance database. A database that has just started (e.g. a
-// freshly-launched container) can reset the first connection; a few short
-// retries ride that out without hanging if the server is genuinely unreachable.
 var (
 	ensurePingAttempts = 10
 	ensurePingDelay    = 250 * time.Millisecond
 )
 
-// sqlOpen is a seam so tests can substitute the admin connection.
 var sqlOpen = sql.Open
 
-// EnsureDatabase creates the target database if it does not already exist,
-// returning whether it had to create it. This is the "first migration can
-// create the DB" capability. Call it before running migrations.
-//
-//   - SQLite (and any file/embedded driver): a no-op. The database file is
-//     created automatically when the runner opens it, so there is nothing to
-//     do; returns (false, nil).
-//   - Postgres: connects to the maintenance `postgres` database (you cannot
-//     CREATE a database while connected to the one being created), checks
-//     pg_database, and issues CREATE DATABASE when absent. Requires the driver
-//     to be linked into the binary and the role to have CREATEDB.
-//
-// dsn is the normal target DSN (URL form `postgres://…/dbname` or keyword form
-// `host=… dbname=…`); EnsureDatabase derives the admin DSN from it.
+// EnsureDatabase creates the Postgres database dsn names when it is
+// missing and reports whether it did; for any other target it does nothing.
 func EnsureDatabase(driver, dsn string) (bool, error) {
 	if !isPostgresTarget(driver, dsn) {
 		return false, nil
@@ -60,11 +43,7 @@ func EnsureDatabase(driver, dsn string) (bool, error) {
 	return ensureDatabaseOn(context.Background(), admin, dbName, safeName)
 }
 
-// ensureDatabaseOn is the connection-agnostic core of EnsureDatabase: probe
-// pg_database on an already-open admin connection and CREATE DATABASE when
-// absent. Separated so it can be exercised without a live Postgres.
 func ensureDatabaseOn(ctx context.Context, admin *sql.DB, dbName, safeName string) (bool, error) {
-	// Tolerate a still-starting server. The first connection can reset.
 	if err := pingWithRetry(ctx, admin); err != nil {
 		return false, fmt.Errorf("ensure database: connect to maintenance db: %w", err)
 	}
@@ -77,18 +56,12 @@ func ensureDatabaseOn(ctx context.Context, admin *sql.DB, dbName, safeName strin
 	if exists {
 		return false, nil
 	}
-	// CREATE DATABASE cannot be parameterized; the name is validated by caller.
 	//gofastr:allow(quoteident) the DSN connects to its database name with the case kept
 	if _, err := admin.ExecContext(ctx, "CREATE DATABASE "+query.QuoteIdent(safeName)); err != nil {
-		// Another replica may have created it after our probe. Match the
-		// driver's SQLSTATE, never the server's localized error text.
 		var state interface{ SQLState() string }
 		if errors.As(err, &state) && state.SQLState() == "42P04" {
 			return false, nil
 		}
-		// Two concurrent creates can also collide on pg_database's unique
-		// index (23505). That is the same lost race only if the database
-		// exists now.
 		if errors.As(err, &state) && state.SQLState() == "23505" {
 			var nowExists bool
 			if qerr := admin.QueryRowContext(ctx,
@@ -101,8 +74,6 @@ func ensureDatabaseOn(ctx context.Context, admin *sql.DB, dbName, safeName strin
 	return true, nil
 }
 
-// pingWithRetry pings db up to ensurePingAttempts times, riding out the
-// connection resets a just-started database emits before it's ready.
 func pingWithRetry(ctx context.Context, db *sql.DB) error {
 	var err error
 	for i := 0; i < ensurePingAttempts; i++ {
@@ -122,8 +93,6 @@ func isPostgresTarget(driver, dsn string) bool {
 	return strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://")
 }
 
-// postgresAdminDSN returns the target database name and a DSN pointed at the
-// maintenance `postgres` database, for both URL and keyword DSN forms.
 func postgresAdminDSN(dsn string) (dbName, adminDSN string, err error) {
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
 		u, perr := url.Parse(dsn)
@@ -137,7 +106,6 @@ func postgresAdminDSN(dsn string) (dbName, adminDSN string, err error) {
 		u.Path = "/postgres"
 		return dbName, u.String(), nil
 	}
-	// Keyword form: host=… dbname=… user=…
 	fields := strings.Fields(dsn)
 	out := make([]string, 0, len(fields))
 	found := false
