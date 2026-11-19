@@ -270,9 +270,11 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 		win32.FrameChanged(main.hwnd)
 	}
 	if cfg.Tray != nil {
+		s.mu.Lock()
 		if s.trayTitle == "" {
 			s.trayTitle = cfg.Tray.Title
 		}
+		s.mu.Unlock()
 		s.installTray(cfg.Tray)
 	}
 	showNativeWindow(main)
@@ -1245,7 +1247,7 @@ func (s *winShell) openWebViewWindow(id string, spec desktop.WindowSpec, url str
 		}
 		title := spec.Title
 		if title == "" {
-			title = s.trayTitle
+			title = s.trayTitleSnapshot()
 		}
 		opened, createErr = s.createNativeWindow(id, title, width, height, spec.Style, spec.Frame, spec.SidebarWidth, windowStyleBits(spec.Style))
 		if createErr != nil || opened == nil {

@@ -268,6 +268,7 @@ func TestHandleRemoteIgnoresMalformedSignals(t *testing.T) {
 		t.Fatalf("SetFanout: %v", err)
 	}
 	defer stop()
+	attachment := store.attachment
 
 	malformed := [][]byte{
 		nil,
@@ -282,33 +283,33 @@ func TestHandleRemoteIgnoresMalformedSignals(t *testing.T) {
 					t.Fatalf("SECURITY: [access] handleRemote panicked on malformed payload #%d: %v", i, r)
 				}
 			}()
-			store.handleRemote(raw)
+			attachment.handleRemote(raw)
 		}()
 	}
 
 	// A well-formed envelope whose BODY is not the invalidate struct is
 	// dropped too (json.Unmarshal error), not treated as role "".
-	store.handleRemote(fanout.Wrap("foreign-node", []byte("garbage-body")))
-	store.dirtyMu.Lock()
-	dirty := len(store.dirty)
-	store.dirtyMu.Unlock()
+	attachment.handleRemote(fanout.Wrap("foreign-node", []byte("garbage-body")))
+	attachment.dirtyMu.Lock()
+	dirty := len(attachment.dirty)
+	attachment.dirtyMu.Unlock()
 	if dirty != 0 {
 		t.Errorf("malformed signals marked %d roles dirty, want 0", dirty)
 	}
 
 	// Control: a well-formed foreign signal for a role marks that role and
 	// the worker drains it.
-	store.handleRemote(fanout.Wrap("foreign-node", []byte(`{"role":"editor"}`)))
-	if !pollAccessUntil(2*time.Second, func() bool { return storeRoleDirtyCleared(store) }) {
+	attachment.handleRemote(fanout.Wrap("foreign-node", []byte(`{"role":"editor"}`)))
+	if !pollAccessUntil(2*time.Second, func() bool { return storeRoleDirtyCleared(attachment) }) {
 		t.Fatal("worker never drained the well-formed signal")
 	}
 }
 
 // storeRoleDirtyCleared reports whether the dirty set is empty.
-func storeRoleDirtyCleared(s *GrantStore) bool {
-	s.dirtyMu.Lock()
-	defer s.dirtyMu.Unlock()
-	return len(s.dirty) == 0
+func storeRoleDirtyCleared(a *grantFanout) bool {
+	a.dirtyMu.Lock()
+	defer a.dirtyMu.Unlock()
+	return len(a.dirty) == 0
 }
 
 // pollAccessUntil polls fn until true or the deadline passes.
@@ -349,7 +350,7 @@ func TestEmptyRoleSignalConvergesDrift(t *testing.T) {
 	}
 
 	// Foreign replica says "reload everything".
-	store.handleRemote(fanout.Wrap("foreign-node", []byte(`{"role":""}`)))
+	store.attachment.handleRemote(fanout.Wrap("foreign-node", []byte(`{"role":""}`)))
 
 	if !pollAccessUntil(3*time.Second, func() bool {
 		return len(policy.PermissionsOf("editor")) == 1
@@ -373,6 +374,7 @@ func TestSetFanoutStopThenLateActivityQuiet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetFanout: %v", err)
 	}
+	attachment := store.attachment
 	stop()
 	stop() // idempotent
 
@@ -383,9 +385,9 @@ func TestSetFanoutStopThenLateActivityQuiet(t *testing.T) {
 				t.Fatalf("SECURITY: [access] post-stop activity panicked: %v", r)
 			}
 		}()
-		store.publish("editor")                                      // send == nil path
-		store.handleRemote(fanout.Wrap("f", []byte(`{"role":"x"}`))) // dirty == nil path
-		store.handleRemote(fanout.Wrap("f", []byte(`{"role":""}`)))  // full-reload signal post-stop
+		store.publish("editor")
+		attachment.handleRemote(fanout.Wrap("f", []byte(`{"role":"x"}`)))
+		attachment.handleRemote(fanout.Wrap("f", []byte(`{"role":""}`)))
 	}
 	quiet()
 	quiet()
@@ -394,9 +396,6 @@ func TestSetFanoutStopThenLateActivityQuiet(t *testing.T) {
 	if len(got) != len(before) {
 		t.Errorf("policy mutated after stop: %v -> %v", before, got)
 	}
-	// Post-stop signals may still land in the (now workerless) dirty set;
-	// that is benign bookkeeping. What must hold — asserted above — is that
-	// no reload ran (policy unchanged) and nothing panicked.
 }
 
 // ---------------------------------------------------------------------------

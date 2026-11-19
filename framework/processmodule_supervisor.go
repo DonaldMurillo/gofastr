@@ -759,11 +759,13 @@ func (sl *moduleSlot) reconcile() {
 	sl.enabled = desired.Enabled
 	state := sl.state
 	childLive := sl.child != nil
-	if sl.leaseFailing {
-		sl.leaseFailing = false
+	leaseRecovered := sl.leaseFailing
+	sl.leaseFailing = false
+	sl.mu.Unlock()
+
+	if leaseRecovered {
 		sl.sup.logf("processmodule: %s lease recovered: re-arming", sl.name)
 	}
-	sl.mu.Unlock()
 
 	if genAdvanced && oldGen != 0 {
 		sl.resetCircuit()

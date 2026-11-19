@@ -25,6 +25,19 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Headless setup no longer deadlocks when a `Complete` or step
+  callback asks the runner a question,** and the setup URL and cookie
+  check read the token and secret under the runner's lock.
+- **Calling `GrantStore.SetFanout` a second time stops the first
+  attachment** instead of leaving two workers sharing one dirty queue. A
+  failed subscription keeps the active one.
+- **Module listing, remote module toggles, lease-recovery logging and
+  document-script scope callbacks run outside the framework's locks,**
+  so a callback that queries or updates the app no longer deadlocks.
+- **The Windows tray title is read and set under one lock** during
+  startup, tray install and secondary windows.
+- **The runtime manifest no longer reads the action map outside its
+  lock** while a screen's actions compile.
 - **`gofastr pack` keeps plugins registered as `&T{...}`, as a generic
   literal, or as the address of a generic literal.** These plugins used
   to be dropped from the packed spec without a word.
