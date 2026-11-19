@@ -467,6 +467,7 @@
       "auditTo": "Hasta",
       "auditUser": "Usuario",
       "badInput": "Rellena todos los campos que pide el formulario.",
+      "bodyTooLarge": "El cuerpo de la solicitud era demasiado grande.",
       "brandSub": "Back office",
       "bump": "Subir generación",
       "capability": "Capacidad",
