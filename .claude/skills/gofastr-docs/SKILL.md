@@ -161,15 +161,25 @@ was needed.
   `.claude/skills/gofastr-host/SKILL.md` recipe table + trigger
   phrases, then copy to `cmd/gofastr/internal/agentscmd/embedded/gofastr-host-skill.md`
   (`TestEmbeddedHostSkillMatchesRepo` pins the sync)
-- **Publish the GitHub Release: a pushed tag is NOT a release.** After
-  the PR merges, tag the merge commit AND run
-  `gh release create vX.Y.Z --title "…" --notes-file <the CHANGELOG
-  section>`. `git push origin vX.Y.Z` only creates a tag object; the
-  repo's Releases page (and anyone watching for releases) shows nothing
-  until the Release object exists. The release is not "done" at the
-  tag; it's done when `gh release view vX.Y.Z` succeeds and it reads
-  `Latest`. (v0.27.0 and v0.28.0 are tag-only for exactly this reason;
-  backfill them if the Releases page needs to be complete.)
+- **Keep the release section under 125,000 characters.** The release
+  workflow publishes the version's CHANGELOG section as the GitHub
+  release body, which GitHub caps there; v0.96.0's publish failed after
+  its gate had passed. Summarize the Fixed and Security lists per round
+  and link the full list at the roll commit, as v0.96.0 (535852ce0) and
+  v0.97.0 did. `TestChangelogSectionsFitReleaseBody` in
+  `internal/upgrade` fails while a released section is over the limit.
+- **Publish by pushing the tag, never by hand.** Merge the release PR
+  with a merge commit (the summary links the roll commit, which must
+  stay on main), then push `vX.Y.Z` on the current head of main once
+  its CI is green. The tag push runs `.github/workflows/release.yml`:
+  `scripts/release-gate.sh` refuses unless the tag is main's head, every
+  check in `scripts/release-required-checks.txt` passed on that commit,
+  and no release exists yet; then the workflow creates the release from
+  the CHANGELOG section and deploys the docs site. Never run
+  `gh release create` yourself: it bypasses the gate (how v0.61.0
+  shipped a red commit). A gate that refused once CI settled is re-run
+  with the workflow's `workflow_dispatch`. The release is done when the
+  Releases page shows `vX.Y.Z` as `Latest`.
 
 ## Hard rules
 
