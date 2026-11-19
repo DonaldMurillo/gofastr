@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"runtime/debug"
@@ -377,30 +378,15 @@ func New(cfg Config) *Battery {
 		panic(err.Error())
 	}
 	for i := range cfg.Widgets {
-		if err := validateWindowStyle(cfg.Widgets[i].Style); err != nil {
-			panic(err.Error())
-		}
-		if cfg.Widgets[i].SidebarWidth < 0 || cfg.Widgets[i].SidebarWidth > MaxSidebarWidth {
-			panic(fmt.Sprintf("desktop: Widgets[%d].SidebarWidth %d must be between 0 and %d", i, cfg.Widgets[i].SidebarWidth, MaxSidebarWidth))
-		}
+		validateConfiguredWindow(cfg.Widgets[i], fmt.Sprintf("Config.Widgets[%d]", i))
 	}
 	if cfg.Settings != nil {
-		if err := validateWindowStyle(cfg.Settings.Style); err != nil {
-			panic(err.Error())
-		}
-		if cfg.Settings.SidebarWidth < 0 || cfg.Settings.SidebarWidth > MaxSidebarWidth {
-			panic(fmt.Sprintf("desktop: Config.Settings.SidebarWidth %d must be between 0 and %d", cfg.Settings.SidebarWidth, MaxSidebarWidth))
-		}
+		validateConfiguredWindow(*cfg.Settings, "Config.Settings")
 	}
-	if cfg.SidebarWidth < 0 || cfg.SidebarWidth > MaxSidebarWidth {
-		panic(fmt.Sprintf("desktop: Config.SidebarWidth %d must be between 0 and %d", cfg.SidebarWidth, MaxSidebarWidth))
-	}
+	validateConfiguredSidebarWidth("Config", cfg.SidebarWidth)
 	prefs, err := newPreferences(nil, cfg.Preferences)
 	if err != nil {
 		panic(err.Error())
-	}
-	if cfg.Settings != nil && !validNavigatePath(cfg.Settings.Path) {
-		panic(fmt.Sprintf("desktop: Config.Settings.Path %q must be a same-origin absolute path (leading /, no scheme, no //, no control characters, no .. segments)", cfg.Settings.Path))
 	}
 	var tray *Tray
 	if cfg.Tray != nil {
@@ -602,6 +588,24 @@ func (b *Battery) Window() (Window, bool) {
 	return b.window, b.window != nil
 }
 
+const windowPathRequirements = "must be a same-origin absolute path (leading /, no scheme, no //, no control characters, no .. segments)"
+
+func validateConfiguredWindow(spec WindowSpec, field string) {
+	if !validNavigatePath(spec.Path) {
+		panic(fmt.Sprintf("desktop: %s.Path %q %s", field, spec.Path, windowPathRequirements))
+	}
+	if err := validateWindowStyle(spec.Style); err != nil {
+		panic(err.Error())
+	}
+	validateConfiguredSidebarWidth(field, spec.SidebarWidth)
+}
+
+func validateConfiguredSidebarWidth(field string, points int) {
+	if err := ValidateSidebarWidth(points); err != nil {
+		panic(fmt.Sprintf("desktop: %s.SidebarWidth %d: %s", field, points, err.Message))
+	}
+}
+
 // OpenWindow opens a secondary window on one of the app's own screens
 // (spec.Path is validated like a menu Navigate path). A window with
 // the same path that is already open is focused and returned, so the
@@ -610,13 +614,13 @@ func (b *Battery) Window() (Window, bool) {
 // order.
 func (b *Battery) OpenWindow(spec WindowSpec) (Window, error) {
 	if !validNavigatePath(spec.Path) {
-		return nil, &Error{Code: CodeInvalidInput, Message: "path must be a same-origin absolute path (leading /, no scheme, no //, no .. segments)"}
+		return nil, &Error{Code: CodeInvalidInput, Message: "path " + windowPathRequirements}
 	}
 	if err := validateWindowStyle(spec.Style); err != nil {
 		return nil, &Error{Code: CodeInvalidInput, Message: strings.TrimPrefix(err.Error(), "desktop: ")}
 	}
-	if spec.SidebarWidth < 0 || spec.SidebarWidth > MaxSidebarWidth {
-		return nil, &Error{Code: CodeInvalidInput, Message: fmt.Sprintf("sidebarWidth must be between 0 and %d", MaxSidebarWidth)}
+	if err := ValidateSidebarWidth(spec.SidebarWidth); err != nil {
+		return nil, err
 	}
 	// Serialize opens so two callers racing on the same path get one
 	// window and one Focus, not two windows.
@@ -816,20 +820,28 @@ func (b *Battery) removeWindowLocked(id string) {
 	}
 }
 
-// handleWindowFrame is WindowConfig.OnWindowFrame: the shell reported a
-// user move or resize. It runs on a goroutine (the delegate hands it
-// off), and the store debounces the write.
-func (b *Battery) handleWindowFrame(id string, f Frame) {
+func (b *Battery) handleWindowFrame(id string, source Window, f Frame) {
+	b.windowMu.Lock()
+	defer b.windowMu.Unlock()
+	w := b.windows[id]
+	if w == nil || (source != nil && (!reflect.ValueOf(source).Comparable() || w != source)) {
+		return
+	}
 	if s := b.winStore.Load(); s != nil {
 		s.setFrame(id, f)
 	}
 }
 
-func (b *Battery) onWindowFrame() func(id string, f Frame) {
+func (b *Battery) frameCallbacks(cfg *WindowConfig) {
 	if b.winStore.Load() == nil {
-		return nil
+		return
 	}
-	return b.handleWindowFrame
+	cfg.OnWindowFrame = func(id string, f Frame) {
+		b.handleWindowFrame(id, nil, f)
+	}
+	cfg.OnWindowFrameFrom = func(w Window, f Frame) {
+		b.handleWindowFrame(w.ID(), w, f)
+	}
 }
 
 func (b *Battery) rememberedFrame(id string) *Frame {
@@ -1118,7 +1130,7 @@ func (b *Battery) Run(app *framework.App) error {
 		b.logger.Error("desktop: the app server stopped while the window was open; closing it", "error", err)
 		b.shell.Quit()
 	}()
-	shellErr := b.shell.Run(ctx, WindowConfig{
+	windowCfg := WindowConfig{
 		AppID:      b.cfg.ID,
 		Title:      b.windowTitle(),
 		Width:      b.windowWidth(),
@@ -1138,12 +1150,13 @@ func (b *Battery) Run(app *framework.App) error {
 		AllowNavigation: b.allowNavigation,
 		OnDeepLink:      b.handleDeepLink,
 		Frame:           b.rememberedFrame(MainWindowID),
-		OnWindowFrame:   b.onWindowFrame(),
 		SidebarWidth:    b.cfg.SidebarWidth,
 		OnWindowFocus:   b.emitWindowFocus,
 		OnWindowBlur:    b.emitWindowBlur,
 		OnAppearance:    b.emitAppearance,
-	}, func(w Window) {
+	}
+	b.frameCallbacks(&windowCfg)
+	shellErr := b.shell.Run(ctx, windowCfg, func(w Window) {
 		b.windowMu.Lock()
 		b.window = w
 		b.windows[w.ID()] = w
@@ -1171,33 +1184,36 @@ func (b *Battery) Run(app *framework.App) error {
 		}
 	})
 
-	// The last state write happens here, after the shell returned and
-	if s := b.state.Load(); s != nil {
-		_ = s.Flush() // a failed write was already Warned inside
-	}
-
 	// Drain the app: Start returns once Shutdown completes.
 	closing.Store(true)
 	shutdownErr := b.shutdownApp()
+	var startResult error
 	select {
-	case err := <-startDone:
-		if shellErr != nil {
-			return shellErr
-		}
-		if err != nil {
-			return fmt.Errorf("desktop: app start returned: %w", err)
-		}
+	case startResult = <-startDone:
 	case <-time.After(runTimeout):
 		// Shutdown force-closed the server; Start should have returned.
 		// Do not block the exit path on it.
 	}
-	if shellErr != nil {
-		return shellErr
+	if startResult != nil {
+		startResult = fmt.Errorf("desktop: app start returned: %w", startResult)
 	}
 	if shutdownErr != nil {
-		return fmt.Errorf("desktop: shutdown: %w", shutdownErr)
+		shutdownErr = fmt.Errorf("desktop: shutdown: %w", shutdownErr)
 	}
-	return nil
+	var flushErr error
+	if err := b.state.Load().Flush(); err != nil {
+		flushErr = fmt.Errorf("desktop: flush app state: %w", err)
+	}
+	var errs []error
+	for _, err := range []error{shellErr, startResult, shutdownErr, flushErr} {
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) == 1 {
+		return errs[0]
+	}
+	return errors.Join(errs...)
 }
 
 // ManifestEnv, when set to "1" in the process environment, makes Run

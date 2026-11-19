@@ -20,8 +20,8 @@
 //     darwin/arm64 and darwin/amd64, the unsupported shell elsewhere.
 //   - battery/desktop/windows: the real shell on windows/amd64
 //     (Win32 + WebView2); unsupported elsewhere.
-//   - battery/desktop/linux: the unsupported shell today (WebKitGTK
-//     when its phase lands).
+//   - battery/desktop/linux: the real shell on linux/amd64 and linux/arm64
+//     (GTK 3 + WebKitGTK 4.1). Other Linux architectures are unsupported.
 //   - battery/desktop/native: Shell() picks the platform package by
 //     GOOS; New(cfg) is desktop.New with that shell as the default.
 //

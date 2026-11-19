@@ -348,7 +348,7 @@ type darwinShell struct {
 	allowNavigation func(url string) bool
 	// onWindowFrame reports user moves and resizes (the windowDidMove:
 	// and windowDidEndLiveResize: delegates), on a goroutine.
-	onWindowFrame func(id string, f desktop.Frame)
+	onWindowFrame func(desktop.Window, desktop.Frame)
 	// onWindowFocus and onWindowBlur report the key-window delegates
 	// (windowDidBecomeKey:/windowDidResignKey:), on a goroutine.
 	onWindowFocus func(id string)
@@ -503,7 +503,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	s.textCtx = textCtx
 	s.onWindowClosed = cfg.OnWindowClosed
 	s.allowNavigation = cfg.AllowNavigation
-	s.onWindowFrame = cfg.OnWindowFrame
+	s.onWindowFrame = cfg.WindowFrameReporter()
 	s.onWindowFocus = cfg.OnWindowFocus
 	s.onWindowBlur = cfg.OnWindowBlur
 	s.onAppearance = cfg.OnAppearance
@@ -585,16 +585,6 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	if framePlaced {
 		applyRememberedFrame(window, cfg.Frame)
 	}
-	objc.Send(window, objc.Sel("makeKeyAndOrderFront:"), 0)
-	if !framePlaced && (cfg.Style.X == nil || cfg.Style.Y == nil) {
-		// No explicit origin: the host default is centered.
-		objc.Send(window, objc.Sel("center"))
-	}
-	// The buttons exist once the title bar is real; the inset goes on
-	// after the window fronts and every delegate path re-applies it.
-	applyTrafficLightInset(window, cfg.Style.TrafficLightInset)
-	objc.Send(nsApp, objc.Sel("activateIgnoringOtherApps:"), 1)
-
 	main := &darwinWindow{shell: s, id: desktop.MainWindowID, window: window, webView: webView, ucc: ucc, title: cfg.Title, chrome: mainChrome}
 	s.mu.Lock()
 	s.window = window
@@ -604,6 +594,30 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	s.windowsByID[main.id] = main
 	s.windowsByUCC[ucc] = main
 	s.mu.Unlock()
+
+	order, activate := windowLaunchOrder(cfg.Style)
+	front := func() {
+		if win, _ := main.ids(); win == 0 {
+			return
+		}
+		objc.Send(window, objc.Sel(order), 0)
+		if !framePlaced && (cfg.Style.X == nil || cfg.Style.Y == nil) {
+			objc.Send(window, objc.Sel("center"))
+		}
+		applyTrafficLightInset(window, cfg.Style.TrafficLightInset)
+		if activate {
+			objc.Send(nsApp, objc.Sel("activateIgnoringOtherApps:"), 1)
+		}
+	}
+	if cfg.Style.Panel {
+		go func() {
+			if err := s.onMain(front); err != nil {
+				s.logger.Warn("desktop: showing the main panel failed", "error", err)
+			}
+		}()
+	} else {
+		front()
+	}
 
 	if cfg.Tray != nil {
 		s.installTray(cfg.Tray, trayRows)
@@ -654,6 +668,13 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	}
 	activeShell.Store(nil)
 	return nil
+}
+
+func windowLaunchOrder(style desktop.WindowStyle) (selector string, activate bool) {
+	if style.Panel {
+		return "orderFront:", false
+	}
+	return "makeKeyAndOrderFront:", true
 }
 
 // killPage stops a web view's loads and navigates it to an empty
@@ -1134,6 +1155,15 @@ func (w *darwinWindow) Title() string {
 
 // SetTitle changes this window's title.
 func (w *darwinWindow) SetTitle(title string) error {
+	return w.withLiveWindow(func(win objc.ID) {
+		objc.Send(win, objc.Sel("setTitle:"), uintptr(objc.NSString(title)))
+		w.mu.Lock()
+		w.title = title
+		w.mu.Unlock()
+	})
+}
+
+func (w *darwinWindow) withLiveWindow(fn func(objc.ID)) error {
 	if win, _ := w.ids(); win == 0 {
 		return errWindowClosed()
 	}
@@ -1144,10 +1174,7 @@ func (w *darwinWindow) SetTitle(title string) error {
 			closed = true
 			return
 		}
-		objc.Send(win, objc.Sel("setTitle:"), uintptr(objc.NSString(title)))
-		w.mu.Lock()
-		w.title = title
-		w.mu.Unlock()
+		fn(win)
 	})
 	if err != nil {
 		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
@@ -1160,27 +1187,10 @@ func (w *darwinWindow) SetTitle(title string) error {
 
 // Focus brings this window to front and activates the app.
 func (w *darwinWindow) Focus() error {
-	if win, _ := w.ids(); win == 0 {
-		return errWindowClosed()
-	}
-	s := w.shell
-	closed := false
-	err := s.onMain(func() {
-		win, _ := w.ids()
-		if win == 0 {
-			closed = true
-			return
-		}
+	return w.withLiveWindow(func(win objc.ID) {
 		objc.Send(win, objc.Sel("makeKeyAndOrderFront:"), 0)
-		objc.Send(s.appID(), objc.Sel("activateIgnoringOtherApps:"), 1)
+		objc.Send(w.shell.appID(), objc.Sel("activateIgnoringOtherApps:"), 1)
 	})
-	if err != nil {
-		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
-	}
-	if closed {
-		return errWindowClosed()
-	}
-	return nil
 }
 
 // Native returns this window's WKWebView object pointer.
@@ -1191,17 +1201,9 @@ func (w *darwinWindow) Native() uintptr {
 
 // Frame implements desktop.Window: the live frame, top-left screen points.
 func (w *darwinWindow) Frame() (desktop.Frame, error) {
-	if win, _ := w.ids(); win == 0 {
-		return desktop.Frame{}, errWindowClosed()
-	}
 	var f desktop.Frame
-	var ok bool
-	err := w.shell.onMain(func() { f, ok = w.readFrameOnMain() })
-	if err != nil {
-		return desktop.Frame{}, &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
-	}
-	if !ok {
-		return desktop.Frame{}, errWindowClosed()
+	if err := w.withLiveWindow(func(win objc.ID) { f = readFrameOnMain(win) }); err != nil {
+		return desktop.Frame{}, err
 	}
 	return f, nil
 }
@@ -1216,38 +1218,14 @@ func (w *darwinWindow) SetFrame(f desktop.Frame) error {
 	if f.Width <= 0 || f.Height <= 0 {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "frame width and height must be positive"}
 	}
-	if win, _ := w.ids(); win == 0 {
-		return errWindowClosed()
-	}
-	closed := false
-	err := w.shell.onMain(func() {
-		win, _ := w.ids()
-		if win == 0 {
-			closed = true
-			return
-		}
+	return w.withLiveWindow(func(win objc.ID) {
 		objc.SendRect(win, objc.Sel("setFrame:display:"), frameToRect(f, readScreens()), 1)
 		w.shell.reportWindowFrame(w)
 	})
-	if err != nil {
-		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
-	}
-	if closed {
-		return errWindowClosed()
-	}
-	return nil
 }
 
-// readFrameOnMain reads the live frame on the main thread (the
-// windowDidMove:/windowDidEndLiveResize: delegates and SetFrame run
-// there). The report to OnWindowFrame crosses to a goroutine so the
-// UI thread never waits on Go.
-func (w *darwinWindow) readFrameOnMain() (desktop.Frame, bool) {
-	win, _ := w.ids()
-	if win == 0 {
-		return desktop.Frame{}, false
-	}
-	return rectToFrame(objc.SendRectRet(win, objc.Sel("frame")), readScreens()), true
+func readFrameOnMain(win objc.ID) desktop.Frame {
+	return rectToFrame(objc.SendRectRet(win, objc.Sel("frame")), readScreens())
 }
 
 // reportWindowFrame hands the window's current frame to OnWindowFrame
@@ -1259,8 +1237,9 @@ func (s *darwinShell) reportWindowFrame(w *darwinWindow) {
 	if cb == nil {
 		return
 	}
-	if f, ok := w.readFrameOnMain(); ok {
-		deliverOnGoroutine(func() { cb(w.id, f) })
+	if win, _ := w.ids(); win != 0 {
+		f := readFrameOnMain(win)
+		deliverOnGoroutine(func() { cb(w, f) })
 	}
 }
 
@@ -1368,13 +1347,9 @@ func (s *darwinShell) OpenWindow(id string, spec desktop.WindowSpec, url string)
 		// A remembered (or explicit) frame wins over the style origin;
 		// one from a screen that is gone centers.
 		applyRememberedFrame(window, spec.Frame)
-		if spec.Style.Panel {
-			// A non-activating panel fronts without taking key or
-			// activating the app: a floating widget must not steal
-			// focus from whatever the user was doing.
-			objc.Send(window, objc.Sel("orderFront:"), 0)
-		} else {
-			objc.Send(window, objc.Sel("makeKeyAndOrderFront:"), 0)
+		order, activate := windowLaunchOrder(spec.Style)
+		objc.Send(window, objc.Sel(order), 0)
+		if activate {
 			objc.Send(s.appID(), objc.Sel("activateIgnoringOtherApps:"), 1)
 		}
 		applyTrafficLightInset(window, spec.Style.TrafficLightInset)

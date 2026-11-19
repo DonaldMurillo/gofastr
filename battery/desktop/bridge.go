@@ -369,14 +369,8 @@ func (b *Battery) authorizeCall(ctx context.Context, cap Capability, m Method) (
 	if m.Permission == "" {
 		return true, ""
 	}
-	decision, found, err := b.grants.Get(ctx, cap.Name, m.Permission)
-	if err != nil {
-		b.logger.Error("desktop: grant store read failed",
-			"capability", cap.Name, "permission", m.Permission, "error", err)
-		return false, CodeInternal
-	}
-	if found {
-		return decision == grantAllow, denyCode(decision)
+	if allowed, code, decided := b.lookupGrant(ctx, cap.Name, m.Permission); decided {
+		return allowed, code
 	}
 
 	// One alert at a time. The alert can stay up for minutes, so a call
@@ -391,14 +385,8 @@ func (b *Battery) authorizeCall(ctx context.Context, cap Capability, m Method) (
 	defer func() { <-b.promptSlot() }()
 	// Re-check under the lock: the request that held the mutex first
 	// may have persisted the decision already.
-	decision, found, err = b.grants.Get(ctx, cap.Name, m.Permission)
-	if err != nil {
-		b.logger.Error("desktop: grant store read failed",
-			"capability", cap.Name, "permission", m.Permission, "error", err)
-		return false, CodeInternal
-	}
-	if found {
-		return decision == grantAllow, denyCode(decision)
+	if allowed, code, decided := b.lookupGrant(ctx, cap.Name, m.Permission); decided {
+		return allowed, code
 	}
 
 	d, perr := b.shell.Prompt(ctx, PermissionRequest{
@@ -422,6 +410,19 @@ func (b *Battery) authorizeCall(ctx context.Context, cap Capability, m Method) (
 		b.persistGrant(ctx, cap.Name, m.Permission, grantDeny)
 		return false, CodeDenied
 	}
+}
+
+func (b *Battery) lookupGrant(ctx context.Context, capability, permission string) (allowed bool, code string, decided bool) {
+	decision, found, err := b.grants.Get(ctx, capability, permission)
+	if err != nil {
+		b.logger.Error("desktop: grant store read failed",
+			"capability", capability, "permission", permission, "error", err)
+		return false, CodeInternal, true
+	}
+	if !found {
+		return false, "", false
+	}
+	return decision == grantAllow, denyCode(decision), true
 }
 
 // persistGrant writes the user's decision on a context the page cannot

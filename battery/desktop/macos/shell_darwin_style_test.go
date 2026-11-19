@@ -60,6 +60,23 @@ func TestStyleWindowLevel(t *testing.T) {
 	}
 }
 
+func TestWindowLaunchOrder(t *testing.T) {
+	for _, tc := range []struct {
+		panel    bool
+		selector string
+		activate bool
+	}{
+		{false, "makeKeyAndOrderFront:", true},
+		{true, "orderFront:", false},
+	} {
+		order, activate := windowLaunchOrder(desktop.WindowStyle{Panel: tc.panel})
+		if order != tc.selector || activate != tc.activate {
+			t.Errorf("panel=%t: launch order = %q, activate = %t, want %q, %t",
+				tc.panel, order, activate, tc.selector, tc.activate)
+		}
+	}
+}
+
 func TestStyleFrameOrigin(t *testing.T) {
 	x, y := 40, 100
 	// AppKit's bottom-left origin from a top-left based Y on a screen

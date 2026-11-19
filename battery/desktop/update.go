@@ -263,11 +263,7 @@ func (b *Battery) CheckForUpdates(ctx context.Context) (Update, error) {
 	if err := ctx.Err(); err != nil {
 		return Update{}, ErrCancelled
 	}
-	r, err := b.updaterFor().resolve(ctx)
-	if err != nil {
-		return Update{}, err
-	}
-	return Update{Available: r.newer, Version: r.release.Version, Notes: clipNotes(r.release.Notes)}, nil
+	return b.updaterFor().check(ctx)
 }
 
 // clipNotes bounds the feed's notes before they reach the page.
@@ -290,9 +286,17 @@ type resolved struct {
 // resolves this platform's entry. Nothing it returns or logs carries
 // the feed URL: the sentinel errors' text is fixed words, by design
 // (the controlbytes posture applied at the source).
-func (u *updater) resolve(ctx context.Context) (resolved, error) {
+func (u *updater) resolve(ctx context.Context, platform update.Platform) (resolved, error) {
 	if u.pub == nil {
 		return resolved{}, errUpdateNotConfigured
+	}
+	running := platform.Version()
+	if running == "" {
+		return resolved{}, errUpdateNeedsBundle
+	}
+	if _, err := update.ParseVersion(running); err != nil {
+		u.b.logger.Warn("desktop: running app version is not a semantic version; updates are off")
+		return resolved{}, errUpdateRunningVersion
 	}
 	cfg := u.b.cfg.Update
 	fctx, cancel := context.WithTimeout(ctx, updateFeedTimeout)
@@ -319,19 +323,6 @@ func (u *updater) resolve(ctx context.Context) (resolved, error) {
 		return resolved{}, errUpdateFeedBad
 	}
 	rel := feed.Select(cfg.Channel)
-	running := u.platformOrDefault().Version()
-	if running == "" {
-		// An unbundled run has no version to compare and never
-		// updates.
-		return resolved{}, errUpdateNeedsBundle
-	}
-	// A running version the updater cannot parse is the bundle's fault,
-	// never the feed's: report it as such instead of "the feed is
-	// invalid" on every check.
-	if _, err := update.ParseVersion(running); err != nil {
-		u.b.logger.Warn("desktop: running app version is not a semantic version; updates are off")
-		return resolved{}, errUpdateRunningVersion
-	}
 	newer, err := update.IsNewer(rel.Version, running)
 	if err != nil {
 		u.b.logger.Warn("desktop: update feed version comparison failed", "error", err.Error())
@@ -388,7 +379,7 @@ func (u *updater) install(ctx context.Context) error {
 	if !ok {
 		return errUpdateNeedsBundle
 	}
-	r, err := u.resolve(ctx)
+	r, err := u.resolve(ctx, platform)
 	if err != nil {
 		return err
 	}
@@ -616,7 +607,7 @@ func (u *updater) removeStaleOld() {
 
 // loop runs the scheduled checks: first after firstUpdateCheckDelay,
 // then every interval, until the Run context ends. An unsupported host
-// (unbundled dev run, non-darwin) stops the loop after one look so the
+// stops the loop after one look so the
 // log is not spammed; every other failure is a Warn and retries next
 // interval. The check body is recover-guarded: a panic in a scheduled
 // goroutine must never take the app down (the recovercallback shape).
@@ -667,7 +658,11 @@ func (u *updater) checkAndNotify(ctx context.Context) (stop bool) {
 // check is CheckForUpdates without the nil-config guard (the loop only
 // runs with a config).
 func (u *updater) check(ctx context.Context) (Update, error) {
-	r, err := u.resolve(ctx)
+	platform := u.platformOrDefault()
+	if _, _, ok := platform.Bundle(); !ok {
+		return Update{}, errUpdateNeedsBundle
+	}
+	r, err := u.resolve(ctx, platform)
 	if err != nil {
 		return Update{}, err
 	}

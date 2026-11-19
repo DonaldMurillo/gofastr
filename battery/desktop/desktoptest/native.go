@@ -649,20 +649,7 @@ func (h *NativeHarness) Events() []Event {
 // WaitEvent waits for the next event named name that Events has not
 // handed out through an earlier WaitEvent, and returns it.
 func (h *NativeHarness) WaitEvent(name string) Event {
-	seen := h.eventsSeen
-	var got Event
-	h.Wait("event "+name, func() bool {
-		evs := h.Events()
-		for i := seen; i < len(evs); i++ {
-			if evs[i].Name == name {
-				got = evs[i]
-				h.eventsSeen = i + 1
-				return true
-			}
-		}
-		return false
-	})
-	return got
+	return waitEvent(h.tb, name, &h.eventsSeen, h.Events, h.Wait)
 }
 
 // ----- the native side (straight through NativeDriver) ---------------
@@ -812,11 +799,7 @@ func (h *NativeHarness) Notifications() []desktop.Notification {
 
 // WindowIDs lists the battery's live windows, main first.
 func (h *NativeHarness) WindowIDs() []string {
-	var ids []string
-	for _, w := range h.Battery.Windows() {
-		ids = append(ids, w.ID())
-	}
-	return ids
+	return windowIDs(h.Battery)
 }
 
 // Window returns the live window with the given id, or nil when there

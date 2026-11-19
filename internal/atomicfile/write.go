@@ -27,9 +27,32 @@ func WriteFile(path string, data []byte, prepare func(*os.File) error) (err erro
 	if fi, serr := os.Stat(path); serr == nil && fi.Mode().Perm()&0o200 == 0 {
 		return &fs.PathError{Op: "open", Path: path, Err: fs.ErrPermission}
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	_, err = writeFile(path, "."+filepath.Base(path)+".tmp-*", data, prepare, true)
+	return err
+}
+
+// WriteStage identifies the operation that failed during atomic replacement.
+type WriteStage uint8
+
+const (
+	WriteCreateTemp WriteStage = iota + 1
+	WritePrepareTemp
+	WriteData
+	writeSync
+	WriteCloseTemp
+	WriteReplace
+)
+
+// WriteFileNoFollow replaces the final directory entry, including a symlink,
+// with a prepared sibling temporary file without syncing. It returns the stage on failure.
+func WriteFileNoFollow(path string, data []byte, prepare func(*os.File) error) (WriteStage, error) {
+	return writeFile(path, ".gofastr-tmp-*", data, prepare, false)
+}
+
+func writeFile(path, pattern string, data []byte, prepare func(*os.File) error, sync bool) (stage WriteStage, err error) {
+	tmp, err := os.CreateTemp(filepath.Dir(path), pattern)
 	if err != nil {
-		return err
+		return WriteCreateTemp, err
 	}
 	defer func() {
 		if err != nil {
@@ -39,21 +62,26 @@ func WriteFile(path string, data []byte, prepare func(*os.File) error) (err erro
 	if prepare != nil {
 		if err = prepare(tmp); err != nil {
 			_ = tmp.Close()
-			return err
+			return WritePrepareTemp, err
 		}
 	}
 	if _, err = tmp.Write(data); err != nil {
 		_ = tmp.Close()
-		return err
+		return WriteData, err
 	}
-	if err = tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
+	if sync {
+		if err = tmp.Sync(); err != nil {
+			_ = tmp.Close()
+			return writeSync, err
+		}
 	}
 	if err = tmp.Close(); err != nil {
-		return err
+		return WriteCloseTemp, err
 	}
-	return Replace(tmp.Name(), path)
+	if err = Replace(tmp.Name(), path); err != nil {
+		return WriteReplace, err
+	}
+	return 0, nil
 }
 
 // Mode is a WriteFile prepare step that sets the file's permission bits

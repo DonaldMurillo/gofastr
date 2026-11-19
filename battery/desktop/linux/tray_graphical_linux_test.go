@@ -347,18 +347,18 @@ func exerciseTrayGraphical(ctx context.Context, role string, s *linuxShell, w *l
 	}
 	coalesced := false
 	if err := s.Main(func() {
-		state.showAboutMain()
-		first := state.about
-		state.showAboutMain()
-		coalesced = first != 0 && first == state.about
+		menuAction{window: w, plan: desktop.MenuItemPlan{Role: desktop.RoleAbout}}.activate()
+		first := w.about
+		state.action(trayAction{plan: desktop.MenuItemPlan{Role: desktop.RoleAbout}})
+		coalesced = first != 0 && first == w.about
 	}); err != nil {
 		return err
 	}
 	aboutOK := false
 	if err := s.Main(func() {
-		if state.about != 0 {
-			call(gtk.Sym.GtkWidgetDestroy, state.about)
-			aboutOK = state.about == 0
+		if w.about != 0 {
+			call(gtk.Sym.GtkWidgetDestroy, w.about)
+			aboutOK = w.about == 0
 		}
 	}); err != nil || !aboutOK || !coalesced {
 		return errors.New("tray About dialog did not coalesce and release on destruction")

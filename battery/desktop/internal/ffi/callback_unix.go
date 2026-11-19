@@ -1,4 +1,4 @@
-//go:build linux && (amd64 || arm64)
+//go:build (darwin || linux) && (amd64 || arm64)
 
 package ffi
 
@@ -7,14 +7,8 @@ import (
 	"unsafe"
 )
 
-// Args carries the C argument registers as seen at the moment a
-// trampoline was entered. Int holds the integer argument registers —
-// x0-x7 on arm64, DI/SI/DX/CX/R8/R9 on amd64, where Int[6] and Int[7]
-// stay zero because the ABI has only six. Float holds d0-d7 / X0-X7,
-// eight on both. Values passed on the C stack beyond the register set
-// are not captured; every callback signature in the desktop host —
-// GObject signal handlers, GTK callbacks, pthread start routines — fits
-// in registers.
+// Args carries the C argument registers on entry. Darwin/amd64 also captures
+// integer arguments 7–8 from the stack. Linux/amd64 leaves those slots zero.
 type Args struct {
 	Int   [8]uintptr
 	Float [8]float64
@@ -23,7 +17,7 @@ type Args struct {
 // callbackArgs is the frame the assembly trampoline builds on the stack
 // and hands to runtime.cgocallback, which hands its address to
 // callbackWrap. Field order and sizes must match the offsets spelled out
-// in the per-arch callback_linux_*.s (Args.Float lands at +72 on both):
+// in the platform's callback assembly:
 //
 //	index  uintptr at cbargs+0
 //	args   Args     at cbargs+8    (Int at +8, Float at +72)
@@ -49,16 +43,8 @@ func init() {
 	callbackWrapABI = *(*uintptr)(fv)
 }
 
-// MaxCallbacks bounds the trampoline table. Slots are never freed:
-// GObject closures and pthread start routines handed to C must stay
-// valid for the process lifetime.
+// MaxCallbacks bounds the trampoline table. Slots stay valid for the process lifetime.
 const MaxCallbacks = 64
-
-// entrySize, the byte length of one callbackasm table entry, is
-// per-arch: callback_linux_arm64.go and callback_linux_amd64.go each
-// declare it beside the assembly that fixes it. The self-test calls
-// entries 0 and 1 and asserts the delta, so a wrong constant fails
-// rather than dispatching to the wrong slot.
 
 var (
 	callbacksMu sync.Mutex
@@ -72,11 +58,8 @@ var (
 	callbackLen int
 )
 
-// ThreadCheck, when non-nil, runs inside every callback before the
-// registered Go function. The GTK shell installs a main-thread assertion
-// here so that a callback arriving on the wrong OS thread panics with
-// context instead of corrupting toolkit state. ffi itself stays free of
-// a toolkit dependency.
+// ThreadCheck, when non-nil, runs before callbacks registered with NewCallback.
+// The shell uses it to assert the callback runs on the toolkit thread.
 var ThreadCheck func()
 
 // NewCallback registers fn in a fixed slot and returns the address of
@@ -89,11 +72,8 @@ func NewCallback(fn func(args *Args) uintptr) uintptr {
 	return newCallback(fn, false)
 }
 
-// NewCallbackAnyThread is NewCallback for a callback the native side may
-// invoke on a thread Go did not create. The main-thread assertion is
-// skipped for it; fn must therefore be safe to run on any thread (signal
-// a channel, no GTK calls without a g_idle_add hop). A GIO async
-// completion and a libnotify server callback are both this shape.
+// NewCallbackAnyThread registers a callback that can run on any OS thread.
+// It skips ThreadCheck, so fn must be safe to run off the toolkit thread.
 func NewCallbackAnyThread(fn func(args *Args) uintptr) uintptr {
 	return newCallback(fn, true)
 }
@@ -111,12 +91,8 @@ func newCallback(fn func(args *Args) uintptr, free bool) uintptr {
 	return callbackasmAddr + uintptr(i)*entrySize
 }
 
-// callbackWrap is entered by runtime.cgocallback (as an ABIInternal
-// entry point, frame pointer in x0) on the stack of the goroutine that
-// was parked in the cgocall the C callback interrupted, or on a
-// freshly borrowed M when the calling thread is not one Go created. It
-// is declared here so go vet's asmdecl sees the symbol the assembly
-// references.
+// callbackWrap is the ABIInternal entry point runtime.cgocallback invokes on
+// the interrupted goroutine or a borrowed M for a foreign thread.
 func callbackWrap(a *callbackArgs) {
 	callbacksMu.Lock()
 	fn := callbacks[a.index]
@@ -131,13 +107,11 @@ func callbackWrap(a *callbackArgs) {
 	a.result = fn(&a.args)
 }
 
-// callbackasm is the trampoline table; callbackasm1 is the shared body.
-// Both are defined in the per-arch callback_linux_*.s and declared here for
-// asmdecl and for taking callbackasm's address via callbackasmAddr.
+// callbackasm is the trampoline table; callbackasm1 is its shared body.
+// The platform assembly defines both and its companion Go file sets entrySize.
 func callbackasm()
 
 func callbackasm1()
 
-// callbackasmAddr holds the address of callbackasm's first entry. It is
-// defined by the GLOBL/DATA pair in the per-arch callback_linux_*.s.
+// callbackasmAddr holds the address of callbackasm's first entry.
 var callbackasmAddr uintptr

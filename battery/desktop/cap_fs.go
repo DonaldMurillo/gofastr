@@ -87,7 +87,7 @@ func (b *Battery) fsCapability() Capability {
 					if !b.pathAllowed(req.Path) {
 						return nil, errPathNotAllowed
 					}
-					if err := writeFileAtomic(req.Path, []byte(req.Text)); err != nil {
+					if _, err := atomicfile.WriteFileNoFollow(req.Path, []byte(req.Text), fileperm.RestrictOpenFile); err != nil {
 						return nil, fsError(err)
 					}
 					return nil, nil
@@ -200,8 +200,7 @@ func fsError(err error) *Error {
 // between. That buys an attacker nothing here, a same-uid process can
 // read the file directly, and the page, which is the actual attacker in
 // this threat model, cannot create a symlink through any bridge method.
-// The write path is unaffected either way: writeFileAtomic finishes
-// with os.Rename, which does not follow a final symlink.
+// The write replaces the final directory entry, including a symlink.
 func (b *Battery) AllowPath(p string) error {
 	if !filepath.IsAbs(p) {
 		return errors.New("desktop: AllowPath requires an absolute path")
@@ -275,37 +274,6 @@ func (b *Battery) pathAllowed(p string) bool {
 		return resolvedOK
 	}
 	return true
-}
-
-// writeFileAtomic writes data to path via a 0600 temp file in the same
-// directory followed by os.Rename, so a crash never leaves a torn file
-// and a replaced file keeps the temp's 0600 mode.
-func writeFileAtomic(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".gofastr-desktop-*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	if err := fileperm.RestrictOpenFile(f); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	if err := atomicfile.Replace(tmp, path); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return nil
 }
 
 type fsTextOutput struct {

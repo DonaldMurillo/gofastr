@@ -647,8 +647,12 @@ func (h *Harness) BootRedirect() string { return h.bootRedirect }
 
 // WindowIDs lists the battery's live windows, main first.
 func (h *Harness) WindowIDs() []string {
+	return windowIDs(h.Battery)
+}
+
+func windowIDs(b *desktop.Battery) []string {
 	var ids []string
-	for _, w := range h.Battery.Windows() {
+	for _, w := range b.Windows() {
 		ids = append(ids, w.ID())
 	}
 	return ids
@@ -678,14 +682,21 @@ func (h *Harness) Events() []Event {
 // handed out through an earlier WaitEvent, and returns it.
 func (h *Harness) WaitEvent(name string) Event {
 	h.t.Helper()
-	seen := h.eventsSeen
+	return waitEvent(h.t, name, &h.eventsSeen, h.Events, h.Wait)
+}
+
+func waitEvent(t TB, name string, cursor *int, events func() []Event, wait func(string, func() bool)) Event {
+	if t != nil {
+		t.Helper()
+	}
+	seen := *cursor
 	var got Event
-	h.Wait("event "+name, func() bool {
-		evs := h.Events()
+	wait("event "+name, func() bool {
+		evs := events()
 		for i := seen; i < len(evs); i++ {
 			if evs[i].Name == name {
 				got = evs[i]
-				h.eventsSeen = i + 1
+				*cursor = i + 1
 				return true
 			}
 		}

@@ -2,7 +2,9 @@ package desktop_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/appstate"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/desktoptest"
 )
 
@@ -118,6 +121,67 @@ func TestStateStrangerRefused(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("stranger state call: %d, want 403", resp.StatusCode)
+	}
+}
+
+func TestStateCompactLimitDoesNotEscapeHTML(t *testing.T) {
+	app, d := wsApp(t, desktop.Config{Title: "S"}, t.TempDir(), nil)
+	h := desktoptest.Run(t, app, d)
+	value := strings.Repeat("<>&", 20000)
+	req, err := http.NewRequest(http.MethodPost, h.URL("/__gofastr/desktop/call/state/set"),
+		strings.NewReader(`{"key":"page.html","value":"`+value+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp := h.Do(req)
+	if resp.Status != http.StatusOK {
+		t.Fatalf("compact %d-byte value rejected: %d %s", len(value)+2, resp.Status, resp.Body)
+	}
+	if err := h.Quit(); err != nil {
+		t.Fatal(err)
+	}
+	s := appstate.Open(d.State().Path(), nil)
+	got, found, err := appstate.Get[string](s, "page.html")
+	if err != nil || !found || got != value {
+		t.Fatalf("reopened value length = %d, found = %t, err = %v", len(got), found, err)
+	}
+	raw, _, err := appstate.Get[json.RawMessage](s, "page.html")
+	if err != nil || len(raw) != len(value)+2 {
+		t.Fatalf("stored JSON length = %d, err = %v", len(raw), err)
+	}
+}
+
+func TestQuitFlushesStateWrittenByStopHook(t *testing.T) {
+	app, d := wsApp(t, desktop.Config{Title: "S"}, t.TempDir(), nil)
+	app.OnStop(func() error { return d.State().Set("page.late", "saved") })
+	h := desktoptest.Run(t, app, d)
+
+	if err := h.Quit(); err != nil {
+		t.Fatal(err)
+	}
+	s := appstate.Open(d.State().Path(), nil)
+	got, found, err := appstate.Get[string](s, "page.late")
+	if err != nil || !found || got != "saved" {
+		t.Fatalf("state on disk after Quit = %q, %t, %v", got, found, err)
+	}
+}
+
+func TestQuitReportsFinalStateWriteFailure(t *testing.T) {
+	app, d := wsApp(t, desktop.Config{Title: "S"}, t.TempDir(), nil)
+	stopErr := errors.New("stop hook failed")
+	app.OnStop(func() error {
+		if err := os.Mkdir(d.State().Path(), 0o700); err != nil {
+			t.Errorf("blocking the state file path: %v", err)
+		}
+		if err := d.State().Set("page.late", "saved"); err != nil {
+			t.Errorf("setting state: %v", err)
+		}
+		return stopErr
+	})
+	d.Shell().Quit()
+	if err := d.Run(app); !errors.Is(err, stopErr) || !strings.Contains(err.Error(), "flush app state") {
+		t.Fatalf("Quit = %v, want stop-hook and flush errors", err)
 	}
 }
 

@@ -124,7 +124,7 @@ type winShell struct {
 	onSettings  func(context.Context)
 	onClosed    func(string)
 	allowNav    func(string) bool
-	onFrame     func(string, desktop.Frame)
+	onFrame     func(desktop.Window, desktop.Frame)
 	onFocus     func(string)
 	onBlur      func(string)
 	onDeepLink  func(string)
@@ -214,7 +214,7 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 	s.onSettings = cfg.OnSettings
 	s.onClosed = cfg.OnWindowClosed
 	s.allowNav = cfg.AllowNavigation
-	s.onFrame = cfg.OnWindowFrame
+	s.onFrame = cfg.WindowFrameReporter()
 	s.onFocus = cfg.OnWindowFocus
 	s.onBlur = cfg.OnWindowBlur
 	s.onDeepLink = cfg.OnDeepLink
@@ -1217,8 +1217,8 @@ func (w *winWindow) reportFrame() {
 	f := frameFromWindowRect(w.hwnd, l, t, r, b)
 	w.frame = f
 	if w.shell.onFrame != nil {
-		onFrame, id := w.shell.onFrame, w.id
-		deliverOnGoroutine(func() { onFrame(id, f) })
+		onFrame := w.shell.onFrame
+		deliverOnGoroutine(func() { onFrame(w, f) })
 	}
 }
 

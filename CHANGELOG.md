@@ -25,6 +25,22 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Desktop quit keeps the last state write.** Quit now saves state
+  written by in-flight requests and stop hooks, and `Run` returns a
+  final save error alongside other teardown errors.
+- **Desktop windows ignore stale reports.** A delayed frame report from
+  a closed window, including an earlier instance of a reopened Settings
+  window, no longer restores or overwrites its frame. The state store
+  has one 64 KiB compact JSON limit without HTML escaping.
+- **Desktop config is checked like the runtime calls.** `New` refuses
+  invalid Settings and widget paths with the same grammar as
+  `OpenWindow`, and every sidebar-width check reports one range. Update
+  checks refuse an unbundled or unversioned app before contacting the
+  feed.
+- **Native shells.** macOS main windows configured as non-activating
+  panels open without taking key status; Linux shares one About dialog
+  between the app menu and the tray. The desktop guide's examples,
+  platform list and update feed keys match the code.
 - **The server-log guide lists every output.** `log.md` now documents
   the stderr console sink beside the file, webhook and JSON stream
   sinks, its three `Config.Console` modes, and how `NO_COLOR` affects
