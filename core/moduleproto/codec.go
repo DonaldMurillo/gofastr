@@ -11,52 +11,21 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
-// Codec cap constants (design §4.2). The scanner caps are the verbatim lift
-// from mcpclient: 64 KiB initial buffer growing to a 4 MiB ceiling. The
-// negotiated max_frame_bytes (default 1 MiB) is the protocol-level cap,
-// enforced on BOTH read and write: over-cap is a terminal fault, never a
-// truncation.
+// Frame-size and inflight limits.
 const (
-	// DefaultMaxFrameBytes is the default negotiated max_frame_bytes (1 MiB),
-	// mirroring core/mcp's maxMCPBodyBytes = 1<<20. A frame whose
-	// JSON-encoded length exceeds this is rejected as terminal on both ends.
 	DefaultMaxFrameBytes = 1 << 20
 
-	// scannerStartCap is the bufio.Scanner's initial buffer (64 KiB).
 	scannerStartCap = 64 * 1024
-	// scannerMaxCap is the bufio.Scanner's structural maximum (4 MiB). A
-	// line longer than this triggers bufio.ErrTooLong, which is terminal.
-	// The negotiated max_frame_bytes MUST be ≤ scannerMaxCap; the codec
-	// asserts this at construction.
-	scannerMaxCap = 4 * 1024 * 1024
+	scannerMaxCap   = 4 * 1024 * 1024
 
-	// DefaultMaxInflight is the default per-peer cap on in-flight originated
-	// requests (design §8: 32 leases/child). Over-cap is a clean
-	// call-local error ([ErrInflightCap]), not a protocol fault.
 	DefaultMaxInflight = 32
 )
 
-// ErrScannerOvercap wraps bufio.ErrTooLong so callers can distinguish a
-// scanner-structural overflow from a negotiated-cap overflow via [OvercapError].
+// ErrScannerOvercap marks a line past the scanner's 4 MiB structural cap.
 var ErrScannerOvercap = errors.New("moduleproto: scanner buffer overflow")
 
-// Codec is the full-duplex newline-delimited JSON framing layer (design §4.2).
-//
-// It is transport-neutral: it speaks to an [io.Reader] and [io.Writer] pair,
-// NOT specifically to os.Stdin / os.Stdout. The same Codec works for stdio
-// (v1) and a future v2 socket transport; the wire format is identical, only
-// the Reader/Writer change (design §1).
-//
-// Concurrency:
-//
-//   - Writes are mutex-guarded. Multiple goroutines may call [Codec.WriteFrame]
-//     concurrently; each frame is emitted atomically as JSON + '\n'.
-//   - Reads are NOT concurrency-safe: exactly one goroutine runs the read loop.
-//     This is the [Peer]'s readLoop goroutine.
-//
-// Over-cap policy (design §4.2): a frame exceeding max_frame_bytes on read or
-// write produces an [*OvercapError] and is terminal; the peer tears down. The
-// codec NEVER truncates; truncation would silently corrupt the wire.
+// Codec is newline-delimited JSON framing over a reader and a writer.
+// WriteFrame is safe for concurrent use; ReadFrame is for one goroutine.
 type Codec struct {
 	r    io.Reader
 	w    io.Writer
@@ -67,11 +36,8 @@ type Codec struct {
 	scan *bufio.Scanner
 }
 
-// NewCodec constructs a Codec over the given reader/writer pair. If
-// maxFrameBytes is <= 0, [DefaultMaxFrameBytes] is used. If maxFrameBytes is
-// greater than the structural scanner cap (4 MiB), construction fails; the
-// scanner itself would reject such frames at the wrong layer, so we surface
-// the configuration error early rather than at first frame.
+// NewCodec builds a Codec capped at maxFrameBytes (0 = 1 MiB). It errors
+// when the cap is above the 4 MiB scanner cap.
 func NewCodec(r io.Reader, w io.Writer, maxFrameBytes int) (*Codec, error) {
 	if maxFrameBytes <= 0 {
 		maxFrameBytes = DefaultMaxFrameBytes
@@ -83,7 +49,6 @@ func NewCodec(r io.Reader, w io.Writer, maxFrameBytes int) (*Codec, error) {
 		)
 	}
 	s := bufio.NewScanner(r)
-	// Verbatim lift from mcpclient: 64 KiB start, 4 MiB max.
 	s.Buffer(make([]byte, scannerStartCap), scannerMaxCap+2)
 	return &Codec{r: r, w: w, max: maxFrameBytes, scan: s}, nil
 }
@@ -91,18 +56,13 @@ func NewCodec(r io.Reader, w io.Writer, maxFrameBytes int) (*Codec, error) {
 // MaxFrameBytes returns the negotiated frame cap in bytes.
 func (c *Codec) MaxFrameBytes() int { return c.max }
 
-// WriteFrame encodes f as JSON, enforces the negotiated cap, and writes the
-// frame followed by a single '\n'. The write is mutex-guarded.
-//
-// On over-cap the frame is NOT written and [*OvercapError] is returned; the
-// caller (the Peer) treats this as a terminal protocol fault.
+// WriteFrame writes f and a newline in one Write. A frame past the cap is
+// not written and returns *OvercapError; after a partial write every later
+// write returns that write's error.
 func (c *Codec) WriteFrame(f *Frame) error {
 	return c.writeFrame(f, nil)
 }
 
-// writeFrame is WriteFrame with a hook. A non-nil locked runs once this
-// write holds the codec, before any byte of it reaches the counterparty,
-// or not at all when the frame never gets that far.
 func (c *Codec) writeFrame(f *Frame, locked func()) error {
 	if f == nil {
 		return fmt.Errorf("%w: nil frame", ErrInvalidFrame)
@@ -119,9 +79,6 @@ func (c *Codec) writeFrame(f *Frame, locked func()) error {
 	if locked != nil {
 		locked()
 	}
-	// Append newline into a single Write so a peer never observes a partial
-	// frame. bytes concat allocates, but stdio JSON frames are small and
-	// bounded by max_frame_bytes; the allocation is the cost of atomicity.
 	if c.werr != nil {
 		return c.werr
 	}
@@ -132,8 +89,6 @@ func (c *Codec) writeFrame(f *Frame, locked func()) error {
 	if err != nil {
 		err = fmt.Errorf("moduleproto: write: %w", err)
 		if n > 0 {
-			// Part of a frame reached the peer; anything written after
-			// it would read as the rest of that frame.
 			c.werr = err
 		}
 		return err
@@ -141,12 +96,8 @@ func (c *Codec) writeFrame(f *Frame, locked func()) error {
 	return nil
 }
 
-// ReadFrame reads the next newline-delimited frame. Returns [io.EOF] at a
-// clean end-of-stream. Any decode error, scanner overflow, or negotiated-cap
-// overflow is returned as a non-nil error that the Peer treats as terminal
-// (with the exception of io.EOF, which may be graceful).
-//
-// ReadFrame must be called from a single goroutine (the read loop).
+// ReadFrame reads the next frame: io.EOF at a clean end, *OvercapError past
+// the cap, ErrInvalidFrame for a repeated or case-folded key.
 func (c *Codec) ReadFrame() (*Frame, error) {
 	if !c.scan.Scan() {
 		if err := c.scan.Err(); err != nil {
@@ -159,24 +110,12 @@ func (c *Codec) ReadFrame() (*Frame, error) {
 	}
 	data := c.scan.Bytes()
 	if len(data) > c.max {
-		// Structural scanner cap (4 MiB) allowed the line through, but the
-		// negotiated protocol cap rejects it; still terminal.
 		return nil, &OvercapError{Size: len(data), Cap: c.max}
 	}
 	var f Frame
-	// Strict envelope pass before the stdlib decode: a frame whose
-	// object repeats a key, or carries two spellings of one key that
-	// differ only by case, reads two ways — a monitor or audit trail
-	// reading the first "method" sees one dispatch target while
-	// stdlib's last-wins fold hands the read loop another. Refuse it
-	// as ErrInvalidFrame, the terminal frame-level sentinel, under the
-	// same no-ambiguity rule handler.DecodeStrict documents (no key may
-	// repeat; no two keys may fold to one name).
 	if err := handler.CheckObjectKeys(data, handler.FoldJSONKey); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrInvalidFrame, err.Error())
 	}
-	// Decode into a copy of the bytes: json.Unmarshal will allocate for any
-	// json.RawMessage fields, so the Frame is safe across subsequent scans.
 	//gofastr:allow(GOFASTR1407) the CheckObjectKeys walk above refused duplicate and case-folded keys at every depth; this decode reads vetted bytes
 	if err := json.Unmarshal(data, &f); err != nil {
 		return nil, fmt.Errorf("moduleproto: decode: %w", err)
@@ -184,9 +123,7 @@ func (c *Codec) ReadFrame() (*Frame, error) {
 	return &f, nil
 }
 
-// EncodeJSON is a small helper for tests and for peers that need to encode a
-// typed value as json.RawMessage for Frame.Params. It enforces nothing about
-// size; callers composing raw Frames should check len against [Codec.MaxFrameBytes].
+// EncodeJSON marshals v, returning nil for nil.
 func EncodeJSON(v any) (json.RawMessage, error) {
 	if v == nil {
 		return nil, nil

@@ -158,6 +158,7 @@ var ownedPackages = []string{
 	"core/yaml",
 	"core/stream",
 	"internal/sseframe",
+	"core/moduleproto",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",

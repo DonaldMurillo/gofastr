@@ -29,6 +29,8 @@ twins:
         note: decodeRequest on the envelope and unmarshalMCPObject on params and arguments.
       - path: framework/experimental/harness/mcpclient/client.go
         note: readLoop on every line a spawned server sends.
+      - path: core/moduleproto/codec.go
+        note: Codec.ReadFrame on every host-to-module frame, refused as ErrInvalidFrame.
 invariants:
   - id: one-callback-error-rule
     rule: tools/call, prompts/get and resources/read decide which callback error crosses the transport in one function, callerFacingError, so an RPCError (wrapped or not) crosses as itself, a typed 4xx handler.Error crosses as invalid params with its code, and every other error is answered with a generic message.
