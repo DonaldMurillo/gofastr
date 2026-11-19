@@ -29,7 +29,8 @@ few lines, and link the PR or the docs page for the rest.
   serves a tool's `readOnlyHint`, `destructiveHint`, `idempotentHint`,
   `openWorldHint` and `title` in `tools/list`; `mcp.Bool(v)` sets a hint,
   and a nil hint is left out. Entity CRUD tools and the framework's own
-  tools now carry them, and `gofastr dev` logs a warning for any tool
+  tools now carry them, a process module sends them in
+  `moduleproto.Tool.Annotations`, and `gofastr dev` logs a warning for any tool
   missing one of the three hints ChatGPT's directory review requires. See
   [MCP server](framework/docs/content/mcp.md#tool-annotations).
   [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
@@ -353,6 +354,10 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **mcp: a `tools/call` with a malformed `_meta` is refused.** A `_meta`
+  that is a string, array or number, or longer than 64 KiB, was ignored;
+  it now answers `-32602` and the tool does not run.
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
 - **featureflag: `MemoryStore.Set` errors read like `SQLStore.Set`'s.** Both
   stores now check a flag through one function, so an empty key reads
   `featureflag: empty key` (was `flag: empty key`) and a bad `Users` entry

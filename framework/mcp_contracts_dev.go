@@ -30,6 +30,7 @@ func (a *App) registerContractDevTools() error {
 		description string
 		schema      map[string]any
 		handler     func(ctx context.Context, params map[string]any) (any, error)
+		hints       mcp.ToolOption
 	}{
 		{
 			name: "contracts_verify",
@@ -50,6 +51,7 @@ func (a *App) registerContractDevTools() error {
 				},
 			},
 			handler: a.toolContractsVerify,
+			hints:   readOnlyToolHints(),
 		},
 		{
 			name: "contracts_fix",
@@ -69,22 +71,19 @@ func (a *App) registerContractDevTools() error {
 				"required": []string{"rule"},
 			},
 			handler: a.toolContractsFix,
+			hints: mcp.WithAnnotations(mcp.Annotations{
+				ReadOnlyHint:    mcp.Bool(false),
+				DestructiveHint: mcp.Bool(true),
+				IdempotentHint:  mcp.Bool(false),
+				OpenWorldHint:   mcp.Bool(false),
+			}),
 		},
 	}
 	for _, t := range tools {
 		if a.skipDevEntityMCPCollision(t.name) {
 			continue
 		}
-		opts := []mcp.ToolOption{mcp.WithDevImplied(), readOnlyToolHints()}
-		if t.name == "contracts_fix" {
-			opts[1] = mcp.WithAnnotations(mcp.Annotations{
-				ReadOnlyHint:    mcp.Bool(false),
-				DestructiveHint: mcp.Bool(true),
-				IdempotentHint:  mcp.Bool(false),
-				OpenWorldHint:   mcp.Bool(false),
-			})
-		}
-		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
+		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, mcp.WithDevImplied(), t.hints); err != nil {
 			return fmt.Errorf("framework: register MCP contract dev tool %q: %w", t.name, err)
 		}
 	}

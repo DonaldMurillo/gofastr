@@ -18,9 +18,10 @@ invariants:
       - test: framework.TestModuleToolRegistry_DisabledGate
       - test: framework.TestGateForModule_nilSupervisorErrors
   - id: tool-digest-is-canonical
-    rule: ModuleToolDigest hashes the JSON of id, name, description and input_schema in that order, so any change to one of them changes the digest.
+    rule: ModuleToolDigest hashes the JSON of id, name, description and input_schema in that order, then annotations only when the tool sets them, so any change to one of them changes the digest and a tool without annotations hashes as it did before they existed.
     enforced_by:
       - test: framework.TestModuleToolDigest_Canonical
+      - test: framework.TestModuleToolDigestPinsAnnotations
   - id: not-serving-is-503
     rule: A proxied route or tool call reaches the child only when its state is Ready and its lease is healthy; otherwise a route answers a buffered 503 with Retry-After and a tool call is not ready.
     enforced_by:
@@ -56,6 +57,12 @@ invariants:
   - id: caller-block-is-diagnostic
     rule: The Subject and Tenant a proxied or tool call sends the child are diagnostic only; authority on the reverse path comes from the delegation handle.
     judge: Does this change make an authorization decision from a Subject or Tenant value the child echoes back?
+  - id: module-tool-hints-pass-through-checked
+    rule: RegisterTools serves a module tool's annotations as MCP annotations of the same JSON shape, and refuses the whole tool list, installing nothing, when a title is longer than 128 bytes or holds invalid UTF-8, a control character or an invisible character.
+    enforced_by:
+      - test: framework.TestModuleToolAnnotationsReachTheServer
+      - test: framework.TestModuleToolAnnotationsShapeMatchesMCP
+      - test: framework.TestModuleToolAnnotationsRefused
 decisions:
   - id: unregister-tools-is-a-no-op
     date: 2026-11-16
@@ -82,3 +89,13 @@ decisions:
       - option: Stream the response.
         why: A child that dies mid-call would leave a truncated 200 instead of a 503.
     upholds: [not-serving-is-503]
+  - id: digest-pins-module-hints
+    date: 2026-11-19
+    status: accepted
+    decision: ModuleToolDigest hashes a tool's annotations when it sets them, and omits the key when it does not.
+    rejected:
+      - option: Leave annotations out of the digest.
+        why: A child could mark a destructive tool read-only after the operator approved it, and clients skip their confirmation for read-only tools.
+      - option: Always hash an annotations key.
+        why: Every installed module's pinned digest would change and its handshake fail.
+    upholds: [tool-digest-is-canonical]

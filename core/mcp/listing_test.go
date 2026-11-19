@@ -3,7 +3,9 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
@@ -227,5 +229,91 @@ func TestContextWithRequestMetaCopies(t *testing.T) {
 	}
 	if RequestMeta(context.Background()) != nil {
 		t.Fatal("RequestMeta on a bare context is not nil")
+	}
+}
+
+type warnedTools struct {
+	mu    sync.Mutex
+	names []string
+}
+
+func (w *warnedTools) Enabled(context.Context, slog.Level) bool { return true }
+func (w *warnedTools) WithAttrs([]slog.Attr) slog.Handler       { return w }
+func (w *warnedTools) WithGroup(string) slog.Handler            { return w }
+func (w *warnedTools) Handle(_ context.Context, r slog.Record) error {
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == "tool" {
+			w.mu.Lock()
+			w.names = append(w.names, a.Value.String())
+			w.mu.Unlock()
+		}
+		return true
+	})
+	return nil
+}
+
+func (w *warnedTools) take() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := strings.Join(w.names, ",")
+	w.names = nil
+	return out
+}
+
+func TestAnnotationWarningsCoverEarlierTools(t *testing.T) {
+	warned := &warnedTools{}
+	prev := slog.Default()
+	slog.SetDefault(slog.New(warned))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	full := WithAnnotations(Annotations{ReadOnlyHint: Bool(true), DestructiveHint: Bool(false), OpenWorldHint: Bool(false)})
+
+	s := NewServer()
+	for name, opts := range map[string][]ToolOption{
+		"b_bare": nil, "a_bare": nil, "full": {full}, "dev_only": {WithDevImplied()},
+	} {
+		if err := s.RegisterTool(name, "", nil, noopTool, opts...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := warned.take(); got != "" {
+		t.Fatalf("warned before warnings were on: %v", got)
+	}
+	s.SetAnnotationWarnings(true)
+	if got := warned.take(); got != "a_bare,b_bare" {
+		t.Fatalf("turning warnings on warned %q, want each earlier unhinted tool once, in name order", got)
+	}
+	s.SetAnnotationWarnings(false)
+	s.SetAnnotationWarnings(true)
+	if err := s.RegisterTool("late_bare", "", nil, noopTool); err != nil {
+		t.Fatal(err)
+	}
+	if got := warned.take(); got != "late_bare" {
+		t.Fatalf("after a toggle the warnings were %q, want only the new tool", got)
+	}
+	s.UnregisterTool("a_bare")
+	if err := s.RegisterTool("a_bare", "", nil, noopTool); err != nil {
+		t.Fatal(err)
+	}
+	if got := warned.take(); got != "a_bare" {
+		t.Fatalf("a re-registered tool warned %q, want a_bare again", got)
+	}
+}
+
+func TestListedToolsCarryAnnotationCopies(t *testing.T) {
+	s := NewServer()
+	if err := s.RegisterTool("lookup", "", nil, noopTool, WithAnnotations(Annotations{ReadOnlyHint: Bool(true)})); err != nil {
+		t.Fatal(err)
+	}
+	*s.ListTools()[0].Annotations.ReadOnlyHint = false
+	listed, err := s.ListToolsFor(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !*listed[0].Annotations.ReadOnlyHint {
+		t.Fatal("a write through ListTools reached the stored tool")
+	}
+	*listed[0].Annotations.ReadOnlyHint = false
+	if got := listedTools(t, s)["lookup"]["annotations"].(map[string]any)["readOnlyHint"]; got != true {
+		t.Fatalf("a write through ListToolsFor reached tools/list: readOnlyHint = %v", got)
 	}
 }
