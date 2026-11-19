@@ -489,11 +489,6 @@ func formFieldCSS(_ style.Theme) string {
    control's row: the hint takes the first row of the control track
    and the label lines up with the control under it. */
 .fui-field:has(> .fui-field__hint) > .fui-field__label { grid-row: var(--fui-field-label-row, auto); }
-@media (max-width: 33rem) {
-  .fui-field { grid-template-columns: minmax(0, 1fr); }
-  .fui-field__hint, .fui-field__error { grid-column: auto; }
-  .fui-field:has(> .fui-field__hint) > .fui-field__label { grid-row: auto; }
-}
 .fui-field__label {
   align-self: center;
   font-weight: var(--font-weight-medium);
@@ -553,6 +548,15 @@ func formFieldCSS(_ style.Theme) string {
    anything is written into it, because :empty stops matching. */
 .fui-field__error:empty,
 .fui-field > [data-hui-field-error]:empty { display: none; }
+/* Below a stated width every field stacks, whatever the theme asked
+   for. After the placement rules above on purpose: at equal
+   specificity the later rule wins, and a hint or error left in column
+   2 of a one-column grid makes an implicit second column. */
+@media (max-width: 33rem) {
+  .fui-field { grid-template-columns: minmax(0, 1fr); }
+  .fui-field__hint, .fui-field__error, .fui-field > [data-hui-field-error] { grid-column: auto; }
+  .fui-field:has(> .fui-field__hint) > .fui-field__label { grid-row: auto; }
+}
 .fui-input {
   /* Fill the field track: the control track is minmax(0, 1fr), so an
      unsized <input> otherwise keeps its intrinsic ~20ch width

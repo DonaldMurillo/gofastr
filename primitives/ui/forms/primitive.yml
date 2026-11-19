@@ -271,6 +271,10 @@ invariants:
     rule: ui.Control writes AutoCapitalize as autocapitalize over NoSpellCheck off and panics on a value outside off, sentences, words and characters.
     enforced_by:
       - test: framework/ui.TestControlAutoCapitalize
+  - id: narrow-fields-stack
+    rule: Below 33rem every ui field is one column whatever the theme's field layout, its hint and error in that column (no implicit second track) and a hinted label in its own row, label then hint then control then error from top to bottom.
+    enforced_by:
+      - test: examples/site.TestE2E_HeadlessLanding_FieldLayoutsUnderConstraint
 decisions:
   - id: form-frame-is-its-own-component
     date: 2026-11-16
