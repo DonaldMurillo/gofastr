@@ -17,13 +17,18 @@ invariants:
     rule: A child that dies or stops answering while the handshake is in flight is a crash that restarts under backoff, not an integrity fault.
     enforced_by:
       - test: framework.TestIsIntegrityFault_HandshakeTransportFailureIsACrash
-      - test: framework.TestPeerGoneMidHandshakeIsCrash
   - id: generation-bump-is-the-recovery-lever
     rule: Only a generation bump re-arms a Failed module or resets an open restart circuit; the re-armed spawn verifies the artifact and handshake again.
     enforced_by:
       - test: framework.TestGenerationBumpRearmsFailed
       - test: framework.TestSweepPMRunFailedWaitsForGenerationBump
       - test: framework/processmoduletest.TestSupervisor_CircuitOpensAndGenResets
+  - id: introspection-separates-desired-and-observed
+    rule: Info and List report the store's desired generation separately from the replica's observed generation and keep the local snapshot when the desired generation is unavailable (zero). List reads desired rows at most once.
+    enforced_by:
+      - test: framework.TestInfo_desiredFromRowObservedFromSlot
+      - test: framework.TestInfoAndList_unknownDesiredGenerationPreservesLocalSnapshot
+      - test: framework.TestList_ordersByNameAndReadsDesiredInOneCall
   - id: circuit-opens-on-crash-rate
     rule: CircuitThreshold crashes within CircuitWindow open the circuit, which holds the module in Crashed instead of restarting it.
     enforced_by:

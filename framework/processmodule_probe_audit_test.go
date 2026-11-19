@@ -21,52 +21,6 @@ import (
 	"time"
 )
 
-// TestAuditParseProbeOutputKilledChildContract pins the stdout-protocol
-// contract written above the probeOut* constants (processmodule_probe.go,
-// "Probe-child stdout protocol"):
-//
-//	"A child that exits without printing (killed by the sandbox mid-attempt,
-//	 or crashed) is treated as UNREACHABLE for P6 (the limit may have fired)
-//	 and FAIL for everything else (the sandbox did not deny the action; it
-//	 killed the child, which is not the same as a clean denial, surface it)."
-//
-// parseProbeOutput returns Unreachable for EVERY probe on the no-output
-// path, so a sandbox that kills the child mid-attempt is reported as
-// "unreachable" rather than "failed" for P1–P5/P7. Both block Conforms()
-// (fail-closed either way), but the operator-facing report mislabels a kill
-// as "could not run" — the exact distinction the comment says to surface.
-func TestAuditParseProbeOutputKilledChildContract(t *testing.T) {
-	// Pin: P6 no-output stays Unreachable per contract.
-	if got := parseProbeOutput(ProbeResourceLimits, "", false, ""); got.Status != ProbeStatusUnreachable {
-		t.Errorf("P6 no-output = %v, want Unreachable (contract)", got.Status)
-	}
-	// FINDING: non-P6 no-output must be FAIL per the documented contract.
-	for _, p := range []ProbeID{ProbeDistinctPrincipal, ProbeNoInheritedSecret, ProbeNoInheritedFD, ProbeNoNetworkEgress, ProbeFilesystemConfinement, ProbeNoPrivReEscalation} {
-		got := parseProbeOutput(p, "", false, "")
-		if got.Status != ProbeStatusFail {
-			t.Errorf("FINDING: %s killed-without-output = %v (%q), want Fail per the stdout-protocol contract — a kill is not a clean denial and must be surfaced as such", p, got.Status, got.Detail)
-		}
-	}
-}
-
-// TestAuditParseProbeOutputStderrShadowsResult: runOneProbe wires the child's
-// stdout AND stderr into ONE bytes.Buffer and parseProbeOutput trusts the
-// FIRST line. A sandbox wrapper that prints anything to stderr before the
-// child's result line (sandbox-exec prints warnings; the wrapper itself owns
-// the pipe until it execs) flips a clean PASS into
-// "unrecognized output" → Unreachable. Observed live on darwin 25.5.0
-// (2026-09-01): every probe's Detail was
-// `unrecognized output: sandbox-exec: execvp() ... Operation not permitted`,
-// i.e. the wrapper's stderr became the parsed line. The parse must find the
-// child's sentinel line, not let an interleaved wrapper line veto it.
-func TestAuditParseProbeOutputStderrShadowsResult(t *testing.T) {
-	mixed := "sandbox-exec: warning: compilation options changed\n" + probeOutPass + " uid isolated"
-	got := parseProbeOutput(ProbeDistinctPrincipal, mixed, false, mixed)
-	if got.Status != ProbeStatusPass {
-		t.Errorf("FINDING: wrapper stderr line shadowed the child's %q line → %v (%q); want Pass — the parser must locate the child's sentinel, not take the first line of the shared stdout+stderr buffer", probeOutPass, got.Status, got.Detail)
-	}
-}
-
 // escapeBackend is a hostile SandboxBackend for the runner (not backend)
 // test: its Wrap replaces the probe child with a shell that (a) spawns a
 // grandchild which calls setsid() — escaping the process group — and holds

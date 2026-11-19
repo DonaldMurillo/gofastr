@@ -209,16 +209,6 @@ func TestBuildHTTPRequestParams_carriesQueryAndBody(t *testing.T) {
 	}
 }
 
-// ---- ProxyHandler ----
-
-func TestProxyHandler_returnsNonNil(t *testing.T) {
-	sup := newBareTestSupervisor(t, newTestStore(t), &TrustedProcessRunner{})
-	defer sup.Close(context.Background())
-	if h := sup.ProxyHandler("demo", "list"); h == nil {
-		t.Error("ProxyHandler returned nil")
-	}
-}
-
 // ---- Info / List / DeclaredRoutes (no spawn, Register installs the slot) ----
 
 func TestInfo_unknownModuleErrors(t *testing.T) {
@@ -248,6 +238,37 @@ func TestInfo_registeredModuleSnapshot(t *testing.T) {
 	}
 }
 
+func TestInfo_desiredFromRowObservedFromSlot(t *testing.T) {
+	store := newTestStore(t)
+	sup := newBareTestSupervisor(t, store, &TrustedProcessRunner{})
+	defer sup.Close(context.Background())
+	d := validDescriptor()
+	if _, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	// No StartLoops: this replica registered the row (gen 1) but never
+	// reconciled, so its slot still observes generation 0.
+	info, err := sup.Info(d.Name)
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if info.DesiredGeneration != 1 || info.ObservedGeneration != 0 {
+		t.Fatalf("Info generations = desired %d / observed %d, want 1 / 0 before reconcile", info.DesiredGeneration, info.ObservedGeneration)
+	}
+	// Another replica bumps the row; without a reconcile here the two
+	// generations must diverge, not both report the stale observed one.
+	if _, err := store.BumpGeneration(context.Background(), d.Name); err != nil {
+		t.Fatalf("bump: %v", err)
+	}
+	info, err = sup.Info(d.Name)
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if info.DesiredGeneration != 2 || info.ObservedGeneration != 0 {
+		t.Errorf("Info generations = desired %d / observed %d, want 2 / 0 after the row was bumped elsewhere", info.DesiredGeneration, info.ObservedGeneration)
+	}
+}
+
 func TestList_emptyReturnsEmpty(t *testing.T) {
 	sup := newBareTestSupervisor(t, newTestStore(t), &TrustedProcessRunner{})
 	defer sup.Close(context.Background())
@@ -256,8 +277,68 @@ func TestList_emptyReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestList_ordersByName(t *testing.T) {
-	store := newTestStore(t)
+type introspectionTestStore struct {
+	ProcessModuleStore
+	getCalls  int
+	listCalls int
+	readErr   error
+}
+
+func (s *introspectionTestStore) GetDesired(ctx context.Context, name string) (DesiredState, error) {
+	s.getCalls++
+	if s.readErr != nil {
+		return DesiredState{}, s.readErr
+	}
+	return s.ProcessModuleStore.GetDesired(ctx, name)
+}
+
+func (s *introspectionTestStore) ListDesired(ctx context.Context) ([]DesiredState, error) {
+	s.listCalls++
+	if s.readErr != nil {
+		return nil, s.readErr
+	}
+	return s.ProcessModuleStore.ListDesired(ctx)
+}
+
+func TestInfoAndList_unknownDesiredGenerationPreservesLocalSnapshot(t *testing.T) {
+	store := &introspectionTestStore{ProcessModuleStore: newTestStore(t)}
+	sup := newBareTestSupervisor(t, store, &TrustedProcessRunner{})
+	defer sup.Close(context.Background())
+	d := validDescriptor()
+	ctx := context.Background()
+	if _, err := sup.Register(ctx, d, ApprovedGrants{"articles:read"}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	sl := sup.Slot(d.Name)
+	sl.mu.Lock()
+	sl.desiredGen = 1
+	sl.leaseFailing = true
+	sl.mu.Unlock()
+	if _, err := store.BumpGeneration(ctx, d.Name); err != nil {
+		t.Fatalf("bump: %v", err)
+	}
+	store.readErr = errors.New("store unavailable")
+
+	info, err := sup.Info(d.Name)
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	list := sup.List()
+	if len(list) != 1 {
+		t.Fatalf("List = %+v, want one registered module", list)
+	}
+	for _, result := range []struct {
+		call string
+		info ProcessModuleInfo
+	}{{"Info", info}, {"List", list[0]}} {
+		if m := result.info; m.DesiredGeneration != 0 || m.ObservedGeneration != 1 || !m.LeaseFailing {
+			t.Errorf("%s = %+v, want desired unknown (0), observed 1 and LeaseFailing", result.call, m)
+		}
+	}
+}
+
+func TestList_ordersByNameAndReadsDesiredInOneCall(t *testing.T) {
+	store := &introspectionTestStore{ProcessModuleStore: newTestStore(t)}
 	sup := newBareTestSupervisor(t, store, &TrustedProcessRunner{})
 	defer sup.Close(context.Background())
 	for _, name := range []string{"zeta", "alpha", "mike"} {
@@ -273,13 +354,24 @@ func TestList_ordersByName(t *testing.T) {
 			t.Fatalf("register %s: %v", name, err)
 		}
 	}
+	if _, err := store.BumpGeneration(context.Background(), "mike"); err != nil {
+		t.Fatalf("bump: %v", err)
+	}
 	list := sup.List()
+	if store.listCalls != 1 || store.getCalls != 0 {
+		t.Errorf("List made %d bulk and %d single-row reads, want one bulk read", store.listCalls, store.getCalls)
+	}
 	if len(list) != 3 {
 		t.Fatalf("List len = %d, want 3", len(list))
 	}
 	if list[0].Name != "alpha" || list[1].Name != "mike" || list[2].Name != "zeta" {
 		names := []string{list[0].Name, list[1].Name, list[2].Name}
 		t.Errorf("List order = %v, want [alpha mike zeta]", names)
+	}
+	for i, want := range []uint64{1, 2, 1} {
+		if info := list[i]; info.DesiredGeneration != want || info.ObservedGeneration != 0 {
+			t.Errorf("%s generations = %d / %d, want %d / 0", info.Name, info.DesiredGeneration, info.ObservedGeneration, want)
+		}
 	}
 }
 

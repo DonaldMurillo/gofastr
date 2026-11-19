@@ -25,6 +25,10 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`ProcessModuleSupervisor.Info` and `List` report the store's desired
+  generation,** not the replica's own, so the admin Modules table shows a
+  replica that lags a bump. `DesiredGeneration` is 0 while the store
+  cannot be read. See [process modules](framework/docs/content/process-modules.md).
 - **`primitives lint` and `gen` agree on paths.** A trailing slash after a
   file name claims nothing, import rules take only literal Go package
   directories, and a commented-out analyzer import or a rule ID in a

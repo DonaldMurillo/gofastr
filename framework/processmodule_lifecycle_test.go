@@ -190,7 +190,7 @@ func TestRunnerRemovesScratchDir(t *testing.T) {
 	d := descriptorForChild(t, childModeCrashExit)
 	gone := func(what, instance string) {
 		t.Helper()
-		dir := filepath.Join(os.TempDir(), "gofastr-module-"+safeDirName(d.Name)+"-"+shortID(instance))
+		dir := filepath.Join(os.TempDir(), "gofastr-module-"+safeDirName(d.Name)+"-"+shortHash(instance))
 		if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
 			_ = os.RemoveAll(dir)
 			t.Errorf("%s: scratch dir %s survived (stat err %v)", what, dir, err)

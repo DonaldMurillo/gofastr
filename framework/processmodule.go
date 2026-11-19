@@ -122,8 +122,6 @@ func descErr(field, rule, msg string) *DescriptorValidationError {
 
 const moduleIdentPattern = "^[A-Za-z][A-Za-z0-9_-]*$"
 
-const idPattern = "^[A-Za-z][A-Za-z0-9_-]*$"
-
 const maxModuleGrants = 32
 
 const hexSHA256Len = 64
@@ -155,8 +153,8 @@ func ValidateProcessModuleDescriptor(d ProcessModuleDescriptor, approved Approve
 	seenRoute := make(map[string]string, len(d.Routes))
 	for i, r := range d.Routes {
 		prefix := fmt.Sprintf("routes[%d]", i)
-		if !matchID(r.ID) {
-			return nil, descErr(prefix+".id", "pattern", fmt.Sprintf("descriptor: route id %q must match %s", r.ID, idPattern))
+		if !matchIdent(r.ID) {
+			return nil, descErr(prefix+".id", "pattern", fmt.Sprintf("descriptor: route id %q must match %s", r.ID, moduleIdentPattern))
 		}
 		if _, dup := seenRoute[r.ID]; dup {
 			return nil, descErr(prefix+".id", "duplicate", fmt.Sprintf("descriptor: duplicate route id %q", r.ID))
@@ -176,8 +174,8 @@ func ValidateProcessModuleDescriptor(d ProcessModuleDescriptor, approved Approve
 	seenTool := make(map[string]struct{}, len(d.Tools))
 	for i, t := range d.Tools {
 		prefix := fmt.Sprintf("tools[%d]", i)
-		if !matchID(t.ID) {
-			return nil, descErr(prefix+".id", "pattern", fmt.Sprintf("descriptor: tool id %q must match %s", t.ID, idPattern))
+		if !matchIdent(t.ID) {
+			return nil, descErr(prefix+".id", "pattern", fmt.Sprintf("descriptor: tool id %q must match %s", t.ID, moduleIdentPattern))
 		}
 		if _, dup := seenTool[t.ID]; dup {
 			return nil, descErr(prefix+".id", "duplicate", fmt.Sprintf("descriptor: duplicate tool id %q", t.ID))
@@ -258,8 +256,6 @@ func matchIdent(s string) bool {
 	}
 	return true
 }
-
-func matchID(s string) bool { return matchIdent(s) }
 
 func isAlpha(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }

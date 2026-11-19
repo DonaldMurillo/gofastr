@@ -816,8 +816,10 @@ func (sl *moduleSlot) reconcile() {
 	}
 }
 
+const desiredStateReadTimeout = 2 * time.Second
+
 func (sl *moduleSlot) refreshDesired() (DesiredState, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), desiredStateReadTimeout)
 	defer cancel()
 	d, err := sl.getDesiredSafely(ctx)
 	if err == nil {
@@ -845,6 +847,15 @@ func (sl *moduleSlot) getDesiredSafely(ctx context.Context) (d DesiredState, err
 		}
 	}()
 	return sl.sup.store.GetDesired(ctx, sl.name)
+}
+
+func (s *ProcessModuleSupervisor) listDesiredSafely(ctx context.Context) (rows []DesiredState, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			rows, err = nil, fmt.Errorf("store ListDesired panic: %v\n%s", textsafe.Recovered(r), debug.Stack())
+		}
+	}()
+	return s.store.ListDesired(ctx)
 }
 
 var errLeaseExpired = errors.New("processmodule: state lease expired")
