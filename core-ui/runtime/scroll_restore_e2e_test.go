@@ -184,3 +184,79 @@ func TestReloadRestoresScrollViaSessionStorage(t *testing.T) {
 		t.Errorf("reload scrollY = %v, want ≈900 — manual scrollRestoration needs the sessionStorage path", y)
 	}
 }
+
+// TestScrollPersistsOncePerGesture: where the browser has scrollend, a
+// smooth scroll writes the stored position once, when it ends, instead
+// of every 150 ms while it runs, and the write holds where it ended.
+func TestScrollPersistsOncePerGesture(t *testing.T) {
+	srv := scrollSite(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+
+	var got struct {
+		Writes int     `json:"writes"`
+		Y      float64 `json:"y"`
+		Stored float64 `json:"stored"`
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/tall-a"),
+		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
+		chromedp.Evaluate(`(() => {
+			window.__writes = 0;
+			const set = Storage.prototype.setItem;
+			Storage.prototype.setItem = function (k, v) {
+				if (k === 'gofastr:scroll') window.__writes++;
+				return set.call(this, k, v);
+			};
+			window.scrollTo({ top: 3000, behavior: 'smooth' });
+		})()`, nil),
+		chromedp.Poll(`window.scrollY >= 2990`, nil, chromedp.WithPollingInterval(50*time.Millisecond)),
+		chromedp.Sleep(400*time.Millisecond),
+		chromedp.Evaluate(`(() => {
+			const st = JSON.parse(sessionStorage.getItem('gofastr:scroll')) || {};
+			return { writes: window.__writes, y: scrollY, stored: (st[history.state.__fui] || [0, 0])[1] };
+		})()`, &got),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if got.Writes != 1 {
+		t.Errorf("a smooth scroll persisted %d times, want 1 (on scrollend)", got.Writes)
+	}
+	if got.Stored != got.Y {
+		t.Errorf("stored scrollY = %v, want the final %v", got.Stored, got.Y)
+	}
+}
+
+// TestReloadRestoresScrollWithoutScrollEnd: a browser that never fires
+// scrollend still keeps a reloaded page's position, because pagehide
+// persists the store.
+func TestReloadRestoresScrollWithoutScrollEnd(t *testing.T) {
+	srv := scrollSite(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+
+	var y float64
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/tall-a"),
+		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
+		// Capture listeners at the target run first: the runtime never
+		// hears scrollend.
+		chromedp.Evaluate(`addEventListener('scrollend', (e) => e.stopImmediatePropagation(), { capture: true }); window.scrollTo(0, 900)`, nil),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(`(JSON.parse(sessionStorage.getItem('gofastr:scroll')) || {})[history.state.__fui] ? 1 : 0`, &y),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if y != 0 {
+		t.Fatalf("the position was stored before pagehide; scrollend was not blocked")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Reload(),
+		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(`window.scrollY`, &y),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if y < 700 || y > 1100 {
+		t.Errorf("reload scrollY = %v, want ≈900 from the pagehide write", y)
+	}
+}
