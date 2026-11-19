@@ -14,34 +14,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// PromptMessage is one message of a prompts/get result: the speaker role
-// ("user" or "assistant") and a content block. Content reuses the tools/call
-// block type (text, image, audio, embedded resource); build it with
-// TextContent / ImageContent / AudioContent / ResourceContent.
+// PromptMessage is one prompts/get message: a role ("user" or "assistant") and a content block.
 type PromptMessage struct {
 	Role    string  `json:"role"`
 	Content Content `json:"content"`
 }
 
-// PromptArgument is one argument a prompt accepts, as prompts/list
-// advertises it. Required arguments are validated on prompts/get: a request
-// missing one is refused with an invalid-params error before the handler
-// runs.
+// PromptArgument is an argument a prompt accepts; a Required one missing from prompts/get is refused before the handler runs.
 type PromptArgument struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Required    bool   `json:"required,omitempty"`
 }
 
-// PromptHandler produces a prompt's messages on prompts/get. It runs per
-// request, receiving the request context (auth/tenant enriched) and the
-// caller-supplied arguments.
+// PromptHandler produces a prompt's messages for the request context and arguments.
 type PromptHandler func(ctx context.Context, args map[string]string) ([]PromptMessage, error)
 
-// Prompt is a registered MCP prompt: a named template a client fills with
-// arguments and feeds to a model. Prompts are user-selected surfaces (the
-// spec imagines them as slash commands), distinct from tools, which the
-// model calls.
+// Prompt is a registered MCP prompt.
 type Prompt struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description,omitempty"`
@@ -51,33 +40,20 @@ type Prompt struct {
 	gate    func(ctx context.Context) error
 }
 
-// PromptOption customizes a prompt at registration time.
+// PromptOption customizes a prompt at registration.
 type PromptOption func(*Prompt)
 
-// WithPromptDescription sets a human/agent-readable description, shown in
-// prompts/list.
+// WithPromptDescription sets the description prompts/list shows.
 func WithPromptDescription(desc string) PromptOption {
 	return func(p *Prompt) { p.Description = desc }
 }
 
-// WithPromptArguments declares the arguments the prompt accepts. Each
-// argument marked Required is checked on prompts/get: a request omitting it
-// is refused with an invalid-params error before the handler runs.
+// WithPromptArguments declares the arguments the prompt accepts.
 func WithPromptArguments(args ...PromptArgument) PromptOption {
 	return func(p *Prompt) { p.Arguments = args }
 }
 
-// WithPromptGate attaches a per-caller precondition to a prompt. The gate
-// runs on every prompts/get before the handler, and is also evaluated
-// during prompts/list so a caller who cannot get the prompt does not see
-// it. This is the prompt-side analogue of [WithToolGate] (and
-// [WithResourceGate] on the resource side): same predicate on both the
-// listing and the get, so a prompt's description and argument list — which
-// can name internal concepts the way a tool's inputSchema does — are not
-// disclosed to a caller the gate would refuse.
-//
-// Prefer this over wrapping the handler yourself: battery/auth's
-// MCPUser() / MCPRole("admin") are ready-made gates.
+// WithPromptGate attaches a per-caller gate that hides the prompt from prompts/list and refuses prompts/get. It panics on a nil gate.
 func WithPromptGate(gate func(ctx context.Context) error) PromptOption {
 	if gate == nil {
 		panic("mcp.WithPromptGate: nil gate — a nil precondition would silently allow every caller")
@@ -85,14 +61,7 @@ func WithPromptGate(gate func(ctx context.Context) error) PromptOption {
 	return func(p *Prompt) { p.gate = gate }
 }
 
-// RegisterPrompt adds a prompt to the server. Registering at least one
-// prompt makes the server advertise the `prompts` capability in initialize.
-// Returns an error on empty name, nil handler, or a duplicate name.
-//
-// Prompts are NOT covered by the tool call gate (mcp.Gated gates tool
-// handlers, not prompts/get). A prompt with sensitive or per-caller content
-// should attach [WithPromptGate], which also hides it from prompts/list for
-// callers the gate refuses.
+// RegisterPrompt adds a prompt and advertises the prompts capability; it errors on an empty name, a nil handler or a duplicate name.
 func (s *Server) RegisterPrompt(name string, handler PromptHandler, opts ...PromptOption) error {
 	if name == "" {
 		return fmt.Errorf("mcp: prompt name must not be empty")
@@ -117,57 +86,32 @@ func (s *Server) RegisterPrompt(name string, handler PromptHandler, opts ...Prom
 	s.prompts[name] = p
 	s.mu.Unlock()
 
-	// Connected clients re-list. Before serving has begun this fans out
-	// to zero subscribers, so boot-time registration notifies nobody. The
-	// notice carries the prompt's own gate: a caller it refuses cannot
-	// list the prompt and is not told it appeared.
 	s.notifySubscribers(sseNotification{method: "notifications/prompts/list_changed", itemGate: p.gate})
 	return nil
 }
 
-// hasPrompts reports whether any prompt is registered (drives the prompts
-// capability advertisement).
 func (s *Server) hasPrompts() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.prompts) > 0
 }
 
-// promptsListResult is the result shape for prompts/list. The nextCursor
-// key is absent on the final page, and on every page when the whole
-// listing fits (the pre-pagination wire shape).
 type promptsListResult struct {
 	Prompts    []Prompt `json:"prompts"` //gofastr:required-array
 	NextCursor string   `json:"nextCursor,omitempty"`
 }
 
-// promptsGetParams are the params for a prompts/get request, per the MCP
-// spec: a prompt name and an arguments object (string values). The values
-// decode as pointers so a null is seen and refused: into a plain string it
-// decoded as "", and a required argument sent as null passed as provided.
 type promptsGetParams struct {
 	Name      string             `json:"name"`
 	Arguments map[string]*string `json:"arguments,omitempty"`
 }
 
-// promptsGetResult is the result shape for prompts/get: an optional
-// description and the prompt's messages.
 type promptsGetResult struct {
 	Description string          `json:"description,omitempty"`
 	Messages    []PromptMessage `json:"messages"` //gofastr:required-array
 }
 
-// handlePromptsList returns one page of the prompts visible to the
-// caller, in name order: a gated prompt (WithPromptGate) is omitted
-// rather than listed-and-refused, the same contract tools/list applies
-// to WithToolGate. The gate runs BEFORE the page is cut, so pagination
-// walks the post-filter set: a gated prompt never surfaces on a page and
-// never bends the page sizes or cursor arithmetic that would otherwise
-// count it. The name sort keeps pages stable across requests.
 func (s *Server) handlePromptsList(ctx context.Context, req Request) Response {
-	// A prompt the caller cannot get is not listed to them: the
-	// description and argument list are the disclosure, same as a
-	// tool's inputSchema.
 	return gatedListResponse(s, ctx, req, "prompts/list",
 		func() map[string]Prompt { return s.prompts },
 		func(p Prompt) func(context.Context) error { return p.gate },
@@ -178,18 +122,6 @@ func (s *Server) handlePromptsList(ctx context.Context, req Request) Response {
 	)
 }
 
-// gatedListResponse serves one page of a gated list method (prompts/list,
-// resources/list, resources/templates/list): it parses the cursor param
-// (an invalid cursor answers invalid-params), snapshots one of the gated
-// registries under the read lock, evaluates the per-caller gates outside
-// it, sorts, cuts the page at the resume offset, and wraps page and
-// nextCursor in the method's own result shape via wrap. The gate runs
-// BEFORE the page is cut, so pagination walks the post-filter set: a
-// gated item never surfaces on a page and never bends the page sizes or
-// cursor arithmetic that would otherwise count it. registry is called
-// under the lock so the map header is read inside it, exactly as the
-// inlined snapshots this helper replaced (the per-method handlers were
-// once verbatim copies of this body).
 func gatedListResponse[T any](
 	s *Server,
 	ctx context.Context,
@@ -204,11 +136,6 @@ func gatedListResponse[T any](
 	if err != nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
 	}
-	// Snapshot under the read lock, evaluate the per-caller gates
-	// outside it: gates are app-supplied callback code and must never
-	// contend with the registry lock (notifications.go's rule). One
-	// slow gate used to stall every registration; a panicking one
-	// unwound past the RUnlock and wedged the registry.
 	s.mu.RLock()
 	all := registry()
 	snapshot := make([]T, 0, len(all))
@@ -218,9 +145,6 @@ func gatedListResponse[T any](
 	s.mu.RUnlock()
 	list := make([]T, 0, len(snapshot))
 	for _, v := range snapshot {
-		// An item the caller's gate refuses is not listed to them:
-		// its metadata is the disclosure. gateRefused also converts a
-		// panicking gate into a refusal instead of a transport crash.
 		if gateRefused(gateOf(v), ctx) {
 			continue
 		}
@@ -231,9 +155,6 @@ func gatedListResponse[T any](
 	return newSuccessResponse(req.ID, wrap(page, next))
 }
 
-// handlePromptsGet resolves a prompt by name, validates required arguments,
-// and returns its messages. Unknown names and missing required arguments
-// are invalid-params errors (the codes the spec assigns them).
 func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 	if req.Params == nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing params")
@@ -253,23 +174,12 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 		return newErrorResponse(req.ID, ErrInvalidParams, fmt.Sprintf("prompt %q not found", params.Name))
 	}
 
-	// The gate runs BEFORE required-argument validation. Validating first
-	// answers a refused caller with `missing required argument "x"`, which
-	// discloses the argument names of a prompt they cannot access - exactly
-	// what prompts/list withholds from them.
 	if gErr := s.checkPromptGate(ctx, p); gErr != nil {
-		// An unmarked refusal answers exactly as an unknown name, so the
-		// call cannot confirm a gated prompt exists; ShowRefusal opts a
-		// gate's message back across.
 		return Response{JSONRPC: "2.0", ID: req.ID, Error: maskedRefusalRPC(gErr, &RPCError{
 			Code: ErrInvalidParams, Message: fmt.Sprintf("prompt %q not found", params.Name),
 		})}
 	}
 
-	// Argument values are strings; a number or an array already failed
-	// the decode above, and a null is refused here. Like the required
-	// check below, this runs after the gate so a refused caller learns
-	// nothing about the prompt's arguments.
 	args := make(map[string]string, len(params.Arguments))
 	for _, name := range slices.Sorted(maps.Keys(params.Arguments)) {
 		v := params.Arguments[name]
@@ -279,8 +189,6 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 		args[name] = *v
 	}
 
-	// Required-argument validation runs before the handler so a
-	// half-filled prompt never renders.
 	for _, a := range p.Arguments {
 		if a.Required {
 			if _, provided := args[a.Name]; !provided {
@@ -295,16 +203,11 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 			slog.String("prompt", p.Name))
 	}
 	if messages == nil {
-		// The schema requires a messages array; null fails a validating
-		// client the way a null tools/call content does (requiredArray).
 		messages = []PromptMessage{}
 	}
 	return newSuccessResponse(req.ID, promptsGetResult{Description: p.Description, Messages: messages})
 }
 
-// getPromptMessages runs a prompt's gate and handler under a recover guard,
-// mirroring readResourceContents so a panic in app-supplied code becomes a
-// well-formed error instead of unwinding the transport (critical for stdio).
 func (s *Server) getPromptMessages(ctx context.Context, p Prompt, args map[string]string) (out []PromptMessage, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -317,8 +220,6 @@ func (s *Server) getPromptMessages(ctx context.Context, p Prompt, args map[strin
 	return p.handler(ctx, args)
 }
 
-// handlerErrorResponse answers a prompt handler's or resource contents func's
-// error: callerFacingError decides what crosses, the rest is logged and generic.
 func handlerErrorResponse(ctx context.Context, req Request, err error, logMsg, genericMsg string, attrs ...slog.Attr) Response {
 	if rpcErr, ok := callerFacingError(ctx, err); ok {
 		return Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}
@@ -328,12 +229,6 @@ func handlerErrorResponse(ctx context.Context, req Request, err error, logMsg, g
 	return newErrorResponse(req.ID, ErrInternalError, genericMsg)
 }
 
-// checkPromptGate runs a prompt's gate (WithPromptGate) under its own
-// recover guard - the same predicate that decided whether the prompt
-// appeared in prompts/list. It is separate from getPromptMessages so the
-// refusal can happen before argument validation without losing the panic
-// protection stdio needs: a panicking gate must become a well-formed error,
-// never a transport crash.
 func (s *Server) checkPromptGate(ctx context.Context, p Prompt) (err error) {
 	if p.gate == nil {
 		return nil
