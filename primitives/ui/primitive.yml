@@ -8,6 +8,10 @@ docs:
 on_change:
   - Screenshot the rendered examples/meridian (marketing, app, auth, admin, phone width, light and dark) and look at it; a DOM dump or computed style cannot show layout.
 invariants:
+  - id: long-lists-skip-offscreen-rows
+    rule: A Long EntryList or Timeline gives each row content-visibility auto with a widened clip edge, so far rows skip rendering while Tab still reaches them; a list without Long renders every row.
+    enforced_by:
+      - test: framework/ui.TestLongListsSkipOffscreenRows
   - id: survey-before-building
     rule: A surface composes the existing component that does the job, or extends it with a config or variant, instead of rebuilding or restyling it.
     judge: Does this change hand-roll markup or CSS that an existing framework/ui or core-ui component already provides, or override a component's internals from outside?
