@@ -34,6 +34,13 @@ few lines, and link the PR or the docs page for the rest.
   missing one of the three hints ChatGPT's directory review requires. See
   [MCP server](framework/docs/content/mcp.md#tool-annotations).
   [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **settings: MCP hints on custom endpoints.** An `endpoints:` entry with
+  `mcp: true` takes an optional `hints:` block (`title`, `read_only`,
+  `destructive`, `idempotent`, `open_world`), and `gofastr generate` now
+  writes `MCPAnnotations` for every MCP endpoint, filling unset hints from
+  the method. Regenerate to pick them up. See
+  [custom endpoints](framework/docs/content/endpoints.md#mcp-tool-hints).
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
 - **mcp: server instructions.** `Server.SetInstructions` and
   `framework.WithMCPInstructions` set the `instructions` that `initialize`
   returns. [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
@@ -359,6 +366,11 @@ few lines, and link the PR or the docs page for the rest.
 - **mcp: a `tools/call` with a malformed `_meta` is refused.** A `_meta`
   that is a string, array or number, or longer than 64 KiB, was ignored;
   it now answers `-32602` and the tool does not run.
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **kiln: `undo` is a destructive tool.** Nothing redoes it, so its
+  descriptor is now `Destructive`: its MCP tool says `destructiveHint: true`
+  and `kiln acp` asks `session/request_permission` before running it. It
+  still needs no plan.
   [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
 - **process modules: a tool's `annotations` key is read and pinned.** A
   module that already sent `annotations` in `module.tool.list` had it

@@ -759,7 +759,8 @@ check: the portal gives you a token and fetches it back from
 trimmed, so a value read from a file with a trailing newline works. An
 empty token mounts nothing, so you can pass an unset environment variable.
 A token longer than 1024 bytes, or one holding a space, a control byte or
-a non-ASCII byte, panics at `NewApp`; the message does not quote the token.
+a non-ASCII byte, makes `WithOpenAIAppsChallenge` panic when it is called;
+the message does not quote the token.
 
 ```go
 framework.WithOpenAIAppsChallenge(os.Getenv("OPENAI_APPS_CHALLENGE"))

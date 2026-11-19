@@ -151,7 +151,7 @@ invariants:
       - battery/log/mcp.go
       - battery/telemetry/mcp.go
   - id: kiln-tools-carry-hints
-    rule: Every Kiln tool kiln/agent/mcp registers sets readOnlyHint, destructiveHint and openWorldHint, read-only only for world_get, destructive exactly when its protocol descriptor is Destructive, and openWorldHint false.
+    rule: Every Kiln tool kiln/agent/mcp registers sets readOnlyHint, destructiveHint and openWorldHint, read-only only for world_get, destructive exactly when its protocol descriptor is Destructive (delete_*, update_entity, reset_session and undo, which nothing redoes), and openWorldHint false.
     enforced_by:
       - test: kiln/agent/mcp.TestEveryToolCarriesListingHints
     applies:
@@ -270,7 +270,7 @@ decisions:
   - id: reversible-toggles-not-destructive
     date: 2026-11-19
     status: accepted
-    decision: app_module_disable and log_set_level carry destructiveHint false, as do the Kiln edits whose descriptor is not Destructive.
+    decision: app_module_disable and log_set_level carry destructiveHint false, as do the Kiln edits whose descriptor is not Destructive; Kiln's undo, which nothing redoes, is Destructive and so destructive.
     rejected:
       - option: Mark every state-changing tool destructive.
         why: Each of these is undone by a counterpart call (app_module_enable, another log_set_level, Kiln's undo) and drops no stored data, and a destructive hint makes a client ask the user to confirm a call that loses nothing.
