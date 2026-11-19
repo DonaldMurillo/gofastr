@@ -441,7 +441,7 @@ func (ds *UIHost) RenderStaticNotFoundPage(ctx context.Context, path string) (st
 			ctx = app.WithRequest(ctx, req)
 		}
 	}
-	ctx = store.WithValues(ctx)
+	ctx = withoutRouteMeta(store.WithValues(ctx))
 	res, err := ds.App.RenderNotFoundPageResult(ctx, path, ds.notFoundBodyComponent(""))
 	if err != nil {
 		slog.Warn("uihost: static not-found render failed; exporting no 404.html", "err", err)

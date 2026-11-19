@@ -34,7 +34,9 @@ few lines, and link the PR or the docs page for the rest.
   still carried the matched route's `rel="alternate" hreflang` links,
   pointing search engines at more 404s and telling it apart from an
   unknown URL. Every not-found page now gets the head an unmatched URL
-  gets. ([#823](https://github.com/DonaldMurillo/gofastr/issues/823))
+  gets, and so do a static export's `404.html` (which listed the home
+  page's alternates) and the error page of a failed render.
+  ([#823](https://github.com/DonaldMurillo/gofastr/issues/823))
 - **gofastr dev: saves no longer run git in your repository.** The
   dev loop's `go list` and `go build` stamped version control info, which
   runs `git status` and takes `.git/index.lock`: a commit made during a
