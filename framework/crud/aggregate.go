@@ -2,10 +2,12 @@ package crud
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -26,8 +28,8 @@ type GroupCount struct {
 
 // SumAll returns SUM(field) over the rows ListAll(ctx, opts) would read,
 // over every match, not a page. The total is decimal text ("0" when no
-// row matches). Decimal columns use the database's exact NUMERIC sum on
-// Postgres and exact addition of stored decimal values on SQLite.
+// row matches). Int and Decimal totals use exact arithmetic on
+// Postgres and SQLite.
 // field names a visible Int, Float or Decimal column. opts takes the
 // filters and Search; Fields, Sorts, Limit, Offset and Includes are
 // refused, since an aggregate reads every match.
@@ -44,12 +46,16 @@ func (ch *CrudHandler) SumAll(ctx context.Context, field string, opts ListOption
 		return "", err
 	}
 	inner, args := qb.Build()
-	if f.Type == schema.Decimal && !ch.onPostgres(ctx) {
+	sqlite := !ch.onPostgres(ctx)
+	if f.Type == schema.Decimal && sqlite {
 		return ch.sumDecimalRows(ctx, inner, args)
 	}
 	var total any
 	stmt := "SELECT SUM(" + query.QuoteFolded(col) + ") FROM (" + inner + ") AS agg_src"
 	if err := ch.conn(ctx).QueryRowContext(ctx, stmt, args...).Scan(&total); err != nil {
+		if f.Type == schema.Int && sqlite && strings.Contains(err.Error(), "integer overflow") {
+			return ch.sumIntRows(ctx, inner, args)
+		}
 		return "", err
 	}
 	switch v := total.(type) {
@@ -66,6 +72,28 @@ func (ch *CrudHandler) SumAll(ctx context.Context, field string, opts ListOption
 	default:
 		return "", fmt.Errorf("SumAll: unexpected %T from the database", total)
 	}
+}
+
+func (ch *CrudHandler) sumIntRows(ctx context.Context, statement string, args []any) (string, error) {
+	rows, err := ch.conn(ctx).QueryContext(ctx, statement, args...)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var total, value big.Int
+	var stored sql.NullInt64
+	for rows.Next() {
+		if err := rows.Scan(&stored); err != nil {
+			return "", err
+		}
+		if stored.Valid {
+			total.Add(&total, value.SetInt64(stored.Int64))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	return total.String(), nil
 }
 
 func (ch *CrudHandler) sumDecimalRows(ctx context.Context, statement string, args []any) (string, error) {

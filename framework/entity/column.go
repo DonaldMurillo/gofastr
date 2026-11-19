@@ -6,6 +6,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Condition is a where-clause fragment, numbered from $1, and its bound arguments.
@@ -118,12 +119,32 @@ func (c StringColumn) Eq(v string) Condition {
 func (c StringColumn) Neq(v string) Condition {
 	return Condition{sql: c.name() + " != $1", args: []any{v}}
 }
+
+// Like matches a SQL pattern with ASCII case folding and backslash escapes.
 func (c StringColumn) Like(pattern string) Condition {
-	return Condition{sql: c.name() + " LIKE $1", args: []any{pattern}}
+	return c.likePattern(" LIKE ", pattern)
 }
+
+// NotLike matches non-NULL values that do not match Like.
 func (c StringColumn) NotLike(pattern string) Condition {
-	return Condition{sql: c.name() + " NOT LIKE $1", args: []any{pattern}}
+	return c.likePattern(" NOT LIKE ", pattern)
 }
+
+func (c StringColumn) likePattern(operator, pattern string) Condition {
+	var expr strings.Builder
+	expr.WriteString(strings.Repeat("replace(", 26))
+	expr.WriteString(c.name())
+	for upper := 'A'; upper <= 'Z'; upper++ {
+		fmt.Fprintf(&expr, ", '%c', '%c')", upper, upper+'a'-'A')
+	}
+	expr.WriteString(operator)
+	expr.WriteString("$1 ESCAPE $2")
+	if (len(pattern)-len(strings.TrimRight(pattern, `\`)))%2 != 0 {
+		pattern += `\`
+	}
+	return Condition{sql: expr.String(), args: []any{asciicase.Lower(pattern), `\`}}
+}
+
 func (c StringColumn) In(values ...string) Condition {
 	args := make([]any, len(values))
 	for i, v := range values {

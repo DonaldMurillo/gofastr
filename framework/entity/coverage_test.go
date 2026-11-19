@@ -25,8 +25,6 @@ func TestColumnConditions(t *testing.T) {
 	checks := map[string]Condition{
 		"name = $1":        s.Eq("x"),
 		"name != $1":       s.Neq("x"),
-		"name LIKE $1":     s.Like("%x%"),
-		"name NOT LIKE $1": s.NotLike("%x%"),
 		"name IN ($1, $2)": s.In("a", "b"),
 		"age = $1":         i.Eq(1),
 		"age != $1":        i.Neq(1),

@@ -25,6 +25,22 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Large SQLite outbox claims no longer fail past 1,000 deliveries,**
+  and Postgres claim checks accept attempt budgets above the 32-bit
+  range.
+- **Custom outboxes get the same delivery table name on SQLite and
+  Postgres,** fitted to 63 bytes. A table name part over 63 bytes is
+  refused. Rename a longer SQLite delivery table before upgrading.
+- **CRUD `SumAll` on SQLite returns exact Int totals past the signed
+  64-bit range,** as Postgres does.
+- **SQLite UNIQUE and NOT NULL refusals keep the declared field key**
+  when the database spells the table or column in a different case.
+- **Typed `Like` and `NotLike` match the same rows on both engines:**
+  ASCII case folding, `%` and `_` wildcards, backslash escapes, and a
+  lone trailing backslash taken literally.
+- **Worktree isolation rewrites a Postgres database chosen with
+  `?dbname=` or `?database=`** instead of leaving every worktree on the
+  shared database.
 - **The embed build and boot gates no longer stop on a harmless regex
   literal** at the start of an `if` body or after nested control
   headers, and they now see a server action call in a division after a

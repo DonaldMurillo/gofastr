@@ -1810,20 +1810,19 @@ column may be read: NoQuery keeps it out of filters and sorts only),
 and masking hooks still run on whatever came back. `CountAll` applies
 both identically, so a page count matches its rows.
 
-Two aggregates run under the same scopes and compute in the database,
-over every match rather than a page:
+Two aggregates run under the same scopes and cover every matching row:
 
 ```go
 total, err := invoices.SumAll(ctx, "amount", crud.ListOptions{Where: open})
 groups, err := invoices.GroupCountAll(ctx, "status", crud.ListOptions{}, 50)
 ```
 
-`SumAll` returns decimal text ("0" over no rows). A `decimal` column sums
-as exact `NUMERIC` on Postgres; SQLite streams the scoped stored values
-and adds their decimal text exactly, avoiding binary-float accumulation.
-This uses constant working memory but reads every matching decimal row.
-Trailing zeroes may differ between dialects. It takes a
-visible int, float or decimal field. `GroupCountAll` returns each stored
+`SumAll` returns decimal text ("0" over no rows). Integer and decimal
+totals use exact arithmetic on both engines, including integer totals
+outside the signed 64-bit range. Postgres computes them in the database.
+SQLite streams every matching stored value and adds it in Go. Decimal
+trailing zeroes may differ between dialects. `SumAll` takes a visible int,
+float or decimal field. `GroupCountAll` returns each stored
 value with its count, ordered by value with the no-value group last, a
 bool as `true`/`false`; a
 positive limit caps the groups, so ask for one more than you draw to
@@ -2451,6 +2450,12 @@ live, err := posts.Query().Where(entities.PostsStatus.Eq(entities.PostsStatusLiv
   `time.Time`, a `*time.Time` or RFC 3339 text and bind it in the
   layout crud stores, so `…10:00:00Z` matches the row stored as
   `…10:00:00.000000Z` on SQLite and ranges compare instants.
+- A string column's `Like` and `NotLike` take a pattern on SQLite and
+  Postgres. Matching folds ASCII letters only. `%` matches zero or more
+  characters, and `_` matches one character. A backslash quotes the next
+  character, so the Go raw string `a\_b` matches a literal underscore.
+  Two backslashes or a single trailing backslash match a literal backslash.
+  Both operators skip NULL values.
 - An enum field with declared values gets a value type and one constant
   per value (`PostsStatusValue`, `PostsStatusDraft`, `PostsStatusLive`).
   The model, both payloads and the column
@@ -2626,6 +2631,8 @@ server log only. When the refused constraint is one the entity declares
 body carries the fields the caller sent in the validation shape, so a
 form shows the refusal on the control:
 `{"error":"conflict","reason":"conflict","success":false,"code":409,"fields":{"number":["is already in use"]},"field_reasons":{"number":["unique_taken"]}}`.
+SQLite matches table and column names in UNIQUE and NOT NULL diagnostics
+using ASCII case folding. The response uses the declared field's wire key.
 A relation's message is "refers to a record that does not exist". A
 column the caller did not send (the owner column of a per-account
 index) is not named, and a conflict on a `hidden` or `no_query` field

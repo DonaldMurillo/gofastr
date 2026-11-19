@@ -160,6 +160,10 @@ invariants:
       - test: framework/entity.TestConditionCombinators
       - test: framework/crud.TestTypedTimestampMatchesStored
       - test: framework/crud.TestTypedQueryRefusesLegacyTimestamps
+  - id: portable-typed-like
+    rule: StringColumn Like and NotLike share likePattern, folding ASCII only and using an explicit backslash escape with a literal trailing backslash on SQLite and Postgres.
+    enforced_by:
+      - test: framework/entity.TestTypedLikePatternParity
   - id: config-defaults
     rule: AccessControl.Declared counts Read, and TenantColumn defaults to tenant_id.
     enforced_by:

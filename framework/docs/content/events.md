@@ -445,7 +445,9 @@ handler)` + `ob.StartRelay(ctx)`.
   because both claims counted. After `MaxAttempts` (default 10) the
   delivery is marked `dead`. `WithMaxAttempts`, `WithBatchSize` (default 100) and
   `WithPollInterval` (default 1s) keep their defaults when
-  given zero or less. `Replay(rowID)` resets all dead/abandoned
+  given zero or less. The relay compares the attempt budget as a 64-bit
+  integer. SQLite applies large claims in chunks within a single write
+  transaction. `Replay(rowID)` resets all dead/abandoned
   deliveries of a row; `ReplayConsumer(rowID, name)` resets one. A reset
   delivery's age starts over, so the handler grace below runs again from
   the replay.
@@ -492,7 +494,14 @@ handler)` + `ob.StartRelay(ctx)`.
   separate integer type).
 - **Table creation.** `WithOutbox` creates its tables on demand at
   `NewApp` time (framework-owned bookkeeping tables;
-  `WithoutAutoMigrate` does not suppress them). If your policy forbids
+  `WithoutAutoMigrate` does not suppress them). `outbox.WithTable` accepts
+  a parent name of up to 63 bytes per identifier, including the schema
+  name when supplied. The delivery table sits in the same schema and uses
+  the parent name plus `_delivery` when it fits. Both engines use
+  `query.FitIdent` on that name when it exceeds 63 bytes. If the fitted
+  name equals the parent, the last character is dropped. Rename a longer
+  delivery table created by an older SQLite deployment to the fitted name
+  before starting the upgraded app. If your policy forbids
   unattended DDL, pass `framework.WithOutbox(outbox.WithoutEnsureTable())`
   and create them yourself before the app stages any event. The schema:
 
