@@ -171,6 +171,18 @@
   // rendered by preset's slot inside the stack). The module names hooks
   // only.
   const TONES = ['info', 'success', 'warning', 'danger'];
+  const TONE_ATTR = {
+    info: 'data-hui-toast-tone-info', success: 'data-hui-toast-tone-success',
+    warning: 'data-hui-toast-tone-warning', danger: 'data-hui-toast-tone-danger'
+  };
+  const GLYPH_ATTR = {
+    info: 'data-hui-toast-glyph-info', success: 'data-hui-toast-glyph-success',
+    warning: 'data-hui-toast-glyph-warning', danger: 'data-hui-toast-glyph-danger'
+  };
+  const VARIANT_ATTR = {
+    info: 'data-hui-toast-variant-info', success: 'data-hui-toast-variant-success',
+    warning: 'data-hui-toast-variant-warning', danger: 'data-hui-toast-variant-danger'
+  };
 
   // findStack: the named stack, else the first on the page. None is
   // null: the module mounts no region of its own — a layout mounts
@@ -302,8 +314,8 @@
     let variantCls = '';
     let glyph = '';
     if (tpl && tone) {
-      variantCls = tpl.getAttribute('data-hui-toast-variant-' + tone) || '';
-      glyph = tpl.getAttribute('data-hui-toast-glyph-' + tone) || '';
+      variantCls = tpl.getAttribute(VARIANT_ATTR[tone]) || '';
+      glyph = tpl.getAttribute(GLYPH_ATTR[tone]) || '';
     } else if (tpl) {
       const extra = templateVariant(tpl, variant);
       variantCls = extra.cls;
@@ -312,7 +324,7 @@
     variantCls.split(/\s+/).forEach((c) => { if (c) root.classList.add(c); });
     root.setAttribute('role', assertive ? 'alert' : 'status');
 
-    const toneWord = tone ? readWord(container, tpl, 'data-hui-toast-tone-' + tone) : '';
+    const toneWord = tone ? readWord(container, tpl, TONE_ATTR[tone]) : '';
     fill(root, 'data-hui-toast-tone', toneWord ? toneWord + ': ' : '');
     fill(root, 'data-hui-toast-icon', glyph);
     fill(root, 'data-hui-toast-title', cfg.title);
