@@ -262,7 +262,10 @@ const DefaultMaxResponseBodyBytes int64 = 64 << 10 // 64 KiB
 // 10s per-request timeout, no redirect following, and a dial-time SSRF
 // guard (net.Dialer.Control re-checks the resolved IP at connect time
 // to defeat DNS rebinding) unless AllowPrivateNetworks is set. A
-// caller-supplied client is used as-is, it gets no dial-time guard.
+// caller-supplied client gets a dial-time guard when it uses the default
+// transport or when its transport can be cloned with a guarded dialer.
+// Other transports get a resolved-IP check on the request target before
+// the transport runs.
 //
 // PollInterval controls how often the worker looks for due deliveries.
 // Default 1 second.

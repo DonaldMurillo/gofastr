@@ -286,39 +286,8 @@ func buildMessage(email Email) ([]byte, error) {
 			return nil, err
 		}
 	}
-	for k, v := range email.Headers {
-		if err := assertNoHeaderInjection(k, k); err != nil {
-			return nil, err
-		}
-		if err := assertNoHeaderInjection(k, v); err != nil {
-			return nil, err
-		}
-	}
-	// A key is written as the field name, so it must be one: a colon or a
-	// space made the line read as another field, and a leading space
-	// folded it into the header above.
-	// Field names compare case-insensitively, so two keys that fold to one
-	// name would write that field twice.
-	seen := make(map[string]string, len(email.Headers))
-	for _, k := range slices.Sorted(maps.Keys(email.Headers)) {
-		if !isFieldName(k) {
-			return nil, fmt.Errorf("%w: Headers key %q is not a header field name (printable ASCII, no colon or space)", ErrSendFailed, k)
-		}
-		folded := asciicase.Lower(k)
-		if prev, dup := seen[folded]; dup {
-			return nil, fmt.Errorf("%w: Headers keys %q and %q name one field", ErrSendFailed, prev, k)
-		}
-		seen[folded] = k
-	}
-	// The MIME structure headers are written below, and the address and
-	// subject fields come from the Email itself; a caller's copy would
-	// give the message two that disagree. Bcc is never written: the
-	// envelope carries it, and a header would publish the blind list;
-	// Resent-Bcc would publish its own the same way.
-	for _, name := range []string{"Content-Type", "Content-Transfer-Encoding", "MIME-Version", "From", "To", "Cc", "Bcc", "Resent-Bcc", "Subject"} {
-		if hasHeader(email.Headers, name) {
-			return nil, fmt.Errorf("%w: Headers cannot set %s; the sender writes it from the Email", ErrSendFailed, name)
-		}
+	if err := checkCustomHeaders(email.Headers); err != nil {
+		return nil, err
 	}
 	for _, att := range email.Attachments {
 		if err := assertNoHeaderInjection("Attachment.Filename", att.Filename); err != nil {
@@ -369,11 +338,8 @@ func buildMessage(email Email) ([]byte, error) {
 		}
 	}
 
-	// Custom headers, sorted so the wire message is byte-stable per send.
-	for _, k := range slices.Sorted(maps.Keys(email.Headers)) {
-		if err := writeHeader(&buf, scrubHeaderValue(k), scrubHeaderValue(email.Headers[k])); err != nil {
-			return nil, err
-		}
+	if err := writeCustomHeaders(&buf, email.Headers); err != nil {
+		return nil, err
 	}
 
 	// Determine if we need MIME multipart. Text plus HTML are two
@@ -556,6 +522,54 @@ func randomBoundary() (string, error) {
 		return "", fmt.Errorf("boundary generation failed: %w", err)
 	}
 	return "gofastr-boundary-" + hex.EncodeToString(b[:]), nil
+}
+
+func checkCustomHeaders(headers map[string]string) error {
+	for k, v := range headers {
+		if err := assertNoHeaderInjection(k, k); err != nil {
+			return err
+		}
+		if err := assertNoHeaderInjection(k, v); err != nil {
+			return err
+		}
+	}
+	// A key is written as the field name, so it must be one: a colon or a
+	// space made the line read as another field, and a leading space
+	// folded it into the header above.
+	// Field names compare case-insensitively, so two keys that fold to one
+	// name would write that field twice.
+	seen := make(map[string]string, len(headers))
+	for _, k := range slices.Sorted(maps.Keys(headers)) {
+		if !isFieldName(k) {
+			return fmt.Errorf("%w: Headers key %q is not a header field name (printable ASCII, no colon or space)", ErrSendFailed, k)
+		}
+		folded := asciicase.Lower(k)
+		if prev, dup := seen[folded]; dup {
+			return fmt.Errorf("%w: Headers keys %q and %q name one field", ErrSendFailed, prev, k)
+		}
+		seen[folded] = k
+	}
+	// The MIME structure headers are written below, and the address and
+	// subject fields come from the Email itself; a caller's copy would
+	// give the message two that disagree. Bcc is never written: the
+	// envelope carries it, and a header would publish the blind list;
+	// Resent-Bcc would publish its own the same way.
+	for _, name := range []string{"Content-Type", "Content-Transfer-Encoding", "MIME-Version", "From", "To", "Cc", "Bcc", "Resent-Bcc", "Subject"} {
+		if hasHeader(headers, name) {
+			return fmt.Errorf("%w: Headers cannot set %s; the sender writes it from the Email", ErrSendFailed, name)
+		}
+	}
+	return nil
+}
+
+func writeCustomHeaders(buf *strings.Builder, headers map[string]string) error {
+	// Custom headers, sorted so the wire message is byte-stable per send.
+	for _, k := range slices.Sorted(maps.Keys(headers)) {
+		if err := writeHeader(buf, scrubHeaderValue(k), scrubHeaderValue(headers[k])); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // hasHeader reports whether headers sets name, folding ASCII case the
@@ -763,7 +777,8 @@ const (
 // CRLF) gets the value back byte for byte. It folds at the last
 // whitespace that keeps a line within foldWidth, and refuses a field
 // with a word it cannot fit within maxLineOctets. Folding never splits a
-// word, so an encoded word stays whole.
+// word, so an encoded word stays whole. A nil buf checks folding without
+// writing the header.
 func writeHeader(buf *strings.Builder, name, value string) error {
 	isWSP := func(c byte) bool { return c == ' ' || c == '\t' }
 	line := name + ": "
@@ -773,7 +788,9 @@ func writeHeader(buf *strings.Builder, name, value string) error {
 			if len(line) > maxLineOctets {
 				return fmt.Errorf("%w: header %s has a word too long to fold within %d octets", ErrSendFailed, name, maxLineOctets)
 			}
-			buf.WriteString(line + "\r\n")
+			if buf != nil {
+				buf.WriteString(line + "\r\n")
+			}
 			line = ""
 		}
 		line += chunk
@@ -796,7 +813,9 @@ func writeHeader(buf *strings.Builder, name, value string) error {
 	if len(line) > maxLineOctets {
 		return fmt.Errorf("%w: header %s has a word too long to fold within %d octets", ErrSendFailed, name, maxLineOctets)
 	}
-	buf.WriteString(line + "\r\n")
+	if buf != nil {
+		buf.WriteString(line + "\r\n")
+	}
 	return nil
 }
 
@@ -988,6 +1007,16 @@ func scrubEnvelopeAddrs(field, raw string) ([]string, error) {
 		specs = append(specs, spec)
 	}
 	return specs, nil
+}
+
+// ValidateHeaders applies the same custom header checks as [SMTPSender.Send].
+// It returns an error wrapping [ErrSendFailed] for unsafe names or values,
+// duplicate or reserved names, and lines that cannot be folded safely.
+func ValidateHeaders(headers map[string]string) error {
+	if err := checkCustomHeaders(headers); err != nil {
+		return err
+	}
+	return writeCustomHeaders(nil, headers)
 }
 
 // ValidateAddress reports whether addr is one mailbox [SMTPSender]

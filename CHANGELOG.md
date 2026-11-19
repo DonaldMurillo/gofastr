@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`notify`'s email channel refuses every custom header `battery/email`
+  refuses.** It used to check only CR, LF and NUL; it now shares the
+  SMTP header rules (reserved names such as `Resent-Bcc`, empty,
+  non-ASCII or whitespace names, case-insensitive duplicates, invalid
+  UTF-8, overlong unfolded fields) and still refuses `Sender` and
+  `Reply-To`.
 - **`rtc.Config.Path` refuses the same paths `relay.Config.Path` does.**
   A path with ServeMux wildcards (`/live/{room}`), `$`, the bare
   `/__gofastr` root or a reserved framework route such as
