@@ -8,6 +8,11 @@ docs:
 on_change:
   - Screenshot the rendered examples/meridian (marketing, app, auth, admin, phone width, light and dark) and look at it; a DOM dump or computed style cannot show layout.
 invariants:
+  - id: video-waits-for-play
+    rule: ui.Video always renders controls, playsinline, its Width and Height, and preload none (metadata with Eager), which ExtraAttrs cannot override, and drops every source, track and poster whose URL fails the URL policy.
+    enforced_by:
+      - test: framework/ui.TestVideoReservesItsBoxAndWaitsForPlay
+      - test: framework/ui.TestVideoDropsUnsafeURLsAndKeepsItsOwnAttributes
   - id: long-lists-skip-offscreen-rows
     rule: A Long EntryList or Timeline gives each row content-visibility auto with a widened clip edge, so far rows skip rendering while Tab still reaches them; a list without Long renders every row.
     enforced_by:
