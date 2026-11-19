@@ -679,19 +679,27 @@ root or another I/O failure still fails the check.
 
 `gofastr deploy <user@host>` puts the app on one Linux server over SSH
 as a systemd service: it builds for the server's CPU, copies the binary,
-starts it, and waits for the health check. A release that does not pass
-is replaced by the one before it. See [Deployment](deploy.md).
+starts it, and waits for the health check. If activation or the check
+fails, it tries to restore the previous release. With no earlier
+release, the failed release stays in place. See [Deployment](deploy.md).
 
-- `gofastr deploy <user@host>`: build, copy, start, check. `--name`
-  (service, user and directory; default this directory's name), `--pkg`,
-  `--bin <file>` (deploy this Linux binary, no build), `--env-file`,
+- `gofastr deploy <user@host>` builds, copies, starts, and checks the app. `--name`
+  names the service, user, and directory. It defaults to the lowercased
+  directory basename. Set `--name` explicitly if that default is invalid.
+  Names have 1 to 31 characters, start with a lower-case ASCII letter, and
+  use only lower-case ASCII letters, digits, and hyphens. Other flags are
+  `--pkg`, `--bin <file>` (deploy this Linux binary, no build), `--env-file`,
   `--port` (default 8080) and `--health` (default `/healthz`) for the
-  check, `--wait <seconds>` (default 30), `--keep <n>` earlier releases
-  (default 5), `--ssh-port`, `-i <identity file>`.
-- `gofastr deploy rollback <user@host>`: start the release before the
-  running one.
-- `gofastr deploy status <user@host>`: the release running, whether the
-  service is active, whether it answers, and the releases kept.
+  check, `--wait <seconds>` for each release's health check (default 30),
+  `--keep <n>` earlier releases (default 5), `--ssh-port`, `-i <identity file>`.
+- `gofastr deploy rollback <user@host>` starts the release before the
+  running one, using its own environment and health settings.
+- `gofastr deploy status <user@host>` shows the release in place, the
+  service state, and the releases kept. It checks health only when the
+  service is active.
+
+For releases without saved health settings, `rollback` and `status`
+use the invocation's `--port` and `--health` values.
 
 ## Telemetry
 

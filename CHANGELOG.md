@@ -25,6 +25,15 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`gofastr deploy` rollback runs the earlier release with its own
+  environment and health check.** A failed deploy or a manual rollback no
+  longer keeps the new release's env file or health port.
+- **`gofastr deploy` recovers from socket and service start errors** the
+  same way as a failed health check, and shows the systemd diagnostics.
+- **`gofastr deploy --wait` is a deadline in seconds,** including a probe
+  in progress.
+- **`gofastr deploy status` reports an inactive service** even when
+  another process answers on the health port.
 - **`ProcessModuleSupervisor.Info` and `List` report the store's desired
   generation,** not the replica's own, so the admin Modules table shows a
   replica that lags a bump. `DesiredGeneration` is 0 while the store
@@ -331,6 +340,10 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **`gofastr deploy` stores each release's env file with the release**
+  and loads it through `/opt/<name>/current/env`; units written before
+  this keep `/etc/<name>/env`. Release ids are unique within a second.
+  See [deploy](framework/docs/content/deploy.md).
 - **New app scaffolds put custom styling in owned style sheets.** They no
   longer emit the empty `appBaseCSS` hook or append `static/app.css`; the
   design-system font-face CSS stays.
