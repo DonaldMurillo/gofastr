@@ -252,3 +252,33 @@ func TestGroupWrapDelegationStaysInsideTheServedRouter(t *testing.T) {
 		}
 	}
 }
+
+func TestRootRedispatchResetsFallbackScope(t *testing.T) {
+	identity := func(next http.Handler) http.Handler { return next }
+	r := New()
+	a, b, c := r.Group("/x"), r.Group("/x"), r.Group("/c")
+	a.Post("/item", status(200))
+	c.Post("/y", status(200))
+	a.WrapNotFound(identity)
+	a.WrapMethodNotAllowed(identity)
+	b.NotFound(status(418))
+	b.MethodNotAllowed(status(418))
+	redispatch := func(to string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.URL.Path == to {
+				w.WriteHeader(499)
+				return
+			}
+			next := req.Clone(req.Context())
+			next.URL.Path = to
+			r.ServeHTTP(w, next)
+		})
+	}
+	c.NotFound(redispatch("/x/missing"))
+	c.MethodNotAllowed(redispatch("/x/item"))
+	for _, path := range []string{"/c/missing", "/c/y"} {
+		if got := fallbackServe(c, http.MethodGet, "", path).Code; got != 418 {
+			t.Errorf("%s redispatched to the root = %d, want 418 delegated to sibling b", path, got)
+		}
+	}
+}
