@@ -383,6 +383,7 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 }
 
 func (ds *UIHost) renderMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	r = r.WithContext(withoutRouteMeta(r.Context()))
 	path := r.URL.Path
 	allow := w.Header().Get("Allow")
 	w.Header().Add("Vary", "Accept")

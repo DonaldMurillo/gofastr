@@ -104,7 +104,7 @@ invariants:
       - test: framework/uihost.TestOneDescriptionPerPage
       - test: framework/uihost.TestSweepPageTypedDescriptionBeatsHeadHTML
   - id: not-found-head-carries-no-route-meta
-    rule: A not-found or error page the host renders, from an unmatched URL, a Load or resolver answering ErrNotFound, an unfilled not-found outlet, a failed render, or a static export's 404.html, carries the site description and none of the matched route's meta, hreflang alternates included, on the full page and the partial.
+    rule: A not-found or error page the host renders, from an unmatched URL, a Load or resolver answering ErrNotFound, an unfilled not-found outlet, a failed render, a method the screen does not take (405), or a static export's 404.html, carries the site description and none of the matched route's meta, hreflang alternates included, on the full page and the partial.
     enforced_by:
       - test: framework/uihost.TestNotFoundOutcomeCarriesNoRouteMeta
       - test: framework/uihost.TestNotFoundOutletCarriesNoRouteMeta
