@@ -1,0 +1,72 @@
+primitive: netguard.transport
+summary: The outbound side - the registration-time URL check and the dial-time guarded transports a caller-supplied URL is delivered through.
+code:
+  - core/netguard/transport.go
+  - core/netguard/outbound.go
+docs:
+  - framework/docs/content/core-packages.md
+  - framework/docs/content/webhooks.md
+invariants:
+  - id: outbound-url-check
+    rule: CheckOutboundURL refuses an empty URL, a scheme other than http or https, a missing host and userinfo in every mode, and unless allowPrivate a localhost, .localhost or .internal name in any case and a literal internal address, each error starting with the caller's prefix.
+    enforced_by:
+      - test: core/netguard.TestSweepCheckOutboundURLRefusals
+      - test: battery/webhook.TestSSRF_AllowPrivateStillEnforcesScheme
+      - test: core/a2a.TestSweepInternalHostNamesRefused
+  - id: registration-lookup-bounded
+    rule: CheckOutboundURL's DNS lookup ends after 3s, and a lookup that fails or times out passes, leaving the verdict to the dial-time guard.
+    enforced_by:
+      - test: core/netguard.TestSweepCheckOutboundURLLookupBounded
+      - test: battery/webhook.TestSubscriberURLLookupBounded
+  - id: dial-time-check
+    rule: GuardedTransport's dialer refuses an address that is not a numeric IP or that Reason calls internal, and with allowPrivate it dials anything.
+    enforced_by:
+      - test: core/netguard.TestSweepDialCheckRefusesUnresolvedAndInternal
+      - test: core/netguard.TestGuardedTransportRefusesLoopback
+      - test: battery/webhook.TestSSRF_DialTimeHonorsAllowPrivate
+  - id: guarded-transport-uses-no-proxy
+    rule: A guarded transport, from GuardedTransport or GuardPlainTransport, never uses a proxy, environment or otherwise.
+    enforced_by:
+      - test: core/netguard.TestGuardedTransportIgnoresEnvProxy
+      - test: core/netguard.TestSweepGuardRoundTripperShapes
+  - id: plain-transport-only
+    rule: GuardPlainTransport clones only a transport whose proxy is nil or ProxyFromEnvironment and whose dialer is nil or http.DefaultTransport's own func value, with no DialTLSContext, Dial or DialTLS, keeping its settings and its HTTP/2 offer, and refuses any other.
+    enforced_by:
+      - test: core/netguard.TestGuardPlainRefusesCustomDialers
+      - test: core/netguard.TestGuardPlainRefusesOwnNetDialer
+      - test: core/netguard.TestGuardPlainTakesDefaultClone
+      - test: core/netguard.TestGuardPlainKeepsHTTP2
+      - test: core/netguard.TestGuardPlainKeepsHTTP1Config
+      - test: core/netguard.TestGuardPlainBlocksLoopback
+  - id: round-tripper-shapes
+    rule: GuardRoundTripper turns nil into GuardedTransport, a plain transport into its guarded clone, and wraps anything else in a ResolveGuard that refuses an internal literal or resolved target before its Inner runs.
+    enforced_by:
+      - test: core/netguard.TestSweepGuardRoundTripperShapes
+      - test: battery/webhook.TestSSRF_CustomTransportSettingsSurvive
+      - test: core/a2a.TestPushPlainTransportDialGuarded
+decisions:
+  - id: one-outbound-url-check
+    date: 2026-11-19
+    status: accepted
+    decision: battery/webhook's validateSubscriberURL and core/a2a's validatePushURL call CheckOutboundURL, and their clients GuardRoundTripper; webhook's unbounded net.LookupIP, rejectInternalIP and ssrfGuardedRoundTripper and a2a's rejectInternal, plainGuarded and guardedRoundTripper are removed.
+    rejected:
+      - option: Keep a copy per surface.
+        why: The copies had drifted, and webhook's registration lookup had no deadline while a2a's had 3s.
+    upholds: [outbound-url-check, registration-lookup-bounded, round-tripper-shapes]
+  - id: no-proxy-under-the-guard
+    date: 2026-11-19
+    status: accepted
+    decision: A guarded transport drops HTTP_PROXY and HTTPS_PROXY; a deployment that needs a proxy supplies its own client or opts out with the surface's allowPrivate.
+    rejected:
+      - option: Honour the environment proxy.
+        why: The dial check would see only the proxy's address while the proxy connected to an internal target.
+    upholds: [guarded-transport-uses-no-proxy]
+  - id: wrap-custom-dialers
+    date: 2026-11-19
+    status: accepted
+    decision: A transport with its own proxy or dialer is wrapped in ResolveGuard, which resolves the target before Inner resolves it again, rather than having its dialer swapped.
+    rejected:
+      - option: Swap in the guarded dialer.
+        why: An egress proxy, SSH tunnel or unix-socket dialer reaches internal addresses by design, and swapping it breaks that routing.
+    revisit_if: Go lets a caller check the address a custom dialer or proxy finally connects to.
+    upholds: [round-tripper-shapes]

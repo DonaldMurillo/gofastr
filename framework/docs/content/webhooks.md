@@ -146,7 +146,9 @@ address (`0.0.0.0`), `localhost`, `*.localhost`, `*.internal`, and
 always rejected.
 
 The guard runs both on the hostname directly and on every resolved IP
-when the host is a name (DNS lookup at subscribe time). It also runs
+when the host is a name (DNS lookup at subscribe time, bounded to 3
+seconds; a lookup that fails or times out lets `Subscribe` succeed and
+leaves the check to delivery). It also runs
 **again at dial time**: the default delivery client's
 `Transport.DialContext` installs a `net.Dialer.Control` hook that
 re-validates the actual resolved IP at connect time. This closes the
