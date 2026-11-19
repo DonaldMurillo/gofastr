@@ -11,7 +11,8 @@ invariants:
     rule: A Decimal value is a string matching the canonical decimal form, so underscore separators, hex floats, Inf and NaN are refused before any parse.
     enforced_by:
       - test: core/schema.TestDecimalCanonicalForm
-      - test: core/schema.TestValidateDecimal
+      - test: core/schema.TestValidateDecimal_InvalidString
+      - test: core/schema.TestValidateDecimal_NonFiniteLiterals
   - id: one-decimal-literal-grammar
     rule: Decimal write validation and Decimal and Float filter coercion all match literals with schema.DecimalRegexp.
     applies:

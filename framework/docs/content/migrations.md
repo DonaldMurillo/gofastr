@@ -366,7 +366,11 @@ migration put on a column the entity leaves optional is not removed.
 > next snapshot directly (write them with `migrate.RenderMigrationFileChecked` /
 > `SaveSnapshot`).
 
-It then updates the snapshot. The typical loop:
+For custom Go registries, boot, `DiffSchema`, and `GeneratePlan` skip table
+and column changes for an entity with no fields. `GeneratePlan` carries
+forward any table it already recorded for that entity.
+
+After generation, the CLI updates the snapshot. The typical loop:
 
 1. Edit an entity in the app spec (add a field, add an entity, …).
 2. `gofastr migrate generate <name> --from=gofastr.yml` → review the generated `.sql`.

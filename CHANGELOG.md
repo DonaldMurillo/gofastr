@@ -25,6 +25,15 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`DiffSchema` and `GeneratePlan` skip a fieldless entity, as boot
+  does.** They planned DDL for an entity with no fields, and
+  `GeneratePlan` wrote an empty table into the snapshot, so removing the
+  placeholder later could plan a `DROP TABLE`. A fieldless entity now
+  keeps the table record it already had.
+- **SQLite column drops see every index on the column.** The diff
+  skipped an index whose details it failed to read, so a column held by
+  that index was proposed as a plain `DROP COLUMN`. Quoted and dotted
+  index names now read correctly, and a read failure stops the diff.
 - **Grouped entity endpoints serve the path OpenAPI publishes.** Under
   `app.GroupEntity`, an absolute `Endpoint.Path` was mounted under the
   group prefix while the spec showed it without, and `.`/`..` segments
