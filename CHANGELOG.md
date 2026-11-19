@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`rtc.Config.Path` refuses the same paths `relay.Config.Path` does.**
+  A path with ServeMux wildcards (`/live/{room}`), `$`, the bare
+  `/__gofastr` root or a reserved framework route such as
+  `/__gofastr/sse` now panics in `rtc.New` with an `rtc:` message,
+  instead of registering a wildcard route or colliding at mount. Both
+  batteries share one validator.
 - **A route group's fallback honours the `{$}` end marker.** `/a/{$}` no
   longer claims `/a/b` when picking which group's 404 or 405 handler
   answers, including next to a catch-all group. Screen routes refuse

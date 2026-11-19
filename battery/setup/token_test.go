@@ -115,9 +115,18 @@ func TestToken_WrongTokenReturns403(t *testing.T) {
 	r := buildTestRunner(t, false, &done)
 	h := r.Handler(func() {}, nil, nil)
 
-	w := doGet(h, "/setup?token=deadbeef")
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for wrong token, got %d", w.Code)
+	last := "0"
+	if strings.HasSuffix(r.token, last) {
+		last = "1"
+	}
+	for _, tc := range []struct{ name, token string }{
+		{"short token", "deadbeef"},
+		{"one digit changed", r.token[:len(r.token)-1] + last},
+	} {
+		w := doGet(h, "/setup?token="+tc.token)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("%s: expected 403 for wrong token, got %d", tc.name, w.Code)
+		}
 	}
 }
 
@@ -151,21 +160,6 @@ func TestToken_CookieGrantsAccess(t *testing.T) {
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 with cookie, got %d", w.Code)
-	}
-}
-
-// TestToken_ConstantTimeCompare verifies the comparison is via
-// subtle.ConstantTimeCompare, not ==.
-func TestToken_ConstantTimeCompare(t *testing.T) {
-	tok := "abcdef1234567890"
-	if !tokenEqual(tok, tok) {
-		t.Fatal("identical tokens must match")
-	}
-	if tokenEqual(tok, "abcdef1234567891") {
-		t.Fatal("different tokens must not match")
-	}
-	if tokenEqual(tok, "") {
-		t.Fatal("empty must not match")
 	}
 }
 
