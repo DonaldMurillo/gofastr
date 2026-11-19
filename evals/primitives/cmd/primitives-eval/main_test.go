@@ -209,7 +209,7 @@ func TestEveryCellRunsUnderTheDenyPolicy(t *testing.T) {
 			if err := json.Unmarshal(raw, &settings); err != nil {
 				t.Fatalf("%s/%s: %v", suite, cond, err)
 			}
-			if !slices.Contains(settings.Permissions.Deny, "Bash(git push *)") || !slices.Contains(settings.Permissions.Deny, "Read(~/.ssh/**)") {
+			if !slices.Contains(settings.Permissions.Deny, "Bash(git push *)") || !slices.Contains(settings.Permissions.Deny, "Read(~/.ssh/**)") || !slices.Contains(settings.Permissions.Deny, "Bash(go clean *)") {
 				t.Errorf("%s/%s runs without the deny policy: %v", suite, cond, settings.Permissions.Deny)
 			}
 			fullHarness := cond == conditionHarness || cond == conditionGuideLong || cond == conditionGuideShort

@@ -131,7 +131,8 @@ a cell inside it would read this checkout's `CLAUDE.md`.
 
 A cell is not a sandbox. It is an agent with a shell on the machine that
 runs the eval. Every cell gets a small deny policy (no pushes, no `ssh`
-or `gh`, no reading of SSH keys or cloud credentials), which stops the
+or `gh`, no reading of SSH keys or cloud credentials, no `go clean`,
+which would empty the build cache the cells share), which stops the
 usual spellings and nothing more. Run the eval somewhere disposable: a
 cloud session or a container, not a workstation with credentials on it.
 

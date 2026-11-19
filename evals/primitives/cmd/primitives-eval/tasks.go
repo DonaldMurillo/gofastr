@@ -40,10 +40,13 @@ const registryPointer = "**Before changing a file, run `go run ./cmd/primitives 
 // shell on this machine, not a sandbox: these rules keep the usual
 // spellings away from credentials and from anything that leaves the
 // machine, and the README says to run the eval somewhere disposable.
+// go clean is denied because the cells share one build cache: one cell
+// clearing it fails the builds and graders of every cell running beside it.
 var cellDeny = []string{
 	"Read(~/.ssh/**)", "Read(~/.aws/**)", "Read(~/.config/gcloud/**)", "Read(~/.azure/**)",
 	"Read(~/.netrc)", "Read(~/.config/gh/**)",
 	"Bash(git push *)", "Bash(gh *)", "Bash(ssh *)", "Bash(scp *)",
+	"Bash(go clean *)",
 }
 
 const (
