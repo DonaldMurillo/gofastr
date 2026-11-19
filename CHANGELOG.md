@@ -27,7 +27,10 @@ few lines, and link the PR or the docs page for the rest.
 ### Fixed
 - **A server action on a static page whose policy phase answers not-found
   refuses with 404 when it names no page.** It answered 403, which said
-  the route exists; naming the page already answered 404.
+  the route exists; naming the page already answered 404. The exported
+  `PatternPolicy` now returns a 404 Block with `NotFound` set for such a
+  static route (it was a Block with status 0), and `PagePolicy` returns
+  a Block, never a zero Allow, beside its error.
 - **A screen's `ErrNotFound` 404 no longer lists the route's hreflang
   alternates.** When a screen's `Load` or resolver answered
   `app.ErrNotFound`, or a not-found outlet went unfilled, the themed 404
