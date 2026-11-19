@@ -1,5 +1,5 @@
 version: v0.97.0
-title: Pending release
+title: SDKs from an OpenAPI document, MCP tool annotations, and routes that answer like an unknown URL
 notes:
   - change: "BREAKING - the admin account form's password change has no confirm field, and the i18nui.AdminConfirmPassword phrase is gone"
     breaking: true
@@ -315,7 +315,7 @@ notes:
   - change: "runtime: an intercepted plain POST form (application/json or data-cui-spa) drops a re-submit of the payload in flight and queues a changed one behind it, as data-cui-rpc forms do; the form reads aria-busy meanwhile"
     guidance: "Nothing to change. A form that relied on sending the same POST twice in a row must wait for the first to answer."
     nodetect: "browser submit timing; no host source spelling shows it"
-  - change: "the module requires Go 1.27.4"
+  - change: "BREAKING - the module requires Go 1.27.4"
     breaking: true
     hits: edit
     guidance: "go.mod names go 1.27.4, up from 1.27.3. Go 1.27.3 builds net/http with GO-2026-6859, an HTTP/1 server crash through a MaxBytesReader header race, and every GoFastr app serves HTTP. `go get` of this release raises your go directive to 1.27.4, and GOTOOLCHAIN=auto (the default) downloads that toolchain. With GOTOOLCHAIN=local, install Go 1.27.4 first. Nothing in your code changes."
@@ -510,3 +510,17 @@ notes:
   - change: "A process module's module.tool.list entry is read with its annotations key (MCP tool hints): ModuleToolDigest hashes it when present and a malformed value fails decoding; it used to be ignored"
     guidance: "Nothing to change for a module that sends no annotations key: its tool digests are unchanged. A module that already sent one must recompute its tool digests with framework.ModuleToolDigest and re-approve the descriptor, or its handshake fails and the module is quarantined."
     nodetect: "the key lives in the module child's module.tool.list answer at runtime, not in host source"
+  - change: "BREAKING - handler.Bind refuses a duplicate or case-folded key at any depth of a JSON body (400 json_duplicate_key or json_folded_keys); it checked the top level of a struct only, so a nested or map key bound last-wins"
+    breaking: true
+    guidance: "Send each key once, in its declared case. A client that relied on a later duplicate winning sends only that value. The MCP twin of the same handler already refused both."
+    nodetect: "the keys of a request body; no host source spelling shows it"
+  - change: "BREAKING - gofastr generate sdk with two or more sdk entries in gofastr.settings.yml refuses to run without --out or --from-openapi (it took the first entry); each flag picks the entry it names or none, no run writes into or inside another entry's output directory, and a settings from_openapi must name a file inside the project"
+    breaking: true
+    guidance: "Pass --out with an entry's directory (or --from-openapi with an entry's document) to pick it, or run gofastr generate, which still runs every entry into its own directory. Move a from_openapi document that lives outside the project into it."
+    nodetect: "the shape is the sdk entries in gofastr.settings.yml and a script that runs generate sdk; no Go source spelling carries it"
+  - change: "A server action that names no page, on a static route whose policy phase answers not-found (a resolver's ErrNotFound or decide.NotFound), refuses with 404 instead of 403, as the named-page case already did"
+    guidance: "A client that reads 403 from such an action reads 404 now; nothing else changes."
+    nodetect: "the status depends on a runtime resolver or policy answer; no source spelling distinguishes it"
+  - change: "An MCP tools/call whose _meta is a string, array or number, or longer than 64 KiB, answers -32602 and the tool does not run; it was ignored"
+    guidance: "Send _meta as a JSON object, as the MCP spec requires. Clients that follow the spec are unaffected."
+    nodetect: "the shape of a request a client sends; no host source spelling shows it"

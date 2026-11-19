@@ -24,7 +24,82 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+## [0.97.0] - 2026-11-19
+
 ### Added
+- **ui: `ControlConfig.AutoCapitalize` sets the case an on-screen
+  keyboard starts in** (`ui.AutoCapitalizeOff`, `AutoCapitalizeSentences`,
+  `AutoCapitalizeWords`, `AutoCapitalizeCharacters`; any other value
+  panics). Entity `email`, `tel` and `url` fields now carry the
+  `autocomplete` token of that name, no spell check and no
+  autocapitalize. ([#814](https://github.com/DonaldMurillo/gofastr/pull/814))
+- **Every page's head carries `<meta name="text-scale" content="scale">`**,
+  so in Chrome and Edge the OS text size scales the root font and every
+  `rem` follows it. ([#814](https://github.com/DonaldMurillo/gofastr/pull/814))
+- **`ui.ColorScheme` keeps one part of a page dark on a light page, or
+  light on a dark one.** `ui.ColorScheme(ui.SchemeDark, children...)`
+  renders `<div data-color-scheme="dark">` (`ui.SchemeLight` for
+  `"light"`). The theme CSS declares that scheme's palette again on the
+  wrapper, with its `color-scheme`, text and background colour, so a
+  primary button inside draws the dark primary and native controls
+  follow the wrapper. Wrappers nest. It needs a theme with `DarkColors`
+  and works with JavaScript off. See
+  [theming](framework/docs/content/theming.md#one-part-of-the-page-in-the-other-scheme-uicolorscheme).
+  ([#758](https://github.com/DonaldMurillo/gofastr/pull/758))
+- **`ui.OneTimeCode` draws the field for a 2FA or emailed code.** It is
+  a `ui.Control` inside a `FormField`: `type="text"`,
+  `autocomplete="one-time-code"`, `inputmode="numeric"`, six digits
+  (`Digits` changes it), posted as `code` (`Name` changes it), with
+  `i18nui.AuthOneTimeCode` ("Authentication code") as the default
+  label. `ui.ControlConfig` gains `EnterKeyHint`, `InputMode` and
+  `NoSpellCheck`, and `ui.PasswordInputConfig` gains `MinLength` and
+  `EnterKeyHint`. `ui.PasswordInput` never spell-checks or
+  auto-capitalises, also while revealed. See
+  [interactive patterns](framework/docs/content/interactive-patterns.md#one-time-code-field).
+  ([#758](https://github.com/DonaldMurillo/gofastr/pull/758))
+- **Password reset and the 2FA challenge work as plain HTML forms.**
+  `POST /auth/forgot-password` (`email`, `next`) answers `303` to `next`
+  for every address, known or not. `POST /auth/reset-password` (`token`,
+  `password`, `next`) and `POST /auth/2fa/challenge` (`code`, `next`)
+  answer `303` to `next` on success and `303` back with `?error=` on a
+  failure; a JSON client gets the JSON answers as before. The new
+  `PasswordResetConfig.LinkPath` names your own page for the emailed
+  link (`?token=` is appended); Init refuses anything but a same-origin
+  path with no query. An app spec `login_form` takes `forgot_href` for
+  a "Forgot your password?" link (`i18nui.AuthForgotPassword`).
+  `examples/meridian/auth_screens.go` has the three pages. See
+  [auth](framework/docs/content/auth.md#password-reset-from-html-forms)
+  and [the 2FA flow](framework/docs/content/auth.md#the-2fa-flow).
+  ([#758](https://github.com/DonaldMurillo/gofastr/pull/758))
+- **`ui.Video` renders a `<video>` with the browser's player controls.**
+  `Sources` are tried in order and `Width` and `Height` are required, so
+  the box is reserved before anything loads. Nothing downloads until the
+  reader presses play (`preload="none"`); `Eager` fetches the metadata
+  with the page. `Poster`, WebVTT `Tracks` (captions by default),
+  `Label`, `Aspect` and `Rounded` are optional. A source, track or
+  poster whose URL fails the URL policy is dropped. It panics with no
+  `Sources`, no size, or an unknown track `Kind`. See
+  [UI components](framework/docs/content/ui-new-components.md).
+  ([#817](https://github.com/DonaldMurillo/gofastr/pull/817))
+- **`uihost.WithFontPreload` preloads self-hosted web fonts.**
+  `WithFontPreload(dir, fonts...)` adds a
+  `<link rel="preload" as="font" type="font/woff2" crossorigin>` for
+  each font that `style.FontFaceCSS(dir, fonts...)` declares: a family
+  that sanitizes to nothing, or a second font with the same family, gets
+  no link, as it gets no `@font-face` rule. `style.FontURL` returns the
+  URL both use. `style.WebFont.Fallback` (a `style.FontFallback`) adds a
+  local face tuned to the web font's metrics, named
+  `font.FallbackFamily()`, so the swap does not move the page. See
+  [theming](framework/docs/content/theming.md#self-hosting-web-fonts).
+  ([#773](https://github.com/DonaldMurillo/gofastr/pull/773))
+- **`style.ContrastWarnings(theme)` lists the contrast pairs `Validate`
+  does not refuse**, and the UI host logs them once at boot: primary and
+  danger ink written in `rgb()`, `hsl()`, `oklab()` or `oklch()` below
+  4.5:1, and a form-control edge below 3:1 over `surface`, in the light
+  and the dark palette. `Validate` still refuses plain hex pairs only,
+  so a theme that booted before still boots. See
+  [theming](framework/docs/content/theming.md).
+  ([#773](https://github.com/DonaldMurillo/gofastr/pull/773))
 - **mcp: tool annotations.** `mcp.WithAnnotations(mcp.Annotations{...})`
   serves a tool's `readOnlyHint`, `destructiveHint`, `idempotentHint`,
   `openWorldHint` and `title` in `tools/list`; `mcp.Bool(v)` sets a hint,
@@ -58,11 +133,8 @@ few lines, and link the PR or the docs page for the rest.
   manifest's drift hash covers the document; the docs site serves the
   downloads only when `sdkdocs.Config.OpenAPI` holds that document, and
   checks drift against it. The entity JS SDK's `_readBody` now reads
-  through `_readBytes`, so regenerated `client.js` files change bytes. A
-  settings file with two or more `sdk` entries now needs `--out` or
-  `--from-openapi` on `gofastr generate sdk` to pick one, instead of
-  taking the first, and an `--out` that names no entry's directory takes
-  no entry's settings. [#818](https://github.com/DonaldMurillo/gofastr/issues/818)
+  through `_readBytes`, so regenerated `client.js` files change bytes.
+  [#818](https://github.com/DonaldMurillo/gofastr/issues/818)
 
 ### Fixed
 - **A server action on a static page whose policy phase answers not-found
@@ -372,6 +444,113 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **BREAKING: `gofastr generate sdk` with two or more `sdk` entries in
+  `gofastr.settings.yml` needs `--out` or `--from-openapi` to pick one.**
+  It took the first entry. Each flag picks the entry it names, or none;
+  no run writes into or inside another entry's output directory, and a
+  settings `from_openapi` must name a file inside the project.
+  `gofastr generate` still runs every entry.
+  [#818](https://github.com/DonaldMurillo/gofastr/issues/818)
+- **Form errors are read once, from one polite region.** No field error
+  node is its own `role="alert"` any more: a refused submit is read from
+  `#cui-form-errors`, one "Label: message" sentence per field, and focus
+  moves to the first refused field. The `headless-validity` module copies
+  the browser's `:user-invalid` onto `aria-invalid`, so a screen reader
+  hears what the border shows. A test or script that looked for
+  `role="alert"` on a field error reads the region instead.
+  ([#814](https://github.com/DonaldMurillo/gofastr/pull/814))
+- **A field's hint sits between its label and its control.**
+  `headless.Field` renders label, hint, control, error; the inline field
+  layout keeps a hinted label on the control's row
+  (`--fui-field-label-row`), and below 33rem every field stacks, hint and
+  error included. `Slider` with `ShowValue` sets `aria-valuetext`, and
+  `SearchInput` wraps its form in `<search>`.
+  ([#814](https://github.com/DonaldMurillo/gofastr/pull/814))
+- **`TextArea{Autogrow: true}` uses `field-sizing: content` where the
+  browser supports it**, with `rows` and `cols` as the minimum size; the
+  measuring script is the fallback elsewhere.
+  ([#814](https://github.com/DonaldMurillo/gofastr/pull/814))
+- **BREAKING: the admin account form asks for the new password once.**
+  The confirm field is gone, and so is the `i18nui.AdminConfirmPassword`
+  phrase. Delete references to it and any catalog entry for
+  `ui.admin.confirmPassword`. The new password field has a show toggle.
+  `POST /auth/password` still accepts `confirm_password` from other
+  clients. `gofastr upgrade` finds the Go uses. See
+  [admin](framework/docs/content/admin.md).
+  ([#758](https://github.com/DonaldMurillo/gofastr/pull/758))
+- **Every page declares `<meta name="color-scheme" content="light dark">`**
+  at the top of its `<head>`, so the browser draws form controls,
+  scrollbars and the page canvas in the right scheme with JavaScript
+  off. A theme with no `DarkColors` now emits `color-scheme: light` on
+  `:root`: on a dark OS, its native controls are light, where they used
+  to turn dark. The color-scheme bootstrap sets the meta to the mode the
+  reader picked, or back to `light dark` while the page follows the OS.
+  The icon `ui.ThemeToggle` no longer stores a choice the OS already
+  shows, so the page follows the OS again when the OS changes. See
+  [theming](framework/docs/content/theming.md#native-controls-color-scheme).
+  ([#758](https://github.com/DonaldMurillo/gofastr/pull/758))
+- **Generated sign-in and sign-up forms carry password-manager hints.**
+  The email field asks for `autocomplete="username"` with
+  `enterkeyhint="next"` and no spell check, and the password is a
+  `ui.PasswordInput` with its show toggle. Regenerate, or copy the field
+  code from [auth](framework/docs/content/auth.md), to pick it up.
+  ([#758](https://github.com/DonaldMurillo/gofastr/pull/758))
+- **Modal widgets render as native `<dialog>` elements.** A widget with
+  `Backdrop` (`preset.Modal`, `preset.Drawer`, `preset.BottomSheet`,
+  anything at `widget.Center`) renders `<dialog class="cui-widget …">`
+  instead of a `<div>`, and the runtime opens it with `showModal()`. The
+  scrim is `::backdrop` in `--ui-scrim`, not a `[data-cui-backdrop]`
+  element; the root drops `role="dialog"` and `aria-modal`, which
+  `<dialog>` implies (another `Role` such as `alertdialog` stays); and
+  with `CloseOnEscape` off it carries `closedby="none"`. The page behind
+  is inert from the moment the modal opens, so Tab can no longer leave
+  it before the focus module loads. A popover opened over a modal mounts
+  inside the dialog. Check host CSS and tests that select the modal by
+  `div`, `role="dialog"`, `aria-modal` or `[data-cui-backdrop]`, or that
+  set its `z-index`. A host `Skeleton` that returns a `<div>` keeps the
+  old behaviour. See [widgets](framework/docs/content/widgets.md).
+  ([#778](https://github.com/DonaldMurillo/gofastr/pull/778))
+- **Form control edges meet 3:1 contrast.** Text fields, textareas,
+  selects, comboboxes, the grouped, password, search, number, tag,
+  colour and time inputs, checkboxes, radios and the switch track draw
+  their edge in the new `--ui-control-border` knob, which defaults to
+  `--color-text-subtle`, not `--color-border` (about 1.3:1). Edges are
+  darker; a theme can set the knob, and gets a boot warning when the
+  edge misses 3:1 over `surface`. See
+  [theming](framework/docs/content/theming.md).
+  ([#773](https://github.com/DonaldMurillo/gofastr/pull/773))
+- **Controls keep their meaning under Windows high contrast.** With
+  `forced-colors: active`, the checkbox tick, radio dot, switch thumb,
+  spinner, divider and mask-drawn chevrons and sort icons draw in
+  system colours, and the selected tab, the current `ui.TabNav` link,
+  the checked `ui.SegmentedControl` segment and the current
+  `ui.SegmentedLinks` item are marked in `Highlight`.
+  ([#773](https://github.com/DonaldMurillo/gofastr/pull/773))
+- **Type and colour defaults changed.** Colour tints use
+  `color-mix(in oklab, …)` instead of `in srgb`, across the kit, the
+  batteries and generated code. Hero, page-header and card titles use
+  `text-wrap: balance`, and the hero's size mixes rem with vw, so it
+  follows the reader's font-size setting. `accent-color` and
+  `::selection` follow `--color-primary`. `--easing-spring` is now a
+  `linear()` spring that overshoots and settles. Check screenshots of
+  pages that depend on exact tint colours.
+  ([#773](https://github.com/DonaldMurillo/gofastr/pull/773))
+- **A polled region off screen is not fetched.** A `data-cui-poll`
+  region more than 200px outside the viewport skips its ticks; the tick
+  that came due while it was away runs as soon as it scrolls near, so
+  it is never more than one interval stale. Widget polls keep their
+  cadence. See [reactivity](framework/docs/content/reactivity.md).
+  ([#817](https://github.com/DonaldMurillo/gofastr/pull/817))
+- **`gofastr test` prints `✓ TestName` without `--- PASS:`.** A passing
+  test's line repeated the `--- PASS:` prefix after the tick, and a
+  failing one `--- FAIL:` after the cross.
+  ([#760](https://github.com/DonaldMurillo/gofastr/pull/760))
+- **`generate app` no longer puts a provenance marker on
+  `gofastr.settings.yml`.** The file is merged into the one you keep,
+  never written whole, so `--json` reported a size that counted a marker
+  the file on disk never got. It now reports the real size. See
+  [app spec](framework/docs/content/app-spec.md).
+  ([#760](https://github.com/DonaldMurillo/gofastr/pull/760))
 - **mcp: a `tools/call` with a malformed `_meta` is refused.** A `_meta`
   that is a string, array or number, or longer than 64 KiB, was ignored;
   it now answers `-32602` and the tool does not run.
@@ -505,7 +684,7 @@ few lines, and link the PR or the docs page for the rest.
   or `go.sum` changed. Fixture trees such as `cmd/check-embed/testdata`
   are meant not to type-check; `go build ./...` there is no longer a
   reason to send the session back.
-- **BREAKING: four leftover compatibility spellings are gone.**
+- **BREAKING: five leftover compatibility spellings are gone.**
   `tenant.TenantConfig.Header` and `auth.MagicLinkConfig.TokenLength`
   were read by nothing; delete them from your literals.
   `migrate.RenderMigrationFile` (and `framework.RenderMigrationFile`) is
@@ -930,7 +1109,7 @@ few lines, and link the PR or the docs page for the rest.
   on this release finds no list there and removes no stale page; delete
   the old `<OutDir>/.gofastr-pages` and, if a page went private since
   the last build, clear `OutDir` once.
-- **`core/static` serves a real `~digit` file name**
+- **BREAKING: `core/static` serves a real `~digit` file name**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [core packages](framework/docs/content/core-packages.md)). A segment
   with `~` followed by a digit, the shape of an NTFS 8.3 short name, is
@@ -1172,7 +1351,6 @@ few lines, and link the PR or the docs page for the rest.
   - two entities whose create-flagged lists share one screen;
   - an entity with `exposure.mcp: true` and `exposure.crud: false`;
   - sibling endpoints whose routes overlap.
-
   It also warns on a `nav[].href` nothing in the spec serves, a
   `custom_form` that POSTs to a screen route, an
   image or file field with no file storage wired, and a screen, auth or
@@ -1180,6 +1358,18 @@ few lines, and link the PR or the docs page for the rest.
   under `locale_prefixes`.
 
 ### Security
+- **The head HTML scrub reads a `<link>`'s real attributes.**
+  `WithHeadHTML` and `SEOScreen.HeadHTML` found a link's `rel` and
+  `href` with a regex that also matched text inside another attribute's
+  quoted value. So `<link data-note=" rel=icon href='' " rel="preload" …>`
+  kept its preload, and a fake empty `href` in a `data-*` value hid a
+  real `href="javascript:…"`. The scrub now reads the tag with the HTML
+  tokenizer, and the first of a repeated attribute wins, as in a
+  browser. It also strips an `on*=` handler or `autofocus` that comes
+  right after a closing quote (`rel="x"onload=…`), which a browser reads
+  as a new attribute. Nothing to change. See
+  [SEO](framework/docs/content/seo.md).
+  ([#817](https://github.com/DonaldMurillo/gofastr/pull/817))
 - **One terminal scrub** ([core packages](framework/docs/content/core-packages.md)).
   Six places stripped control characters from text bound for an
   operator's terminal, each with its own set: codegen extension stderr
@@ -1489,7 +1679,7 @@ few lines, and link the PR or the docs page for the rest.
   could ask for `?page=/admin` and read the names of the admin drawer,
   palette and shortcut sheet. `/__gofastr/widgets` also answers
   `Cache-Control: no-store` with `Vary: Cookie`.
-- **The Roles grid refuses a revoke that locks the caller out.** An admin
+- **BREAKING: the Roles grid refuses a revoke that locks the caller out.** An admin
   could untick a permission their own role held and then could not grant
   it back. The save is refused before any write when none of the
   caller's roles would still hold it.
@@ -1500,7 +1690,7 @@ few lines, and link the PR or the docs page for the rest.
 - **The real-estate example's tours and inquiries declare `states:`**, so
   an anonymous visitor can no longer book a tour already `confirmed` or
   file an inquiry already `converted`.
-- **The default email check refuses a value that is not one
+- **BREAKING: the default email check refuses a value that is not one
   `local@domain` address** ([auth](framework/docs/content/auth.md)).
   Registration accepted `notanemail` as an account. Register, login,
   magic link, password reset and OAuth now answer 400 `invalid_email`
@@ -2474,12 +2664,12 @@ few lines, and link the PR or the docs page for the rest.
   `query_undecodable`; an entityui list screen shows its "Filter not
   applied" warning when the pair is one of its own params, so a keyed
   list does not warn for its neighbour's.
-- **A `?where=` leaf with a null or missing value answers 400.**
+- **BREAKING: a `?where=` leaf with a null or missing value answers 400.**
   `{"field":"title","value":null}` compiled to `title = ''` on a text
   column; it and a null `in` entry now answer
   `filter.where_needs_value`. An explicit `""` still matches the empty
   string.
-- **The CSV export refuses `?q=` on an entity with no search fields**, as
+- **BREAKING: the CSV export refuses `?q=` on an entity with no search fields**, as
   the REST list does, instead of exporting every row.
 - **llm.md text cannot turn control-byte entities into markup**, and a
   code block in a table cell keeps its row whole. Inline code keeps the
@@ -2554,12 +2744,13 @@ few lines, and link the PR or the docs page for the rest.
   required field with no default validated, and every submit answered
   400. The real-estate, lms and project-manager examples had four such
   forms; each now lists its field.
-- **A repeated `?include=` key answers 400 `include_repeated`**
+- **BREAKING: a repeated `?include=` key answers 400 `include_repeated`**
   ([includes](framework/docs/content/includes.md)); the second key was
   half-applied.
-- **The CSV export, bulk, list-deleted, saved-views and relation-picker
-  routes refuse as the list route does**: an anonymous caller gets 401,
-  not 403.
+- **BREAKING: the CSV export, bulk, list-deleted, saved-views and
+  relation-picker routes refuse as the list route does**: a caller with
+  no session or tenant gets 401, not 403, and the body is the CRUD
+  refusal envelope in place of `{"error":"access denied"}`.
 - **A wrong path or method under `/mcp` or on `/openapi.json` answers a
   JSON problem document** instead of the UI host's HTML page, and opens
   no guest session.
@@ -2568,7 +2759,7 @@ few lines, and link the PR or the docs page for the rest.
   An edit form still needs the runtime: its native POST reaches a route
   that serves PUT and PATCH
   ([#715](https://github.com/DonaldMurillo/gofastr/issues/715)).
-- **Every CRUD read refuses a repeated single-value control** with 400
+- **BREAKING: every CRUD read refuses a repeated single-value control** with 400
   `query_key_repeated`: `cursor`, `direction`, `fields`, `limit`,
   `offset`, `page`, `per_page`, `q`, `stream`, `trashed` and `where`, on
   list (offset, cursor and stream pages), direct streaming and read-one.
@@ -2641,7 +2832,7 @@ few lines, and link the PR or the docs page for the rest.
 - **Docs**: search query terms keep `-` and `_`; backup codes are eight
   letters and digits; component sheets read the component-option
   variables; seed references resolve only against one-column keys.
-- **semantic refuses text it cannot store**
+- **BREAKING: semantic refuses text it cannot store**
   ([semantic search](framework/docs/content/semantic-search.md)). `Index.Add`,
   `IndexOwned` and the `/index` route refuse a document whose ID,
   source, owner or text holds a NUL byte or invalid UTF-8. `Index.Add`
