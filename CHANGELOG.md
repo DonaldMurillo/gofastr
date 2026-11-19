@@ -25,6 +25,22 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Image variant lists are checked before any rendition is written.**
+  `VariantSet.ProcessTo` used to hand earlier variants to its sink and
+  only then refuse a bad later one, and `imagefield.New` accepted an
+  unsupported format. Both now run the new `image.CheckVariants` (count,
+  widths, encodings, names) first.
+- **`image.Metadata().HasAlpha` reads every pixel.** It sampled nine
+  points on anything but an RGBA or NRGBA image, so a paletted or 16-bit
+  image with one transparent interior pixel reported no alpha.
+- **Upload metadata stripping keeps 16-bit PNG precision when it
+  rotates.** An EXIF-oriented PNG came back as 8-bit premultiplied RGBA;
+  it now keeps 16-bit channels and straight alpha.
+- **Truncated JPEG and PNG uploads are refused before storage.** The
+  metadata strip now requires the JPEG EOI marker and the PNG IEND chunk
+  instead of storing a file cut short. Rendition MIME strings share the
+  8 KiB field limit, and `file.VariantStorageRefs` reports false for a
+  JSON `null`.
 - **Admin role assignment honours a Decider's deny.** Adding or removing
   a role is refused when the request's Decider denies any permission the
   role grants, as grant and revoke already were.

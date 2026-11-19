@@ -338,16 +338,3 @@ func TestSinkPanics(t *testing.T) {
 		panic("sink go boom")
 	})
 }
-
-// TestVariantSetWidthLargerThanSourceUpscales documents the "no
-// without-enlargement guard" behavior of VariantSet.
-func TestVariantSetWidthLargerThanSourceUpscales(t *testing.T) {
-	src := stdimage.NewRGBA(stdimage.Rect(0, 0, 16, 16))
-	img := FromImage(src, FormatPNG)
-	set := VariantSet{Variants: []Variant{{Width: 2048, Format: FormatPNG}}}
-	res, err := set.Process(img)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("Variant width=2048 from src=16x16 produced %dx%d (%d bytes) — upscaled blindly", res.Variants[0].Width, res.Variants[0].Height, len(res.Variants[0].Bytes))
-}

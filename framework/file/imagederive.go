@@ -30,7 +30,7 @@ func VariantStorageRefs(raw []byte) (refs []string, ok bool) {
 	var vs []struct {
 		StorageRef string `json:"storage_ref"`
 	}
-	if err := json.Unmarshal(raw, &vs); err != nil {
+	if err := json.Unmarshal(raw, &vs); err != nil || vs == nil {
 		return nil, false
 	}
 	for _, v := range vs {
@@ -86,6 +86,10 @@ func (d *ImageDerivatives) Validate() error {
 		if r, off := indexForgedRune(v.StorageRef); off >= 0 {
 			return fmt.Errorf("%w: variant %d storage_ref contains invisible or bidi rune U+%04X at offset %d",
 				ErrFileFieldControlBytes, i, r, off)
+		}
+		if len(v.MIME) > MaxFileFieldStringBytes {
+			return fmt.Errorf("%w: variant %d mime is %d bytes (max %d)",
+				ErrFileFieldOversize, i, len(v.MIME), MaxFileFieldStringBytes)
 		}
 		if r, off := indexForgedRune(v.MIME); off >= 0 {
 			return fmt.Errorf("%w: variant %d mime contains invisible or bidi rune U+%04X at offset %d",

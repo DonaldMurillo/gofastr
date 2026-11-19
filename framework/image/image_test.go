@@ -6,6 +6,7 @@ import (
 	"hash/crc32"
 	stdimage "image"
 	"image/color"
+	"image/draw"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
@@ -876,25 +877,30 @@ func TestFromImageHasNoOrientation(t *testing.T) {
 	}
 }
 
-// TestHasAlphaDetectsInteriorPixel pins the round-4 P1: the prior
-// implementation sampled only 9 corner/centre pixels, so a logo
-// with a single semi-transparent inner pixel reported HasAlpha=false.
-// The fast path walks Pix[3::4] for NRGBA/RGBA with early exit on the
-// first non-opaque sample.
 func TestHasAlphaDetectsInteriorPixel(t *testing.T) {
-	src := stdimage.NewNRGBA(stdimage.Rect(0, 0, 16, 16))
-	for i := 0; i < len(src.Pix); i += 4 {
-		src.Pix[i+0] = 200
-		src.Pix[i+1] = 200
-		src.Pix[i+2] = 200
-		src.Pix[i+3] = 255
-	}
-	// Single interior pixel with sub-opaque alpha.
-	off := src.PixOffset(5, 5)
-	src.Pix[off+3] = 250
-	wrapped := FromImage(src, FormatPNG)
-	if !wrapped.Metadata().HasAlpha {
-		t.Error("interior alpha=250 must be detected as HasAlpha=true")
+	rect := stdimage.Rect(0, 0, 16, 16)
+	palette := color.Palette{color.White, color.Transparent}
+	for _, tc := range []struct {
+		name  string
+		image draw.Image
+		alpha color.Color
+	}{
+		{"NRGBA", stdimage.NewNRGBA(rect), color.NRGBA{A: 250}},
+		{"paletted", stdimage.NewPaletted(rect, palette), color.Transparent},
+		{"16-bit", stdimage.NewNRGBA64(rect), color.Transparent},
+		{"generic", struct{ draw.Image }{stdimage.NewRGBA(rect)}, color.Transparent},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			draw.Draw(tc.image, rect, stdimage.NewUniform(color.White), stdimage.Point{}, draw.Src)
+			wrapped := FromImage(tc.image, FormatPNG)
+			if wrapped.Metadata().HasAlpha {
+				t.Fatal("fully opaque image reports alpha")
+			}
+			tc.image.Set(5, 5, tc.alpha)
+			if !wrapped.Metadata().HasAlpha {
+				t.Error("image with one non-opaque interior pixel reports no alpha")
+			}
+		})
 	}
 }
 

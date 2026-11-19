@@ -18,7 +18,7 @@ twins:
         note: placeholderUsable, for the render sink.
 invariants:
   - id: variant-refs-validated
-    rule: ImageDerivatives.Validate refuses a variant StorageRef that is oversize, has an unsafe scheme, holds "..", a control byte or a forged rune, a variant MIME with a control byte, forged rune or unsafe character, and a negative width or height.
+    rule: ImageDerivatives.Validate refuses a variant StorageRef that is oversize, has an unsafe scheme, holds "..", a control byte or a forged rune, a variant MIME that is oversize or has a control byte, forged rune or unsafe character, and a negative width or height.
     enforced_by:
       - test: framework/file.TestVariantRefRejectsControlBytes
       - test: framework/file.TestImageDerivativesValidateTable
