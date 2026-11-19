@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,9 +22,16 @@ import (
 // fakeDaemon stands in for a running installed daemon: it answers the
 // installed layout's control channel with the pid of a real child
 // process, so procalive.Alive sees a live process until kill reaps it.
+// kill closes the control channel, waits killGap, then marks killed
+// and kills the process: a stop that trusts the closed channel alone
+// returns inside the gap, with killed still false, while a stop that
+// waits for the exit returns after it. Tests ask killed rather than
+// procalive.Alive, which can misread a zombie that kill's Wait is
+// reaping at that moment.
 type fakeDaemon struct {
-	pid  int
-	kill func()
+	pid    int
+	kill   func()
+	killed atomic.Bool
 }
 
 // startFakeDaemon starts one. With obeyStop, a control "stop" closes
@@ -53,6 +61,8 @@ func startFakeDaemon(t *testing.T, b *Battery, obeyStop bool) *fakeDaemon {
 	d.kill = func() {
 		once.Do(func() {
 			ln.Close()
+			time.Sleep(killGap)
+			d.killed.Store(true)
 			_ = child.Process.Kill()
 			_ = child.Wait()
 		})
@@ -70,6 +80,8 @@ func startFakeDaemon(t *testing.T, b *Battery, obeyStop bool) *fakeDaemon {
 	})
 	return d
 }
+
+const killGap = 300 * time.Millisecond
 
 func shortStopWait(t *testing.T) {
 	t.Helper()
@@ -106,7 +118,7 @@ func TestLaunchdStopWaitsForExit(t *testing.T) {
 	if err := (launchd{}).stop(b); err != nil {
 		t.Fatal(err)
 	}
-	if procalive.Alive(d.pid) {
+	if !d.killed.Load() {
 		t.Fatal("stop returned while the daemon was still alive")
 	}
 	if got := ft.got(); len(got) != 1 || got[0] != "launchctl kill SIGTERM gui/501/dev.gofastr.svctest" {
@@ -194,7 +206,7 @@ func TestTaskSchedulerStopDrains(t *testing.T) {
 	if err := (taskScheduler{}).stop(b); err != nil {
 		t.Fatal(err)
 	}
-	if procalive.Alive(d.pid) {
+	if !d.killed.Load() {
 		t.Fatal("stop returned while the daemon was still alive")
 	}
 	if got := ft.got(); len(got) != 0 {
@@ -211,7 +223,7 @@ func TestTaskSchedulerStopEndsAStuckDaemon(t *testing.T) {
 	if err := (taskScheduler{}).stop(b); err != nil {
 		t.Fatal(err)
 	}
-	if procalive.Alive(d.pid) {
+	if !d.killed.Load() {
 		t.Fatal("stop returned while the daemon was still alive")
 	}
 	want := []string{"schtasks /End /TN dev.gofastr.svctest-S-1-5-21-7"}

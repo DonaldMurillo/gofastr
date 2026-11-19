@@ -42,8 +42,10 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 	// package is imported, and on a page only when asked for.
 	behaviorOverrides := map[string]int{
 		// TestIslandToastReturnsFocus: focused-row detach observation and
-		// origin recovery share the toast lifecycle, 3144 measured + 2.
-		"framework/headless/feedback.js": 3146,
+		// origin recovery share the toast lifecycle; a toast action
+		// refuses a non-string label or endpoint and copies only string
+		// RPC hooks (+32). 3176 measured + 2.
+		"framework/headless/feedback.js": 3178,
 		// framework/headless's disclosure and sortable list, each at the
 		// walk's line before the 2026-11-05 IME Escape fix: an Escape or
 		// key handler ignores a composition event (`isComposing` or
