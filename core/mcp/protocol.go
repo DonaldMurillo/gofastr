@@ -163,7 +163,7 @@ func negotiateProtocolVersion(params json.RawMessage) string {
 
 func (s *Server) handleInitialize(req Request) Response {
 	s.mu.RLock()
-	name, version := s.name, s.version
+	name, version, instructions := s.name, s.version, s.instructions
 	s.mu.RUnlock()
 	capabilities := map[string]any{
 		"tools": map[string]any{"listChanged": true},
@@ -174,9 +174,13 @@ func (s *Server) handleInitialize(req Request) Response {
 	if s.hasPrompts() {
 		capabilities["prompts"] = map[string]any{"listChanged": true}
 	}
-	return newSuccessResponse(req.ID, map[string]any{
+	result := map[string]any{
 		"protocolVersion": negotiateProtocolVersion(req.Params),
 		"capabilities":    capabilities,
 		"serverInfo":      map[string]any{"name": name, "version": version},
-	})
+	}
+	if instructions != "" {
+		result["instructions"] = instructions
+	}
+	return newSuccessResponse(req.ID, result)
 }

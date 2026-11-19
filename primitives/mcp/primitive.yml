@@ -93,6 +93,10 @@ invariants:
       - test: core/mcp.TestPanickingGateFailsClosedEverywhere
       - test: core/mcp.TestCallGatePanicRedScrubbed
       - test: core/mcp.TestServerGatePanicRedScrubbed
+  - id: initialize-serves-instructions
+    rule: initialize carries instructions exactly when SetInstructions set non-empty text, and the text as set.
+    enforced_by:
+      - test: core/mcp.TestInitializeServesInstructions
 decisions:
   - id: callback-errors-share-one-function
     date: 2026-11-16

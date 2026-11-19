@@ -2448,6 +2448,16 @@ your connection" wording.
 Never a `location.href` fallback. A static export ships the same page
 as `404.html` at the root (see `framework/docs/content/static-export.md`).
 
+A route that matches but answers not-found gets the same page as one
+that matches nothing: a `Load` or resolver returning `app.ErrNotFound`,
+an unfilled `FallbackNotFound` outlet, a policy returning
+`decide.NotFound()`, and middleware calling `host.ServeNotFound(w, r)`.
+The head carries none of the matched route's meta (hreflang, canonical,
+description, OG), so the two 404s cannot be told apart.
+`decide.NotFound()` is a `DecisionBlock` with `NotFound` set, which the
+policy phase turns into the whole-page not-found error: code that only
+knows `Block` still refuses with 404.
+
 ## Theme
 
 The framework's design tokens live in `core-ui/style.Theme`, a

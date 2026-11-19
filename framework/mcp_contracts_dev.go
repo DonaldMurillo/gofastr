@@ -75,7 +75,15 @@ func (a *App) registerContractDevTools() error {
 		if a.skipDevEntityMCPCollision(t.name) {
 			continue
 		}
-		opts := []mcp.ToolOption{mcp.WithDevImplied()}
+		opts := []mcp.ToolOption{mcp.WithDevImplied(), readOnlyToolHints()}
+		if t.name == "contracts_fix" {
+			opts[1] = mcp.WithAnnotations(mcp.Annotations{
+				ReadOnlyHint:    mcp.Bool(false),
+				DestructiveHint: mcp.Bool(true),
+				IdempotentHint:  mcp.Bool(false),
+				OpenWorldHint:   mcp.Bool(false),
+			})
+		}
 		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
 			return fmt.Errorf("framework: register MCP contract dev tool %q: %w", t.name, err)
 		}

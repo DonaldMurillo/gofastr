@@ -12,7 +12,8 @@ import (
 
 // A page whose policy phase fails answers its error, never itself, so its
 // actions refuse with the same status: a guard that reads a missing row
-// makes /gone a 404, and the action does not run.
+// makes /gone a 404, named or not (a 403 would say the route exists),
+// and the action does not run.
 func TestServerActionRefusesFailedPage(t *testing.T) {
 	ran := 0
 	row := app.NewKey[string]("row")
@@ -39,8 +40,8 @@ func TestServerActionRefusesFailedPage(t *testing.T) {
 	if code := post(context.Background(), `{"action":"purge","params":{},"componentId":"gone","page":"/gone"}`); code != http.StatusNotFound {
 		t.Errorf("named page: status %d, want 404", code)
 	}
-	if code := post(context.Background(), `{"action":"purge","params":{},"componentId":"gone"}`); code != http.StatusForbidden {
-		t.Errorf("no page: status %d, want 403", code)
+	if code := post(context.Background(), `{"action":"purge","params":{},"componentId":"gone"}`); code != http.StatusNotFound {
+		t.Errorf("no page: status %d, want 404", code)
 	}
 	if ran != 0 {
 		t.Errorf("handler ran %d times, want 0", ran)

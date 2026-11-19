@@ -25,6 +25,27 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **mcp: tool annotations.** `mcp.WithAnnotations(mcp.Annotations{...})`
+  serves a tool's `readOnlyHint`, `destructiveHint`, `idempotentHint`,
+  `openWorldHint` and `title` in `tools/list`; `mcp.Bool(v)` sets a hint,
+  and a nil hint is left out. Entity CRUD tools and the framework's own
+  tools now carry them, and `gofastr dev` logs a warning for any tool
+  missing one of the three hints ChatGPT's directory review requires. See
+  [MCP server](framework/docs/content/mcp.md#tool-annotations).
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **mcp: server instructions.** `Server.SetInstructions` and
+  `framework.WithMCPInstructions` set the `instructions` that `initialize`
+  returns. [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **mcp: request `_meta` in tool handlers.** `mcp.RequestMeta(ctx)` returns
+  a copy of the `_meta` a `tools/call` carried, such as ChatGPT's
+  `openai/locale` and `openai/subject`. The values are unauthenticated:
+  never use them as an identity.
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **framework: OpenAI apps domain check.**
+  `framework.WithOpenAIAppsChallenge(token)` serves the token as plain
+  text at `/.well-known/openai-apps-challenge`. See
+  [agent-readiness](framework/docs/content/agent-ready.md).
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
 - **`gofastr generate sdk --from-openapi <path|url>`, and `from_openapi`
   on the `sdk` settings entry.** It writes the Go and JS/TS SDKs and
   `dist/` from an OpenAPI 3 document: one typed method per `operationId`,
@@ -41,6 +62,16 @@ few lines, and link the PR or the docs page for the rest.
   taking the first. [#818](https://github.com/DonaldMurillo/gofastr/issues/818)
 
 ### Fixed
+- **A server action on a static page whose policy phase answers not-found
+  refuses with 404 when it names no page.** It answered 403, which said
+  the route exists; naming the page already answered 404.
+- **A screen's `ErrNotFound` 404 no longer lists the route's hreflang
+  alternates.** When a screen's `Load` or resolver answered
+  `app.ErrNotFound`, or a not-found outlet went unfilled, the themed 404
+  still carried the matched route's `rel="alternate" hreflang` links,
+  pointing search engines at more 404s and telling it apart from an
+  unknown URL. Every not-found page now gets the head an unmatched URL
+  gets. ([#823](https://github.com/DonaldMurillo/gofastr/issues/823))
 - **gofastr dev: saves no longer run git in your repository.** The
   dev loop's `go list` and `go build` stamped version control info, which
   runs `git status` and takes `.git/index.lock`: a commit made during a
@@ -470,6 +501,16 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr upgrade` finds the Go spellings.
 
 ### Added
+- **`decide.NotFound()` and `UIHost.ServeNotFound(w, r)` answer a route
+  with the 404 an unknown URL gets.** A policy returning
+  `decide.NotFound()`, or middleware calling `host.ServeNotFound`, gets
+  the `WithNotFoundScreen` page, partial, problem JSON or markdown, with
+  nothing from the route, so a route the caller may not see looks like
+  one that does not exist. A region guard's `NotFound` takes the whole
+  page to 404. `decide.Block(404)` still answers the plain status phrase.
+  See [UI wiring](framework/docs/content/ui-wiring.md).
+  ([#824](https://github.com/DonaldMurillo/gofastr/issues/824))
+
 - **fanout: `UnwrapForeign(self, raw)`.** Unwraps a fanout envelope and
   reports `ok` false for a malformed one or one this node sent. The event
   bridge, SSE broker, island manager, access store and module manager use

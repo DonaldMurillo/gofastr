@@ -126,6 +126,12 @@ func runRegionGuards(ctx context.Context, screen *Screen, chain []LayoutLayer) (
 			case DecisionRedirect:
 				return nil, d
 			case DecisionRenderAlt, DecisionBlock:
+				// On the not-found or error page itself, a guard's
+				// NotFound is a Block of its region: the page is
+				// already the answer.
+				if d.notFound() && !screen.notFoundOutcome && !screen.errorOutcome {
+					return nil, d
+				}
 				rd := regionDecision{kind: d.Kind}
 				if d.Kind == DecisionRenderAlt {
 					rd.factory = d.AltFactory

@@ -24,6 +24,8 @@ type Tool struct {
 	Description  string         `json:"description"`
 	InputSchema  map[string]any `json:"inputSchema"`
 	OutputSchema map[string]any `json:"outputSchema,omitempty"`
+	// Annotations are the tool's behaviour hints in tools/list; see WithAnnotations.
+	Annotations *Annotations `json:"annotations,omitempty"`
 	// Meta is the tool's `_meta` in tools/list.
 	Meta    map[string]any `json:"_meta,omitempty"`
 	Handler ToolHandler    `json:"-"`
@@ -78,8 +80,9 @@ type Server struct {
 
 	resources map[string]Resource
 
-	name    string
-	version string
+	name         string
+	version      string
+	instructions string
 
 	prompts map[string]Prompt
 
@@ -92,6 +95,7 @@ type Server struct {
 	registerHook func(toolName string)
 
 	devImpliedBarred bool
+	warnUnannotated  bool
 	callGate         func(toolName string) error
 
 	serverGate func(ctx context.Context) error
@@ -137,6 +141,27 @@ func (s *Server) SetServerName(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.name = name
+}
+
+// SetInstructions sets the instructions initialize returns, which tell a client when to use the server's tools; empty omits them.
+func (s *Server) SetInstructions(text string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.instructions = text
+}
+
+// Instructions returns the text SetInstructions set.
+func (s *Server) Instructions() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.instructions
+}
+
+// SetAnnotationWarnings makes RegisterTool log a warning for each tool, other than a WithDevImplied one, that leaves readOnlyHint, destructiveHint or openWorldHint unset.
+func (s *Server) SetAnnotationWarnings(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.warnUnannotated = on
 }
 
 // ServerInfo returns the serverInfo name and version.
@@ -196,7 +221,13 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 
 	s.tools[name] = tool
 	hook := s.registerHook
+	warn := s.warnUnannotated && !tool.devImplied
 	s.mu.Unlock()
+	if missing := missingListingHints(tool.Annotations); warn && len(missing) > 0 {
+		slog.Warn("mcp: tool leaves annotation hints unset; directory listings such as ChatGPT's require them",
+			slog.String("tool", textsafe.SanitizeControlBytes(name)),
+			slog.String("missing", strings.Join(missing, ", ")))
+	}
 	if hook != nil {
 		hook(name)
 	}

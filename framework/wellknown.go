@@ -234,3 +234,28 @@ func (a *App) handleOAuthAuthorizationServer(w http.ResponseWriter, r *http.Requ
 	}
 	a.writeWellKnownJSON(w, r, doc)
 }
+
+const maxOpenAIAppsChallengeBytes = 1024
+
+// WithOpenAIAppsChallenge serves token as text/plain at /.well-known/openai-apps-challenge, the domain check of
+// OpenAI's app submission. Surrounding whitespace is trimmed, an empty token mounts nothing, and a token holding
+// anything but printable ASCII, or longer than 1024 bytes, panics.
+func WithOpenAIAppsChallenge(token string) AppOption {
+	token = strings.TrimSpace(token)
+	if len(token) > maxOpenAIAppsChallengeBytes {
+		panic("framework.WithOpenAIAppsChallenge: token is longer than 1024 bytes")
+	}
+	for i := 0; i < len(token); i++ {
+		if token[i] <= ' ' || token[i] > '~' {
+			panic("framework.WithOpenAIAppsChallenge: token holds a space, control byte or non-ASCII byte")
+		}
+	}
+	return func(a *App) { a.openAIAppsChallenge = token }
+}
+
+func (a *App) handleOpenAIAppsChallenge(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write([]byte(a.openAIAppsChallenge))
+}

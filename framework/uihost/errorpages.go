@@ -98,7 +98,16 @@ func (ds *UIHost) notFoundBodyComponent(path string) component.Component {
 	return &defaultNotFoundScreen{path: path}
 }
 
+// ServeNotFound answers r with what a URL no route matches gets: the
+// not-found page, the client-navigation partial, problem JSON or
+// markdown, as r asks, status 404, with no meta from any route.
+// Middleware calls it to make a route look like one that does not exist.
+func (ds *UIHost) ServeNotFound(w http.ResponseWriter, r *http.Request) {
+	ds.serveNotFound(w, r, routePath(r))
+}
+
 func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path string) {
+	r = r.WithContext(withNotFoundPage(r.Context()))
 	w.Header().Add("Vary", "Accept")
 	if acceptsProblemJSON(r) {
 		w.Header().Set("Content-Type", "application/problem+json")
@@ -225,10 +234,12 @@ func (ds *UIHost) errorBodyComponent() component.Component {
 }
 
 func (ds *UIHost) serveResolverError(w http.ResponseWriter, r *http.Request, path string, pe *app.PageError) {
-	slog.Error("uihost: route resolver failed; serving error page",
-		"path", textsafe.StripUnsafe(path),
-		"err", textsafe.Recovered(pe.Err),
-		"not_found", pe.NotFound)
+	if !pe.Policy {
+		slog.Error("uihost: route resolver failed; serving error page",
+			"path", textsafe.StripUnsafe(path),
+			"err", textsafe.Recovered(pe.Err),
+			"not_found", pe.NotFound)
+	}
 	if pe.NotFound {
 		ds.serveNotFound(w, r, path)
 		return
