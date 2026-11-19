@@ -29,4 +29,18 @@ func TestSweepOpenAPIFieldSchemaAgreesWithJSONSchema(t *testing.T) {
 			}
 		}
 	}
+	for _, values := range [][]string{nil, {}} {
+		f := schema.Field{Name: "f", Type: schema.Enum, Values: values}
+		oa := FieldToSchema(f)
+		js := schema.JSONSchema([]schema.Field{f})["properties"].(map[string]any)["f"].(map[string]any)
+		if _, ok := oa["enum"]; ok {
+			t.Errorf("Values %#v: OpenAPI enum = %v, want none", values, oa["enum"])
+		}
+		if e, ok := js["enum"].([]string); !ok || len(e) != 0 {
+			t.Errorf("Values %#v: JSONSchema enum = %#v, want an empty list", values, js["enum"])
+		}
+		if oa["type"] != js["type"] {
+			t.Errorf("Values %#v: type %v in OpenAPI, %v in JSONSchema", values, oa["type"], js["type"])
+		}
+	}
 }
