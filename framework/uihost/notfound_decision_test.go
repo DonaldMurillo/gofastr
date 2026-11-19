@@ -246,4 +246,3 @@ func TestStaticRenderSkipsDecideNotFound(t *testing.T) {
 		t.Fatalf("RenderStaticPage err = %v, want *PolicyBlockedError not found", err)
 	}
 }
-
