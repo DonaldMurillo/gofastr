@@ -29,7 +29,7 @@ invariants:
     enforced_by:
       - test: core/upload.TestLocalStorageRefusesMidResolvePlant
   - id: atomic-durable-save
-    rule: Save writes a 0o600 temp file beside the target in 0o700 directories, syncs it and renames it into place only if its context is still live, so a reader or a canceled save sees the old object or the whole new one.
+    rule: Save writes a 0o600 temp file beside the target in 0o700 directories, syncs it, checks its context once more before taking the commit lock and then renames it into place, so a reader sees the old object or the whole new one and a save canceled before that check keeps the old object; one canceled while it waits on the lock still commits.
     enforced_by:
       - test: core/upload.TestSaveNotVisibleUntilComplete
       - test: core/upload.TestCanceledMutationsKeepObject
@@ -42,7 +42,7 @@ invariants:
     enforced_by:
       - test: core/upload.TestDirectoryKeyIsNotAnObject
   - id: no-absolute-path-in-errors
-    rule: No error from LocalStorage or the fold walk names the storage base or an absolute path, and a missing object wraps ErrNotFound and os.ErrNotExist.
+    rule: No error from LocalStorage or the fold walk names the storage base or an absolute path, and for a missing object Get and GetRange wrap ErrNotFound (which wraps os.ErrNotExist), Delete wraps os.ErrNotExist alone and Exists answers false with a nil error.
     enforced_by:
       - test: core/upload.TestLocalStorage_GetMissingScrubsPath
       - test: core/upload.TestDeleteExistsLeakNoAbsPath

@@ -33,6 +33,24 @@ few lines, and link the PR or the docs page for the rest.
   through `UnmarshalStrict`; a body with such keys answers 400
   `json_duplicate_key` or `json_folded_keys`.
   ([core packages](framework/docs/content/core-packages.md))
+- **handler: the strict key walk no longer copies its path at every
+  level.** `CheckObjectKeys`, which `Bind`, `UnmarshalStrict`,
+  `ToolAdapter` and the MCP, A2A and ACP servers run, rebuilt the JSON
+  path for each nested value, so an 8 KiB body of 4,000 nested arrays
+  allocated about 350 MB. It now keeps one path stack and allocates
+  in proportion to the depth. Refusals still name the same path.
+  ([core packages](framework/docs/content/core-packages.md))
+- **webhook, a2a: a hostless URL such as `http://:8080/` is refused with
+  private networks allowed too.** `AllowPrivateNetworks` skipped the
+  hostname check along with the internal-address checks, so a URL with
+  only a port registered. `netguard.CheckOutboundURL` now checks the
+  hostname before the private-network early return.
+  ([webhooks](framework/docs/content/webhooks.md))
+- **static: a file whose `Close` panics no longer crashes the process
+  during a background ETag hash.** The recovery covered `Open`, `Stat`
+  and `Read` but ran before the deferred `Close`, so a custom `fs.File`
+  that panicked in `Close` took down the server. Now such a panic costs
+  only that file's ETag. ([core packages](framework/docs/content/core-packages.md))
 - **webhook: `Subscribe` waits at most 3 seconds on DNS.** The
   registration-time URL check looked the host up with no deadline, so a
   slow or unanswering DNS server held `Subscribe` for as long as the

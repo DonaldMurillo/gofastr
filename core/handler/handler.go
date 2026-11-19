@@ -159,8 +159,9 @@ func ViolationBodies(ctx context.Context, fields map[string][]schema.Violation) 
 
 // WriteError writes the error envelope ({"error","code","reason","fields",
 // "field_reasons","success":false}) in r's locale. Only a *Error's own
-// text is sent; any other error, a nil *Error and a code outside 400-599
-// are a generic 500. r may be nil.
+// text is sent; any other error and a nil *Error are a generic 500, and
+// a *Error whose code is outside 400-599 is sent as 500 with its own
+// message, reason and violations. r may be nil.
 func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	herr, ok := err.(*Error)
 	if !ok || herr == nil {

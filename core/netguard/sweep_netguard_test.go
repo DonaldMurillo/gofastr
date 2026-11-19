@@ -43,12 +43,12 @@ func TestSweepCheckOutboundURLRefusals(t *testing.T) {
 			t.Errorf("CheckOutboundURL(%q) refused a public literal: %v", raw, err)
 		}
 	}
-	for _, raw := range []string{"http://localhost/x", "http://127.0.0.1/x", "http://a.internal/x"} {
+	for _, raw := range []string{"http://localhost/x", "http://127.0.0.1/x", "http://a.internal/x", "http://10.0.0.5:8080/x", "http://[::1]:9000/x"} {
 		if err := CheckOutboundURL(raw, "probe", true); err != nil {
 			t.Errorf("allowPrivate refused %q: %v", raw, err)
 		}
 	}
-	for _, raw := range []string{"ftp://localhost/x", "http://u:p@localhost/x", "http://"} {
+	for _, raw := range []string{"ftp://localhost/x", "http://u:p@localhost/x", "http://", "http://:8080/x"} {
 		if err := CheckOutboundURL(raw, "probe", true); err == nil {
 			t.Errorf("allowPrivate accepted %q, want the scheme, userinfo and host checks kept", raw)
 		}
