@@ -584,3 +584,44 @@ func TestConfigResolve(t *testing.T) {
 		}
 	}
 }
+
+// A quiet prefix stops at a path segment: a route that merely starts
+// with the same letters is not under it.
+func TestUnderStopsAtAPathSegment(t *testing.T) {
+	for _, c := range []struct {
+		path, prefix string
+		want         bool
+	}{
+		{"/assets/app.js", "/assets/", true},
+		{"/assets/", "/assets/", true},
+		{"/assets", "/assets/", false},
+		{"/assets2/app.js", "/assets/", false},
+		{"/healthz", "/healthz", true},
+		{"/healthz/db", "/healthz", true},
+		{"/healthz2", "/healthz", false},
+		{"/health", "/healthz", false},
+	} {
+		if got := telemetry.Under(c.path, c.prefix); got != c.want {
+			t.Errorf("Under(%q, %q) = %v, want %v", c.path, c.prefix, got, c.want)
+		}
+	}
+}
+
+// Steps draws a trace as a tree: children under their parent, siblings
+// by start whatever order the file holds them in, an orphan at the
+// top, and the first of the detail attributes as each step's detail.
+func TestStepsOrdersTheTreeAndPicksTheDetail(t *testing.T) {
+	tr := telemetry.Trace{Spans: []telemetry.Span{
+		{SpanID: "b", ParentID: "a", Name: "later child", Offset: 5, Attrs: []telemetry.Attr{{Key: "db.statement", Value: "INSERT"}}},
+		{SpanID: "c", ParentID: "a", Name: "earlier child", Offset: 1, Attrs: []telemetry.Attr{{Key: "http.target", Value: "/v1"}, {Key: "db.query.text", Value: "SELECT"}}},
+		{SpanID: "a", Name: "root", Attrs: []telemetry.Attr{{Key: "messaging.destination.name", Value: "topic"}}},
+		{SpanID: "d", ParentID: "gone", Name: "orphan", Offset: 9},
+	}}
+	var got strings.Builder
+	for _, s := range telemetry.Steps(tr) {
+		fmt.Fprintf(&got, "%d %s %s; ", s.Depth, s.Name, s.Detail)
+	}
+	if want := "0 root topic; 1 earlier child SELECT; 1 later child INSERT; 0 orphan ; "; got.String() != want {
+		t.Fatalf("Steps:\n got %s\nwant %s", got.String(), want)
+	}
+}

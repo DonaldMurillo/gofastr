@@ -25,6 +25,11 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **telemetry: the Logs page keeps entries with an empty path when the
+  quiet path list holds an empty prefix,** matching the collector.
+- **telemetry: `gofastr telemetry request` and the `telemetry_request` MCP
+  tool find linked logs for a trace at the largest stored duration.** The
+  log window overflowed there before.
 - **entityui: cross-site JSON writes to trash and saved views are refused.**
   Restore, Purge and Saved Views now refuse a cross-site POST of any
   content type with 403, like the other entityui write routes. A
@@ -260,6 +265,9 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **telemetry: `gofastr telemetry request` names steps by the same six
+  attributes as the request page.** The first attribute present wins, so
+  a step's detail can differ from older output.
 - **crud: an entity's `llm.md` filter table uses the MCP tools' operator
   labels.** `like` reads "contains the substring" (was "LIKE (contains)")
   and `in` reads "is one of" (was "IN (comma-separated)").

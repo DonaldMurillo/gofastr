@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/telemetry"
 	"github.com/DonaldMurillo/gofastr/internal/telemetry/otelspan"
+	"github.com/DonaldMurillo/gofastr/internal/telemetry/telemetrytest"
 )
 
 type traceLine struct {
@@ -128,6 +130,59 @@ func TestLoneClientSpanIsNotSampledIn(t *testing.T) {
 	root.End()
 	if len(kept) != 1 || len(kept[0].Spans) != 2 {
 		t.Fatalf("a job and its query: kept %+v", kept)
+	}
+}
+
+func TestLogsAndCollectorAgreeOnQuietPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name, prefix, path string
+		wantVisible        bool
+	}{
+		{"empty path under empty prefix", "", "", true},
+		{"root under empty prefix", "", "/", false},
+		{"relative path under empty prefix", "", "assets", true},
+		{"empty path under root prefix", "/", "", true},
+		{"root under root prefix", "/", "/", false},
+		{"descendant under root prefix", "/", "/assets/app.js", false},
+		{"exact trailing slash", "/assets/", "/assets/", false},
+		{"descendant under trailing slash", "/assets/", "/assets/app.js", false},
+		{"path without trailing slash", "/assets/", "/assets", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			at := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+			kept := false
+			c, err := telemetry.NewCollector(telemetry.Config{Dir: dir, SampleRate: 1}, func(telemetry.Trace) error {
+				kept = true
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			tracer := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(otelspan.New(c, tc.prefix))).Tracer("test")
+			_, req := tracer.Start(context.Background(), "HTTP GET", trace.WithSpanKind(trace.SpanKindServer),
+				trace.WithTimestamp(at), trace.WithAttributes(attribute.String("http.target", tc.path)))
+			req.End(trace.WithTimestamp(at.Add(time.Millisecond)))
+			if kept != tc.wantVisible {
+				t.Errorf("collector kept the trace: %v, want %v", kept, tc.wantVisible)
+			}
+
+			line := fmt.Appendf(nil, `{"time":%q,"level":"INFO","msg":"http.request","path":%q}`+"\n",
+				at.Format(time.RFC3339Nano), tc.path)
+			telemetrytest.Append(t, dir, telemetry.KindLogs, at, line)
+			store, err := telemetry.Open(telemetry.Config{Dir: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			logs, err := store.Logs(telemetry.LogQuery{SkipPaths: []string{tc.prefix}}, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if visible := len(logs) > 0; visible != tc.wantVisible {
+				t.Errorf("Logs kept the access line: %v, want %v (collector kept the trace: %v)", visible, tc.wantVisible, kept)
+			}
+		})
 	}
 }
 

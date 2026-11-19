@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -284,6 +285,25 @@ func TestRequest(t *testing.T) {
 	}
 }
 
+func TestRequestFindsLinkedLogsAtMaximumDuration(t *testing.T) {
+	dir := t.TempDir()
+	dur := time.Duration(math.MaxInt64).Truncate(time.Microsecond)
+	tr := itel.Trace{Time: now, TraceID: okID, Dur: dur}
+	telemetrytest.Append(t, dir, itel.KindTraces, tr.Time, itel.AppendTrace(nil, tr))
+	at := tr.Time.Add(-dur).Add(-time.Second)
+	log := fmt.Appendf(nil, `{"time":%q,"level":"INFO","msg":"at the first second of margin","trace_id":%q}`+"\n",
+		at.Format(time.RFC3339Nano), tr.TraceID)
+	telemetrytest.Append(t, dir, itel.KindLogs, at, log)
+
+	out, err := run(t, "request", tr.TraceID, "--dir", dir, "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "at the first second of margin") {
+		t.Fatalf("request omitted the log at the start of its window:\n%s", out)
+	}
+}
+
 // One failed request says what went wrong and where, each stack line
 // on a line of its own with nothing in it that moves the cursor.
 func TestRequestShowsTheErrorAndTheStack(t *testing.T) {
@@ -355,5 +375,58 @@ func TestAppFlagFindsTheDefaultDirectory(t *testing.T) {
 	}
 	if out, err := run(t, "requests", "--app", "shop"); err != nil || !strings.Contains(out, okID) {
 		t.Fatalf("--app shop: %v\n%s", err, out)
+	}
+}
+
+// A step's detail is the first of the detail attributes it carries,
+// the six the screens read, whichever of them a span holds.
+func TestRequestDetailNamesWhatWasRun(t *testing.T) {
+	dir := t.TempDir()
+	id := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb1"
+	at := now.Add(-time.Minute)
+	tr := itel.Trace{Time: at, TraceID: id, Route: "POST /orders", Status: 200, Dur: 20 * time.Millisecond,
+		Spans: []itel.Span{
+			{SpanID: "01", Name: "HTTP POST POST /orders", Dur: 20 * time.Millisecond},
+			{SpanID: "02", ParentID: "01", Name: "INSERT", Offset: 2 * time.Millisecond, Dur: 4 * time.Millisecond,
+				Attrs: []itel.Attr{{Key: "db.statement", Value: "INSERT INTO orders"}}},
+			{SpanID: "03", ParentID: "01", Name: "publish", Offset: 8 * time.Millisecond, Dur: 4 * time.Millisecond,
+				Attrs: []itel.Attr{{Key: "messaging.destination.name", Value: "orders.topic"}}},
+			{SpanID: "04", ParentID: "01", Name: "fetch", Offset: 14 * time.Millisecond, Dur: 4 * time.Millisecond,
+				Attrs: []itel.Attr{{Key: "http.target", Value: "/v1/stock"}}},
+			{SpanID: "05", ParentID: "01", Name: "count", Offset: 18 * time.Millisecond, Dur: 1 * time.Millisecond,
+				Attrs: []itel.Attr{{Key: "http.target", Value: "/v1/lose"}, {Key: "db.query.text", Value: "SELECT count(*)"}}},
+		}}
+	telemetrytest.Append(t, dir, itel.KindTraces, at, itel.AppendTrace(nil, tr))
+	out, err := run(t, "request", id, "--dir", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"INSERT  INSERT INTO orders",
+		"publish  orders.topic",
+		"fetch  /v1/stock",
+		"count  SELECT count(*)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in\n%s", want, out)
+		}
+	}
+}
+
+func TestRequestKeepsSeparatorForAnEmptyDetail(t *testing.T) {
+	dir := t.TempDir()
+	tr := itel.Trace{Time: now, TraceID: okID, Spans: []itel.Span{
+		{SpanID: "01", Name: "empty detail", Attrs: []itel.Attr{
+			{Key: "http.url", Value: "/ignored"},
+			{Key: "db.query.text", Value: ""},
+		}},
+	}}
+	telemetrytest.Append(t, dir, itel.KindTraces, tr.Time, itel.AppendTrace(nil, tr))
+	out, err := run(t, "request", tr.TraceID, "--dir", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "empty detail  \n") || strings.Contains(out, "/ignored") {
+		t.Fatalf("want just the two-space separator after the step name, got %q", out)
 	}
 }

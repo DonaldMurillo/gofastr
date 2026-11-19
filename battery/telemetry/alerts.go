@@ -251,13 +251,6 @@ func (p *Plugin) Firing() []Alert {
 	return out
 }
 
-// webhookClient posts alerts: a deadline, and no following a redirect
-// to wherever a response points.
-var webhookClient = &http.Client{
-	Timeout:       10 * time.Second,
-	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-}
-
 // WebhookNotifier returns a Config.Notify that posts each alert to
 // target as JSON: {"text": ..., "content": ..., "alert": {...}}. Slack,
 // Mattermost and Teams incoming webhooks read "text" and Discord reads
@@ -285,7 +278,7 @@ func WebhookNotifier(target string) func(context.Context, Alert) error {
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		resp, err := webhookClient.Do(req)
+		resp, err := outboundClient.Do(req)
 		if err != nil {
 			// The URL of a chat webhook is its secret: say which host
 			// refused, not the whole of it.

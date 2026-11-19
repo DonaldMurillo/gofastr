@@ -39,6 +39,15 @@ type TraceSummary struct {
 	Err string
 }
 
+// RequestRow is one kept request as telemetry_requests and `gofastr
+// telemetry requests --json` print it.
+func RequestRow(s TraceSummary) map[string]any {
+	return map[string]any{
+		"time": s.Time.UTC().Format(time.RFC3339Nano), "trace_id": s.TraceID, "route": s.Route, "path": s.Path,
+		"status": s.Status, "dur_us": s.Dur.Microseconds(), "error": s.Error, "failed_steps": s.FailedSteps,
+	}
+}
+
 // ErrBadTraceID is returned for a trace ID that is not 32 hex digits.
 var ErrBadTraceID = errors.New("telemetry: trace ID must be 32 hex digits")
 
@@ -247,6 +256,27 @@ func (s *Store) Logs(q LogQuery, limit int) ([]LogEntry, error) {
 // budgetEvery is how many lines are read between looks at the clock.
 const budgetEvery = 1024
 
+// Under reports whether a nonempty path matches a prefix exactly or falls
+// below it at a path segment boundary.
+func Under(path, prefix string) bool {
+	return path != "" && (path == prefix || strings.HasPrefix(path, descendantPrefix(prefix))) //gofastr:allow(GOFASTR1006) descendantPrefix always returns a slash-terminated prefix, so the match includes the segment boundary.
+}
+
+func descendantPrefix(prefix string) string {
+	return strings.TrimSuffix(prefix, "/") + "/"
+}
+
+// UnderNeedles builds the encoded path matches for Under so Logs can
+// filter stored lines without decoding them.
+func UnderNeedles(prefix string) [][]byte {
+	below := appendJSONString([]byte(`"path":`), descendantPrefix(prefix))
+	below = below[:len(below)-1]
+	if prefix == "" {
+		return [][]byte{below}
+	}
+	return [][]byte{appendJSONString([]byte(`"path":`), prefix), below}
+}
+
 // LogsWithin is Logs that gives up after budget (zero for no limit): a
 // search for a rare word reads every line of every day, and a sealed
 // day must be unpacked to be read. When it gives up it returns what it
@@ -257,14 +287,10 @@ const budgetEvery = 1024
 func (s *Store) LogsWithin(q LogQuery, limit int, budget time.Duration) (out []LogEntry, stopped time.Time, err error) {
 	has := wordMatcher(q.Text)
 	// A prefix covers its own path and what is below it, and stops at a
-	// path segment, as the collector's quiet paths do: "/healthz" skips
-	// "/healthz" and "/healthz/db" and leaves "/healthz2" in.
+	// path segment (Under), as the collector's quiet paths do.
 	skips := make([][]byte, 0, 2*len(q.SkipPaths))
 	for _, p := range q.SkipPaths {
-		// The path attribute whole, then up to but not including its
-		// closing quote.
-		below := appendJSONString([]byte(`"path":`), strings.TrimSuffix(p, "/")+"/")
-		skips = append(skips, appendJSONString([]byte(`"path":`), p), below[:len(below)-1])
+		skips = append(skips, UnderNeedles(p)...)
 	}
 	pick := func(line []byte) (LogEntry, bool) {
 		if !has(line) {
