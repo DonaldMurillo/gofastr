@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **gofastr dev: saves no longer run git in your repository.** The
+  dev loop's `go list` and `go build` stamped version control info, which
+  runs `git status` and takes `.git/index.lock`: a commit made during a
+  rebuild could fail with "index.lock: File exists", and a dev server
+  killed mid-query left the lock behind. They now pass
+  `-buildvcs=false`, so the dev binary has no `vcs.*` build settings.
 - **router: Group fallbacks match escaped segments, stay in the served
   subtree, and keep the shared 405 chain.** A `%2F` in a request path no
   longer shifts which Group's `NotFound` or `MethodNotAllowed` covers it;
