@@ -153,7 +153,7 @@ middleware chaining after registration (`Use` adds outside-in, the first
 added is outermost; `UseInner` adds middleware that runs after every `Use`
 and `Group` middleware in the tree, next to the handler), route groups
 (a top-level `Group` prefix is empty, starts with `/`, or names a host
-with a dot or `localhost`, without a port; `Group("v1")` panics, since the mux
+with a dot or `localhost` (any letter case), without a port; `Group("v1")` panics, since the mux
 would read `v1` as a host; a group's `NotFound` and `MethodNotAllowed`
 answer the misses under its prefix, the longest matching prefix
 winning, even when the root serves the request, with `%2F` kept
