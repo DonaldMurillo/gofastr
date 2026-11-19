@@ -236,12 +236,14 @@ page-tall stack. The header and the footer are the site's own packages,
 not framework components. Each is a Go file that composes `core-ui/html`
 elements and framework parts, plus an owned style sheet
 (`siteheader.style.css`) that `gofastr gen styles` turns into typed
-class methods. Every dimension is a theme token: the page measure
+class methods. Every shared dimension is a theme token: the page measure
 (`--size-page-width`, with `--size-page-gutter` outside it) and the bar
 height (`--size-header-height`) are built-ins, and a value only the
 header needs is the package's own token in `siteheader.tokens.css`,
-which the site adds with `Theme.Extend`. The phone menu is
-`headless.Disclosure`: it traps focus while open and closes on Escape,
+which the site adds with `Theme.Extend`. Two footer dimensions are
+intrinsic instead: the tagline's `max-inline-size: 32ch` and the link
+columns' `minmax(10rem, 1fr)` stay literal in the owned sheet. The phone
+menu is `headless.Disclosure`: it traps focus while open and closes on Escape,
 on a link tap and on navigation. [Theming](theming.md) covers owned
 sheets and app tokens.
 
@@ -315,18 +317,24 @@ the rails sticky under the header, sets the article's reading rhythm,
 and draws the previous/next cards. The nav rail is static chrome the
 layer keeps, scroll included, across doc-to-doc navigations; the
 runtime's active-link sweep marks the current article. (A nav that must
-be re-derived server-side per page is a route area instead.) Crumbs,
-pager and rail are outlets each page fills; the crumbs are `ui.Breadcrumbs`. A page that leaves
-the rail unfilled, or declines its fill (`ErrNoFill`), collapses the
-empty column with `:has(> :empty)`, including after client
-navigation. The pager's own words, its nav label and the "Previous" /
-"Next" defaults, translate through `PagerConfig.Ctx` the way
-siteheader's do through `Config.Ctx` (`i18nui.NavMoreArticles`,
-`i18nui.PaginationPrevious`, `i18nui.PaginationNext`); with no context
-they read English. A rail left unset collapses the same way, because the
-unset region renders an empty element itself; a page with neither
-rail is one centred column at the prose measure, the shape a blog
-post or a standalone page uses.
+be re-derived server-side per page is a route area instead.) Each page
+fills the crumbs, pager and rail outlets. Use `ui.Breadcrumbs` for the
+crumbs.
+
+The stylesheet collapses a rail and its column when the rail is empty
+or its only child is empty: an outlet left unfilled, or one whose fill
+returns `ErrNoFill`, renders an empty element. The selectors are `.toc:empty, .toc:has(> :only-child:empty)`
+for the contents rail and `.nav:empty, .nav:has(> :only-child:empty)`
+for the nav rail. They also apply after client navigation. With both
+rails collapsed, the article is one centred column at the prose measure.
+
+Pass the request context in `PagerConfig.Ctx` to translate the pager's
+nav label and its default "Previous" and "Next" labels for the reader
+(`i18nui.NavMoreArticles`, `i18nui.PaginationPrevious`,
+`i18nui.PaginationNext`). With no context, the pager uses the app's
+default translator in its fallback locale. A label uses its built-in
+English text when there is no default translator or the translator
+has no translation for that label.
 
 From `examples/site` (`docs_catalog.go`, `registerDocsGroup`, and
 `layout.go`, `docsLayout`):
