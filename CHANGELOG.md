@@ -25,6 +25,16 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **router: Group fallbacks match escaped segments, stay in the served
+  subtree, and keep the shared 405 chain.** A `%2F` in a request path no
+  longer shifts which Group's `NotFound` or `MethodNotAllowed` covers it;
+  a Group's `WrapNotFound` or `WrapMethodNotAllowed` with no handler of
+  its own delegates only within the router that served the request; a 405
+  handler set on a Group in another branch now runs inside the chain of
+  the group holding the path's routes (e.g. its CORS preflight); and a
+  route's cached middleware chain and its version are published together,
+  so a request after a late `Use` cannot run the old chain.
+  ([#799](https://github.com/DonaldMurillo/gofastr/pull/799))
 - **jcs: `CanonicalizeJSON` refuses 513 nested empty arrays or objects.**
   The 512-level limit let one more level through when the innermost
   container was empty; it now counts arrays and objects alike.
