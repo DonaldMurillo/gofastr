@@ -10,9 +10,11 @@ invariants:
     rule: Publish NOTIFYs a wrapper of at most 7000 bytes inline and stores a larger one in the fallback table, NOTIFYing a t:<id> pointer that receivers SELECT.
     enforced_by:
       - test: framework/fanout.TestPostgres_BigPayloadFallsBackToTable
+      - test: framework/fanout.TestPostgresPublishNotifiesInlineAndSpill
   - id: channel-is-the-table-name
-    rule: The NOTIFY channel is the fallback table's name, so two fanouts with different tables on one database never see each other's messages, inline or spilled.
+    rule: LISTEN and NOTIFY use the canonical ASCII-lowercase fallback table name, so aliases for one physical table share a channel and different tables remain isolated.
     enforced_by:
+      - test: framework/fanout.TestPostgresListenUsesCanonicalFallbackTableName
       - test: framework/fanout.TestPostgres_InlineMessageStaysOnItsTable
       - test: framework/fanout.TestPostgres_TableNameIsolatesChannel
   - id: construction-refuses-bad-config

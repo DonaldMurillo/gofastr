@@ -30,10 +30,8 @@ import (
 // owner's call. A dist/ directory holds the servable artifacts (sdk-go.zip,
 // client.js, client.d.ts, manifest.json) that framework/sdkdocs hosts.
 //
-// SDK output is generator-owned and regenerates IN PLACE: when the docs
-// site warns that the artifacts drifted from the live schema, the fix is
-// re-running this command, so a conflict prompt would only add friction. Point --out somewhere private if
-// you need to keep an old build.
+// SDK output is generator-owned and regenerates in place.
+// Point --out somewhere private to keep an old build.
 
 type SdkOptions struct {
 	OutDir     string
@@ -65,6 +63,7 @@ type sdkSpec struct {
 	SDKVersion     string
 	GofastrVersion string
 	Module         string
+	GoDirectory    string
 	BaseURL        string
 	APIPrefix      string    // "" or "/api": baked into docs/examples, not client paths
 	GeneratedAt    time.Time // zero unless --stamp-time; the manifest omits it then
@@ -131,13 +130,7 @@ func sdkMarkdownSafe(value string) string {
 	return strings.ReplaceAll(out, "*/", "* /")
 }
 
-// sdkFenceWord reduces the app name to the bytes that are inert inside
-// the README's ```sh install fence (`go mod edit -replace <module>=./<dir>`),
-// which an operator copies and pastes into a shell: the module-path
-// alphabet only. A newline would become its own shell line, and spaces,
-// pipes, backticks and quotes all change how the pasted line parses, so
-// they are dropped rather than escaped — hostile junk can only mangle the
-// directory hint, never restructure the command.
+// sdkFenceWord keeps the path-component alphabet used in SDK README examples.
 func sdkFenceWord(value string) string {
 	var b strings.Builder
 	b.Grow(len(value))
@@ -499,16 +492,13 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *SdkOptions) (sdkSpe
 		apiPrefix = "/" + apiPrefix
 	}
 
-	// App is config-provenance (--name / gofastr.settings.yml, the same
-	// provenance the exec gate and sdkCommentSafe treat as hostile) and
-	// lands raw in both READMEs' H1/prose and (as the -sdk directory) in
-	// the install fence. Scrub it once here; renderSDKGoReadme applies
-	// the stricter fence reduction at the fence slot itself.
+	appName := sdkMarkdownSafe(opts.name)
 	spec := sdkSpec{
-		App:            sdkMarkdownSafe(opts.name),
+		App:            appName,
 		SDKVersion:     opts.sdkVersion,
 		GofastrVersion: gofastrVersion,
 		Module:         opts.module,
+		GoDirectory:    sdkFenceWord(appName) + "-sdk",
 		BaseURL:        opts.baseURL,
 		APIPrefix:      apiPrefix,
 	}
@@ -610,10 +600,12 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]GeneratedFile,
 	artifacts := map[string]sdk.Artifact{}
 	var distFiles []GeneratedFile
 
-	record := func(key, file, module string, data []byte) {
+	record := func(key string, artifact sdk.Artifact, data []byte) {
 		sum := sha256.Sum256(data)
-		artifacts[key] = sdk.Artifact{File: file, SHA256: fmt.Sprintf("%x", sum), Bytes: int64(len(data)), Module: module}
-		distFiles = append(distFiles, GeneratedFile{Name: "dist/" + file, Content: string(data)})
+		artifact.SHA256 = fmt.Sprintf("%x", sum)
+		artifact.Bytes = int64(len(data))
+		artifacts[key] = artifact
+		distFiles = append(distFiles, GeneratedFile{Name: "dist/" + artifact.File, Content: string(data)})
 	}
 
 	if want["go"] {
@@ -632,11 +624,11 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]GeneratedFile,
 			for _, f := range goFiles {
 				zipFiles = append(zipFiles, sdk.File{Path: f.Name, Data: []byte(f.Content)})
 			}
-			raw, err := sdk.PackZip(spec.App+"-sdk", zipFiles)
+			raw, err := sdk.PackZip(spec.GoDirectory, zipFiles)
 			if err != nil {
 				return nil, err
 			}
-			record("go", sdk.GoArtifact, spec.Module, raw)
+			record("go", sdk.Artifact{File: sdk.GoArtifact, Module: spec.Module, Directory: spec.GoDirectory}, raw)
 		}
 	}
 
@@ -652,9 +644,9 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]GeneratedFile,
 			}
 			switch f.Name {
 			case sdk.JSArtifact:
-				record("js", sdk.JSArtifact, "", []byte(f.Content))
+				record("js", sdk.Artifact{File: f.Name}, []byte(f.Content))
 			case sdk.JSTypesArtifact:
-				record("js-types", sdk.JSTypesArtifact, "", []byte(f.Content))
+				record("js-types", sdk.Artifact{File: f.Name}, []byte(f.Content))
 			}
 		}
 	}
@@ -733,17 +725,7 @@ func renderSDKGoFiles(spec sdkSpec) ([]GeneratedFile, error) {
 }
 
 func sdkExampleBaseURL(spec sdkSpec) string {
-	return sdkExampleHost(spec) + spec.APIPrefix
-}
-
-// sdkExampleHost is the app origin WITHOUT the API prefix. Docs-site and
-// download URLs mount on the host, only API calls live under the prefix.
-func sdkExampleHost(spec sdkSpec) string {
-	base := spec.BaseURL
-	if base == "" {
-		base = "https://your-app.example.com"
-	}
-	return strings.TrimRight(base, "/")
+	return sdk.ExampleHost(spec.BaseURL) + spec.APIPrefix
 }
 
 func renderSDKGoReadme(spec sdkSpec) string {
@@ -752,10 +734,7 @@ func renderSDKGoReadme(spec sdkSpec) string {
 	fmt.Fprintf(&sb, "# %s Go SDK\n\n<!-- %s -->\n\n", spec.App, spec.Header())
 	fmt.Fprintf(&sb, "A standalone, stdlib-only Go client for the %s HTTP API.\n\n", spec.App)
 	sb.WriteString("## Install\n\nUnzip next to your project (or anywhere), then wire the module locally:\n\n")
-	// sdkFenceWord, not the markdown scrub: this line is pasted into a
-	// shell, so the directory hint is held to the module-path alphabet
-	// (spec.Module itself is already regex-gated by validateSDKModulePath).
-	fmt.Fprintf(&sb, "```sh\ngo mod edit -replace %s=./%s-sdk\ngo get %s\n```\n\n", spec.Module, sdkFenceWord(spec.App), spec.Module)
+	fmt.Fprintf(&sb, "```sh\ngo mod edit -replace %s=./%s\ngo get %s\n```\n\n", spec.Module, spec.GoDirectory, spec.Module)
 	sb.WriteString("## Use\n\n")
 	fmt.Fprintf(&sb, "```go\nimport client %q\n\n", spec.Module)
 	fmt.Fprintf(&sb, "c := client.NewClient(%q, nil)\nc.Token = os.Getenv(\"API_TOKEN\") // Bearer token minted via POST /auth/tokens\n\n", sdkExampleBaseURL(spec))

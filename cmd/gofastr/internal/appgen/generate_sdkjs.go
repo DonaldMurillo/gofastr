@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
+	"github.com/DonaldMurillo/gofastr/framework/sdk"
 )
 
 // renderSDKJSFiles emits the JS/TS SDK: one handrolled ESM client.js plus a
@@ -437,7 +438,7 @@ func renderSDKJSReadme(spec sdkSpec) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# %s JS/TS SDK\n\n<!-- %s -->\n\n", spec.App, spec.Header())
 	sb.WriteString("Two plain files, zero dependencies, no build step: `client.js` (ESM) and\n`client.d.ts` (types). Drop them into your project, or import the client\nstraight from the running app:\n\n")
-	fmt.Fprintf(&sb, "```js\nimport { Client } from %q;\n// or, served by the app itself:\n// import { Client } from %q;\n\nconst api = new Client({ baseURL: %q, token: process.env.API_TOKEN });\nconst page = await api.%s.list({ sort: \"-created_at\", limit: 50 });\n```\n\n", "./client.js", sdkExampleHost(spec)+"/docs/api/sdk/client.js", sdkExampleBaseURL(spec), prop)
+	fmt.Fprintf(&sb, "```js\nimport { Client } from %q;\n// or, served by the app itself:\n// import { Client } from %q;\n\nconst api = new Client({ baseURL: %q, token: process.env.API_TOKEN });\nconst page = await api.%s.list({ sort: \"-created_at\", limit: 50 });\n```\n\n", "./client.js", sdk.ExampleHost(spec.BaseURL)+"/docs/api/sdk/client.js", sdkExampleBaseURL(spec), prop)
 	sb.WriteString("TypeScript picks up `client.d.ts` automatically when both files sit side by\nside. There is intentionally no package.json: if you want this on npm,\nadd your own and publish it; it's your API.\n\n")
 	sb.WriteString("## Casing contract\n\nResponses are camelCase. Error `fields` keys use response wire keys, including\nexplicit WireName overrides. Filter/sort **query params** use snake_case column\nnames. Use the exported\n`<entity>Fields` constants for filter and sort keys instead of guessing.\nThey list only the queryable columns, so a column the API refuses to filter\non is absent: validation errors can still name it, since a field can be\nwritable without being queryable:\n\n")
 	// Pick the example field AND operator from the one type predicate

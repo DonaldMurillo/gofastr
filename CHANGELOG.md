@@ -25,6 +25,18 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **SDK reference pages match the mounted HTTP API.** Record and
+  custom-endpoint rows use the paths the server mounts, MCP-only
+  endpoints are left out, filter examples use values the server accepts,
+  and the error guide names the response wire keys.
+- **Go SDK install steps name the directory in the ZIP.** An app name
+  with spaces put one directory in the archive and another in the `go
+  mod edit -replace` line.
+- **Two SDK docs mounts on one router no longer panic.** Each mount gets
+  its own drawer, keyed by its base path.
+- **SDK docs describe static export and drift accurately.** The static
+  export recipe stages `sdk-go.zip` as `go.zip`, and the drift section
+  says when the check runs and what `schemaVersion` means.
 - **`gofastr pack` keeps more of the app.** It preserves drawer, sheet
   and dialog screen types, recognizes auth forms under a custom auth
   base path, reads both generated line-chart call shapes, and keeps
@@ -645,6 +657,15 @@ few lines, and link the PR or the docs page for the rest.
   them.
 
 ### Changed
+- **Postgres fanout folds its fallback table name to lowercase.** The
+  table and the LISTEN/NOTIFY channel now use one folded name, so
+  `App.Msgs` and `app.msgs` share a channel. Replace every replica
+  together: during a rolling deploy an older replica configured with an
+  uppercase name listens on a different channel.
+- **SDK manifest schema version 3 records the Go archive directory.**
+  The served install guide reads it, and the manifest reader refuses a
+  directory that is not one safe path component. Regenerate the SDK and
+  redeploy or remount the docs site.
 - **The admin "nothing to replay" phrase moved to
   `ui.admin.replayNothing`** (was `admin.replay_nothing`), beside the
   other replay phrases. Apps that translate it rename the catalog key.

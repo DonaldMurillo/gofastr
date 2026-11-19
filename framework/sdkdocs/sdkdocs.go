@@ -187,14 +187,29 @@ func (s *site) includedEntities() []*entity.Entity {
 	return out
 }
 
+func (s *site) firstIncludedEntityPerTable() []*entity.Entity {
+	seen := map[string]bool{}
+	var out []*entity.Entity
+	for _, e := range s.includedEntities() {
+		if !seen[e.Config.Table] {
+			seen[e.Config.Table] = true
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func nameMatches(e *entity.Entity, names []string) bool {
 	for _, n := range names {
-		n = asciicase.Lower(strings.TrimSpace(n))
-		if n == asciicase.Lower(e.Config.Name) || n == asciicase.Lower(e.Config.Table) {
+		if matchesFoldedName(e, asciicase.Lower(strings.TrimSpace(n))) {
 			return true
 		}
 	}
 	return false
+}
+
+func matchesFoldedName(e *entity.Entity, folded string) bool {
+	return folded == asciicase.Lower(e.Config.Name) || folded == asciicase.Lower(e.Config.Table)
 }
 
 func (s *site) lookup(segment string) (*entity.Entity, bool) {
@@ -209,7 +224,7 @@ func (s *site) lookupAll(segment string) []*entity.Entity {
 	segment = asciicase.Lower(segment)
 	var out []*entity.Entity
 	for _, e := range s.includedEntities() {
-		if segment == asciicase.Lower(e.Config.Table) || segment == asciicase.Lower(e.Config.Name) {
+		if matchesFoldedName(e, segment) {
 			out = append(out, e)
 		}
 	}

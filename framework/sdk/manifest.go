@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"regexp"
 	"time"
 )
 
@@ -17,6 +18,8 @@ type Artifact struct {
 	Bytes int64 `json:"bytes"`
 	// Module is the Go SDK's module path, empty for other artifacts.
 	Module string `json:"module,omitempty"`
+	// Directory is the Go archive's top-level directory, empty for other artifacts.
+	Directory string `json:"directory,omitempty"`
 }
 
 // Manifest is the manifest.json written beside the artifacts.
@@ -38,8 +41,10 @@ type Manifest struct {
 	Artifacts map[string]Artifact `json:"artifacts"`
 }
 
-// ReadManifest loads ManifestFile from fsys, erroring when it is missing,
-// malformed, or lacks a version, entities, artifacts or a file or sha256.
+var archiveDirectory = regexp.MustCompile(`^[A-Za-z0-9._~-]+$`)
+
+// ReadManifest loads ManifestFile from fsys and rejects incomplete artifact
+// records or a Go archive without a safe top-level directory.
 func ReadManifest(fsys fs.FS) (*Manifest, error) {
 	raw, err := fs.ReadFile(fsys, ManifestFile)
 	if err != nil {
@@ -62,6 +67,9 @@ func ReadManifest(fsys fs.FS) (*Manifest, error) {
 	for key, a := range m.Artifacts {
 		if a.File == "" || a.SHA256 == "" {
 			return nil, fmt.Errorf("sdk: %s: artifact %q is missing file or sha256", ManifestFile, key)
+		}
+		if key == "go" && (!archiveDirectory.MatchString(a.Directory) || a.Directory == "." || a.Directory == "..") {
+			return nil, fmt.Errorf("sdk: %s: Go artifact directory must be a safe single path component", ManifestFile)
 		}
 	}
 	return &m, nil

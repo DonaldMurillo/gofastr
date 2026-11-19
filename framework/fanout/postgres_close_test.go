@@ -41,7 +41,7 @@ func TestCloseCancelsFallbackFetch(t *testing.T) {
 	if _, err := tx.Exec(`LOCK TABLE ` + f.qt() + ` IN ACCESS EXCLUSIVE MODE`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := lockDB.Exec(`SELECT pg_notify($1, 't:1')`, f.channel); err != nil {
+	if _, err := lockDB.Exec(`SELECT pg_notify($1, 't:1')`, f.table); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)

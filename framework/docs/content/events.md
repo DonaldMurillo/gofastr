@@ -246,7 +246,9 @@ island push both work regardless of which replica holds the connection.
 Backends: `framework/fanout.NewPostgres` (uses the DB you already have;
 payloads over the NOTIFY size limit spill to a small fallback table)
 and `core/fanout.NewRedis` (bring-your-own client, mirroring
-`cache.RedisClient`). The fanout is caller-owned: close it after the
+`cache.RedisClient`). With PostgreSQL, `fanout.WithTableName` sets both
+the fallback table and the LISTEN/NOTIFY channel. Both names use ASCII
+lowercase. The fanout is caller-owned: close it after the
 app shuts down, and close the Postgres one before its `*sql.DB`. Its
 `Close` cancels a fallback-row fetch in flight and returns once the
 LISTEN dispatcher has stopped and released its pool connection.
