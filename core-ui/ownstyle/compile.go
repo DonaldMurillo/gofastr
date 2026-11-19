@@ -364,33 +364,6 @@ func (c *compiler) registerKeyframes(r *Rule) *Rule {
 	return r
 }
 
-// composeSelector composes a nested rule's prelude with the selector
-// context it nests in: an explicit "&" is replaced by the parent (each
-// occurrence), and a prelude without one descends from it.
-func (c *compiler) composeSelector(parent string, prel []Token) string {
-	if parent == "" {
-		return emitRun(prel, emitSelector)
-	}
-	hasAmp := false
-	for _, t := range prel {
-		if t.Type == TokenDelim && t.Text == "&" {
-			hasAmp = true
-			break
-		}
-	}
-	if !hasAmp {
-		return parent + " " + emitRun(prel, emitSelector)
-	}
-	sub := make([]Token, len(prel))
-	copy(sub, prel)
-	for i := range sub {
-		if sub[i].Type == TokenDelim && sub[i].Text == "&" {
-			sub[i].Text = parent
-		}
-	}
-	return emitRun(sub, emitSelector)
-}
-
 // keyframesName returns the name a @keyframes rule declares.
 func keyframesName(r *Rule) (string, bool) {
 	for _, t := range r.Prel {

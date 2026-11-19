@@ -124,7 +124,7 @@ func WidgetLayout() *appui.Layout {
 	})
 }
 
-var layoutStyle = registry.RegisterStyle("desktopui-layout", layoutCSS,
+var _ = registry.RegisterStyle("desktopui-layout", layoutCSS,
 	registry.WithLoad(registry.LoadAlways))
 
 func layoutCSS(_ style.Theme) string {

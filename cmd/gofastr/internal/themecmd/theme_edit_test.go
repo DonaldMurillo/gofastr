@@ -1043,7 +1043,7 @@ func TestPackageNameForPathIsAlwaysALegalIdentifier(t *testing.T) {
 // Attribute values are HTML, not Go literals. %q renders a double quote as \",
 // which HTML does not treat as an escape; the attribute simply ends early. Not
 // reachable with the default theme, which is exactly why it is a trap: the
-// label two lines above used htmlEscape correctly while the value beside it
+// label two lines above escaped its text correctly while the value beside
 // did not.
 func TestThemeEditControlsEscapeAttributeValues(t *testing.T) {
 	controls := renderTokenControls(map[string]string{

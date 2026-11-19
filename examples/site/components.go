@@ -12,7 +12,7 @@ package main
 //   - Backward-compatible aliases (componentCatalog, componentEntry,
 //     componentCode, noteOnlyComponents, componentPkg, groupCatalog,
 //     categorySlug, initialKanbanColumns, initialOptimisticNotes,
-//     sidebarShowcaseConfig, demoSectionMenuConfig, kanbanCard/column,
+//     demoSectionMenuConfig, kanbanCard/column,
 //     optimisticNote). Tests, demo_state.go, main.go, and
 //     components_sidebar.go reference these names directly.
 //   - The SSR demo wrappers (kanbanDemo, optimisticCreateDemo,
@@ -58,9 +58,6 @@ var (
 
 	initialKanbanColumns   = gallery.InitialKanbanColumns
 	initialOptimisticNotes = gallery.InitialOptimisticNotes
-
-	sidebarShowcaseConfig = gallery.SidebarShowcaseConfig
-	demoCompany           = gallery.DemoCompany
 
 	componentPkg = gallery.PkgForSlug
 	categorySlug = gallery.CategorySlug

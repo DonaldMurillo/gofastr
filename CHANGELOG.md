@@ -747,6 +747,8 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Removed
+- **Generated entity files no longer carry the unused
+  `extract<Entity>Record` wrapper.** Regenerating an app removes it.
 - **`TenantConfig.AutoScope` is gone.** It was never read: multi-tenant
   scoping is always on, and `tenant.AllowCrossTenant` on a context with
   no tenant ID stays the cross-tenant opt-in.

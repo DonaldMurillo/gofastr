@@ -229,7 +229,6 @@ var (
 	iaWS       = `[ \t\n\f\r]`
 	iaCompound = `(?:` + iaAttr + `|:not\(` + iaAttr + `\))+`
 	iaSelector = regexp.MustCompile(`^` + iaWS + `*` + iaCompound + `(?:` + iaWS + `*(?:` + iaWS + `+|[>+~]` + iaWS + `*)` + iaCompound + `)*` + iaWS + `*(?:,` + iaWS + `*` + iaCompound + `(?:` + iaWS + `*(?:` + iaWS + `+|[>+~]` + iaWS + `*)` + iaCompound + `)*` + iaWS + `*)*$`)
-	iaEvent    = map[string]bool{"click": true, "keydown": true}
 )
 
 // ReserveBehaviorNames records names no behaviour may register under:

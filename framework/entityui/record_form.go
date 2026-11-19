@@ -251,7 +251,6 @@ type formBuilder struct {
 	create     bool
 	values     map[string]string
 	placed     map[string]bool
-	err        error
 	replace    []string
 	compact    bool
 }

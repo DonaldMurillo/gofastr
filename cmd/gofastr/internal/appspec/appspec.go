@@ -4716,12 +4716,6 @@ func appSpecDisplayField(decl framework.EntityDeclaration) string {
 // shared with the admin battery so both spell "Category" the same way.
 func singularize(s string) string { return inflect.Singular(s) }
 
-// appSpecBlockHasSource reports whether a block binds to live entity data.
-func appSpecBlockHasSource(b AppSpecBlock) bool {
-	_, ok := b.Props["source"].(map[string]any)
-	return ok
-}
-
 // RouteParamNames parses the param names a route declares, accepting
 // both supported syntaxes, "{slug}" / "{path...}" / "{id:int}" and
 // ":slug" / ":path*" / ":id:int", mirroring the router's
@@ -5430,19 +5424,4 @@ func stringStringMapValue(node *coreyaml.Node) map[string]string {
 		out[key] = stringValue(child)
 	}
 	return out
-}
-
-func appSpecSeedHasComplexValues(bp AppSpec) bool {
-	for _, seed := range bp.Seed {
-		for _, row := range seed.Rows {
-			for _, v := range row {
-				switch v.(type) {
-				case string, int, int64, float64, bool, nil:
-				default:
-					return true
-				}
-			}
-		}
-	}
-	return false
 }

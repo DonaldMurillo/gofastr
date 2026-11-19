@@ -556,16 +556,12 @@ func (s *server) serveState(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-// renderSkeleton produces the initial chrome HTML: framework-default
+// renderSkeletonCtx produces the initial chrome HTML: framework-default
 // for the position, OR the host's custom Skeleton if provided. Slots
-// are rendered to HTML and looked up by name.
-func (s *server) renderSkeleton() render.HTML {
-	return s.renderSkeletonCtx(context.Background())
-}
-
-// renderSkeletonCtx is renderSkeleton with an explicit request context, threaded
-// into each slot so context-aware slots render per-request (role-aware nav,
-// tenant-scoped chrome, …). Slots that aren't context-aware are unaffected.
+// are rendered to HTML and looked up by name, with the request context
+// threaded into each slot so context-aware slots render per-request
+// (role-aware nav, tenant-scoped chrome, …). Slots that aren't
+// context-aware are unaffected.
 //
 // Slot Components and the host Skeleton hook are host-pluggable render
 // hooks of exactly the class layout chrome slots are, so they get the same

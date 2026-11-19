@@ -487,14 +487,3 @@ func (s *darwinShell) reportWindowActivity(w *darwinWindow, focus bool) {
 		deliverOnGoroutine(func() { blurCB(id) })
 	}
 }
-
-// snapshotWindows copies the live window list under the lock.
-func (s *darwinShell) snapshotWindows() []*darwinWindow {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	wins := make([]*darwinWindow, 0, len(s.windows))
-	for _, w := range s.windows {
-		wins = append(wins, w)
-	}
-	return wins
-}

@@ -8,7 +8,7 @@ package main
 // stylesheet from the theme's Code slots (--tk-*, dark values in
 // Theme.DarkCode). The site ships no CSS for any of it.
 //
-// The hand-tokenized helpers (kw/fn_/str_/pn/ty/com + ln) stay for blocks
+// The hand-tokenized helpers (kw/fn_/str_/pn/ty + ln) stay for blocks
 // that want exact control over which identifiers read as calls vs types;
 // raw source can instead go through codeBlockScroll or ui.CodeTabs, which
 // highlight with ui.HighlightLines.
@@ -68,7 +68,6 @@ func fn_(s string) render.HTML  { return render.Tag("span", attrClass("tk-fn"), 
 func str_(s string) render.HTML { return render.Tag("span", attrClass("tk-str"), render.Text(s)) }
 func pn(s string) render.HTML   { return render.Tag("span", attrClass("tk-pn"), render.Text(s)) }
 func ty(s string) render.HTML   { return render.Tag("span", attrClass("tk-type"), render.Text(s)) }
-func com(s string) render.HTML  { return render.Tag("span", attrClass("tk-com"), render.Text(s)) }
 
 // attrClass is sugar for the one attr we set everywhere. Keeps call sites
 // readable when there are 20 of them in a row.

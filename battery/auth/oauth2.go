@@ -1435,15 +1435,6 @@ func (p *OAuth2Plugin) verifyState(state, expectedProvider string) (userID, nonc
 	return string(uidBytes), nonceB64, expiry, true
 }
 
-// purgeExpiredNonces is retained for explicit cleanup callers (e.g. a
-// future ticker goroutine). The hot validate path inlines its own
-// size-gated purge.
-func (p *OAuth2Plugin) purgeExpiredNonces() {
-	p.noncesMu.Lock()
-	defer p.noncesMu.Unlock()
-	p.purgeExpiredNoncesLocked(time.Now())
-}
-
 func (p *OAuth2Plugin) purgeExpiredNoncesLocked(now time.Time) {
 	for n, exp := range p.usedNonces {
 		if !now.Before(exp) {

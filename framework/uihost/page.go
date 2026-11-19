@@ -271,10 +271,6 @@ func (ds *UIHost) injectChrome(ctx context.Context, page, pagePath, sessionID, p
 	return ds.injectChromeModeFor(ctx, page, pagePath, sessionID, presenceTopic, true, nil)
 }
 
-func (ds *UIHost) injectChromeFor(ctx context.Context, page, pagePath, sessionID, presenceTopic string, comp component.Component) string {
-	return ds.injectChromeModeFor(ctx, page, pagePath, sessionID, presenceTopic, true, comp)
-}
-
 func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp component.Component) string {
 	head, own := scanDescriptions(ds.screenOwnHead(ctx, pagePath, comp), 1)
 	if own != "" {

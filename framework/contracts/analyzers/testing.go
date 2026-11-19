@@ -270,17 +270,6 @@ func ruleDisabledTests(src lintSource, reportAllNonLane bool) []contracts.Diagno
 	return out
 }
 
-func callSpan(p *contracts.Pass, rel string, n ast.Node) string {
-	start := p.Position(n.Pos()).Line
-	end := p.Position(n.End()).Line
-	var b strings.Builder
-	for ln := start; ln <= end; ln++ {
-		b.WriteString(p.Line(rel, ln))
-		b.WriteString("\n")
-	}
-	return b.String()
-}
-
 func guardedByShort(lines []string, lineNo int) bool {
 	for i, seen := lineNo-2, 0; i >= 0 && seen < 4; i-- {
 		trimmed := strings.TrimSpace(lines[i])

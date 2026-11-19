@@ -713,13 +713,6 @@ func (s *darwinShell) stopLoop() {
 // Quit ends the event loop Run blocks in.
 func (s *darwinShell) Quit() { s.stopLoop() }
 
-// webViewID returns the live WKWebView, 0 before Run published it.
-func (s *darwinShell) webViewID() objc.ID {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.webView
-}
-
 // windowID returns the live NSWindow, 0 before Run published it.
 func (s *darwinShell) windowID() objc.ID {
 	s.mu.Lock()

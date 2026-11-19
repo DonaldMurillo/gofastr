@@ -54,21 +54,6 @@ func dataDirPath(id string) (string, error) {
 	return filepath.Join(base, id), nil
 }
 
-// appOptionsDataDir resolves the effective data directory for an app
-// id, honouring an explicit override (Config.DataDir).
-func appOptionsDataDir(override, id string) (string, error) {
-	if override != "" {
-		if !filepath.IsAbs(override) {
-			return "", fmt.Errorf("desktop: Config.DataDir %q must be absolute", override)
-		}
-		if err := fileperm.MkdirPrivate(override); err != nil {
-			return "", fmt.Errorf("desktop: create data dir %s: %w", override, err)
-		}
-		return override, nil
-	}
-	return DataDir(id)
-}
-
 // randomToken returns 32 bytes from crypto/rand, base64url-encoded.
 // Every credential this package mints (boot token, session value,
 // secret, script nonce) comes through here; a wedged CSPRNG is an

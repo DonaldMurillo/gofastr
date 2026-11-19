@@ -212,9 +212,6 @@ func (b *Battery) updaterFor() *updater {
 	return b.updater
 }
 
-// platformOrNil returns the test-injected platform, or nil.
-func (u *updater) platformOverride() update.Platform { return u.platform }
-
 // renameFile is the swap's rename: the injected one, or os.Rename.
 func (u *updater) renameFile(oldpath, newpath string) error {
 	if u.rename != nil {

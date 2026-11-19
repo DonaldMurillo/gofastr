@@ -796,10 +796,3 @@ func contrastProbeCSS() string {
 var previewChromeCSS = `
 .tp-probes { position: absolute; left: -9999px; top: -9999px; visibility: hidden; pointer-events: none; }
 `
-
-// htmlEscape escapes a string for safe inclusion in HTML text content.
-// Delegates to the canonical 5-char escaper so no reduced-shape escaper
-// (the documented past-XSS shape) survives in the tree.
-func htmlEscape(s string) string {
-	return render.Escape(s)
-}
