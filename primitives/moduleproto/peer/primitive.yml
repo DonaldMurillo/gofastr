@@ -45,7 +45,7 @@ invariants:
       - test: core/moduleproto.TestAbandonedWindowEvictionStaysFatal
       - test: core/moduleproto.TestAbandonedWindowCountsOnlyUnansweredIDs
   - id: on-id-only-for-sendable-calls
-    rule: CallWithID reports an id only after the ctx and params checks pass, never for a request whose ctx already ended or whose params fail to marshal; the report does not promise a write, since a ctx that ends after it (onID's own cancel included) returns ctx.Err() before the request is written.
+    rule: CallWithID reports an id only after the ctx and params checks pass, never for a request whose ctx already ended or whose params fail to marshal; the report does not promise a write - a ctx that has ended by the check after onID (onID's own cancel included) returns ctx.Err() with nothing written, while one that ends after that check can return ctx.Err() with the request written or still being written.
     enforced_by:
       - test: core/moduleproto.TestCallDoneCtxAllocatesNoID
       - test: core/moduleproto.TestCallWithIDReportsNoIDWhenParamsFailToMarshal
