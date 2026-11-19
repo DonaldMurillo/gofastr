@@ -59,8 +59,9 @@ selected at process startup. The minified output is still a valid
 ES2020+ IIFE; no source maps are emitted, but the code remains
 human-readable enough to set breakpoints in.
 
-The core's gzip gates are 16,380 bytes at level 6 and
-18,947 bytes at level 1, including static server-action refusal and skipped
+The core's gzip gates are the `coreGoalGZ` (16,944 bytes at level 6) and
+`coreCongestionWindowGZ` (19,588 bytes at level 1) constants in
+`core-ui/runtime/budget_test.go`, including static server-action refusal and skipped
 automatic mounts, full-document session cache invalidation,
 shared trap and initial focus eligibility, page-cancelled signal clicks,
 positive router click ownership, document-base-resolved query/fragment
@@ -71,8 +72,8 @@ reports `cached: false` and other page metadata updates normally.
 Fallback toast rows and hydrated text signals use implicit status/alert
 live semantics without adding a second announcement through `aria-live`.
 Bare-primary loading adds only the navigation handoff to the existing
-demand-loaded envelope scheduler: 11 B at level 6 and 23 B at level 1,
-measuring 16,126 B and 18,694 B respectively, with 2 B clearance in each gate.
+demand-loaded envelope scheduler. Each gate keeps 2 B of clearance over the
+measured size; `core-ui/runtime/budget_test.go` is where both numbers live.
 Layouts without loading templates, outlets, or route areas still fetch
 neither the envelope nor the loading module.
 Ordinary-page form-helper discovery fits those
@@ -121,8 +122,8 @@ and both stylesheets together come to about 12 KB.
 After minification (typical end-user deploy):
 
 - `runtime.js`: `core-ui/runtime/budget_test.go` holds the gzip gates at
-  16,380 B (level 6) and 18,947 B (level 1). The
-  level-1 gate sits 4,611 B past the 14 KiB initial congestion window,
+  16,944 B (level 6) and 19,588 B (level 1). The
+  level-1 gate sits 5,252 B past the 14 KiB initial congestion window,
   so a cold first load of the core takes a second round trip; each
   byte over 14 KiB is a named entry in that test
 - Every on-demand module: ≤ 3 KB gz each; a page only fetches the
