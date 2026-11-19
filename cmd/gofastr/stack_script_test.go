@@ -1,22 +1,26 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
 
 // fakeStackGH stands in for gh: every call prints $BODY through its
-// --jq expression with the real jq, and $CALLS records that gh ran. A
+// --jq expression with the real jq, $CALLS records that gh ran, and a
+// request body read from stdin (--input -) is saved to $STDIN. A
 // poll of a running merge (merge-async/<id>) prints $POLL instead, and a
 // call that starts a merge exits $PUT_EXIT after printing, as gh does on
 // an HTTP error.
 const fakeStackGH = `#!/usr/bin/env bash
 args="$*"
 echo "$args" >> "$CALLS"
+case "$args" in *"--input -"*) cat > "$STDIN" ;; esac
 case "$args" in *merge-async/*) BODY="$POLL" ;; esac
 jqexpr=""
 while [ $# -gt 0 ]; do
@@ -38,7 +42,7 @@ func stackCalls(t *testing.T, body string, args ...string) (out string, code int
 	return out, code, lastCalls
 }
 
-var lastCalls string
+var lastCalls, lastStdin string
 
 func runStackScriptEnv(t *testing.T, body string, env []string, args ...string) (out string, code int, called bool) {
 	t.Helper()
@@ -52,6 +56,7 @@ func runStackScriptEnv(t *testing.T, body string, env []string, args ...string) 
 		t.Fatal(err)
 	}
 	calls := filepath.Join(bin, "calls")
+	stdin := filepath.Join(bin, "stdin")
 	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "stack.sh"))
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +64,7 @@ func runStackScriptEnv(t *testing.T, body string, env []string, args ...string) 
 	cmd := exec.Command("bash", append([]string{script}, args...)...)
 	cmd.Env = append(os.Environ(),
 		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"BODY="+body, "CALLS="+calls)
+		"BODY="+body, "CALLS="+calls, "STDIN="+stdin)
 	cmd.Env = append(cmd.Env, env...)
 	raw, err := cmd.CombinedOutput()
 	var exit *exec.ExitError
@@ -70,6 +75,8 @@ func runStackScriptEnv(t *testing.T, body string, env []string, args ...string) 
 	}
 	logged, statErr := os.ReadFile(calls)
 	lastCalls = string(logged)
+	sent, _ := os.ReadFile(stdin)
+	lastStdin = string(sent)
 	return string(raw), code, statErr == nil
 }
 
@@ -144,6 +151,12 @@ func TestStackScriptAddsPRsToAStack(t *testing.T) {
 	}
 	if !strings.Contains(calls, "-X POST repos/DonaldMurillo/gofastr/stacks/5/add") {
 		t.Fatalf("add called gh as:\n%s", calls)
+	}
+	var sent struct {
+		PullRequests []int `json:"pull_requests"`
+	}
+	if err := json.Unmarshal([]byte(lastStdin), &sent); err != nil || !slices.Equal(sent.PullRequests, []int{3, 4}) {
+		t.Fatalf("add sent %q (%v), want pull_requests [3 4] in that order", lastStdin, err)
 	}
 }
 
