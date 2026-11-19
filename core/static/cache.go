@@ -90,8 +90,8 @@ func (c *digestCache) hashInBackground(key digestKey, open func() (fs.File, erro
 	}
 	go func() {
 		defer release()
-		defer f.Close()
 		defer func() { _ = recover() }()
+		defer f.Close()
 		if !sameRevision(f, key) {
 			return
 		}

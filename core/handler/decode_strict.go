@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"reflect"
-	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -156,14 +155,15 @@ func CheckTopLevelKeys(data []byte, fold func(string) string) error {
 func CheckObjectKeys(data []byte, fold func(string) string) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
-	err := walkObjectKeys(dec, fold, nil)
+	var path []pathSeg
+	err := walkObjectKeys(dec, fold, &path)
 	if _, tokenErr := err.(*Error); err != nil && !tokenErr {
 		return nil
 	}
 	return err
 }
 
-func walkObjectKeys(dec *json.Decoder, fold func(string) string, path []pathSeg) error {
+func walkObjectKeys(dec *json.Decoder, fold func(string) string, path *[]pathSeg) error {
 	tok, err := dec.Token()
 	if err != nil {
 		return err
@@ -187,20 +187,24 @@ func walkObjectKeys(dec *json.Decoder, fold func(string) string, path []pathSeg)
 					norm = fold(key)
 				}
 				if prev, dup := seen[norm]; dup {
-					return keyRefusal(path, prev, key)
+					return keyRefusal(*path, prev, key)
 				}
 				seen[norm] = key
-				if err := walkObjectKeys(dec, fold, append(slices.Clip(path), pathSeg{key: key})); err != nil {
+				*path = append(*path, pathSeg{key: key})
+				if err := walkObjectKeys(dec, fold, path); err != nil {
 					return err
 				}
+				*path = (*path)[:len(*path)-1]
 			}
 			_, err := dec.Token() // the closing '}'
 			return err
 		case '[':
 			for i := 0; dec.More(); i++ {
-				if err := walkObjectKeys(dec, fold, append(slices.Clip(path), pathSeg{index: i, isIdx: true})); err != nil {
+				*path = append(*path, pathSeg{index: i, isIdx: true})
+				if err := walkObjectKeys(dec, fold, path); err != nil {
 					return err
 				}
+				*path = (*path)[:len(*path)-1]
 			}
 			_, err := dec.Token() // the closing ']'
 			return err

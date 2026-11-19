@@ -16,6 +16,11 @@ import (
 func TestSweepSpilledPartRemovedAfterRefusal(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
+	t.Setenv("TMP", tmp)
+	t.Setenv("TEMP", tmp)
+	if got := os.TempDir(); got != tmp {
+		t.Fatalf("os.TempDir() = %q, want %q; spilled parts would not land in the inspected directory", got, tmp)
+	}
 	h := Handler(Config{MaxSize: 8 << 20, AllowedExts: []string{"png"}, Storage: &recordingStorage{}})
 	body, ct := multipartBody(t, 2<<20)
 	req := httptest.NewRequest(http.MethodPost, "/upload", body)
@@ -106,7 +111,10 @@ func TestSweepFoldWalkErrorNamesNoRoot(t *testing.T) {
 	}
 	err := RefuseFoldedKey("file.txt/child", "", base, nil)
 	if err == nil {
-		t.Skip("this filesystem reports no error under a file")
+		if runtime.GOOS == "windows" {
+			t.Skip("Windows reports a path under a file as missing, so the walk has no error to scrub")
+		}
+		t.Fatal("the fold walk under a regular file returned no error, so the scrub was never reached")
 	}
 	if strings.Contains(err.Error(), base) {
 		t.Fatalf("the fold walk's error names the storage root: %v", err)

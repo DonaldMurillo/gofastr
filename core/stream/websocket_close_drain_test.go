@@ -3,6 +3,7 @@ package stream
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -361,17 +362,25 @@ func TestCloseAfterFailedWriteSkipsDrain(t *testing.T) {
 	}
 }
 
-// pingStallConn takes data frames slowly, and stalls any other frame until a
-// write deadline is set, like a peer that stopped reading after the
-// drain. When armed, the first deadline cleared after a drained frame
-// starts a keepalive Ping and holds the write lock long enough for that
-// Ping to queue ahead of the Close frame.
+// pingStallConn takes data frames and logs every frame write with the
+// deadline it ran under. Any other frame stalls until a deadline is set,
+// then times out, like a peer that stopped reading after the drain. When
+// armed, Close's own first SetWriteDeadline call runs, on Close's
+// goroutine and in order, the drain and then a keepalive Ping, so the
+// Ping follows a drained frame and precedes the Close frame by
+// construction.
 type pingStallConn struct {
 	mu    sync.Mutex
 	dl    time.Time
 	armed bool
 	c     *WebSocketConn
-	ping  chan error
+	ping  error
+	log   []frameWrite
+}
+
+type frameWrite struct {
+	opcode byte
+	dl     time.Time
 }
 
 func (s *pingStallConn) Read([]byte) (int, error) { select {} }
@@ -379,20 +388,20 @@ func (s *pingStallConn) Close() error             { return nil }
 func (s *pingStallConn) SetWriteDeadline(t time.Time) error {
 	s.mu.Lock()
 	s.dl = t
-	start := s.armed && t.IsZero()
-	if start {
-		s.armed = false
-	}
+	run := s.armed && !t.IsZero()
+	s.armed = s.armed && !run
 	s.mu.Unlock()
-	if start {
-		go func() { s.ping <- s.c.writeFrame(wsopcodePing, nil) }()
-		time.Sleep(5 * time.Millisecond)
+	if run {
+		s.c.drainQueued(t)
+		s.ping = s.c.writeFrame(wsopcodePing, nil)
 	}
 	return nil
 }
 func (s *pingStallConn) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	s.log = append(s.log, frameWrite{p[0] & 0x0F, s.dl})
+	s.mu.Unlock()
 	if p[0]&0x0F == wsopcodeText {
-		time.Sleep(5 * time.Millisecond)
 		return len(p), nil
 	}
 	for {
@@ -407,10 +416,10 @@ func (s *pingStallConn) Write(p []byte) (int, error) {
 }
 
 // A drained frame cleared the socket's deadline, so with WriteTimeout
-// disabled a keepalive Ping that took the write lock next wrote with
-// none, and Close waited on that lock for as long as the peer stalled.
+// disabled a keepalive Ping written next went out with none, and Close
+// waited on the write lock for as long as the peer stalled.
 func TestCloseReturnsWhenPingFollowsDrainedFrame(t *testing.T) {
-	sc := &pingStallConn{ping: make(chan error, 1)}
+	sc := &pingStallConn{armed: true}
 	c := &WebSocketConn{conn: sc, sendBuffer: make(chan wsMessage, 4), closed: make(chan struct{}), peerClosed: make(chan struct{}),
 		config: WSConfig{WriteTimeout: -1, CloseTimeout: time.Millisecond}}
 	sc.c = c
@@ -419,9 +428,6 @@ func TestCloseReturnsWhenPingFollowsDrainedFrame(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	sc.mu.Lock()
-	sc.armed = true
-	sc.mu.Unlock()
 	done := make(chan struct{})
 	go func() { c.Close(); close(done) }()
 	select {
@@ -429,10 +435,23 @@ func TestCloseReturnsWhenPingFollowsDrainedFrame(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Close stayed blocked behind a Ping written with no deadline after the drain")
 	}
-	select {
-	case <-sc.ping:
-	case <-time.After(3 * time.Second):
-		t.Fatal("the Ping never returned")
+	sc.mu.Lock()
+	log := append([]frameWrite(nil), sc.log...)
+	sc.mu.Unlock()
+	want := []byte{wsopcodeText, wsopcodeText, wsopcodeText, wsopcodePing, wsopcodeClose}
+	if len(log) != len(want) {
+		t.Fatalf("conn saw %d frame writes %v, want %v", len(log), log, want)
+	}
+	for i, w := range log {
+		if w.opcode != want[i] {
+			t.Fatalf("frame write %d is opcode 0x%X, want 0x%X (order %v)", i, w.opcode, want[i], log)
+		}
+	}
+	if ping := log[3]; ping.dl.IsZero() {
+		t.Fatal("the Ping after the drain was written with no deadline")
+	}
+	if !errors.Is(sc.ping, timeoutErr{}) {
+		t.Fatalf("Ping returned %v, want the stalled peer's timeout", sc.ping)
 	}
 }
 

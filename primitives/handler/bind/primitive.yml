@@ -44,6 +44,10 @@ invariants:
       - test: core/handler.TestUnmarshalStrictRefusesNestedAmbiguity
       - test: core/handler.TestStrictNestedKeysFoldLikeDecoder
       - test: core/handler.TestToolAdapterRefusesFoldedTwinAcrossHalves
+  - id: key-walk-linear-in-depth
+    rule: The key walk behind CheckObjectKeys, which Bind, UnmarshalStrict, DecodeStrict and ToolAdapter all run, pushes and pops one path stack, so what it allocates grows linearly with nesting depth rather than copying the path at every level.
+    enforced_by:
+      - test: core/handler.TestCheckObjectKeysDeepNestingIsLinear
   - id: exact-numbers
     rule: Bind and ToolAdapter decode numbers under interfaces as json.Number and settle them, so an integer past 2^53 keeps its digits.
     enforced_by:

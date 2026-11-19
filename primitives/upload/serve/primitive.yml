@@ -11,7 +11,7 @@ invariants:
     enforced_by:
       - test: core/upload.TestServeHandlerMethodNotAllowed
   - id: sniffed-type-and-nosniff
-    rule: Every served object carries X-Content-Type-Options nosniff and a Content-Type sniffed from its first 512 bytes, on the whole-body and the range path alike.
+    rule: Every served object carries X-Content-Type-Options nosniff and a Content-Type sniffed from its first 512 bytes, which scriptable-downgraded may then replace with application/octet-stream, on the whole-body and the range path alike.
     enforced_by:
       - test: core/upload.TestServeHandlerSniffsContentType
       - test: core/upload.TestRangeServingKeepsScriptableGuard
