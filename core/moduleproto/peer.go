@@ -202,7 +202,8 @@ func (p *Peer) Call(ctx context.Context, method string, params any) (json.RawMes
 
 // CallWithID is Call that reports the frame id to onID, synchronously,
 // once the ctx and params checks pass and before the frame is written. A
-// ctx that ends after onID returns ctx.Err() with nothing written.
+// ctx already ended when onID returns gives ctx.Err() with nothing
+// written; one that ends later can give ctx.Err() after the write.
 // module.cancel names that id.
 func (p *Peer) CallWithID(ctx context.Context, method string, params any, onID func(id uint64)) (json.RawMessage, error) {
 	return p.call(ctx, method, params, onID)
