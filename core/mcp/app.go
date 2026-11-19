@@ -38,6 +38,9 @@ type AppConfig struct {
 
 	// ToolMeta is merged into the tool's `_meta`; the ui.resourceUri linkage always wins.
 	ToolMeta map[string]any
+
+	// Annotations are the tool's behaviour hints; see WithAnnotations.
+	Annotations *Annotations
 }
 
 // RegisterApp registers an App's UI resource and its linking tool, whose `_meta` gets ui.resourceUri and openai/outputTemplate; on a missing field or a duplicate it registers neither.
@@ -100,5 +103,9 @@ func (s *Server) RegisterApp(cfg AppConfig) error {
 	meta["ui"] = ui
 	meta["openai/outputTemplate"] = cfg.ResourceURI
 
-	return s.RegisterTool(cfg.Name, cfg.Description, cfg.InputSchema, cfg.Handler, WithToolMeta(meta))
+	opts := []ToolOption{WithToolMeta(meta)}
+	if cfg.Annotations != nil {
+		opts = append(opts, WithAnnotations(*cfg.Annotations))
+	}
+	return s.RegisterTool(cfg.Name, cfg.Description, cfg.InputSchema, cfg.Handler, opts...)
 }

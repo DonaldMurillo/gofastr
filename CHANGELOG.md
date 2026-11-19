@@ -24,6 +24,29 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Added
+- **mcp: tool annotations.** `mcp.WithAnnotations(mcp.Annotations{...})`
+  serves a tool's `readOnlyHint`, `destructiveHint`, `idempotentHint`,
+  `openWorldHint` and `title` in `tools/list`; `mcp.Bool(v)` sets a hint,
+  and a nil hint is left out. Entity CRUD tools and the framework's own
+  tools now carry them, and `gofastr dev` logs a warning for any tool
+  missing one of the three hints ChatGPT's directory review requires. See
+  [MCP server](framework/docs/content/mcp.md#tool-annotations).
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **mcp: server instructions.** `Server.SetInstructions` and
+  `framework.WithMCPInstructions` set the `instructions` that `initialize`
+  returns. [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **mcp: request `_meta` in tool handlers.** `mcp.RequestMeta(ctx)` returns
+  a copy of the `_meta` a `tools/call` carried, such as ChatGPT's
+  `openai/locale` and `openai/subject`. The values are unauthenticated:
+  never use them as an identity.
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **framework: OpenAI apps domain check.**
+  `framework.WithOpenAIAppsChallenge(token)` serves the token as plain
+  text at `/.well-known/openai-apps-challenge`. See
+  [agent-readiness](framework/docs/content/agent-ready.md).
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+
 ### Fixed
 - **gofastr dev: saves no longer run git in your repository.** The
   dev loop's `go list` and `go build` stamped version control info, which

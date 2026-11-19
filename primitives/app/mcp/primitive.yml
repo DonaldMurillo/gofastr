@@ -129,6 +129,17 @@ invariants:
       - test: framework.TestDevExplicitCollisionStillFails
       - test: framework.TestReplacedDevToolCollisionFails
       - test: framework.TestSweepAgentsExplicitEntityCollisionFails
+  - id: app-wires-instructions-and-hint-warnings
+    rule: NewApp hands WithMCPInstructions to whichever MCP server the options leave installed, and turns on SetAnnotationWarnings when the dev gate is on and only then.
+    enforced_by:
+      - test: framework.TestWithMCPInstructionsReachesInitialize
+      - test: framework.TestDevModeWarnsOnUnannotatedTools
+    applies:
+      - framework/app.go
+  - id: builtin-tools-carry-hints
+    rule: Every introspection, contract and control tool the framework registers sets readOnlyHint, destructiveHint and openWorldHint, and an entity Endpoint's MCPAnnotations reach its tool.
+    enforced_by:
+      - test: framework.TestBuiltinMCPToolsCarryListingHints
 decisions:
   - id: control-separate-from-introspection
     date: 2026-11-16

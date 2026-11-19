@@ -82,7 +82,7 @@ func (a *App) registerIntrospectionTools() error {
 			handler:     a.toolUnmounted,
 		},
 	}
-	var opts []mcp.ToolOption
+	opts := []mcp.ToolOption{readOnlyToolHints()}
 	if a.mcpIntrospectionDevImplied {
 		opts = append(opts, mcp.WithDevImplied())
 	}
@@ -359,4 +359,13 @@ func dialectStringForTool(d migrate.Dialect) string {
 		return "all"
 	}
 	return string(d)
+}
+
+func readOnlyToolHints() mcp.ToolOption {
+	return mcp.WithAnnotations(mcp.Annotations{
+		ReadOnlyHint:    mcp.Bool(true),
+		DestructiveHint: mcp.Bool(false),
+		IdempotentHint:  mcp.Bool(true),
+		OpenWorldHint:   mcp.Bool(false),
+	})
 }
