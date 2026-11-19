@@ -23,6 +23,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
+	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 )
 
 const (
@@ -381,27 +382,28 @@ type embedGrantResponse struct {
 	ExpiresInMS int64  `json:"expires_in_ms"`
 }
 
-func embedError(w http.ResponseWriter, r *http.Request, status int, why string, err error) {
+func embedError(w http.ResponseWriter, r *http.Request, status int, phrase i18n.Phrase, why string, err error) {
 	if err != nil {
 		slog.Default().Debug("uihost: embed request refused", "reason", why, "err", err)
 	}
-	i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
+	i18n.HTTPError(w, r, status, phrase)
 }
 
 func (ds *UIHost) handleEmbedExchange(w http.ResponseWriter, r *http.Request) {
 	stripAmbientCredentials(r)
 	if !ds.embedHost.Ready() {
-		embedError(w, r, http.StatusServiceUnavailable, "no signing key", nil)
+		embedError(w, r, http.StatusServiceUnavailable, i18n.StatusPhrase(http.StatusServiceUnavailable), "no signing key", nil)
 		return
 	}
 	var req embedExchangeRequest
 	if err := handler.DecodeStrict(http.MaxBytesReader(w, r.Body, 8<<10), &req); err != nil {
-		embedError(w, r, http.StatusBadRequest, "malformed body", err)
+		status, phrase := bodylimit.DecodeRefusal(err)
+		embedError(w, r, status, phrase, "malformed body", err)
 		return
 	}
 	res, err := ds.embedHost.Exchange(r.Context(), req.Token, req.Origin)
 	if err != nil {
-		embedError(w, r, http.StatusUnauthorized, "exchange refused", err)
+		embedError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized), "exchange refused", err)
 		return
 	}
 	if res.Replay {
@@ -418,12 +420,12 @@ func (ds *UIHost) handleEmbedExchange(w http.ResponseWriter, r *http.Request) {
 func (ds *UIHost) handleEmbedRefresh(w http.ResponseWriter, r *http.Request) {
 	stripAmbientCredentials(r)
 	if !ds.embedHost.Ready() {
-		embedError(w, r, http.StatusServiceUnavailable, "no signing key", nil)
+		embedError(w, r, http.StatusServiceUnavailable, i18n.StatusPhrase(http.StatusServiceUnavailable), "no signing key", nil)
 		return
 	}
 	grant, err := ds.embedHost.Refresh(r.Context(), r.Header.Get(embedGrantHeader))
 	if err != nil {
-		embedError(w, r, http.StatusUnauthorized, "refresh refused", err)
+		embedError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized), "refresh refused", err)
 		return
 	}
 	ds.writeEmbedGrant(w, grant.Token, grant.Expires.UnixMilli())
@@ -472,7 +474,7 @@ func (ds *UIHost) resolveEmbedSurface(w http.ResponseWriter, r *http.Request) (*
 	name := r.PathValue("surface")
 	s, ok := ds.embedHost.Lookup(name)
 	if !ok {
-		embedError(w, r, http.StatusNotFound, "unknown surface", nil)
+		embedError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound), "unknown surface", nil)
 		return nil, false
 	}
 	return s, true
@@ -487,7 +489,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 	escaped := strings.TrimPrefix(r.URL.EscapedPath(), fembed.SurfacePrefix+s.Name)
 	page, ok := ds.embedPagePath(s, escaped)
 	if !ok {
-		embedError(w, r, http.StatusNotFound, "path does not match the surface", nil)
+		embedError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound), "path does not match the surface", nil)
 		return
 	}
 	content := fembed.SurfacePrefix + s.Name + "/content"
@@ -495,7 +497,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 		content += "?path=" + url.QueryEscape(escaped)
 	}
 	if !ds.embedHost.Ready() {
-		embedError(w, r, http.StatusServiceUnavailable, "no signing key", nil)
+		embedError(w, r, http.StatusServiceUnavailable, i18n.StatusPhrase(http.StatusServiceUnavailable), "no signing key", nil)
 		return
 	}
 	applyEmbedFraming(w, ds.embedShellOrigins(r, s))
@@ -631,21 +633,21 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ds.embedHost.Ready() {
-		embedError(w, r, http.StatusServiceUnavailable, "no signing key", nil)
+		embedError(w, r, http.StatusServiceUnavailable, i18n.StatusPhrase(http.StatusServiceUnavailable), "no signing key", nil)
 		return
 	}
 	grant, err := ds.embedHost.VerifyGrant(r.Context(), r.Header.Get(embedGrantHeader))
 	if err != nil {
-		embedError(w, r, http.StatusUnauthorized, "grant refused", err)
+		embedError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized), "grant refused", err)
 		return
 	}
 	if grant.Surface != s.Name {
-		embedError(w, r, http.StatusNotFound, "grant is for another surface", nil)
+		embedError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound), "grant is for another surface", nil)
 		return
 	}
 	page, ok := ds.embedPagePath(s, r.URL.Query().Get("path"))
 	if !ok {
-		embedError(w, r, http.StatusNotFound, "path does not match the surface", nil)
+		embedError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound), "path does not match the surface", nil)
 		return
 	}
 
@@ -654,7 +656,7 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	ctx = fembed.WithGrant(ctx, grant)
 	ctx, _, reason, err := ds.embedHost.InstallSubject(ctx, grant.Subject)
 	if err != nil {
-		embedError(w, r, http.StatusForbidden, reason, err)
+		embedError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden), reason, err)
 		return
 	}
 
@@ -677,14 +679,14 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	}
 	switch res.Kind {
 	case app.DecisionRedirect:
-		embedError(w, r, http.StatusForbidden, "screen policy redirected", nil)
+		embedError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden), "screen policy redirected", nil)
 		return
 	case app.DecisionBlock:
 		status := res.Status
 		if status == 0 {
 			status = http.StatusForbidden
 		}
-		embedError(w, r, status, "screen policy blocked", nil)
+		embedError(w, r, status, i18n.StatusPhrase(status), "screen policy blocked", nil)
 		return
 	}
 

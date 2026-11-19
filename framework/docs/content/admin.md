@@ -748,7 +748,9 @@ Each ops form posts two ways. With the runtime it is a form RPC: success
 is `204` with a toast, a refusal is JSON `{"error": ...}` with its
 status. A plain post redirects (`303`) back to the page with
 `?result=<name>`, which the page draws as a notice. Bodies are capped at
-1 MiB (`413` past it).
+1 MiB, and an oversize post answers the same two ways: the RPC gets a
+`413` JSON refusal, a plain post redirects with
+`?result=body-too-large`.
 
 ## Authorization
 

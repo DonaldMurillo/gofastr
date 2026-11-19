@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -941,7 +942,7 @@ func (nw *NativeWindow) State() (desktop.WindowState, error) {
 
 // bootEnv prepares the process for a native run.
 func bootEnv() {
-	os.Setenv("GOFASTR_ISOLATION", "off")
+	os.Setenv(isolation.EnvIsolation, "off")
 	if os.Getenv(dataDirEnv) == "" {
 		if dir, err := os.MkdirTemp("", "gofastr-desktop-native-*"); err == nil {
 			os.Setenv(dataDirEnv, dir)

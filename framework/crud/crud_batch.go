@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -16,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 )
 
 // MaxBatchSize caps how many items a single _batch request may contain.
@@ -38,7 +38,7 @@ func decodeBatchEnvelope(r *http.Request, v any, allowed ...string) error {
 		return err
 	}
 	if err := handler.UnmarshalStrict(raw, v, handler.UseNumber()); err != nil {
-		return fmt.Errorf("invalid JSON: %w", err)
+		return err
 	}
 	return nil
 }
@@ -188,7 +188,8 @@ func (ch *CrudHandler) runBatch(w http.ResponseWriter, r *http.Request, spec bat
 	limitJSONBody(w, r)
 	if err := decodeBatchEnvelope(r, spec.envelope, spec.key); err != nil {
 		if errors.Is(err, errBodyTooLarge) {
-			writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
+			status, phrase := bodylimit.TooLargeRefusal()
+			writeJSONError(w, r, status, phrase)
 			return
 		}
 		writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)

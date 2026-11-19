@@ -1,17 +1,17 @@
 package auth
 
 import (
-	"errors"
 	"io"
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 )
 
-// maxAuthBodyBytes caps every JSON body decoded by an auth handler.
-// 1 MiB is plenty for credentials/codes/emails and matches core/handler.Bind.
-const maxAuthBodyBytes = 1 << 20 // 1 MiB
+// maxAuthBodyBytes caps every JSON body decoded by an auth handler, at
+// the repo's bodylimit.MaxJSONBodyBytes.
+const maxAuthBodyBytes = bodylimit.MaxJSONBodyBytes
 
 // decodeJSONLimited is the auth battery's single JSON body decode: a hard
 // size cap, content-type strictness, and handler.UnmarshalStrict for the
@@ -40,15 +40,13 @@ func decodeJSONLimited(w http.ResponseWriter, r *http.Request, dst any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			writeAuthError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-			return false
-		}
-		writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+		status, phrase := bodylimit.ReadRefusal(err)
+		writeAuthError(w, r, status, phrase)
 		return false
 	}
 	if err := handler.UnmarshalStrict(body, dst); err != nil {
-		writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+		status, phrase := bodylimit.DecodeRefusal(err)
+		writeAuthError(w, r, status, phrase)
 		return false
 	}
 	return true

@@ -1,0 +1,19 @@
+primitive: settle
+summary: The bounded, detached context an outcome write runs on after its unit of work returned, and the timeout that bounds it, in internal/settle.
+code:
+  - internal/settle/
+invariants:
+  - id: settle-context-is-detached-and-bounded
+    rule: An outcome write after its handler, delivery or run returned runs on settle.Context - WithoutCancel plus a Timeout bound - and the queue, webhook and entityui settle sites take the timeout and helper from here.
+    enforced_by:
+      - analyzer: settlectx
+    judge: Does a new settle-style outcome write take its context and timeout from internal/settle instead of declaring its own?
+decisions:
+  - id: one-settle-owner
+    date: 2026-11-19
+    status: accepted
+    decision: The 10s settle timeout and the WithoutCancel helper moved to internal/settle, deleting the four copies (queue settleTimeout/settleContext, webhook settleTimeout, webhook inboundSettleTimeout, entityui bulkSettleTimeout).
+    rejected:
+      - option: battery/queue exports the const and helper
+        why: framework/entityui cannot import a battery package, and no framework package should grow one.
+    upholds: [settle-context-is-detached-and-bounded]

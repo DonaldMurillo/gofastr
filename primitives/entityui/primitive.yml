@@ -96,6 +96,13 @@ invariants:
     enforced_by:
       - test: framework/entityui.TestLastUpdatedStaysInScope
       - test: framework/entityui.TestSweepPGLastUpdatedSkipsNullTimestamps
+  - id: post-only-handlers-name-post-in-allow
+    rule: "A 405 from a POST-only entityui handler (save, saved views, restore, purge) sets Allow: POST, as the picker and override handlers do and RFC 9110 requires."
+    enforced_by:
+      - test: framework/entityui.TestPostOnlyHandlersAnswer405WithAllowPost
+  - id: bulk-resume-grace-has-one-declaration
+    rule: The resume grace window is entityui.BulkResumeGrace, used by App start's resume and battery/admin's Init alike; no second window is declared.
+    judge: Does a new resume caller take entityui.BulkResumeGrace instead of declaring its own window?
 decisions:
   - id: scriptless-edit-through-an-entityui-route
     date: 2026-11-16
@@ -110,3 +117,11 @@ decisions:
         why: The entity packages should give an app the building block for a scriptless edit, and the cost is one small handler.
     revisit_if: Every app turns scriptless edits on, so the opt-in is noise and App.EntityUI should mount the route itself.
     upholds: [scriptless-edit-is-opt-in, save-handler-is-the-crud-update]
+  - id: bulk-resume-grace-exported
+    date: 2026-11-19
+    status: accepted
+    decision: BulkResumeGrace is exported beside BulkRetention and battery/admin's own bulkResumeGrace copy, whose comment pinned the coupling to this window by prose, was deleted in its favour.
+    rejected:
+      - option: Keep two constants with the comment naming the other.
+        why: The comment was the only thing keeping the two windows equal.
+    upholds: [bulk-resume-grace-has-one-declaration]

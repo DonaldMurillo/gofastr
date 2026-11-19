@@ -4,7 +4,6 @@ import (
 	"context"
 	cryptorand "crypto/rand"
 	"encoding/json"
-	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -20,6 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/uihost/internal/sessiontoken"
+	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 )
 
 // Session is a browser session: ID is the public stream and presence key,
@@ -203,15 +203,13 @@ func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxMutatingBodyBytes)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-			return false
-		}
-		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+		status, phrase := bodylimit.ReadRefusal(err)
+		i18n.HTTPError(w, r, status, phrase)
 		return false
 	}
 	if err := handler.UnmarshalStrict(body, dst); err != nil {
-		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+		status, phrase := bodylimit.DecodeRefusal(err)
+		i18n.HTTPError(w, r, status, phrase)
 		return false
 	}
 	return true

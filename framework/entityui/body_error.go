@@ -1,18 +1,42 @@
 package entityui
 
 import (
-	"errors"
+	"io"
 	"net/http"
 
-	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 )
 
-// writeBodyError answers a failed request-body decode: 413 when the body
-// passed its MaxBytesReader limit, else 400 with the invalid-JSON reason.
-func writeBodyError(w http.ResponseWriter, r *http.Request, err error) {
-	if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-		writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-		return
+// decodeBody caps r.Body at limit and decodes it with
+// handler.UnmarshalStrict, answering through writeBulkError: 413 over
+// the cap, 400 naming an unreadable body, 400 naming invalid JSON. It
+// reports whether the caller may read on.
+func decodeBody(w http.ResponseWriter, r *http.Request, limit int64, dst any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		status, phrase := bodylimit.ReadRefusal(err)
+		writeBulkError(w, r, status, phrase)
+		return false
 	}
-	writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
+	if err := handler.UnmarshalStrict(data, dst); err != nil {
+		status, phrase := bodylimit.DecodeRefusal(err)
+		writeBulkError(w, r, status, phrase)
+		return false
+	}
+	return true
+}
+
+// parseBodyForm caps r.Body at limit and parses its form, answering
+// through writeBulkError: 413 over the cap, else 400 naming invalid
+// form data. It reports whether the caller may read on.
+func parseBodyForm(w http.ResponseWriter, r *http.Request, limit int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	if err := r.ParseForm(); err != nil {
+		status, phrase := bodylimit.FormRefusal(err)
+		writeBulkError(w, r, status, phrase)
+		return false
+	}
+	return true
 }

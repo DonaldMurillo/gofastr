@@ -147,13 +147,11 @@ func (u *UI) OverrideHandler(entityName string) http.Handler {
 		}
 		plain := !handler.IsJSONContentType(r.Header.Get("Content-Type"))
 		if plain && !isFormContentType(r.Header.Get("Content-Type")) {
-			writeBulkError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
+			writeBulkError(w, r, http.StatusUnsupportedMediaType, i18n.ReasonJSONMediaType)
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, overrideBodyLimit)
-		state, reason, back, err := readOverrideBody(r, plain)
-		if err != nil {
-			writeBodyError(w, r, err)
+		state, reason, back, ok := readOverrideBody(w, r, plain)
+		if !ok {
 			return
 		}
 		if plain {
@@ -219,18 +217,18 @@ type overrideBody struct {
 	Back   string `json:"back"`
 }
 
-func readOverrideBody(r *http.Request, plain bool) (state, reason, back string, err error) {
+func readOverrideBody(w http.ResponseWriter, r *http.Request, plain bool) (state, reason, back string, ok bool) {
 	if !plain {
 		var body overrideBody
-		if err := handler.DecodeStrict(r.Body, &body); err != nil {
-			return "", "", "", err
+		if !decodeBody(w, r, overrideBodyLimit, &body) {
+			return "", "", "", false
 		}
-		return body.State, body.Reason, body.Back, nil
+		return body.State, body.Reason, body.Back, true
 	}
-	if err := r.ParseForm(); err != nil {
-		return "", "", "", err
+	if !parseBodyForm(w, r, overrideBodyLimit) {
+		return "", "", "", false
 	}
-	return r.PostFormValue(overrideStateField), r.PostFormValue(overrideReasonField), r.PostFormValue("back"), nil
+	return r.PostFormValue(overrideStateField), r.PostFormValue(overrideReasonField), r.PostFormValue("back"), true
 }
 
 func isFormContentType(ct string) bool {

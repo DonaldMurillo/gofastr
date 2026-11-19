@@ -22,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/netguard"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/core/tracing"
+	"github.com/DonaldMurillo/gofastr/internal/settle"
 )
 
 // MaxPayloadBytes caps webhook payload size. Larger payloads are
@@ -783,7 +784,7 @@ func (m *Manager) releaseClaims(ctx context.Context, r claimReleaser, ds []Deliv
 		}
 	}()
 	now := m.nowFn()
-	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
+	settleCtx, cancel := settle.Context(ctx)
 	defer cancel()
 	for _, d := range ds {
 		if err := r.releaseClaim(settleCtx, d, now); err != nil {
@@ -1086,16 +1087,12 @@ func (m *Manager) saveDelivery(d Delivery) {
 			m.logf("webhook: delivery %s: persist %s state panicked (row may be stale → duplicate delivery): %s", d.ID, d.Status, textsafe.Recovered(v))
 		}
 	}()
-	ctx, cancel := context.WithTimeout(context.Background(), settleTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), settle.Timeout)
 	defer cancel()
 	if err := m.store.UpdateDelivery(ctx, d); err != nil {
 		m.logf("webhook: delivery %s: persist %s state failed (row may be stale → duplicate delivery): %v", d.ID, d.Status, err)
 	}
 }
-
-// settleTimeout bounds a delivery's state write and a claim release
-// after the worker detaches them from its own context.
-const settleTimeout = 10 * time.Second
 
 // schedule sets NextAttemptAt or marks the delivery dead when the
 // attempt budget is exhausted.

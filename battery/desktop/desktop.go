@@ -25,6 +25,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/update"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/localapp"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/gatepath"
@@ -1058,7 +1059,7 @@ func (b *Battery) Run(app *framework.App) error {
 	// Deviation 7: worktree isolation off for this Start. Process-wide
 	// effect; see Config.KeepIsolation.
 	if !b.cfg.KeepIsolation {
-		os.Setenv("GOFASTR_ISOLATION", "off")
+		os.Setenv(isolation.EnvIsolation, "off")
 	}
 	startErr := make(chan error, 1)
 	go func() { startErr <- app.Start(listenAddr) }()

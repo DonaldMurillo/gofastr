@@ -17,6 +17,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 )
 
 // Bridge routes. Every native capability call from the page funnels
@@ -29,8 +30,9 @@ const (
 	bridgeScriptFn = bridgePrefix + "/bridge.js"
 )
 
-// maxCallBody caps a bridge call body (the unboundedbody posture).
-const maxCallBody = 1 << 20
+// maxCallBody caps a bridge call body at the repo's
+// bodylimit.MaxJSONBodyBytes (the unboundedbody posture).
+const maxCallBody = bodylimit.MaxJSONBodyBytes
 
 // callBudget bounds one bridge call in place of the app's request and
 // write timeouts (30 s and 60 s by default). A call can wait on a

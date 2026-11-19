@@ -1,0 +1,35 @@
+primitive: bodylimit
+summary: The repo's cap on one inbound JSON request body and the status+phrase every capped, unreadable or undecodable request body answers, in internal/bodylimit.
+code:
+  - internal/bodylimit/
+invariants:
+  - id: body-refusal-mapping-is-one
+    rule: The status and phrase for a refused request body come from bodylimit - 413 with the status phrase over the cap, 400 body_unreadable for a failed read, 400 invalid_json_body for a failed decode, 400 invalid_form for a failed form parse - and no surface re-derives the pair.
+    enforced_by:
+      - test: framework/entityui.TestBulkBodyReadFailureNamesTheUnreadableBody
+      - test: battery/auth.TestDecodeJSONLimitedReadFailureNamesTheUnreadableBody
+      - test: battery/webhook.TestIngestBodyReadFailureNamesTheUnreadableBody
+      - test: framework/uihost.TestDecodeBoundedReadFailureNamesTheUnreadableBody
+      - test: framework/uihost.TestSweepEmbedExchangeMalformedBodyIsInvalidJSON
+      - test: battery/admin.TestOpsOversizeBodyAnswersTheOpsEnvelope
+      - test: framework/crud.TestJSONDecodeErrorsArePhrasedOverHTTP
+  - id: json-body-cap-is-one-constant
+    rule: Every inbound JSON request body cap is bodylimit.MaxJSONBodyBytes - crud's exported MaxJSONBodyBytes re-exports it, and auth, the admin ops post, semantic routes and the desktop bridge take their value from it.
+    judge: Does a new inbound JSON request-body cap take bodylimit.MaxJSONBodyBytes instead of declaring its own 1 MiB?
+decisions:
+  - id: refusals-live-under-internal
+    date: 2026-11-19
+    status: accepted
+    decision: The MaxBytesReader-to-refusal mapping moved to internal/bodylimit, deleting the six package copies (crud writeBodyError, entityui writeBodyError, auth decodeJSONLimited, uihost decodeBounded, webhook's ingest read, admin readOps) that had drifted into three wordings for one refusal.
+    rejected:
+      - option: core/handler or core/i18n, beside the phrases
+        why: Both directories are owned by open PRs, while every layer can import an internal package.
+    upholds: [body-refusal-mapping-is-one]
+  - id: json-cap-narrowed-to-request-bodies
+    date: 2026-11-19
+    status: accepted
+    decision: Only inbound JSON request-body caps share MaxJSONBodyBytes; the oauth2 and OIDC JWKS response caps, the generated client templates, the urlencoded form caps (setup, the CSRF middleware) and webhook's outbound MaxPayloadBytes stay their own knobs.
+    rejected:
+      - option: one constant for every 1 MiB in the repo
+        why: A response cap and a request cap change for different reasons, and the generated clients are emitted text.
+    upholds: [json-body-cap-is-one-constant]

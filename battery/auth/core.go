@@ -734,6 +734,9 @@ func refuseAuth(w http.ResponseWriter, r *http.Request, isForm bool, status int,
 }
 
 func writeAuthErrorFields(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, fields map[string]string, params ...map[string]any) {
+	if status < 400 || status > 599 {
+		status = http.StatusInternalServerError
+	}
 	body := map[string]any{
 		"error":   reason.Text(requestContext(r), params...),
 		"success": false,

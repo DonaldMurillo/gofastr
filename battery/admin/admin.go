@@ -49,6 +49,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 )
 
 // Config configures the Admin battery.
@@ -343,7 +344,7 @@ func (b *Battery) Init(app *framework.App) error {
 		// Bind first: a job resumed before its handler was registered
 		// would be dead-lettered by the queue as an unknown type.
 		b.cfg.BulkJobs.Bind(jobsUI)
-		if n, err := jobsUI.ResumeBulkJobs(context.Background(), bulkResumeGrace); err != nil {
+		if n, err := jobsUI.ResumeBulkJobs(context.Background(), entityui.BulkResumeGrace); err != nil {
 			b.logger().Error("admin: resume bulk jobs", "resumed", n, "error", err)
 		} else if n > 0 {
 			b.logger().Info("admin: resumed bulk jobs", "count", n)
@@ -657,9 +658,9 @@ func isSafeAdminMethod(method string) bool {
 
 // ----- ops posts -------------------------------------------------------------
 
-// maxAdminBodyBytes caps an ops post body, the repo's 1 MiB form
-// convention (battery/auth, the CSRF middleware, crud's Bind).
-const maxAdminBodyBytes int64 = 1 << 20
+// maxAdminBodyBytes caps an ops post body at the repo's
+// bodylimit.MaxJSONBodyBytes.
+const maxAdminBodyBytes int64 = bodylimit.MaxJSONBodyBytes
 
 // isRPC reports a post from the runtime's form RPC, which sends JSON. A
 // plain form post (no script) sends urlencoded.
@@ -673,21 +674,13 @@ func isRPC(r *http.Request) bool {
 // an array; any other JSON value is refused. On failure it has answered.
 func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (url.Values, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxAdminBodyBytes)
-	tooLarge := func(err error) bool {
-		_, ok := errors.AsType[*http.MaxBytesError](err)
-		return ok
-	}
 	if isRPC(r) {
 		// Strict: a repeated or case-folded key reads one way here and
 		// another on the form surface, so the body is refused.
 		var raw map[string]any
 		//gofastr:allow(floatnum) only strings and string arrays become form values; a number is refused
 		if err := handler.DecodeStrict(r.Body, &raw); err != nil {
-			if tooLarge(err) {
-				i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return nil, false
-			}
-			b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
+			b.refuseBodyError(w, r, page, err)
 			return nil, false
 		}
 		vals := url.Values{}
@@ -712,14 +705,20 @@ func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (
 		return vals, true
 	}
 	if err := r.ParseForm(); err != nil {
-		if tooLarge(err) {
-			i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-			return nil, false
-		}
-		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
+		b.refuseBodyError(w, r, page, err)
 		return nil, false
 	}
 	return r.PostForm, true
+}
+
+// refuseBodyError answers a failed ops-post body read through the ops
+// envelope: 413 over the cap, 400 bad-input otherwise.
+func (b *Battery) refuseBodyError(w http.ResponseWriter, r *http.Request, page string, err error) {
+	if bodylimit.TooLarge(err) {
+		b.refuse(w, r, page, http.StatusRequestEntityTooLarge, "body-too-large")
+		return
+	}
+	b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 }
 
 // result is one outcome an ops post reports: its message and whether it
@@ -745,6 +744,7 @@ var results = map[string]result{
 	"module-revoked":         {i18nui.AdminModuleRevoked, true},
 	"refused":                {i18nui.AdminRefused, false},
 	"failed":                 {i18nui.AdminFailed, false},
+	"body-too-large":         {i18nui.AdminBodyTooLarge, false},
 	"bad-input":              {i18nui.AdminBadInput, false},
 	"grant-refused":          {i18nui.AdminGrantRefused, false},
 	"assign-refused":         {i18nui.AdminAssignRefused, false},

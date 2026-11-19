@@ -48,10 +48,11 @@ var (
 )
 
 var (
-	AdminRefused  = i18n.Define("ui.admin.refused", "You may not do that.")
-	AdminFailed   = i18n.Define("ui.admin.failed", "That did not work. Check the server logs for details.")
-	AdminBadInput = i18n.Define("ui.admin.badInput", "Fill in every field the form asks for.")
-	AdminDone     = i18n.Define("ui.admin.done", "Done.")
+	AdminRefused      = i18n.Define("ui.admin.refused", "You may not do that.")
+	AdminFailed       = i18n.Define("ui.admin.failed", "That did not work. Check the server logs for details.")
+	AdminBadInput     = i18n.Define("ui.admin.badInput", "Fill in every field the form asks for.")
+	AdminBodyTooLarge = i18n.Define("ui.admin.bodyTooLarge", "The request body was too large.")
+	AdminDone         = i18n.Define("ui.admin.done", "Done.")
 )
 
 var (

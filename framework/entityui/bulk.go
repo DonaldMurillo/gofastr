@@ -25,6 +25,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/settle"
 )
 
 const bulkBodyLimit = 256 << 10
@@ -477,7 +478,7 @@ func (u *UI) auditBulk(ctx context.Context, m *meta, runID, action, creator stri
 	if bh == nil {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bulkSettleTimeout)
+	ctx, cancel := settle.Context(ctx)
 	defer cancel()
 	detail := map[string]any{
 		"action": action, "count": count, "status": status,
@@ -510,13 +511,11 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
 		if !handler.IsJSONContentType(r.Header.Get("Content-Type")) {
-			writeBulkError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
+			writeBulkError(w, r, http.StatusUnsupportedMediaType, i18n.ReasonJSONMediaType)
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, bulkBodyLimit)
 		var body bulkBody
-		if err := handler.DecodeStrict(r.Body, &body); err != nil {
-			writeBodyError(w, r, err)
+		if !decodeBody(w, r, bulkBodyLimit, &body) {
 			return
 		}
 		record := body.Scope == bulkScopeRecord
@@ -681,7 +680,7 @@ func (u *UI) queueBulk(ctx context.Context, w http.ResponseWriter, r *http.Reque
 }
 
 func (u *UI) abandonJob(ctx context.Context, store BulkStore, m *meta, job BulkJob) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bulkSettleTimeout)
+	ctx, cancel := settle.Context(ctx)
 	defer cancel()
 	runner := newRunID()
 	now := u.now()
@@ -734,7 +733,7 @@ func (u *UI) RunBulkJob(ctx context.Context, id string) (err error) {
 	defer func() {
 		if err != nil && held && !errors.Is(err, ErrBulkLeaseLost) {
 			now := u.now()
-			rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bulkSettleTimeout)
+			rctx, cancel := settle.Context(ctx)
 			defer cancel()
 			if _, rerr := store.Claim(rctx, id, runner, now, now); rerr != nil {
 				slog.WarnContext(ctx, "entityui: bulk lease release", "entity", m.name, "job", id, "error", rerr)
@@ -801,7 +800,7 @@ func (u *UI) RunBulkJob(ctx context.Context, id string) (err error) {
 				outcomes[rid] = BulkRowSkipped
 			}
 		}
-		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bulkSettleTimeout)
+		settleCtx, cancel := settle.Context(ctx)
 		err = store.Settle(settleCtx, id, runner, outcomes)
 		cancel()
 		if err != nil {
@@ -810,7 +809,10 @@ func (u *UI) RunBulkJob(ctx context.Context, id string) (err error) {
 	}
 }
 
-const bulkSettleTimeout = 10 * time.Second
+// BulkResumeGrace is how old an unenqueued bulk job must be before
+// ResumeBulkJobs hands it over again, so a job a confirm still owns is
+// left alone.
+const BulkResumeGrace = time.Minute
 
 // ResumeBulkJobs hands the JobRunner every queued job older than grace
 // that was never marked enqueued or whose lease expired, and reports how many.
@@ -865,6 +867,9 @@ func writeBulkJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func writeBulkError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, params ...map[string]any) {
+	if status < 400 || status > 599 {
+		status = http.StatusInternalServerError
+	}
 	writeBulkJSON(w, status, map[string]string{"error": reason.Text(r.Context(), params...), "reason": reason.Code()})
 }
 

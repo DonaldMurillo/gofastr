@@ -37,12 +37,6 @@ const bulkJobType = "entityui.bulk"
 // a fresh budget; these attempts cover transient execution failures.
 const bulkJobMaxAttempts = 5
 
-// bulkResumeGrace is how old an unenqueued bulk job must be before the
-// admin's Init hands it over again, the same window App.EntityUI uses at
-// start: a younger job may belong to a confirm still between writing its
-// snapshot and enqueuing it.
-const bulkResumeGrace = time.Minute
-
 // errBulkJobsUnbound answers an Enqueue (or a queued run) before Bind:
 // the job stays queued in the snapshot store, so ResumeBulkJobs picks it
 // up once the runner is bound.

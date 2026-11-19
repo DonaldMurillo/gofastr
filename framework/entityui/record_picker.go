@@ -190,13 +190,11 @@ func (u *UI) PickerHandler(entityName string) http.Handler {
 			return
 		}
 		if !handler.IsJSONContentType(r.Header.Get("Content-Type")) {
-			writeBulkError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
+			writeBulkError(w, r, http.StatusUnsupportedMediaType, i18n.ReasonJSONMediaType)
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, pickerBodyLimit)
 		var body pickerBody
-		if err := handler.DecodeStrict(r.Body, &body); err != nil {
-			writeBodyError(w, r, err)
+		if !decodeBody(w, r, pickerBodyLimit, &body) {
 			return
 		}
 		opts, more, refused, err := u.pickerOptions(ctx, f, body.Q)

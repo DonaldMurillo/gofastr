@@ -86,6 +86,7 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
 			writeBulkError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
@@ -109,7 +110,6 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, deletedBodyLimit)
 		jsonCall := handler.IsJSONContentType(r.Header.Get("Content-Type"))
 		var back string
 		var haveBack bool
@@ -117,14 +117,12 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 			var body struct {
 				Back string `json:"back"`
 			}
-			if err := handler.DecodeStrict(r.Body, &body); err != nil {
-				writeBodyError(w, r, err)
+			if !decodeBody(w, r, deletedBodyLimit, &body) {
 				return
 			}
 			back, haveBack = scrubBackPath(body.Back)
 		} else {
-			if err := r.ParseForm(); err != nil {
-				writeBodyError(w, r, err)
+			if !parseBodyForm(w, r, deletedBodyLimit) {
 				return
 			}
 			back, haveBack = scrubBackPath(r.PostFormValue("back"))

@@ -25,6 +25,17 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A refused request body answers the same way on every route.**
+  Malformed JSON is `invalid_json` on every crud route, batch included.
+  A body that could not be read says `body_unreadable` instead of
+  "invalid JSON". A 415 names `unsupported media type: expected
+  application/json`. A 405 from a POST-only handler (entity record save,
+  saved views, the deleted list, inbound webhooks, server actions)
+  carries `Allow: POST`. The embed token exchange answers 413 over its 8
+  KiB cap instead of 400.
+- **An admin ops post over the 1 MiB cap answers through the ops
+  envelope:** 413 JSON for the form RPC and `?result=body-too-large` for
+  a plain form post, instead of a bare 413 page.
 - **`gofastr pack` accepts `--out=<file>` and `-o=<file>`,** like every
   other command that takes a value.
 - **`gofastr init --some-unknown-flag` names the flag** instead of

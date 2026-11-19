@@ -29,6 +29,7 @@ func (u *UI) SavedViewsHandler(entityName string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
 			writeBulkError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
@@ -51,10 +52,8 @@ func (u *UI) SavedViewsHandler(entityName string) http.Handler {
 		if !requireRead(w, r, ctx, m) {
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, savedViewBodyLimit)
-		body, jsonCall, err := decodeSavedViewBody(r)
-		if err != nil {
-			writeBodyError(w, r, err)
+		body, jsonCall, ok := decodeSavedViewBody(w, r)
+		if !ok {
 			return
 		}
 		back, ok := scrubBackPath(body.Back)
@@ -80,25 +79,25 @@ type savedViewBody struct {
 	Key    string `json:"key"`
 }
 
-func decodeSavedViewBody(r *http.Request) (savedViewBody, bool, error) {
+func decodeSavedViewBody(w http.ResponseWriter, r *http.Request) (body savedViewBody, jsonCall, ok bool) {
 	if handler.IsJSONContentType(r.Header.Get("Content-Type")) {
-		var body savedViewBody
-		if err := handler.DecodeStrict(r.Body, &body); err != nil {
-			return savedViewBody{}, true, err
+		if !decodeBody(w, r, savedViewBodyLimit, &body) {
+			return savedViewBody{}, true, false
 		}
-		return body, true, nil
+		return body, true, true
 	}
-	if err := r.ParseForm(); err != nil {
-		return savedViewBody{}, false, err
+	if !parseBodyForm(w, r, savedViewBodyLimit) {
+		return savedViewBody{}, false, false
 	}
 	f := r.PostForm
-	return savedViewBody{
+	body = savedViewBody{
 		Name:   f.Get("name"),
 		Filter: f.Get("filter"),
 		Cols:   f.Get("cols"),
 		Back:   f.Get("back"),
 		Key:    f.Get("key"),
-	}, false, nil
+	}
+	return body, false, true
 }
 
 func (u *UI) createSavedView(ctx context.Context, w http.ResponseWriter, r *http.Request, m *meta, body savedViewBody, back string, backOK, jsonCall bool) {
