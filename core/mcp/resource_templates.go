@@ -124,16 +124,14 @@ type resourceTemplatesListResult struct {
 // surfaces on a page and never bends the page sizes or cursor arithmetic
 // that would otherwise count it.
 func (s *Server) handleResourcesTemplatesList(ctx context.Context, req Request) Response {
-	offset, err := s.listOffset(req, "resources/templates/list")
-	if err != nil {
-		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
-	}
 	// A template the caller cannot use is not listed to them: the
 	// uriTemplate and description are the disclosure.
-	page, next := gatedListPage(s, ctx, "resources/templates/list", offset,
+	return gatedListResponse(s, ctx, req, "resources/templates/list",
 		func() map[string]ResourceTemplate { return s.templates },
 		func(tpl ResourceTemplate) func(context.Context) error { return tpl.gate },
 		func(a, b ResourceTemplate) int { return strings.Compare(a.URITemplate, b.URITemplate) },
+		func(page []ResourceTemplate, next string) any {
+			return resourceTemplatesListResult{ResourceTemplates: requiredArray(page), NextCursor: next}
+		},
 	)
-	return newSuccessResponse(req.ID, resourceTemplatesListResult{ResourceTemplates: page, NextCursor: next})
 }

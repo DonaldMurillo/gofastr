@@ -228,20 +228,24 @@ func newPartsSite(t *testing.T, afterMs int, withVT ...bool) *partsSite {
 	return s
 }
 
-// gatePart installs a release gate for one part and returns its
-// release func. The gate is also released at test cleanup (a t.Fatal
-// between arming and releasing must not wedge the httptest server's
-// Close on a blocked handler).
-func (s *partsSite) gatePart(t *testing.T, key string) func() {
+// gate installs a release gate for one key and returns its release
+// func. The gate is also released at test cleanup (a t.Fatal between
+// arming and releasing must not wedge the httptest server's Close on a
+// blocked handler).
+func (s *partsSite) gate(t *testing.T, gates map[string]chan struct{}, key string) func() {
 	t.Helper()
 	s.mu.Lock()
 	g := make(chan struct{})
-	s.partGate[key] = g
+	gates[key] = g
 	s.mu.Unlock()
 	var once sync.Once
 	release := func() { once.Do(func() { close(g) }) }
 	t.Cleanup(release)
 	return release
+}
+
+func (s *partsSite) gatePart(t *testing.T, key string) func() {
+	return s.gate(t, s.partGate, key)
 }
 
 func (s *partsSite) setPartResp(key string, fn http.HandlerFunc) {
@@ -257,15 +261,7 @@ func (s *partsSite) setPageResp(key string, fn http.HandlerFunc) {
 }
 
 func (s *partsSite) gatePage(t *testing.T, path string) func() {
-	t.Helper()
-	s.mu.Lock()
-	g := make(chan struct{})
-	s.pageGate[path] = g
-	s.mu.Unlock()
-	var once sync.Once
-	release := func() { once.Do(func() { close(g) }) }
-	t.Cleanup(release)
-	return release
+	return s.gate(t, s.pageGate, path)
 }
 
 func readText(t *testing.T, ctx context.Context, sel string) string {

@@ -22,49 +22,15 @@ package resources
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider/openrouter"
+	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
-
-// redProvLogSink is a minimal slog.Handler storing record attributes
-// verbatim (no JSON/text escaping), so a test can detect raw control
-// bytes a real handler would have escaped away. Unique-prefix replica of
-// the captureHandler pattern (core/handler/panic_logscrub_red_test.go).
-type redProvLogSink struct {
-	mu    sync.Mutex
-	attrs map[string]string
-}
-
-func (h *redProvLogSink) Enabled(context.Context, slog.Level) bool { return true }
-
-func (h *redProvLogSink) Handle(_ context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.attrs == nil {
-		h.attrs = map[string]string{}
-	}
-	r.Attrs(func(a slog.Attr) bool {
-		h.attrs[a.Key] = a.Value.String()
-		return true
-	})
-	return nil
-}
-
-func (h *redProvLogSink) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *redProvLogSink) WithGroup(string) slog.Handler      { return h }
-
-func (h *redProvLogSink) redGet(key string) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.attrs[key]
-}
 
 func TestProviderErrRedScrubbed(t *testing.T) {
 	// Hostile peer body: bidi override, C1 CSI, and a raw ESC OSC payload
@@ -82,10 +48,8 @@ func TestProviderErrRedScrubbed(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	prev := slog.Default()
-	sink := &redProvLogSink{}
-	slog.SetDefault(slog.New(sink))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	sink := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, sink)
 
 	cat := NewCatalog()
 	cat.Providers = []provider.Provider{
@@ -98,7 +62,7 @@ func TestProviderErrRedScrubbed(t *testing.T) {
 		t.Fatalf("setup broken: ListProviders did not degrade to the provider entry: %+v", out)
 	}
 
-	got := sink.redGet("error")
+	got := sink.Get("error")
 	if got == "" {
 		t.Fatal("setup broken: provider error never reached the slog sink " +
 			"(ListProviders must log the refused /models listing)")

@@ -19,19 +19,9 @@ func mustRegisterTemplate(t *testing.T, s *Server, uriTemplate, name string, opt
 // response).
 func listTemplateURIs(t *testing.T, s *Server, ctx context.Context) []string {
 	t.Helper()
-	resp := s.HandleRequest(ctx, Request{JSONRPC: "2.0", ID: 1, Method: "resources/templates/list"})
-	if resp.Error != nil {
-		return nil
-	}
-	res, ok := resp.Result.(resourceTemplatesListResult)
-	if !ok {
-		t.Fatalf("resources/templates/list result type %T", resp.Result)
-	}
-	uris := make([]string, 0, len(res.ResourceTemplates))
-	for _, tpl := range res.ResourceTemplates {
-		uris = append(uris, tpl.URITemplate)
-	}
-	return uris
+	return listField(t, s, ctx, "resources/templates/list",
+		func(r resourceTemplatesListResult) []ResourceTemplate { return r.ResourceTemplates },
+		func(tpl ResourceTemplate) string { return tpl.URITemplate })
 }
 
 // TestTemplatesListWireShape pins the resources/templates/list wire shape

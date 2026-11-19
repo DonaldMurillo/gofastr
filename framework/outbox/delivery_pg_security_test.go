@@ -44,33 +44,7 @@ func TestPGClaimDeliveriesConcurrentNoBusy(t *testing.T) {
 	defer cancel()
 
 	const parents = 100 // × 2 consumers = 200 deliveries
-	for i := 0; i < parents; i++ {
-		tx, err := db.BeginTx(ctx, nil)
-		if err != nil {
-			t.Fatalf("begin append tx: %v", err)
-		}
-		if _, err := o.Append(ctx, tx, "order.placed", map[string]any{"i": i}); err != nil {
-			t.Fatalf("append %d: %v", i, err)
-		}
-		if err := tx.Commit(); err != nil {
-			t.Fatalf("commit append %d: %v", i, err)
-		}
-	}
-	// expandDeliveries is batch-capped per pump; drain until quiescent.
-	expanded := 0
-	for {
-		n, err := o.expandDeliveries(ctx)
-		if err != nil {
-			t.Fatalf("expand: %v", err)
-		}
-		expanded += n
-		if n == 0 {
-			break
-		}
-	}
-	if expanded != 2*parents {
-		t.Fatalf("expand created %d deliveries, want %d", expanded, 2*parents)
-	}
+	seedClaimRace(t, o, db, ctx, parents)
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup

@@ -169,22 +169,6 @@ func TestCrudApplyTenantScopeCount(t *testing.T) {
 // ============================================================================
 
 func TestCrudApplySoftDeleteFilter(t *testing.T) {
-	ent := entity.Define("posts", entity.EntityConfig{Scope: &entity.ScopeConfig{SoftDelete: true}, Exposure: &entity.ExposureConfig{}})
-
-	ch := &crud.CrudHandler{Entity: ent}
-
-	req := httptest.NewRequest("GET", "/posts", nil)
-
-	qb := query.Select("*").From("posts")
-	ch.ApplySoftDeleteFilter(qb, req)
-
-	sqlStr, _ := qb.Build()
-	if !strings.Contains(sqlStr, "deleted_at IS NULL") {
-		t.Errorf("expected deleted_at IS NULL in query, got: %s", sqlStr)
-	}
-}
-
-func TestCrudApplySoftDeleteFilter_WithTrashed(t *testing.T) {
 	// Anonymous callers must NOT be able to expose soft-deleted rows
 	// via ?trashed=true, that turned a "show recently-deleted" toggle
 	// into an information-disclosure path on public list endpoints.
@@ -192,34 +176,43 @@ func TestCrudApplySoftDeleteFilter_WithTrashed(t *testing.T) {
 	// requires the filter to stay applied when no authenticated user
 	// is present, regardless of the query param. The test was
 	// previously inverted; git history records the flip.
-	ent := entity.Define("posts", entity.EntityConfig{Scope: &entity.ScopeConfig{SoftDelete: true}, Exposure: &entity.ExposureConfig{}})
-
-	ch := &crud.CrudHandler{Entity: ent}
-
-	req := httptest.NewRequest("GET", "/posts?trashed=true", nil)
-
-	qb := query.Select("*").From("posts")
-	ch.ApplySoftDeleteFilter(qb, req)
-
-	sqlStr, _ := qb.Build()
-	if !strings.Contains(sqlStr, "deleted_at IS NULL") {
-		t.Errorf("anonymous trashed=true must still hide deleted rows; got: %s", sqlStr)
+	softDelete := entity.EntityConfig{Scope: &entity.ScopeConfig{SoftDelete: true}, Exposure: &entity.ExposureConfig{}}
+	tests := []struct {
+		name string
+		cfg  entity.EntityConfig
+		url  string
+		want string // substring the SQL must contain; "" means it must not appear
+		msg  string
+	}{
+		{"soft delete scope filters deleted rows", softDelete, "/posts", "deleted_at IS NULL",
+			"expected deleted_at IS NULL in query, got: %s"},
+		{"anonymous trashed=true keeps the filter", softDelete, "/posts?trashed=true", "deleted_at IS NULL",
+			"anonymous trashed=true must still hide deleted rows; got: %s"},
+		{"entity without soft delete is untouched", entity.EntityConfig{}, "/posts", "",
+			"expected no deleted_at filter for non-soft-delete entity, got: %s"},
 	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ent := entity.Define("posts", tt.cfg)
 
-func TestCrudApplySoftDeleteFilter_NotSoftDelete(t *testing.T) {
-	ent := entity.Define("posts", entity.EntityConfig{})
+			ch := &crud.CrudHandler{Entity: ent}
 
-	ch := &crud.CrudHandler{Entity: ent}
+			req := httptest.NewRequest("GET", tt.url, nil)
 
-	req := httptest.NewRequest("GET", "/posts", nil)
+			qb := query.Select("*").From("posts")
+			ch.ApplySoftDeleteFilter(qb, req)
 
-	qb := query.Select("*").From("posts")
-	ch.ApplySoftDeleteFilter(qb, req)
-
-	sqlStr, _ := qb.Build()
-	if strings.Contains(sqlStr, "deleted_at") {
-		t.Errorf("expected no deleted_at filter for non-soft-delete entity, got: %s", sqlStr)
+			sqlStr, _ := qb.Build()
+			if tt.want == "" {
+				if strings.Contains(sqlStr, "deleted_at") {
+					t.Errorf(tt.msg, sqlStr)
+				}
+				return
+			}
+			if !strings.Contains(sqlStr, tt.want) {
+				t.Errorf(tt.msg, sqlStr)
+			}
+		})
 	}
 }
 

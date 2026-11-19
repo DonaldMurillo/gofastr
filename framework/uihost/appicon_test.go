@@ -2,7 +2,6 @@ package uihost
 
 import (
 	"bytes"
-	stdimage "image"
 	"image/color"
 	"image/png"
 	"net/http/httptest"
@@ -11,22 +10,13 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pngtest"
 )
 
 // testIconPNG returns PNG bytes of a solid w×h image.
 func testIconPNG(t *testing.T, w, h int) []byte {
 	t.Helper()
-	img := stdimage.NewNRGBA(stdimage.Rect(0, 0, w, h))
-	for y := range h {
-		for x := range w {
-			img.Set(x, y, color.NRGBA{R: 30, G: 90, B: 200, A: 255})
-		}
-	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		t.Fatalf("encode test icon: %v", err)
-	}
-	return buf.Bytes()
+	return pngtest.Solid(t, w, h, color.NRGBA{R: 30, G: 90, B: 200, A: 255})
 }
 
 func newAppIconHost(t *testing.T, opts ...Option) *UIHost {

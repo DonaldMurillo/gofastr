@@ -25,6 +25,29 @@ func writeRuntimeFixture(t *testing.T, name, body string) string {
 	return dir
 }
 
+// lintRuntimeRepo runs one clean-tree lint over the runtime package
+// and every registered behaviour, and fails the test with failMsg when
+// the lint fires. A missing core-ui/runtime is a failure, not a skip: it
+// ships in every checkout, so a gate that cannot find it guards nothing.
+func lintRuntimeRepo(t *testing.T, failMsg string, lint func(roots ...string) (*Result, error)) {
+	t.Helper()
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Skipf("can't locate repo root: %v", err)
+	}
+	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
+	if _, err := os.Stat(runtimeDir); err != nil {
+		t.Fatalf("runtime dir not present: %v", err)
+	}
+	res, err := lint(runtimeLintRoots(t, runtimeDir)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("%s:\n%s", failMsg, res.Error())
+	}
+}
+
 // selectorFixture uses ~ for JS backticks (Go raw strings cannot carry
 // them); untailed below.
 const selectorFixtureRaw = `// Reduced from the pre-fix sources at 7bd789e9 (real API names):
@@ -166,21 +189,7 @@ func TestLintSelectorInterpolation_SyntheticPositives(t *testing.T) {
 
 //gofastr:test-reads core-ui/runtime/
 func TestLintSelectorInterpolation_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	if _, err := os.Stat(runtimeDir); err != nil {
-		t.Skipf("runtime dir not present: %v", err)
-	}
-	res, err := LintSelectorInterpolation(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS contains unescaped selector interpolations:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS contains unescaped selector interpolations", LintSelectorInterpolation)
 }
 
 // ── LintRegistryOwnProps ───────────────────────────────────────────────
@@ -340,36 +349,13 @@ function onClose(e) {
   return [st, cfg];
 }
 `)
-	res, err := LintRegistryOwnProps(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
 	// The detail-borne read fires; the cfg.name member chain stays the
 	// declared catalog-config silence.
-	if len(res.Violations) != 1 {
-		t.Fatalf("expected 1 finding, got %d:\n%s", len(res.Violations), res.Error())
-	}
-	if !strings.Contains(res.Violations[0].Message, "widgetIndex[") {
-		t.Errorf("expected the finding on widgetIndex: %s", res.Violations[0].Message)
-	}
+	lintOneFinding(t, LintRegistryOwnProps, dir, "widgetIndex[")
 }
 
 func TestLintRegistryOwnProps_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	if _, err := os.Stat(runtimeDir); err != nil {
-		t.Skipf("runtime dir not present: %v", err)
-	}
-	res, err := LintRegistryOwnProps(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS contains prototype-chain registry reads:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS contains prototype-chain registry reads", LintRegistryOwnProps)
 }
 
 // ── LintResponseMountedAfterOK ─────────────────────────────────────────
@@ -421,19 +407,7 @@ async function awaitForm(path) {
 
 func TestLintResponseMountedAfterOK_FiresOnPreFixShape(t *testing.T) {
 	dir := writeRuntimeFixture(t, "response.js", responseFixture)
-	res, err := LintResponseMountedAfterOK(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 3 {
-		t.Fatalf("expected exactly 3 findings (conflictRefresh, loadPanel, loadBadge), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintResponseMountedAfterOK, dir, 3, "conflictRefresh, loadPanel, loadBadge", "[response-mounted-unchecked]")
 }
 
 // TestLintResponseMountedAfterOK_MountSpells: the mounts that hand
@@ -648,16 +622,7 @@ function paneFixed(pane) { // quiet: the prefix heads the key
   localStorage.setItem(SIDEBAR_PREFIX + encodeURIComponent(pane.dataset.cuiPaneKey) + '.prefs', '1');
 }
 `)
-	res, err := LintStorageKeyRaw(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 1 {
-		t.Fatalf("expected 1 finding, got %d:\n%s", len(res.Violations), res.Error())
-	}
-	if !strings.Contains(res.Violations[0].Message, "names no namespace") {
-		t.Errorf("expected the unnamed-namespace finding: %s", res.Violations[0].Message)
-	}
+	lintOneFinding(t, LintStorageKeyRaw, dir, "names no namespace")
 }
 
 // TestProtoKeyBareComposite: a template holding one interpolation and
@@ -814,34 +779,11 @@ function bracketLiteral() { // quiet: a literal key
   localStorage['gofastr.seen'] = '1';
 }
 `)
-	res, err := LintStorageKeyRaw(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 1 {
-		t.Fatalf("expected 1 finding, got %d:\n%s", len(res.Violations), res.Error())
-	}
-	if !strings.Contains(res.Violations[0].Message, "el.dataset.prefKey") {
-		t.Errorf("expected the finding on the dataset read: %s", res.Violations[0].Message)
-	}
+	lintOneFinding(t, LintStorageKeyRaw, dir, "el.dataset.prefKey")
 }
 
 func TestLintResponseMountedAfterOK_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	if _, err := os.Stat(runtimeDir); err != nil {
-		t.Skipf("runtime dir not present: %v", err)
-	}
-	res, err := LintResponseMountedAfterOK(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS mounts fetched text without an .ok check:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS mounts fetched text without an .ok check", LintResponseMountedAfterOK)
 }
 
 // ── LintAttributePathSegments ──────────────────────────────────────────
@@ -912,37 +854,11 @@ function encodedFetch(el) {
 
 func TestLintAttributePathSegments_FiresOnPreFixShape(t *testing.T) {
 	dir := writeRuntimeFixture(t, "attrpath.js", attrPathFixture)
-	res, err := LintAttributePathSegments(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 3 {
-		t.Fatalf("expected exactly 3 findings (_kilnPost, mountThumb, fetchNote), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[attr-path-segment]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintAttributePathSegments, dir, 3, "_kilnPost, mountThumb, fetchNote", "[attr-path-segment]")
 }
 
 func TestLintAttributePathSegments_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	if _, err := os.Stat(runtimeDir); err != nil {
-		t.Skipf("runtime dir not present: %v", err)
-	}
-	res, err := LintAttributePathSegments(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS joins attribute-borne values into URL paths ungated:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS joins attribute-borne values into URL paths ungated", LintAttributePathSegments)
 }
 
 // ── review findings (7-14): named .then handlers, statusText gates,
@@ -989,19 +905,7 @@ function refreshChecked(el, src) {
 
 func TestLintResponseMountedAfterOK_NamedThenHandler(t *testing.T) {
 	dir := writeRuntimeFixture(t, "named.js", namedThenFixture)
-	res, err := LintResponseMountedAfterOK(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 4 {
-		t.Fatalf("expected 4 findings (refresh, refresh2, refresh3, refreshInline), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintResponseMountedAfterOK, dir, 4, "refresh, refresh2, refresh3, refreshInline", "[response-mounted-unchecked]")
 }
 
 const statusTextFixture = `// .statusText displayed is not a .status check (review finding 14):
@@ -1045,19 +949,7 @@ function loadTern(el, src) {
 
 func TestLintResponseMountedAfterOK_StatusTextIsNotAGate(t *testing.T) {
 	dir := writeRuntimeFixture(t, "statustext.js", statusTextFixture)
-	res, err := LintResponseMountedAfterOK(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 3 {
-		t.Fatalf("expected exactly 3 findings (load, loadCtl, loadOkButton), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintResponseMountedAfterOK, dir, 3, "load, loadCtl, loadOkButton", "[response-mounted-unchecked]")
 }
 
 // attrTplFixtureRaw uses ~ for JS backticks; untailed below.
@@ -1097,19 +989,7 @@ var attrTplFixture = strings.ReplaceAll(attrTplFixtureRaw, "~", "\x60")
 
 func TestLintAttributePathSegments_TemplateLiterals(t *testing.T) {
 	dir := writeRuntimeFixture(t, "tpl.js", attrTplFixture)
-	res, err := LintAttributePathSegments(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 4 {
-		t.Fatalf("expected exactly 4 findings (postTpl, loadNote, mixed, postCat), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[attr-path-segment]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintAttributePathSegments, dir, 4, "postTpl, loadNote, mixed, postCat", "[attr-path-segment]")
 }
 
 const registryHoistedFixture = `// Guard hoisted into a compute-once boolean (review finding 9): a
@@ -1153,21 +1033,43 @@ function findAny(name) {
 }
 `
 
-func TestLintRegistryOwnProps_HoistedGuardBoolean(t *testing.T) {
-	dir := writeRuntimeFixture(t, "hoisted.js", registryHoistedFixture)
-	res, err := LintRegistryOwnProps(dir)
+// lintExpectFindings asserts lint fires exactly n findings on dir, each
+// carrying prefix (want names the findings in the failure message).
+func lintExpectFindings(t *testing.T, lint func(roots ...string) (*Result, error), dir string, n int, want, prefix string) {
+	t.Helper()
+	res, err := lint(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Violations) != 2 {
-		t.Fatalf("expected exactly 2 findings (findMixed, findAny), got %d:\n%s",
-			len(res.Violations), res.Error())
+	if len(res.Violations) != n {
+		t.Fatalf("expected exactly %d findings (%s), got %d:\n%s", n, want, len(res.Violations), res.Error())
 	}
 	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[registry-own-prop] catalog[") {
+		if !strings.HasPrefix(v.Message, prefix) {
 			t.Errorf("finding on a fixed/silent spelling: %s:%d: %s", v.File, v.Line, v.Message)
 		}
 	}
+}
+
+// lintOneFinding asserts lint fires exactly one finding on dir whose
+// message contains want.
+func lintOneFinding(t *testing.T, lint func(roots ...string) (*Result, error), dir, want string) {
+	t.Helper()
+	res, err := lint(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding naming %s, got %d:\n%s", want, len(res.Violations), res.Error())
+	}
+	if !strings.Contains(res.Violations[0].Message, want) {
+		t.Errorf("expected the finding to name %s: %s", want, res.Violations[0].Message)
+	}
+}
+
+func TestLintRegistryOwnProps_HoistedGuardBoolean(t *testing.T) {
+	lintExpectFindings(t, LintRegistryOwnProps, writeRuntimeFixture(t, "hoisted.js", registryHoistedFixture),
+		2, "findMixed, findAny", "[registry-own-prop] catalog[")
 }
 
 const longForInFixture = `// A for-in loop whose body far exceeds any fixed byte window (review
@@ -1197,17 +1099,7 @@ after += reg[k];
 
 func TestLintRegistryOwnProps_LongForInBody(t *testing.T) {
 	dir := writeRuntimeFixture(t, "longforin.js", longForInFixture)
-	res, err := LintRegistryOwnProps(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 1 {
-		t.Fatalf("expected exactly 1 finding (the read after the loop), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	if !strings.HasPrefix(res.Violations[0].Message, "[registry-own-prop] reg[") {
-		t.Errorf("unexpected message: %s", res.Violations[0].Message)
-	}
+	lintExpectFindings(t, LintRegistryOwnProps, dir, 1, "the read after the loop", "[registry-own-prop] reg[")
 }
 
 const selReassignFixture = `// window.CSS.escape (review finding 11): the defensive global
@@ -1369,20 +1261,8 @@ function lookupMultiline(name) {
 `
 
 func TestLintRegistryOwnProps_Review5DeclsIndicesAndIn(t *testing.T) {
-	dir := writeRuntimeFixture(t, "review5reg.js", registryReview5Fixture)
-	res, err := LintRegistryOwnProps(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 3 {
-		t.Fatalf("expected exactly 3 findings (inline decl, member index, in-guarded read), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[registry-own-prop] REGISTRY") {
-			t.Errorf("finding on a fixed/silent spelling: %s:%d: %s", v.File, v.Line, v.Message)
-		}
-	}
+	lintExpectFindings(t, LintRegistryOwnProps, writeRuntimeFixture(t, "review5reg.js", registryReview5Fixture),
+		3, "inline decl, member index, in-guarded read", "[registry-own-prop] REGISTRY")
 }
 
 const responseReview5Fixture = `// Review 5: every compound assignment to innerHTML/outerHTML is a
@@ -1411,19 +1291,7 @@ function loadSlot(slot, src) {
 
 func TestLintResponseMountedAfterOK_Review5MountsAndChains(t *testing.T) {
 	dir := writeRuntimeFixture(t, "review5resp.js", responseReview5Fixture)
-	res, err := LintResponseMountedAfterOK(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 3 {
-		t.Fatalf("expected exactly 3 findings (+=, ?.then, swapPane), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintResponseMountedAfterOK, dir, 3, "+=, ?.then, swapPane", "[response-mounted-unchecked]")
 }
 
 // attrReview5FixtureRaw uses ~ for JS backticks; untailed below.
@@ -1528,19 +1396,7 @@ function mountStatus2xxRange(target, src) {
 
 func TestLintResponseMountedAfterOK_Review6StatusGates(t *testing.T) {
 	dir := writeRuntimeFixture(t, "review6resp.js", responseReview6Fixture)
-	res, err := LintResponseMountedAfterOK(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 6 {
-		t.Fatalf("expected exactly 6 findings (truthiness, < 400, <= 399, mirrored 399 >=, range < 400, range <= 399), got %d:\n%s",
-			len(res.Violations), res.Error())
-	}
-	for _, v := range res.Violations {
-		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
-			t.Errorf("unexpected message: %s", v.Message)
-		}
-	}
+	lintExpectFindings(t, LintResponseMountedAfterOK, dir, 6, "truthiness, < 400, <= 399, mirrored 399 >=, range < 400, range <= 399", "[response-mounted-unchecked]")
 }
 
 const attrReview6Fixture = `// Review 6: a matching validation in an unrelated earlier branch
@@ -2055,16 +1911,7 @@ var cookieTplFixture = strings.ReplaceAll(cookieTplFixtureRaw, "~", "\x60")
 
 func TestCookieConcatTemplateWrites(t *testing.T) {
 	dir := writeRuntimeFixture(t, "cookietpl.js", cookieTplFixture)
-	res, err := LintCookieConcat(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(res.Violations) != 1 {
-		t.Fatalf("expected exactly 1 finding (the raw ${id} body), got %d:\n%s", len(res.Violations), res.Error())
-	}
-	if !strings.Contains(res.Violations[0].Message, `"id"`) {
-		t.Errorf("expected the finding on id: %s", res.Violations[0].Message)
-	}
+	lintOneFinding(t, LintCookieConcat, dir, `"id"`)
 }
 
 // moduleURLFixtureRaw uses ~ for JS backticks; untailed below.
@@ -2459,21 +2306,7 @@ func TestLintDecodeURIRaw_RepoIsClean(t *testing.T) {
 	// core-ui/runtime/deeplink_decode_red_test.go) are still OPEN in
 	// this worktree, so the live tree fires today. Delete this skip
 	// once the fix worktree merges; the assertion below is the gate.
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	if _, err := os.Stat(runtimeDir); err != nil {
-		t.Skipf("runtime dir not present: %v", err)
-	}
-	res, err := LintDecodeURIRaw(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS decodes data-fui values outside try blocks:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS decodes data-fui values outside try blocks", LintDecodeURIRaw)
 }
 
 // ── LintProtoKeyWrite ──────────────────────────────────────────────────
@@ -2628,21 +2461,7 @@ func TestLintProtoKeyWrite_RepoIsClean(t *testing.T) {
 	// core-ui/runtime/src_animate_proto_red_test.go) are still OPEN in
 	// this worktree, so the live tree fires today. Delete this skip
 	// once the fix worktree merges; the assertion below is the gate.
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	if _, err := os.Stat(runtimeDir); err != nil {
-		t.Skipf("runtime dir not present: %v", err)
-	}
-	res, err := LintProtoKeyWrite(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS writes attribute-borne keys into shared stores with no reserved-key guard:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS writes attribute-borne keys into shared stores with no reserved-key guard", LintProtoKeyWrite)
 }
 
 // The four shape lints below had fixture tests only: nothing ran them
@@ -2651,63 +2470,19 @@ func TestLintProtoKeyWrite_RepoIsClean(t *testing.T) {
 // package and every registered behaviour.
 
 func TestLintSelectorBareArgGuarded_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	res, err := LintSelectorBareArgGuarded(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS builds a selector from an unguarded bare argument:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS builds a selector from an unguarded bare argument", LintSelectorBareArgGuarded)
 }
 
 func TestLintCookieConcat_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	res, err := LintCookieConcat(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS writes a cookie by concatenation:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS writes a cookie by concatenation", LintCookieConcat)
 }
 
 func TestLintModuleURLShape_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	res, err := LintModuleURLShape(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS builds a module URL in a shape the loader does not own:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS builds a module URL in a shape the loader does not own", LintModuleURLShape)
 }
 
 func TestLintStorageKeyRaw_RepoIsClean(t *testing.T) {
-	repoRoot, err := findRepoRoot()
-	if err != nil {
-		t.Skipf("can't locate repo root: %v", err)
-	}
-	runtimeDir := filepath.Join(repoRoot, "core-ui", "runtime")
-	res, err := LintStorageKeyRaw(runtimeLintRoots(t, runtimeDir)...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("runtime JS builds a storage key from a raw value:\n%s", res.Error())
-	}
+	lintRuntimeRepo(t, "runtime JS builds a storage key from a raw value", LintStorageKeyRaw)
 }
 
 // ── review-8 findings (WP9): string-literal assignment prose, regex

@@ -70,32 +70,27 @@ func TestPageHandlerRendersScreenAtForeignPath(t *testing.T) {
 
 // A dynamic screen path is never forced into the dispatch: rewriting it
 // would hand the literal pattern to param capture, so id would arrive as
-// "{id}" and every param screen would 404.
+// "{id}" and every param screen would 404. The router stores dynamic paths
+// in the ":id" spelling, so a handler built from either spelling must not
+// force that pattern into the dispatch either.
 func TestPageHandlerKeepsDynamicRequestPath(t *testing.T) {
-	a := app.NewApp("pagehandler")
-	a.Register("/thing/{id}", &paramJSONComp{}, nil)
-	ds := New(a)
-
-	rec := httptest.NewRecorder()
-	ds.PageHandler("/thing/{id}")(rec, httptest.NewRequest(http.MethodGet, "/thing/42", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status: got %d, want 200", rec.Code)
-	}
-	if body := rec.Body.String(); !strings.Contains(body, ">42<") {
-		t.Errorf("param not captured from the real path; got: %s", body)
-	}
+	checkPageHandlerParamCapture(t, "/thing/{id}")
 }
 
-// The router stores dynamic paths in the ":id" spelling, so a handler
-// built from a registered screen's Path must not force that pattern
-// into the dispatch either.
 func TestPageHandlerKeepsColonParamPath(t *testing.T) {
+	checkPageHandlerParamCapture(t, "/thing/:id")
+}
+
+// checkPageHandlerParamCapture builds the handler from the pattern spelling
+// and confirms the real request path still drives param capture.
+func checkPageHandlerParamCapture(t *testing.T, pattern string) {
+	t.Helper()
 	a := app.NewApp("pagehandler")
 	a.Register("/thing/{id}", &paramJSONComp{}, nil)
 	ds := New(a)
 
 	rec := httptest.NewRecorder()
-	ds.PageHandler("/thing/:id")(rec, httptest.NewRequest(http.MethodGet, "/thing/42", nil))
+	ds.PageHandler(pattern)(rec, httptest.NewRequest(http.MethodGet, "/thing/42", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: got %d, want 200", rec.Code)
 	}

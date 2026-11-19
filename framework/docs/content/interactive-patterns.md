@@ -747,7 +747,7 @@ For a `<select>` the `input`/`change` distinction doesn't matter (both fire
 once, on selection), so set a small debounce, `data-cui-rpc-debounce-ms="1"`,
 to fire promptly instead of waiting out the 250 ms default meant for
 keystroke typeahead. This recipe is covered end-to-end by
-`TestInputTrigger_SelectFiresRPC` in `core-ui/runtime`.
+`TestInputTrigger/SelectFiresRPC` in `core-ui/runtime`.
 
 ### 4. Route-param syntax: `{id}` on the HTTP router, both on the screen router
 

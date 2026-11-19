@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,28 +19,30 @@ type strictKeysReq struct {
 	IsAdmin bool   `json:"-"`
 }
 
-func TestBind_RejectsDuplicateKeys(t *testing.T) {
-	body := `{"name":"alice","name":"bob"}`
+// mustReject asserts Bind refuses body — the strict-key contract's whole
+// point. reason carries the per-vector smuggling rationale verbatim, so a
+// failure still names the attack it guards against.
+func mustReject(t *testing.T, body, reason string) {
+	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	var dst strictKeysReq
 	if err := Bind(req, &dst); err == nil {
-		t.Fatalf("Bind accepted duplicate key %q; last-key-wins lets validation see one value and the handler another", "name")
+		t.Fatalf("%s", reason)
 	}
+}
+
+func TestBind_RejectsDuplicateKeys(t *testing.T) {
+	mustReject(t, `{"name":"alice","name":"bob"}`,
+		`Bind accepted duplicate key "name"; last-key-wins lets validation see one value and the handler another`)
 }
 
 func TestBind_RejectsCaseFoldedKeys(t *testing.T) {
 	for _, key := range []string{"Name", "NAME", "nAmE", "User_ID", "USER_ID"} {
 		t.Run(key, func(t *testing.T) {
-			body := `{"` + key + `":"alice"}`
-			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-
-			var dst strictKeysReq
-			if err := Bind(req, &dst); err == nil {
-				t.Fatalf("Bind accepted case-folded key %q; stdlib's case-insensitive match lets a body smuggle into validated fields", key)
-			}
+			mustReject(t, `{"`+key+`":"alice"}`,
+				fmt.Sprintf("Bind accepted case-folded key %q; stdlib's case-insensitive match lets a body smuggle into validated fields", key))
 		})
 	}
 }
@@ -47,14 +50,8 @@ func TestBind_RejectsCaseFoldedKeys(t *testing.T) {
 func TestBind_RejectsUnknownFields(t *testing.T) {
 	for _, key := range []string{"role", "is_admin", "tenant_id", "permissions", "api_key"} {
 		t.Run(key, func(t *testing.T) {
-			body := `{"name":"alice","` + key + `":"x"}`
-			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-
-			var dst strictKeysReq
-			if err := Bind(req, &dst); err == nil {
-				t.Fatalf("Bind silently ignored unknown field %q; mass-assignment vector if any downstream handler picks the body up as map[string]any", key)
-			}
+			mustReject(t, `{"name":"alice","`+key+`":"x"}`,
+				fmt.Sprintf("Bind silently ignored unknown field %q; mass-assignment vector if any downstream handler picks the body up as map[string]any", key))
 		})
 	}
 }
@@ -62,14 +59,8 @@ func TestBind_RejectsUnknownFields(t *testing.T) {
 // Tag json:"-" must stay off the allow-list: a body with "IsAdmin":true
 // must not bind to a field the author explicitly excluded.
 func TestBind_RejectsJsonDashTaggedFields(t *testing.T) {
-	body := `{"name":"alice","IsAdmin":true}`
-	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-
-	var dst strictKeysReq
-	if err := Bind(req, &dst); err == nil {
-		t.Fatalf("Bind accepted field tagged json:\"-\"; that tag is the canonical opt-out for sensitive props")
-	}
+	mustReject(t, `{"name":"alice","IsAdmin":true}`,
+		`Bind accepted field tagged json:"-"; that tag is the canonical opt-out for sensitive props`)
 }
 
 type embeddedCommon struct {

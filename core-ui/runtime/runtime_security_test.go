@@ -1252,64 +1252,61 @@ func TestModuleURLsGateAttrNames(t *testing.T) {
 	}
 }
 
+// lintRuntimeShapeWithVacuity runs one of the core-ui/check runtime-shape
+// lints over the package tree, then proves the lint still fires on the
+// pre-fix spelling pinned in vacuitySrc (the vacuity control every
+// lint-backed test below carries).
+func lintRuntimeShapeWithVacuity(t *testing.T, failMsg, vacuitySrc, vacuityMsg string,
+	lint func(roots ...string) (*check.Result, error)) {
+	t.Helper()
+	res, err := lint(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("%s:\n%s", failMsg, strings.TrimSpace(res.Error()))
+	}
+	vdir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(vdir, "vacuity.js"), []byte(vacuitySrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vres, err := lint(vdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !vres.HasErrors() {
+		t.Error(vacuityMsg)
+	}
+}
+
 // TestSelectorBareArgGuarded: a querySelector whose argument is a bare
 // identifier read from a data-cui-* attribute runs inside a try, so a
 // malformed value degrades instead of throwing out of the delegated
 // handler. Property over the whole runtime; vacuity control on the
 // pre-fix copy.js spelling.
 func TestSelectorBareArgGuarded(t *testing.T) {
-	res, err := check.LintSelectorBareArgGuarded(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("SECURITY: [selector-bare-arg] unguarded attribute-borne selector lookup(s) in the shipped runtime:\n%s",
-			strings.TrimSpace(res.Error()))
-	}
-	vdir := t.TempDir()
-	vsrc := "function onClick(el) {\n" +
-		"  const sel = el.getAttribute('data-cui-copy-text-from');\n" +
-		"  const src = document.querySelector(sel);\n" +
-		"  return src;\n}\n"
-	if err := os.WriteFile(filepath.Join(vdir, "vacuity.js"), []byte(vsrc), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	vres, err := check.LintSelectorBareArgGuarded(vdir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !vres.HasErrors() {
-		t.Error("VACUITY: LintSelectorBareArgGuarded no longer fires on the pre-fix bare querySelector(sel) spelling")
-	}
+	lintRuntimeShapeWithVacuity(t,
+		"SECURITY: [selector-bare-arg] unguarded attribute-borne selector lookup(s) in the shipped runtime",
+		"function onClick(el) {\n"+
+			"  const sel = el.getAttribute('data-cui-copy-text-from');\n"+
+			"  const src = document.querySelector(sel);\n"+
+			"  return src;\n}\n",
+		"VACUITY: LintSelectorBareArgGuarded no longer fires on the pre-fix bare querySelector(sel) spelling",
+		check.LintSelectorBareArgGuarded)
 }
 
 // TestCookieWritesEncodeOperands: document.cookie writes never splice a
 // raw non-literal operand (the banner dismiss id used to). Vacuity
 // control on the pre-fix banner.js spelling.
 func TestCookieWritesEncodeOperands(t *testing.T) {
-	res, err := check.LintCookieConcat(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("SECURITY: [cookie-concat] raw operand in a document.cookie write in the shipped runtime:\n%s",
-			strings.TrimSpace(res.Error()))
-	}
-	vdir := t.TempDir()
-	vsrc := "const STORAGE_PREFIX = 'gofastr.banner-dismiss.';\n" +
-		"function recordDismiss(id) {\n" +
-		"  document.cookie = STORAGE_PREFIX + id + '=1; Path=/; Max-Age=31536000; SameSite=Lax';\n" +
-		"}\n"
-	if err := os.WriteFile(filepath.Join(vdir, "vacuity.js"), []byte(vsrc), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	vres, err := check.LintCookieConcat(vdir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !vres.HasErrors() {
-		t.Error("VACUITY: LintCookieConcat no longer fires on the pre-fix STORAGE_PREFIX + id spelling")
-	}
+	lintRuntimeShapeWithVacuity(t,
+		"SECURITY: [cookie-concat] raw operand in a document.cookie write in the shipped runtime",
+		"const STORAGE_PREFIX = 'gofastr.banner-dismiss.';\n"+
+			"function recordDismiss(id) {\n"+
+			"  document.cookie = STORAGE_PREFIX + id + '=1; Path=/; Max-Age=31536000; SameSite=Lax';\n"+
+			"}\n",
+		"VACUITY: LintCookieConcat no longer fires on the pre-fix STORAGE_PREFIX + id spelling",
+		check.LintCookieConcat)
 }
 
 // TestModuleURLsGateTheirId: a script src or dynamic import built from a
@@ -1317,32 +1314,17 @@ func TestCookieWritesEncodeOperands(t *testing.T) {
 // loadModule is the pattern). Vacuity control on the pre-fix
 // actionloader.js spelling.
 func TestModuleURLsGateTheirId(t *testing.T) {
-	res, err := check.LintModuleURLShape(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("SECURITY: [module-url-shape] ungated module URL build in the shipped runtime:\n%s",
-			strings.TrimSpace(res.Error()))
-	}
-	vdir := t.TempDir()
-	vsrc := "function scan(root, manifest) {\n" +
-		"  root.querySelectorAll('[data-widget]').forEach(function (el) {\n" +
-		"    const id = el.getAttribute('data-widget');\n" +
-		"    const s = document.createElement('script');\n" +
-		"    s.src = '/__gofastr/widget/' + id + '.js?v=' + manifest[id];\n" +
-		"    document.head.appendChild(s);\n" +
-		"  });\n}\n"
-	if err := os.WriteFile(filepath.Join(vdir, "vacuity.js"), []byte(vsrc), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	vres, err := check.LintModuleURLShape(vdir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !vres.HasErrors() {
-		t.Error("VACUITY: LintModuleURLShape no longer fires on the pre-fix '/__gofastr/widget/' + id spelling")
-	}
+	lintRuntimeShapeWithVacuity(t,
+		"SECURITY: [module-url-shape] ungated module URL build in the shipped runtime",
+		"function scan(root, manifest) {\n"+
+			"  root.querySelectorAll('[data-widget]').forEach(function (el) {\n"+
+			"    const id = el.getAttribute('data-widget');\n"+
+			"    const s = document.createElement('script');\n"+
+			"    s.src = '/__gofastr/widget/' + id + '.js?v=' + manifest[id];\n"+
+			"    document.head.appendChild(s);\n"+
+			"  });\n}\n",
+		"VACUITY: LintModuleURLShape no longer fires on the pre-fix '/__gofastr/widget/' + id spelling",
+		check.LintModuleURLShape)
 }
 
 // TestStorageKeysEncodeAttrValues: a storage key the runtime reads from
@@ -1354,27 +1336,12 @@ func TestModuleURLsGateTheirId(t *testing.T) {
 // any localStorage key on the origin. Vacuity control on the pre-fix
 // sidebar.js spelling.
 func TestStorageKeysEncodeAttrValues(t *testing.T) {
-	res, err := check.LintStorageKeyRaw(".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.HasErrors() {
-		t.Errorf("SECURITY: [storage-key-raw] attribute-borne storage key(s) used raw in the shipped runtime:\n%s",
-			strings.TrimSpace(res.Error()))
-	}
-	vdir := t.TempDir()
-	vsrc := "const setCollapsed = (root, collapsed) => {\n" +
-		"  const key = root.getAttribute('data-cui-sidebar-storage');\n" +
-		"  try { localStorage.setItem(key, collapsed ? 'true' : 'false'); } catch (_) {}\n" +
-		"};\n"
-	if err := os.WriteFile(filepath.Join(vdir, "vacuity.js"), []byte(vsrc), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	vres, err := check.LintStorageKeyRaw(vdir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !vres.HasErrors() {
-		t.Error("VACUITY: LintStorageKeyRaw no longer fires on the pre-fix raw localStorage.setItem(key) spelling")
-	}
+	lintRuntimeShapeWithVacuity(t,
+		"SECURITY: [storage-key-raw] attribute-borne storage key(s) used raw in the shipped runtime",
+		"const setCollapsed = (root, collapsed) => {\n"+
+			"  const key = root.getAttribute('data-cui-sidebar-storage');\n"+
+			"  try { localStorage.setItem(key, collapsed ? 'true' : 'false'); } catch (_) {}\n"+
+			"};\n",
+		"VACUITY: LintStorageKeyRaw no longer fires on the pre-fix raw localStorage.setItem(key) spelling",
+		check.LintStorageKeyRaw)
 }

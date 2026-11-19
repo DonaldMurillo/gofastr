@@ -128,7 +128,7 @@ The registry paragraph that opened this list is still in `AGENTS.md`.
   `*_security_test.go`; a probe that is deleted says why in the commit
   message and beside the sibling test that carries the contract. The raw
   `go test` output is kept at `.gofastr/red-tests.log`.
-- **Check for duplicated code**: `make dupl` (dupl at threshold 100 over
+- **Check for duplicated code**: `make dupl` (dupl at threshold 80 over
   the repo's Go files, examples/evals/testdata/`*.gen.go` excluded). Fails
   when the clone-group count grows past `scripts/dupl-baseline.txt`;
   re-baseline with `scripts/dupl.sh --rebaseline` and commit the baseline

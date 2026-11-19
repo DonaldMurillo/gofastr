@@ -11,8 +11,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// startApp boots app on an ephemeral loopback port and returns it + a cleanup,
-// mirroring startSecurityExposureApp.
+// startApp boots app on an ephemeral loopback port and returns it + a
+// cleanup.
 func startApp(t *testing.T, app *App) (*App, func()) {
 	t.Helper()
 	done := make(chan error, 1)

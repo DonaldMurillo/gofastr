@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -482,15 +481,7 @@ func sqliteBusyClass(msg string) bool {
 // 60s a busy error can only mean the claim path stopped serialising.
 func openClaimRaceDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dsn := "file:" + filepath.ToSlash(filepath.Join(t.TempDir(), "claims.db")) +
-		"?_busy_timeout=60000&_journal_mode=WAL"
-	db, err := sql.Open("sqlite3", dsn)
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	db.SetMaxOpenConns(8)
-	t.Cleanup(func() { _ = db.Close() })
-	return db
+	return openQueueFileDB(t, "claims.db", 60000, 8)
 }
 
 // TestSQLiteDequeueConcurrentNoBusy drives the SQLite claim path with 8

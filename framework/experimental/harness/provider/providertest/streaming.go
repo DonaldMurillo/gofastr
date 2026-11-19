@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
 )
 
@@ -34,7 +35,20 @@ func DecodeRequestBody(t testing.TB, r io.Reader) RequestBody {
 	if err != nil {
 		t.Fatalf("read request body: %v", err)
 	}
+	// Refuse an ambiguous top level (duplicate or case-folded keys:
+	// GOFASTR1407) while tolerating provider fields outside
+	// RequestBody's documented subset — the capture asserts what the
+	// adapter tests pin, and real requests legitimately carry
+	// temperature, max_tokens, tools and more.
+	if err := handler.CheckObjectKeys(raw, strings.ToLower); err != nil {
+		t.Fatalf("ambiguous request body %q: %v", raw, err)
+	}
 	var body RequestBody
+	// RequestBody is a deliberate subset of a provider chat request:
+	// UnmarshalStrict's struct mode would refuse the legitimate fields
+	// it ignores (temperature, max_tokens, tools), so the full-depth
+	// ambiguity walk above is the guard instead.
+	//gofastr:allow(GOFASTR1407) subset decode, guarded by the CheckObjectKeys walk above
 	if err := json.Unmarshal(raw, &body); err != nil {
 		t.Fatalf("unmarshal request body %q: %v", raw, err)
 	}

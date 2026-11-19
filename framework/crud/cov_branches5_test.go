@@ -16,62 +16,43 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
-func TestAfterCreateHookError(t *testing.T) {
-	ch, _ := covNotesHandler(t)
-	ch.Hooks = hook.NewHookRegistry()
-	ch.Hooks.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
-		return errors.New("after-create boom")
-	})
-	if _, err := ch.CreateOne(context.Background(), map[string]any{"title": "x"}); err == nil {
-		t.Error("AfterCreate hook error should propagate")
+// TestHookErrorsPropagate registers a failing hook for one lifecycle
+// point at a time and requires the error to surface from the matching
+// in-process write instead of being swallowed.
+func TestHookErrorsPropagate(t *testing.T) {
+	cases := []struct {
+		name  string
+		event hook.HookType
+		op    string // write surface the hook guards
+	}{
+		{"AfterCreate", hook.AfterCreate, "create"},
+		{"BeforeUpdate", hook.BeforeUpdate, "update"},
+		{"AfterUpdate", hook.AfterUpdate, "update"},
+		{"BeforeDelete", hook.BeforeDelete, "delete"},
+		{"AfterDelete", hook.AfterDelete, "delete"},
 	}
-}
-
-func TestBeforeUpdateHookError(t *testing.T) {
-	ch, _ := covNotesHandler(t)
-	created, _ := ch.CreateOne(context.Background(), map[string]any{"title": "x"})
-	ch.Hooks = hook.NewHookRegistry()
-	ch.Hooks.RegisterHook(hook.BeforeUpdate, func(ctx context.Context, data any) error {
-		return errors.New("before-update boom")
-	})
-	if _, err := ch.UpdateOne(context.Background(), created["id"].(string), map[string]any{"title": "y"}); err == nil {
-		t.Error("BeforeUpdate hook error should propagate")
-	}
-}
-
-func TestAfterUpdateHookError(t *testing.T) {
-	ch, _ := covNotesHandler(t)
-	created, _ := ch.CreateOne(context.Background(), map[string]any{"title": "x"})
-	ch.Hooks = hook.NewHookRegistry()
-	ch.Hooks.RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
-		return errors.New("after-update boom")
-	})
-	if _, err := ch.UpdateOne(context.Background(), created["id"].(string), map[string]any{"title": "y"}); err == nil {
-		t.Error("AfterUpdate hook error should propagate")
-	}
-}
-
-func TestBeforeDeleteHookError(t *testing.T) {
-	ch, _ := covNotesHandler(t)
-	created, _ := ch.CreateOne(context.Background(), map[string]any{"title": "x"})
-	ch.Hooks = hook.NewHookRegistry()
-	ch.Hooks.RegisterHook(hook.BeforeDelete, func(ctx context.Context, data any) error {
-		return errors.New("before-delete boom")
-	})
-	if err := ch.DeleteOne(context.Background(), created["id"].(string)); err == nil {
-		t.Error("BeforeDelete hook error should propagate")
-	}
-}
-
-func TestAfterDeleteHookError(t *testing.T) {
-	ch, _ := covNotesHandler(t)
-	created, _ := ch.CreateOne(context.Background(), map[string]any{"title": "x"})
-	ch.Hooks = hook.NewHookRegistry()
-	ch.Hooks.RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
-		return errors.New("after-delete boom")
-	})
-	if err := ch.DeleteOne(context.Background(), created["id"].(string)); err == nil {
-		t.Error("AfterDelete hook error should propagate")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ch, _ := covNotesHandler(t)
+			created, _ := ch.CreateOne(context.Background(), map[string]any{"title": "x"})
+			id := created["id"].(string)
+			ch.Hooks = hook.NewHookRegistry()
+			ch.Hooks.RegisterHook(tc.event, func(ctx context.Context, data any) error {
+				return errors.New(strings.ToLower(tc.name) + " boom")
+			})
+			var err error
+			switch tc.op {
+			case "create":
+				_, err = ch.CreateOne(context.Background(), map[string]any{"title": "y"})
+			case "update":
+				_, err = ch.UpdateOne(context.Background(), id, map[string]any{"title": "y"})
+			case "delete":
+				err = ch.DeleteOne(context.Background(), id)
+			}
+			if err == nil {
+				t.Errorf("%s hook error should propagate", tc.name)
+			}
+		})
 	}
 }
 

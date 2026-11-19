@@ -36,19 +36,10 @@ func queryApp(t *testing.T, db *sql.DB) (*App, *crud.CrudHandler) {
 	)`); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", entity.EntityConfig{
-		Table: "posts",
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "views", Type: schema.Int},
-		},
-	}.WithTimestamps(false))
-	ent, _ := app.Registry.Get("posts")
-	ch := crud.NewCrudHandler(ent, db)
-	ch.Hooks = app.HookRegistry("posts")
-	ch.Registry = app.Registry
-	return app, ch
+	return postsHandlerApp(t, db, []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "views", Type: schema.Int},
+	})
 }
 
 func seedQueryPosts(t *testing.T, db *sql.DB) {

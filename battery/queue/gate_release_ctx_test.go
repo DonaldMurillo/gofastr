@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"sync/atomic"
 	"testing"
-
-	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 // A worker that claims a job and then finds its type gated hands the claim
@@ -16,18 +14,7 @@ import (
 // attempt the dead-letter sweep failed a job that never ran once the lease
 // expired. The release now settles on a detached context, like Ack and Nack.
 func TestGateReleaseSurvivesShutdown(t *testing.T) {
-	t.Run("sqlite", func(t *testing.T) {
-		db, q := openDBQueueOpts(t, WithWorkers(0))
-		assertGateReleaseSurvivesShutdown(t, db, q)
-	})
-	t.Run("postgres", func(t *testing.T) {
-		db := pgtest.DB(t)
-		q, err := NewDBQueue(db, WithWorkers(0))
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertGateReleaseSurvivesShutdown(t, db, q)
-	})
+	forBackendQueues(t, []DBQueueOption{WithWorkers(0)}, assertGateReleaseSurvivesShutdown)
 }
 
 func assertGateReleaseSurvivesShutdown(t *testing.T, db *sql.DB, q *DBQueue) {

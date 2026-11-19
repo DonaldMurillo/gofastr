@@ -660,6 +660,21 @@ func localNumber(pass *analysis.Pass) map[*types.Var]string {
 	return localVars(pass, &localNumberCache, true, func(e ast.Expr) (string, bool) { return numberCall(pass, e) })
 }
 
+// localVarOf resolves e to the function-scoped variable it names, nil
+// for anything else (a field, a package var, a non-identifier): the
+// local trackers only follow storage other functions cannot reach.
+func localVarOf(pass *analysis.Pass, e ast.Expr) *types.Var {
+	id, ok := ast.Unparen(e).(*ast.Ident)
+	if !ok {
+		return nil
+	}
+	v, _ := pass.TypesInfo.ObjectOf(id).(*types.Var)
+	if v == nil || v.IsField() || v.Parent() == nil || v.Parent() == pass.Pkg.Scope() {
+		return nil
+	}
+	return v
+}
+
 // localVars maps the package's function-scoped variables, in non-test
 // files, onto what classify reports for a value they are given, cached
 // per pass. With every unset, any one such assignment or declaration
@@ -673,17 +688,7 @@ func localVars(pass *analysis.Pass, cache *sync.Map, every bool, classify func(a
 	out := map[*types.Var]string{}
 	declared := map[*types.Var]bool{}
 	poisoned := map[*types.Var]bool{}
-	local := func(e ast.Expr) *types.Var {
-		id, ok := ast.Unparen(e).(*ast.Ident)
-		if !ok {
-			return nil
-		}
-		v, _ := pass.TypesInfo.ObjectOf(id).(*types.Var)
-		if v == nil || v.IsField() || v.Parent() == nil || v.Parent() == pass.Pkg.Scope() {
-			return nil
-		}
-		return v
-	}
+	local := func(e ast.Expr) *types.Var { return localVarOf(pass, e) }
 	poison := func(e ast.Expr) {
 		if v := local(e); v != nil {
 			poisoned[v] = true

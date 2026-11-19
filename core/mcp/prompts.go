@@ -165,40 +165,45 @@ type promptsGetResult struct {
 // never bends the page sizes or cursor arithmetic that would otherwise
 // count it. The name sort keeps pages stable across requests.
 func (s *Server) handlePromptsList(ctx context.Context, req Request) Response {
-	offset, err := s.listOffset(req, "prompts/list")
-	if err != nil {
-		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
-	}
 	// A prompt the caller cannot get is not listed to them: the
 	// description and argument list are the disclosure, same as a
-	// tool's inputSchema. The name sort keeps pages stable across
-	// requests.
-	page, next := gatedListPage(s, ctx, "prompts/list", offset,
+	// tool's inputSchema.
+	return gatedListResponse(s, ctx, req, "prompts/list",
 		func() map[string]Prompt { return s.prompts },
 		func(p Prompt) func(context.Context) error { return p.gate },
 		func(a, b Prompt) int { return strings.Compare(a.Name, b.Name) },
+		func(page []Prompt, next string) any {
+			return promptsListResult{Prompts: requiredArray(page), NextCursor: next}
+		},
 	)
-	return newSuccessResponse(req.ID, promptsListResult{Prompts: page, NextCursor: next})
 }
 
-// gatedListPage snapshots one of the gated registries (prompts,
-// resources, resource templates) under the read lock, evaluates the per-caller
-// gates outside it, sorts, and cuts the page at offset. The gate runs
+// gatedListResponse serves one page of a gated list method (prompts/list,
+// resources/list, resources/templates/list): it parses the cursor param
+// (an invalid cursor answers invalid-params), snapshots one of the gated
+// registries under the read lock, evaluates the per-caller gates outside
+// it, sorts, cuts the page at the resume offset, and wraps page and
+// nextCursor in the method's own result shape via wrap. The gate runs
 // BEFORE the page is cut, so pagination walks the post-filter set: a
 // gated item never surfaces on a page and never bends the page sizes or
 // cursor arithmetic that would otherwise count it. registry is called
 // under the lock so the map header is read inside it, exactly as the
-// inlined snapshots this helper replaced (handlePromptsList and
-// handleResourcesTemplatesList, formerly verbatim copies of this body).
-func gatedListPage[T any](
+// inlined snapshots this helper replaced (the per-method handlers were
+// once verbatim copies of this body).
+func gatedListResponse[T any](
 	s *Server,
 	ctx context.Context,
+	req Request,
 	method string,
-	offset int,
 	registry func() map[string]T,
 	gateOf func(T) func(context.Context) error,
 	less func(a, b T) int,
-) ([]T, string) {
+	wrap func(page []T, next string) any,
+) Response {
+	offset, err := s.listOffset(req, method)
+	if err != nil {
+		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
+	}
 	// Snapshot under the read lock, evaluate the per-caller gates
 	// outside it: gates are app-supplied callback code and must never
 	// contend with the registry lock (notifications.go's rule). One
@@ -222,7 +227,8 @@ func gatedListPage[T any](
 		list = append(list, v)
 	}
 	slices.SortFunc(list, less)
-	return pageList(s, method, list, offset)
+	page, next := pageList(s, method, list, offset)
+	return newSuccessResponse(req.ID, wrap(page, next))
 }
 
 // handlePromptsGet resolves a prompt by name, validates required arguments,
@@ -290,7 +296,7 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 	}
 	if messages == nil {
 		// The schema requires a messages array; null fails a validating
-		// client the way a null tools/call content does (contentArray).
+		// client the way a null tools/call content does (requiredArray).
 		messages = []PromptMessage{}
 	}
 	return newSuccessResponse(req.ID, promptsGetResult{Description: p.Description, Messages: messages})

@@ -1,16 +1,15 @@
 package middleware
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
 // TestSampledLogging_SanitizesMethod ensures the production-recommended
@@ -116,36 +115,32 @@ func TestLogging_LongPathTruncated(t *testing.T) {
 	}
 }
 
-// captureHandler is a minimal slog.Handler that stores the last record's
-// attributes verbatim (no JSON/text escaping), so a test can detect raw
-// control bytes that a real JSON handler would have escaped away.
-type captureHandler struct {
-	mu    sync.Mutex
-	attrs map[string]string
+// logSink is one middleware that logs a request-derived path/method
+// attribute. async marks the sinks whose request log fires from a watcher
+// goroutine after ServeHTTP returns (timeout), so a test must poll for the
+// attribute instead of reading it synchronously.
+type logSink struct {
+	name    string
+	handler http.Handler
+	async   bool
 }
 
-func (h *captureHandler) Enabled(context.Context, slog.Level) bool { return true }
-func (h *captureHandler) Handle(_ context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.attrs == nil {
-		h.attrs = map[string]string{}
+// requestLogSinks returns every sink that logs a request-derived value.
+// Shared by the log-injection property tests so a sink added to one is
+// exercised by all of them.
+func requestLogSinks() []logSink {
+	return []logSink{
+		{"logging", Logging()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})), false},
+		{"recovery", Recovery()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+			panic("boom")
+		})), false},
+		{"timeout", Timeout(50 * time.Millisecond)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done() // wait for the deadline, then panic late
+			panic("late")
+		})), true},
 	}
-	r.Attrs(func(a slog.Attr) bool { h.attrs[a.Key] = a.Value.String(); return true })
-	return nil
-}
-func (h *captureHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *captureHandler) WithGroup(string) slog.Handler      { return h }
-
-func (h *captureHandler) get(key string) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.attrs[key]
-}
-func (h *captureHandler) reset() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.attrs = map[string]string{}
 }
 
 // TestLogSinksScrubAndBound pins the two halves of the log-injection
@@ -156,33 +151,16 @@ func (h *captureHandler) reset() {
 // only one half. This loops the property × surface so a new sink can't drift
 // the same way.
 func TestLogSinksScrubAndBound(t *testing.T) {
-	prev := slog.Default()
-	cap := &captureHandler{}
-	slog.SetDefault(slog.New(cap))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	cap := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, cap)
 
-	sinks := []struct {
-		name    string
-		handler http.Handler
-		async   bool // timeout logs from a watcher goroutine after ServeHTTP returns
-	}{
-		{"logging", Logging()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		})), false},
-		{"recovery", Recovery()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-			panic("boom")
-		})), false},
-		{"timeout", Timeout(50 * time.Millisecond)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-			<-r.Context().Done() // wait for the deadline, then panic late
-			panic("late")
-		})), true},
-	}
+	sinks := requestLogSinks()
 
 	// Distinct attack bytes: CR, LF, NUL, DEL.
 	for _, sk := range sinks {
 		t.Run(sk.name, func(t *testing.T) {
 			for _, b := range []byte{'\r', '\n', 0x00, 0x7f} {
-				cap.reset()
+				cap.Reset()
 				req := httptest.NewRequest(http.MethodGet, "/", nil)
 				req.URL.Path = "/test" + string(b) + "END"
 				req.Method = "GE" + string(b) + "T"
@@ -191,34 +169,34 @@ func TestLogSinksScrubAndBound(t *testing.T) {
 				if sk.async {
 					// The timed-out-handler log fires from a watcher goroutine.
 					deadline := time.Now().Add(2 * time.Second)
-					for time.Now().Before(deadline) && cap.get("path") == "" {
+					for time.Now().Before(deadline) && cap.Get("path") == "" {
 						time.Sleep(5 * time.Millisecond)
 					}
 				}
 
-				if got := cap.get("path"); got == "" {
+				if got := cap.Get("path"); got == "" {
 					t.Fatalf("byte=%#x: no path attribute captured", b)
 				} else if strings.ContainsRune(got, rune(b)) {
 					t.Errorf("byte=%#x: raw control byte reached path log attr %q", b, got)
 				}
-				if got := cap.get("method"); strings.ContainsRune(got, rune(b)) {
+				if got := cap.Get("method"); strings.ContainsRune(got, rune(b)) {
 					t.Errorf("byte=%#x: raw control byte reached method log attr %q", b, got)
 				}
 			}
 
 			// Length bound: a 10 KB path must not land in full.
-			cap.reset()
+			cap.Reset()
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.URL.Path = "/" + strings.Repeat("A", 10000)
 			sk.handler.ServeHTTP(httptest.NewRecorder(), req)
 			if sk.async {
 				deadline := time.Now().Add(2 * time.Second)
-				for time.Now().Before(deadline) && cap.get("path") == "" {
+				for time.Now().Before(deadline) && cap.Get("path") == "" {
 					time.Sleep(5 * time.Millisecond)
 				}
 			}
-			if strings.Contains(cap.get("path"), strings.Repeat("A", 10000)) {
-				t.Errorf("10KB path logged unbounded: %d bytes", len(cap.get("path")))
+			if strings.Contains(cap.Get("path"), strings.Repeat("A", 10000)) {
+				t.Errorf("10KB path logged unbounded: %d bytes", len(cap.Get("path")))
 			}
 		})
 	}
@@ -251,42 +229,25 @@ func TestScrubControlBytes_FullC0Range(t *testing.T) {
 // forged 10 KB method string lands in the log whole. Recovery/Logging both
 // logged it unbounded after the path got its cap.
 func TestLogSinks_BoundMethod(t *testing.T) {
-	prev := slog.Default()
-	cap := &captureHandler{}
-	slog.SetDefault(slog.New(cap))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	cap := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, cap)
 
-	sinks := []struct {
-		name    string
-		handler http.Handler
-		async   bool
-	}{
-		{"logging", Logging()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		})), false},
-		{"recovery", Recovery()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-			panic("boom")
-		})), false},
-		{"timeout", Timeout(50 * time.Millisecond)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-			<-r.Context().Done()
-			panic("late")
-		})), true},
-	}
+	sinks := requestLogSinks()
 
 	const huge = 10000
 	for _, sk := range sinks {
 		t.Run(sk.name, func(t *testing.T) {
-			cap.reset()
+			cap.Reset()
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.Method = strings.Repeat("X", huge)
 			sk.handler.ServeHTTP(httptest.NewRecorder(), req)
 			if sk.async {
 				deadline := time.Now().Add(2 * time.Second)
-				for time.Now().Before(deadline) && cap.get("method") == "" {
+				for time.Now().Before(deadline) && cap.Get("method") == "" {
 					time.Sleep(5 * time.Millisecond)
 				}
 			}
-			got := cap.get("method")
+			got := cap.Get("method")
 			if got == "" {
 				t.Fatalf("no method attribute captured")
 			}
@@ -305,10 +266,8 @@ func TestLogSinks_BoundMethod(t *testing.T) {
 // property: the logged "error" attribute never exceeds maxRecoveryPanicLen,
 // even when every byte expands on encoding.
 func TestRecovery_EncodeBeforeTruncate(t *testing.T) {
-	prev := slog.Default()
-	cap := &captureHandler{}
-	slog.SetDefault(slog.New(cap))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	cap := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, cap)
 
 	h := Recovery()(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		panic(strings.Repeat("\r", maxRecoveryPanicLen))
@@ -316,7 +275,7 @@ func TestRecovery_EncodeBeforeTruncate(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	h.ServeHTTP(httptest.NewRecorder(), req)
 
-	got := cap.get("error")
+	got := cap.Get("error")
 	if got == "" {
 		t.Fatalf("no error attribute captured")
 	}
@@ -334,10 +293,8 @@ func TestRecovery_EncodeBeforeTruncate(t *testing.T) {
 // maxRecoveryPanicLen. The property: the logged "error" attribute never
 // exceeds maxRecoveryPanicLen, even when every byte expands on encoding.
 func TestTimeout_EncodeBeforeTruncate(t *testing.T) {
-	prev := slog.Default()
-	cap := &captureHandler{}
-	slog.SetDefault(slog.New(cap))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	cap := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, cap)
 
 	h := Timeout(50 * time.Millisecond)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done() // wait for the deadline, then panic late
@@ -348,11 +305,11 @@ func TestTimeout_EncodeBeforeTruncate(t *testing.T) {
 
 	// The late-panic log fires from a watcher goroutine after the 504.
 	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && cap.get("error") == "" {
+	for time.Now().Before(deadline) && cap.Get("error") == "" {
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	got := cap.get("error")
+	got := cap.Get("error")
 	if got == "" {
 		t.Fatalf("no error attribute captured (late-panic watcher did not fire)")
 	}

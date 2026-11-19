@@ -3,29 +3,15 @@
 package macos
 
 import (
-	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"testing"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
 )
 
 func TestStyleOriginUsesPrimary(t *testing.T) {
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, executable, "-test.run=^$")
-	command.Env = append(os.Environ(), "GOFASTR_TEST_STYLE_ORIGIN=1")
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("style coordinate check: %v\n%s", err, output)
-	}
+	nativeCheck(t, "GOFASTR_TEST_STYLE_ORIGIN", "style coordinate check")
 }
 
 func styleOriginCheck() int {

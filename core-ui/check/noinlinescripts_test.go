@@ -228,23 +228,7 @@ var _ = `+"`<script>alert(1)</script>`"+`
 //
 //gofastr:test-reads *.go
 func TestLintNoInlineScripts_RepoIsClean(t *testing.T) {
-	// Locate repo root by walking up from this file until we find
-	// go.mod. Avoids hard-coded relative paths fragile to refactors.
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := wd
-	for {
-		if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
-			break
-		}
-		parent := filepath.Dir(root)
-		if parent == root {
-			t.Skip("could not locate repo root")
-		}
-		root = parent
-	}
+	root := repoRoot(t)
 	res, err := LintNoInlineScriptsRecursive(root)
 	if err != nil {
 		t.Fatal(err)
@@ -252,5 +236,27 @@ func TestLintNoInlineScripts_RepoIsClean(t *testing.T) {
 	if res.HasErrors() {
 		t.Errorf("repo contains inline-<script> violations — `make build` would refuse to compile:\n%s",
 			strings.TrimSpace(res.Error()))
+	}
+}
+
+// repoRoot locates the repository root by walking up from this file until
+// we find go.mod. It avoids hard-coded relative paths fragile to refactors
+// and skips when the root cannot be found.
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := wd
+	for {
+		if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
+			return root
+		}
+		parent := filepath.Dir(root)
+		if parent == root {
+			t.Skip("could not locate repo root")
+		}
+		root = parent
 	}
 }

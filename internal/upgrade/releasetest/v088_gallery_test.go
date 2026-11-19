@@ -1,7 +1,6 @@
 package releasetest
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
@@ -22,19 +21,7 @@ func BaseCSS(t Theme) string     { return "" }
 // through the shipped YAML.
 func v088Note(t *testing.T, prefix string) *upgrade.Note {
 	t.Helper()
-	reg := scantest.Registry(t)
-	for _, rel := range reg.Releases {
-		if rel.Version != "v0.88.0" {
-			continue
-		}
-		for i := range rel.Notes {
-			if strings.HasPrefix(rel.Notes[i].Change, prefix) {
-				return rel.Notes[i]
-			}
-		}
-	}
-	t.Fatalf("no v0.88.0 note starting %q", prefix)
-	return nil
+	return shippedNote(t, "v0.88.0", prefix)
 }
 
 // v088Hits runs one note over a one-file app built on kit.

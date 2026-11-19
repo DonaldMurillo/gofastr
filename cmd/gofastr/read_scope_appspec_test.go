@@ -58,22 +58,7 @@ func TestExampleReadScopeBoots(t *testing.T) {
 	}
 
 	anon := func(table string) []map[string]any {
-		t.Helper()
-		resp, err := http.Get(baseURL + "/api/" + table)
-		if err != nil {
-			t.Fatalf("GET /api/%s: %v", table, err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("GET /api/%s = %d, want 200 (a blank read: serves anonymous callers)", table, resp.StatusCode)
-		}
-		var envelope struct {
-			Data []map[string]any `json:"data"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-			t.Fatalf("decode /api/%s payload: %v", table, err)
-		}
-		return envelope.Data
+		return apiRows(t, http.DefaultClient, baseURL, table)
 	}
 
 	anonPosts := anon("posts")
@@ -118,22 +103,7 @@ func TestExampleReadScopeBoots(t *testing.T) {
 	}
 
 	authed := func(table string) []map[string]any {
-		t.Helper()
-		resp, err := client.Get(baseURL + "/api/" + table)
-		if err != nil {
-			t.Fatalf("authed GET /api/%s: %v", table, err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("authed GET /api/%s = %d, want 200", table, resp.StatusCode)
-		}
-		var envelope struct {
-			Data []map[string]any `json:"data"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-			t.Fatalf("decode authed /api/%s: %v", table, err)
-		}
-		return envelope.Data
+		return apiRows(t, client, baseURL, table)
 	}
 
 	var sawDraft bool
@@ -154,4 +124,24 @@ func TestExampleReadScopeBoots(t *testing.T) {
 	if !sawUnapproved {
 		t.Error("signed-in /api/testimonials did not serve the seeded unapproved testimonial")
 	}
+}
+
+// apiRows GETs <baseURL>/api/<table> with c and decodes the data envelope.
+func apiRows(t *testing.T, c *http.Client, baseURL, table string) []map[string]any {
+	t.Helper()
+	resp, err := c.Get(baseURL + "/api/" + table)
+	if err != nil {
+		t.Fatalf("GET /api/%s: %v", table, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/%s = %d, want 200", table, resp.StatusCode)
+	}
+	var envelope struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode /api/%s payload: %v", table, err)
+	}
+	return envelope.Data
 }

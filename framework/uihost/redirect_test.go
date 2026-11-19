@@ -12,6 +12,20 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
+// requireHardRedirect asserts a hard GET of path yields a permanent (308)
+// redirect to wantLocation, short-circuiting before screen resolution.
+func requireHardRedirect(t *testing.T, ds *UIHost, path, wantLocation string) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	if rec.Code != http.StatusPermanentRedirect {
+		t.Fatalf("GET %s: got %d, want 308", path, rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != wantLocation {
+		t.Errorf("Location: got %q, want %s", loc, wantLocation)
+	}
+}
+
 // A hard GET of a redirect path yields a permanent (308) redirect to the
 // resolved target, short-circuiting before screen resolution.
 func TestRedirectHardGET308(t *testing.T) {
@@ -19,16 +33,7 @@ func TestRedirectHardGET308(t *testing.T) {
 	a.Register("/", &testHomeComp{}, nil)
 	a.Redirect("/old", "/new")
 	a.Register("/new", &testHomeComp{}, nil)
-	ds := New(a)
-
-	rec := httptest.NewRecorder()
-	ds.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/old", nil))
-	if rec.Code != http.StatusPermanentRedirect {
-		t.Fatalf("GET /old: got %d, want 308", rec.Code)
-	}
-	if loc := rec.Header().Get("Location"); loc != "/new" {
-		t.Errorf("Location: got %q, want /new", loc)
-	}
+	requireHardRedirect(t, New(a), "/old", "/new")
 }
 
 // A pattern redirect resolves the passthrough params into the Location.
@@ -37,16 +42,7 @@ func TestRedirectPatternHardGET308(t *testing.T) {
 	a.Register("/", &testHomeComp{}, nil)
 	a.RedirectPattern("/old/{id}", "/new/{id}")
 	a.Register("/new/{id}", &paramJSONComp{}, nil)
-	ds := New(a)
-
-	rec := httptest.NewRecorder()
-	ds.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/old/42", nil))
-	if rec.Code != http.StatusPermanentRedirect {
-		t.Fatalf("GET /old/42: got %d, want 308", rec.Code)
-	}
-	if loc := rec.Header().Get("Location"); loc != "/new/42" {
-		t.Errorf("Location: got %q, want /new/42", loc)
-	}
+	requireHardRedirect(t, New(a), "/old/42", "/new/42")
 }
 
 // The route manifest carries the redirect target so the client can rewrite

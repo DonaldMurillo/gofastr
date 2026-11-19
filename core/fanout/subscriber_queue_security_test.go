@@ -3,11 +3,11 @@ package fanout
 import (
 	"context"
 	"os"
-	"os/exec"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/reexectest"
 )
 
 // Property: panic isolation at extension points. A panicking subscriber
@@ -35,19 +35,10 @@ func TestSubscriberPanicDoesNotKillProcess(t *testing.T) {
 		subscriberPanicChild()
 		return // unreachable; subscriberPanicChild exits
 	}
-
-	cmd := exec.Command(os.Args[0],
-		"-test.run", "^TestSubscriberPanicDoesNotKillProcess$",
-		"-test.count=1")
-	cmd.Env = append(os.Environ(), panicChildEnv+"=1")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("subscriber panic killed the process: %v\n--- child output ---\n%s",
-			err, out)
-	}
-	if strings.Contains(string(out), "panic:") {
-		t.Fatalf("child reported a panic:\n%s", out)
-	}
+	reexectest.RunChild(t, "TestSubscriberPanicDoesNotKillProcess", panicChildEnv,
+		"[subscriber-panic]",
+		"[subscriber-panic] a panicking subscriber callback killed the process: "+
+			"the SubscriberQueue drainer did not survive it")
 }
 
 // subscriberPanicChild is the child-side scenario. It never returns.

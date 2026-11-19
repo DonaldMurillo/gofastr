@@ -2,10 +2,6 @@ package mcpclient
 
 import (
 	"context"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -54,11 +50,7 @@ import (
 // stub_windows_test.go).
 func writeAmbigEnvStub(t *testing.T, mode string) string {
 	t.Helper()
-	dir := t.TempDir()
-	if runtime.GOOS == "windows" {
-		src := filepath.Join(dir, "ambstub.go")
-		bin := filepath.Join(dir, "ambstub.exe")
-		const source = `package main
+	const source = `package main
 
 import (
   "bufio"
@@ -94,16 +86,7 @@ func main() {
   }
 }
 `
-		if err := os.WriteFile(src, []byte(source), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if out, err := exec.Command("go", "build", "-o", bin, src).CombinedOutput(); err != nil {
-			t.Fatalf("setup broken: build ambiguous-envelope stub: %v\n%s", err, out)
-		}
-		return bin
-	}
-	path := filepath.Join(dir, "amb-mcp.sh")
-	script := `#!/bin/sh
+	const script = `#!/bin/sh
 mode="$1"
 while IFS= read -r line; do
   case "$line" in
@@ -124,10 +107,7 @@ while IFS= read -r line; do
   esac
 done
 `
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return writePeerStub(t, "ambstub", "amb-mcp.sh", "ambiguous-envelope stub", source, script)
 }
 
 // TestResponseRedRefusesAmbiguousEnvelope: the stub answers the first

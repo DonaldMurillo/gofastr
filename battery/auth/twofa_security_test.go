@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -275,17 +273,13 @@ func TestTwoFARegenerateDoesNotResurrect(t *testing.T) {
 // ─── Single-use TOTP under concurrent presentation ────────────────────────
 
 // rendezvousTwoFAStore pins the read→write race window in challengeHandler
-// open deterministically: when armed, the FIRST GetTwoFA call reads its
-// snapshot and then blocks until the SECOND arrives. Both callers therefore
-// hold pre-write copies of the state before either can reach the write — no
-// scheduling luck involved. The fix (CompareAndSwapTwoFA on the read state)
-// makes each write conditional, so the second presentation's swap fails.
+// open deterministically: when armed, both callers hold pre-write copies
+// of the 2FA state before either can reach the write. The fix
+// (CompareAndSwapTwoFA on the read state) makes each write conditional,
+// so the second presentation's swap fails.
 type rendezvousTwoFAStore struct {
 	*MemoryTwoFAStore
-	armed     atomic.Bool
-	entered   atomic.Int64
-	release   chan struct{}
-	closeOnce sync.Once
+	rendezvous
 }
 
 func (s *rendezvousTwoFAStore) GetTwoFA(ctx context.Context, userID string) (*TwoFAState, error) {
@@ -293,19 +287,8 @@ func (s *rendezvousTwoFAStore) GetTwoFA(ctx context.Context, userID string) (*Tw
 	if err != nil {
 		return nil, err
 	}
-	if s.armed.Load() {
-		if s.entered.Add(1) == 1 {
-			select {
-			case <-s.release:
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(10 * time.Second):
-				// Fall through rather than hang forever; the assertions
-				// below report whatever actually happened.
-			}
-		} else {
-			s.closeOnce.Do(func() { close(s.release) })
-		}
+	if err := s.gate(ctx); err != nil {
+		return nil, err
 	}
 	return st, nil
 }
@@ -319,7 +302,7 @@ func TestTwoFAChallengeCodeSingleUseConcurrent(t *testing.T) {
 
 	rendezvous := &rendezvousTwoFAStore{
 		MemoryTwoFAStore: twofa.store.(*MemoryTwoFAStore),
-		release:          make(chan struct{}),
+		rendezvous:       rendezvous{release: make(chan struct{})},
 	}
 	twofa.store = rendezvous
 

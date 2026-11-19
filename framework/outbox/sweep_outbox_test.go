@@ -160,7 +160,7 @@ func TestRelayWithNoConsumersWarns(t *testing.T) {
 }
 
 func TestRelayStartRewritesTimeTextToBindLayout(t *testing.T) {
-	db, o := openPureOutbox(t)
+	db, o := openOutbox(t, WithPollInterval(time.Millisecond))
 	ctx := context.Background()
 	other := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339Nano)
 	if _, err := db.ExecContext(ctx, `INSERT INTO event_outbox (id, type, payload, status, attempts, created_at)

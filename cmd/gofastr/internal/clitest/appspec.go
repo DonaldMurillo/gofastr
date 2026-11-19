@@ -2,7 +2,6 @@ package clitest
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -74,25 +73,7 @@ func AssertContains(t *testing.T, haystack, needle string) {
 	}
 }
 
+// CaptureStdout is CovT_capStdout under the name the appspec-era tests use.
 func CaptureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	old := os.Stdout
-	f, err := os.CreateTemp(t.TempDir(), "stdout-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stdout = f
-	defer func() {
-		os.Stdout = old
-		_ = f.Close()
-	}()
-	fn()
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		t.Fatal(err)
-	}
-	out, err := io.ReadAll(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(out)
+	return CovT_capStdout(t, fn)
 }

@@ -7,30 +7,15 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
-
 	mcpcore "github.com/DonaldMurillo/gofastr/core/mcp"
-	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/kiln/agent/mcp"
-	"github.com/DonaldMurillo/gofastr/kiln/db"
-	"github.com/DonaldMurillo/gofastr/kiln/journal"
-	"github.com/DonaldMurillo/gofastr/kiln/live"
+	"github.com/DonaldMurillo/gofastr/kiln/internal/kilntest"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 )
 
 func setup(t *testing.T) *protocol.Tools {
 	t.Helper()
-	d, cleanup, err := db.EphemeralSQLite("kiln-mcp")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(cleanup)
-	factory := func() *framework.App { return framework.NewApp(framework.WithDB(d)) }
-	l, err := live.New(journal.NewMemory(), factory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return protocol.New(l)
+	return kilntest.NewTools(t, "kiln-mcp")
 }
 
 func TestRegisterAllTools(t *testing.T) {

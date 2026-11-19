@@ -172,18 +172,16 @@ type resourceContentItem struct {
 // description are the disclosure, the same way a template's uriTemplate
 // and description are.
 func (s *Server) handleResourcesList(ctx context.Context, req Request) Response {
-	offset, err := s.listOffset(req, "resources/list")
-	if err != nil {
-		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
-	}
 	// A resource the caller cannot read is not listed to them: the
 	// URI, name and description are the disclosure.
-	page, next := gatedListPage(s, ctx, "resources/list", offset,
+	return gatedListResponse(s, ctx, req, "resources/list",
 		func() map[string]Resource { return s.resources },
 		func(r Resource) func(context.Context) error { return r.gate },
 		func(a, b Resource) int { return strings.Compare(a.URI, b.URI) },
+		func(page []Resource, next string) any {
+			return resourcesListResult{Resources: requiredArray(page), NextCursor: next}
+		},
 	)
-	return newSuccessResponse(req.ID, resourcesListResult{Resources: page, NextCursor: next})
 }
 
 // handleResourcesRead resolves a resource by uri and returns its contents.

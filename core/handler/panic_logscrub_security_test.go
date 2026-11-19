@@ -3,12 +3,12 @@ package handler
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
 // Pins: a recovered panic value embedding request-derived text reaches
@@ -29,44 +29,9 @@ import (
 // Probe note: the panic value embeds the control bytes RAW (fmt %s), not
 // %q-escaped — %q pre-escapes them, which would hide the surface.
 
-// redPanicScrubSink is a minimal slog.Handler storing record attributes
-// verbatim (no JSON/text escaping), so a test can detect raw control bytes
-// a real handler would have escaped away. Unique-prefix replica of
-// middleware's captureHandler pattern (logging_security_test.go).
-type redPanicScrubSink struct {
-	mu    sync.Mutex
-	attrs map[string]string
-}
-
-func (h *redPanicScrubSink) Enabled(context.Context, slog.Level) bool { return true }
-
-func (h *redPanicScrubSink) Handle(_ context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.attrs == nil {
-		h.attrs = map[string]string{}
-	}
-	r.Attrs(func(a slog.Attr) bool {
-		h.attrs[a.Key] = a.Value.String()
-		return true
-	})
-	return nil
-}
-
-func (h *redPanicScrubSink) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *redPanicScrubSink) WithGroup(string) slog.Handler      { return h }
-
-func (h *redPanicScrubSink) redGet(key string) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.attrs[key]
-}
-
 func TestHandlerAdapterRedPanicLogScrub(t *testing.T) {
-	prev := slog.Default()
-	sink := &redPanicScrubSink{}
-	slog.SetDefault(slog.New(sink))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	sink := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, sink)
 
 	// Request-derived text carrying raw C0/DEL/C1/bidi bytes, embedded in
 	// the panic value the way a handler echoing user input would build it.
@@ -80,9 +45,9 @@ func TestHandlerAdapterRedPanicLogScrub(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("setup broken: recovered panic did not produce 500 (got %d)", rec.Code)
 	}
-	got := sink.redGet("error")
+	got := sink.Get("error")
 	if got == "" {
-		t.Fatalf("setup broken: panic value never reached the slog sink (attrs=%v)", sink.attrs)
+		t.Fatalf("setup broken: panic value never reached the slog sink (attrs=%v)", sink.Attrs())
 	}
 	for _, bad := range []string{"\r", "\u202E", "\u009B", "\x00", "\x7f"} {
 		if strings.Contains(got, bad) {
@@ -102,8 +67,8 @@ func TestHandlerAdapterRedPanicLogScrub(t *testing.T) {
 	if rec2.Code != http.StatusInternalServerError {
 		t.Fatalf("setup broken: benign panic did not produce 500 (got %d)", rec2.Code)
 	}
-	if !strings.Contains(sink.redGet("error"), "benign panic message") {
+	if !strings.Contains(sink.Get("error"), "benign panic message") {
 		t.Errorf("SECURITY: [handler-panic-log-scrub] positive control: benign panic text was "+
-			"destroyed on the way to the log (got %q)", sink.redGet("error"))
+			"destroyed on the way to the log (got %q)", sink.Get("error"))
 	}
 }
