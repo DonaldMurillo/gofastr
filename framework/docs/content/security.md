@@ -217,9 +217,10 @@ hosts. In that case, `'strict-dynamic'` with nonces or hashes is the
 way to keep those hosts from becoming a bypass. Every script written
 into the HTML then needs its own nonce or hash, `runtime.js` included:
 a hash for an inline block authorizes nothing else, and a hash for an
-external script also needs a matching `integrity` attribute. Scripts
-an authorized script loads at runtime need neither. Static exports
-can't use nonces.
+external script also needs a matching `integrity` attribute. A script
+an authorized script inserts as an element (`createElement`) needs
+neither; one it writes with `document.write` counts as written into the
+HTML and does. Static exports can't use nonces.
 
 ### Configuring the default chain's headers
 
