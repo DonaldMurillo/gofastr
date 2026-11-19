@@ -215,3 +215,19 @@ func TestRefusedSubmitSkipsADisabledFieldset(t *testing.T) {
 		t.Errorf("focus after the refused submit is on %q, want the first enabled refused field %q", got, "email")
 	}
 }
+
+// A refused radio group whose last radio, the one report marks, is
+// disabled still takes focus on an enabled radio.
+func TestRefusedRadioGroupWithADisabledLastRadio(t *testing.T) {
+	got := focusAfterRefusal(t, `<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
+  <fieldset data-hui-field=""><legend>Plan</legend>
+    <input type="radio" id="p-free" name="plan" value="free">
+    <input type="radio" id="p-team" name="plan" value="team" disabled>
+  </fieldset>
+  <div data-hui-field=""><label for="email">Email</label><input id="email" name="email" value=""></div>
+  <button type="submit" id="go">Save</button>
+</form>`, `{"plan":["is required"],"email":["is required"]}`, "email-error", nil, clickSave())
+	if got != "p-free" {
+		t.Errorf("focus after the refused submit is on %q, want the enabled radio %q", got, "p-free")
+	}
+}

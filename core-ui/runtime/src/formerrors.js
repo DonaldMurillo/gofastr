@@ -143,12 +143,17 @@
       // holds a control associated from outside the form (form="id").
       // A hidden input (a combobox's value) or a disabled control (its own
       // attribute or a disabled fieldset's) cannot take focus.
-      let first = [...form.elements].find((e) => e.type !== 'hidden' && !e.matches(':disabled') && e.getAttribute('aria-invalid') === 'true');
-      // A radio group is marked on its last radio; the reader lands on
-      // the checked one, or the first.
-      if (first && first.type === 'radio') {
-        const g = [...form.elements].filter((e) => e.type === 'radio' && e.name === first.name && !e.matches(':disabled'));
-        first = g.find((e) => e.checked) || g[0];
+      let first = null;
+      for (const e of form.elements) {
+        if (e.type === 'hidden' || e.getAttribute('aria-invalid') !== 'true') continue;
+        if (e.type === 'radio') {
+          // A refused group is marked on its last radio, which may be
+          // disabled; the reader lands on its checked radio, or its
+          // first, among those that can take focus.
+          const g = [...form.elements].filter((r) => r.type === 'radio' && r.name === e.name && !r.matches(':disabled'));
+          first = g.find((r) => r.checked) || g[0];
+        } else if (!e.matches(':disabled')) first = e;
+        if (first) break;
       }
       if (first && (!a || a === document.body || form.contains(a) || a.form === form)) first.focus();
     }
