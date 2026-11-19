@@ -32,6 +32,7 @@ type oaJSDescriptor struct {
 	BodyType     string      `json:"bodyType"`
 	BodyRequired bool        `json:"bodyRequired"`
 	Result       string      `json:"result"`
+	Accept       string      `json:"accept"`
 	Auth         []string    `json:"auth"`
 }
 
@@ -81,6 +82,7 @@ func oaJSDescribe(op oaSDKOp) oaJSDescriptor {
 	if op.AuthHeader != "" {
 		d.Auth = []string{op.AuthHeader, op.AuthPrefix}
 	}
+	d.Accept = op.Accept
 	return d
 }
 
@@ -136,12 +138,16 @@ func renderOASDKJSFiles(spec oaSDKSpec) []GeneratedFile {
 	dts.WriteString("export declare class Client {\n  constructor(opts: { baseURL: string; token?: string; fetch?: typeof fetch; maxBlobBytes?: number });\n  baseURL: string;\n  token: string;\n  /** The most bytes a binary answer is read into a Blob from (default 32 MiB). */\n  maxBlobBytes: number;\n")
 	for _, op := range spec.Ops {
 		var args []string
-		if op.ParamsType != "" {
-			opt := "?"
-			if oaHasRequiredParam(op) {
-				opt = ""
-			}
-			args = append(args, "params"+opt+": "+op.ParamsType)
+		bodyRequired := op.BodyRequired && (op.Body != nil || op.BodyKind == "binary")
+		switch {
+		case op.ParamsType == "":
+		case oaHasRequiredParam(op):
+			args = append(args, "params: "+op.ParamsType)
+		case bodyRequired:
+			// An optional parameter cannot come before a required one.
+			args = append(args, "params: "+op.ParamsType+" | undefined")
+		default:
+			args = append(args, "params?: "+op.ParamsType)
 		}
 		switch {
 		case op.Body != nil:
@@ -160,7 +166,8 @@ func renderOASDKJSFiles(spec oaSDKSpec) []GeneratedFile {
 		result := "null"
 		switch op.Result {
 		case "json":
-			result = op.ResultType.tsExpr()
+			// An empty or 204 answer resolves to null.
+			result = op.ResultType.tsExpr() + " | null"
 		case "binary":
 			result = "Blob"
 		}
@@ -297,6 +304,7 @@ const jsOAClientTail = `  async do(method, path, body) {
         headers[name] = String(value);
       }
     }
+    if (op.accept && !Object.keys(headers).some((k) => k.toLowerCase() === "accept")) headers.Accept = op.accept;
     let payload;
     let contentType = "";
     if (body !== undefined && body !== null) {

@@ -40,6 +40,9 @@ type oaSDKOp struct {
 	// Result is "", "json" or "binary"; ResultType types a JSON one.
 	Result     string
 	ResultType *oaType
+	// Accept is the Accept header the operation sends: the JSON type it
+	// reads, or the binary types it takes; "" sends none.
+	Accept string
 }
 
 // oaGoClientMembers are the Go Client's fields and methods, which an
@@ -190,11 +193,11 @@ func buildOASDKOp(ts *oaTypeSet, op cliOp) (oaSDKOp, error) {
 		}
 	}
 
-	result, schema, err := oaResponse(ts.root, op.node)
+	result, schema, accept, err := oaResponse(ts.root, op.node)
 	if err != nil {
 		return sop, err
 	}
-	sop.Result = result
+	sop.Result, sop.Accept = result, accept
 	if result == "json" {
 		if sop.ResultType, _, err = ts.typeOf(schema, op.GoName+"Response"); err != nil {
 			return sop, fmt.Errorf("response: %w", err)
@@ -218,10 +221,12 @@ func oaRequestSchema(root, node map[string]any) (map[string]any, error) {
 }
 
 // oaResponse reads the operation's success answer: the lowest 2xx
-// response that has content. Every media type JSON makes a "json" result
-// typed from its schema; any other media type makes the answer "binary",
-// handed to the caller unread. No 2xx content is "".
-func oaResponse(root, node map[string]any) (kind string, schema map[string]any, err error) {
+// response that has content. A JSON media type among its types makes a
+// "json" result typed from that schema (application/json first), asked
+// for with an Accept of that type; with none, the answer is "binary",
+// handed to the caller unread, and Accept lists its types. No 2xx content
+// is "".
+func oaResponse(root, node map[string]any) (kind string, schema map[string]any, accept string, err error) {
 	responses, _ := node["responses"].(map[string]any)
 	codes := slices.DeleteFunc(slices.Sorted(maps.Keys(responses)), func(code string) bool {
 		return !(len(code) == 3 && code[0] == '2' && (code[1:] == "XX" || code[1:] == "xx" || code[1] >= '0' && code[1] <= '9' && code[2] >= '0' && code[2] <= '9'))
@@ -230,36 +235,44 @@ func oaResponse(root, node map[string]any) (kind string, schema map[string]any, 
 		r, _ := responses[code].(map[string]any)
 		r, err := oaResolve(root, orEmpty(r))
 		if err != nil {
-			return "", nil, fmt.Errorf("response %s: %w", code, err)
+			return "", nil, "", fmt.Errorf("response %s: %w", code, err)
 		}
 		content, _ := r["content"].(map[string]any)
 		if len(content) == 0 {
 			continue
 		}
-		types := slices.Sorted(maps.Keys(content))
 		pick := ""
-		for _, ct := range types {
-			if !oaJSONMedia(ct) {
-				return "binary", nil, nil
-			}
-			if pick == "" || ct == "application/json" {
+		var binary []string
+		for _, ct := range slices.Sorted(maps.Keys(content)) {
+			base, _, err := mime.ParseMediaType(ct)
+			switch {
+			case oaJSONMedia(ct) && (pick == "" || base == "application/json"):
 				pick = ct
+			case !oaJSONMedia(ct) && err == nil && !strings.ContainsFunc(base, isControlByte):
+				binary = append(binary, base)
 			}
+		}
+		if pick == "" {
+			return "binary", nil, strings.Join(binary, ", "), nil
 		}
 		media, _ := content[pick].(map[string]any)
 		schema, _ = media["schema"].(map[string]any)
-		return "json", schema, nil
+		base, _, err := mime.ParseMediaType(pick)
+		if err != nil || strings.ContainsFunc(base, isControlByte) {
+			base = "application/json"
+		}
+		return "json", schema, base, nil
 	}
-	return "", nil, nil
+	return "", nil, "", nil
 }
 
-// oaJSONMedia reports application/json or a +json suffix type.
+// oaJSONMedia reports application/json, text/json or a +json suffix type.
 func oaJSONMedia(ct string) bool {
 	base, _, err := mime.ParseMediaType(ct)
 	if err != nil {
 		base = strings.ToLower(strings.TrimSpace(strings.SplitN(ct, ";", 2)[0]))
 	}
-	return base == "application/json" || strings.HasSuffix(base, "+json")
+	return base == "application/json" || base == "text/json" || strings.HasSuffix(base, "+json")
 }
 
 // oaSummary is the operation's summary when the document gives one.
@@ -475,6 +488,10 @@ func renderOASDKMethod(sb *strings.Builder, op oaSDKOp) {
 		}
 		return "", oaGoParamString(f, p.GoType), ""
 	})
+
+	if op.Accept != "" {
+		fmt.Fprintf(sb, "\tif hdr.Get(\"Accept\") == \"\" {\n\t\thdr.Set(\"Accept\", %q)\n\t}\n", op.Accept)
+	}
 
 	caller := "c"
 	if op.AuthHeader != "" {

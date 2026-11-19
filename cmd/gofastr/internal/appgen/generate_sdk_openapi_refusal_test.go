@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -53,6 +54,12 @@ func TestOpenAPISDKRefusals(t *testing.T) {
 		{"parameter fields collide", oaSDKDoc(`{"/a":{"get":{"operationId":"a","parameters":[{"name":"pet_id","in":"query","schema":{"type":"string"}},{"name":"petId","in":"header","schema":{"type":"string"}}]}}}`), "Go field PetId"},
 		{"parameter without a field name", oaSDKDoc(`{"/a":{"get":{"operationId":"a","parameters":[{"name":"@q","in":"query","schema":{"type":"string"}}]}}}`), "does not derive a Go field name"},
 		{"swagger 2", `{"swagger":"2.0","paths":{}}`, "Swagger"},
+		{"object parameter", oaSDKDoc(`{"/a":{"get":{"operationId":"a","parameters":[{"name":"q","in":"query","schema":{"type":"object","properties":{"x":{"type":"string"}}}}]}}}`), "only scalars and arrays of strings are sent as parameters"},
+		{"array of integers", oaSDKDoc(`{"/a":{"get":{"operationId":"a","parameters":[{"name":"q","in":"query","schema":{"type":"array","items":{"type":"integer"}}}]}}}`), "only arrays of strings are sent as repeated parameters"},
+		{"unknown in", oaSDKDoc(`{"/a":{"get":{"operationId":"a","parameters":[{"name":"q","in":"body","schema":{"type":"string"}}]}}}`), "the SDK sends path, query or header parameters"},
+		{"form body", oaSDKDoc(`{"/a":{"post":{"operationId":"a","requestBody":{"content":{"application/x-www-form-urlencoded":{"schema":{"type":"object"}}}}}}}`), "the SDK sends application/json and binary"},
+		{"text body", oaSDKDoc(`{"/a":{"post":{"operationId":"a","requestBody":{"content":{"text/plain":{"schema":{"type":"string"}}}}}}}`), "the SDK sends application/json and binary"},
+		{"header name", oaSDKDoc(`{"/a":{"get":{"operationId":"a","parameters":[{"name":"X(1)","in":"header","schema":{"type":"string"}}]}}}`), "is not a plain header name"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -65,13 +72,24 @@ func TestOpenAPISDKRefusals(t *testing.T) {
 }
 
 // The refusals that only a command line needs stay out of the SDK: a
-// command word the CLI reserves, or a parameter named like a CLI flag,
-// is an ordinary method and field.
+// command word the CLI reserves, a parameter named like a CLI flag, and
+// terminal-control bytes in a summary or description (the SDK folds them
+// out of its comments; the CLI prints them in --help) are fine.
 func TestOpenAPISDKSkipsCLIOnlyRefusals(t *testing.T) {
-	doc := oaSDKDoc(`{"/login":{"post":{"operationId":"login","parameters":[{"name":"token","in":"query","schema":{"type":"string"}},{"name":"url","in":"header","schema":{"type":"string"}}]}}}`)
+	doc := oaSDKDoc(`{"/login":{"post":{"operationId":"login","summary":"sign in\u001b[2J now","parameters":[{"name":"token","in":"query","description":"the\u001b]0;x\u0007 token","schema":{"type":"string"}},{"name":"url","in":"header","schema":{"type":"string"}}]}}}`)
 	spec, err := oaSDKSpecFor(t, doc)
 	if err != nil {
 		t.Fatal(err)
+	}
+	files, err := renderOASDKGoFiles(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := renderOASDKJSFiles(spec)
+	for _, f := range append(files, js...) {
+		if strings.ContainsAny(f.Content, "\x1b\x07") {
+			t.Errorf("%s carries the summary's or description's control bytes", f.Name)
+		}
 	}
 	if len(spec.Ops) != 1 || spec.Ops[0].GoName != "Login" || spec.Ops[0].QueryFields[0] != "Token" || spec.Ops[0].HeaderFields[0] != "Url" {
 		t.Fatalf("ops: %+v", spec.Ops)
@@ -95,18 +113,27 @@ func TestOpenAPISDKUnnameableObjectIsRaw(t *testing.T) {
 	}
 }
 
-// A response that offers any non-JSON media type is binary; one whose
-// media types are all JSON is typed; no 2xx content is no result.
+// A response that offers a JSON media type is typed from it, whatever
+// else it offers, and asks for JSON; one with none is binary and asks for
+// its types; no 2xx content is no result and sends no Accept.
 func TestOpenAPISDKResponseKinds(t *testing.T) {
 	spec, err := oaSDKSpecFor(t, oaSDKFixture)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{"BatchZip": "binary", "DecodeImage": "json", "GenerateBarcode": "binary", "GetSpec": "json", "Ping": "", "ValidateData": "json"}
+	want := map[string][2]string{
+		"BatchZip": {"binary", "application/zip"}, "DecodeImage": {"json", "application/json"},
+		"GenerateBarcode": {"binary", "image/png, image/svg+xml"}, "GetSpec": {"json", "application/json"},
+		"Ping": {"", ""}, "PostOpt": {"", ""}, "UploadOpt": {"json", "application/json"},
+		"ValidateData": {"json", "application/json"},
+	}
 	for _, op := range spec.Ops {
-		if op.Result != want[op.GoName] {
-			t.Errorf("%s: result %q, want %q", op.GoName, op.Result, want[op.GoName])
+		if got := [2]string{op.Result, op.Accept}; got != want[op.GoName] {
+			t.Errorf("%s: result and Accept %q, want %q", op.GoName, got, want[op.GoName])
 		}
+	}
+	if v := spec.Ops[slices.IndexFunc(spec.Ops, func(op oaSDKOp) bool { return op.GoName == "ValidateData" })]; v.ResultType.Name != "ValidateResult" {
+		t.Errorf("ValidateData beside text/plain: result %+v, want the typed ValidateResult", v.ResultType)
 	}
 }
 
@@ -237,9 +264,10 @@ func TestOpenAPISDKRecursiveSchemas(t *testing.T) {
 var oaUnionSettings, _ = filepath.Abs(filepath.Join("testdata", "union", "gofastr.settings.yml"))
 
 // With an entity sdk entry and an OpenAPI one (the union app's layout), a
-// run takes one entry's settings: --from-openapi or --out picks it, and a
-// plain run refuses to guess instead of reading the document from one
-// entry and the output directory from the other.
+// run takes one entry's settings: --from-openapi or --out picks it, or
+// none when it names no entry, and a plain run refuses to guess instead
+// of reading the document from one entry and the output directory from
+// the other. No run writes into another entry's output directory.
 func TestOpenAPISDKEntrySelection(t *testing.T) {
 	union, err := os.ReadFile(oaUnionSettings)
 	if err != nil {
@@ -259,7 +287,11 @@ func TestOpenAPISDKEntrySelection(t *testing.T) {
 		{name: "from-openapi", opts: SdkOptions{fromOpenAPI: "api/openapi.json"}, wantOut: "gen/apisdk", wantDoc: "api/openapi.json"},
 		{name: "out entity", opts: SdkOptions{OutDir: "gen/sdk"}, wantOut: "gen/sdk"},
 		{name: "out openapi", opts: SdkOptions{OutDir: "gen/apisdk"}, wantOut: "gen/apisdk", wantDoc: "api/openapi.json"},
-		{name: "another document", opts: SdkOptions{fromOpenAPI: "other.json"}, wantDoc: "other.json"},
+		{name: "another document", opts: SdkOptions{fromOpenAPI: "other.json"}, wantErr: "gen/sdk is where the sdk entry for the entity set"},
+		{name: "another document elsewhere", opts: SdkOptions{fromOpenAPI: "other.json", OutDir: "gen/other"}, wantOut: "gen/other", wantDoc: "other.json"},
+		{name: "another document over an entry", opts: SdkOptions{fromOpenAPI: "other.json", OutDir: "gen/apisdk"}, wantErr: "the OpenAPI document api/openapi.json"},
+		{name: "a document over the entity entry", opts: SdkOptions{fromOpenAPI: "api/openapi.json", OutDir: "gen/sdk"}, wantErr: "gen/sdk is where the sdk entry for the entity set"},
+		{name: "out unnamed", opts: SdkOptions{OutDir: "gen/x"}, wantOut: "gen/x"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := tc.opts

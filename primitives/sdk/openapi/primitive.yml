@@ -36,8 +36,8 @@ invariants:
     rule: An object whose property names do not all make distinct Go field names is json.RawMessage in Go and unknown in TypeScript, never a struct missing or renaming a property.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKUnnameableObjectIsRaw
-  - id: non-json-answer-is-binary
-    rule: The lowest 2xx response with content decides the result, and any non-JSON media type in it makes the answer binary.
+  - id: json-answer-is-typed
+    rule: The lowest 2xx response with content decides the result; a JSON media type in it types the result and is sent as Accept, whatever else it offers, and with none the answer is binary and Accept lists its types.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKResponseKinds
   - id: go-sdk-wire
@@ -46,7 +46,7 @@ invariants:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
       - test: cmd/gofastr/internal/appgen.TestUnionApp
   - id: stream-timeout-bounds-the-headers
-    rule: DoStream bounds a request by the HTTP client's Timeout only until the response headers arrive, and streams the body for as long as the caller's context allows, while every buffered call keeps the whole-request Timeout.
+    rule: DoStream bounds a request by the HTTP client's Timeout only until the response headers arrive, and streams a 2xx body for as long as the caller's context allows, while a non-2xx error body and every buffered call keep the Timeout.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
   - id: self-reference-is-typed-once
@@ -54,13 +54,22 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKRecursiveSchemas
   - id: one-entry-per-run
-    rule: gofastr generate sdk takes its defaults from one sdk entry, picked by --from-openapi, --out or being the only one, and refuses to guess between two or more.
+    rule: gofastr generate sdk takes its defaults from at most one sdk entry, the one --from-openapi or --out names or else the only one, refuses to guess between two or more, and never writes into another entry's output directory.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKEntrySelection
   - id: only-the-stream-is-unread
     rule: Every read of a response body in the Go SDK's client goes through the 1 MiB cap, except the 2xx body DoStream returns after refusing a non-2xx status.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKClientBodiesBounded
+  - id: js-types-compile
+    rule: The generated client.d.ts passes tsc --strict, declares an all-optional parameter object before a required body as P | undefined, and types a JSON result T | null.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKTypesCompile
+  - id: sdk-refusals-name-the-sdk
+    rule: A refusal the shared walk raises for the SDK names the SDK and its parameters, never a flag or the CLI's help output, and terminal-control bytes in a summary or description are dropped from the SDK's comments instead of refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKRefusals
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKSkipsCLIOnlyRefusals
   - id: js-sdk-wire
     rule: The generated client.js sends each operation as the Go SDK does, resolves a binary answer to a Blob read under maxBlobBytes, reads every other body under 1 MiB, and throws ApiError for a non-2xx answer or a redirect and TypeError for a missing required parameter.
     enforced_by:
@@ -103,6 +112,14 @@ decisions:
       - option: No cap on the Blob.
         why: The SDK, not the caller, buffers it, so a hostile endpoint could fill the page's memory.
     upholds: [js-sdk-wire]
+  - id: json-wins-over-text
+    date: 2026-11-19
+    status: accepted
+    decision: A response offering a JSON media type beside others is typed from the JSON one and asked for with Accept.
+    rejected:
+      - option: Treat any non-JSON media type as a binary answer.
+        why: Swashbuckle lists text/plain and text/json beside application/json on every response, so no operation of such a document got a typed result.
+    upholds: [json-answer-is-typed]
   - id: unnameable-object-is-raw
     date: 2026-11-19
     status: accepted
@@ -126,7 +143,7 @@ decisions:
   - id: refuse-to-guess-an-sdk-entry
     date: 2026-11-19
     status: accepted
-    decision: With two or more sdk entries, gofastr generate sdk needs --from-openapi or --out to pick one, as gofastr generate cli needs --out or --binary.
+    decision: With two or more sdk entries, gofastr generate sdk needs --from-openapi or --out to pick one, as gofastr generate cli needs --out or --binary; a flag that names no entry takes none, and no run writes into another entry's output directory.
     rejected:
       - option: Take the first entry, as before.
         why: The run then mixed entries, reading from_openapi from one and the output directory from another, and wrote the OpenAPI SDK over the entity SDK.

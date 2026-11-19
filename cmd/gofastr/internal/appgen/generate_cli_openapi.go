@@ -880,7 +880,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 	// Derived names land in generated Go source and command tables:
 	// reject anything outside the plain grammar instead of munging.
 	if !oaValidIdent(op.GoName) || !oaValidFlag(op.Command) {
-		return op, fmt.Errorf("operationId %q does not derive a usable command name (letters, digits, - and _ only, not digit-led); rename the operation", id)
+		return op, fmt.Errorf("operationId %q does not derive a usable %s name (letters, digits, - and _ only, not digit-led); rename the operation", id, oaWord(cli, "command", "method"))
 	}
 	summary := method + " " + path
 	if s, ok := opNode["summary"].(string); ok && s != "" {
@@ -899,7 +899,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 	// accepted). The 8-bit C1 spellings (U+0080–U+009F: CSI as U+009B,
 	// OSC as U+009D) drive the same escapes without an ESC prefix, so
 	// they are refused too (2026-09-05 red-probe round).
-	if strings.ContainsFunc(summary, func(r rune) bool {
+	if cli && strings.ContainsFunc(summary, func(r rune) bool {
 		return (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f || textsafe.IsC1(r)
 	}) {
 		return op, fmt.Errorf("operation %q has a summary carrying terminal-control bytes (ESC, CR, BEL or another C0/DEL, or the 8-bit C1 forms U+0080–U+009F): summaries are printed verbatim in the generated CLI's help output. Remove them from the spec", id)
@@ -974,7 +974,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		// Any other in (Swagger 2's body/formData, a typo) matched no case
 		// below and the parameter vanished from the CLI, required or not.
 		if in != "path" && in != "query" && in != "header" {
-			return op, fmt.Errorf("parameter %q has in %q; the CLI sends path, query or header parameters", name, in)
+			return op, fmt.Errorf("parameter %q has in %q; %s sends path, query or header parameters", name, in, oaWord(cli, "the CLI", "the SDK"))
 		}
 		schema, _ := pm["schema"].(map[string]any)
 		if schema != nil {
@@ -988,10 +988,10 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		if !ok {
 			for _, union := range []string{"oneOf", "anyOf"} {
 				if _, present := schema[union]; present {
-					return op, fmt.Errorf("parameter %q has an unsupported %s union; only one non-null scalar branch maps to a flag", name, union)
+					return op, fmt.Errorf("parameter %q has an unsupported %s union; only one non-null scalar branch %s", name, union, oaWord(cli, "maps to a flag", "is a parameter value"))
 				}
 			}
-			return op, fmt.Errorf("parameter %q has a non-scalar schema; only scalars and arrays of strings map to flags", name)
+			return op, fmt.Errorf("parameter %q has a non-scalar schema; only scalars and arrays of strings %s", name, oaWord(cli, "map to flags", "are sent as parameters"))
 		}
 		if repeated {
 			if in == "path" {
@@ -1000,7 +1000,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 			if goType != "string" {
 				// A repeatable flag collects strings; typed validation
 				// would be silently skipped, so refuse rather than lie.
-				return op, fmt.Errorf("parameter %q is an array of %s; only arrays of strings map to repeatable flags", name, goType)
+				return op, fmt.Errorf("parameter %q is an array of %s; only arrays of strings %s", name, goType, oaWord(cli, "map to repeatable flags", "are sent as repeated parameters"))
 			}
 		}
 		joined, err := oaParamJoined(pm, name, in, repeated)
@@ -1013,7 +1013,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		// control byte is refused like a summary's.
 		desc, _ := pm["description"].(string)
 		desc = strings.Join(strings.Fields(desc), " ")
-		if strings.ContainsFunc(desc, func(r rune) bool { return isControlByte(r) || textsafe.IsC1(r) }) {
+		if cli && strings.ContainsFunc(desc, func(r rune) bool { return isControlByte(r) || textsafe.IsC1(r) }) {
 			return op, fmt.Errorf("parameter %q has a description carrying terminal-control bytes: descriptions are printed verbatim in the generated CLI's help output. Remove them from the spec", name)
 		}
 		cp := cliOpParam{
@@ -1171,7 +1171,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 					// must be a plain media type: no control byte (C0, DEL
 					// or C1) that would rewrite the operator's terminal.
 					if strings.ContainsFunc(ct, func(r rune) bool { return isControlByte(r) || textsafe.IsC1(r) }) {
-						return op, fmt.Errorf("request body content type %q carries control bytes: it is printed in the generated CLI's help output and sent as a header. Remove them from the spec", ct)
+						return op, fmt.Errorf("request body content type %q carries control bytes: it is %s. Remove them from the spec", ct, oaWord(cli, "printed in the generated CLI's help output and sent as a header", "sent as a header"))
 					}
 					if _, _, err := mime.ParseMediaType(ct); err != nil || !strings.Contains(ct, "/") {
 						return op, fmt.Errorf("request body content type %q is not a media type (type/subtype)", ct)
@@ -1182,11 +1182,22 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 				}
 			}
 			if op.BodyKind == "" && len(content) > 0 {
-				return op, fmt.Errorf("request body offers %s; supported are application/json and binary (application/octet-stream / format: binary)", strings.Join(slices.Sorted(maps.Keys(content)), ", "))
+				return op, fmt.Errorf("request body offers %s; %s", strings.Join(slices.Sorted(maps.Keys(content)), ", "), oaWord(cli,
+					"supported are application/json and binary (application/octet-stream / format: binary)",
+					"the SDK sends application/json and binary (application/octet-stream / format: binary) bodies"))
 			}
 		}
 	}
 	return op, nil
+}
+
+// oaWord picks a refusal's wording for the generator that reads the
+// document: the CLI, or the SDK.
+func oaWord(cli bool, forCLI, forSDK string) string {
+	if cli {
+		return forCLI
+	}
+	return forSDK
 }
 
 func orEmpty(m map[string]any) map[string]any {

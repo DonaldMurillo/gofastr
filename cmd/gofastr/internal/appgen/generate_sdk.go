@@ -1,6 +1,7 @@
 package appgen
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -174,6 +175,10 @@ func validateSDKModulePath(module string) error {
 }
 
 var sdkValidTargets = map[string]bool{"go": true, "js": true}
+
+// sdkDefaultOut is where a run writes when neither --out nor a settings
+// entry names a directory.
+const sdkDefaultOut = "gen/sdk"
 
 // RunGenerateSDK implements `gofastr generate sdk`.
 func RunGenerateSDK(args []string) {
@@ -452,32 +457,41 @@ func applySDKConfigDefaults(opts *SdkOptions) error {
 		entries = append(entries, sdkEntry{decoded, filepath.ToSlash(filepath.Join(discovery.Config.Codegen.Output, out))})
 	}
 	// A run takes one entry's settings, never a mix of two: --from-openapi
-	// picks the entry for the same document, or none; --out picks the entry
-	// writing there; otherwise the only entry. Two or more need a flag.
+	// picks the entry for the same document, --out the entry writing there,
+	// each or none; with neither, the only entry. Two or more need a flag.
 	picked := entries
 	switch {
 	case opts.fromOpenAPI != "":
 		picked = slices.DeleteFunc(slices.Clone(entries), func(e sdkEntry) bool { return !sameOpenAPISource(e.opts.fromOpenAPI, opts.fromOpenAPI) })
 	case opts.OutDir != "":
-		if same := slices.DeleteFunc(slices.Clone(entries), func(e sdkEntry) bool { return filepath.Clean(e.outDir) != filepath.Clean(opts.OutDir) }); len(same) > 0 {
-			picked = same
-		}
+		picked = slices.DeleteFunc(slices.Clone(entries), func(e sdkEntry) bool { return filepath.Clean(e.outDir) != filepath.Clean(opts.OutDir) })
 	}
-	switch len(picked) {
-	case 0:
-		return nil
-	case 1:
-	default:
+	if len(picked) > 1 {
 		var dirs []string
 		for _, e := range picked {
 			dirs = append(dirs, e.outDir)
 		}
-		return fmt.Errorf("gofastr.settings.yml lists %d sdk entries (%s); pass --out or --from-openapi to pick one", len(picked), strings.Join(dirs, ", "))
+		return fmt.Errorf("gofastr.settings.yml lists %d sdk entries (%s); pass --out with one of those directories, or --from-openapi with an entry's document, to pick one", len(picked), strings.Join(dirs, ", "))
 	}
-	entry := picked[0].opts
-	if opts.OutDir == "" {
+	if len(picked) == 1 && opts.OutDir == "" {
 		opts.OutDir = picked[0].outDir
 	}
+	// Another entry's output directory holds another SDK and its manifest.
+	out := cmp.Or(opts.OutDir, sdkDefaultOut)
+	for _, e := range entries {
+		if filepath.Clean(e.outDir) != filepath.Clean(out) || len(picked) == 1 && e.outDir == picked[0].outDir {
+			continue
+		}
+		source := "the entity set"
+		if e.opts.fromOpenAPI != "" {
+			source = "the OpenAPI document " + e.opts.fromOpenAPI
+		}
+		return fmt.Errorf("%s is where the sdk entry for %s in gofastr.settings.yml writes, and this run is not that entry; pass --out to write somewhere else", out, source)
+	}
+	if len(picked) == 0 {
+		return nil
+	}
+	entry := picked[0].opts
 	for _, field := range []struct {
 		flag       string
 		dst, entry *string
@@ -544,7 +558,7 @@ func settleSDKSpec(opts *SdkOptions) (sdkSpec, error) {
 	}
 	sort.Strings(opts.targets)
 	if opts.OutDir == "" {
-		opts.OutDir = "gen/sdk"
+		opts.OutDir = sdkDefaultOut
 	}
 
 	abs, err := filepath.Abs(".")

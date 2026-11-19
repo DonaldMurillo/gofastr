@@ -10,7 +10,9 @@ import (
 )
 
 // oaSDKFixture is a barcode API in gobarc's shape: JSON and binary
-// answers, a binary upload, a bearer default and one apiKey operation.
+// answers, a binary upload, a bearer default and one apiKey operation,
+// plus a Swashbuckle-style answer offering text/plain beside JSON and two
+// operations whose optional parameters come before a required body.
 const oaSDKFixture = `{
   "openapi": "3.1.0",
   "info": {"title": "barc", "version": "1.0.0"},
@@ -64,7 +66,27 @@ const oaSDKFixture = `{
           "type": "object", "required": ["data"],
           "properties": {"data": {"type": "string"}, "symbology": {"type": "string"}}
         }}}},
-        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ValidateResult"}}}}}
+        "responses": {"200": {"description": "ok", "content": {
+          "application/json": {"schema": {"$ref": "#/components/schemas/ValidateResult"}},
+          "text/json": {"schema": {"$ref": "#/components/schemas/ValidateResult"}},
+          "text/plain": {"schema": {"$ref": "#/components/schemas/ValidateResult"}}
+        }}}
+      }
+    },
+    "/opt": {
+      "post": {
+        "operationId": "postOpt",
+        "parameters": [{"name": "dryRun", "in": "query", "schema": {"type": "boolean"}}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Size"}}}},
+        "responses": {"204": {"description": "done"}}
+      }
+    },
+    "/upload": {
+      "put": {
+        "operationId": "uploadOpt",
+        "parameters": [{"name": "name", "in": "query", "schema": {"type": "string"}}],
+        "requestBody": {"required": true, "content": {"application/octet-stream": {}}},
+        "responses": {"200": {"description": "ok", "content": {"application/json": {"schema": {"type": "integer"}}}}}
       }
     },
     "/spec/{symbology}": {

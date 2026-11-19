@@ -166,6 +166,12 @@ func (c *Client) DoStream(ctx context.Context, method, path string, query url.Va
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer cancel()
 		defer resp.Body.Close()
+		if c.HTTP.Timeout > 0 {
+			// The error body is buffered, so it keeps the Timeout a
+			// buffered call has.
+			errorBody := time.AfterFunc(c.HTTP.Timeout, cancel)
+			defer errorBody.Stop()
+		}
 		return nil, "", statusError(resp)
 	}
 	return &streamBody{ReadCloser: resp.Body, cancel: cancel}, resp.Header.Get("Content-Type"), nil

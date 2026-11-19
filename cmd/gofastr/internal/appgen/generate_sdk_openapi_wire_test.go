@@ -19,13 +19,14 @@ import (
 
 // oaWireRequest is one request the fixture API saw.
 type oaWireRequest struct {
-	Method, Path, Query, Auth, Key, Trace, ContentType string
-	Body                                               string
+	Method, Path, Query, Auth, Key, Trace, ContentType, Accept string
+	Body                                                       string
 }
 
 // oaWireServer answers the oaSDKFixture operations under /api, and under
 // /big/api with bodies past the 1 MiB cap. Under /slow a body takes a
-// second to arrive and under /slowhead the headers do; under /fail every
+// second to arrive, under /slowerr a 500's body does, and under /slowhead
+// the headers do; under /fail every
 // operation answers 500. A request under /redir is
 // redirected to /followed, which records that a client followed it.
 func oaWireServer(t *testing.T) (*httptest.Server, func() []oaWireRequest) {
@@ -44,7 +45,7 @@ func oaWireHandler() (http.Handler, func() []oaWireRequest) {
 		seen = append(seen, oaWireRequest{
 			Method: r.Method, Path: r.URL.EscapedPath(), Query: r.URL.RawQuery,
 			Auth: r.Header.Get("Authorization"), Key: r.Header.Get("X-Barc-Key"), Trace: r.Header.Get("X-Trace"),
-			ContentType: r.Header.Get("Content-Type"), Body: string(body),
+			ContentType: r.Header.Get("Content-Type"), Accept: r.Header.Get("Accept"), Body: string(body),
 		})
 		mu.Unlock()
 		big := strings.HasPrefix(r.URL.Path, "/big/")
@@ -53,6 +54,15 @@ func oaWireHandler() (http.Handler, func() []oaWireRequest) {
 			time.Sleep(700 * time.Millisecond)
 			w.Header().Set("Content-Type", "image/png")
 			_, _ = w.Write([]byte("PNG!"))
+			return
+		}
+		if strings.HasPrefix(path, "/slowerr/") {
+			w.WriteHeader(http.StatusInternalServerError)
+			for range 4 {
+				_, _ = w.Write([]byte("error "))
+				w.(http.Flusher).Flush()
+				time.Sleep(250 * time.Millisecond)
+			}
 			return
 		}
 		if strings.HasPrefix(path, "/slow/") {
@@ -210,6 +220,11 @@ func TestWire(t *testing.T) {
 		t.Fatalf("a stream whose headers outlive Client.Timeout: %v, want the header timeout", err)
 	}
 
+	start := time.Now()
+	if _, err := client.NewClient(base+"/slowerr"+client.APIPrefix, short).BatchZip(ctx, nil); err == nil || time.Since(start) > 800*time.Millisecond {
+		t.Fatalf("a 500 whose body trickles: %v after %s, want an error within Client.Timeout", err, time.Since(start))
+	}
+
 	big := client.NewClient(base+"/big"+client.APIPrefix, nil)
 	if _, err := big.ValidateData(ctx, &client.ValidateDataRequest{Data: "d"}); err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("a JSON answer past the cap: %v, want the cap error", err)
@@ -246,6 +261,9 @@ func checkOAWire(t *testing.T, who string, seen []oaWireRequest) {
 	t.Helper()
 	byPath := map[string]oaWireRequest{}
 	for _, r := range seen {
+		if r.Accept == "*/*" {
+			r.Accept = "" // fetch's own default: the client sent none
+		}
 		if _, dup := byPath[r.Path]; !dup {
 			byPath[r.Path] = r
 		}
@@ -254,10 +272,10 @@ func checkOAWire(t *testing.T, who string, seen []oaWireRequest) {
 		path string
 		want oaWireRequest
 	}{
-		{"/api/generate", oaWireRequest{Method: "POST", Auth: "Bearer tok-1", ContentType: "application/json", Body: `{"data":"x","symbology":"qr"}`}},
-		{"/api/validate", oaWireRequest{Method: "POST", Auth: "Bearer tok-1", ContentType: "application/json", Body: `{"data":"d"}`}},
-		{"/api/spec/qr%2Fx", oaWireRequest{Method: "GET", Auth: "Bearer tok-1", Query: "limit=0&tag=a&tag=b&fields=x%2Cy,z", Trace: "t-1"}},
-		{"/api/decode", oaWireRequest{Method: "POST", Key: "tok-1", ContentType: "image/png", Body: "PNG"}},
+		{"/api/generate", oaWireRequest{Method: "POST", Auth: "Bearer tok-1", ContentType: "application/json", Accept: "image/png, image/svg+xml", Body: `{"data":"x","symbology":"qr"}`}},
+		{"/api/validate", oaWireRequest{Method: "POST", Auth: "Bearer tok-1", ContentType: "application/json", Accept: "application/json", Body: `{"data":"d"}`}},
+		{"/api/spec/qr%2Fx", oaWireRequest{Method: "GET", Auth: "Bearer tok-1", Query: "limit=0&tag=a&tag=b&fields=x%2Cy,z", Trace: "t-1", Accept: "application/json"}},
+		{"/api/decode", oaWireRequest{Method: "POST", Key: "tok-1", ContentType: "image/png", Accept: "application/json", Body: "PNG"}},
 		{"/api/ping", oaWireRequest{Method: "DELETE", Auth: "Bearer tok-1"}},
 	}
 	for _, c := range checks {

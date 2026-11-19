@@ -406,15 +406,31 @@ codegen:
 
 The document is read by the same code as `gofastr generate cli
 --from-openapi` ([App CLI](app-cli.md)), so it is refused for the same
-reasons: a missing or duplicate `operationId`, a parameter style other
-than form (query) or simple (path, header), a cookie parameter, an
-external `$ref`, a Swagger 2 document. The command-line refusals do not
-apply: an operation named `login` or a parameter named `token` is fine
-in an SDK. The SDK adds its own: an `operationId` whose Go method or
-client.js method the client already defines (`Do`, `DoRaw`, `DoStream`,
-`do`, `toString`), a parameter whose name derives no Go field name, or
-two parameters of one operation that derive the same one. A derived type
-name declared twice is refused too. Nothing is renamed.
+reasons:
+
+- a missing or duplicate `operationId`, or one that is not letters,
+  digits, `-` and `_`;
+- a parameter style other than form (query) or simple (path, header), a
+  cookie parameter or an `in` other than path, query and header;
+- a parameter whose schema is not a scalar or an array of strings (an
+  object, an array of numbers, a union of two types), an array path
+  parameter, a header name that is not an HTTP token, or a path template
+  whose placeholders and path parameters do not match;
+- a request body other than `application/json` or binary
+  (`application/octet-stream` or `format: binary`): multipart,
+  form-urlencoded and `text/plain` bodies are refused;
+- an external `$ref`, a `$ref` cycle, a Swagger 2 document, and a
+  document whose only security schemes are neither http bearer nor an
+  apiKey in a header.
+
+The refusals that exist only for a command line do not apply: an
+operation named `login`, a parameter named `token`, and terminal-control
+bytes in a summary or description (the SDK folds them out of its
+comments) are fine. The SDK adds its own: an `operationId` whose Go
+method or client.js method the client already defines (`Do`, `DoRaw`,
+`DoStream`, `do`, `toString`), a parameter whose name derives no Go
+field name, or two parameters of one operation that derive the same one.
+A derived type name declared twice is refused too. Nothing is renamed.
 
 `servers[0].url` gives the default origin and the API prefix, which
 `--api-prefix` replaces, like the CLI. The token goes under the scheme
@@ -444,15 +460,25 @@ defer png.Close()
 | JSON request body | the schema's type; a pointer when `requestBody.required` is not set (nil sends none) |
 | binary request body | an `io.Reader`, sent under the document's media type |
 | JSON response | the schema's type; a struct comes back as a pointer, nil for an empty answer |
-| any non-JSON response (`image/png`, `application/zip`) | an `io.ReadCloser`, unbuffered: the caller reads and closes it |
+| a response with no JSON media type (`image/png`, `application/zip`) | an `io.ReadCloser`, unbuffered: the caller reads and closes it |
 | no 2xx content | `error` only |
+
+The lowest 2xx response with content decides the result. When it offers
+a JSON media type (`application/json`, `text/json` or a `+json` type),
+the result is typed from that schema, `application/json` first, and the
+request sends `Accept` with that type, so a server that also offers
+`text/plain` (as Swashbuckle documents do) answers JSON. With no JSON
+media type the answer is binary and `Accept` lists its types. An
+operation with no 2xx content sends no `Accept`. A header parameter
+named `Accept` replaces it.
 
 A binary answer goes through `DoStream`, where the HTTP client's
 `Timeout` (30 seconds for `NewClient(url, nil)`) bounds the wait for the
 response headers only: the body streams for as long as the request's
 context allows, so a large download is not cut off at 30 seconds. Every
 buffered call (`Do`, `DoRaw`, every JSON operation) keeps the whole-request
-`Timeout`. To bound a download, give the call a context with a deadline.
+`Timeout`, and so does a non-2xx answer's error body under `DoStream`. To
+bound a download, give the call a context with a deadline.
 
 A component schema keeps its name (`#/components/schemas/Size` is
 `Size`); an inline object is named by its place (`ValidateDataRequest`,
@@ -486,7 +512,11 @@ under 1 MiB, and either cap throws `ApiError`. Integers past 2^53 arrive
 as their decimal strings, as in the entity SDK. A redirect is not
 followed (it would carry the token to another origin) and throws
 `ApiError`, as does every non-2xx answer; a missing required parameter
-or body throws `TypeError` before anything is sent. `client.d.ts`
+or body throws `TypeError` before anything is sent. A JSON operation
+resolves to `null` for a 204 or empty answer, and `client.d.ts` declares
+it `Promise<T | null>`. When an operation's parameters are all optional
+and its body is required, its parameter object is declared
+`params: P | undefined` (pass `undefined` for none). `client.d.ts`
 declares the same types the Go SDK has.
 
 **dist and drift.** `manifest.json` records `"source": "openapi"`, an
@@ -559,11 +589,13 @@ The config keys are `name`, `api_prefix`, `module`, `base_url`,
 (every build would fetch it), and takes no `only` or `exclude`: the SDK
 covers every operation in the document. `gofastr generate sdk` takes
 its defaults from one entry, never a mix of two: `--from-openapi` picks
-the entry that names the same document (or none), `--out` the entry
-writing there, and with neither the only entry. A settings file with two
-or more `sdk` entries, such as an entity SDK beside an OpenAPI one, needs
-one of those flags; `gofastr generate` and `gofastr build` run every
-entry into its own output directory.
+the entry that names the same document, `--out` the entry writing to
+that directory, each or no entry; with neither flag, the only entry. A
+settings file with two or more `sdk` entries, such as an entity SDK
+beside an OpenAPI one, needs one of those flags; `gofastr generate` and
+`gofastr build` run every entry into its own output directory. No run
+writes into another entry's output directory: `--from-openapi` with a
+document no entry names, when `gen/sdk` is an entry's, needs `--out`.
 A flag passed empty still wins: `--only=` generates every entity and
 `--api-prefix=` means no prefix, whatever the settings entry says.
 An

@@ -59,7 +59,8 @@ few lines, and link the PR or the docs page for the rest.
   through `_readBytes`, so regenerated `client.js` files change bytes. A
   settings file with two or more `sdk` entries now needs `--out` or
   `--from-openapi` on `gofastr generate sdk` to pick one, instead of
-  taking the first. [#818](https://github.com/DonaldMurillo/gofastr/issues/818)
+  taking the first, and an `--out` that names no entry's directory takes
+  no entry's settings. [#818](https://github.com/DonaldMurillo/gofastr/issues/818)
 
 ### Fixed
 - **A server action on a static page whose policy phase answers not-found
