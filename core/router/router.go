@@ -218,7 +218,7 @@ func (r *Router) Prefix() string { return r.prefix }
 func (r *Router) Root() *Router { return r.root }
 
 // Group returns a sub-router under prefix with mw added to the inherited chain.
-// A top-level prefix is empty, starts with "/", or is a portless host whose first segment has a dot or is localhost; else it panics.
+// A top-level prefix is empty, starts with "/", or is a portless host whose first segment has a dot or is localhost (any case); else it panics.
 func (r *Router) Group(prefix string, mw ...Middleware) *Router {
 	if r.prefix == "" {
 		checkHostPrefix(prefix)
