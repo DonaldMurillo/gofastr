@@ -167,6 +167,9 @@ func TestSweepDefaultSeatCapIsSixteen(t *testing.T) {
 func TestSweepEmptyListingsAnswerArrays(t *testing.T) {
 	refuse := func(context.Context) error { return errors.New("no") }
 	s := NewServer()
+	if err := s.RegisterTool("t", "", nil, func(context.Context, map[string]any) (any, error) { return "ok", nil }, WithToolGate(refuse)); err != nil {
+		t.Fatal(err)
+	}
 	mustRegisterPrompt(t, s, "p", noopPrompt, WithPromptGate(refuse))
 	mustRegisterTemplate(t, s, "ui://t/{id}", "t", WithResourceTemplateGate(refuse))
 	if err := staticResource(s, "ui://r", "r", "text/markdown", "x", WithResourceGate(refuse)); err != nil {
