@@ -19,9 +19,6 @@ import (
 type LocalStorage struct {
 	baseDir string
 
-	// rootMu guards root/rootBase. The root is opened lazily on the
-	// first operation whose base resolves on disk and pinned for the
-	// backend's lifetime, so every syscall can go through it.
 	rootMu       sync.Mutex
 	root         *os.Root
 	rootBase     string
@@ -50,22 +47,9 @@ func (s *LocalStorage) Close() error {
 	return err
 }
 
-// afterResolve is a test seam: when non-nil it runs after a key's
-// containment has been proven on the resolved chain and before the
-// operation's first filesystem syscall — exactly the window an attacker
-// planting a symlink into the tree lives in. Nothing installs it outside
-// the security tests (same pattern as core/router's serveHook); tests
-// using it must not run in parallel.
 var afterResolve func(path string)
 
-// sanitizeKey prevents path traversal in storage keys. It refuses a key
-// rather than cleaning it: "a//b.png", "a/./b.png", "a/b.png/" and
-// "/a/b.png" all name the file of "a/b.png", and erasure deletes the keys
-// a row names, so a row naming an alias deleted another key's file. Every
-// key the framework mints (UniqueFilename, framework/file's
-// GenerateFilePath, the image renditions beside it) is already clean.
 func sanitizeKey(key string) (string, error) {
-	// Reject obvious traversal patterns
 	if strings.Contains(key, "..") {
 		return "", fmt.Errorf("%w: path traversal detected", ErrInvalidKey)
 	}
@@ -75,7 +59,6 @@ func sanitizeKey(key string) (string, error) {
 	if strings.HasPrefix(key, "/") || filepath.IsAbs(key) || filepath.VolumeName(key) != "" {
 		return "", fmt.Errorf("%w: absolute key", ErrInvalidKey)
 	}
-	// The native spelling: RefuseFoldedKey splits it on os.PathSeparator.
 	cleaned := filepath.Clean(key)
 	if filepath.ToSlash(cleaned) != key {
 		return "", fmt.Errorf("%w: key is not in its clean form", ErrInvalidKey)
@@ -83,11 +66,6 @@ func sanitizeKey(key string) (string, error) {
 	return cleaned, nil
 }
 
-// resolvedKey is what every operation needs before it touches the
-// filesystem: the clean key (for error messages), the absolute base
-// (for scrubbing paths out of errors), the symlink-resolved root the
-// path was proven to sit under, and the canonical path filesystem calls
-// actually use.
 type resolvedKey struct {
 	safeKey string
 	absBase string
@@ -95,17 +73,6 @@ type resolvedKey struct {
 	path    string
 }
 
-// resolveKey is the single containment enforcement point for this
-// backend; Save, open (which serves Get and GetRange), Delete, and
-// Exists all route through it, so none can drift from the others. It
-// runs the lexical checks (sanitizeKey plus the absolute-prefix
-// containment) and then [ResolveUnderRoot], which proves containment on
-// the symlink-RESOLVED chain: a symlinked directory or leaf planted
-// inside the storage tree cannot funnel a read, write, or delete
-// outside the root. Save refused that shape first (the probe class
-// framework/contracts' TestApplyRefusesSymlinkEscape pins); the read,
-// delete, and existence surfaces hold the same line. Errors it returns
-// carry no absolute path.
 func (s *LocalStorage) resolveKey(key string) (resolvedKey, error) {
 	safeKey, err := sanitizeKey(key)
 	if err != nil {
@@ -114,7 +81,6 @@ func (s *LocalStorage) resolveKey(key string) (resolvedKey, error) {
 
 	fullPath := filepath.Join(s.baseDir, safeKey)
 
-	// Double-check the resolved path is still within baseDir
 	absBase, err := filepath.Abs(s.baseDir)
 	if err != nil {
 		return resolvedKey{}, fmt.Errorf("resolving base dir: %w", err)
@@ -138,16 +104,6 @@ func (s *LocalStorage) resolveKey(key string) (resolvedKey, error) {
 	return rk, nil
 }
 
-// rootFor returns the backend's *os.Root pinned to rk.root — the
-// symlink-resolved base every key was proven to sit under — opening it
-// on first use and reusing it for the backend's lifetime. It returns
-// nil when the root cannot be opened (base missing or unreadable);
-// callers then fall back to the resolved absolute paths, the
-// resolve-then-open posture the 2026-09-04 security suite pins, whose
-// only residual exposure is a symlink planted between resolution and
-// the syscall. A first Save into a fresh base takes that fallback once
-// (MkdirAll creates the tree) and re-pins the root for the rest of the
-// write.
 func (s *LocalStorage) rootFor(rk resolvedKey) *os.Root {
 	s.rootMu.Lock()
 	defer s.rootMu.Unlock()
@@ -159,17 +115,12 @@ func (s *LocalStorage) rootFor(rk resolvedKey) *os.Root {
 		return nil
 	}
 	if s.root != nil {
-		// Operations keep their root across copies and cleanup. Re-pinning
-		// must not close that handle; Close releases it after callers drain.
 		s.retiredRoots = append(s.retiredRoots, s.root)
 	}
 	s.root, s.rootBase = root, rk.root
 	return root
 }
 
-// rel spells rk.path relative to rk.root for *os.Root calls. ResolveUnderRoot
-// proved the path sits at or under the resolved root, so the trim always
-// yields a valid root-relative name.
 func (rk resolvedKey) rel() string {
 	if rk.path == rk.root {
 		return "."
@@ -177,16 +128,9 @@ func (rk resolvedKey) rel() string {
 	return strings.TrimPrefix(rk.path, rk.root+string(os.PathSeparator))
 }
 
-// CreateTempInRoot is os.CreateTemp for an *os.Root: an O_RDWR|O_CREATE|
-// O_EXCL staging file with a crypto/rand suffix, retried on the
-// collision-impossible EEXIST. os.CreateTemp only accepts absolute
-// directory paths — exactly the post-resolution window this backend
-// exists to close — so the staging create is spelled out through the
-// root instead. Mode 0o600 matches the saved-file mode both local
-// backends apply. Exported because battery/storage's local backend
-// stages its atomic writes through the same root-contained create, the
-// same way it reuses ResolveUnderRoot and ScrubPath, so the two cannot
-// drift.
+// CreateTempInRoot creates a new 0o600 file in relDir under root, named by
+// pattern with its last "*" replaced by random hex, and returns it with
+// its root-relative name.
 func CreateTempInRoot(root *os.Root, relDir, pattern string) (*os.File, string, error) {
 	prefix, suffix := pattern, ""
 	if i := strings.LastIndexByte(pattern, '*'); i >= 0 {
@@ -209,20 +153,9 @@ func CreateTempInRoot(root *os.Root, relDir, pattern string) (*os.File, string, 
 	return nil, "", fmt.Errorf("temp file in %s: too many attempts", relDir)
 }
 
-// Save writes the file to the local filesystem under baseDir/key.
-// It creates subdirectories as needed.
-//
-// On a case-insensitive or normalization-insensitive filesystem (macOS
-// default APFS) the key is refused (see [RefuseFoldedKey]) when an
-// existing object is stored under a byte-different spelling that folds
-// onto the same file; the exact stored key keeps ordinary overwrite
-// semantics.
-//
-// The write is atomic: data lands in a temp file beside the target and
-// is renamed into place, so a reader racing the writer (the ServeHandler
-// + LocalStorage pairing) sees the previous whole object or the new
-// one, never the torn window of an in-flight copy. A failed copy leaves
-// no partial file at the final path.
+// Save writes r to baseDir/key through a temp file renamed into place, so
+// a reader sees the old object or the whole new one. It refuses a key
+// [RefuseFoldedKey] refuses.
 func (s *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -232,46 +165,23 @@ func (s *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error 
 		return err
 	}
 
-	// Every wrap below scrubs the absolute path out of the OS error.
-	// These are os.PathError values naming the full storage path, and
-	// the CRUD handlers echo an upload failure straight into a 400 body —
-	// so an ENAMETOOLONG or EACCES here disclosed the storage layout to
-	// the caller. Get already scrubbed for exactly this reason; the
-	// write side is the one an unauthenticated multipart POST can reach.
 	scrub := func(what, path string, err error) error {
 		return fmt.Errorf("%s: %s", what, ScrubPath(err.Error(), rk.absBase, path))
 	}
 
-	// Refuse a key that folds onto an object stored under a byte-
-	// different spelling BEFORE anything is created or written: on a
-	// case-insensitive or normalization-insensitive filesystem the
-	// MkdirAll below would otherwise plant directories inside the other
-	// key's namespace and the rename would clobber its object. Pinned by
-	// TestFoldedKeysDoNotAlias; battery/storage's local backend holds
-	// the same line through the same shared helper.
 	if err := RefuseFoldedKey(key, rk.path, rk.root, s.rootFor(rk)); err != nil {
 		return err
 	}
 
-	// Create parent directories. Mode 0o700 keeps tenant upload trees
-	// from being enumerable by other local users on a shared host. See
-	// TestLocalStorage_SaveRestrictsDirectoryPermissions for the threat
-	// model (local enumeration of unrelated tenants' upload paths).
 	dir := filepath.Dir(rk.path)
 	root := s.rootFor(rk)
 	if root == nil {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return scrub("creating directories", dir, err)
 		}
-		// The base itself was just created (or appeared); pin the root
-		// now so the staging write and the rename are kernel-contained.
 		root = s.rootFor(rk)
 	}
 	if root != nil {
-		// Kernel-contained write: every syscall below goes through the
-		// *os.Root, so a symlink planted anywhere on the chain after
-		// resolveKey is refused by the openat containment instead of
-		// being followed.
 		rel := rk.rel()
 		if err := root.MkdirAll(filepath.Dir(rel), 0o700); err != nil {
 			return scrub("creating directories", dir, err)
@@ -279,10 +189,6 @@ func (s *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error 
 		if err := fileperm.RestrictDirectoryTree(dir, rk.root); err != nil {
 			return scrub("restricting directories", dir, err)
 		}
-		// The temp file sits beside the target: the O_EXCL create never
-		// follows a symlink at a name of its own choosing, and a
-		// same-directory rename is atomic on every supported
-		// filesystem.
 		tmp, tmpRel, err := CreateTempInRoot(root, filepath.Dir(rel), ".gofastr-tmp-*")
 		if err != nil {
 			return scrub("creating temp file", rel, err)
@@ -298,23 +204,15 @@ func (s *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error 
 		if _, err := io.Copy(tmp, r); err != nil {
 			return scrub("writing file", tmpRel, err)
 		}
-		// Sync before the rename so the object is durable at the moment
-		// it becomes visible; the rename is ordered after the data.
 		if err := tmp.Sync(); err != nil {
 			return scrub("syncing file", tmpRel, err)
 		}
 		if err := tmp.Close(); err != nil {
 			return scrub("closing file", tmpRel, err)
 		}
-		// Mode 0o600 keeps uploaded files readable only by the process
-		// owner. The default umask leaves os.Create at 0o644, which on
-		// a shared multi-tenant node exposes every upload to unrelated
-		// local users. See TestLocalStorage_SaveRestrictsFilePermissions.
 		if err := root.Chmod(tmpRel, 0o600); err != nil {
 			return scrub("restricting file", tmpRel, err)
 		}
-		// The rename is the commit: a save canceled during the copy
-		// leaves the stored object as it was.
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -333,12 +231,6 @@ func (s *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error 
 		return nil
 	}
 
-	// Fallback (root unavailable): resolve-then-open on the absolute
-	// path, the posture the 2026-09-04 fix shipped. Only reachable when
-	// the base could not be opened as a root even after MkdirAll.
-	// The temp file sits beside the target: CreateTemp never follows a
-	// symlink at a name of its own choosing, and a same-directory rename
-	// is atomic on every supported filesystem.
 	if err := fileperm.RestrictDirectoryTree(dir, rk.root); err != nil {
 		return scrub("restricting directories", dir, err)
 	}
@@ -355,15 +247,9 @@ func (s *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error 
 		}
 	}()
 
-	// Mode 0o600 keeps uploaded files readable only by the process
-	// owner. The default umask leaves os.Create at 0o644, which on a
-	// shared multi-tenant node exposes every upload to unrelated local
-	// users. See TestLocalStorage_SaveRestrictsFilePermissions.
 	if _, err := io.Copy(tmp, r); err != nil {
 		return scrub("writing file", tmpPath, err)
 	}
-	// Sync before the rename so the object is durable at the moment it
-	// becomes visible; the rename is ordered after the data.
 	if err := tmp.Sync(); err != nil {
 		return scrub("syncing file", tmpPath, err)
 	}
@@ -393,7 +279,8 @@ func (s *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error 
 	return nil
 }
 
-// Delete removes the file at key from the local filesystem.
+// Delete removes the object at key; a directory or missing key is an
+// error wrapping os.ErrNotExist.
 func (s *LocalStorage) Delete(ctx context.Context, key string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -403,14 +290,9 @@ func (s *LocalStorage) Delete(ctx context.Context, key string) error {
 		return err
 	}
 
-	// On a case- or normalization-insensitive filesystem "A/b.png" opens
-	// a/b.png: Save refuses the second spelling, and so does Delete, or
-	// erasing a row naming it removed the other key's object.
 	root := s.rootFor(rk)
 	var rmErr error
 	if err := CommitUnfolded(key, rk.root, root, func() error {
-		// Only a regular file is an object: a key naming a prefix
-		// directory is not found, and the directory stays.
 		var fi os.FileInfo
 		var stErr error
 		if root != nil {
@@ -423,8 +305,6 @@ func (s *LocalStorage) Delete(ctx context.Context, key string) error {
 			return nil
 		}
 		if root != nil {
-			// Kernel-contained unlink: a parent directory swapped for a
-			// symlink after resolution is refused here instead of followed.
 			rmErr = root.Remove(rk.rel())
 		} else {
 			rmErr = os.Remove(rk.path)
@@ -434,11 +314,6 @@ func (s *LocalStorage) Delete(ctx context.Context, key string) error {
 		return err
 	}
 	if rmErr != nil {
-		// The wrap scrubs the absolute path out of the raw
-		// *os.PathError: erase_data.go and DeleteFileField embed this
-		// message verbatim in errors reported to operators and hosts.
-		// A missing object keeps os.ErrNotExist in the chain: cleanup
-		// callers count it as already deleted.
 		msg := ScrubPath(rmErr.Error(), rk.absBase, rk.path)
 		if errors.Is(rmErr, os.ErrNotExist) {
 			return fmt.Errorf("deleting file: %s: %w", msg, os.ErrNotExist)
@@ -449,37 +324,23 @@ func (s *LocalStorage) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// Get opens the file at key from the local filesystem for reading.
-//
-// Returns [ErrNotFound] (wrapping [os.ErrNotExist]) when the key is
-// missing. Callers can match on os.ErrNotExist or upload.ErrNotFound
-// without parsing the message. Other errors are returned with the
-// absolute filesystem path stripped, so a 500 propagated to an end
-// user doesn't disclose where the data lives.
+// Get opens the object at key, or returns an error wrapping [ErrNotFound]
+// for a missing key or a directory. No error names an absolute path.
 func (s *LocalStorage) Get(_ context.Context, key string) (io.ReadCloser, error) {
 	return s.open(key)
 }
 
-// GetRange implements [RangeGetter]. The local backend already opens an
-// *os.File, so seekability costs nothing here: Get simply discarded it
-// through the io.ReadCloser return type. Key validation is the same code
-// path, not a parallel one.
+// GetRange implements [RangeGetter] through the same open as Get.
 func (s *LocalStorage) GetRange(_ context.Context, key string) (io.ReadSeekCloser, error) {
 	return s.open(key)
 }
 
-// open resolves key against baseDir and opens it. It is the single
-// enforcement point for sanitization and the base-dir containment check, so
-// Get and GetRange cannot drift apart.
 func (s *LocalStorage) open(key string) (*os.File, error) {
 	rk, err := s.resolveKey(key)
 	if err != nil {
 		return nil, err
 	}
 
-	// On a case- or normalization-insensitive filesystem "tenanta/x"
-	// opens the file stored as "TenantA/x": refuse a spelling other than
-	// the stored one, as Save and Delete do.
 	root := s.rootFor(rk)
 	if err := RefuseFoldedKey(key, "", rk.root, root); err != nil {
 		return nil, err
@@ -487,9 +348,6 @@ func (s *LocalStorage) open(key string) (*os.File, error) {
 
 	var f *os.File
 	if root != nil {
-		// Kernel-contained open: a symlink planted at the leaf (or a
-		// parent swapped) after resolution is refused here instead of
-		// streamed.
 		f, err = root.Open(rk.rel())
 	} else {
 		f, err = os.Open(rk.path)
@@ -498,14 +356,8 @@ func (s *LocalStorage) open(key string) (*os.File, error) {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("%w: %s", ErrNotFound, rk.safeKey)
 		}
-		// Hide the absolute filesystem path from the error message; an
-		// HTTP handler that surfaces this back to the caller would
-		// otherwise leak the storage layout.
 		return nil, fmt.Errorf("opening file: %s", ScrubPath(err.Error(), rk.absBase, rk.path))
 	}
-	// A directory (the uploads/<entity>/<field> prefixes) is not an
-	// object: handed back, its first read failed and ServeHandler
-	// answered 500 for every GET of a prefix.
 	if fi, err := f.Stat(); err != nil || fi.IsDir() {
 		f.Close()
 		if err != nil {
@@ -517,9 +369,7 @@ func (s *LocalStorage) open(key string) (*os.File, error) {
 	return f, nil
 }
 
-// ErrNotFound is wrapped by Get when the requested key doesn't exist.
-// Callers can match on this or on errors.Is(err, os.ErrNotExist): the
-// returned error wraps both so existing code continues to work.
+// ErrNotFound is wrapped when a key names no object; it wraps os.ErrNotExist.
 var ErrNotFound = errNotFound{}
 
 type errNotFound struct{}
@@ -527,41 +377,18 @@ type errNotFound struct{}
 func (errNotFound) Error() string { return "upload: not found" }
 func (errNotFound) Unwrap() error { return os.ErrNotExist }
 
-// ErrInvalidKey is wrapped when a storage key is rejected by
-// sanitization (path traversal, empty key, or a path that escapes the
-// base directory). The detection lives in [sanitizeKey] and the
-// backend's escape check: callers (e.g. [ServeHandler]) classify the
-// typed error rather than re-implement path validation.
+// ErrInvalidKey is wrapped when a key is refused: traversal, empty,
+// absolute, unclean, escaping the base, or folding onto another key.
 var ErrInvalidKey = errors.New("upload: invalid key")
 
-// underRoot reports whether path is root itself or sits below it.
 func underRoot(path, root string) bool {
 	return path == root || strings.HasPrefix(path, root+string(os.PathSeparator))
 }
 
-// ResolveUnderRoot resolves absPath — an absolute path already checked
-// to sit lexically under absBase — against the filesystem's symlinks,
-// and returns the canonical path filesystem calls should use plus the
-// symlink-resolved root that path was proven to sit under.
-//
-// Containment is enforced on the RESOLVED chain, not the lexical one:
-// realBase is EvalSymlinks(absBase), and a resolved directory chain or
-// leaf that lands outside it is refused with [ErrInvalidKey] ("path
-// escapes base directory through a symlink") instead of followed.
-//
-// The leaf's existence picks the resolution depth. A path that exists
-// resolves in full, leaf included, so a symlinked file is refused (or
-// followed to an in-root target) exactly like a symlinked directory. A
-// path that does not exist resolves through its deepest existing
-// ancestor with the missing tail rejoined, so a symlinked directory is
-// still refused while the tail of the key has yet to be written. When
-// the root itself is missing there is nothing to escape through yet and
-// absPath is returned as-is: the syscall reports the miss as
-// [os.ErrNotExist], which Get maps to [ErrNotFound].
-//
-// battery/storage's LocalStorage routes through this same helper, so
-// the two local backends cannot drift on containment. Errors it returns
-// are scrubbed of absolute paths via [ScrubPath].
+// ResolveUnderRoot resolves the symlinks of absPath, which sits lexically
+// under absBase, through its deepest existing ancestor, and returns it
+// with the resolved base; a chain that leaves the base is refused with
+// [ErrInvalidKey]. Errors carry no absolute path.
 func ResolveUnderRoot(absBase, absPath string) (resolved, realBase string, err error) {
 	realBase, err = filepath.EvalSymlinks(absBase)
 	if err != nil {
@@ -583,10 +410,6 @@ func ResolveUnderRoot(absBase, absPath string) (resolved, realBase string, err e
 		return "", "", fmt.Errorf("resolving storage path: %s", ScrubPath(err.Error(), absBase, absPath))
 	}
 
-	// A trailing component is missing. Resolve the deepest existing
-	// ancestor and rejoin the remainder, so a symlinked directory
-	// cannot funnel the eventual create, open, or remove outside the
-	// root while the tail is still absent.
 	for dir := filepath.Dir(absPath); ; dir = filepath.Dir(dir) {
 		realDir, err := filepath.EvalSymlinks(dir)
 		if err == nil {
@@ -599,18 +422,12 @@ func ResolveUnderRoot(absBase, absPath string) (resolved, realBase string, err e
 			return "", "", fmt.Errorf("resolving storage directory: %s", ScrubPath(err.Error(), absBase, dir))
 		}
 		if dir == string(os.PathSeparator) {
-			// Nothing on the chain exists, so the syscall on absPath
-			// cannot reach an outside file; it reports the miss.
 			return absPath, realBase, nil
 		}
 	}
 }
 
-// ScrubPath removes occurrences of the absolute base dir and the full
-// resolved path from a string so internal storage paths don't leak
-// through wrapped error messages. Exported because battery/storage's
-// local backend holds the same invariant behind the same Storage
-// interface and scrubs with the same rules.
+// ScrubPath replaces full with <file> and base with <base> in msg.
 func ScrubPath(msg, base, full string) string {
 	if full != "" {
 		msg = strings.ReplaceAll(msg, full, "<file>")
@@ -621,14 +438,13 @@ func ScrubPath(msg, base, full string) string {
 	return msg
 }
 
-// Exists checks whether a file at key exists in the local filesystem.
+// Exists reports whether an object, not a directory, is stored at key.
 func (s *LocalStorage) Exists(_ context.Context, key string) (bool, error) {
 	rk, err := s.resolveKey(key)
 	if err != nil {
 		return false, err
 	}
 
-	// A folded spelling would report the other key's object; see open.
 	root := s.rootFor(rk)
 	if err := RefuseFoldedKey(key, "", rk.root, root); err != nil {
 		return false, err
@@ -636,8 +452,6 @@ func (s *LocalStorage) Exists(_ context.Context, key string) (bool, error) {
 
 	var fi os.FileInfo
 	if root != nil {
-		// Kernel-contained stat: no existence oracle for paths a
-		// post-resolution symlink plant funnels outside the root.
 		fi, err = root.Stat(rk.rel())
 	} else {
 		fi, err = os.Stat(rk.path)
@@ -649,6 +463,5 @@ func (s *LocalStorage) Exists(_ context.Context, key string) (bool, error) {
 		return false, fmt.Errorf("checking file: %s", ScrubPath(err.Error(), rk.absBase, rk.path))
 	}
 
-	// A directory is a key prefix, not an object; see open.
 	return !fi.IsDir(), nil
 }

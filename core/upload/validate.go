@@ -3,7 +3,6 @@ package upload
 import (
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -15,36 +14,25 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// ValidateMIME reads the first 512 bytes from file to detect MIME type,
-// checks it against the allowed list, then resets the reader.
-// If allowed is empty, all MIME types are permitted.
+// ValidateMIME sniffs the first 512 bytes of file, rewinds it, and refuses
+// a base media type not in allowed; an empty allowed permits all.
 func ValidateMIME(file io.ReadSeeker, allowed []string) error {
 	if len(allowed) == 0 {
 		return nil
 	}
 
-	// Read up to the first 512 bytes for MIME detection. Use io.ReadFull
-	// rather than a single file.Read so a chunked/non-seekable reader that
-	// returns a short first Read still yields the full sniff window. A
-	// short file is fine: io.ErrUnexpectedEOF (some bytes, then EOF) and
-	// io.EOF (zero bytes) both mean "that's all there is".
 	buf := make([]byte, 512)
 	n, err := io.ReadFull(file, buf)
 	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
 		return fmt.Errorf("reading file for MIME detection: %w", err)
 	}
 
-	// Reset reader so the full file can be read later
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("resetting file reader: %w", err)
 	}
 
 	detected := http.DetectContentType(buf[:n])
 
-	// http.DetectContentType appends parameters ("text/plain;
-	// charset=utf-8"), while an allowlist entry is naturally the bare
-	// media type. Compare base-to-base so listing "text/plain" matches
-	// what the sniff returns for a plain-text body.
 	base := mediaType(detected)
 	if slices.ContainsFunc(allowed, func(a string) bool { return mediaType(a) == base }) {
 		return nil
@@ -53,9 +41,6 @@ func ValidateMIME(file io.ReadSeeker, allowed []string) error {
 	return i18n.NewError(reasonMIMENotAllowed, map[string]any{"type": detected, "allowed": strings.Join(allowed, ", ")})
 }
 
-// mediaType strips any "; parameter" suffix and normalizes case and
-// surrounding whitespace, leaving the base media type both sides of an
-// allowlist comparison share.
 func mediaType(v string) string {
 	if i := strings.IndexByte(v, ';'); i >= 0 {
 		v = v[:i]
@@ -63,8 +48,7 @@ func mediaType(v string) string {
 	return strings.ToLower(strings.TrimSpace(v))
 }
 
-// ValidateSize checks that the file size does not exceed max.
-// A max of 0 means no limit.
+// ValidateSize refuses size over max; a max of 0 or less is no limit.
 func ValidateSize(size int64, max int64) error {
 	if max <= 0 {
 		return nil
@@ -75,11 +59,8 @@ func ValidateSize(size int64, max int64) error {
 	return nil
 }
 
-// ValidateExt checks that the file extension is in the allowed list.
-// Extensions are compared ASCII case-insensitively without the leading
-// dot: a Unicode fold would let a look-alike (U+0130 lowers to i) pass
-// for an allowed extension.
-// If allowed is empty, all extensions are permitted.
+// ValidateExt refuses filename unless its extension, without the dot and
+// folded by ASCII case only, is in allowed; an empty allowed permits all.
 func ValidateExt(filename string, allowed []string) error {
 	if len(allowed) == 0 {
 		return nil
@@ -99,30 +80,13 @@ func ValidateExt(filename string, allowed []string) error {
 	return i18n.NewError(reasonExtNotAllowed, map[string]any{"ext": fileExt, "allowed": strings.Join(allowed, ", ")})
 }
 
-// MaxFilenameBytes caps the sanitised filename length. A user-supplied
-// filename has no legitimate reason to exceed a few hundred bytes; the
-// cap protects log lines, filesystem APIs, and database columns from
-// pathological inputs.
+// MaxFilenameBytes caps SanitizeFilename's result.
 const MaxFilenameBytes = 255
 
-// SanitizeFilenameInputBound caps the *input* length before any of the
-// O(n) sanitisation passes (control-byte strip, replacer, interior-ext
-// split-and-join) run. A multipart Content-Disposition filename is a
-// MIME-header value and is NOT counted against ParseMultipartForm's
-// maxMemory, so without this guard an attacker can ship a multi-MiB
-// filename (bounded only by the stdlib's 10 MiB per-header cap) that
-// amplifies into tens of MB of transient allocation and >100ms of CPU
-// per request: strings.Split on a ~9 MiB all-dots name produces a
-// ~9.4M-element slice. The bound is a generous multiple of
-// MaxFilenameBytes so legitimate names with escaped / multibyte
-// sequences survive untouched; the final MaxFilenameBytes cap still
-// applies after sanitisation.
+// SanitizeFilenameInputBound caps SanitizeFilename's input before any pass
+// runs over it.
 const SanitizeFilenameInputBound = 4 * MaxFilenameBytes
 
-// boundFilenameInput hard-truncates name to at most
-// SanitizeFilenameInputBound bytes on a UTF-8 rune boundary so the
-// per-rune / split passes in SanitizeFilename never see a pathological
-// multi-MiB input. It is a cheap O(min(len, bound)) operation.
 func boundFilenameInput(name string) string {
 	if len(name) <= SanitizeFilenameInputBound {
 		return name
@@ -130,53 +94,25 @@ func boundFilenameInput(name string) string {
 	return truncateRunes(name, SanitizeFilenameInputBound)
 }
 
-// SanitizeFilename removes path separators, null bytes, and other dangerous
-// characters from a filename to prevent path traversal attacks. It also
-// neutralises double-extension smuggling, e.g. `shell.php.jpg` becomes
-// `shell_php.jpg`, so a misconfigured web server can't be tricked into
-// executing a hidden interior extension.
-//
-// Control bytes (CR, LF, TAB, anything < 0x20) are dropped so a logged
-// filename can't escape its log line via injected newlines or terminal
-// control sequences; the C1 controls and the zero-width/bidi set ride
-// along (see isStrippableControl) so the storage key a filename becomes
-// can't flip the extension a user sees. The final result is truncated to
-// MaxFilenameBytes (preserving the extension) so an attacker can't ship
-// a 10 MB filename.
+// SanitizeFilename returns a safe base name for name: controls and
+// invisible runes dropped, directories, leading dots and shell or Windows
+// metacharacters removed, interior executable extensions defused
+// (shell.php.jpg becomes shell._php.jpg), and the result cut on a rune
+// boundary to MaxFilenameBytes, extension kept. A name left empty is
+// "upload".
 func SanitizeFilename(name string) string {
-	// Bound the input length BEFORE any O(n) memory-heavy pass. The
-	// multipart filename is attacker-controlled MIME-header metadata not
-	// counted against maxMemory, so a multi-MiB name would otherwise
-	// explode the strings.Split / per-rune passes below into a
-	// request-amplified CPU/allocation DoS. The MaxFilenameBytes output
-	// cap still runs at the end; this only caps the *work*.
 	name = boundFilenameInput(name)
 
-	// Drop every control byte (NUL, CR, LF, TAB, ESC, ...) and DEL up
-	// front. Done before filepath.Base because `evil.php\x00.jpg` would
-	// otherwise reach filepath.Base intact and look like a `.jpg` file,
-	// while the OS open() syscall would truncate at the NUL and write
-	// `evil.php`. Same hazard applies to CR/LF: log lines / multipart
-	// Content-Disposition headers split on those bytes.
 	name = stripControlBytes(name)
 
-	// Normalize backslashes to forward slashes for cross-platform safety
 	name = strings.ReplaceAll(name, "\\", "/")
 
-	// Get just the base filename (removes any directory components)
 	name = filepath.Base(name)
 
-	// Remove leading dots (hidden files, ".." etc)
 	for strings.HasPrefix(name, ".") {
 		name = strings.TrimPrefix(name, ".")
 	}
 
-	// Replace problematic characters. Beyond path separators and traversal
-	// segments, also neutralise shell-dangerous characters (`;`, `|`, `&`,
-	// backtick, `$`, `<`, `>`, `*`, `?`) and Windows-illegal characters
-	// (`:` , `"`) so a downstream consumer that interpolates the filename
-	// into a shell or a Windows path can't be tricked into command
-	// injection or NTFS alternate-data-stream tricks.
 	replacer := strings.NewReplacer(
 		"/", "_",
 		"\\", "_",
@@ -197,33 +133,17 @@ func SanitizeFilename(name string) string {
 	)
 	name = replacer.Replace(name)
 
-	// Trim whitespace
 	name = strings.TrimSpace(name)
 
-	// Neutralise dangerous interior extensions. We split on `.`, keep the
-	// final segment as the real extension, and replace any *interior*
-	// segment that matches a known executable extension with `_`. This
-	// preserves legitimate compound extensions like `.tar.gz` while
-	// turning `shell.php.jpg` into `shell_php.jpg`.
 	name = neutraliseInteriorExecExts(name)
 
-	// If the surviving filename is empty or consists only of dots /
-	// spaces (e.g. ". .", " . ", "..."), fall back to a safe label.
-	// A bare-dot or all-dots filename is still a hidden file on POSIX
-	// and an invalid name on Windows.
 	if isBlankOrDottyOnly(name) {
 		return "upload"
 	}
 
-	// Length cap. Keep the extension if there is one so the truncated
-	// name still round-trips through MIME detection. Truncation walks
-	// back to a UTF-8 rune boundary so the result is never invalid
-	// UTF-8: an orphaned lead/continuation byte would corrupt the
-	// storage key, utf8mb4 DB columns, and JSON consumers.
 	if len(name) > MaxFilenameBytes {
 		ext := filepath.Ext(name)
 		if len(ext) >= MaxFilenameBytes {
-			// Extension itself is absurdly long; drop it.
 			name = truncateRunes(name, MaxFilenameBytes)
 		} else {
 			name = truncateRunes(name, MaxFilenameBytes-len(ext)) + ext
@@ -233,9 +153,6 @@ func SanitizeFilename(name string) string {
 	return name
 }
 
-// truncateRunes returns the longest prefix of s that is at most maxBytes
-// bytes and ends on a UTF-8 rune boundary, so the result is always valid
-// UTF-8.
 func truncateRunes(s string, maxBytes int) string {
 	if maxBytes <= 0 {
 		return ""
@@ -244,24 +161,12 @@ func truncateRunes(s string, maxBytes int) string {
 		return s
 	}
 	cut := maxBytes
-	// Back up until cut lands on a rune boundary (i.e. not in the middle
-	// of a multibyte sequence).
 	for cut > 0 && !utf8.RuneStart(s[cut]) {
 		cut--
 	}
 	return s[:cut]
 }
 
-// stripControlBytes drops every C0 control byte, DEL, every C1 control,
-// every invisible/bidi codepoint, and every Unicode control /
-// line-terminator rune. The multibyte runes close gaps a byte-only
-// filter leaves open: U+0085 (NEL), U+2028/U+2029 (LINE/PARAGRAPH
-// SEPARATOR), the C1 block, and the zero-width/bidi set are all encoded
-// entirely with bytes >= 0x80, so they survive a byte-only scan yet are
-// treated as line breaks, terminal escapes, or text-reordering controls
-// by terminals, log processors, browsers, and JavaScript/JSON tooling.
-// The set is named once in core/textsafe; this is the shared strip for
-// anything on its way to becoming a stored filename or storage key.
 func stripControlBytes(s string) string {
 	if !strings.ContainsFunc(s, isStrippableControl) {
 		return s
@@ -277,31 +182,17 @@ func stripControlBytes(s string) string {
 	return b.String()
 }
 
-// isStrippableControl reports whether r is a control character, a
-// Unicode line/paragraph separator, a C1 control, or an invisible/bidi
-// codepoint that must never survive into a stored filename or the
-// storage key built from one.
 func isStrippableControl(r rune) bool {
 	switch r {
-	case '\u2028', // LINE SEPARATOR
-		'\u2029', // PARAGRAPH SEPARATOR
-		'\u0085': // NEXT LINE (NEL)
+	case '\u2028', '\u2029', '\u0085':
 		return true
 	}
-	// C0 controls, DEL, and the C1 block (0x80–0x9f, which includes NEL
-	// above but also the other invisible control runes).
 	if r < 0x20 || r == 0x7f || textsafe.IsC1(r) {
 		return true
 	}
-	// The zero-width/bidi set: a filename and the key built from it are
-	// rendered to humans in served URL paths, Content-Disposition, storage
-	// listings, and logs, where an RLO flips the visible extension and a
-	// zero-width space manufactures visually identical twin names.
 	return textsafe.IsInvisible(r)
 }
 
-// isBlankOrDottyOnly reports whether s is empty or made up of nothing
-// but dots and ASCII whitespace.
 func isBlankOrDottyOnly(s string) bool {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
@@ -312,10 +203,6 @@ func isBlankOrDottyOnly(s string) bool {
 	return true
 }
 
-// dangerousExecExts is the deny-list of file extensions that have ever
-// been treated as executable by a web server, shell, or scripting host.
-// Anything appearing in an interior position of a multi-dotted filename
-// is collapsed to an underscore.
 var dangerousExecExts = map[string]bool{
 	"php":   true,
 	"phtml": true,
@@ -355,8 +242,6 @@ var dangerousExecExts = map[string]bool{
 func neutraliseInteriorExecExts(name string) string {
 	parts := strings.Split(name, ".")
 	if len(parts) < 3 {
-		// No interior segment to worry about, either no extension or
-		// exactly one (base.ext) which is the legitimate shape.
 		return name
 	}
 	for i := 1; i < len(parts)-1; i++ {
@@ -365,13 +250,4 @@ func neutraliseInteriorExecExts(name string) string {
 		}
 	}
 	return strings.Join(parts, ".")
-}
-
-// detectMIMEFromName attempts to detect MIME type from filename extension.
-func detectMIMEFromName(filename string) string {
-	ext := filepath.Ext(filename)
-	if ext == "" {
-		return ""
-	}
-	return mime.TypeByExtension(ext)
 }
