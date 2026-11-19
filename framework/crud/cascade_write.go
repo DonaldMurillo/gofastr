@@ -86,22 +86,14 @@ func (ch *CrudHandler) writePivotLink(ctx context.Context, r *http.Request, rel 
 		}
 		lw := pivotHandler.linkWrite(map[string]any{rel.LocalKey: l.parent, rel.ForeignKeyTarget: l.child})
 		if err := pivotHandler.checkBelongsToScope(ctx, r, lw); err != nil {
-			var ve *ValidationError
-			if errors.As(err, &ve) {
-				return &ValidationError{fields: prefixValidationErrors(fieldPrefix, ve.fields)}
-			}
-			return fmt.Errorf("%s: %w", fieldPrefix, err)
+			return wrapCascadeChildError(fieldPrefix, err)
 		}
 		if !pivotHandler.canCascadeWrite(ctx, r, opCreate, "") {
 			return fmt.Errorf("%w: permission denied to create %s", errNotFound, pivot.GetName())
 		}
 		res, err := pivotHandler.doCreate(ctx, r, maps.Clone(lw.body))
 		if err != nil {
-			var ve *ValidationError
-			if errors.As(err, &ve) {
-				return &ValidationError{fields: prefixValidationErrors(fieldPrefix, ve.fields)}
-			}
-			return fmt.Errorf("%s: %w", fieldPrefix, err)
+			return wrapCascadeChildError(fieldPrefix, err)
 		}
 		created = res
 		return nil
@@ -290,17 +282,9 @@ func (ch *CrudHandler) checkChildOwnership(ctx context.Context, r *http.Request,
 	if err != nil {
 		return fmt.Errorf("foreign key %q: %w", fkCol, err)
 	}
-	preds := eagerScopeFilters(ctx, target)
-	readPreds := readScopeFilters(ctx, target)
-	clause, args := filterClause(preds, 3)
-	readClause, readArgs := renderReadScope(readPreds, "", 3+len(args))
-	if readClause != "" {
-		readClause = " AND " + readClause
-	}
-	q := fmt.Sprintf("SELECT 1 FROM %s WHERE %s = $1 AND %s = $2%s%s",
-		query.QuoteKeyword(table), query.QuoteKeyword(pkCol), query.QuoteKeyword(foreignCol), clause, readClause)
-	if target.Config.Scope.SoftDelete {
-		q += " AND deleted_at IS NULL"
+	conds := []string{
+		fmt.Sprintf("%s = $1", query.QuoteKeyword(pkCol)),
+		fmt.Sprintf("%s = $2", query.QuoteKeyword(foreignCol)),
 	}
 	parentPK, err := ch.keyColumn()
 	if err != nil {
@@ -308,8 +292,7 @@ func (ch *CrudHandler) checkChildOwnership(ctx context.Context, r *http.Request,
 	}
 	coercedChildID := coercePKValue(ch.Registry, target, targetPK, childIDVal)
 	coercedParentID := coercePKValue(ch.Registry, ch.Entity, parentPK, parentID)
-	allArgs := append([]any{coercedChildID, coercedParentID}, args...)
-	allArgs = append(allArgs, readArgs...)
+	q, allArgs := scopedTargetQuery(ctx, target, table, "1", conds, []any{coercedChildID, coercedParentID})
 	var belongs int
 	if err := ch.DB.QueryRowContext(ctx, q, allArgs...).Scan(&belongs); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -346,25 +329,13 @@ func (ch *CrudHandler) findExistingHasOneChild(ctx context.Context, r *http.Requ
 	if err != nil {
 		return nil, fmt.Errorf("foreign key %q: %w", fkCol, err)
 	}
-	preds := eagerScopeFilters(ctx, target)
-	readPreds := readScopeFilters(ctx, target)
-	clause, args := filterClause(preds, 2)
-	readClause, readArgs := renderReadScope(readPreds, "", 2+len(args))
-	if readClause != "" {
-		readClause = " AND " + readClause
-	}
-	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1%s%s",
-		query.QuoteKeyword(pkCol), query.QuoteKeyword(table), query.QuoteKeyword(foreignCol), clause, readClause)
-	if target.Config.Scope.SoftDelete {
-		q += " AND deleted_at IS NULL"
-	}
 	parentPK, err := ch.keyColumn()
 	if err != nil {
 		return nil, err
 	}
 	coercedParentID := coercePKValue(ch.Registry, ch.Entity, parentPK, parentID)
-	allArgs := append([]any{coercedParentID}, args...)
-	allArgs = append(allArgs, readArgs...)
+	q, allArgs := scopedTargetQuery(ctx, target, table, query.QuoteKeyword(pkCol),
+		[]string{fmt.Sprintf("%s = $1", query.QuoteKeyword(foreignCol))}, []any{coercedParentID})
 	var existingID any
 	if err := ch.DB.QueryRowContext(ctx, q, allArgs...).Scan(&existingID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -401,20 +372,9 @@ func (ch *CrudHandler) checkTargetRowScope(ctx context.Context, r *http.Request,
 	if err != nil {
 		return fmt.Errorf("target key %q: %w", targetPK, err)
 	}
-	preds := eagerScopeFilters(ctx, target)
-	readPreds := readScopeFilters(ctx, target)
-	clause, args := filterClause(preds, 2)
-	readClause, readArgs := renderReadScope(readPreds, "", 2+len(args))
-	if readClause != "" {
-		readClause = " AND " + readClause
-	}
-	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1%s%s", query.QuoteKeyword(pkCol), query.QuoteKeyword(table), query.QuoteKeyword(pkCol), clause, readClause)
-	if target.Config.Scope.SoftDelete {
-		q += " AND deleted_at IS NULL"
-	}
 	coercedID := coercePKValue(ch.Registry, target, targetPK, idVal)
-	allArgs := append([]any{coercedID}, args...)
-	allArgs = append(allArgs, readArgs...)
+	q, allArgs := scopedTargetQuery(ctx, target, table, query.QuoteKeyword(pkCol),
+		[]string{fmt.Sprintf("%s = $1", query.QuoteKeyword(pkCol))}, []any{coercedID})
 	var hit any
 	if err := ch.DB.QueryRowContext(ctx, q, allArgs...).Scan(&hit); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -654,11 +614,7 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 			}
 		}
 		if err != nil {
-			var ve *ValidationError
-			if errors.As(err, &ve) {
-				return nil, &ValidationError{fields: prefixValidationErrors(rel.Name, ve.fields)}
-			}
-			return nil, fmt.Errorf("%s: %w", rel.Name, err)
+			return nil, wrapCascadeChildError(rel.Name, err)
 		}
 
 		childPKVal := childResult[targetPK]
@@ -905,11 +861,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 							var err error
 							childResult, err = childHandler.doUpdate(ctx, r, fmt.Sprint(childID), childMap)
 							if err != nil {
-								var ve *ValidationError
-								if errors.As(err, &ve) {
-									return nil, &ValidationError{fields: prefixValidationErrors(fmt.Sprintf("%s.%d", rel.Name, idx), ve.fields)}
-								}
-								return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
+								return nil, wrapCascadeChildError(fmt.Sprintf("%s.%d", rel.Name, idx), err)
 							}
 							childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
 							if childResult, err = ch.cascadeReadBack(ctx, r, rel, childHandler, childResult); err != nil {
@@ -923,11 +875,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						var err error
 						childResult, err = childHandler.doCreate(ctx, r, childMap)
 						if err != nil {
-							var ve *ValidationError
-							if errors.As(err, &ve) {
-								return nil, &ValidationError{fields: prefixValidationErrors(fmt.Sprintf("%s.%d", rel.Name, idx), ve.fields)}
-							}
-							return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
+							return nil, wrapCascadeChildError(fmt.Sprintf("%s.%d", rel.Name, idx), err)
 						}
 						childHandler.emitCascade(ctx, event.EntityCreated, childResult)
 						childID = childResult[targetPK]

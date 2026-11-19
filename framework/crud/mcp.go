@@ -502,14 +502,16 @@ func listToolSchema(ent *entity.Entity, reg entity.Registry) map[string]any {
 			if s.Op == filter.OpIn {
 				ps = map[string]any{"type": "array", "items": tf.schema(field), "minItems": 1}
 			}
-			ps["description"] = fmt.Sprintf("Filter by %s: %s.", field.Name, mcpOperatorLabel(s.Op))
+			ps["description"] = fmt.Sprintf("Filter by %s: %s.", field.Name, filterOpLabel(s.Op))
 			props[spell.Key(mcpFieldKey(field), s.Op)] = ps
 		}
 	}
 	return map[string]any{"type": "object", "properties": props}
 }
 
-func mcpOperatorLabel(op filter.FilterOp) string {
+// filterOpLabel names a filter operator in plain English, for the agent
+// surfaces (MCP tool schemas and llm.md) that describe it.
+func filterOpLabel(op filter.FilterOp) string {
 	switch op {
 	case filter.OpEq:
 		return "equals"

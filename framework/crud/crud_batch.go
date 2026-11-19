@@ -156,6 +156,85 @@ func (ch *CrudHandler) shapeBatchResults(r *http.Request, results []batchResult,
 	}
 }
 
+// batchSpec is one _batch op's half of the shared runBatch scaffold:
+// what differs between create, update and delete.
+type batchSpec struct {
+	op         crudOp                     // the scope gate the op runs
+	envelope   any                        // pointer to the op's decode target
+	key        string                     // the envelope's one allowed key
+	empty      i18n.Phrase                // the refusal for an empty list
+	count      func() int                 // the decoded item count
+	normalize  func()                     // item fixups before the size refusals; nil for ids
+	checkItems func(r *http.Request) bool // per-item refusal after them; nil for ids; false = already answered
+	event      string                     // the event each committed item emits
+	shape      bool                       // run the response hooks over the committed bodies
+	tx         func(ctx context.Context, r *http.Request, ch *CrudHandler, results []batchResult, hidden []bool) error
+}
+
+// runBatch is the shared _batch scaffold: event stamps, no-store, the
+// JSON and scope gates, the body limit, the strict envelope decode, the
+// empty and MaxBatchSize refusals, the transaction, and on commit the
+// event loop, response hooks and envelope.
+func (ch *CrudHandler) runBatch(w http.ResponseWriter, r *http.Request, spec batchSpec) {
+	r = r.WithContext(withEventStamps(r.Context()))
+	w.Header().Set("Cache-Control", "no-store")
+	if err := enforceJSONOnly(r); err != nil {
+		writeContentTypeError(w, r, err)
+		return
+	}
+	if !ch.requireScope(w, r, spec.op) {
+		return
+	}
+	limitJSONBody(w, r)
+	if err := decodeBatchEnvelope(r, spec.envelope, spec.key); err != nil {
+		if errors.Is(err, errBodyTooLarge) {
+			writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
+			return
+		}
+		writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
+		return
+	}
+	if spec.normalize != nil {
+		spec.normalize()
+	}
+	n := spec.count()
+	if n == 0 {
+		writeJSONError(w, r, http.StatusBadRequest, spec.empty)
+		return
+	}
+	if n > MaxBatchSize {
+		writeJSONError(w, r, http.StatusBadRequest, reasonBatchTooLarge, map[string]any{"size": n, "max": MaxBatchSize})
+		return
+	}
+	if spec.checkItems != nil && !spec.checkItems(r) {
+		return
+	}
+	results := initSkipped(n)
+	var hidden []bool
+	if spec.shape {
+		hidden = make([]bool, n)
+	}
+	txErr := ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
+		return spec.tx(ctx, r, ch, results, hidden)
+	})
+	if txErr != nil && !errors.Is(txErr, errBatchAborted) {
+		logf("crud: batch tx failed: %v", txErr)
+		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+		return
+	}
+	if txErr == nil {
+		for _, res := range results {
+			if res.Data != nil {
+				ch.EmitEvent(r.Context(), spec.event, res.Data)
+			}
+		}
+	}
+	if txErr == nil && spec.shape {
+		ch.shapeBatchResults(r, results, hidden)
+	}
+	writeBatchResponse(w, r, BatchResponse{Committed: txErr == nil, Results: results})
+}
+
 type batchCreateRequest struct {
 	Items []map[string]any `json:"items"`
 }
@@ -165,76 +244,38 @@ type batchCreateRequest struct {
 // input order.
 func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		r = r.WithContext(withEventStamps(r.Context()))
-		w.Header().Set("Cache-Control", "no-store")
-		if err := enforceJSONOnly(r); err != nil {
-			writeContentTypeError(w, r, err)
-			return
-		}
-		if !ch.requireScope(w, r, opCreate) {
-			return
-		}
-		limitJSONBody(w, r)
 		var req batchCreateRequest
-		if err := decodeBatchEnvelope(r, &req, "items"); err != nil {
-			if errors.Is(err, errBodyTooLarge) {
-				writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return
-			}
-			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
-			return
-		}
-		normalizeItemNumbers(req.Items)
-		if len(req.Items) == 0 {
-			writeJSONError(w, r, http.StatusBadRequest, reasonItemsEmpty)
-			return
-		}
-		if len(req.Items) > MaxBatchSize {
-			writeJSONError(w, r, http.StatusBadRequest, reasonBatchTooLarge, map[string]any{"size": len(req.Items), "max": MaxBatchSize})
-			return
-		}
-		for i, item := range req.Items {
-			if err := ch.itemKeyFoldsUnambiguous(item); err != nil {
-				writeBatchItemError(w, r, i, err)
-				return
-			}
-		}
-
-		results := initSkipped(len(req.Items))
-		hidden := make([]bool, len(req.Items))
-		txErr := ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
-			for i, item := range req.Items {
-				body := ch.unconvertMapKeys(item)
-				res, err := ch.doCreate(ctx, r, body)
-				if err == nil {
-					hidden[i], err = ch.readScopeHidesRow(ctx, res)
+		ch.runBatch(w, r, batchSpec{
+			op: opCreate, envelope: &req, key: "items", empty: reasonItemsEmpty,
+			count:     func() int { return len(req.Items) },
+			normalize: func() { normalizeItemNumbers(req.Items) },
+			checkItems: func(r *http.Request) bool {
+				for i, item := range req.Items {
+					if err := ch.itemKeyFoldsUnambiguous(item); err != nil {
+						writeBatchItemError(w, r, i, err)
+						return false
+					}
 				}
-				if err != nil {
-					results[i] = classifyDoErr(ctx, i, err, ch.convertKey)
-					return errBatchAborted
+				return true
+			},
+			event: event.EntityCreated,
+			shape: true,
+			tx: func(ctx context.Context, r *http.Request, ch *CrudHandler, results []batchResult, hidden []bool) error {
+				for i, item := range req.Items {
+					body := ch.unconvertMapKeys(item)
+					res, err := ch.doCreate(ctx, r, body)
+					if err == nil {
+						hidden[i], err = ch.readScopeHidesRow(ctx, res)
+					}
+					if err != nil {
+						results[i] = classifyDoErr(ctx, i, err, ch.convertKey)
+						return errBatchAborted
+					}
+					results[i] = batchResult{Index: i, Data: res}
 				}
-				results[i] = batchResult{Index: i, Data: res}
-			}
-			return nil
+				return nil
+			},
 		})
-
-		if txErr != nil && !errors.Is(txErr, errBatchAborted) {
-			logf("crud: batch tx failed: %v", txErr)
-			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
-			return
-		}
-		if txErr == nil {
-			for _, res := range results {
-				if res.Data != nil {
-					ch.EmitEvent(r.Context(), event.EntityCreated, res.Data)
-				}
-			}
-		}
-
-		if txErr == nil {
-			ch.shapeBatchResults(r, results, hidden)
-		}
-		writeBatchResponse(w, r, BatchResponse{Committed: txErr == nil, Results: results})
 	}
 }
 
@@ -246,93 +287,55 @@ type batchUpdateRequest struct {
 // naming its record by key, as BatchCreate.
 func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		r = r.WithContext(withEventStamps(r.Context()))
-		w.Header().Set("Cache-Control", "no-store")
-		if err := enforceJSONOnly(r); err != nil {
-			writeContentTypeError(w, r, err)
-			return
-		}
-		if !ch.requireScope(w, r, opUpdate) {
-			return
-		}
-		limitJSONBody(w, r)
 		var req batchUpdateRequest
-		if err := decodeBatchEnvelope(r, &req, "items"); err != nil {
-			if errors.Is(err, errBodyTooLarge) {
-				writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return
-			}
-			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
-			return
-		}
-		normalizeItemNumbers(req.Items)
-		if len(req.Items) == 0 {
-			writeJSONError(w, r, http.StatusBadRequest, reasonItemsEmpty)
-			return
-		}
-		if len(req.Items) > MaxBatchSize {
-			writeJSONError(w, r, http.StatusBadRequest, reasonBatchTooLarge, map[string]any{"size": len(req.Items), "max": MaxBatchSize})
-			return
-		}
-		for i, item := range req.Items {
-			if err := ch.itemKeyFoldsUnambiguous(item); err != nil {
-				writeBatchItemError(w, r, i, err)
-				return
-			}
-		}
-
-		results := initSkipped(len(req.Items))
-		hidden := make([]bool, len(req.Items))
-		txErr := ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
-			for i, item := range req.Items {
-				body := ch.unconvertMapKeys(item)
-				id, ok := entity.RowKey(body, ch.keyCols(), nil)
-				if !ok {
-					keys := make([]string, len(ch.keyCols()))
-					for k, c := range ch.keyCols() {
-						keys[k] = ch.convertKey(c)
+		ch.runBatch(w, r, batchSpec{
+			op: opUpdate, envelope: &req, key: "items", empty: reasonItemsEmpty,
+			count:     func() int { return len(req.Items) },
+			normalize: func() { normalizeItemNumbers(req.Items) },
+			checkItems: func(r *http.Request) bool {
+				for i, item := range req.Items {
+					if err := ch.itemKeyFoldsUnambiguous(item); err != nil {
+						writeBatchItemError(w, r, i, err)
+						return false
 					}
-					f := phraseRefusal(ctx, http.StatusBadRequest, reasonItemMissingKey, map[string]any{"key": strings.Join(keys, ", ")})
-					results[i] = batchResult{Index: i, Error: f.text, Reason: f.reason}
-					return errBatchAborted
 				}
-				for _, c := range ch.keyCols() {
-					delete(body, c)
+				return true
+			},
+			event: event.EntityUpdated,
+			shape: true,
+			tx: func(ctx context.Context, r *http.Request, ch *CrudHandler, results []batchResult, hidden []bool) error {
+				for i, item := range req.Items {
+					body := ch.unconvertMapKeys(item)
+					id, ok := entity.RowKey(body, ch.keyCols(), nil)
+					if !ok {
+						keys := make([]string, len(ch.keyCols()))
+						for k, c := range ch.keyCols() {
+							keys[k] = ch.convertKey(c)
+						}
+						f := phraseRefusal(ctx, http.StatusBadRequest, reasonItemMissingKey, map[string]any{"key": strings.Join(keys, ", ")})
+						results[i] = batchResult{Index: i, Error: f.text, Reason: f.reason}
+						return errBatchAborted
+					}
+					for _, c := range ch.keyCols() {
+						delete(body, c)
+					}
+					if !ch.itemPermitted(ctx, opUpdate, id) {
+						results[i] = batchResult{Index: i, Error: reasonAccessDenied.Text(ctx), Reason: reasonAccessDenied.Code()}
+						return errBatchAborted
+					}
+					res, err := ch.doUpdate(ctx, r, id, body)
+					if err == nil {
+						hidden[i], err = ch.readScopeHidesRow(ctx, res)
+					}
+					if err != nil {
+						results[i] = classifyDoErr(ctx, i, err, ch.convertKey)
+						return errBatchAborted
+					}
+					results[i] = batchResult{Index: i, Data: res}
 				}
-				if !ch.itemPermitted(ctx, opUpdate, id) {
-					results[i] = batchResult{Index: i, Error: reasonAccessDenied.Text(ctx), Reason: reasonAccessDenied.Code()}
-					return errBatchAborted
-				}
-				res, err := ch.doUpdate(ctx, r, id, body)
-				if err == nil {
-					hidden[i], err = ch.readScopeHidesRow(ctx, res)
-				}
-				if err != nil {
-					results[i] = classifyDoErr(ctx, i, err, ch.convertKey)
-					return errBatchAborted
-				}
-				results[i] = batchResult{Index: i, Data: res}
-			}
-			return nil
+				return nil
+			},
 		})
-
-		if txErr != nil && !errors.Is(txErr, errBatchAborted) {
-			logf("crud: batch tx failed: %v", txErr)
-			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
-			return
-		}
-		if txErr == nil {
-			for _, res := range results {
-				if res.Data != nil {
-					ch.EmitEvent(r.Context(), event.EntityUpdated, res.Data)
-				}
-			}
-		}
-
-		if txErr == nil {
-			ch.shapeBatchResults(r, results, hidden)
-		}
-		writeBatchResponse(w, r, BatchResponse{Committed: txErr == nil, Results: results})
 	}
 }
 
@@ -344,62 +347,25 @@ type batchDeleteRequest struct {
 // BatchCreate.
 func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		r = r.WithContext(withEventStamps(r.Context()))
-		w.Header().Set("Cache-Control", "no-store")
-		if err := enforceJSONOnly(r); err != nil {
-			writeContentTypeError(w, r, err)
-			return
-		}
-		if !ch.requireScope(w, r, opDelete) {
-			return
-		}
-		limitJSONBody(w, r)
 		var req batchDeleteRequest
-		if err := decodeBatchEnvelope(r, &req, "ids"); err != nil {
-			if errors.Is(err, errBodyTooLarge) {
-				writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
-				return
-			}
-			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidBody)
-			return
-		}
-		if len(req.IDs) == 0 {
-			writeJSONError(w, r, http.StatusBadRequest, reasonIDsEmpty)
-			return
-		}
-		if len(req.IDs) > MaxBatchSize {
-			writeJSONError(w, r, http.StatusBadRequest, reasonBatchTooLarge, map[string]any{"size": len(req.IDs), "max": MaxBatchSize})
-			return
-		}
-
-		results := initSkipped(len(req.IDs))
-		txErr := ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
-			for i, id := range req.IDs {
-				if !ch.itemPermitted(ctx, opDelete, id) {
-					results[i] = batchResult{Index: i, Error: reasonAccessDenied.Text(ctx), Reason: reasonAccessDenied.Code()}
-					return errBatchAborted
+		ch.runBatch(w, r, batchSpec{
+			op: opDelete, envelope: &req, key: "ids", empty: reasonIDsEmpty,
+			count: func() int { return len(req.IDs) },
+			event: event.EntityDeleted,
+			tx: func(ctx context.Context, r *http.Request, ch *CrudHandler, results []batchResult, _ []bool) error {
+				for i, id := range req.IDs {
+					if !ch.itemPermitted(ctx, opDelete, id) {
+						results[i] = batchResult{Index: i, Error: reasonAccessDenied.Text(ctx), Reason: reasonAccessDenied.Code()}
+						return errBatchAborted
+					}
+					if err := ch.doDelete(ctx, r, id); err != nil {
+						results[i] = classifyDoErr(ctx, i, err, ch.convertKey)
+						return errBatchAborted
+					}
+					results[i] = batchResult{Index: i, Data: ch.keyPayload(id)}
 				}
-				if err := ch.doDelete(ctx, r, id); err != nil {
-					results[i] = classifyDoErr(ctx, i, err, ch.convertKey)
-					return errBatchAborted
-				}
-				results[i] = batchResult{Index: i, Data: ch.keyPayload(id)}
-			}
-			return nil
+				return nil
+			},
 		})
-
-		if txErr != nil && !errors.Is(txErr, errBatchAborted) {
-			logf("crud: batch tx failed: %v", txErr)
-			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
-			return
-		}
-		if txErr == nil {
-			for _, res := range results {
-				if res.Data != nil {
-					ch.EmitEvent(r.Context(), event.EntityDeleted, res.Data)
-				}
-			}
-		}
-		writeBatchResponse(w, r, BatchResponse{Committed: txErr == nil, Results: results})
 	}
 }

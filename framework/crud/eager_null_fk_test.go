@@ -64,7 +64,7 @@ func nullFKWorld(t *testing.T) (*sql.DB, *entity.Entity, *entity.Entity, *stubRe
 }
 
 // TestEagerLoadBelongsToNullFK covers the legacy exported EagerLoad helper
-// (eager.go → eagerLoadBelongsTo): a NULL FK must yield the parent row
+// (eager.go → loadBelongsToFiltered): a NULL FK must yield the parent row
 // with the relation absent, not a scan error.
 func TestEagerLoadBelongsToNullFK(t *testing.T) {
 	db, postsEnt, _, reg := nullFKWorld(t)

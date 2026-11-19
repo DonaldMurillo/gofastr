@@ -404,19 +404,7 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, r *http.Request,
 			conds[i] = fmt.Sprintf("%s = $%d", query.QuoteKeyword(c), i+1)
 			allArgs[i] = coercePKValue(ch.Registry, target, targetKey[i], raws[i])
 		}
-		preds := eagerScopeFilters(ctx, target)
-		readPreds := readScopeFilters(ctx, target)
-		clause, args := filterClause(preds, len(allArgs)+1)
-		readClause, readArgs := renderReadScope(readPreds, "", len(allArgs)+1+len(args))
-		if readClause != "" {
-			readClause = " AND " + readClause
-		}
-		q := fmt.Sprintf("SELECT %s FROM %s WHERE %s%s%s", query.QuoteKeyword(keyCols[0]), query.QuoteKeyword(table), strings.Join(conds, " AND "), clause, readClause)
-		if target.Config.Scope.SoftDelete {
-			q += " AND deleted_at IS NULL"
-		}
-		allArgs = append(allArgs, args...)
-		allArgs = append(allArgs, readArgs...)
+		q, allArgs := scopedTargetQuery(ctx, target, table, query.QuoteKeyword(keyCols[0]), conds, allArgs)
 		var hit any
 		if err := ch.conn(ctx).QueryRowContext(ctx, q, allArgs...).Scan(&hit); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {

@@ -380,17 +380,23 @@ preserve those events.
 When an in-process `CreateOne` / `UpdateOne` / `UpsertOne` / batch call
 fails schema validation, the returned error unwraps to
 `*crud.ValidationError`. Use `errors.As` to detect it and read the
-per-field messages:
+per-field violations:
 
 ```go
 import "errors"
+import "log"
 import "github.com/DonaldMurillo/gofastr/framework/crud"
 
-row, err := ch.CreateOne(ctx, body)
+_, err := ch.CreateOne(ctx, body)
 var ve *crud.ValidationError
 if errors.As(err, &ve) {
-    // ve.Fields() → map[string][]string, e.g. {"email": ["is required"}}
-    return ve.Fields()
+    // ve.Fields() → map[string][]schema.Violation, e.g.
+    // ve.Fields()["email"][0].Error() → "is required"
+    for field, violations := range ve.Fields() {
+        for _, v := range violations {
+            log.Printf("%s: %s", field, v.Error())
+        }
+    }
 }
 ```
 

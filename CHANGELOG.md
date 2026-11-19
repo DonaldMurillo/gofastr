@@ -260,6 +260,9 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **crud: an entity's `llm.md` filter table uses the MCP tools' operator
+  labels.** `like` reads "contains the substring" (was "LIKE (contains)")
+  and `in` reads "is one of" (was "IN (comma-separated)").
 - **The default Content-Security-Policy sends `base-uri 'none'` and
   `worker-src 'self'`**, live and in static exports. An app that renders a
   `<base>` element sets its own policy with `framework.WithSecurityHeaders`.
