@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=057c8e9c3a639ca6
+//gofastr:generated generator=app kind=scaffold version=dev sum=cd92baa0d8a08bd5
 
 package main
 
@@ -44,7 +44,8 @@ func TestE2E(t *testing.T) {
 	addr := e2eFreeAddr(t)
 	srv := exec.Command(bin)
 	srv.Dir = dir
-	srv.Env = append(os.Environ(), "PORT="+addr, "GOFASTR_SEMANTIC_COVERAGE=1", "DATABASE_URL=file:"+filepath.Join(dir, "e2e.db"))
+	srv.Env = append(os.Environ(), "PORT="+addr, "GOFASTR_SEMANTIC_COVERAGE=1")
+	srv.Env = append(srv.Env, "DATABASE_URL=file:"+filepath.Join(dir, "e2e.db"))
 	e2eCaptureServerLog(t, srv, dir)
 	if err := srv.Start(); err != nil {
 		t.Fatalf("start: %v", err)

@@ -446,12 +446,9 @@ func applySDKConfigDefaults(opts *SdkOptions) error {
 // buildSDKSpec validates selection and derives the renderer input. It
 // mutates opts only to settle defaults (name, out dir, targets).
 func buildSDKSpec(decls []framework.EntityDeclaration, opts *SdkOptions) (sdkSpec, error) {
-	for _, sel := range [][]string{opts.only, opts.exclude} {
-		for _, name := range sel {
-			if !cliAnyEntityMatches(decls, name) {
-				return sdkSpec{}, fmt.Errorf("--only/--exclude: no entity named %q", name)
-			}
-		}
+	selected, err := selectDeclarations(decls, opts.only, opts.exclude, func(string) string { return "--only/--exclude" })
+	if err != nil {
+		return sdkSpec{}, err
 	}
 	for _, t := range opts.targets {
 		if !sdkValidTargets[t] {
@@ -519,23 +516,9 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *SdkOptions) (sdkSpe
 		spec.GeneratedAt = time.Now().UTC()
 	}
 
-	matchesAny := func(decl framework.EntityDeclaration, names []string) bool {
-		for _, name := range names {
-			if cliEntityMatches(decl, name) {
-				return true
-			}
-		}
-		return false
-	}
 	structOwners := map[string]string{} // derived Go type name → declaring entity
 	propOwners := map[string]string{}   // derived client.js property → declaring entity
-	for _, decl := range decls {
-		if len(opts.only) > 0 && !matchesAny(decl, opts.only) {
-			continue
-		}
-		if matchesAny(decl, opts.exclude) {
-			continue
-		}
+	for _, decl := range selected {
 		ent := buildEntityModel(decl, cliVerbs)
 		// `generate sdk` reads the same hand-written entities/*.go the CLI
 		// generator reads (packReadEntities), so it inherits the same trust

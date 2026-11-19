@@ -12,10 +12,16 @@ extras such as `ID` or `Class` cannot override the canonical `id` or `class`.
 
 Generation rejects image blocks without `src`, fieldsets without `legend`,
 text-only labels without `for`, and node-rendered links without text,
-children, or a nonblank `aria-label` or `aria-labelledby` prop. A plain
-`{type: link, href: /docs}` block uses its href as the label; adding `kind`,
-props, actions, an island, or a widget selects the node renderer and requires
-content or one of those accessible-name props. The low-level node renderer
+children, or a nonblank `aria-label` or `aria-labelledby` prop. This plain
+link block uses its href as the label:
+
+```yaml
+- type: link
+  href: /docs
+```
+
+Adding `kind`, props, actions, an island, or a widget selects the node renderer
+and requires content or one of those accessible-name props. The low-level node renderer
 degrades incomplete nodes instead of panicking:
 an image is omitted, an empty-legend fieldset stays a fieldset, a label may
 remain unassociated, and a link without `href` becomes text content.
@@ -620,6 +626,10 @@ exists, so it lands in the skipped list and the existing file is left
 untouched. There is no diffing or merging: `--add` only writes files that
 don't exist. Running the same fragment twice is safe.
 
+A new authored or synthesized screen must have a distinct mounted route.
+For example, `/docs/{slug}` conflicts with a mounted `/docs/:page`
+because both match the same URLs.
+
 **A new screen over an entity that already has screens** is refused. An
 entity's list, record and create screens share one file,
 `screen_<entity>_crud.go`; once the project has it, `--add` cannot put
@@ -1054,15 +1064,28 @@ entities:
     crud: true
     search_fields: [number]
     fields:
-      - {name: number, type: string, required: true}
-      - {name: amount, type: decimal, required: true}
-      - {name: status, type: enum, values: [draft, open, paid, void], default: draft}
-      - {name: paid_on, type: date}
+      - name: number
+        type: string
+        required: true
+      - name: amount
+        type: decimal
+        required: true
+      - name: status
+        type: enum
+        values: [draft, open, paid, void]
+        default: draft
+      - name: paid_on
+        type: date
     states:
       field: status
       initial: [draft]
       transitions:
-        - {key: mark_paid, label: Mark paid, from: [open], to: paid, stamp: paid_on, variant: primary}
+        - key: mark_paid
+          label: Mark paid
+          from: [open]
+          to: paid
+          stamp: paid_on
+          variant: primary
     display:
       singular: Invoice
       plural: Invoices
@@ -1072,7 +1095,8 @@ entities:
       form:
         main:
           - row: [number, amount]
-          - {section: dates, items: [paid_on]}
+          - section: dates
+            items: [paid_on]
         side: [status]
 ```
 
@@ -1088,11 +1112,10 @@ Dashboard data blocks read through the same value: `stat_card` calls
 `LineChart`, each resolving the entity at render time (a chart source
 needs no screen and no registry entry).
 
-`appBaseCSS()` (mounted ahead of `static/app.css`) is an owned,
-empty-by-default extension point for app-specific base CSS: every
-generated screen composes `framework/ui` components and `core-ui/app`
-layouts that ship their own styling, so the generator emits zero bespoke
-CSS.
+Generated screens compose `framework/ui` components and `core-ui/app`
+layouts with their own styling. Add app styles in
+[owned style sheets](ui-composition-recipes.md) using `<name>.style.css` and
+`gofastr gen styles`.
 
 #### Extending the screens (`extensions.go`)
 
@@ -1180,9 +1203,14 @@ entities:
     crud: true
     primary_key: [student_id, course_id]
     fields:
-      - {name: student_id, type: string, required: true}
-      - {name: course_id, type: string, required: true}
-      - {name: grade, type: string}
+      - name: student_id
+        type: string
+        required: true
+      - name: course_id
+        type: string
+        required: true
+      - name: grade
+        type: string
 ```
 
 The rules are `EntityConfig.PrimaryKey`'s
@@ -1217,9 +1245,12 @@ key column, in key order, as a list:
   - name: lines
     crud: true
     fields:
-      - {name: order_store, type: string}
-      - {name: order_no, type: int}
-      - {name: sku, type: string}
+      - name: order_store
+        type: string
+      - name: order_no
+        type: int
+      - name: sku
+        type: string
     relations:
       - type: belongs_to
         name: order
@@ -1282,14 +1313,26 @@ variant with a `12rem` default minimum. Spacing must use the shared
 **Long-form content**: `markdown` renders formatted prose (`ui.Markdown`) from a
 `text:` string (headings, **bold**, lists, etc.) at a readable measure; the plain
 `type: heading` / `type: paragraph` blocks are also typeset to a comfortable
-column on marketing pages. **Pricing**: a `pricing` block takes
-`props: {plans: [{name, price, period, description, features: […], cta_text,
-cta_href, featured}]}` and renders a row of `ui.PricingCard`s (featured plan
-highlighted), so a pricing page reads like marketing, not an admin grid. A
-plan with `cta_text` needs a safe `cta_href` (root-relative, http(s), mailto
-or a fragment), and a numeric `price` is quoted (`price: "29"`); validation
-refuses either. A `callout` takes `props.title` and `text:` as its body and
-needs at least one of them.
+column on marketing pages. **Pricing**: a `pricing` block renders a row of
+`ui.PricingCard`s and highlights a featured plan.
+
+```yaml
+- kind: pricing
+  props:
+    plans:
+      - name: Starter
+        price: "29"
+        period: month
+        description: For small teams
+        features: [Shared workspace, Email support]
+        cta_text: Start
+        cta_href: /signup
+        featured: true
+```
+
+A plan with `cta_text` needs a safe `cta_href` (root-relative, http(s), mailto
+or a fragment). Quote numeric prices. A `callout` takes `props.title` and
+`text:` as its body and needs at least one of them.
 
 A catalog prop that takes text refuses a number or a boolean: an unquoted
 `heading: 2026` decodes as a number, which the generator would draw as
@@ -1377,10 +1420,25 @@ its `text:`. These props are text: quote a number (`value: "42"`), since
 an unquoted one reads as no value at all.
 
 **Data-bound dashboard widgets:** `stat_card` and the charts accept a `source:`
-that computes a live metric server-side:
-`source: {entity: customers, agg: sum, field: mrr}` (or `agg: count` with an
-optional `filter: status=active`) for a `stat_card`, and
-`source: {entity: customers, group_by: status}` for a chart. `agg` is
+that computes a live metric server-side.
+
+```yaml
+- kind: stat_card
+  props:
+    label: Monthly revenue
+    source:
+      entity: customers
+      agg: sum
+      field: mrr
+- kind: bar_chart
+  props:
+    source:
+      entity: customers
+      group_by: status
+```
+
+A `stat_card` can also use `agg: count` with an optional
+`filter: status=active`. `agg` is
 `count` (the default) or `sum`, spelled exactly, and a sum's `field` is an
 `int`, `float` or `decimal` field; validation refuses anything else rather
 than rendering "—". A count takes no `field` and no `format`, and a sum's
@@ -2026,6 +2084,10 @@ on: each names the app spec file (and the line, where the parser provides
 one), what is wrong, and the remedy. `gofastr generate` runs the same checks
 before writing any file.
 
+Screen mounts use `app.CanonicalRoutePattern`, the same normalization as
+screen registration. A catch-all such as `/docs/{path...}` mounts as
+`/docs/:path*` and captures one or more path segments.
+
 The generator rejects:
 
 - unknown top-level or section keys, except `x_` / `x-` extension keys
@@ -2320,15 +2382,17 @@ portability rules are built into that template:
 - **Database bootstrap follows `db.driver`.** A SQLite/empty-driver
   app spec boots against a throwaway `DATABASE_URL=file:<tmp>/e2e.db`. A
   `postgres` app spec declares the engine the spec ships against, so the
-  test carves a disposable database from the env-provided
-  `TEST_POSTGRES_DSN` admin DSN and points the child at it
-  (`DATABASE_URL` + `DB_DRIVER=postgres`). When `TEST_POSTGRES_DSN` is unset or
-  Postgres is unreachable the test **skips** (`t.Skip`). That keeps driverless CI
-  green-by-skip instead of timing out with a misleading "server did not become
-  ready". Set `TEST_POSTGRES_DSN` to a `postgres://` DSN whose role can
+  test uses [testkit](testkit.md#newisolateddbdsn) to carve a disposable
+  database from `TEST_POSTGRES_DSN` and point the child at it
+  (`DATABASE_URL` + `DB_DRIVER=postgres`). The test skips when the DSN is
+  unset, Postgres is unreachable, or the admin connection cannot create
+  the test database. Set `TEST_POSTGRES_DSN` to a `postgres://` DSN whose role can
   `CREATE DATABASE` / `DROP DATABASE` to exercise the postgres path locally.
   (The generated `main.go` links both drivers, so switching `DB_DRIVER`
   between `sqlite` and `postgres` at boot works whatever the spec declares.)
+
+Both drivers set `GOFASTR_SEMANTIC_COVERAGE=1` in the child environment so
+the server records which contracts the generated suite exercises.
 
 With gated screens and a seeded admin, the test signs in as that admin and
 then requires each gated screen to answer 200. The admin is seeded with the

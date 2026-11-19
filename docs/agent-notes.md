@@ -16,6 +16,7 @@
 - Approach: call runtime-owned exposure, endpoint-route and sitemap checks; lint nav against the screen router and known generated routes; warn because owned routes/static inputs cannot be fully known.
 - Evidence: `TestRenderPanicParity` catches a removed callout check; `TestBootRefusalParity` catches a removed exposure call (both proved with Go overlays).
 - Pitfall: endpoint grammar already refuses leading underscores; keep that gate while checking own-route collisions. Check endpoint shape before one complete group call (siblings can overlap). Emit `view_stubs_<entity>_init.go` registrations (avoid both Go suffix constraints and screen filenames). Keep stale registrations inert by checking the live registry through `withViewStubs(fwApp, appExtensions)`; never infer file deletion from a partial spec, packed declarations or source substrings. Compare framework route patterns to actual registrations through a socket-free Host. Keep callbacks in owned `extensions.go`; the owned `app.go` call passes fwApp into the wrapper.
+- Route checks: compare mounted screen shapes for `--add`, including synthesized screens. Feed the mounted patterns to the app router for form and nav probes, and preserve HTTP methods for nav links.
 - Next time: add a case or a reason for every catalog kind, and mutate each independent validator before trusting its parity table.
 - Status: active
 

@@ -1,0 +1,56 @@
+primitive: appgen
+summary: The app-spec reader and application and client generators.
+code:
+  - cmd/gofastr/internal/appgen/
+  - cmd/gofastr/internal/appspec/appspec.go
+  - cmd/gofastr/internal/appspec/doc_examples_test.go
+docs:
+  - framework/docs/content/app-spec.md
+  - framework/docs/content/entity-declarations.md
+invariants:
+  - id: route-patterns-follow-screen-router
+    rule: Generated screen mounts and route comparisons use the app router's normalization, including brace-style catch-alls.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGeneratedCatchAllMountMatchesRouter
+    applies:
+      - core-ui/app/router.go
+  - id: add-preserves-distinct-mounted-routes
+    rule: Additive generation rejects equivalent mounted route shapes for new authored or synthesized screens and skips re-added screens.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestAddEquivalentScreenRoutesRefused
+      - test: cmd/gofastr/internal/appgen.TestAddScreenCollidesWithSynthesizedRoute
+      - test: cmd/gofastr/internal/appgen.TestAddSameScreenIsIdempotent
+  - id: nav-requires-get
+    rule: Nav lint keeps the registered HTTP method and resolves chrome links with a GET probe.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestNavHrefRequiresGET
+  - id: post-form-probes-mounted-screen
+    rule: POST form lint resolves an escaped action path with the same route matcher and mounted patterns as the generated app.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestPostFormFollowsMountedScreenPatterns
+  - id: create-form-block-identity
+    rule: Each create form binds its mount action and control IDs to its own screen and block path.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestCreateFormsOwnMountActionsAndControlIDs
+  - id: markdown-h1-counts
+    rule: A Markdown H1 suppresses the fallback H1 and lowers the heading of a later entity list.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestMarkdownH1LowersFollowingListHeading
+  - id: subprocess-records-semantic-coverage
+    rule: Generated SQLite and Postgres E2E child servers both receive GOFASTR_SEMANTIC_COVERAGE=1 before their driver-specific environment.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestGeneratedE2ESetsSemanticCoverageEnv
+  - id: one-declaration-selection
+    rule: CLI and SDK generation select declarations through the same CLI entity matcher and keep their own error labels.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestRenderCLI_EntityOnlyExclude
+      - test: cmd/gofastr/internal/appgen.TestBuildSDKSpecSelection
+  - id: one-create-field-eligibility
+    rule: Create form validation and emission use the same field eligibility check, with validation retaining reasons for refused entries.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestFormFieldsEntryMustDraw
+      - test: cmd/gofastr/internal/appgen.TestEntityFormUsesWireNames
+  - id: documentation-examples-load
+    rule: App-spec YAML recipes use block mappings and load through the app-spec reader.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestRewrittenAppSpecDocExamplesLoad

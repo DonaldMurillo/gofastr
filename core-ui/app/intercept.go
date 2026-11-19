@@ -88,7 +88,7 @@ func normalizeIntercept(intercept *Intercept) *Intercept {
 		if p == "" || p[0] != '/' {
 			panic(fmt.Sprintf("app: InterceptFrom needs an absolute route pattern to intercept from, got %q", p))
 		}
-		patterns[index] = canonicalRoutePattern(p)
+		patterns[index] = CanonicalRoutePattern(p)
 	}
 	if intercept.As != ScreenDrawer && intercept.As != ScreenSheet {
 		panic(fmt.Sprintf("app: InterceptFrom presentation must be ScreenDrawer or ScreenSheet, got %v", intercept.As))

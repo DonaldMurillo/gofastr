@@ -3,6 +3,7 @@ package testkit_test
 import (
 	"context"
 	"database/sql"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -106,5 +107,69 @@ func TestRewriteDBNamePreservesUserHostQuery(t *testing.T) {
 		if !strings.Contains(out, must) {
 			t.Fatalf("rewritten DSN missing %q: %s", must, out)
 		}
+	}
+}
+
+func TestNewIsolatedDBDSNSkipsWithoutAdminDSN(t *testing.T) {
+	if !t.Run("missing", func(t *testing.T) {
+		testkit.NewIsolatedDBDSN(t, "")
+		t.Error("missing DSN did not skip")
+	}) {
+		t.Error("missing DSN failed")
+	}
+}
+
+func TestNewIsolatedDBDSNCarvesAndDrops(t *testing.T) {
+	adminDSN := os.Getenv("GOFASTR_TEST_POSTGRES_DSN")
+	if adminDSN == "" {
+		t.Skip("GOFASTR_TEST_POSTGRES_DSN unset; skipping live-PG self-test")
+	}
+	u, err := url.Parse(adminDSN)
+	if err != nil {
+		t.Fatal("expected a Postgres URL")
+	}
+	options := u.Query()
+	options.Set("dbname", strings.TrimPrefix(u.Path, "/"))
+	u.RawQuery = options.Encode()
+
+	var name string
+	if !t.Run("provision", func(t *testing.T) {
+		dsn := testkit.NewIsolatedDBDSN(t, u.String())
+		carved, err := url.Parse(dsn)
+		if err != nil {
+			t.Fatal("expected a carved Postgres URL")
+		}
+		if carved.Query().Has("dbname") || carved.Query().Has("database") {
+			t.Error("carved URL retains a database override")
+		}
+		db, err := sql.Open("postgres", dsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if err := db.QueryRowContext(t.Context(), "SELECT current_database()").Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		if name != strings.TrimPrefix(carved.Path, "/") || !strings.HasPrefix(name, "ftest_") {
+			t.Errorf("connected to %q, want disposable database from the carved URL", name)
+		}
+	}) {
+		return
+	}
+	if name == "" {
+		t.Fatal("configured Postgres fixture skipped provisioning")
+	}
+
+	admin, err := sql.Open("postgres", adminDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close()
+	var exists bool
+	if err := admin.QueryRowContext(t.Context(), "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname=$1)", name).Scan(&exists); err != nil {
+		t.Fatal(err)
+	}
+	if exists {
+		t.Errorf("database %q still exists after subtest cleanup", name)
 	}
 }

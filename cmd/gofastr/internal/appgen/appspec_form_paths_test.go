@@ -61,7 +61,7 @@ func TestRelationSelectUsesTargetKey(t *testing.T) {
 			},
 		},
 	}
-	js := appSpecEntityFormClientJS(appspec.AppSpecBlock{Kind: "entity_form", Entity: "products"}, entities, "/api")
+	js := appSpecEntityFormClientJS(appspec.AppSpecBlock{Kind: "entity_form", Entity: "products"}, entities, "/api", "entity_form_products_0")
 	want := `{"currencies":{"key":"currencyCode","path":"/api/currencies"},"vendors":{"key":"id","path":"/api/shop_vendors"}}`
 	if !strings.Contains(js, "const targets = "+want+";") {
 		t.Errorf("relation targets are not the tables and keys %s:\n%s", want, js)

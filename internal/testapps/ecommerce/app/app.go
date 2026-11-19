@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=d6641987edb0728d
+//gofastr:generated generator=app kind=scaffold version=dev sum=dddb83b35f08ccc9
 
 package main
 
@@ -46,14 +46,6 @@ const (
 	staticDir = ""
 	apiPrefix = "api"
 )
-
-// appBaseCSS is an owned extension point for app-specific base CSS.
-// It's empty by default: every generated surface composes framework/ui
-// components and core-ui/app layouts that ship their own CSS, so the
-// generated app ships no bespoke styling. Add app CSS here or in static/app.css.
-func appBaseCSS() string {
-	return ""
-}
 
 // guestPolicy gates a guest-only screen (login / signup): a
 // signed-in visitor is redirected to the app instead of seeing a sign-in

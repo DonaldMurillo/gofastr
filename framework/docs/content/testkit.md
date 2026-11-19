@@ -240,6 +240,22 @@ separate admin connection.
 db, name := testkit.NewIsolatedDBWithName(t, adminDSN, migrate)
 ```
 
+### `NewIsolatedDBDSN`
+
+```go
+func NewIsolatedDBDSN(t *testing.T, adminDSN string) string
+```
+
+Use the returned DSN as the database URL for a subprocess. It names the
+disposable database, strips `dbname` and `database` query overrides, and
+preserves the other connection options. The helper drops the database at
+test cleanup. Register subprocess shutdown with `t.Cleanup` after calling
+the helper so shutdown runs before the drop.
+
+The helper skips if the admin DSN is missing or unusable, or the admin
+connection cannot create a database. Generated Postgres end-to-end tests
+pass their `TEST_POSTGRES_DSN` to this helper.
+
 ### Admin DSN
 
 Pass a Postgres DSN with permission to `CREATE DATABASE` and `DROP DATABASE`

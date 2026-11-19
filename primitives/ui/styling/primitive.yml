@@ -13,6 +13,7 @@ invariants:
   - id: one-styling-surface
     rule: All CSS lives in the design system (component sheets, layouts, theme tokens) or in an app's owned style sheet, scoped to its own markup and written in tokens; generators and apps ship no other CSS.
     enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestScaffoldCSSUsesOwnedSheets
       - contract: GOFASTR1801
       - contract: GOFASTR1804
       - contract: GOFASTR1806

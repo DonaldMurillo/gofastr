@@ -900,14 +900,15 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		// shared file already exists would be skipped with that file and
 		// never written: refuse it instead of dropping it.
 		taken := registeredScreenRoutes(writeRoot)
-		for _, s := range bp.Screens {
+		for _, s := range appspec.AppSpecSynthesizeCRUDScreens(bp).Screens {
 			file, declared, dropped := addScreenTarget(writeRoot, s)
-			if dropped && !taken[s.Route] {
+			shape := appspec.RouteShape(appSpecScreenPattern(bp, s))
+			if dropped && !taken[shape] {
 				cerr := fmt.Errorf("screen %q would be written to %s, which the project already has and which does not hold it. --add writes only new files and never edits one, so the screen would be left out. Write the screen into %s by hand (a type, a mount func and its line in init), or merge the fragment into the app spec and regenerate with --force", s.Name, file, file)
 				failGenerate(options.json, fmt.Errorf("Failed to load app spec: %v", cerr))
 				cli.OsExit(1)
 			}
-			if !taken[s.Route] || declared {
+			if !taken[shape] || declared {
 				continue // a new route, or the same screen being re-added (skip-existing)
 			}
 			cerr := fmt.Errorf("screen %q route %q collides with a route already mounted in the project. Pick a different route (--add cannot replace an owned screen; use --force to regenerate the whole app)", s.Name, s.Route)
@@ -2661,7 +2662,7 @@ func readLegacyRegisterUnder(writeRoot string) ([]framework.EntityDeclaration, e
 	return packReadLegacyRegister(root, "entities/register.go")
 }
 
-// registeredScreenRoutes returns the set of routes actually mounted by the
+// registeredScreenRoutes returns the set of route shapes actually mounted by the
 // generated app under writeRoot, scanned from every `site.Register(route, …)`
 // and `app.NewScreen(route, …)` (the arg to site.RegisterScreen) call in its
 // *.go files. Unlike packReadScreens, which reconstructs only the AUTHORED
@@ -2710,7 +2711,7 @@ func registeredScreenRoutes(writeRoot string) map[string]bool {
 			// NewScreen so scanning NewScreen covers it.
 			if sel.Sel.Name == "Register" || sel.Sel.Name == "NewScreen" {
 				if r := appspec.AstString(call.Args[0]); strings.HasPrefix(r, "/") {
-					routes[r] = true
+					routes[appspec.RouteShape(r)] = true
 				}
 			}
 			return true

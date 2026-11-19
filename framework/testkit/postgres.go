@@ -27,62 +27,65 @@ func NewIsolatedDB(t *testing.T, adminDSN string, migrate func(*sql.DB) error) *
 // NewIsolatedDBWithName is [NewIsolatedDB] that also returns the name.
 func NewIsolatedDBWithName(t *testing.T, adminDSN string, migrate func(*sql.DB) error) (*sql.DB, string) {
 	t.Helper()
-	if err := ValidateAdminDSN(adminDSN); err != nil {
+	dbName, carvedDSN, err := provisionIsolatedDB(t, adminDSN)
+	if err != nil {
 		t.Fatalf("testkit: %v", err)
 	}
 
-	admin, err := sql.Open("postgres", adminDSN)
-	if err != nil {
-		t.Fatalf("testkit: open admin DSN: %v", err)
-	}
-	t.Cleanup(func() { _ = admin.Close() })
-	admin.SetMaxOpenConns(2)
-
-	if err := pingWithRetry(admin); err != nil {
-		t.Fatalf("testkit: cannot reach Postgres via adminDSN: %v", err)
-	}
-
-	dbName := newUniqueDBName(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if _, err := admin.ExecContext(ctx, `CREATE DATABASE "`+dbName+`"`); err != nil {
-		t.Fatalf("testkit: CREATE DATABASE %q: %v", dbName, err)
-	}
-
-	carvedDSN, err := rewriteDBName(adminDSN, dbName)
-	if err != nil {
-		dropCarvedDB(t, admin, dbName, err)
-		t.Fatalf("testkit: rewrite carved DSN: %v", err)
-	}
 	carved, err := sql.Open("postgres", carvedDSN)
 	if err != nil {
-		dropCarvedDB(t, admin, dbName, err)
 		t.Fatalf("testkit: open carved DB %q: %v", dbName, err)
 	}
+	t.Cleanup(func() { _ = carved.Close() })
 	if err := pingWithRetry(carved); err != nil {
-		_ = carved.Close()
-		dropCarvedDB(t, admin, dbName, err)
 		t.Fatalf("testkit: ping carved DB %q: %v", dbName, err)
 	}
-
-	t.Cleanup(func() {
-		_ = carved.Close()
-		dropCtx, dropCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer dropCancel()
-		// best-effort: the checked DROP below reports any remaining leak.
-		_, _ = admin.ExecContext(dropCtx,
-			`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1`, dbName)
-		if _, derr := admin.ExecContext(dropCtx, `DROP DATABASE IF EXISTS "`+dbName+`"`); derr != nil {
-			t.Errorf("testkit: leaked DB %q (drop failed): %v", dbName, derr)
-		}
-	})
-
 	if migrate != nil {
 		if err := migrate(carved); err != nil {
 			t.Fatalf("testkit: migrate callback on %q: %v", dbName, err)
 		}
 	}
 	return carved, dbName
+}
+
+// NewIsolatedDBDSN provisions a database for a subprocess and drops it at test cleanup.
+// It skips when adminDSN is unusable or the admin connection cannot create the database.
+func NewIsolatedDBDSN(t *testing.T, adminDSN string) string {
+	t.Helper()
+	_, dsn, err := provisionIsolatedDB(t, adminDSN)
+	if err != nil {
+		t.Skipf("testkit: %v", err)
+	}
+	return dsn
+}
+
+func provisionIsolatedDB(t *testing.T, adminDSN string) (name, dsn string, unavailable error) {
+	t.Helper()
+	if err := ValidateAdminDSN(adminDSN); err != nil {
+		return "", "", err
+	}
+	admin, err := sql.Open("postgres", adminDSN)
+	if err != nil {
+		return "", "", fmt.Errorf("open admin DSN: %w", err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	admin.SetMaxOpenConns(2)
+	if err := pingWithRetry(admin); err != nil {
+		return "", "", fmt.Errorf("cannot reach Postgres via adminDSN: %w", err)
+	}
+
+	dbName := newUniqueDBName(t)
+	carvedDSN, err := rewriteDBName(adminDSN, dbName)
+	if err != nil {
+		t.Fatalf("testkit: rewrite carved DSN: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	if _, err := admin.ExecContext(ctx, `CREATE DATABASE "`+dbName+`"`); err != nil {
+		return "", "", fmt.Errorf("CREATE DATABASE %q failed (role needs CREATEDB): %w", dbName, err)
+	}
+	t.Cleanup(func() { dropCarvedDB(t, admin, dbName) })
+	return dbName, carvedDSN, nil
 }
 
 // ValidateAdminDSN errors on an empty DSN or one that is not postgres://.
@@ -159,7 +162,7 @@ func RewriteDBNameForTest(dsn, dbName string) (string, error) {
 	return rewriteDBName(dsn, dbName)
 }
 
-func dropCarvedDB(t *testing.T, admin *sql.DB, dbName string, _ error) {
+func dropCarvedDB(t *testing.T, admin *sql.DB, dbName string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -167,7 +170,7 @@ func dropCarvedDB(t *testing.T, admin *sql.DB, dbName string, _ error) {
 	_, _ = admin.ExecContext(ctx,
 		`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1`, dbName)
 	if _, derr := admin.ExecContext(ctx, `DROP DATABASE IF EXISTS "`+dbName+`"`); derr != nil {
-		t.Errorf("testkit: leaked DB %q during error path (drop failed): %v", dbName, derr)
+		t.Errorf("testkit: leaked DB %q (drop failed): %v", dbName, derr)
 	}
 }
 

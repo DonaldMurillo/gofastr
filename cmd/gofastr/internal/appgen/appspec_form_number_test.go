@@ -27,7 +27,7 @@ func TestEntityFormNumberSteps(t *testing.T) {
 	expr := appSpecEntityFormExpr(appspec.AppSpec{},
 		appspec.AppSpecScreen{Name: "home"},
 		appspec.AppSpecBlock{Kind: "entity_form", Entity: "products"},
-		nil, map[string]framework.EntityDeclaration{"products": decl}, "/api",
+		[]int{0}, map[string]framework.EntityDeclaration{"products": decl}, "/api",
 	)
 	for name, step := range map[string]string{"stock": "1", "count": "1", "price": "0.0001", "weight": "any"} {
 		re := regexp.MustCompile(`ui\.Control\(ui\.ControlConfig\{Field: c, Type: "number", Name: "` + name + `", Step: "` + regexp.QuoteMeta(step) + `"\}\)`)
@@ -35,7 +35,7 @@ func TestEntityFormNumberSteps(t *testing.T) {
 			t.Errorf("%s: want a number control with step %q:\n%s", name, step, expr)
 		}
 	}
-	if !regexp.MustCompile(`ui\.FormField\(ui\.FormFieldConfig\{Label: i18nui\.FieldLabel\(ctx, nil, "products", "price", "Price"\), For: "field-price", Required: true,`).MatchString(expr) {
+	if !regexp.MustCompile(`ui\.FormField\(ui\.FormFieldConfig\{Label: i18nui\.FieldLabel\(ctx, nil, "products", "price", "Price"\), For: "field-entity_form_home_0-price", Required: true,`).MatchString(expr) {
 		t.Errorf("the required decimal's field lost Required:\n%s", expr)
 	}
 }

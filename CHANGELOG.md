@@ -25,6 +25,22 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **App-spec catch-all screen routes mount with the router's syntax,** and
+  `generate --add` refuses a route equal in shape to one already mounted,
+  including entity-list screens.
+- **App-spec nav lint warns on a link to a POST-only route,** such as the
+  auth battery's logout.
+- **App-spec POST form actions resolve against the mounted screen
+  routes,** including catch-all, typed and composite-key routes.
+- **Two create forms on one screen get their own controls and relation
+  loading.**
+- **The entity-list heading drops to level 2 when a Markdown block already
+  renders the page H1.**
+- **Generated Postgres E2E tests point at their own disposable database**
+  when the admin URL carries a database override, and record semantic
+  coverage.
+- **The app-spec YAML recipes in the docs load,** and strict mode's table
+  says a chrome link needs a registered GET route.
 - **verify: a trailing CSS block-comment waiver covers its own line,** as
   the docs say.
 - **verify: a capability-scoped run reports only that capability's rules**
@@ -302,6 +318,9 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **New app scaffolds put custom styling in owned style sheets.** They no
+  longer emit the empty `appBaseCSS` hook or append `static/app.css`; the
+  design-system font-face CSS stays.
 - **verify: `hostport` and `waitgroup` run once, in plain `go vet`.** The
   suite stage no longer runs them a second time; the standalone vettool
   and `make analyze` keep both.
@@ -457,6 +476,11 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr upgrade` finds the Go spellings.
 
 ### Added
+- **`testkit.NewIsolatedDBDSN`** provisions a disposable Postgres
+  database for a subprocess and drops it at test cleanup. See
+  [testkit](framework/docs/content/testkit.md).
+- **`app.CanonicalRoutePattern`** returns the pattern the screen router
+  registers and compares routes by.
 - **`LowPriority` on `ui.OptimizedImage` and `ui.PipelineImage`** renders
   `fetchpriority="low"`. See [image](framework/docs/content/image.md#loading-and-priority).
 - **Passkeys: autofill sign-in, step-up, rename and password-manager sync

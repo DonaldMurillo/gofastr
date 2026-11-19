@@ -1068,7 +1068,8 @@ entities:
     owner_field: user_id
     cross_owner_read: tickets:read:all
     fields:
-      - {name: subject, type: string}
+      - name: subject
+        type: string
 ```
 
 Grant the permission to the role that should see across owners:
@@ -1381,8 +1382,10 @@ entities:
   - name: articles
     search_fields: [title, body]
     fields:
-      - {name: title, type: string}
-      - {name: body, type: text}
+      - name: title
+        type: string
+      - name: body
+        type: text
 ```
 
 A request like `GET /api/articles?q=go%20concurrency` tokenizes the term
