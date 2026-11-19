@@ -161,6 +161,7 @@ var ownedPackages = []string{
 	"core/moduleproto",
 	"core/acp",
 	"core/a2a",
+	"core/fanout",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",
