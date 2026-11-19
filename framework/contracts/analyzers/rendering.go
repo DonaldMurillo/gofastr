@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/codegen"
-	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/core/fuzzy"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 	"github.com/DonaldMurillo/gofastr/internal/bom"
 
@@ -542,7 +542,7 @@ func blankCSSCommentsAndStrings(src string) string {
 func closestToken(name string, names []string) (string, bool) {
 	best, bestDist := "", 3
 	for _, cand := range names {
-		if d := access.EditDistance(name, cand); d < bestDist {
+		if d := fuzzy.Levenshtein(name, cand); d < bestDist {
 			best, bestDist = cand, d
 		}
 	}

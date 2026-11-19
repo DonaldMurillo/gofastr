@@ -26,6 +26,16 @@ func validateField(f Field, value any) error {
 		}
 		return nil
 	}
+	if f.Required {
+		if s, ok := value.(string); ok && s == "" {
+			switch f.Type {
+			case Int, Float, Bool, Enum, UUID, Timestamp, Date, JSON, Relation, Image, File:
+				return violate(ReasonRequired, nil)
+			case String, Text, Decimal:
+				// Their validators check for empty strings after conversion.
+			}
+		}
+	}
 
 	switch f.Type {
 	case String, Text:

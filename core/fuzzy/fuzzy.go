@@ -10,6 +10,10 @@ func Levenshtein(a, b string) int {
 	if lb == 0 {
 		return la
 	}
+	if la < lb {
+		a, b = b, a
+		la, lb = lb, la
+	}
 	prev := make([]int, lb+1)
 	curr := make([]int, lb+1)
 	for j := 0; j <= lb; j++ {

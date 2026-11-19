@@ -693,9 +693,10 @@ verify outside a GoFastr app. Start at `core/webbotauth/webbotauth.go`:
 ### fuzzy
 
 Shared string-similarity helpers, currently `Levenshtein` edit distance
-(bytewise, two rolling rows). Dependency-free so both the framework and
-the CLI import it. Indirect; used for "did you mean …" suggestions. Start
-at `core/fuzzy/fuzzy.go`: `Levenshtein`.
+(bytewise, with two rolling rows sized to the shorter input).
+Dependency-free so both the framework and the CLI import it. Indirect;
+used for "did you mean …" suggestions. Start at `core/fuzzy/fuzzy.go`:
+`Levenshtein`.
 
 ## Common mistakes
 

@@ -208,7 +208,8 @@ func foreignKeyViolations(ctx context.Context, q queryer) ([]string, error) {
 	}
 	var violations []string
 	for _, schema := range schemas {
-		rows, err := q.QueryContext(ctx, "PRAGMA "+quoteIdent(schema)+".foreign_key_check")
+		//gofastr:allow(quoteident) schema was read from PRAGMA database_list with its case kept
+		rows, err := q.QueryContext(ctx, "PRAGMA "+query.QuoteIdent(schema)+".foreign_key_check")
 		if err != nil {
 			return nil, err
 		}
@@ -259,7 +260,8 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 	schema, base := splitTable(s.Table)
 	master, seqTable, prefix := "sqlite_master", "sqlite_sequence", ""
 	if schema != "" {
-		master, seqTable, prefix = quoteIdent(schema)+".sqlite_master", quoteIdent(schema)+".sqlite_sequence", quoteIdent(schema)+"."
+		//gofastr:allow(quoteident) schema is split from the SafeIdent-checked SQLite table name being rebuilt and keeps its supplied spelling for the attached schema
+		master, seqTable, prefix = query.QuoteIdent(schema)+".sqlite_master", query.QuoteIdent(schema)+".sqlite_sequence", query.QuoteIdent(schema)+"."
 	}
 
 	var stored, createSQL string
@@ -271,7 +273,8 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 	if err != nil {
 		return err
 	}
-	qualified := prefix + quoteIdent(stored)
+	//gofastr:allow(quoteident) stored was read from sqlite_master with its case kept
+	qualified := prefix + query.QuoteIdent(stored)
 
 	var replays []string
 	objRows, err := conn.QueryContext(ctx,
@@ -312,7 +315,8 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 	}
 	quoted := make([]string, len(cols))
 	for i, c := range cols {
-		quoted[i] = quoteIdent(c)
+		//gofastr:allow(quoteident) c was read from PRAGMA table_info with its case kept
+		quoted[i] = query.QuoteIdent(c)
 	}
 	colList := strings.Join(quoted, ", ")
 
@@ -329,9 +333,11 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 
 	stmts := []string{
 		newDDL,
-		fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s", prefix+quoteIdent(newTable), colList, colList, qualified),
+		//gofastr:allow(quoteident) newTable is the sqlite_master name plus a literal repair suffix
+		fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s", prefix+query.QuoteIdent(newTable), colList, colList, qualified),
 		fmt.Sprintf("DROP TABLE %s", qualified),
-		fmt.Sprintf("ALTER TABLE %s RENAME TO %s", prefix+quoteIdent(newTable), quoteIdent(stored)),
+		//gofastr:allow(quoteident) newTable is the sqlite_master name plus a literal repair suffix, stored came from sqlite_master
+		fmt.Sprintf("ALTER TABLE %s RENAME TO %s", prefix+query.QuoteIdent(newTable), query.QuoteIdent(stored)),
 	}
 	stmts = append(stmts, replays...)
 	for _, stmt := range stmts {
@@ -684,11 +690,6 @@ func nextSQLToken(s string) (string, string) {
 		i++
 	}
 	return s[:i], s[i:]
-}
-
-// quoteIdent quotes an identifier the SQLite way, doubling a literal quote.
-func quoteIdent(s string) string {
-	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
 // skipQuoted returns the index just past the quoted run opening at i, or i.

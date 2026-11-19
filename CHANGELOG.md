@@ -269,6 +269,13 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **schema: a required field sent as `""` answers `required` for every
+  supported field type.** Int, Float, Bool, Enum, UUID, Timestamp, Date,
+  JSON, Relation, Image and File used to answer a type reason such as
+  `not_integer`, `not_uuid` or `empty_path`. String, Text and Decimal
+  already answered `required`.
+- **access: `access.EditDistance` is removed.** Use `fuzzy.Levenshtein`
+  from `core/fuzzy`.
 - **telemetry: `gofastr telemetry request` names steps by the same six
   attributes as the request page.** The first attribute present wins, so
   a step's detail can differ from older output.

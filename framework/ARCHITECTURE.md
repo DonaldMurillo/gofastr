@@ -436,9 +436,7 @@ Today's intra-L3 edges: `slowquery → db`, `softdelete → db`, `outbox → eve
 `event → db` (EmitAsync masks the emitter's transaction with `db.WithoutTx`),
 `embed → db + migrate + tenant`, `imagefield → file + image`,
 `contracts → agentsinv`, `headless → agentsinv`, `localapp → owner` (the
-fallback extractor it installs), `contracts/analyzers → access` (the one
-Levenshtein, `access.EditDistance`, behind both the capability
-suggester and the rendering rule), `dsl → filter` (the LIKE-escape helpers:
+fallback extractor it installs), `dsl → filter` (the LIKE-escape helpers:
 one canonical `EscapeLikePattern`/`LikeEscapeSuffix`, not a per-package
 re-implementation). Within L4: `openapi → crud`. In the UI stack:
 `ui → i18nui + agentsinv`, `uihost → axecov + dev + embed + image +
