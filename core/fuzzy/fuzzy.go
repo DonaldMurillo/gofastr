@@ -1,16 +1,7 @@
-// Package fuzzy holds small string-similarity helpers shared across the
-// codebase. It is dependency-free and low-level so both the framework and
-// the CLI (which cannot import each other) can reuse one implementation
-// instead of maintaining copies.
+// Package fuzzy holds string-similarity helpers shared by the framework and the CLI.
 package fuzzy
 
-// Levenshtein returns the edit distance between a and b: the minimum number
-// of single-character insertions, deletions, or substitutions to turn one
-// into the other. Inputs are compared bytewise; for ASCII identifiers
-// (command names, field names) that is equivalent to rune distance.
-//
-// It uses two rolling rows, so allocation and memory are O(len(b)); the
-// identifier lists it runs against are tiny.
+// Levenshtein returns the bytewise edit distance between a and b.
 func Levenshtein(a, b string) int {
 	la, lb := len(a), len(b)
 	if la == 0 {

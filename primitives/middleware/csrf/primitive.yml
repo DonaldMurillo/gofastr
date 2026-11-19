@@ -1,0 +1,107 @@
+primitive: middleware.csrf
+summary: The signed double-submit-cookie CSRF middleware, its masked tokens, skip predicates and the development key file.
+code:
+  - core/middleware/csrf.go
+  - core/middleware/csrf_devkey.go
+  - core/middleware/csrf_mask.go
+  - core/middleware/csrf_skipper.go
+docs:
+  - framework/docs/content/security.md
+invariants:
+  - id: host-prefix-on-secure-requests
+    rule: On a request that is secure by CookieSecure, TLS or X-Forwarded-Proto https in any case, the cookie name, a custom CookieName included, carries the __Host- prefix unless NoHostPrefix is set, and a CookiePath other than "/" without NoHostPrefix panics at construction.
+    enforced_by:
+      - test: core/middleware.TestCustomCSRFNameGetsHostPrefix
+      - test: core/middleware.TestPlantedPlainCookieRefused
+      - test: core/middleware.TestCSRFCookieSecureBehindProxy
+      - test: core/middleware.TestHostPrefixNeedsRootPath
+  - id: unsafe-request-needs-signed-matching-token
+    rule: An unsafe request passes only when its header or form token, unmasked, equals the cookie in constant time and the cookie's HMAC verifies under SecretKey or an AdditionalKeys entry.
+    enforced_by:
+      - test: core/middleware.TestCSRF_UnsignedHeaderRejected
+      - test: core/middleware.TestCSRF_ForgedSignatureRejected
+      - test: core/middleware.TestCSRF_KeyRotationAcceptsAdditionalKeys
+      - test: core/middleware.TestMaskedCSRFTokenIsAccepted
+  - id: safe-request-reuses-only-a-valid-cookie
+    rule: A safe request keeps an existing cookie only when its signature still verifies, mints a new one otherwise, and skips both when an outer CSRF already put a token on the context.
+    enforced_by:
+      - test: core/middleware.TestCSRF_GetReplacesStaleCookie
+      - test: core/middleware.TestCSRF_GetPreservesValidCookie
+      - test: core/middleware.TestCSRF_GetNestedCtxStillShortCircuits
+  - id: token-on-context-both-ways
+    rule: The token is on the request context for TokenFromContext on the safe request that minted it and on a verified unsafe request, and VerifiedCSRFSubmission reports the header and token an unsafe request passed with.
+    enforced_by:
+      - test: core/middleware.TestCSRF_VerifiedPostExposesToken
+      - test: core/middleware.TestVerifiedCSRFSubmission
+  - id: form-body-capped-and-restored
+    rule: The form fallback reads at most MaxFormBytes (1 MiB by default) of a urlencoded or multipart body, answers 413 above it, and hands the handler the same bytes.
+    enforced_by:
+      - test: core/middleware.TestCSRF_FormBodyHasMaxSize
+      - test: core/middleware.TestCSRF_MultipartBodyHasMaxSize
+      - test: core/middleware.TestCSRF_FormBodyMaxSizeDefault
+      - test: core/middleware.TestCSRF_FormBodyDownstreamCanRead
+      - test: core/middleware.TestCSRF_MaxInt64FormCapKeepsToken
+  - id: cookie-is-script-readable-and-lax
+    rule: The CSRF cookie is not HttpOnly, so client script can copy it into the header, and is SameSite=Lax.
+    enforced_by:
+      - test: core/middleware.TestSweepCSRFCookieIsScriptReadableAndLax
+  - id: only-bearer-skips
+    rule: SkipBearerAuth skips a request carrying Authorization with the Bearer scheme or X-API-Key, never Basic, Digest, Negotiate or NTLM, which a browser attaches by itself.
+    enforced_by:
+      - test: core/middleware.TestSkipBearerAuthOnlyBearerScheme
+      - test: core/middleware.TestSkipBearerAuthKeepsCSRFForAmbientSchemes
+  - id: skipper-matches-escaped-path
+    rule: CSRFSkipper compares its prefixes with the escaped path as sent, so an encoded separator never inherits a directory's exemption.
+    enforced_by:
+      - test: core/middleware.TestSkipMatchesEncodedPathLiterally
+  - id: masked-token-differs-every-render
+    rule: MaskCSRFToken returns different bytes on every call for one token and "" for an empty one.
+    enforced_by:
+      - test: core/middleware.TestMaskedCSRFTokenNeverRepeats
+      - test: core/middleware.TestMaskOfEmptyTokenIsEmpty
+  - id: dev-key-file-private
+    rule: DevCSRFKeyFromFile writes a 32-byte key with mode 0600 in a directory made with mode 0700, and refuses a file of any other length.
+    enforced_by:
+      - test: core/middleware.TestDevCSRFKeyFromFile_GeneratesAndPersists
+      - test: core/middleware.TestSweepDevCSRFKeyDirIsPrivate
+      - test: core/middleware.TestDevCSRFKeyFromFile_RejectsWrongLength
+  - id: nil-logger-falls-back
+    rule: WarnIfCSRFUnconfigured with a nil logger, a typed nil *slog.Logger included, warns through slog.Default.
+    enforced_by:
+      - test: core/middleware.TestWarnIfCSRFUnconfigured_NilSlogLogger
+decisions:
+  - id: signed-double-submit
+    date: 2026-11-18
+    status: accepted
+    decision: The cookie value is a random token with its HMAC, so a cookie planted from a sibling subdomain without the key fails even when the header matches it.
+    rejected:
+      - option: Plain double-submit, header equal to cookie.
+        why: A sibling subdomain can set both the cookie and a matching header value.
+      - option: A token bound to the session.
+        why: The middleware runs before and without sessions; the __Host- prefix and the signature close the planting route instead.
+    upholds: [unsafe-request-needs-signed-matching-token, host-prefix-on-secure-requests]
+  - id: verify-every-rotation-key
+    date: 2026-11-18
+    status: accepted
+    decision: verifySignedTokenAny checks every key even after one matched.
+    rejected:
+      - option: Return on the first matching key.
+        why: The timing would tell an attacker which key signed a token, singling out tokens under the rotation key about to be dropped.
+    upholds: [unsafe-request-needs-signed-matching-token]
+  - id: mask-rendered-tokens
+    date: 2026-11-18
+    status: accepted
+    decision: Rendered tokens are masked under a fresh one-time pad, and the check accepts masked and raw forms alike.
+    rejected:
+      - option: Render the raw cookie value.
+        why: A compressed page carrying the same secret on every response lets a BREACH-style attacker recover it byte by byte.
+    upholds: [masked-token-differs-every-render]
+  - id: auto-key-is-per-process
+    date: 2026-11-18
+    status: accepted
+    decision: An empty SecretKey gets one random per-process key, and WarnIfCSRFUnconfigured warns about it at startup.
+    rejected:
+      - option: Refuse to start without a SecretKey.
+        why: A single-instance dev server would need configuration before its first form works; DevCSRFKeyFromFile and the warning cover the cases that break.
+    revisit_if: Multi-replica deploys keep shipping without a SecretKey despite the warning.
+    upholds: [nil-logger-falls-back]

@@ -2,18 +2,11 @@ package schema
 
 import "math"
 
-// MaxVarcharWidth is the widest VARCHAR(n) every supported dialect
-// accepts: Postgres refuses n past 10485760 at CREATE TABLE.
+// MaxVarcharWidth is the widest VARCHAR(n) every supported dialect accepts.
 const MaxVarcharWidth = 10485760
 
-// LengthBound converts a String/Text field's Min or Max to the integer a
-// JSON Schema minLength/maxLength (or a column width) takes: rounded
-// with round, then clamped to [0, math.MaxInt32]. ok is false for NaN,
-// and the caller leaves the keyword out.
-//
-// A bare int(*f.Max) is implementation-defined for a finite value past
-// the int range (MinInt64 on amd64, MaxInt64 on arm64), so a huge Max
-// published a negative or nonsense maxLength.
+// LengthBound rounds a String/Text Min or Max with round and clamps it to
+// [0, math.MaxInt32]; ok is false for NaN.
 func LengthBound(v float64, round func(float64) float64) (n int, ok bool) {
 	if math.IsNaN(v) {
 		return 0, false
@@ -28,9 +21,8 @@ func LengthBound(v float64, round func(float64) float64) (n int, ok bool) {
 	return int(r), true
 }
 
-// VarcharWidth reports the VARCHAR width for a String field's Max, and
-// false when the column should be TEXT instead: no Max, a Max under 1,
-// or one wider than MaxVarcharWidth (validation still enforces the Max).
+// VarcharWidth reports the VARCHAR width for a String field's Max, or false
+// when the column is TEXT: no Max, under 1, or past MaxVarcharWidth.
 func VarcharWidth(max *float64) (int, bool) {
 	if max == nil {
 		return 0, false

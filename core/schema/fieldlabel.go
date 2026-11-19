@@ -1,14 +1,7 @@
 package schema
 
-// FieldTypeLabel returns the human-readable label for a field type.
-// It is the one table behind both renderings that name field types in
-// prose: the llm.md entity reference (framework/crud) and the SDK
-// reference screens (framework/sdkdocs), which used to carry two
-// copies that could drift. wire selects the audience: true appends the
-// wire-format notes an SDK author needs (decimal arrives as a string,
-// image and file fields arrive as URLs); false returns the bare name
-// the llm.md table uses. An unknown FieldType labels as "string",
-// matching what both tables previously answered.
+// FieldTypeLabel returns the prose name of a field type; wire adds the
+// wire-format note an SDK author needs. An unknown type labels as "string".
 func FieldTypeLabel(t FieldType, wire bool) string {
 	switch t {
 	case String:

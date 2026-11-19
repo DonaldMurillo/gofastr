@@ -1,0 +1,26 @@
+primitive: mcp.prompts
+summary: The prompt registry and prompts/list and prompts/get, with per-prompt gates and required-argument checks.
+code:
+  - core/mcp/prompts.go
+docs:
+  - framework/docs/content/mcp.md
+invariants:
+  - id: gate-before-arguments
+    rule: prompts/get runs the prompt's gate before it looks at the arguments, so a refused caller never learns an argument name from a missing-argument or null-argument error.
+    enforced_by:
+      - test: core/mcp.TestGatedPromptHidesArgNames
+      - test: core/mcp.TestPromptGateRefusesGet
+  - id: arguments-checked-before-handler
+    rule: prompts/get refuses a null argument value and a missing required argument with -32602 before the handler runs.
+    enforced_by:
+      - test: core/mcp.TestPromptArgNullRefused
+      - test: core/mcp.TestPromptsGetMissingRequiredArgErrors
+  - id: unknown-prompt-is-invalid-params
+    rule: prompts/get of an unknown name answers -32602, the code the spec assigns, not -32601.
+    enforced_by:
+      - test: core/mcp.TestPromptsGetUnknownNameErrors
+  - id: messages-never-null
+    rule: A prompts/get result's messages is an array, never null, and a panicking handler answers -32603 "internal prompt error".
+    enforced_by:
+      - test: core/mcp.TestPromptMessagesNeverNull
+      - test: core/mcp.TestPromptsGetPanicBecomesError

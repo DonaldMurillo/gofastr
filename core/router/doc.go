@@ -1,3 +1,2 @@
-// Package router is part of the GoFastr framework.
-// See https://github.com/DonaldMurillo/gofastr for documentation.
+// Package router is the GoFastr HTTP router: ServeMux patterns, Groups, per-request middleware chains and 404/405 fallbacks.
 package router

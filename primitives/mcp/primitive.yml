@@ -4,6 +4,31 @@ code:
   - core/mcp/
 docs:
   - framework/docs/content/mcp.md
+twins:
+  - job: Run an app-supplied gate or callback under a recover guard that logs the scrubbed panic and fails closed.
+    why: Work not yet done; each site answers a different shape (a bool for listings and notifications, an RPCError for tools and prompts, a masked sentinel for Gated and resource gates), so one helper would need to return the error and let each caller map it.
+    sites:
+      - path: core/mcp/server.go
+        note: gateRefused, checkToolGate, runCallGate, checkServerGate and invokeHandler.
+      - path: core/mcp/gated.go
+        note: gatedCall, for Gated wrappers.
+      - path: core/mcp/resources.go
+        note: readResourceContents, for the resource gate and contents func.
+      - path: core/mcp/prompts.go
+        note: getPromptMessages and checkPromptGate.
+      - path: core/mcp/notifications.go
+        note: gateAllows, for delivery-time notification gates.
+  - job: Refuse JSON-RPC messages whose envelope or params hold duplicate or case-folded keys.
+    why: core/mcp and the harness control plane are separate MCP servers with their own request types; both call handler.UnmarshalStrict and handler.CheckObjectKeys, but answer a refused envelope differently (core/mcp -32700 or -32600 with a null id, the harness -32602).
+    sites:
+      - path: core/mcp/transport.go
+        note: decodeEnvelope, the envelope decode every core/mcp transport runs.
+      - path: core/mcp/protocol.go
+        note: HandleRequest, the params check at the dispatch chokepoint.
+      - path: framework/experimental/harness/control/mcpserver/server.go
+        note: decodeRequest on the envelope and unmarshalMCPObject on params and arguments.
+      - path: framework/experimental/harness/mcpclient/client.go
+        note: readLoop on every line a spawned server sends.
 invariants:
   - id: one-callback-error-rule
     rule: tools/call, prompts/get and resources/read decide which callback error crosses the transport in one function, callerFacingError, so an RPCError (wrapped or not) crosses as itself, a typed 4xx handler.Error crosses as invalid params with its code, and every other error is answered with a generic message.
@@ -14,6 +39,54 @@ invariants:
     rule: WithToolGate, WithResourceGate, WithResourceTemplateGate, WithPromptGate and Gated panic on a nil gate.
     enforced_by:
       - test: core/mcp.TestNilGateOptionsPanic
+  - id: request-id-is-scalar
+    rule: HandleRequest refuses a request whose id is not a string, a number or null with -32600 and a null id, and one whose jsonrpc is not "2.0" with -32600.
+    enforced_by:
+      - test: core/mcp.TestNonScalarIDRefused
+      - test: core/mcp.TestInvalidJSONRPCVersion
+  - id: params-refuse-ambiguous-keys
+    rule: HandleRequest answers -32602 before dispatch when any object at any depth of params repeats a key or holds two keys that case-fold onto each other.
+    enforced_by:
+      - test: core/mcp.TestParamsDuplicateKeysRefused
+  - id: server-gate-covers-data-surface
+    rule: The server-wide gate (SetGate) runs before tools/list, tools/call, resources/list, resources/read, resources/templates/list, resources/subscribe, resources/unsubscribe, prompts/list and prompts/get, and never before initialize or ping; its refusal answers through gateRefusal.
+    enforced_by:
+      - test: core/mcp.TestServerGateClosesListAndCall
+      - test: core/mcp.TestServerGateClosesResourceSubscribe
+      - test: core/mcp.TestInitializeAndPingStayOpenUnderServerGate
+  - id: version-negotiation
+    rule: initialize answers the client's protocolVersion when it is one of SupportedProtocolVersions (2025-06-18, 2025-03-26), and LatestProtocolVersion for any other, missing or non-string value.
+    enforced_by:
+      - test: core/mcp.TestInitializeNegotiatesVersion
+      - test: core/mcp.TestSupportedProtocolVersionsList
+  - id: capabilities-follow-registries
+    rule: initialize always advertises tools, advertises resources (with subscribe) when a resource or a resource template is registered, and prompts only when a prompt is registered.
+    enforced_by:
+      - test: core/mcp.TestTemplatesAdvertiseResources
+      - test: core/mcp.TestResourcesCapability_OnlyWhenRegistered
+      - test: core/mcp.TestInitializeOmitsPromptsWhenEmpty
+  - id: cursor-is-unforgeable
+    rule: A list cursor carries only its method and resume offset under an HMAC keyed by a per-server random secret, and a cursor that is malformed, tampered, minted for another list method or holds a negative offset answers -32602 "invalid cursor".
+    enforced_by:
+      - test: core/mcp.TestForgedCursorIsRejected
+  - id: paging-walks-post-gate-sorted-listing
+    rule: tools/list, resources/list, resources/templates/list and prompts/list drop items the caller's gates refuse and sort by name, URI or uriTemplate before the page is cut, so a gated item never appears on a page or counts toward an offset.
+    enforced_by:
+      - test: core/mcp.TestPagingNeverRevealsGatedItems
+      - test: core/mcp.TestListPaginationCoversAllItems
+  - id: page-boundaries
+    rule: A listing that fits one page carries no nextCursor, a cursor at or past the end answers an empty page with no nextCursor and no error, and the page end is computed without integer overflow for any page size.
+    enforced_by:
+      - test: core/mcp.TestListShortSetOmitsNextCursor
+      - test: core/mcp.TestStaleCursorPastEndEmptyPage
+      - test: core/mcp.TestListHugePageSizeDoesNotOverflow
+  - id: panicking-gate-fails-closed
+    rule: A gate or callback that panics never unwinds the transport; a listing hides the item, a direct call answers as an unknown name, and a handler panic answers -32603 with a generic message.
+    enforced_by:
+      - test: core/mcp.TestSweepPanickingGatesMaskAsUnknown
+      - test: core/mcp.TestPanickingGateFailsClosedEverywhere
+      - test: core/mcp.TestCallGatePanicRedScrubbed
+      - test: core/mcp.TestServerGatePanicRedScrubbed
 decisions:
   - id: callback-errors-share-one-function
     date: 2026-11-16
@@ -23,3 +96,50 @@ decisions:
       - option: Keep the prompt and resource copy and add the missing cases to it.
         why: It was the second copy of the rule and had already drifted, answering a wrapped RPCError and a typed 4xx as internal errors where tools/call let them cross.
     upholds: [one-callback-error-rule]
+  - id: refuse-ambiguous-keys-at-dispatch
+    date: 2026-11-18
+    status: accepted
+    decision: Duplicate and case-folded keys in params are refused once, at HandleRequest, for every method that decodes params.
+    rejected:
+      - option: Plain encoding/json decoding of params.
+        why: It keeps the last duplicate and folds key case, so a proxy, WAF or audit log reading the first occurrence and the dispatcher could disagree on which tool ran or which uri was read.
+      - option: A check in each method handler.
+        why: A new method would ship without it.
+    upholds: [params-refuse-ambiguous-keys]
+  - id: handshake-outside-server-gate
+    date: 2026-11-18
+    status: accepted
+    decision: initialize and ping stay outside the server-wide gate.
+    rejected:
+      - option: Gate the handshake too.
+        why: It carries only the protocol version, capability booleans and the server name, and no MCP client can present credentials before it completes the handshake.
+    upholds: [server-gate-covers-data-surface]
+  - id: protocol-versions
+    date: 2026-11-18
+    status: accepted
+    decision: The server negotiates 2025-06-18 and 2025-03-26 and leaves 2024-11-05 off.
+    rejected:
+      - option: Also accept 2024-11-05.
+        why: Its HTTP+SSE transport answers each POST with 202 and delivers the response on the stream, while this server answers in the POST body, so such a client would wait forever.
+    revisit_if: A 2025-03-26 client depends on JSON-RPC batches, which that revision requires and this server answers with an invalid-request error.
+    upholds: [version-negotiation]
+  - id: signed-offset-cursors
+    date: 2026-11-18
+    status: accepted
+    decision: List cursors are "v1.<payload>.<hmac>" with only the method and offset in the payload, authenticated but not encrypted, under a per-process secret.
+    rejected:
+      - option: A plain offset as the cursor.
+        why: A client could mint any offset, negative or mid-set, or reuse a cursor across list methods.
+      - option: Carry the total count or page size in the cursor.
+        why: The cursor would become an oracle for how many items exist.
+      - option: A secret that survives restarts.
+        why: A restart only makes the client restart the walk from page 1, which the spec's repeat-until-absent loop handles.
+    upholds: [cursor-is-unforgeable]
+  - id: page-size-one-hundred
+    date: 2026-11-18
+    status: accepted
+    decision: Every list method serves pages of 100 items.
+    rejected:
+      - option: A smaller page.
+        why: Every listing a GoFastr app serves today fits in 100, so a client written before pagination sees the same single-page response.
+    upholds: [page-boundaries]

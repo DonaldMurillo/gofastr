@@ -25,48 +25,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// IdempotencyKeyHeader is the request header clients use to assign a
-// stable identity to a write. Two requests carrying the same value are
-// the "same" request from the client's point of view; the middleware
-// guarantees at-most-once side-effects within the store's retention
-// window.
+// IdempotencyKeyHeader is the request header that names a write, so a retry with the same value is answered from the cache.
 const IdempotencyKeyHeader = "Idempotency-Key"
 
-// IdempotencyStore is the pluggable backend for cached responses.
-// Implementations must be safe for concurrent use.
-//
-// Begin claims a key. The semantics are:
-//
-//   - replay non-nil, ok=true: a cached response already exists for this
-//     key and fingerprint; the middleware should write replay back and
-//     skip the downstream handler.
-//   - replay nil, ok=false, err=nil: the caller is the first writer for
-//     this key. It must call Finish exactly once with the captured
-//     response. (Both shipped stores return ok=false here, and the
-//     middleware's replay branch is `ok && replay != nil`, so ok=false is
-//     the contract. This line used to say ok=true, which no implementation
-//     and no caller has ever agreed with.)
-//   - ok=false, err=ErrFingerprintMismatch: same key was used previously
-//     with a different request fingerprint. The middleware responds 422.
-//   - ok=false, err=ErrInFlight: another request with the same key is
-//     currently executing. The middleware responds 409.
-//   - any other err: storage failure; middleware fails closed (503)
-//     unless IdempotencyConfig.FailOpen is true.
+// IdempotencyStore holds claims and cached responses. Begin returns a replay with ok true, nil and ok false for a fresh claim the caller must Finish once, ErrFingerprintMismatch, ErrInFlight, or another error for a store failure.
 type IdempotencyStore interface {
 	Begin(ctx context.Context, key, fingerprint string) (replay *IdempotentResponse, ok bool, err error)
 	Finish(ctx context.Context, key, fingerprint string, resp *IdempotentResponse) error
 }
 
-// InFlightTTLStore is the optional capability an IdempotencyStore
-// implements to publish how long an in-flight claim holds its key
-// before a retry may execute the handler again. It is deliberately
-// separate from IdempotencyStore, so a custom store still compiles
-// unchanged; the App probes for it at startup and checks the value
-// against the request budget (a claim that expires before the budget
-// lets a retry double-execute a handler the deadline has not killed
-// yet). Both built-in stores implement it; the memory store's value is
-// set with WithMemoryIdempotencyInFlightTTL, the SQL store's with
-// WithSQLIdempotencyInFlightTTL.
+// InFlightTTLStore is implemented by a store that reports how long an in-flight claim holds its key.
 type InFlightTTLStore interface {
 	InFlightTTL() time.Duration
 }
@@ -84,61 +52,7 @@ var (
 	ErrInFlight            = errors.New("idempotency: concurrent request in flight")
 )
 
-// IdempotencyConfig configures the idempotency middleware.
-//
-// Store defaults to an in-memory store with TTL. Set this to a redis-
-// or db-backed implementation for multi-instance deployments.
-//
-// TTL controls how long completed responses are remembered. Default 24h
-// (matches the Stripe/Square convention).
-//
-// MaxBodyBytes caps how much of the request body is read for fingerprint
-// + replay capture. Defaults to 1 MiB. Larger requests bypass
-// idempotency to keep memory bounded; they receive a Vary header
-// indicating the bypass but otherwise proceed normally.
-//
-// MaxResponseBytes caps the size of the captured response body. When a
-// successful handler writes more than this, the claim is released and
-// the response goes through unchanged. Default 1 MiB.
-//
-// Methods restricts which HTTP methods participate. Defaults to POST,
-// PUT, PATCH, DELETE. GET/HEAD/OPTIONS always bypass.
-//
-// Required, if true, rejects unsafe writes that don't carry the header
-// (400). Default false; header is opt-in per request.
-//
-// Principal extracts the authenticated subject (user/tenant id) from
-// each request. When set, the fingerprint is namespaced by the result
-// so two principals using the SAME Idempotency-Key value never see
-// each other's cached responses, closing a cross-tenant replay leak.
-// Without one, or for a request it returns "" for, nothing is cached;
-// return a constant such as "anon" to share one namespace on purpose.
-//
-// Tenant, when set, returns the tenant the request acts in ("" for
-// none). A non-empty tenant joins the principal in the storage key, so
-// one credential that switches its active tenant and resends the same
-// key, path and body runs the write in the second tenant instead of
-// being served the first tenant's response. The principal alone stays
-// the row's owner for export and erasure.
-//
-// Scope, when set, returns what narrows the request below its
-// principal's full authority ("" for nothing): a scope-restricted API
-// token or embed grant. It joins the storage key the way Tenant does, so
-// a narrow token of one user resending the key a session or a broader
-// token used runs its own request instead of being served a response its
-// scopes would not allow. framework.WithIdempotency sets it from the
-// request's held scopes.
-//
-// FailOpen flips behaviour on store error: true falls through to the
-// handler (availability-first), false returns 503 to the client
-// (correctness-first). Default false; a broken store no longer
-// silently allows duplicate writes.
-//
-// Logger records a Finish failure: a DB blip that strands the in-flight
-// claim so later retries of the SAME request get 409 until the entry TTLs.
-// The client already received its response (Finish runs after the handler),
-// so the response is unaffected; this is an observability seam, not a
-// control-flow change. Default slog.Default().
+// IdempotencyConfig configures the idempotency middleware; a request whose Principal is "" (or with no Principal set) is served uncached, and Tenant and Scope join the principal in the storage key.
 type IdempotencyConfig struct {
 	Store            IdempotencyStore
 	TTL              time.Duration
@@ -151,22 +65,12 @@ type IdempotencyConfig struct {
 	Scope            func(r *http.Request) string
 	FailOpen         bool
 	Logger           *slog.Logger
-	// MaxStoreEntries caps how many entries the DEFAULT in-memory store
-	// (Store == nil) retains; at the cap the store sheds idle entries
-	// first (least recently used), in-flight claims last. 0 keeps the
-	// default, 100_000 (the framework/ratelimit maxKeys precedent).
-	// Ignored when Store is set — a custom store owns its own bounds.
+	// MaxStoreEntries caps the default memory store's entries; 0 means 100_000. Ignored when Store is set.
 	MaxStoreEntries int
-	// MaxStoreEntryBytes caps the retained footprint of one cached
-	// response (body + headers) in the default store; a larger response
-	// is dropped at Finish and the key re-executes instead of replaying.
-	// 0 keeps the default, 1 MiB. Ignored when Store is set.
+	// MaxStoreEntryBytes caps one cached response in the default memory store; 0 means 1 MiB. Ignored when Store is set.
 	MaxStoreEntryBytes int64
 }
 
-// headersStrippedFromReplay are response headers the middleware never
-// caches: they're per-request and/or per-identity and replaying them
-// across requests would leak session/credential material.
 var headersStrippedFromReplay = map[string]struct{}{
 	"Set-Cookie":          {},
 	"Cookie":              {},
@@ -175,17 +79,7 @@ var headersStrippedFromReplay = map[string]struct{}{
 	"Www-Authenticate":    {},
 }
 
-// Idempotency returns Middleware that honours the Idempotency-Key header
-// on configured methods. See IdempotencyConfig for tuning.
-//
-// On a replay the middleware writes the cached status, headers, and
-// body verbatim and adds Idempotent-Replay: true so the client can
-// distinguish a replay from a fresh result.
-//
-// A negative TTL panics at construction (this constructor returns no
-// error): a negative lifetime can only be a sign or unit error, and
-// substituting the default would turn the caller's most restrictive
-// input into the longest retention the middleware offers.
+// Idempotency returns middleware that replays the cached 2xx response, with Idempotent-Replay: true, for a repeated Idempotency-Key; a negative TTL panics.
 func Idempotency(cfg IdempotencyConfig) Middleware {
 	if cfg.TTL < 0 {
 		panic(fmt.Sprintf("idempotency: Idempotency: TTL must be >= 0 (got %v)", cfg.TTL))
@@ -216,19 +110,6 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 	for _, m := range cfg.Methods {
 		methods[m] = true
 	}
-	// No Principal means one shared key namespace for every caller: two
-	// users who pick the same Idempotency-Key value land on the same
-	// entry, and the second is served the first's cached response BODY.
-	// A UUID collision is unlikely, but a client library using a
-	// request-scoped counter, a retry helper hashing the payload, or a
-	// hand-written "order-1" are not.
-	//
-	// Degrade to a no-op rather than cache into a shared namespace: a
-	// host that never wired a Principal then behaves exactly as if the
-	// middleware were absent, which is the safe reading of "not
-	// configured". Everything else in this file already fails closed:
-	// FailOpen defaults false, credential headers are stripped from
-	// replays. This default was the odd one out.
 	if cfg.Principal == nil {
 		logSlogWarnDefault("middleware: Idempotency has no Principal function — replay caching is DISABLED. " +
 			"Set IdempotencyConfig.Principal (e.g. the authenticated user or tenant id) to enable it; " +
@@ -255,11 +136,6 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 				i18n.HTTPError(w, r, http.StatusBadRequest, reasonIdemKeyTooLong)
 				return
 			}
-			// A key is printable ASCII (RFC 9110 field-value bytes a
-			// client mints; the IETF draft recommends a UUID). A byte
-			// past 0x7e is not UTF-8 a Postgres text column accepts, so
-			// it reached the store and answered 503 "store down" for a
-			// client's malformed header.
 			if !printableASCII(key) {
 				i18n.HTTPError(w, r, http.StatusBadRequest, reasonIdemKeyInvalid)
 				return
@@ -271,7 +147,7 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 				return
 			}
 			if tooLarge {
-				w.Header().Add("Vary", "Idempotency-Key") // Add, not Set: an upstream middleware (CORS) may already have written Vary
+				w.Header().Add("Vary", "Idempotency-Key")
 				w.Header().Set("Idempotent-Bypass", "body-too-large")
 				original := r.Body
 				r.Body = struct {
@@ -290,25 +166,11 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			if cfg.Principal != nil {
 				principal = cfg.Principal(r)
 			}
-			// No subject means no namespace to keep this caller's entry
-			// apart from another's: every such caller would share one,
-			// and a colliding key replays one user's response to the
-			// next. Serve it uncached, the same as no Principal at all.
 			if principal == "" {
 				next.ServeHTTP(w, r)
 				return
 			}
 			fp := requestFingerprint(r, body, principal)
-			// Namespace the storage key by principal too, binding the
-			// key shard to "principal:key". The
-			// byte-length prefix keeps the shard injective over
-			// (principal, key) pairs: with a bare "\x00" separator,
-			// ("a\x00b", "c") and ("a", "b\x00c") both collapse to
-			// "a\x00b\x00c", and the second caller is wrongly refused
-			// (422 fingerprint mismatch) on a key it is the first and
-			// only user of — a cross-principal cache-poisoning DoS for
-			// any Principal function that can return NUL-bearing
-			// subjects.
 			tenant := ""
 			if cfg.Tenant != nil {
 				tenant = cfg.Tenant(r)
@@ -342,9 +204,6 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 				return
 			}
 
-			// Snapshot the set of header keys upstream middleware has
-			// already written so the cache only stores headers the
-			// handler itself adds.
 			upstreamKeys := make(map[string]bool, len(w.Header()))
 			for k := range w.Header() {
 				upstreamKeys[k] = true
@@ -357,32 +216,15 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 				upstreamKeys:   upstreamKeys,
 				maxBody:        cfg.MaxResponseBytes,
 			}
-			// Finish persists (or releases) the claim AFTER the handler has
-			// answered. A failure here strands the entry: the client already
-			// got its response, but the same Idempotency-Key now 409s on
-			// retry until the claim TTLs. The response is already sent, so the
-			// only correct action is to make the loss observable; silently
-			// dropping it is the bug this fixes.
 			finish := func(resp *IdempotentResponse) {
-				// Use a fresh context for the cleanup write so a client
-				// disconnect doesn't strand the claim in-flight until the
-				// 30-second TTL; that would block legitimate retries.
 				finishCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 				//gofastr:allow(textbind) Finish binds the same pgKey-escaped column Begin claimed under; the key was vetted by columnPrincipal on the Begin that must precede it, and NUL keys are stored, not refused (the round-trip contract)
 				if err := cfg.Store.Finish(finishCtx, storeKey, fp, resp); err != nil {
 					cfg.Logger.Error("idempotency: Finish failed (claim stranded; retries of this key will 409 until TTL)",
-						// The key is request-borne: scrub it the way every
-						// slog sink does, so a forged key cannot paint a
-						// forged line into the operator's tail.
 						"key", textsafe.ScrubControlBytes(key), "error", err)
 				}
 			}
-			// A panicking handler (http.ErrAbortHandler included) skips
-			// the Finish below. Release the claim on the way out, or every
-			// retry of the same request 409s "in flight" until the claim
-			// TTLs although nothing is running; then let the panic go on
-			// to Recovery or net/http.
 			defer func() {
 				if v := recover(); v != nil {
 					finish(nil)
@@ -395,15 +237,6 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			case rec.bodyOverflow, rec.streamed:
 				finish(nil)
 			case !rec.wroteHeader && r.Context().Err() != nil:
-				// The handler returned without writing and its request is
-				// over (a deadline, a client that hung up): it gave up, it
-				// did not answer. The recorder's starting 200 is net/http's
-				// implicit status, and caching it replayed an empty 200 to
-				// the retry of a request that had been answered 504, for a
-				// write that never ran. A handler that DID write a 2xx is
-				// cached below whatever the context says: the work is
-				// done, the client never saw the answer, and the retry is
-				// what the key is for.
 				finish(nil)
 			case rec.status >= 200 && rec.status < 300:
 				snap := &IdempotentResponse{
@@ -419,9 +252,6 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 	}
 }
 
-// readBodyLimit drains up to limit+1 bytes from the request body. If the
-// extra byte is consumed the body is "too large" and the caller should
-// bypass idempotency rather than retain it.
 func readBodyLimit(r *http.Request, limit int64) ([]byte, bool, error) {
 	if r.Body == nil {
 		return nil, false, nil
@@ -436,10 +266,6 @@ func readBodyLimit(r *http.Request, limit int64) ([]byte, bool, error) {
 	return buf, false, nil
 }
 
-// sentinelLimit is limit+1, the one extra byte that tells "exactly
-// limit" from "more than limit". At math.MaxInt64 (no cap) the +1 would
-// wrap negative and io.LimitReader would read nothing, so the cap stays
-// put there: no body can be longer anyway.
 func sentinelLimit(limit int64) int64 {
 	if limit >= math.MaxInt64 {
 		return limit
@@ -447,19 +273,12 @@ func sentinelLimit(limit int64) int64 {
 	return limit + 1
 }
 
-// idemStoreKey is the key the store sees: the principal's byte length,
-// NUL, the principal, the tenant and the scope the same way, then the
-// client's key. The length prefixes keep it injective over (principal,
-// tenant, scope, key).
 func idemStoreKey(principal, tenant, scope, key string) string {
 	return strconv.Itoa(len(principal)) + "\x00" + principal +
 		strconv.Itoa(len(tenant)) + "\x00" + tenant +
 		strconv.Itoa(len(scope)) + "\x00" + scope + key
 }
 
-// idemPrincipal reads the principal back out of an idemStoreKey key,
-// so a store can file the row under the user it was cached for. A key
-// in any other shape names nobody.
 func idemPrincipal(storeKey string) string {
 	n, rest, ok := strings.Cut(storeKey, "\x00")
 	if !ok {
@@ -472,25 +291,6 @@ func idemPrincipal(storeKey string) string {
 	return rest[:size]
 }
 
-// requestFingerprint hashes the parts of the request that define
-// "sameness" for idempotency: principal, method, path, query, content-
-// type, and the body. Headers other than Content-Type are excluded;
-// they vary with auth tokens, request IDs, etc., and aren't part of
-// the client's intent.
-//
-// Including principal in the fingerprint closes the cross-tenant replay
-// hole: two principals submitting the same body with the same key now
-// hash differently, so each gets its own cached response.
-//
-// Every field is length-prefixed (uint32 big-endian), never
-// separator-joined: a bare "\x00" separator is ambiguous when a field
-// carries NUL — the path from %00, the raw body, a NUL-bearing
-// principal — and two DIFFERENT field tuples fold onto the same
-// digest (("a\x00b","c") and ("a","b\x00c" both hash
-// "a\x00b\x00c")), so the second request replays the first's cached
-// response under the same key. The length prefix keeps the field
-// stream injective (gofastrcompositekey, the same shape the storage
-// shard in Idempotency above already carries).
 func requestFingerprint(r *http.Request, body []byte, principal string) string {
 	h := sha256.New()
 	writeField := func(field string) {
@@ -501,13 +301,9 @@ func requestFingerprint(r *http.Request, body []byte, principal string) string {
 	}
 	writeField(principal)
 	writeField(r.Method)
-	// The escaped path, not the decoded one: /items/a%2Fb and /items/a/b
-	// decode alike but route apart, so they are different requests.
 	writeField(r.URL.EscapedPath())
 	writeField(r.URL.RawQuery)
 	writeField(r.Header.Get("Content-Type"))
-	// The body is last and already bytes: prefix it without the
-	// string() copy of what can be a MaxBodyBytes-sized slice.
 	var bodyLen [4]byte
 	binary.BigEndian.PutUint32(bodyLen[:], uint32(len(body)))
 	h.Write(bodyLen[:])
@@ -515,9 +311,6 @@ func requestFingerprint(r *http.Request, body []byte, principal string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// writeReplay applies the cached response. Cached entries only carry
-// headers the handler itself wrote and never include Set-Cookie,
-// Authorization, or other identity-bearing headers.
 func writeReplay(w http.ResponseWriter, replay *IdempotentResponse) {
 	maps.Copy(w.Header(), replay.Header)
 	w.Header().Set("Idempotent-Replay", "true")
@@ -526,11 +319,6 @@ func writeReplay(w http.ResponseWriter, replay *IdempotentResponse) {
 	_, _ = w.Write(replay.Body)
 }
 
-// idempotencyRecorder captures status + body so the response can be
-// cached. headers is the live http.Header from the upstream
-// ResponseWriter; upstreamKeys is the set of keys already present
-// before the handler ran, so handlerHeaders() can isolate the headers
-// the handler itself set.
 type idempotencyRecorder struct {
 	http.ResponseWriter
 	status       int
@@ -540,38 +328,27 @@ type idempotencyRecorder struct {
 	maxBody      int64
 	bodyOverflow bool
 	wroteHeader  bool
-	// streamed marks a response the handler flushed or hijacked: what a
-	// replay would send is not what the client got, so none is kept.
-	streamed bool
+	streamed     bool
 }
 
-// FlushError passes a flush through and marks the response streamed.
 func (r *idempotencyRecorder) FlushError() error {
 	r.streamed = true
 	return http.NewResponseController(r.ResponseWriter).Flush()
 }
 
-// Flush is FlushError for handlers that assert http.Flusher.
 func (r *idempotencyRecorder) Flush() { _ = r.FlushError() }
 
-// Hijack hands the connection to the handler; nothing is kept for replay.
 func (r *idempotencyRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	r.streamed = true
 	return http.NewResponseController(r.ResponseWriter).Hijack()
 }
 
-// Unwrap lets http.ResponseController reach the connection's deadlines;
-// Flush and Hijack stop at the methods above.
 func (r *idempotencyRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func (r *idempotencyRecorder) WriteHeader(status int) {
 	if r.wroteHeader {
 		return
 	}
-	// An informational status (103 Early Hints) comes before the final
-	// one: pass it on and keep waiting. Latching it dropped the final
-	// status, so the client saw 200 and nothing was stored to replay.
-	// 101 is final: the connection changes protocol.
 	if status >= 100 && status < 200 && status != http.StatusSwitchingProtocols {
 		r.ResponseWriter.WriteHeader(status)
 		return
@@ -596,9 +373,6 @@ func (r *idempotencyRecorder) Write(p []byte) (int, error) {
 	return r.ResponseWriter.Write(p)
 }
 
-// handlerHeaders returns a fresh http.Header containing only the
-// entries the handler added during the recorded request, minus the
-// per-identity headers we never want to replay.
 func (r *idempotencyRecorder) handlerHeaders() http.Header {
 	out := make(http.Header, len(r.headers))
 	for k, vs := range r.headers {
@@ -615,26 +389,10 @@ func (r *idempotencyRecorder) handlerHeaders() http.Header {
 	return out
 }
 
-// defaultMaxIdemEntries caps how many entries the in-process store retains
-// at once. The store key is client-chosen (the Idempotency-Key header, no
-// auth required), so without a cap a flood of unique keys grows the map
-// until OOM — the same shape framework/ratelimit's maxKeys guards. The cap
-// is far above any legitimate concurrent-key count and eviction is
-// idle-first, so a flood can only evict flood.
 const defaultMaxIdemEntries = 100_000
 
-// defaultMaxIdemEntryBytes caps the retained footprint of ONE cached
-// response (body + headers). It re-bounds the store even when a host
-// raises the middleware-level MaxResponseBytes, and matches that default.
 const defaultMaxIdemEntryBytes = 1 << 20
 
-// memoryIdempotencyStore is the default in-process IdempotencyStore.
-// Entries expire after TTL; in-flight claims expire faster (30s) so a
-// crashed handler doesn't lock out retries forever. The store is bounded
-// by default: at most maxEntries entries (idle-first eviction when the
-// cap is hit) and at most maxEntryBytes retained per entry (an oversized
-// response is dropped rather than cached), so a flood of unique keys
-// cannot exhaust process memory.
 type memoryIdempotencyStore struct {
 	ttl           time.Duration
 	inFlightTTL   time.Duration
@@ -647,20 +405,15 @@ type memoryIdempotencyStore struct {
 
 type idemEntry struct {
 	fingerprint string
-	resp        *IdempotentResponse // nil while in-flight
+	resp        *IdempotentResponse
 	expires     time.Time
-	lastAccess  time.Time // idle-first eviction rank: touched by Begin hits and Finish
+	lastAccess  time.Time
 }
 
 // MemoryIdempotencyOption configures the in-process store.
 type MemoryIdempotencyOption func(*memoryIdempotencyStore)
 
-// WithMemoryStoreMaxEntries caps the number of resident entries. When the
-// cap is hit the store sheds idle entries first (least recently used),
-// down to a low-water mark so the shed runs at most once per ~10% of the
-// cap rather than on every insert; in-flight claims are evicted only when
-// every entry is in-flight. Defaults to 100_000 (the framework/ratelimit
-// maxKeys precedent); n <= 0 keeps the default.
+// WithMemoryStoreMaxEntries caps the entries the store holds, shedding completed and least recently used entries first; n <= 0 keeps 100_000.
 func WithMemoryStoreMaxEntries(n int) MemoryIdempotencyOption {
 	return func(s *memoryIdempotencyStore) {
 		if n > 0 {
@@ -669,11 +422,7 @@ func WithMemoryStoreMaxEntries(n int) MemoryIdempotencyOption {
 	}
 }
 
-// WithMemoryIdempotencyInFlightTTL overrides the default 30s in-flight
-// claim TTL. Set this above the request budget (the App sizes its
-// default store from RequestTimeout plus slack): a claim that expires
-// while the handler still runs lets a retry execute it again. d <= 0
-// keeps the default.
+// WithMemoryIdempotencyInFlightTTL sets how long an in-flight claim holds its key; d <= 0 keeps 30s.
 func WithMemoryIdempotencyInFlightTTL(d time.Duration) MemoryIdempotencyOption {
 	return func(s *memoryIdempotencyStore) {
 		if d > 0 {
@@ -685,12 +434,7 @@ func WithMemoryIdempotencyInFlightTTL(d time.Duration) MemoryIdempotencyOption {
 // InFlightTTL implements InFlightTTLStore.
 func (s *memoryIdempotencyStore) InFlightTTL() time.Duration { return s.inFlightTTL }
 
-// WithMemoryStoreMaxEntryBytes caps the retained footprint of one cached
-// response (body + headers). A response larger than the cap is not
-// retained: the entry is dropped at Finish, the client still received the
-// live response, and the next request with the same key re-executes
-// rather than replays. Defaults to 1 MiB (matching MaxResponseBytes);
-// n <= 0 keeps the default.
+// WithMemoryStoreMaxEntryBytes caps one cached response; a larger one is not kept. n <= 0 keeps 1 MiB.
 func WithMemoryStoreMaxEntryBytes(n int64) MemoryIdempotencyOption {
 	return func(s *memoryIdempotencyStore) {
 		if n > 0 {
@@ -699,16 +443,7 @@ func WithMemoryStoreMaxEntryBytes(n int64) MemoryIdempotencyOption {
 	}
 }
 
-// NewMemoryIdempotencyStore returns an in-process IdempotencyStore.
-// Suitable for single-instance deployments and tests. Use a Redis- or
-// DB-backed implementation behind the same interface for clusters.
-// The store is bounded by default (defaultMaxIdemEntries entries,
-// defaultMaxIdemEntryBytes per entry); see the options to change either.
-//
-// ttl 0 keeps the 24h default. A negative ttl panics: it can only be a
-// sign or unit error, and substituting the default would turn the
-// caller's most restrictive input into the longest retention the store
-// offers (mirroring MemorySessionStore.Create's fail-closed posture).
+// NewMemoryIdempotencyStore returns an in-process, bounded IdempotencyStore; ttl 0 means 24h and a negative ttl panics.
 func NewMemoryIdempotencyStore(ttl time.Duration, opts ...MemoryIdempotencyOption) IdempotencyStore {
 	if ttl < 0 {
 		panic(fmt.Sprintf("idempotency: NewMemoryIdempotencyStore: ttl must be >= 0 (got %v)", ttl))
@@ -745,16 +480,11 @@ func (s *memoryIdempotencyStore) Begin(_ context.Context, key, fingerprint strin
 		return e.resp, true, nil
 	}
 
-	// Drop expired entries about once a minute, as the SQL store does.
 	if now.Sub(s.lastReap) > idemReapEvery {
 		s.reapLocked(now)
 		s.lastReap = now
 	}
 
-	// Shed idle entries when at capacity, BEFORE inserting the new claim,
-	// so the map is bounded under a unique-key flood. maxEntries == 0
-	// (a hand-built store literal, never the New constructor) means
-	// unlimited and skips the shed.
 	if s.maxEntries > 0 && len(s.entries) >= s.maxEntries {
 		s.evictLocked()
 	}
@@ -766,17 +496,6 @@ func (s *memoryIdempotencyStore) Begin(_ context.Context, key, fingerprint strin
 	return nil, false, nil
 }
 
-// evictLocked sheds entries down to a low-water mark (90% of the cap) so
-// the O(n) scan runs at most once per ~10% of the cap rather than on every
-// insert under sustained flood — the framework/ratelimit evictLocked
-// precedent. The victim order is idle-first:
-//
-//   - completed entries (resp != nil) are shed before in-flight claims;
-//     dropping an in-flight claim opens a concurrent-execution window for
-//     that key, so claims are only shed when EVERY entry is in-flight;
-//   - within each class, the least recently accessed entry goes first, so
-//     a flood of fresh keys can only evict flood — a key that is being
-//     replayed stays warm.
 func (s *memoryIdempotencyStore) evictLocked() {
 	lowWater := s.maxEntries * 9 / 10
 	type victim struct {
@@ -795,7 +514,7 @@ func (s *memoryIdempotencyStore) evictLocked() {
 		if !ranked[i].lastAccess.Equal(ranked[j].lastAccess) {
 			return ranked[i].lastAccess.Before(ranked[j].lastAccess)
 		}
-		return ranked[i].key < ranked[j].key // deterministic tie-break under one clock tick
+		return ranked[i].key < ranked[j].key
 	})
 	for i := 0; i < len(ranked) && len(s.entries) > lowWater; i++ {
 		delete(s.entries, ranked[i].key)
@@ -811,11 +530,6 @@ func (s *memoryIdempotencyStore) Finish(_ context.Context, key, fingerprint stri
 	if !ok {
 		return nil
 	}
-	// Only the owner of the in-flight claim may mutate or release it. If the
-	// claim expired and was re-assigned to a different fingerprint while this
-	// handler was still running, Finish must be a no-op: writing would clobber
-	// the new owner's claim and replay this caller's response to them on retry,
-	// a cross-user disclosure. See TestIdemFinishOnlyWritesOwnClaim.
 	if e.fingerprint != fingerprint {
 		return nil
 	}
@@ -823,11 +537,6 @@ func (s *memoryIdempotencyStore) Finish(_ context.Context, key, fingerprint stri
 		delete(s.entries, key)
 		return nil
 	}
-	// Per-entry byte cap: an oversized response is dropped, not retained.
-	// The client already received the live response; the cost of dropping
-	// is that the next request with this key re-executes instead of
-	// replaying — availability over memory, the same posture as the
-	// middleware-level MaxResponseBytes bypass.
 	if responseBytes(resp) > s.maxEntryBytes {
 		delete(s.entries, key)
 		return nil
@@ -838,8 +547,6 @@ func (s *memoryIdempotencyStore) Finish(_ context.Context, key, fingerprint stri
 	return nil
 }
 
-// responseBytes returns the retained footprint of a cached response:
-// body plus header keys and values.
 func responseBytes(resp *IdempotentResponse) int {
 	n := len(resp.Body)
 	for k, vs := range resp.Header {
@@ -851,7 +558,6 @@ func responseBytes(resp *IdempotentResponse) int {
 	return n
 }
 
-// idemReapEvery is how often Begin sweeps expired entries out of the map.
 const idemReapEvery = time.Minute
 
 func (s *memoryIdempotencyStore) reapLocked(now time.Time) {
@@ -862,8 +568,6 @@ func (s *memoryIdempotencyStore) reapLocked(now time.Time) {
 	}
 }
 
-// printableASCII reports whether s holds only bytes 0x21-0x7e and
-// spaces, the bytes a client-minted Idempotency-Key is made of.
 func printableASCII(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if c := s[i]; c < 0x20 || c > 0x7e {

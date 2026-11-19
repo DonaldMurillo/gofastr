@@ -5,8 +5,7 @@ import (
 	"database/sql"
 )
 
-// Transaction executes fn inside a database transaction.
-// It begins a transaction, calls fn, and commits on success or rolls back on error.
+// Transaction runs fn in a transaction, committing when fn returns nil and rolling back otherwise.
 func Transaction(ctx context.Context, db *sql.DB, fn func(tx *sql.Tx) error) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {

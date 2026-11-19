@@ -1,0 +1,16 @@
+primitive: middleware.logging
+summary: The request-logging middleware, full and sampled, and the status-recording writer it wraps responses in.
+code:
+  - core/middleware/logging.go
+docs:
+  - framework/docs/content/log.md
+invariants:
+  - id: sampled-logging-keeps-errors-and-slow
+    rule: SampledLogging logs every request answered 400 or above or slower than its threshold, and one in sampleN of the rest.
+    enforced_by:
+      - test: core/middleware.TestSweepSampledLoggingAlwaysLogsErrors
+      - test: core/middleware.TestSampledLogging_SanitizesMethod
+  - id: readfrom-commits-lazily
+    rule: The logging writer keeps ReadFrom and records the implicit 200 only once bytes were copied.
+    enforced_by:
+      - test: core/middleware.TestLoggingReadFromLazyCommit

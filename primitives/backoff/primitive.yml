@@ -1,0 +1,45 @@
+primitive: backoff
+summary: The retry-delay policies (exponential, positional table, jitter) shared by the outbox relay, the queue and webhook batteries and the log webhook sink.
+code:
+  - core/backoff/
+invariants:
+  - id: exponential-never-overflows
+    rule: For a base of zero or more, Exponential returns base*2^(attempts-1) capped at a positive max, and with no cap stops doubling at the largest value whose next doubling would overflow int64, so any attempt count returns a non-negative delay; callers pass a non-negative base.
+    enforced_by:
+      - test: core/backoff.TestExponential
+      - test: core/backoff.TestExponentialMonotone
+      - test: core/backoff.TestSafeDoublingDoesNotClampEarly
+  - id: nonpositive-attempts-read-as-first
+    rule: Exponential and At read attempts below 1 as the first attempt, so a zero or wrapped-negative count yields base or table[0].
+    enforced_by:
+      - test: core/backoff.TestMinimumAttemptDoesNotWrap
+      - test: core/backoff.TestAt
+  - id: zero-base-returns-at-once
+    rule: Exponential with a zero base returns zero without iterating the attempt count.
+    enforced_by:
+      - test: core/backoff.TestZeroBaseReturnsImmediately
+  - id: table-reuses-last-entry
+    rule: At returns table[attempts-1], the last entry once attempts runs past the table, and zero for an empty table.
+    enforced_by:
+      - test: core/backoff.TestAt
+  - id: jitter-stays-in-range
+    rule: Jitter clamps fraction to [0, 1] with NaN as 0 and r into [0, 1], and returns a value in d×(1-fraction) to d×(1+fraction) that is never above the largest Duration and, for a non-negative d, never negative; a negative d comes back unchanged.
+    enforced_by:
+      - test: core/backoff.TestJitterBounds
+decisions:
+  - id: one-backoff-package
+    date: 2026-11-18
+    status: accepted
+    decision: The retry delays live in one dependency-free core package that framework/outbox and the batteries import, since the batteries sit above the framework but not above each other.
+    rejected:
+      - option: Keep a backoff function in each battery and in the outbox.
+        why: Each copy has to re-prove the overflow clamp and the attempts-below-one case, and the copies drift.
+    upholds: [exponential-never-overflows, nonpositive-attempts-read-as-first]
+  - id: jitter-takes-r-from-caller
+    date: 2026-11-18
+    status: accepted
+    decision: Jitter takes the random point r as an argument instead of drawing it, so the function is deterministic and its range is testable.
+    rejected:
+      - option: Draw r from math/rand inside Jitter.
+        why: The bounds could then only be tested statistically.
+    upholds: [jitter-stays-in-range]

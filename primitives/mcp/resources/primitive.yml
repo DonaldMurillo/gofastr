@@ -1,0 +1,40 @@
+primitive: mcp.resources
+summary: Resources and resource templates - registration, resources/list, resources/read and resources/templates/list, with per-resource and per-template gates.
+code:
+  - core/mcp/resources.go
+  - core/mcp/resource_templates.go
+docs:
+  - framework/docs/content/mcp.md
+invariants:
+  - id: resource-gate-guards-read
+    rule: resources/read runs a resource's WithResourceGate before its contents func, and a refusal or a panic in the gate answers as an unknown uri unless the refusal carries ShowRefusal.
+    enforced_by:
+      - test: core/mcp.TestWithResourceGate_BlocksAndAllows
+      - test: core/mcp.TestWithResourceGate_PanicRecovers
+  - id: read-contents-shape
+    rule: A resources/read item carries exactly one of text or blob, keeping an empty text key, and repeats the resource's _meta.
+    enforced_by:
+      - test: core/mcp.TestResourcesRead_EmptyKeepsUnionKey
+      - test: core/mcp.TestResourceReadCarriesMeta
+  - id: contents-panic-is-internal-error
+    rule: A panicking contents func answers -32603 "internal resource error" and never unwinds the transport.
+    enforced_by:
+      - test: core/mcp.TestResourcesRead_PanicRecovers
+decisions:
+  - id: resource-gate-is-an-option
+    date: 2026-11-18
+    status: accepted
+    decision: A resource with per-caller content takes WithResourceGate, which hides it from a refused caller's listings and notifications as well as refusing the read.
+    rejected:
+      - option: A check inside the contents func.
+        why: It guards only the read, and the resource's uri, name and description stay listed.
+      - option: Cover resources with the tool gates.
+        why: Gated and the tool gates wrap tool handlers; resources/read never runs them.
+    upholds: [resource-gate-guards-read]
+  - id: templates-share-resources-capability
+    date: 2026-11-18
+    status: accepted
+    decision: A template registration advertises the resources capability and fires notifications/resources/list_changed, and templates are stored and listed verbatim, never expanded server-side.
+    rejected:
+      - option: A separate templates capability or list_changed notification.
+        why: The MCP spec defines neither.

@@ -1,0 +1,29 @@
+primitive: query.dbtime
+summary: Reading time columns back from Postgres and SQLite drivers and finding SQLite time text that is not in the driver's own bind layout.
+code:
+  - core/query/dbtime.go
+invariants:
+  - id: parse-driver-time-shapes
+    rule: ParseDBTime accepts time.Time, a non-nil *time.Time and RFC3339 or space-separated SQLite text as a string or bytes, and errors on a nil *time.Time or any other value.
+    enforced_by:
+      - test: core/query.TestParseDBTimeAcceptsDriverShapes
+      - test: core/query.TestParseDBTimeRejectsUnsupported
+  - id: probe-falls-back-to-rfc3339nano
+    rule: ProbeSQLiteBindLayout returns the layout the driver writes for a bound time.Time, and RFC3339Nano when the probe fails or the text matches no known layout.
+    enforced_by:
+      - test: core/query.TestProbeSQLiteBindLayout
+  - id: time-fixes-idempotent
+    rule: SQLiteTimeFixes skips NULL columns and text already in layout, and errors on a value that is not text or not readable time, so a normalization pass rewrites each value at most once.
+    enforced_by:
+      - test: core/query.TestSQLiteTimeFixes
+decisions:
+  - id: normalize-to-probed-layout
+    date: 2026-11-18
+    status: accepted
+    decision: Stored SQLite time text is normalized to the layout the connected driver binds, probed at run time.
+    rejected:
+      - option: Normalize to one fixed layout.
+        why: Predicates compare stored text against the driver's bound text lexicographically, and the pure driver and mattn/go-sqlite3 bind different layouts.
+      - option: Keep a value that cannot be parsed.
+        why: It is corrupt, and keeping it leaves the comparison bug in place.
+    upholds: [time-fixes-idempotent, probe-falls-back-to-rfc3339nano]

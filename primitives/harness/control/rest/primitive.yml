@@ -1,0 +1,168 @@
+primitive: harness.control.rest
+summary: The HTTP+SSE control transport - catalog listings, per-session commands as POSTs dispatched to the multiplexer as the verified token, and a session's events as a server-sent event stream that resumes from Last-Event-ID.
+code:
+  - framework/experimental/harness/control/rest/
+docs:
+  - framework/docs/content/harness-architecture.md
+twins:
+  - job: Admit a request only from an allow-listed Host, and from a browser only with an allow-listed Origin.
+    why: Work not yet done; rest and ws each grew their own hostOK and originOK, and the MCP HTTP transport has neither check.
+    sites:
+      - path: framework/experimental/harness/control/rest/rest.go
+        note: Server.hostOK and Server.originOK.
+      - path: framework/experimental/harness/control/ws/ws.go
+        note: Handler.hostOK and Handler.originOK, byte for byte the same.
+      - path: framework/experimental/harness/control/mcpserver/http.go
+        note: HTTPHandler.ServeHTTP checks no Host or Origin at all.
+  - job: Read the capability token off a request and verify it.
+    why: Work not yet done; each transport picks its own headers, so rest takes X-Harness-Token, Bearer or ?token=, ws takes ?token= or X-Harness-Token, and MCP HTTP takes only Bearer.
+    sites:
+      - path: framework/experimental/harness/control/rest/rest.go
+        note: Server.verifyToken.
+      - path: framework/experimental/harness/control/ws/ws.go
+        note: The token lookup at the top of Handler.ServeHTTP.
+      - path: framework/experimental/harness/control/mcpserver/http.go
+        note: verifyBearer.
+  - job: Check a command against the token's command and session scope before it reaches the multiplexer.
+    why: Work not yet done; each transport learns the target session differently (URL path, socket binding plus body, tool arguments) and checks scope where it learns it.
+    sites:
+      - path: framework/experimental/harness/control/rest/rest.go
+        note: handleSessionItem checks AllowsSession and handlePOST checks AllowsCommand.
+      - path: framework/experimental/harness/control/ws/ws.go
+        note: ServeHTTP checks AllowsSession at upgrade and Conn.handleText checks AllowsCommand and the body's session on every frame.
+      - path: framework/experimental/harness/control/mcpserver/server.go
+        note: Server.authorize, plus its own AllowsSession check in readEvents.
+  - job: Name the session a decoded command targets.
+    why: Work not yet done; the Command interface does not expose the session, so ws and mcpserver each type-switch, and the mcpserver copy lacks AttachSession, DetachSession and CustomCommand.
+    sites:
+      - path: framework/experimental/harness/control/ws/ws.go
+        note: commandSession.
+      - path: framework/experimental/harness/control/mcpserver/server.go
+        note: commandSession.
+  - job: Choose the control.Client identity a command is dispatched as, which decides turn originator and self-approval.
+    why: Work not yet done; rest dispatches as the token (one ClientID per JTI), ws as one fresh ClientID per socket, and mcpserver as a fresh ClientID per tool call.
+    sites:
+      - path: framework/experimental/harness/control/rest/rest.go
+        note: tokenClientID and restClient.
+      - path: framework/experimental/harness/control/ws/ws.go
+        note: Conn gets ids.NewClientID() in ServeHTTP.
+      - path: framework/experimental/harness/control/mcpserver/server.go
+        note: mcpClient gets ids.NewClientID() in runAgentWithShellAccess and dispatchCommand.
+  - job: Seat a long-lived stream per token principal and refuse the one past the cap with 429 and Retry-After before any bytes go out.
+    why: Work not yet done; each transport resolves its Seats field against control.DefaultSeatTable with its own seatTable method and writes its own 429.
+    sites:
+      - path: framework/experimental/harness/control/rest/rest.go
+        note: handleSSE and Server.seatTable.
+      - path: framework/experimental/harness/control/ws/ws.go
+        note: Handler.ServeHTTP before Hijack, and Handler.seatTable.
+      - path: framework/experimental/harness/control/mcpserver/http.go
+        note: handleGET and HTTPHandler.seatTable.
+  - job: Re-verify an open stream's token on a ticker and end the stream once it no longer verifies.
+    why: Work not yet done; rest and ws tick every 10s and also check per event or frame, MCP HTTP checks only on its 15s keepalive.
+    sites:
+      - path: framework/experimental/harness/control/rest/rest.go
+        note: The recheck ticker and the per-event verifyToken in handleSSE.
+      - path: framework/experimental/harness/control/ws/ws.go
+        note: Conn.revocationWatch and the per-frame Verify in handleText.
+      - path: framework/experimental/harness/control/mcpserver/http.go
+        note: The keepalive tick in handleGET.
+  - job: Resume a session's event stream after a client-supplied event id, refusing one that is not a number.
+    why: Work not yet done; rest reads the Last-Event-ID header in lastEventID, ws parses a lastEventId query parameter inline, and mcpserver parses since= out of the events URI.
+    sites:
+      - path: framework/experimental/harness/control/rest/rest.go
+        note: lastEventID.
+      - path: framework/experimental/harness/control/ws/ws.go
+        note: The lastEventId parse in Handler.ServeHTTP.
+      - path: framework/experimental/harness/control/mcpserver/server.go
+        note: parseEventsURI.
+  - job: Refuse a command body with duplicate or case-folded keys and cap its size.
+    why: Work not yet done; rest strict-decodes each command under a 4 MiB MaxBytesReader, ws strict-decodes the frame envelope under a 16 MiB message cap, and mcpserver strict-decodes the envelope and walks params again under a 4 MiB read and scanner cap.
+    sites:
+      - path: framework/experimental/harness/control/rest/rest.go
+        note: handlePOST.
+      - path: framework/experimental/harness/control/ws/ws.go
+        note: Conn.handleText and wsMessageLimit.
+      - path: framework/experimental/harness/control/mcpserver/server.go
+        note: decodeRequest and unmarshalMCPObject.
+      - path: framework/experimental/harness/control/mcpserver/http.go
+        note: The LimitReader in handlePOST.
+  - job: Mark every control-plane response Cache-Control no-store.
+    why: Work not yet done; rest sets it in writeJSON, MCP HTTP in ServeHTTP, and the rest SSE stream answers no-cache instead.
+    sites:
+      - path: framework/experimental/harness/control/rest/rest.go
+        note: writeJSON, and handleSSE's no-cache.
+      - path: framework/experimental/harness/control/mcpserver/http.go
+        note: HTTPHandler.ServeHTTP and handleGET.
+invariants:
+  - id: host-and-origin-allowlists
+    rule: A request whose Host is not in a non-empty AllowedHosts, or that carries an Origin not in AllowedOrigins, is refused 403 before any token check; an empty AllowedOrigins refuses every browser Origin and admits a request with none.
+    enforced_by:
+      - test: framework/experimental/harness/control/rest.TestInvalidHostRejected
+      - test: framework/experimental/harness/control/rest.TestInvalidOriginRejected
+      - test: framework/experimental/harness/control/rest.TestRestOriginDeniedWhenUnconfigured
+  - id: token-gates-all-but-handshake-and-health
+    rule: Every route but /v1/handshake and /v1/health refuses a request without a verifying token with 401.
+    enforced_by:
+      - test: framework/experimental/harness/control/rest.TestSessionsRequiresToken
+      - test: framework/experimental/harness/control/rest.TestSessionTasksEndpointRequiresToken
+  - id: session-and-command-scope
+    rule: A /v1/sessions/{id} route answers 403 when the token does not allow that session, and a command POST answers 403 when the token does not allow that command, before the body is read or the session touched.
+    enforced_by:
+      - test: framework/experimental/harness/control/rest.TestRESTTokenScopeEnforced
+  - id: listings-are-scoped
+    rule: GET /v1/sessions lists only the sessions the token allows, live or past, and passes the scope to the store so it applies before the 50-session cap; a request with no claims gets 403.
+    enforced_by:
+      - test: framework/experimental/harness/control/rest.TestSessionListHonoursTokenScope
+      - test: framework/experimental/harness/control/rest.TestPastSessionScopeBeforeCap
+      - test: framework/experimental/harness/control/rest.TestSessionsWithoutClaimsIs403
+  - id: strict-bounded-command-body
+    rule: A command body over 4 MiB, or with a duplicate or case-folded key, is refused 400 and never dispatched.
+    enforced_by:
+      - test: framework/experimental/harness/control/rest.TestRestRefusesOversizeBody
+      - test: framework/experimental/harness/control/rest.TestRestInputRejectsDuplicateKeys
+      - test: framework/experimental/harness/control/rest.TestRestInputRejectsCaseFoldedKeys
+  - id: dispatch-as-the-token
+    rule: A POSTed command is dispatched as a client whose identity class is the token's and whose ClientID is derived from the token's JTI, so the same token is the same client across requests.
+    enforced_by:
+      - test: framework/experimental/harness/control/rest.TestRestAnswerUsesTokenClass
+      - test: framework/experimental/harness/control/rest.TestRestClientIDStablePerToken
+  - id: sse-subscribes-before-headers
+    rule: The events stream subscribes to the session bus before it writes the 200, so a turn the client starts on seeing the headers reaches the stream.
+    enforced_by:
+      - test: framework/experimental/harness/control/rest.TestSSESubscribedBeforeHeaders
+  - id: sse-seat-cap
+    rule: The events streams one token holds are capped by the seat table, and the one past the cap gets 429 with Retry-After before any event is written.
+    enforced_by:
+      - test: framework/experimental/harness/control/rest.TestSSEStreamsRedCappedPerToken
+  - id: sse-ends-on-revocation
+    rule: An open events stream ends once its token stops verifying, checked before every event and on a ticker while idle.
+    enforced_by:
+      - test: framework/experimental/harness/control/rest.TestRestSSEStreamStopsOnRevocation
+      - test: framework/experimental/harness/control/rest.TestSSEIdleStreamEndsOnRevocation
+  - id: sse-resume
+    rule: A numeric Last-Event-ID replays the events after it before going live, a non-numeric one is refused 400, and a StreamGap event is written with no id so it never moves the client's Last-Event-ID.
+    enforced_by:
+      - test: framework/experimental/harness/control/rest.TestSSEReplaysAfterLastEventID
+      - test: framework/experimental/harness/control/rest.TestSSERefusesBadLastEventID
+      - test: framework/experimental/harness/control/rest.TestSSEGapCarriesNoID
+  - id: json-is-no-store-and-encoded-first
+    rule: Every JSON answer carries Cache-Control no-store, and a body that cannot be encoded answers 500 with reason InternalError rather than the intended status with an empty body.
+    enforced_by:
+      - test: framework/experimental/harness/control/rest.TestRestJSONRedNoStore
+      - test: framework/experimental/harness/control/rest.TestRestUnencodableBodyIs500
+decisions:
+  - id: token-in-query-for-eventsource
+    date: 2026-11-18
+    status: accepted
+    decision: The token is read from X-Harness-Token, then Authorization Bearer, then a ?token= query parameter.
+    rejected:
+      - option: Headers only.
+        why: A browser EventSource cannot set request headers, so the SSE stream would be unreachable from the bundled web client.
+  - id: originless-requests-pass
+    date: 2026-11-18
+    status: accepted
+    decision: A request with no Origin header passes the Origin check, and a browser Origin must be listed.
+    rejected:
+      - option: Admit any Origin when AllowedOrigins is empty.
+        why: Any web page could then drive a loopback-bound harness; only browsers set Origin, so its absence proves nothing either way, while its presence must be vouched for.
+    upholds: [host-and-origin-allowlists]

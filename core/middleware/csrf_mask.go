@@ -6,17 +6,9 @@ import (
 	"strings"
 )
 
-// maskedPrefix marks a masked CSRF token. A raw token starts with the
-// 43-character base64url encoding of its random half, so it can never
-// begin with this.
 const maskedPrefix = "m1."
 
-// MaskCSRFToken returns token under a fresh one-time pad:
-// "m1." + base64url(pad || pad XOR token). Render this, never the raw
-// token, into any response body. The bytes differ on every call, so a
-// compressed page carrying the token gives a BREACH-style attacker
-// nothing to converge on; CSRF accepts the masked form wherever it
-// accepts the raw one. Returns "" for an empty token.
+// MaskCSRFToken returns token under a fresh one-time pad, so its bytes differ on every call; render this, never the raw token. Empty stays empty.
 func MaskCSRFToken(token string) string {
 	if token == "" {
 		return ""
@@ -24,8 +16,6 @@ func MaskCSRFToken(token string) string {
 	n := len(token)
 	buf := make([]byte, 2*n)
 	if _, err := rand.Read(buf[:n]); err != nil {
-		// crypto/rand does not fail on supported platforms; refuse to
-		// render a predictable pad if it ever does.
 		panic("csrf: masking token: " + err.Error())
 	}
 	for i := range n {
@@ -34,9 +24,6 @@ func MaskCSRFToken(token string) string {
 	return maskedPrefix + base64.RawURLEncoding.EncodeToString(buf)
 }
 
-// unmaskCSRFToken reverses MaskCSRFToken. A value without the masked
-// prefix is returned as is (a raw token); a malformed masked value
-// returns "", which never matches a cookie.
 func unmaskCSRFToken(v string) string {
 	rest, ok := strings.CutPrefix(v, maskedPrefix)
 	if !ok {

@@ -1,0 +1,54 @@
+primitive: router
+summary: The core HTTP router, a Go 1.22 ServeMux behind Groups and a middleware chain composed per route at request time and cached until any Use in the tree.
+code:
+  - core/router/doc.go
+  - core/router/router.go
+  - core/router/group.go
+docs:
+  - framework/docs/content/core-packages.md
+on_change:
+  - core/router is framework-agnostic; an error or warning it raises names the generic fix, not a framework type.
+invariants:
+  - id: late-middleware-wraps-every-route
+    rule: Middleware added after a route was registered, or after it served a request, wraps that route on its next request when added with Use on the route's router or an ancestor, or with UseInner anywhere in the tree; Use on a sibling Group does not.
+    enforced_by:
+      - test: core/router.TestLateMiddlewareWrapsExistingRoutes
+      - test: core/router.TestGroupSeesLateParentMiddleware
+      - test: core/router.TestSweepRouterUseAfterFirstRequestRecomposes
+  - id: chain-order
+    rule: A route's chain runs the root's Use middleware first, then each enclosing Group's in nesting order, each list in the order added, then every UseInner middleware, then the handler.
+    enforced_by:
+      - test: core/router.TestMiddlewareExecutionOrder
+      - test: core/router.TestNestedGroupsCompose
+      - test: core/router.TestUseInnerRunsAfterUseAndGroup
+  - id: conflict-panic-names-the-route
+    rule: Handle re-panics a ServeMux conflict with the colliding "METHOD /path" and the usual fix, and a malformed pattern as an invalid route without the conflict advice.
+    enforced_by:
+      - test: core/router.TestRouteConflictPanicIsActionable
+      - test: core/router.TestUncleanPatternPanicIsNotAConflict
+  - id: top-level-group-prefix
+    rule: A top-level Group prefix that is neither empty nor starts with "/" panics unless its first segment holds a dot or is localhost in any letter case, and a host prefix with a port panics.
+    enforced_by:
+      - test: core/router.TestGroupRefusesBarePrefix
+  - id: routes-lists-whole-tree
+    rule: Routes on any router of a tree returns every route registered in the tree, Groups included, in registration order.
+    enforced_by:
+      - test: core/router.TestRouter_RoutesIntrospection
+decisions:
+  - id: compose-chain-per-route-at-request-time
+    date: 2026-11-18
+    status: accepted
+    decision: Each route caches its composed chain against a tree-wide version that every Use, UseInner and Group with middleware bumps, so steady traffic pays one atomic load and late middleware still applies.
+    rejected:
+      - option: Compose the chain once when Handle registers the route.
+        why: Plugins and OnStart hooks add middleware after routes exist, and a register-middleware-first order cannot be enforced across batteries.
+      - option: Compose the chain on every request.
+        why: It allocates the whole chain per request on the hot path.
+    upholds: [late-middleware-wraps-every-route]
+  - id: middleware-type-alias
+    date: 2026-11-18
+    status: accepted
+    decision: router.Middleware is a type alias of middleware.Middleware.
+    rejected:
+      - option: A distinct named type.
+        why: Every core/middleware and battery value would need an explicit conversion before Use.

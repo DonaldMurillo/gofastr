@@ -1,0 +1,22 @@
+primitive: fuzzy
+summary: String-similarity helpers (Levenshtein edit distance) shared by the framework's did-you-mean suggestions and the CLI, which cannot import each other.
+code:
+  - core/fuzzy/
+docs:
+  - framework/docs/content/core-packages.md
+invariants:
+  - id: levenshtein-is-edit-distance
+    rule: Levenshtein returns the minimum number of single-byte insertions, deletions and substitutions turning a into b, and the same value for b into a.
+    enforced_by:
+      - test: core/fuzzy.TestLevenshtein
+decisions:
+  - id: bytewise-two-rows
+    date: 2026-11-18
+    status: accepted
+    decision: Levenshtein compares bytes and keeps two rolling rows, so memory is O(len(b)); it does not bound its input, and non-ASCII input is compared bytewise, so edits are counted in bytes and changing one character can take more than one edit.
+    rejected:
+      - option: Compare runes.
+        why: The names suggested against are ASCII identifiers (command and field names), so a non-ASCII typo is already at least one edit off, and decoding costs an allocation per call.
+      - option: Fill the full len(a)×len(b) matrix.
+        why: Only the previous row is ever read, so the matrix is memory spent for nothing.
+    revisit_if: A did-you-mean suggestion for non-ASCII input is reported missing, or an unbounded caller becomes slow. framework/filter caps query keys at 64 bytes (framework/filter.TestUnknownFilterKeyIsBounded) but passes non-ASCII keys bytewise; cmd/gofastr dispatch passes the raw first argument unbounded.
