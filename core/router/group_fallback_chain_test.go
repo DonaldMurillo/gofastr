@@ -128,3 +128,16 @@ func TestGroup405HandlerRunsChainOnce(t *testing.T) {
 		t.Fatalf("got %d ran=%q, want 405 through api once", w.Code, ran(w))
 	}
 }
+
+func TestSibling405HandlerRunsSharedOwnerChain(t *testing.T) {
+	r := New()
+	r.Use(mark("root"))
+	api := r.Group("/api", mark("api"))
+	api.Post("/items", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	r.Group("/api/items", mark("items")).MethodNotAllowed(status(http.StatusMethodNotAllowed))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodOptions, "/api/items", nil))
+	if w.Code != http.StatusMethodNotAllowed || ran(w) != "root,api,items" {
+		t.Fatalf("got %d ran=%q, want 405 through root,api,items once each", w.Code, ran(w))
+	}
+}
