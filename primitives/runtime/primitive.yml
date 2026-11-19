@@ -14,7 +14,7 @@ invariants:
       - test: core-ui/runtime/internal/treegate.TestRuntimeAttrsAreDocumented
       - test: core-ui/runtime/internal/treegate.TestPrivilegedAttrsAreDocumented
   - id: refused-submit-focuses-first-invalid
-    rule: A refused form submit moves focus to the first refused control in form.elements order that can take it, a control associated from outside the form included and a hidden input or disabled control (a disabled fieldset's included) skipped, a radio group on its checked or first enabled radio, while focus is still on the body, in the form or on one of its controls; a click-dispatched control or an as-you-type dispatch never moves focus.
+    rule: A refused form submit, on the data-cui-rpc path and the plain-form bridge alike, moves focus to the first refused control in form.elements order that can take it, a control associated from outside the form included and a hidden input or disabled control (a disabled fieldset's included) skipped, a radio group on its checked or first enabled radio, while focus is still on the body, in the form or on one of its controls; a click-dispatched control or an as-you-type dispatch never moves focus.
     enforced_by:
       - test: core-ui/runtime.TestRefusedSubmitFocusesFirstInvalidField
       - test: core-ui/runtime.TestRefusedInputDispatchKeepsFocus
@@ -27,6 +27,7 @@ invariants:
       - test: core-ui/runtime.TestRetryClearsAnExternalControlsError
       - test: core-ui/runtime.TestRefusedSubmitSkipsADisabledFieldset
       - test: core-ui/runtime.TestRefusedRadioGroupWithADisabledLastRadio
+      - test: core-ui/runtime.TestRefusedPlainFormSubmitFocusesFirstInvalidField
   - id: no-hard-navigation
     rule: Navigation goes through the client router; nothing assigns location.href or reloads the page to move between pages or to refresh one.
     enforced_by:
@@ -108,6 +109,22 @@ invariants:
       - test: core-ui/runtime.TestPollFetchIsLowPriority
       - test: core-ui/runtime.TestWidgetPollFetchIsLowPriority
       - test: core-ui/runtime.TestPrefetchPriorityFollowsIntent
+  - id: user-invalid-mirrors-to-aria-invalid
+    rule: The validity module copies the browser verdict onto aria-invalid, "true" under :user-invalid and "false" under :user-valid, only after the reader left the field or tried to submit; a script checkValidity() marks nothing, and a control whose described data-hui-field-error node holds words keeps the server "true".
+    enforced_by:
+      - test: core-ui/runtime.TestUserInvalidMirrorsToAriaInvalid
+      - test: core-ui/runtime.TestBlockedSubmitMarksRefusedControls
+      - test: core-ui/runtime.TestServerVerdictStandsOverNativeValid
+  - id: refusal-read-from-one-polite-region
+    rule: A refused form submission is read from the one cui-form-errors region (role=status, aria-live=polite), one sentence per refused field (its label, a colon, its messages), and no error node the module places is an alert of its own; a successful retry empties the region.
+    enforced_by:
+      - test: core-ui/runtime.TestRefusalIsReadFromOnePoliteRegion
+      - test: core-ui/runtime.TestRuntimeModule_FormErrors
+  - id: autogrow-defers-to-field-sizing
+    rule: Where CSS.supports reports field-sizing content, the textarea module sets field-sizing content on each autogrow textarea and measures nothing (no inline height, no ResizeObserver); elsewhere its scrollHeight fallback grows it, a hidden textarea included.
+    enforced_by:
+      - test: core-ui/runtime.TestAutogrowUsesFieldSizing
+      - test: core-ui/runtime.TestHiddenTextareaGrowsOnReveal
 decisions:
   - id: poll-before-push
     status: accepted

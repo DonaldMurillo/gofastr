@@ -134,6 +134,11 @@ func textAreaCSS(_ style.Theme) string {
   resize: none;
   overflow: hidden;
 }
+/* The engine sizes the field to its content from first paint; the
+   runtime's scrollHeight fallback only runs where this does not. */
+@supports (field-sizing: content) {
+  .fui-textarea[data-cui-autogrow] { field-sizing: content; }
+}
 .fui-textarea::placeholder { color: var(--color-text-subtle); }
 .fui-textarea:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);

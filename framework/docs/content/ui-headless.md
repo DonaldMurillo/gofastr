@@ -267,7 +267,7 @@ nothing hidden submits); `ui.TextArea` is `headless.Field` +
 `headless.Textarea` the way `ui.Select` is, with `Autogrow` reaching
 the control through the prop that survives the data-cui-* refusal.
 `ui.SearchInput` has no headless counterpart (the icon, the clear
-button and the role="search" wrap are its own) and keeps its own
+button and the `<search>` landmark wrap are its own) and keeps its own
 module, registered from framework/ui (`searchinput.js` beside the
 component) the way FileDropzone's is: it binds the component's
 classes, so it is the kit's and not the kernel's.

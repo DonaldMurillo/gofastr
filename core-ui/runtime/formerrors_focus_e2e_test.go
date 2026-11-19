@@ -241,3 +241,18 @@ func TestRefusedRadioGroupWithADisabledLastRadio(t *testing.T) {
 		})
 	}
 }
+
+// The plain-form bridge (a data-cui-spa form, no data-cui-rpc) moves
+// focus to the first refused field exactly like a data-cui-rpc form
+// (#704).
+func TestRefusedPlainFormSubmitFocusesFirstInvalidField(t *testing.T) {
+	got := focusAfterRefusal(t, `<form id="f" action="/rpc/save" method="POST" data-cui-spa>
+  <div data-hui-field=""><label for="name">Name</label><input id="name" name="name" value="ok"></div>
+  <div data-hui-field=""><label for="email">Email</label><input id="email" name="email" value=""></div>
+  <div data-hui-field=""><label for="city">City</label><input id="city" name="city" value=""></div>
+  <button type="submit" id="go">Save</button>
+</form>`, `{"city":["is required"],"email":["is required"]}`, "city-error", nil, clickSave())
+	if got != "email" {
+		t.Errorf("focus after the refused plain-form submit is on %q, want the first refused field %q", got, "email")
+	}
+}

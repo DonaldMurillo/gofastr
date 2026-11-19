@@ -267,6 +267,10 @@ invariants:
     rule: A group's leaf inputs take the ids <group id>-<index>.
     enforced_by:
       - test: framework/ui.TestRadioGroupStructure
+  - id: control-autocapitalize-is-typed
+    rule: ui.Control writes AutoCapitalize as autocapitalize over NoSpellCheck off and panics on a value outside off, sentences, words and characters.
+    enforced_by:
+      - test: framework/ui.TestControlAutoCapitalize
 decisions:
   - id: form-frame-is-its-own-component
     date: 2026-11-16

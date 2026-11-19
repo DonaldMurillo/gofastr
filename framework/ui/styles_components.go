@@ -484,9 +484,15 @@ func formFieldCSS(_ style.Theme) string {
   grid-template-columns: var(--fui-field-columns);
   gap: var(--fui-density-gap) var(--spacing-md, 8px);
 }
+/* The hint sits between the label and the control (headless.Field's
+   order), so the inline layout pins a hinted field's label to the
+   control's row: the hint takes the first row of the control track
+   and the label lines up with the control under it. */
+.fui-field:has(> .fui-field__hint) > .fui-field__label { grid-row: var(--fui-field-label-row, auto); }
 @media (max-width: 33rem) {
   .fui-field { grid-template-columns: minmax(0, 1fr); }
   .fui-field__hint, .fui-field__error { grid-column: auto; }
+  .fui-field:has(> .fui-field__hint) > .fui-field__label { grid-row: auto; }
 }
 .fui-field__label {
   align-self: center;
@@ -504,7 +510,7 @@ func formFieldCSS(_ style.Theme) string {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
@@ -513,7 +519,11 @@ func formFieldCSS(_ style.Theme) string {
    whose alternative text is empty, so the label's accessible name
    stays clean (the parser is told the rule by the control's own
    required attribute, not by a spoken "*"). */
+/* The single-value line first: an engine without alternative text for
+   generated content drops the whole second declaration and keeps the
+   asterisk from this one. */
 .fui-field__label[data-required]::after {
+  content: " *";
   content: " *" / "";
   color: var(--color-danger, #B91C1C);
 }
@@ -988,7 +998,7 @@ func notificationCSS(t style.Theme) string {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 [data-cui-comp="ui-notification"] {
@@ -1142,7 +1152,7 @@ func toastStackCSS(_ style.Theme) string {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 [data-cui-comp="ui-toast-stack"] {
@@ -1450,7 +1460,7 @@ func dataTableCSS(_ style.Theme) string {
     inline-size: 1px;
     block-size: 1px;
     overflow: hidden;
-    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
     white-space: nowrap;
   }
   /* Clipped, not removed: a header control that takes focus (a sort
@@ -1462,7 +1472,7 @@ func dataTableCSS(_ style.Theme) string {
     inline-size: auto;
     block-size: auto;
     overflow: visible;
-    clip: auto;
+    clip-path: none;
     /* Room for the focus ring inside the scroll wrapper's clip. */
     padding-block-start: var(--spacing-sm, 4px);
   }
@@ -1563,7 +1573,7 @@ func dataTableCSS(_ style.Theme) string {
     inline-size: 1px;
     block-size: 1px;
     overflow: hidden;
-    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
     white-space: nowrap;
   }
   /* Clipped, not removed: a header control that takes focus (a sort
@@ -1575,7 +1585,7 @@ func dataTableCSS(_ style.Theme) string {
     inline-size: auto;
     block-size: auto;
     overflow: visible;
-    clip: auto;
+    clip-path: none;
     /* Room for the focus ring inside the scroll wrapper's clip. */
     padding-block-start: var(--spacing-sm, 4px);
   }
@@ -2064,7 +2074,7 @@ func backToTopCSS(_ style.Theme) string {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }`
 }

@@ -42,6 +42,8 @@ var demandLoadMarkers = []demandLoadMarker{
 	{"data-cui-widget", "widgets"},
 	{"data-cui-open", "widgets"},
 	{"data-cui-autogrow", "textarea"},
+	{"data-hui-field", "validity"},
+	{"data-hui-choice", "validity"},
 	{"data-cui-dropdown-wrap", "dropdown"},
 	{"data-cui-reveal", "reveal"},
 	{"data-cui-animate-signal", "animate"},

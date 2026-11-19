@@ -91,10 +91,13 @@ func TestSweepFormsFieldMarksItsHooksAndRequiredLabel(t *testing.T) {
 		t.Errorf("the field root does not carry data-hui-field: %s", got)
 	}
 	has(t, got, `data-required="" for="n">Name</label>`, "a required field's label is not marked")
-	has(t, got, `data-hui-field-error="" id="n-error" role="alert">Enter a name.</p>`, "the error node lost its id, role or hook")
+	has(t, got, `data-hui-field-error="" id="n-error">Enter a name.</p>`, "the error node lost its id or hook")
+	hasNot(t, got, `role="alert"`, "the error is its own alert: the runtime's one polite region reads a refusal")
 	has(t, got, `id="n-hint">Letters only.</p>`, "the hint was dropped beside an error")
-	if e, h := strings.Index(string(got), "Enter a name."), strings.Index(string(got), "Letters only."); e > h {
-		t.Errorf("the error is not drawn before the hint: %s", got)
+	l, h, c, e := strings.Index(string(got), "</label>"), strings.Index(string(got), "Letters only."),
+		strings.Index(string(got), "<input"), strings.Index(string(got), "Enter a name.")
+	if !(l < h && h < c && c < e) {
+		t.Errorf("the field is not label, hint, control, error in that order: %s", got)
 	}
 	if !seen.Invalid || !seen.Required || seen.ID != "n" {
 		t.Errorf("the control was not told the field's state: %+v", seen)
@@ -111,7 +114,7 @@ func TestSweepFormsReservedErrorNodeIsWiredAndEmpty(t *testing.T) {
 	if seen.Invalid {
 		t.Error("a reserved, empty error marked the control invalid")
 	}
-	has(t, got, `<p data-cui-internal="" data-hui-field-error="" id="tok-error" role="alert"></p>`, "the reserved node is not an empty, hooked alert")
+	has(t, got, `<input id="tok" name="tok" type="text"><p data-cui-internal="" data-hui-field-error="" id="tok-error"></p>`, "the reserved node is not an empty, hooked node after the control")
 	set := Field(FieldProps{Label: "Token", For: "tok", Error: "Bad.", ReserveError: true}, nil,
 		func(c FieldControl) render.HTML { return Input(InputProps{Name: "tok", ID: c.ID}, nil) })
 	if n := count(set, `id="tok-error"`); n != 1 {

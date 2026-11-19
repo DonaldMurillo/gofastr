@@ -24,7 +24,8 @@ func TestRuntimeModule_FormErrors(t *testing.T) {
 		`'filled'`,               // a rendered node the module wrote into
 		"aria-invalid",
 		"aria-describedby",
-		"role", // role=alert on the message
+		"cui-form-errors", // the one polite region every refusal is read from
+		"'polite'",
 		"_toastOrFallback",
 		"NS._formErrors",
 		"loadedModules",
@@ -32,6 +33,9 @@ func TestRuntimeModule_FormErrors(t *testing.T) {
 		if !strings.Contains(src, want) {
 			t.Errorf("formerrors module missing %q", want)
 		}
+	}
+	if strings.Contains(src, "'alert'") {
+		t.Error("formerrors must not make each error its own alert: a refusal is read once, from the polite region")
 	}
 	if strings.Contains(src, "innerHTML") {
 		t.Error("formerrors must build its markup with DOM calls, never innerHTML")

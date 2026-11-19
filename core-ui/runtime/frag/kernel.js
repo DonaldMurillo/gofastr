@@ -48,7 +48,7 @@
   const M = Object.freeze({
     htmlAttrs: Object.freeze('aria-busy data-color-scheme data-cui-os data-cui-static lang'.split(' ')),
     bodyClasses: Object.freeze('cui-sse-down cui-sse-up'.split(' ')),
-    singletons: Object.freeze('cui-backtotop-sentinel cui-nav-toast cui-toast-fallback'.split(' ')),
+    singletons: Object.freeze('cui-backtotop-sentinel cui-form-errors cui-nav-toast cui-toast-fallback'.split(' ')),
   });
   const _dc = (list, n) => {
     if (!list.includes(n)) console.warn('[gofastr] not in doc.MANIFEST: ' + n);

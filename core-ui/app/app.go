@@ -911,6 +911,12 @@ func (a *App) renderScreenPageIDs(ctx context.Context, path string, screen *Scre
 			"name":    "viewport",
 			"content": "width=device-width, initial-scale=1.0",
 		}),
+		// The OS text size scales the root font, so every rem follows
+		// it (Chrome and Edge; other engines ignore the name).
+		render.VoidTag("meta", map[string]string{
+			"name":    "text-scale",
+			"content": "scale",
+		}),
 	)
 	// Title: effectiveTitle was resolved before the render (see the
 	// route seeding above); titleText carries the app-name suffix.

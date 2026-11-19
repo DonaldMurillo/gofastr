@@ -151,7 +151,8 @@ type SliderProps struct {
 	Step int
 	// Value is the initial value, clamped into Min..Max.
 	Value int
-	// ShowValue renders a live output beside the label.
+	// ShowValue renders a live output beside the label, and speaks the
+	// same words on the thumb as aria-valuetext.
 	ShowValue bool
 	// ShowEdgeLabels renders Min and Max under the track.
 	ShowEdgeLabels bool
@@ -201,14 +202,19 @@ func Slider(p SliderProps, s Classes) render.HTML {
 
 	b := p.Parts.Box(s)
 	input := html.Attrs{
-		"type":       "range",
-		"name":       p.Name,
-		"id":         id,
-		"min":        strconv.Itoa(min),
-		"max":        strconv.Itoa(max),
-		"step":       strconv.Itoa(step),
-		"value":      strconv.Itoa(value),
-		"aria-label": p.Label,
+		"type":  "range",
+		"name":  p.Name,
+		"id":    id,
+		"min":   strconv.Itoa(min),
+		"max":   strconv.Itoa(max),
+		"step":  strconv.Itoa(step),
+		"value": strconv.Itoa(value),
+	}
+	if p.ShowValue {
+		// The output's words, spoken: headless-controls keeps both live,
+		// and it loads only for a slider with an output, so a bare
+		// slider speaks its native value instead of a stale text.
+		input["aria-valuetext"] = w.Number(value)
 	}
 	Flag(input, "disabled", p.Disabled)
 

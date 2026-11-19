@@ -18,9 +18,12 @@ type FieldProps struct {
 	Label string
 	// For is the control's id.
 	For string
-	// Hint stays rendered and described beside an Error, after it.
+	// Hint renders between the label and the control, and stays
+	// described beside an Error, after it.
 	Hint string
-	// Error is announced and drawn before the hint.
+	// Error renders after the control and is described before the hint;
+	// it is no live region of its own (the runtime's one polite region
+	// reads a refusal).
 	Error string
 	// ReserveError renders an empty described error node, id For+"-error", for
 	// a script to fill; that script also sets aria-invalid.
@@ -72,19 +75,19 @@ func Field(p FieldProps, s Classes, build func(FieldControl) render.HTML) render
 	}
 	kids := []render.HTML{
 		b.El("label", PartLabel, Internal(labelAttrs), render.Text(p.Label)),
-		control,
-	}
-	if p.Error != "" {
-		kids = append(kids, b.El("p", PartError,
-			Mark(Internal(Attrs(map[string]string{"id": errID, "role": "alert"})), "data-hui-field-error"),
-			render.Text(p.Error)))
-	} else if reserved {
-		kids = append(kids, b.El("p", PartError,
-			Mark(Internal(Attrs(map[string]string{"id": errID, "role": "alert"})), "data-hui-field-error")))
 	}
 	if p.Hint != "" {
 		kids = append(kids, b.El("p", PartHint,
 			Internal(Attrs(map[string]string{"id": hintID})), render.Text(p.Hint)))
+	}
+	kids = append(kids, control)
+	if p.Error != "" {
+		kids = append(kids, b.El("p", PartError,
+			Mark(Internal(Attrs(map[string]string{"id": errID})), "data-hui-field-error"),
+			render.Text(p.Error)))
+	} else if reserved {
+		kids = append(kids, b.El("p", PartError,
+			Mark(Internal(Attrs(map[string]string{"id": errID})), "data-hui-field-error")))
 	}
 
 	own := Mark(Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID})), "data-hui-field")
@@ -269,7 +272,7 @@ func init() {
 			}
 			return []Case{{
 				Name: "hinted",
-				Why:  "the hint is tied to the control by id, or it is on screen for sighted users only and the format rule never arrives",
+				Why:  "the hint is tied to the control by id, or it is on screen for sighted users only and the format rule never arrives; it sits between the label and the control, so the rule is read before the reader starts typing and an autofill popup or an on-screen keyboard never covers it",
 				HTML: Field(FieldProps{Label: "Port", For: "field-port", Hint: "1–65535"}, s, input),
 			}, {
 				Name: "errored",
@@ -277,7 +280,7 @@ func init() {
 				HTML: Field(FieldProps{Label: "Port", For: "field-port-bad", Hint: "1–65535", Error: "Already in use."}, s, input),
 			}, {
 				Name: "reserved error node",
-				Why:  "a script that fills the error without re-rendering needs the node and its id already in the description — an empty described-by target announces nothing until it is filled, which is the point, and the stylesheet keeps the empty node out of the layout",
+				Why:  "a script that fills the error without re-rendering needs the node and its id already in the description — an empty described-by target announces nothing until it is filled, which is the point, and the stylesheet keeps the empty node out of the layout; the node is no live region, so a form with ten errors is not ten interruptions: the filling script announces once, from one polite region",
 				HTML: Field(FieldProps{Label: "Token", For: "field-token-live", ReserveError: true}, s, input),
 			}, {
 				Name: "required",

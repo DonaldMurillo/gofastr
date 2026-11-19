@@ -190,7 +190,7 @@ func ratingCSS(_ style.Theme) string {
   margin: -1px;
   padding: 0;
   border: 0;
-  clip: rect(0,0,0,0);
+  clip-path: inset(50%);
   overflow: hidden;
   white-space: nowrap;
 }
