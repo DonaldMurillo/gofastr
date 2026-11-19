@@ -1,0 +1,29 @@
+primitive: unmounted
+summary: The running app's record of the framework packages compiled into it as unmounted copies, filled by the init() of each copy's generated unmounted.gen.go and read by App.Unmounted and the app_unmounted MCP tool.
+code:
+  - core/unmounted/unmounted.go
+docs:
+  - framework/docs/content/unmount.md
+invariants:
+  - id: imports-nothing-from-gofastr
+    rule: core/unmounted imports only the standard library, so a copy that imports it never pulls in the gofastr package it replaced.
+    enforced_by:
+      - test: core/unmounted.TestSweepUnmountedImportsOnlyStdlib
+  - id: keyed-by-copy-path
+    rule: Register keys a copy by its own import path, so one source may have several copies and a second registration under the same path replaces the first.
+    enforced_by:
+      - test: core/unmounted.TestRegisterKeysByPath
+  - id: list-sorted-by-source-then-path
+    rule: List returns every registered copy sorted by Source, then Path.
+    enforced_by:
+      - test: core/unmounted.TestListIsSortedBySource
+      - test: core/unmounted.TestSweepUnmountedListSortsSourceBeforePath
+decisions:
+  - id: binary-record-apart-from-settings-record
+    date: 2026-11-19
+    status: accepted
+    decision: The binary keeps its own record of copies, registered from each copy's init(), apart from the unmounted section of gofastr.settings.yml that the CLI writes.
+    rejected:
+      - option: Read the unmounted section of the settings file at run time.
+        why: A deployed binary has no settings file beside it, and the section lists copies on disk, not the ones compiled in.
+    upholds: [keyed-by-copy-path]

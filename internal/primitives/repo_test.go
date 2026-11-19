@@ -166,6 +166,7 @@ var ownedPackages = []string{
 	"core/static",
 	"core/handler",
 	"core/webbotauth",
+	"core/unmounted",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",
