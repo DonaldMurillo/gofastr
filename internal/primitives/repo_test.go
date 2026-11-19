@@ -171,6 +171,8 @@ var ownedPackages = []string{
 	"core/settings",
 	"core/featureflag",
 	"core/config",
+	"core/i18n",
+	"core/i18n/internal/cldrgen",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",

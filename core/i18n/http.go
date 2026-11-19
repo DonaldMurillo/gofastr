@@ -7,18 +7,9 @@ import (
 	"net/http"
 )
 
-// HTTPError is http.Error with a translated message: it writes status
-// and p's text in the request's locale as a text/plain body. A zero p,
-// or status's own [StatusPhrase] that the locale does not translate,
-// writes http.StatusText ("Internal Server Error"), as http.Error does.
-// Framework code reaches every plain-text refusal through here, so an
-// app's catalog translates them all; the repo's rawtext analyzer
-// refuses a bare http.Error.
-//
-// A status outside 400-599 is sent as 500, as handler.WriteError sends
-// it: an error never goes out under a status that reads as success, and
-// a forgotten zero (decide.Block(0), a config left unset) does not panic
-// inside net/http's WriteHeader on the error path.
+// HTTPError writes status and p's text in the request's locale as text/plain,
+// http.StatusText for a zero or untranslated status phrase, and 500 for a
+// status outside 400-599.
 func HTTPError(w http.ResponseWriter, r *http.Request, status int, p Phrase, params ...map[string]any) {
 	if status < 400 || status > 599 {
 		status = http.StatusInternalServerError
@@ -41,9 +32,7 @@ func HTTPError(w http.ResponseWriter, r *http.Request, status int, p Phrase, par
 	fmt.Fprintln(w, msg)
 }
 
-// Status phrases: the generic refusal for each HTTP error status, under
-// "error.<code>". A refusal with nothing more specific to say uses
-// [StatusPhrase].
+// Status phrases: the generic refusal for each HTTP error status.
 var statusPhrases = map[int]Phrase{
 	http.StatusBadRequest:                    Define("error.bad_request", "bad request"),
 	http.StatusUnauthorized:                  Define("error.unauthorized", "unauthorized"),
@@ -87,14 +76,11 @@ var statusPhrases = map[int]Phrase{
 	http.StatusNetworkAuthenticationRequired: Define("error.network_auth_required", "network authentication required"),
 }
 
-// StatusPhrase returns the generic phrase for an HTTP error status, or
-// the zero Phrase for a status without one.
+// StatusPhrase returns the generic phrase for an HTTP error status, or zero.
 func StatusPhrase(status int) Phrase { return statusPhrases[status] }
 
-// HTTPErrorFor is [HTTPError] for an error: a [Phrased] error in err's
-// chain translates with its params; any other error writes status's
-// generic phrase, so an unphrased error's own text (often a driver's or
-// a library's) never reaches the body.
+// HTTPErrorFor is [HTTPError] for err: its [Phrased] error, else status's
+// generic phrase, never err's own text.
 func HTTPErrorFor(w http.ResponseWriter, r *http.Request, status int, err error) {
 	if e, ok := errors.AsType[Phrased](err); ok {
 		if p, params := e.Phrased(); !p.IsZero() {

@@ -8,14 +8,8 @@ import (
 	"golang.org/x/text/language/display"
 )
 
-// LanguageName returns locale tag's name in its own language, first
-// letter capitalized for a list or menu: "Español" for "es", "日本語"
-// for "ja". A regional tag CLDR names no differently from its base
-// language ("pt-br" is "português", like "pt") adds the region's name
-// in that language, "Português (Brasil)", or the region code when CLDR
-// has none ("English (XA)"). A tag CLDR does not know comes back as
-// given. A language switcher labels each entry with it, so a reader
-// finds their language whichever one the page is in.
+// LanguageName returns tag's name in its own language, capitalized, with the
+// region added where CLDR names the region variant no differently.
 func LanguageName(tag string) string {
 	t, err := language.Parse(tag)
 	if err != nil {
