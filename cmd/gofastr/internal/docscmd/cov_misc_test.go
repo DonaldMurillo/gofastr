@@ -20,8 +20,8 @@ func TestRunDocsUnknownTopicExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { RunDocs([]string{"no-such-topic-xyz"}) })
 	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("want 2 got %d", code)
 	}
 }
 

@@ -11,7 +11,7 @@ import (
 func runRoute(t *testing.T, args ...string) (int, string) {
 	t.Helper()
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { runNewRoute(args) })
 	})
 	return code, out

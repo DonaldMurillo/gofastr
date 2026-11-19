@@ -75,7 +75,7 @@ func repairT_legacyDB(t *testing.T, path string) {
 func repairT_run(t *testing.T, args ...string) (string, int) {
 	t.Helper()
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunMigrate(args) })
 	})
 	return out, code

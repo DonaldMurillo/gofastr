@@ -74,14 +74,16 @@ func RunDeploy(args []string) {
 	if err == nil {
 		return
 	}
-	if !errors.Is(err, flag.ErrHelp) {
-		cli.Fail("%s", err.Error())
-	}
-	if errors.Is(err, errUsage) || errors.Is(err, flag.ErrHelp) {
-		fmt.Print(usage)
-	}
 	if errors.Is(err, flag.ErrHelp) {
+		fmt.Print(usage)
 		cli.OsExit(0)
+		return
+	}
+	cli.Fail("%s", err.Error())
+	if errors.Is(err, errUsage) {
+		fmt.Fprint(os.Stderr, usage)
+		cli.OsExit(2)
+		return
 	}
 	cli.OsExit(1)
 }

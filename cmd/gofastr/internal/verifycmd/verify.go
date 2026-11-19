@@ -759,7 +759,7 @@ severity unless a gofastr.settings.yml relaxes it, or a
   --root <dir>       Project root (default: .)
   --no-vet           Skip the vet stage (go vet and the GoFastr analyzers)
   --timings          Show per-analyzer wall time
-  --verbose          Show the full explanation under every finding
+  --verbose, -v      Show the full explanation under every finding
   --help             This message
 
 %s:

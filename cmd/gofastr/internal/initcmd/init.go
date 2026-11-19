@@ -32,23 +32,8 @@ func RunInit(args []string) {
 	}
 	name, flags, err := splitInitArgs(args)
 	if err != nil {
-		cli.Fail("%v", err)
-		cli.Info("Run 'gofastr init --help' for the accepted flags.")
-		cli.OsExit(2)
+		cli.UsageFail("%v\n  Run 'gofastr init --help' for the accepted flags.", err)
 		return
-	}
-	if name == "" {
-		cli.Fail("Project name is required.")
-		cli.Info("Usage: gofastr init <project-name>")
-		cli.Info("Example: gofastr init myapp")
-		cli.OsExit(1)
-	}
-
-	// Validate project name
-	if err := validateProjectName(name); err != nil {
-		cli.Fail("Invalid project name %q: %v", name, err)
-		cli.Info("Use lowercase letters, digits, and hyphens. Example: my-blog-app")
-		cli.OsExit(1)
 	}
 
 	modulePath := ""
@@ -57,7 +42,9 @@ func RunInit(args []string) {
 	reinit := false
 	force := false
 
-	// Allow overriding via flags
+	// Flags are walked before the name check so a typo is named whatever
+	// else is missing: `init --forc` used to be reported as a missing
+	// project name.
 	for _, arg := range flags {
 		switch {
 		case arg == "--reinit":
@@ -97,10 +84,19 @@ func RunInit(args []string) {
 		default:
 			// A misspelled flag used to be skipped, so `--noentty`
 			// scaffolded the default app and exited 0.
-			cli.Fail("Unknown flag %q.", arg)
-			cli.Info("Run 'gofastr init --help' for the accepted flags.")
-			cli.OsExit(2)
+			cli.UsageFail("Unknown flag %q.\n  Run 'gofastr init --help' for the accepted flags.", arg)
 		}
+	}
+
+	if name == "" {
+		cli.UsageFail("Project name is required.\n  Usage: gofastr init <project-name>\n  Example: gofastr init myapp")
+	}
+
+	// Validate project name
+	if err := validateProjectName(name); err != nil {
+		cli.Fail("Invalid project name %q: %v", name, err)
+		cli.Info("Use lowercase letters, digits, and hyphens. Example: my-blog-app")
+		cli.OsExit(1)
 	}
 
 	// --reinit: refresh AI onboarding files only (no Go code, no git). It

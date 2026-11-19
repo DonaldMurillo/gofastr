@@ -66,8 +66,8 @@ func TestRunNewNoArgsExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { RunNew(nil) })
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1, got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2, got %d", code)
 	}
 }
 
@@ -75,8 +75,8 @@ func TestRunNewUnknownResourceExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { RunNew([]string{"frobnicate"}) })
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1, got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2, got %d", code)
 	}
 }
 

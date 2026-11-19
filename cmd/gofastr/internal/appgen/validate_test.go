@@ -91,7 +91,7 @@ func TestGenerateModuleMismatchExits1(t *testing.T) {
 	clitest.WriteFileAll(t, filepath.Join(dir, "go.mod"), "module example.com/app\n\ngo 1.24\n")
 	clitest.WriteFileAll(t, filepath.Join(dir, "bp.yml"), "app:\n  name: Demo\n  module: example.com/other\n")
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			GenerateFromAppSpec(GenerateOptions{Spec: filepath.Join(dir, "bp.yml"), outputDir: "gen", dryRun: true})
 		})

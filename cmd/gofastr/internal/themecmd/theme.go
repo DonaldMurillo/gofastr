@@ -2,6 +2,8 @@ package themecmd
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -15,7 +17,8 @@ import (
 // RunTheme dispatches `gofastr theme <subcommand>`.
 func RunTheme(args []string) {
 	if len(args) == 0 {
-		printThemeHelp()
+		printThemeHelp(os.Stderr)
+		cli.OsExit(2)
 		return
 	}
 	switch args[0] {
@@ -24,21 +27,20 @@ func RunTheme(args []string) {
 	case "edit":
 		runThemeEdit(args[1:])
 	case "--help", "-h", "help":
-		printThemeHelp()
+		printThemeHelp(os.Stdout)
 	default:
 		cli.Fail("Unknown theme subcommand: %s", args[0])
-		fmt.Println()
-		printThemeHelp()
-		cli.OsExit(1)
+		printThemeHelp(os.Stderr)
+		cli.OsExit(2)
 	}
 }
 
-func printThemeHelp() {
-	fmt.Println("Usage: gofastr theme <subcommand>")
-	fmt.Println()
-	fmt.Println("Subcommands:")
-	fmt.Println("  init     Scaffold a starter theme.go in the current project.")
-	fmt.Println("  edit     Launch a local theme configurator with a live preview.")
+func printThemeHelp(w io.Writer) {
+	fmt.Fprintln(w, "Usage: gofastr theme <subcommand>")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Subcommands:")
+	fmt.Fprintln(w, "  init     Scaffold a starter theme.go in the current project.")
+	fmt.Fprintln(w, "  edit     Launch a local theme configurator with a live preview.")
 }
 
 // runThemeInit writes a starter theme.go to the user's project. The

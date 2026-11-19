@@ -48,8 +48,8 @@ func TestRunEmbedHelpAndUnknown(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { RunSemantic([]string{"bogus"}) })
 	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("want 2 got %d", code)
 	}
 }
 
@@ -75,8 +75,8 @@ func TestEmbedQueryNoArgsExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { embedQuery(nil) })
 	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("want 2 got %d", code)
 	}
 }
 
@@ -89,36 +89,36 @@ func TestEmbedQueryFlagParsing(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { embedQuery([]string{"auth", "-k", "notnum"}) })
 	})
-	if code != 1 {
-		t.Fatalf("bad k want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("bad k want 2 got %d", code)
 	}
 	// missing k value
 	code = clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { embedQuery([]string{"auth", "-k"}) })
 	})
-	if code != 1 {
-		t.Fatalf("missing k want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("missing k want 2 got %d", code)
 	}
 	// missing mmr value
 	code = clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { embedQuery([]string{"auth", "--mmr"}) })
 	})
-	if code != 1 {
-		t.Fatalf("missing mmr want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("missing mmr want 2 got %d", code)
 	}
 	// bad mmr
 	code = clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { embedQuery([]string{"auth", "--mmr", "nope"}) })
 	})
-	if code != 1 {
-		t.Fatalf("bad mmr want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("bad mmr want 2 got %d", code)
 	}
 	// unknown flag
 	code = clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() { embedQuery([]string{"auth", "--zzz"}) })
 	})
-	if code != 1 {
-		t.Fatalf("unknown flag want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("unknown flag want 2 got %d", code)
 	}
 }
 

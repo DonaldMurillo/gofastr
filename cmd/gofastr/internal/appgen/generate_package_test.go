@@ -44,7 +44,7 @@ func TestGeneratePackageListsAllPackages(t *testing.T) {
 func TestGeneratePackageUnknownNameRefused(t *testing.T) {
 	var out string
 	code := -1
-	out = clitest.CovT_capStdout(t, func() {
+	out = clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			runGeneratePackage([]string{"banner"})
 		})
@@ -65,7 +65,7 @@ func TestGeneratePackageNeedsGoMod(t *testing.T) {
 	clitest.CovT_chdir(t, t.TempDir())
 	var out string
 	code := -1
-	out = clitest.CovT_capStdout(t, func() {
+	out = clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			runGeneratePackage([]string{"siteheader"})
 		})
@@ -94,7 +94,7 @@ func TestGeneratePackageRefusesNonEmptyTarget(t *testing.T) {
 
 	var out string
 	code := -1
-	out = clitest.CovT_capStdout(t, func() {
+	out = clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			runGeneratePackage([]string{"siteheader", "--out=taken"})
 		})
@@ -119,7 +119,7 @@ func TestGeneratePackageRefusesBadImport(t *testing.T) {
 	clitest.CovT_chdir(t, dir)
 	for _, out := range []string{`my "pkg"`, "my pkg"} {
 		code := -1
-		msg := clitest.CovT_capStdout(t, func() {
+		msg := clitest.CovT_capOutput(t, func() {
 			code = clitest.CovT_capExit(t, func() {
 				runGeneratePackage([]string{"siteheader", "--out=" + out})
 			})
@@ -187,7 +187,7 @@ func TestGeneratePackageSubdirOutWorks(t *testing.T) {
 			t.Errorf("%s: dry run did not approve the in-module target:\n%s", tc.name, dry)
 		}
 		var code int
-		out := clitest.CovT_capStdout(t, func() {
+		out := clitest.CovT_capOutput(t, func() {
 			code = clitest.CovT_capExit(t, func() {
 				runGeneratePackage([]string{tc.pkg, "--out=" + tc.out})
 			})
@@ -229,7 +229,7 @@ func TestGeneratePackageDryRunRefusesOutside(t *testing.T) {
 		{"siteheader", "--out=../..", "--dry-run"},
 	} {
 		var code int
-		out := clitest.CovT_capStdout(t, func() {
+		out := clitest.CovT_capOutput(t, func() {
 			code = clitest.CovT_capExit(t, func() {
 				runGeneratePackage(args)
 			})
@@ -315,7 +315,7 @@ func TestGeneratePackageRacerRolledBack(t *testing.T) {
 	t.Cleanup(func() { packageWriteFiles = codegen.WriteFiles })
 
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			runGeneratePackage([]string{"sitefooter"})
 		})
@@ -365,7 +365,7 @@ func TestGeneratePackageFailureCleansDirs(t *testing.T) {
 	t.Cleanup(func() { packageWriteFiles = codegen.WriteFiles })
 
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() {
 			runGeneratePackage([]string{"docpage", "--out=deep/nested/hdr"})
 		})

@@ -49,6 +49,19 @@ func CovT_capStderr(t *testing.T, fn func()) string {
 	return captureOutput(t, &os.Stderr, fn)
 }
 
+// CovT_capOutput captures stdout and stderr together, stdout first. For
+// tests that assert a refusal's text without caring which stream carried
+// it: the ✗ line and usage errors go to stderr (cli.UsageFail), while
+// usage blocks and help stay on stdout.
+func CovT_capOutput(t *testing.T, fn func()) string {
+	t.Helper()
+	var errOut string
+	out := CovT_capStdout(t, func() {
+		errOut = CovT_capStderr(t, fn)
+	})
+	return out + errOut
+}
+
 func captureOutput(t *testing.T, stream **os.File, fn func()) string {
 	t.Helper()
 	old := *stream

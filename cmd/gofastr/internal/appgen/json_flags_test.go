@@ -19,9 +19,9 @@ func TestGenerateFlagsAreJSON(t *testing.T) {
 		{"screen", GenerateScaffoldScreen, 2},
 		{"sdk", RunGenerateSDK, 2},
 		{"cli", RunGenerateCLI, 2},
-		{"client", RunGenerateClient, 1},
-		{"endpoints", runGenerateEndpoints, 1},
-		{"styles", runGenerateStyles, 1},
+		{"client", RunGenerateClient, 2},
+		{"endpoints", runGenerateEndpoints, 2},
+		{"styles", runGenerateStyles, 2},
 		{"package", runGeneratePackage, 2},
 	} {
 		t.Run(command.name, func(t *testing.T) {

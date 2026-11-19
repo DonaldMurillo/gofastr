@@ -82,7 +82,7 @@ func TestNewHandlerRefusesItsImportName(t *testing.T) {
 	dir := t.TempDir()
 	clitest.CovT_chdir(t, dir)
 	var code int
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CovT_capOutput(t, func() {
 		code = clitest.CovT_capExit(t, func() { RunNew([]string{"handler", "http"}) })
 	})
 	if code != 1 || !strings.Contains(out, "net/http") {

@@ -30,6 +30,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	relsemver "github.com/DonaldMurillo/gofastr/internal/semver"
 	"golang.org/x/mod/semver"
 )
@@ -112,7 +113,7 @@ func runDocsServe(args []string) {
 }
 
 func printDocsServeHelp() {
-	fmt.Fprint(os.Stderr, `gofastr docs serve: browse the docs site offline
+	fmt.Fprint(os.Stdout, `gofastr docs serve: browse the docs site offline
 
 Usage:
   gofastr docs serve [flags]
@@ -471,7 +472,7 @@ func serveDocsDir(dir string, opts docsServeOptions) error {
 	// Worktree isolation remaps a dev app's port so parallel checkouts do
 	// not collide. The docs site is not the project's app, and the user
 	// asked for this port, so serve it there.
-	_ = os.Setenv("GOFASTR_ISOLATION", "off")
+	_ = os.Setenv(isolation.EnvIsolation, "off")
 	return app.Start(net.JoinHostPort("127.0.0.1", strconv.Itoa(opts.port)))
 }
 

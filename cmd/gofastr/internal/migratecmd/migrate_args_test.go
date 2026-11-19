@@ -140,8 +140,8 @@ func TestMigrateRefusesUnknownFlag(t *testing.T) {
 		code := clitest.CovT_capExit(t, func() {
 			clitest.CovT_capStdout(t, func() { RunMigrate(args) })
 		})
-		if code != 1 {
-			t.Errorf("migrate %q exited %d, want 1", args, code)
+		if code != 2 {
+			t.Errorf("migrate %q exited %d, want 2", args, code)
 		}
 	}
 	db, err := sql.Open("sqlite3", path)

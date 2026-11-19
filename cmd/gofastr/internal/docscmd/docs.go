@@ -77,7 +77,7 @@ func RunDocs(args []string) {
 		cli.Fprintln(os.Stderr, err.Error())
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Run `gofastr docs` to see every available topic.")
-		cli.OsExit(1)
+		cli.OsExit(2)
 	}
 	cli.Print(string(body))
 }

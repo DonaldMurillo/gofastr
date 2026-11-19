@@ -33,7 +33,7 @@ type jsonParityCase struct {
 func TestJSONStdoutParity(t *testing.T) {
 	fixtures := map[string][]jsonParityCase{
 		"generate": {
-			{name: "failure", args: []string{"--json", "--unknown-json-parity"}, code: 1},
+			{name: "failure", args: []string{"--json", "--unknown-json-parity"}, code: 2},
 			{name: "success", args: []string{"--json", "--dry-run"}, setup: jsonParityProject},
 			{name: "unknown", args: []string{"frobnicate", "--json"}, code: 1},
 			{name: "removed-ts", args: []string{"ts", "--json"}, code: 1},
@@ -47,7 +47,7 @@ func TestJSONStdoutParity(t *testing.T) {
 			{name: "explain-failure", args: []string{"--json", "--explain", "GOFASTR0000"}, code: 2},
 		},
 		"semantic": {
-			{name: "failure", args: []string{"query", "--json"}, code: 1},
+			{name: "failure", args: []string{"query", "--json"}, code: 2},
 			{name: "success", args: []string{"query", "needle"}},
 			{name: "alias-success", args: []string{"q", "needle"}},
 			{name: "stats-success", args: []string{"stats", "--json"}},
@@ -140,7 +140,7 @@ func TestJSONStdoutParity(t *testing.T) {
 			t.Run(generator.Name, func(t *testing.T) {
 				t.Run("failure", func(t *testing.T) {
 					jsonParitySandbox(t)
-					runJSONParity(t, []string{"generate", generator.Name, "--json", "--unknown-json-parity"}, 1)
+					runJSONParity(t, []string{"generate", generator.Name, "--json", "--unknown-json-parity"}, 2)
 				})
 				t.Run("success", func(t *testing.T) {
 					if reason, ok := noJSONSuccess[generator.Name]; ok {

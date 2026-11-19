@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 type tarEntry struct {
@@ -450,5 +452,21 @@ func TestReleaseAttachesDocsSite(t *testing.T) {
 	reverify := strings.Index(rel, "name: Re-verify the tag is still main head")
 	if gate < 0 || build < 0 || reverify < 0 || !(gate < build && build < reverify) {
 		t.Errorf("release.yml step order gate=%d build=%d reverify=%d; want gate < build < reverify", gate, build, reverify)
+	}
+}
+
+// `docs serve --help` is a help request like every other: it prints on
+// stdout and exits 0, so `gofastr docs serve --help | less` shows the
+// flags. It used to be the one help that went to stderr.
+func TestDocsServeHelpPrintsToStdout(t *testing.T) {
+	var out, errOut string
+	out = clitest.CovT_capStdout(t, func() {
+		errOut = clitest.CovT_capStderr(t, func() { RunDocs([]string{"serve", "--help"}) })
+	})
+	if !strings.Contains(out, "gofastr docs serve") {
+		t.Fatalf("docs serve --help missing on stdout:\n%s", out)
+	}
+	if strings.TrimSpace(errOut) != "" {
+		t.Fatalf("docs serve --help wrote to stderr:\n%s", errOut)
 	}
 }

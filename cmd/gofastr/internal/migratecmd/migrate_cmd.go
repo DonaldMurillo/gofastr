@@ -40,8 +40,7 @@ func RunMigrate(args []string) {
 	}
 
 	if err := migrateFlagsError(subcmd, rest); err != nil {
-		cli.Fail("%v", err)
-		cli.OsExit(1)
+		cli.UsageFail("%v", err)
 		return
 	}
 	if err := migratePositionalError(subcmd, rest); err != nil {
@@ -76,10 +75,7 @@ func RunMigrate(args []string) {
 	case "repair":
 		runMigrateRepair(rest)
 	default:
-		cli.Fail("Unknown migrate subcommand: %q", subcmd)
-		cli.Info("Available: up, down, status, generate, force, repair")
-		cli.Info("Usage: gofastr migrate [up|down|status|generate|force|repair]")
-		cli.OsExit(1)
+		cli.UsageFail("Unknown migrate subcommand: %q. Available: up, down, status, generate, force, repair.", subcmd)
 	}
 }
 

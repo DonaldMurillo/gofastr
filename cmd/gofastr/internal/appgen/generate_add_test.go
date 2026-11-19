@@ -104,15 +104,16 @@ func TestOverwriteErrorNamesAddPath(t *testing.T) {
 	// First generate succeeds (writes main.go, app.go, …).
 	clitest.CovT_capStdout(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: bp}) })
 	// Second plain generate (no --add, no --force) must refuse and name --add.
-	// Capture stdout panic-safely: covT_capStdout's read-after-fn is skipped
-	// when fn panics via osExit, so redirect to a temp file ourselves and read
-	// it in a recover'd defer.
-	old := os.Stdout
-	f, err := os.CreateTemp(t.TempDir(), "stdout-*")
+	// Capture both streams panic-safely (the ✗ line goes to stderr, the
+	// hint lines to stdout): the capture helpers' read-after-fn is skipped
+	// when fn panics via osExit, so redirect to a temp file ourselves and
+	// read it in a recover'd defer.
+	oldOut, oldErr := os.Stdout, os.Stderr
+	f, err := os.CreateTemp(t.TempDir(), "output-*")
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.Stdout = f
+	os.Stdout, os.Stderr = f, f
 	var out string
 	code := clitest.CovT_capExit(t, func() {
 		defer func() {
@@ -122,7 +123,7 @@ func TestOverwriteErrorNamesAddPath(t *testing.T) {
 		}()
 		GenerateFromAppSpec(GenerateOptions{Spec: bp})
 	})
-	os.Stdout = old
+	os.Stdout, os.Stderr = oldOut, oldErr
 	if err := f.Close(); err != nil {
 		t.Fatalf("close captured stdout: %v", err)
 	}

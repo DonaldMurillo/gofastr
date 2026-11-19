@@ -71,8 +71,7 @@ func RunExport(args []string) {
 	}
 	opts, err := parseExportOptions(args)
 	if err != nil {
-		cli.Fail("%v", err)
-		cli.OsExit(1)
+		cli.UsageFail("%v", err)
 		return
 	}
 	if err := project.ValidateBuildTarget(context.Background(), opts.pkg); err != nil {

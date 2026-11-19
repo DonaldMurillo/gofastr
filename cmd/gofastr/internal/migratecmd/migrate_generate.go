@@ -27,25 +27,20 @@ import (
 func runMigrateGenerate(args []string) {
 	opts := parseMigrateGenOptions(args)
 	if opts.name == "" {
-		cli.Fail("Usage: gofastr migrate generate <name> --from=<gofastr.yml> [--migrations=dir] [--snapshot=path] [--driver=name]")
-		cli.OsExit(1)
+		cli.UsageFail("Usage: gofastr migrate generate <name> --from=<gofastr.yml> [--migrations=dir] [--snapshot=path] [--driver=name]")
 	}
 	if opts.from == "" {
-		cli.Fail("An app spec is required: pass --from=<gofastr.yml>.")
-		cli.OsExit(1)
+		cli.UsageFail("An app spec is required: pass --from=<gofastr.yml>.")
 	}
 	if opts.group != "" {
 		if err := migrate.ValidateGroupName(opts.group); err != nil {
-			cli.Fail("%v", err)
-			cli.OsExit(1)
+			cli.UsageFail("%v", err)
 		}
 	}
 
 	dialect, err := generateDialect(opts.driver)
 	if err != nil {
-		cli.Fail("%v", err)
-		cli.OsExit(1)
-		return
+		cli.UsageFail("%v", err)
 	}
 
 	bp, err := appspec.LoadAppSpec(opts.from)

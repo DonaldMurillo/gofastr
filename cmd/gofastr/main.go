@@ -122,8 +122,9 @@ func printHelp() {
                         before if the check fails. rollback · status.
                         See "gofastr docs deploy"
   telemetry <sub>       Read the log and trace files battery/telemetry writes, with
-                        the app running or not: logs · requests · request <trace-id>
-                        --dir <directory> or --app <name>. See "gofastr docs telemetry"
+                        the app running or not: stats · logs · requests · issues ·
+                        request <trace-id>. --dir <directory> or --app <name>. See
+                        "gofastr docs telemetry"
   upgrade               Guide the app to a newer GoFastr release: shows every
                         migration note between go.mod's version and the target,
                         points at affected lines; --apply runs the go get/tidy/
@@ -209,7 +210,14 @@ var commands = []commandSpec{
 	{names: []string{"unmount"}, run: unmountcmd.RunUnmount, ownsHelp: true, versionChecked: true},
 	{names: []string{"remount"}, run: unmountcmd.RunRemount, ownsHelp: true, versionChecked: true},
 	{names: []string{"theme"}, run: themecmd.RunTheme, ownsHelp: true, versionChecked: true},
-	{names: []string{"version"}, run: func([]string) { cli.Println(project.VersionLine()) }},
+	{names: []string{"version"}, run: func(args []string) {
+		for _, a := range args {
+			if cli.IsFlagToken(a) {
+				cli.UsageFail("Unknown flag %s: `gofastr version` takes no flags.", a)
+			}
+		}
+		cli.Println(project.VersionLine())
+	}},
 	{names: []string{"help"}, run: func([]string) { printHelp() }},
 }
 

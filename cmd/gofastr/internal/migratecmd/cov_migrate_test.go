@@ -39,10 +39,10 @@ func TestRunMigrateDefaultsToUp(t *testing.T) {
 
 func TestRunMigrateUnknownSubcmdExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() { RunMigrate([]string{"bogus"}) })
+		clitest.CovT_capOutput(t, func() { RunMigrate([]string{"bogus"}) })
 	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("want 2 got %d", code)
 	}
 }
 
@@ -227,12 +227,12 @@ entities:
 		t.Fatal(err)
 	}
 	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() {
+		clitest.CovT_capOutput(t, func() {
 			runMigrateGenerate([]string{"create_posts", "--from=" + bp, "--group=bad name!"})
 		})
 	})
-	if code != 1 {
-		t.Fatalf("want exit 1 for invalid --group, got %d", code)
+	if code != 2 {
+		t.Fatalf("want exit 2 for invalid --group, got %d", code)
 	}
 	matches, _ := filepath.Glob(filepath.Join(dir, "migrations", "*.sql"))
 	if len(matches) != 0 {
@@ -242,10 +242,10 @@ entities:
 
 func TestRunMigrateGenerateNoNameExits(t *testing.T) {
 	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() { runMigrateGenerate(nil) })
+		clitest.CovT_capOutput(t, func() { runMigrateGenerate(nil) })
 	})
-	if code != 1 {
-		t.Fatalf("want 1 got %d", code)
+	if code != 2 {
+		t.Fatalf("want 2 got %d", code)
 	}
 }
 

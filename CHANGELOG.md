@@ -25,6 +25,15 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`gofastr pack` accepts `--out=<file>` and `-o=<file>`,** like every
+  other command that takes a value.
+- **`gofastr init --some-unknown-flag` names the flag** instead of
+  saying the project name is missing.
+- **CLI help lists the flags the parsers accept:** verify's `-v`,
+  semantic's `-k`, `--hybrid` and `--mmr`, migrate generate's
+  `--migrations` and `--snapshot`, agents' `skill --force`, and
+  telemetry's `stats` and `issues`. `docs serve --help` prints on
+  stdout.
 - **Headless setup no longer deadlocks when a `Complete` or step
   callback asks the runner a question,** and the setup URL and cookie
   check read the token and secret under the runner's lock.
@@ -776,6 +785,11 @@ few lines, and link the PR or the docs page for the rest.
   them.
 
 ### Changed
+- **Every `gofastr` usage error exits 2, and every `✗` error line prints
+  on stderr.** Unknown flags, missing arguments and unknown subcommands
+  used to exit 0, 1 or 2 depending on the command, and error lines went
+  to stdout for most commands. `--help` output stays on stdout. Bare
+  `gofastr theme` now prints its usage on stderr and exits 2.
 - **Usage errors exit 2 for `gofastr generate` and its generators.**
   `generate`, `generate --watch`, and the `app`, `entity`, `screen`,
   `package`, `cli` and `sdk` parsers, plus `unmount`, `remount` and
