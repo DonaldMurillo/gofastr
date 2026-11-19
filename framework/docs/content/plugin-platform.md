@@ -303,7 +303,10 @@ client.sendRequest("rows", { page: 2 }, 5000).then(render, showError);
 
 On the host, an adapter answers frame requests with per-instance
 handlers (`api.onRequest(method, handler)`) or a static
-`registration.onRequest(method, params, api)` fallback.
+`registration.onRequest(method, params, api)` fallback. Either handler can
+return a value or a promise that resolves to the reply value. The Go
+`pluginhost.BrokerRegistration` type mirrors the registration shape and
+omits both callbacks from JSON.
 
 One contract, both directions:
 

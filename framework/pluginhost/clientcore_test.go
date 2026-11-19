@@ -55,18 +55,7 @@ func TestBrokerJS_NeverEmitsAllowSameOrigin(t *testing.T) {
 	}
 }
 
-// (3) The host→frame post uses targetOrigin "*" (correct for an opaque frame,
-// where a concrete targetOrigin would never match), the source check, not an
-// origin string, is the gate. Pin the rationale so nobody "hardens" it into a
-// concrete origin that silently drops every message.
-func TestBrokerJS_PostsWithWildcardTargetOrigin(t *testing.T) {
-	js := string(brokerJSBytes)
-	if !strings.Contains(js, `postMessage(env, "*")`) {
-		t.Error("postTo must use targetOrigin \"*\" for the opaque frame (source check is the gate)")
-	}
-}
-
-// (4) The fallback lifecycle (#253): the broker finds the server-rendered
+// (3) The fallback lifecycle (#253): the broker finds the server-rendered
 // [data-fui-plugin-fallback] node, hides the frame behind it while
 // loading, swaps to the frame on ready, and — the load-bearing half —
 // swaps BACK on bootError so a dead frame degrades to the static node

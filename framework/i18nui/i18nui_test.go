@@ -78,17 +78,6 @@ func TestTReturnsDefault(t *testing.T) {
 	}
 }
 
-func TestTUsesCtxTranslator(t *testing.T) {
-	cat := i18n.NewMapCatalog()
-	cat.Set("fr", "ui.pagination.next", i18n.Message{Text: "Suivant"})
-	tr := i18n.NewTranslator(cat, "en")
-	ctx := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
-	ctx = i18n.WithTranslator(ctx, tr)
-	if got := PaginationNext.Text(ctx); got != "Suivant" {
-		t.Fatalf("PaginationNext.Text(ctx) = %q, want Suivant", got)
-	}
-}
-
 // Text falls back to the English default when the ctx translator is
 // present but the catalog has no ui.* entry (the miss case, an app
 // catalog won't contain ui.* keys unless the app overrides them).

@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A misspelled plugin host requirement is named in the build error.**
+  `permissions-policy:camrea` reported `"" is not a known
+  permissions-policy feature`; the error now quotes `camrea`.
+  `pluginhost.BrokerRegistration` gains the `OnRequest` callback the
+  JavaScript adapter contract already had (excluded from JSON, like
+  `OnEvent`).
 - **`DiffSchema` and `GeneratePlan` skip a fieldless entity, as boot
   does.** They planned DDL for an entity with no fields, and
   `GeneratePlan` wrote an empty table into the snapshot, so removing the

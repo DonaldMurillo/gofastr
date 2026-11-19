@@ -45,7 +45,7 @@
  *   });
  *
  * The generic broker handles the protocol-level events itself (ready, resize,
- * focusChanged, themeApplied, metric, bootError), then invokes registration.onEvent
+ * themeApplied, metric, bootError), then invokes registration.onEvent
  * for EVERY inbound event so the adapter can handle its own methods AND mirror
  * the generic hooks under any plugin-specific names the tests read.
  */
@@ -62,10 +62,9 @@
   const DEFAULT_MIN_HEIGHT = "240px";
   const DEFAULT_TITLE = "Plugin";
 
-  // Per-iframe instance state, keyed by the iframe element (framework
-  // per-instance-state rule). `live` mirrors the set so we can iterate for
-  // source lookup and SPA teardown — a WeakMap is not iterable.
-  const states = new WeakMap();
+  // Per-iframe instance state (framework per-instance-state rule). `live`
+  // holds every mounted instance so we can iterate for source lookup and
+  // SPA teardown.
   const live = [];
   // Mount marker → its instance state (null when no adapter claimed it),
   // so a rescan after a swap never mounts a marker twice.
@@ -322,7 +321,6 @@
       // degrades to the static output instead of an empty box.
       fallback: marker.querySelector("[data-fui-plugin-fallback]"),
       capabilities: parseCaps(marker, adapter.manifest),
-      docId: marker.getAttribute("data-fui-plugin-docid") || "demo",
       // id -> {resolve, reject, timer}. NULL-PROTO, not {}: the frame
       // controls msg.id on the response path, and a {} lookup of
       // "__proto__"/"constructor" returns an Object.prototype member —
@@ -335,9 +333,6 @@
       inflight: 0,
       requestHandlers: Object.create(null), // method -> frame→host handler
       ready: false,
-      focused: false,
-      lastMetric: null,
-      theme: null,
       observer: null,
       api: null
     };
@@ -439,8 +434,7 @@
         showFrame(st);
         break;
       case "themeApplied":
-        st.theme = params;                       // {scheme, sample:{--name:value}}
-        st.frame.__pluginTheme = params;
+        st.frame.__pluginTheme = params;         // {scheme, sample:{--name:value}}, readable by host tests
         break;
       case "resize":
         if (params.height != null) {
@@ -451,11 +445,7 @@
             typeof params.height === "number" ? params.height + "px" : String(params.height);
         }
         break;
-      case "focusChanged":
-        st.focused = !!params.focused;
-        break;
       case "metric":
-        st.lastMetric = params;
         st.frame.__pluginLastMetric = params;    // readable by host tests
         break;
       case "bootError":
@@ -617,7 +607,6 @@
     if (parent) parent.removeChild(st.frame);
     const i = live.indexOf(st);
     if (i !== -1) live.splice(i, 1);
-    states["delete"](st.frame);
     // Forget the marker so the same element mounts again if it returns.
     mounted["delete"](st.marker);
     // Reject any pending requests so no promise leaks unresolved forever,
@@ -704,7 +693,6 @@
     // server-rendered fallback until the frame reports ready. No-op
     // without a fallback, so the frame stays visible-while-loading.
     showFallback(st);
-    states.set(frame, st);
     mounted.set(marker, st);
     live.push(st);
     observeTheme(st);

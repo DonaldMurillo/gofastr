@@ -57,16 +57,16 @@ func TestManifestValidateHostRequirementGrammar(t *testing.T) {
 		tok    string
 		wantIn string
 	}{
-		{"", "unknown grammar"},                                                 // empty
-		{"   ", "unknown grammar"},                                              // whitespace only
-		{"permissions:camera", "unknown grammar"},                               // unknown prefix
-		{"capability:document:read", "unknown grammar"},                         // scope grammar, not host grammar
-		{"permissions-policy:", "not a known permissions-policy feature"},       // empty feature
-		{"permissions-policy:camrea", "not a known permissions-policy feature"}, // typo
-		{"permissions-policy:camera; microphone=()", "not a known"},             // ';' smuggle
-		{"permissions-policy:camera=(self)", "not a known"},                     // grant syntax is not a declaration
-		{"permissions-policy:camera microphone", "not a known"},                 // embedded whitespace
-		{"allow-scripts", "unknown grammar"},                                    // sandbox vocabulary
+		{"", "unknown grammar"},                                                             // empty
+		{"   ", "unknown grammar"},                                                          // whitespace only
+		{"permissions:camera", "unknown grammar"},                                           // unknown prefix
+		{"capability:document:read", "unknown grammar"},                                     // scope grammar, not host grammar
+		{"permissions-policy:", "not a known permissions-policy feature"},                   // empty feature
+		{"permissions-policy:camrea", `"camrea" is not a known permissions-policy feature`}, // typo names the feature
+		{"permissions-policy:camera; microphone=()", "not a known"},                         // ';' smuggle
+		{"permissions-policy:camera=(self)", "not a known"},                                 // grant syntax is not a declaration
+		{"permissions-policy:camera microphone", "not a known"},                             // embedded whitespace
+		{"allow-scripts", "unknown grammar"},                                                // sandbox vocabulary
 	}
 	for _, c := range invalid {
 		m := Manifest{Entry: "/e.html", HostRequirements: []string{c.tok}}
