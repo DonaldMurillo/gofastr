@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -69,5 +70,71 @@ func TestRefusedInputDispatchKeepsFocus(t *testing.T) {
 	}
 	if focused != "city" {
 		t.Errorf("focus after an as-you-type refusal is on %q, want it left on %q", focused, "city")
+	}
+}
+
+// A control associated from outside the form (form="f") is refused like
+// any other, and comes first when it is first in tree order.
+func TestRefusedSubmitFocusesAnExternalControl(t *testing.T) {
+	page := `<!doctype html><html><head><title>focus</title></head><body>
+<div data-hui-field=""><label for="code">Code</label><input id="code" name="code" form="f" value=""></div>
+<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
+  <div data-hui-field=""><label for="email">Email</label><input id="email" name="email" value=""></div>
+  <button type="submit" id="go">Save</button>
+</form>
+<script src="/__gofastr/runtime.js"></script>
+</body></html>`
+	srv := formErrorsServer(t, page, func(int32) (int, string) {
+		return http.StatusUnprocessableEntity, `{"error":"validation failed","fields":{"email":["is required"],"code":["is required"]}}`
+	})
+	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+
+	var focused string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#go`, chromedp.ByID),
+		chromedp.Click(`#go`, chromedp.ByID),
+		chromedp.Poll(`!!document.getElementById('code-error')`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Evaluate(`document.activeElement && document.activeElement.id`, &focused),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if focused != "code" {
+		t.Errorf("focus after the refused submit is on %q, want the external control %q", focused, "code")
+	}
+}
+
+// A reader who moved focus out of the form while the submit was in
+// flight keeps it there when the refusal lands.
+func TestLateRefusalLeavesFocusOutsideTheForm(t *testing.T) {
+	page := `<!doctype html><html><head><title>focus</title></head><body>
+<input id="search" aria-label="Search">
+<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
+  <div data-hui-field=""><label for="email">Email</label><input id="email" name="email" value=""></div>
+  <button type="submit" id="go">Save</button>
+</form>
+<script src="/__gofastr/runtime.js"></script>
+</body></html>`
+	release := make(chan struct{})
+	srv := formErrorsServer(t, page, func(int32) (int, string) {
+		<-release
+		return http.StatusUnprocessableEntity, `{"error":"validation failed","fields":{"email":["is required"]}}`
+	})
+	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+
+	var focused string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#go`, chromedp.ByID),
+		chromedp.Click(`#go`, chromedp.ByID),
+		chromedp.Focus(`#search`, chromedp.ByID),
+		chromedp.ActionFunc(func(context.Context) error { close(release); return nil }),
+		chromedp.Poll(`!!document.getElementById('email-error')`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Evaluate(`document.activeElement && document.activeElement.id`, &focused),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if focused != "search" {
+		t.Errorf("focus after a late refusal is on %q, want it left on %q", focused, "search")
 	}
 }

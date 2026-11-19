@@ -115,8 +115,10 @@
     }
     if (placed && !(opts && opts.input)) {
       const a = document.activeElement;
-      const first = form.querySelector('[aria-invalid="true"]');
-      if (first && (!a || a === document.body || form.contains(a))) first.focus();
+      // form.elements, not a descendant query: it is in tree order and
+      // holds a control associated from outside the form (form="id").
+      const first = [...form.elements].find((e) => e.getAttribute('aria-invalid') === 'true');
+      if (first && (!a || a === document.body || form.contains(a) || a.form === form)) first.focus();
     }
     if (!placed && typeof NS._toastOrFallback === 'function') {
       const title = (d && typeof d.error === 'string' && d.error) || NS.say('runtime.request_failed_status', 'Request failed ({{status}})', { status });

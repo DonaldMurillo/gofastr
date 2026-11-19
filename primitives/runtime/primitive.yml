@@ -14,10 +14,12 @@ invariants:
       - test: core-ui/runtime/internal/treegate.TestRuntimeAttrsAreDocumented
       - test: core-ui/runtime/internal/treegate.TestPrivilegedAttrsAreDocumented
   - id: refused-submit-focuses-first-invalid
-    rule: A refused form submit moves focus to the first refused control in the form's order while focus is still in the form or on the body; an as-you-type dispatch never moves focus.
+    rule: A refused form submit moves focus to the first refused control in form.elements order, a control associated from outside the form included, while focus is still on the body, in the form or on one of its controls; an as-you-type dispatch never moves focus.
     enforced_by:
       - test: core-ui/runtime.TestRefusedSubmitFocusesFirstInvalidField
       - test: core-ui/runtime.TestRefusedInputDispatchKeepsFocus
+      - test: core-ui/runtime.TestRefusedSubmitFocusesAnExternalControl
+      - test: core-ui/runtime.TestLateRefusalLeavesFocusOutsideTheForm
   - id: no-hard-navigation
     rule: Navigation goes through the client router; nothing assigns location.href or reloads the page to move between pages or to refresh one.
     enforced_by:
