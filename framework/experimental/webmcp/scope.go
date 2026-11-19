@@ -17,7 +17,14 @@ type mountConfig struct {
 	private     bool
 	pageScope   func(*http.Request) bool
 	bridgeDebug bool
+	polyfill    bool
 	docScope    func(path string) bool
+}
+
+// WithPolyfill includes the standalone WebMCP polyfill for secure contexts
+// without native WebMCP. Built-in browser agents require native support.
+func WithPolyfill() MountOption {
+	return func(c *mountConfig) { c.polyfill = true }
 }
 
 // WithBridgeDebug exposes window.__gofastrWebMCP with registration counts

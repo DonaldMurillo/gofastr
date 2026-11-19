@@ -63,9 +63,14 @@ invariants:
       - test: framework/experimental/webmcp.TestScriptEscapesHostileToolFields
       - test: framework/experimental/webmcp.TestBridgeRegistersAndExecutesTools
   - id: bridge-calls-as-the-user
-    rule: The bridge calls a tool's endpoint with a same-origin fetch carrying the visitor's cookies and the X-Gofastr-WebMCP marker, returns the body as text with isError set on a non-2xx status, and never throws to the agent.
+    rule: The bridge calls a tool's endpoint with a same-origin fetch carrying the visitor's cookies and the X-Gofastr-WebMCP marker, returns the body as text with isError set on a non-2xx status, and uses the same error result for network failures.
     enforced_by:
       - test: framework/experimental/webmcp.TestBridgeRegistersAndExecutesTools
+      - test: framework/experimental/webmcp.TestStandalonePolyfill
+  - id: cancellation-reaches-http
+    rule: The invocation's AbortSignal cancels the HTTP request and the caller sees an aborted execution.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestPolyfillCancelsInFlightRequest
   - id: bridge-get-input-wins
     rule: For a GET tool the bridge sets each non-null input key on the query, replacing a baked-in parameter of the same name, and skips null values.
     enforced_by:
@@ -75,8 +80,10 @@ invariants:
     enforced_by:
       - test: framework/experimental/webmcp.TestBridgeReadsCSRFMetaAtDispatchTime
   - id: bridge-noop-without-api
-    rule: On a browser with neither document.modelContext nor navigator.modelContext offering registerTool, the bridge registers nothing and throws nothing.
-    judge: Does this change make bridge.js touch modelContext, fetch, or throw before checking that registerTool exists?
+    rule: On a browser without native registerTool, the default bridge registers nothing. An opt-in polyfill ships in the versioned bridge asset and preserves usable native contexts.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestStandalonePolyfill
+      - test: framework/experimental/webmcp.TestPolyfillChangesOnlyBridgeAsset
 decisions:
   - id: check-names-on-the-server
     date: 2026-11-18

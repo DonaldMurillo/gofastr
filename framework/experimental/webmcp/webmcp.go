@@ -1,5 +1,5 @@
 // Package webmcp exposes an app's server-declared tools to in-browser AI
-// agents through the experimental WebMCP proposal (navigator.modelContext).
+// agents through the experimental WebMCP proposal (document.modelContext).
 package webmcp
 
 import (
@@ -30,11 +30,17 @@ const defaultInputSchema = `{"type":"object","properties":{}}`
 //go:embed bridge.js
 var bridgeJS string
 
+//go:embed third_party/webmcp-polyfill/polyfill.js
+var polyfillJS string
+
 var toolNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 
 const toolsPlaceholder = "__GOFASTR_WEBMCP_TOOLS__"
 
 const debugPlaceholder = "__GOFASTR_WEBMCP_DEBUG__"
+
+// polyfillPlaceholder is replaced with the optional browser bundle.
+const polyfillPlaceholder = "__GOFASTR_WEBMCP_POLYFILL__"
 
 // Tool declares one WebMCP tool: what the agent sees and the same-origin
 // endpoint its execute() calls with the visitor's credentials.
@@ -57,7 +63,7 @@ type Tool struct {
 	// Examples are usage examples checked against InputSchema at registration.
 	Examples []Example `json:"examples,omitempty"`
 
-	// OutputSchema documents the response shape and is never checked at runtime.
+	// OutputSchema documents the HTTP response body in the manifest.
 	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
 
 	// Method is GET, POST, PUT, PATCH or DELETE; it defaults to POST.
@@ -71,6 +77,13 @@ type Tool struct {
 
 	// UntrustedContentHint is forwarded as annotations.untrustedContentHint and is advisory only.
 	UntrustedContentHint bool `json:"untrustedContentHint,omitempty"`
+
+	// ConsequentialHint flags a tool whose execution can have significant
+	// consequences. It is advisory to the agent and browser.
+	ConsequentialHint bool `json:"consequentialHint,omitempty"`
+
+	// Debugging marks a tool intended for developers or test tooling.
+	Debugging bool `json:"debugging,omitempty"`
 }
 
 // ScriptRegistrar puts the bridge script on every full-page render; *uihost.UIHost satisfies it.
@@ -225,7 +238,7 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar, opts ...MountOp
 	if err != nil {
 		return fail(fmt.Errorf("webmcp: Mount: quote tools manifest: %w", err))
 	}
-	for _, ph := range []string{toolsPlaceholder, debugPlaceholder} {
+	for _, ph := range []string{toolsPlaceholder, debugPlaceholder, polyfillPlaceholder} {
 		if !strings.Contains(bridgeJS, ph) {
 			return fail(fmt.Errorf("webmcp: Mount: bridge.js is missing the %s placeholder; the embedded asset is corrupt", ph))
 		}
@@ -234,7 +247,15 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar, opts ...MountOp
 	if cfg.bridgeDebug {
 		debugLit = "true"
 	}
-	script := []byte(strings.Replace(strings.Replace(bridgeJS, toolsPlaceholder, string(quotedTools), 1), debugPlaceholder, debugLit, 1))
+	var polyfill string
+	if cfg.polyfill {
+		polyfill = polyfillJS
+	}
+	script := []byte(strings.NewReplacer(
+		toolsPlaceholder, string(quotedTools),
+		debugPlaceholder, debugLit,
+		polyfillPlaceholder, polyfill,
+	).Replace(bridgeJS))
 
 	scriptPath := rt.Prefix() + ScriptRoute
 	manifestPath := rt.Prefix() + ManifestRoute
