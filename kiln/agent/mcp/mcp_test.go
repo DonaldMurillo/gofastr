@@ -127,3 +127,28 @@ func TestSameDispatchAsNative(t *testing.T) {
 	}
 	_ = context.Background
 }
+
+func TestEveryToolCarriesListingHints(t *testing.T) {
+	tools := setup(t)
+	srv := mcpcore.NewServer()
+	if err := mcp.Register(srv, tools); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	for _, tool := range srv.ListTools() {
+		d, _ := tools.Describe(tool.Name)
+		a := tool.Annotations
+		if a == nil || a.ReadOnlyHint == nil || a.DestructiveHint == nil || a.OpenWorldHint == nil {
+			t.Errorf("%s: annotations %+v, want readOnlyHint, destructiveHint and openWorldHint set", tool.Name, a)
+			continue
+		}
+		if *a.ReadOnlyHint != (tool.Name == "world_get") || *a.DestructiveHint != d.Destructive || *a.OpenWorldHint {
+			t.Errorf("%s: readOnly %v destructive %v openWorld %v, want readOnly only for world_get and destructive as the descriptor says (%v)",
+				tool.Name, *a.ReadOnlyHint, *a.DestructiveHint, *a.OpenWorldHint, d.Destructive)
+		}
+	}
+	for _, name := range []string{"delete_entity", "update_entity", "reset_session"} {
+		if d, _ := tools.Describe(name); !d.Destructive {
+			t.Fatalf("setup: %s is no longer a destructive descriptor", name)
+		}
+	}
+}

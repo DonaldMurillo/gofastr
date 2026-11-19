@@ -187,6 +187,9 @@ type ToolAnnotations struct {
 	OpenWorldHint   *bool  `json:"openWorldHint,omitempty"`
 }
 
+// Bool returns a pointer to v, for the hint fields of ToolAnnotations.
+func Bool(v bool) *bool { return &v }
+
 // ToolListResult is the result of module.tool.list.
 type ToolListResult struct {
 	Tools []Tool `json:"tools"`

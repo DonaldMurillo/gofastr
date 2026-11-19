@@ -462,8 +462,8 @@ MCP behaviour hints, in the same JSON shape `tools/list` serves (see
 moduleproto.Tool{
     ID: "total", Name: "Total", InputSchema: schema,
     Annotations: &moduleproto.ToolAnnotations{
-        ReadOnlyHint: mcp.Bool(true), DestructiveHint: mcp.Bool(false),
-        IdempotentHint: mcp.Bool(true), OpenWorldHint: mcp.Bool(false),
+        ReadOnlyHint: moduleproto.Bool(true), DestructiveHint: moduleproto.Bool(false),
+        IdempotentHint: moduleproto.Bool(true), OpenWorldHint: moduleproto.Bool(false),
     },
 }
 ```
@@ -474,7 +474,9 @@ the missing hints; ChatGPT's directory review requires `readOnlyHint`,
 `destructiveHint` and `openWorldHint` on every tool. `ModuleToolDigest`
 hashes the annotations when they are set, so the descriptor's digest pins
 them and a child that changes a hint is quarantined like one that
-reshapes its schema; a tool without them hashes exactly as before. The
+reshapes its schema. A tool that sends no `annotations` key hashes exactly
+as before; a module that already sent the key before the host read it
+must recompute its digests, because the key is now part of them. The
 host treats the title as untrusted: one longer than 128 bytes, or holding
 invalid UTF-8, a control character or an invisible character, refuses
 the module's whole tool list.

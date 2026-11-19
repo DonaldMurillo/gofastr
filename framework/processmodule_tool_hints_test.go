@@ -14,10 +14,10 @@ import (
 func moduleHints(title string) *moduleproto.ToolAnnotations {
 	return &moduleproto.ToolAnnotations{
 		Title:           title,
-		ReadOnlyHint:    mcp.Bool(true),
-		DestructiveHint: mcp.Bool(false),
-		IdempotentHint:  mcp.Bool(true),
-		OpenWorldHint:   mcp.Bool(false),
+		ReadOnlyHint:    moduleproto.Bool(true),
+		DestructiveHint: moduleproto.Bool(false),
+		IdempotentHint:  moduleproto.Bool(true),
+		OpenWorldHint:   moduleproto.Bool(false),
 	}
 }
 

@@ -28,7 +28,7 @@ few lines, and link the PR or the docs page for the rest.
 - **mcp: tool annotations.** `mcp.WithAnnotations(mcp.Annotations{...})`
   serves a tool's `readOnlyHint`, `destructiveHint`, `idempotentHint`,
   `openWorldHint` and `title` in `tools/list`; `mcp.Bool(v)` sets a hint,
-  and a nil hint is left out. Entity CRUD tools and the framework's own
+  and a nil hint is left out. Entity CRUD tools, Kiln's tools and the framework's own
   tools now carry them, a process module sends them in
   `moduleproto.Tool.Annotations`, and `gofastr dev` logs a warning for any tool
   missing one of the three hints ChatGPT's directory review requires. See
@@ -359,6 +359,14 @@ few lines, and link the PR or the docs page for the rest.
 - **mcp: a `tools/call` with a malformed `_meta` is refused.** A `_meta`
   that is a string, array or number, or longer than 64 KiB, was ignored;
   it now answers `-32602` and the tool does not run.
+  [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
+- **process modules: a tool's `annotations` key is read and pinned.** A
+  module that already sent `annotations` in `module.tool.list` had it
+  ignored; it is now decoded, served as MCP hints and hashed into
+  `ModuleToolDigest`, so that module's approved digests change and its
+  handshake fails until they are recomputed. A malformed value fails
+  decoding. Modules that never sent the key are unaffected. See
+  [process modules](framework/docs/content/process-modules.md#mcp-tools).
   [#822](https://github.com/DonaldMurillo/gofastr/issues/822)
 - **featureflag: `MemoryStore.Set` errors read like `SQLStore.Set`'s.** Both
   stores now check a flag through one function, so an empty key reads

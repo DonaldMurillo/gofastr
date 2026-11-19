@@ -31,7 +31,7 @@ func Register(srv *mcpcore.Server, tools *protocol.Tools) error {
 			// surfaces destructive-op blockers; the agent should call
 			// propose_plan and retry.
 			return res, nil
-		})
+		}, mcpcore.WithAnnotations(toolHints(desc)))
 		if err != nil {
 			return fmt.Errorf("kiln/agent/mcp: register %q: %w", desc.Name, err)
 		}
@@ -48,4 +48,16 @@ func NewServer(tools *protocol.Tools) (*mcpcore.Server, error) {
 		return nil, err
 	}
 	return srv, nil
+}
+
+func toolHints(d protocol.Descriptor) mcpcore.Annotations {
+	hints := mcpcore.Annotations{
+		ReadOnlyHint:    mcpcore.Bool(d.ReadOnly),
+		DestructiveHint: mcpcore.Bool(d.Destructive),
+		OpenWorldHint:   mcpcore.Bool(false),
+	}
+	if d.ReadOnly {
+		hints.IdempotentHint = mcpcore.Bool(true)
+	}
+	return hints
 }
