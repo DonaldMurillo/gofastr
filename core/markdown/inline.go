@@ -9,33 +9,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 )
 
-// maxInlineDepth bounds inline nesting (link text, emphasis inner content).
-// renderInline recurses once per nesting level: attacker-supplied markdown
-// like "[[[…x…](u)](u)](u)" or deeply nested emphasis drives that recursion
-// arbitrarily deep, exhausting the goroutine stack (an unrecoverable crash)
-// and burning super-linear CPU. Past the cap we stop recursing and emit the
-// remaining inner text verbatim (HTML-escaped), failing closed without
-// dropping content, exactly like maxBlockquoteDepth in the block layer.
 const maxInlineDepth = 64
 
-// maxURLParenDepth bounds how many balanced parentheses a link URL may
-// nest, so matching them is a constant number of lookups per link.
 const maxURLParenDepth = 32
 
-// renderInline runs the inline parser over a single block of text and emits
-// HTML. Order matters: code spans are extracted first so their contents are
-// not interpreted as bold/italic, then images, then links, then bold, then
-// italic. Plain text segments are HTML-escaped.
 func renderInline(input string) string {
 	return renderInlineDepth(input, 0)
 }
 
 func renderInlineDepth(input string, depth int) string {
-	// links indexes bracket matches and ')' positions for the whole block
-	// once, so a '[' that never closes costs a lookup, not a scan to end of
-	// input. Nested link text and emphasis content are windows of the same
-	// block and share it: rebuilding it per level cost a full pass for
-	// every nesting level.
 	var links *linkIndex
 	if strings.IndexByte(input, '[') >= 0 {
 		links = buildLinkIndex(input)
@@ -43,26 +25,12 @@ func renderInlineDepth(input string, depth int) string {
 	return renderInlineAt(input, depth, links, 0)
 }
 
-// renderInlineAt renders input, which sits at offset base of the block
-// links was built for.
 func renderInlineAt(input string, depth int, links *linkIndex, base int) string {
 	if depth >= maxInlineDepth {
-		// Bail out: emit the rest of this block as escaped plain text
-		// rather than recursing further into nested constructs.
 		return escapeHTML(input)
 	}
 	var sb strings.Builder
-	// noCloser memoizes (delim,run) pairs for which a scan has already
-	// reached end-of-input without finding a matching closing run. Once a
-	// run has no closer from some position, no later opener of the same
-	// (delim,run) can find one either (its scan covers a suffix of the same
-	// region), so we skip the rescan. This turns the unmatched-emphasis
-	// case from O(n^2) into O(n), a CPU-DoS guard.
 	var noCloser map[int]bool
-	// runs indexes the block's maximal backtick runs so code-span closer
-	// lookups are binary searches instead of tail scans. Built only when
-	// the block contains a backtick at all; see backtickRuns for why a
-	// scan-per-lookup is not just slow but a CPU-DoS on adversarial input.
 	var runs *backtickRuns
 	if strings.IndexByte(input, '`') >= 0 {
 		runs = buildBacktickRuns(input)
@@ -72,16 +40,9 @@ func renderInlineAt(input string, depth int, links *linkIndex, base int) string 
 		ch := input[i]
 		switch {
 		case ch == '\\' && i+1 < len(input) && input[i+1] == '\n':
-			// Backslash hard break (CommonMark): the one spelling of a
-			// <br> that survives an editor stripping trailing spaces.
 			sb.WriteString("<br>\n")
 			i += 2
 		case ch == ' ':
-			// A space run is consumed whole so the lookahead stays O(n).
-			// Before a newline it decides the break: two or more spaces
-			// are a hard break, fewer are dropped in front of a soft
-			// break. At the end of the block it is trailing whitespace
-			// and is dropped.
 			j := i
 			for j < len(input) && input[j] == ' ' {
 				j++
@@ -110,16 +71,6 @@ func renderInlineAt(input string, depth int, links *linkIndex, base int) string 
 				i = end + open
 				continue
 			}
-			// Unmatched run: the WHOLE run is literal text (CommonMark:
-			// a backtick string not closed by a matching run is literal).
-			// Consume the entire run, never one byte at a time. The next
-			// position of the same run would re-run findCodeEnd for a
-			// SHORTER length over the same tail, costing run × tail on
-			// adversarial input (measured 639 ms on a 64 KiB document
-			// before this skip). The emphasis branch's noCloser memo
-			// cannot be reused here: its key is the run length, and each
-			// successive position of a backtick run scans for a different
-			// length, so a memo keyed that way never hits.
 			sb.WriteString(input[i : i+open])
 			i += open
 		case ch == '!' && i+1 < len(input) && input[i+1] == '[':
@@ -149,9 +100,6 @@ func renderInlineAt(input string, depth int, links *linkIndex, base int) string 
 			sb.WriteString("[")
 			i++
 		case ch == '_' && wordByteBefore(input, i):
-			// Intraword underscore (CommonMark): XDG_DATA_HOME and
-			// many_to_many are text. The whole run goes out at once, or
-			// its second underscore, preceded by the first, would open.
 			j := i
 			for j < len(input) && input[j] == '_' {
 				j++
@@ -161,9 +109,6 @@ func renderInlineAt(input string, depth int, links *linkIndex, base int) string 
 		case ch == '*' || ch == '_':
 			delim, run := scanRun(input, i, ch)
 			if i+run >= len(input) || isBlank(input[i+run]) {
-				// A run followed by whitespace opens nothing
-				// (CommonMark's left-flanking rule): "2 * 3 * 4" is
-				// arithmetic, and it used to italicise the 3.
 				sb.WriteString(input[i : i+run])
 				i += run
 				continue
@@ -201,9 +146,6 @@ func renderInlineAt(input string, depth int, links *linkIndex, base int) string 
 			sb.WriteString(escapeHTML(string(ch)))
 			i++
 		case ch == '\n':
-			// Soft break: source text is hard-wrapped, so a plain newline
-			// is not a line break. Emit it as-is; the browser folds it
-			// into a space.
 			sb.WriteByte('\n')
 			i++
 		case ch == '<', ch == '>', ch == '&', ch == '"', ch == '\'':
@@ -217,12 +159,7 @@ func renderInlineAt(input string, depth int, links *linkIndex, base int) string 
 	return sb.String()
 }
 
-// scanRun returns the run length of the same delimiter starting at i.
-// It also returns the delimiter byte for clarity at call sites.
 func scanRun(s string, i int, delim byte) (byte, int) {
-	// Stop counting at 3: the caller only distinguishes runs of 1, 2 and
-	// 3+, and counting a full run of N identical delimiters at every
-	// position would be O(n^2) on a long unmatched run (a CPU-DoS vector).
 	n := 0
 	for n < 3 && i+n < len(s) && s[i+n] == delim {
 		n++
@@ -230,14 +167,6 @@ func scanRun(s string, i int, delim byte) (byte, int) {
 	return delim, n
 }
 
-// findClosingDelim looks for a matching delimiter run after position start.
-// CommonMark has a more complex flanking rule; we use a simple "next run of
-// the same length" search which works for everyday docs, plus two of its
-// rules: an underscore run followed by a letter or digit is intraword and
-// closes nothing, and a link binds tighter than emphasis, so the search
-// steps over a parsed [text](url) whole (a '*' or '_' in its URL closed
-// the emphasis and broke the link). s is the window at offset base of the
-// block links was built for.
 func findClosingDelim(runs *backtickRuns, links *linkIndex, s string, base, start int, delim byte, run int) int {
 	i := start
 	for i < len(s) {
@@ -255,13 +184,6 @@ func findClosingDelim(runs *backtickRuns, links *linkIndex, s string, base, star
 				i = end + open
 				continue
 			}
-			// Unmatched code-span opener: skip the entire run so the walk
-			// does not call findCodeEnd again from every backtick of the
-			// same run — each call would rescan the tail for a shorter
-			// length, the same run × tail blowup the main loop guards
-			// against. Skipping the closing run entirely (end + open, not
-			// end + 1) also stops the walk from re-entering a matched
-			// span's closing run mid-run.
 			i += open
 			continue
 		}
@@ -270,8 +192,6 @@ func findClosingDelim(runs *backtickRuns, links *linkIndex, s string, base, star
 			for i+n < len(s) && s[i+n] == delim {
 				n++
 			}
-			// A run preceded by whitespace closes nothing, the mirror
-			// of the opener rule in renderInlineAt.
 			if n == run && !isBlank(s[i-1]) && (delim != '_' || !wordByteAt(s, i+n)) {
 				return i
 			}
@@ -283,30 +203,12 @@ func findClosingDelim(runs *backtickRuns, links *linkIndex, s string, base, star
 	return -1
 }
 
-// backtickRuns indexes the maximal backtick runs of one block so that
-// code-span closer lookups are binary searches instead of forward scans.
-//
-// A scan-per-lookup is not merely slow, it is a CPU-DoS ladder: after the
-// whole-run skip in the caller, every DISTINCT run length can still fail
-// once, and each failure walks the remaining input. Runs of lengths
-// 1..K fit in ~K²/2 bytes, so K failing scans over that cost O(n·√n) —
-// measured 552 ms on a 1 MB document built as runs of 1..1414 backticks.
-// With the index, a lookup is O(log n) and the shape is linear.
 type backtickRuns struct {
-	// start/lens list each maximal run's start offset and full length, in
-	// document order. byLen maps a run length to the ascending starts of
-	// all runs with that length. All three are int: Render caps no
-	// document size, so an int32 offset wraps on a block over
-	// math.MaxInt32 — a negative "open" reaches the caller and slices
-	// out of range (pinned by TestMarkdown_GiantBacktickRunNoInt32Wrap).
 	start []int
 	lens  []int
 	byLen map[int][]int
 }
 
-// buildBacktickRuns makes the index for s. Callers only build it when s
-// contains a backtick (strings.IndexByte gate), keeping backtick-free
-// blocks on the fast path.
 func buildBacktickRuns(s string) *backtickRuns {
 	b := &backtickRuns{byLen: make(map[int][]int)}
 	for i := 0; i < len(s); {
@@ -327,15 +229,8 @@ func buildBacktickRuns(s string) *backtickRuns {
 	return b
 }
 
-// findCodeEnd returns the start index of the closing backtick run that
-// matches the opening run at i, together with that opening run's length
-// open (the matching closing run has the same length, so callers can skip
-// past both runs in full). end is -1 if no matching run exists. i must be
-// a backtick of a block this index was built for; mid-run positions use
-// the remaining suffix as the opener, the same rule a linear scan had.
 func (b *backtickRuns) findCodeEnd(i int) (end, open int) {
 	r := sort.Search(len(b.start), func(k int) bool { return b.start[k] > i }) - 1
-	// Callers only query at backticks, so run r contains i.
 	open = b.start[r] + b.lens[r] - i
 	starts := b.byLen[open]
 	k := sort.Search(len(starts), func(k int) bool { return starts[k] >= i+open })
@@ -345,28 +240,13 @@ func (b *backtickRuns) findCodeEnd(i int) (end, open int) {
 	return starts[k], open
 }
 
-// linkIndex records, for one block, where each '[' closes and where every
-// ')' sits, so parseLink answers in O(log n) instead of scanning forward.
-//
-// A forward scan is a CPU-DoS: an unclosed '[' scans to end of input,
-// fails, the caller advances one byte and the next '[' rescans the same
-// tail. "[[[[…", "[x]([x](…" with no ')', and "[[[…]]]" with no "(" after
-// it are all quadratic that way. Bracket matching is a stack walk, the
-// same answer the depth-counting scan gave: the first ']' after i where
-// the bracket depth counted from i returns to zero.
 type linkIndex struct {
-	// opens lists every '[' offset in ascending order and match holds the
-	// offset of its closing ']', or -1 when it never closes. parens lists
-	// every ')' offset in ascending order.
-	opens  []int
-	match  []int
-	parens []int
-	// lparens lists every '(' offset in ascending order, so parseLink can
-	// count the ones inside a URL without scanning it.
+	opens   []int
+	match   []int
+	parens  []int
 	lparens []int
 }
 
-// buildLinkIndex makes the index for s in one pass.
 func buildLinkIndex(s string) *linkIndex {
 	l := &linkIndex{}
 	var stack []int
@@ -390,14 +270,6 @@ func buildLinkIndex(s string) *linkIndex {
 	return l
 }
 
-// parseLink parses [text](url) starting at the '[' at position i.
-// Returns the link text, URL, the index immediately after the closing ')',
-// and a success flag. Used for both links and (with caller adjustments)
-// images. s is the window at offset base of the block this index was
-// built for. A '[' match is found by counting forward from that '[', so
-// the block's answer holds inside the window when the match falls inside
-// it; a match or ')' past the window's end is no match, as a scan of the
-// window alone would find.
 func (l *linkIndex) parseLink(s string, base, i int) (text, url string, end int, ok bool) {
 	if l == nil || i >= len(s) || s[i] != '[' {
 		return "", "", 0, false
@@ -420,11 +292,6 @@ func (l *linkIndex) parseLink(s string, base, i int) (text, url string, end int,
 	if p == len(l.parens) || l.parens[p] >= limit {
 		return "", "", 0, false
 	}
-	// A ')' ends the URL only once every '(' inside it has closed, so
-	// [Go](https://en.wikipedia.org/wiki/Go_(game)) keeps its last
-	// parenthesis; cut at the first ')', the href lost it and the page
-	// showed a stray ")". Nesting is bounded like cmark's, and a URL
-	// whose parentheses never balance ends at its first ')' as before.
 	lo := sort.SearchInts(l.lparens, base+urlStart)
 	for q := p; q < len(l.parens) && l.parens[q] < limit && q-p <= maxURLParenDepth; q++ {
 		if sort.SearchInts(l.lparens, l.parens[q])-lo == q-p {
@@ -437,9 +304,6 @@ func (l *linkIndex) parseLink(s string, base, i int) (text, url string, end int,
 	return text, url, k + 1, true
 }
 
-// wordByteBefore reports whether the character before s[i] is a letter
-// or digit. The start of the window counts as a boundary: a nested window
-// opens just after a delimiter or '['.
 func wordByteBefore(s string, i int) bool {
 	if i == 0 {
 		return false
@@ -448,7 +312,6 @@ func wordByteBefore(s string, i int) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
-// wordByteAt reports whether the character at s[i] is a letter or digit.
 func wordByteAt(s string, i int) bool {
 	if i >= len(s) {
 		return false
@@ -465,7 +328,6 @@ func isPunct(b byte) bool {
 	return strings.ContainsRune("\\`*_{}[]()#+-.!|~>", rune(b))
 }
 
-// slugify produces an anchor-friendly id from heading text.
 func slugify(text string) string {
 	var sb strings.Builder
 	prevDash := true
@@ -484,10 +346,6 @@ func slugify(text string) string {
 	return strings.Trim(sb.String(), "-")
 }
 
-// ---------------------------------------------------------------------------
-// Escaping
-// ---------------------------------------------------------------------------
-
 var htmlEscaper = strings.NewReplacer(
 	"&", "&amp;",
 	"<", "&lt;",
@@ -498,18 +356,8 @@ var htmlEscaper = strings.NewReplacer(
 
 func escapeHTML(s string) string { return htmlEscaper.Replace(s) }
 
-// escapeAttr is the same as escapeHTML for now. We never embed attribute
-// values from user-controlled context without escaping, and the same set of
-// characters needs to be neutralised in either spot.
 func escapeAttr(s string) string { return htmlEscaper.Replace(s) }
 
-// safeLinkURL enforces the canonical urlsafe allow-list
-// (core-ui/urlsafe) on a markdown link href: http(s), mailto, tel and
-// relative/fragment references pass; every other scheme — javascript:,
-// vbscript:, data:, but also file:, ftp:, blob:, ws: and
-// protocol-relative //host references — is replaced with `#`. The
-// allow-list is the point: a per-surface deny-list drifts from the
-// policy every other URL sink in the repo applies.
 func safeLinkURL(url string) string {
 	url = stripURLControlBytes(url)
 	if urlsafe.Clean(url, urlsafe.Anchor) == "" {
@@ -518,11 +366,6 @@ func safeLinkURL(url string) string {
 	return url
 }
 
-// safeImageURL is the image counterpart of safeLinkURL, under the
-// urlsafe ImageSource policy: http(s) and relative references plus
-// inline raster data: images pass; everything else — script-y schemes,
-// data:text/html, data:image/svg, file:, blob:, protocol-relative — is
-// replaced with `#`.
 func safeImageURL(url string) string {
 	url = stripURLControlBytes(url)
 	if urlsafe.Clean(url, urlsafe.ImageSource) == "" {
@@ -531,13 +374,6 @@ func safeImageURL(url string) string {
 	return url
 }
 
-// stripURLControlBytes removes the tab/LF/CR/NUL bytes that the HTML5
-// URL parser deletes from a URL before resolving its scheme. Browsers
-// ignore them anywhere in the URL, including in the MIDDLE of a scheme
-// name, so `java\tscript:` resolves to `javascript:`. We delete them up
-// front so both the scheme allow-list and the stored href see the same
-// string the browser will execute, closing the interior-control-byte
-// bypass.
 func stripURLControlBytes(url string) string {
 	if !strings.ContainsAny(url, "\t\n\r\x00") {
 		return url
@@ -547,7 +383,6 @@ func stripURLControlBytes(url string) string {
 	for i := 0; i < len(url); i++ {
 		switch url[i] {
 		case '\t', '\n', '\r', '\x00':
-			// dropped, mirrors the browser URL parser
 		default:
 			sb.WriteByte(url[i])
 		}

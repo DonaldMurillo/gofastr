@@ -164,6 +164,7 @@ var ownedPackages = []string{
 	"core/fanout",
 	"core/openapi",
 	"core/datexport",
+	"core/markdown",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",
