@@ -31,30 +31,7 @@ func securityExposureApp(t *testing.T) *App {
 
 func startSecurityExposureApp(t *testing.T) (*App, func()) {
 	t.Helper()
-	app := securityExposureApp(t)
-	done := make(chan error, 1)
-	go func() {
-		done <- app.Start("127.0.0.1:0")
-	}()
-
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		app.serverMu.Lock()
-		srv := app.server
-		app.serverMu.Unlock()
-		if srv != nil {
-			return app, func() {
-				shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-				_ = app.Shutdown(shutdownCtx)
-				<-done
-			}
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("timed out waiting for app server to start")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	return startApp(t, securityExposureApp(t))
 }
 
 func TestEntityLLMMDHandler_RequiresAuth(t *testing.T) {

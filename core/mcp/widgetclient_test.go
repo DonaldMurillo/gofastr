@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/jstest"
 )
 
 // The MCP Apps widget client lives in widgetclient.js and speaks ext-apps
@@ -14,27 +16,6 @@ import (
 // pins. Every pin runs against non-comment JS: the header comment names the
 // same strings, so a whole-file Contains would stay green with the code
 // deleted.
-
-// nonCommentJS strips whole-line and trailing // comments, returning the
-// executable lines joined — the same approach as pluginhost's
-// TestBrokerJS_NeverEmitsAllowSameOrigin scan, so pins can't be satisfied by
-// prose.
-func nonCommentJS(js string) string {
-	var b strings.Builder
-	for line := range strings.SplitSeq(js, "\n") {
-		code := strings.TrimSpace(line)
-		if strings.HasPrefix(code, "//") || strings.HasPrefix(code, "*") ||
-			strings.HasPrefix(code, "/*") {
-			continue
-		}
-		if idx := strings.Index(code, "//"); idx >= 0 {
-			code = strings.TrimSpace(code[:idx])
-		}
-		b.WriteString(code)
-		b.WriteString("\n")
-	}
-	return b.String()
-}
 
 // jsBody slices code from the start marker to the end marker (first
 // occurrence after start), so a pin can be scoped to one function instead of
@@ -57,7 +38,7 @@ func jsBody(code, start, end string) string {
 // sender/registration sites, so a typo'd or deleted literal fails here
 // instead of shipping a widget that silently never works.
 func TestWidgetClientJS_PinMethodNames(t *testing.T) {
-	code := nonCommentJS(string(widgetClientJSBytes))
+	code := jstest.NonCommentJS(string(widgetClientJSBytes))
 	for _, m := range []string{
 		// Widget → host: handshake.
 		"ui/initialize",
@@ -91,7 +72,7 @@ func TestWidgetClientJS_PinMethodNames(t *testing.T) {
 // handler, so the textual order inside connect() is load-bearing — flipping
 // it sends initialized before the host answered initialize.
 func TestWidgetClientJS_HandshakeNotifiesAfterInitializeResult(t *testing.T) {
-	code := nonCommentJS(string(widgetClientJSBytes))
+	code := jstest.NonCommentJS(string(widgetClientJSBytes))
 	body := jsBody(code, "connect: function", "request: request")
 	if body == "" {
 		t.Fatal("connect() body not found in widget client")
@@ -129,7 +110,7 @@ func TestWidgetClientJS_HandshakeNotifiesAfterInitializeResult(t *testing.T) {
 // except ui/resource-teardown, the one inbound request, which is answered
 // (pinned by the channel-contract test).
 func TestWidgetClientJS_ValidatesMessageSource(t *testing.T) {
-	code := nonCommentJS(string(widgetClientJSBytes))
+	code := jstest.NonCommentJS(string(widgetClientJSBytes))
 	if !strings.Contains(code, "event.source === window.parent") &&
 		!strings.Contains(code, "window.parent === event.source") {
 		t.Error("onWindowMessage must accept only messages whose source is the parent window (in code, not prose)")
@@ -170,16 +151,8 @@ func TestWidgetClientJS_PostsWithWildcardTargetOrigin(t *testing.T) {
 // read as a comment start and destroy the scheme before the check), so a URL
 // in a trailing comment flags — the safe direction.
 func TestWidgetClientJS_NoExternalURLs(t *testing.T) {
-	js := string(widgetClientJSBytes)
-	for line := range strings.SplitSeq(js, "\n") {
-		code := strings.TrimSpace(line)
-		if strings.HasPrefix(code, "//") || strings.HasPrefix(code, "*") ||
-			strings.HasPrefix(code, "/*") {
-			continue // whole-line comment
-		}
-		if strings.Contains(code, "http://") || strings.Contains(code, "https://") {
-			t.Errorf("external URL in executable code: %q", strings.TrimSpace(line))
-		}
+	for _, line := range jstest.ExternalURLCodeLines(string(widgetClientJSBytes)) {
+		t.Errorf("external URL in executable code: %q", line)
 	}
 }
 
@@ -195,7 +168,7 @@ func TestWidgetClientJS_EnvelopeVersion(t *testing.T) {
 	if m[1] != "2.0" {
 		t.Errorf("JSON_RPC_VERSION = %q, want 2.0 (JSON-RPC 2.0 is the ext-apps transport)", m[1])
 	}
-	code := nonCommentJS(string(widgetClientJSBytes))
+	code := jstest.NonCommentJS(string(widgetClientJSBytes))
 	if !strings.Contains(code, "jsonrpc: JSON_RPC_VERSION") {
 		t.Error("outbound messages must be built from JSON_RPC_VERSION")
 	}
@@ -210,7 +183,7 @@ func TestWidgetClientJS_EnvelopeVersion(t *testing.T) {
 // that is answered before it fails everything outstanding, and notification
 // methods instead of throwing.
 func TestWidgetClientJS_ChannelContract(t *testing.T) {
-	code := nonCommentJS(string(widgetClientJSBytes))
+	code := jstest.NonCommentJS(string(widgetClientJSBytes))
 	for _, s := range []string{
 		"MAX_INFLIGHT = 64;", // anchored: "= 64" alone would also match 640
 		`"E_TIMEOUT"`,
@@ -338,7 +311,7 @@ func TestWidgetClientJS_ReturnsACopy(t *testing.T) {
 // deleted line here is a widget that renders the host's dark mode as
 // light with no error anywhere.
 func TestWidgetClientJS_AppliesHostThemeToDocumentRoot(t *testing.T) {
-	code := nonCommentJS(string(widgetClientJSBytes))
+	code := jstest.NonCommentJS(string(widgetClientJSBytes))
 	body := jsBody(code, "function applyHostTheme", "function applyHostContext")
 	if body == "" {
 		t.Fatal("applyHostTheme() not found in widget client")
@@ -369,7 +342,7 @@ func TestWidgetClientJS_AppliesHostThemeToDocumentRoot(t *testing.T) {
 // host leaves the widget rendering the old theme forever, with no error
 // anywhere.
 func TestWidgetClientJS_HostThemeStateIsReplacedNotPiled(t *testing.T) {
-	code := nonCommentJS(string(widgetClientJSBytes))
+	code := jstest.NonCommentJS(string(widgetClientJSBytes))
 	body := jsBody(code, "function applyHostTheme", "function applyHostContext")
 	if body == "" {
 		t.Fatal("applyHostTheme() not found in widget client")
@@ -390,7 +363,7 @@ func TestWidgetClientJS_HostThemeStateIsReplacedNotPiled(t *testing.T) {
 // "the app is ready", and a ready widget must already reflect the host's
 // theme, not catch up a frame later.
 func TestWidgetClientJS_ConnectAppliesThemeBeforeInitialized(t *testing.T) {
-	code := nonCommentJS(string(widgetClientJSBytes))
+	code := jstest.NonCommentJS(string(widgetClientJSBytes))
 	body := jsBody(code, "connect: function", "request: request")
 	if body == "" {
 		t.Fatal("connect() body not found in widget client")
@@ -411,7 +384,7 @@ func TestWidgetClientJS_ConnectAppliesThemeBeforeInitialized(t *testing.T) {
 // wire. The order inside handleNotification is load-bearing — applying
 // after the handler would run author code against a stale root.
 func TestWidgetClientJS_HostContextChangedAppliedInDispatch(t *testing.T) {
-	code := nonCommentJS(string(widgetClientJSBytes))
+	code := jstest.NonCommentJS(string(widgetClientJSBytes))
 	body := jsBody(code, "function handleNotification", "function handleTeardown")
 	if body == "" {
 		t.Fatal("handleNotification() not found in widget client")
@@ -433,7 +406,7 @@ func TestWidgetClientJS_HostContextChangedAppliedInDispatch(t *testing.T) {
 // scribbling on the returned object must not corrupt the merge state the
 // next applyHostContext reads.
 func TestWidgetClientJS_HostContextReturnsACopy(t *testing.T) {
-	code := nonCommentJS(string(widgetClientJSBytes))
+	code := jstest.NonCommentJS(string(widgetClientJSBytes))
 	body := jsBody(code, "hostContext: function", "applyHostContext: applyHostContext")
 	if body == "" {
 		t.Fatal("hostContext() not found in widget client")

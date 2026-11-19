@@ -39,24 +39,7 @@ type labOutlets struct{ Toolbar, Aside *app.Outlet }
 // whose Default renders [HELP]. The handles come back with the layout
 // so the caller's fills name the same typed values.
 func labShell() (*app.Layout, *labOutlets) {
-	o := &labOutlets{
-		Toolbar: app.NewOutlet("toolbar"),
-		Aside:   app.NewOutlet("aside", app.OutletOptions{Default: &fillComp{label: "HELP"}}),
-	}
-	return app.NewLayout("shell", app.LayoutSpec{
-		Outlets: []*app.Outlet{o.Toolbar, o.Aside},
-		Areas:   []app.AreaSpec{{Name: "crumbs"}},
-	}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
-		return render.Join(
-			render.Text("HEADER "),
-			l.RouteArea("crumbs", func(ctx context.Context, m app.Match) render.HTML {
-				return render.Text("crumbs:" + m.Path())
-			}),
-			l.Place(o.Toolbar),
-			l.Primary(),
-			l.Place(o.Aside),
-		)
-	}), o
+	return guardedShell(nil, nil)
 }
 
 func TestFillResolutionOrderScreenGroupDefault(t *testing.T) {

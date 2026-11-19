@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
+	"github.com/DonaldMurillo/gofastr/framework/internal/pngtest"
 )
 
 // Pins the documented contract that stored originals KEEP their image
@@ -391,17 +392,7 @@ func halfRedGreenJPEG(t *testing.T) []byte {
 
 func solidPNG(t *testing.T, w, h int) []byte {
 	t.Helper()
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := range h {
-		for x := range w {
-			img.Set(x, y, color.RGBA{R: 10, G: 200, B: 30, A: 255})
-		}
-	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		t.Fatalf("encode png: %v", err)
-	}
-	return buf.Bytes()
+	return pngtest.Solid(t, w, h, color.RGBA{R: 10, G: 200, B: 30, A: 255})
 }
 
 func pngChunk(typ string, payload []byte) []byte {

@@ -460,6 +460,30 @@ func TestOfflineBannerReadsTheFieldsSseMirrors(t *testing.T) {
 	}
 }
 
+// behaviorMarkerCases pins, per behavior, the exact marker literals its
+// RegisterBehavior call spells — the input both halves of
+// TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers walk.
+var behaviorMarkerCases = []struct {
+	name    string
+	markers []string
+}{
+	{ControlsBehaviorName, []string{"[data-hui-counter-value]", "[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
+		"[data-hui-slider-output]", "[data-hui-range-slider]", "[data-hui-json]"}},
+	{CollectionsBehaviorName, []string{"[data-hui-tag-input]", "[data-hui-repeater]"}},
+	{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
+	{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
+		"[data-cui-toast-stack]", "[data-hui-network-retry]"}},
+	{CopyBehaviorName, []string{"[data-hui-copy]"}},
+	{BellBehaviorName, []string{"[data-hui-notification-bell]"}},
+	{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]", "[data-hui-theme-picker]",
+		"[data-hui-shortcut-focus]", "[data-hui-shortcut-click]"}},
+	{ComboboxBehaviorName, []string{"[data-hui-combobox-input]"}},
+	{TabsBehaviorName, []string{"[data-hui-tabs]"}},
+	{CarouselBehaviorName, []string{"[data-hui-carousel]"}},
+	{PaneHostBehaviorName, []string{"[data-hui-panehost]"}},
+	{SidebarBehaviorName, []string{"[data-hui-sidebar]", "[data-hui-sidebar-group-toggle]"}},
+}
+
 // TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers holds the three
 // module registrations to the same contract the headless module's own
 // gate holds: the registered markers are exactly the literals on the
@@ -467,26 +491,7 @@ func TestOfflineBannerReadsTheFieldsSseMirrors(t *testing.T) {
 // every marker names a hook some Spec declares, so the kernel never
 // fetches a module for markup this package cannot render.
 func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		markers []string
-	}{
-		{ControlsBehaviorName, []string{"[data-hui-counter-value]", "[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
-			"[data-hui-slider-output]", "[data-hui-range-slider]", "[data-hui-json]"}},
-		{CollectionsBehaviorName, []string{"[data-hui-tag-input]", "[data-hui-repeater]"}},
-		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
-		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
-			"[data-cui-toast-stack]", "[data-hui-network-retry]"}},
-		{CopyBehaviorName, []string{"[data-hui-copy]"}},
-		{BellBehaviorName, []string{"[data-hui-notification-bell]"}},
-		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]", "[data-hui-theme-picker]",
-			"[data-hui-shortcut-focus]", "[data-hui-shortcut-click]"}},
-		{ComboboxBehaviorName, []string{"[data-hui-combobox-input]"}},
-		{TabsBehaviorName, []string{"[data-hui-tabs]"}},
-		{CarouselBehaviorName, []string{"[data-hui-carousel]"}},
-		{PaneHostBehaviorName, []string{"[data-hui-panehost]"}},
-		{SidebarBehaviorName, []string{"[data-hui-sidebar]", "[data-hui-sidebar-group-toggle]"}},
-	} {
+	for _, tc := range behaviorMarkerCases {
 		e, ok := uiregistry.LookupBehavior(tc.name)
 		if !ok {
 			t.Fatalf("%q is not registered: every hook its components render would be bound to nothing", tc.name)
@@ -507,26 +512,7 @@ func TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers(t *testing.T) {
 	declared := declaredHooks()
 	src := jsWithoutComments()
 	read := moduleBoundHooks(src)
-	for _, tc := range []struct {
-		name    string
-		markers []string
-	}{
-		{ControlsBehaviorName, []string{"[data-hui-counter-value]", "[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
-			"[data-hui-slider-output]", "[data-hui-range-slider]", "[data-hui-json]"}},
-		{CollectionsBehaviorName, []string{"[data-hui-tag-input]", "[data-hui-repeater]"}},
-		{WizardBehaviorName, []string{"[data-hui-step-wizard]"}},
-		{FeedbackBehaviorName, []string{"[data-hui-copy]", "[data-hui-toast-stack]",
-			"[data-cui-toast-stack]", "[data-hui-network-retry]"}},
-		{CopyBehaviorName, []string{"[data-hui-copy]"}},
-		{BellBehaviorName, []string{"[data-hui-notification-bell]"}},
-		{NavigationBehaviorName, []string{"[data-hui-back-to-top]", "[data-hui-theme-toggle]", "[data-hui-theme-picker]",
-			"[data-hui-shortcut-focus]", "[data-hui-shortcut-click]"}},
-		{ComboboxBehaviorName, []string{"[data-hui-combobox-input]"}},
-		{TabsBehaviorName, []string{"[data-hui-tabs]"}},
-		{CarouselBehaviorName, []string{"[data-hui-carousel]"}},
-		{PaneHostBehaviorName, []string{"[data-hui-panehost]"}},
-		{SidebarBehaviorName, []string{"[data-hui-sidebar]", "[data-hui-sidebar-group-toggle]"}},
-	} {
+	for _, tc := range behaviorMarkerCases {
 		for _, m := range tc.markers {
 			hook := strings.Trim(m, "[]")
 			known := declared[hook]

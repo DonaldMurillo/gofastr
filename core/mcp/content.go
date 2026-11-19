@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 )
 
-// Content is one MCP content block (text, image, audio or embedded resource); build it with TextContent, ImageContent, AudioContent or ResourceContent.
+// Content is a single MCP content block in a tools/call result. It models the
+// spec's content union (text, image, audio, embedded resource). A tool handler
+// may return a Content, a []Content, or a ToolResult to emit rich blocks
+// instead of the default JSON-marshaled text. Construct blocks with TextContent /
+// ImageContent / AudioContent / ResourceContent.
 type Content struct {
 	Type     string            // "text" | "image" | "audio" | "resource"
 	Text     string            // type=="text"
@@ -15,7 +19,10 @@ type Content struct {
 	Meta     map[string]any    // optional per-block _meta
 }
 
-// EmbeddedResource is an inline text or base64 blob resource in a "resource" content block; a set Blob makes it a blob resource.
+// EmbeddedResource is the payload of a type=="resource" content block: an
+// inline copy of a resource (text or base64 blob) carried in a tool result.
+// Set Blob for a blob resource; otherwise it is a text resource, and an
+// empty Text still goes on the wire.
 type EmbeddedResource struct {
 	URI      string `json:"uri"`
 	MimeType string `json:"mimeType"`
@@ -23,7 +30,9 @@ type EmbeddedResource struct {
 	Blob     string `json:"blob"` // base64
 }
 
-// MarshalJSON emits exactly one of text and blob.
+// MarshalJSON emits exactly one of text and blob, the key a client reads
+// to tell the union's members apart. Both omitempty dropped the key of an
+// empty text resource, leaving a block no validating client could decode.
 func (r EmbeddedResource) MarshalJSON() ([]byte, error) {
 	m := map[string]any{"uri": r.URI}
 	if r.MimeType != "" {
@@ -37,7 +46,9 @@ func (r EmbeddedResource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
-// MarshalJSON emits only the fields the spec defines for the block's type.
+// MarshalJSON emits exactly the fields the spec defines for the block's type,
+// so an image block never carries a stray empty "text" and a text block never
+// carries empty "data"/"mimeType".
 func (c Content) MarshalJSON() ([]byte, error) {
 	m := map[string]any{"type": c.Type}
 	switch c.Type {
@@ -58,34 +69,46 @@ func (c Content) MarshalJSON() ([]byte, error) {
 // TextContent returns a text content block.
 func TextContent(text string) Content { return Content{Type: "text", Text: text} }
 
-// ImageContent returns an image content block with data base64-encoded.
+// ImageContent returns an image content block; data is base64-encoded for the
+// wire (e.g. ImageContent(pngBytes, "image/png")).
 func ImageContent(data []byte, mimeType string) Content {
 	return Content{Type: "image", Data: base64.StdEncoding.EncodeToString(data), MimeType: mimeType}
 }
 
-// AudioContent returns an audio content block with data base64-encoded.
+// AudioContent returns an audio content block; data is base64-encoded.
 func AudioContent(data []byte, mimeType string) Content {
 	return Content{Type: "audio", Data: base64.StdEncoding.EncodeToString(data), MimeType: mimeType}
 }
 
-// ResourceContent returns an embedded text-resource content block.
+// ResourceContent returns an embedded-resource content block carrying a text
+// resource inline.
 func ResourceContent(uri, mimeType, text string) Content {
 	return Content{Type: "resource", Resource: &EmbeddedResource{URI: uri, MimeType: mimeType, Text: text}}
 }
 
-// ToolResult is a rich tools/call result: content blocks and/or structuredContent; with no blocks, Structured is mirrored into a text block.
+// ToolResult is a rich tool result a handler can return for full control over
+// the tools/call response: explicit content blocks and/or a structured payload
+// (structuredContent, machine-readable and validated against the tool's
+// outputSchema). When Content is empty but Structured is set, core/mcp mirrors
+// the structured value into a text block so non-structured clients still see
+// output.
 type ToolResult struct {
 	Content    []Content
 	Structured any
 	IsError    bool
 }
 
-// ImageResult is a tool result holding one image block.
+// ImageResult is a convenience tool result for the common "return a generated
+// image" case: mcp.ImageResult{Data: pngBytes, MimeType: "image/png"}.
 type ImageResult struct {
 	Data     []byte
 	MimeType string `json:"mimeType"`
 }
 
+// normalizeToolResult converts whatever a ToolHandler returned into the wire
+// tools/call result. Plain values keep the legacy JSON-marshaled text shape,
+// so existing tools are unaffected. A value JSON cannot encode (NaN, a
+// channel) is an error: answering it as empty text read as success.
 func normalizeToolResult(result any) (toolsCallResult, error) {
 	switch v := result.(type) {
 	case ToolResult:
@@ -100,7 +123,7 @@ func normalizeToolResult(result any) (toolsCallResult, error) {
 	case Content:
 		return toolsCallResult{Content: []Content{v}}, nil
 	case []Content:
-		return toolsCallResult{Content: contentArray(v)}, nil
+		return toolsCallResult{Content: requiredArray(v)}, nil
 	case string:
 		return toolsCallResult{Content: []Content{TextContent(v)}}, nil
 	default:
@@ -115,6 +138,7 @@ func normalizeToolResult(result any) (toolsCallResult, error) {
 func richResult(r ToolResult) (toolsCallResult, error) {
 	content := r.Content
 	if r.Structured != nil {
+		// Encoded even beside text content: it ships as structuredContent.
 		b, err := json.Marshal(r.Structured)
 		if err != nil {
 			return toolsCallResult{}, err
@@ -123,12 +147,5 @@ func richResult(r ToolResult) (toolsCallResult, error) {
 			content = []Content{TextContent(string(b))}
 		}
 	}
-	return toolsCallResult{Content: contentArray(content), StructuredContent: r.Structured, IsError: r.IsError}, nil
-}
-
-func contentArray(c []Content) []Content {
-	if c == nil {
-		return []Content{}
-	}
-	return c
+	return toolsCallResult{Content: requiredArray(content), StructuredContent: r.Structured, IsError: r.IsError}, nil
 }

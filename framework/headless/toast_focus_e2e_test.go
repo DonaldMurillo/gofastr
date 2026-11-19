@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -62,14 +63,23 @@ func TestToastDismissRestoresFocus(t *testing.T) {
 	}
 }
 
-func TestToastFocusSkipsUnavailableRows(t *testing.T) {
-	ctx := behaviorPage(t, startBehaviorServer(t, toastStackWithTemplate()))
+// focusEmulatedToastPage serves body plus the toast stack template,
+// enables focus emulation, and returns the context once the feedback
+// module has loaded — the prologue every toast focus test shares.
+func focusEmulatedToastPage(t *testing.T, body string) context.Context {
+	t.Helper()
+	ctx := behaviorPage(t, startBehaviorServer(t, body))
 	if err := chromedp.Run(ctx, emulation.SetFocusEmulationEnabled(true)); err != nil {
 		t.Fatal(err)
 	}
 	if !pollTrue(ctx, controlsLoadedExpr(FeedbackBehaviorName)) {
 		t.Fatal("feedback did not load")
 	}
+	return ctx
+}
+
+func TestToastFocusSkipsUnavailableRows(t *testing.T) {
+	ctx := focusEmulatedToastPage(t, toastStackWithTemplate())
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
 		window.__previous = window.__gofastr.toast({title:'Previous'});
 		const current = window.__gofastr.toast({title:'Current'});
@@ -86,13 +96,7 @@ func TestToastFocusSkipsUnavailableRows(t *testing.T) {
 }
 
 func TestToastRemovalRespectsNewFocus(t *testing.T) {
-	ctx := behaviorPage(t, startBehaviorServer(t, `<button id="origin">Origin</button><button id="other">Other</button>`+toastStackWithTemplate()))
-	if err := chromedp.Run(ctx, emulation.SetFocusEmulationEnabled(true)); err != nil {
-		t.Fatal(err)
-	}
-	if !pollTrue(ctx, controlsLoadedExpr(FeedbackBehaviorName)) {
-		t.Fatal("feedback did not load")
-	}
+	ctx := focusEmulatedToastPage(t, `<button id="origin">Origin</button><button id="other">Other</button>`+toastStackWithTemplate())
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => { document.getElementById('origin').focus();
 		const id = window.__gofastr.toast({title:'Leaving'});
 		window.__row = document.querySelector('[data-hui-toast-id="' + id + '"]');
@@ -113,13 +117,7 @@ func TestToastRemovalRespectsNewFocus(t *testing.T) {
 }
 
 func TestToastCapacityPreservesFocus(t *testing.T) {
-	ctx := behaviorPage(t, startBehaviorServer(t, toastStackWithTemplate()))
-	if err := chromedp.Run(ctx, emulation.SetFocusEmulationEnabled(true)); err != nil {
-		t.Fatal(err)
-	}
-	if !pollTrue(ctx, controlsLoadedExpr(FeedbackBehaviorName)) {
-		t.Fatal("feedback did not load")
-	}
+	ctx := focusEmulatedToastPage(t, toastStackWithTemplate())
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('[data-cui-toast-stack]').setAttribute('data-hui-toast-max', '1');
 		const id = window.__gofastr.toast({title:'First'});
 		document.querySelector('[data-hui-toast-id="' + id + '"] [data-hui-toast-dismiss]').focus();

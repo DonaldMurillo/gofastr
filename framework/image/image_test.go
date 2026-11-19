@@ -641,57 +641,43 @@ func TestBlurHashLengthIsCorrect(t *testing.T) {
 // degenerate (you can't fit M independent DCT components into N<M
 // samples). Today the encoder returns a base83-looking string anyway;
 // the fix surfaces an error.
-// TestBlurHashAutoResizesLargeInput pins the documented foot-gun: a
-// 4096×4096 source through BlurHash used to allocate ~470 MB and take
-// 2 s. The auto-resize fast path scales internally to at most
-// blurhashMaxSize on each axis before computing, so the cost stays
-// O(blurhashMaxSize²) regardless of input.
-func TestBlurHashAutoResizesLargeInput(t *testing.T) {
-	src := FromImage(gradient(512, 512), FormatPNG)
-	runtime.GC()
-	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
-	hash, err := src.BlurHash(4, 3)
-	runtime.ReadMemStats(&after)
-	if err != nil {
-		t.Fatalf("BlurHash: %v", err)
+// TestBlurHashAutoResizeBoundsAllocation pins the auto-resize fast path:
+// BlurHash scales its source internally to at most blurhashMaxSize on each
+// axis before computing, so the cost stays O(blurhashMaxSize²) regardless
+// of input size or aspect. A 4096×4096 source through BlurHash used to
+// allocate ~470 MB and take 2 s; a 512² source ~6.3 MB of linear buffers;
+// a tall portrait walked thousands of rows because Resize(cap, 0, FitInside)
+// only capped width. Verifying allocations stay sub-MB on both shapes proves
+// the cap now applies to the longest side regardless of aspect.
+func TestBlurHashAutoResizeBoundsAllocation(t *testing.T) {
+	cases := []struct {
+		name string
+		w, h int
+	}{
+		{"large-input", 512, 512},
+		{"portrait-caps-longest-side", 100, 1000},
 	}
-	if len(hash) != 28 {
-		t.Errorf("len=%d, want 28", len(hash))
-	}
-	// 512² = 262,144 px × 24 B per linR/G/B float64 ≈ 6.3 MB if the
-	// algorithm allocates linear buffers at full source size. The
-	// auto-resize path should be sub-1 MB.
-	delta := after.TotalAlloc - before.TotalAlloc
-	if delta > 1_500_000 {
-		t.Errorf("BlurHash on 512² allocated %d bytes; want <1.5 MB (auto-resize active?)", delta)
-	}
-}
-
-// TestBlurHashAutoResizeCapsLongestSideForPortrait pins the fix for
-// the auto-resize bug where Resize(cap, 0, FitInside) only capped
-// width. A tall portrait still walked thousands of rows. Verifying
-// allocations stay sub-MB on a 1000-row source proves the cap now
-// applies to the longest side regardless of aspect.
-func TestBlurHashAutoResizeCapsLongestSideForPortrait(t *testing.T) {
-	src := FromImage(gradient(100, 1000), FormatPNG)
-	runtime.GC()
-	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
-	hash, err := src.BlurHash(4, 3)
-	runtime.ReadMemStats(&after)
-	if err != nil {
-		t.Fatalf("BlurHash: %v", err)
-	}
-	if len(hash) != 28 {
-		t.Errorf("len=%d, want 28", len(hash))
-	}
-	// With the bug, the cosine loop ran on 64*640=40k pixels and the
-	// linR/G/B buffers were ~960 KB. The fix bounds it to ≤ 64*64 = 4k
-	// pixels (~100 KB of linear buffers). Allow generous slack.
-	delta := after.TotalAlloc - before.TotalAlloc
-	if delta > 1_500_000 {
-		t.Errorf("portrait BlurHash allocated %d bytes; want <1.5 MB (longest-side cap active?)", delta)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := FromImage(gradient(tc.w, tc.h), FormatPNG)
+			runtime.GC()
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			hash, err := src.BlurHash(4, 3)
+			runtime.ReadMemStats(&after)
+			if err != nil {
+				t.Fatalf("BlurHash: %v", err)
+			}
+			if len(hash) != 28 {
+				t.Errorf("len=%d, want 28", len(hash))
+			}
+			// Allow generous slack (both regressions allocated well over
+			// 1.5 MB): the auto-resize must keep total allocations sub-MB.
+			delta := after.TotalAlloc - before.TotalAlloc
+			if delta > 1_500_000 {
+				t.Errorf("BlurHash on %d×%d allocated %d bytes; want <1.5 MB (auto-resize active?)", tc.w, tc.h, delta)
+			}
+		})
 	}
 }
 

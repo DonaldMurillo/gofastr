@@ -50,77 +50,63 @@ func TestSSESubscribeExitsOnCtxDone(t *testing.T) {
 // honor in-bounds requests verbatim.
 func TestSSEBufferClampedToMax(t *testing.T) {
 	t.Run("oversize clamped", func(t *testing.T) {
-		broker := NewSSEBroker(SSEBrokerConfig{Topic: "t", DefaultBuf: 8, MaxBuf: 32})
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		r := httptest.NewRequest("GET", "/events?buffer=99999&subscriber_id=clamp-test", nil).WithContext(ctx)
-		w := httptest.NewRecorder()
-		done := make(chan struct{})
-		go func() {
-			broker.Subscribe(w, r)
-			close(done)
-		}()
-
-		deadline := time.Now().Add(500 * time.Millisecond)
-		for broker.SubscriberCount() != 1 {
-			if time.Now().After(deadline) {
-				t.Fatal("subscriber never registered")
-			}
-			time.Sleep(5 * time.Millisecond)
+		bufCap, cleanup := subscribeBufCap(t, "clamp-test", "/events?buffer=99999&subscriber_id=clamp-test")
+		defer cleanup()
+		if bufCap > 32 {
+			t.Fatalf("buffer cap = %d, want <= MaxBuf 32", bufCap)
 		}
-
-		broker.mu.RLock()
-		sub := broker.subscribers["clamp-test"]
-		broker.mu.RUnlock()
-		if sub == nil {
-			t.Fatal("subscriber not found")
-		}
-		if cap(sub.ch) > 32 {
-			t.Fatalf("buffer cap = %d, want <= MaxBuf 32", cap(sub.ch))
-		}
-
-		cancel()
-		<-done
 	})
 
 	// In-bounds request must NOT be clamped to DefaultBuf; caller
 	// should get exactly what they asked for when it sits within
 	// [DefaultBuf, MaxBuf].
 	t.Run("in-bounds honored", func(t *testing.T) {
-		broker := NewSSEBroker(SSEBrokerConfig{Topic: "t", DefaultBuf: 8, MaxBuf: 32})
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		r := httptest.NewRequest("GET", "/events?buffer=16&subscriber_id=in-bounds", nil).WithContext(ctx)
-		w := httptest.NewRecorder()
-		done := make(chan struct{})
-		go func() {
-			broker.Subscribe(w, r)
-			close(done)
-		}()
-
-		deadline := time.Now().Add(500 * time.Millisecond)
-		for broker.SubscriberCount() != 1 {
-			if time.Now().After(deadline) {
-				t.Fatal("subscriber never registered")
-			}
-			time.Sleep(5 * time.Millisecond)
+		bufCap, cleanup := subscribeBufCap(t, "in-bounds", "/events?buffer=16&subscriber_id=in-bounds")
+		defer cleanup()
+		if bufCap != 16 {
+			t.Fatalf("buffer cap = %d, want exactly 16 (in-bounds request must be honored verbatim)", bufCap)
 		}
+	})
+}
 
-		broker.mu.RLock()
-		sub := broker.subscribers["in-bounds"]
-		broker.mu.RUnlock()
-		if sub == nil {
-			t.Fatal("subscriber not found")
-		}
-		if cap(sub.ch) != 16 {
-			t.Fatalf("buffer cap = %d, want exactly 16 (in-bounds request must be honored verbatim)", cap(sub.ch))
-		}
+// subscribeBufCap starts Subscribe on a fresh DefaultBuf=8/MaxBuf=32
+// broker using query, waits for subscriber id to register, and returns its
+// channel capacity plus a cleanup that cancels the request context and
+// waits for Subscribe to return. The two buffer-clamp subtests share this
+// shape; they differ only in the requested size and the bound they assert.
+func subscribeBufCap(t *testing.T, id, query string) (bufCap int, cleanup func()) {
+	t.Helper()
+	broker := NewSSEBroker(SSEBrokerConfig{Topic: "t", DefaultBuf: 8, MaxBuf: 32})
+	ctx, cancel := context.WithCancel(context.Background())
+	// Always release the context, even on a t.Fatal below, so the
+	// Subscribe goroutine is never stranded for the rest of the binary.
+	t.Cleanup(cancel)
+	r := httptest.NewRequest("GET", query, nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		broker.Subscribe(w, r)
+		close(done)
+	}()
 
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for broker.SubscriberCount() != 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("subscriber never registered")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	broker.mu.RLock()
+	sub := broker.subscribers[id]
+	broker.mu.RUnlock()
+	if sub == nil {
+		t.Fatal("subscriber not found")
+	}
+	return cap(sub.ch), func() {
 		cancel()
 		<-done
-	})
+	}
 }
 
 // Finding 5b: oversize subscriber_id must be rejected/truncated.

@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"testing"
 	"time"
-
-	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // ============================================================================
@@ -45,20 +43,7 @@ func BenchmarkT7_Plaintext_NetHTTP(b *testing.B) {
 	}
 }
 
-func BenchmarkT7_Plaintext_GoFastr(b *testing.B) {
-	app := NewApp(WithoutDefaultMiddleware())
-	app.Router().GetFunc("/plaintext", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte("Hello, World!"))
-	})
-	req := benchRequest(b, http.MethodGet, "/plaintext", nil)
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		rec := httptest.NewRecorder()
-		app.Router().ServeHTTP(rec, req)
-	}
-}
+func BenchmarkT7_Plaintext_GoFastr(b *testing.B) { benchGoFastrPlaintext(b) }
 
 // ----------------------------------------------------------------------------
 // 7.2: JSON serialization (small)
@@ -82,23 +67,7 @@ func BenchmarkT7_JSON_NetHTTP(b *testing.B) {
 	}
 }
 
-func BenchmarkT7_JSON_GoFastr(b *testing.B) {
-	app := NewApp(WithoutDefaultMiddleware())
-	type msg struct {
-		Message string `json:"message"`
-	}
-	app.Router().GetFunc("/json", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(msg{Message: "Hello, World!"})
-	})
-	req := benchRequest(b, http.MethodGet, "/json", nil)
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		rec := httptest.NewRecorder()
-		app.Router().ServeHTTP(rec, req)
-	}
-}
+func BenchmarkT7_JSON_GoFastr(b *testing.B) { benchGoFastrJSON(b) }
 
 // ----------------------------------------------------------------------------
 // 7.3: Single query
@@ -147,35 +116,7 @@ func BenchmarkT7_SingleQuery_NetHTTP(b *testing.B) {
 // BenchmarkT7_SingleQuery_GoFastr is the equivalent endpoint expressed
 // through the framework: entity declaration, CRUD routes, the rest is
 // generated. Numbers compare directly with the hand-rolled variant.
-func BenchmarkT7_SingleQuery_GoFastr(b *testing.B) {
-	forEachBenchDialect(b, func(b *testing.B, db *sql.DB, _ Dialect) {
-		const N = 10000
-		seedWorldsTable(b, db, N)
-
-		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		worlds := Define("worlds", EntityConfig{
-			Table: "worlds",
-			Fields: []schema.Field{
-				{Name: "random_number", Type: schema.Int},
-			},
-		}.WithTimestamps(false))
-		app.Registry.Register(worlds)
-		benchMountCrud(b, app, worlds, "/worlds")
-
-		rng := rand.New(rand.NewSource(42))
-		b.ResetTimer()
-		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
-			id := fmt.Sprintf("w%d", rng.Intn(N))
-			req := benchAuthed(b, http.MethodGet, "/worlds/"+id, nil)
-			rec := httptest.NewRecorder()
-			app.Router().ServeHTTP(rec, req)
-			if rec.Code != http.StatusOK {
-				b.Fatalf("status %d: %s", rec.Code, rec.Body.String())
-			}
-		}
-	})
-}
+func BenchmarkT7_SingleQuery_GoFastr(b *testing.B) { benchGoFastrSingleQuery(b) }
 
 // ----------------------------------------------------------------------------
 // 7.4: List with filter (the framework's bread and butter)

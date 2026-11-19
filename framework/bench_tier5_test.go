@@ -32,21 +32,7 @@ import (
 
 // BenchmarkT5_Plaintext is the floor: no DB, no JSON, no entity machinery.
 // Throughput here is the framework's per-request ceiling.
-func BenchmarkT5_Plaintext(b *testing.B) {
-	app := NewApp(WithoutDefaultMiddleware())
-	app.Router().GetFunc("/plaintext", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		_, _ = w.Write([]byte("Hello, World!"))
-	})
-
-	req := benchRequest(b, http.MethodGet, "/plaintext", nil)
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		rec := httptest.NewRecorder()
-		app.Router().ServeHTTP(rec, req)
-	}
-}
+func BenchmarkT5_Plaintext(b *testing.B) { benchGoFastrPlaintext(b) }
 
 // BenchmarkT5_Plaintext_WithDefaults runs the same workload through the
 // default middleware chain. The delta between this and the bare variant is
@@ -72,24 +58,7 @@ func BenchmarkT5_Plaintext_WithDefaults(b *testing.B) {
 // ----------------------------------------------------------------------------
 
 // BenchmarkT5_JSON encodes a small message object and writes it.
-func BenchmarkT5_JSON(b *testing.B) {
-	app := NewApp(WithoutDefaultMiddleware())
-	type message struct {
-		Message string `json:"message"`
-	}
-	app.Router().GetFunc("/json", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(message{Message: "Hello, World!"})
-	})
-
-	req := benchRequest(b, http.MethodGet, "/json", nil)
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		rec := httptest.NewRecorder()
-		app.Router().ServeHTTP(rec, req)
-	}
-}
+func BenchmarkT5_JSON(b *testing.B) { benchGoFastrJSON(b) }
 
 // ----------------------------------------------------------------------------
 // 5.3: Single query
@@ -98,35 +67,7 @@ func BenchmarkT5_JSON(b *testing.B) {
 
 // BenchmarkT5_SingleQuery hits GET /worlds/{id} for a random id. Mirrors
 // TechEmpower's "Test 2: Single Query".
-func BenchmarkT5_SingleQuery(b *testing.B) {
-	forEachBenchDialect(b, func(b *testing.B, db *sql.DB, _ Dialect) {
-		const N = 10000
-		seedWorldsTable(b, db, N)
-
-		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-		worlds := Define("worlds", EntityConfig{
-			Table: "worlds",
-			Fields: []schema.Field{
-				{Name: "random_number", Type: schema.Int},
-			},
-		}.WithTimestamps(false))
-		app.Registry.Register(worlds)
-		benchMountCrud(b, app, worlds, "/worlds")
-
-		rng := rand.New(rand.NewSource(42))
-		b.ResetTimer()
-		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
-			id := fmt.Sprintf("w%d", rng.Intn(N))
-			req := benchAuthed(b, http.MethodGet, "/worlds/"+id, nil)
-			rec := httptest.NewRecorder()
-			app.Router().ServeHTTP(rec, req)
-			if rec.Code != http.StatusOK {
-				b.Fatalf("status %d: %s", rec.Code, rec.Body.String())
-			}
-		}
-	})
-}
+func BenchmarkT5_SingleQuery(b *testing.B) { benchGoFastrSingleQuery(b) }
 
 // ----------------------------------------------------------------------------
 // 5.4: Multiple queries

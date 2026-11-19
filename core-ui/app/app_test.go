@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -69,55 +70,33 @@ func TestNewScreen(t *testing.T) {
 	}
 }
 
-func TestNewDrawer(t *testing.T) {
-	comp := &stubComponent{html: render.Raw("<nav>Menu</nav>")}
-	s := NewDrawer("/sidebar", comp)
-	if s.Type != ScreenDrawer {
-		t.Errorf("expected ScreenDrawer, got %v", s.Type)
+func TestNewOverlayScreen(t *testing.T) {
+	overlays := []struct {
+		name    string
+		build   func(string, component.Component) *Screen
+		kind    ScreenType
+		content string
+	}{
+		{"drawer", NewDrawer, ScreenDrawer, "<nav>Menu</nav>"},
+		{"sheet", NewSheet, ScreenSheet, "<p>Sheet content</p>"},
+		{"dialog", NewDialog, ScreenDialog, "<p>Dialog content</p>"},
 	}
+	for _, o := range overlays {
+		t.Run(o.name, func(t *testing.T) {
+			s := o.build("/"+o.name, &stubComponent{html: render.Raw(o.content)})
+			if s.Type != o.kind {
+				t.Errorf("expected %v, got %v", o.kind, s.Type)
+			}
 
-	// Drawer renders bare content, runtime adds structural wrapping
-	html := string(s.Render())
-	if !strings.Contains(html, "<nav>Menu</nav>") {
-		t.Errorf("expected bare content in drawer, got: %s", html)
-	}
-	// Wrappers are NOT added server-side for overlays
-	if strings.Contains(html, "overlay-backdrop") {
-		t.Errorf("drawer should not include overlay wrapper, got: %s", html)
-	}
-}
-
-func TestNewSheet(t *testing.T) {
-	comp := &stubComponent{html: render.Raw("<p>Sheet content</p>")}
-	s := NewSheet("/sheet", comp)
-	if s.Type != ScreenSheet {
-		t.Errorf("expected ScreenSheet, got %v", s.Type)
-	}
-
-	// Sheet renders bare content, runtime adds structural wrapping
-	html := string(s.Render())
-	if !strings.Contains(html, "<p>Sheet content</p>") {
-		t.Errorf("expected bare content in sheet, got: %s", html)
-	}
-	if strings.Contains(html, "overlay-backdrop") {
-		t.Errorf("sheet should not include overlay wrapper, got: %s", html)
-	}
-}
-
-func TestNewDialog(t *testing.T) {
-	comp := &stubComponent{html: render.Raw("<p>Dialog content</p>")}
-	s := NewDialog("/dialog", comp)
-	if s.Type != ScreenDialog {
-		t.Errorf("expected ScreenDialog, got %v", s.Type)
-	}
-
-	// Dialog renders bare content, runtime adds structural wrapping
-	html := string(s.Render())
-	if !strings.Contains(html, "<p>Dialog content</p>") {
-		t.Errorf("expected bare content in dialog, got: %s", html)
-	}
-	if strings.Contains(html, "overlay-backdrop") {
-		t.Errorf("dialog should not include overlay wrapper, got: %s", html)
+			// Overlays render bare content; the runtime adds structural wrapping.
+			html := string(s.Render())
+			if !strings.Contains(html, o.content) {
+				t.Errorf("expected bare content in %s, got: %s", o.name, html)
+			}
+			if strings.Contains(html, "overlay-backdrop") {
+				t.Errorf("%s should not include overlay wrapper, got: %s", o.name, html)
+			}
+		})
 	}
 }
 

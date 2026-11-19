@@ -697,6 +697,48 @@ func (ch *CrudHandler) refuseUnwrittenLink(ctx context.Context, rel entity.Relat
 	}}}}
 }
 
+// wrapCascadeChildError reports a failed child write under its relation
+// path ("notes", "notes.2"), prefixing a ValidationError's field names
+// rather than its message.
+func wrapCascadeChildError(path string, err error) error {
+	var ve *ValidationError
+	if errors.As(err, &ve) {
+		return &ValidationError{fields: prefixValidationErrors(path, ve.fields)}
+	}
+	return fmt.Errorf("%s: %w", path, err)
+}
+
+// cascadeChildUpdate guards the child row id with the cascade write
+// permission, updates it, and emits EntityUpdated on success.
+func cascadeChildUpdate(ctx context.Context, r *http.Request, childHandler *CrudHandler, target *entity.Entity, path, id string, childMap map[string]any) (map[string]any, error) {
+	if !childHandler.canCascadeWrite(ctx, r, opUpdate, id) {
+		return nil, fmt.Errorf("%w: permission denied to update %s", errNotFound, target.GetName())
+	}
+	res, err := childHandler.doUpdate(ctx, r, id, childMap)
+	if err != nil {
+		return nil, wrapCascadeChildError(path, err)
+	}
+	childHandler.emitCascade(ctx, event.EntityUpdated, res)
+	return res, nil
+}
+
+// cascadeChildCreate refuses an unwritten link, guards the create with the
+// cascade write permission, creates the row, and emits EntityCreated.
+func cascadeChildCreate(ctx context.Context, r *http.Request, childHandler *CrudHandler, rel entity.Relation, target *entity.Entity, path string, childMap map[string]any) (map[string]any, error) {
+	if err := childHandler.refuseUnwrittenLink(ctx, rel); err != nil {
+		return nil, err
+	}
+	if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
+		return nil, fmt.Errorf("%w: permission denied to create %s", errNotFound, target.GetName())
+	}
+	res, err := childHandler.doCreate(ctx, r, childMap)
+	if err != nil {
+		return nil, wrapCascadeChildError(path, err)
+	}
+	childHandler.emitCascade(ctx, event.EntityCreated, res)
+	return res, nil
+}
+
 // processDependentCascadeWrites writes the HasOne, HasMany and
 // ManyToMany children after the parent.
 func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *http.Request, parentID any, body map[string]any, isUpdate bool) (map[string]any, error) {
@@ -747,68 +789,31 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 			if !hasChildID {
 				childIDVal, hasChildID = childMap[childHandler.convertKey(targetPK)]
 			}
-			if isUpdate {
-				if hasChildID && childIDVal != nil && fmt.Sprint(childIDVal) != "" {
-					if err := ch.checkChildOwnership(ctx, r, rel, target, targetPK, oneFK(rel), childIDVal, parentID); err != nil {
-						return nil, err
-					}
-					if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childIDVal)) {
-						return nil, fmt.Errorf("%w: permission denied to update %s", errNotFound, target.GetName())
-					}
-					childResult, err = childHandler.doUpdate(ctx, r, fmt.Sprint(childIDVal), childMap)
-					if err == nil {
-						childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
-					}
-				} else {
-					existingID, scanErr := ch.findExistingHasOneChild(ctx, r, rel, target, targetPK, oneFK(rel), parentID)
-					if scanErr != nil {
-						return nil, scanErr
-					}
-					if existingID != nil {
-						if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(existingID)) {
-							return nil, fmt.Errorf("%w: permission denied to update %s", errNotFound, target.GetName())
-						}
-						childResult, err = childHandler.doUpdate(ctx, r, fmt.Sprint(existingID), childMap)
-						if err == nil {
-							childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
-						}
-					} else {
-						if err := childHandler.refuseUnwrittenLink(ctx, rel); err != nil {
-							return nil, err
-						}
-						if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
-							return nil, fmt.Errorf("%w: permission denied to create %s", errNotFound, target.GetName())
-						}
-						childResult, err = childHandler.doCreate(ctx, r, childMap)
-						if err == nil {
-							childHandler.emitCascade(ctx, event.EntityCreated, childResult)
-						}
-					}
-				}
-			} else {
-				if err := childHandler.refuseUnwrittenLink(ctx, rel); err != nil {
+			if isUpdate && hasChildID && childIDVal != nil && fmt.Sprint(childIDVal) != "" {
+				if err := ch.checkChildOwnership(ctx, r, rel, target, targetPK, oneFK(rel), childIDVal, parentID); err != nil {
 					return nil, err
 				}
-				if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
-					return nil, fmt.Errorf("%w: permission denied to create %s", errNotFound, target.GetName())
+				childResult, err = cascadeChildUpdate(ctx, r, childHandler, target, rel.Name, fmt.Sprint(childIDVal), childMap)
+			} else if isUpdate {
+				existingID, scanErr := ch.findExistingHasOneChild(ctx, r, rel, target, targetPK, oneFK(rel), parentID)
+				if scanErr != nil {
+					return nil, scanErr
 				}
-				childResult, err = childHandler.doCreate(ctx, r, childMap)
-				if err == nil {
-					childHandler.emitCascade(ctx, event.EntityCreated, childResult)
+				if existingID != nil {
+					childResult, err = cascadeChildUpdate(ctx, r, childHandler, target, rel.Name, fmt.Sprint(existingID), childMap)
+				} else {
+					childResult, err = cascadeChildCreate(ctx, r, childHandler, rel, target, rel.Name, childMap)
 				}
+			} else {
+				childResult, err = cascadeChildCreate(ctx, r, childHandler, rel, target, rel.Name, childMap)
 			}
 			if err != nil {
-				var ve *ValidationError
-				if errors.As(err, &ve) {
-					return nil, &ValidationError{fields: prefixValidationErrors(rel.Name, ve.fields)}
-				}
-				return nil, fmt.Errorf("%s: %w", rel.Name, err)
+				return nil, err
 			}
 			if childResult, err = ch.cascadeReadBack(ctx, r, rel, childHandler, childResult); err != nil {
 				return nil, fmt.Errorf("%s: %w", rel.Name, err)
 			}
 			attached[ch.convertKey(rel.Name)] = childResult
-
 		case entity.RelHasMany:
 			slice, ok := rawVal.([]any)
 			if !ok {
@@ -816,11 +821,12 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 			}
 			childResults := make([]map[string]any, 0, len(slice))
 			for idx, item := range slice {
+				path := fmt.Sprintf("%s.%d", rel.Name, idx)
 				childMap, ok := item.(map[string]any)
 				if !ok {
-					return nil, &ValidationError{fields: map[string][]schema.Violation{fmt.Sprintf("%s.%d", rel.Name, idx): {{Reason: reasonNotObject}}}}
+					return nil, &ValidationError{fields: map[string][]schema.Violation{path: {{Reason: reasonNotObject}}}}
 				}
-				childMap, err = childHandler.childColumns(r, fmt.Sprintf("%s.%d", rel.Name, idx), childMap)
+				childMap, err = childHandler.childColumns(r, path, childMap)
 				if err != nil {
 					return nil, err
 				}
@@ -835,34 +841,15 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					if err := ch.checkChildOwnership(ctx, r, rel, target, targetPK, oneFK(rel), childIDVal, parentID); err != nil {
 						return nil, err
 					}
-					if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childIDVal)) {
-						return nil, fmt.Errorf("%w: permission denied to update %s", errNotFound, target.GetName())
-					}
-					childResult, err = childHandler.doUpdate(ctx, r, fmt.Sprint(childIDVal), childMap)
-					if err == nil {
-						childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
-					}
+					childResult, err = cascadeChildUpdate(ctx, r, childHandler, target, path, fmt.Sprint(childIDVal), childMap)
 				} else {
-					if err := childHandler.refuseUnwrittenLink(ctx, rel); err != nil {
-						return nil, err
-					}
-					if !childHandler.canCascadeWrite(ctx, r, opCreate, "") {
-						return nil, fmt.Errorf("%w: permission denied to create %s", errNotFound, target.GetName())
-					}
-					childResult, err = childHandler.doCreate(ctx, r, childMap)
-					if err == nil {
-						childHandler.emitCascade(ctx, event.EntityCreated, childResult)
-					}
+					childResult, err = cascadeChildCreate(ctx, r, childHandler, rel, target, path, childMap)
 				}
 				if err != nil {
-					var ve *ValidationError
-					if errors.As(err, &ve) {
-						return nil, &ValidationError{fields: prefixValidationErrors(fmt.Sprintf("%s.%d", rel.Name, idx), ve.fields)}
-					}
-					return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
+					return nil, err
 				}
 				if childResult, err = ch.cascadeReadBack(ctx, r, rel, childHandler, childResult); err != nil {
-					return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
+					return nil, fmt.Errorf("%s: %w", path, err)
 				}
 				childResults = append(childResults, childResult)
 			}

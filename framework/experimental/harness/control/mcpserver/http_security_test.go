@@ -220,29 +220,33 @@ func mcpRawRefused(code int, body string) bool {
 	return strings.Contains(body, `"error"`)
 }
 
-// TestMcpPostRejectsDuplicateKeys: exact duplicate "jsonrpc" keys —
-// wire-level last-wins on the JSON-RPC envelope.
-func TestMcpPostRejectsDuplicateKeys(t *testing.T) {
+// strictKeysMCPServer stands up the POST /mcp surface with a scope token
+// and proves the happy path: the well-formed shape of the strict-key
+// legs' request returns a result, so a refusal there can only come from
+// key strictness, not plumbing. The bearer is orthogonal to the decode
+// gap; the requests carry one only because the transport now refuses to
+// serve without an encoder. A strict-decode refusal with the bearer
+// present is the cleanest proof the smuggled body reached the JSON-RPC
+// dispatcher.
+func strictKeysMCPServer(t *testing.T) (*httptest.Server, string) {
 	s, _, _ := newTestServer(t)
-	// Bearer is orthogonal to the decode gap; the requests carry one
-	// only because the transport now refuses to serve without an
-	// encoder. A strict-decode refusal with the bearer present is the
-	// cleanest proof the smuggled body reached the JSON-RPC dispatcher.
 	enc := auth.NewEncoder(mustTestSecret(t))
 	h := NewHTTPHandler(s, enc, auth.NewRevocationList())
 	srv := httptest.NewServer(h)
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	tok := mintHTTPScopeToken(t, enc, nil)
-
-	// Happy guard: the well-formed shape of the same request succeeds,
-	// so the refusal demanded below can only come from key strictness,
-	// not plumbing.
 	code, raw := postRawMCP(t, srv, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	if code != http.StatusOK || strings.Contains(raw, `"error"`) {
 		t.Fatalf("happy path: well-formed request must return a result (status=%d body=%s)", code, raw)
 	}
+	return srv, tok
+}
 
-	code, raw = postRawMCP(t, srv, tok, `{"jsonrpc":"1.0","jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+// TestMcpPostRejectsDuplicateKeys: exact duplicate "jsonrpc" keys —
+// wire-level last-wins on the JSON-RPC envelope.
+func TestMcpPostRejectsDuplicateKeys(t *testing.T) {
+	srv, tok := strictKeysMCPServer(t)
+	code, raw := postRawMCP(t, srv, tok, `{"jsonrpc":"1.0","jsonrpc":"2.0","id":1,"method":"tools/list"}`)
 	if !mcpRawRefused(code, raw) {
 		t.Errorf("SECURITY: [mcp-strict-keys] POST /mcp executed a JSON-RPC request with a "+
 			"duplicate jsonrpc key: status=%d body=%.200s — duplicate top-level keys resolve "+
@@ -255,19 +259,8 @@ func TestMcpPostRejectsDuplicateKeys(t *testing.T) {
 // onto the tagged fields via stdlib json's tag-insensitive match — the
 // request still executes; survives a dedup-only fix.
 func TestMcpPostRejectsCaseFoldedKeys(t *testing.T) {
-	s, _, _ := newTestServer(t)
-	enc := auth.NewEncoder(mustTestSecret(t))
-	h := NewHTTPHandler(s, enc, auth.NewRevocationList())
-	srv := httptest.NewServer(h)
-	defer srv.Close()
-	tok := mintHTTPScopeToken(t, enc, nil)
-
-	code, raw := postRawMCP(t, srv, tok, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
-	if code != http.StatusOK || strings.Contains(raw, `"error"`) {
-		t.Fatalf("happy path: well-formed request must return a result (status=%d body=%s)", code, raw)
-	}
-
-	code, raw = postRawMCP(t, srv, tok, `{"JSONRPC":"2.0","ID":1,"METHOD":"tools/list"}`)
+	srv, tok := strictKeysMCPServer(t)
+	code, raw := postRawMCP(t, srv, tok, `{"JSONRPC":"2.0","ID":1,"METHOD":"tools/list"}`)
 	if !mcpRawRefused(code, raw) {
 		t.Errorf("SECURITY: [mcp-strict-keys] POST /mcp executed a JSON-RPC request with "+
 			"case-folded top-level keys: status=%d body=%.200s — case-folded keys still match their "+

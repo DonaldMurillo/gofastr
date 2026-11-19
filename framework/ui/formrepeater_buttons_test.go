@@ -20,24 +20,10 @@ func TestFormRepeaterControlsWearKitButtonClasses(t *testing.T) {
 		Name:  "links",
 		Items: [][]render.HTML{{render.Text("a")}, {render.Text("b")}},
 	}))
-	sheet := buttonCSS(style.DefaultTheme())
-	for _, c := range []struct {
-		marker string
-		want   []string
-	}{
+	assertControlsWearKitButtonClasses(t, h, []kitButtonCase{
 		{`data-hui-repeater-action="remove"`, []string{"fui-button", "fui-button--danger", "fui-form-repeater__remove"}},
 		{`data-hui-repeater-action="add"`, []string{"fui-button", "fui-button--secondary", "fui-form-repeater__add"}},
-	} {
-		got := classTokens(buttonTag(t, h, c.marker))
-		for _, w := range c.want {
-			if !containsToken(got, w) {
-				t.Errorf("%s: class %q missing from %v", c.marker, w, got)
-			}
-			if strings.HasPrefix(w, "fui-button") && !strings.Contains(sheet, "."+w+" {") {
-				t.Errorf("%s: class %q has no rule in the ui-button sheet", c.marker, w)
-			}
-		}
-	}
+	})
 }
 
 // The ui-form-repeater sheet owns the group's layout only: no rule of

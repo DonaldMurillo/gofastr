@@ -23,13 +23,25 @@ import (
 // whose own route answers 403, and `?include=comments.author` dumped the table
 // in one request. The same held for `?rel.field=` nested filters, which do not
 // return the row but make the result count an oracle for its values.
-func includeGateApp(t *testing.T) *App {
+// includeGateDB opens the suite's in-memory sqlite DB pinned to ONE
+// connection: a :memory: database exists per connection, so a second
+// pooled connection would see an empty database ("no such table")
+// whenever the scheduler hands a query a different handle than the one
+// auto-migrate wrote through — a CI-only flake this pin removes.
+func includeGateDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Skip("sqlite3 driver not available")
 	}
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+func includeGateApp(t *testing.T) *App {
+	t.Helper()
+	db := includeGateDB(t)
 
 	app := NewApp(WithConfig(AppConfig{Name: "incgate", APIPrefix: "/api"}), WithDB(db))
 	// Gated: its own list route refuses an anonymous caller.
@@ -116,11 +128,7 @@ func TestNestedFilterRespectsTargetEntityReadGate(t *testing.T) {
 // The gate must not refuse a relation the caller CAN read, or every legitimate
 // include breaks.
 func TestIncludeAllowedWhenTargetIsReadable(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Skip("sqlite3 driver not available")
-	}
-	t.Cleanup(func() { db.Close() })
+	db := includeGateDB(t)
 
 	app := NewApp(WithConfig(AppConfig{Name: "incok", APIPrefix: "/api"}), WithDB(db))
 	app.Entity("owners", EntityConfig{
@@ -169,11 +177,7 @@ func TestIncludeAllowedWhenTargetIsReadable(t *testing.T) {
 // assertion accepted the 400. The chain here is notes → owner (readable) →
 // profile (gated), and only a 403 naming the gated entity passes.
 func TestIncludeGateAppliesAtNestedDepth(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Skip("sqlite3 driver not available")
-	}
-	t.Cleanup(func() { db.Close() })
+	db := includeGateDB(t)
 
 	app := NewApp(WithConfig(AppConfig{Name: "depthgate", APIPrefix: "/api"}), WithDB(db))
 	// Two hops out, and gated.
@@ -312,11 +316,7 @@ func TestIncludeGateAppliesToReadOneAndCursor(t *testing.T) {
 // hits nothing. Status alone is too weak an assertion for that now, since both
 // answers are 200 — the BODIES have to match too.
 func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Skip("sqlite3 driver not available")
-	}
-	t.Cleanup(func() { db.Close() })
+	db := includeGateDB(t)
 
 	app := NewApp(WithConfig(AppConfig{Name: "ownergate", APIPrefix: "/api"}), WithDB(db))
 	// Owner-scoped: its own route refuses a caller with no owner in context.
@@ -418,11 +418,7 @@ func TestNestedFilterRespectsOwnerScopedTarget(t *testing.T) {
 // and GET by id with a 404. The EXISTS subquery counted them, so `?rel.field=`
 // confirmed values in trashed rows one guess at a time.
 func TestNestedFilterHidesSoftDeletedTargetRows(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Skip("sqlite3 driver not available")
-	}
-	t.Cleanup(func() { db.Close() })
+	db := includeGateDB(t)
 
 	app := NewApp(WithConfig(AppConfig{Name: "sdgate", APIPrefix: "/api"}), WithDB(db))
 	app.Entity("snotes", EntityConfig{
@@ -491,11 +487,7 @@ func TestNestedFilterHidesSoftDeletedTargetRows(t *testing.T) {
 // would remove a capability without protecting anything. The exemption is the
 // same pair the routes honour.
 func TestNestedFilterAllowsCrossOwnerCallers(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Skip("sqlite3 driver not available")
-	}
-	t.Cleanup(func() { db.Close() })
+	db := includeGateDB(t)
 
 	app := NewApp(WithConfig(AppConfig{Name: "xogate", APIPrefix: "/api"}), WithDB(db))
 	app.Entity("notes", EntityConfig{
@@ -607,11 +599,7 @@ func (u xoUser) GetRoles() []string { return u.roles }
 // silently wrong data when a same-named table exists and a 500 when it does
 // not.
 func TestNestedFilterQueriesTheResolvedTargetTable(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Skip("sqlite3 driver not available")
-	}
-	t.Cleanup(func() { db.Close() })
+	db := includeGateDB(t)
 
 	app := NewApp(WithConfig(AppConfig{Name: "tablegate", APIPrefix: "/api"}), WithDB(db))
 	// Entity NAME "authors", TABLE "acct_authors".
@@ -669,11 +657,7 @@ func TestNestedFilterQueriesTheResolvedTargetTable(t *testing.T) {
 // dead, an anonymous `?include=` serves whole rows of a session-required entity
 // and the rest of this file stays green.
 func TestIncludeGateRefusesADefaultPostureTarget(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Skip("sqlite3 driver not available")
-	}
-	t.Cleanup(func() { db.Close() })
+	db := includeGateDB(t)
 
 	app := NewApp(WithConfig(AppConfig{Name: "defposture", APIPrefix: "/api"}), WithDB(db))
 	// Default posture: no Access, no Public, no OwnerField. Auto-CRUD requires

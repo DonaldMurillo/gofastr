@@ -13,8 +13,7 @@ invariants:
   - id: rejected-origin-gets-nothing
     rule: A rejected origin gets no Access-Control-Allow-Methods or -Headers, and its preflight is answered 403, never 204.
     enforced_by:
-      - test: core/middleware.TestCORS_RejectedOriginOmitsAllowMethods
-      - test: core/middleware.TestCORS_RejectedOriginOmitsAllowHeaders
+      - test: core/middleware.TestCORS_RejectedOriginOmitsAllowMetadata
       - test: core/middleware.TestCORS_RejectedOriginPreflightReturnsForbidden
       - test: core/middleware.TestCORSAllowAnyHeaderRejectedOriginGetsNothing
   - id: vary-origin-on-every-response

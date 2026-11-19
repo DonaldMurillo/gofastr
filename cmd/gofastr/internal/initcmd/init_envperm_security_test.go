@@ -1,13 +1,13 @@
 package initcmd
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/settings"
+	"github.com/DonaldMurillo/gofastr/internal/heldfiletest"
 )
 
 // Property: the scaffolded .env is never readable by anyone but its owner.
@@ -77,7 +77,7 @@ func TestInitRewritesReplaceWhole(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	oldEnv, oldMain := heldInit(t, env), heldInit(t, gi)
+	oldEnv, oldMain := heldfiletest.Held(t, env), heldfiletest.Held(t, gi)
 	if err := writeEnvFile(dir, "NEW=1\n"); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestInitRewritesReplaceWhole(t *testing.T) {
 	if err := os.WriteFile(cfg, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	oldCfg := heldInit(t, cfg)
+	oldCfg := heldfiletest.Held(t, cfg)
 	writeSettingsFile(dir, "sqlite")
 	if got := oldCfg(); got != "old" {
 		t.Fatalf("old handle reads %s %q: rewritten in place", settings.FileName, got)
@@ -100,24 +100,5 @@ func TestInitRewritesReplaceWhole(t *testing.T) {
 		if fi, _ := os.Stat(gi); fi.Mode().Perm() != 0o600 {
 			t.Fatalf("main.go mode %v, want its 0600 kept", fi.Mode().Perm())
 		}
-	}
-}
-
-// heldInit opens path and returns a reader of what that handle sees: a
-// file renamed over path leaves it reading the old content, one
-// truncated in place leaves it reading the new.
-func heldInit(t *testing.T, path string) func() string {
-	t.Helper()
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = f.Close() })
-	return func() string {
-		b, err := io.ReadAll(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(b)
 	}
 }

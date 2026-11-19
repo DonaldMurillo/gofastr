@@ -301,28 +301,28 @@ func TestLocationGainsPrefix(t *testing.T) {
 	}
 }
 
-// The runtime applies X-Gofastr-Push-State to the URL bar as given, so
-// an unprefixed one moves a Spanish page to the English URL.
-func TestPushStateGainsPrefix(t *testing.T) {
+// assertRewrittenHeader wraps a handler that sets header to value and
+// asserts the middleware rewrites it to want for a Spanish request.
+func assertRewrittenHeader(t *testing.T, header, value, want string) {
+	t.Helper()
 	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("X-Gofastr-Push-State", "/orders?page=2")
+		w.Header().Set(header, value)
 	}))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, esRequest("POST", "/x"))
-	if got := rec.Header().Get("X-Gofastr-Push-State"); got != "/es/orders?page=2" {
-		t.Fatalf("X-Gofastr-Push-State = %q", got)
+	if got := rec.Header().Get(header); got != want {
+		t.Fatalf("%s = %q", header, got)
 	}
 }
 
+// The runtime applies X-Gofastr-Push-State to the URL bar as given, so
+// an unprefixed one moves a Spanish page to the English URL.
+func TestPushStateGainsPrefix(t *testing.T) {
+	assertRewrittenHeader(t, "X-Gofastr-Push-State", "/orders?page=2", "/es/orders?page=2")
+}
+
 func TestLocationWithoutBody(t *testing.T) {
-	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("X-Gofastr-Location", "/orders/7")
-	}))
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, esRequest("POST", "/x"))
-	if got := rec.Header().Get("X-Gofastr-Location"); got != "/es/orders/7" {
-		t.Fatalf("X-Gofastr-Location = %q", got)
-	}
+	assertRewrittenHeader(t, "X-Gofastr-Location", "/orders/7", "/es/orders/7")
 }
 
 // X-Gofastr-Document carries an absolute URL; one on this app keeps the

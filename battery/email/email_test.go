@@ -265,45 +265,45 @@ func TestTemplateExecutionMultipleVariables(t *testing.T) {
 	}
 }
 
-func TestTemplateExecutionTextOnly(t *testing.T) {
-	tmpl := Template{
-		Subject:  "Hello {{.Name}}",
-		TextBody: "Text only body for {{.Name}}.",
+func TestTemplateExecutionSingleBody(t *testing.T) {
+	cases := []struct {
+		name               string
+		tmpl               Template
+		data               map[string]any
+		wantText, wantHTML string
+	}{
+		{
+			name: "TextOnly",
+			tmpl: Template{
+				Subject:  "Hello {{.Name}}",
+				TextBody: "Text only body for {{.Name}}.",
+			},
+			data:     map[string]any{"Name": "Charlie"},
+			wantText: "Text only body for Charlie.",
+		},
+		{
+			name: "HTMLOnly",
+			tmpl: Template{
+				Subject:  "HTML Only",
+				HTMLBody: "<p>Hello {{.Name}}</p>",
+			},
+			data:     map[string]any{"Name": "Dave"},
+			wantHTML: "<p>Hello Dave</p>",
+		},
 	}
-
-	data := map[string]any{"Name": "Charlie"}
-
-	email, err := Execute(tmpl, data)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if email.TextBody != "Text only body for Charlie." {
-		t.Errorf("expected text body, got %q", email.TextBody)
-	}
-	if email.HTMLBody != "" {
-		t.Errorf("expected empty HTML body, got %q", email.HTMLBody)
-	}
-}
-
-func TestTemplateExecutionHTMLOnly(t *testing.T) {
-	tmpl := Template{
-		Subject:  "HTML Only",
-		HTMLBody: "<p>Hello {{.Name}}</p>",
-	}
-
-	data := map[string]any{"Name": "Dave"}
-
-	email, err := Execute(tmpl, data)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if email.TextBody != "" {
-		t.Errorf("expected empty text body, got %q", email.TextBody)
-	}
-	if email.HTMLBody != "<p>Hello Dave</p>" {
-		t.Errorf("expected HTML body, got %q", email.HTMLBody)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			email, err := Execute(tc.tmpl, tc.data)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if email.TextBody != tc.wantText {
+				t.Errorf("expected text body %q, got %q", tc.wantText, email.TextBody)
+			}
+			if email.HTMLBody != tc.wantHTML {
+				t.Errorf("expected HTML body %q, got %q", tc.wantHTML, email.HTMLBody)
+			}
+		})
 	}
 }
 

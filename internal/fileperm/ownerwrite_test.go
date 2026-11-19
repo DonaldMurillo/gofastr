@@ -3,11 +3,12 @@
 package fileperm
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/heldfiletest"
 )
 
 func TestWriteOwnerOnlyTightensExistingLooseFile(t *testing.T) {
@@ -150,7 +151,7 @@ func TestReplaceOwnerOnlyRenamesOver(t *testing.T) {
 	if err := os.WriteFile(path, []byte("OLD=1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	old := heldOld(t, path)
+	old := heldfiletest.Held(t, path)
 	if err := ReplaceOwnerOnly(path, []byte("NEW=1\n")); err != nil {
 		t.Fatal(err)
 	}
@@ -164,24 +165,5 @@ func TestReplaceOwnerOnlyRenamesOver(t *testing.T) {
 		if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
 			t.Fatalf("mode %v, want 0600", fi.Mode().Perm())
 		}
-	}
-}
-
-// heldOld opens path and returns a reader of what that handle sees: a
-// file renamed over path leaves it reading the old content, one
-// truncated in place leaves it reading the new.
-func heldOld(t *testing.T, path string) func() string {
-	t.Helper()
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = f.Close() })
-	return func() string {
-		b, err := io.ReadAll(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(b)
 	}
 }

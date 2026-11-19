@@ -23,6 +23,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	itel "github.com/DonaldMurillo/gofastr/internal/telemetry"
+	"github.com/DonaldMurillo/gofastr/internal/telemetry/telemetrytest"
 )
 
 const (
@@ -67,14 +68,7 @@ func seed(t *testing.T, dir string, now time.Time) {
 		{-1 * time.Minute, `"level":"DEBUG","msg":"tick"`},
 	}
 	write := func(kind string, at time.Time, line []byte) {
-		f, err := os.OpenFile(filepath.Join(dir, itel.FileName(kind, at)), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer f.Close()
-		if _, err := f.Write(line); err != nil {
-			t.Fatal(err)
-		}
+		telemetrytest.Append(t, dir, kind, at, line)
 	}
 	for _, tr := range traces {
 		write(itel.KindTraces, tr.Time, itel.AppendTrace(nil, tr))

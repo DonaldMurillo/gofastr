@@ -63,7 +63,7 @@ func TestArchContract_RegistryHasNoChromeHTML(t *testing.T) {
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("registry status: err=%v code=%d", err, resp.StatusCode)
 	}
-	body := readBody(t, resp)
+	body := readAll(t, resp)
 	if strings.Contains(body, "SHOULD-NOT-BE-IN-REGISTRY") {
 		t.Error("contract violation: chrome HTML must not be embedded in the widgets registry — fetch via cfg.chromePath")
 	}
@@ -90,7 +90,7 @@ func TestArchContract_StatePathOmittedWhenNoSignals(t *testing.T) {
 		t.Fatalf("registry status: %v", err)
 	}
 	var entries []map[string]any
-	if err := json.Unmarshal([]byte(readBody(t, resp)), &entries); err != nil {
+	if err := json.Unmarshal([]byte(readAll(t, resp)), &entries); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	cfg := findCfg(t, entries, "arch-state-test")
@@ -133,7 +133,7 @@ func TestArchContract_StatePathEmittedWhenSignalsExist(t *testing.T) {
 	defer srv.Close()
 
 	resp, _ := http.Get(srv.URL + "/__gofastr/widgets")
-	body := readBody(t, resp)
+	body := readAll(t, resp)
 	if !strings.Contains(body, `"statePath":"/core-ui/widget/arch-state-emitted/state"`) {
 		t.Errorf("contract violation: statePath must be emitted when signals exist; body=%s", body)
 	}
@@ -157,7 +157,7 @@ func TestArchContract_ChromeEndpointServesRenderedHTML(t *testing.T) {
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("chrome status: err=%v code=%d", err, resp.StatusCode)
 	}
-	body := readBody(t, resp)
+	body := readAll(t, resp)
 	if !strings.Contains(body, marker) {
 		t.Errorf("contract violation: chrome endpoint must serve the rendered chrome; missing marker, body=%s", body)
 	}
@@ -180,7 +180,7 @@ func TestArchContract_RegistryExposesChromePath(t *testing.T) {
 	defer srv.Close()
 
 	resp, _ := http.Get(srv.URL + "/__gofastr/widgets")
-	body := readBody(t, resp)
+	body := readAll(t, resp)
 	wantPath := `"chromePath":"/core-ui/widget/arch-cpath/chrome"`
 	if !strings.Contains(body, wantPath) {
 		t.Errorf("contract violation: registry must expose chromePath; missing %q in %s", wantPath, body)
@@ -206,7 +206,7 @@ func TestArchContract_RegistryExposesDeepLinkMetadata(t *testing.T) {
 	defer srv.Close()
 
 	resp, _ := http.Get(srv.URL + "/__gofastr/widgets")
-	body := readBody(t, resp)
+	body := readAll(t, resp)
 	for _, want := range []string{
 		`"deepLinkKey":"modal"`,
 		`"deepLinkValue":"user-edit"`,
@@ -235,7 +235,7 @@ func TestArchContract_HiddenWidgetsStillRegistered(t *testing.T) {
 	defer srv.Close()
 
 	resp, _ := http.Get(srv.URL + "/__gofastr/widgets")
-	body := readBody(t, resp)
+	body := readAll(t, resp)
 	if !strings.Contains(body, `"name":"arch-hidden"`) {
 		t.Errorf("contract violation: hidden widget must still appear in registry; body=%s", body)
 	}
@@ -283,7 +283,7 @@ func TestArchContract_GlobalWidgetAvailableEverywhere(t *testing.T) {
 	defer srv.Close()
 	for _, page := range []string{"/", "/anywhere", "/deep/nested"} {
 		resp, _ := http.Get(srv.URL + "/__gofastr/widgets?page=" + page)
-		body := readBody(t, resp)
+		body := readAll(t, resp)
 		if !strings.Contains(body, `"name":"arch-global-scope"`) {
 			t.Errorf("contract violation: global widget (no Routes) must appear on every page; missing on %s", page)
 		}
@@ -303,11 +303,11 @@ func TestArchContract_ExactPageScoping(t *testing.T) {
 	defer srv.Close()
 
 	resp, _ := http.Get(srv.URL + "/__gofastr/widgets?page=/foo")
-	if !strings.Contains(readBody(t, resp), `"name":"arch-exact-scope"`) {
+	if !strings.Contains(readAll(t, resp), `"name":"arch-exact-scope"`) {
 		t.Error("contract violation: widget with .Pages(\"/foo\") must appear on /foo")
 	}
 	resp, _ = http.Get(srv.URL + "/__gofastr/widgets?page=/bar")
-	if strings.Contains(readBody(t, resp), `"name":"arch-exact-scope"`) {
+	if strings.Contains(readAll(t, resp), `"name":"arch-exact-scope"`) {
 		t.Error("contract violation: widget with .Pages(\"/foo\") must NOT appear on /bar")
 	}
 }
@@ -326,7 +326,7 @@ func TestArchContract_PrefixPageScoping(t *testing.T) {
 
 	for _, page := range []string{"/components/modal", "/components/drawer", "/components/anything"} {
 		resp, _ := http.Get(srv.URL + "/__gofastr/widgets?page=" + page)
-		if !strings.Contains(readBody(t, resp), `"name":"arch-prefix-scope"`) {
+		if !strings.Contains(readAll(t, resp), `"name":"arch-prefix-scope"`) {
 			t.Errorf("contract violation: PagesPrefix(\"/components/\") must match %s", page)
 		}
 	}
@@ -334,7 +334,7 @@ func TestArchContract_PrefixPageScoping(t *testing.T) {
 		// "/components" (no trailing slash) shouldn't prefix-match
 		// "/components/".
 		resp, _ := http.Get(srv.URL + "/__gofastr/widgets?page=" + page)
-		if strings.Contains(readBody(t, resp), `"name":"arch-prefix-scope"`) {
+		if strings.Contains(readAll(t, resp), `"name":"arch-prefix-scope"`) {
 			t.Errorf("contract violation: PagesPrefix(\"/components/\") must NOT match %s", page)
 		}
 	}
@@ -353,11 +353,11 @@ func TestArchContract_MatchFnPageScoping(t *testing.T) {
 	defer srv.Close()
 
 	resp, _ := http.Get(srv.URL + "/__gofastr/widgets?page=/users.admin")
-	if !strings.Contains(readBody(t, resp), `"name":"arch-match-scope"`) {
+	if !strings.Contains(readAll(t, resp), `"name":"arch-match-scope"`) {
 		t.Error("PagesMatch must accept /users.admin")
 	}
 	resp, _ = http.Get(srv.URL + "/__gofastr/widgets?page=/users")
-	if strings.Contains(readBody(t, resp), `"name":"arch-match-scope"`) {
+	if strings.Contains(readAll(t, resp), `"name":"arch-match-scope"`) {
 		t.Error("PagesMatch must reject /users")
 	}
 }
@@ -416,26 +416,9 @@ func TestArchContract_RenderChromeMatchesChromeEndpoint(t *testing.T) {
 	defer srv.Close()
 
 	resp, _ := http.Get(srv.URL + "/core-ui/widget/arch-render-eq/chrome")
-	via := readBody(t, resp)
+	via := readAll(t, resp)
 	direct := widget.RenderChrome(&def)
 	if via != direct {
 		t.Errorf("contract violation: RenderChrome and /chrome endpoint must produce identical HTML.\nvia endpoint:\n%s\nvia RenderChrome:\n%s", via, direct)
 	}
-}
-
-func readBody(t *testing.T, resp *http.Response) string {
-	t.Helper()
-	defer resp.Body.Close()
-	buf := make([]byte, 0, 4096)
-	tmp := make([]byte, 4096)
-	for {
-		n, err := resp.Body.Read(tmp)
-		if n > 0 {
-			buf = append(buf, tmp[:n]...)
-		}
-		if err != nil {
-			break
-		}
-	}
-	return string(buf)
 }

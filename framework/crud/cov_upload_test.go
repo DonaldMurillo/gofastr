@@ -186,27 +186,29 @@ func TestMultipartCreate_NoStorageConfigured(t *testing.T) {
 	}
 }
 
-func TestJSONCreate_RejectsUnsafeMediaURL(t *testing.T) {
-	ch, _ := covUploadHandler(t)
-	req := withTestUser(httptest.NewRequest("POST", "/media",
-		strings.NewReader(`{"caption":"x","photo":"javascript:alert(1)"}`)), "u1")
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	ch.Create()(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("unsafe media URL create = %d, want 400. body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestJSONCreate_AcceptsSafeMediaURL(t *testing.T) {
-	ch, _ := covUploadHandler(t)
-	req := withTestUser(httptest.NewRequest("POST", "/media",
-		strings.NewReader(`{"caption":"x","photo":"https://cdn.example.com/a.png"}`)), "u1")
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	ch.Create()(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("safe media URL create = %d, body=%s", rec.Code, rec.Body.String())
+// TestJSONCreate_MediaURLSafety pins both sides of the URL gate: a JSON
+// create carrying a javascript: photo is refused (400) while an https URL
+// stores (201).
+func TestJSONCreate_MediaURLSafety(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		url  string
+		want int
+	}{
+		{"rejects unsafe media URL", "javascript:alert(1)", http.StatusBadRequest},
+		{"accepts safe media URL", "https://cdn.example.com/a.png", http.StatusCreated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ch, _ := covUploadHandler(t)
+			req := withTestUser(httptest.NewRequest("POST", "/media",
+				strings.NewReader(`{"caption":"x","photo":"`+tc.url+`"}`)), "u1")
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			ch.Create()(rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("%s = %d, want %d. body=%s", tc.name, rec.Code, tc.want, rec.Body.String())
+			}
+		})
 	}
 }
 

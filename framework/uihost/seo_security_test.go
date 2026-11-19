@@ -2,11 +2,9 @@ package uihost
 
 import (
 	"context"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -18,24 +16,12 @@ func (c *headHTMLComp) HeadHTML() string    { return c.head }
 
 func renderHeadPage(t *testing.T, opts ...Option) string {
 	t.Helper()
-	application := app.NewApp("HeadSec")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-	host := New(application, opts...)
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	return rec.Body.String()
+	return serveHomeWithComp(t, "HeadSec", &testHomeComp{}, opts...)
 }
 
 func renderScreenHeadPage(t *testing.T, head string) string {
 	t.Helper()
-	application := app.NewApp("ScreenHeadSec")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &headHTMLComp{head: head}).WithTitle("Home"), nil)
-	host := New(application)
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	return rec.Body.String()
+	return serveHomeWithComp(t, "ScreenHeadSec", &headHTMLComp{head: head})
 }
 
 // dangerousHead is the canonical block-list for caller-supplied head
@@ -172,13 +158,7 @@ func (c *seoBundleComp) ScreenSEO(ctx context.Context) SEO { return c.seo }
 
 func renderBundleSEOPage(t *testing.T, s SEO) string {
 	t.Helper()
-	application := app.NewApp("BundleSEOSec")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &seoBundleComp{seo: s}).WithTitle("Home"), nil)
-	host := New(application)
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	return rec.Body.String()
+	return serveHomeWithComp(t, "BundleSEOSec", &seoBundleComp{seo: s})
 }
 
 // Per-page typed SEO URL fields (the ScreenSEO bundle path) must enforce

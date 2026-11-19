@@ -87,33 +87,31 @@ func TestPermissionGate_ListAllowedWithPermission(t *testing.T) {
 	}
 }
 
-// TestPermissionGate_WrongPermissionDenied confirms a permission for a
-// different op does not unlock writes: docs:read does not authorize Create.
-func TestPermissionGate_WrongPermissionDenied(t *testing.T) {
-	ch, _ := setupPermissionedHandler(t)
+// TestPermissionGate_CreateNeedsWritePermission confirms a permission for a
+// different op does not unlock writes: docs:read does not authorize Create
+// (403) while docs:write does (201).
+func TestPermissionGate_CreateNeedsWritePermission(t *testing.T) {
+	for _, tc := range []struct {
+		desc string
+		perm access.Permission
+		want int
+	}{
+		{"Create with only docs:read", "docs:read", http.StatusForbidden},
+		{"Create with docs:write", "docs:write", http.StatusCreated},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			ch, _ := setupPermissionedHandler(t)
 
-	req := grantReq(httptest.NewRequest(http.MethodPost, "/api/docs",
-		strings.NewReader(`{"body":"x"}`)), "docs:read")
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	ch.Create()(rec, req)
+			req := grantReq(httptest.NewRequest(http.MethodPost, "/api/docs",
+				strings.NewReader(`{"body":"x"}`)), tc.perm)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			ch.Create()(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("Create with only docs:read = %d, want 403. body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestPermissionGate_CreateAllowedWithWrite(t *testing.T) {
-	ch, _ := setupPermissionedHandler(t)
-
-	req := grantReq(httptest.NewRequest(http.MethodPost, "/api/docs",
-		strings.NewReader(`{"body":"x"}`)), "docs:write")
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	ch.Create()(rec, req)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("Create with docs:write = %d, want 201. body=%s", rec.Code, rec.Body.String())
+			if rec.Code != tc.want {
+				t.Fatalf("%s = %d, want %d. body=%s", tc.desc, rec.Code, tc.want, rec.Body.String())
+			}
+		})
 	}
 }
 

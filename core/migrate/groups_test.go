@@ -19,22 +19,23 @@ func mustReg(t *testing.T, m *Migrator, mig Migration) {
 	}
 }
 
-// seqOrder reads the `who` column of the seq table in insertion order, the
-// observable proof of the (version, group) apply sequence.
-func seqOrder(t *testing.T, db *sql.DB) []string {
+// queryStrings runs a single-column query and returns its values in row
+// order, failing the test on a query, scan, or iteration error. seqOrder
+// and pkColumns share this loop.
+func queryStrings(t *testing.T, db *sql.DB, label, query string) []string {
 	t.Helper()
-	rows, err := db.Query("SELECT who FROM seq ORDER BY id")
+	rows, err := db.Query(query)
 	if err != nil {
-		t.Fatalf("read seq: %v", err)
+		t.Fatalf("%s: %v", label, err)
 	}
 	defer rows.Close()
 	var out []string
 	for rows.Next() {
-		var w string
-		if err := rows.Scan(&w); err != nil {
-			t.Fatalf("scan seq: %v", err)
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			t.Fatalf("scan %s: %v", label, err)
 		}
-		out = append(out, w)
+		out = append(out, v)
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatalf("iterate rows: %v", err)
@@ -42,26 +43,17 @@ func seqOrder(t *testing.T, db *sql.DB) []string {
 	return out
 }
 
+// seqOrder reads the `who` column of the seq table in insertion order, the
+// observable proof of the (version, group) apply sequence.
+func seqOrder(t *testing.T, db *sql.DB) []string {
+	t.Helper()
+	return queryStrings(t, db, "seq", "SELECT who FROM seq ORDER BY id")
+}
+
 // pkColumns returns the tracking-table PK columns via SQLite pragma.
 func pkColumns(t *testing.T, db *sql.DB) []string {
 	t.Helper()
-	rows, err := db.Query("SELECT name FROM pragma_table_info('_migrations') WHERE pk > 0 ORDER BY pk")
-	if err != nil {
-		t.Fatalf("pragma_table_info: %v", err)
-	}
-	defer rows.Close()
-	var cols []string
-	for rows.Next() {
-		var c string
-		if err := rows.Scan(&c); err != nil {
-			t.Fatalf("scan: %v", err)
-		}
-		cols = append(cols, c)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("iterate rows: %v", err)
-	}
-	return cols
+	return queryStrings(t, db, "pragma_table_info", "SELECT name FROM pragma_table_info('_migrations') WHERE pk > 0 ORDER BY pk")
 }
 
 // ---- parse ----

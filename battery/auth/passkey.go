@@ -798,17 +798,9 @@ func (p *PasskeyPlugin) noticeAdded(r *http.Request, userID string, cred Passkey
 		return
 	}
 	to, body := u.GetEmail(), passkeyAddedNoticeBody(cred)
-	p.notices.enqueue(r.Context(), to, func(ctx context.Context) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				slog.Warn("added-passkey notice sender panicked", "plugin", "passkey",
-					"email_hash", hashedIdentifier(to), "panic", textsafe.Recovered(rec))
-			}
-		}()
-		if err := sender.Send(ctx, to, body); err != nil {
-			slog.Warn("added-passkey notice send failed", "plugin", "passkey", "email_hash", hashedIdentifier(to), "err", err)
-		}
-	})
+	p.notices.enqueue(r.Context(), to, scrubbedNoticeSend("passkey",
+		"added-passkey notice sender panicked", "added-passkey notice send failed",
+		to, sender, body))
 }
 
 // passkeyAddedNoticeBody is the added-passkey email: fixed text and

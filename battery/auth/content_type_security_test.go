@@ -16,11 +16,7 @@ func TestLogin_RejectsTextPlainJSON(t *testing.T) {
 	seedUser(t, store, "alice@example.com", "password123")
 	r := mountRoutes(mgr)
 
-	body, _ := json.Marshal(map[string]string{"email": "alice@example.com", "password": "password123"})
-	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "text/plain")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	rec := postAuthJSON(r, "/auth/login", map[string]string{"email": "alice@example.com", "password": "password123"}, "text/plain")
 
 	if rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("SECURITY: [auth-content-type] /auth/login accepted JSON body with text/plain content type (%d). Attack: content-type smuggling into login.", rec.Code)
@@ -75,11 +71,7 @@ func TestMagicLinkSend_RejectsTextPlainJSON(t *testing.T) {
 	mgr, _, _ := newMagicLinkManager(t, nil)
 	r := mountMagicLinkRoutes(mgr)
 
-	body, _ := json.Marshal(map[string]string{"email": "alice@example.com"})
-	req := httptest.NewRequest(http.MethodPost, "/auth/magic-link/send", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "text/plain")
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	rec := postAuthJSON(r, "/auth/magic-link/send", map[string]string{"email": "alice@example.com"}, "text/plain")
 
 	if rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("SECURITY: [auth-content-type] /auth/magic-link/send accepted JSON body with text/plain content type (%d). Attack: content-type smuggling into magic-link delivery.", rec.Code)
@@ -90,10 +82,7 @@ func TestMagicLinkSend_RejectsMissingContentType(t *testing.T) {
 	mgr, _, _ := newMagicLinkManager(t, nil)
 	r := mountMagicLinkRoutes(mgr)
 
-	body, _ := json.Marshal(map[string]string{"email": "alice@example.com"})
-	req := httptest.NewRequest(http.MethodPost, "/auth/magic-link/send", bytes.NewReader(body))
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	rec := postAuthJSON(r, "/auth/magic-link/send", map[string]string{"email": "alice@example.com"}, "")
 
 	if rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("SECURITY: [auth-content-type] /auth/magic-link/send accepted JSON body without Content-Type (%d). Attack: ambiguous parser acceptance into magic-link delivery.", rec.Code)

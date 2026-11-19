@@ -3,6 +3,8 @@ package pluginhost
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/jstest"
 )
 
 // The security-critical client core lives in host/pluginhost.js. Its invariants
@@ -19,7 +21,7 @@ func TestBrokerJS_ValidatesMessageSource(t *testing.T) {
 	// Code lines only (nonCommentJS): the header comment states the same
 	// invariants in prose, and a whole-file Contains could go vacuous the
 	// day the comment happens to use the code's operand order.
-	code := nonCommentJS(string(brokerJSBytes))
+	code := jstest.NonCommentJS(string(brokerJSBytes))
 	if !strings.Contains(code, "contentWindow === event.source") {
 		t.Error("onMessage must accept only messages whose source is a mounted frame's contentWindow")
 	}
@@ -71,7 +73,7 @@ func TestBrokerJS_PostsWithWildcardTargetOrigin(t *testing.T) {
 // instead of an empty box. Behavior lives in the DOM (no browser here),
 // so pin the wiring at the source, in code not comments.
 func TestBrokerJS_FallbackLifecycle(t *testing.T) {
-	code := nonCommentJS(string(brokerJSBytes))
+	code := jstest.NonCommentJS(string(brokerJSBytes))
 	if !strings.Contains(code, `querySelector("[data-fui-plugin-fallback]")`) {
 		t.Error("broker must locate the fallback node in the marker")
 	}

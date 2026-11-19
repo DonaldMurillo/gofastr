@@ -10,6 +10,21 @@ import (
 //go:fix inline
 func fPtr(v float64) *float64 { return new(v) }
 
+// assertWithinBounds checks a Min/Max-bounded field: a value below the
+// min rejects, a value above the max rejects, and one between passes.
+func assertWithinBounds(t *testing.T, f Field, below, above, ok any) {
+	t.Helper()
+	if err := Validate(f, below); err == nil {
+		t.Fatal("expected error below min")
+	}
+	if err := Validate(f, above); err == nil {
+		t.Fatal("expected error above max")
+	}
+	if err := Validate(f, ok); err != nil {
+		t.Fatalf("expected valid, got %v", err)
+	}
+}
+
 // ---------- String ----------
 
 func TestValidateString_Valid(t *testing.T) {
@@ -124,15 +139,7 @@ func TestValidateInt_WrongType(t *testing.T) {
 
 func TestValidateInt_MinMax(t *testing.T) {
 	f := Field{Name: "age", Type: Int, Min: new(float64(0)), Max: new(float64(150))}
-	if err := Validate(f, -1); err == nil {
-		t.Fatal("expected error below min")
-	}
-	if err := Validate(f, 151); err == nil {
-		t.Fatal("expected error above max")
-	}
-	if err := Validate(f, 25); err != nil {
-		t.Fatalf("expected valid, got %v", err)
-	}
+	assertWithinBounds(t, f, -1, 151, 25)
 }
 
 // ---------- Float ----------
@@ -156,15 +163,7 @@ func TestValidateFloat_WrongType(t *testing.T) {
 
 func TestValidateFloat_MinMax(t *testing.T) {
 	f := Field{Name: "price", Type: Float, Min: new(float64(0)), Max: new(float64(100))}
-	if err := Validate(f, -0.1); err == nil {
-		t.Fatal("expected error below min")
-	}
-	if err := Validate(f, 100.1); err == nil {
-		t.Fatal("expected error above max")
-	}
-	if err := Validate(f, 50.0); err != nil {
-		t.Fatalf("expected valid, got %v", err)
-	}
+	assertWithinBounds(t, f, -0.1, 100.1, 50.0)
 }
 
 // ---------- Decimal ----------
@@ -192,15 +191,7 @@ func TestValidateDecimal_WrongType(t *testing.T) {
 
 func TestValidateDecimal_MinMax(t *testing.T) {
 	f := Field{Name: "amount", Type: Decimal, Min: new(float64(0)), Max: new(float64(1000))}
-	if err := Validate(f, "-1.00"); err == nil {
-		t.Fatal("expected error below min")
-	}
-	if err := Validate(f, "1001.00"); err == nil {
-		t.Fatal("expected error above max")
-	}
-	if err := Validate(f, "500.00"); err != nil {
-		t.Fatalf("expected valid, got %v", err)
-	}
+	assertWithinBounds(t, f, "-1.00", "1001.00", "500.00")
 }
 
 func TestValidateDecimal_RequiredEmpty(t *testing.T) {

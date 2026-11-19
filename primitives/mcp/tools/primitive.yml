@@ -9,12 +9,12 @@ docs:
   - framework/docs/content/mcp.md
 twins:
   - job: Snapshot a registry under the read lock and filter it by gates outside the lock.
-    why: Work not yet done; listTools also applies the name-based call gate and listToolsUnfiltered applies only that one, so gatedListPage would need a second gate hook to cover them.
+    why: Work not yet done; listTools also applies the name-based call gate and listToolsUnfiltered applies only that one, so gatedListResponse would need a second gate hook to cover them.
     sites:
       - path: core/mcp/server.go
         note: listTools and listToolsUnfiltered, for tools.
       - path: core/mcp/prompts.go
-        note: gatedListPage, for prompts, resources and resource templates.
+        note: gatedListResponse, for prompts, resources and resource templates.
 invariants:
   - id: args-validated-before-handler
     rule: tools/call, and CallTool in process, check arguments against the tool's inputSchema (type, enum, properties, required, additionalProperties, items, recursively) and answer -32602 before the handler runs, unless the tool was registered WithLaxArgs.
