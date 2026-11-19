@@ -1,23 +1,5 @@
-// Package config provides a first-class configuration loader that binds
-// environment variables, config files, and secret sources into typed Go
-// structs with validation.
-//
-// Apps currently roll their own os.Getenv calls. This package removes that
-// class of bugs with a single typed binding step.
-//
-// Usage:
-//
-//	type AppConfig struct {
-//	    Port    int    `config:"PORT" default:"8080" validate:"min=1,max=65535"`
-//	    DBURL   string `config:"DATABASE_URL" required:"true"`
-//	    Debug   bool   `config:"DEBUG" default:"false"`
-//	    LogLevel string `config:"LOG_LEVEL" default:"info" validate:"oneof=debug info warn error"`
-//	}
-//
-//	var cfg AppConfig
-//	if err := config.Load(&cfg); err != nil {
-//	    log.Fatal(err)
-//	}
+// Package config binds environment variables and other sources into typed
+// Go structs with defaults, required fields, redaction and validation.
 package config
 
 import (
@@ -39,9 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// Source provides configuration values. The default source reads from
-// environment variables. Custom sources (files, secret managers, etc.)
-// implement this interface.
+// Source provides configuration values.
 type Source interface {
 	// Get returns the value for the given key, or ("", false) if not found.
 	Get(key string) (string, bool)
@@ -50,15 +30,12 @@ type Source interface {
 // EnvSource reads from environment variables. This is the default source.
 type EnvSource struct{}
 
-// Get returns the environment variable for the given key. Distinguishes
-// between unset (returns ok=false) and set-but-empty (returns "", true).
-// Conflating those breaks defaulting. An explicit empty value used to
-// silently fall back to the `default:` tag.
+// Get returns the environment variable, ("", true) when it is set but empty.
 func (EnvSource) Get(key string) (string, bool) {
 	return os.LookupEnv(key)
 }
 
-// MapSource reads from a static map. Useful for testing.
+// MapSource reads from a static map.
 type MapSource map[string]string
 
 // Get returns the value from the map.
@@ -80,74 +57,25 @@ func (cs ChainedSource) Get(key string) (string, bool) {
 	return "", false
 }
 
-// ConfigValidator is implemented by config structs that want a
-// post-binding validation hook. Validate runs after every field has
-// been populated; returning a non-nil error aborts Load.
-//
-// Renamed from Validator to avoid collision with entity.Entity's own
-// Validate() error method. A config struct that doubled as an
-// entity would otherwise accidentally satisfy this interface.
+// ConfigValidator is a config struct's post-binding check; its error aborts
+// Load.
 type ConfigValidator interface {
 	Validate() error
 }
 
-// Load populates the config struct from the given sources (defaulting to
-// EnvSource if none are provided). Struct fields use `config:"KEY"` tags
-// to specify the source key, `default:"VALUE"` for defaults, and
-// `required:"true"` for mandatory fields.
-//
-// Nested struct fields recurse with a SCREAMING_SNAKE prefix derived from
-// the parent field name (e.g. `DB DBConfig` reads keys like DB_HOST). A
-// nested struct behind a pointer (`DB *DBConfig`) recurses the same way:
-// it is allocated and bound when any of its nested keys is present in a
-// source, and left nil when none is. A `required` leaf inside a struct
-// that stayed nil is therefore not enforced — use the value spelling
-// when absence must fail the boot.
-//
-// The fields of an EMBEDDED struct are promoted the way encoding/json
-// promotes them, with no prefix: in `type Cfg struct{ Base }`, Base's
-// `config:"PORT"` field reads PORT (never BASE_PORT). That holds for a
-// pointer embed (allocated when one of its keys is present, left nil
-// otherwise) and for an unexported embedded type's exported fields. A
-// shallower field wins over a promoted one with the same key; two
-// promoted at the same depth are ambiguous and Load refuses the type.
-// Name the field (`Base Base`) to read its keys under BASE_. A config
-// tag on an embedded struct is refused.
-//
-// A shadowed field (Base.Port under an outer Port reading the same key)
-// is never bound from a source, so it takes its own `default:` tag, the
-// only value Load can give it: a method on Base reading b.Port then
-// reads what it read before promotion when BASE_PORT was unset, not
-// zero. Its `required` and `validate` tags do not apply. A shadowed
-// named struct takes its fields' defaults the same way; a shadowed
-// pointer is left as it is.
-//
-// The fields of an embedded struct used to be read under the embed's
-// name (BASE_PORT). When a source still holds such a key and no field
-// reads it, Load logs a warning through log/slog's default logger,
-// once per key per process, naming the key it reads now. It never
-// fails Load.
-//
-// `required:"true"` demands a non-empty value: a key that is present
-// but set to the empty string ("SECRET=" in a .env, a ConfigMap key
-// with no value) fails the same way an absent key does. A `default:`
-// tag still satisfies a required field when the key is absent.
-//
-// Fields tagged `sensitive:"true"` have their raw value redacted from
-// any error messages, including the text of a ConfigValidator error.
-//
-// If the config (or a pointer to it) implements ConfigValidator,
-// Validate is called after binding and its error is returned.
-//
-// Supported field types: string, int, int64, float64, bool, Duration,
-// any type whose pointer implements encoding.TextUnmarshaler (time.Time,
-// slog.Level, netip.Addr; value or pointer form), and nested structs
-// (value or pointer form).
+// Load binds cfg, a pointer to a struct, from sources (EnvSource when none)
+// using its config, default, required, sensitive and validate tags. Named
+// nested structs read keys under a NAME_ prefix, embedded structs are
+// promoted without one, and a nested pointer is allocated only when one of
+// its keys is present. Sensitive values are redacted from every error, a
+// ConfigValidator's included. Load errors on a struct shape it cannot bind,
+// a missing or empty required value, a value that does not parse or fails
+// its validate rule, and a ConfigValidator error.
 func Load(cfg any, sources ...Source) error {
 	return LoadWith(cfg, sources...)
 }
 
-// LoadWith is an alias for Load. Populates config from sources.
+// LoadWith is Load.
 func LoadWith(cfg any, sources ...Source) error {
 	v := reflect.ValueOf(cfg)
 	if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Struct {
@@ -170,27 +98,12 @@ func LoadWith(cfg any, sources ...Source) error {
 
 	if val, ok := cfg.(ConfigValidator); ok {
 		if err := val.Validate(); err != nil {
-			// The `sensitive:"true"` contract is "redacted from any error
-			// messages", but redaction used to wrap only setField's parse
-			// error. A host's Validate() writing the idiomatic
-			// fmt.Errorf("bad DSN %q", c.DBURL) was wrapped verbatim and
-			// leaked the credential out through MustLoad's panic. We can't
-			// restructure a third-party error, so scrub the bound secret
-			// values out of its rendered text instead.
 			return fmt.Errorf("config: validate: %s", redactSecrets(err.Error(), secrets))
 		}
 	}
 	return nil
 }
 
-// redactSecrets replaces every occurrence of a bound sensitive value in
-// msg with a placeholder. Values are scrubbed longest-first so a secret
-// that contains a shorter one doesn't leave a fragment behind.
-//
-// Each secret is matched in its escaped spellings too (see
-// [secretSpellings]): a validator writing fmt.Errorf("%q", tok) turns a
-// '"' or '\' in the token into an escape, and a raw-bytes match then
-// missed the whole credential.
 func redactSecrets(msg string, secrets []string) string {
 	if len(secrets) == 0 {
 		return msg
@@ -208,11 +121,6 @@ func redactSecrets(msg string, secrets []string) string {
 	return msg
 }
 
-// secretEscapers are the ways an error message commonly re-spells a
-// value: Go quoting (%q, %+q, %v of a []string), JSON with and without
-// HTML escaping, and URL query/path escaping. Each returns the body
-// without surrounding quotes, so a spelling embedded in a longer quoted
-// string still matches.
 var secretEscapers = []func(string) string{
 	func(s string) string { q := strconv.Quote(s); return q[1 : len(q)-1] },
 	func(s string) string { q := strconv.QuoteToASCII(s); return q[1 : len(q)-1] },
@@ -222,9 +130,6 @@ var secretEscapers = []func(string) string{
 	url.PathEscape,
 }
 
-// secretSpellings returns s and its escaped forms, up to two escapes
-// deep: a validator error quoted again by a wrapping %q (or JSON
-// encoded by a logger) carries the secret doubly escaped.
 func secretSpellings(s string) []string {
 	seen := map[string]bool{s: true}
 	out := []string{s}
@@ -245,7 +150,6 @@ func secretSpellings(s string) []string {
 	return out
 }
 
-// jsonBody is s JSON-encoded as a string, without the quotes.
 func jsonBody(s string, escapeHTML bool) string {
 	var b strings.Builder
 	enc := json.NewEncoder(&b)
@@ -257,29 +161,17 @@ func jsonBody(s string, escapeHTML bool) string {
 	return q[1 : len(q)-1]
 }
 
-// configField is one field Load binds in a struct: a leaf it reads one
-// key for, or a named nested struct whose fields it reads under key as
-// a prefix ("DB_"). Fields of embedded structs are promoted into their
-// parent's list, as encoding/json promotes them, so index is the path
-// from the struct through each embedded field to this one.
 type configField struct {
-	index  []int
-	key    string
-	nested bool
-	path   string // Go spelling for errors: "Base.Port"
-	sf     reflect.StructField
-	// shadowed marks a promoted field a shallower one with the same key
-	// hides: it is never bound from a source and takes its own default.
-	shadowed bool
-	// legacy is the key the field was read at before embedded fields
-	// were promoted: each embed on its path added "<NAME>_" ahead of
-	// key. hasLegacy is false when an unexported embed is on the path,
-	// since such a field was not read at all.
+	index     []int
+	key       string
+	nested    bool
+	path      string
+	sf        reflect.StructField
+	shadowed  bool
 	legacy    string
 	hasLegacy bool
 }
 
-// keyLabel is how an error names the field's key.
 func (f configField) keyLabel() string {
 	if f.nested {
 		return f.key + "*"
@@ -287,11 +179,6 @@ func (f configField) keyLabel() string {
 	return f.key
 }
 
-// isNestedStruct reports whether a named field of type t recurses under
-// a NAME_ prefix: a struct, or a pointer to one.
-//
-// A type that parses its own text (time.Time, netip.Addr) is a leaf, not
-// a nested struct: its fields are not config keys.
 func isNestedStruct(t reflect.Type) bool {
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -301,25 +188,10 @@ func isNestedStruct(t reflect.Type) bool {
 
 var textUnmarshalerType = reflect.TypeFor[encoding.TextUnmarshaler]()
 
-// parsesText reports whether *t implements encoding.TextUnmarshaler.
 func parsesText(t reflect.Type) bool {
 	return reflect.PointerTo(t).Implements(textUnmarshalerType)
 }
 
-// configFields lists the fields Load binds in t, in field order, with
-// the fields of embedded structs promoted the way encoding/json promotes
-// them: `type Cfg struct{ Base }` reads Base's `config:"PORT"` as PORT.
-// An unexported embedded type promotes its exported fields too, and a
-// pointer embed is followed.
-//
-// Two fields reading one key resolve as encoding/json resolves two
-// fields with one name: the shallower one wins and the deeper one is not
-// read from any source; it comes back marked shadowed, so Load can give
-// it its default. Two at the same depth are ambiguous, and where
-// encoding/json drops both silently, Load refuses the type.
-//
-// A config tag on an embedded struct is refused rather than read as a
-// prefix: naming the field (`Base Base`) is how a struct's keys get one.
 func configFields(t reflect.Type) ([]configField, error) {
 	var all []configField
 	if err := collectConfigFields(t, nil, "", "", true, map[reflect.Type]bool{t: true}, &all); err != nil {
@@ -363,13 +235,6 @@ func configFields(t reflect.Type) ([]configField, error) {
 	return out, nil
 }
 
-// collectConfigFields appends every candidate field of t, descending into
-// embedded structs. active holds the embedded types on the current path,
-// so a type that embeds itself is refused instead of walked forever.
-//
-// legacy is the key prefix the embeds on the path spelled before
-// promotion ("BASE_"), and legacyOK is false once an unexported embed is
-// on the path.
 func collectConfigFields(t reflect.Type, index []int, path, legacy string, legacyOK bool, active map[reflect.Type]bool, out *[]configField) error {
 	for i := range t.NumField() {
 		f := t.Field(i)
@@ -399,8 +264,6 @@ func collectConfigFields(t reflect.Type, index []int, path, legacy string, legac
 				}
 				continue
 			}
-			// An embedded non-struct is a field named after its type, as
-			// in encoding/json; an unexported one is not read.
 		}
 		if !f.IsExported() {
 			continue
@@ -419,16 +282,10 @@ func collectConfigFields(t reflect.Type, index []int, path, legacy string, legac
 	return nil
 }
 
-// srcHasKey reports whether src holds any key the fields of t would read
-// at prefix — leaves at prefix+key (tag or uppercased name), nested
-// structs at prefix+NAME_…, promoted fields without their embed's name —
-// mirroring bindStruct's key derivation exactly (both read configFields).
-// It is the presence probe that decides whether a nil pointer-to-struct
-// field, or a nil pointer embed, is allocated or left nil.
 func srcHasKey(t reflect.Type, prefix string, src Source) bool {
 	fields, err := configFields(t)
 	if err != nil {
-		return false // checkConfigShape refused the type before any probe
+		return false
 	}
 	for _, f := range fields {
 		if fieldHasKey(f, prefix, src) {
@@ -438,7 +295,6 @@ func srcHasKey(t reflect.Type, prefix string, src Source) bool {
 	return false
 }
 
-// fieldHasKey reports whether src holds a key f reads at prefix.
 func fieldHasKey(f configField, prefix string, src Source) bool {
 	if f.nested {
 		t := f.sf.Type
@@ -451,10 +307,6 @@ func fieldHasKey(f configField, prefix string, src Source) bool {
 	return ok
 }
 
-// allocEmbeds allocates every nil pointer embed on f's path in elem. An
-// unexported one cannot be allocated through reflect (encoding/json
-// refuses it the same way), so a key present behind one is an error
-// rather than a silently dropped value.
 func allocEmbeds(elem reflect.Value, f configField, prefix string) error {
 	v := elem
 	for _, i := range f.index[:len(f.index)-1] {
@@ -474,8 +326,6 @@ func allocEmbeds(elem reflect.Value, f configField, prefix string) error {
 	return nil
 }
 
-// reachField returns the field at f's path in elem, or false when a nil
-// pointer embed on the path leaves it unreachable.
 func reachField(elem reflect.Value, f configField) (reflect.Value, bool) {
 	v := elem
 	for n, i := range f.index {
@@ -490,26 +340,12 @@ func reachField(elem reflect.Value, f configField) (reflect.Value, bool) {
 	return v, true
 }
 
-// bindStruct walks the fields of elem, reading from src under the given
-// prefix. Named nested struct fields recurse with prefix+FieldName+"_";
-// fields of embedded structs are promoted (see [configFields]).
-//
-// Every value bound into a `sensitive:"true"` field is appended to
-// secrets so [redactSecrets] can scrub it out of a ConfigValidator's
-// error text.
 func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string) error {
 	fields, err := configFields(elem.Type())
 	if err != nil {
 		return err
 	}
-	// A nil pointer embed is allocated when any field promoted through it
-	// has a key present, before any field binds, so a required or
-	// defaulted field ahead of the present one in the embed is still
-	// enforced. One with no key present stays nil and its fields are
-	// skipped, as a nil `DB *DBConfig` is.
 	for _, f := range fields {
-		// A shadowed field's key belongs to the field that shadows it, so
-		// its presence allocates nothing on the shadowed path.
 		if !f.shadowed && fieldHasKey(f, prefix, src) {
 			if err := allocEmbeds(elem, f, prefix); err != nil {
 				return err
@@ -533,16 +369,10 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 
 		if cf.nested {
 			nestedPrefix := prefix + cf.key
-			// A nested struct behind a POINTER recurses like the value
-			// form: allocated and bound when any of its nested keys is
-			// present, left nil otherwise. It used to fall through to the
-			// leaf path, whose uppercase-name key is almost never set, so
-			// `DB *DBConfig` silently ignored DB_HOST/DB_PORT while Load
-			// returned nil (2026-09-04 red-probe round).
 			if fieldVal.Kind() == reflect.Pointer {
 				if fieldVal.IsNil() {
 					if !srcHasKey(fieldVal.Type().Elem(), nestedPrefix, src) {
-						continue // no nested key present: leave the pointer nil
+						continue
 					}
 					fieldVal.Set(reflect.New(fieldVal.Type().Elem()))
 				}
@@ -565,12 +395,6 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 			val = defaultVal
 		}
 
-		// `required` means a usable value, not merely a present key.
-		// EnvSource deliberately reports set-but-empty as ("", true), so
-		// checking only !found let `SECRET=`, an empty .env line, a k8s
-		// ConfigMap key with no value, a secret-manager miss, satisfy
-		// `required` and silently bind the zero value. Test the resolved
-		// value instead of the lookup's ok flag.
 		if val == "" {
 			if required {
 				return fmt.Errorf("config: required field %s (%s) not set", field.Name, key)
@@ -578,8 +402,6 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 			if err := validateTags(fieldVal, field.Tag.Get("validate")); err != nil {
 				return fmt.Errorf("config: field %s: %s", field.Name, redactSecrets(err.Error(), *secrets))
 			}
-			// An empty value (`KEY=`) leaves the field as the host set
-			// it; the tags still check what it holds.
 			continue
 		}
 
@@ -601,11 +423,6 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 	return nil
 }
 
-// applyDefaults gives a shadowed field the value Load can: its own
-// default tag, never a source's value (the key belongs to the field that
-// shadows it). A struct takes each field's default, recursively; a
-// pointer is left as it is, nil or not, and a field with no default
-// keeps what it holds.
 func applyDefaults(v reflect.Value, sf reflect.StructField) error {
 	if isNestedStruct(sf.Type) {
 		if v.Kind() == reflect.Pointer {
@@ -639,21 +456,12 @@ func applyDefaults(v reflect.Value, sf reflect.StructField) error {
 	return nil
 }
 
-// legacyWarned holds the old-spelling keys Load already warned about, so
-// each is reported once per process.
 var legacyWarned sync.Map
 
-// legacyKey is a key spelled the way Load read a promoted field before
-// promotion, and the key that field reads now ("" when it is shadowed).
 type legacyKey struct {
 	old, now, path string
 }
 
-// warnLegacyKeys logs, once per key, every pre-promotion key spelling
-// ("BASE_PORT" for Base's PORT in `struct{ Base }`) that src holds and
-// no field of t reads. It reads only presence, never values, and never
-// fails: the warning is how an app that still sets the old key learns
-// it is ignored.
 func warnLegacyKeys(t reflect.Type, src Source) {
 	read := map[string]bool{}
 	var legacy []legacyKey
@@ -678,12 +486,6 @@ func warnLegacyKeys(t reflect.Type, src Source) {
 	}
 }
 
-// collectLegacyKeys walks t's fields as Load binds them, recording every
-// key Load reads in read and every leaf whose pre-promotion key differs
-// from its key now in legacy. prefix and legacyPrefix are the two
-// spellings' prefixes so far; legacyOK is false below an unexported
-// embed, whose fields were never read, and shadowed marks a subtree no
-// source binds.
 func collectLegacyKeys(t reflect.Type, prefix, legacyPrefix string, legacyOK, shadowed bool, read map[string]bool, legacy *[]legacyKey, active map[reflect.Type]bool) {
 	if active[t] {
 		return
@@ -692,7 +494,7 @@ func collectLegacyKeys(t reflect.Type, prefix, legacyPrefix string, legacyOK, sh
 	defer delete(active, t)
 	fields, err := configFields(t)
 	if err != nil {
-		return // checkConfigShape refused the type before this walk
+		return
 	}
 	for _, f := range fields {
 		hidden := shadowed || f.shadowed
@@ -719,13 +521,6 @@ func collectLegacyKeys(t reflect.Type, prefix, legacyPrefix string, legacyOK, sh
 	}
 }
 
-// setField sets a reflect.Value from a string, converting to the
-// appropriate type. A type that parses its own text (time.Time,
-// slog.Level, netip.Addr, an enum whose UnmarshalText admits only its
-// members), directly or through a pointer, binds through UnmarshalText,
-// ahead of the kind switch: slog.Level is an int, and the int case
-// refused "debug"; a validated `type Tier string` bound "bogus" raw
-// through the string case.
 func setField(v reflect.Value, s string, fieldName string) error {
 	if v.Kind() == reflect.Pointer && parsesText(v.Type().Elem()) {
 		p := reflect.New(v.Type().Elem())
@@ -745,7 +540,6 @@ func setField(v reflect.Value, s string, fieldName string) error {
 	case reflect.String:
 		v.SetString(s)
 	case reflect.Int, reflect.Int64:
-		// Check for time.Duration
 		if v.Type().String() == "time.Duration" {
 			d, err := parseDuration(s)
 			if err != nil {
@@ -760,9 +554,6 @@ func setField(v reflect.Value, s string, fieldName string) error {
 		if err != nil {
 			return fmt.Errorf("config: field %s: %q is not a valid float: %w", fieldName, s, err)
 		}
-		// NaN/Inf defeat every comparison guard a host can write (IEEE-754:
-		// every comparison with NaN is false, Inf compares true on one side),
-		// so `if r < 0 || r > 1 { error }` in a Validate() hook passes NaN
 		if math.IsNaN(f) || math.IsInf(f, 0) {
 			return fmt.Errorf("config: field %s: %q is not a valid float: non-finite values are rejected because they bypass numeric range guards", fieldName, s)
 		}
@@ -788,10 +579,7 @@ func setIntegerField(value reflect.Value, text, fieldName string) error {
 	return nil
 }
 
-// parseDuration parses a duration string. Supports standard Go duration
-// syntax ("30s", "5m", "500ms") plus plain integer seconds.
 func parseDuration(s string) (int64, error) {
-	// Try standard Go parsing first
 	if strings.ContainsAny(s, "hmsuµn") {
 		d, err := parseGoDuration(s)
 		if err == nil {
@@ -799,16 +587,10 @@ func parseDuration(s string) (int64, error) {
 		}
 		return 0, err
 	}
-	// Plain integer = seconds
 	n, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
 		return 0, err
 	}
-	// The seconds-to-nanoseconds multiply overflows int64 past ~292 years,
-	// and it wrapped silently: a TTL of math.MaxInt64 bound as -1s, which
-	// every consumer reads as "already expired" or "no timeout", depending
-	// on which side of zero it checks. Refuse the value instead of binding
-	// a number nobody wrote.
 	const maxSeconds = math.MaxInt64 / int64(time.Second)
 	if n > maxSeconds || n < math.MinInt64/int64(time.Second) {
 		return 0, fmt.Errorf("duration %ss overflows int64 nanoseconds (max %d seconds)", s, maxSeconds)
@@ -816,9 +598,6 @@ func parseDuration(s string) (int64, error) {
 	return n * int64(time.Second), nil
 }
 
-// parseGoDuration delegates to time.ParseDuration so all of Go's
-// suffixes ("ns", "us"/"µs", "ms", "s", "m", "h") parse correctly.
-// The previous handrolled scanner mis-read "500ms" as "500m + trailing s".
 func parseGoDuration(s string) (int64, error) {
 	d, err := time.ParseDuration(s)
 	if err != nil {
@@ -827,14 +606,13 @@ func parseGoDuration(s string) (int64, error) {
 	return int64(d), nil
 }
 
-// MustLoad is like Load but panics on error. Use in init() or main().
+// MustLoad is Load, panicking on error.
 func MustLoad(cfg any, sources ...Source) {
 	if err := Load(cfg, sources...); err != nil {
 		panic(err)
 	}
 }
 
-// validateTags enforces the bounds and choices advertised by Load.
 func validateTags(v reflect.Value, tag string) error {
 	if tag == "" {
 		return nil
@@ -863,9 +641,6 @@ func validateTags(v reflect.Value, tag string) error {
 		switch key {
 		case "min", "max":
 			if v.Kind() == reflect.Int || v.Kind() == reflect.Int64 {
-				// Integer and Duration bounds compare as int64: a float64
-				// bound rounds past 2^53. A Duration's bounds are durations
-				// ("1s", "5m"), compared in nanoseconds like the value.
 				var b int64
 				var err error
 				if isDuration {
@@ -913,12 +688,6 @@ func validateTags(v reflect.Value, tag string) error {
 	return schema.Validate(f, value)
 }
 
-// checkConfigShape refuses, before any source is read or any pointer
-// allocated, a struct shape Load cannot bind: a recursive one (key
-// discovery would be unbounded, through a named field or an embed), a
-// key two embedded structs promote at the same depth, and a config tag
-// on an embedded struct. It walks the same field list bindStruct binds
-// ([configFields]), so every nested struct Load could reach is checked.
 func checkConfigShape(t reflect.Type, active map[reflect.Type]bool) error {
 	if active[t] {
 		return fmt.Errorf("config: recursive struct %s is unsupported", t)

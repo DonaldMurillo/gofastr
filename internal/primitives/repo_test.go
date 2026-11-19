@@ -170,6 +170,7 @@ var ownedPackages = []string{
 	"core/tracing",
 	"core/settings",
 	"core/featureflag",
+	"core/config",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",
