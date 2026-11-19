@@ -56,6 +56,9 @@ export async function use(): Promise<void> {
 func TestOpenAPISDKTypesCompile(t *testing.T) {
 	tsc, err := exec.LookPath("tsc")
 	if err != nil {
+		if os.Getenv("GOFASTR_REQUIRE_TSC") != "" {
+			t.Fatal("tsc is not on PATH and GOFASTR_REQUIRE_TSC is set")
+		}
 		t.Skip("tsc is not on PATH")
 	}
 	out := oaSDKGenerate(t, oaSDKFixture)

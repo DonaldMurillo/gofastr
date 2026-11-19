@@ -68,9 +68,10 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKClientBodiesBounded
   - id: js-types-compile
-    rule: The generated client.d.ts passes tsc --strict, declares an all-optional parameter object before a required body as P | undefined, and types a JSON result T | null.
+    rule: The generated client.d.ts passes tsc --strict, declares an all-optional parameter object before a required body as P | undefined, and types a JSON result T | null; the check skips without tsc only when GOFASTR_REQUIRE_TSC is unset, and CI's test job sets it and installs one pinned TypeScript.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKTypesCompile
+      - test: cmd/gofastr.TestCITypeScriptIsPinned
   - id: sdk-refusals-name-the-sdk
     rule: A refusal the shared walk raises for the SDK names the SDK and its parameters, never a flag or the CLI's help output, and terminal-control bytes in a summary or description are dropped from the SDK's comments instead of refused.
     enforced_by:

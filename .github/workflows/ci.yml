@@ -104,6 +104,11 @@ jobs:
       # drifts from it, fails the job instead of quietly skipping. Local dev
       # leaves it unset → tests keep skipping when no Postgres is around.
       PGTEST_REQUIRED: "1"
+      # The OpenAPI SDK's client.d.ts is type-checked with tsc
+      # (TestOpenAPISDKTypesCompile). Locally the test skips without tsc;
+      # here it fails instead, so a declaration regression cannot pass
+      # behind a skip. The TypeScript step below installs the pinned tsc.
+      GOFASTR_REQUIRE_TSC: "1"
       # Affected scope (cmd/affected). On a pull request, vet, the
       # deterministic test step and the coverage floors run over the
       # import-graph closure of the PR's changes: the checkout is the PR's
@@ -231,6 +236,13 @@ jobs:
           # every step at once; TestChromeIsPinned holds them to one value.
           chrome-version: "1745190"
           install-dependencies: true
+
+      - name: Install TypeScript (type-checks the generated SDK declarations)
+        # A pinned release, installed into the runner's own Node, whose bin
+        # directory is already on PATH: a moving version would change the
+        # tsc the cached test results saw. TestCITypeScriptIsPinned holds
+        # the pin and GOFASTR_REQUIRE_TSC together.
+        run: npm install -g typescript@6.0.2 && tsc --version
 
       - name: Install bubblewrap (linux sandbox backend + P1-P7 probes)
         # The process-module SandboxRunner (framework) shells to `bwrap` for
