@@ -28,7 +28,7 @@ decisions:
   - id: propagation-is-opt-in
     date: 2026-11-19
     status: accepted
-    decision: Transport injects traceparent only when PropagateTraceContext is given, for calls between the app's own services, and leaves a header the caller set alone.
+    decision: Transport injects traceparent only when PropagateTraceContext is given, for calls between the app's own services; without it a traceparent the caller set is forwarded unchanged, and with it the injected header replaces the caller's on the outgoing clone.
     rejected:
       - option: Propagate by default, as the server middleware extracts by default.
         why: The header hands the caller's trace and span ids to whatever host the request reaches, which for a webhook or third-party API is someone else's server.
