@@ -19,7 +19,7 @@ func firstGrepTopic(out string) string {
 }
 
 func TestDocsCommandListsGrepsAndReads(t *testing.T) {
-	list := clitest.CovT_capStdout(t, func() {
+	list := clitest.CaptureStdout(t, func() {
 		RunDocs([]string{"--list"})
 	})
 	if !strings.Contains(list, "entity-declarations") {
@@ -28,7 +28,7 @@ func TestDocsCommandListsGrepsAndReads(t *testing.T) {
 	if !strings.Contains(list, "ui-capability-map") {
 		t.Fatalf("docs list missing task-oriented UI capability map:\n%s", list)
 	}
-	grep := clitest.CovT_capStdout(t, func() {
+	grep := clitest.CaptureStdout(t, func() {
 		RunDocs([]string{"--grep", "owner scoping"})
 	})
 	if !strings.Contains(grep, "entity-declarations") {
@@ -48,14 +48,14 @@ func TestDocsCommandListsGrepsAndReads(t *testing.T) {
 		"reconciliation": "optimistic-ui",
 		"owner scoping":  "a2a", // the "Auth and owner scoping" section
 	} {
-		result := clitest.CovT_capStdout(t, func() { RunDocs([]string{"--grep", term}) })
+		result := clitest.CaptureStdout(t, func() { RunDocs([]string{"--grep", term}) })
 		first := firstGrepTopic(result)
 		if first != want {
 			t.Fatalf("docs grep %q routed to %q, want %q:\n%s", term, first, want, result)
 		}
 	}
 
-	capabilityMap := clitest.CovT_capStdout(t, func() {
+	capabilityMap := clitest.CaptureStdout(t, func() {
 		RunDocs([]string{"ui-capability-map"})
 	})
 	for _, want := range []string{"The state boundary", "Live dashboards", "Stateless and affinity-bound islands", "Common mistakes"} {
@@ -63,7 +63,7 @@ func TestDocsCommandListsGrepsAndReads(t *testing.T) {
 			t.Fatalf("ui-capability-map doc missing %q:\n%s", want, capabilityMap)
 		}
 	}
-	body := clitest.CovT_capStdout(t, func() {
+	body := clitest.CaptureStdout(t, func() {
 		RunDocs([]string{"entity-declarations"})
 	})
 	for _, want := range []string{

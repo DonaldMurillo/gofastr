@@ -23,7 +23,7 @@ func TestPackRefusesFlagAsOutput(t *testing.T) {
 				previous := cli.OsExit
 				t.Cleanup(func() { cli.OsExit = previous })
 				cli.OsExit = func(code int) { exitCode = code }
-				output := clitest.CovT_capStdout(t, func() { RunPack([]string{dir, flag, value.argument}) })
+				output := clitest.CaptureStdout(t, func() { RunPack([]string{dir, flag, value.argument}) })
 				if exitCode != 1 {
 					t.Errorf("%s %q exited %d, want refusal", flag, value.argument, exitCode)
 				}

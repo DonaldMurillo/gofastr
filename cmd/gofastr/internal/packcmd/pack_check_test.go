@@ -243,7 +243,7 @@ func TestPackCheckNotesGoToStderr(t *testing.T) {
 	}
 	oldErr := os.Stderr
 	os.Stderr = errF
-	out := clitest.CovT_capStdout(t, func() { RunPack([]string{dir}) })
+	out := clitest.CaptureStdout(t, func() { RunPack([]string{dir}) })
 	os.Stderr = oldErr
 	if _, err := errF.Seek(0, io.SeekStart); err != nil {
 		t.Fatal(err)
@@ -492,7 +492,7 @@ func TestPackNamesMissingSeedPassword(t *testing.T) {
 	origExit := clipkg.OsExit
 	clipkg.OsExit = func(int) {}
 	defer func() { clipkg.OsExit = origExit }()
-	out := clitest.CovT_capStdout(t, func() { RunPack([]string{"-o", filepath.Join(t.TempDir(), "out.yml"), dir}) })
+	out := clitest.CaptureStdout(t, func() { RunPack([]string{"-o", filepath.Join(t.TempDir(), "out.yml"), dir}) })
 	if !strings.Contains(out, "holds no ADMIN_SEED_PASSWORD") {
 		t.Fatalf("pack did not name the missing seed password:\n%s", out)
 	}

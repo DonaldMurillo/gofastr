@@ -134,7 +134,7 @@ nav:
 	if err := os.WriteFile(filepath.Join("gen", "public", "brochure.pdf"), []byte("%PDF"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out := clitest.CovT_capStdout(t, func() {
+	out := clitest.CaptureStdout(t, func() {
 		GenerateFromAppSpec(GenerateOptions{Spec: "gofastr.yml", outputDir: "gen", outputSet: true, dryRun: true})
 	})
 	if strings.Contains(out, "nav[0].href") {
