@@ -160,6 +160,7 @@ var ownedPackages = []string{
 	"core/a2a",
 	"core/netguard",
 	"core/upload",
+	"core/static",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",
