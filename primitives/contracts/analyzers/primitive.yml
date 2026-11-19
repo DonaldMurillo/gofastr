@@ -21,7 +21,7 @@ invariants:
       - test: framework/contracts/internal/codetext.TestSweepCoreUnterminatedQuoteEndsAtNewline
       - test: framework/contracts/internal/codetext.TestSweepCoreOpenQuoteDoesNotSwallowTheFile
   - id: unterminated-comment-is-returned
-    rule: Comments returns a comment left open at end of file, with the line it starts on.
+    rule: Comments returns each top-level comment's starting line and exact byte span, including a comment left open at end of file.
     enforced_by:
       - test: framework/contracts/internal/codetext.TestCommentsCarryStartLine
   - id: import-suffix-on-a-segment

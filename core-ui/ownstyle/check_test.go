@@ -126,6 +126,15 @@ func TestCheckUnknownTokens(t *testing.T) {
 	}
 }
 
+func TestTokenSuggestionsKeepRuneDistanceAndCutoff(t *testing.T) {
+	if got, ok := closestToken("--radius-éé", []string{"--radius-aa"}); !ok || got != "--radius-aa" {
+		t.Errorf("closestToken = %q, %v, want --radius-aa at distance two", got, ok)
+	}
+	if got := editDistance("éééé", "", 2); got != 3 {
+		t.Errorf("editDistance = %d, want cutoff + 1", got)
+	}
+}
+
 type cssCase struct {
 	src  string
 	want string

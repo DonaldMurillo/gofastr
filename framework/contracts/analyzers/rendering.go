@@ -127,6 +127,30 @@ const navLead = `(?:^|[^.\w$])`
 
 const navQualChain = `(?:(?:window|document|self|top|parent|frames)\.)`
 
+var (
+	reDeclCSS  = regexp.MustCompile(`(?:^|[\s{;"` + "`" + `])(-{0,2}[A-Za-z][A-Za-z-]*)\s*:\s*([^;{}"` + "`" + `]+)`)
+	reDeclPair = regexp.MustCompile(`"([A-Za-z][A-Za-z-]*)",\s*"([^"]+)"`)
+)
+
+type cssDeclaration struct {
+	property, value string
+	offset          int
+}
+
+func scanCSSDeclarations(source string) []cssDeclaration {
+	var out []cssDeclaration
+	scan := func(delimiter string, pattern *regexp.Regexp) {
+		if strings.Contains(source, delimiter) {
+			for _, m := range pattern.FindAllStringSubmatchIndex(source, -1) {
+				out = append(out, cssDeclaration{strings.ToLower(source[m[2]:m[3]]), source[m[4]:m[5]], m[2]})
+			}
+		}
+	}
+	scan(":", reDeclCSS)
+	scan(`",`, reDeclPair)
+	return out
+}
+
 func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	var out []contracts.Diagnostic
 	for _, f := range p.AppFiles() {
@@ -159,14 +183,13 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 					out = append(out, checkFallbackDrift(f.Rel, lineNo, line, lines[i], ownTheme, inDark)...)
 				}
 			}
-			if ownsStyling && (strings.Contains(line, ":") || strings.Contains(line, `",`)) {
-				out = append(out, checkBareThemeLiterals(f.Rel, lineNo, line, lines[i], devSurface)...)
-			}
-			if ownsStyling && !devSurface && (strings.Contains(line, ":") || strings.Contains(line, `",`)) {
-				out = append(out, checkPhysicalSides(f.Rel, lineNo, line, lines[i], bgMirrored, inDir)...)
-			}
-			if ownsStyling && !devSurface && (strings.Contains(line, ":") || strings.Contains(line, `",`)) {
-				out = append(out, checkFlexReverse(f.Rel, lineNo, line, lines[i])...)
+			if ownsStyling {
+				decls := scanCSSDeclarations(line)
+				out = append(out, checkBareThemeLiterals(f.Rel, lineNo, decls, lines[i], devSurface)...)
+				if !devSurface {
+					out = append(out, checkPhysicalSides(f.Rel, lineNo, decls, lines[i], bgMirrored, inDir)...)
+					out = append(out, checkFlexReverse(f.Rel, lineNo, decls, lines[i])...)
+				}
 			}
 
 			if !strings.ContainsAny(line, ":@<") &&

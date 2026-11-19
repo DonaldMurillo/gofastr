@@ -3,25 +3,11 @@ package check
 import (
 	"go/ast"
 	"go/token"
-	"regexp"
+	"slices"
 	"strings"
-)
 
-// The //gofastr:allow(<name>) <why> marker, read with the grammar of
-// internal/analyzers/allow (that package needs go/analysis, which this
-// one must not import). A marker is live only as the FIRST thing in a
-// comment: a marker quoted in a string, or in prose partway through a
-// comment, is documentation. The reason is the comment's own text after
-// the parenthesis (less a block comment's closing delimiter) and must
-// not be empty; code after a block comment is not a reason. A trailing
-// marker covers its own line; a marker alone on its line covers that
-// line and the next one.
-//
-// The runtimeprose and layerprefix lints used to find the marker with
-// strings.Index anywhere on the line or the line above, so a trailing
-// marker silenced the next line too, and code after it counted as the
-// reason.
-var reAllowMarker = regexp.MustCompile(`^(?://|/\*)\s*gofastr:allow\(([A-Za-z0-9_,\s]+)\)(.*)$`)
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
+)
 
 // markerComment is one comment and where it sits.
 type markerComment struct {
@@ -34,17 +20,8 @@ type markerComment struct {
 func allowedLines(comments []markerComment, name string) map[int]bool {
 	out := map[int]bool{}
 	for _, c := range comments {
-		m := reAllowMarker.FindStringSubmatch(c.text)
-		if m == nil || !markerNames(m[1], name) {
-			continue
-		}
-		rest := m[2]
-		if strings.HasPrefix(c.text, "/*") {
-			rest = strings.TrimSuffix(strings.TrimSpace(rest), "*/")
-		}
-		// Separator punctuation alone ("--", "— :") is not a reason,
-		// the rule framework/contracts and internal/analyzers/allow hold.
-		if strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(rest), "-—:")) == "" {
+		m, ok := names.ParseMarker(c.text)
+		if !ok || m.File || m.Reason == "" || !slices.Contains(m.Rules, name) {
 			continue
 		}
 		out[c.line] = true
@@ -53,15 +30,6 @@ func allowedLines(comments []markerComment, name string) map[int]bool {
 		}
 	}
 	return out
-}
-
-func markerNames(list, name string) bool {
-	for n := range strings.SplitSeq(list, ",") {
-		if strings.TrimSpace(n) == name {
-			return true
-		}
-	}
-	return false
 }
 
 // jsComments returns the comments of a JS source. Code blanks every

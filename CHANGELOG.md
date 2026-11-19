@@ -25,6 +25,24 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **verify: a trailing CSS block-comment waiver covers its own line,** as
+  the docs say.
+- **verify: a capability-scoped run reports only that capability's rules**
+  and counts only their waivers. `verify entities` used to report
+  GOFASTR1901, a permissions rule.
+- **verify: a Go syntax error found while collecting waivers fails the
+  current report,** and a second run on the same pass reports it the same
+  way.
+- **verify: the stale-waiver autofix removes only the comment** when code
+  follows a block-comment waiver on the same line. It used to delete the
+  statement too.
+- **verify: applying fixes refuses an edit that targets a different file**
+  from its diagnostic.
+- **verify: GOFASTR1418 follows SQLite's rowid rule.** A nullable
+  `INTEGER PRIMARY KEY DESC` column is flagged, and a table-level
+  single-column `PRIMARY KEY` on an `INTEGER` column is not.
+- **verify: `enabled: false` wins over `severity` in the same rule or
+  capability map.** The severity used to re-enable the rule.
 - **verify: the permissions PII rule (GOFASTR1901) and the app-spec PII
   check agree.** Both flag acronym-led fields such as `SSNBackup`, and
   neither counts an access block holding only `anyone` as a gate.
@@ -284,6 +302,9 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **verify: `hostport` and `waitgroup` run once, in plain `go vet`.** The
+  suite stage no longer runs them a second time; the standalone vettool
+  and `make analyze` keep both.
 - **cli: `gofastr audit lint` uses the same detectors as `gofastr verify`.**
   It now reports raw-string and multiline SQL concatenation, `render.HTML`
   built with `Sprintf`, `Join` or a local string, and CSRF deficits that a

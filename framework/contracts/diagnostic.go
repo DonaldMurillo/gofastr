@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// TextEdit replaces the byte range [Start, End) of File, as read during
-// the pass, with New.
+// TextEdit replaces the byte range [Start, End) of File with New.
+// An empty File uses the enclosing diagnostic's file.
 type TextEdit struct {
 	File  string `json:"file"`
 	Start int    `json:"start"`

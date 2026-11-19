@@ -27,6 +27,14 @@ invariants:
       - test: framework/contracts/analyzers.TestCSSInACommentIsNotReported
       - test: framework/contracts/analyzers.TestScriptNavLookalikesAreClean
       - test: framework/contracts/analyzers.TestPhysicalSideDirBlockAcrossLines
+  - id: one-declaration-scan
+    rule: The bare-theme, physical-side and flex-reverse checks share one CSS and builder declaration scan with case-insensitive property names and original byte offsets for the dir override.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestBareThemeLiteralsAreReported
+      - test: framework/contracts/analyzers.TestBareThemeLiteralInSetPairIsReported
+      - test: framework/contracts/analyzers.TestPhysicalSideAfterDirBlockOnSameLine
+      - test: framework/contracts/analyzers.TestPhysicalSideInSetPairIsReported
+      - test: framework/contracts/analyzers.TestFlexReverseIsReported
   - id: hard-navigation-shapes
     rule: GOFASTR1802 fires on assigning location, or its href, search or pathname through any chain of window, document, self, top, parent or frames, with = or +=, and on location.reload, assign or replace; a comparison, a hash change and a property named location do not fire, and a bare location = needs a quoted value in Go but not in a script.
     enforced_by:

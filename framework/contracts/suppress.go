@@ -4,22 +4,18 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/framework/contracts/internal/codetext"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
-)
-
-var (
-	reAllowLine = regexp.MustCompile(`^(?:/\*|//|#)\s*gofastr:allow\(([^)]*)\)([^\n]*)`)
-	reAllowFile = regexp.MustCompile(`^(?:/\*|//|#)\s*gofastr:allow-file\(([^)]*)\)([^\n]*)`)
+	"github.com/DonaldMurillo/gofastr/internal/bom"
 )
 
 type suppression struct {
 	File     string
-	Line     int
+	Comment  codetext.Comment
 	Scope    int
 	ScopeEnd int
 	IsFile   bool
@@ -52,75 +48,95 @@ func collectSuppressions(p *Pass) *suppressionSet {
 		if !ok {
 			continue
 		}
-		lines := strings.Split(string(body), "\n")
-		for _, c := range commentRanges(p, f.Rel, lines) {
-			for _, m := range reAllowFile.FindAllStringSubmatch(c.text, -1) {
-				set.add(p, f.Rel, c.line, 0, 0, true, m[1], m[2])
+		source := string(body)
+		for _, c := range commentRanges(p, f, source) {
+			marker, ok := names.ParseMarker(c.Text)
+			if !ok {
+				continue
 			}
-			for _, m := range reAllowLine.FindAllStringSubmatch(c.text, -1) {
-				scopeStart, scopeEnd := scopeLineFor(lines, c.line-1)
-				scopeEnd = scopeEndFor(p, f.Rel, scopeEnd)
-				set.add(p, f.Rel, c.line, scopeStart, scopeEnd, false, m[1], m[2])
+			sup := &suppression{File: f.Rel, Comment: c, IsFile: marker.File, Reason: marker.Reason}
+			if !sup.IsFile {
+				sup.Scope = c.Line
+				sup.ScopeEnd = scopeEndFor(p, f.Rel, scopeLineFor(source, c))
 			}
+			set.add(p, sup, marker.Rules)
 		}
 	}
 	return set
 }
 
-type commentText struct {
-	line int
-	text string
-}
-
-func commentRanges(p *Pass, rel string, lines []string) []commentText {
-	if file, ok := p.AST(rel); ok {
-		out := make([]commentText, 0, len(file.Comments))
+func commentRanges(p *Pass, f SourceFile, source string) []codetext.Comment {
+	if file, ok := p.AST(f.Rel); ok {
+		var out []codetext.Comment
+		fset := p.FileSet()
 		for _, group := range file.Comments {
 			for _, c := range group.List {
-				out = append(out, commentText{
-					line: p.Position(c.Pos()).Line,
-					text: c.Text,
+				if !strings.Contains(c.Text, "gofastr:allow") {
+					continue
+				}
+				pos := fset.PositionFor(c.Pos(), false)
+				end := pos.Offset + goCommentLen(source[pos.Offset:])
+				out = append(out, codetext.Comment{
+					Line: pos.Line, Text: source[pos.Offset:end], Start: pos.Offset, End: end,
 				})
 			}
 		}
 		return out
 	}
-	if IsScriptPath(rel) {
-		var out []commentText
-		for _, c := range codetext.Comments(strings.Join(lines, "\n"), true) {
-			out = append(out, commentText{line: c.Line, text: c.Text})
-		}
-		return out
+	if !strings.Contains(source, "gofastr:allow") {
+		return nil
 	}
-	var out []commentText
-	for i, raw := range lines {
-		trimmed := strings.TrimSpace(raw)
-		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") ||
-			strings.HasPrefix(trimmed, "*") || strings.HasPrefix(trimmed, "/*") {
-			out = append(out, commentText{line: i + 1, text: trimmed})
+	if !f.IsCSS {
+		return codetext.Comments(source, f.IsScript)
+	}
+	var out []codetext.Comment
+	bomLen := len(source) - len(bom.Trim(source))
+	for _, tok := range ownstyle.Tokenize(source) {
+		if tok.Type == ownstyle.TokenComment {
+			out = append(out, codetext.Comment{
+				Line: tok.Line, Text: tok.Text, Start: tok.Start + bomLen, End: tok.End + bomLen,
+			})
 		}
 	}
 	return out
 }
 
-func scopeLineFor(lines []string, idx int) (int, int) {
-	trimmed := strings.TrimSpace(lines[idx])
-	standalone := strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#")
-	if !standalone && strings.HasPrefix(trimmed, "/*") {
-		if close := strings.Index(trimmed, "*/"); close < 0 || strings.TrimSpace(trimmed[close+2:]) == "" {
-			standalone = true
-		}
+func goCommentLen(source string) int {
+	if strings.HasPrefix(source, "/*") {
+		return strings.Index(source[2:], "*/") + 4
 	}
+	line, _, _ := strings.Cut(source, "\n")
+	return len(strings.TrimSuffix(line, "\r"))
+}
+
+func commentLineBounds(source string, c codetext.Comment) (start, end int, standalone bool) {
+	start = strings.LastIndexByte(source[:c.Start], '\n') + 1
+	if start == 0 {
+		start = len(source) - len(bom.Trim(source))
+	}
+	end = len(source)
+	if i := strings.IndexByte(source[c.End:], '\n'); i >= 0 {
+		end = c.End + i
+	}
+	standalone = strings.TrimSpace(source[start:c.Start]) == "" && strings.TrimSpace(source[c.End:end]) == ""
+	return
+}
+
+func scopeLineFor(source string, c codetext.Comment) int {
+	_, end, standalone := commentLineBounds(source, c)
 	if !standalone {
-		return idx + 1, idx + 1
+		return c.Line
 	}
-	for j := idx + 1; j < len(lines); j++ {
-		if strings.TrimSpace(lines[j]) == "" {
-			continue
+	line := c.Line + strings.Count(c.Text, "\n")
+	if end < len(source) {
+		for next := range strings.SplitSeq(source[end+1:], "\n") {
+			line++
+			if strings.TrimSpace(next) != "" {
+				return line
+			}
 		}
-		return idx + 1, j + 1
 	}
-	return idx + 1, idx + 1
+	return c.Line
 }
 
 func scopeEndFor(p *Pass, rel string, scope int) int {
@@ -144,20 +160,10 @@ func scopeEndFor(p *Pass, rel string, scope int) int {
 	return end
 }
 
-func (s *suppressionSet) add(p *Pass, file string, line, scope, scopeEnd int, isFile bool, ruleList, rest string) {
-	reason := strings.TrimSpace(rest)
-	reason = strings.TrimSuffix(reason, "*/")
-	reason = strings.TrimSpace(strings.TrimLeft(reason, "-—:"))
-
-	var rules []string
-	for _, part := range names.SplitRuleList(ruleList) {
-		if part = strings.TrimSpace(part); part != "" {
-			rules = append(rules, part)
-		}
-	}
-
+func (s *suppressionSet) add(p *Pass, sup *suppression, rules []string) {
+	file, line := sup.File, sup.Comment.Line
 	directive := "gofastr:allow"
-	if isFile {
+	if sup.IsFile {
 		directive = "gofastr:allow-file"
 	}
 
@@ -181,7 +187,7 @@ func (s *suppressionSet) add(p *Pass, file string, line, scope, scopeEnd int, is
 		}
 	}
 
-	if reason == "" {
+	if sup.Reason == "" {
 		s.issues = append(s.issues, Diagnostic{
 			RuleID: RuleSuppressionNoReason, File: file, Line: line,
 			Message: fmt.Sprintf("`//%s(%s)` has no reason", directive, strings.Join(rules, ",")),
@@ -190,7 +196,6 @@ func (s *suppressionSet) add(p *Pass, file string, line, scope, scopeEnd int, is
 		return
 	}
 
-	var known []string
 	for _, r := range rules {
 		if names.Known(r) {
 			continue
@@ -207,15 +212,11 @@ func (s *suppressionSet) add(p *Pass, file string, line, scope, scopeEnd int, is
 			s.issues = append(s.issues, d)
 			continue
 		}
-		known = append(known, r)
+		sup.Rules = append(sup.Rules, r)
 	}
-	if len(known) == 0 {
-		return
+	if len(sup.Rules) > 0 {
+		s.byFile[file] = append(s.byFile[file], sup)
 	}
-	s.byFile[file] = append(s.byFile[file], &suppression{
-		File: file, Line: line, Scope: scope, ScopeEnd: scopeEnd, IsFile: isFile,
-		Rules: known, Reason: reason,
-	})
 }
 
 func (s *suppressionSet) suppressed(d Diagnostic, rule Rule) bool {
@@ -229,8 +230,8 @@ func (s *suppressionSet) suppressed(d Diagnostic, rule Rule) bool {
 	return hit
 }
 
-func (s *suppressionSet) stale(p *Pass) []Diagnostic {
-	var out []Diagnostic
+func (s *suppressionSet) stale(active func(Rule) bool) []*suppression {
+	var out []*suppression
 	files := make([]string, 0, len(s.byFile))
 	for f := range s.byFile {
 		files = append(files, f)
@@ -238,67 +239,46 @@ func (s *suppressionSet) stale(p *Pass) []Diagnostic {
 	sort.Strings(files)
 	for _, f := range files {
 		for _, sup := range s.byFile[f] {
-			if sup.used {
-				continue
+			if !sup.used && sup.rulesActive(active) {
+				out = append(out, sup)
 			}
-			out = append(out, Diagnostic{
-				RuleID: RuleSuppressionStale, File: f, Line: sup.Line,
-				Message:    fmt.Sprintf("suppression for %s matches nothing here", strings.Join(sup.Rules, ", ")),
-				Suggestion: "delete the directive: the finding it silenced is gone",
-				Snippet:    p.Line(f, sup.Line),
-				Evidence:   map[string]string{"reason": sup.Reason},
-				Fix:        deleteDirectiveFix(p, f, sup.Line),
-			})
 		}
 	}
 	return out
 }
 
-func deleteDirectiveFix(p *Pass, rel string, line int) *SuggestedFix {
-	body, ok := p.Source(rel)
-	if !ok || line < 1 {
-		return nil
-	}
-	lines := strings.Split(string(body), "\n")
-	if line > len(lines) {
-		return nil
-	}
-	offset := 0
-	for i := 0; i < line-1; i++ {
-		offset += len(lines[i]) + 1
-	}
-	text := lines[line-1]
-	idx := directiveStart(text)
-	if idx < 0 {
-		return nil
-	}
-	before := text[:idx]
-	if strings.TrimSpace(before) == "" {
-		end := offset + len(text) + 1
-		if end > len(body) {
-			end = len(body)
-		}
-		return &SuggestedFix{
-			Description: "delete the stale suppression",
-			Edits:       []TextEdit{{File: rel, Start: offset, End: end, Old: string(body[offset:end])}},
+func (s *suppression) rulesActive(active func(Rule) bool) bool {
+	for _, name := range s.Rules {
+		r, ok := LookupRule(name)
+		if !ok || !active(r) {
+			return false
 		}
 	}
-	start := offset + len(strings.TrimRight(before, " \t"))
-	end := offset + len(strings.TrimRight(text, "\r"))
-	if end <= start {
-		return nil
-	}
-	return &SuggestedFix{
-		Description: "delete the stale suppression",
-		Edits:       []TextEdit{{File: rel, Start: start, End: end, Old: string(body[start:end])}},
+	return true
+}
+
+func (s *suppression) staleDiagnostic(p *Pass) Diagnostic {
+	return Diagnostic{
+		RuleID: RuleSuppressionStale, File: s.File, Line: s.Comment.Line,
+		Message:    fmt.Sprintf("suppression for %s matches nothing here", strings.Join(s.Rules, ", ")),
+		Suggestion: "delete the directive: the finding it silenced is gone",
+		Snippet:    p.Line(s.File, s.Comment.Line),
+		Evidence:   map[string]string{"reason": s.Reason},
 	}
 }
 
-func directiveStart(line string) int {
-	for _, marker := range []string{"//gofastr:allow", "// gofastr:allow", "/*gofastr:allow", "/* gofastr:allow", "#gofastr:allow", "# gofastr:allow"} {
-		if i := strings.Index(line, marker); i >= 0 {
-			return i
-		}
+func (s *suppression) deletion(p *Pass) *SuggestedFix {
+	body, ok := p.Source(s.File)
+	c := s.Comment
+	if !ok || c.Start < 0 || c.End <= c.Start || c.End > len(body) || string(body[c.Start:c.End]) != c.Text {
+		return nil
 	}
-	return -1
+	start, end := c.Start, c.End
+	if lineStart, lineEnd, standalone := commentLineBounds(string(body), c); standalone {
+		start, end = lineStart, min(lineEnd+1, len(body))
+	}
+	return &SuggestedFix{
+		Description: "delete the stale suppression",
+		Edits:       []TextEdit{{File: s.File, Start: start, End: end, Old: string(body[start:end])}},
+	}
 }

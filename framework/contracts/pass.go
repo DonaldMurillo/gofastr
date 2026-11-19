@@ -53,12 +53,13 @@ type Pass struct {
 
 	files []SourceFile
 
-	mu       sync.Mutex
-	fset     *token.FileSet
-	sources  map[string][]byte
-	asts     map[string]*ast.File
-	unparsed map[string]string
-	memo     map[string]any
+	mu            sync.Mutex
+	fset          *token.FileSet
+	sources       map[string][]byte
+	asts          map[string]*ast.File
+	readFailures  map[string]string
+	parseFailures map[string]string
+	memo          map[string]any
 }
 
 // NewPass discovers every source file under root and returns a pass ready
@@ -86,14 +87,15 @@ func NewPass(root string, cfg *Config) (*Pass, error) {
 		cfg = DefaultConfig()
 	}
 	p := &Pass{
-		Root:       abs,
-		ModulePath: ReadModulePath(abs),
-		Config:     cfg,
-		fset:       token.NewFileSet(),
-		sources:    map[string][]byte{},
-		asts:       map[string]*ast.File{},
-		unparsed:   map[string]string{},
-		memo:       map[string]any{},
+		Root:          abs,
+		ModulePath:    ReadModulePath(abs),
+		Config:        cfg,
+		fset:          token.NewFileSet(),
+		sources:       map[string][]byte{},
+		asts:          map[string]*ast.File{},
+		readFailures:  map[string]string{},
+		parseFailures: map[string]string{},
+		memo:          map[string]any{},
 	}
 	if err := p.discover(); err != nil {
 		return nil, err
@@ -109,13 +111,13 @@ func (p *Pass) discover() error {
 			}
 			if d != nil && d.IsDir() {
 				if rel, relErr := filepath.Rel(p.Root, path); relErr == nil {
-					p.unparsed[filepath.ToSlash(rel)] = err.Error()
+					p.readFailures[filepath.ToSlash(rel)] = err.Error()
 				}
 				return fs.SkipDir
 			}
 			if strings.HasSuffix(path, ".go") || strings.HasSuffix(path, ".css") || IsScriptPath(path) {
 				if rel, relErr := filepath.Rel(p.Root, path); relErr == nil {
-					p.unparsed[filepath.ToSlash(rel)] = err.Error()
+					p.readFailures[filepath.ToSlash(rel)] = err.Error()
 				}
 			}
 			return nil
@@ -142,7 +144,7 @@ func (p *Pass) discover() error {
 		rel = filepath.ToSlash(rel)
 		body, readErr := os.ReadFile(path)
 		if readErr != nil {
-			p.unparsed[rel] = readErr.Error()
+			p.readFailures[rel] = readErr.Error()
 			return nil
 		}
 		p.sources[rel] = body
@@ -309,36 +311,34 @@ func (p *Pass) AST(rel string) (*ast.File, bool) {
 	f, err := parser.ParseFile(p.fset, rel, body, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		p.asts[rel] = nil
-		if p.unparsed == nil {
-			p.unparsed = map[string]string{}
-		}
-		p.unparsed[rel] = err.Error()
+		p.parseFailures[rel] = err.Error()
 		return nil, false
 	}
 	p.asts[rel] = f
 	return f, true
 }
 
-// Unparsed returns the files whose source could not be read or parsed,
-// keyed by path, with the read or parser error. NewPass remains inspectable;
-// Run refuses unreadable discovery and marks later parse failures incomplete.
+// Unparsed returns a copy of read and parse errors keyed by source path.
+// Run refuses read failures and reports parse failures as incomplete analysis.
 func (p *Pass) Unparsed() map[string]string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	out := make(map[string]string, len(p.unparsed))
-	for k, v := range p.unparsed {
+	out := make(map[string]string, len(p.readFailures)+len(p.parseFailures))
+	for k, v := range p.readFailures {
+		out[k] = v
+	}
+	for k, v := range p.parseFailures {
 		out[k] = v
 	}
 	return out
 }
 
 func (p *Pass) discoveryError() error {
-	unparsed := p.Unparsed()
-	if len(unparsed) == 0 {
+	if len(p.readFailures) == 0 {
 		return nil
 	}
-	failures := make([]string, 0, len(unparsed))
-	for path, reason := range unparsed {
+	failures := make([]string, 0, len(p.readFailures))
+	for path, reason := range p.readFailures {
 		failures = append(failures, fmt.Sprintf("%q: %q", path, reason))
 	}
 	sort.Strings(failures)
@@ -350,8 +350,8 @@ func (p *Pass) Position(pos token.Pos) token.Position {
 	return p.FileSet().Position(pos)
 }
 
-// Memo computes a value once per pass and shares it across analyzers;
-// the first caller's value wins.
+// Memo shares the first value stored for key across analyzers. Concurrent
+// cache misses may compute the value more than once.
 func (p *Pass) Memo(key string, compute func() any) any {
 	p.mu.Lock()
 	if v, ok := p.memo[key]; ok {

@@ -892,9 +892,14 @@ log, outbox, queue, webhooks, idempotency keys, feature flags, the auth
 stores and the rest) follow the same rule: a new one refuses a `NULL` key
 on SQLite, and one that already exists is left as it was. For a `CREATE
 TABLE` you write by hand, `gofastr verify` reports a primary-key column
-with no `NOT NULL` (`GOFASTR1418`): write `id TEXT PRIMARY KEY NOT NULL`,
-and `NOT NULL` on each column a `PRIMARY KEY (a, b)` names. The rule reads
-SQL written in Go strings; a `.sql` migration file is yours to check.
+that can store NULL on SQLite (`GOFASTR1418`). Write
+`id TEXT PRIMARY KEY NOT NULL` and add `NOT NULL` to each column a
+`PRIMARY KEY (a, b)` names. A rowid table fills a single `INTEGER` key
+automatically with either `id INTEGER PRIMARY KEY` or
+`id INTEGER, PRIMARY KEY (id)`. Inline `INTEGER PRIMARY KEY DESC` can
+store NULL unless you add `NOT NULL`. In `STRICT` and `WITHOUT ROWID`
+tables, primary-key columns refuse NULL or, for a rowid alias, fill
+themselves. The rule reads SQL written in Go strings.
 A table with no primary key is allowed but cannot be referenced. `RawType` on a column overrides
 the portable type with an exact SQL type (`NUMERIC(10,2)`, `INET`, …) and works
 on entity fields too. A raw table has no CRUD routes, and the admin's

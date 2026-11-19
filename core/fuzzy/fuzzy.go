@@ -3,6 +3,15 @@ package fuzzy
 
 // Levenshtein returns the bytewise edit distance between a and b.
 func Levenshtein(a, b string) int {
+	return levenshtein([]byte(a), []byte(b))
+}
+
+// LevenshteinRunes returns the edit distance in Unicode code points.
+func LevenshteinRunes(a, b string) int {
+	return levenshtein([]rune(a), []rune(b))
+}
+
+func levenshtein[T comparable](a, b []T) int {
 	la, lb := len(a), len(b)
 	if la == 0 {
 		return lb
@@ -26,14 +35,9 @@ func Levenshtein(a, b string) int {
 			if a[i-1] == b[j-1] {
 				cost = 0
 			}
-			curr[j] = min3(prev[j]+1, curr[j-1]+1, prev[j-1]+cost)
+			curr[j] = min(prev[j]+1, curr[j-1]+1, prev[j-1]+cost)
 		}
 		prev, curr = curr, prev
 	}
 	return prev[lb]
-}
-
-func min3(a, b, c int) int {
-	m := min(c, min(b, a))
-	return m
 }

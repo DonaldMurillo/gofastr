@@ -7,18 +7,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-func checkFlexReverse(rel string, lineNo int, scan, orig string) []contracts.Diagnostic {
-	scan = strings.ToLower(scan)
-	if !strings.Contains(scan, "-reverse") {
-		return nil
-	}
+func checkFlexReverse(rel string, lineNo int, decls []cssDeclaration, orig string) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	report := func(prop, value string) {
-		prop = strings.ToLower(prop)
+	for _, decl := range decls {
+		prop := decl.property
 		if prop != "flex-direction" && prop != "flex-flow" {
-			return
+			continue
 		}
-		for _, tok := range cssTokens(strings.ToLower(value)) {
+		for _, tok := range cssTokens(strings.ToLower(decl.value)) {
 			if tok != "row-reverse" && tok != "column-reverse" {
 				continue
 			}
@@ -30,17 +26,7 @@ func checkFlexReverse(rel string, lineNo int, scan, orig string) []contracts.Dia
 					prop, tok),
 				Snippet: strings.TrimSpace(orig),
 			})
-			return
-		}
-	}
-	if strings.Contains(scan, ":") {
-		for _, m := range reBareDeclCSS.FindAllStringSubmatch(scan, -1) {
-			report(m[1], m[2])
-		}
-	}
-	if strings.Contains(scan, `",`) {
-		for _, m := range reBareDeclPair.FindAllStringSubmatch(scan, -1) {
-			report(m[1], m[2])
+			break
 		}
 	}
 	return out

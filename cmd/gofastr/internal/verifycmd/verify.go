@@ -459,7 +459,7 @@ func runGoVet(root string, capture bool) (out, suiteSkipped string, ok bool) {
 	}
 	ok = true
 	if suiteArgs != nil {
-		ok = run(suiteArgs, suiteEnv)
+		ok = run(append(suiteArgs, "-hostport=false", "-waitgroup=false"), suiteEnv)
 	}
 	return strings.TrimSpace(buf.String()), suiteSkipped, ok
 }
@@ -743,9 +743,8 @@ severity unless a gofastr.settings.yml relaxes it, or a
   --json             Machine-readable report (every diagnostic carries its rule)
   --sarif <file>     Write SARIF 2.1.0 for code scanning / IDE integration
   --fix              Apply the mechanical fixes, then re-verify
-  --baseline-write   Record every current finding as accepted debt, so only
-                     NEW findings fail from now on. How an existing codebase
-                     adopts verify without fixing everything first.
+  --baseline-write   Write current gating findings as accepted debt to the
+                     baseline file. Commit the file to share it with the team.
   --baseline <file>  Use a baseline other than .gofastr-contracts-baseline.json
   --changed[=<ref>]  Report only findings in files this change touched.
                      Bare form = uncommitted work; with a ref = everything

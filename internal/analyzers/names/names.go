@@ -1,13 +1,12 @@
-// Package names is the dependency-free list of repo analyzer names: the
-// vocabulary of the //gofastr:allow(<name>) marker. It carries no
-// go/analysis import on purpose, so framework/contracts (and every nested
-// module that builds it) can consult the list without pulling x/tools
-// into its go.sum.
+// Package names holds the repo analyzer vocabulary and parses allow markers
+// without importing go/analysis.
 package names
 
 import (
+	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // Analyzers is every repo analyzer the vettool registers, by the name a
@@ -110,15 +109,44 @@ func Known(name string) bool {
 	return slices.Contains(Analyzers, name) || slices.Contains(Lints, name)
 }
 
-// SplitRuleList splits a marker's rule list on commas, spaces and
-// tabs — the one grammar both suppression pipelines read. Until
-// 2026-11 the vettool split on commas only, so a marker written
-// `//gofastr:allow(rootwrite rootread) why` — the form
-// framework/contracts/suppress.go documents — silenced nothing in a
-// `go vet -vettool` run while the same list worked under `gofastr
-// verify`. framework/contracts/suppress.go calls this too.
+// SplitRuleList splits a marker's rule list on commas, spaces and tabs.
 func SplitRuleList(list string) []string {
 	return strings.FieldsFunc(list, func(r rune) bool {
 		return r == ',' || r == ' ' || r == '\t'
 	})
+}
+
+var marker = regexp.MustCompile(`^(?://|/\*)\s*gofastr:allow(-file)?\(([^)]*)\)([^\n]*)`)
+
+// Marker is a parsed directive. The caller validates its rules and reason
+// and decides which lines the directive covers.
+type Marker struct {
+	File   bool
+	Rules  []string
+	Reason string
+}
+
+// ParseMarker recognizes a directive at the start of a comment token.
+func ParseMarker(comment string) (Marker, bool) {
+	m := marker.FindStringSubmatch(comment)
+	if m == nil {
+		return Marker{}, false
+	}
+	reason := strings.TrimSpace(m[3])
+	if strings.HasPrefix(comment, "/*") {
+		reason = strings.TrimSuffix(reason, "*/")
+	}
+	reason = strings.TrimLeftFunc(reason, func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune("-—:", r)
+	})
+	out := Marker{
+		File:   m[1] != "",
+		Reason: strings.TrimSpace(reason),
+	}
+	for _, rule := range SplitRuleList(m[2]) {
+		if rule = strings.TrimSpace(rule); rule != "" {
+			out.Rules = append(out.Rules, rule)
+		}
+	}
+	return out, true
 }

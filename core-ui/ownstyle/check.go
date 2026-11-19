@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/fuzzy"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
@@ -940,33 +941,8 @@ func closestToken(name string, names []string) (string, bool) {
 	return "", false
 }
 
-// editDistance is Levenshtein with an early exit once the distance
-// exceeds cutoff (returns cutoff+1).
 func editDistance(a, b string, cutoff int) int {
-	ra, rb := []rune(a), []rune(b)
-	if len(ra) == 0 {
-		return min(len(rb), cutoff+1)
-	}
-	if len(rb) == 0 {
-		return min(len(ra), cutoff+1)
-	}
-	prev := make([]int, len(rb)+1)
-	cur := make([]int, len(rb)+1)
-	for j := range len(rb) {
-		prev[j] = j
-	}
-	for i := 1; i <= len(ra); i++ {
-		cur[0] = i
-		for j := 1; j <= len(rb); j++ {
-			cost := 1
-			if ra[i-1] == rb[j-1] {
-				cost = 0
-			}
-			cur[j] = min(min(cur[j-1]+1, prev[j]+1), prev[j-1]+cost)
-		}
-		prev, cur = cur, prev
-	}
-	return min(prev[len(rb)], cutoff+1)
+	return min(fuzzy.LevenshteinRunes(a, b), cutoff+1)
 }
 
 // significantTokens filters whitespace and comment tokens out of a run.

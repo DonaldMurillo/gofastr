@@ -14,6 +14,7 @@ var (
 	rePhysicalWord   = regexp.MustCompile(`(?:^|\s)(left|right)(?:\s|$)`)
 	reFourValue      = regexp.MustCompile(`^(?:margin|padding|inset|scroll-margin|scroll-padding|border-width|border-style|border-color)$`)
 	reDirOverride    = regexp.MustCompile(`:dir\((?:rtl|ltr)\)`)
+	reBackgroundPos  = regexp.MustCompile(`(?i)background-position`)
 )
 
 func cssTokens(v string) []string {
@@ -94,16 +95,15 @@ func physicalSide(prop, value string, bgMirrored bool) (lit, want string, ok boo
 	return "", "", false
 }
 
-func checkPhysicalSides(rel string, lineNo int, scan, orig string, bgMirrored bool, inDir []bool) []contracts.Diagnostic {
+func checkPhysicalSides(rel string, lineNo int, decls []cssDeclaration, orig string, bgMirrored bool, inDir []bool) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	report := func(prop, value string, off int) {
-		if off < len(inDir) && inDir[off] {
-			return
+	for _, decl := range decls {
+		if decl.offset < len(inDir) && inDir[decl.offset] {
+			continue
 		}
-		prop = strings.ToLower(prop)
-		lit, want, ok := physicalSide(prop, value, bgMirrored)
+		lit, want, ok := physicalSide(decl.property, decl.value, bgMirrored)
 		if !ok {
-			return
+			continue
 		}
 		out = append(out, contracts.Diagnostic{
 			RuleID: contracts.RulePhysicalSide,
@@ -113,16 +113,6 @@ func checkPhysicalSides(rel string, lineNo int, scan, orig string, bgMirrored bo
 				lit, want),
 			Snippet: strings.TrimSpace(orig),
 		})
-	}
-	if strings.Contains(scan, ":") {
-		for _, m := range reBareDeclCSS.FindAllStringSubmatchIndex(scan, -1) {
-			report(scan[m[2]:m[3]], scan[m[4]:m[5]], m[2])
-		}
-	}
-	if strings.Contains(scan, `",`) {
-		for _, m := range reBareDeclPair.FindAllStringSubmatchIndex(scan, -1) {
-			report(scan[m[2]:m[3]], scan[m[4]:m[5]], m[2])
-		}
 	}
 	return out
 }
@@ -134,16 +124,10 @@ func mirrorsBackground(scan []string) bool {
 		if flags == nil {
 			continue
 		}
-		for start := 0; start < len(line); {
-			offset := strings.Index(line[start:], "background-position")
-			if offset < 0 {
-				break
-			}
-			position := start + offset
-			if position < len(flags) && flags[position] {
+		for _, match := range reBackgroundPos.FindAllStringIndex(line, -1) {
+			if flags[match[0]] {
 				return true
 			}
-			start = position + len("background-position")
 		}
 	}
 	return false

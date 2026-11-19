@@ -2,6 +2,8 @@ primitive: contracts
 summary: The semantic checks behind gofastr verify - the rule catalog, the analyzer and pass interfaces, and the run that turns diagnostics into a report.
 code:
   - framework/contracts/
+  - cmd/gofastr/internal/verifycmd/
+  - internal/analyzers/suite/
 docs:
   - framework/docs/content/contracts.md
 on_change:
@@ -31,6 +33,17 @@ invariants:
     rule: Run overwrites a diagnostic's Slug, Capability and Severity from the catalog and config, fills an empty Suggestion with the rule's Fix, and attaches the rule.
     enforced_by:
       - test: framework/contracts.TestSweepEngineRunTakesSeverityFromTheCatalog
+  - id: capability-filters-by-rule
+    rule: A capability filter admits a finding by its rule rather than its analyzer, preserves meta findings, and counts a stale waiver only when every rule it names is active.
+    enforced_by:
+      - test: framework/contracts.TestSweepEngineCapabilityFiltersRulesAndWaivers
+  - id: verify-vet-passes-run-once
+    rule: Verify disables hostport and waitgroup only in its second vet pass because plain vet already runs them, and the standalone suite retains both.
+    enforced_by:
+      - test: cmd/gofastr/internal/verifycmd.TestVerifyDisablesDuplicatePassesOnlyInSuiteStage
+      - test: internal/analyzers/suite.TestStandaloneSuiteKeepsStockVetPasses
+    applies:
+      - cmd/vettool/
   - id: redacted-snippet-stays-empty
     rule: Run never fills Snippet from source for a diagnostic marked RedactSnippet.
     enforced_by:
@@ -93,10 +106,11 @@ invariants:
     enforced_by:
       - test: framework/contracts.TestGeneratedSourceNeedsFullHeader
   - id: parse-failure-is-recorded
-    rule: A Go file that fails to parse is recorded in Unparsed, and a nonzero Unparsed fails the report.
+    rule: A Go syntax error counts in the current report even when suppression collection finds it, and a cached parse failure does not become a source discovery error.
     enforced_by:
       - test: framework/contracts.TestUnparsedFilesAreCountedAndReported
       - test: framework/contracts.TestUnparsedReportCannotPass
+      - test: framework/contracts.TestSweepEngineCountsParseFailuresFoundBySuppressionCollection
   - id: unreadable-subtree-is-recorded
     rule: An unreadable file or subtree under the root is recorded in Unparsed while its readable siblings are still discovered.
     enforced_by:
@@ -139,11 +153,11 @@ decisions:
     rejected:
       - option: Rewrite `:id` to `{id}` mechanically.
         why: The handler still reads the parameter the old way, so a loud 404 becomes a route that fails quietly; only a human knows what it should read.
-  - id: stale-waivers-are-consumed-eagerly
+  - id: active-stale-waivers-are-consumed-first
     date: 2026-11-17
     status: accepted
-    decision: Run consumes a GOFASTR0002 waiver before deciding whether the stale finding it covers is reportable on a narrowed run, so Suppressed may count that waiver.
+    decision: Run narrows stale candidates to active rules before consuming GOFASTR0002 waivers, and marks the waivers used before reporting the remaining candidates.
     rejected:
-      - option: Consume the waiver only when its finding would be reported.
-        why: The waiver stays unused on the narrowed run and is reported stale itself on the next full run.
+      - option: Report each candidate as it is visited.
+        why: A waiver covering a later stale candidate could be reported stale before its use is known.
     upholds: [contracts.config/stale-directive-is-waivable]

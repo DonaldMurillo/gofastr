@@ -25,32 +25,14 @@
 package allow
 
 import (
-	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
 	"go/token"
 	"os"
-	"regexp"
+	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
 	"golang.org/x/tools/go/analysis"
 )
-
-// marker matches a live allow directive AT THE START of a comment
-// token. The anchor is the grammar framework/contracts/suppress.go:35
-// states: a directive must be the first thing in its comment, so prose
-// or documentation that merely MENTIONS the marker ("The
-// //gofastr:allow(worldreadable) marker is documented in allow.go.")
-// disables nothing. Until 2026-09-07 the pattern was unanchored, and a
-// mid-prose mention above a trigger line suppressed the diagnostic
-// (the round-5 red test in prose_security_test.go pinned it).
-//
-// The rest is captured without a line anchor and without crossing a
-// newline (`[^\n]*`, suppress.go's capture): a block comment may open
-// the marker on one line and carry its reason on the next
-// (`/*\ngofastr:allow(x) why\n*/`); a `(.*)$` capture matched nothing
-// there, because `.` stops at the newline while `$` without (?m) only
-// matches at the end of the whole token (2026-11-03 finding
-// R8-AZ10-02).
-var marker = regexp.MustCompile(`^(?://|/\*)\s*gofastr:allow\(([A-Za-z0-9_,\s]+)\)([^\n]*)`)
 
 // Guard rewrites a's Run so diagnostics on an allowed line are dropped.
 // It mutates a in place and returns it, so a registration list can be
@@ -103,8 +85,8 @@ func collect(pass *analysis.Pass, name string) map[lineKey]bool {
 		var src []byte
 		for _, cg := range f.Comments {
 			for _, c := range cg.List {
-				m := marker.FindStringSubmatch(c.Text)
-				if m == nil || !listNames(m[1], name) || reason(c.Text, m[2]) == "" {
+				m, ok := names.ParseMarker(c.Text)
+				if !ok || m.File || m.Reason == "" || !slices.Contains(m.Rules, name) {
 					continue
 				}
 				pos := pass.Fset.Position(c.Pos())
@@ -132,22 +114,6 @@ func readFile(pass *analysis.Pass, name string) []byte {
 	return b
 }
 
-// reason returns the marker's reason: the text after the parenthesis,
-// less a block comment's closing delimiter, so `/* gofastr:allow(x) */`
-// carries none.
-//
-// Separator punctuation is not a reason either: `//gofastr:allow(x) --`
-// or `— :` says nothing, and framework/contracts/suppress.go already
-// trims the same "-—:" run before it demands one, so gofastr verify
-// reported such a marker as reasonless while the vettool honoured it
-// (2026-11-02 guard bash).
-func reason(text, rest string) string {
-	if strings.HasPrefix(text, "/*") {
-		rest = strings.TrimSuffix(strings.TrimSpace(rest), "*/")
-	}
-	return strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(rest), "-—:"))
-}
-
 // standsAlone reports whether the comment is the only thing on its
 // line(s): nothing but whitespace before its start, and nothing but
 // whitespace after its end. A block comment followed by code on the same
@@ -170,19 +136,6 @@ func standsAlone(src []byte, pos, end token.Position) bool {
 		stop++
 	}
 	return strings.TrimSpace(string(src[end.Offset:stop])) == ""
-}
-
-// listNames reports whether the marker's rule list names name. The
-// list separates rules with commas, spaces or tabs — names.SplitRuleList,
-// the same grammar framework/contracts/suppress.go reads (2026-11:
-// commas alone left a space-separated list silencing nothing here).
-func listNames(list, name string) bool {
-	for _, n := range names.SplitRuleList(list) {
-		if strings.TrimSpace(n) == name {
-			return true
-		}
-	}
-	return false
 }
 
 // Names and Known re-export the marker vocabulary from internal/analyzers/

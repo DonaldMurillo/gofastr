@@ -45,7 +45,7 @@ func TestPhysicalSidesAreReported(t *testing.T) {
 // CSS; the override's exemption ends at its own closing brace, and the
 // rule after it is judged on its own bytes.
 func TestPhysicalSideAfterDirBlockOnSameLine(t *testing.T) {
-	ds := designFixture(t, "framework/ui/x.go", "package ui\n\nvar css = `:dir(rtl) .chev { transform: scaleX(-1) } .menu { border-right: 1px solid var(--color-border); }`\n")
+	ds := designFixture(t, "framework/ui/x.go", "package ui\n\nvar css = `:dir(rtl) .chev { BORDER-LEFT: 1px solid red } .menü { BORDER-RIGHT: 1px solid var(--color-border); }`\n")
 	found := countRule(t, ds, contracts.RulePhysicalSide)
 	if len(found) != 1 || !strings.Contains(found[0].Message, "border-inline-end") {
 		t.Fatalf("the .menu rule after the :dir() block is its own declaration; got %v", found)
@@ -77,7 +77,7 @@ func TestLTRBackgroundOverrideDoesNotMirrorRTL(t *testing.T) {
 
 func TestPhysicalSideInSetPairIsReported(t *testing.T) {
 	ds := designFixture(t, "core-ui/widget/page.go",
-		"package widget\n\nfunc f(ss *Sheet) {\n\tss.Rule(\".a\").Set(\"left\", \"{spacing.lg}\", \"text-align\", \"right\").End()\n}\n")
+		"package widget\n\nfunc f(ss *Sheet) {\n\tss.Rule(\".a\").Set(\"LEFT\", \"{spacing.lg}\", \"TEXT-ALIGN\", \"right\").End()\n}\n")
 	if found := countRule(t, ds, contracts.RulePhysicalSide); len(found) != 2 {
 		t.Fatalf("want 2 GOFASTR1824 on the Set pairs, got %d: %v", len(found), found)
 	}
@@ -135,7 +135,7 @@ func TestPhysicalSideDirBlockAcrossLines(t *testing.T) {
 	}{
 		{"var css = `.a:dir(rtl) {\n  margin-left: var(--spacing-sm, 4px);\n}`", 0},
 		{"var css = `.a:dir(rtl) {\n  margin-left: 0;\n}\n.b {\n  margin-left: var(--spacing-sm, 4px);\n}`", 1},
-		{"var css = `.a { background-position: right 12px center; }\n.a:dir(rtl) {\n  background-position: left 12px center;\n}`", 0},
+		{"var css = `.a { background-position: right 12px center; }\n.a:dir(rtl) {\n  BACKGROUND-POSITION: left 12px center;\n}`", 0},
 		{"var css = `.a { background-position: right 12px center; }`\n\n// a :dir(rtl) rule could flip background-position here\n", 1},
 	} {
 		ds := designFixture(t, "framework/ui/x.go", "package ui\n\n"+tc.src+"\n")
