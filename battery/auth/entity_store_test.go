@@ -224,7 +224,7 @@ func insertExpiredSession(t *testing.T, store *EntitySessionStore, userID string
 	if err != nil {
 		t.Fatalf("token: %v", err)
 	}
-	now := time.Now()
+	now := time.Now().UTC()
 	expired := now.Add(-time.Hour)
 	q := store.qTable("INSERT INTO %s (token, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4)")
 	if _, err := store.db.ExecContext(context.Background(), q, tok, userID, now, expired); err != nil {

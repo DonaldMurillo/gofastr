@@ -446,7 +446,7 @@ func TestIdemReclaimKeepsFreshRow(t *testing.T) {
 			if _, err := db.Exec("DELETE FROM idempotency_keys WHERE key = ?", "k-f4"); err != nil {
 				t.Fatalf("reseed delete: %v", err)
 			}
-			now := time.Now()
+			now := time.Now().UTC()
 			if _, err := db.Exec(
 				"INSERT INTO idempotency_keys (key, fingerprint, expires_at, created_at) VALUES (?, ?, ?, ?)",
 				"k-f4", "fp-seed", now.Add(-time.Second), now.Add(-2*time.Second),
