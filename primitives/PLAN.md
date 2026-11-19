@@ -147,7 +147,9 @@ the fanout loop guard (`fanout.UnwrapForeign`) and the SQL lexer
 (`internal/sqllex`). The registry now holds 112 twins left to merge, 15
 more than before, each with a `why`. Fixed on the way: webhook
 registration's unbounded DNS lookup, `Bind` accepting nested duplicate
-keys (breaking), fanout queues delivering after `stop`.
+keys (breaking), fanout queues delivering after `stop`. The replay eval
+after them held every number but the upgrade note, which one task missed
+as it had before (`2026-11-19-replay-core-sweeps.md`).
 
 Next: `core-ui/`, then `battery/`, `cmd/`, `internal/`. The repository as a
 whole is at 16.1%.
