@@ -315,7 +315,7 @@ notes:
   - change: "runtime: an intercepted plain POST form (application/json or data-cui-spa) drops a re-submit of the payload in flight and queues a changed one behind it, as data-cui-rpc forms do; the form reads aria-busy meanwhile"
     guidance: "Nothing to change. A form that relied on sending the same POST twice in a row must wait for the first to answer."
     nodetect: "browser submit timing; no host source spelling shows it"
-  - change: "BREAKING - the module requires Go 1.27.4"
+  - change: "the module requires Go 1.27.4"
     breaking: true
     hits: edit
     guidance: "go.mod names go 1.27.4, up from 1.27.3. Go 1.27.3 builds net/http with GO-2026-6859, an HTTP/1 server crash through a MaxBytesReader header race, and every GoFastr app serves HTTP. `go get` of this release raises your go directive to 1.27.4, and GOTOOLCHAIN=auto (the default) downloads that toolchain. With GOTOOLCHAIN=local, install Go 1.27.4 first. Nothing in your code changes."
