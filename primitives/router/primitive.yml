@@ -10,7 +10,7 @@ on_change:
   - core/router is framework-agnostic; an error or warning it raises names the generic fix, not a framework type.
 invariants:
   - id: late-middleware-wraps-every-route
-    rule: Middleware added with Use or UseInner anywhere in the tree after a route was registered, or after it served a request, wraps that route on its next request.
+    rule: Middleware added after a route was registered, or after it served a request, wraps that route on its next request when added with Use on the route's router or an ancestor, or with UseInner anywhere in the tree; Use on a sibling Group does not.
     enforced_by:
       - test: core/router.TestLateMiddlewareWrapsExistingRoutes
       - test: core/router.TestGroupSeesLateParentMiddleware
@@ -27,7 +27,7 @@ invariants:
       - test: core/router.TestRouteConflictPanicIsActionable
       - test: core/router.TestUncleanPatternPanicIsNotAConflict
   - id: top-level-group-prefix
-    rule: A top-level Group prefix that does not start with "/" panics unless its first segment holds a dot or is localhost, and a host prefix with a port panics.
+    rule: A top-level Group prefix that is neither empty nor starts with "/" panics unless its first segment holds a dot or is localhost, and a host prefix with a port panics.
     enforced_by:
       - test: core/router.TestGroupRefusesBarePrefix
   - id: routes-lists-whole-tree

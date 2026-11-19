@@ -152,13 +152,15 @@ A method-based HTTP router over Go 1.22's `http.ServeMux`: `METHOD
 middleware chaining after registration (`Use` adds outside-in, the first
 added is outermost; `UseInner` adds middleware that runs after every `Use`
 and `Group` middleware in the tree, next to the handler), route groups
-(a top-level `Group` prefix starts with `/` or names a host with a dot
-or `localhost`, without a port; `Group("v1")` panics, since the mux
+(a top-level `Group` prefix is empty, starts with `/`, or names a host
+with a dot or `localhost`, without a port; `Group("v1")` panics, since the mux
 would read `v1` as a host; a group's `NotFound` and `MethodNotAllowed`
 answer the misses under its prefix, the longest matching prefix
-winning, even when the root serves the request; a 405 runs the
-middleware of the group that holds the path's routes, so CORS set on
-`Group("/api")` answers the preflight of `POST /api/items`), and sanitized path
+winning, even when the root serves the request, with `%2F` kept
+inside one segment as the mux reads it; a 405 runs the middleware of
+the group that holds the path's routes, so CORS set on `Group("/api")`
+answers the preflight of `POST /api/items`, even when the 405 handler
+belongs to another group), and sanitized path
 params (`Param` strips CR/LF/NUL, a decoded `/`, smuggled `..`, and in a
 `{name...}` catch-all a leading or doubled `/`, which only `%2F` produces;
 `handler.Bind` applies the same rule to `path:"..."` tags, and any other
