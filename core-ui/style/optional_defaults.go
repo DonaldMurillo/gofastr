@@ -9,7 +9,7 @@ import (
 // theme's value for it. A theme that leaves a slot of such a set fully
 // unset (a theme.go written before the set existed) emits, lists and
 // edits the default value for that slot, so every reader of the token
-// resolves: kit CSS, the style.Use utilities, owned sheets, host CSS.
+// resolves: kit CSS, generated utility CSS, owned sheets, host CSS.
 var optionalSetDefaults = sync.OnceValue(func() map[reflect.Type]reflect.Value {
 	d := DefaultTheme()
 	return map[reflect.Type]reflect.Value{

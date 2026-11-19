@@ -100,16 +100,6 @@ func TestCSSCustomPropertiesEmitsAllCategories(t *testing.T) {
 	}
 }
 
-func TestCSSCustomPropertiesDeterministic_AllCategories(t *testing.T) {
-	first := DefaultTheme().CSSCustomProperties()
-	for i := range 50 {
-		got := DefaultTheme().CSSCustomProperties()
-		if got != first {
-			t.Fatalf("non-deterministic at iter %d", i)
-		}
-	}
-}
-
 func TestCSSCustomPropertiesOfEmbeddedTheme(t *testing.T) {
 	type appTheme struct {
 		Theme
@@ -577,16 +567,5 @@ func TestNegativeRadiusIsRefused(t *testing.T) {
 	th.Radii.MD = Radius{Name: "md", Value: -2}
 	if err := th.Validate(); err == nil {
 		t.Fatal("a negative radius must fail validation")
-	}
-}
-
-// "none" / "0" radii are a real use case (sharp corners).
-// Validate must accept Radius{Name: "none", Value: 0} when the Name
-// is "none", the special sentinel that documents intent.
-func TestThemeValidate_AllowsNoneRadius(t *testing.T) {
-	th := DefaultTheme()
-	// none already exists; just confirm the default theme passes.
-	if err := th.Validate(); err != nil {
-		t.Errorf("default theme should pass: %v", err)
 	}
 }

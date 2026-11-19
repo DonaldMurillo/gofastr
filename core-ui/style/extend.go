@@ -37,8 +37,8 @@ func (t Theme) Extend(tokens ...any) Theme {
 	out := t
 	out.Extensions = cloneExtensions(t.Extensions)
 	seen := map[string]string{}
-	var existing []tokenAt
-	walkTokenPaths(reflect.ValueOf(out), "Theme", &existing)
+	var existing []tokenField
+	walkTokens(reflect.ValueOf(out), "Theme", &existing)
 	for _, e := range existing {
 		if _, dup := seen[e.Key]; !dup {
 			seen[e.Key] = e.Path
@@ -47,8 +47,8 @@ func (t Theme) Extend(tokens ...any) Theme {
 	for _, in := range tokens {
 		p := copyTokenStruct(in)
 		autofillTokens(p.Elem(), nil)
-		var added []tokenAt
-		walkTokenPaths(p, extensionPath(p), &added)
+		var added []tokenField
+		walkTokens(p, extensionPath(p), &added)
 		if len(added) == 0 {
 			panic(fmt.Sprintf("style: Theme.Extend: %s has no typed token fields (style.Color, style.Size, …)", p.Elem().Type()))
 		}
@@ -93,7 +93,7 @@ type DarkTokens interface {
 // new map. A key that is not one of the set's own colours, or a value
 // outside the colour grammar, panics: the set is compiled in, so the
 // mistake is the build's.
-func mergeDarkTokens(dark, values map[string]string, own []tokenAt, owner string) map[string]string {
+func mergeDarkTokens(dark, values map[string]string, own []tokenField, owner string) map[string]string {
 	if len(dark) == 0 || len(values) == 0 {
 		return dark
 	}
@@ -122,12 +122,9 @@ func mergeDarkTokens(dark, values map[string]string, own []tokenAt, owner string
 // letter, so it maps to one Go field name and back.
 var tokenNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 
-// ParseToken turns one custom-property key and CSS value into the
-// typed token it declares: ("size-page-width", "67.5rem") is
-// Size{Name: "page-width", Value: "67.5rem"}. The key's prefix picks
-// the type (TokenCategory, longest first), and the value must pass the
-// check ApplyTokens runs for that type, so a value a generated token
-// set compiles in is one the theme editor would also accept.
+// ParseToken accepts a custom-property key without the leading "--" and its value.
+// ("size-page-width", "67.5rem") yields Size{Name: "page-width", Value: "67.5rem"}.
+// The key's prefix picks the type. ApplyTokens and ParseToken use the same value checks.
 //
 // Breakpoint and code-colour keys are refused: a breakpoint cannot be
 // read through var() in a media query, and the code palette is the
@@ -296,8 +293,8 @@ func extensionPath(v reflect.Value) string {
 
 // duplicateTokenKey reports the first key two tokens of t both emit.
 func duplicateTokenKey(t Theme) error {
-	var all []tokenAt
-	walkTokenPaths(reflect.ValueOf(t), "Theme", &all)
+	var all []tokenField
+	walkTokens(reflect.ValueOf(t), "Theme", &all)
 	seen := map[string]string{}
 	for _, a := range all {
 		if prev, ok := seen[a.Key]; ok {
@@ -306,41 +303,4 @@ func duplicateTokenKey(t Theme) error {
 		seen[a.Key] = a.Path
 	}
 	return nil
-}
-
-// tokenAt is one emitted key and the Go field path that emits it, for
-// the messages that name both owners of a key.
-type tokenAt struct {
-	Key, Path string
-}
-
-// walkTokenPaths is walkTokens with the field path kept: same skip
-// rules (tokenPair decides), same recursion, an extension named by its
-// struct type.
-func walkTokenPaths(v reflect.Value, path string, out *[]tokenAt) {
-	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
-		if v.IsNil() {
-			return
-		}
-		v = v.Elem()
-	}
-	if v.Kind() == reflect.Slice {
-		for i := range v.Len() {
-			walkTokenPaths(v.Index(i), extensionPath(v.Index(i)), out)
-		}
-		return
-	}
-	if v.Kind() != reflect.Struct {
-		return
-	}
-	if key, _, ok := tokenPair(v); ok {
-		*out = append(*out, tokenAt{key, path})
-		return
-	}
-	for sf, f := range v.Fields() {
-		if !f.CanInterface() {
-			continue
-		}
-		walkTokenPaths(f, path+"."+sf.Name, out)
-	}
 }

@@ -33,9 +33,7 @@ func ThemeHash(t Theme) string {
 	// compiler-independent token CSS (tokenCSS, not CSSCustomProperties):
 	// the compiled block only exists once a compiler is registered, and a
 	// theme's identity must be the same in every binary, whichever layers
-	// it links. Hashing therefore never touches the compiler hook, so a
-	// hash computed during init cannot freeze it. sortedMapKeys is the
-	// mapwriter discipline.
+	// it links. Only theme CSS emission freezes compiler registration.
 	var b strings.Builder
 	b.WriteString(t.tokenCSS())
 	b.WriteString("\n/* components */\n")
@@ -190,10 +188,11 @@ func (t Theme) CSSCustomProperties() string {
 	if knobs := knobsCSS(t.Knobs); knobs != "" {
 		css += "\n" + knobs
 	}
-	if compiled := t.compiledOptionsCSS(); compiled != "" {
+	opts := componentOptionDecls(withDefaultOptions(t.Components))
+	if compiled := compiledOptionsCSS(opts); compiled != "" {
 		css += "\n" + compiled
 	}
-	return css + "\n" + schemeCSS(t, componentOptionDecls(withDefaultOptions(t.Components)))
+	return css + "\n" + schemeCSS(t, opts)
 }
 
 // tokenCSS is CSSCustomProperties without the compiled component
@@ -232,7 +231,7 @@ func (t Theme) tokenCSS() string {
 // the flattened options directly, so an optionless theme still hashes
 // as optionless in every binary — the compiled block (floor included)
 // is a function of the linked layer, not part of what the theme is.
-func (t Theme) compiledOptionsCSS() string {
+func compiledOptionsCSS(opts []string) string {
 	// The compiled component options join the root block AFTER the
 	// tokens they reference: a declaration like
 	// --fui-button-bg: var(--color-primary) computes its var() at the
@@ -240,7 +239,6 @@ func (t Theme) compiledOptionsCSS() string {
 	// theme boundary (ThemeOverrideCSS does the scoped half) to pick up
 	// each scope's palette instead of carrying the root's colours into
 	// it. Sorted by name for the byte-stable output ThemeHash needs.
-	opts := componentOptionDecls(withDefaultOptions(t.Components))
 	if len(opts) == 0 {
 		return ""
 	}
@@ -311,29 +309,14 @@ func CSSCustomPropertiesOf(theme any) string {
 	return b.String()
 }
 
-// tokenKV is a single typed token flattened to its CSS custom-property
-// identifier (Key, WITHOUT the leading "--") and the exact value string
-// the :root block emits after the colon. Both CSSCustomPropertiesOf and
-// ThemeToTokens produce these via the single walkTokens walk, so the two
-// flatteners can never disagree about which tokens exist or their values.
-type tokenKV struct {
-	Key, Value string
+// tokenField is an emitted token's CSS key (without "--"), value, and optional Go field path.
+type tokenField struct {
+	Key, Value, Path string
 }
 
-// walkTokens walks v, recursing into struct fields and dereferencing
-// pointers/interfaces, and appends every emittable typed token as a
-// tokenKV. The Key is the CSS custom-property identifier WITHOUT the
-// leading "--" ("color-primary", "spacing-md", "duration-fast",
-// "tk-kw"); the Value is exactly what CSSCustomProperties emits after
-// the colon ("#4F46E5", "8px", "150ms", "var(--color-code-text)").
-//
-// This is the single shared reflection walk. collectTokenDecls (the
-// :root emitter) and ThemeToTokens (the token map) both route through
-// it, which is what guarantees a theme flattened to a map and re-applied
-// reproduces identical CSS, the round-trip property ThemeHash asserts.
-// The two flatteners that disagree is precisely the bug the token-map
-// layer exists to prevent, so the walk is shared rather than duplicated.
-func walkTokens(v reflect.Value, out *[]tokenKV) {
+// walkTokens visits emittable tokens, including defaults. A nonempty path
+// enables field paths for collision diagnostics.
+func walkTokens(v reflect.Value, path string, out *[]tokenField) {
 	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return
@@ -342,7 +325,12 @@ func walkTokens(v reflect.Value, out *[]tokenKV) {
 	}
 	if v.Kind() == reflect.Slice {
 		for i := range v.Len() {
-			walkTokens(v.Index(i), out)
+			item := v.Index(i)
+			itemPath := ""
+			if path != "" {
+				itemPath = extensionPath(item)
+			}
+			walkTokens(item, itemPath, out)
 		}
 		return
 	}
@@ -351,14 +339,18 @@ func walkTokens(v reflect.Value, out *[]tokenKV) {
 	}
 	v = withOptionalDefaults(v)
 	if key, val, ok := tokenPair(v); ok {
-		*out = append(*out, tokenKV{key, val})
+		*out = append(*out, tokenField{Key: key, Value: val, Path: path})
 		return
 	}
-	for _, f := range v.Fields() {
+	for sf, f := range v.Fields() {
 		if !f.CanInterface() {
 			continue
 		}
-		walkTokens(f, out)
+		fieldPath := ""
+		if path != "" {
+			fieldPath = path + "." + sf.Name
+		}
+		walkTokens(f, fieldPath, out)
 	}
 }
 
@@ -470,8 +462,8 @@ func tokenPair(v reflect.Value) (key, value string, ok bool) {
 // the var-naming live in one place (walkTokens / tokenPair); this just
 // stitches the "--" / ": " / ";" punctuation the :root block needs.
 func collectTokenDecls(v reflect.Value, out *[]string) {
-	var pairs []tokenKV
-	walkTokens(v, &pairs)
+	var pairs []tokenField
+	walkTokens(v, "", &pairs)
 	for _, p := range pairs {
 		*out = append(*out, "--"+p.Key+": "+p.Value+";")
 	}

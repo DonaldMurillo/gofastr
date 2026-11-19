@@ -25,6 +25,15 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Component sheets build the CSS they describe.** A sheet can be built
+  more than once from the same builder, nested pseudo and child rules
+  apply to every selector in a list, adjacent media queries coalesce in
+  nested lists too, and a keyframe step with an unpaired property panics
+  with its name.
+- **Theme collisions count optional defaults.** `style.Extend` and
+  `Theme.Validate` now report a key that collides with an emitted
+  optional default, such as `Theme.Strokes.Thin`, and font-face URLs use
+  `FontURL` like the rule they sit in.
 - **Analyzers catch a few more spellings.** `nonfinite` recognizes
   aliased standard-library `math` imports, `keytrim` checks identity
   keys bound in a declaration, `recoverlog` checks logs written through

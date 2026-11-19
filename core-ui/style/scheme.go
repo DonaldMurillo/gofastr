@@ -23,25 +23,13 @@ func schemeCSS(t Theme, opts []string) string {
 		}
 		return css
 	}
-	var tokens []tokenKV
-	walkTokens(reflect.ValueOf(t), &tokens)
+	var tokens []tokenField
+	walkTokens(reflect.ValueOf(t), "", &tokens)
 	light := make(map[string]string, len(tokens))
 	for _, kv := range tokens {
 		light[kv.Key] = kv.Value
 	}
-	var darkLines, lightLines []string
-	for _, name := range sortedMapKeys(dark) {
-		darkLines = append(darkLines, "--color-"+name+": "+dark[name]+";")
-		if v, ok := light["color-"+name]; ok {
-			lightLines = append(lightLines, "--color-"+name+": "+v+";")
-		}
-	}
-	for _, name := range sortedMapKeys(code) {
-		darkLines = append(darkLines, "--tk-"+name+": "+code[name]+";")
-		if v, ok := light["tk-"+name]; ok {
-			lightLines = append(lightLines, "--tk-"+name+": "+v+";")
-		}
-	}
+	darkLines, lightLines := paletteLines(dark, code, light)
 	// A custom property's var() computes on the element that declares
 	// it, so a subtree re-declares every root line that reads another
 	// variable: those would otherwise arrive resolved against the root.
@@ -81,14 +69,32 @@ func schemeCSS(t Theme, opts []string) string {
 	return strings.TrimSuffix(b.String(), "\n")
 }
 
+func paletteLines(colors, code, light map[string]string) (darkLines, lightLines []string) {
+	darkLines = make([]string, 0, len(colors)+len(code))
+	for _, palette := range []struct {
+		prefix string
+		values map[string]string
+	}{
+		{"color-", colors},
+		{"tk-", code},
+	} {
+		for _, name := range sortedMapKeys(palette.values) {
+			key := palette.prefix + name
+			property := "--" + key + ": "
+			darkLines = append(darkLines, property+palette.values[name]+";")
+			if value, ok := light[key]; ok {
+				lightLines = append(lightLines, property+value+";")
+			}
+		}
+	}
+	return darkLines, lightLines
+}
+
 // darkCodeCSS is the dark syntax palette of a theme whose page stays
 // light: a code-only dark palette does not flip the page, so it carries
 // no paint lines and no color-scheme.
 func darkCodeCSS(code map[string]string) string {
-	lines := make([]string, 0, len(code))
-	for _, name := range sortedMapKeys(code) {
-		lines = append(lines, "--tk-"+name+": "+code[name]+";")
-	}
+	lines, _ := paletteLines(nil, code, nil)
 	var b strings.Builder
 	b.WriteString(":root[data-color-scheme=\"dark\"] {\n")
 	writeScopeLines(&b, "  ", lines)

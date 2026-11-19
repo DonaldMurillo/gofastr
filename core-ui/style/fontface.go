@@ -83,11 +83,6 @@ const DefaultFontDir = "/fonts"
 // [DefaultFontDir]. A font with no Family is skipped rather than
 // emitting a rule the browser will ignore.
 func FontFaceCSS(dir string, fonts ...WebFont) string {
-	if dir == "" {
-		dir = DefaultFontDir
-	}
-	dir = quotedSlotSanitized(strings.TrimSuffix(dir, "/"))
-
 	var b strings.Builder
 	seen := make(map[string]bool, len(fonts))
 	for _, f := range fonts {
@@ -97,9 +92,9 @@ func FontFaceCSS(dir string, fonts ...WebFont) string {
 		}
 		seen[family] = true
 		fmt.Fprintf(&b,
-			"@font-face { font-family: '%s'; font-style: %s; font-weight: %s; font-display: %s; src: url('%s/%s.woff2') format('woff2'); }\n",
+			"@font-face { font-family: '%s'; font-style: %s; font-weight: %s; font-display: %s; src: url('%s') format('woff2'); }\n",
 			family, bareSlotValue(f.Style, "normal"), bareSlotValue(f.Weight, "400 700"),
-			bareSlotValue(f.Display, "swap"), dir, quotedSlotSanitized(f.fileName()))
+			bareSlotValue(f.Display, "swap"), FontURL(dir, f))
 		if local := quotedSlotSanitized(f.Fallback.Local); local != "" {
 			fmt.Fprintf(&b, "@font-face { font-family: '%s'; src: local('%s');", quotedSlotSanitized(f.FallbackFamily()), local)
 			for _, d := range []struct{ name, v string }{

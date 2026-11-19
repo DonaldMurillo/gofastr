@@ -4,9 +4,9 @@
 // # Theme, the typed design system
 //
 // A Theme is a Go struct of typed token value types (Color, Spacing,
-// Radius, Font, etc.). Every primitive token is required except the
-// optional groups (Strokes, Leading, Tracking, Opacities, Code): an
-// unset slot in one of those emits the default theme's value. Passing a
+// Radius, Font, etc.). Unset slots in Strokes, Leading, Tracking and Opacities
+// emit the default theme's values. Code is optional. Unset Code slots omit
+// their CSS variables, and code blocks fall back to the built-in palette. Passing a
 // half-populated Theme to app.WithTheme panics at startup with a path
 // to the missing field. Names auto-derive from struct-field paths
 // (Colors.PrimaryFg → "primary-fg") via AutoFillNames so authors only
@@ -46,7 +46,7 @@
 //
 //	func modalCSS(t style.Theme) string {
 //	    return style.NewComponentSheet("modal", t).
-//	        Rule(".header").Set("font-weight", "{fonts.weight.bold}").End().
+//	        Rule(".header").Set("font-weight", "{font-weight.bold}").End().
 //	        Rule(".body").  Set("padding",     "{spacing.lg}").End().
 //	        MustBuild()
 //	}
@@ -62,18 +62,17 @@
 //
 // # Section-level overrides, cui-theme-<hash>
 //
-// RegisterThemeOverride(theme, partial) returns a class name like
-// "cui-theme-a1b2c3d4" plus a CSS block that redeclares only the
-// overridden tokens. Wrap a region with that class via ui.Themed
-// and every descendant's var() refs resolve through the override.
-// See core-ui/ARCHITECTURE.md for the cascade rationale.
+// RegisterThemeOverride takes a full Theme and returns a ThemeRef. The host
+// writes the registered theme's declarations under its scope class in app.css.
+// Pass the handle to ui.Themed to scope descendants' theme variables:
+//
+//	dark := style.RegisterThemeOverride(darkTheme)
+//	ui.Themed(dark, ui.Card{...})
 //
 // # Utility classes
 //
-// style.Use("card") returns the attribute map for a utility class
-// generated from theme tokens. Utility classes follow a Tailwind-
-// like convention and are extracted to CSS at build time by
-// CollectUsed/RenderCollected.
+// GenerateUtilityCSS emits rules for utility classes such as "flex" and "p-md".
+// CSSExtractor.GenerateChunk extracts classes from rendered HTML and emits their rules.
 //
 // # Token reference
 //

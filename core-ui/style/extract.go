@@ -1,7 +1,6 @@
 package style
 
 import (
-	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -55,17 +54,7 @@ func (e *CSSExtractor) ExtractFromHTML(html string) []string {
 // braces, semicolons, or a url( payload would become live CSS (the same
 // identifier-slot contract StyleSheet property names carry).
 func (e *CSSExtractor) GenerateCSS(classes []string) string {
-	var b strings.Builder
-	for _, class := range classes {
-		if !isCSSIdent(class) {
-			continue
-		}
-		props := resolveUtilityClass(class, e.Theme)
-		if props != "" {
-			fmt.Fprintf(&b, ".%s { %s }\n", class, props)
-		}
-	}
-	return b.String()
+	return GenerateUtilityCSS(classes, e.Theme)
 }
 
 // GenerateChunk extracts classes from HTML and generates utility CSS.

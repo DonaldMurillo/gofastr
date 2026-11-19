@@ -11,7 +11,7 @@ import (
 
 // ThemeRef is a handle to a registered theme override. The framework
 // emits a `.cui-theme-<hash>` CSS block in app.css that re-declares
-// every changed token; wrapping a subtree with this class scopes the
+// the full registered theme's tokens; wrapping a subtree with this class scopes the
 // override to that part of the DOM via the CSS variable cascade.
 //
 // Apps register an override once at boot:
@@ -20,21 +20,12 @@ import (
 //
 // And wrap any subtree:
 //
-//	ui.Themed(style.Dark, ui.Card{...})
+//	ui.Themed(Dark, ui.Card{...})
 //
-// Registration does NOT hash; Hash/Class compute the content address on
-// first use. That ordering is what makes the package-level pattern above
-// safe: a `var Dark = …` in a library package that does not import
-// framework/ui runs during init, before the component-options compiler
-// is registered, and a hash computed there would freeze the compiler
-// hook with none registered and panic framework/ui's later init. With
-// lazy hashing, init order stops mattering for registration; only a
-// package-level Class()/ThemeHash call still hashes before the styled
-// layer's init (the panic RegisterComponentOptionsCompiler raises names
-// that cause).
+// Hash and Class compute the content address on first use, independently of the
+// component-options compiler. Emitting theme CSS freezes compiler registration.
 //
-// Hash is content-addressed (sha256 of the override's :root output)
-// so registering the same theme twice yields the same hash and class.
+// Identical themes yield the same hash and class.
 type ThemeRef struct {
 	rec *themeOverrideRecord
 }
@@ -87,17 +78,8 @@ var (
 // every token under the override class, the browser's cascade
 // handles the actual delta vs the canonical :root.
 //
-// The theme is deep-cloned (Theme.Clone) BEFORE it is stored, and the
-// hash is computed from that clone on first use, never here. Theme
-// travels by value, but its maps (DarkColors, DarkCode, Components,
-// Knobs) and its Extensions token sets are references: without the clone a caller-side write after registration
-// would change what every page serves while the hash — computed once,
-// from the bytes as they were — kept naming the old content, and the
-// write could race a request reading the same map. And without the
-// lazy hash, the package-level registration pattern taught above would
-// hash during a library package's init and freeze the compiler hook
-// before framework/ui registers it (see ThemeRef). The hash, when it
-// is computed, is ThemeHash, the one canonical content address.
+// Registration deep-clones the theme. The first consumer computes ThemeHash from
+// that snapshot, so changes to the caller's theme cannot alter the registered CSS.
 func RegisterThemeOverride(t Theme) ThemeRef {
 	rec := &themeOverrideRecord{theme: t.Clone()}
 	themeOverrideMu.Lock()
@@ -209,7 +191,8 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 	collectTokenDecls(reflect.ValueOf(t), &lines)
 	sort.Strings(lines)
 	lines = append(lines, knobDecls(t.Knobs)...)
-	lines = append(lines, componentOptionDecls(withDefaultOptions(t.Components))...)
+	opts := componentOptionDecls(withDefaultOptions(t.Components))
+	lines = append(lines, opts...)
 	var b strings.Builder
 	fmt.Fprintf(&b, ":root.cui-theme-%s,\n.cui-theme-%s {\n", hash, hash)
 	writeScopeLines(&b, "  ", lines)
@@ -224,7 +207,7 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 	if len(t.DarkColors) == 0 && len(t.DarkCode) == 0 {
 		return b.String()
 	}
-	darkLines := darkScopeLines(t)
+	darkLines := darkScopeLines(t, opts)
 	b.WriteString("\n[data-color-scheme=\"dark\"]:root.cui-theme-" + hash + ",\n[data-color-scheme=\"dark\"] .cui-theme-" + hash + " {\n")
 	writeScopeLines(&b, "  ", darkLines)
 	b.WriteString("}\n")
@@ -242,15 +225,9 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 // carries. No color/background paint lines: the light block's
 // `color: var(--color-text)` re-resolves here against the
 // re-declared token.
-func darkScopeLines(t Theme) []string {
-	lines := make([]string, 0, len(t.DarkColors)+len(t.DarkCode)+16)
-	for _, name := range sortedMapKeys(t.DarkColors) {
-		lines = append(lines, fmt.Sprintf("--color-%s: %s;", name, t.DarkColors[name]))
-	}
-	for _, name := range sortedMapKeys(t.DarkCode) {
-		lines = append(lines, fmt.Sprintf("--tk-%s: %s;", name, t.DarkCode[name]))
-	}
-	lines = append(lines, componentOptionDecls(withDefaultOptions(t.Components))...)
+func darkScopeLines(t Theme, opts []string) []string {
+	lines, _ := paletteLines(t.DarkColors, t.DarkCode, nil)
+	lines = append(lines, opts...)
 	if len(t.DarkColors) > 0 {
 		lines = append(lines, "color-scheme: dark;")
 	}

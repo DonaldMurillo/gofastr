@@ -106,15 +106,17 @@ func (cs *ComponentSheet) End() *ComponentSheet {
 }
 
 // Build serializes the stylesheet with every top-level selector
-// scoped to [data-cui-comp="<name>"]. Returns an error if any
+// scoped to [data-cui-comp="<name>"]. Build leaves the builder available for
+// further edits or repeated builds. Returns an error if any
 // selector cannot be safely scoped (body, html, :root, *,
 // ::backdrop, ::view-transition-*).
 func (cs *ComponentSheet) Build() (string, error) {
 	prefix := `[data-cui-comp="` + cs.name + `"]`
-	if err := scopeRules(cs.inner.rules, prefix); err != nil {
+	rules, err := scopedRules(cs.inner.rules, prefix)
+	if err != nil {
 		return "", err
 	}
-	return cs.inner.CSS(), nil
+	return (&StyleSheet{rules: rules}).CSS(), nil
 }
 
 // MustBuild is Build but panics with a useful message on error.
@@ -131,12 +133,11 @@ func (cs *ComponentSheet) MustBuild() string {
 	return css
 }
 
-// scopeRules prefixes selectors in place. @keyframes children keep
-// their step selectors (0%, from, to). @media / @container parents
-// pass through; their inner rules get scoped.
-func scopeRules(rules []cssRule, prefix string) error {
-	for i := range rules {
-		r := &rules[i]
+// scopedRules copies the rule tree and prefixes selectors outside @keyframes.
+func scopedRules(rules []cssRule, prefix string) ([]cssRule, error) {
+	out := slices.Clone(rules)
+	for i := range out {
+		r := &out[i]
 		if slices.ContainsFunc(r.parents, func(parent string) bool {
 			return strings.HasPrefix(parent, "@keyframes")
 		}) {
@@ -145,15 +146,17 @@ func scopeRules(rules []cssRule, prefix string) error {
 		if r.selector != "" {
 			scoped, err := scopeSelector(r.selector, prefix)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			r.selector = scoped
 		}
-		if err := scopeRules(r.children, prefix); err != nil {
-			return err
+		children, err := scopedRules(r.children, prefix)
+		if err != nil {
+			return nil, err
 		}
+		r.children = children
 	}
-	return nil
+	return out, nil
 }
 
 // scopeSelector prepends prefix to every comma-separated selector
@@ -223,15 +226,8 @@ func unscopableSelector(sel string) (string, bool) {
 	return "", false
 }
 
-// splitTopLevelCommas splits a selector on commas, ignoring commas
-// inside (), [], or quoted strings. Cheap state machine; no regex.
-//
-// Note: CSS escapes inside attribute selectors use the hex form
-// (e.g. `\22` for ", with an optional trailing space), not C-style
-// `\"`. A naive `\` escape would corrupt selectors like
-// `[data-x="a\\b"]`. We simply toggle on the matching quote, that's
-// what CSS parsers do, and any embedded comma inside quotes is
-// already protected by the quote bracket.
+// splitTopLevelCommas ignores escaped commas and those inside
+// functions, brackets, strings, and comments.
 func splitTopLevelCommas(s string) []string {
 	out := []string{}
 	depth := 0
@@ -240,12 +236,21 @@ func splitTopLevelCommas(s string) []string {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		switch {
+		case c == '\\' && i+1 < len(s):
+			i++
 		case inQuote != 0:
 			if c == inQuote {
 				inQuote = 0
 			}
 		case c == '"' || c == '\'':
 			inQuote = c
+		case c == '/' && strings.HasPrefix(s[i:], "/*"):
+			end := strings.Index(s[i+2:], "*/")
+			if end < 0 {
+				i = len(s)
+			} else {
+				i += end + 3
+			}
 		case c == '(' || c == '[':
 			depth++
 		case c == ')' || c == ']':

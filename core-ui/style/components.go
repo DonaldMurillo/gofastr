@@ -101,7 +101,7 @@ type Declaration struct {
 // a package init with its complete default option set, read (and frozen)
 // at the first theme-CSS emission. The defaults are the floor a theme's
 // own options merge over, at :root and in every scope block (see
-// compiledOptionsCSS and ThemeOverrideCSS).
+// CSSCustomProperties and ThemeOverrideCSS).
 var componentCompiler struct {
 	mu       sync.Mutex
 	fn       func(components map[string]string) []Declaration
@@ -140,16 +140,8 @@ var componentCompiler struct {
 // styled layer later cannot silently alias two themes that were
 // distinct all along.
 //
-// It panics when called twice (one compiler per process; the second
-// registration is a wiring bug, not a preference) and when called after
-// a theme was hashed or theme CSS was emitted: a package-level
-// ref.Class() or ThemeHash call in a package that does not import
-// framework/ui runs before this package's init and freezes the hook
-// with no compiler registered. The uihost freezes app.css, the
-// component catalog and the manifest in sync.Once at first use, so a
-// compiler registered late would be missing from all three and a page
-// would render options another page never saw. Register from init,
-// before the host serves; hash later, not at package scope.
+// Register once per process, before CSSCustomProperties or ThemeOverrideCSS first emits theme CSS.
+// A duplicate or late registration panics. ThemeHash and ThemeRef.Class may run before registration.
 func RegisterComponentOptionsCompiler(fn func(components map[string]string) []Declaration, defaults map[string]string) {
 	if fn == nil {
 		panic("style: RegisterComponentOptionsCompiler needs a compiler, not nil")
@@ -173,10 +165,8 @@ func RegisterComponentOptionsCompiler(fn func(components map[string]string) []De
 	componentCompiler.mu.Lock()
 	defer componentCompiler.mu.Unlock()
 	if componentCompiler.frozen {
-		panic("style: RegisterComponentOptionsCompiler called after a theme was hashed or emitted: " +
-			"a package-level ref.Class() or ThemeHash call, or theme CSS emission, in a package that does " +
-			"not import framework/ui runs before the compiler's init and freezes the hook with none " +
-			"registered; register the compiler earlier or hash later")
+		panic("style: RegisterComponentOptionsCompiler called after theme CSS emission: " +
+			"register the compiler before calling CSSCustomProperties or ThemeOverrideCSS")
 	}
 	if componentCompiler.fn != nil {
 		panic("style: a component-options compiler is already registered: one per process (framework/ui registers it from its init)")
