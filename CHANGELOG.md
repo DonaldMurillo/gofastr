@@ -384,6 +384,10 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr upgrade` finds the Go spellings.
 
 ### Added
+- **`netguard.OriginAllowed`** is the one cross-origin check `core/mcp`
+  and `core/a2a` share: no Origin, the request's own Host, or a
+  case-insensitive allow-list match passes. Neither server's answers
+  change. See [core packages](framework/docs/content/core-packages.md#netguard).
 - **`LowPriority` on `ui.OptimizedImage` and `ui.PipelineImage`** renders
   `fetchpriority="low"`. See [image](framework/docs/content/image.md#loading-and-priority).
 - **Passkeys: autofill sign-in, step-up, rename and password-manager sync

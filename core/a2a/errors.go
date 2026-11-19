@@ -2,11 +2,7 @@ package a2a
 
 import "fmt"
 
-// JSON-RPC error codes. The -327xx/-326xx block is JSON-RPC 2.0 itself; the
-// -3200x block is the A2A v1.0 error mapping (spec §5.4); -31401/-31403 are
-// the auth codes the A2A project's SDKs use for a caller the server could
-// not identify or would not allow, kept so a client built on those SDKs
-// maps our refusals to the same errors it already handles.
+// JSON-RPC error codes.
 const (
 	CodeParseError     = -32700
 	CodeInvalidRequest = -32600
@@ -28,9 +24,7 @@ const (
 	CodeUnauthorized    = -31403
 )
 
-// Error is a JSON-RPC error object. Returning one from a skill handler or a
-// Store surfaces it to the client with its code intact; any other error is
-// reported as CodeInternalError with a generic message, never its text.
+// Error is a JSON-RPC error object.
 type Error struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`

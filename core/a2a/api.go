@@ -7,9 +7,7 @@ import (
 	"time"
 )
 
-// Skill is one thing the agent can do, invoked by name. The descriptive
-// fields are exactly the AgentSkill fields of the agent card (spec §8),
-// so the card and the server list one set of skills from one source.
+// Skill is one thing the agent can do, invoked by name.
 type Skill struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
@@ -19,24 +17,18 @@ type Skill struct {
 	InputModes  []string `json:"inputModes,omitempty"`
 	OutputModes []string `json:"outputModes,omitempty"`
 
-	// Handler runs the skill for one message. Nil is a build error.
+	// Handler runs the skill for one message. Nil is a NewServer error.
 	Handler Handler `json:"-"`
 }
 
-// Handler does the work of a skill for one inbound message. It reports
-// progress and results through the TaskContext; returning nil with the
-// task still in progress completes it, returning an error fails it (a
-// context cancellation cancels it instead). A returned *Error keeps its
-// code and message; any other error is logged and the client sees the
-// generic "skill handler failed", so a wrapped database or network error
-// never reaches a caller. Fail(TextPart(...)) is the way to say why.
+// Handler does the work of a skill for one inbound message. Returning nil
+// with the task in progress completes it; an error fails it, and the client
+// sees a returned *Error's message or else "skill handler failed".
 type Handler func(ctx context.Context, t TaskContext) error
 
 // TaskContext is a handler's view of, and control over, its task. Every
-// mutating call persists the task through the Store and fans the
-// corresponding event out to streaming subscribers and push configs
-// before returning, so a crash after the call cannot lose what the client
-// was already told.
+// mutating call persists the task, then notifies subscribers and push
+// configs, before it returns.
 type TaskContext interface {
 	// Task returns a snapshot of the task as currently persisted.
 	Task() *Task
@@ -45,17 +37,16 @@ type TaskContext interface {
 	// Owner returns the principal that owns the task (Config.Owner's
 	// value for the request that created it).
 	Owner() string
-	// Request returns the HTTP request that started or resumed this run,
-	// for handlers that re-dispatch into the app with the caller's
-	// credentials. Its Context is not the handler's context.
+	// Request returns the HTTP request that started or resumed this run, for
+	// handlers that re-dispatch into the app with the caller's credentials.
+	// Its Context is not the handler's context.
 	Request() *http.Request
 
 	// Working moves the task to TASK_STATE_WORKING with an optional agent
 	// status message (nil parts: no message). Idempotent once working.
 	Working(parts ...Part) error
-	// Artifact records an artifact and emits an artifact-update event. An
-	// artifact whose ArtifactID matches an existing one replaces it unless
-	// append is set, in which case its parts are appended.
+	// Artifact records an artifact and emits an artifact-update event. One
+	// with an existing ArtifactID replaces it, or with append extends it.
 	Artifact(a Artifact, append bool) error
 	// Complete ends the task in TASK_STATE_COMPLETED with an optional
 	// final agent message.
@@ -65,20 +56,15 @@ type TaskContext interface {
 	// Reject ends the task in TASK_STATE_REJECTED: the agent will not do
 	// this work (unknown skill, bad input).
 	Reject(parts ...Part) error
-	// RequireInput pauses the task in TASK_STATE_INPUT_REQUIRED. The next
-	// SendMessage addressed to the task resumes it: the handler runs again
-	// with the new message and the task's history.
+	// RequireInput pauses the task in TASK_STATE_INPUT_REQUIRED; the next
+	// SendMessage to the task runs the handler again.
 	RequireInput(parts ...Part) error
 	// RequireAuth pauses the task in TASK_STATE_AUTH_REQUIRED, the same
 	// way as RequireInput.
 	RequireAuth(parts ...Part) error
 }
 
-// Router picks the skill for a message. The default reads
-// msg.Metadata["skill"], then the first data part carrying a "skill"
-// key, then the only skill when exactly one is registered, and otherwise
-// rejects the task, without listing the registered skill ids (see
-// DefaultRouter).
+// Router picks the skill for a message. Nil in Config means DefaultRouter.
 type Router func(ctx context.Context, msg *Message, skills []Skill) (skillID string, err error)
 
 // TaskRecord is a task as the Store holds it: the wire Task plus the
@@ -87,16 +73,12 @@ type TaskRecord struct {
 	Task    Task
 	Owner   string
 	SkillID string
-	// Scope is the scope set of the credential that created the task, in
-	// the canonical form ScopeKey writes: "" for an unscoped caller (a
-	// session, server code), a JSON array otherwise. A scoped caller sees
-	// only the tasks whose Scope equals its own; see Config.Scopes.
+	// Scope is the scope set of the credential that created the task, in the
+	// canonical form ScopeKey writes: "" for an unscoped caller (a session,
+	// server code), a JSON array otherwise.
 	Scope string
-	// Tenant is the tenant the creating request acted in (Config.Tenant),
-	// "" for none. A server with a Tenant hook shows a caller only the
-	// tasks made in its current tenant, so a member who leaves a tenant,
-	// or switches to another, stops reading the results its tasks there
-	// returned. Owner stays the user id alone: erasure deletes by it.
+	// Tenant is the tenant the creating request acted in (Config.Tenant), ""
+	// for none.
 	Tenant string
 	// Version is bumped on every UpdateTask; an update whose Version does
 	// not match the stored row fails with ErrConflict.
@@ -119,24 +101,20 @@ type ListQuery struct {
 	// After filters to tasks whose status timestamp is after this instant
 	// (zero: no filter).
 	After time.Time
-	// Scoped filters to tasks whose Scope equals Scope: the tasks a
-	// scoped caller may see. False lists every task of the owner.
+	// Scoped filters to tasks whose Scope equals Scope: the tasks a scoped
+	// caller may see.
 	Scoped bool
 	Scope  string
-	// Tenanted filters to tasks whose Tenant equals Tenant ("" included:
-	// a tenant-less caller sees only tenant-less tasks). False lists
-	// every tenant's tasks of the owner.
+	// Tenanted filters to tasks whose Tenant equals Tenant ("" included: a
+	// tenant-less caller sees only tenant-less tasks).
 	Tenanted bool
 	Tenant   string
 	Limit    int
 	Offset   int
 }
 
-// Store persists tasks and push configs. Every read and write is scoped
-// by owner: a task belongs to the principal that created it, and no call
-// returns or touches another owner's rows. Implementations are safe for
-// concurrent use and shared across replicas (the SQL store); the memory
-// store is per process.
+// Store persists tasks and push configs. Every call is scoped by owner and
+// never returns or touches another owner's rows.
 type Store interface {
 	CreateTask(ctx context.Context, rec *TaskRecord) error
 	// GetTask returns ErrNotFound for an unknown id OR another owner's task.
@@ -154,32 +132,22 @@ type Store interface {
 	DeletePushConfig(ctx context.Context, owner, taskID, id string) error
 }
 
-// ScopeFilter is the optional Store capability that says ListTasks
-// applies ListQuery.Scoped and Scope in its query, so its page and total
-// count only a scoped caller's tasks. The server lists a scoped caller
-// through a Store without it by walking every task of the owner and
-// counting the caller's alone, which costs one read of the owner's tasks
-// per list. Both built-in stores implement it.
+// ScopeFilter is the optional Store capability that says ListTasks applies
+// ListQuery.Scoped and Scope in its query, so its page and total count only a
+// scoped caller's tasks.
 type ScopeFilter interface {
 	FiltersByScope()
 }
 
-// TenantFilter is the optional Store capability that says ListTasks
-// applies ListQuery.Tenanted and Tenant in its query. The server lists
-// through a Store without it, when Config.Tenant is set, the way it
-// lists a scoped caller through a Store without ScopeFilter: it walks
-// the owner's tasks and counts the caller's tenant's alone. Both
-// built-in stores implement it.
+// TenantFilter is the optional Store capability that says ListTasks applies
+// ListQuery.Tenanted and Tenant in its query.
 type TenantFilter interface {
 	FiltersByTenant()
 }
 
 // RetentionTier is the set of one owner's tasks a retention bound counts
 // within: the tasks made in one tenant under one scope set, i.e. whose
-// TaskRecord.Tenant and TaskRecord.Scope equal these. Tenant "" is the
-// tenant-less tier and Scope "" the unscoped one (ScopeKey writes a
-// scoped caller's key). Retention is per tier, never per owner alone, so
-// one tier's writes cannot trim another tier's rows.
+// TaskRecord.Tenant and TaskRecord.Scope equal these.
 type RetentionTier struct {
 	Tenant string
 	Scope  string
@@ -190,32 +158,23 @@ func TierOf(rec *TaskRecord) RetentionTier {
 	return RetentionTier{Tenant: rec.Tenant, Scope: rec.Scope}
 }
 
-// holds reports whether rec belongs to the tier.
 func (t RetentionTier) holds(rec *TaskRecord) bool {
 	return rec.Tenant == t.Tenant && rec.Scope == t.Scope
 }
 
-// RetentionTrimmer is the optional Store capability that bounds the
-// rows cheap authenticated writes mint. The server asks the store to
-// trim after every persist that leaves a task terminal and after every
-// push-config create; a store that does not implement it keeps its own
-// retention policy. Both built-in stores implement it.
+// RetentionTrimmer is the optional Store capability that bounds the rows
+// cheap authenticated writes mint.
 type RetentionTrimmer interface {
-	// TrimTerminalTasks deletes the OLDEST terminal task rows of owner
-	// in tier (the rows whose Tenant and Scope equal tier's) until at
-	// most keep remain in that tier. Rows of any other tier, and
-	// non-terminal rows, are never touched: a narrow token's activity,
-	// or the user's activity in another tenant, must not delete results
-	// that tier cannot even read. keep < 0 means unlimited (no-op).
+	// TrimTerminalTasks deletes the OLDEST terminal task rows of owner in
+	// tier (the rows whose Tenant and Scope equal tier's) until at most keep
+	// remain in that tier. keep < 0 is a no-op.
 	TrimTerminalTasks(ctx context.Context, owner string, tier RetentionTier, keep int) error
-	// TrimPushConfigs deletes the OLDEST push-notification configs
-	// registered for (owner, taskID) until at most keep remain.
-	// keep < 0 means unlimited (no-op).
+	// TrimPushConfigs deletes the OLDEST push-notification configs registered
+	// for (owner, taskID) until at most keep remain. keep < 0 is a no-op.
 	TrimPushConfigs(ctx context.Context, owner, taskID string, keep int) error
 }
 
-// Store errors. Implementations return these (or wrap them) so the server
-// can map them to JSON-RPC codes without knowing the backend.
+// Store errors, returned or wrapped by Store implementations.
 var (
 	ErrNotFound = errors.New("a2a: not found")
 	ErrConflict = errors.New("a2a: version conflict")
@@ -228,7 +187,6 @@ type Capabilities struct {
 	ExtendedAgentCard bool `json:"extendedAgentCard,omitempty"`
 }
 
-// requestKey carries the inbound request into a task run.
 type requestKey struct{}
 
 // WithRequest returns a context carrying r, for TaskContext.Request.

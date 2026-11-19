@@ -159,6 +159,8 @@ var ownedPackages = []string{
 	"core/stream",
 	"internal/sseframe",
 	"core/moduleproto",
+	"core/acp",
+	"core/a2a",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",
