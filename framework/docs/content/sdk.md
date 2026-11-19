@@ -447,13 +447,24 @@ defer png.Close()
 | any non-JSON response (`image/png`, `application/zip`) | an `io.ReadCloser`, unbuffered: the caller reads and closes it |
 | no 2xx content | `error` only |
 
+A binary answer goes through `DoStream`, where the HTTP client's
+`Timeout` (30 seconds for `NewClient(url, nil)`) bounds the wait for the
+response headers only: the body streams for as long as the request's
+context allows, so a large download is not cut off at 30 seconds. Every
+buffered call (`Do`, `DoRaw`, every JSON operation) keeps the whole-request
+`Timeout`. To bound a download, give the call a context with a deadline.
+
 A component schema keeps its name (`#/components/schemas/Size` is
 `Size`); an inline object is named by its place (`ValidateDataRequest`,
 `GetSpecResponse`, `SizeOwner`). `integer` is `int64`, `number`
 `float64`, and an optional or nullable scalar a pointer. A schema the
 SDK cannot type (a union of two types, an object with no properties, an
 object whose property names do not all make Go fields, such as `@type`)
-is `json.RawMessage`, so no value is dropped or rounded.
+is `json.RawMessage`, so no value is dropped or rounded. A component that
+refers to itself is typed once and then as raw JSON: `Json:
+{additionalProperties: {$ref: Json}}` is `map[string]json.RawMessage`,
+while an object component refers to its own named struct (`Tree` holding
+`[]Tree`).
 
 **JS/TS.** `client.js` has one async method per operation, named by the
 `operationId` (or the Go name with its first letter lowered when the
@@ -546,9 +557,13 @@ The config keys are `name`, `api_prefix`, `module`, `base_url`,
 `sdk_version`, `from_openapi` (strings) and `targets`, `only`, `exclude`
 (YAML lists). `from_openapi` names a file in the project, never a URL
 (every build would fetch it), and takes no `only` or `exclude`: the SDK
-covers every operation in the document. `--from-openapi` on the command
-line uses the entry that names the same document, or none, so it never
-writes into another entry's output directory.
+covers every operation in the document. `gofastr generate sdk` takes
+its defaults from one entry, never a mix of two: `--from-openapi` picks
+the entry that names the same document (or none), `--out` the entry
+writing there, and with neither the only entry. A settings file with two
+or more `sdk` entries, such as an entity SDK beside an OpenAPI one, needs
+one of those flags; `gofastr generate` and `gofastr build` run every
+entry into its own output directory.
 A flag passed empty still wins: `--only=` generates every entity and
 `--api-prefix=` means no prefix, whatever the settings entry says.
 An

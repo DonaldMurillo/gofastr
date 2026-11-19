@@ -35,8 +35,10 @@ few lines, and link the PR or the docs page for the rest.
   `send`, `readCapped` and `statusError` with no change in behaviour. The
   manifest's drift hash covers the document; `sdkdocs.Config.OpenAPI`
   serves the downloads beside it. The entity JS SDK's `_readBody` now reads
-  through `_readBytes`, so regenerated `client.js` files change bytes.
-  [#818](https://github.com/DonaldMurillo/gofastr/issues/818)
+  through `_readBytes`, so regenerated `client.js` files change bytes. A
+  settings file with two or more `sdk` entries now needs `--out` or
+  `--from-openapi` on `gofastr generate sdk` to pick one, instead of
+  taking the first. [#818](https://github.com/DonaldMurillo/gofastr/issues/818)
 
 ### Fixed
 - **gofastr dev: saves no longer run git in your repository.** The

@@ -169,3 +169,111 @@ func TestOpenAPISDKSettingsEntry(t *testing.T) {
 		t.Fatalf("settings defaults: %+v", opts)
 	}
 }
+
+// oaRecursiveDoc refers to components inside themselves: a map of
+// itself, a list of itself, an object through an unnameable component,
+// and a struct through its own property.
+const oaRecursiveDoc = `{"openapi":"3.1.0",
+  "components":{"schemas":{
+    "Json":{"type":"object","additionalProperties":{"$ref":"#/components/schemas/Json"}},
+    "Node":{"type":"array","items":{"$ref":"#/components/schemas/Node"}},
+    "Odd[Name]":{"type":"object","properties":{"next":{"$ref":"#/components/schemas/Odd[Name]"}}},
+    "Tree":{"type":"object","properties":{"kids":{"type":"array","items":{"$ref":"#/components/schemas/Tree"}}}}
+  }},
+  "paths":{
+    "/json":{"post":{"operationId":"putJson","requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Json"}}}},
+      "responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Node"}}}}}}},
+    "/odd":{"get":{"operationId":"getOdd","parameters":[{"name":"q","in":"query","schema":{"$ref":"#/components/schemas/Node"}}],
+      "responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Odd[Name]"}}}}}}},
+    "/tree":{"get":{"operationId":"getTree","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Tree"}}}}}}}
+  }}`
+
+// A component met again inside itself is typed once and then as raw JSON
+// (a named struct refers to itself by name), so a recursive document
+// generates instead of overflowing the stack. The CLI's walk reads the
+// same document without recursing.
+func TestOpenAPISDKRecursiveSchemas(t *testing.T) {
+	spec, err := oaSDKSpecFor(t, strings.Replace(oaRecursiveDoc, `,"parameters":[{"name":"q","in":"query","schema":{"$ref":"#/components/schemas/Node"}}]`, "", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, op := range spec.Ops {
+		if op.Body != nil {
+			got[op.GoName+" body"] = op.Body.goExpr()
+		}
+		got[op.GoName] = op.ResultType.goExpr()
+	}
+	want := map[string]string{
+		"PutJson body": "map[string]json.RawMessage",
+		"PutJson":      "[]json.RawMessage",
+		"GetOdd":       "GetOddResponse",
+		"GetTree":      "Tree",
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s: %s, want %s", k, got[k], v)
+		}
+	}
+	if fields := spec.Types.structs["GetOddResponse"].Fields; len(fields) != 1 || fields[0].Type.Kind != "raw" {
+		t.Errorf("GetOddResponse fields: %+v", fields)
+	}
+	if fields := spec.Types.structs["Tree"].Fields; len(fields) != 1 || fields[0].Type.goExpr() != "[]Tree" {
+		t.Errorf("Tree fields: %+v", fields)
+	}
+	if _, err := renderOASDKGoFiles(spec); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildOpenAPICLISpec(mustDecodeJSONMap(t, oaRecursiveDoc), CliOptions{Binary: "x", FromOpenAPI: "openapi.json"}, "c"); err == nil || !strings.Contains(err.Error(), "non-scalar schema") {
+		t.Fatalf("the CLI over a recursive parameter schema: %v, want the non-scalar refusal", err)
+	}
+	if _, err := BuildOpenAPICLISpec(mustDecodeJSONMap(t, strings.Replace(oaRecursiveDoc, `,"parameters":[{"name":"q","in":"query","schema":{"$ref":"#/components/schemas/Node"}}]`, "", 1)), CliOptions{Binary: "x", FromOpenAPI: "openapi.json"}, "c"); err != nil {
+		t.Fatalf("the CLI over a recursive document: %v", err)
+	}
+}
+
+// oaUnionSettings is the union app's settings file, read before a test
+// changes directory.
+var oaUnionSettings, _ = filepath.Abs(filepath.Join("testdata", "union", "gofastr.settings.yml"))
+
+// With an entity sdk entry and an OpenAPI one (the union app's layout), a
+// run takes one entry's settings: --from-openapi or --out picks it, and a
+// plain run refuses to guess instead of reading the document from one
+// entry and the output directory from the other.
+func TestOpenAPISDKEntrySelection(t *testing.T) {
+	union, err := os.ReadFile(oaUnionSettings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := oaTempModule(t)
+	if err := os.WriteFile(filepath.Join(dir, "gofastr.settings.yml"), union, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name             string
+		opts             SdkOptions
+		wantOut, wantDoc string
+		wantErr          string
+	}{
+		{name: "plain", wantErr: "lists 2 sdk entries"},
+		{name: "from-openapi", opts: SdkOptions{fromOpenAPI: "api/openapi.json"}, wantOut: "gen/apisdk", wantDoc: "api/openapi.json"},
+		{name: "out entity", opts: SdkOptions{OutDir: "gen/sdk"}, wantOut: "gen/sdk"},
+		{name: "out openapi", opts: SdkOptions{OutDir: "gen/apisdk"}, wantOut: "gen/apisdk", wantDoc: "api/openapi.json"},
+		{name: "another document", opts: SdkOptions{fromOpenAPI: "other.json"}, wantDoc: "other.json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := tc.opts
+			opts.set = map[string]bool{}
+			err := applySDKConfigDefaults(&opts)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("got %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil || opts.OutDir != tc.wantOut || opts.fromOpenAPI != tc.wantDoc {
+				t.Fatalf("out %q doc %q err %v, want out %q doc %q", opts.OutDir, opts.fromOpenAPI, err, tc.wantOut, tc.wantDoc)
+			}
+		})
+	}
+}

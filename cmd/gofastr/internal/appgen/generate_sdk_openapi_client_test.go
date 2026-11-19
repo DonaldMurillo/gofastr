@@ -49,7 +49,7 @@ func TestOpenAPISDKClientIsTheCLIClient(t *testing.T) {
 		}
 	}
 	for name := range sdk {
-		if _, shared := cli[name]; !shared && name != "DoStream" {
+		if _, shared := cli[name]; !shared && name != "DoStream" && name != "Close" {
 			t.Errorf("the SDK client declares %s, which the CLI client does not", name)
 		}
 	}
@@ -78,7 +78,7 @@ func TestOpenAPISDKClientBodiesBounded(t *testing.T) {
 		}
 		switch trimmed := strings.TrimSpace(line); {
 		case strings.Contains(line, "io.LimitReader(resp.Body,"), strings.Contains(line, "resp.Body.Close()"):
-		case trimmed == `return resp.Body, resp.Header.Get("Content-Type"), nil`:
+		case trimmed == `return &streamBody{ReadCloser: resp.Body, cancel: cancel}, resp.Header.Get("Content-Type"), nil`:
 			streams++
 		default:
 			t.Errorf("SECURITY: the SDK client touches resp.Body with no size bound (line %d): %s", i+1, trimmed)
@@ -89,7 +89,7 @@ func TestOpenAPISDKClientBodiesBounded(t *testing.T) {
 	}
 	stream := oaFuncs(t, src)["DoStream"]
 	refuse := strings.Index(stream, `return nil, "", statusError(resp)`)
-	if refuse < 0 || refuse > strings.Index(stream, "return resp.Body") || !strings.Contains(stream, "resp.StatusCode < 200 || resp.StatusCode >= 300") {
+	if refuse < 0 || refuse > strings.Index(stream, "return &streamBody{") || !strings.Contains(stream, "resp.StatusCode < 200 || resp.StatusCode >= 300") {
 		t.Errorf("DoStream hands back a body before refusing a non-2xx status:\n%s", stream)
 	}
 	for _, f := range files[1:2] {

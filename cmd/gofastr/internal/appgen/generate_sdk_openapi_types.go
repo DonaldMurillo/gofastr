@@ -41,6 +41,9 @@ type oaTypeSet struct {
 	order   []string
 	byRef   map[string]string
 	owner   map[string]string
+	// inline holds the refs being typed in place (a component that is
+	// not a named struct): one met again inside itself is raw JSON.
+	inline map[string]bool
 }
 
 // oaReservedTypes are the package-level names the generated SDKs declare
@@ -51,7 +54,7 @@ var oaReservedTypes = []string{
 }
 
 func newOATypeSet(root map[string]any) *oaTypeSet {
-	ts := &oaTypeSet{root: root, structs: map[string]*oaStruct{}, byRef: map[string]string{}, owner: map[string]string{}}
+	ts := &oaTypeSet{root: root, structs: map[string]*oaStruct{}, byRef: map[string]string{}, owner: map[string]string{}, inline: map[string]bool{}}
 	for _, n := range oaReservedTypes {
 		ts.owner[n] = "the SDK itself"
 	}
@@ -98,6 +101,11 @@ func (ts *oaTypeSet) typeOf(schema map[string]any, hint string) (t *oaType, null
 				return &oaType{Kind: "struct", Name: name}, oaNullable(resolved), nil
 			}
 		}
+		if ts.inline[ref] {
+			return oaRaw, false, nil
+		}
+		ts.inline[ref] = true
+		defer delete(ts.inline, ref)
 		return ts.typeOf(resolved, hint)
 	}
 	for _, union := range []string{"oneOf", "anyOf"} {

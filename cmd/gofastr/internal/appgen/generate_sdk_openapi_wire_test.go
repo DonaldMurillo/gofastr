@@ -24,7 +24,9 @@ type oaWireRequest struct {
 }
 
 // oaWireServer answers the oaSDKFixture operations under /api, and under
-// /big/api with bodies past the 1 MiB cap. A request under /redir is
+// /big/api with bodies past the 1 MiB cap. Under /slow a body takes a
+// second to arrive and under /slowhead the headers do; under /fail every
+// operation answers 500. A request under /redir is
 // redirected to /followed, which records that a client followed it.
 func oaWireServer(t *testing.T) (*httptest.Server, func() []oaWireRequest) {
 	h, seen := oaWireHandler()
@@ -47,6 +49,22 @@ func oaWireHandler() (http.Handler, func() []oaWireRequest) {
 		mu.Unlock()
 		big := strings.HasPrefix(r.URL.Path, "/big/")
 		path := strings.TrimPrefix(r.URL.Path, "/big")
+		if strings.HasPrefix(path, "/slowhead/") {
+			time.Sleep(700 * time.Millisecond)
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write([]byte("PNG!"))
+			return
+		}
+		if strings.HasPrefix(path, "/slow/") {
+			w.Header().Set("Content-Type", "image/png")
+			w.WriteHeader(http.StatusOK)
+			for range 4 {
+				_, _ = w.Write(bytes.Repeat([]byte("x"), 1024))
+				w.(http.Flusher).Flush()
+				time.Sleep(250 * time.Millisecond)
+			}
+			return
+		}
 		if strings.HasPrefix(path, "/fail/") {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -104,9 +122,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	client "example.com/barc-sdk"
 )
@@ -167,6 +187,27 @@ func TestWire(t *testing.T) {
 	redir.Token = "tok-1"
 	if err := redir.Ping(ctx); !errors.As(err, &apiErr) || apiErr.Status != 307 {
 		t.Fatalf("a redirect: %v, want the 307 as *APIError", err)
+	}
+
+	if d := client.NewClient(base, nil).HTTP.Timeout; d != 30*time.Second {
+		t.Fatalf("the default client's timeout is %s, want 30s", d)
+	}
+	short := &http.Client{Timeout: 300 * time.Millisecond, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	slow := client.NewClient(base+"/slow"+client.APIPrefix, short)
+	rc, err = slow.BatchZip(ctx, nil)
+	if err != nil {
+		t.Fatalf("BatchZip on a slow body: %v", err)
+	}
+	n, err = io.Copy(io.Discard, rc)
+	rc.Close()
+	if err != nil || n != 4096 {
+		t.Fatalf("a stream slower than Client.Timeout read %d bytes (%v), want all 4096: the timeout bounds the headers, not the download", n, err)
+	}
+	if _, err := slow.ValidateData(ctx, &client.ValidateDataRequest{Data: "d"}); err == nil {
+		t.Fatal("a buffered JSON call outlived Client.Timeout")
+	}
+	if _, err := client.NewClient(base+"/slowhead"+client.APIPrefix, short).BatchZip(ctx, nil); err == nil || !strings.Contains(err.Error(), "no response headers within 300ms") {
+		t.Fatalf("a stream whose headers outlive Client.Timeout: %v, want the header timeout", err)
 	}
 
 	big := client.NewClient(base+"/big"+client.APIPrefix, nil)

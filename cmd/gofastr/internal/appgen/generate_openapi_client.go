@@ -139,17 +139,48 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, query url.Value
 // DoStream is DoRaw for a body too large to buffer (an image, an
 // archive): a 2xx response's body comes back unread, and the caller
 // reads and closes it. A non-2xx answer is read under the cap into an
-// *APIError, as DoRaw reads it.
+// *APIError, as DoRaw reads it. The HTTP client's Timeout bounds the
+// wait for the response headers only, since it would otherwise cut off
+// a long download; the body streams for as long as ctx allows.
 func (c *Client) DoStream(ctx context.Context, method, path string, query url.Values, hdr http.Header, contentType string, body io.Reader) (io.ReadCloser, string, error) {
-	resp, err := c.send(ctx, method, path, query, hdr, contentType, body)
+	ctx, cancel := context.WithCancel(ctx)
+	stream := *c
+	var headers *time.Timer
+	if c.HTTP.Timeout > 0 {
+		unbounded := *c.HTTP
+		unbounded.Timeout = 0
+		stream.HTTP = &unbounded
+		headers = time.AfterFunc(c.HTTP.Timeout, cancel)
+	}
+	resp, err := stream.send(ctx, method, path, query, hdr, contentType, body)
+	if headers != nil && !headers.Stop() {
+		if err == nil {
+			resp.Body.Close()
+		}
+		err = fmt.Errorf("no response headers within %s", c.HTTP.Timeout)
+	}
 	if err != nil {
+		cancel()
 		return nil, "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		defer cancel()
 		defer resp.Body.Close()
 		return nil, "", statusError(resp)
 	}
-	return resp.Body, resp.Header.Get("Content-Type"), nil
+	return &streamBody{ReadCloser: resp.Body, cancel: cancel}, resp.Header.Get("Content-Type"), nil
+}
+
+// streamBody releases DoStream's context once the caller closes the body.
+type streamBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b *streamBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.cancel()
+	return err
 }
 `)
 	}

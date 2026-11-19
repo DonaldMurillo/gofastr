@@ -45,6 +45,18 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
       - test: cmd/gofastr/internal/appgen.TestUnionApp
+  - id: stream-timeout-bounds-the-headers
+    rule: DoStream bounds a request by the HTTP client's Timeout only until the response headers arrive, and streams the body for as long as the caller's context allows, while every buffered call keeps the whole-request Timeout.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
+  - id: self-reference-is-typed-once
+    rule: A component met again while it is being typed in place is raw JSON, and an object component refers to its own named struct, so a recursive document generates in both SDKs and the CLI.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKRecursiveSchemas
+  - id: one-entry-per-run
+    rule: gofastr generate sdk takes its defaults from one sdk entry, picked by --from-openapi, --out or being the only one, and refuses to guess between two or more.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKEntrySelection
   - id: only-the-stream-is-unread
     rule: Every read of a response body in the Go SDK's client goes through the 1 MiB cap, except the 2xx body DoStream returns after refusing a non-2xx status.
     enforced_by:
@@ -101,3 +113,23 @@ decisions:
       - option: Rename or drop the property.
         why: The struct would send and read a different key than the API.
     upholds: [untypeable-schema-is-raw]
+  - id: stream-bounds-headers-not-body
+    date: 2026-11-19
+    status: accepted
+    decision: DoStream sends through a copy of the HTTP client without its Timeout and cancels the request when that Timeout passes before the headers arrive, leaving the CLI's client and every buffered call unchanged.
+    rejected:
+      - option: A default client with no Timeout and a transport with dial, TLS and header timeouts.
+        why: It changes NewClient, which the CLI shares, and a caller's own *http.Client would still cut its downloads at its Timeout.
+      - option: Keep the 30-second Timeout on streams.
+        why: It covers reading the whole body, so any download slower than 30 seconds failed partway.
+    upholds: [stream-timeout-bounds-the-headers]
+  - id: refuse-to-guess-an-sdk-entry
+    date: 2026-11-19
+    status: accepted
+    decision: With two or more sdk entries, gofastr generate sdk needs --from-openapi or --out to pick one, as gofastr generate cli needs --out or --binary.
+    rejected:
+      - option: Take the first entry, as before.
+        why: The run then mixed entries, reading from_openapi from one and the output directory from another, and wrote the OpenAPI SDK over the entity SDK.
+      - option: Run every entry.
+        why: Flags such as --module or --name would apply to SDKs they were not meant for; gofastr generate already runs every entry.
+    upholds: [one-entry-per-run]

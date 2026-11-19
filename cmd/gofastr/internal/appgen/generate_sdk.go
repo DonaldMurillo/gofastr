@@ -432,60 +432,84 @@ func applySDKConfigDefaults(opts *SdkOptions) error {
 	if !discovery.Found || !sameDir(discovery.ProjectDir, ".") {
 		return nil
 	}
+	type sdkEntry struct {
+		opts   SdkOptions
+		outDir string
+	}
+	var entries []sdkEntry
 	for i, gen := range discovery.Config.Codegen.Generators {
 		if gen.Name != "sdk" || gen.Extension != "" {
 			continue
 		}
-		entry, err := decodeSDKEntry(i, gen)
+		decoded, err := decodeSDKEntry(i, gen)
 		if err != nil {
 			return err
 		}
-		// --from-openapi takes the entry generated from the same document,
-		// or none: another entry's output directory holds another SDK.
-		if opts.fromOpenAPI != "" && !sameOpenAPISource(entry.fromOpenAPI, opts.fromOpenAPI) {
-			continue
+		out := gen.Output
+		if out == "" {
+			out = "sdk"
 		}
-		if opts.OutDir == "" {
-			out := gen.Output
-			if out == "" {
-				out = "sdk"
-			}
-			opts.OutDir = filepath.ToSlash(filepath.Join(discovery.Config.Codegen.Output, out))
+		entries = append(entries, sdkEntry{decoded, filepath.ToSlash(filepath.Join(discovery.Config.Codegen.Output, out))})
+	}
+	// A run takes one entry's settings, never a mix of two: --from-openapi
+	// picks the entry for the same document, or none; --out picks the entry
+	// writing there; otherwise the only entry. Two or more need a flag.
+	picked := entries
+	switch {
+	case opts.fromOpenAPI != "":
+		picked = slices.DeleteFunc(slices.Clone(entries), func(e sdkEntry) bool { return !sameOpenAPISource(e.opts.fromOpenAPI, opts.fromOpenAPI) })
+	case opts.OutDir != "":
+		if same := slices.DeleteFunc(slices.Clone(entries), func(e sdkEntry) bool { return filepath.Clean(e.outDir) != filepath.Clean(opts.OutDir) }); len(same) > 0 {
+			picked = same
 		}
-		for _, field := range []struct {
-			flag       string
-			dst, entry *string
-		}{
-			{"name", &opts.name, &entry.name},
-			{"api-prefix", &opts.apiPrefix, &entry.apiPrefix},
-			{"module", &opts.module, &entry.module},
-			{"base-url", &opts.baseURL, &entry.baseURL},
-			{"sdk-version", &opts.sdkVersion, &entry.sdkVersion},
-			{"from-openapi", &opts.fromOpenAPI, &entry.fromOpenAPI},
-		} {
-			if *field.dst == "" && !opts.set[field.flag] {
-				*field.dst = *field.entry
-				if entry.set[field.flag] {
-					if opts.set == nil {
-						opts.set = map[string]bool{}
-					}
-					opts.set[field.flag] = true
-				}
-			}
-		}
-		for _, field := range []struct {
-			flag       string
-			dst, entry *[]string
-		}{
-			{"target", &opts.targets, &entry.targets},
-			{"only", &opts.only, &entry.only},
-			{"exclude", &opts.exclude, &entry.exclude},
-		} {
-			if len(*field.dst) == 0 && !opts.set[field.flag] {
-				*field.dst = *field.entry
-			}
-		}
+	}
+	switch len(picked) {
+	case 0:
 		return nil
+	case 1:
+	default:
+		var dirs []string
+		for _, e := range picked {
+			dirs = append(dirs, e.outDir)
+		}
+		return fmt.Errorf("gofastr.settings.yml lists %d sdk entries (%s); pass --out or --from-openapi to pick one", len(picked), strings.Join(dirs, ", "))
+	}
+	entry := picked[0].opts
+	if opts.OutDir == "" {
+		opts.OutDir = picked[0].outDir
+	}
+	for _, field := range []struct {
+		flag       string
+		dst, entry *string
+	}{
+		{"name", &opts.name, &entry.name},
+		{"api-prefix", &opts.apiPrefix, &entry.apiPrefix},
+		{"module", &opts.module, &entry.module},
+		{"base-url", &opts.baseURL, &entry.baseURL},
+		{"sdk-version", &opts.sdkVersion, &entry.sdkVersion},
+		{"from-openapi", &opts.fromOpenAPI, &entry.fromOpenAPI},
+	} {
+		if *field.dst == "" && !opts.set[field.flag] {
+			*field.dst = *field.entry
+			if entry.set[field.flag] {
+				if opts.set == nil {
+					opts.set = map[string]bool{}
+				}
+				opts.set[field.flag] = true
+			}
+		}
+	}
+	for _, field := range []struct {
+		flag       string
+		dst, entry *[]string
+	}{
+		{"target", &opts.targets, &entry.targets},
+		{"only", &opts.only, &entry.only},
+		{"exclude", &opts.exclude, &entry.exclude},
+	} {
+		if len(*field.dst) == 0 && !opts.set[field.flag] {
+			*field.dst = *field.entry
+		}
 	}
 	return nil
 }
