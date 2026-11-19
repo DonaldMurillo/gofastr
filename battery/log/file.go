@@ -97,8 +97,8 @@ func MustFileSink(path string, opts FileOpts) Sink {
 	return s
 }
 
-// DefaultFileSink resolves a per-app file under the OS state dir.
-// On linux this honors $XDG_STATE_HOME; otherwise ~/.local/state/<app>/server.log.
+// DefaultFileSink resolves $XDG_STATE_HOME/<app>/server.log when the
+// variable is non-empty, or ~/.local/state/<app>/server.log otherwise.
 //
 // appName must be non-empty. Two apps that both pass an empty name
 // would otherwise silently share one log file ("gofastr/server.log")

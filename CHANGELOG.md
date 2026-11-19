@@ -25,6 +25,10 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **The server-log guide lists every output.** `log.md` now documents
+  the stderr console sink beside the file, webhook and JSON stream
+  sinks, its three `Config.Console` modes, and how `NO_COLOR` affects
+  attachment and color.
 - **The JavaScript lint reads more code correctly.** It handles division
   after a quoted value, named single-parameter keydown handlers, and
   static template replacements for number placeholders.
