@@ -14,7 +14,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
-	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -132,8 +131,11 @@ func parseAuthFormOrRefuse(w http.ResponseWriter, r *http.Request) bool {
 	if err == nil {
 		return true
 	}
-	status, phrase := bodylimit.FormRefusal(err)
-	writeAuthError(w, r, status, phrase)
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+		writeAuthError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
+		return false
+	}
+	writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
 	return false
 }
 

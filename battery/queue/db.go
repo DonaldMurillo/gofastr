@@ -22,7 +22,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/db/sqlbusy"
-	"github.com/DonaldMurillo/gofastr/internal/settle"
 )
 
 // DBQueue is a SQL-backed queue. Jobs persist in a single table; Dequeue
@@ -1526,7 +1525,7 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 			// dead-lettered instead, where ListJobs shows it and Replay
 			// re-runs it once a handler is back. The settle is detached
 			// from shutdown, and a failure is logged, not discarded.
-			settleCtx, cancel := settle.Context(ctx)
+			settleCtx, cancel := settleContext(ctx)
 			// A claim another worker settled or re-took meanwhile settles
 			// nothing (dead is false): no dead-letter to report.
 			if dead, err := q.settleFailure(settleCtx, job, fmt.Errorf("%w: no handler registered for job type %q", ErrPermanent, job.Type)); err != nil {
@@ -1577,7 +1576,7 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 				"attempt", job.Attempts,
 				"max_attempts", job.MaxAttempts,
 				"err", err)
-			settleCtx, cancel := settle.Context(ctx)
+			settleCtx, cancel := settleContext(ctx)
 			dead, serr := q.settleFailure(settleCtx, job, err)
 			cancel()
 			if serr != nil {
@@ -1592,7 +1591,7 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 			}
 			continue
 		}
-		settleCtx, cancel := settle.Context(ctx)
+		settleCtx, cancel := settleContext(ctx)
 		if err := q.Ack(settleCtx, job); err != nil {
 			q.logger.Warn("queue: ack failed", "job_id", job.ID, "err", err)
 		}
@@ -1606,7 +1605,7 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 // shutdown made it fail, leaving the row claimed with the attempt spent,
 // and on a last attempt the dead-letter sweep failed a job that never ran.
 func (q *DBQueue) handBack(ctx context.Context, job Job) {
-	settleCtx, cancel := settle.Context(ctx)
+	settleCtx, cancel := settleContext(ctx)
 	defer cancel()
 	if err := q.release(settleCtx, job); err != nil {
 		q.logger.Warn("queue: handing back an unstarted job failed; it reruns when its lease expires",
@@ -1627,6 +1626,18 @@ func (q *DBQueue) noteClaimOK() {
 	if q.claimFailing.CompareAndSwap(true, false) {
 		q.logger.Info("queue: claiming jobs recovered", "table", q.table)
 	}
+}
+
+// settleTimeout bounds one ack or nack write after a handler returns.
+// It equals internal/settle.Timeout; queue keeps its own copy so it stays
+// unmountable (TestSettleTimeoutMatchesSettle).
+const settleTimeout = 10 * time.Second
+
+// settleContext detaches ctx from the worker's cancellation and bounds it:
+// a shutdown that lands as a handler finishes must not drop the outcome,
+// or the finished job runs again once its lease expires.
+func settleContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
 }
 
 // runHandler invokes a job handler, converting a panic into an error so a

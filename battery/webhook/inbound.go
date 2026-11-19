@@ -18,8 +18,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/queue"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
-	"github.com/DonaldMurillo/gofastr/internal/bodylimit"
-	"github.com/DonaldMurillo/gofastr/internal/settle"
 )
 
 // Inbound lifecycle status values for an InboundEnvelope. Prefix avoids
@@ -250,8 +248,11 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			status, phrase := bodylimit.ReadRefusal(err)
-			i18n.HTTPError(w, r, status, phrase)
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+				i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
+				return
+			}
+			i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonBodyUnreadable)
 			return
 		}
 
@@ -472,7 +473,7 @@ func ProcessInbound(store InboundStore, fn func(ctx context.Context, e InboundEn
 		// The outcome is written on a detached, bounded context: a
 		// shutdown that lands as fn finishes must not leave the envelope
 		// "processing" for work that already happened.
-		settleCtx, cancel := settle.Context(ctx)
+		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
 		defer cancel()
 		if err != nil {
 			failed := *env

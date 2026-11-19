@@ -25,11 +25,23 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/netguard"
 	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/internal/mountpath"
 )
 
 // DefaultPath is the mount prefix used when Config.Path is empty.
 const DefaultPath = "/__gofastr/t"
+
+// reservedGoFastrSegments are the path segments directly under
+// /__gofastr that the framework and its batteries already serve
+// (runtime.js, app.css, the SSE bus, compute workers, …). Mounting a
+// relay route onto one of them collides at registration time, so New
+// refuses the Config up front instead of letting the ServeMux panic
+// without context during Init.
+var reservedGoFastrSegments = map[string]bool{
+	"sse": true, "session": true, "action": true, "widgets": true,
+	"widget": true, "embed": true, "embed.js": true, "embed-runtime.js": true,
+	"runtime.js": true, "runtime": true, "app.css": true, "comp": true,
+	"color-scheme.js": true, "compute": true, "pwa": true, "icons": true,
+}
 
 // defaultMaxBodyBytes caps request bodies per route when
 // Route.MaxBodyBytes is zero. 8 MiB is generous for analytics beacons
@@ -272,9 +284,56 @@ func (r *Relay) Init(app *framework.App) error {
 // percent-encoding, and clear of the framework's reserved
 // /__gofastr namespace.
 func validatePath(p string) {
-	if err := mountpath.Validate("Config.Path", p); err != nil {
-		panic("relay: " + err.Error())
+	if !strings.HasPrefix(p, "/") {
+		panic(fmt.Sprintf("relay: Config.Path %q must be absolute (start with /)", p))
 	}
+	if p == "/" {
+		panic(`relay: Config.Path "/" would capture the whole app`)
+	}
+	if strings.HasSuffix(p, "/") {
+		panic(fmt.Sprintf("relay: Config.Path %q must not end with a slash", p))
+	}
+	if err := validateSegments("Config.Path", p); err != nil {
+		panic(err.Error())
+	}
+	if p == "/__gofastr" {
+		panic(`relay: Config.Path "/__gofastr" is the framework's reserved namespace root; mount under a subpath like "/__gofastr/t" or a custom path`)
+	}
+	if rest, ok := strings.CutPrefix(p, "/__gofastr/"); ok && rest != "" {
+		seg := rest
+		if i := strings.IndexByte(rest, '/'); i >= 0 {
+			seg = rest[:i]
+		}
+		if reservedGoFastrSegments[seg] {
+			panic(fmt.Sprintf("relay: Config.Path %q collides with the reserved framework route /__gofastr/%s", p, seg))
+		}
+	}
+}
+
+// validateSegments rejects traversal, empty segments, percent-encoding,
+// and control bytes in an absolute path.
+func validateSegments(what, p string) error {
+	for i := range len(p) {
+		c := p[i]
+		if c <= 0x20 || c == 0x7f {
+			return fmt.Errorf("relay: %s %q contains a control character or space", what, p)
+		}
+		if c == '{' || c == '}' || c == '$' {
+			return fmt.Errorf("relay: %s %q must be a literal path without ServeMux metacharacters", what, p)
+		}
+		if c == '%' || c == '#' || c == '?' || c == '\\' {
+			return fmt.Errorf("relay: %s %q contains %q; percent-encoding and fragments are not valid here", what, p, string(c))
+		}
+	}
+	for _, seg := range strings.Split(p[1:], "/") {
+		if seg == "" {
+			return fmt.Errorf("relay: %s %q contains an empty path segment", what, p)
+		}
+		if seg == "." || seg == ".." {
+			return fmt.Errorf("relay: %s %q contains a traversal segment", what, p)
+		}
+	}
+	return nil
 }
 
 // validatePrefix enforces the route prefix contract: relative to Path,
@@ -292,8 +351,8 @@ func validatePrefix(prefix string) {
 	if name == "" {
 		panic(`relay: route prefix "/" would shadow the whole mount path`)
 	}
-	if err := mountpath.ValidateSegments("route prefix", "/"+name); err != nil {
-		panic("relay: " + err.Error())
+	if err := validateSegments("route prefix", "/"+name); err != nil {
+		panic(err.Error())
 	}
 }
 

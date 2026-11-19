@@ -2,10 +2,25 @@ primitive: bodylimit
 summary: The repo's cap on one inbound JSON request body and the status+phrase every capped, unreadable or undecodable request body answers, in internal/bodylimit.
 code:
   - internal/bodylimit/
+twins:
+  - job: Map a refused auth request body (over the cap, unreadable, undecodable, bad form) to its status and phrase, and cap it at 1 MiB.
+    why: battery/auth stays unmountable, and unmount refuses a package that imports a gofastr internal/ package; auth keeps a copy pinned to bodylimit by a parity test.
+    sites:
+      - path: internal/bodylimit/bodylimit.go
+        note: MaxJSONBodyBytes, ReadRefusal, DecodeRefusal, FormRefusal.
+      - path: battery/auth/json_limit.go
+        note: maxAuthBodyBytes and decodeJSONLimited.
+      - path: battery/auth/form_decode.go
+        note: parseAuthFormOrRefuse.
+      - path: battery/webhook/inbound.go
+        note: IngestHandler's read refusal; webhook stays unmountable too.
 invariants:
   - id: body-refusal-mapping-is-one
-    rule: The status and phrase for a refused request body come from bodylimit - 413 with the status phrase over the cap, 400 body_unreadable for a failed read, 400 invalid_json_body for a failed decode, 400 invalid_form for a failed form parse - and no surface re-derives the pair.
+    rule: The status and phrase for a refused request body come from bodylimit - 413 with the status phrase over the cap, 400 body_unreadable for a failed read, 400 invalid_json_body for a failed decode, 400 invalid_form for a failed form parse - and no surface re-derives the pair, except the unmountable batteries' pinned copies listed under twins.
     enforced_by:
+      - test: battery/auth.TestBodyRefusalsMatchBodylimit
+      - test: cmd/gofastr/internal/unmountcmd.TestUnmountableBatteriesImportNoInternal
+
       - test: framework/entityui.TestBulkBodyReadFailureNamesTheUnreadableBody
       - test: battery/auth.TestDecodeJSONLimitedReadFailureNamesTheUnreadableBody
       - test: battery/webhook.TestIngestBodyReadFailureNamesTheUnreadableBody
@@ -14,7 +29,7 @@ invariants:
       - test: battery/admin.TestOpsOversizeBodyAnswersTheOpsEnvelope
       - test: framework/crud.TestJSONDecodeErrorsArePhrasedOverHTTP
   - id: json-body-cap-is-one-constant
-    rule: Every inbound JSON request body cap is bodylimit.MaxJSONBodyBytes - crud's exported MaxJSONBodyBytes re-exports it, and auth, the admin ops post, semantic routes and the desktop bridge take their value from it.
+    rule: Every inbound JSON request body cap is bodylimit.MaxJSONBodyBytes - crud's exported MaxJSONBodyBytes re-exports it, and the admin ops post, semantic routes and the desktop bridge take their value from it, and auth's own copy equals it (battery/auth.TestBodyRefusalsMatchBodylimit).
     judge: Does a new inbound JSON request-body cap take bodylimit.MaxJSONBodyBytes instead of declaring its own 1 MiB?
 decisions:
   - id: refusals-live-under-internal
