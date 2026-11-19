@@ -207,3 +207,66 @@ func TestErrorPageCarriesNoRouteMeta(t *testing.T) {
 type panicSEOComp struct{ barcodeComp }
 
 func (*panicSEOComp) Render() render.HTML { panic("render failed") }
+
+// RenderScreen answering a matched route with an error status (a
+// middleware's 404 or 410 screen) carries none of the route's meta; at
+// 200 the route's alternates stay, so the check is not vacuous.
+func TestRenderScreenErrorCarriesNoRouteMeta(t *testing.T) {
+	a := app.NewApp("rsmeta")
+	a.SetDefaultLayout(app.NewLayout("root", app.LayoutSpec{}, func(_ context.Context, l *app.LayoutTree) render.HTML { return l.Primary() }))
+	a.Register("/barcodes/:type", &barcodeComp{}, nil)
+	ds := New(a, WithSitemap(SitemapConfig{BaseURL: "https://example.com"}), WithDescription("Site wide"))
+	set := i18n.PathLocales{Default: "en", Prefixed: []string{"es"}}
+	ds.SetPathLocales(set)
+	render := func(status int, partial bool) string {
+		req := httptest.NewRequest(http.MethodGet, "/barcodes/hidden", nil)
+		req = req.WithContext(i18n.WithPathLocale(req.Context(), set, "en"))
+		if partial {
+			req.Header.Set("X-Gofastr-Navigate", "1")
+			req.Header.Set("X-Gofastr-From", "/barcodes/qr")
+		}
+		rec := httptest.NewRecorder()
+		ds.RenderScreen(rec, req, nfMetaBody{}, ScreenResponse{Status: status})
+		if rec.Code != status {
+			t.Fatalf("status %d, want %d", rec.Code, status)
+		}
+		return rec.Body.String()
+	}
+	if got := render(http.StatusOK, false); !strings.Contains(got, `hreflang="es"`) {
+		t.Fatalf("200 lost the route's alternates, so the 404 check proves nothing")
+	}
+	for _, status := range []int{http.StatusNotFound, http.StatusGone} {
+		for _, partial := range []bool{false, true} {
+			if got := routeMeta(render(status, partial)); len(got) != 0 {
+				t.Errorf("%d partial=%v: carries route meta %q", status, partial, got)
+			}
+		}
+	}
+}
+
+// selfNotFoundComp is a routed screen that answers 404 itself.
+type selfNotFoundComp struct{}
+
+func (selfNotFoundComp) Render() render.HTML   { return "<p>my own 404</p>" }
+func (selfNotFoundComp) ScreenStatusCode() int { return http.StatusNotFound }
+func (selfNotFoundComp) ScreenSEO(context.Context) SEO {
+	return SEO{Description: "Own 404", Robots: "noindex"}
+}
+
+// A routed screen that sets a 404 status itself keeps its own head, its
+// robots line included (decision screen-own-404-keeps-its-head).
+func TestScreenOwn404KeepsItsHead(t *testing.T) {
+	a := app.NewApp("own404")
+	a.Register("/own", selfNotFoundComp{}, nil)
+	ds := New(a)
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/own", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status %d, want 404", rec.Code)
+	}
+	for _, want := range []string{`content="Own 404"`, `content="noindex"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("own 404 lost %s", want)
+		}
+	}
+}
