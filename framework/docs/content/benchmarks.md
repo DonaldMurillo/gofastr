@@ -261,10 +261,11 @@ those paths.
 
 ### What to look for
 
-- **Streaming wins over buffered-paginated** at any volume that pays
-  network round-trips. SQLite shows a small win (12.2 ms vs 13.4 ms
-  on 2026-10-18); Postgres showed 12ms vs 46ms, a **3.9× win**, because
-  one query beats 50 round-trips.
+- **Streaming avoids the round trips of buffered pagination.** For 5,000
+  rows, SQLite took 13.4 ms/op with buffered pagination and 12.2 ms/op
+  with streaming on 2026-10-18. The [2026-07-18 snapshot](perf-results.md#historical-snapshot-2026-07-18-v0260)
+  (v0.26.0) measured 46.7 ms/op with buffered pagination and 11.5 ms/op
+  with streaming on Postgres, a **4.1× speedup**.
 - **SSE delivery_ratio** ≪ 1.0 under bursty emit. Default subscribers
   drop oldest events on overflow; this is documented behaviour. A
   regression means the ratio drops further at a fixed emit rate.
