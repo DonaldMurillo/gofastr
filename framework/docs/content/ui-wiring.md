@@ -243,6 +243,27 @@ Useful options:
   borrowing the failed route's title.
   An unmatched route retains its request path even if the root layout has
   a `FallbackNotFound` outlet; it is already rendering the not-found page.
+- **Make a route look like one that does not exist.** A policy that
+  returns `decide.NotFound()` answers what a URL no route matches gets:
+  the `WithNotFoundScreen` page, the client-navigation partial, problem
+  JSON or markdown, as the request asks, with status 404 and no title,
+  content, hreflang or other meta from the route. Its server actions
+  refuse with 404 too, and `gofastr export` skips the page as it skips
+  any page a policy refuses. `decide.Block(404)` is different: it answers the
+  status phrase as a plain body. Middleware gets the same answer from
+  `host.ServeNotFound(w, r)` on the `*uihost.UIHost` the app mounted:
+
+  ```go
+  admin := app.PolicyFunc(func(ctx context.Context) app.Decision {
+      if isAdmin(ctx) {
+          return decide.Allow()
+      }
+      return decide.NotFound()
+  })
+  ```
+
+  Widgets mounted on the path, and the layout's chrome, still render,
+  as they do for any unknown URL at that path.
 
 **`fwApp.Start`** runs migrations, binds the port, serves. Nothing
 UI-specific.

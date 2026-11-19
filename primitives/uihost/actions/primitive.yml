@@ -83,9 +83,10 @@ invariants:
       - test: framework/uihost.TestServerActionRunsRequiresResolvers
       - test: framework/uihost.TestServerActionRefusesFailedPage
   - id: server-action-refusal-status
-    rule: A refused server action answers the policy's block status when it is 4xx or 5xx, 404 for a page that resolves not-found, and 403 otherwise.
+    rule: A refused server action answers the policy's block status when it is 4xx or 5xx, 404 for a page or static pattern that resolves not-found (decide.NotFound included), and 403 otherwise.
     enforced_by:
       - test: framework/uihost.TestServerActionRefusesFailedPage
+      - test: framework/uihost.TestDecideNotFoundRefusesActions
       - test: framework/uihost.TestServerActionRunsRequiresResolvers
   - id: server-action-result
     rule: A server action's handler receives the request's params, and its JSON result carries Cache-Control no-store and a message in the caller's locale.

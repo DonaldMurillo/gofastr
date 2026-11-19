@@ -25,6 +25,9 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A server action on a static page whose policy phase answers not-found
+  refuses with 404 when it names no page.** It answered 403, which said
+  the route exists; naming the page already answered 404.
 - **A screen's `ErrNotFound` 404 no longer lists the route's hreflang
   alternates.** When a screen's `Load` or resolver answered
   `app.ErrNotFound`, or a not-found outlet went unfilled, the themed 404
@@ -461,6 +464,16 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr upgrade` finds the Go spellings.
 
 ### Added
+- **`decide.NotFound()` and `UIHost.ServeNotFound(w, r)` answer a route
+  with the 404 an unknown URL gets.** A policy returning
+  `decide.NotFound()`, or middleware calling `host.ServeNotFound`, gets
+  the `WithNotFoundScreen` page, partial, problem JSON or markdown, with
+  nothing from the route, so a route the caller may not see looks like
+  one that does not exist. A region guard's `NotFound` takes the whole
+  page to 404. `decide.Block(404)` still answers the plain status phrase.
+  See [UI wiring](framework/docs/content/ui-wiring.md).
+  ([#824](https://github.com/DonaldMurillo/gofastr/issues/824))
+
 - **fanout: `UnwrapForeign(self, raw)`.** Unwraps a fanout envelope and
   reports `ok` false for a malformed one or one this node sent. The event
   bridge, SSE broker, island manager, access store and module manager use

@@ -365,6 +365,9 @@ type PageError struct {
 	Path     string
 	Err      error
 	NotFound bool
+	// Policy marks the not-found outcome a policy chose with
+	// decide.NotFound, as opposed to a resolver that failed.
+	Policy bool
 }
 
 func (e *PageError) Error() string {
