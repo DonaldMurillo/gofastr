@@ -510,8 +510,8 @@ func toggleCSS(_ style.Theme) string {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
 }
-.fui-choice__input[aria-invalid="true"],
-.fui-switch__input[aria-invalid="true"] {
+.fui-choice__input:is(:user-invalid, [aria-invalid="true"]),
+.fui-switch__input:is(:user-invalid, [aria-invalid="true"]) {
   border-color: var(--color-danger, #B91C1C);
 }
 .fui-choice__input:disabled,

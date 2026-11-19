@@ -570,7 +570,7 @@ func formFieldCSS(_ style.Theme) string {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
 }
-.fui-input[aria-invalid="true"] {
+.fui-input:is(:user-invalid, [aria-invalid="true"]) {
   /* Non-color affordance: stack an inset 1px ring so the error state
      reads as a thicker border without bumping border-width and
      shifting the input's internal text by 1px on every validation

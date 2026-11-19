@@ -72,8 +72,11 @@
 
   // report renders the envelope into the form. status and txt are the
   // response's; a body that is not the envelope falls back to a toast
-  // naming the status.
-  function report(form, status, txt) {
+  // naming the status. opts.focus (a submit, never an as-you-type
+  // dispatch) moves focus to the first refused control, but only while
+  // focus is still in the form or nowhere, so a late answer never pulls
+  // the reader out of what they moved on to.
+  function report(form, status, txt, opts) {
     if (!form) return;
     // The first refusal in a document loads this module after the
     // request, so rpc.js could not clear the server's own messages.
@@ -109,6 +112,11 @@
       if (p.id) describe(el, p.id, true);
       p.textContent = [].concat(fields[name]).join(', ');
       placed++;
+    }
+    if (placed && opts && opts.focus) {
+      const a = document.activeElement;
+      const first = form.querySelector('[aria-invalid="true"]');
+      if (first && (!a || a === document.body || form.contains(a))) first.focus();
     }
     if (!placed && typeof NS._toastOrFallback === 'function') {
       const title = (d && typeof d.error === 'string' && d.error) || NS.say('runtime.request_failed_status', 'Request failed ({{status}})', { status });

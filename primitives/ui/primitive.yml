@@ -39,6 +39,10 @@ invariants:
     rule: No registered kit sheet mixes colours in srgb; tints mix in oklab.
     enforced_by:
       - test: framework/ui.TestKitMixesColoursInOklab
+  - id: invalid-state-follows-user-invalid
+    rule: Every kit rule that styles [aria-invalid="true"] matches it as :is(:user-invalid, [aria-invalid="true"]), so a field the user has left invalid shows the error before any server answer.
+    enforced_by:
+      - test: framework/ui.TestKitInvalidStateFollowsUserInvalid
   - id: kit-headings-balance
     rule: Hero, page-header and card titles use text-wrap balance, the hero's fluid size mixes rem with vw, and inline code is sized by font-size-adjust where supported.
     enforced_by:
