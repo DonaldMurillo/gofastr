@@ -1,0 +1,42 @@
+primitive: settings.endpoints
+summary: The endpoints section - custom entity routes linked to typed handlers in entities/ - decoded and checked by DecodeEndpoints, which the app spec's endpoints key shares, and rewritten by SetEndpoints.
+code:
+  - core/settings/endpoints.go
+docs:
+  - framework/docs/content/endpoints.md
+invariants:
+  - id: every-key-checked
+    rule: An endpoint entry with an unknown key, a missing required key, a value of the wrong kind or a value outside its shape (snake_case name and entity, GET POST PUT PATCH or DELETE, a relative path with a literal segment, a handler entities/<file>.go#<Exported> that is not a test file, a one-line description) is refused.
+    enforced_by:
+      - test: core/settings.TestEndpointsRefuseBadEntries
+      - test: core/settings.TestEndpointNamesFirstMissingField
+  - id: no-shared-name-or-route
+    rule: Two endpoints may not share a name, nor a method and entity route once parameter names are erased, and no path may be the entity's {id}/transitions/{key} state-move route.
+    enforced_by:
+      - test: core/settings.TestEndpointsRefuseDuplicates
+      - test: core/settings.TestSetEndpointsRefusesOneRouteTwice
+      - test: core/settings.TestEndpointsRefuseBadEntries
+  - id: format-quotes-strings
+    rule: FormatEndpoints quotes every string value, so a name such as true reads back as a string.
+    enforced_by:
+      - test: core/settings.TestFormatEndpointsQuotesKeywords
+  - id: write-reads-back
+    rule: SetEndpoints writes nothing unless the rewritten file reads back with exactly the given entries, and keeps the rest of the file's bytes.
+    enforced_by:
+      - test: core/settings.TestSetEndpointsKeepsTheRestOfTheFile
+      - test: core/settings.TestSetEndpointsRefusesBadEntry
+      - test: core/settings.TestSweepSettingsEndpointsQuotedKeyRefused
+  - id: app-spec-decodes-through-settings
+    rule: The app spec's endpoints key is decoded and checked only by settings.DecodeEndpoints.
+    judge: Does the app spec decode or check an endpoints entry anywhere other than through settings.DecodeEndpoints?
+    applies:
+      - cmd/gofastr/internal/appspec/appspec.go
+decisions:
+  - id: check-shape-at-decode
+    date: 2026-11-19
+    status: accepted
+    decision: Every endpoint value is checked against its shape when decoded, and whether the entity and handler exist is left to the generator, which has the source.
+    rejected:
+      - option: Accept any string and escape it when generating Go.
+        why: An entry lands in generated Go, the SDKs and the CLI, and each would have to escape it its own way.
+    upholds: [every-key-checked]
