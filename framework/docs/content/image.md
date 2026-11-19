@@ -318,6 +318,17 @@ fall through to the `<img>` fallback.
 `HighPriority` always loads eagerly: a lazy image is not fetched until
 layout, so a high priority hint on it would do nothing.
 
+There is no separate preload option for the main image, because none
+is needed: the `<img>` is in the server-rendered HTML, so the browser's
+preload scanner finds it as soon as the markup arrives. A
+`<link rel="preload" as="image">` only helps an image the browser
+discovers late, such as a CSS `background-image`. Don't draw the main
+image that way: render it as a `ui.OptimizedImage` or `ui.PipelineImage`
+with `HighPriority`. Caller head HTML (`WithHeadHTML`, a screen's
+`HeadHTML`) can't carry a preload link either: the head scrub drops
+every preload-family link. Fonts have their own option,
+`uihost.WithFontPreload`.
+
 ## Placeholders
 
 A placeholder is a cheap stand-in that paints before the real image

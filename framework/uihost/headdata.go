@@ -17,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	xhtml "golang.org/x/net/html"
 )
 
 func catalogJSONScript(ds *UIHost) string {
@@ -201,9 +202,13 @@ var voidHeadTagsRe = regexp.MustCompile(
 	`(?is)<(base|embed|img|source)\b[^>]*?/?>`,
 )
 
-var eventHandlerAttrRe = regexp.MustCompile(`(?is)[\s/]on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s/>]+)`)
+// A browser starts a new attribute after whitespace, a slash or the
+// quote that closes the previous value. A leading space or slash goes
+// with the match; a closing quote is kept, so the value before it stays
+// closed.
+var eventHandlerAttrRe = regexp.MustCompile(`(?is)(?:[\s/]|(["']))on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s/>]+)`)
 
-var autofocusAttrRe = regexp.MustCompile(`(?is)[\s/]autofocus(\s*=\s*("[^"]*"|'[^']*'|[^\s/>]+))?`)
+var autofocusAttrRe = regexp.MustCompile(`(?is)(?:[\s/]|(["']))autofocus(\s*=\s*("[^"]*"|'[^']*'|[^\s/>]+))?`)
 
 var metaRefreshRe = regexp.MustCompile(`(?is)<meta\b[^>]*http-equiv\s*=\s*["']?\s*refresh\s*["']?[^>]*>`)
 
@@ -237,8 +242,8 @@ func stripInlineScriptsOnce(s string) string {
 	out = dangerousHeadTagsRe.ReplaceAllString(out, "")
 	out = voidHeadTagsRe.ReplaceAllString(out, "")
 	out = metaRefreshRe.ReplaceAllString(out, "")
-	out = eventHandlerAttrRe.ReplaceAllString(out, "")
-	out = autofocusAttrRe.ReplaceAllString(out, "")
+	out = eventHandlerAttrRe.ReplaceAllString(out, "$1")
+	out = autofocusAttrRe.ReplaceAllString(out, "$1")
 	out = linkTagRe.ReplaceAllStringFunc(out, func(tag string) string {
 		if isSafeLinkTag(tag) {
 			return tag
@@ -248,45 +253,31 @@ func stripInlineScriptsOnce(s string) string {
 	return out
 }
 
+// isSafeLinkTag reads the tag's real attributes with the HTML tokenizer,
+// the first of a repeated name winning as in a browser, so text inside
+// another attribute's value is never mistaken for a rel or an href.
 func isSafeLinkTag(tag string) bool {
-	rel := extractAttrValue(tag, "rel")
-	for _, tok := range strings.Fields(strings.ToLower(rel)) {
+	z := xhtml.NewTokenizer(strings.NewReader(tag))
+	if tt := z.Next(); tt != xhtml.StartTagToken && tt != xhtml.SelfClosingTagToken {
+		return false
+	}
+	attrs := map[string]string{}
+	for _, a := range z.Token().Attr {
+		if _, seen := attrs[a.Key]; !seen {
+			attrs[a.Key] = a.Val
+		}
+	}
+	for _, tok := range strings.Fields(strings.ToLower(attrs["rel"])) {
 		switch tok {
 		case "preload", "modulepreload", "prefetch":
 			return false
 		}
 	}
-	href := extractAttrValue(tag, "href")
-	if href == "" {
+	href, ok := attrs["href"]
+	if !ok || href == "" {
 		return true
 	}
 	return isSafeHeadURL(href)
-}
-
-var attrValueRegexps sync.Map
-
-func attrValueRegexp(attr string) *regexp.Regexp {
-	if re, ok := attrValueRegexps.Load(attr); ok {
-		return re.(*regexp.Regexp)
-	}
-	re := regexp.MustCompile(`(?is)["'/\s]` + regexp.QuoteMeta(attr) + `\s*=\s*("([^"]*)"|'([^']*)'|[^\s/>]*)`)
-	attrValueRegexps.Store(attr, re)
-	return re
-}
-
-func extractAttrValue(tag, attr string) string {
-	m := attrValueRegexp(attr).FindStringSubmatch(tag)
-	if m == nil {
-		return ""
-	}
-	switch {
-	case strings.HasPrefix(m[1], `"`):
-		return m[2]
-	case strings.HasPrefix(m[1], `'`):
-		return m[3]
-	default:
-		return m[1]
-	}
 }
 
 func isSafeHeadURL(u string) bool {
