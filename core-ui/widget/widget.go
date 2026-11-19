@@ -420,12 +420,18 @@ func (b *Builder) Mount(p Position) *Builder {
 	b.def.Position = p
 	if p == Center {
 		b.def.Backdrop = true
-		b.def.CloseOnEscape = true
-		b.def.CloseOnClickOutside = true
+		b.Dismissible()
 		if b.def.Role == "" {
 			b.def.Role = "dialog"
 		}
 	}
+	return b
+}
+
+// Dismissible enables Escape and outside-click dismissal for the widget.
+func (b *Builder) Dismissible() *Builder {
+	b.def.CloseOnEscape = true
+	b.def.CloseOnClickOutside = true
 	return b
 }
 
@@ -481,10 +487,7 @@ func (b *Builder) PollTerminal(fn func() bool) *Builder {
 // the client. method is GET, POST, PUT, PATCH or DELETE; "" defaults to
 // "POST", and Mount panics on any other.
 func (b *Builder) RPC(method, path string, h http.Handler) *Builder {
-	if method == "" {
-		method = "POST"
-	}
-	b.def.RPCs = append(b.def.RPCs, RPCEndpoint{Method: method, Path: path, Handler: h})
+	b.def.RPCs = append(b.def.RPCs, RPCEndpoint{Method: widgetRPCMethod(method), Path: path, Handler: h})
 	return b
 }
 
@@ -802,48 +805,11 @@ func Mount(r *router.Router, def *Definition) {
 		def.StatePath = "/core-ui/widget/" + def.Name + "/state"
 	}
 
-	// An RPC method Mount cannot register fails before any route is: a
-	// PATCH used to fall through to POST, so the runtime's PATCH found no
-	// handler and a POST reached it.
-	for _, rpc := range def.RPCs {
-		switch rpc.Method {
-		case "", "GET", "POST", "PUT", "PATCH", "DELETE":
-		default:
-			panic(fmt.Sprintf("widget: %s RPC %s has method %q; want GET, POST, PUT, PATCH or DELETE (empty means POST)", def.Name, rpc.Path, rpc.Method))
-		}
-	}
-
-	def.mountPrefix = r.Prefix()
-	srv := &server{def: *def}
-	r.Get(def.StylePath, http.HandlerFunc(srv.serveStyle))
-	r.Get(def.StatePath, gateSession(def.gateLevelOf(), def, http.HandlerFunc(srv.serveState)))
-	// Chrome endpoint: runtime fetches HTML lazily on first open
-	// instead of receiving it inline in the /widgets catalog. Keeps
-	// the registry small and lets browsers cache by URL.
-	r.Get(chromePathFor(def), gateSession(def.gateLevelOf(), def, http.HandlerFunc(srv.serveChrome)))
-
-	for _, rpc := range def.RPCs {
-		// Same gate the widget's own /state and chrome endpoints carry.
-		// These were registered bare, so a widget declaring
-		// RequireSession refused a caller on /state and served that same
-		// caller its RPCs in the same process -- and the RPCs are the
-		// mutating half. A gate that covers the read and not the write is
-		// not a gate.
-		h := gateSession(def.gateLevelOf(), def, rpc.Handler)
-		switch rpc.Method {
-		case "GET":
-			r.Get(rpc.Path, h)
-		case "POST":
-			r.Post(rpc.Path, h)
-		case "PUT":
-			r.Put(rpc.Path, h)
-		case "PATCH":
-			r.Patch(rpc.Path, h)
-		case "DELETE":
-			r.Delete(rpc.Path, h)
-		default: // "" or POST, the only other methods the check above lets through
-			r.Post(rpc.Path, h)
-		}
+	prefix := r.Prefix()
+	endpoints := widgetEndpoints(def, prefix)
+	def.mountPrefix = prefix
+	for _, e := range endpoints {
+		r.Handle(e.method, e.path, e.handler)
 	}
 
 	registryMu.Lock()
@@ -865,42 +831,48 @@ func MountShared(r *router.Router, def *Definition) {
 		served[route.Method+" "+route.Pattern] = true
 	}
 	root := r.Root()
-	srv := &server{def: *def}
-	gate := def.gateLevelOf()
-	type endpoint struct {
-		method, url string
-		handler     http.Handler
-	}
-	endpoints := []endpoint{
-		{"GET", def.StyleURL(), http.HandlerFunc(srv.serveStyle)},
-		{"GET", def.StateURL(), gateSession(gate, def, http.HandlerFunc(srv.serveState))},
-		{"GET", def.ChromeURL(), gateSession(gate, def, http.HandlerFunc(srv.serveChrome))},
-	}
-	for _, rpc := range def.RPCs {
-		method := rpc.Method
-		if method == "" {
-			method = "POST"
-		}
-		endpoints = append(endpoints, endpoint{method, def.mountPrefix + rpc.Path, gateSession(gate, def, rpc.Handler)})
-	}
-	for _, e := range endpoints {
-		if served[e.method+" "+e.url] {
+	for _, e := range widgetEndpoints(def, def.mountPrefix) {
+		url := def.mountPrefix + e.path
+		key := e.method + " " + url
+		if served[key] {
 			continue
 		}
-		served[e.method+" "+e.url] = true
-		switch e.method {
-		case "GET":
-			root.Get(e.url, e.handler)
-		case "PUT":
-			root.Put(e.url, e.handler)
-		case "PATCH":
-			root.Patch(e.url, e.handler)
-		case "DELETE":
-			root.Delete(e.url, e.handler)
-		default: // POST, the only other method Mount lets through
-			root.Post(e.url, e.handler)
-		}
+		served[key] = true
+		root.Handle(e.method, url, e.handler)
 	}
+}
+
+type widgetEndpoint struct {
+	method, path string
+	handler      http.Handler
+}
+
+func widgetEndpoints(def *Definition, prefix string) []widgetEndpoint {
+	srv := &server{def: *def}
+	srv.def.mountPrefix = prefix
+	gate := def.gateLevelOf()
+	endpoints := []widgetEndpoint{
+		{"GET", def.StylePath, http.HandlerFunc(srv.serveStyle)},
+		{"GET", def.StatePath, gateSession(gate, def, http.HandlerFunc(srv.serveState))},
+		{"GET", chromePathFor(def), gateSession(gate, def, http.HandlerFunc(srv.serveChrome))},
+	}
+	for _, rpc := range def.RPCs {
+		method := widgetRPCMethod(rpc.Method)
+		switch method {
+		case "GET", "POST", "PUT", "PATCH", "DELETE":
+		default:
+			panic(fmt.Sprintf("widget: %s RPC %s has method %q; want GET, POST, PUT, PATCH or DELETE (empty means POST)", def.Name, rpc.Path, rpc.Method))
+		}
+		endpoints = append(endpoints, widgetEndpoint{method, rpc.Path, gateSession(gate, def, rpc.Handler)})
+	}
+	return endpoints
+}
+
+func widgetRPCMethod(method string) string {
+	if method == "" {
+		return "POST"
+	}
+	return method
 }
 
 // MountBuilder builds the widget from b and mounts it on r, sugar over the

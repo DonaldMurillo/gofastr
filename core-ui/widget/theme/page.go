@@ -5,9 +5,8 @@
 // kiln-button, kiln-grid-*, …) that reference canonical theme
 // tokens.
 //
-// A host can override individual tokens by passing a custom Theme
-// to PageTheme, every utility class re-resolves to the new value,
-// so a single token swap re-skins the whole app.
+// Customize the value returned by PageTheme and pass it to PageCSS
+// to emit the host stylesheet with the overridden tokens.
 package theme
 
 import "github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -18,6 +17,7 @@ import "github.com/DonaldMurillo/gofastr/core-ui/style"
 //
 //	t := theme.PageTheme()
 //	t.Colors.Primary = style.Color{Name: "primary", Value: "#0F172A"}
+//	css := theme.PageCSS(t)
 func PageTheme() style.Theme {
 	t := style.DefaultTheme()
 	t.Name = "page"

@@ -1,7 +1,6 @@
 package widget
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -294,6 +293,26 @@ func serveRuntime(w http.ResponseWriter, r *http.Request) {
 // HTTP route.
 func ServeWidgetList(w http.ResponseWriter, r *http.Request) { serveWidgetList(w, r) }
 
+type catalogEntry struct {
+	Cfg    catalogConfig `json:"cfg"`
+	Hidden bool          `json:"hidden"`
+}
+
+type catalogConfig struct {
+	Backdrop       bool     `json:"backdrop"`
+	ChromePath     string   `json:"chromePath"`
+	CloseOnClick   bool     `json:"closeOnClick"`
+	CloseOnEscape  bool     `json:"closeOnEscape"`
+	DeepLinkKey    string   `json:"deepLinkKey"`
+	DeepLinkParams []string `json:"deepLinkParams"`
+	DeepLinkValue  string   `json:"deepLinkValue"`
+	Name           string   `json:"name"`
+	PollMS         int      `json:"pollMs,omitempty"`
+	Position       Position `json:"position"`
+	StatePath      string   `json:"statePath,omitempty"`
+	StylePath      string   `json:"stylePath"`
+}
+
 // serveWidgetList returns the JSON registry of widgets. Metadata
 // ONLY, chrome HTML is shipped via the per-widget endpoint
 // `/core-ui/widget/<name>/chrome` and fetched lazily when the
@@ -325,56 +344,35 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 	} else {
 		defs = allWidgets()
 	}
-	out := make([]map[string]any, 0, len(defs))
+	out := make([]catalogEntry, 0, len(defs))
 	for _, d := range defs {
-		// Only what this caller is offered (OfferedTo): a widget its gate
-		// refuses would only name itself here and 403 on /chrome, and one
-		// its ListedFor turns away stays out of the listing. ListedFor
-		// scopes the listing only; /chrome and /state check the gate.
 		if !d.OfferedTo(r) {
 			continue
 		}
-		cfg := map[string]any{
-			"name":           d.Name,
-			"position":       string(d.Position),
-			"backdrop":       d.Backdrop,
-			"closeOnEscape":  d.CloseOnEscape,
-			"closeOnClick":   d.CloseOnClickOutside,
-			"stylePath":      d.StyleURL(),
-			"chromePath":     d.ChromeURL(),
-			"deepLinkKey":    d.DeepLinkKey,
-			"deepLinkValue":  d.DeepLinkValue,
-			"deepLinkParams": d.DeepLinkParams,
+		cfg := catalogConfig{
+			Name:           d.Name,
+			Position:       d.Position,
+			Backdrop:       d.Backdrop,
+			CloseOnEscape:  d.CloseOnEscape,
+			CloseOnClick:   d.CloseOnClickOutside,
+			StylePath:      d.StyleURL(),
+			ChromePath:     d.ChromeURL(),
+			DeepLinkKey:    d.DeepLinkKey,
+			DeepLinkValue:  d.DeepLinkValue,
+			DeepLinkParams: d.DeepLinkParams,
 		}
-		// statePath is omitted entirely when there are no signals so
-		// the runtime can skip the empty round-trip on every mount.
-		// pollMs is emitted ONLY when both conditions hold: there is
-		// something to poll (statePath exists) AND PollMS > 0. A
-		// widget without signals never carries pollMs even if PollMS
-		// was set, the runtime would have nothing to fetch.
 		if len(d.Signals) > 0 {
-			cfg["statePath"] = d.StateURL()
-			if d.PollMS > 0 {
-				cfg["pollMs"] = d.PollMS
-			}
+			cfg.StatePath = d.StateURL()
+			cfg.PollMS = max(d.PollMS, 0)
 		}
-		out = append(out, map[string]any{
-			"hidden": d.Hidden,
-			"cfg":    cfg,
-		})
-	}
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(out); err != nil {
-		// A state value that cannot encode would answer the catalog
-		// with an empty body, mounting no widgets; answer 500 so the
-		// runtime treats the catalog as failed, not empty.
-		i18n.HTTPError(w, r, http.StatusInternalServerError, reasonEncodeFailed)
-		return
+		out = append(out, catalogEntry{Cfg: cfg, Hidden: d.Hidden})
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(buf.Bytes())
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(out); err != nil {
+		slog.DebugContext(r.Context(), "widget catalog write failed", "err", err)
+	}
 }
 
 // chromePathFor returns the route the runtime fetches to get the
@@ -958,7 +956,7 @@ func widgetCSS(def Definition) string {
 			"will-change", "transform",
 		).
 		End()
-	ss.Rule(`[data-cui-widget][data-cui-drag-handle="true"]`).
+	ss.Rule(`[data-cui-widget][data-cui-dragging] [data-cui-drag-handle="true"]`).
 		Set("cursor", "grabbing").
 		End()
 

@@ -12,7 +12,7 @@
 // Architectural goals:
 //
 //  1. Hosts (kiln, future feature packages) describe widgets
-//     declaratively via WidgetDef. They never write DOM/CSS by hand.
+//     declaratively via Definition.
 //
 //  2. The runtime (core-ui/runtime + core-ui/html/Overlay) owns
 //     mounting, stacking, focus management, SSE wiring, and RPC
@@ -32,12 +32,12 @@
 //	    Slot("body",   bodyComponent).
 //	    Signal("page", pageSignalSrc).
 //	    Poll(15 * time.Second).
-//	    RPC("POST", "/kiln/tool/reset_session", resetHandler)
+//	    RPC("POST", "/kiln/tool/reset_session", resetHandler).
+//	    Build()
 //
-//	widget.Mount(app, def)
+//	widget.Mount(app.Router(), &def)
 //
 // The package is intentionally small in interface. Built-in surfaces
 // (FloatingPanel, Modal, Toast, Drawer, Popover) live in
-// core-ui/widget/preset and are constructed with the same WidgetDef
-// builder, no new primitive per surface.
+// core-ui/widget/preset and use the same Builder.
 package widget

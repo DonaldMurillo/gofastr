@@ -25,6 +25,14 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Widget builders share one dismissal switch.** Modal, Drawer,
+  BottomSheet and Popover presets opt into Escape and outside-click
+  dismissal with `Builder.Dismissible()`, and every RPC endpoint
+  registers through one path that refuses an unknown method.
+- **Widget fixes.** Bottom-sheet handles show a grabbing cursor while
+  dragged, the page theme CSS uses the customized theme, and the widget
+  guide, optimistic-UI and signal-store examples compile against the
+  current API.
 - **Desktop quit keeps the last state write.** Quit now saves state
   written by in-flight requests and stop hooks, and `Run` returns a
   final save error alongside other teardown errors.

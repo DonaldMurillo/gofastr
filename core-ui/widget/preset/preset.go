@@ -162,18 +162,11 @@ var (
 // Role defaults to "dialog" so screen readers announce the drawer
 // like a modal, overrideable via .Role("…") on the builder.
 func Drawer(name string) *widget.Builder {
-	b := widget.New(name).
+	return widget.New(name).
 		Mount(widget.Edge).
 		Backdrop().
+		Dismissible().
 		Role("dialog")
-	// Match Modal's CloseOnEscape / CloseOnClickOutside since drawers
-	// are equally modal in feel. widget.Builder doesn't expose setters
-	// for these (only the Center-position Mount auto-enables them), so
-	// reach into the definition directly.
-	d := b.Definition()
-	d.CloseOnEscape = true
-	d.CloseOnClickOutside = true
-	return b
 }
 
 // Banner is a top-anchored persistent strip. Useful for build progress,
@@ -196,15 +189,12 @@ func Banner(name string) *widget.Builder {
 // content surface that on small screens makes more sense rising
 // from the bottom than sliding in from the left.
 func BottomSheet(name string) *widget.Builder {
-	b := widget.New(name).
+	return widget.New(name).
 		Mount(widget.Bottom).
 		Backdrop().
+		Dismissible().
 		Role("dialog").
 		DragDismiss()
-	d := b.Definition()
-	d.CloseOnEscape = true
-	d.CloseOnClickOutside = true
-	return b
 }
 
 // Popover is a click-triggered floating surface with no backdrop dim.
@@ -242,14 +232,9 @@ func BottomSheet(name string) *widget.Builder {
 // Typical use: a help panel, a per-row "more details" expand, a
 // utility palette opened by a toolbar button.
 func Popover(name string) *widget.Builder {
-	b := widget.New(name).
+	return widget.New(name).
 		Mount(widget.TopRight).
 		Hidden().
+		Dismissible().
 		Surface()
-	d := b.Definition()
-	// Same dismissal affordances as Drawer / Modal, no backdrop dim,
-	// but ESC and outside-click still close the popover.
-	d.CloseOnEscape = true
-	d.CloseOnClickOutside = true
-	return b
 }
