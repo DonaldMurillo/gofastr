@@ -163,8 +163,8 @@ SQLite and Postgres, dialect-aware.
 - **[Embed](/docs/embed)**: hand a screen to a site you don't control: one
   `<script>` tag, an origin allowlist, a themed iframe.
   **[Semantic search](/docs/semantic-search)**: local vector retrieval, no API
-  key. **[Audit deps](/docs/audit-deps)**: flag packages an agent shouldn't
-  import.
+  key. **[Audit deps](/docs/audit-deps)**: find candidate global registration
+  calls in a source tree.
 - **[Kiln](/docs/kiln)**: experimental build-mode binary: an agent edits an
   in-memory model over HTTP.
 - **[ACP](/docs/acp)**: the Agent Client Protocol server package behind

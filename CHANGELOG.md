@@ -25,6 +25,18 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`gofastr audit a11y` follows split sitemaps.** With a sitemap index
+  it audited the XML part files as pages; it now reads each part in the
+  same signed-in browser session and audits their pages, and an
+  unreadable part fails discovery. The password marker is read only for
+  a valid runtime run (`--url` must be an absolute HTTP or HTTPS URL),
+  so help, bad flags and static mode no longer consume stdin;
+  `--email`/`--password` without `--url` is a usage error.
+- **`gofastr audit deps` reads its sources honestly.** It decodes
+  raw-string and escaped import paths, reports source read errors
+  instead of skipping the file, and its help, report and docs describe
+  what it finds: candidate calls to global registration APIs anywhere in
+  the selected tree, not only in `init()`.
 - **The theme editor previews every gallery component.** FormRepeater,
   Repeater and PipelineImage were missing from its preview, and its
   StepWizard submitted to a route the editor does not serve; the wizard

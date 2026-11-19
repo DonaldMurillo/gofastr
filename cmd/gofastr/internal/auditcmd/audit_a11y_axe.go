@@ -2,11 +2,9 @@ package auditcmd
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -51,37 +49,51 @@ func (r axeAuditRun) onlyLogin() bool {
 // Incomplete reports coverage that must not pass CI as a clean audit.
 func (r axeAuditRun) Incomplete() bool { return len(r.Unreachable) > 0 || r.onlyLogin() }
 
-// discoverA11yPages returns the route paths to audit for base: every
-// <loc> in the app's /sitemap.xml (the WithSitemap endpoint, also
-// written by static export), falling back to just "/" when no sitemap
-// is served. Explicit --pages always bypasses discovery.
-func discoverA11yPages(base string) []string {
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(strings.TrimRight(base, "/") + "/sitemap.xml")
-	if err != nil {
-		return []string{"/"}
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return []string{"/"}
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return []string{"/"}
-	}
-	return a11yPagesFromSitemap(string(body))
+type a11ySitemap struct {
+	XMLName xml.Name
+	Pages   []string `xml:"url>loc"`
+	Parts   []string `xml:"sitemap>loc"`
 }
 
-func a11yPagesFromSitemap(body string) []string {
-	locs := sitemapLocRE.FindAllStringSubmatch(body, -1)
+func discoverA11yPages(readSitemap func(path string) (a11ySitemap, error)) ([]string, error) {
+	root, err := readSitemap("/sitemap.xml")
+	if err != nil {
+		return []string{"/"}, nil
+	}
+	var locations []string
+	switch root.XMLName.Local {
+	case "urlset":
+		locations = root.Pages
+	case "sitemapindex":
+		seenParts := map[string]bool{}
+		for _, loc := range root.Parts {
+			part, err := url.Parse(strings.TrimSpace(loc))
+			if err != nil || !strings.HasPrefix(part.Path, "/") {
+				return nil, fmt.Errorf("invalid sitemap part location %q", loc)
+			}
+			path := part.RequestURI()
+			if seenParts[path] {
+				continue
+			}
+			seenParts[path] = true
+			doc, err := readSitemap(path)
+			if err != nil {
+				return nil, fmt.Errorf("sitemap part %s: %w", path, err)
+			}
+			if doc.XMLName.Local != "urlset" {
+				return nil, fmt.Errorf("sitemap part %s: expected a URL set, got %s", path, doc.XMLName.Local)
+			}
+			locations = append(locations, doc.Pages...)
+		}
+	}
 	var pages []string
 	seen := map[string]bool{}
-	for _, m := range locs {
-		u, err := url.Parse(strings.TrimSpace(m[1]))
+	for _, loc := range locations {
+		u, err := url.Parse(strings.TrimSpace(loc))
 		if err != nil {
 			continue
 		}
-		p := u.Path
+		p := u.EscapedPath()
 		if p == "" {
 			p = "/"
 		}
@@ -91,17 +103,19 @@ func a11yPagesFromSitemap(body string) []string {
 		}
 	}
 	if len(pages) == 0 {
-		return []string{"/"}
+		return []string{"/"}, nil
 	}
-	return pages
+	return pages, nil
 }
 
-var sitemapLocRE = regexp.MustCompile(`<loc>\s*([^<]+?)\s*</loc>`)
+func readA11ySitemap(source string) (a11ySitemap, error) {
+	var doc a11ySitemap
+	err := xml.Unmarshal([]byte(source), &doc)
+	return doc, err
+}
 
 // auditA11yURL runs the vendored axe-core engine against every page
-// under both color schemes via headless Chrome, the same harness the
-// framework's own a11y gates use. The caller controls the page list;
-// pass nil to audit just "/".
+// under both color schemes, discovering pages from the sitemap if omitted.
 func auditA11yURL(base string, pages []string, credentials a11yCredentials) (axeAuditRun, error) {
 	base = strings.TrimRight(base, "/")
 	browser, cancel, err := axetest.NewBrowserContext(context.Background())
@@ -115,10 +129,10 @@ func auditA11yURL(base string, pages []string, credentials a11yCredentials) (axe
 		}
 	}
 	if len(pages) == 0 {
-		pages = discoverA11yPagesFromBrowser(browser, base)
-	}
-	if len(pages) == 0 {
-		pages = []string{"/"}
+		pages, err = discoverA11yPagesFromBrowser(browser, base)
+		if err != nil {
+			return axeAuditRun{}, err
+		}
 	}
 	cli.Printf("Auditing %d page(s) at %s under %d color scheme(s)…\n\n", len(pages), base, len(axetest.Schemes))
 
@@ -169,17 +183,29 @@ func loginA11y(browser context.Context, base string, credentials a11yCredentials
 	return nil
 }
 
-func discoverA11yPagesFromBrowser(browser context.Context, base string) []string {
-	ctx, cancel := axetest.NewTabContext(browser, 15*time.Second)
-	defer cancel()
-	var source string
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/sitemap.xml"),
-		chromedp.Evaluate(`document.documentElement.outerHTML`, &source),
-	); err != nil {
-		return []string{"/"}
-	}
-	return a11yPagesFromSitemap(source)
+func discoverA11yPagesFromBrowser(browser context.Context, base string) ([]string, error) {
+	return discoverA11yPages(func(path string) (a11ySitemap, error) {
+		ctx, cancel := axetest.NewTabContext(browser, 15*time.Second)
+		defer cancel()
+		var source string
+		// Chrome's XML viewer moves the original document under its source element.
+		resp, err := chromedp.RunResponse(ctx,
+			chromedp.Navigate(base+path),
+			chromedp.Evaluate(`new XMLSerializer().serializeToString(
+				document.getElementById('webkit-xml-viewer-source-xml')?.firstElementChild ?? document.documentElement
+			)`, &source),
+		)
+		if err != nil {
+			return a11ySitemap{}, err
+		}
+		if resp == nil {
+			return a11ySitemap{}, fmt.Errorf("sitemap request returned no response")
+		}
+		if !samePage(base+path, resp.URL) || resp.Status != 200 {
+			return a11ySitemap{}, fmt.Errorf("sitemap request did not return a document at the requested path (HTTP %d)", resp.Status)
+		}
+		return readA11ySitemap(source)
+	})
 }
 
 func axeScanPage(browser context.Context, base, page, scheme string) ([]axetest.Violation, string, error) {

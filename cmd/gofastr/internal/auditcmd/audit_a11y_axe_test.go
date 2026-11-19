@@ -1,48 +1,71 @@
 package auditcmd
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
 
-func TestDiscoverPagesFromSitemap(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/sitemap.xml" {
-			http.NotFound(w, r)
-			return
+func sitemapFixture(documents map[string]string) func(string) (a11ySitemap, error) {
+	return func(path string) (a11ySitemap, error) {
+		source, ok := documents[path]
+		if !ok {
+			return a11ySitemap{}, fmt.Errorf("%s: missing sitemap fixture", path)
 		}
-		w.Header().Set("Content-Type", "application/xml")
-		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+		return readA11ySitemap(source)
+	}
+}
+
+func TestA11ySitemapDiscoversURLSet(t *testing.T) {
+	read := sitemapFixture(map[string]string{"/sitemap.xml": `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://example.com/</loc></url>
   <url><loc>https://example.com/about</loc></url>
   <url><loc>https://example.com/docs/intro</loc></url>
-</urlset>`))
-	}))
-	defer srv.Close()
-
-	pages := discoverA11yPages(srv.URL)
+</urlset>`})
+	pages, err := discoverA11yPages(read)
 	want := []string{"/", "/about", "/docs/intro"}
-	if len(pages) != len(want) {
-		t.Fatalf("expected %v, got %v", want, pages)
-	}
-	for i := range want {
-		if pages[i] != want[i] {
-			t.Errorf("page %d: want %q, got %q", i, want[i], pages[i])
-		}
+	if err != nil || !slices.Equal(pages, want) {
+		t.Fatalf("discovered %v, error %v, want %v", pages, err, want)
 	}
 }
 
-func TestDiscoverPagesFallsBackToRoot(t *testing.T) {
-	srv := httptest.NewServer(http.NotFoundHandler())
-	defer srv.Close()
-	pages := discoverA11yPages(srv.URL)
-	if len(pages) != 1 || pages[0] != "/" {
-		t.Errorf(`expected ["/"], got %v`, pages)
+func TestA11ySitemapFallsBackToRoot(t *testing.T) {
+	pages, err := discoverA11yPages(sitemapFixture(nil))
+	if err != nil || !slices.Equal(pages, []string{"/"}) {
+		t.Fatalf(`expected ["/"], got %v, error %v`, pages, err)
+	}
+}
+
+func TestA11ySitemapIndexDoesNotScanPartURLs(t *testing.T) {
+	read := sitemapFixture(map[string]string{
+		"/sitemap.xml": `<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap><loc>https://example.com/sitemap/1.xml</loc></sitemap>
+  <sitemap><loc>https://example.com/sitemap/2.xml</loc></sitemap>
+</sitemapindex>`,
+		"/sitemap/1.xml": `<urlset><url><loc>https://example.com/</loc></url>
+<url><loc>https://example.com/about</loc></url></urlset>`,
+		"/sitemap/2.xml": `<urlset><url><loc>https://example.com/about</loc></url>
+<url><loc>https://example.com/docs/intro</loc></url></urlset>`,
+	})
+	pages, err := discoverA11yPages(read)
+	if err != nil || !slices.Equal(pages, []string{"/", "/about", "/docs/intro"}) {
+		t.Fatalf("got %v, error %v, want unique application pages from both parts", pages, err)
+	}
+}
+
+func TestA11ySitemapMissingPartFailsDiscovery(t *testing.T) {
+	read := sitemapFixture(map[string]string{
+		"/sitemap.xml": `<sitemapindex><sitemap><loc>/sitemap/1.xml</loc></sitemap></sitemapindex>`,
+	})
+	pages, err := discoverA11yPages(read)
+	if len(pages) != 0 || err == nil || !strings.Contains(err.Error(), "/sitemap/1.xml") {
+		t.Fatalf("discovered %v, error %v, want a failure naming the missing part", pages, err)
 	}
 }
 
@@ -58,6 +81,20 @@ func TestAuditA11yURLFindsImageAltViolation(t *testing.T) {
 	covDir := t.TempDir()
 	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", covDir)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/sitemap.xml":
+			w.Header().Set("Content-Type", "application/xml")
+			fmt.Fprint(w, `<sitemapindex><sitemap><loc>/sitemap/1.xml</loc></sitemap></sitemapindex>`)
+			return
+		case "/sitemap/1.xml":
+			w.Header().Set("Content-Type", "application/xml")
+			fmt.Fprint(w, `<urlset><url><loc>/broken</loc></url></urlset>`)
+			return
+		case "/broken":
+		default:
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`<!DOCTYPE html>
 <html lang="en"><head><title>Broken</title></head><body>
@@ -68,9 +105,12 @@ func TestAuditA11yURLFindsImageAltViolation(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	run, err := auditA11yURL(srv.URL, []string{"/"}, a11yCredentials{})
+	run, err := auditA11yURL(srv.URL, nil, a11yCredentials{})
 	if err != nil {
 		t.Fatalf("auditA11yURL: %v", err)
+	}
+	if !slices.Equal(run.Pages, []string{"/broken"}) {
+		t.Fatalf("audit discovered %v, want [/broken]", run.Pages)
 	}
 	found := false
 	for _, r := range run.Results {
