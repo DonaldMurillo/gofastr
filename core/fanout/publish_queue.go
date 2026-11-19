@@ -24,7 +24,8 @@ func PublishQueue(f Fanout, topic string, depth int) (send func([]byte), stop fu
 
 // PublishQueueReporting is [PublishQueue] whose failed callback runs once
 // for each payload the running queue failed to publish, with the reason. A
-// payload still queued, or sent, when stop runs is dropped without a call.
+// payload that stop itself drops gets no call; a send racing stop may still
+// evict an older payload and report it as dropped.
 func PublishQueueReporting(f Fanout, topic string, depth int) (send func(payload []byte, failed func(error)), stop func()) {
 	type item struct {
 		payload []byte
