@@ -945,3 +945,45 @@ func TestPoll_AHoldEnds(t *testing.T) {
 		t.Errorf("focus went to %q when the hold ended, want back in the field", active)
 	}
 }
+
+// TestPoll_PausesOffScreen: a region far below the viewport is not
+// fetched while it stays there, and a tick that came due meanwhile
+// fetches as soon as the region is scrolled into view.
+func TestPoll_PausesOffScreen(t *testing.T) {
+	var hits atomic.Int64
+	page := `<!doctype html><html><head></head><body>
+<div style="height:20000px">spacer</div>
+<div id="region" data-cui-poll="5s" data-cui-poll-src="/fresh">stale</div>
+<script src="/__gofastr/runtime.js"></script></body></html>`
+	base := startPollServer(t, page, map[string]http.HandlerFunc{
+		"/fresh": func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprint(w, `fresh`)
+		},
+	})
+
+	ctx := chromedptest.Context(t)
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		chromedp.Poll(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.poll)`, nil,
+			chromedp.WithPollingInterval(100*time.Millisecond)),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	// Two full cadences: an on-screen region would have been fetched.
+	time.Sleep(11 * time.Second)
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("an off-screen region was fetched %d times", n)
+	}
+	start := time.Now()
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.getElementById('region').scrollIntoView(); true`, nil),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	waitHits(t, &hits, 1)
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("the overdue tick waited %v after the region came into view", took)
+	}
+}

@@ -134,6 +134,9 @@ no fanout, no shared infrastructure, and no held connection.
   polled region an `id` if it should keep focus across refreshes.
 - The interval is jittered so a fleet of tabs does not synchronize on a wall
   clock.
+- A region more than 200px outside the viewport is not fetched. The
+  tick that came due while it was away fetches as soon as the reader
+  scrolls it near, so what they see is never older than one interval.
 - A scheduled tick fetches at `priority: 'low'`, so it never holds up a
   request the user is waiting on. The refresh when the tab becomes
   visible again, and a widget's refresh after its own RPC succeeds, use
