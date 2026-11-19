@@ -41,13 +41,8 @@ type TimelineEvent struct {
 // TimelineConfig configures a Timeline.
 type TimelineConfig struct {
 	Events []TimelineEvent
-	// Long marks a list rendered unpaginated that may run to hundreds of
-	// rows: rows far off-screen skip layout and paint until scrolled near
-	// (content-visibility: auto). They stay in the accessibility tree,
-	// reachable by Tab and by find-in-page.
-	Long  bool
-	ID    string
-	Class string
+	ID     string
+	Class  string
 	// ExtraAttrs land on the <ol>; class, id, style and data-cui-* are
 	// the component's.
 	ExtraAttrs html.Attrs
@@ -114,12 +109,6 @@ func Timeline(cfg TimelineConfig) render.HTML {
 	if cfg.Class != "" {
 		attrs["class"] = cfg.Class
 	}
-	if cfg.Long {
-		if attrs["class"] != "" {
-			attrs["class"] += " "
-		}
-		attrs["class"] += "fui-timeline--long"
-	}
 	parts := headless.Parts{Attrs: headless.PartAttrs{headless.PartRoot: attrs}}
 
 	return timelineStyle.WrapHTML(headless.Timeline(headless.TimelineProps{
@@ -148,13 +137,6 @@ func timelineCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-timeline"] .fui-timeline__item:last-child {
   padding-block-end: 0;
-}
-/* A long timeline's events skip rendering off-screen; the clip edge is
-   widened so a focus ring inside an event is not cut off. */
-[data-cui-comp="ui-timeline"].fui-timeline--long .fui-timeline__item {
-  content-visibility: auto;
-  contain-intrinsic-size: auto var(--ui-timeline-row-estimate, 4rem);
-  overflow-clip-margin: calc(var(--stroke-focus, 2px) + var(--stroke-focus-offset, 2px));
 }
 /* Vertical rail — drawn under the dot column. Stops at the last item
    so the rail doesn't run past the final dot. */

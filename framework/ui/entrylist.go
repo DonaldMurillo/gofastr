@@ -31,13 +31,8 @@ type EntryListConfig struct {
 	// Ranked draws an <ol> numbered from Start (at least 1).
 	Ranked bool
 	Start  int
-	// Long marks a list rendered unpaginated that may run to hundreds of
-	// rows: rows far off-screen skip layout and paint until scrolled near
-	// (content-visibility: auto). They stay in the accessibility tree,
-	// reachable by Tab and by find-in-page.
-	Long  bool
-	ID    string
-	Class string
+	ID     string
+	Class  string
 	// ExtraAttrs land on the list; class, id, style, start, aria-label
 	// and data-cui-* are the component's. A role replaces role="list".
 	ExtraAttrs html.Attrs
@@ -93,9 +88,6 @@ func EntryList(cfg EntryListConfig) render.HTML {
 		attrs["class"] += " fui-entry-list--ranked"
 		attrs["start"] = strconv.Itoa(max(cfg.Start, 1))
 	}
-	if cfg.Long {
-		attrs["class"] += " fui-entry-list--long"
-	}
 	return entryListStyle.WrapHTML(render.Tag(tag, attrs, items...))
 }
 
@@ -116,17 +108,6 @@ func entryListCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-entry-list"] .fui-entry-list__item {
   min-width: 0;
-}
-/* A long list's rows skip rendering off-screen. Paint containment clips
-   at the row's edge, so the clip edge is widened to keep a focus ring
-   and, on a ranked list, the number in the gutter. */
-[data-cui-comp="ui-entry-list"].fui-entry-list--long .fui-entry-list__item {
-  content-visibility: auto;
-  contain-intrinsic-size: auto var(--ui-entry-list-row-estimate, 3rem);
-  overflow-clip-margin: calc(var(--stroke-focus, 2px) + var(--stroke-focus-offset, 2px));
-}
-[data-cui-comp="ui-entry-list"].fui-entry-list--long.fui-entry-list--ranked .fui-entry-list__item {
-  overflow-clip-margin: var(--ui-entry-list-rank-width, 4.5ch);
 }
 [data-cui-comp="ui-entry-list"] .fui-entry-list__meta {
   margin-block-start: var(--spacing-xs, 2px);

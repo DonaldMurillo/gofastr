@@ -214,7 +214,11 @@ browsers ignore `'self'`, so `<script src="/__gofastr/runtime.js">`
 would stop loading. A per-response nonce would make every page body
 unique. Leave both out unless your override adds third-party script
 hosts. In that case, `'strict-dynamic'` with nonces or hashes is the
-way to keep those hosts from becoming a bypass.
+way to keep those hosts from becoming a bypass, and then every script
+needs its own nonce or hash, `runtime.js` included: a hash for an
+inline block authorizes nothing else, and a hash for an external
+script also needs a matching `integrity` attribute. Static exports
+can't use nonces.
 
 ### Configuring the default chain's headers
 

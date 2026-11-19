@@ -58,8 +58,9 @@ type VideoConfig struct {
 	ID    string
 	Class string
 
-	// ExtraAttrs land on the <video>; class, id, src, poster, preload and
-	// data-cui-* are the component's.
+	// ExtraAttrs land on the <video>; class, id, src, poster, preload,
+	// width, height, controls, playsinline and data-cui-* are the
+	// component's, in any letter case.
 	ExtraAttrs html.Attrs
 }
 
@@ -112,7 +113,7 @@ func Video(cfg VideoConfig) render.HTML {
 		kids = append(kids, render.VoidTag("track", attrs))
 	}
 
-	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "src", "poster", "preload")
+	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "src", "poster", "preload", "width", "height", "controls", "playsinline")
 	if attrs == nil {
 		attrs = html.Attrs{}
 	}

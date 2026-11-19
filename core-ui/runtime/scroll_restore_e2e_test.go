@@ -227,8 +227,8 @@ func TestScrollPersistsOncePerGesture(t *testing.T) {
 }
 
 // TestReloadRestoresScrollWithoutScrollEnd: a browser that never fires
-// scrollend still keeps a reloaded page's position, because pagehide
-// persists the store.
+// scrollend still keeps a reloaded page's position, because the page
+// going hidden persists the store.
 func TestReloadRestoresScrollWithoutScrollEnd(t *testing.T) {
 	srv := scrollSite(t)
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
@@ -246,7 +246,7 @@ func TestReloadRestoresScrollWithoutScrollEnd(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if y != 0 {
-		t.Fatalf("the position was stored before pagehide; scrollend was not blocked")
+		t.Fatalf("the position was stored before the page went hidden; scrollend was not blocked")
 	}
 	if err := chromedp.Run(ctx,
 		chromedp.Reload(),
@@ -257,6 +257,6 @@ func TestReloadRestoresScrollWithoutScrollEnd(t *testing.T) {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if y < 700 || y > 1100 {
-		t.Errorf("reload scrollY = %v, want ≈900 from the pagehide write", y)
+		t.Errorf("reload scrollY = %v, want ≈900 from the write when the page went hidden", y)
 	}
 }

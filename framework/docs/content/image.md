@@ -325,9 +325,9 @@ preload scanner finds it as soon as the markup arrives. A
 discovers late, such as a CSS `background-image`. Don't draw the main
 image that way: render it as a `ui.OptimizedImage` or `ui.PipelineImage`
 with `HighPriority`. Caller head HTML (`WithHeadHTML`, a screen's
-`HeadHTML`) can't carry a preload link anyway, because the head scrub
-drops every preload-family link. Fonts have their own option,
-`uihost.WithFontPreload`.
+`HeadHTML`) is not a supported place for a preload link either: the
+head scrub is written to drop preload-family links. Fonts have their
+own option, `uihost.WithFontPreload`.
 
 ## Placeholders
 

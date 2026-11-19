@@ -32,7 +32,7 @@ invariants:
     enforced_by:
       - test: core-ui/runtime.TestPoll_PausesOffScreen
   - id: scroll-store-persists-per-gesture
-    rule: The router writes its scroll store to sessionStorage once per scroll gesture, on scrollend, and on pagehide, so a reloaded page keeps its position even where scrollend never fires.
+    rule: The router writes its scroll store to sessionStorage once per scroll gesture, on scrollend, and whenever the page goes hidden, so a reloaded page, or a background tab the browser discards, keeps its position even where scrollend never fires.
     enforced_by:
       - test: core-ui/runtime.TestScrollPersistsOncePerGesture
       - test: core-ui/runtime.TestReloadRestoresScrollWithoutScrollEnd

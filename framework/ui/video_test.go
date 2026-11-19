@@ -39,10 +39,13 @@ func TestVideoDropsUnsafeURLsAndKeepsItsOwnAttributes(t *testing.T) {
 		Width:   16, Height: 9,
 		Poster:     "javascript:alert(2)",
 		Tracks:     []VideoTrack{{URL: "javascript:alert(3)"}},
-		ExtraAttrs: html.Attrs{"preload": "auto", "poster": "/evil.png", "src": "/evil.mp4", "data-cui-x": "1"},
+		ExtraAttrs: html.Attrs{"preload": "auto", "poster": "/evil.png", "src": "/evil.mp4", "data-cui-x": "1", "Width": "1", "HEIGHT": "1", "Controls": "x", "title": "kept"},
 	}))
 	if strings.Contains(out, "javascript:") || strings.Contains(out, "evil") || strings.Contains(out, "data-cui-x") || strings.Contains(out, "<track") {
 		t.Errorf("SECURITY: an unsafe URL or a protected attribute reached the video: %s", out)
+	}
+	if strings.Contains(out, `Width=`) || strings.Contains(out, `HEIGHT=`) || strings.Contains(out, `Controls=`) || !strings.Contains(out, `title="kept"`) {
+		t.Errorf("a case variant of an owned attribute survived, or an unrelated extra was dropped: %s", out)
 	}
 	if !strings.Contains(out, `src="/ok.mp4"`) || !strings.Contains(out, `preload="none"`) {
 		t.Errorf("the safe source or the component's preload is missing: %s", out)

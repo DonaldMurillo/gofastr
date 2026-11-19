@@ -450,13 +450,14 @@
     }
     try { sessionStorage.setItem(SCROLL_KEY, JSON.stringify(_scrollStore)); } catch (_) {}
   };
-  // Persisted once per gesture on scrollend, and on pagehide, which
-  // covers a reload in a browser without scrollend.
+  // Persisted once per gesture on scrollend, and whenever the page is
+  // hidden: a reload or leave, and a background tab the browser may
+  // discard without pagehide, in a browser without scrollend too.
   window.addEventListener('scroll', () => {
     _scrollStore[_entryId] = [scrollX | 0, scrollY | 0];
   }, { passive: true });
   addEventListener('scrollend', _persistScroll);
-  addEventListener('pagehide', _persistScroll);
+  addEventListener('visibilitychange', () => document.hidden && _persistScroll());
   // Reload restore: manual scrollRestoration leaves a reloaded page at
   // the top; the stored position for this entry id puts it back. A URL
   // fragment wins, the browser's native hash scroll is already right.
