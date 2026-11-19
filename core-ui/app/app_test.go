@@ -271,6 +271,10 @@ func TestAppRenderPage(t *testing.T) {
 	if !strings.Contains(s, `name="viewport"`) {
 		t.Errorf("expected viewport meta, got: %s", s)
 	}
+	// The OS text size reaches the page's rems (#704).
+	if strings.Count(s, `<meta content="scale" name="text-scale">`) != 1 {
+		t.Errorf("expected one text-scale meta, got: %s", s)
+	}
 	// Check title.
 	if !strings.Contains(s, "<title>MyApp</title>") {
 		t.Errorf("expected title, got: %s", s)

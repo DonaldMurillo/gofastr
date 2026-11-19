@@ -563,6 +563,7 @@ func toggleCSS(_ style.Theme) string {
    legend's accessible name stays clean. The rule itself is on the
    leaves' required attributes; this is the cue beside it. */
 .fui-choice-group__legend[data-required]::after {
+  content: " *";
   content: " *" / "";
   color: var(--color-danger, #B91C1C);
 }
@@ -880,7 +881,7 @@ func spinnerCSS(_ style.Theme) string {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }

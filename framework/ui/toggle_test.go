@@ -69,7 +69,9 @@ func TestCheckboxErrorWiresAriaAndAlertOutsideTheRun(t *testing.T) {
 	mustContain(t, h, `aria-invalid="true"`)
 	mustContain(t, h, `aria-describedby="n-error"`)
 	mustContain(t, h, `id="n-error"`)
-	mustContain(t, h, `role="alert"`)
+	if strings.Contains(string(h), `role="alert"`) {
+		t.Errorf("a choice error is no alert of its own: the runtime reads a refusal from one polite region:\n%s", h)
+	}
 	mustContain(t, h, "Must agree")
 	// The message cannot sit inside the label (it would join the
 	// control's accessible name); the shell keeps run + message as
@@ -124,7 +126,9 @@ func TestSwitchMessageWiresDescribedBy(t *testing.T) {
 	e := Switch(ToggleConfig{Name: "wifi", Label: "Wi-Fi", Error: "No radio"})
 	mustContain(t, e, `aria-invalid="true"`)
 	mustContain(t, e, `aria-describedby="wifi-error"`)
-	mustContain(t, e, `role="alert"`)
+	if strings.Contains(string(e), `role="alert"`) {
+		t.Errorf("a switch error is no alert of its own:\n%s", e)
+	}
 }
 
 func TestToggleCustomIDOverridesName(t *testing.T) {

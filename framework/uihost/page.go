@@ -544,7 +544,7 @@ func (ds *UIHost) documentShellLang(ctx context.Context, path, lang, title, body
 		lang = ds.LangFor(ctx, path)
 	}
 	return fmt.Sprintf(
-		`<!DOCTYPE html><html dir="%s" lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>%s</title></head><body>%s</body></html>`,
+		`<!DOCTYPE html><html dir="%s" lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="text-scale" content="scale"><title>%s</title></head><body>%s</body></html>`,
 		i18n.Dir(lang), stdhtml.EscapeString(lang), stdhtml.EscapeString(title), body)
 }
 

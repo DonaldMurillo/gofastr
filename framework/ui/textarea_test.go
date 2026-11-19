@@ -63,16 +63,17 @@ func TestTextAreaAutogrowAddsMarker(t *testing.T) {
 	}
 }
 
-// The field owns the message: the error renders as a role="alert"
-// paragraph wired into the control's aria-describedby, and the
-// control carries the invalid state.
+// The field owns the message: the error renders as a paragraph wired
+// into the control's aria-describedby (no alert of its own: the runtime
+// reads a refusal from one polite region), and the control carries the
+// invalid state.
 func TestTextAreaErrorState(t *testing.T) {
 	h := string(TextArea(TextAreaConfig{Name: "x", Label: "x", Error: "Too short"}))
 	if !strings.Contains(h, `aria-invalid="true"`) {
 		t.Errorf("Error should mark textarea aria-invalid:\n%s", h)
 	}
-	if !strings.Contains(h, `role="alert"`) {
-		t.Errorf("Error should render an alert paragraph:\n%s", h)
+	if !strings.Contains(h, `id="x-error">Too short</p>`) || strings.Contains(h, `role="alert"`) {
+		t.Errorf("Error should render a plain paragraph, not an alert:\n%s", h)
 	}
 	if !strings.Contains(h, `aria-describedby="x-error"`) {
 		t.Errorf("Error should be wired into the control's described-by:\n%s", h)

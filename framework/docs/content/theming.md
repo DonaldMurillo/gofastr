@@ -917,8 +917,8 @@ where one declaration covers every rule beneath it.
 | `button.treatment: filled` | `--fui-button-primary-bg: var(--color-primary)`, `--fui-button-primary-fg: var(--color-primary-fg)`, `--fui-button-primary-border: var(--ui-button-edge, transparent)`, and the same `-danger` trio from `--color-danger` / `--color-danger-fg` |
 | `button.treatment: outline` | `--fui-button-primary-bg: transparent`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--color-primary)`, and the `-danger` trio from `--color-danger` |
 | `button.treatment: soft` | `--fui-button-primary-bg: color-mix(in oklab, var(--color-primary) 15%, transparent)`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--ui-button-edge, transparent)`, and the `-danger` trio likewise |
-| `field.layout: stacked` | `--fui-field-columns: minmax(0, 1fr)`, `--fui-field-message-column: 1 / -1` |
-| `field.layout: inline` | `--fui-field-columns: minmax(8rem, 1fr) minmax(0, 3fr)`, `--fui-field-message-column: 2` |
+| `field.layout: stacked` | `--fui-field-columns: minmax(0, 1fr)`, `--fui-field-message-column: 1 / -1`, `--fui-field-label-row: auto` |
+| `field.layout: inline` | `--fui-field-columns: minmax(8rem, 1fr) minmax(0, 3fr)`, `--fui-field-message-column: 2`, `--fui-field-label-row: 2` |
 | `field.radius: round` / `square` | `--fui-field-radius: var(--radii-md)` / `0` |
 
 The `.fui-button--primary` and `.fui-button--danger` rules in the
@@ -928,7 +928,10 @@ themselves and read no treatment.
 
 The field family's rules in the `ui-form-field` sheet consume
 `--fui-field-columns` (the label/control track split),
-`--fui-field-message-column` (which track the hint and error sit in)
+`--fui-field-message-column` (which track the hint and error sit in),
+`--fui-field-label-row` (the row a hinted field's label takes: the
+hint renders above the control, so inline pins the label to the
+control's row)
 and `--fui-field-radius` (what the field's inputs, selects and
 summaries draw). Inline is a preference, not a promise: below a stated
 width the sheet stacks the row whatever the theme asked for, the

@@ -22,8 +22,10 @@
   //     (FOUC). It is enumerated here as documentation only.
   //   - data-cui-static is written by the static exporter (Go), never
   //     by the runtime. Enumerated as documentation only.
-  //   - Transient DOM (e.g. the feedback module's copy textarea) and
-  //     pure reads (#cui-route-announce) stay unwrapped.
+  //   - Transient DOM (e.g. the feedback module's copy textarea),
+  //     pure reads (#cui-route-announce) and the formerrors module's
+  //     #cui-form-errors region (a demand module, created on its first
+  //     refusal) stay unwrapped.
   //
   // lockScroll/unlockScroll refcount by OWNER (a Set), so two
   // concurrent lockers, a modal over an image overlay, a drawer over a

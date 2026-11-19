@@ -63,7 +63,10 @@ func TestFileUploadErrorWiresAria(t *testing.T) {
 	h := FileUpload(FileUploadConfig{Name: "f", Label: "x", Error: "Too large"})
 	mustContain(t, h, `aria-invalid="true"`)
 	mustContain(t, h, `aria-describedby="f-error"`)
-	mustContain(t, h, `role="alert"`)
+	mustContain(t, h, `id="f-error"`)
+	if strings.Contains(string(h), `role="alert"`) {
+		t.Errorf("an upload error is no alert of its own:\n%s", h)
+	}
 	mustContain(t, h, "Too large")
 }
 

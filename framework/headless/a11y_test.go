@@ -80,9 +80,10 @@ func TestFieldWiresLabelHintAndErrorToTheControl(t *testing.T) {
 	has(t, bad, `aria-describedby="p2-error p2-hint"`, "the control is not tied to its error and its hint")
 	has(t, bad, `aria-invalid="true"`, "an errored field does not mark its control invalid")
 
-	// The error itself has to interrupt. A message that appears
-	// silently is a message a screen reader user never learns about.
-	has(t, bad, `role="alert"`, "the error is not announced")
+	// The error is no alert of its own: a form with ten errors would be
+	// ten interruptions. The runtime reads a refusal once, from one
+	// polite region, and the error stays in the control's description.
+	hasNot(t, bad, `role="alert"`, "the error is its own alert")
 }
 
 // Required is stated to the parser, not only drawn. A red asterisk is

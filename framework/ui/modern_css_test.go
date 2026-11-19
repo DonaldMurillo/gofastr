@@ -70,3 +70,41 @@ func TestKitInvalidStateFollowsUserInvalid(t *testing.T) {
 		t.Fatal("no kit sheet styles :user-invalid")
 	}
 }
+
+// No kit sheet hides content with the deprecated clip property: the
+// visually-hidden recipe clips with clip-path: inset(50%) (#704).
+var deprecatedClip = regexp.MustCompile(`(^|[^-])clip\s*:`)
+
+func TestKitHidesWithClipPath(t *testing.T) {
+	th := theme.Default()
+	for _, e := range registry.All() {
+		if css := e.CSSFor(th); deprecatedClip.MatchString(css) {
+			t.Errorf("style %q uses the deprecated clip property; clip with clip-path: inset(50%%)", e.Name)
+		}
+	}
+}
+
+// The required asterisk's alternative-text form, content: " *" / "",
+// follows a single-value line, so an engine that drops the two-value
+// declaration still draws the asterisk (#704).
+func TestRequiredMarkKeepsAFallback(t *testing.T) {
+	th := theme.Default()
+	seen := 0
+	for _, e := range registry.All() {
+		css := strings.ReplaceAll(e.CSSFor(th), "\n", " ")
+		for i := strings.Index(css, `content: " *" / "";`); i >= 0; {
+			seen++
+			if !strings.HasSuffix(strings.TrimRight(css[:i], " "), `content: " *";`) {
+				t.Errorf("style %q: the required mark's alt-text content has no single-value line before it", e.Name)
+			}
+			next := strings.Index(css[i+1:], `content: " *" / "";`)
+			if next < 0 {
+				break
+			}
+			i += 1 + next
+		}
+	}
+	if seen == 0 {
+		t.Error("VACUITY: no sheet draws the required mark")
+	}
+}
