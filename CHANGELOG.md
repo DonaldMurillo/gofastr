@@ -182,6 +182,16 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **The default Content-Security-Policy sends `base-uri 'none'` and
+  `worker-src 'self'`**, live and in static exports. An app that renders a
+  `<base>` element sets its own policy with `framework.WithSecurityHeaders`.
+- **`HighPriority` images load eagerly.** It used to pair
+  `fetchpriority="high"` with `loading="lazy"`, which wastes the hint.
+  `ui.Avatar` images now carry `width`, `height` and `loading="lazy"`.
+- **Scheduled poll ticks and visible or eager prefetches ask for
+  `priority: 'low'`**, so background work yields to what the user is
+  waiting on. A hover prefetch, a widget's refresh after its own RPC and
+  the refresh when a tab becomes visible keep the default priority.
 - **BREAKING: the passkey plugin needs a way to email the account owner
   when a passkey is added.** Set `PasskeyConfig.NoticeSender`, or
   `NoAddedNotice: true`; outside `DevMode`, Init fails when neither is set. The
@@ -301,6 +311,8 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr upgrade` finds the Go spellings.
 
 ### Added
+- **`LowPriority` on `ui.OptimizedImage` and `ui.PipelineImage`** renders
+  `fetchpriority="low"`. See [image](framework/docs/content/image.md#loading-and-priority).
 - **Passkeys: autofill sign-in, step-up, rename and password-manager sync
   ([#708](https://github.com/DonaldMurillo/gofastr/issues/708)).**
   `auth.PasskeyAutofillAttrs` lists the device's passkeys in the username

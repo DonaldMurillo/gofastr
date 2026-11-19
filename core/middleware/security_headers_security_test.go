@@ -116,7 +116,7 @@ func TestDefaultCSPBoundsFormAndObject(t *testing.T) {
 		}
 	}
 	// The existing guarantees must survive.
-	for _, want := range []string{"default-src 'self'", "frame-ancestors 'none'", "base-uri 'self'"} {
+	for _, want := range []string{"default-src 'self'", "frame-ancestors 'none'", "base-uri 'none'", "worker-src 'self'"} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("the default CSP lost %q: %q", want, csp)
 		}

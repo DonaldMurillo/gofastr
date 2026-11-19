@@ -88,6 +88,12 @@ invariants:
     enforced_by:
       - test: core-ui/runtime.TestConfirmTeardownRunsInTheClosingTask
       - test: core-ui/runtime.TestConfirmInsideModalWidgetOwnsKeyboard
+  - id: background-fetches-yield
+    rule: A scheduled poll tick (data-cui-poll and a widget's state poll) and a visible or eager prefetch ask for priority 'low'; a hover prefetch, a widget's pollNow after its own RPC and the refresh when a hidden tab becomes visible keep the default, since the user is waiting on them.
+    enforced_by:
+      - test: core-ui/runtime.TestPollFetchIsLowPriority
+      - test: core-ui/runtime.TestWidgetPollFetchIsLowPriority
+      - test: core-ui/runtime.TestPrefetchPriorityFollowsIntent
 decisions:
   - id: poll-before-push
     status: accepted
