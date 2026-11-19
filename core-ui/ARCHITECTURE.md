@@ -358,7 +358,7 @@ own test suites.
 | Prefix | Defined by | Read or written by | Examples |
 |---|---|---|---|
 | `data-cui-*`, `cui-*`, `#cui-*` | `core-ui` (the kernel: `runtime.js`, `core-ui/app`, `core-ui/widget`, `core-ui/interactive`) | anyone: the kernel reads them, every layer above emits them | `data-cui-rpc`, `data-cui-open`, `data-cui-comp`, `cui-widget`, `cui-visually-hidden`, `#cui-toast-fallback` |
-| `data-hui-*` | `framework/headless` (structure + behaviour hooks) | headless modules, the kit's sheets, and the three kernel modules that read headless markup (`formerrors.js` reads `data-hui-field`, `data-hui-field-error`, `data-hui-choice`; `validity.js` loads on `data-hui-field` and `data-hui-choice` and reads `data-hui-field-error`; `feedback.js` clones `data-hui-toast-template`) | `data-hui-field-error`, `data-hui-copy-state`, `data-hui-toast-template` |
+| `data-hui-*` | `framework/headless` (structure + behaviour hooks) | headless modules, the kit's sheets, and the two kernel modules that read headless markup (`formerrors.js` reads `data-hui-field`, `data-hui-field-error`, `data-hui-choice`; `feedback.js` clones `data-hui-toast-template`) | `data-hui-field-error`, `data-hui-copy-state`, `data-hui-toast-template` |
 | `fui-*`, `data-fui-*`, `--fui-*` | the rest of `framework/`: `framework/ui` (classes, its own modules), `framework/uihost`, `framework/pluginhost` | framework code and app sheets; never the kernel or headless | `fui-notification`, `data-fui-lightbox`, `data-fui-plugin`, `data-fui-page-loading`, `--fui-button-bg` |
 | `data-search*` | `framework/ui`: the hooks `CommandPalette` (with `Search`) and `SearchResults` declare | `battery/sitesearch`'s runtime modules, which fill and update that markup | `data-search`, `data-search-all`, `data-search-page`, `data-search-ignore` |
 | a plugin's own prefix | the plugin repository | the plugin | `gofastr-plugins` names its attributes after itself, not `data-fui-plugin*` |
@@ -1234,7 +1234,6 @@ by the SPA cross-chain swap after it replaces the layout shell.
 | `<body>` class | `cui-sse-down` | NOT written by core-ui (the per-widget SSE block that owned it is gone). Kiln's dev-mode reload client (`kiln/live/reload.go`) toggles it on its EventSource `error`; app surfaces should read `window.__gofastr.sseStatus` / `pollStatus` instead | CSS connection-state styling (kiln panel dot) |
 | `<body>` class | `cui-sse-up` | same as `cui-sse-down`: kiln dev-mode reload client only | CSS connection-state styling |
 | `<body>` singleton | `cui-backtotop-sentinel` | backtotop module (`doc.singleton`): one shared scroll sentinel for every BackToTop button | its own IntersectionObserver |
-| `<body>` singleton | `cui-form-errors` | the `formerrors` module (`doc.singleton`): the one polite live region (`role="status"`, `aria-live="polite"`, `.cui-visually-hidden`) a refused form submission is read from, one `Label: message` sentence per refused field; emptied when the form's errors clear | screen readers; e2e tests target `#cui-form-errors` |
 | `<body>` singleton | `cui-nav-toast` | core `_showNavToast` (`doc.singleton`): nav-failure / static-mode notices | user-visible mini toast; styled by `.cui-nav-toast` in `frameworkBuiltinCSS`; e2e tests target `#cui-nav-toast` |
 | `<body>` singleton | `cui-toast-fallback` | core `_fallbackToast` (`doc.singleton`): the degraded, unstyled toast region used when the toasts module fails to load. Distinct from the styled toast stack by design | user-visible fallback notices; carries `data-cui-toast-fallback` for tests/CSS |
 
@@ -3494,7 +3493,6 @@ core-ui/
                  computed, desktop, dragdismiss, dropdown, envelope,
                  formerrors, intercept, loading, parts, poll, popover,
                  preload, reveal, rpc, rtc, sse, textarea, transition,
-                 validity,
                  widgetfocus, widgethelpers, widgetlinks, widgets, ws.
                  Component behaviour that binds a kit class is not
                  here: framework/headless and framework/ui register

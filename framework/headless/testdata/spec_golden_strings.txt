@@ -616,15 +616,15 @@ every bar is hidden from the tree: a screen reader reading out eight empty boxes
 
 === Slider / with a live output ===
 the output is a real form output associated with the input, its SSR text is the true value, and the hook it carries is how the module keeps it in step while the thumb moves
-<div data-hui-slider=""><label data-cui-internal="" for="cpu">CPU share</label><output data-cui-internal="" data-hui-slider-output="" for="cpu">40</output><input aria-label="CPU share" data-cui-internal="" id="cpu" max="100" min="0" name="cpu" step="1" type="range" value="40"><div data-cui-internal=""><span>0</span><span>100</span></div></div>
+<div data-hui-slider=""><label data-cui-internal="" for="cpu">CPU share</label><output data-cui-internal="" data-hui-slider-output="" for="cpu">40</output><input aria-valuetext="40" data-cui-internal="" id="cpu" max="100" min="0" name="cpu" step="1" type="range" value="40"><div data-cui-internal=""><span>0</span><span>100</span></div></div>
 
 === Slider / bare, no output ===
 a slider with no output renders no hook at all — markup carried for no one is the defect the hooks gate exists to catch
-<div data-hui-slider=""><label data-cui-internal="" for="mem">Memory</label><input aria-label="Memory" data-cui-internal="" id="mem" max="100" min="0" name="mem" step="1" type="range" value="0"></div>
+<div data-hui-slider=""><label data-cui-internal="" for="mem">Memory</label><input data-cui-internal="" id="mem" max="100" min="0" name="mem" step="1" type="range" value="0"></div>
 
 === Slider / bounded custom step ===
 a step the value lands on: the browser, the server and the module all read the same three attributes, and a value between steps renders as given — data, not a broken prop
-<div data-hui-slider=""><label data-cui-internal="" for="batch">Batch size</label><output data-cui-internal="" data-hui-slider-output="" for="batch">50</output><input aria-label="Batch size" data-cui-internal="" id="batch" max="100" min="10" name="batch" step="10" type="range" value="50"></div>
+<div data-hui-slider=""><label data-cui-internal="" for="batch">Batch size</label><output data-cui-internal="" data-hui-slider-output="" for="batch">50</output><input aria-valuetext="50" data-cui-internal="" id="batch" max="100" min="10" name="batch" step="10" type="range" value="50"></div>
 
 === SortableItems / the reconciliation fragment ===
 a versioned 409 replaces the list's rows with the server's own — this is that fragment, the rows without the wrapper (empty items render it empty, a column honestly emptied)

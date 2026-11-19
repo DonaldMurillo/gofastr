@@ -109,12 +109,6 @@ invariants:
       - test: core-ui/runtime.TestPollFetchIsLowPriority
       - test: core-ui/runtime.TestWidgetPollFetchIsLowPriority
       - test: core-ui/runtime.TestPrefetchPriorityFollowsIntent
-  - id: user-invalid-mirrors-to-aria-invalid
-    rule: The validity module copies the browser verdict onto aria-invalid, "true" under :user-invalid and "false" under :user-valid, only after the reader left the field or tried to submit; a script checkValidity() marks nothing, and a control whose described data-hui-field-error node holds words keeps the server "true".
-    enforced_by:
-      - test: core-ui/runtime.TestUserInvalidMirrorsToAriaInvalid
-      - test: core-ui/runtime.TestBlockedSubmitMarksRefusedControls
-      - test: core-ui/runtime.TestServerVerdictStandsOverNativeValid
   - id: refusal-read-from-one-polite-region
     rule: A refused form submission is read from the one cui-form-errors region (role=status, aria-live=polite), one sentence per refused field (its label, a colon, its messages), and no error node the module places is an alert of its own; a successful retry empties the region.
     enforced_by:

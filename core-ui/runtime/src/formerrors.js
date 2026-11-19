@@ -32,14 +32,16 @@
   let sayTimer = 0;
   function say(text) {
     clearTimeout(sayTimer);
-    if (!text && !document.getElementById('cui-form-errors')) return;
-    const r = NS.doc.singleton('cui-form-errors', () => {
-      const d = document.createElement('div');
-      d.setAttribute('role', 'status');
-      d.setAttribute('aria-live', 'polite');
-      d.className = 'cui-visually-hidden';
-      return d;
-    });
+    let r = document.getElementById('cui-form-errors');
+    if (!r) {
+      if (!text) return;
+      r = document.createElement('div');
+      r.id = 'cui-form-errors';
+      r.setAttribute('role', 'status');
+      r.setAttribute('aria-live', 'polite');
+      r.className = 'cui-visually-hidden';
+      document.body.appendChild(r);
+    }
     r.textContent = '';
     if (text) sayTimer = setTimeout(() => { r.textContent = text; }, 50);
   }

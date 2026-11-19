@@ -446,9 +446,6 @@
     // TextArea autogrow: applies the same auto-resize handler the
     // widget runtime uses for textareas anywhere on the page.
     { name: 'textarea',       selector: 'textarea[data-cui-autogrow]' },
-    // Validity: copies the browser's :user-invalid verdict onto
-    // aria-invalid for every headless field and choice.
-    { name: 'validity',       selector: '[data-hui-field],[data-hui-choice]' },
     // DragDismiss: pointer drag-to-close for BottomSheet-style widgets.
     { name: 'dragdismiss', selector: '[data-cui-drag-dismiss="true"]' },
     // Dropdown: click-toggle + click-outside dismiss + Esc close.

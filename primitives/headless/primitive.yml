@@ -268,6 +268,12 @@ invariants:
       - test: framework/headless.TestE2E_ControlsSliderMirrorsItsOutput
       - test: framework/headless.TestE2E_SliderOutputsUsePageDigits
       - test: framework/ui.TestSliderIsNamedByItsLabelAndSpeaksItsValue
+  - id: user-invalid-mirrors-to-aria-invalid
+    rule: The headless-validity module, for a control in a Field or a Choice, copies the browser verdict onto aria-invalid, "true" under :user-invalid and "false" under :user-valid, only after the reader left the field or tried to submit; a script checkValidity() marks nothing, and a control whose described data-hui-field-error node holds words keeps the server "true".
+    enforced_by:
+      - test: framework/headless.TestE2E_UserInvalidMirrorsToAriaInvalid
+      - test: framework/headless.TestE2E_BlockedSubmitMarksRefusedControls
+      - test: framework/headless.TestE2E_ServerVerdictStandsOverNativeValid
 decisions:
   - id: classes-live-in-the-styled-layer
     date: 2026-11-16

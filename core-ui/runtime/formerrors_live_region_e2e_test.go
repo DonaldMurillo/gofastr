@@ -1,13 +1,9 @@
 package runtime
 
 import (
-	"net/http"
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
-
-	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // A refused submit is read once, from the document's one polite
@@ -25,13 +21,6 @@ func TestRefusalIsReadFromOnePoliteRegion(t *testing.T) {
   </fieldset>
   <button type="submit" id="go">Save</button>
 </form><script src="/__gofastr/runtime.js"></script></body></html>`
-	srv := formErrorsServer(t, page, func(n int32) (int, string) {
-		if n == 1 {
-			return http.StatusUnprocessableEntity, `{"error":"validation failed","fields":{"email":["is required"],"city":["is required","too short"],"plan":["pick one"]}}`
-		}
-		return http.StatusOK, `{}`
-	})
-	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
 	var got struct {
 		Text   string `json:"text"`
 		Role   string `json:"role"`
@@ -40,22 +29,14 @@ func TestRefusalIsReadFromOnePoliteRegion(t *testing.T) {
 		Count  int    `json:"count"`
 	}
 	var after string
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/"),
-		chromedp.WaitVisible(`#go`, chromedp.ByID),
-		chromedp.Click(`#go`, chromedp.ByID),
-		chromedp.Poll(`(document.getElementById('cui-form-errors')?.textContent || '') !== ''`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+	refuseThenRetry(t, page, `{"email":["is required"],"city":["is required","too short"],"plan":["pick one"]}`,
+		`(document.getElementById('cui-form-errors')?.textContent || '') !== ''`,
 		chromedp.Evaluate(`(() => { const r = document.getElementById('cui-form-errors');
 			return { text: r.textContent, role: r.getAttribute('role'), live: r.getAttribute('aria-live'),
 				alerts: document.querySelectorAll('[role="alert"]').length,
 				count: document.querySelectorAll('#cui-form-errors').length }; })()`, &got),
-		chromedp.Click(`#go`, chromedp.ByID),
-		chromedp.Poll(`!document.getElementById('email').hasAttribute('aria-invalid')`, nil, chromedp.WithPollingTimeout(10*time.Second)),
-		chromedp.Sleep(100*time.Millisecond),
-		chromedp.Evaluate(`document.getElementById('cui-form-errors').textContent`, &after),
-	); err != nil {
-		t.Fatalf("chromedp: %v", err)
-	}
+		`!document.getElementById('email').hasAttribute('aria-invalid')`,
+		chromedp.Evaluate(`document.getElementById('cui-form-errors').textContent`, &after))
 	if want := "Email: is required. City: is required, too short. Plan: pick one"; got.Text != want {
 		t.Errorf("the region reads %q, want %q", got.Text, want)
 	}

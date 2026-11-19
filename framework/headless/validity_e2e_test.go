@@ -1,29 +1,21 @@
-package runtime
+package headless
 
 import (
-	"net/http"
+	"context"
 	"testing"
 	"time"
 
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
-
-	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
-// validityPage loads body under the runtime and waits for the validity
-// module the headless field marker loads.
-func validityPage(t *testing.T, body string) (run func(...chromedp.Action)) {
+// validityPage loads body and waits for headless-validity, which a
+// Field or Choice marker loads.
+func validityPage(t *testing.T, body string) func(...chromedp.Action) {
 	t.Helper()
-	page := `<!doctype html><html><head><title>validity</title></head><body>` + body +
-		`<script src="/__gofastr/runtime.js"></script></body></html>`
-	srv := formErrorsServer(t, page, func(int32) (int, string) {
-		return http.StatusUnprocessableEntity, `{"error":"validation failed","fields":{}}`
-	})
-	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
-	if err := chromedp.Run(ctx, chromedp.Navigate(srv.URL+"/"),
-		chromedp.Poll(`window.__gofastr?.loadedModules?.validity === true`, nil, chromedp.WithPollingTimeout(10*time.Second))); err != nil {
-		t.Fatalf("the validity module did not load for a headless field: %v", err)
+	ctx := behaviorPage(t, startBehaviorServer(t, body))
+	if !pollTrue(ctx, controlsLoadedExpr(ValidityBehaviorName)) {
+		t.Fatal("a headless field did not load headless-validity")
 	}
 	return func(a ...chromedp.Action) {
 		t.Helper()
@@ -37,10 +29,16 @@ func invalidOf(id string, out *string) chromedp.Action {
 	return chromedp.Evaluate(`String(document.getElementById('`+id+`').getAttribute('aria-invalid'))`, out)
 }
 
+func waitFor(js string) chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		return chromedp.Poll(js, nil, chromedp.WithPollingTimeout(2*time.Second)).Do(ctx)
+	})
+}
+
 // A field the reader leaves invalid reads aria-invalid="true", only
 // once they leave it (typing into an untouched field marks nothing),
 // and fixing it while typing clears the mark to "false" (#704).
-func TestUserInvalidMirrorsToAriaInvalid(t *testing.T) {
+func TestE2E_UserInvalidMirrorsToAriaInvalid(t *testing.T) {
 	run := validityPage(t, `<form id="f">
   <div data-hui-field=""><label for="email">Email</label><input id="email" name="email" type="email" required></div>
   <div data-hui-field=""><label for="city">City</label><input id="city" name="city"></div>
@@ -52,11 +50,11 @@ func TestUserInvalidMirrorsToAriaInvalid(t *testing.T) {
 		chromedp.SendKeys(`#email`, "nope", chromedp.ByID),
 		invalidOf("email", &typing),
 		chromedp.KeyEvent(kb.Tab),
-		chromedp.Poll(`document.getElementById('email').getAttribute('aria-invalid') === 'true'`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+		waitFor(`document.getElementById('email').getAttribute('aria-invalid') === 'true'`),
 		invalidOf("email", &left),
 		chromedp.Click(`#email`, chromedp.ByID),
 		chromedp.SendKeys(`#email`, "@example.com", chromedp.ByID),
-		chromedp.Poll(`document.getElementById('email').getAttribute('aria-invalid') !== 'true'`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+		waitFor(`document.getElementById('email').getAttribute('aria-invalid') !== 'true'`),
 		invalidOf("email", &fixed),
 	)
 	if before != "null" || typing != "null" {
@@ -72,7 +70,7 @@ func TestUserInvalidMirrorsToAriaInvalid(t *testing.T) {
 
 // A submit the browser blocks marks every refused control at once; a
 // script's checkValidity(), which no reader caused, marks nothing.
-func TestBlockedSubmitMarksRefusedControls(t *testing.T) {
+func TestE2E_BlockedSubmitMarksRefusedControls(t *testing.T) {
 	run := validityPage(t, `<form id="f">
   <div data-hui-field=""><label for="name">Name</label><input id="name" name="name" required></div>
   <div data-hui-field=""><label for="code">Code</label><input id="code" name="code" required></div>
@@ -84,7 +82,7 @@ func TestBlockedSubmitMarksRefusedControls(t *testing.T) {
 		chromedp.Sleep(50*time.Millisecond),
 		invalidOf("name", &scripted),
 		chromedp.Click(`#go`, chromedp.ByID),
-		chromedp.Poll(`document.getElementById('code').getAttribute('aria-invalid') === 'true'`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+		waitFor(`document.getElementById('code').getAttribute('aria-invalid') === 'true'`),
 		invalidOf("name", &name),
 		invalidOf("code", &code),
 	)
@@ -98,7 +96,7 @@ func TestBlockedSubmitMarksRefusedControls(t *testing.T) {
 
 // A server's verdict stands while its words describe the control: a
 // value the browser accepts does not flip it to "false".
-func TestServerVerdictStandsOverNativeValid(t *testing.T) {
+func TestE2E_ServerVerdictStandsOverNativeValid(t *testing.T) {
 	run := validityPage(t, `<form id="f">
   <div data-hui-field=""><label for="slug">Slug</label><input id="slug" name="slug" aria-invalid="true" aria-describedby="slug-error" value="taken"><p id="slug-error" data-hui-field-error="">Already in use.</p></div>
   <div data-hui-field=""><label for="other">Other</label><input id="other" name="other"></div>

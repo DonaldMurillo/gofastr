@@ -569,7 +569,12 @@ are `[data-hui-reveal]`, `[data-hui-color]`,
 `[data-hui-system]`, `[data-hui-table]` and `[data-hui-selection]`:
 one per behaviour, the root hook of each. The `when` behaviour is a
 separate module, `headless-when` (`when_behavior.go`), loaded by its
-own marker `[data-hui-when]`.
+own marker `[data-hui-when]`. So is `headless-validity` (`validity_behavior.go`), loaded by
+`[data-hui-field]` or `[data-hui-choice]`: it copies the browser's
+`:user-invalid` / `:user-valid` verdict on a control in a field or
+choice onto `aria-invalid` (`"true"` or `"false"`), only after the
+reader has left the field or tried to submit, and leaves a server's
+`"true"` alone while the field's error node still holds its words.
 
 What it does, one line per behaviour:
 

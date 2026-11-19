@@ -25,11 +25,11 @@ Forms follow the same rules on every surface:
 
 - A field shows its error once the reader has left it or tried to
   submit, not while they type: the kit styles
-  `:is(:user-invalid, [aria-invalid="true"])`, and the runtime's
-  `validity` module copies `:user-invalid` onto `aria-invalid`
-  (`"true"` or `"false"`), so a screen reader hears the same state the
-  border shows. A server's verdict stays until the reader edits that
-  field.
+  `:is(:user-invalid, [aria-invalid="true"])`, and the
+  `headless-validity` module copies `:user-invalid` onto `aria-invalid`
+  (`"true"` or `"false"`) for every control in a field or choice, so a
+  screen reader hears the same state the border shows. A server's
+  verdict stays until the next submit clears it.
 - A refused submit is read once, from one polite live region
   (`#cui-form-errors`), as one "Label: message" sentence per field. No
   error node is its own `role="alert"`. Focus then moves to the first
