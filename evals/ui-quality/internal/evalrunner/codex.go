@@ -7,15 +7,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/evals/internal/codexlog"
+	"github.com/DonaldMurillo/gofastr/evals/internal/proctree"
 )
 
-var (
-	tokenUsagePattern = regexp.MustCompile(`(?m)tokens used\r?\n([\d,]+)`)
-	firstTimePattern  = regexp.MustCompile(`(?m)^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\b`)
-)
+var firstTimePattern = regexp.MustCompile(`(?m)^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\b`)
 
 type codexInvocation struct {
 	Program string
@@ -84,8 +83,7 @@ func runCodex(ctx context.Context, inv codexInvocation) error {
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, inv.Program, inv.Args...)
-	configureCommandCancellation(cmd)
+	cmd := exec.Command(inv.Program, inv.Args...)
 	cmd.Dir = inv.Dir
 	if inv.Env != nil {
 		cmd.Env = inv.Env
@@ -93,7 +91,7 @@ func runCodex(ctx context.Context, inv codexInvocation) error {
 	cmd.Stdin = strings.NewReader(inv.Stdin)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	err = runOwnedCommand(cmd)
+	err = proctree.Run(runCtx, cmd)
 	if closeErr := logFile.Close(); closeErr != nil && err == nil {
 		return fmt.Errorf("close Codex log: %w", closeErr)
 	}
@@ -106,35 +104,13 @@ func runCodex(ctx context.Context, inv codexInvocation) error {
 	return nil
 }
 
-func codexVersion(ctx context.Context, program string, prefixArgs []string) (string, error) {
-	versionCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	args := append(append([]string(nil), prefixArgs...), "--version")
-	versionCmd := exec.CommandContext(versionCtx, program, args...)
-	versionCmd.WaitDelay = 5 * time.Second // an orphaned descendant must not hold the pipe past the deadline
-	out, err := versionCmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("resolve Codex version: %w (%s)", err, strings.TrimSpace(string(out)))
-	}
-	version := strings.TrimSpace(string(out))
-	if version == "" {
-		return "", fmt.Errorf("resolve Codex version: empty output")
-	}
-	return version, nil
-}
-
 func builderMetricsFromArtifacts(resultDir string) (float64, int64) {
 	logPath := filepath.Join(resultDir, "builder.log")
 	b, err := os.ReadFile(logPath)
 	if err != nil {
 		return 0, 0
 	}
-	var tokens int64
-	matches := tokenUsagePattern.FindAllSubmatch(b, -1)
-	if len(matches) > 0 {
-		raw := strings.ReplaceAll(string(matches[len(matches)-1][1]), ",", "")
-		tokens, _ = strconv.ParseInt(raw, 10, 64)
-	}
+	tokens := codexlog.ParseTokenUsage(b)
 	var duration float64
 	if startMatch := firstTimePattern.FindSubmatch(b); len(startMatch) == 2 {
 		if start, parseErr := time.Parse(time.RFC3339Nano, string(startMatch[1])); parseErr == nil {

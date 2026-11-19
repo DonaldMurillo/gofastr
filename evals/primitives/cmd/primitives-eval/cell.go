@@ -18,6 +18,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/evals/internal/proctree"
 )
 
 //go:embed graders
@@ -35,6 +37,11 @@ const (
 	outcomeError    = "error"
 	outcomeSkipped  = "skipped"
 )
+
+// stopGrace is how long a process the agent left in the cell gets to
+// exit on SIGTERM, which lets git remove its own index.lock, before
+// KillUnder SIGKILLs it.
+var stopGrace = 5 * time.Second
 
 type cell struct {
 	Task      string `json:"task"`
@@ -129,14 +136,17 @@ func runCell(cfg config, c *cell) {
 	agent.Stdout = &stream
 	agent.Stderr = &stream
 	runErr := agent.Run()
-	stopCellProcesses(dir)
+	// Sample the deadline where the agent's own run ended: reaping the
+	// cell can outlast it, and that must not reclassify the failure.
+	timedOut := ctx.Err() != nil
+	proctree.KillUnder(dir, stopGrace)
 	_, writeErr := transcript.Write(stream.Bytes())
 	if err := errors.Join(writeErr, transcript.Close()); err != nil {
 		fail(err)
 		return
 	}
 	readTranscript(c, stream.Bytes())
-	agentNote, fatal := agentFailure(runErr, ctx.Err() != nil, c)
+	agentNote, fatal := agentFailure(runErr, timedOut, c)
 	if fatal {
 		fail(fmt.Errorf("agent: %w", runErr))
 		return

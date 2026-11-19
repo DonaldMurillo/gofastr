@@ -122,3 +122,14 @@ func TestLeaderboardReportsDevLoopFunnel(t *testing.T) {
 		t.Fatalf("leaderboard missing dev-loop funnel line:\n%s", md)
 	}
 }
+
+func TestDocsStatsReturnsScannerError(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "shim.log")
+	if err := os.WriteFile(log, []byte("docs help\n"+strings.Repeat("x", 128<<10)+"\ndocs search rest\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	stats := cliDocsInvocationStats(log)
+	if stats.Calls != 1 || stats.ReadErr == nil {
+		t.Fatalf("wanted one parsed call and a scanner error, got calls=%d err=%v", stats.Calls, stats.ReadErr)
+	}
+}

@@ -80,7 +80,8 @@ Per fixture, `TestHistoricalUpgrades`:
 8. Asserts, over HTTP (no browser):
    - SSR renders (`GET /`, `GET /tags` → 200).
    - Public CRUD survives (`GET /api/tags` → the seeded count).
-   - OpenAPI is auth-gated (401 anon, 200 authed) and names every entity.
+   - OpenAPI is auth-gated (401 anon, 200 authed) and names every entity
+     the requesting scope can read.
    - Both seed users log in. Their password hashes survived the migration.
    - Owner isolation: alice sees only her tasks, bob only his; alice's create
      is invisible to bob.

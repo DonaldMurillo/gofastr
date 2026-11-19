@@ -5,22 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 )
-
-var tokenUsagePattern = regexp.MustCompile(`(?m)tokens used\r?\n([\d,]+)`)
-
-func ParseTokenUsage(log []byte) int64 {
-	matches := tokenUsagePattern.FindAllSubmatch(log, -1)
-	if len(matches) == 0 {
-		return 0
-	}
-	raw := strings.ReplaceAll(string(matches[len(matches)-1][1]), ",", "")
-	value, _ := strconv.ParseInt(raw, 10, 64)
-	return value
-}
 
 func WorkspaceMetrics(root string) (sourceLines, testLines, directDeps int) {
 	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {

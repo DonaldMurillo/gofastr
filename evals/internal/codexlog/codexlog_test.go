@@ -1,4 +1,4 @@
-package evalrunner
+package codexlog
 
 import "testing"
 
@@ -12,5 +12,11 @@ func TestParseTokenUsageUsesLastReport(t *testing.T) {
 func TestParseTokenUsageMissing(t *testing.T) {
 	if got := ParseTokenUsage([]byte("no telemetry")); got != 0 {
 		t.Fatalf("ParseTokenUsage() = %d, want 0", got)
+	}
+}
+
+func TestParseTokenUsageCarriageReturn(t *testing.T) {
+	if got := ParseTokenUsage([]byte("tokens used\r\n9,876")); got != 9876 {
+		t.Fatalf("ParseTokenUsage() = %d, want 9876", got)
 	}
 }

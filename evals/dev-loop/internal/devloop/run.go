@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -24,6 +23,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/evals/internal/childenv"
+	"github.com/DonaldMurillo/gofastr/evals/internal/proctree"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -193,7 +193,7 @@ func runTrial(ctx context.Context, opts Options, i int, gofastrBin, realGo strin
 	// Each trial serves on its own port, named in the task, so the agent
 	// never has to hunt for its server and never meets another process
 	// that happens to hold :8080 on the operator's machine.
-	port, err := freePort()
+	port, err := proctree.FreePort()
 	if err != nil {
 		return fail("pick trial port", err)
 	}
@@ -233,7 +233,7 @@ func runAgent(ctx context.Context, opts Options, workspace, shimDir, dir, addr s
 
 	runCtx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, opts.ClaudeBin,
+	cmd := exec.Command(opts.ClaudeBin,
 		"-p", "--model", opts.Model,
 		"--no-session-persistence", "--output-format", "stream-json", "--verbose",
 		"--setting-sources", "project",
@@ -242,15 +242,11 @@ func runAgent(ctx context.Context, opts Options, workspace, shimDir, dir, addr s
 	cmd.Dir = workspace
 	cmd.Env = agentEnv(shimDir, addr)
 	cmd.Stdout, cmd.Stderr = transcript, stderr
-	ownProcessGroup(cmd)
-	err = cmd.Run()
-	// A dev server the agent backgrounded and never stopped outlives the
-	// agent; reap the whole group before the probe takes a port. One the
-	// agent detached (setsid, a new session) left the group, so also reap
-	// every process still working inside the trial directory.
-	killGroup(cmd)
-	reapUnder(dir)
-	if runCtx.Err() == context.DeadlineExceeded {
+	err = proctree.Run(runCtx, cmd)
+	timedOut := runCtx.Err() == context.DeadlineExceeded
+	// Reap processes that detached from the group within this trial.
+	proctree.KillUnder(dir, reapGrace)
+	if timedOut {
 		return fmt.Errorf("timed out after %s", opts.Timeout)
 	}
 	return err
@@ -324,7 +320,7 @@ func probeTask(ctx context.Context, dir, workspace, realGo string) []string {
 	if err := runQuiet(ctx, workspace, filepath.Join(dir, "probe-build.log"), []string{"GOWORK=off"}, realGo, "build", "-o", bin, "."); err != nil {
 		return []string{"task: app does not build: " + err.Error()}
 	}
-	port, err := freePort()
+	port, err := proctree.FreePort()
 	if err != nil {
 		return []string{"task: no free port: " + err.Error()}
 	}
@@ -334,18 +330,15 @@ func probeTask(ctx context.Context, dir, workspace, realGo string) []string {
 	}
 	defer logFile.Close()
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
-	server := exec.CommandContext(ctx, bin)
+	server := exec.Command(bin)
 	server.Dir = workspace
 	server.Env = append(childenv.Allowlisted(), fmt.Sprintf("PORT=127.0.0.1:%d", port), "GOFASTR_ISOLATION=0")
 	server.Stdout, server.Stderr = logFile, logFile
-	ownProcessGroup(server)
-	if err := server.Start(); err != nil {
+	command, err := proctree.Start(ctx, server)
+	if err != nil {
 		return []string{"task: app does not start: " + err.Error()}
 	}
-	defer func() {
-		killGroup(server)
-		_ = server.Wait()
-	}()
+	defer command.Stop()
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	get := func(path string) (int, string) {
@@ -383,14 +376,9 @@ func probeTask(ctx context.Context, dir, workspace, realGo string) []string {
 	return failures
 }
 
-func freePort() (int, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port, nil
-}
+// reapGrace is how long KillUnder lets a process it SIGTERMs exit on its
+// own before SIGKILL, so git can release index.lock.
+const reapGrace = 5 * time.Second
 
 // runQuiet runs a setup command with output appended to logPath.
 func runQuiet(ctx context.Context, cwd, logPath string, env []string, program string, args ...string) error {
@@ -402,12 +390,11 @@ func runQuiet(ctx context.Context, cwd, logPath string, env []string, program st
 	fmt.Fprintf(f, "$ %s %s\n", program, strings.Join(args, " "))
 	cmdCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, program, args...)
+	cmd := exec.Command(program, args...)
 	cmd.Dir = cwd
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdout, cmd.Stderr = f, f
-	cmd.WaitDelay = 5 * time.Second
-	if err := cmd.Run(); err != nil {
+	if err := proctree.Run(cmdCtx, cmd); err != nil {
 		return fmt.Errorf("%w (log: %s)", err, logPath)
 	}
 	return nil
