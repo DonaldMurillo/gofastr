@@ -17,14 +17,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// decimalRe matches a canonical decimal numeric literal: an optional sign
-// followed by digits with an optional fractional part, or a bare fractional
-// part, optionally with a base-10 exponent. It deliberately rejects Go
-// float-literal forms that storage layers cannot reparse (underscore
-// separators, hex floats) as well as Inf/NaN.
 var decimalRe = regexp.MustCompile(`^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$`)
 
-// validateField dispatches to type-specific validation.
 func validateField(f Field, value any) error {
 	if value == nil {
 		if f.Required {
@@ -63,8 +57,6 @@ func validateField(f Field, value any) error {
 	}
 }
 
-// --- String / Text ---
-
 func validateString(f Field, value any) error {
 	s, ok := toString(value)
 	if !ok {
@@ -95,16 +87,11 @@ func validateString(f Field, value any) error {
 	return nil
 }
 
-// --- Int ---
-
 func validateInt(f Field, value any) error {
 	n, ok := toInt64(value)
 	if !ok {
 		return violate(ReasonNotInteger, nil)
 	}
-	// Compare bounds in integer space. The bounds are stored as *float64,
-	// so first clamp them to the int64 range; widening n to float64 instead
-	// would lose precision above 2^53 and admit values strictly over Max.
 	if f.Min != nil && (math.IsNaN(*f.Min) || *f.Min >= math.Exp2(63) || n < floatBoundToInt64(*f.Min, true)) {
 		return violate(ReasonMin, map[string]any{"min": *f.Min})
 	}
@@ -114,15 +101,8 @@ func validateInt(f Field, value any) error {
 	return nil
 }
 
-// floatBoundToInt64 converts a *float64 Int bound to an int64 for exact
-// integer comparison. Bounds beyond the int64 range are clamped: a Min above
-// MaxInt64 becomes MaxInt64 (nothing can satisfy it), a Max above MaxInt64
-// becomes MaxInt64 (no int64 can exceed it), and symmetrically for the low
-// end. isMin selects rounding that never widens the admitted range.
 func floatBoundToInt64(b float64, isMin bool) int64 {
 	if math.IsNaN(b) {
-		// A NaN bound can never be satisfied / never be exceeded; pick the
-		// extreme that rejects everything for a Min and accepts for a Max.
 		if isMin {
 			return math.MaxInt64
 		}
@@ -140,16 +120,12 @@ func floatBoundToInt64(b float64, isMin bool) int64 {
 	return int64(math.Floor(b))
 }
 
-// --- Float ---
-
 func validateFloat(f Field, value any) error {
 	n, ok := toFloat64(value)
 	if !ok {
 		return violate(ReasonNotNumber, nil)
 	}
 	if math.IsNaN(n) || math.IsInf(n, 0) {
-		// NaN/Inf defeat every Min/Max comparison (IEEE-754); reject them
-		// so the bound can't be bypassed.
 		return violate(ReasonNotFinite, nil)
 	}
 	if f.Min != nil && n < *f.Min {
@@ -160,8 +136,6 @@ func validateFloat(f Field, value any) error {
 	}
 	return nil
 }
-
-// --- Decimal ---
 
 func validateDecimal(f Field, value any) error {
 	s, ok := toString(value)
@@ -174,23 +148,9 @@ func validateDecimal(f Field, value any) error {
 	if s == "" {
 		return nil
 	}
-	// decimalRe is the primary form guard: it admits only canonical decimal
-	// text and rejects the float-literal forms storage can't reparse
-	// (underscore separators, hex floats) and the non-finite literals (Inf/NaN)
-	// that would bypass the Min/Max bounds. The ParseFloat + finiteness checks
-	// below are defense-in-depth: with the current regex they are unreachable
-	// (kept by policy), but they keep the validator fail-closed if the
-	// regex is ever loosened or a typed caller bypasses it.
 	if !decimalRe.MatchString(s) {
 		return violate(ReasonNotDecimal, nil)
 	}
-	// Postgres refuses an exponent past ±1000 (22P02) and a value the
-	// column's precision cannot hold (22003), and rounds away fraction
-	// digits past its scale, while SQLite stores each as sent: the create
-	// answered 500 on one dialect and 201 on the other, or the two kept
-	// different numbers. Both checks read the text, so they run ahead of
-	// ParseFloat (which reads 1e-1001 as 0 with no error) and big.Rat
-	// (which builds 10^|exp| in full).
 	if !DecimalExponentFits(s) {
 		return violate(ReasonDecimalExponent, map[string]any{"max": MaxDecimalExponent})
 	}
@@ -210,20 +170,11 @@ func validateDecimal(f Field, value any) error {
 	if math.IsNaN(n) || math.IsInf(n, 0) {
 		return violate(ReasonNotFiniteDecimal, nil)
 	}
-	// Compare bounds in exact decimal space. Decimal is a fixed-precision type
-	// stored as a string precisely to avoid float rounding, so the bound check
-	// must not round-trip through float64 (which would lose precision above
-	// 2^53 and admit values strictly over Max / under Min). big.Rat parses the
-	// canonical decimal text exactly, and each bound uses its shortest decimal spelling, so configured decimal
-	// values compare exactly at the boundary.
 	dv, ok := new(big.Rat).SetString(s)
 	if !ok {
-		// decimalRe already vetted the form; defensive fail-closed.
 		return violate(ReasonNotDecimal, nil)
 	}
 	if f.Min != nil {
-		// decimalBound returns nil for a NaN/Inf bound; such a bound can never be
-		// satisfied, so reject (fail closed) rather than panic in Cmp.
 		min := decimalBound(*f.Min)
 		if min == nil || dv.Cmp(min) < 0 {
 			return violate(ReasonMin, map[string]any{"min": *f.Min})
@@ -238,8 +189,6 @@ func validateDecimal(f Field, value any) error {
 	return nil
 }
 
-// --- Bool ---
-
 func validateBool(value any) error {
 	switch v := value.(type) {
 	case bool:
@@ -250,8 +199,6 @@ func validateBool(value any) error {
 		}
 		return violate(ReasonNotTrueFalse, nil)
 	case int64:
-		// crud decodes an integer literal to int64, so a body's 1 arrives
-		// here as one.
 		if v == 0 || v == 1 {
 			return nil
 		}
@@ -272,8 +219,6 @@ func validateBool(value any) error {
 	}
 }
 
-// --- Enum ---
-
 func validateEnum(f Field, value any) error {
 	s, ok := toString(value)
 	if !ok {
@@ -284,8 +229,6 @@ func validateEnum(f Field, value any) error {
 	}
 	return violate(ReasonNotOneOf, map[string]any{"values": fmt.Sprint(f.Values)})
 }
-
-// --- UUID ---
 
 var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
@@ -300,24 +243,17 @@ func validateUUID(value any) error {
 	return nil
 }
 
-// --- Timestamp ---
-
 func validateTimestamp(value any) error {
 	s, ok := toString(value)
 	if !ok {
 		return violate(ReasonNotString, nil)
 	}
 	ts, err := time.Parse(time.RFC3339, s)
-	// Go reads year 0000; Postgres refuses it as out of range, so the
-	// write failed there as a 500. crud stores the UTC instant, so that
-	// is the year checked.
 	if err != nil || ts.UTC().Year() < 1 {
 		return violate(ReasonNotTimestamp, nil)
 	}
 	return nil
 }
-
-// --- Date ---
 
 func validateDate(value any) error {
 	s, ok := toString(value)
@@ -325,14 +261,11 @@ func validateDate(value any) error {
 		return violate(ReasonNotString, nil)
 	}
 	d, err := time.Parse("2006-01-02", s)
-	// Year 0000 parses in Go and is out of range on Postgres.
 	if err != nil || d.Year() < 1 {
 		return violate(ReasonNotDate, nil)
 	}
 	return nil
 }
-
-// --- JSON ---
 
 func validateJSON(value any) error {
 	var encoded []byte
@@ -340,9 +273,6 @@ func validateJSON(value any) error {
 	case string:
 		encoded = []byte(v)
 	case []byte:
-		// Byte slices bind as JSON text (crud's marshalJSONColumn), so
-		// they are checked as text, not as the base64 string
-		// json.Marshal would make of them.
 		encoded = v
 	case json.RawMessage:
 		encoded = v
@@ -375,8 +305,6 @@ func validateJSON(value any) error {
 	}
 }
 
-// --- Relation ---
-
 func validateRelation(value any) error {
 	s, ok := toString(value)
 	if !ok {
@@ -390,8 +318,6 @@ func validateRelation(value any) error {
 	}
 	return nil
 }
-
-// --- Image / File ---
 
 func validateImageOrFile(value any) error {
 	s, ok := toString(value)
@@ -407,8 +333,6 @@ func validateImageOrFile(value any) error {
 	return nil
 }
 
-// --- helpers ---
-
 func toString(v any) (string, bool) {
 	switch val := v.(type) {
 	case string:
@@ -420,12 +344,6 @@ func toString(v any) (string, bool) {
 	}
 }
 
-// isInt64Representable reports whether a float is a finite, integral value
-// that fits in int64. Go's float->int64 conversion silently saturates for
-// out-of-range inputs, so an explicit guard is required to avoid accepting a
-// value (e.g. 1e30) that the validator would then range-check against the
-// wrong (saturated) number. The upper bound is strict because MaxInt64 itself
-// is not exactly representable as float64 and rounds up to 2^63.
 func isInt64Representable(n float64) bool {
 	if math.IsNaN(n) || math.IsInf(n, 0) {
 		return false
@@ -449,12 +367,6 @@ func toInt64(v any) (int64, bool) {
 	case int64:
 		return n, true
 	case uint:
-		// Same overflow check as uint64: on 64-bit platforms uint is
-		// 64 bits wide, and converting an out-of-int64-range value
-		// wraps negative — uint(MaxUint64) read as -1 slips past any
-		// Max-only bound. The two unsigned spellings of one number
-		// must agree. The comparison runs in uint64 so a 32-bit
-		// build, whose uint cannot hold MaxInt64, compiles.
 		if uint64(n) > math.MaxInt64 {
 			return 0, false
 		}
@@ -466,7 +378,6 @@ func toInt64(v any) (int64, bool) {
 	case uint32:
 		return int64(n), true
 	case uint64:
-		// overflow check
 		if n > math.MaxInt64 {
 			return 0, false
 		}
@@ -529,13 +440,6 @@ func toFloat64(v any) (float64, bool) {
 	}
 }
 
-// Decimal bounds use their shortest decimal spelling, matching configuration
-// and JSON, rather than the binary floating-point approximation. A float64
-// keeps every decimal of up to 15 significant digits as written, so a bound
-// whose shortest spelling fits is that spelling: Min 1e30 is 1e30, not
-// 1000000000000000019884624838656. An integral bound that needs 16 or more
-// digits (2^60, spelled in full or computed) was not written as a short
-// decimal, and its exact binary value is the bound.
 func decimalBound(v float64) *big.Rat {
 	if math.IsNaN(v) || math.IsInf(v, 0) {
 		return nil
@@ -548,8 +452,6 @@ func decimalBound(v float64) *big.Rat {
 	return n
 }
 
-// significantDigits counts the mantissa digits of a FormatFloat 'e'
-// spelling.
 func significantDigits(e string) int {
 	n := 0
 	for _, c := range e {

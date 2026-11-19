@@ -16,46 +16,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 )
 
-// SQLIdempotencyStore persists idempotency claims to a SQL database.
-// It works with sqlite and postgres; dialect is pinned via
-// WithSQLIdempotencyDialect or auto-detected via SELECT version() at
-// construction.
-//
-// The table is created on first use with the supplied (or default)
-// name. Records older than TTL are removed lazily on Begin, at most
-// once per minute per store instance, not on every request.
-//
-// Schema (all dialects):
-//
-//	idempotency_keys(
-//	    key            TEXT PRIMARY KEY NOT NULL,
-//	    fingerprint    TEXT NOT NULL,
-//	    status         INTEGER,           -- nullable while in-flight
-//	    headers        TEXT,              -- JSON, http.Header shape
-//	    body           BLOB (sqlite) / BYTEA (postgres),
-//	    expires_at     TIMESTAMP/TIMESTAMPTZ NOT NULL,
-//	    created_at     TIMESTAMP/TIMESTAMPTZ NOT NULL,
-//	    principal      TEXT NOT NULL DEFAULT ''
-//	)
-//
-// On postgres the key column holds the middleware's store key with a
-// backslash written as two and NUL as backslash-zero (pgKey): the key
-// joins its parts with NUL bytes and Postgres TEXT refuses 0x00. SQLite
-// keeps the key as is.
-//
-// principal is the IdempotencyConfig.Principal value the response was
-// cached for, stored as is. App.EraseUserData deletes the rows whose
-// principal is the erased user id, and App.ExportData dumps the table
-// under its configured name. On postgres a principal holding NUL cannot
-// be stored as is, so Begin refuses it with an error and the middleware
-// answers 503 (or runs the handler unkeyed under FailOpen); encoding it
-// would let it land on another user's literal id.
+// SQLIdempotencyStore is an IdempotencyStore on a SQLite or Postgres table, created on first use and registered for App.ExportData and App.EraseUserData by its principal column.
 type SQLIdempotencyStore struct {
 	db            *sql.DB
 	table         string
 	ttl           time.Duration
 	inFlightTTL   time.Duration
-	dialect       string // "sqlite" or "postgres"
+	dialect       string
 	dialectPinned bool
 	lastReapUnix  atomic.Int64
 }
@@ -68,9 +35,7 @@ func WithSQLIdempotencyTable(name string) SQLIdempotencyOption {
 	return func(s *SQLIdempotencyStore) { s.table = name }
 }
 
-// WithSQLIdempotencyTTL overrides the default 24h cached-response TTL.
-// d <= 0 keeps the default: a zero TTL expired the cached response on
-// write, so every retry ran the handler again.
+// WithSQLIdempotencyTTL sets the cached-response TTL; d <= 0 keeps 24h.
 func WithSQLIdempotencyTTL(d time.Duration) SQLIdempotencyOption {
 	return func(s *SQLIdempotencyStore) {
 		if d > 0 {
@@ -79,12 +44,7 @@ func WithSQLIdempotencyTTL(d time.Duration) SQLIdempotencyOption {
 	}
 }
 
-// WithSQLIdempotencyInFlightTTL overrides the default 30s in-flight
-// claim TTL. Set this above the worst-case handler latency: a slower
-// handler whose claim expires mid-execution lets retries see "no row"
-// and execute again. d <= 0 keeps the default: a zero TTL wrote every
-// claim already expired, which is that duplicate execution on every
-// retry.
+// WithSQLIdempotencyInFlightTTL sets how long an in-flight claim holds its key; d <= 0 keeps 30s.
 func WithSQLIdempotencyInFlightTTL(d time.Duration) SQLIdempotencyOption {
 	return func(s *SQLIdempotencyStore) {
 		if d > 0 {
@@ -96,8 +56,7 @@ func WithSQLIdempotencyInFlightTTL(d time.Duration) SQLIdempotencyOption {
 // InFlightTTL implements InFlightTTLStore.
 func (s *SQLIdempotencyStore) InFlightTTL() time.Duration { return s.inFlightTTL }
 
-// WithSQLIdempotencyDialect pins the SQL dialect ("postgres" or
-// "sqlite") instead of running the auto-detection probe.
+// WithSQLIdempotencyDialect pins the dialect ("postgres" or "sqlite") instead of probing the DB.
 func WithSQLIdempotencyDialect(dialect string) SQLIdempotencyOption {
 	return func(s *SQLIdempotencyStore) {
 		s.dialect = dialect
@@ -105,8 +64,7 @@ func WithSQLIdempotencyDialect(dialect string) SQLIdempotencyOption {
 	}
 }
 
-// NewSQLIdempotencyStore constructs a SQL-backed IdempotencyStore and
-// ensures the backing table exists.
+// NewSQLIdempotencyStore returns a SQL-backed IdempotencyStore, creating its table if needed.
 func NewSQLIdempotencyStore(db *sql.DB, opts ...SQLIdempotencyOption) (*SQLIdempotencyStore, error) {
 	if db == nil {
 		return nil, errors.New("idempotency: nil DB")
@@ -137,11 +95,6 @@ func NewSQLIdempotencyStore(db *sql.DB, opts ...SQLIdempotencyOption) (*SQLIdemp
 	return s, nil
 }
 
-// registerData declares the table to App.ExportData and
-// App.EraseUserData under its configured name. Erasure matches the
-// principal column, so it reaches a cached response when the
-// Principal function returns the user id; a tenant-keyed principal is
-// left to the tenant's own lifecycle and to the TTL.
 func (s *SQLIdempotencyStore) registerData() {
 	datexport.Register(datexport.DataExporter{
 		Name: datexport.ScopedName("idempotency_keys", s.table), Source: "idempotency", Table: s.table, PrimaryKey: "key",
@@ -156,7 +109,6 @@ func (s *SQLIdempotencyStore) registerData() {
 func (s *SQLIdempotencyStore) ensureTable() error {
 	tsType, blobType := "DATETIME", "BLOB"
 	if s.dialect == "postgres" {
-		// Postgres has no BLOB type; BYTEA is its byte string.
 		tsType, blobType = "TIMESTAMPTZ", "BYTEA"
 	}
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -184,24 +136,14 @@ func (s *SQLIdempotencyStore) ensureTable() error {
 	return nil
 }
 
-// Begin implements IdempotencyStore. The implementation is safe under
-// concurrent inserts: an `INSERT … ON CONFLICT DO NOTHING` either
-// claims the row (RowsAffected=1) or loses the race (RowsAffected=0),
-// in which case we re-read and report the winner's state instead of
-// surfacing a PK-violation error that would otherwise look like a
-// generic store failure and bypass idempotency.
+// Begin implements IdempotencyStore.
 func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string) (*IdempotentResponse, bool, error) {
-	// UTC: SQLite compares these as text, and a local offset that changes
-	// (a DST fall-back) puts an expired row after "now".
 	now := time.Now().UTC()
 	principal, err := s.columnPrincipal(key)
 	if err != nil {
 		return nil, false, err
 	}
 	dbKey := s.columnKey(key)
-	// Rate-limited reap. Skipping the per-call DELETE keeps Begin cheap
-	// at high load; expired rows still get removed at least once per
-	// minute per store instance.
 	if last := s.lastReapUnix.Load(); now.Unix()-last > 60 {
 		if s.lastReapUnix.CompareAndSwap(last, now.Unix()) {
 			// best-effort: authoritative reads filter expired rows; this
@@ -213,8 +155,6 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 		}
 	}
 
-	// 1) Try to claim the row atomically. If another writer beat us to
-	//    it, RowsAffected==0 and we fall through to a read.
 	res, err := s.db.ExecContext(ctx, s.upsertClaimStmt(),
 		dbKey, fingerprint, now.Add(s.inFlightTTL), now, principal,
 	)
@@ -223,13 +163,9 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 	}
 	rows, _ := res.RowsAffected()
 	if rows >= 1 {
-		// Fresh claim: we own the row.
 		return nil, false, nil
 	}
 
-	// 2) Lost the race or there's an existing valid row. Read it.
-	// Filter expired rows out of the read so a TTL'd entry never
-	// replays; the reap is rate-limited and isn't authoritative.
 	row := s.db.QueryRowContext(ctx,
 		fmt.Sprintf("SELECT fingerprint, status, headers, body FROM %s WHERE key = %s AND expires_at > %s",
 			s.table, s.placeholder(1), s.placeholder(2)),
@@ -242,13 +178,6 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 	err = row.Scan(&storedFP, &status, &headers, &body)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		// Existing row was expired (or reaped between the failed insert
-		// and this read). Delete the stale row then retry the claim once;
-		// the second insert wins now that the conflict is gone. The DELETE is
-		// expiry-gated so a concurrent re-claimer can never remove a FRESH
-		// claim another caller just inserted (which would let both run the
-		// handler, the double-execution idempotency exists to prevent). See
-		// TestIdemReclaimKeepsFreshRow.
 		if _, deleteErr := s.db.ExecContext(ctx,
 			fmt.Sprintf("DELETE FROM %s WHERE key = %s AND expires_at <= %s", s.table, s.placeholder(1), s.placeholder(2)),
 			dbKey, now,
@@ -265,7 +194,6 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 		if rows >= 1 {
 			return nil, false, nil
 		}
-		// Still racing; give up and report in-flight conservatively.
 		return nil, false, ErrInFlight
 	case err != nil:
 		return nil, false, err
@@ -278,10 +206,6 @@ func (s *SQLIdempotencyStore) Begin(ctx context.Context, key, fingerprint string
 	}
 	hdr := http.Header{}
 	if headers.Valid && headers.String != "" {
-		// A stored response whose headers no longer parse is corrupt;
-		// replaying it with silently-dropped headers would answer a
-		// cached request without the content-type/security headers it
-		// was originally served under, so refuse the replay instead.
 		if err := json.Unmarshal([]byte(headers.String), &hdr); err != nil {
 			return nil, false, fmt.Errorf("idempotency: stored response headers for %q are corrupt: %w", key, err)
 		}
@@ -315,9 +239,6 @@ func (s *SQLIdempotencyStore) Finish(ctx context.Context, key, fingerprint strin
 	return err
 }
 
-// addPrincipalColumn upgrades a table an earlier release created
-// without the principal column. Rows cached before it read as nobody's
-// and age out under the TTL.
 func (s *SQLIdempotencyStore) addPrincipalColumn() error {
 	if s.dialect == "postgres" {
 		_, err := s.db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS principal TEXT NOT NULL DEFAULT ''`, s.table))
@@ -331,10 +252,6 @@ func (s *SQLIdempotencyStore) addPrincipalColumn() error {
 }
 
 func (s *SQLIdempotencyStore) upsertClaimStmt() string {
-	// INSERT ON CONFLICT DO NOTHING: lets concurrent claims race
-	// without one of them surfacing a PK-violation error. Returns
-	// RowsAffected=1 on win, 0 on loss; callers re-read to discover
-	// the winner's state.
 	if s.dialect == "postgres" {
 		return fmt.Sprintf(
 			"INSERT INTO %s (key, fingerprint, expires_at, created_at, principal) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (key) DO NOTHING",
@@ -347,9 +264,6 @@ func (s *SQLIdempotencyStore) upsertClaimStmt() string {
 	)
 }
 
-// columnKey is the value bound to the key column. On postgres it is
-// pgKey(key); SQLite stores the key unchanged, so rows an earlier
-// release wrote there keep matching within their TTL.
 func (s *SQLIdempotencyStore) columnKey(key string) string {
 	if s.dialect == "postgres" {
 		return pgKey(key)
@@ -357,21 +271,10 @@ func (s *SQLIdempotencyStore) columnKey(key string) string {
 	return key
 }
 
-// errPrincipalNUL refuses a principal Postgres TEXT cannot store.
 var errPrincipalNUL = errors.New("idempotency: principal holds a NUL byte, which a postgres TEXT column cannot store")
 
-// errKeyNotUTF8 refuses a store key Postgres TEXT cannot store: a
-// principal, tenant or scope that is not valid UTF-8. The middleware
-// already refuses a client key outside printable ASCII.
 var errKeyNotUTF8 = errors.New("idempotency: store key is not valid UTF-8, which a postgres TEXT column cannot store")
 
-// columnPrincipal is the value bound to the principal column: the
-// principal read out of the store key, stored as is, so
-// App.EraseUserData, which matches the raw user id, reaches it (a
-// DOMAIN\user id keeps its one backslash). On postgres a principal
-// holding NUL is refused: escaping it would let "a<NUL>b" share a value
-// with another user's literal `a\0b`, and erasing one would delete the
-// other's rows.
 func (s *SQLIdempotencyStore) columnPrincipal(key string) (string, error) {
 	p := idemPrincipal(key)
 	if s.dialect == "postgres" && strings.IndexByte(p, 0) >= 0 {
@@ -383,10 +286,6 @@ func (s *SQLIdempotencyStore) columnPrincipal(key string) (string, error) {
 	return p, nil
 }
 
-// pgKey makes a string storable in a Postgres TEXT column, which
-// refuses NUL: a backslash becomes two backslashes and NUL becomes a
-// backslash then "0". Escaping the backslash too keeps the mapping
-// injective, so two different store keys never land on one row.
 func pgKey(s string) string {
 	if strings.IndexByte(s, 0) < 0 && strings.IndexByte(s, '\\') < 0 {
 		return s

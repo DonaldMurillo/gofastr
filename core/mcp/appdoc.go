@@ -1,13 +1,5 @@
 // check-csp:ignore-file
-//
-// This file emits two inline <script> elements, in widgetDocumentTmpl:
-// the widget client and the author's code. See widgetDocumentTmpl's own
-// comment for why the inline-script rule's premise does not describe
-// this surface -- an MCP App resource is a single self-contained HTML
-// document delivered over resources/read and rendered by the chat host
-// in its own sandboxed iframe, under a CSP the host assembles from
-// AppConfig.CSP. There is no URL on our origin the frame can fetch code
-// from: it resolves every relative URL against the host.
+
 package mcp
 
 import (
@@ -16,69 +8,22 @@ import (
 	"strings"
 )
 
-// defaultWidgetRootID is the id WidgetDocument gives the root element that
-// wraps the author's body markup when RootID is not set.
 const defaultWidgetRootID = "app"
 
-// WidgetDocument is the author-owned half of an MCP App widget document:
-// the markup and the code. HTML assembles it into the single-file HTML
-// document AppConfig.HTML wants, so the boilerplate an author would
-// otherwise retype per widget — doctype, head, charset/viewport, the root
-// element, and above all the widget client — is right by construction.
-//
-// The widget client ([WidgetClientJS]) is inlined, not linked. The chat
-// host renders the document in a sandboxed srcdoc frame on the HOST's
-// origin, so a `<script src>` naming a path on this server resolves
-// against the host instead, 404s there, and the widget silently never
-// receives anything. Inlining keeps the document single-file, as
-// AppConfig.HTML requires, and needs no script-src origin in AppConfig.CSP.
-//
-// The builder emits structure only: no CSS, no design tokens, no default
-// styling of any kind. The chat host owns the widget's design language;
-// the widget client applies the host's theme signals (HostContext.theme,
-// HostContext.styles) to the document root at runtime, and author CSS
-// references those signals instead of inventing a palette. See
-// framework/docs/content/agent-host.md for the convention.
-//
-// Field trust matches AppConfig.HTML itself: Title, Lang, and RootID are
-// data and are context-escaped by html/template (HTML text, attribute
-// value); Body and Script are author-authored document content and pass
-// through verbatim, exactly as a hand-written HTML string would.
+// WidgetDocument is an MCP App widget's markup and code; HTML assembles it into the single-file document AppConfig.HTML wants, with the widget client inlined.
 type WidgetDocument struct {
-	// Title is the document title (text-escaped).
+	// Title is the document title (escaped).
 	Title string
-	// Lang is the <html lang> value (attribute-escaped). Default "en".
+	// Lang is the <html lang> value (escaped); default "en".
 	Lang string
-	// RootID is the id of the root element wrapping Body (attribute-
-	// escaped). Default "app".
+	// RootID is the id of the element wrapping Body (escaped); default "app".
 	RootID string
-	// Body is the author's markup, inserted verbatim inside the root
-	// element.
+	// Body is the author's markup, inserted verbatim.
 	Body string
-	// Script is the author's JavaScript statements, inserted verbatim in a
-	// classic inline <script> after the widget client runs, so it can use
-	// window.__gofastrMcpApp immediately. It must not contain the sequence
-	// "</script" (case-insensitive) or "<!--": the first terminates the
-	// script element early and the second can put the HTML parser into a
-	// state where the closing tag no longer closes. HTML rejects both with
-	// an error rather than shipping a document the parser silently
-	// truncates. Split string literals ("<\/script>", "<\!--") to avoid
-	// the sequences.
+	// Script is the author's JavaScript, inserted verbatim after the widget client; it must not contain "</script" or "<!--".
 	Script string
 }
 
-// widgetDocumentTmpl is the whole document. html/template's contextual
-// analysis is load-bearing here: Title renders in an HTML-text context,
-// Lang/RootID in attribute contexts, and each is escaped for its own
-// context — the escapes a string concat would conflate. The two scripts
-// are inline because this document is not served by the web host: an MCP
-// App resource is a single self-contained HTML document delivered over
-// resources/read and rendered by the chat host in its own sandboxed
-// iframe, whose CSP the host assembles from AppConfig.CSP. There is no
-// URL on our origin the frame can fetch code from, and AppConfig.HTML has
-// always been documented as single-file HTML with inline JS/CSS. The
-// inline-script rule's premise -- the web host's default-src 'self'
-// policy with no unsafe-inline -- does not describe this surface.
 var widgetDocumentTmpl = template.Must(template.New("widgetdoc").Parse(`<!DOCTYPE html>
 <html lang="{{.Lang}}">
 <head>
@@ -96,10 +41,6 @@ var widgetDocumentTmpl = template.Must(template.New("widgetdoc").Parse(`<!DOCTYP
 </html>
 `))
 
-// widgetDocModel is the executed template data. Body, Client and Script
-// are pre-typed as template.HTML / template.JS — document content, each
-// checked by inlineScriptHazard where it lands in a script — while the
-// data fields stay plain strings so html/template escapes them.
 type widgetDocModel struct {
 	Title  string
 	Lang   string
@@ -109,11 +50,6 @@ type widgetDocModel struct {
 	Script template.JS
 }
 
-// inlineScriptHazard names the first sequence in js that an inline
-// <script> element cannot carry: "</script" (ASCII case-insensitive)
-// closes the element early, and "<!--" can put the parser into a state
-// where the closing tag no longer closes. It returns "" when js is safe.
-// The scan folds ASCII only, so the offset it reports indexes js itself.
 func inlineScriptHazard(js string) (seq string, at int) {
 	for i := range len(js) {
 		if js[i] != '<' {
@@ -128,14 +64,7 @@ func inlineScriptHazard(js string) (seq string, at int) {
 	return "", -1
 }
 
-// HTML assembles the widget document and returns it for AppConfig.HTML.
-//
-// It errors when Body and Script are both empty (an empty widget is an
-// authoring mistake, the same class RegisterApp guards) and when Script
-// contains a sequence the HTML parser cannot carry inside an inline
-// script element ("</script", case-insensitive, or "<!--"). The widget
-// client is held to the same rule, so a client that ever carried one
-// fails here instead of shipping cut short in every widget.
+// HTML returns the assembled document, or an error when Body and Script are both empty or Script holds "</script" or "<!--".
 func (d WidgetDocument) HTML() (string, error) {
 	if strings.TrimSpace(d.Body) == "" && strings.TrimSpace(d.Script) == "" {
 		return "", fmt.Errorf("mcp: widget document needs a Body, a Script, or both")

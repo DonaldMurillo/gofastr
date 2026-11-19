@@ -1,0 +1,39 @@
+primitive: schema
+summary: The entity field model (Field, FieldType, Schema and its selectors) that crud, entity, migrations, openapi and the SDK docs all read.
+code:
+  - core/schema/doc.go
+  - core/schema/schema.go
+  - core/schema/fieldlabel.go
+docs:
+  - framework/docs/content/entity-declarations.md
+on_change:
+  - A new FieldType gets a case in validateField, fieldToJSONSchema, FieldTypeLabel and each dialect's column mapping in the migrators.
+invariants:
+  - id: field-encodes-as-json
+    rule: A Field marshals with encoding/json, its func-typed Mask tagged json:"-" so an encoded Field carries no Mask.
+    enforced_by:
+      - test: core/schema.TestFieldEncodesAsJSON
+      - test: core/schema.TestFieldMembersWithNoJSONFormAreTagged
+  - id: one-field-type-label-table
+    rule: FieldTypeLabel is the one table naming field types in prose, wire=true adding the string-on-the-wire note for decimal and the url note for image and file, and an unknown type labels as string.
+    enforced_by:
+      - test: core/schema.TestFieldTypeLabel
+decisions:
+  - id: field-mask-tagged-not-marshaled
+    date: 2026-11-18
+    status: accepted
+    decision: Field.Mask carries the json:"-" tag, so entity.Endpoint can publish []Field as its input and output schema.
+    rejected:
+      - option: Leave Mask untagged.
+        why: encoding/json refuses a func-typed struct field even when it is nil, so every Field failed to encode.
+      - option: A custom MarshalJSON on Field.
+        why: A func has no JSON form either way, and a hand-written encoder must track every new member.
+    upholds: [field-encodes-as-json]
+  - id: one-label-table-for-llm-md-and-sdkdocs
+    date: 2026-11-18
+    status: accepted
+    decision: The llm.md entity reference (framework/crud) and the SDK reference screens (framework/sdkdocs) both call FieldTypeLabel, its wire flag selecting the audience.
+    rejected:
+      - option: A label table in each renderer.
+        why: The two copies drifted.
+    upholds: [one-field-type-label-table]

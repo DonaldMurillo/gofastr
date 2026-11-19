@@ -1,0 +1,72 @@
+primitive: middleware.timeout
+summary: Timeout, which runs the handler on its own goroutine behind a buffered writer and answers 504 when it overruns, unless the response is already streaming.
+code:
+  - core/middleware/timeout.go
+docs:
+  - framework/docs/content/deploy.md
+invariants:
+  - id: zero-means-no-deadline
+    rule: A duration or route Budget of zero or less serves the request with no deadline.
+    enforced_by:
+      - test: core/middleware.TestTimeoutZeroOrNegativeMeansNoDeadline
+  - id: overrun-gets-504
+    rule: A buffered handler that finishes at or after its deadline gets a 504, even when the request goroutine noticed late, and one that finished before it is answered as written.
+    enforced_by:
+      - test: core/middleware.TestHandlerBeatTheDeadlineComparesFinishTime
+      - test: core/middleware.TestTimeoutBoundaryIsDeterministic
+  - id: streaming-sheds-the-deadline
+    rule: Once the handler flushed or hijacked, the deadline no longer applies, the middleware waits for the handler, and the context stays live so a later disconnect arrives as Canceled.
+    enforced_by:
+      - test: core/middleware.TestTimeoutLetsStreamsThrough
+      - test: core/middleware.TestTimeoutStreamDisconnectAfterDeadline
+  - id: context-advertises-no-deadline
+    rule: The handler's context reports no Deadline, since a response that starts streaming sheds the one it had.
+    enforced_by:
+      - test: core/middleware.TestSweepTimeoutContextReportsNoDeadline
+  - id: first-status-wins
+    rule: The buffered writer keeps the first final status, so a later WriteHeader changes nothing.
+    enforced_by:
+      - test: core/middleware.TestSweepTimeoutKeepsFirstStatus
+  - id: buffered-headers-replace-upstream
+    rule: The handler's header map starts as a copy of the upstream headers and replaces them on commit, a deletion included.
+    enforced_by:
+      - test: core/middleware.TestTimeoutKeepsUpstreamHeaders
+  - id: late-writes-refused
+    rule: A write, flush or hijack through the writer after the handler returned is refused, and only buffers up to 1 MiB go back to the pool.
+    enforced_by:
+      - test: core/middleware.TestTimeoutLateWriteIsRefused
+      - test: core/middleware.TestTimeoutBigBufferNotPooled
+  - id: hijack-decides-before-expiry
+    rule: Expiry waits for a hijack in progress, and a hijack that failed leaves the writer buffered with the deadline armed.
+    enforced_by:
+      - test: core/middleware.TestTimeoutExpireWaitsOutHijack
+      - test: core/middleware.TestTimeoutFailedHijackKeepsBuffering
+  - id: handler-panic-carried-with-its-stack
+    rule: A handler panic is re-raised on the request goroutine with the handler goroutine's stack, inside abortedStream when the response was streaming, and a panic after a 504 is logged.
+    enforced_by:
+      - test: core/middleware.TestTimeoutPanicKeepsHandlerStack
+      - test: core/middleware.TestTimeoutMarksStreamedPanicCut
+      - test: core/middleware.TestTimeoutLatePanicLogsStack
+  - id: timeout-log-names-the-route
+    rule: The timeout warning names method, path, budget and, when the router stamped one, the matched pattern.
+    enforced_by:
+      - test: core/middleware.TestTimeoutFireLogsMethodAndPattern
+decisions:
+  - id: own-context-not-withtimeout
+    date: 2026-11-18
+    status: accepted
+    decision: The handler's context is timeoutCtx, whose deadline can be disarmed once the response streams and which reports no Deadline.
+    rejected:
+      - option: context.WithTimeout.
+        why: Its deadline cannot be withdrawn, so a streaming handler past it could not tell a later client disconnect from the deadline.
+      - option: Report the deadline from Deadline().
+        why: A derived context.WithTimeout trusts an earlier advertised deadline and drops its own timer, which is lost when the stream disarms it.
+    upholds: [streaming-sheds-the-deadline, context-advertises-no-deadline]
+  - id: buffer-the-response
+    date: 2026-11-18
+    status: accepted
+    decision: Handler writes land in a private header map and body buffer until the handler returns or streams.
+    rejected:
+      - option: Let the handler write the real ResponseWriter.
+        why: The handler goroutine and the 504 path would share one header map, which panicked with concurrent map writes under load.
+    upholds: [buffered-headers-replace-upstream, overrun-gets-504]

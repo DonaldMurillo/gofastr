@@ -47,8 +47,6 @@ func (ib *InsertBuilder) Build() (string, []any) {
 		sb.WriteString(" DEFAULT VALUES")
 	} else {
 
-		// Columns: each column is sanitized so SQL meta-sequences in
-		// a hostile column name cannot escape the parenthesised list.
 		sb.WriteString(" (")
 		sanitized := make([]string, len(ib.columns))
 		for i, c := range ib.columns {
@@ -57,7 +55,6 @@ func (ib *InsertBuilder) Build() (string, []any) {
 		sb.WriteString(strings.Join(sanitized, ", "))
 		sb.WriteString(")")
 
-		// Values
 		sb.WriteString(" VALUES (")
 		placeholders := make([]string, len(ib.values))
 		for i := range ib.values {
@@ -67,7 +64,6 @@ func (ib *InsertBuilder) Build() (string, []any) {
 		sb.WriteString(")")
 	}
 
-	// Returning: each column sanitized for the same reason as Columns.
 	if len(ib.returning) > 0 {
 		sb.WriteString(" RETURNING ")
 		sanitizedRet := make([]string, len(ib.returning))

@@ -1,0 +1,40 @@
+primitive: middleware.cors
+summary: The CORS middleware, which answers allowed origins with exact-origin or wildcard headers and refuses everything else.
+code:
+  - core/middleware/cors.go
+docs:
+  - framework/docs/content/security.md
+invariants:
+  - id: empty-allow-list-denies
+    rule: An empty AllowedOrigins allows no origin; only "*" or an exact origin match sets Access-Control-Allow-Origin.
+    enforced_by:
+      - test: core/middleware.TestCORS_EmptyAllowedOriginsDenyAllWithoutExtraHeaders
+      - test: core/middleware.TestCORS_OriginMatchIsExactNotSubstring
+  - id: rejected-origin-gets-nothing
+    rule: A rejected origin gets no Access-Control-Allow-Methods or -Headers, and its preflight is answered 403, never 204.
+    enforced_by:
+      - test: core/middleware.TestCORS_RejectedOriginOmitsAllowMethods
+      - test: core/middleware.TestCORS_RejectedOriginOmitsAllowHeaders
+      - test: core/middleware.TestCORS_RejectedOriginPreflightReturnsForbidden
+      - test: core/middleware.TestCORSAllowAnyHeaderRejectedOriginGetsNothing
+  - id: vary-origin-on-every-response
+    rule: Under an allow-list every response, matched or not, adds Vary Origin to whatever Vary an outer middleware already wrote, and AllowAnyHeader or AllowAnyMethod adds the matching Access-Control-Request Vary.
+    enforced_by:
+      - test: core/middleware.TestCORS_VaryOriginOnEveryResponse
+      - test: core/middleware.TestCORS_AppendsVaryInsteadOfClobbering
+      - test: core/middleware.TestCORSAllowAnyHeaderEchoesRequestedHeaders
+  - id: preflight-needs-request-method
+    rule: Only an OPTIONS request carrying Origin and Access-Control-Request-Method is a preflight; any other OPTIONS reaches the handler.
+    enforced_by:
+      - test: core/middleware.TestCORS_PlainOptionsReachesHandler
+  - id: wildcard-never-carries-credentials
+    rule: A response whose final Access-Control-Allow-Origin is "*" never carries Access-Control-Allow-Credentials, whether the handler wrote, flushed, sent nothing or panicked.
+    enforced_by:
+      - test: core/middleware.TestStripCredsCoversEmptyResponse
+      - test: core/middleware.TestStripCredsCoversWrittenResponse
+      - test: core/middleware.TestCORSStripsCredsAfterPanic
+  - id: echoed-and-configured-tokens-are-clean
+    rule: Configured methods and headers lose control bytes, and an echoed request header or method is a well-formed token, at most 64 header names.
+    enforced_by:
+      - test: core/middleware.TestCORS_SanitizesConfigTokens
+      - test: core/middleware.TestCORSAllowAnyHeaderEchoesOnlyTokens

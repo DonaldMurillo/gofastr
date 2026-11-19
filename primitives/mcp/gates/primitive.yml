@@ -1,0 +1,42 @@
+primitive: mcp.gates
+summary: Gated and Decorate, which wrap a tool handler with a per-caller gate the server can find at registration, and ShowRefusal, which decides whether a gate's refusal reads as an unknown name or crosses with its message.
+code:
+  - core/mcp/gated.go
+  - core/mcp/refusal.go
+docs:
+  - framework/docs/content/mcp.md
+invariants:
+  - id: refusal-masked-as-unknown
+    rule: An unmarked gate refusal on tools/call, resources/read or prompts/get answers with exactly the error an unknown name answers with, so a direct call cannot confirm a gated item exists.
+    enforced_by:
+      - test: core/mcp.TestGatedItemAnswersAsUnknown
+      - test: core/mcp.TestSweepPanickingGatesMaskAsUnknown
+  - id: show-refusal-crosses
+    rule: A refusal wrapped with ShowRefusal crosses as gateRefusal converts it - a gate's own RPCError, wrapped or not, keeps its code and message, and any other error answers -32602 carrying its text.
+    enforced_by:
+      - test: core/mcp.TestShowRefusalLetsTheMessageCross
+      - test: core/mcp.TestGateRPCErrorKeepsCode
+  - id: decorate-keeps-gates-outside
+    rule: Decorate peels every Gated layer off a handler, decorates the inner handler, and puts the same gates back outside it in the same order, so registration still finds them and runs them before validation.
+    enforced_by:
+      - test: core/mcp.TestDecorateKeepsGatesFirst
+decisions:
+  - id: mask-by-default-show-by-opt-in
+    date: 2026-11-18
+    status: accepted
+    decision: A gate's refusal answers as an unknown name unless the gate wraps its error with ShowRefusal.
+    rejected:
+      - option: Send every gate's message to the caller.
+        why: The call becomes an existence oracle for items the listings already hide.
+    upholds: [refusal-masked-as-unknown, show-refusal-crosses]
+  - id: weak-registry-of-gated-wrappers
+    date: 2026-11-18
+    status: accepted
+    decision: Gated records each wrapper in a process-wide registry of weak pointers, pruned on every new wrapper, and registration matches a handler to it by reflected function identity.
+    rejected:
+      - option: Change ToolHandler from a function type to an interface or struct.
+        why: It is public API every tool author writes against.
+      - option: A registry of strong references.
+        why: It would keep discarded wrappers and the app closures they hold alive for the life of the process.
+      - option: Match by code pointer.
+        why: Every bound call method shares one code pointer while carrying a different gate and handler.

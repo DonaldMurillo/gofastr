@@ -1,0 +1,25 @@
+primitive: middleware.recovery
+summary: Recovery, which logs a handler panic and answers 500, or cuts the connection when the response already started.
+code:
+  - core/middleware/recovery.go
+docs:
+  - framework/docs/content/security.md
+invariants:
+  - id: started-response-is-cut
+    rule: A panic after a final status, body byte, flush or hijack reached the client is logged and re-raised as http.ErrAbortHandler instead of a 500, and http.ErrAbortHandler itself passes through.
+    enforced_by:
+      - test: core/middleware.TestRecoveryCutsCommittedResponse
+      - test: core/middleware.TestRecoveryLetsAbortHandlerThrough
+  - id: informational-status-does-not-start
+    rule: A 1xx other than 101 does not start the response, and a WriteHeader that panics on an invalid code leaves it unstarted, so a 500 can still follow.
+    enforced_by:
+      - test: core/middleware.TestRecovery500AfterHintsOnly
+      - test: core/middleware.TestRecoveryInvalidStatusStill500
+  - id: error-page-drops-representation-headers
+    rule: The 500 drops the handler's Content-Encoding, Content-Length, Content-Type, ETag, Last-Modified, Content-Range, Accept-Ranges and Content-Disposition and sets Cache-Control no-store.
+    enforced_by:
+      - test: core/middleware.TestRecovery500DropsHandlerRepresentationHeaders
+  - id: logs-the-handlers-stack
+    rule: A panic Timeout carried over is logged with the stack of the goroutine that panicked.
+    enforced_by:
+      - test: core/middleware.TestTimeoutPanicKeepsHandlerStack
