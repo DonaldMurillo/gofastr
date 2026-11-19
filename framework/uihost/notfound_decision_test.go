@@ -42,6 +42,7 @@ func notFoundDecisionApp(t *testing.T) *UIHost {
 	a.SetDefaultLayout(app.NewLayout("root", app.LayoutSpec{}, func(_ context.Context, l *app.LayoutTree) render.HTML { return l.Primary() }))
 	hidden := app.PolicyFunc(func(context.Context) app.Decision { return decide.NotFound() })
 	a.RegisterScreen(app.NewScreen("/nfd-admin", adminComp{}).WithTitle("Admin").WithPolicy(hidden), nil)
+	a.RegisterScreen(app.NewScreen("/nfd-dyn/:type", &barcodeComp{}).WithTitle("Dyn").WithPolicy(hidden), nil)
 	a.Register("/origin", statusScreenComp("origin"), nil)
 	return New(a, WithNotFoundScreen(nfMetaBody{}), WithDescription("Site wide"),
 		WithPublicLLMMD(), WithMarkdownNegotiation())
@@ -49,6 +50,7 @@ func notFoundDecisionApp(t *testing.T) *UIHost {
 
 type nfShape struct {
 	name   string
+	method string
 	header map[string]string
 	suffix string
 }
@@ -59,10 +61,23 @@ var nfShapes = []nfShape{
 	{name: "problem", header: map[string]string{"Accept": "application/problem+json"}},
 	{name: "markdown", header: map[string]string{"Accept": "text/markdown"}},
 	{name: "llm.md", suffix: "/llm.md"},
+	{name: "part", header: map[string]string{"X-Gofastr-Part": "l:root#aside"}},
+}
+
+// nfMethodShapes are the methods a screen does not take. A policy does
+// not run for them (unsafe-method-on-screen-is-405), so only middleware
+// calling ServeNotFound hides the route from them.
+var nfMethodShapes = []nfShape{
+	{name: "post", method: http.MethodPost},
+	{name: "options", method: http.MethodOptions},
 }
 
 func serveShape(h http.Handler, path string, s nfShape) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodGet, path+s.suffix, nil)
+	method := s.method
+	if method == "" {
+		method = http.MethodGet
+	}
+	req := httptest.NewRequest(method, path+s.suffix, nil)
 	for k, v := range s.header {
 		req.Header.Set(k, v)
 	}
@@ -73,8 +88,13 @@ func serveShape(h http.Handler, path string, s nfShape) *httptest.ResponseRecord
 
 func assertSameNotFound(t *testing.T, shape string, got, want *httptest.ResponseRecorder, gotPath, wantPath string) {
 	t.Helper()
-	if got.Code != http.StatusNotFound || got.Code != want.Code {
-		t.Fatalf("%s: status %d, unmatched URL %d; want both 404", shape, got.Code, want.Code)
+	if got.Code != want.Code || (!strings.HasSuffix(shape, "part") && got.Code != http.StatusNotFound) {
+		t.Fatalf("%s: status %d, unmatched URL %d; want the same, 404 but for a part reset", shape, got.Code, want.Code)
+	}
+	for _, h := range []string{"Allow", "X-Gofastr-Part-Reset"} {
+		if g, w := got.Header().Get(h), want.Header().Get(h); g != w {
+			t.Errorf("%s: %s %q, unmatched URL %q", shape, h, g, w)
+		}
 	}
 	if g, w := got.Header().Get("Content-Type"), want.Header().Get("Content-Type"); g != w {
 		t.Errorf("%s: Content-Type %q, unmatched URL %q", shape, g, w)
@@ -95,7 +115,26 @@ func TestDecideNotFoundMatchesUnmatchedURL(t *testing.T) {
 		got := serveShape(ds, "/nfd-admin", s)
 		want := serveShape(ds, "/zz-nope", s)
 		assertSameNotFound(t, s.name, got, want, "/nfd-admin", "/zz-nope")
+		got = serveShape(ds, "/nfd-dyn/qr", s)
+		want = serveShape(ds, "/zz-dyn/qr", s)
+		assertSameNotFound(t, "dynamic "+s.name, got, want, "/nfd-dyn/qr", "/zz-dyn/qr")
 	}
+}
+
+// The llm.md index lists no decide.NotFound route, and a dynamic
+// route's pattern doc answers as an unknown one.
+func TestDecideNotFoundHiddenFromLLMIndex(t *testing.T) {
+	ds := notFoundDecisionApp(t)
+	idx := serveShape(ds, "/llm-pages.md", nfShape{})
+	if idx.Code != http.StatusOK || !strings.Contains(idx.Body.String(), "/origin") {
+		t.Fatalf("index: %d, want it listing /origin:\n%s", idx.Code, idx.Body.String())
+	}
+	if body := idx.Body.String(); strings.Contains(body, "nfd-admin") || strings.Contains(body, "nfd-dyn") {
+		t.Errorf("index lists a hidden route:\n%s", body)
+	}
+	got := serveShape(ds, "/nfd-dyn/:type/llm.md", nfShape{})
+	want := serveShape(ds, "/zz-dyn/:type/llm.md", nfShape{})
+	assertSameNotFound(t, "pattern llm.md", got, want, "/nfd-dyn", "/zz-dyn")
 }
 
 // Middleware that calls ServeNotFound answers what an unmatched URL gets,
@@ -118,7 +157,7 @@ func TestServeNotFoundMatchesUnmatchedURL(t *testing.T) {
 		})
 	})
 	ds.Mount(rt)
-	for _, s := range nfShapes {
+	for _, s := range append(append([]nfShape{}, nfShapes...), nfMethodShapes...) {
 		got := serveShape(rt, "/nfd-admin", s)
 		want := serveShape(rt, "/zz-nope", s)
 		assertSameNotFound(t, s.name, got, want, "/nfd-admin", "/zz-nope")

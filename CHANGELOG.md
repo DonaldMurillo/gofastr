@@ -58,7 +58,9 @@ few lines, and link the PR or the docs page for the rest.
   still carried the matched route's `rel="alternate" hreflang` links,
   pointing search engines at more 404s and telling it apart from an
   unknown URL. Every not-found page now gets the head an unmatched URL
-  gets. ([#823](https://github.com/DonaldMurillo/gofastr/issues/823))
+  gets, and so do a static export's `404.html` (which listed the home
+  page's alternates) and the error page of a failed render.
+  ([#823](https://github.com/DonaldMurillo/gofastr/issues/823))
 - **gofastr dev: saves no longer run git in your repository.** The
   dev loop's `go list` and `go build` stamped version control info, which
   runs `git status` and takes `.git/index.lock`: a commit made during a
@@ -498,7 +500,11 @@ few lines, and link the PR or the docs page for the rest.
   the `WithNotFoundScreen` page, partial, problem JSON or markdown, with
   nothing from the route, so a route the caller may not see looks like
   one that does not exist. A region guard's `NotFound` takes the whole
-  page to 404. `decide.Block(404)` still answers the plain status phrase.
+  page to 404, and the `/llm-pages.md` index leaves the route out. A
+  POST or OPTIONS to the page still answers 405, since no screen code
+  runs for it; middleware calling `ServeNotFound` hides the route from
+  every method. `decide.Block(404)` still answers the plain status
+  phrase.
   See [UI wiring](framework/docs/content/ui-wiring.md).
   ([#824](https://github.com/DonaldMurillo/gofastr/issues/824))
 
