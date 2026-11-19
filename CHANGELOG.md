@@ -25,7 +25,7 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
-- **handler: `Bind` refuses duplicate and case-folded keys at every
+- **BREAKING: handler: `Bind` refuses duplicate and case-folded keys at every
   depth.** The JSON body was checked at the top level of a struct only,
   so `{"user":{"role":"member","role":"admin"}}` bound last-wins, and a
   map destination took `{"name":"a","name":"c"}`, while `ToolAdapter`
