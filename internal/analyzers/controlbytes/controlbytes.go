@@ -192,7 +192,6 @@ import (
 	"go/token"
 	"go/types"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -1434,24 +1433,11 @@ func returnsScrubOf(fn *ast.FuncDecl, pass *analysis.Pass, p *types.Var) bool {
 			// returned callee must itself carry the scrub, by body
 			// evidence when it is a same-package declaration (the
 			// one-line wrapper around quoteParamValue carries none).
-			var calleeObj types.Object
-			switch inner := ast.Unparen(call.Fun).(type) {
-			case *ast.Ident:
-				calleeObj = pass.TypesInfo.ObjectOf(inner)
-			case *ast.SelectorExpr:
-				if isel, ok := pass.TypesInfo.Selections[inner]; ok {
-					calleeObj = isel.Obj()
-				}
-			}
-			if calleeObj != nil {
-				if calleeDecl, ok := declsOf(pass)[calleeObj]; ok {
-					var vp *types.Var
-					if sig, ok := calleeObj.Type().(*types.Signature); ok && sig.Params().Len() > 0 {
-						vp = sig.Params().At(0)
-					}
-					if vp == nil || !c0FilterBody(calleeDecl, pass, vp) {
-						continue
-					}
+			if decl := sameDecl(pass, call.Fun); decl != nil {
+				callee := pass.TypesInfo.Defs[decl.Name].(*types.Func)
+				params := callee.Signature().Params()
+				if params.Len() == 0 || !c0FilterBody(decl, pass, params.At(0)) {
+					continue
 				}
 			}
 			for _, a := range call.Args {
@@ -1521,28 +1507,8 @@ func c0ComparisonIn(body ast.Node, pass *analysis.Pass, depth int) bool {
 			if depth >= 1 {
 				return true
 			}
-			var callee types.Object
-			switch fun := ast.Unparen(n.Fun).(type) {
-			case *ast.Ident:
-				callee = pass.TypesInfo.ObjectOf(fun)
-			case *ast.SelectorExpr:
-				if sel, ok := pass.TypesInfo.Selections[fun]; ok {
-					callee = sel.Obj()
-				}
-			}
-			if callee == nil {
-				return true
-			}
-			for _, d := range pass.Files {
-				for _, decl := range d.Decls {
-					fd, ok := decl.(*ast.FuncDecl)
-					if !ok || pass.TypesInfo.Defs[fd.Name] != callee || fd.Body == nil {
-						continue
-					}
-					if c0ComparisonIn(fd.Body, pass, depth+1) {
-						found = true
-					}
-				}
+			if decl := sameDecl(pass, n.Fun); decl != nil {
+				found = c0ComparisonIn(decl.Body, pass, depth+1)
 			}
 		}
 		return !found
@@ -1569,37 +1535,11 @@ func ctlLiteral(e ast.Expr) bool {
 
 // litValue is the value of a numeric or rune literal.
 func litValue(e ast.Expr) (uint64, bool) {
-	lit, ok := e.(*ast.BasicLit)
-	if !ok {
+	lit, ok := ast.Unparen(e).(*ast.BasicLit)
+	if !ok || (lit.Kind != token.INT && lit.Kind != token.CHAR) {
 		return 0, false
 	}
-	var v uint64
-	switch lit.Kind {
-	case token.INT:
-		val := lit.Value
-		if len(val) > 1 && val[0] == '0' && val[1] != '.' {
-			u, err := strconv.ParseUint(strings.TrimPrefix(strings.TrimPrefix(val, "0x"), "0X"), 16, 32)
-			if err != nil {
-				return 0, false
-			}
-			v = u
-		} else {
-			u, err := strconv.ParseUint(val, 10, 32)
-			if err != nil {
-				return 0, false
-			}
-			v = u
-		}
-	case token.CHAR:
-		r, _, tail, err := strconv.UnquoteChar(lit.Value[1:len(lit.Value)-1], '\'')
-		if err != nil || tail != "" {
-			return 0, false
-		}
-		v = uint64(r)
-	default:
-		return 0, false
-	}
-	return v, true
+	return constant.Uint64Val(constant.MakeFromLiteral(lit.Value, lit.Kind, 0))
 }
 
 // declsOf memoizes the package's object-to-declaration map.

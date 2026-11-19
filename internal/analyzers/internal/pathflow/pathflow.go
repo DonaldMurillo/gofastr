@@ -1305,13 +1305,6 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		}
 		return nil
 	}
-	strConst := func(e ast.Expr) (string, bool) {
-		tv, ok := pass.TypesInfo.Types[e]
-		if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
-			return "", false
-		}
-		return constant.StringVal(tv.Value), true
-	}
 	parentPrefix := ".." + sep
 	// cover is what an outside path makes a condition: forced true,
 	// forced false, neither, or, for tests of a Rel result, true on
@@ -1362,7 +1355,7 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 			if x.Op == token.EQL {
 				// rel == ".."
 				for _, pair := range [][2]ast.Expr{{x.X, x.Y}, {x.Y, x.X}} {
-					if c, ok := strConst(pair[1]); ok && c == ".." && dominates(x, sink, body) {
+					if c, ok := astx.StringConstant(pass, pair[1]); ok && c == ".." && dominates(x, sink, body) {
 						if r := relOf(pair[0]); r != nil {
 							return part(r, dotdot)
 						}
@@ -1431,7 +1424,7 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 			// neither.
 			if isPrefix(x) && len(x.Args) == 2 {
 				if r := relOf(x.Args[0]); r != nil {
-					switch c, _ := strConst(x.Args[1]); c {
+					switch c, _ := astx.StringConstant(pass, x.Args[1]); c {
 					case "..":
 						return part(r, dotdot|parent)
 					case parentPrefix:

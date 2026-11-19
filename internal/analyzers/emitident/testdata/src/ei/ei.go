@@ -329,3 +329,15 @@ func trimmedName(s string) string { return strings.TrimSpace(s) }
 func i10Helper(name string) string {
 	return fmt.Sprintf("func %s() {\n", trimmedName(name)) // want `identifier slot "func %s"`
 }
+
+func formatTypePrefix(name string) string {
+	return fmt.Sprintf("type%s", name)
+}
+
+func formatWidth(name string) string {
+	return fmt.Sprintf("type %*s struct{}", 4, name) // want `identifier slot "type %\*s"`
+}
+
+func formatIndexedPrecision(name string) string {
+	return fmt.Sprintf("type %.[1]*[2]s struct{}", 4, name) // want `identifier slot "type %\.\[1\]\*\[2\]s"`
+}

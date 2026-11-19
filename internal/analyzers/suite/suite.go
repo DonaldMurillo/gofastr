@@ -13,7 +13,7 @@
 // Two binaries serve the set. cmd/vettool runs it over this repo via
 // `make analyze`, the pre-commit hook, and CI's vet step:
 //
-//	go build -o dist/vettool ./cmd/vettool
+//	go build -buildvcs=false -o dist/vettool ./cmd/vettool
 //	go vet -vettool=dist/vettool ./...
 //
 // The gofastr CLI carries it too, so `gofastr verify` in an app (a tree

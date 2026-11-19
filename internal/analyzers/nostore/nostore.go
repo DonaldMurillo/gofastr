@@ -111,21 +111,24 @@ import (
 	"go/token"
 	"go/types"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/types/typeutil"
 )
 
 var Analyzer = &analysis.Analyzer{
 	Name: "nostore",
-	Doc:  "reports a per-caller (principal-resolving) 2xx response written with no Cache-Control on its path",
+	Doc:  "reports a per-caller (principal-resolving) 2xx response written without a Cache-Control directive that suppresses shared storage",
 	Run:  run,
 }
 
-const nostoreMsg = "2xx response for a resolved principal written with no Cache-Control on the path: a shared cache or the back/forward cache can replay one caller's body at another's URL — set Cache-Control: no-store before the write (the writeCredentialHeaders / admin-gate / mcp-transport spellings), or pin it once in the wrapper this handler is mounted behind"
+const nostoreMsg = "2xx response for a resolved principal written without a Cache-Control directive that suppresses shared storage: a shared cache can replay one caller's body at another's URL — set Cache-Control: no-store before the write (the writeCredentialHeaders / admin-gate / mcp-transport spellings), or pin it once in the wrapper this handler is mounted behind"
 
 // resolverName matches the identity-reader call spellings by name.
 var resolverName = regexp.MustCompile(`(?i)(currentuser|getuser|sessionfrom|tokenscopes|requireowner|requireauth|verifytoken|readsession|getsession|loadsession|resolvesession|currentsession|allowsession)`)
@@ -176,6 +179,7 @@ var identityType = regexp.MustCompile(`(?i)(session|token)`)
 type sinkSite struct {
 	node     ast.Node
 	paramIdx int
+	body     *ast.BlockStmt
 }
 
 type family struct {
@@ -183,9 +187,9 @@ type family struct {
 	bodies       []*ast.BlockStmt
 	callees      map[*family]bool // named-call + wiring edges ("invokes")
 	resolves     bool
-	cc           bool
+	cc           map[*ast.BlockStmt]ast.Stmt
+	ccCallees    map[*family]bool
 	sinks        []sinkSite
-	topCalls     []*ast.CallExpr           // calls at the bodies' top level
 	callSites    []*ast.CallExpr           // every call in the family
 	passthrough  bool                      // upstream/stored headers copied onto w
 	hasBodyWrite bool                      // any body write (not bare WriteHeader)
@@ -215,7 +219,7 @@ func run(pass *analysis.Pass) (any, error) {
 			if !ok || fd.Body == nil {
 				continue
 			}
-			fam := &family{decl: fd, callees: map[*family]bool{}, writers: map[types.Object]bool{}}
+			fam := &family{decl: fd, callees: map[*family]bool{}, cc: map[*ast.BlockStmt]ast.Stmt{}, ccCallees: map[*family]bool{}, writers: map[types.Object]bool{}}
 			fam.bodies = append(fam.bodies, fd.Body)
 			astx.CollectLiterals(fd.Body, &fam.bodies)
 			families = append(families, fam)
@@ -269,14 +273,24 @@ func run(pass *analysis.Pass) (any, error) {
 	for changed := true; changed; {
 		changed = false
 		for _, fam := range families {
-			if fam.cc {
-				continue
-			}
-			for _, top := range fam.topCalls {
-				if t := byDecl[astx.ResolveCall(pass, top.Fun, funcs, methods)]; t != nil && t.cc {
-					fam.cc = true
-					changed = true
-					break
+			for _, body := range fam.bodies {
+				for _, stmt := range body.List {
+					if existing := fam.cc[body]; existing != nil && existing.Pos() <= stmt.Pos() {
+						break
+					}
+					expr, ok := stmt.(*ast.ExprStmt)
+					if !ok {
+						continue
+					}
+					call, ok := ast.Unparen(expr.X).(*ast.CallExpr)
+					if !ok {
+						continue
+					}
+					if t := byDecl[astx.ResolveCall(pass, call.Fun, funcs, methods)]; t != nil && t.cc[t.decl.Body] != nil {
+						fam.cc[body] = stmt
+						changed = true
+						break
+					}
 				}
 			}
 		}
@@ -303,6 +317,32 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 		for f := range fs {
 			owner.callees[f] = true
+		}
+	}
+
+	for _, fam := range families {
+		for _, body := range fam.bodies {
+			fam.sinks = append(fam.sinks, bodySinks(pass, fam, body, func(call *ast.CallExpr) bool {
+				target := byDecl[astx.ResolveCall(pass, call.Fun, funcs, methods)]
+				return target != nil && target.cc[target.decl.Body] != nil
+			})...)
+		}
+		for _, call := range fam.callSites {
+			if !fam.ccBefore(call) {
+				continue
+			}
+			if t := byDecl[astx.ResolveCall(pass, call.Fun, funcs, methods)]; t != nil && t != fam {
+				fam.ccCallees[t] = true
+			}
+			callee := ast.Unparen(call.Fun)
+			if sel, ok := callee.(*ast.SelectorExpr); ok && sel.Sel.Name == "ServeHTTP" {
+				callee = ast.Unparen(sel.X)
+			}
+			if id, ok := callee.(*ast.Ident); ok {
+				for target := range wiredInto[pass.TypesInfo.Uses[id]] {
+					fam.ccCallees[target] = true
+				}
+			}
 		}
 	}
 
@@ -401,6 +441,31 @@ func run(pass *analysis.Pass) (any, error) {
 		return false
 	}
 
+	mounted := map[*ast.BlockStmt]bool{}
+	mountedResolves := map[*ast.BlockStmt]bool{}
+	for _, fam := range families {
+		parents := dominance.Parents(fam.decl.Body)
+		for n, parent := range parents {
+			lit, ok := n.(*ast.FuncLit)
+			if !ok || !mountedHandler(pass, lit, parent, parents) {
+				continue
+			}
+			mounted[lit.Body] = true
+			mountedResolves[lit.Body] = bodyResolves(pass, lit.Body)
+			for callNode := range ast.Preorder(lit.Body) {
+				call, ok := callNode.(*ast.CallExpr)
+				if !ok {
+					continue
+				}
+				if target := byDecl[astx.ResolveCall(pass, call.Fun, funcs, methods)]; target != nil {
+					for family := range floodOf(target) {
+						mountedResolves[lit.Body] = mountedResolves[lit.Body] || family.resolves
+					}
+				}
+			}
+		}
+	}
+
 	reported := map[ast.Node]bool{}
 	for _, fam := range families {
 		if !resolverOK(fam) || ccOK(fam, families) {
@@ -411,7 +476,7 @@ func run(pass *analysis.Pass) (any, error) {
 				continue // the write's own path is protected or non-2xx
 			}
 			for _, sink := range r.sinks {
-				if !keepSink(r, sink) || reported[sink.node] {
+				if (mounted[sink.body] && !mountedResolves[sink.body]) || !keepSink(r, sink) || reported[sink.node] {
 					continue
 				}
 				reported[sink.node] = true
@@ -420,6 +485,31 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	}
 	return nil, nil
+}
+
+// mountedHandler identifies an independently dispatched route callback.
+func mountedHandler(pass *analysis.Pass, lit *ast.FuncLit, parent ast.Node, parents map[ast.Node]ast.Node) bool {
+	node := ast.Node(lit)
+	for ; parent != nil; node, parent = parent, parents[parent] {
+		switch expr := parent.(type) {
+		case *ast.ParenExpr:
+			continue
+		case *ast.CallExpr:
+			if pass.TypesInfo.Types[expr.Fun].IsType() {
+				continue
+			}
+			fn := typeutil.StaticCallee(pass.TypesInfo, expr)
+			if fn == nil {
+				return false
+			}
+			isMux := astx.ReceiverIs(fn, "net/http", "ServeMux") && (fn.Name() == "HandleFunc" || fn.Name() == "Handle")
+			isRouter := astx.ReceiverIs(fn, "github.com/DonaldMurillo/gofastr/core/router", "Router")
+			return (isMux || isRouter) && slices.ContainsFunc(expr.Args, func(arg ast.Expr) bool { return arg == node })
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 // scanFamily computes the family's own facts: writer params, principal
@@ -445,19 +535,9 @@ func scanFamily(pass *analysis.Pass, fam *family) {
 		if !fam.resolves {
 			fam.resolves = bodyResolves(pass, body)
 		}
-		if !fam.cc {
-			fam.cc = bodySetsCC(pass, body)
+		if set := bodySetsCC(pass, body); set != nil {
+			fam.cc[body] = set
 		}
-		for _, stmt := range body.List {
-			if expr, ok := stmt.(*ast.ExprStmt); ok {
-				if call, ok := expr.X.(*ast.CallExpr); ok {
-					fam.topCalls = append(fam.topCalls, call)
-				}
-			}
-		}
-	}
-	for _, body := range fam.bodies {
-		fam.sinks = append(fam.sinks, bodySinks(pass, fam, body)...)
 	}
 }
 
@@ -558,18 +638,22 @@ func resolverCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 // that ends in a plain else and sets it in every arm (the uihost
 // serveVersionedText private / immutable / no-cache split). Every path
 // through such a chain runs a set.
-func bodySetsCC(pass *analysis.Pass, body *ast.BlockStmt) bool {
+func bodySetsCC(pass *analysis.Pass, body *ast.BlockStmt) ast.Stmt {
 	for _, stmt := range body.List {
-		switch st := stmt.(type) {
-		case *ast.ExprStmt:
-			if call, ok := st.X.(*ast.CallExpr); ok && isCacheControlSet(pass, call) {
-				return true
-			}
-		case *ast.IfStmt:
-			if everyArmSetsCC(pass, st) {
-				return true
-			}
+		if statementSetsCC(pass, stmt, nil) {
+			return stmt
 		}
+	}
+	return nil
+}
+
+func statementSetsCC(pass *analysis.Pass, stmt ast.Stmt, helperSetsCC func(*ast.CallExpr) bool) bool {
+	switch st := stmt.(type) {
+	case *ast.ExprStmt:
+		call, ok := ast.Unparen(st.X).(*ast.CallExpr)
+		return ok && (isCacheControlSet(pass, call) || helperSetsCC != nil && helperSetsCC(call))
+	case *ast.IfStmt:
+		return everyArmSetsCC(pass, st)
 	}
 	return false
 }
@@ -628,7 +712,7 @@ func isCacheControlHeader(call *ast.CallExpr) bool {
 	if !ok || (sel.Sel.Name != "Set" && sel.Sel.Name != "Add") || len(call.Args) < 2 {
 		return false
 	}
-	return headerNameIs(call.Args[0], "cache-control")
+	return astx.EqualFoldStringLiteral(call.Args[0], "cache-control")
 }
 
 // isCacheControlSet: Header().Set/Add("Cache-Control", v) on any writer
@@ -647,7 +731,7 @@ func isCacheControlSet(pass *analysis.Pass, call *ast.CallExpr) bool {
 	if len(call.Args) < 2 {
 		return false
 	}
-	if !headerNameIs(call.Args[0], "cache-control") {
+	if !astx.EqualFoldStringLiteral(call.Args[0], "cache-control") {
 		return false
 	}
 	v, ok := astx.StringConstant(pass, call.Args[1])
@@ -668,14 +752,6 @@ func suppressesStorage(v string) bool {
 		}
 	}
 	return false
-}
-
-func headerNameIs(e ast.Expr, want string) bool {
-	lit, ok := e.(*ast.BasicLit)
-	if !ok || lit.Kind != token.STRING {
-		return false
-	}
-	return strings.EqualFold(strings.Trim(lit.Value, "\"'`"), want)
 }
 
 // scanContext collects the per-family facts the sink postures need:
@@ -916,9 +992,12 @@ func requestAccessor(pass *analysis.Pass, call *ast.CallExpr, fam *family) bool 
 // that such a status precedes (webbotauth's 403/503 problem bodies, the
 // proxy's 503) is an error body, not a 2xx one; a write no error status
 // precedes is still the implicit 200.
-func bodySinks(pass *analysis.Pass, fam *family, body *ast.BlockStmt) []sinkSite {
+func bodySinks(pass *analysis.Pass, fam *family, body *ast.BlockStmt, helperSetsCC func(*ast.CallExpr) bool) []sinkSite {
 	var consts []int64
 	ast.Inspect(body, func(n ast.Node) bool {
+		if _, nested := n.(*ast.FuncLit); nested {
+			return false
+		}
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
@@ -952,15 +1031,11 @@ func bodySinks(pass *analysis.Pass, fam *family, body *ast.BlockStmt) []sinkSite
 	}
 
 	var sinks []sinkSite
-	parent := parentMap(body)
-	ccSets := []*ast.CallExpr{}
+	parent := dominance.Parents(body)
 	ast.Inspect(body, func(n ast.Node) bool {
-		if call, ok := n.(*ast.CallExpr); ok && isCacheControlSet(pass, call) {
-			ccSets = append(ccSets, call)
+		if _, nested := n.(*ast.FuncLit); nested {
+			return false
 		}
-		return true
-	})
-	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
@@ -977,29 +1052,26 @@ func bodySinks(pass *analysis.Pass, fam *family, body *ast.BlockStmt) []sinkSite
 				return true // bodyless 2xx: no body, nothing to store
 			}
 			idx = statusParamIdx(pass, fam, call)
-			sinks = append(sinks, sinkSite{node: call, paramIdx: idx})
+			sinks = append(sinks, sinkSite{node: call, paramIdx: idx, body: body})
 		} else if sinkEncode(pass, fam, call) {
 			if len(call.Args) == 1 {
 				if lit, ok := ast.Unparen(call.Args[0]).(*ast.CompositeLit); ok && fam.ackLiteral(pass, lit) {
 					return true // acknowledgement body: nothing to replay
 				}
 			}
-			sinks = append(sinks, sinkSite{node: call, paramIdx: -1})
+			sinks = append(sinks, sinkSite{node: call, paramIdx: -1, body: body})
 		} else if sinkWrite(pass, fam, call) ||
 			sinkPrint(pass, fam, call) || sinkRespond(pass, fam, call) {
-			sinks = append(sinks, sinkSite{node: call, paramIdx: -1})
+			sinks = append(sinks, sinkSite{node: call, paramIdx: -1, body: body})
 		} else {
 			return true
 		}
-		// A Cache-Control set in the SAME conditional branch as this
-		// write guards exactly this write (llm.md sets no-cache inside
-		// the if that writes the doc) — a set in a DIFFERENT branch
-		// does not (the uihost re-mint branch's no-store says nothing
-		// about the live-session write).
-		for _, set := range ccSets {
-			if sameBranch(parent, set, call, body) {
-				sinks = sinks[:len(sinks)-1]
-				break
+		for _, list := range dominance.Prefix(call, parent, body) {
+			for _, stmt := range list {
+				if statementSetsCC(pass, stmt, helperSetsCC) {
+					sinks = sinks[:len(sinks)-1]
+					return true
+				}
 			}
 		}
 		return true
@@ -1072,109 +1144,10 @@ func isErrorStatusStmt(pass *analysis.Pass, fam *family, st ast.Stmt) bool {
 	return status2xx(pass, call.Args[0]) == statusNo
 }
 
-// parentMap tracks statement containers and the expressions attached
-// to them. Branch credit does not cross expression forms this walk
-// does not traverse, such as function literals.
-func parentMap(body *ast.BlockStmt) map[ast.Node]ast.Node {
-	m := map[ast.Node]ast.Node{}
-	ast.Inspect(body, func(n ast.Node) bool {
-		switch p := n.(type) {
-		case *ast.IfStmt:
-			for _, c := range containerChildren(p) {
-				if _, seen := m[c]; !seen {
-					m[c] = p
-				}
-			}
-		}
-		return true
-	})
-	// The generic walk: record parent for every container node.
-	var walk func(n ast.Node)
-	walk = func(n ast.Node) {
-		children := containerChildren(n)
-		for _, c := range children {
-			if _, seen := m[c]; !seen {
-				m[c] = n
-			}
-			walk(c)
-		}
-	}
-	walk(body)
-	return m
-}
-
-func containerChildren(n ast.Node) []ast.Node {
-	var out []ast.Node
-	switch v := n.(type) {
-	case *ast.BlockStmt:
-		for _, st := range v.List {
-			out = append(out, st)
-		}
-	case *ast.IfStmt:
-		out = append(out, v.Cond, v.Body)
-		if v.Else != nil {
-			out = append(out, v.Else)
-		}
-	case *ast.ForStmt:
-		out = append(out, v.Body)
-	case *ast.RangeStmt:
-		out = append(out, v.Body)
-	case *ast.SwitchStmt:
-		out = append(out, v.Body)
-	case *ast.TypeSwitchStmt:
-		out = append(out, v.Body)
-	case *ast.SelectStmt:
-		out = append(out, v.Body)
-	case *ast.CaseClause:
-		for _, st := range v.Body {
-			out = append(out, st)
-		}
-	case *ast.CommClause:
-		for _, st := range v.Body {
-			out = append(out, st)
-		}
-	case *ast.AssignStmt:
-		for _, e := range v.Rhs {
-			out = append(out, e)
-		}
-	case *ast.ExprStmt:
-		out = append(out, v.X)
-	case *ast.ReturnStmt:
-		for _, e := range v.Results {
-			out = append(out, e)
-		}
-	case *ast.DeferStmt:
-		out = append(out, v.Call)
-	case *ast.GoStmt:
-		out = append(out, v.Call)
-	case *ast.CallExpr:
-		out = append(out, v.Fun)
-		for _, a := range v.Args {
-			out = append(out, a)
-		}
-	case *ast.SelectorExpr:
-		out = append(out, v.X)
-	}
-	return out
-}
-
-// sameBranch: set and sink share a conditional ancestor (an If/For/
-// Case block) below the function's top-level body — a set in one
-// branch guards only the writes of that branch.
-func sameBranch(parent map[ast.Node]ast.Node, set, sink ast.Node, root *ast.BlockStmt) bool {
-	ancestors := map[ast.Node]bool{}
-	for n := parent[set]; n != nil; n = parent[n] {
-		ancestors[n] = true
-	}
-	for n := parent[sink]; n != nil; n = parent[n] {
-		if n == root {
-			return false
-		}
-		if ancestors[n] {
-			switch n.(type) {
-			case *ast.BlockStmt, *ast.CaseClause, *ast.CommClause:
-				return true
-			}
+func (fam *family) ccBefore(node ast.Node) bool {
+	for body, set := range fam.cc {
+		if set.End() <= node.Pos() && node.End() <= body.End() {
+			return true
 		}
 	}
 	return false
@@ -1359,19 +1332,14 @@ func isWriterValue(pass *analysis.Pass, fam *family, e ast.Expr) bool {
 	return false
 }
 
-// ccOK: Cache-Control credit — the family's own unconditional set
-// (fam.cc, which run extends with the helper arm: a top-level call to
-// a same-package helper that sets it unconditionally), or a wrapper
-// family that sets it and invokes (or wires) this one.
+// ccOK checks for upstream header ownership or a protected wrapper invocation.
 func ccOK(fam *family, families []*family) bool {
-	if fam.cc || fam.passthrough {
+	if fam.passthrough {
 		return true
 	}
 	for _, other := range families {
-		if other.cc && other != fam {
-			if _, ok := other.callees[fam]; ok {
-				return true
-			}
+		if other.ccCallees[fam] {
+			return true
 		}
 	}
 	return false

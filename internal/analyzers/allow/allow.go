@@ -11,11 +11,10 @@
 // marker with nothing after the parenthesis silences nothing (for a
 // /* */ marker the closing delimiter is not a reason). A marker covers
 // the line below only when it is alone on its line: a block marker with
-// code after it on the same line covers that line and no other. The
-// analyzers never see the marker. Guard wraps each one's Run so the
-// filter sits between the analyzer and the driver, which keeps the
-// fixture suites (analysistest runs the unwrapped Run) and the rules
-// themselves free of suppression logic.
+// code after it on the same line covers that line and no other.
+// Guard filters diagnostics between the analyzer and the driver.
+// Analyzers that export facts can also consult Allowed so a waived
+// site does not export a fact that reports at its callers.
 //
 // This exists because the 2026-09 red-probe round produced rules whose
 // whole-repo runs found a few sites that are the shape on purpose (a

@@ -358,7 +358,7 @@ func (g *graph) makeNode(body *ast.BlockStmt, typ types.Type, owner *node) *node
 		body:       body,
 		typ:        typ,
 		owner:      owner,
-		hasRecover: hasRecover(body),
+		hasRecover: hasRecover(g.pass, body),
 		readLoop:   containsReadLoop(g.pass, body),
 		params:     paramObjects(typ),
 	}
@@ -1067,25 +1067,16 @@ func (g *graph) protected(n *node) bool {
 	return !n.goLaunched && n.owner != nil && g.protected(n.owner)
 }
 
-func hasRecover(body *ast.BlockStmt) bool {
+func hasRecover(pass *analysis.Pass, body *ast.BlockStmt) bool {
 	found := false
-	ast.Inspect(body, func(x ast.Node) bool {
-		switch x := x.(type) {
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch x := n.(type) {
 		case *ast.FuncLit:
-			// A recover deferred inside a nested literal runs on that
-			// literal's own stack — a goroutine's recover cannot catch
-			// a panic in this body. Deferred literals are visited from
-			// their DeferStmt below.
 			return false
 		case *ast.DeferStmt:
-			ast.Inspect(x.Call, func(y ast.Node) bool {
-				if call, ok := y.(*ast.CallExpr); ok {
-					if id, ok := ast.Unparen(call.Fun).(*ast.Ident); ok && id.Name == "recover" {
-						found = true
-					}
-				}
-				return !found
-			})
+			if lit, ok := ast.Unparen(x.Call.Fun).(*ast.FuncLit); ok {
+				found = directRecover(pass, lit.Body)
+			}
 		}
 		return !found
 	})
@@ -1103,7 +1094,7 @@ func hasRecover(body *ast.BlockStmt) bool {
 // ||, and no builtin panic may appear anywhere in the body, deferred
 // calls and literals included. The recover itself is not under a defer
 // or inside a nested literal: it works only when the guard is the
-// DEFERRED function, the named-guard spelling (defer guard()).
+// deferred function itself, named or literal.
 func directRecover(pass *analysis.Pass, body *ast.BlockStmt) bool {
 	isBuiltin := func(expression ast.Expr, name string) bool {
 		call, ok := ast.Unparen(expression).(*ast.CallExpr)

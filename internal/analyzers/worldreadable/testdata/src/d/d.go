@@ -113,3 +113,39 @@ func otherPath(path, other string) (*os.File, error) {
 	}
 	return f, fileperm.Restrict(other, false)
 }
+
+func unrelatedHandle(path string, other *os.File) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o600) // want `os\.OpenFile mode 0o600 applies only at create, and fileperm\.Restrict`
+	if err != nil {
+		return nil, err
+	}
+	if err := other.Chmod(0o600); err != nil {
+		return nil, err
+	}
+	return f, fileperm.Restrict(path, false)
+}
+
+func aliasedHandle(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	alias := f
+	if err := alias.Chmod(0o600); err != nil {
+		return nil, err
+	}
+	return f, fileperm.Restrict(path, false)
+}
+
+func reboundHandle(path string, other *os.File) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o600) // want `os\.OpenFile mode 0o600 applies only at create, and fileperm\.Restrict`
+	if err != nil {
+		return nil, err
+	}
+	alias := other
+	if err := alias.Chmod(0o600); err != nil {
+		return nil, err
+	}
+	alias = f
+	return alias, fileperm.Restrict(path, false)
+}

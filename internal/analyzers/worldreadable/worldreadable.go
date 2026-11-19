@@ -31,10 +31,9 @@
 // readable with the new secret content (the fileperm.WriteOwnerOnly /
 // writeSecretFile lesson: open O_CREATE|O_TRUNC 0o600, Chmod the
 // HANDLE to 0o600, then write — the mode travels with the write).
-// Only os.WriteFile participates: OpenFile with an owner-only mode is
-// the fix spelling's own first half, and directories/Mkdir are not
-// this shape. Quiet, deliberately: a path minted under a throwaway
-// root in the same function (os.MkdirTemp / t.TempDir, or a
+// The inverse arm checks os.WriteFile and atomicfile.Rewrite, which
+// preserves existing permissions. Quiet, deliberately: a path minted
+// under a throwaway root in the same function (os.MkdirTemp / t.TempDir, or a
 // os.CreateTemp result's Name() — the file cannot pre-exist), a
 // package that writes through an owner-only helper instead
 // (WriteOwnerOnly / writeSecretFile / SeedOwnerOnly — no os.WriteFile
@@ -49,7 +48,7 @@
 // already existed and reached for Restrict, which does not change a
 // file's mode off Windows (battery/semantic's WAL, B60, against
 // semantic-search.md's owner-only promise). Quiet: a handle Chmod or
-// fileperm.RestrictOpenFile anywhere in the function (the fix), an
+// fileperm.RestrictOpenFile on that handle (the fix), an
 // os.Chmod of the same path, O_EXCL, and an OpenFile with no Restrict
 // at all (a lock file, a log: nothing claims owner-only for an existing
 // file there, and firing on every such open is noise).
@@ -298,7 +297,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, ctx *pkgCtx) {
 		if !pathflow.FlagMentions(flags, "O_CREATE") || pathflow.FlagMentions(flags, "O_EXCL") {
 			continue
 		}
-		if !restrictsPath(pass, fn.Body, s.path, bound) || tightensHandle(pass, fn.Body) || chmodsPath(pass, fn.Body, s.path, bound) {
+		if !restrictsPath(pass, fn.Body, s.path, bound) || tightensHandle(pass, fn.Body, s.call) || chmodsPath(pass, fn.Body, s.path, bound) {
 			continue
 		}
 		pass.Reportf(s.call.Pos(),
@@ -336,29 +335,80 @@ func callsOnPath(pass *analysis.Pass, body *ast.BlockStmt, path ast.Expr, bound 
 	return found
 }
 
-// tightensHandle reports whether body chmods an *os.File handle or
-// calls a RestrictOpenFile helper: the mode then travels with the open.
-func tightensHandle(pass *analysis.Pass, body *ast.BlockStmt) bool {
+// tightensHandle matches a chmod or RestrictOpenFile to this open's handle.
+func tightensHandle(pass *analysis.Pass, body *ast.BlockStmt, open *ast.CallExpr) bool {
+	bound := map[types.Object]*ast.CallExpr{}
+	source := func(e ast.Expr) *ast.CallExpr {
+		switch expr := ast.Unparen(e).(type) {
+		case *ast.CallExpr:
+			return expr
+		case *ast.Ident:
+			return bound[pass.TypesInfo.ObjectOf(expr)]
+		}
+		return nil
+	}
+	bind := func(lhs ast.Expr, origin *ast.CallExpr) {
+		if id, ok := ast.Unparen(lhs).(*ast.Ident); ok && id.Name != "_" {
+			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+				bound[obj] = origin
+			}
+		}
+	}
+	var inspect func(ast.Node) bool
 	found := false
-	ast.Inspect(body, func(n ast.Node) bool {
-		c, ok := n.(*ast.CallExpr)
-		if !ok || found {
-			return !found
-		}
-		sel, ok := c.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		switch sel.Sel.Name {
-		case "RestrictOpenFile":
-			found = true
-		case "Chmod":
-			if t := pass.TypesInfo.TypeOf(sel.X); t != nil && t.String() == "*os.File" {
+	inspect = func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.AssignStmt:
+			sources := make([]*ast.CallExpr, len(n.Rhs))
+			for i, rhs := range n.Rhs {
+				ast.Inspect(rhs, inspect)
+				sources[i] = source(rhs)
+			}
+			for i, lhs := range n.Lhs {
+				switch {
+				case len(n.Lhs) == len(sources):
+					bind(lhs, sources[i])
+				case len(sources) == 1:
+					bind(lhs, sources[0])
+				}
+			}
+			return false
+		case *ast.ValueSpec:
+			for i, name := range n.Names {
+				switch {
+				case len(n.Names) == len(n.Values):
+					bind(name, source(n.Values[i]))
+				case len(n.Values) == 1:
+					bind(name, source(n.Values[0]))
+				}
+			}
+		case *ast.CallExpr:
+			if n.Pos() <= open.Pos() {
+				return !found
+			}
+			sel, ok := ast.Unparen(n.Fun).(*ast.SelectorExpr)
+			if !ok {
+				return !found
+			}
+			var handle ast.Expr
+			switch sel.Sel.Name {
+			case "RestrictOpenFile":
+				if len(n.Args) > 0 && strings.HasSuffix(pathflow.QualifiedFunc(pass, n.Fun), "fileperm.RestrictOpenFile") {
+					handle = n.Args[0]
+				}
+			case "Chmod":
+				handle = sel.X
+			}
+			if handle != nil && astx.IsNamed(astx.Deref(pass.TypesInfo.TypeOf(handle)), "os", "File") &&
+				source(handle) == open {
 				found = true
 			}
 		}
 		return !found
-	})
+	}
+	ast.Inspect(body, inspect)
 	return found
 }
 

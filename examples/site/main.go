@@ -586,6 +586,7 @@ func setupServer() *framework.App {
 		// Read path: a 409 reconciliation GET only ever follows a move that
 		// already created the session, so it reads state and never mints a
 		// cookie or creates one. A cookieless edge case reconciles to the seed.
+		w.Header().Set("Cache-Control", "no-store")
 		sess := demoStateForRequest(r)
 		sess.mu.Lock()
 		defer sess.mu.Unlock()

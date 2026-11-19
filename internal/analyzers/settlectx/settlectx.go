@@ -134,12 +134,12 @@ import (
 	"go/types"
 	"maps"
 	"slices"
-	"strings"
-	"unicode"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/cfg"
 	"golang.org/x/tools/go/types/typeutil"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
@@ -291,15 +291,16 @@ type state struct {
 }
 
 type assign struct {
-	end token.Pos
+	at  ast.Node
 	rhs ast.Expr
 }
 
 // resolver answers "what context does this expression hold here" for one
 // top-level function body, nested literals included.
 type resolver struct {
-	a       *analyzer
-	assigns map[types.Object][]assign
+	a        *analyzer
+	assigns  map[types.Object][]assign
+	reaching func(types.Object, ast.Node) []ast.Expr
 	// closures are locals bound to a func literal in this body: the
 	// function's own code, not a caller-supplied callback.
 	closures map[types.Object]bool
@@ -308,7 +309,7 @@ type resolver struct {
 func (a *analyzer) newResolver(body *ast.BlockStmt) *resolver {
 	r := &resolver{a: a, assigns: map[types.Object][]assign{}, closures: map[types.Object]bool{}}
 	info := a.pass.TypesInfo
-	add := func(id *ast.Ident, rhs ast.Expr, end token.Pos) {
+	add := func(id *ast.Ident, rhs ast.Expr, at ast.Node) {
 		obj := info.Defs[id]
 		if obj == nil {
 			obj = info.Uses[id]
@@ -322,7 +323,7 @@ func (a *analyzer) newResolver(body *ast.BlockStmt) *resolver {
 		if !isContext(obj.Type()) {
 			return
 		}
-		r.assigns[obj] = append(r.assigns[obj], assign{end: end, rhs: rhs})
+		r.assigns[obj] = append(r.assigns[obj], assign{at: at, rhs: rhs})
 	}
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch n := n.(type) {
@@ -338,7 +339,7 @@ func (a *analyzer) newResolver(body *ast.BlockStmt) *resolver {
 				} else if len(n.Rhs) == 1 {
 					rhs = n.Rhs[0]
 				}
-				add(id, rhs, n.End())
+				add(id, rhs, n)
 			}
 		case *ast.ValueSpec:
 			for i, id := range n.Names {
@@ -348,7 +349,7 @@ func (a *analyzer) newResolver(body *ast.BlockStmt) *resolver {
 				} else if len(n.Values) == 1 {
 					rhs = n.Values[0]
 				}
-				add(id, rhs, n.End())
+				add(id, rhs, n)
 			}
 		}
 		return true
@@ -369,22 +370,7 @@ func (r *resolver) classify(e ast.Expr, depth int) state {
 		if obj == nil {
 			obj = info.Defs[e]
 		}
-		v, ok := obj.(*types.Var)
-		if !ok || !isContext(v.Type()) {
-			return state{}
-		}
-		var last *assign
-		for i := range r.assigns[obj] {
-			as := &r.assigns[obj][i]
-			if as.end <= e.Pos() && (last == nil || as.end > last.end) {
-				last = as
-			}
-		}
-		if last == nil {
-			// A parameter or a free variable: a root of its own.
-			return state{kind: live, root: obj}
-		}
-		return r.classify(last.rhs, depth+1)
+		return r.classifyLocal(obj, e, depth)
 	case *ast.SelectorExpr:
 		// A context held in a struct field (w.ctx): the field is the root.
 		if sel, ok := info.Selections[e]; ok && sel.Kind() == types.FieldVal && isContext(sel.Obj().Type()) {
@@ -437,9 +423,93 @@ func (r *resolver) classify(e ast.Expr, depth int) state {
 	return state{}
 }
 
+func (r *resolver) classifyLocal(obj types.Object, use ast.Node, depth int) state {
+	if obj == nil || !isContext(obj.Type()) {
+		return state{}
+	}
+	if r.reaching != nil {
+		var result state
+		for _, value := range r.reaching(obj, use) {
+			candidate := r.classify(value, depth+1)
+			if candidate.kind == detached && !candidate.bounded {
+				return candidate
+			}
+			if result.kind == 0 || candidate.kind == detached {
+				result = candidate
+			}
+		}
+		return result
+	}
+	var last *assign
+	for i := range r.assigns[obj] {
+		as := &r.assigns[obj][i]
+		if as.at.End() <= use.Pos() && (last == nil || as.at.End() > last.at.End()) {
+			last = as
+		}
+	}
+	if last == nil {
+		return state{kind: live, root: obj}
+	}
+	return r.classify(last.rhs, depth+1)
+}
+
+// useReturnPaths traces each returned variable back through every reaching assignment.
+func (r *resolver) useReturnPaths(body *ast.BlockStmt) {
+	graph := cfg.New(body, func(call *ast.CallExpr) bool {
+		id, ok := ast.Unparen(call.Fun).(*ast.Ident)
+		return !ok || r.a.pass.TypesInfo.Uses[id] != types.Universe.Lookup("panic")
+	})
+	blocks := map[ast.Node]*cfg.Block{}
+	preds := map[*cfg.Block][]*cfg.Block{}
+	for _, block := range graph.Blocks {
+		if !block.Live {
+			continue
+		}
+		for _, next := range block.Succs {
+			preds[next] = append(preds[next], block)
+		}
+		for _, node := range block.Nodes {
+			ast.Inspect(node, func(n ast.Node) bool {
+				if _, nested := n.(*ast.FuncLit); nested {
+					return false
+				}
+				if n != nil {
+					blocks[n] = block
+				}
+				return true
+			})
+		}
+	}
+
+	r.reaching = func(obj types.Object, use ast.Node) []ast.Expr {
+		var values []ast.Expr
+		seen := map[*cfg.Block]bool{}
+		var trace func(*cfg.Block, token.Pos)
+		trace = func(block *cfg.Block, before token.Pos) {
+			if block == nil {
+				return
+			}
+			for i := len(r.assigns[obj]) - 1; i >= 0; i-- {
+				a := r.assigns[obj][i]
+				if blocks[a.at] == block && (!before.IsValid() || a.at.End() <= before) {
+					values = append(values, a.rhs)
+					return
+				}
+			}
+			for _, pred := range preds[block] {
+				if !seen[pred] {
+					seen[pred] = true
+					trace(pred, token.NoPos)
+				}
+			}
+		}
+		trace(blocks[use], use.Pos())
+		return values
+	}
+}
+
 func isContext(t types.Type) bool {
-	n, ok := types.Unalias(t).(*types.Named)
-	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == "context" && n.Obj().Name() == "Context"
+	return astx.IsNamed(types.Unalias(t), "context", "Context")
 }
 
 func returnsContext(t types.Type) bool {
@@ -479,31 +549,60 @@ func (a *analyzer) detachState(fn *types.Func) (isDetach, bounded bool) {
 // collectDetaching finds the local functions that return a context built
 // on context.WithoutCancel, and whether a timeout or deadline bounds it.
 func (a *analyzer) collectDetaching(fns []*ast.FuncDecl) {
+	type contextHelper struct {
+		fn       *types.Func
+		resolver *resolver
+		returns  []*ast.ReturnStmt
+	}
+	var helpers []contextHelper
 	for _, fn := range fns {
 		obj, ok := a.pass.TypesInfo.Defs[fn.Name].(*types.Func)
 		if !ok || !returnsContext(obj.Signature().Results()) {
 			continue
 		}
-		var detach, bound bool
+		helper := contextHelper{fn: obj, resolver: a.newResolver(fn.Body)}
+		helper.resolver.useReturnPaths(fn.Body)
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			c, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			f := typeutil.StaticCallee(a.pass.TypesInfo, c)
-			if f == nil || f.Pkg() == nil || f.Pkg().Path() != "context" {
-				return true
-			}
-			switch f.Name() {
-			case "WithoutCancel":
-				detach = true
-			case "WithTimeout", "WithDeadline", "WithTimeoutCause", "WithDeadlineCause":
-				bound = true
+			switch n := n.(type) {
+			case *ast.FuncLit:
+				return false
+			case *ast.ReturnStmt:
+				helper.returns = append(helper.returns, n)
 			}
 			return true
 		})
-		if detach {
-			a.detaching[obj] = bound
+		helpers = append(helpers, helper)
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, helper := range helpers {
+			detach, bounded := false, true
+			results := helper.fn.Signature().Results()
+			for _, ret := range helper.returns {
+				for i := 0; i < results.Len(); i++ {
+					obj := results.At(i)
+					if !isContext(obj.Type()) {
+						continue
+					}
+					var returned state
+					switch {
+					case len(ret.Results) == 0:
+						returned = helper.resolver.classifyLocal(obj, ret, 0)
+					case len(ret.Results) == 1:
+						returned = helper.resolver.classify(ret.Results[0], 0)
+					default:
+						returned = helper.resolver.classify(ret.Results[i], 0)
+					}
+					if returned.kind == detached {
+						detach = true
+						bounded = bounded && returned.bounded
+					}
+				}
+			}
+			if prior, ok := a.detaching[helper.fn]; detach && (!ok || prior != bounded) {
+				a.detaching[helper.fn] = bounded
+				changed = true
+			}
 		}
 	}
 }
@@ -530,20 +629,7 @@ func (a *analyzer) collectRuns(fns []*ast.FuncDecl) {
 			if !ok {
 				continue
 			}
-			params := map[types.Object]int{}
-			i := 0
-			for _, field := range fn.Type.Params.List {
-				if len(field.Names) == 0 {
-					i++
-					continue
-				}
-				for _, id := range field.Names {
-					if po := a.pass.TypesInfo.Defs[id]; po != nil && isContext(po.Type()) {
-						params[po] = i
-					}
-					i++
-				}
-			}
+			params := ctxParams(a.pass, fn)
 			if len(params) == 0 {
 				continue
 			}
@@ -876,7 +962,7 @@ var settleVerbs = map[string]bool{
 }
 
 func settleName(name string) bool {
-	return settleVerbs[firstWord(name)]
+	return settleVerbs[astx.FirstWord(name)]
 }
 
 // releaseVerbs lead the call that hands a claim back: release, handBack,
@@ -884,7 +970,7 @@ func settleName(name string) bool {
 var releaseVerbs = map[string]bool{"release": true, "hand": true, "requeue": true, "unlock": true}
 
 func releaseName(name string) bool {
-	return releaseVerbs[firstWord(name)]
+	return releaseVerbs[astx.FirstWord(name)]
 }
 
 // claimVerbs lead a call that claims work or a lock for the caller:
@@ -896,7 +982,7 @@ var claimVerbs = map[string]bool{"claim": true, "dequeue": true, "acquire": true
 func (a *analyzer) claimRoots(r *resolver, call *ast.CallExpr) []types.Object {
 	info := a.pass.TypesInfo
 	fn, ok := typeutil.Callee(info, call).(*types.Func)
-	if !ok || !claimVerbs[firstWord(fn.Name())] {
+	if !ok || !claimVerbs[astx.FirstWord(fn.Name())] {
 		return nil
 	}
 	var roots []types.Object
@@ -909,17 +995,4 @@ func (a *analyzer) claimRoots(r *resolver, call *ast.CallExpr) []types.Object {
 		}
 	}
 	return roots
-}
-
-// firstWord returns the leading camel-case word of name, lowercased.
-func firstWord(name string) string {
-	rs := []rune(name)
-	end := len(rs)
-	for i := 1; i < len(rs); i++ {
-		if unicode.IsUpper(rs[i]) {
-			end = i
-			break
-		}
-	}
-	return strings.ToLower(string(rs[:end]))
 }

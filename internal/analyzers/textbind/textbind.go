@@ -1705,10 +1705,7 @@ func (st *fnState) vetted(v *types.Var, use ast.Node, after token.Pos) bool {
 		if st.checksIn(cond, v) || allowListed(st.c.pass, cond, v, true) {
 			return true
 		}
-		// if p, ok := providers[v]; ok { … }
-		if iff, ok := st.parents[cond].(*ast.IfStmt); ok && st.commaOKLookup(iff.Init, v) != nil {
-			return true
-		}
+
 	}
 	// A switch on v whose constant case holds the use.
 	for c, p := ast.Node(use), st.parents[use]; p != nil && p != body; c, p = p, st.parents[p] {
@@ -1721,27 +1718,90 @@ func (st *fnState) vetted(v *types.Var, use ast.Node, after token.Pos) bool {
 		}
 	}
 	prefix := dominance.Prefix(use, st.parents, body)
+	if st.membershipVetted(v, use, after, prefix) {
+		return true
+	}
 	for _, stmts := range prefix {
-		var okVars []types.Object // comma-ok lookups of v in a map
 		for _, s := range stmts {
 			if s.Pos() < after {
 				continue
-			}
-			if ok := st.commaOKLookup(s, v); ok != nil {
-				okVars = append(okVars, ok)
 			}
 			if iff := dominance.IfStmtOf(s); iff != nil && iff.Cond != nil && dominance.Diverges(iff.Body) {
 				if st.checksIn(iff.Cond, v) || allowListed(st.c.pass, iff.Cond, v, false) {
 					return true
 				}
-				// _, ok := allowed[v]; if !ok { return }, in one
-				// statement or two.
-				if st.commaOKLookup(iff.Init, v) != nil || mentionsAny(st.c.pass, iff.Cond, okVars) {
-					return true
-				}
+
 			}
 			if verdicts := st.keptCheckIn(s, v); len(verdicts) > 0 && st.verdictGates(verdicts, s, prefix, use) {
 				return true
+			}
+		}
+	}
+	return false
+}
+
+func (st *fnState) membershipVetted(v *types.Var, use ast.Node, after token.Pos, prefix [][]ast.Stmt) bool {
+	proves := func(iff *ast.IfStmt, holds bool) bool {
+		check := func(lookup ast.Stmt) bool {
+			verdict := st.commaOKLookup(lookup, v)
+			if verdict == nil || lookup.Pos() < after {
+				return false
+			}
+			for _, d := range st.defs[verdict] {
+				if lookup.Pos() < d.pos && d.pos < iff.Cond.Pos() {
+					return false
+				}
+			}
+			return provesMembership(st.c.pass, iff.Cond, verdict, holds)
+		}
+		if check(iff.Init) {
+			return true
+		}
+		for _, stmts := range dominance.Prefix(iff, st.parents, st.fd.Body) {
+			for _, s := range stmts {
+				if check(s) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for child, parent := use, st.parents[use]; parent != nil; child, parent = parent, st.parents[parent] {
+		if iff, ok := parent.(*ast.IfStmt); ok && (child == iff.Body || child == iff.Else) && proves(iff, child == iff.Body) {
+			return true
+		}
+	}
+	for _, stmts := range prefix {
+		for _, stmt := range stmts {
+			if iff := dominance.IfStmtOf(stmt); iff != nil && dominance.Diverges(iff.Body) && proves(iff, false) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func provesMembership(pass *analysis.Pass, cond ast.Expr, verdict types.Object, holds bool) bool {
+	switch e := ast.Unparen(cond).(type) {
+	case *ast.Ident:
+		return holds && pass.TypesInfo.Uses[e] == verdict
+	case *ast.UnaryExpr:
+		return e.Op == token.NOT && provesMembership(pass, e.X, verdict, !holds)
+	case *ast.BinaryExpr:
+		switch e.Op {
+		case token.LAND, token.LOR:
+			x := provesMembership(pass, e.X, verdict, holds)
+			y := provesMembership(pass, e.Y, verdict, holds)
+			if holds == (e.Op == token.LAND) {
+				return x || y
+			}
+			return x && y
+		case token.EQL, token.NEQ:
+			for _, operands := range [][2]ast.Expr{{e.X, e.Y}, {e.Y, e.X}} {
+				if value := pass.TypesInfo.Types[operands[1]].Value; value != nil && value.Kind() == constant.Bool {
+					want := holds == (e.Op == token.EQL)
+					return provesMembership(pass, operands[0], verdict, want == constant.BoolVal(value))
+				}
 			}
 		}
 	}

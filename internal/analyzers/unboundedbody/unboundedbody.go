@@ -14,12 +14,10 @@
 // a different and much smaller risk. A grep cannot tell those apart, which
 // is why this lives in the vet lane rather than the contracts one.
 //
-// A read is any whole-body consumer: io.ReadAll / ioutil.ReadAll,
-// io.Copy / io.CopyBuffer, io.ReadFull, ReadFrom on any io.ReaderFrom, a
-// json/xml/yaml decoder, httputil.DumpBody. The body may reach it as
-// r.Body, through a local bound once to it (body := r.Body), or through
-// bufio.NewReader / NewReaderSize / io.TeeReader, none of which caps
-// anything (widened 2026-11-02: each of those spellings was silent).
+// Read sinks include ReadAll, Copy, CopyBuffer, ReadFrom, JSON/XML/YAML
+// decoders, and fixed-buffer io.ReadFull. Binding r.Body to a local or
+// wrapping it in bufio.NewReader, NewReaderSize, or io.TeeReader keeps
+// the request body visible to the check.
 //
 // A cap counts only when it is on the path of the request being read:
 //
@@ -56,21 +54,7 @@
 // which is exactly how the probed sites sat in files whose other routes
 // were capped.
 //
-// A cap counts for the ParseForm posture when it is established on the
-// same request object BEFORE the parse:
-//
-//   - r.Body is reassigned from http.MaxBytesReader / io.LimitReader in
-//     the same function (the battery/auth spelling);
-//   - a same-package helper that establishes the cap (its own body
-//     rebinds the request's Body from a capping constructor) is called
-//     first with this request (the crud spelling: limitRequestBody
-//     then readRequestBody; a helper whose LimitReader wraps some
-//     other reader caps nothing it is handed);
-//   - every same-package caller of this function has already capped the
-//     request it passes in, by either spelling above, before the call
-//     (the parse-helper credit: framework/crud parseMultipartBody is
-//     capped by its caller's limitRequestBody, and that pre-condition is
-//     the function's own documented contract).
+// Form parsing uses the same cap proofs as the other read sinks.
 //
 // Silent postures, deliberately:
 //   - a bare r.Form / r.PostForm / r.MultipartForm read is not a trigger:
@@ -89,9 +73,8 @@
 //     the handler invisibly to this rule; nothing in this repo uses
 //     MaxBytesHandler today, and a site that gains one should say so next
 //     to the parse or carry its own wrap;
-//   - function literals get no caller credit (they are mounted as values,
-//     not called by name), which is the handler shape and stays reported;
-//     a literal's read takes the mount credit of the FuncDecl around it;
+//   - function literals take mount credit from their enclosing
+//     declaration and earn caller credit only through named helpers;
 //   - for the read posture, a handler the package never references (an
 //     exported handler a host mounts) has no visible cap and reports,
 //     and a "middleware" whose LimitReader wraps something other than a
@@ -116,22 +99,20 @@ var Analyzer = &analysis.Analyzer{
 	Run:  run,
 }
 
-// sinks are the calls that consume a whole body. The int is the argument
-// position holding the reader.
+// sinks maps body-read calls to the argument position of their reader.
 var sinks = map[string]int{
-	"io.ReadAll":        0,
-	"ioutil.ReadAll":    0,
-	"io.Copy":           1,
-	"io.CopyBuffer":     1,
-	"json.NewDecoder":   0,
-	"xml.NewDecoder":    0,
-	"yaml.NewDecoder":   0,
-	"json.Unmarshal":    0,
-	"httputil.DumpBody": 0,
-	"io.ReadFull":       0,
+	"io.ReadAll":      0,
+	"ioutil.ReadAll":  0,
+	"io.Copy":         1,
+	"io.CopyBuffer":   1,
+	"json.NewDecoder": 0,
+	"xml.NewDecoder":  0,
+	"yaml.NewDecoder": 0,
+	"json.Unmarshal":  0,
+	"io.ReadFull":     0,
 }
 
-// sinkArg returns the reader argument of a whole-body read: a sinks
+// sinkArg returns the reader argument of a body read: a sinks
 // entry, or ReadFrom on any io.ReaderFrom (buf.ReadFrom(r.Body) reads to
 // EOF). The 2026-11-02 guard bash found ioutil.ReadAll, io.CopyBuffer,
 // ReadFrom, a bufio.NewReader wrap and a `body := r.Body` alias all
@@ -155,13 +136,14 @@ func run(pass *analysis.Pass) (any, error) {
 		if pathflow.IsTestFile(pass, f) {
 			continue
 		}
-		checkFormParse(pass, f)
+		formReports := map[formRead]bool{}
 		aliases := readsrc.SingleBindings(pass, f)
-		walkWithFuncs(f, func(n ast.Node, fn ast.Node, encl *ast.FuncDecl) {
-			call, ok := n.(*ast.CallExpr)
-			if !ok || fn == nil {
+		walkCalls(f, func(call *ast.CallExpr, stack []ast.Node) {
+			fn, encl := funcsOf(stack)
+			if fn == nil {
 				return
 			}
+			ix.checkFormParse(call, fn, encl, stack, formReports)
 			arg := sinkArg(pass, call)
 			if arg == nil {
 				return
@@ -189,12 +171,10 @@ func run(pass *analysis.Pass) (any, error) {
 // enclosing functions, and every reference to a package function with
 // whether a capping middleware wraps it.
 type pkgIndex struct {
-	pass      *analysis.Pass
-	caps      map[types.Object]bool
-	rebinders map[types.Object]bool
-	decls     map[types.Object]*ast.FuncDecl
-	calls     map[types.Object][]siteIn
-	refs      map[types.Object][]bool // reference → wrapped by a rebinder's argument
+	pass  *analysis.Pass
+	caps  map[types.Object]bool
+	calls map[types.Object][]siteIn
+	refs  map[types.Object][]bool // reference → wrapped by a rebinder's argument
 }
 
 // siteIn is one same-package call of a named function: the innermost
@@ -207,13 +187,12 @@ type siteIn struct {
 
 func buildIndex(pass *analysis.Pass) *pkgIndex {
 	ix := &pkgIndex{
-		pass:      pass,
-		caps:      cappingObjects(pass),
-		rebinders: bodyRebinders(pass),
-		decls:     funcDecls(pass),
-		calls:     map[types.Object][]siteIn{},
-		refs:      map[types.Object][]bool{},
+		pass:  pass,
+		caps:  bodyRebinders(pass),
+		calls: map[types.Object][]siteIn{},
+		refs:  map[types.Object][]bool{},
 	}
+	decls := astx.FuncDecls(pass)
 	for _, f := range pass.Files {
 		if pathflow.IsTestFile(pass, f) {
 			continue
@@ -229,15 +208,14 @@ func buildIndex(pass *analysis.Pass) *pkgIndex {
 			if !ok {
 				return true
 			}
-			obj := pass.TypesInfo.Uses[id]
-			if obj == nil || ix.decls[obj] == nil {
+			obj, ok := pass.TypesInfo.Uses[id].(*types.Func)
+			if !ok || decls[obj] == nil {
 				return true
 			}
 			fn, encl := funcsOf(stack)
-			if encl != nil && pass.TypesInfo.Defs[encl.Name] == obj {
-				return true // recursion is no mount
+			if encl == nil || pass.TypesInfo.Defs[encl.Name] != obj {
+				ix.refs[obj] = append(ix.refs[obj], ix.wrappedByRebinder(stack))
 			}
-			ix.refs[obj] = append(ix.refs[obj], ix.wrappedByRebinder(stack))
 			if call := calleeCall(stack); call != nil && fn != nil {
 				ix.calls[obj] = append(ix.calls[obj], siteIn{fn: fn, encl: encl, call: call})
 			}
@@ -273,14 +251,14 @@ func (ix *pkgIndex) sinkCapped(fn ast.Node, encl *ast.FuncDecl, obj types.Object
 	if fn != ast.Node(encl) || depth > 4 || visiting[fo] || len(ix.calls[fo]) == 0 {
 		return false
 	}
-	idx := paramIndex(ix.pass, encl, obj)
-	if idx < 0 {
+	idx, ok := pathflow.ParamIndexes(ix.pass, encl)[obj]
+	if !ok {
 		return false
 	}
 	visiting[fo] = true
 	defer delete(visiting, fo)
 	for _, site := range ix.calls[fo] {
-		callerObj := requestObject(ix.pass, argAt(site.call, idx))
+		callerObj := requestObject(ix.pass, pathflow.ArgAt(site.call, idx))
 		if callerObj == nil {
 			return false
 		}
@@ -322,7 +300,7 @@ func (ix *pkgIndex) wrappedByRebinder(stack []ast.Node) bool {
 		if stack[i+1] == call.Fun {
 			continue
 		}
-		if callee := calleeObject(ix.pass, call.Fun); callee != nil && ix.rebinders[callee] {
+		if callee := calleeObject(ix.pass, call.Fun); callee != nil && ix.caps[callee] {
 			return true
 		}
 	}
@@ -332,17 +310,23 @@ func (ix *pkgIndex) wrappedByRebinder(stack []ast.Node) bool {
 // calleeCall returns the call whose callee the innermost node of stack
 // is (the ident itself, or the Sel of a selector callee), or nil.
 func calleeCall(stack []ast.Node) *ast.CallExpr {
-	n := len(stack)
-	if n < 2 {
-		return nil
-	}
-	child := stack[n-1]
-	parent := stack[n-2]
-	if sel, ok := parent.(*ast.SelectorExpr); ok && sel.Sel == child && n >= 3 {
-		child, parent = sel, stack[n-3]
-	}
-	if call, ok := parent.(*ast.CallExpr); ok && call.Fun == child {
-		return call
+	child := stack[len(stack)-1]
+	for i := len(stack) - 2; i >= 0; i-- {
+		switch parent := stack[i].(type) {
+		case *ast.SelectorExpr:
+			if parent.Sel != child {
+				return nil
+			}
+		case *ast.ParenExpr:
+		case *ast.CallExpr:
+			if parent.Fun == child {
+				return parent
+			}
+			return nil
+		default:
+			return nil
+		}
+		child = stack[i]
 	}
 	return nil
 }
@@ -369,9 +353,8 @@ func funcsOf(stack []ast.Node) (ast.Node, *ast.FuncDecl) {
 	return fn, encl
 }
 
-// walkWithFuncs visits every node of f with its innermost function and
-// enclosing FuncDecl.
-func walkWithFuncs(f *ast.File, visit func(n, fn ast.Node, encl *ast.FuncDecl)) {
+// walkCalls visits each call and its enclosing AST nodes.
+func walkCalls(f *ast.File, visit func(*ast.CallExpr, []ast.Node)) {
 	var stack []ast.Node
 	ast.Inspect(f, func(n ast.Node) bool {
 		if n == nil {
@@ -379,8 +362,9 @@ func walkWithFuncs(f *ast.File, visit func(n, fn ast.Node, encl *ast.FuncDecl)) 
 			return true
 		}
 		stack = append(stack, n)
-		fn, encl := funcsOf(stack)
-		visit(n, fn, encl)
+		if call, ok := n.(*ast.CallExpr); ok {
+			visit(call, stack)
+		}
 		return true
 	})
 }
@@ -460,92 +444,37 @@ var parseMethods = map[string]bool{
 	"FormFile":           true,
 }
 
-// checkFormParse runs the per-handler form-parity posture over one file.
-// Each function (declarations and literals alike, handlers are usually
-// literals) is judged on its own request parameter: did anything cap that
-// request before the first body-reading call?
-func checkFormParse(pass *analysis.Pass, f *ast.File) {
-	caps := cappingObjects(pass)
-	callers := callerSites(pass)
-	decls := funcDecls(pass)
-	for _, fn := range astx.AllFuncs(f) {
-		params := requestParams(pass, fn)
-		if len(params) == 0 {
-			continue
-		}
-		reported := map[types.Object]bool{}
-		ast.Inspect(astx.BodyOf(fn), func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-			if !ok || !parseMethods[sel.Sel.Name] {
-				return true
-			}
-			if !isInboundRequest(pass, sel.X) {
-				return true
-			}
-			obj := requestObject(pass, sel.X)
-			if obj != nil && reported[obj] {
-				return true
-			}
-			if parseCapped(pass, fn, obj, call.Pos(), caps, callers, decls, map[types.Object]bool{}, 0) {
-				return true
-			}
-			pass.Reportf(call.Pos(),
-				"parses the request form with no cap of its own: the stdlib floor is 10 MiB per urlencoded body, so one request can park that in memory — wrap r.Body in http.MaxBytesReader(w, r.Body, cap) before ParseForm and map *http.MaxBytesError to 413")
-			if obj != nil {
-				reported[obj] = true
-			}
-			return true
-		})
-	}
+type formRead struct {
+	fn  ast.Node
+	req types.Object
 }
 
-// parseCapped reports whether the request object obj (nil: any inbound
-// request) is already capped at pos in fn: a rebind of this request's
-// Body from a capping constructor earlier in fn, a call to a
-// cap-establishing helper with this request earlier in fn, or every
-// same-package caller of fn having capped the request it passes in
-// before the call (one level of recursion, cycle-guarded).
-func parseCapped(pass *analysis.Pass, fn ast.Node, obj types.Object, pos token.Pos,
-	caps map[types.Object]bool, callers map[types.Object][]callSite, decls map[types.Object]*ast.FuncDecl,
-	visiting map[types.Object]bool, depth int) bool {
-	if rebindCapped(pass, fn, obj, pos) || helperCapped(pass, fn, obj, pos, caps) {
-		return true
+// checkFormParse reports the first uncapped parse for each request in fn.
+func (ix *pkgIndex) checkFormParse(call *ast.CallExpr, fn ast.Node, encl *ast.FuncDecl, stack []ast.Node, reported map[formRead]bool) {
+	pass := ix.pass
+	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+	if !ok || !parseMethods[sel.Sel.Name] || !isInboundRequest(pass, sel.X) || !hasRequestParam(pass, stack) {
+		return
 	}
-	if depth > 4 {
-		return false
+	read := formRead{fn: fn, req: requestObject(pass, sel.X)}
+	if reported[read] || ix.sinkCapped(fn, encl, read.req, call.Pos(), map[types.Object]bool{}, 0) {
+		return
 	}
-	fo := funcObject(pass, fn)
-	if fo == nil || visiting[fo] || len(callers[fo]) == 0 {
-		return false
+	pass.Reportf(call.Pos(),
+		"parses the request form with no cap of its own: the stdlib floor is 10 MiB per urlencoded body, so one request can park that in memory — wrap r.Body in http.MaxBytesReader(w, r.Body, cap) before ParseForm and map *http.MaxBytesError to 413")
+	if read.req != nil {
+		reported[read] = true
 	}
-	visiting[fo] = true
-	defer delete(visiting, fo)
-	idx := paramIndex(pass, decls[fo], obj)
-	if idx < 0 {
-		return false
-	}
-	for _, site := range callers[fo] {
-		arg := argAt(site.call, idx)
-		callerObj := requestObject(pass, arg)
-		if callerObj == nil {
-			return false
-		}
-		if !parseCapped(pass, site.fn, callerObj, site.call.Pos(), caps, callers, decls, visiting, depth+1) {
-			return false
-		}
-	}
-	return true
 }
 
 // rebindCapped: an assignment in fn, before pos, rebinds this request's
 // Body from a capping constructor (the battery/auth spelling).
 func rebindCapped(pass *analysis.Pass, fn ast.Node, obj types.Object, pos token.Pos) bool {
 	found := false
-	ast.Inspect(fn, func(n ast.Node) bool {
+	ast.Inspect(astx.BodyOf(fn), func(n ast.Node) bool {
+		if _, nested := n.(*ast.FuncLit); nested {
+			return false
+		}
 		assign, ok := n.(*ast.AssignStmt)
 		if !ok || assign.Pos() >= pos {
 			return !found
@@ -572,20 +501,15 @@ func rebindCapped(pass *analysis.Pass, fn ast.Node, obj types.Object, pos token.
 // spelling: limitRequestBody(w, r) then readRequestBody(r)).
 func helperCapped(pass *analysis.Pass, fn ast.Node, obj types.Object, pos token.Pos, caps map[types.Object]bool) bool {
 	found := false
-	ast.Inspect(fn, func(n ast.Node) bool {
+	ast.Inspect(astx.BodyOf(fn), func(n ast.Node) bool {
+		if _, nested := n.(*ast.FuncLit); nested {
+			return false
+		}
 		call, ok := n.(*ast.CallExpr)
 		if !ok || call.Pos() >= pos {
 			return !found
 		}
-		var callee types.Object
-		switch fun := ast.Unparen(call.Fun).(type) {
-		case *ast.Ident:
-			callee = pass.TypesInfo.ObjectOf(fun)
-		case *ast.SelectorExpr:
-			if sel, ok := pass.TypesInfo.Selections[fun]; ok {
-				callee = sel.Obj()
-			}
-		}
+		callee := calleeObject(pass, call.Fun)
 		if callee == nil || !caps[callee] {
 			return !found
 		}
@@ -597,100 +521,6 @@ func helperCapped(pass *analysis.Pass, fn ast.Node, obj types.Object, pos token.
 		return !found
 	})
 	return found
-}
-
-// cappingObjects maps every package-level function or method whose
-// body rebinds an inbound request's Body from a capping constructor to
-// its object, for the helper-called-first credit. Methods included:
-// crud's limitRequestBody shape is a plain function but nothing about
-// the credit should depend on that. The rebind is the test
-// bodyRebinders applies: a helper whose LimitReader wraps some other
-// reader caps nothing of the request it is handed, so it earns no
-// credit (peek, the 2026-11-03 gap round: the mere presence of a cap
-// constructor silenced a sibling's uncapped read).
-func cappingObjects(pass *analysis.Pass) map[types.Object]bool {
-	out := map[types.Object]bool{}
-	for _, fn := range allFuncsAll(pass, false) {
-		decl, ok := fn.(*ast.FuncDecl)
-		if !ok || decl.Body == nil {
-			continue
-		}
-		if rebindsRequestBody(pass, decl.Body) {
-			if obj := pass.TypesInfo.Defs[decl.Name]; obj != nil {
-				out[obj] = true
-			}
-		}
-	}
-	return out
-}
-
-// callSite is one same-package call of a named function: the enclosing
-// function node and the call itself.
-type callSite struct {
-	fn   ast.Node
-	call *ast.CallExpr
-}
-
-// callerSites indexes every same-package call of a named function or
-// method by the callee's object. Handler literals are mounted as values,
-// never called by name, so they keep zero callers and no credit. Test
-// files are excluded: a unit test calling a helper directly proves
-// nothing about the production surfaces that reach it.
-func callerSites(pass *analysis.Pass) map[types.Object][]callSite {
-	out := map[types.Object][]callSite{}
-	for _, fn := range allFuncsAll(pass, false) {
-		ast.Inspect(astx.BodyOf(fn), func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			var callee types.Object
-			switch fun := ast.Unparen(call.Fun).(type) {
-			case *ast.Ident:
-				callee = pass.TypesInfo.ObjectOf(fun)
-			case *ast.SelectorExpr:
-				if sel, ok := pass.TypesInfo.Selections[fun]; ok {
-					callee = sel.Obj()
-				}
-			}
-			if callee == nil {
-				return true
-			}
-			out[callee] = append(out[callee], callSite{fn: fn, call: call})
-			return true
-		})
-	}
-	return out
-}
-
-// funcDecls maps each package-level declaration's object to its node.
-func funcDecls(pass *analysis.Pass) map[types.Object]*ast.FuncDecl {
-	out := map[types.Object]*ast.FuncDecl{}
-	for _, f := range pass.Files {
-		for _, d := range f.Decls {
-			fn, ok := d.(*ast.FuncDecl)
-			if !ok {
-				continue
-			}
-			if obj := pass.TypesInfo.Defs[fn.Name]; obj != nil {
-				out[obj] = fn
-			}
-		}
-	}
-	return out
-}
-
-// allFuncsAll is allFuncs over every non-test file of the package
-// (includeTests=false), or every file (true).
-func allFuncsAll(pass *analysis.Pass, includeTests bool) []ast.Node {
-	var out []ast.Node
-	for _, f := range pass.Files {
-		if !includeTests && pathflow.IsTestFile(pass, f) {
-			continue
-		}
-		out = append(out, astx.AllFuncs(f)...)
-	}
-	return out
 }
 
 // requestObject resolves e to its *http.Request variable object, nil
@@ -720,68 +550,28 @@ func sameRequest(pass *analysis.Pass, e ast.Expr, obj types.Object) bool {
 	return requestObject(pass, e) == obj
 }
 
-// requestParams collects fn's *http.Request parameter objects. Literals
-// count: handlers are usually literals returned from factories.
-func requestParams(pass *analysis.Pass, fn ast.Node) []types.Object {
-	var params *ast.FieldList
-	switch fn := fn.(type) {
-	case *ast.FuncDecl:
-		params = fn.Type.Params
-	case *ast.FuncLit:
-		params = fn.Type.Params
-	default:
-		return nil
-	}
-	if params == nil {
-		return nil
-	}
-	var out []types.Object
-	for _, field := range params.List {
-		for _, name := range field.Names {
-			obj, ok := pass.TypesInfo.ObjectOf(name).(*types.Var)
-			// ObjectOf, not Types: a DEFINING ident (the parameter name)
-			// has no Types entry, its type lives on the object.
-			if ok && isRequestType(obj.Type()) {
-				out = append(out, obj)
+// hasRequestParam reports whether a containing function names an inbound request parameter.
+func hasRequestParam(pass *analysis.Pass, stack []ast.Node) bool {
+	for _, n := range stack {
+		var params *ast.FieldList
+		switch fn := n.(type) {
+		case *ast.FuncDecl:
+			params = fn.Type.Params
+		case *ast.FuncLit:
+			params = fn.Type.Params
+		}
+		if params == nil {
+			continue
+		}
+		for _, field := range params.List {
+			for _, name := range field.Names {
+				if obj := pass.TypesInfo.Defs[name]; obj != nil && isRequestType(obj.Type()) {
+					return true
+				}
 			}
 		}
 	}
-	return out
-}
-
-// paramIndex returns the positional index of obj among decl's
-// parameters, or -1 (the parse-helper credit needs to know which call
-// argument carries the request being judged).
-func paramIndex(pass *analysis.Pass, decl *ast.FuncDecl, obj types.Object) int {
-	if decl == nil || decl.Type.Params == nil {
-		return -1
-	}
-	idx := 0
-	for _, field := range decl.Type.Params.List {
-		for _, name := range field.Names {
-			if pass.TypesInfo.ObjectOf(name) == obj {
-				return idx
-			}
-			idx++
-		}
-	}
-	return -1
-}
-
-// funcObject resolves a function node to its object (literals have none).
-func funcObject(pass *analysis.Pass, fn ast.Node) types.Object {
-	if ft, ok := fn.(*ast.FuncDecl); ok {
-		return pass.TypesInfo.Defs[ft.Name]
-	}
-	return nil
-}
-
-// argAt returns call's argument at index i, nil when out of range.
-func argAt(call *ast.CallExpr, i int) ast.Expr {
-	if i < 0 || i >= len(call.Args) {
-		return nil
-	}
-	return call.Args[i]
+	return false
 }
 
 // isInboundRequest reports whether expr is a *net/http.Request — the

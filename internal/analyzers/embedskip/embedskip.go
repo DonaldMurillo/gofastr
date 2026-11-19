@@ -85,24 +85,7 @@ func run(pass *analysis.Pass) (any, error) {
 			continue
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
-			var bound ast.Expr
-			var body *ast.BlockStmt
-			switch s := n.(type) {
-			case *ast.ForStmt:
-				if b, ok := s.Cond.(*ast.BinaryExpr); ok {
-					// The bound may sit on either side: i < t.NumField()
-					// and t.NumField() > i are the same walk.
-					bound = b.Y
-					if isNumFieldCall(pass, b.X) {
-						bound = b.X
-					}
-				}
-				body = s.Body
-			case *ast.RangeStmt:
-				bound, body = s.X, s.Body
-			default:
-				return true
-			}
+			bound, body := loopBound(pass, n)
 			if body == nil || !isNumFieldCall(pass, bound) {
 				return true
 			}

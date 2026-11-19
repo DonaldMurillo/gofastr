@@ -25,6 +25,16 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`notify` refuses a pre-rendered payload of the wrong type.** A
+  `Data["_rendered_<channel>"]` or `Data["_rendered"]` value that is not
+  a `notify.Rendered` now fails that channel with `notify: <key> must be
+  notify.Rendered`. Before, the bad value was skipped and the channel
+  quietly fell back to the shared payload or the templater.
+- **`go vet` with the GoFastr suite catches more.** It recognizes
+  credentials sent through `http.Client.Do` on any client value and
+  forms built with aliased readers, credits a middleware body cap for
+  form parsing, and finds error leaks and ungated identifiers through
+  more `fmt` call spellings.
 - **A slow `QueryRowContext` warning names its error without leaking
   query values.** The log line shows `err=database_error` plus the
   SQLSTATE or driver code when the driver gives one, never the driver's

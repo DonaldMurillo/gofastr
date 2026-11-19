@@ -40,6 +40,7 @@ func requireJSON(next http.Handler) http.Handler { return next }
 func indexHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.ReadAll(r.Body)
+		_ = r.ParseForm()
 	})
 }
 
@@ -167,4 +168,18 @@ func fakeWrapped() http.Handler {
 
 func mountFake(mux *http.ServeMux) {
 	mux.Handle("POST /fake", notAMiddleware(fakeWrapped(), nil))
+}
+
+func outerRead(w http.ResponseWriter, r *http.Request) func() {
+	capLater := func() { capRequest(w, r) }
+	_, _ = io.ReadAll(r.Body) // want `reads an inbound request body with no size cap`
+	_ = r.ParseForm()         // want `parses the request form with no cap`
+	return capLater
+}
+
+func nestedParseFactory() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parse := func() { _ = r.ParseForm() } // want `parses the request form with no cap`
+		parse()
+	})
 }

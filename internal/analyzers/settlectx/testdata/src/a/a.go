@@ -369,3 +369,22 @@ func indexRespected(ctx, jobCtx context.Context, q *Queue, job Job, fn func(cont
 	}
 	return q.Ack(ctx, job)
 }
+
+func detachWithUnrelatedTimeout(ctx context.Context) context.Context { // want detachWithUnrelatedTimeout:`detaches\(bounded=false\)`
+	_, cancel := context.WithTimeout(ctx, time.Second)
+	cancel()
+	return context.WithoutCancel(ctx)
+}
+
+func (q *Queue) workerLoopUnrelatedTimeout(ctx context.Context, job Job) { // want workerLoopUnrelatedTimeout:`runsCallback\[0\]`
+	_ = q.runHandler(ctx, q.handlers[job.Type], job)
+	_ = q.Ack(detachWithUnrelatedTimeout(ctx), job) // want `Ack records an outcome under context.WithoutCancel with no timeout`
+}
+
+func detachWithOptionalTimeout(ctx context.Context, bounded bool) (result context.Context, cancel context.CancelFunc) { // want detachWithOptionalTimeout:`detaches\(bounded=false\)`
+	result = context.WithoutCancel(ctx)
+	if bounded {
+		result, cancel = context.WithTimeout(result, time.Second)
+	}
+	return
+}

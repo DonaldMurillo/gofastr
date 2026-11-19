@@ -62,6 +62,9 @@ func TestSortableMoveDedupsCards(t *testing.T) {
 	if moveRec.Code != http.StatusNoContent {
 		t.Fatalf("move status = %d, want 204", moveRec.Code)
 	}
+	if cc := moveRec.Result().Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("move Cache-Control = %q, want no-store", cc)
+	}
 
 	// Carry the minted session cookie to the conflict read so we observe THIS
 	// session's board.
@@ -81,6 +84,9 @@ func TestSortableMoveDedupsCards(t *testing.T) {
 	app.Router().ServeHTTP(confRec, confReq)
 	if confRec.Code != http.StatusOK {
 		t.Fatalf("conflict status = %d, want 200", confRec.Code)
+	}
+	if cc := confRec.Result().Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("conflict Cache-Control = %q, want no-store", cc)
 	}
 
 	// The todo column holds two real cards (k1, k2); dedup must keep it at two

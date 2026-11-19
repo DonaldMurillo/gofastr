@@ -2,13 +2,13 @@ package compositekey
 
 import (
 	"go/ast"
-	"go/constant"
 	"go/token"
 	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 )
 
@@ -244,64 +244,33 @@ func flaggedSprintf(pass *analysis.Pass, call *ast.CallExpr) *printKey {
 		if len(call.Args) == 0 {
 			return nil
 		}
-		tv, ok := pass.TypesInfo.Types[call.Args[0]]
-		if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
-			return nil
-		}
-		verbs, ok := formatVerbs(constant.StringVal(tv.Value))
+		format, ok := astx.StringConstant(pass, call.Args[0])
 		if !ok {
 			return nil
 		}
-		for i, v := range verbs {
-			if i+1 >= len(call.Args) || v.verb != 'v' {
+		args := call.Args[1:]
+		var key *printKey
+		for d := range astx.FormatDirectives(format, len(args)) {
+			if d.Invalid || d.Indexed || d.Star {
+				return nil
+			}
+			if key != nil || d.Verb != 'v' || d.Arg >= len(args) {
 				continue
 			}
-			a := call.Args[i+1]
+			a := args[d.Arg]
 			if why := unstablePrint(pass.TypesInfo.TypeOf(a)); why != "" {
-				return &printKey{verb: v.flags + "v", operand: a, why: why}
+				flags := strings.Map(func(flag rune) rune {
+					if flag == '+' || flag == '#' {
+						return flag
+					}
+					return -1
+				}, d.Flags)
+				key = &printKey{verb: flags + "v", operand: a, why: why}
 			}
 		}
+		return key
 	}
 	return nil
-}
-
-type fmtVerb struct {
-	flags string
-	verb  rune
-}
-
-// formatVerbs lists the verbs of a format string in argument order. It
-// gives up (ok=false) on explicit argument indexes and * widths, which
-// break the one-verb-one-argument mapping.
-func formatVerbs(format string) ([]fmtVerb, bool) {
-	var out []fmtVerb
-	for i := 0; i < len(format); i++ {
-		if format[i] != '%' {
-			continue
-		}
-		i++
-		if i < len(format) && format[i] == '%' {
-			continue
-		}
-		flags := ""
-		for i < len(format) && strings.ContainsRune("+-# 0", rune(format[i])) {
-			if format[i] == '+' || format[i] == '#' {
-				flags += string(format[i])
-			}
-			i++
-		}
-		for i < len(format) && (format[i] >= '0' && format[i] <= '9' || format[i] == '.') {
-			i++
-		}
-		if i >= len(format) {
-			return nil, false
-		}
-		if format[i] == '[' || format[i] == '*' {
-			return nil, false
-		}
-		out = append(out, fmtVerb{flags: flags, verb: rune(format[i])})
-	}
-	return out, true
 }
 
 // unstablePrint explains why %v of a value of static type t is not a

@@ -398,7 +398,7 @@ func llmMDNoCacheFire(w http.ResponseWriter, r *http.Request) {
 	u := CurrentUser(r.Context())
 	w.Header().Set("Content-Type", "text/markdown")
 	w.Header().Set("Cache-Control", "no-cache")
-	w.Write([]byte(u)) // want `2xx response for a resolved principal`
+	w.Write([]byte(u)) // want `without a Cache-Control directive that suppresses shared storage`
 }
 
 // maxAgeFire and publicFire invite storage outright.
@@ -466,4 +466,39 @@ func uncalledHeaderSetter(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Write([]byte("account")) // want `2xx response for a resolved principal`
 	}
+}
+
+func cacheControlAfterWrite(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	w.Write([]byte("account")) // want `2xx response for a resolved principal`
+	w.Header().Set("Cache-Control", "no-store")
+}
+
+func cacheControlHelperAfterWrite(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	w.Write([]byte("account")) // want `2xx response for a resolved principal`
+	writeCredHeaders(w)
+}
+
+func independentMounts(mux *http.ServeMux) {
+	mux.HandleFunc("/private", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := requireUser(w, r); !ok {
+			return
+		}
+		writeCredHeaders(w)
+		w.Write([]byte("private"))
+	})
+	mux.HandleFunc("/public", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("public"))
+	})
+	mux.HandleFunc("/missing", func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := requireUser(w, r); !ok {
+			return
+		}
+		w.Write([]byte("missing")) // want `2xx response for a resolved principal`
+	})
 }

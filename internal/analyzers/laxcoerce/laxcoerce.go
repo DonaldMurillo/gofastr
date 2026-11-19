@@ -59,6 +59,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"slices"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/cfg"
@@ -398,10 +399,8 @@ func notOKBranches(pass *analysis.Pass, body *ast.BlockStmt, okObj types.Object)
 					out = append(out, els)
 				}
 			}
-			// A bare `if ok` (or `ok && …`) with no else: the statements
-			// after it in its enclosing block are the not-ok path — the
-			// early-return layout's other half.
-			if st.Else == nil && mentionsOK(pass, st.Cond, okObj) {
+			// A successful early return leaves only !ok on the continuing path.
+			if st.Else == nil && isIdentObj(pass, ast.Unparen(st.Cond), okObj) && dominance.Diverges(st.Body) {
 				if ft := fallThroughRegion(parents, st); ft != nil {
 					out = append(out, ft)
 				}
@@ -424,23 +423,6 @@ func notOKBranches(pass *analysis.Pass, body *ast.BlockStmt, okObj types.Object)
 		return true
 	})
 	return out
-}
-
-// mentionsOK reports whether the condition asserts the comma-ok
-// variable positively: the bare `ok` ident, or a conjunction
-// (`ok && …`) whose fall-through includes !ok.
-func mentionsOK(pass *analysis.Pass, cond ast.Expr, okObj types.Object) bool {
-	switch c := cond.(type) {
-	case *ast.Ident:
-		return isIdentObj(pass, c, okObj)
-	case *ast.ParenExpr:
-		return mentionsOK(pass, c.X, okObj)
-	case *ast.BinaryExpr:
-		return c.Op == token.LAND &&
-			(mentionsOK(pass, c.X, okObj) || mentionsOK(pass, c.Y, okObj))
-	default:
-		return false
-	}
 }
 
 // fallThroughRegion returns the statements after st in its enclosing
@@ -521,92 +503,93 @@ func isFalse(e ast.Expr) bool {
 	return ok && id.Name == "false"
 }
 
-// branchIsLax reports whether the !ok branch silently swallows the wrong
-// type: it continues, or breaks/gotos out of the loop when the function
-// has an error result to speak through, or returns without any operand
-// carrying an error — counting only statements at the branch's own top
-// level, since a lax statement nested under another condition executes
-// only when that condition holds; or neither diverges nor records an
-// error but rebinds the asserted variable to its zero value and falls
-// through.
+// branchIsLax looks for a failure path that erases the mismatch or leaves with no error.
 func branchIsLax(pass *analysis.Pass, br *ast.BlockStmt, hasErrorResult bool, asserted types.Object, body *ast.BlockStmt) bool {
-	// An error surfaced or recorded anywhere in the branch — nested or
-	// not — precludes laxness.
-	surfaced := false
+	labels := map[string]bool{}
+	var jumps []*ast.BranchStmt
 	ast.Inspect(br, func(n ast.Node) bool {
-		if surfaced {
-			return false
-		}
 		switch st := n.(type) {
 		case *ast.FuncLit:
-			return false // the closure's returns are not this branch's
-		case *ast.ReturnStmt:
-			for _, res := range st.Results {
-				if carriesError(pass, res) {
-					surfaced = true
-					return false
-				}
-			}
-		case *ast.AssignStmt:
-			for _, rhs := range st.Rhs {
-				if carriesError(pass, rhs) {
-					surfaced = true
-					return false
-				}
+			return false
+		case *ast.LabeledStmt:
+			labels[st.Label.Name] = true
+		case *ast.BranchStmt:
+			if st.Tok == token.GOTO && st.Label != nil {
+				jumps = append(jumps, st)
 			}
 		}
 		return true
 	})
-	if surfaced {
-		return false
+
+	falloff := &ast.ReturnStmt{}
+	region := &ast.BlockStmt{List: append(slices.Clone(br.List), falloff)}
+	// A stub stands in for an external label whose exits the full-body CFG checks.
+	external := map[*ast.ReturnStmt]bool{}
+	for _, jump := range jumps {
+		if labels[jump.Label.Name] {
+			continue
+		}
+		labels[jump.Label.Name] = true
+		ret := &ast.ReturnStmt{}
+		external[ret] = gotoSurfacesError(pass, body, jump)
+		region.List = append(region.List, &ast.LabeledStmt{Label: jump.Label, Stmt: ret})
 	}
-	diverges := false
-	for _, st := range br.List {
-		switch x := st.(type) {
-		case *ast.ReturnStmt:
-			diverges = true
-			if !hasErrorResult {
-				continue
-			}
-			if len(x.Results) == 0 {
-				// Bare return: the named error result holds whatever the
-				// branch left it, which is nil unless an error was
-				// assigned before the return.
+	graph := cfg.New(region, func(call *ast.CallExpr) bool {
+		id, ok := ast.Unparen(call.Fun).(*ast.Ident)
+		return !ok || pass.TypesInfo.Uses[id] != types.Universe.Lookup("panic")
+	})
+	type pathState struct {
+		block    *cfg.Block
+		recorded bool
+		zeroed   bool
+	}
+	pending := []pathState{{block: graph.Blocks[0]}}
+	seen := map[pathState]bool{}
+	for len(pending) > 0 {
+		path := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if seen[path] {
+			continue
+		}
+		seen[path] = true
+		if jump, ok := path.block.Stmt.(*ast.BranchStmt); ok && path.block.Kind == cfg.KindUnreachable {
+			if !path.recorded && (jump.Tok == token.CONTINUE || hasErrorResult && jump.Tok == token.BREAK) {
 				return true
 			}
-			for _, res := range x.Results {
-				if carriesError(pass, res) {
-					return false // error surfaced: not lax
+		}
+		for _, node := range path.block.Nodes {
+			switch st := node.(type) {
+			case *ast.AssignStmt:
+				for _, rhs := range st.Rhs {
+					path.recorded = path.recorded || carriesError(pass, rhs)
 				}
-			}
-			return true
-		case *ast.BranchStmt:
-			diverges = true
-			if x.Tok == token.GOTO && gotoSurfacesError(pass, body, x) {
-				return false
-			}
-			if x.Tok == token.CONTINUE {
-				return true
-			}
-			// A break or goto that leaves the loop early is the
-			// continue's twin: the list truncates and the nil error
-			// still says fine (2026-11-03 round).
-			if hasErrorResult && (x.Tok == token.BREAK || x.Tok == token.GOTO) {
-				return true
-			}
-		case *ast.ExprStmt:
-			if call, ok := x.X.(*ast.CallExpr); ok {
-				if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "panic" {
-					diverges = true
+				path.zeroed = path.zeroed || zeroesAsserted(pass, st, asserted)
+			case *ast.ReturnStmt:
+				if !hasErrorResult {
+					break
+				}
+				if st == falloff {
+					if path.zeroed && !path.recorded {
+						return true
+					}
+				} else if refuses, stub := external[st]; stub {
+					if !refuses && !path.recorded {
+						return true
+					}
+				} else if len(st.Results) == 0 {
+					if !path.recorded {
+						return true
+					}
+				} else if !slices.ContainsFunc(st.Results, func(e ast.Expr) bool { return carriesError(pass, e) }) {
+					return true
 				}
 			}
 		}
+		for _, next := range path.block.Succs {
+			pending = append(pending, pathState{block: next, recorded: path.recorded, zeroed: path.zeroed})
+		}
 	}
-	// A branch that neither diverges nor records an error, but rebinds
-	// the asserted variable to its zero value, falls through with the
-	// wrong type already erased — the zero default reads as "not
-	// supplied" while the nil error says fine.
-	return !diverges && hasErrorResult && zeroesAsserted(pass, br, asserted)
+	return false
 }
 
 func gotoSurfacesError(pass *analysis.Pass, body *ast.BlockStmt, branch *ast.BranchStmt) bool {
@@ -653,29 +636,17 @@ func gotoSurfacesError(pass *analysis.Pass, body *ast.BlockStmt, branch *ast.Bra
 
 // zeroesAsserted reports whether the branch assigns the asserted
 // variable a zero literal (0, "", false).
-func zeroesAsserted(pass *analysis.Pass, br *ast.BlockStmt, asserted types.Object) bool {
+func zeroesAsserted(pass *analysis.Pass, st *ast.AssignStmt, asserted types.Object) bool {
 	if asserted == nil {
 		return false
 	}
-	found := false
-	ast.Inspect(br, func(n ast.Node) bool {
-		st, ok := n.(*ast.AssignStmt)
-		if !ok {
+	for i, lhs := range st.Lhs {
+		id, ok := lhs.(*ast.Ident)
+		if ok && pass.TypesInfo.ObjectOf(id) == asserted && i < len(st.Rhs) && isZeroLiteral(pass, st.Rhs[i]) {
 			return true
 		}
-		for i, lhs := range st.Lhs {
-			id, ok := lhs.(*ast.Ident)
-			if !ok || pass.TypesInfo.ObjectOf(id) != asserted {
-				continue
-			}
-			if i < len(st.Rhs) && isZeroLiteral(pass, st.Rhs[i]) {
-				found = true
-				return false
-			}
-		}
-		return true
-	})
-	return found
+	}
+	return false
 }
 
 // isZeroLiteral reports whether e is the constant zero of its type.

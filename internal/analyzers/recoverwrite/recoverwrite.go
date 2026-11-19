@@ -108,43 +108,9 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 		return imported(fn)
 	}
-	decls := map[*types.Func]*ast.FuncDecl{}
-	for _, f := range pass.Files {
-		for _, d := range f.Decls {
-			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
-				if fn, ok := pass.TypesInfo.Defs[fd.Name].(*types.Func); ok {
-					decls[fn] = fd
-				}
-			}
-		}
-	}
 	reported := map[token.Pos]bool{}
-	for _, f := range pass.Files {
-		if pathflow.IsTestFile(pass, f) {
-			continue
-		}
-		ast.Inspect(f, func(n ast.Node) bool {
-			ds, ok := n.(*ast.DeferStmt)
-			if !ok {
-				return true
-			}
-			var body *ast.BlockStmt
-			switch fun := ast.Unparen(ds.Call.Fun).(type) {
-			case *ast.FuncLit:
-				body = fun.Body
-			default:
-				if fn, ok := astx.CalleeFunc(pass, fun); ok {
-					if fd := decls[fn.Origin()]; fd != nil {
-						body = fd.Body
-					}
-				}
-			}
-			if body == nil {
-				return true
-			}
-			check(pass, body, helpers, reported)
-			return true
-		})
+	for body := range astx.DeferredBodies(pass, func(f *ast.File) bool { return !pathflow.IsTestFile(pass, f) }) {
+		check(pass, body, helpers, reported)
 	}
 	return nil, nil
 }

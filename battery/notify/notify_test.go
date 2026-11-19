@@ -213,6 +213,32 @@ func TestNotifier_PreRenderedPayloadShortCircuitsTemplater(t *testing.T) {
 	}
 }
 
+type fallbackTemplater struct{}
+
+func (fallbackTemplater) Render(context.Context, string, string, map[string]any) (Rendered, error) {
+	return Rendered{TextBody: "templated fallback"}, nil
+}
+
+func TestNotifier_RejectsMalformedPreRenderedPayload(t *testing.T) {
+	for _, key := range []string{"_rendered_log", "_rendered"} {
+		t.Run(key, func(t *testing.T) {
+			ch := &recordingChannel{name: "log"}
+			n := New(WithChannel(ch), WithTemplater(fallbackTemplater{}))
+			data := map[string]any{key: "wrong type"}
+			if key == "_rendered_log" {
+				data["_rendered"] = Rendered{TextBody: "pre-rendered fallback"}
+			}
+			err := n.Send(context.Background(), Notification{Type: "test", To: Recipient{UserID: "u"}, Data: data})
+			if err == nil || !strings.Contains(err.Error(), key+" must be notify.Rendered") {
+				t.Fatalf("Send with malformed %s returned %v", key, err)
+			}
+			if len(ch.rendered) != 0 {
+				t.Fatalf("sent a fallback for malformed %s", key)
+			}
+		})
+	}
+}
+
 // ----- LoggerChannel --------------------------------------------------------
 
 func TestLoggerChannel_WritesToProvidedLogger(t *testing.T) {

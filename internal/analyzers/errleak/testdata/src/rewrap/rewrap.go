@@ -136,3 +136,40 @@ func ownLiteral(name string) error {
 	}
 	return nil
 }
+
+func testsDifferentError(err, other error) *RPCError {
+	if typed, ok := errors.AsType[*RPCError](other); ok {
+		return typed
+	}
+	return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+}
+
+func discardsTypedError(err error) *RPCError {
+	_, _ = err.(*RPCError)
+	return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+}
+
+func testsInsideSibling(err error, enabled bool) *RPCError {
+	if enabled {
+		if typed, ok := errors.AsType[*RPCError](err); ok {
+			return typed
+		}
+	}
+	return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+}
+
+func testsReassignedVerdict(err error, enabled bool) *RPCError {
+	typed, ok := errors.AsType[*RPCError](err)
+	ok = ok && enabled
+	if ok {
+		return typed
+	}
+	return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+}
+
+func rebuildsMatchingTypedError(err error) *RPCError {
+	if typed, ok := err.(*RPCError); ok {
+		return &RPCError{Message: typed.Error()}
+	}
+	return &RPCError{Message: err.Error()} // want `rebuilds a \*RPCError from an error's text`
+}

@@ -8,20 +8,21 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
 	"golang.org/x/tools/go/analysis"
 )
 
 // RecheckAnalyzer is the principal re-check arm (see the package doc).
 var RecheckAnalyzer = &analysis.Analyzer{
 	Name: "unrechecked",
-	Doc:  "reports a long-lived stream for a resolved principal whose delivery loops never re-check that principal, or whose connect-time authorization / tenant decision is never re-run on the delivery path",
+	Doc:  "reports a long-lived stream for a resolved principal whose loop lacks a principal re-check on delivery or while idle, or whose connect-time authorization or tenant decision is never re-run on delivery",
 	Run:  runRecheck,
 }
 
 // WriteDeadlineAnalyzer is the blocked-write arm (see the package doc).
 var WriteDeadlineAnalyzer = &analysis.Analyzer{
 	Name: "nowritedeadline",
-	Doc:  "reports a client write inside a long-lived stream's park loop with no write deadline anywhere on the loop's path",
+	Doc:  "reports a client write inside a long-lived stream's park loop with no write deadline on its path, or a ResponseController deadline armed in the stream and never cleared",
 	Run:  runWriteDeadline,
 }
 
@@ -323,9 +324,21 @@ func (a *arms) tickRecheck(l *parkLoop) bool {
 	if !ticks {
 		return false
 	}
-	for _, st := range l.body.List {
-		if st != ast.Stmt(sel) && a.reaches(st, l.fam, "recheckany", a.recheckAny) {
-			return true
+	parents := dominance.Parents(l.body)
+	for child, parent := ast.Node(sel), parents[sel]; parent != nil; child, parent = parent, parents[parent] {
+		var stmts []ast.Stmt
+		switch scope := parent.(type) {
+		case *ast.BlockStmt:
+			stmts = scope.List
+		case *ast.CaseClause:
+			stmts = scope.Body
+		case *ast.CommClause:
+			stmts = scope.Body
+		}
+		for _, st := range stmts {
+			if st != child && a.reaches(st, l.fam, "recheckany", a.recheckAny) {
+				return true
+			}
 		}
 	}
 	return false

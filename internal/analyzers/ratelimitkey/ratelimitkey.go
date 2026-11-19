@@ -222,8 +222,8 @@ func (s *state) isCollapsed(e ast.Expr, depth int) bool {
 		}
 		fn = fn.Origin()
 		switch {
-		case recvIs(fn, "net/netip", "Addr") && fn.Name() == "Prefix",
-			recvIs(fn, "net", "IP") && fn.Name() == "Mask",
+		case astx.ReceiverIs(fn, "net/netip", "Addr") && fn.Name() == "Prefix",
+			astx.ReceiverIs(fn, "net", "IP") && fn.Name() == "Mask",
 			isPkgFunc(fn, "net", "CIDRMask"),
 			s.isCollapser(fn):
 			return true
@@ -419,11 +419,6 @@ func (s *state) reportFunc(e ast.Expr, where string) {
 	s.pass.Reportf(e.Pos(),
 		"ratelimitkey: %s returns a client's full address and %s: one IPv6 subscriber holds a whole /64 and rotates past a per-address limit; key on ratelimit.IPKey (or (*Limiter).ClientKey), which collapses IPv6 to its /64",
 		what, where)
-}
-
-func recvIs(fn *types.Func, pkg, name string) bool {
-	sig, ok := fn.Type().(*types.Signature)
-	return ok && sig.Recv() != nil && astx.IsNamed(astx.Deref(sig.Recv().Type()), pkg, name)
 }
 
 func isPkgFunc(fn *types.Func, pkg, name string) bool {
