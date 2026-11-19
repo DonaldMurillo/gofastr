@@ -1,41 +1,5 @@
 // Package webmcp exposes an app's server-declared tools to in-browser AI
-// agents through the WebMCP proposal (navigator.modelContext).
-//
-// EXPERIMENTAL. WebMCP itself is a Chrome origin-trial API (Chrome 146+
-// behind chrome://flags/#enable-webmcp-testing, origin trial from Chrome
-// 149; automation passes --enable-blink-features=WebMCP). The API surface
-// of this package tracks that proposal and may change or be removed
-// without a major version bump, like everything under
-// framework/experimental.
-//
-// The server declares tools (name, description, JSON Schema, and the
-// same-origin endpoint that implements them). Mount serves a small
-// bridge script that registers each tool on navigator.modelContext; the
-// tool's execute() proxies to the declared endpoint with the visitor's
-// own session credentials. An in-browser agent therefore acts strictly
-// as the signed-in user: every call re-enters the app through normal
-// HTTP with the user's cookies, so auth, CSRF, owner scoping, and rate
-// limits all apply unchanged. Only declare endpoints you would let the
-// signed-in user call from their own devtools console, because that is
-// exactly what a WebMCP tool call is.
-//
-// Usage:
-//
-//	h := webmcp.New()
-//	err := h.Register(webmcp.Tool{
-//	    Name:        "create_note",
-//	    Description: "Create a note for the signed-in user.",
-//	    InputSchema: json.RawMessage(`{"type":"object","properties":{"body":{"type":"string"}},"required":["body"]}`),
-//	    Method:      "POST",
-//	    Path:        "/api/notes",
-//	})
-//	// Handle declares the tool and binds its route in one call; see
-//	// handle.go. Register every tool before Mount; the set freezes
-//	// there.
-//	scriptURL, err := h.Mount(app.Router(), uiHost)
-//
-// On a browser without WebMCP the bridge script is a no-op: it feature-
-// detects navigator.modelContext and returns.
+// agents through the experimental WebMCP proposal (navigator.modelContext).
 package webmcp
 
 import (
@@ -54,131 +18,72 @@ import (
 )
 
 const (
-	// ScriptRoute serves the bridge script with the tool manifest baked
-	// in. The URL registered on the page carries a content-hash query so
-	// it caches immutably and busts when the tool set changes.
+	// ScriptRoute serves the bridge script with the tool manifest baked in.
 	ScriptRoute = "/__gofastr/webmcp.js"
 
-	// ManifestRoute serves the frozen tool manifest as JSON, for tests,
-	// introspection, and server-side agents that want to know what the
-	// page will register.
+	// ManifestRoute serves the frozen tool manifest as JSON.
 	ManifestRoute = "/__gofastr/webmcp/tools.json"
 )
 
-// defaultInputSchema is used when a Tool declares no InputSchema: a
-// tool that takes an empty object.
 const defaultInputSchema = `{"type":"object","properties":{}}`
 
 //go:embed bridge.js
 var bridgeJS string
 
-// toolNameRe is the WebMCP spec's tool-name grammar (1–128 ASCII
-// alphanumerics, "_", "-", "."). The browser enforces the same rule in
-// registerTool and rejects violations asynchronously, which from the
-// agent's viewpoint is a tool that silently never existed; failing at
-// Register keeps the misdeclaration loud and server-side.
 var toolNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
 
-// toolsPlaceholder is the token in bridge.js the frozen manifest replaces.
 const toolsPlaceholder = "__GOFASTR_WEBMCP_TOOLS__"
 
-// debugPlaceholder is the token in bridge.js Mount replaces with the
-// literal true/false enabling the bridge's bounded debug state.
 const debugPlaceholder = "__GOFASTR_WEBMCP_DEBUG__"
 
-// Tool declares one WebMCP tool: what the agent sees (Name, Title,
-// Description, InputSchema) and where execute() proxies to (Method,
-// Path). The endpoint is called same-origin with the visitor's session
-// credentials and a "X-Gofastr-WebMCP: 1" request header; its response
-// body is returned to the agent verbatim as text content, with the MCP
-// isError flag set on any non-2xx status.
+// Tool declares one WebMCP tool: what the agent sees and the same-origin
+// endpoint its execute() calls with the visitor's credentials.
 type Tool struct {
-	// Name uniquely identifies the tool on the page. Required, and
-	// constrained to the WebMCP spec's tool-name grammar: 1–128 ASCII
-	// alphanumerics, "_", "-", or "." (the browser rejects anything
-	// else at registerTool time, silently from the agent's viewpoint,
-	// so Register enforces it up front). Registration is per browsing
-	// context, so the name must also be unique against any tools the
-	// app registers through its own JS.
+	// Name is unique on the page and matches [A-Za-z0-9_.-]{1,128}.
 	Name string `json:"name"`
 
-	// Group tags the tool as belonging to a group declared with
-	// Host.Group. Set by Group.Register/Group.Handle; Mount fails if it
-	// references a group that was never declared. Pure metadata for the
-	// manifest: it never renames the tool, changes its endpoint, or
-	// affects authorization.
+	// Group names the Host.Group the tool belongs to; it is metadata only.
 	Group string `json:"group,omitempty"`
 
 	// Title is an optional human-readable display name.
 	Title string `json:"title,omitempty"`
 
-	// Description tells the agent what the tool does and when to use
-	// it. Required: an undescribed tool is dead weight the agent cannot
-	// pick.
+	// Description tells the agent what the tool does; it is required.
 	Description string `json:"description"`
 
-	// InputSchema is the JSON Schema for the tool's input, as a JSON
-	// object. Defaults to {"type":"object","properties":{}}.
+	// InputSchema is a JSON Schema object; it defaults to an empty object schema.
 	InputSchema json.RawMessage `json:"inputSchema"`
 
-	// Examples are usage examples validated against InputSchema at
-	// registration (a minimal structural check: the input must be an
-	// object, required keys present, declared property types respected)
-	// and preserved in the manifest. The browser proposal has no
-	// examples field in registerTool, so in-browser agents see them
-	// only through the manifest; server-side agents read them from
-	// /tools.json.
+	// Examples are usage examples checked against InputSchema at registration.
 	Examples []Example `json:"examples,omitempty"`
 
-	// OutputSchema documents the tool's response shape as a JSON
-	// object. Descriptive only: the endpoint's response is returned to
-	// the agent verbatim with NO runtime validation against this
-	// schema — do not treat it as a guarantee without checking the
-	// body yourself.
+	// OutputSchema documents the response shape and is never checked at runtime.
 	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
 
-	// Method is the HTTP method execute() uses: GET, POST, PUT, PATCH,
-	// or DELETE. Defaults to POST. GET folds the input object into the
-	// query string; every other method sends it as a JSON body.
+	// Method is GET, POST, PUT, PATCH or DELETE; it defaults to POST.
 	Method string `json:"method"`
 
-	// Path is the same-origin absolute path of the implementing
-	// endpoint ("/api/notes"). A query string is allowed; schemes,
-	// hosts, fragments, backslashes, control characters, and "."/".."
-	// segments are rejected.
+	// Path is the endpoint's same-origin absolute path; a query is allowed.
 	Path string `json:"path"`
 
-	// ReadOnlyHint advertises the tool as non-mutating (forwarded to
-	// the browser as annotations.readOnlyHint). Advisory only: agents
-	// may prefer read-only tools when exploring, but the hint never
-	// replaces endpoint authorization.
+	// ReadOnlyHint is forwarded as annotations.readOnlyHint and is advisory only.
 	ReadOnlyHint bool `json:"readOnlyHint,omitempty"`
 
-	// UntrustedContentHint tells the agent the tool's result can carry
-	// content the app does not control (user-generated text), forwarded
-	// as annotations.untrustedContentHint. Advisory only: it never
-	// replaces output sanitization. Keep it on tools whose outputs
-	// include user-controlled content, even when they also declare an
-	// OutputSchema.
+	// UntrustedContentHint is forwarded as annotations.untrustedContentHint and is advisory only.
 	UntrustedContentHint bool `json:"untrustedContentHint,omitempty"`
 }
 
-// ScriptRegistrar is the seam through which Mount puts the bridge script
-// on every full-page render. *uihost.UIHost satisfies it.
+// ScriptRegistrar puts the bridge script on every full-page render; *uihost.UIHost satisfies it.
 type ScriptRegistrar interface {
 	RegisterExternalScript(src string) error
 }
 
-// documentScriptRegistrar is the seam WithDocumentScope needs: the
-// host's document-lifetime script rail. *uihost.UIHost satisfies it.
-// Kept structural (like ScriptRegistrar) so the option type below
-// stays satisfied by any host that grows the same rail.
 type documentScriptRegistrar interface {
 	RegisterDocumentScript(src string, scope func(path string) bool) error
 }
 
 // Host collects tool declarations and, once mounted, serves the bridge
-// script and manifest. Zero value is not usable; call New.
+// script and manifest. Create one with New.
 type Host struct {
 	mu           sync.Mutex
 	tools        []Tool
@@ -189,8 +94,7 @@ type Host struct {
 	groups       []*groupMeta
 }
 
-// New returns an empty Host, configured by opts (WithObserver,
-// WithInstructions).
+// New returns an empty Host configured by opts.
 func New(opts ...HostOption) *Host {
 	h := &Host{names: make(map[string]bool)}
 	for _, opt := range opts {
@@ -201,29 +105,15 @@ func New(opts ...HostOption) *Host {
 	return h
 }
 
-// Register adds a tool declaration. It returns an error (naming the
-// exact field) for a missing name or description, a duplicate name, an
-// unsupported method, a path that is not a same-origin absolute path, an
-// InputSchema or OutputSchema that is not a JSON object, or examples
-// that contradict the InputSchema. Registration after Mount is refused:
-// the script and manifest are frozen at Mount so every page render
-// ships the same tool set. Every refusal is reported to the observer
-// (if installed) as a register-phase ToolEvent.
+// Register adds a tool declaration or returns an error naming the field it
+// refuses; after Mount it always refuses.
 func (h *Host) Register(t Tool) error {
 	declared := t
 	t, class, err := validateTool(t)
 	if err == nil {
 		h.mu.Lock()
-		switch {
-		case h.mounted:
-			class, err = "after_mount", fmt.Errorf("webmcp: Register(%q) refused: Mount already froze the tool set; register every tool before Mount", t.Name)
-		case h.names[t.Name]:
-			class, err = "duplicate_name", fmt.Errorf("webmcp: Register: duplicate tool name %q (the browser refuses duplicate registrations)", t.Name)
-		case h.instructions != "" && t.Name == InstructionsToolName:
-			class, err = "reserved_name", fmt.Errorf("webmcp: Register(%q) refused: WithInstructions reserves that name for the generated orientation tool; use a different name or drop WithInstructions", t.Name)
-		case t.Group != "" && !h.groupDeclaredLocked(t.Group):
-			class, err = "undeclared_group", fmt.Errorf("webmcp: Register(%q): references group %q, which was never declared with Host.Group; declare the group first", t.Name, t.Group)
-		default:
+		class, err = h.admitLocked("Register", t)
+		if err == nil {
 			h.names[t.Name] = true
 			h.tools = append(h.tools, t)
 		}
@@ -235,12 +125,20 @@ func (h *Host) Register(t Tool) error {
 	return err
 }
 
-// validateTool normalizes and validates one declaration. It applies the
-// defaults Register and Handle document (method POST, empty-object
-// input schema), clones the caller-owned schema and example bytes so a
-// later mutation of the source slices cannot corrupt the frozen
-// manifest, and returns the error class alongside the error so the
-// observer can name the failure without string matching.
+func (h *Host) admitLocked(verb string, t Tool) (string, error) {
+	switch {
+	case h.mounted:
+		return "after_mount", fmt.Errorf("webmcp: %s(%q) refused: Mount already froze the tool set; register every tool before Mount", verb, t.Name)
+	case h.names[t.Name]:
+		return "duplicate_name", fmt.Errorf("webmcp: %s: duplicate tool name %q (the browser refuses duplicate registrations)", verb, t.Name)
+	case h.instructions != "" && t.Name == InstructionsToolName:
+		return "reserved_name", fmt.Errorf("webmcp: %s(%q) refused: WithInstructions reserves that name for the generated orientation tool; use a different name or drop WithInstructions", verb, t.Name)
+	case t.Group != "" && !h.groupDeclaredLocked(t.Group):
+		return "undeclared_group", fmt.Errorf("webmcp: %s(%q): references group %q, which was never declared with Host.Group; declare the group first", verb, t.Name, t.Group)
+	}
+	return "", nil
+}
+
 func validateTool(t Tool) (Tool, string, error) {
 	if !toolNameRe.MatchString(t.Name) {
 		return t, "tool_name", fmt.Errorf("webmcp: Register: tool name %q must match the WebMCP grammar [A-Za-z0-9_.-]{1,128}; the browser rejects anything else and the tool would silently never appear in getTools()", t.Name)
@@ -261,9 +159,6 @@ func validateTool(t Tool) (Tool, string, error) {
 	if len(t.InputSchema) == 0 {
 		t.InputSchema = json.RawMessage(defaultInputSchema)
 	} else {
-		// Clone: the caller owns the RawMessage's backing array, and a
-		// later mutation of it would bypass the validation below and
-		// corrupt the manifest frozen at Mount.
 		t.InputSchema = append(json.RawMessage(nil), t.InputSchema...)
 	}
 	if !json.Valid(t.InputSchema) || !strings.HasPrefix(strings.TrimSpace(string(t.InputSchema)), "{") {
@@ -275,35 +170,9 @@ func validateTool(t Tool) (Tool, string, error) {
 	return t, "", nil
 }
 
-// Mount freezes the tool set, registers ScriptRoute and ManifestRoute on
-// rt, and (when scripts is non-nil) registers the hash-versioned script
-// URL so every full-page render includes the bridge. It returns that
-// script URL so hosts that render their own <script> tags can inject it
-// themselves (pass scripts == nil in that case).
-//
-// Options tailor the framework-owned asset routes for credential-gated
-// surfaces: WithAssetAuthorization wraps them with middleware,
-// WithPageScope gates them on a per-request predicate, WithPrivateAssets
-// switches them to the private no-store cache policy, and
-// WithBridgeDebug bakes the bridge's bounded debug state into the
-// script. Any of the first three implies the private policy, since the
-// assets become requester-dependent and a shared cache must never replay
-// an authenticated asset to anonymous traffic. The zero-option mount
-// serves exactly the public policies it always did.
-//
-// When WithInstructions was set at New, Mount additionally serves the
-// instructions at InstructionsRoute — under the same asset policies —
-// and appends the deterministic read-only orientation tool that returns
-// them, so in-browser agents can read the cross-tool contract.
-//
-// Mounting with zero tools is an error: the wiring would silently do
-// nothing. Mounting twice, onto a router that already holds any of the
-// asset routes, or with a group referencing an undeclared group or a
-// dangling PreferredFirst name, is an error. A failed Mount (route
-// conflict, bad embedded asset, script-rail refusal) registers nothing
-// and leaves the Host re-mountable after the cause is fixed. On a
-// grouped router the served routes and the returned script URL carry
-// the group prefix.
+// Mount freezes the tool set, serves the bridge script, manifest and (with
+// WithInstructions) instructions on rt, registers the script on scripts
+// when it is non-nil, and returns the hash-versioned script URL.
 func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar, opts ...MountOption) (string, error) {
 	var cfg mountConfig
 	for _, opt := range opts {
@@ -320,10 +189,6 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar, opts ...MountOp
 		h.mu.Unlock()
 		return "", fmt.Errorf("webmcp: Mount refused with zero registered tools: the bridge script would do nothing; call Register first")
 	}
-	// Latch now so a concurrent Register can't grow the set mid-mount,
-	// but un-latch on any failure below: everything fallible runs
-	// before the first route registration, so a failed Mount leaves no
-	// half-mounted state behind.
 	h.mounted = true
 	if err := h.validateGroupsLocked(h.tools); err != nil {
 		h.mounted = false
@@ -334,10 +199,6 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar, opts ...MountOp
 	instructions := h.instructions
 	groups := h.groupInfos()
 	if instructions != "" {
-		// The generated orientation tool joins the LOCAL copy only: a
-		// failed Mount must be able to retry without appending it
-		// twice. Full-slice expression clones so the frozen set never
-		// aliases h.tools' backing array.
 		tools = append(tools[:len(tools):len(tools)], orientationTool(rt.Prefix()))
 	}
 	h.mu.Unlock()
@@ -360,12 +221,6 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar, opts ...MountOp
 	if err != nil {
 		return fail(fmt.Errorf("webmcp: Mount: marshal tools: %w", err))
 	}
-	// The manifest is embedded as a QUOTED JSON string the bridge feeds
-	// to JSON.parse, never as a bare JS object literal: in a literal,
-	// "__proto__" is a prototype setter (an own key in the schema would
-	// vanish) and duplicate "__proto__" keys — which json.Valid accepts
-	// — are a SyntaxError that would kill the whole bridge. JSON.parse
-	// has neither behavior.
 	quotedTools, err := json.Marshal(string(toolsJSON))
 	if err != nil {
 		return fail(fmt.Errorf("webmcp: Mount: quote tools manifest: %w", err))
@@ -381,20 +236,10 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar, opts ...MountOp
 	}
 	script := []byte(strings.Replace(strings.Replace(bridgeJS, toolsPlaceholder, string(quotedTools), 1), debugPlaceholder, debugLit, 1))
 
-	// A grouped router prepends its prefix to every registration, so
-	// the served paths (and therefore the rail URL and the conflict
-	// pre-flight) must carry it too: without this, mounting on
-	// Group("/v1") would serve the bridge at /v1/... while registering
-	// the unprefixed URL on the script rail, a guaranteed 404.
 	scriptPath := rt.Prefix() + ScriptRoute
 	manifestPath := rt.Prefix() + ManifestRoute
 	instructionsPath := rt.Prefix() + InstructionsRoute
 
-	// Pre-flight the route patterns: the router panics on conflicts, so
-	// a second Host on the same router (or an app squatting on the
-	// routes) must surface as a clean error BEFORE the script rail is
-	// touched, keeping "a failed Mount leaves nothing behind" true.
-	// Routes() reports full (prefix-joined) patterns.
 	for _, route := range rt.Routes() {
 		if route.Method != http.MethodGet {
 			continue
@@ -408,12 +253,6 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar, opts ...MountOp
 
 	scriptURL := uihost.ScriptURL(scriptPath, script)
 	if cfg.docScope != nil {
-		// Document lifetime: the tag ships only on in-scope pages and
-		// the runtime hard-navigates across the scope edge. The host
-		// registrar must carry the document rail; a nil registrar
-		// (render-your-own-tag) cannot feed the route manifest the
-		// boundary needs, so refuse rather than ship a scope edge the
-		// client cannot see.
 		if scripts == nil {
 			return fail(fmt.Errorf("webmcp: Mount: WithDocumentScope needs the host registrar (pass the *uihost.UIHost, not nil); a self-rendered tag cannot declare the boundary in the route manifest"))
 		}
@@ -455,7 +294,6 @@ func (h *Host) Mount(rt *router.Router, scripts ScriptRegistrar, opts ...MountOp
 	return scriptURL, nil
 }
 
-// manifestHandler serves the frozen manifest with a strong ETag.
 func manifestHandler(body []byte) http.Handler {
 	etag := fmt.Sprintf("%q", fmt.Sprintf("%x", len(body))+"-"+hashHex(body))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -472,9 +310,6 @@ func manifestHandler(body []byte) http.Handler {
 	})
 }
 
-// hashHex is a small FNV-1a content hash for the manifest ETag. The
-// script route's caching comes from uihost.ScriptHandler and is not
-// affected by this.
 func hashHex(b []byte) string {
 	const (
 		offset = 14695981039346656037
@@ -488,13 +323,6 @@ func hashHex(b []byte) string {
 	return fmt.Sprintf("%016x", h)
 }
 
-// validToolPath mirrors the same-origin grammar uihost applies to
-// external script srcs: single leading "/", no scheme or host, no
-// backslash, no control bytes, no fragment, no "."/".." path segments,
-// with the segment/backslash/control checks applied to BOTH the raw
-// path and its percent-decoded form (browser URL normalization treats
-// "%2e%2e" as "..", so a raw-only check would declare one path and
-// fetch another); query strings allowed.
 func validToolPath(p string) bool {
 	if p == "" || !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
 		return false

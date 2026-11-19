@@ -1,0 +1,53 @@
+primitive: middleware.compress
+summary: Compress, the gzip middleware for text-like responses, with its own gzip entity tags and a cache of compressed immutable bodies.
+code:
+  - core/middleware/compress.go
+docs:
+  - framework/docs/content/security.md
+invariants:
+  - id: gzip-only-when-accepted
+    rule: A response is gzipped only when some Accept-Encoding line admits gzip or x-gzip with a non-zero q, or names only a non-zero *, and a named gzip;q=0 refuses it.
+    enforced_by:
+      - test: core/middleware.TestCompressHonorsGzipQZero
+      - test: core/middleware.TestCompressReadsEveryAcceptEncodingLine
+  - id: what-is-left-alone
+    rule: HEAD and Range requests, text/event-stream, bodies under 1 KiB, bodies a handler already encoded and non-text types pass through unencoded.
+    enforced_by:
+      - test: core/middleware.TestCompressSkipsRangeAndHead
+      - test: core/middleware.TestCompressSkipsEventStream
+      - test: core/middleware.TestCompressSkipsSmallBody
+      - test: core/middleware.TestCompressLeavesEncodedBodies
+  - id: gzip-has-its-own-etag
+    rule: The gzip representation's ETag is the handler's with -gzip added, and an If-None-Match or If-Match naming it is turned back into the handler's tag before the handler runs.
+    enforced_by:
+      - test: core/middleware.TestCompressGivesGzipItsOwnETag
+      - test: core/middleware.TestCompressRevalidatesGzipETag
+      - test: core/middleware.TestCompressIfMatchGzipTag
+      - test: core/middleware.TestCompressSuffixesGzipLookingETag
+  - id: flushed-strong-tag-turns-weak
+    rule: A body under a strong ETag is held and compressed in one pass, and if the handler flushes it the tag turns weak.
+    enforced_by:
+      - test: core/middleware.TestCompressFlushedTaggedBodyTagIsWeak
+      - test: core/middleware.TestCompressFlushedImmutableTagIsWeak
+  - id: gzip-advertises-no-ranges
+    rule: A gzipped response drops Accept-Ranges.
+    enforced_by:
+      - test: core/middleware.TestCompressDropsAcceptRanges
+  - id: immutable-cache-on-second-sighting
+    rule: A compressed copy of an immutable body is cached only from its second sighting, bounded per entry and in total.
+    enforced_by:
+      - test: core/middleware.TestCompressCachesOnSecondSighting
+  - id: first-status-wins
+    rule: The first final status is kept, and a later WriteHeader changes nothing.
+    enforced_by:
+      - test: core/middleware.TestCompressKeepsFirstStatus
+decisions:
+  - id: gzip-only
+    date: 2026-11-18
+    status: accepted
+    decision: Compress offers gzip only.
+    rejected:
+      - option: Brotli.
+        why: The standard library has no Brotli encoder and the module takes no third-party compressor.
+    revisit_if: The standard library gains a Brotli or zstd encoder.
+    upholds: [gzip-only-when-accepted]

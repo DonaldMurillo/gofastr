@@ -1,9 +1,3 @@
-// Package zai implements the ZAI GLM Provider (OpenAI-compatible).
-//
-// Endpoint: https://api.z.ai/api/paas/v4/chat/completions
-// Models:   glm-5.1, glm-4.6, glm-4.5-air, glm-z1
-//
-// See docs/harness-architecture.md § Providers → ZAI GLM.
 package zai
 
 import (
@@ -14,29 +8,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider/internal/openai"
 )
 
-// ZAI publishes two base URLs:
-//
-//   - https://api.z.ai/api/paas/v4: general API (pay-as-you-go).
-//   - https://api.z.ai/api/coding/paas/v4: GLM Coding Plan
-//     subscription. Same wire shape, dedicated quota.
-//
-// Keys provisioned for the Coding Plan return HTTP 429 with code
-// 1113 "Insufficient balance" if you hit the general endpoint
-// instead. The Provider auto-detects via the CodingPlan flag (default
-// false → general endpoint).
 const (
 	defaultBase       = "https://api.z.ai/api/paas/v4"
 	defaultCodingBase = "https://api.z.ai/api/coding/paas/v4"
 )
 
-// Provider is the ZAI GLM Provider.
+// Provider is the ZAI GLM provider; CodingPlan selects the GLM Coding Plan endpoint, and BaseURL, when set, wins over both.
 type Provider struct {
-	APIKey  string
-	HTTP    *http.Client
-	BaseURL string // explicit override (wins over CodingPlan)
-
-	// CodingPlan switches the base URL to the GLM Coding Plan
-	// endpoint. Honored when BaseURL is empty.
+	APIKey     string
+	HTTP       *http.Client
+	BaseURL    string
 	CodingPlan bool
 }
 
@@ -54,14 +35,7 @@ func (p *Provider) Chat(ctx context.Context, req *provider.Request) (<-chan prov
 	return client.Chat(ctx, req)
 }
 
-// Models implements provider.Provider with the v0.1 static catalog.
-// ZAI doesn't publish a discoverable /models endpoint in their public
-// docs, so the catalog is hardcoded. When ZAI publishes a model
-// catalog API, switch to dynamic discovery.
-//
-// GLM-5.1 is the current flagship and is listed first so default
-// pickers land on it; older models stay in the catalog for users who
-// have prompts tuned to specific versions.
+// Models implements provider.Provider with a static catalog.
 func (p *Provider) Models(_ context.Context) ([]provider.Model, error) {
 	return []provider.Model{
 		{
@@ -95,7 +69,7 @@ func (p *Provider) Models(_ context.Context) ([]provider.Model, error) {
 	}, nil
 }
 
-// TokenCount uses the same 4-chars-per-token heuristic as OpenRouter.
+// TokenCount implements provider.Provider with provider.EstimateTokens.
 func (p *Provider) TokenCount(_ context.Context, _ string, msgs []provider.Message) (int, error) {
 	return provider.EstimateTokens(msgs), nil
 }

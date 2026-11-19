@@ -1,10 +1,3 @@
-// Package resources aggregates read-only catalogs (sessions,
-// profiles, providers, tools, skills, mcp servers, slash-commands,
-// runtime stats) for REST and mcpserver to surface.
-//
-// Per § Control plane → Package map, this layer sits above
-// session/skill/tool/profile and below the transport so transports
-// don't need to back-import everything.
 package resources
 
 import (
@@ -24,42 +17,27 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
 
-// Catalog is the aggregator. The harness composition layer wires the
-// subsystem references (Engines, Tools, Skills, Providers, etc.)
-// once at boot; transports read from this surface.
+// Catalog is the read-only view of sessions, tools, providers, skills and commands the transports serve.
 type Catalog struct {
 	mu sync.RWMutex
 
-	// engines is the live set; one per session.
-	engines map[ids.SessionID]*engine.Engine
-
-	// pluginNamespaces is the union of slash-command namespaces
-	// claimed by plugins. Reserved built-in namespaces come from
-	// slash.AllNamespaces().
+	engines          map[ids.SessionID]*engine.Engine
 	pluginNamespaces []string
 
-	// Tools is the registered tool catalog.
-	Tools *tool.Registry
-
-	// Providers is the configured provider list. Order is
-	// registration order.
+	Tools     *tool.Registry
 	Providers []provider.Provider
-
-	// Skills returns the loaded skill tier-1 metadata. The
-	// composition wires a callable so the catalog stays decoupled
-	// from skill.Registry's concrete type.
+	// Skills returns the loaded skills' tier-1 metadata.
 	Skills func() []skillmd.Tier1
 }
 
-// NewCatalog returns an empty Catalog. Wire fields after construction.
+// NewCatalog returns an empty Catalog; the caller sets Tools, Providers and Skills.
 func NewCatalog() *Catalog {
 	return &Catalog{
 		engines: make(map[ids.SessionID]*engine.Engine),
 	}
 }
 
-// RegisterEngine registers a session's engine for inclusion in
-// /v1/sessions listings.
+// RegisterEngine adds a session's engine to the session listing.
 func (c *Catalog) RegisterEngine(e *engine.Engine) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -79,8 +57,6 @@ func (c *Catalog) ClaimNamespace(ns string) {
 	defer c.mu.Unlock()
 	c.pluginNamespaces = append(c.pluginNamespaces, ns)
 }
-
-// ----- DTOs surfaced over the wire -----
 
 // SessionInfo is the shape /v1/sessions and harness/v1://sessions return.
 type SessionInfo struct {
@@ -137,17 +113,12 @@ func SessionsAllowed(list []SessionInfo, claims auth.Claims) []SessionInfo {
 	return slices.DeleteFunc(list, func(si SessionInfo) bool { return !claims.AllowsSession(si.SessionID) })
 }
 
-// ListProviders returns the provider catalog with model details.
+// ListProviders returns each provider with its models; a provider whose listing fails is logged and shows none.
 func (c *Catalog) ListProviders(ctx context.Context) []ProviderInfo {
 	out := make([]ProviderInfo, 0, len(c.Providers))
 	for _, p := range c.Providers {
 		models, err := p.Models(ctx)
 		if err != nil {
-			// The catalog is display-only; a refused listing degrades
-			// to an empty model list rather than a failed page, but
-			// the refusal is logged rather than dropped. Models may
-			// come back partially built alongside the error — those
-			// entries are not vouched for, so drop them too.
 			slog.Warn("harness control: listing models", "provider", p.Name(), "error", err)
 			models = nil
 		}
@@ -178,14 +149,11 @@ func (c *Catalog) ListTools() []ToolInfo {
 // ListSlashCommands returns the union of built-in and plugin commands.
 func (c *Catalog) ListSlashCommands() []SlashCommandInfo {
 	out := make([]SlashCommandInfo, 0, 32)
-	// Built-ins (no namespace).
 	for _, b := range slash.AllBuiltins() {
 		out = append(out, SlashCommandInfo{
 			Name: b.Name, Description: b.Description, ArgsHelp: b.ArgsHelp, IsBuiltin: true,
 		})
 	}
-	// Reserved namespaces (without specific verbs, caller can
-	// enumerate skills, profiles, etc. via dedicated endpoints).
 	for _, ns := range slash.AllNamespaces() {
 		out = append(out, SlashCommandInfo{
 			Namespace:   ns,
@@ -205,6 +173,11 @@ func (c *Catalog) ListSlashCommands() []SlashCommandInfo {
 	return out
 }
 
+// ListProfiles returns the names of the built-in profiles.
+func (c *Catalog) ListProfiles() []string {
+	return []string{"framework", "default"}
+}
+
 // ListSkills returns the loaded skill tier-1 catalog.
 func (c *Catalog) ListSkills() []skillmd.Tier1 {
 	if c.Skills == nil {
@@ -213,14 +186,11 @@ func (c *Catalog) ListSkills() []skillmd.Tier1 {
 	return c.Skills()
 }
 
-// Handshake returns the protocol handshake. Provided here so REST
-// and mcpserver share one implementation.
+// Handshake returns the protocol handshake advertising features.
 func (c *Catalog) Handshake(features []string) control.Handshake {
 	return control.CurrentHandshake(features)
 }
 
-// countAssistant counts assistant-role messages in an engine's history.
-// We re-derive rather than tracking turns in another place.
 func countAssistant(e *engine.Engine) int {
 	n := 0
 	for _, m := range e.History {

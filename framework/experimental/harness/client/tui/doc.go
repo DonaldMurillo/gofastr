@@ -1,5 +1,2 @@
-// Package tui is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package tui is the harness's raw-mode terminal client, built on the standard library and golang.org/x/term.
 package tui

@@ -1,0 +1,55 @@
+primitive: harness.provider
+summary: The Provider interface the harness engine talks to language models through, its canonical request and stream-event types, the shared token estimate and the static pricing table.
+code:
+  - framework/experimental/harness/provider/doc.go
+  - framework/experimental/harness/provider/provider.go
+  - framework/experimental/harness/provider/cache_attrib.go
+  - framework/experimental/harness/provider/estimate.go
+  - framework/experimental/harness/provider/pricing.go
+  - framework/experimental/harness/provider/providertest/
+docs:
+  - framework/docs/content/harness-architecture.md
+on_change:
+  - A new provider adds a case to PricingForModel when it has no catalog that carries prices, and runs providertest.AssertStreamingParse from its own tests.
+twins:
+  - job: Build an openai.Client from an adapter's base URL, key, HTTP client and name, and hand it the Chat request.
+    why: Work not yet done; the two adapters differ only in base URL and OpenRouter's two extra headers, which a shared constructor could take as arguments.
+    sites:
+      - path: framework/experimental/harness/provider/openrouter/openrouter.go
+        note: Provider.Chat, adds HTTP-Referer and X-Title.
+      - path: framework/experimental/harness/provider/zai/zai.go
+        note: Provider.Chat, picks the general or Coding Plan base URL.
+invariants:
+  - id: estimate-four-bytes-per-token
+    rule: EstimateTokens counts the bytes of text blocks, tool-use names and inputs and tool-result text, and divides by four rounding up, so a partial token counts as one.
+    enforced_by:
+      - test: framework/experimental/harness/provider.TestEstimateTokens
+  - id: usd-prices-every-token-class
+    rule: USDForUsage prices input, output, cache-read and cache-write tokens each at their own per-million rate, and a zero Pricing costs nothing.
+    enforced_by:
+      - test: framework/experimental/harness/provider.TestUSDForUsage_Math
+      - test: framework/experimental/harness/provider.TestSweepUSDPricesCacheWrites
+      - test: framework/experimental/harness/provider.TestUSDForUsage_ZeroPricingZeroCost
+  - id: unknown-model-has-no-price
+    rule: PricingForModel returns false for a provider and model pair absent from its static table.
+    enforced_by:
+      - test: framework/experimental/harness/provider.TestPricingForModel_UnknownReturnsFalse
+      - test: framework/experimental/harness/provider.TestPricingForModel_KnownProviders
+decisions:
+  - id: estimate-instead-of-tokenizer
+    date: 2026-11-18
+    status: accepted
+    decision: Both adapters answer TokenCount with the shared four-bytes-per-token estimate.
+    rejected:
+      - option: Call a tokenization endpoint or bundle a tokenizer.
+        why: Neither OpenRouter nor ZAI exposes a tokenization endpoint, and the harness bundles no model SDK.
+    revisit_if: A provider ships a tokenization endpoint, or compaction triggers too late because the estimate undercounts.
+    upholds: [estimate-four-bytes-per-token]
+  - id: static-pricing-only-where-no-catalog-prices
+    date: 2026-11-18
+    status: accepted
+    decision: The static pricing table covers ZAI only, at its pay-as-you-go rates; OpenRouter prices come from its /models catalog.
+    rejected:
+      - option: A static table for OpenRouter models.
+        why: OpenRouter fronts dozens of upstream models whose prices change, and its catalog already carries them.
+    upholds: [unknown-model-has-no-price]

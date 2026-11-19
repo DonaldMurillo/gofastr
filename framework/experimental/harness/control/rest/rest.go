@@ -1,31 +1,7 @@
-// Package rest implements the HTTP+SSE control-plane transport.
-//
-// Routes (per § REST surface):
-//
-//	GET    /v1/handshake
-//	GET    /v1/health
-//	GET    /v1/sessions                          (catalog)
-//	GET    /v1/sessions/{id}/events  (SSE)       stream
-//	POST   /v1/sessions/{id}/input               SendInput
-//	POST   /v1/sessions/{id}/cancel              CancelTurn
-//	POST   /v1/sessions/{id}/permission          AnswerPermission
-//	POST   /v1/sessions/{id}/model               SetModel
-//	GET    /v1/profiles                          (catalog)
-//	GET    /v1/providers                         (catalog)
-//	GET    /v1/tools                             (catalog)
-//	GET    /v1/skills                            (catalog)
-//	GET    /v1/slash-commands                    (catalog)
-//	GET    /v1/auth/token                        token mint (Unix-socket-only)
-//
-// Security per § Threat model:
-//
-//   - Token via X-Harness-Token header (anti-DNS-rebinding).
-//   - Host header must match localhost / 127.0.0.1 / configured.
-//   - Origin header must be in the allowlist for non-curl callers.
 package rest
 
 import (
-	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -50,35 +26,31 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool/builtins"
 )
 
-// maxRESTBody caps an inbound body: one command payload. Past this, the
-// request is refused rather than buffered.
 const maxRESTBody = 4 << 20
 
-// Server is the REST transport.
+const revocationRecheck = 10 * time.Second
+
+// Server is the HTTP+SSE control transport.
 type Server struct {
-	Mux            *multiplex.Mux
-	Catalog        *resources.Catalog
-	Encoder        *auth.Encoder
-	Revocations    *auth.RevocationList
-	Features       []string
-	AllowedHosts   []string // exact-match Host headers permitted (e.g., "127.0.0.1:8421")
-	AllowedOrigins []string // exact-match Origin headers permitted
-
-	// Seats bounds the concurrent /events SSE streams one token
-	// principal may hold (core/stream's seat policy). Nil shares the
-	// process-wide DefaultSeatTable with the ws and MCP-HTTP
-	// transports, so the cap counts per credential across all three.
+	Mux         *multiplex.Mux
+	Catalog     *resources.Catalog
+	Encoder     *auth.Encoder
+	Revocations *auth.RevocationList
+	Features    []string
+	// AllowedHosts are the exact Host headers admitted; empty admits any.
+	AllowedHosts []string
+	// AllowedOrigins are the exact browser Origins admitted; empty admits none.
+	AllowedOrigins []string
+	// Seats caps the /events streams per token; nil uses control.DefaultSeatTable.
 	Seats *control.SeatTable
-
-	// SessionStore, when non-nil, backs the ?past=true query on
-	// /v1/sessions to surface historical sessions from disk.
+	// SessionStore, when set, serves GET /v1/sessions?past=true.
 	SessionStore session.Store
 
-	// Handler caches the constructed mux.
 	handler http.Handler
+	recheck time.Duration
 }
 
-// Handler returns the http.Handler. Lazy-built on first call.
+// Handler returns the routes, built on first call.
 func (s *Server) Handler() http.Handler {
 	if s.handler != nil {
 		return s.handler
@@ -97,8 +69,6 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-// seatTable resolves the seat table: the wired Seats field, else the
-// process-wide table shared with the ws and MCP-HTTP transports.
 func (s *Server) seatTable() *control.SeatTable {
 	if s.Seats != nil {
 		return s.Seats
@@ -106,7 +76,6 @@ func (s *Server) seatTable() *control.SeatTable {
 	return control.DefaultSeatTable()
 }
 
-// handle is the request wrapper: Host/Origin checks + optional token verification.
 func (s *Server) handle(inner http.HandlerFunc, requireToken bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.hostOK(r) {
@@ -123,8 +92,6 @@ func (s *Server) handle(inner http.HandlerFunc, requireToken bool) http.HandlerF
 				writeError(w, http.StatusUnauthorized, control.ReasonTokenExpired, err.Error())
 				return
 			}
-			// Stash the verified claims so per-session handlers can
-			// enforce the token's session/command scope (mirrors ws.go).
 			r = r.WithContext(context.WithValue(r.Context(), claimsKey{}, claims))
 		}
 		inner(w, r)
@@ -133,31 +100,21 @@ func (s *Server) handle(inner http.HandlerFunc, requireToken bool) http.HandlerF
 
 func (s *Server) hostOK(r *http.Request) bool {
 	if len(s.AllowedHosts) == 0 {
-		// No restriction configured, typical for Unix socket.
 		return true
 	}
 	return slices.Contains(s.AllowedHosts, r.Host)
 }
 
-// originOK reports whether the request's Origin is permitted. See the
-// ws.Handler.originOK doc for the rationale, an empty AllowedOrigins
-// denies a browser-set Origin rather than admitting it, matching the
-// convention core/middleware/cors.go states.
 func (s *Server) originOK(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		// curl-style callers without Origin are accepted.
 		return true
 	}
 	return slices.Contains(s.AllowedOrigins, origin)
 }
 
-// claimsKey is the context key under which verified token claims are
-// stashed by handle() for downstream scope enforcement.
 type claimsKey struct{}
 
-// claimsFrom returns the verified claims stashed by handle(). The
-// second result is false when the route did not require a token.
 func claimsFrom(r *http.Request) (auth.Claims, bool) {
 	c, ok := r.Context().Value(claimsKey{}).(auth.Claims)
 	return c, ok
@@ -166,15 +123,11 @@ func claimsFrom(r *http.Request) (auth.Claims, bool) {
 func (s *Server) verifyToken(r *http.Request) (auth.Claims, error) {
 	tok := r.Header.Get("X-Harness-Token")
 	if tok == "" {
-		// Authorization: Bearer <token> fallback, common header.
 		if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
 			tok = strings.TrimPrefix(h, "Bearer ")
 		}
 	}
 	if tok == "" {
-		// Query-param fallback. EventSource (SSE) can't set custom
-		// headers in browsers, so we accept ?token=... for GET-style
-		// long-lived connections. POSTs should still prefer headers.
 		tok = r.URL.Query().Get("token")
 	}
 	if tok == "" {
@@ -185,8 +138,6 @@ func (s *Server) verifyToken(r *http.Request) (auth.Claims, error) {
 	}
 	return auth.Verify(s.Encoder, s.Revocations, tok, time.Now())
 }
-
-// ---------- Handlers ----------
 
 func (s *Server) handleHandshake(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.Catalog.Handshake(s.Features))
@@ -204,18 +155,12 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "")
 		return
 	}
-	// A token bound to some sessions lists only those: a past session
-	// carries the start of its first prompt.
 	claims, ok := claimsFrom(r)
 	if !ok {
 		writeError(w, http.StatusForbidden, "Forbidden", "no token claims")
 		return
 	}
-	// ?past=true returns historical sessions from the on-disk log
-	// (useful for the sidebar to show prior conversations); default
-	// returns just the active in-memory sessions.
 	if r.URL.Query().Get("past") == "true" && s.SessionStore != nil {
-		// The scope goes to the store so it applies before the cap.
 		past, err := s.SessionStore.ListPastSessions(r.Context(), 50, claims.Sessions)
 		if err != nil {
 			log.Printf("rest: store: %v", err)
@@ -230,9 +175,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resources.SessionsAllowed(s.Catalog.ListSessions(), claims))
 }
 
-// handleSessionItem handles /v1/sessions/{id}/<verb>.
 func (s *Server) handleSessionItem(w http.ResponseWriter, r *http.Request) {
-	// Path: /v1/sessions/{id}/...
 	rest := strings.TrimPrefix(r.URL.Path, "/v1/sessions/")
 	parts := strings.SplitN(rest, "/", 2)
 	if len(parts) == 0 || parts[0] == "" {
@@ -244,9 +187,6 @@ func (s *Server) handleSessionItem(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "InvalidSessionID", err.Error())
 		return
 	}
-	// Enforce the token's session scope before touching the session
-	// at all, a token bound to session A must not drive session B,
-	// nor read its event stream/tasks. Mirrors ws.go:AllowsSession.
 	claims, ok := claimsFrom(r)
 	if !ok || !claims.AllowsSession(sessID) {
 		writeError(w, http.StatusForbidden, "Forbidden", "token not bound to session")
@@ -258,8 +198,6 @@ func (s *Server) handleSessionItem(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case verb == "" && r.Method == http.MethodGet:
-		// Session meta, minimal for v0.1: just whatever the catalog
-		// already exposes for the matching SessionID.
 		for _, si := range s.Catalog.ListSessions() {
 			if si.SessionID == sessID {
 				writeJSON(w, http.StatusOK, si)
@@ -284,22 +222,13 @@ func (s *Server) handleSessionItem(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handlePOST decodes the typed command body, dispatches via the mux.
-// cmdSeed is a zero-value of the expected type used to discriminate.
 func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.SessionID, cmdSeed control.Command) {
 	defer r.Body.Close()
-	// Enforce the token's command scope before decoding/dispatching:
-	// a token scoped to SendInput must not answer permission prompts.
-	// Session scope was already checked in handleSessionItem.
 	if claims, ok := claimsFrom(r); !ok || !claims.AllowsCommand(cmdSeed.CommandKind()) {
 		writeError(w, http.StatusForbidden, "Forbidden", "token not permitted for command "+cmdSeed.CommandKind())
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxRESTBody)
-	// Buffered strict decode (handler.UnmarshalStrict): DisallowUnknownFields
-	// alone rejects only keys matching NO field; duplicates resolve
-	// last-wins and case-folded keys still match their tags, so both
-	// smuggle shapes dispatched. Reject the ambiguity before decode.
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "InvalidBody", err.Error())
@@ -339,11 +268,6 @@ func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.S
 		return
 	}
 
-	// Synthesize a request-scoped Client for the dispatch, as the
-	// verified token: its identity class decides what the mux lets it
-	// do (only a human answers a permission prompt), and its JTI names
-	// one client across requests, so a turn's originator is the token
-	// that started it.
 	claims, _ := claimsFrom(r)
 	c := &restClient{id: tokenClientID(claims.JTI), class: claims.IdentityClass}
 	if err := s.Mux.Dispatch(r.Context(), c, cmd); err != nil {
@@ -353,15 +277,10 @@ func (s *Server) handlePOST(w http.ResponseWriter, r *http.Request, sessID ids.S
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// handleSSE streams events for the session via the SSE protocol.
-// handleTasks returns the current TaskList snapshot for a session.
-// Read-only, the model writes via the TaskList tool dispatch, and
-// the snapshot is kept by the tool. Clients (web sidebar, TUI panel,
-// external dashboards) poll this endpoint to render the plan.
 func (s *Server) handleTasks(w http.ResponseWriter, _ *http.Request, sessID ids.SessionID) {
 	items, updated := builtins.TaskListSnapshot(sessID)
 	if items == nil {
-		items = []builtins.TaskItem{} // serialize as [] not null
+		items = []builtins.TaskItem{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"tasks":   items,
@@ -380,14 +299,6 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 		writeError(w, http.StatusInternalServerError, "NoFlusher", "")
 		return
 	}
-	// Seat the stream per token principal BEFORE any bytes go out, so
-	// a refusal can still answer 429 at connect (core/stream's seat
-	// policy; the ws twin seats its upgrade the same way). Each
-	// admitted stream parks a handler goroutine, a bus subscription,
-	// and a revocation ticker for the life of the request, so the
-	// 17th same-token GET must not be as cheap as the 1st.
-	// A reconnecting client names the last id it saw. A malformed one
-	// is refused: reading it as zero would replay the whole window.
 	since, resume, ok := lastEventID(r)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "InvalidLastEventID", "")
@@ -402,16 +313,8 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 		return
 	}
 	defer s.seatTable().ReleaseSeat(seat)
-	// Subscribe BEFORE the headers go out: the client treats the
-	// flushed 200 as "stream live" and may drive a turn at once, and
-	// Bus.broadcast delivers only to current subscribers, with no
-	// replay. Subscribing after the flush lost that turn whenever the
-	// handler was descheduled between the two (the ws twin's
-	// subscribe-before-dispatch rule).
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	// With Last-Event-ID the stream first replays what came after it
-	// (the bus window, then the session log), then goes live.
 	var ch <-chan control.EventEnvelope
 	if resume {
 		ch = eng.Bus.SubscribeSince(ctx, since)
@@ -423,22 +326,14 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
-	// SSEWriter arms a fresh write deadline on every event, so a
-	// client that stops reading cannot park this handler for good.
 	sse := stream.NewSSEWriter(w)
-	// Re-verify the token for the life of the stream. handle() verified
-	// it once at request time, but the loop below holds the stream open
-	// long after; Revoke(jti) must reach an open stream, not just fresh
-	// requests. Checked before every event write and on a ticker so an
-	// idle stream also cycles back through the gate.
-	recheck := time.NewTicker(10 * time.Second)
+	recheck := time.NewTicker(cmp.Or(s.recheck, revocationRecheck))
 	defer recheck.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-seat.Done:
-			// Displaced by an EvictOldest admission: stop delivering.
 			return
 		case <-recheck.C:
 			if _, err := s.verifyToken(r); err != nil {
@@ -449,16 +344,12 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 				return
 			}
 			if _, err := s.verifyToken(r); err != nil {
-				// Credential refused mid-stream (revoked/expired):
-				// stop delivering and drop the stream.
 				return
 			}
 			body, err := json.Marshal(env)
 			if err != nil {
 				continue
 			}
-			// A StreamGap carries id 0. It names no position, so it
-			// must not move the client's Last-Event-ID.
 			if env.ID != 0 {
 				sse.SetID(strconv.FormatUint(env.ID, 10))
 			}
@@ -469,8 +360,6 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request, sessID ids.Se
 	}
 }
 
-// lastEventID reads the SSE Last-Event-ID header. resume is false
-// when the header is absent; ok is false when it is not a number.
 func lastEventID(r *http.Request) (since uint64, resume, ok bool) {
 	raw := r.Header.Get("Last-Event-ID")
 	if raw == "" {
@@ -483,11 +372,8 @@ func lastEventID(r *http.Request) (since uint64, resume, ok bool) {
 	return n, true, true
 }
 
-// Catalog endpoints, read-only.
-
 func (s *Server) handleProfiles(w http.ResponseWriter, _ *http.Request) {
-	// v0.1 ships two presets shipped in profile/; their names are exposed here.
-	writeJSON(w, http.StatusOK, []string{"framework", "default"})
+	writeJSON(w, http.StatusOK, s.Catalog.ListProfiles())
 }
 
 func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
@@ -507,15 +393,8 @@ func (s *Server) handleSlashCommands(w http.ResponseWriter, _ *http.Request) {
 }
 
 func writeJSON(w http.ResponseWriter, code int, body any) {
-	// Cache-Control: no-store on every JSON body, the mcpserver twin's
-	// shape: these are session-bound bodies behind a bearer header, and
-	// RFC 9111's storage restriction covers Authorization requests, not
-	// every cookie/token shape a shared cache or the back/forward cache
-	// would otherwise replay at another caller's URL.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
-	// Encode before the status goes out: a body with no JSON form (a
-	// NaN, a chan) would otherwise answer code with an empty body.
 	b, err := json.Marshal(body)
 	if err != nil {
 		log.Printf("harness rest: encode %T: %v", body, err)
@@ -533,19 +412,13 @@ func writeError(w http.ResponseWriter, code int, reason, msg string) {
 	writeJSON(w, code, control.Error{Reason: reason, Message: msg})
 }
 
-// classifyMuxError maps multiplex error types to canonical Reason codes.
 func classifyMuxError(err error) string {
-	if tip, ok := err.(*multiplex.TurnInProgressError); ok {
-		_ = tip
+	if _, ok := err.(*multiplex.TurnInProgressError); ok {
 		return control.ReasonTurnInProgress
 	}
 	return control.ReasonInvalidCommand
 }
 
-// tokenClientID is the client a token's requests dispatch as: the
-// token's ULID under the client prefix. The verifier requires only a
-// non-empty JTI, so one without the tok_ shape keeps the whole JTI
-// under the prefix: still one client per token.
 func tokenClientID(jti ids.JTI) ids.ClientID {
 	if _, u, err := ulid.SplitPrefixed(string(jti)); err == nil {
 		return ids.ClientID(ids.PrefixClient + "_" + u.String())
@@ -553,9 +426,6 @@ func tokenClientID(jti ids.JTI) ids.ClientID {
 	return ids.ClientID(ids.PrefixClient + "_" + string(jti))
 }
 
-// restClient is the per-HTTP-request synthesized Client. For v0.1
-// it's request-scoped and doesn't subscribe to events directly:
-// callers stream via /events SSE.
 type restClient struct {
 	id    ids.ClientID
 	class control.IdentityClass
@@ -571,6 +441,4 @@ func (c *restClient) Subscribe(_ context.Context) <-chan control.EventEnvelope {
 func (c *restClient) Send(_ context.Context, _ control.Command) error { return nil }
 func (c *restClient) Close() error                                    { return nil }
 
-// Compile-time assertion.
 var _ control.Client = (*restClient)(nil)
-var _ = bytes.NewReader // keep stdlib import that may be used by tests

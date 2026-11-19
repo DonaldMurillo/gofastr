@@ -1,0 +1,65 @@
+primitive: mcp.apps
+summary: MCP Apps - RegisterApp wires a ui:// HTML resource and its linking tool, and WidgetDocument assembles the single-file widget document with the embedded widget client inlined.
+code:
+  - core/mcp/app.go
+  - core/mcp/appdoc.go
+  - core/mcp/widgetclient.go
+  - core/mcp/widgetclient.js
+docs:
+  - framework/docs/content/mcp.md
+  - framework/docs/content/agent-host.md
+invariants:
+  - id: app-registers-both-or-neither
+    rule: RegisterApp refuses a duplicate tool name or resource uri before registering either half.
+    enforced_by:
+      - test: core/mcp.TestRegisterApp_DuplicateLeavesRegistryClean
+  - id: app-linkage-wins
+    rule: The app tool's _meta always holds ui.resourceUri and openai/outputTemplate pointing at ResourceURI, deep-merged over ToolMeta's ui map without mutating the caller's map, and a zero AppCSP omits the csp key.
+    enforced_by:
+      - test: core/mcp.TestRegisterApp_ToolMetaPreservesUILinkage
+      - test: core/mcp.TestRegisterApp_DoesNotMutateCallerMeta
+      - test: core/mcp.TestRegisterApp_ZeroCSPOmitsKey
+  - id: inline-script-hazards-refused
+    rule: WidgetDocument.HTML refuses a Script, or a widget client, holding "<!--" or "</script" in any ASCII case.
+    enforced_by:
+      - test: core/mcp.TestWidgetDocument_Validation
+      - test: core/mcp.TestWidgetDocument_RefusesUnsafeClient
+  - id: widget-client-copy
+    rule: WidgetClientJS returns a fresh copy of the embedded client on every call.
+    enforced_by:
+      - test: core/mcp.TestWidgetClientJS_ReturnsACopy
+decisions:
+  - id: inline-widget-client
+    date: 2026-11-18
+    status: accepted
+    decision: WidgetDocument inlines the widget client and the author's script, and appdoc.go is exempt from check-csp.
+    rejected:
+      - option: Link the client with script src.
+        why: The chat host renders the document in a sandboxed srcdoc frame on its own origin, so a path on this server resolves against the host and 404s.
+      - option: Hold the document to the web host's no-inline-script CSP.
+        why: The document is not served by the web host; the chat host assembles its CSP from AppConfig.CSP.
+    upholds: [inline-script-hazards-refused]
+  - id: unlocked-duplicate-precheck
+    date: 2026-11-18
+    status: accepted
+    decision: RegisterApp checks both halves for duplicates under the read lock, then registers the resource and the tool with separate calls.
+    rejected:
+      - option: Hold the registry lock across both registrations.
+        why: RegisterResource and RegisterTool take the lock themselves and notify subscribers after releasing it, and apps register during single-threaded app init.
+    revisit_if: RegisterApp is called concurrently with other registrations, where a racing registration could leave one half registered.
+    upholds: [app-registers-both-or-neither]
+  - id: structure-only-document
+    date: 2026-11-18
+    status: accepted
+    decision: WidgetDocument emits structure only, with no CSS or design tokens, and the widget client applies the host's theme signals.
+    rejected:
+      - option: Ship default styling.
+        why: The chat host owns the widget's design language.
+  - id: structured-csp
+    date: 2026-11-18
+    status: accepted
+    decision: AppConfig.CSP is the spec's structured AppCSP with its wire names, replacing a raw policy string without a shim.
+    rejected:
+      - option: Keep the raw string with a shim.
+        why: The string form emitted JSON no conformant host could consume, so no working caller existed to break.
+    upholds: [app-linkage-wins]

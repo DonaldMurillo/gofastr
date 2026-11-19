@@ -1,0 +1,67 @@
+primitive: harness.engine.middleware
+summary: The request and tool middleware the harness ships - the system prompt header, untrusted-context injection, the cost budget, and the permission gate that asks clients before a tool runs.
+code:
+  - framework/experimental/harness/engine/middleware.go
+  - framework/experimental/harness/engine/permission_mw.go
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: system-header-first
+    rule: SystemPromptMiddleware puts the profile header before any existing System prompt.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestSystemPromptMiddlewarePrepends
+  - id: untrusted-content-is-fenced
+    rule: Injected context goes after UntrustedContentNotice inside <untrusted-NAME> tags, and any <untrusted- or </untrusted- sequence in the content, in any case, is broken so it cannot close the fence.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestContextInjectionWrapsInUntrustedTags
+      - test: framework/experimental/harness/engine.TestContextInjectionTagBreakout
+  - id: spend-is-monotone
+    rule: SimpleCostTracker ignores a non-positive, NaN or infinite increment, and CostBudgetMiddleware refuses a request once spend reaches the cap.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestCostSpendMonotonicAgainstCap
+      - test: framework/experimental/harness/engine.TestCostBudgetBlocksWhenExceeded
+  - id: permission-fails-closed
+    rule: A tool call the permission engine does not allow runs only on an explicit allow answer; a policy deny, timeout, cancelled turn, closed answer channel or deny answer returns an error result without running it.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestPermissionGateFailsClosed
+      - test: framework/experimental/harness/engine.TestPermissionPolicyDenyNeverRuns
+      - test: framework/experimental/harness/engine.TestPermissionMiddlewareDenyOnTimeout
+      - test: framework/experimental/harness/engine.TestPermissionMiddlewareAllow
+  - id: permission-timeout-shape
+    rule: PermissionMiddleware waits 60s for a zero timeout and panics at construction on a negative one.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestPermissionZeroTimeoutWaitsForLateAnswer
+      - test: framework/experimental/harness/engine.TestPermissionMwNegativeTimeoutPanics
+      - test: framework/experimental/harness/engine.TestPermissionMwZeroTimeoutKeepsDefault
+  - id: prompt-shows-real-call
+    rule: PermissionRequested carries the tool name and input that will run, byte for byte.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestPermissionPromptCarriesRealInvocation
+  - id: persist-failure-is-generic
+    rule: A failure to save an Allow-always rule publishes a generic PermissionPersistFailed message, never the persistence path, and the approved call still runs.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestPermissionPersistRedGeneric
+decisions:
+  - id: neutralize-not-escape
+    date: 2026-11-18
+    status: accepted
+    decision: A forged boundary tag in untrusted content is broken by a space after its "<".
+    rejected:
+      - option: HTML-escape the whole content.
+        why: Project files and fetched pages would reach the model mangled, while only the boundary tag needs defusing.
+    upholds: [untrusted-content-is-fenced]
+  - id: identity-checked-in-multiplex
+    date: 2026-11-18
+    status: accepted
+    decision: The multiplexer enforces that an agent cannot approve its own turn before it routes an answer; PermissionMiddleware does not check identity again.
+    rejected:
+      - option: Check the answering client's identity in the middleware.
+        why: The middleware sees only the answer channel and would duplicate the multiplexer's routing rules.
+  - id: negative-permission-timeout-panics
+    date: 2026-11-18
+    status: accepted
+    decision: A negative permission timeout panics at construction.
+    rejected:
+      - option: Treat it as the 60s default.
+        why: A sign or unit error would silently become the longest wait for an approval.
+    upholds: [permission-timeout-shape]

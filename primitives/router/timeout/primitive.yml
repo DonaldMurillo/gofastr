@@ -1,0 +1,22 @@
+primitive: router.timeout
+summary: Per-group and per-route request-timeout budgets the router stamps on the request context for middleware.Timeout.
+code:
+  - core/router/timeout.go
+docs:
+  - framework/docs/content/deploy.md
+invariants:
+  - id: exact-route-beats-nearest-group
+    rule: A matched route's budget is its exact SetRouteTimeout override if any, else the SetTimeout of the nearest router from its own Group up to the root, else none and the request is left unstamped.
+    enforced_by:
+      - test: core/router.TestRouteOverrideBeatsGroupNearestWins
+      - test: core/router.TestGroupTimeoutAppliesToGroupRoutes
+      - test: core/router.TestNoOverridesLeavesRequestUnstamped
+      - test: core/router.TestRouteTimeoutThroughRealChain
+decisions:
+  - id: overrides-behind-a-flag
+    date: 2026-11-18
+    status: accepted
+    decision: The root holds an atomic flag set by the first SetTimeout or SetRouteTimeout, and a route resolves its budget only once it is set.
+    rejected:
+      - option: Resolve the budget on every request.
+        why: An app with no overrides would take a lock and walk the Group chain on every request for nothing.

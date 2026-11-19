@@ -1,11 +1,3 @@
-// Package skill wraps the SKILL.md parser with the 3-tier
-// progressive-disclosure machinery the engine uses.
-//
-// Tier 1: name + description loaded at startup (~100 tokens/skill).
-// Tier 2: full SKILL.md body fetched on activation.
-// Tier 3: supporting files in scripts/, references/, assets/,
-//
-//	fetched only on explicit reference from tier 2.
 package skill
 
 import (
@@ -24,9 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/skill/skillmd"
 )
 
-// Registry indexes available skills by name. At startup it scans
-// configured search paths and loads tier-1 metadata for each. Tier-2
-// bodies are loaded on first Activate.
+// Registry indexes skills by name: Load reads name and description, Activate the body, SupportingFile the tier-3 files.
 type Registry struct {
 	mu          sync.RWMutex
 	skills      map[string]*entry
@@ -35,22 +25,15 @@ type Registry struct {
 
 type entry struct {
 	tier1      skillmd.Tier1
-	path       string // absolute path to SKILL.md
+	path       string
 	sha256     string
-	body       string // tier-2, loaded on activation
+	body       string
 	bodyLoaded bool
 	triggers   []string
-	dir        string // skill directory containing scripts/ references/ assets/
+	dir        string
 }
 
-// NewRegistry returns a Registry that scans the given search paths
-// when Load is called. Paths are searched in order; later paths
-// override earlier ones (project-local overrides global which
-// overrides built-in). A later path replacing an earlier same-named
-// skill is a SHADOW: precedence is kept, but Load prints a warning to
-// stderr naming both files, because the project directory is untrusted
-// input in a cloned repo and a name-squat puts repo-authored content
-// under a name the operator chose to trust.
+// NewRegistry returns a Registry over searchPaths; a later path's skill replaces an earlier one of the same name.
 func NewRegistry(searchPaths ...string) *Registry {
 	return &Registry{
 		skills:      make(map[string]*entry),
@@ -58,9 +41,7 @@ func NewRegistry(searchPaths ...string) *Registry {
 	}
 }
 
-// Load scans the search paths and populates tier-1 metadata. Errors
-// reading individual files are returned as a joined error; loading
-// continues across remaining files.
+// Load rescans the search paths, warning on stderr when a skill shadows another, and joins per-file errors.
 func (r *Registry) Load() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -82,13 +63,6 @@ func (r *Registry) Load() error {
 				errs = append(errs, fmt.Errorf("%s: %w", path, err))
 				return nil
 			}
-			// Later paths overriding earlier ones is the documented
-			// precedence (project overrides global), and it stays — but a
-			// shadow is no longer SILENT. A cloned checkout can name-squat
-			// an operator-global skill, putting repo-authored name and
-			// description into the system prompt wearing a name the
-			// operator chose to trust; the warning names both files so the
-			// operator can see the swap (Q11: keep precedence, disclose it).
 			if prev, exists := r.skills[s.Name]; exists && prev.path != path {
 				fmt.Fprintf(os.Stderr,
 					"skill: warning: %q from %s shadows the same-named skill from %s; the later path wins — verify both before trusting it\n",
@@ -111,12 +85,6 @@ func (r *Registry) Load() error {
 	return nil
 }
 
-// parseSkillRooted parses the SKILL.md at path through an *os.Root over
-// its containing directory, so a SKILL.md that is a symlink pointing
-// outside the skill tree is refused instead of read: neither the tier-1
-// Load scan nor a tier-2 Activate reads file bytes from outside the
-// tree (2026-09-04 red-probe round). Dir and SHA256 are derived exactly
-// as skillmd.Parse derives them.
 func parseSkillRooted(path string) (*skillmd.Skill, error) {
 	root, err := os.OpenRoot(filepath.Dir(path))
 	if err != nil {
@@ -137,8 +105,7 @@ func parseSkillRooted(path string) (*skillmd.Skill, error) {
 	return s, nil
 }
 
-// Tier1Catalog returns the lightweight metadata for all loaded skills,
-// sorted by name. Engine uses this for the system-prompt skill list.
+// Tier1Catalog returns every loaded skill's name and description, sorted by name.
 func (r *Registry) Tier1Catalog() []skillmd.Tier1 {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -150,8 +117,7 @@ func (r *Registry) Tier1Catalog() []skillmd.Tier1 {
 	return out
 }
 
-// Activate returns the tier-2 body of a skill, loading it from disk
-// on first call. Subsequent calls hit the in-memory cache.
+// Activate returns a skill's body, read from disk on the first call and cached after.
 func (r *Registry) Activate(name string) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -171,11 +137,7 @@ func (r *Registry) Activate(name string) (string, error) {
 	return e.body, nil
 }
 
-// SupportingFile reads a tier-3 file (under scripts/, references/, or
-// assets/) for the named skill. Refuses paths that escape the skill
-// directory — lexically (.., absolute paths) and physically (symlinked
-// directory or file components): the read goes through an *os.Root over
-// the skill directory, which refuses symlink escapes in the kernel.
+// SupportingFile reads rel inside the named skill's directory and refuses any path or symlink that leaves it.
 func (r *Registry) SupportingFile(name, rel string) ([]byte, error) {
 	r.mu.RLock()
 	e, ok := r.skills[name]
@@ -195,7 +157,7 @@ func (r *Registry) SupportingFile(name, rel string) ([]byte, error) {
 	return root.ReadFile(clean)
 }
 
-// SHA256 returns the hash of the named skill's SKILL.md, for TOFU comparison.
+// SHA256 returns the hex SHA-256 of the named skill's SKILL.md.
 func (r *Registry) SHA256(name string) (string, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -213,9 +175,7 @@ func (r *Registry) Names() []string {
 	return slices.Sorted(maps.Keys(r.skills))
 }
 
-// MatchesTrigger returns the names of skills whose triggers match the
-// given input (filename glob OR keyword pattern). Empty input
-// returns nothing.
+// MatchesTrigger returns, sorted, the skills with a trigger glob (holding / or *) matching input or a keyword in it, case-insensitive.
 func (r *Registry) MatchesTrigger(input string) []string {
 	if input == "" {
 		return nil
@@ -229,7 +189,6 @@ func (r *Registry) MatchesTrigger(input string) []string {
 			if t == "" {
 				continue
 			}
-			// Filename glob (contains /) or keyword (substring match).
 			if strings.Contains(t, "/") || strings.Contains(t, "*") {
 				if ok, _ := filepath.Match(t, input); ok {
 					out = append(out, e.tier1.Name)

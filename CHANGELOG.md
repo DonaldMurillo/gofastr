@@ -25,6 +25,79 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **router: Group fallbacks match escaped segments, stay in the served
+  subtree, and keep the shared 405 chain.** A `%2F` in a request path no
+  longer shifts which Group's `NotFound` or `MethodNotAllowed` covers it;
+  a Group's `WrapNotFound` or `WrapMethodNotAllowed` with no handler of
+  its own delegates only within the router that served the request, even
+  when a fallback redispatches to the root; a 405
+  handler set on a Group in another branch now runs inside the chain of
+  the group holding the path's routes (e.g. its CORS preflight); and a
+  route's cached middleware chain and its version are published together,
+  so a request after a late `Use` cannot run the old chain.
+  ([#799](https://github.com/DonaldMurillo/gofastr/pull/799))
+- **jcs: `CanonicalizeJSON` refuses 513 nested empty arrays or objects.**
+  The 512-level limit let one more level through when the innermost
+  container was empty; it now counts arrays and objects alike.
+- **yaml: a duplicate key in a list item names the right first line when
+  the first value is nested.** `"- a:\n    b: 1\n  a: 2\n"` reported `a` as
+  first defined on line 2; it now says line 1.
+- **harness TUI: a second SIGINT or SIGTERM exits.** The signal path
+  ignored the double-press check, so only a second Ctrl-C key ended the
+  session; a second signal within 2 seconds now exits too.
+- **harness TUI: a reply line that starts with `● ` stays inside its code
+  block.** A fenced reply holding a line like `● literal` closed the fence,
+  and the lines after it were drawn as markdown.
+- **harness TUI: Ctrl-O keeps the scrollback at 1000 lines.** Expanding a
+  truncated tool result could push it past the cap.
+- **harness TUI: modal text drops 8-bit DCS and SOS sequences, and 8-bit
+  sequences with no ESC in the text.** Their payload used to show in the
+  modal.
+- **harness: promoting a session deny no longer turns it into an allow.**
+  `permission.Engine.Promote` used to drop the session rule even when a
+  persistent "Allow always" rule or an earlier, wider preset allow would
+  still decide the same calls; it now returns `ErrPromotionShadowed` and
+  keeps the session rule
+  ([harness architecture](framework/docs/content/harness-architecture.md)).
+- **harness: the credential helper refuses an unknown provider first.**
+  `helper.InProcess.AttachAuth` returns `ErrUnknownProvider` for any
+  provider but openrouter and zai before it reads the credential store,
+  instead of returning the store's not-found error.
+- **harness: a hook that times out takes its children with it.** SIGTERM
+  goes to the hook's process group at the deadline and SIGKILL follows
+  within 5s, so a timed-out hook holds the turn at most 5s past its
+  deadline (less when the whole group exits on SIGTERM); a timed-out hook used to hold the
+  turn about 10s and leave a backgrounded child running
+  ([harness architecture](framework/docs/content/harness-architecture.md)).
+- **harness: hook and Bash output that fills the cap exactly still says it
+  was truncated.** Later output was dropped with no note.
+- **harness: promoting a session deny over a preset allow takes effect.**
+  `permission.Promote` kept the preset's allow for the same tool and argv
+  glob, and could remove the wrong session rule under a concurrent revoke.
+- **harness: `tool.Registry.Lookup` wraps `ErrToolUnknown`**, as documented;
+  the error text is now `tool: unknown: "X" not registered`.
+- **harness: a profile refuses an unknown key inside an `mcp_servers`
+  entry, a value of the wrong type there, and text after a value.** A
+  misspelt `sha256` dropped the binary pin with no error, `args = "x"` gave
+  a server no arguments, and `schema_version = 1.5` was read as 1. Only
+  whitespace or a `#` comment may follow a value now.
+- **harness: the MCP control server reads `harness/v1://profiles`**, which it
+  listed but answered as an unknown URI. MCP command tools answer -32602 for
+  a malformed `sessionId` or `callId` instead of running with an empty one.
+- **harness TUI:** Ctrl-O and the thinking collapse stay on the right lines
+  after the scrollback trims; a progress line is cut on a rune boundary; a
+  tool call ends a code fence a reply left open.
+- **webmcp: `Host.Handle` refuses what `Register` refuses.** Handle took the
+  reserved `get_app_instructions` name under `WithInstructions`, putting two
+  tools with one name in the manifest, and took a tool tagged with an
+  undeclared group. Both now fail, through the check Register uses.
+- **webmcp: a bad group declaration fails Mount.** A group with a bad name or
+  declared twice was accepted, though the `Group` contract said Mount fails.
+- **webmcp: an example whose input is the literal `null` fails Register**,
+  like any other input that is not a JSON object.
+- **webmcp: a schema type keyword outside JSON Schema's seven accepts any
+  example value**, as documented, instead of rejecting every value
+  ([webmcp](framework/docs/content/webmcp.md)).
 - **An erasure retried after a store eraser failed hands that store the
   user's identities again.** The first run's SQL part deleted the user row
   the email was read from, so the retry's `ErasedUser` carried only the id.

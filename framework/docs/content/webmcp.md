@@ -369,7 +369,7 @@ app-instructions field yet, `Mount` also serves it at
 `/__gofastr/webmcp/instructions.json` through a deterministic read-only
 orientation tool (`get_app_instructions`), so in-browser agents can
 read it without the app hand-rolling a tool. That name is reserved
-while instructions are set. The route follows the same asset policies
+while instructions are set: `Register` and `Handle` refuse it. The route follows the same asset policies
 as the script and manifest (page scope, authorization middleware,
 private caching).
 
@@ -377,14 +377,16 @@ private caching).
 `Group.Register` and `Group.Handle` tag tools with the group name, and
 the manifest carries the group's description and preferred-first tool.
 Grouping is pure metadata — it never changes endpoints, middleware, or
-hints. `Register` refuses a tool referencing an undeclared group, and
-`Mount` fails when a group's `WithPreferredFirst` names a tool that
-never joined the group.
+hints. `Register` and `Handle` refuse a tool referencing an undeclared
+group. `Mount` fails when a group name breaks the tool-name grammar or
+is declared twice, and when a group's `WithPreferredFirst` names a tool
+that never joined the group.
 
 **Examples** are validated against the input schema at registration
 with a minimal structural check: the input must be a JSON object,
 required keys present, declared property types respected (`"integer"`
-accepts whole numbers; a list of types accepts any of them). An example
+accepts whole numbers; a list of types accepts any of them; a type
+keyword outside JSON Schema's seven accepts any value). An example
 that contradicts its own schema fails at startup next to the
 declaration. **Output schemas** are checked to be JSON objects and
 preserved, but they are documentation: responses are returned to the
@@ -406,7 +408,7 @@ registration of the tool itself is unaffected.
 |---|---|---|
 | `Name` | yes | Unique per page, constrained to the WebMCP spec grammar `[A-Za-z0-9_.-]{1,128}` (the browser rejects anything else asynchronously, which reads as a tool that never existed; `Register` fails loudly instead). The browser also refuses duplicate registrations, so it must not collide with tools the app registers from its own JS. |
 | `Title` | no | Human-readable display name. |
-| `Group` | no | Tags the tool into a group declared with `Host.Group`. Set by `Group.Register`/`Group.Handle`; `Register` fails on a group that was never declared. Metadata only: no renaming, no routing or authorization change. |
+| `Group` | no | Tags the tool into a group declared with `Host.Group`. Set by `Group.Register`/`Group.Handle`; `Register` and `Handle` fail on a group that was never declared. Metadata only: no renaming, no routing or authorization change. |
 | `Description` | yes | What the tool does and when to use it. An agent cannot pick an undescribed tool, so `Register` refuses a blank one. |
 | `InputSchema` | no | JSON Schema object for the input. Defaults to `{"type":"object","properties":{}}`. |
 | `Examples` | no | Usage examples, validated against `InputSchema` at registration (object shape, required keys, declared property types) and preserved in the manifest. |

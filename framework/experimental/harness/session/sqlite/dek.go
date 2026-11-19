@@ -14,34 +14,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// DEK/KEK scheme:
-//
-//   - DEK (data-encryption key): random 32 bytes, used to encrypt
-//     the session DB file at rest. Generated once and stored in a
-//     header file alongside the DB.
-//   - KEK (key-encryption key): derived from the user's passphrase
-//     or machine key (the existing credstore key). Encrypts the DEK
-//     using AES-GCM.
-//
-// Rotating the KEK re-wraps the DEK; it does NOT re-encrypt the DB.
-// This makes rotation O(1) regardless of DB size, addressing the
-// architecture doc's "VACUUM is poison" concern.
-//
-// The DEK header lives at `<dbPath>.dek` with mode 0600.
-
-// DEKHeader is the on-disk shape of the wrapped DEK.
+// DEKHeader is the on-disk JSON of an AES-GCM-wrapped data-encryption key.
 type DEKHeader struct {
 	Version  int    `json:"version"`
-	Nonce    []byte `json:"nonce"`          // AES-GCM nonce for the wrap
-	Wrapped  []byte `json:"wrapped"`        // AES-GCM ciphertext of the DEK
-	Metadata string `json:"meta,omitempty"` // human-readable, e.g. "kek=machine"
+	Nonce    []byte `json:"nonce"`
+	Wrapped  []byte `json:"wrapped"`
+	Metadata string `json:"meta,omitempty"`
 }
 
 const dekHeaderVersion = 1
 
-// LoadOrCreateDEK opens the DEK header at `<dbPath>.dek`. If it
-// doesn't exist, a fresh DEK is generated and wrapped with `kek`.
-// Returns the unwrapped DEK and the header path.
+// LoadOrCreateDEK unwraps the DEK at <dbPath>.dek with the 32-byte kek, creating one if the header cannot be read, and returns it with the header path.
 func LoadOrCreateDEK(dbPath string, kek []byte) ([]byte, string, error) {
 	if len(kek) != 32 {
 		return nil, "", fmt.Errorf("sqlite: KEK must be 32 bytes")
@@ -61,7 +44,6 @@ func LoadOrCreateDEK(dbPath string, kek []byte) ([]byte, string, error) {
 		}
 		return dek, headerPath, nil
 	}
-	// Generate a fresh DEK.
 	dek := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, dek); err != nil {
 		return nil, "", err
@@ -72,8 +54,7 @@ func LoadOrCreateDEK(dbPath string, kek []byte) ([]byte, string, error) {
 	return dek, headerPath, nil
 }
 
-// RotateKEK re-wraps the DEK with a new KEK without re-encrypting
-// the DB. After this returns, only `newKEK` can unwrap.
+// RotateKEK re-wraps the DEK under newKEK without touching the database; oldKEK no longer unwraps it.
 func RotateKEK(dbPath string, oldKEK, newKEK []byte) error {
 	dek, headerPath, err := LoadOrCreateDEK(dbPath, oldKEK)
 	if err != nil {
@@ -82,18 +63,7 @@ func RotateKEK(dbPath string, oldKEK, newKEK []byte) error {
 	return writeDEKHeader(headerPath, newKEK, dek, "kek=rotated")
 }
 
-// ExportDEK writes the DEK wrapped under a recipient's public key so
-// the user can escrow or migrate the DB. The recipient format is
-// X25519 base64; we use a tiny in-package wrapper (no third-party
-// dep) that emits an AES-GCM-wrapped DEK plus the recipient's public
-// key fingerprint for identification.
-//
-// To keep the implementation stdlib-only, the "recipient" here is
-// another 32-byte key, not full X25519 + age. Real X25519/age
-// integration lives behind a build-tagged extension at
-// session/sqlite/escrow_age.go; the v0.1 default ships this simpler
-// form that still meets the threat-model goal of "key escrow that
-// doesn't require the harness binary to recover."
+// ExportDEK writes the DEK to outPath, owner-only, wrapped under a 32-byte symmetric recipientKey for escrow.
 func ExportDEK(dbPath string, kek, recipientKey []byte, outPath string) error {
 	if len(recipientKey) != 32 {
 		return fmt.Errorf("sqlite: recipient key must be 32 bytes")
@@ -115,7 +85,6 @@ func ExportDEK(dbPath string, kek, recipientKey []byte, outPath string) error {
 		return err
 	}
 	wrapped := gcm.Seal(nonce, nonce, dek, nil)
-	// Write as JSON for human-inspectability.
 	header := DEKHeader{
 		Version:  dekHeaderVersion,
 		Nonce:    nonce,
@@ -129,10 +98,6 @@ func ExportDEK(dbPath string, kek, recipientKey []byte, outPath string) error {
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o700); err != nil {
 		return err
 	}
-	// The exported copy is the same secret material writeDEKHeader
-	// treats as temp(0600)+rename atomic: a pre-existing 0644 export
-	// (re-export over an old copy, restored checkout, umask drift)
-	// must be tightened on the handle, not just created 0600.
 	tmp := outPath + ".tmp"
 	if err := fileperm.WriteOwnerOnly(tmp, data); err != nil {
 		return err
@@ -140,9 +105,7 @@ func ExportDEK(dbPath string, kek, recipientKey []byte, outPath string) error {
 	return os.Rename(tmp, outPath)
 }
 
-// ImportDEK reads a previously-exported DEK and installs it as the
-// active DEK for the given DB, wrapped under the local KEK. The
-// recipientKey must match what ExportDEK used.
+// ImportDEK unwraps an ExportDEK file with recipientKey and installs it as dbPath's DEK under localKEK.
 func ImportDEK(dbPath, exportedPath string, recipientKey, localKEK []byte) error {
 	data, err := os.ReadFile(exportedPath)
 	if err != nil {
@@ -209,8 +172,7 @@ func unwrap(kek, nonce, wrapped []byte) ([]byte, error) {
 	return gcm.Open(nil, nonce, wrapped, nil)
 }
 
-// OpenWithKEK opens an encrypted Store using the DEK/KEK scheme.
-// If no .dek file exists, a fresh DEK is generated and wrapped.
+// OpenWithKEK opens dbPath with EncryptionAtRest under the DEK that kek unwraps, creating the DEK on first use.
 func OpenWithKEK(dbPath string, kek []byte) (*Store, error) {
 	dek, _, err := LoadOrCreateDEK(dbPath, kek)
 	if err != nil {

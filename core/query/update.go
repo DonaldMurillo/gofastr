@@ -46,9 +46,7 @@ func (ub *UpdateBuilder) Returning(cols ...string) *UpdateBuilder {
 	return ub
 }
 
-// Build produces the final parameterized SQL and argument slice. The
-// Matching builds the SELECT of cols from the rows this UPDATE would
-// change: the same table and WHERE conditions, with only their arguments.
+// Matching builds the SELECT of cols from the rows this UPDATE would change.
 func (ub *UpdateBuilder) Matching(cols ...string) (string, []any) {
 	var args []any
 	for _, w := range ub.wheres {
@@ -57,7 +55,6 @@ func (ub *UpdateBuilder) Matching(cols ...string) (string, []any) {
 	return buildFiltered(selectVerb(cols), ub.table, ub.wheres, args)
 }
 
-// selectVerb is "SELECT a, b FROM ", each column sanitized.
 func selectVerb(cols []string) string {
 	safe := make([]string, len(cols))
 	for i, c := range cols {
@@ -66,17 +63,13 @@ func selectVerb(cols []string) string {
 	return "SELECT " + strings.Join(safe, ", ") + " FROM "
 }
 
-// args follow the placeholders, every SET value before every WHERE arg,
-// whatever order Set and Where were called in.
+// Build produces the SQL and arguments, every SET value before every WHERE argument.
 func (ub *UpdateBuilder) Build() (string, []any) {
 	var sb strings.Builder
 
 	sb.WriteString("UPDATE ")
 	sb.WriteString(identSlot(sanitizeFragment(ub.table)))
 
-	// SET clauses: column slot is sanitized; the value flows through
-	// a placeholder. A payload like `role = 'admin' --` collapses to a
-	// non-injection token.
 	sb.WriteString(" SET ")
 	paramIdx := 1
 	args := make([]any, 0, len(ub.sets))
@@ -89,7 +82,6 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 		args = append(args, s.value)
 	}
 
-	// WHERE
 	if len(ub.wheres) > 0 {
 		sb.WriteString(" WHERE ")
 		appendWhereClauses(&sb, ub.wheres, paramIdx)
@@ -98,7 +90,6 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 		}
 	}
 
-	// Returning: each column sanitized.
 	if len(ub.returning) > 0 {
 		sb.WriteString(" RETURNING ")
 		sanitizedRet := make([]string, len(ub.returning))

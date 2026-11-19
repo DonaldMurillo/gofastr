@@ -1,0 +1,108 @@
+primitive: render.ids
+summary: The per-render id scope (UniqueID, ReserveID, WithIDNamespace, RegionBatch, SettleIDs), which hands each element id derived from content out once per page, suffixing repeats, the same whether a part renders on the page, alone or on another goroutine.
+code:
+  - core/render/ids.go
+docs:
+  - core-ui/ARCHITECTURE.md
+  - framework/docs/content/ui-new-components.md
+on_change:
+  - core-ui/app installs the scope once per page (WithRequest), renders islands and deferred outlets as namespaced regions and runs signal seeds through SettleIDs; a change to when ids are handed out must be checked against those callers.
+twins:
+  - job: Scan an HTML start tag's attributes, quote-aware, up to its closing >.
+    why: Nothing but work not yet done; the id reader needs values and raw-text skipping, the registry splice needs names and a splice point, and neither has been rebuilt on one tokenizer.
+    sites:
+      - path: core/render/ids.go
+        note: writtenIDs and readAttrs, which read id values for ReserveRendered.
+      - path: core-ui/registry/render.go
+        note: hasAttrName and startTagEnd, for the marker and attribute splice.
+invariants:
+  - id: unique-per-scope
+    rule: Within one scope UniqueID returns id the first time and id-2, id-3 on each repeat, skipping a suffixed id already taken or reserved.
+    enforced_by:
+      - test: core/render.TestUniqueIDSuffixesRepeats
+  - id: no-scope-keeps-id
+    rule: With no scope on the context, or a nil context, or an empty id, UniqueID returns the id unchanged, and HasIDScope reports false.
+    enforced_by:
+      - test: core/render.TestUniqueIDWithoutScopeKeepsID
+      - test: core/render.TestHasIDScope
+      - test: core/render.TestRegionBatchWithoutScope
+  - id: family-taken-whole
+    rule: UniqueID and ReserveID take the id and every child suffix together, and UniqueID picks the first candidate whose whole family is free.
+    enforced_by:
+      - test: core/render.TestUniqueIDTakesTheFamily
+  - id: explicit-id-wins
+    rule: An explicit id is never rewritten, and the first Settle of a batch reserves the explicit ids of every region before any region's derived ids are handed out, so no derived id lands on an explicit one.
+    enforced_by:
+      - test: core/render.TestRegionExplicitIDWins
+      - test: core/render.TestRegionBatchSettlesInOrder
+  - id: settle-order-not-render-order
+    rule: A region's derived ids are placeholders until Settle, and Settle in region order gives the same ids whichever region rendered first.
+    enforced_by:
+      - test: core/render.TestRegionBatchSettlesInOrder
+      - test: core/render.TestRegionBatchNestsInARegion
+  - id: unsafe-id-keeps-escaper-bytes
+    rule: In a region, an id or child holding a byte other than an ASCII letter, digit, - or _ is emitted as is between two placeholders for its namespace and suffix, so the bytes an escaper writes for it survive Settle and it is still settled across regions.
+    enforced_by:
+      - test: core/render.TestSweepRenderRegionIDKeepsItsEscaperBytes
+      - test: core/render.TestRegionBatchUnsafeIDKeepsBytes
+      - test: core/render.TestUnsafeIDsSettleAcrossRegions
+  - id: namespace-encoding-unambiguous
+    rule: A namespace is spelled with ASCII letters, digits and single inner hyphens, every other byte as _ and two lowercase hex digits, so it holds no -- and no byte outside the token-safe set, and two namespaces never give one id.
+    enforced_by:
+      - test: core/render.TestNamespaceBoundaryIsUnambiguous
+      - test: core/render.TestNamespaceIsTokenSafe
+  - id: namespace-kind-apart
+    rule: WithIDNamespaceKind namespaces read _<kind>-<encoded ns> with kind a letter from g to z, panic on any other kind or an empty ns, and never equal a WithIDNamespace namespace.
+    enforced_by:
+      - test: core/render.TestIDNamespaceKindIsApart
+  - id: namespace-reserves-outward
+    rule: Every id a namespace scope hands out or reserves is also reserved in the scope the namespace was opened in.
+    enforced_by:
+      - test: core/render.TestSweepRenderNamespaceReservesInOuterScope
+  - id: reserve-rendered-reads-elements-only
+    rule: ReserveRendered reserves the decoded id attribute of each element in a region's HTML, holding no placeholder, and reads nothing inside a comment, another attribute's value or a raw-text element; after the first Settle it reserves in the parent scope at once.
+    enforced_by:
+      - test: core/render.TestRegionReservesRenderedIDs
+      - test: core/render.TestWrittenIDsReadElementsOnly
+      - test: core/render.TestReserveRenderedEdges
+  - id: attribute-reference-rules
+    rule: An id attribute's character references decode by the HTML attribute rules, so a legacy entity with no semicolon before a letter, digit or = stays literal and numeric references decode as the tokenizer does.
+    enforced_by:
+      - test: core/render.TestWrittenIDsAttributeEntities
+  - id: token-lookalike-reserved
+    rule: ReserveID reserves an explicit id that only starts like a placeholder, and ignores a string holding a real placeholder.
+    enforced_by:
+      - test: core/render.TestReserveIDTakesTokenLookalike
+  - id: settle-ids-replays-all
+    rule: SettleIDs applies every Settle the request's scope has run, in the order they ran, so a value holding a nested region's placeholders resolves to final ids; batches are numbered so a nested batch's placeholders never match its parent's.
+    enforced_by:
+      - test: core/render.TestSettleIDsFollowsNestedRegions
+decisions:
+  - id: placeholders-settled-in-region-order
+    date: 2026-11-18
+    status: accepted
+    decision: Concurrent regions answer UniqueID with placeholder tokens and Settle hands the real ids out in region order afterwards, so the page's bytes do not depend on which goroutine finished first.
+    rejected:
+      - option: Share one locked scope across the region goroutines.
+        why: Ids would go to whichever region asked first, so the same page would render different ids from one request to the next.
+      - option: Render regions sequentially.
+        why: It gives up the concurrent outlet fills the layout renders for.
+    upholds: [settle-order-not-render-order, explicit-id-wins]
+  - id: namespace-per-island
+    date: 2026-11-18
+    status: accepted
+    decision: A part that also renders alone (an island, a deferred outlet) renders under its own id namespace, so its ids are the same on the page and in its RPC or part answer.
+    rejected:
+      - option: A process-wide counter when no scope is present.
+        why: The counter gives an island one id on the page and another in its RPC answer.
+      - option: Hand the part ids from the page scope.
+        why: Alone, the part has no page scope, so earlier sections cannot suffix its ids the same way.
+    upholds: [namespace-encoding-unambiguous, namespace-reserves-outward]
+  - id: read-rendered-ids
+    date: 2026-11-18
+    status: accepted
+    decision: A region's output is read for its id attributes before it settles, so an explicit id wins whether or not the component that wrote it called ReserveID.
+    rejected:
+      - option: Rely on every component calling ReserveID for an explicit id.
+        why: Most components forward an explicit id without calling it, and each one missed is a derived id that can land on it.
+    upholds: [reserve-rendered-reads-elements-only, explicit-id-wins]

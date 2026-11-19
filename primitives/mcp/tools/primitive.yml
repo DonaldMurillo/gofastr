@@ -1,0 +1,129 @@
+primitive: mcp.tools
+summary: The tool registry and tools/list and tools/call - registration and withdrawal, the call and per-tool gates, inputSchema validation of arguments, and the content blocks a handler's result becomes.
+code:
+  - core/mcp/server.go
+  - core/mcp/tools.go
+  - core/mcp/toolargs.go
+  - core/mcp/content.go
+docs:
+  - framework/docs/content/mcp.md
+twins:
+  - job: Snapshot a registry under the read lock and filter it by gates outside the lock.
+    why: Work not yet done; listTools also applies the name-based call gate and listToolsUnfiltered applies only that one, so gatedListResponse would need a second gate hook to cover them.
+    sites:
+      - path: core/mcp/server.go
+        note: listTools and listToolsUnfiltered, for tools.
+      - path: core/mcp/prompts.go
+        note: gatedListResponse, for prompts, resources and resource templates.
+invariants:
+  - id: args-validated-before-handler
+    rule: tools/call, and CallTool in process, check arguments against the tool's inputSchema (type, enum, properties, required, additionalProperties, items, recursively) and answer -32602 before the handler runs, unless the tool was registered WithLaxArgs.
+    enforced_by:
+      - test: core/mcp.TestToolCallArgsMatchInputSchema
+      - test: core/mcp.TestToolCallArgsInProcessChokepoint
+  - id: additional-properties-semantics
+    rule: additionalProperties false refuses an undeclared argument, a subschema validates undeclared arguments, and an absent additionalProperties allows them.
+    enforced_by:
+      - test: core/mcp.TestToolCallArgsSchemaKeywords
+      - test: core/mcp.TestToolCallArgsMatchInputSchema
+  - id: refusal-is-deterministic
+    rule: Argument validation walks properties and arguments in sorted key order, so arguments with several faults are refused naming the same one on every call.
+    enforced_by:
+      - test: core/mcp.TestToolArgRefusalIsDeterministic
+  - id: numbers-compare-exactly
+    rule: Enum and integer checks compare a number by its exact decimal text, never through float64 and never by building a big.Rat, so an integer above 2^53 does not match its float neighbour and a huge exponent costs only its text length.
+    enforced_by:
+      - test: core/mcp.TestToolArgsEnumExactText
+      - test: core/mcp.TestCompoundEnumComparesNumbers
+      - test: core/mcp.TestToolCallArgsSchemaKeywords
+  - id: huge-integers-keep-digits
+    rule: tools/call decodes arguments with UseNumber and hands a handler float64 for every number except an integer beyond 2^53, or an integral literal float64 would round, which stays a json.Number.
+    enforced_by:
+      - test: core/mcp.TestSweepHugeIntegerArgumentKeepsDigits
+      - test: core/mcp.TestToolCallArgsSchemaKeywords
+  - id: gates-run-before-validation
+    rule: tools/call runs the call gate, the tool's WithToolGate and every Gated wrapper's gate before schema validation, so a refused caller never learns the tool's required arguments.
+    enforced_by:
+      - test: core/mcp.TestGatedValidationOrderAndIdentity
+  - id: disabled-tool-is-unknown
+    rule: A tool the call gate (SetCallGate) refuses answers -32601 "tool %q not found", exactly as an unregistered name, and is left out of tools/list and ListTools.
+    enforced_by:
+      - test: core/mcp.TestCallGateGenericRefusalMessage
+      - test: core/mcp.TestListToolsExcludesGated
+  - id: gates-outside-registry-lock
+    rule: Tool listings snapshot the registry under the read lock and evaluate the call gate and per-tool gates after releasing it, so a slow or re-entrant gate never blocks a registration.
+    enforced_by:
+      - test: core/mcp.TestListingGateNeverBlocksRegistry
+      - test: core/mcp.TestCallGateNeverBlocksRegistry
+  - id: call-tool-for-runs-server-gate
+    rule: CallToolFor runs the server-wide gate before everything CallTool runs, and CallTool runs the tool's own gates but not the server-wide gate.
+    enforced_by:
+      - test: core/mcp.TestCallToolForRunsServerGate
+  - id: dev-implied-withdrawn-and-barred
+    rule: UnregisterDevImpliedTools removes exactly the tools registered WithDevImplied, returns their names sorted, and makes every later WithDevImplied registration a logged no-op that returns nil.
+    enforced_by:
+      - test: core/mcp.TestSweepDevImpliedToolsWithdrawnAndBarred
+      - test: framework.TestDevIntrospectionWithdrawnOnExposed
+  - id: handler-panic-is-internal-error
+    rule: A panicking tool handler answers -32603 "internal tool error" and the panic value is logged, never sent.
+    enforced_by:
+      - test: core/mcp.TestToolPanicBecomesRPCError
+  - id: result-content-shape
+    rule: A tools/call result's content is an array, never null; a ToolResult with Structured and no blocks mirrors the structured JSON into one text block; and a result JSON cannot encode answers -32603 with a generic message instead of empty text.
+    enforced_by:
+      - test: core/mcp.TestToolResultContentNeverNull
+      - test: core/mcp.TestResult_StructuredContentAndTextMirror
+      - test: core/mcp.TestToolResultEncodeFailureIsError
+  - id: content-blocks-carry-spec-fields
+    rule: A Content block marshals only the fields its type defines, and an EmbeddedResource marshals exactly one of text or blob, keeping an empty text key.
+    enforced_by:
+      - test: core/mcp.TestImageResult_EmitsImageBlock
+      - test: core/mcp.TestEmbeddedResource_EmptyKeepsUnionKey
+decisions:
+  - id: minimal-schema-validator
+    date: 2026-11-18
+    status: accepted
+    decision: tools/call validates only type, enum, properties, required, additionalProperties and items, ignores every other keyword and any malformed declaration of these, and treats an empty schema as accepting anything.
+    rejected:
+      - option: A full JSON Schema implementation or a third-party validator.
+        why: The declared schemas in the repo use only these keywords, and a dependency would be added for keywords no tool declares.
+      - option: Enforce minimum, maximum, minLength and maxLength.
+        why: Handlers that document clamp semantics, such as framework_docs_search's limit, clamp rather than refuse.
+    revisit_if: A registered tool's schema relies on a keyword the validator ignores to refuse input.
+    upholds: [args-validated-before-handler, additional-properties-semantics]
+  - id: lax-args-opt-out
+    date: 2026-11-18
+    status: accepted
+    decision: Schema validation is on by default and a tool opts out with WithLaxArgs, owning its own validation.
+    rejected:
+      - option: A descriptive-only inputSchema.
+        why: Every handler then received attacker-typed JSON (a float for an int, an object for a scalar) and had to defend itself.
+    upholds: [args-validated-before-handler]
+  - id: float64-unless-precision-lost
+    date: 2026-11-18
+    status: accepted
+    decision: Wire numbers decode with UseNumber and are converted back to float64 unless that would lose digits.
+    rejected:
+      - option: json.Number for every number.
+        why: Existing handlers assert params["n"].(float64) and would break.
+      - option: float64 for every number.
+        why: An integer above 2^53 rounds, and an entity filter built from it addresses the wrong row.
+    upholds: [huge-integers-keep-digits]
+  - id: tool-gate-option-over-gated
+    date: 2026-11-18
+    status: accepted
+    decision: WithToolGate is the gate for tools registered on the server, filtering tools/list as well as refusing tools/call.
+    rejected:
+      - option: Gated alone.
+        why: It wraps the handler only, so an unauthenticated tools/list still returned the full inputSchema, which for entity CRUD tools names every entity, field, type and enum.
+    upholds: [gates-run-before-validation]
+  - id: withdraw-dev-implied-as-a-set
+    date: 2026-11-18
+    status: accepted
+    decision: Dev-implied tools are marked at registration and the bind guard withdraws the whole marked set at once, barring later dev-implied registrations.
+    rejected:
+      - option: Each feature withdraws its own dev tools.
+        why: One feature remembered to withdraw and the others did not, which left ungated mutation tools on an exposed bind.
+      - option: Decide before registering.
+        why: The listen address is known only at Start, after InitPlugins has run every registrar.
+    upholds: [dev-implied-withdrawn-and-barred]

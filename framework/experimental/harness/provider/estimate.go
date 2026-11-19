@@ -1,11 +1,6 @@
 package provider
 
-// EstimateTokens returns a best-effort token estimate for msgs using
-// the 4-chars-per-token heuristic (the rule of thumb across English
-// text for most modern tokenizers). It replaces the two identical
-// TokenCount bodies formerly duplicated in the openrouter and zai
-// adapters, which have no tokenization endpoint to call; the +3 rounds
-// up so a partial token counts as one.
+// EstimateTokens estimates the tokens in msgs at four bytes per token, rounded up.
 func EstimateTokens(msgs []Message) int {
 	total := 0
 	for _, m := range msgs {

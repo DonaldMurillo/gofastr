@@ -26,6 +26,56 @@ invariants:
       - framework/contracts/format_text.go
       - cmd/gofastr/
       - framework/experimental/harness/client/tui/
+  - id: invisible-set
+    rule: IsInvisible is true for the zero-width, joiner, LRM, RLM, bidi embedding, override and isolate codepoints, U+061C, U+180E, U+FEFF, U+2060 to U+2064, U+202F, the Unicode tag block and the four Hangul fillers, and false for combining marks and other visible text.
+    enforced_by:
+      - test: core/textsafe.TestInvisibleSetIsExactlyTheNamedCodepoints
+      - test: core/textsafe.TestTagCharactersAndHangulFillersAreInvisible
+      - test: core/textsafe.TestStripInvisibleRemovesBidiAndZeroWidthOnly
+  - id: subdivision-flags-survive
+    rule: The string helpers keep a black flag followed by 3 to 7 lowercase or digit tag characters and CANCEL TAG whole, and strip or report any other tag run, a shorter or longer one included.
+    enforced_by:
+      - test: core/textsafe.TestSubdivisionFlagsSurvive
+      - test: core/textsafe.TestHiddenTagTextStripped
+      - test: core/textsafe.TestShortFlagTagRunIsStripped
+  - id: unsafe-covers-line-breaks
+    rule: IsUnsafe is true for C0, DEL, every C1 control and U+2028 and U+2029, so it covers every Unicode mandatory line break.
+    enforced_by:
+      - test: core/textsafe.TestUnsafeCoversEveryMandatoryLineBreak
+      - test: core/textsafe.TestContainsUnsafe
+  - id: control-bytes-are-ascii
+    rule: HasControlBytes is true only for a byte below 0x20 or 0x7F, and SanitizeControlBytes removes exactly those bytes and returns s itself when there are none.
+    enforced_by:
+      - test: core/textsafe.TestHasControlBytesFlagsC0AndDEL
+      - test: core/textsafe.TestHasControlBytesIgnoresPrintableAndUnicode
+      - test: core/textsafe.TestSanitizeControlBytesRemovesOnlyControls
+      - test: core/textsafe.TestSanitizeControlBytesCleanFastPathReturnsSameString
+  - id: log-scrub-encodes-unsafe-set
+    rule: ScrubControlBytes percent-encodes every C0, DEL and IsUnsafe rune and every stray byte in 0x80 to 0x9F, leaves other invalid bytes as they are, and its fast-path probe flags a superset of what it encodes.
+    enforced_by:
+      - test: core/textsafe.TestScrubControlBytesPercentEncodesC0AndDEL
+      - test: core/textsafe.TestScrubControlBytesEncodesC1AndBidiRunes
+      - test: core/textsafe.TestScrubControlBytesStrayHighBytes
+      - test: core/textsafe.TestNeedsControlScrubIsSupersetOfEncoder
+  - id: recovered-is-scrubbed-and-capped
+    rule: Recovered applies StripUnsafe to the rendered panic value, keeping a valid subdivision flag's tags and dropping every other IsUnsafe codepoint, then cuts it at 4 KiB on a rune boundary with the marker "…(truncated)", and LogPanic logs that value and the stack once per panic and nothing without one.
+    enforced_by:
+      - test: core/textsafe.TestRecoveredStripsControlBytes
+      - test: core/textsafe.TestRecoveredCapsAtFourKiBOnARuneBoundary
+      - test: core/textsafe.TestLogPanicRecoversAndScrubs
+      - test: core/textsafe.TestLogPanicWithoutPanicIsSilent
+      - analyzer: recoverlog
+  - id: truncate-shape
+    rule: Truncate returns "" for a cap of zero or less, s unchanged within the cap, a hard cut at max bytes when max is at most the marker's byte length, and otherwise exactly max bytes ending in " … (truncated)".
+    enforced_by:
+      - test: core/textsafe.TestTruncateNegativeCap
+      - test: core/textsafe.TestTruncateLeavesShortStringsAlone
+      - test: core/textsafe.TestTruncateAppendsMarkerWithinCap
+      - test: core/textsafe.TestTruncateHardCutWhenMarkerDoesNotFit
+  - id: storable-text
+    rule: Storable is false for invalid UTF-8, WTF-8 lone surrogates included, and for a NUL byte, the two Postgres refuses with SQLSTATE 22021.
+    enforced_by:
+      - test: core/textsafe.TestStorable
 decisions:
   - id: terminal-scrub-lives-in-textsafe
     date: 2026-11-16
@@ -37,3 +87,44 @@ decisions:
       - option: Fold the header, SSE and log scrubs into the same function.
         why: Each protocol frames differently, since SSE keeps LF, a header value keeps neither CR nor LF and a terminal keeps LF and loses CR, so those stay separate functions over the shared predicate.
     upholds: [one-terminal-scrub]
+  - id: narrow-invisible-set
+    date: 2026-11-18
+    status: accepted
+    decision: IsInvisible names only codepoints with no glyph of their own whose one effect is to reorder or hide neighbouring text, and combining marks and other diacritics fall through.
+    rejected:
+      - option: Treat every format or combining codepoint as invisible.
+        why: Names and text in many scripts carry combining marks, and stripping them changes what a reader sees.
+    upholds: [invisible-set]
+  - id: control-bytes-stay-ascii
+    date: 2026-11-18
+    status: accepted
+    decision: HasControlBytes and SanitizeControlBytes walk bytes and cover only C0 and DEL, separate from the rune-based IsUnsafe set, because their callers gate header values, cache keys and file names on the ASCII control range.
+    rejected:
+      - option: Make them reach the C1 and invisible set as well.
+        why: It would change what the replaced private copies accepted, and a byte walk answers the ASCII question exactly since valid UTF-8 never holds a byte below 0x20.
+    upholds: [control-bytes-are-ascii]
+  - id: remove-for-headers-encode-for-logs
+    date: 2026-11-18
+    status: accepted
+    decision: SanitizeControlBytes removes control bytes, for header values, CORS tokens, route prefixes and DSL literals, while ScrubControlBytes percent-encodes the unsafe set, for request values rendered into log lines.
+    rejected:
+      - option: One scrub for both.
+        why: A header must lose the CR and LF to stay one line, while a log reader needs to see that they were there.
+      - option: Rely on slog's JSON handler to escape.
+        why: It escapes C0 but writes C1 and bidi runes raw, and an escaped CRLF still reads as a line break to grep and naive log shippers.
+    upholds: [log-scrub-encodes-unsafe-set]
+  - id: one-copy-of-each-helper
+    date: 2026-11-18
+    status: accepted
+    decision: HasControlBytes, SanitizeControlBytes, ScrubControlBytes and Truncate replace the byte-identical private copies in cmd/repolint, core/handler, core/middleware, framework/ui, framework/routegroup, framework/dsl and battery/log.
+    rejected:
+      - option: Keep the private copies.
+        why: They drifted into hand-maintained parity, and one probe omitted most of the C0 range so those bytes leaked.
+twins:
+  - job: Cap a string bound for a log at a byte length and mark the cut.
+    why: Recovered backs off to a rune boundary with the marker "…(truncated)" while Truncate cuts byte-aligned with " … (truncated)"; merging them needs one marker and one cut rule.
+    sites:
+      - path: core/textsafe/truncate.go
+        note: Truncate, for log lines in core/handler, core/middleware and battery/log.
+      - path: core/textsafe/recovered.go
+        note: Recovered, which cuts a panic value at 4 KiB.

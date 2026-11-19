@@ -1,0 +1,68 @@
+primitive: harness.tool.builtins.webfetch
+summary: The WebFetch tool - an http(s) GET that refuses internal addresses before the request, on every redirect and at dial time, strips credential headers, and caps what the model sees.
+code:
+  - framework/experimental/harness/tool/builtins/webfetch*.go
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: http-schemes-only
+    rule: WebFetch refuses any scheme but http and https before it builds a request.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestWebFetchRefusesSchemeBeforeAnyRequest
+      - test: framework/experimental/harness/tool/builtins.TestWebFetchRejectsNonHTTP
+  - id: internal-address-refused
+    rule: With AllowPrivateHosts false, WebFetch reaches no loopback, link-local, private, CGNAT, unspecified or IPv4-mapped internal address - the host is checked before the request and at dial time on the connected IP; every redirect hop is checked whatever AllowPrivateHosts says.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestAssertPublicHostRefusesInternal
+      - test: framework/experimental/harness/tool/builtins.TestWebFetchSSRFGuard
+      - test: framework/experimental/harness/tool/builtins.TestWebFetchRebindDialReject
+      - test: framework/experimental/harness/tool/builtins.TestInternalIPRanges
+  - id: host-transport-guarded
+    rule: With AllowPrivateHosts false, a host-supplied *http.Transport is used only through a clone carrying the dial-time guard, and any other RoundTripper is refused.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestWebFetchGuardsHostTransport
+  - id: no-environment-proxy
+    rule: The default WebFetch transport never routes through HTTP_PROXY or HTTPS_PROXY.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestWebFetchIgnoresEnvProxy
+  - id: credential-headers-stripped
+    rule: WebFetch never forwards an Authorization, Cookie or X-Harness-Token header the call names, in any letter case.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestWebFetchStripsCredentialHeaders
+  - id: model-body-capped
+    rule: WebFetch downloads at most 5 MiB and returns at most 32 KiB of body to the model, with a note saying how much it cut.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestWebFetchCapsWhatTheModelSees
+decisions:
+  - id: dial-time-guard
+    date: 2026-11-18
+    status: accepted
+    decision: The connected IP is checked in the dialer's Control hook, after resolution and before connect, in addition to the host check.
+    rejected:
+      - option: Check the host only before the request.
+        why: The dialer resolves again, so a DNS-rebinding host public at the check reaches an internal IP at connect.
+    upholds: [internal-address-refused, host-transport-guarded]
+  - id: shared-internal-predicate
+    date: 2026-11-18
+    status: accepted
+    decision: What counts as internal is core/netguard.IsInternal, shared with battery/webhook.
+    rejected:
+      - option: A local list of internal ranges.
+        why: Two hand-kept copies drifted and let a CGNAT target through on the webhook side.
+    upholds: [internal-address-refused]
+  - id: no-proxy
+    date: 2026-11-18
+    status: accepted
+    decision: The default transport sets Proxy to nil.
+    rejected:
+      - option: Honour the environment proxy.
+        why: The dial check would see only the proxy's address while the proxy connected to the model's target, metadata service included.
+    upholds: [no-environment-proxy]
+  - id: model-cap-below-download-cap
+    date: 2026-11-18
+    status: accepted
+    decision: The body shown to the model is cut at 32 KiB, separately from the 5 MiB download cap.
+    rejected:
+      - option: Return the whole downloaded body.
+        why: Megabytes of HTML overflow a model's context window and the model answered with an empty response.
+    upholds: [model-body-capped]

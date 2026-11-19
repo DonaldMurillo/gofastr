@@ -1,0 +1,47 @@
+primitive: harness.provider.zai
+summary: The ZAI GLM provider - Chat through the shared OpenAI client against the general or the Coding Plan endpoint, and a static model catalog.
+code:
+  - framework/experimental/harness/provider/zai/
+twins:
+  - job: List the ZAI models the harness knows about.
+    why: Work not yet done; the catalog and the pricing table were written apart and already disagree (glm-4.6, glm-4.5-air and glm-z1 have no price; glm-4.5 and glm-4-plus are priced but not listed).
+    sites:
+      - path: framework/experimental/harness/provider/zai/zai.go
+        note: Provider.Models, the static catalog.
+      - path: framework/experimental/harness/provider/pricing.go
+        note: zaiPricing, the static price table.
+invariants:
+  - id: base-url-choice
+    rule: BaseURL wins when set; otherwise CodingPlan selects https://api.z.ai/api/coding/paas/v4 and its absence the general https://api.z.ai/api/paas/v4.
+    enforced_by:
+      - test: framework/experimental/harness/provider/zai.TestSweepBaseURLAndCatalog
+  - id: no-openrouter-headers
+    rule: ZAI requests carry the bearer key but never HTTP-Referer or X-Title.
+    enforced_by:
+      - test: framework/experimental/harness/provider/zai.TestChatRequestShape
+  - id: errors-name-zai
+    rule: A ZAI HTTP error is prefixed "zai:", the provider name the shared client is given.
+    enforced_by:
+      - test: framework/experimental/harness/provider/zai.TestChatHTTPError401
+  - id: flagship-first
+    rule: Models lists glm-5.1 first, so a default model picker lands on the current flagship.
+    enforced_by:
+      - test: framework/experimental/harness/provider/zai.TestSweepBaseURLAndCatalog
+decisions:
+  - id: coding-plan-is-an-explicit-flag
+    date: 2026-11-18
+    status: accepted
+    decision: The Coding Plan endpoint is chosen by the CodingPlan flag (ZAI_CODING_PLAN in the harness), since a Coding Plan key on the general endpoint gets HTTP 429 code 1113 "Insufficient balance".
+    rejected:
+      - option: Detect the plan by retrying on the other endpoint after a 429 with code 1113.
+        why: A retry doubles every failing request and hides a real out-of-balance error behind a second call.
+    upholds: [base-url-choice]
+  - id: static-catalog
+    date: 2026-11-18
+    status: accepted
+    decision: The ZAI model catalog is a hard-coded list.
+    rejected:
+      - option: Discover models from a /models endpoint.
+        why: ZAI's public docs publish no model catalog endpoint.
+    revisit_if: ZAI publishes a model catalog API.
+    upholds: [flagship-first]

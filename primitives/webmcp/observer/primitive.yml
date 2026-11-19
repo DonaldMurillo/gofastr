@@ -1,0 +1,51 @@
+primitive: webmcp.observer
+summary: Opt-in observation of tools - refused declarations and marked invocations become metadata-only ToolEvents with a per-call invocation id.
+code:
+  - framework/experimental/webmcp/observer.go
+docs:
+  - framework/docs/content/webmcp.md
+invariants:
+  - id: events-carry-no-input
+    rule: A ToolEvent carries the declared name, method and path, the status, duration, error class and invocation id, and nothing from the request body, headers, query or cookies.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestObserverEventsNeverCarryInputs
+  - id: only-marked-calls-are-invocations
+    rule: Only a request carrying the X-Gofastr-WebMCP header produces an invoke event and an invocation id; an unmarked request passes through untouched.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestObserverReportsMarkedCallsOnly
+      - test: framework/experimental/webmcp.TestInvocationIDCorrelatesEventAndHandler
+  - id: no-observer-no-instrumentation
+    rule: With no observer installed, Handle routes carry no wrapper, and a marked call gets no invocation id or header.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestNoObserverMeansNoInstrumentation
+  - id: panic-reported-then-rethrown
+    rule: A handler panic produces an invoke event with error class panic and then panics again, so the app's recovery middleware still writes the response.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestObservedPanicIsReportedAndRepanicked
+  - id: recorder-reports-final-status
+    rule: The status recorder reports the first final status, skips 1xx hints other than 101, takes 200 from the first Write, ReadFrom or Flush, and passes ReadFrom, Flush, Hijack and Unwrap through to the underlying writer.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestObserverReportsStatusAfterHints
+      - test: framework/experimental/webmcp.TestStatusRecorderLatchesOnFlush
+      - test: framework/experimental/webmcp.TestStatusRecorderKeepsReadFrom
+      - test: framework/experimental/webmcp.TestStatusRecorderReachesDeadline
+      - test: framework/experimental/webmcp.TestStatusRecorderPassesHijack
+  - id: marker-never-authorizes
+    rule: Nothing in webmcp grants or skips authorization because a request carries the X-Gofastr-WebMCP header; it only attributes the call.
+    judge: Does this change read MarkerHeader to allow a request, skip a check, or choose a weaker policy?
+decisions:
+  - id: events-are-metadata-only
+    date: 2026-11-18
+    status: accepted
+    decision: ToolEvent reports the declared path and outcome, never the request URL or input.
+    rejected:
+      - option: Include the request URL, query or body for debugging.
+        why: Tool inputs are where secrets live, and an observer is usually a log.
+    upholds: [events-carry-no-input]
+  - id: invocation-id-panics-without-entropy
+    date: 2026-11-18
+    status: accepted
+    decision: A crypto/rand failure while minting an invocation id panics.
+    rejected:
+      - option: Fall back to a constant or counter id.
+        why: A repeated id would correlate unrelated calls, which is worse than a loud failure.

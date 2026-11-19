@@ -1,0 +1,22 @@
+primitive: harness.ids
+summary: Typed harness identifiers - SessionID, LogID, CallID, JTI and ClientID are distinct string types holding a prefix (sess, log, call, tok, cli), "_" and a ULID, made by New* and checked by Valid* and Parse*.
+code:
+  - framework/experimental/harness/ids/
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: parse-checks-prefix
+    rule: Each Parse function and Valid function accepts only its own prefix followed by a valid ULID, so a LogID string never parses as a SessionID.
+    enforced_by:
+      - test: framework/experimental/harness/ids.TestParseRejectsWrongPrefix
+      - test: framework/experimental/harness/ids.TestNewIDsAreValid
+decisions:
+  - id: one-string-type-per-id
+    date: 2026-11-18
+    status: accepted
+    decision: Each ID kind is its own named string type, so it serializes as a plain JSON string and the compiler refuses a SessionID where a LogID is wanted.
+    rejected:
+      - option: Plain string IDs.
+        why: Nothing would stop one kind of ID being passed where another is expected.
+      - option: Struct IDs with custom JSON marshalers.
+        why: Every type would need marshal code to keep the wire form a plain string.

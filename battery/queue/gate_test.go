@@ -2,7 +2,10 @@ package queue
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -228,7 +231,7 @@ func TestDBQueueGateNoClaimChurn(t *testing.T) {
 // workerLoop (pre-M4) is flagged as a data race. Reading under q.mu.RLock
 // makes the access safe.
 func TestDBQueueGateConcurrentSetGate(t *testing.T) {
-	_, q := openDBQueue(t, 1)
+	db, q := openDBQueue(t, 1)
 	ctx := context.Background()
 
 	var ran atomic.Int32
@@ -273,8 +276,33 @@ func TestDBQueueGateConcurrentSetGate(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	if c := ran.Load(); c != 10 {
-		t.Fatalf("expected 10 runs after settling gate, got %d", c)
+		t.Fatalf("expected 10 runs after settling gate, got %d; queue clock=%s, jobs:\n%s",
+			c, q.now().UTC().Format(time.RFC3339Nano), dumpJobRows(t, db, q))
 	}
+}
+
+// dumpJobRows renders each row's claim state: a pending row scheduled after
+// the queue clock means the clock stepped back; one before it, a stalled worker.
+func dumpJobRows(t *testing.T, db *sql.DB, q *DBQueue) string {
+	t.Helper()
+	rows, err := db.Query(`SELECT status, scheduled_at, attempts, claim_token FROM ` + q.qt())
+	if err != nil {
+		return "query: " + err.Error()
+	}
+	defer rows.Close()
+	var b strings.Builder
+	for rows.Next() {
+		var status, sched, token string
+		var attempts int
+		if err := rows.Scan(&status, &sched, &attempts, &token); err != nil {
+			return "scan: " + err.Error()
+		}
+		fmt.Fprintf(&b, "  status=%s scheduled_at=%s attempts=%d claimed=%t\n", status, sched, attempts, token != "")
+	}
+	if err := rows.Err(); err != nil {
+		return "rows: " + err.Error()
+	}
+	return b.String()
 }
 
 func TestGateDeferNoStrand(t *testing.T) {

@@ -1,9 +1,3 @@
-// Package provider defines the Provider abstraction the engine uses
-// to talk to language models. Provider adapters live in subpackages
-// (openrouter, zai) and translate to/from the canonical
-// Anthropic-shape message form used internally.
-//
-// See docs/harness-architecture.md § Providers.
 package provider
 
 import (
@@ -12,41 +6,25 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 )
 
-// Provider is the abstraction every LLM transport implements.
-//
-// Concrete implementations live in subpackages: openrouter and zai.
+// Provider is the interface every LLM transport implements: Chat streams a completion on a channel
+// that closes when the stream ends, Models lists the catalog, and TokenCount estimates msgs' tokens.
 type Provider interface {
-	// Name returns the provider's identifier (e.g., "openrouter", "zai").
 	Name() string
-
-	// Chat starts a streaming chat completion. The returned channel
-	// is closed when the stream terminates (success or error).
-	//
-	// The engine consumes events from this channel and re-emits them
-	// onto the per-session Bus.
 	Chat(ctx context.Context, req *Request) (<-chan StreamEvent, error)
-
-	// Models returns the model catalog this provider can serve. The
-	// engine surfaces this through /v1/providers/{name}/models.
 	Models(ctx context.Context) ([]Model, error)
-
-	// TokenCount estimates how many tokens the given messages will
-	// consume against the named model. Used by the compaction
-	// trigger middleware.
 	TokenCount(ctx context.Context, model string, msgs []Message) (int, error)
 }
 
-// Request is a model invocation. It is provider-agnostic: each
-// adapter translates it to its wire format.
+// Request is a provider-agnostic model invocation; a zero Temperature or MaxTokens means the provider default.
 type Request struct {
 	Model       string
-	System      string            // system prompt (already assembled by middleware)
-	Messages    []Message         // canonical history
-	Tools       []ToolSchema      // available tools for tool_use
-	Temperature float64           // 0.0 = deterministic
-	MaxTokens   int               // 0 = provider default
-	CacheHints  []CacheBreakpoint // provider-aware cache placement
-	Extra       map[string]any    // provider-specific knobs (rarely used)
+	System      string
+	Messages    []Message
+	Tools       []ToolSchema
+	Temperature float64
+	MaxTokens   int
+	CacheHints  []CacheBreakpoint
+	Extra       map[string]any
 }
 
 // Message is a canonical Anthropic-shape message (role + content blocks).
@@ -63,19 +41,17 @@ const (
 	RoleAssistant Role = "assistant"
 )
 
-// ToolSchema is the tool catalog entry surfaced to the model.
+// ToolSchema is the tool catalog entry surfaced to the model; InputSchema is JSON Schema.
 type ToolSchema struct {
 	Name        string
 	Description string
-	InputSchema []byte // JSON Schema bytes
+	InputSchema []byte
 }
 
-// CacheBreakpoint marks a position in the history where prompt cache
-// should be anchored. Provider-aware: Anthropic uses content-block
-// cache_control; OpenAI uses prompt_cache_key; others ignore.
+// CacheBreakpoint marks the Request.Messages index where a prompt cache should be anchored.
 type CacheBreakpoint struct {
-	MessageIndex int    // 0-based index into Request.Messages
-	Marker       string // optional opaque marker
+	MessageIndex int
+	Marker       string
 }
 
 // Model describes a model the provider exposes.
@@ -88,12 +64,12 @@ type Model struct {
 	Capabilities  Capabilities
 }
 
-// Pricing per million tokens, USD.
+// Pricing is USD per million tokens.
 type Pricing struct {
 	InputPerMTok      float64
 	OutputPerMTok     float64
-	CacheReadPerMTok  float64 // discounted cache hit rate
-	CacheWritePerMTok float64 // cache-write surcharge
+	CacheReadPerMTok  float64
+	CacheWritePerMTok float64
 }
 
 // Capabilities describes optional features a model supports.
@@ -104,20 +80,17 @@ type Capabilities struct {
 	PromptCache bool
 }
 
-// StreamEvent is a single event from a provider's streaming
-// response. Each adapter parses provider-specific wire format and
-// emits these canonical events. The engine's stream parser
-// (engine/stream.go) translates them to control.Event types.
+// StreamEvent is one canonical event of a streaming response; which fields are set depends on Kind.
 type StreamEvent struct {
 	Kind         StreamEventKind
-	Text         string           // for KindTextDelta
-	Thinking     []byte           // for KindThinkingDelta (opaque, provider-stamped)
-	ToolUse      *control.ToolUse // for KindToolUseStart (Input filled in on Stop)
-	ToolUseID    string           // for KindToolUseDelta / KindToolUseStop
-	InputDelta   string           // for KindToolUseDelta (concatenates to ToolUse.Input on Stop)
-	Usage        *Usage           // for KindUsage
-	FinishReason string           // for KindStop ("stop", "tool_use", "length", "yield")
-	Err          error            // for KindError
+	Text         string
+	Thinking     []byte
+	ToolUse      *control.ToolUse
+	ToolUseID    string
+	InputDelta   string
+	Usage        *Usage
+	FinishReason string
+	Err          error
 }
 
 type StreamEventKind int

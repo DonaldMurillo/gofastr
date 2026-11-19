@@ -1,0 +1,69 @@
+primitive: webmcp.scope
+summary: Mount options for the bridge's assets - authorization middleware, per-request page scope, private caching, opt-in debug state, and a document-lifetime scope on the host's script rail.
+code:
+  - framework/experimental/webmcp/scope.go
+docs:
+  - framework/docs/content/webmcp.md
+twins:
+  - job: Serve a fixed text asset with a strong ETag and 304 revalidation.
+    why: manifestHandler is the public no-cache variant and privateTextHandler the private no-store one; they differ only in Cache-Control and ETag shape, and merging them is work not yet done.
+    sites:
+      - path: framework/experimental/webmcp/webmcp.go
+        note: manifestHandler, for the default manifest and instructions routes.
+      - path: framework/experimental/webmcp/scope.go
+        note: privateTextHandler, for requester-dependent assets.
+invariants:
+  - id: requester-dependent-is-private
+    rule: A mount with WithAssetAuthorization, WithPageScope or WithPrivateAssets serves the script, manifest and instructions under Cache-Control private, no-store, while WithBridgeDebug alone does not.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestRequesterDependentMountsArePrivate
+      - test: framework/experimental/webmcp.TestAuthenticatedAssetsNotSharedCacheable
+      - test: framework/experimental/webmcp.TestPrivateAssetsOptionSetsNoStore
+    applies:
+      - framework/experimental/webmcp/webmcp.go
+  - id: default-mount-is-public
+    rule: A mount with none of those options serves the hash-versioned script immutably and the manifest no-cache with a strong ETag.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestDefaultMountKeepsPublicPolicies
+    applies:
+      - framework/experimental/webmcp/webmcp.go
+  - id: auth-before-scope
+    rule: Asset authorization middleware runs before the page-scope predicate, so an unauthorized request gets the middleware's refusal, not the empty asset.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestAuthRunsBeforePageScope
+  - id: out-of-scope-asset-is-empty
+    rule: A request the page-scope predicate rejects gets 200 with an empty script or an empty tool set and empty instructions, private, no-store, and no tool bytes.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestPageScopeServesNothingOutOfScope
+  - id: document-scope-needs-the-rail
+    rule: WithDocumentScope fails Mount unless the registrar implements RegisterDocumentScript, and when it does the bridge goes on that rail instead of RegisterExternalScript.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestWithDocumentScopeNeedsDocumentRail
+      - test: framework/experimental/webmcp.TestWithDocumentScopeRidesHostRail
+    applies:
+      - framework/experimental/webmcp/webmcp.go
+decisions:
+  - id: gated-assets-force-private
+    date: 2026-11-18
+    status: accepted
+    decision: Authorization or page scope on the assets turns on the private no-store policy by itself.
+    rejected:
+      - option: Require the caller to pass WithPrivateAssets too.
+        why: A forgotten option would let a shared cache replay an authenticated script or manifest to anonymous traffic.
+    upholds: [requester-dependent-is-private]
+  - id: document-scope-hard-boundary
+    date: 2026-11-18
+    status: accepted
+    decision: WithDocumentScope ships the bridge only on in-scope pages and makes the host do a full document load across the scope edge.
+    rejected:
+      - option: Drop the script tag on out-of-scope pages and keep soft navigation.
+        why: Removing the tag does not unregister tools already on modelContext and a soft swap runs no body script, so a page could keep another page's tools.
+    revisit_if: WebMCP gains a way to unregister a tool, such as an AbortSignal on registerTool.
+    upholds: [document-scope-needs-the-rail]
+  - id: page-scope-on-identity
+    date: 2026-11-18
+    status: accepted
+    decision: The WithPageScope predicate sees the asset request, so it scopes on identity, while WithDocumentScope scopes on the page's route pattern.
+    rejected:
+      - option: Scope the asset request on the page path.
+        why: The asset fetch's URL is the asset's own path; the page path is not in the request.

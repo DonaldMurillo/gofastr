@@ -1,0 +1,34 @@
+primitive: harness.engine.dispatch
+summary: Tool dispatch - runs one tool call through the tool middleware chain, publishes ToolCallStarted and ToolResult around it, and spells each call as the argv summary permission rules match.
+code:
+  - framework/experimental/harness/engine/tool_dispatch.go
+  - framework/experimental/harness/engine/util.go
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: intent-before-run
+    rule: Dispatch publishes ToolCallStarted before the tool runs and ToolResult after it.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestDispatchPublishesStartAndResult
+  - id: middleware-error-is-a-result
+    rule: An error from the tool middleware chain comes back as an IsError tool result with an Error event, never as a Dispatch error.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestDispatchMiddlewareErrorBecomesErrorResult
+  - id: bash-summary-carries-env-and-cwd
+    rule: The argv summary of a Bash call is the command behind its cwd and env, spelled and quoted the way a shell would run them, so a rule for the bare command never matches a call with env or cwd.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestBashSummaryShowsEnvAndCwd
+      - test: framework/experimental/harness/engine.TestQuietModeAsksForBashEnvAndCwd
+  - id: search-summary-names-where-it-reads
+    rule: The argv summary of Grep and Glob holds the directory and file glob they read, quoting a word only when it holds whitespace or a quote, so a plain pattern keeps the spelling saved approvals use.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestArgvSummaryNamesSearchRoot
+      - test: framework/experimental/harness/engine.TestArgvSummaryKeepsPlainSearchSpelling
+twins:
+  - job: Single-quote a word for an argv summary.
+    why: summaryWord quotes only on whitespace or a quote so plain search patterns keep the spelling earlier approvals were saved under, while shellQuote quotes anything outside a shell-safe set; merging them changes saved Bash or search rules.
+    sites:
+      - path: framework/experimental/harness/engine/tool_dispatch.go
+        note: shellQuote, for Bash cwd and env words.
+      - path: framework/experimental/harness/engine/tool_dispatch.go
+        note: summaryWord, for Grep and Glob words.

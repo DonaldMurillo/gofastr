@@ -1,0 +1,72 @@
+primitive: jcs
+summary: RFC 8785 JSON Canonicalization Scheme on the standard library, the byte form the framework signs and hashes JSON in (A2A agent cards).
+code:
+  - core/jcs/
+docs:
+  - framework/docs/content/core-packages.md
+invariants:
+  - id: strict-parse
+    rule: CanonicalizeJSON returns an error for a duplicate object key, a lone or misordered surrogate escape, invalid UTF-8, a raw control character in a string, a number literal that overflows to Infinity, more than 512 nested arrays and objects, whether the innermost is empty or not, and any content after the one JSON value.
+    enforced_by:
+      - test: core/jcs.TestRejectedJSON
+      - test: core/jcs.TestDepthLimit
+  - id: keys-sort-by-utf16
+    rule: Object members are written sorted by their names as UTF-16 code units, so a key above U+FFFF sorts before one in U+E000 to U+FFFF although its UTF-8 bytes sort after.
+    enforced_by:
+      - test: core/jcs.TestUTF16SortDivergence
+      - test: core/jcs.TestReferenceSuite
+      - test: core/jcs.TestNodeCorpus
+  - id: numbers-as-ecmascript
+    rule: Every number is parsed to an IEEE 754 double and written as ECMAScript Number::toString writes it, plain decimal for magnitudes from 1e-6 to below 1e21, exponential without padding outside that range, -0 as 0 and an underflowing literal as 0.
+    enforced_by:
+      - test: core/jcs.TestRFC8785AppendixB
+      - test: core/jcs.TestES6NumberVectors
+      - test: core/jcs.TestNodeCorpus
+      - test: core/jcs.TestUnderflowCanonicalizesToZero
+      - test: core/jcs.TestNumberLiteralFormsCollapse
+  - id: minimal-string-escapes
+    rule: Strings are written with only the escapes \b \t \n \f \r \" \\ and lowercase \u00xx for other bytes below U+0020; '/', DEL and every other character are written as literal UTF-8.
+    enforced_by:
+      - test: core/jcs.TestReferenceSuite
+      - test: core/jcs.TestCanonicalizeValues
+  - id: go-values-reject-non-finite
+    rule: Canonicalize returns an error for NaN and ±Infinity and canonicalizes any other value by encoding it with encoding/json and passing the bytes through CanonicalizeJSON.
+    enforced_by:
+      - test: core/jcs.TestRejectedNumbers
+      - test: core/jcs.TestCanonicalizeValues
+decisions:
+  - id: own-strict-parser
+    date: 2026-11-18
+    status: accepted
+    decision: CanonicalizeJSON parses with its own strict parser that emits canonical bytes as it goes, on the standard library only.
+    rejected:
+      - option: Decode with encoding/json into any and re-serialize.
+        why: encoding/json keeps the last of two duplicate keys, replaces invalid UTF-8 and lone surrogates with U+FFFD and loses the literal, so two different signed documents could canonicalize to the same bytes.
+      - option: Use a third-party JCS library.
+        why: The package is small and the core tree takes no dependencies.
+    upholds: [strict-parse]
+  - id: numbers-are-doubles
+    date: 2026-11-18
+    status: accepted
+    decision: Numbers follow I-JSON (RFC 7493), so an integer beyond 2^53 rounds like any double, and a caller that needs such a value exact carries it as a string, as RFC 8785 Appendix D recommends.
+    rejected:
+      - option: Keep big integer literals verbatim.
+        why: RFC 8785 defines the canonical number as the ECMAScript serialization of a double, and verifiers in other languages would produce different bytes.
+    upholds: [numbers-as-ecmascript]
+  - id: go-values-via-encoding-json
+    date: 2026-11-18
+    status: accepted
+    decision: Canonicalize marshals a Go value with encoding/json and canonicalizes the bytes, inheriting its U+FFFD replacement of invalid UTF-8; untrusted strings go through CanonicalizeJSON instead.
+    rejected:
+      - option: Walk Go values with reflection directly.
+        why: It would duplicate encoding/json's struct tag, Marshaler and json.Number handling.
+    revisit_if: A caller canonicalizes untrusted Go strings and needs invalid UTF-8 rejected rather than replaced.
+    upholds: [go-values-reject-non-finite]
+  - id: depth-bound
+    date: 2026-11-18
+    status: accepted
+    decision: Nesting is capped at 512 levels of arrays and objects, the outermost counting as one and scalars not counting, so hostile input returns an error instead of overflowing the stack, as RFC 8785 section 5 recommends sanity checks on input.
+    rejected:
+      - option: Recurse without a bound.
+        why: A verifier canonicalizes documents it received, and deep nesting would crash it.
+    upholds: [strict-parse]
