@@ -428,7 +428,8 @@ operation named `login`, a parameter named `token`, and terminal-control
 bytes in a summary or description (the SDK folds them out of its
 comments) are fine. The SDK adds its own: an `operationId` whose Go
 method or client.js method the client already defines (`Do`, `DoRaw`,
-`DoStream`, `do`, `toString`), a parameter whose name derives no Go
+`DoStream`, `do`, `toString`, and `then`, which would make the client a
+thenable that `await` calls), a parameter whose name derives no Go
 field name, or two parameters of one operation that derive the same one.
 A derived type name declared twice is refused too. Nothing is renamed.
 
@@ -457,7 +458,7 @@ defer png.Close()
 | Document | Go |
 |---|---|
 | path, query and header parameters | one `<Op>Params` struct; an optional parameter is a pointer, a repeated one a `[]string` |
-| JSON request body | the schema's type; a pointer when `requestBody.required` is not set (nil sends none) |
+| JSON request body | the schema's type; when `requestBody.required` is not set, nil sends none: a pointer for an object or scalar body, a nil slice, map or `json.RawMessage` for the others |
 | binary request body | an `io.Reader`, sent under the document's media type |
 | JSON response | the schema's type; a struct comes back as a pointer, nil for an empty answer |
 | a response with no JSON media type (`image/png`, `application/zip`) | an `io.ReadCloser`, unbuffered: the caller reads and closes it |
@@ -467,8 +468,13 @@ The lowest 2xx response with content decides the result. When it offers
 a JSON media type (`application/json`, `text/json` or a `+json` type),
 the result is typed from that schema, `application/json` first, and the
 request sends `Accept` with that type, so a server that also offers
-`text/plain` (as Swashbuckle documents do) answers JSON. With no JSON
-media type the answer is binary and `Accept` lists its types. An
+`text/plain` (as Swashbuckle documents do) answers JSON. A wildcard
+type (`*/*` or `application/*`, which springdoc writes on every
+response) whose schema is a reference, an object, an array or a
+non-string scalar is JSON too, asked for as `application/json`; a
+wildcard with a string schema or none is binary. With no JSON media type
+the answer is binary and `Accept` lists its types. A struct result is
+nil for an empty or literal `null` answer. An
 operation with no 2xx content sends no `Accept`. A header parameter
 named `Accept` replaces it.
 
@@ -501,7 +507,7 @@ object keyed by their names in the document, then the body:
 import { Client, APIPrefix } from "./client.js";
 const api = new Client({ baseURL: "https://barcode.example.com" + APIPrefix, token });
 const png = await api.generateBarcode({ data: "hi", symbology: "qr" }); // a Blob
-const spec = await api.getSpec({ symbology: "qr", "X-Trace": "t-1" });
+const spec = await api.getSpec({ symbology: "qr", limit: 10, "X-Trace": "t-1" });
 ```
 
 A binary answer resolves to a `Blob`: it carries the response's
@@ -585,8 +591,10 @@ codegen:
 
 The config keys are `name`, `api_prefix`, `module`, `base_url`,
 `sdk_version`, `from_openapi` (strings) and `targets`, `only`, `exclude`
-(YAML lists). `from_openapi` names a file in the project, never a URL
-(every build would fetch it), and takes no `only` or `exclude`: the SDK
+(YAML lists). `from_openapi` names a file in the project, relative to it
+and never a URL (every build would fetch it); it is read through
+`os.Root`, so neither `../` nor a symlink leaves the project. It takes
+no `only` or `exclude`: the SDK
 covers every operation in the document. `gofastr generate sdk` takes
 its defaults from one entry, never a mix of two: `--from-openapi` picks
 the entry that names the same document, `--out` the entry writing to
@@ -595,7 +603,10 @@ settings file with two or more `sdk` entries, such as an entity SDK
 beside an OpenAPI one, needs one of those flags; `gofastr generate` and
 `gofastr build` run every entry into its own output directory. No run
 writes into another entry's output directory: `--from-openapi` with a
-document no entry names, when `gen/sdk` is an entry's, needs `--out`.
+document no entry names, when `gen/sdk` is an entry's, needs `--out`,
+and an output directory inside or above another entry's is refused
+however it is spelled. Two entries for one document are told apart by
+`--out`.
 A flag passed empty still wins: `--only=` generates every entity and
 `--api-prefix=` means no prefix, whatever the settings entry says.
 An
@@ -694,7 +705,11 @@ sdkdocs.Mount(site, fwApp.Router(), sdkdocs.Config{
 })
 ```
 
-The overview page then leaves out the entity quickstart.
+The overview page then leaves out the entity quickstart, entity pages
+show only the curl example (the downloaded SDKs have no entity methods),
+and every curl snippet sends the token under the header the manifest
+records from the document's security scheme (`tokenHeader`,
+`tokenPrefix`).
 `gofastr generate sdk` covers every entity by default, so for a site
 that documents only `Public` entities generate with
 `--only=<those entities>`, or widen `Entities` / `IncludeGated` if

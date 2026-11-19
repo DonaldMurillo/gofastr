@@ -56,6 +56,11 @@ func oaWireHandler() (http.Handler, func() []oaWireRequest) {
 			_, _ = w.Write([]byte("PNG!"))
 			return
 		}
+		if strings.HasPrefix(path, "/nullres/") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("null"))
+			return
+		}
 		if strings.HasPrefix(path, "/slowerr/") {
 			w.WriteHeader(http.StatusInternalServerError)
 			for range 4 {
@@ -223,6 +228,10 @@ func TestWire(t *testing.T) {
 	start := time.Now()
 	if _, err := client.NewClient(base+"/slowerr"+client.APIPrefix, short).BatchZip(ctx, nil); err == nil || time.Since(start) > 800*time.Millisecond {
 		t.Fatalf("a 500 whose body trickles: %v after %s, want an error within Client.Timeout", err, time.Since(start))
+	}
+
+	if v, err := client.NewClient(base+"/nullres"+client.APIPrefix, nil).ValidateData(ctx, &client.ValidateDataRequest{Data: "d"}); err != nil || v != nil {
+		t.Fatalf("a null answer: %+v %v, want nil", v, err)
 	}
 
 	big := client.NewClient(base+"/big"+client.APIPrefix, nil)

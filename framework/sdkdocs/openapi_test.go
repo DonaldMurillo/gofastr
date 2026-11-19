@@ -22,7 +22,7 @@ func openAPIArtifacts(t *testing.T, doc string) fstest.MapFS {
 	}
 	raw, err := json.Marshal(sdk.Manifest{
 		SchemaVersion: sdk.SchemaVersion, App: "barc", SDKVersion: "1.0.0", GofastrVersion: "v0.97.0",
-		Source: sdk.SourceOpenAPI, Entities: []string{}, SchemaHash: hash,
+		Source: sdk.SourceOpenAPI, Entities: []string{}, SchemaHash: hash, TokenHeader: "X-Barc-Key",
 		Artifacts: map[string]sdk.Artifact{
 			"go": {File: sdk.GoArtifact, SHA256: sdkSum("zip"), Bytes: 3, Module: "example.com/barc-sdk"},
 			"js": {File: sdk.JSArtifact, SHA256: sdkSum("//js\n"), Bytes: 5},
@@ -73,5 +73,37 @@ func TestOpenAPIManifestDownloads(t *testing.T) {
 	}
 	if resp, _ := get(t, srv, "/docs/api/sdk/client.js"); resp.StatusCode != http.StatusOK {
 		t.Errorf("a drifted SDK still downloads: status %d", resp.StatusCode)
+	}
+}
+
+// With OpenAPI-sourced downloads, every curl snippet sends the token under
+// the header the document's scheme names, and entity pages show no
+// entity-SDK calls the downloaded SDKs do not have.
+func TestOpenAPIManifestSnippets(t *testing.T) {
+	reg := testRegistry()
+	srv := mountedServer(t, Config{Registry: reg, Artifacts: openAPIArtifacts(t, openAPIDoc), OpenAPI: []byte(openAPIDoc)})
+	for _, path := range []string{"/docs/api", "/docs/api/auth", "/docs/api/entities/posts"} {
+		resp, body := get(t, srv, path)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: status %d", path, resp.StatusCode)
+		}
+		if !strings.Contains(body, "X-Barc-Key: $API_TOKEN") && !strings.Contains(body, "X-Barc-Key: &lt;token&gt;") {
+			t.Errorf("%s does not show the document's token header", path)
+		}
+		if strings.Contains(body, "Bearer") {
+			t.Errorf("%s shows a bearer token the SDKs do not send", path)
+		}
+	}
+	_, body := get(t, srv, "/docs/api/entities/posts")
+	// The highlighter splits code into tokens, so the checks read one each.
+	for _, entitySDK := range []string{"ListPosts", "WatchPosts", "CreatePosts", "filters"} {
+		if strings.Contains(body, entitySDK) {
+			t.Errorf("the entity page shows %s, which the OpenAPI SDK has no method for", entitySDK)
+		}
+	}
+
+	srv = mountedServer(t, Config{Registry: reg, Artifacts: testArtifacts(t, reg, true)})
+	if _, body := get(t, srv, "/docs/api/entities/posts"); !strings.Contains(body, "ListPosts") || !strings.Contains(body, "filters") || !strings.Contains(body, "Bearer") {
+		t.Error("the entity SDK's page lost its SDK snippets or its bearer header")
 	}
 }

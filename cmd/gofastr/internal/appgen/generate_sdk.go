@@ -199,7 +199,11 @@ func RunGenerateSDK(args []string) {
 	}
 
 	if opts.fromOpenAPI != "" {
-		files, err := renderOpenAPISDK(&opts, opts.fromOpenAPI)
+		root := ""
+		if !opts.set["from-openapi"] {
+			root = "." // the settings entry named it: a file in the project
+		}
+		files, err := renderOpenAPISDK(&opts, root)
 		if err != nil {
 			// The error quotes names from the document, which may come
 			// from a URL: encode its control bytes for the terminal.
@@ -460,11 +464,11 @@ func applySDKConfigDefaults(opts *SdkOptions) error {
 	// picks the entry for the same document, --out the entry writing there,
 	// each or none; with neither, the only entry. Two or more need a flag.
 	picked := entries
-	switch {
-	case opts.fromOpenAPI != "":
-		picked = slices.DeleteFunc(slices.Clone(entries), func(e sdkEntry) bool { return !sameOpenAPISource(e.opts.fromOpenAPI, opts.fromOpenAPI) })
-	case opts.OutDir != "":
-		picked = slices.DeleteFunc(slices.Clone(entries), func(e sdkEntry) bool { return filepath.Clean(e.outDir) != filepath.Clean(opts.OutDir) })
+	if opts.fromOpenAPI != "" {
+		picked = slices.DeleteFunc(slices.Clone(picked), func(e sdkEntry) bool { return !sameOpenAPISource(e.opts.fromOpenAPI, opts.fromOpenAPI) })
+	}
+	if opts.OutDir != "" && (opts.fromOpenAPI == "" || len(picked) > 1) {
+		picked = slices.DeleteFunc(slices.Clone(picked), func(e sdkEntry) bool { return !samePath(e.outDir, opts.OutDir) })
 	}
 	if len(picked) > 1 {
 		var dirs []string
@@ -479,7 +483,7 @@ func applySDKConfigDefaults(opts *SdkOptions) error {
 	// Another entry's output directory holds another SDK and its manifest.
 	out := cmp.Or(opts.OutDir, sdkDefaultOut)
 	for _, e := range entries {
-		if filepath.Clean(e.outDir) != filepath.Clean(out) || len(picked) == 1 && e.outDir == picked[0].outDir {
+		if !pathsOverlap(e.outDir, out) || len(picked) == 1 && e.outDir == picked[0].outDir {
 			continue
 		}
 		source := "the entity set"
@@ -526,6 +530,28 @@ func applySDKConfigDefaults(opts *SdkOptions) error {
 		}
 	}
 	return nil
+}
+
+// samePath reports whether two project-relative or absolute paths name
+// one directory.
+func samePath(a, b string) bool {
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	return errA == nil && errB == nil && absA == absB
+}
+
+// pathsOverlap reports whether one directory is the other or holds it.
+func pathsOverlap(a, b string) bool {
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	if errA != nil || errB != nil {
+		return true
+	}
+	inside := func(dir, p string) bool {
+		rel, err := filepath.Rel(dir, p)
+		return err == nil && filepath.IsLocal(rel)
+	}
+	return inside(absA, absB) || inside(absB, absA)
 }
 
 // buildSDKSpec validates selection and derives the renderer input. It
@@ -1016,7 +1042,7 @@ func (sdkGenerator) Generate(_ context.Context, genCtx *codegen.Context, cfg cod
 	opts.OutDir = "gen/sdk"
 	var files []GeneratedFile
 	if opts.fromOpenAPI != "" {
-		files, err = renderOpenAPISDK(&opts, filepath.Join(dir, opts.fromOpenAPI))
+		files, err = renderOpenAPISDK(&opts, dir)
 	} else {
 		files, err = renderEntitySDK(dir, &opts)
 	}

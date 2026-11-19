@@ -40,7 +40,10 @@ type oaTypeSet struct {
 	structs map[string]*oaStruct
 	order   []string
 	byRef   map[string]string
-	owner   map[string]string
+	// refNullable holds whether each named component admits null, for
+	// every use after the first.
+	refNullable map[string]bool
+	owner       map[string]string
 	// inline holds the refs being typed in place (a component that is
 	// not a named struct): one met again inside itself is raw JSON.
 	inline map[string]bool
@@ -54,7 +57,7 @@ var oaReservedTypes = []string{
 }
 
 func newOATypeSet(root map[string]any) *oaTypeSet {
-	ts := &oaTypeSet{root: root, structs: map[string]*oaStruct{}, byRef: map[string]string{}, owner: map[string]string{}, inline: map[string]bool{}}
+	ts := &oaTypeSet{root: root, structs: map[string]*oaStruct{}, byRef: map[string]string{}, refNullable: map[string]bool{}, owner: map[string]string{}, inline: map[string]bool{}}
 	for _, n := range oaReservedTypes {
 		ts.owner[n] = "the SDK itself"
 	}
@@ -83,7 +86,7 @@ func (ts *oaTypeSet) typeOf(schema map[string]any, hint string) (t *oaType, null
 	}
 	if ref, isRef := schema["$ref"].(string); isRef {
 		if name, seen := ts.byRef[ref]; seen {
-			return &oaType{Kind: "struct", Name: name}, false, nil
+			return &oaType{Kind: "struct", Name: name}, ts.refNullable[ref], nil
 		}
 		resolved, err := oaResolve(ts.root, schema)
 		if err != nil {
@@ -95,6 +98,7 @@ func (ts *oaTypeSet) typeOf(schema map[string]any, hint string) (t *oaType, null
 					return nil, false, err
 				}
 				ts.byRef[ref] = name
+				ts.refNullable[ref] = oaNullable(resolved)
 				if err := ts.addStruct(name, resolved); err != nil {
 					return nil, false, err
 				}

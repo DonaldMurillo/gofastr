@@ -47,6 +47,7 @@ func TestOpenAPISDKRefusals(t *testing.T) {
 		{"Go client member", oaSDKDoc(`{"/a":{"get":{"operationId":"do"}}}`), "Client.Do"},
 		{"JS client member", oaSDKDoc(`{"/a":{"get":{"operationId":"_send"}}}`), "client.js method _send"},
 		{"JS object member", oaSDKDoc(`{"/a":{"get":{"operationId":"toString"}}}`), "client.js method toString"},
+		{"thenable", oaSDKDoc(`{"/a":{"get":{"operationId":"then"}}}`), "client.js method then"},
 		{"reserved type name", oaSDKDoc(`{"/a":{"get":{"operationId":"a","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Client"}}}}}}}}`,
 			`{"schemas":{"Client":{"type":"object","properties":{"id":{"type":"string"}}}}}`), "type name Client"},
 		{"type name taken twice", oaSDKDoc(`{"/a":{"get":{"operationId":"a","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"object","properties":{"x":{"type":"string"}}}}}}}}},"/b":{"get":{"operationId":"b","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/AResponse"}}}}}}}}`,
@@ -125,6 +126,7 @@ func TestOpenAPISDKResponseKinds(t *testing.T) {
 		"BatchZip": {"binary", "application/zip"}, "DecodeImage": {"json", "application/json"},
 		"GenerateBarcode": {"binary", "image/png, image/svg+xml"}, "GetSpec": {"json", "application/json"},
 		"Ping": {"", ""}, "PostOpt": {"", ""}, "UploadOpt": {"json", "application/json"},
+		"GetPet": {"json", "application/json"}, "GetPetPhoto": {"binary", "*/*"},
 		"ValidateData": {"json", "application/json"},
 	}
 	for _, op := range spec.Ops {
@@ -305,6 +307,83 @@ func TestOpenAPISDKEntrySelection(t *testing.T) {
 			}
 			if err != nil || opts.OutDir != tc.wantOut || opts.fromOpenAPI != tc.wantDoc {
 				t.Fatalf("out %q doc %q err %v, want out %q doc %q", opts.OutDir, opts.fromOpenAPI, err, tc.wantOut, tc.wantDoc)
+			}
+		})
+	}
+}
+
+// A nullable component keeps its nullability at every use, not only the
+// first one that named it.
+func TestOpenAPISDKNullableRefPerUse(t *testing.T) {
+	doc := oaSDKDoc(`{"/a":{"get":{"operationId":"a","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"object","properties":{"m1":{"$ref":"#/components/schemas/Maybe"},"m2":{"$ref":"#/components/schemas/Maybe"}}}}}}}}}}`,
+		`{"schemas":{"Maybe":{"type":["object","null"],"properties":{"x":{"type":"string"}}}}}`)
+	spec, err := oaSDKSpecFor(t, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range spec.Types.structs["AResponse"].Fields {
+		if f.Type.Name != "Maybe" || !f.Nullable {
+			t.Errorf("%s: %+v nullable %v, want Maybe, nullable", f.Wire, f.Type, f.Nullable)
+		}
+	}
+}
+
+// The OpenAPI document a settings entry names stays inside the project:
+// an absolute path or a ../ one is refused, and a symlink out of the
+// project fails to read.
+func TestOpenAPISDKEntryDocumentStaysInProject(t *testing.T) {
+	for _, path := range []string{"../openapi.json", "/etc/openapi.json", "api/../../openapi.json"} {
+		_, err := decodeSDKEntry(0, codegen.GeneratorConfig{Name: "sdk", Config: map[string]any{"from_openapi": path}})
+		if err == nil || !strings.Contains(err.Error(), "leaves the project") {
+			t.Errorf("%s: %v, want the in-project refusal", path, err)
+		}
+	}
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "openapi.json"), []byte(oaSDKFixture), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := oaTempModule(t)
+	if err := os.Symlink(filepath.Join(outside, "openapi.json"), filepath.Join(dir, "linked.json")); err != nil {
+		t.Skip("no symlinks here")
+	}
+	_, err := sdkGenerator{}.Generate(t.Context(), &codegen.Context{ProjectDir: dir}, codegen.GeneratorConfig{
+		Name: "sdk", Config: map[string]any{"from_openapi": "linked.json"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "read OpenAPI document") {
+		t.Fatalf("a symlink out of the project: %v, want a read error", err)
+	}
+}
+
+// Two entries for one document are told apart by --out, and no run
+// writes into or above another entry's output directory, however the
+// directory is spelled.
+func TestOpenAPISDKEntryOutputsDoNotOverlap(t *testing.T) {
+	dir := oaTempModule(t)
+	settings := "codegen:\n  generators:\n    - name: sdk\n    - name: sdk\n      output: a\n      config:\n        from_openapi: api/openapi.json\n    - name: sdk\n      output: b\n      config:\n        from_openapi: api/openapi.json\n        module: example.com/b\n"
+	if err := os.WriteFile(filepath.Join(dir, "gofastr.settings.yml"), []byte(settings), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, doc, out, wantOut, wantModule, wantErr string
+	}{
+		{name: "one document, two entries", doc: "api/openapi.json", wantErr: "lists 2 sdk entries"},
+		{name: "picked by out", doc: "api/openapi.json", out: "gen/b", wantOut: "gen/b", wantModule: "example.com/b"},
+		{name: "inside another entry", doc: "other.json", out: "gen/sdk/go", wantErr: "gen/sdk/go is where the sdk entry for the entity set"},
+		{name: "above other entries", doc: "other.json", out: "gen", wantErr: "is where the sdk entry"},
+		{name: "absolute spelling", doc: "other.json", out: filepath.Join(dir, "gen", "a"), wantErr: "the OpenAPI document api/openapi.json"},
+		{name: "beside them", doc: "other.json", out: "gen/c", wantOut: "gen/c"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := SdkOptions{fromOpenAPI: tc.doc, OutDir: tc.out, set: map[string]bool{"from-openapi": true}}
+			err := applySDKConfigDefaults(&opts)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("got %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil || opts.OutDir != tc.wantOut || opts.module != tc.wantModule {
+				t.Fatalf("out %q module %q err %v, want %q %q", opts.OutDir, opts.module, err, tc.wantOut, tc.wantModule)
 			}
 		})
 	}

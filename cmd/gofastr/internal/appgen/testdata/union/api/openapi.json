@@ -105,6 +105,18 @@
         "responses": {"200": {"description": "zip", "content": {"application/zip": {}}}}
       }
     },
+    "/pet": {
+      "get": {
+        "operationId": "getPet",
+        "responses": {"200": {"description": "springdoc", "content": {"*/*": {"schema": {"$ref": "#/components/schemas/Size"}}}}}
+      }
+    },
+    "/pet/photo": {
+      "get": {
+        "operationId": "getPetPhoto",
+        "responses": {"200": {"description": "springdoc", "content": {"*/*": {"schema": {"type": "string", "format": "binary"}}}}}
+      }
+    },
     "/ping": {
       "delete": {"operationId": "ping", "responses": {"204": {"description": "gone"}}}
     }

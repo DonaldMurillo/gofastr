@@ -225,6 +225,9 @@ func decodeSDKEntry(index int, gen codegen.GeneratorConfig) (SdkOptions, error) 
 	if strings.Contains(opts.fromOpenAPI, "://") {
 		return opts, e.errorf("config.from_openapi must be a file in the project, not a URL: every build would fetch it. Save the document and name the file")
 	}
+	if opts.fromOpenAPI != "" && !filepath.IsLocal(filepath.FromSlash(opts.fromOpenAPI)) {
+		return opts, e.errorf("config.from_openapi must be a file in the project, named relative to it: %q leaves the project", opts.fromOpenAPI)
+	}
 	if err := checkOpenAPISDKOptions(opts); err != nil {
 		return opts, e.errorf("%v", err)
 	}

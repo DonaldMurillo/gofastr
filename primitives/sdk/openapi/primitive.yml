@@ -21,7 +21,7 @@ twins:
         note: jsOAClientTail, the OpenAPI Client's do over _send.
 invariants:
   - id: one-client-renderer
-    rule: The Go SDK's client.go declares every function the --from-openapi CLI's internal/client declares with the same text, both from renderOpenAPIClient, and adds only DoStream.
+    rule: The Go SDK's client.go declares every function the --from-openapi CLI's internal/client declares with the same text, both from renderOpenAPIClient, and adds only DoStream and the streamBody type that releases its context on Close.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKClientIsTheCLIClient
   - id: same-refusals-as-the-cli
@@ -37,7 +37,7 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKUnnameableObjectIsRaw
   - id: json-answer-is-typed
-    rule: The lowest 2xx response with content decides the result; a JSON media type in it types the result and is sent as Accept, whatever else it offers, and with none the answer is binary and Accept lists its types.
+    rule: The lowest 2xx response with content decides the result; a JSON media type in it, or a */* or application/* one carrying a reference, object, array or non-string scalar schema, types the result and is asked for with Accept, whatever else it offers, and with none the answer is binary and Accept lists its types.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKResponseKinds
   - id: go-sdk-wire
@@ -49,14 +49,20 @@ invariants:
     rule: DoStream bounds a request by the HTTP client's Timeout only until the response headers arrive, and streams a 2xx body for as long as the caller's context allows, while a non-2xx error body and every buffered call keep the Timeout.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
+  - id: nullable-at-every-use
+    rule: A nullable component is nullable at every use, and a struct result is nil for an empty or literal null answer.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKNullableRefPerUse
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
   - id: self-reference-is-typed-once
     rule: A component met again while it is being typed in place is raw JSON, and an object component refers to its own named struct, so a recursive document generates in both SDKs and the CLI.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKRecursiveSchemas
   - id: one-entry-per-run
-    rule: gofastr generate sdk takes its defaults from at most one sdk entry, the one --from-openapi or --out names or else the only one, refuses to guess between two or more, and never writes into another entry's output directory.
+    rule: gofastr generate sdk takes its defaults from at most one sdk entry, the one --from-openapi or --out names (both together telling apart two entries for one document) or else the only one, refuses to guess between two or more, and never writes into, inside or above another entry's output directory, compared as absolute paths.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKEntrySelection
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKEntryOutputsDoNotOverlap
   - id: only-the-stream-is-unread
     rule: Every read of a response body in the Go SDK's client goes through the 1 MiB cap, except the 2xx body DoStream returns after refusing a non-2xx status.
     enforced_by:
@@ -79,10 +85,11 @@ invariants:
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKLayoutAndManifest
   - id: settings-entry
-    rule: An sdk settings entry's from_openapi names a file in the project, takes no only or exclude, and runs under gofastr generate --config and as gofastr generate sdk's defaults.
+    rule: An sdk settings entry's from_openapi names a file in the project, relative and read through os.Root so neither ../ nor a symlink leaves it, takes no only or exclude, and runs under gofastr generate --config and as gofastr generate sdk's defaults.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKSettingsEntry
       - test: cmd/gofastr/internal/generatecmd.TestWatchHashesCLIOpenAPIDoc
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKEntryDocumentStaysInProject
 decisions:
   - id: one-client-for-cli-and-sdk
     date: 2026-11-19
@@ -119,6 +126,14 @@ decisions:
     rejected:
       - option: Treat any non-JSON media type as a binary answer.
         why: Swashbuckle lists text/plain and text/json beside application/json on every response, so no operation of such a document got a typed result.
+    upholds: [json-answer-is-typed]
+  - id: wildcard-with-a-schema-is-json
+    date: 2026-11-19
+    status: accepted
+    decision: A */* or application/* response whose schema is a reference, object, array or non-string scalar is JSON, asked for as application/json.
+    rejected:
+      - option: Treat */* as binary like any non-JSON type.
+        why: springdoc-openapi, Spring Boot's default, writes */* on every response, so every operation of such a document returned an io.ReadCloser.
     upholds: [json-answer-is-typed]
   - id: unnameable-object-is-raw
     date: 2026-11-19

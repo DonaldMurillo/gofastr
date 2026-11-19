@@ -239,7 +239,7 @@ curl -LO %s/sdk/client.d.ts
 # import { Client } from "%s/sdk/client.js";`,
 		docsBase, docsBase, docsBase)
 	curl := fmt.Sprintf(`# No SDK required: it's a plain HTTP API.
-curl -H "Authorization: Bearer $API_TOKEN" %s/<entity>`, s.exampleOrigin())
+curl -H "%s" %s/<entity>`, s.tokenHeaderLine("$API_TOKEN"), s.exampleOrigin())
 
 	return ui.CodeTabs(ui.CodeTabsConfig{Name: "sdk-install", Label: "Install"},
 		ui.CodeSample{Label: "Go", Language: "shell", Code: goInstall},
@@ -283,8 +283,8 @@ const api = new Client({ baseURL: %q, token: process.env.API_TOKEN });
 const page = await api.%s.list({ limit: 25 });
 console.log(page.total);`, origin, prop)
 
-	curlCode := fmt.Sprintf(`curl -H "Authorization: Bearer $API_TOKEN" \
-  "%s/%s?limit=25"`, origin, e.Config.Table)
+	curlCode := fmt.Sprintf(`curl -H "%s" \
+  "%s/%s?limit=25"`, s.tokenHeaderLine("$API_TOKEN"), origin, e.Config.Table)
 
 	return ui.CodeTabs(ui.CodeTabsConfig{Name: "sdk-quickstart", Label: "Quickstart"},
 		ui.CodeSample{Label: "Go", Language: "go", Code: goCode},
@@ -297,7 +297,7 @@ type authScreen struct{ site *site }
 
 func (sc *authScreen) ScreenTitle(ctx context.Context) string { return "API authentication" }
 func (sc *authScreen) ScreenDescription(ctx context.Context) string {
-	return "Bearer-token authentication for the " + sc.site.cfg.AppName + " API"
+	return "API-token authentication for the " + sc.site.cfg.AppName + " API"
 }
 
 func (sc *authScreen) Render() render.HTML {
@@ -307,8 +307,8 @@ func (sc *authScreen) Render() render.HTML {
 	body := []render.HTML{
 		heading(1, "Authentication"),
 		para(
-			text("Programmatic clients authenticate with a bearer API token sent as "),
-			code("Authorization: Bearer <token>"),
+			text("Programmatic clients authenticate with an API token sent as "),
+			code(s.tokenHeaderLine("<token>")),
 			text(". Both SDKs attach it automatically once configured."),
 		),
 	}
@@ -330,7 +330,7 @@ func (sc *authScreen) Render() render.HTML {
 			ui.CodeSample{Label: "Go", Language: "go", Code: `c := client.NewClient(baseURL, nil)
 c.Token = os.Getenv("API_TOKEN")`},
 			ui.CodeSample{Label: "TypeScript", Language: "ts", Code: `const api = new Client({ baseURL, token: process.env.API_TOKEN });`},
-			ui.CodeSample{Label: "curl", Language: "shell", Code: fmt.Sprintf(`curl -H "Authorization: Bearer $API_TOKEN" %s/<entity>`, origin)},
+			ui.CodeSample{Label: "curl", Language: "shell", Code: fmt.Sprintf(`curl -H "%s" %s/<entity>`, s.tokenHeaderLine("$API_TOKEN"), origin)},
 		),
 		para(text("Tokens carry scopes; a request outside the token's scopes is refused with 403. Rotate by minting a new token and deleting the old one.")),
 	)
@@ -703,9 +703,16 @@ page, err := c.List%s(ctx, params)
 %sawait api.%s.watch((event) => console.log(event), { signal });`,
 		prop, filterField, filterKey, tsCreate, prop)
 
-	curlCode := fmt.Sprintf(`curl -H "Authorization: Bearer $API_TOKEN" \
-  "%s/%s?%s=10&sort=-%s"`, origin, cfg.Table, url.QueryEscape(filterKey), filterField)
+	curlCode := fmt.Sprintf(`curl -H "%s" \
+  "%s/%s?%s=10&sort=-%s"`, s.tokenHeaderLine("$API_TOKEN"), origin, cfg.Table, url.QueryEscape(filterKey), filterField)
 
+	if s.openAPIManifest() {
+		// The downloads are the OpenAPI document's SDKs, which have no
+		// entity methods: plain HTTP is the example that holds.
+		return ui.CodeTabs(ui.CodeTabsConfig{Name: tabsName},
+			ui.CodeSample{Label: "curl", Language: "shell", Code: curlCode},
+		)
+	}
 	return ui.CodeTabs(ui.CodeTabsConfig{Name: tabsName},
 		ui.CodeSample{Label: "Go", Language: "go", Code: goCode},
 		ui.CodeSample{Label: "TypeScript", Language: "ts", Code: tsCode},
@@ -753,4 +760,25 @@ func upperFirst(s string) string {
 		return s
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// openAPIManifest reports downloads generated from an OpenAPI document.
+func (s *site) openAPIManifest() bool {
+	m, _, _ := s.resolved()
+	return m != nil && m.Source == sdk.SourceOpenAPI
+}
+
+// tokenHeaderLine is the header the SDKs send token in: the scheme an
+// OpenAPI manifest records, else a bearer token. The recorded name and
+// prefix are held to the bytes inert in the double-quoted shell snippets
+// they land in.
+func (s *site) tokenHeaderLine(token string) string {
+	header, prefix := "Authorization", "Bearer "
+	if m, _, _ := s.resolved(); m != nil && m.Source == sdk.SourceOpenAPI && m.TokenHeader != "" {
+		header, prefix = fenceWord(strings.ReplaceAll(m.TokenHeader, "/", "")), ""
+		if p := strings.TrimSpace(fenceWord(strings.ReplaceAll(m.TokenPrefix, "/", ""))); p != "" {
+			prefix = p + " "
+		}
+	}
+	return header + ": " + prefix + token
 }

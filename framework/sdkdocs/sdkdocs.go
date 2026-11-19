@@ -140,7 +140,7 @@ func Mount(coreApp *app.App, r *router.Router, cfg Config) error {
 			WithDescription("Client SDKs and API reference for " + cfg.AppName),
 		app.NewScreen(base+"/auth", &authScreen{site: s}).
 			WithTitle("API authentication: " + cfg.AppName).
-			WithDescription("Bearer-token authentication for the " + cfg.AppName + " API"),
+			WithDescription("API-token authentication for the " + cfg.AppName + " API"),
 		app.NewScreen(base+"/errors", &errorsScreen{site: s}).
 			WithTitle("API errors: " + cfg.AppName).
 			WithDescription("Error envelope and status codes for the " + cfg.AppName + " API"),

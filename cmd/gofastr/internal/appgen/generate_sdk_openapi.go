@@ -7,6 +7,8 @@ import (
 	"go/token"
 	"maps"
 	"mime"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -50,14 +52,26 @@ type oaSDKOp struct {
 var oaGoClientMembers = []string{"BaseURL", "HTTP", "Token", "Do", "DoRaw", "DoStream"}
 
 // oaJSClientMembers are the members the OpenAPI client.js Client defines.
-var oaJSClientMembers = []string{"baseURL", "token", "maxBlobBytes", "_fetch", "do", "_send", "_call", "_readBody", "_readBytes"}
+// then is among them: a Client with a then method is a thenable, and
+// awaiting it, or returning it from an async function, would call it.
+var oaJSClientMembers = []string{"baseURL", "token", "maxBlobBytes", "_fetch", "do", "_send", "_call", "_readBody", "_readBytes", "then"}
 
-// renderOpenAPISDK reads the document at src and renders the SDK files.
-func renderOpenAPISDK(opts *SdkOptions, src string) ([]GeneratedFile, error) {
+// renderOpenAPISDK reads the document opts.fromOpenAPI names and renders
+// the SDK files. With a project directory the name is a file inside it,
+// read through os.Root so neither ../ nor a symlink leaves it; without
+// one it is the --from-openapi flag's path or URL, read as given.
+func renderOpenAPISDK(opts *SdkOptions, project string) ([]GeneratedFile, error) {
 	if err := checkOpenAPISDKOptions(*opts); err != nil {
 		return nil, err
 	}
-	raw, err := readOpenAPISource(src)
+	src := opts.fromOpenAPI
+	var raw []byte
+	var err error
+	if project != "" {
+		raw, err = readProjectFile(project, src)
+	} else {
+		raw, err = readOpenAPISource(src)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("read OpenAPI document: %w", err)
 	}
@@ -80,9 +94,20 @@ func renderOpenAPISDK(opts *SdkOptions, src string) ([]GeneratedFile, error) {
 			m.Source = sdk.SourceOpenAPI
 			m.Entities = []string{}
 			m.SchemaHash = hash
+			m.TokenHeader, m.TokenPrefix = spec.API.TokenHeader, spec.API.TokenPrefix
 			return nil
 		},
 	}, opts.targets, !opts.noArchive)
+}
+
+// readProjectFile reads rel inside dir through os.Root.
+func readProjectFile(dir, rel string) ([]byte, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return root.ReadFile(filepath.FromSlash(rel))
 }
 
 // openAPIDocHash is the manifest's drift hash: sdk.OpenAPIHash over the
@@ -241,29 +266,70 @@ func oaResponse(root, node map[string]any) (kind string, schema map[string]any, 
 		if len(content) == 0 {
 			continue
 		}
-		pick := ""
+		pick, wildcard := "", ""
 		var binary []string
 		for _, ct := range slices.Sorted(maps.Keys(content)) {
 			base, _, err := mime.ParseMediaType(ct)
+			media, _ := content[ct].(map[string]any)
+			s, _ := media["schema"].(map[string]any)
 			switch {
 			case oaJSONMedia(ct) && (pick == "" || base == "application/json"):
 				pick = ct
-			case !oaJSONMedia(ct) && err == nil && !strings.ContainsFunc(base, isControlByte):
+			case oaJSONMedia(ct):
+			case (base == "*/*" || base == "application/*") && oaJSONShaped(root, s):
+				// springdoc documents every answer as */* with the JSON schema.
+				wildcard = ct
+			case err == nil && !strings.ContainsFunc(base, isControlByte):
 				binary = append(binary, base)
 			}
+		}
+		accept := ""
+		if pick == "" && wildcard != "" {
+			pick, accept = wildcard, "application/json"
 		}
 		if pick == "" {
 			return "binary", nil, strings.Join(binary, ", "), nil
 		}
 		media, _ := content[pick].(map[string]any)
 		schema, _ = media["schema"].(map[string]any)
-		base, _, err := mime.ParseMediaType(pick)
-		if err != nil || strings.ContainsFunc(base, isControlByte) {
-			base = "application/json"
+		if accept == "" {
+			base, _, err := mime.ParseMediaType(pick)
+			accept = base
+			if err != nil || strings.ContainsFunc(base, isControlByte) {
+				accept = "application/json"
+			}
 		}
-		return "json", schema, base, nil
+		return "json", schema, accept, nil
 	}
 	return "", nil, "", nil
+}
+
+// oaJSONShaped reports a schema a wildcard media type carries JSON in: a
+// reference, an object, an array or a non-string scalar. A string schema
+// (format binary or not) or none is a body handed over as it is.
+func oaJSONShaped(root, schema map[string]any) bool {
+	if schema == nil {
+		return false
+	}
+	if _, isRef := schema["$ref"]; isRef {
+		resolved, err := oaResolve(root, schema)
+		if err != nil {
+			return true // typing the result reports the reference
+		}
+		schema = resolved
+	}
+	switch t, _ := schema["type"].(string); t {
+	case "string":
+		return false
+	case "":
+		for _, k := range []string{"type", "properties", "items", "additionalProperties", "allOf", "oneOf", "anyOf"} {
+			if _, has := schema[k]; has {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
 
 // oaJSONMedia reports application/json, text/json or a +json suffix type.
@@ -531,7 +597,8 @@ func renderOASDKMethod(sb *strings.Builder, op oaSDKOp) {
 	default:
 		fmt.Fprintf(sb, "\tdata, _, err := %s.DoRaw%s\n\tif err != nil {\n\t\t%s\n\t}\n", caller, call, fail("err"))
 		if op.ResultType.Kind == "struct" {
-			fmt.Fprintf(sb, "\tif len(data) == 0 {\n\t\treturn nil, nil\n\t}\n\tout := new(%s)\n\tif err := decodeBody(data, out); err != nil {\n\t\treturn nil, err\n\t}\n\treturn out, nil\n}\n", op.ResultType.Name)
+			// Decoding into a nil pointer keeps a literal null answer nil.
+			fmt.Fprintf(sb, "\tif len(data) == 0 {\n\t\treturn nil, nil\n\t}\n\tvar out *%s\n\tif err := decodeBody(data, &out); err != nil {\n\t\treturn nil, err\n\t}\n\treturn out, nil\n}\n", op.ResultType.Name)
 			return
 		}
 		fmt.Fprintf(sb, "\tvar out %s\n\tif len(data) > 0 {\n\t\tif err := decodeBody(data, &out); err != nil {\n\t\t\t%s\n\t\t}\n\t}\n\treturn out, nil\n}\n", op.ResultType.goExpr(), fail("err"))

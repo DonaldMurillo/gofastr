@@ -11,7 +11,8 @@ import (
 
 // oaSDKFixture is a barcode API in gobarc's shape: JSON and binary
 // answers, a binary upload, a bearer default and one apiKey operation,
-// plus a Swashbuckle-style answer offering text/plain beside JSON and two
+// plus a Swashbuckle-style answer offering text/plain beside JSON, two
+// springdoc-style */* answers (a schema and a binary string), and two
 // operations whose optional parameters come before a required body.
 const oaSDKFixture = `{
   "openapi": "3.1.0",
@@ -120,6 +121,18 @@ const oaSDKFixture = `{
         "responses": {"200": {"description": "zip", "content": {"application/zip": {}}}}
       }
     },
+    "/pet": {
+      "get": {
+        "operationId": "getPet",
+        "responses": {"200": {"description": "springdoc", "content": {"*/*": {"schema": {"$ref": "#/components/schemas/Size"}}}}}
+      }
+    },
+    "/pet/photo": {
+      "get": {
+        "operationId": "getPetPhoto",
+        "responses": {"200": {"description": "springdoc", "content": {"*/*": {"schema": {"type": "string", "format": "binary"}}}}}
+      }
+    },
     "/ping": {
       "delete": {"operationId": "ping", "responses": {"204": {"description": "gone"}}}
     }
@@ -168,6 +181,9 @@ func TestOpenAPISDKLayoutAndManifest(t *testing.T) {
 	}
 	if m.Source != sdk.SourceOpenAPI || len(m.Entities) != 0 || m.SchemaHash != want || m.App != "barc" || m.SDKVersion != "1.2.3" {
 		t.Fatalf("manifest: %+v, want the openapi source and hash %s", m, want)
+	}
+	if m.TokenHeader != "Authorization" || m.TokenPrefix != "Bearer " {
+		t.Errorf("manifest token scheme %q %q, want the document's bearer scheme", m.TokenHeader, m.TokenPrefix)
 	}
 	if m.Artifacts["go"].Module != "example.com/barc-sdk" || len(m.Artifacts) != 3 {
 		t.Errorf("artifacts: %+v", m.Artifacts)

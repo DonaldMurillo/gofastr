@@ -55,8 +55,9 @@ few lines, and link the PR or the docs page for the rest.
   The Go `client.go` comes from the code that writes the `generate cli
   --from-openapi` client, whose `client.gen.go` now splits `DoRaw` into
   `send`, `readCapped` and `statusError` with no change in behaviour. The
-  manifest's drift hash covers the document; `sdkdocs.Config.OpenAPI`
-  serves the downloads beside it. The entity JS SDK's `_readBody` now reads
+  manifest's drift hash covers the document; the docs site serves the
+  downloads only when `sdkdocs.Config.OpenAPI` holds that document, and
+  checks drift against it. The entity JS SDK's `_readBody` now reads
   through `_readBytes`, so regenerated `client.js` files change bytes. A
   settings file with two or more `sdk` entries now needs `--out` or
   `--from-openapi` on `gofastr generate sdk` to pick one, instead of

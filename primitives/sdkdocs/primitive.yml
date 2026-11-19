@@ -64,6 +64,10 @@ invariants:
     rule: Every artifact route answers 404 for a manifest whose source is openapi unless Config.OpenAPI holds a document, and the drift banner shows when that document's OpenAPIHash differs from the manifest's.
     enforced_by:
       - test: framework/sdkdocs.TestOpenAPIManifestDownloads
+  - id: openapi-snippets-match-the-sdk
+    rule: With a manifest whose source is openapi, every curl snippet sends the token under the manifest's tokenHeader and tokenPrefix, and entity pages show no entity-SDK calls.
+    enforced_by:
+      - test: framework/sdkdocs.TestOpenAPIManifestSnippets
   - id: artifact-is-the-one-the-manifest-records
     rule: An SDK artifact whose SHA-256 differs from the manifest's record for its key, or has no record, answers 404.
     enforced_by:

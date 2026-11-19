@@ -39,6 +39,11 @@ type Manifest struct {
 	// SchemaHash is SchemaHash over Entities at generation time, or
 	// OpenAPIHash over the document for an OpenAPI source.
 	SchemaHash string `json:"schemaHash"`
+	// TokenHeader and TokenPrefix are what an OpenAPI source's SDKs send
+	// the token as (X-Api-Key and "", or Authorization and "Bearer "); empty
+	// for the entity source, whose SDKs send a bearer token.
+	TokenHeader string `json:"tokenHeader,omitempty"`
+	TokenPrefix string `json:"tokenPrefix,omitempty"`
 	// Artifacts is keyed "go", "js" and "js-types", for those generated.
 	Artifacts map[string]Artifact `json:"artifacts"`
 }
