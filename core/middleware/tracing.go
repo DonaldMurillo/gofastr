@@ -1,12 +1,9 @@
 package middleware
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"github.com/DonaldMurillo/gofastr/internal/panicstack"
-	"io"
-	"net"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -46,7 +43,7 @@ func Tracing() Middleware {
 			defer span.End()
 
 			prop.Inject(ctx, propagation.HeaderCarrier(w.Header()))
-			ww := &tracingResponseWriter{ResponseWriter: w, status: 200}
+			ww := newStatusWriter(w)
 			finish := func(status int) {
 				route := r.Pattern
 				if route == "" || strings.HasSuffix(route, "/") || strings.HasSuffix(route, "...}") {
@@ -128,61 +125,6 @@ func NoteRoute(ctx context.Context, route string) {
 // SpanFromRequest returns the span on r's context, a no-op span without Tracing.
 func SpanFromRequest(r *http.Request) trace.Span {
 	return trace.SpanFromContext(r.Context())
-}
-
-type tracingResponseWriter struct {
-	http.ResponseWriter
-	status      int
-	wroteHeader bool
-}
-
-func (w *tracingResponseWriter) WriteHeader(code int) {
-	if w.wroteHeader {
-		return
-	}
-	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
-		w.ResponseWriter.WriteHeader(code)
-		return
-	}
-	w.ResponseWriter.WriteHeader(code)
-	w.status = code
-	w.wroteHeader = true
-}
-
-func (w *tracingResponseWriter) Write(b []byte) (int, error) {
-	if !w.wroteHeader {
-		w.WriteHeader(http.StatusOK)
-	}
-	return w.ResponseWriter.Write(b)
-}
-
-func (w *tracingResponseWriter) ReadFrom(src io.Reader) (int64, error) {
-	return copyResponse(w, w.ResponseWriter, src)
-}
-
-func (w *tracingResponseWriter) Flush() {
-	w.wroteHeader = true
-	if f, ok := w.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-func (w *tracingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
-		return hj.Hijack()
-	}
-	return nil, nil, http.ErrNotSupported
-}
-
-func (w *tracingResponseWriter) Push(target string, opts *http.PushOptions) error {
-	if pu, ok := w.ResponseWriter.(http.Pusher); ok {
-		return pu.Push(target, opts)
-	}
-	return http.ErrNotSupported
-}
-
-func (w *tracingResponseWriter) Unwrap() http.ResponseWriter {
-	return w.ResponseWriter
 }
 
 const maxSpanStackLen = 8 << 10
