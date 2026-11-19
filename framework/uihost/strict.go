@@ -408,15 +408,6 @@ func InvalidSitemapBaseURL(base string) string {
 	return ""
 }
 
-func isDynamicRoute(pattern string) bool {
-	for seg := range strings.SplitSeq(pattern, "/") {
-		if strings.HasPrefix(seg, ":") || strings.HasPrefix(seg, "{") {
-			return true
-		}
-	}
-	return false
-}
-
 func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 	if cfg.level(strictCheckAxeCoverage) == StrictOff {
 		return nil
@@ -427,7 +418,7 @@ func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 		if !ok || screen.Type != app.ScreenPage || cfg.exempt(screen.Path) {
 			continue
 		}
-		if isDynamicRoute(screen.Path) {
+		if isDynamicScreenPath(screen.Path) {
 			provider, declares := screen.Component.(app.StaticPathsProvider)
 			if !declares || len(provider.StaticPaths(context.Background())) == 0 {
 				invisible = append(invisible, screen.Path)

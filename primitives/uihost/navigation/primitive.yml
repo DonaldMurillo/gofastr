@@ -234,7 +234,7 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestSweepNavMethodNotAllowedPageInLayout
   - id: default-error-pages-style-home-link
-    rule: The default error pages' home link carries the fui-button fui-button--primary classes.
+    rule: The default error pages' home link carries the fui-button fui-button--primary classes, on every arm a visitor can reach — the composed screens, the bare no-layout fallbacks and the problem-JSON worker's HTML arm.
     enforced_by:
       - test: framework/uihost.TestDefaultErrorPagesStyleHomeLink
 decisions:

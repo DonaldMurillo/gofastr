@@ -172,8 +172,8 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 	title = textsafe.StripInvisible(title)
 	if title == "" {
 		title = textsafe.StripInvisible(ds.App.Name)
-	} else if suffix := " — " + ds.App.Name; !strings.HasSuffix(title, suffix) {
-		title += suffix
+	} else {
+		title = suffixTitle(title, ds.App.Name)
 	}
 	if title != "" {
 		w.Header().Set("X-Gofastr-Title", url.PathEscape(title))

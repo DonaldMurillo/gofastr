@@ -25,6 +25,10 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **uihost: sitemaps list literal routes that contain a colon,** such as
+  `/time/12:30`, without a static-path provider.
+- **uihost: the bare fallback 404 and 500 pages carry the same styled
+  home link as the default error screens.**
 - **telemetry: the Logs page keeps entries with an empty path when the
   quiet path list holds an empty prefix,** matching the collector.
 - **telemetry: `gofastr telemetry request` and the `telemetry_request` MCP

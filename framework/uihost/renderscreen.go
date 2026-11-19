@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -91,10 +90,7 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 	}
 	if t, ok := comp.(app.ScreenTitler); ok {
 		if name := t.ScreenTitle(r.Context()); name != "" {
-			title = name
-			if suffix := " — " + appName; !strings.HasSuffix(title, suffix) {
-				title += suffix
-			}
+			title = suffixTitle(name, appName)
 		}
 	}
 

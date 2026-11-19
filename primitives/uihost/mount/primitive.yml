@@ -75,6 +75,10 @@ invariants:
     rule: A dynamic screen's pattern llm.md, for a request its policies do not allow, is the metadata-free withheld doc.
     enforced_by:
       - test: framework/uihost.TestSweepCorePatternLLMMDWithheldByPolicy
+  - id: pattern-llm-md-resolves-seo-before-render
+    rule: An allowed pattern llm.md resolves the registered screen's SEO before rendering its markdown body.
+    enforced_by:
+      - test: framework/uihost.TestPatternLLMMDResolvesSEOBeforeRender
   - id: llm-md-follows-page-status
     rule: A concrete URL's llm.md answers the page's 404 whenever the page answers anything but 200.
     enforced_by:
