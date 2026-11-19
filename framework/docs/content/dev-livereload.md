@@ -21,16 +21,17 @@ defaults are dev-friendly; production is always safe:
 | Var | Default | Meaning |
 |---|---|---|
 | `GOFASTR_DEV` | unset | `gofastr dev` sets this to `1` on the child process. Without it, livereload stays dormant. |
-| `GOFASTR_ENV` | unset | Set to `production` to force livereload off even if `GOFASTR_DEV` slips through. Belt-and-suspenders for accidental dev binaries in prod. |
-| `GOFASTR_DEV_LIVERELOAD` | unset (= on) | Set to `0` to opt out while keeping the rest of dev mode (`gofastr dev`'s rebuild loop) running. |
-| `GOFASTR_DEV_LAYOUT` | unset (= on) | Set to `0` to stop serving the [layout layer](#layout-layer) script. |
+| `GOFASTR_ENV` | unset | Set to a production-like value (`production`, `prod`, `live` or `staging`, any case) to force livereload off even if `GOFASTR_DEV` slips through. Belt-and-suspenders for accidental dev binaries in prod. |
+| `GOFASTR_DEV_LIVERELOAD` | unset (= on) | Set to a false value (`0`, `false`, `f`) to opt out while keeping the rest of dev mode (`gofastr dev`'s rebuild loop) running. |
+| `GOFASTR_DEV_LAYOUT` | unset (= on) | Set to a false value to stop serving the [layout layer](#layout-layer) script. |
 
-Predicate (single source of truth in `framework/dev/livereload.go`):
+Predicate (the environment gate lives in `internal/devmode`, the opt-out
+in `framework/dev/livereload.go`):
 
 ```
-GOFASTR_ENV != "production"  AND
-GOFASTR_DEV truthy           AND
-GOFASTR_DEV_LIVERELOAD != "0"
+GOFASTR_ENV not in {production, prod, live, staging}  AND
+GOFASTR_DEV truthy                                     AND
+GOFASTR_DEV_LIVERELOAD does not parse as false
 ```
 
 ## What it does
