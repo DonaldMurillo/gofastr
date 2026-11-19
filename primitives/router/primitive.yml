@@ -27,7 +27,7 @@ invariants:
       - test: core/router.TestRouteConflictPanicIsActionable
       - test: core/router.TestUncleanPatternPanicIsNotAConflict
   - id: top-level-group-prefix
-    rule: A top-level Group prefix that is neither empty nor starts with "/" panics unless its first segment holds a dot or is localhost, and a host prefix with a port panics.
+    rule: A top-level Group prefix that is neither empty nor starts with "/" panics unless its first segment holds a dot or is localhost in any letter case, and a host prefix with a port panics.
     enforced_by:
       - test: core/router.TestGroupRefusesBarePrefix
   - id: routes-lists-whole-tree
