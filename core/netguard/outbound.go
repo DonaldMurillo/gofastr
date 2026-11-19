@@ -27,7 +27,8 @@ func CheckOutboundURL(raw, prefix string, allowPrivate bool) error {
 	if scheme != "http" && scheme != "https" {
 		return fmt.Errorf("%s: scheme %q not allowed (need http or https)", prefix, u.Scheme)
 	}
-	if u.Host == "" {
+	host := u.Hostname()
+	if host == "" {
 		return fmt.Errorf("%s: URL missing host", prefix)
 	}
 	if u.User != nil {
@@ -35,10 +36,6 @@ func CheckOutboundURL(raw, prefix string, allowPrivate bool) error {
 	}
 	if allowPrivate {
 		return nil
-	}
-	host := u.Hostname()
-	if host == "" {
-		return fmt.Errorf("%s: URL missing host", prefix)
 	}
 	if IsInternalName(host) {
 		return fmt.Errorf("%s: host %q targets internal infrastructure", prefix, host)

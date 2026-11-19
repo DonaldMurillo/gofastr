@@ -170,8 +170,9 @@ route to it. Only `AllowPrivateNetworks: true` opts out.
 
 For development and tests, opt out via `Options.AllowPrivateNetworks =
 true`. This disables both the subscribe-time and the dial-time IP
-checks. The scheme guard still applies: `file://`, `gopher://`, etc.
-are always refused.
+checks. The scheme, host and userinfo guards still apply: `file://`,
+`gopher://`, a URL with no hostname such as `http://:8080/`, and one
+carrying `user:pass@` are always refused.
 
 ### Receivers on the same LAN or machine
 

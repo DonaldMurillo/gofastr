@@ -77,6 +77,10 @@ type panicFile struct{ fs.File }
 
 func (panicFile) Read([]byte) (int, error) { panic("read") }
 
+type closePanicFile struct{ fs.File }
+
+func (closePanicFile) Close() error { panic("close") }
+
 func TestSweepBackgroundHashPanicCostsOnlyTheETag(t *testing.T) {
 	c := newDigestCache()
 	data := bytes.Repeat([]byte("x"), 8)
@@ -88,6 +92,11 @@ func TestSweepBackgroundHashPanicCostsOnlyTheETag(t *testing.T) {
 	key := keyOf("big.bin", st)
 	c.hashInBackground(key, func() (fs.File, error) { return panicFS{base}.Open("big.bin") })
 	c.hashInBackground(digestKey{name: "boom"}, func() (fs.File, error) { panic("open") })
+	closeKey := digestKey{name: "close"}
+	c.hashInBackground(closeKey, func() (fs.File, error) {
+		f, err := base.Open("big.bin")
+		return closePanicFile{f}, err
+	})
 	deadline := time.Now().Add(2 * time.Second)
 	for len(c.slots) > 0 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
@@ -98,4 +107,23 @@ func TestSweepBackgroundHashPanicCostsOnlyTheETag(t *testing.T) {
 	if _, ok := c.done.Load(key); ok {
 		t.Fatal("a panicking read stored a digest")
 	}
+	for _, k := range []digestKey{key, closeKey} {
+		for time.Now().Before(deadline) {
+			if _, running := c.inflight.Load(k); !running {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if _, running := c.inflight.Load(k); running {
+			t.Fatalf("a panicking hash kept its inflight key %q", k.name)
+		}
+	}
+	c.hashInBackground(key, func() (fs.File, error) { return base.Open("big.bin") })
+	for time.Now().Before(deadline) {
+		if _, ok := c.done.Load(key); ok {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("the same revision could not be hashed after a panic")
 }
