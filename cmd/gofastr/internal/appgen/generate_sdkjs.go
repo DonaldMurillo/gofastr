@@ -960,8 +960,8 @@ const jsClientMethods = `  async do(method, path, body) {
 
 `
 
-// dtsRuntimePrelude declares the shared runtime types in client.d.ts.
-const dtsRuntimePrelude = `export declare class ApiError extends Error {
+// dtsApiError declares ApiError, first in both JS SDKs' client.d.ts.
+const dtsApiError = `export declare class ApiError extends Error {
   status: number;
   code: number;
   /** The error's stable code (unique_taken, unknown_filter); null on a non-JSON body. */
@@ -974,7 +974,10 @@ const dtsRuntimePrelude = `export declare class ApiError extends Error {
   parsed: unknown;
 }
 
-export interface ListParams {
+`
+
+// dtsRuntimePrelude declares the shared runtime types in client.d.ts.
+const dtsRuntimePrelude = dtsApiError + `export interface ListParams {
   page?: number;
   limit?: number;
   /** "-created_at" for descending; snake_case column names. */

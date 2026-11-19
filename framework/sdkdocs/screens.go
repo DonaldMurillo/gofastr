@@ -159,7 +159,7 @@ func (sc *indexScreen) Render() render.HTML {
 		heading(2, "Install"),
 		s.installTabs(),
 	)
-	if ents := s.includedEntities(); len(ents) > 0 {
+	if ents := s.includedEntities(); len(ents) > 0 && (m == nil || m.Source != sdk.SourceOpenAPI) {
 		body = append(body,
 			heading(2, "Quickstart"),
 			s.quickstartTabs(ents[0]),
@@ -175,6 +175,12 @@ func (s *site) downloads(m *sdk.Manifest) []render.HTML {
 				code("sdkdocs.Config.Artifacts"), text(" at the dist directory:")),
 			ui.TerminalBlock(ui.TerminalBlockConfig{Label: "$ generate"},
 				text("gofastr generate sdk")),
+		}
+	}
+	if m.Source == sdk.SourceOpenAPI && s.cfg.OpenAPI == nil {
+		return []render.HTML{
+			para(text("Downloads are withheld on this deployment: the SDKs were generated from an OpenAPI document, and the site serves them only beside the document they describe. Pass it as "),
+				code("sdkdocs.Config.OpenAPI"), text(".")),
 		}
 	}
 	if !s.artifactsDocumented(m) {

@@ -12,7 +12,9 @@ gofastr generate sdk
 ```
 
 Like `generate cli`, the entity set comes from your project source
-(`entities/*.go`), not an app spec. SDK output is **generator-owned and
+(`entities/*.go`), not an app spec. An API described by an OpenAPI
+document instead generates with `--from-openapi` (see From an OpenAPI
+document). SDK output is **generator-owned and
 regenerates in place**: when the docs site warns that downloads drifted
 from the live schema, the fix is re-running the command.
 
@@ -383,6 +385,107 @@ Each value goes into its own path segment, escaped the way the server's
 server stores. An entity with an integer `id` types it `number | string`,
 like every integer field (see below).
 
+## From an OpenAPI document
+
+An app whose API is hand-written, not auto-CRUD, usually keeps an OpenAPI 3
+document. `--from-openapi` generates both SDKs from that document instead
+of the entity set, in the same layout:
+
+```bash
+gofastr generate sdk --from-openapi api/openapi.json --module github.com/me/app-sdk
+```
+
+```yaml
+codegen:
+  generators:
+    - name: sdk
+      config:
+        from_openapi: api/openapi.json
+        module: github.com/me/app-sdk
+```
+
+The document is read by the same code as `gofastr generate cli
+--from-openapi` ([App CLI](app-cli.md)), so it is refused for the same
+reasons: a missing or duplicate `operationId`, a parameter style other
+than form (query) or simple (path, header), a cookie parameter, an
+external `$ref`, a Swagger 2 document. The command-line refusals do not
+apply: an operation named `login` or a parameter named `token` is fine
+in an SDK. The SDK adds its own: an `operationId` whose Go method or
+client.js method the client already defines (`Do`, `DoRaw`, `DoStream`,
+`do`, `toString`), a parameter whose name derives no Go field name, or
+two parameters of one operation that derive the same one. A derived type
+name declared twice is refused too. Nothing is renamed.
+
+`servers[0].url` gives the default origin and the API prefix, which
+`--api-prefix` replaces, like the CLI. The token goes under the scheme
+the document's top-level `security` names (`Authorization: Bearer` for
+http bearer, the header an apiKey scheme names), and an operation whose
+own `security` names another scheme sends it under that one.
+
+**Go.** `client.go` is the client the CLI builds into its
+`internal/client`, from the same renderer: `NewClient`, `Token`,
+`APIError`, a 30-second default timeout, redirects refused, a 1 MiB cap
+on every buffered body, exact JSON numbers. `operations.go` adds one
+method per operation, named from its `operationId` (`generateBarcode` is
+`GenerateBarcode`), and `APIPrefix`:
+
+```go
+c := client.NewClient("https://barcode.example.com"+client.APIPrefix, nil)
+c.Token = os.Getenv("API_TOKEN")
+
+png, err := c.GenerateBarcode(ctx, client.GenerateRequest{Data: "hi", Symbology: "qr"})
+if err != nil { /* *client.APIError for a non-2xx answer */ }
+defer png.Close()
+```
+
+| Document | Go |
+|---|---|
+| path, query and header parameters | one `<Op>Params` struct; an optional parameter is a pointer, a repeated one a `[]string` |
+| JSON request body | the schema's type; a pointer when `requestBody.required` is not set (nil sends none) |
+| binary request body | an `io.Reader`, sent under the document's media type |
+| JSON response | the schema's type; a struct comes back as a pointer, nil for an empty answer |
+| any non-JSON response (`image/png`, `application/zip`) | an `io.ReadCloser`, unbuffered: the caller reads and closes it |
+| no 2xx content | `error` only |
+
+A component schema keeps its name (`#/components/schemas/Size` is
+`Size`); an inline object is named by its place (`ValidateDataRequest`,
+`GetSpecResponse`, `SizeOwner`). `integer` is `int64`, `number`
+`float64`, and an optional or nullable scalar a pointer. A schema the
+SDK cannot type (a union of two types, an object with no properties, an
+object whose property names do not all make Go fields, such as `@type`)
+is `json.RawMessage`, so no value is dropped or rounded.
+
+**JS/TS.** `client.js` has one async method per operation, named by the
+`operationId` (or the Go name with its first letter lowered when the
+`operationId` is not a JS identifier). It takes the parameters as one
+object keyed by their names in the document, then the body:
+
+```js
+import { Client, APIPrefix } from "./client.js";
+const api = new Client({ baseURL: "https://barcode.example.com" + APIPrefix, token });
+const png = await api.generateBarcode({ data: "hi", symbology: "qr" }); // a Blob
+const spec = await api.getSpec({ symbology: "qr", "X-Trace": "t-1" });
+```
+
+A binary answer resolves to a `Blob`: it carries the response's
+Content-Type, an image goes straight to `URL.createObjectURL`, and
+`blob.arrayBuffer()` is one call away. The Blob is read under
+`maxBlobBytes` (32 MiB unless the constructor sets it), every other body
+under 1 MiB, and either cap throws `ApiError`. Integers past 2^53 arrive
+as their decimal strings, as in the entity SDK. A redirect is not
+followed (it would carry the token to another origin) and throws
+`ApiError`, as does every non-2xx answer; a missing required parameter
+or body throws `TypeError` before anything is sent. `client.d.ts`
+declares the same types the Go SDK has.
+
+**dist and drift.** `manifest.json` records `"source": "openapi"`, an
+empty `entities` list, and `framework/sdk.OpenAPIHash` of the document
+as its `schemaHash`: a SHA-256 over the document's RFC 8785 canonical
+JSON, so reformatting it moves nothing. A YAML document is hashed as its
+JSON form. The docs site serves these downloads only beside the
+document they describe, passed as `sdkdocs.Config.OpenAPI` (see
+Serving), and shows the drift banner when that document's hash differs.
+
 ## The casing contract both SDKs encode
 
 Responses are camelCase (the server default). Request bodies accept snake
@@ -400,7 +503,8 @@ camelCase wire keys (`address_line_1` becomes `addressLine1`).
 ## Flags and project configuration
 
 ```
-gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>]
+gofastr generate sdk [--from-openapi=<path|url>] [--target=go,js]
+    [--out=gen/sdk] [--name=<app>]
     [--api-prefix=api] [--only=a,b] [--exclude=c] [--module=<path>]
     [--base-url=<url>] [--sdk-version=<semver>] [--no-archive]
     [--stamp-time] [--dry-run] [--json]
@@ -439,7 +543,12 @@ codegen:
 ```
 
 The config keys are `name`, `api_prefix`, `module`, `base_url`,
-`sdk_version` (strings) and `targets`, `only`, `exclude` (YAML lists).
+`sdk_version`, `from_openapi` (strings) and `targets`, `only`, `exclude`
+(YAML lists). `from_openapi` names a file in the project, never a URL
+(every build would fetch it), and takes no `only` or `exclude`: the SDK
+covers every operation in the document. `--from-openapi` on the command
+line uses the entry that names the same document, or none, so it never
+writes into another entry's output directory.
 A flag passed empty still wins: `--only=` generates every entity and
 `--api-prefix=` means no prefix, whatever the settings entry says.
 An
@@ -525,6 +634,20 @@ must match the SHA-256 the manifest records for it, so an artifact an
 earlier run left in dist (a `sdk-go.zip` from before a `--target=js`
 run) answers 404 instead of serving schema the manifest no longer
 names.
+A manifest generated `--from-openapi` names no entities; its downloads
+answer 404 unless `Config.OpenAPI` holds the JSON document the app
+publishes, since the document is what they describe:
+
+```go
+spec, _ := os.ReadFile("api/openapi.json")
+sdkdocs.Mount(site, fwApp.Router(), sdkdocs.Config{
+    Registry:  fwApp.Registry,
+    Artifacts: os.DirFS("gen/sdk/dist"),
+    OpenAPI:   spec,
+})
+```
+
+The overview page then leaves out the entity quickstart.
 `gofastr generate sdk` covers every entity by default, so for a site
 that documents only `Public` entities generate with
 `--only=<those entities>`, or widen `Entities` / `IncludeGated` if
@@ -548,12 +671,17 @@ search fields, relations, states, settings-declared endpoints and every
 non-hidden field. Reordering a composite key therefore reports drift,
 since an old SDK would pass the key arguments the wrong way round.
 
+For an SDK generated `--from-openapi` the hash is `sdk.OpenAPIHash` of
+the document, and the site recomputes it from `Config.OpenAPI`.
+
 The manifest must list the entities it covers: `ReadManifest` refuses an
 empty (or omitted) `entities` list the same way it refuses a missing
 artifact, because a zero-entity manifest makes this check vacuous — the
 recomputed hash would be a constant no matter what the live registry
 holds, and a generation run that lost its entity list would report
-"current" forever after.
+"current" forever after. A manifest whose `source` is `openapi` lists
+no entities instead, since its hash covers the document, and a `source`
+the reader does not know is refused.
 
 ### Static export
 
@@ -594,6 +722,7 @@ Files the export already produced (or the user static dir) always win.
 Endpoints registered by hand in Go get no typed methods: both SDKs expose
 the `Do`/`do` escape hatch and the reference pages list them. Declare an
 endpoint in `gofastr.settings.yml` to get a typed method
-([Custom endpoints](endpoints.md)). Servers reconfigured to snake_case responses (`WithJSONCase`) should set
+([Custom endpoints](endpoints.md)), or describe the API in an OpenAPI
+document and generate with `--from-openapi`. Servers reconfigured to snake_case responses (`WithJSONCase`) should set
 `sdkdocs.Config.SnakeCase` for the docs examples; the generated SDKs
 assume the camelCase default.

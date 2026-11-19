@@ -10,8 +10,9 @@ on_change:
   - A change to the Manifest's JSON shape must be written by cmd/gofastr/internal/appgen and read by framework/sdkdocs in the same change.
 invariants:
   - id: manifest-is-complete
-    rule: ReadManifest refuses a manifest that is missing, malformed, or has no schemaVersion, no entities, no artifacts, or an artifact without file or sha256; a different SchemaVersion is not an error.
+    rule: ReadManifest refuses a manifest that is missing, malformed, or has no schemaVersion, no artifacts, an artifact without file or sha256, an unknown source, no entities for the entity source or any for the openapi source; a different SchemaVersion is not an error.
     enforced_by:
+      - test: framework/sdk.TestReadManifestSources
       - test: framework/sdk.TestReadManifestValidates
       - test: framework/sdk.TestReadManifestRejectsEmptyEntities
       - test: framework/sdk.TestReadManifestRefusesEachMissingPart

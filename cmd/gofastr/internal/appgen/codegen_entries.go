@@ -188,7 +188,7 @@ func decodeCLIEntry(index int, gen codegen.GeneratorConfig) (CliOptions, error) 
 func decodeSDKEntry(index int, gen codegen.GeneratorConfig) (SdkOptions, error) {
 	e := entryConfig{index: index, name: "sdk", cfg: gen.Config}
 	var opts SdkOptions
-	if err := e.known("name", "api_prefix", "module", "base_url", "sdk_version", "targets", "only", "exclude"); err != nil {
+	if err := e.known("name", "api_prefix", "module", "base_url", "sdk_version", "targets", "only", "exclude", "from_openapi"); err != nil {
 		return opts, err
 	}
 	for _, field := range []struct {
@@ -199,6 +199,7 @@ func decodeSDKEntry(index int, gen codegen.GeneratorConfig) (SdkOptions, error) 
 		{"module", &opts.module},
 		{"base_url", &opts.baseURL},
 		{"sdk_version", &opts.sdkVersion},
+		{"from_openapi", &opts.fromOpenAPI},
 	} {
 		v, _, err := e.str(field.key, false)
 		if err != nil {
@@ -221,7 +222,22 @@ func decodeSDKEntry(index int, gen codegen.GeneratorConfig) (SdkOptions, error) 
 	if opts.exclude, err = e.list("exclude"); err != nil {
 		return opts, err
 	}
+	if strings.Contains(opts.fromOpenAPI, "://") {
+		return opts, e.errorf("config.from_openapi must be a file in the project, not a URL: every build would fetch it. Save the document and name the file")
+	}
+	if err := checkOpenAPISDKOptions(opts); err != nil {
+		return opts, e.errorf("%v", err)
+	}
 	return opts, nil
+}
+
+// checkOpenAPISDKOptions refuses an entity selection beside an OpenAPI
+// source: the SDK covers every operation the document declares.
+func checkOpenAPISDKOptions(opts SdkOptions) error {
+	if opts.fromOpenAPI != "" && (len(opts.only) > 0 || len(opts.exclude) > 0) {
+		return fmt.Errorf("only and exclude select entities, and an SDK generated from an OpenAPI document covers every operation in it; drop them")
+	}
+	return nil
 }
 
 // ApplyCLIConfigDefaults fills what the flags left unset from a cli entry in

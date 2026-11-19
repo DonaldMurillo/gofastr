@@ -1,0 +1,103 @@
+primitive: sdk.openapi
+summary: The Go and JS/TS SDKs gofastr generate sdk --from-openapi renders from an OpenAPI 3 document, and the client renderer and document walk it shares with gofastr generate cli --from-openapi.
+code:
+  - cmd/gofastr/internal/appgen/generate_openapi_client.go
+  - cmd/gofastr/internal/appgen/generate_sdk_openapi.go
+  - cmd/gofastr/internal/appgen/generate_sdk_openapi_types.go
+  - cmd/gofastr/internal/appgen/generate_sdkjs_openapi.go
+docs:
+  - framework/docs/content/sdk.md
+  - framework/docs/content/app-cli.md
+on_change:
+  - A change to renderOpenAPIClient or writeOARequestParts changes the --from-openapi CLI's generated output too; say so in CHANGELOG.
+  - A new refusal in buildOpenAPIModel applies to both generators; a refusal only a command line needs goes behind oaModelOptions.CLI.
+twins:
+  - job: The JS client's raw escape hatch, do(method, path, body), that sends a JSON body with the token and parses the answer.
+    why: The entity client.js sends only a bearer token and turns a body holding a Blob into multipart FormData; merging them needs the entity Client to carry the token scheme the OpenAPI one reads from the document.
+    sites:
+      - path: cmd/gofastr/internal/appgen/generate_sdkjs.go
+        note: jsClientMethods, the entity Client's do.
+      - path: cmd/gofastr/internal/appgen/generate_sdkjs_openapi.go
+        note: jsOAClientTail, the OpenAPI Client's do over _send.
+invariants:
+  - id: one-client-renderer
+    rule: The Go SDK's client.go declares every function the --from-openapi CLI's internal/client declares with the same text, both from renderOpenAPIClient, and adds only DoStream.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKClientIsTheCLIClient
+  - id: same-refusals-as-the-cli
+    rule: The SDK refuses a missing or duplicate operationId, an unsupported parameter style, a cookie parameter and an external $ref through the walk the CLI uses, and refuses an operation or parameter whose Go or client.js name the client already declares or another one derives.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKRefusals
+  - id: cli-only-refusals-stay-cli
+    rule: A reserved CLI command word or flag name is an ordinary method or field in the SDK.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKSkipsCLIOnlyRefusals
+  - id: untypeable-schema-is-raw
+    rule: An object whose property names do not all make distinct Go field names is json.RawMessage in Go and unknown in TypeScript, never a struct missing or renaming a property.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKUnnameableObjectIsRaw
+  - id: non-json-answer-is-binary
+    rule: The lowest 2xx response with content decides the result, and any non-JSON media type in it makes the answer binary.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKResponseKinds
+  - id: go-sdk-wire
+    rule: The generated Go module passes go vet and sends each operation's parameters, body and token as the document describes, keeps integers past 2^53 exact, streams a binary answer unbuffered, caps a JSON one at 1 MiB, and returns a redirect as *APIError without following it.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
+      - test: cmd/gofastr/internal/appgen.TestUnionApp
+  - id: only-the-stream-is-unread
+    rule: Every read of a response body in the Go SDK's client goes through the 1 MiB cap, except the 2xx body DoStream returns after refusing a non-2xx status.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKClientBodiesBounded
+  - id: js-sdk-wire
+    rule: The generated client.js sends each operation as the Go SDK does, resolves a binary answer to a Blob read under maxBlobBytes, reads every other body under 1 MiB, and throws ApiError for a non-2xx answer or a redirect and TypeError for a missing required parameter.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKJSWireBrowser
+  - id: manifest-records-the-document
+    rule: The manifest of an OpenAPI SDK has source openapi, no entities, and sdk.OpenAPIHash of the document as its schemaHash.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKLayoutAndManifest
+  - id: settings-entry
+    rule: An sdk settings entry's from_openapi names a file in the project, takes no only or exclude, and runs under gofastr generate --config and as gofastr generate sdk's defaults.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKSettingsEntry
+      - test: cmd/gofastr/internal/generatecmd.TestWatchHashesCLIOpenAPIDoc
+decisions:
+  - id: one-client-for-cli-and-sdk
+    date: 2026-11-19
+    status: accepted
+    decision: The SDK's client.go comes from the renderer that writes the --from-openapi CLI's internal/client, and both assemble parameters through writeOARequestParts; the CLI's DoRaw now sends through send, readCapped and statusError, which DoStream also uses.
+    rejected:
+      - option: A second client renderer in the SDK generator.
+        why: The two would drift on the cap, the redirect refusal and the token header, the twin class twin-sweep hunts.
+      - option: Make the CLI import the SDK.
+        why: The CLI is generated into a module that may not want a second one, and its internal/client already works.
+    upholds: [one-client-renderer]
+  - id: binary-go-is-a-readcloser
+    date: 2026-11-19
+    status: accepted
+    decision: A binary answer returns an io.ReadCloser from DoStream, read by the caller and outside the 1 MiB cap.
+    rejected:
+      - option: Return []byte.
+        why: A batch archive or a large image is past 1 MiB, and buffering it without a cap would undo the cap.
+    upholds: [only-the-stream-is-unread]
+  - id: binary-js-is-a-blob
+    date: 2026-11-19
+    status: accepted
+    decision: client.js resolves a binary answer to a Blob carrying the response's Content-Type, read under maxBlobBytes, 32 MiB unless the constructor sets it.
+    rejected:
+      - option: Resolve to an ArrayBuffer.
+        why: It drops the Content-Type, which tells a PNG from an SVG, and blob.arrayBuffer() is one call away.
+      - option: No cap on the Blob.
+        why: The SDK, not the caller, buffers it, so a hostile endpoint could fill the page's memory.
+    upholds: [js-sdk-wire]
+  - id: unnameable-object-is-raw
+    date: 2026-11-19
+    status: accepted
+    decision: An object with a property name no Go field can carry is typed raw JSON.
+    rejected:
+      - option: Refuse the document.
+        why: A property name is wire data nobody can change, as the CLI's --json-only body fields already decided.
+      - option: Rename or drop the property.
+        why: The struct would send and read a different key than the API.
+    upholds: [untypeable-schema-is-raw]

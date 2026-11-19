@@ -24,6 +24,20 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Added
+- **`gofastr generate sdk --from-openapi <path|url>`, and `from_openapi`
+  on the `sdk` settings entry.** It writes the Go and JS/TS SDKs and
+  `dist/` from an OpenAPI 3 document: one typed method per `operationId`,
+  `io.ReadCloser` in Go and `Blob` in JS for image, zip and other non-JSON
+  answers, and the token under the scheme the document's `security` names.
+  The Go `client.go` comes from the code that writes the `generate cli
+  --from-openapi` client, whose `client.gen.go` now splits `DoRaw` into
+  `send`, `readCapped` and `statusError` with no change in behaviour. The
+  manifest's drift hash covers the document; `sdkdocs.Config.OpenAPI`
+  serves the downloads beside it. The entity JS SDK's `_readBody` now reads
+  through `_readBytes`, so regenerated `client.js` files change bytes.
+  [#818](https://github.com/DonaldMurillo/gofastr/issues/818)
+
 ### Fixed
 - **gofastr dev: saves no longer run git in your repository.** The
   dev loop's `go list` and `go build` stamped version control info, which
