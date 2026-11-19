@@ -32,7 +32,8 @@ few lines, and link the PR or the docs page for the rest.
   pointing search engines at more 404s and telling it apart from an
   unknown URL. Every not-found page now gets the head an unmatched URL
   gets, and so do a static export's `404.html` (which listed the home
-  page's alternates) and the error page of a failed render.
+  page's alternates), the error page of a failed render, the 405 page
+  and `host.RenderScreen` at a 4xx or 5xx status.
   ([#823](https://github.com/DonaldMurillo/gofastr/issues/823))
 - **gofastr dev: saves no longer run git in your repository.** The
   dev loop's `go list` and `go build` stamped version control info, which
