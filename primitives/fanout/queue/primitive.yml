@@ -29,7 +29,7 @@ invariants:
       - test: core/fanout.TestStopWaitsForInflightPublish
       - test: core/fanout.TestNoPublishStartsAfterStop
   - id: publish-failure-is-reported-once
-    rule: PublishQueueReporting calls failed once for each payload that a running queue fails to publish, with the backend's error, ErrPublishDropped on overflow, or a panic error when Publish panicked, contains a panic in failed, and calls nothing for a payload still queued or sent when stop runs.
+    rule: PublishQueueReporting calls failed once for each payload that a running queue fails to publish, with the backend's error, ErrPublishDropped on overflow, or a panic error when Publish panicked, contains a panic in failed, and calls nothing for a payload that stop itself drops; a send racing stop may still evict an older payload and report it with ErrPublishDropped.
     enforced_by:
       - test: core/fanout.TestPublishQueueReportsFailure
       - test: core/fanout.TestPublishQueueReportsOverflow

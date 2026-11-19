@@ -340,8 +340,9 @@ envelope that stops broadcasts from re-broadcasting. `PublishQueue`
 publishes from hot paths without blocking; `PublishQueueReporting` is
 the same queue with a per-payload callback that runs when the payload
 is not published (backend error, timeout, or `ErrPublishDropped` on
-overflow), for a caller that must act on a loss. A payload still queued,
-or sent, when `stop` runs is dropped without a callback. Indirect by
+overflow), for a caller that must act on a loss. A payload that `stop`
+itself drops gets no callback; a send racing `stop` may still evict an
+older payload and report it as dropped. Indirect by
 default: the framework wires it under the event bus, the island
 manager, and `SSEBroker`. Reach for it directly only to span a new
 real-time surface across replicas. Start at `core/fanout/fanout.go`:
