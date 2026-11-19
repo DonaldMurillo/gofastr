@@ -264,8 +264,6 @@ framework/
 │                    must not link every image decoder, so the dependency is
 │                    inverted through an interface and only apps that opt in
 │                    (framework.WithImagePipeline) pay for the codecs.
-├── internal/casing/ snake↔camel helpers (private to the framework
-│                    module, not part of the public API)
 ├── internal/exif/   TIFF/EXIF orientation parser shared by file/ and
 │                    image/ (stdlib-only leaf, so file/ never links codecs)
 ├── internal/jpegcost/ reads a JPEG's frame header for what image/jpeg
@@ -393,6 +391,10 @@ The root package `framework/` itself contains:
 ---
 
 ## Layering rules (top imports bottom, reverse is forbidden)
+
+The module-root `internal/casing` package is a stdlib-only leaf. The
+framework and the app generator use its snake↔camel helpers to share the
+default JSON wire-key conversion.
 
 ```
 L1  internal/casing, internal/exif,           (no internal deps; exif is the

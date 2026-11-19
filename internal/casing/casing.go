@@ -41,8 +41,8 @@ func ToCamel(s string) string {
 
 	parts := strings.Split(s, "_")
 	for i := 1; i < len(parts); i++ {
-		if len(parts[i]) > 0 {
-			parts[i] = string(unicode.ToUpper(rune(parts[i][0]))) + parts[i][1:]
+		if p := parts[i]; p != "" && p[0] >= 'a' && p[0] <= 'z' {
+			parts[i] = string(p[0]-'a'+'A') + p[1:]
 		}
 	}
 	result := strings.Join(parts, "")
@@ -108,28 +108,6 @@ func MapToSnake(m map[string]any) map[string]any {
 	result := make(map[string]any, len(m))
 	for k, v := range m {
 		result[ToSnake(k)] = v
-	}
-	return result
-}
-
-// PrecomputeMapping returns each column's camelCase key, for ApplyMapping.
-func PrecomputeMapping(columns []string) map[string]string {
-	m := make(map[string]string, len(columns))
-	for _, col := range columns {
-		m[col] = ToCamel(col)
-	}
-	return m
-}
-
-// ApplyMapping returns row with mapped keys renamed and other keys kept as they are.
-func ApplyMapping(row map[string]any, mapping map[string]string) map[string]any {
-	result := make(map[string]any, len(row))
-	for k, v := range row {
-		if camel, ok := mapping[k]; ok {
-			result[camel] = v
-		} else {
-			result[k] = v
-		}
 	}
 	return result
 }

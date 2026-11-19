@@ -27,7 +27,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/internal/browserpath"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
@@ -37,13 +36,7 @@ import (
 // Chrome launch, not one each.
 func behaviorBrowserCtx(t *testing.T) context.Context {
 	t.Helper()
-	if testing.Short() {
-		t.Skip("browser E2E disabled in short mode")
-	}
-	execPath, ok := browserpath.Find()
-	if !ok {
-		t.Skip("browser E2E requires Chrome, Chromium, or Edge")
-	}
+	execPath := chromedptest.BrowserPath(t)
 	return chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(execPath)))
 }
 

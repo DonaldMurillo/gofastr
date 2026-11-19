@@ -19,7 +19,7 @@ import (
 // false stall fault in the child). The demo child, the shape the docs
 // teach, now exits non-zero on a fault, so the supervisor restarts it.
 func TestDemoChildExitsOnPeerFault(t *testing.T) {
-	if os.Getenv(childEnvName) != "" {
+	if os.Getenv(pmtestkit.EnvName) != "" {
 		return
 	}
 	bin, _ := pmtestkit.DemoBinary(t)

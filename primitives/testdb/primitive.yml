@@ -17,7 +17,6 @@ invariants:
   - id: schema-name-is-unique-and-fits
     rule: NewSchemaName embeds the pid and a per-call counter, emits only [a-z0-9_], and stays within Postgres's 63-byte identifier cap by cutting the test name, never the pid or counter.
     enforced_by:
-      - test: framework/internal/testdb.TestNewSchemaNameCarriesProcessIdentity
       - test: framework/internal/testdb.TestNewSchemaNameIsUniquePerCall
       - test: framework/internal/testdb.TestNewSchemaNameFitsPostgresIdentifierLimit
       - test: framework/internal/testdb.TestNewSchemaNameFitsUnderALongTestName

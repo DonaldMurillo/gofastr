@@ -12,6 +12,8 @@ import (
 
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 const (
@@ -25,23 +27,7 @@ func labBrowserCtx(t *testing.T) context.Context {
 	if testing.Short() {
 		t.Skip("browser E2E disabled in short mode")
 	}
-	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
-		chromedp.Flag("no-sandbox", true),
-		// Transition tests need motion even when the host disables animations.
-		chromedp.Flag("force-prefers-no-reduced-motion", true),
-		chromedp.WSURLReadTimeout(90*time.Second),
-		chromedp.WindowSize(1280, 800),
-	)
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
-	t.Cleanup(allocCancel)
-	root, cancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
-	t.Cleanup(cancel)
-	if err := chromedp.Run(root); err != nil {
-		t.Fatalf("browser failed to start: %v", err)
-	}
-	return root
+	return chromedptest.Context(t, chromedptest.WindowSize(1280, 800), chromedptest.WithoutDeadline())
 }
 
 // labRead reads the trimmed text of sel. A missing element reads as
@@ -284,6 +270,9 @@ func TestTreeLayoutBootCaptureE2E(t *testing.T) {
 	t.Cleanup(srv.Close)
 	base := srv.URL
 	browser := labBrowserCtx(t)
+	if deadline, ok := browser.Deadline(); ok {
+		t.Fatalf("browser deadline %v caps the boot-capture subtests' individual timeouts", deadline)
+	}
 
 	t.Run("boot capture replays fills on Back", func(t *testing.T) {
 		ctx := newLabTab(t, browser)

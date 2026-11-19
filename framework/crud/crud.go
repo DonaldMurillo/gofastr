@@ -28,9 +28,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
-	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	"github.com/DonaldMurillo/gofastr/framework/pagination"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
+	"github.com/DonaldMurillo/gofastr/internal/casing"
 )
 
 func getHandlerUser(ctx context.Context) (any, bool) {

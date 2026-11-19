@@ -25,6 +25,10 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Default camelCase wire keys keep non-ASCII bytes intact.** A
+  snake_case name whose segment starts with a multibyte character
+  (`a_é`) became a corrupted key; the generator and the framework now
+  share one ASCII-safe conversion, so it reads `aé` in both.
 - **`gofastr audit a11y` follows split sitemaps.** With a sitemap index
   it audited the XML part files as pages; it now reads each part in the
   same signed-in browser session and audits their pages, and an

@@ -14,10 +14,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
-	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	"github.com/DonaldMurillo/gofastr/framework/sdk"
 	"github.com/DonaldMurillo/gofastr/framework/sdkdocs/internal/docpage"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/casing"
 )
 
 const drawerName = "sdkdocs-section-menu"

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
-	"github.com/DonaldMurillo/gofastr/internal/browserpath"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
@@ -133,13 +132,7 @@ func TestOAuthSameOriginCallbackRedirects(t *testing.T) {
 // two sites to the browser, and the user clicks through the provider's
 // page, as a first consent does.
 func TestOAuthSignInLandsSignedIn(t *testing.T) {
-	if testing.Short() {
-		t.Skip("browser E2E disabled in short mode")
-	}
-	browser, ok := browserpath.Find()
-	if !ok {
-		t.Skip("browser E2E requires Chrome, Chromium, or Edge")
-	}
+	browser := chromedptest.BrowserPath(t)
 	var appPort string
 	idp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
