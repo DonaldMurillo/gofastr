@@ -99,7 +99,7 @@ func (ds *UIHost) notFoundBodyComponent(path string) component.Component {
 }
 
 func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path string) {
-	r = r.WithContext(withNotFoundPage(r.Context()))
+	r = r.WithContext(withoutRouteMeta(r.Context()))
 	w.Header().Add("Vary", "Accept")
 	if acceptsProblemJSON(r) {
 		w.Header().Set("Content-Type", "application/problem+json")
@@ -254,6 +254,7 @@ func (ds *UIHost) serveRenderError(w http.ResponseWriter, r *http.Request, path 
 }
 
 func (ds *UIHost) serveError(w http.ResponseWriter, r *http.Request, path string) {
+	r = r.WithContext(withoutRouteMeta(r.Context()))
 	if acceptsProblemJSON(r) {
 		ds.serveServerError(w, r, path)
 		return
