@@ -41,8 +41,11 @@ func removeUnder(outDir, dst string) error {
 
 func relUnder(outDir, dst string) (string, error) {
 	rel, err := filepath.Rel(outDir, dst)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		return "", fmt.Errorf("static: refusing to write outside OutDir: %q", dst)
+	if err != nil {
+		return "", fmt.Errorf("static: refusing to write outside OutDir: %q under %q: %w", dst, outDir, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("static: refusing to write outside OutDir: %q escapes %q", dst, outDir)
 	}
 	return rel, nil
 }

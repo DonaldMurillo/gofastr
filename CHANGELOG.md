@@ -25,6 +25,19 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Embed grant responses stay `private, no-store` whatever the handler
+  sets.** The grant middleware set `Cache-Control` and `Vary:
+  X-Gofastr-Embed` before calling the handler, so a handler that set its
+  own cache headers could make a grant-scoped page cacheable. The policy
+  is now applied when the response commits, including on flush and
+  `io.Copy`.
+- **`UIHost.SetStaticFS` serves files that cannot seek.** A file system
+  whose files lack `Seek` answered 500 or 416; such files now stream
+  their full body, with no byte-range support.
+- **Static export keeps routes with a literal colon.** A route such as
+  `/a:b` was taken for a parameter route and skipped for want of
+  `StaticPaths`; export now uses the router's own segment rule
+  (`app.RouteHasParams`).
 - **Image variant lists are checked before any rendition is written.**
   `VariantSet.ProcessTo` used to hand earlier variants to its sink and
   only then refuse a bad later one, and `imagefield.New` accepted an

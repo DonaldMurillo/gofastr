@@ -277,10 +277,16 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				if f, err := ds.staticFS.Open(cleanPath); err == nil && !fsEntryIsDir(f) {
 					devStaticNoStore(w)
-					if rs, ok := f.(io.ReadSeeker); ok && wantsVersion(r) {
+					if rs, seekable := f.(io.ReadSeeker); seekable && wantsVersion(r) {
 						if info, err := f.Stat(); err == nil && !info.IsDir() {
 							ds.markVersionedStatic(w, r, assetKey{fromFS: true, rel: cleanPath}, f)
 							http.ServeContent(w, r, path, info.ModTime(), rs)
+							_ = f.Close()
+							return
+						}
+					} else if !seekable && !strings.HasSuffix(path, "/index.html") {
+						if info, err := f.Stat(); err == nil && info.Mode().IsRegular() {
+							serveStaticStream(w, r, cleanPath, f, info.Size())
 							_ = f.Close()
 							return
 						}

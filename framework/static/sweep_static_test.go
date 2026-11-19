@@ -438,8 +438,8 @@ func TestSweepStaticWatch(t *testing.T) {
 	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m := newMtimeMap()
-	m.scan([]string{dir})
+	m := &mtimeMap{}
+	m.files = m.scan([]string{dir})
 	if err := os.Remove(f); err != nil {
 		t.Fatal(err)
 	}

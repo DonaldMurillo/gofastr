@@ -23,7 +23,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
-	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 const (
@@ -653,30 +652,10 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	ctx := app.WithRequest(r.Context(), r)
 	ctx = store.WithValues(ctx)
 	ctx = fembed.WithGrant(ctx, grant)
-	ctx = handler.SetUser(ctx, nil)
-	ctx = handler.SetTenant(ctx, nil)
-	ctx = tenant.SetTenantID(ctx, "")
-
-	if resolveTenant := ds.embedHost.TenantResolver(); resolveTenant != nil && grant.Subject != "" {
-		tid, err := resolveTenant(ctx, grant.Subject)
-		if err != nil {
-			embedError(w, r, http.StatusForbidden, "tenant did not resolve", err)
-			return
-		}
-		if tid != "" {
-			ctx = handler.SetTenant(ctx, tid)
-			ctx = tenant.SetTenantID(ctx, tid)
-		}
-	}
-	if resolve := ds.embedHost.Resolver(); resolve != nil && grant.Subject != "" {
-		user, err := resolve(ctx, grant.Subject)
-		if err != nil {
-			embedError(w, r, http.StatusForbidden, "subject did not resolve", err)
-			return
-		}
-		if !fembed.IsNilValue(user) {
-			ctx = handler.SetUser(ctx, user)
-		}
+	ctx, _, reason, err := ds.embedHost.InstallSubject(ctx, grant.Subject)
+	if err != nil {
+		embedError(w, r, http.StatusForbidden, reason, err)
+		return
 	}
 
 	res, err := ds.App.RenderPartialResult(ctx, page)

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -21,6 +23,30 @@ type goneScreen struct{}
 
 func (*goneScreen) ScreenStatusCode() int { return 404 }
 func (*goneScreen) Render() render.HTML   { return "<p>gone</p>" }
+
+func TestExportKeepsLiteralColonRoutes(t *testing.T) {
+	const route = "/a:b"
+	ctx := context.Background()
+	a := coreapp.NewApp("literal-colon")
+	a.Register(route, &homeScreen{}, nil)
+	if _, params, ok := a.Router.Resolve(route); !ok || len(params) != 0 {
+		t.Fatalf("router resolved %q = %t with params %v, want a literal route", route, ok, params)
+	}
+	paths, err := expandRoute(ctx, a, route)
+	if err != nil || !slices.Equal(paths, []string{route}) {
+		t.Fatalf("expandRoute(%q) = %v, %v, want [%s]", route, paths, err, route)
+	}
+	if runtime.GOOS == "windows" {
+		return
+	}
+	out := t.TempDir()
+	res, err := (&Builder{Host: uihost.New(a), OutDir: out}).Build(ctx)
+	if err != nil || !slices.Equal(res.Pages, []string{route}) {
+		t.Fatalf("export = %v, %v, want one page at %q", res.Pages, err, route)
+	}
+	readOut(t, out, "a:b/index.html")
+	readOut(t, out, "a:b/llm.md")
+}
 
 // The exported page index links docs the export wrote: a StaticPaths
 // route linked /products/:slug/llm.md, a file no export writes, and

@@ -146,9 +146,6 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 			pageOwner[foldPath(file)] = p
 			html := b.applyStaticMode(lctx, page)
 			dst := filepath.Join(b.OutDir, pathToFile(p))
-			if err := b.ensureContained(dst); err != nil {
-				return err
-			}
 			if err := writeUnder(b.OutDir, dst, []byte(html)); err != nil {
 				return err
 			}
@@ -204,9 +201,6 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	if page, ok := b.Host.RenderStaticNotFoundPage(ctx, "/"); ok {
 		html := b.applyStaticMode(ctx, page)
 		dst := filepath.Join(b.OutDir, "404.html")
-		if err := b.ensureContained(dst); err != nil {
-			return res, err
-		}
 		if err := writeUnder(b.OutDir, dst, []byte(html)); err != nil {
 			return res, err
 		}
@@ -439,17 +433,6 @@ func (b *Builder) routeExcluded(pattern string) bool {
 	return false
 }
 
-func (b *Builder) ensureContained(dst string) error {
-	rel, err := filepath.Rel(b.OutDir, dst)
-	if err != nil {
-		return fmt.Errorf("static: refusing to write outside OutDir: %q: %w", dst, err)
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		return fmt.Errorf("static: refusing to write outside OutDir: %q escapes %q", dst, b.OutDir)
-	}
-	return nil
-}
-
 func (b *Builder) log(format string, args ...any) {
 	if b.Logger != nil {
 		b.Logger(format, args...)
@@ -457,7 +440,7 @@ func (b *Builder) log(format string, args ...any) {
 }
 
 func expandRoute(ctx context.Context, app *coreapp.App, pattern string) ([]string, error) {
-	if !strings.Contains(pattern, ":") {
+	if !coreapp.RouteHasParams(pattern) {
 		return []string{pattern}, nil
 	}
 	screen, ok := app.Router.ScreenByPattern(pattern)
@@ -533,9 +516,6 @@ func (b *Builder) writeRawAsset(urlPath string, body []byte) error {
 		return err
 	}
 	dst := filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(urlPath, "/")))
-	if err := b.ensureContained(dst); err != nil {
-		return err
-	}
 	return writeUnder(b.OutDir, dst, body)
 }
 

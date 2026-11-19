@@ -60,6 +60,10 @@ invariants:
     rule: A dynamic route whose screen does not implement StaticPaths is skipped with a warning naming the route.
     enforced_by:
       - test: framework/static.TestBuildWarnsOnDynamicRouteWithoutStaticPaths
+  - id: export-uses-the-router-parameter-segments
+    rule: HTML and Markdown expansion use the app router's parameter segment rule. A colon inside a literal segment does not require StaticPaths.
+    enforced_by:
+      - test: framework/static.TestExportKeepsLiteralColonRoutes
   - id: staticpaths-value-stays-in-its-directory
     rule: applyParams refuses a StaticPaths value holding a NUL or a backslash, or whose page file on a static host would have an empty, "." or ".." path component, and lets a slash in a one-segment key export to nested directories.
     enforced_by:

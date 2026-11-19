@@ -2,12 +2,15 @@ package uihost
 
 import (
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 )
@@ -75,6 +78,73 @@ func TestDevServesStaticFSWithNoStore(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if string(body) != "body{margin:0}" {
 		t.Errorf("dev static-FS body = %q, want the file bytes", body)
+	}
+}
+
+type nonSeekingStaticFS struct{ fs.FS }
+
+func (s nonSeekingStaticFS) Open(name string) (fs.File, error) {
+	f, err := s.FS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return struct{ fs.File }{f}, nil
+}
+
+func TestStaticFSNonSeekingFile(t *testing.T) {
+	const body = "body{margin:0}"
+	modified := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	fsys := fstest.MapFS{
+		"app.css": {Data: []byte(body), ModTime: modified},
+		"asset":   {Data: []byte(body), ModTime: modified},
+	}
+	a := app.NewApp("static-nonseeking-test")
+	ds := New(a)
+	ds.SetStaticFS(nonSeekingStaticFS{fsys})
+
+	for _, tc := range []struct {
+		name, method, target, byteRange, wantBody, wantType string
+	}{
+		{"get", http.MethodGet, "/app.css", "", body, "text/css; charset=utf-8"},
+		{"extensionless", http.MethodGet, "/asset", "", body, "application/octet-stream"},
+		{"range", http.MethodGet, "/app.css", "bytes=0-3", body, "text/css; charset=utf-8"},
+		{"head", http.MethodHead, "/app.css", "", "", "text/css; charset=utf-8"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.target, nil)
+			if tc.byteRange != "" {
+				req.Header.Set("Range", tc.byteRange)
+			}
+			rec := httptest.NewRecorder()
+			ds.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK || rec.Body.String() != tc.wantBody {
+				t.Fatalf("status = %d, body = %q, want 200 and %q", rec.Code, rec.Body.String(), tc.wantBody)
+			}
+			if got := rec.Header().Get("Content-Length"); got != strconv.Itoa(len(body)) {
+				t.Errorf("Content-Length = %q, want %d", got, len(body))
+			}
+			if got := rec.Header().Get("Content-Type"); got != tc.wantType {
+				t.Errorf("Content-Type = %q, want %q", got, tc.wantType)
+			}
+			if got := rec.Header().Get("Accept-Ranges"); got != "" {
+				t.Errorf("Accept-Ranges = %q, want empty", got)
+			}
+		})
+	}
+
+	ds.SetStaticFS(fsys)
+	req := httptest.NewRequest(http.MethodGet, "/app.css", nil)
+	req.Header.Set("Range", "bytes=0-3")
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, req)
+	if rec.Code != http.StatusPartialContent || rec.Body.String() != "body" {
+		t.Fatalf("seekable range: status = %d, body = %q, want 206 and body", rec.Code, rec.Body.String())
+	}
+	req.Header.Set("If-Modified-Since", modified.Format(http.TimeFormat))
+	rec = httptest.NewRecorder()
+	ds.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotModified || rec.Body.Len() != 0 {
+		t.Fatalf("seekable conditional: status = %d, body = %q, want 304 with no body", rec.Code, rec.Body.String())
 	}
 }
 

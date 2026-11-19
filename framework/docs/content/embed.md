@@ -14,51 +14,61 @@ themed, authenticated piece of the app.
 
 ## Declaring a surface
 
+Pass the reports component and the app's subject resolver to the setup
+function. The screen renders inside the frame with `app.EmbedLayout()`.
+The surface's `Reach` includes the `/reports` group, whose middleware
+requires the same `reports:read` scope the surface declares.
+
+<!-- gofastr:compile
+-->
 ```go
-import "github.com/DonaldMurillo/gofastr/framework/embed"
+package reports
 
-burn, err := embed.NewSQLBurnStore(db)
-if err != nil { log.Fatal(err) }
+import (
+    "database/sql"
 
-// The screen the surface renders, registered chrome-less so it paints with no
-// header, nav or footer, which is what you want inside a 400px frame. Pass the SAME
-// *app.Screen value to the surface: a Surface carries a screen, not a path
-// string, so the link from a surface to the component tree it renders is a Go
-// value a human, a static analyzer, and the boot-time server-action walk can
-// follow: nothing has to resolve a string against a route table.
-reports := app.NewScreen("/embed/reports", &Reports{})
-application.RegisterScreen(reports, app.EmbedLayout())
+    "github.com/DonaldMurillo/gofastr/core-ui/app"
+    "github.com/DonaldMurillo/gofastr/core-ui/component"
+    "github.com/DonaldMurillo/gofastr/framework"
+    "github.com/DonaldMurillo/gofastr/framework/embed"
+    "github.com/DonaldMurillo/gofastr/framework/routegroup"
+    "github.com/DonaldMurillo/gofastr/framework/uihost"
+)
 
-embeds, err := embed.New(embed.Config{
-    Surfaces: []embed.Surface{{
-        Name:    "reports",
-        Screen:  reports,
-        Origins: []string{"https://acme.com", "https://shop.acme.com"},
-        Scopes:  []string{"read"},
-        Theme:   embed.ThemeConfig{AllowTokens: []string{"color-primary"}},
-    }},
-    BurnStore: burn,
-    Resolve: func(ctx context.Context, subject string) (any, error) {
-        return users.FindByID(ctx, subject)
-    },
-})
-if err != nil { log.Fatal(err) }
+func mountReports(fwApp *framework.App, application *app.App, db *sql.DB,
+    reportsComponent component.Component, resolve embed.SubjectResolver,
+) (*embed.Host, *routegroup.RouteGroup, error) {
+    burn, err := embed.NewSQLBurnStore(db)
+    if err != nil {
+        return nil, nil, err
+    }
 
-site := uihost.New(application, uihost.WithEmbed(embeds))
+    reports := app.NewScreen("/embed/reports", reportsComponent)
+    application.RegisterScreen(reports, app.EmbedLayout())
+    embeds, err := embed.New(embed.Config{
+        Surfaces: []embed.Surface{{
+            Name:    "reports",
+            Screen:  reports,
+            Origins: []string{"https://acme.com", "https://shop.acme.com"},
+            Scopes:  []string{"reports:read"},
+            Reach:   []string{"/reports"},
+            Theme:   embed.ThemeConfig{AllowTokens: []string{"color-primary"}},
+        }},
+        BurnStore: burn,
+        Resolve:   resolve,
+    })
+    if err != nil {
+        return nil, nil, err
+    }
 
-// fwApp is the *framework.App. It is not called `app` because `app` is the
-// core-ui/app PACKAGE, used further down for NewScreen and EmbedLayout; one
-// name cannot be both.
-fwApp.Mount(site)
+    // Install before any authentication middleware.
+    fwApp.Use(embeds.Middleware())
+    fwApp.Mount(uihost.New(application, uihost.WithEmbed(embeds)))
 
-// Island RPCs from inside a frame target ORDINARY app routes, which know
-// nothing about embeds. This is what authenticates them. Install it FIRST,
-// outside every authentication middleware; see below.
-fwApp.Use(embeds.Middleware())
-
-// Scopes are not enforced automatically. This is what makes them bind.
-reportsRoutes := fwApp.Group("/reports")
-reportsRoutes.Use(embeds.RequireScope("reports:read"))
+    reportsRoutes := fwApp.Group("/reports")
+    reportsRoutes.Use(embeds.RequireScope("reports:read"))
+    return embeds, reportsRoutes, nil
+}
 ```
 
 ### A surface on a route with parameters
@@ -219,6 +229,11 @@ cannot take them back: it does not know which keys another package used. The
 observable failures are a bearer token overwriting the grant's identity, and an
 API token's scopes surviving under the grant subject's name.
 
+After verification, grant middleware commits `Cache-Control: private, no-store`
+even when the route sets its own cache policy. Middleware and frame content
+both use `Host.InstallSubject` to replace the request identity with the grant
+subject's resolved tenant and user.
+
 A surface renders a screen, and that screen decides its own chrome. Register
 it with the `core-ui/app` package's `EmbedLayout()` and it renders with no
 header, nav or footer, which is what you want inside a 400px frame on someone
@@ -239,13 +254,25 @@ decisions.
 
 The app mints a nonce server-side, for one viewer, on one origin:
 
+<!-- gofastr:compile
+-->
 ```go
-nonce, err := embeds.MintNonce(r.Context(), "reports", user.ID, "https://acme.com", nil)
+package reports
+
+import (
+    "net/http"
+
+    "github.com/DonaldMurillo/gofastr/framework/embed"
+)
+
+func mintReportsNonce(r *http.Request, embeds *embed.Host, userID string) (string, error) {
+    return embeds.MintNonce(r.Context(), "reports", userID, "https://acme.com", nil)
+}
 ```
 
 Render `nonce` into the snippet you give the customer. Passing `nil` for scopes
-grants the surface's declared set; passing a scope the surface does not declare
-is an error rather than a silent drop.
+grants the surface's declared set, `reports:read` in this example. Passing an
+undeclared scope returns an error.
 
 ## An app secret is required
 

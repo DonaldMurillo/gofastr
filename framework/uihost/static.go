@@ -1,10 +1,12 @@
 package uihost
 
 import (
+	"io"
 	"io/fs"
 	"net/http"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/rootfs"
@@ -114,6 +116,17 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 func devStaticNoStore(w http.ResponseWriter) {
 	if dev.Enabled() {
 		w.Header().Set("Cache-Control", "no-store")
+	}
+}
+
+func serveStaticStream(w http.ResponseWriter, r *http.Request, name string, body io.Reader, size int64) {
+	h := w.Header()
+	h.Set("Content-Type", corestatic.DetectFromName(name))
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Length", strconv.FormatInt(size, 10))
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		_, _ = io.CopyN(w, body, size)
 	}
 }
 

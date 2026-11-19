@@ -2,6 +2,7 @@ package embed
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -79,6 +80,64 @@ func TestGrantResponsesAreNotCacheable(t *testing.T) {
 	vary := rec.Header().Values("Vary")
 	if !containsFold(vary, GrantHeader) {
 		t.Fatalf("Vary = %v, want it to include %q", vary, GrantHeader)
+	}
+}
+
+type grantReadFromRecorder struct {
+	*httptest.ResponseRecorder
+	copied bool
+}
+
+func (r *grantReadFromRecorder) ReadFrom(src io.Reader) (int64, error) {
+	r.copied = true
+	return io.Copy(r.ResponseRecorder, src)
+}
+
+func TestGrantCachePolicySurvivesDownstreamHeaders(t *testing.T) {
+	h := middlewareHost(t)
+	grant := grantFor(t, h)
+	for _, tc := range []struct {
+		name   string
+		status int
+		write  func(http.ResponseWriter)
+	}{
+		{"explicit", http.StatusAccepted, func(w http.ResponseWriter) { w.WriteHeader(http.StatusAccepted) }},
+		{"implicit", http.StatusOK, func(w http.ResponseWriter) { _, _ = w.Write([]byte("asset")) }},
+		{"copy", http.StatusOK, func(w http.ResponseWriter) {
+			_, _ = io.Copy(w, struct{ io.Reader }{strings.NewReader("asset")})
+		}},
+		{"flush", http.StatusOK, func(w http.ResponseWriter) {
+			if err := http.NewResponseController(w).Flush(); err != nil {
+				t.Error(err)
+			}
+		}},
+		{"no write", http.StatusOK, func(http.ResponseWriter) {}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Cache-Control", "public, max-age=60")
+				w.Header().Set("Vary", "Accept-Encoding")
+				tc.write(w)
+			})
+			req := httptest.NewRequest(http.MethodGet, "/embed/dashboard", nil)
+			req.Header.Set(GrantHeader, grant)
+			rec := &grantReadFromRecorder{ResponseRecorder: httptest.NewRecorder()}
+			h.Middleware()(next).ServeHTTP(rec, req)
+			if tc.name == "copy" && (!rec.copied || rec.Body.String() != "asset") {
+				t.Errorf("underlying ReadFrom called = %t, body = %q, want true and asset", rec.copied, rec.Body.String())
+			}
+			res := rec.Result()
+			defer res.Body.Close()
+			if res.StatusCode != tc.status {
+				t.Errorf("status = %d, want %d", res.StatusCode, tc.status)
+			}
+			if got := res.Header.Get("Cache-Control"); got != "private, no-store" {
+				t.Errorf("Cache-Control = %q, want private, no-store", got)
+			}
+			if vary := res.Header.Values("Vary"); !containsFold(vary, GrantHeader) || !containsFold(vary, "Accept-Encoding") {
+				t.Errorf("Vary = %v, want %s and Accept-Encoding", vary, GrantHeader)
+			}
+		})
 	}
 }
 

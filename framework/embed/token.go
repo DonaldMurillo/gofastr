@@ -184,21 +184,24 @@ func VerifyNonce(key []byte, token string, now time.Time) (Nonce, error) {
 
 // MintGrant signs a grant whose expiry is clamped to deadline.
 func MintGrant(key []byte, n Nonce, ttl time.Duration, deadline time.Time, now time.Time) (string, error) {
+	token, _, err := mintGrant(key, n, ttl, deadline, now)
+	return token, err
+}
+
+func mintGrant(key []byte, n Nonce, ttl time.Duration, deadline time.Time, now time.Time) (string, time.Time, error) {
 	if len(key) == 0 {
-		return "", errors.New("embed: no signing key")
+		return "", time.Time{}, errors.New("embed: no signing key")
 	}
-	exp := now.Add(ttl)
-	if exp.After(deadline) {
-		exp = deadline
-	}
-	return sign(GrantPrefix, key, grantClaims{
+	exp := min(now.Add(ttl).Unix(), deadline.Unix())
+	token, err := sign(GrantPrefix, key, grantClaims{
 		Surface:  n.Surface,
 		Subject:  n.Subject,
 		Scopes:   n.Scopes,
 		Origin:   n.Origin,
-		Expires:  exp.Unix(),
+		Expires:  exp,
 		Deadline: deadline.Unix(),
 	})
+	return token, time.Unix(exp, 0), err
 }
 
 // VerifyGrant checks a grant's signature, required claims and expiry.

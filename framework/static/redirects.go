@@ -52,9 +52,6 @@ func (b *Builder) writeRedirects(ctx context.Context, pages map[string]bool, ren
 			}
 			owner[foldPath(rel)] = from
 			dst := filepath.Join(b.OutDir, filepath.FromSlash(rel))
-			if err := b.ensureContained(dst); err != nil {
-				return err
-			}
 			if err := writeUnder(b.OutDir, dst, []byte(redirectPage(lctx, href, b.policy()))); err != nil {
 				return err
 			}

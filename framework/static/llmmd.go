@@ -56,9 +56,6 @@ func (b *Builder) writeLLMMD(ctx context.Context, res *Result, at func(string) s
 					"route", route.Path, "path", p)
 			}
 			dst := filepath.Join(b.OutDir, pathToLLMFile(at(p)))
-			if err := b.ensureContained(dst); err != nil {
-				return err
-			}
 			if err := writeUnder(b.OutDir, dst, []byte(md)); err != nil {
 				return err
 			}
