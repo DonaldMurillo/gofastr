@@ -143,10 +143,7 @@ func sayParamN(params string) (string, bool) {
 // '{{n}}', in any of JavaScript's three quotes: a template literal with
 // no substitution is the same string as a quoted one.
 func isNPlaceholder(pattern string) bool {
-	if isJSStringLiteral(pattern) {
-		return pattern[1:len(pattern)-1] == "{{n}}"
-	}
-	return pattern == "`{{n}}`"
+	return isStaticJSStringLiteral(pattern) && pattern[1:len(pattern)-1] == "{{n}}"
 }
 
 // reNRegex matches a regex literal pattern that names {{n}}: /\{\{n\}\}/
@@ -164,7 +161,7 @@ var (
 // formatNumber; with exact false (a regex filling several keys) it must
 // also spell String( to count.
 func numberFillBad(arg string, exact bool) bool {
-	if arg == "" || isJSStringLiteral(arg) || isJSNumericLiteral(arg) || strings.Contains(arg, "formatNumber") {
+	if arg == "" || isStaticJSStringLiteral(arg) || isJSNumericLiteral(arg) || strings.Contains(arg, "formatNumber") {
 		return false
 	}
 	return exact || strings.Contains(arg, "String(")

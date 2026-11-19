@@ -6,6 +6,7 @@
 // for the declarative UI layer.
 //
 // Allowed imports are limited to a safe subset of the standard library
-// (fmt, strings, strconv, html/template, html, math, time, errors)
-// and any package under github.com/DonaldMurillo/gofastr/.
+// (fmt, strings, strconv, html/template, html, math, time, errors) and these
+// packages under github.com/DonaldMurillo/gofastr: core/render, core-ui/html,
+// core-ui/component, core-ui/interactive, and core-ui/style.
 package check

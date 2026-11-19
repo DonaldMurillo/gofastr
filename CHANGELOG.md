@@ -25,6 +25,9 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **The JavaScript lint reads more code correctly.** It handles division
+  after a quoted value, named single-parameter keydown handlers, and
+  static template replacements for number placeholders.
 - **Component sheets build the CSS they describe.** A sheet can be built
   more than once from the same builder, nested pseudo and child rules
   apply to every selector in a list, adjacent media queries coalesce in

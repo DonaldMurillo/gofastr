@@ -177,143 +177,12 @@ func loadJSSources(roots ...string) ([]jsSource, error) {
 		out = append(out, jsSource{
 			Path:       f,
 			Src:        string(raw),
-			Code:       stripJSCommentsKeepStrings(string(raw)),
-			Blank:      stripJSCommentsAndStrings(string(raw)),
+			Code:       stripJS(string(raw), keepJSLiterals),
+			Blank:      stripJS(string(raw), blankJSLiterals),
 			lineStarts: newlineOffsets(string(raw)),
 		})
 	}
 	return out, nil
-}
-
-// blankJSLineComment blanks the line comment starting at src[i] (the
-// first '/') into out and returns the advanced buffer and the index of
-// the terminating newline (or len(src)). Every comment byte becomes a
-// space so the output stays length- and line-aligned with the source.
-// It replaces the verbatim copies of this loop in
-// stripJSCommentsKeepStrings and stripJSCommentsAndStrings.
-func blankJSLineComment(out []byte, src string, i int) ([]byte, int) {
-	for i < len(src) && src[i] != '\n' {
-		out = append(out, ' ')
-		i++
-	}
-	return out, i
-}
-
-// blankJSBlockComment blanks the block comment starting at src[i] (the
-// '/') into out and returns the advanced buffer and the index just
-// past the closing "*/" (or len(src) when unterminated). The "/*" and
-// "*/" delimiters become spaces; newlines inside are kept so the
-// output stays line-aligned. It replaces the verbatim copies of this
-// loop in stripJSCommentsKeepStrings and stripJSCommentsAndStrings.
-func blankJSBlockComment(out []byte, src string, i int) ([]byte, int) {
-	out = append(out, ' ', ' ')
-	i += 2
-	for i < len(src) {
-		if src[i] == '*' && i+1 < len(src) && src[i+1] == '/' {
-			out = append(out, ' ', ' ')
-			return out, i + 2
-		}
-		if src[i] == '\n' {
-			out = append(out, '\n')
-		} else {
-			out = append(out, ' ')
-		}
-		i++
-	}
-	return out, i
-}
-
-// stripJSCommentsKeepStrings blanks the contents of JS line and block
-// comments while copying string and template literals verbatim,
-// preserving length and line breaks. Interpolation bodies of template
-// literals are executable JS, so they are recursed through and have
-// their comments stripped. Regex literals are copied verbatim: their
-// bodies can contain "/" pairs (a [/[/] class) that would otherwise
-// read as comment openers.
-func stripJSCommentsKeepStrings(src string) string {
-	out := make([]byte, 0, len(src))
-	i := 0
-	for i < len(src) {
-		c := src[i]
-		if c == '/' && i+1 < len(src) && src[i+1] == '/' {
-			out, i = blankJSLineComment(out, src, i)
-			continue
-		}
-		if c == '/' && i+1 < len(src) && src[i+1] == '*' {
-			out, i = blankJSBlockComment(out, src, i)
-			continue
-		}
-		// Regex literal: copy verbatim to its closing unescaped "/".
-		if c == '/' && regexLiteralStartsAt(out) {
-			out = append(out, c)
-			i++
-			inClass := false
-			for i < len(src) && src[i] != '\n' {
-				if src[i] == '\\' && i+1 < len(src) {
-					if src[i+1] == '\n' {
-						out = append(out, ' ', '\n')
-					} else {
-						out = append(out, src[i], src[i+1])
-					}
-					i += 2
-					continue
-				}
-				if src[i] == '[' {
-					inClass = true
-				} else if src[i] == ']' {
-					inClass = false
-				} else if src[i] == '/' && !inClass {
-					out = append(out, c)
-					i++
-					break
-				}
-				out = append(out, src[i])
-				i++
-			}
-			continue
-		}
-		// String literal: copy verbatim; template interpolation bodies
-		// are executable and recursed.
-		if c == '\'' || c == '"' || c == '`' {
-			quote := c
-			out = append(out, c)
-			i++
-			for i < len(src) {
-				if src[i] == '\\' && i+1 < len(src) {
-					if src[i+1] == '\n' {
-						out = append(out, ' ', '\n')
-					} else {
-						out = append(out, src[i], src[i+1])
-					}
-					i += 2
-					continue
-				}
-				if src[i] == quote {
-					out = append(out, c)
-					i++
-					break
-				}
-				if quote == '`' && src[i] == '$' && i+1 < len(src) && src[i+1] == '{' {
-					out = append(out, src[i], src[i+1])
-					i += 2
-					body, end := templateExprEnd(src, i)
-					out = append(out, stripJSCommentsKeepStrings(body)...)
-					i = end
-					if i < len(src) && src[i] == '}' {
-						out = append(out, '}')
-						i++
-					}
-					continue
-				}
-				out = append(out, src[i])
-				i++
-			}
-			continue
-		}
-		out = append(out, c)
-		i++
-	}
-	return string(out)
 }
 
 // matchDelimForward returns the index of the delimiter in s that pairs
@@ -490,6 +359,11 @@ func isJSStringLiteral(s string) bool {
 		return false
 	}
 	return (s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '"' && s[len(s)-1] == '"')
+}
+
+func isStaticJSStringLiteral(s string) bool {
+	return isJSStringLiteral(s) ||
+		(len(s) >= 2 && s[0] == '`' && s[len(s)-1] == '`' && !strings.Contains(s, "${"))
 }
 
 func isJSNumericLiteral(s string) bool {
@@ -1372,7 +1246,7 @@ func LintRegistryOwnProps(roots ...string) (*Result, error) {
 				if isForInIndex(spans, start, idx) {
 					continue
 				}
-				if registryAccessIsWrite(f.Blank, close) {
+				if _, _, ok := bracketWriteOp(f.Blank, close); ok {
 					continue
 				}
 				if registryAccessIsDelete(f.Blank, start) {
@@ -1583,35 +1457,6 @@ func forInSpans(blank string) []forInSpan {
 func isForInIndex(spans []forInSpan, pos int, idx string) bool {
 	for _, s := range spans {
 		if s.idx == idx && pos >= s.start && pos <= s.end {
-			return true
-		}
-	}
-	return false
-}
-
-// registryAccessIsWrite reports whether the bracket access closing at
-// close is a write (REG[x] = …, REG[x].member = …, REG[x] += …).
-func registryAccessIsWrite(blank string, close int) bool {
-	i := close + 1
-	for {
-		i = skipSpace(blank, i)
-		if i < len(blank) && blank[i] == '.' { // member chains: REG[x].foo =
-			i++
-			for i < len(blank) && isJSIdentChar(blank[i]) {
-				i++
-			}
-			continue
-		}
-		break
-	}
-	if i >= len(blank) {
-		return false
-	}
-	if blank[i] == '=' {
-		return !(i+1 < len(blank) && (blank[i+1] == '=' || blank[i+1] == '>'))
-	}
-	for _, op := range []string{"+=", "-=", "*=", "/=", "%=", "&&=", "||=", "??=", "**=", "<<=", ">>=", ">>>=", "&=", "|=", "^="} {
-		if strings.HasPrefix(blank[i:], op) {
 			return true
 		}
 	}
@@ -2204,19 +2049,11 @@ func ifGatesResponse(span string) bool {
 		if !textHasGate(span[open+1 : close]) {
 			continue
 		}
-		b := skipSpace(span, close+1)
-		if b >= len(span) {
+		start, end, ok := branchSpan(span, close+1)
+		if !ok {
 			continue
 		}
-		tEnd := b
-		if span[b] == '{' {
-			if e := matchDelimForward(span, b); e >= 0 {
-				tEnd = e
-			}
-		} else if e := statementEnd(span, b); e < len(span) {
-			tEnd = e
-		}
-		branch := span[b:min(tEnd+1, len(span))]
+		branch := span[start : end+1]
 		if reBodyRead.MatchString(branch) || reHTMLMount.MatchString(branch) || branchRejects(branch) {
 			return true
 		}
@@ -2895,10 +2732,6 @@ var reIfOpen = regexp.MustCompile(`\bif\s*\(`)
 // attribute read (not a bare variable) any regex .test( counts: there
 // is no variable to match.
 func attrPathGated(code, blank, v string, regexConsts map[string]string, pos int) bool {
-	start, _ := enclosingFunction(code, pos)
-	body := code[start:]
-	blankBody := blank[start:]
-	pos0 := pos - start
 	ident := `\w+`
 	if isJSIdent(v) {
 		ident = regexp.QuoteMeta(v)
@@ -2942,33 +2775,49 @@ func attrPathGated(code, blank, v string, regexConsts map[string]string, pos int
 		}
 		return false
 	}
-	for _, loc := range reIfOpen.FindAllStringIndex(body, -1) {
-		if loc[0] >= pos0 {
-			break // every later if is past the construction
+	return ifDominates(code, blank, pos, gateIn)
+}
+
+// branchSpan returns the inclusive bounds of the branch after a condition.
+func branchSpan(code string, from int) (start, end int, ok bool) {
+	start = skipSpace(code, from)
+	if start >= len(code) {
+		return 0, 0, false
+	}
+	end = start
+	if code[start] == '{' {
+		if close := matchDelimForward(code, start); close >= 0 {
+			end = close
 		}
+	} else if close := statementEnd(code, start); close < len(code) {
+		end = close
+	}
+	return start, end, true
+}
+
+// ifDominates checks the containing branch and earlier rejecting branches.
+// gateIn receives true for a containing branch so callers can check polarity.
+func ifDominates(code, blank string, pos int, gateIn func(cond string, inBranch bool) bool) bool {
+	start, _ := enclosingFunction(code, pos)
+	body, blankBody := code[start:], blank[start:]
+	pos -= start
+	for _, loc := range reIfOpen.FindAllStringIndex(body[:pos], -1) {
 		open := loc[1] - 1
 		close := matchDelimForward(body, open)
-		if close < 0 || close >= pos0 {
+		if close < 0 || close >= pos {
+			continue
+		}
+		branchStart, branchEnd, ok := branchSpan(body, close+1)
+		if !ok {
 			continue
 		}
 		cond := body[open+1 : close]
-		b := skipSpace(body, close+1)
-		if b >= len(body) {
-			continue
+		if branchStart <= pos && pos <= branchEnd && gateIn(cond, true) {
+			return true
 		}
-		tEnd := b
-		if body[b] == '{' {
-			if e := matchDelimForward(body, b); e >= 0 {
-				tEnd = e
-			}
-		} else if e := statementEnd(body, b); e < len(body) {
-			tEnd = e
-		}
-		if b <= pos0 && pos0 <= tEnd && gateIn(cond, true) {
-			return true // the branch that builds the URL ran the gate and it held
-		}
-		if tEnd < pos0 && gateIn(cond, false) && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(blankBody, tEnd+1, pos0) {
-			return true // the gate's failures left; only validated values continue
+		if branchEnd < pos && gateIn(cond, false) &&
+			branchRejects(body[branchStart:branchEnd+1]) && ifStillOpenAt(blankBody, branchEnd+1, pos) {
+			return true
 		}
 	}
 	return false
@@ -3701,52 +3550,15 @@ func regexTestDominates(code, blank, v string, pos int) bool {
 	if !isJSIdent(v) {
 		return false
 	}
-	start, _ := enclosingFunction(code, pos)
-	body := code[start:]
-	blankBody := blank[start:]
-	pos0 := pos - start
 	reGate := regexp.MustCompile(`[/\w]\s*\.\s*test\s*\(\s*` + regexp.QuoteMeta(v) + `\s*\)`)
-	for _, loc := range reIfOpen.FindAllStringIndex(body, -1) {
-		if loc[0] >= pos0 {
-			break // every later if is past the build
-		}
-		open := loc[1] - 1
-		close := matchDelimForward(body, open)
-		if close < 0 || close >= pos0 {
-			continue
-		}
-		cond := body[open+1 : close]
-		gated := func(positiveOnly bool) bool {
-			for _, m := range reGate.FindAllStringIndex(cond, -1) {
-				if !positiveOnly || !gateNegated(cond, m[0], m[1]) {
-					return true
-				}
+	return ifDominates(code, blank, pos, func(cond string, inBranch bool) bool {
+		for _, m := range reGate.FindAllStringIndex(cond, -1) {
+			if !inBranch || !gateNegated(cond, m[0], m[1]) {
+				return true
 			}
-			return false
 		}
-		if !gated(false) {
-			continue
-		}
-		b := skipSpace(body, close+1)
-		if b >= len(body) {
-			continue
-		}
-		tEnd := b
-		if body[b] == '{' {
-			if e := matchDelimForward(body, b); e >= 0 {
-				tEnd = e
-			}
-		} else if e := statementEnd(body, b); e < len(body) {
-			tEnd = e
-		}
-		if b <= pos0 && pos0 <= tEnd && gated(true) {
-			return true // the branch that builds the URL ran the gate and it held
-		}
-		if tEnd < pos0 && gated(false) && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(blankBody, tEnd+1, pos0) {
-			return true // the gate's failures left; only shape-valid ids continue
-		}
-	}
-	return false
+		return false
+	})
 }
 
 // ── lint 8: attribute value used raw as a storage key ─────────────────
@@ -4074,23 +3886,31 @@ func funcHeads(blank string) []funcHead {
 // funcHeadName returns the declared name of the function whose body '{'
 // sits at bodyOpen: the identifier heading `function NAME(…)`,
 // `NAME(…) {`, or the const forms `const NAME = (…) => {` /
-// `const NAME = function (…) {`, or the single parameter of
-// `NAME => {`. "" for anonymous bodies and keyword-headed blocks.
+// `const NAME = function (…) {`, or `const NAME = param => {`.
+// Anonymous bodies and keyword-headed blocks return "".
 func funcHeadName(blank string, bodyOpen int) string {
 	j := skipSpaceBack(blank, bodyOpen-1)
 	if j < 0 {
 		return ""
 	}
 	if blank[j] == '>' && j >= 1 && blank[j-1] == '=' { // NAME => { or (…) => {
-		k := skipSpaceBack(blank, j-2)
-		if k >= 0 && isJSIdentChar(blank[k]) {
-			return wordBefore(blank, k+1)
+		paramStart := skipSpaceBack(blank, j-2)
+		if paramStart < 0 {
+			return ""
 		}
-		if k >= 0 && blank[k] == ')' { // const NAME = (…) => {
-			p := matchDelimBack(blank, k)
-			if e := skipSpaceBack(blank, p-1); e >= 0 && blank[e] == '=' && !cmpEquals(blank, e) {
-				return wordBefore(blank, e)
-			}
+		if blank[paramStart] == ')' {
+			paramStart = matchDelimBack(blank, paramStart)
+		} else if param := wordBefore(blank, paramStart+1); param != "" {
+			paramStart -= len(param) - 1
+		} else {
+			return ""
+		}
+		e := skipSpaceBack(blank, paramStart-1)
+		if e >= 0 && wordBefore(blank, e+1) == "async" {
+			e = skipSpaceBack(blank, e-len("async"))
+		}
+		if e >= 0 && blank[e] == '=' && !cmpEquals(blank, e) {
+			return wordBefore(blank, e)
 		}
 		return ""
 	}
@@ -4421,8 +4241,7 @@ var reDecodeCall = regexp.MustCompile(`\bdecodeURI(?:Component)?\s*\(`)
 //     out-of-scope posture lints 1/5/8 hold.
 //
 // Writes are found on the Blank view (a bracket access followed by an
-// assignment operator, member chains included — the walk
-// registryAccessIsWrite uses); key and RHS text are recovered from
+// assignment operator, member chains included); key and RHS text are recovered from
 // Code by offset.
 func LintProtoKeyWrite(roots ...string) (*Result, error) {
 	res := &Result{}
@@ -4477,7 +4296,7 @@ type bracketWrite struct {
 }
 
 // bracketWriteSites finds the bracket writes of the file: reads,
-// comparisons, and deletes drop out (the registryAccessIsWrite shape).
+// comparisons, and deletes drop out.
 // Each '[' is delimiter-matched to its ']', so a nested key
 // (X[keys[i]]) yields its whole key text and the write operator is
 // searched after the true close; a '[' with no receiver before it is a
@@ -4660,42 +4479,9 @@ func mapStore(blank, base string) bool {
 // enclosing function; a guard after the write cannot retroactively
 // protect it.
 func reservedGuardDominates(code, blank, key string, pos int) bool {
-	start, _ := enclosingFunction(code, pos)
-	body := code[start:]
-	blankBody := blank[start:]
-	pos0 := pos - start
-	for _, loc := range reIfOpen.FindAllStringIndex(body, -1) {
-		if loc[0] >= pos0 {
-			break // every later if is past the write
-		}
-		open := loc[1] - 1
-		close := matchDelimForward(body, open)
-		if close < 0 || close >= pos0 {
-			continue
-		}
-		if !reservedGuardIn(body[open+1:close], key) {
-			continue
-		}
-		b := skipSpace(body, close+1)
-		if b >= len(body) {
-			continue
-		}
-		tEnd := b
-		if body[b] == '{' {
-			if e := matchDelimForward(body, b); e >= 0 {
-				tEnd = e
-			}
-		} else if e := statementEnd(body, b); e < len(body) {
-			tEnd = e
-		}
-		if b <= pos0 && pos0 <= tEnd {
-			return true // the branch that writes ran the guard
-		}
-		if tEnd < pos0 && branchRejects(body[b:tEnd+1]) && ifStillOpenAt(blankBody, tEnd+1, pos0) {
-			return true // the guard's failures left; only safe keys continue
-		}
-	}
-	return false
+	return ifDominates(code, blank, pos, func(cond string, _ bool) bool {
+		return reservedGuardIn(cond, key)
+	})
 }
 
 // reservedGuardIn reports whether the if-condition carries a credited
