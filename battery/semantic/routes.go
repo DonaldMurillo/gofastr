@@ -337,10 +337,3 @@ type errorResponse struct {
 func writeErr(w http.ResponseWriter, r *http.Request, code int, reason i18n.Phrase, params ...map[string]any) {
 	writeJSON(w, r, code, errorResponse{Error: reason.Text(r.Context(), params...), Reason: reason.Code()})
 }
-
-// errMethodNotAllowed is reserved for future use when we split the
-// composite handler into per-route handlers and want to centralise the
-// 405 response.
-var errMethodNotAllowed = errors.New("method not allowed")
-
-var _ = errMethodNotAllowed

@@ -11,7 +11,7 @@ idx, _ := semantic.Open(semantic.Options{
     // Or the dependency-free deterministic stub for tests/offline dev:
     // Embedder: semantic.NewStubEmbedder(128),
     Keyword:  semantic.NewMemoryKeyword(),       // optional, enables hybrid
-    Path:     "~/.gofastr/semantic/myapp",       // optional, enables persistence
+    Path:     "./.gofastr/semantic/myapp",        // optional, enables persistence
 })
 defer idx.Close()
 
@@ -25,6 +25,8 @@ hits, _ := idx.Query(ctx, semantic.Query{
     MMRLambda: 0.3,     // diversity reranking
 })
 ```
+
+The library uses `Path` as written, including any leading `~`.
 
 ## What's in the box
 
@@ -101,6 +103,9 @@ The snapshot header records the embedder's `Name()` and `Dim()`. A mismatch on l
 
 ## HTTP surface
 
+The handler fails closed with HTTP 401 when no token is configured.
+Send `Authorization: Bearer <token>` with each request.
+
 | Method | Path | Body | Returns |
 | --- | --- | --- | --- |
 | POST | `/semantic/index` | `{"documents":[…]}` | 202 + `{"added": N}` |
@@ -111,14 +116,16 @@ The snapshot header records the embedder's `Name()` and `Dim()`. A mismatch on l
 Mount via the plugin:
 
 ```go
-app.RegisterPlugin(semantic.NewPlugin(idx))
+app.RegisterPlugin(semantic.NewPlugin(idx).
+    WithAuthToken(os.Getenv("SEMANTIC_TOKEN")))
 app.InitPlugins()
 ```
 
 Or wire the raw handler onto any router:
 
 ```go
-mux.Handle("/semantic/", http.StripPrefix("/semantic", semantic.Handler(idx)))
+mux.Handle("/semantic/", http.StripPrefix("/semantic",
+    semantic.Handler(idx, semantic.WithAuthToken(os.Getenv("SEMANTIC_TOKEN")))))
 ```
 
 ## CLI

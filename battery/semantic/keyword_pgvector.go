@@ -29,9 +29,7 @@ func (pgKeyword) Index(context.Context, string, string) error { return nil }
 func (pgKeyword) Delete(context.Context, string) error { return nil }
 
 func (k pgKeyword) Search(ctx context.Context, text string, top int) ([]KeywordHit, error) {
-	if top <= 0 {
-		top = 10
-	}
+	top = defaultTop(top)
 	q := tsqueryAny(keywordTokens(text))
 	// No terms: an empty tsquery matches nothing, so skip the round trip.
 	if q == "" {
