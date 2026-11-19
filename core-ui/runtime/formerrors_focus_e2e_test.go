@@ -217,17 +217,27 @@ func TestRefusedSubmitSkipsADisabledFieldset(t *testing.T) {
 }
 
 // A refused radio group whose last radio, the one report marks, is
-// disabled still takes focus on an enabled radio.
+// disabled still takes focus on an enabled radio, even when another
+// refused field sits between them.
 func TestRefusedRadioGroupWithADisabledLastRadio(t *testing.T) {
-	got := focusAfterRefusal(t, `<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
-  <fieldset data-hui-field=""><legend>Plan</legend>
+	for name, body := range map[string]string{
+		"adjacent": `<fieldset data-hui-field=""><legend>Plan</legend>
     <input type="radio" id="p-free" name="plan" value="free">
     <input type="radio" id="p-team" name="plan" value="team" disabled>
   </fieldset>
+  <div data-hui-field=""><label for="email">Email</label><input id="email" name="email" value=""></div>`,
+		"split by a field": `<div data-hui-field=""><input type="radio" id="p-free" name="plan" value="free" aria-label="Free"></div>
   <div data-hui-field=""><label for="email">Email</label><input id="email" name="email" value=""></div>
+  <div data-hui-field=""><input type="radio" id="p-team" name="plan" value="team" aria-label="Team" disabled></div>`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := focusAfterRefusal(t, `<form id="f" data-cui-rpc="/rpc/save" data-cui-rpc-method="POST">
+  `+body+`
   <button type="submit" id="go">Save</button>
 </form>`, `{"plan":["is required"],"email":["is required"]}`, "email-error", nil, clickSave())
-	if got != "p-free" {
-		t.Errorf("focus after the refused submit is on %q, want the enabled radio %q", got, "p-free")
+			if got != "p-free" {
+				t.Errorf("focus after the refused submit is on %q, want the enabled radio %q", got, "p-free")
+			}
+		})
 	}
 }

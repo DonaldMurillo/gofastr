@@ -143,18 +143,14 @@
       // holds a control associated from outside the form (form="id").
       // A hidden input (a combobox's value) or a disabled control (its own
       // attribute or a disabled fieldset's) cannot take focus.
-      let first = null;
-      for (const e of form.elements) {
-        if (e.type === 'hidden' || e.getAttribute('aria-invalid') !== 'true') continue;
-        if (e.type === 'radio') {
-          // A refused group is marked on its last radio, which may be
-          // disabled; the reader lands on its checked radio, or its
-          // first, among those that can take focus.
-          const g = [...form.elements].filter((r) => r.type === 'radio' && r.name === e.name && !r.matches(':disabled'));
-          first = g.find((r) => r.checked) || g[0];
-        } else if (!e.matches(':disabled')) first = e;
-        if (first) break;
-      }
+      // A refused radio group is marked on its last radio only, which may
+      // be disabled or sit after another field, so every radio of a
+      // marked group counts as refused; the reader lands on the group's
+      // checked radio, or its first, among those that can take focus.
+      const groups = new Set([...form.elements].filter((r) => r.type === 'radio' && r.getAttribute('aria-invalid') === 'true').map((r) => r.name));
+      const enabled = [...form.elements].filter((e) => e.type !== 'hidden' && !e.matches(':disabled'));
+      let first = enabled.find((e) => (e.type === 'radio' ? groups.has(e.name) : e.getAttribute('aria-invalid') === 'true'));
+      if (first && first.type === 'radio') first = enabled.find((r) => r.type === 'radio' && r.name === first.name && r.checked) || first;
       if (first && (!a || a === document.body || form.contains(a) || a.form === form)) first.focus();
     }
     if (!placed && typeof NS._toastOrFallback === 'function') {
