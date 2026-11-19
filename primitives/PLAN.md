@@ -147,7 +147,11 @@ the fanout loop guard (`fanout.UnwrapForeign`) and the SQL lexer
 (`internal/sqllex`). The registry now holds 112 twins left to merge, 15
 more than before, each with a `why`. Fixed on the way: webhook
 registration's unbounded DNS lookup, `Bind` accepting nested duplicate
-keys (breaking), fanout queues delivering after `stop`. The replay eval
+keys (breaking), fanout queues delivering after `stop`; and, from review,
+a WebSocket `Close` that could hang behind a keepalive Ping, a `Write`
+racing `Close` that was accepted and dropped, the strict-key walk's
+quadratic allocation, a hostless URL passing with private networks
+allowed, and a `Close` panic escaping the static-file hash goroutine. The replay eval
 after them held every number but the upgrade note, which one task missed
 as it had before (`2026-11-19-replay-core-sweeps.md`).
 
