@@ -108,8 +108,19 @@ whose remaining comments are one-line docs on exported identifiers
 `sdkdocs/internal/docpage`). Those groups added 669 invariants, 234
 decisions and 8 twins. `framework/` as a whole is at 7.8%, its tests at
 12.0%; the repository as a whole is at the share the script prints.
-Next: `framework/experimental` (harness, webmcp, apiversions), then
-`core/`.
+`framework/experimental` is swept, to 4.5%: `harness` 4.3% (286
+invariants, 112 decisions, 38 twins, one primitive per job), `webmcp`
+7.3% (33, 11, 4) and `apiversions` 11.8%, whose 27 comment lines are all
+exported docs (6 and 2). In `core/`, twelve packages are swept:
+`backoff` 6.2%, `dotenv` 2.5%, `jcs` 1.0%, `fuzzy` 6.1%, `textsafe`
+6.4%, `yaml` 0.0%, `router` 5.1%, `middleware` 2.9%, `render` 4.2%,
+`query` 7.7%, `schema` 5.7% and `mcp` 3.8%; the `core/` primitives hold
+277 invariants, 106 decisions and 21 twins. `core/` as a whole is still
+at 23.4%. Next: the rest of
+`core/` (`a2a`, `acp`, `config`, `datexport`, `fanout`, `featureflag`,
+`handler`, `i18n`, `markdown`, `migrate`, `moduleproto`, `netguard`,
+`openapi`, `settings`, `static`, `stream`, `tracing`, `unmounted`,
+`upload`, `webbotauth`), then `core-ui/`.
 
 ### 3. Bring the known twins in, and merge them
 
