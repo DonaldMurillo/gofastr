@@ -54,7 +54,8 @@ var sectionMenuJS string
 // bind the menu's own classes, so the module lives beside the component
 // and the kernel demand-loads it when a menu is on the page.
 var _ = registry.RegisterBehavior("sectionmenu", sectionMenuJS,
-	registry.Markers(`[data-cui-comp="cui-section-menu"]`))
+	registry.Markers(`[data-cui-comp="cui-section-menu"]`),
+	registry.Requires("activelink"))
 
 // SectionItem is one navigable link in a SectionMenu group.
 type SectionItem struct {

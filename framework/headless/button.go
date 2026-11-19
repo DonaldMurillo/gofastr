@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/uiaction"
 )
 
 // ButtonProps is a button, or an anchor that looks like one.
@@ -298,26 +299,19 @@ func rpcAttrs(seam, component string, a html.Attrs, perSeam func(out html.Attrs,
 }
 
 func checkToastAction(seam, v string) {
-	var a struct {
-		Label string            `json:"label"`
-		Attrs map[string]string `json:"attrs"`
+	var a uiaction.ToastAction
+	if err := json.Unmarshal([]byte(v), &a); err != nil {
+		panic("headless: " + seam + " carries an invalid data-cui-rpc-success-action")
 	}
-	if err := json.Unmarshal([]byte(v), &a); err != nil || a.Label == "" || a.Attrs["data-cui-rpc"] == "" {
-		panic("headless: " + seam + " carries a data-cui-rpc-success-action that is not a label and an RPC to run")
-	}
-	for k := range a.Attrs {
-		if k != "data-cui-rpc" && !strings.HasPrefix(k, "data-cui-rpc-") {
-			panic("headless: " + seam + "'s success toast action carries " + k + "; a toast's button carries RPC wiring only")
-		}
+	if err := a.Validate(); err != nil {
+		panic("headless: " + seam + " data-cui-rpc-success-action: " + err.Error())
 	}
 	actionAttrs(html.Attrs(a.Attrs))
 }
 
 func checkToastActionRides(seam string, out html.Attrs) {
-	if _, act := out["data-cui-rpc-success-action"]; act {
-		if _, toast := out["data-cui-rpc-success-toast"]; !toast {
-			panic("headless: " + seam + " carries data-cui-rpc-success-action with no data-cui-rpc-success-toast — the action rides the success toast")
-		}
+	if uiaction.MissingSuccessToast(out) {
+		panic("headless: " + seam + " carries data-cui-rpc-success-action with no data-cui-rpc-success-toast — the action rides the success toast")
 	}
 }
 

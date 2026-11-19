@@ -171,18 +171,6 @@
   // rendered by preset's slot inside the stack). The module names hooks
   // only.
   const TONES = ['info', 'success', 'warning', 'danger'];
-  const TONE_ATTR = {
-    info: 'data-hui-toast-tone-info', success: 'data-hui-toast-tone-success',
-    warning: 'data-hui-toast-tone-warning', danger: 'data-hui-toast-tone-danger'
-  };
-  const GLYPH_ATTR = {
-    info: 'data-hui-toast-glyph-info', success: 'data-hui-toast-glyph-success',
-    warning: 'data-hui-toast-glyph-warning', danger: 'data-hui-toast-glyph-danger'
-  };
-  const VARIANT_ATTR = {
-    info: 'data-hui-toast-variant-info', success: 'data-hui-toast-variant-success',
-    warning: 'data-hui-toast-variant-warning', danger: 'data-hui-toast-variant-danger'
-  };
 
   // findStack: the named stack, else the first on the page. None is
   // null: the module mounts no region of its own — a layout mounts
@@ -249,10 +237,14 @@
     if (!el) return false;
     if (typeof a === 'string') { try { a = JSON.parse(a); } catch (_) { a = null; } }
     const attrs = a && a.attrs;
-    if (!a || !a.label || !attrs || typeof attrs['data-cui-rpc'] !== 'string') { el.remove(); return false; }
+    const endpoint = attrs && attrs['data-cui-rpc'];
+    if (!a || typeof a.label !== 'string' || !a.label || typeof endpoint !== 'string' || !endpoint) {
+      el.remove();
+      return false;
+    }
     el.textContent = a.label;
     el.hidden = false;
-    Object.keys(attrs).forEach((k) => { if (RPC_ATTR.test(k)) el.setAttribute(k, attrs[k]); });
+    Object.entries(attrs).forEach(([k, v]) => { if (RPC_ATTR.test(k) && typeof v === 'string') el.setAttribute(k, v); });
     return true;
   }
 
@@ -294,7 +286,7 @@
     // attributes. Any other variant (neutral, a registered status
     // variant) is not a tone: it wears what the template lists for it
     // and says no tone word, so it never passes for info.
-    const tone = TONES.indexOf(variant) >= 0 ? variant : '';
+    const tone = TONES.includes(variant) ? variant : '';
     const assertive = tone === 'warning' || tone === 'danger';
 
     const tpl = rowTemplate(container);
@@ -310,8 +302,8 @@
     let variantCls = '';
     let glyph = '';
     if (tpl && tone) {
-      variantCls = tpl.getAttribute(VARIANT_ATTR[tone]) || '';
-      glyph = tpl.getAttribute(GLYPH_ATTR[tone]) || '';
+      variantCls = tpl.getAttribute('data-hui-toast-variant-' + tone) || '';
+      glyph = tpl.getAttribute('data-hui-toast-glyph-' + tone) || '';
     } else if (tpl) {
       const extra = templateVariant(tpl, variant);
       variantCls = extra.cls;
@@ -320,7 +312,7 @@
     variantCls.split(/\s+/).forEach((c) => { if (c) root.classList.add(c); });
     root.setAttribute('role', assertive ? 'alert' : 'status');
 
-    const toneWord = tone ? readWord(container, tpl, TONE_ATTR[tone]) : '';
+    const toneWord = tone ? readWord(container, tpl, 'data-hui-toast-tone-' + tone) : '';
     fill(root, 'data-hui-toast-tone', toneWord ? toneWord + ': ' : '');
     fill(root, 'data-hui-toast-icon', glyph);
     fill(root, 'data-hui-toast-title', cfg.title);

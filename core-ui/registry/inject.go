@@ -3,73 +3,26 @@ package registry
 import (
 	"fmt"
 	"html"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// injectMarker splices ` data-cui-comp="<name>"` into the first
-// opening tag of html. No HTML parser: a small state machine finds
-// the end of the opening tag (the `>` that is not inside an attribute
-// quote) and inserts the attribute just before it.
-//
-// Errors when html does not begin with an opening tag after leading
-// whitespace, or when the first tag is self-closing in a way we
-// cannot edit safely (we still inject before `/>`). The error
-// message tells the caller how to fix their component.
+// injectMarker adds the component marker unless the root already has one.
 func injectMarker(html, name string) (render.HTML, error) {
 	if name == "" {
 		return render.HTML(html), fmt.Errorf("injectMarker: empty name")
 	}
-	// Skip leading whitespace and HTML comments.
-	i := 0
-	for {
-		j := skipWhitespace(html, i)
-		if j+4 <= len(html) && html[j:j+4] == "<!--" {
-			end := strings.Index(html[j+4:], "-->")
-			if end < 0 {
-				return render.HTML(html), fmt.Errorf("injectMarker: unterminated <!-- comment in component output")
-			}
-			i = j + 4 + end + 3
-			continue
-		}
-		i = j
-		break
+	start, end, err := rootTag(html)
+	if err != nil {
+		return render.HTML(html), fmt.Errorf("registry: component %q must render a single rooted element: %w", name, err)
 	}
-	if i >= len(html) || html[i] != '<' {
-		return render.HTML(html), fmt.Errorf(
-			"registry: component %q must render a single rooted element; "+
-				"got fragment starting with %q. Wrap your output in <div> or a semantic tag.",
-			name, preview(html))
-	}
-	// Tag name must be a letter (HTML element), not '/', '!', '?'.
-	if i+1 >= len(html) {
-		return render.HTML(html), fmt.Errorf("registry: component %q produced an incomplete tag", name)
-	}
-	c := html[i+1]
-	if c == '/' || c == '!' || c == '?' {
-		return render.HTML(html), fmt.Errorf(
-			"registry: component %q must start with an element open tag, got %q",
-			name, preview(html))
-	}
-
-	// Find the end of the opening tag: the `>` that closes it,
-	// respecting attribute quotes.
-	end := findOpenTagEnd(html, i+1)
-	if end < 0 {
-		return render.HTML(html), fmt.Errorf("registry: component %q produced an unterminated open tag", name)
-	}
-
-	// If the outermost tag already carries data-cui-comp (e.g. the
-	// caller is composing a component wrapped by another Style, or
-	// WrapHTML was already applied), leave the html alone. Double-
-	// marker would inflate Scan output and emit a stray <link>.
-	openTag := html[i:end]
-	if hasAttribute(openTag, "data-cui-comp") {
+	if hasAttribute(html[start:end], "data-cui-comp") {
 		return render.HTML(html), nil
 	}
-
-	return render.HTML(spliceAttr(html, i, end, "data-cui-comp", name)), nil
+	return render.HTML(spliceAttr(html, end, "data-cui-comp", name)), nil
 }
 
 // attrNameOK validates an attribute name: a letter or underscore (or
@@ -109,53 +62,79 @@ func InjectAttribute(src render.HTML, name, value string) (render.HTML, error) {
 		return src, fmt.Errorf("registry: InjectAttribute: %q is not a valid attribute name", name)
 	}
 	html := string(src)
-	// Skip leading whitespace and HTML comments (as injectMarker does).
-	i := 0
-	for {
-		j := skipWhitespace(html, i)
-		if j+4 <= len(html) && html[j:j+4] == "<!--" {
-			end := strings.Index(html[j+4:], "-->")
-			if end < 0 {
-				return src, fmt.Errorf("registry: InjectAttribute: unterminated <!-- comment in html")
-			}
-			i = j + 4 + end + 3
-			continue
-		}
-		i = j
-		break
+	start, end, err := rootTag(html)
+	if err != nil {
+		return src, fmt.Errorf("registry: InjectAttribute: %w", err)
 	}
-	if i+1 >= len(html) || html[i] != '<' || html[i+1] == '/' || html[i+1] == '!' || html[i+1] == '?' {
-		return src, fmt.Errorf("registry: InjectAttribute: html must begin with an element open tag, got %q", preview(html))
-	}
-	end := findOpenTagEnd(html, i+1)
-	if end < 0 {
-		return src, fmt.Errorf("registry: InjectAttribute: unterminated open tag")
-	}
-	if hasAttribute(html[i:end], name) {
+	if hasAttribute(html[start:end], name) {
 		return src, nil
 	}
-	return render.HTML(spliceAttr(html, i, end, name, htmlEscape(value))), nil
+	return render.HTML(spliceAttr(html, end, name, value)), nil
 }
 
-// spliceAttr builds the attribute text and inserts it before the
-// tag's `>` (before the `/` of a self-closing tag), adding a separator
-// space only when the source does not already have whitespace there.
-func spliceAttr(html string, i, end int, name, value string) string {
+// AppendAttributes appends sorted render.Attr values to the root tag, keeping existing attributes.
+// A fragment with no usable root or no valid new attributes is returned unchanged.
+func AppendAttributes(src render.HTML, attrs map[string]string) render.HTML {
+	if len(attrs) == 0 {
+		return src
+	}
+	html := string(src)
+	_, end, err := rootTag(html)
+	if err != nil {
+		return src
+	}
+	var out strings.Builder
+	for _, name := range slices.Sorted(maps.Keys(attrs)) {
+		if attr := render.Attr(name, attrs[name]); attr != "" {
+			if out.Len() > 0 {
+				out.WriteByte(' ')
+			}
+			out.WriteString(attr)
+		}
+	}
+	if out.Len() == 0 {
+		return src
+	}
+	return render.HTML(spliceAttrs(html, end, out.String()))
+}
+
+func rootTag(html string) (start, end int, err error) {
+	start = skipWhitespace(html, 0)
+	for strings.HasPrefix(html[start:], "<!--") {
+		close := strings.Index(html[start+4:], "-->")
+		if close < 0 {
+			return 0, 0, fmt.Errorf("unterminated <!-- comment in html")
+		}
+		start = skipWhitespace(html, start+4+close+3)
+	}
+	if start+1 >= len(html) || html[start] != '<' || html[start+1] == '/' || html[start+1] == '!' || html[start+1] == '?' {
+		return 0, 0, fmt.Errorf("html must begin with an element open tag, got %q", preview(html))
+	}
+	end = findOpenTagEnd(html, start+1)
+	if end < 0 {
+		return 0, 0, fmt.Errorf("unterminated open tag")
+	}
+	return start, end, nil
+}
+
+func spliceAttrs(html string, end int, attrs string) string {
 	insertAt := end
-	selfClose := end > 0 && html[end-1] == '/'
+	selfClose := html[end-1] == '/'
 	if selfClose {
-		insertAt = end - 1
+		insertAt--
 	}
 	sep := " "
-	if insertAt > 0 && (html[insertAt-1] == ' ' || html[insertAt-1] == '\t' || html[insertAt-1] == '\n') {
+	if insertAt > 0 && strings.ContainsRune(" \t\n", rune(html[insertAt-1])) {
 		sep = ""
 	}
-	attr := sep + name + `="` + value + `"`
-	// Preserve `<br />` spacing: a space before `/` stays a space.
 	if selfClose && insertAt > 0 && html[insertAt-1] == ' ' {
-		attr += " "
+		attrs += " "
 	}
-	return html[:insertAt] + attr + html[insertAt:]
+	return html[:insertAt] + sep + attrs + html[insertAt:]
+}
+
+func spliceAttr(html string, end int, name, value string) string {
+	return spliceAttrs(html, end, name+`="`+htmlEscape(value)+`"`)
 }
 
 // hasAttribute reports whether the given opening-tag slice already
@@ -256,28 +235,11 @@ func Attribute(src render.HTML, name string) (string, bool, error) {
 		return "", false, fmt.Errorf("registry: Attribute: %q is not a valid attribute name", name)
 	}
 	html := string(src)
-	i := 0
-	for {
-		j := skipWhitespace(html, i)
-		if j+4 <= len(html) && html[j:j+4] == "<!--" {
-			end := strings.Index(html[j+4:], "-->")
-			if end < 0 {
-				return "", false, fmt.Errorf("registry: Attribute: unterminated <!-- comment in html")
-			}
-			i = j + 4 + end + 3
-			continue
-		}
-		i = j
-		break
+	start, end, err := rootTag(html)
+	if err != nil {
+		return "", false, fmt.Errorf("registry: Attribute: %w", err)
 	}
-	if i+1 >= len(html) || html[i] != '<' || html[i+1] == '/' || html[i+1] == '!' || html[i+1] == '?' {
-		return "", false, fmt.Errorf("registry: Attribute: html must begin with an element open tag, got %q", preview(html))
-	}
-	end := findOpenTagEnd(html, i+1)
-	if end < 0 {
-		return "", false, fmt.Errorf("registry: Attribute: unterminated open tag")
-	}
-	openTag := html[i:end]
+	openTag := html[start:end]
 	// Walk the tag outside quoted values looking for `name = value`.
 	var quote byte
 	for at := 1; at < len(openTag); at++ {

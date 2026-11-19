@@ -2,6 +2,7 @@ primitive: headless.feedback
 summary: Headless actions and feedback - buttons, optimistic and toggle actions, toasts and the notification bell, alerts and live regions, spinners, skeletons, progress, counters, disclosure and the system banner.
 code:
   - framework/headless/action.go
+  - internal/uiaction/
   - framework/headless/button.go
   - framework/headless/notification.go
   - framework/headless/bell_behavior.go
@@ -51,9 +52,10 @@ invariants:
     enforced_by:
       - test: framework/headless.TestSweepFeedbackUntoggleEndpointImpliesUntoggle
   - id: action-failure-is-announced
-    rule: An action button carries data-hui-action-failed on its root, FailedText or else Strings.ActionFailed, and a role=status span with no aria-live.
+    rule: The shared action renderer emits data-hui-action-failed on the button root and a role=status span with no aria-live.
     enforced_by:
       - test: framework/headless.TestAFailedActionHasSomewhereToSayItAndSomethingToSay
+      - test: core-ui/interactive.TestOptimisticUpdateRendersComponentAttrs
   - id: button-needs-a-name
     rule: Button panics when both Label and AriaLabel are empty.
     enforced_by:
@@ -83,6 +85,8 @@ invariants:
     rule: A data-cui-rpc-success-action is a label with RPC-only attrs checked as a Button's own, and panics without a data-cui-rpc-success-toast beside it.
     enforced_by:
       - test: framework/headless.TestSuccessToastActionChecked
+      - test: core-ui/interactive.TestSuccessToastActionEmitsAttr
+      - test: framework/headless.TestE2E_RuntimeToastAction
     applies:
       - framework/headless/form.go
   - id: confirm-wording-rides-the-gate

@@ -17,6 +17,17 @@ func TestInjectIntoSimpleDiv(t *testing.T) {
 	}
 }
 
+func TestInjectMarkerEscapesName(t *testing.T) {
+	got, err := injectMarker(`<div>hi</div>`, `modal">`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `<div data-cui-comp="modal&#34;&gt;">hi</div>`
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestInjectIntoDivWithAttrs(t *testing.T) {
 	got, err := injectMarker(`<div class="x" id="y">hi</div>`, "modal")
 	if err != nil {

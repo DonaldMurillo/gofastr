@@ -2,6 +2,7 @@ primitive: render.html
 summary: The escaping HTML builder (Escape, Text, Raw, Attr, Tag, VoidTag, Join, If, When, Classes), which builds markup that cannot break out of a text node, an attribute value, an attribute name or a tag name.
 code:
   - core/render/html.go
+  - core-ui/registry/inject.go
 docs:
   - framework/docs/content/core-packages.md
 twins:
@@ -20,7 +21,7 @@ twins:
       - path: core/render/html.go
         note: isSafeAttrKey, behind Attr, Tag and VoidTag.
       - path: core-ui/registry/inject.go
-        note: attrNameOK, behind InjectAttribute and the component marker splice.
+        note: attrNameOK, behind InjectAttribute and Attribute.
 invariants:
   - id: escape-five-ampersand-first
     rule: Escape turns &, <, >, double quote and single quote into &amp;, &lt;, &gt;, &quot; and &#39;, replacing the ampersand first so no entity it writes is escaped twice, and Text and every attribute value go through it.
@@ -46,6 +47,11 @@ invariants:
     rule: Tag and VoidTag write attributes in sorted key order, one space before each, and a dropped attribute leaves no space behind.
     enforced_by:
       - test: core/render.TestSweepRenderAttrsSortedNoDanglingSpace
+  - id: one-root-attribute-splice
+    rule: Registry injection and interactive wrappers use one quote-aware root-tag scan and splice that skips leading comments and inserts before a self-closing slash.
+    enforced_by:
+      - test: core-ui/registry.TestInjectAttribute
+      - test: core-ui/interactive.TestInteractiveAttributesReachRootAfterComments
   - id: when-is-lazy
     rule: When calls its function only when the condition is true, while If takes an already built fragment.
     enforced_by:

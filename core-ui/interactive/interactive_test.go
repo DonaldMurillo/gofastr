@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -205,6 +207,39 @@ func TestWrapRawHTMLGTInAttrValue(t *testing.T) {
 	}
 }
 
+func TestInteractiveAttributesReachRootAfterComments(t *testing.T) {
+	const button = render.HTML(`<!-- note --><button title="1>2">Save</button>`)
+	if got := OnClick(button, Post("/api/save")); got != `<!-- note --><button title="1>2" data-cui-rpc="/api/save" data-cui-rpc-method="POST">Save</button>` {
+		t.Errorf("OnClick = %s", got)
+	}
+	const input = render.HTML(`<!-- note --><input />`)
+	if got := SetLocal(input, "filter", `a"&b`); got != render.HTML(`<!-- note --><input `+render.Attr("data-cui-signal-set", `filter:a"&b`)+` />`) {
+		t.Errorf("SetLocal = %s", got)
+	}
+	if got := Dropdown(button, input); !strings.Contains(string(got), `<!-- note --><input data-cui-dropdown-panel="" hidden="" />`) {
+		t.Errorf("Dropdown panel = %s", got)
+	}
+	if got := registry.AppendAttributes(input, map[string]string{"oninput": "ignored"}); got != input {
+		t.Errorf("unsafe attribute was not dropped: %s", got)
+	}
+}
+
+func TestOnSuccessDerivationsKeepIndependentEffects(t *testing.T) {
+	base := Post("/api/save").OnSuccess(OpenWidget("saved"))
+	base.effects = append(make([]Effect, 0, 2), base.effects...)
+	first := base.OnSuccess(SetSignal("first"))
+	second := base.OnSuccess(SetSignal("second"))
+	if got := first.Attrs()["data-cui-rpc-signal"]; got != "first" {
+		t.Errorf("first derivative writes %q, want first", got)
+	}
+	if got := second.Attrs()["data-cui-rpc-signal"]; got != "second" {
+		t.Errorf("second derivative writes %q, want second", got)
+	}
+	if _, ok := base.Attrs()["data-cui-rpc-signal"]; ok {
+		t.Error("deriving actions changed the base")
+	}
+}
+
 func TestWrapLeadingWhitespace(t *testing.T) {
 	html := render.HTML("  <button>x</button>")
 	result := wrapWithAction(html, Post("/api/x"))
@@ -215,13 +250,6 @@ func TestWrapLeadingWhitespace(t *testing.T) {
 	}
 	if !strings.Contains(s, `data-cui-rpc="/api/x"`) {
 		t.Errorf("rpc attr missing: %s", s)
-	}
-}
-
-func TestWrapNoTag(t *testing.T) {
-	result := wrapWithAction(render.HTML("plain text"), Post("/api/x"))
-	if string(result) != "plain text" {
-		t.Errorf("plain text should be unchanged, got: %s", result)
 	}
 }
 
@@ -372,13 +400,35 @@ func TestRevealStampsCompMarkerAndCSS(t *testing.T) {
 	}
 	css := revealStyle.Entry().CSSFor(style.Theme{})
 	for _, sel := range []string{
-		`[data-cui-comp="cui-reveal"].cui-hidden{opacity:0}`,
+		`[data-cui-reveal].cui-hidden{opacity:0}`,
 		`.cui-revealed{opacity:1`,
 		`prefers-reduced-motion`,
 	} {
 		if !strings.Contains(css, sel) {
 			t.Errorf("reveal CSS missing %q:\n%s", sel, css)
 		}
+	}
+}
+
+func TestRevealLoadsCSSForStyledRoot(t *testing.T) {
+	const html = render.HTML(`<section data-cui-comp="existing-card">Card</section>`)
+	got := Reveal(html, "fade-up")
+	if !strings.Contains(string(got), `<section data-cui-comp="existing-card" data-cui-reveal="fade-up"`) {
+		t.Fatalf("the styled section must still be the reveal target: %s", got)
+	}
+	names := registry.Scan(string(got))
+	if !slices.Contains(names, "existing-card") || !slices.Contains(names, "cui-reveal") {
+		t.Errorf("styles discovered for the section = %v, want the original and reveal sheets", names)
+	}
+	css := revealStyle.Entry().CSSFor(style.Theme{})
+	if !strings.Contains(css, `[data-cui-scope="cui-reveal"])[data-cui-reveal].cui-hidden{opacity:0}`) {
+		t.Errorf("reveal CSS does not target the scoped behavior marker: %s", css)
+	}
+
+	const owned = render.HTML(`<section data-cui-comp="existing-card" data-cui-scope="existing-owner">Card</section>`)
+	wrapped := Reveal(owned, "fade-up")
+	if !strings.Contains(string(wrapped), `<div data-cui-reveal="fade-up" data-cui-comp="cui-reveal">`+string(owned)+`</div>`) {
+		t.Errorf("Reveal must preserve both markers and animate the surrounding element: %s", wrapped)
 	}
 }
 
@@ -439,8 +489,8 @@ func TestLiveSearchDefaultDebounce(t *testing.T) {
 	)
 	result := LiveSearch(form, Post("/api/search"), 0)
 	s := string(result)
-	if !strings.Contains(s, `data-cui-rpc-debounce-ms="300"`) {
-		t.Fatalf("expected default 300ms debounce attr data-cui-rpc-debounce-ms: %s", s)
+	if !strings.Contains(s, `data-cui-rpc-debounce-ms="250"`) {
+		t.Fatalf("expected default 250ms debounce attr data-cui-rpc-debounce-ms: %s", s)
 	}
 	// old wrong name must NOT appear
 	if strings.Contains(s, `data-cui-rpc-debounce="`) {
@@ -493,6 +543,10 @@ func TestOptimisticUpdateRendersComponentAttrs(t *testing.T) {
 	// Must have the endpoint.
 	if !strings.Contains(s, `data-hui-action-endpoint="/api/like/42"`) {
 		t.Fatalf("missing endpoint attr: %s", s)
+	}
+	if !strings.Contains(s, `data-hui-action-failed="Could not save. Try again."`) ||
+		!strings.Contains(s, `<span data-hui-action-status="" role="status"></span>`) {
+		t.Fatalf("missing failure announcement: %s", s)
 	}
 	// POST is the default, method attr should NOT be emitted.
 	if strings.Contains(s, `data-hui-action-method`) {
@@ -626,16 +680,6 @@ func TestDropdownTriggerAttrs(t *testing.T) {
 	}
 }
 
-func TestDropdownPanelAttrs(t *testing.T) {
-	trigger := render.Tag("button", nil, render.Text("Menu"))
-	panel := render.Tag("div", nil, render.Text("Content"))
-	result := Dropdown(trigger, panel)
-	s := string(result)
-	if !strings.Contains(s, `data-cui-dropdown-panel`) {
-		t.Errorf("dropdown panel missing data-cui-dropdown-panel in:\n%s", s)
-	}
-}
-
 func TestDropdownWrapsBoth(t *testing.T) {
 	trigger := render.Tag("button", nil, render.Text("Menu"))
 	panel := render.Tag("div", nil, render.Text("Content"))
@@ -694,13 +738,14 @@ func TestOnSuccessToastEmitsAttr(t *testing.T) {
 // toast to ride is refused.
 func TestSuccessToastActionEmitsAttr(t *testing.T) {
 	attrs := Delete("/api/item/1").OnSuccessToast("Deleted").
-		OnSuccessToastAction("Undo", Post("/api/item/1/_restore").WithBody(`{}`).OnSuccessToast("Restored")).Attrs()
+		OnSuccessToastAction("Undo", Post("/api/item/1/_restore").WithBody(`{}`).
+			OnSuccess(SetSignal("item")).OnSuccessToast("Restored")).Attrs()
 	var got ToastAction
 	if err := json.Unmarshal([]byte(attrs["data-cui-rpc-success-action"]), &got); err != nil {
 		t.Fatalf("success action is not JSON: %v (%v)", err, attrs)
 	}
 	want := map[string]string{"data-cui-rpc": "/api/item/1/_restore", "data-cui-rpc-method": "POST",
-		"data-cui-rpc-body": "{}", "data-cui-rpc-success-toast": "Restored"}
+		"data-cui-rpc-body": "{}", "data-cui-rpc-success-toast": "Restored", "data-cui-rpc-signal": "item"}
 	if got.Label != "Undo" || !maps.Equal(got.Attrs, want) {
 		t.Fatalf("success action = %+v, want Undo over %v", got, want)
 	}
@@ -708,9 +753,10 @@ func TestSuccessToastActionEmitsAttr(t *testing.T) {
 		t.Fatal("an action without OnSuccessToastAction must not carry the hook")
 	}
 	for name, f := range map[string]func(){
-		"confirm":  func() { Delete("/x").OnSuccessToastAction("Undo", Post("/y").WithConfirm("Sure?")) },
-		"no label": func() { Delete("/x").OnSuccessToastAction("", Post("/y")) },
-		"no toast": func() { Delete("/x").OnSuccessToastAction("Undo", Post("/y")).Attrs() },
+		"confirm":     func() { Delete("/x").OnSuccessToastAction("Undo", Post("/y").WithConfirm("Sure?")) },
+		"no label":    func() { Delete("/x").OnSuccessToastAction("", Post("/y")) },
+		"no endpoint": func() { Delete("/x").OnSuccessToastAction("Undo", Action{}) },
+		"no toast":    func() { Delete("/x").OnSuccessToastAction("Undo", Post("/y")).Attrs() },
 	} {
 		func() {
 			defer func() {

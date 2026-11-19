@@ -25,6 +25,18 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **Interactive wrappers wire the real root.** `OnClick`, `SetLocal`,
+  `Dropdown` and the other wrappers attach their attributes after
+  leading comments and before a self-closing slash, instead of stamping
+  the comment.
+- **Interactive actions behave as documented.** Several `OnSuccess`
+  chains derived from one Action keep independent effects; `LiveSearch`
+  with a zero debounce uses the runtime default of 250 ms; `Reveal`
+  loads its stylesheet on a root that already has component styles; a
+  toast action with an empty endpoint renders no button; an optimistic
+  button announces a failed request when it rolls back.
+- **The SectionMenu phone pill follows the active link** across
+  trailing-slash and Unicode URL variants.
 - **GOFASTR1824 judges only CSS.** The physical-side rule scanned whole
   Go source lines, so a Go struct literal with a `Right` field was
   reported as a CSS declaration. It now reads CSS in stylesheets and Go
