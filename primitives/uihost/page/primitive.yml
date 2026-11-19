@@ -103,6 +103,11 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestOneDescriptionPerPage
       - test: framework/uihost.TestSweepPageTypedDescriptionBeatsHeadHTML
+  - id: not-found-head-carries-no-route-meta
+    rule: A not-found page, from an unmatched URL, a Load or resolver answering ErrNotFound, or an unfilled not-found outlet, carries the site description and none of the matched route's meta, hreflang alternates included, on the full page and the partial.
+    enforced_by:
+      - test: framework/uihost.TestNotFoundOutcomeCarriesNoRouteMeta
+      - test: framework/uihost.TestNotFoundOutletCarriesNoRouteMeta
   - id: screen-head-urls-are-safe
     rule: A canonical or hreflang URL reaches the head only when it is an http(s) or relative reference.
     enforced_by:

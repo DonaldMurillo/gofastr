@@ -25,6 +25,13 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A screen's `ErrNotFound` 404 no longer lists the route's hreflang
+  alternates.** When a screen's `Load` or resolver answered
+  `app.ErrNotFound`, or a not-found outlet went unfilled, the themed 404
+  still carried the matched route's `rel="alternate" hreflang` links,
+  pointing search engines at more 404s and telling it apart from an
+  unknown URL. Every not-found page now gets the head an unmatched URL
+  gets. ([#823](https://github.com/DonaldMurillo/gofastr/issues/823))
 - **gofastr dev: saves no longer run git in your repository.** The
   dev loop's `go list` and `go build` stamped version control info, which
   runs `git status` and takes `.git/index.lock`: a commit made during a
