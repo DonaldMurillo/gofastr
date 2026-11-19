@@ -45,7 +45,7 @@ invariants:
       - test: core/static.TestFileInRootFallbacks
       - test: core/static.TestSweepFallbackOpenRefusesSymlinkEscape
   - id: miss-or-fault
-    rule: A missing name, one fs.ValidPath refuses (ErrInvalid) and one holding a NUL is a miss that may fall back; a FIFO or device is a 404 without being opened; any other open or stat error, and a read error while the ETag is hashed before the status is written, is a 500; a read that fails during body copying (a large file served before its hash, a range, the unseekable path) is not mapped to an error status; the 200 or 206 is or becomes the response, and the body ends short of its Content-Length.
+    rule: A missing name, one fs.ValidPath refuses (ErrInvalid) and one holding a NUL is a miss that may fall back; a FIFO or device is a 404 without being opened; any other open or stat error, and a read error while the ETag is hashed before the status is written, is a 500; a read that fails during body copying (a large file served before its hash, a range, the unseekable path) is not mapped to an error status; the 200, 206 or not-found page's 404 is or becomes the response, and the body may end short of its Content-Length.
     enforced_by:
       - test: core/static.TestInvalidPathIsNotAServerError
       - test: core/static.TestSweepInvalidPathIsAMiss
