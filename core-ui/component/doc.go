@@ -9,7 +9,6 @@
 //   - ComponentBase for embedding common fields (ID, Class)
 //   - ComponentContext for event data and state access
 //   - ActionRegistry and On() for declarative event handling
-//   - Lifecycle hooks (Mount, Update, Unmount)
 //   - ComponentList for rendering multiple components
 //
 // Basic usage:

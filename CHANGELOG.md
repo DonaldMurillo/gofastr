@@ -25,6 +25,10 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **The seo package example ships its JSON-LD.** The package doc put
+  `seo.Render` in a screen's `HeadHTML`, which the host strips of every
+  `<script>`; it now uses the `ScreenSchema` hook. `seo.md` lists all
+  eleven builders.
 - **Widget builders share one dismissal switch.** Modal, Drawer,
   BottomSheet and Popover presets opt into Escape and outside-click
   dismissal with `Builder.Dismissible()`, and every RPC endpoint
@@ -556,6 +560,15 @@ few lines, and link the PR or the docs page for the rest.
   `EraseUserData` treated them as two tables and reported each erased
   row twice. Table names now fold the way export and the SQL already
   did, so `EraseTableResult.Table` is the lower-case name.
+
+### Removed
+
+- **Unused `core-ui/component` APIs are gone.** The lifecycle API
+  (`Lifecycle`, `LifecycleHook`, `NewLifecycle` and its hook methods),
+  `Server`, `ServerCall`, and the `ActionDef.Server` and
+  `ActionDef.Debounce` fields had no readers: nothing in the framework
+  fired a lifecycle hook or read either field. Delete any reference to
+  them.
 
 ### Changed
 - **The admin "nothing to replay" phrase moved to

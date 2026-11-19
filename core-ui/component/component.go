@@ -187,11 +187,7 @@ func SafeRenderCtx(ctx context.Context, c Component) (html render.HTML, err erro
 			}
 		}
 	}()
-	if cc, ok := c.(ContextComponent); ok {
-		html = cc.RenderCtx(ctx)
-	} else {
-		html = c.Render()
-	}
+	html = RenderComponentCtx(ctx, c)
 	return
 }
 

@@ -17,12 +17,8 @@
 // before "(", then reports the canonical spelling instead of allowing a dead
 // call to ship.
 //
-// component.Server(...) and ActionDef.Server look like the marker but are dead
-// API: Server(...) has one call site in the whole repo (a unit test), and On()
-// never sets ActionDef.Server nor does the compiler read it. Keying on either
-// would record a *declaration* rather than the property. That is the exact
-// failure mode issue #150 rejected a marker interface for, so they are
-// not matched.
+// The analyzer checks the call in ClientJS itself. Issue #150 rejected
+// marker interfaces because they can drift from the code that runs.
 //
 // # Reachability, and where each step gives up
 //

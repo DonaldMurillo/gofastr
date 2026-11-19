@@ -4,19 +4,23 @@
 //
 // Each type carries the @context + @type envelope automatically; the
 // caller fills in the descriptive fields and hands the value to
-// [Render] (or to a screen's HeadHTML implementation), which produces
-// a `<script type="application/ld+json">` block. The script element
-// is data, not code, strict CSP (`default-src 'self'`) permits it
-// alongside `<script type="application/json">`.
+// [Render], which produces a `<script type="application/ld+json">`
+// block. The script element is data, not code, strict CSP
+// (`default-src 'self'`) permits it alongside
+// `<script type="application/json">`.
 //
-// Common usage from a screen:
+// Common usage from a screen: implement the ScreenSchema hook
+// (framework/uihost.ScreenSchema) and let the host render the block
+// into <head>. Do not route [Render] through SEOScreen.HeadHTML: the
+// host scrubs every <script> out of HeadHTML, so the JSON-LD never
+// ships.
 //
-//	func (s *ProductScreen) HeadHTML() string {
-//	    return string(seo.Render(seo.Product{
-//	        Name:        s.product.Name,
-//	        Description: s.product.Description,
-//	        Image:       s.product.HeroURL,
-//	    }))
+//	func (s *ProductScreen) ScreenSchema(ctx context.Context) []seo.Thing {
+//	    p := seo.NewProduct()
+//	    p.Name = s.product.Name
+//	    p.Description = s.product.Description
+//	    p.Image = s.product.HeroURL
+//	    return []seo.Thing{p}
 //	}
 package seo
 
@@ -275,9 +279,9 @@ func NewOffer() Offer { return Offer{base: newBase("Offer")} }
 // ─── Render ────────────────────────────────────────────────────────
 
 // Render emits one <script type="application/ld+json"> tag per item.
-// JSON is marshaled with html.UnescapeString-safe content; the only
-// dangerous sequence inside a `<script>` body is `</`, which we
-// neutralize by escaping the `<`.
+// json.Marshal escapes angle brackets in JSON strings. Render also
+// replaces any literal `</` in the marshaled bytes with `<\/` to
+// prevent an HTML closing tag inside the script body.
 //
 // URL-typed Schema.org fields (see urlFields) pass the same head-URL
 // allow-list the page's canonical/og/twitter arms use; a value that

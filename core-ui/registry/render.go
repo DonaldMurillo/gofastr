@@ -55,18 +55,9 @@ func (s *Style) WrapHTML(html render.HTML) render.HTML {
 // the name. Only attribute positions inside an open tag count (preceded
 // by whitespace or '/'), so stray mentions inside <pre>/<code>/text
 // content don't trigger false-positive SSR links. A name outside
-// markerNameByte's charset, or one with no closing quote, never
+// isTagNameByte's charset, or one with no closing quote, never
 // matches, so it never reaches a /__gofastr/comp/<name>.css URL.
 var markerAttrs = []string{"comp", "scope"}
-
-// markerNameByte accepts [a-zA-Z0-9_:.-].
-func markerNameByte(c byte) bool {
-	switch {
-	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
-		return true
-	}
-	return c == '_' || c == ':' || c == '.' || c == '-'
-}
 
 // Scan returns the sorted, deduped list of sheet names referenced by
 // data-cui-comp and data-cui-scope attributes in html. Used by the SSR
@@ -100,7 +91,7 @@ func ScanSplit(html string) (live, held []string) {
 // scanNames returns the sorted marker names in html, minus skip.
 func scanNames(html string, skip []string) []string {
 	seen := map[string]struct{}{}
-	for n := range attrscan.Values(html, markerAttrs, markerNameByte, true) {
+	for n := range attrscan.Values(html, markerAttrs, isTagNameByte, true) {
 		seen[n] = struct{}{}
 	}
 	for _, n := range skip {

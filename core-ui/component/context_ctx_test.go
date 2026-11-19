@@ -107,6 +107,9 @@ func TestComponentContext_StateAccessorsOptional(t *testing.T) {
 	if got := cc.GetState("k"); got != "v" {
 		t.Errorf("GetState after SetState = %v, want \"v\"", got)
 	}
+	if got := cc.GetState("missing"); got != nil {
+		t.Errorf("GetState for an absent key with a getter = %v, want nil", got)
+	}
 }
 
 func TestComponentContext_ParamHelpers(t *testing.T) {

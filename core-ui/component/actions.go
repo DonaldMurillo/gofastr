@@ -13,10 +13,8 @@ import (
 
 // ActionDef defines a single event handler within a component.
 type ActionDef struct {
-	Event    string                  // "click", "submit", "input", "change", "keydown", etc.
-	Handler  func(*ComponentContext) // the server-side handler (runs in Go)
-	Server   bool                    // if true, this action must run on the server
-	Debounce int                     // debounce in milliseconds (0 = no debounce)
+	Event   string                  // "click", "submit", "input", "change", "keydown", etc.
+	Handler func(*ComponentContext) // the server-side handler (runs in Go)
 
 	// ClientJS is the JavaScript handler body. This is what gets compiled
 	// into the actions.js bundle. It receives a `params` object with:
@@ -31,23 +29,6 @@ type ActionDef struct {
 	//
 	// Example: "G.setState('count', G.getState('count', 0) + 1); G.updateText('[data-count]', G.getState('count', 0));"
 	ClientJS string
-}
-
-// ServerCall represents a call that should be executed on the server.
-type ServerCall struct {
-	Action string
-	Params map[string]string
-}
-
-// Server marks an action as requiring server-side execution.
-// When the compiler sees this, it generates JS that POSTs to the server
-// instead of running locally. The server handler runs in a goroutine.
-func Server(action string, params ...string) *ServerCall {
-	p := make(map[string]string)
-	for i := 0; i+1 < len(params); i += 2 {
-		p[params[i]] = params[i+1]
-	}
-	return &ServerCall{Action: action, Params: p}
 }
 
 // ActionRegistry holds all registered actions for a component.
