@@ -1,0 +1,72 @@
+primitive: webbotauth.discovery
+summary: Resolving a Signature-Agent URL to keys - the SSRF-guarded directory fetch, the bounded positive and negative caches, fetch slots, and JWK Set parsing.
+code:
+  - core/webbotauth/directory.go
+  - core/webbotauth/jwks.go
+docs:
+  - framework/docs/content/web-bot-auth.md
+invariants:
+  - id: agent-url-shape
+    rule: A Signature-Agent URL must be https with a host and no userinfo; a directory-type one must be a bare origin and resolves to its well-known directory, and a jwks_uri one is fetched as sent with only its fragment dropped.
+    enforced_by:
+      - test: core/webbotauth.TestParseAgentRef_SchemeAndShapeRules
+  - id: fetch-never-reaches-internal
+    rule: Discovery refuses an internal name or literal, any internal DNS answer within a 2s lookup run under at most 8 concurrent lookups (busy beyond that), and any internal address at dial time, through no proxy.
+    enforced_by:
+      - test: core/webbotauth.TestCheckHostPublic_RefusesInternal
+      - test: core/webbotauth.TestCheckHostPublic_LookupsAreBounded
+      - test: core/webbotauth.TestCheckHostPublic_LiteralIPSkipsTheLookupBudget
+      - test: core/webbotauth.TestDialGuard_RefusesInternalDial
+  - id: fetch-bounded
+    rule: A fetch follows no redirect, accepts only 200 with a directory or JSON content type, reads at most 256 KiB, runs under a 5s deadline detached from the caller's cancellation, and holds one of 8 global and 2 per-registrable-domain slots, waiting at most 2s for one before ErrResolverBusy.
+    enforced_by:
+      - test: core/webbotauth.TestFetch_DoesNotFollowRedirects
+      - test: core/webbotauth.TestFetch_Non200AndContentType
+      - test: core/webbotauth.TestFetch_SizeCap
+      - test: core/webbotauth.TestFetch_WallClockTimeout
+      - test: core/webbotauth.TestSlowOriginLeavesSlotsForOthers
+      - test: core/webbotauth.TestFetchSlotWaitIsBounded
+      - test: core/webbotauth.TestBusyKeyFetchIsRetryable
+  - id: cache-evidence-rules
+    rule: Concurrent resolves of one identifier share one fetch; a success replaces the entry wholesale for max-age or Expires clamped to 1m-24h (1h without either); a failure never evicts a held entry and defers its refetch by the negative TTL, caches 5 minutes negative only when nothing is held, and caches nothing for a cancel, a deadline or a busy resolver; junk identifiers churn only the negative LRU.
+    enforced_by:
+      - test: core/webbotauth.TestResolveCoalesces_ConcurrentFetches
+      - test: core/webbotauth.TestRotation_RemovedKeyStopsVerifyingAfterTTL
+      - test: core/webbotauth.TestFetchFailure_DoesNotEvictCachedKeys
+      - test: core/webbotauth.TestFailedRefreshBacksOff
+      - test: core/webbotauth.TestSweepCanceledRefreshSetsNoBackoff
+      - test: core/webbotauth.TestNegativeCache_PreventsRefetchStorm
+      - test: core/webbotauth.TestCacheEviction_JunkURLsCannotEvictRealKeys
+      - test: core/webbotauth.TestResponseTTL_Clamping
+      - test: core/webbotauth.TestResponseTTLHugeMaxAgeClampsToCeiling
+      - test: core/webbotauth.TestResponseTTLReadsEveryCacheControlLine
+  - id: jwks-parsing
+    rule: A directory holds at most 32 keys; only OKP Ed25519 keys with use sig and alg EdDSA when present are kept, a kid, use or alg that is not a string fails the set, and a key is selected by its RFC 8037 thumbprint within its nbf and exp.
+    enforced_by:
+      - test: core/webbotauth.TestKeyCountCap
+      - test: core/webbotauth.TestJWKMalformedFieldsRefused
+decisions:
+  - id: stale-keys-over-revocation
+    date: 2026-11-19
+    status: accepted
+    decision: A failed refetch keeps serving the held keys.
+    rejected:
+      - option: Evict on failure.
+        why: One directory outage would revoke an operator's keys at every verifier at once (draft 6.10); rotation still lands on the next successful fetch.
+    upholds: [cache-evidence-rules]
+  - id: select-by-thumbprint
+    date: 2026-11-19
+    status: accepted
+    decision: Keys are selected by computed thumbprint, never by the directory's kid.
+    rejected:
+      - option: Match kid.
+        why: A jwks_uri directory may carry an operator-chosen kid that means nothing to a verifier.
+    upholds: [jwks-parsing]
+  - id: own-lookup-bound
+    date: 2026-11-19
+    status: accepted
+    decision: checkHostPublic bounds its lookup by the request context, 2s and a process-wide semaphore, where netguard.CheckOutboundURL uses a plain 3s bound.
+    rejected:
+      - option: netguard.CheckOutboundURL.
+        why: The host comes from every inbound request header, not an operator's registration, so the lookup needs a concurrency cap and a busy outcome.
+    upholds: [fetch-never-reaches-internal]

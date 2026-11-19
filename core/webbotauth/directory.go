@@ -1,60 +1,5 @@
 package webbotauth
 
-// directory.go: resolving a Signature-Agent URL to key material.
-//
-// The fetch target comes from an attacker-controlled request header, so
-// this file is an SSRF boundary. The controls, each required by draft
-// section 6.7 / Appendix C and each pinned by a test in
-// directory_test.go:
-//
-//   - https only; http, file, and every other scheme are refused.
-//   - netguard.IsInternal checked three times per fetch: on the literal
-//     host (no DNS), on every DNS answer before dialing, and — the
-//     authoritative check — in net.Dialer.Control on the actual
-//     resolved address at connect time, which closes the TOCTOU window
-//     where a name resolves public for the check and private for the
-//     dial (DNS rebinding).
-//   - redirects are not followed at all. draft-02 section 5.5 requires
-//     non-200 to be a discovery failure and forbids automatic
-//     redirects, which also removes the re-check-per-hop problem: there
-//     are zero hops.
-//   - response bodies are capped (256 KiB after content decoding, read
-//     through io.LimitReader so an oversized body is detected without
-//     buffering it).
-//   - every fetch runs under a wall-clock context timeout.
-//   - the key count is capped at maxDirectoryKeys.
-//
-// Cache policy (draft Appendix C.4/C.5, section 6.10):
-//
-//   - Successful fetches replace the cached entry wholesale, including
-//     when the new set drops a key — that is the rotation mechanism
-//     ("a directory that resolves and does not contain the key is
-//     evidence; it is newer than whatever the verifier holds").
-//   - Positive TTL honors Cache-Control max-age / Expires when present,
-//     clamped to [1min, 24h], default 1h.
-//   - Failed fetches never evict a positive entry: a directory outage
-//     must not revoke the operator's keys at every verifier at once
-//     (section 6.10). A stale entry is served until the directory
-//     answers again. The trade-off is deliberate and follows the draft:
-//     availability wins over revocation latency; rotation takes effect
-//     on the next successful refetch.
-//   - Failures are negative-cached for a short TTL (<= 5 min, draft
-//     C.5) so a flood of unresolvable agent URLs cannot force a fetch
-//     per request. A failed refresh of a held entry backs off the same
-//     way: the stale keys serve without a refetch until the negative
-//     TTL has passed, so an outage costs one fetch per TTL, not one per
-//     request.
-//   - Fetch slots are bounded twice: at most maxConcurrentFetches
-//     overall and maxFetchesPerSite per registrable domain, so one slow
-//     origin named through many query-varied jwks_uri identifiers (which
-//     defeat coalescing and the negative cache) cannot hold every slot.
-//     A fetch that finds no slot waits at most fetchSlotWait and then
-//     reports ErrResolverBusy, which verification turns into a
-//     retryable unverified outcome, never a refusal.
-//   - Positive and negative entries live in separate bounded LRU maps:
-//     an attacker spraying junk URLs can only churn the negative map,
-//     never evict a real agent's keys.
-
 import (
 	"container/list"
 	"context"
@@ -68,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"golang.org/x/net/publicsuffix"
@@ -87,6 +31,7 @@ const (
 	defaultNegativeTTL       = 5 * time.Minute // draft C.5 ceiling
 	defaultCacheEntries      = 256             // per map
 	dnsLookupTimeout         = 2 * time.Second // attacker-chosen hostname
+	dialTimeout              = 3 * time.Second
 	maxConcurrentFetches     = 8               // across all identifiers
 	maxConcurrentLookups     = 8               // across all hostnames
 	maxFetchesPerSite        = 2               // per registrable domain
@@ -94,7 +39,6 @@ const (
 	acceptDirectory          = "application/http-message-signatures-directory+json, application/json;q=0.9"
 )
 
-// discoveryType names the Signature-Agent member's type parameter.
 type discoveryType string
 
 const (
@@ -102,15 +46,12 @@ const (
 	discoveryJWKS      discoveryType = "jwks_uri"
 )
 
-// agentRef is one Signature-Agent member resolved to a fetch plan.
 type agentRef struct {
 	identifier string        // cache key: the URL the verifier resolves
 	fetchURL   string        // what is actually fetched
 	typ        discoveryType // how the URL was derived
 }
 
-// parseAgentRef validates a Signature-Agent member value and derives
-// the fetch URL plus identifier (draft section 5.5).
 func parseAgentRef(ctx context.Context, raw string, typ discoveryType) (*agentRef, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -133,9 +74,6 @@ func parseAgentRef(ctx context.Context, raw string, typ discoveryType) (*agentRe
 	}
 	switch typ {
 	case discoveryDirectory:
-		// The member value must be an origin: empty path ("/ MAY be
-		// accepted"), no query, no fragment. The identifier is the
-		// well-known URI at that origin.
 		if u.Path != "" && u.Path != "/" {
 			return nil, fmt.Errorf("directory-type signature-agent must be an origin, got path %q", u.Path)
 		}
@@ -145,9 +83,6 @@ func parseAgentRef(ctx context.Context, raw string, typ discoveryType) (*agentRe
 		wk := &url.URL{Scheme: "https", Host: strings.ToLower(u.Host), Path: directoryWellKnown}
 		return &agentRef{identifier: wk.String(), fetchURL: wk.String(), typ: typ}, nil
 	case discoveryJWKS:
-		// Fetched as sent; the identifier drops only the fragment, which
-		// is never sent. The query stays because it selects what is
-		// fetched: two queries can name two key sets on a shared host.
 		id := &url.URL{Scheme: "https", Host: strings.ToLower(u.Host), Path: u.Path, RawPath: u.RawPath, RawQuery: u.RawQuery}
 		fetch := &url.URL{Scheme: "https", Host: strings.ToLower(u.Host), Path: u.Path, RawPath: u.RawPath, RawQuery: u.RawQuery}
 		return &agentRef{identifier: id.String(), fetchURL: fetch.String(), typ: typ}, nil
@@ -156,28 +91,14 @@ func parseAgentRef(ctx context.Context, raw string, typ discoveryType) (*agentRe
 	}
 }
 
-// dnsSem bounds concurrent resolver calls for attacker-named hostnames.
-// It is package-level rather than per-resolver because the resource it
-// protects -- the process's resolver, and the sockets under it -- is
-// process-wide. The literal-IP path below never reaches it: that check
-// costs no network at all and must stay unconditional.
 var dnsSem = make(chan struct{}, maxConcurrentLookups)
 
-// ErrResolverBusy reports that discovery was not attempted because the
-// process was already resolving as many attacker-named hostnames as it
-// is willing to. It says nothing about the signature: the request may
-// be perfectly valid and simply arrived during a burst.
+// ErrResolverBusy reports that discovery was not attempted for lack of a
+// lookup or fetch slot; it says nothing about the signature.
 var ErrResolverBusy = errors.New("webbotauth: resolver busy")
 
-// checkHostPublic rejects hostnames that target internal
-// infrastructure before any network activity: the obvious internal
-// names, literal internal IPs, and hostnames whose DNS answers include
-// an internal address. The dial-time Control hook re-checks the
-// address actually dialed.
 func checkHostPublic(ctx context.Context, host string) error {
-	lower := strings.ToLower(host)
-	if lower == "localhost" || strings.HasSuffix(lower, ".localhost") ||
-		strings.HasSuffix(lower, ".internal") || lower == "metadata.google.internal" {
+	if netguard.IsInternalName(host) {
 		return fmt.Errorf("webbotauth: host %q targets internal infrastructure", host)
 	}
 	if ip := net.ParseIP(host); ip != nil {
@@ -186,26 +107,16 @@ func checkHostPublic(ctx context.Context, host string) error {
 		}
 		return nil
 	}
-	// Bounded, and tied to the request: an attacker picks this hostname,
-	// so an un-deadlined lookup lets a slow authoritative server hold the
-	// goroutine for the resolver's full retry budget. This runs ahead of
-	// the fetch's own timeout and repeats even when the identifier is
-	// negative-cached, so the bound has to live here.
 	lookupCtx, cancel := context.WithTimeout(ctx, dnsLookupTimeout)
 	defer cancel()
 	select {
 	case dnsSem <- struct{}{}:
 		defer func() { <-dnsSem }()
 	case <-lookupCtx.Done():
-		// Waiting for a lookup slot is itself refusal-worthy: it means
-		// the process is already resolving as many attacker-named hosts
-		// as it is willing to.
 		return fmt.Errorf("host %q lookup not attempted: %w", host, ErrResolverBusy)
 	}
 	addrs, err := net.DefaultResolver.LookupIPAddr(lookupCtx, host)
 	if err != nil {
-		// Unresolvable now: not a policy refusal. The fetch (and its
-		// dial-time guard) will fail and negative-cache the outcome.
 		return nil
 	}
 	for _, a := range addrs {
@@ -217,67 +128,30 @@ func checkHostPublic(ctx context.Context, host string) error {
 	return nil
 }
 
-// guardedTransport is the outbound transport: redirects disabled,
-// timeouts, and the dial-time netguard check on the resolved address.
-// Built once per resolver; the dialer Control sees every connect.
-// allowPrivate skips the dial-time check for the in-package tests that
-// dial loopback test servers deliberately; the production constructor
-// always passes false and no exported surface exposes the knob.
 func guardedTransport(allowPrivate bool) *http.Transport {
-	dialer := &net.Dialer{
-		Timeout:   3 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}
-	if !allowPrivate {
-		dialer.Control = func(network, address string, _ syscall.RawConn) error {
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				host = address
-			}
-			ip := net.ParseIP(host)
-			if ip == nil {
-				// Control receives the already-resolved numeric address.
-				return fmt.Errorf("webbotauth: dial address %q is not a resolved IP", address)
-			}
-			if reason := netguard.Reason(ip); reason != "" {
-				return fmt.Errorf("webbotauth: %s %s not allowed", reason, ip)
-			}
-			return nil
-		}
-	}
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.DialContext = dialer.DialContext
-	if !allowPrivate {
-		// Clone() carries ProxyFromEnvironment with it. With HTTPS_PROXY
-		// set, the dial-time Control hook only ever sees the proxy's
-		// address, while the proxy resolves and connects to the host we
-		// were told to fetch — so the whole netguard chain inspects the
-		// wrong endpoint and an internal target goes through. There is
-		// no proxy configuration that makes this checkable from here.
-		tr.Proxy = nil
+	tr := netguard.GuardedTransport(allowPrivate, "webbotauth")
+	dial := tr.DialContext
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+		defer cancel()
+		return dial(ctx, network, addr)
 	}
 	tr.TLSHandshakeTimeout = 3 * time.Second
 	tr.ResponseHeaderTimeout = 4 * time.Second
 	return tr
 }
 
-// cacheEntry is one cached directory resolution. Entries are replaced,
-// never changed in place: a reader may hold one.
 type cacheEntry struct {
 	keys      []jwk
 	expiresAt time.Time
-	// retryAt is set when a refresh past expiresAt failed: the entry
-	// keeps serving (draft 6.10) and is not refetched before retryAt.
-	retryAt time.Time
+	retryAt   time.Time
 }
 
-// negativeEntry is a cached failure.
 type negativeEntry struct {
 	reason    string
 	expiresAt time.Time
 }
 
-// lruShard is a tiny LRU: map + move-to-front list, bounded.
 type lruShard struct {
 	max   int
 	mu    sync.Mutex
@@ -289,7 +163,6 @@ func newLRUShard(max int) *lruShard {
 	return &lruShard{max: max, keys: make(map[string]*list.Element, max), order: list.New()}
 }
 
-// get returns the value and bumps it to most-recently-used.
 func (l *lruShard) get(key string) (any, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -334,7 +207,6 @@ type lruElement struct {
 	val any
 }
 
-// directoryResolver caches and fetches agent directories.
 type directoryResolver struct {
 	client  *http.Client
 	maxBody int64
@@ -351,15 +223,8 @@ type directoryResolver struct {
 	inflight map[string]*fetchCall
 	now      func() time.Time
 
-	// sem caps outbound fetches across every identifier. The inflight
-	// map already collapses duplicate fetches for one identifier, but
-	// an attacker naming many distinct resolvable hosts is not
-	// duplicating anything, so that map bounds nothing for them.
-	sem chan struct{}
-	// slotWait bounds the wait for a free slot in sem.
-	slotWait time.Duration
-	// siteFetches counts in-flight fetches per registrable domain
-	// (guarded by mu); perSite caps it.
+	sem         chan struct{}
+	slotWait    time.Duration
 	siteFetches map[string]int
 	perSite     int
 }
@@ -374,9 +239,6 @@ func newDirectoryResolver(log *slog.Logger) *directoryResolver {
 	return &directoryResolver{
 		client: &http.Client{
 			Transport: guardedTransport(false),
-			// draft section 5.5: never follow redirects; the
-			// CheckRedirect hook fires before any second connection is
-			// opened, so a 3xx re-opens no SSRF question at all.
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
@@ -397,9 +259,6 @@ func newDirectoryResolver(log *slog.Logger) *directoryResolver {
 	}
 }
 
-// resolve returns the key set for an identifier, fetching and caching
-// as needed. Concurrent calls for one identifier coalesce into a single
-// fetch (draft C.3).
 func (d *directoryResolver) resolve(ctx context.Context, ref *agentRef) (*jwkSet, error) {
 	now := d.now()
 	if v, ok := d.pos.get(ref.identifier); ok {
@@ -407,12 +266,6 @@ func (d *directoryResolver) resolve(ctx context.Context, ref *agentRef) (*jwkSet
 		if now.Before(e.expiresAt) || now.Before(e.retryAt) {
 			return &jwkSet{keys: e.keys}, nil
 		}
-		// TTL lapsed: refresh (blocking, bounded by the slot wait and
-		// the fetch timeout). A successful fetch replaces the entry
-		// wholesale - the rotation path. A failed fetch is not evidence
-		// (draft 6.10) and the cached keys keep serving, however old: an
-		// operator's directory outage must not revoke its keys at every
-		// verifier at once.
 		set, err := d.fetchCoalesced(ctx, ref)
 		if err != nil {
 			return &jwkSet{keys: e.keys}, nil
@@ -432,10 +285,6 @@ func (d *directoryResolver) resolve(ctx context.Context, ref *agentRef) (*jwkSet
 	return set, nil
 }
 
-// fetchSite is the key the per-site fetch cap counts under: the
-// registrable domain of the fetch host, so a.evil.example and
-// b.evil.example share one budget. An IP literal, or a host the
-// public suffix list cannot place, counts as itself.
 func fetchSite(fetchURL string) string {
 	u, err := url.Parse(fetchURL)
 	if err != nil {
@@ -451,11 +300,6 @@ func fetchSite(fetchURL string) string {
 	return host
 }
 
-// fetchBounded takes a per-site and a global fetch slot, then runs the
-// fetch detached from the calling request's cancellation under its own
-// deadline. Detaching matters because other verifiers join this call:
-// if it inherited the leader's context, one client disconnecting would
-// fail every request waiting on the same directory.
 func (d *directoryResolver) fetchBounded(ctx context.Context, ref *agentRef) (*jwkSet, error) {
 	site := fetchSite(ref.fetchURL)
 	d.mu.Lock()
@@ -472,9 +316,6 @@ func (d *directoryResolver) fetchBounded(ctx context.Context, ref *agentRef) (*j
 		}
 		d.mu.Unlock()
 	}()
-	// The global slot wait is bounded: a burst of slow directories must
-	// not hold every other verification for as long as its request
-	// lives.
 	wait := time.NewTimer(d.slotWait)
 	defer wait.Stop()
 	select {
@@ -485,10 +326,6 @@ func (d *directoryResolver) fetchBounded(ctx context.Context, ref *agentRef) (*j
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	// Detach from cancellation, but never from a caller deadline that is
-	// tighter than our own: dropping it would silently lengthen a bound
-	// the caller asked for. WithoutCancel removes the disconnect
-	// propagation; the deadline below keeps the time bound.
 	timeout := defaultFetchTimeout
 	if dl, ok := ctx.Deadline(); ok {
 		if remaining := time.Until(dl); remaining < timeout {
@@ -500,8 +337,6 @@ func (d *directoryResolver) fetchBounded(ctx context.Context, ref *agentRef) (*j
 	return d.fetch(fetchCtx, ref)
 }
 
-// fetchCoalesced runs (or joins) one in-flight fetch for the
-// identifier, then updates the cache per the evidence rules.
 func (d *directoryResolver) fetchCoalesced(ctx context.Context, ref *agentRef) (*jwkSet, error) {
 	d.mu.Lock()
 	if call, ok := d.inflight[ref.identifier]; ok {
@@ -526,11 +361,6 @@ func (d *directoryResolver) fetchCoalesced(ctx context.Context, ref *agentRef) (
 	d.mu.Unlock()
 
 	if err != nil {
-		// A failed resolution is not evidence (draft 6.10): keep any
-		// positive entry, serving it until the negative TTL has passed
-		// before the next refetch, and only write the negative cache
-		// when nothing positive is held. The caller leaving says nothing
-		// about the directory, so it sets no backoff.
 		if v, ok := d.pos.get(ref.identifier); ok {
 			e := v.(*cacheEntry)
 			if ctx.Err() == nil {
@@ -539,23 +369,16 @@ func (d *directoryResolver) fetchCoalesced(ctx context.Context, ref *agentRef) (
 			return nil, err
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrResolverBusy) {
-			// The caller went away (or ran out of budget), or our own
-			// fetch budget was full. Neither is evidence about the
-			// directory, and caching it would let a client that aborts
-			// repeatedly keep a real agent refused for the whole
-			// negative TTL.
 			return nil, err
 		}
 		d.neg.put(ref.identifier, &negativeEntry{reason: err.Error(), expiresAt: d.now().Add(d.negativeTTL)})
 		return nil, err
 	}
-	// Success is newer evidence whatever it says: replace wholesale.
 	d.neg.delete(ref.identifier)
 	d.pos.put(ref.identifier, &cacheEntry{keys: set.keys, expiresAt: d.now().Add(set.ttl)})
 	return set, nil
 }
 
-// fetch performs one guarded directory fetch.
 func (d *directoryResolver) fetch(ctx context.Context, ref *agentRef) (*jwkSet, error) {
 	fctx, cancel := context.WithTimeout(ctx, defaultFetchTimeout)
 	defer cancel()
@@ -572,8 +395,6 @@ func (d *directoryResolver) fetch(ctx context.Context, ref *agentRef) (*jwkSet, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		// draft 5.5: only 200 OK counts; every other status (redirects
-		// included) is a discovery failure.
 		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("directory fetch: status %d", resp.StatusCode)
 	}
@@ -605,20 +426,12 @@ func mediaType(ct string) string {
 	return strings.ToLower(strings.TrimSpace(ct))
 }
 
-// responseTTL derives the positive cache TTL from Cache-Control
-// max-age or Expires-Date, clamped to [minPositiveTTL, maxPositiveTTL].
-// ok is false when neither header is present.
 func responseTTL(h http.Header, now time.Time) (time.Duration, bool) {
-	// Every Cache-Control line: a max-age on a second line still bounds
-	// the entry (RFC 9110 §5.3).
 	if cc := strings.Join(h.Values("Cache-Control"), ","); cc != "" {
 		for _, part := range strings.Split(cc, ",") {
 			part = strings.TrimSpace(part)
 			if v, ok := strings.CutPrefix(part, "max-age="); ok {
 				if secs, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && secs >= 0 {
-					// Bound the seconds before they become a Duration: a
-					// max-age past MaxInt64 nanoseconds wrapped, and the
-					// clamp then saw the wrapped value.
 					if secs > int64(maxPositiveTTL/time.Second) {
 						return maxPositiveTTL, true
 					}

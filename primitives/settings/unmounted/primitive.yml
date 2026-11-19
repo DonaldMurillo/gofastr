@@ -1,0 +1,56 @@
+primitive: settings.unmounted
+summary: The unmounted section - the CLI's record of the gofastr packages a project copied into its tree - decoded and checked by File.Unmounted and rewritten by SetUnmounted through the shared section writer.
+code:
+  - core/settings/unmounted.go
+docs:
+  - framework/docs/content/unmount.md
+invariants:
+  - id: entry-shape
+    rule: An unmounted entry needs exactly source, version, path and date as strings, a valid import path, a version of letters, digits, dots, hyphens and pluses, a clean relative path outside any vendor directory, and a YYYY-MM-DD date, and no two entries share a path.
+    enforced_by:
+      - test: core/settings.TestUnmountedRefusesBadEntries
+      - test: core/settings.TestUnmountedNamesFirstMissingField
+      - test: core/settings.TestUnmountedSameSourceTwoPaths
+  - id: section-written-sorted
+    rule: SetUnmounted writes its entries sorted by source, then path, without reordering the caller's slice.
+    enforced_by:
+      - test: core/settings.TestSweepSettingsUnmountedWrittenSorted
+  - id: section-replaced-rest-kept
+    rule: A section write replaces that section and its gofastr header whole, keeps every other line's bytes (a comment between two entries belongs to the section), and removes the file when nothing else is left.
+    enforced_by:
+      - test: core/settings.TestSetUnmountedKeepsTheRestOfTheFile
+      - test: core/settings.TestSetUnmountedCommentBetweenEntries
+      - test: core/settings.TestUnmountedHeaderLineEndings
+      - test: core/settings.TestSweepSettingsEmptySectionRemovesFile
+      - test: core/settings.TestSetUnmountedCreatesTheFile
+  - id: write-reads-back
+    rule: SetUnmounted writes nothing unless the rewritten file reads back with exactly the given entries.
+    enforced_by:
+      - test: core/settings.TestSetUnmountedQuotedKeyRefused
+  - id: write-is-atomic-and-locked
+    rule: A section write holds a lock file in the project's .gofastr directory, refuses a settings file that is a symlink, and renames an owner-only temporary file over the old one.
+    enforced_by:
+      - test: core/settings.TestSectionWritersKeepBothSections
+      - test: core/settings.TestSectionLockStaysInStateDir
+      - test: core/settings.TestSetUnmountedRefusesSymlink
+      - test: core/settings.TestSetUnmountedReplacesFile
+      - test: core/settings.TestSweepSettingsWriteIsOwnerOnly
+decisions:
+  - id: lock-in-state-dir-kept
+    date: 2026-11-19
+    status: accepted
+    decision: The write lock is a file in the git-ignored .gofastr directory that is never removed.
+    rejected:
+      - option: A lock file beside gofastr.settings.yml.
+        why: It would show up beside the committed file.
+      - option: Remove the lock file after unlocking.
+        why: A new writer could then lock a fresh inode while a waiting writer holds the old one, and both would write.
+    upholds: [write-is-atomic-and-locked]
+  - id: one-copy-per-path
+    date: 2026-11-19
+    status: accepted
+    decision: Entries are keyed by path, so one source may be copied more than once.
+    rejected:
+      - option: Key entries by source.
+        why: generate package copies a chrome package once per binary that owns it.
+    upholds: [entry-shape]

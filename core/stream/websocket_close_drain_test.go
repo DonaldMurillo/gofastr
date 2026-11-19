@@ -3,6 +3,7 @@ package stream
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -358,5 +359,139 @@ func TestCloseAfterFailedWriteSkipsDrain(t *testing.T) {
 	}
 	if got := len(c.sendBuffer); got != 4 {
 		t.Fatalf("Close drained %d queued messages into a failed socket, want them left (4 queued)", 4-got)
+	}
+}
+
+// pingStallConn takes data frames and logs every frame write with the
+// deadline it ran under. Any other frame stalls until a deadline is set,
+// then times out, like a peer that stopped reading after the drain. When
+// armed, Close's own first SetWriteDeadline call runs, on Close's
+// goroutine and in order, the drain and then a keepalive Ping, so the
+// Ping follows a drained frame and precedes the Close frame by
+// construction.
+type pingStallConn struct {
+	mu    sync.Mutex
+	dl    time.Time
+	armed bool
+	c     *WebSocketConn
+	ping  error
+	log   []frameWrite
+}
+
+type frameWrite struct {
+	opcode byte
+	dl     time.Time
+}
+
+func (s *pingStallConn) Read([]byte) (int, error) { select {} }
+func (s *pingStallConn) Close() error             { return nil }
+func (s *pingStallConn) SetWriteDeadline(t time.Time) error {
+	s.mu.Lock()
+	s.dl = t
+	run := s.armed && !t.IsZero()
+	s.armed = s.armed && !run
+	s.mu.Unlock()
+	if run {
+		s.c.drainQueued(t)
+		s.ping = s.c.writeFrame(wsopcodePing, nil)
+	}
+	return nil
+}
+func (s *pingStallConn) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	s.log = append(s.log, frameWrite{p[0] & 0x0F, s.dl})
+	s.mu.Unlock()
+	if p[0]&0x0F == wsopcodeText {
+		return len(p), nil
+	}
+	for {
+		s.mu.Lock()
+		dl := s.dl
+		s.mu.Unlock()
+		if !dl.IsZero() {
+			return 0, timeoutErr{}
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// A drained frame cleared the socket's deadline, so with WriteTimeout
+// disabled a keepalive Ping written next went out with none, and Close
+// waited on the write lock for as long as the peer stalled.
+func TestCloseReturnsWhenPingFollowsDrainedFrame(t *testing.T) {
+	sc := &pingStallConn{armed: true}
+	c := &WebSocketConn{conn: sc, sendBuffer: make(chan wsMessage, 4), closed: make(chan struct{}), peerClosed: make(chan struct{}),
+		config: WSConfig{WriteTimeout: -1, CloseTimeout: time.Millisecond}}
+	sc.c = c
+	for range 3 {
+		if err := c.WriteString("queued"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	done := make(chan struct{})
+	go func() { c.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close stayed blocked behind a Ping written with no deadline after the drain")
+	}
+	sc.mu.Lock()
+	log := append([]frameWrite(nil), sc.log...)
+	sc.mu.Unlock()
+	want := []byte{wsopcodeText, wsopcodeText, wsopcodeText, wsopcodePing, wsopcodeClose}
+	if len(log) != len(want) {
+		t.Fatalf("conn saw %d frame writes %v, want %v", len(log), log, want)
+	}
+	for i, w := range log {
+		if w.opcode != want[i] {
+			t.Fatalf("frame write %d is opcode 0x%X, want 0x%X (order %v)", i, w.opcode, want[i], log)
+		}
+	}
+	if ping := log[3]; ping.dl.IsZero() {
+		t.Fatal("the Ping after the drain was written with no deadline")
+	}
+	if !errors.Is(sc.ping, timeoutErr{}) {
+		t.Fatalf("Ping returned %v, want the stalled peer's timeout", sc.ping)
+	}
+}
+
+// A Write that passed the closed check before Close could still put its
+// message on the queue after Close drained it, and return nil for a
+// message that was never written. Every nil return must reach the wire.
+func TestWriteAcceptedDuringCloseIsWritten(t *testing.T) {
+	const trials, writers = 300, 8
+	for trial := range trials {
+		rc := &recordConn{}
+		c := &WebSocketConn{conn: rc, sendBuffer: make(chan wsMessage, 1024), closed: make(chan struct{}), peerClosed: make(chan struct{}),
+			config: WSConfig{CloseTimeout: time.Millisecond}}
+		var accepted sync.WaitGroup
+		var mu sync.Mutex
+		ok := 0
+		start := make(chan struct{})
+		for range writers {
+			accepted.Add(1)
+			go func() {
+				defer accepted.Done()
+				<-start
+				for c.WriteString("m") == nil {
+					mu.Lock()
+					ok++
+					mu.Unlock()
+				}
+			}()
+		}
+		close(start)
+		time.Sleep(50 * time.Microsecond)
+		c.Close()
+		accepted.Wait()
+		text := 0
+		for _, f := range recordedFrames(t, rc) {
+			if f.opcode == wsopcodeText {
+				text++
+			}
+		}
+		if text != ok {
+			t.Fatalf("trial %d: Write returned nil %d times, peer got %d messages", trial, ok, text)
+		}
 	}
 }

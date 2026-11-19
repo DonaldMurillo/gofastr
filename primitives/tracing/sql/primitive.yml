@@ -1,0 +1,47 @@
+primitive: tracing.sql
+summary: OpenDB and WrapConnector, a database/sql driver wrapper that records a client span per Exec, Query, BEGIN, COMMIT and ROLLBACK with the statement's literals replaced by ?.
+code:
+  - core/tracing/sql.go
+docs:
+  - framework/docs/content/observability.md
+invariants:
+  - id: query-text-has-no-literals
+    rule: db.query.text is the statement with every literal replaced by ? under the engine's quoting rules, cut to its first 4096 bytes.
+    enforced_by:
+      - test: core/tracing.TestSQLSpanStripsLiterals
+      - test: core/tracing.TestQueryTextStripsLiterals
+      - test: core/tracing.TestQueryTextPerSystemQuoting
+      - test: core/tracing.TestSweepTracingQueryTextCapIs4KiB
+  - id: span-named-by-first-keyword
+    rule: A statement span is named by the statement's first keyword in upper case after leading whitespace and comments, and SQL when it opens with anything else.
+    enforced_by:
+      - test: core/tracing.TestSpanNameIsFirstKeyword
+  - id: system-from-driver-name
+    rule: OpenDB maps sqlite3 and sqlite to sqlite, postgres, pgx and pgx/v5 to postgresql, mysql to mysql, and passes any other driver name through as db.system.name.
+    enforced_by:
+      - test: core/tracing.TestSweepTracingDriverNameToSystem
+  - id: errskip-records-nothing
+    rule: A driver answer of driver.ErrSkip records no span, so only the fallback path database/sql then takes is traced.
+    enforced_by:
+      - test: core/tracing.TestSweepTracingErrSkipRecordsNoSpan
+  - id: tx-spans-under-begin-context
+    rule: A transaction's BEGIN, COMMIT and ROLLBACK each get a span, COMMIT and ROLLBACK parented by the context BeginTx was given.
+    enforced_by:
+      - test: core/tracing.TestSQLTransactionsWork
+      - test: core/tracing.TestSweepTracingCommitUnderBeginContext
+  - id: wrapper-adds-no-capability
+    rule: The wrapper keeps the inner driver's behaviour, exposing ColumnConverter only on a statement that has one, refusing transaction options and named arguments a legacy driver would drop, and failing a legacy call whose context is done before it runs.
+    enforced_by:
+      - test: core/tracing.TestColumnConverterForwarded
+      - test: core/tracing.TestLegacyDriverRejectsTxOptions
+      - test: core/tracing.TestSweepTracingLegacyDriverRefusesNamedArgs
+      - test: core/tracing.TestLegacyDriverHonorsCanceledCtx
+decisions:
+  - id: query-text-capped
+    date: 2026-11-19
+    status: accepted
+    decision: db.query.text keeps the first 4096 bytes of the redacted statement.
+    rejected:
+      - option: Keep the whole statement.
+        why: A bulk insert's placeholder list runs to megabytes, and the head names the statement well enough.
+    upholds: [query-text-has-no-literals]

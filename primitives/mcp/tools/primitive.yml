@@ -51,10 +51,12 @@ invariants:
       - test: core/mcp.TestCallGateGenericRefusalMessage
       - test: core/mcp.TestListToolsExcludesGated
   - id: gates-outside-registry-lock
-    rule: Tool listings snapshot the registry under the read lock and evaluate the call gate and per-tool gates after releasing it, so a slow or re-entrant gate never blocks a registration.
+    rule: Every listing (tools/list, prompts/list, resources/list, resources/templates/list) snapshots its registry under the read lock and evaluates the call gate and per-item gates after releasing it, so a slow or re-entrant gate never blocks a registration.
     enforced_by:
       - test: core/mcp.TestListingGateNeverBlocksRegistry
       - test: core/mcp.TestCallGateNeverBlocksRegistry
+    applies:
+      - core/mcp/prompts.go
   - id: call-tool-for-runs-server-gate
     rule: CallToolFor runs the server-wide gate before everything CallTool runs, and CallTool runs the tool's own gates but not the server-wide gate.
     enforced_by:

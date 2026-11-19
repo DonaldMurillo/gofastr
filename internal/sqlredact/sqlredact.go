@@ -16,6 +16,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
+	"github.com/DonaldMurillo/gofastr/internal/sqllex"
 )
 
 // Dialect is the engine whose quoting rules decide where a literal ends.
@@ -107,13 +108,13 @@ func Text(query string, d Dialect) string {
 			}
 			space = true
 		case c == '/' && i+1 < len(query) && query[i+1] == '*':
-			i = skipBlockComment(query, i, r.nestComments)
+			i = sqllex.SkipBlockComment(query, i, r.nestComments)
 			space = true
 		case c == '\'' || (r.dqString && c == '"'):
 			eString := i > 0 && query[i-1]|0x20 == 'e' && (i == 1 || !continuesName(query[i-2]))
 			switch {
 			case r.ambiguous:
-				plain, escaped := skipQuoted(query, i, false), skipQuoted(query, i, true)
+				plain, escaped := sqllex.SkipQuoted(query, i, false), sqllex.SkipQuoted(query, i, true)
 				if plain != escaped {
 					// One engine ends the string where another reads on:
 					// whatever follows may be a value under one of them.
@@ -122,7 +123,7 @@ func Text(query string, d Dialect) string {
 					i = plain
 				}
 			default:
-				i = skipQuoted(query, i, r.backslash || eString)
+				i = sqllex.SkipQuoted(query, i, r.backslash || eString)
 			}
 			emit("?")
 		case c == '"' || c == '`':
@@ -135,8 +136,8 @@ func Text(query string, d Dialect) string {
 			}
 			emit(query[i:j])
 			i = j
-		case c == '$' && dollarTag(query[i:]) != "":
-			tag := dollarTag(query[i:])
+		case c == '$' && sqllex.DollarTag(query[i:]) != "":
+			tag := sqllex.DollarTag(query[i:])
 			j := strings.Index(query[i+len(tag):], tag)
 			if j < 0 {
 				i = len(query)
@@ -162,66 +163,6 @@ func Text(query string, d Dialect) string {
 		}
 	}
 	return textsafe.ScrubControlBytes(b.String())
-}
-
-// skipBlockComment returns the index after the /* comment opening at i.
-// With nest set, an inner /* opens a level a */ must close first, as
-// PostgreSQL reads them. An unterminated comment runs to the end.
-func skipBlockComment(q string, i int, nest bool) int {
-	depth := 0
-	for j := i; j+1 < len(q); {
-		switch {
-		case q[j] == '/' && q[j+1] == '*' && (nest || depth == 0):
-			depth++
-			j += 2
-		case q[j] == '*' && q[j+1] == '/':
-			depth--
-			j += 2
-			if depth == 0 {
-				return j
-			}
-		default:
-			j++
-		}
-	}
-	return len(q)
-}
-
-// skipQuoted returns the index after the string opened by the quote at i,
-// where a doubled quote is an escaped one and, with escapes set, so is
-// any character after a backslash. An unterminated string runs to the end.
-func skipQuoted(q string, i int, escapes bool) int {
-	quote := q[i]
-	for j := i + 1; j < len(q); j++ {
-		if escapes && q[j] == '\\' {
-			j++
-			continue
-		}
-		if q[j] == quote {
-			if j+1 < len(q) && q[j+1] == quote {
-				j++
-				continue
-			}
-			return j + 1
-		}
-	}
-	return len(q)
-}
-
-// dollarTag returns the $tag$ opening a PostgreSQL dollar-quoted string
-// at the start of s, or "" when s opens a $1 placeholder or nothing. A
-// tag is an identifier, so a letter outside ASCII ($é$) counts.
-func dollarTag(s string) string {
-	for j := 1; j < len(s); j++ {
-		switch c := s[j]; {
-		case c == '$':
-			return s[:j+1]
-		case isASCIILetter(c) || c == '_' || c >= 0x80 || (j > 1 && isDigit(c)):
-		default:
-			return ""
-		}
-	}
-	return ""
 }
 
 func isDigit(c byte) bool       { return c >= '0' && c <= '9' }

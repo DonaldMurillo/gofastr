@@ -1,0 +1,113 @@
+primitive: moduleproto.peer
+summary: Peer, the full-duplex endpoint that sends requests and serves the counterparty's over one Codec, with its caps, cancellation and fault handling.
+code:
+  - core/moduleproto/peer.go
+invariants:
+  - id: per-direction-ids
+    rule: Each Peer numbers its own requests from 1, and only a frame with no method is looked up among the ids it sent, so a request and a response with the same id never collide.
+    enforced_by:
+      - test: core/moduleproto.TestPerDirectionIDCorrelation
+      - test: core/moduleproto.TestInterleavedBidirectional
+  - id: every-request-answered
+    rule: A request for an unknown method is answered CodeMethodNotFound, a refusing serve gate answers with its *Error, and a panicking handler or gate answers CodeInternalError.
+    enforced_by:
+      - test: core/moduleproto.TestPeerMethodNotFoundReplies
+      - test: core/moduleproto.TestServeGateRefusesRequest
+      - test: core/moduleproto.TestServeGatePanicRefuses
+      - test: core/moduleproto.TestHandlerPanicBecomesErrorResponse
+  - id: plain-errors-stay-local
+    rule: A handler's *Error crosses the wire with its code and message, and any other error crosses as CodeInternalError "internal handler error".
+    enforced_by:
+      - test: core/moduleproto.TestSweepPlainHandlerErrorStaysOnThisSide
+      - test: core/moduleproto.TestPeerHandlerReturnsError
+  - id: origination-capped
+    rule: Call at maxInflight returns ErrInflightCap with nothing written, an abandoned Call keeps its slot until its write returns, and Notify past maxInflight pending writes returns ErrInflightCap.
+    enforced_by:
+      - test: core/moduleproto.TestPeerInflightCapRejects
+      - test: core/moduleproto.TestAbandonedWriteKeepsInflightSlot
+      - test: core/moduleproto.TestNotifyWritesAreBounded
+  - id: serving-capped
+    rule: Past maxServeInflight running handlers a request is answered CodeInflightCap off the read loop and a notification is dropped, while module.cancel runs on the read loop outside the cap.
+    enforced_by:
+      - test: core/moduleproto.TestServeSideInflightCap
+      - test: core/moduleproto.TestOverCapAnswerNeverWedgesReadLoop
+      - test: core/moduleproto.TestNotifyFloodBoundedByServeCap
+  - id: stalled-counterparty-faults
+    rule: When maxServeInflight served responses wait unwritten and another is ready, the Peer faults with ErrStalled; a response leaves the count when its write takes the codec, so callers at the cap never stall.
+    enforced_by:
+      - test: core/moduleproto.TestStalledReaderFaultsPeer
+      - test: core/moduleproto.TestCallersAtTheCapNeverStall
+  - id: late-response-pardoned-once
+    rule: A response to an id whose Call gave up is dropped exactly once, a response to an id never sent is a terminal fault, and the pardon window counts only ids still owed (1024).
+    enforced_by:
+      - test: core/moduleproto.TestLateResponseAfterCallTimeoutIsNotFatal
+      - test: core/moduleproto.TestPeerUnsolicitedRespIsFatal
+      - test: core/moduleproto.TestAbandonedWindowEvictionStaysFatal
+      - test: core/moduleproto.TestAbandonedWindowCountsOnlyUnansweredIDs
+  - id: on-id-only-for-sendable-calls
+    rule: CallWithID reports an id only after the ctx and params checks pass, never for a request whose ctx already ended or whose params fail to marshal; the report does not promise a write - a ctx that has ended by the check after onID (onID's own cancel included) returns ctx.Err() with nothing written, while one that ends after that check can return ctx.Err() with the request written or still being written.
+    enforced_by:
+      - test: core/moduleproto.TestCallDoneCtxAllocatesNoID
+      - test: core/moduleproto.TestCallWithIDReportsNoIDWhenParamsFailToMarshal
+  - id: calls-never-wait-on-a-write
+    rule: A Call returns on ctx, Close or a fault while its request write is still blocked.
+    enforced_by:
+      - test: core/moduleproto.TestCallReturnsWhileWriteBlocked
+      - test: core/moduleproto.TestCloseEndsBlockedCall
+      - test: core/moduleproto.TestPeerCloseUnblocksCalls
+  - id: cancel-by-canonical-frame-id
+    rule: module.cancel cancels every handler serving the inbound frame id its request_id names in canonical decimal, and any other spelling is a no-op.
+    enforced_by:
+      - test: core/moduleproto.TestModuleCancelCancelsByFrameID
+      - test: core/moduleproto.TestModuleCancelNonCanonicalRequestIDIsNoOp
+  - id: handlers-cancelled-on-shutdown
+    rule: Close, a terminal fault and the read loop's exit each cancel every served handler's context, and a faulted Peer serves no further frame.
+    enforced_by:
+      - test: core/moduleproto.TestCloseCancelsServedHandlers
+      - test: core/moduleproto.TestFaultCancelsServedHandlers
+      - test: core/moduleproto.TestReadEOFCancelsServedHandlers
+      - test: core/moduleproto.TestFaultedPeerServesNothing
+  - id: eof-is-graceful
+    rule: A clean EOF ends the read loop without a fatal error.
+    enforced_by:
+      - test: core/moduleproto.TestPeerEOFIsGraceful
+  - id: guard-clauses
+    rule: Handle refuses an empty method and module.cancel, and a second Start panics.
+    enforced_by:
+      - test: core/moduleproto.TestGuardClausesRefuseWithoutState
+      - test: core/moduleproto.TestSecondStartPanics
+decisions:
+  - id: own-codec-not-mcpclient
+    date: 2026-11-19
+    status: accepted
+    decision: moduleproto has its own symmetric codec and Peer.
+    rejected:
+      - option: Reuse framework/experimental/harness/mcpclient.
+        why: Its read loop decodes every line as a response with no method and treats id 0 as a notification, so it cannot serve requests the child sends back.
+    upholds: [per-direction-ids]
+  - id: cancel-names-the-frame
+    date: 2026-11-19
+    status: accepted
+    decision: module.cancel's request_id is the inbound frame id in canonical decimal, as CallWithID reports it.
+    rejected:
+      - option: The proxy's HTTPRequestParams.RequestID.
+        why: No serving peer can map that correlation id to a frame, so module.cancel was a silent no-op (issue 356).
+      - option: A prefix parse with fmt.Sscanf, or ParseUint alone.
+        why: Sscanf refused "notes-42" and accepted "1-x" as 1, and ParseUint accepts "01", so one frame had several spellings.
+    upholds: [cancel-by-canonical-frame-id]
+  - id: free-serve-slot-before-write
+    date: 2026-11-19
+    status: accepted
+    decision: A serve slot is released when the handler returns, before its response is written; unwritten responses are bounded separately.
+    rejected:
+      - option: Hold the slot until the write returns.
+        why: The counterparty frees its slot on reading the response and may send its next call first, which a still-held slot refuses at the agreed ceiling.
+    upholds: [stalled-counterparty-faults, serving-capped]
+  - id: pardon-window-counts-owed
+    date: 2026-11-19
+    status: accepted
+    decision: The 1024-id pardon window counts tombstones still owed a response.
+    rejected:
+      - option: Count every abandonment.
+        why: 1024 calls abandoned and then answered evicted the tombstone of one slow call still owed, and its answer faulted a conforming peer.
+    upholds: [late-response-pardoned-once]

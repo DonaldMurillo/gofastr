@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -160,5 +161,29 @@ func TestSweepDefaultSeatCapIsSixteen(t *testing.T) {
 	}
 	if _, ok := s.addSSESubscriber(context.Background(), "peer:10.0.0.1"); ok {
 		t.Fatal("a 17th stream was admitted under the default cap of 16")
+	}
+}
+
+func TestSweepEmptyListingsAnswerArrays(t *testing.T) {
+	refuse := func(context.Context) error { return errors.New("no") }
+	s := NewServer()
+	if err := s.RegisterTool("t", "", nil, func(context.Context, map[string]any) (any, error) { return "ok", nil }, WithToolGate(refuse)); err != nil {
+		t.Fatal(err)
+	}
+	mustRegisterPrompt(t, s, "p", noopPrompt, WithPromptGate(refuse))
+	mustRegisterTemplate(t, s, "ui://t/{id}", "t", WithResourceTemplateGate(refuse))
+	if err := staticResource(s, "ui://r", "r", "text/markdown", "x", WithResourceGate(refuse)); err != nil {
+		t.Fatal(err)
+	}
+	for method, key := range map[string]string{
+		"tools/list":               "tools",
+		"prompts/list":             "prompts",
+		"resources/list":           "resources",
+		"resources/templates/list": "resourceTemplates",
+	} {
+		m := wireResult(t, sweepCall(t, s, method, map[string]any{}))
+		if arr, ok := m[key].([]any); !ok || len(arr) != 0 {
+			t.Errorf("%s: %s = %#v, want []", method, key, m[key])
+		}
 	}
 }

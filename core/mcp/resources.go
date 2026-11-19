@@ -109,12 +109,11 @@ type resourceReadResult struct {
 }
 
 type resourceContentItem struct {
-	URI      string  `json:"uri"`
-	MimeType string  `json:"mimeType,omitempty"`
-	Text     *string `json:"text,omitempty"`
-	Blob     *string `json:"blob,omitempty"` // base64
-	// Meta is the resource's _meta, repeated on its contents.
-	Meta map[string]any `json:"_meta,omitempty"`
+	URI      string         `json:"uri"`
+	MimeType string         `json:"mimeType,omitempty"`
+	Text     *string        `json:"text,omitempty"`
+	Blob     *string        `json:"blob,omitempty"`
+	Meta     map[string]any `json:"_meta,omitempty"`
 }
 
 func (s *Server) handleResourcesList(ctx context.Context, req Request) Response {

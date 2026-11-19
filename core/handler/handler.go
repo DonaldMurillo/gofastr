@@ -13,21 +13,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// Handler is a typed function that processes an input of type I and returns
-// an output of type O. It receives a context (which carries the *http.Request
-// via RequestFromContext) and a fully-bound input struct.
+// Handler is a typed handler; RequestFromContext gives it the request.
 type Handler[I, O any] func(ctx context.Context, in I) (O, error)
 
-// HandlerAdapter bridges a typed Handler into a standard http.HandlerFunc.
-// It handles input binding, panic recovery, and output serialization.
+// HandlerAdapter serves h over HTTP: Bind, h, then Respond or WriteError,
+// with a panic answered as a generic 500.
 func HandlerAdapter[I, O any](h Handler[I, O]) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// started turns true once a status has gone out. A panic after
-		// that (a ResponseType's WriteBody) cannot become a 500: the
-		// client already has a 200 and part of a body, and an error
-		// document written now would be spliced onto it as if it were
-		// that body. Abort the connection instead, so the client sees a
-		// broken response rather than a successful one.
 		var started bool
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -38,13 +30,6 @@ func HandlerAdapter[I, O any](h Handler[I, O]) http.HandlerFunc {
 					)
 					panic(http.ErrAbortHandler)
 				}
-				// The raw panic value (driver strings, internal paths,
-				// wrapped DB errors) must stay out of the client body.
-				// Log it server-side and return a fixed generic 500,
-				// mirroring middleware.RecoveryFn. textsafe.Recovered
-				// scrubs C0/DEL/C1/bidi and truncates, so a giant or
-				// control-laden panic can neither forge lines in the
-				// operator's tail nor drive a multi-MB log.
 				slog.Default().Error("panic recovered in handler",
 					"error", textsafe.Recovered(rec),
 					"stack", textsafe.Truncate(string(debug.Stack()), maxStackLogLen),
@@ -72,21 +57,10 @@ func HandlerAdapter[I, O any](h Handler[I, O]) http.HandlerFunc {
 	}
 }
 
-// Caps on the panic value / stack pieces logged from the recover path,
-// so a handler that panics with a huge value can't drive a multi-MB log
-// line through slog.Default.
-const (
-	maxPanicLogLen = 4 << 10  // 4 KiB
-	maxStackLogLen = 64 << 10 // 64 KiB
-)
+const maxStackLogLen = 64 << 10
 
-// Error is a structured HTTP error with optional field-level validation errors.
-//
-// Reason, when set, is what the client reads: the response message is
-// Reason translated into the request's locale with Params, and the
-// body's "reason" is Reason.Code(), the stable code a client branches
-// on. Message is the text an error with no Reason sends as written (an
-// app's own wording); framework code always sets a Reason.
+// Error is an HTTP error. The client reads Reason translated with Params
+// (and Reason.Code() as "reason"), or Message when Reason is zero.
 type Error struct {
 	Code       int                           // HTTP status code
 	Reason     i18n.Phrase                   // translated message + stable code (optional)
@@ -117,9 +91,7 @@ func (e *Error) Unwrap() error {
 // zero Phrase, which i18n.ErrorText passes over.
 func (e *Error) Phrased() (i18n.Phrase, map[string]any) { return e.Reason, e.Params }
 
-// Errorf creates a new Error with the given HTTP status code and a
-// formatted message sent as written. Framework code uses [Fail] so the
-// message translates; Errorf is for an app's own wording.
+// Errorf returns an Error whose message is sent as written.
 func Errorf(code int, format string, args ...any) *Error {
 	return &Error{
 		Code: code,
@@ -137,9 +109,7 @@ func Fail(code int, reason i18n.Phrase, params ...map[string]any) *Error {
 	return e
 }
 
-// WrapError wraps an existing error with an HTTP status code and the
-// phrase the client reads, keeping the cause for errors.Is/As without
-// sending it.
+// WrapError returns an Error sending reason and keeping err as its cause.
 func WrapError(code int, reason i18n.Phrase, err error) *Error {
 	return &Error{
 		Code:   code,
@@ -161,14 +131,6 @@ func ValidationError(fields map[string][]schema.Violation) *Error {
 	}
 }
 
-// errorResponse is the error envelope every route answers with, the
-// CRUD routes' included (framework/crud writes the same keys): "error"
-// is the message in the request's locale, "code" the HTTP status,
-// "reason" the message's stable code, and "fields"/"field_reasons" the
-// field violations with their codes. "success" is always false and
-// says nothing the status does not; it stays because the crud routes
-// and this writer both sent it before the two shapes became one, so a
-// client that branches on it keeps working.
 type errorResponse struct {
 	Error        string              `json:"error"`
 	Code         int                 `json:"code"`
@@ -195,32 +157,11 @@ func ViolationBodies(ctx context.Context, fields map[string][]schema.Violation) 
 	return messages, codes
 }
 
-// WriteError writes a structured error response to w, translated into
-// r's locale, in the one error envelope every route answers with:
-//
-//	{"error": "<message>", "code": 400, "reason": "<stable code>",
-//	 "fields": {...}, "field_reasons": {...}, "success": false}
-//
-// "reason" is absent for an error with no Reason (Errorf's own
-// wording), and "fields"/"field_reasons" for an error with no
-// Violations.
-//
-// An *Error is rendered as the developer built it: its Code, its
-// Reason (translated, with the code in "reason") or its Message, and
-// its Violations. Any other error type is treated as an internal
-// failure: the response message is a generic "internal server error"
-// with status 500, and the original error stays out of the response
-// body. Callers that *do* want a message to reach the client must wrap
-// explicitly via [Fail], [WrapError] or [Errorf] (WrapError keeps the
-// cause for `errors.Is/As` without leaking it).
-//
-// This prevents accidental leaks of database errors, driver-specific
-// strings ("pq: password authentication failed for user \"admin\""),
-// or wrapped stack traces. r may be nil; the message is then English.
-//
-// A nil *Error is the generic 500, and a Code outside 400-599 (a
-// forgotten zero, a 1xx or 2xx) is sent as 500: an error never goes out
-// under a status that reads as success.
+// WriteError writes the error envelope ({"error","code","reason","fields",
+// "field_reasons","success":false}) in r's locale. Only a *Error's own
+// text is sent; any other error and a nil *Error are a generic 500, and
+// a *Error whose code is outside 400-599 is sent as 500 with its own
+// message, reason and violations. r may be nil.
 func WriteError(w http.ResponseWriter, r *http.Request, err error) {
 	herr, ok := err.(*Error)
 	if !ok || herr == nil {
@@ -258,5 +199,4 @@ func RequestFromContext(ctx context.Context) (*http.Request, bool) {
 	return r, ok
 }
 
-// context keys
 type requestKey struct{}

@@ -31,6 +31,65 @@ few lines, and link the PR or the docs page for the rest.
   rebuild could fail with "index.lock: File exists", and a dev server
   killed mid-query left the lock behind. They now pass
   `-buildvcs=false`, so the dev binary has no `vcs.*` build settings.
+- **config: a shadowed field's sensitive default stays out of validator
+  errors.** An embedded field hidden by an outer field with the same key
+  takes its `default` tag; when that field was `sensitive`, a
+  `ConfigValidator` error quoting it printed the default in clear. It is
+  now redacted like any other sensitive value. See
+  [core packages](framework/docs/content/core-packages.md).
+- **fanout: the go-redis adapter in the docs confirms its subscription.**
+  go-redis's `Client.Subscribe` drops the error of a refused `SUBSCRIBE`
+  (a Redis ACL that allows `PUBLISH` only, say), so the documented
+  adapter reported success and the replica heard nothing on that topic.
+  It now waits on `sub.Receive(ctx)` and returns its error. The docs also
+  say that `PublishQueueReporting` calls no callback for a payload
+  dropped by `stop`. See [core packages](framework/docs/content/core-packages.md#fanout).
+- **fanout: nothing is delivered after a queue's `stop`.** A payload
+  sent to a `SubscriberQueue` (and so to an `InProcess`, Redis or
+  Postgres subscriber) or a `PublishQueue` after `stop` returned could
+  still reach the callback or the backend about half the time. It is now
+  always dropped. See [core packages](framework/docs/content/core-packages.md#fanout).
+- **BREAKING: handler: `Bind` refuses duplicate and case-folded keys at every
+  depth.** The JSON body was checked at the top level of a struct only,
+  so `{"user":{"role":"member","role":"admin"}}` bound last-wins, and a
+  map destination took `{"name":"a","name":"c"}`, while `ToolAdapter`
+  refused both for the same handler's MCP twin. `Bind` now decodes
+  through `UnmarshalStrict`; a body with such keys answers 400
+  `json_duplicate_key` or `json_folded_keys`.
+  ([core packages](framework/docs/content/core-packages.md))
+- **handler: the strict key walk no longer copies its path at every
+  level.** `CheckObjectKeys`, which `Bind`, `UnmarshalStrict`,
+  `ToolAdapter` and the MCP, A2A and ACP servers run, rebuilt the JSON
+  path for each nested value, so an 8 KiB body of 4,000 nested arrays
+  allocated about 350 MB. It now keeps one path stack and allocates
+  in proportion to the depth. Refusals still name the same path.
+  ([core packages](framework/docs/content/core-packages.md))
+- **webhook, a2a: a hostless URL such as `http://:8080/` is refused with
+  private networks allowed too.** `AllowPrivateNetworks` skipped the
+  hostname check along with the internal-address checks, so a URL with
+  only a port registered. `netguard.CheckOutboundURL` now checks the
+  hostname before the private-network early return.
+  ([webhooks](framework/docs/content/webhooks.md))
+- **static: a file whose `Close` panics no longer crashes the process
+  during a background ETag hash.** The recovery covered `Open`, `Stat`
+  and `Read` but ran before the deferred `Close`, so a custom `fs.File`
+  that panicked in `Close` took down the server. Now such a panic costs
+  only that file's ETag. ([core packages](framework/docs/content/core-packages.md))
+- **webhook: `Subscribe` waits at most 3 seconds on DNS.** The
+  registration-time URL check looked the host up with no deadline, so a
+  slow or unanswering DNS server held `Subscribe` for as long as the
+  resolver retried. It now shares `netguard.CheckOutboundURL` with A2A
+  push registration, which bounds the lookup; a hostless URL such as
+  `http://:8080/` is refused by A2A push too. ([webhooks](framework/docs/content/webhooks.md))
+- **stream: `WebSocketConn.Close` returns when a keepalive Ping slips in
+  after the drain.** With a negative `WriteTimeout`, a Ping written after
+  a drained frame cleared the socket's deadline could block on a peer
+  that stopped reading and hold `Close` forever. Every frame written once
+  `Close` starts now carries its bound. See
+  [core packages](framework/docs/content/core-packages.md).
+- **stream: a `Write` racing `Close` is no longer accepted and dropped.**
+  A `Write` that returns nil is now always queued before `Close` drains;
+  one that loses the race returns `ErrClosed`.
 - **router: Group fallbacks match escaped segments, stay in the served
   subtree, and keep the shared 405 chain.** A `%2F` in a request path no
   longer shifts which Group's `NotFound` or `MethodNotAllowed` covers it;
@@ -261,6 +320,11 @@ few lines, and link the PR or the docs page for the rest.
   did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
+- **featureflag: `MemoryStore.Set` errors read like `SQLStore.Set`'s.** Both
+  stores now check a flag through one function, so an empty key reads
+  `featureflag: empty key` (was `flag: empty key`) and a bad `Users` entry
+  `featureflag: flag "k": users[0]: ...`. Code that matched the old text
+  matches the new prefix. ([feature flags](framework/docs/content/feature-flags.md#stores))
 - **The default Content-Security-Policy sends `base-uri 'none'` and
   `worker-src 'self'`**, live and in static exports. An app that renders a
   `<base>` element sets its own policy with `framework.WithSecurityHeaders`.
@@ -390,6 +454,15 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr upgrade` finds the Go spellings.
 
 ### Added
+- **fanout: `UnwrapForeign(self, raw)`.** Unwraps a fanout envelope and
+  reports `ok` false for a malformed one or one this node sent. The event
+  bridge, SSE broker, island manager, access store and module manager use
+  it in place of their own origin checks. See
+  [core packages](framework/docs/content/core-packages.md#fanout).
+- **`netguard.OriginAllowed`** is the one cross-origin check `core/mcp`
+  and `core/a2a` share: no Origin, the request's own Host, or a
+  case-insensitive allow-list match passes. Neither server's answers
+  change. See [core packages](framework/docs/content/core-packages.md#netguard).
 - **`LowPriority` on `ui.OptimizedImage` and `ui.PipelineImage`** renders
   `fetchpriority="low"`. See [image](framework/docs/content/image.md#loading-and-priority).
 - **Passkeys: autofill sign-in, step-up, rename and password-manager sync

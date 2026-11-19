@@ -14,15 +14,14 @@ import (
 	"golang.org/x/text/currency"
 )
 
-// Numeric is any integer or float type, named ones included.
+// Numeric is any integer or float type.
 type Numeric interface {
 	~int | ~int8 | ~int16 | ~int32 | ~int64 |
 		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr |
 		~float32 | ~float64
 }
 
-// NumberOption adjusts how Number and Percent write a value: its
-// fraction digits, or its grouping.
+// NumberOption adjusts how Number and Percent write a value.
 type NumberOption func(*numberOpts)
 
 type numberOpts struct {
@@ -31,46 +30,34 @@ type numberOpts struct {
 	noGrouping       bool
 }
 
-// maxFractionDigits caps MinFraction and MaxFraction.
 const maxFractionDigits = 20
 
-// MinFraction writes at least n fraction digits, padding with zeros.
-// n is clamped to 0..20.
+// MinFraction writes at least n fraction digits, n clamped to 0..20.
 func MinFraction(n int) NumberOption {
 	return func(o *numberOpts) { o.minFrac, o.setMin = clampFrac(n), true }
 }
 
-// MaxFraction rounds to at most n fraction digits. n is clamped to
-// 0..20.
+// MaxFraction rounds to at most n fraction digits, n clamped to 0..20.
 func MaxFraction(n int) NumberOption {
 	return func(o *numberOpts) { o.maxFrac, o.setMax = clampFrac(n), true }
 }
 
 func clampFrac(n int) int { return min(max(n, 0), maxFractionDigits) }
 
-// NoGrouping writes the integer digits as one run, with no group
-// separator: a year, an id or a code keeps its shape (2026, not 2,026)
-// while still taking the locale's digits (٢٠٢٦).
+// NoGrouping writes the integer digits with no group separator.
 func NoGrouping() NumberOption {
 	return func(o *numberOpts) { o.noGrouping = true }
 }
 
-// Number writes v in the context's locale: its digits, decimal mark and
-// grouping (1,234.5 in English, 1 234,5 in French, 12,34,567 in Indian
-// English, ١٢٣ in Egyptian Arabic). Floats round to three fraction
-// digits unless an option says otherwise.
+// Number writes v in ctx's locale, floats rounded to three fraction digits
+// unless an option says otherwise.
 func Number[N Numeric](ctx context.Context, v N, opts ...NumberOption) string {
 	m := cldrFor(ctx)
 	return m.loc.formatNumber(m.loc.decimalPattern, v, 0, opts, "")
 }
 
-// Decimal writes s, a plain decimal string such as "-1234.5" (the shape
-// a NUMERIC column or a big.Rat's FloatString hands back), in the
-// context's locale. The digits never pass through a float64, so a
-// value past float64's 15–17 significant digits prints exactly, and
-// rounding to the fraction options goes half away from zero. ok is
-// false when s is not an optional sign, digits and an optional
-// fraction.
+// Decimal writes s, a plain decimal string, in ctx's locale without passing
+// through a float64; ok is false when s is not [+-]digits[.digits].
 func Decimal(ctx context.Context, s string, opts ...NumberOption) (out string, ok bool) {
 	r, ok := parseDecimal(s)
 	if !ok {
@@ -80,14 +67,8 @@ func Decimal(ctx context.Context, s string, opts ...NumberOption) (out string, o
 	return m.loc.formatNumber(m.loc.decimalPattern, r, 0, opts, ""), true
 }
 
-// maxDecimalLen bounds the strings Decimal parses; a longer one is not
-// a number anything stores.
 const maxDecimalLen = 512
 
-// parseDecimal reads [+-]digits[.digits] (either side may be empty, not
-// both) into an exact rational. Exponents and fractions ("1/3") are
-// refused: big.Rat accepts both, and "1e999999999" would allocate its
-// digits.
 func parseDecimal(s string) (*big.Rat, bool) {
 	if len(s) == 0 || len(s) > maxDecimalLen {
 		return nil, false
@@ -101,20 +82,15 @@ func parseDecimal(s string) (*big.Rat, bool) {
 	return r, ok
 }
 
-// Percent writes v as a percentage in the context's locale: 0.25 is
-// "25%" in English and "25 %" in French. It rounds to whole percents
+// Percent writes v as a percentage in ctx's locale, rounded to whole percents
 // unless an option says otherwise.
 func Percent[N Numeric](ctx context.Context, v N, opts ...NumberOption) string {
 	m := cldrFor(ctx)
 	return m.loc.formatNumber(m.loc.percentPattern, v, 2, opts, "")
 }
 
-// Currency writes amount in the currency named by its ISO 4217 code, in
-// the context's locale: Currency(ctx, 1234.5, "EUR") is "€1,234.50" in
-// English and "1 234,50 €" in French. The amount rounds to the
-// currency's standard digits in the CLDR release the locale tables come
-// from (none for JPY, two for AMD, three for BHD). An unknown code
-// writes the amount with two digits and no symbol.
+// Currency writes amount in the ISO 4217 currency code in ctx's locale,
+// rounded to the currency's CLDR digits; an unknown code gets two digits.
 func Currency[N Numeric](ctx context.Context, amount N, code string) string {
 	m := cldrFor(ctx)
 	scale, symbol := 2, ""
@@ -126,10 +102,6 @@ func Currency[N Numeric](ctx context.Context, amount N, code string) string {
 	return m.loc.formatNumber(m.loc.currencyPattern, amount, 0, opts, symbol)
 }
 
-// standardCurrencyDigits is the CLDR fraction digits of a known ISO
-// 4217 code: its own entry, else CLDR's DEFAULT. golang.org/x/text's
-// rounding table is an older CLDR's and gives AMD, COP, GYD, IDR, MNT,
-// MUR, PKR, TZS and UZS none.
 func standardCurrencyDigits(code string) int {
 	if digits, ok := cldrCurrencyDigits[code]; ok {
 		return digits
@@ -137,9 +109,6 @@ func standardCurrencyDigits(code string) int {
 	return cldrCurrencyDefaultDigits
 }
 
-// formatParam writes v as a number in l's locale when v is a plain
-// number: an integer or float kind that is neither a fmt.Stringer (a
-// time.Duration prints "1s") nor an error. A nil l writes nothing.
 func (l *cldrLocale) formatParam(v any) (string, bool) {
 	if l == nil || v == nil {
 		return "", false
@@ -157,7 +126,6 @@ func (l *cldrLocale) formatParam(v any) (string, bool) {
 	return "", false
 }
 
-// numberPattern is a parsed CLDR number pattern.
 type numberPattern struct {
 	posPrefix, posSuffix string
 	negPrefix, negSuffix string
@@ -166,9 +134,6 @@ type numberPattern struct {
 	minFrac, maxFrac     int
 }
 
-// parseNumberPattern reads a CLDR pattern such as "#,##0.###",
-// "#,##,##0%" or "¤#,##0.00;¤-#,##0.00". Prefixes and suffixes keep
-// their pattern characters (¤ % - and quotes); affix expands them.
 func parseNumberPattern(p string) numberPattern {
 	pos, neg, hasNeg := strings.Cut(p, ";")
 	var np numberPattern
@@ -191,8 +156,6 @@ func parseNumberPattern(p string) numberPattern {
 	return np
 }
 
-// splitAffixes splits a sub-pattern around its number: the run from the
-// first # or 0 through the last of # 0 , .
 func splitAffixes(p string) (prefix, num, suffix string) {
 	start := strings.IndexAny(p, "#0")
 	if start < 0 {
@@ -205,9 +168,6 @@ func splitAffixes(p string) (prefix, num, suffix string) {
 	return p[:start], p[start:end], p[end:]
 }
 
-// formatNumber writes v through pattern. shift moves the decimal point
-// right (2 for percent) on the decimal string, so 0.07 is 7 exactly,
-// not 7.000000000000001.
 func (l *cldrLocale) formatNumber(pattern string, v any, shift int, opts []NumberOption, symbol string) string {
 	np := parseNumberPattern(pattern)
 	o := numberOpts{minFrac: np.minFrac, maxFrac: np.maxFrac}
@@ -223,8 +183,6 @@ func (l *cldrLocale) formatNumber(pattern string, v any, shift int, opts []Numbe
 	o.maxFrac = max(o.maxFrac, o.minFrac)
 
 	digits, neg, special := plainDecimal(v, o.maxFrac+shift, l.nan)
-	// NaN and the infinities wear the pattern's affixes like any
-	// number: $∞, ∞ %.
 	body := special
 	if special == "" {
 		intPart, frac := shiftPoint(digits, shift)
@@ -259,9 +217,6 @@ func (l *cldrLocale) formatNumber(pattern string, v any, shift int, opts []Numbe
 	return l.affix(prefix, symbol, true) + body + l.affix(suffix, symbol, false)
 }
 
-// plainDecimal writes the magnitude of v in plain decimal, floats
-// rounded to frac digits, and reports its sign. NaN (spelled nan, the
-// locale's symbol) and the infinities come back as special.
 func plainDecimal(v any, frac int, nan string) (digits string, neg bool, special string) {
 	if r, ok := v.(*big.Rat); ok {
 		return new(big.Rat).Abs(r).FloatString(frac), r.Sign() < 0, ""
@@ -291,9 +246,6 @@ func plainDecimal(v any, frac int, nan string) (digits string, neg bool, special
 	return "0", false, ""
 }
 
-// shiftPoint moves the decimal point of a plain decimal n places right
-// and returns the integer and fraction digits, the integer part without
-// leading zeros (but at least "0").
 func shiftPoint(s string, n int) (intPart, frac string) {
 	intPart, frac, _ = strings.Cut(s, ".")
 	if n > 0 {
@@ -309,8 +261,6 @@ func shiftPoint(s string, n int) (intPart, frac string) {
 	return intPart, frac
 }
 
-// groupDigits separates an integer's digits per the pattern's grouping
-// sizes, when it has at least minGrouping digits past the first group.
 func (l *cldrLocale) groupDigits(s string, np numberPattern) string {
 	if np.primary <= 0 || len(s)-np.primary < l.minGrouping {
 		return s
@@ -334,11 +284,6 @@ func (l *cldrLocale) groupDigits(s string, np numberPattern) string {
 	return b.String()
 }
 
-// affix expands a pattern prefix or suffix: ¤ is the currency symbol,
-// % the percent sign, - the minus sign, and quoted text is literal. A
-// symbol that ends in a letter, written right against the digits, gets
-// a no-break space between them (CHF 12.00, not CHF12.00): CLDR's
-// default currency spacing.
 func (l *cldrLocale) affix(p, symbol string, prefix bool) string {
 	var b strings.Builder
 	for i := 0; i < len(p); i++ {
@@ -380,8 +325,6 @@ func (l *cldrLocale) affix(p, symbol string, prefix bool) string {
 	return b.String()
 }
 
-// spacedSymbol reports whether a symbol's side facing the digits is a
-// letter or digit, which CLDR's currency spacing separates from them.
 func spacedSymbol(symbol string, prefix bool) bool {
 	var r rune
 	if prefix {

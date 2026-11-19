@@ -8,11 +8,8 @@ import (
 	"sync/atomic"
 )
 
-// IsForgeableRequest reports whether a cross-site page could have sent
-// this request WITHOUT a CORS preflight: the CORS "simple request"
-// content types plus the absent header (a bodyless fetch() sends no
-// Content-Type). application/json and every other type are not
-// forgeable: a cross-site POST carrying one is preflighted.
+// IsForgeableRequest reports whether r's Content-Type is a CORS-simple
+// one or absent, so a cross-site page could send it without a preflight.
 func IsForgeableRequest(r *http.Request) bool {
 	ct := r.Header.Get("Content-Type")
 	if i := strings.IndexByte(ct, ';'); i >= 0 {
@@ -25,34 +22,10 @@ func IsForgeableRequest(r *http.Request) bool {
 	return false
 }
 
-// IsCrossSiteRequest reports whether the request came from another
-// origin, using Fetch Metadata first and the Origin header as the
-// fallback. This is the ONE implementation of the repo's cross-site
-// form guard; every battery and tool that refuses cross-site POSTs
-// calls it and keeps only its own response shape.
-//
-// Sec-Fetch-Site is authoritative where the browser sends it:
-// "same-origin" and "none" (a user-initiated navigation: address bar,
-// bookmark) are safe, "cross-site" is refused outright. "same-site" is
-// NOT proof of same-origin: the site computation drops the port and
-// folds sibling subdomains, so a page on evil.example.com (or on a
-// sibling port of a localhost tool) is same-site while its Origin names
-// a different origin, and a SameSite cookie still attaches. It falls
-// through to the Origin-host comparison, as does any unknown value, and
-// under "same-site" an absent, opaque or unparseable Origin is
-// cross-site: a same-origin page says "same-origin", so only a sibling
-// (one sending Referrer-Policy: no-referrer, which makes Origin "null")
-// reaches that arm.
-// Two copies of this guard (battery/setup, kiln/chat) trusted
-// "same-site" and were driven to an attacker-owned admin account and an
-// approved destructive plan by the 2026-09-06 probes; the copies are
-// gone.
-//
-// Without Fetch Metadata, an Origin whose host differs from r.Host is
-// cross-site. An absent or opaque ("null") Origin cannot prove an
-// attack and is allowed: a legitimate top-level same-origin form
-// navigation sends Origin: null too, and non-browser clients (curl,
-// tests, native apps) send neither header.
+// IsCrossSiteRequest reports whether r came from another origin: by
+// Sec-Fetch-Site when it is cross-site, same-origin or none, otherwise by
+// the Origin host against r.Host. Under same-site an absent, null or
+// hostless Origin is cross-site; with no Fetch Metadata it is not.
 func IsCrossSiteRequest(r *http.Request) bool {
 	switch r.Header.Get("Sec-Fetch-Site") {
 	case "cross-site":
@@ -60,8 +33,6 @@ func IsCrossSiteRequest(r *http.Request) bool {
 	case "same-origin", "none":
 		return false
 	}
-	// Under "same-site" the Origin must prove same-origin: a sibling page
-	// sending Referrer-Policy: no-referrer sends Origin: null.
 	sameSite := r.Header.Get("Sec-Fetch-Site") == "same-site"
 	o := r.Header.Get("Origin")
 	if o == "" || o == "null" {
@@ -74,12 +45,8 @@ func IsCrossSiteRequest(r *http.Request) bool {
 	return !strings.EqualFold(u.Host, r.Host)
 }
 
-// IsCrossSiteRequestStrict is IsCrossSiteRequest for surfaces that are
-// only ever called by fetch(), never by a form navigation: there an
-// opaque "Origin: null" with no Fetch Metadata to vouch for it is the
-// sandboxed-iframe / cross-origin-redirect shape, not a legitimate
-// top-level navigation, so it is refused too. Where the browser sends
-// Sec-Fetch-Site the header decides exactly as in IsCrossSiteRequest.
+// IsCrossSiteRequestStrict is IsCrossSiteRequest that also refuses a bare
+// Origin: null with no Sec-Fetch-Site, for fetch-only endpoints.
 func IsCrossSiteRequestStrict(r *http.Request) bool {
 	if IsCrossSiteRequest(r) {
 		return true
@@ -87,28 +54,14 @@ func IsCrossSiteRequestStrict(r *http.Request) bool {
 	return r.Header.Get("Origin") == "null" && r.Header.Get("Sec-Fetch-Site") == ""
 }
 
-// IsForgedCrossSiteWrite reports whether r is a write another site's page
-// could have sent with the user's cookies and no CORS preflight: any
-// method but GET, HEAD and OPTIONS (a CORS preflight is an OPTIONS
-// request with no body and no content type, and must reach CORS), a
-// forgeable content type
-// (IsForgeableRequest), and a cross-site origin (IsCrossSiteRequest).
-// It is the check entity endpoints and CRUD routes run before their
-// handler; RefuseCrossSite applies it to any handler.
+// IsForgedCrossSiteWrite reports a method other than GET, HEAD and OPTIONS
+// that IsForgeableRequest and IsCrossSiteRequest both report.
 func IsForgedCrossSiteWrite(r *http.Request) bool {
 	return r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions &&
 		IsForgeableRequest(r) && IsCrossSiteRequest(r)
 }
 
-// RefuseCrossSite wraps h so a forged cross-site write
-// (IsForgedCrossSiteWrite) gets 403 with ReasonCrossSiteRefused before h
-// runs. It needs no token, so it suits a plain server-rendered form route
-// mounted with Router().HandleFunc, which the CSRF middleware's
-// per-form token does not reach. Requests from the app's own pages,
-// non-browser clients (no Origin, no Sec-Fetch-Site) and preflighted
-// requests (application/json and other non-simple types) pass. A route
-// that must accept a cross-site POST, such as an OAuth form_post
-// callback, is simply not wrapped.
+// RefuseCrossSite answers a forged cross-site write 403 before h runs.
 func RefuseCrossSite(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if IsForgedCrossSiteWrite(r) {
@@ -124,22 +77,9 @@ func RefuseCrossSite(h http.Handler) http.Handler {
 // reload with another hop.
 const SameSiteHopParam = "gofastr_hop"
 
-// NeedsSameSiteHop reports whether a top-level GET that sets or needs a
-// SameSite=Strict cookie should first be answered with a page from this
-// origin that loads the URL again (SameSiteHopTarget). A navigation that
-// began on another site keeps a Strict cookie off itself and off every
-// redirect that continues it; the page's own reload starts here and
-// carries the cookie.
-//
-// It is true when IsCrossSiteRequest is, and when the request carries
-// no Sec-Fetch-Site at all and is not a hop's reload. A browser sends
-// Fetch Metadata only to a potentially trustworthy origin, so a link in
-// a chat page to a plain-HTTP address such as http://192.168.1.5:8080
-// arrives with neither Sec-Fetch-Site nor Origin, the same as curl.
-// Deciding on IsCrossSiteRequest alone spent the first-run setup token
-// on that click, and the operator landed on 403. A client that sends no
-// Fetch Metadata therefore gets the hop page, which spends nothing, and
-// follows its Refresh header or its link.
+// NeedsSameSiteHop reports whether a top-level GET should first get a
+// same-origin page that loads it again: it is cross-site, or carries no
+// Sec-Fetch-Site and no SameSiteHopParam.
 func NeedsSameSiteHop(r *http.Request) bool {
 	if IsCrossSiteRequest(r) {
 		return true
@@ -147,16 +87,9 @@ func NeedsSameSiteHop(r *http.Request) bool {
 	return r.Header.Get("Sec-Fetch-Site") == "" && !r.URL.Query().Has(SameSiteHopParam)
 }
 
-// SameSiteHopTarget is the URL a hop page answering r loads again:
-// target, r's same-origin path and query, with SameSiteHopParam added
-// when r carried no Sec-Fetch-Site. That reload carries no Fetch
-// Metadata either, so the marker is what ends the hop. A browser that
-// sends Fetch Metadata says "same-origin" on the reload, and its URL is
-// left as it came. The marker is no credential: a link that carries it
-// gets what every request got before the hop existed. Whoever adds it
-// already holds the URL, and where the URL is the secret (the setup
-// token) the holder could spend it directly; a cross-site request with
-// Fetch Metadata hops whatever its query says.
+// SameSiteHopTarget returns target with SameSiteHopParam added when r
+// carried no Sec-Fetch-Site and target lacks it. The marker is no
+// credential.
 func SameSiteHopTarget(r *http.Request, target string) string {
 	if r.Header.Get("Sec-Fetch-Site") != "" {
 		return target

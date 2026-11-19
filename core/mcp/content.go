@@ -23,7 +23,7 @@ type EmbeddedResource struct {
 	Blob     string `json:"blob"` // base64
 }
 
-// MarshalJSON emits only the fields the spec defines for the block's type.
+// MarshalJSON emits exactly one of text and blob.
 func (r EmbeddedResource) MarshalJSON() ([]byte, error) {
 	m := map[string]any{"uri": r.URI}
 	if r.MimeType != "" {

@@ -26,17 +26,24 @@ var headScrubReassembly = []struct {
 func TestHeadScrubDoesNotReassembleTags(t *testing.T) {
 	for _, tc := range headScrubReassembly {
 		t.Run(tc.name, func(t *testing.T) {
-			for _, sink := range []struct{ name, page string }{
-				{"WithHeadHTML", renderHeadPage(t, WithHeadHTML(tc.payload))},
-				{"SEOScreen.HeadHTML", renderScreenHeadPage(t, tc.payload)},
-				{"stripInlineScripts", stripInlineScripts(tc.payload)},
-			} {
-				if strings.Contains(strings.ToLower(sink.page), strings.ToLower(tc.forbidden)) {
-					t.Errorf("SECURITY: [uihost] %s: scrub of %q emitted %q: removing an inner match reassembled the outer one",
-						sink.name, tc.payload, tc.forbidden)
-				}
-			}
+			assertHeadScrubKeepsOut(t, tc.payload, tc.forbidden, "removing an inner match reassembled the outer one")
 		})
+	}
+}
+
+// assertHeadScrubKeepsOut fails when forbidden, in any letter case,
+// survives payload through any head sink: WithHeadHTML, a screen's
+// HeadHTML, or the scrub itself.
+func assertHeadScrubKeepsOut(t *testing.T, payload, forbidden, why string) {
+	t.Helper()
+	for _, sink := range []struct{ name, page string }{
+		{"WithHeadHTML", renderHeadPage(t, WithHeadHTML(payload))},
+		{"SEOScreen.HeadHTML", renderScreenHeadPage(t, payload)},
+		{"stripInlineScripts", stripInlineScripts(payload)},
+	} {
+		if strings.Contains(strings.ToLower(sink.page), strings.ToLower(forbidden)) {
+			t.Errorf("SECURITY: [uihost] %s: scrub of %q emitted %q: %s", sink.name, payload, forbidden, why)
+		}
 	}
 }
 

@@ -8,15 +8,13 @@ import (
 
 // Document is the result of parsing a Markdown source.
 type Document struct {
-	// Frontmatter holds key/value pairs from a leading `--- ... ---` block.
-	// Values are kept as raw strings; callers do their own typing.
+	// Frontmatter holds the leading block's key/value pairs as strings.
 	Frontmatter map[string]string
 
 	// HTML is the rendered body.
 	HTML render.HTML
 
-	// Title is the text of the first H1 in the document if present, otherwise
-	// the value of the `title` frontmatter key. Useful for setting <title>.
+	// Title is the first H1's text, else the title frontmatter key.
 	Title string
 }
 
@@ -30,19 +28,13 @@ func Render(input string) Document {
 	return Document{Frontmatter: fm, HTML: html, Title: title}
 }
 
-// RenderHTML is a convenience wrapper that returns just the HTML body.
+// RenderHTML returns Render(input).HTML.
 func RenderHTML(input string) render.HTML {
 	return Render(input).HTML
 }
 
-// maxBlockquoteDepth bounds blockquote nesting. Each level re-parses the
-// remaining inner text, so unbounded nesting is O(n^2) on a single line of
-// "> > > … x", a CPU-DoS amplifier on any user-submitted markdown. Past
-// the cap we stop recursing and emit the remaining text verbatim (escaped).
 const maxBlockquoteDepth = 32
 
-// renderBody runs the block parser and returns the HTML plus the first H1
-// text seen (used as the document title).
 func renderBody(input string) (render.HTML, string) {
 	return renderBodyDepth(input, 0, make(map[string]int), make(map[string]bool))
 }
@@ -57,11 +49,6 @@ func renderBodyDepth(input string, depth int, headingIDs map[string]int, heading
 	var sb strings.Builder
 	var firstH1 string
 	for !p.eof() {
-		// Progress guard: every block handler must consume at least one
-		// line. A classifier that matches a line the handler then refuses
-		// to consume (e.g. an atX() / renderX() whitespace-definition
-		// mismatch) spins forever. Record the position and force-advance
-		// past an unconsumable line so no handler bug can hang the render.
 		start := p.pos
 		switch {
 		case p.atFence():
@@ -98,8 +85,6 @@ func renderBodyDepth(input string, depth int, headingIDs map[string]int, heading
 	return render.HTML(sb.String()), firstH1
 }
 
-// splitLines splits input into lines without keeping the trailing line break.
-// We normalise CRLF to LF first so logic only deals with one form.
 func splitLines(input string) []string {
 	input = strings.ReplaceAll(input, "\r\n", "\n")
 	input = strings.ReplaceAll(input, "\r", "\n")

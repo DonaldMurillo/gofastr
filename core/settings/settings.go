@@ -1,10 +1,6 @@
-// Package settings reads gofastr.settings.yml, the one committed file that
-// holds a project's gofastr configuration. Each top-level section belongs
-// to one reader: codegen and endpoints to `gofastr generate`, contracts
-// to `gofastr verify`, isolation to the running app, unmounted to the
-// CLI's record of copied packages. This package finds the file and checks
-// its top level; each reader decodes its own section. The unmounted and
-// endpoints sections are decoded here, since several commands share each.
+// Package settings finds and checks gofastr.settings.yml, a project's
+// committed gofastr configuration, and decodes and rewrites its endpoints and
+// unmounted sections.
 package settings
 
 import (
@@ -21,8 +17,6 @@ import (
 // FileName is the settings file's name at the project root.
 const FileName = "gofastr.settings.yml"
 
-// sections are the top-level keys the file may hold. version is the file
-// format's version; the rest are one reader each.
 var sections = map[string]bool{
 	"version":   true,
 	"codegen":   true,
@@ -32,22 +26,19 @@ var sections = map[string]bool{
 	"unmounted": true,
 }
 
-// IsSection reports whether name is one of the file's reader sections, for
-// a reader of another file that wants to point a misplaced key here.
+// IsSection reports whether name is a section other than version.
 func IsSection(name string) bool { return name != "version" && sections[name] }
 
 // File is a parsed settings file.
 type File struct {
 	// Path is the file's path, absolute when Find located it.
 	Path string
-	// Dir is the directory holding the file: the project root its
-	// relative paths resolve against.
+	// Dir is the directory holding the file.
 	Dir  string
 	root *coreyaml.Node
 }
 
-// Section returns the named top-level section, or nil when the file has
-// none.
+// Section returns the named top-level section, or nil.
 func (f File) Section(name string) *coreyaml.Node {
 	if f.root == nil || f.root.Kind != coreyaml.Map {
 		return nil
@@ -55,29 +46,18 @@ func (f File) Section(name string) *coreyaml.Node {
 	return f.root.Map[name]
 }
 
-// Root returns the whole parsed document, for a reader whose decoder takes
-// the file with its section in place.
+// Root returns the whole parsed document.
 func (f File) Root() *coreyaml.Node { return f.root }
 
-// retired are the files this one replaced, by the section their content
-// moved to. Each reader refuses its own: a file that is no longer read
-// would otherwise drop its settings without a word.
 var retired = map[string][]string{
 	"codegen":   {"gofastr.codegen.yml", "gofastr.codegen.yaml"},
 	"contracts": {"gofastr.contracts.yml", "gofastr.contracts.yaml"},
 	"isolation": {"gofastr.isolation.yml", "gofastr.isolation.yaml"},
 }
 
-// Find looks for FileName in start and each parent up to the project root
-// (the first directory holding go.work, go.mod or .git), never past it. A
-// settings file can name a command that generate runs, so one planted in a
-// shared ancestor (a workspace parent, /tmp, $HOME) must never apply. With
-// no project root above start, only start itself is searched. ok is false
-// when no settings file is found.
-//
-// section names the reader. A file that used to hold that section on its
-// own (gofastr.codegen.yml for codegen) is an error naming where its
-// content goes now.
+// Find loads the first FileName in SearchDirs(start); ok is false when there
+// is none. It errors when a directory searched holds the retired file of
+// section (gofastr.codegen.yml for codegen).
 func Find(start, section string) (f File, ok bool, err error) {
 	dirs, err := SearchDirs(start)
 	if err != nil {
@@ -117,9 +97,8 @@ func Load(path string) (File, error) {
 	return Parse(path, data)
 }
 
-// Parse checks a settings document: a map whose keys are known sections,
-// with version 1 when a version is given. An empty document is a file
-// with no sections.
+// Parse checks a settings document: a map of known sections, with version 1
+// when a version is given.
 func Parse(path string, data []byte) (File, error) {
 	root, err := coreyaml.Parse(string(data))
 	if err != nil {
@@ -151,10 +130,8 @@ func sectionList() string {
 	return strings.Join(names, ", ")
 }
 
-// SearchDirs lists the directories Find searches: start and each parent
-// up to and including the project root. With no root marker anywhere
-// above start it returns start alone: an unmarked tree says nothing about
-// where the project ends.
+// SearchDirs lists start and each parent up to and including the project
+// root, or start alone when no directory above it is a project root.
 func SearchDirs(start string) ([]string, error) {
 	dir, err := filepath.Abs(start)
 	if err != nil {
@@ -175,10 +152,9 @@ func SearchDirs(start string) ([]string, error) {
 	return dirs[:1], nil
 }
 
-// projectRootMarkers are the files that make a directory a project root.
 var projectRootMarkers = []string{"go.work", "go.mod", ".git"}
 
-// IsProjectRoot reports whether dir holds a project root marker.
+// IsProjectRoot reports whether dir holds go.work, go.mod or .git.
 func IsProjectRoot(dir string) bool {
 	for _, m := range projectRootMarkers {
 		if _, err := os.Stat(filepath.Join(dir, m)); err == nil {
