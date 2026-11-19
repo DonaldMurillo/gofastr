@@ -29,7 +29,8 @@ few lines, and link the PR or the docs page for the rest.
   subtree, and keep the shared 405 chain.** A `%2F` in a request path no
   longer shifts which Group's `NotFound` or `MethodNotAllowed` covers it;
   a Group's `WrapNotFound` or `WrapMethodNotAllowed` with no handler of
-  its own delegates only within the router that served the request; a 405
+  its own delegates only within the router that served the request, even
+  when a fallback redispatches to the root; a 405
   handler set on a Group in another branch now runs inside the chain of
   the group holding the path's routes (e.g. its CORS preflight); and a
   route's cached middleware chain and its version are published together,
