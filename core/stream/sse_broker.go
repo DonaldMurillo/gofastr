@@ -16,18 +16,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// SSEBroker fans out SSE events to multiple HTTP subscribers.
-// Each subscriber gets a buffered channel. Default subscribers drop the
-// oldest queued event when the buffer is full; clients that opt into
-// ?slow=block or X-SSE-Slow: block instead backpressure Publish until
-// buffer space is available.
-//
-// Buffer size is configurable per-subscriber via query param (?buffer=128)
-// or header (X-SSE-Buffer), with a default fallback bounded by MaxBuf.
-//
-// When SSEBrokerConfig.Fanout is set, Publish also broadcasts to other
-// replicas (topic "gofastr.sse.<Topic>") and events from other replicas are
-// delivered locally. Delivery is lossy best-effort (the real-time lane).
+// SSEBroker fans SSE events out to the HTTP subscribers it holds and, with
+// a Fanout, to and from other replicas.
 type SSEBroker struct {
 	mu                sync.RWMutex
 	subscribers       map[string]*subscriber
@@ -36,19 +26,10 @@ type SSEBroker struct {
 	maxBuf            int
 	heartbeatInterval time.Duration
 
-	// allowClientSlowMode / blockTO / maxSubs mirror the config; see
-	// SSEBrokerConfig for why each defaults the way it does.
 	allowClientSlowMode bool
 	blockTO             time.Duration
 	maxSubs             int
 
-	// fanout, when non-nil, mirrors Publish to other replicas and
-	// re-delivers theirs locally. nodeID drops own-node echoes. fanoutSend
-	// is the non-blocking enqueue into the publish queue
-	// (fanout.PublishQueue); Publish is called from request/emit paths and
-	// must never wait on the backend's network/DB round-trip. Guarded by
-	// the fanout being attached once at construction and torn down by
-	// Close; reads happen only on the Publish path (mu-free after attach).
 	fanout       fanout.Fanout
 	nodeID       string
 	fanoutTopic  string
@@ -57,54 +38,27 @@ type SSEBroker struct {
 	fanoutOnce   sync.Once
 	closed       atomic.Bool
 
-	// principal resolves a request to a caller identity for
-	// subscriber-id eviction scoping. nil disables eviction.
 	principal func(*http.Request) string
 
-	// seatCap / seatOverflow mirror SSEBrokerConfig's seat policy;
-	// seatOrder is the per-principal FIFO of live seats (map key =
-	// Config.Principal's value, "" for every unidentifiable caller)
-	// the EvictOldest policy pops and the unregister path splices.
-	// Guarded by mu like the subscribers map it shadows.
 	seatCap      int
 	seatOverflow SeatOverflowPolicy
 	seatOrder    map[string][]*subscriber
 }
 
 type subscriber struct {
-	// requestedID is the stable client-supplied id. The map key may be a
-	// generated id when callers collide without a trustworthy principal.
 	requestedID string
-	// principal identifies the caller that registered this subscriber,
-	// so a client-supplied subscriber_id can only evict an entry the
-	// same caller created. See Subscribe.
-	principal string
-	// regID is the subscribers-map key this entry was stored under; it
-	// lets the seat policy evict this subscriber in O(1) instead of
-	// scanning the map by pointer. Valid only while the entry is live:
-	// every path that removes the map entry splices the seat first.
-	regID    string
-	ch       chan sseEvent
-	filter   string // optional event name filter; see wants
-	done     chan struct{}
-	slowMode sseSlowMode
+	principal   string
+	regID       string
+	ch          chan sseEvent
+	filter      string
+	done        chan struct{}
+	slowMode    sseSlowMode
 
-	// cut ends a write the handler is parked in (a past write deadline
-	// on the response). Closing done only reaches a handler waiting in
-	// its select; one parked inside a socket write to a peer that
-	// stopped reading never looks at done, and with no server
-	// WriteTimeout (the usual SSE setting) it stays resident after
-	// eviction gave its seat away. cutMu and returned keep cut from
-	// running once the handler has returned: the response then belongs
-	// to net/http, and a keep-alive connection may already carry the
-	// next request.
 	cutMu    sync.Mutex
 	cut      func()
 	returned bool
 }
 
-// interruptWrite unblocks a write the evicted handler may be parked in.
-// Called after the eviction released b.mu, never under it.
 func (s *subscriber) interruptWrite() {
 	s.cutMu.Lock()
 	defer s.cutMu.Unlock()
@@ -133,85 +87,33 @@ type SSEBrokerConfig struct {
 	MaxBuf            int           // maximum allowed subscriber buffer (0 = 1024)
 	HeartbeatInterval time.Duration // 0 = 30s; emits a comment frame to keep idle connections open
 
-	// Fanout, when set, makes Publish cross replicas (topic
-	// "gofastr.sse.<Topic>") and re-delivers other replicas' events locally.
-	// Remote-origin events are delivered with ALWAYS drop-oldest semantics
-	// (even to slow=block subscribers): a remote replica cannot be
-	// backpressured through a channel send, so a single stalled subscriber
-	// must never wedge receive for the others. Local Publish keeps its
-	// block-mode backpressure contract. Optional. Close cancels the
-	// subscription.
+	// Fanout, when set, makes Publish cross replicas on topic
+	// "gofastr.sse.<Topic>" and delivers other replicas' events locally.
+	// Close cancels the subscription.
 	Fanout fanout.Fanout
 
-	// AllowClientSlowMode lets a REQUEST select block mode via
-	// ?slow=block / X-SSE-Slow. Off by default.
-	//
-	// deliver() walks subscribers sequentially on the publisher's
-	// goroutine, so a block-mode subscriber that stops reading stalls
-	// every other subscriber AND whatever called Publish, usually a
-	// request handler. On a public endpoint that is an unauthenticated
-	// denial of service, so the choice belongs to the developer who
-	// knows whether the endpoint is trusted, not to the caller.
+	// AllowClientSlowMode lets a request choose block mode with ?slow=block
+	// or X-SSE-Slow: block. Off by default.
 	AllowClientSlowMode bool
 
-	// BlockTimeout bounds how long a block-mode send may stall before
-	// the broker gives up on that subscriber and moves on. 0 = 5s.
-	// A blocking send with no timeout is unbounded backpressure.
+	// BlockTimeout bounds one block-mode send. 0 = 5s.
 	BlockTimeout time.Duration
 
-	// Principal identifies the caller behind a request, so a reconnect
-	// with the same ?subscriber_id replaces its OWN entry and nobody
-	// else's. Return "" for "cannot tell", which is treated as "not the
-	// same caller".
-	//
-	// Set this to something the caller cannot choose and another caller
-	// cannot guess: a session user id is the usual answer.
-	//
-	// Left nil, the broker never evicts. The old default keyed on
-	// RemoteAddr's host, which is honest only on a direct connection:
-	// behind nginx, an ALB, Cloudflare or a k8s ingress, every request's
-	// TCP peer is the proxy, so all subscribers collapsed to one
-	// principal and `?subscriber_id=<victim>` dropped the victim's
-	// stream, repeatably. Nothing is lost by not evicting: subscriber
-	// ids address nothing (deliver() broadcasts), and a dropped
-	// connection already unregisters itself.
+	// Principal names the caller behind a request; a reconnect with the same
+	// ?subscriber_id and principal replaces its own stream. "" means "cannot
+	// tell" and never matches. Nil disables replacement.
 	Principal func(*http.Request) string
 
-	// MaxSeatsPerPrincipal caps how many concurrent streams ONE
-	// principal holds. 0 = 16 (the same default core/mcp's SSE stream
-	// uses); a negative value lifts the cap for deployments that bound
-	// seats elsewhere. The zero-value config gets the default: a single
-	// low-privilege user must not be able to exhaust the process's
-	// goroutines/FDs/memory for everyone else, and MaxSubscribers (the
-	// all-users cap) is opt-in unlimited by design.
-	//
-	// When Principal is nil (or returns ""), callers cannot be told
-	// apart, so every anonymous stream shares ONE seat bucket: the cap
-	// then bounds all unidentifiable subscribers collectively. Raise it
-	// (or set Principal) on a public stream that legitimately serves
-	// more than 16 anonymous viewers.
+	// MaxSeatsPerPrincipal caps the streams one principal holds. 0 = 16,
+	// negative = no cap. Callers Principal cannot tell apart share one bucket.
 	MaxSeatsPerPrincipal int
 
-	// SeatOverflow selects what a principal at MaxSeatsPerPrincipal does
-	// with its next stream: SeatOverflowRefuse answers 429 at connect
-	// (the default), SeatOverflowEvictOldest closes that principal's
-	// oldest stream and seats the new one — the multi-tab-friendly
-	// policy for apps whose clients reconnect faster than a half-open
-	// connection's seat is reclaimed.
+	// SeatOverflow picks what a principal at MaxSeatsPerPrincipal gets:
+	// SeatOverflowRefuse (429, the default) or SeatOverflowEvictOldest.
 	SeatOverflow SeatOverflowPolicy
 
-	// MaxSubscribers caps concurrent subscribers; 0 = unlimited. Subscribe
-	// rejects past the cap rather than evicting, and the cap is exact.
-	//
-	// A client whose previous connection is half-open (mobile handoff, laptop
-	// sleep, an LB idle-kill the server has not noticed) still holds a seat
-	// until HeartbeatInterval's next write fails and the stream unregisters
-	// itself. That heartbeat is what reclaims the seat: for every client,
-	// including the ones that send no subscriber_id, which is all of the
-	// framework's own. A reserved slot keyed on the requested id was tried
-	// and removed: nothing in the client runtime sends an id, so it could
-	// never fire, while costing a scan of every subscriber under the write
-	// lock and letting the cap be exceeded by one.
+	// MaxSubscribers caps concurrent subscribers; 0 = unlimited. Past the cap
+	// Subscribe answers 503.
 	MaxSubscribers int
 }
 
@@ -252,17 +154,12 @@ func NewSSEBroker(cfg SSEBrokerConfig) *SSEBroker {
 	return b
 }
 
-// sseFanoutMsg is the wire shape for a fanned-out SSE event.
 type sseFanoutMsg struct {
 	Name string `json:"n"`
 	Data string `json:"d"`
 	ID   string `json:"i,omitempty"`
 }
 
-// attachFanout subscribes to the broker's fanout topic so events published on
-// other replicas are re-delivered locally. Own-node messages are dropped.
-// Received events are NEVER re-published. A subscribe failure falls back to
-// local-only with a logged warning (best-effort lane).
 func (b *SSEBroker) attachFanout(f fanout.Fanout) {
 	if f == nil {
 		return
@@ -274,15 +171,12 @@ func (b *SSEBroker) attachFanout(f fanout.Fanout) {
 			return
 		}
 		if origin == nodeID {
-			return // own-node: drop
+			return
 		}
 		var msg sseFanoutMsg
 		if jerr := json.Unmarshal(body, &msg); jerr != nil {
 			return
 		}
-		// Deliver locally only via the always-non-blocking path; never
-		// re-publish on receive. (A remote origin cannot be backpressured;
-		// see deliverFromFanout.)
 		b.deliverFromFanout(msg.Name, msg.Data, msg.ID)
 	})
 	if err != nil {
@@ -300,15 +194,11 @@ func (b *SSEBroker) attachFanout(f fanout.Fanout) {
 	}
 }
 
-// maxSubscriberID caps the length of a client-supplied subscriber_id to
-// prevent unbounded key growth in the subscribers map.
 const maxSubscriberID = 256
 
-// Subscribe adds a subscriber and blocks, writing events to the response.
-// The subscriber ID is taken from ?subscriber_id or X-Subscriber-ID header.
-// Buffer size from ?buffer= or X-SSE-Buffer header, clamped to MaxBuf.
-// Subscribe returns when the request context is canceled or the client
-// disconnects.
+// Subscribe writes events to w until the request ends or the stream is
+// evicted. It reads ?subscriber_id (or X-Subscriber-ID), ?buffer= (or
+// X-SSE-Buffer, clamped to MaxBuf) and the ?event= filter.
 func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 	bufSize := b.defaultBuf
 	if v := r.URL.Query().Get("buffer"); v != "" {
@@ -334,7 +224,6 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 	if subID == "" {
 		subID = generateSubscriberID()
 	}
-	// Reject oversized client-supplied subscriber IDs by truncating.
 	if len(subID) > maxSubscriberID {
 		subID = subID[:maxSubscriberID]
 	}
@@ -348,32 +237,20 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 		filter:      filter,
 		done:        make(chan struct{}),
 		slowMode:    b.parseSlowMode(r),
-		// A writer that cannot take a deadline (ErrNotSupported) leaves
-		// the parked write to the server's own WriteTimeout.
-		cut: func() { _ = rc.SetWriteDeadline(time.Now()) },
+		cut:         func() { _ = rc.SetWriteDeadline(time.Now()) },
 	}
-	// Registered first so it runs last: no eviction can cut the
-	// response after this returns.
 	defer func() {
 		sub.cutMu.Lock()
 		sub.returned = true
 		sub.cutMu.Unlock()
 	}()
 
-	// Eviction is scoped to the SAME principal. subscriber_id exists so
-	// apps can pass a meaningful id (user, tab, device), but it is
-	// attacker-supplied, and evicting on a bare id match let
-	// `?subscriber_id=<victim>` drop the victim's stream. Without a
-	// Principal, colliding callers therefore keep separate map entries.
 	sub.principal = b.principalFor(r)
 
 	b.mu.Lock()
 	registrationID := subID
 	var prev *subscriber
 	if sub.principal != "" {
-		// Only a caller the host can identify may replace a stream. A bare
-		// subscriber_id is attacker-supplied, so colliding anonymous callers
-		// keep separate map entries rather than evicting each other.
 		for id, incumbent := range b.subscribers {
 			if incumbent.requestedID == sub.requestedID && incumbent.principal == sub.principal {
 				registrationID = id
@@ -400,16 +277,6 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 		i18n.HTTPError(w, r, http.StatusServiceUnavailable, reasonTooManySubscribers)
 		return
 	}
-	// Per-principal seat cap: the same caller cannot hold unbounded
-	// concurrent streams. A replacement keeps its seat (the incumbent
-	// departs in the same critical section below). Refusal answers 429
-	// at connect — the per-caller limit, distinguishable from the
-	// global 503 above; EvictOldest closes this principal's oldest
-	// stream instead, with the same done/map ownership the replacement
-	// path uses (close, delete, and the evicted loop's defer skips).
-	// evicted is the stream this Subscribe pushes out, if any. Closing
-	// its done ends a handler waiting in its select; interruptWrite,
-	// after the unlock, ends one parked in a write.
 	var evicted *subscriber
 	if !replacing {
 		if seats := seatsFor(b.seatCap); seats > 0 && len(b.seatOrder[sub.principal]) >= seats {
@@ -426,7 +293,6 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if replacing {
-		// The incumbent's seat transfers to its replacement.
 		b.spliceSeatLocked(prev)
 		close(prev.done)
 		evicted = prev
@@ -442,31 +308,9 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 
 	defer func() {
 		b.mu.Lock()
-		// Release the seat FIRST, unconditionally: unlike the map
-		// delete below, a stream evicted or replaced by a newer
-		// Subscribe must not keep its seat counted (the new entry
-		// already took it in the same critical section that removed
-		// this one).
 		b.spliceSeatLocked(sub)
-		// Only delete if the map still points to *this* subscriber. If a
-		// later Subscribe with the same ID has already overwritten us,
-		// our done channel was closed by that path; do not clobber the
-		// newer entry.
 		if cur, ok := b.subscribers[subID]; ok && cur == sub {
 			delete(b.subscribers, subID)
-			// Close done so any delivery goroutine blocked on a
-			// slow=block send (select on <-sub.done) unblocks. Without
-			// this a slow=block subscriber whose loop has exited leaves
-			// deliverLocal wedged forever on the channel send, which in
-			// turn wedges fanout receive for every OTHER subscriber.
-			//
-			// Double-close is impossible: the eviction paths (same
-			// subID re-Subscribe, seat EvictOldest) close done AND
-			// remove the map entry in the same critical section, so by
-			// the time this defer observes cur==sub no eviction
-			// occurred; and if an eviction DID occur cur!=sub and we
-			// skip. The paths are thus mutually exclusive on done
-			// ownership.
 			close(sub.done)
 		}
 		b.mu.Unlock()
@@ -477,11 +321,6 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 	sse.Flush()
 
 	ctxDone := r.Context().Done()
-	// The caller was established once, at connect. Re-establish it on every
-	// heartbeat and before every delivery, so a session revoked or a token
-	// expired after connect closes the stream instead of receiving until the
-	// client disconnects (handler.RecheckPrincipal; with no check installed
-	// it always holds).
 	held := func() bool {
 		_, ok := handler.RecheckPrincipal(r.Context())
 		return ok
@@ -527,12 +366,9 @@ func (b *SSEBroker) Subscribe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Publish sends an event to all subscribers. If a default subscriber's
-// buffer is full, the oldest event is dropped. A subscriber that opted into
-// slow=block backpressures this call until buffer space opens or that
-// subscriber is closed. Subscribers are snapshotted under the read lock;
-// sends happen outside the lock to keep fan-out from holding the broker
-// lock during slow per-channel writes.
+// Publish delivers an event to every local subscriber and, with a Fanout,
+// to other replicas. A full default subscriber drops its oldest event; a
+// block-mode subscriber holds Publish up to BlockTimeout.
 func (b *SSEBroker) Publish(name, data string, id ...string) {
 	var eventID string
 	if len(id) > 0 {
@@ -542,28 +378,14 @@ func (b *SSEBroker) Publish(name, data string, id ...string) {
 	b.publishFanout(name, data, eventID)
 }
 
-// deliverLocal sends a locally-originated event to every local subscriber
-// with the broker's drop-oldest / block semantics: a slow=block subscriber
-// backpressures this call (block-mode backpressure is a LOCAL Publish
-// contract; the local emitter chose to publish and can be stalled).
 func (b *SSEBroker) deliverLocal(name, data, eventID string) {
 	b.deliver(name, data, eventID, false)
 }
 
-// deliverFromFanout sends a remote-origin event to every local subscriber
-// with ALWAYS drop-oldest semantics, even for slow=block subscribers. A
-// remote replica cannot be backpressured through a channel send: if a single
-// slow=block subscriber on this replica stopped reading, blocking on its
-// channel would wedge fanout receive for ALL other (healthy) subscribers on
-// this replica. The fanout-receive lane must therefore never block.
 func (b *SSEBroker) deliverFromFanout(name, data, eventID string) {
 	b.deliver(name, data, eventID, true)
 }
 
-// deliver fans evt out to every local subscriber. When fromFanout is false
-// (local Publish) slow=block subscribers backpressure via select-on-done;
-// when fromFanout is true (remote origin) every subscriber gets drop-oldest
-// so the receive lane can never wedge.
 func (b *SSEBroker) deliver(name, data, eventID string, fromFanout bool) {
 	evt := sseEvent{Name: name, Data: data, ID: eventID}
 
@@ -575,18 +397,10 @@ func (b *SSEBroker) deliver(name, data, eventID string, fromFanout bool) {
 	b.mu.RUnlock()
 
 	for _, sub := range subs {
-		// An event the subscriber's ?event= filter excludes never
-		// enters its buffer: queued there it would take a slot, and
-		// drop-oldest would evict an event the subscriber asked for to
-		// make room for one it then throws away (a block-mode
-		// subscriber would backpressure Publish for it too).
 		if !sub.wants(name) {
 			continue
 		}
 		if !fromFanout && sub.slowMode == sseSlowBlock {
-			// Bounded: an unbounded send lets one stalled subscriber
-			// wedge deliver(), and therefore every other subscriber
-			// and the calling handler, for as long as it likes.
 			timer := time.NewTimer(b.blockTimeout())
 			select {
 			case sub.ch <- evt:
@@ -599,7 +413,6 @@ func (b *SSEBroker) deliver(name, data, eventID string, fromFanout bool) {
 		select {
 		case sub.ch <- evt:
 		default:
-			// Buffer full: drop oldest and try again
 			select {
 			case <-sub.ch:
 			default:
@@ -607,24 +420,15 @@ func (b *SSEBroker) deliver(name, data, eventID string, fromFanout bool) {
 			select {
 			case sub.ch <- evt:
 			default:
-				// Still full after drain: drop entirely
 			}
 		}
 	}
 }
 
-// wants reports whether the subscriber's ?event= filter admits an
-// event named name: no filter admits every event, a filter admits only
-// that exact name. deliver and the subscriber's own loop both ask it,
-// so the two can never disagree.
 func (s *subscriber) wants(name string) bool {
 	return s.filter == "" || name == s.filter
 }
 
-// publishFanout mirrors the event to other replicas via the attached fanout,
-// if any. Best-effort; no-op without a fanout. The enqueue never blocks:
-// Publish runs on request/emit goroutines and a stalled backend must not
-// stall them (see fanout.PublishQueue).
 func (b *SSEBroker) publishFanout(name, data, eventID string) {
 	if b.fanoutSend == nil || b.closed.Load() {
 		return
@@ -636,11 +440,8 @@ func (b *SSEBroker) publishFanout(name, data, eventID string) {
 	b.fanoutSend(fanout.Wrap(b.nodeID, body))
 }
 
-// Close tears down the broker's fanout participation entirely: the receive
-// subscription is cancelled and subsequent Publish calls stop crossing
-// replicas. It is a no-op when no fanout is attached. The broker has no other
-// goroutines to stop; its subscribers live and die with their HTTP request
-// contexts. Safe to call multiple times.
+// Close ends the broker's fanout participation: the receive subscription
+// is cancelled and later Publish calls stay local. Safe to call twice.
 func (b *SSEBroker) Close() {
 	b.fanoutOnce.Do(func() {
 		b.closed.Store(true)
@@ -650,9 +451,6 @@ func (b *SSEBroker) Close() {
 	})
 }
 
-// parseSlowMode reads the client's requested slow-consumer mode. The
-// request may only select block mode when the host opted in via
-// SSEBrokerConfig.AllowClientSlowMode. See that field for why.
 func (b *SSEBroker) parseSlowMode(r *http.Request) sseSlowMode {
 	if !b.allowClientSlowMode {
 		return sseSlowDropOldest
@@ -663,10 +461,6 @@ func (b *SSEBroker) parseSlowMode(r *http.Request) sseSlowMode {
 	return sseSlowDropOldest
 }
 
-// principalFor derives the caller identity used to scope subscriber-id
-// eviction, or "" when the host gave the broker no way to tell callers
-// apart. "" is never treated as equal to another principal, so it
-// disables eviction rather than widening it.
 func (b *SSEBroker) principalFor(r *http.Request) string {
 	if b.principal == nil || r == nil {
 		return ""
@@ -674,8 +468,6 @@ func (b *SSEBroker) principalFor(r *http.Request) string {
 	return b.principal(r)
 }
 
-// blockTimeout is the bound on a block-mode send. Never zero, so a
-// blocking send can always make progress.
 func (b *SSEBroker) blockTimeout() time.Duration {
 	if b.blockTO > 0 {
 		return b.blockTO
@@ -690,12 +482,6 @@ func (b *SSEBroker) SubscriberCount() int {
 	return len(b.subscribers)
 }
 
-// generateSubscriberID returns 16 random bytes hex-encoded (32 chars).
-// Unguessable, collision-resistant, no global counter contention.
-// crypto/rand.Read cannot fail on a supported platform, and there is no
-// safe fallback: a time-derived id is enumerable, which is exactly what
-// the id exists to prevent — so a failure is fatal rather than
-// downgraded into the worst moment to mint an enumerable id.
 func generateSubscriberID() string {
 	var buf [16]byte
 	if _, err := rand.Read(buf[:]); err != nil {

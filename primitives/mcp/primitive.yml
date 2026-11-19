@@ -29,6 +29,8 @@ twins:
         note: decodeRequest on the envelope and unmarshalMCPObject on params and arguments.
       - path: framework/experimental/harness/mcpclient/client.go
         note: readLoop on every line a spawned server sends.
+      - path: core/moduleproto/codec.go
+        note: Codec.ReadFrame on every host-to-module frame, refused as ErrInvalidFrame.
       - path: core/acp/server.go
         note: decodeEnvelope on each line and decodeParams on every params object.
       - path: core/a2a/server.go
