@@ -87,6 +87,11 @@ invariants:
       - test: battery/auth.TestBFFPostureLetsFormPostCallbackThrough
       - test: battery/auth.TestBFFPostureSignOutFormPassesLogoutOriginGuard
       - test: battery/auth.TestBFFPostureLogoutExemptionStaysSameOriginAndExact
+  - id: backup-code-regeneration-requires-post
+    rule: Backup-code regeneration runs on POST because it invalidates the previous set and CSRF middleware exempts safe methods such as GET.
+    enforced_by:
+      - test: battery/auth.TestBackupCodesRejectsGetRequests
+      - test: battery/auth.TestTwoFA_BackupCodesRefresh
   - id: init-refuses-non-idempotent-canonicalizer
     rule: Init refuses an AuthConfig.CanonicalizeEmail override that, over a fixed set of probe addresses, maps an address it accepted to a different address or refuses it on a second pass, and every ingestion refuses an address the override moves on a second pass.
     enforced_by:

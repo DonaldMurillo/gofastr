@@ -192,6 +192,12 @@ func TestPasswordChangeRevokesOthers(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("change: %d %s", w.Code, w.Body.String())
 	}
+	if got := w.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+		t.Errorf("password change Cache-Control = %q, want no-store", got)
+	}
+	if got := w.Body.String(); got != "{\"updated\":true}\n" {
+		t.Errorf("password change response = %q, want updated JSON", got)
+	}
 	if !h.passwordIs("brandnewpw1") || h.passwordIs("oldpw123") {
 		t.Fatal("the new password was not stored")
 	}

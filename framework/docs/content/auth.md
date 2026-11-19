@@ -1368,8 +1368,9 @@ by default; no configuration required.
 The same guard covers the other bodyless POSTs a signed-in user's cookie
 can carry: `/2fa/disable`, `/2fa/backup-codes` and `/2fa/enroll` refuse a
 cross-site request, so a hidden form on another site cannot turn off a
-user's second factor or replace their backup codes. `/2fa/verify` and
-`/2fa/challenge` read a JSON body and answer 415 to anything else.
+user's second factor or replace their backup codes. `/2fa/verify` accepts
+only JSON and returns 415 for any other content type. `/2fa/challenge`
+accepts either JSON or a form.
 
 ## Browser-backend (BFF) posture
 
