@@ -1,9 +1,6 @@
 package uihost
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 // The head scrub read a link's rel and href with a regex that also
 // matched text inside another attribute's quoted value, so a fake
@@ -26,15 +23,7 @@ var headScrubAttrBypass = []struct {
 func TestHeadScrubReadsRealAttributesOnly(t *testing.T) {
 	for _, tc := range headScrubAttrBypass {
 		t.Run(tc.name, func(t *testing.T) {
-			for _, sink := range []struct{ name, page string }{
-				{"WithHeadHTML", renderHeadPage(t, WithHeadHTML(tc.payload))},
-				{"SEOScreen.HeadHTML", renderScreenHeadPage(t, tc.payload)},
-				{"stripInlineScripts", stripInlineScripts(tc.payload)},
-			} {
-				if strings.Contains(strings.ToLower(sink.page), strings.ToLower(tc.forbidden)) {
-					t.Errorf("SECURITY: [uihost] %s: scrub of %q kept %q", sink.name, tc.payload, tc.forbidden)
-				}
-			}
+			assertHeadScrubKeepsOut(t, tc.payload, tc.forbidden, "text inside another attribute, or an attribute after a closing quote, slipped past")
 		})
 	}
 }
