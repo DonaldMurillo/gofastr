@@ -428,7 +428,7 @@ func TestACellWhoseAgentRanOutOfTimeIsGradedWithANote(t *testing.T) {
 func TestACellWhoseAgentNeverRanIsAnError(t *testing.T) {
 	// The deadline only matters to the RanOutOfTime test; a tight one
 	// here races machine load and misclassifies the agent as timed out.
-	cfg, stub := stubCellTimeout(t, "exit 3", 5*time.Second)
+	cfg, stub := stubCellTimeout(t, "exit 3", time.Minute)
 	c := &cell{Task: stub.ID, Condition: conditionRegistry, Run: 1, task: stub}
 	runCell(cfg, c)
 	if c.Outcome != outcomeError {
