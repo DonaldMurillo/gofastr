@@ -19,7 +19,7 @@ func stubBuildInfo(t *testing.T, info *debug.BuildInfo) {
 func TestVersionCommandPrintsRelease(t *testing.T) {
 	stubBuildInfo(t, &debug.BuildInfo{Main: debug.Module{Path: project.GofastrModule, Version: "v0.87.0"}})
 	for _, args := range [][]string{{"version"}, {"--version"}} {
-		out := clitest.CaptureStdout(t, func() { dispatch(args) })
+		out := clitest.CovT_capStdout(t, func() { dispatch(args) })
 		if !strings.HasPrefix(out, "GoFastr v0.87.0 ") {
 			t.Errorf("gofastr %s printed %q, want the installed release", args[0], out)
 		}

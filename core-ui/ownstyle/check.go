@@ -459,7 +459,7 @@ func isComparisonDelim(t Token) bool {
 
 // reWidth is a width literal in the units media features carry. rem
 // and em resolve at the browser's 16px root default, the same scale
-// sameScaleValue uses.
+// SameScaleValue uses.
 var reWidth = regexp.MustCompile(`^(\d*\.?\d+)(px|rem|em)$`)
 
 // widthToPx converts a media-feature width literal to pixels.
@@ -823,7 +823,7 @@ func (c *checker) checkFallbackDrift(d *Decl, varTok Token, name, fallback strin
 		return
 	}
 	declared, ok := c.lightTokenValue(name)
-	if !ok || sameScaleValue(fallback, declared) {
+	if !ok || SameScaleValue(fallback, declared) {
 		return
 	}
 	c.report(Diagnostic{
@@ -889,13 +889,13 @@ func (c *checker) report(d Diagnostic) { c.out = append(c.out, d) }
 // the theme emits and authors write.
 var reLengthOrTime = regexp.MustCompile(`^(\d*\.?\d+)(px|rem|ms|s)$`)
 
-// sameScaleValue reports whether two CSS literals denote the same
+// SameScaleValue reports whether two CSS literals denote the same
 // length or time. rem is compared to px at the browser's 16px root
 // default, and s to ms, so `1rem` is the right fallback for a `16px`
 // token and `.5s` for a `500ms` one. Anything the regex does not parse
 // is compared as an ASCII case-folded string, the way CSS matches
 // keywords and units.
-func sameScaleValue(a, b string) bool {
+func SameScaleValue(a, b string) bool {
 	a, b = asciicase.Lower(strings.TrimSpace(a)), asciicase.Lower(strings.TrimSpace(b))
 	if a == b {
 		return true

@@ -21,67 +21,39 @@ import (
 // OnBeforeCreate registers a typed BeforeCreate hook on the entity named
 // name. The fields fn changes on *T are written back into the body to insert.
 func OnBeforeCreate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
-	app.HookRegistry(name).RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
-		var v T
-		if err := unmarshalHookPayload(data, &v); err != nil {
-			return &hookBodyError{err: err}
-		}
-		before := snapshotDeepCopy(v)
-		if err := fn(ctx, &v); err != nil {
-			return err
-		}
-		if m, ok := data.(map[string]any); ok {
-			return mergeStructIntoMap(&before, &v, m)
-		}
-		return nil
-	})
+	registerValueHook(app, name, hook.BeforeCreate, true, fn)
 }
 
 // OnAfterCreate registers a typed AfterCreate hook on the inserted row. The
 // fields fn changes reach the response, not the stored row. It runs
 // before commit; an error rolls back the write.
 func OnAfterCreate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
-	app.HookRegistry(name).RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
-		var v T
-		if err := unmarshalHookPayload(data, &v); err != nil {
-			return err
-		}
-		before := snapshotDeepCopy(v)
-		if err := fn(ctx, &v); err != nil {
-			return err
-		}
-		if m, ok := data.(map[string]any); ok {
-			return mergeStructIntoMap(&before, &v, m)
-		}
-		return nil
-	})
+	registerValueHook(app, name, hook.AfterCreate, false, fn)
 }
 
 // OnBeforeUpdate registers a typed BeforeUpdate hook. *T holds only what
 // the caller sent; the fields fn changes are written back into the update.
 func OnBeforeUpdate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
-	app.HookRegistry(name).RegisterHook(hook.BeforeUpdate, func(ctx context.Context, data any) error {
-		var v T
-		if err := unmarshalHookPayload(data, &v); err != nil {
-			return &hookBodyError{err: err}
-		}
-		before := snapshotDeepCopy(v)
-		if err := fn(ctx, &v); err != nil {
-			return err
-		}
-		if m, ok := data.(map[string]any); ok {
-			return mergeStructIntoMap(&before, &v, m)
-		}
-		return nil
-	})
+	registerValueHook(app, name, hook.BeforeUpdate, true, fn)
 }
 
 // OnAfterUpdate registers a typed AfterUpdate hook on the updated row. The
 // fields fn changes reach the response, not the stored row.
 func OnAfterUpdate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
-	app.HookRegistry(name).RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
+	registerValueHook(app, name, hook.AfterUpdate, false, fn)
+}
+
+// registerValueHook decodes the payload into a *T, runs fn and merges the
+// fields fn changed back into the payload map. bodyErr marks a decode
+// failure as the caller's (a Before hook reads the request body); an After
+// hook reads a stored row, so its decode failure stays a server error.
+func registerValueHook[T any](app *App, name string, ht hook.HookType, bodyErr bool, fn func(ctx context.Context, value *T) error) {
+	app.HookRegistry(name).RegisterHook(ht, func(ctx context.Context, data any) error {
 		var v T
 		if err := unmarshalHookPayload(data, &v); err != nil {
+			if bodyErr {
+				return &hookBodyError{err: err}
+			}
 			return err
 		}
 		before := snapshotDeepCopy(v)

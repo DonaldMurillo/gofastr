@@ -2,7 +2,6 @@ package clitest
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -72,27 +71,4 @@ func AssertContains(t *testing.T, haystack, needle string) {
 	if !strings.Contains(haystack, needle) {
 		t.Fatalf("missing %q in:\n%s", needle, haystack)
 	}
-}
-
-func CaptureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	old := os.Stdout
-	f, err := os.CreateTemp(t.TempDir(), "stdout-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stdout = f
-	defer func() {
-		os.Stdout = old
-		_ = f.Close()
-	}()
-	fn()
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		t.Fatal(err)
-	}
-	out, err := io.ReadAll(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(out)
 }

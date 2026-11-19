@@ -188,7 +188,7 @@ func TestGenerateWarnsAuthDevMode(t *testing.T) {
 	clitest.CovT_chdir(t, dir)
 	path := filepath.Join(dir, "gofastr.yml")
 	clitest.WriteTestFile(t, path, "app:\n  name: Demo\n  module: example.com/demo\n  auth:\n    enabled: true\n")
-	output := clitest.CaptureStdout(t, func() {
+	output := clitest.CovT_capStdout(t, func() {
 		RunGenerateApp([]string{path, "--dry-run"})
 	})
 	if !strings.Contains(output, "dev mode") {
@@ -215,7 +215,7 @@ entities:
         type: string
         required: true
 `)
-	output := clitest.CaptureStdout(t, func() {
+	output := clitest.CovT_capStdout(t, func() {
 		RunGenerateApp([]string{path, "--dry-run"})
 	})
 	if !strings.Contains(output, "announcements") || !strings.Contains(output, "public: true") {
@@ -230,7 +230,7 @@ func TestGenerateFromAppSpecDryRunJSON(t *testing.T) {
 	clitest.CovT_chdir(t, dir)
 	path := filepath.Join(dir, "gofastr.yml")
 	clitest.WriteTestFile(t, path, clitest.TestAppSpecYAML())
-	output := clitest.CaptureStdout(t, func() {
+	output := clitest.CovT_capStdout(t, func() {
 		RunGenerateApp([]string{path, "--dry-run", "--json"})
 	})
 	var got struct {
