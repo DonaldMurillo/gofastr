@@ -199,16 +199,19 @@ func Run(p *Pass, opts RunOptions) (*Report, error) {
 				fmt.Sprintf("diagnostic references unknown rule %q at %s", d.RuleID, d.Location()))
 			continue
 		}
-		sev := p.Config.SeverityFor(rule)
-		if !opts.includesCapability(rule.Capability) || sev == SeverityOff {
+		if !opts.includesCapability(rule.Capability) {
 			continue
 		}
-		if p.Config.ExemptFor(rule, d.File) {
-			continue
-		}
-		if sup.suppressed(d, rule) {
-			report.noteSuppressed(rule.ID, d.File)
-			continue
+		sev := rule.Severity
+		if !d.Unwaivable {
+			sev = p.Config.SeverityFor(rule)
+			if sev == SeverityOff || p.Config.ExemptFor(rule, d.File) {
+				continue
+			}
+			if sup.suppressed(d, rule) {
+				report.noteSuppressed(rule.ID, d.File)
+				continue
+			}
 		}
 		d.Slug = rule.Slug
 		d.Capability = rule.Capability

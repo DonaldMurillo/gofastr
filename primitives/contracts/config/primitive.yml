@@ -105,14 +105,19 @@ invariants:
       - test: framework/contracts.TestStaleSuppressionIsWaivableLikeAnyFinding
       - test: framework/contracts.TestSweepEngineLineWaiverOfAStaleDirectiveIsNotItselfStale
   - id: baseline-counts-per-rule-and-file
-    rule: A baseline absorbs up to its recorded count of findings per (rule, file), wherever they move in the file, and the next one fails.
+    rule: A baseline absorbs up to its recorded count of waivable findings per (rule, file), wherever they move in the file, and the next one fails.
     enforced_by:
       - test: framework/contracts.TestBaselineAbsorbsExistingFindings
       - test: framework/contracts.TestBaselineDoesNotAbsorbNewFindings
   - id: baseline-records-gating-findings-only
-    rule: NewBaseline records only findings at or above the report's fail-on severity.
+    rule: NewBaseline records only waivable findings at or above the report's fail-on severity.
     enforced_by:
       - test: framework/contracts.TestBaselineRecordsOnlyGatingFindings
+  - id: rejected-custom-media-is-unwaivable
+    rule: When verify checks owned styles, a custom media query the compiler rejects stays an error under GOFASTR1814 through source waivers, config overrides and exemptions, and baselines because the generated initializer would panic at startup. Source hash findings under the same ID follow the ordinary waiver rules.
+    enforced_by:
+      - test: framework/contracts/analyzers.TestOwnedInvalidMediaCannotBeWaived
+      - test: framework/contracts/analyzers.TestOwnedStaleStyleSourceCanBeWaived
   - id: suppressed-finding-keeps-its-baseline-slot
     rule: A suppressed finding, a waived stale directive included, still claims its (rule, file) baseline slot whatever the fail floor, and the claimed slot is reported as over-accepting.
     enforced_by:

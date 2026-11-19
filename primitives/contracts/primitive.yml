@@ -4,6 +4,7 @@ code:
   - framework/contracts/
   - cmd/gofastr/internal/verifycmd/
   - internal/analyzers/suite/
+  - internal/contractsrun/
 docs:
   - framework/docs/content/contracts.md
 on_change:
@@ -30,7 +31,7 @@ invariants:
     enforced_by:
       - test: framework/contracts.TestPanickingAnalyzerDoesNotKillTheRun
   - id: catalog-decides-severity
-    rule: Run overwrites a diagnostic's Slug, Capability and Severity from the catalog and config, fills an empty Suggestion with the rule's Fix, and attaches the rule.
+    rule: Run sets Slug and Capability from the catalog and Severity from the catalog plus any applicable config override, fills an empty Suggestion with the rule's Fix, and attaches the rule.
     enforced_by:
       - test: framework/contracts.TestSweepEngineRunTakesSeverityFromTheCatalog
   - id: capability-filters-by-rule
@@ -126,6 +127,15 @@ invariants:
       - test: framework/contracts.TestPassMemoComputesOnce
       - test: framework/contracts.TestSweepEngineMemoKeepsTheFirstStoredValue
 decisions:
+  - id: cli-and-mcp-runner-is-internal
+    date: 2026-11-19
+    status: accepted
+    decision: The CLI and framework MCP share contract orchestration in the module-level internal/contractsrun package.
+    rejected:
+      - option: Export the orchestration from framework/contracts.
+        why: The CLI and MCP baseline and error policies would become part of the public library API.
+      - option: Put the orchestration under framework/internal.
+        why: The CLI cannot import a package under framework/internal.
   - id: catalog-is-data-in-one-file
     date: 2026-11-17
     status: accepted

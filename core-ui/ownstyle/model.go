@@ -141,10 +141,6 @@ type modelBuilder struct {
 	// groupPos records where each group's declaration lives, for
 	// mismatch diagnostics.
 	groupPos map[string]Pos
-
-	// lastBase is the base of the compound being folded ("" when the
-	// compound's base is :scope).
-	lastBase string
 }
 
 // rule folds one rule (recursing into at-rule blocks and nested style
@@ -178,37 +174,38 @@ func (b *modelBuilder) selector(r *Rule) {
 func (b *modelBuilder) compound(comp []Token, doc string) {
 	sig := significantTokens(comp)
 	isRoot := len(sig) >= 2 && sig[0].Type == TokenColon && sig[1].Type == TokenIdent && sig[1].Text == "scope"
-	rest := sig
-	if isRoot {
-		rest = sig[2:]
-	}
-	var classIdx []int // indexes into sig of (dot, ident) pairs
-	// A :has() argument is a relative selector naming other elements:
-	// its classes are folded as selectors of their own once this
-	// compound is done, never as this compound's variants. :is(),
-	// :where() and :not() still describe this element, so their
-	// classes stay in the scan.
+	type classToken struct{ dot, name Token }
+	var classes []classToken
+	// Keep :has() trivia for splitting its relative selectors into compounds.
 	var hasArgs [][]Token
-	for i := 0; i+1 < len(rest); i++ {
-		if rest[i].Type == TokenFunction && strings.EqualFold(rest[i].Text, "has(") {
+	for i := 0; i+1 < len(comp); i++ {
+		t := comp[i]
+		if t.Type == TokenFunction && strings.EqualFold(t.Text, "has(") {
 			depth, j := 1, i+1
-			for ; j < len(rest) && depth > 0; j++ {
-				switch rest[j].Type {
+			for ; j < len(comp); j++ {
+				switch comp[j].Type {
 				case TokenFunction, TokenOpenParen, TokenOpenSquare:
 					depth++
 				case TokenCloseParen, TokenCloseSquare:
 					depth--
 				}
+				if depth == 0 {
+					break
+				}
 			}
-			hasArgs = append(hasArgs, rest[i+1:j-1])
-			i = j - 1
+			hasArgs = append(hasArgs, comp[i+1:j])
+			i = j
 			continue
 		}
-		if rest[i].Type == TokenDelim && rest[i].Text == "." && rest[i+1].Type == TokenIdent {
-			if isKitClass(rest[i+1].Text) {
-				continue // kit class: not this sheet's vocabulary
+		if t.Type != TokenDelim || t.Text != "." {
+			continue
+		}
+		j := slices.IndexFunc(comp[i+1:], significant)
+		if j >= 0 {
+			name := comp[i+1+j]
+			if name.Type == TokenIdent && !isKitClass(name.Text) {
+				classes = append(classes, classToken{t, name})
 			}
-			classIdx = append(classIdx, i)
 		}
 	}
 	defer b.hasArguments(hasArgs)
@@ -217,23 +214,18 @@ func (b *modelBuilder) compound(comp []Token, doc string) {
 		// that rule's doc comment, even before any variant appears.
 		b.ensureRoot(doc)
 	}
-	if len(classIdx) == 0 {
+	if len(classes) == 0 {
 		return
 	}
+	base := ":scope"
 	if !isRoot {
-		b.lastBase = rest[classIdx[0]+1].Text
+		base = classes[0].name.Text
+		b.noteBase(base, doc, classes[0].dot)
+		classes = classes[1:]
 	}
-	first := true
-	for _, i := range classIdx {
-		dot, name := rest[i], rest[i+1]
-		if first && !isRoot {
-			b.noteBase(name.Text, doc, dot)
-		} else {
-			b.noteVariant(name.Text, doc, dot, isRoot && first)
-		}
-		first = false
+	for _, class := range classes {
+		b.noteVariant(base, class.name.Text, doc, class.dot)
 	}
-	b.lastBase = ""
 }
 
 // hasArguments folds each :has() argument as a selector list of its
@@ -268,9 +260,8 @@ func (b *modelBuilder) noteBase(name, doc string, dot Token) {
 	b.m.Classes = append(b.m.Classes, &ClassModel{Name: name, Doc: doc})
 }
 
-// noteVariant records a class used as a variant of the preceding base
-// in its compound. rootBase marks a variant on :scope.
-func (b *modelBuilder) noteVariant(name, doc string, dot Token, rootBase bool) {
+// noteVariant records a class used as a variant on its compound's base.
+func (b *modelBuilder) noteVariant(base, name, doc string, dot Token) {
 	role := b.roles[name]
 	if role.asBase {
 		b.reportClassTwice(name, dot)
@@ -279,30 +270,25 @@ func (b *modelBuilder) noteVariant(name, doc string, dot Token, rootBase bool) {
 	b.roles[name] = role
 
 	if group, value, ok := splitGroupValue(name); ok {
-		if rootBase {
-			b.ensureRoot(doc)
-			b.m.Root.Groups = appendUnique(b.m.Root.Groups, group)
+		b.addGroupValue(base, group, value, doc, dot)
+		if base == ":scope" {
+			root := b.ensureRoot(doc)
+			root.Groups = appendUnique(root.Groups, group)
+		} else if c := b.class(base); c != nil {
+			c.Groups = appendUnique(c.Groups, group)
 		}
-		b.addGroupValue(group, value, doc, dot)
 		return
 	}
 	flag := FlagModel{Name: name, Doc: doc}
-	if rootBase {
+	if base == ":scope" {
 		root := b.ensureRoot(doc)
 		if !hasFlag(root.Flags, name) {
 			root.Flags = append(root.Flags, flag)
 		}
 		return
 	}
-	// A flag lands on the last base introduced in this compound; the
-	// compound is processed left to right, so the most recent class in
-	// Classes from this compound is the base. Record it via the base
-	// that noteBase just appended (the LAST class in Classes whose
-	// variant this is). Track it through the builder's lastBase.
-	if b.lastBase != "" {
-		if c := b.class(b.lastBase); c != nil && !hasFlag(c.Flags, name) {
-			c.Flags = append(c.Flags, flag)
-		}
+	if c := b.class(base); c != nil && !hasFlag(c.Flags, name) {
+		c.Flags = append(c.Flags, flag)
 	}
 }
 
@@ -343,7 +329,7 @@ func (b *modelBuilder) ensureRoot(doc string) *RootModel {
 }
 
 // addGroupValue folds one "group--value" variant into the model.
-func (b *modelBuilder) addGroupValue(group, value, doc string, dot Token) {
+func (b *modelBuilder) addGroupValue(base, group, value, doc string, dot Token) {
 	g := b.group(group)
 	if g == nil {
 		g = &GroupModel{Name: group, Doc: doc}
@@ -354,46 +340,18 @@ func (b *modelBuilder) addGroupValue(group, value, doc string, dot Token) {
 		}
 		b.groupPos[group] = Pos{Line: dot.Line, Col: dot.Col}
 	}
+	byBase := b.groupValuesByBase[group]
+	if byBase == nil {
+		byBase = map[string][]string{}
+		b.groupValuesByBase[group] = byBase
+	}
+	byBase[base] = appendUnique(byBase[base], value)
 	for _, v := range g.Values {
 		if v.Value == value {
 			return
 		}
 	}
 	g.Values = append(g.Values, GroupValueModel{Value: value, Doc: doc})
-	// The same-value-set rule is checked in finish, once every base's
-	// set is known; remember which base declared what.
-	if b.lastBase != "" {
-		if b.groupValuesByBase == nil {
-			b.groupValuesByBase = map[string]map[string][]string{}
-		}
-		byBase := b.groupValuesByBase[group]
-		if byBase == nil {
-			byBase = map[string][]string{}
-			b.groupValuesByBase[group] = byBase
-		}
-		if !slices.Contains(byBase[b.lastBase], value) {
-			byBase[b.lastBase] = append(byBase[b.lastBase], value)
-		}
-	} else {
-		// :scope is its own base.
-		if b.groupValuesByBase == nil {
-			b.groupValuesByBase = map[string]map[string][]string{}
-		}
-		byBase := b.groupValuesByBase[group]
-		if byBase == nil {
-			byBase = map[string][]string{}
-			b.groupValuesByBase[group] = byBase
-		}
-		if !slices.Contains(byBase[":scope"], value) {
-			byBase[":scope"] = append(byBase[":scope"], value)
-		}
-	}
-	// A base using a group records the group on the class model.
-	if b.lastBase != "" {
-		if c := b.class(b.lastBase); c != nil {
-			c.Groups = appendUnique(c.Groups, group)
-		}
-	}
 }
 
 // group finds a group model by name.
@@ -408,22 +366,15 @@ func (b *modelBuilder) group(name string) *GroupModel {
 
 // finish validates the group value sets across bases.
 func (b *modelBuilder) finish() {
-	for group, byBase := range b.groupValuesByBase {
+	for _, group := range slices.Sorted(maps.Keys(b.groupValuesByBase)) {
+		byBase := b.groupValuesByBase[group]
 		if len(byBase) < 2 {
 			continue
 		}
-		var reference []string
-		refBase := ""
-		for _, base := range slices.Sorted(maps.Keys(byBase)) {
-			if refBase == "" {
-				refBase, reference = base, byBase[base]
-			}
-		}
-		for base, values := range byBase {
-			if base == refBase {
-				continue
-			}
-			if !sameValueSet(reference, values) {
+		bases := slices.Sorted(maps.Keys(byBase))
+		refBase := bases[0]
+		for _, base := range bases[1:] {
+			if !sameValueSet(byBase[refBase], byBase[base]) {
 				pos := b.groupPos[group]
 				b.diags = append(b.diags, Diagnostic{
 					Rule:     RuleGroupMismatch,
@@ -436,7 +387,7 @@ func (b *modelBuilder) finish() {
 			}
 		}
 	}
-	slices.SortFunc(b.diags, func(a, b Diagnostic) int {
+	slices.SortStableFunc(b.diags, func(a, b Diagnostic) int {
 		if a.Line != b.Line {
 			return a.Line - b.Line
 		}

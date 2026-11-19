@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/names"
 )
 
 // RuleRepeatedLiteral is GOFASTR1822 (warn): one literal value written
@@ -14,59 +16,52 @@ import (
 // of them forks the look.
 const RuleRepeatedLiteral = "GOFASTR1822"
 
-// allowMarker is a gofastr:allow directive at the start of a CSS
-// comment: the rule list, then the mandatory reason.
-var allowMarker = regexp.MustCompile(`^/\*\s*gofastr:allow\(([^)]*)\)\s*(.*?)\s*\*/$`)
-
-// Suppressed reports whether a gofastr:allow(<rule>) <reason> comment
-// in src waives d, the way `gofastr verify` reads the marker: the
-// comment must open with the directive and carry a reason (a bare
-// marker silences nothing), and it covers its own line when it trails
-// code, or the next line holding code when it stands alone. Rules are
-// matched by GOFASTR id. `gofastr gen styles` filters through this so
-// a waived finding does not block the generated Go.
+// Suppressed reports whether a gofastr:allow or gofastr:allow-file CSS
+// comment waives d by rule ID. A waiver requires a reason.
 func Suppressed(src string, d Diagnostic) bool {
-	toks := Tokenize(src)
-	for i, t := range toks {
+	if !strings.Contains(src, "gofastr:allow") {
+		return false
+	}
+	bomLen := len(src) - len(stripBOM(src))
+	for _, t := range Tokenize(src) {
 		if t.Type != TokenComment {
 			continue
 		}
-		m := allowMarker.FindStringSubmatch(t.Text)
-		if m == nil || m[2] == "" {
+		m, ok := names.ParseMarker(t.Text)
+		if !ok || m.Reason == "" || slices.Contains(m.Rules, "*") ||
+			slices.ContainsFunc(m.Rules, func(r string) bool { return strings.EqualFold(r, "all") }) {
 			continue
 		}
-		named := false
-		for _, r := range strings.Split(m[1], ",") {
-			if strings.EqualFold(strings.TrimSpace(r), d.Rule) {
-				named = true
-			}
+		if !slices.ContainsFunc(m.Rules, func(r string) bool { return strings.EqualFold(r, d.Rule) }) {
+			continue
 		}
-		if named && markerScope(toks, i) == d.Line {
+		if m.File || (d.Line >= t.Line && d.Line <= CSSWaiverScopeEnd(src, t.Start+bomLen, t.End+bomLen, t.Line)) {
 			return true
 		}
 	}
 	return false
 }
 
-// markerScope is the line the comment at toks[i] covers.
-func markerScope(toks []Token, i int) int {
-	c := toks[i]
-	end := c.Line + strings.Count(c.Text, "\n")
-	for j := i - 1; j >= 0 && toks[j].Line == c.Line; j-- {
-		if significant(toks[j]) {
-			return c.Line // trails code on its first line
+// CSSWaiverScopeEnd returns the last line covered by a CSS waiver comment.
+// start and end are byte offsets in src, including any leading BOM.
+func CSSWaiverScopeEnd(src string, start, end, line int) int {
+	lineStart := strings.LastIndexByte(src[:start], '\n') + 1
+	before := src[lineStart:start]
+	if lineStart == 0 {
+		before = stripBOM(before)
+	}
+	after, rest, hasNextLine := strings.Cut(src[end:], "\n")
+	if !hasNextLine || strings.TrimSpace(before) != "" || strings.TrimSpace(after) != "" {
+		return line
+	}
+	covered := line + strings.Count(src[start:end], "\n")
+	for next := range strings.SplitSeq(rest, "\n") {
+		covered++
+		if strings.TrimSpace(next) != "" {
+			return covered
 		}
 	}
-	for j := i + 1; j < len(toks); j++ {
-		if !significant(toks[j]) {
-			continue
-		}
-		if toks[j].Line == end {
-			return end // code follows on its last line
-		}
-		return toks[j].Line
-	}
-	return end
+	return line
 }
 
 // SheetSource is one owned sheet's path and bytes, for the
@@ -136,7 +131,7 @@ func RepeatedLiteralsIn(sheets []SheetSource, tokens map[string]string) []Repeat
 					if v == "" || bareKeyword(v) || strings.Contains(lv, "var(") || strings.Contains(v, "{") || structuralLiteral(prop, lv) {
 						continue
 					}
-					if tokenValueFor(valueIndex[lv], cats) {
+					if tokenValueFor(valueIndex[normalizeNumber(lv)], cats) {
 						continue
 					}
 					k := key{cats[0], lv}

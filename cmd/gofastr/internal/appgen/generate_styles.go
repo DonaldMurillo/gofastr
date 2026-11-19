@@ -570,7 +570,7 @@ Run "gofastr docs cli" for the CLI map.`)
 // them is an error (the file's Go must not be written).
 func printDiagnostics(rel, src string, diags []ownstyle.Diagnostic) (hasErr bool) {
 	for _, d := range diags {
-		if ownstyle.Suppressed(src, d) {
+		if d.Rule != ownstyle.RuleInvalidMedia && ownstyle.Suppressed(src, d) {
 			continue
 		}
 		cli.Printf("%s:%d:%d: %s %s %s\n", rel, d.Line, d.Col, d.Severity, d.Rule, d.Message)

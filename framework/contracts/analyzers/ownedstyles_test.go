@@ -3,6 +3,7 @@ package analyzers_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -112,6 +113,107 @@ func TestOwnedRawMediaWidth(t *testing.T) {
 	fireAndQuiet(t, contracts.RuleRawMediaWidth, "board",
 		"@media (min-width: 700px) { .a { order: 1; } }\n", 1, 20,
 		"@media (--above-md) { .a { order: 1; } }\n")
+}
+
+func TestOwnedInvalidCustomMedia(t *testing.T) {
+	for _, tc := range []struct {
+		query, want string
+	}{
+		{"(--typo)", "unknown custom media --typo"},
+		{"(--above-typo)", "unknown custom media --above-typo: the theme declares breakpoints"},
+		{"not (--dark)", "custom medium --dark must stand alone or combine with `and`"},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			d := fireAndQuiet(t, contracts.RuleStaleStyleSource, "board",
+				".a {\n  @media "+tc.query+" { color: inherit; }\n}\n", 2, 3,
+				".a {\n  @media ( --above-md ) and (--dark) { color: inherit; }\n}\n")
+			if !strings.Contains(d.Message, tc.want) {
+				t.Errorf("message = %q, want %q", d.Message, tc.want)
+			}
+		})
+	}
+}
+
+func TestOwnedInvalidMediaCannotBeWaived(t *testing.T) {
+	const sheetPath = "board/board.style.css"
+	const invalidQuery = "@media (--typo) { .a { color: inherit; } }\n"
+	const rule = contracts.RuleStaleStyleSource
+	for _, tc := range []struct {
+		name, prefix, config string
+		baseline             bool
+	}{
+		{name: "line waiver", prefix: "/* gofastr:allow(GOFASTR1814) accepted debt */\n"},
+		{name: "file waiver", prefix: "/* gofastr:allow-file(GOFASTR1814) accepted debt */\n"},
+		{name: "rule disabled", config: "  rules:\n    GOFASTR1814: off\n"},
+		{name: "rule downgraded", config: "  rules:\n    GOFASTR1814: warn\n"},
+		{name: "path exemption", config: "  rules:\n    GOFASTR1814:\n      exempt: [board/board.style.css]\n"},
+		{name: "global path exemption", config: "  exempt: [board/board.style.css]\n"},
+		{name: "baseline", baseline: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			files := ownedPair(t, "board", "board", "board", tc.prefix+invalidQuery)
+			files["go.mod"] = "module example.com/app\n\ngo 1.26\n"
+			if tc.config != "" {
+				files["gofastr.settings.yml"] = "contracts:\n" + tc.config
+			}
+			seedFixture(t, dir, files)
+			cfg, err := contracts.LoadConfig(dir, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			pass, err := contracts.NewPass(dir, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			report, err := contracts.Run(pass, contracts.RunOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.baseline {
+				recorded := contracts.NewBaseline(report, time.Time{}, "")
+				if recorded.Counts[rule][sheetPath] != 0 {
+					t.Errorf("baseline recorded the invalid media diagnostic: %v", recorded.Counts)
+				}
+				report.ApplyBaseline(&contracts.Baseline{
+					Counts: map[string]map[string]int{rule: {sheetPath: 1}},
+				})
+			}
+			d := assertHas(t, report.Diagnostics, rule)
+			if d.File != sheetPath || d.Line != 1+strings.Count(tc.prefix, "\n") || d.Column != 1 ||
+				d.Severity != contracts.SeverityError || !strings.Contains(d.Message, "unknown custom media --typo") {
+				t.Errorf("want an invalid custom media error at the query, got %+v", d)
+			}
+		})
+	}
+}
+
+func TestOwnedStaleStyleSourceCanBeWaived(t *testing.T) {
+	files := ownedPair(t, "board", "board", "board", ".a { color: inherit; }\n")
+	const sheetPath = "board/board.style.css"
+	files[sheetPath] = "/* gofastr:allow(GOFASTR1814) defer regeneration */\n" + files[sheetPath]
+	ds := fixture(t, files)
+	assertNot(t, ds, contracts.RuleStaleStyleSource, "the waiver covers the stale source hash")
+	assertNot(t, ds, contracts.RuleSuppressionStale, "the waiver matched the stale source hash")
+}
+
+func TestKitRootStyleFiresOnNestedMediaDeclarations(t *testing.T) {
+	const css = `.column {
+  @media (--above-md) {
+    margin: 0;
+    color: inherit;
+    .child { color: inherit; }
+    @keyframes fade { from { color: inherit; } }
+  }
+}
+`
+	ds := fixture(t, merge(ownedPair(t, "board", "board", "board", css), map[string]string{
+		"view/view.go": kitViewPrefix + "func v() any { return ui.Card(ui.CardConfig{Class: board.Style.Column()}) }\n",
+	}))
+	found := countRule(t, ds, contracts.RuleKitRootStyle)
+	if len(found) != 1 || found[0].Line != 4 || found[0].Column != 5 || !strings.Contains(found[0].Message, "color: .column") {
+		t.Fatalf("want the media declaration at 4:5, got %v", found)
+	}
 }
 
 func TestOwnedAnimationIsWarn(t *testing.T) {

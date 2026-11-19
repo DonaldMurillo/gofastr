@@ -308,11 +308,8 @@ func (c *compiler) chainNode(link *Rule, decls []*Decl, children []*enode) (*eno
 }
 
 // darkInterior builds the content inside an already-dark split. Nested
-// rules render verbatim (nesting composes); a further (--dark) folds —
-// its conditions already hold — joining its declarations to the
-// ENCLOSING rule's (returned in decls, for the caller to attach) and
-// its rules at its position; a non-dark media keeps its wrapper, with
-// whatever declarations fold out of its interior; @keyframes hoists.
+// rules retain their nesting. A media wrapper folds when removing its
+// dark term leaves no conditions. Keyframes hoist.
 func (c *compiler) darkInterior(rules []*Rule, conds []string) (decls []*Decl, nodes []*enode, kfs []*kfSeg, err error) {
 	for _, r := range rules {
 		if err := containerMediaError(r); err != nil {
@@ -327,29 +324,21 @@ func (c *compiler) darkInterior(rules []*Rule, conds []string) (decls []*Decl, n
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("%d:%d: %w", r.Pos.Line, r.Pos.Col, err)
 			}
-			if isDark {
-				folded, inner, innerKfs, ferr := c.darkInterior(r.Nested, conds)
-				if ferr != nil {
-					return nil, nil, nil, ferr
-				}
-				// The wrapper drops; its declarations (they apply to
-				// the enclosing rule) and its rules join at its
-				// position, source order kept.
+			folded, children, innerKfs, err := c.darkInterior(r.Nested, conds)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			kfs = append(kfs, innerKfs...)
+			if isDark && len(parts) == 0 {
 				decls = append(decls, r.Decls...)
 				decls = append(decls, folded...)
-				nodes = append(nodes, inner...)
-				kfs = append(kfs, innerKfs...)
+				nodes = append(nodes, children...)
 				continue
 			}
-			wDecls, wChildren, wKfs, ferr := c.darkInterior(r.Nested, conds)
-			if ferr != nil {
-				return nil, nil, nil, ferr
-			}
-			kfs = append(kfs, wKfs...)
 			nodes = append(nodes, &enode{
-				rule:     &Rule{Block: true, Prel: r.Prel, Decls: wDecls},
+				rule:     &Rule{Block: true, Prel: r.Prel, Decls: append(slices.Clone(r.Decls), folded...)},
 				media:    strings.Join(parts, " and "),
-				children: wChildren,
+				children: children,
 			})
 
 		default:
@@ -422,8 +411,8 @@ func (c *compiler) expandMediaQuery(prel []Token) (parts []string, isDark bool, 
 		if len(cond) == 0 {
 			continue
 		}
-		if isCustomMedium(cond) {
-			expanded, dark, err := c.expandCustomMedium(cond[1].Text, cond[1])
+		if sig := significantTokens(cond); isCustomMedium(sig) {
+			expanded, dark, err := c.expandCustomMedium(sig[1].Text)
 			if err != nil {
 				return nil, false, err
 			}
@@ -445,7 +434,7 @@ func (c *compiler) expandMediaQuery(prel []Token) (parts []string, isDark bool, 
 	return parts, isDark, nil
 }
 
-// isCustomMedium reports whether cond is exactly "( --name )".
+// isCustomMedium reports whether the significant tokens form "(--name)".
 func isCustomMedium(cond []Token) bool {
 	return len(cond) == 3 &&
 		cond[0].Type == TokenOpenParen &&
@@ -517,7 +506,7 @@ func splitOnAnd(prel []Token) [][]Token {
 }
 
 // expandCustomMedium expands one custom media name.
-func (c *compiler) expandCustomMedium(name string, at Token) (string, bool, error) {
+func (c *compiler) expandCustomMedium(name string) (string, bool, error) {
 	switch name {
 	case "--dark":
 		return "", true, nil
@@ -540,10 +529,12 @@ func (c *compiler) expandCustomMedium(name string, at Token) (string, bool, erro
 		if err != nil {
 			return "", false, fmt.Errorf("breakpoint --%s has a non-numeric value %q", bp, px)
 		}
-		return "(max-width: " + strconv.FormatFloat(v-0.02, 'f', -1, 64) + "px)", false, nil
+		return "(max-width: " + strconv.FormatFloat(v-belowBreakpointOffset, 'f', -1, 64) + "px)", false, nil
 	}
 	return "", false, fmt.Errorf("unknown custom media %s (known: --above-<bp>, --below-<bp>, --reduced-motion, --dark)", name)
 }
+
+const belowBreakpointOffset = 0.02
 
 // breakpointValue is the raw token value ("768px") of a named
 // breakpoint.
@@ -651,9 +642,9 @@ func (c *compiler) emitDecl(d *Decl, rename bool) string {
 		return out
 	}
 	val := d.Value
-	if rename && (name == "animation" || name == "animation-name") {
+	if prop := propName(d); rename && (prop == "animation" || prop == "animation-name") {
 		val = slices.Clone(d.Value)
-		for _, i := range animationNameTokens(val, name == "animation") {
+		for _, i := range animationNameTokens(val, prop == "animation") {
 			if nn, ok := c.kfRename[val[i].Text]; ok {
 				val[i].Text = nn
 			}

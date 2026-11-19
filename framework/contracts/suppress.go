@@ -57,7 +57,11 @@ func collectSuppressions(p *Pass) *suppressionSet {
 			sup := &suppression{File: f.Rel, Comment: c, IsFile: marker.File, Reason: marker.Reason}
 			if !sup.IsFile {
 				sup.Scope = c.Line
-				sup.ScopeEnd = scopeEndFor(p, f.Rel, scopeLineFor(source, c))
+				if f.IsCSS {
+					sup.ScopeEnd = ownstyle.CSSWaiverScopeEnd(source, c.Start, c.End, c.Line)
+				} else {
+					sup.ScopeEnd = scopeEndFor(p, f.Rel, scopeLineFor(source, c))
+				}
 			}
 			set.add(p, sup, marker.Rules)
 		}

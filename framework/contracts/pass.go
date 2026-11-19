@@ -211,9 +211,18 @@ func (p *Pass) TestFiles() []SourceFile {
 // StyleFiles returns the non-generated .css files configuration has not
 // exempted.
 func (p *Pass) StyleFiles() []SourceFile {
+	return p.styleFiles(false)
+}
+
+// ExemptStyleFiles returns non-generated CSS covered by global path exemptions.
+func (p *Pass) ExemptStyleFiles() []SourceFile {
+	return p.styleFiles(true)
+}
+
+func (p *Pass) styleFiles(exempt bool) []SourceFile {
 	var out []SourceFile
 	for _, f := range p.files {
-		if !f.IsCSS || f.IsGenerated || p.Config.ExemptPath(f.Rel) {
+		if !f.IsCSS || f.IsGenerated || p.Config.ExemptPath(f.Rel) != exempt {
 			continue
 		}
 		out = append(out, f)

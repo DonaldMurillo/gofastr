@@ -488,7 +488,11 @@ func (s *scanner) consumeBadURLRemnants() {
 // consume algorithms. It never fails: malformed input yields bad-string
 // / bad-url tokens and unterminated comments that the parser reports.
 func Tokenize(src string) []Token {
-	s := newScanner(stripBOM(src))
+	return tokenize(stripBOM(src))
+}
+
+func tokenize(src string) []Token {
+	s := newScanner(src)
 	out := make([]Token, 0, 64)
 	emit := func(t TokenType, start, line, col int) {
 		out = append(out, Token{t, s.src[start:s.pos], line, col, start, s.pos})

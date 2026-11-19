@@ -25,6 +25,29 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **An unknown custom media query in an owned stylesheet is caught
+  before the app starts.** `gofastr gen styles` and `gofastr verify`
+  passed `@media (--typo)` and the generated initializer panicked at
+  startup. Generation now refuses the sheet with the compiler's message,
+  and verify reports it under GOFASTR1814 as an error that no waiver,
+  config override, exemption or baseline can hide. Custom-media terms
+  also accept whitespace and comments inside their parentheses.
+- **Owned stylesheets compile what they say.** A group value shared by
+  two bases now appears in both typed APIs, every variant in a `:scope`
+  compound reaches the root, and descendants inside `:has()` are
+  separate classes. Dark builds keep direct declarations in nested media
+  blocks and keep the width condition when an inner query also names
+  `--dark`. Case-variant animation properties reference the scoped
+  keyframes. A UTF-8 BOM, or comments before a declaration's colon or
+  inside `!important`, no longer shift source slices or break parsing.
+- **Owned-style diagnostics point the right way.** Raw width queries
+  suggest the breakpoint in the right direction and explain inclusive
+  bounds; a repeated number spelled differently from an equal theme
+  token gets only the hardcoded-token diagnostic; verify flags restyling
+  declarations in nested media on kit component roots; CSS waivers use
+  the same grammar and line scope in generation and verify; and an app
+  tokens file refuses a second dark block or rules nested in its dark
+  `:root`.
 - **Default camelCase wire keys keep non-ASCII bytes intact.** A
   snake_case name whose segment starts with a multibyte character
   (`a_é`) became a corrupted key; the generator and the framework now

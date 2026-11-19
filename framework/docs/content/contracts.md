@@ -135,14 +135,21 @@ vocabulary the app calls; edit one without regenerating the other and
 the Go silently serves the old CSS. `testdata/` trees are skipped.
 Regenerate with `gofastr gen styles` (see the [CLI](cli.md)).
 
-Every other owned-style check runs the same code `gofastr gen styles`
-runs before it writes Go (`core-ui/ownstyle`), against the same token
-set: the built-in theme plus every app token the program's
-`*.tokens.css` files declare ([theming](theming.md#app-tokens-in-css-nametokenscss)).
-The generator and `gofastr verify` share one program grouping — the
-same grouping GOFASTR1816 and GOFASTR1822 judge, per target platform —
-so the two cannot disagree about a sheet, and a sheet two programs
-share satisfies each program's tokens, not their union.
+Verify also reports custom media queries that the owned-style compiler
+rejects under GOFASTR1814, even when the generated source hash matches.
+Fix the query at the reported position and rerun `gofastr gen styles`.
+These errors stay visible through CSS waivers, config exemptions and
+severity overrides, and baselines.
+
+`gofastr gen styles` and `gofastr verify` share the owned-style checks and
+group sheets by program and target platform. Each group sees the built-in
+theme plus the app tokens declared by its own `*.tokens.css` files
+([theming](theming.md#app-tokens-in-css-nametokenscss)). A sheet shared by
+multiple programs must satisfy each program's token set.
+
+`gofastr gen styles` reports parse and model diagnostics before writing Go.
+`gofastr verify` reports the shared diagnostics with GOFASTR rule IDs and
+also checks for upstream candidates, kit-root styling, and handle leaks.
 Findings point at the CSS line and column. `testdata/` trees are
 skipped here too. Inside a `.css` file, a
 `/* gofastr:allow(GOFASTRnnnn) reason */` comment waives the rule on

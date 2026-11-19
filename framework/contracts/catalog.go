@@ -1129,13 +1129,13 @@ func renderingRules() []Rule {
 	}, {
 		ID: RuleStaleStyleSource, Slug: "rendering/stale-style-source",
 		Title: "Owned style CSS changed since its Go was generated", Capability: CapRendering, Severity: SeverityError,
-		Summary: "A *.style.css has no sibling <name>_style.gen.go (a *.tokens.css no <name>_tokens.gen.go), or the sibling's Source hash does not match the CSS bytes.",
+		Summary: "The generated Go sibling of a *.style.css or *.tokens.css is missing or stale, or an owned stylesheet uses a custom media query the compiler rejects.",
 		Why: "The generated file is the only thing connecting a hand-written stylesheet to the type-checked class vocabulary: " +
 			"the CSS constant, the ownstyle.Must registration and every class method are frozen at generate time. Edit the " +
 			"CSS without regenerating and the Go silently serves the OLD bytes — the class methods keep naming classes the " +
 			"sheet no longer declares, and the scope still loads the stale CSS. Nothing else can see the drift: the CSS is " +
-			"valid CSS and the Go is valid Go.",
-		Fix: "Run `gofastr gen styles` (regenerates every <name>_style.gen.go and <name>_tokens.gen.go whose CSS changed, and writes .gofastr/tokens.css for editor completion). Never hand-edit a generated file.",
+			"valid CSS and the Go is valid Go. A rejected custom media query can also make the generated initializer panic at startup.",
+		Fix: "Fix any rejected custom media query at the reported position, then run `gofastr gen styles` to regenerate the Go. Never hand-edit a generated file.",
 		Doc: "cli",
 		Examples: []Example{{
 			Bad:  "/* board.style.css */\n:scope { display: grid; }\n/* edited after board_style.gen.go was generated;\n   its Source hash line no longer matches these bytes */",

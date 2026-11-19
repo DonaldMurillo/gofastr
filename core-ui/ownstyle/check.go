@@ -50,6 +50,8 @@ const (
 	// instead of a custom media name (raw widths stay legal in
 	// @container).
 	RuleRawMediaWidth = "GOFASTR1812"
+	// RuleInvalidMedia marks a source query the owned-style compiler rejects.
+	RuleInvalidMedia = "invalid-media"
 	// RuleAnimationWithoutReducedMotion is GOFASTR1813 (warn): an
 	// animation with no @media (--reduced-motion) block for the same
 	// selector.
@@ -89,7 +91,7 @@ func (d Diagnostic) String() string {
 
 // Check parses src and runs every CSS-only owned-style check against
 // it: GOFASTR1806, 1807, 1808, 1810, 1811, 1812, 1813 (warn), 1819
-// (Kind App only), 1820, plus parse errors. tokens is the running
+// (Kind App only), 1820, plus parse and custom media errors. tokens is the running
 // theme's token map (style.ThemeToTokens); breakpoints come from its
 // --breakpoint-* entries. file is reserved for the caller's own
 // reporting and is not used — the Diagnostic carries only positions.
@@ -372,6 +374,10 @@ func (c *checker) walk(r *Rule, inRM, inKF bool) {
 	}
 	switch {
 	case r.At && r.Name == "media":
+		expander := compiler{breakpoints: c.breakpoints}
+		if _, _, err := expander.expandMediaQuery(r.Prel); err != nil {
+			c.report(Diagnostic{Rule: RuleInvalidMedia, Severity: SeverityError, Line: r.Pos.Line, Col: r.Pos.Col, Message: err.Error()})
+		}
 		c.checkMediaWidths(r)
 	case r.At && !r.Block && r.Name != "layer":
 		c.report(Diagnostic{
@@ -404,7 +410,8 @@ func (c *checker) checkMediaWidths(r *Rule) {
 		if t.Type != TokenIdent {
 			continue
 		}
-		switch t.Text {
+		feature := strings.ToLower(t.Text)
+		switch feature {
 		case "min-width", "max-width", "width":
 		default:
 			continue
@@ -422,21 +429,31 @@ func (c *checker) checkMediaWidths(r *Rule) {
 					Severity: SeverityError,
 					Line:     v.Line,
 					Col:      v.Col,
-					Message:  c.rawWidthMessage(v.Text),
+					Message:  c.rawWidthMessage(v.Text, widthComparison(prel[k+1:i], true)),
 				})
 			}
 		}
 		// The feature's value: after ':' or a comparison operator.
 		j := i + 1
+		var comparison string
 		if j < len(prel) && prel[j].Type == TokenColon {
 			j++
+			switch feature {
+			case "min-width":
+				comparison = ">="
+			case "max-width":
+				comparison = "<="
+			default:
+				comparison = "="
+			}
 		} else {
 			// Range syntax: width > 768px, or 768px < width.
 			for j < len(prel) && isComparisonDelim(prel[j]) {
 				j++
 			}
+			comparison = widthComparison(prel[i+1:j], false)
 		}
-		if j >= len(prel) {
+		if j >= len(prel) || comparison == "" {
 			continue
 		}
 		v := prel[j]
@@ -448,9 +465,24 @@ func (c *checker) checkMediaWidths(r *Rule) {
 			Severity: SeverityError,
 			Line:     v.Line,
 			Col:      v.Col,
-			Message:  c.rawWidthMessage(v.Text),
+			Message:  c.rawWidthMessage(v.Text, comparison),
 		})
 	}
+}
+
+func widthComparison(tokens []Token, reversed bool) string {
+	var op strings.Builder
+	for _, t := range tokens {
+		switch {
+		case reversed && t.Text == "<":
+			op.WriteByte('>')
+		case reversed && t.Text == ">":
+			op.WriteByte('<')
+		default:
+			op.WriteString(t.Text)
+		}
+	}
+	return op.String()
 }
 
 // isComparisonDelim reports whether t is <, > or = (range syntax).
@@ -480,40 +512,62 @@ func widthToPx(raw string) (float64, string, bool) {
 	return n, m[2], true
 }
 
-// rawWidthMessage names the theme breakpoints that bracket the raw
-// width, in the design doc's voice. A width that EQUALS a breakpoint
-// (the kit's own sheets spell it in rem: min-width: 48rem) names that
-// breakpoint and its custom medium.
-func (c *checker) rawWidthMessage(raw string) string {
+// rawWidthMessage suggests bounds in the direction of the original query.
+func (c *checker) rawWidthMessage(raw, comparison string) string {
+	if comparison == "=" {
+		return fmt.Sprintf("%s is a raw width; no custom medium expresses equality", raw)
+	}
 	px, unit, ok := widthToPx(raw)
 	msg := fmt.Sprintf("%s is not a theme breakpoint", raw)
 	if !ok || len(c.breakpoints) == 0 {
 		return msg
 	}
+	upper := strings.HasPrefix(comparison, "<")
 	var exact *breakpoint
 	var below, above *breakpoint
 	for i := range c.breakpoints {
-		bp := c.breakpoints[i]
+		bp := &c.breakpoints[i]
+		if upper && px == bp.px-belowBreakpointOffset {
+			msg := fmt.Sprintf("%s is the upper limit of (--below-%s); use (--below-%s)", raw, bp.name, bp.name)
+			if comparison == "<" {
+				msg += " if you mean at or below that limit"
+			}
+			return msg
+		}
 		switch {
 		case bp.px == px:
-			exact = &c.breakpoints[i]
+			exact = bp
 		case bp.px < px:
-			below = &c.breakpoints[i]
+			below = bp
 		case bp.px > px && above == nil:
-			above = &c.breakpoints[i]
+			above = bp
 		}
 	}
 	suggest := func(bp breakpoint) string {
+		if upper {
+			return fmt.Sprintf("(--below-%s) (max-width: %gpx)", bp.name, bp.px-belowBreakpointOffset)
+		}
 		return fmt.Sprintf("(--above-%s) %gpx", bp.name, bp.px)
 	}
 	switch {
 	case exact != nil:
 		if unit == "px" {
-			msg = fmt.Sprintf("%s is the %s breakpoint; use (--above-%s) so the theme can move it",
-				raw, exact.name, exact.name)
+			msg = fmt.Sprintf("%s is the %s breakpoint", raw, exact.name)
 		} else {
-			msg = fmt.Sprintf("%s is %gpx, the %s breakpoint; use (--above-%s)",
-				raw, px, exact.name, exact.name)
+			msg = fmt.Sprintf("%s is %gpx, the %s breakpoint", raw, px, exact.name)
+		}
+		switch comparison {
+		case "<=":
+			msg += fmt.Sprintf("; use (--below-%s) if you mean below the breakpoint (max-width: %gpx)", exact.name, px-belowBreakpointOffset)
+		case "<":
+			msg += "; use " + suggest(*exact)
+		case ">":
+			msg += fmt.Sprintf("; use (--above-%s) if you mean at or above the breakpoint", exact.name)
+		case ">=":
+			msg += fmt.Sprintf("; use (--above-%s)", exact.name)
+			if unit == "px" {
+				msg += " so the theme can move it"
+			}
 		}
 	case below != nil && above != nil:
 		msg += "; use " + suggest(*below) + " or " + suggest(*above)

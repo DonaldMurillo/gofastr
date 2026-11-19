@@ -83,6 +83,41 @@ func TestRepeatedLiterals(t *testing.T) {
 	}
 }
 
+func TestRepeatedLiteralsSkipEquivalentNumber(t *testing.T) {
+	sheets := []SheetSource{
+		{File: "a.style.css", Src: ".a { opacity: 0.60; }"},
+		{File: "b.style.css", Src: ".b { opacity: 0.60; }"},
+	}
+	tokens := map[string]string{"opacity-muted": "0.6"}
+	ds := Check(sheets[0].File, sheets[0].Src, KindScoped, tokens)
+	if len(ds) != 1 || ds[0].Rule != RuleHardcodedTokenValue {
+		t.Fatalf("want GOFASTR1807, got %v", ds)
+	}
+	if got := RepeatedLiteralsIn(sheets, tokens); len(got) != 0 {
+		t.Errorf("GOFASTR1807 already covers this value, got repeated literals %v", got)
+	}
+}
+
+func TestSuppressedUsesSharedMarkerGrammarAndScope(t *testing.T) {
+	for _, tc := range []struct {
+		name, src string
+		line      int
+		want      bool
+	}{
+		{"space-separated rules", "/* gofastr:allow(GOFASTR1811 GOFASTR1806) legacy */\n.a{}", 2, true},
+		{"separator without reason", "/* gofastr:allow(GOFASTR1806) --: */\n.a{}", 2, false},
+		{"standalone spans blank lines", "\ufeff/* gofastr:allow(GOFASTR1806) legacy */\n\n.a{}", 2, true},
+		{"multiline with code on last line", "/* gofastr:allow(GOFASTR1806) legacy\n*/ .a{}", 2, false},
+		{"file scope", "/* gofastr:allow-file(GOFASTR1806) legacy */\n.a{}\n.b{}", 3, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Suppressed(tc.src, Diagnostic{Rule: RuleUnknownThemeToken, Line: tc.line}); got != tc.want {
+				t.Errorf("Suppressed at line %d = %t, want %t", tc.line, got, tc.want)
+			}
+		})
+	}
+}
+
 // A property name is read decoded and case folded, as in Check: an
 // escaped or upper-case padding still writes the repeated literal.
 func TestRepeatedLiteralsEscapedName(t *testing.T) {
