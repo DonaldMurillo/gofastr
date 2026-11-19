@@ -31,6 +31,15 @@ func runStackScript(t *testing.T, body string, args ...string) (out string, code
 	return runStackScriptEnv(t, body, nil, args...)
 }
 
+// stackCalls runs stack.sh and returns its output and the gh command lines it ran.
+func stackCalls(t *testing.T, body string, args ...string) (out string, code int, calls string) {
+	t.Helper()
+	out, code, _ = runStackScript(t, body, args...)
+	return out, code, lastCalls
+}
+
+var lastCalls string
+
 func runStackScriptEnv(t *testing.T, body string, env []string, args ...string) (out string, code int, called bool) {
 	t.Helper()
 	for _, tool := range []string{"bash", "jq"} {
@@ -59,7 +68,8 @@ func runStackScriptEnv(t *testing.T, body string, env []string, args ...string) 
 	} else if err != nil {
 		t.Fatal(err)
 	}
-	_, statErr := os.Stat(calls)
+	logged, statErr := os.ReadFile(calls)
+	lastCalls = string(logged)
 	return string(raw), code, statErr == nil
 }
 
@@ -71,6 +81,7 @@ func TestStackScriptRefusesBadArguments(t *testing.T) {
 	for _, args := range [][]string{
 		{}, {"bogus"}, {"create"}, {"create", "1"}, {"view"}, {"view", "1", "2"},
 		{"merge"}, {"merge", "1", "merge", "extra"},
+		{"add"}, {"add", "5"}, {"unstack"}, {"unstack", "5", "6"},
 	} {
 		out, code, called := runStackScript(t, "[]", args...)
 		if code != 2 || called || !strings.Contains(out, "stack.sh create") {
@@ -117,5 +128,36 @@ func TestStackScriptMergeResumesARunningMerge(t *testing.T) {
 	out, code, _ = runStackScriptEnv(t, `{"message":"Not mergeable"}`, []string{"PUT_EXIT=1"}, "merge", "9")
 	if code == 0 || !strings.Contains(out, "Not mergeable") {
 		t.Fatalf("a refusal with no id: exit %d, output:\n%s", code, out)
+	}
+}
+
+// add posts the new PRs to the stack's add route and prints the stack
+// GitHub returns; a series opened later joins its stack this way, since
+// create refuses a PR already in one.
+//
+//gofastr:test-reads scripts/stack.sh
+func TestStackScriptAddsPRsToAStack(t *testing.T) {
+	stack := `{"number":5,"base":{"ref":"main"},"pull_requests":[{"number":1},{"number":2},{"number":3},{"number":4}]}`
+	out, code, calls := stackCalls(t, stack, "add", "5", "3", "4")
+	if code != 0 || strings.TrimSpace(out) != "stack #5 on main: #1 -> #2 -> #3 -> #4" {
+		t.Fatalf("add: exit %d, output:\n%s", code, out)
+	}
+	if !strings.Contains(calls, "-X POST repos/DonaldMurillo/gofastr/stacks/5/add") {
+		t.Fatalf("add called gh as:\n%s", calls)
+	}
+}
+
+// unstack reports a stack GitHub dissolved (204, no body) and one it kept
+// because some PRs could not leave it.
+//
+//gofastr:test-reads scripts/stack.sh
+func TestStackScriptUnstacks(t *testing.T) {
+	out, code, calls := stackCalls(t, "", "unstack", "5")
+	if code != 0 || strings.TrimSpace(out) != "stack #5 dissolved" || !strings.Contains(calls, "-X POST repos/DonaldMurillo/gofastr/stacks/5/unstack") {
+		t.Fatalf("unstack of a whole stack: exit %d, output:\n%s\ncalls:\n%s", code, out, calls)
+	}
+	out, code, _ = stackCalls(t, `{"number":5,"pull_requests":[{"number":1}]}`, "unstack", "5")
+	if code != 0 || strings.TrimSpace(out) != "stack #5 kept: #1" {
+		t.Fatalf("unstack that keeps a merged PR: exit %d, output:\n%s", code, out)
 	}
 }
