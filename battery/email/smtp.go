@@ -927,17 +927,15 @@ func scrubHeaderValue(s string) string {
 			return r
 		}, s)
 	}
-	var b strings.Builder
-	b.Grow(len(s))
+	buf := make([]byte, 0, len(s))
 	for i := range len(s) {
-		c := s[i]
-		if c < 0x20 || c == 0x7f {
-			fmt.Fprintf(&b, "%%%02x", c)
+		if textsafe.IsControlByte(s[i]) {
+			buf = textsafe.AppendPercentByte(buf, s[i])
 			continue
 		}
-		b.WriteByte(c)
+		buf = append(buf, s[i])
 	}
-	return b.String()
+	return string(buf)
 }
 
 // assertNoHeaderInjection returns an error if value contains any codepoint
