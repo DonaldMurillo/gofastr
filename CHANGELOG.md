@@ -25,6 +25,37 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **`semantic` refuses a document whose `metadata["kind"]` is not a
+  string,** which every store would have saved as an empty kind that no
+  filter matches.
+- **`gofastr test` stops the test process when its output is cut off,**
+  and waits at most a second for stderr a child process still holds.
+- **`gofastr pack` exits 2 on usage errors,** `gofastr validate` help
+  names exit 2 for them, and `gofastr docs serve` writes usage errors to
+  stderr only.
+- **`gofastr new handler` takes its package from Go files that parse**
+  and skips the `_` and `.` files Go ignores.
+- **A `// safe-sql: <reason>` waiver in `gofastr audit lint` and
+  `verify` covers only the statement it sits on,** and a waiver without
+  a reason waives nothing.
+- **The unscoped-PII check in `gofastr validate` and `verify` looks for
+  a read gate:** an entity whose access gates only writes is reported.
+- **`gofastr audit a11y` fails discovery when the root sitemap answers
+  an error or does not parse.** Only a missing sitemap (404 or 410)
+  falls back to `/`.
+- **`gofastr deploy` and `deploy rollback` take a per-app lock on the
+  server,** and rollback and retention follow the order the server
+  installed releases in.
+- **Local storage reads and deletes existing keys that hold control
+  bytes;** new saves still refuse them.
+- **Headless setup returns the context error when it is cancelled**
+  while another setup run holds the claim.
+- **Static files from a file system that cannot seek send
+  `Last-Modified`** and answer revalidation with 304.
+- **GOFASTR1824 accepts `:dir()` overrides written with the style
+  builder,** as it does in CSS text.
+- **The embed action scan finds server-action calls after a private
+  method such as `#if()`.**
 - **A refused request body answers the same way on every route.**
   Malformed JSON is `invalid_json` on every crud route, batch included.
   A body that could not be read says `body_unreadable` instead of
@@ -71,7 +102,9 @@ few lines, and link the PR or the docs page for the rest.
   range.
 - **Custom outboxes get the same delivery table name on SQLite and
   Postgres,** fitted to 63 bytes. A table name part over 63 bytes is
-  refused. Rename a longer SQLite delivery table before upgrading.
+  refused. Before upgrading, rename a SQLite delivery table over 63
+  bytes, or the Postgres delivery table of a parent named 55 to 62 bytes
+  (old name `left('<parent>_delivery', 63)`), to the fitted name.
 - **CRUD `SumAll` on SQLite returns exact Int totals past the signed
   64-bit range,** as Postgres does.
 - **SQLite UNIQUE and NOT NULL refusals keep the declared field key**
@@ -796,6 +829,9 @@ few lines, and link the PR or the docs page for the rest.
   them.
 
 ### Changed
+- **A custom `auth.UserStore` must implement `auth.RoleSwapper`** for
+  the admin role editor to save role changes. `EntityUserStore`
+  implements it.
 - **Every `gofastr` usage error exits 2, and every `✗` error line prints
   on stderr.** Unknown flags, missing arguments and unknown subcommands
   used to exit 0, 1 or 2 depending on the command, and error lines went
@@ -1640,6 +1676,11 @@ few lines, and link the PR or the docs page for the rest.
   under `locale_prefixes`.
 
 ### Security
+- **The admin role editor refuses to assign or remove a role that grants
+  `*`** unless the request's `access.Decider` allows `*`.
+- **The admin role editor saves only when the account still has the
+  roles it read.** A stale edit answers 409 (`roles-conflict`), so it
+  cannot put back a role another admin revoked.
 - **One terminal scrub** ([core packages](framework/docs/content/core-packages.md)).
   Six places stripped control characters from text bound for an
   operator's terminal, each with its own set: codegen extension stderr
