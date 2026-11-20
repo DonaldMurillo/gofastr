@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
@@ -14,6 +15,12 @@ import (
 // and JSON. Regenerate with GOFASTR_UPDATE_GOLDEN=1 after an intended
 // catalog change and read the diff.
 func TestVerifyCatalogOutputMatchesGolden(t *testing.T) {
+	// The binary run straight from a terminal (an IDE runner, go test -c)
+	// would otherwise style the output and miss the plain golden.
+	oldTTY := cli.StdoutIsTTY
+	cli.StdoutIsTTY = false
+	t.Cleanup(func() { cli.StdoutIsTTY = oldTTY })
+
 	var b strings.Builder
 	capture := func(args ...string) {
 		out, code := captureVerify(t, args)
