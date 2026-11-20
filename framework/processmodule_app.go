@@ -131,3 +131,7 @@ func (a processCoordinatorAdapter) Info(name string) (ProcessModuleInfo, bool) {
 	}
 	return info, true
 }
+
+func (a processCoordinatorAdapter) list(ctx context.Context) []ProcessModuleInfo {
+	return a.sup.list(ctx)
+}

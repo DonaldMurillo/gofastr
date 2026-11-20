@@ -503,6 +503,10 @@ func (mm *ModuleManager) subscribeFanout() error {
 
 // List returns introspection info for every registered module.
 func (mm *ModuleManager) List() []ModuleInfo {
+	return mm.list(context.Background())
+}
+
+func (mm *ModuleManager) list(ctx context.Context) []ModuleInfo {
 	mm.mu.RLock()
 	pc := mm.processCoordinator
 	process := maps.Clone(mm.process)
@@ -551,20 +555,33 @@ func (mm *ModuleManager) List() []ModuleInfo {
 	}
 	mm.mu.RUnlock()
 
+	batch, canList := pc.(interface {
+		list(context.Context) []ProcessModuleInfo
+	})
+	var processInfo map[string]ProcessModuleInfo
+	if canList && len(out) > 0 {
+		infos := batch.list(ctx)
+		processInfo = make(map[string]ProcessModuleInfo, len(infos))
+		for _, info := range infos {
+			processInfo[info.Name] = info
+		}
+	}
 	pt, _ := pc.(processModuleToggler)
 	for i := range out {
 		info := &out[i]
 		if process[info.Name] {
 			info.Enabled = pt != nil && pt.DesiredEnabled(info.Name)
 		}
-		if pc != nil {
-			if pi, ok := pc.Info(info.Name); ok {
-				info.ProcessState = pi.State.String()
-				info.RestartCount = pi.RestartCount
-				info.ObservedGeneration = pi.ObservedGeneration
-				info.InstanceID = pi.InstanceID
-				info.LastExit = pi.LastExit
-			}
+		pi, ok := processInfo[info.Name]
+		if pc != nil && !canList {
+			pi, ok = pc.Info(info.Name)
+		}
+		if ok {
+			info.ProcessState = pi.State.String()
+			info.RestartCount = pi.RestartCount
+			info.ObservedGeneration = pi.ObservedGeneration
+			info.InstanceID = pi.InstanceID
+			info.LastExit = pi.LastExit
 		}
 	}
 	return out

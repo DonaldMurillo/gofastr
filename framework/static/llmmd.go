@@ -2,7 +2,6 @@ package static
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -12,7 +11,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
-func (b *Builder) writeLLMMD(ctx context.Context, res *Result, at func(string) string, docs map[string]bool) error {
+func (b *Builder) writeLLMMD(locale exportLocale, res *Result, docs map[string]bool) error {
+	ctx := locale.ctx
+	if locale.rule.Locales != nil {
+		ctx = coreapp.WithLinkKeep(ctx, b.keepUnprefixed)
+	}
 	exported := map[string][]string{}
 	for _, route := range b.Host.App.Routes() {
 		if b.routeExcluded(route.Path) {
@@ -28,11 +31,7 @@ func (b *Builder) writeLLMMD(ctx context.Context, res *Result, at func(string) s
 		if screen.NoLLMMD {
 			continue
 		}
-		paths, err := expandRoute(ctx, b.Host.App, route.Path)
-		if err != nil {
-			return fmt.Errorf("static: expand llm.md %q: %w", route.Path, err)
-		}
-		for _, p := range paths {
+		for _, p := range locale.paths[route.Path] {
 			if _, redirected := b.Host.App.ResolveRedirect(p); redirected {
 				continue
 			}
@@ -55,18 +54,19 @@ func (b *Builder) writeLLMMD(ctx context.Context, res *Result, at func(string) s
 				slog.Warn("static: expanded llm.md path does not resolve: writing withheld doc; check StaticPaths values against the route's constraints",
 					"route", route.Path, "path", p)
 			}
-			dst := filepath.Join(b.OutDir, pathToLLMFile(at(p)))
+			file := pathToLLMFile(locale.path(p))
+			dst := filepath.Join(b.OutDir, file)
 			if err := writeUnder(b.OutDir, dst, []byte(md)); err != nil {
 				return err
 			}
-			res.Assets = append(res.Assets, "/"+filepath.ToSlash(pathToLLMFile(at(p))))
-			docs[filepath.ToSlash(pathToLLMFile(at(p)))] = true
+			res.Assets = append(res.Assets, "/"+filepath.ToSlash(file))
+			docs[filepath.ToSlash(file)] = true
 			exported[route.Path] = append(exported[route.Path], p)
 			b.log("wrote llm.md for %s -> %s", p, dst)
 		}
 	}
 	indexMD := coreapp.AppLLMMDCtx(coreapp.WithExportedDocs(ctx, exported), b.Host.App)
-	index := at("/llm-pages.md")
+	index := locale.path("/llm-pages.md")
 	if err := writeUnder(b.OutDir, filepath.Join(b.OutDir, filepath.FromSlash(strings.TrimPrefix(index, "/"))), []byte(indexMD)); err != nil {
 		return err
 	}

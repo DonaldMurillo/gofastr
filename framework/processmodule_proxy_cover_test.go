@@ -282,6 +282,7 @@ type introspectionTestStore struct {
 	getCalls  int
 	listCalls int
 	readErr   error
+	bulkRead  func(context.Context) error
 }
 
 func (s *introspectionTestStore) GetDesired(ctx context.Context, name string) (DesiredState, error) {
@@ -294,10 +295,73 @@ func (s *introspectionTestStore) GetDesired(ctx context.Context, name string) (D
 
 func (s *introspectionTestStore) ListDesired(ctx context.Context) ([]DesiredState, error) {
 	s.listCalls++
+	if s.bulkRead != nil {
+		return nil, s.bulkRead(ctx)
+	}
 	if s.readErr != nil {
 		return nil, s.readErr
 	}
 	return s.ProcessModuleStore.ListDesired(ctx)
+}
+
+func TestModuleListingsShareOneDesiredRead(t *testing.T) {
+	app := NewApp(WithMCPIntrospection())
+	store := &introspectionTestStore{ProcessModuleStore: newTestStore(t)}
+	sup := newBareTestSupervisor(t, store, &TrustedProcessRunner{})
+	t.Cleanup(func() { _ = sup.Close(context.Background()) })
+	app.Modules().SetProcessCoordinator(processCoordinatorAdapter{sup: sup})
+	for _, name := range []string{"alpha", "beta"} {
+		d := validToolDescriptor(t, name, nil)
+		if _, err := sup.Register(context.Background(), d, nil); err != nil {
+			t.Fatalf("register %s: %v", name, err)
+		}
+		app.Modules().register(name, ModuleManifest{})
+		app.Modules().markProcess(name)
+	}
+	app.InitPlugins()
+
+	t.Run("manager", func(t *testing.T) {
+		store.bulkRead = func(ctx context.Context) error {
+			if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > desiredStateReadTimeout {
+				t.Errorf("bulk read deadline = %v, want at most %v from now", deadline, desiredStateReadTimeout)
+			}
+			return errors.New("store unavailable")
+		}
+		list := app.Modules().List()
+		if len(list) != 2 || list[0].ProcessState != StateInstalledDisabled.String() || list[0].Enabled {
+			t.Errorf("List = %+v, want local snapshots after a store failure", list)
+		}
+		if store.listCalls != 1 || store.getCalls != 0 {
+			t.Errorf("List made %d bulk and %d single reads, want 1 and 0", store.listCalls, store.getCalls)
+		}
+	})
+	t.Run("MCP", func(t *testing.T) {
+		store.listCalls, store.getCalls = 0, 0
+		ctx, stop := context.WithTimeout(context.Background(), time.Second)
+		defer stop()
+		wantDeadline, _ := ctx.Deadline()
+		store.bulkRead = func(readCtx context.Context) error {
+			if deadline, ok := readCtx.Deadline(); !ok || !deadline.Equal(wantDeadline) {
+				t.Errorf("bulk read deadline = %v, want caller deadline %v", deadline, wantDeadline)
+			}
+			stop()
+			if !errors.Is(readCtx.Err(), context.Canceled) {
+				t.Errorf("bulk read context = %v after caller cancellation", readCtx.Err())
+			}
+			return readCtx.Err()
+		}
+		res, err := app.MCP.CallTool(ctx, "app_modules", nil)
+		if err != nil {
+			t.Fatalf("app_modules: %v", err)
+		}
+		mods := res.(map[string]any)["modules"].([]map[string]any)
+		if len(mods) != 2 || mods[0]["enabled"] != false {
+			t.Errorf("app_modules = %v, want local snapshots after cancellation", mods)
+		}
+		if store.listCalls != 1 || store.getCalls != 0 {
+			t.Errorf("app_modules made %d bulk and %d single reads, want 1 and 0", store.listCalls, store.getCalls)
+		}
+	})
 }
 
 func TestInfoAndList_unknownDesiredGenerationPreservesLocalSnapshot(t *testing.T) {

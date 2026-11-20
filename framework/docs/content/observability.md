@@ -128,10 +128,11 @@ A `SlowQueryLogger` line logs the statement's shape, masked by the same
 code as a trace span's `db.query.text`: every string and number literal
 (`'…'`, `E'…'`, `$tag$…$tag$`, `42`) printed as `?`, comments dropped,
 whitespace collapsed, cut at 240 bytes plus a trailing ellipsis, and bound
-arguments counted. A slow `QueryRowContext` failure records
+arguments counted. A slow statement that fails records
 `err=database_error` and adds `sqlstate` or `driver_code` when available.
-The returned row retains the original error for `Scan`. Where a literal
-ends depends on the engine, so name it:
+`ExecContext` and `QueryContext` return the original error.
+`QueryRowContext` leaves it on the row for `Scan`. Pass the database
+engine to apply its literal quoting rules.
 
 ```go
 slowDB := slowquery.NewSlowQueryLogger(db, 200*time.Millisecond, logger,

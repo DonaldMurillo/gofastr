@@ -14,13 +14,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-func (b *Builder) writeRedirects(ctx context.Context, pages map[string]bool, rendered *fileSet, owner map[string]string) error {
-	locales, byPrefix := b.Host.PathLocales()
-	tags := []string{""}
-	if byPrefix {
-		tags = locales.All()
-	}
-	var rules strings.Builder
+type exportRedirect struct{ from, target string }
+
+func (b *Builder) exportRedirects() []exportRedirect {
+	var redirects []exportRedirect
 	for _, route := range b.Host.App.Routes() {
 		if route.RedirectTo == "" {
 			continue
@@ -39,11 +36,18 @@ func (b *Builder) writeRedirects(ctx context.Context, pages map[string]bool, ren
 			slog.Warn("static: skipped redirect whose chain does not end", "from", route.Path)
 			continue
 		}
-		for _, tag := range tags {
-			from, to, lctx := route.Path, target, ctx
-			if byPrefix {
-				from, to = locales.Path(tag, from), b.localeTarget(locales, tag, to)
-				lctx = localeContext(ctx, locales, tag)
+		redirects = append(redirects, exportRedirect{from: route.Path, target: target})
+	}
+	return redirects
+}
+
+func (b *Builder) writeRedirects(locales []exportLocale, redirects []exportRedirect, pages map[string]bool, rendered *fileSet, owner map[string]string) error {
+	var rules strings.Builder
+	for _, redirect := range redirects {
+		for _, locale := range locales {
+			from, to := locale.path(redirect.from), redirect.target
+			if locale.rule.Prefix != "" {
+				to = b.localeTarget(locale.set, locale.tag, to)
 			}
 			href := b.redirectHref(to, pages)
 			rel := filepath.ToSlash(pathToFile(from))
@@ -52,7 +56,7 @@ func (b *Builder) writeRedirects(ctx context.Context, pages map[string]bool, ren
 			}
 			owner[foldPath(rel)] = from
 			dst := filepath.Join(b.OutDir, filepath.FromSlash(rel))
-			if err := writeUnder(b.OutDir, dst, []byte(redirectPage(lctx, href, b.policy()))); err != nil {
+			if err := writeUnder(b.OutDir, dst, []byte(redirectPage(locale.ctx, href, b.policy()))); err != nil {
 				return err
 			}
 			rendered.add(rel)

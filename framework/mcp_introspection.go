@@ -149,8 +149,8 @@ func (a *App) toolBatteries(_ context.Context, _ map[string]any) (any, error) {
 	}, nil
 }
 
-func (a *App) toolModules(_ context.Context, _ map[string]any) (any, error) {
-	mods := a.Modules().List()
+func (a *App) toolModules(ctx context.Context, _ map[string]any) (any, error) {
+	mods := a.Modules().list(ctx)
 	out := make([]map[string]any, 0, len(mods))
 	for _, m := range mods {
 		out = append(out, map[string]any{

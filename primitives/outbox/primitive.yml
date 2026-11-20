@@ -33,6 +33,10 @@ invariants:
     rule: On Postgres New errors when an older build left the parent or delivery table under its case-kept name, instead of starting an empty table beside it.
     enforced_by:
       - test: framework/outbox.TestPostgres_CaseKeptTableRefused
+  - id: claim-index-fits-postgres
+    rule: New creates the delivery claim index with a fitted name even when the Postgres delivery table name already uses all 63 bytes.
+    enforced_by:
+      - test: framework/outbox.TestPostgres_LongDeliveryTableHasClaimIndex
   - id: non-positive-options-keep-defaults
     rule: WithPollInterval, WithBatchSize, WithMaxAttempts and WithHandlerTimeout keep their defaults (1s, 100, 10, 30s) for a value at or below zero.
     enforced_by:

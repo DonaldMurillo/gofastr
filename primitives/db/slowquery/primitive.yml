@@ -13,7 +13,7 @@ invariants:
       - test: framework.TestSlowQuery_AboveThreshold_Logged
       - test: framework.TestSlowQuery_AsCrudHandlerDB
   - id: line-is-shape-only
-    rule: The slow line masks statement literals by dialect and counts bound arguments. A query_row failure logs a safe error kind and any available SQLSTATE or numeric driver code, never the driver error text or the argument values.
+    rule: The slow line masks statement literals by dialect and counts bound arguments. Exec, query and query_row failures log a safe error kind and any available SQLSTATE or numeric driver code, never the driver error text or the argument values.
     enforced_by:
       - test: framework/slowquery.TestSlowQueryLineMasksLiteral
       - test: framework/slowquery.TestTrimSQLMasksEveryDialectsLiterals

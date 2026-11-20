@@ -6,9 +6,44 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
 )
+
+func checkRouteOutput(route, p string) error {
+	dir := strings.Trim(hostPath(p), "/")
+	if dir == "" {
+		return nil
+	}
+	for name := range strings.SplitSeq(dir, "/") {
+		if !portableFilename(name) {
+			return fmt.Errorf("static: route %q exports to %q: %q is not a portable filename", route, p, name)
+		}
+	}
+	return nil
+}
+
+func portableFilename(name string) bool {
+	if name == "" || len(name) > 255 || !utf8.ValidString(name) ||
+		strings.ContainsAny(name, `<>:"\|?*`) || strings.HasSuffix(name, ".") || strings.HasSuffix(name, " ") ||
+		strings.ContainsFunc(name, func(r rune) bool { return r < 32 }) {
+		return false
+	}
+	stem, _, _ := strings.Cut(name, ".")
+	stem = strings.ToUpper(strings.TrimRight(stem, " "))
+	switch stem {
+	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
+		return false
+	}
+	if strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT") {
+		switch stem[3:] {
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9", "¹", "²", "³":
+			return false
+		}
+	}
+	return true
+}
 
 func writeUnder(outDir, dst string, data []byte) error {
 	rel, err := relUnder(outDir, dst)

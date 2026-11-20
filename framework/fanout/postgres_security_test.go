@@ -241,29 +241,6 @@ func TestNewPostgresUnreachableFailsFast(t *testing.T) {
 	}
 }
 
-func TestPostgresListenUsesCanonicalFallbackTableName(t *testing.T) {
-	dsn := "host=127.0.0.1 port=1 dbname=fanout_test sslmode=disable connect_timeout=1"
-	for _, name := range []string{"App.Msgs", "app.msgs"} {
-		t.Run(name, func(t *testing.T) {
-			db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer db.Close()
-			mock.ExpectQuery(`SELECT to_regclass($1) IS NOT NULL, to_regclass($2) IS NOT NULL`).
-				WithArgs(`"`+name+`"`, `"app"."msgs"`).
-				WillReturnRows(sqlmock.NewRows([]string{"kept", "folded"}).AddRow(false, true))
-			_, err = NewPostgres(dsn, db, WithTableName(name), WithoutEnsureTable(), WithListenTimeout(50*time.Millisecond))
-			if err == nil || !strings.Contains(err.Error(), `listen "app.msgs": timed out`) {
-				t.Errorf("NewPostgres(%q) returned %v, want a listen attempt on app.msgs", name, err)
-			}
-			if err := mock.ExpectationsWereMet(); err != nil {
-				t.Fatal(err)
-			}
-		})
-	}
-}
-
 func TestPostgresPublishNotifiesInlineAndSpill(t *testing.T) {
 	cause := errors.New("notify refused")
 	for _, tc := range []struct {

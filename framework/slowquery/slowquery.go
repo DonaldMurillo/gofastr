@@ -112,11 +112,7 @@ func (s *SlowQueryLogger) observe(ctx context.Context, kind, query string, args 
 		slog.Int("args", len(args)),
 	}
 	if err != nil {
-		if kind == "query_row" {
-			attrs = appendRowError(attrs, err)
-		} else {
-			attrs = append(attrs, slog.String("err", err.Error()))
-		}
+		attrs = appendErrorMetadata(attrs, err)
 	}
 	logger := s.getLogger()
 	if logger == nil {
@@ -125,7 +121,7 @@ func (s *SlowQueryLogger) observe(ctx context.Context, kind, query string, args 
 	logger.LogAttrs(ctx, slog.LevelWarn, "slow query", attrs...)
 }
 
-func appendRowError(attrs []slog.Attr, err error) []slog.Attr {
+func appendErrorMetadata(attrs []slog.Attr, err error) []slog.Attr {
 	attrs = append(attrs, slog.String("err", "database_error"))
 	if state, ok := errors.AsType[interface {
 		error

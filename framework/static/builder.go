@@ -84,6 +84,7 @@ type Result struct {
 // pages load, and returns what it wrote. A page with no static answer
 // (gated, redirected, a 404 outlet or a status other than 200) is skipped
 // with a warning; any other render failure fails the build.
+// A non-portable route output path fails before the build writes any files.
 func (b *Builder) Build(ctx context.Context) (Result, error) {
 	ctx = uihost.WithStaticBasePath(ctx, b.BasePath)
 	if b.Host == nil {
@@ -96,6 +97,11 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 	if _, _, err := b.pageManifest(); err != nil {
+		return Result{}, err
+	}
+	redirects := b.exportRedirects()
+	locales, err := b.planLocales(ctx, redirects)
+	if err != nil {
 		return Result{}, err
 	}
 	if err := os.MkdirAll(b.OutDir, 0o755); err != nil {
@@ -118,21 +124,12 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		}
 	}
 
-	locales, byPrefix := b.Host.PathLocales()
-	tags := []string{""}
-	if byPrefix {
-		tags = locales.All()
-	}
-	for _, tag := range tags {
-		lctx, rule := ctx, urlprefix.Rule{}
-		if byPrefix {
-			lctx = localeContext(ctx, locales, tag)
-			rule = urlprefix.Rule{Prefix: i18n.PathPrefix(lctx), Locales: locales.All(), Keep: b.keepUnprefixed}
-		}
-		err := walk(lctx, b.Host, b.routeExcluded, nil, b.log, nil, func(route, p, page string) error {
-			if rule.Prefix != "" {
-				p = locales.Path(tag, p)
-				page = string(urlprefix.HTML([]byte(page), rule))
+	for _, locale := range locales {
+		expand := func(route string) ([]string, error) { return locale.paths[route], nil }
+		err := walk(locale.ctx, b.Host, b.routeExcluded, nil, b.log, expand, nil, func(route, p, page string) error {
+			p = locale.path(p)
+			if locale.rule.Prefix != "" {
+				page = string(urlprefix.HTML([]byte(page), locale.rule))
 			}
 			for _, c := range b.Contributors {
 				if err := c.ExportPage(p, page); err != nil {
@@ -144,7 +141,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 				return fmt.Errorf("static: pages %q and %q both export to %s; give one of them another path", prev, p, file)
 			}
 			pageOwner[foldPath(file)] = p
-			html := b.applyStaticMode(lctx, page)
+			html := b.applyStaticMode(locale.ctx, page)
 			dst := filepath.Join(b.OutDir, pathToFile(p))
 			if err := writeUnder(b.OutDir, dst, []byte(html)); err != nil {
 				return err
@@ -194,7 +191,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	}
 	rendered.add("_headers")
 
-	if err := b.writeRedirects(ctx, pageSet(res.Pages), rendered, pageOwner); err != nil {
+	if err := b.writeRedirects(locales, redirects, pageSet(res.Pages), rendered, pageOwner); err != nil {
 		return res, err
 	}
 
@@ -214,13 +211,8 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	}
 
 	if !b.Host.App.NoLLMMD {
-		for _, tag := range tags {
-			lctx, at := ctx, func(p string) string { return p }
-			if byPrefix {
-				lctx = coreapp.WithLinkKeep(localeContext(ctx, locales, tag), b.keepUnprefixed)
-				at = func(p string) string { return locales.Path(tag, p) }
-			}
-			if err := b.writeLLMMD(lctx, &res, at, docs); err != nil {
+		for _, locale := range locales {
+			if err := b.writeLLMMD(locale, &res, docs); err != nil {
 				return res, err
 			}
 		}
@@ -331,6 +323,59 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	return res, nil
 }
 
+type exportLocale struct {
+	ctx   context.Context
+	set   i18n.PathLocales
+	tag   string
+	rule  urlprefix.Rule
+	paths map[string][]string
+}
+
+func (l exportLocale) path(p string) string { return l.set.Path(l.tag, p) }
+
+func (b *Builder) planLocales(ctx context.Context, redirects []exportRedirect) ([]exportLocale, error) {
+	locales, byPrefix := b.Host.PathLocales()
+	tags := []string{""}
+	if byPrefix {
+		tags = locales.All()
+	}
+	routes := b.Host.App.Routes()
+	out := make([]exportLocale, 0, len(tags))
+	for _, tag := range tags {
+		locale := exportLocale{ctx: ctx, paths: make(map[string][]string)}
+		if byPrefix {
+			locale.ctx = localeContext(ctx, locales, tag)
+			locale.set, locale.tag = locales, tag
+			locale.rule = urlprefix.Rule{Prefix: i18n.PathPrefix(locale.ctx), Locales: tags, Keep: b.keepUnprefixed}
+		}
+		for _, route := range routes {
+			if route.RedirectTo != "" || b.routeExcluded(route.Path) {
+				continue
+			}
+			paths, err := expandRoute(locale.ctx, b.Host.App, route.Path)
+			if err != nil {
+				return nil, fmt.Errorf("static: expand %q: %w", route.Path, err)
+			}
+			for _, p := range paths {
+				if _, redirected := b.Host.App.ResolveRedirect(p); redirected {
+					continue
+				}
+				if err := checkRouteOutput(route.Path, locale.path(p)); err != nil {
+					return nil, err
+				}
+			}
+			locale.paths[route.Path] = paths
+		}
+		for _, redirect := range redirects {
+			if err := checkRouteOutput(redirect.from, locale.path(redirect.from)); err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, locale)
+	}
+	return out, nil
+}
+
 // Walk renders every page an export of host would write, in route order,
 // and passes each to fn with its live HTML. skip, when set, is asked about
 // each route pattern and expanded path before it renders. A page that
@@ -343,12 +388,13 @@ func Walk(ctx context.Context, host *uihost.UIHost, skip func(path string) bool,
 	if skip == nil {
 		skip = func(string) bool { return false }
 	}
-	return walk(ctx, host, skip, skip, nil,
+	expand := func(route string) ([]string, error) { return expandRoute(ctx, host.App, route) }
+	return walk(ctx, host, skip, skip, nil, expand,
 		func(path string, err error) error { return fn(path, "", err) },
 		func(_, p, page string) error { return fn(p, page, nil) })
 }
 
-func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(string) bool, logf func(string, ...any), fail func(path string, err error) error, fn func(route, path, page string) error) error {
+func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(string) bool, logf func(string, ...any), expand func(string) ([]string, error), fail func(path string, err error) error, fn func(route, path, page string) error) error {
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
@@ -363,7 +409,7 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 		if route.RedirectTo != "" {
 			continue
 		}
-		paths, err := expandRoute(ctx, host.App, route.Path)
+		paths, err := expand(route.Path)
 		if err != nil {
 			if err := fail(route.Path, fmt.Errorf("static: expand %q: %w", route.Path, err)); err != nil {
 				return err
@@ -376,6 +422,12 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 			}
 			if _, redirected := host.App.ResolveRedirect(p); redirected {
 				logf("skipped %s: a redirect takes its path", p)
+				continue
+			}
+			if err := checkRouteOutput(route.Path, p); err != nil {
+				if err := fail(p, err); err != nil {
+					return err
+				}
 				continue
 			}
 			page, fillFailures, err := host.RenderStaticPageResult(ctx, p)

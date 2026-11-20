@@ -23,15 +23,34 @@ func (fakeExec) ExecContext(context.Context, string, ...any) (sql.Result, error)
 func (fakeExec) BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)        { return nil, errFake }
 
 func TestSlowLineCountsArgsAndCarriesTheError(t *testing.T) {
-	var buf bytes.Buffer
-	s := NewSlowQueryLogger(fakeExec{}, 1, slog.New(slog.NewJSONHandler(&buf, nil)))
-	_, _ = s.ExecContext(context.Background(), "UPDATE t SET v = $1", "bound-secret")
-	line := buf.String()
-	if strings.Contains(line, "bound-secret") || !strings.Contains(line, `"args":1`) {
-		t.Fatalf("slow line must count bound args, never print them: %s", line)
-	}
-	if !strings.Contains(line, errFake.Error()) {
-		t.Fatalf("slow line dropped the statement's error: %s", line)
+	const secret = "bound-secret"
+	driverErr := &pq.Error{Code: "22P02", Message: "invalid integer: " + secret}
+	inner := sql.OpenDB(failConnector{err: driverErr})
+	t.Cleanup(func() { _ = inner.Close() })
+	for _, kind := range []string{"exec", "query"} {
+		t.Run(kind, func(t *testing.T) {
+			var buf bytes.Buffer
+			s := NewSlowQueryLogger(inner, 1, slog.New(slog.NewJSONHandler(&buf, nil)))
+			ctx := context.Background()
+			var err error
+			if kind == "exec" {
+				_, err = s.ExecContext(ctx, "SELECT $1::int", secret)
+			} else {
+				_, err = s.QueryContext(ctx, "SELECT $1::int", secret)
+			}
+			if !errors.Is(err, driverErr) {
+				t.Fatalf("%s returned %v, want the original driver error", kind, err)
+			}
+			line := buf.String()
+			if strings.Contains(line, secret) {
+				t.Errorf("slow line leaked the bound value: %s", line)
+			}
+			for _, want := range []string{`"args":1`, `"err":"database_error"`, `"sqlstate":"22P02"`} {
+				if !strings.Contains(line, want) {
+					t.Errorf("slow line missing %s: %s", want, line)
+				}
+			}
+		})
 	}
 }
 

@@ -348,6 +348,10 @@ func (sl *moduleSlot) info() ProcessModuleInfo {
 // by name. It reads desired generations together and keeps local snapshots
 // available when that read fails.
 func (s *ProcessModuleSupervisor) List() []ProcessModuleInfo {
+	return s.list(context.Background())
+}
+
+func (s *ProcessModuleSupervisor) list(ctx context.Context) []ProcessModuleInfo {
 	s.mu.Lock()
 	names := slices.Collect(maps.Keys(s.slots))
 	s.mu.Unlock()
@@ -363,7 +367,7 @@ func (s *ProcessModuleSupervisor) List() []ProcessModuleInfo {
 		return out
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), desiredStateReadTimeout)
+	ctx, cancel := context.WithTimeout(ctx, desiredStateReadTimeout)
 	defer cancel()
 	rows, err := s.listDesiredSafely(ctx)
 	if err != nil {

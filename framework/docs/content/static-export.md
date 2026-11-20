@@ -310,6 +310,12 @@ with a combining accent), which APFS stores as one. A
 redirect's page is checked the same way, against the pages and the
 other redirects.
 
+Before writing any files, the builder checks that page and redirect
+routes map to portable filenames, including after parameter expansion
+and locale prefixing. The error names the route. For example, the live
+router accepts `/a:b` as a literal route, but a static export refuses it
+because Windows reserves the colon in filenames.
+
 Dynamic routes whose screen doesn't implement `StaticPathsProvider` (or returns an
 empty slice) are **skipped** at build time, but the builder now logs a
 `WARN` naming the route pattern and the fix (implement `StaticPaths`) rather
