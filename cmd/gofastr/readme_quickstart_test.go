@@ -8,18 +8,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
-
-// mcpTrueRe matches the entity-config `MCP:  true,` line without pinning the
-// exact gofmt column alignment: `MCP:` followed by ≥1 whitespace then `true`.
-// A future struct key that lengthens the column must not break this guard.
-var mcpTrueRe = regexp.MustCompile(`MCP:\s+true`)
 
 func readmeContent(t *testing.T) string {
 	t.Helper()
@@ -219,73 +213,44 @@ func TestReadmeDonaldsWayQuickstartRuns(t *testing.T) {
 	}
 }
 
-// TestReadmeGoQuickstartRuns is the executable gate for the smallest-app Go
+// TestReadmeGoQuickstartRuns is the executable gate for the Framework
 // snippet. It extracts the exact program, swaps only the hard-coded listen
-// address for a free port (the one transform, mirroring the go.mod injection
-// the app spec gate does), compiles it against the working tree, boots it,
-// and asserts the runtime claims the README's comments make:
-//   - GET /posts == 200 (anonymous read): Public: true opts out of
-//     secure-by-default (crud requireAuthenticated) so the documented
-//     "complete server" does not 401.
-//   - POST /posts == 201 (anonymous write): Public: true's comment promises
-//     read AND write; this catches a regression where read is open but create
-//     silently still requires a session.
-//   - POST /mcp initialize returns a JSON-RPC result AND tools/list contains
-//     posts_list + posts_create: WithMCP() mounts /mcp AND MCP:true on the
-//     entity actually registered its CRUD tools rather than leaving /mcp empty.
-//
-// This gate exists because those claims silently drifted from the code
-// (issue #65 secure-by-default and the WithMCP requirement) while the snippet
-// went untested.
+// address for a free port, compiles it against the working tree, boots it,
+// and asserts the runtime claims the section makes:
+//   - GET / == 200 with the framework/ui Card heading ("Ship faster")
+//   - GET /api/hello == 200 with the typed JSON payload ("hello from go")
+//   - POST /mcp initialize returns a JSON-RPC result, tools/list contains
+//     "greet", and tools/call "greet" returns "hello from mcp".
 func TestReadmeGoQuickstartRuns(t *testing.T) {
 	src := readmeProgram(t, readmeEntityHeading)
-	// Guard the three source-level claims so a future edit can't drop the
-	// flags and leave the runtime assertions passing for the wrong reason.
-	// MCP:true is matched with a regexp (not the exact gofmt-aligned literal)
-	// so a future struct-key addition that re-aligns the column does not
-	// silently break this guard.
-	for _, want := range []string{"framework.WithMCP()", "Public: true"} {
+	for _, want := range []string{"framework.WithMCP()", "framework.WithMCPTools", "ui.Card"} {
 		if !strings.Contains(src, want) {
-			t.Fatalf("README smallest-app snippet lost %q — it backs a runtime claim:\n%s", want, src)
+			t.Fatalf("README framework snippet lost %q — it backs a runtime claim:\n%s", want, src)
 		}
 	}
-	if !mcpTrueRe.MatchString(src) {
-		t.Fatalf("README smallest-app snippet lost MCP:true — it backs the /mcp tool-registration claim:\n%s", src)
-	}
 
-	baseURL, output := buildAndBootReadmeProgram(t, src, "readme.example/smallest", "readme-smallest-app", "/posts")
+	baseURL, output := buildAndBootReadmeProgram(t, src, "readme.example/framework", "readme-framework-app", "/")
 
-	// Anonymous READ: the documented "complete server" is reachable, and
-	// Public: true opts out of secure-by-default so it does not 401.
-	getResp, err := http.Get(baseURL + "/posts")
+	getResp, err := http.Get(baseURL + "/")
 	if err != nil {
 		t.Fatal(err)
 	}
+	pageBody, _ := io.ReadAll(getResp.Body)
 	getResp.Body.Close()
-	if getResp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /posts = %d, want 200 (Public opt-out missing?)\n%s", getResp.StatusCode, output.String())
+	if getResp.StatusCode != http.StatusOK || !strings.Contains(string(pageBody), "Ship faster") {
+		t.Fatalf("GET / = %d, body %q — want 200 with the rendered Card heading\n%s", getResp.StatusCode, pageBody, output.String())
 	}
 
-	// Anonymous WRITE: Public: true's comment promises read AND write, so a
-	// POST must persist. Catches the regression where read is open but create
-	// silently still requires a session (the secure-by-default default).
-	postResp, err := http.Post(baseURL+"/posts", "application/json", strings.NewReader(`{"title":"gate"}`))
+	apiResp, err := http.Get(baseURL + "/api/hello")
 	if err != nil {
-		t.Fatalf("POST /posts: %v\n%s", err, output.String())
+		t.Fatalf("GET /api/hello: %v\n%s", err, output.String())
 	}
-	postResp.Body.Close()
-	if postResp.StatusCode != http.StatusCreated {
-		t.Fatalf("POST /posts = %d, want 201 (Public: true should grant anonymous write)\n%s", postResp.StatusCode, output.String())
+	apiBody, _ := io.ReadAll(apiResp.Body)
+	apiResp.Body.Close()
+	if apiResp.StatusCode != http.StatusOK || !strings.Contains(string(apiBody), `"message":"hello from go"`) {
+		t.Fatalf("GET /api/hello = %d, body %q — want typed JSON greeting\n%s", apiResp.StatusCode, apiBody, output.String())
 	}
 
-	// MCP is live AND carries the entity CRUD tools the snippet promises
-	// (posts_list/get/create/update/delete). The Streamable HTTP transport is
-	// stateless JSON-RPC over POST, with no Mcp-Session-Id threading needed, so
-	// initialize then tools/list can be called directly. Asserting the tool
-	// names are present, rather than only that /mcp != 404, catches a
-	// regression where WithMCP() still mounts /mcp but MCP:true was dropped
-	// from the entity (or tool registration failed past boot), leaving an
-	// empty tool set.
 	client := &http.Client{Timeout: 5 * time.Second}
 	initReq := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"readme-gate","version":"0"}}}`
 	initResp, err := client.Post(baseURL+"/mcp", "application/json", strings.NewReader(initReq))
@@ -307,10 +272,18 @@ func TestReadmeGoQuickstartRuns(t *testing.T) {
 	}
 	listBody, _ := io.ReadAll(listResp.Body)
 	listResp.Body.Close()
-	for _, want := range []string{"posts_list", "posts_create"} {
-		if !strings.Contains(string(listBody), want) {
-			t.Fatalf("POST /mcp tools/list missing %q — MCP:true did not register the entity's CRUD tools (got: %s)\n%s", want, listBody, output.String())
-		}
+	if !strings.Contains(string(listBody), `"greet"`) {
+		t.Fatalf("POST /mcp tools/list missing greet (got: %s)\n%s", listBody, output.String())
+	}
+	callReq := `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"greet","arguments":{}}}`
+	callResp, err := client.Post(baseURL+"/mcp", "application/json", strings.NewReader(callReq))
+	if err != nil {
+		t.Fatalf("POST /mcp tools/call: %v\n%s", err, output.String())
+	}
+	callBody, _ := io.ReadAll(callResp.Body)
+	callResp.Body.Close()
+	if !strings.Contains(string(callBody), "hello from mcp") {
+		t.Fatalf("POST /mcp tools/call greet missing expected payload (got: %s)\n%s", callBody, output.String())
 	}
 }
 

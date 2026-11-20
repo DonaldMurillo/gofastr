@@ -39,10 +39,10 @@ type HomeScreen struct{}
 // ScreenTitle returns the bare page name; core-ui/app appends " — GoFastr"
 // (the app name) to form the <title>, so it must NOT be repeated here.
 func (s *HomeScreen) ScreenTitle(ctx context.Context) string {
-	return "Full-stack Go that doesn't get in your way"
+	return "Go from idea to a full-stack app, fastr"
 }
 func (s *HomeScreen) ScreenDescription(ctx context.Context) string {
-	return "An early (v0.x) full-stack Go framework that stays out of your way. Declare your domain in Go and get server-rendered screens, a REST API, MCP tools, migrations, and a typed query builder. It stays plain Go that you and your agents can read, edit, and own."
+	return "GoFastr is a full-stack Go framework for prototypes and small-to-medium apps. Stay as barebones as a stdlib router and HTML helper, or turn on server-rendered UI, auth, SQLite or Postgres, and MCP—in one binary of plain Go you own."
 }
 func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
@@ -86,9 +86,11 @@ func heroSection() render.HTML {
 		ShowCopy: true,
 	})
 	agents := html.Paragraph(html.TextConfig{},
-		render.Text("During development, "),
+		render.Text("Simple for humans to understand, optimized for agents. During development, "),
 		ui.InlineCode("gofastr dev"),
-		render.Text(" gives Claude Code or Codex the app's routes, config, and logs over MCP. In production, user agents call the same data under the same permissions."),
+		render.Text(" gives Claude Code or Codex your app's routes, config, and logs over MCP; in production, user agents call "),
+		ui.InlineCode("/mcp"),
+		render.Text(" under the same permissions."),
 	)
 
 	// Keep the primary path before the deeper agent story: the actions
@@ -96,12 +98,12 @@ func heroSection() render.HTML {
 	// viewport; the install line and the agent note follow.
 	return ui.Hero(ui.HeroConfig{
 		Eyebrow: "early · " + versionLabel(),
-		Title:   "Full-stack Go that doesn't get in the way of you or your agents.",
+		Title:   "Go from idea to a full-stack app, fastr.",
 		Lede: render.Join(
 			html.Strong(html.TextConfig{}, render.Text("GoFastr")),
-			render.Text(" is a full-stack Go framework. Declare your domain in Go and get "),
-			html.Strong(html.TextConfig{}, render.Text("server-rendered screens")),
-			render.Text(", REST endpoints, MCP tools, migrations, and typed queries. It stays plain Go on disk that you own."),
+			render.Text(" is a full-stack Go framework for prototypes and small-to-medium apps. Stay as barebones as a stdlib router, or turn on "),
+			html.Strong(html.TextConfig{}, render.Text("server-rendered UI")),
+			render.Text(", auth, SQLite or Postgres, and MCP—in one binary of plain Go you own."),
 		),
 		Actions: []render.HTML{
 			ui.LinkButton(ui.LinkButtonConfig{Label: "Get started", Href: "/get-started", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),
@@ -154,28 +156,50 @@ func main() {
 var heroFrameworkSrc = `package main
 
 import (
-	"database/sql"
+	"context"
 	"log"
 
-	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/mcp"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
-	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
+type HomeScreen struct{}
+
+func (s *HomeScreen) ScreenTitle(context.Context) string { return "Hello" }
+func (s *HomeScreen) Render() render.HTML {
+	return ui.Card(ui.CardConfig{Heading: "Ship faster"},
+		html.Paragraph(html.TextConfig{}, render.Text("Server-rendered HTML in Go, zero JS build step.")),
+	)
+}
+
+type Greeting struct {
+	Message string ` + "`json:\"message\"`" + `
+}
+
 func main() {
-	db, _ := sql.Open("sqlite3", "app.db")
-	app := framework.NewApp(framework.WithDB(db), framework.WithMCP()) // WithMCP serves the tools at /mcp
+	pages := app.NewApp("Demo")
+	pages.Register("/", &HomeScreen{}, nil)
 
-	// CRUD is auto-on when a DB is set (CRUD *bool: nil = auto).
-	app.Entity("posts", framework.EntityConfig{
-		Exposure: &framework.ExposureConfig{
-			Public: true, // anonymous read AND write; omit it and CRUD requires a session (secure by default)
-			MCP:    true, // emit posts_list/get/create/update/delete MCP tools
-		},
-		Fields: []schema.Field{{Name: "title", Type: schema.String, Required: true}},
-	})
+	fw := framework.NewUIHostApp(uihost.New(pages),
+		framework.WithMCP(),
+		framework.WithMCPTools(func(s *mcp.Server) error {
+			return s.RegisterTool("greet", "Return a greeting", nil, func(ctx context.Context, _ map[string]any) (any, error) {
+				return Greeting{Message: "hello from mcp"}, nil
+			})
+		}),
+	)
 
-	log.Fatal(app.Start(":8080")) // GET/POST /posts, /openapi.json, MCP: all live
+	fw.Router().Get("/api/hello", handler.HandlerAdapter(func(ctx context.Context, _ struct{}) (Greeting, error) {
+		return Greeting{Message: "hello from go"}, nil
+	}))
+
+	log.Fatal(fw.Start(":8080")) // HTML at /, JSON at /api/hello, MCP at /mcp
 }`
 
 var heroDonaldSrc = `package main
