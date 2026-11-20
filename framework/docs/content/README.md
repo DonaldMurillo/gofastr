@@ -1,286 +1,104 @@
-# GoFastr documentation index
+# GoFastr documentation
 
-The top-level `README.md` is the entry point. These pages are
-per-feature references, each grounded in the actual code. Every
-guide doc ends with a "common mistakes" callout; the handful of
-data and index artifacts (this index, the overview map, benchmark
-results, the harness contract) are exempt. The exemption list lives in
-`framework/docs/docs_test.go` and is enforced by
-`TestGuideDocsEndWithCommonMistakes`.
+Every guide here ships inside the `gofastr` binary. Browse offline with `gofastr docs`, search with `gofastr docs --grep <term>`, or read them online at [donaldmurillo.github.io/gofastr](https://donaldmurillo.github.io/gofastr/).
+
+If you are new to GoFastr, start with the [Overview](overview.md), then jump to the capability map for what you are building ([Backend](backend-capability-map.md) or [UI](ui-capability-map.md)).
 
 ## Start here
 
-- [Backend capability map](backend-capability-map.md): one row per job
-  (scope rows to a user, add auth, prove the API works), the symbols to
-  compose, and a command that verifies it. Land here before opening any
-  topic page below.
-- [UI capability map](ui-capability-map.md): start from a product job
-  such as a live dashboard, optimistic board, master/detail workspace,
-  or server-authoritative reactive SaaS; choose state and delivery
-  boundaries before package names.
-- [AppSpec tutorial](tutorial-app-spec.md): walks through the
-  optional scaffolder: app spec → generated UI + API → auth + owner
-  scoping + RBAC → customize in plain Go → deploy.
-- [Comparison](comparison.md): vs PocketBase, Encore, Wasp, and
-  hand-rolled Gin+sqlc; weaknesses stated honestly.
-- [API stability](stability.md): how breaking changes ship and upgrade,
-  experimental exclusions, and the v1 semantic-versioning promise.
+- [Overview](overview.md): how the layers fit together, from barebones `core/` to a full-stack app.
+- [UI getting started](ui-getting-started.md): scaffold an app, run `gofastr dev`, customize the theme, and build screens.
+- [Project structure](project-structure.md): why apps start flat and when to introduce `internal/` or `cmd/`.
+- [The gofastr CLI](cli.md): install, scaffold, dev server, migrations, verification, and releases.
+- [Backend capability map](backend-capability-map.md): pick a backend job and jump straight to the package and doc.
+- [UI capability map](ui-capability-map.md): pick a UI shape and see state ownership, delivery tier, and examples.
+- [Comparison](comparison.md): honest trade-offs vs PocketBase, Encore, Wasp, and hand-rolled Go.
+- [API stability](stability.md) and [Upgrading](upgrading.md): pre-v1 breaking-change policy and `gofastr upgrade`.
 
-## Architecture & conventions
+## UI & interactivity
 
-- [Runtime contract](runtime-contract.md): the UI/runtime contract:
-  SSR/hydration/island/SSE model + `data-cui-*` attribute reference.
-  **Mandatory reading** before any UI or runtime change. (Embedded
-  extract; the repo's source of truth is `core-ui/ARCHITECTURE.md`.)
-- [`ROADMAP.md`](../../../ROADMAP.md): forward-looking work (proposals,
-  performance opportunities, in-flight plans).
-- [Project structure](project-structure.md): why `gofastr init` ships a
-  flat layout and you grow structure as real boundaries appear.
-- [Core packages](core-packages.md): a map of the exported `core/*`
-  packages with no dedicated page: what each does, when you touch it
-  directly vs through the framework, and one code anchor.
-- [The SQLite driver GoFastr ships](sqlite-driver.md): modernc.org/sqlite
-  registered as `sqlite3`, the three DSN defaults `sqlite/stdlib` adds to
-  every connection, and why `:memory:` needs one connection.
+- [Reactivity model](reactivity.md): choosing between client signals, island RPC, polling, and SSE push.
+- [UI components](ui-new-components.md): catalog of built-in `framework/ui` components.
+- [UI composition recipes](ui-composition-recipes.md): real desktop and mobile layouts built from kit primitives.
+- [UI wiring](ui-wiring.md): mounting the UI host onto a plain `framework.App` by hand.
+- [Theming](theming.md): light/dark palettes, semantic tokens, and owning your own `theme/theme.go`.
+- [Layouts](layouts.md): shared shells, nested routes, and partial navigation swaps.
+- [Forms](form-module.md): server-validated forms, field controls, conditional sections, and wizards.
+- [Widgets](widgets.md): modals, drawers, popovers, and toasts via `core-ui/widget`.
+- [Interactive patterns](interactive-patterns.md): `data-cui-*` behaviors and hand-written server islands.
+- [Signal store](signal-store.md): typed client state shared across components with SSR seeding.
+- [Optimistic UI](optimistic-ui.md): optimistic mutations, rollback, and conflict reconciliation.
+- [Live dashboards](live-dashboards.md): keeping dashboards fresh with polling, signals, and SSE.
+- [Pane host](pane-host.md): master/detail workspaces and side-pane navigation.
+- [Presence](presence.md): live user rosters over the SSE lane.
+- [Runtime contract](runtime-contract.md): full SSR/hydration/island model and `data-cui-*` reference.
+- [Headless components](ui-headless.md): unstyled structure and behavior hooks for custom design systems.
+- [Browser-local storage](localdb.md) and [Local entities](local-entities.md): IndexedDB stores declared in Go.
+- [SEO](seo.md), [PWA](pwa.md), and [Accessibility](accessibility.md): metadata, sitemaps, offline shells, and a11y checks.
+- [Static-site export](static-export.md) and [Site search](site-search.md): render routes to static HTML with offline search.
+- [Porting an existing frontend](porting.md): serving an external design system or `html/template` pages.
 
-## Entity APIs
+## Data, APIs & entities
 
-- [Entity declarations](entity-declarations.md): JSON + Go field types
-  and the runtime/code-gen loaders.
-- [States](states.md): `EntityConfig.States` gives an entity a state
-  machine the CRUD handler enforces: a guarded state field, moves as a
-  route, an MCP tool and a Go call.
-- [Batch endpoints](batch-endpoints.md): `_batch` POST / PATCH / DELETE
-  with one-transaction semantics.
-- [Includes & eager loading](includes.md): `?include=` with scoped
-  filters and nested paths.
-- [Cursor pagination](cursor-pagination.md): opt-in keyset paging,
-  composite cursors, when to pick offset vs cursor.
-- [Entity events & SSE](events.md): `_events` stream, push-only,
-  backpressure rules.
-- [File uploads](uploads.md): multipart on `Image`/`File` fields via
-  `WithFileStorage`, plus `WithImagePipeline` for automatic renditions,
-  BlurHash, and LQIP on every `Image` upload.
-- [Entity screens](entityui.md): `framework/entityui`: the list, record
-  and create screens generated apps and the admin draw, from the
-  entity's `Display` and `States`, with query-param state and the read
-  gates the API applies.
-- [Query DSL](query-dsl.md): agent-friendly query parser →
-  `core/query` builder.
+- [Entity declarations](entity-declarations.md): declare tables, REST CRUD, validation, OpenAPI, and MCP tools.
+- [Migrations](migrations.md): versioned SQL migrations, schema diffing, and dialect support.
+- [Hooks & transactions](hooks-and-transactions.md): lifecycle hooks, `App.InTx`, and shared transactions.
+- [Custom endpoints](endpoints.md): adding hand-written routes alongside entities.
+- [Query DSL](query-dsl.md), [Includes](includes.md), and [Cursor pagination](cursor-pagination.md): filtering, eager loading, and keyset paging.
+- [States](states.md): state machines enforced across REST, MCP, and Go writes.
+- [Batch endpoints](batch-endpoints.md): atomic multi-record `_batch` writes.
+- [Entity events & SSE](events.md): push-only entity change streams.
+- [Entity screens](entityui.md): generated list, detail, and create screens for entities.
+- [File uploads](uploads.md) and [Image pipeline](image.md): multipart uploads, variants, and pure-Go resizing.
+- [The SQLite driver](sqlite-driver.md): pure-Go SQLite (`CGO_ENABLED=0`) defaults and `:memory:` rules.
+- [API versioning (experimental)](api-versioning.md): versioned prefixes, projections, and deprecation headers.
 
-## App features
+## Auth, security & operations
 
-- [Hooks & transactions](hooks-and-transactions.md): lifecycle hook
-  points, `TxFromContext`, `App.InTx`, typed hooks.
-- [Access control](access-control.md): `RolePolicy`,
-  `RequirePermission`, custom `Policy` implementations.
-- [Authentication](auth.md): `battery/auth`: AuthManager + plugins
-  (login, OAuth, magic-link, emailed codes, 2FA, accounts, email
-  verification, password reset), optional UserStore/SessionStore extensions,
-  cookie + rate-limit posture, threat model.
-- [Multi-tenant scoping](multi-tenant.md): auto-inject, auto-scope,
-  the tenant header middleware.
-- [Cron / scheduled jobs](cron.md): in-process `Scheduler`, spec
-  syntax, single-replica constraint.
-- [Audit log](audit-log.md): `WithAuditLog`, transactional row
-  writes, schema.
-- [Server logs](log.md): `battery/log`: structured JSON access logs,
-  panic recovery, lifecycle events; writes to a file (default or a
-  path you choose) and to webhook sinks.
-- [Plugins](plugins.md): `Plugin` + optional capability interfaces.
-- [Heavy-JS plugin platform](plugin-platform.md): sandboxed-iframe
-  isolation host for megabyte-class client plugins; capability grants
-  over auth scopes; the trusted-mount opt-out; the plugins.json
-  registry convention.
-- [Dev-mode livereload](dev-livereload.md): auto-wired SSE refresh
-  under `gofastr dev`; env kill switches for prod.
-- [Runtime JS and CSS minification](runtime-minification.md): embedded
-  `runtime.js` minifier, served-CSS minifier, env gating, prod-wins
-  defaults.
-- [WebMCP bridge (experimental)](webmcp.md): expose server-declared
-  tools to in-browser agents via the page's `modelContext` (the Chrome
-  origin-trial WebMCP API); execute() proxies to same-origin endpoints
-  with the visitor's session.
-- [Generative UI](generative-ui.md): the position: models compose the
-  design system, never emit markup or CSS; where that rule applies
-  (agent-built apps, Kiln, MCP App widgets) and why runtime per-user
-  generation is plugin territory, not a framework feature.
-- [Agent host](agent-host.md): the contract for the chat-host surface:
-  `RoleAgent`, authoring MCP App widgets with the document builder, and
-  consuming the host's theme signals instead of shipping a palette.
-- [A2A task exchange](a2a.md): the Agent2Agent v1.0 task exchange behind
-  `WithA2A`: deterministic named skills, derived entity skills and their
-  data-part contract, the task lifecycle, streaming, push notifications,
-  and the boundary between task state and the queue.
-- [Application hosts](application-hosts.md): `App.Run(ctx, host)`,
-  the one lifecycle engine behind `Start` and `Serve`;
-  `ServicesHost` for an App that opens no listener; `ServicesReady`
-  versus `OnReady`; and the stop, cancel and rollback rules a native
-  host follows.
-- [Desktop host (experimental)](desktop.md): `battery/desktop`: run
-  the app in the OS WebView from a CGO_ENABLED=0 binary: boot-token
-  loopback handshake, typed JS bridge with permission-gated
-  chokepoint, menus, tray, deep links, remembered window state, app
-  state, declared preferences with a settings screen, single-user
-  mode, and the fs allow-list. Experimental: pin a version.
-- [Logs and traces on disk (experimental)](telemetry.md):
-  `battery/telemetry`: log lines and complete traces in day files on the
-  app's own machine, inside a disk and memory budget.
-- [OS service host (experimental)](service.md): `battery/service`:
-  `<app> service install` registers the binary as a per-user launchd
-  agent, `systemd --user` unit or Task Scheduler task; the loopback
-  gate (Host pin, cross-site refusal, signed session), the token
-  sign-in `open` performs, the control channel, the local identity,
-  and the dev run. Experimental: pin a version.
+- [Authentication](auth.md): sessions, login, OAuth, magic links, 2FA, passkeys, and password resets.
+- [Access control](access-control.md): roles, wildcard scopes, permissions, and custom policies.
+- [Security defaults](security.md): CSP, CSRF, CORS, headers, and safe defaults.
+- [Multi-tenant scoping](multi-tenant.md): automatic `tenant_id` isolation.
+- [Rate limiting](rate-limit.md) and [Idempotency](idempotency.md): abuse protection and safe mutation retries.
+- [Audit log](audit-log.md), [Server logs](log.md), and [Observability](observability.md): audit trails, JSON logs, and metrics.
+- [Health checks](health-checks.md) and [First-run setup](first-run.md): probes and initial-boot onboarding.
+- [Deployment](deploy.md), [Scaling](scaling.md), and [Backups](backups.md): single-binary deploys, multi-replica fanout, and backups.
+- [Data export & erasure](data-export.md): user data portability and deletion helpers.
+- [Project settings](settings.md), [Env / .env](dotenv.md), and [Worktree isolation](isolation.md): local config and parallel agent worktrees.
 
-## Building UI
+## Batteries & infrastructure
 
-- [Reactivity model](reactivity.md): the four ways to make a page
-  change after first paint: client signals, RPC, polling, and SSE push.
-  Read this first when deciding how a surface stays fresh. The ladder,
-  the statelessness contract, and the session-token story.
-- [UI capability map](ui-capability-map.md): task-oriented architecture
-  map with runnable proofs, state ownership, replica semantics, and
-  explicit non-goals.
-- [UI getting started](ui-getting-started.md): the 15-minute path:
-  scaffold → design direction → theme → framework-native composition.
-- [UI composition recipes](ui-composition-recipes.md): product-shaped
-  desktop/mobile page structures composed entirely from `framework/ui`
-  primitives.
-- [UI wiring](ui-wiring.md): adding the UI system to a plain
-  `framework.App` by hand: site app, theme, layout, `uihost.New`,
-  and the `WidgetMounter` shim, with a complete `main.go`.
-- [Theming](theming.md): the token catalog, dark mode via
-  `DarkColors` + `data-color-scheme`, `ui.Themed` section overrides,
-  `--ui-*` component knobs, and why component internals are never
-  overridden from site CSS.
-- [Runtime contract](runtime-contract.md): the SSR / hydration /
-  island / SSE model and the `data-cui-*` attribute reference
-  (embedded extract of `core-ui/ARCHITECTURE.md`).
-- [UI components index](ui-new-components.md): one-page catalog of
-  every component the framework ships, each with its package, `go doc`
-  path, and live demo at `/components/<slug>` on the docs site.
-- [Interactive patterns](interactive-patterns.md): every `data-cui-*`
-  behavior, client-only vs RPC-backed, plus writing a hand-written
-  island end to end.
-- [Form module](form-module.md): HTML form primitives, `framework/ui`
-  form components, validation, conditional sections, step wizards.
-- [Widgets](widgets.md): `core-ui/widget` builder and presets
-  (modal, drawer, popover, toast).
-- [Signal store](signal-store.md): `core-ui/store` typed shared
-  client state with SSR seeding.
+- [Queue](queue.md) and [Cron](cron.md): background jobs with retries/dead-letter and scheduled tasks.
+- [Email](email.md) and [Notifications](notifications.md): SMTP/log senders and multi-channel templates.
+- [File storage](storage.md) and [Cache](cache.md): pluggable local/S3 storage and caching interfaces.
+- [Search](search.md) and [Semantic search](semantic-search.md): FTS5/Postgres full-text and local vector search.
+- [Webhooks](webhooks.md): signed outbound delivery with retries and dead-lettering.
+- [Admin UI](admin.md): built-in back-office screens for data, queues, and audit logs.
+- [Printable documents](print.md): print-friendly HTML and optional PDF generation.
+- [Feature flags](feature-flags.md) and [Internationalization](i18n.md): rollouts, translations, CLDR formatting, and RTL.
+- [First-party relay](relay.md) and [Analytics recipes](analytics-recipes.md): same-origin proxying for analytics under strict CSP.
+- [Embed](embed.md) and [WebRTC rooms](rtc.md): embeddable third-party frames and peer-to-peer signaling.
+- [Plugins](plugins.md), [Modules](modules.md), [Process modules](process-modules.md), and [Plugin platform](plugin-platform.md): extending an app in-process or isolated.
 
-## Operations
+## Agents & the agentic web
 
-- [Project settings](settings.md): `gofastr.settings.yml`, the one file
-  that holds codegen, contracts, isolation and unmounted configuration.
-- [Unmounting a package](unmount.md): copy a gofastr package into the
-  app to change it, and `gofastr remount` to go back.
-- [Worktree isolation](isolation.md): automatic local port, DB, and
-  service-env isolation for linked Git worktrees.
-- [Migrations](migrations.md): SQL files, CLI subcommands,
-  auto-migrate, dialects.
-- [First-run setup](first-run.md): the `battery/setup` wizard: an
-  interactive first-boot setup and a scriptable headless path for IaC,
-  over one bootstrap API.
-- [Security defaults](security.md): default middleware chain, CSP,
-  CORS, CSRF, rate limiting.
-- [Auditing init-time registrations](audit-deps.md): `gofastr audit deps`
-  lists every `init()` that mutates framework-wide state, so a dependency
-  that hijacks startup is visible before `main()` runs.
-- [Idempotency keys](idempotency.md): `Idempotency-Key` header
-  support for safe-retry of POST / PUT / PATCH / DELETE.
-- [Health checks](health-checks.md): `/healthz` + `/readyz`,
-  custom readiness checks, plugin/battery integration.
-- [Feature flags](feature-flags.md): `core/featureflag` evaluator,
-  rollout percentage, user/tenant/environment allow lists.
-- [Outbound webhooks](webhooks.md): `battery/webhook`: signed
-  delivery, retry-with-backoff, dead-letter, glob event filters.
-- [First-party relay](relay.md): `battery/relay`: same-origin reverse
-  proxy for third-party services (analytics, widgets, trackers) with
-  fixed upstreams, stripped credentials both ways, and the strict CSP
-  kept intact.
-- [WebRTC rooms](rtc.md): `battery/rtc`: signaling rooms over
-  StateChannel with server-derived identity and per-peer TURN
-  credentials, plus the `__gofastr.connectRoom` browser module; media
-  flows peer to peer and never touches Go.
-- [Analytics recipes](analytics-recipes.md): PostHog and Statsig
-  first-party through `battery/relay`: bootstrap script, pageviews on
-  `gofastr:navigate`, same-origin identity, and a `featureflag.Store`
-  adapter for server-side gates.
-- [Internationalization](i18n.md): every framework message as an
-  `i18n.Phrase` with a `reason` code, JSON catalogs, CLDR plurals,
-  numbers and dates, right-to-left pages, locale URL prefixes, and
-  `i18n.CheckCatalog`.
-- [Unified notifications](notifications.md): `battery/notify` sends
-  to multiple channels, each with its own template.
-- [Email](email.md): `battery/email`: SMTP and log senders behind one
-  `Sender` interface, plus template rendering.
-- [Factories / fixtures](factories.md): `framework/factory`
-  Rails-style test setup helpers.
-- [Testkit](testkit.md): `framework/testkit`: isolated per-test Postgres
-  databases, migrate callback, auto-drop on cleanup.
-- [Queue](queue.md): `battery/queue`: background job processing, dead-letter
-  replay, Redis and in-memory backends.
-- [Embed](embed.md): hand out screens as embeddable surfaces on other
-  people's sites: single-use handshake nonce, exact origin allowlist, a frame
-  runtime with no SPA navigation.
-- [Semantic search](semantic-search.md): local semantic search via brute-force cosine, no API
-  key required.
-- [Admin UI](admin.md): `battery/admin` stock screens for
-  queue + audit log.
-- [Printable documents](print.md): `battery/print`: declare a
-  print-friendly document route (invoice / receipt / report); optional
-  headless-Chromium PDF via the `chromepdf` adapter.
-- [Search](search.md): `battery/search` backend interface with three
-  shipped backends: in-memory, Postgres FTS, and SQLite FTS5.
-- [Image pipeline](image.md): `framework/image`: chainable
-  Resize / Rotate / Flip / Modulate / Placeholder / BlurHash (encode and
-  decode), pure-Go with no CGo or system codec dependencies. For CRUD
-  uploads, wire it once with `WithImagePipeline`; see
-  [File uploads](uploads.md).
-- [File storage](storage.md): `battery/storage`: the `Storage`
-  interface plus local and S3 backends, wired via `WithFileStorage`.
+- [Agent-ready apps](agent-ready.md): `/mcp`, `llm.md`, `llms.txt`, and agent discovery endpoints.
+- [MCP server](mcp.md): registering custom tools, resources, prompts, and gates with `core/mcp`.
+- [Agent host](agent-host.md): chat-host surfaces and MCP App widgets.
+- [A2A task exchange](a2a.md): Agent2Agent v1.0 skills and task lifecycle.
+- [Web Bot Auth](web-bot-auth.md): cryptographic bot identity verification.
+- [WebMCP bridge (experimental)](webmcp.md): exposing server tools to in-browser agents.
+- [Generative UI](generative-ui.md): composing the design system instead of emitting raw markup.
+- [Kiln](kiln.md) and [ACP](acp.md): experimental agent-driven build mode and Agent Client Protocol server.
 
-## Build-time tooling
+## Tooling, hosts & testing
 
-- [The gofastr CLI](cli.md): one binary; maps each `gofastr` command to
-  the doc that covers it.
-- [Contracts](contracts.md): `gofastr verify`: the rules that say whether
-  an app is still an idiomatic GoFastr app, not merely a compiling one.
-  Routing, permissions, security, architecture, rendering, semantic
-  coverage. Strict by default, relaxed only in writing.
-- [Static-site export](static-export.md): `app.ExportStatic`: render
-  every route in-process to a directory of query-free HTML + assets for
-  any static host (GitHub Pages, S3). Replaces the broken `wget` crawl;
-  stamps pages with `data-cui-static` so server-backed islands no-op
-  instead of 404'ing.
-- [Site search](site-search.md): `battery/sitesearch`: a full-text index
-  of every rendered page, searched from the command palette on a live
-  server or from JSON files in a static export.
-
-- [Codegen](codegen.md): YAML-configured generators, external extension
-  protocol, safe output paths, and manifest-based cleaning.
-- [Ship your API as a CLI](app-cli.md): `gofastr generate cli`: a
-  branded, stdlib-only terminal client for your customers, with scoped
-  API-token auth, batch verbs, live `watch`, entity/verb selection, and
-  a never-overwritten `custom.go` extension seam.
-- [Ship your API as SDKs](sdk.md): `gofastr generate sdk`: a
-  downloadable Go SDK module and a zero-dependency JS/TS client, served
-  by the app itself via `framework/sdkdocs`: live per-entity reference
-  pages, tabbed install guides, and schema-hash drift detection.
-- [App specs](app-spec.md): deterministic YAML-to-code input for
-  `gofastr generate app`, backed by the in-house `core/yaml` parser.
-- [Kiln (agent-driven build mode)](kiln.md): separate binary; build a
-  GoFastr app live via an agent CLI, then freeze to a `gofastr.yml` app spec
-  (with a lossless `world.json` snapshot) and generate owned Go.
-- [Benchmarks](benchmarks.md): tiered Go benchmarks covering claims-
-  defending end-to-end paths, hot-path microbenchmarks, concurrency,
-  and startup. `make bench`, output to `dist/bench/`.
-
-## Maintaining these docs
-
-The `gofastr-docs` skill at
-`.claude/skills/gofastr-docs/SKILL.md` auto-loads when adding,
-changing, or removing any exported API. Docs ship in the same commit
-as the code, not a follow-up.
+- [Contracts](contracts.md) and [Strict mode](strict-mode.md): `gofastr verify` static checks and semantic coverage.
+- [Testkit](testkit.md) and [Factories](factories.md): real HTTP/DB integration tests and fixture helpers.
+- [AppSpec tutorial](tutorial-app-spec.md), [App specs](app-spec.md), and [Codegen](codegen.md): optional one-file app scaffolding.
+- [Client SDKs](sdk.md), [Customer CLI](app-cli.md), and [Releases](release.md): shipping Go/TS SDKs, branded CLIs, and release installers.
+- [Application hosts](application-hosts.md), [Local apps](local-apps.md), and [Local runs](local-runs.md): running headless or managing local state.
+- [Desktop host (experimental)](desktop.md), [OS service host (experimental)](service.md), and [On-disk telemetry (experimental)](telemetry.md).
+- [Core packages](core-packages.md): standalone `core/` utilities without dedicated guides.
+- [Compute workers](compute.md), [Dev livereload](dev-livereload.md), [Runtime minification](runtime-minification.md), [Unmounting packages](unmount.md), and [Auditing deps](audit-deps.md).
+- [Benchmarks](benchmarks.md), [Performance results](perf-results.md), and the [Roadmap](../../../ROADMAP.md).

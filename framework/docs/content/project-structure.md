@@ -1,116 +1,75 @@
 # Project structure
 
-GoFastr does not impose a layout. It scaffolds a **flat** project and expects
-you to grow into structure as real boundaries appear: the way idiomatic Go
-projects actually evolve, not the way a framework dictates on day one.
+GoFastr does not force a directory layout. `gofastr init` scaffolds a flat project and expects structure to grow only as real boundaries appear—the same way idiomatic Go codebases evolve.
 
-> The rule: **structure follows the app.** Don't pre-build `cmd/` + `internal/`
-> for a hello-world. Extract a package when a real boundary shows up, not before.
+> **Start flat.** Don't create `cmd/`, `internal/`, and `services/` for a prototype. Extract packages when a real boundary shows up.
 
-## What `gofastr init` gives you
+## What `gofastr init` creates
 
-```
+```text
 myapp/
-├── main.go             # the entrypoint + UI host: one binary at the root
-├── screens.go          # the sample HomeScreen (package main, beside main.go)
-├── screens_auth.go     # /login and /register over battery/auth (wired in main.go)
-├── entities/           # Go entity declarations: the source of truth
-│   └── entities.go     # app.Entity(...) registrations (sample: posts, at /api/posts)
-├── migrations/         # versioned SQL (reversible)
-├── static/             # empty placeholder; serve it with uihost.WithStaticDir("static")
-├── gofastr.settings.yml   # project settings: isolation, codegen, contracts
+├── main.go                 # entrypoint, wiring, and Start()
+├── screens.go              # sample home screen (package main)
+├── screens_auth.go         # /login and /register screens (skipped with --no-entity)
+├── entities/               # optional Go entity declarations (skipped with --no-entity)
+│   └── entities.go
+├── migrations/             # versioned SQL migrations
+├── static/                 # static assets (serve via uihost.WithStaticDir)
+├── gofastr.settings.yml    # CLI and contract settings
 ├── go.mod
-└── AGENTS.md, CLAUDE.md, DESIGN.md, .agents/   # agent onboarding
+└── AGENTS.md, CLAUDE.md, DESIGN.md, .agents/   # coding-agent onboarding
 ```
 
-That's the whole thing. One `main.go`, your declarations, and the generated
-code beside them: all owned Go you commit and edit. No `gen/` quarantine dir,
-no `cmd/`, no `internal/`, no `controllers/services/repositories/`. There's
-nothing to navigate yet.
+Everything generated is plain Go you commit and edit. There is no `gen/` folder and no `DO NOT EDIT` scaffold lock-in. Run `gofastr dev` from the root for hot reload while iterating (use `go run .` only for quick one-off runs).
 
-## How it grows
+If you want a completely barebones start without the sample entity or auth screens, run `gofastr init myapp --no-entity`—or skip `init` altogether and import `core/` packages in a single `main.go`.
 
-GoFastr leans on the two layouts Go developers already reach for, in order:
+## How an app grows
 
-**1. Declarations + scaffolded code.** Entities are the canonical
-description: written in Go (`entities/entities.go`, the `gofastr init`
-default) or declared in a [`gofastr.yml` app spec](app-spec.md). When you
-generate from an app spec (`gofastr generate app gofastr.yml`), it scaffolds
-owned Go straight into this root layout: a flat `package main` (`main.go`,
-`app.go`, `screens_register.go` plus one `screen_<name>.go` per screen, …) plus
-the `entities/` package; you read, edit, and commit it.
-The app spec is optional and one-time, not a source of truth:
-`generate` is one-shot (it refuses to overwrite an existing project unless you
-pass `--force`), so once the code is yours you own and edit it directly, and
-you can delete `gofastr.yml` entirely; the running app does not need it. Most
-small apps never need more than this.
+### 1. Flat `package main` (prototypes and small apps)
 
-**`--out=<dir>` (or `output_dir:` in the app spec's `app:` block) scaffolds into
-a subpackage** instead of the module root, useful when the repo is a monorepo or
-an example that also hosts its own Go test package and you want the app to live
-under, say, `app/`. The [`internal/testapps/ecommerce`](https://github.com/DonaldMurillo/gofastr/tree/main/internal/testapps/ecommerce)
-example app uses `output_dir: app` for exactly this reason; develop it with
-`gofastr dev --dir app` (hot reload) or run it once with `go run ./app`. The
-subpackage is still owned Go; `--out` only changes *where* the scaffold
-lands, not whether you own it.
+Most prototypes and small apps stay flat at the module root: `main.go`, a few `screen_*.go` files, custom routes or handlers, and optional `entities/`.
 
-**2. Domain packages (`internal/<domain>/`), when real per-feature logic
-appears.** When a feature grows hooks, custom endpoints, background work, or
-service logic, give it a package named for the **domain**, not the technical
-layer:
+If you scaffold from a [`gofastr.yml` app spec](app-spec.md) with `gofastr generate app gofastr.yml`, it writes into this same flat layout (`--out=<dir>` puts it in a subpackage if you're inside a monorepo). Generation is one-shot—it refuses to overwrite existing files unless you pass `--force`—and the running app never reads `gofastr.yml`, so you can delete the YAML once the code is yours.
 
-```
+### 2. Domain packages under `internal/<domain>/`
+
+When a feature develops real business logic—billing webhooks, custom workflows, background jobs—move it into a package named after the **domain**, not the technical layer:
+
+```text
 myapp/
 ├── main.go
-├── entities/            # declarations stay here
-├── app.go, screens_register.go, screen_*.go  # generated screens + wiring (package main)
+├── screens.go
+├── entities/
 ├── internal/
-│   ├── billing/         # billing hooks, webhooks, invoice logic
-│   ├── projects/        # project-specific endpoints + rules
-│   └── auth/            # custom auth policy, owner extraction
+│   ├── billing/       # billing handlers, hooks, webhooks, invoice rules
+│   ├── projects/      # project endpoints, permissions, queries
+│   └── auth/          # custom policies and session helpers
 ├── migrations/
 └── static/
 ```
 
-The opinion GoFastr holds here: **organize by domain (`billing/`,
-`projects/`), not by layer (`controllers/`, `services/`, `repositories/`).**
-Everything about a feature lives together, which is easier
-to navigate and matches how the standard library and most large Go codebases
-are organized. `internal/` keeps these packages private to your module.
+Organize by feature (`billing/`, `projects/`), not by layer (`controllers/`, `services/`, `repositories/`). Everything for one domain stays together, and `internal/` keeps it private to your module.
 
-**3. `cmd/<name>/` only when you have a second binary.** A single server stays
-as a root `main.go`; that's idiomatic for one program. The moment you add a
-worker, a CLI, or a migration runner, give each its own `cmd/` directory:
+### 3. `cmd/<name>/` when you ship a second binary
 
-```
+One binary stays at the repo root (`main.go`). The moment you add a separate worker, CLI, or migration binary, introduce `cmd/`:
+
+```text
 myapp/
 ├── cmd/
 │   ├── server/main.go
 │   └── worker/main.go
-├── internal/…
-└── …
+└── internal/…
 ```
 
-## Reaching for `core/`
+## Mixing `core/`, `framework/`, and plain stdlib
 
-When the framework is in your way, drop to `core/` and write plain `net/http`:
-`core/router`, `core/render`, `core/query`, and friends are usable on their own.
-A domain package under `internal/` can mix framework entities and hand-written
-`core` handlers freely; nothing forces you to stay inside the entity layer.
+You never have to choose between barebones and framework-wide conventions. Inside the same app—or even the same `internal/<domain>/` package—you can mix `framework` screens, opt-in `app.Entity` registrations, `core/router` and `core/query` helpers, and plain `net/http` or `database/sql` handlers freely.
 
 ## Common mistakes
 
-- **Pre-building `cmd/server/` + `internal/` for a tiny app.** It's ceremony
-  with nothing in it. Start flat; the refactor to `cmd/`/`internal/` is
-  mechanical when you actually need it.
-- **Treating the scaffold as untouchable.** There's no `gen/` quarantine dir and
-  no `DO NOT EDIT` header; the generated `entities/` package and root
-  `app.go`/`screens_register.go`/`screen_*.go`/… are owned `package main` Go.
-  `gofastr generate` is one-shot: it scaffolds once and refuses to overwrite an
-  existing project (pass `--force` to regenerate the whole set).
-- **Layer-based packages (`services/`, `repositories/`).** In Go this scatters
-  one feature across many directories. Organize by domain instead.
-- **Keeping `gofastr.yml` around as a source of truth.** It's an optional,
-  one-time input to the scaffold; the app never reads it again. After
-  scaffolding, the owned Go is canonical; you can delete the app spec and
-  the app still runs.
+- **Pre-building `cmd/` + `internal/` on day one.** It adds navigation overhead with nothing inside. Start flat; moving files later is mechanical.
+- **Organizing by technical layer (`controllers/`, `services/`, `repositories/`).** In Go this scatters one feature across five folders. Group by domain instead.
+- **Treating scaffolded files as read-only.** Files from `gofastr init` and `gofastr generate app` are yours to edit directly; there is no hidden sync loop.
+- **Keeping `gofastr.yml` around as a source of truth.** Once generated, the Go files are canonical and the running app never reads the YAML again.
