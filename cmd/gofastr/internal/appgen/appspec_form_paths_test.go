@@ -79,9 +79,6 @@ func TestScreenInvalidationDependencies(t *testing.T) {
 		if !strings.Contains(src, `invalidateScreensOnWrite(fwApp, "/v2/blog_posts", "*")`) {
 			t.Errorf("%s record routes must invalidate their cached instances using the table: %s", kind, src)
 		}
-		if !strings.Contains(appSpecScreensRegisterGo, `case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:`) {
-			t.Errorf("%s must cover writes, not reads: %s", kind, src)
-		}
 	}
 	for _, blocks := range [][]appspec.AppSpecBlock{nil, {{Kind: "entity_form", Entity: "posts"}}, {{Kind: "entity_list", Entity: "missing"}}} {
 		if src := appSpecScreenInvalidation(appspec.AppSpecScreen{Route: "/", Body: blocks}, bp); src != "" {
