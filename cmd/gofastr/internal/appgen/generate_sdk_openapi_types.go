@@ -397,8 +397,45 @@ func (t *oaType) tsExpr() string {
 	return "unknown"
 }
 
+func (ts *oaTypeSet) goRecursiveCodecs() map[string]bool {
+	recursive := make(map[string]bool)
+	for _, name := range ts.order {
+		st := ts.structs[name]
+		if st.Additional == nil {
+			continue
+		}
+		seen := make(map[string]bool)
+		var reaches func(*oaType) bool
+		reaches = func(t *oaType) bool {
+			if t == nil {
+				return false
+			}
+			switch t.Kind {
+			case "map", "array":
+				return reaches(t.Elem)
+			case "struct":
+				if t.Name == name {
+					return true
+				}
+				if seen[t.Name] {
+					return false
+				}
+				seen[t.Name] = true
+				nested := ts.structs[t.Name]
+				return reaches(nested.Additional) || slices.ContainsFunc(nested.Fields, func(f oaField) bool { return reaches(f.Type) })
+			default:
+				return false
+			}
+		}
+		if reaches(st.Additional) || slices.ContainsFunc(st.Fields, func(f oaField) bool { return reaches(f.Type) }) {
+			recursive[name] = true
+		}
+	}
+	return recursive
+}
+
 // renderGo emits every struct type, in the order they were named.
-func (ts *oaTypeSet) renderGo(sb *strings.Builder) {
+func (ts *oaTypeSet) renderGo(sb *strings.Builder, recursive map[string]bool) {
 	for _, name := range ts.order {
 		st := ts.structs[name]
 		if !token.IsIdentifier(name) {
@@ -425,20 +462,30 @@ func (ts *oaTypeSet) renderGo(sb *strings.Builder) {
 				typ = "*" + typ
 			}
 			fmt.Fprintf(sb, "\t// AdditionalProperties holds JSON properties not declared by the schema.\n\tAdditionalProperties map[string]%s `json:\"-\"`\n}\n", typ)
-			st.renderGoObjectCodec(sb, typ)
+			st.renderGoObjectCodec(sb, typ, recursive[name])
 		} else {
 			sb.WriteString("}\n")
 		}
 	}
+	if len(recursive) > 0 {
+		sb.WriteString(oaGoJSONCycleGuard)
+	}
 }
 
-func (st *oaStruct) renderGoObjectCodec(sb *strings.Builder, valueType string) {
+func (st *oaStruct) renderGoObjectCodec(sb *strings.Builder, valueType string, recursive bool) {
 	wires := make([]string, 0, len(st.Fields))
 	for _, f := range st.Fields {
 		wires = append(wires, fmt.Sprintf("%q", f.Wire))
 	}
+	fmt.Fprintf(sb, "\nfunc (v %s) MarshalJSON() ([]byte, error) {\n", st.Name)
+	if recursive {
+		sb.WriteString(`	value := reflect.ValueOf(v)
+	if openAPIJSONHasCycle(value, nil, make(map[openAPIJSONVisit]bool)) {
+		return nil, &json.UnsupportedValueError{Value: value, Str: "encountered a cycle via " + value.Type().String()}
+	}
+`)
+	}
 	fmt.Fprintf(sb, `
-func (v %[1]s) MarshalJSON() ([]byte, error) {
 	type plain %[1]s
 	data, err := json.Marshal(plain(v))
 	if err != nil || len(v.AdditionalProperties) == 0 {
@@ -492,6 +539,74 @@ func (v *%[1]s) UnmarshalJSON(data []byte) error {
 }
 `, valueType)
 }
+
+const oaGoJSONCycleGuard = `
+type openAPIJSONVisit struct {
+	typ, owner reflect.Type
+	ptr uintptr
+	length int
+}
+
+func openAPIJSONHasCycle(v reflect.Value, owner reflect.Type, path map[openAPIJSONVisit]bool) bool {
+	kind := v.Kind()
+	switch kind {
+	case reflect.Ptr, reflect.Map, reflect.Slice:
+		if v.IsNil() || kind == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
+			return false
+		}
+		visit := openAPIJSONVisit{typ: v.Type(), owner: owner, ptr: v.Pointer()}
+		if kind == reflect.Slice {
+			visit.length = v.Len()
+		}
+		if path[visit] {
+			return true
+		}
+		path[visit] = true
+		defer delete(path, visit)
+	}
+	switch kind {
+	case reflect.Ptr:
+		return openAPIJSONHasCycle(v.Elem(), nil, path)
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			var owner reflect.Type
+			if v.Type().Field(i).Tag.Get("json") == "-" {
+				owner = v.Type()
+			}
+			if openAPIJSONHasCycle(v.Field(i), owner, path) {
+				return true
+			}
+		}
+	case reflect.Map:
+		iter := v.MapRange()
+		for iter.Next() {
+			if owner != nil && openAPIJSONDeclares(owner, iter.Key().String()) {
+				continue
+			}
+			if openAPIJSONHasCycle(iter.Value(), nil, path) {
+				return true
+			}
+		}
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			if openAPIJSONHasCycle(v.Index(i), nil, path) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func openAPIJSONDeclares(typ reflect.Type, key string) bool {
+	for i := 0; i < typ.NumField(); i++ {
+		name, _, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
+		if name != "-" && name == key {
+			return true
+		}
+	}
+	return false
+}
+`
 
 // renderTS emits every struct type as an interface.
 func (ts *oaTypeSet) renderTS(sb *strings.Builder) {

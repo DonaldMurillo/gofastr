@@ -514,6 +514,7 @@ JSON names take precedence over map keys. The Go generator reports a
 collision rather than renaming a property that derives one of these Go
 members: `AdditionalProperties`, `MarshalJSON`, or `UnmarshalJSON`.
 Omitting `additionalProperties` or setting it to `false` does not add a map.
+Encoding a recursive Go value with a cycle returns a JSON encoding error.
 
 Nullable JSON request bodies (`nullable: true` in OpenAPI 3.0 or a
 `type` list containing `"null"` in 3.1) retain null separately from

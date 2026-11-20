@@ -53,6 +53,10 @@ invariants:
     rule: The Go renderer refuses a named field that collides with an additional-properties member instead of renaming it.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKAdditionalPropertyNameCollision
+  - id: go-sdk-additional-property-cycles
+    rule: Marshaling a recursive Go object with additional properties returns an encoding error for a cycle on the wire, without rejecting shared children or traversing shadowed additional keys.
+    enforced_by:
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKAdditionalPropertiesRoundTrip
   - id: stream-timeout-bounds-the-headers
     rule: DoStream bounds a request by the HTTP client's Timeout only until the response headers arrive, and streams a 2xx body for as long as the caller's context allows, while a non-2xx error body and every buffered call keep the Timeout.
     enforced_by:

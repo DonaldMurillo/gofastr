@@ -419,6 +419,10 @@ func oaGoParamString(v, goType string) string {
 
 func renderOASDKOperations(spec oaSDKSpec) string {
 	need := map[string]bool{"context": len(spec.Ops) > 0, "net/http": len(spec.Ops) > 0, "net/url": len(spec.Ops) > 0}
+	recursive := spec.Types.goRecursiveCodecs()
+	if len(recursive) > 0 {
+		need["reflect"], need["strings"] = true, true
+	}
 	for _, name := range spec.Types.order {
 		st := spec.Types.structs[name]
 		need["encoding/json"] = need["encoding/json"] || st.Additional != nil
@@ -461,7 +465,7 @@ func renderOASDKOperations(spec oaSDKSpec) string {
 	}
 	sb.WriteString(")\n\n")
 	fmt.Fprintf(&sb, "// APIPrefix is the path the document's servers[0].url puts before every\n// operation's path. A Client's BaseURL is the server's origin followed by it.\nconst APIPrefix = %q\n", spec.API.APIPrefix)
-	spec.Types.renderGo(&sb)
+	spec.Types.renderGo(&sb, recursive)
 	for _, op := range spec.Ops {
 		renderOASDKParamsType(&sb, op)
 	}

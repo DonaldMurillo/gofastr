@@ -45,6 +45,7 @@ func TestOpenAPISDKAdditionalPropertiesRoundTrip(t *testing.T) {
     "type":"object",
     "properties":{
       "known":{"type":"string"},
+      "node":{"$ref":"#/components/schemas/Node"},
       "flex":{
         "type":"object",
         "properties":{
@@ -58,6 +59,15 @@ func TestOpenAPISDKAdditionalPropertiesRoundTrip(t *testing.T) {
       "implicit":{"type":"object","properties":{"label":{"type":"string"}}}
     },
     "additionalProperties":{"type":["integer","null"]}
+  },"Node":{
+    "type":"object",
+    "properties":{
+      "next":{"$ref":"#/components/schemas/Node"},
+      "children":{"type":"array","items":{"$ref":"#/components/schemas/Node"}},
+      "links":{"type":"object","additionalProperties":{"$ref":"#/components/schemas/Node"}},
+      "plain":{"type":"object","properties":{"back":{"$ref":"#/components/schemas/Node"}}}
+    },
+    "additionalProperties":{"$ref":"#/components/schemas/Node"}
   }}}
 }`, "--no-archive")
 	goDir := filepath.Join(out, "go")
@@ -84,6 +94,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -150,6 +161,42 @@ func TestAdditionalPropertyNames(t *testing.T) {
 	var record client.RecordData
 	if err := json.Unmarshal([]byte("{\"count\":\"not an integer\"}"), &record); err == nil {
 		t.Fatal("a string was accepted as a typed integer additional property")
+	}
+}
+
+func TestRecursiveMixedObject(t *testing.T) {
+	defer debug.SetMaxStack(debug.SetMaxStack(1 << 20))
+	for _, tc := range []struct {
+		name string
+		link func(*client.Node)
+	}{
+		{"pointer", func(n *client.Node) { n.Next = n }},
+		{"slice", func(n *client.Node) { n.Children = []client.Node{{}}; n.Children[0] = *n }},
+		{"map", func(n *client.Node) { n.Links = map[string]client.Node{}; n.Links["loop"] = *n }},
+		{"plain struct", func(n *client.Node) { n.Plain = &client.NodePlain{Back: n} }},
+		{"additional map", func(n *client.Node) { n.AdditionalProperties = map[string]client.Node{}; n.AdditionalProperties["loop"] = *n }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var node client.Node
+			tc.link(&node)
+			if _, err := json.Marshal(node); err == nil || !strings.Contains(err.Error(), "cycle") {
+				t.Fatalf("json.Marshal error = %v, want cycle error", err)
+			}
+		})
+	}
+
+	leaf := &client.Node{}
+	node := client.Node{
+		Next: leaf,
+		AdditionalProperties: map[string]client.Node{
+			"left": {Next: leaf}, "right": {Next: leaf},
+		},
+	}
+	node.AdditionalProperties["next"] = node
+	const want = "{\"left\":{\"next\":{}},\"next\":{},\"right\":{\"next\":{}}}"
+	got, err := json.Marshal(node)
+	if err != nil || string(got) != want {
+		t.Fatalf("json.Marshal = %s, %v; want %s", got, err, want)
 	}
 }
 
