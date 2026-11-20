@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/page"
 	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 
@@ -41,11 +42,13 @@ type webmcpServer struct {
 	echoHdr      http.Header
 	searchQ      string
 	searchSource string
+	echoStarted  chan struct{}
+	echoCanceled chan struct{}
 }
 
-func newWebmcpServer(t *testing.T) *webmcpServer {
+func newWebmcpServer(t *testing.T, opts ...MountOption) *webmcpServer {
 	t.Helper()
-	ws := &webmcpServer{}
+	ws := &webmcpServer{echoStarted: make(chan struct{}, 1), echoCanceled: make(chan struct{}, 1)}
 	rt := router.New()
 
 	rt.Post("/api/echo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +61,12 @@ func newWebmcpServer(t *testing.T) *webmcpServer {
 			Msg string `json:"msg"`
 		}
 		_ = json.Unmarshal(b, &in)
+		if in.Msg == "wait-for-abort" {
+			ws.echoStarted <- struct{}{}
+			<-r.Context().Done()
+			ws.echoCanceled <- struct{}{}
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"msg": strings.ToUpper(in.Msg)})
 	}))
@@ -94,6 +103,8 @@ func newWebmcpServer(t *testing.T) *webmcpServer {
 			// browser accepts the forwarded annotations object.
 			ReadOnlyHint:         true,
 			UntrustedContentHint: true,
+			ConsequentialHint:    true,
+			Debugging:            true,
 		},
 		{
 			Name:        "broken",
@@ -113,9 +124,8 @@ func newWebmcpServer(t *testing.T) *webmcpServer {
 		},
 		{
 			// Richer metadata (group, examples, output schema) must not
-			// break registration: the browser proposal cannot forward
-			// these fields, and the bridge must degrade safely — ignore
-			// what it cannot pass on, register what it can.
+			// break registration. OutputSchema describes the endpoint
+			// body, so it stays in the manifest with group and examples.
 			Name:        "grouped_probe",
 			Group:       "scene",
 			Description: "Schema stress: group, examples, output schema.",
@@ -133,7 +143,7 @@ func newWebmcpServer(t *testing.T) *webmcpServer {
 			t.Fatalf("register %s: %v", tl.Name, err)
 		}
 	}
-	scriptURL, err := h.Mount(rt, nil, WithBridgeDebug())
+	scriptURL, err := h.Mount(rt, nil, append(opts, WithBridgeDebug())...)
 	if err != nil {
 		t.Fatalf("mount: %v", err)
 	}
@@ -141,6 +151,7 @@ func newWebmcpServer(t *testing.T) *webmcpServer {
 	rt.Get("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{Name: "session", Value: "user-42", Path: "/"})
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Security-Policy", "script-src 'self'")
 		// The CSRF middleware minted a token on this GET; expose it the
 		// way the app shell does, via the meta tag the bridge reads.
 		fmt.Fprintf(w, `<!doctype html><html><head><title>webmcp e2e</title>`+
@@ -158,7 +169,7 @@ func newWebmcpServer(t *testing.T) *webmcpServer {
 	return ws
 }
 
-func webmcpBrowserCtx(t *testing.T) context.Context {
+func webmcpBrowserCtx(t *testing.T, native bool) context.Context {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("browser E2E disabled in short mode")
@@ -172,11 +183,13 @@ func webmcpBrowserCtx(t *testing.T) context.Context {
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
-		// The whole point: WebMCP is a flagged experimental web platform
-		// feature; this exposes navigator.modelContext on Chromium 146+.
-		chromedp.Flag("enable-blink-features", "WebMCP"),
 		chromedp.WSURLReadTimeout(90*time.Second),
 	)
+	feature := "enable-blink-features"
+	if !native {
+		feature = "disable-blink-features"
+	}
+	opts = append(opts, chromedp.Flag(feature, "WebMCP"))
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	t.Cleanup(allocCancel)
 	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithBrowserOption(chromedp.WithDialTimeout(90*time.Second)))
@@ -220,7 +233,7 @@ func evalAwait(ctx context.Context, expr string, out *string) error {
 
 func TestBridgeRegistersAndExecutesTools(t *testing.T) {
 	ws := newWebmcpServer(t)
-	ctx := webmcpBrowserCtx(t)
+	ctx := webmcpBrowserCtx(t, true)
 
 	if err := chromedp.Run(ctx, chromedp.Navigate(ws.srv.URL+"/")); err != nil {
 		t.Fatalf("navigate: %v", err)
@@ -326,6 +339,109 @@ func TestBridgeRegistersAndExecutesTools(t *testing.T) {
 	}
 }
 
+func TestStandalonePolyfill(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		native bool
+		opts   []MountOption
+	}{
+		{name: "disabled"},
+		{name: "polyfilled", opts: []MountOption{WithPolyfill()}},
+		{name: "preserves_native", native: true, opts: []MountOption{WithPolyfill()}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := newWebmcpServer(t, tc.opts...)
+			ctx := webmcpBrowserCtx(t, tc.native)
+			if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+				_, err := page.AddScriptToEvaluateOnNewDocument(`
+					window.beforeBridge = document.modelContext || navigator.modelContext;
+				`).Do(ctx)
+				return err
+			}), chromedp.Navigate(ws.srv.URL+"/")); err != nil {
+				t.Fatal(err)
+			}
+			var state struct{ Before, After, Same bool }
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+				const context = document.modelContext || navigator.modelContext;
+				return {before: !!window.beforeBridge, after: !!context, same: window.beforeBridge === context};
+			})()`, &state)); err != nil {
+				t.Fatal(err)
+			}
+			if tc.native && !state.Before {
+				t.Skip("Chromium build does not expose native WebMCP")
+			}
+			if state.Before != tc.native || state.After != (len(tc.opts) > 0) || (tc.native && !state.Same) {
+				t.Fatalf("unexpected context before and after loading bridge: %+v", state)
+			}
+			if len(tc.opts) == 0 {
+				return
+			}
+			waitForTools(t, ctx, "broken,echo_upper,get_app_instructions,grouped_probe,proto_probe,search")
+			if !tc.native {
+				var hints struct{ ReadOnlyHint, UntrustedContentHint, ConsequentialHint, Debugging bool }
+				if err := chromedp.Run(ctx, chromedp.Evaluate(`(async () =>
+					(await document.modelContext.getTools()).find(tool => tool.name === "search").annotations
+				)()`, &hints, func(p *cdpruntime.EvaluateParams) *cdpruntime.EvaluateParams {
+					return p.WithAwaitPromise(true)
+				})); err != nil {
+					t.Fatal(err)
+				}
+				if !hints.ReadOnlyHint || !hints.UntrustedContentHint || !hints.ConsequentialHint || !hints.Debugging {
+					t.Fatalf("tool annotations lost: %+v", hints)
+				}
+			}
+			var result string
+			if err := evalAwait(ctx, execToolExpr("echo_upper", `{msg:"fallback"}`), &result); err != nil {
+				t.Fatal(err)
+			}
+			assertToolResult(t, result, false, `{"msg":"FALLBACK"}`)
+			ws.mu.Lock()
+			header := ws.echoHdr
+			ws.mu.Unlock()
+			if !strings.Contains(header.Get("Cookie"), "session=user-42") ||
+				header.Get("X-CSRF-Token") == "" || header.Get(MarkerHeader) != "1" {
+				t.Fatal("tool call lost its session cookie, CSRF token, or invocation marker")
+			}
+		})
+	}
+}
+
+func TestPolyfillCancelsInFlightRequest(t *testing.T) {
+	ws := newWebmcpServer(t, WithPolyfill())
+	ctx := webmcpBrowserCtx(t, false)
+	if err := chromedp.Run(ctx, chromedp.Navigate(ws.srv.URL+"/")); err != nil {
+		t.Fatal(err)
+	}
+	waitForTools(t, ctx, "broken,echo_upper,get_app_instructions,grouped_probe,proto_probe,search")
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const context = document.modelContext;
+		window.toolAbort = new AbortController();
+		window.toolInvocation = context.getTools().then(tools => {
+			const tool = tools.find(tool => tool.name === 'echo_upper');
+			return context.executeTool(tool, {msg: 'wait-for-abort'}, {signal: window.toolAbort.signal});
+		}).then(() => 'resolved', err => err.name);
+	})()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ws.echoStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("tool never reached the endpoint")
+	}
+	var result string
+	if err := evalAwait(ctx, `(window.toolAbort.abort(), window.toolInvocation)`, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result != "AbortError" {
+		t.Fatalf("canceled invocation returned %q", result)
+	}
+	select {
+	case <-ws.echoCanceled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("invocation canceled without canceling the HTTP request")
+	}
+}
+
 // TestBridgeReadsCSRFMetaAtDispatchTime proves the CSRF token is read
 // when a tool executes, not when the bridge script parses: removing the
 // meta tag makes the next unsafe call 403 (isError), and restoring it
@@ -333,7 +449,7 @@ func TestBridgeRegistersAndExecutesTools(t *testing.T) {
 // after removal and a missing-meta page would never recover.
 func TestBridgeReadsCSRFMetaAtDispatchTime(t *testing.T) {
 	ws := newWebmcpServer(t)
-	ctx := webmcpBrowserCtx(t)
+	ctx := webmcpBrowserCtx(t, true)
 
 	if err := chromedp.Run(ctx, chromedp.Navigate(ws.srv.URL+"/")); err != nil {
 		t.Fatalf("navigate: %v", err)
