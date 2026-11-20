@@ -1,0 +1,15 @@
+primitive: ui.styling.pagetheme
+summary: The kiln page theme - PageTheme, the default style.Theme with the page palette and fonts, and PageCSS, the :root tokens plus the kiln- utility classes that read them.
+code:
+  - core-ui/widget/theme/
+docs:
+  - framework/docs/content/widgets.md
+invariants:
+  - id: page-css-reads-tokens
+    rule: PageCSS writes every token of t as a :root custom property, and the utility rules' font sizes, card shadow and colours read theme tokens, so swapping a token on the Theme changes the rules that read it.
+    enforced_by:
+      - test: core-ui/widget/theme.TestPageCSSEmitsRootVarsAndUtilities
+      - test: core-ui/widget/theme.TestPageCSSReflectsOverrideValues
+      - test: core-ui/widget/theme.TestPageCSSFontSizesFollowTypographyTokens
+      - test: core-ui/widget/theme.TestPageCSS_CardShadowMustUseShadowToken
+      - test: core-ui/widget/theme.TestPageCSS_TypographySizesMustUseTextTokens
