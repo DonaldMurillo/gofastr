@@ -97,6 +97,16 @@ invariants:
     enforced_by:
       - test: battery/desktop.TestStateSurvivesSecondBattery
       - test: battery/desktop.TestRememberedPathBecomesBootRedirect
+  - id: data-dir-env-absolute
+    rule: GOFASTR_DESKTOP_DATA_DIR replaces the OS user config dir as the data dir base only when it is absolute, and DataDir errors otherwise.
+    enforced_by:
+      - test: battery/desktop.TestDataDirEnvMustBeAbsolute
+  - id: persistent-profile-explicit
+    rule: Config.PersistentProfile on a shell without profile support makes Run return ErrUnsupported before the App starts, and with support Run prepares the profile under the resolved data dir, commits the bound address and releases the profile on every return.
+    enforced_by:
+      - test: battery/desktop.TestProfileUnsupportedExplicit
+      - test: battery/desktop.TestProfileResolvedIdentity
+      - test: battery/desktop.TestProfileStartupCleanup
 decisions:
   - id: new-panics
     date: 2026-11-20

@@ -5,10 +5,6 @@ import (
 	"encoding/json"
 )
 
-// windowsCapability: open, focus, close, and list the app's windows.
-// Ungated, the page already lives in one of these windows and can
-// only reach the app's own screens (path validated like a menu
-// Navigate path).
 func (b *Battery) windowsCapability() Capability {
 	return Capability{
 		Name:        "windows",
@@ -133,9 +129,6 @@ func (b *Battery) windowsCapability() Capability {
 	}
 }
 
-// windowsStyleInput is the page-facing shape of WindowStyle. Decoding
-// into a typed struct (never a map[string]any walk) makes a wrong-typed
-// field a decode error, not a silent miss.
 type windowsStyleInput struct {
 	Chrome      string `json:"chrome"`
 	Float       bool   `json:"float"`
@@ -147,10 +140,6 @@ type windowsStyleInput struct {
 	Y           *int   `json:"y"`
 }
 
-// toWindowStyle validates and maps the page's style object onto
-// WindowStyle. The coordinate bound keeps a page from parking a window
-// far off-screen; the pair rule matches the Go contract (both set, or
-// centered).
 func (s *windowsStyleInput) toWindowStyle() (WindowStyle, *Error) {
 	var chrome WindowChrome
 	switch s.Chrome {
@@ -183,7 +172,6 @@ func (s *windowsStyleInput) toWindowStyle() (WindowStyle, *Error) {
 	}, nil
 }
 
-// windowByID resolves a live window by id ("main" or a secondary id).
 func (b *Battery) windowByID(id string) (Window, bool) {
 	b.windowMu.Lock()
 	defer b.windowMu.Unlock()
@@ -194,7 +182,6 @@ func (b *Battery) windowByID(id string) (Window, bool) {
 	return w, ok
 }
 
-// windowsIDInput decodes the shared {id} request shape.
 func windowsIDInput(in json.RawMessage) (string, *Error) {
 	var req struct {
 		ID string `json:"id"`

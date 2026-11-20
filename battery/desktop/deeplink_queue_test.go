@@ -2,6 +2,8 @@ package desktop
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -206,5 +208,85 @@ func TestDeepLinkBeforeFlushKeepsArrivalOrder(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("delivery order = %q, want %q", got, want)
 		}
+	}
+}
+
+func TestColdDeepLinkQueueIsBounded(t *testing.T) {
+	b := New(Config{ID: "coldq.example.app", Shell: newFakeShell(), Logger: testLogger(t), DeepLink: &DeepLinkConfig{Scheme: "notes"}})
+	for i := range 3 * maxQueuedDeepLinks {
+		b.handleDeepLink(fmt.Sprintf("notes://q/%d", i))
+	}
+	q := b.deepLinkQueueState()
+	q.mu.Lock()
+	n, first := len(q.queued), q.queued[0].path
+	q.mu.Unlock()
+	if n != maxQueuedDeepLinks || first != fmt.Sprintf("/q/%d", 2*maxQueuedDeepLinks) {
+		t.Fatalf("pre-window queue holds %d links starting at %s, want the newest %d", n, first, maxQueuedDeepLinks)
+	}
+}
+
+type panickingFocusWindow struct{ *fakeWindow }
+
+func (panickingFocusWindow) Focus() error { panic("focus blew up") }
+
+func TestDeepLinkDeliveryPanicIsContained(t *testing.T) {
+	b := New(Config{ID: "dlpanic.example.app", Shell: newFakeShell(), Logger: testLogger(t), DeepLink: &DeepLinkConfig{Scheme: "notes"}})
+	w := panickingFocusWindow{&fakeWindow{id: MainWindowID}}
+	b.window = w
+	b.windows[MainWindowID] = w
+	b.flushDeepLinks(w)
+	b.handleDeepLink("notes://a")
+	b.handleDeepLink("notes://b")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		q := b.deepLinkQueueState()
+		q.mu.Lock()
+		idle := !q.draining && len(q.pending) == 0
+		q.mu.Unlock()
+		if idle {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the drain stopped after a delivery panicked")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestDeepLinkSchemeBounds(t *testing.T) {
+	for _, scheme := range []string{"", "a" + strings.Repeat("b", maxDeepLinkSchemeLen)} {
+		if err := validateDeepLink(&DeepLinkConfig{Scheme: scheme}); err == nil {
+			t.Errorf("scheme %q accepted", scheme)
+		}
+	}
+}
+
+type bootingPageWindow struct {
+	*fakeWindow
+	asks atomic.Int32
+}
+
+func (w *bootingPageWindow) EvalAsync(context.Context, string) (json.RawMessage, error) {
+	if w.asks.Add(1) < 3 {
+		return json.RawMessage("false"), nil
+	}
+	return json.RawMessage("true"), nil
+}
+
+func (w *bootingPageWindow) Eval(js string) error {
+	if w.asks.Load() < 3 {
+		return fmt.Errorf("eval before the page's runtime booted")
+	}
+	return w.fakeWindow.Eval(js)
+}
+
+func TestDeepLinkWaitsForThePageRuntime(t *testing.T) {
+	b := New(Config{ID: "dlwait.example.app", Shell: newFakeShell(), Logger: testLogger(t), DeepLink: &DeepLinkConfig{Scheme: "notes"}})
+	w := &bootingPageWindow{fakeWindow: &fakeWindow{id: MainWindowID}}
+	b.window = w
+	b.windows[MainWindowID] = w
+	b.deliverDeepLink(w, "notes://a", "/a")
+	if n := len(w.fakeWindow.evaluated); n == 0 {
+		t.Fatal("the navigate eval ran before the page's runtime answered")
 	}
 }

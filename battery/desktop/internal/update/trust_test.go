@@ -36,6 +36,7 @@ func TestCheckWindowsTrustPolicy(t *testing.T) {
 		{"installed loader with no subject", unsigned, trusted(nil), unsigned, msDLL, false},
 		{"installed loader untrusted, new one trusted", unsigned, Trust{State: Untrusted}, unsigned, acmeDLL, true},
 		{"installed loader missing, new one trusted", unsigned, unsigned, unsigned, msDLL, true},
+		{"installed loader missing, new one unsigned", unsigned, unsigned, unsigned, unsigned, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := CheckWindowsTrust(tc.running, tc.runningDLL, tc.exe, tc.dll)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
 
@@ -49,4 +50,38 @@ func TestDialogsCancelIsCancelledCode(t *testing.T) {
 func quoteJSON(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
+}
+
+func TestDialogsAnswerTheCleanPath(t *testing.T) {
+	b, shell := newTestBattery(t)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "picked.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	shell.openFileResult = []string{dir + "/./picked.txt"}
+	res, err := callMethod(t, b, "dialogs", "openFile", `{}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paths := res.(dialogPathsOutput).Paths; len(paths) != 1 || paths[0] != filepath.Join(dir, "picked.txt") {
+		t.Fatalf("openFile answered %q, want the clean form fs accepts back", paths)
+	}
+}
+
+func TestFolderListIsCapped(t *testing.T) {
+	dir := t.TempDir()
+	for i := range fsListLimit + 1 {
+		if err := os.WriteFile(filepath.Join(dir, strconv.Itoa(i)), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	out, ferr := listFolder(root, ".")
+	if ferr != nil || len(out.Entries) != fsListLimit || !out.Truncated {
+		t.Fatalf("list of %d entries = %d entries, truncated=%v, err=%v", fsListLimit+1, len(out.Entries), out.Truncated, ferr)
+	}
 }

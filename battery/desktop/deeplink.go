@@ -14,51 +14,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// Deep links: the OS hands the app a URL on its custom scheme
-// (`notes://notes/123`), on a cold launch or while running. The shell
-// delivers the raw URL through WindowConfig.OnDeepLink; the battery
-// validates it, turns it into an app path, navigates the main window,
-// and emits a `deep_link` event. Links that arrive before the window is
-// up are queued and delivered once it is.
-
-// DeepLinkConfig enables deep links for the app. Zero value: none.
+// DeepLinkConfig enables deep links for the app.
 type DeepLinkConfig struct {
-	// Scheme is the URL scheme the app claims ("notes"). The macOS
-	// bundle builder registers it in Info.plist. A Windows build made
-	// with `gofastr desktop build --scheme` registers it for the current
-	// user whenever the app starts. The battery refuses links on other schemes.
+	// Scheme is the URL scheme the app claims ("notes").
 	Scheme string
 
-	// OnDeepLink, when set, replaces the default mapping: return the
-	// app path the link navigates to, or ok=false to drop the link
-	// silently. The returned path must pass the same grammar a menu
-	// Navigate path passes (leading /, no scheme, no control
-	// characters, no . or .. segments, no path segment that decodes to
-	// a /, a \ or a control character) or the link is dropped with a
-	// Warn.
+	// OnDeepLink, when set, maps a link to its app path, or returns ok=false to drop it.
 	OnDeepLink func(u *url.URL) (path string, ok bool)
 }
 
-// Deep-link limits.
 const (
-	// maxDeepLinkBytes bounds one raw link. The link becomes a log
-	// line and a page event; neither should carry an unbounded URL.
-	maxDeepLinkBytes = 2048
-	// maxDeepLinkSchemeLen bounds the configured scheme (RFC 3986
-	// says 2 to 32 for the schemes anyone registers).
+	maxDeepLinkBytes     = 2048
 	maxDeepLinkSchemeLen = 32
-	// maxQueuedDeepLinks bounds both pre-window and pending delivery
-	// queues: a cold launch or a busy page must not allow a flood to
-	// grow memory without bound. Oldest pending links are dropped first.
-	maxQueuedDeepLinks = 16
+	maxQueuedDeepLinks   = 16
 )
 
-// reDeepLinkScheme is the custom-scheme grammar the battery registers
-// (lowercase first letter, then letters, digits, +, ., -).
 var reDeepLinkScheme = regexp.MustCompile(`^[a-z][a-z0-9+.-]*$`)
 
-// validate reports whether the config is usable. A nil config (deep
-// links off) is valid.
 func (c *DeepLinkConfig) validate() error {
 	if c == nil {
 		return nil
@@ -75,21 +47,13 @@ func (c *DeepLinkConfig) validate() error {
 	return nil
 }
 
-// validateDeepLink is the construction-time check New runs (a wiring
-// error you want at construction); handleDeepLink runs it again per
-// link so a battery built without New still fails closed.
 func validateDeepLink(c *DeepLinkConfig) error { return c.validate() }
 
-// deepLinkPayload is the deep_link event body: what the OS opened and
-// where the host navigated.
 type deepLinkPayload struct {
 	URL  string `json:"url"`
 	Path string `json:"path"`
 }
 
-// scrubDeepLink makes a raw link safe for a log line: control
-// characters become "?" and the copy is bounded. Nothing from the OS
-// reaches a log sink unscrubbed.
 func scrubDeepLink(raw string) string {
 	const max = 200
 	if len(raw) > max {
@@ -106,55 +70,30 @@ func scrubDeepLink(raw string) string {
 	return b.String()
 }
 
-// deepLinkQueue is the per-battery pre-window queue (Battery.deepLinks)
-// and, once the window is up, the ordered delivery line: links are
-// delivered by one goroutine in arrival order, never on the shell's
-// own thread, because delivery waits for the page's runtime through
-// the page evaluator and that answer arrives on the shell's thread.
 type deepLinkQueue struct {
 	mu       sync.Mutex
 	queued   []queuedDeepLink
 	pending  []deepLinkDelivery
 	draining bool
-	// flushed is set, under mu, by the flush that moves the pre-window
-	// queue onto the delivery line. A link routes to the window only
-	// once it is set: before that, a link that saw the window up could
-	// still pass the flush and strand behind it, or overtake the links
-	// the flush is about to deliver.
-	flushed bool
+	flushed  bool
 }
 
-// deepLinkRouteHook, when set by a test, runs in handleDeepLink after
-// the window check and before the link is queued or put on the line.
-// It is how a test pins the interleaving where the window comes up in
-// between.
 var deepLinkRouteHook atomic.Pointer[func()]
 
-// deepLinkDelivery is one link bound for one window.
 type deepLinkDelivery struct {
 	w         Window
 	raw, path string
 }
 
-// queuedDeepLink is a link that passed validation and mapping before the
-// window was up. The mapped path is kept so the flush delivers it
-// without running the host OnDeepLink a second time.
 type queuedDeepLink struct {
 	raw  string
 	path string
 }
 
-// deepLinkQueueState returns this battery's queue.
 func (b *Battery) deepLinkQueueState() *deepLinkQueue {
 	return &b.deepLinks
 }
 
-// handleDeepLink is WindowConfig.OnDeepLink: the raw URL the OS asked
-// the app to open. A link that fails validation is dropped with a Warn
-// (scrubbed); a link that arrives before the window is up is queued;
-// otherwise it is delivered at once. The window check and the queue
-// write share one lock with flushDeepLinks, so no link lands in the
-// pre-window queue after its one flush has run.
 func (b *Battery) handleDeepLink(rawURL string) {
 	path, ok := b.mapDeepLink(rawURL)
 	if !ok {
@@ -186,13 +125,9 @@ func (b *Battery) handleDeepLink(rawURL string) {
 	}
 }
 
-// mapDeepLink validates rawURL against DeepLinkConfig and maps it to an
-// app path. ok is false when the link is dropped.
 func (b *Battery) mapDeepLink(rawURL string) (string, bool) {
 	cfg := b.cfg.DeepLink
 	if cfg == nil {
-		// Deep links are off, yet a shell can still deliver one (a
-		// second instance forwarding its argument).
 		b.logger.Warn("desktop: dropping a deep link with deep links off", "url", scrubDeepLink(rawURL))
 		return "", false
 	}
@@ -221,18 +156,12 @@ func (b *Battery) mapDeepLink(rawURL string) (string, bool) {
 	}
 	var path string
 	if cfg.OnDeepLink != nil {
-		// The override owns the mapping; ok=false is the app declining
-		// the link, which is not a Warn.
 		p, ok := cfg.OnDeepLink(u)
 		if !ok {
 			return "", false
 		}
 		path = p
 	} else {
-		// Default: notes://host/path?q -> /host/path?q. The fragment
-		// never crosses (the page owns its own anchors), and the
-		// scheme alone maps to the app root. The path stays escaped:
-		// a decoded %3F or %23 would start a query or fragment.
 		path = "/" + u.Host + u.EscapedPath()
 		if u.RawQuery != "" {
 			path += "?" + u.RawQuery
@@ -246,10 +175,6 @@ func (b *Battery) mapDeepLink(rawURL string) (string, bool) {
 	return path, true
 }
 
-// enqueueDeepLink puts a link on the delivery line and starts the
-// drain when none is running. Deliveries run in arrival order on one
-// goroutine; the caller (the shell's deep-link callback or Run's
-// ready callback) returns at once.
 func (b *Battery) enqueueDeepLink(d deepLinkDelivery) {
 	q := b.deepLinkQueueState()
 	q.mu.Lock()
@@ -258,9 +183,6 @@ func (b *Battery) enqueueDeepLink(d deepLinkDelivery) {
 	b.startDeepLinkDrain(start, dropped)
 }
 
-// pushLocked appends d to the delivery line, dropping the oldest link
-// past the bound. It reports whether the caller must start a drain and
-// which links fell off. q.mu must be held.
 func (q *deepLinkQueue) pushLocked(d deepLinkDelivery) (start bool, dropped []string) {
 	q.pending = append(q.pending, d)
 	if len(q.pending) > maxQueuedDeepLinks {
@@ -272,8 +194,6 @@ func (q *deepLinkQueue) pushLocked(d deepLinkDelivery) (start bool, dropped []st
 	return start, dropped
 }
 
-// startDeepLinkDrain logs what pushLocked dropped and starts the drain
-// it asked for. It runs after q.mu is released.
 func (b *Battery) startDeepLinkDrain(start bool, dropped []string) {
 	for _, raw := range dropped {
 		b.logger.Warn("desktop: deep-link delivery queue is full; dropping the oldest pending link",
@@ -284,8 +204,6 @@ func (b *Battery) startDeepLinkDrain(start bool, dropped []string) {
 	}
 }
 
-// drainDeepLinks delivers pending links one at a time until the line
-// is empty, then retires; the next enqueue starts a fresh drain.
 func (b *Battery) drainDeepLinks() {
 	q := b.deepLinkQueueState()
 	for {
@@ -302,17 +220,8 @@ func (b *Battery) drainDeepLinks() {
 	}
 }
 
-// deepLinkPageWait bounds how long a delivery waits for the page's
-// runtime: a window whose document never boots (a dead server, a page
-// with no runtime) still gets the eval, and the log says it waited.
 const deepLinkPageWait = 15 * time.Second
 
-// awaitPageRuntime waits until the window's page holds the runtime's
-// navigate, polling through the page evaluator. On a cold launch the
-// queued link is flushed right after the boot navigation, before
-// /enter has answered, and a link can arrive while any document
-// loads; an eval against that window throws and the link is lost. A
-// window that cannot be asked (the fake shell) is taken as ready.
 func (b *Battery) awaitPageRuntime(w Window) {
 	pe, ok := w.(PageEvaluator)
 	if !ok {
@@ -335,14 +244,7 @@ func (b *Battery) awaitPageRuntime(w Window) {
 	}
 }
 
-// deliverDeepLink focuses the main window, waits for its page's
-// runtime, navigates it with the same client-side call a menu
-// Navigate item uses, and reports the link to every page listener
-// through the deep_link event.
 func (b *Battery) deliverDeepLink(w Window, rawURL, path string) {
-	// Delivery runs on the drain's bare goroutine through host-installed
-	// window methods (Focus, Eval, the page evaluator): recover so one
-	// panic drops that link and cannot kill the process.
 	defer func() {
 		if v := recover(); v != nil {
 			b.logger.Error("desktop: deep-link delivery panicked", "path", path, "panic", textsafe.Recovered(v))
@@ -366,12 +268,6 @@ func (b *Battery) deliverDeepLink(w Window, rawURL, path string) {
 	}
 }
 
-// flushDeepLinks delivers links queued before the window opened, in
-// arrival order, to w. Run calls it right after the boot navigation.
-// Each link was validated and mapped when it arrived, so the flush
-// delivers the stored path and never re-runs the host OnDeepLink. The
-// queued links move onto the delivery line under the same lock that
-// sets flushed, so a link arriving during the flush lands behind them.
 func (b *Battery) flushDeepLinks(w Window) {
 	q := b.deepLinkQueueState()
 	q.mu.Lock()

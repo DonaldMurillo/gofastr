@@ -51,3 +51,11 @@ func TestLaunchArgsWithoutBuild(t *testing.T) {
 		}
 	}
 }
+
+func TestLaunchArgsKnowTheLaunchOnlyScheme(t *testing.T) {
+	withBuiltLaunchArgs(t, []string{"desktop"}, "")
+	builtLaunchScheme = "notes"
+	if got := LaunchArgs([]string{"notes://n/1"}); !slices.Equal(got, []string{"desktop", "notes://n/1"}) {
+		t.Fatalf("a link on the scheme a macOS build stamped only for launch args = %q", got)
+	}
+}

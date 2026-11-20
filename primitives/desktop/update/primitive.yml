@@ -1,0 +1,148 @@
+primitive: desktop.update
+summary: The auto-updater, a signed feed checked on a schedule, a verified download swapped in place of the running bundle and relaunched, its page capability and the feed writer the CLI uses.
+code:
+  - battery/desktop/update.go
+  - battery/desktop/cap_updates.go
+  - battery/desktop/internal/update/
+docs:
+  - framework/docs/content/desktop.md
+on_change:
+  - No error, log line or bridge message from the updater carries a path or a URL; the bridge errors are fixed words and paths go through LogDetail.
+invariants:
+  - id: update-config-validated
+    rule: New panics on an Update config whose FeedURL is not https or http to 127.0.0.1, whose PublicKey is not 64 hex characters, whose Channel is over 64 bytes or holds a control character, whose MacOSTeamID is not ten uppercase letters and digits, or that sets both MacOSTeamID and MacOSAllowAdHoc.
+    enforced_by:
+      - test: battery/desktop.TestUpdateConfigValidation
+  - id: install-is-gated
+    rule: The updates capability is registered for every battery, check is ungated and install is gated updates:install, so the OS prompt asks once before a bundle is replaced.
+    enforced_by:
+      - test: battery/desktop.TestUpdatesCapabilityShape
+      - test: battery/desktop.TestUpdatesCheckAndInstallThroughThePage
+  - id: one-install-at-a-time
+    rule: install is single-flight through TryLock, so a concurrent call is refused at once, and every call after a completed swap is refused.
+    enforced_by:
+      - test: battery/desktop.TestInstallRefusesConcurrentInstall
+  - id: bundle-is-the-feed-release
+    rule: An install refuses a bundle whose version is not the feed release's or whose identifier is not the running app's, and refuses when the running app reports no identifier.
+    enforced_by:
+      - test: battery/desktop.TestInstallRefusesMislabelledBundle
+      - test: battery/desktop.TestInstallRefusesWithoutRunningIdentifier
+  - id: swap-rolls-back
+    rule: swap refuses before touching anything when an installed path is missing, and a failed rename puts back every unit already swapped, last first.
+    enforced_by:
+      - test: battery/desktop.TestInstallRetryAfterFailedRollbackKeepsOldBundle
+      - test: battery/desktop.TestFileLayoutInstallRollsBackEarlierFiles
+  - id: notify-once-per-version
+    rule: update_available is emitted once per version, one delivery at a time, and a version counts as notified only after a delivery succeeded.
+    enforced_by:
+      - test: battery/desktop.TestUpdateNotifySharesInflight
+      - test: battery/desktop.TestScheduledCheckEmitsEventOncePerVersion
+      - test: battery/desktop.TestUpdateNotifyRetriesDelivery
+  - id: signature-before-parse
+    rule: ParseFeed refuses a manifest over 64 KiB, then verifies the detached ed25519 signature over the exact manifest bytes before decoding anything, then refuses a feed or channel version that is not semver and a missing, malformed or passed expiry.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestParseFeedRejectsOversizeManifest
+      - test: battery/desktop/internal/update.TestParseFeedRejectsBadSignatureBeforeParse
+      - test: battery/desktop/internal/update.TestFeedRefusesInvalidChannelVersion
+      - test: battery/desktop/internal/update.TestParseFeedRefusesExpired
+  - id: fetch-rules
+    rule: Fetch refuses before dialing a URL that is not https or http to 127.0.0.1, holds every redirect to the same rule ahead of the caller's own CheckRedirect, and refuses a body past its cap.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestAllowedURLSchemeRules
+      - test: battery/desktop/internal/update.TestFetchRefusesDisallowedURLBeforeDialing
+      - test: battery/desktop/internal/update.TestFetchRefusesRedirectOffRule
+      - test: battery/desktop/internal/update.TestFetchKeepsRedirectPolicy
+      - test: battery/desktop/internal/update.TestFetchRefusesBodyOverCap
+  - id: extract-one-bundle-inside-root
+    rule: ExtractZip refuses an entry name with a backslash, a drive letter, a leading slash or a dot segment, any entry outside the one named root directory, an archive without that root's directory entry, and a symlink or device entry.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestCleanEntryNameRefusesEscapes
+      - test: battery/desktop/internal/update.TestExtractZipNeedsTheNamedRootDirectory
+      - test: battery/desktop/internal/update.TestExtractZipRefusesSymlinkEntry
+  - id: extract-drops-group-other-write
+    rule: An extracted directory is owner-writable and no extracted file or directory keeps group or other write.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestExtractDirectoriesRefusePublicWrites
+      - test: battery/desktop/internal/update.TestExtractDropsGroupOtherWrite
+  - id: semver-precedence
+    rule: Compare orders by major, minor and patch, puts a release above every pre-release of the same triple, and lets a longer pre-release list win when the prefixes match.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestCompareOrdersVersions
+      - test: battery/desktop/internal/update.TestIsNewerRules
+  - id: windows-trust-never-loosens
+    rule: CheckWindowsTrust refuses a new loader DLL that is not trusted or, when the installed one is trusted, signed by another subject, a new executable whose signature does not verify, and, when the running executable is trusted, a new one from another subject.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestCheckWindowsTrustPolicy
+  - id: move-tree-never-merges
+    rule: MoveTree refuses a destination that exists, renames with no-replace semantics in one syscall, and copies with exclusive creates when the rename crosses volumes.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestMoveTreeRefusesExistingDestination
+      - test: battery/desktop/internal/update.TestRenameRefusesAppearedDestination
+  - id: log-detail-has-no-path
+    rule: LogDetail keeps only the operation and the OS error of a path, link or syscall error and collapses any other error to fixed words.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestLogDetailDropsPaths
+  - id: predecessor-variable-consumed
+    rule: AwaitPredecessor removes GOFASTR_DESKTOP_UPDATE_PREDECESSOR from the environment and waits only when it names another positive process id.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestAwaitPredecessorConsumesTheVariable
+  - id: feed-writer-checks
+    rule: WriteFeed refuses a lifetime that is negative or past MaxFeedLifetime, merges into an existing manifest only when its signature verifies under the same key, and writes both files 0644.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestWriteFeedRefusesBadLifetime
+      - test: battery/desktop/internal/update.TestFeedRefusesForeignManifest
+      - test: battery/desktop/internal/update.TestFeedFilesArePublic
+  - id: key-file-cross-checked
+    rule: LoadPrivateKey accepts a hex seed, or a hex seed followed by its public key, which must match the seed's in constant time.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestLoadPrivateKeyFormats
+  - id: info-plist-unambiguous
+    rule: ParseInfoPlist refuses a repeated or missing CFBundleIdentifier or CFBundleShortVersionString.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestParseInfoPlistRefusesAmbiguity
+  - id: darwin-signature-pin
+    rule: On macOS an update must pass codesign --verify --deep --strict against the team's Developer ID requirement when MacOSTeamID is set, else the running bundle's designated requirement, and is refused when the running app has no identity unless MacOSAllowAdHoc, and under every policy when codesign cannot read the running app.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestDarwinVerifyPinsRunningIdentity
+      - test: battery/desktop/internal/update.TestDarwinVerifyPinsTeamID
+      - test: battery/desktop/internal/update.TestDarwinVerifyRefusesNoIdentity
+      - test: battery/desktop/internal/update.TestDarwinUnreadableIdentityRefuses
+  - id: windows-layout-is-closed
+    rule: A Windows install swaps exactly the executable and WebView2Loader.dll, refuses a running layout where the loader is missing or not a regular file, and relaunches the new executable with PredecessorEnv naming the quitting process.
+    enforced_by:
+      - test: battery/desktop/internal/update.TestReadRunningBuildRefusesABrokenLayout
+      - test: battery/desktop/internal/update.TestWindowsPlatformInspect
+      - test: battery/desktop/internal/update.TestWindowsRelaunchNamesThePredecessor
+decisions:
+  - id: build-metadata-refused
+    date: 2026-11-20
+    status: accepted
+    decision: A version with build metadata (+...) is refused.
+    rejected:
+      - option: Ignore build metadata as semver does.
+        why: Two versions that differ only in build metadata compare equal, and the updater would download the same version forever.
+    upholds: [semver-precedence]
+  - id: feed-expiry-signed
+    date: 2026-11-20
+    status: accepted
+    decision: The signed manifest carries an expiry and a client refuses it once passed, with no grace period.
+    rejected:
+      - option: A manifest valid forever once signed.
+        why: Whoever serves the feed could replay an old signed manifest and hold every client on an old release.
+    upholds: [signature-before-parse]
+  - id: no-revocation-fetch
+    date: 2026-11-20
+    status: accepted
+    decision: The Authenticode check runs WinVerifyTrust with no revocation fetch.
+    rejected:
+      - option: Check revocation online.
+        why: An install must not hang on a CRL download, and the feed's ed25519 signature is the primary check.
+    upholds: [windows-trust-never-loosens]
+  - id: install-refused-not-queued
+    date: 2026-11-20
+    status: accepted
+    decision: A second install while one runs is refused.
+    rejected:
+      - option: Queue it behind the first.
+        why: Two runs share <Name>.app.new and .old, and the second's RemoveAll of .old could delete the first's only copy of the running bundle between its renames.
+    upholds: [one-install-at-a-time]
