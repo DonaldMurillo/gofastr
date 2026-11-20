@@ -360,4 +360,12 @@ func TestShapeErrorHidesOtherFieldsSecret(t *testing.T) {
 	if err == nil || strings.Contains(err.Error(), "alpha-key") || !strings.Contains(err.Error(), "unknown name") {
 		t.Fatalf("Load = %v, want an unknown-rule error that does not quote the rule name", err)
 	}
+	var plain struct {
+		Token string `config:"TOKEN" sensitive:"true" default:"secret"` // not-a-secret: fixture
+		Mode  string `config:"MODE" validate:"secret=1"`
+	}
+	err = config.Load(&plain, config.MapSource{})
+	if err == nil || strings.Contains(err.Error(), "secret") || !strings.Contains(err.Error(), "unknown name") {
+		t.Fatalf("Load = %v, want an unknown-rule error that does not quote a plain-word rule name", err)
+	}
 }

@@ -722,26 +722,11 @@ func parseRules(t reflect.Type, tag string) ([]valueRule, error) {
 			}
 			r.choices = strings.Fields(arg)
 		default:
-			if isRuleName(key) {
-				return nil, fmt.Errorf("unknown validation rule %q", key)
-			}
-			return nil, fmt.Errorf("validation rule %d has an unknown name", i+1)
+			return nil, fmt.Errorf("validation rule %d has an unknown name (want min, max or oneof)", i+1)
 		}
 		rules = append(rules, r)
 	}
 	return rules, nil
-}
-
-func isRuleName(s string) bool {
-	if s == "" || len(s) > 16 {
-		return false
-	}
-	for _, r := range s {
-		if r < 'a' || r > 'z' {
-			return false
-		}
-	}
-	return true
 }
 
 func validateTags(v reflect.Value, tag string) error {

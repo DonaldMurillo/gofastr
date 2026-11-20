@@ -248,7 +248,7 @@ func TestUnboundFieldRuleRefused(t *testing.T) {
 		Inner
 		Mode string `config:"MODE"`
 	}
-	if err := Load(&shadowed{}, MapSource{"MODE": "quiet"}); err == nil || !strings.Contains(err.Error(), `unknown validation rule "bogus"`) {
+	if err := Load(&shadowed{}, MapSource{"MODE": "quiet"}); err == nil || !strings.Contains(err.Error(), "validation rule 1 has an unknown name") {
 		t.Errorf("shadowed: Load = %v, want the unknown rule refused", err)
 	}
 
