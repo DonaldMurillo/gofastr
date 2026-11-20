@@ -1340,8 +1340,8 @@ cached canonical screen before checking response success, including on 404 and
 policy refusals, just like ordinary navigation: an earlier identity's pages must
 not replay after the session changes. Closing routes through
 `history.back()`, so Back, Escape, the backdrop, and any
-`data-cui-intercept-close` button are one code path and the page
-underneath is never refetched.
+`data-cui-intercept-close` button uncover the page underneath
+without a refetch unless a save left it stale.
 
 **Stacking.** An intercepted link clicked INSIDE an open pane opens the
 target as a NEW layer over the current one — the same route check as

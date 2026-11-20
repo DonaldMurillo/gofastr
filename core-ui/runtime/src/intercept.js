@@ -17,7 +17,7 @@
 //     navigation back to the normal loadPage path.
 //   - The page underneath stays mounted. Closing is a history move, so
 //     Back, ESC, the backdrop and any data-cui-intercept-close button
-//     are one code path and returning to the list costs no refetch.
+//     uncover it without a refetch unless a save left it stale.
 //   - Intercepted HTML never enters the screen cache. The cache is
 //     keyed by path and holds canonical page renders; storing an
 //     overlay variant there would poison a later direct visit.
@@ -135,6 +135,7 @@
     NS._mergeSeed?.(t.el);
     t.el.setAttribute('data-cui-intercept-as', res.as);
     NS.scanAndLoadCSS?.(t.el);
+    t.stale = false;
   }
 
   function refresh(t, res, focus) {
@@ -244,7 +245,6 @@
     if (!below) {
       // The page under the stack is entry 0 of the new stack.
       underPath = location.pathname + location.search;
-      pageStale = false;
       stackId = RUN + ++seq;
       try { history.replaceState({ ...history.state, cui: { s: stackId } }, '', location.href); } catch (_) {}
     }
@@ -307,19 +307,19 @@
     if (!(lay ? lay.stale : pageStale)) return;
     const e = epoch;
     if (!guardOK(lay?.el ?? document, () => { if (e === epoch) uncover(focus); }, { to: location.href })) return;
-    if (!lay) {
-      pageStale = false;
-      NS.refresh?.();
-      return;
-    }
-    lay.stale = false;
-    fetchOverlay(lay.url, lay.fromURL)
+    if (lay) refetchLayer(lay, focus, e);
+    else NS.refresh?.();
+  }
+
+  function refetchLayer(lay, focus, e) {
+    const u = lay.url;
+    fetchOverlay(u, lay.fromURL)
       .then((res) => {
         if (e !== epoch) return;
-        if (!res) { fallbackNav(lay.url, ''); return; }
+        if (!res) { fallbackNav(u, ''); return; }
         refresh(lay, res, focus);
       })
-      .catch(() => { if (e === epoch) fallbackNav(lay.url, ''); });
+      .catch(() => { if (e === epoch) fallbackNav(u, ''); });
   }
 
   // Drop every layer without a history move: a real navigation has
@@ -518,19 +518,10 @@
       history.go(-back);
     }
     settleAfterDrop(focus);
-    if (!lay) {
-      NS.refresh?.();
-      return true;
-    }
-    for (const l of layers) l.stale = l !== lay;
     pageStale = true;
-    fetchOverlay(lay.url, lay.fromURL)
-      .then((res) => {
-        if (e !== epoch) return;
-        if (!res) { fallbackNav(lay.url, ''); return; }
-        refresh(lay, res, focus);
-      })
-      .catch(() => { if (e === epoch) fallbackNav(lay.url, ''); });
+    for (const l of layers) l.stale = true;
+    if (lay) refetchLayer(lay, focus, e);
+    else NS.refresh?.();
     return true;
   };
 
@@ -575,21 +566,12 @@
         drop(shut);
       }
       if (refetch) {
-        const u = location.pathname + location.search + location.hash;
-        const e = epoch;
-        lay.stale = false;
         lay.cur = j;
-        lay.url = u;
-        fetchOverlay(u, lay.fromURL)
-          .then((res) => {
-            if (e !== epoch) return;
-            if (!res) { fallbackNav(u, ''); return; }
-            refresh(lay, res, focus);
-          })
-          .catch(() => { if (e === epoch) fallbackNav(u, ''); });
+        lay.url = location.pathname + location.search + location.hash;
+        refetchLayer(lay, focus, epoch);
       }
       settleAfterDrop(focus);
-      uncover(focus);
+      if (!refetch) uncover(focus);
       return true;
     }
     // The entry belongs to none of the layers (the page under the
@@ -624,6 +606,7 @@
   // The navigation a data-cui-intercept-panel link handed over has
   // landed on its page: open the record over it.
   window.addEventListener('gofastr:navigate', () => {
+    pageStale = false;
     closeAllNow();
     const p = panel;
     panel = null;

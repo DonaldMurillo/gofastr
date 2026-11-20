@@ -56,7 +56,7 @@ func startInterceptReturnServer(t *testing.T) *httptest.Server {
 			switch r.URL.Path {
 			case "/rec/a":
 				fmt.Fprintf(w, `<div id="rec-a"><p id="rec-count">REC %d</p><a id="rec-new" href="/new">add</a>`+
-					`<a id="rec-to-b" href="/rec/b">rec b</a>`+
+					`<a id="rec-to-b" href="/rec/b">rec b</a><a id="rec-query" href="/rec/a?view=other">other view</a>`+
 					`<form id="rec-form" data-cui-rpc="/save" data-cui-rpc-method="POST" data-cui-rpc-navigate="/rec/a">`+
 					`<button id="rec-save" type="submit">Save</button></form></div>`, saves.Load())
 			case "/rec/b":
@@ -221,6 +221,67 @@ func TestSaveInUpperPaneRefreshesTheLayersUnder(t *testing.T) {
 	}
 	if !interceptWait(ctx, `!document.getElementById('rec-a') && `+fmt.Sprintf(textIs, "list-count", "LIST 1")) {
 		t.Fatalf("closing the lower record left the list stale: %+v", readStack(ctx))
+	}
+}
+
+func TestUncoveredStalePageSurvivesStartingANewStack(t *testing.T) {
+	ctx := returnRig(t)
+	returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+	returnClick(t, ctx, "rec-save", fmt.Sprintf(textIs, "rec-count", "REC 1"))
+	ngEval(t, ctx, `window.__pageGuardCalls = 0;
+		__gofastr._leaveGuard = { ok: (scope) => scope !== document || ++window.__pageGuardCalls > 1 };`, nil)
+	ngRun(t, ctx, chromedp.KeyEvent(kb.Escape))
+	if !interceptWait(ctx, `location.pathname === '/list' && window.__pageGuardCalls === 1 && `+fmt.Sprintf(textIs, "list-count", "LIST 0")) {
+		t.Fatalf("the page guard did not keep the list unchanged: %+v", readStack(ctx))
+	}
+
+	returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+	ngRun(t, ctx, chromedp.KeyEvent(kb.Escape))
+	if !interceptWait(ctx, `location.pathname === '/list' && window.__pageGuardCalls === 2 && `+fmt.Sprintf(textIs, "list-count", "LIST 1")) {
+		t.Fatalf("closing the new stack did not refresh the still-stale list: %+v", readStack(ctx))
+	}
+}
+
+func TestUncoveredStaleLayerRetriesSupersededRefresh(t *testing.T) {
+	for _, history := range []bool{false, true} {
+		name := "escape"
+		if history {
+			name = "history-refetch"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := returnRig(t)
+			returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+			if history {
+				returnClick(t, ctx, "rec-query", `location.search === '?view=other'`)
+			}
+			returnClick(t, ctx, "rec-to-b", `!!document.getElementById('rec-b')`)
+			returnClick(t, ctx, "rec-b-save", fmt.Sprintf(textIs, "rec-b-count", "REC 1"))
+			ngEval(t, ctx, `{
+				const fetch = __gofastr.fetch;
+				window.__lowerFetches = 0;
+				__gofastr.fetch = (url, opts) => {
+					if (String(url).endsWith('/rec/a') && opts?.headers?.['X-Gofastr-Intercept'] && ++window.__lowerFetches === 1) {
+						return new Promise(resolve => { window.__releaseLower = () => resolve(fetch(url, opts)); });
+					}
+					return fetch(url, opts);
+				};
+			}`, nil)
+			if history {
+				ngEval(t, ctx, `history.go(-2)`, nil)
+			} else {
+				ngRun(t, ctx, chromedp.KeyEvent(kb.Escape))
+			}
+			if !interceptWait(ctx, `!document.getElementById('rec-b') && window.__lowerFetches === 1 && location.pathname === '/rec/a' && !location.search`) {
+				t.Fatalf("expected one pending refresh after uncovering the lower record: %+v", readStack(ctx))
+			}
+
+			returnClick(t, ctx, "rec-to-b", `!!document.getElementById('rec-b')`)
+			ngRun(t, ctx, chromedp.KeyEvent(kb.Escape))
+			if !interceptWait(ctx, `window.__lowerFetches === 2 && `+fmt.Sprintf(textIs, "rec-count", "REC 1")) {
+				t.Fatalf("uncover did not retry the interrupted refresh: %+v", readStack(ctx))
+			}
+			ngEval(t, ctx, `window.__releaseLower()`, nil)
+		})
 	}
 }
 
