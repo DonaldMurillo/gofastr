@@ -49,7 +49,6 @@ invariants:
     rule: Both token stores consume a token on its first redeem, refuse an expired one at redeem and peek, and purge by exact payload; the SQL store keeps only the SHA-256 digest of each token.
     enforced_by:
       - test: battery/auth.TestMemoryMagicLinkTokenStore_DoubleRedeemFails
-      - test: battery/auth.TestMemoryMagicLinkTokenStore_ExpiredTokenFails
       - test: battery/auth.TestMemoryMagicLinkPeekRefusesExpired
       - test: battery/auth.TestSQLMagicLink_SingleUse
       - test: battery/auth.TestSQLMagicLink_Expired

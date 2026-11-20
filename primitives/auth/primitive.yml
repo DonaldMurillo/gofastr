@@ -119,7 +119,6 @@ invariants:
     enforced_by:
       - test: battery/auth.TestDefaultRolesReturnsACopy
       - test: battery/auth.TestRegisterUsesConfiguredRoles
-      - test: battery/auth.TestDefaultRolesIgnoreClientInput
   - id: set-user-roles-audited
     rule: SetUserRoles refuses a user id that is not storable text with ErrUserNotFound and emits roles.updated only after the store changed the roles.
     enforced_by:

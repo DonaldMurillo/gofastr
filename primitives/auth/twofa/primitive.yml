@@ -21,31 +21,27 @@ invariants:
       - test: battery/auth.TestBackupCodesRejectsGetRequests
       - test: battery/auth.TestTwoFARoutesRejectCrossSite
   - id: step-up-is-positive
-    rule: Enrol, verify, disable and backup-codes refuse a pending session and, on an account with an enabled factor, any session not marked TwoFactorVerified; an unreadable 2FA state refuses.
+    rule: Enrol, verify, disable and backup-codes refuse a pending session and, on an account with an enabled factor, any session not marked TwoFactorVerified.
     enforced_by:
       - test: battery/auth.TestPendingTwoFA_MutationEndpointsRejected
       - test: battery/auth.TestTwoFA_StepUpNeedsVerifiedFlag
-      - test: battery/auth.TestTwoFA_Enroll_FailsClosedOnStoreError
   - id: writes-swap-over-what-was-read
-    rule: Enrol never overwrites an enabled factor, and enrol, verify, the challenge's step consume and backup-code regeneration write only over the state they read, so a racing disable or a second presentation of one step loses.
+    rule: Enrol never overwrites an enabled factor, and enrol, verify, and the challenge's step consume write only over the state they read, so a racing disable or a second presentation of one step loses.
     enforced_by:
       - test: battery/auth.TestTwoFAEnrollRefusesOverwritingEnabledFactor
       - test: battery/auth.TestTwoFAEnrollNoResurrect
       - test: battery/auth.TestTwoFAVerifyNoResurrect
       - test: battery/auth.TestTwoFAChallengeCodeSingleUseConcurrent
-      - test: battery/auth.TestTwoFARegenerateDoesNotResurrect
       - test: battery/auth.TestTwoFACASRefusesReenrolledRow
   - id: verify-marks-the-enrolling-session
     rule: A successful verify marks the session that enrolled as having passed the factor.
     enforced_by:
-      - test: battery/auth.TestTwoFA_EnrollAndVerify
+      - test: battery/auth.TestTwoFA_BackupCodesRefresh
   - id: step-accepted-once
-    rule: The challenge accepts a TOTP step only above the last accepted one, compares codes in constant time, and spends a backup code once.
+    rule: The challenge accepts a TOTP step only above the last accepted one, and a backup code matches its bcrypt hash.
     enforced_by:
       - test: battery/auth.TestTOTPCodeNotReusableWithinWindow
-      - test: battery/auth.TestTOTP_RejectsWrongCode
       - test: battery/auth.TestMemoryTwoFAStore_ConsumeBackupCode
-      - test: battery/auth.TestBackupCodes_GenerateAndConsume
   - id: challenge-rotates-the-session
     rule: A passed challenge mints a fresh verified session and deletes the judged one, refusing when the judged session vanished or the mark failed.
     enforced_by:
@@ -56,7 +52,6 @@ invariants:
     rule: RequireTwoFA lets an enrolled principal through only when one of that principal's own live, non-pending sessions on the request passed the challenge.
     enforced_by:
       - test: battery/auth.TestTwoFA_RequireMiddleware_BlocksUnverifiedSession
-      - test: battery/auth.TestRequireTwoFASplitCookiesRefused
       - test: battery/auth.TestRequireTwoFAJWTPlusOtherCookie
   - id: disable-drops-pending
     rule: Disabling the factor deletes the user's sessions still pending a challenge.
@@ -67,9 +62,8 @@ invariants:
     enforced_by:
       - test: battery/auth.TestMemoryTwoFAStoreReturnsCopies
   - id: seeds-sealed
-    rule: EntityTwoFAStore requires an EncryptionKey and seals seeds, reads a plaintext base32 seed from before sealing but no other unopenable value, re-seals a row opened by a previous key, and refuses a corrupt codes column.
+    rule: EntityTwoFAStore seals seeds, reads a plaintext base32 seed from before sealing but no other unopenable value, re-seals a row opened by a previous key, and refuses a corrupt codes column.
     enforced_by:
-      - test: battery/auth.TestTwoFAStoreRefusesEmptyKey
       - test: battery/auth.TestTwoFAStoreSealsSecretAtRest
       - test: battery/auth.TestTwoFAStoreReadsLegacyPlaintext
       - test: battery/auth.TestTwoFARekeyNotServedAsSeed

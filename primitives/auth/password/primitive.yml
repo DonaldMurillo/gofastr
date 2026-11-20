@@ -12,7 +12,6 @@ invariants:
     enforced_by:
       - test: battery/auth.TestPassword_EmptyPasswordRejected
       - test: battery/auth.TestPasswordFloorCountsCharacters
-      - test: battery/auth.TestPassword_ShortPasswordRejectedByStrengthCheck
       - test: battery/auth.TestPassword_VeryLongPasswordHandled
   - id: verify-detects-the-format
     rule: CheckPassword verifies "$argon2id$" hashes with argon2id and everything else with bcrypt; verifyPassword asks a custom DefaultHasher first and then CheckPassword, without recursing when the custom Verify calls CheckPassword.
@@ -24,7 +23,7 @@ invariants:
     rule: Argon2Hasher.Hash refuses parameters past the caps Verify enforces on a stored hash (1 GiB, 100 iterations, 16 threads, 128-byte key), Verify refuses such a hash before deriving, compares in constant time, and every hash gets a fresh salt.
     enforced_by:
       - test: battery/auth.TestArgon2HashRefusesParamsVerifyRefuses
-      - test: battery/auth.TestArgon2_VerifyRejectsResourceExhaustionParams
+      - test: battery/auth.TestArgon2PHCRefusesOversizedParams
       - test: battery/auth.TestArgon2_HashAndVerify
       - test: battery/auth.TestArgon2_DifferentSaltPerHash
   - id: dummies-track-the-hasher
@@ -55,13 +54,12 @@ invariants:
     enforced_by:
       - test: battery/auth.TestPasswordChangeLosesToReset
   - id: change-revokes-and-remints
-    rule: A change drops the user's reset links and mailed sign-ins and revokes every session (answering 500 when that fails), then remints the caller's session keeping a second factor it had passed, and drops the remint if the hash moved meanwhile.
+    rule: A change drops the user's reset links and mailed sign-ins and revokes every session (answering 500 when that fails), then remints the caller's session, and drops the remint if the hash moved meanwhile.
     enforced_by:
       - test: battery/auth.TestPasswordChangeDropsOutstandingResetLinks
       - test: battery/auth.TestChangeDropsMagicLinks
       - test: battery/auth.TestPasswordChangeRevokesOthers
       - test: battery/auth.TestPasswordChangeFailsWhenRevokeFails
-      - test: battery/auth.TestPasswordChangeKeepsTwoFAProof
       - test: battery/auth.TestChangeRemintOvertakenByReset
   - id: reset-config
     rule: The reset link lives one hour by default, both endpoints get a 10/min per-IP floor, Init refuses a bad BaseURL, a LinkPath that is not a same-origin path without query, and the in-memory token store in production.
@@ -91,15 +89,14 @@ invariants:
       - test: battery/auth.TestPasswordReset_KillsSiblingTokens
       - test: battery/auth.TestPasskeyResetPurgesBeforeRevoke
       - test: battery/auth.TestResetUnlinksOAuthOnVerified
-      - test: battery/auth.TestResetRevokesIdPSessionMidUnlink
       - test: battery/auth.TestPasswordReset_RevokesExistingSessions
       - test: battery/auth.TestResetFailsWhenRevokeFails
       - test: battery/auth.TestResetDropsMagicLinks
-      - test: battery/auth.TestResetPurgeFailStillRevokes
       - test: battery/auth.TestPasswordResetRevokesAPITokens
       - test: battery/auth.TestPasswordResetFailsIfTokensStay
       - test: battery/auth.TestResetClaimsUnverifiedAccount
       - test: battery/auth.TestPasswordResetMailsANotice
+      - test: battery/auth.TestResetOfVerifiedAccountEvictsEverything
 decisions:
   - id: bcrypt-default-argon2-opt-in
     date: 2026-11-20

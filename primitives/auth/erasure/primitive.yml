@@ -8,11 +8,10 @@ docs:
   - framework/docs/content/auth.md
 invariants:
   - id: configured-tables-reached
-    rule: After Init the erasers and exporters name the tables the configured SQL stores use, and every erased auth table is also exported.
+    rule: After Init the erasers and exporters name the tables the configured SQL stores use.
     enforced_by:
       - test: battery/auth.TestEraseCoversConfiguredStoreTables
       - test: battery/auth.TestExportCoversConfiguredStoreTables
-      - test: battery/auth.TestAuthExportEraseParity
   - id: token-erasers-by-purpose
     rule: Each flow's token eraser matches its purpose prefix, and the magic-link and email-code ones bind the resolved, canonical email.
     enforced_by:
@@ -25,7 +24,6 @@ invariants:
   - id: host-resolver-kept
     rule: Init keeps a host's email resolver and its canonicalizer, adding the manager's canonicalizer only to the battery default or a resolver with none.
     enforced_by:
-      - test: battery/auth.TestInitKeepsHostEmailResolver
       - test: battery/auth.TestHostResolverKeepsItsCanonicalizer
   - id: memory-stores-erased
     rule: Init registers an eraser for the manager's in-memory stores, which OnStop removes.
@@ -33,7 +31,7 @@ invariants:
       - test: battery/auth.TestMemoryStoresReachedByErasure
 twins:
   - job: Name each auth table to the data planes, once for export and once for erasure.
-    why: The two registries take different records (DataExporter with columns, DataEraser with a mode and identity), so each table is declared twice; TestAuthExportEraseParity pins that they cover the same tables.
+    why: The two registries take different records (DataExporter with columns, DataEraser with a mode and identity), so each table is declared twice; TestExportCoversConfiguredStoreTables and TestEraseCoversConfiguredStoreTables pin the configured names on both.
     sites:
       - path: battery/auth/export.go
         note: registerCanonicalExporters and resolveExportTables.

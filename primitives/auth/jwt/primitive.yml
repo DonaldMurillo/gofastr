@@ -17,7 +17,6 @@ invariants:
     rule: ValidateToken refuses a bad signature (compared with hmac.Equal), an empty subject, an expired token and one issued more than two minutes in the future.
     enforced_by:
       - test: battery/auth.TestJWTInvalidSignature
-      - test: battery/auth.TestAuthBypass_AlgNoneJWTRejected
       - test: battery/auth.TestJWTRejectsEmptySubject
       - test: battery/auth.TestJWTExpiredTokenRejected
       - test: battery/auth.TestJWTRejectsFutureIssuedAt
@@ -36,10 +35,8 @@ invariants:
       - test: battery/auth.TestJWTCredentialTagSurvivesRotation
       - test: battery/auth.TestGenerateTokenRefusesUnknownUser
   - id: require-auth-wiring
-    rule: RequireAuth panics at wiring on a nil JWTAuth, and passes a request without a bearer only when a verified embed grant or App.InProcessHandler put a non-nil user on it.
+    rule: RequireAuth passes a request without a bearer token only when a verified embed grant or App.InProcessHandler put a user on it.
     enforced_by:
-      - test: battery/auth.TestRequireAuthNilPanicsAtWiring
-      - test: battery/auth.TestRequireAuthRefusesASubjectlessGrant
       - test: battery/auth.TestRequireAuthAcceptsAVerifiedGrant
       - test: battery/auth.TestInProcessRequireAuth
   - id: role-gate

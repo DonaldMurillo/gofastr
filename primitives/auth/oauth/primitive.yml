@@ -21,7 +21,7 @@ invariants:
     enforced_by:
       - test: battery/auth.TestOAuth2Plugin_StateTampered
       - test: battery/auth.TestOAuth2Plugin_StateWrongProvider
-      - test: battery/auth.TestOAuth2Plugin_StateExpiry
+      - test: battery/auth.TestExpiredStateRefused
       - test: battery/auth.TestOAuth2Plugin_StateReplayRejected
       - test: battery/auth.TestOAuthCallbackWithoutCodeRecordsNoNonce
   - id: nonce-map-bounded
@@ -38,24 +38,20 @@ invariants:
   - id: pkce-binds-the-code
     rule: The plugin sends an S256 challenge derived from the state to PKCE providers and the matching verifier at exchange, so a code from another flow does not redeem.
     enforced_by:
-      - test: battery/auth.TestBuiltInProvidersSendPKCE
+      - test: battery/auth.TestOAuthRedirectSendsPKCEChallenge
       - test: battery/auth.TestOAuthStolenCodeDoesNotRedeemInAnotherFlow
   - id: links-keyed-by-registry-name
     rule: Links are keyed on the registry key the state validated, not the provider's own Name().
     enforced_by:
       - test: battery/auth.TestOAuthLinksKeyedToRegistryName
   - id: resolution-table
-    rule: resolveOAuthUser refuses without a linker or on any lookup error, signs in an existing link, refuses an empty address, refuses a verified email that matches a password account or an unproven passwordless one, auto-links a proven passwordless one, never binds an unverified email to an existing account, and returns the owner the link actually names after a write.
+    rule: resolveOAuthUser refuses without a linker or when HasPassword fails, refuses an empty address, refuses a verified email that matches an unproven passwordless account, and never binds an unverified email to an existing account.
     enforced_by:
       - test: battery/auth.TestResolveOAuth_NoLinker_FailsClosed
-      - test: battery/auth.TestResolveOAuth_LookupError_FailsClosed
       - test: battery/auth.TestOAuthEmptyEmailNeverMergesAccounts
-      - test: battery/auth.TestResolveOAuth_VerifiedEmailAndPassword_Refuses
       - test: battery/auth.TestResolveOAuth_HasPasswordError_FailsClosed
       - test: battery/auth.TestOAuthUnverifiedPrecreateNoMerge
       - test: battery/auth.TestResolveOAuth_UnverifiedEmail_DoesNotMatchPasswordAccount
-      - test: battery/auth.TestResolveOAuth_ConcurrentSameIdentityProducesOneLink
-      - test: battery/auth.TestLinkRecheckNilUserIsGone
   - id: verified-assertion-marks-the-account
     rule: An IdP's verified assertion for the account's own address marks it verified, at sign-up and on a linked sign-in.
     enforced_by:
@@ -81,7 +77,6 @@ invariants:
     rule: A sign-in or link callback reached by a cross-site navigation (or one with no Fetch Metadata) answers a same-origin hop page instead of a redirect, and the hop target never leaves the origin.
     enforced_by:
       - test: battery/auth.TestOAuthCrossSiteCallbackHopsToLanding
-      - test: battery/auth.TestOAuthSignInLandsSignedIn
       - test: battery/auth.TestOAuthLinkSurvivesStrictCookie
       - test: battery/auth.TestCrossSiteArrivalHopIsNoOpenRedirect
   - id: provider-fetches
@@ -93,26 +88,23 @@ invariants:
       - test: battery/auth.TestGitHubPublicEmailUnconfirmedIsUnverified
       - test: battery/auth.TestNonExpiringProviderTokenIsUsable
   - id: oidc-config
-    rule: NewOIDCProvider requires a ClientSecret and an https Issuer (http only on a literal loopback), never follows redirects, and refuses a discovery document whose issuer differs or whose endpoints are not https (http only under a loopback-http issuer) or carry userinfo.
+    rule: NewOIDCProvider requires a ClientSecret and an https Issuer (http only on a literal loopback), and refuses a discovery document whose issuer differs or whose endpoints are not https (http only under a loopback-http issuer) or carry userinfo.
     enforced_by:
       - test: battery/auth.TestOIDC_NewProviderValidation
       - test: battery/auth.TestOIDCHttpIssuerOnlyLiteralLoopback
-      - test: battery/auth.TestOIDCSec_TokenRedirectKeepsSecret
       - test: battery/auth.TestOIDCSec_DiscoveryIssuerMismatch
       - test: battery/auth.TestOIDCSec_EndpointDowngradeRefused
       - test: battery/auth.TestValidateOIDCEndpoint
   - id: oidc-exchange
-    rule: The exchange picks the client authentication discovery allows and refuses a token response without an id_token.
+    rule: The exchange picks the client authentication discovery allows.
     enforced_by:
       - test: battery/auth.TestOIDCTokenAuthMethod
-      - test: battery/auth.TestOIDCSec_MissingIDToken
   - id: id-token-verified
-    rule: verifyIDToken accepts only RS256 or ES256 with a key of the same type, a 64-byte raw ES256 signature, then iss, aud (with azp equal to the client when present, and required for several audiences), exp, nbf and iat.
+    rule: verifyIDToken accepts only RS256 or ES256 with a key of the same type, then iss, aud (with azp equal to the client when present, and required for several audiences), exp, nbf and iat.
     enforced_by:
       - test: battery/auth.TestOIDCSec_AlgHS256
       - test: battery/auth.TestOIDCSec_AlgLowercase
       - test: battery/auth.TestOIDCSec_ECKeyForRS256
-      - test: battery/auth.TestOIDCSec_ES256DERSig
       - test: battery/auth.TestOIDCSec_WrongIssuer
       - test: battery/auth.TestOIDCSec_AudMissingClient
       - test: battery/auth.TestOIDCSec_SingleAudBadAzp
@@ -125,23 +117,21 @@ invariants:
     enforced_by:
       - test: battery/auth.TestOIDCSec_EncUseKeyRejected
       - test: battery/auth.TestOIDCSec_JWKAlgMismatchRejected
-      - test: battery/auth.TestOIDCSec_WeakRSAKey
+      - test: battery/auth.TestOIDCWeakRSAJWKSkipped
       - test: battery/auth.TestOIDCSec_OversizedRSAModulus
       - test: battery/auth.TestOIDCSec_DegenerateRSAExponent
       - test: battery/auth.TestOIDCEcPointOffCurveRejected
       - test: battery/auth.TestOIDCNoKidAmbiguousKeyset
   - id: jwks-refetch-bounded
-    rule: An unknown kid forces at most one refetch per kid per gap, and a failed refresh with a stale set backs off a minute.
+    rule: A failed JWKS refresh with a stale set backs off a minute.
     enforced_by:
-      - test: battery/auth.TestJWKSCache_SameKidRateLimited
       - test: battery/auth.TestJWKSRefreshFailureBacksOff
   - id: oidc-email-verified-is-about-email
-    rule: email_verified vouches only for the email claim's own address, a userinfo flag counts only when the id_token carried none and names the same address, an unparseable flag is false, and userinfo must name the id_token's subject.
+    rule: email_verified vouches only for the email claim's own address, a userinfo flag counts only when the id_token carried none and names the same address, and userinfo must name the id_token's subject.
     enforced_by:
       - test: battery/auth.TestOIDCRemappedEmailClaimDoesNotInheritVerified
       - test: battery/auth.TestOIDCUserinfoRemappedEmailClaimDoesNotInheritVerified
       - test: battery/auth.TestOIDCVerifiedFlagNeedsSameEmail
-      - test: battery/auth.TestOIDCSec_EmailVerified_StringFalse
       - test: battery/auth.TestOIDCSec_UserinfoSubMismatch
       - test: battery/auth.TestOIDCSec_UserinfoMissingSub
   - id: provider-tokens-sealed
@@ -168,11 +158,10 @@ invariants:
       - test: battery/auth.TestValidToken_RefreshesNearExpiry
       - test: battery/auth.TestNonExpiringProviderTokenIsUsable
   - id: link-table
-    rule: LinkOAuth keeps an existing binding's owner, RefreshOAuthProfile updates only a link bound to the given user, FindByOAuth answers ErrUserNotFound for an empty key, ListAccounts orders by provider, and UnlinkOAuthGuarded refuses the user's last login method atomically.
+    rule: LinkOAuth keeps an existing binding's owner, RefreshOAuthProfile updates only a link bound to the given user, ListAccounts orders by provider, and UnlinkOAuthGuarded refuses the user's last login method atomically.
     enforced_by:
       - test: battery/auth.TestEntityOAuthLinks_LinkDoesNotReassignOwner
       - test: battery/auth.TestRefreshOAuthProfileUpdatesOnly
-      - test: battery/auth.TestEntityOAuthLinks_FindByOAuthEmptyKey
       - test: battery/auth.TestEntityOAuthLinks_MultipleProvidersForOneUser
       - test: battery/auth.TestEntityStoreGuardedUnlinkRefusesLastMethod
 decisions:

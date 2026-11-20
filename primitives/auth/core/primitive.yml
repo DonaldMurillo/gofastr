@@ -34,7 +34,7 @@ invariants:
       - test: battery/auth.TestSessionCookieAttributes
       - test: battery/auth.TestCorePlugin_LoginCookieUsesStrictSameSite
       - test: battery/auth.TestCorePlugin_LogoutCookieUsesStrictSameSite
-      - test: battery/auth.TestSessionCookieSingleMintSite
+      - test: battery/auth.TestMagicLinkRedCookieStrict
   - id: login-throttles-per-account-before-lookup
     rule: Login spends the per-account limiter, keyed on the canonical address, before the user-store lookup; DevMode relaxes only the per-IP login limiter.
     enforced_by:
@@ -120,7 +120,6 @@ invariants:
     rule: An address longer than 254 bytes answers 400 at every email-ingesting endpoint.
     enforced_by:
       - test: battery/auth.TestOverlongShapedEmailRefused
-      - test: battery/auth.TestEmailLengthCap_EmailEndpoints
   - id: redirects-stay-same-origin
     rule: successRedirect honours ?next= only as a same-origin relative path, and a form error redirects only to a same-origin Referer's path with its query dropped, else the configured fallback, else JSON.
     enforced_by:

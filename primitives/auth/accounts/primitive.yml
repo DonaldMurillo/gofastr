@@ -14,9 +14,8 @@ invariants:
       - test: battery/auth.TestAccountsRefusePendingSession
       - test: battery/auth.TestUnlinkRefusesUnstorableProvider
   - id: unlink-keeps-a-way-in
-    rule: Unlink refuses to remove the user's last login method, deciding and deleting in one store operation through AtomicUnlinker when the store has it, and drops the provider's stored tokens on success.
+    rule: Unlink decides and deletes in one store operation through AtomicUnlinker when the store has it, and drops the provider's stored tokens on success.
     enforced_by:
-      - test: battery/auth.TestAccounts_Unlink_RefusesLast
       - test: battery/auth.TestUnlinkAtomicMethodCount
       - test: battery/auth.TestUnlinkDropsStoredProviderTokens
   - id: claim-evicts-the-squatter

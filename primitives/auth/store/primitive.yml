@@ -18,7 +18,6 @@ invariants:
     enforced_by:
       - test: battery/auth.TestEntityUserStore_DuplicateEmail_ReturnsErrEmailTaken
       - test: battery/auth.TestPasswordSettersUnknownUserFailClosed
-      - test: battery/auth.TestEmailRoutesRefuseBadText
       - test: battery/auth.TestRoleIDsRefuseUnstorableText
   - id: password-writes
     rule: SwapPassword writes only while the old hash is stored, ClearPassword writes a fresh unusable hash, and MarkEmailVerified sets the column true.

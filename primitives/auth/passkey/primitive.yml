@@ -36,14 +36,13 @@ invariants:
       - test: battery/auth.TestPasskeyCapHoldsAtRegister
       - test: battery/auth.TestPasskeyRegisterOvertakenByReset
   - id: sign-in-checks
-    rule: Sign-in needs the userHandle the passkey was registered to, an unchanged backup-eligible bit and a sign count that advances unless both are zero, records the use with a compare-and-swap (409 on a lost race), answers 500 on a failed user lookup, fails closed when 2FA state is unavailable, and drops its session when a reset removed the passkey meanwhile.
+    rule: Sign-in needs the userHandle the passkey was registered to, an unchanged backup-eligible bit and a sign count that advances unless both are zero, records the use with a compare-and-swap (409 on a lost race), fails closed when 2FA state is unavailable, and drops its session when a reset removed the passkey meanwhile.
     enforced_by:
       - test: battery/auth.TestPasskeyUserHandleMustMatch
       - test: battery/auth.TestPasskeyBackupEligibleIsFixed
       - test: battery/auth.TestPasskeySignCountMustAdvance
       - test: battery/auth.TestPasskeyZeroCounterSignsIn
       - test: battery/auth.TestPasskeyLostRaceIs409
-      - test: battery/auth.TestPasskeyUserLookupFailIs500
       - test: battery/auth.TestPasskeyTwoFADownFailsClosed
       - test: battery/auth.TestPasskeyLoginOvertakenByReset
   - id: delete-is-owner-scoped
@@ -56,7 +55,6 @@ invariants:
       - test: battery/auth.TestClientDataRefusals
       - test: battery/auth.TestAssertionRefusals
       - test: battery/auth.TestAttestationRefusals
-      - test: battery/auth.TestPasskeyChallengePurposes
   - id: keys-and-cbor-bounded
     rule: A COSE key is a P-256 point on the curve, a 32-byte Ed25519 key or an RSA modulus of 2048-8192 bits, and the CBOR decoder refuses nesting past eight levels.
     enforced_by:

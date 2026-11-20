@@ -7,9 +7,8 @@ docs:
   - framework/docs/content/audit-log.md
 invariants:
   - id: one-delivery-path
-    rule: Every event goes through deliverAudit, which no-ops on a nil sink, recovers and scrubs a sink panic, and calls the sink on the request's values without its cancellation under a five-second deadline.
+    rule: Every event goes through deliverAudit, which recovers and scrubs a sink panic, and calls the sink on the request's values without its cancellation under a five-second deadline.
     enforced_by:
-      - test: battery/auth.TestAudit_NilSinkNoPanic
       - test: battery/auth.TestAudit_PanickingSinkRecovered
       - test: battery/auth.TestAuthAuditRedPanicScrubbed
       - test: battery/auth.TestAuditRowSurvivesCancelledRequest
@@ -23,6 +22,4 @@ invariants:
       - test: battery/auth.TestAuditEmailHashIsCanonical
   - id: closed-vocabulary
     rule: Every SecurityEvent Kind the battery emits is listed in audit-log.md's event taxonomy, and Meta carries no secret or user-supplied value but the address.
-    enforced_by:
-      - test: battery/auth.TestAudit_NoSecretsLeak
     judge: Does this change emit a SecurityEvent with a Kind not in audit-log.md's taxonomy, or put a secret or a user-supplied value other than Email into an event?

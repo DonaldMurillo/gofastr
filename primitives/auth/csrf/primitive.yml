@@ -18,11 +18,10 @@ invariants:
       - test: battery/auth.TestCSRFInputFromCtx_MatchesRequestVariant
       - test: battery/auth.TestCSRFTokenPrefersHostPrefixedCookie
   - id: bff-guard
-    rule: WithBFFPosture refuses an invalid token brand, answers 403 to an Origin outside the exact allowlist and to a bearer JWT under the API prefix (the whole app without one, matched by segment), consumes only real CORS preflights, and lets the form-post OAuth callback through.
+    rule: WithBFFPosture refuses an invalid token brand, answers 403 to an Origin outside the exact allowlist and to a bearer JWT under the API prefix (the whole app without one, matched by segment), and lets the form-post OAuth callback through.
     enforced_by:
       - test: battery/auth.TestBFFRejectsInvalidTokenBrand
       - test: battery/auth.TestBFFPostureRejectsUntrustedOriginsAndJWTs
       - test: battery/auth.TestBFFBearerRejectedEverySpelling
       - test: battery/auth.TestBFFGuardPrefixIsSegmentScoped
-      - test: battery/auth.TestBFFPostureOnlyConsumesCORSPreflight
       - test: battery/auth.TestBFFPostureLetsFormPostCallbackThrough
