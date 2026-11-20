@@ -178,6 +178,7 @@ var ownedPackages = []string{
 	"core/config",
 	"core/i18n",
 	"core/i18n/internal/cldrgen",
+	"core-ui/app",
 	"core-ui/component",
 	"core-ui/check",
 	"core-ui/compute",

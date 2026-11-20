@@ -1,0 +1,58 @@
+primitive: screen
+summary: core-ui/app, the URL-to-page pipeline - the App that owns the Router, DI container and theme, and RenderPageResult, which resolves a screen, runs its policies, builds a per-request instance, loads it, fills its outlets and renders the document; routing, the screen lifecycle, layouts, policies, intercepts and llm.md are its parts.
+code:
+  - core-ui/app/
+docs:
+  - framework/docs/content/layouts.md
+  - core-ui/ARCHITECTURE.md
+on_change:
+  - framework/uihost serves what this package renders; a change to RenderResult, the route manifest or the partial answer moves with uihost and the runtime.
+invariants:
+  - id: value-component-with-inject-fails
+    rule: A screen component registered by value whose type, embeds included, carries inject tags fails its render naming the pointer remedy, and a pointer component is injected on every render path.
+    enforced_by:
+      - test: core-ui/app.TestRenderValueComponentWithInjectTagsFails
+      - test: core-ui/app.TestValueComponentEmbeddedInjectFails
+      - test: core-ui/app.TestRenderValueComponentStateless
+  - id: routes-are-deterministic
+    rule: Routes lists every screen and redirect in a sorted order, so the route manifest and the static export are the same bytes in every process.
+    enforced_by:
+      - test: core-ui/app.TestRoutesRedirectOrderDeterministic
+      - test: core-ui/app.TestPathsAreSorted
+      - test: core-ui/app.TestEveryPathFindsItsScreenByPattern
+  - id: document-language
+    rule: The document language is LangFunc's non-empty answer, else a screen's ScreenLang read after Load, else the request's negotiated locale, else Lang, else "en", and it is written escaped with its matching dir.
+    enforced_by:
+      - test: core-ui/app.TestLangFor
+      - test: core-ui/app.TestLangFuncEmptyResultFallsBackToLang
+      - test: core-ui/app.TestScreenLangerReadAfterLoad
+      - test: core-ui/app.TestLangIsAttributeEscaped
+      - test: core-ui/app.TestDocumentDirFollowsLang
+  - id: status-first-wins
+    rule: SetStatus records only the first valid status code a render sets.
+    enforced_by:
+      - test: core-ui/app.TestSetStatusFirstWins
+  - id: host-hooks-are-contained
+    rule: A panic in a host render hook, a layout or a boundary fallback is recovered, reported and tagged, never escaped from the pipeline.
+    enforced_by:
+      - test: core-ui/app.TestSSRPipelineContainsHostHookPanics
+      - test: core-ui/app.TestHostRenderHooksAreNetted
+      - test: core-ui/app.TestRenderRawLayoutPanicIsTagged
+      - test: core-ui/app.TestBoundaryFallbackPanicIsContained
+decisions:
+  - id: not-found-through-the-pipeline
+    date: 2026-11-20
+    status: accepted
+    decision: A not-found or error page renders a synthetic screen through the same pipeline as a registered one, inside the root layout with its outlets' defaults.
+    rejected:
+      - option: A separate bare error document.
+        why: The 404 and 500 pages would lose the app's shell and every outlet default.
+    upholds: [host-hooks-are-contained]
+  - id: manifest-by-pattern
+    date: 2026-11-20
+    status: accepted
+    decision: The route manifest, export, sitemap and llm.md look screens up by their registered pattern.
+    rejected:
+      - option: Resolve the pattern as a path.
+        why: A constrained pattern's own text fails its constraint, so constrained routes silently vanished from all four.
+    upholds: [routes-are-deterministic]

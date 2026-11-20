@@ -1,0 +1,49 @@
+primitive: screen.policy
+summary: Who may see a page or a region - Policy and the Decision it returns (allow, redirect, render an alternative, block), the policy chain a screen inherits from its groups, the region guards on outlets, areas and fills, and the decide constructors.
+code:
+  - core-ui/app/policy.go
+  - core-ui/app/region_guard.go
+  - core-ui/app/decide/
+docs:
+  - framework/docs/content/access-control.md
+invariants:
+  - id: first-refusal-decides
+    rule: ResolvePolicy runs the screen's effective chain, its groups' policies outermost first, and returns the first decision that is not allow.
+    enforced_by:
+      - test: core-ui/app.TestRenderPageResult_RedirectsOnPolicyFail
+      - test: core-ui/app.TestPolicy_GroupInheritsThroughScreen
+      - test: core-ui/app.TestPolicy_SubGroupAddsToParentChain
+      - test: core-ui/app.TestRenderPageResult_BlocksWithStatus
+  - id: render-alt-is-fresh
+    rule: A RenderAlt decision's factory is called once per request and its component goes through the same per-request pipeline.
+    enforced_by:
+      - test: core-ui/app.TestRenderAlt_FactoryPerRequest
+      - test: core-ui/app.TestRenderAlt_FactoryConcurrentAcrossScreens
+  - id: guards-before-load
+    rule: Region guards run in the policy phase before Load, a guard redirect moves the whole page, a guard's alternative or block applies to its region only, and a chain refusal skips the guards.
+    enforced_by:
+      - test: core-ui/app.TestRegionGuardRunsBeforeLoad
+      - test: core-ui/app.TestRegionGuardRendersAltAndBlocks
+      - test: core-ui/app.TestChainRefusalSkipsRegionGuards
+  - id: page-policy-matches-render
+    rule: The policy the host checks for a pattern before rendering gives the same answer the render reaches, and withholds a page whose guard read failed.
+    enforced_by:
+      - test: core-ui/app.TestPagePolicyMatchesRender
+      - test: core-ui/app.TestPagePolicyGuardReadNotFound
+      - test: core-ui/app.TestPatternPolicyWithholdsFailedPage
+decisions:
+  - id: decide-subpackage
+    date: 2026-11-20
+    status: accepted
+    decision: The Decision constructors live in app/decide so call sites read decide.Block(403).
+    rejected:
+      - option: Constructors in package app.
+        why: Names like Block and Redirect would shadow the variables authors reach for.
+  - id: alt-factory-not-instance
+    date: 2026-11-20
+    status: accepted
+    decision: RenderAlt takes a factory, not a component.
+    rejected:
+      - option: Take a component instance.
+        why: SetParams, Inject and Load mutate it per request, so a shared instance leaks one viewer's data to the next.
+    upholds: [render-alt-is-fresh]

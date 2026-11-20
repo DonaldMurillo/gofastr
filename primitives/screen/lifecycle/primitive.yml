@@ -1,0 +1,81 @@
+primitive: screen.lifecycle
+summary: One screen's per-request life - the Screen and its options, the per-request component instance, the resolvers it reads once per render, outlets and the fills that resolve them concurrently with contained failures, deferred parts, loading content and preload modes.
+code:
+  - core-ui/app/screen.go
+  - core-ui/app/fill.go
+  - core-ui/app/outlet.go
+  - core-ui/app/loading.go
+  - core-ui/app/preload.go
+  - core-ui/app/resolver.go
+docs:
+  - framework/docs/content/layouts.md
+invariants:
+  - id: per-request-instance
+    rule: Each render works on a shallow copy of the registered pointer component, so SetParams, Inject and Load never leak state between requests, full page or partial.
+    enforced_by:
+      - test: core-ui/app.TestScreen_PerRequestInstance_NoStateLeak
+      - test: core-ui/app.TestScreen_PerRequestInstance_ParallelIsolation
+      - test: core-ui/app.TestScreen_PerRequestInstance_RenderPartialAlsoIsolated
+  - id: resolver-runs-once
+    rule: A resolver runs once per render however many fills read it, concurrently or in turn, and a panicking resolver becomes its error.
+    enforced_by:
+      - test: core-ui/app.TestResolverOnceUnderConcurrentFills
+      - test: core-ui/app.TestResolverOnceSequentialValue
+      - test: core-ui/app.TestP3PanicInResolutionConverted
+  - id: resolver-error-by-phase
+    rule: A resolver read in the policy or Load phase that failed decides the page's outcome, not-found for ErrNotFound and the error page otherwise, while one read in a region is contained to that region.
+    enforced_by:
+      - test: core-ui/app.TestResolverErrorByPhase
+      - test: core-ui/app.TestGuardReadFailSkipsLoad
+      - test: core-ui/app.TestPartResetsOnGuardReadFail
+  - id: fills-are-contained
+    rule: Fills resolve concurrently with a bound, a fill's load error or panic is contained to its outlet and recorded in declaration order, and ErrNoFill falls through to the next candidate and then the default.
+    enforced_by:
+      - test: core-ui/app.TestFillsLoadConcurrently
+      - test: core-ui/app.TestP2FillLoadError
+      - test: core-ui/app.TestP2FillRenderPanic
+      - test: core-ui/app.TestContainedFillFailuresRecordedInDeclarationOrder
+      - test: core-ui/app.TestFillFallsThroughErrNoFillToDefault
+      - test: core-ui/app.TestFillResolutionOrderScreenGroupDefault
+  - id: fills-name-their-outlets
+    rule: A fill for an outlet no layout declares, or whose layout is not in the screen's chain, panics at render, and an outlet name outside letters, digits, '-' and '_' panics at construction.
+    enforced_by:
+      - test: core-ui/app.TestValidateRefusesFillForLayoutNotInChain
+      - test: core-ui/app.TestValidateRefusesBadName
+      - test: core-ui/app.TestMistypedOutletDoesNotCompile
+  - id: not-found-outlet
+    rule: An outlet declared FallbackNotFound that nothing fills renders the not-found body as the primary through the full screen pipeline and answers 404, and a part request for it resets the whole page.
+    enforced_by:
+      - test: core-ui/app.TestNotFoundOutletOutcome
+      - test: core-ui/app.TestValidateRefusesNotFoundWithDefault
+      - test: core-ui/app.TestOutlet404PartRequestIsWholePageReset
+  - id: deferred-parts
+    rule: A page request skips deferred loaders and lists their addresses in the manifest, a first full load renders every deferred region, and a part request runs only its own fill.
+    enforced_by:
+      - test: core-ui/app.TestPageRequestSkipsDeferredLoaders
+      - test: core-ui/app.TestFirstLoadCarriesDeferredRegions
+      - test: core-ui/app.TestPartRequestRunsOnlyItsFill
+      - test: core-ui/app.TestRoutesOmitDeferredWhenEmpty
+  - id: retired-methods-panic
+    rule: A component declaring a retired context-free method such as Title() panics when registered or rendered, naming the ctx-taking replacement.
+    enforced_by:
+      - test: core-ui/app.TestRetiredTitleMethodPanics
+      - test: core-ui/app.TestRetiredTitleAtRenderPanics
+      - test: core-ui/app.TestRetiredTitleOnNotFoundPanics
+decisions:
+  - id: full-load-waits-for-every-fill
+    date: 2026-11-20
+    status: accepted
+    decision: A full document waits for every fill, deferred outlets included, and only client navigations defer.
+    rejected:
+      - option: Defer on the first load too.
+        why: The first paint would depend on JavaScript to fill its regions.
+    upholds: [deferred-parts]
+  - id: shallow-copy-not-constructor
+    date: 2026-11-20
+    status: accepted
+    decision: The per-request instance is a shallow copy of the registered struct, keeping its construction fields.
+    rejected:
+      - option: Render the registered instance.
+        why: Concurrent requests wrote each other's params and loaded state into one struct.
+    upholds: [per-request-instance]
