@@ -505,6 +505,23 @@ NSwag write a nullable reference, is a nullable `Person`); an `allOf`
 of several members, or one beside properties, is the merged object. A
 document deriving more than 5000 struct types is refused.
 
+When an object declares both named properties and `additionalProperties`,
+the generated Go struct exposes the extra keys in
+`AdditionalProperties map[string]json.RawMessage`. Extra values stay raw
+even if the schema gives them a type: callers can decode them as needed,
+and a round trip preserves values such as large numbers and nested nulls.
+The map's entries are sibling JSON keys, not a nested field. Matching is
+case-sensitive in these structs: a declared `label` takes precedence
+over a map key named `label`, but `Label` goes in the map.
+
+The Go generator reports a collision rather than renaming a property
+that derives `AdditionalProperties`, `MarshalJSON`, or `UnmarshalJSON`.
+Omitting `additionalProperties` or setting it to `false` does not add a map.
+When flattening `allOf`, an explicit allowance from the wrapper or any
+member is enough. Flattened objects with no named properties keep their
+existing raw JSON map type.
+Encoding a recursive Go value with a cycle returns a JSON encoding error.
+
 Nullable JSON request bodies (`nullable: true` in OpenAPI 3.0 or a
 `type` list containing `"null"` in 3.1 and later) retain null separately from
 absence. In JS/TS, pass `null` to send the literal JSON `null` with
