@@ -10,9 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
-	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
@@ -29,26 +27,13 @@ func seedBatchDB(t *testing.T, db *sql.DB) {
 	}
 }
 
-func batchApp(t *testing.T, db *sql.DB) *App {
-	t.Helper()
-	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
-	app.Entity("posts", entity.EntityConfig{
-		Table: "posts",
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "body", Type: schema.Text},
-		},
-	}.WithTimestamps(false))
-	return app
-}
-
 // runBatchTest fans the body across both dialects, providing both the raw db
 // (for direct assertions) and the TestApp (for HTTP calls).
 func runBatchTest(t *testing.T, body func(t *testing.T, db *sql.DB, ta *TestApp)) {
 	t.Helper()
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBatchDB(t, db)
-		app := batchApp(t, db)
+		app := newPostsApp(t, db)
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 		body(t, db, ta)
 	})
@@ -62,7 +47,7 @@ func runBatchTestWithApp(t *testing.T, configure func(*App), body func(t *testin
 	t.Helper()
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		seedBatchDB(t, db)
-		app := batchApp(t, db)
+		app := newPostsApp(t, db)
 		if configure != nil {
 			configure(app)
 		}

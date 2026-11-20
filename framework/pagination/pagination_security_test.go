@@ -88,39 +88,37 @@ func TestDecodeCursor_StripsNULFromFieldName(t *testing.T) {
 	}
 }
 
-func TestDecodeMultiCursor_StripsNewlinesFromFieldNames(t *testing.T) {
-	t.Parallel()
+// decodeMultiCursorField round-trips one (name, value) field through the
+// composite encoding and returns it as decoded — the scaffold the
+// multi-cursor sanitization and verbatim-value tests share.
+func decodeMultiCursorField(t *testing.T, name, value string) multiCursorField {
+	t.Helper()
 	raw, err := json.Marshal(multiCursorToken{
-		Fields: []multiCursorField{{Name: "id\nrole", Value: "42"}},
+		Fields: []multiCursorField{{Name: name, Value: value}},
 	})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-
 	fields, err := DecodeMultiCursor(base64.StdEncoding.EncodeToString(raw))
 	if err != nil {
 		t.Fatalf("DecodeMultiCursor: %v", err)
 	}
-	if fields[0].Name != "idrole" {
-		t.Fatalf("SECURITY: [pagination] DecodeMultiCursor retained newline-bearing field name %q. Attack: multi-column cursor poisoning.", fields[0].Name)
+	return fields[0]
+}
+
+func TestDecodeMultiCursor_StripsNewlinesFromFieldNames(t *testing.T) {
+	t.Parallel()
+	field := decodeMultiCursorField(t, "id\nrole", "42")
+	if field.Name != "idrole" {
+		t.Fatalf("SECURITY: [pagination] DecodeMultiCursor retained newline-bearing field name %q. Attack: multi-column cursor poisoning.", field.Name)
 	}
 }
 
 func TestDecodeMultiCursor_StripsNULFromFieldNames(t *testing.T) {
 	t.Parallel()
-	raw, err := json.Marshal(multiCursorToken{
-		Fields: []multiCursorField{{Name: "id\x00role", Value: "42"}},
-	})
-	if err != nil {
-		t.Fatalf("Marshal: %v", err)
-	}
-
-	fields, err := DecodeMultiCursor(base64.StdEncoding.EncodeToString(raw))
-	if err != nil {
-		t.Fatalf("DecodeMultiCursor: %v", err)
-	}
-	if fields[0].Name != "idrole" {
-		t.Fatalf("SECURITY: [pagination] DecodeMultiCursor retained NUL-bearing field name %q. Attack: multi-column cursor control-byte poisoning.", fields[0].Name)
+	field := decodeMultiCursorField(t, "id\x00role", "42")
+	if field.Name != "idrole" {
+		t.Fatalf("SECURITY: [pagination] DecodeMultiCursor retained NUL-bearing field name %q. Attack: multi-column cursor control-byte poisoning.", field.Name)
 	}
 }
 
@@ -151,19 +149,8 @@ func TestDecodeCursor_ValueIsBoundDataNotSanitized(t *testing.T) {
 // comparison as bind args, so it decodes verbatim.
 func TestDecodeMultiCursor_ValueIsBoundDataNotSanitized(t *testing.T) {
 	t.Parallel()
-	raw, err := json.Marshal(multiCursorToken{
-		Fields: []multiCursorField{{Name: "id", Value: "42\nadmin"}},
-	})
-	if err != nil {
-		t.Fatalf("Marshal: %v", err)
-	}
-
-	fields, err := DecodeMultiCursor(base64.StdEncoding.EncodeToString(raw))
-	if err != nil {
-		t.Fatalf("DecodeMultiCursor: %v", err)
-	}
-	if fields[0].Value != "42\nadmin" {
-		t.Fatalf("DecodeMultiCursor mutated the value %q — keyset values are bound args and must round-trip verbatim", fields[0].Value)
+	if field := decodeMultiCursorField(t, "id", "42\nadmin"); field.Value != "42\nadmin" {
+		t.Fatalf("DecodeMultiCursor mutated the value %q — keyset values are bound args and must round-trip verbatim", field.Value)
 	}
 }
 

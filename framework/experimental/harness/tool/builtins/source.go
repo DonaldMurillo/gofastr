@@ -6,17 +6,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
 
-// Source is the ToolSource that exposes the built-in tool set.
+// Source is the ToolSource of the built-in tools.
 type Source struct {
-	// EnabledPacks lets a profile constrain which packs of tools are
-	// exposed (e.g., a CI profile that doesn't want Bash). Empty
-	// means "all v0.1 built-ins."
+	// EnabledPacks limits the tools to these packs (see PackTools); empty exposes every built-in.
 	EnabledPacks []string
 }
 
 func (s Source) Name() string { return "builtin" }
 
-// Tools returns the built-in tools enabled for this source.
+// Tools returns the built-in tools in the enabled packs, ToolSearch always among them.
 func (s Source) Tools(ctx context.Context) ([]tool.Tool, error) {
 	all := []tool.Tool{
 		Read{},
@@ -34,7 +32,6 @@ func (s Source) Tools(ctx context.Context) ([]tool.Tool, error) {
 	if len(s.EnabledPacks) == 0 {
 		return all, nil
 	}
-	// Build allowed set from the requested packs.
 	allowed := map[string]bool{}
 	for _, p := range s.EnabledPacks {
 		for _, name := range PackTools(p) {
@@ -43,8 +40,6 @@ func (s Source) Tools(ctx context.Context) ([]tool.Tool, error) {
 	}
 	out := make([]tool.Tool, 0, len(all))
 	for _, t := range all {
-		// ToolSearch is ALWAYS available, it's the model's escape
-		// hatch when the pack filter omits something it needs.
 		if allowed[t.Name()] || t.Name() == "ToolSearch" {
 			out = append(out, t)
 		}
@@ -52,8 +47,7 @@ func (s Source) Tools(ctx context.Context) ([]tool.Tool, error) {
 	return out, nil
 }
 
-// PackTools returns the tool names belonging to a built-in pack name.
-// See § Profiles → tool_packs.
+// PackTools returns the tool names in a built-in pack, or nil for an unknown pack.
 func PackTools(pack string) []string {
 	switch pack {
 	case "fs":

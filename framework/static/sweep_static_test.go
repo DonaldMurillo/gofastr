@@ -22,7 +22,7 @@ import (
 )
 
 func TestSweepStaticDefaultCSPDirectives(t *testing.T) {
-	for _, d := range []string{"default-src 'self'", "object-src 'none'", "form-action 'self'", "frame-ancestors 'none'", "base-uri 'self'"} {
+	for _, d := range []string{"default-src 'self'", "object-src 'none'", "form-action 'self'", "frame-ancestors 'none'", "base-uri 'none'", "worker-src 'self'"} {
 		if !strings.Contains(staticExportCSP, d) {
 			t.Errorf("the default export policy lacks %s: %s", d, staticExportCSP)
 		}

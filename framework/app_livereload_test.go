@@ -29,51 +29,42 @@ func TestNewAppAutoWiresLiveReloadWhenDev(t *testing.T) {
 	}
 }
 
-func TestNewAppSkipsLiveReloadInProduction(t *testing.T) {
-	t.Setenv("GOFASTR_DEV", "1")
-	t.Setenv("GOFASTR_ENV", "production")
-
-	app := NewApp(WithoutDefaultMiddleware())
-
-	req := httptest.NewRequest(http.MethodGet, "/__livereload.js", nil)
-	rr := httptest.NewRecorder()
-	app.Router().ServeHTTP(rr, req)
-
-	if rr.Code == http.StatusOK {
-		t.Fatalf("/__livereload.js served in production env (status=%d) — must be 404", rr.Code)
+// livereloadNotServed boots an app under env and pins that the
+// livereload script is not served, for the reason named by why.
+func livereloadNotServed(t *testing.T, why string, env map[string]string) {
+	t.Helper()
+	for k, v := range env {
+		t.Setenv(k, v)
 	}
+	rr := httptest.NewRecorder()
+	NewApp(WithoutDefaultMiddleware()).Router().ServeHTTP(rr,
+		httptest.NewRequest(http.MethodGet, "/__livereload.js", nil))
+	if rr.Code == http.StatusOK {
+		t.Fatalf("/__livereload.js served %s (status=%d)", why, rr.Code)
+	}
+}
+
+func TestNewAppSkipsLiveReloadInProduction(t *testing.T) {
+	livereloadNotServed(t, "in production env — must be 404", map[string]string{
+		"GOFASTR_DEV": "1",
+		"GOFASTR_ENV": "production",
+	})
 }
 
 func TestNewAppLiveReloadOptOut(t *testing.T) {
-	t.Setenv("GOFASTR_DEV", "1")
-	t.Setenv("GOFASTR_DEV_LIVERELOAD", "0")
-	t.Setenv("GOFASTR_ENV", "")
-
-	app := NewApp(WithoutDefaultMiddleware())
-
-	req := httptest.NewRequest(http.MethodGet, "/__livereload.js", nil)
-	rr := httptest.NewRecorder()
-	app.Router().ServeHTTP(rr, req)
-
-	if rr.Code == http.StatusOK {
-		t.Fatalf("/__livereload.js served despite opt-out (status=%d)", rr.Code)
-	}
+	livereloadNotServed(t, "despite opt-out", map[string]string{
+		"GOFASTR_DEV":            "1",
+		"GOFASTR_DEV_LIVERELOAD": "0",
+		"GOFASTR_ENV":            "",
+	})
 }
 
 func TestNewAppLiveReloadOffWithoutDev(t *testing.T) {
-	t.Setenv("GOFASTR_DEV", "")
-	t.Setenv("GOFASTR_ENV", "")
-	t.Setenv("GOFASTR_DEV_LIVERELOAD", "")
-
-	app := NewApp(WithoutDefaultMiddleware())
-
-	req := httptest.NewRequest(http.MethodGet, "/__livereload.js", nil)
-	rr := httptest.NewRecorder()
-	app.Router().ServeHTTP(rr, req)
-
-	if rr.Code == http.StatusOK {
-		t.Fatalf("/__livereload.js served without GOFASTR_DEV (status=%d)", rr.Code)
-	}
+	livereloadNotServed(t, "without GOFASTR_DEV", map[string]string{
+		"GOFASTR_DEV":            "",
+		"GOFASTR_ENV":            "",
+		"GOFASTR_DEV_LIVERELOAD": "",
+	})
 }
 
 func TestNewAppWiresLayoutLayerWhenDev(t *testing.T) {

@@ -1,0 +1,75 @@
+primitive: appspec
+summary: Reads gofastr.yml (one file or a directory of fragments, YAML or JSON) into an AppSpec and refuses every spec that would generate an app which fails to compile, boot or serve what the author wrote.
+code:
+  - cmd/gofastr/internal/appspec/
+docs:
+  - framework/docs/content/app-spec.md
+  - framework/docs/content/tutorial-app-spec.md
+on_change:
+  - "A new, renamed or removed spec key, block kind or default changes framework/docs/content/app-spec.md (Shape and Validation sections) in the same commit, and the tutorial when its example spec stops loading."
+  - "A change that refuses a spec which used to load (a new check, a removed or renamed key or block kind, a flag now decoded strictly) adds a breaking note to internal/upgrade/releases/<next version>.yml in the same PR, with a find.config matcher on the gofastr.yml key path (entities.*.fields.*.name) or a nodetect reason, plus a CHANGELOG Unreleased entry."
+  - "A new list section on AppSpec is appended in MergeAppSpecs, decoded in DecodeAppSpec and serialized by packcmd encodeAppSpecYAML with its key in topLevelOrder."
+  - "A new check goes through schemaErrors.add inside ValidateAppSpec so one pass still reports every finding; a decode-time refusal names the YAML path and line."
+twins:
+  - job: Each spec section lists the keys it accepts, and every other list of those keys (misplaced-key hints, pack's serializer order, the directory merge) must name the same set.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: DecodeAppSpec allowed map (top level, includes hooks) and decodeAppSpecApp allowed map (app keys).
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: appLevelKeys and topLevelKeys, the hint tables unknownKeyLocationHint reads; topLevelKeys omits hooks today.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: MergeAppSpecs, which appends every list section of a directory spec.
+      - path: cmd/gofastr/internal/packcmd/pack.go
+        note: topLevelOrder, appOrder, entityOrder, fieldOrder, screenOrder, blockOrder, relationOrder, indexOrder and navOrder, the serializer's key lists.
+      - path: cmd/gofastr/internal/appspec/pack.go
+        note: packHeldFieldKeys, the schema.Field keys a spec field holds, which must match decodeFields allowed keys.
+  - job: A flag whose false value is the permissive state, and a string whose empty value is the ungated one, are decoded strictly (protectiveBool, requireScalarString) in every spelling the spec accepts.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: decodeEntityScope, the grouped scope.soft_delete, scope.multi_tenant, owner_field, tenant_field and cross_owner_read.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: mergeEntityScopeDeclaration, the flat spellings of the same five keys.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: decodeFields (required, unique, read_only, hidden, no_query), decodeIndices (unique) and decodeRelations (hidden).
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: decodeAppSpecScreens access.auth and access.role, decodeAppSpecAuth enabled and dev_mode, decodeAppSpecAdmin role.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: decodeEntityAccess and decodeEntityReadScope, every permission and predicate value.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: decodeNavItems still reads role with stringValue, so a list or map role shows the item to everyone; decide whether it joins.
+  - job: Every spec construct that names an entity is checked against the declared entities, so a typo fails at generate time rather than at migrate or boot.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: ValidateAppSpec, a relation-typed field's to, relations[].entity, and hooks[].entity.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: validateAppSpecSeedTypes, the seed block's entity.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: validateAppSpecBlock, entity_list, entity_form and entity_detail targets and the chart and stat_card source.entity, each also requiring crud enabled.
+      - path: cmd/gofastr/internal/appspec/appspec_endpoints.go
+        note: ValidateAppSpecEndpoints, the endpoint's entity.
+invariants:
+  - id: merge-appends-every-list
+    rule: MergeAppSpecs carries every exported slice field of AppSpec from both inputs into the merged spec.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestMergeAppSpecsAppendsEverySlice
+  - id: dir-app-key-set-once
+    rule: In a directory spec, an app key set by two fragment files is an error naming the key and both files, never a last-wins merge.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDirMergeRefusesAppKeyInTwoFiles
+  - id: one-pass-reports-all
+    rule: Validation and unknown-key rejection report every finding in one run, with the count, rather than stopping at the first.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestValidateReportsAllSchemaErrors
+      - test: cmd/gofastr/internal/appspec.TestUnknownKeysAllReportedAtOnce
+  - id: protective-flags-are-strict
+    rule: A protective flag (a field constraint, an index unique, a flat soft_delete or multi_tenant) written as yes, on, y, 1 or a non-scalar is a load error naming the key.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestFlatProtectiveBoolErrorsFromLoad
+      - test: cmd/gofastr/internal/appspec.TestConstraintFlagsRejectNonBools
+  - id: multi-tenant-refused
+    rule: An entity with multi_tenant true fails validation, because the generator cannot emit a tenant resolver.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestMultiTenantRefusedWithoutResolver

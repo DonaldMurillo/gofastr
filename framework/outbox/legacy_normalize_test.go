@@ -10,23 +10,6 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-// openPureOutbox opens a fresh pure-sqlite DB + Outbox so the normalizer's
-// dialect path (the one that matters for legacy timestamps) is exercised.
-func openPureOutbox(t *testing.T) (*sql.DB, *Outbox) {
-	t.Helper()
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	db.SetMaxOpenConns(1)
-	o, err := New(db, WithHandlerGrace(0), WithPollInterval(time.Millisecond))
-	if err != nil {
-		t.Fatalf("new outbox: %v", err)
-	}
-	return db, o
-}
-
 const (
 	legacySpaceLayout    = "2006-01-02 15:04:05.999999999-07:00"
 	legacySpaceNoTZ      = "2006-01-02 15:04:05.999999999"
@@ -38,7 +21,7 @@ const (
 // then re-opens the outbox to trigger normalization and asserts the on-disk
 // values are now canonical RFC3339Nano text.
 func TestNormalize_RewritesLegacyParentAndDelivery(t *testing.T) {
-	db, o := openPureOutbox(t)
+	db, o := openOutbox(t, WithPollInterval(time.Millisecond))
 	ctx := context.Background()
 
 	// Future lease in legacy layout, the exact shape that breaks the relay
@@ -100,7 +83,7 @@ func TestNormalize_RewritesLegacyParentAndDelivery(t *testing.T) {
 // because every value is already canonical. We measure this by counting
 // rows-affected across both passes, the second pass must touch zero rows.
 func TestNormalize_Idempotent(t *testing.T) {
-	db, o := openPureOutbox(t)
+	db, o := openOutbox(t, WithPollInterval(time.Millisecond))
 	ctx := context.Background()
 
 	// Insert one legacy row.
@@ -133,7 +116,7 @@ func TestNormalize_Idempotent(t *testing.T) {
 // normalization as NULL (a row that has never been claimed/dispatched must
 // keep those columns empty, not get stamped with a zero time).
 func TestNormalize_PreservesNulls(t *testing.T) {
-	db, o := openPureOutbox(t)
+	db, o := openOutbox(t, WithPollInterval(time.Millisecond))
 	ctx := context.Background()
 
 	pastLegacy := time.Now().UTC().Add(-time.Hour).Format(legacySpaceLayout)
@@ -168,7 +151,7 @@ func TestNormalize_PreservesNulls(t *testing.T) {
 // (canonical RFC3339Nano via the pure driver binding time.Time) pass through
 // normalization unchanged.
 func TestNormalize_NoOpOnCanonical(t *testing.T) {
-	db, o := openPureOutbox(t)
+	db, o := openOutbox(t, WithPollInterval(time.Millisecond))
 	ctx := context.Background()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {

@@ -45,14 +45,27 @@ func TestRepeaterControlsWearKitButtonClasses(t *testing.T) {
 		Label: "Guests",
 		Items: []render.HTML{render.Text("a"), render.Text("b")},
 	}))
-	sheet := buttonCSS(style.DefaultTheme())
-	for _, c := range []struct {
-		marker string
-		want   []string
-	}{
+	assertControlsWearKitButtonClasses(t, h, []kitButtonCase{
 		{`data-hui-repeater-action="remove"`, []string{"fui-button", "fui-button--ghost", "fui-repeater__remove"}},
 		{`data-hui-repeater-action="add"`, []string{"fui-button", "fui-button--secondary", "fui-repeater__add"}},
-	} {
+	})
+}
+
+// kitButtonCase is one repeater control marker and the classes its button
+// tag must wear.
+type kitButtonCase struct {
+	marker string
+	want   []string
+}
+
+// assertControlsWearKitButtonClasses checks each marker's button tag wears
+// its want classes, and that every fui-button token it carries is one the
+// ui-button sheet actually draws — the contract the FormRepeater and
+// Repeater control tests share.
+func assertControlsWearKitButtonClasses(t *testing.T, h string, cases []kitButtonCase) {
+	t.Helper()
+	sheet := buttonCSS(style.DefaultTheme())
+	for _, c := range cases {
 		got := classTokens(buttonTag(t, h, c.marker))
 		for _, w := range c.want {
 			if !containsToken(got, w) {

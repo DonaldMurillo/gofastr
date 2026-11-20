@@ -1,6 +1,7 @@
 package static
 
 import (
+	"bytes"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -12,40 +13,46 @@ import (
 	"testing/fstest"
 )
 
-// TestStatic_DotDotTraversal verifies that path traversal via ../ is
-// blocked. Attack: reading arbitrary files from the filesystem.
-func TestStatic_DotDotTraversal(t *testing.T) {
-	files := fstest.MapFS{
-		"public/index.html":  &fstest.MapFile{Data: []byte("<h1>public</h1>")},
-		"secret/secret.html": &fstest.MapFile{Data: []byte("SECRET")},
+// Property: a request path that escapes the FS root must never yield the
+// secret content — whether it carries a literal ../ (attack: reading
+// arbitrary files from the filesystem) or a double-encoded %252e%252e that
+// survives one decode pass (attack: WAF bypass via encoding).
+func TestStatic_TraversalBlocked(t *testing.T) {
+	attacks := []struct {
+		name   string
+		url    string
+		detail string
+		attack string
+	}{
+		{
+			name:   "dotdot",
+			url:    "/static/../secret/secret.html",
+			detail: "GET /static/../secret/secret.html returned 200 with secret content",
+			attack: "directory traversal via ../",
+		},
+		{
+			name:   "double-encoded",
+			url:    "/static/%252e%252e/secret/secret.html", // %252e = double-encoded "."
+			detail: "double-encoded ../ returned 200 with secret",
+			attack: "WAF bypass via double encoding.",
+		},
 	}
-	handler := Handler(Config{FS: files, Prefix: "/static"})
+	for _, attack := range attacks {
+		t.Run(attack.name, func(t *testing.T) {
+			files := fstest.MapFS{
+				"public/index.html":  &fstest.MapFile{Data: []byte("<h1>public</h1>")},
+				"secret/secret.html": &fstest.MapFile{Data: []byte("SECRET")},
+			}
+			handler := Handler(Config{FS: files, Prefix: "/static"})
 
-	req := httptest.NewRequest(http.MethodGet, "/static/../secret/secret.html", nil)
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+			req := httptest.NewRequest(http.MethodGet, attack.url, nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
 
-	if rr.Code == http.StatusOK && strings.Contains(rr.Body.String(), "SECRET") {
-		t.Errorf("SECURITY: [path_traversal] GET /static/../secret/secret.html returned 200 with secret content. Attack: directory traversal via ../")
-	}
-}
-
-// TestStatic_DoubleEncodedTraversal verifies that double-encoded path
-// traversal (%252e%252e) is blocked. Attack: WAF bypass via encoding.
-func TestStatic_DoubleEncodedTraversal(t *testing.T) {
-	files := fstest.MapFS{
-		"public/index.html":  &fstest.MapFile{Data: []byte("<h1>public</h1>")},
-		"secret/secret.html": &fstest.MapFile{Data: []byte("SECRET")},
-	}
-	handler := Handler(Config{FS: files, Prefix: "/static"})
-
-	// %252e = double-encoded "."
-	req := httptest.NewRequest(http.MethodGet, "/static/%252e%252e/secret/secret.html", nil)
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	if rr.Code == http.StatusOK && strings.Contains(rr.Body.String(), "SECRET") {
-		t.Errorf("SECURITY: [path_traversal] double-encoded ../ returned 200 with secret. Attack: WAF bypass via double encoding.")
+			if rr.Code == http.StatusOK && strings.Contains(rr.Body.String(), "SECRET") {
+				t.Errorf("SECURITY: [path_traversal] %s. Attack: %s", attack.detail, attack.attack)
+			}
+		})
 	}
 }
 
@@ -152,13 +159,13 @@ func TestStatic_ContentSniffingPrevented(t *testing.T) {
 // across deployments.
 func TestStatic_ETagNotLeakHashState(t *testing.T) {
 	data := []byte("hello world")
-	etag := generateETag(data)
+	etag, _ := hashETag(bytes.NewReader(data))
 	// ETag should be a hash, not raw content
 	if strings.Contains(etag, "hello world") {
 		t.Errorf("SECURITY: [etag] ETag contains raw content: %q. Attack: content oracle via ETag.", etag)
 	}
 	// ETag should be consistent for same content
-	etag2 := generateETag(data)
+	etag2, _ := hashETag(bytes.NewReader(data))
 	if etag != etag2 {
 		t.Errorf("ETag inconsistent for same content: %q vs %q", etag, etag2)
 	}

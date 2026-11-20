@@ -1,75 +1,18 @@
-// Package featureflag is a minimal feature-flag primitive for GoFastr apps.
-//
-// The package name avoids collision with the standard library's `flag`;
-// users who want a shorter local name can alias on import:
-//
-//	import flag "github.com/DonaldMurillo/gofastr/core/featureflag"
-//
-// The model is intentionally small: a flag has a global on/off switch,
-// an optional percentage rollout, and explicit user/tenant allow lists.
-// Rules are evaluated against an EvalContext that you build from the
-// request (user, tenant, env, attributes).
-//
-// Anything more elaborate, variants with weights, dependent flags,
-// scheduled ramps, should be a separate evaluator. This package's
-// only job is to make "is feature X on for this caller right now"
-// trivial to express in handler code.
-//
-// Wiring:
-//
-//	store := featureflag.NewMemoryStore()
-//	store.Set(featureflag.Flag{Key: "new-checkout", Enabled: true, Rollout: 25})
-//	featureflag.SetDefault(featureflag.NewEvaluator(store))
-//
-//	// later, in a handler
-//	if featureflag.Bool(ctx, "new-checkout") {
-//	    return newCheckout(w, r)
-//	}
-//	return oldCheckout(w, r)
-//
-// Concurrency: the bundled memory store is safe for concurrent reads
-// and writes. Evaluator and the package-level helpers are safe for
-// concurrent use as long as the underlying store is.
+// Package featureflag evaluates feature flags for the caller an EvalContext
+// names.
 package featureflag
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"hash/fnv"
-	"net/url"
 	"slices"
-	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
-// Flag is the rule definition stored for a key.
-//
-// Enabled is the global kill switch; when false, Bool always returns
-// false regardless of the other fields.
-//
-// Rollout is a percentage (0–100) of subjects that see the flag as on,
-// computed from a stable hash of the flag key and subject id. Set 0
-// for "off-by-default" and 100 to enable everywhere the kill switch
-// allows.
-//
-// Users and Tenants are explicit allow lists. A subject matching
-// either list short-circuits to true (regardless of rollout), so flags
-// can be force-enabled for testers and beta tenants.
-//
-// A Users entry names one tenant's user: "acme:42" matches user 42 of
-// tenant acme only, and a bare "42" matches user 42 only when the
-// context has no tenant (a single-tenant app). The entry splits at its
-// first ':', with ':' and '%' in the tenant id percent-escaped; build
-// entries with [UserEntry]. Tenants holds tenant ids.
-//
-// Envs restricts the flag to specific deployment environments. When
-// non-empty, the EvalContext's Env must match one of the listed values
-// or the flag evaluates to false, even for explicitly allow-listed
-// users. When empty, no environment restriction applies. The match is
-// case-sensitive string equality.
+// Flag is the rule stored for a key: a kill switch, a 0-100 rollout, and
+// [UserEntry] users, tenant ids and environments that allow it.
 type Flag struct {
 	Key     string
 	Enabled bool
@@ -79,20 +22,7 @@ type Flag struct {
 	Envs    []string
 }
 
-// EvalContext is the per-call subject identity used to evaluate a flag.
-// Build one from the request, typically the authenticated user id and
-// the resolved tenant id. A TenantID left empty falls back to the
-// tenant the framework resolved for the request (handler.GetTenantID),
-// so a multi-tenant app's user entries stay scoped to their tenant.
-//
-// The Env field is matched by string equality against any rule that
-// references it; this is how "dev only" or "staging only" flags work
-// without coupling the flag definition to deployment plumbing.
-//
-// Attrs is open-ended additional context (region, plan tier, etc.).
-// The default evaluator doesn't consult Attrs, but a custom Store /
-// Evaluator wrapper can. Future versions of this package may grow
-// attribute-rule matching; storing them now keeps the migration cheap.
+// EvalContext is the caller a flag is evaluated for.
 type EvalContext struct {
 	UserID   string
 	TenantID string
@@ -100,59 +30,35 @@ type EvalContext struct {
 	Attrs    map[string]string
 }
 
-// Store is the pluggable backend that holds flag definitions.
-// Implementations must be safe for concurrent use.
-//
-// Get returns (nil, nil), not an error, when the key isn't defined.
-// Evaluator treats that as "fall through to the supplied default."
+// Store holds flags; Get returns (nil, nil) for an undefined key.
 type Store interface {
 	Get(ctx context.Context, key string) (*Flag, error)
 }
 
-// MutableStore extends Store with write operations. The memory store
-// implements it; persistent stores (db, redis) typically should too so
-// admin tools can edit flags at runtime.
+// MutableStore is a Store that can also write flags.
 type MutableStore interface {
 	Store
 	Set(f Flag) error
 	Delete(key string) error
 }
 
-// Evaluator is the entry point for runtime checks.
+// Evaluator answers flag checks from a Store.
 type Evaluator struct {
 	store Store
-	// salt is folded into the rollout bucket hash. A non-empty salt
-	// makes the bucket assignment unpredictable to an adversary who
-	// can only see flag keys. Without it, a 1% rollout can be
-	// brute-forced by trying ~100 distinct subject ids.
-	salt string
+	salt  string
 }
 
-// NewEvaluator wraps a Store. Passing nil yields an evaluator that
-// answers every question with the caller's default, useful for tests
-// that don't want to wire a store but still call featureflag.Bool.
+// NewEvaluator wraps a Store; a nil Store answers every default.
 func NewEvaluator(s Store) *Evaluator {
 	return &Evaluator{store: s}
 }
 
-// NewEvaluatorWithSalt wraps a Store with a process-private salt mixed
-// into the rollout bucket hash. Set this when the rollout cohort needs
-// to be unpredictable to attackers (kill switches whose evasion would
-// re-enable a payments flow, etc.). Without a salt, FNV-1a buckets
-// are deterministic from public flag keys.
-//
-// The salt is process-private by convention; rotating it shuffles
-// every cohort so use only when that's acceptable.
+// NewEvaluatorWithSalt wraps a Store with a salt for the rollout hash.
 func NewEvaluatorWithSalt(s Store, salt string) *Evaluator {
 	return &Evaluator{store: s, salt: salt}
 }
 
-// Bool returns whether the named flag is on for the supplied context.
-// Missing keys, storage errors, and disabled flags all return false.
-//
-// The context's user / tenant lists are checked first, then the rollout
-// percentage. The decision is stable across processes: same key +
-// same subject id always hashes the same way.
+// Bool reports whether the flag is on; missing or unreadable is false.
 func (e *Evaluator) Bool(ctx context.Context, key string) bool {
 	if e == nil || e.store == nil {
 		return false
@@ -164,30 +70,19 @@ func (e *Evaluator) Bool(ctx context.Context, key string) bool {
 	return e.evaluate(ctx, f)
 }
 
-// evaluate applies the rule chain to an already-loaded flag. It performs
-// no store access, so callers control exactly how many fetches happen;
-// Bool and BoolDefault both fetch once and hand the result here. Keeping
-// the decision logic store-free closes the TOCTOU double-read window and
-// lets BoolDefault honour its fail-closed contract.
 func (e *Evaluator) evaluate(ctx context.Context, f *Flag) bool {
 	if f == nil || !f.Enabled {
 		return false
 	}
 	ec := FromContext(ctx)
-	// Env gate runs first: a flag restricted to staging must not be
-	// reachable from production, even for explicitly allow-listed users.
-	if len(f.Envs) > 0 && !containsString(f.Envs, ec.Env) {
+	if len(f.Envs) > 0 && !slices.Contains(f.Envs, ec.Env) {
 		return false
 	}
 	tenant := evalTenant(ctx, ec)
-	// A Users entry names one tenant's user ("acme:42"); a bare id names
-	// a user only where there is no tenant. User ids are per-tenant in a
-	// multi-tenant app, so a bare "42" used to enable the flag for user
-	// 42 of every tenant.
 	if ec.UserID != "" && userAllowed(f.Users, tenant, ec.UserID) {
 		return true
 	}
-	if containsString(f.Tenants, tenant) && tenant != "" {
+	if slices.Contains(f.Tenants, tenant) && tenant != "" {
 		return true
 	}
 	if f.Rollout <= 0 {
@@ -196,13 +91,6 @@ func (e *Evaluator) evaluate(ctx context.Context, f *Flag) bool {
 	if f.Rollout >= 100 {
 		return true
 	}
-	// Anonymous subjects (no UserID or TenantID) hash to a single
-	// constant bucket per flag, so a "50% rollout" would be 100% or
-	// 0% of anonymous traffic depending on the key's hash. Force off
-	// at any partial rollout to avoid that silent footgun. Apps that
-	// want anonymous traffic in a rollout should derive a stable
-	// pseudo-subject (request signature, session) and put it in
-	// EvalContext.UserID themselves.
 	subject := subjectID(tenant, ec.UserID)
 	if subject == "" {
 		return false
@@ -210,25 +98,11 @@ func (e *Evaluator) evaluate(ctx context.Context, f *Flag) bool {
 	return bucket(e.salt, f.Key, subject) < f.Rollout
 }
 
-// BoolDefault returns the supplied fallback when the named flag is
-// genuinely absent from the store; existing flags evaluate normally
-// (so an explicitly-disabled flag returns false, ignoring fallback).
-//
-// Use this for kill switches where a typo or accidental delete must
-// not silently re-enable the protected path. Example:
-//
-//	if app.Flags().BoolDefault(ctx, "kill-payments", true) {
-//	    return payment.Block(...) // safe default: block on missing flag
-//	}
+// BoolDefault is Bool, but missing or unreadable returns fallback.
 func (e *Evaluator) BoolDefault(ctx context.Context, key string, fallback bool) bool {
 	if e == nil || e.store == nil {
 		return fallback
 	}
-	// Single guarded fetch: evaluating the flag we already loaded avoids
-	// a second, independent store.Get inside Bool. That second read could
-	// error (transient DB blip) and make Bool return false, failing open,
-	// or observe a changed definition (TOCTOU). One read here keeps the
-	// fallback authoritative whenever the store can't give a clean answer.
 	f, err := e.store.Get(ctx, key)
 	if err != nil || f == nil {
 		return fallback
@@ -236,18 +110,6 @@ func (e *Evaluator) BoolDefault(ctx context.Context, key string, fallback bool) 
 	return e.evaluate(ctx, f)
 }
 
-// subjectID picks the stable identifier to hash for rollout: the user
-// as its Users entry spells it ([UserEntry]: "tenant:user" with a
-// tenant, the bare id without), else the tenant id, else empty. Keying
-// a tenant's user on the pair keeps user 42 of two tenants in
-// independent buckets; with no tenant the subject is the bare id, so a
-// single-tenant app's cohorts are what they were.
-//
-// An empty subject is NOT bucketed: the caller forces the flag OFF at
-// partial rollout rather than hashing every anonymous request into one
-// shared bucket, which would flip all of them together at the same
-// percentage. Callers who want anonymous traffic in a rollout derive a
-// stable pseudo-subject and put it in EvalContext.UserID themselves.
 func subjectID(tenantID, userID string) string {
 	switch {
 	case userID != "" && tenantID != "":
@@ -258,10 +120,6 @@ func subjectID(tenantID, userID string) string {
 	return tenantID
 }
 
-// bucket returns an integer in [0, 100) for the (salt, key, subject)
-// tuple. FNV-1a is good enough for distribution and far cheaper than
-// crypto hashes. When adversary resistance matters, supply a non-
-// empty salt at evaluator construction.
 func bucket(salt, key, subject string) int {
 	h := fnv.New32a()
 	if salt != "" {
@@ -274,78 +132,6 @@ func bucket(salt, key, subject string) int {
 	return int(h.Sum32() % 100)
 }
 
-func containsString(xs []string, s string) bool {
-	return slices.Contains(xs, s)
-}
-
-// tenantEscaper writes a tenant id into a user entry's tenant part:
-// '%' and ':' percent-escaped, so the entry's first ':' always ends the
-// tenant part.
-var tenantEscaper = strings.NewReplacer("%", "%25", ":", "%3A")
-
-// UserEntry spells a [Flag.Users] entry for one user of one tenant:
-// "tenant:user", with ':' and '%' in the tenant id percent-escaped
-// ("a:b" is written "a%3Ab"). The user id is written as is, ':'
-// included, since the entry splits at its first ':'. With no tenant it
-// is the bare user id, or ":user" when the id holds a ':' (a bare
-// "google:42" would name tenant google's user 42).
-func UserEntry(tenantID, userID string) string {
-	if tenantID == "" {
-		if strings.Contains(userID, ":") {
-			return ":" + userID
-		}
-		return userID
-	}
-	return tenantEscaper.Replace(tenantID) + ":" + userID
-}
-
-// ParseUserEntry reads a [Flag.Users] entry back into the tenant and
-// user it names, the inverse of [UserEntry]. The entry splits at its
-// first ':'; the part before it is the percent-escaped tenant id, and
-// an entry with no ':' is a bare user id with no tenant. An empty user
-// id, or a tenant part that is not valid percent-escaping, is an error.
-func ParseUserEntry(entry string) (tenantID, userID string, err error) {
-	tenantPart, userID, qualified := strings.Cut(entry, ":")
-	if !qualified {
-		tenantPart, userID = "", entry
-	}
-	if userID == "" {
-		return "", "", errors.New("featureflag: user entry names no user id")
-	}
-	tenantID, err = url.PathUnescape(tenantPart)
-	if err != nil {
-		return "", "", errors.New("featureflag: user entry has a malformed tenant escape")
-	}
-	return tenantID, userID, nil
-}
-
-// validUsers reports the first malformed entry of a Users list, so a
-// store refuses a flag whose entry would silently never match.
-func validUsers(users []string) error {
-	for i, u := range users {
-		if _, _, err := ParseUserEntry(u); err != nil {
-			return fmt.Errorf("users[%d]: %w", i, err)
-		}
-	}
-	return nil
-}
-
-// userAllowed reports whether users holds an entry naming this tenant's
-// user. A malformed entry matches nothing.
-func userAllowed(users []string, tenantID, userID string) bool {
-	for _, u := range users {
-		t, id, err := ParseUserEntry(u)
-		if err == nil && t == tenantID && id == userID {
-			return true
-		}
-	}
-	return false
-}
-
-// evalTenant is the tenant a flag is evaluated for: the EvalContext's
-// TenantID, or, when that is empty, the tenant the framework resolved
-// for the request (core/handler's tenant slot, which
-// tenant.ResolveMiddleware and tenant.TenantMiddleware fill).
 func evalTenant(ctx context.Context, ec EvalContext) string {
 	if ec.TenantID != "" || ctx == nil {
 		return ec.TenantID
@@ -353,16 +139,12 @@ func evalTenant(ctx context.Context, ec EvalContext) string {
 	return handler.GetTenantID(ctx)
 }
 
-// ----- package-level default ------------------------------------------------
-
 var (
 	defaultMu   sync.RWMutex
 	defaultEval *Evaluator
 )
 
-// SetDefault installs the process-wide evaluator the package-level
-// helpers (Bool) use on a context that carries none (see WithEvaluator).
-// Pass nil to disable and have Bool return false for every such call.
+// SetDefault installs the evaluator Bool uses when ctx carries none.
 func SetDefault(e *Evaluator) {
 	defaultMu.Lock()
 	defaultEval = e
@@ -376,28 +158,21 @@ func Default() *Evaluator {
 	return defaultEval
 }
 
-// Bool is a convenience wrapper around EvaluatorFrom(ctx).Bool.
+// Bool is EvaluatorFrom(ctx).Bool(ctx, key).
 func Bool(ctx context.Context, key string) bool {
 	return EvaluatorFrom(ctx).Bool(ctx, key)
 }
 
 type evaluatorCtxKey struct{}
 
-// ctxEvaluator wraps the attached evaluator so a nil one still reads as
-// attached.
 type ctxEvaluator struct{ e *Evaluator }
 
-// WithEvaluator attaches e to ctx ahead of the process default, so Bool
-// on ctx reads e. An App attaches its own evaluator to every request,
-// which keeps two Apps in one process from reading each other's flags
-// through Default. A nil e still counts: Bool on ctx then reports false
-// instead of falling back to Default.
+// WithEvaluator attaches e, nil included, to ctx ahead of Default.
 func WithEvaluator(ctx context.Context, e *Evaluator) context.Context {
 	return context.WithValue(ctx, evaluatorCtxKey{}, ctxEvaluator{e})
 }
 
-// EvaluatorFrom returns the evaluator WithEvaluator attached to ctx, or
-// Default() when ctx carries none.
+// EvaluatorFrom returns ctx's evaluator, or Default() when it has none.
 func EvaluatorFrom(ctx context.Context) *Evaluator {
 	if ctx != nil {
 		if v, ok := ctx.Value(evaluatorCtxKey{}).(ctxEvaluator); ok {
@@ -407,13 +182,9 @@ func EvaluatorFrom(ctx context.Context) *Evaluator {
 	return Default()
 }
 
-// ----- context plumbing -----------------------------------------------------
-
 type ctxKey struct{}
 
-// WithContext attaches an EvalContext to ctx. Middleware that knows the
-// user and tenant should call this once per request; handlers then
-// just call flag.Bool(ctx, ...).
+// WithContext attaches an EvalContext to ctx.
 func WithContext(ctx context.Context, ec EvalContext) context.Context {
 	return context.WithValue(ctx, ctxKey{}, ec)
 }
@@ -425,96 +196,4 @@ func FromContext(ctx context.Context) EvalContext {
 	}
 	v, _ := ctx.Value(ctxKey{}).(EvalContext)
 	return v
-}
-
-// ----- memory store ---------------------------------------------------------
-
-// MemoryStore is the bundled in-memory MutableStore implementation.
-// Suitable for single-instance apps, tests, and as a cache layer in
-// front of a persistent store.
-type MemoryStore struct {
-	mu    sync.RWMutex
-	flags map[string]Flag
-}
-
-// NewMemoryStore creates an empty MemoryStore.
-func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{flags: map[string]Flag{}}
-}
-
-// cloneFlag returns f with its Users/Tenants/Envs slice fields deep-copied, so
-// the copy shares no backing array with the original. Those slices ARE the
-// allow-lists evaluate() consults; aliasing them across the store boundary
-// makes All's "The result is a copy" promise false for exactly the fields an
-// admin render scrubs in place (and makes them a data race between evaluate()
-// readers and any writer holding the "copy"). slices.Clone(nil) is nil, so
-// absent lists stay absent.
-func cloneFlag(f Flag) Flag {
-	f.Users = slices.Clone(f.Users)
-	f.Tenants = slices.Clone(f.Tenants)
-	f.Envs = slices.Clone(f.Envs)
-	return f
-}
-
-// Get returns the stored flag, or (nil, nil) when absent. The returned Flag
-// owns its slices: mutating them does not affect the store.
-func (m *MemoryStore) Get(_ context.Context, key string) (*Flag, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	f, ok := m.flags[key]
-	if !ok {
-		return nil, nil
-	}
-	f = cloneFlag(f)
-	return &f, nil
-}
-
-// Set creates or updates a flag definition. Empty Key returns an error. The
-// store keeps its own copy of the allow-list slices: mutating the caller's
-// Flag (or its slices) after Set does not change what evaluate() consults.
-func (m *MemoryStore) Set(f Flag) error {
-	if f.Key == "" {
-		return errors.New("flag: empty key")
-	}
-	if err := validUsers(f.Users); err != nil {
-		return fmt.Errorf("flag %q: %w", f.Key, err)
-	}
-	if f.Rollout < 0 {
-		f.Rollout = 0
-	}
-	if f.Rollout > 100 {
-		f.Rollout = 100
-	}
-	m.mu.Lock()
-	m.flags[f.Key] = cloneFlag(f)
-	m.mu.Unlock()
-	return nil
-}
-
-// Delete removes a flag. Missing keys are not an error.
-func (m *MemoryStore) Delete(key string) error {
-	m.mu.Lock()
-	delete(m.flags, key)
-	m.mu.Unlock()
-	return nil
-}
-
-// All returns a snapshot of every defined flag, suitable for /admin
-// listings. The result is a copy, including the Users/Tenants/Envs slices:
-// mutations (e.g. scrubbing PII before a render) don't affect the store.
-//
-// SECURITY: the snapshot includes each flag's full definition; the
-// Users and Tenants allow-lists carry raw subject ids / emails. That is
-// PII, and the list of who is inside a gated cohort is itself a signal.
-// Gate this behind admin auth before rendering it; do not hand the
-// result to an anonymous introspection endpoint. Compare
-// router.Routes(), which carries the same warning.
-func (m *MemoryStore) All() []Flag {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	out := make([]Flag, 0, len(m.flags))
-	for _, f := range m.flags {
-		out = append(out, cloneFlag(f))
-	}
-	return out
 }

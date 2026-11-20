@@ -60,6 +60,14 @@ invariants:
     enforced_by:
       - test: framework/sdkdocs.TestArtifactsRefuseGatedScope
       - test: framework/sdkdocs.TestArtifactsRefuseWithoutManifest
+  - id: openapi-downloads-need-the-document
+    rule: Every artifact route answers 404 for a manifest whose source is openapi unless Config.OpenAPI holds a document, and the drift banner shows when that document's OpenAPIHash differs from the manifest's.
+    enforced_by:
+      - test: framework/sdkdocs.TestOpenAPIManifestDownloads
+  - id: openapi-snippets-match-the-sdk
+    rule: With a manifest whose source is openapi, every curl snippet sends the token under the manifest's tokenHeader and tokenPrefix, and entity pages show no entity-SDK calls.
+    enforced_by:
+      - test: framework/sdkdocs.TestOpenAPIManifestSnippets
   - id: artifact-is-the-one-the-manifest-records
     rule: An SDK artifact whose SHA-256 differs from the manifest's record for its key, or has no record, answers 404.
     enforced_by:
@@ -130,3 +138,11 @@ decisions:
         why: A raw CR or LF could forge headers, and DEL breaks HTTP/2 writes.
     revisit_if: app.Decision carries a URL that is scrubbed when the decision is made.
     upholds: [redirect-only-for-downloads]
+  - id: openapi-downloads-follow-the-published-document
+    date: 2026-11-19
+    status: accepted
+    decision: A site serves SDKs generated from an OpenAPI document only when the host passes that document as Config.OpenAPI, and checks their drift against it.
+    rejected:
+      - option: Serve them because their manifest names no gated entity.
+        why: The check would pass vacuously, so the SDK of a private document would ship on a public site.
+    upholds: [openapi-downloads-need-the-document]

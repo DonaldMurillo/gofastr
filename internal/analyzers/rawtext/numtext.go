@@ -255,17 +255,7 @@ func localParams(pass *analysis.Pass) map[*types.Var]*ast.CompositeLit {
 	}
 	out := map[*types.Var]*ast.CompositeLit{}
 	poisoned := map[*types.Var]bool{}
-	localVar := func(e ast.Expr) *types.Var {
-		id, ok := ast.Unparen(e).(*ast.Ident)
-		if !ok {
-			return nil
-		}
-		v, _ := pass.TypesInfo.ObjectOf(id).(*types.Var)
-		if v == nil || v.IsField() || v.Parent() == nil || v.Parent() == pass.Pkg.Scope() {
-			return nil
-		}
-		return v
-	}
+	localVar := func(e ast.Expr) *types.Var { return localVarOf(pass, e) }
 	record := func(lhs, rhs ast.Expr) {
 		v := localVar(lhs)
 		if v == nil {

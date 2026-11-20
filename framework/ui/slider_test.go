@@ -78,10 +78,22 @@ func TestSliderShowValueAddsMirrorMarker(t *testing.T) {
 	}
 }
 
-func TestSliderHasAriaLabel(t *testing.T) {
-	h := string(Slider(SliderConfig{Name: "vol", Label: "Volume"}))
-	if !strings.Contains(h, `aria-label="Volume"`) {
-		t.Errorf("Slider input should carry aria-label=Label:\n%s", h)
+// The visible label names the thumb through for=id; a second name in
+// aria-label is redundant and drifts from the label (#704). The spoken
+// value is the formatted number the output shows.
+func TestSliderIsNamedByItsLabelAndSpeaksItsValue(t *testing.T) {
+	h := string(Slider(SliderConfig{Name: "vol", ID: "vol", Label: "Volume", Value: 40, ShowValue: true}))
+	if strings.Contains(h, `aria-label=`) {
+		t.Errorf("Slider input should be named by its visible label alone, not aria-label:\n%s", h)
+	}
+	if !strings.Contains(h, `<label class="fui-slider__label" data-cui-internal="" for="vol">Volume</label>`) {
+		t.Errorf("Slider should render a visible label for the input:\n%s", h)
+	}
+	if !strings.Contains(h, `aria-valuetext="40"`) {
+		t.Errorf("Slider input should carry aria-valuetext:\n%s", h)
+	}
+	if bare := string(Slider(SliderConfig{Name: "vol", Label: "Volume"})); strings.Contains(bare, "aria-valuetext") {
+		t.Errorf("a slider with no output loads no module to keep aria-valuetext live, so it must not render one:\n%s", bare)
 	}
 }
 
@@ -103,7 +115,7 @@ func TestSliderExtraAttrsCannotOverrideOwned(t *testing.T) {
 	}
 	for _, want := range []string{
 		`data-test="hook"`, `type="range"`, `name="vol"`, `min="0"`, `max="100"`,
-		`step="5"`, `value="25"`, `aria-label="Volume"`, `class="fui-slider__input"`,
+		`step="5"`, `value="25"`, `class="fui-slider__input"`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("missing %q:\n%s", want, h)

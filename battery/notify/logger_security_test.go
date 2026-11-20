@@ -15,7 +15,7 @@ import (
 // from a rendered notification into the log, found by the 2026-09-04
 // red-probe round; fixed by passing LoggerChannel's subject and text body
 // through email.RedactBody — the same helper battery/email's LogSender uses
-// (TestLogSender_DoesNotExposeLiveResetLinksInTextBody), not a forked copy
+// (TestLogSender_DoesNotExposeLiveResetLinks/text_body), not a forked copy
 // of the patterns.
 // Family: F15 Secret lifecycle (credential URLs in logs via the dev log channel)
 // Property: a development log channel never writes a live credential URL from
@@ -57,7 +57,7 @@ func TestLoggerChannelRedactsCredentialURLs(t *testing.T) {
 	if strings.Contains(out, liveToken) || strings.Contains(out, "/reset-password?token=") {
 		t.Errorf("SECURITY: [notify-log] LoggerChannel wrote a live credential URL into the log "+
 			"(output: %q): battery/email's LogSender redacts exactly this shape "+
-			"(TestLogSender_DoesNotExposeLiveResetLinksInTextBody, battery/email/log.go RedactBody); "+
+			"(TestLogSender_DoesNotExposeLiveResetLinks/text_body, battery/email/log.go RedactBody); "+
 			"notify's bundled log channel must not be the one sink in the flow that leaks it", out)
 	}
 }

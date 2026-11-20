@@ -257,6 +257,16 @@ func setupAccountsTestWithPassword(t *testing.T, hasPassword bool, providers ...
 	return store, r, sess.Token
 }
 
+// unlinkProvider issues DELETE /auth/unlink/<provider> with the session
+// cookie and returns the recorded response.
+func unlinkProvider(r *router.Router, sess, provider string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodDelete, "/auth/unlink/"+provider, nil)
+	req.AddCookie(&http.Cookie{Name: "session_id", Value: sess})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
 // TestAccounts_Unlink_OAuthOnlyUserCannotUnlinkLast pins the new HasPassword
 // rule: a user whose only credential is a single OAuth link (no password,
 // placeholder hash) cannot unlink that link. Pre-HasPassword the system
@@ -265,11 +275,7 @@ func setupAccountsTestWithPassword(t *testing.T, hasPassword bool, providers ...
 func TestAccounts_Unlink_OAuthOnlyUserCannotUnlinkLast(t *testing.T) {
 	_, r, sess := setupAccountsTestWithPassword(t, false, "google")
 
-	req := httptest.NewRequest(http.MethodDelete, "/auth/unlink/google", nil)
-	req.AddCookie(&http.Cookie{Name: "session_id", Value: sess})
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusConflict {
+	if w := unlinkProvider(r, sess, "google"); w.Code != http.StatusConflict {
 		t.Fatalf("OAuth-only user must not unlink last provider; got %d (body=%s)",
 			w.Code, w.Body.String())
 	}
@@ -282,11 +288,7 @@ func TestAccounts_Unlink_OAuthOnlyUserCannotUnlinkLast(t *testing.T) {
 func TestAccounts_Unlink_PasswordUserCanUnlinkAll(t *testing.T) {
 	_, r, sess := setupAccountsTestWithPassword(t, true, "google")
 
-	req := httptest.NewRequest(http.MethodDelete, "/auth/unlink/google", nil)
-	req.AddCookie(&http.Cookie{Name: "session_id", Value: sess})
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
+	if w := unlinkProvider(r, sess, "google"); w.Code != http.StatusOK {
 		t.Fatalf("password user with one OAuth must be allowed to unlink it; got %d (body=%s)",
 			w.Code, w.Body.String())
 	}
@@ -300,11 +302,7 @@ func TestAccounts_Unlink_PasswordUserCanUnlinkAll(t *testing.T) {
 func TestAccounts_Unlink_OAuthOnlyMultipleLinks_StillCanReduceToOne(t *testing.T) {
 	_, r, sess := setupAccountsTestWithPassword(t, false, "google", "github")
 
-	req := httptest.NewRequest(http.MethodDelete, "/auth/unlink/github", nil)
-	req.AddCookie(&http.Cookie{Name: "session_id", Value: sess})
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
+	if w := unlinkProvider(r, sess, "github"); w.Code != http.StatusOK {
 		t.Fatalf("OAuth-only user with 2 providers must be allowed to unlink down to 1; got %d (body=%s)",
 			w.Code, w.Body.String())
 	}
@@ -314,20 +312,12 @@ func TestAccounts_Unlink_RefusesLast(t *testing.T) {
 	_, _, r, sess := setupAccountsTest(t)
 
 	// Unlink one (still have google).
-	req := httptest.NewRequest(http.MethodDelete, "/auth/unlink/github", nil)
-	req.AddCookie(&http.Cookie{Name: "session_id", Value: sess})
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
+	if w := unlinkProvider(r, sess, "github"); w.Code != http.StatusOK {
 		t.Fatalf("first unlink: %d", w.Code)
 	}
 
 	// Now unlink the last one, must refuse to avoid locking the user out.
-	req2 := httptest.NewRequest(http.MethodDelete, "/auth/unlink/google", nil)
-	req2.AddCookie(&http.Cookie{Name: "session_id", Value: sess})
-	w2 := httptest.NewRecorder()
-	r.ServeHTTP(w2, req2)
-	if w2.Code != http.StatusConflict {
+	if w2 := unlinkProvider(r, sess, "google"); w2.Code != http.StatusConflict {
 		t.Fatalf("expected 409 refusing to unlink the last linked account; got %d (body=%s)",
 			w2.Code, w2.Body.String())
 	}

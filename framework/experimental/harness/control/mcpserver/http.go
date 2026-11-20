@@ -21,61 +21,31 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
 
-// HTTPHandler wraps Server with the MCP streamable-HTTP transport.
-//
-// Per the MCP spec (2024-11-05), streamable HTTP uses a single
-// endpoint that accepts POST for request/notification + GET for
-// server-initiated events. Mcp-Session-Id header binds a logical MCP
-// session across requests.
-//
-// The GET stream carries keepalives only: engine events do not flow
-// over it. A client catches up on a session's events by POSTing
-// resources/read for harness/v1://session/{id}/events?since=<id>,
-// which replays from the bus window and the session log (see
-// Server.readEvents).
+// HTTPHandler serves Server over MCP streamable HTTP: POST for requests, GET for a keepalive stream, DELETE to end a session.
 type HTTPHandler struct {
 	Server *Server
 
-	// Encoder verifies bearer tokens; nil refuses every request (see
-	// ServeHTTP).
+	// Encoder verifies bearer tokens; nil refuses every request with 503.
 	Encoder     *auth.Encoder
 	Revocations *auth.RevocationList
 
-	// Seats bounds the concurrent GET /mcp event streams one token
-	// principal may hold (core/stream's seat policy). Nil shares the
-	// process-wide control.DefaultSeatTable with the REST and ws
-	// transports, so the cap counts per credential across all three.
+	// Seats caps the GET streams per token; nil uses control.DefaultSeatTable.
 	Seats *control.SeatTable
 
-	// sessions maps Mcp-Session-Id → live GET stream state.
 	mu       sync.Mutex
 	sessions map[string]*httpMCPSession
-
-	// inflight is the running-request table every POST shares. An MCP
-	// client sends notifications/cancelled as its own POST, which must
-	// reach a request another POST is still serving. Entries are owned
-	// by token principal plus Mcp-Session-Id (see inflightOwner).
 	inflight *inflightTable
 }
 
 type httpMCPSession struct {
 	id        string
 	mu        sync.Mutex
-	pendingEv [][]byte // event payloads queued for the GET stream
+	pendingEv [][]byte
 	closed    bool
-	// streams counts GET streams currently parked on this session.
-	// Guarded by HTTPHandler.mu: it is only touched in acquire/release
-	// under the handler lock, and release reaps the record when it hits
-	// zero with a drained backlog. A client that loops connect-and-
-	// abandon on fresh Mcp-Session-Ids otherwise grows h.sessions
-	// monotonically for the process lifetime.
-	streams int
+	streams   int
 }
 
-// NewHTTPHandler returns an HTTP handler wrapping Server. enc is not
-// optional at serve time: a nil Encoder has ServeHTTP refuse every request
-// with 503, because an unauthenticated network transport has no process
-// boundary to lean on (stdio does). Mount with auth.NewEncoder(secret).
+// NewHTTPHandler returns an HTTPHandler; with a nil enc it refuses every request with 503.
 func NewHTTPHandler(s *Server, enc *auth.Encoder, rl *auth.RevocationList) *HTTPHandler {
 	return &HTTPHandler{
 		Server:      s,
@@ -86,8 +56,6 @@ func NewHTTPHandler(s *Server, enc *auth.Encoder, rl *auth.RevocationList) *HTTP
 	}
 }
 
-// seatTable resolves the seat table: the wired Seats field, else the
-// process-wide table shared with the REST and ws transports.
 func (h *HTTPHandler) seatTable() *control.SeatTable {
 	if h.Seats != nil {
 		return h.Seats
@@ -95,18 +63,8 @@ func (h *HTTPHandler) seatTable() *control.SeatTable {
 	return control.DefaultSeatTable()
 }
 
-// ServeHTTP dispatches the MCP streamable-HTTP protocol.
-//
-//	POST /mcp  → JSON-RPC request, returns immediate JSON response
-//	GET  /mcp  → SSE stream of server-initiated events / notifications
+// ServeHTTP verifies the bearer token and serves POST, GET and DELETE on the MCP endpoint.
 func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Fail closed. A nil Encoder means "no authentication configured",
-	// and over a network transport that is not a posture, it is an open
-	// door: stdio leans on the process boundary as the check
-	// (Server.authorize's nil-claims posture), but any client that
-	// reaches this listener could drive the agent session — tools/call
-	// included — with no credential at all. Refuse every request instead
-	// of degrading to stdio trust semantics on TCP.
 	if h.Encoder == nil {
 		i18n.HTTPError(w, r, http.StatusServiceUnavailable, reasonNoAuthEncoder)
 		return
@@ -122,8 +80,6 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if sessID == "" {
 		sessID = string(ids.NewSessionID())
 	}
-	// Cache-Control: no-store on every response, these are session-bound
-	// JSON-RPC / SSE responses, never cacheable by intermediaries.
 	w.Header().Set("Cache-Control", "no-store")
 	switch r.Method {
 	case http.MethodPost:
@@ -138,9 +94,6 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// sanitizeSessionID strips CR, LF, and NUL bytes from an Mcp-Session-Id
-// header value to prevent response-header / session-fixation injection
-// where an attacker reflects a newline-bearing id into headers.
 func sanitizeSessionID(s string) string {
 	if s == "" {
 		return s
@@ -160,10 +113,6 @@ func sanitizeSessionID(s string) string {
 	return b.String()
 }
 
-// isAcceptableJSONContentType returns true if ct parses as
-// application/json or application/*+json. Anything else (including a
-// missing or text/plain body) is rejected with 415 to block
-// content-type smuggling into the JSON-RPC transport.
 func isAcceptableJSONContentType(ct string) bool {
 	if ct == "" {
 		return false
@@ -181,14 +130,6 @@ func isAcceptableJSONContentType(ct string) bool {
 	return false
 }
 
-// sanitizeSSEData defangs an event payload before emission so a single
-// stored event cannot inject additional SSE directives (event:, id:,
-// retry:, or a blank-line frame break) on replay. We:
-//   - strip CR and NUL bytes outright,
-//   - split on LF and re-prefix every line with "data: ",
-//   - defang any embedded SSE directive keywords inside each line so
-//     that even a downstream string-match for `event:` / `id:` /
-//     `retry:` / `data:` will not see a forgeable directive.
 func sanitizeSSEData(payload []byte) []byte {
 	cleaned := make([]byte, 0, len(payload))
 	for _, c := range payload {
@@ -208,9 +149,6 @@ func sanitizeSSEData(payload []byte) []byte {
 	return out.Bytes()
 }
 
-// defangSSEDirectives rewrites SSE directive keywords inside a single
-// already-newline-split data line so an attacker-controlled payload
-// cannot smuggle a directive substring into the emitted frame.
 func defangSSEDirectives(ln []byte) []byte {
 	s := string(ln)
 	for _, kw := range []string{"event:", "id:", "retry:", "data:"} {
@@ -230,10 +168,6 @@ func (h *HTTPHandler) handlePOST(w http.ResponseWriter, r *http.Request, sessID 
 		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonBodyUnreadable)
 		return
 	}
-	// Reuse Server's stdio handler via an in-memory io pair. Build a
-	// fresh Server pointer rather than copying the parent by value:
-	// the parent embeds a sync.Mutex that must not be copied (go vet:
-	// "assignment copies lock value").
 	in := bytes.NewReader(append(bytes.TrimSpace(raw), '\n'))
 	var out bytes.Buffer
 	s := New(h.Server.Mux, h.Server.Catalog)
@@ -244,7 +178,6 @@ func (h *HTTPHandler) handlePOST(w http.ResponseWriter, r *http.Request, sessID 
 	s.owner = inflightOwner{principal: string(claims.JTI), session: sessID}
 	s.WithIO(in, &out)
 	if err := s.Serve(r.Context()); err != nil && !errors.Is(err, context.Canceled) {
-		// Serve returns nil on EOF; only log unexpected errors.
 		if err != io.EOF {
 			log.Printf("mcpserver: serve: %v", err)
 			i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
@@ -268,11 +201,6 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
-	// Seat the stream per token principal BEFORE any bytes go out, so
-	// a refusal can still answer 429 at connect (core/stream's seat
-	// policy; the REST twin seats its SSE stream the same way). Each
-	// admitted stream parks a handler goroutine and a keepalive ticker
-	// for the life of the request.
 	var principal string
 	if claims != nil {
 		principal = string(claims.JTI)
@@ -294,14 +222,6 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 	sess := h.acquireSession(sessID)
 	defer h.releaseSession(sessID)
 
-	// Replay backlog (anything published while no GET was attached).
-	// Defang each stored event so a poisoned payload cannot inject a
-	// second SSE frame or a fake event:/id:/retry: directive on replay.
-	// Each write runs under a fresh deadline, so a client that stops
-	// reading cannot park this handler for good, and clears it once
-	// flushed: on HTTP/2 the deadline is a stream timer that resets the
-	// stream when it fires, write pending or not, so one left armed kills
-	// the stream in the idle gap before the next ping.
 	rc := http.NewResponseController(w)
 	for _, ev := range sess.drain() {
 		_ = rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout))
@@ -309,9 +229,6 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 		flusher.Flush()
 		_ = rc.SetWriteDeadline(time.Time{})
 	}
-	// Park until ctx done. Engine events do not flow over this stream
-	// (clients read the events resource instead), so it carries a
-	// keepalive every 15s.
 	ticker := keepaliveTicker()
 	defer ticker.Stop()
 	for {
@@ -319,11 +236,8 @@ func (h *HTTPHandler) handleGET(w http.ResponseWriter, r *http.Request, sessID s
 		case <-r.Context().Done():
 			return
 		case <-seat.Done:
-			// Displaced by an EvictOldest admission: stop streaming.
 			return
 		case <-ticker.C:
-			// The bearer was verified at connect; a token revoked or
-			// expired since must end the stream, not just fresh requests.
 			if _, ok := verifyBearer(h.Encoder, h.Revocations, r.Header.Get("Authorization")); !ok {
 				return
 			}
@@ -349,14 +263,6 @@ func (h *HTTPHandler) acquireSession(sessID string) *httpMCPSession {
 	return s
 }
 
-// releaseSession retires one GET stream and reaps the session record
-// when no stream is parked on it anymore and its backlog is drained:
-// the record's only purpose is to carry the backlog between GETs, and
-// mcpserver does not yet publish server-initiated events between
-// connections, so a record with neither stream nor backlog is garbage.
-// Reaping here bounds h.sessions to live connections; before it, every
-// GET with a fresh client-supplied Mcp-Session-Id left a permanent
-// record behind (an explicit DELETE was the only removal).
 func (h *HTTPHandler) releaseSession(sessID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -397,10 +303,6 @@ func (s *httpMCPSession) drain() [][]byte {
 	return out
 }
 
-// verifyBearer accepts the bearer scheme used by REST + ws and RETURNS
-// the verified claims. It used to return only a bool, so the scope the
-// token carries -- which sessions, which commands -- was verified and
-// then thrown away, and a tools/call could name any session it liked.
 func verifyBearer(enc *auth.Encoder, rl *auth.RevocationList, header string) (auth.Claims, bool) {
 	if len(header) < len("Bearer ") || header[:len("Bearer ")] != "Bearer " {
 		return auth.Claims{}, false
@@ -413,11 +315,8 @@ func verifyBearer(enc *auth.Encoder, rl *auth.RevocationList, header string) (au
 	return claims, true
 }
 
-// timeNow is replaced in tests; production uses time.Now().
 var timeNow = realTimeNow
 
-// sseWriteTimeout bounds one write on the GET stream.
 const sseWriteTimeout = 10 * time.Second
 
-// keepaliveTicker is split out to ease testing.
 var keepaliveTicker = realKeepaliveTicker

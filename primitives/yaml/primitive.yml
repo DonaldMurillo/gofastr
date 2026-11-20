@@ -1,0 +1,108 @@
+primitive: yaml
+summary: The in-house YAML 1.2 subset parser (block maps and lists, scalars, inline scalar lists) that reads app specs, codegen configs and kiln snapshots with line and column on every node.
+code:
+  - core/yaml/
+docs:
+  - framework/docs/content/app-spec.md
+on_change:
+  - A change to what the subset accepts updates the YAML subset list in framework/docs/content/app-spec.md.
+twins:
+  - job: Find which bytes of one line sit inside a quoted scalar.
+    why: 'splitMapping only needs the key side of "key: value" and keeps its own quote loop; folding it into quoteScanner is work not yet done.'
+    sites:
+      - path: core/yaml/yaml.go
+        note: quoteScanner.next, used by stripComment and splitInline.
+      - path: core/yaml/yaml.go
+        note: splitMapping, which opens a quote only before any key text and finds the first unquoted colon followed by whitespace.
+invariants:
+  - id: bom-and-comments
+    rule: 'Parse skips a leading byte order mark and treats # as a comment only outside a quoted scalar and at the start of a line or after a space or tab.'
+    enforced_by:
+      - test: core/yaml.TestParseSkipsLeadingBOM
+      - test: core/yaml.TestParseCommentAfterTab
+  - id: quote-opens-only-at-scalar-start
+    rule: 'A quote opens a quoted scalar only at the start of a line, after a "key: " or "- " indicator or after a flow [, { or comma, so an apostrophe inside a plain scalar never swallows a following comment or comma.'
+    enforced_by:
+      - test: core/yaml.TestPlainApostropheIsNotAQuote
+      - test: core/yaml.TestMappingKeepsPlainApostropheKeys
+      - test: core/yaml.TestMappingColonRespectsQuotesAndSeparation
+  - id: nesting-is-bounded
+    rule: Block nesting and inline-list nesting each stop at 128 levels with an error, so no input exhausts the goroutine stack.
+    enforced_by:
+      - test: core/yaml.TestYAML_DeepNestingRejected
+      - test: core/yaml.TestYAML_DeepNestingNoStackExhaust
+      - test: core/yaml.TestYAMLDepthBoundaryExact
+      - test: core/yaml.TestYAML_InlineListNoStackExhaust
+  - id: duplicate-keys-refused
+    rule: A key repeated in one mapping, including between a list item's first key and its continuation lines, is an error naming the key and the line that first defined it; the same key in sibling list items is allowed.
+    enforced_by:
+      - test: core/yaml.TestYAML_DuplicateKeysRejected
+      - test: core/yaml.TestYAML_DuplicateKeyErrorNamesKeyAndLines
+  - id: keys-are-normalized
+    rule: Every mapping key, a list item's first key included, unquotes to its bare spelling before the duplicate check and is refused when it carries an anchor, alias or tag, a flow character, a control byte or surrounding space inside its quotes.
+    enforced_by:
+      - test: core/yaml.TestYAMLQuotedKeysEvadeDuplicateGuard
+      - test: core/yaml.TestMappingKeysRejectDecodedControls
+  - id: unsupported-syntax-fails
+    rule: Anchors, aliases, every tag spelling including a bare !, flow mappings, a compact nested list on its parent's dash line, a nested mapping on the same line and tab indentation are errors, never read as plain strings.
+    enforced_by:
+      - test: core/yaml.TestLocalTagRefused
+      - test: core/yaml.TestYAMLAnchorAliasRejectedAtValueSurfaces
+      - test: core/yaml.TestParseSubsetRejectsUnsupportedSyntax
+      - test: core/yaml.TestFlowMapValueErrMatches
+      - test: core/yaml.TestCompactNestedListRefused
+  - id: core-schema-scalars
+    rule: Scalars resolve by the YAML 1.2 core schema, so true, false and null are recognised only in lower, title or upper case, yes and on stay strings, a float needs a decimal fraction or exponent with no hex or underscores, and an out-of-range float is an error.
+    enforced_by:
+      - test: core/yaml.TestCoreSchemaScalarResolution
+      - test: core/yaml.TestYAML_YAML11BooleansStayStrings
+      - test: core/yaml.TestCoreSchemaOutOfRangeFloatRefused
+  - id: yaml-escapes
+    rule: A double-quoted scalar decodes only the YAML 1.2 escapes, \x \u \U as Unicode code points, and refuses any other escape and any surrogate code point; a single-quoted scalar refuses a lone interior quote.
+    enforced_by:
+      - test: core/yaml.TestDoubleQuotedEscapesFollowYAML
+      - test: core/yaml.TestDoubleQuotedRefusesNonYAMLEscapes
+      - test: core/yaml.TestSingleQuotedScalarsRejectInteriorQuote
+  - id: inline-list-items
+    rule: An inline list holds only scalars, a trailing comma adds no item and any other empty item is an error.
+    enforced_by:
+      - test: core/yaml.TestInlineListTrailingComma
+  - id: list-item-key-column
+    rule: 'In a "- key: value" list item, lines past the key column belong to an empty first value, lines at the key column are the item''s further keys unless the first value is empty and the line is a sequence item, which then belongs to that value, and a line between the dash and the key column is an error.'
+    enforced_by:
+      - test: core/yaml.TestListItemFirstKeyOwnsDeeperLines
+      - test: core/yaml.TestListItemKeyColumnLineIsSibling
+      - test: core/yaml.TestListItemMisindentedContinuation
+decisions:
+  - id: in-house-subset
+    date: 2026-11-18
+    status: accepted
+    decision: GoFastr parses YAML with its own subset parser that refuses anything outside the subset instead of depending on a full YAML library.
+    rejected:
+      - option: Depend on a full YAML library.
+        why: Anchors, tags, merge keys and YAML 1.1 booleans let one config read two ways, and the inputs are security-relevant config; gofastr generate cli --from hands it remote YAML.
+    upholds: [unsupported-syntax-fails, core-schema-scalars]
+  - id: duplicates-fail-closed
+    date: 2026-11-18
+    status: accepted
+    decision: A duplicate mapping key is an error, not last-wins.
+    rejected:
+      - option: Keep the last value, as the parser once did.
+        why: A reviewer and grep read the first value while the parser used the second, so enabled false followed by enabled true shipped enabled.
+    upholds: [duplicate-keys-refused, keys-are-normalized]
+  - id: yaml-escape-decoder
+    date: 2026-11-18
+    status: accepted
+    decision: Double-quoted scalars decode with a YAML 1.2 escape table instead of strconv.Unquote.
+    rejected:
+      - option: strconv.Unquote.
+        why: It reads Go syntax, so \xe9 became the invalid byte 0xE9 instead of U+00E9 and Go's octal \101 read as A, both wrong values with no error.
+    upholds: [yaml-escapes]
+  - id: core-float-grammar
+    date: 2026-11-18
+    status: accepted
+    decision: A float is matched against the core-schema grammar before strconv.ParseFloat, and .inf and .nan stay strings.
+    rejected:
+      - option: Accept whatever strconv.ParseFloat accepts.
+        why: It also reads hex floats (0x1.8p1) and digit underscores (1_000.5), which every other YAML reader treats as strings.
+    upholds: [core-schema-scalars]

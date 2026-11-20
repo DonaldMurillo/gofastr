@@ -103,6 +103,15 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestOneDescriptionPerPage
       - test: framework/uihost.TestSweepPageTypedDescriptionBeatsHeadHTML
+  - id: not-found-head-carries-no-route-meta
+    rule: A not-found or error page the host renders, from an unmatched URL, a Load or resolver answering ErrNotFound, an unfilled not-found outlet, a failed render, a method the screen does not take (405), RenderScreen at a 4xx or 5xx status, or a static export's 404.html, carries the site description and none of the matched route's meta, hreflang alternates included, on the full page and the partial.
+    enforced_by:
+      - test: framework/uihost.TestNotFoundOutcomeCarriesNoRouteMeta
+      - test: framework/uihost.TestNotFoundOutletCarriesNoRouteMeta
+      - test: framework/uihost.TestStaticNotFoundPageCarriesNoRouteMeta
+      - test: framework/uihost.TestErrorPageCarriesNoRouteMeta
+      - test: framework/uihost.TestRenderScreenErrorCarriesNoRouteMeta
+      - test: framework/uihost.TestScreenOwn404KeepsItsHead
   - id: screen-head-urls-are-safe
     rule: A canonical or hreflang URL reaches the head only when it is an http(s) or relative reference.
     enforced_by:
@@ -215,7 +224,7 @@ invariants:
       - test: framework/uihost.TestModulePreloadsAreLowPriority
       - test: framework/uihost.TestModuleHintIsClassicPreload
   - id: caller-head-html-is-scrubbed
-    rule: "stripInlineScripts removes script, active-content and void resource tags, meta refresh, on* handlers and autofocus (with a / as well as a space before them), and preload-family or unsafe-URL links from caller head HTML, repeats until nothing changes, and returns nothing for HTML still changing after eight passes."
+    rule: "stripInlineScripts removes script, active-content and void resource tags, meta refresh, on* handlers and autofocus (after a space, a / or the quote that closes the previous value), and preload-family or unsafe-URL links, judged on the link's real attributes as the HTML tokenizer reads them, from caller head HTML, repeats until nothing changes, and returns nothing for HTML still changing after eight passes."
     enforced_by:
       - test: framework/uihost.TestWithHeadHTML_StripsDangerousTags
       - test: framework/uihost.TestHeadHTML_NeutralisesAutofocusXSS
@@ -223,6 +232,8 @@ invariants:
       - test: framework/uihost.TestSweepPageHeadLinkNeedsSafeHref
       - test: framework/uihost.TestHeadScrubDoesNotReassembleTags
       - test: framework/uihost.TestHeadScrubFailsClosedAtPassCap
+      - test: framework/uihost.TestHeadScrubReadsRealAttributesOnly
+      - test: framework/uihost.TestHeadScrubKeepsSafeLinks
   - id: inline-block-cannot-escape-its-element
     rule: An inline head block whose body holds NUL, a case-insensitive </style or </script, or <!-- is refused, and CR LF and lone CR are turned into LF before the block is hashed.
     enforced_by:
@@ -325,6 +336,14 @@ invariants:
       - test: framework/uihost.TestBootKeepsTheAppsOwnToastStack
       - test: framework/uihost.TestToastStylesUnderOtherPrefix
 decisions:
+  - id: screen-own-404-keeps-its-head
+    date: 2026-11-19
+    status: accepted
+    decision: A routed screen that answers 404 itself (ScreenStatusCode or app.SetStatus) keeps its own head; only the host's not-found, error and 405 pages and RenderScreen at an error status drop the route's meta.
+    rejected:
+      - option: Drop the head of any page that answers 4xx.
+        why: The screen is still the route's own page and may say robots noindex or a canonical itself; the host's pages render a component that only stands in for the route.
+    revisit_if: A crawler report shows a screen's own 404 listing alternates that point at 404s.
   - id: first-paint-budget
     date: 2026-11-16
     status: accepted

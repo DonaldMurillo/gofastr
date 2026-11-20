@@ -1,0 +1,62 @@
+primitive: fanout.envelope
+summary: The node-id envelope every fanout message travels in, and the loop guard that drops a replica's own broadcasts on receive.
+code:
+  - core/fanout/envelope.go
+invariants:
+  - id: envelope-keeps-every-byte
+    rule: Unwrap returns exactly the body Wrap was given, invalid UTF-8 included, and Wrap writes a valid UTF-8 body as the JSON string "b" and base64 in "x" only when the body is not UTF-8.
+    enforced_by:
+      - test: core/fanout.TestWrapUnwrapBinaryRoundTrip
+      - test: core/fanout.TestWrapIsJSON
+  - id: envelope-needs-a-node-id
+    rule: Unwrap errors on input that is not a JSON envelope and on an envelope whose final node id is empty.
+    enforced_by:
+      - test: core/fanout.TestUnwrapHostileEnvelopeShapes
+      - test: core/fanout.TestUnwrapInvalid
+  - id: node-id-is-random
+    rule: NewNodeID returns 32 hex characters from crypto/rand, so two replicas never share an id.
+    enforced_by:
+      - test: core/fanout.TestNewNodeID
+  - id: one-loop-guard
+    rule: Every fanout receiver drops a malformed envelope and one its own node sent through UnwrapForeign, so a replica never re-applies its own broadcast.
+    enforced_by:
+      - test: core/fanout.TestSweepFanoutUnwrapForeignDropsOwnAndMalformed
+      - test: framework/event.TestBridgeThreeBusExactlyOnce
+      - test: core/stream.TestSweepOwnFanoutEchoIsDropped
+      - test: core-ui/island.TestIslandFanoutOwnNodeNoDup
+      - test: framework.TestModuleManager_RemoteToggleForwardsReconcile
+    judge: Does this change unwrap a fanout envelope and compare its origin with its own node id by hand instead of calling UnwrapForeign?
+    applies:
+      - framework/event/bridge.go
+      - core/stream/sse_broker.go
+      - core-ui/island/manager.go
+      - framework/access/store.go
+      - framework/module.go
+decisions:
+  - id: utf8-body-stays-a-string
+    date: 2026-11-19
+    status: accepted
+    decision: A UTF-8 body travels as the JSON string "b" and only a non-UTF-8 body as base64 "x", so the wire shape of every UTF-8 payload is unchanged.
+    rejected:
+      - option: Always base64 the body.
+        why: Old and new binaries would not read each other's envelopes during a rolling deploy.
+      - option: Always send the body as a JSON string.
+        why: json.Marshal rewrites each invalid byte as U+FFFD, corrupting hashes and serialized blobs.
+    upholds: [envelope-keeps-every-byte]
+  - id: node-id-not-a-counter
+    date: 2026-11-19
+    status: accepted
+    decision: A node id is 16 random bytes.
+    rejected:
+      - option: A per-process counter.
+        why: Two replicas that both start at zero would share an id and drop each other's broadcasts as their own.
+    upholds: [node-id-is-random]
+  - id: one-unwrap-foreign
+    date: 2026-11-19
+    status: accepted
+    decision: UnwrapForeign is the one loop guard; it replaced the hand-written unwrap-then-compare in the event bridge, the SSE broker, the island and presence lanes, the access store and the module manager.
+    rejected:
+      - option: Keep the comparison at each receiver.
+        why: Six copies of one rule, and a receiver that forgot the origin check would re-apply every broadcast it sent.
+    revisit_if: A receiver needs to read its own node id under a lock it holds while integrating the message, as battery/rtc does.
+    upholds: [one-loop-guard]

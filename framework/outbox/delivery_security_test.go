@@ -53,35 +53,9 @@ func TestClaimDeliveriesConcurrentNoBusy(t *testing.T) {
 	defer cancel()
 
 	const parents = 100 // × 2 consumers = 200 deliveries
-	for i := 0; i < parents; i++ {
-		tx, err := db.BeginTx(ctx, nil)
-		if err != nil {
-			t.Fatalf("begin append tx: %v", err)
-		}
-		if _, err := o.Append(ctx, tx, "order.placed", map[string]any{"i": i}); err != nil {
-			t.Fatalf("append %d: %v", i, err)
-		}
-		if err := tx.Commit(); err != nil {
-			t.Fatalf("commit append %d: %v", i, err)
-		}
-	}
-	// expandDeliveries is batch-capped per pump; drain until quiescent.
-	expanded := 0
-	for {
-		n, err := o.expandDeliveries(ctx)
-		if err != nil {
-			t.Fatalf("expand: %v", err)
-		}
-		expanded += n
-		if n == 0 {
-			break
-		}
-	}
-	if expanded != 2*parents {
-		t.Fatalf("expand created %d deliveries, want %d", expanded, 2*parents)
-	}
-
+	seedClaimRace(t, o, db, ctx, parents)
 	const relays = 4
+
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	claims := make([][]string, relays)
@@ -157,6 +131,39 @@ func TestClaimDeliveriesConcurrentNoBusy(t *testing.T) {
 	}
 	if len(all) != 2*parents {
 		t.Errorf("claimed %d of %d deliveries", len(all), 2*parents)
+	}
+}
+
+// seedClaimRace appends parents order.placed events, each in its own
+// transaction, then drains the batch-capped expander until quiescent,
+// so the two registered consumers hold 2×parents deliveries.
+func seedClaimRace(t *testing.T, o *Outbox, db *sql.DB, ctx context.Context, parents int) {
+	t.Helper()
+	for i := 0; i < parents; i++ {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatalf("begin append tx: %v", err)
+		}
+		if _, err := o.Append(ctx, tx, "order.placed", map[string]any{"i": i}); err != nil {
+			t.Fatalf("append %d: %v", i, err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatalf("commit append %d: %v", i, err)
+		}
+	}
+	expanded := 0
+	for {
+		n, err := o.expandDeliveries(ctx)
+		if err != nil {
+			t.Fatalf("expand: %v", err)
+		}
+		expanded += n
+		if n == 0 {
+			break
+		}
+	}
+	if expanded != 2*parents {
+		t.Fatalf("expand created %d deliveries, want %d", expanded, 2*parents)
 	}
 }
 

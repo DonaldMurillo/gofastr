@@ -166,6 +166,16 @@ func stuck() {}
 	}
 }
 
+// solveGOOS pins that a file named name carrying //go:build tag solves
+// to GOOS goos.
+func solveGOOS(t *testing.T, name, tag, goos string) {
+	t.Helper()
+	cfg, err := solveFileConfig([]byte("//go:build "+tag+"\n\npackage main\n"), name)
+	if err != nil || cfg.goos != goos {
+		t.Errorf("%s with //go:build %s: got %+v err=%v, want GOOS=%s", name, tag, cfg, err, goos)
+	}
+}
+
 // go/build lets GOOS=android satisfy linux, ios satisfy darwin and
 // illumos satisfy solaris, so a file whose name pins the first and
 // whose constraint names the second builds; the solver must agree.
@@ -175,10 +185,7 @@ func TestSolveImpliedOSTags(t *testing.T) {
 		{"x_ios.go", "darwin", "ios"},
 		{"x_illumos.go", "solaris", "illumos"},
 	} {
-		cfg, err := solveFileConfig([]byte("//go:build "+c.tag+"\n\npackage main\n"), c.name)
-		if err != nil || cfg.goos != c.goos {
-			t.Errorf("%s with //go:build %s: got %+v err=%v, want GOOS=%s", c.name, c.tag, cfg, err, c.goos)
-		}
+		solveGOOS(t, c.name, c.tag, c.goos)
 	}
 }
 
@@ -224,10 +231,7 @@ func TestSolveSuffixSatisfiedByImplyingOS(t *testing.T) {
 		{"x_linux.go", "android", "android"},
 		{"x_solaris.go", "illumos", "illumos"},
 	} {
-		cfg, err := solveFileConfig([]byte("//go:build "+c.tag+"\n\npackage main\n"), c.name)
-		if err != nil || cfg.goos != c.goos {
-			t.Errorf("%s with //go:build %s: got %+v err=%v, want GOOS=%s", c.name, c.tag, cfg, err, c.goos)
-		}
+		solveGOOS(t, c.name, c.tag, c.goos)
 	}
 }
 

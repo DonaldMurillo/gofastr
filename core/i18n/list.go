@@ -2,20 +2,16 @@ package i18n
 
 import "context"
 
-// List joins items as the context's locale writes "a, b, and c": "a, b
-// et c" in French, "a、b、c" in Japanese.
+// List joins items as ctx's locale writes "a, b, and c".
 func List(ctx context.Context, items []string) string {
 	return joinList(cldrFor(ctx).loc.and, items)
 }
 
-// ListOr joins items as alternatives: "a, b, or c" in English, "a, b
-// ou c" in French.
+// ListOr joins items as ctx's locale writes "a, b, or c".
 func ListOr(ctx context.Context, items []string) string {
 	return joinList(cldrFor(ctx).loc.or, items)
 }
 
-// joinList applies CLDR's list patterns (start, middle, end, two),
-// building from the end so each pattern wraps the joined tail.
 func joinList(p [4]string, items []string) string {
 	switch n := len(items); n {
 	case 0:

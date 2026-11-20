@@ -35,8 +35,7 @@ func (db *DeleteBuilder) Returning(cols ...string) *DeleteBuilder {
 	return db
 }
 
-// Matching builds the SELECT of cols from the rows this DELETE would
-// remove: the same table and WHERE conditions, with their arguments.
+// Matching builds the SELECT of cols from the rows this DELETE would remove.
 func (db *DeleteBuilder) Matching(cols ...string) (string, []any) {
 	return buildFiltered(selectVerb(cols), db.table, db.wheres, db.args)
 }
@@ -47,7 +46,6 @@ func (db *DeleteBuilder) Build() (string, []any) {
 	if len(db.returning) == 0 {
 		return sqlStr, args
 	}
-	// Each column sanitized, as UpdateBuilder.Returning does.
 	cols := make([]string, len(db.returning))
 	for i, c := range db.returning {
 		cols[i] = identSlot(sanitizeColumn(c))

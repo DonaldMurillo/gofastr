@@ -176,21 +176,24 @@ func TestScopeNestedFiltersForCallerStillRefusesUnreadableTargets(t *testing.T) 
 	}
 }
 
+// relationShapeCases enumerates every relation shape the exists-subquery
+// builder must qualify against the target's own table.
+var relationShapeCases = []struct {
+	name string
+	rel  entity.Relation
+}{
+	{"many-to-one", entity.Relation{Type: entity.RelManyToOne, Entity: "notes", ForeignKey: []string{"note_id"}}},
+	{"has-many", entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: []string{"board_id"}}},
+	{"has-one", entity.Relation{Type: entity.RelHasOne, Entity: "notes", ForeignKey: []string{"board_id"}}},
+	{"many-to-many", entity.Relation{Type: entity.RelManyToMany, Entity: "notes", Through: "board_notes", LocalKey: "board_id", ForeignKeyTarget: "note_id"}},
+}
+
 // The predicate has to reach the SQL, qualified against the target's table and
 // bound as a placeholder, in every relation shape. A scope attached to the
 // struct but dropped on the way to SQL is the same oracle with a passing unit
 // test above it.
 func TestBuildExistsSubqueryEmitsScopePredicates(t *testing.T) {
-	shapes := []struct {
-		name string
-		rel  entity.Relation
-	}{
-		{"many-to-one", entity.Relation{Type: entity.RelManyToOne, Entity: "notes", ForeignKey: []string{"note_id"}}},
-		{"has-many", entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: []string{"board_id"}}},
-		{"has-one", entity.Relation{Type: entity.RelHasOne, Entity: "notes", ForeignKey: []string{"board_id"}}},
-		{"many-to-many", entity.Relation{Type: entity.RelManyToMany, Entity: "notes", Through: "board_notes", LocalKey: "board_id", ForeignKeyTarget: "note_id"}},
-	}
-	for _, sh := range shapes {
+	for _, sh := range relationShapeCases {
 		t.Run(sh.name, func(t *testing.T) {
 			nf := nestedFilter{
 				Relation: sh.rel, Field: "body", Op: filter.OpEq, Value: "x", table: "note_rows",
@@ -261,16 +264,7 @@ func TestResolvedTableUsesTargetTable(t *testing.T) {
 // The soft-delete predicate must reach every relation shape, qualified against
 // the target's table.
 func TestBuildExistsSubqueryHidesSoftDeletedInEveryShape(t *testing.T) {
-	shapes := []struct {
-		name string
-		rel  entity.Relation
-	}{
-		{"many-to-one", entity.Relation{Type: entity.RelManyToOne, Entity: "notes", ForeignKey: []string{"note_id"}}},
-		{"has-many", entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: []string{"board_id"}}},
-		{"has-one", entity.Relation{Type: entity.RelHasOne, Entity: "notes", ForeignKey: []string{"board_id"}}},
-		{"many-to-many", entity.Relation{Type: entity.RelManyToMany, Entity: "notes", Through: "board_notes", LocalKey: "board_id", ForeignKeyTarget: "note_id"}},
-	}
-	for _, sh := range shapes {
+	for _, sh := range relationShapeCases {
 		t.Run(sh.name, func(t *testing.T) {
 			nf := nestedFilter{Relation: sh.rel, Field: "body", Op: "eq", Value: "x", softDelete: true, table: "note_rows"}
 			sql, _ := buildExistsSubquery("boards", []string{"id"}, nf)

@@ -33,7 +33,6 @@ type line struct {
 }
 
 func Parse(input string) (*Node, error) {
-	// A leading byte order mark is not content (YAML 1.2 section 5.2).
 	input = strings.TrimPrefix(input, "\ufeff")
 	lines, err := lexLines(input)
 	if err != nil {
@@ -75,7 +74,6 @@ func stripComment(line string) string {
 	var q quoteScanner
 	for i := 0; i < len(line); {
 		n, unquoted := q.next(line, i, false)
-		// A comment follows whitespace, a tab as much as a space.
 		if unquoted && line[i] == '#' && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t') {
 			return strings.TrimRight(line[:i], " ")
 		}
@@ -84,23 +82,12 @@ func stripComment(line string) string {
 	return line
 }
 
-// quoteScanner walks one line and tracks where quoted scalars are.
-//
-// A quote opens a quoted scalar only where a scalar BEGINS: at the start
-// of the line, after a "key: " or "- " indicator, or after a flow '[',
-// '{' or ','. Inside a plain scalar a quote is an ordinary character, so
-// "O'Reilly # note" ends at the comment and "[O'Reilly, Jane]" splits on
-// its comma. Treating every quote as an opener made both swallow the
-// rest of the line.
 type quoteScanner struct {
-	quote byte // the open quote, 0 outside a quoted scalar
-	plain bool // inside a plain (or just-closed quoted) scalar
-	flow  int  // depth of unquoted '[' / '{'
+	quote byte
+	plain bool
+	flow  int
 }
 
-// next consumes the byte at s[i] and returns how many bytes it took and
-// whether that byte is syntax outside any quoted scalar. flow says s is
-// already the inside of a flow collection, where ',' separates entries.
 func (q *quoteScanner) next(s string, i int, flow bool) (n int, unquoted bool) {
 	c := s[i]
 	sepAfter := i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t'
@@ -109,7 +96,7 @@ func (q *quoteScanner) next(s string, i int, flow bool) (n int, unquoted bool) {
 		case q.quote == '"' && c == '\\' && i+1 < len(s):
 			return 2, false
 		case c == q.quote && c == '\'' && i+1 < len(s) && s[i+1] == '\'':
-			return 2, false // '' is an escaped quote
+			return 2, false
 		case c == q.quote:
 			q.quote, q.plain = 0, true
 		}
@@ -136,11 +123,6 @@ func (q *quoteScanner) next(s string, i int, flow bool) (n int, unquoted bool) {
 	return 1, true
 }
 
-// maxNestingDepth bounds parser recursion. Each indentation level recurses
-// through parseBlock → parseMap/parseList → parseBlock, so deeply nested
-// input drives unbounded recursion, a stack-exhaustion DoS on any user-
-// supplied YAML. Past the cap we stop recursing and return an error,
-// mirroring core/markdown's maxBlockquoteDepth.
 const maxNestingDepth = 128
 
 type parser struct {
@@ -176,32 +158,8 @@ func (p *parser) parseMap(indent int) (*Node, error) {
 	return p.parseMapSeeded(indent, nil)
 }
 
-// parseMapSeeded is parseMap with the duplicate-key tracker pre-populated.
-//
-// A "- key: value" list item builds its first key itself and then parses the
-// indented continuation lines as a separate map. Without the seed that map
-// starts blank, so for
-//
-//   - a: 1
-//     a: 2
-//     a: 3
-//
-// it catches a@3 against a@4 and reports line 3 as the first definition —
-// when `a` was first defined on line 2, in the item itself. The reported
-// line is the whole point of the error, so it has to be the real one.
 func (p *parser) parseMapSeeded(indent int, seed map[string]int) (*Node, error) {
 	out := &Node{Kind: Map, Line: p.lines[p.pos].line, Column: indent + 1, Map: map[string]*Node{}}
-	// A duplicate key was silent last-wins: `enabled: false` followed later
-	// by `enabled: true` took the second value while a reviewer, and grep,
-	// read the first. Every mainstream parser refuses that, and this
-	// parser's inputs are the security-relevant config — app specs,
-	// codegen configs, kiln freeze snapshots — so the ambiguity has to fail
-	// closed here rather than resolve to whichever line came last. Same
-	// class as the YAML 1.2 boolean that read `auth: yes` as a string and
-	// meant PUBLIC: ask which direction a misread moves safety.
-	//
-	// seen holds the line that first defined each key so the error can name
-	// both.
 	seen := make(map[string]int, 8+len(seed))
 	maps.Copy(seen, seed)
 	for p.pos < len(p.lines) {
@@ -251,17 +209,6 @@ func (p *parser) parseMapSeeded(indent int, seed map[string]int) (*Node, error) 
 	return out, nil
 }
 
-// normalizeKey validates and canonicalises the KEY side of "key: value".
-// Keys were previously taken verbatim after TrimSpace, so `"title"`,
-// `&title`, and `title` were three DISTINCT map keys: a duplicate
-// smuggled in under quoting or an anchor/tag decoration shadowed
-// nothing, conflicted with nothing, and a reader saw one key configured
-// while the parser held two — exactly the ambiguity the duplicate-key
-// guard exists to refuse. Quoted keys unquote to their bare spelling so
-// the guard sees them; anchor/alias/tag decorations are rejected,
-// mirroring parseScalar's value-side rejection; flow characters stay
-// unsupported on the key side (checked on the raw spelling, so a
-// quoted key containing them is refused too).
 func normalizeKey(raw string, line, column int) (string, error) {
 	key := strings.TrimSpace(raw)
 	if key == "" {
@@ -307,9 +254,6 @@ func (p *parser) parseList(indent int) (*Node, error) {
 		item := strings.TrimSpace(strings.TrimPrefix(line.text, "-"))
 		p.pos++
 		if strings.HasPrefix(item, "- ") || item == "-" {
-			// A compact nested sequence ("- - a") is outside the subset.
-			// Read as a scalar it became the string "- a", or a map key
-			// "- name", with no error.
 			return nil, fmt.Errorf("yaml:%d:%d: a nested list on the same line as its parent dash is not supported; put the inner list on its own indented lines", line.line, line.indent+3)
 		}
 		if strings.HasPrefix(item, "{") {
@@ -329,20 +273,10 @@ func (p *parser) parseList(indent int) (*Node, error) {
 		}
 		if key, value, ok := splitMapping(item); ok && strings.TrimSpace(key) != "" && !strings.HasPrefix(item, "[") {
 			child := &Node{Kind: Map, Line: line.line, Column: line.indent + 1, Map: map[string]*Node{}}
-			// The item's first key is a mapping key like any other:
-			// normalize it so flow characters and anchor/tag
-			// decorations are refused here too (the plain map path
-			// enforces this via normalizeKey) and a quoted spelling
-			// cannot dodge the continuation-seed duplicate check.
 			normKey, kErr := normalizeKey(key, line.line, line.indent+3)
 			if kErr != nil {
 				return nil, kErr
 			}
-			// The item's keys sit at keyCol, the column after "- ". A
-			// first key with an empty value owns the lines indented past
-			// keyCol as its own value; lines at keyCol are the item's
-			// further keys. Anything else between the dash and keyCol,
-			// or past it after a scalar, belongs to nothing.
 			keyCol := line.indent + 1 + (len(line.text) - 1 - len(strings.TrimLeft(line.text[1:], " ")))
 			value = strings.TrimSpace(value)
 			if value == "" {
@@ -364,37 +298,14 @@ func (p *parser) parseList(indent int) (*Node, error) {
 				child.Map[normKey] = scalar
 			}
 			if p.pos < len(p.lines) && p.lines[p.pos].indent > indent {
-				// Parsed at keyCol: a line deeper than that is refused
-				// there, and one shallower ends the map and is refused
-				// back here as unexpected indentation.
-				//
-				// Seed with the key this item already defined, so a repeat
-				// among the continuation lines reports the item's line as
-				// the first definition rather than the first continuation.
-				seed := make(map[string]int, len(child.Map))
-				for k, v := range child.Map {
-					seed[k] = v.Line
-				}
-				more, err := p.parseMapSeeded(keyCol, seed)
+				more, err := p.parseMapSeeded(keyCol, map[string]int{normKey: line.line})
 				if err != nil {
 					return nil, err
 				}
-				// The second silent-merge path, and the one parseMap's own
-				// `seen` cannot see: a "- key: value" item builds its first
-				// key here, then the indented continuation lines are parsed
-				// as a SEPARATE map and copied in. maps.Copy overwrote a
-				// collision without a word. Keys are walked in sorted order
-				// so the reported one is deterministic — the repo's
-				// mapwriter analyzer requires that of any map iteration
-				// whose output escapes.
-				//
-				// A key repeated across SIBLING list items is untouched:
-				// those are different mappings, and repeating a key across
-				// them is ordinary YAML.
 				for _, k := range slices.Sorted(maps.Keys(more.Map)) {
-					if first, dup := child.Map[k]; dup {
+					if _, dup := child.Map[k]; dup {
 						v := more.Map[k]
-						return nil, fmt.Errorf("yaml:%d:%d: duplicate mapping key %q (first defined at line %d)", v.Line, v.Column, k, first.Line)
+						return nil, fmt.Errorf("yaml:%d:%d: duplicate mapping key %q (first defined at line %d)", v.Line, v.Column, k, line.line)
 					}
 				}
 				maps.Copy(child.Map, more.Map)
@@ -415,14 +326,6 @@ func flowMapError(line, column int) error {
 	return fmt.Errorf(`yaml:%d:%d: flow mapping "{ ... }" is not supported; use block style (one "key: value" per indented line)`, line, column)
 }
 
-// parseScalar decodes one scalar (or an inline list, which is a scalar
-// syntactically). depth is the inline-nesting level: parseScalar and
-// parseInlineList are mutually recursive on '[', and that recursion used to
-// consult nothing — p.depth guards indentation nesting only, so an inline
-// list nested a few thousand deep exhausted the goroutine stack and killed
-// the process before the Kind check that rejects nested inline lists ever
-// ran. `gofastr generate cli --from <URL>` hands remote YAML to Parse
-// verbatim, so the input is not local-file-only.
 func parseScalar(raw string, line, column, depth int) (*Node, error) {
 	if depth >= maxNestingDepth {
 		return nil, fmt.Errorf("yaml:%d:%d: nesting depth exceeds maximum of %d", line, column, maxNestingDepth)
@@ -434,9 +337,6 @@ func parseScalar(raw string, line, column, depth int) (*Node, error) {
 	if strings.HasPrefix(raw, "{") {
 		return nil, flowMapError(line, column)
 	}
-	// "!" opens a tag in every spelling: a !!core tag, a local !foo, and
-	// the bare non-specific "!". This parser resolves none of them, so a
-	// local tag is refused rather than read as the plain string "!foo".
 	if strings.HasPrefix(raw, "&") || strings.HasPrefix(raw, "*") || strings.HasPrefix(raw, "!") {
 		return nil, fmt.Errorf("yaml:%d:%d: anchors, aliases, and tags are not supported", line, column)
 	}
@@ -454,8 +354,6 @@ func parseScalar(raw string, line, column, depth int) (*Node, error) {
 		}
 		return &Node{Kind: Scalar, Value: value, Line: line, Column: column}, nil
 	}
-	// The YAML 1.2 core schema (section 10.3.2) spells each of these in
-	// three cases only: tRuE is a string, as it is to every other tool.
 	switch raw {
 	case "true", "True", "TRUE":
 		return &Node{Kind: Scalar, Value: true, Line: line, Column: column}, nil
@@ -481,13 +379,6 @@ func parseScalar(raw string, line, column, depth int) (*Node, error) {
 	return &Node{Kind: Scalar, Value: raw, Line: line, Column: column}, nil
 }
 
-// isCoreFloat reports whether raw is a decimal float in the YAML 1.2 core
-// schema with a fraction or an exponent: [-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)
-// ([eE][-+]?[0-9]+)?. strconv.ParseFloat alone also reads Go's own
-// spellings, a hex float (0x1.8p1 as 3) and digit underscores (1_000.5),
-// which are strings to every other YAML reader. A digits-only spelling is
-// an integer, so one too large for int64 stays a string as before.
-// .inf and .nan are left strings: no consumer reads a non-finite number.
 func isCoreFloat(raw string) bool {
 	i := 0
 	if i < len(raw) && (raw[i] == '-' || raw[i] == '+') {
@@ -565,10 +456,6 @@ func splitInline(body string) ([]string, error) {
 	if q.quote != 0 {
 		return nil, fmt.Errorf("unterminated quoted scalar")
 	}
-	// A trailing comma ends the list (YAML 1.2 allows it) and adds no
-	// item: appended, the empty last part became a "" value that an
-	// app-spec enum then accepted. Any other empty part ([a,,b], [,a])
-	// is refused; an empty item is spelled "".
 	if last := strings.TrimSpace(body[start:]); last != "" || len(out) == 0 {
 		out = append(out, last)
 	}
@@ -603,8 +490,6 @@ func parseQuoted(raw string) (string, error) {
 	return decodeDoubleQuoted(raw[1 : len(raw)-1])
 }
 
-// yamlEscapes maps the single-character escapes of a YAML 1.2
-// double-quoted scalar (section 5.7) to what they stand for.
 var yamlEscapes = map[byte]string{
 	'0': "\x00", 'a': "\a", 'b': "\b", 't': "\t", '\t': "\t", 'n': "\n",
 	'v': "\v", 'f': "\f", 'r': "\r", 'e': "\x1b", ' ': " ", '"': `"`,
@@ -612,12 +497,6 @@ var yamlEscapes = map[byte]string{
 	'P': " ",
 }
 
-// decodeDoubleQuoted decodes the body of a double-quoted scalar by the
-// YAML 1.2 escape rules. It replaced strconv.Unquote, which reads Go
-// syntax: "\xe9" came back as the lone byte 0xE9 (invalid UTF-8) where
-// YAML means U+00E9 "é", and the Go-only octal "\101" read as "A" where
-// YAML has no such escape. Both were wrong values with no error; an
-// escape YAML does not define now fails like any unsupported syntax.
 func decodeDoubleQuoted(body string) (string, error) {
 	if !strings.ContainsAny(body, `\"`) {
 		return body, nil
@@ -650,8 +529,6 @@ func decodeDoubleQuoted(body string) (string, error) {
 			return "", fmt.Errorf("escape \\%c needs %d hex digits", e, width)
 		}
 		hex := body[i+1 : i+1+width]
-		// ParseUint with an explicit base takes no sign, prefix or
-		// underscore, so this accepts exactly width hex digits.
 		n, err := strconv.ParseUint(hex, 16, 32)
 		if err != nil {
 			return "", fmt.Errorf("escape \\%c needs %d hex digits", e, width)
@@ -666,8 +543,6 @@ func decodeDoubleQuoted(body string) (string, error) {
 	return b.String(), nil
 }
 
-// A mapping separator is an unquoted colon followed by whitespace or EOF.
-// Colons in URLs and quoted keys are part of the scalar.
 func splitMapping(s string) (string, string, bool) {
 	var quote byte
 	for i := 0; i < len(s); i++ {

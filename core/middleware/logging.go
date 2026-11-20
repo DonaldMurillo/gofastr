@@ -13,13 +13,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// LoggingFn returns middleware that logs each request via the *slog.Logger
-// returned by getLogger. getLogger is called per request so the upstream
-// (e.g. framework.App) can hand out a logger that was swapped after the
-// middleware was attached; this is how plugins can replace the logger
-// after the chain is already wired.
-//
-// If getLogger is nil or returns nil, slog.Default() is used.
+// LoggingFn returns middleware that logs each request through getLogger, called per request; slog.Default when it or its result is nil.
 func LoggingFn(getLogger func() *slog.Logger) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,26 +31,19 @@ func LoggingFn(getLogger func() *slog.Logger) Middleware {
 			logger.Info("request",
 				"method", textsafe.Truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
 				"path", textsafe.Truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
-				"status", wrapped.statusCode,
+				"status", wrapped.status,
 				"duration", duration.String(),
 			)
 		})
 	}
 }
 
-// Logging returns middleware that logs each request using slog.Default()
-// at request time (not at construction). Kept as a convenience for code
-// that doesn't have a logger to inject; new framework code should wire
-// LoggingFn with an explicit logger source.
+// Logging is LoggingFn(nil).
 func Logging() Middleware {
 	return LoggingFn(nil)
 }
 
-// LoggingWithWriter returns logging middleware that writes to w as
-// structured JSON. If w is nil, slog.Default() is used at request time.
-//
-// Retained for tests and ad-hoc tooling that wants a fixed-destination
-// logger; new framework code should prefer LoggingFn.
+// LoggingWithWriter returns logging middleware that writes JSON to w, or uses slog.Default when w is nil.
 func LoggingWithWriter(w io.Writer) Middleware {
 	if w == nil {
 		return LoggingFn(nil)
@@ -67,25 +54,12 @@ func LoggingWithWriter(w io.Writer) Middleware {
 	return LoggingFn(func() *slog.Logger { return logger })
 }
 
-// SampledLogging returns middleware that logs only a fraction of requests.
-// It ALWAYS logs requests that are slow (> slowThreshold) or errored
-// (status >= 400). Otherwise it logs 1-in-every-sampleN requests.
-//
-// This addresses the ~200× overhead benchmark where Logging() dominates
-// the default middleware chain cost. Use this as the default in
-// production; switch to Logging() in dev or when debugging.
-//
-// When sampleN is 0 or 1, every request is logged (equivalent to Logging()).
-//
-// SampledLogging uses slog.Default(); use SampledLoggingFn to inject a
-// specific logger source the same way LoggingFn does.
+// SampledLogging logs every request that errored (status >= 400) or took longer than slowThreshold, and one in sampleN of the rest; sampleN <= 1 logs all.
 func SampledLogging(sampleN int, slowThreshold time.Duration) Middleware {
 	return SampledLoggingFn(sampleN, slowThreshold, nil)
 }
 
-// SampledLoggingFn is the injected-logger variant of SampledLogging.
-// getLogger is called per logged event; nil or nil-returning getLogger
-// falls back to slog.Default().
+// SampledLoggingFn is SampledLogging with a logger source, as in LoggingFn.
 func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func() *slog.Logger) Middleware {
 	if sampleN <= 1 {
 		return LoggingFn(getLogger)
@@ -105,25 +79,23 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 				}
 			}
 
-			// Always log errors and slow requests
-			if wrapped.statusCode >= 400 || duration > slowThreshold {
+			if wrapped.status >= 400 || duration > slowThreshold {
 				logger.Info("request",
 					"method", textsafe.Truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
 					"path", textsafe.Truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
-					"status", wrapped.statusCode,
+					"status", wrapped.status,
 					"duration", duration.String(),
 					"sampled", false,
 				)
 				return
 			}
 
-			// Sample 1-in-N normal requests
 			n := counter.Add(1)
 			if n%uint64(sampleN) == 1 {
 				logger.Info("request",
 					"method", textsafe.Truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
 					"path", textsafe.Truncate(safeLogPath(r.URL.Path), maxRecoveryPathLen),
-					"status", wrapped.statusCode,
+					"status", wrapped.status,
 					"duration", duration.String(),
 					"sampled", true,
 				)
@@ -132,16 +104,11 @@ func SampledLoggingFn(sampleN int, slowThreshold time.Duration, getLogger func()
 	}
 }
 
-// safeLogMethod percent-encodes control bytes (and DEL) in the HTTP method.
 func safeLogMethod(m string) string { return textsafe.ScrubControlBytes(m) }
 
-// safeLogPath percent-encodes control characters in a URL path.
 func safeLogPath(p string) string { return textsafe.ScrubControlBytes(p) }
 
-// DiscardLogging returns middleware that tracks request timing but
-// writes no log output. Useful for benchmarks and high-throughput
-// production paths where structured logging is handled externally
-// (e.g. by a reverse proxy or APM agent).
+// DiscardLogging returns middleware that logs nothing.
 func DiscardLogging() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -150,75 +117,26 @@ func DiscardLogging() Middleware {
 	}
 }
 
-// responseWriter wraps http.ResponseWriter to capture the status code.
-// To preserve optional interfaces (Flusher, Hijacker, Pusher), use
-// wrapResponseWriter which returns a wrapper that exposes only the
-// interfaces the underlying writer actually supports.
+// responseWriter is the statusRecorder the logging middleware wraps the
+// response in; reveal offers Flush, Hijack and Push only when the
+// underlying writer has them.
 type responseWriter struct {
-	http.ResponseWriter
-	statusCode  int
-	wroteHeader bool
+	statusRecorder
 }
 
-// WriteHeader records the status the client gets, the way the metrics
-// and tracing wrappers do: an informational status (103 Early Hints) is
-// forwarded and not latched, since a final status follows it; the first
-// final status latches and a later, superfluous call is dropped, as
-// net/http drops it. Latching every call logged a 103 for a response
-// the client got as 200, and a 500 for one already sent as 200.
-func (rw *responseWriter) WriteHeader(code int) {
-	if rw.wroteHeader {
-		return
-	}
-	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
-		rw.ResponseWriter.WriteHeader(code) // informational: forward, keep waiting
-		return
-	}
-	rw.statusCode = code
-	rw.wroteHeader = true
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-// Write latches the implicit 200 a first Write sends, so a WriteHeader
-// after it cannot rewrite the logged status.
-func (rw *responseWriter) Write(b []byte) (int, error) {
-	if !rw.wroteHeader {
-		rw.WriteHeader(http.StatusOK)
-	}
-	return rw.ResponseWriter.Write(b)
-}
-
-// ReadFrom latches the implicit 200 only after bytes are copied, keeping the
-// connection's sendfile path: io.Copy and http.ServeContent probe the
-// writer they are handed for ReaderFrom, and Unwrap does not reach
-// them — without this, every file served behind Logging degrades to a
-// copied body.
 func (rw *responseWriter) ReadFrom(src io.Reader) (int64, error) {
 	copied, err := io.Copy(rw.ResponseWriter, src)
 	if copied > 0 && !rw.wroteHeader {
-		rw.statusCode = http.StatusOK
+		rw.status = http.StatusOK
 		rw.wroteHeader = true
 	}
 	return copied, err
 }
 
-// Unwrap lets http.NewResponseController walk through this wrapper so
-// SetReadDeadline/SetWriteDeadline reach the real connection instead of
-// failing with a silent ErrNotSupported (a streaming handler that
-// ignores that error then has no per-write deadline, and a half-open
-// client pins its goroutine). Every variant below embeds this type, so
-// the one method covers the whole family — matching the Unwrap the
-// cors/metrics/tracing wrappers already carry.
-func (rw *responseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
-
-// optional-interface wrappers; we conditionally expose just what the
-// underlying writer actually supports, so a caller's interface assertion
-// reflects the real capabilities of the stack.
-
 type flushWriter struct{ *responseWriter }
 
 func (f flushWriter) Flush() {
-	f.responseWriter.wroteHeader = true // a flush sends the headers: 200 unless a status was set
+	f.responseWriter.wroteHeader = true
 	if fl, ok := f.responseWriter.ResponseWriter.(http.Flusher); ok {
 		fl.Flush()
 	}
@@ -242,10 +160,6 @@ func (p pushWriter) Push(target string, opts *http.PushOptions) error {
 	return http.ErrNotSupported
 }
 
-// 8 combinations of (Flusher, Hijacker, Pusher); only the relevant
-// few are common enough to be worth a dedicated type; we collapse the
-// rest into the dominant patterns below.
-
 type flushHijackWriter struct {
 	*responseWriter
 	flushWriter
@@ -258,14 +172,10 @@ type flushHijackPushWriter struct {
 	pushWriter
 }
 
-// wrapResponseWriter picks a wrapper that exposes the same optional
-// interfaces (Flusher, Hijacker, Pusher) as the underlying writer.
 func wrapResponseWriter(w http.ResponseWriter) *responseWriter {
-	return &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+	return &responseWriter{statusRecorder{ResponseWriter: w, status: http.StatusOK}}
 }
 
-// reveal returns a writer that exposes only the optional interfaces the
-// underlying ResponseWriter w actually supports.
 func reveal(rw *responseWriter) http.ResponseWriter {
 	_, fl := rw.ResponseWriter.(http.Flusher)
 	_, hj := rw.ResponseWriter.(http.Hijacker)

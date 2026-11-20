@@ -509,22 +509,13 @@ func (a *analyzer) collectDetaching(fns []*ast.FuncDecl) {
 // runsIndexes returns the argument indexes at which fn invokes a callback
 // under the passed context.
 func (a *analyzer) runsIndexes(fn *types.Func) map[int]bool {
-	fn = fn.Origin()
-	if idx, ok := a.runs[fn]; ok {
-		return idx
-	}
-	if fn.Pkg() == a.pass.Pkg {
-		return nil
-	}
-	var f runsCallback
-	if !a.pass.ImportObjectFact(fn, &f) {
-		return nil
-	}
-	out := map[int]bool{}
-	for _, i := range f.Index {
-		out[i] = true
-	}
-	return out
+	return a.factIndexes(fn, a.runs, func(fn *types.Func) ([]int, bool) {
+		var f runsCallback
+		if !a.pass.ImportObjectFact(fn, &f) {
+			return nil, false
+		}
+		return f.Index, true
+	})
 }
 
 // collectRuns computes, to a fixed point, the local functions that run a

@@ -301,33 +301,29 @@ func TestNegotiate_ResolverUnknownValueFallsThrough(t *testing.T) {
 	}
 }
 
-func TestNegotiate_ResolverOversizedValueRejected(t *testing.T) {
+// negotiateWithLocaleCookie negotiates against the en/fr catalog pair the
+// resolver-cookie tests share, with a locale cookie value, and returns
+// the tag Negotiate picked.
+func negotiateWithLocaleCookie(cookieValue string) string {
 	c := NewMapCatalog()
 	c.Set("en", "k", Message{Text: "en"})
 	c.Set("fr", "k", Message{Text: "fr"})
 	tr := NewTranslator(c, "en")
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: "locale", Value: strings.Repeat("a", 40)})
+	r.AddCookie(&http.Cookie{Name: "locale", Value: cookieValue})
+	return Negotiate(tr, r, WithLocaleResolver(CookieLocale("locale"))).Tag
+}
 
-	got := Negotiate(tr, r, WithLocaleResolver(CookieLocale("locale")))
-	if got.Tag != "en" {
-		t.Fatalf("oversized cookie should be rejected → fallback: got %q want en", got.Tag)
+func TestNegotiate_ResolverOversizedValueRejected(t *testing.T) {
+	if tag := negotiateWithLocaleCookie(strings.Repeat("a", 40)); tag != "en" {
+		t.Fatalf("oversized cookie should be rejected → fallback: got %q want en", tag)
 	}
 }
 
 func TestNegotiate_ResolverGarbageCharsRejected(t *testing.T) {
-	c := NewMapCatalog()
-	c.Set("en", "k", Message{Text: "en"})
-	c.Set("fr", "k", Message{Text: "fr"})
-	tr := NewTranslator(c, "en")
-
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: "locale", Value: "<script>"})
-
-	got := Negotiate(tr, r, WithLocaleResolver(CookieLocale("locale")))
-	if got.Tag != "en" {
-		t.Fatalf("garbage cookie should be rejected → fallback: got %q want en", got.Tag)
+	if tag := negotiateWithLocaleCookie("<script>"); tag != "en" {
+		t.Fatalf("garbage cookie should be rejected → fallback: got %q want en", tag)
 	}
 }
 
@@ -347,17 +343,9 @@ func TestNegotiate_ResolverFalseFallsThrough(t *testing.T) {
 }
 
 func TestNegotiate_ResolverRegionFallbackMatches(t *testing.T) {
-	c := NewMapCatalog()
-	c.Set("en", "k", Message{Text: "en"})
-	c.Set("fr", "k", Message{Text: "fr"})
-	tr := NewTranslator(c, "en")
-
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.AddCookie(&http.Cookie{Name: "locale", Value: "fr-CA"}) // matches "fr" via tag fallback
-
-	got := Negotiate(tr, r, WithLocaleResolver(CookieLocale("locale")))
-	if got.Tag != "fr" {
-		t.Fatalf("fr-CA cookie should match fr: got %q want fr", got.Tag)
+	// "fr-CA" matches the bare "fr" catalog via tag fallback.
+	if tag := negotiateWithLocaleCookie("fr-CA"); tag != "fr" {
+		t.Fatalf("fr-CA cookie should match fr: got %q want fr", tag)
 	}
 }
 

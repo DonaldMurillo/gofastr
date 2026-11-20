@@ -12,28 +12,31 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
-func upsertApp(t *testing.T, db *sql.DB) (*App, *crud.CrudHandler) {
+// postsHandlerApp registers a posts entity with the given fields over db and
+// returns the app with a fully wired CRUD handler (hooks + registry): the
+// shape every test that drives a crud.CrudHandler directly needs. Shared by
+// crud_upsert_test.go and typed_query_test.go.
+func postsHandlerApp(t *testing.T, db *sql.DB, fields []schema.Field) (*App, *crud.CrudHandler) {
 	t.Helper()
-	if _, err := db.Exec(`CREATE TABLE posts (
-		id TEXT PRIMARY KEY,
-		title TEXT NOT NULL,
-		body TEXT DEFAULT ''
-	)`); err != nil {
-		t.Fatalf("create: %v", err)
-	}
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
 	app.Entity("posts", entity.EntityConfig{
-		Table: "posts",
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String, Required: true},
-			{Name: "body", Type: schema.Text},
-		},
+		Table:  "posts",
+		Fields: fields,
 	}.WithTimestamps(false))
 	ent, _ := app.Registry.Get("posts")
 	ch := crud.NewCrudHandler(ent, db)
 	ch.Hooks = app.HookRegistry("posts")
 	ch.Registry = app.Registry
 	return app, ch
+}
+
+func upsertApp(t *testing.T, db *sql.DB) (*App, *crud.CrudHandler) {
+	t.Helper()
+	createPostsTestTable(t, db)
+	return postsHandlerApp(t, db, []schema.Field{
+		{Name: "title", Type: schema.String, Required: true},
+		{Name: "body", Type: schema.Text},
+	})
 }
 
 // ============================================================================

@@ -1,65 +1,67 @@
 primitive: middleware
-summary: The HTTP middleware of core/middleware, among them idempotency keys with their memory and SQL stores, the token-bucket rate limit, and the /metrics store that subsystem collectors write to.
+summary: The HTTP middleware of core/middleware, composed with Chain or a Pipeline, and the request ID; each family (CORS, CSRF, security headers, idempotency, rate limit, compression, timeout, recovery, logging, metrics, tracing) is a child.
 code:
-  - core/middleware/
+  - core/middleware/doc.go
+  - core/middleware/middleware.go
+  - core/middleware/phrases.go
+  - core/middleware/requestid.go
+  - core/middleware/statuswriter.go
 docs:
-  - framework/docs/content/idempotency.md
-  - framework/docs/content/rate-limit.md
-  - framework/docs/content/observability.md
+  - framework/docs/content/security.md
 twins:
-  - job: Expire an idempotency entry at its TTL and drop expired entries about once a minute.
-    why: The memory store holds a map under a mutex and compares Go times, while the SQL store holds rows other replicas read and expires them by a SQL comparison on expires_at, which SQLite makes as text.
+  - job: Record the final status a response sent, forwarding a 1xx other than 101 without recording it and latching the first final status, an implicit 200 from a write or flush included.
+    why: Logging, metrics, tracing and the idempotency recorder share statusRecorder; Recovery keeps its own writer because it forwards every WriteHeader and tracks whether anything started, which panickedStatus reads, and folding it in has not been designed.
     sites:
+      - path: core/middleware/statuswriter.go
+        note: statusRecorder.WriteHeader and Write, embedded by logging, metrics, tracing and idempotency.
+      - path: core/middleware/recovery.go
+        note: recoveryWriter.WriteHeader and markStarted.
+  - job: Decide whether a request arrived over HTTPS from TLS, an X-Forwarded-Proto of https in any case, or a configured override.
+    why: SecurityHeaders and CSRF each inline the same three-way test against their own config flag (Secure, CookieSecure); nothing shared names it yet.
+    sites:
+      - path: core/middleware/security.go
+        note: The secure test in SecurityHeaders that gates HSTS.
+      - path: core/middleware/csrf.go
+        note: The secure test in CSRF that sets the cookie's Secure flag and __Host- prefix.
+  - job: Bound a map keyed by client-chosen values with an absolute cap that sheds to 90 percent of it, cheapest entries first.
+    why: The rate-limit buckets rank by tokens left and the idempotency entries by in-flight state and last access, so the ranking differs while the cap and low-water shape is copied.
+    sites:
+      - path: core/middleware/ratelimit.go
+        note: bucketStore.evictLocked.
       - path: core/middleware/idempotency.go
-        note: memoryIdempotencyStore.Begin and reapLocked.
-      - path: core/middleware/idempotency_sql.go
-        note: SQLIdempotencyStore.Begin, its rate-limited reap and Finish.
+        note: memoryIdempotencyStore.evictLocked.
 invariants:
-  - id: expired-idempotency-entries-leave-both-stores
-    rule: An idempotency entry past its TTL no longer answers a Begin on the memory store or the SQL store, and the memory store drops expired entries on a Begin at most once per idemReapEvery, as the SQL store reaps.
+  - id: chain-order
+    rule: Chain(A, B, C)(h) is A(B(C(h))), and Pipeline.Build applies its middleware in the order they were added.
     enforced_by:
-      - test: core/middleware.TestMemoryIdempotencyReapsExpired
-      - test: core/middleware.TestMemoryStore_TTLExpiry
-      - test: core/middleware.TestSQLIdempotency_ExpiryAllowsFreshClaim
-  - id: sql-idempotency-expiry-binds-utc
-    rule: The SQL idempotency store binds every time in UTC, so a row expires on time when the process's UTC offset changes.
+      - test: core/middleware.TestChainOrder
+      - test: core/middleware.TestPipelineBuild
+  - id: request-id-is-bounded
+    rule: RequestID reuses an inbound X-Request-ID only when it is at most MaxRequestIDLen bytes of letters, digits, dot, dash and underscore, and otherwise generates a UUID.
     enforced_by:
-      - test: core/middleware.TestSQLIdempotencyExpiryIgnoresLocalOffset
-  - id: full-bucket-restarts-its-clock
-    rule: A rate-limit bucket that refills to capacity restarts its tick clock, so a client that was quiet gets one Capacity burst, and a partial refill keeps the clock it had.
+      - test: core/middleware.TestRequestIDRejectsOversized
+      - test: core/middleware.TestRequestIDRejectsBadCharset
+  - id: wrappers-keep-optional-interfaces
+    rule: Every ResponseWriter wrapper in the package forwards Flush and Hijack and keeps ReadFrom and Unwrap, so streams, upgrades, sendfile and deadlines work behind it.
     enforced_by:
-      - test: core/middleware.TestRateLimitFullBucketRestartsClock
-      - test: core/middleware.TestRateLimitPartialRefillKeepsClock
-  - id: counter-is-fed-by-an-add-only-source
-    rule: Every Prometheus metric the repository declares is listed in emittedMetrics with the source of its number; a counter is named _total, nothing else is, and no counter is fed by a count of current state (COUNT, len, Stats).
+      - test: core/middleware.TestCORS_PreservesFlusherAndHijacker
+      - test: core/middleware.TestMetricsPreservesHijacker
+      - test: core/middleware.TestTracingPreservesHijacker
+      - test: core/middleware.TestRecoveryKeepsReaderFrom
+      - test: core/middleware.TestLoggingReadFromLazyCommit
+      - test: core/middleware.TestLoggingWriterUnwrapsForResponseController
+  - id: wrappers-record-the-status-sent
+    rule: A status-recording wrapper forwards a 1xx other than 101 without recording it and records the first final status, latched by a write or flush.
     enforced_by:
-      - test: framework.TestEveryCounterIsFedByAnAddOnlySource
-      - test: framework/outbox.TestOutboxDeadLetterMetricIsAGauge
-      - test: battery/queue.TestDeadLetterMetricIsAGauge
-    judge: Does this change declare a counter whose value can fall while the process runs, such as a row count, a list length or a sum over things that can be removed?
-    applies:
-      - framework/metrics.go
-      - framework/outbox/metrics.go
-      - framework/slowquery/metrics.go
-      - battery/webhook/webhook.go
-      - battery/log/metrics_handler.go
-      - battery/queue/metrics.go
-decisions:
-  - id: outbox-dead-letter-gauge-has-no-alias
-    date: 2026-11-16
-    status: accepted
-    decision: outbox_dead_letter_total, a COUNT of the delivery rows dead now, is renamed to the gauge outbox_dead_letter_deliveries with no alias, as queue_dead_letter_total was.
-    rejected:
-      - option: Keep it a counter and count dead-letter events in process memory.
-        why: Deliveries are dead-lettered by any replica and the figure must survive a restart, so an in-process count would differ per replica and reset on deploy while the rows remain.
-      - option: Emit the old name beside the new one for a release.
-        why: The old series would still be a counter that falls on a Replay, a purge or an erasure, so a dashboard left on it stays wrong with no error to show it.
-    upholds: [counter-is-fed-by-an-add-only-source]
-  - id: remaining-counters-are-atomic-adds
-    date: 2026-11-16
-    status: accepted
-    decision: http_requests_total, the two webhook totals, slow_queries_total and the four gofastr_log totals stay counters because each loads an atomic that is only added to, and the two db_pool wait totals because sql.DBStats documents them as running totals.
-    rejected:
-      - option: Prove each with a test that tries to make it fall.
-        why: No operation removes from an add-only atomic, so such a test has nothing to drive; the table pins the expression each number is loaded from instead.
-    upholds: [counter-is-fed-by-an-add-only-source]
+      - test: core/middleware.TestWrappersKeepStatusAfterHints
+      - test: core/middleware.TestLoggingRecordsStatusSent
+      - test: core/middleware.TestWrappersLatchStatusOnFlush
+      - test: core/middleware.TestIdempotencyRecordsPastEarlyHints
+  - id: log-sinks-scrub-request-values
+    rule: Every log line and span attribute built from a request's method or path has its control and invisible characters escaped before it is truncated to its cap.
+    enforced_by:
+      - test: core/middleware.TestLogSinksScrubAndBound
+      - test: core/middleware.TestLogging_LogInjection
+      - test: core/middleware.TestSampledLogging_SanitizesMethod
+      - test: core/middleware.TestLogTraceScrubInvisibleChars
+      - test: core/middleware.TestRecovery_EncodeBeforeTruncate

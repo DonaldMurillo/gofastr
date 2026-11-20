@@ -1,5 +1,2 @@
-// Package auth is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package auth is the harness control plane's capability tokens: claims, signing, revocation and confirmed issuance.
 package auth

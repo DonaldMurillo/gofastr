@@ -14,6 +14,8 @@ type Descriptor struct {
 	Description string         `json:"description"`
 	Schema      map[string]any `json:"schema"`
 	Destructive bool           `json:"destructive,omitempty"`
+	// ReadOnly marks a tool that changes nothing.
+	ReadOnly bool `json:"read_only,omitempty"`
 }
 
 // List returns every tool the protocol exposes.
@@ -34,6 +36,7 @@ func (t *Tools) Describe(name string) (Descriptor, bool) {
 
 var descriptors = map[string]Descriptor{
 	"world_get": {
+		ReadOnly:    true,
 		Name:        "world_get",
 		Description: "Read the current Kiln world IR. Empty path returns the full world. Use entities.<name>, pages.<path>, _chat, or _plans to fetch a sub-tree.",
 		Schema: object(map[string]any{
@@ -231,8 +234,9 @@ var descriptors = map[string]Descriptor{
 	},
 	"undo": {
 		Name:        "undo",
-		Description: "Truncate the journal by one entry, reverting the most recent change.",
+		Description: "Truncate the journal by one entry, reverting the most recent change. Destructive: nothing redoes it, but it does not require a plan: it's a user-initiated step back.",
 		Schema:      object(nil, nil),
+		Destructive: true,
 	},
 	"reset_session": {
 		Name:        "reset_session",

@@ -26,7 +26,8 @@ type SearchInputConfig struct {
 	ID string
 	// Placeholder defaults to "Search...".
 	Placeholder string
-	// Action, when set, wraps the field in a <form role="search">.
+	// Action, when set, wraps the field in a <form> inside a <search>
+	// landmark.
 	Action string
 	// Method is "GET" (default) or "POST".
 	Method string
@@ -102,12 +103,13 @@ func SearchInput(cfg SearchInputConfig) render.HTML {
 		if action == "" {
 			action = "#"
 		}
-		return searchInputStyle.WrapHTML(render.Tag("form", map[string]string{
-			"role":   "search",
-			"action": action,
-			"method": method,
-			"class":  "fui-search__form",
-		}, innerWrapper))
+		return searchInputStyle.WrapHTML(render.Tag("search", map[string]string{"class": "fui-search__landmark"},
+			render.Tag("form", map[string]string{
+				"action":            action,
+				"method":            method,
+				"class":             "fui-search__form",
+				"data-cui-internal": "",
+			}, innerWrapper)))
 	}
 
 	return searchInputStyle.WrapHTML(innerWrapper)
@@ -197,6 +199,17 @@ func searchInputCSS(_ style.Theme) string {
 }
 .fui-search .fui-search__clear[hidden] {
   display: none;
+}
+/* The <search> landmark is the root and draws nothing of its own: it
+   lays out like the form it wraps (an engine that predates the element
+   would draw it inline), and the form fills whatever width a parent
+   gives the root. */
+.fui-search__landmark {
+  display: inline-flex;
+}
+.fui-search__landmark > .fui-search__form {
+  flex: 1 1 auto;
+  min-inline-size: 0;
 }
 .fui-search__form {
   display: inline-flex;

@@ -41,18 +41,7 @@ func TestSkippedTransitionRaisesNoUnhandledRejection(t *testing.T) {
 		w.Header().Set("Content-Type", "application/javascript")
 		_, _ = w.Write([]byte(js))
 	})
-	mux.HandleFunc("/a", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Gofastr-Navigate") == "1" {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("X-Gofastr-Partial", "true")
-			w.Header().Set("X-Gofastr-Title", "A")
-			w.Header().Set("X-Gofastr-Swap", "l:site")
-			fmt.Fprint(w, `<span id="page-a">A</span>`)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, doc(`<span id="page-a">A</span>`))
-	})
+	mux.HandleFunc("/a", spaPartial(nil, "A", "l:site", `<span id="page-a">A</span>`, doc(`<span id="page-a">A</span>`)))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)

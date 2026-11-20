@@ -2,8 +2,7 @@ package router
 
 import "net/http"
 
-// HandleFunc registers a handler function for the given method and pattern.
-// This is a convenience wrapper around Handle that accepts an http.HandlerFunc.
+// HandleFunc is Handle for a handler function.
 func (r *Router) HandleFunc(method, pattern string, fn http.HandlerFunc) {
 	r.Handle(method, pattern, fn)
 }

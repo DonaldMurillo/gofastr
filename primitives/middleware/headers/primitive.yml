@@ -1,0 +1,38 @@
+primitive: middleware.headers
+summary: SecurityHeaders, the strict default set of browser security headers with HTTPS-only HSTS.
+code:
+  - core/middleware/security.go
+docs:
+  - framework/docs/content/security.md
+on_change:
+  - The default CSP here is the base of the static export's policy; a change to it is made in primitives/static/csp too.
+invariants:
+  - id: default-csp-bounds-form-and-object
+    rule: The default Content-Security-Policy names form-action 'self' and object-src 'none', which default-src does not cover.
+    enforced_by:
+      - test: core/middleware.TestDefaultCSPBoundsFormAndObject
+  - id: hsts-only-over-https
+    rule: Strict-Transport-Security is sent only over TLS, an X-Forwarded-Proto of exactly https in any case, or Secure true, with a one-year max-age by default and none at HSTSMaxAge -1.
+    enforced_by:
+      - test: core/middleware.TestHSTSDefaultOnTLS
+      - test: core/middleware.TestHSTSHonorsForwardedProto
+      - test: core/middleware.TestHSTSAbsentOnPlainHTTP
+      - test: core/middleware.TestHSTSForwardedProtoExactValueOnly
+  - id: cross-origin-isolation-by-default
+    rule: Cross-Origin-Resource-Policy and Cross-Origin-Opener-Policy default to same-origin.
+    enforced_by:
+      - test: core/middleware.TestSecurityHeaders_CORPPresent
+      - test: core/middleware.TestSecurityHeaders_COOPPresent
+  - id: xss-auditor-disabled
+    rule: "SecurityHeaders sends X-XSS-Protection: 0."
+    enforced_by:
+      - test: core/middleware.TestSweepSecurityHeadersDisableXSSAuditor
+decisions:
+  - id: xss-auditor-off
+    date: 2026-11-18
+    status: accepted
+    decision: X-XSS-Protection is sent as 0, leaving script injection to the CSP.
+    rejected:
+      - option: "X-XSS-Protection: 1; mode=block."
+        why: The legacy auditor is gone from current browsers and, where it ran, could be steered to blank or alter a page; the CSP is the defence.
+    upholds: [xss-auditor-disabled]

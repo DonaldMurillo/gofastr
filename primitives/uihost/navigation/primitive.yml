@@ -237,7 +237,37 @@ invariants:
     rule: The default error pages' home link carries the fui-button fui-button--primary classes.
     enforced_by:
       - test: framework/uihost.TestDefaultErrorPagesStyleHomeLink
+  - id: decide-not-found-is-an-unmatched-url
+    rule: A policy answering decide.NotFound, and middleware calling ServeNotFound, answer what a URL no route matches gets on every shape (page, partial and its session step, prefetch, problem JSON, markdown, llm.md, a deferred part request), status and headers included, with no content or meta from the route, ServeNotFound does so for a method the page does not take too, the llm.md index leaves the route out, a server action on that page refuses with 404, and a static export skips the page as it skips any page a policy refuses.
+    enforced_by:
+      - test: framework/uihost.TestDecideNotFoundHiddenFromLLMIndex
+      - test: framework/uihost.TestPagePolicyNotFoundIsABlock
+      - test: framework/uihost.TestNotFoundFlagNeeds404
+      - test: framework/uihost.TestStaticRenderSkipsDecideNotFound
+      - test: framework/uihost.TestDecideNotFoundMatchesUnmatchedURL
+      - test: framework/uihost.TestServeNotFoundMatchesUnmatchedURL
+      - test: framework/uihost.TestDecideNotFoundRefusesActions
+  - id: guard-not-found-is-whole-page
+    rule: A region guard answering decide.NotFound takes the whole page to 404, except on the not-found and error pages themselves, where it blocks its region and the page keeps its layout.
+    enforced_by:
+      - test: framework/uihost.TestRegionGuardNotFoundIsWholePage
+      - test: framework/uihost.TestRegionGuardNotFoundOnErrorPage
 decisions:
+  - id: not-found-is-a-flagged-block
+    date: 2026-11-19
+    status: accepted
+    decision: decide.NotFound is a DecisionBlock with Status 404 and NotFound set, which the policy phase turns into the whole-page not-found error a resolver's ErrNotFound produces.
+    rejected:
+      - option: A new DecisionKind for not-found.
+        why: Every site that switches on Kind (hosts, sitemap, embed, actions, region guards) already refuses a Block; a new kind falls through to Allow wherever a switch misses it, while a flagged Block degrades to a plain 404 at worst.
+    upholds: [decide-not-found-is-an-unmatched-url]
+  - id: block-404-stays-plain
+    date: 2026-11-19
+    status: accepted
+    decision: decide.Block(404) keeps answering the status phrase; the themed not-found page is opt-in through decide.NotFound.
+    rejected:
+      - option: Make Block(404) render the not-found page when WithNotFoundScreen is set.
+        why: It would quietly change the body of every app that already blocks with 404.
   - id: part-request-never-mints
     date: 2026-11-16
     status: accepted

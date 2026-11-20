@@ -30,6 +30,8 @@ type assetKey struct {
 type assetVersion struct {
 	modTime time.Time
 	size    int64
+	ino     uint64
+	ctime   int64
 	hash    string
 }
 
@@ -75,10 +77,13 @@ func (v *assetVersions) hashOpen(key assetKey, f fs.File) (hash string, isFile b
 }
 
 func (v *assetVersions) lookup(key assetKey, info fs.FileInfo, r io.Reader) string {
+	ino, ctime := assetFileRevision(info)
+	d := time.Since(time.Unix(0, ctime))
+	settled := ctime == 0 || d >= time.Second || d < 0
 	v.mu.Lock()
 	e, ok := v.entries[key]
 	v.mu.Unlock()
-	if ok && e.modTime.Equal(info.ModTime()) && e.size == info.Size() {
+	if settled && ok && e.modTime.Equal(info.ModTime()) && e.size == info.Size() && e.ino == ino && e.ctime == ctime {
 		return e.hash
 	}
 	h := sha256.New()
@@ -87,11 +92,14 @@ func (v *assetVersions) lookup(key assetKey, info fs.FileInfo, r io.Reader) stri
 	}
 	sum := h.Sum(nil)
 	hash := hex.EncodeToString(sum[:6])
+	if !settled {
+		return hash
+	}
 	v.mu.Lock()
 	if v.entries == nil {
 		v.entries = map[assetKey]assetVersion{}
 	}
-	v.entries[key] = assetVersion{modTime: info.ModTime(), size: info.Size(), hash: hash}
+	v.entries[key] = assetVersion{modTime: info.ModTime(), size: info.Size(), ino: ino, ctime: ctime, hash: hash}
 	v.mu.Unlock()
 	return hash
 }

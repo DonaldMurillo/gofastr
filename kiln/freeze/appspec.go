@@ -38,6 +38,13 @@ func AppSpecYAML(w *world.World) ([]byte, error) {
 }
 
 func validateGraduation(w *world.World) error {
+	switch w.App.JSONCase {
+	case "", "camel", "camelCase":
+	case "snake", "snake_case":
+		return fmt.Errorf("freeze: app.json_case %q cannot be expressed by the current app spec (camelCase only); keep the Kiln preview for snake_case, or explicitly change app.json_case to camel before freezing and set framework.AppConfig.JSONCase = framework.CaseSnake in owned Go before serving clients", w.App.JSONCase)
+	default:
+		return fmt.Errorf("freeze: unknown app.json_case %q (want camel|snake)", w.App.JSONCase)
+	}
 	if _, err := freezeEndpoints(w); err != nil {
 		return err
 	}

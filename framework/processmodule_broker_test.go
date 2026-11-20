@@ -173,16 +173,22 @@ func wantOK(t *testing.T, err error) {
 
 // ----- §5 adversarial gate tests (deny before re-dispatch) -----
 
-// TestBrokerGrantScopeMatchDenies: a module CANNOT exceed descriptor.requested
-// ∩ operator.approved. Granted articles:write, asking articles:read → the
-// ScopeMatch pre-filter denies and the router is NEVER reached.
-func TestBrokerGrantScopeMatchDenies(t *testing.T) {
-	reg := brokerRegistry(brokerEntity("articles", "articles", nil))
-	var hit atomic.Bool
-	b := NewBroker(fakeSuccessRouter(&hit), reg, nil, "")
-	view := ModuleGrantView{Name: "m", Grants: []access.Permission{"articles:write"}}
+// denyEntityQuery wires a broker over the hit-recording router, runs one
+// reverse entity query under view, and returns its error, so a test pins
+// the denial (wantDenied) and that the router stayed unreached
+// (wantNotHit).
+func denyEntityQuery(t *testing.T, hit *atomic.Bool, reg *Registry, view ModuleGrantView, params moduleproto.EntityQueryParams) error {
+	t.Helper()
+	b := NewBroker(fakeSuccessRouter(hit), reg, nil, "")
 	h := b.entityHandler(view, opQuery)
-	_, err := callReverse(t, h, moduleproto.EntityQueryParams{Entity: "articles"})
+	_, err := callReverse(t, h, params)
+	return err
+}
+func TestBrokerGrantScopeMatchDenies(t *testing.T) {
+	var hit atomic.Bool
+	err := denyEntityQuery(t, &hit, brokerRegistry(brokerEntity("articles", "articles", nil)),
+		ModuleGrantView{Name: "m", Grants: []access.Permission{"articles:write"}},
+		moduleproto.EntityQueryParams{Entity: "articles"})
 	wantDenied(t, err)
 	wantNotHit(t, &hit)
 }
@@ -193,12 +199,10 @@ func TestBrokerGrantScopeMatchDenies(t *testing.T) {
 // the router is never reached; a child cannot inject a capability string (the
 // params have no such field and the handler reads none).
 func TestBrokerIgnoresChildCapability(t *testing.T) {
-	reg := brokerRegistry(brokerEntity("articles", "articles", nil))
 	var hit atomic.Bool
-	b := NewBroker(fakeSuccessRouter(&hit), reg, nil, "")
-	view := ModuleGrantView{Name: "m", Grants: []access.Permission{"unrelated:read"}}
-	h := b.entityHandler(view, opQuery)
-	_, err := callReverse(t, h, moduleproto.EntityQueryParams{Entity: "articles"})
+	err := denyEntityQuery(t, &hit, brokerRegistry(brokerEntity("articles", "articles", nil)),
+		ModuleGrantView{Name: "m", Grants: []access.Permission{"unrelated:read"}},
+		moduleproto.EntityQueryParams{Entity: "articles"})
 	wantDenied(t, err)
 	wantNotHit(t, &hit)
 }
@@ -243,15 +247,11 @@ func TestBrokerStripsCrossOwnerRead(t *testing.T) {
 // its grant set. Granted articles:*; asking secrets:read → denied, router
 // never reached.
 func TestBrokerEntityOutsideGrantDenies(t *testing.T) {
-	reg := brokerRegistry(
-		brokerEntity("articles", "articles", nil),
-		brokerEntity("secrets", "secrets", nil),
-	)
 	var hit atomic.Bool
-	b := NewBroker(fakeSuccessRouter(&hit), reg, nil, "")
-	view := ModuleGrantView{Name: "m", Grants: []access.Permission{"articles:*"}}
-	h := b.entityHandler(view, opQuery)
-	_, err := callReverse(t, h, moduleproto.EntityQueryParams{Entity: "secrets"})
+	err := denyEntityQuery(t, &hit,
+		brokerRegistry(brokerEntity("articles", "articles", nil), brokerEntity("secrets", "secrets", nil)),
+		ModuleGrantView{Name: "m", Grants: []access.Permission{"articles:*"}},
+		moduleproto.EntityQueryParams{Entity: "secrets"})
 	wantDenied(t, err)
 	wantNotHit(t, &hit)
 }
@@ -259,12 +259,10 @@ func TestBrokerEntityOutsideGrantDenies(t *testing.T) {
 // TestBrokerUnknownEntityDenies: an entity name the registry does not know is
 // denied (fail-closed), never silently empty, and never reaches the router.
 func TestBrokerUnknownEntityDenies(t *testing.T) {
-	reg := brokerRegistry(brokerEntity("articles", "articles", nil))
 	var hit atomic.Bool
-	b := NewBroker(fakeSuccessRouter(&hit), reg, nil, "")
-	view := ModuleGrantView{Name: "m", Grants: []access.Permission{"*:read"}} // grant matches any resource
-	h := b.entityHandler(view, opQuery)
-	_, err := callReverse(t, h, moduleproto.EntityQueryParams{Entity: "nope"})
+	err := denyEntityQuery(t, &hit, brokerRegistry(brokerEntity("articles", "articles", nil)),
+		ModuleGrantView{Name: "m", Grants: []access.Permission{"*:read"}}, // grant matches any resource
+		moduleproto.EntityQueryParams{Entity: "nope"})
 	wantDenied(t, err)
 	wantNotHit(t, &hit)
 }
@@ -274,15 +272,13 @@ func TestBrokerUnknownEntityDenies(t *testing.T) {
 // TestBrokerUnknownHandleDenies: a reverse call echoing a handle the broker
 // never minted is denied; the router is never reached.
 func TestBrokerUnknownHandleDenies(t *testing.T) {
-	reg := brokerRegistry(brokerEntity("articles", "articles", nil))
 	var hit atomic.Bool
-	b := NewBroker(fakeSuccessRouter(&hit), reg, nil, "")
-	view := ModuleGrantView{Name: "m", Grants: []access.Permission{"articles:read"}}
-	h := b.entityHandler(view, opQuery)
-	_, err := callReverse(t, h, moduleproto.EntityQueryParams{
-		Entity: "articles",
-		Caller: moduleproto.CallerRef{Delegation: "deadbeef-not-a-real-handle"},
-	})
+	err := denyEntityQuery(t, &hit, brokerRegistry(brokerEntity("articles", "articles", nil)),
+		ModuleGrantView{Name: "m", Grants: []access.Permission{"articles:read"}},
+		moduleproto.EntityQueryParams{
+			Entity: "articles",
+			Caller: moduleproto.CallerRef{Delegation: "deadbeef-not-a-real-handle"},
+		})
 	wantDenied(t, err)
 	wantNotHit(t, &hit)
 }

@@ -63,72 +63,61 @@ func (d *EntityDeclaration) UnmarshalJSON(data []byte) error {
 		if d.Scope == nil {
 			d.Scope = &ScopeDeclaration{}
 		}
-		for _, merge := range []func() error{
-			func() error {
-				return mergeDeclarationJSONField(d.Name, root, scopeJSON, "soft_delete", &d.Scope.SoftDelete)
-			},
-			func() error {
-				return mergeDeclarationJSONField(d.Name, root, scopeJSON, "multi_tenant", &d.Scope.MultiTenant)
-			},
-			func() error {
-				return mergeDeclarationJSONField(d.Name, root, scopeJSON, "tenant_field", &d.Scope.TenantField)
-			},
-			func() error {
-				return mergeDeclarationJSONField(d.Name, root, scopeJSON, "owner_field", &d.Scope.OwnerField)
-			},
-			func() error {
-				return mergeDeclarationJSONField(d.Name, root, scopeJSON, "cross_owner_read", &d.Scope.CrossOwnerRead)
-			},
-		} {
-			if err := merge(); err != nil {
-				return err
-			}
+		if err := mergeDeclarationFields(d.Name, root, scopeJSON,
+			declFieldOf("soft_delete", &d.Scope.SoftDelete),
+			declFieldOf("multi_tenant", &d.Scope.MultiTenant),
+			declFieldOf("tenant_field", &d.Scope.TenantField),
+			declFieldOf("owner_field", &d.Scope.OwnerField),
+			declFieldOf("cross_owner_read", &d.Scope.CrossOwnerRead),
+		); err != nil {
+			return err
 		}
 	}
 	if d.Pagination != nil || declarationHasAny(root, "cursor_field", "cursor_fields", "max_list_limit") {
 		if d.Pagination == nil {
 			d.Pagination = &PaginationDeclaration{}
 		}
-		for _, merge := range []func() error{
-			func() error {
-				return mergeDeclarationJSONField(d.Name, root, paginationJSON, "cursor_field", &d.Pagination.CursorField)
-			},
-			func() error {
-				return mergeDeclarationJSONField(d.Name, root, paginationJSON, "cursor_fields", &d.Pagination.CursorFields)
-			},
-			func() error {
-				return mergeDeclarationJSONField(d.Name, root, paginationJSON, "max_list_limit", &d.Pagination.MaxListLimit)
-			},
-		} {
-			if err := merge(); err != nil {
-				return err
-			}
+		if err := mergeDeclarationFields(d.Name, root, paginationJSON,
+			declFieldOf("cursor_field", &d.Pagination.CursorField),
+			declFieldOf("cursor_fields", &d.Pagination.CursorFields),
+			declFieldOf("max_list_limit", &d.Pagination.MaxListLimit),
+		); err != nil {
+			return err
 		}
 	}
 	if d.Exposure != nil || declarationHasAny(root, "crud", "mcp", "public", "access", "read_scope") {
 		if d.Exposure == nil {
 			d.Exposure = &ExposureDeclaration{}
 		}
-		for _, merge := range []func() error{
-			func() error {
-				return mergeDeclarationJSONField(d.Name, root, exposureJSON, "crud", &d.Exposure.CRUD)
-			},
-			func() error {
-				return mergeDeclarationJSONField(d.Name, root, exposureJSON, "mcp", &d.Exposure.MCP)
-			},
-			func() error {
-				return mergeDeclarationJSONField(d.Name, root, exposureJSON, "public", &d.Exposure.Public)
-			},
-			func() error {
-				return mergeDeclarationJSONField(d.Name, root, exposureJSON, "access", &d.Exposure.Access)
-			},
-			func() error {
-				return mergeDeclarationJSONField(d.Name, root, exposureJSON, "read_scope", &d.Exposure.ReadScope)
-			},
-		} {
-			if err := merge(); err != nil {
-				return err
-			}
+		if err := mergeDeclarationFields(d.Name, root, exposureJSON,
+			declFieldOf("crud", &d.Exposure.CRUD),
+			declFieldOf("mcp", &d.Exposure.MCP),
+			declFieldOf("public", &d.Exposure.Public),
+			declFieldOf("access", &d.Exposure.Access),
+			declFieldOf("read_scope", &d.Exposure.ReadScope),
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// declField merges one JSON key from its group into a declaration field.
+type declField func(name string, root, group map[string]json.RawMessage) error
+
+// declFieldOf binds key to dst, keeping dst's concrete type so the merge
+// decodes into it directly.
+func declFieldOf[T any](key string, dst *T) declField {
+	return func(name string, root, group map[string]json.RawMessage) error {
+		return mergeDeclarationJSONField(name, root, group, key, dst)
+	}
+}
+
+// mergeDeclarationFields runs each field's merge, stopping at the first error.
+func mergeDeclarationFields(name string, root, group map[string]json.RawMessage, fields ...declField) error {
+	for _, f := range fields {
+		if err := f(name, root, group); err != nil {
+			return err
 		}
 	}
 	return nil

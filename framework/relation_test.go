@@ -15,51 +15,38 @@ import (
 
 // --- Relation tests ---
 
-func TestRelationHasOne(t *testing.T) {
-	r := entity.HasOne("profile", "profiles", "user_id")
-	if r.Type != entity.RelHasOne {
-		t.Errorf("expected RelHasOne, got %d", r.Type)
+func TestRelationConstructors(t *testing.T) {
+	tests := []struct {
+		name       string
+		relation   entity.Relation
+		wantType   entity.RelationType
+		wantName   string
+		wantEntity string
+		wantFK     []string
+	}{
+		{"HasOne", entity.HasOne("profile", "profiles", "user_id"),
+			entity.RelHasOne, "profile", "profiles", []string{"user_id"}},
+		{"BelongsTo", entity.BelongsTo("author", "users", "user_id"),
+			entity.RelManyToOne, "author", "users", []string{"user_id"}},
+		{"HasMany", entity.HasMany("comments", "comments", "post_id"),
+			entity.RelHasMany, "comments", "comments", []string{"post_id"}},
 	}
-	if r.Name != "profile" {
-		t.Errorf("expected name profile, got %s", r.Name)
-	}
-	if r.Entity != "profiles" {
-		t.Errorf("expected entity profiles, got %s", r.Entity)
-	}
-	if !slices.Equal(r.ForeignKey, []string{"user_id"}) {
-		t.Errorf("expected FK user_id, got %v", r.ForeignKey)
-	}
-}
-
-func TestRelationBelongsTo(t *testing.T) {
-	r := entity.BelongsTo("author", "users", "user_id")
-	if r.Type != entity.RelManyToOne {
-		t.Errorf("expected RelManyToOne, got %d", r.Type)
-	}
-	if r.Name != "author" {
-		t.Errorf("expected name author, got %s", r.Name)
-	}
-	if r.Entity != "users" {
-		t.Errorf("expected entity users, got %s", r.Entity)
-	}
-	if !slices.Equal(r.ForeignKey, []string{"user_id"}) {
-		t.Errorf("expected FK user_id, got %v", r.ForeignKey)
-	}
-}
-
-func TestRelationHasMany(t *testing.T) {
-	r := entity.HasMany("comments", "comments", "post_id")
-	if r.Type != entity.RelHasMany {
-		t.Errorf("expected RelHasMany, got %d", r.Type)
-	}
-	if r.Name != "comments" {
-		t.Errorf("expected name comments, got %s", r.Name)
-	}
-	if r.Entity != "comments" {
-		t.Errorf("expected entity comments, got %s", r.Entity)
-	}
-	if !slices.Equal(r.ForeignKey, []string{"post_id"}) {
-		t.Errorf("expected FK post_id, got %v", r.ForeignKey)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := tt.relation
+			if r.Type != tt.wantType {
+				t.Errorf("%s: Type = %d, want %d", tt.name, r.Type, tt.wantType)
+			}
+			if r.Name != tt.wantName {
+				t.Errorf("%s: Name = %q, want %q", tt.name, r.Name, tt.wantName)
+			}
+			if r.Entity != tt.wantEntity {
+				t.Errorf("%s: Entity = %q, want %q", tt.name, r.Entity, tt.wantEntity)
+			}
+			if !slices.Equal(r.ForeignKey, tt.wantFK) {
+				t.Errorf("%s: ForeignKey = %v, want %v", tt.name, r.ForeignKey, tt.wantFK)
+			}
+		})
 	}
 }
 

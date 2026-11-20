@@ -1,10 +1,3 @@
-// Package credstore implements credential storage.
-//
-// Per § Credentials: encrypted-file is the primary store (AES-GCM
-// with a passphrase- or machine-bound key). OS keychain integrations
-// are opt-in build-tagged plugins per platform, those live next to
-// this file with `_darwin.go` / `_linux.go` / `_windows.go` suffixes
-// and call back into Store.
 package credstore
 
 import (
@@ -26,10 +19,7 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 )
 
-// Store is the credential store interface. Tokens are addressed by a
-// {provider, account} key pair, most providers have one account per
-// install (the API key); Copilot's auth flow has an explicit
-// account-per-GitHub-user model.
+// Store holds secrets addressed by a (provider, account) pair.
 type Store interface {
 	Get(provider, account string) (string, error)
 	Put(provider, account, secret string) error
@@ -43,20 +33,10 @@ type Entry struct {
 	Account  string
 }
 
-// EncryptedFileStore is the primary implementation: an AES-GCM
-// encrypted JSON file at the configured path.
-//
-// File layout (post-decryption):
-//
-//	{
-//	  "entries": {
-//	    "openrouter|default": "<api-key>",
-//	    "zai|default":        "<api-key>"
-//	  }
-//	}
+// EncryptedFileStore is a Store kept as an AES-GCM encrypted JSON file.
 type EncryptedFileStore struct {
 	path string
-	key  []byte // 32 bytes
+	key  []byte
 
 	mu     sync.Mutex
 	loaded bool
@@ -67,10 +47,7 @@ type storeData struct {
 	Entries map[string]string `json:"entries"`
 }
 
-// NewEncryptedFileStore returns a Store backed by an encrypted file at
-// the given path. The 32-byte key is derived elsewhere (DeriveKey
-// from passphrase, or machine-bound key from /etc/machine-id +
-// hostname).
+// NewEncryptedFileStore returns a store at path sealed with key, which must be 32 bytes (see DeriveKey and MachineKey).
 func NewEncryptedFileStore(path string, key []byte) (*EncryptedFileStore, error) {
 	if len(key) != 32 {
 		return nil, fmt.Errorf("credstore: key must be 32 bytes (got %d)", len(key))
@@ -83,22 +60,12 @@ func NewEncryptedFileStore(path string, key []byte) (*EncryptedFileStore, error)
 	return &EncryptedFileStore{path: path, key: cp}, nil
 }
 
-// DeriveKey returns a 32-byte key from a passphrase using PBKDF2-SHA256.
-//
-// salt should be a stable per-install value (e.g. a UUID generated on
-// first run and stored in `~/.config/gofastr/harness/salt`).
-//
-// The PBKDF2 iteration count is intentionally high (200k) since
-// unlocking is rare, once per harness boot for interactive use.
+// DeriveKey returns a 32-byte key from a passphrase and a stable per-install salt using PBKDF2-SHA256.
 func DeriveKey(passphrase, salt []byte) []byte {
 	return pbkdf2.Key(passphrase, salt, 200_000, 32, sha256.New)
 }
 
-// MachineKey derives a 32-byte key from machine-stable inputs without
-// any user passphrase. Used for headless/CI where there's no human to
-// type a passphrase. The threat model accepts that anyone with root
-// on the machine can re-derive the same key, that's expected for the
-// CI use case.
+// MachineKey derives a 32-byte key from machine-stable inputs, for runs with no passphrase.
 func MachineKey(hostname string, extra []byte) []byte {
 	h := sha256.New()
 	h.Write([]byte("gofastr-harness-machine-key-v1\x00"))
@@ -123,8 +90,6 @@ func (s *EncryptedFileStore) Get(provider, account string) (string, error) {
 		return "", ErrNotFound
 	}
 	if legacyKeyAmbiguous(key) {
-		// "p|a|b" was written by ("p|a", "b") or ("p", "a|b"); the
-		// legacy format cannot say which, so neither pair may read it.
 		return "", fmt.Errorf("%w: %q", ErrAmbiguousLegacyKey, key)
 	}
 	return v, nil
@@ -140,9 +105,6 @@ func (s *EncryptedFileStore) Put(provider, account, secret string) error {
 		s.data.Entries = make(map[string]string)
 	}
 	s.data.Entries[credentialKey(provider, account)] = secret
-	// The re-entered secret supersedes the legacy entry, ambiguous or
-	// not: in the legacy format every pair that maps to this key shared
-	// one slot, and a Put by any of them overwrote it.
 	delete(s.data.Entries, legacyCredentialKey(provider, account))
 	return s.saveLocked()
 }
@@ -169,19 +131,12 @@ func (s *EncryptedFileStore) List() ([]Entry, error) {
 		if entry, ok := parseCredentialKey(k); ok {
 			out = append(out, entry)
 		} else if legacyKeyAmbiguous(k) {
-			// List every pair that could own an ambiguous legacy key:
-			// Get on any of them answers ErrAmbiguousLegacyKey, and a
-			// Put or Delete on any of them replaces it. An encoded key
-			// never holds '|', so a legacy provider spelled "v1:..."
-			// lands here too.
 			out = append(out, legacyCandidates(k)...)
 		}
 	}
 	return out, nil
 }
 
-// credentialKey encodes each component independently. Raw URL base64 does
-// not contain ':', so the separator cannot occur inside either encoded field.
 func credentialKey(provider, account string) string {
 	enc := base64.RawURLEncoding
 	return "v1:" + enc.EncodeToString([]byte(provider)) + ":" + enc.EncodeToString([]byte(account))
@@ -207,9 +162,6 @@ func parseCredentialKey(key string) (Entry, bool) {
 	return parseLegacyCredentialKey(key)
 }
 
-// parseLegacyCredentialKey splits an unambiguous "provider|account" key.
-// A key with more than one '|' has several possible splits and is not
-// parsed; see legacyCandidates.
 func parseLegacyCredentialKey(key string) (Entry, bool) {
 	provider, account, ok := strings.Cut(key, "|")
 	if !ok || legacyKeyAmbiguous(key) {
@@ -222,7 +174,6 @@ func legacyKeyAmbiguous(key string) bool {
 	return strings.Count(key, "|") > 1
 }
 
-// legacyCandidates returns every (provider, account) split of a legacy key.
 func legacyCandidates(key string) []Entry {
 	var out []Entry
 	for i := 0; i < len(key); i++ {
@@ -233,15 +184,6 @@ func legacyCandidates(key string) []Entry {
 	return out
 }
 
-// loadLocked reads and decrypts the store on first use.
-//
-// The loaded flag is set only on SUCCESS. It used to be set on entry,
-// which latched a failed load as a completed one: after a wrong-key
-// decrypt, the store held zero-valued data and believed it was current,
-// so Get answered "not found" instead of repeating the decrypt error --
-// and Put then re-encrypted that empty map under the wrong key and wrote
-// it over the file, destroying every credential the real key protected.
-// The failure has to stay a failure on every call.
 func (s *EncryptedFileStore) loadLocked() error {
 	if s.loaded {
 		return nil
@@ -285,10 +227,6 @@ func (s *EncryptedFileStore) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	// Atomic write: write to <path>.tmp then rename. WriteOwnerOnly so
-	// the tmp is 0600 on create AND overwrite — a pre-existing weaker
-	// tmp keeps its mode under bare os.WriteFile, and the renamed
-	// ciphertext inherits the tightened one.
 	tmp := s.path + ".tmp"
 	if err := fileperm.WriteOwnerOnly(tmp, enc); err != nil {
 		return fmt.Errorf("credstore: write tmp: %w", err)
@@ -299,7 +237,6 @@ func (s *EncryptedFileStore) saveLocked() error {
 	return nil
 }
 
-// File format on disk: base64(<nonce 12><ciphertext><tag>).
 func encrypt(key, plain []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -314,8 +251,6 @@ func encrypt(key, plain []byte) ([]byte, error) {
 		return nil, err
 	}
 	ct := gcm.Seal(nonce, nonce, plain, nil)
-	// base64-wrap so the file is human-inspectable as text and
-	// survives Windows file editors that mangle binary.
 	encoded := base64.StdEncoding.EncodeToString(ct)
 	return []byte(encoded), nil
 }
@@ -343,8 +278,5 @@ func decrypt(key, b64 []byte) ([]byte, error) {
 // ErrNotFound is returned by Get when the (provider, account) pair has no entry.
 var ErrNotFound = errors.New("credstore: not found")
 
-// ErrAmbiguousLegacyKey is returned by Get when the only entry for the pair
-// is a legacy "provider|account" key holding more than one '|': the old
-// format cannot say which pair wrote it, so the secret is not handed to
-// either. Re-enter it with Put (or remove it with Delete) on the right pair.
+// ErrAmbiguousLegacyKey is returned by Get when the pair's only entry is a legacy key with several possible splits; Put or Delete on the right pair clears it.
 var ErrAmbiguousLegacyKey = errors.New("credstore: ambiguous legacy credential key; re-enter the credential")

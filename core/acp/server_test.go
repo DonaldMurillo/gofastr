@@ -671,23 +671,25 @@ func TestHeldBytesReleased(t *testing.T) {
 	}
 }
 
-func TestSessionLoadUnknownIDIsResourceNotFound(t *testing.T) {
-	d := startDialog(t, &fakeLoadingAgent{}, nil)
-	d.initialize()
-	d.request(2, "session/load", map[string]any{"sessionId": "nope", "cwd": "/tmp/p", "mcpServers": []any{}})
-	e := respError(t, d.untilResponseID(2))
-	if e["code"] != float64(acp.ErrResourceNotFound) {
-		t.Errorf("code = %v, want %d", e["code"], acp.ErrResourceNotFound)
-	}
-}
-
-func TestSessionLoadWithoutCapabilityIsMethodNotFound(t *testing.T) {
-	d := startDialog(t, &fakeAgent{}, nil) // no loader
-	d.initialize()
-	d.request(2, "session/load", map[string]any{"sessionId": "x", "cwd": "/tmp/p", "mcpServers": []any{}})
-	e := respError(t, d.untilResponseID(2))
-	if e["code"] != float64(acp.ErrMethodNotFound) {
-		t.Errorf("code = %v, want %d", e["code"], acp.ErrMethodNotFound)
+func TestSessionLoadRejections(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		agent     acp.Agent
+		sessionID string
+		want      int
+	}{
+		{"unknown id is resource-not-found", &fakeLoadingAgent{}, "nope", acp.ErrResourceNotFound},
+		{"without loader capability is method-not-found", &fakeAgent{}, "x", acp.ErrMethodNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := startDialog(t, tc.agent, nil)
+			d.initialize()
+			d.request(2, "session/load", map[string]any{"sessionId": tc.sessionID, "cwd": "/tmp/p", "mcpServers": []any{}})
+			e := respError(t, d.untilResponseID(2))
+			if e["code"] != float64(tc.want) {
+				t.Errorf("code = %v, want %d", e["code"], tc.want)
+			}
+		})
 	}
 }
 

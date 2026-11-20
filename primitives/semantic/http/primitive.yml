@@ -22,8 +22,7 @@ invariants:
   - id: bodies-decode-strictly
     rule: /index and /query refuse a repeated or case-folded JSON key.
     enforced_by:
-      - test: battery/semantic.TestIndexRejectsDuplicateJSONKeys
-      - test: battery/semantic.TestQueryRejectsDuplicateJSONKeys
+      - test: battery/semantic.TestRejectsDuplicateAndFoldedJSONKeys
   - id: unstorable-id-never-reaches-the-index
     rule: DELETE /doc answers an id that is not storable text without calling the index.
     enforced_by:

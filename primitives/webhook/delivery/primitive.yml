@@ -31,18 +31,14 @@ invariants:
       - test: battery/webhook.TestPublish_RejectsInvalidJSONPayload
       - test: battery/webhook.TestEraseRemovesOwnedDeliveries
   - id: every-client-is-ssrf-guarded
-    rule: Without AllowPrivateNetworks every delivery client refuses internal targets at dial or round-trip time, a caller-supplied client and transport included, and Subscribe refuses localhost, .localhost and .internal hosts and internal IPs while leaving a DNS failure to the dial-time guard.
+    rule: Subscribe checks a subscriber URL with netguard.CheckOutboundURL, and without AllowPrivateNetworks every delivery client, a caller-supplied one included, goes through netguard.GuardRoundTripper.
     enforced_by:
+      - test: battery/webhook.TestSubscribe_RejectsSSRFURL
+      - test: battery/webhook.TestSSRFRefusesInternalSuffixHosts
+      - test: battery/webhook.TestSSRF_URLWithUserinfoRejected
+      - test: battery/webhook.TestSSRF_AllowPrivateStillEnforcesScheme
       - test: battery/webhook.TestSSRF_CustomClientStillGuarded
       - test: battery/webhook.TestSSRF_CustomRoundTripperGuarded
-      - test: battery/webhook.TestSSRFRefusesInternalSuffixHosts
-      - test: battery/webhook.TestSSRF_PublicURLAccepted
-      - test: battery/webhook.TestSSRF_AllowPrivateOverrides
-  - id: scheme-and-userinfo-checked-in-every-mode
-    rule: A subscriber URL needs an http or https scheme and no userinfo, AllowPrivateNetworks or not.
-    enforced_by:
-      - test: battery/webhook.TestSSRF_UnsupportedSchemesRejected
-      - test: battery/webhook.TestSSRF_URLWithUserinfoRejected
   - id: credential-never-follows-a-redirect
     rule: A delivery carrying Subscriber.Auth goes through a client that answers a 3xx as the response instead of following it.
     enforced_by:
@@ -125,18 +121,10 @@ decisions:
   - id: wrap-custom-clients
     date: 2026-11-20
     status: accepted
-    decision: A caller-supplied HTTPClient keeps its routing and gets the SSRF guard added, through the dial-time hook on a plain transport and a resolving RoundTripper otherwise.
+    decision: A caller-supplied HTTPClient keeps its routing and gets the SSRF guard added through netguard.GuardRoundTripper.
     rejected:
       - option: Use a caller-supplied client as-is.
         why: A proxy, tracing or timeout customization would silently reopen loopback, RFC 1918 and metadata targets through DNS rebinding.
-    upholds: [every-client-is-ssrf-guarded]
-  - id: dns-failure-left-to-the-dial
-    date: 2026-11-20
-    status: accepted
-    decision: Subscribe accepts a hostname that does not resolve, and the dial-time guard checks whatever it resolves to later.
-    rejected:
-      - option: Refuse a hostname that does not resolve.
-        why: Registration would require the receiver to be live.
     upholds: [every-client-is-ssrf-guarded]
   - id: newline-joined-signature
     date: 2026-11-20

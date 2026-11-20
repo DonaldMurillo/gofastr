@@ -1,0 +1,26 @@
+primitive: middleware.tracing
+summary: Tracing, the OpenTelemetry server-span middleware, and NoteRoute, which lets a router behind a catch-all name the span.
+code:
+  - core/middleware/tracing.go
+docs:
+  - framework/docs/content/observability.md
+invariants:
+  - id: extract-global-then-w3c
+    rule: The incoming context comes from the global propagator when it has fields and yields a remote span, else from W3C traceparent, and W3C baggage only when the global left none.
+    enforced_by:
+      - test: core/middleware.TestTracing_GlobalWithoutW3CFallsBackToTraceparent
+      - test: core/middleware.TestTracing_NoGlobalPropagatorUnchanged
+  - id: inject-before-the-handler
+    rule: The span context is injected into the response headers before the handler runs.
+    enforced_by:
+      - test: core/middleware.TestTracing_ResponseCarriesTraceparent
+  - id: span-named-for-the-route
+    rule: The span is named for the mux pattern, or for the first NoteRoute when the pattern is empty or takes a subtree, else "unmatched", and a status of 500 or more marks it an error.
+    enforced_by:
+      - test: core/middleware.TestNoteRouteNamesTheSpan
+      - test: core/middleware.TestTracing_500MarksSpanError
+  - id: panicked-span-carries-the-stack
+    rule: A panicked request's span gets the status the client got, an error status and an exception.stacktrace from the goroutine that panicked.
+    enforced_by:
+      - test: core/middleware.TestTracingMarksPanickedSpan
+      - test: core/middleware.TestTracingSpanCarriesThePanicsStack

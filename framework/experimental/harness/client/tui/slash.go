@@ -1,13 +1,5 @@
 package tui
 
-// Slash-command client behavior:
-//   - Tab completes the longest unambiguous prefix of `/<verb>`.
-//   - Multiple matches print a one-line listing to scrollback.
-//   - A handful of commands (clear, help, quit, web) are dispatched
-//     locally, they only affect the client. The rest are forwarded
-//     to the engine via SendInput so a server-side parser can route
-//     them (this preserves wire compatibility with non-TUI clients).
-
 import (
 	"context"
 	"fmt"
@@ -20,10 +12,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool/builtins"
 )
 
-// slashCandidates returns every completable identifier, namespaces
-// (e.g. "sessions:", "mcp:") plus built-in verbs ("help", "clear",
-// "model", …). Namespaces include their trailing colon so completing
-// "/sess<Tab>" lands on "/sessions:" cursor-ready to take the suffix.
 func slashCandidates() []string {
 	var out []string
 	for _, b := range slash.AllBuiltins() {
@@ -36,19 +24,11 @@ func slashCandidates() []string {
 	return out
 }
 
-// completeSlash takes the input buffer (e.g. "/he") and returns
-// (completion, matches). `completion` is the longest common prefix of
-// all matching candidates, caller can replace the input with it.
-// `matches` is non-nil only when there are multiple matches; callers
-// typically show them in scrollback.
-//
-// Returns ("", nil) when input doesn't start with '/' or when there
-// are no matches.
 func completeSlash(input string) (completion string, matches []string) {
 	if !strings.HasPrefix(input, "/") {
 		return "", nil
 	}
-	prefix := input[1:] // drop leading slash
+	prefix := input[1:]
 	var hits []string
 	for _, c := range slashCandidates() {
 		if strings.HasPrefix(c, prefix) {
@@ -65,14 +45,12 @@ func completeSlash(input string) (completion string, matches []string) {
 	}
 }
 
-// longestCommonPrefix is a stdlib-only LCP over a slice of strings.
 func longestCommonPrefix(strs []string) string {
 	if len(strs) == 0 {
 		return ""
 	}
 	prefix := strs[0]
 	for _, s := range strs[1:] {
-		// Trim prefix until s starts with it.
 		for !strings.HasPrefix(s, prefix) {
 			prefix = prefix[:len(prefix)-1]
 			if prefix == "" {
@@ -83,18 +61,6 @@ func longestCommonPrefix(strs []string) string {
 	return prefix
 }
 
-// slashPopupItems returns the live-filter rows shown above the input
-// box while the user is typing a slash command:
-//
-//   - rows: full display strings (with descriptions). May include a
-//     trailing "(+N more)" overflow row when more candidates exist
-//     than fit in maxRows.
-//   - names: the literal slash tokens (e.g. "/clear", "/sessions:")
-//     parallel to rows[0..len(names)]. Up/Down arrow navigation walks
-//     this slice; Tab completes into it.
-//   - total: count of true candidates (excluding overflow row).
-//
-// Returns (nil, nil, 0) when input doesn't look like a slash command.
 func slashPopupItems(input string, maxRows int) (rows []string, names []string, total int) {
 	if !strings.HasPrefix(input, "/") {
 		return nil, nil, 0
@@ -117,16 +83,12 @@ func slashPopupItems(input string, maxRows int) (rows []string, names []string, 
 	if total <= maxRows {
 		return allRows, allNames, total
 	}
-	// Overflow: keep maxRows-1 selectable + one non-selectable hint.
 	rows = append([]string{}, allRows[:maxRows-1]...)
 	rows = append(rows, fmt.Sprintf("… (+%d more — keep typing to narrow)", total-(maxRows-1)))
 	names = append([]string{}, allNames[:maxRows-1]...)
 	return rows, names, total
 }
 
-// shortToken truncates a bearer token to its first 12 chars + ellipsis
-// so the curl example in the /web modal stays readable on narrow
-// terminals. The full token is still shown above the example.
 func shortToken(tok string) string {
 	if len(tok) <= 12 {
 		return tok
@@ -134,10 +96,6 @@ func shortToken(tok string) string {
 	return tok[:12]
 }
 
-// popupActive reports whether the slash-command popup is currently
-// open (i.e. the input starts with `/` and at least one candidate
-// exists). Used by the escape handler to decide whether Up/Down
-// should navigate the popup or scroll scrollback.
 func (t *TUI) popupActive() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -148,8 +106,6 @@ func (t *TUI) popupActive() bool {
 	return len(names) > 0
 }
 
-// popupMove walks the popup selection by delta. Wraps both ways so
-// repeated Down past the end loops to the top.
 func (t *TUI) popupMove(delta int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -161,11 +117,6 @@ func (t *TUI) popupMove(delta int) {
 	t.popupIdx = ((t.popupIdx+delta)%n + n) % n
 }
 
-// popupAcceptsEnter reports whether Enter should be hijacked for
-// autocomplete rather than submitting. True iff the popup is showing
-// candidates AND the input doesn't already exactly equal one of them
-// (so a fully typed `/clear` submits immediately rather than
-// round-tripping through a no-op completion).
 func (t *TUI) popupAcceptsEnter() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -180,11 +131,6 @@ func (t *TUI) popupAcceptsEnter() bool {
 	return !slices.Contains(names, input)
 }
 
-// dispatchLocalSlash returns true when the command was fully handled
-// client-side. When it returns false, the caller should forward the
-// raw input to the engine so server-side handlers can take it.
-//
-// Caller must NOT hold t.mu, this function locks internally.
 func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 	c, err := slash.Parse(input)
 	if err != nil {
@@ -198,14 +144,9 @@ func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 		t.thinkingOpen = false
 		t.scrollOffset = 0
 		t.mu.Unlock()
-		// Re-render the welcome banner so the user keeps the keybind
-		// hints after clearing (showWelcome no-ops on non-empty
-		// scrollback, so it's safe to call unconditionally).
 		t.showWelcome()
 		return true, false
 	case "help":
-		// Open the help modal so the catalog doesn't pollute scrollback.
-		// The modal covers the screen until Esc/Enter/q.
 		var lines []string
 		lines = append(lines, "Built-in slash commands:")
 		lines = append(lines, "")
@@ -231,8 +172,6 @@ func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 		t.openModal("Help", lines)
 		return true, false
 	case "tasks":
-		// Show the current TaskList snapshot in a modal so the user
-		// can see the agent's plan without polluting scrollback.
 		items, updated := builtins.TaskListSnapshot(t.Session)
 		var lines []string
 		if len(items) == 0 {
@@ -260,9 +199,6 @@ func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 		t.openModal("Plan", lines)
 		return true, false
 	case "web":
-		// Show the URL + token + curl example in a modal so the user
-		// can copy without scrolling. The token is sensitive so we
-		// keep it on-screen only as long as the modal is open.
 		if t.WebURL == "" {
 			t.openModal("Web sidecar", []string{
 				"The HTTP control plane isn't running.",
@@ -296,7 +232,6 @@ func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 		t.openModal("Web sidecar", lines)
 		return true, false
 	case "quit":
-		// Treat as immediate exit; the run loop will return.
 		return true, true
 	case "profile":
 		lines := []string{
@@ -352,7 +287,6 @@ func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 			t.openModal("Model", lines)
 			return true, false
 		}
-		// With an argument: queue a SetModel command via the inproc client.
 		if t.Client != nil {
 			_ = t.Client.Send(context.Background(), control.SetModel{
 				SessionID: t.Session,
@@ -366,9 +300,6 @@ func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 		t.mu.Unlock()
 		return true, false
 	case "compact":
-		// History compaction middleware is roadmap. For now we surface
-		// the request as a CustomCommand the engine COULD pick up,
-		// plus a scrollback hint so the user gets feedback.
 		if t.Client != nil {
 			_ = t.Client.Send(context.Background(), control.CustomCommand{
 				SessionID: t.Session,
@@ -385,8 +316,6 @@ func (t *TUI) dispatchLocalSlash(input string) (handled, exit bool) {
 	return false, false
 }
 
-// nonempty returns s when non-empty, else fallback. Tiny helper for
-// status-line strings.
 func nonempty(s, fallback string) string {
 	if s == "" {
 		return fallback

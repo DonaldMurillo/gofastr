@@ -1,7 +1,6 @@
 package packcmd
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
+	"github.com/DonaldMurillo/gofastr/internal/heldfiletest"
 )
 
 // Property: a CLI-written artifact that carries secrets recovered from .env
@@ -128,30 +128,11 @@ func TestPackOutputReplacesWhole(t *testing.T) {
 	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	old := heldPack(t, path)
+	old := heldfiletest.Held(t, path)
 	if err := writeSecretFile(path, "new"); err != nil {
 		t.Fatal(err)
 	}
 	if got := old(); got != "old" {
 		t.Fatalf("the old handle reads %q: rewritten in place", got)
-	}
-}
-
-// heldPack opens path and returns a reader of what that handle sees: a
-// file renamed over path leaves it reading the old content, one
-// truncated in place leaves it reading the new.
-func heldPack(t *testing.T, path string) func() string {
-	t.Helper()
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = f.Close() })
-	return func() string {
-		b, err := io.ReadAll(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(b)
 	}
 }

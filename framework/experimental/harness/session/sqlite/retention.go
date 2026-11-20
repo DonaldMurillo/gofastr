@@ -14,12 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// DropMetadata removes event rows entirely (not just their content)
-// whose ts is older than the given age. Returns the count of deleted
-// rows.
-//
-// Default policy per § Persistence: drop metadata-only rows after
-// 180 days. Pinned sessions (tracked separately) survive.
+// DropMetadata deletes event rows older than age, except those of exemptSessions, and returns how many it deleted.
 func (s *Store) DropMetadata(ctx context.Context, age time.Duration, exemptSessions []string) (int64, error) {
 	cutoff := time.Now().Add(-age).UTC().Format(time.RFC3339Nano)
 	query := `DELETE FROM events WHERE ts < ?`
@@ -44,24 +39,15 @@ func (s *Store) DropMetadata(ctx context.Context, age time.Duration, exemptSessi
 	return res.RowsAffected()
 }
 
-// ---------- Monthly rolling log files ----------
-
-// MonthlyRollover provides per-month log files
-// (sessions-YYYYMM.db) for retention efficiency: VACUUM only touches
-// the current month's file, not the whole history.
-//
-// The current month's file is the "live" Store; older months are
-// closed and become read-only archives. Open queries can span
-// archives by iterating Open() on each month file.
+// MonthlyRollover keeps one session log per UTC month, sessions-YYYYMM.db, under one directory.
 type MonthlyRollover struct {
 	mu      sync.Mutex
 	dir     string
 	current *Store
-	month   string // YYYYMM the current store was opened for
+	month   string
 }
 
-// NewMonthlyRollover returns a rollover manager rooted at dir. The
-// current month's store is opened immediately.
+// NewMonthlyRollover opens the current month's store under dir.
 func NewMonthlyRollover(dir string) (*MonthlyRollover, error) {
 	m := &MonthlyRollover{dir: dir}
 	if err := m.openCurrentLocked(); err != nil {
@@ -70,8 +56,7 @@ func NewMonthlyRollover(dir string) (*MonthlyRollover, error) {
 	return m, nil
 }
 
-// Current returns the live Store, rolling over if the calendar month
-// has changed since the last call.
+// Current returns the current month's store, closing last month's when the month has changed.
 func (m *MonthlyRollover) Current() (*Store, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -87,8 +72,7 @@ func (m *MonthlyRollover) Current() (*Store, error) {
 	return m.current, nil
 }
 
-// ListArchives returns the paths of every month file in the directory
-// (current + archives), oldest first.
+// ListArchives returns every month file in the directory, oldest first.
 func (m *MonthlyRollover) ListArchives() ([]string, error) {
 	entries, err := os.ReadDir(m.dir)
 	if err != nil {
@@ -101,12 +85,11 @@ func (m *MonthlyRollover) ListArchives() ([]string, error) {
 			out = append(out, filepath.Join(m.dir, name))
 		}
 	}
-	// alphabetical sort happens to be chronological with YYYYMM.
 	slices.Sort(out)
 	return out, nil
 }
 
-// Close releases the live Store.
+// Close closes the current month's store.
 func (m *MonthlyRollover) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -134,30 +117,18 @@ func (m *MonthlyRollover) openCurrentLocked() error {
 	return nil
 }
 
-// ---------- Cost-ledger split into its own non-encrypted DB ----------
-
-// CostLedger is a separate SQLite DB that records cost rows
-// independently from the event log. Survives VACUUM on the main
-// session DB and is queryable directly for the cost dashboard.
+// CostLedger is an owner-only SQLite file of per-call cost rows, separate from the event log.
 type CostLedger struct {
 	db   *sql.DB
 	path string
 	mu   sync.Mutex
 }
 
-// OpenCostLedger opens the cost ledger DB.
+// OpenCostLedger opens or creates the owner-only cost ledger at path.
 func OpenCostLedger(path string) (*CostLedger, error) {
-	// Owner-only, matching the sibling event store: the ledger records
-	// per-session spend (session ids, providers, models, token counts).
-	// The WAL sidecars inherit the main db's mode on creation.
 	if err := fileperm.MkdirPrivate(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
-	// Owner-only, matching the sibling event store: the ledger records
-	// per-session spend (session ids, providers, models, token counts).
-	// The WAL sidecars inherit the main db's mode on creation, and
-	// SeedOwnerOnly also tightens a pre-existing weaker file (the
-	// event store's Open does the same through the shared helper).
 	if err := fileperm.SeedOwnerOnly(path); err != nil {
 		return nil, err
 	}
@@ -214,10 +185,6 @@ func (c *CostLedger) CostBySession(ctx context.Context, since time.Time) (map[st
          WHERE ts >= ? GROUP BY session`)
 }
 
-// groupedUSD runs a (key, SUM(usd)) GROUP BY query over cost_rows since
-// the given time and collects the per-key totals. It replaces the
-// duplicated query-and-scan bodies of CostByProvider and CostBySession,
-// which differed only in the grouped column.
 func (c *CostLedger) groupedUSD(ctx context.Context, since time.Time, query string) (map[string]float64, error) {
 	rows, err := c.db.QueryContext(ctx, query, since.UTC().Format(time.RFC3339Nano))
 	if err != nil {
@@ -236,17 +203,14 @@ func (c *CostLedger) groupedUSD(ctx context.Context, since time.Time, query stri
 	return out, rows.Err()
 }
 
-// Close releases the DB.
+// Close closes the ledger.
 func (c *CostLedger) Close() error { return c.db.Close() }
 
-// ErrLedgerClosed is returned when methods are called after Close.
+// ErrLedgerClosed reports use of a closed ledger.
 var ErrLedgerClosed = errors.New("sqlite: cost ledger closed")
 
-// DefaultCostLedgerPath returns the canonical XDG state location.
+// DefaultCostLedgerPath returns ~/.local/state/gofastr/harness/cost-ledger.db.
 func DefaultCostLedgerPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".local", "state", "gofastr", "harness", "cost-ledger.db")
 }
-
-// Compile-time sanity that fmt.Sprintf isn't accidentally unused.
-var _ = fmt.Sprintf

@@ -1,10 +1,3 @@
-// Package openrouter implements the OpenRouter Provider.
-//
-// OpenRouter sits in front of dozens of upstream models; we speak the
-// OpenAI Chat Completions wire format. Model catalog comes from
-// /v1/models with TTL caching; pricing metadata feeds the cost
-// dashboard. HTTP-Referer and X-Title are required by some upstream
-// models, we set both unconditionally.
 package openrouter
 
 import (
@@ -24,31 +17,19 @@ import (
 )
 
 const (
-	defaultBase = "https://openrouter.ai/api/v1"
-
-	// modelsMaxBody caps the bytes decoded from the /models catalog
-	// response. The fetch carries the API key as a bearer header; a
-	// bigger body is a misbehaving endpoint, not a catalog to buffer
-	// to EOF. 1 MiB matches the OIDC/provider fetch convention
-	// (battery/auth oauthProviderMaxBody).
+	defaultBase   = "https://openrouter.ai/api/v1"
 	modelsMaxBody = 1 << 20
 )
 
-// Provider is the OpenRouter Provider.
+// Provider is the OpenRouter provider. Referer and Title are sent as HTTP-Referer and X-Title.
 type Provider struct {
-	APIKey string
-	HTTP   *http.Client
-
-	// BaseURL overrides the default endpoint (for tests / proxies).
+	APIKey  string
+	HTTP    *http.Client
 	BaseURL string
-
-	// Referer + Title are required by some upstream models on OpenRouter.
-	// Defaults: "https://gofastr.dev/harness" and "gofastr-harness".
 	Referer string
 	Title   string
 
-	// ModelCatalogTTL controls how long /models responses are cached.
-	// Default 1h.
+	// ModelCatalogTTL is how long a /models answer is cached; zero means one hour.
 	ModelCatalogTTL time.Duration
 
 	mu           sync.Mutex
@@ -95,10 +76,6 @@ func (p *Provider) Models(ctx context.Context) ([]provider.Model, error) {
 	req.Header.Set("Authorization", "Bearer "+p.APIKey)
 	client := p.HTTP
 	if client == nil {
-		// Redirects are refused (the oidcNoRedirect spelling from
-		// battery/auth/oidc.go): this fetch carries the API key as a
-		// bearer header, and a 3xx answer would re-send it to whatever
-		// origin the provider names.
 		client = &http.Client{
 			Timeout: 30 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
@@ -112,12 +89,6 @@ func (p *Provider) Models(ctx context.Context) ([]provider.Model, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		// The preview is PEER-RESPONSE bytes and this error reaches
-		// slog live (resources.ListProviders logs it): scrub the
-		// terminal-forgery set (C0/DEL/C1/bidi) at the
-		// error-construction site so a hostile or MITM'd endpoint
-		// cannot forge lines in the operator's log tail, keeping the
-		// HTTP status and a bounded preview for diagnosis.
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 		return nil, fmt.Errorf("openrouter /models: HTTP %d: %s", resp.StatusCode, textsafe.StripUnsafe(string(body)))
 	}
@@ -140,10 +111,6 @@ func (p *Provider) Models(ctx context.Context) ([]provider.Model, error) {
 	if err != nil {
 		return nil, fmt.Errorf("openrouter /models: read: %w", err)
 	}
-	// Strict-key walk before decode: a catalog carrying duplicate or
-	// case-folded keys resolves last-wins under stdlib json, so the
-	// harness would register model ids a first-read intermediary parsed
-	// differently (the SSE chunk rule; unknown fields stay tolerated).
 	if err := handler.CheckObjectKeys(rawModels, handler.FoldJSONKey); err != nil {
 		return nil, fmt.Errorf("openrouter /models: parse: %w", err)
 	}
@@ -171,10 +138,7 @@ func (p *Provider) Models(ctx context.Context) ([]provider.Model, error) {
 	return append([]provider.Model{}, out...), nil
 }
 
-// TokenCount returns a best-effort approximation. OpenRouter doesn't
-// have a tokenization endpoint; we fall back to a 4-chars-per-token
-// heuristic (the rate of thumb across English text for most modern
-// tokenizers).
+// TokenCount implements provider.Provider with provider.EstimateTokens.
 func (p *Provider) TokenCount(_ context.Context, _ string, msgs []provider.Message) (int, error) {
 	return provider.EstimateTokens(msgs), nil
 }
@@ -200,9 +164,6 @@ func (p *Provider) title() string {
 	return "gofastr-harness"
 }
 
-// OpenRouter prices come as strings in USD-per-token like "0.000003".
-// We convert to USD-per-million-tokens. Returns 0 on parse failure
-// (better than crashing the catalog).
 func parseUSDPerToken(s string) float64 {
 	if s == "" {
 		return 0

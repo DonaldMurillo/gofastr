@@ -1,5 +1,2 @@
-// Package control is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package control is the harness control plane: wire protocol, Client interface and stream seats.
 package control

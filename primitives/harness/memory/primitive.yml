@@ -1,0 +1,47 @@
+primitive: harness.memory
+summary: File-backed auto-memory - one markdown file with name, description and metadata.type frontmatter per entry plus a MEMORY.md index, all owner-only, with keyword-overlap lookup of relevant entries.
+code:
+  - framework/experimental/harness/memory/
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: name-is-a-slug
+    rule: Save and parse accept only names of ASCII letters, digits, - and _, so an entry file never lands outside the memory root.
+    enforced_by:
+      - test: framework/experimental/harness/memory.TestSaveRejectsPathEscape
+      - test: framework/experimental/harness/memory.TestSaveAcceptsSlugName
+  - id: entry-needs-description-and-known-type
+    rule: An entry with no description or a type other than user, feedback, project or reference is refused by Save and by parse on load.
+    enforced_by:
+      - test: framework/experimental/harness/memory.TestSaveRejectsMissingDescriptionAndUnknownType
+      - test: framework/experimental/harness/memory.TestParseRejectsMissingFields
+  - id: files-owner-only-on-overwrite
+    rule: Every Save writes the entry file and MEMORY.md 0600, tightening a pre-existing world-readable file.
+    enforced_by:
+      - test: framework/experimental/harness/memory.TestEntryOverwriteTightened
+      - test: framework/experimental/harness/memory.TestMemoryRedOverwriteTightened
+  - id: index-is-not-an-entry
+    rule: Loading the root skips MEMORY.md and directories, and fails on any other .md file without valid frontmatter.
+    enforced_by:
+      - test: framework/experimental/harness/memory.TestSaveAndReload
+  - id: name-and-description-outrank-body
+    rule: Relevant scores 3 for each query token found in an entry's name or description and 1 for one found only in its body, and returns the highest scores first, ties by name.
+    enforced_by:
+      - test: framework/experimental/harness/memory.TestRelevantScoring
+decisions:
+  - id: slug-allow-list
+    date: 2026-11-18
+    status: accepted
+    decision: Memory names are checked against a letters, digits, - and _ allow-list.
+    rejected:
+      - option: Clean the joined path and check it stays under the root.
+        why: Cleaning has to get "..", separators, NUL and Windows drive forms all right, and names are slugs by convention so the allow-list costs nothing.
+    upholds: [name-is-a-slug]
+  - id: keyword-overlap-ranking
+    date: 2026-11-18
+    status: accepted
+    decision: Relevant ranks by plain token overlap.
+    rejected:
+      - option: Embedding or BM25 ranking.
+        why: It adds a dependency and an index for a store of a few dozen hand-written entries.
+    revisit_if: Memory stores grow to hundreds of entries and the per-turn injection picks irrelevant ones.

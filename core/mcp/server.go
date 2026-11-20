@@ -1,7 +1,3 @@
-// Package mcp implements a Model Context Protocol server for GoFastr.
-//
-// It provides tool registration, JSON-RPC 2.0 message handling, and
-// transports for stdio and HTTP/SSE.
 package mcp
 
 import (
@@ -9,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -19,115 +16,57 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// ToolHandler is the function signature for MCP tool handlers. It receives a
-// context (carrying auth/tenant info) and a map of parameters.
-//
-// The return value is normalized into the tools/call response by result type:
-//   - mcp.ToolResult: explicit content blocks and/or structuredContent
-//   - mcp.ImageResult: a single base64 image block (renders inline)
-//   - mcp.Content / []mcp.Content: one or more content blocks (build with
-//     TextContent / ImageContent / AudioContent / ResourceContent)
-//   - string: a single text block
-//   - anything else: JSON-marshaled into a text block (the legacy default)
-//
-// A non-nil error is returned as a JSON-RPC error; report an in-band tool
-// failure with mcp.ToolResult{IsError: true} instead.
+// ToolHandler handles a tools/call; it returns a ToolResult, ImageResult, Content, []Content, string or any JSON value, and a non-nil error answers as a JSON-RPC error.
 type ToolHandler func(ctx context.Context, params map[string]any) (any, error)
 
-// Tool represents a registered MCP tool with its metadata and handler.
+// Tool is a registered MCP tool.
 type Tool struct {
 	Name         string         `json:"name"`
 	Description  string         `json:"description"`
 	InputSchema  map[string]any `json:"inputSchema"`
 	OutputSchema map[string]any `json:"outputSchema,omitempty"`
-	// Meta is serialized verbatim as the tool's `_meta` in tools/list. MCP
-	// Apps use it to link a tool to its UI resource, e.g.
-	// {"ui": {"resourceUri": "ui://app/widget.html"}} (and the ChatGPT
-	// compat alias "openai/outputTemplate").
+	// Annotations are the tool's behaviour hints in tools/list; see WithAnnotations.
+	Annotations *Annotations `json:"annotations,omitempty"`
+	// Meta is the tool's `_meta` in tools/list.
 	Meta    map[string]any `json:"_meta,omitempty"`
 	Handler ToolHandler    `json:"-"`
 
-	// Gate, when set, is a per-caller precondition evaluated BEFORE the
-	// handler on tools/call, and again in tools/list to decide whether this
-	// tool is visible to the caller at all. See WithToolGate.
+	// Gate hides the tool from tools/list and refuses tools/call for callers it refuses; see WithToolGate.
 	Gate func(ctx context.Context) error `json:"-"`
 
-	// LaxArgs opts the tool out of dispatch-time inputSchema
-	// validation. tools/call validates `arguments` against the declared
-	// InputSchema (types, required, additionalProperties as declared)
-	// and answers invalid-params BEFORE the handler runs; a tool that
-	// must receive its arguments verbatim -- a pass-through proxy, a
-	// schema that deliberately under-describes -- registers with
-	// WithLaxArgs and keeps validating on its own. Opting out is a
-	// contract the tool author owns: the declared schema stops being
-	// enforced, not merely described.
+	// LaxArgs turns off inputSchema validation of tools/call arguments; see WithLaxArgs.
 	LaxArgs bool `json:"-"`
 
-	// devImplied records that the tool exists only because a dev-mode
-	// implication turned it on (a dev loop enabling entity write tools or
-	// a battery's mutation surface), not because the host opted in. Set
-	// with WithDevImplied; read by UnregisterDevImpliedTools, which the
-	// framework's bind guard calls when the listener is not loopback.
-	// Deliberately unexported: it is wiring metadata between registrar
-	// and withdrawer, never a property clients see or set.
 	devImplied bool
 
-	// callHandler is the innermost handler of a Gated chain. Handler keeps
-	// the original wrapper for callers reading the public Tool value.
 	callHandler  ToolHandler
 	handlerGates []func(context.Context) error
 }
 
-// ToolOption customizes a tool at registration time.
+// ToolOption customizes a tool at registration.
 type ToolOption func(*Tool)
 
-// WithOutputSchema declares the JSON Schema for a tool's structuredContent.
+// WithOutputSchema declares the JSON Schema of the tool's structuredContent.
 func WithOutputSchema(schema map[string]any) ToolOption {
 	return func(t *Tool) { t.OutputSchema = schema }
 }
 
-// WithToolMeta attaches a `_meta` object to a tool, serialized verbatim in
-// tools/list. Use it for the MCP Apps UI linkage. Symmetric with
-// WithResourceMeta on the resource side.
+// WithToolMeta sets the tool's `_meta`, serialized verbatim in tools/list.
 func WithToolMeta(meta map[string]any) ToolOption {
 	return func(t *Tool) { t.Meta = meta }
 }
 
-// WithLaxArgs registers a tool whose `arguments` are NOT validated
-// against its declared inputSchema at dispatch time. The default (no
-// option) enforces the schema: JSON types, required keys, and
-// additionalProperties as declared, refusing non-conforming calls with
-// invalid-params before the handler runs. Reach for this only when the
-// tool must see its arguments verbatim and validates them itself; see
-// Tool.LaxArgs.
+// WithLaxArgs registers a tool whose arguments are not validated against its inputSchema; the tool validates them itself.
 func WithLaxArgs() ToolOption {
 	return func(t *Tool) { t.LaxArgs = true }
 }
 
-// WithDevImplied marks a tool as existing only because a dev-mode
-// implication turned it on — the dev loop enabling an entity's write tools,
-// or a battery's mutation surface implied by GOFASTR_DEV — rather than an
-// explicit host opt-in. Such tools are UNGATED by design (the dev loop has
-// no auth to satisfy) and are therefore only safe on a loopback listener;
-// the framework's bind guard withdraws exactly the marked set via
-// UnregisterDevImpliedTools once the listen address is known. An explicit
-// opt-in never marks its tools, so it is never withdrawn by that path.
+// WithDevImplied marks a tool that exists only because dev mode turned it on, so UnregisterDevImpliedTools withdraws it on a non-loopback bind.
 func WithDevImplied() ToolOption {
 	return func(t *Tool) { t.devImplied = true }
 }
 
-// WithToolGate attaches a per-caller precondition to a tool. The gate runs on
-// every tools/call before the handler, and is also evaluated during tools/list
-// so a caller who cannot invoke the tool does not see it.
-//
-// That second half is the point. [Gated] wraps a HANDLER, so it only ever
-// affected tools/call: an unauthenticated tools/list still returned the tool's
-// full inputSchema, which for entity CRUD tools is built from live entity
-// definitions: every entity name, every non-Hidden field, its type and its
-// enum set. The call refused; the schema was already out.
-//
-// Prefer this over [Gated] for anything registered directly on the server.
-// battery/auth's MCPUser() / MCPRole("admin") are ready-made gates.
+// WithToolGate attaches a per-caller gate that hides the tool from tools/list and refuses tools/call before argument validation. It panics on a nil gate.
 func WithToolGate(gate func(ctx context.Context) error) ToolOption {
 	if gate == nil {
 		panic("mcp.WithToolGate: nil gate — a nil precondition would silently allow every caller")
@@ -135,120 +74,50 @@ func WithToolGate(gate func(ctx context.Context) error) ToolOption {
 	return func(t *Tool) { t.Gate = gate }
 }
 
-// Server is an MCP server with a tool registry.
+// Server is an MCP server holding tool, resource, template and prompt registries.
 type Server struct {
 	mu    sync.RWMutex
 	tools map[string]Tool
 
-	// resources is the resource registry (resources/list + resources/read).
-	// Nil until the first RegisterResource. A non-empty registry makes
-	// initialize advertise the `resources` capability.
 	resources map[string]Resource
 
-	// name/version are advertised in the MCP `initialize` handshake
-	// (serverInfo). Defaults set in NewServer; override via SetServerInfo.
-	name    string
-	version string
+	name         string
+	version      string
+	instructions string
 
-	// prompts is the prompt registry (prompts/list + prompts/get). Nil
-	// until the first RegisterPrompt. A non-empty registry makes
-	// initialize advertise the `prompts` capability.
 	prompts map[string]Prompt
 
-	// templates is the resource-template registry
-	// (resources/templates/list). Nil until the first
-	// RegisterResourceTemplate. A non-empty templates registry also
-	// makes initialize advertise the `resources` capability.
 	templates map[string]ResourceTemplate
 
-	// listPageSize overrides the page size for every paginated list
-	// method; 0 = defaultListPageSize. Tests shrink it to force
-	// multi-page walks.
 	listPageSize int
 
-	// cursorSecret keys the HMAC that makes list cursors unforgeable.
-	// Random per process; see cursor.go for the encoding contract.
 	cursorSecret []byte
 
-	// registerHook, when set, is called for every RegisterTool call.
-	// Framework code uses it to attribute tools to the module whose Init
-	// registered them. Nil = no-op.
 	registerHook func(toolName string)
 
-	// devImpliedBarred, once set by UnregisterDevImpliedTools, makes every
-	// LATER RegisterTool carrying WithDevImplied a no-op (logged). The
-	// bind guard runs before Start's InitPlugins, so batteries register
-	// their dev-implied tools after the withdrawal; without the bar they
-	// would reintroduce the exposed-bind surface post-guard.
 	devImpliedBarred bool
-	// callGate, when set, is checked in callTool right after getTool.
-	// A non-nil error blocks the handler and returns a JSON-RPC error
-	// result without invoking the tool. Framework code uses it to gate
-	// tools owned by a disabled module.
-	callGate func(toolName string) error
+	warnUnannotated  bool
+	annotationWarned map[string]struct{}
+	callGate         func(toolName string) error
 
-	// serverGate, when set, is a per-caller precondition covering the whole
-	// JSON-RPC DATA surface: tools/list, tools/call, resources/list,
-	// resources/read, resources/templates/list, prompts/list and
-	// prompts/get. It is the switch for a host whose /mcp is private
-	// wholesale, as opposed to per-tool WithToolGate.
-	//
-	// initialize and ping are deliberately NOT covered. They carry only the
-	// protocol version, capability booleans and the server name, and a client
-	// that cannot complete the handshake cannot present credentials in a way
-	// any MCP client implements.
 	serverGate func(ctx context.Context) error
 
-	// allowedHosts pins the Host authorities this server answers on
-	// (the DNS-rebinding control). Empty = unpinned. See originOK.
-	allowedHosts []string
-	// allowedOrigins permits browser Origins that are not same-origin
-	// with the request: tunnels, split-origin dev clients.
-	allowedOrigins []string
-	// requireLoopbackHost restricts the transport to loopback Host
-	// authorities on any port. `gofastr dev` sets it because dev
-	// auto-enables the mutating control tools; it is the port-agnostic
-	// form of the allowedHosts pin.
+	allowedHosts        []string
+	allowedOrigins      []string
 	requireLoopbackHost bool
 
-	// sseMu guards the server-initiated notification machinery: the
-	// SSE subscriber registry and the resources/subscribe counts. It is
-	// deliberately NOT s.mu — notification fan-out happens on every
-	// registration and update, and must never contend with (or nest
-	// inside) the registry lock. The lock order is one-way: registry
-	// methods take s.mu, release it, then notify with sseMu; nothing
-	// takes sseMu while holding s.mu.
-	sseMu sync.Mutex
-	// sseSubs holds the live GET-stream subscribers
-	// (notifications.go). Initialized in NewServer; addSSESubscriber
-	// also grows it lazily for a zero-value Server.
-	sseSubs map[*sseSubscriber]struct{}
-	// resourceSubs counts active resources/subscribe requests per uri;
-	// NotifyResourceUpdated only fans out while a uri's count is
-	// positive. Connection-agnostic by transport necessity: there is no
-	// session id linking a POST to a GET stream.
-	resourceSubs map[string]int
-	// resourceSubsBy splits resourceSubs by the caller that subscribed
-	// (sseSeatKey's identity): resources/unsubscribe releases only the
-	// caller's own count, so one caller cannot switch off another's
-	// updates. Delivery still reads the per-uri total above.
-	resourceSubsBy map[resourceSubKey]int
-	// SSE subscriber seat policy (seats.go): how many concurrent
-	// notification streams one caller may hold, and what happens past
-	// the cap. sseSeatOrder is the per-caller FIFO the EvictOldest
-	// policy pops and removeSSESubscriber splices; it shadows sseSubs
-	// and is guarded by the same sseMu.
+	sseMu           sync.Mutex
+	sseSubs         map[*sseSubscriber]struct{}
+	resourceSubs    map[string]int
+	resourceSubsBy  map[resourceSubKey]int
 	sseSeatCap      int
 	sseStreamLimit  int
 	sseSeatOverflow SeatOverflowPolicy
 	sseSeatOrder    map[string][]*sseSubscriber
-	// sseKeepAlive overrides sseKeepAliveEvery, the interval at which an
-	// idle notification stream re-checks its caller and writes a comment
-	// line. Zero means the default; tests shrink it.
-	sseKeepAlive time.Duration
+	sseKeepAlive    time.Duration
 }
 
-// NewServer creates a new MCP server with an empty tool registry.
+// NewServer returns a server with empty registries.
 func NewServer() *Server {
 	return &Server{
 		tools:        make(map[string]Tool),
@@ -261,8 +130,7 @@ func NewServer() *Server {
 	}
 }
 
-// SetServerInfo overrides the name/version advertised in the MCP
-// `initialize` handshake (serverInfo). Call before serving requests.
+// SetServerInfo sets the serverInfo name and version initialize advertises.
 func (s *Server) SetServerInfo(name, version string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -270,42 +138,93 @@ func (s *Server) SetServerInfo(name, version string) {
 	s.version = version
 }
 
-// SetServerName overrides just the serverInfo name advertised in the
-// MCP initialize handshake, leaving the version at its default. Used by
-// hosts that know their app name but not a separate MCP server version.
+// SetServerName sets the serverInfo name initialize advertises.
 func (s *Server) SetServerName(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.name = name
 }
 
-// ServerInfo returns the name/version advertised in the MCP initialize
-// handshake. Used by well-known discovery artifacts (e.g. an MCP server
-// card) that mirror the handshake's serverInfo.
+// SetInstructions sets the instructions initialize returns, which tell a client when to use the server's tools; empty omits them.
+func (s *Server) SetInstructions(text string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.instructions = text
+}
+
+// Instructions returns the text SetInstructions set.
+func (s *Server) Instructions() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.instructions
+}
+
+// SetAnnotationWarnings logs a warning, once per tool, for each tool other than a WithDevImplied one that leaves readOnlyHint,
+// destructiveHint or openWorldHint unset: for the tools already registered when it is turned on, and for each later RegisterTool.
+func (s *Server) SetAnnotationWarnings(on bool) {
+	type pending struct{ name, missing string }
+	var warn []pending
+	s.mu.Lock()
+	s.warnUnannotated = on
+	if on {
+		for _, name := range slices.Sorted(maps.Keys(s.tools)) {
+			if missing := s.claimAnnotationWarning(s.tools[name]); missing != "" {
+				warn = append(warn, pending{name, missing})
+			}
+		}
+	}
+	s.mu.Unlock()
+	for _, w := range warn {
+		logUnhintedTool(w.name, w.missing)
+	}
+}
+
+func (s *Server) claimAnnotationWarning(t Tool) string {
+	if !s.warnUnannotated || t.devImplied {
+		return ""
+	}
+	if _, done := s.annotationWarned[t.Name]; done {
+		return ""
+	}
+	missing := missingListingHints(t.Annotations)
+	if len(missing) == 0 {
+		return ""
+	}
+	if s.annotationWarned == nil {
+		s.annotationWarned = make(map[string]struct{})
+	}
+	s.annotationWarned[t.Name] = struct{}{}
+	return strings.Join(missing, ", ")
+}
+
+func logUnhintedTool(name, missing string) {
+	slog.Warn("mcp: tool leaves annotation hints unset; directory listings such as ChatGPT's require them",
+		slog.String("tool", textsafe.SanitizeControlBytes(name)),
+		slog.String("missing", missing))
+}
+
+// ServerInfo returns the serverInfo name and version.
 func (s *Server) ServerInfo() (name, version string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.name, s.version
 }
 
-// SetRegisterHook installs a callback fired for every RegisterTool call.
-// Framework code uses it to attribute tools to the module whose Init
-// registered them. Pass nil to clear.
+// SetRegisterHook sets a callback run for every registered tool; nil clears it.
 func (s *Server) SetRegisterHook(fn func(toolName string)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.registerHook = fn
 }
 
-// SetCallGate installs a gate checked in callTool right after the tool
-// is resolved. A non-nil error blocks the handler and returns a JSON-RPC
-// error result. Framework code uses it to gate tools owned by a disabled
-// module. Pass nil to clear.
+// SetCallGate sets a gate by tool name; a refused tool answers as unknown and is left out of the listings; nil clears it.
 func (s *Server) SetCallGate(fn func(toolName string) error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.callGate = fn
 }
+
+// RegisterTool adds a tool; it errors on an empty name, a nil handler or a duplicate name.
 func (s *Server) RegisterTool(name, description string, inputSchema map[string]any, fn ToolHandler, opts ...ToolOption) error {
 	if name == "" {
 		return fmt.Errorf("mcp: tool name must not be empty")
@@ -328,13 +247,6 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 	s.mu.Lock()
 
 	if tool.devImplied && s.devImpliedBarred {
-		// A bind guard already withdrew the dev-implied set BEFORE this
-		// registrar ran (Start guards the bind before it inits
-		// plugins). Registering now would reintroduce, post-guard,
-		// exactly the exposed-bind surface the guard removed — so the
-		// registration is dropped instead. Not an error: a dev app on a
-		// non-loopback bind must still boot, minus its ungated
-		// dev-implied tools.
 		s.mu.Unlock()
 		slog.Warn("mcp: dev-implied tool not registered: listener is not loopback",
 			slog.String("tool", name))
@@ -348,16 +260,14 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 
 	s.tools[name] = tool
 	hook := s.registerHook
+	missing := s.claimAnnotationWarning(tool)
 	s.mu.Unlock()
+	if missing != "" {
+		logUnhintedTool(name, missing)
+	}
 	if hook != nil {
 		hook(name)
 	}
-	// Registration after serving has begun tells connected clients to
-	// re-list. "After serving has begun" needs no flag: before any
-	// subscriber exists the fan-out is a no-op, and a subscriber can
-	// only exist once serving has begun. The notification carries the
-	// tool's own gate: a caller the gate refuses cannot see the tool in
-	// tools/list, and must not be told it appeared either.
 	s.notifySubscribers(sseNotification{
 		method:   "notifications/tools/list_changed",
 		itemGate: tool.Gate,
@@ -365,31 +275,18 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 	return nil
 }
 
-// UnregisterTool removes a tool from the registry and reports whether it
-// was there. It exists for opt-ins that can only be withdrawn AFTER the
-// tool has already been registered: the framework's dev MCP registers its
-// mutating control tools during InitPlugins, but whether they may be
-// served at all depends on the listen address, which is not known until
-// Start. A host that calls InitPlugins itself, before Start, therefore
-// registers first and learns second — and clearing the intent flag at
-// that point changes nothing, because the tool is already in the map and
-// tools/list already names it.
-//
-// Withdrawal is not a substitute for not registering: prefer deciding
-// before RegisterTool wherever the information is available.
+// UnregisterTool removes a tool and reports whether it was registered.
 func (s *Server) UnregisterTool(name string) bool {
 	s.mu.Lock()
 	tool, ok := s.tools[name]
 	if ok {
 		delete(s.tools, name)
+		delete(s.annotationWarned, name)
 	}
 	s.mu.Unlock()
 	if !ok {
 		return false
 	}
-	// Same re-list notification a registration sends, carrying the same
-	// gate: a caller who could never see the tool must not be told it
-	// went away either.
 	s.notifySubscribers(sseNotification{
 		method:   "notifications/tools/list_changed",
 		itemGate: tool.Gate,
@@ -397,32 +294,19 @@ func (s *Server) UnregisterTool(name string) bool {
 	return true
 }
 
-// UnregisterDevImpliedTools removes every tool registered with
-// WithDevImplied and returns the withdrawn names in name order (empty
-// when nothing was marked — the common case for apps that never ran the
-// dev implication). It is the set-shaped twin of UnregisterTool: dev-implied
-// tools (entity write tools, a battery's implied mutation, the contract
-// dev tools that write to disk) register ungated across InitPlugins and
-// entity registration, but whether they may be SERVED depends on the
-// listen address, which is not known until Start — after every registrar
-// has already run. The bind guard therefore withdraws the whole marked set
-// at once instead of each feature re-deriving its own list, which is how
-// the exposed-bind hole this closes was born: one feature remembered to
-// withdraw, the others did not.
+// UnregisterDevImpliedTools removes every WithDevImplied tool, returns their names sorted, and ignores later WithDevImplied registrations.
 func (s *Server) UnregisterDevImpliedTools() []string {
 	type withdrawn struct {
 		name string
 		gate func(ctx context.Context) error
 	}
 	s.mu.Lock()
-	// Bar future registrations too: the bind guard runs before Start's
-	// InitPlugins, so battery-registered dev-implied tools arrive after
-	// this sweep and must not reintroduce what it removed.
 	s.devImpliedBarred = true
 	var out []withdrawn
 	for name, tool := range s.tools {
 		if tool.devImplied {
 			delete(s.tools, name)
+			delete(s.annotationWarned, name)
 			out = append(out, withdrawn{name: name, gate: tool.Gate})
 		}
 	}
@@ -434,9 +318,6 @@ func (s *Server) UnregisterDevImpliedTools() []string {
 	names := make([]string, len(out))
 	for i, w := range out {
 		names[i] = w.name
-		// Same re-list notification a registration (or UnregisterTool)
-		// sends, carrying the same gate: a caller who could never see
-		// the tool must not be told it went away either.
 		s.notifySubscribers(sseNotification{
 			method:   "notifications/tools/list_changed",
 			itemGate: w.gate,
@@ -445,7 +326,6 @@ func (s *Server) UnregisterDevImpliedTools() []string {
 	return names
 }
 
-// getTool returns a tool by name. The bool indicates whether it was found.
 func (s *Server) getTool(name string) (Tool, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -453,11 +333,7 @@ func (s *Server) getTool(name string) (Tool, bool) {
 	return t, ok
 }
 
-// HasTool reports whether a tool is registered under name, regardless of
-// gates or visibility. Registration-time collision checks need this
-// ground truth: the caller-filtered listings hide gated tools whose
-// names are nonetheless taken, and a collision discovered only at
-// RegisterTool time is discovered after sibling state already committed.
+// HasTool reports whether a tool is registered under name, whatever its gates.
 func (s *Server) HasTool(name string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -465,22 +341,12 @@ func (s *Server) HasTool(name string) bool {
 	return ok
 }
 
-// ListTools returns all registered tools whose call gate (if set)
-// allows them. Tools owned by a disabled module are excluded. Handlers
-// are nilled out for safety.
-//
-// It does NOT apply per-tool caller gates ([WithToolGate]). There is no
-// caller to evaluate them against. It is a Go-API introspection call for
-// in-process code that already holds the server. Never serve its output to a
-// remote caller: use [Server.ListToolsFor] with the request context, which is
-// what the JSON-RPC tools/list path does.
+// ListTools returns the tools the call gate allows, without applying per-caller gates; never serve it to a remote caller, use ListToolsFor.
 func (s *Server) ListTools() []Tool {
 	return s.listToolsUnfiltered()
 }
 
-// ListToolsFor returns the tools visible to the caller ctx identifies:
-// per-tool gates and the server-wide gate are both applied. This is the
-// listing tools/list serves.
+// ListToolsFor returns the tools visible to the caller in ctx, as tools/list serves them.
 func (s *Server) ListToolsFor(ctx context.Context) ([]Tool, error) {
 	if err := s.checkServerGate(ctx); err != nil {
 		return nil, err
@@ -488,25 +354,12 @@ func (s *Server) ListToolsFor(ctx context.Context) ([]Tool, error) {
 	return s.listTools(ctx), nil
 }
 
-// listTools returns all registered tools (without handlers), excluding
-// any whose call gate refuses them (e.g. tools owned by a disabled
-// module), sorted by name. The sort is what makes pagination sound: pages
-// are cut from this listing across separate requests, so map iteration
-// order would reshuffle items between pages and duplicate or drop them.
 func (s *Server) listTools(ctx context.Context) []Tool {
-	// Snapshot the registry AND the gate under the read lock, then
-	// evaluate every gate OUTSIDE it. Gates are app-supplied callback
-	// code (an auth check free to do I/O), and notifications.go states
-	// this package's own rule: per-caller gates "must never contend
-	// with (or nest inside) the registry lock". One slow gate used to
-	// block every registration — and Go's RWMutex is writer-preferring,
-	// so a queued RegisterTool blocked every other reader too; a gate
-	// that re-entered the registry (module toggles re-register tools)
-	// deadlocked it outright.
 	s.mu.RLock()
 	gate := s.callGate
 	snapshot := make([]Tool, 0, len(s.tools))
 	for _, t := range s.tools {
+		t.Annotations = clonedAnnotations(t.Annotations)
 		snapshot = append(snapshot, t)
 	}
 	s.mu.RUnlock()
@@ -514,10 +367,8 @@ func (s *Server) listTools(ctx context.Context) []Tool {
 	tools := make([]Tool, 0, len(snapshot))
 	for _, t := range snapshot {
 		if gate != nil && runCallGate(gate, t.Name) != nil {
-			continue // gated tool excluded from listing
+			continue
 		}
-		// A tool the caller cannot invoke is not listed to them: the
-		// inputSchema is the disclosure, not the call.
 		if gateRefused(t.Gate, ctx) {
 			continue
 		}
@@ -527,12 +378,6 @@ func (s *Server) listTools(ctx context.Context) []Tool {
 	return tools
 }
 
-// gateRefused evaluates an app-supplied gate under a recover guard and
-// reports whether the caller is refused. A panic in gate code fails
-// CLOSED — the item is hidden from the listing — and never unwinds into
-// the transport loop (stdio has no per-request recover net). The same
-// contract checkPromptGate and gateAllows carry, shaped for the listing
-// filters.
 func gateRefused(gate func(ctx context.Context) error, ctx context.Context) (refused bool) {
 	if gate == nil {
 		return false
@@ -547,14 +392,6 @@ func gateRefused(gate func(ctx context.Context) error, ctx context.Context) (ref
 	return gate(ctx) != nil
 }
 
-// checkToolGate runs a tool's caller gate ([WithToolGate]) under a
-// recover guard — the prompt-side contract of checkPromptGate. A
-// panicking gate must become a well-formed internal error, never a
-// transport crash; on stdio there is no net/http per-request recover
-// net, so an escaped panic kills the whole process. The gate's raw
-// error is returned; callTool answers it with maskedRefusalRPC, so an
-// unmarked refusal reads as an unknown tool and only a ShowRefusal
-// error's message crosses.
 func (s *Server) checkToolGate(ctx context.Context, t Tool) (err error) {
 	if t.Gate == nil {
 		return nil
@@ -572,12 +409,6 @@ func (s *Server) checkToolGate(ctx context.Context, t Tool) (err error) {
 	return nil
 }
 
-// gateRefusal is the JSON-RPC error a gate's refusal answers as. A gate
-// that returns its own *RPCError keeps its code and message, as Gated,
-// WithResourceGate and WithPromptGate always did; any other error is a
-// caller-facing refusal on invalid params carrying its message. Wrapping
-// an *RPCError a second time answered -32602 with "RPC error -32001: ..."
-// on the tool and server-wide gates alone.
 func gateRefusal(err error) *RPCError {
 	if rpcErr, ok := errors.AsType[*RPCError](err); ok {
 		return rpcErr
@@ -585,12 +416,6 @@ func gateRefusal(err error) *RPCError {
 	return &RPCError{Code: ErrInvalidParams, Message: err.Error()}
 }
 
-// runCallGate evaluates the registry-wide call gate with the same net
-// checkToolGate gives the per-tool gate: a panicking gate refuses the
-// call instead of unwinding the transport loop it runs on
-// (recovercallback pins this). The recovered value is logged before
-// the error is returned — a swallowed panic is indistinguishable from
-// a refusal storm in the logs (review 6).
 func runCallGate(gate func(toolName string) error, name string) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -605,14 +430,12 @@ func runCallGate(gate func(toolName string) error, name string) (err error) {
 	return gate(name)
 }
 
-// listToolsUnfiltered applies only the name-based call gate (disabled
-// modules), not per-caller gates. See ListTools. The gate evaluation
-// follows the same outside-the-lock rule as listTools.
 func (s *Server) listToolsUnfiltered() []Tool {
 	s.mu.RLock()
 	gate := s.callGate
 	snapshot := make([]Tool, 0, len(s.tools))
 	for _, t := range s.tools {
+		t.Annotations = clonedAnnotations(t.Annotations)
 		snapshot = append(snapshot, t)
 	}
 	s.mu.RUnlock()
@@ -627,28 +450,13 @@ func (s *Server) listToolsUnfiltered() []Tool {
 	return tools
 }
 
-// SetGate installs a server-wide precondition over the JSON-RPC data surface
-// (tools/list, tools/call, resources/list, resources/read,
-// resources/templates/list, resources/subscribe, resources/unsubscribe,
-// prompts/list, prompts/get). Pass nil to clear it. See the serverGate field
-// for why initialize and ping stay open. The gate also filters
-// server-initiated notifications per subscriber: a caller it refuses
-// receives nothing on the SSE stream, not even a list_changed.
-//
-// Use it when the whole /mcp endpoint is private. For a mixed surface,
-// public read tools and gated mutating ones, attach per-tool gates with
-// [WithToolGate] instead, which also filters the listing per caller.
+// SetGate sets a server-wide gate over every tools, resources and prompts method and the notification stream; initialize and ping stay open; nil clears it.
 func (s *Server) SetGate(gate func(ctx context.Context) error) {
 	s.mu.Lock()
 	s.serverGate = gate
 	s.mu.Unlock()
 }
 
-// checkServerGate evaluates the server-wide gate, if any, with the
-// same fail-closed net checkToolGate gives the per-tool gate: a
-// panicking gate answers as an error, not an unwound transport
-// (recovercallback pins this), and the recovered value is logged
-// before that answer (review 6).
 func (s *Server) checkServerGate(ctx context.Context) (err error) {
 	s.mu.RLock()
 	gate := s.serverGate
@@ -668,28 +476,12 @@ func (s *Server) checkServerGate(ctx context.Context) (err error) {
 	return gate(ctx)
 }
 
-// CallTool is the exported form of callTool: invokes a registered tool
-// by name with the given params. Use this when calling MCP tools
-// in-process (tests, server-side integrations) without going through
-// the JSON-RPC transport layer.
-//
-// It runs the tool's own gate ([WithToolGate]) against ctx, so an in-process
-// caller must carry the identity the gate expects. It does NOT run the
-// server-wide gate ([Server.SetGate]). That one describes who may reach the
-// /mcp ENDPOINT, and an in-process caller is not coming through it. Every
-// remote transport dispatches via HandleRequest, which does apply it. A
-// remote caller arriving through another surface goes through
-// [Server.CallToolFor].
+// CallTool runs a tool in process with its own gates and argument validation, but not the server-wide gate.
 func (s *Server) CallTool(ctx context.Context, name string, params map[string]any) (any, error) {
 	return s.callTool(ctx, name, params)
 }
 
-// CallToolFor invokes a tool for a remote caller that reaches it through
-// a surface other than /mcp, such as the A2A exchange. ctx carries that
-// caller. The server-wide gate ([Server.SetGate]) runs first, then
-// everything [Server.CallTool] runs, so the second surface cannot reach a
-// tool the gate closes /mcp over. A refusal answers as tools/call does:
-// invalid params carrying the gate's message.
+// CallToolFor runs a tool for a remote caller arriving through another surface: the server-wide gate first, then everything CallTool runs.
 func (s *Server) CallToolFor(ctx context.Context, name string, params map[string]any) (any, error) {
 	if err := s.checkServerGate(ctx); err != nil {
 		return nil, gateRefusal(err)
@@ -697,7 +489,6 @@ func (s *Server) CallToolFor(ctx context.Context, name string, params map[string
 	return s.callTool(ctx, name, params)
 }
 
-// callTool executes a registered tool by name with the given params.
 func (s *Server) callTool(ctx context.Context, name string, params map[string]any) (any, error) {
 	t, ok := s.getTool(name)
 	if !ok {
@@ -707,12 +498,6 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 		}
 	}
 
-	// Call gate: framework code uses this to block tools owned by a
-	// disabled module. Read under RLock to avoid a data race with
-	// SetCallGate. The refusal answers exactly as an unknown tool — the
-	// two-layer module gate's own rule (disabled is indistinguishable
-	// from uninstalled), and the only answer that names no module or
-	// disabled state: a distinct "unavailable" confirmed the tool.
 	s.mu.RLock()
 	gate := s.callGate
 	s.mu.RUnlock()
@@ -725,11 +510,6 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 		}
 	}
 
-	// Per-tool caller gate (WithToolGate). Runs before the handler; the
-	// same predicate decided whether this tool appeared in tools/list.
-	// An unmarked refusal answers exactly as an unknown tool, so the
-	// call cannot confirm a gated tool exists; ShowRefusal opts a gate's
-	// message back across.
 	if gErr := s.checkToolGate(ctx, t); gErr != nil {
 		return nil, maskedRefusalRPC(gErr, &RPCError{
 			Code:    ErrMethodNotFound,
@@ -737,9 +517,6 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 		})
 	}
 
-	// Gated wrappers carry the same caller boundary as WithToolGate.
-	// Run their gates before schema validation, which would otherwise
-	// disclose a hidden tool's required fields to a refused caller.
 	for _, gate := range t.handlerGates {
 		if gErr := gatedCall(gate, ctx); gErr != nil {
 			return nil, maskedRefusalRPC(gErr, &RPCError{
@@ -749,12 +526,6 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 		}
 	}
 
-	// Arguments must conform to the tool's declared inputSchema before
-	// the handler runs. The schema tools/list advertises is the
-	// contract the caller is held to: type confusion, missing required
-	// keys, and unknown keys under additionalProperties:false are
-	// refused here, so no handler has to re-implement JSON typing.
-	// LaxArgs opts a tool out (Tool.LaxArgs / WithLaxArgs).
 	if !t.LaxArgs {
 		if err := validateToolArgs(t.InputSchema, params); err != nil {
 			return nil, &RPCError{
@@ -766,7 +537,6 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 
 	result, err := s.invokeHandler(ctx, t, params)
 	if err != nil {
-		// An unmarked Gated refusal: answer as an unknown tool.
 		if errors.Is(err, errGatedHidden) {
 			return nil, &RPCError{
 				Code:    ErrMethodNotFound,
@@ -776,12 +546,6 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 		if rpcErr, ok := callerFacingError(ctx, err); ok {
 			return nil, rpcErr
 		}
-		// A plain error is internal detail (filesystem paths, driver
-		// and DSN text, internal hostnames) and must not cross the
-		// transport — the same posture invokeHandler's panic path
-		// takes. Log it server-side and answer the generic message.
-		// Caller-visible failures use mcp.ToolResult{IsError: true},
-		// a deliberate *RPCError, or a typed 4xx *handler.Error.
 		slog.Error("mcp: tool handler failed",
 			slog.String("tool", name),
 			slog.String("err", err.Error()))
@@ -793,8 +557,6 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 	return result, nil
 }
 
-// callerFacingError is the one rule for which tool, prompt and resource
-// callback errors cross the transport: an *RPCError, or a typed 4xx *handler.Error.
 func callerFacingError(ctx context.Context, err error) (*RPCError, bool) {
 	if rpcErr, ok := errors.AsType[*RPCError](err); ok {
 		return rpcErr, true
@@ -815,14 +577,6 @@ func callerFacingError(ctx context.Context, err error) (*RPCError, bool) {
 	return &RPCError{Code: ErrInvalidParams, Message: message, Data: data}, true
 }
 
-// invokeHandler runs a tool handler with a recover() guard so a panic
-// inside attacker-reachable handler code (e.g. an unchecked type
-// assertion on request-supplied arguments) becomes a well-formed
-// JSON-RPC internal error instead of unwinding the transport loop. This
-// matters most for ServeStdio, which has no net/http per-request recover
-// net and would otherwise crash the entire process. The recovered panic
-// value is deliberately NOT echoed to the caller to avoid leaking
-// internal details.
 func (s *Server) invokeHandler(ctx context.Context, t Tool, params map[string]any) (result any, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {

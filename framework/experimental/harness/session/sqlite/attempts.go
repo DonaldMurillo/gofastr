@@ -7,19 +7,17 @@ import (
 	"time"
 )
 
-// ProviderAttempt records one provider HTTP call. Used by the cost
-// reconciliation job to compare local estimates against provider-side
-// usage APIs (OpenRouter /credits, ZAI /billing/usage, etc.).
+// ProviderAttempt is one provider HTTP call with its token counts and estimated cost.
 type ProviderAttempt struct {
 	ID               int64
 	Session          string
 	Turn             int
 	Provider         string
 	Model            string
-	RequestID        string // upstream request ID when surfaced
+	RequestID        string
 	StartedAt        time.Time
 	EndedAt          time.Time
-	TerminatedReason string // "complete" | "eof" | "timeout" | "cancel" | "http_error"
+	TerminatedReason string
 	InputTokens      int
 	OutputTokens     int
 	CacheReadTokens  int
@@ -27,7 +25,6 @@ type ProviderAttempt struct {
 	EstimatedUSD     float64
 }
 
-// migration: provider_attempts table.
 const attemptsSchema = `
 CREATE TABLE IF NOT EXISTS provider_attempts (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,8 +59,7 @@ CREATE TABLE IF NOT EXISTS reconciliations (
 );
 `
 
-// EnsureAttemptsSchema applies the provider_attempts migration. Safe
-// to call repeatedly.
+// EnsureAttemptsSchema creates the provider_attempts and reconciliations tables if missing.
 func (s *Store) EnsureAttemptsSchema(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -71,8 +67,7 @@ func (s *Store) EnsureAttemptsSchema(ctx context.Context) error {
 	return err
 }
 
-// RecordAttempt inserts a provider_attempts row, returning the
-// assigned ID.
+// RecordAttempt inserts a provider_attempts row and returns its id.
 func (s *Store) RecordAttempt(ctx context.Context, a ProviderAttempt) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -96,8 +91,7 @@ func (s *Store) RecordAttempt(ctx context.Context, a ProviderAttempt) (int64, er
 	return res.LastInsertId()
 }
 
-// AttemptsForTurn returns all attempts for one turn. Useful when
-// computing the true cost of a turn that retried.
+// AttemptsForTurn returns the attempts of one turn, oldest first.
 func (s *Store) AttemptsForTurn(ctx context.Context, session string, turn int) ([]ProviderAttempt, error) {
 	rows, err := s.db.QueryContext(ctx, `
         SELECT id, session, turn, provider, model, request_id,
@@ -130,8 +124,7 @@ func (s *Store) AttemptsForTurn(ctx context.Context, session string, turn int) (
 	return out, rows.Err()
 }
 
-// Reconciliation is one reconciliation pass against an upstream
-// provider's billing API.
+// Reconciliation is one comparison of upstream-billed and locally estimated USD.
 type Reconciliation struct {
 	ID          int64
 	Provider    string
@@ -143,7 +136,7 @@ type Reconciliation struct {
 	RanAt       time.Time
 }
 
-// SaveReconciliation persists a reconciliation result.
+// SaveReconciliation stores r with VarianceUSD recomputed as UpstreamUSD - LocalUSD.
 func (s *Store) SaveReconciliation(ctx context.Context, r Reconciliation) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -164,8 +157,7 @@ func (s *Store) SaveReconciliation(ctx context.Context, r Reconciliation) (int64
 	return res.LastInsertId()
 }
 
-// LocalCostInPeriod returns the local-estimated USD for one provider
-// across the time window. Used by the reconciliation job.
+// LocalCostInPeriod sums the estimated USD of one provider's attempts that started and ended inside [start, end].
 func (s *Store) LocalCostInPeriod(ctx context.Context, provider string, start, end time.Time) (float64, error) {
 	var usd float64
 	row := s.db.QueryRowContext(ctx, `
@@ -181,19 +173,15 @@ func (s *Store) LocalCostInPeriod(ctx context.Context, provider string, start, e
 	return usd, nil
 }
 
-// UpstreamUsageFetcher is the abstraction the reconciliation job uses
-// to pull billing data from a provider. Each Provider package can
-// implement this if its upstream offers a usage API.
+// UpstreamUsageFetcher reads a provider's billed USD for a period.
 type UpstreamUsageFetcher interface {
-	// Name returns the provider name (matches ProviderAttempt.Provider).
+	// Name returns the provider name as stored in ProviderAttempt.Provider.
 	Name() string
-	// FetchUsageUSD returns the upstream-reported USD spent in the
-	// given period.
+	// FetchUsageUSD returns the upstream-reported USD spent in the period.
 	FetchUsageUSD(ctx context.Context, start, end time.Time) (float64, error)
 }
 
-// ReconcileNow runs one reconciliation pass for the given provider.
-// Returns the diff. Callers schedule this daily.
+// ReconcileNow compares the fetcher's billed USD with the local estimate over the last period and saves the result.
 func (s *Store) ReconcileNow(ctx context.Context, fetcher UpstreamUsageFetcher, period time.Duration) (Reconciliation, error) {
 	end := time.Now().UTC()
 	start := end.Add(-period)
@@ -219,5 +207,5 @@ func (s *Store) ReconcileNow(ctx context.Context, fetcher UpstreamUsageFetcher, 
 	return r, nil
 }
 
-// ErrNoReconciliations sentinel.
+// ErrNoReconciliations reports that no reconciliation has been recorded.
 var ErrNoReconciliations = errors.New("sqlite: no reconciliations recorded")

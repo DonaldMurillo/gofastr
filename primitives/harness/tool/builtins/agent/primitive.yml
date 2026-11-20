@@ -1,0 +1,16 @@
+primitive: harness.tool.builtins.agent
+summary: The Agent tool - runs a sub-agent through the Spawner in the dispatch context and returns its final text, refusing past the sub-agent depth limit.
+code:
+  - framework/experimental/harness/tool/builtins/agent*.go
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: spawn-depth-limit
+    rule: Agent refuses with an error result, without calling the Spawner, when the context's sub-agent depth is MaxSpawnDepth or more, and spawns below it.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestAgentRefusesPastMaxDepth
+      - test: framework/experimental/harness/tool/builtins.TestAgentAllowedUnderMaxDepth
+  - id: missing-spawner-is-error-result
+    rule: Agent with no Spawner in the context returns an error result instead of panicking.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestAgentNoSpawnerInCtxIsErrorNotPanic

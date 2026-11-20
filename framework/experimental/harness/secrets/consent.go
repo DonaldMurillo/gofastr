@@ -13,53 +13,33 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
-// A cloned repo's .harness-secrets/env can hold the repo author's own
-// provider keys. When the operator has none of their own, LoadRepo set
-// them silently and the session ran, and billed, on the author's
-// account, with the author able to read every prompt on their provider
-// dashboard. LoadWithConsent asks first: once per repository and key
-// set, remembered like an "Allow always" permission scoped to the
-// directory, and a run with nobody to ask refuses the keys.
-
-// ApprovalsFile is the file, under the harness config directory, that
-// remembers which repositories may supply which provider keys.
+// ApprovalsFile is the name of the file, in the harness config directory, that remembers approved repositories and keys.
 const ApprovalsFile = "repo-secrets.json"
 
-// maxApprovalsBytes bounds the approvals read.
 const maxApprovalsBytes = 1 << 20
 
-// Request is what a consent prompt shows: the secrets file and the
-// provider keys it would set because the environment lacks them.
+// Request is what a consent prompt shows: the secrets file, its repository and the sorted key names it would set.
 type Request struct {
-	Path string   // the .harness-secrets/env file
-	Dir  string   // the repository directory holding it
-	Keys []string // sorted key names, never values
+	Path string
+	Dir  string
+	Keys []string
 }
 
-// Ask decides a Request. It returns approve=true to use the keys (and
-// remember the answer). A nil Ask means nobody can be asked.
+// Ask decides a Request; true approves and remembers it. A nil Ask means nobody can be asked.
 type Ask func(Request) (approve bool, err error)
 
-// Result says what LoadWithConsent did.
+// Result says what LoadWithConsent did: Applied when keys were set, Remembered when an earlier approval allowed it.
 type Result struct {
 	Request
-	// Applied is true when the keys were set in the environment.
-	Applied bool
-	// Remembered is true when they were set from an earlier approval.
+	Applied    bool
 	Remembered bool
 }
 
-// ErrRefused is returned when the file would supply keys and neither an
-// earlier approval, allow, nor ask approved them. The keys are not set.
+// ErrRefused is returned when nothing approved the keys the file would supply; none are set.
 var ErrRefused = errors.New("secrets: repository-supplied provider keys not approved")
 
-// LoadWithConsent finds .harness-secrets/env above dir and sets the
-// provider keys it would supply only with consent: a remembered
-// approval for this directory covering every key, allow (an explicit
-// operator flag), or ask returning true, which is then remembered in
-// approvalsPath. With none of them it sets nothing and returns
-// ErrRefused, so a non-interactive run never borrows a repo's account.
-// A file that supplies nothing the environment lacks asks nothing.
+// LoadWithConsent sets the keys .harness-secrets/env above dir would supply only when an approval in approvalsPath covers them,
+// allow is true, or ask approves (and is remembered); otherwise it returns ErrRefused.
 func LoadWithConsent(dir, approvalsPath string, allow bool, ask Ask) (Result, error) {
 	path, ok := findSecretsFile(dir)
 	if !ok {
@@ -145,8 +125,6 @@ func readApprovals(path string) (approvalList, error) {
 	return list, nil
 }
 
-// covers reports whether an earlier approval for req.Dir named every
-// key req asks about. A new key in the file asks again.
 func (l approvalList) covers(req Request) bool {
 	for _, a := range l.Approvals {
 		if a.Dir != req.Dir {
@@ -166,7 +144,6 @@ func (l approvalList) covers(req Request) bool {
 	return false
 }
 
-// remember adds req's directory and keys and writes the list owner-only.
 func (l approvalList) remember(path string, req Request) error {
 	if path == "" {
 		return nil

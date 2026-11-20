@@ -181,74 +181,78 @@ func TestHTTPQuery_InvalidJSONDoesNotEchoDecoderInternals(t *testing.T) {
 	}
 }
 
-// Property: the /index API refuses duplicate and case-folded top-level JSON
-// keys. Stdlib encoding/json keeps the LAST duplicate and binds case-folded
-// spellings onto the tagged field, so {"documents":[A],"documents":[B]}
-// indexes batch B while an audit log (or intercepting proxy) records A —
-// the ambiguity itself is the bug; strict decoding refuses it.
-func TestIndexRejectsDuplicateJSONKeys(t *testing.T) {
-	h := Handler(errIndex{}, WithAuthToken("red-token"))
-	// First occurrence indexes doc "a"; the smuggled last value swaps the
-	// batch for doc "b".
-	body := `{"documents":[{"id":"a","text":"alpha"}],"documents":[{"id":"b","text":"beta"}]}`
-	req := httptest.NewRequest(http.MethodPost, "/index", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer red-token")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("SECURITY: [semantic-index-strict-keys] POST /index with duplicate \"documents\" key returned %d %q — last-wins swapped the indexed batch; want 400", rec.Code, rec.Body.String())
+// Property: the /index and /query APIs refuse duplicate and case-folded
+// top-level JSON keys. Stdlib encoding/json keeps the LAST duplicate and
+// binds case-folded spellings onto the tagged field, so
+// {"documents":[A],"documents":[B]} indexes batch B while an audit log
+// (or intercepting proxy) records A, and a smuggled second "text"
+// silently swaps the query the audit trail recorded — the ambiguity
+// itself is the bug; strict decoding refuses it.
+func TestRejectsDuplicateAndFoldedJSONKeys(t *testing.T) {
+	cases := []struct {
+		name  string // also the SECURITY message noun for where the keys collided
+		scope string // index or query, for the message tag
+		path  string
+		body  string
+		keys  string // what the request smuggled, for the failure message
+		why   string // the consequence last-wins decoding would allow
+	}{
+		{
+			name:  "index duplicate documents key",
+			scope: "index",
+			path:  "/index",
+			// First occurrence indexes doc "a"; the smuggled last value
+			// swaps the batch for doc "b".
+			body: `{"documents":[{"id":"a","text":"alpha"}],"documents":[{"id":"b","text":"beta"}]}`,
+			keys: `duplicate "documents" key`,
+			why:  "last-wins swapped the indexed batch",
+		},
+		{
+			name:  "index folded Documents key",
+			scope: "index",
+			path:  "/index",
+			// "Documents" is not the wire tag, but stdlib json still binds
+			// it via the case-insensitive tag fallback, so the folded
+			// spelling smuggles a second batch exactly like the exact
+			// duplicate does.
+			body: `{"Documents":[{"id":"a","text":"alpha"}],"documents":[{"id":"b","text":"beta"}]}`,
+			keys: `case-folded "Documents"/"documents" keys`,
+			why:  "the folded spelling still binds the tagged field last-wins",
+		},
+		{
+			name:  "query duplicate text key",
+			scope: "query",
+			path:  "/query",
+			body:  `{"text":"alpha","text":"omega"}`,
+			keys:  `duplicate "text" key`,
+			why:   "last-wins swapped the query text",
+		},
+		{
+			name:  "query folded Text key",
+			scope: "query",
+			path:  "/query",
+			// "Text" binds the json:"text" tag via the case-insensitive
+			// fallback, so the folded spelling smuggles a second query
+			// value.
+			body: `{"Text":"alpha","text":"omega"}`,
+			keys: `case-folded "Text"/"text" keys`,
+			why:  "the folded spelling still binds the tagged field last-wins",
+		},
 	}
-}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := Handler(errIndex{}, WithAuthToken("red-token"))
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer red-token")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
 
-func TestIndexRejectsFoldedJSONKeys(t *testing.T) {
-	h := Handler(errIndex{}, WithAuthToken("red-token"))
-	// "Documents" is not the wire tag, but stdlib json still binds it via
-	// the case-insensitive tag fallback, so the folded spelling smuggles a
-	// second batch exactly like the exact duplicate does.
-	body := `{"Documents":[{"id":"a","text":"alpha"}],"documents":[{"id":"b","text":"beta"}]}`
-	req := httptest.NewRequest(http.MethodPost, "/index", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer red-token")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("SECURITY: [semantic-index-strict-keys] POST /index with case-folded \"Documents\"/\"documents\" keys returned %d %q — the folded spelling still binds the tagged field last-wins; want 400", rec.Code, rec.Body.String())
-	}
-}
-
-// Property: /query refuses duplicate and case-folded top-level JSON keys for
-// the same reason — a smuggled second "text" silently swaps the query the
-// audit trail recorded.
-func TestQueryRejectsDuplicateJSONKeys(t *testing.T) {
-	h := Handler(errIndex{}, WithAuthToken("red-token"))
-	body := `{"text":"alpha","text":"omega"}`
-	req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer red-token")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("SECURITY: [semantic-query-strict-keys] POST /query with duplicate \"text\" key returned %d %q — last-wins swapped the query text; want 400", rec.Code, rec.Body.String())
-	}
-}
-
-func TestQueryRejectsFoldedJSONKeys(t *testing.T) {
-	h := Handler(errIndex{}, WithAuthToken("red-token"))
-	// "Text" binds the json:"text" tag via the case-insensitive fallback,
-	// so the folded spelling smuggles a second query value.
-	body := `{"Text":"alpha","text":"omega"}`
-	req := httptest.NewRequest(http.MethodPost, "/query", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer red-token")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("SECURITY: [semantic-query-strict-keys] POST /query with case-folded \"Text\"/\"text\" keys returned %d %q — the folded spelling still binds the tagged field last-wins; want 400", rec.Code, rec.Body.String())
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("SECURITY: [semantic-%s-strict-keys] POST %s with %s returned %d %q — %s; want 400",
+					tc.scope, tc.path, tc.keys, rec.Code, rec.Body.String(), tc.why)
+			}
+		})
 	}
 }
 

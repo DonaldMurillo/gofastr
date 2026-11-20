@@ -5,13 +5,7 @@ import (
 	"sync"
 )
 
-// CancelTree wires cancellation hierarchically so cancelling a turn
-// propagates to its tool calls and to any child engines it spawned
-// (e.g., via the `delegate` tool).
-//
-// The doc commits to: cancellation tree (turn → tool calls → child
-// engines). v0.x scopes `delegate` to sync-only-blocking; the child
-// engine has its own CancelTree rooted at the delegate's call.
+// CancelTree is a tree of cancellable contexts: cancelling a node cancels its descendants.
 type CancelTree struct {
 	mu       sync.Mutex
 	root     context.Context
@@ -28,9 +22,7 @@ func NewCancelTree(parent context.Context) *CancelTree {
 // Context returns the context tied to this node.
 func (t *CancelTree) Context() context.Context { return t.root }
 
-// Child returns a child node. Cancelling the parent cancels every
-// child (transitively). Cancelling a child does not affect the parent
-// or siblings.
+// Child returns a child node that the parent's cancellation reaches and whose own cancellation does not reach the parent or siblings.
 func (t *CancelTree) Child() *CancelTree {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -45,7 +37,7 @@ func (t *CancelTree) Cancel(cause error) {
 	t.cancel(cause)
 }
 
-// Cause returns the reason this node was cancelled (or nil if not).
+// Cause returns the reason this node was cancelled, or nil.
 func (t *CancelTree) Cause() error {
 	return context.Cause(t.root)
 }

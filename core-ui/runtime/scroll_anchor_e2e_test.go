@@ -51,30 +51,29 @@ func scrollAnchorSite(t *testing.T, delayMs int, padPx int) *httptest.Server {
 			`<div style="height:4000px"></div>` +
 			`</main></div><script src="/__gofastr/runtime.js"></script></body></html>`
 	}
-	mux.HandleFunc("/a", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Gofastr-Navigate") == "1" {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("X-Gofastr-Partial", "true")
-			w.Header().Set("X-Gofastr-Title", "a")
-			w.Header().Set("X-Gofastr-Swap", "l:site")
-			fmt.Fprint(w, `<h1 id="screen-a">a</h1><a id="to-b" style="position:fixed;top:4px;right:4px" href="/b#deep">to b</a><div style="height:4000px"></div>`)
-			return
+	// screenHandler serves one same-chain screen: a partial fragment on
+	// X-Gofastr-Navigate requests, the full page otherwise.
+	screenHandler := func(title, partialBody, fullBody string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Gofastr-Navigate") == "1" {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.Header().Set("X-Gofastr-Partial", "true")
+				w.Header().Set("X-Gofastr-Title", title)
+				w.Header().Set("X-Gofastr-Swap", "l:site")
+				fmt.Fprint(w, partialBody)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, fullBody)
 		}
-		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, page("screen-a", "/b#deep", false))
-	})
-	mux.HandleFunc("/b", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Gofastr-Navigate") == "1" {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("X-Gofastr-Partial", "true")
-			w.Header().Set("X-Gofastr-Title", "b")
-			w.Header().Set("X-Gofastr-Swap", "l:site")
-			fmt.Fprint(w, `<h1 id="screen-b">b</h1><span data-cui-comp="cold">cold</span><div style="height:600px"></div><h2 id="deep">deep target</h2><div style="height:4000px"></div>`)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, page("screen-b", "/a", true))
-	})
+	}
+	mux.HandleFunc("/a", screenHandler("a",
+		`<h1 id="screen-a">a</h1><a id="to-b" style="position:fixed;top:4px;right:4px" href="/b#deep">to b</a><div style="height:4000px"></div>`,
+		page("screen-a", "/b#deep", false)))
+	mux.HandleFunc("/b", screenHandler("b",
+		`<h1 id="screen-b">b</h1><span data-cui-comp="cold">cold</span><div style="height:600px"></div><h2 id="deep">deep target</h2><div style="height:4000px"></div>`,
+		page("screen-b", "/a", true)))
+
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

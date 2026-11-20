@@ -1,0 +1,65 @@
+primitive: uiregistry.behavior
+summary: RegisterBehavior, which registers a component's runtime module beside its style - the source, the markers that load it, idle loading, requirements, the interactions the kernel's bridge retains while it fetches, on-request API modules - and the reserved kernel module names.
+code:
+  - core-ui/registry/behavior.go
+docs:
+  - core-ui/ARCHITECTURE.md
+  - framework/docs/content/ui-new-components.md
+on_change:
+  - A field added to Interaction must also be read, or refused as unreadable, by core-ui/runtime/internal/treegate.Interactions.
+invariants:
+  - id: registration-refuses-mistakes
+    rule: RegisterBehavior panics on a bad name, an empty source, no Markers on a marker-loaded module, a marker that is not [data-x] or [data-x="v"] free of control bytes, backslashes, quotes and brackets, and an OnRequest module with Markers, LoadIdle, Interactions or Requires.
+    enforced_by:
+      - test: core-ui/registry.TestRegisterBehaviorRules
+      - test: core-ui/registry.TestRegisterBehaviorOnRequest
+  - id: interactions-are-validated
+    rule: An interaction is click with a non-empty Selector and no Keys or Scope, or keydown with non-empty Keys, none empty, a Scope and no Selector, each selector a list of attribute selectors, :not([attr]) and combinators across any CSS whitespace; any other event panics, and the Keys slice is copied from the caller.
+    enforced_by:
+      - test: core-ui/registry.TestRegisterBehaviorInteractions
+  - id: requires-are-module-names
+    rule: Requires keeps the first position of each repeated name and panics on a name outside the module-name grammar or on the behaviour's own name.
+    enforced_by:
+      - test: core-ui/registry.TestRegisterBehaviorRequires
+  - id: behaviour-names-are-unique
+    rule: A second registration of a name with another source, markers, idle flag, on-request flag, requirements or interactions panics and an identical one returns the first entry; a name reserved for an embedded runtime module panics whichever of the reservation and the registration comes first; a style may share a behaviour's name.
+    enforced_by:
+      - test: core-ui/registry.TestRegisterBehaviorDuplicates
+      - test: core-ui/registry.TestDuplicateWithOtherInteractionKeysPanics
+      - test: core-ui/registry.TestRegisterBehaviorRefusesReservedNames
+      - test: core-ui/registry.TestReservationRefusesAnEarlierRegistration
+      - test: core-ui/registry.TestStyleAndBehaviorMayShareAName
+  - id: marker-attrs-are-known
+    rule: IsMarkerAttr is true for the attribute of every registered marker, so core-ui/noderender drops it from untrusted IR.
+    enforced_by:
+      - test: core-ui/noderender.TestIRDropsBehaviorMarkers
+  - id: marker-substring-is-rendered-form
+    rule: MarkerSubstring is the marker as rendered HTML spells it, the attribute name or name="value" with the value escaped as render.Escape does, and "" for a selector that is not a marker.
+    enforced_by:
+      - test: core-ui/registry.TestMarkerSubstring
+decisions:
+  - id: behaviour-takes-the-style-seam
+    date: 2026-11-20
+    status: accepted
+    decision: A behaviour registers in the package that renders its markup, beside its style, and core-ui/runtime serves, minifies and hashes it like an embedded module.
+    rejected:
+      - option: Put every component's module in core-ui/runtime/src.
+        why: A binary would carry every module whether or not it imports the component, and the runtime package would grow with the kit.
+  - id: interaction-grammar-wider-than-markers
+    date: 2026-11-20
+    status: accepted
+    decision: An interaction selector may use combinators, :not([attr]) and comma lists, while a marker stays one data- attribute selector.
+    rejected:
+      - option: One grammar for both.
+        why: The host parses a marker back out of rendered HTML for preload, while an interaction selector only ever reaches the browser's querySelector, where a lightbox scope needs [data-cui-widget]:not([hidden]).
+      - option: Admit type, class and id selectors.
+        why: No descriptor needs one and a registered module binds by attribute; the grammar widens with the client that needs it.
+    upholds: [interactions-are-validated]
+  - id: refuse-at-registration
+    date: 2026-11-20
+    status: accepted
+    decision: Every malformed marker, interaction or requirement panics at registration.
+    rejected:
+      - option: Let the kernel skip what it cannot use.
+        why: A selector querySelector throws on kills the kernel's whole boot scan or the bridge's listener in production, where the mistake shows as a lost click instead of a startup failure.
+    upholds: [registration-refuses-mistakes, interactions-are-validated]

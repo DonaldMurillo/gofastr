@@ -146,7 +146,9 @@ address (`0.0.0.0`), `localhost`, `*.localhost`, `*.internal`, and
 always rejected.
 
 The guard runs both on the hostname directly and on every resolved IP
-when the host is a name (DNS lookup at subscribe time). It also runs
+when the host is a name (DNS lookup at subscribe time, bounded to 3
+seconds; a lookup that fails or times out lets `Subscribe` succeed and
+leaves the check to delivery). It also runs
 **again at dial time**: the default delivery client's
 `Transport.DialContext` installs a `net.Dialer.Control` hook that
 re-validates the actual resolved IP at connect time. This closes the
@@ -168,8 +170,9 @@ route to it. Only `AllowPrivateNetworks: true` opts out.
 
 For development and tests, opt out via `Options.AllowPrivateNetworks =
 true`. This disables both the subscribe-time and the dial-time IP
-checks. The scheme guard still applies: `file://`, `gopher://`, etc.
-are always refused.
+checks. The scheme, host and userinfo guards still apply: `file://`,
+`gopher://`, a URL with no hostname such as `http://:8080/`, and one
+carrying `user:pass@` are always refused.
 
 ### Receivers on the same LAN or machine
 

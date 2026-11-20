@@ -137,7 +137,7 @@ func colorFieldCSS(_ style.Theme) string {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: calc(var(--stroke-focus-offset, 2px) / 2);
 }
-.fui-color__text[aria-invalid="true"],
+.fui-color__text:is(:user-invalid, [aria-invalid="true"]),
 .fui-color[data-invalid] .fui-color__text {
   border-color: var(--color-danger, #B91C1C);
   box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #B91C1C);

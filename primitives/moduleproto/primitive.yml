@@ -1,0 +1,15 @@
+primitive: moduleproto
+summary: The host-to-module wire protocol of core/moduleproto - JSON-RPC 2.0 frames over a reader and writer, a full-duplex Peer, the handshake and the method catalog - carrying wire mechanics only, no capability policy.
+code:
+  - core/moduleproto/
+docs:
+  - framework/docs/content/process-modules.md
+imports:
+  - deny: framework
+    from: [core/moduleproto]
+    why: The protocol is shared by the host and every module child, so it must not drag the framework into a module binary.
+    instead: Pass what the protocol needs as a value type in methods.go and let the supervisor in framework fill it.
+  - deny: core/mcp
+    from: [core/moduleproto]
+    why: The host-to-module pipe is its own JSON-RPC dialect; MCP is only an optional module surface the supervisor registers separately.
+    instead: Keep MCP tool shapes as plain values (Tool, ToolCallParams) and register them into core/mcp in the supervisor.

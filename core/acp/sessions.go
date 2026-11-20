@@ -4,35 +4,20 @@ import (
 	"fmt"
 )
 
-// defaultSessionsPerConn is the live-session cap one connection gets
-// when Options.MaxSessions is left at zero. ACP clients legitimately
-// mint one session per task over a long-lived connection (an editor
-// session can run for hours), so the bound is generous — but it exists:
-// session/new is as cheap as a frame gets (authenticated only when the
-// embedder wires Options.Authenticate, and the zero-value Options is
-// explicitly usable), and without a bound one connected client grows
-// the process monotonically for the life of the connection. Found red
-// in the 2026-09-05 adversarial pass round 4 (10,000 session/new frames
-// on one connection, all accepted).
 const defaultSessionsPerConn = 1024
 
-// SessionOverflowPolicy selects what a connection at Options.MaxSessions
-// does with its next session/new.
+// SessionOverflowPolicy selects what a connection at Options.MaxSessions does
+// with its next session/new.
 type SessionOverflowPolicy uint8
 
 const (
-	// SessionOverflowRefuse answers the session/new (or session/load)
-	// with an ErrInvalidParams error, mirroring the 4 MiB frame cap
-	// Serve already enforces. The default.
+	// SessionOverflowRefuse answers the overflowing call ErrInvalidParams.
 	SessionOverflowRefuse SessionOverflowPolicy = iota
 	// SessionOverflowEvictOldest drops the connection's oldest session
-	// (canceling its in-flight prompt turn, if any) and seats the new
-	// one. For agent hosts whose clients churn sessions faster than
-	// they close them.
+	// (canceling its in-flight prompt turn, if any) and seats the new one.
 	SessionOverflowEvictOldest
 )
 
-// sessionCapFor resolves the configured cap; negative means unlimited.
 func (s *Server) sessionCapFor() int {
 	if s.opts.MaxSessions == 0 {
 		return defaultSessionsPerConn
@@ -40,11 +25,6 @@ func (s *Server) sessionCapFor() int {
 	return s.opts.MaxSessions
 }
 
-// refuseFullSessions returns the invalid-params error a session mint
-// past the cap must answer, or nil when a seat is available (directly,
-// or via eviction once the new session exists). Handlers call it BEFORE
-// invoking the embedder's Agent, so a refused frame never makes the
-// embedder mint a session that cannot be seated.
 func (st *serverState) refuseFullSessions(existingID string) *wireRespError {
 	max := st.srv.sessionCapFor()
 	if max <= 0 {
@@ -67,18 +47,6 @@ func (st *serverState) refuseFullSessions(existingID string) *wireRespError {
 	}
 }
 
-// recordSession applies the per-connection session cap and inserts s
-// under id. A reload of an id this connection already holds replaces
-// the entry without growing the set. Past the cap the policy applies:
-// refuse (nil, non-nil error) or evict the oldest session — its
-// in-flight prompt, if any, is canceled so the turn ends promptly.
-// The pre-check above already refused the hopeless frames; this is the
-// authoritative check under the lock.
-//
-// A fresh session (session/new) under an id this connection already
-// holds, live or draining, is refused: the Agent broke the contract
-// that NewSession mints a new id, and replacing the entry would clear a
-// running turn's busy flag and drop its cancel handle.
 func (st *serverState) recordSession(s *session, id string, fresh bool) *wireRespError {
 	max := st.srv.sessionCapFor()
 	st.mu.Lock()
@@ -121,9 +89,6 @@ func (st *serverState) recordSession(s *session, id string, fresh bool) *wireRes
 	return nil
 }
 
-// sessionBusy reports whether id names a session on this connection
-// whose prompt turn is still running, a live one or one EvictOldest
-// dropped before its turn returned.
 func (st *serverState) sessionBusy(id string) bool {
 	st.mu.Lock()
 	sessions := []*session{st.sessions[id], st.draining[id]}

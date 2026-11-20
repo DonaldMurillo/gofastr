@@ -1,0 +1,142 @@
+primitive: query.builder
+summary: The SELECT, COUNT, INSERT, UPDATE and DELETE builders, which scrub and keyword-quote their identifier slots, renumber $N placeholders across WHERE fragments and fold the WHERE connectors into one parenthesized predicate.
+code:
+  - core/query/query.go
+  - core/query/count.go
+  - core/query/delete.go
+  - core/query/insert.go
+  - core/query/update.go
+docs:
+  - framework/docs/content/query-dsl.md
+on_change:
+  - The SQL a chain of only Where calls builds stays byte for byte what it was, since the CRUD layer, the DSL and stored test fixtures compare it.
+twins:
+  - job: Render a scrubbed, keyword-quoted, comma-joined column list.
+    why: Each builder grew its own loop; nothing but work not yet done keeps them from one helper.
+    sites:
+      - path: core/query/query.go
+        note: QueryBuilder.Build, the SELECT columns.
+      - path: core/query/insert.go
+        note: InsertBuilder.Build, the column list and RETURNING.
+      - path: core/query/update.go
+        note: UpdateBuilder.Build's RETURNING and selectVerb.
+      - path: core/query/delete.go
+        note: DeleteBuilder.Build's RETURNING.
+invariants:
+  - id: where-folds-left
+    rule: Each WHERE condition is wrapped in parens and the connectors fold left to right, so an AND after an OR binds to the whole group before it and Where(a).OrWhere(b).Where(c) builds ((a) OR (b)) AND (c), while a chain with no OR before an AND writes no extra parens.
+    enforced_by:
+      - test: core/query.TestWhereConnectorsFoldLeftToRight
+      - test: core/query.TestScopeAfterOrWhereBindsToTheWholePredicate
+      - test: core/query.TestWhereChainsMatchALeftFoldOnSQLite
+      - test: core/query.TestSelect_WhereClausesAreParenthesised
+      - test: core/query.TestCount_WhereClausesAreParenthesised
+      - test: core/query.TestUpdate_WhereClausesAreParenthesised
+      - test: core/query.TestDelete_WhereClausesAreParenthesised
+  - id: placeholders-renumber-by-position
+    rule: Build rewrites each $N placeholder of each condition to the next index in encounter order, whatever its digits, so a repeated $1 is two binds, and the run continues across conditions after any SET values.
+    enforced_by:
+      - test: core/query.TestWhere_PlaceholdersAreRenumberedPositionally
+      - test: core/query.TestWhere_RenumberStartsFromBuilderOffset
+      - test: core/query.TestCursorThenWherePlaceholderOrdering
+      - test: core/query.TestUpdateSetAfterWhereBindsInOrder
+  - id: literals-and-comments-keep-their-dollars
+    rule: A $N inside a single-quoted literal (doubled quotes and, only for an E prefix that starts a token, backslash escapes), a dollar-quoted literal, a double-quoted or backquoted identifier, a -- line comment or a block comment is copied unchanged and takes no index.
+    enforced_by:
+      - test: core/query.TestRenumberLeavesLiteralsAlone
+      - test: core/query.TestWhere_QuotedLiteralNotRenumbered
+      - test: core/query.TestWhere_EscapedQuoteInLiteral
+      - test: core/query.TestKeywordEndingInEDoesNotOpenAnEscapeString
+      - test: core/query.TestRenumberPreservesQuotedIdentifiers
+      - test: core/query.TestRenumberSkipsComments
+      - test: core/query.TestDollarSignsInBareIdentifiers
+  - id: unbalanced-block-comment-closes-at-first-end
+    rule: Block comments nest, but one whose nesting never closes ends at its first */, the reading SQLite executes.
+    enforced_by:
+      - test: core/query.TestUnclosedNestedBlockCommentClosesAtFirstEnd
+  - id: trailing-line-comment-cannot-eat-the-paren
+    rule: A condition that ends inside a -- line comment gets a newline before its closing paren.
+    enforced_by:
+      - test: core/query.TestTrailingLineCommentEndsBeforeTheCloseParen
+  - id: identifier-slots-are-scrubbed
+    rule: Every table, join, order, cursor and column slot has control bytes removed and parens, semicolons and comment markers replaced by spaces before it is written, column slots also lose all spaces and tabs, and an order direction other than ASC or DESC is dropped.
+    enforced_by:
+      - test: core/query.TestSelectFrom_DoesNotInterpolateUnsafeTableName
+      - test: core/query.TestSelectColumns_DoesNotInterpolateUnsafeColumnExpression
+      - test: core/query.TestInsertColumns_DoesNotInterpolateUnsafeColumnName
+      - test: core/query.TestSelectOrder_DoesNotInterpolateUnsafeDirection
+      - test: core/query.TestSelectJoin_DoesNotInterpolateUnsafeJoinPredicate
+      - test: core/query.TestSelectCursor_DoesNotInterpolateUnsafeCursorField
+  - id: clean-identifier-scrub-allocates-nothing
+    rule: Scrubbing an identifier that holds nothing to scrub returns it without allocating.
+    enforced_by:
+      - test: core/query.TestSanitizeCleanIdentNoAlloc
+  - id: keyword-names-quoted-in-every-slot
+    rule: A plain or dotted identifier in a builder slot has each keyword part quoted and folded through QuoteKeyword, and every other name is written bare.
+    enforced_by:
+      - test: core/query.TestBuildersQuoteKeywordNames
+      - test: core/query.TestBuildersLeaveOtherNamesBare
+  - id: offset-alone-carries-a-limit
+    rule: An OFFSET without a LIMIT is written after LIMIT math.MaxInt64, which both dialects accept.
+    enforced_by:
+      - test: core/query.TestOffsetWithoutLimitRunsOnSQLite
+  - id: cursor-orders-toward-the-cursor
+    rule: Cursor orders by its field ASC forward and DESC backward, and adds no second order key when the builder already orders by that field.
+    enforced_by:
+      - test: core/query.TestCursorOrdersInComparisonDirection
+      - test: core/query.TestCursorAddsNoSecondOrderKeyForOrderedColumn
+  - id: builders-own-their-slices
+    rule: A builder copies the slices it is given, and Build returns arguments that neither the caller's slices nor later calls on the builder change.
+    enforced_by:
+      - test: core/query.TestInsertOwnsSlices
+      - test: core/query.TestSelectAndReturningOwnColumns
+      - test: core/query.TestCountAndDeleteResultsOwnArgs
+      - test: core/query.TestUpdateOwnsWhereArgs
+      - test: core/query.TestSweepQueryBuildArgsOutliveLaterWhere
+  - id: empty-insert-writes-default-values
+    rule: An INSERT with no columns and no values is written as INSERT INTO t DEFAULT VALUES.
+    enforced_by:
+      - test: core/query.TestInsertDefaultValues
+decisions:
+  - id: renumber-by-position
+    date: 2026-11-18
+    status: accepted
+    decision: Placeholders are renumbered by encounter order, not mapped by their digits.
+    rejected:
+      - option: Map each original $N to one bind, so a repeated $1 reuses it.
+        why: entity conditions, the DSL and nested-filter subqueries each number from $1 and append their args in order, so composing them needs positional renumbering.
+    upholds: [placeholders-renumber-by-position]
+  - id: scrub-not-refuse
+    date: 2026-11-18
+    status: accepted
+    decision: The builders scrub injection markers out of identifier slots as defense in depth and leave validation to callers through SafeIdent.
+    rejected:
+      - option: Validate every slot and return an error from Build.
+        why: Build returns no error, and slots legitimately hold *, join predicates and expressions a strict identifier check refuses.
+      - option: Quote every slot.
+        why: It would change the SQL of every schema and break slots that hold expressions or already-quoted names.
+    upholds: [identifier-slots-are-scrubbed, keyword-names-quoted-in-every-slot]
+  - id: sqlite-reading-of-unclosed-comment
+    date: 2026-11-18
+    status: accepted
+    decision: A block comment whose nesting never closes is read the SQLite way, closing at its first */.
+    rejected:
+      - option: Always nest, as Postgres does.
+        why: Postgres refuses such a fragment as unterminated, so only SQLite runs it, and the nesting read left that SQL's placeholders unrenumbered.
+    upholds: [unbalanced-block-comment-closes-at-first-end]
+  - id: offset-limit-max-int
+    date: 2026-11-18
+    status: accepted
+    decision: An offset alone is written with LIMIT math.MaxInt64.
+    rejected:
+      - option: LIMIT -1 or LIMIT ALL.
+        why: Each is accepted by one dialect only.
+    upholds: [offset-alone-carries-a-limit]
+  - id: preallocate-where-capacity
+    date: 2026-11-18
+    status: accepted
+    decision: Select and Count start their where and arg slices at capacity 4.
+    rejected:
+      - option: Start them nil.
+        why: The CRUD list path adds four or five conditions to each of its count and data builders and paid for every growth step.
+    revisit_if: The CRUD list path stops adding most of its conditions through these builders.

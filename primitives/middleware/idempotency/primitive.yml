@@ -1,0 +1,123 @@
+primitive: middleware.idempotency
+summary: The Idempotency-Key middleware and its memory and SQL stores, which replay a write's cached 2xx answer to its retry.
+code:
+  - core/middleware/idempotency.go
+  - core/middleware/idempotency_sql.go
+docs:
+  - framework/docs/content/idempotency.md
+twins:
+  - job: Expire an idempotency entry at its TTL and drop expired entries about once a minute.
+    why: The memory store holds a map under a mutex and compares Go times, while the SQL store holds rows other replicas read and expires them by a SQL comparison on expires_at, which SQLite makes as text.
+    sites:
+      - path: core/middleware/idempotency.go
+        note: memoryIdempotencyStore.Begin and reapLocked.
+      - path: core/middleware/idempotency_sql.go
+        note: SQLIdempotencyStore.Begin, its rate-limited reap and Finish.
+invariants:
+  - id: expired-idempotency-entries-leave-both-stores
+    rule: An idempotency entry past its TTL no longer answers a Begin on the memory store or the SQL store, and the memory store drops expired entries on a Begin at most once per idemReapEvery, as the SQL store reaps.
+    enforced_by:
+      - test: core/middleware.TestMemoryIdempotencyReapsExpired
+      - test: core/middleware.TestMemoryStore_TTLExpiry
+      - test: core/middleware.TestSQLIdempotency_ExpiryAllowsFreshClaim
+  - id: sql-idempotency-expiry-binds-utc
+    rule: The SQL idempotency store binds every time in UTC, so a row expires on time when the process's UTC offset changes.
+    enforced_by:
+      - test: core/middleware.TestSQLIdempotencyExpiryIgnoresLocalOffset
+  - id: no-principal-no-cache
+    rule: A request with no Principal function, or one it maps to "", runs the handler uncached.
+    enforced_by:
+      - test: core/middleware.TestEmptyPrincipalSkipsCache
+  - id: key-is-short-printable-ascii
+    rule: A key longer than 255 bytes or holding a byte outside 0x20-0x7e is answered 400 before the store is asked.
+    enforced_by:
+      - test: core/middleware.TestIdempotencyKeyLengthBoundary
+      - test: core/middleware.TestIdempotency_TooLongKeyRejected
+      - test: core/middleware.TestIdemShardAmbiguousUnderNULPrincipal
+  - id: store-key-and-fingerprint-injective
+    rule: The store key length-prefixes principal, tenant and scope before the client key, and the fingerprint length-prefixes principal, method, escaped path, query, Content-Type and body, so two different tuples never share a value.
+    enforced_by:
+      - test: core/middleware.TestSweepIdemStoreKeyInjectiveAcrossParts
+      - test: core/middleware.TestIdemFingerprintInjectiveUnderNUL
+      - test: core/middleware.TestFingerprintBindsFullRequestShape
+  - id: only-2xx-is-cached
+    rule: Only a 2xx answer the handler wrote is cached; a non-2xx answer, a panic, an over-cap or streamed response and an unwritten response whose context ended release the claim.
+    enforced_by:
+      - test: core/middleware.TestSweepIdempotencyDoesNotCacheClientErrors
+      - test: core/middleware.TestIdempotency_NonSuccessReleasesClaim
+      - test: core/middleware.TestIdempotency_PanicReleasesClaim
+      - test: core/middleware.TestIdempotencyLetsStreamsThrough
+      - test: core/middleware.TestIdempotencyUnwrittenResponseAndEndedContext
+  - id: replay-carries-only-handler-headers
+    rule: A replay carries Idempotent-Replay true and only the headers the handler itself set, never Set-Cookie, Cookie, Authorization, Proxy-Authorization or WWW-Authenticate.
+    enforced_by:
+      - test: core/middleware.TestReplayStripsAllCredentialHeaders
+      - test: core/middleware.TestIdempotency_ReplayDoesNotOverwriteUpstreamHeaders
+      - test: core/middleware.TestIdempotency_ReplaysCachedResponse
+  - id: refusals-by-cause
+    rule: A fingerprint mismatch is 422, a claim in flight is 409 with Retry-After 1, and a store error is 503 unless FailOpen runs the handler.
+    enforced_by:
+      - test: core/middleware.TestIdempotency_FailsClosedOnStoreError
+      - test: core/middleware.TestIdempotency_FailOpenOptionPreservesAvailability
+      - test: core/middleware.TestIdempotencyInFlightSetsRetryAfter
+  - id: oversized-body-bypasses
+    rule: A body over MaxBodyBytes runs the handler uncached with every byte intact, adding Vary Idempotency-Key to whatever Vary an outer middleware wrote.
+    enforced_by:
+      - test: core/middleware.TestIdempotency_BodyTooLargeBypassesCleanly
+      - test: core/middleware.TestIdempotencyRedVaryAppendNotSet
+      - test: core/middleware.TestIdempotency_MaxInt64BodyCapKeepsBody
+  - id: finish-outlives-the-request
+    rule: Finish runs on a fresh context, so a client that hangs up does not strand its claim.
+    enforced_by:
+      - test: core/middleware.TestIdempotency_FinishUsesUncancelledContext
+  - id: finish-writes-only-its-own-claim
+    rule: Finish stores or releases an entry only when its fingerprint is the caller's, so a claim that expired and was re-taken is neither given the first caller's response nor removed by it.
+    enforced_by:
+      - test: core/middleware.TestSweepMemoryFinishSkipsAnotherOwnersClaim
+      - test: core/middleware.TestSweepSQLReleaseKeepsAnotherOwnersClaim
+  - id: memory-store-bounded
+    rule: The memory store holds at most MaxStoreEntries entries, shedding completed entries before in-flight claims and the least recently used first, and keeps no response over MaxStoreEntryBytes.
+    enforced_by:
+      - test: core/middleware.TestMemoryStore_EvictsIdleFirst
+      - test: core/middleware.TestSweepMemoryEvictsCompletedBeforeInFlight
+      - test: core/middleware.TestMemoryStore_EntryByteCapDropsOversized
+      - test: core/middleware.TestSweepIdempotencyPassesEntryByteCapToDefaultStore
+      - test: core/middleware.TestSweepIdempotencyPassesEntryCapToDefaultStore
+  - id: negative-ttl-panics
+    rule: A negative TTL passed to Idempotency or NewMemoryIdempotencyStore panics, and zero means 24 hours; the in-flight claim holds 30 seconds unless set.
+    enforced_by:
+      - test: core/middleware.TestNewMemoryIdemStoreNegativeTTLPanics
+      - test: core/middleware.TestMemoryIdempotencyInFlightTTLOption
+  - id: informational-status-not-recorded
+    rule: The recorder forwards a 1xx other than 101 and caches the final status that follows it.
+    enforced_by:
+      - test: core/middleware.TestIdempotencyRecordsPastEarlyHints
+  - id: erasure-reaches-cached-rows
+    rule: The SQL store files each row under the principal read back from the store key, so App.EraseUserData for that user deletes it.
+    enforced_by:
+      - test: core/middleware.TestEraseRemovesCachedReplays
+decisions:
+  - id: unconfigured-principal-disables-caching
+    date: 2026-11-18
+    status: accepted
+    decision: With no Principal the middleware is a pass-through that logs a warning, rather than caching in one namespace shared by every caller.
+    rejected:
+      - option: Cache under one shared namespace.
+        why: Two callers who pick the same key value, a counter or a hand-written "order-1", would be served each other's response bodies.
+    upholds: [no-principal-no-cache]
+  - id: negative-ttl-is-an-error
+    date: 2026-11-18
+    status: accepted
+    decision: A negative TTL panics at construction instead of falling back to the default.
+    rejected:
+      - option: Treat a negative TTL as zero, the 24-hour default.
+        why: A sign or unit error would turn the most restrictive input into the longest retention.
+    upholds: [negative-ttl-panics]
+  - id: postgres-refuses-nul-principal
+    date: 2026-11-18
+    status: accepted
+    decision: On Postgres a store key is escaped by pgKey, but a principal holding NUL or a key that is not UTF-8 is refused with an error.
+    rejected:
+      - option: Escape the principal column as well.
+        why: An escaped "a<NUL>b" would equal another user's literal id and erasing one would delete the other's rows.
+    upholds: [erasure-reaches-cached-rows]

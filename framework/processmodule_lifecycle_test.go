@@ -3,7 +3,6 @@ package framework
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -149,17 +148,7 @@ func TestProxyOversizeBody413(t *testing.T) {
 	sup, sl, _, child, cleanup := toolTestSlot(t, nil)
 	defer cleanup()
 	got := make(chan int, 4)
-	if err := child.Handle(moduleproto.MethodHTTP, func(_ context.Context, raw json.RawMessage) (any, error) {
-		var p moduleproto.HTTPRequestParams
-		_ = json.Unmarshal(raw, &p)
-		got <- len(p.BodyB64)
-		return moduleproto.HTTPResponseResult{
-			Status: http.StatusOK,
-			Body:   moduleproto.HTTPResponseBody{Kind: moduleproto.BodyKindText, Value: jsonRaw(`"ok"`)},
-		}, nil
-	}); err != nil {
-		t.Fatal(err)
-	}
+	handleEchoBody(t, child, got)
 
 	small := httptest.NewRecorder()
 	sup.serveProxy(sl.desc.Name, "r1", small, httptest.NewRequest(http.MethodPost, "/r", bytes.NewReader([]byte("hi"))))

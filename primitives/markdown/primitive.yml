@@ -1,0 +1,48 @@
+primitive: markdown
+summary: The core/markdown renderer, a dependency-free Markdown subset that turns docs and site content into escaped HTML; the block parser, the inline parser and frontmatter are its parts.
+code:
+  - core/markdown/doc.go
+  - core/markdown/markdown.go
+docs:
+  - framework/docs/content/core-packages.md
+invariants:
+  - id: source-html-is-escaped
+    rule: Render never passes HTML from the source through; every tag, attribute and code body comes out escaped, and a comment block opening within three spaces of indent and ending its last line with --> renders as nothing.
+    enforced_by:
+      - test: core/markdown.TestRawHTMLIsEscaped
+      - test: core/markdown.TestMarkdown_HTMLTagEscaped
+      - test: core/markdown.TestCommentBlockRendersNothing
+      - test: core/markdown.TestCommentWithTrailingTextStaysEscaped
+      - test: core/markdown.TestUnclosedCommentStaysEscaped
+      - test: core/markdown.TestSweepMarkdownIndentedCommentOpenerIsText
+  - id: title-falls-back-to-frontmatter
+    rule: Document.Title is the first H1's text, or the frontmatter title when the body has no H1.
+    enforced_by:
+      - test: core/markdown.TestFrontmatterTitleFallback
+  - id: input-is-normalized
+    rule: Render drops one leading byte order mark and reads CRLF and a lone CR as one line break.
+    enforced_by:
+      - test: core/markdown.TestSweepMarkdownLeadingBOMIsDropped
+      - test: core/markdown.TestSweepMarkdownCRLFIsOneLineBreak
+  - id: block-loop-always-advances
+    rule: Every pass of the block loop consumes at least one line, the loop forcing a step past a line no handler consumed, so Render terminates on any input.
+    enforced_by:
+      - test: core/markdown.TestMarkdown_NonAdvancingBlockquoteTerminates
+    judge: Does this change add a block classifier whose handler can leave the line unconsumed, or remove the forced step in renderBodyDepth?
+decisions:
+  - id: own-renderer
+    date: 2026-11-19
+    status: accepted
+    decision: core/markdown is a small renderer of the subset the project writes, aiming at predictable output rather than CommonMark fidelity.
+    rejected:
+      - option: Wrap goldmark or another CommonMark library.
+        why: It adds a dependency to core and passes raw HTML through unless configured otherwise.
+    revisit_if: Docs need CommonMark constructs the subset cannot express.
+  - id: escape-never-sanitize
+    date: 2026-11-19
+    status: accepted
+    decision: Source HTML is escaped, never passed through, and the only markup is the renderer's own.
+    rejected:
+      - option: Pass HTML through an allow-list sanitizer.
+        why: Rendered markdown can be user content, and a sanitizer is a second policy to keep in step with the browser.
+    upholds: [source-html-is-escaped]

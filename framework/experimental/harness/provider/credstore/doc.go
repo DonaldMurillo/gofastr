@@ -1,5 +1,2 @@
-// Package credstore is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package credstore stores provider credentials in an AES-GCM encrypted file.
 package credstore

@@ -517,19 +517,26 @@ func TestCompositeBelongsToTargetRefused(t *testing.T) {
 	})
 }
 
-// A many_to_many through a join entity that lacks one of the two link
-// columns is refused at boot: the migrator creates no pivot for it.
-func TestJoinEntityMissingLinkColumn(t *testing.T) {
+// autoMigrateSchoolRelation swaps the student entity's second relation for
+// rel and runs AutoMigrate over the school fixtures on SQLite, returning
+// the refusal (or nil) both join-entity gate tests assert against.
+func autoMigrateSchoolRelation(t *testing.T, rel entity.Relation) error {
+	t.Helper()
 	ents := schoolEntities(nil)
-	ents[0].Config.Relations[1] = entity.ManyToMany("courses", "course", "enrollments", "student_id", "class_id")
+	ents[0].Config.Relations[1] = rel
 	reg := NewRegistry()
 	for _, e := range ents {
 		if err := reg.Register(e); err != nil {
 			t.Fatal(err)
 		}
 	}
-	db := openTestDB(t, DialectSQLite)
-	err := AutoMigrate(db, reg)
+	return AutoMigrate(openTestDB(t, DialectSQLite), reg)
+}
+
+// A many_to_many through a join entity that lacks one of the two link
+// columns is refused at boot: the migrator creates no pivot for it.
+func TestJoinEntityMissingLinkColumn(t *testing.T) {
+	err := autoMigrateSchoolRelation(t, entity.ManyToMany("courses", "course", "enrollments", "student_id", "class_id"))
 	if err == nil || !strings.Contains(err.Error(), `declares no column "class_id"`) {
 		t.Fatalf("AutoMigrate = %v, want the missing link column refused", err)
 	}
@@ -539,16 +546,7 @@ func TestJoinEntityMissingLinkColumn(t *testing.T) {
 // table, so it is refused at boot instead of read past the join entity's
 // gates (2026-10-27 D9).
 func TestJoinEntityThroughSchemaSpelling(t *testing.T) {
-	ents := schoolEntities(nil)
-	ents[0].Config.Relations[1] = entity.ManyToMany("courses", "course", "main.enrollments", "student_id", "course_id")
-	reg := NewRegistry()
-	for _, e := range ents {
-		if err := reg.Register(e); err != nil {
-			t.Fatal(err)
-		}
-	}
-	db := openTestDB(t, DialectSQLite)
-	err := AutoMigrate(db, reg)
+	err := autoMigrateSchoolRelation(t, entity.ManyToMany("courses", "course", "main.enrollments", "student_id", "course_id"))
 	if err == nil || !strings.Contains(err.Error(), "spell them the same") {
 		t.Fatalf("AutoMigrate = %v, want the schema spelling refused", err)
 	}

@@ -1,0 +1,97 @@
+primitive: handler.bind
+summary: Bind, the strict JSON decoders, the client-facing decode phrases and ToolAdapter, which binds the same typed input from MCP tool params.
+code:
+  - core/handler/bind.go
+  - core/handler/decode_strict.go
+  - core/handler/json_detail.go
+  - core/handler/reasons.go
+  - core/handler/tool.go
+docs:
+  - framework/docs/content/core-packages.md
+twins:
+  - job: Bind a tagged query or path value of one typed input from an HTTP request and from MCP tool params.
+    why: Bind receives values the router and URL parsing already produced and cuts a query or path value at its first control byte, while ToolAdapter has no router before it and refuses such a value 400; the tag walk, setters and body decode are already shared.
+    sites:
+      - path: core/handler/bind.go
+        note: bindQuery, bindPath and sanitizeQueryParam.
+      - path: core/handler/tool.go
+        note: bindToolParams.
+invariants:
+  - id: source-priority
+    rule: Bind applies header, query, path, then the JSON body, a present later value replacing an earlier one and an absent body property keeping it, with tags on untagged embedded structs promoted and nil embedded pointers allocated only when a value arrives.
+    enforced_by:
+      - test: core/handler.TestBindSourcePriority
+      - test: core/handler.TestBodyPriorityOverQuery
+      - test: core/handler.TestBind_EmptyBodyKeepsQueryValues
+      - test: core/handler.TestBindFillsEmbeddedTags
+      - test: core/handler.TestBindLeavesUnusedEmbedNil
+  - id: body-only-for-json
+    rule: The body is decoded only under a Content-Type whose parsed media type is application/json or ends in +json, for struct and non-struct destinations alike, and capped at 1 MiB with a larger body a 413 that keeps the *http.MaxBytesError.
+    enforced_by:
+      - test: core/handler.TestIsJSONContentType
+      - test: core/handler.TestBindRedNonStructJSONGate
+      - test: core/handler.TestBind_JSONPrefixSpoofingRejected_JSONP
+      - test: core/handler.TestBind_OversizedBodyIs413
+  - id: one-strict-decode
+    rule: Bind, UnmarshalStrict, DecodeStrict and ToolAdapter refuse a body that is not valid UTF-8, a duplicate or FoldJSONKey-folded key in any object at any depth, an unknown top-level key on a struct, and a second value after the first.
+    enforced_by:
+      - test: core/handler.TestBind_MapDstRefusesDuplicateKeys
+      - test: core/handler.TestBind_NestedDupKeysRefused
+      - test: core/handler.TestBind_RejectsCaseFoldedKeys
+      - test: core/handler.TestBind_RejectsUnknownFields
+      - test: core/handler.TestBindRedTrailingJSONRefused
+      - test: core/handler.TestJSONBodyMustBeUTF8
+      - test: core/handler.TestUnmarshalStrictRefusesNestedAmbiguity
+      - test: core/handler.TestStrictNestedKeysFoldLikeDecoder
+      - test: core/handler.TestToolAdapterRefusesFoldedTwinAcrossHalves
+  - id: key-walk-linear-in-depth
+    rule: The key walk behind CheckObjectKeys, which Bind, UnmarshalStrict, DecodeStrict and ToolAdapter all run, pushes and pops one path stack, so what it allocates grows linearly with nesting depth rather than copying the path at every level.
+    enforced_by:
+      - test: core/handler.TestCheckObjectKeysDeepNestingIsLinear
+  - id: exact-numbers
+    rule: Bind and ToolAdapter decode numbers under interfaces as json.Number and settle them, so an integer past 2^53 keeps its digits.
+    enforced_by:
+      - test: core/handler.TestBindKeepsBigIntegers
+      - test: core/handler.TestToolAdapterKeepsBigIntegers
+  - id: tag-values
+    rule: A tagged value binds through UnmarshalText when the type has one, else parses at the field's bit width and refuses overflow, NaN and infinities; an empty value is absent unless the tag says ,empty, and any other tag option or a nameless tag fails every bind.
+    enforced_by:
+      - test: core/handler.TestBindQueryRunsTheTypesTextValidator
+      - test: core/handler.TestBind_IntegerOverflowRejected
+      - test: core/handler.TestBind_Float32OverflowRejected
+      - test: core/handler.TestSweepBindRefusesInfinity
+      - test: core/handler.TestBindEmptyQueryIsAbsent
+      - test: core/handler.TestBindEmptyOptionBindsExplicitEmpty
+      - test: core/handler.TestBindTagOptionMistakesAreRefused
+  - id: control-bytes-never-bound
+    rule: Bind cuts a query value at its first C0 or DEL byte and sanitizes path values as core/router does, and ToolAdapter refuses such a query or path value 400, sanitizing path values with its route's catch-all flags.
+    enforced_by:
+      - test: core/handler.TestBindQueryRedControlBytes
+      - test: core/handler.TestSweepBindCutsQueryAtDEL
+      - test: core/handler.TestBindPathParamsAreSanitized
+      - test: core/handler.TestToolAdapterRefusesPathEscape
+      - test: core/handler.TestToolPathParamFollowsRoutePattern
+  - id: decode-errors-are-phrased
+    rule: A decode refusal's detail names the client's JSON path and JSON types, never the decoder's text naming Go types or structs.
+    enforced_by:
+      - test: core/handler.TestJSONDecodeErrorsArePhrased
+      - test: core/handler.TestBindDecodeErrorsArePhrased
+      - test: core/handler.TestJSONPathEscapesAndCaps
+      - test: core/handler.TestToolParamErrorsUseJSONTypes
+decisions:
+  - id: bind-decodes-through-unmarshal-strict
+    date: 2026-11-19
+    status: accepted
+    decision: Bind's body goes through UnmarshalStrict, so its key rules are the strict decoder's at every depth; bindBody's own top-level-only decode is removed.
+    rejected:
+      - option: Keep bindBody's top-level check.
+        why: It let a nested or map duplicate key through last-wins on HTTP while ToolAdapter refused the same body for the same Handler's MCP twin.
+    upholds: [one-strict-decode]
+  - id: refuse-ambiguous-json
+    date: 2026-11-19
+    status: accepted
+    decision: A duplicate or case-folded key is refused rather than resolved.
+    rejected:
+      - option: Keep encoding/json's last-wins.
+        why: A reviewer or log reads the first value while the handler runs the last.
+    upholds: [one-strict-decode]

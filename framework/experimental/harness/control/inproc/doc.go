@@ -1,5 +1,2 @@
-// Package inproc is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package inproc is the in-process control transport the bundled TUI and web clients use.
 package inproc

@@ -1,0 +1,17 @@
+primitive: harness.client
+summary: The bundled clients a person drives a harness session with - a raw-mode terminal UI and a loopback browser sidecar - each attached to one engine through an inproc control client.
+code:
+  - framework/experimental/harness/client/
+docs:
+  - framework/docs/content/harness-architecture.md
+on_change:
+  - A client is one more consumer of the control protocol, so a new event kind or command lands in control first and each client decides how to show it.
+decisions:
+  - id: windows-runs-the-web-client
+    date: 2026-11-18
+    status: accepted
+    decision: The terminal UI is a Unix client; on Windows notifyWindowResize is a no-op so the package still builds, and the web client is the Windows UI.
+    rejected:
+      - option: Port the raw-mode TUI to Windows ConPTY with live resize.
+        why: Windows has no SIGWINCH, and the console API needs its own input and resize path that nothing else in the harness uses.
+    revisit_if: Windows users run the TUI and need it to re-lay out on resize.

@@ -1,0 +1,86 @@
+primitive: harness.control.mcpserver.http
+summary: MCP streamable HTTP for the harness - every POST runs the stdio Server on the request body with the verified token's claims, GET opens a keepalive-only SSE stream, and DELETE drops the Mcp-Session-Id.
+code:
+  - framework/experimental/harness/control/mcpserver/http.go
+  - framework/experimental/harness/control/mcpserver/phrases.go
+  - framework/experimental/harness/control/mcpserver/time.go
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: nil-encoder-refuses-all
+    rule: An HTTPHandler with a nil Encoder answers every request 503, whatever it carries.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestNilEncoderAnswers503
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPHandlerNilEncoderRefuses
+  - id: verified-claims-reach-the-server
+    rule: Each POST runs the Server with the claims of the bearer token it verified, so the token's session and command scope apply to its tool calls.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestMCPTokenScopeEnforced
+      - test: framework/experimental/harness/control/mcpserver.TestMCPCommandScopeEnforced
+  - id: json-content-type-only
+    rule: A POST whose Content-Type is not application/json or application/*+json is refused 415.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPPOSTRejectsTextPlain
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPPOSTRejectsMissingContentType
+  - id: session-id-header-sanitized
+    rule: CR, LF and NUL are stripped from Mcp-Session-Id before it is echoed in a response header.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPPOSTSessionIDStripsNewlines
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPGETSessionIDStripsNewlines
+  - id: replayed-sse-is-defanged
+    rule: A replayed SSE payload has CR and NUL removed, every line prefixed with data, and every event, id, retry or data directive inside it rewritten, so it cannot forge a second event or directive.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPGETReplayStripsInjectedSecondEvent
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPGETReplayStripsInjectedIDDirective
+      - test: framework/experimental/harness/control/mcpserver.TestSSEDataCarriesNoCR
+  - id: every-response-no-store
+    rule: Every POST, GET and DELETE response carries Cache-Control no-store.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPPOSTSetsNoStore
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPGETSetsNoStore
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPDeleteSetsNoStore
+  - id: get-stream-seat-cap
+    rule: The GET streams one token holds are capped by the seat table, and the one past the cap gets 429 before the 200 is written.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestGETStreamsCappedPerToken
+  - id: get-stream-ends-on-revocation
+    rule: A GET stream ends at the first keepalive after its token stops verifying.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestMCPGETStreamEndsOnRevoke
+  - id: write-deadline-cleared
+    rule: Each GET stream write runs under a deadline that is cleared once flushed, so an HTTP/2 stream timer left armed never resets an idle stream.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPGETClearsWriteDeadline
+  - id: session-records-reaped
+    rule: A session record is dropped when its last GET stream ends with no backlog, so fresh Mcp-Session-Ids do not grow the table.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestMCPHTTPSessionsAreReaped
+  - id: cancel-across-posts-same-owner
+    rule: All POSTs share one in-flight table keyed by token JTI plus Mcp-Session-Id, so notifications/cancelled in one POST cancels a request another POST runs for the same owner, and never one of another owner.
+    enforced_by:
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPCancelReachesOtherPOST
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPCancelOtherOwnerIgnored
+      - test: framework/experimental/harness/control/mcpserver.TestHTTPDuplicateIDAcrossPOSTs
+decisions:
+  - id: get-stream-carries-keepalives-only
+    date: 2026-11-18
+    status: accepted
+    decision: The GET stream carries only a keepalive every 15s, and a client reads a session's events through resources/read of the events URI.
+    rejected:
+      - option: Push engine events over the GET stream.
+        why: The stream is per Mcp-Session-Id, not per harness session, and the events resource already replays from the bus window and the session log with since=, which a reconnecting client needs anyway.
+  - id: owner-is-token-and-session
+    date: 2026-11-18
+    status: accepted
+    decision: An in-flight request is owned by the token's JTI together with the Mcp-Session-Id.
+    rejected:
+      - option: Own it by Mcp-Session-Id alone.
+        why: The client picks Mcp-Session-Id, so one caller could cancel another's requests by naming its id.
+    upholds: [cancel-across-posts-same-owner]
+  - id: post-reuses-stdio-server
+    date: 2026-11-18
+    status: accepted
+    decision: Each POST builds a fresh Server and runs Serve on the body through an in-memory reader and writer.
+    rejected:
+      - option: Copy the parent Server by value per POST.
+        why: Server holds a sync.Mutex, which must not be copied.

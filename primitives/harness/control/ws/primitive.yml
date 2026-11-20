@@ -1,0 +1,79 @@
+primitive: harness.control.ws
+summary: The WebSocket control transport - a stdlib RFC 6455 upgrade bound to one session and one token, carrying command frames in and event frames out, with every frame checked against the token's scope.
+code:
+  - framework/experimental/harness/control/ws/
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: upgrade-gates
+    rule: The upgrade is refused before Hijack when the Host or Origin is not allowed (an empty AllowedOrigins refuses every browser Origin), the token does not verify, the token does not allow the session, lastEventId is not a number, or the request is not a well-formed RFC 6455 opening handshake.
+    enforced_by:
+      - test: framework/experimental/harness/control/ws.TestWSHostPinnedRejectsRebind
+      - test: framework/experimental/harness/control/ws.TestWSOriginDeniedWhenUnconfigured
+      - test: framework/experimental/harness/control/ws.TestWSRejectsBadToken
+      - test: framework/experimental/harness/control/ws.TestWSUpgradeRefusesUnboundSession
+      - test: framework/experimental/harness/control/ws.TestWSRefusesBadLastEventID
+      - test: framework/experimental/harness/control/ws.TestWSRefusesMalformedHandshake
+  - id: socket-seat-cap
+    rule: The sockets one token holds are capped by the seat table, and the dial past the cap gets 429 before Hijack.
+    enforced_by:
+      - test: framework/experimental/harness/control/ws.TestWSSocketsRedCappedPerToken
+  - id: every-frame-is-scoped
+    rule: Each command frame is refused unless the token still verifies, allows the command kind, and the body names the socket's own session (Attach and Detach instead need the token to allow the named session); a frame that fails verification also closes the socket.
+    enforced_by:
+      - test: framework/experimental/harness/control/ws.TestWSTokenCommandScopeEnforced
+      - test: framework/experimental/harness/control/ws.TestWSTokenSessionScopeOnCommandBody
+      - test: framework/experimental/harness/control/ws.TestWsSocketStopsOnRevocation
+  - id: idle-socket-ends-on-revocation
+    rule: A socket whose token stops verifying is closed by a ticker even when the client sends nothing.
+    enforced_by:
+      - test: framework/experimental/harness/control/ws.TestWSIdleSocketClosesOnRevocation
+  - id: strict-frame-envelope
+    rule: A frame envelope with a duplicate or case-folded key is refused, never dispatched.
+    enforced_by:
+      - test: framework/experimental/harness/control/ws.TestWsFrameRejectsDuplicateKeys
+      - test: framework/experimental/harness/control/ws.TestWsFrameRejectsCaseFoldedKeys
+  - id: subscribe-before-read-loop
+    rule: The socket subscribes to the session bus before it reads the first frame, so the events of a command sent right after the 101 reach the client.
+    enforced_by:
+      - test: framework/experimental/harness/control/ws.TestWSHandshakeAndCommand
+  - id: socket-outlives-the-request
+    rule: The socket's loops run on a context that is not the HTTP request's, which ends when ServeHTTP returns after Hijack.
+    enforced_by:
+      - test: framework/experimental/harness/control/ws.TestWSHandshakeAndCommand
+  - id: fragmentation-follows-rfc6455
+    rule: A fragmented text message is assembled and run once complete; a continuation with no open message, a text frame inside an open one, a fragmented control frame or a control frame over 125 bytes closes the socket.
+    enforced_by:
+      - test: framework/experimental/harness/control/ws.TestWSFragmentedCommandRuns
+      - test: framework/experimental/harness/control/ws.TestWSFragmentErrorsClose
+  - id: message-cap-spans-fragments
+    rule: One frame and one assembled message together never hold more than 16 MiB, and a frame past what is left of that cap closes the socket.
+    enforced_by:
+      - test: framework/experimental/harness/control/ws.TestWSFragmentErrorsClose
+  - id: payload-grows-as-delivered
+    rule: readFrame grows a payload buffer in 32 KiB steps as bytes arrive, never allocating the length a frame header claims up front.
+    enforced_by:
+      - test: framework/experimental/harness/control/ws.TestFrameAllocRedTracksDeliveredBytes
+  - id: writes-have-a-deadline
+    rule: Every frame write runs under a write deadline, so a client that stops reading ends the event pump instead of blocking it.
+    enforced_by:
+      - test: framework/experimental/harness/control/ws.TestEventPumpLeavesStalledClient
+  - id: ws-resume
+    rule: A numeric lastEventId replays the events after it before going live.
+    enforced_by:
+      - test: framework/experimental/harness/control/ws.TestWSReplaysAfterLastEventID
+decisions:
+  - id: stdlib-websocket
+    date: 2026-11-18
+    status: accepted
+    decision: The transport frames RFC 6455 itself on a hijacked connection with crypto/sha1 for the accept key.
+    rejected:
+      - option: A WebSocket library.
+        why: The harness takes no third-party dependency, and the control plane needs text, close and ping frames only.
+  - id: token-in-query-for-browsers
+    date: 2026-11-18
+    status: accepted
+    decision: The upgrade takes the token from a ?token= query parameter, falling back to X-Harness-Token.
+    rejected:
+      - option: A header only.
+        why: A browser's WebSocket constructor cannot set request headers.

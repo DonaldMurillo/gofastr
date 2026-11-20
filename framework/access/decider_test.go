@@ -43,16 +43,22 @@ func TestCanResource_AllowDeciderPermits(t *testing.T) {
 	}
 }
 
+// ctxWithDecider grants role the capability, then installs a Decider that
+// always returns decision — the scaffold every decider-fallback test needs.
+func ctxWithDecider(role, capability string, decision access.Decision) context.Context {
+	rp := access.NewRolePolicy()
+	rp.Grant(role, access.Permission(capability))
+	return access.WithDecider(ctxFor(rp, role), func(_ context.Context, _ []string, _ access.Permission, _ access.Ref) access.Decision {
+		return decision
+	})
+}
+
 // TestCanResource_DenyDeciderBlocks confirms a Decider returning DecisionDeny
 // refuses the check even when the role policy would allow, the seam can tighten
 // below the coarse role policy (e.g. "editor, but not of this project").
 func TestCanResource_DenyDeciderBlocks(t *testing.T) {
 	t.Parallel()
-	rp := access.NewRolePolicy()
-	rp.Grant("editor", "projects:update") // coarse policy says yes
-	ctx := access.WithDecider(ctxFor(rp, "editor"), func(_ context.Context, _ []string, _ access.Permission, _ access.Ref) access.Decision {
-		return access.DecisionDeny
-	})
+	ctx := ctxWithDecider("editor", "projects:update", access.DecisionDeny)
 	if access.CanResource(ctx, "projects:update", access.Ref{Type: "projects", ID: "42"}) {
 		t.Fatalf("DecisionDeny must block even when the role policy grants")
 	}
@@ -62,11 +68,7 @@ func TestCanResource_DenyDeciderBlocks(t *testing.T) {
 // role policy, the decider can opt out of a decision it has no opinion on.
 func TestCanResource_AbstainFallsThrough(t *testing.T) {
 	t.Parallel()
-	rp := access.NewRolePolicy()
-	rp.Grant("editor", "projects:update")
-	ctx := access.WithDecider(ctxFor(rp, "editor"), func(_ context.Context, _ []string, _ access.Permission, _ access.Ref) access.Decision {
-		return access.DecisionAbstain
-	})
+	ctx := ctxWithDecider("editor", "projects:update", access.DecisionAbstain)
 	if !access.CanResource(ctx, "projects:update", access.Ref{Type: "projects", ID: "42"}) {
 		t.Fatalf("Abstain must fall through to Can, which grants editor projects:update")
 	}
@@ -76,11 +78,7 @@ func TestCanResource_AbstainFallsThrough(t *testing.T) {
 // no grant ⇒ Can denies. Confirms Abstain truly delegates, not silently allows.
 func TestCanResource_AbstainFallsThroughDeny(t *testing.T) {
 	t.Parallel()
-	rp := access.NewRolePolicy()
-	rp.Grant("editor", "projects:read") // no projects:update
-	ctx := access.WithDecider(ctxFor(rp, "editor"), func(_ context.Context, _ []string, _ access.Permission, _ access.Ref) access.Decision {
-		return access.DecisionAbstain
-	})
+	ctx := ctxWithDecider("editor", "projects:read", access.DecisionAbstain)
 	if access.CanResource(ctx, "projects:update", access.Ref{Type: "projects", ID: "42"}) {
 		t.Fatalf("Abstain must fall through to Can, which denies editor projects:update")
 	}

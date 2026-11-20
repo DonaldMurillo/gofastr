@@ -10,11 +10,8 @@ import (
 	"time"
 )
 
-// MemoryStore is the in-process Store: a mutex, two maps, deep copies
-// at the boundary. Every read and write is scoped by owner in the map
-// key, not filtered after the fact, so the owner predicate cannot be
-// forgotten on a new query shape. Use the SQLStore to share tasks
-// across replicas.
+// MemoryStore is the in-process Store: a mutex, two maps, deep copies at the
+// boundary. It is per process; use SQLStore to share tasks across replicas.
 type MemoryStore struct {
 	mu    sync.Mutex
 	tasks map[taskKey]*TaskRecord
@@ -29,13 +26,6 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-// taskKey and pushKey are the store's map keys. They are structs, not
-// owner+"\x00"+id string concatenations: a string composite is
-// ambiguous when a field itself contains NUL — ("alice\x00t1", "evil")
-// collides with ("alice", "t1\x00evil") on GetTask, and ListTasks'
-// prefix scan matched the former against alice's "owner\x00" prefix,
-// leaking one owner's task list to another. Struct keys are injective
-// by construction; no delimiter can be smuggled through them.
 type taskKey struct{ owner, id string }
 
 type pushKey struct{ owner, taskID, id string }
@@ -68,8 +58,6 @@ func (m *MemoryStore) GetTask(_ context.Context, owner, id string) (*TaskRecord,
 	defer m.mu.Unlock()
 	rec, ok := m.tasks[taskKey{owner, id}]
 	if !ok {
-		// Unknown id and someone else's task answer identically: task
-		// ids must not enumerate across owners.
 		return nil, ErrNotFound
 	}
 	return rec.Clone(), nil
@@ -95,16 +83,10 @@ func (m *MemoryStore) UpdateTask(_ context.Context, rec *TaskRecord) error {
 	next := rec.Clone()
 	next.Version = stored.Version + 1
 	next.CreatedAt = stored.CreatedAt
-	// Tenant and scope are fixed at creation, as in the SQL store,
-	// whose UPDATE never writes either column.
 	next.Tenant = stored.Tenant
 	next.Scope = stored.Scope
 	next.UpdatedAt = time.Now()
 	m.tasks[key] = next
-	// Hand back a fresh clone, never next itself: copying next's
-	// fields shared its History, Artifacts and Metadata with the stored
-	// record, so a caller mutating its copy changed stored state with
-	// no version bump.
 	*rec = *next.Clone()
 	return nil
 }
@@ -122,10 +104,6 @@ func (m *MemoryStore) ListTasks(_ context.Context, owner string, q ListQuery) (r
 	defer m.mu.Unlock()
 	var matched []*TaskRecord
 	for key, rec := range m.tasks {
-		// Exact owner equality, not a delimiter prefix: with string
-		// keys, an owner literally named "alice\x00t1" made alice's
-		// prefix scan match its rows. The struct key makes the fields
-		// unambiguous; compare the field, never a concatenation.
 		if key.owner != owner {
 			continue
 		}
@@ -151,8 +129,6 @@ func (m *MemoryStore) ListTasks(_ context.Context, owner string, q ListQuery) (r
 	return recs, total, nil
 }
 
-// matchesQuery applies ListQuery to one record. Status timestamps sort
-// with nil treated as the zero instant.
 func matchesQuery(rec *TaskRecord, q ListQuery) bool {
 	if q.ContextID != "" && rec.Task.ContextID != q.ContextID {
 		return false
@@ -178,9 +154,6 @@ func matchesQuery(rec *TaskRecord, q ListQuery) bool {
 	return true
 }
 
-// sortRecsNewestFirst orders by status timestamp descending, then
-// updated-at, then id, so equal timestamps (common under a fixed test
-// clock) still order deterministically.
 func sortRecsNewestFirst(recs []*TaskRecord) {
 	sort.Slice(recs, func(i, j int) bool {
 		a, b := recs[i], recs[j]
@@ -239,8 +212,6 @@ func (m *MemoryStore) ListPushConfigs(_ context.Context, owner, taskID string) (
 	defer m.mu.Unlock()
 	var recs []*PushConfigRecord
 	for key, rec := range m.push {
-		// Field equality on the struct key, never a delimiter prefix
-		// (see taskKey).
 		if key.owner != owner || key.taskID != taskID {
 			continue
 		}
@@ -268,15 +239,6 @@ func (m *MemoryStore) DeletePushConfig(_ context.Context, owner, taskID, id stri
 	return nil
 }
 
-// TrimTerminalTasks implements RetentionTrimmer: it keeps the newest
-// `keep` terminal rows of owner in tier and deletes the older ones.
-// Non-terminal rows (a task in flight, or paused on input) are never
-// retention's to touch. A trimmed task's push configs go with it: no
-// event can reach them again.
-// orphanPushGrace is how old a push config with no task must be before a
-// trim sweeps it. A send stores its config just before its task row, so a
-// younger one may be a send in flight; the grace also covers clock skew
-// between the replica that wrote created_at and the one trimming.
 const orphanPushGrace = 10 * time.Minute
 
 func (m *MemoryStore) TrimTerminalTasks(_ context.Context, owner string, tier RetentionTier, keep int) error {
@@ -300,10 +262,6 @@ func (m *MemoryStore) TrimTerminalTasks(_ context.Context, owner string, tier Re
 		delete(m.tasks, taskKey{owner, rec.Task.ID})
 		trimmed[rec.Task.ID] = true
 	}
-	// A trimmed task's configs go with it, and so does any of the owner's
-	// configs whose task has been gone longer than orphanPushGrace: one
-	// registered while an earlier trim deleted its task landed after that
-	// trim's sweep.
 	cutoff := time.Now().Add(-orphanPushGrace)
 	for key, rec := range m.push {
 		if key.owner != owner {
@@ -346,8 +304,6 @@ func (m *MemoryStore) TrimPushConfigs(_ context.Context, owner, taskID string, k
 	return nil
 }
 
-// clonePushConfig copies the config's AuthenticationInfo pointer so two
-// callers of GetPushConfig cannot share it.
 func clonePushConfig(c PushNotificationConfig) PushNotificationConfig {
 	out := c
 	if c.Authentication != nil {

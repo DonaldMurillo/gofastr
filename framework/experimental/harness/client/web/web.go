@@ -1,21 +1,5 @@
 //check-csp:ignore-file
-// The bundled harness web client is a dev-only operator surface served
-// on a random localhost port, not a production browser app, so the
-// framework's strict-CSP contract does not apply. The indexHTML
-// constant inlines the SSE listener + form handler so the harness
-// runs without a build step or an extra HTTP round-trip.
 
-// Package web implements the bundled web client.
-//
-// v0.1 minimum: serve a minimal HTML+JS shell on a random local port
-// that talks to the engine via the same inproc transport the TUI
-// uses. The page consumes Server-Sent Events from the harness bus
-// and POSTs SendInput via a small JSON endpoint hosted by this same
-// http.Server.
-//
-// Full GoFastr-App dogfooding (entities, island hydration, framework
-// crud machinery) lands as the harness grows; v0.1 keeps the surface
-// tight so the harness ships a usable browser UI today.
 package web
 
 import (
@@ -37,8 +21,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
 )
 
-// maxWebSendBody caps an inbound body: one message of user text. Past this, the
-// request is refused rather than buffered.
 const maxWebSendBody = 1 << 20
 
 // Server is the bundled web client.
@@ -46,33 +28,20 @@ type Server struct {
 	Client  *inproc.Client
 	Session ids.SessionID
 
-	// seats bounds concurrent /events SSE streams (core/stream's seat
-	// policy). The sidecar is loopback-only with no per-caller
-	// credential, so every dial shares one anonymous principal — the
-	// posture framework/crud takes for Public streams — and the cap
-	// bounds them collectively.
 	seats *control.SeatTable
 
 	listener net.Listener
 	srv      *http.Server
 
 	mu  sync.RWMutex
-	bus *engine.Bus // engine bus subscribed for SSE clients
+	bus *engine.Bus
 }
 
-// New constructs a Server bound to the given inproc Client + bus.
-//
-// The bus is needed (in addition to the Client) so each browser
-// subscriber gets its own dedicated channel, the inproc.Client's
-// Subscribe is one-channel-per-client, and we want N browsers to
-// share one engine.
+// New constructs a Server that sends input through c and streams bus to every browser.
 func New(c *inproc.Client, session ids.SessionID, bus *engine.Bus) *Server {
 	return &Server{Client: c, Session: session, bus: bus, seats: control.DefaultSeatTable()}
 }
 
-// seatTable resolves the seat table: the one wired at construction
-// (the process-wide control-plane table, whose anonymous-principal
-// bucket is this sidecar's — no other surface seats the "" principal).
 func (s *Server) seatTable() *control.SeatTable {
 	if s.seats != nil {
 		return s.seats
@@ -80,8 +49,7 @@ func (s *Server) seatTable() *control.SeatTable {
 	return control.DefaultSeatTable()
 }
 
-// Start binds a TCP listener on 127.0.0.1:0 (random port) and serves
-// the web UI. Returns the URL to print.
+// Start serves the web UI on a random 127.0.0.1 port and returns its URL.
 func (s *Server) Start() (string, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -98,11 +66,8 @@ func (s *Server) Start() (string, error) {
 	return "http://" + ln.Addr().String(), nil
 }
 
-// Stop terminates the server. It waits for in-flight requests until ctx
-// ends, then closes the connections left: Shutdown never closes an active
-// connection, and an /events stream with a reading browser never finishes,
-// so its handler, seat and bus subscription would outlive Stop
-// (2026-10-27 H26). It returns ctx's error when it had to close any.
+// Stop waits for in-flight requests until ctx ends, then closes the connections left
+// and returns ctx's error.
 func (s *Server) Stop(ctx context.Context) error {
 	if s.srv == nil {
 		return nil
@@ -114,11 +79,8 @@ func (s *Server) Stop(ctx context.Context) error {
 	return err
 }
 
-// ---------- handlers ----------
-
 func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// X-Content-Type-Options + Referrer-Policy: defense in depth.
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	_, _ = fmt.Fprint(w, indexHTML)
@@ -138,10 +100,6 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
-	// Seat the stream BEFORE any bytes go out, so a refusal can still
-	// answer 429 at connect (core/stream's seat policy; the REST /events
-	// twin seats the same way). Each admitted stream parks a handler
-	// goroutine and a bus subscription for the life of the request.
 	seat, seated := s.seatTable().AcquireSeat("", 0, stream.SeatOverflowRefuse)
 	if !seated {
 		w.Header().Set("Retry-After", "1")
@@ -149,27 +107,21 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.seatTable().ReleaseSeat(seat)
-	// Subscribe BEFORE the headers go out: the browser may act the
-	// moment the stream opens, and the bus has no replay for events
-	// broadcast before a subscriber registers.
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	ch := s.bus.Subscribe(ctx)
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering if proxied
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
-	// SSEWriter arms a fresh write deadline on every event, so a
-	// client that stops reading cannot park this handler for good.
 	sse := stream.NewSSEWriter(w)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-seat.Done:
-			// Displaced by an EvictOldest admission: stop streaming.
 			return
 		case env, ok := <-ch:
 			if !ok {
@@ -200,10 +152,6 @@ func (s *Server) handleInput(w http.ResponseWriter, r *http.Request) {
 		Text string `json:"text"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxWebSendBody)
-	// Strict decode (handler.DecodeStrict): duplicate and case-folded
-	// top-level keys resolve last-wins under stdlib json, so a smuggled
-	// body shape would POST a prompt at model authority while a
-	// first-read intermediary parsed a different request.
 	if err := handler.DecodeStrict(r.Body, &body); err != nil {
 		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 		return
@@ -216,8 +164,6 @@ func (s *Server) handleInput(w http.ResponseWriter, r *http.Request) {
 		SessionID: s.Session,
 		Content:   engine.SimpleInput(body.Text),
 	}); err != nil {
-		// The loopback-only client relays the engine's own refusal (a
-		// turn in progress, a closed session) so its one user can act.
 		writeJSONError(w, r, http.StatusConflict, reasonSendFailed, map[string]any{"detail": err.Error()})
 		return
 	}
@@ -235,9 +181,6 @@ func jsonString(s string) string {
 	return string(b)
 }
 
-// indexHTML is the minimal SPA. v0.1 ships inline, when the
-// GoFastr-App dogfooding lands this is replaced with island-rendered
-// pages.
 const indexHTML = `<!doctype html>
 <html lang="en">
 <head>

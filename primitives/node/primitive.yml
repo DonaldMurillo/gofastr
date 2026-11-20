@@ -1,0 +1,69 @@
+primitive: node
+summary: The JSON-clean UI element tree (Node and Action) that the app spec codegen and Kiln's World IR both compose, with the stable per-element IDs and the walk, find and clone helpers authoring tools mutate it through.
+code:
+  - core-ui/node/
+docs:
+  - framework/docs/content/process-modules.md
+on_change:
+  - The JSON tags on Node and Action are a wire shape journals, codegen and the MCP tool surfaces store; a renamed tag breaks every saved tree.
+invariants:
+  - id: stdlib-only
+    rule: core-ui/node imports only the standard library, so any layer can describe a tree without linking a renderer or the Kiln engine.
+    enforced_by:
+      - test: core-ui/node.TestNodeImportsOnlyTheStandardLibrary
+  - id: assign-keeps-given-ids
+    rule: AssignNodeIDs fills an ID only where one is missing, keeps every given ID, and a second pass calls idGen no more.
+    enforced_by:
+      - test: core-ui/node.TestAssignNodeIDsPreservesAndFills
+  - id: element-id-shape
+    rule: NewElementID returns "el_" followed by 12 hex characters from crypto/rand.
+    enforced_by:
+      - test: core-ui/node.TestNewElementIDFormat
+  - id: find-returns-parent-and-index
+    rule: FindNodeByID returns the matching node with its parent and index in the parent, nil and -1 for the root, and no match for an empty id.
+    enforced_by:
+      - test: core-ui/node.TestFindNodeByID
+      - test: core-ui/node.TestFindNodeByIDRootHasNoParent
+  - id: clone-is-deep
+    rule: CloneNode copies Props, Bindings, Actions and Children at every depth, so mutating the clone leaves the source unchanged.
+    enforced_by:
+      - test: core-ui/node.TestCloneNodeDeepCopy
+  - id: tree-round-trips-json
+    rule: A Node with its actions survives a JSON marshal and unmarshal unchanged.
+    enforced_by:
+      - test: core-ui/node.TestNodeJSONRoundTrip
+decisions:
+  - id: id-handles-not-paths
+    date: 2026-11-20
+    status: accepted
+    decision: Authoring tools address an element by its ID, which the renderer ignores.
+    rejected:
+      - option: Positional tree paths.
+        why: They break when siblings shift.
+      - option: Selector queries.
+        why: They can match more than one element.
+    upholds: [assign-keeps-given-ids]
+  - id: short-element-ids
+    date: 2026-11-20
+    status: accepted
+    decision: An element ID is 48 random bits, short enough for terminals and tool calls.
+    rejected:
+      - option: A full UUID.
+        why: A collision in one page would need around 10^14 IDs, so the extra length buys nothing a page can use.
+    upholds: [element-id-shape]
+  - id: linear-find
+    date: 2026-11-20
+    status: accepted
+    decision: FindNodeByID walks the tree.
+    rejected:
+      - option: Keep an ID index beside the tree.
+        why: Pages are small, and the index would cost bookkeeping on every other operation.
+    revisit_if: A profile shows FindNodeByID on a hot path.
+  - id: actions-are-data
+    date: 2026-11-20
+    status: accepted
+    decision: An Action is a verb from a closed catalog with JSON params, never Go source.
+    rejected:
+      - option: Actions as Go code.
+        why: Journals, codegen and the MCP tool surfaces could not round-trip them.
+    upholds: [tree-round-trips-json]

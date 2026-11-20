@@ -61,6 +61,7 @@ import (
 
 	"golang.org/x/tools/go/analysis"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
 )
 
@@ -288,15 +289,8 @@ func regexpVars(pass *analysis.Pass) *regexpBindings {
 
 // isRegexp: *regexp.Regexp (or a regexp.Regexp value).
 func isRegexp(t types.Type) bool {
-	if ptr, ok := t.(*types.Pointer); ok {
-		t = ptr.Elem()
-	}
-	named, ok := t.(*types.Named)
-	if !ok {
-		return false
-	}
-	obj := named.Obj()
-	return obj != nil && obj.Name() == "Regexp" && obj.Pkg() != nil && obj.Pkg().Path() == "regexp"
+	named := astx.NamedOf(t)
+	return named != nil && astx.IsNamed(named, "regexp", "Regexp")
 }
 
 func compiledPattern(pass *analysis.Pass, e ast.Expr) (string, bool) {

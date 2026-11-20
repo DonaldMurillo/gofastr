@@ -1,0 +1,155 @@
+primitive: migrate.runner
+summary: The core/migrate Migrator, which parses directive files, registers versioned migrations in default or named groups, applies and rolls them back, and keeps the tracking table and its checksums.
+code:
+  - core/migrate/doc.go
+  - core/migrate/migrate.go
+  - core/migrate/runner.go
+  - core/migrate/integrity.go
+docs:
+  - framework/docs/content/migrations.md
+invariants:
+  - id: group-names
+    rule: A group name is empty for the default group or 1 to 64 of ASCII letters, digits, _ and -, the name default is refused when registered and selects the default group when passed to Up, Down, Status or Force.
+    enforced_by:
+      - test: core/migrate.TestParseInvalidGroupName
+      - test: core/migrate.TestRegisterInvalidGroup
+      - test: core/migrate.TestValidateGroupName_Exported
+      - test: core/migrate.TestSweepMigrateGroupNameIsAtMost64
+      - test: core/migrate.TestDefaultAliasSelectsDefaultGroup
+  - id: unknown-group-refused-for-writes
+    rule: Up and Down refuse a selected group with no registered migration, naming the known groups, while Status reads it as empty.
+    enforced_by:
+      - test: core/migrate.TestUpUnknownGroupErrors
+      - test: core/migrate.TestDownUnknownGroupErrors
+      - test: core/migrate.TestUpRejectsUnknownGroupLoudly
+      - test: core/migrate.TestStatusUnknownGroupEmptyNotError
+  - id: register-refuses-bad-migrations
+    rule: Register refuses an empty Up and a (Group, Version) already registered, and keeps migrations ordered by version then group, which is the apply order.
+    enforced_by:
+      - test: core/migrate.TestMissingUpDirectiveFailsLoud
+      - test: core/migrate.TestRegisterDupGroupVerRejected
+      - test: core/migrate.TestRegisterSortsMigrations
+      - test: core/migrate.TestSweepMigratePendingTiesBreakByGroup
+  - id: parser-refuses-what-it-would-drop
+    rule: The parser drops a leading byte order mark and refuses a file with no version, no Up section, an unknown -- +migrate directive or a comment that reads as one with its spacing or case off, and IsDirectiveLine reports the same lines.
+    enforced_by:
+      - test: core/migrate.TestParseMigrationIgnoresBOM
+      - test: core/migrate.TestRegisterFromReaderMissingVersion
+      - test: core/migrate.TestMisspelledDirectiveRefused
+      - test: core/migrate.TestKnownDirectivesStillParse
+      - test: core/migrate.TestMissingUpDirectiveFailsLoud
+      - test: framework/migrate.TestGeneratorGuardCoversNearMissDirectives
+  - id: tracking-table-shape
+    rule: The tracking table gains group_name and a (group_name, version) key only in an Up, Down or Force that registers or selects a named group, older tables gain the checksum and dirty columns in any call including Status, Status never adds group_name or changes the key, and reads follow the columns the table has.
+    enforced_by:
+      - test: core/migrate.TestStatusNeverAddsGroupColumn
+      - test: core/migrate.TestStatusDoesNotUpgradePK
+      - test: core/migrate.TestLegacyTableUpgradedToGroups
+      - test: core/migrate.TestBackfillTrackingColumns
+      - test: core/migrate.TestSweepMigrateStatusBackfillsIntegrityColumnsOnly
+      - test: core/migrate.TestDeregisteredGroupDoesNotShadowNewDefaultVersion
+      - test: core/migrate.TestPG_SiblingSchemaDoesNotFalsePositive
+      - test: core/migrate.TestRebuildSQLitePreservesGroupName
+      - test: core/migrate.TestQualifiedSQLiteTrackingTableGroups
+  - id: case-kept-table-refused
+    rule: On Postgres the runner refuses to start over a case-kept tracking table an older build left, instead of creating an empty folded one beside it.
+    enforced_by:
+      - test: core/migrate.TestPG_CaseKeptTrackingTableRefused
+  - id: owned-groups-only
+    rule: The default group and every named group with a registered migration are owned, and only owned rows block on dirty, count as unregistered drift, or are rolled back, so a disabled module's rows never stop another group.
+    enforced_by:
+      - test: core/migrate.TestForeignGroupDirtyDoesNotBlock
+      - test: core/migrate.TestDownNotBrickedByUnregisteredDirty
+      - test: core/migrate.TestDown_AppliedButNotRegistered
+      - test: core/migrate.TestStatusReportsModifiedAndUnregistered
+      - test: core/migrate.TestDeregisteredGroupDoesNotBrickUp
+  - id: drift-and-dirty-block
+    rule: Up refuses while an owned row is dirty or an applied migration's Up no longer hashes to its recorded SHA-256, a blank recorded checksum and an edited Down never counting as drift, and Status lists the same drift.
+    enforced_by:
+      - test: core/migrate.TestNoTransaction_FailureLeavesDirtyAndBlocks
+      - test: core/migrate.TestGroupDirtyBlocksAndNamesGroup
+      - test: core/migrate.TestChecksum_DriftDetected
+      - test: core/migrate.TestGroupChecksumDriftDetected
+      - test: core/migrate.TestChecksum_NoFalsePositiveOnLegacyRow
+      - test: core/migrate.TestBlankChecksumSkipsDriftInGroup
+      - test: core/migrate.TestSweepMigrateEditedDownIsNotDrift
+  - id: apply-is-atomic
+    rule: A transactional migration's SQL and its tracking row commit in one transaction, and a NoTransaction migration writes its row dirty before its SQL runs and clears it only after, Down marking the row dirty before its SQL too.
+    enforced_by:
+      - test: core/migrate.TestRT_PartialFailureIsAtomic
+      - test: core/migrate.TestNoTransaction_FailureLeavesDirtyAndBlocks
+      - test: core/migrate.TestPG_DirtyViaNoTransactionDown
+      - test: core/migrate.TestRunMigrationDownNoTx_Protocol
+  - id: sqlite-run-converges
+    rule: On SQLite each migration rechecks its tracking row just before applying and skips one a peer already recorded, so a runner with a stale pending list converges instead of failing.
+    enforced_by:
+      - test: core/migrate.TestSQLiteUpStaleReadWaitsNotFails
+  - id: down-refuses-before-it-acts
+    rule: Down refuses before rolling anything back when an owned row is dirty or a migration it would roll back has no Down, and rolls back newest first by version then group.
+    enforced_by:
+      - test: core/migrate.TestDownRefusesMigrationWithoutDown
+      - test: core/migrate.TestGroupAwarePGDown_GroupTiebreak
+      - test: core/migrate.TestRT_DownBlocksOnDirty
+  - id: force-reconciles
+    rule: Force takes at most one group, and with applied true writes a clean row carrying the registered name and checksum over any existing one, and with applied false removes the row.
+    enforced_by:
+      - test: core/migrate.TestForceTwoArgsErrors
+      - test: core/migrate.TestForceDoesNotRefreshDriftedChecksum
+      - test: core/migrate.TestForce_Baseline
+      - test: core/migrate.TestForce_NotAppliedRemovesRow
+      - test: core/migrate.TestForceClearsDirtyOnBothShapes
+  - id: lost-lease-stops-the-run
+    rule: Up and Down renew the SQLite lease before each migration and stop with an error once another process holds it.
+    enforced_by:
+      - test: core/migrate.TestLostLeaseStopsRun
+      - test: core/migrate.TestLostLeaseStopsRollback
+      - test: core/migrate.TestPoolOneRunKeepsLease
+decisions:
+  - id: groups-only-when-used
+    date: 2026-11-19
+    status: accepted
+    decision: The group column and composite key appear only once a named group is registered or selected, so an app without groups keeps the single-version tracking table.
+    rejected:
+      - option: Always create the group-aware table.
+        why: Every existing app's tracking table would be rebuilt on upgrade for a feature it does not use.
+    upholds: [tracking-table-shape]
+  - id: status-does-no-ddl
+    date: 2026-11-19
+    status: accepted
+    decision: Status creates a missing table in the plain shape and adds a missing checksum or dirty column, but never adds group_name or changes the key.
+    rejected:
+      - option: Upgrade the key in Status too.
+        why: Status takes no lock, and the SQLite rebuild is a check-then-act that is not safe against a concurrent Up.
+    upholds: [tracking-table-shape]
+  - id: checksum-covers-up
+    date: 2026-11-19
+    status: accepted
+    decision: The recorded checksum is the SHA-256 of Up alone.
+    rejected:
+      - option: Hash Up and Down together.
+        why: Fixing a broken Down of an applied migration would then block every later Up.
+    upholds: [drift-and-dirty-block]
+  - id: refuse-unknown-directives
+    date: 2026-11-19
+    status: accepted
+    decision: An unknown or near-miss directive fails the parse.
+    rejected:
+      - option: Skip lines the parser does not know.
+        why: A misspelled Down left the Up section open, so the rollback ran inside the apply and the version was recorded applied.
+    upholds: [parser-refuses-what-it-would-drop]
+  - id: disabled-module-rows-are-not-ours
+    date: 2026-11-19
+    status: accepted
+    decision: A named group with no registered migration is a disabled module whose rows the runner leaves alone; the default group is always owned.
+    rejected:
+      - option: Treat every applied row as the runner's.
+        why: A module turned off would leave rows that brick every other group's Up and Down.
+    upholds: [owned-groups-only]
+  - id: one-tracking-row-statement
+    date: 2026-11-19
+    status: accepted
+    decision: prepareTable, ownsGroup, insertRecord, recordColumns and trackingRowWhere are the one place each step is written; they replaced the copies of the create-upgrade-detect sequence in Up, Down and Force, the owned-group check in checkIntegrity, Down and Status, and the group-aware and plain halves of every tracking-row INSERT, DELETE and Force upsert.
+    rejected:
+      - option: Keep a group-aware and a plain statement at each site.
+        why: The halves drift, as the owned-group rule had already been written three ways.
+    upholds: [owned-groups-only, tracking-table-shape]

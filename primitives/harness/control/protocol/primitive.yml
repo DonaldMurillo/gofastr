@@ -1,0 +1,48 @@
+primitive: harness.control.protocol
+summary: The harness wire protocol - the closed Command and Event unions with their kind strings, the canonical EventEnvelope every transport carries verbatim, the handshake, the JSON codec, and the stable Error reason codes.
+code:
+  - framework/experimental/harness/control/protocol.go
+docs:
+  - framework/docs/content/harness-architecture.md
+on_change:
+  - A new command or event kind is added in four places in protocol.go (the type, its Kind method, the All*Kinds list and the decode switch) and changes the handshake's kind lists, which clients read.
+invariants:
+  - id: commands-refuse-ambiguous-keys
+    rule: UnmarshalCommand refuses a frame with a duplicate or case-folded key at any depth, in the envelope or the body, and still ignores body fields it does not know.
+    enforced_by:
+      - test: framework/experimental/harness/control.TestUnmarshalCommandRefusesAmbiguousKeysAtAnyDepth
+  - id: unknown-kind-is-refused
+    rule: UnmarshalCommand and DecodeEvent return an error for a kind outside the built-in set, never a zero value of some command or event.
+    enforced_by:
+      - test: framework/experimental/harness/control.TestUnmarshalRejectsUnknownCommand
+      - test: framework/experimental/harness/control.TestKindListsMatchCodecs
+  - id: kind-lists-match-codecs
+    rule: Every kind in AllCommandKinds and AllEventKinds (the handshake's command_kinds and event_kinds) decodes through UnmarshalCommand or DecodeEvent to a value whose CommandKind or EventKind is that same string.
+    enforced_by:
+      - test: framework/experimental/harness/control.TestKindListsMatchCodecs
+      - test: framework/experimental/harness/control.TestCommandRoundTrip
+      - test: framework/experimental/harness/control.TestHandshakeKindsMatchPublicLists
+  - id: identity-class-wire-strings
+    rule: IdentityClass encodes as "human" or "agent", and decoding any other string is an error rather than a default class.
+    enforced_by:
+      - test: framework/experimental/harness/control.TestIdentityClassRefusesUnknownWireString
+      - test: framework/experimental/harness/control.TestIdentityClassJSON
+decisions:
+  - id: strict-keys-lenient-fields
+    date: 2026-11-18
+    status: accepted
+    decision: Command frames refuse duplicate and case-folded keys at every depth through handler.CheckObjectKeys (the same walk the harness MCP server and core/mcp run), while unknown body fields stay ignored.
+    rejected:
+      - option: Plain encoding/json decoding.
+        why: It resolves duplicate and case-folded keys last-wins, so an intermediary that read the first spelling would approve a different value from the one the engine runs.
+      - option: DisallowUnknownFields on bodies.
+        why: The protocol evolves by adding fields in minor versions, and an older engine would then refuse a newer client's frames.
+    upholds: [commands-refuse-ambiguous-keys]
+  - id: closed-unions-with-custom-escape
+    date: 2026-11-18
+    status: accepted
+    decision: Commands and events are closed unions in control, advertised in the handshake, and plugins extend them only through CustomCommand and CustomEvent routed by Namespace.
+    rejected:
+      - option: An open registry where plugins add their own kinds.
+        why: The handshake could no longer list every kind, and a client could not tell an unknown kind from a malformed frame.
+    upholds: [unknown-kind-is-refused, kind-lists-match-codecs]

@@ -1,0 +1,16 @@
+primitive: store.route
+summary: The route.* signal family - route.path, route.pattern, route.title, route.params.<name> and route.query.<key> - declared by the store under its reserved prefix and seeded from the router's snapshot each render.
+code:
+  - core-ui/store/route.go
+docs:
+  - framework/docs/content/signal-store.md
+invariants:
+  - id: route-family-is-declared-once
+    rule: Route.Param and Route.Query return the same slice for a name every time, RouteNames lists every declared route.* name, and the family survives a test reset of the registry.
+    enforced_by:
+      - test: core-ui/store.TestStoreRefusesRoutePrefix
+      - test: core-ui/store.TestRouteSeedDueGatesTheWriters
+  - id: seed-route-reaches-new-bindings
+    rule: SeedRoute writes every param and query value into the request's bag whether or not its slice is declared yet, so a binding declared during the render shows it, and SeedRouteQueryFrom keeps the first value of each key.
+    enforced_by:
+      - test: core-ui/store.TestSeedRouteSeedsUndeclaredParams

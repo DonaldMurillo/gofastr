@@ -1,17 +1,10 @@
 package a2a
 
-import (
-	"database/sql"
-	"testing"
-)
+import "testing"
 
 // SQLite names the schema on the index, never on the indexed table.
 func TestSQLiteQualifiedTablesBuild(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db := openSQLite(t)
 	if _, err := NewSQLStore(db, WithTablePrefix("main.")); err != nil {
 		t.Fatalf("NewSQLStore with a schema-qualified table: %v", err)
 	}

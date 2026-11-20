@@ -50,18 +50,25 @@ func legacyDBOn(t *testing.T, driverName string, ddl ...string) *sql.DB {
 	return db
 }
 
-func taskEntity(t *testing.T) *entity.Entity {
+// defineTaskEntity is the tasks fixture taskEntity (string id) and
+// autoIncTaskEntity (integer id) share, differing only in the id column.
+func defineTaskEntity(t *testing.T, idType schema.FieldType) *entity.Entity {
 	t.Helper()
 	return entity.Define("tasks", entity.EntityConfig{
 		Table: "tasks",
 		Scope: &entity.ScopeConfig{OwnerField: "user_id"},
 		Fields: []schema.Field{
-			{Name: "id", Type: schema.String},
+			{Name: "id", Type: idType},
 			{Name: "user_id", Type: schema.String},
 			{Name: "title", Type: schema.String},
 		},
 		Relations: []entity.Relation{entity.BelongsTo("user", "users", "user_id")},
 	}.WithTimestamps(false))
+}
+
+func taskEntity(t *testing.T) *entity.Entity {
+	t.Helper()
+	return defineTaskEntity(t, schema.String)
 }
 
 // The whole point of the repair: a database carrying the stale key refuses
@@ -250,7 +257,11 @@ func TestRepairOwnerFKKeepsOtherForeignKeys(t *testing.T) {
 // off by necessity, on a pooled connection that goes on to serve ordinary
 // writes; leaving it off there would silently disable the feature the whole
 // v0.67 change exists to turn on.
-func TestRepairRestoresForeignKeyEnforcement(t *testing.T) {
+// repairedTasksDB is the fixture both pragma-restore tests share: a pooled
+// connection to the stale owner-FK schema after Find and Repair have run on
+// it, so each test only asserts the pragma the repair must have restored.
+func repairedTasksDB(t *testing.T) *sql.DB {
+	t.Helper()
 	db := legacyDB(t,
 		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
 		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT, FOREIGN KEY (user_id) REFERENCES users(id))`,
@@ -263,6 +274,11 @@ func TestRepairRestoresForeignKeyEnforcement(t *testing.T) {
 	if err := RepairStaleOwnerForeignKeys(ctx, db, stale); err != nil {
 		t.Fatal(err)
 	}
+	return db
+}
+
+func TestRepairRestoresForeignKeyEnforcement(t *testing.T) {
+	db := repairedTasksDB(t)
 	// MaxOpenConns(1), so this is the very connection the rebuild ran on.
 	var on int
 	if err := db.QueryRow("PRAGMA foreign_keys").Scan(&on); err != nil {
@@ -693,18 +709,7 @@ func TestRepairSurvivesADependentView(t *testing.T) {
 // way out just like foreign_keys. Leaving it on is a quieter defect than an
 // unenforced key: nothing fails until someone renames a table.
 func TestRepairRestoresLegacyAlterTable(t *testing.T) {
-	db := legacyDB(t,
-		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
-		`CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT, FOREIGN KEY (user_id) REFERENCES users(id))`,
-	)
-	ctx := context.Background()
-	stale, err := FindStaleOwnerForeignKeys(ctx, db, testReg{"tasks": taskEntity(t)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := RepairStaleOwnerForeignKeys(ctx, db, stale); err != nil {
-		t.Fatal(err)
-	}
+	db := repairedTasksDB(t)
 	var legacy int
 	if err := db.QueryRow("PRAGMA legacy_alter_table").Scan(&legacy); err != nil {
 		t.Fatal(err)
@@ -1091,16 +1096,7 @@ func TestRepairKeepsTheAutoincrementHighWaterMark(t *testing.T) {
 // AUTOINCREMENT fixture.
 func autoIncTaskEntity(t *testing.T) *entity.Entity {
 	t.Helper()
-	return entity.Define("tasks", entity.EntityConfig{
-		Table: "tasks",
-		Scope: &entity.ScopeConfig{OwnerField: "user_id"},
-		Fields: []schema.Field{
-			{Name: "id", Type: schema.Int},
-			{Name: "user_id", Type: schema.String},
-			{Name: "title", Type: schema.String},
-		},
-		Relations: []entity.Relation{entity.BelongsTo("user", "users", "user_id")},
-	}.WithTimestamps(false))
+	return defineTaskEntity(t, schema.Int)
 }
 
 // assertColumnType fails when a rebuilt column's declared type is not exactly

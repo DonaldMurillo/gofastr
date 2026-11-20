@@ -41,38 +41,34 @@ func (s *e2eFullStore) UpdateRoles(_ context.Context, userID string, roles []str
 	return nil
 }
 
-// --- linkingStore (accounts_test.go) ---
+// --- linkingStore (accounts_test.go) / linkingUserStore (oauth2_test.go) ---
 
-func (s *linkingStore) UpdateRoles(_ context.Context, userID string, roles []string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	u, ok := s.byID[userID]
+// setBasicUserRoles is the shared UpdateRoles body of the test stores
+// whose byID map holds User directly: mutate a *BasicUser in place, or
+// replace a foreign implementation with a BasicUser carrying the roles.
+func setBasicUserRoles(byID map[string]User, userID string, roles []string) error {
+	u, ok := byID[userID]
 	if !ok {
 		return ErrUserNotFound
 	}
 	if bu, ok := u.(*BasicUser); ok {
 		bu.Roles = roles
 	} else {
-		s.byID[userID] = &BasicUser{ID: u.GetID(), Email: u.GetEmail(), Roles: roles}
+		byID[userID] = &BasicUser{ID: u.GetID(), Email: u.GetEmail(), Roles: roles}
 	}
 	return nil
 }
 
-// --- linkingUserStore (oauth2_test.go) ---
+func (s *linkingStore) UpdateRoles(_ context.Context, userID string, roles []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return setBasicUserRoles(s.byID, userID, roles)
+}
 
 func (s *linkingUserStore) UpdateRoles(_ context.Context, userID string, roles []string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	u, ok := s.byID[userID]
-	if !ok {
-		return ErrUserNotFound
-	}
-	if bu, ok := u.(*BasicUser); ok {
-		bu.Roles = roles
-	} else {
-		s.byID[userID] = &BasicUser{ID: u.GetID(), Email: u.GetEmail(), Roles: roles}
-	}
-	return nil
+	return setBasicUserRoles(s.byID, userID, roles)
 }
 
 // --- staticUserStore (apitoken_test.go) ---

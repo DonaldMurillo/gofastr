@@ -25,7 +25,8 @@ type SliderConfig struct {
 	Step int
 	// Value is clamped into Min..Max.
 	Value int
-	// ShowValue renders the value output beside the label.
+	// ShowValue renders the value output beside the label, spoken on
+	// the thumb as aria-valuetext.
 	ShowValue bool
 	// ShowEdgeLabels renders Min and Max under the track.
 	ShowEdgeLabels bool

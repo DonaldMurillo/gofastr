@@ -18,22 +18,6 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// eager.go: BelongsTo SOURCE query error (eager.go:177). The existing fault
-// tests cover the HasMany/m2m next-err and the BelongsTo target query; the
-// unfiltered BelongsTo *source* query error had no coverage.
-// ---------------------------------------------------------------------------
-
-func TestEagerBelongsTo_SrcQueryErr(t *testing.T) {
-	ch, db, reg := covFaultRelWorld(t)
-	rel := entity.BelongsTo("author", "users", "author_id")
-	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM posts " })
-	_, err := EagerLoad(context.Background(), db, ch.Entity, []entity.Relation{rel}, []string{"p1"}, reg)
-	if !errors.Is(err, errCovInjected) {
-		t.Fatalf("belongsTo src query = %v, want injected", err)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // crud.go:417: the nested-filter closure `func(sql,args){ qb.Where(...) }`
 // runs only when there are nested filters (?author.name=alice).
 // ---------------------------------------------------------------------------

@@ -66,17 +66,7 @@ func newNonPeekingHarness(t *testing.T) *tokenPurposeHarness {
 // serves its own token when the store cannot peek. A RED below is then the
 // purpose check, not the missing peeker breaking the wiring.
 func TestNonPeekingStoreStillServesOwnFlows(t *testing.T) {
-	h := newNonPeekingHarness(t)
-
-	if code := h.attemptReset(h.mintResetToken()); code != http.StatusOK {
-		t.Errorf("reset token at /auth/reset-password: got %d, want 200", code)
-	}
-	if code := h.attemptVerifyEmail(h.mintVerificationToken()); code != http.StatusOK {
-		t.Errorf("verification token at /auth/verify-email: got %d, want 200", code)
-	}
-	if code := h.attemptMagicVerify(h.mintMagicLinkToken()); code != http.StatusFound {
-		t.Errorf("magic-link token at /auth/magic-link/verify: got %d, want 302", code)
-	}
+	newNonPeekingHarness(t).assertEachFlowServesOwnToken()
 }
 
 // The account-takeover case on the fallback path: a verification token
@@ -84,33 +74,13 @@ func TestNonPeekingStoreStillServesOwnFlows(t *testing.T) {
 // GET link) must not reach SetPassword.
 func TestNonPeekingStoreRefusesVerificationTokenAtReset(t *testing.T) {
 	h := newNonPeekingHarness(t)
-	before := h.passwordHash()
-
-	if code := h.attemptReset(h.mintVerificationToken()); code != http.StatusUnauthorized {
-		t.Errorf("SECURITY: [token-purpose] verification token at /auth/reset-password on a non-peeking store: got %d, want 401", code)
-	}
-	if after := h.passwordHash(); after != before {
-		t.Error("SECURITY: [token-purpose] verification token changed the victim's password hash on a non-peeking store")
-	}
+	h.assertTokenRefusedAtReset(h.mintVerificationToken(), "verification token", " on a non-peeking store")
 }
 
 // The other two directions, matching TestResetTokenCannotDriveOtherFlows.
 func TestNonPeekingStoreRefusesResetTokenElsewhere(t *testing.T) {
 	h := newNonPeekingHarness(t)
-
-	if code := h.attemptVerifyEmail(h.mintResetToken()); code != http.StatusUnauthorized {
-		t.Errorf("SECURITY: [token-purpose] reset token at /auth/verify-email on a non-peeking store: got %d, want 401", code)
-	}
-	if h.store.verifiedIDs[h.victimID] {
-		t.Error("SECURITY: [token-purpose] reset token marked the victim's email verified on a non-peeking store")
-	}
-
-	if code := h.attemptMagicVerify(h.mintResetToken()); code != http.StatusUnauthorized {
-		t.Errorf("SECURITY: [token-purpose] reset token at /auth/magic-link/verify on a non-peeking store: got %d, want 401", code)
-	}
-	if _, _, err := h.store.FindByEmail(context.Background(), h.victimID); err == nil {
-		t.Error("SECURITY: [token-purpose] reset token auto-created an account keyed by the victim's userID as its email")
-	}
+	h.assertResetTokenRefusedElsewhere(" on a non-peeking store")
 }
 
 // A magic-link token carries an EMAIL payload; at /auth/reset-password that

@@ -1,0 +1,68 @@
+primitive: component
+summary: The core-ui component model - the Component, ContextComponent and InteractiveComponent interfaces, the Widget hydration boundary, SafeRender's panic fallback, the action registry On and ExtractActions fill, and the ComponentContext an action handler receives.
+code:
+  - core-ui/component/
+docs:
+  - framework/docs/content/ui-wiring.md
+  - framework/docs/content/widgets.md
+invariants:
+  - id: render-ctx-wins
+    rule: SafeRenderCtx and RenderComponentCtx call RenderCtx with the request context when a component implements ContextComponent and Render only otherwise, and a Widget renders its component the same way.
+    enforced_by:
+      - test: core-ui/component.TestSafeRenderCtx_PrefersContextComponent
+      - test: core-ui/component.TestCompositionPrefersContext
+      - test: core-ui/component.TestWidgetRendersContext
+  - id: panic-fallback-is-escaped-and-scrubbed
+    rule: SafeRender recovers a render panic, renders the component's RenderError when it is an ErrorBoundary, and otherwise an alert box whose message is the panic value escaped and scrubbed by textsafe.Recovered.
+    enforced_by:
+      - test: core-ui/component.TestSafeRenderEscapesPanicMessage
+      - test: core-ui/component.TestSafeRenderFallbackScrubsPanicValue
+      - test: core-ui/component.TestSafeRenderErrorBoundary
+  - id: widget-id-matches-the-runtime-gate
+    rule: NewWidget maps every rune of the id outside [A-Za-z0-9_-] to '-', so the data-behavior URL it emits for an interactive widget always passes the runtime's /__gofastr/widget/<id>.js gate.
+    enforced_by:
+      - test: core-ui/component.TestWidgetBehaviorURLMatchesRuntimeGate
+  - id: extract-actions-survives-a-panic
+    rule: ExtractActions logs a panic in Actions with the component type, the scrubbed value and the stack, returns an empty registry and restores the registry On writes to.
+    enforced_by:
+      - test: core-ui/component.TestActionPanicIsLoggedAndEmpty
+  - id: actions-in-event-order
+    rule: ActionRegistry.All returns the actions sorted by event name, so the actions bundle is the same bytes every build.
+    enforced_by:
+      - test: core-ui/component.TestActionsSortedByEvent
+  - id: component-context-is-a-context
+    rule: ComponentContext delegates Deadline, Done, Err and Value to the request context it carries, and to context.Background when that is nil.
+    enforced_by:
+      - test: core-ui/component.TestComponentContext_CarriesRequestContext
+      - test: core-ui/component.TestComponentContext_PropagatesCancellation
+      - test: core-ui/component.TestComponentContext_PropagatesDeadline
+      - test: core-ui/component.TestComponentContext_NilCtxBehavesAsBackground
+  - id: state-accessors-optional
+    rule: GetState returns nil and SetState does nothing when the context has no state getter or setter.
+    enforced_by:
+      - test: core-ui/component.TestComponentContext_StateAccessorsOptional
+decisions:
+  - id: action-context-carries-the-request
+    date: 2026-11-20
+    status: accepted
+    decision: ComponentContext is itself a context.Context carrying the request context, and NewComponentContextFor is the constructor for any path that has a request.
+    rejected:
+      - option: Pass the handler event data and state access only.
+        why: The server-action endpoint requires a mutating handler to check authorization itself, and with no request context handler.GetUser had nothing to read.
+    upholds: [component-context-is-a-context]
+  - id: context-only-embed
+    date: 2026-11-20
+    status: accepted
+    decision: ContextComponent does not embed Component; a type that only implements RenderCtx embeds ContextOnly for a Render that is never called.
+    rejected:
+      - option: Embed Component in ContextComponent.
+        why: Every ctx-aware component would need a Render stub that calls RenderCtx with a background context.
+    upholds: [render-ctx-wins]
+  - id: slug-not-refuse-widget-ids
+    date: 2026-11-20
+    status: accepted
+    decision: An invalid widget id is slugged to the runtime's alphabet, not refused.
+    rejected:
+      - option: Emit the id as given.
+        why: The runtime drops a data-behavior URL outside its alphabet, so a widget whose id came from a display name or path segment would never hydrate.
+    upholds: [widget-id-matches-the-runtime-gate]

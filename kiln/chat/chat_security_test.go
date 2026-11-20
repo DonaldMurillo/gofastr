@@ -691,6 +691,19 @@ func planApproved(l *live.Live, id string) bool {
 	return approved
 }
 
+// proposeStrictPlan registers plan id with the shape the strict-decoding
+// tests approve or reject: one step, one destructive target.
+func proposeStrictPlan(t *testing.T, tools *protocol.Tools, id string) {
+	t.Helper()
+	if res := tools.ProposePlan(context.Background(), protocol.ProposePlanArgs{
+		PlanID:  id,
+		Steps:   []string{"drop posts"},
+		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "posts"}},
+	}); !res.OK {
+		t.Fatalf("propose_plan %s: %+v", id, res)
+	}
+}
+
 func TestPanelSendRejectsMalformed(t *testing.T) {
 	l, _ := newCSRFTestServer(t)
 	panelStrictRefusals(t, l, []struct {
@@ -715,14 +728,7 @@ func TestPanelSendRejectsDuplicateKeys(t *testing.T) {
 
 func TestPanelApproveRejectsMalformed(t *testing.T) {
 	l, tools := newCSRFTestServer(t)
-	ctx := context.Background()
-	if res := tools.ProposePlan(ctx, protocol.ProposePlanArgs{
-		PlanID:  "strict-a",
-		Steps:   []string{"drop posts"},
-		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "posts"}},
-	}); !res.OK {
-		t.Fatalf("propose_plan strict-a: %+v", res)
-	}
+	proposeStrictPlan(t, tools, "strict-a")
 	panelStrictRefusals(t, l, []struct {
 		name string
 		path string
@@ -738,15 +744,8 @@ func TestPanelApproveRejectsMalformed(t *testing.T) {
 // control; strict-b must stay pending.
 func TestPanelApproveRejectsDuplicateKeys(t *testing.T) {
 	l, tools := newCSRFTestServer(t)
-	ctx := context.Background()
 	for _, id := range []string{"strict-a", "strict-b"} {
-		if res := tools.ProposePlan(ctx, protocol.ProposePlanArgs{
-			PlanID:  id,
-			Steps:   []string{"drop posts"},
-			Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "posts"}},
-		}); !res.OK {
-			t.Fatalf("propose_plan %s: %+v", id, res)
-		}
+		proposeStrictPlan(t, tools, id)
 	}
 	panelStrictRefusals(t, l, []struct {
 		name string
@@ -763,14 +762,7 @@ func TestPanelApproveRejectsDuplicateKeys(t *testing.T) {
 
 func TestPanelRejectPlanRejectsMalformed(t *testing.T) {
 	l, tools := newCSRFTestServer(t)
-	ctx := context.Background()
-	if res := tools.ProposePlan(ctx, protocol.ProposePlanArgs{
-		PlanID:  "strict-a",
-		Steps:   []string{"drop posts"},
-		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "posts"}},
-	}); !res.OK {
-		t.Fatalf("propose_plan strict-a: %+v", res)
-	}
+	proposeStrictPlan(t, tools, "strict-a")
 	panelStrictRefusals(t, l, []struct {
 		name string
 		path string
@@ -782,14 +774,7 @@ func TestPanelRejectPlanRejectsMalformed(t *testing.T) {
 
 func TestPanelRejectPlanRejectsDuplicateKeys(t *testing.T) {
 	l, tools := newCSRFTestServer(t)
-	ctx := context.Background()
-	if res := tools.ProposePlan(ctx, protocol.ProposePlanArgs{
-		PlanID:  "strict-a",
-		Steps:   []string{"drop posts"},
-		Targets: []journal.PlanTarget{{Op: "delete_entity", Name: "posts"}},
-	}); !res.OK {
-		t.Fatalf("propose_plan strict-a: %+v", res)
-	}
+	proposeStrictPlan(t, tools, "strict-a")
 	panelStrictRefusals(t, l, []struct {
 		name string
 		path string

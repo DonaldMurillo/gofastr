@@ -1,5 +1,2 @@
-// Package harness is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package harness wires the experimental agent harness behind `gofastr harness`: engine, sessions, tools, skills, providers and control.
 package harness

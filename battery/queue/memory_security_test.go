@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/reexectest"
 )
 
 // ============================================================================
@@ -85,22 +85,11 @@ func TestMemoryQueueGatePanicIsolated(t *testing.T) {
 		return // unreachable; queueGatePanicChild exits
 	}
 
-	cmd := exec.Command(os.Args[0],
-		"-test.run", "^TestMemoryQueueGatePanicIsolated$",
-		"-test.count=1")
-	cmd.Env = append(os.Environ(), queueGatePanicChildEnv+"=1")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() >= 10 {
-			t.Fatalf("gate-panic child scenario contract broken (exit %d):\n%s", exitErr.ExitCode(), out)
-		}
-		t.Errorf("SECURITY: [gate-panic-isolation] a panicking SetGate callback killed the process: the worker did not survive it (memory.go processJob must route the gate through gateAllows like DBQueue): %v\n--- child output ---\n%s", err, out)
-		return
-	}
-	if strings.Contains(string(out), "panic:") {
-		t.Errorf("SECURITY: [gate-panic-isolation] child survived but reported a panic:\n%s", out)
-	}
+	reexectest.RunChild(t, "TestMemoryQueueGatePanicIsolated", queueGatePanicChildEnv,
+		"[gate-panic-isolation]",
+		"[gate-panic-isolation] a panicking SetGate callback killed the process: "+
+			"the worker did not survive it (memory.go processJob must route the gate "+
+			"through gateAllows like DBQueue)")
 }
 
 // queueGatePanicChild is the child-side scenario. It never returns.

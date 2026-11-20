@@ -73,6 +73,28 @@ func TestCovViewDuplicatePanics(t *testing.T) {
 	})
 }
 
+// dupToolEndpointsConfig declares two endpoints that register the same MCP
+// tool name under paths "a" and "b", with CRUD routes off; registration
+// must refuse the pair with a panic.
+func dupToolEndpointsConfig(tool string) entity.EntityConfig {
+	return entity.EntityConfig{
+		Fields:   []schema.Field{{Name: "title", Type: schema.String}},
+		Exposure: &entity.ExposureConfig{CRUD: new(false)},
+		Endpoints: []entity.Endpoint{
+			{
+				Method: http.MethodPost, Path: "a", Name: tool, MCP: true,
+				Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+				MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
+			},
+			{
+				Method: http.MethodPost, Path: "b", Name: tool, MCP: true,
+				Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+				MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
+			},
+		},
+	}
+}
+
 // registerEntityEndpoints surfaces the MCP RegisterTool error (line 801) when
 // two endpoints declare the same tool Name.
 func TestCovEntityEndpointDuplicateToolPanics(t *testing.T) {
@@ -82,19 +104,7 @@ func TestCovEntityEndpointDuplicateToolPanics(t *testing.T) {
 			t.Fatal("expected panic from duplicate MCP tool name")
 		}
 	}()
-	app.Entity("posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: new(false)}, Endpoints: []entity.Endpoint{
-		{
-			Method: http.MethodPost, Path: "a", Name: "dup_tool", MCP: true,
-			Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
-		},
-		{
-			Method: http.MethodPost, Path: "b", Name: "dup_tool", MCP: true,
-			Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
-		},
-	},
-	})
+	app.Entity("posts", dupToolEndpointsConfig("dup_tool"))
 }
 
 // registerGroupEndpoints surfaces the MCP RegisterTool error (line 442).
@@ -106,19 +116,7 @@ func TestCovGroupEndpointDuplicateToolPanics(t *testing.T) {
 			t.Fatal("expected panic from duplicate group MCP tool name")
 		}
 	}()
-	app.GroupEntity(g, "posts", entity.EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}, Exposure: &entity.ExposureConfig{CRUD: new(false)}, Endpoints: []entity.Endpoint{
-		{
-			Method: http.MethodPost, Path: "a", Name: "dup", MCP: true,
-			Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
-		},
-		{
-			Method: http.MethodPost, Path: "b", Name: "dup", MCP: true,
-			Handler:    http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-			MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
-		},
-	},
-	})
+	app.GroupEntity(g, "posts", dupToolEndpointsConfig("dup"))
 }
 
 // RegisterBattery panics if called after InitPlugins (line 852).

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -32,17 +33,9 @@ func (c *seoTestComp) HeadHTML() string {
 // ---------------------------------------------------------------------------
 
 func TestWithHeadHTML(t *testing.T) {
-	application := app.NewApp("HeadTest")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-
-	host := New(application,
+	page := serveHomeWithOpts(t, "HeadTest",
 		WithHeadHTML(`<link rel="icon" href="/static/favicon.ico"><meta name="theme-color" content="#f7f5ee">`),
 	)
-
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
 
 	assertContains(t, page, `<link rel="icon" href="/static/favicon.ico">`)
 	assertContains(t, page, `<meta name="theme-color" content="#f7f5ee">`)
@@ -72,64 +65,28 @@ func TestWithHeadHTMLNotInjectedByDefault(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWithFavicon(t *testing.T) {
-	application := app.NewApp("FaviconTest")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-
-	host := New(application, WithFavicon("/static/favicon.ico"))
-
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
-
+	page := serveHomeWithOpts(t, "FaviconTest", WithFavicon("/static/favicon.ico"))
 	assertContains(t, page, `<link rel="icon" href="/static/favicon.ico">`)
 }
 
 func TestWithThemeColor(t *testing.T) {
-	application := app.NewApp("ThemeColorTest")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-
-	host := New(application, WithThemeColor("#f7f5ee"))
-
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
-
+	page := serveHomeWithOpts(t, "ThemeColorTest", WithThemeColor("#f7f5ee"))
 	assertContains(t, page, `<meta name="theme-color" content="#f7f5ee">`)
 }
 
 func TestWithDescription(t *testing.T) {
-	application := app.NewApp("DescTest")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-
-	host := New(application, WithDescription("A test site for head injection"))
-
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
-
+	page := serveHomeWithOpts(t, "DescTest", WithDescription("A test site for head injection"))
 	assertContains(t, page, `<meta name="description" content="A test site for head injection">`)
 }
 
 func TestWithOpenGraph(t *testing.T) {
-	application := app.NewApp("OGTest")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-
-	host := New(application, WithOpenGraph(OG{
+	page := serveHomeWithOpts(t, "OGTest", WithOpenGraph(OG{
 		Title:       "My Site",
 		Description: "Best site ever",
 		Image:       "https://example.com/og.png",
 		URL:         "https://example.com",
 		Type:        "website",
 	}))
-
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
-
 	assertContains(t, page, `<meta property="og:title" content="My Site">`)
 	assertContains(t, page, `<meta property="og:description" content="Best site ever">`)
 	assertContains(t, page, `<meta property="og:image" content="https://example.com/og.png">`)
@@ -138,21 +95,12 @@ func TestWithOpenGraph(t *testing.T) {
 }
 
 func TestWithTwitterCard(t *testing.T) {
-	application := app.NewApp("TwitterTest")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-
-	host := New(application, WithTwitterCard(TwitterCard{
+	page := serveHomeWithOpts(t, "TwitterTest", WithTwitterCard(TwitterCard{
 		Card:        "summary_large_image",
 		Title:       "My Site",
 		Description: "Best site",
 		Image:       "https://example.com/card.png",
 	}))
-
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
-
 	assertContains(t, page, `<meta name="twitter:card" content="summary_large_image">`)
 	assertContains(t, page, `<meta name="twitter:title" content="My Site">`)
 	assertContains(t, page, `<meta name="twitter:description" content="Best site">`)
@@ -160,30 +108,12 @@ func TestWithTwitterCard(t *testing.T) {
 }
 
 func TestWithCanonicalURL(t *testing.T) {
-	application := app.NewApp("CanonicalTest")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-
-	host := New(application, WithCanonicalURL("https://example.com/page"))
-
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
-
+	page := serveHomeWithOpts(t, "CanonicalTest", WithCanonicalURL("https://example.com/page"))
 	assertContains(t, page, `<link rel="canonical" href="https://example.com/page">`)
 }
 
 func TestWithPreconnect(t *testing.T) {
-	application := app.NewApp("PreconnectTest")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-
-	host := New(application, WithPreconnect("https://fonts.googleapis.com", "https://fonts.gstatic.com"))
-
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
-
+	page := serveHomeWithOpts(t, "PreconnectTest", WithPreconnect("https://fonts.googleapis.com", "https://fonts.gstatic.com"))
 	assertContains(t, page, `<link rel="preconnect" href="https://fonts.googleapis.com">`)
 	assertContains(t, page, `<link rel="preconnect" href="https://fonts.gstatic.com">`)
 }
@@ -245,19 +175,33 @@ func TestSEOScreenPlusGlobalHead(t *testing.T) {
 
 func TestSEOScreenNoOverride(t *testing.T) {
 	// Screen that doesn't implement SEOScreen should work fine
-	application := app.NewApp("NoSEOTest")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-
-	host := New(application, WithFavicon("/favicon.ico"))
-
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
+	page := serveHomeWithOpts(t, "NoSEOTest", WithFavicon("/favicon.ico"))
 
 	assertContains(t, page, `<link rel="icon" href="/favicon.ico">`)
 	// No crash, no extra head content
 	assertNotContains(t, page, `og:title`)
+}
+
+// serveHomeWithOpts builds the standard one-home-screen app, hosts it with
+// opts, serves "/", and returns the rendered page — the scaffold the
+// head-option tests share.
+func serveHomeWithOpts(t *testing.T, name string, opts ...Option) string {
+	t.Helper()
+	return serveHomeWithComp(t, name, &testHomeComp{}, opts...)
+}
+
+// serveHomeWithComp is serveHomeWithOpts for a screen that renders comp
+// instead of the stock home component — the scaffold the head-scrub and
+// SEO-bundle tests build their per-payload screens from.
+func serveHomeWithComp(t *testing.T, name string, comp component.Component, opts ...Option) string {
+	t.Helper()
+	application := app.NewApp(name)
+	application.SetDefaultLayout(bareLayout("main"))
+	application.RegisterScreen(app.NewScreen("/", comp).WithTitle("Home"), nil)
+	host := New(application, opts...)
+	rec := httptest.NewRecorder()
+	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	return rec.Body.String()
 }
 
 // ---------------------------------------------------------------------------
@@ -265,11 +209,7 @@ func TestSEOScreenNoOverride(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAllTypedHelpersCombined(t *testing.T) {
-	application := app.NewApp("AllHelpers")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-
-	host := New(application,
+	page := serveHomeWithOpts(t, "AllHelpers",
 		WithFavicon("/favicon.ico"),
 		WithThemeColor("#0f0"),
 		WithDescription("All helpers test"),
@@ -278,11 +218,6 @@ func TestAllTypedHelpersCombined(t *testing.T) {
 		WithCanonicalURL("https://example.com/"),
 		WithPreconnect("https://cdn.example.com"),
 	)
-
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
-
 	// All tags should be present in <head>
 	for _, want := range []string{
 		`<link rel="icon" href="/favicon.ico">`,
@@ -317,15 +252,7 @@ func TestAllTypedHelpersCombined(t *testing.T) {
 
 func TestTypedHelpersEscapeAttrs(t *testing.T) {
 	// Ensure typed helpers escape user-provided values
-	application := app.NewApp("EscapeTest")
-	application.SetDefaultLayout(bareLayout("main"))
-	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home"), nil)
-
-	host := New(application, WithDescription(`<script>alert("xss")</script>`))
-
-	rec := httptest.NewRecorder()
-	host.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
+	page := serveHomeWithOpts(t, "EscapeTest", WithDescription(`<script>alert("xss")</script>`))
 
 	// The raw <script> tag must NOT appear in output. It must be escaped
 	assertNotContains(t, page, `<script>alert("xss")</script>`)

@@ -41,15 +41,22 @@ func (g *gatedShell) Run(ctx context.Context, w desktop.WindowConfig, ready func
 	return g.Shell.Run(ctx, w, ready)
 }
 
-// TestDeepLinkNavigatesAndEmits: a link on the configured scheme
-// focuses the main window, navigates it client-side, and reaches the
-// page as a deep_link event carrying the raw URL and the mapped path.
-func TestDeepLinkNavigatesAndEmits(t *testing.T) {
+// notesHarness boots the standard deep-link app (title DL, scheme
+// notes://) and returns its running harness. The tests that vary the
+// config — override, no-config, gated shell — spell it out themselves.
+func notesHarness(t *testing.T) *desktoptest.Harness {
 	app, d := uiApp(t, desktop.Config{
 		Title:    "DL",
 		DeepLink: &desktop.DeepLinkConfig{Scheme: "notes"},
 	})
-	h := desktoptest.Run(t, app, d)
+	return desktoptest.Run(t, app, d)
+}
+
+// TestDeepLinkNavigatesAndEmits: a link on the configured scheme
+// focuses the main window, navigates it client-side, and reaches the
+// page as a deep_link event carrying the raw URL and the mapped path.
+func TestDeepLinkNavigatesAndEmits(t *testing.T) {
+	h := notesHarness(t)
 
 	h.OpenURL("notes://notes/123?x=1")
 
@@ -73,11 +80,7 @@ func TestDeepLinkNavigatesAndEmits(t *testing.T) {
 // TestDeepLinkSchemeAloneMapsToRoot: scheme:// with no host and no
 // path maps to the app root.
 func TestDeepLinkSchemeAloneMapsToRoot(t *testing.T) {
-	app, d := uiApp(t, desktop.Config{
-		Title:    "DL",
-		DeepLink: &desktop.DeepLinkConfig{Scheme: "notes"},
-	})
-	h := desktoptest.Run(t, app, d)
+	h := notesHarness(t)
 
 	h.OpenURL("notes://")
 
@@ -92,11 +95,7 @@ func TestDeepLinkSchemeAloneMapsToRoot(t *testing.T) {
 // dropped; the scheme match itself is case-insensitive, so NOTES://
 // is the one accepted link.
 func TestDeepLinkRefusesOffSchemeUserinfoLength(t *testing.T) {
-	app, d := uiApp(t, desktop.Config{
-		Title:    "DL",
-		DeepLink: &desktop.DeepLinkConfig{Scheme: "notes"},
-	})
-	h := desktoptest.Run(t, app, d)
+	h := notesHarness(t)
 
 	h.OpenURL("other://notes/123")                      // wrong scheme
 	h.OpenURL("notes://user:secret@notes/123")          // userinfo
@@ -131,11 +130,7 @@ func TestDeepLinkRefusesOffSchemeUserinfoLength(t *testing.T) {
 // TestDeepLinkRefusesTraversal: a host or path segment of ".." fails
 // the navigate-path grammar and is dropped.
 func TestDeepLinkRefusesTraversal(t *testing.T) {
-	app, d := uiApp(t, desktop.Config{
-		Title:    "DL",
-		DeepLink: &desktop.DeepLinkConfig{Scheme: "notes"},
-	})
-	h := desktoptest.Run(t, app, d)
+	h := notesHarness(t)
 
 	h.OpenURL("notes://host/../etc")
 	h.OpenURL("notes://../secret")

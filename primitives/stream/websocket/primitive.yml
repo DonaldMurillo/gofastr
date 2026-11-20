@@ -1,0 +1,165 @@
+primitive: stream.websocket
+summary: WebSocketConn - the RFC 6455 handshake, frame codec, read pump, keepalive and closing handshake, with no external dependency.
+code:
+  - core/stream/websocket.go
+docs:
+  - framework/docs/content/rtc.md
+twins:
+  - job: Parse and write RFC 6455 frames on a hijacked connection.
+    why: The harness control socket hijacks the connection itself after its own seat and token checks and reads frames on its own command loop, and WebSocketConn exposes no frame-level codec for it to call.
+    sites:
+      - path: core/stream/websocket.go
+        note: readFrame and writeFrameBy.
+      - path: framework/experimental/harness/control/ws/ws.go
+        note: Conn.readFrame, Conn.writeFrame and completeHandshake.
+invariants:
+  - id: close-frame-has-its-own-deadline
+    rule: Once WebSocketConn.Close starts, every frame write before its Close frame (a keepalive Ping or a Pong included) carries Close's drain bound and the Close frame a fresh deadline of its own, so a negative WriteTimeout and a peer that stopped reading cannot block Close for good.
+    enforced_by:
+      - test: core/stream.TestCloseFrameIsBoundedAfterDrainWhenWriteTimeoutDisabled
+      - test: core/stream.TestCloseReturnsWhenPingFollowsDrainedFrame
+  - id: handshake-checked-before-hijack
+    rule: CheckUpgradeRequest refuses, before anything is hijacked, a request that is not GET, not HTTP/1.1 or later, has no websocket token on any Upgrade line or no upgrade token on any Connection line, is not version 13, or carries a key that is not base64 of 16 bytes.
+    enforced_by:
+      - test: core/stream.TestUpgradeRejectsNonRFCHandshake
+      - test: core/stream.TestCheckUpgradeReadsEveryUpgradeLine
+      - test: core/stream.TestUpgradeReadsEveryHeaderLine
+  - id: same-origin-by-default
+    rule: With no CheckOrigin an upgrade whose Origin host differs from the request Host is refused, a request with no Origin passes, and a CheckOrigin replaces the check.
+    enforced_by:
+      - test: core/stream.TestWSRejectsCrossOrigin
+      - test: core/stream.TestWSCheckOriginOverride
+  - id: handshake-write-bounded
+    rule: The 101 response is written under a write deadline that is cleared after it, and a failure to set either closes the hijacked connection.
+    enforced_by:
+      - test: core/stream.TestUpgradeBoundsHandshakeWrite
+      - test: core/stream.TestUpgradeAlwaysBoundsHandshake
+      - test: core/stream.TestUpgradeClearsHandshakeDeadline
+  - id: pipelined-bytes-kept
+    rule: Bytes the HTTP server buffered past the handshake are served to the read pump before the socket.
+    enforced_by:
+      - test: core/stream.TestWSRedHijackCoalescedFrame
+  - id: upgrade-settles-defaults
+    rule: Upgrade fills a zero config as ReadLimit 1 MiB, SendBuffer 32 (also for a negative one), WriteTimeout 10s, ReadIdleTimeout 60s, PongTimeout 10s, CloseTimeout 1s and 32 control frames a second, and always requires masked client frames.
+    enforced_by:
+      - test: core/stream.TestSweepUpgradeSettlesDefaults
+      - test: core/stream.TestUpgradeNegativeSendBufferUsesDefault
+  - id: subprotocol-server-preference
+    rule: Upgrade echoes the first of Subprotocols that the client offered on any Sec-WebSocket-Protocol line, and no header when none match.
+    enforced_by:
+      - test: core/stream.TestWSSubprotocolPickFirst
+  - id: connection-id-random-or-given
+    rule: A connection carries WSConfig.ConnectionID or a fresh random id.
+    enforced_by:
+      - test: core/stream.TestUpgradeConnectionIDDistinct
+  - id: text-out-is-utf8
+    rule: Write, Hub.Broadcast and StateChannel refuse a text message that is not valid UTF-8 before queueing it; WriteBinary sends opcode 2 on the same queue, keeping Write order.
+    enforced_by:
+      - test: core/stream.TestWriteRefusesInvalidUTF8
+      - test: core/stream.TestHubBroadcastRefusesInvalidUTF8
+      - test: core/stream.TestStateChannelRefusesInvalidUTF8
+      - test: core/stream.TestWriteBinaryArrivesAsOpcode2
+  - id: read-drains-before-error
+    rule: Read returns every message the pump decoded before it returns the pump's terminal error.
+    enforced_by:
+      - test: core/stream.TestReadDrainsBufferedThenError
+      - test: core/stream.TestReadDoneStillDrainsLastMessage
+  - id: close-drains-what-write-accepted
+    rule: Close writes the queued messages before its Close frame within WriteTimeout (10s when unset or disabled), cutting a stalled pump write at that bound, and skips the drain when the peer closed first or a write already failed. Write's admission and Close's drain share one sync point, so a Write that returns nil is queued before the drain starts, a Write not admitted by then returns ErrClosed, and a Write blocked on a full queue is released by Close rather than holding it.
+    enforced_by:
+      - test: core/stream.TestCloseWritesQueuedMessagesBeforeCloseFrame
+      - test: core/stream.TestWriteAcceptedDuringCloseIsWritten
+      - test: core/stream.TestCloseDrainBoundedByWriteTimeout
+      - test: core/stream.TestCloseCutsStalledPumpWriteWhenWriteTimeoutDisabled
+      - test: core/stream.TestPeerInitiatedCloseSkipsDrain
+      - test: core/stream.TestCloseAfterFailedWriteSkipsDrain
+  - id: nothing-after-close-frame
+    rule: Once the Close frame is written every later frame write returns ErrClosed and puts nothing on the wire.
+    enforced_by:
+      - test: core/stream.TestNoDataFrameAfterClose
+  - id: close-waits-for-peer-or-death
+    rule: Close waits for the peer's Close frame, the read pump's exit or CloseTimeout, whichever comes first.
+    enforced_by:
+      - test: core/stream.TestCloseHandshakeFastWithoutReader
+      - test: core/stream.TestCloseEndsWhenConnDies
+  - id: close-echo-sanitized
+    rule: A peer Close is echoed with its code when it is 1000-1003, 1007-1011 or 3000-4999 and its reason is UTF-8, bodyless when bodyless, and as 1002 otherwise, a one-byte body included.
+    enforced_by:
+      - test: core/stream.TestCloseEchoSanitizesReserved
+      - test: core/stream.TestCloseEchoCodeBoundary
+      - test: core/stream.TestOneByteCloseBodyEchoes1002
+      - test: core/stream.TestCloseReasonBadUTF8Echoes1002
+      - test: core/stream.TestBodylessCloseEchoesBodyless
+  - id: own-close-status-sanitized
+    rule: CloseWithStatus sends a code that may not be echoed as 1002 and returns an error, and keeps only printable ASCII of the reason within the frame's limit.
+    enforced_by:
+      - test: core/stream.TestCloseWithStatusRefusesReservedCodes
+      - test: core/stream.TestCloseWithStatusWritesCodeAndReason
+  - id: close-hooks-recovered
+    rule: A panicking OnClose hook is recovered and logged through textsafe.Recovered.
+    enforced_by:
+      - test: core/stream.TestWSCloseHookRedPanicScrubbed
+  - id: frame-protocol-errors-close-with-status
+    rule: readFrame fails the connection with 1002 for set RSV bits, a fragmented or over-125-byte control frame, a non-minimal length, an unmasked client frame, a reserved opcode or a continuation with nothing open, and with 1009 for a frame or reassembled message past ReadLimit.
+    enforced_by:
+      - test: core/stream.TestProtocolErrorsCloseWithStatus
+      - test: core/stream.TestNonMinimalLengthRejected
+      - test: core/stream.TestSweepOversizeControlFrameFailsWith1002
+      - test: core/stream.TestWSHugeLengthRejected
+      - test: core/stream.TestWSUnmaskedClientFrameRejected
+      - test: core/stream.TestRejectsBareContinuationAndReservedOpcode
+      - test: core/stream.TestFragmentedMessageReassembly
+  - id: text-in-is-utf8
+    rule: A reassembled text message that is not valid UTF-8 fails the connection with 1007.
+    enforced_by:
+      - test: core/stream.TestInvalidUTF8ClosesWith1007OnWire
+  - id: control-frames-rate-limited
+    rule: Pings and Pongs past MaxControlFramesPerSecond (burst twice the rate) close the connection with 1008.
+    enforced_by:
+      - test: core/stream.TestControlFramesRateLimited
+  - id: keepalive-detects-dead-peers
+    rule: After ReadIdleTimeout of silence a Ping goes out, its pong clock starts once the Ping is written, a Pong clears it, and no Pong within PongTimeout closes the connection; a negative ReadIdleTimeout disables keepalive.
+    enforced_by:
+      - test: core/stream.TestWSIdlePingPongCloses
+      - test: core/stream.TestDeadPeerStillDetected
+      - test: core/stream.TestPongClockStartsAtPingWrite
+      - test: core/stream.TestWSPongKeepsAlive
+      - test: core/stream.TestNegativeReadIdleDisablesKeepalive
+  - id: stalled-handoff-resolved
+    rule: Past ReadIdleTimeout+PongTimeout on a full read buffer, a connection that never called Read drops data it did not ask for and stays open, one that did read is closed, and the pong clock restarts when the stall ends.
+    enforced_by:
+      - test: core/stream.TestSweepPushOnlyConnSurvivesAStall
+      - test: core/stream.TestStalledReaderIsReclaimed
+      - test: core/stream.TestPongClockRestartsAfterStall
+decisions:
+  - id: no-websocket-dependency
+    date: 2026-11-19
+    status: accepted
+    decision: core/stream implements the RFC 6455 subset the framework needs itself.
+    rejected:
+      - option: Depend on gorilla/websocket or nhooyr.io/websocket.
+        why: core/stream must build without third-party modules.
+    revisit_if: The framework needs an extension such as permessage-deflate.
+  - id: read-pump-owns-the-socket
+    date: 2026-11-19
+    status: accepted
+    decision: One read pump goroutine does every socket read from Upgrade on and hands data messages to Read through a small buffer.
+    rejected:
+      - option: Read the socket inside Read.
+        why: A push-only server that never calls Read would never answer a Ping or see the peer's Close.
+    upholds: [stalled-handoff-resolved, close-waits-for-peer-or-death]
+  - id: conservative-close-echo
+    date: 2026-11-19
+    status: accepted
+    decision: 1012-1014 are not echoed even though IANA registers them.
+    rejected:
+      - option: Echo every IANA-registered code.
+        why: RFC 6455 does not define them and a strict peer answers an unknown code with 1002; 1002 is safe everywhere.
+    upholds: [close-echo-sanitized]
+  - id: grow-payload-while-reading
+    date: 2026-11-19
+    status: accepted
+    decision: A frame payload is read in 32 KiB chunks under a read deadline instead of allocated at its declared length.
+    rejected:
+      - option: Allocate the declared length up front.
+        why: Twelve header bytes would pin ReadLimit of heap per socket.

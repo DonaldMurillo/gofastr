@@ -629,13 +629,90 @@ report lists the rows deleted and the stores that succeeded. Erase again
 once the store is reachable: the SQL planes match nothing, and each store
 removes what is left. A panicking eraser counts as a failed one.
 
-A retry cannot hand an `EraseResolved` store the identities again: the user
-row they were read from went with the first run, so the retry's
-`ErasedUser` carries only the id. A store keyed by such an identity must
-either not fail once it has its input, or find the value another way on a
-retry. `battery/auth`'s in-memory eraser does the second: with no resolved
-email it reads the address from its user store, and it fails only when that
-lookup fails, which a retry repeats.
+A retry hands a failed `EraseResolved` store the same identities as the
+first run, though the user row they were read from went with it. When an
+`EraseResolved` store eraser fails, the erasure writes the identities
+that resolved for the user to the `gofastr_erase_identities` table
+(`tenant`, `user_id`, `store`, `kind`, `value`, `expires_at`), one row per
+store and value, creating it only if it is absent. `store` is the store
+eraser's source and name, the source prefixed by its length
+(`4:auth/auth_memory`) so no two pairs collide: every restart registers
+the stores again under the same names, so that is what a retry finds
+them by, and a store registered under a name another store used before
+is taken as the same store. This write runs after the commit and after
+the stores, on its own 30-second deadline that starts only then, so it
+lands even when the request's deadline has passed or the stores ran
+long. An erasure whose stores all succeed, or where only an id-keyed
+store failed, writes nothing.
+
+A later erasure of that user in the same tenant gives each store the
+identities kept for that store alone, and only where its resolvers find
+nothing now. A store with more than one kept value of a kind (it failed
+again with a new one) is run once for each, and each run's kept values
+are checked for expiry just before it; a dry run counts what the store
+keys by user id once across those runs. A store that succeeded the
+first time gets only what resolves now. A kept value another account
+now holds (a new user took the address) is not given: an email-keyed
+store cannot tell the old owner's data from the new owner's. The check
+reads every row of the resolver's table and counts a value as held when
+it is the same, differs only in case (Unicode case), or folds to it
+under the resolver's `Canonicalize`; NULL and empty values are skipped.
+It runs just before the store, not under a lock with it: an account
+that takes the address in that moment can still lose its tokens for
+that address. When the check cannot answer (a database error, or a
+`Canonicalize` that panics), the value is withheld, its row stays for
+the next retry, and the erasure (a dry run too) returns an error saying
+so. A value expired by its store's turn, or by the end of its check, is
+not given. The SQL planes never use kept values.
+
+A store's success removes the rows read for it before it ran that this
+attempt answered for (handed over, held by another account, or expired),
+and no row another erasure wrote meanwhile. A kept value of a kind that
+resolves to another value now is not handed over, so it stays for a
+later retry or its expiry. A store that fails again keeps its
+rows with their first expiry; identities that resolved on that attempt
+are added beside them with their own 30 days, and a value it got only
+from retention is never written back, so a row a concurrent retry
+removed stays removed.
+
+A kept row expires 30 days after the failure that first wrote it.
+Expired rows are never read, every erasure that reaches the table
+deletes them (before it writes new ones), and a running App deletes
+them at start and every hour. A host whose App runs rarely can call
+`App.SweepErasureRetention(ctx)` from its own scheduler. Until a row
+expires or its store succeeds, the table holds the erased user's email
+(or other identity) and nothing else. A dry run gives each failed store
+what was kept for it, as a retry would, and writes nothing.
+
+A retry cannot finish an email-keyed store's erasure when the identity
+is not there to give. Two cases differ:
+
+- The process stopped between the commit and the store erasers, the
+  write above failed (the erasure's error says so), or the row expired.
+  The address is still the erased user's alone: finish that store's
+  erasure by hand, by the address, from your own records.
+- Another account now holds the address. Do not erase that store by the
+  address: it would also take the new owner's data. Erase only records
+  the store ties to the former user by a stable owner id, or by a time
+  inside a verified interval when only the former user held the address;
+  the erasure date alone is not enough, since the new holder may have
+  used the address before. A store that cannot tell the records apart
+  keeps them until they expire on their own (magic links and emailed
+  codes expire within their TTL).
+
+A runtime role without the right to create tables needs the table made
+ahead of time, once:
+
+```sql
+CREATE TABLE IF NOT EXISTS gofastr_erase_identities (
+  tenant TEXT NOT NULL DEFAULT '', user_id TEXT NOT NULL, store TEXT NOT NULL,
+  kind BIGINT NOT NULL, value TEXT NOT NULL, expires_at BIGINT NOT NULL,
+  PRIMARY KEY (tenant, user_id, store, kind, value));
+```
+
+The erasure creates the table only when it is absent and a store failed,
+and never alters an existing one. `App.ExportData` leaves the table out: it is bookkeeping for a
+user already erased, and a restore must not bring their email back.
 
 A dry run rolls the transaction back first, then asks each store for its
 count with `dryRun` set, so nothing in the store changes.

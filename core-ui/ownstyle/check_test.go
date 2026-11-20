@@ -126,11 +126,54 @@ func TestCheckUnknownTokens(t *testing.T) {
 	}
 }
 
+type cssCase struct {
+	src  string
+	want string
+}
+
+// checkCases runs Check over each case: "" wants no diagnostics,
+// otherwise some diagnostic of rule must prefix-match want.
+func checkCases(t *testing.T, rule string, cases []cssCase) {
+	t.Helper()
+	for _, tc := range cases {
+		ds := Check("t.style.css", tc.src, KindScoped, defaultTokens(t))
+		if tc.want == "" {
+			if len(ds) != 0 {
+				t.Errorf("%q: unexpected %s", tc.src, joinDiags(ds))
+			}
+			continue
+		}
+		found := false
+		for _, d := range ds {
+			if d.Rule == rule && strings.HasPrefix(d.String(), tc.want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%q: want %q, got %s", tc.src, tc.want, joinDiags(ds))
+		}
+	}
+}
+
+// checkExact runs Check over each case in kind: "" wants no
+// diagnostics, otherwise exactly one diagnostic, prefix-matching want.
+func checkExact(t *testing.T, kind Kind, cases []cssCase) {
+	t.Helper()
+	for _, tc := range cases {
+		ds := Check("t.style.css", tc.src, kind, defaultTokens(t))
+		if tc.want == "" {
+			if len(ds) != 0 {
+				t.Errorf("%q: unexpected %s", tc.src, joinDiags(ds))
+			}
+			continue
+		}
+		if len(ds) != 1 || !strings.HasPrefix(ds[0].String(), tc.want) {
+			t.Errorf("%q: want %q, got %s", tc.src, tc.want, joinDiags(ds))
+		}
+	}
+}
 func TestCheckHardcodedTokenValues(t *testing.T) {
-	cases := []struct {
-		src  string
-		want string
-	}{
+	cases := []cssCase{
 		{".a{padding:16px}", "1:12 error GOFASTR1807 16px is --spacing-lg; write var(--spacing-lg)"},
 		{".a{color:#52525B}", "1:10 error GOFASTR1807 #52525B is --color-text-muted; write var(--color-text-muted)"},
 		// Shorthands and multi-token values differ from every token value.
@@ -161,24 +204,7 @@ func TestCheckHardcodedTokenValues(t *testing.T) {
 		{".a{padding-inline:16px}", "1:19 error GOFASTR1807 16px is --spacing-lg"},
 		{".a{margin-block-start:16px}", "1:23 error GOFASTR1807 16px is --spacing-lg"},
 	}
-	for _, tc := range cases {
-		ds := Check("t.style.css", tc.src, KindScoped, defaultTokens(t))
-		if tc.want == "" {
-			if len(ds) != 0 {
-				t.Errorf("%q: unexpected %s", tc.src, joinDiags(ds))
-			}
-			continue
-		}
-		found := false
-		for _, d := range ds {
-			if d.Rule == RuleHardcodedTokenValue && strings.HasPrefix(d.String(), tc.want) {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("%q: want %q, got %s", tc.src, tc.want, joinDiags(ds))
-		}
-	}
+	checkCases(t, RuleHardcodedTokenValue, cases)
 }
 
 // A theme may spell a token's number any way the browser reads: a
@@ -260,10 +286,7 @@ func TestCheckFallbackDrift(t *testing.T) {
 }
 
 func TestCheckKitClassAndAttributeSelectors(t *testing.T) {
-	cases := []struct {
-		src  string
-		want string
-	}{
+	cases := []cssCase{
 		{".card .fui-card__body { gap: 0; }", "1:7 error GOFASTR1810"},
 		{".a .fui-sidebar__item { color: red; }", "1:4 error GOFASTR1810"},
 		// The attribute form, positioned at the bracket.
@@ -273,25 +296,11 @@ func TestCheckKitClassAndAttributeSelectors(t *testing.T) {
 		// Kit class mentioned in a string never matches.
 		{".a{content:\".fui-card__body\"}", ""},
 	}
-	for _, tc := range cases {
-		ds := Check("t.style.css", tc.src, KindScoped, defaultTokens(t))
-		if tc.want == "" {
-			if len(ds) != 0 {
-				t.Errorf("%q: unexpected %s", tc.src, joinDiags(ds))
-			}
-			continue
-		}
-		if len(ds) != 1 || !strings.HasPrefix(ds[0].String(), tc.want) {
-			t.Errorf("%q: want %q, got %s", tc.src, tc.want, joinDiags(ds))
-		}
-	}
+	checkExact(t, KindScoped, cases)
 }
 
 func TestCheckRawMediaWidths(t *testing.T) {
-	cases := []struct {
-		src  string
-		want string
-	}{
+	cases := []cssCase{
 		{"@media (min-width: 900px) { .a { color: red; } }", "1:20 error GOFASTR1812 900px is not a theme breakpoint"},
 		{"@media (max-width: 900px) { .a { color: red; } }", "1:20"},
 		{"@media screen and (min-width: 768px) { .a { color: red; } }", "1:31 error GOFASTR1812 768px is the md breakpoint; use (--above-md) so the theme can move it"},
@@ -306,24 +315,7 @@ func TestCheckRawMediaWidths(t *testing.T) {
 		{"@media (900px >= width) { .a { color: red; } }", "1:9 error GOFASTR1812"},
 		{"@media (768px <= min-width) { .a { color: red; } }", "1:9 error GOFASTR1812 768px is the md breakpoint"},
 	}
-	for _, tc := range cases {
-		ds := Check("t.style.css", tc.src, KindScoped, defaultTokens(t))
-		if tc.want == "" {
-			if len(ds) != 0 {
-				t.Errorf("%q: unexpected %s", tc.src, joinDiags(ds))
-			}
-			continue
-		}
-		found := false
-		for _, d := range ds {
-			if d.Rule == RuleRawMediaWidth && strings.HasPrefix(d.String(), tc.want) {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("%q: want %q, got %s", tc.src, tc.want, joinDiags(ds))
-		}
-	}
+	checkCases(t, RuleRawMediaWidth, cases)
 }
 
 func TestCheckAnimationReducedMotion(t *testing.T) {
@@ -355,10 +347,7 @@ func TestCheckAppSheetRules(t *testing.T) {
 	if ds := Check("t.style.css", "h2 { color: red; }\n.a { --x: 1; }", scoped, defaultTokens(t)); len(ds) != 0 {
 		t.Fatalf("scoped sheets may select elements and declare custom properties: %s", joinDiags(ds))
 	}
-	cases := []struct {
-		src  string
-		want string
-	}{
+	cases := []cssCase{
 		{"p { color: red; }", "1:1 error GOFASTR1819"},
 		{"h2.title { color: red; }", "1:1 error GOFASTR1819"},
 		{":scope { color: red; }", "1:1 error GOFASTR1819"},
@@ -366,18 +355,7 @@ func TestCheckAppSheetRules(t *testing.T) {
 		{".priority.level--urgent { color: red; }", ""},
 		{".a { --accent: #B91C1C; }", "1:6 error GOFASTR1819"},
 	}
-	for _, tc := range cases {
-		ds := Check("t.style.css", tc.src, KindApp, defaultTokens(t))
-		if tc.want == "" {
-			if len(ds) != 0 {
-				t.Errorf("%q: unexpected %s", tc.src, joinDiags(ds))
-			}
-			continue
-		}
-		if len(ds) != 1 || !strings.HasPrefix(ds[0].String(), tc.want) {
-			t.Errorf("%q: want %q, got %s", tc.src, tc.want, joinDiags(ds))
-		}
-	}
+	checkExact(t, KindApp, cases)
 }
 
 func TestCheckTokenCustomProperty(t *testing.T) {

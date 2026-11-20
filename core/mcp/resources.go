@@ -14,23 +14,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// ResourceContents is the payload a resource yields on resources/read. Set
-// exactly one of Text (UTF-8) or Blob (arbitrary bytes, base64-encoded on the
-// wire). MimeType, if set, overrides the resource's declared MimeType for this
-// read.
+// ResourceContents is what resources/read returns: Text or Blob, and a MimeType overriding the resource's.
 type ResourceContents struct {
 	Text     string
 	Blob     []byte
 	MimeType string
 }
 
-// ResourceContentsFunc lazily produces a resource's contents. It runs per
-// resources/read, receiving the request context (auth/tenant enriched).
+// ResourceContentsFunc produces a resource's contents on each resources/read.
 type ResourceContentsFunc func(ctx context.Context) (ResourceContents, error)
 
-// Resource is a registered MCP resource. MCP Apps serve their UI as a
-// `ui://` resource (mimeType "text/html;profile=mcp-app"); resources are also
-// useful for docs, schemas, and templates.
+// Resource is a registered MCP resource.
 type Resource struct {
 	URI         string         `json:"uri"`
 	Name        string         `json:"name"`
@@ -42,30 +36,20 @@ type Resource struct {
 	gate     func(ctx context.Context) error
 }
 
-// ResourceOption customizes a resource at registration time.
+// ResourceOption customizes a resource at registration.
 type ResourceOption func(*Resource)
 
-// WithResourceDescription sets a human/agent-readable description.
+// WithResourceDescription sets the description resources/list shows.
 func WithResourceDescription(desc string) ResourceOption {
 	return func(r *Resource) { r.Description = desc }
 }
 
-// WithResourceMeta attaches a `_meta` object to a resource, serialized
-// verbatim in resources/list. MCP Apps ride csp/permissions here on the
-// resource's `_meta.ui`.
+// WithResourceMeta sets the resource's `_meta`, serialized verbatim in resources/list and resources/read.
 func WithResourceMeta(meta map[string]any) ResourceOption {
 	return func(r *Resource) { r.Meta = meta }
 }
 
-// WithResourceGate attaches a per-caller precondition to a resource. The
-// gate runs on every resources/read before the contents func, and is also
-// evaluated during resources/list so a caller the gate refuses does not see
-// it, nor told by notifications/resources/list_changed that it appeared.
-// This is the resource-side analogue of [WithToolGate] and
-// [WithPromptGate]: the same predicate guards the listing and the read,
-// because a resource's URI, name and description can name internal
-// concepts the way a tool's inputSchema does. battery/auth's
-// auth.MCPUser() and auth.MCPRole("admin") are ready-made gates.
+// WithResourceGate attaches a per-caller gate that hides the resource from resources/list and its notifications and refuses resources/read. It panics on a nil gate.
 func WithResourceGate(gate func(ctx context.Context) error) ResourceOption {
 	if gate == nil {
 		panic("mcp.WithResourceGate: nil gate — a nil precondition would silently allow every caller")
@@ -73,19 +57,7 @@ func WithResourceGate(gate func(ctx context.Context) error) ResourceOption {
 	return func(r *Resource) { r.gate = gate }
 }
 
-// RegisterResource adds a resource to the server. Registering at least one
-// resource makes the server advertise the `resources` capability in
-// initialize. Returns an error on empty uri/name, nil contents, or a
-// duplicate uri.
-//
-// Auth note: resources are NOT covered by the tool call gate (mcp.Gated /
-// auth.MCPUser / auth.MCPRole gate tool handlers, not resources/read). A
-// resource serving PUBLIC content (e.g. an MCP App's widget HTML) needs no
-// gating. To serve per-caller or sensitive data, pass [WithResourceGate]:
-// it hides the resource from a refused caller's resources/list and refuses
-// its resources/read. A check inside the contents func (it receives the
-// auth/tenant-enriched request context) guards only the read; the
-// resource stays listed.
+// RegisterResource adds a resource and advertises the resources capability; it errors on an empty uri or name, nil contents or a duplicate uri.
 func (s *Server) RegisterResource(uri, name, mimeType string, contents ResourceContentsFunc, opts ...ResourceOption) error {
 	if uri == "" {
 		return fmt.Errorf("mcp: resource uri must not be empty")
@@ -113,81 +85,48 @@ func (s *Server) RegisterResource(uri, name, mimeType string, contents ResourceC
 	s.resources[uri] = res
 	s.mu.Unlock()
 
-	// Connected clients re-list. Before serving has begun this fans out
-	// to zero subscribers, so boot-time registration notifies nobody.
-	// The notification carries the resource's own gate: a caller the
-	// gate refuses cannot see the resource in resources/list and must
-	// not be told it appeared.
 	s.notifySubscribers(sseNotification{method: "notifications/resources/list_changed", itemGate: res.gate})
 	return nil
 }
 
-// hasResources reports whether any resource is registered (drives the
-// resources capability advertisement).
 func (s *Server) hasResources() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.resources) > 0
 }
 
-// resourcesListResult is the result shape for resources/list. The
-// nextCursor key is absent on the final page, and on every page when the
-// whole listing fits (the pre-pagination wire shape).
 type resourcesListResult struct {
 	Resources  []Resource `json:"resources"` //gofastr:required-array
 	NextCursor string     `json:"nextCursor,omitempty"`
 }
 
-// resourcesReadParams are the params for a resources/read request.
 type resourcesReadParams struct {
 	URI string `json:"uri"`
 }
 
-// resourceReadResult is the result shape for resources/read.
 type resourceReadResult struct {
 	Contents []resourceContentItem `json:"contents"` //gofastr:required-array
 }
 
-// resourceContentItem is the spec's TextResourceContents |
-// BlobResourceContents union, told apart by which key is present. Text
-// and Blob are pointers so exactly one is set and an empty body still
-// carries its key: two plain omitempty strings dropped both for "" and
-// left an item no validating client could decode.
 type resourceContentItem struct {
-	URI      string  `json:"uri"`
-	MimeType string  `json:"mimeType,omitempty"`
-	Text     *string `json:"text,omitempty"`
-	Blob     *string `json:"blob,omitempty"` // base64
-	// Meta is the resource's _meta, repeated on its contents: a host reads
-	// an MCP App's _meta.ui (csp, permissions) from what it renders, and
-	// resources/list alone left the declared CSP unseen.
-	Meta map[string]any `json:"_meta,omitempty"`
+	URI      string         `json:"uri"`
+	MimeType string         `json:"mimeType,omitempty"`
+	Text     *string        `json:"text,omitempty"`
+	Blob     *string        `json:"blob,omitempty"`
+	Meta     map[string]any `json:"_meta,omitempty"`
 }
 
-// handleResourcesList returns one page of the resources visible
-// to the caller, in URI order. The gate runs BEFORE the page is cut, so
-// pagination walks the post-filter set: a resource whose gate refuses the
-// caller never surfaces on a page and never bends the page sizes or cursor
-// arithmetic that would otherwise count it. A resource's URI, name and
-// description are the disclosure, the same way a template's uriTemplate
-// and description are.
 func (s *Server) handleResourcesList(ctx context.Context, req Request) Response {
-	offset, err := s.listOffset(req, "resources/list")
-	if err != nil {
-		return newErrorResponse(req.ID, ErrInvalidParams, err.Error())
-	}
-	// A resource the caller cannot read is not listed to them: the
-	// URI, name and description are the disclosure.
-	page, next := gatedListPage(s, ctx, "resources/list", offset,
+	return gatedListResponse(s, ctx, req, "resources/list",
 		func() map[string]Resource { return s.resources },
 		func(r Resource) func(context.Context) error { return r.gate },
 		func(a, b Resource) int { return strings.Compare(a.URI, b.URI) },
+		func(page []Resource, next string) any {
+			return resourcesListResult{Resources: requiredArray(page), NextCursor: next}
+		},
 	)
-	return newSuccessResponse(req.ID, resourcesListResult{Resources: page, NextCursor: next})
 }
 
-// handleResourcesRead resolves a resource by uri and returns its contents.
-// Unknown uris are a not-found error (no filesystem access: a map lookup).
 func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response {
 	if req.Params == nil {
 		return newErrorResponse(req.ID, ErrInvalidParams, "missing params")
@@ -211,9 +150,6 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 	if err != nil {
 		var gated *gateRefusalError
 		if errors.As(err, &gated) {
-			// An unmarked refusal answers exactly as an unknown uri, so
-			// the read cannot confirm a gated resource exists;
-			// ShowRefusal opts a gate's message back across.
 			return Response{JSONRPC: "2.0", ID: req.ID, Error: maskedRefusalRPC(gated.err, &RPCError{
 				Code: ErrMethodNotFound, Message: fmt.Sprintf("resource %q not found", params.URI),
 			})}
@@ -235,9 +171,6 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 	return newSuccessResponse(req.ID, resourceReadResult{Contents: []resourceContentItem{item}})
 }
 
-// readResourceContents runs a resource's contents func under a recover guard,
-// mirroring invokeHandler so a panic in app-supplied code becomes a
-// well-formed error instead of unwinding the transport (critical for stdio).
 func (s *Server) readResourceContents(ctx context.Context, res Resource) (out ResourceContents, err error) {
 	inGate := false
 	defer func() {
@@ -246,21 +179,12 @@ func (s *Server) readResourceContents(ctx context.Context, res Resource) (out Re
 				"resource", textsafe.SanitizeControlBytes(res.URI), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			out = ResourceContents{}
 			if inGate {
-				// A panicking gate fails closed AND masks: an internal
-				// error differs from the unknown-uri answer and would
-				// confirm the gated resource exists.
 				err = &gateRefusalError{err: errGatePanicked}
 				return
 			}
 			err = &RPCError{Code: ErrInternalError, Message: "internal resource error"}
 		}
 	}()
-	// Auth gate (WithResourceGate) runs before the contents func: the
-	// resource-side analogue of mcp.Gated. Inside the recover guard so a
-	// panicking gate becomes a well-formed error, not a transport crash.
-	// The refusal leaves as a gateRefusalError so handleResourcesRead
-	// can answer it as an unknown uri unless it carries ShowRefusal —
-	// the same masking every item gate applies.
 	if res.gate != nil {
 		inGate = true
 		gErr := res.gate(ctx)

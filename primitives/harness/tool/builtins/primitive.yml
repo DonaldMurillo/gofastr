@@ -1,0 +1,36 @@
+primitive: harness.tool.builtins
+summary: The built-in tool catalog - Source exposes Read, Write, Edit, Bash, Grep, Glob, Ls, WebFetch, TaskList, Agent and ToolSearch, filtered by pack, and ToolSearch lets the model find a tool by keywords.
+code:
+  - framework/experimental/harness/tool/builtins/source.go
+  - framework/experimental/harness/tool/builtins/stubs.go
+  - framework/experimental/harness/tool/builtins/doc.go
+  - framework/experimental/harness/tool/builtins/toolsearch*.go
+  - framework/experimental/harness/tool/builtins/sweep_builtins_test.go
+docs:
+  - framework/docs/content/harness-architecture.md
+on_change:
+  - A new built-in declares Mutating truthfully, joins a pack in PackTools, and gets an argv summary in engine FormatArgvSummary so the permission prompt names what it touches.
+invariants:
+  - id: toolsearch-always-exposed
+    rule: Source.Tools includes ToolSearch whatever EnabledPacks names, an unknown pack included.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestSourceKeepsToolSearchUnderAnyPack
+  - id: mutating-flags
+    rule: Read, Glob, Ls, Grep, WebFetch, ToolSearch and TaskList report Mutating false, and Write, Edit, Bash and Agent report true.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestBuiltinMutatingFlags
+  - id: toolsearch-skips-itself
+    rule: ToolSearch never lists itself among its matches.
+    enforced_by:
+      - test: framework/experimental/harness/tool/builtins.TestToolSearchExcludesItself
+decisions:
+  - id: toolsearch-keyword-scoring
+    date: 2026-11-18
+    status: accepted
+    decision: ToolSearch ranks tools by keyword overlap with name (10 points a term) and description (3 points), stopwords dropped.
+    rejected:
+      - option: A fuzzy-match or embedding library.
+        why: It adds a dependency and nondeterministic ranking for a catalog of tens of tools.
+      - option: Send every tool schema in every request.
+        why: With MCP servers and plugin packs the schemas burn input tokens on every turn.
+    upholds: [toolsearch-always-exposed]

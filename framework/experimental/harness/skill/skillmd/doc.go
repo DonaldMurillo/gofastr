@@ -1,5 +1,2 @@
-// Package skillmd is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package skillmd parses SKILL.md files (https://agentskills.io/specification): a small YAML frontmatter, then a markdown body.
 package skillmd

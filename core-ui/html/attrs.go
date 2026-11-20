@@ -11,8 +11,7 @@ import (
 // Attrs is a type alias for map[string]string, matching [render.Attrs].
 type Attrs = map[string]string
 
-// MergeAttrs merges zero or more attribute maps. Later maps overwrite
-// earlier ones for the same key. Returns nil if no maps are provided.
+// MergeAttrs merges zero or more attribute maps.
 func MergeAttrs(attrsList ...Attrs) Attrs {
 	if len(attrsList) == 0 {
 		return nil
@@ -24,9 +23,8 @@ func MergeAttrs(attrsList ...Attrs) Attrs {
 	return merged
 }
 
-// Classes converts a map of class names to booleans into an Attrs containing
-// a single "class" attribute. Only classes with a true value are included,
-// in sorted order so the attribute is the same bytes on every render.
+// Classes converts a map of class names to booleans into an Attrs containing a single "class"
+// attribute.
 func Classes(classes map[string]bool) Attrs {
 	var active []string
 	for _, cls := range slices.Sorted(maps.Keys(classes)) {
@@ -41,20 +39,8 @@ func Classes(classes map[string]bool) Attrs {
 	return Attrs{"class": strings.Join(active, " ")}
 }
 
-// SafeExtraAttrs returns a copy of a component config's ExtraAttrs with
-// the keys the component owns removed, ready to forward to the
-// component's root element. Dropped: every case-variant of "class",
-// "id", and the listed protected keys, plus any "data-cui-*" key.
-//
-// Case-variants must go, not just exact matches: HTML attribute names
-// are case-insensitive, so a "Class" or "Type" entry survives a
-// lowercase-only overwrite as a distinct map key, renders as a second
-// attribute, and folds back onto the protected one in the parser.
-// "data-cui-*" is reserved for runtime wiring; a caller-supplied value
-// would collide with the marker WrapHTML injects into the root tag.
-//
-// Returns nil when nothing survives, which every ExtraAttrs consumer
-// treats as "no extra attributes".
+// SafeExtraAttrs returns a copy of a component config's ExtraAttrs with the keys the component owns
+// removed, ready to forward to the component's root element.
 func SafeExtraAttrs(attrs Attrs, protected ...string) Attrs {
 	if len(attrs) == 0 {
 		return nil
@@ -86,16 +72,9 @@ func SafeExtraAttrs(attrs Attrs, protected ...string) Attrs {
 	return out
 }
 
-// SafeCarrierAttrs is SafeExtraAttrs for wiring carriers: components
-// whose ExtraAttrs are the documented attachment point for runtime
-// wiring (interactive.Action.Attrs(), data-cui-open, …) and that emit
-// no data-cui-* wiring of their own. It drops every case-variant of
-// "class", "id", "data-cui-comp" (the style-scope marker WrapHTML
-// injects), and the listed protected keys, but keeps the rest of
-// "data-cui-*" so the interactive package's attrs pass through.
-// ui.Button and ui.Link are the carriers; a component that renders its
-// own data-cui-* attributes must use SafeExtraAttrs instead, or a
-// caller could spoof its wiring.
+// SafeCarrierAttrs is SafeExtraAttrs for wiring carriers: components whose ExtraAttrs are the
+// documented attachment point for runtime wiring (interactive.Action.Attrs(), data-cui-open, …) and
+// that emit no data-cui-* wiring of their own.
 func SafeCarrierAttrs(attrs Attrs, protected ...string) Attrs {
 	if len(attrs) == 0 {
 		return nil
@@ -125,7 +104,6 @@ func SafeCarrierAttrs(attrs Attrs, protected ...string) Attrs {
 }
 
 // DataAttrs converts a map of key-value pairs into data-* attributes.
-// Keys should not include the "data-" prefix; it is added automatically.
 func DataAttrs(data map[string]string) Attrs {
 	if len(data) == 0 {
 		return nil
@@ -143,53 +121,35 @@ func ID(id string) Attrs {
 }
 
 // Aria returns an Attrs containing a single aria-* attribute.
-// The key should not include the "aria-" prefix; it is added automatically.
 func Aria(key, value string) Attrs {
 	return Attrs{"aria-" + key: value}
 }
 
 // OnClick returns Attrs with data-action set to the given action name.
-// Used to wire up click handlers on html.
-// Example: Button("Save", OnClick("save"))
 func OnClick(action string) Attrs {
 	return Attrs{"data-action": action}
 }
 
 // OnSubmit returns Attrs with data-action set and data-action-type="submit".
-// Used on form html.
 func OnSubmit(action string) Attrs {
 	return Attrs{"data-action": action, "data-action-type": "submit"}
 }
 
 // OnInput returns Attrs with data-action set and data-action-type="input".
-// Used on input/textarea elements for real-time input handling.
 func OnInput(action string) Attrs {
 	return Attrs{"data-action": action, "data-action-type": "input"}
 }
 
 // OnChange returns Attrs with data-action set and data-action-type="change".
-// Used on select/input elements for change handling.
 func OnChange(action string) Attrs {
 	return Attrs{"data-action": action, "data-action-type": "change"}
 }
 
-// Bind returns Attrs that create a two-way binding between an input element
-// and a named state key. The runtime.js listens for input events on elements
-// with data-bind and dispatches actions with the new value.
-//
-// Usage:
-//
-//	search := signal.New("")
-//	html.Input(html.Text, "search",
-//	    html.Bind("search"),
-//	    html.Placeholder("Search..."),
-//	)
+// Bind returns Attrs that create a two-way binding between an input element and a named state key.
 func Bind(key string) Attrs {
 	return Attrs{"data-bind": key}
 }
 
-// buildAttrs constructs an Attrs map from optional base attrs, ID, and Class.
-// It never returns nil, always returns a usable map.
 func buildAttrs(base Attrs, id, class string) Attrs {
 	attrs := make(Attrs)
 	maps.Copy(attrs, base)
@@ -202,7 +162,6 @@ func buildAttrs(base Attrs, id, class string) Attrs {
 	return attrs
 }
 
-// setAttr is a helper that sets a key in the attrs map, creating it if nil.
 func setAttr(attrs Attrs, key, value string) Attrs {
 	if attrs == nil {
 		attrs = make(Attrs, 1)
@@ -211,16 +170,6 @@ func setAttr(attrs Attrs, key, value string) Attrs {
 	return attrs
 }
 
-// setURLAttr sets a URL-valued attribute after running it through the
-// shared scheme allow-list, and OMITS the attribute when the value is
-// refused. Omitting rather than blanking matters: `src=""` re-requests the
-// current document in several browsers, and `href=""` is a live link back
-// to the page. A dropped attribute is inert.
-//
-// This is the lowest layer that renders a caller-supplied URL, so it is
-// where the guard belongs, core-ui/noderender explicitly documents its IR
-// as untrusted and renders through here, and framework/ui's own safeURL
-// sits above it.
 func setURLAttr(attrs Attrs, key, value string, policy urlsafe.Policy) Attrs {
 	if !urlsafe.OK(value, policy) {
 		return attrs

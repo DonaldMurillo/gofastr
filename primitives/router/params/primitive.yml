@@ -1,0 +1,56 @@
+primitive: router.params
+summary: Reading path parameters off a matched request, truncated at any byte the mux could not have routed.
+code:
+  - core/router/params.go
+docs:
+  - framework/docs/content/core-packages.md
+invariants:
+  - id: truncate-unroutable-bytes
+    rule: SanitizePathParam truncates at the first CR, LF or NUL, at a ".." segment bounded by "/" or the ends, at any "/" for a single-segment wildcard, and at an empty leading or interior segment for a catch-all, leaving "..." and a trailing "/" alone.
+    enforced_by:
+      - test: core/router.TestSanitizeTruncatesAtFirstBadByte
+      - test: core/router.TestRouter_ParamStripsNewlines
+      - test: core/router.TestRouter_ParamStripsNUL
+      - test: core/router.TestCatchAllRefusesEncodedEmptySegment
+      - test: core/router.TestParamRejectsEncodedSlash
+  - id: param-flag-from-pattern
+    rule: Param and Params take the catch-all flag from the matched pattern, so a single-segment value stops at a %2F-encoded slash.
+    enforced_by:
+      - test: core/router.TestSweepRouterParamSingleSegmentStopsAtSlash
+      - test: core/router.TestRouter_ParamsCatchAll
+  - id: param-panics-on-undeclared-name
+    rule: Param panics when the request's pattern declares no {name} or {name...} wildcard of that name, and reads the value unchecked when the request has no pattern.
+    enforced_by:
+      - test: core/router.TestParamPanicsOnUndeclaredName
+      - test: core/router.TestParamRejectsNearMissNames
+      - test: core/router.TestParamWithoutPatternReadsValue
+  - id: params-keys-every-declared-wildcard
+    rule: Params holds a key for every wildcard the pattern declares, a catch-all under its bare name and never the {$} anchor, even when the sanitized value is empty.
+    enforced_by:
+      - test: core/router.TestParamsKeepsDeclaredKeys
+      - test: core/router.TestRouter_ParamsCatchAll
+      - test: core/router.TestParamsSkipsEndAnchorToken
+decisions:
+  - id: param-panics-not-empty
+    date: 2026-11-18
+    status: accepted
+    decision: Param panics on a name the route does not declare.
+    rejected:
+      - option: Return "" for an undeclared name.
+        why: A misspelt name let a handler carry on with an empty id.
+    upholds: [param-panics-on-undeclared-name]
+  - id: params-presence-means-declared
+    date: 2026-11-18
+    status: accepted
+    decision: A Params key means the pattern declares it; the caller checks the value.
+    rejected:
+      - option: Omit a key whose value sanitizes to "".
+        why: Callers testing presence took the collection branch for a scrubbed single-item request and failed open.
+    upholds: [params-keys-every-declared-wildcard]
+  - id: sanitize-bounds-not-validates
+    date: 2026-11-18
+    status: accepted
+    decision: SanitizePathParam only removes what routing cannot produce; a filesystem, object-store or map sink still allow-lists the value itself.
+    rejected:
+      - option: Validate values for every sink in the router.
+        why: A value safe as a header byte string is not safe as a path or key, and the router cannot know the sink.

@@ -8,7 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // StepWizardStep is one step in the wizard.
@@ -95,24 +94,7 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 
 	var errors render.HTML
 	if len(cfg.Errors) > 0 || cfg.Summary != "" {
-		if cfg.ID == "" {
-			panic("ui: StepWizard rendering Errors requires ID — the summary's id is derived from it (StepWizardConfig.ID + \"-errors\"), and two summaries on one page would share one title id")
-		}
-		general := cfg.Summary
-		if general == "" {
-			general = i18nui.FormErrorsSummary.Text(ctx)
-		}
-		errors = ValidationSummary(ValidationSummaryConfig{
-			ID:          cfg.ID + "-errors",
-			Errors:      cfg.Errors,
-			General:     general,
-			FieldLabels: cfg.FieldLabels,
-			FieldIDs:    cfg.FieldIDs,
-			FieldOrder:  cfg.FieldOrder,
-			Title:       i18nui.FormHasErrors.Text(ctx),
-			Ctx:         ctx,
-		})
-		errors = headless.Own(errors)
+		errors = formErrorsSummary(ctx, "StepWizard", cfg.ID, cfg.Summary, cfg.Errors, cfg.FieldLabels, cfg.FieldIDs, cfg.FieldOrder)
 	}
 
 	parts := headless.Parts{}
@@ -147,7 +129,7 @@ func stepWizardCSS(_ style.Theme) string {
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__indicator {

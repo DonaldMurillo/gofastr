@@ -40,10 +40,13 @@ const registryPointer = "**Before changing a file, run `go run ./cmd/primitives 
 // shell on this machine, not a sandbox: these rules keep the usual
 // spellings away from credentials and from anything that leaves the
 // machine, and the README says to run the eval somewhere disposable.
+// go clean is denied because the cells share one build cache: one cell
+// clearing it fails the builds and graders of every cell running beside it.
 var cellDeny = []string{
 	"Read(~/.ssh/**)", "Read(~/.aws/**)", "Read(~/.config/gcloud/**)", "Read(~/.azure/**)",
 	"Read(~/.netrc)", "Read(~/.config/gh/**)",
 	"Bash(git push *)", "Bash(gh *)", "Bash(ssh *)", "Bash(scp *)",
+	"Bash(go clean *)",
 }
 
 const (
@@ -176,7 +179,7 @@ var tasks = []task{
 		Packages: []string{"./battery/admin/"},
 	},
 	{
-		ID: "form-field-typo", Suite: suiteReplay, Ref: "5cbb3145^", Graders: "form-field-typo", Overlay: "appspec",
+		ID: "form-field-typo", Suite: suiteReplay, Ref: "5cbb3145^", Graders: "form-field-typo", Overlay: "appspec-form",
 		Prompt: "In gofastr.yml, an entity_form block whose fields: list has a typo, such as visitor_emial for visitor_email, validates, and the generated form drops that field without a word. " +
 			"entity_list refuses an unknown column when the spec loads. Make entity_form refuse an unknown field name at load too, naming the entry." + replayClosing,
 		Packages: []string{"./cmd/gofastr/internal/appspec/"},

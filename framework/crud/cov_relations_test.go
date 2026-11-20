@@ -16,7 +16,14 @@ import (
 // kinds, registers each entity, and returns a posts CrudHandler + registry.
 func covRelWorld(t *testing.T) (*CrudHandler, *sql.DB, stubRegistry) {
 	t.Helper()
-	db := setupDB(t,
+	return covRelWorldOver(t, setupDB)
+}
+
+// covRelWorldOver is covRelWorld over a caller-chosen DB opener, so the
+// fault-injection world (covFaultRelWorld) shares the exact same shape.
+func covRelWorldOver(t *testing.T, open func(*testing.T, ...string) *sql.DB) (*CrudHandler, *sql.DB, stubRegistry) {
+	t.Helper()
+	db := open(t,
 		`CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, password_hash TEXT)`,
 		`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT, author_id TEXT)`,
 		`CREATE TABLE comments (id TEXT PRIMARY KEY, post_id TEXT, body TEXT)`,
@@ -88,6 +95,27 @@ func covRelWorld(t *testing.T) (*CrudHandler, *sql.DB, stubRegistry) {
 	return ch, db, reg
 }
 
+// scopedIncludeCount lists posts with the given scoped include and
+// returns how many related rows the p1 row carries under relKey.
+func scopedIncludeCount(t *testing.T, include, relKey string) int {
+	t.Helper()
+	ch, _, _ := covRelWorld(t)
+	req := withTestUser(httptest.NewRequest("GET", "/posts?include="+include, nil), "u1")
+	rec := httptest.NewRecorder()
+	ch.List()(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("scoped include %s = %d, body=%s", include, rec.Code, rec.Body.String())
+	}
+	resp := decodeListResponse(t, rec.Body.String())
+	for _, row := range resp.Data {
+		if row["id"] == "p1" {
+			rel, _ := row[relKey].([]any)
+			return len(rel)
+		}
+	}
+	return 0
+}
+
 func TestList_WithAllIncludes(t *testing.T) {
 	ch, _, _ := covRelWorld(t)
 	req := withTestUser(httptest.NewRequest("GET", "/posts?include=author,comments,profile,tags", nil), "u1")
@@ -150,21 +178,8 @@ func TestGet_WithIncludesAndProjection(t *testing.T) {
 }
 
 func TestList_ScopedInclude(t *testing.T) {
-	ch, _, _ := covRelWorld(t)
-	req := withTestUser(httptest.NewRequest("GET", "/posts?include=comments(body=nice)", nil), "u1")
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
-	}
-	resp := decodeListResponse(t, rec.Body.String())
-	for _, row := range resp.Data {
-		if row["id"] == "p1" {
-			comments, _ := row["comments"].([]any)
-			if len(comments) != 1 {
-				t.Errorf("scoped include comments = %d, want 1", len(comments))
-			}
-		}
+	if n := scopedIncludeCount(t, "comments(body=nice)", "comments"); n != 1 {
+		t.Errorf("scoped include comments = %d, want 1", n)
 	}
 }
 

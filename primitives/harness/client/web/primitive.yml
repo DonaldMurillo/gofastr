@@ -1,0 +1,76 @@
+primitive: harness.client.web
+summary: The loopback browser sidecar - an inline HTML page, an SSE /events stream of one session's bus and a JSON /input endpoint that sends SendInput through the inproc client.
+code:
+  - framework/experimental/harness/client/web/
+docs:
+  - framework/docs/content/harness-architecture.md
+on_change:
+  - Nothing in cmd/gofastr starts this server yet; the operator's browser chat is cmd/gofastr/internal/harnesscmd/harness_http.go, so a fix to one is checked against the other.
+twins:
+  - job: Refuse a request to a loopback sidecar whose Host is not a loopback name or whose Origin is another site.
+    why: The CLI's guard lives in an internal package under cmd/gofastr that framework code cannot import, and it pins the exact bound authority while this one accepts any loopback host.
+    sites:
+      - path: framework/experimental/harness/client/web/guard.go
+        note: guardLoopback, loopbackHost and originMatchesHost.
+      - path: cmd/gofastr/internal/loopback/harness_http.go
+        note: LoopbackGuards, IsLoopbackHost and HostAllowed.
+  - job: Stream one session's bus to an HTTP client as SSE under a stream seat.
+    why: The REST stream authenticates a bearer token, seats per token and resumes from Last-Event-ID, while this one has no credential and no resume; the seat-subscribe-write loop is still written twice.
+    sites:
+      - path: framework/experimental/harness/client/web/web.go
+        note: handleSSE.
+      - path: framework/experimental/harness/control/rest/rest.go
+        note: the /events handler.
+invariants:
+  - id: loopback-host-only
+    rule: /events and /input answer 403 to a Host that is not localhost or a loopback IP literal, so a rebound hostname that resolves to 127.0.0.1 is refused.
+    enforced_by:
+      - test: framework/experimental/harness/client/web.TestEventsPinsLoopbackHost
+  - id: origin-must-match-when-sent
+    rule: An Origin header, when present, must name the request's Host or the request gets 403, and Origin null counts as another site; a request with no Origin passes.
+    enforced_by:
+      - test: framework/experimental/harness/client/web.TestInputRejectsCrossOrigin
+      - test: framework/experimental/harness/client/web.TestInputRefusesANullOrigin
+  - id: input-decoded-strictly
+    rule: POST /input reads at most maxWebSendBody bytes and decodes with handler.DecodeStrict, so a duplicate, case-folded or oversized body gets 400 and never reaches the session.
+    enforced_by:
+      - test: framework/experimental/harness/client/web.TestWebInputRejectsDuplicateKeys
+      - test: framework/experimental/harness/client/web.TestWebInputRejectsCaseFoldedKeys
+      - test: framework/experimental/harness/client/web.TestInputRefusesABodyPastTheCap
+  - id: stream-seated-before-bytes
+    rule: /events takes a stream seat under the anonymous principal before writing anything and answers 429 with Retry-After when the seats are full.
+    enforced_by:
+      - test: framework/experimental/harness/client/web.TestEventsRefusesPastTheSeatCap
+  - id: subscribe-before-headers
+    rule: /events subscribes to the bus before it sends the response headers, so an event published the moment the stream opens reaches the browser.
+    enforced_by:
+      - test: framework/experimental/harness/client/web.TestEventsSeesAnEventPublishedAsTheStreamOpens
+  - id: stop-closes-open-streams
+    rule: Stop waits for requests until its context ends and then closes the connections left, so an open /events stream ends and frees its seat and subscription.
+    enforced_by:
+      - test: framework/experimental/harness/client/web.TestStopEndsOpenEventStream
+decisions:
+  - id: standalone-sidecar-page
+    date: 2026-11-18
+    status: accepted
+    decision: The web client is a dev-only page on a random loopback port with its CSS and script inline and its own SSE /events stream, opted out of check-csp by directive.
+    rejected:
+      - option: Build it as a GoFastr app with islands, the styling surface and the /__gofastr/sse bus.
+        why: That puts the whole framework app stack inside the harness process for a single-user operator page.
+    revisit_if: The web client is wired into gofastr harness or becomes the dogfooded GoFastr app the architecture doc plans.
+  - id: origin-optional
+    date: 2026-11-18
+    status: accepted
+    decision: Origin is checked only when the request sends one.
+    rejected:
+      - option: Require an Origin header.
+        why: curl and dev tools send none, and a browser always sends Origin on the cross-site requests the guard exists to stop.
+    upholds: [origin-must-match-when-sent]
+  - id: one-anonymous-principal
+    date: 2026-11-18
+    status: accepted
+    decision: Every /events stream seats under the empty principal in the process-wide control seat table, so the cap bounds all browser streams together.
+    rejected:
+      - option: A seat per connection or per remote address.
+        why: The sidecar has no credential to key on, and every caller shares 127.0.0.1.
+    upholds: [stream-seated-before-bytes]

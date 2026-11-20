@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // mailQueue delivers mail the auth handlers send off the timed path (the
@@ -86,6 +88,25 @@ func (q *mailQueue) enqueue(requestCtx context.Context, to string, send func(ctx
 		slog.Warn("email delivery queue full", "plugin", q.name, "email_hash", job.emailHash)
 	}
 	return queued
+}
+
+// scrubbedNoticeSend is the queue body every email notice shares: the
+// sender is host code, so a panic is recovered and logged scrubbed
+// (textsafe.Recovered keeps control/bidi bytes of the panic value out
+// of the operator's tail — the recovercallback contract) and a send
+// failure is logged by the hashed recipient, never propagated into the
+// queue. plugin and the two messages name the notice in the log.
+func scrubbedNoticeSend(plugin, panicMsg, failMsg, to string, sender EmailSender, body string) func(context.Context) {
+	return func(ctx context.Context) {
+		defer func() {
+			if p := recover(); p != nil {
+				slog.Warn(panicMsg, "plugin", plugin, "email_hash", hashedIdentifier(to), "panic", textsafe.Recovered(p))
+			}
+		}()
+		if err := sender.Send(ctx, to, body); err != nil {
+			slog.Warn(failMsg, "plugin", plugin, "email_hash", hashedIdentifier(to), "err", err)
+		}
+	}
 }
 
 // stop cancels the sends in flight, closes the queue and waits for the

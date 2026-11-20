@@ -2,19 +2,14 @@ package handler
 
 import "context"
 
-// --- Type-safe context keys ---
-
 type userKey struct{}
 type tenantKey struct{}
 type tenantIDKey struct{}
 type requestIDKey struct{}
 type loggerKey struct{}
 
-// --- User ---
-
-// SetUser stores a user value in the context. It also drops any principal
-// re-check installed for the previous user (see WithPrincipalCheck): the
-// middleware that sets a user installs its own check after this call.
+// SetUser stores user in ctx and drops the principal checks installed for
+// the previous user.
 func SetUser(ctx context.Context, user any) context.Context {
 	if cur, _ := ctx.Value(principalCheckKey{}).(*principalChecks); cur != nil {
 		ctx = context.WithValue(ctx, principalCheckKey{}, (*principalChecks)(nil))
@@ -28,8 +23,6 @@ func GetUser(ctx context.Context) (any, bool) {
 	return u, ok
 }
 
-// --- Tenant ---
-
 // SetTenant stores a tenant value in the context.
 func SetTenant(ctx context.Context, tenant any) context.Context {
 	return context.WithValue(ctx, tenantKey{}, tenant)
@@ -41,11 +34,7 @@ func GetTenant(ctx context.Context) (any, bool) {
 	return t, ok
 }
 
-// SetTenantID stores the resolved tenant ID string in the context: the
-// slot framework/tenant's SetTenantID and GetTenantID read and write, and
-// the one tenant scoping filters on. It lives here, below framework/tenant,
-// so a leaf package (framework/access's cached role resolver) can partition
-// by tenant without importing the tenant package.
+// SetTenantID stores the tenant ID tenant scoping filters on.
 func SetTenantID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, tenantIDKey{}, id)
 }
@@ -55,8 +44,6 @@ func GetTenantID(ctx context.Context) string {
 	id, _ := ctx.Value(tenantIDKey{}).(string)
 	return id
 }
-
-// --- RequestID ---
 
 // SetRequestID stores a request ID in the context.
 func SetRequestID(ctx context.Context, id string) context.Context {
@@ -68,8 +55,6 @@ func GetRequestID(ctx context.Context) (string, bool) {
 	id, ok := ctx.Value(requestIDKey{}).(string)
 	return id, ok
 }
-
-// --- Logger ---
 
 // SetLogger stores a logger in the context.
 func SetLogger(ctx context.Context, logger any) context.Context {

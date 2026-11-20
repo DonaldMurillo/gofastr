@@ -23,7 +23,7 @@ func TestCollapsedSidebarLabelsStayAccessible(t *testing.T) {
 	if strings.Contains(block, "display: none") {
 		t.Fatalf("collapsed label rule uses display:none:\n%s", block)
 	}
-	if !strings.Contains(block, "clip: rect(0, 0, 0, 0)") {
+	if !strings.Contains(block, "clip-path: inset(50%)") {
 		t.Fatalf("collapsed label rule should use the clip pattern:\n%s", block)
 	}
 }

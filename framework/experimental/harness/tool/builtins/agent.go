@@ -1,26 +1,5 @@
 package builtins
 
-// Agent, the harness's sub-agent launcher. Pattern from Claude Code's
-// "Task" tool: the model can spawn a fresh agent with a focused prompt
-// and get back a final summary. The sub-agent has the same Provider,
-// Model, and Tools as the parent but a blank conversation history, so
-// long parent contexts don't bleed into the sub-task.
-//
-// Implementation: the engine implements tool.Spawner and is plumbed
-// into the dispatch ctx by Engine.RunTurn. The tool resolves it and
-// calls Spawn(systemHint, userPrompt), blocking until the sub-agent's
-// loop terminates. Events from the sub-agent fan out on the same bus,
-// so attached clients can watch its progress in real time.
-//
-// Defaults:
-//
-//   - systemHint is empty unless the caller passes one. The sub-agent
-//     inherits the parent's system prompt + AGENTS.md via the engine's
-//     request middleware regardless.
-//   - The result is the sub-agent's last assistant text. Tool-call
-//     interactions inside the sub-loop are hidden from the parent
-//     (just like CC's Task tool returns a single summary).
-
 import (
 	"context"
 	"encoding/json"
@@ -30,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
 
+// Agent runs a sub-agent with the given prompt and returns its final assistant text.
 type Agent struct{}
 
 func (Agent) Name() string { return "Agent" }
@@ -39,7 +19,7 @@ func (Agent) Description() string {
 		"The sub-agent has the same tools but starts with an empty history. " +
 		"Inputs: prompt (required, what the sub-agent should do), description (short label for UI), system (optional extra system hint)."
 }
-func (Agent) Mutating() bool { return true } // sub-agents may dispatch mutating tools
+func (Agent) Mutating() bool { return true }
 func (Agent) InputSchema() []byte {
 	return []byte(`{
   "type": "object",
@@ -71,10 +51,6 @@ func (Agent) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*to
 	if !ok {
 		return errorResult("Agent: no spawner in dispatch context (engine wiring missing)"), nil
 	}
-	// Depth guard, refuse if this Agent call is already inside a
-	// sub-agent at the max depth. Prevents recursive Agent → Agent →
-	// Agent chains that ran a single session up to 70+ tool calls
-	// (sess_01KSDZK5…).
 	depth := tool.SpawnDepthFromContext(ctx)
 	if depth >= tool.MaxSpawnDepth {
 		return errorResult(fmt.Sprintf("Agent: refusing to spawn at depth %d (MaxSpawnDepth=%d). "+

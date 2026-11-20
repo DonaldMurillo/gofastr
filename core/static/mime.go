@@ -6,13 +6,6 @@ import (
 	"strings"
 )
 
-// mimeTypes maps file extensions to canonical web MIME types. It is
-// consulted BEFORE mime.TypeByExtension on purpose: the stdlib answer
-// depends on the host (Linux merges /etc/mime.types, which reports
-// e.g. image/vnd.microsoft.icon for .ico and audio/webm for .webm),
-// and a framework serving content must return the same Content-Type
-// on every platform. Keep entries aligned with what browsers expect
-// (.js is text/javascript per RFC 9239).
 var mimeTypes = map[string]string{
 	".html":  "text/html; charset=utf-8",
 	".htm":   "text/html; charset=utf-8",
@@ -40,23 +33,18 @@ var mimeTypes = map[string]string{
 	".wasm":  "application/wasm",
 }
 
-// DetectFromName returns the MIME type for the given filename based on
-// its extension. The built-in canonical table wins so detection is
-// platform-independent; mime.TypeByExtension only covers the long tail
-// of extensions not in the table, and "application/octet-stream" is
-// the final fallback.
+// DetectFromName returns the MIME type for name's extension from the
+// built-in table, then mime.TypeByExtension, then application/octet-stream.
 func DetectFromName(name string) string {
 	ext := strings.ToLower(filepath.Ext(name))
 	if ext == "" {
 		return "application/octet-stream"
 	}
 
-	// Canonical table first: deterministic across platforms.
 	if mt, ok := mimeTypes[ext]; ok {
 		return mt
 	}
 
-	// Long tail: defer to the stdlib (host mime DB may extend this).
 	if mt := mime.TypeByExtension(ext); mt != "" {
 		return mt
 	}

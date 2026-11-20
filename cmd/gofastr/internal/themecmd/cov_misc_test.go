@@ -1,13 +1,13 @@
 package themecmd
 
 import (
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
+	"github.com/DonaldMurillo/gofastr/internal/heldfiletest"
 )
 
 // ── theme.go ──────────────────────────────────────────────────────────
@@ -82,31 +82,12 @@ func TestThemeInitForceReplacesWhole(t *testing.T) {
 	if err := os.WriteFile(dest, []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	old := heldTheme(t, dest)
+	old := heldfiletest.Held(t, dest)
 	clitest.CovT_capStdout(t, func() { RunTheme([]string{"init", "--out=" + dest, "--force"}) })
 	if got := old(); got != "old" {
 		t.Fatalf("the old handle reads %q: rewritten in place", got)
 	}
 	if got, _ := os.ReadFile(dest); !strings.Contains(string(got), "package") {
 		t.Fatalf("theme not written: %q", got)
-	}
-}
-
-// heldTheme opens path and returns a reader of what that handle sees: a
-// file renamed over path leaves it reading the old content, one
-// truncated in place leaves it reading the new.
-func heldTheme(t *testing.T, path string) func() string {
-	t.Helper()
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = f.Close() })
-	return func() string {
-		b, err := io.ReadAll(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(b)
 	}
 }

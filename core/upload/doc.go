@@ -1,3 +1,2 @@
-// Package upload is part of the GoFastr framework.
-// See https://github.com/DonaldMurillo/gofastr for documentation.
+// Package upload validates, stores and serves uploaded files.
 package upload

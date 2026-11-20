@@ -7,20 +7,26 @@ import (
 	"testing"
 )
 
+// getWithSecurityHeaders runs one GET through SecurityHeaders with cfg
+// and returns the response, so a header pin is one line of setup.
+func getWithSecurityHeaders(t *testing.T, cfg SecurityHeadersConfig) *httptest.ResponseRecorder {
+	t.Helper()
+	srv := SecurityHeaders(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	return rr
+}
+
 // TestSecurityHeaders_CSPNoUnsafeDirectives verifies the CSP header does
 // not contain dangerous directives like unsafe-inline, unsafe-eval, or
 // default-src *. Attack: CSP with permissive directives allows XSS via
 // injected scripts. Expected: CSP absent of unsafe-inline, unsafe-eval,
 // default-src *.
 func TestSecurityHeaders_CSPNoUnsafeDirectives(t *testing.T) {
-	mw := SecurityHeaders(SecurityHeadersConfig{})
-	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
+	rr := getWithSecurityHeaders(t, SecurityHeadersConfig{})
 
 	csp := rr.Header().Get("Content-Security-Policy")
 	if csp == "" {
@@ -37,17 +43,10 @@ func TestSecurityHeaders_CSPNoUnsafeDirectives(t *testing.T) {
 // and HSTSMaxAge > 0, the Strict-Transport-Security header is present.
 // Attack: missing HSTS allows protocol downgrade and cookie theft.
 func TestSecurityHeaders_HSTSOnHTTPSConfig(t *testing.T) {
-	mw := SecurityHeaders(SecurityHeadersConfig{
+	rr := getWithSecurityHeaders(t, SecurityHeadersConfig{
 		Secure:     true,
 		HSTSMaxAge: 31536000,
 	})
-	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
 
 	hsts := rr.Header().Get("Strict-Transport-Security")
 	if hsts == "" {
@@ -62,14 +61,7 @@ func TestSecurityHeaders_HSTSOnHTTPSConfig(t *testing.T) {
 // X-Frame-Options is set to DENY or SAMEORIGIN. Attack: clickjacking
 // via iframe embedding without frame protection.
 func TestSecurityHeaders_FrameOptionsDenyOrSameorigin(t *testing.T) {
-	mw := SecurityHeaders(SecurityHeadersConfig{})
-	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
+	rr := getWithSecurityHeaders(t, SecurityHeadersConfig{})
 
 	xfo := rr.Header().Get("X-Frame-Options")
 	if xfo != "DENY" && xfo != "SAMEORIGIN" {
@@ -81,14 +73,7 @@ func TestSecurityHeaders_FrameOptionsDenyOrSameorigin(t *testing.T) {
 // header is set. Attack: cross-origin resource loading without CORP
 // allows data exfiltration. Expected: CORP header present.
 func TestSecurityHeaders_CORPPresent(t *testing.T) {
-	mw := SecurityHeaders(SecurityHeadersConfig{})
-	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
+	rr := getWithSecurityHeaders(t, SecurityHeadersConfig{})
 
 	corp := rr.Header().Get("Cross-Origin-Resource-Policy")
 	if corp == "" {
@@ -100,14 +85,7 @@ func TestSecurityHeaders_CORPPresent(t *testing.T) {
 // header is set. Attack: missing COOP allows cross-origin window
 // references and Spectre-class attacks. Expected: COOP header present.
 func TestSecurityHeaders_COOPPresent(t *testing.T) {
-	mw := SecurityHeaders(SecurityHeadersConfig{})
-	srv := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
+	rr := getWithSecurityHeaders(t, SecurityHeadersConfig{})
 
 	coop := rr.Header().Get("Cross-Origin-Opener-Policy")
 	if coop == "" {
@@ -138,7 +116,7 @@ func TestDefaultCSPBoundsFormAndObject(t *testing.T) {
 		}
 	}
 	// The existing guarantees must survive.
-	for _, want := range []string{"default-src 'self'", "frame-ancestors 'none'", "base-uri 'self'"} {
+	for _, want := range []string{"default-src 'self'", "frame-ancestors 'none'", "base-uri 'none'", "worker-src 'self'"} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("the default CSP lost %q: %q", want, csp)
 		}

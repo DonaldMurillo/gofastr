@@ -1,0 +1,52 @@
+primitive: harness.provider.openrouter
+summary: The OpenRouter provider - Chat through the shared OpenAI client with HTTP-Referer and X-Title, and a TTL-cached /models catalog that carries prices.
+code:
+  - framework/experimental/harness/provider/openrouter/
+twins:
+  - job: Build a default HTTP client that refuses redirects for a request carrying the provider's bearer key.
+    why: Work not yet done; the /models fetch builds its own client instead of sharing the wire client's, and the timeouts differ (30 s against 5 min).
+    sites:
+      - path: framework/experimental/harness/provider/openrouter/openrouter.go
+        note: Provider.Models.
+      - path: framework/experimental/harness/provider/internal/openai/client.go
+        note: Client.Chat.
+  - job: Turn a non-200 provider answer into an error with the status and an 8 KiB preview stripped of control characters.
+    why: Work not yet done; one shared helper in the wire package could serve both.
+    sites:
+      - path: framework/experimental/harness/provider/openrouter/openrouter.go
+        note: Provider.Models.
+      - path: framework/experimental/harness/provider/internal/openai/client.go
+        note: Client.Chat.
+  - job: Refuse duplicate or case-folded keys in a provider's JSON answer before decoding it.
+    why: Work not yet done; both call handler.CheckObjectKeys then json.Unmarshal by hand where one strict decode helper would do.
+    sites:
+      - path: framework/experimental/harness/provider/openrouter/openrouter.go
+        note: Provider.Models, the catalog body.
+      - path: framework/experimental/harness/provider/internal/openai/client.go
+        note: parseSSEStream, each SSE chunk.
+invariants:
+  - id: sends-referer-and-title
+    rule: Chat sends HTTP-Referer and X-Title on every request, defaulting to https://gofastr.dev/harness and gofastr-harness, because some upstream models on OpenRouter require them.
+    enforced_by:
+      - test: framework/experimental/harness/provider/openrouter.TestChatRequestShape
+  - id: models-fetch-refuses-redirects
+    rule: The /models fetch with no HTTP client given refuses redirects, so the bearer key never reaches the origin a 3xx names.
+    enforced_by:
+      - test: framework/experimental/harness/provider/openrouter.TestModelsRefusesRedirect
+      - test: framework/experimental/harness/provider/openrouter.TestChatRefusesRedirect
+  - id: models-body-bounded
+    rule: The /models body is read through a 1 MiB limit.
+    enforced_by:
+      - test: framework/experimental/harness/provider/openrouter.TestModelsCatalogDecodeIsBounded
+  - id: models-strict-keys
+    rule: A /models body with duplicate or case-folded keys is refused before it is decoded.
+    enforced_by:
+      - test: framework/experimental/harness/provider/openrouter.TestSweepModelsRefusesFoldedKeys
+  - id: models-error-scrubbed
+    rule: A non-200 /models answer becomes an error with the status and an 8 KiB preview stripped of control characters, because it reaches the operator's log.
+    enforced_by:
+      - test: framework/experimental/harness/provider/openrouter.TestSweepModelsErrorPreviewIsScrubbed
+  - id: catalog-cached-and-copied
+    rule: Models caches the catalog for ModelCatalogTTL (one hour by default), converts per-token price strings to per-million rates with an unparsable price as 0, and returns a copy a caller may edit without changing the cache.
+    enforced_by:
+      - test: framework/experimental/harness/provider/openrouter.TestSweepModelsCatalog
