@@ -80,6 +80,7 @@ invariants:
       - test: battery/auth.TestPasswordResetDeliveryDroppedWhenQueueFull
       - test: battery/auth.TestPasswordResetDeliveryRefusedAfterStop
       - test: battery/auth.TestMailQueueRecoversSenderPanic
+      - test: battery/auth.TestDuplicateNoticeSenderPanicRecovered
 decisions:
   - id: confirmation-step
     date: 2026-11-20

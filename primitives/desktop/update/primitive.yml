@@ -86,6 +86,7 @@ invariants:
     rule: AwaitPredecessor removes GOFASTR_DESKTOP_UPDATE_PREDECESSOR from the environment and waits only when it names another positive process id.
     enforced_by:
       - test: battery/desktop/internal/update.TestAwaitPredecessorConsumesTheVariable
+      - test: battery/desktop/internal/update.TestAwaitPredecessorWaitsForALiveProcess
   - id: feed-writer-checks
     rule: WriteFeed refuses a lifetime that is negative or past MaxFeedLifetime, merges into an existing manifest only when its signature verifies under the same key, and writes both files 0644.
     enforced_by:

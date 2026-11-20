@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,11 +22,17 @@ func (s failingCreateStore) CreateUser(context.Context, string, string, []string
 	return nil, errors.New("db down")
 }
 
-type panickingSender struct{ done chan struct{} }
+type panickingSender struct {
+	calls atomic.Int32
+	sent  chan string
+}
 
-func (s *panickingSender) Send(context.Context, string, string) error {
-	defer close(s.done)
-	panic("sender exploded")
+func (s *panickingSender) Send(_ context.Context, to, _ string) error {
+	if s.calls.Add(1) == 1 {
+		panic("sender exploded")
+	}
+	s.sent <- to
+	return nil
 }
 
 type failingCreateSessions struct{ *MemorySessionStore }
@@ -200,7 +207,7 @@ func TestRegisterStoreFailureIs500(t *testing.T) {
 }
 
 func TestDuplicateNoticeSenderPanicRecovered(t *testing.T) {
-	sender := &panickingSender{done: make(chan struct{})}
+	sender := &panickingSender{sent: make(chan string, 1)}
 	store := newMemoryUserStore()
 	mgr := New(AuthConfig{JWTSecret: "s", DevMode: true, UserStore: store, RegisterEmailSender: sender})
 	mgr.Use(NewCorePlugin())
@@ -208,15 +215,20 @@ func TestDuplicateNoticeSenderPanicRecovered(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = mgr.OnStop(context.Background()) })
-	seedUser(t, store, "holder@example.com", "supersecret1")
-	(&cookieJar{}).do(mountRoutes(mgr), http.MethodPost, "/auth/register",
-		map[string]string{"email": "holder@example.com", "password": "supersecret1"}, "")
-	select {
-	case <-sender.done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("notice never sent")
+	routes := mountRoutes(mgr)
+	for _, email := range []string{"first@example.com", "second@example.com"} {
+		seedUser(t, store, email, "supersecret1")
+		(&cookieJar{}).do(routes, http.MethodPost, "/auth/register",
+			map[string]string{"email": email, "password": "supersecret1"}, "")
 	}
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case to := <-sender.sent:
+		if to != "second@example.com" {
+			t.Fatalf("second notice went to %q", to)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the notice after a panicking send never arrived: the panic took the mail worker down")
+	}
 }
 
 func TestCanonicalizerErrorTextNotEchoed(t *testing.T) {

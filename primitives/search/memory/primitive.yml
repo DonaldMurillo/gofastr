@@ -23,5 +23,5 @@ invariants:
     rule: The store eraser deletes every document whose Owner is the erased user, counts without deleting on a dry run, touches nothing for an empty owner, and stops reaching the index once Close runs.
     enforced_by:
       - test: battery/search.TestEraseRemovesMemoryDocuments
-      - test: battery/search.TestMemoryCloseStopsErasure
+      - test: battery/search.TestMemoryEraseSkipsEmptyOwnerAndDryRun
       - test: battery/search.TestBatteryStopClosesMemory

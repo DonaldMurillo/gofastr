@@ -56,12 +56,14 @@ func TestMagicLinkVerifyCapsBody(t *testing.T) {
 
 func TestMailQueueRecoversSenderPanic(t *testing.T) {
 	q := newMailQueue("test")
-	done := make(chan struct{})
-	q.enqueue(context.Background(), "a@example.com", func(context.Context) {
-		defer close(done)
-		panic("sender exploded")
-	})
-	<-done
+	ran := make(chan struct{})
+	q.enqueue(context.Background(), "a@example.com", func(context.Context) { panic("sender exploded") })
+	q.enqueue(context.Background(), "b@example.com", func(context.Context) { close(ran) })
+	select {
+	case <-ran:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the send after a panicking one never ran")
+	}
 	if err := q.stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
