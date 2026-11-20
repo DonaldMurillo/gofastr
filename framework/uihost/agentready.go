@@ -633,7 +633,10 @@ func (p acceptPreferences) prefersMarkdown() bool {
 }
 
 func (p acceptPreferences) prefersProblemJSON(markdownAvailable bool) bool {
-	problem := max(p.json.quality, p.problemJSON.quality)
+	problem := p.problemJSON.quality
+	if p.problemJSON.specificity == 0 {
+		problem = p.json.quality
+	}
 	return problem > 0 && problem >= p.html.quality &&
 		(!markdownAvailable || problem >= p.markdown.quality)
 }

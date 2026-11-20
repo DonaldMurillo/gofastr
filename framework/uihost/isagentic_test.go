@@ -193,6 +193,8 @@ func TestNotFound_JSONProblemAcceptVariants(t *testing.T) {
 		{"exact HTML overrides wildcard", []string{"text/html;q=0, */*, application/json;q=0.2"}, "application/problem+json"},
 		{"invalid weight", []string{"application/problem+json;q=1.5"}, "text/html"},
 		{"zero weight", []string{"application/problem+json;q=0"}, "text/html"},
+		{"explicit refusal overrides alias", []string{"application/json, application/problem+json;q=0"}, "text/html"},
+		{"explicit weight overrides alias", []string{"text/html;q=0.5, application/json, application/problem+json;q=0.2"}, "text/html"},
 		{"quoted comma", []string{`text/plain;profile="x, application/json, y"`}, "text/html"},
 		{"browser default", []string{"text/html,application/xhtml+xml,*/*;q=0.8"}, "text/html"},
 		{"application wildcard alone", []string{"application/*"}, "text/html"},

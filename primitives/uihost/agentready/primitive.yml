@@ -121,7 +121,7 @@ invariants:
     enforced_by:
       - test: framework/uihost.TestMarkdownNegotiation_EndToEnd
   - id: problem-json-respects-accept-weights
-    rule: Problem JSON requires an explicit positive Accept weight on application/problem+json or application/json at least as high as the weight of HTML and any available Markdown.
+    rule: Problem JSON requires an explicit positive Accept weight at least as high as the weight of HTML and any available Markdown. A valid application/problem+json range takes precedence over the application/json alias, even at q=0.
     enforced_by:
       - test: framework/uihost.TestNotFound_JSONProblemAcceptVariants
   - id: page-markdown-not-storable
