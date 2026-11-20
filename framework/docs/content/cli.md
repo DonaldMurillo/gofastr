@@ -94,7 +94,7 @@ Run `gofastr help` for an overview or `gofastr <command> --help` for every flag.
 
 - **Version mismatch check:** Project commands compare your `go.mod` GoFastr version against the installed CLI and warn on stderr if they differ (silence with `GOFASTR_NO_VERSION_CHECK=1`).
 - **Machine-readable `--json`:** Commands supporting `--json` write one JSON document to stdout and all prose/warnings to stderr (`generate --watch --json` streams newline-delimited JSON).
-- **Project confinement & safe output:** Scaffold and generator commands refuse to follow symlinks outside the project root, never overwrite existing files unless `--force` is passed, and scrub terminal control/bidi sequences before printing external text.
+- **Project confinement & safe output:** Scaffold commands (`init`, `generate app`, `generate package`) refuse to follow symlinks outside the project root and never overwrite existing files unless `--force` is passed (derived generators like `generate styles`, `generate client`, `generate cli`, and `generate sdk` rebuild their derived outputs on each run). External text is scrubbed of terminal control and bidi sequences before printing.
 - **Windows `init` double-invocation:** `gofastr init <name>` exits 1 if the destination already exists and leaves it untouched. If a wrapper or agent runner reports "already exists" alongside a complete scaffold, check whether the runner retried the command after it already succeeded rather than passing `--force`.
 
 ## Common mistakes

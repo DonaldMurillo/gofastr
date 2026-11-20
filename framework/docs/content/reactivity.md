@@ -1,116 +1,41 @@
 # Reactivity model
 
-GoFastr ships four ways to make a page change after first paint. They form a
-ladder, cheapest first. Pick the lowest rung that fits the product behavior;
-reach for the next one only when the lower one cannot do the job.
+GoFastr gives you four ways to update a page after first paint, ordered from cheapest to heaviest. Pick the lowest rung that fits the job; move up only when the lower rung can't do it.
 
-| Rung | What it is | When it fits |
+| Rung | Mechanism | Best for |
 |---|---|---|
-| **Client signal** | A string value held in the runtime signal store, mutated by `data-cui-signal-set/inc/toggle`. No server. | UI-only state. Tabs, toggles, theme, an open/closed panel. |
-| **RPC** | A `fetch` to a server handler. The server reads from the DB and returns HTML or a value; the runtime swaps the region or sets a signal. | Anything the user triggered. The default for data. |
-| **Polling** | The runtime re-fetches a region on an interval. | Passive freshness for a counter, a status, or a dashboard, without holding a connection. |
-| **SSE push** | One long-lived `/__gofastr/sse` connection per page. The server pushes when state changes. | Semantics that need the connection: presence, collaborative editing, sub-second internal dashboards. |
+| **1. Client signals** | Browser signal store (`data-cui-signal-*`). Zero network. | UI-only state: tabs, toggles, theme, open/closed panels. |
+| **2. Island RPC** | `fetch` to a server handler; swaps HTML or sets a signal. | Every user-triggered data action (forms, filters, sorts, CRUD). |
+| **3. Polling** | Interval GET (`data-cui-poll` or `Builder.Poll`). No held socket. | Passive freshness: counters, job status, dashboards. |
+| **4. SSE push** | Single `/__gofastr/sse` stream per page. | Presence, collaboration, and sub-second live updates. |
 
-## The four rungs, in order
+## 1. Client signals
 
-### 1. Client signals
-
-A signal is a named string kept in the runtime signal store in the browser.
-Three click-time primitives mutate it:
+Signals hold lightweight UI state in the browser with no server round-trip:
 
 | Attribute | Effect |
 |---|---|
 | `data-cui-signal-set="name:value"` | Sets `name` to `value` |
-| `data-cui-signal-inc="name[:delta]"` | Increments `name` by `delta` (default 1; negative decrements) |
+| `data-cui-signal-inc="name[:delta]"` | Increments `name` by `delta` (default `1`) |
 | `data-cui-signal-toggle="name"` | Flips `name` between `"true"` and `"false"` |
 
-They work anywhere on the page, inside a modal, drawer or popover too. On
-a node that also carries `data-cui-rpc`, the signal mutation wins and no
-request is sent.
+Any element carrying `data-cui-signal="<name>"` updates automatically when that signal changes. For typed, namespaced, SSR-seeded state shared across components, use `core-ui/store` ([Signal store](signal-store.md)).
 
-Any element with `data-cui-signal="<name>"` re-renders when the value changes.
-For typed, shared, SSR-seeded state, wrap signals with `core-ui/store` (see
-[Signal store](signal-store.md)).
+## 2. RPC
 
-No server involvement. No RPC. No page reload.
+A click or form submit fires an HTTP request to your Go handler. The handler reads or mutates the DB and returns authoritative HTML (to swap an island) or a value (to update a signal):
 
-### 2. RPC
+- **Stateless & authoritative:** any replica can serve any RPC, and the HTTP response is the source of truth for validation, errors, and optimistic rollback.
+- **Screen-policy enforced:** compiled server actions (`/__gofastr/action`) run the screen's policy chain before executing, and JSON bodies reject duplicate/case-folded keys. Per-record authorization still belongs in your handler.
+- **Screen cache invalidation:** the client router caches up to 20 visited screens per tab for instant Back/Forward navigation. Non-`GET` RPCs automatically evict the current screen; call `ui.InvalidateScreens(w, "/orders")` when a mutation also stales *other* cached routes.
 
-A user click or submit fires a `fetch` to a server handler. The handler reads
-from the DB, renders fresh HTML (or returns a value), and the runtime swaps the
-region or writes the value into a signal.
+See [Interactive patterns](interactive-patterns.md) and [Optimistic UI](optimistic-ui.md) for the full attribute vocabulary and mutation patterns.
 
-- Stateless. Any replica can answer; there is no in-process session object
-  tied to the connection.
-- Authoritative. The HTTP response is the source of truth for the mutation;
-  the runtime reconciles against it.
-- Covers every user-initiated data change: paginate, filter, create, update,
-  delete, optimistic toggles with rollback.
-- JSON POST bodies are decoded under strict top-level key rules: the
-  compiled server-action endpoint (`/__gofastr/action`) refuses a body
-  with duplicate or case-folded keys rather than decoding it last-wins.
-- A compiled server action runs its screen's Policy chain first (the same
-  chain that gates the page render) and answers 403 when it does not
-  Allow, so a caller the page refuses cannot run the page's actions. The
-  runtime sends the page path with each action (`page` in the body); when
-  it resolves to the action's own screen, the policy reads that page's
-  route params through `app.MatchFromContext`, as it does on a render.
-  Any other path leaves the params empty, so write the policy to refuse
-  on an empty param. The client picks the path, so the gate answers "may
-  this caller see some page of this screen", never "may it act on this
-  record": anything finer than the page gate (per record, per field) is
-  the handler's job.
+## 3. Polling
 
-A mutation can also stale screens the user is *not* on: a create stales
-every cached page of the list, an admin action stales `/pricing`. Name
-them on the response with `ui.InvalidateScreens(w, "/orders")` and the
-runtime drops those entries from its per-tab screen cache, so back-nav
-re-fetches instead of showing the pre-mutation copy. This rides the
-initiating RPC's response; it is part of this rung, not a fifth one. It
-only reaches the tab that made the request; other tabs that need the
-fresh value are the polling rung's job, and SSE is never a
-cache-invalidation transport. For the *current* screen, use
-`data-cui-rpc-navigate` (or return island HTML); eviction alone never
-re-renders anything. The runtime drops the current screen's cached copy
-itself after any successful RPC whose method is not `GET`, so Back to it
-fetches the page instead of replaying the copy from before the write.
+Polling refreshes passive UI without holding an open connection or needing cross-replica fanout—any replica answers directly from the database.
 
-The screen cache is why Back and Forward inside an app are instant,
-without relying on the browser's own back/forward cache (bfcache). The
-runtime keeps the last 20 screens per tab and shows them on `popstate`
-without asking the server. Every page document the UI host serves is
-`Cache-Control: no-store`, which keeps it out of HTTP caches; it is not
-a bfcache rule, and a browser may still keep an eligible page there.
-The framework does not change pages to make them bfcache-eligible:
-that would only help when the user leaves the site and comes back.
-Static exports are cached however their host decides, and the runtime
-handles a bfcache restore on any page. See
-[Security defaults](security.md), "Recovery screens and cache policy".
-
-See [Interactive patterns](interactive-patterns.md) for the full attribute
-vocabulary and [Optimistic UI](optimistic-ui.md) for the mutation lifecycle.
-
-The headless controls ride the rungs rather than adding to them. A
-`headless.Counter`'s value is a client signal (`data-cui-signal` /
-`data-cui-signal-inc`, rung 1); a `headless.Repeater`'s add and
-remove are named submit buttons, and when the result swaps the
-region the same buttons carry the RPC contract (rung 2); a
-`headless.StepWizard`'s submit is a plain form POST that becomes a
-region update under its optional Island; a `headless.Toast` arriving
-at runtime is the RPC response's header (`X-Gofastr-Toast`) read by
-the feedback module, and the stack it lands in is mounted once by the
-layout. The drag-time behaviour of `NumberInput`, `Slider` and
-`RangeSlider` is local presentation: no request fires while a thumb
-moves, and the form the inputs ride submits when the reader submits
-it.
-
-### 3. Polling
-
-Polling re-fetches on an interval without holding a connection. It gives you
-freshness for passive surfaces, a status pill, a counter, a dashboard, with
-no fanout, no shared infrastructure, and no held connection.
-
-**Page level.** Add two attributes to the region you want to refresh:
+**Page region:**
 
 ```html
 <div data-cui-poll="30s" data-cui-poll-src="/islands/orders/today">
@@ -118,300 +43,61 @@ no fanout, no shared infrastructure, and no held connection.
 </div>
 ```
 
-- `data-cui-poll` is a Go duration string (`30s`, `5m`, `1h`). Five seconds is
-  the floor.
-- `data-cui-poll-src` is the URL the runtime fetches. The response body
-  replaces the region's `innerHTML`, exactly like an RPC signal swap.
-- A body identical to the last one applied is not written again while
-  the region still holds what it left there, so an unchanged region
-  keeps its nodes, focus and scroll position. A region something else
-  redrew in the meantime is written again.
-- While someone is working in the region, the swap waits: keyboard
-  focus on something inside it, a caret in one of its fields, or a text
-  selection. Focus a mouse click left behind does not count. The wait
-  ends on the first tick after they leave, and after six ticks at most.
-- After a swap, focus that was inside goes back to the element with the
-  same `id`, or to a link with the same `href`. Give a control in a
-  polled region an `id` if it should keep focus across refreshes.
-- The interval is jittered so a fleet of tabs does not synchronize on a wall
-  clock.
-- A region more than 200px outside the viewport is not fetched. The
-  tick that came due while it was away fetches as soon as the reader
-  scrolls it near, so what they see is never older than one interval.
-- A scheduled tick fetches at `priority: 'low'`, so it never holds up a
-  request the user is waiting on. The refresh when the tab becomes
-  visible again, and a widget's refresh after its own RPC succeeds, use
-  the default priority.
-- The poller pauses while the tab is hidden and resumes when it returns.
-- A failed fetch doubles the interval (capped at 5x the base, reset on the
-  next success); the runtime keeps polling rather than
-  spinning.
+- `data-cui-poll` takes a Go duration (minimum `5s`) with automatic jitter.
+- Identical HTML responses skip DOM writes so focus and scroll stay untouched; swaps pause while a user is typing or navigating inside the region, and restore focus by `id` or `href` afterward.
+- Polls pause automatically when off-screen or when the browser tab is hidden, and back off on errors.
+- **Stop on completion:** return header `X-Gofastr-Poll-Stop: 1` (or remove the `data-cui-poll` marker) when a job reaches a terminal state.
 
-**Widget level.** A widget that wants to refresh its own signals on a cadence
-calls `Builder.Poll(interval)`:
+**Widget level:** call `Builder.Poll(interval)` (and optionally `Builder.PollTerminal(fn)`) to refresh a widget's `/state` signals on a cadence:
 
 ```go
 panel := preset.FloatingPanel("ops-panel").
-    Slot("body", bodyComponent).
-    Signal("queue_depth", widget.SignalFunc(readQueueDepth)).
-    Poll(15 * time.Second).
-    Build()
+	Slot("body", bodyComponent).
+	Signal("queue_depth", widget.SignalFunc(readQueueDepth)).
+	Poll(15 * time.Second).
+	Build()
 ```
 
-On each interval the runtime re-fetches the widget's `/state` endpoint and
-re-applies the signals that changed. A value equal to the stored one is
-skipped (an object or array compares by its JSON), so an unchanged response
-does not rewrite a bound node or replay its `data-cui-flash-on-update`. No SSE
-binding, no event name, no per-widget push channel.
+## 4. SSE push
 
-**Why prefer polling.** Any replica can answer the fetch from the DB. You do
-not need `WithFanout`, you do not need sticky routing, and the page works the
-same way on a single replica as it does behind a load balancer. For dashboards,
-counters, and statuses this is the recommended tier.
+All server-pushed page updates share one `/__gofastr/sse` connection per page. Use SSE only when the connection itself is part of the product (presence rosters, collaboration) or updates must arrive faster than a poll interval:
 
-**Stopping a poll (terminal state).** A poll whose job is done, whether a
-job-status pill that reached `completed` or a batch that finished, should
-not keep hitting the server forever. The server ends the cadence by
-setting `X-Gofastr-Poll-Stop: 1` (truthy: `1`/`true`/`yes`/`on`) on the
-terminal poll response. The runtime applies the response body (or, for
-a widget, the final signal snapshot) and then tears down the timer, so
-no further fetches land. The header is opt-in: a handler that forgets
-it keeps polling, so a still-live poll cannot be terminated by
-accident. For `Builder.Poll` widgets, declare the terminal condition
-with `Builder.PollTerminal(func() bool)`; the `/state` handler emits
-the header automatically once the predicate returns true. It asks the
-predicate before it reads the signals, so the stopping snapshot is never
-older than the terminal answer, and it skips the header on a response
-missing a signal whose read failed. A poll whose
-region is swapped out entirely (an island swap that replaces the
-`data-cui-poll` element, or a replacement carrying
-`data-cui-poll="off"`/`"0"`) is not re-wired either, so removing the
-marker also ends the poll.
+- **Push-only & best-effort:** never deliver the answer to a user's own click over SSE (that belongs in the RPC response). Slow consumers drop stale frames; durable side effects belong in `battery/queue` or the transactional outbox.
+- **Multi-replica:** enable `framework.WithFanout` so pushes on one replica reach sockets on another.
+- **Long-lived & bounded:** streams outlive the request timeout once flushed, send keepalive heartbeats (default `15s`, `island.WithSSEHeartbeat`), and reclaim stranded streams after a bounded lifetime (default `5m`, `island.WithSSEStreamBound`).
+- **Connection caps:** default caps are 16/session, 256/client, and 4096/replica (`island.WithStreamCaps`, `island.WithPeerStreamCap`), rejecting excess connects with `429` + `Retry-After`. Behind a reverse proxy, set `AppConfig.TrustedProxies` (or `uihost.WithTrustedProxies`) so clients aren't grouped under the proxy IP.
 
-### 4. SSE push
+See [Events and SSE](events.md), [Presence](presence.md), and [Live dashboards](live-dashboards.md).
 
-The single `/__gofastr/sse` bus. One long-lived connection per page; the server
-pushes frames when state changes.
+## WebSockets (custom bidirectional protocols)
 
-SSE earns its cost when the product semantics need the connection: when the
-fact "this client is connected" is itself part of the truth (presence, the
-collaborative roster), or when updates land faster than a poll cycle could
-sensibly reflect (sub-second internal dashboards).
+For bidirectional protocols outside the page model (multiplayer state, WebRTC signaling), use `core/stream` directly—or `battery/rtc` for WebRTC rooms ([WebRTC rooms](rtc.md)).
 
-- Best-effort, not durable. A slow consumer drops old frames; a reconnect
-  does not replay them. Side effects that must not be lost go on the
-  transactional outbox or `battery/queue`, never the SSE lane.
-- Multi-replica needs `WithFanout` so a push emitted on one replica reaches
-  subscribers connected to another. Without it, push stays per-process.
-- Push only. The result of a user action arrives in the RPC response, never
-  on the event stream.
-- Streams outlive the request timeout. A response that flushes (every SSE
-  subscription does) flips the timeout writer into streaming mode so its 504
-  can no longer fire; the stream loop then ignores the request context's
-  `DeadlineExceeded` (middleware.Timeout firing on a still-connected
-  subscriber, the original bug) while still unwinding promptly on a real
-  `context.Canceled` (client disconnect). A heartbeat (default 15s,
-  `island.WithSSEHeartbeat`) writes keepalive comments so proxies and load
-  balancers don't idle-kill a live stream, and a bounded stream lifetime
-  (default 5m, `island.WithSSEStreamBound`) reclaims a stream stranded by a
-  peer the server can't observe as gone, even when its heartbeat writes
-  keep succeeding into the kernel buffer. The pair is order-safe:
-  `NewManager` enforces bound > heartbeat at the end of construction, so
-  a bound at or below the heartbeat restores the 5m default, and a
-  heartbeat raised above that lifts the bound to heartbeat + 5m — a
-  sub-heartbeat bound would otherwise reclaim every stream before its
-  first keepalive write. The connection's read/write
-  deadlines are NOT cleared (the reverted 217e8d06 did, which broke
-  net/http's close-notify and stranded streams instead). See issue #159.
-- Concurrent streams are capped: 16 per session, 256 per client and
-  4096 per replica by default (`island.WithStreamCaps`,
-  `island.WithPeerStreamCap`). A client is the signed-in user, or an
-  anonymous caller's address (an IPv6 address counts by its /64);
-  `Manager.ClientKey` returns the key a request counts under. The
-  per-client cap exists because a session costs one same-origin POST, so
-  without it one client could mint sessions until it held every slot.
-  Behind a reverse proxy, list it in `AppConfig.TrustedProxies`, which
-  the App puts on each request's context, or with
-  `uihost.WithTrustedProxies` (`island.WithTrustedProxies` on a manager
-  you build), which replaces the App's list for that host: the cap then reads
-  the `X-Forwarded-For` hop the proxy saw, walked from the right the way
-  the rate limiter does. Without the list every anonymous visitor counts
-  as the proxy's address and shares its 256 streams; the first refusal
-  from a private or loopback peer with no proxy listed logs a warning
-  saying so. The policy is reject-not-evict: an over-cap connect gets a
-  `429 Too Many Requests` with `Retry-After`, and existing streams are
-  never dropped to make room.
+When you own a WebSocket, handle reconnects cleanly with two primitives:
 
-See [Events and SSE](events.md) for the broker contract, [Presence](presence.md)
-for the canonical push case, and [Live dashboards](live-dashboards.md) for the
-decision between SSE push and polling.
+- **Sequenced snapshots (`stream.StateChannel` + `__gofastr.createSequencedReducer`):** send one consistent state snapshot on connect followed by strictly increasing event sequences so late messages never resurrect stale state.
+- **Reconnect generations (`__gofastr.connectWebSocket`):** track each reconnect as a fresh generation (`onGenerationStart`, `onHydrated`, `onGenerationEnd`) so higher-level state (like WebRTC peer connections or dedup caches) resynchronizes explicitly instead of assuming the socket coming back fixed everything.
 
-## WebSockets: when the app owns the protocol
+## Statelessness & sessions
 
-The four rungs cover pages. Some surfaces need bidirectional frames the
-page model does not shape: WebRTC signaling, multiplayer protocols,
-anything where the client talks back on the same connection the server
-pushes on. Those use `core/stream` WebSockets directly, and they carry
-two obligations the framework does not assume for you. For WebRTC
-signaling specifically, `battery/rtc` packages the
-server side and the `rtc` runtime module ([WebRTC rooms](rtc.md)).
+Durable state lives in your database; UI projections live in the browser signal store—never in server RAM tied to a connection.
 
-**Ordering across reconnects.** When a client reconnects, it needs a
-snapshot of current state plus the events that follow it, and the two
-must share one sequence so a delayed snapshot cannot resurrect state a
-newer event replaced — a reconnect can otherwise replay a stale banner
-over a live clear. `stream.StateChannel` (see
-[Core packages](core-packages.md) → stream) owns that contract
-server-side: one snapshot per connect from one immutable read, events
-with strictly increasing sequences, per-role filtering before
-serialization. In the browser, load the `ws` runtime module
-(`__gofastr.loadModule('ws')`) and fold every envelope through
-`__gofastr.createSequencedReducer(initial, apply)`, which applies only
-`sequence > appliedSequence` and rejects everything older, whatever its
-payload says. Call it as `reduce(envelope, generation)` with the
-generation `onMessage` hands you: the first snapshot of a new
-generation applies whatever its sequence, because a restarted server
-or another replica numbers from its own start. Inside a generation the
-strict rule holds. Generations only grow, so a late message from a
-generation older than the one hydrated is refused. On the server, a reconnect's snapshot is numbered
-above every event the channel already sent, so it never ties an event
-the old connection applied.
+- **Signed transport sessions:** `uihost` uses HMAC-signed tokens rather than server-side session records, so sticky routing is never required.
+- **Single replica:** zero config—an ephemeral boot secret is minted automatically, and open tabs transparently roll over to the new token after a deploy (without logging users out of `battery/auth`).
+- **Multiple replicas:** set a shared secret via `framework.WithSecret` or `GOFASTR_SECRET`. Enabling `WithFanout` without a configured secret fails loudly at boot so tokens never silently mismatch across replicas.
 
-**Generations, not "it's back".** A recovered socket does not mean the
-protocol layered on it recovered: browser state can still hold a stale
-offer, a failed peer, or a dedup entry that swallows the server's fresh
-event as a duplicate. `__gofastr.connectWebSocket(url, opts)` gives
-each reconnect a distinct generation and the hooks to resynchronize:
-`onGenerationStart` (socket open), `onHydrated` (the application
-applied the snapshot, via `handle.hydrated(sequence)`), and
-`onGenerationEnd` with a bounded reason class (`closed`, `error`,
-`refused`, `stop`) — never the raw close reason, and never a payload or
-credential in any log. `refused` is a server that accepted the
-handshake only to close with 4000 + a 4xx status (kept on
-`status.refused`); it is final and not retried, where a 4000 + 5xx
-close is an `error` and retried, even when the closing handshake
-completed cleanly. Hooks are idempotent per generation. A new
-generation invalidates only generation-bound work; which state survives
-(a healthy peer, the session) is the application's call, and so is
-marking the protocol caught-up with `handle.resyncComplete()`.
+## Which rung should I pick?
 
-WebSocket recovery does not prove WebRTC/media recovery. A live socket
-says nothing about a peer connection that failed or an offer that went
-stale; the application must renegotiate through these hooks and verify
-its own media returned. See [Core packages](core-packages.md) → stream
-for the Go-side helpers.
-
-## Which rung fits
-
-Three questions, in order:
-
-1. **Did the user trigger it?** Use an RPC. The server renders from the DB and
-   the runtime swaps the region or sets a signal.
-2. **Is it passive freshness: the server's current value, on a cadence, with
-   no held connection?** Poll. Any replica serves the fetch.
-3. **Does the product need to know who is connected right now, or push under a
-   second?** Use SSE. Wire `WithFanout` if you run more than one replica.
-
-A fourth rule, kept negative: **never** deliver the result of a user action
-over SSE. SSE is push for *other* clients and for background changes. The
-action's own response comes back on the RPC that triggered it.
-
-## Statelessness contract
-
-State lives in two places: the database (durable truth) and the client signal
-store (UI state). It does not live in server RAM tied to a connection.
-
-The interactive layer is stateless. Any replica can serve any RPC, any poll
-fetch, and any SSE subscribe; the request reads from shared state (the DB, or
-a shared store like Redis) and renders the response. There is no in-process
-widget or island object the next request depends on.
-
-Practical consequences:
-
-- A poll fetched on replica B sees the same data a push from replica A would
-  have shown.
-- An RPC that lands on the replica the user has never talked to still renders
-  the right thing, because it reconstructs from the URL, the session, and the
-  DB.
-- The only multi-replica requirement for push is `WithFanout`, which bridges
-  the SSE lane; the state itself was never per-replica.
-
-If a surface cannot be reconstructed from shared state on every request, that
-is a design smell, not a topology choice. Redesign the handler to reconstruct,
-or move the state into the DB.
-
-## Sessions
-
-The uihost session is an HMAC-signed token, not a server-side record. A token
-issued by one replica verifies on every other replica that shares the secret.
-
-- **One replica, no secret configured.** The framework mints an ephemeral boot
-  secret at startup. Sessions work, but they roll over on restart because the
-  next boot mints a new one. Zero config; the trade-off is that after a deploy
-  each open page transparently re-mints its UI session (this is the
-  SSE/interaction transport session, not `battery/auth` login state; nobody is
-  logged out). Recovery needs no user action: a page re-mints on its next render
-  or navigation, and a purely idle tab re-mints from the SSE module itself
-  (`POST /__gofastr/session`) once its stream reconnect starts failing. The
-  idle re-mint only runs while the stream is open (the stream itself is on
-  demand — it exists only while the page holds a push target); a page without
-  one recovers on its next navigation, whose answer carries the fresh id.
-  Ordinary and intercepted navigation apply that `X-Gofastr-Session` rollover
-  before checking response success, including 404s and policy refusals: the SSE
-  `meta[name="gofastr-sse"]` moves to the new token (no element id is needed)
-  and all cached screens from the old identity are
-  discarded. No application-side retry or cache reset is needed.
-  Transport failures retry after 1.5–3 seconds with independent jitter,
-  doubling to a cap of 30–60 seconds per attempt. A successful stream open
-  resets the backoff. DOM insertions cannot bypass a pending retry, so a
-  permanent failure does not hammer the stream and session endpoints every
-  few seconds. A bfcache restore reconnects immediately: hiding the page
-  cancels the timer and clears the pending-retry marker together.
-- **Multi-replica.** Set a shared secret so every replica verifies the same
-  tokens. Two ways to set it:
-  - `framework.WithSecret(secret)` in code, or
-  - the `GOFASTR_SECRET` environment variable.
-- **Fanout without a configured secret fails at boot.** A multi-replica
-  deployment that wired `WithFanout` but forgot the secret refuses to start,
-  with an error naming both. This is deliberate: silent token mismatch in
-  production is worse than a loud boot failure.
-
-Sticky sessions are not part of the contract. A token is portable; route the
-request to whichever replica the load balancer picks.
-
-## See also
-
-- [Interactive patterns](interactive-patterns.md): the full `data-cui-*`
-  vocabulary, including the RPC and signal primitives summarized above.
-- [Widgets](widgets.md): `Builder.Poll` and the widget builder.
-- [Presence](presence.md): the canonical SSE push case.
-- [Live dashboards](live-dashboards.md): choosing between polling and SSE for
-  a live surface.
-- [Events and SSE](events.md): the broker contract and the durable outbox.
-- [Scaling](scaling.md): multi-replica delivery, `WithFanout`, and the
-  session-token checklist.
-- [Runtime contract](runtime-contract.md): the SSR / hydration / island / SSE
-  boundary and the `data-cui-*` attribute reference.
+1. **Purely visual / local toggle?** → Client signal.
+2. **User clicked or submitted something?** → Island RPC.
+3. **Passive freshness (dashboard, status, counter)?** → Polling.
+4. **Live presence or sub-second push to other users?** → SSE push.
 
 ## Common mistakes
 
-- **Jumping to SSE for a dashboard.** A counter or status pill that ticks
-  every few seconds is a poll, not a push. SSE is the right answer when the
-  connection itself is part of the truth or the cadence is sub-second.
-- **Delivering a user action over SSE.** SSE is push for *other* clients. The
-  result of the click the user just made comes back on the RPC response.
-- **Forgetting `GOFASTR_SECRET` before adding a second replica.** Sessions
-  issued by one replica stop verifying on the other. The fanout-without-secret
-  boot failure catches this for push; set the secret anyway, before you scale.
-- **Holding widget or island state in process RAM.** A request landing on a
-  different replica cannot read it. Move the state to the DB or redesign the
-  handler to reconstruct.
-- **Polling a path that mutates.** `data-cui-poll-src` should be a read. Polls
-  fire on a timer; a poll that writes would write on every tab, on every
-  interval, in every browser.
-- **Treating a reconnected WebSocket as recovered application state.**
-  The socket coming back says nothing about a stale offer, a failed
-  peer, or a dedup key that eats the server's next event. Key
-  generation-bound work to the reconnect generation and resynchronize
-  through the `ws` module's hooks; verify media protocols returned on
-  their own terms.
+- **Jumping to SSE for ordinary dashboards.** A counter or status card that refreshes every few seconds is a poll, not an SSE stream.
+- **Answering a user's own click over SSE.** The initiating RPC response must return the mutation's result; SSE is for background or other-user updates.
+- **Scaling to two replicas without `GOFASTR_SECRET`.** Set a shared secret before adding a second replica so transport tokens verify everywhere.
+- **Storing widget or island state in process memory.** Reconstruct from URL, session, and DB on each request so any replica can answer.
+- **Pointing `data-cui-poll-src` at a mutating handler.** Polls fire repeatedly on every open tab—keep polled endpoints read-only.
+- **Assuming a reconnected WebSocket restored protocol state.** Resynchronize state explicitly per reconnect generation using `stream.StateChannel` and the `ws` module hooks.

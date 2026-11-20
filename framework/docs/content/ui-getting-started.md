@@ -232,7 +232,7 @@ site.Register("/products/{id}", &ProductScreen{}, nil,
 	app.InterceptFrom("/products", app.ScreenDrawer)) // or app.ScreenSheet
 ```
 
-One `RenderCtx` serves both views. Inside an overlay, `app.OverlayOriginFromContext(ctx)` returns the page underneath so a form save can navigate back and refresh it. Up to four drawers can stack, and adding `LeaveGuard: true` on `ui.FormConfig` warns before discarding unsaved edits.
+One `RenderCtx` serves both views. Inside an overlay, `app.OverlayOriginFromContext(ctx)` returns the page underneath so a form save can navigate back and refresh it. Up to four drawers can stack, and setting `LeaveGuard: "You have unsaved changes."` on `ui.FormConfig` warns before discarding unsaved edits.
 
 ---
 
