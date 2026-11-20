@@ -87,9 +87,10 @@ invariants:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKRefusals
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKSkipsCLIOnlyRefusals
   - id: js-sdk-wire
-    rule: The generated client.js sends each operation as the Go SDK does, resolves a binary answer to a Blob read under maxBlobBytes, reads every other body under 1 MiB, and throws ApiError for a non-2xx answer or a redirect and TypeError for a missing required parameter.
+    rule: The generated client.js sends each operation as the Go SDK does except that nullable JSON request bodies distinguish explicit null from absence, resolves a binary answer to a Blob read under maxBlobBytes, reads every other body under 1 MiB, and throws ApiError for a non-2xx answer or a redirect and TypeError for a missing required parameter.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKJSWireBrowser
+      - test: cmd/gofastr/internal/appgen.TestOpenAPISDKNullableBody
   - id: manifest-records-the-document
     rule: The manifest of an OpenAPI SDK has source openapi, no entities, and sdk.OpenAPIHash of the document as its schemaHash.
     enforced_by:
@@ -101,6 +102,15 @@ invariants:
       - test: cmd/gofastr/internal/generatecmd.TestWatchHashesCLIOpenAPIDoc
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKEntryDocumentStaysInProject
 decisions:
+  - id: preserve-go-body-signatures
+    date: 2026-11-20
+    status: accepted
+    decision: Go signatures stay unchanged for nullable request bodies, so only the JS SDK models explicit JSON null separately from absence for nullable schemas.
+    rejected:
+      - option: Add pointer levels such as *T or **T to nullable Go body parameters.
+        why: Changing signatures would break existing callers of regenerated Go SDKs and double-pointer body parameters are not idiomatic.
+    revisit_if: An idiomatic backwards-compatible representation of nullable and optional Go request bodies becomes available.
+    upholds: [js-sdk-wire]
   - id: one-client-for-cli-and-sdk
     date: 2026-11-19
     status: accepted

@@ -31,6 +31,7 @@ type oaJSDescriptor struct {
 	Body         string      `json:"body"`
 	BodyType     string      `json:"bodyType"`
 	BodyRequired bool        `json:"bodyRequired"`
+	BodyNullable bool        `json:"bodyNullable"`
 	Result       string      `json:"result"`
 	Accept       string      `json:"accept"`
 	Auth         []string    `json:"auth"`
@@ -40,7 +41,7 @@ func oaJSDescribe(op oaSDKOp) oaJSDescriptor {
 	d := oaJSDescriptor{
 		Name: op.JSName, Method: op.Method, Path: op.PathTemplate,
 		Required: []string{}, PathParams: []string{}, Query: [][2]string{}, Header: [][2]string{},
-		BodyRequired: op.BodyRequired,
+		BodyRequired: op.BodyRequired, BodyNullable: op.BodyNullable,
 	}
 	for _, p := range op.PathParams {
 		d.PathParams = append(d.PathParams, p.Name)
@@ -155,7 +156,11 @@ func renderOASDKJSFiles(spec oaSDKSpec) []GeneratedFile {
 			if op.BodyRequired {
 				opt = ""
 			}
-			args = append(args, "body"+opt+": "+op.Body.tsExpr())
+			bodyType := op.Body.tsExpr()
+			if op.BodyNullable {
+				bodyType += " | null"
+			}
+			args = append(args, "body"+opt+": "+bodyType)
 		case op.BodyKind == "binary":
 			opt := "?"
 			if op.BodyRequired {
@@ -307,7 +312,7 @@ const jsOAClientTail = `  async do(method, path, body) {
     if (op.accept && !Object.keys(headers).some((k) => k.toLowerCase() === "accept")) headers.Accept = op.accept;
     let payload;
     let contentType = "";
-    if (body !== undefined && body !== null) {
+    if (body !== undefined && (body !== null || op.bodyNullable)) {
       payload = op.body === "json" ? JSON.stringify(body) : body;
       contentType = op.body === "json" ? "application/json" : op.bodyType;
     } else if (op.bodyRequired) {
