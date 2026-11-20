@@ -99,6 +99,10 @@ invariants:
       - test: framework/crud.TestMcpFieldSchema_AllTypes
       - test: framework/crud.TestMCPWriteOmitsScopeFields
       - test: framework/crud.TestWriteToolSchemaNarrowsStates
+  - id: mcp-tools-carry-hints
+    rule: RegisterEntityMCPTools marks list and get read-only, non-destructive and idempotent, create non-destructive and not idempotent, update and delete destructive and idempotent, each state move destructive and not idempotent, and every tool openWorldHint false.
+    enforced_by:
+      - test: framework/crud.TestEntityMCPToolsCarryHints
 decisions:
   - id: mcp-dispatches-through-the-router
     status: accepted
@@ -132,3 +136,11 @@ decisions:
     rejected:
       - option: Always namespace.
         why: The flat names are the public agent surface of unversioned entities.
+  - id: update-is-destructive
+    date: 2026-11-19
+    status: accepted
+    decision: The update tool and every state move carry destructiveHint true.
+    rejected:
+      - option: Mark only delete destructive.
+        why: The MCP spec defines destructiveHint false as additive-only, and an update or move overwrites values the caller cannot get back.
+    upholds: [mcp-tools-carry-hints]

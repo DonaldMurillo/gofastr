@@ -102,11 +102,19 @@ func wsConnect(url string) (*wsClient, error) {
 
 // writeFrame writes one masked client frame (clients must mask).
 func (c *wsClient) writeFrame(opcode byte, payload []byte) {
+	if err := c.tryWriteFrame(opcode, payload); err != nil {
+		c.t.Fatalf("ws write: %v", err)
+	}
+}
+
+// tryWriteFrame is writeFrame that returns the write error instead of
+// failing the test, for a goroutine other than the test's own.
+func (c *wsClient) tryWriteFrame(opcode byte, payload []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var mask [4]byte
 	if _, err := rand.Read(mask[:]); err != nil {
-		c.t.Fatalf("ws write: mask: %v", err)
+		return fmt.Errorf("mask: %w", err)
 	}
 	header := []byte{0x80 | opcode}
 	n := len(payload)
@@ -125,9 +133,19 @@ func (c *wsClient) writeFrame(opcode byte, payload []byte) {
 	for i := range n {
 		masked[i] = payload[i] ^ mask[i%4]
 	}
-	if _, err := c.conn.Write(append(header, masked...)); err != nil {
-		c.t.Fatalf("ws write: %v", err)
+	_, err := c.conn.Write(append(header, masked...))
+	return err
+}
+
+// trySend is send for a goroutine other than the test's own: it returns
+// the marshal or write error, so a socket the server closed ends the
+// sender instead of failing the test after it returned.
+func (c *wsClient) trySend(v any) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
 	}
+	return c.tryWriteFrame(0x1, data)
 }
 
 // send marshals v and writes it as one text frame.

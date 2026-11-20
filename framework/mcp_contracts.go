@@ -68,7 +68,7 @@ func (a *App) registerContractTools() error {
 		if a.skipDevEntityMCPCollision(t.name) {
 			continue
 		}
-		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler); err != nil {
+		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, readOnlyToolHints()); err != nil {
 			return fmt.Errorf("framework: register MCP tool %q: %w", t.name, err)
 		}
 	}

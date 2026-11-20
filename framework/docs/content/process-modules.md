@@ -454,6 +454,33 @@ roles there would let a tool read across owners. A tool can do nothing an HTTP
 route with the same grants couldn't; there is no separate tool-permission
 vocabulary.
 
+Each `moduleproto.Tool` in `module.tool.list` may carry `annotations`, its
+MCP behaviour hints, in the same JSON shape `tools/list` serves (see
+[tool annotations](mcp.md#tool-annotations)):
+
+```go
+moduleproto.Tool{
+    ID: "total", Name: "Total", InputSchema: schema,
+    Annotations: &moduleproto.ToolAnnotations{
+        ReadOnlyHint: moduleproto.Bool(true), DestructiveHint: moduleproto.Bool(false),
+        IdempotentHint: moduleproto.Bool(true), OpenWorldHint: moduleproto.Bool(false),
+    },
+}
+```
+
+The host serves them on `module.<name>.<tool>` as sent. A tool with no
+annotations serves none, and in dev mode the app logs a warning naming
+the missing hints; ChatGPT's directory review requires `readOnlyHint`,
+`destructiveHint` and `openWorldHint` on every tool. `ModuleToolDigest`
+hashes the annotations when they are set, so the descriptor's digest pins
+them and a child that changes a hint is quarantined like one that
+reshapes its schema. A tool that sends no `annotations` key hashes exactly
+as before; a module that already sent the key before the host read it
+must recompute its digests, because the key is now part of them. The
+host treats the title as untrusted: one longer than 128 bytes, or holding
+invalid UTF-8, a control character or an invisible character, refuses
+the module's whole tool list.
+
 ## UI rendering
 
 A module owns *screen logic* only. It returns a bounded, declarative

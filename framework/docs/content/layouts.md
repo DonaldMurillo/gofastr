@@ -464,8 +464,11 @@ missing entity rendering half a page.
 A `Policy` can attach to one region instead of the whole screen:
 `OutletOptions.Policy`, `AreaSpec.Policy`, or `app.FillPolicy(p)` on one
 fill declaration. Every region guard runs in the policy phase, before
-any `Load`. The first `Redirect` moves the whole page; `RenderAlt` and
-`Block` are recorded and applied to their region alone. Every surface
+any `Load`. The first `Redirect` moves the whole page, and so does
+`decide.NotFound()`, which makes the page the not-found page; `RenderAlt`
+and `Block` are recorded and applied to their region alone. On the
+not-found and error pages themselves, a guard's `NotFound` blocks its
+region. Every surface
 that answers for the page runs them: the render, deferred part
 requests, server actions (a redirect refuses the action with 403), the
 sitemap and the llm.md documents. `(*App).PagePolicy(ctx, path)` is

@@ -31,6 +31,8 @@ type Endpoint struct {
 	MCP bool
 	// Public serves callers with no session, over HTTP and as an MCP tool.
 	Public bool
+	// Hints are the MCP tool's behaviour hints; an unset one takes the method's default (see MCPHints).
+	Hints EndpointHints
 }
 
 // HandlerFile is the linked file, relative to the settings file.
@@ -57,7 +59,7 @@ func (e Endpoint) PathParams() []string {
 }
 
 var (
-	endpointKeys    = []string{"name", "entity", "method", "path", "handler", "description", "mcp", "public"}
+	endpointKeys    = []string{"name", "entity", "method", "path", "handler", "description", "mcp", "public", "hints"}
 	endpointMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
 	snakeNameRe     = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
 	pathLiteralRe   = regexp.MustCompile(`^[a-z0-9]+([-_][a-z0-9]+)*$`)
@@ -123,6 +125,13 @@ func DecodeEndpoints(section *coreyaml.Node, at string) ([]Endpoint, error) {
 				}
 				*dst = b
 			}
+		}
+		if n := item.Map["hints"]; n != nil {
+			h, err := decodeHints(n)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", at, err)
+			}
+			e.Hints = h
 		}
 		if e.Name != "" {
 			at = fmt.Sprintf("%s (%s)", at, e.Name)
@@ -194,12 +203,10 @@ func (e Endpoint) Validate() error {
 	if path.Clean(file) != file {
 		return fmt.Errorf("handler %q must be a clean path", e.Handler)
 	}
-	for _, r := range e.Description {
-		if r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) || r == ' ' || r == ' ' {
-			return fmt.Errorf("description must be one line of text with no control characters")
-		}
+	if !oneLine(e.Description) {
+		return fmt.Errorf("description must be one line of text with no control characters")
 	}
-	return nil
+	return e.validateHints()
 }
 
 func checkEndpointPath(p string) error {
@@ -262,6 +269,7 @@ func formatEndpointsBody(entries []Endpoint) string {
 		if e.Public {
 			b.WriteString("    public: true\n")
 		}
+		formatHints(&b, e.Hints)
 	}
 	return b.String()
 }

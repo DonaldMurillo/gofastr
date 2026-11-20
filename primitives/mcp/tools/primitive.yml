@@ -5,6 +5,8 @@ code:
   - core/mcp/tools.go
   - core/mcp/toolargs.go
   - core/mcp/content.go
+  - core/mcp/annotations.go
+  - core/mcp/requestmeta.go
 docs:
   - framework/docs/content/mcp.md
 twins:
@@ -81,6 +83,28 @@ invariants:
     enforced_by:
       - test: core/mcp.TestImageResult_EmitsImageBlock
       - test: core/mcp.TestEmbeddedResource_EmptyKeepsUnionKey
+  - id: annotations-serve-set-hints
+    rule: "A tool registered WithAnnotations serves them as `annotations` in tools/list with every set hint, false included, and no key for a nil hint; a tool without them serves no annotations key; WithAnnotations copies the hints so the caller's bools cannot change them later, and ListTools and ListToolsFor hand out copies so a write to a listed tool's annotations never reaches the stored tool."
+    enforced_by:
+      - test: core/mcp.TestToolAnnotationsServedInToolsList
+      - test: core/mcp.TestListedToolsCarryAnnotationCopies
+  - id: unhinted-tool-warns-when-asked
+    rule: SetAnnotationWarnings(true) logs one warning, naming each of readOnlyHint, destructiveHint and openWorldHint left unset, for every tool already registered and, through RegisterTool, for every later one; each tool is warned about once until it is unregistered, and nothing is logged for a fully hinted tool, a WithDevImplied tool, or with the setting off.
+    enforced_by:
+      - test: core/mcp.TestAnnotationWarningsNameMissingHints
+      - test: core/mcp.TestAnnotationWarningsCoverEarlierTools
+  - id: request-meta-is-the-calls-own
+    rule: "tools/call puts the call's own `_meta` object on the context its gates and handler see, nil when the call sent none or null even if the incoming context carried one, and RequestMeta returns a fresh deep copy each time, so no reader's writes reach another."
+    enforced_by:
+      - test: core/mcp.TestRequestMetaReachesHandlerAsCopy
+      - test: core/mcp.TestContextWithRequestMetaCopies
+  - id: request-meta-bounded
+    rule: "tools/call answers -32602 naming `_meta`, without running the handler, when `_meta` is not a JSON object or null, or is longer than 64 KiB."
+    enforced_by:
+      - test: core/mcp.TestRequestMetaRefusals
+  - id: request-meta-never-logged
+    rule: "Values from a tools/call `_meta` are never logged, echoed in an error or used as an identity by core/mcp."
+    judge: "Does this change log, echo in an error message, persist, or authorize on a value read from a tools/call `_meta`?"
 decisions:
   - id: minimal-schema-validator
     date: 2026-11-18
@@ -129,3 +153,34 @@ decisions:
       - option: Decide before registering.
         why: The listen address is known only at Start, after InitPlugins has run every registrar.
     upholds: [dev-implied-withdrawn-and-barred]
+  - id: hints-warn-not-refuse
+    date: 2026-11-19
+    status: accepted
+    decision: A tool missing a listing hint is a logged warning a host turns on with SetAnnotationWarnings, and the framework turns it on in dev mode; registration never refuses it.
+    rejected:
+      - option: Refuse to register a tool without the three hints.
+        why: Every existing tool and every app not listed in a directory would fail to boot over hints only the directory scan reads.
+      - option: core/mcp reads GOFASTR_DEV itself.
+        why: core packages do not read the framework's dev gate; the framework owns that switch and sets it on the server.
+      - option: Warn for dev-implied tools too.
+        why: They are withdrawn on a non-loopback bind, so no directory scan ever sees them.
+    upholds: [unhinted-tool-warns-when-asked]
+  - id: request-meta-on-context
+    date: 2026-11-19
+    status: accepted
+    decision: "The tools/call `_meta` reaches a handler through RequestMeta(ctx), copied on each read, not through a new ToolHandler parameter."
+    rejected:
+      - option: A second handler signature that takes the meta.
+        why: Every handler, Gated wrapper and Decorate site would need a new type for a value most tools never read.
+      - option: Hand back the decoded map itself.
+        why: A gate or wrapper that edited it would change what the handler sees.
+    revisit_if: "prompts/get or resources/read need the caller's `_meta` too."
+    upholds: [request-meta-is-the-calls-own]
+  - id: request-meta-capped-at-64k
+    date: 2026-11-19
+    status: accepted
+    decision: "A `_meta` over 64 KiB is refused, below the 1 MiB request cap, because every RequestMeta call deep-copies it."
+    rejected:
+      - option: Rely on the request body cap alone.
+        why: A handler that reads RequestMeta in a loop would copy up to 1 MiB each time.
+    upholds: [request-meta-bounded]

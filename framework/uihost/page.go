@@ -96,7 +96,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, scrubCtl(carryQuery(target, r.URL.RawQuery)), http.StatusPermanentRedirect)
 		return
 	}
-	if ds.agentReady != nil && ds.agentReady.contentNeg && ds.llmMDPublic {
+	if ds.negotiatesMarkdown() {
 		if acceptsMarkdown(r) {
 			if ds.serveMarkdownForPage(w, r) {
 				return
@@ -131,10 +131,34 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		writeBlock(w, r, res)
 		return
 	}
-	ds.finishPageDocument(w, r, withRenderAlt(ctx, res), res.HTML, path, res.Component, pageStatus(res, recorded()))
+	ds.finishPageDocument(w, r, withOutcome(ctx, res), res.HTML, path, res.Component, pageStatus(res, recorded()))
+}
+
+// negotiatesMarkdown reports whether a page answers text/markdown to a
+// request that asks for it.
+func (ds *UIHost) negotiatesMarkdown() bool {
+	return ds.agentReady != nil && ds.agentReady.contentNeg && ds.llmMDPublic
 }
 
 type renderAltKey struct{}
+
+type noRouteMetaKey struct{}
+
+func withoutRouteMeta(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noRouteMetaKey{}, true)
+}
+
+func routeMetaOff(ctx context.Context) bool {
+	nf, _ := ctx.Value(noRouteMetaKey{}).(bool)
+	return nf
+}
+
+func withOutcome(ctx context.Context, res app.RenderResult) context.Context {
+	if res.NotFoundOutlet {
+		ctx = withoutRouteMeta(ctx)
+	}
+	return withRenderAlt(ctx, res)
+}
 
 type staticExportKey struct{}
 
@@ -285,7 +309,7 @@ func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp comp
 }
 
 func (ds *UIHost) screenOwnHead(ctx context.Context, pagePath string, comp component.Component) string {
-	if ds.App == nil || pagePath == "" {
+	if ds.App == nil || pagePath == "" || routeMetaOff(ctx) {
 		return ""
 	}
 	screen, _, ok := ds.App.Router.Resolve(pagePath)

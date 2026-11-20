@@ -288,6 +288,8 @@ type App struct {
 	mcpControlDevImplied       bool
 	mcpAutoMount               bool
 	mcpGate                    func(ctx context.Context) error
+	mcpInstructions            string
+	openAIAppsChallenge        string
 	a2aCfg                     *A2AConfig
 	a2a                        *a2a.Server
 	a2aPath                    string
@@ -497,6 +499,13 @@ func WithMCPTools(register func(*mcp.Server) error) AppOption {
 	}
 	return func(a *App) {
 		a.mcpRegistrars = append(a.mcpRegistrars, register)
+	}
+}
+
+// WithMCPInstructions sets the instructions the MCP server's initialize returns, telling a client when to use its tools.
+func WithMCPInstructions(text string) AppOption {
+	return func(a *App) {
+		a.mcpInstructions = text
 	}
 }
 
@@ -1135,6 +1144,12 @@ func NewApp(opts ...AppOption) *App {
 	a.trustedProxies = clientip.ParseProxies(a.Config.TrustedProxies)
 	if a.mcpGate != nil && a.MCP != nil {
 		a.MCP.SetGate(a.mcpGate)
+	}
+	if a.mcpInstructions != "" && a.MCP != nil {
+		a.MCP.SetInstructions(a.mcpInstructions)
+	}
+	if dev.Enabled() && a.MCP != nil {
+		a.MCP.SetAnnotationWarnings(true)
 	}
 	if a.secret == nil {
 		if env := os.Getenv("GOFASTR_SECRET"); env != "" {
@@ -1821,7 +1836,7 @@ func endpointMCPOptions(ent *entity.Entity, ep entity.Endpoint) []mcp.ToolOption
 		verb = "read"
 	}
 	scope := access.Permission(ent.GetTable() + ":" + verb)
-	return []mcp.ToolOption{mcp.WithToolGate(func(ctx context.Context) error {
+	opts := []mcp.ToolOption{mcp.WithToolGate(func(ctx context.Context) error {
 		if gate != nil {
 			if err := gate(ctx); err != nil {
 				return err
@@ -1832,6 +1847,10 @@ func endpointMCPOptions(ent *entity.Entity, ep entity.Endpoint) []mcp.ToolOption
 		}
 		return nil
 	})}
+	if ep.MCPAnnotations != nil {
+		opts = append(opts, mcp.WithAnnotations(*ep.MCPAnnotations))
+	}
+	return opts
 }
 
 func endpointMCPTwin(pattern string, h mcp.ToolHandler) mcp.ToolHandler {
@@ -2470,6 +2489,9 @@ func (a *App) finalizeRoutes() (hasAPI, hasLLMMD bool, err error) {
 		}
 	}
 	a.router.Get("/.well-known/agent-skills/index.json", http.HandlerFunc(a.handleAgentSkillsIndex))
+	if a.openAIAppsChallenge != "" {
+		a.router.Get("/.well-known/openai-apps-challenge", http.HandlerFunc(a.handleOpenAIAppsChallenge))
+	}
 	if a.oauthAuthServer != nil {
 		a.router.Get("/.well-known/oauth-authorization-server", http.HandlerFunc(a.handleOAuthAuthorizationServer))
 	}

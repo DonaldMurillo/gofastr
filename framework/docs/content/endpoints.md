@@ -60,6 +60,52 @@ drift like any entity change.
 | `description` | no | One line for docs, OpenAPI, the MCP tool and the CLI help. |
 | `mcp` | no | Also register the endpoint as an MCP tool. |
 | `public` | no | Serve callers with no session, over HTTP and MCP. |
+| `hints` | no | The MCP tool's behaviour hints; needs `mcp: true`. See below. |
+
+## MCP tool hints
+
+An endpoint with `mcp: true` serves its tool with
+[annotations](mcp.md#tool-annotations), which clients read to decide
+whether to ask the user before a call. ChatGPT's directory review requires
+`readOnlyHint`, `destructiveHint` and `openWorldHint` on every tool, so the
+generated registration always sets all four. Each comes from the method
+unless `hints:` sets it:
+
+| Method | read_only | destructive | idempotent | open_world |
+| --- | --- | --- | --- | --- |
+| `GET` | true | false | true | false |
+| `POST` | false | false | false | false |
+| `PUT` | false | true | true | false |
+| `PATCH` | false | true | false | false |
+| `DELETE` | false | true | true | false |
+
+`PUT`, `PATCH` and `DELETE` count as destructive because they overwrite or
+remove what was there, the reading the entity CRUD tools use. Override a
+default when the handler does something else:
+
+```yaml
+endpoints:
+  - name: clear_cache
+    entity: posts
+    method: DELETE
+    path: "{id}/cache"
+    handler: entities/posts_endpoints.go#ClearCache
+    mcp: true
+    hints:
+      title: "Clear a post's cache"
+      destructive: false
+```
+
+| Key | Meaning |
+| --- | --- |
+| `title` | A display name for the tool: one line, at most 128 bytes. |
+| `read_only` | `true` when the handler changes nothing. |
+| `destructive` | `true` when it may delete or overwrite data. |
+| `idempotent` | `true` when a repeat call with the same input changes nothing more. |
+| `open_world` | `true` when it reaches outside the app, such as a third-party API. |
+
+Each is `true` or `false`. `hints:` on an endpoint without `mcp: true` is
+an error, as is any other key.
 
 ## The handler
 

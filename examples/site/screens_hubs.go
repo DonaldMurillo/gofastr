@@ -369,7 +369,7 @@ r.Get("/api/ping", handler.HandlerAdapter(
 			},
 			{
 				Title:    "MCP server",
-				Body:     []render.HTML{hubP("The MCP server is a core package too, not something only entities produce. Register a tool with a name, a JSON schema, and a Go function.")},
+				Body:     []render.HTML{hubP("The MCP server is a core package too, not something only entities produce. Register a tool with a name, a JSON schema, a Go function, and the hints that tell a client whether it changes anything.")},
 				CodeFile: "mcp.go",
 				CodeLang: "go",
 				Code: `s := mcp.NewServer()
@@ -378,7 +378,11 @@ s.RegisterTool("greet", "Say hello", map[string]any{
     "properties": map[string]any{"name": map[string]any{"type": "string"}},
 }, func(ctx context.Context, p map[string]any) (any, error) {
     return "hello " + p["name"].(string), nil
-})`,
+}, mcp.WithAnnotations(mcp.Annotations{
+    ReadOnlyHint:    mcp.Bool(true),
+    DestructiveHint: mcp.Bool(false),
+    OpenWorldHint:   mcp.Bool(false),
+}))`,
 				RefHref: pkg + "core/mcp",
 				RefText: "pkg.go.dev · core/mcp →",
 			},
