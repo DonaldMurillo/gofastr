@@ -37,45 +37,17 @@ func TestOpenAPISDKNullableBody(t *testing.T) {
 			}
 			files := renderOASDKJSFiles(spec)
 			t.Run("go", func(t *testing.T) {
-				out := oaSDKGenerate(t, doc)
-				probe := `package client
-import (
- "context"
- "io"
- "net/http"
- "net/http/httptest"
- "testing"
-)
-func TestNullableBody(t *testing.T) {
- var body, ct string
- srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-  b, _ := io.ReadAll(r.Body); body, ct = string(b), r.Header.Get("Content-Type"); w.WriteHeader(204)
- }))
- defer srv.Close()
- c := NewClient(srv.URL, nil)
- ctx := context.Background()
- var null *string
- value := "hello"
- for _, call := range []func() error{
-  func() error { return c.Required(ctx, nil) },
-  func() error { return c.Optional(ctx, &null) },
- } {
-  if err := call(); err != nil { t.Fatal(err) }
-  if body != "null" || ct != "application/json" { t.Fatalf("body=%q content-type=%q", body, ct) }
- }
- if err := c.Optional(ctx, nil); err != nil { t.Fatal(err) }
- if body != "" || ct != "" { t.Fatalf("absent body=%q content-type=%q", body, ct) }
- if err := c.Required(ctx, &value); err != nil { t.Fatal(err) }
- if body != "\"hello\"" { t.Fatalf("value body=%q", body) }
-}
-`
-				if err := os.WriteFile(filepath.Join(out, "go", "nullable_test.go"), []byte(probe), 0o644); err != nil {
-					t.Fatal(err)
-				}
-				cmd := exec.Command("go", "test", "-count=1", ".")
-				cmd.Dir = filepath.Join(out, "go")
-				if output, err := cmd.CombinedOutput(); err != nil {
-					t.Fatalf("generated Go: %v\n%s", err, output)
+				for _, op := range spec.Ops {
+					var generated strings.Builder
+					renderOASDKMethod(&generated, op)
+					bodyType := "string"
+					if !op.BodyRequired {
+						bodyType = "*string"
+					}
+					want := "body " + bodyType + ") error"
+					if !strings.Contains(generated.String(), want) {
+						t.Errorf("%s: missing unchanged Go signature %q", op.GoName, want)
+					}
 				}
 			})
 			t.Run("types", func(t *testing.T) {

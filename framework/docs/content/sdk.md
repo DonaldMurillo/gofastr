@@ -511,12 +511,16 @@ absence. In JS/TS, pass `null` to send the literal JSON `null` with
 `Content-Type: application/json`; `undefined` omits an optional body
 and rejects a required one. The body parameter's TypeScript type includes
 `| null`. For non-nullable bodies, `null` still means absent.
-In Go, a required nullable scalar or object takes a pointer: nil sends
-JSON `null`. An optional nullable body adds a presence pointer (for
-example, `**string`): nil omits the body, while a non-nil outer pointer
-to a nil inner value sends JSON `null`. Nullable maps, slices and raw
-JSON use their nil value for JSON `null`, with an outer pointer for
-optional presence.
+
+The Go SDK does not model request-body nullability separately from
+presence, so nullable scalar bodies cannot send an explicit JSON `null`.
+A required nullable string still takes `body string` and marshals that
+value (including `""`); an optional one takes `body *string`, where nil
+omits both the body and Content-Type and a non-nil pointer marshals the
+string. Existing nil-able body types are passed through unchanged:
+required slices, maps and `json.RawMessage` marshal nil as JSON `null`,
+but optional nil values omit the body instead. Go signatures are unchanged
+by schema nullability.
 
 **JS/TS.** `client.js` has one async method per operation, named by the
 `operationId` (or the Go name with its first letter lowered when the
