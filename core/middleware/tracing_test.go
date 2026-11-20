@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -76,22 +77,41 @@ func TestTracing_RecordsSpan(t *testing.T) {
 // 5xx responses mark the span as Error
 // ============================================================================
 
-func TestTracing_500MarksSpanError(t *testing.T) {
-	rec := withRecordingTracer(t)
-	rt := router.New()
-	rt.Use(middleware.Tracing())
-	rt.Get("/boom", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "kaboom", http.StatusInternalServerError)
-	}))
-	w := httptest.NewRecorder()
-	rt.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/boom", nil))
+func TestTracing_ResponseErrorType(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		status     int
+		spanStatus codes.Code
+		errorType  string
+	}{
+		{"ok", http.StatusOK, codes.Unset, ""},
+		{"not found", http.StatusNotFound, codes.Unset, ""},
+		{"client error", 499, codes.Unset, ""},
+		{"internal server error", http.StatusInternalServerError, codes.Error, "500"},
+		{"service unavailable", http.StatusServiceUnavailable, codes.Error, "503"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := withRecordingTracer(t)
+			h := middleware.Tracing()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+			}))
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
 
-	spans := rec.Ended()
-	if len(spans) != 1 {
-		t.Fatalf("expected 1 span, got %d", len(spans))
-	}
-	if spans[0].Status().Code.String() != "Error" {
-		t.Fatalf("expected Error status, got %v", spans[0].Status())
+			spans := rec.Ended()
+			if len(spans) != 1 {
+				t.Fatalf("expected 1 span, got %d", len(spans))
+			}
+			if got := spans[0].Status().Code; got != tc.spanStatus {
+				t.Errorf("span status = %v, want %v", got, tc.spanStatus)
+			}
+			got, present := attrsAsMap(spans[0].Attributes())["error.type"]
+			if tc.errorType != "" && got != tc.errorType {
+				t.Errorf("error.type = %v, want %q", got, tc.errorType)
+			}
+			if tc.errorType == "" && present {
+				t.Errorf("error.type = %v, want no attribute", got)
+			}
+		})
 	}
 }
 

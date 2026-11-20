@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 func sweepCaptureLog(t *testing.T) *bytes.Buffer {
@@ -52,7 +53,7 @@ func TestSweepCoreSlotPanicLogsTypeOnly(t *testing.T) {
 func TestSweepCoreKindTextPanicIsEmpty(t *testing.T) {
 	buf := sweepCaptureLog(t)
 	x := sweepKindUI(t, Kind{
-		Cell: func(cc CellContext) render.HTML { return render.HTML(cell(cc.Value)) },
+		Cell: func(cc CellContext) render.HTML { return render.HTML(fieldtext.Cell(cc.Value)) },
 		Text: func(CellContext) string { panic("secret-text") },
 	}, nil)
 	body := string(x.ui.List("deals").Base("/deals").Columns("name", "amount").RenderCtx(x.userCtx("/deals", "", "u1")))
@@ -80,7 +81,7 @@ func TestSweepCoreNewRefusesBadFilesURL(t *testing.T) {
 
 // New keeps its own copy of Extensions: changing the caller's maps afterwards changes no screen.
 func TestSweepCoreNewClonesExtensions(t *testing.T) {
-	x := sweepKindUI(t, Kind{Cell: func(cc CellContext) render.HTML { return render.HTML("<b>" + cell(cc.Value) + "</b>") }}, func(ext *Extensions) {
+	x := sweepKindUI(t, Kind{Cell: func(cc CellContext) render.HTML { return render.HTML("<b>" + fieldtext.Cell(cc.Value) + "</b>") }}, func(ext *Extensions) {
 		ext.Kinds["probe"] = Kind{Cell: func(CellContext) render.HTML { return "MUTATED" }}
 	})
 	body := string(x.ui.List("deals").Base("/deals").Columns("name", "amount").RenderCtx(x.userCtx("/deals", "", "u1")))
@@ -109,7 +110,7 @@ func TestSweepCoreKindCellIsNotElevated(t *testing.T) {
 		if _, ok := x.ui.Count(cc.Ctx, "invoices", ""); ok {
 			leaked = true
 		}
-		return render.HTML(cell(cc.Value))
+		return render.HTML(fieldtext.Cell(cc.Value))
 	}}}}
 	ents := invoiceEntities()
 	inv := ents["invoices"]

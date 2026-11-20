@@ -23,6 +23,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 func (b *RecordBuilder) render(ctx context.Context) (render.HTML, error) {
@@ -194,7 +195,7 @@ func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any,
 	title := b.ui.recordTitle(ctx, m, row)
 	cfg := ui.PageHeaderConfig{Title: title, Subtitle: stampLine(ctx, m, row)}
 	if m.states != nil {
-		if v := cell(m.rowValue(row, m.states.Field)); v != "" {
+		if v := fieldtext.Cell(m.rowValue(row, m.states.Field)); v != "" {
 			cfg.Badge = ui.StatusBadge(ui.StatusBadgeConfig{
 				Label:   m.valueLabel(ctx, m.states.Field, v),
 				Variant: enumVariant(v),
@@ -261,7 +262,7 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 	var out []render.HTML
 	var danger []ui.MenuItem
 	if m.states != nil && canUpdate(ctx, m, b.id) {
-		current := cell(m.rowValue(row, m.states.Field))
+		current := fieldtext.Cell(m.rowValue(row, m.states.Field))
 		for _, t := range m.states.Transitions {
 			if t.System || !slices.Contains(t.From, current) {
 				continue

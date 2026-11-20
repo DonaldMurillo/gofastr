@@ -8,6 +8,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 // gadgetUI is a record whose stored values are shapes a native control
@@ -159,7 +160,7 @@ func TestTimestampKeepsMilliseconds(t *testing.T) {
 		"2026-10-27T10:00:00.000250Z": "2026-10-27T10:00",
 		"2026-10-27T10:00:07.500000Z": "2026-10-27T10:00:07.500",
 	} {
-		if got := timestampInputValue(formValueText(f, in)); got != want {
+		if got := fieldtext.TimestampInput(fieldtext.Form(f, in)); got != want {
 			t.Errorf("input value for %s = %q, want %q", in, got, want)
 		}
 	}

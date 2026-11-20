@@ -43,8 +43,9 @@ func (ds *UIHost) CompileActions(componentID string, comp component.Component) s
 }
 
 // AutoCompileActions compiles the actions of every registered screen that
-// implements InteractiveComponent, under app.ScreenComponentID's id or one
-// derived from the route path. It panics when two routes derive one id.
+// implements InteractiveComponent, under the id its ComponentID method
+// declares or one derived from the route path. It panics when two routes
+// derive one id.
 func (ds *UIHost) AutoCompileActions() {
 	claimed := make(map[string]string, len(ds.App.Routes()))
 	for _, route := range ds.App.Routes() {
@@ -54,7 +55,7 @@ func (ds *UIHost) AutoCompileActions() {
 		}
 		if _, ok := screen.Component.(component.InteractiveComponent); ok {
 			var id string
-			if cid, ok := screen.Component.(app.ScreenComponentID); ok {
+			if cid, ok := screen.Component.(interface{ ComponentID() string }); ok {
 				id = cid.ComponentID()
 			} else {
 				id = pathToActionID(route.Path)
@@ -63,8 +64,8 @@ func (ds *UIHost) AutoCompileActions() {
 				panic(fmt.Sprintf(
 					"uihost: screens %q and %q both derive server-action id %q; "+
 						"one screen's Go handlers would be unreachable and its data-action clicks "+
-						"would run the other's. Give one of them an explicit ComponentID() "+
-						"(implement app.ScreenComponentID) or rename the route.",
+						"would run the other's. Give one of them an explicit ComponentID() string "+
+						"method or rename the route.",
 					prev, route.Path, id))
 			}
 			claimed[id] = route.Path

@@ -199,11 +199,23 @@ and carries these attributes:
 | `http.status_code` | final response status |
 | `http.target` | request URL path |
 
-Responses with status `>= 500` set the span status to `codes.Error`. A
-panicking handler's span ends with `codes.Error` and the status the client
-got (`500`, or the one already sent), and the SDK records the panic as the
-span's `exception` event. The span also carries `exception.stacktrace`: the
-call stack from the function that panicked, at most 8 KiB.
+Responses with status `>= 500` set the span status to `codes.Error` and
+`error.type` to the status code as a string (e.g. `"503"`). Lower response
+codes alone don't mark the span as an error or set `error.type`.
+
+When a panic reaches the tracing middleware, the span ends with
+`codes.Error` and `error.type` set to `tracing.ErrorTypePanic` (`"panic"`),
+even if the handler already sent a non-5xx response. `http.status_code`
+still holds the status the client got (`500`, or the one already sent).
+The SDK records the panic as the span's `exception` event. The span also
+carries `exception.stacktrace`: the call stack from the function that
+panicked, at most 8 KiB.
+
+Typed handlers wrapped by `handler.HandlerAdapter` recover their own panics
+and write a 500, so the panic never reaches the tracing middleware and their
+spans read `error.type="500"`. A typed handler that panics after its
+response has started is aborted instead, and that span reads
+`error.type="panic"`.
 
 Incoming trace context is extracted with the global propagator you set
 with `otel.SetTextMapPropagator` (B3, Jaeger, a composite), the same one
@@ -364,12 +376,15 @@ MySQL's `#` counts). For a `db.system.name` other than `postgresql`,
 string whose end depends on whether a backslash escapes hides the rest
 of the statement. `url.full` drops the query string, fragment and user info. A failure sets
 the span status to `codes.Error` with `error.type` holding the error's Go
-type (or the HTTP status code, or `panic`), never its message, since
+type (or the HTTP status code, or `tracing.ErrorTypePanic` for a panic),
+never its message, since
 driver and handler errors routinely quote row values.
 
 `tracing.ErrorType(err)` supplies the same Go type name for custom spans.
-It sees through `fmt.Errorf` wrappers using `%w` (following the first error
+It unwraps only `fmt.Errorf` wrappers using `%w` (following the first error
 when there are several `%w` operands), and returns `"<nil>"` for nil.
+`errors.Join` reports `*errors.joinError`; a wrapped `errors.New` sentinel
+reports `*errors.errorString`.
 SQL, HTTP client and queue job spans share this logic.
 
 ### Exporting traces to a collector (OTLP)
@@ -463,6 +478,11 @@ Detection is conservative: a goroutine blocked on a primitive that is
 still reachable (a global, a live struct) is never reported, so a zero
 count does not prove the absence of every leak, but a nonzero count is
 never a false alarm.
+
+`Start` and `Run` mount the `/.debug/*` routes when `AppConfig.DebugEndpoints`
+is set. A host that serves the app without calling `Start`, as `kiln serve`
+does, calls `app.MountLLMMDAndDebugRoutes()` to mount them (and
+`/api/llm.md`); calling it a second time does nothing.
 
 ## Common mistakes
 

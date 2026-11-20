@@ -2,8 +2,23 @@ package framework
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 )
+
+func TestModuleRoleDSNErrorsHideAdminCredentials(t *testing.T) {
+	for _, dsn := range []string{
+		"mysql://admin:admin-credential@host/db",
+		"postgres://admin:admin-credential@host/%zz",
+		"host=localhost password=admin-credential",
+		"admin-credential:password@host/db",
+	} {
+		_, err := moduleRoleDSN(dsn, "role", "role-credential")
+		if err == nil || strings.Contains(err.Error(), "admin-credential") || strings.Contains(err.Error(), "role-credential") {
+			t.Errorf("moduleRoleDSN error = %v, want an error without credentials", err)
+		}
+	}
+}
 
 // The module-role DSN keeps only where the admin DSN's server is and how
 // to reach it. A user, password, passfile or service in its query names

@@ -59,6 +59,9 @@ func runFreeze(args []string) int {
 		return 1
 	}
 
+	for _, warning := range freeze.GraduationWarnings(sess.World) {
+		fmt.Fprintf(os.Stderr, "[kiln freeze] warning: %s\n", warning)
+	}
 	entCount := len(sess.World.Entities)
 	pageCount := len(sess.World.Pages)
 	hookCount := len(sess.World.Hooks)

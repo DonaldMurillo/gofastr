@@ -95,6 +95,25 @@ func TestErrorTypeSeesThroughWrapping(t *testing.T) {
 	}
 }
 
+func TestErrorTypeUnwrapsOnlyFmt(t *testing.T) {
+	sentinel := errors.New("sentinel")
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"join", errors.Join(&customErr{}, sentinel), "*errors.joinError"},
+		{"wrapped-join", fmt.Errorf("outer: %w", errors.Join(&customErr{}, sentinel)), "*errors.joinError"},
+		{"wrapped-sentinel", fmt.Errorf("outer: %w", sentinel), "*errors.errorString"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ErrorType(tc.err); got != tc.want {
+				t.Errorf("ErrorType = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 type customErr struct{}
 
 func (*customErr) Error() string { return "boom" }

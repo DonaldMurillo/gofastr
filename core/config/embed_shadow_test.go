@@ -235,3 +235,62 @@ func TestShadowedFieldDefaultIsValidated(t *testing.T) {
 		t.Errorf("no default: Load = %v; a shadowed field with no default is left as it was", err)
 	}
 }
+
+// A validate rule Load cannot apply fails Load on every field, not only
+// on one a source binds: a shadowed field with no default and a field
+// behind a nested pointer no key allocates are refused too, as a bound
+// field with the same rule is.
+func TestUnboundFieldRuleRefused(t *testing.T) {
+	type Inner struct {
+		Mode string `config:"MODE" validate:"bogus=1"`
+	}
+	type shadowed struct {
+		Inner
+		Mode string `config:"MODE"`
+	}
+	if err := Load(&shadowed{}, MapSource{"MODE": "quiet"}); err == nil || !strings.Contains(err.Error(), "validation rule 1 has an unknown name") {
+		t.Errorf("shadowed: Load = %v, want the unknown rule refused", err)
+	}
+
+	type DB struct {
+		Pool int `config:"POOL" validate:"oneof=1 2"`
+	}
+	type pointer struct {
+		DB *DB
+	}
+	if err := Load(&pointer{}, MapSource{}); err == nil || !strings.Contains(err.Error(), "oneof requires a string") {
+		t.Errorf("nil pointer: Load = %v, want the unappliable rule refused", err)
+	}
+}
+
+// A shadowed default its rule refuses names the embedded field and says the
+// value is its default: the outer field's own value passed, so an error
+// that named only "Mode" would point at the wrong field.
+func TestShadowedDefaultErrorNamesEmbeddedField(t *testing.T) {
+	type Inner struct {
+		Mode string `config:"MODE" default:"loud" validate:"oneof=quiet normal"`
+	}
+	type leaf struct {
+		Inner
+		Mode string `config:"MODE"`
+	}
+	err := Load(&leaf{}, MapSource{"MODE": "quiet"})
+	if want := "config: default of shadowed field Inner.Mode: must be one of quiet normal"; err == nil || err.Error() != want {
+		t.Errorf("leaf: Load = %v, want %q", err, want)
+	}
+
+	type DB struct {
+		Pool int `config:"POOL" default:"500" validate:"max=100"`
+	}
+	type Base struct{ DB DB }
+	type nested struct {
+		Base
+		DB struct {
+			Pool int `config:"POOL"`
+		}
+	}
+	err = Load(&nested{}, MapSource{"DB_POOL": "5"})
+	if want := "config: default of shadowed field Base.DB.Pool: must be at most 100"; err == nil || err.Error() != want {
+		t.Errorf("nested: Load = %v, want %q", err, want)
+	}
+}

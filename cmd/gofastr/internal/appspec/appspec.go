@@ -185,6 +185,9 @@ type AppSpecApp struct {
 	// Independent of PWA. A screen inventory is schema disclosure, so
 	// it never rides along with another feature.
 	LLMMD bool
+	// EntityLLMMD (app.entity_llm_md) emits AppConfig.NoLLMMD as its
+	// inverse when set; nil leaves entity llm.md routes on.
+	EntityLLMMD *bool
 	// LocalePrefixes emits framework.WithLocalePrefixes()
 	// (app.locale_prefixes): every locales/<tag>.json is served under
 	// /<tag>/, with hreflang, sitemap and robots entries. English keeps
@@ -738,7 +741,7 @@ func decodeAppSpecApp(node *coreyaml.Node) (AppSpecApp, error) {
 	if err != nil {
 		return AppSpecApp{}, err
 	}
-	allowed := map[string]bool{"name": true, "description": true, "base_url": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "api_prefix": true, "public_openapi": true, "theme": true, "auth": true, "admin": true, "pwa": true, "llm_md": true, "locale_prefixes": true}
+	allowed := map[string]bool{"name": true, "description": true, "base_url": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "api_prefix": true, "public_openapi": true, "theme": true, "auth": true, "admin": true, "pwa": true, "llm_md": true, "entity_llm_md": true, "locale_prefixes": true}
 	if err := rejectUnknownKeys(m, allowed, "app"); err != nil {
 		return AppSpecApp{}, err
 	}
@@ -815,6 +818,10 @@ func decodeAppSpecApp(node *coreyaml.Node) (AppSpecApp, error) {
 	}
 	if v, ok := m["llm_md"]; ok {
 		app.LLMMD = boolValue(v)
+	}
+	if v, ok := m["entity_llm_md"]; ok {
+		b := boolValue(v)
+		app.EntityLLMMD = &b
 	}
 	if v, ok := m["locale_prefixes"]; ok {
 		app.LocalePrefixes = boolValue(v)
@@ -5173,7 +5180,7 @@ var appLevelKeys = map[string]bool{
 	"name": true, "description": true, "base_url": true, "module": true,
 	"db": true, "static_dir": true, "output_dir": true, "api_prefix": true,
 	"public_openapi": true, "theme": true, "auth": true, "admin": true,
-	"pwa": true, "llm_md": true, "locale_prefixes": true,
+	"pwa": true, "llm_md": true, "entity_llm_md": true, "locale_prefixes": true,
 }
 
 // topLevelKeys are the app spec's root sections; written under `app:`

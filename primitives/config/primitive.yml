@@ -27,11 +27,25 @@ invariants:
     rule: A sensitive field's value or default never appears in a Load error, a ConfigValidator error scrubbed longest value first in its raw, Go-quoted, JSON and URL-escaped spellings up to two escapes deep.
     enforced_by:
       - test: core/config.TestSensitiveValueRedacted
+      - test: core/config.TestSensitiveNamedStringPresetRedacted
+      - test: core/config.TestUnsetSecretIntKeepsParseErrorDigits
+      - test: core/config.TestPresetSensitiveRedactedInValidator
+      - test: core/config.TestSecretInOtherFieldParseError
+      - test: core/config.TestOverriddenSecretDefaultStaysReadable
+      - test: core/config.TestMalformedRuleHidesSensitiveDefault
+      - test: core/config.TestShapeErrorHidesOtherFieldsSecret
+      - test: core/config.TestShortSecretPlaceholderStaysIntact
       - test: core/config.TestSensitiveRedactedInValidator
       - test: core/config.TestRedactLongestSecretFirst
       - test: core/config.TestRedactEscapedSecretSpellings
       - test: core/config.TestSweepConfigSensitiveBadDefaultRedacted
       - test: core/config.TestSweepConfigShadowedSensitiveDefaultRedactedInValidator
+      - test: core/config.TestShadowedSensitiveDefaultOneofRedacted
+      - test: core/config.TestOtherFieldOneofErrorRedacted
+  - id: unchanged-binding-errors-keep-chain
+    rule: A binding error whose message contains no sensitive value retains its original error chain; a redacted binding error drops the chain so it cannot expose the secret.
+    enforced_by:
+      - test: core/config.TestNonSecretParseErrorPreservesChain
   - id: key-naming
     rule: A leaf reads its config tag or else its upper-cased field name, a named nested struct reads its fields under NAME_, and a nested pointer is allocated only when one of its keys is present.
     enforced_by:
@@ -51,11 +65,12 @@ invariants:
       - test: core/config.TestPointerEmbedEnforcesEarlierRequired
       - test: core/config.TestRequiredPromotedFieldNamesKey
   - id: shadowed-takes-default
-    rule: A shadowed field is never bound from a source and takes only its own default tag, checked by its validate rule, a shadowed struct each field's default, and a shadowed pointer stays as it was.
+    rule: A shadowed field is never bound from a source and takes only its own default tag, checked by its validate rule with an error naming the embedded field's path, a shadowed struct each field's default, and a shadowed pointer stays as it was.
     enforced_by:
       - test: core/config.TestShadowedFieldTakesItsDefault
       - test: core/config.TestShadowedFieldBadDefaultFails
       - test: core/config.TestShadowedFieldDefaultIsValidated
+      - test: core/config.TestShadowedDefaultErrorNamesEmbeddedField
       - test: core/config.TestShadowedPointerEmbedStaysNil
       - test: core/config.TestSweepConfigShadowedNestedPointerStaysNil
   - id: shape-refused-before-reading
@@ -85,13 +100,14 @@ invariants:
       - test: core/config.TestDurationParsesNanosAndMicros
       - test: core/config.TestLoadDurationOverflowRejected
   - id: validate-rules
-    rule: validate takes min, max and oneof only, integer and duration bounds compare exactly as int64 with duration bounds read as durations, and an unknown rule or one the field's type cannot take fails Load.
+    rule: validate takes min, max and oneof only, integer and duration bounds compare exactly as int64 with duration bounds read as durations, and an unknown rule or one the field's type cannot take fails Load before a source is read, on every field, bound or not.
     enforced_by:
       - test: core/config.TestDocumentedValidationTags
       - test: core/config.TestDurationBoundsReadAsDurations
       - test: core/config.TestIntegerBoundsCompareExactly
       - test: core/config.TestUnappliableValidationRulesRefused
       - test: core/config.TestSweepConfigUnknownRuleRefused
+      - test: core/config.TestUnboundFieldRuleRefused
   - id: validator-hook-runs
     rule: A config that implements ConfigValidator has Validate called after binding, and its error fails Load and MustLoad.
     enforced_by:

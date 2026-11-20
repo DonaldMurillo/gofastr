@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=0dea6e6df6d6cbfd
+//gofastr:generated generator=app kind=scaffold version=dev sum=3e2c40efcb53f590
 
 package main
 
@@ -42,6 +42,7 @@ func (s *CategoriesScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountCategoriesScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	invalidateScreensOnWrite(fwApp, "/api/categories", "/categories")
 	site.Register("/categories", &CategoriesScreen{}, appLayout)
 }
 

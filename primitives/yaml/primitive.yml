@@ -57,6 +57,16 @@ invariants:
       - test: core/yaml.TestCoreSchemaScalarResolution
       - test: core/yaml.TestYAML_YAML11BooleansStayStrings
       - test: core/yaml.TestCoreSchemaOutOfRangeFloatRefused
+  - id: core-schema-integers
+    rule: Plain scalars resolve signed or unsigned decimal and unsigned 0o octal and 0x hexadecimal spellings within int64 range as integers.
+    enforced_by:
+      - test: core/yaml.TestCoreSchemaIntegerResolution
+  - id: string-emission-follows-parser
+    rule: Pack and freeze quote string values when the scalar parser would reject them, change their type or text, or when YAML punctuation or non-printable bytes require quoting.
+    enforced_by:
+      - test: core/yaml.TestNeedsQuote
+      - test: cmd/gofastr/internal/packcmd.TestPackStringScalarsRoundTrip
+      - test: kiln/freeze.TestAppSpecStringScalarsRoundTrip
   - id: yaml-escapes
     rule: A double-quoted scalar decodes only the YAML 1.2 escapes, \x \u \U as Unicode code points, and refuses any other escape and any surrogate code point; a single-quoted scalar refuses a lone interior quote.
     enforced_by:
@@ -74,6 +84,14 @@ invariants:
       - test: core/yaml.TestListItemKeyColumnLineIsSibling
       - test: core/yaml.TestListItemMisindentedContinuation
 decisions:
+  - id: core-prefixed-integers
+    date: 2026-11-20
+    status: accepted
+    decision: "BREAKING: Unquoted 0x and 0o integer spellings now read as numbers, so enum values such as [0x01, 0x02] can become strings 1 and 2, a string default of 0x10 can fail as integer 16, and unquoted strings in older Pack or Kiln snapshots can read back as integers; quote each value meant to stay a string."
+    rejected:
+      - option: Keep reading unquoted hex and octal integers as strings.
+        why: That preserves old specs but disagrees with the YAML 1.2 core schema chosen in D-30.
+    upholds: [core-schema-integers]
   - id: in-house-subset
     date: 2026-11-18
     status: accepted

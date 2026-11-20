@@ -17,12 +17,22 @@ invariants:
       - test: core/tracing.TestSweepTracingErrorTypeNotMessage
       - test: core/tracing.TestSQLSpanMarksErrors
   - id: error-type-sees-through-fmt
-    rule: error.type is the type under any fmt.Errorf %w wrapping, and the first wrapped error's type for a wrapper with several %w verbs.
+    rule: error.type unwraps only fmt.Errorf %w wrappers, follows the first of several %w operands, and reports *errors.joinError for errors.Join or *errors.errorString for a wrapped errors.New sentinel.
     applies:
       - battery/queue/invoke.go
     enforced_by:
       - test: core/tracing.TestErrorTypeSeesThroughWrapping
+      - test: core/tracing.TestErrorTypeUnwrapsOnlyFmt
       - test: battery/queue.TestJobSpanErrorTypeSeesThroughWrapping
+  - id: panic-error-type-is-the-constant
+    rule: Every span that records a panic sets error.type to tracing.ErrorTypePanic, never a literal of its own.
+    applies:
+      - core/middleware/tracing.go
+      - battery/queue/invoke.go
+    enforced_by:
+      - test: core/middleware.TestTracingMarksPanickedSpan
+      - test: battery/queue.TestMemoryJobSpans
+    judge: Does this change set a panic span's error.type from a string literal instead of tracing.ErrorTypePanic?
   - id: job-is-its-own-trace
     rule: Job opens an internal root span named by the scrubbed name, parents fn's spans under it, sets fn's error text, scrubbed and capped, as its status, and on a panic records the value and the panicking function's stack, ends the span and panics on.
     enforced_by:

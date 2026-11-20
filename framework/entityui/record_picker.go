@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 const (
@@ -129,7 +130,7 @@ func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts 
 	titles := u.rowTitles(ctx, om, rows, 0)
 	needle := strings.ToLower(q)
 	for i, r := range rows {
-		oid := cell(om.rowValue(r, om.pk))
+		oid := fieldtext.Cell(om.rowValue(r, om.pk))
 		if oid == "" {
 			continue
 		}
