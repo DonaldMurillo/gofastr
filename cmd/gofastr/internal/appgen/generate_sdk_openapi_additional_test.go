@@ -55,10 +55,22 @@ func TestOpenAPISDKAdditionalPropertiesRoundTrip(t *testing.T) {
         "additionalProperties":true
       },
       "emptySchema":{"type":"object","properties":{"label":{"type":"string"}},"additionalProperties":{}},
+      "merged":{
+        "allOf":[{"$ref":"#/components/schemas/Identified"}],
+        "properties":{"label":{"type":"string"}},
+        "additionalProperties":true
+      },
+      "mergedTyped":{"$ref":"#/components/schemas/TypedExtras"},
       "closed":{"type":"object","properties":{"label":{"type":"string"}},"additionalProperties":false},
       "implicit":{"type":"object","properties":{"label":{"type":"string"}}}
     },
     "additionalProperties":{"type":["integer","null"]}
+  },"Identified":{"type":"object","properties":{"id":{"type":"string"}}},
+  "TypedExtras":{
+    "allOf":[
+      {"$ref":"#/components/schemas/Identified"},
+      {"type":"object","additionalProperties":{"type":["integer","null"]}}
+    ]
   },"Node":{
     "type":"object",
     "properties":{
@@ -102,8 +114,11 @@ import (
 )
 
 func TestRoundTrip(t *testing.T) {
-	const want = "{\"known\":\"x\",\"count\":9007199254740993,\"missing\":null,\"flex\":{\"label\":\"y\",\"extra\":{\"n\":9007199254740993}},\"emptySchema\":{\"other\":[true,null]},\"closed\":{\"label\":\"z\"},\"implicit\":{\"label\":\"w\"}}"
-	const response = "{\"known\":\"x\",\"count\":9007199254740993,\"missing\":null,\"flex\":{\"label\":\"y\",\"extra\":{\"n\":9007199254740993}},\"emptySchema\":{\"other\":[true,null]},\"closed\":{\"label\":\"z\",\"ignored\":1},\"implicit\":{\"label\":\"w\",\"ignored\":2}}"
+	const common = "{\"known\":\"x\",\"count\":9007199254740993,\"missing\":null," +
+		"\"flex\":{\"label\":\"y\",\"extra\":{\"n\":9007199254740993}},\"emptySchema\":{\"other\":[true,null]}," +
+		"\"merged\":{\"id\":\"1\",\"label\":\"x\",\"extra\":1},\"mergedTyped\":{\"id\":\"2\",\"count\":3,\"missing\":null},"
+	const want = common + "\"closed\":{\"label\":\"z\"},\"implicit\":{\"label\":\"w\"}}"
+	const response = common + "\"closed\":{\"label\":\"z\",\"ignored\":1},\"implicit\":{\"label\":\"w\",\"ignored\":2}}"
 	post := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -161,6 +176,10 @@ func TestAdditionalPropertyNames(t *testing.T) {
 	var record client.RecordData
 	if err := json.Unmarshal([]byte("{\"count\":\"not an integer\"}"), &record); err == nil {
 		t.Fatal("a string was accepted as a typed integer additional property")
+	}
+	var composed client.TypedExtras
+	if err := json.Unmarshal([]byte("{\"count\":\"not an integer\"}"), &composed); err == nil {
+		t.Fatal("a string was accepted as a typed integer additional property in allOf")
 	}
 }
 

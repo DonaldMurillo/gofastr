@@ -1,6 +1,7 @@
 primitive: sdk.openapi
 summary: The Go and JS/TS SDKs gofastr generate sdk --from-openapi renders from an OpenAPI 3 document, and the client renderer and document walk it shares with gofastr generate cli --from-openapi.
 code:
+  - cmd/gofastr/internal/appgen/generate_cli_openapi.go
   - cmd/gofastr/internal/appgen/generate_openapi_client.go
   - cmd/gofastr/internal/appgen/generate_sdk_openapi.go
   - cmd/gofastr/internal/appgen/generate_sdk_openapi_types.go
@@ -46,7 +47,7 @@ invariants:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKGoWire
       - test: cmd/gofastr/internal/appgen.TestUnionApp
   - id: go-sdk-additional-properties-round-trip
-    rule: Generated Go structs preserve explicitly allowed additional properties as sibling JSON keys while reserving exact declared names for their named fields.
+    rule: Generated Go structs, including flattened allOf objects, preserve explicitly allowed additional properties as sibling JSON keys while reserving exact declared names for their named fields.
     enforced_by:
       - test: cmd/gofastr/internal/appgen.TestOpenAPISDKAdditionalPropertiesRoundTrip
   - id: go-sdk-additional-property-name-collision

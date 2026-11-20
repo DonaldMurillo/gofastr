@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -322,6 +323,9 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 			if rq, ok := pm["required"].([]any); ok {
 				required = append(required, rq...)
 			}
+			if extra := oaMergeAdditionalProperties(merged["additionalProperties"], pm["additionalProperties"]); extra != nil {
+				merged["additionalProperties"] = extra
+			}
 		}
 		if len(props) == 0 && len(typed) > 0 && typed[0]["type"] != "object" &&
 			!slices.ContainsFunc(typed, func(m map[string]any) bool { return fmt.Sprint(m["type"]) != fmt.Sprint(typed[0]["type"]) }) {
@@ -352,6 +356,22 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 		}
 	}
 	return node, nil
+}
+
+func oaMergeAdditionalProperties(current, next any) any {
+	switch next := next.(type) {
+	case bool:
+		if next || current == nil {
+			return next
+		}
+	case map[string]any:
+		previous, typed := current.(map[string]any)
+		if current == true || typed && !reflect.DeepEqual(previous, next) {
+			return true
+		}
+		return next
+	}
+	return current
 }
 
 // oaParamJoined reads a parameter's style and explode and reports whether
