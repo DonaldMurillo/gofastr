@@ -23,6 +23,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -117,9 +118,10 @@ func (s *CatalogItemScreen) ScreenDescription(ctx context.Context) string {
 	return "Catalog product detail."
 }
 
-func (s *CatalogItemScreen) RenderCtx(_ context.Context) render.HTML {
+func (s *CatalogItemScreen) RenderCtx(ctx context.Context) render.HTML {
 	it, ok := catalogByID(s.id)
 	if !ok {
+		app.SetStatus(ctx, http.StatusNotFound)
 		return ui.Stack(ui.StackConfig{},
 			ui.EmptyState(ui.EmptyStateConfig{
 				Title:        "No such product",
