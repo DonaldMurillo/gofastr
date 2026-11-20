@@ -1,0 +1,69 @@
+primitive: render.html
+summary: The escaping HTML builder (Escape, Text, Raw, Attr, Tag, VoidTag, Join, If, When, Classes), which builds markup that cannot break out of a text node, an attribute value, an attribute name or a tag name.
+code:
+  - core/render/html.go
+docs:
+  - framework/docs/content/core-packages.md
+twins:
+  - job: Escape the five HTML special characters (&, <, >, double and single quote) to entities, ampersand first.
+    why: Nothing but work not yet done; the markdown renderer and the pie chart's SVG labels each carry a replacer of their own instead of calling render.Escape.
+    sites:
+      - path: core/render/html.go
+        note: Escape, behind Text, Attr and every Tag attribute value.
+      - path: core/markdown/inline.go
+        note: htmlEscaper, for markdown text and attributes.
+      - path: framework/ui/piechart.go
+        note: escapeXML, for SVG label text.
+  - job: Decide whether a string is a safe HTML attribute name before writing it into a tag.
+    why: The rules differ today; render.Attr refuses on* handlers and allows no dot, while the registry's splice allows a dot and an on* name; merging needs a decision on which names the splice must accept.
+    sites:
+      - path: core/render/html.go
+        note: isSafeAttrKey, behind Attr, Tag and VoidTag.
+      - path: core-ui/registry/inject.go
+        note: attrNameOK, behind InjectAttribute and the component marker splice.
+invariants:
+  - id: escape-five-ampersand-first
+    rule: Escape turns &, <, >, double quote and single quote into &amp;, &lt;, &gt;, &quot; and &#39;, replacing the ampersand first so no entity it writes is escaped twice, and Text and every attribute value go through it.
+    enforced_by:
+      - test: core/render.TestEscape_AllFiveSpecialChars
+      - test: core/render.TestEscape_AmpersandFirst
+      - test: core/render.TestXSS_TextEscapesSingleQuotes
+  - id: attr-key-allow-list
+    rule: Attr returns the empty string, and Tag and VoidTag drop the attribute, for a key that is empty, holds a byte other than an ASCII letter, digit, -, _ or :, or starts with on in any letter case.
+    enforced_by:
+      - test: core/render.TestAttr_RejectsWhitespaceInAttributeName
+      - test: core/render.TestAttr_RejectsEventHandlerAttributeName
+      - test: core/render.TestTag_DropsEventHandlerAttributeName
+      - test: core/render.TestVoidTag_DropsEventHandlerAttributeName
+      - test: core/render.TestAttrKeyDropsBreakoutShapes
+  - id: tag-name-allow-list
+    rule: Tag and VoidTag render a name that is not an ASCII letter followed by ASCII letters, digits or hyphens, the empty name included, as span.
+    enforced_by:
+      - test: core/render.TestXSS_TagNameInjection
+      - test: core/render.TestXSS_VoidTagNameInjection
+      - test: core/render.TestTag_EmptyNameHandled
+  - id: attrs-sorted-no-dangling-space
+    rule: Tag and VoidTag write attributes in sorted key order, one space before each, and a dropped attribute leaves no space behind.
+    enforced_by:
+      - test: core/render.TestSweepRenderAttrsSortedNoDanglingSpace
+  - id: when-is-lazy
+    rule: When calls its function only when the condition is true, while If takes an already built fragment.
+    enforced_by:
+      - test: core/render.TestWhenLazy
+decisions:
+  - id: drop-inline-event-handlers
+    date: 2026-11-18
+    status: accepted
+    decision: Attr drops every on* attribute outright, because behaviour belongs in runtime.js and data-cui-* bindings, not in script injected into the markup.
+    rejected:
+      - option: Allow on* attributes with an escaped value.
+        why: An escaped value is still script the browser runs, and a CSP that forbids inline handlers would break the page anyway.
+    upholds: [attr-key-allow-list]
+  - id: bad-names-degrade-silently
+    date: 2026-11-18
+    status: accepted
+    decision: An unsafe tag name renders as span and an unsafe attribute key is dropped, so the builder never returns an error and never writes the bad bytes.
+    rejected:
+      - option: Escape the bad name and write it.
+        why: No escaping makes whitespace or a quote legal in a tag or attribute name, so the bytes would still open a new attribute.
+    upholds: [attr-key-allow-list, tag-name-allow-list]

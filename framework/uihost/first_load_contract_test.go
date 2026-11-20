@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -132,5 +133,23 @@ func TestColorSchemeMetaIsStatic(t *testing.T) {
 	}
 	if n := strings.Count(page, `<meta name="color-scheme"`); n != 1 {
 		t.Errorf("%d color-scheme metas in the page, want 1", n)
+	}
+}
+
+// Every page the host renders, the fallback document shell included,
+// carries one text-scale meta, so the OS text size reaches the page's
+// rems (#704).
+func TestPagesCarryTheTextScaleMeta(t *testing.T) {
+	ds := newTestUIHost()
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	shell := ds.documentShell(context.Background(), "/", "t", "<main></main>")
+	for name, page := range map[string]string{"page": w.Body.String(), "document shell": shell} {
+		if n := strings.Count(page, `name="text-scale"`); n != 1 {
+			t.Errorf("%s carries %d text-scale metas, want 1:\n%.400s", name, n, page)
+		}
+		if !strings.Contains(page, `content="scale"`) {
+			t.Errorf("%s's text-scale meta does not say scale:\n%.400s", name, page)
+		}
 	}
 }

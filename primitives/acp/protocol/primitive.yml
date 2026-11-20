@@ -1,0 +1,16 @@
+primitive: acp.protocol
+summary: The ACP v1 wire types - capabilities, content blocks, tool calls, plans, permissions and the session/update frames with their constructors.
+code:
+  - core/acp/protocol.go
+docs:
+  - framework/docs/content/acp.md
+invariants:
+  - id: required-fields-on-the-wire
+    rule: A text block always carries text, a resource_link carries uri and name, a diff carries path and newText, a terminal item carries terminalId, and a plan update carries entries ([] when empty), even when the values are empty.
+    enforced_by:
+      - test: core/acp.TestEmptyRequiredFieldsKept
+      - test: core/acp.TestUpdateFramesMarshalToSpecShape
+  - id: patch-sends-cleared-fields
+    rule: ToolCallUpdateFrame sends a title, content, rawInput or rawOutput the caller set to an empty value, and omits the ones left nil.
+    enforced_by:
+      - test: core/acp.TestUpdateFramesMarshalToSpecShape

@@ -1,11 +1,10 @@
 package fanout
 
 import (
-	"context"
-	"log/slog"
 	"strings"
-	"sync"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
 // Pins: a recovered panic value embedding subscriber-derived text reaches
@@ -27,43 +26,9 @@ import (
 // Probe note: the payload embeds the control bytes RAW (panic value),
 // not %q-escaped — %q pre-escapes them and would hide the surface.
 
-// redFanScrubSink is a minimal slog.Handler storing record attributes
-// verbatim (no JSON/text escaping), so a test can detect raw control
-// bytes a real handler would have escaped away.
-type redFanScrubSink struct {
-	mu    sync.Mutex
-	attrs map[string]string
-}
-
-func (h *redFanScrubSink) Enabled(context.Context, slog.Level) bool { return true }
-
-func (h *redFanScrubSink) Handle(_ context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.attrs == nil {
-		h.attrs = map[string]string{}
-	}
-	r.Attrs(func(a slog.Attr) bool {
-		h.attrs[a.Key] = a.Value.String()
-		return true
-	})
-	return nil
-}
-
-func (h *redFanScrubSink) WithAttrs([]slog.Attr) slog.Handler { return h }
-func (h *redFanScrubSink) WithGroup(string) slog.Handler      { return h }
-
-func (h *redFanScrubSink) redGet(key string) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.attrs[key]
-}
-
 func TestFanoutRedSubscriberPanicScrub(t *testing.T) {
-	prev := slog.Default()
-	sink := &redFanScrubSink{}
-	slog.SetDefault(slog.New(sink))
-	t.Cleanup(func() { slog.SetDefault(prev) })
+	sink := &scrubtest.Sink{}
+	scrubtest.InstallDefault(t, sink)
 
 	// The panic value a subscriber echoing hostile input would build:
 	// visible text plus a raw OSC title-set, an RLO bidi override, and
@@ -71,9 +36,9 @@ func TestFanoutRedSubscriberPanicScrub(t *testing.T) {
 	malicious := "boom \x1b]0;pwned \u202e and \u009bCSI"
 	deliver(func([]byte) { panic(malicious) }, []byte("probe"))
 
-	got := sink.redGet("panic")
+	got := sink.Get("panic")
 	if got == "" {
-		t.Fatalf("setup broken: subscriber panic never reached the slog sink (attrs=%v)", sink.attrs)
+		t.Fatalf("setup broken: subscriber panic never reached the slog sink (attrs=%v)", sink.Attrs())
 	}
 	for _, bad := range []string{"\x1b", "\u202e", "\u009b"} {
 		if strings.Contains(got, bad) {

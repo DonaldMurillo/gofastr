@@ -461,11 +461,8 @@ func (mm *ModuleManager) publish(_ context.Context, name string, enabled bool) {
 }
 
 func (mm *ModuleManager) handleRemoteToggle(raw []byte) {
-	nodeID, body, err := fanout.Unwrap(raw)
-	if err != nil {
-		return
-	}
-	if nodeID == mm.nodeID {
+	_, body, ok := fanout.UnwrapForeign(mm.nodeID, raw)
+	if !ok {
 		return
 	}
 	var msg moduleToggleMessage

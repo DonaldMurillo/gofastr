@@ -203,7 +203,7 @@ const skeletonPresetsCSS = `
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 /* The one bar style every preset draws: the shimmer the retired

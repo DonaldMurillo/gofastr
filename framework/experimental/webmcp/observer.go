@@ -14,43 +14,27 @@ import (
 	"time"
 )
 
-// MarkerHeader is the header the bridge sends on every tool fetch
-// ("X-Gofastr-WebMCP: 1"). It attributes a call as agent-driven — for
-// audit notes, differentiated rate limits, observers — and never grants
-// anything: any page script can send it, so it must never be an
-// authorization input.
+// MarkerHeader is sent by the bridge on every tool call; it attributes a
+// call and never authorizes one.
 const MarkerHeader = "X-Gofastr-WebMCP"
 
-// InvocationHeader carries the per-call correlation id on responses
-// from observer-instrumented routes.
+// InvocationHeader carries the invocation id on observed responses.
 const InvocationHeader = "X-Gofastr-WebMCP-Invocation"
 
-// HostOption configures a Host at construction (New).
+// HostOption configures a Host at New.
 type HostOption func(*Host)
 
-// ToolPhase names which half of a tool's life an event describes:
-// registration (a declaration refused by Register/Handle) or invocation
-// (a marked call executing through a Handle-registered route).
+// ToolPhase says whether an event is a refused declaration or an invocation.
 type ToolPhase string
 
+// Tool event phases.
 const (
 	PhaseRegister ToolPhase = "register"
 	PhaseInvoke   ToolPhase = "invoke"
 )
 
-// ToolEvent is the metadata-safe observation the framework can make
-// about a tool: identity (name), routing (method, path), outcome
-// (status, error class), and cost (duration). It deliberately carries
-// NOTHING from the request itself — no input body, no headers, no
-// query string, no cookies — because tool inputs are exactly where
-// secrets live. Path is the DECLARED tool path, never the request URL.
-//
-// StatusCode is the HTTP status of the endpoint response (0 when a
-// handler panic unwound past the observer). ErrClass is empty on
-// success; otherwise a stable token: registration failures use the
-// validation branch ("path", "duplicate_name", "after_mount",
-// "route_conflict", ...), invocations use "http_<status>" or "panic".
-// InvocationID is set on invoke events; see InvocationID.
+// ToolEvent describes one refused declaration or one marked invocation by
+// name, declared path, status, duration and error class, never by input.
 type ToolEvent struct {
 	Phase        ToolPhase
 	Name         string
@@ -62,24 +46,15 @@ type ToolEvent struct {
 	InvocationID string
 }
 
-// WithObserver installs fn as the observer for registration failures
-// and agent-driven invocations of Handle-registered routes. The last
-// option wins. fn runs inline (keep it cheap) and must not panic and
-// must not call back into the Host. With no observer installed, Handle
-// routes carry no instrumentation and events are never built —
-// diagnostics are opt-in and free by default.
+// WithObserver installs fn to receive ToolEvents inline; it must not panic
+// or call back into the Host.
 func WithObserver(fn func(ToolEvent)) HostOption {
 	return func(h *Host) { h.observer = fn }
 }
 
 type invocationKey struct{}
 
-// InvocationID returns the WebMCP invocation id carried by the marked
-// request's context, or "". Handle-registered routes expose it when an
-// observer is installed: the id also rides the response as
-// X-Gofastr-WebMCP-Invocation and the observer's ToolEvent, so an app
-// can correlate the agent's command with its own downstream events
-// (delivery, acknowledgement) by logging it from the handler.
+// InvocationID returns the invocation id on an observed marked request, or "".
 func InvocationID(ctx context.Context) string {
 	id, _ := ctx.Value(invocationKey{}).(string)
 	return id
@@ -88,18 +63,11 @@ func InvocationID(ctx context.Context) string {
 func randomInvocationID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		// crypto/rand failure is catastrophic by contract; a constant
-		// id would silently CORRELATE unrelated calls, which is worse
-		// than a loud panic at first use.
 		panic(fmt.Sprintf("webmcp: invocation id: %v", err))
 	}
 	return hex.EncodeToString(b[:])
 }
 
-// emitRegister reports a refused declaration. Called after the Host
-// lock is released (an observer must be free to inspect anything), with
-// the DECLARED values — developer-authored constants, never request
-// data.
 func (h *Host) emitRegister(t Tool, class string) {
 	if h.observer == nil {
 		return
@@ -113,14 +81,6 @@ func (h *Host) emitRegister(t Tool, class string) {
 	})
 }
 
-// observeHandler wraps one Handle-registered route. Requests without
-// the marker header pass straight through with zero added work: an
-// ordinary call and an agent call to the same handler stay
-// distinguishable (only the agent call is an invocation event), and the
-// marker never becomes an authorization input. Marked requests get a
-// correlation id (context + response header) and end in one ToolEvent
-// carrying the declared path, the response status, the duration, and an
-// error class — never the input.
 func (h *Host) observeHandler(t Tool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get(MarkerHeader) == "" {
@@ -151,8 +111,6 @@ func (h *Host) observeHandler(t Tool, next http.Handler) http.Handler {
 				InvocationID: id,
 			})
 			if p != nil {
-				// Re-panic so the app's recovery middleware (outer, in
-				// the router chain) still owns the response.
 				panic(p)
 			}
 		}()
@@ -160,10 +118,6 @@ func (h *Host) observeHandler(t Tool, next http.Handler) http.Handler {
 	})
 }
 
-// statusRecorder remembers the status the handler wrote so the observer
-// can report an outcome. It passes Flush and Hijack through so streaming
-// (SSE) and upgrade (WebSocket) tool endpoints keep working under
-// instrumentation.
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
@@ -183,10 +137,6 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 	return s.ResponseWriter.Write(b)
 }
 
-// ReadFrom keeps the connection's sendfile path: io.Copy and
-// http.ServeContent use the writer's ReaderFrom when it has one, and
-// embedding http.ResponseWriter does not promote it. It latches the
-// implicit 200 the way Write does.
 func (s *statusRecorder) ReadFrom(src io.Reader) (int64, error) {
 	if s.status == 0 {
 		s.status = http.StatusOK
@@ -194,9 +144,6 @@ func (s *statusRecorder) ReadFrom(src io.Reader) (int64, error) {
 	return io.Copy(s.ResponseWriter, src)
 }
 
-// Flush sends the headers: the status is the one set, or 200. Latch it,
-// so a WriteHeader after the flush (which net/http drops) is not
-// reported as the outcome.
 func (s *statusRecorder) Flush() {
 	if s.status == 0 {
 		s.status = http.StatusOK
@@ -206,7 +153,6 @@ func (s *statusRecorder) Flush() {
 	}
 }
 
-// Unwrap lets http.ResponseController reach the connection's deadlines.
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {

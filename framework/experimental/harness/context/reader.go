@@ -1,15 +1,3 @@
-// Package context implements project-instruction file readers.
-//
-// Per § Skills (SKILL.md) and context (AGENTS.md), the harness reads
-// project context from a profile-configured list of (path, label)
-// tuples. AGENTS.md is the open standard primary surface; vendor
-// fallback files (CLAUDE.md, .cursorrules, GEMINI.md, …) are read if
-// present.
-//
-// Each entry in the profile's context_sources list is resolved to a
-// Reader by Resolve. The result is fed into the engine's request
-// middleware chain via ContextSection wrapped in
-// <untrusted-NAME>...</untrusted-NAME> tags (rule 12).
 package context
 
 import (
@@ -31,24 +19,13 @@ type Section struct {
 
 // Reader reads project context from a working directory.
 type Reader struct {
-	// WorkingDir is the root the reader walks from. AGENTS.md
-	// walks upward from this to the repo root.
+	// WorkingDir is where reading starts; AGENTS.md is also looked up in each parent up to the repo root.
 	WorkingDir string
-
-	// Sources is the configured list, names like "AGENTS.md" or
-	// "CLAUDE.md". Per § Profiles, this is just a strings list, not
-	// a polymorphism point.
+	// Sources names the files to read, such as "AGENTS.md" or "CLAUDE.md".
 	Sources []string
 }
 
-// Read returns all sections found, in profile-configured order. Each
-// AGENTS.md walk produces one section per file encountered (deepest
-// first → root last, so child rules apply atop parent rules).
-//
-// Missing files are silently skipped, readers don't error on the
-// happy "no AGENTS.md in this repo" path. So are files the reader
-// refuses: a symlink that leaves the file's directory, anything that
-// is not a regular file, and a file over maxContextFileBytes.
+// Read returns the sections found in Sources order, skipping missing and refused files; it errors on an unknown source.
 func (r *Reader) Read() ([]Section, error) {
 	if r.WorkingDir == "" {
 		wd, err := os.Getwd()
@@ -72,10 +49,6 @@ func (r *Reader) Read() ([]Section, error) {
 			for _, f := range files {
 				body, sum, err := readFile(filepath.Dir(f), "AGENTS.md")
 				if err != nil {
-					// A refused file (a symlink out of its directory,
-					// a FIFO or device, an oversized file) is skipped
-					// like a missing one: one bad file must not drop
-					// the rest of the context.
 					continue
 				}
 				sections = append(sections, Section{
@@ -102,9 +75,6 @@ func (r *Reader) Read() ([]Section, error) {
 	return sections, nil
 }
 
-// walkUpward returns AGENTS.md files from the deepest directory
-// (workingDir) up to the repo root, in deepest-first order so
-// concatenated content reads "child overrides parent."
 func walkUpward(workingDir, basename string) ([]string, error) {
 	var out []string
 	dir := workingDir
@@ -113,8 +83,6 @@ func walkUpward(workingDir, basename string) ([]string, error) {
 		if info, err := os.Stat(p); err == nil && !info.IsDir() {
 			out = append(out, p)
 		}
-		// Repo-root sentinel: stop at the filesystem root or when
-		// .git appears (avoid walking up out of the repo into $HOME).
 		if dir == filepath.Dir(dir) {
 			break
 		}
@@ -135,19 +103,10 @@ func readSingle(workingDir, rel, sourceName string) (Section, bool) {
 	return Section{Source: sourceName, Path: p, Body: body, SHA256: sum}, true
 }
 
-// maxContextFileBytes caps one context file. The body goes into every
-// system prompt, and an unbounded read of a /dev/zero symlink would
-// exhaust memory.
 const maxContextFileBytes = 256 << 10
 
-// errNotRegular refuses a context path that is not a regular file.
 var errNotRegular = errors.New("context: not a regular file")
 
-// readFile reads name through an *os.Root over dir, so a context file
-// that is a symlink pointing out of dir (a repo's AGENTS.md ->
-// ~/.ssh/id_ed25519, or a .github directory linked elsewhere) is
-// refused instead of sent to the provider. Only regular files are read, checked before the open
-// so a FIFO cannot block it, and the read stops at maxContextFileBytes.
 func readFile(dir, name string) (string, string, error) {
 	data, err := readRooted(dir, name)
 	if err != nil {
@@ -176,8 +135,6 @@ func readRooted(dir, name string) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
-	// Check the handle too: the path may have been swapped between the
-	// stat and the open.
 	if info, err = f.Stat(); err != nil {
 		return nil, err
 	}
@@ -212,5 +169,5 @@ func canonicalName(filename string) string {
 	return strings.ToLower(strings.TrimPrefix(filename, "."))
 }
 
-// ErrNoSourcesConfigured is returned when Reader.Sources is empty.
+// ErrNoSourcesConfigured names an empty Reader.Sources; Read itself returns no sections and a nil error then.
 var ErrNoSourcesConfigured = errors.New("context: no sources configured")

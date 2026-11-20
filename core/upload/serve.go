@@ -11,15 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// scriptableHead reports whether a sniffed content type is one a
-// browser will render and execute as active content. Served verbatim,
-// an uploaded HTML document becomes a stored-XSS vector.
-//
-// XML counts. An XML document may carry an xml-stylesheet processing
-// instruction naming an XSLT sheet, and the transform that sheet applies
-// can emit arbitrary HTML including <script> — so two uploads, a .xml
-// pointing at a .xsl beside it, compose into exactly the stored-XSS the
-// HTML case forbids. Neither leg looks scriptable on its own.
 func scriptableHead(ct string) bool {
 	ct = strings.ToLower(ct)
 	return strings.HasPrefix(ct, "text/html") ||
@@ -31,11 +22,6 @@ func scriptableHead(ct string) bool {
 		strings.HasPrefix(ct, "application/xslt")
 }
 
-// scriptableExt reports whether the key's extension denotes scriptable
-// content. SVG in particular is not recognized by
-// [http.DetectContentType] (it sniffs as text/plain), so the extension
-// is the reliable "derived" signal for it — and so is an XSLT sheet,
-// which sniffs as text/plain for the same reason.
 func scriptableExt(key string) bool {
 	switch ext(key) {
 	case "html", "htm", "xhtml", "svg", "xml", "xsl", "xslt":
@@ -44,32 +30,10 @@ func scriptableExt(key string) bool {
 	return false
 }
 
-// ServeHandler returns an http.HandlerFunc that streams a file stored
-// under storage back to the client. Mount it on the framework router
-// with a catch-all key, e.g.
-//
-//	r.Get("/uploads/{key...}", upload.ServeHandler(storage))
-//
-// Semantics:
-//
-//   - GET and HEAD only; any other method yields 405 with an Allow header.
-//   - The key is resolved from r.PathValue("key") (populated by the
-//     router's {key...} wildcard), falling back to the URL path with a
-//     leading slash stripped when no path value is set.
-//   - The content type is sniffed from the first 512 bytes of the body
-//     via [http.DetectContentType], never from the client or the key.
-//   - X-Content-Type-Options: nosniff is always set.
-//   - Scriptable content (HTML, XHTML, SVG) is forced to
-//     application/octet-stream with Content-Disposition: attachment so a
-//     browser downloads it instead of rendering it (stored-XSS guard).
-//   - Path-traversal defense is delegated entirely to the Storage
-//     backend ([LocalStorage]'s sanitizeKey is the single enforcement
-//     point); the handler performs no path manipulation of its own and
-//     echoes no filesystem path on any error.
-//   - When the backend implements [RangeGetter], `Range:` requests are
-//     answered with 206 and Accept-Ranges is advertised, so an interrupted
-//     download of a large object resumes instead of restarting. Backends
-//     that decline the capability serve whole bodies exactly as before.
+// ServeHandler streams the object under r.PathValue("key") (or the URL
+// path) to GET and HEAD with a sniffed Content-Type and nosniff, sends
+// HTML, XHTML, SVG, XML and XSLT as an octet-stream attachment, and
+// answers Range when storage is a RangeGetter.
 func ServeHandler(storage Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -83,10 +47,6 @@ func ServeHandler(storage Storage) http.HandlerFunc {
 			key = strings.TrimPrefix(r.URL.Path, "/")
 		}
 
-		// A backend that implements RangeGetter hands back a seekable
-		// reader, which is what http.ServeContent needs to answer a Range
-		// request. Backends that decline fall through to the whole-body
-		// path below.
 		if rg, ok := storage.(RangeGetter); ok {
 			rs, err := rg.GetRange(r.Context(), key)
 			if err != nil {
@@ -105,9 +65,6 @@ func ServeHandler(storage Storage) http.HandlerFunc {
 		}
 		defer rc.Close()
 
-		// storage.Get returns an io.ReadCloser, not a Seeker, so sniff
-		// the head into a buffer and re-assemble the full stream for the
-		// response body via [io.MultiReader].
 		head := make([]byte, 512)
 		n, readErr := io.ReadFull(rc, head)
 		if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
@@ -128,11 +85,6 @@ func ServeHandler(storage Storage) http.HandlerFunc {
 	}
 }
 
-// serveSeekable sniffs the head, rewinds, and hands the reader to
-// http.ServeContent, which owns Range/If-Range/206/Accept-Ranges. The
-// content-type headers are set first: ServeContent only guesses a type when
-// the header is unset, so the sniffed value and the stored-XSS guard both
-// survive.
 func serveSeekable(w http.ResponseWriter, r *http.Request, key string, rs io.ReadSeeker) {
 	head := make([]byte, 512)
 	n, readErr := io.ReadFull(rs, head)
@@ -147,36 +99,21 @@ func serveSeekable(w http.ResponseWriter, r *http.Request, key string, rs io.Rea
 
 	setServeHeaders(w, key, http.DetectContentType(head[:n]))
 
-	// An empty name keeps ServeContent from re-deriving a content type from
-	// the extension: the sniffed value above is authoritative. A zero modtime
-	// suppresses Last-Modified; the Storage contract exposes no mtime.
 	http.ServeContent(w, r, "", time.Time{}, rs)
 }
 
-// setServeHeaders applies the content-type decision shared by both serving
-// paths, including the stored-XSS guard.
 func setServeHeaders(w http.ResponseWriter, key, contentType string) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if scriptableHead(contentType) || scriptableExt(key) {
-		// Stored-XSS guard: never let a browser render uploaded HTML/SVG.
-		// Force a neutral, downloadable representation. SVG sniffs as
-		// text/plain, so the key's extension is the reliable "derived"
-		// signal for it.
 		contentType = "application/octet-stream"
 		w.Header().Set("Content-Disposition", "attachment")
 	}
 	w.Header().Set("Content-Type", contentType)
 }
 
-// serveStoreError maps a Storage.Get error to an HTTP status without
-// echoing any filesystem path. Missing keys are 404; keys rejected by
-// backend sanitization (traversal / escaped paths) are 400; anything
-// else is a generic 500.
 func serveStoreError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
-		// ErrNotFound wraps os.ErrNotExist, so this also matches any
-		// backend that returns a stdlib not-exist error through it.
 		i18n.HTTPError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 	case errors.Is(err, ErrInvalidKey):
 		i18n.HTTPError(w, r, http.StatusBadRequest, reasonInvalidKey)

@@ -249,11 +249,7 @@ func TestMagicLink_Send_NoEmail_Returns400(t *testing.T) {
 	mgr, _, _ := newMagicLinkManager(t, sender)
 	r := mountMagicLinkRoutes(mgr)
 
-	body, _ := json.Marshal(map[string]string{"email": ""})
-	req := httptest.NewRequest(http.MethodPost, "/auth/magic-link/send", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+	w := postAuthJSON(r, "/auth/magic-link/send", map[string]string{"email": ""}, "application/json")
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
@@ -265,11 +261,7 @@ func TestMagicLink_Send_DevMode_LogsURL(t *testing.T) {
 	mgr, _, _ := newMagicLinkManager(t, nil)
 	r := mountMagicLinkRoutes(mgr)
 
-	body, _ := json.Marshal(map[string]string{"email": "alice@example.com"})
-	req := httptest.NewRequest(http.MethodPost, "/auth/magic-link/send", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+	w := postAuthJSON(r, "/auth/magic-link/send", map[string]string{"email": "alice@example.com"}, "application/json")
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 in dev mode, got %d", w.Code)

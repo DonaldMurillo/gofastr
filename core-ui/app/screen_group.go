@@ -12,16 +12,6 @@ import (
 )
 
 // ScreenGroup defines a shared layout that wraps every child screen.
-// Screen groups nest: navigating between siblings inside the same group
-// swaps only the inner content region, not the layout shell.
-//
-// Usage:
-//
-//	group := app.NewScreenGroup("/settings", app.NewLayout("settings",
-//	    app.LayoutSpec{}, buildSettings))
-//	group.Screen(screen1, nil)
-//	group.Screen(screen2, nil)
-//	appRouter.ScreenGroup(group)
 type ScreenGroup struct {
 	prefix     string
 	layout     *Layout
@@ -32,29 +22,16 @@ type ScreenGroup struct {
 	parentApp  *Router
 	standalone bool // when true, the host's default layout does NOT wrap this group
 
-	// fills are this group's outlet-fill declarations, keyed by
-	// (layout, outlet), consulted after each member screen's own fills
-	// and before the outlet's Default (innermost group first). See
-	// fill.go..
 	fills map[*Outlet]fillDecl
 
-	// resolvers are this group's route resolvers, visible to every
-	// member screen that does not declare its own for the same key.
-	// See resolver.go.
 	resolvers []resolverDecl
 
-	// requires lists the resolver keys (this group's or a member's)
-	// that run EAGERLY in the policy phase (group.Requires).
 	requires []AnyKey
 
-	// loading is this group's swap-slot loading declaration (,
-	// the default for every member screen that
-	// does not declare its own. Consulted innermost group first.
 	loading *Loading
 }
 
-// StaticComponent wraps raw HTML as a component.Component. Useful for
-// layout regions that don't change per-request (sidebars, headers).
+// StaticComponent wraps raw HTML as a component.Component.
 type StaticComponent struct {
 	HTML render.HTML
 }
@@ -67,33 +44,18 @@ func NewStaticComponent(h render.HTML) *StaticComponent {
 	return &StaticComponent{HTML: h}
 }
 
-// contextComponentFunc adapts a ctx→HTML func into a ContextComponent.
 type contextComponentFunc func(ctx context.Context) render.HTML
 
 func (f contextComponentFunc) Render() render.HTML                     { return f(context.Background()) }
 func (f contextComponentFunc) RenderCtx(c context.Context) render.HTML { return f(c) }
 
-// NewContextComponent creates a component whose output depends on the request
-// context (auth-aware chrome, tenant-scoped headers, …). The layout threads the
-// live request context in via WrapCtx, so RenderCtx receives the signed-in
-// user; Render() falls back to a background context.
+// NewContextComponent creates a component whose output depends on the request context (auth-aware
+// chrome, tenant-scoped headers, …).
 func NewContextComponent(fn func(ctx context.Context) render.HTML) component.Component {
 	return contextComponentFunc(fn)
 }
 
 // NewScreenGroup creates a screen group with the given prefix and layout.
-// The prefix is the URL path prefix shared by all screens in the group.
-// The layout wraps every child screen's content.
-//
-// Optional policies attach a chain of access policies to every screen
-// in the group (and sub-groups). The chain is evaluated outermost
-// group → innermost group → screen at request time; the first non-
-// Allow Decision wins. Use this to gate entire route prefixes:
-//
-//	dash := app.NewScreenGroup("/dashboard", dashLayout, auth.SessionPolicy())
-//	dash.Screen(app.NewScreen("/", &HomeScreen{}), nil)            // inherits SessionPolicy
-//	dash.Screen(app.NewScreen("/billing", &BillingScreen{}).
-//	    WithPolicy(auth.RolePolicy("admin")), nil)                  // SessionPolicy + RolePolicy
 func NewScreenGroup(prefix string, layout *Layout, policies ...Policy) *ScreenGroup {
 	return &ScreenGroup{
 		prefix:   normalizeGroupPrefix(prefix),
@@ -102,19 +64,14 @@ func NewScreenGroup(prefix string, layout *Layout, policies ...Policy) *ScreenGr
 	}
 }
 
-// Standalone marks this group as a self-contained shell: its own layout is the
-// outermost wrapper and the host App's default layout (SetDefaultLayout) does
-// NOT wrap it. Use this when a battery or feature mounts its screens on the
-// host's App but renders a full page shell of its own, e.g. the admin
-// back-office, whose sidebar would otherwise nest inside the app's sidebar
-// (a double-sidebar). Returns the group for chaining.
+// Standalone marks this group as a self-contained shell: its own layout is the outermost wrapper
+// and the host App's default layout (SetDefaultLayout) does NOT wrap it.
 func (g *ScreenGroup) Standalone() *ScreenGroup {
 	g.standalone = true
 	return g
 }
 
-// WithPolicy appends a Policy to the group's chain. Returns the group
-// for chaining. Chain is evaluated before any per-screen policies.
+// WithPolicy appends a Policy to the group's chain.
 func (g *ScreenGroup) WithPolicy(p Policy) *ScreenGroup {
 	if p == nil {
 		return g
@@ -123,8 +80,6 @@ func (g *ScreenGroup) WithPolicy(p Policy) *ScreenGroup {
 	return g
 }
 
-// normalizeGroupPrefix ensures the prefix starts with / and ends with /
-// (because it's a directory-like prefix for child screens).
 func normalizeGroupPrefix(p string) string {
 	if p == "" || p == "/" {
 		return "/"
@@ -152,42 +107,22 @@ func (g *ScreenGroup) Layout() *Layout {
 	return g.layout
 }
 
-// Screen registers a screen within this group. The screen's path is
-// resolved relative to the group's prefix. If the screen has no layout,
-// the group's layout is applied.
-//
-// The screen path can be:
-//   - Absolute ("/users"): used as-is, but must start with the group prefix
-//   - Relative ("users"): prefixed with the group's prefix
+// Screen registers a screen within this group.
 func (g *ScreenGroup) Screen(screen *Screen, layout *Layout) {
-	// Resolve path relative to group prefix
 	screen.Path = g.resolvePath(screen.Path)
 
-	// Apply layout: explicit > screen's own > group's layout
 	if layout != nil {
 		screen.Layout = layout
 	} else if screen.Layout == nil {
 		screen.Layout = g.layout
 	}
 
-	// Remember the innermost group so the renderer can compose all
-	// parent group layouts at render time (with proper
-	// data-cui-screen-group markers per level).
 	screen.group = g
 
 	g.screens = append(g.screens, screen)
 }
 
-// SubGroup creates a nested screen group. The child group's prefix is
-// resolved relative to this group's prefix, even with a leading slash.
-// Empty prefixes reuse the parent prefix; repeated slashes are normalized.
-// The child inherits this
-// group's layout unless it declares its own.
-//
-// Optional policies are appended to the parent's policy chain at
-// resolution time, they don't replace inherited policies. A child's
-// screens are gated by parent.policies + child.policies + screen.Policies
-// in that order.
+// SubGroup creates a nested screen group.
 func (g *ScreenGroup) SubGroup(prefix string, layout *Layout, policies ...Policy) *ScreenGroup {
 	childPrefix := normalizeGroupPrefix(path.Join(g.prefix, prefix))
 	child := &ScreenGroup{
@@ -203,7 +138,6 @@ func (g *ScreenGroup) SubGroup(prefix string, layout *Layout, policies ...Policy
 	return child
 }
 
-// resolvePath resolves a path relative to the group's prefix.
 func (g *ScreenGroup) resolvePath(path string) string {
 	if startsWithSlash(path) {
 		prefix := normalizeRoutePath(g.prefix)
@@ -213,12 +147,10 @@ func (g *ScreenGroup) resolvePath(path string) string {
 		}
 		return path
 	}
-	// Relative path, prepend group prefix
 	return g.prefix + path
 }
 
-// Screens returns all screens registered directly in this group
-// (not including sub-groups).
+// Screens returns all screens registered directly in this group (not including sub-groups).
 func (g *ScreenGroup) Screens() []*Screen {
 	return g.screens
 }
@@ -233,38 +165,25 @@ func (g *ScreenGroup) AllScreens() []*Screen {
 	return all
 }
 
-// RenderLayout wraps content in the group's layout. If the group has
-// no layout, returns content unchanged.
-//
-// The rendered wrapper carries a data-cui-screen-group attribute so
-// the runtime knows this is a layout boundary that should be preserved
-// during sibling-screen navigation.
+// RenderLayout wraps content in the group's layout.
 func (g *ScreenGroup) RenderLayout(content render.HTML) render.HTML {
 	return g.RenderLayoutCtx(context.Background(), content)
 }
 
-// RenderLayoutCtx is RenderLayout with the request context threaded into the
-// group layout's chrome.
+// RenderLayoutCtx is RenderLayout with the request context threaded into the group layout's chrome.
 func (g *ScreenGroup) RenderLayoutCtx(ctx context.Context, content render.HTML) render.HTML {
 	if g.layout == nil {
 		return content
 	}
 	wrapped := g.layout.WrapCtx(ctx, content)
-	// Wrap in a group marker div so the runtime can identify the boundary.
-	// The data-cui-screen-group attribute enables DOM-stable sibling nav.
 	return html.Div(html.DivConfig{
 		Class:      "cui-screen-group",
 		ExtraAttrs: map[string]string{"data-cui-screen-group": g.prefix},
 	}, wrapped)
 }
 
-// Ensure StaticComponent satisfies component.Component.
 var _ component.Component = (*StaticComponent)(nil)
 
-// groupChainContainsLayout reports whether any group in the chain
-// (innermost → outermost) already uses layout. Used by the renderer
-// to avoid wrapping the default layout TWICE when an app declares
-// the same layout both at the App level and on a ScreenGroup.
 func groupChainContainsLayout(innermost *ScreenGroup, layout *Layout) bool {
 	for g := innermost; g != nil; g = g.parent {
 		if g.layout == layout {
@@ -274,9 +193,6 @@ func groupChainContainsLayout(innermost *ScreenGroup, layout *Layout) bool {
 	return false
 }
 
-// groupChainIsStandalone reports whether any group in the chain is marked
-// Standalone, in which case the host App's default layout must NOT wrap the
-// composition (the group ships its own full shell).
 func groupChainIsStandalone(innermost *ScreenGroup) bool {
 	for g := innermost; g != nil; g = g.parent {
 		if g.standalone {

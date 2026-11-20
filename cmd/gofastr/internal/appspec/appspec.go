@@ -36,6 +36,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	"github.com/DonaldMurillo/gofastr/internal/inflect"
+	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
 type AppSpec struct {
@@ -1152,12 +1153,12 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 	return out, nil
 }
 
-// decodeDisplayDeclaration decodes an entity's display: group through the
-// declaration's own strict JSON shape, so the app spec refuses exactly the
-// keys the entity package refuses, with its error wrapped in the yaml
-// position. A present-but-empty block is a non-nil zero config, matching
-// how the scope and exposure groups decode.
-func decodeDisplayDeclaration(node *coreyaml.Node, context string) (*fwentity.DisplayConfig, error) {
+// decodeStrictConfig decodes an entity sub-block (display:, states:)
+// through the declaration's own strict JSON shape, so the app spec
+// refuses exactly the keys the entity package refuses, with its error
+// wrapped in the yaml position. A present-but-empty block is a non-nil
+// zero config, matching how the scope and exposure groups decode.
+func decodeStrictConfig[T any](node *coreyaml.Node, context string) (*T, error) {
 	if node == nil {
 		return nil, nil
 	}
@@ -1165,27 +1166,21 @@ func decodeDisplayDeclaration(node *coreyaml.Node, context string) (*fwentity.Di
 	if err != nil {
 		return nil, fmt.Errorf("app spec: %s: %w", context, err)
 	}
-	var d fwentity.DisplayConfig
-	if err := json.Unmarshal(data, &d); err != nil {
+	var cfg T
+	if err := jsonexact.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("app spec: %s: %w", context, err)
 	}
-	return &d, nil
+	return &cfg, nil
+}
+
+// decodeDisplayDeclaration decodes an entity's display: group.
+func decodeDisplayDeclaration(node *coreyaml.Node, context string) (*fwentity.DisplayConfig, error) {
+	return decodeStrictConfig[fwentity.DisplayConfig](node, context)
 }
 
 // decodeStatesDeclaration is decodeDisplayDeclaration's twin for states:.
 func decodeStatesDeclaration(node *coreyaml.Node, context string) (*fwentity.StatesConfig, error) {
-	if node == nil {
-		return nil, nil
-	}
-	data, err := json.Marshal(codegen.AnyValue(node))
-	if err != nil {
-		return nil, fmt.Errorf("app spec: %s: %w", context, err)
-	}
-	var s fwentity.StatesConfig
-	if err := json.Unmarshal(data, &s); err != nil {
-		return nil, fmt.Errorf("app spec: %s: %w", context, err)
-	}
-	return &s, nil
+	return decodeStrictConfig[fwentity.StatesConfig](node, context)
 }
 
 func mergeEntityScopeDeclaration(

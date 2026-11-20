@@ -1,0 +1,149 @@
+primitive: config
+summary: The core/config loader, which binds environment variables and other Sources into a typed struct through its config, default, required, sensitive and validate tags, with nested and embedded structs, redaction and a post-binding ConfigValidator hook.
+code:
+  - core/config/config.go
+docs:
+  - framework/docs/content/core-packages.md
+invariants:
+  - id: set-but-empty-is-present
+    rule: EnvSource reports a variable set to the empty string as present, and ChainedSource answers from the first source that has the key.
+    enforced_by:
+      - test: core/config.TestEnvSourceDistinguishesEmpty
+      - test: core/config.TestLoadChainedSources
+  - id: required-means-non-empty
+    rule: A required field fails Load when its resolved value is empty, a present empty key included, and is satisfied by a default when the key is absent.
+    enforced_by:
+      - test: core/config.TestRequiredRejectsEmptyValue
+      - test: core/config.TestLoadRequiredMissing
+      - test: core/config.TestSweepConfigDefaultSatisfiesRequired
+  - id: empty-value-keeps-field
+    rule: A present empty value leaves the field as the host set it, without its default, and the validate rules still check it.
+    enforced_by:
+      - test: core/config.TestEmptyValueKeepsHostValue
+      - test: core/config.TestSweepConfigEmptyValueSkipsDefault
+      - test: core/config.TestEmptyValueStillValidated
+      - test: core/config.TestValidationTagsCheckUnboundDefaults
+  - id: sensitive-never-in-errors
+    rule: A sensitive field's value or default never appears in a Load error, a ConfigValidator error scrubbed longest value first in its raw, Go-quoted, JSON and URL-escaped spellings up to two escapes deep.
+    enforced_by:
+      - test: core/config.TestSensitiveValueRedacted
+      - test: core/config.TestSensitiveRedactedInValidator
+      - test: core/config.TestRedactLongestSecretFirst
+      - test: core/config.TestRedactEscapedSecretSpellings
+      - test: core/config.TestSweepConfigSensitiveBadDefaultRedacted
+      - test: core/config.TestSweepConfigShadowedSensitiveDefaultRedactedInValidator
+  - id: key-naming
+    rule: A leaf reads its config tag or else its upper-cased field name, a named nested struct reads its fields under NAME_, and a nested pointer is allocated only when one of its keys is present.
+    enforced_by:
+      - test: core/config.TestSweepConfigUntaggedFieldReadsUpperName
+      - test: core/config.TestNestedStructPrefixed
+      - test: core/config.TestNamedStructFieldKeepsPrefix
+      - test: core/config.TestPointerNestedStructBindsOrErrors
+  - id: embeds-promote-like-json
+    rule: Embedded struct fields are promoted without a prefix, through pointer and unexported embeds, the shallower of two same-key fields wins, and a pointer embed is allocated before binding when any key promoted through it is present.
+    enforced_by:
+      - test: core/config.TestEmbeddedStructFieldsArePromoted
+      - test: core/config.TestEmbeddedPrefixedKeyIsNotRead
+      - test: core/config.TestUnexportedEmbedPromotes
+      - test: core/config.TestPointerEmbedAllocatedWhenKeyPresent
+      - test: core/config.TestUnexportedPointerEmbed
+      - test: core/config.TestShallowerFieldWins
+      - test: core/config.TestPointerEmbedEnforcesEarlierRequired
+      - test: core/config.TestRequiredPromotedFieldNamesKey
+  - id: shadowed-takes-default
+    rule: A shadowed field is never bound from a source and takes only its own default tag, a shadowed struct each field's default, and a shadowed pointer stays as it was.
+    enforced_by:
+      - test: core/config.TestShadowedFieldTakesItsDefault
+      - test: core/config.TestShadowedFieldBadDefaultFails
+      - test: core/config.TestShadowedPointerEmbedStaysNil
+      - test: core/config.TestSweepConfigShadowedNestedPointerStaysNil
+  - id: shape-refused-before-reading
+    rule: Load refuses a non-pointer or a pointer to a non-struct, a recursive struct, a key two embeds promote at the same depth and a config tag on an embedded struct, before it reads a source.
+    enforced_by:
+      - test: core/config.TestLoadNonPointer
+      - test: core/config.TestSweepConfigPointerToNonStructRefused
+      - test: core/config.TestRecursiveConfigTerminates
+      - test: core/config.TestRecursiveEmbedRefused
+      - test: core/config.TestSameDepthKeyIsAmbiguous
+      - test: core/config.TestTaggedEmbedRefused
+  - id: legacy-embed-key-warns
+    rule: A source key spelled under an embed's name that no field reads now is logged once per process and never fails Load.
+    enforced_by:
+      - test: core/config.TestLegacyEmbedKeyWarns
+      - test: core/config.TestLegacyKeyThroughEmbedChainWarns
+      - test: core/config.TestLegacyEmbedKeyQuietCases
+      - test: core/config.TestLegacyKeyOfShadowedFieldWarns
+  - id: values-parse-strictly
+    rule: A TextUnmarshaler binds through UnmarshalText ahead of its kind, an integer must fit the field's width, a float must be finite, and a duration is Go syntax or whole seconds that fit in int64 nanoseconds.
+    enforced_by:
+      - test: core/config.TestLoadBindsTextUnmarshaler
+      - test: core/config.TestLoadIntHonorsTargetWidth
+      - test: core/config.TestIntegerBindingHonorsWidth
+      - test: core/config.TestLoadFloatRejectsNonFinite
+      - test: core/config.TestDurationParsesMillis
+      - test: core/config.TestDurationParsesNanosAndMicros
+      - test: core/config.TestLoadDurationOverflowRejected
+  - id: validate-rules
+    rule: validate takes min, max and oneof only, integer and duration bounds compare exactly as int64 with duration bounds read as durations, and an unknown rule or one the field's type cannot take fails Load.
+    enforced_by:
+      - test: core/config.TestDocumentedValidationTags
+      - test: core/config.TestDurationBoundsReadAsDurations
+      - test: core/config.TestIntegerBoundsCompareExactly
+      - test: core/config.TestUnappliableValidationRulesRefused
+      - test: core/config.TestSweepConfigUnknownRuleRefused
+  - id: validator-hook-runs
+    rule: A config that implements ConfigValidator has Validate called after binding, and its error fails Load and MustLoad.
+    enforced_by:
+      - test: core/config.TestValidateHookErrors
+      - test: core/config.TestMustLoadPanicsOnValidate
+decisions:
+  - id: promote-embeds-like-json
+    date: 2026-11-19
+    status: accepted
+    decision: Embedded struct fields are promoted without the embed's name, resolved the way encoding/json resolves them, and a same-depth clash is refused where encoding/json would drop both silently.
+    rejected:
+      - option: Read an embed's fields under its name, BASE_PORT.
+        why: It was the old behaviour and surprised every reader of a config struct built from a shared base.
+      - option: Read a config tag on an embedded struct as its prefix.
+        why: Naming the field (Base Base) already gives a prefix, and a second way would make the key depend on a tag a reader can miss.
+    upholds: [embeds-promote-like-json, shape-refused-before-reading]
+  - id: legacy-key-warns-not-fails
+    date: 2026-11-19
+    status: accepted
+    decision: A key spelled the pre-promotion way is logged once, naming the key the field reads now, and Load still succeeds.
+    rejected:
+      - option: Fail Load on the old key.
+        why: An app that upgraded would refuse to boot over a key it may set for another binary.
+    upholds: [legacy-embed-key-warns]
+  - id: required-is-a-usable-value
+    date: 2026-11-19
+    status: accepted
+    decision: required checks the resolved value, not whether the key was present.
+    rejected:
+      - option: Check only that the key is present.
+        why: SECRET= in a .env, a ConfigMap key with no value or a secret-manager miss would satisfy required and bind the zero value.
+    upholds: [required-means-non-empty]
+  - id: scrub-validator-text
+    date: 2026-11-19
+    status: accepted
+    decision: Load scrubs every bound sensitive value, in its common escaped spellings, out of a ConfigValidator error's text.
+    rejected:
+      - option: Redact only the parse errors Load writes itself.
+        why: A host's Validate writing fmt.Errorf("bad DSN %q", c.DBURL) leaked the credential through MustLoad's panic, and a third-party error cannot be restructured.
+    upholds: [sensitive-never-in-errors]
+  - id: refuse-non-finite-and-overflow
+    date: 2026-11-19
+    status: accepted
+    decision: NaN, Inf and a seconds duration past int64 nanoseconds fail Load.
+    rejected:
+      - option: Bind them as parsed.
+        why: NaN passes every range check a Validate hook can write, and math.MaxInt64 seconds wrapped to -1s, read as expired or as no timeout.
+    upholds: [values-parse-strictly]
+  - id: config-validator-name
+    date: 2026-11-19
+    status: accepted
+    decision: The post-binding hook interface is named ConfigValidator.
+    rejected:
+      - option: Name it Validator.
+        why: A config struct that doubled as an entity would satisfy it through entity.Entity's own Validate method by accident.
+    upholds: [validator-hook-runs]

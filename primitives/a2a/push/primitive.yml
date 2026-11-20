@@ -1,0 +1,43 @@
+primitive: a2a.push
+summary: Push-notification delivery - registration-time URL checks, the SSRF-guarded client, and per-config ordered, bounded, best-effort POSTs.
+code:
+  - core/a2a/push.go
+docs:
+  - framework/docs/content/a2a.md
+invariants:
+  - id: push-url-refuses-internal
+    rule: validatePushURL refuses a non-http(s) scheme, userinfo, localhost, .localhost and .internal names and internal IPs (unless AllowPrivate), and credentials over plain http (unless AllowPrivate), at registration.
+    enforced_by:
+      - test: core/a2a.TestSweepInternalHostNamesRefused
+      - test: core/a2a.TestPushLoopbackRefusedWithoutAllowPrivate
+      - test: core/a2a.TestCredentialedPushOverHTTPRefused
+  - id: delivery-client-guarded
+    rule: Neither the default client nor a supplied one follows redirects, and a supplied plain *http.Transport is cloned with the dial-time guard rather than modified.
+    enforced_by:
+      - test: core/a2a.TestPushRedirectNotFollowed
+      - test: core/a2a.TestSweepSuppliedClientNeverFollowsRedirects
+      - test: core/a2a.TestPushPlainTransportDialGuarded
+  - id: delivery-bounded
+    rule: Each POST carries a 10s deadline on its request, at most 16 configs deliver at once and 16 events wait process-wide, one owner holds at most a quarter of each, and past a bound the event is dropped, never waited for.
+    enforced_by:
+      - test: core/a2a.TestPushRequestCarriesDeadline
+      - test: core/a2a.TestPushSlotsPerOwner
+      - test: core/a2a.TestPushQueueBounded
+      - test: core/a2a.TestPushBacklogBounded
+  - id: delivery-never-goes-backwards
+    rule: Deliveries to one config go one at a time in event order, and an event whose task version is older than one already enqueued for that config is dropped.
+    enforced_by:
+      - test: core/a2a.TestPushNeverGoesBackwards
+      - test: core/a2a.TestPushOrderPerConfig
+  - id: delivery-panic-contained
+    rule: A panic in the supplied client fails that one delivery through postGuarded's recover, and the drain goes on.
+    enforced_by:
+      - test: core/a2a.TestPushClientPanicContained
+decisions:
+  - id: best-effort-delivery
+    date: 2026-11-19
+    status: accepted
+    decision: A push is one attempt with no retry, and a failure is logged at Warn.
+    rejected:
+      - option: Retries with backoff.
+        why: Reliable delivery is battery/queue's job, and task progress must never wait on a receiver that is down.

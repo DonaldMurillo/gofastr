@@ -1,0 +1,65 @@
+primitive: i18n.phrase
+summary: Phrases - catalog keys with English text defined at package level - their translation and error wrapping, the catalog completeness check, and HTTPError, the translated plain-text refusal.
+code:
+  - core/i18n/phrase.go
+  - core/i18n/check.go
+  - core/i18n/http.go
+docs:
+  - framework/docs/content/i18n.md
+invariants:
+  - id: define-refuses-conflicts
+    rule: Define panics on a key that is not two or more dot-separated segments of ASCII letters, digits, _ and -, on empty English, and on a key already defined with other English.
+    enforced_by:
+      - test: core/i18n.TestDefineRefusesConflict
+      - test: core/i18n.TestDefineRefusesBadKeys
+  - id: phrase-text-falls-back-to-english
+    rule: Phrase.Text reads ctx's translator, else the default, renders the English with the same params on a miss, writes number params in the text's language, and the zero Phrase renders "".
+    enforced_by:
+      - test: core/i18n.TestPhraseEnglishWithoutTranslator
+      - test: core/i18n.TestPhraseUsesContextTranslator
+      - test: core/i18n.TestPhraseCatalogMissFallsBack
+      - test: core/i18n.TestPhraseParamsFormatNumbers
+      - test: core/i18n.TestZeroPhraseTextIsEmpty
+      - test: core/i18n.TestPhraseCodeIsLastSegment
+  - id: error-text-innermost-code
+    rule: ErrorText renders the first Phrased error with the causes it wraps and answers the innermost code, fills a non-zero frame's detail with an unphrased error, and with a zero frame sends the error's own text with no code.
+    enforced_by:
+      - test: core/i18n.TestErrorTextPrefersPhrasedError
+      - test: core/i18n.TestWrapTranslatesCause
+      - test: core/i18n.TestWrapPlainCauseKeepsFrameCode
+      - test: core/i18n.TestErrorTextFramesPlainError
+      - test: core/i18n.TestErrorTextZeroFrameKeepsAppText
+  - id: http-error-shape
+    rule: HTTPError sends a status outside 400-599 as 500, writes the phrase's text (its English when untranslated) as nosniff text/plain, and writes http.StatusText for a zero phrase or an untranslated status phrase; HTTPErrorFor never writes an unphrased error's own text.
+    enforced_by:
+      - test: core/i18n.TestHTTPErrorClampsStatus
+      - test: core/i18n.TestHTTPErrorTranslates
+      - test: core/i18n.TestHTTPErrorUntranslatedIsStatusText
+      - test: core/i18n.TestHTTPErrorZeroPhraseUsesStatusText
+      - test: core/i18n.TestSweepI18nHTTPErrorWritesOwnPhraseUntranslated
+      - test: core/i18n.TestHTTPErrorNilRequest
+      - test: core/i18n.TestStatusPhraseCoversRefusals
+      - test: core/i18n.TestStatusPhraseEveryNamedError
+  - id: no-bare-http-error
+    rule: Framework code writes a plain-text refusal through i18n.HTTPError, never a bare http.Error.
+    enforced_by:
+      - analyzer: rawtext
+  - id: check-catalog-problems
+    rule: CheckCatalog reports a key no Define registered, a translation whose placeholder set differs from the English (a plural form may drop only the count), a Required phrase the locale lacks, and a plural without other, sorted by key.
+    enforced_by:
+      - test: core/i18n.TestCheckCatalogFindsEachProblem
+      - test: core/i18n.TestCheckCatalogPluralMustCoverEnglish
+      - test: core/i18n.TestCheckCatalogPluralFormKeepsParams
+      - test: core/i18n.TestCheckCatalogSpacedPlaceholder
+      - test: core/i18n.TestCheckReportsPluralWithoutOther
+      - test: core/i18n.TestCheckCatalogCleanAndNil
+      - test: core/i18n.TestPlaceholdersSortedDistinct
+decisions:
+  - id: one-key-one-sentence
+    date: 2026-11-19
+    status: accepted
+    decision: Define panics when a key is defined again with other English.
+    rejected:
+      - option: Let the last definition win.
+        why: Two packages could claim one key for two sentences and the catalog would translate only one of them.
+    upholds: [define-refuses-conflicts]

@@ -34,20 +34,7 @@ func hookScopedNotesHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 		},
 		Exposure: public,
 	}.WithTimestamps(false))
-	posts := entity.Define("posts", entity.EntityConfig{
-		Table: "posts",
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String},
-			{Name: "note_id", Type: schema.String},
-		},
-		Relations: []entity.Relation{
-			entity.BelongsTo("lead", "notes", "note_id").WithCascadeWrite(true),
-			entity.HasOne("note", "notes", "post_id").WithCascadeWrite(true),
-			entity.HasMany("notes", "notes", "post_id").WithCascadeWrite(true),
-			entity.ManyToMany("tagged", "notes", "post_notes", "post_id", "note_id").WithCascadeWrite(true),
-		},
-		Exposure: public,
-	}.WithTimestamps(false))
+	posts := cascadePostsEntity()
 	notes.SetDB(db)
 	posts.SetDB(db)
 	ch := NewCrudHandler(posts, db).WithJSONCase(CaseSnake)

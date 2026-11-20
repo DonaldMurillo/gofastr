@@ -98,10 +98,16 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 			handler: p.toolLogs,
 		},
 	}
+	hints := mcp.WithAnnotations(mcp.Annotations{
+		ReadOnlyHint:    mcp.Bool(true),
+		DestructiveHint: mcp.Bool(false),
+		IdempotentHint:  mcp.Bool(true),
+		OpenWorldHint:   mcp.Bool(false),
+	})
 	for _, t := range tools {
-		opts := []mcp.ToolOption{mcp.WithToolGate(gate)}
+		opts := []mcp.ToolOption{hints, mcp.WithToolGate(gate)}
 		if devImplied {
-			opts = []mcp.ToolOption{mcp.WithDevImplied()}
+			opts = []mcp.ToolOption{hints, mcp.WithDevImplied()}
 		}
 		if err := app.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
 			return fmt.Errorf("telemetry: register %s: %w", t.name, err)

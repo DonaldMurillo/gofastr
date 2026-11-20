@@ -1,0 +1,131 @@
+primitive: webmcp
+summary: Experimental WebMCP bridge - a Host collects server-declared tools, Mount freezes them into a manifest and a bridge script, and the bridge registers each tool on the page's modelContext and proxies its execute() to the declared same-origin endpoint.
+code:
+  - framework/experimental/webmcp/
+docs:
+  - framework/docs/content/webmcp.md
+on_change:
+  - The API tracks the WebMCP proposal (Chromium 146+, --enable-blink-features=WebMCP); a change to what the bridge passes to registerTool is checked in a real browser with TestBridgeRegistersAndExecutesTools, which skips without Chromium.
+twins:
+  - job: Decide whether a string is a same-origin absolute path with no scheme, host, fragment, backslash, control byte or dot segment.
+    why: validToolPath must also accept a query and check the percent-decoded path, uihost's validator is unexported and parses with url.Parse; folding them is work not yet done.
+    sites:
+      - path: framework/experimental/webmcp/webmcp.go
+        note: validToolPath, for Tool.Path at Register and Handle.
+      - path: framework/uihost/register_script.go
+        note: validExternalScriptSrc, for RegisterExternalScript srcs.
+  - job: Put the page's CSRF meta token on an unsafe-method fetch as X-CSRF-Token.
+    why: The bridge is a standalone script that runs on hosts that render their own tag without the core runtime, so it cannot call the runtime's helper.
+    sites:
+      - path: framework/experimental/webmcp/bridge.js
+        note: dispatch, for every non-GET tool call.
+      - path: core-ui/runtime/src/rpc.js
+        note: _csrf, for runtime RPCs.
+invariants:
+  - id: tool-name-grammar
+    rule: Register and Handle refuse a tool name outside [A-Za-z0-9_.-]{1,128}, the WebMCP grammar the browser enforces in registerTool.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestRegisterEnforcesToolNameGrammar
+  - id: tool-path-same-origin
+    rule: A Tool.Path is refused unless it is one leading slash and a path with no scheme, host, fragment, backslash, control byte or "." or ".." segment, checked on both the raw path and its percent-decoded form.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestRegisterRejectsBadPaths
+      - test: framework/experimental/webmcp.TestPathRejectsEncodedDotSegments
+  - id: declarations-are-copied
+    rule: Register and Handle copy InputSchema, OutputSchema and Examples, so a caller mutating its slices after registration cannot change the manifest Mount freezes.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestRegisterClonesInputSchema
+      - test: framework/experimental/webmcp.TestExamplesClonedFromCaller
+      - test: framework/experimental/webmcp.TestOutputSchemaValidatedAndPreserved
+  - id: register-and-handle-admit-alike
+    rule: Register and Handle refuse the same declarations through one check - after Mount, a duplicate name, the reserved orientation tool name while instructions are set, and an undeclared group.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestHandleRefusesWhatRegisterRefuses
+      - test: framework/experimental/webmcp.TestRegisterAfterMountRefused
+      - test: framework/experimental/webmcp.TestHandleRefusedAfterMount
+  - id: mount-needs-tools
+    rule: Mount fails with zero registered tools.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestMountRefusesZeroTools
+  - id: failed-mount-leaves-nothing
+    rule: A Mount that fails registers no route and no script, leaves the Host unmounted, and a retry adds the orientation tool to the manifest exactly once.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestMountFailureLeavesHostRemountable
+      - test: framework/experimental/webmcp.TestMountRefusesConflictingRoutes
+      - test: framework/experimental/webmcp.TestFailedMountRetryAddsOrientationToolOnce
+  - id: mount-carries-group-prefix
+    rule: On a grouped router the served asset routes and the returned script URL carry the group prefix.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestMountOnGroupedRouterCarriesThePrefix
+  - id: manifest-embedded-as-json-string
+    rule: The bridge script carries the tool manifest as a quoted JSON string it passes to JSON.parse, never as a JavaScript object literal.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestScriptEscapesHostileToolFields
+      - test: framework/experimental/webmcp.TestBridgeRegistersAndExecutesTools
+  - id: bridge-calls-as-the-user
+    rule: The bridge calls a tool's endpoint with a same-origin fetch carrying the visitor's cookies and the X-Gofastr-WebMCP marker, returns the body as text with isError set on a non-2xx status, and uses the same error result for network failures.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestBridgeRegistersAndExecutesTools
+      - test: framework/experimental/webmcp.TestStandalonePolyfill
+  - id: cancellation-reaches-http
+    rule: The invocation's AbortSignal cancels the HTTP request and the caller sees an aborted execution.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestPolyfillCancelsInFlightRequest
+  - id: bridge-get-input-wins
+    rule: For a GET tool the bridge sets each non-null input key on the query, replacing a baked-in parameter of the same name, and skips null values.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestBridgeRegistersAndExecutesTools
+  - id: bridge-csrf-at-dispatch
+    rule: For a non-GET tool the bridge reads the csrf-token meta tag when the call is made, not when the script loads, and sends it as X-CSRF-Token.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestBridgeReadsCSRFMetaAtDispatchTime
+  - id: bridge-noop-without-api
+    rule: On a browser without native registerTool, the default bridge registers nothing. An opt-in polyfill ships in the versioned bridge asset and preserves usable native contexts.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestStandalonePolyfill
+      - test: framework/experimental/webmcp.TestPolyfillChangesOnlyBridgeAsset
+decisions:
+  - id: check-names-on-the-server
+    date: 2026-11-18
+    status: accepted
+    decision: Register refuses a name outside the WebMCP grammar instead of passing it to the browser.
+    rejected:
+      - option: Let registerTool reject it in the browser.
+        why: The browser rejects asynchronously, so to the agent the tool just never exists and nothing points at the declaration.
+    upholds: [tool-name-grammar]
+  - id: manifest-as-json-string
+    date: 2026-11-18
+    status: accepted
+    decision: The manifest is baked into bridge.js as a quoted JSON string read with JSON.parse.
+    rejected:
+      - option: Bake it in as a JavaScript object literal.
+        why: In a literal an own "__proto__" key in a schema becomes a prototype setter, and a duplicate "__proto__" key, which json.Valid accepts, is a SyntaxError that kills the whole bridge.
+    upholds: [manifest-embedded-as-json-string]
+  - id: freeze-at-mount
+    date: 2026-11-18
+    status: accepted
+    decision: The tool set freezes at Mount, and Register or Handle after it fail.
+    rejected:
+      - option: Accept tools after Mount and rebuild the script.
+        why: Pages rendered before and after the change would ship different tool sets under one hash-versioned URL scheme.
+    upholds: [register-and-handle-admit-alike]
+  - id: agent-acts-as-the-user
+    date: 2026-11-18
+    status: accepted
+    decision: A tool call re-enters the app as an ordinary same-origin HTTP request with the visitor's session, so auth, CSRF, owner scoping and rate limits apply unchanged.
+    rejected:
+      - option: A separate agent channel with its own credential.
+        why: It would need an authorization path beside the app's, and a tool would no longer be bounded by what the signed-in user may already do from devtools.
+    upholds: [bridge-calls-as-the-user]
+  - id: vendor-the-polyfill-unmodified
+    date: 2026-11-20
+    status: accepted
+    decision: WithPolyfill embeds the upstream standalone bundle byte for byte from a vendor/ directory, so the repo's JS walkers skip it like any other vendored code.
+    rejected:
+      - option: Rewrite the bundle to pass the repo's JS lints (no var, no arguments, own-property registry reads).
+        why: A hand-edited copy no longer matches the npm archive hash in THIRD_PARTY_NOTICES.md, and every upgrade would repeat the edit.
+      - option: Keep it under third_party/ and add that name to each walker's skip list.
+        why: The skip lists are copied across several walkers in core-ui/check and cmd/repolint; one more name means editing all of them, while vendor/ is already skipped everywhere.
+      - option: Load it from a CDN or require npm.
+        why: The point of the option is a Go-only app that serves the fallback from its own origin under the bridge's scope and authorization.
+    upholds: [bridge-noop-without-api]

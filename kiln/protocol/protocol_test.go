@@ -4,29 +4,15 @@ import (
 	"context"
 	"testing"
 
-	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
-
-	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/kiln/db"
+	"github.com/DonaldMurillo/gofastr/kiln/internal/kilntest"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
-	"github.com/DonaldMurillo/gofastr/kiln/live"
 	"github.com/DonaldMurillo/gofastr/kiln/protocol"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
 func newTools(t *testing.T) *protocol.Tools {
 	t.Helper()
-	d, cleanup, err := db.EphemeralSQLite("kiln-proto")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(cleanup)
-	factory := func() *framework.App { return framework.NewApp(framework.WithDB(d)) }
-	l, err := live.New(journal.NewMemory(), factory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return protocol.New(l)
+	return kilntest.NewTools(t, "kiln-proto")
 }
 
 func TestAddEntityHappyPath(t *testing.T) {

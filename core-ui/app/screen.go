@@ -28,39 +28,25 @@ const (
 	ScreenDialog
 )
 
-// ScreenTitler is an optional interface for components that declare their
-// own page title. The returned string is the page-specific portion, the
-// framework appends the app name from AppConfig.Name to produce the full
-// <title>. For example, ScreenTitle returning "Dashboard" with
-// AppConfig.Name "MyApp" produces <title>Dashboard — MyApp</title>.
-//
-// ctx is the request's on every render, so a title built from a phrase
-// (i18n.Phrase.Text) speaks the reader's language. Register also reads it
-// once with a bare context for the route table; that copy is the
-// phrase's English.
+// ScreenTitler is an optional interface for components that declare their own page title.
 type ScreenTitler interface {
 	ScreenTitle(ctx context.Context) string
 }
 
-// ScreenDescriber is an optional interface for components that declare their
-// own page description (used for route preloading metadata and SEO). ctx
-// follows the ScreenTitler rules.
+// ScreenDescriber is an optional interface for components that declare their own page description
+// (used for route preloading metadata and SEO).
 type ScreenDescriber interface {
 	ScreenDescription(ctx context.Context) string
 }
 
-// RefuseRetiredScreenMethods panics on a component still declaring the
-// no-argument ScreenTitle, ScreenDescription, ScreenSEO or ScreenSchema.
-// Those compile but satisfy no interface, so the page would lose its
-// title, description or SEO without a word.
+// RefuseRetiredScreenMethods panics on a component still declaring the no-argument ScreenTitle,
+// ScreenDescription, ScreenSEO or ScreenSchema.
 func RefuseRetiredScreenMethods(where string, comp any) {
 	if comp == nil {
 		return
 	}
 	t := reflect.TypeOf(comp)
 	for _, name := range retiredScreenMethods {
-		// The method's type counts the receiver: the receiver alone is
-		// the retired spelling.
 		if m, ok := t.MethodByName(name); ok && m.Type.NumIn() == 1 {
 			panic(fmt.Sprintf("app: %s: %T declares %s() with no context; "+
 				"it is %s(ctx context.Context) now", where, comp, name, name))
@@ -68,52 +54,28 @@ func RefuseRetiredScreenMethods(where string, comp any) {
 	}
 }
 
-// retiredScreenMethods are the screen methods that take the request
-// context, so their words follow the reader's language. ScreenSEO and
-// ScreenSchema live in framework/uihost, which this package cannot name,
-// hence the check by name and arity.
 var retiredScreenMethods = []string{"ScreenTitle", "ScreenDescription", "ScreenSEO", "ScreenSchema"}
 
-// ScreenLanger is an optional interface for components that declare the
-// document language of their own page as a BCP-47 tag ("es", "pt-BR"). It is
-// read AFTER Load, so a dynamic route can take the tag from the content it
-// fetched, and it beats App.LangFunc for that page. Returning "" falls through
-// to App.LangFunc, then App.Lang, then "en".
-//
-// Implement it on any page whose language differs from the rest of the site.
-// Without it the page claims the site language, which mispronounces the text in
-// a screen reader (WCAG 3.1.1) and misfiles it in any indexer that reads
-// <html lang>.
+// ScreenLanger is an optional interface for components that declare the document language of their
+// own page as a BCP-47 tag ("es", "pt-BR").
 type ScreenLanger interface {
 	ScreenLang() string
 }
 
-// ScreenTyper is an optional interface for components that declare their
-// screen type. If not implemented, the screen defaults to ScreenPage.
-// Most screens can omit this, only implement it for drawers, sheets, or dialogs.
+// ScreenTyper is an optional interface for components that declare their screen type.
 type ScreenTyper interface {
 	ScreenType() ScreenType
 }
 
-// ScreenSpec is a convenience interface that groups ScreenTitler,
-// ScreenDescriber, and ScreenTyper. Components can implement the full
-// interface, or implement just the individual interfaces they need.
-// For example, a component that only needs ScreenTitle can implement
-// ScreenTitler alone, ScreenType defaults to ScreenPage and description
-// defaults to empty.
-//
-// The builder methods (WithTitle, WithDescription, WithScreenType) still
-// work as overrides when using RegisterScreen instead of Register.
+// ScreenSpec is a convenience interface that groups ScreenTitler, ScreenDescriber, and ScreenTyper.
 type ScreenSpec interface {
 	ScreenTitler
 	ScreenDescriber
 	ScreenTyper
 }
 
-// ScreenComponentID is an optional extension of ScreenSpec that lets a screen
-// declare its component ID for action compilation. If not implemented, the
-// ID is derived from the route path. The component ID must match the
-// data-component attribute in the rendered HTML.
+// ScreenComponentID is an optional extension of ScreenSpec that lets a screen declare its component
+// ID for action compilation.
 type ScreenComponentID interface {
 	ScreenSpec
 	// ComponentID returns the ID used for action registration and data-component.
@@ -121,42 +83,16 @@ type ScreenComponentID interface {
 }
 
 // ScreenActions is an optional interface for screens that declare server actions.
-// The host compiles them at Mount, and again at App.Start for a screen a
-// plugin registered after Mount; a screen registered once the app is
-// serving is not compiled, and its data-action clicks answer 404.
-// The Actions method uses component.On() to register handlers, same as InteractiveComponent.
 type ScreenActions interface {
 	Actions()
 }
 
-// ScreenLoader is an optional interface for screens that need to fetch data
-// before rendering. Load runs AFTER route params have been injected and AFTER
-// DI services are wired, but BEFORE Render. Mutating fields on the screen is
-// the expected pattern, those fields are then read by Render.
-//
-// The same Load runs for both SSR (per-request) and SSG (at build time), so
-// implementations should be deterministic given the same context inputs.
-// Network calls are fine; non-deterministic state (random IDs, time-of-day
-// branches) will produce different output between SSG runs.
+// ScreenLoader is an optional interface for screens that need to fetch data before rendering.
 type ScreenLoader interface {
 	Load(ctx context.Context) error
 }
 
-// StaticPathsProvider is an optional interface for screens that mount on a
-// dynamic route pattern (e.g. "/products/:slug") and want to participate in
-// static-site generation. The returned slice is one entry per concrete URL
-// the SSG build should produce; each entry maps each ":param" in the route
-// pattern to the value used for that build.
-//
-//	func (s *ProductDetailScreen) StaticPaths(ctx context.Context) []map[string]string {
-//	    return []map[string]string{
-//	        {"slug": "device"},
-//	        {"slug": "gadget"},
-//	    }
-//	}
-//
-// Routes whose screen does not implement StaticPathsProvider are skipped at
-// build time (they remain reachable via SSR if the server is running).
+// StaticPathsProvider lists the concrete params a screen on a dynamic pattern is exported for.
 type StaticPathsProvider interface {
 	StaticPaths(ctx context.Context) []map[string]string
 }
@@ -176,71 +112,39 @@ type Screen struct {
 	// Component is the component that renders this screen.
 	Component component.Component
 	// Layout is an optional layout override for this screen.
-	Layout *Layout
-	// policies is the screen-level policy chain. Evaluated after any
-	// parent ScreenGroup policies (outermost→innermost). The first
-	// non-Allow Decision wins. Use WithPolicy to add; PolicyChain to read.
-	policies []Policy
-	// notFoundOutcome identifies the synthetic 404 page. A missing layout
-	// outlet must not replace its path-aware body with a pathless fallback.
+	Layout          *Layout
+	policies        []Policy
 	notFoundOutcome bool
+	errorOutcome    bool
 
 	// NoLLMMD disables auto-generated /path/llm.md for this screen.
 	NoLLMMD bool
-	// Article marks the screen's content as an article so browsers offer
-	// their built-in Reader Mode (Safari Reader, Firefox Reader View) and
-	// render it well. Set with the AsArticle registration option; the
-	// framework wraps the content in <article> and synthesizes Article
-	// JSON-LD + og:type=article, deriving the headline and description
-	// from the screen's own title and description. For richer reader-view
-	// metadata (byline, date, cover image) also implement ScreenArticle.
+	// Article marks the screen's content as an article so browsers offer their built-in Reader Mode
+	// (Safari Reader, Firefox Reader View) and render it well.
 	Article bool
 
-	// NoSPA excludes the screen from the client route manifest: links to
-	// it resolve as full document loads instead of soft navigations. For
-	// hosts whose pages bind behavior at script load (legacy page-runtimes)
-	// a soft swap never re-runs them, so every handler on the destination
-	// dies. Screen-level granular alternative to per-link data-cui-nav=off.
+	// NoSPA excludes the screen from the client route manifest: links to it resolve as full document
+	// loads instead of soft navigations.
 	NoSPA bool
 
-	// Intercept, when set, makes this screen present as an overlay for
-	// a soft navigation that started on the declared origin route. Nil
-	// (the default) means the screen always renders as itself. See
-	// intercept.go.
+	// Intercept, when set, makes this screen present as an overlay for a soft navigation that started
+	// on the declared origin route.
 	Intercept *Intercept
 
-	// Preload declares how the client may prefetch this route before it is
-	// navigated to: "" (never, the default), PreloadHover, PreloadVisible,
-	// or PreloadEager. Set with the Preload registration option; carried to
-	// the client in the route manifest.
+	// Preload declares how the client may prefetch this route before it is navigated to: "" (never, the
+	// default), PreloadHover, PreloadVisible, or PreloadEager.
 	Preload string
 
-	// group is the innermost ScreenGroup this screen belongs to, when
-	// registered via group.Screen. Nil for screens registered directly
-	// on the router. When set, the renderer composes all parent group
-	// layouts (innermost→outermost), each wrapped in a
-	// data-cui-screen-group marker so the runtime can preserve the
-	// matching layout shell during sibling-screen navigation.
 	group *ScreenGroup
 
-	// resolvers are this screen's own route resolvers, consulted
-	// before any group's for the same key. See resolver.go.
 	resolvers []resolverDecl
 
-	// ownStyle is the screen's owned style (WithStyle); nil for none.
-	// wrapArticle stamps its name on the screen's wrapper.
 	ownStyle *ownstyle.Sheet
 
-	// fills are this screen's outlet-fill declarations, keyed by
-	// (layout, outlet). Resolved by resolveFills on every render; see
-	// fill.go..
 	fills map[*Outlet]fillDecl
 
-	// Loading declares what the SWAP SLOT shows while a navigation to
-	// this screen is in flight (, rendered
-	// once into the route manifest the client already carries, shown in
-	// the swap slot only. The screen's own declaration wins over any
-	// group's.
+	// Loading declares what the SWAP SLOT shows while a navigation to this screen is in flight (,
+	// rendered once into the route manifest the client already carries, shown in the swap slot only.
 	Loading *Loading
 }
 
@@ -254,15 +158,7 @@ func NewScreen(path string, comp component.Component) *Screen {
 	}
 }
 
-// RoutePath returns the app route this screen is mounted at (the [Screen.Path]
-// field), e.g. "/reports".
-//
-// It is the contract an embed surface carries: framework/embed.Surface holds
-// the screen rather than a path string, so the link from a surface to the
-// component tree it renders is a Go value, followable by a human, a static
-// analyzer, and the boot-time server-action walk, instead of a string the
-// framework has to resolve against a route table. Named for the route it
-// occupies, not as a field accessor.
+// RoutePath returns the app route this screen is mounted at ([Screen.Path]).
 func (s *Screen) RoutePath() string { return s.Path }
 
 // WithTitle sets the screen's page title.
@@ -277,17 +173,13 @@ func (s *Screen) WithDescription(desc string) *Screen {
 	return s
 }
 
-// WithLoading declares what the swap slot shows while a navigation to
-// this screen is in flight (, . Overrides any
-// group-level WithLoading for this screen.
+// WithLoading declares what the swap slot shows while a navigation to this screen is in flight (, .
 func (s *Screen) WithLoading(ld *Loading) *Screen {
 	s.Loading = ld
 	return s
 }
 
-// WithPolicy appends a Policy to the screen's own chain. The screen's
-// chain is evaluated after any parent ScreenGroup policies; the first
-// non-Allow Decision wins. Call multiple times to add several policies.
+// WithPolicy appends a Policy to the screen's own chain.
 func (s *Screen) WithPolicy(p Policy) *Screen {
 	if p == nil {
 		return s
@@ -296,9 +188,8 @@ func (s *Screen) WithPolicy(p Policy) *Screen {
 	return s
 }
 
-// PolicyChain returns a copy of the screen's own policy chain (does
-// not include inherited group policies, use EffectivePolicies for the
-// full walk). Returns nil when no policies are attached.
+// PolicyChain returns a copy of the screen's own policy chain (does not include inherited group
+// policies, use EffectivePolicies for the full walk).
 func (s *Screen) PolicyChain() []Policy {
 	if len(s.policies) == 0 {
 		return nil
@@ -308,8 +199,7 @@ func (s *Screen) PolicyChain() []Policy {
 	return out
 }
 
-// ParamSetter is implemented by components that accept route parameters
-// before rendering. The app calls SetParams after resolving a dynamic route.
+// ParamSetter is implemented by components that accept route parameters before rendering.
 type ParamSetter interface {
 	SetParams(params map[string]string)
 }
@@ -344,28 +234,6 @@ func NewDialog(path string, comp component.Component) *Screen {
 	}
 }
 
-// newInstance returns a fresh per-request copy of Component so the
-// SetParams / Inject / Load / Render pipeline operates on storage that
-// no other request can see. Without this, a registered screen instance
-// is shared across requests, and any field a Load forgets to reset
-// leaks the previous request's data into the next render (e.g. the
-// "/foods/oatmeal renders Coffee because the previous request stored
-// Coffee in s.food" bug).
-//
-// For pointer-to-struct components the implementation shallow-copies
-// the registration-time value into a freshly-allocated struct. That
-// preserves construction-time configuration (literal field values set
-// when the host called `&FooScreen{Greeting: "hi"}`) while giving the
-// request its own storage for everything Load mutates.
-//
-// Non-pointer / non-struct components (e.g. function-style stateless
-// components) are returned as-is because there is no per-instance
-// state to leak.
-//
-// A note on shared references: shallow copy means slice / map / pointer
-// fields are still aliased. Construction-time fields shouldn't be
-// mutated during a render; Load should always reassign collection
-// fields rather than mutate them in place.
 func (s *Screen) newInstance() component.Component {
 	if s.Component == nil {
 		return nil
@@ -374,17 +242,12 @@ func (s *Screen) newInstance() component.Component {
 }
 
 // Render renders the screen's component with appropriate ARIA landmarks.
-// Equivalent to RenderCtx(context.Background()), use RenderCtx when a
-// request context is available so ContextComponent screens receive it.
 func (s *Screen) Render() render.HTML {
 	return s.RenderCtx(context.Background())
 }
 
-// RenderCtx renders the screen's component with ARIA landmarks, passing
-// ctx through to ContextComponent implementations. The render runs under
-// the SSR containment (SafeRenderCtx): a panicking screen renders its
-// fallback rather than escaping — the same net every other host-supplied
-// render hook on the pipeline gets.
+// RenderCtx renders the screen's component with ARIA landmarks, passing ctx through to
+// ContextComponent implementations.
 func (s *Screen) RenderCtx(ctx context.Context) render.HTML {
 	content, renderErr := component.SafeRenderCtx(ctx, s.Component)
 	if renderErr != nil {
@@ -394,10 +257,6 @@ func (s *Screen) RenderCtx(ctx context.Context) render.HTML {
 	return wrapByScreenType(s.Type, s.Title, content)
 }
 
-// wrapByScreenType applies the ARIA scaffolding that matches t. Exported
-// at package scope so callers that need to substitute a different
-// component (e.g. RenderAlt) can reuse the wrapping without copying the
-// Screen struct.
 func wrapByScreenType(t ScreenType, title string, content render.HTML) render.HTML {
 	switch t {
 	case ScreenPage:
@@ -423,7 +282,6 @@ func wrapByScreenType(t ScreenType, title string, content render.HTML) render.HT
 		}, content)
 
 	default:
-		// Fallback: treat as page.
 		return html.Main(html.MainConfig{}, content)
 	}
 }
@@ -444,21 +302,11 @@ func (t ScreenType) String() string {
 	}
 }
 
-// ValidateScreenOutput checks a screen's rendered output for common mistakes
-// and returns a slice of warning strings. An empty slice means no issues.
-// This is intended for dev-mode linting, it does not affect production
-// rendering.
-//
-// Currently checks:
-//   - Nested <main> elements: ScreenPage screens are already wrapped in <main>
-//     by the framework, so including <main> in the component output creates
-//     nested <main> elements (invalid HTML).
+// ValidateScreenOutput checks a screen's rendered output for common mistakes and returns a slice of
+// warning strings.
 func ValidateScreenOutput(screen *Screen, output string) []string {
 	var warnings []string
 
-	// Only check <main> nesting for page-type screens. Drawers, sheets,
-	// and dialogs don't get the <main> wrapper, so <main> in their output
-	// is fine.
 	if screen.Type == ScreenPage {
 		if strings.Contains(output, "<main") {
 			warnings = append(warnings,

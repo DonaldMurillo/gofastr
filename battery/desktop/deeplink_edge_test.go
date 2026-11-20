@@ -14,11 +14,7 @@ import (
 // An escaped "?" or "#" in a link's path stays part of the path: the
 // default mapping builds from the escaped path, not the decoded one.
 func TestDeepLinkKeepsEscapedPath(t *testing.T) {
-	app, d := uiApp(t, desktop.Config{
-		Title:    "DL",
-		DeepLink: &desktop.DeepLinkConfig{Scheme: "notes"},
-	})
-	h := desktoptest.Run(t, app, d)
+	h := notesHarness(t)
 
 	h.OpenURL("notes://notes/a%3Fb%23c?x=1")
 	h.Wait("the deep-link navigation", func() bool { return len(h.Navigations()) == 1 })
@@ -30,11 +26,7 @@ func TestDeepLinkKeepsEscapedPath(t *testing.T) {
 // A percent-encoded dot segment is a traversal too: a URL parser reads
 // %2e%2e as "..". Escaped paths must not carry one past the grammar.
 func TestDeepLinkRefusesEncodedDots(t *testing.T) {
-	app, d := uiApp(t, desktop.Config{
-		Title:    "DL",
-		DeepLink: &desktop.DeepLinkConfig{Scheme: "notes"},
-	})
-	h := desktoptest.Run(t, app, d)
+	h := notesHarness(t)
 
 	h.OpenURL("notes://host/%2e%2e/etc")
 	h.OpenURL("notes://host/.%2E/etc")

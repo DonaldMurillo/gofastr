@@ -100,49 +100,7 @@ func renderClient(decls []framework.EntityDeclaration) string {
 // is a stream, not a buffer: it stays line-bounded via scanner.Buffer.
 const maxBodyBytes = 1 << 20
 
-// Client is a typed HTTP client targeting the gofastr server's CRUD routes.
-// Pass any *http.Client (httptest, retryable wrapper, etc.): Client never
-// closes it.
-//
-// Token, when set, is sent as "Authorization: Bearer <Token>" on every
-// request. Pair it with the server's API-token middleware
-// (auth.TokenMiddleware) and a scoped token minted via the app's
-// /auth/tokens endpoints; leave empty for cookie/session or public APIs.
-type Client struct {
-	BaseURL string
-	HTTP    *http.Client
-	Token   string
-}
-
-// NewClient constructs a Client with the default http.Client when one is
-// not supplied. BaseURL should NOT include a trailing slash. The default
-// refuses redirects: requests carry the bearer token when Token is set,
-// and a 3xx would re-send it to whatever origin the response names. Pass
-// your own *http.Client to keep a redirect policy.
-func NewClient(baseURL string, httpClient *http.Client) *Client {
-	if httpClient == nil {
-		//gofastr:allow(clienttimeout) requests carry the caller's context (http.NewRequestWithContext); a Client.Timeout would kill Watch's long-lived SSE stream mid-subscription
-		httpClient = &http.Client{
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
-	}
-	return &Client{BaseURL: baseURL, HTTP: httpClient}
-}
-
-// APIError is returned for non-2xx responses. Status is the HTTP code;
-// Body holds the raw response (capped at maxBodyBytes) so callers can
-// decode application-level error fields if they want.
-type APIError struct {
-	Status int
-	Body   []byte
-}
-
-func (e *APIError) Error() string {
-	return fmt.Sprintf("api: %d: %s", e.Status, string(e.Body))
-}
-
+` + sdkClientCore.render() + `
 // doJSON marshals body (when non-nil), sends method+path, and decodes the
 // 2xx response into out. Non-2xx returns an *APIError; transport errors
 // pass through.

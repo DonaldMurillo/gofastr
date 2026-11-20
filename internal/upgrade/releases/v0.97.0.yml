@@ -1,5 +1,5 @@
 version: v0.97.0
-title: Pending release
+title: SDKs from an OpenAPI document, MCP tool annotations, and routes that answer like an unknown URL
 notes:
   - change: "BREAKING - the admin account form's password change has no confirm field, and the i18nui.AdminConfirmPassword phrase is gone"
     breaking: true
@@ -475,3 +475,52 @@ notes:
     breaking: true
     guidance: "Delete calls to window.__gofastr.textarea.rescan(). Content the runtime swaps in is scanned on insert; nothing in the framework called the hook."
     nodetect: "the hook was read from app JavaScript, which the scanner does not parse"
+  - change: "BREAKING - auth.PasskeyStore gains RenamePasskey(ctx, userID, id, name) (bool, error); both built-in stores implement it"
+    breaking: true
+    hits: review
+    guidance: "A custom PasskeyStore adds RenamePasskey: set the name of the user's passkey with that id and answer false when the user has none. It may also store PasskeyCredential.Transports and AAGUID, which registration now fills. SQLPasskeyStore adds its transports and aaguid columns at EnsureSchema."
+    find:
+      uses:
+        - gofastr/battery/auth.PasskeyStore
+  - change: "A passkey sign-in with a credential the server does not hold answers 404 instead of 401, with the same message"
+    guidance: "A client of POST /auth/passkey/login that treats only 401 as a failed sign-in treats 404 the same. Its reason is passkey_unknown_credential, and the battery's passkey module calls PublicKeyCredential.signalUnknownCredential only for that reason."
+    nodetect: "the status depends on which credential a browser presents; no host source spelling distinguishes it"
+  - change: "Init refuses an AuthConfig.CanonicalizeEmail override that is not idempotent, and an address it moves on a second pass is refused with invalid_email"
+    guidance: "An override must map a canonical address to itself, as the docs already required: make the fold total (strip every dot, not one), or refuse the addresses it will not fold. The boot error names the address that moved."
+    find:
+      uses:
+        - gofastr/battery/auth.AuthConfig.CanonicalizeEmail
+  - change: "BREAKING - the passkey plugin refuses to start outside DevMode without a way to email the owner when a passkey is added"
+    breaking: true
+    hits: review
+    guidance: "Set PasskeyConfig.NoticeSender to your EmailSender, or NoAddedNotice: true if the app tells users another way. AuthConfig.RegisterEmailSender does not stand in for it. With NoticeSender set, the user store must implement auth.EmailVerifiedChecker (the battery's stores do), since the notice goes only to a verified address."
+    find:
+      uses:
+        - gofastr/battery/auth.NewPasskeyPlugin
+  - change: "Adding or removing a passkey needs a step-up once the account holds a passkey able to confirm one"
+    guidance: "The battery's browser module runs the step-up and resends. A client of its own that calls POST /auth/passkey/register/options or /auth/passkey/delete handles 403 passkey_reauth_required by running /auth/passkey/reauth and sending the proof it answers as \"proof\", and 403 passkey_signin_required by asking the user to sign in again with a passkey."
+    nodetect: "the answer depends on the account's passkeys at runtime; no host source spelling distinguishes an affected call"
+  - change: "BREAKING - POST /auth/passkey/register needs the binding its register/options answer carried, and completes only in the session that asked for those options"
+    breaking: true
+    guidance: "The battery's browser module sends it. A client of its own copies \"binding\" from the register/options answer into the register body, from the same session."
+    nodetect: "the register body is built in client JavaScript, which the scanner does not parse"
+  - change: "The passkey autofill limit is chosen by ?autofill=1 on POST /auth/passkey/login/options, not by an autofill body member"
+    guidance: "The battery's browser module sends the query. A client of its own that sent {\"autofill\": true} adds ?autofill=1 to the URL instead; without it the request counts against the ceremonies' limit."
+    nodetect: "the request is built in client JavaScript, which the scanner does not parse"
+  - change: "A process module's module.tool.list entry is read with its annotations key (MCP tool hints): ModuleToolDigest hashes it when present and a malformed value fails decoding; it used to be ignored"
+    guidance: "Nothing to change for a module that sends no annotations key: its tool digests are unchanged. A module that already sent one must recompute its tool digests with framework.ModuleToolDigest and re-approve the descriptor, or its handshake fails and the module is quarantined."
+    nodetect: "the key lives in the module child's module.tool.list answer at runtime, not in host source"
+  - change: "BREAKING - handler.Bind refuses a duplicate or case-folded key at any depth of a JSON body (400 json_duplicate_key or json_folded_keys); it checked the top level of a struct only, so a nested or map key bound last-wins"
+    breaking: true
+    guidance: "Send each key once, in its declared case. A client that relied on a later duplicate winning sends only that value. The MCP twin of the same handler already refused both."
+    nodetect: "the keys of a request body; no host source spelling shows it"
+  - change: "BREAKING - gofastr generate sdk with two or more sdk entries in gofastr.settings.yml refuses to run without --out or --from-openapi (it took the first entry); each flag picks the entry it names or none, no run writes into or inside another entry's output directory, and a settings from_openapi must name a file inside the project"
+    breaking: true
+    guidance: "Pass --out with an entry's directory (or --from-openapi with an entry's document) to pick it, or run gofastr generate, which still runs every entry into its own directory. Move a from_openapi document that lives outside the project into it."
+    nodetect: "the shape is the sdk entries in gofastr.settings.yml and a script that runs generate sdk; no Go source spelling carries it"
+  - change: "A server action that names no page, on a static route whose policy phase answers not-found (a resolver's ErrNotFound or decide.NotFound), refuses with 404 instead of 403, as the named-page case already did"
+    guidance: "A client that reads 403 from such an action reads 404 now; nothing else changes."
+    nodetect: "the status depends on a runtime resolver or policy answer; no source spelling distinguishes it"
+  - change: "An MCP tools/call whose _meta is a string, array or number, or longer than 64 KiB, answers -32602 and the tool does not run; it was ignored"
+    guidance: "Send _meta as a JSON object, as the MCP spec requires. Clients that follow the spec are unaffected."
+    nodetect: "the shape of a request a client sends; no host source spelling shows it"

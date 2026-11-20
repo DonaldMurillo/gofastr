@@ -25,23 +25,6 @@ func roundTripTo(t *testing.T, src image.Image) image.Image {
 	return out
 }
 
-func assertNRGBAEqual(t *testing.T, want, got image.Image) {
-	t.Helper()
-	wb, gb := want.Bounds(), got.Bounds()
-	if wb.Dx() != gb.Dx() || wb.Dy() != gb.Dy() {
-		t.Fatalf("bounds: %v vs %v", wb, gb)
-	}
-	for y := 0; y < wb.Dy(); y++ {
-		for x := 0; x < wb.Dx(); x++ {
-			w := color.NRGBAModel.Convert(want.At(wb.Min.X+x, wb.Min.Y+y)).(color.NRGBA)
-			g := color.NRGBAModel.Convert(got.At(gb.Min.X+x, gb.Min.Y+y)).(color.NRGBA)
-			if w != g {
-				t.Fatalf("pixel (%d,%d): want %v got %v", x, y, w, g)
-			}
-		}
-	}
-}
-
 func TestRoundTripTypeRGBA(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 8, 6))
 	for y := range 6 {
@@ -50,7 +33,7 @@ func TestRoundTripTypeRGBA(t *testing.T) {
 		}
 	}
 	out := roundTripTo(t, src)
-	assertNRGBAEqual(t, src, out)
+	assertPixelEqual(t, src, out)
 }
 
 func TestRoundTripTypeNRGBA(t *testing.T) {
@@ -61,7 +44,7 @@ func TestRoundTripTypeNRGBA(t *testing.T) {
 		}
 	}
 	out := roundTripTo(t, src)
-	assertNRGBAEqual(t, src, out)
+	assertPixelEqual(t, src, out)
 }
 
 func TestRoundTripTypeGray(t *testing.T) {
@@ -72,7 +55,7 @@ func TestRoundTripTypeGray(t *testing.T) {
 		}
 	}
 	out := roundTripTo(t, src)
-	assertNRGBAEqual(t, src, out)
+	assertPixelEqual(t, src, out)
 }
 
 func TestRoundTripTypePaletted(t *testing.T) {
@@ -89,7 +72,7 @@ func TestRoundTripTypePaletted(t *testing.T) {
 		}
 	}
 	out := roundTripTo(t, src)
-	assertNRGBAEqual(t, src, out)
+	assertPixelEqual(t, src, out)
 }
 
 func TestRoundTripTypeYCbCr(t *testing.T) {
@@ -102,7 +85,7 @@ func TestRoundTripTypeYCbCr(t *testing.T) {
 		src.Cr[i] = 128
 	}
 	out := roundTripTo(t, src)
-	assertNRGBAEqual(t, src, out)
+	assertPixelEqual(t, src, out)
 }
 
 func TestRoundTripTypeCMYK(t *testing.T) {
@@ -113,7 +96,7 @@ func TestRoundTripTypeCMYK(t *testing.T) {
 		}
 	}
 	out := roundTripTo(t, src)
-	assertNRGBAEqual(t, src, out)
+	assertPixelEqual(t, src, out)
 }
 
 // customRGBA64Image is a user-defined image returning RGBA64-model colors,
@@ -153,7 +136,7 @@ func TestRoundTripAR16384x1(t *testing.T) {
 		src.SetNRGBA(x, 0, color.NRGBA{R: uint8(x), G: uint8(x >> 4), B: uint8(x >> 8), A: 255})
 	}
 	out := roundTripTo(t, src)
-	assertNRGBAEqual(t, src, out)
+	assertPixelEqual(t, src, out)
 }
 
 func TestRoundTripAR1x16384(t *testing.T) {
@@ -162,7 +145,7 @@ func TestRoundTripAR1x16384(t *testing.T) {
 		src.SetNRGBA(0, y, color.NRGBA{R: uint8(y), G: uint8(y >> 4), B: uint8(y >> 8), A: 255})
 	}
 	out := roundTripTo(t, src)
-	assertNRGBAEqual(t, src, out)
+	assertPixelEqual(t, src, out)
 }
 
 func TestRoundTripAR16385x1Rejected(t *testing.T) {
@@ -188,7 +171,7 @@ func TestRoundTripAlphaAllZero(t *testing.T) {
 		src.Pix[i+3] = 0
 	}
 	out := roundTripTo(t, src)
-	assertNRGBAEqual(t, src, out)
+	assertPixelEqual(t, src, out)
 }
 
 func TestRoundTripAlphaVaryGrayMid(t *testing.T) {
@@ -199,7 +182,7 @@ func TestRoundTripAlphaVaryGrayMid(t *testing.T) {
 		}
 	}
 	out := roundTripTo(t, src)
-	assertNRGBAEqual(t, src, out)
+	assertPixelEqual(t, src, out)
 }
 
 // ---- wraparound boundary ----
@@ -226,7 +209,7 @@ func TestRoundTripWrapAroundBoundary(t *testing.T) {
 		}
 	}
 	out := roundTripTo(t, src)
-	assertNRGBAEqual(t, src, out)
+	assertPixelEqual(t, src, out)
 }
 
 // TestStressPremultipliedZeroAlphaOddRGB tests the foot-gun of image.RGBA
@@ -254,6 +237,6 @@ func TestRoundTripPremultipliedZeroAlphaOddRGB(t *testing.T) {
 	out := roundTripTo(t, src)
 	// What we want is the *invariant* that NRGBAModel.Convert of input
 	// equals NRGBAModel.Convert of output.
-	assertNRGBAEqual(t, src, out)
+	assertPixelEqual(t, src, out)
 	_ = fmt.Sprintf
 }

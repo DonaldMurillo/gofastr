@@ -7,3 +7,8 @@ codegen:
     - name: sdk
       config:
         targets: [go, js]
+    - name: sdk
+      output: apisdk
+      config:
+        from_openapi: api/openapi.json
+        module: example.com/union-api-sdk

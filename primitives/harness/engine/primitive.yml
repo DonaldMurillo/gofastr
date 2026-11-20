@@ -1,0 +1,18 @@
+primitive: harness.engine
+summary: The agent loop of one harness session - the event bus, the turn loop, tool dispatch, request and tool middleware, and the cancellation tree that ties a turn to its tool calls and sub-agents.
+code:
+  - framework/experimental/harness/engine/doc.go
+  - framework/experimental/harness/engine/cancel.go
+  - framework/experimental/harness/engine/request.go
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: cancel-reaches-descendants-only
+    rule: Cancelling a CancelTree node cancels every descendant node, and cancelling a child never cancels its parent or siblings.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestCancelTreePropagatesToChildren
+      - test: framework/experimental/harness/engine.TestCancelTreeChildDoesNotCancelParent
+  - id: first-request-middleware-is-outermost
+    rule: ChainRequest runs the middleware in the order listed, the first one outermost, before the base handler.
+    enforced_by:
+      - test: framework/experimental/harness/engine.TestChainRequestFirstIsOutermost

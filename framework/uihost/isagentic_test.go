@@ -176,21 +176,48 @@ func TestNotFound_JSONProblem(t *testing.T) {
 }
 
 func TestNotFound_JSONProblemAcceptVariants(t *testing.T) {
-	ds := newISOHost()
-	for _, accept := range []string{
-		"application/problem+json",
-		"application/json, text/plain",
-		"text/html, application/json;q=0.9",
+	ds := newISOHost(WithMarkdownNegotiation())
+	for _, tc := range []struct {
+		name   string
+		accept []string
+		want   string
+	}{
+		{"explicit problem JSON", []string{"application/problem+json"}, "application/problem+json"},
+		{"JSON alias", []string{"application/json, text/plain"}, "application/problem+json"},
+		{"JSON parameters", []string{"application/json; charset=utf-8"}, "application/problem+json"},
+		{"higher HTML weight", []string{"text/html, application/json;q=0.9"}, "text/html"},
+		{"higher problem weight", []string{"text/html;q=0.5, application/problem+json;q=0.9"}, "application/problem+json"},
+		{"equal weights", []string{"text/html, application/json"}, "application/problem+json"},
+		{"separate header lines", []string{"text/html;q=0.5", "application/json"}, "application/problem+json"},
+		{"wildcard prefers HTML", []string{"text/*;q=0.9, application/json;q=0.2"}, "text/html"},
+		{"exact HTML overrides wildcard", []string{"text/html;q=0, */*, application/json;q=0.2"}, "application/problem+json"},
+		{"invalid weight", []string{"application/problem+json;q=1.5"}, "text/html"},
+		{"zero weight", []string{"application/problem+json;q=0"}, "text/html"},
+		{"explicit refusal overrides alias", []string{"application/json, application/problem+json;q=0"}, "text/html"},
+		{"explicit weight overrides alias", []string{"text/html;q=0.5, application/json, application/problem+json;q=0.2"}, "text/html"},
+		{"quoted comma", []string{`text/plain;profile="x, application/json, y"`}, "text/html"},
+		{"browser default", []string{"text/html,application/xhtml+xml,*/*;q=0.8"}, "text/html"},
+		{"application wildcard alone", []string{"application/*"}, "text/html"},
+		{"higher Markdown weight", []string{"application/json;q=0.2, text/markdown;variant=GFM"}, "text/markdown"},
+		{"equal Markdown and JSON weights", []string{"text/markdown, application/json"}, "application/problem+json"},
 	} {
-		rec := doGet(ds, "/nope", accept)
-		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/problem+json") {
-			t.Errorf("Accept %q → Content-Type %q, want problem+json", accept, ct)
-		}
-	}
-	// A browser-style Accept must keep the HTML 404.
-	rec := doGet(ds, "/nope", "text/html,application/xhtml+xml,*/*;q=0.8")
-	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
-		t.Errorf("browser Accept → Content-Type %q, want text/html", ct)
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/nope", nil)
+			for _, accept := range tc.accept {
+				req.Header.Add("Accept", accept)
+			}
+			rec := httptest.NewRecorder()
+			ds.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("status %d, want 404", rec.Code)
+			}
+			if ct, _, _ := strings.Cut(rec.Header().Get("Content-Type"), ";"); ct != tc.want {
+				t.Errorf("Accept %q → Content-Type %q, want %s", tc.accept, ct, tc.want)
+			}
+			if !varyHasAccept(rec) {
+				t.Error("404 must carry Vary: Accept")
+			}
+		})
 	}
 }
 

@@ -287,7 +287,12 @@ func TestCoord_PG_ModuleSchemaIsolation(t *testing.T) {
 	}
 }
 
-func TestCoord_PG_HostilePublicDenied(t *testing.T) {
+// pgApplyOne wires the migration coordinator over the shared Postgres
+// (admin pool, schema-scoped store) for the trusted demo module and applies
+// one approved migration. The Postgres-fence tests assert on its error plus
+// the absence of the table the migration tried to create.
+func pgApplyOne(t *testing.T, name, up string) (*sql.DB, error) {
+	t.Helper()
 	adminDB, adminDSN := pgCoordEnv(t)
 	store := pgCoordStore(t)
 	desc := ProcessModuleDescriptor{
@@ -298,10 +303,17 @@ func TestCoord_PG_HostilePublicDenied(t *testing.T) {
 		TrustTier:      TrustTrusted,
 		MigrationGroup: "demo",
 	}
-	c, _ := NewMigrationCoordinator(store, adminDB, WithCoordinatorAdminDSN(adminDSN))
-	err := c.Apply(context.Background(), desc, []ApprovedMigration{
-		{Version: 1, Name: "evil", Up: "CREATE TABLE public.evil (id int)"},
+	c, err := NewMigrationCoordinator(store, adminDB, WithCoordinatorAdminDSN(adminDSN))
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	return adminDB, c.Apply(context.Background(), desc, []ApprovedMigration{
+		{Version: 1, Name: name, Up: up},
 	})
+}
+
+func TestCoord_PG_HostilePublicDenied(t *testing.T) {
+	adminDB, err := pgApplyOne(t, "evil", "CREATE TABLE public.evil (id int)")
 	if err == nil {
 		t.Fatal("hostile migration writing to public must be denied by the role")
 	}
@@ -312,22 +324,9 @@ func TestCoord_PG_HostilePublicDenied(t *testing.T) {
 }
 
 func TestCoord_PG_SetRoleEscalationFails(t *testing.T) {
-	adminDB, adminDSN := pgCoordEnv(t)
-	store := pgCoordStore(t)
-	desc := ProcessModuleDescriptor{
-		Name:           "demo",
-		Version:        "1.0.0",
-		ArtifactSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		SurfaceSHA256:  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		TrustTier:      TrustTrusted,
-		MigrationGroup: "demo",
-	}
-	c, _ := NewMigrationCoordinator(store, adminDB, WithCoordinatorAdminDSN(adminDSN))
 	// SET ROLE postgres from the module role must fail (not a member), the
 	// authenticate-as property (design §7 point 2). RESET ROLE is a no-op.
-	err := c.Apply(context.Background(), desc, []ApprovedMigration{
-		{Version: 1, Name: "escalate", Up: "SET ROLE postgres; CREATE TABLE public.evil2 (id int)"},
-	})
+	adminDB, err := pgApplyOne(t, "escalate", "SET ROLE postgres; CREATE TABLE public.evil2 (id int)")
 	if err == nil {
 		t.Fatal("SET ROLE escalation must be denied")
 	}

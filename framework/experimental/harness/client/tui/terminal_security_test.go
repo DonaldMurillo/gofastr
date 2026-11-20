@@ -35,20 +35,14 @@ import (
 // draw(): scrollback is storage, and storing an ESC byte there hands
 // every future renderer the same bug.
 func TestScrollbackStripsTerminalEscapes(t *testing.T) {
-	shapes := []struct {
-		name    string
-		payload string
-	}{
+	shapes := []stripShape{
 		{"osc52 clipboard write", "\x1b]52;c;aG90IGNsaXBib2FyZA==\x07"},
 		{"osc title rewrite", "\x1b]0;pwned\x07"},
 		{"csi alt screen flip", "\x1b[?1049h"},
 		{"csi private mode", "\x1b[?1000;1006h"},
 		{"c0 row overwrite", "ok\rEVIL\x07\x08"},
 	}
-	surfaces := []struct {
-		name string
-		ev   func(text string) control.Event
-	}{
+	surfaces := []stripSurface{
 		{"TextDelta text", func(text string) control.Event {
 			return control.TextDelta{Text: "say " + text}
 		}},
@@ -71,15 +65,61 @@ func TestScrollbackStripsTerminalEscapes(t *testing.T) {
 			return control.TurnStarted{Turn: 1, Content: []control.ContentBlock{{Type: "text", Text: text}}}
 		}},
 	}
+	assertStripsTerminalEscapes(t, surfaces, shapes, "Hello world 100%")
+}
 
+// render feeds one event through the envelope codec, mirroring the
+// real delivery path (EncodeEvent on the bus, DecodeEvent in the TUI).
+// String fields round-trip raw control bytes: the codec escapes them
+// on the wire and restores them at decode.
+func render(t *testing.T, tui *TUI, e control.Event) {
+	t.Helper()
+	env, err := control.EncodeEvent(1, e, tui.Session, ids.NewClientID(), time.Now())
+	if err != nil {
+		t.Fatalf("encode event: %v", err)
+	}
+	tui.renderEvent(env)
+}
+
+// ctrlByte reports the first C0 control byte (tab excepted) or DEL in
+// s, the byte class a terminal interprets rather than prints.
+func ctrlByte(s string) (byte, bool) {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < 0x20 && c != '\t') || c == 0x7f {
+			return c, true
+		}
+	}
+	return 0, false
+}
+
+// stripShape is one attacker payload; stripSurface one renderEvent path
+// that carries event text into scrollback. Both terminal-control pins
+// run the same matrix through assertStripsTerminalEscapes.
+type stripShape struct {
+	name    string
+	payload string
+}
+
+type stripSurface struct {
+	name string
+	ev   func(text string) control.Event
+}
+
+// assertStripsTerminalEscapes runs the surface × shape matrix behind both
+// terminal-control pins: per surface, clean text must survive ingest and
+// reach the terminal unchanged (so the fix cannot strip by blunt
+// truncation after an ESC), then no payload byte may be stored in
+// scrollback or reach t.out verbatim.
+func assertStripsTerminalEscapes(t *testing.T, surfaces []stripSurface, shapes []stripShape, clean string) {
 	for _, surface := range surfaces {
 		// Happy path first: clean text must survive ingest and reach
 		// the terminal unchanged, so the fix cannot strip by blunt
 		// truncation after an ESC.
 		tui, buf := newRenderTestTUI(t)
-		render(t, tui, surface.ev("Hello world 100%"))
+		render(t, tui, surface.ev(clean))
 		tui.draw()
-		if !strings.Contains(buf.String(), "Hello world 100%") {
+		if !strings.Contains(buf.String(), clean) {
 			t.Errorf("%s: clean text did not reach terminal output: %q", surface.name, buf.String())
 		}
 
@@ -114,31 +154,6 @@ func TestScrollbackStripsTerminalEscapes(t *testing.T) {
 	}
 }
 
-// render feeds one event through the envelope codec, mirroring the
-// real delivery path (EncodeEvent on the bus, DecodeEvent in the TUI).
-// String fields round-trip raw control bytes: the codec escapes them
-// on the wire and restores them at decode.
-func render(t *testing.T, tui *TUI, e control.Event) {
-	t.Helper()
-	env, err := control.EncodeEvent(1, e, tui.Session, ids.NewClientID(), time.Now())
-	if err != nil {
-		t.Fatalf("encode event: %v", err)
-	}
-	tui.renderEvent(env)
-}
-
-// ctrlByte reports the first C0 control byte (tab excepted) or DEL in
-// s, the byte class a terminal interprets rather than prints.
-func ctrlByte(s string) (byte, bool) {
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if (c < 0x20 && c != '\t') || c == 0x7f {
-			return c, true
-		}
-	}
-	return 0, false
-}
-
 // TestProgressLinesStripTerminalEscapes extends the terminal-control
 // property to the two renderEvent paths the test above does not reach:
 //
@@ -158,19 +173,13 @@ func ctrlByte(s string) (byte, bool) {
 //     approves an invocation, and a live escape sequence there can
 //     visually rewrite the command being approved.
 func TestProgressLinesStripTerminalEscapes(t *testing.T) {
-	shapes := []struct {
-		name    string
-		payload string
-	}{
+	shapes := []stripShape{
 		{"osc52 clipboard write", "building \x1b]52;c;aG90IGNsaXBib2FyZA==\x07 done"},
 		{"csi alt screen flip", "\x1b[?1049h"},
 		{"csi private mode", "step 1 \x1b[?1000;1006h step 2"},
 		{"c0 row overwrite", "ok\rEVIL\x07\x08"},
 	}
-	surfaces := []struct {
-		name string
-		ev   func(text string) control.Event
-	}{
+	surfaces := []stripSurface{
 		{"ToolCallProgress partial", func(text string) control.Event {
 			return control.ToolCallProgress{CallID: ids.NewCallID(), Partial: text}
 		}},
@@ -189,35 +198,5 @@ func TestProgressLinesStripTerminalEscapes(t *testing.T) {
 			}
 		}},
 	}
-
-	for _, surface := range surfaces {
-		// Happy path: clean progress/approval text must survive ingest.
-		tui, buf := newRenderTestTUI(t)
-		render(t, tui, surface.ev("compiling 42%"))
-		tui.draw()
-		if !strings.Contains(buf.String(), "compiling 42%") {
-			t.Errorf("%s: clean text did not reach terminal output: %q", surface.name, buf.String())
-		}
-
-		for _, shape := range shapes {
-			tui, buf := newRenderTestTUI(t)
-			render(t, tui, surface.ev(shape.payload))
-			for i, ln := range tui.scrollback {
-				if strings.HasPrefix(ln, spinnerLineMarker) {
-					continue
-				}
-				if c, bad := ctrlByte(ln); bad {
-					t.Errorf("SECURITY: %s / %s: scrollback[%d] stores control byte %#02x: %q",
-						surface.name, shape.name, i, c, ln)
-					break
-				}
-			}
-			buf.Reset()
-			tui.draw()
-			if strings.Contains(buf.String(), shape.payload) {
-				t.Errorf("SECURITY: %s / %s: payload reached terminal output verbatim: %q",
-					surface.name, shape.name, shape.payload)
-			}
-		}
-	}
+	assertStripsTerminalEscapes(t, surfaces, shapes, "compiling 42%")
 }

@@ -12,37 +12,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
 
-// Source adapts an MCP Client into a tool.ToolSource. Tools the
-// remote server exposes are surfaced under namespace prefixes like
-// "mcp:kiln.create_entity" so they don't collide with built-ins.
+// Source is a tool.ToolSource exposing a server's tools as "<name>.<tool>".
 type Source struct {
 	client    *Client
-	name      string // "mcp:<server-name>" or just "<server-name>"
-	discovery string // "eager" or "lazy"
+	name      string
+	discovery string
 	tools     []ToolDescriptor
 }
 
-// NewSource constructs a Source.
-//
-// discovery selects between:
-//   - "eager": tools/list + schemas fetched at startup. Use for
-//     low-tool-count servers (<=20 tools).
-//   - "lazy":  tools/list only at startup; tool_schema fetched on
-//     first invocation. Default for high-tool-count servers.
-//
-// Per the spec, /list already returns names + descriptions +
-// inputSchema. The "lazy" mode in v0.1 just defers tool registration
-// to later if no schema has been seen, but most servers return
-// schemas in /list anyway, so the actual savings come from server
-// implementations that elide schemas in /list.
+// NewSource returns a Source for the server c under name; discovery ("eager" or "lazy") is recorded but not yet acted on.
 func NewSource(name, discovery string, c *Client) *Source {
 	return &Source{client: c, name: name, discovery: discovery}
 }
 
-// Name implements tool.ToolSource.
+// Name returns "mcp:" plus the server name.
 func (s *Source) Name() string { return "mcp:" + s.name }
 
-// Tools implements tool.ToolSource by calling the MCP server's tools/list.
+// Tools lists the server's tools on every call.
 func (s *Source) Tools(ctx context.Context) ([]tool.Tool, error) {
 	descs, err := s.client.ListTools(ctx)
 	if err != nil {
@@ -62,14 +48,12 @@ func (s *Source) Tools(ctx context.Context) ([]tool.Tool, error) {
 }
 
 func prefixed(serverName, toolName string) string {
-	// Avoid double-prefixing if the server already prefixes its tool names.
 	if strings.HasPrefix(toolName, serverName+".") {
 		return toolName
 	}
 	return serverName + "." + toolName
 }
 
-// mcpTool is one MCP-bridged tool.
 type mcpTool struct {
 	source      *Source
 	name        string
@@ -81,16 +65,9 @@ func (t *mcpTool) Name() string        { return t.name }
 func (t *mcpTool) Description() string { return t.description }
 func (t *mcpTool) InputSchema() []byte { return t.schema }
 
-// Mutating returns true (conservative) for all MCP-bridged tools.
-// MCP doesn't declare is_mutating per tool; without that info we
-// assume mutating so the intent/outcome ledger fsyncs are applied.
-// Profile-level overrides can mark specific MCP tools as read-only.
 func (t *mcpTool) Mutating() bool { return true }
 
-// Run executes the tool via MCP tools/call.
 func (t *mcpTool) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*tool.ToolResult, error) {
-	// Strip the server prefix when calling, the server expects its
-	// own canonical tool name.
 	remoteName := call.Name
 	prefix := t.source.name + "."
 	if after, ok := strings.CutPrefix(remoteName, prefix); ok {
@@ -103,7 +80,6 @@ func (t *mcpTool) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink)
 			Content: []control.ContentBlock{{Type: "text", Text: err.Error()}},
 		}, nil
 	}
-	// MCP tool result shape: {content: [{type: "text", text: "..."}], isError?}
 	var parsed struct {
 		Content []struct {
 			Type string `json:"type"`
@@ -111,10 +87,6 @@ func (t *mcpTool) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink)
 		} `json:"content"`
 		IsError bool `json:"isError"`
 	}
-	// The result is third-party server bytes: refuse ambiguity at
-	// every depth (the readLoop envelope rule) before the content
-	// blocks execute as tool output, keeping the MCP tolerance for
-	// unknown fields.
 	if err := handler.CheckObjectKeys(result, handler.FoldJSONKey); err != nil {
 		return &tool.ToolResult{
 			IsError: true,

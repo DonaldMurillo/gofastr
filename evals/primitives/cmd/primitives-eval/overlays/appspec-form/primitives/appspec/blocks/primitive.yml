@@ -1,0 +1,68 @@
+primitive: appspec.blocks
+summary: Checks each screen body block (node, catalog, control, chart, stat_card and entity blocks) for the props its framework/ui component or entityui builder needs, so a block that loads never panics or vanishes at render.
+code:
+  - cmd/gofastr/internal/appspec/catalog_required.go
+  - cmd/gofastr/internal/appspec/appspec_controls.go
+docs:
+  - framework/docs/content/app-spec.md
+on_change:
+  - "A new block kind is added to the validateAppSpecBlock switch, to AppSpecCatalogKind or appSpecControlKinds when the catalog draws it, to catalogTextProps for every prop appgen reads as text, and to the Data blocks or UI component blocks section of app-spec.md."
+  - "A prop the generator starts reading through AppSpecProp joins catalogTextProps, or appgen TestCatalogTextPropsCoverGenerator fails."
+twins:
+  - job: A block's fields list is checked at load, entry by entry, against what its component draws, so an entry the page would drop is refused naming it rather than vanishing.
+    why: Recorded for the replay eval after the fix, naming the sibling sites; whether the sites can be merged was not assessed.
+    sites:
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: validateAppSpecBlock entity_list, which refuses an entry that names no column, a hidden or display-omitted column, or one listed twice.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: validateAppSpecBlock entity_form, which checks entity and mode only; the same entry checks apply in create and in edit mode.
+      - path: cmd/gofastr/internal/appgen/appspec.go
+        note: appSpecFormFieldSkipped, which drops the server-filled id, created_at, updated_at and deleted_at, and hidden, auto-generated and read_only fields, from a generated form.
+      - path: framework/entityui/meta.go
+        note: meta.system, the fields entityui forms never carry (auto-generated, read_only, an optional primary key).
+  - job: The set of block kinds is enumerated in several switches that must agree on which kinds exist and which renderer draws them.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: validateAppSpecBlock, the kind switch whose default refuses an unsupported block type.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: AppSpecCatalogKind and typeNamesCatalogKind, the catalog kinds (section excluded under type) decodeBlocks reads as kind.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: decodeBlocks refusal of entity_create and entity_edit, and refuseReplacedBlockKeys entityBlock kind list.
+      - path: cmd/gofastr/internal/appspec/appspec_controls.go
+        note: appSpecControlKinds, the control catalog, and validateAppSpecControlBlock.
+      - path: cmd/gofastr/internal/appspec/catalog_required.go
+        note: validateCatalogRequired switch and catalogTextProps keyed by kind.
+      - path: cmd/gofastr/internal/appgen/appspec.go
+        note: renderAppSpecCatalogBlock, the emitter switch that draws each catalog kind.
+  - job: A column the API masks (hidden or no_query) is refused in every spec position whose value a page renders, matches on or carries in a token.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: decodeAppSpecEntities, search_fields (hidden, no_query), read_scope filter fields (hidden only) and cursor fields (hidden, no_query).
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: validateAppSpecBlock entity_list fields (hidden and display omit) and the stat_card source.filter column loop.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: validateEntityListFilter, the entity_list pinned filter column.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: requireGroupableColumn, the chart group_by and the stat_card sum source.field.
+invariants:
+  - id: load-verdict-is-boot-verdict
+    rule: A stat_card filter or chart group_by the load accepts passes entityui CheckStat or CheckChart at boot, and one the load refuses fails it.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestStatFilterLoadMatchesBoot
+      - test: cmd/gofastr/internal/appspec.TestChartGroupByLoadMatchesBoot
+  - id: type-spelled-catalog-kind-is-kind
+    rule: A block whose type names a catalog kind (other than section) decodes with that kind in Kind and an empty Type, at every depth.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestDecodeReadsTypeSpelledCatalogKindAsKind
+  - id: masked-columns-refused-on-screens
+    rule: A chart group_by, a stat_card sum field or a stat_card filter on a hidden or no_query column fails validation naming why.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestScreenGuardsRejectHiddenColumns
+      - test: cmd/gofastr/internal/appspec.TestChartGroupByRefusesMaskedColumn
+      - test: cmd/gofastr/internal/appspec.TestStatCardNoQueryFilterRejected
+  - id: catalog-text-props-are-text
+    rule: A number or bool given for a prop a catalog kind reads as text is refused at load.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestCatalogTextPropRefusesNumber

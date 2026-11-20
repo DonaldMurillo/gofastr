@@ -87,6 +87,41 @@ invariants:
       - test: battery/auth.TestBFFPostureLetsFormPostCallbackThrough
       - test: battery/auth.TestBFFPostureSignOutFormPassesLogoutOriginGuard
       - test: battery/auth.TestBFFPostureLogoutExemptionStaysSameOriginAndExact
+  - id: init-refuses-non-idempotent-canonicalizer
+    rule: Init refuses an AuthConfig.CanonicalizeEmail override that, over a fixed set of probe addresses, maps an address it accepted to a different address or refuses it on a second pass, and every ingestion refuses an address the override moves on a second pass.
+    enforced_by:
+      - test: battery/auth.TestInitRefusesNonIdempotentCanonicalizer
+      - test: battery/auth.TestNonIdempotentCanonicalizerRefusedAtRuntime
+  - id: oidc-tenant-issuer-is-the-tokens-own
+    rule: An OIDCProvider accepts a discovery issuer with a {tenantid} slot only when OIDCConfig.Tenants is set and the template is the configured issuer with one whole path segment open, fails discovery when Tenants is set and the issuer is anything else, keeps its own copy of Tenants, and then accepts an id_token only when its iss is that template filled with its own non-empty tid claim, the tid is listed in Tenants or Tenants holds "*", and its signing key, when the key names an issuer, names that iss or the template.
+    enforced_by:
+      - test: battery/auth.TestOIDCMultiTenantIssuer
+      - test: battery/auth.TestOIDCTenantTemplateMustFitTheIssuer
+      - test: battery/auth.TestOIDCTenantsRefuseAnExactIssuer
+      - test: battery/auth.TestOIDCTenantsAreCopied
+      - test: battery/auth.TestOIDCTenantKeyIssuerScope
+  - id: oidc-tenant-identity-is-tenant-and-subject
+    rule: Under a multi-tenant issuer the OAuth2UserInfo ID is the token's tid, a slash and the claim OIDCClaims.IDClaim names (sub by default), FetchUserInfo refuses a sign-in it can answer only from the userinfo endpoint, and the OAuth callback never joins such an identity with no link to an existing account by email (409 collision); its link signs in.
+    enforced_by:
+      - test: battery/auth.TestOIDCMultiTenantIdentityCarriesTheTenant
+      - test: battery/auth.TestOIDCTenantIdentityNeverEmailLinks
+  - id: oidc-tenant-email-needs-domain-proof
+    rule: Under a multi-tenant issuer an OAuth2UserInfo email is verified only when the signed id_token carries both xms_edov true and email_verified true and the kept address is its own email claim; the userinfo endpoint never makes it verified.
+    enforced_by:
+      - test: battery/auth.TestOIDCMultiTenantEmailNeedsDomainProof
+  - id: sqlite-column-add-is-checked
+    rule: On SQLite the auth stores add a missing column only after PRAGMA table_info, matched with ASCII-only case folding as SQLite compares identifiers, treat a failed ALTER as success only when the column is there afterwards (a lost race), and report any other failure.
+    enforced_by:
+      - test: battery/auth.TestSQLiteColumnCheckFoldsASCIIOnly
+      - test: battery/auth.TestAddColumnIfMissingToleratesALostRace
+      - test: battery/auth.TestAddColumnAfterCheckReportsARealFailure
+  - id: manager-canonical-email-follows-the-override
+    rule: AuthManager.CanonicalEmail answers the address under AuthConfig.CanonicalizeEmail when set; every audit event the manager emits carries its email folded the same way, or as given when the override refuses it, and the SQL sink hashes that exact folded value, folding by the default only an address it did not get from the manager's fold (one sent directly, or rewritten by a wrapping sink); the event marks the fold with a sha256 of the folded address, never a second plaintext copy.
+    enforced_by:
+      - test: battery/auth.TestManagerCanonicalEmailFollowsOverride
+      - test: battery/auth.TestAuditEmailHashIsCanonical
+      - test: battery/auth.TestAuditDigestFollowsTheManagersFold
+      - test: battery/auth.TestAuditEventKeepsNoSecondAddress
 decisions:
   - id: logout-clear-site-data-skips-cookies
     date: 2026-11-17

@@ -131,13 +131,9 @@ func TestNestedFilter_ManyToMany(t *testing.T) {
 // ============================================================================
 
 func TestNestedFilter_UnknownRelation_400(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		seedBlogDB(t, db)
-		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
-
-		resp := ta.Get("/posts?bogus.name=alice")
-		resp.AssertStatus(t, http.StatusBadRequest).
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
+		ta.Get("/posts?bogus.name=alice").
+			AssertStatus(t, http.StatusBadRequest).
 			AssertBodyContains(t, "bogus")
 	})
 }
@@ -147,13 +143,9 @@ func TestNestedFilter_UnknownRelation_400(t *testing.T) {
 // ============================================================================
 
 func TestNestedFilter_UnknownField_400(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		seedBlogDB(t, db)
-		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
-
-		resp := ta.Get("/posts?author.does_not_exist=x")
-		resp.AssertStatus(t, http.StatusBadRequest).
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
+		ta.Get("/posts?author.does_not_exist=x").
+			AssertStatus(t, http.StatusBadRequest).
 			AssertBodyContains(t, "does_not_exist")
 	})
 }
@@ -230,13 +222,9 @@ func TestNestedFilter_MultiHop_3Hops(t *testing.T) {
 }
 
 func TestNestedFilter_ExceedsMaxDepth_400(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
-		seedBlogDB(t, db)
-		app := nestedBlogApp(t, db)
-		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
-
-		resp := ta.Get("/posts?a.b.c.d.e.name=x")
-		resp.AssertStatus(t, http.StatusBadRequest).
+	runIncludeTest(t, func(t *testing.T, ta *TestApp) {
+		ta.Get("/posts?a.b.c.d.e.name=x").
+			AssertStatus(t, http.StatusBadRequest).
 			AssertBodyContains(t, "too many relation hops")
 	})
 }

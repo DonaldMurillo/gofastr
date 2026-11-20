@@ -1,0 +1,26 @@
+primitive: stream.hub
+summary: Hub, the best-effort broadcast of WebSocket messages to a set of connections.
+code:
+  - core/stream/hub.go
+twins:
+  - job: Register a connection with a close watcher that ends with the registration, and close every connection on Stop.
+    why: Work not yet done; StateChannel registers on its Run loop after the snapshot read and keeps a role per connection, Hub registers on the caller's goroutine.
+    sites:
+      - path: core/stream/hub.go
+        note: Register, Unregister and Run's stop branch.
+      - path: core/stream/state_channel.go
+        note: runSnapshot, Unregister and Run's stop branch.
+invariants:
+  - id: broadcast-never-waits-on-a-connection
+    rule: Broadcast drops a message when the hub's queue is full, and Run drops it for a connection whose send buffer is full, so neither the caller nor the loop waits on a slow connection.
+    enforced_by:
+      - test: core/stream.TestSweepHubNeverWaitsOnAFullConnection
+  - id: watcher-ends-with-registration
+    rule: Unregister stops the connection's close watcher.
+    enforced_by:
+      - test: core/stream.TestHubUnregisterStopsCloseWatcher
+  - id: stop-closes-and-refuses
+    rule: Stop closes every registered connection, and a Register after Stop adds nothing.
+    enforced_by:
+      - test: core/stream.TestHubStopClosesConnections
+      - test: core/stream.TestHubRegisterAfterStop

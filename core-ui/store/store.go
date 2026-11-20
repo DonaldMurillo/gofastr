@@ -1,19 +1,5 @@
-// Package store is a typed, server-declared shared-state primitive for
-// the GoFastr UI. A Store groups typed Slices; each Slice is one named
-// reactive value that:
-//
-//   - seeds its initial value into the client signal bus at SSR (so
-//     getSignal returns the server value on first paint, not undefined),
-//   - emits read-only binding attributes for presentational consumers,
-//   - and (Phase 2) connects an island/RPC producer's updates so they
-//     fan out to every consumer client-side, with no server re-render.
-//
-// The design is two-layer: the *declaration* (name → type, default,
-// scope) is process-global; the *value* is request-scoped (a producer
-// calls Slice.Seed(ctx, v) at render time). The framework resolves the
-// seed for a page by scanning the rendered HTML for referenced names
-// (ScanReferenced) plus all app-global slices, then emitting one inert
-// <script type="application/json" id="gofastr-signals"> block.
+// Package store is the typed, server-declared signal store: declared once,
+// valued per request and seeded into the client signal bus at SSR.
 package store
 
 import (
@@ -31,17 +17,14 @@ type Scope int
 const (
 	// ScopePage seeds only on pages whose HTML references the slice.
 	ScopePage Scope = iota
-	// ScopeGlobal seeds on every page and survives client-side
-	// navigation (cart count, signed-in user, theme).
+	// ScopeGlobal seeds on every page and survives client navigation.
 	ScopeGlobal
 )
 
-// Store namespaces a group of slices. New("org").String("companyName",…)
-// declares the slice "org.companyName".
+// Store namespaces a group of slices.
 type Store struct{ ns string }
 
-// New returns a Store whose slices are prefixed with namespace (a "."
-// separator is inserted; an empty namespace yields unprefixed names).
+// New returns a Store whose slice names are prefixed with namespace and a dot.
 func New(namespace string) *Store { return &Store{ns: namespace} }
 
 // String declares a string-typed slice.
@@ -53,19 +36,11 @@ func (s *Store) Int(name string, def int) *Slice[int] { return declare(s, name, 
 // Bool declares a bool-typed slice.
 func (s *Store) Bool(name string, def bool) *Slice[bool] { return declare(s, name, def) }
 
-// JSON declares a slice of an arbitrary JSON-serializable type. It is a
-// free function because Go methods cannot introduce their own type
-// parameters.
+// JSON declares a slice of a JSON-serialisable type.
 func JSON[T any](s *Store, name string, def T) *Slice[T] { return declare(s, name, def) }
 
-// Computed declares a derived slice computed client-side: when any of the
-// named dependency signals changes, the runtime runs the JS reducer
-// registered under reducer (window.__gofastr._reducers[reducer]) over the
-// current dep values and broadcasts the result to this slice's consumers.
-// The reducer is a host-provided JS function (CSP-safe, no eval). The
-// computed value is derived, so it is never part of the SSR seed.
-//
-//	var Greeting = store.Computed[string](Org, "greeting", "greet", "org.companyName")
+// Computed declares a slice the runtime derives on the client by running the
+// registered reducer over deps; it is never seeded.
 func Computed[T any](s *Store, name, reducer string, deps ...string) *Slice[T] {
 	full := name
 	if s.ns != "" {
@@ -81,14 +56,12 @@ func Computed[T any](s *Store, name, reducer string, deps ...string) *Slice[T] {
 	return &Slice[T]{name: full, scope: ScopePage, def: zero, comp: &computedCfg{reducer: reducer, deps: deps}}
 }
 
-// ─── declaration registry (process-global) ──────────────────────────
-
 type decl struct {
 	name     string
 	scope    Scope
 	def      any
-	computed bool     // derived client-side; excluded from the seed
-	deps     []string // a computed slice's dependencies
+	computed bool
+	deps     []string
 }
 
 var (
@@ -106,9 +79,6 @@ func declare[T any](s *Store, name string, def T) *Slice[T] {
 	return &Slice[T]{name: full, scope: ScopePage, def: def}
 }
 
-// register records a declaration. Identical re-declaration is idempotent
-// (shared package-level decls, test re-runs); a conflicting default
-// panics, two producers must not claim one name with different values.
 func register(name string, scope Scope, def any) {
 	regMu.Lock()
 	defer regMu.Unlock()
@@ -131,23 +101,17 @@ func registerComputed(name string, deps []string) {
 		return
 	}
 	declRegistry[name] = &decl{name: name, scope: ScopePage, def: nil, computed: true, deps: slices.Clone(deps)}
-	// The runtime recomputes a slice on every dependency write and then
-	// writes it, so a cycle would ping-pong until the stack overflowed.
 	if path := computedCycle(name); path != nil {
 		delete(declRegistry, name)
 		panic(fmt.Sprintf("store: computed %q has a dependency cycle: %s", name, strings.Join(path, " -> ")))
 	}
 }
 
-// computedCycle returns a dependency path from start back to itself
-// through computed slices, or nil. regMu is held.
 func computedCycle(start string) []string {
 	var path []string
 	seen := map[string]bool{}
 	var walk func(n string) bool
 	walk = func(n string) bool {
-		// seen only bounds the walk on a diamond: every slice declared
-		// before this one is acyclic, so the walk ends without it.
 		d, ok := declRegistry[n]
 		if !ok || !d.computed || seen[n] {
 			return false
@@ -176,26 +140,6 @@ func setScope(name string, scope Scope) {
 	}
 }
 
-// validateName rejects names that could break out of a data-cui-* HTML
-// attribute or the signal key. Allowed: letters, digits, '.', '_', '-'.
-//
-// The route.* prefix is RESERVED for the router's snapshot (DESIGN
-// "Route signals"): a user-declared slice under it would race the
-// seeded route values — the declaration's default stamping SSR paints
-// while every navigation's seed merge overwrites it — so declaring
-// one panics. The route family declares its own slices through
-// route.go's declareRoute, which owns the prefix and skips the
-// reservation by design.
-//
-// The runtime kernel's prototype-pollution guard (frag/signals.js
-// isReservedSignalKey) refuses __proto__ / constructor / prototype as
-// signal names because those keys re-parent the client signal store;
-// validateName rejects the same three at declaration time — its
-// character class alone would accept them, shipping a slice whose
-// value SSR keeps stamping while EVERY client-side write to it is
-// silently refused: a permanently dead binding with no error anywhere.
-// A namespace prefix ("app.__proto__") produces a non-reserved full
-// key, so only bare names are refused.
 func validateName(name string) {
 	if name == "" {
 		panic("store: slice name must not be empty")
@@ -210,10 +154,6 @@ func validateName(name string) {
 	validateNameChars(name)
 }
 
-// validateDep holds a computed slice's dependency to the slice-name
-// rules, except that a route.* signal is readable: the deps ride
-// comma-joined in data-cui-computed-deps, so a comma would split one
-// name into two.
 func validateDep(name string) {
 	if strings.HasPrefix(name, "route.") {
 		validateNameChars(name)
@@ -222,9 +162,6 @@ func validateDep(name string) {
 	validateName(name)
 }
 
-// validateNameChars is the charset half of validateName, shared with
-// the route family's own declarations (route.go's declareRoute owns
-// the reserved prefix).
 func validateNameChars(name string) {
 	for _, r := range name {
 		switch {
@@ -236,9 +173,7 @@ func validateNameChars(name string) {
 	}
 }
 
-// GlobalNames returns the sorted names of all ScopeGlobal slices. The
-// host seeds these on every page regardless of whether the page
-// references them.
+// GlobalNames returns the sorted names of every ScopeGlobal slice.
 func GlobalNames() []string {
 	regMu.RLock()
 	defer regMu.RUnlock()
@@ -252,12 +187,6 @@ func GlobalNames() []string {
 	return out
 }
 
-// resetForTest clears the declaration registry. Test-only. The route.*
-// family is declared at package init and shares this registry: a wipe
-// must restore its declared names, or every later test's seed writers
-// (ResolveSeed skips undeclared names) silently drop the route values
-// — exactly the cross-test breakage TestRouteSeedDueGatesTheWriters
-// catches.
 func resetForTest() {
 	regMu.Lock()
 	declRegistry = map[string]*decl{}

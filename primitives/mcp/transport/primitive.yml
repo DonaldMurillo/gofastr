@@ -1,0 +1,148 @@
+primitive: mcp.transport
+summary: The MCP transports - ServeHTTP, ServeStdio and ServeSSE's POST and held GET stream - with the envelope decode, the content-type, body-size and origin checks, and SSE framing.
+code:
+  - core/mcp/transport.go
+docs:
+  - framework/docs/content/mcp.md
+twins:
+  - job: Accept only a JSON media type on an MCP POST.
+    why: core/mcp and the harness control plane are separate servers; the copies have drifted, core/mcp accepting any type with a +json suffix and the harness only application/*+json.
+    sites:
+      - path: core/mcp/transport.go
+        note: isMCPJSONContentType, for ServeHTTP and ServeSSE's POST.
+      - path: framework/experimental/harness/control/mcpserver/http.go
+        note: isAcceptableJSONContentType, for the harness HTTP POST.
+  - job: Frame an untrusted payload as SSE data lines so it cannot start a second event or directive.
+    why: The copies have drifted - StreamSSE keeps the payload byte-for-byte as data lines, while the harness also deletes CR and NUL and rewrites event, id, retry and data prefixes inside the payload; merging needs a choice between the two.
+    sites:
+      - path: core/mcp/transport.go
+        note: StreamSSE and stripSSEField.
+      - path: framework/experimental/harness/control/mcpserver/http.go
+        note: sanitizeSSEData and defangSSEDirectives, for replayed payloads.
+  - job: Answer a JSON-RPC response that cannot be encoded with -32603 under the request id instead of no line.
+    why: Each server encodes its own response type; core/mcp falls back to a null id when the id itself cannot encode, the harness does not need to because its ids stay raw JSON.
+    sites:
+      - path: core/mcp/transport.go
+        note: encodeResponse.
+      - path: framework/experimental/harness/control/mcpserver/server.go
+        note: Server.write.
+invariants:
+  - id: json-content-type-only
+    rule: A POST whose Content-Type is missing or not application/json or a +json type is answered 415.
+    enforced_by:
+      - test: core/mcp.TestServeHTTP_RejectsTextPlain
+      - test: core/mcp.TestServeSSEPost_RejectsTextPlain
+  - id: body-capped
+    rule: A POST body over 1 MiB is answered 413, and a stdio line over 1 MiB is answered with an error line and ends the session.
+    enforced_by:
+      - test: core/mcp.TestServeHTTP_RejectsOversizedBody
+      - test: core/mcp.TestServeSSEPost_RejectsOversizedBody
+      - test: core/mcp.TestStdioLineLimit
+  - id: one-strict-envelope-decode
+    rule: Every transport decodes the envelope through decodeEnvelope, which answers malformed JSON -32700 and a duplicate, case-folded or unknown envelope key -32600, both with a null id.
+    enforced_by:
+      - test: core/mcp.TestEnvelopeErrorCodes
+      - test: core/mcp.TestStdioEnvelopeAmbiguityRefused
+  - id: numeric-id-echoed-exactly
+    rule: A numeric request id is echoed as the literal the client sent, never rounded through float64.
+    enforced_by:
+      - test: core/mcp.TestNumericIDEchoedExactly
+      - test: core/mcp.TestHugeNumericIDEchoed
+  - id: notifications-get-no-reply
+    rule: A valid message with no id member gets no reply (no stdio line, HTTP 202 with no body), while an id-less message without jsonrpc 2.0 and a method is answered -32600 with a null id.
+    enforced_by:
+      - test: core/mcp.TestIDLessMessageGetsNoReply
+      - test: core/mcp.TestHTTPNotificationGetsNoReply
+      - test: core/mcp.TestStdioNotificationGetsNoReply
+      - test: core/mcp.TestIDLessInvalidRequestAnswered
+  - id: unencodable-response-answered
+    rule: A response JSON cannot encode is answered with -32603 "internal error" under the request's id, or a null id when the id cannot encode, never with an empty body or no line.
+    enforced_by:
+      - test: core/mcp.TestUnencodableResponseAnswered
+  - id: origin-and-host-checked
+    rule: Every HTTP entry point, the SSE GET stream included, answers 403 when an Origin header names another authority and is not in SetAllowedOrigins, when SetAllowedHosts is set and Host is not in it, or when SetRequireLoopbackHost is set and Host is not loopback.
+    enforced_by:
+      - test: core/mcp.TestMCPRejectsForeignOrigin
+      - test: core/mcp.TestMCPHostPinRejectsRebind
+      - test: core/mcp.TestSSEGetHandlerEnforcesOrigin
+      - test: core/mcp.TestLoopbackPinDoesNotImplyLoopbackBind
+  - id: responses-no-store
+    rule: Every POST response and the SSE GET stream carry Cache-Control no-store.
+    enforced_by:
+      - test: core/mcp.TestServeHTTP_SetsNoStore
+      - test: core/mcp.TestServeSSEGet_SetsNoStore
+  - id: stdio-returns-on-cancel
+    rule: ServeStdio returns ctx's error as soon as ctx ends, even while no input arrives.
+    enforced_by:
+      - test: core/mcp.TestServeStdioReturnsOnCancelWhileIdle
+  - id: sse-framing
+    rule: StreamSSE cuts the event name at the first CR, LF or NUL and writes every line of the payload as its own data line, so the payload round-trips byte-for-byte and cannot start a second event or directive.
+    enforced_by:
+      - test: core/mcp.TestStreamSSE_StripsInjectedEventNewlines
+      - test: core/mcp.TestStreamSSE_StripsInjectedEventNUL
+      - test: core/mcp.TestStreamSSE_DataCannotInjectSecondEvent
+      - test: core/mcp.TestStreamSSE_MultilineDataRoundTrips
+  - id: endpoint-event-names-mount-path
+    rule: The GET stream's first event is an endpoint event naming the path ServeSSE was mounted at.
+    enforced_by:
+      - test: core/mcp.TestEndpointEventNamesMountPath
+  - id: write-deadline-cleared
+    rule: The write deadline an SSE event is written under is cleared once the event is flushed, so an HTTP/2 stream timer never resets a stream idle between notifications.
+    enforced_by:
+      - test: core/mcp.TestSSEEventClearsWriteDeadline
+  - id: stream-rechecks-caller
+    rule: The GET stream re-checks its caller on every keep-alive tick and before every delivery, and ends when the principal no longer resolves or resolves to another tenant than at connect.
+    enforced_by:
+      - test: core/mcp.TestRevokedIdleStreamCloses
+      - test: core/mcp.TestTenantChangeClosesStream
+      - test: core/mcp.TestRevokedPrincipalClosesStream
+  - id: refused-caller-takes-no-seat
+    rule: The GET stream runs the server-wide gate at connect and answers 403 before taking a seat or writing a byte.
+    enforced_by:
+      - test: core/mcp.TestServerGateRefusedAtConnectHoldsNoSeat
+decisions:
+  - id: unpinned-host-by-default
+    date: 2026-11-18
+    status: accepted
+    decision: Host is checked only when the embedder pins it with SetAllowedHosts or SetRequireLoopbackHost, while a foreign Origin is always refused and an absent one passes.
+    rejected:
+      - option: Always pin Host.
+        why: An unpinned server cannot know its own public name, so ordinary deployments would break.
+      - option: Refuse a request with no Origin.
+        why: curl, stdio bridges and native MCP clients never send one, and its absence proves nothing.
+    revisit_if: The server learns its public authority from configuration it always has.
+    upholds: [origin-and-host-checked]
+  - id: loopback-host-is-not-a-bind
+    date: 2026-11-18
+    status: accepted
+    decision: SetRequireLoopbackHost stops DNS rebinding from a browser only, and the framework pairs it with a loopback bind in guardDevMCPBind.
+    rejected:
+      - option: Treat the loopback Host pin as network isolation.
+        why: A direct TCP client sets Host to anything, so a listener on a routable interface stays reachable.
+    upholds: [origin-and-host-checked]
+  - id: sse-data-lines-not-rewrites
+    date: 2026-11-18
+    status: accepted
+    decision: StreamSSE frames each payload line as its own data line and leaves "event:", "id:", "retry:" and "data:" inside the payload untouched.
+    rejected:
+      - option: Collapse the payload to one line and rewrite those prefixes.
+        why: It corrupted legitimate JSON-RPC content, and after a data prefix the substrings cannot start a field anyway.
+    upholds: [sse-framing]
+  - id: per-write-deadline-on-streams
+    date: 2026-11-18
+    status: accepted
+    decision: The held stream arms a write deadline per event and treats http.ErrNotSupported from SetWriteDeadline or Flush as no deadline rather than a dead stream.
+    rejected:
+      - option: Rely on http.Server.WriteTimeout.
+        why: A server that holds streams runs it at zero, and a client that stops reading would pin the handler forever.
+      - option: Fail the stream when the writer has no deadline support.
+        why: Middleware and test writers wrap the connection without it, and those streams worked before.
+    upholds: [write-deadline-cleared]
+  - id: keep-alive-rechecks
+    date: 2026-11-18
+    status: accepted
+    decision: The stream writes a comment line every 15 seconds and re-checks the caller on that tick, whether or not notifications went out.
+    rejected:
+      - option: Re-check only before a delivery.
+        why: A revoked caller kept its seat as long as nothing was raised, and a half-open connection was never written to and never found dead.
+    upholds: [stream-rechecks-caller]

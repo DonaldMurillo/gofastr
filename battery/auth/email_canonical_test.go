@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -120,5 +121,91 @@ func TestOAuthRefusesNonAddressEmail(t *testing.T) {
 	}
 	if len(userStore.users) != 0 {
 		t.Fatalf("SECURITY: a non-address became an account: %v", storeKeys(userStore))
+	}
+}
+
+// Init refuses a CanonicalizeEmail override that moves an address it
+// already canonicalized, and accepts one that is idempotent or refuses
+// some probes.
+func TestInitRefusesNonIdempotentCanonicalizer(t *testing.T) {
+	boot := func(fold func(string) (string, error)) error {
+		mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), CanonicalizeEmail: fold})
+		return mgr.Init(nil)
+	}
+	prefix := func(s string) (string, error) { return "c-" + strings.ToLower(s), nil }
+	if err := boot(prefix); err == nil || !strings.Contains(err.Error(), "not idempotent") {
+		t.Fatalf("a prefixing canonicalizer booted: %v", err)
+	}
+	// Drops one dot per call: idempotent only on an address without dots.
+	oneDot := func(s string) (string, error) {
+		c, err := CanonicalEmail(s)
+		local, domain, _ := strings.Cut(c, "@")
+		return strings.Replace(local, ".", "", 1) + "@" + domain, err
+	}
+	if err := boot(oneDot); err == nil {
+		t.Fatal("a canonicalizer that folds one dot at a time booted")
+	}
+	allDots := func(s string) (string, error) {
+		c, err := CanonicalEmail(s)
+		local, domain, _ := strings.Cut(c, "@")
+		return strings.ReplaceAll(local, ".", "") + "@" + domain, err
+	}
+	if err := boot(allDots); err != nil {
+		t.Fatalf("an idempotent canonicalizer refused: %v", err)
+	}
+	gmailOnly := func(s string) (string, error) {
+		if !strings.HasSuffix(strings.ToLower(s), "@gmail.com") {
+			return "", ErrEmailNotComposed
+		}
+		return CanonicalEmail(s)
+	}
+	if err := boot(gmailOnly); err != nil {
+		t.Fatalf("a canonicalizer that refuses most probes refused: %v", err)
+	}
+}
+
+// An override that passes the boot probe (it refuses every probe
+// address) but moves an address it accepts is refused per request.
+func TestNonIdempotentCanonicalizerRefusedAtRuntime(t *testing.T) {
+	corpOneDot := func(s string) (string, error) {
+		c, err := CanonicalEmail(s)
+		if err != nil || !strings.HasSuffix(c, "@corp.example") {
+			return "", ErrEmailNotComposed
+		}
+		local, domain, _ := strings.Cut(c, "@")
+		return strings.Replace(local, ".", "", 1) + "@" + domain, nil
+	}
+	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), CanonicalizeEmail: corpOneDot})
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("boot: %v", err)
+	}
+	if _, err := mgr.canonicalizeEmail("f.i.r.s.t@corp.example"); err == nil {
+		t.Fatal("an address the override moves twice was accepted")
+	}
+	if got, err := mgr.canonicalizeEmail("first@corp.example"); err != nil || got != "first@corp.example" {
+		t.Fatalf("a stable address: %q %v", got, err)
+	}
+}
+
+// AuthManager.CanonicalEmail and the audit pseudonym follow the
+// manager's override, so host keys and audit digests agree with the
+// battery's own.
+func TestManagerCanonicalEmailFollowsOverride(t *testing.T) {
+	noDots := func(s string) (string, error) {
+		c, err := CanonicalEmail(s)
+		local, domain, _ := strings.Cut(c, "@")
+		return strings.ReplaceAll(local, ".", "") + "@" + domain, err
+	}
+	sink := &recordingSink{}
+	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), CanonicalizeEmail: noDots, AuditSink: sink})
+	if err := mgr.Init(nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := mgr.CanonicalEmail("A.Lice@Example.com"); err != nil || got != "alice@example.com" {
+		t.Fatalf("manager CanonicalEmail: %q %v", got, err)
+	}
+	mgr.emitSecurity(context.Background(), SecurityEvent{Kind: "magiclink.requested", Email: "A.Lice@Example.com"})
+	if ev := sink.findByKind("magiclink.requested"); ev == nil || ev.Email != "alice@example.com" {
+		t.Fatalf("audit sink saw %+v, want the override's canonical address", ev)
 	}
 }

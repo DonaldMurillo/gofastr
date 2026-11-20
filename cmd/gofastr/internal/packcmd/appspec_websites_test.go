@@ -379,37 +379,31 @@ func TestAppSpec_SeedOrderedAndDecimalCoerced(t *testing.T) {
 	}
 }
 
-func TestAppSpec_StaticDynamicScreenGetsSetParams(t *testing.T) {
+func TestAppSpec_DynamicScreenGetsSetParams(t *testing.T) {
 	// A dynamic route whose body needs no request context still MUST
 	// implement SetParams: the router panics at registration otherwise.
-	bp := websitesAppSpec()
-	bp.Screens = append(bp.Screens, appspec.AppSpecScreen{
-		Name: "article", Route: "/articles/{slug}",
-		Body: []appspec.AppSpecBlock{{Kind: "heading", Props: map[string]any{"level": int64(1), "text": "Article"}}},
-	})
-	screens := appgen.RenderAppSpecScreens(bp)
-	if !strings.Contains(screens, "func (s *ArticleScreen) SetParams(") {
-		t.Errorf("static-body dynamic screen missing SetParams:\n%s", screens)
-	}
-	if !strings.Contains(screens, `p["slug"]`) {
-		t.Error("SetParams should read the route's declared param name, not a hardcoded id")
-	}
-}
-
-func TestAppSpec_ColonRouteGetsSetParams(t *testing.T) {
-	// Sol round-2: the framework accepts both {slug} and :slug; the
+	// Sol round-2: the framework accepts both {slug} and :slug routes; the
 	// generator must emit SetParams for either, or the app panics at boot.
-	bp := websitesAppSpec()
-	bp.Screens = append(bp.Screens, appspec.AppSpecScreen{
-		Name: "post", Route: "/posts/:slug",
-		Body: []appspec.AppSpecBlock{{Kind: "heading", Props: map[string]any{"level": int64(1), "text": "Post"}}},
-	})
-	screens := appgen.RenderAppSpecScreens(bp)
-	if !strings.Contains(screens, "func (s *PostScreen) SetParams(") {
-		t.Errorf("colon-route dynamic screen missing SetParams:\n%s", screens)
-	}
-	if !strings.Contains(screens, `p["slug"]`) {
-		t.Error("SetParams should read the colon route's declared param")
+	for _, tt := range []struct {
+		name, screen, route, heading, setParams string
+	}{
+		{"brace route", "article", "/articles/{slug}", "Article", "func (s *ArticleScreen) SetParams("},
+		{"colon route", "post", "/posts/:slug", "Post", "func (s *PostScreen) SetParams("},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			bp := websitesAppSpec()
+			bp.Screens = append(bp.Screens, appspec.AppSpecScreen{
+				Name: tt.screen, Route: tt.route,
+				Body: []appspec.AppSpecBlock{{Kind: "heading", Props: map[string]any{"level": int64(1), "text": tt.heading}}},
+			})
+			screens := appgen.RenderAppSpecScreens(bp)
+			if !strings.Contains(screens, tt.setParams) {
+				t.Errorf("%s: dynamic screen missing SetParams:\n%s", tt.name, screens)
+			}
+			if !strings.Contains(screens, `p["slug"]`) {
+				t.Error("SetParams should read the route's declared param name, not a hardcoded id")
+			}
+		})
 	}
 }
 

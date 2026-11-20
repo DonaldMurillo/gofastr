@@ -15,10 +15,6 @@ invariants:
     rule: A join with no Join.User is refused with 403 unless AnonymousSeats is AnonymousPerSocket.
     enforced_by:
       - test: battery/rtc.TestAnonymousJoinRefusedByDefault
-  - id: frames-are-rate-limited
-    rule: A socket over MaxFramesPerSecond is closed.
-    enforced_by:
-      - test: battery/rtc.TestFrameFloodClosesSocket
   - id: revoked-peer-is-closed
     rule: Each inbound frame re-checks the socket's principal and Authorize, and a peer that no longer passes is closed with 4401.
     enforced_by:

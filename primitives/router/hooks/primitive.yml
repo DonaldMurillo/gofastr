@@ -1,0 +1,50 @@
+primitive: router.hooks
+summary: The tree-wide callbacks the framework installs on a router, the route gate, the register and serve hooks and the pre-route rewrite, each guarded against its own panic.
+code:
+  - core/router/hooks.go
+invariants:
+  - id: hooks-live-on-root
+    rule: SetRegisterHook, SetRouteGate, SetServeHook and PreRoute called on any router of a tree set the one hook the whole tree uses, and the register hook fires for a route registered on any Group.
+    enforced_by:
+      - test: core/router.TestSweepRouterHooksSetOnGroupGovernTree
+      - test: core/router.TestRegisterHookCalledOnRoot
+  - id: gate-before-chain-plain-404
+    rule: The route gate is called with the matched route's "METHOD /pattern" key before the serve hook and the middleware chain, and a false answers a plain 404 without running either.
+    enforced_by:
+      - test: core/router.TestRouteGateBlocksWhenFalse
+      - test: core/router.TestRouteGateBlocksBeforeMiddleware
+      - test: core/router.TestGateKeyedOnMethodAndPath
+  - id: serve-hook-after-gate-with-pattern
+    rule: The serve hook fires for a matched route after the gate allowed it and before the chain, with the registered pattern rather than the request path.
+    enforced_by:
+      - test: core/router.TestSweepRouterServeHookOrder
+  - id: hook-panics-are-contained
+    rule: A panicking gate is logged and refuses (404, method dropped from Allow), a panicking serve hook is logged and the request is still served, and a panicking pre-route hook is logged and answers a localized 500 without running the chain or a handler.
+    enforced_by:
+      - test: core/router.TestPanickingRouteGateFailsClosed
+      - test: core/router.TestPanickingServeHookStillServes
+      - test: core/router.TestPanickingPreRouteFailsClosed
+      - test: core/router.TestRouterHookPanicParity
+  - id: pre-route-rewrites-or-redirects
+    rule: A pre-route hook's returned request is the one the mux matches, and a non-empty target answers 308 to it through the middleware chain without routing.
+    enforced_by:
+      - test: core/router.TestPreRouteRewritesBeforeMatch
+      - test: core/router.TestPreRouteRedirectRunsChain
+      - test: core/router.TestPreRouteNilRemoves
+decisions:
+  - id: gated-route-is-404-not-403
+    date: 2026-11-18
+    status: accepted
+    decision: A route the gate refuses answers the same plain 404 as a path that was never registered.
+    rejected:
+      - option: Answer 403 Forbidden.
+        why: It tells an anonymous caller that a disabled module's route exists.
+    upholds: [gate-before-chain-plain-404, router.fallback/gated-methods-never-advertised]
+  - id: gate-keyed-by-method-and-pattern
+    date: 2026-11-18
+    status: accepted
+    decision: The gate key is "METHOD /pattern", so two modules owning different methods on one path are gated independently.
+    rejected:
+      - option: Key the gate on the path alone.
+        why: Disabling one module would take down another module's method on the same path.
+    upholds: [gate-before-chain-plain-404]

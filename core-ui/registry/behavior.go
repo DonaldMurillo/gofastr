@@ -12,77 +12,28 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// Behaviour registers like style.
-//
-// A component's stylesheet is registered by the package that renders
-// its markup (RegisterStyle), listed in the catalog the host puts in
-// <head>, and loaded by the runtime when its marker appears. Its
-// behaviour now takes the same seam: RegisterBehavior in the same
-// package, the JavaScript embedded beside the Go, served by the host
-// at /__gofastr/runtime/<name>.js like any runtime module, listed in
-// the module manifest the kernel already reads, and scanned for by the
-// markers it declares. The kernel treats a registered module and an
-// embedded one identically after the fetch. See
-// core-ui/ARCHITECTURE.md.
-//
-//	//go:embed runtime.js
-//	var runtimeJS string
-//
-//	var Behavior = registry.RegisterBehavior("headless", runtimeJS,
-//	    registry.Markers("[data-hui-reveal]", "[data-hui-when]"))
-//
-// This package stores the source as registered. Minification, hashing
-// and serving happen in core-ui/runtime, where the embedded modules'
-// do, so the two kinds of module are one kind from the host down.
-
 // BehaviorEntry is one registered behaviour.
 type BehaviorEntry struct {
-	// Name is the module name: the URL is /__gofastr/runtime/<Name>.js
-	// and the manifest key is Name. One namespace with the embedded
-	// kernel modules; a style may share the name.
+	// Name is the module name, served at /__gofastr/runtime/<Name>.js.
 	Name string
 	// Source is the JavaScript as registered.
 	Source string
-	// Markers are the attribute selectors the kernel scans for, each
-	// "[data-x]" or "[data-x=\"v\"]".
+	// Markers are the attribute selectors whose presence loads the module.
 	Markers []string
-	// Idle defers the load to idle time after first paint, as the
-	// kernel's `idle: true` modules do.
+	// Idle defers the load to idle time after first paint.
 	Idle bool
-	// Requires are the modules loaded before this one, in the order
-	// they were named, deduplicated. They may be embedded kernel
-	// modules or other registered behaviours.
+	// Requires are the modules loaded before this one, deduplicated in order.
 	Requires []string
-	// Interactions are the user interactions the kernel's interaction
-	// bridge retains while the module is still fetching, replayed on
-	// the original node once the module registers: the cold-cache
-	// window where a click or a keypress would otherwise be lost. The
-	// bridge is the kernel's (frag/boot.js); the descriptor only names
-	// what it retains. Empty for the behaviours that need no
-	// retention, which is the default and costs no listener.
+	// Interactions are what the kernel's bridge retains while the module fetches.
 	Interactions []Interaction
-	// OnRequest marks an API module: no marker loads it. It loads only
-	// when page code calls __gofastr.loadModule(Name) or a behaviour
-	// lists it in Requires. It is served and versioned like every
-	// module (the module manifest carries it), but the marker block
-	// leaves it out, so the kernel's scan never sees it.
+	// OnRequest marks an API module that loads only through loadModule or Requires.
 	OnRequest bool
 
 	sourceHash string
 }
 
-// Interaction is one interaction a behaviour asks the kernel to retain
-// while its module is still fetching — the exact shape the bridge
-// already understands, which is why the fields are the bridge's own:
-// Event, and for a click the Selector the node is resolved with
-// (closest from the event target), and for a keydown the Keys
-// (e.key values) and the Scope, a selector that must match somewhere
-// in the document — the retention is armed only while the scope
-// exists, so a key that belongs to an open surface is not eaten while
-// that surface is closed. A key held with Alt, Ctrl, Meta or Shift is
-// never retained: it is a browser or OS shortcut. The JSON tags are the wire shape: the
-// behaviours block carries these verbatim under "x", so the kernel
-// reads the array without translating it.
+// Interaction is one click or keydown the bridge retains and replays; the JSON
+// tags are the wire shape the kernel reads.
 type Interaction struct {
 	Event    string   `json:"event"`
 	Selector string   `json:"selector,omitempty"`
@@ -90,80 +41,39 @@ type Interaction struct {
 	Scope    string   `json:"scope,omitempty"`
 }
 
-// SourceHash is the SHA-256 of the registered source, eight bytes as
-// hex. The served version hash is computed over the served (possibly
-// minified) bytes in core-ui/runtime; this one identifies the
-// registration, for duplicate detection and caches keyed on it.
+// SourceHash is the SHA-256 of the registered source, eight bytes as hex.
 func (e *BehaviorEntry) SourceHash() string { return e.sourceHash }
 
 // BehaviorOption configures a BehaviorEntry at registration time.
 type BehaviorOption func(*BehaviorEntry)
 
-// Markers declares the attribute selectors whose presence loads the
-// module. At least one is required, unless the module is OnRequest
-// (which takes none). Each is "[data-x]" or
-// "[data-x=\"v\"]": an attribute selector on a data- attribute, nothing
-// else, so the host can also match it in rendered HTML for preload.
+// Markers declares the selectors, each [data-x] or [data-x="v"], that load the module.
 func Markers(selectors ...string) BehaviorOption {
 	return func(e *BehaviorEntry) { e.Markers = append(e.Markers, selectors...) }
 }
 
-// OnRequest registers an API module instead of a marker-loaded one:
-// it is never scanned for, and loads only through
-// __gofastr.loadModule(name) or another behaviour's Requires. A page
-// that never asks for it never downloads it, and a binary that never
-// imports the registering package never contains it — which is why an
-// optional API belongs here rather than in core-ui/runtime/src. It
-// takes no Markers, LoadIdle, Interactions or Requires: each of those
-// is a reason to load that an on-request module does not have (its
-// own dependencies it loads itself).
+// OnRequest registers an API module, loaded only by loadModule or another behaviour's Requires.
 func OnRequest() BehaviorOption { return func(e *BehaviorEntry) { e.OnRequest = true } }
 
-// LoadIdle defers the load to idle time after first paint. The
-// default loads as soon as the marker is seen.
+// LoadIdle defers the load to idle time after first paint.
 func LoadIdle() BehaviorOption { return func(e *BehaviorEntry) { e.Idle = true } }
 
-// Requires names the modules that must be loaded and registered
-// before this one: the action adapters need the action primitive, and
-// a dependency declared here is a dependency the loader honors on
-// every path that loads the module (marker scan, idle queue, hover
-// prefetch, interaction bridge). A name is an embedded kernel module
-// or another registered behaviour; the manifest carries it and
-// core-ui/runtime refuses a name that is neither, or a cycle, when it
-// builds the block — at the first render that needs the manifest, not
-// at startup, because the registry is only complete once every
-// package's init has run. A module may not require itself.
+// Requires names the modules that must be loaded and registered before this one.
 func Requires(names ...string) BehaviorOption {
 	return func(e *BehaviorEntry) { e.Requires = append(e.Requires, names...) }
 }
 
-// Interactions declares the user interactions the kernel's
-// interaction bridge retains while the module is still fetching —
-// click on a slow module's control, keydown on its surface — and
-// replays on the original node once the module registers, so the
-// cold-cache window eats no click and no keypress. The default (no
-// option) installs no listener and costs nothing, which is right for
-// every behaviour whose wiring happens on insertion rather than on a
-// user event. Each spec is validated like a marker: a programming
-// error is refused here, at registration, not discovered as a lost
-// click.
+// Interactions declares the clicks and keydowns the kernel retains while the module fetches.
 func Interactions(specs ...Interaction) BehaviorOption {
 	return func(e *BehaviorEntry) {
 		for _, spec := range specs {
-			// The struct copies, but its Keys slice would keep pointing
-			// at the caller's array, so a later write there would change
-			// a descriptor that has already been validated and is on its
-			// way to the manifest. Clone it here, where the entry stops
-			// being the caller's.
 			spec.Keys = slices.Clone(spec.Keys)
 			e.Interactions = append(e.Interactions, spec)
 		}
 	}
 }
 
-// Behavior is the handle RegisterBehavior returns. Authors keep it in a
-// package var; nothing on it is needed at render time, because the
-// marker in the markup is what loads the module.
+// Behavior is the handle RegisterBehavior returns.
 type Behavior struct{ e *BehaviorEntry }
 
 // Name returns the registered name.
@@ -173,89 +83,37 @@ func (b *Behavior) Name() string { return b.e.Name }
 func (b *Behavior) Entry() *BehaviorEntry { return b.e }
 
 var (
-	behaviors = map[string]*BehaviorEntry{}
-	// behaviorMarkerAttrs holds the attribute name of every registered marker,
-	// so a renderer of untrusted markup can refuse the attributes that
-	// arm a module.
-	behaviorMarkerAttrs = map[string]bool{}
-	// reservedBehaviorNames are the embedded kernel modules' names, set
-	// by core-ui/runtime at init so a registration that would shadow
-	// one fails where it is written rather than where it is served.
+	behaviors             = map[string]*BehaviorEntry{}
+	behaviorMarkerAttrs   = map[string]bool{}
 	reservedBehaviorNames = map[string]bool{}
 )
 
 var (
-	// behaviorName is the grammar for behavior AND style names: each is
-	// a URL segment and a manifest key, and a style name is spliced
-	// unescaped into every instance's data-cui-comp marker.
-	behaviorName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
-	// The value may not carry a control character (a tab included),
-	// DEL, a backslash, a quote or a bracket: a CSS string with an
-	// unescaped newline or a trailing backslash is not a selector,
-	// querySelector throws on it, and one throw in the kernel's scan
-	// aborts the boot pass for every module. Refused here, where it is
-	// a startup failure.
+	behaviorName   = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 	behaviorMarker = regexp.MustCompile(`^\[(data-[a-z0-9-]+)(="[^"\]\\\x00-\x1f\x7f]*")?\]$`)
 )
 
-// The interaction grammar is deliberately WIDER than the marker
-// grammar above, and the marker rule is not widened with it. A marker
-// must be a single attribute selector on a data- attribute because
-// the HOST parses it back out of rendered HTML for preload
-// (MarkerSubstring rewrites it into the bytes it appears as in
-// markup). An interaction selector — a click's node selector, a
-// keydown's scope — is only ever handed to the browser's own
-// querySelector/closest inside the kernel's bridge, never parsed
-// host-side, so it may use the parts of the selector grammar a
-// browser accepts and a descriptor needs: combinators (descendant,
-// >, +, ~), :not([attr]) — the lightbox's scope is
-// `[data-cui-widget]:not([hidden]) …`, where [hidden] is a plain HTML
-// attribute, not a data- one — and comma lists. What is still refused
-// is the set querySelector THROWS on, because a throw lives inside
-// the bridge's document-level listener and silently kills retention
-// for that event: control characters and DEL anywhere a value can
-// carry them, backslashes, unbalanced brackets and parens (the shape
-// rules below make imbalance unrepresentable). Type, class and id
-// selectors are refused too: not because they throw, but because no
-// descriptor needs one yet (and a registered module binds by
-// attribute, never by class); widen the grammar with the client that
-// needs it, not ahead of it.
 var (
-	iaAttr = `\[(?:[A-Za-z][A-Za-z0-9_-]*)(?:="[^"\\\x00-\x1f\x7f]*")?\]`
-	// CSS whitespace is all five of these, so a selector written across
-	// two source lines is browser-valid and must not panic here. Only
-	// the separators take them: iaAttr's quoted value still refuses
-	// every control character, newline and carriage return included.
+	iaAttr     = `\[(?:[A-Za-z][A-Za-z0-9_-]*)(?:="[^"\\\x00-\x1f\x7f]*")?\]`
 	iaWS       = `[ \t\n\f\r]`
 	iaCompound = `(?:` + iaAttr + `|:not\(` + iaAttr + `\))+`
 	iaSelector = regexp.MustCompile(`^` + iaWS + `*` + iaCompound + `(?:` + iaWS + `*(?:` + iaWS + `+|[>+~]` + iaWS + `*)` + iaCompound + `)*` + iaWS + `*(?:,` + iaWS + `*` + iaCompound + `(?:` + iaWS + `*(?:` + iaWS + `+|[>+~]` + iaWS + `*)` + iaCompound + `)*` + iaWS + `*)*$`)
 	iaEvent    = map[string]bool{"click": true, "keydown": true}
 )
 
-// ReserveBehaviorNames records names no behaviour may register under:
-// the embedded runtime modules, which share the URL and the manifest.
-// core-ui/runtime calls it at init; a name registered before that is
-// checked again where the two sets merge.
+// ReserveBehaviorNames records the embedded runtime modules' names, which no behaviour may take.
 func ReserveBehaviorNames(names ...string) {
 	mu.Lock()
 	defer mu.Unlock()
 	for _, n := range names {
 		reservedBehaviorNames[n] = true
-		// A package that imports registry but not runtime can register
-		// before the reservation arrives; the collision is refused
-		// here, at init, rather than where the two sets are served.
 		if _, taken := behaviors[n]; taken {
 			panic("registry.ReserveBehaviorNames: behaviour " + n + " is already registered under an embedded runtime module's name — the two share one URL and one manifest")
 		}
 	}
 }
 
-// RegisterBehavior registers a component's runtime module under a
-// process-wide unique name and returns a handle. Identical
-// re-registration (same source and options) is a no-op; any other
-// duplicate panics so misnames surface at startup, as RegisterStyle's
-// do. Every rule below is a panic with its reason: a mistake here is a
-// startup failure, never a dead marker in production.
+// RegisterBehavior registers a runtime module under a unique name; every mistake panics.
 func RegisterBehavior(name, js string, opts ...BehaviorOption) *Behavior {
 	if !behaviorName.MatchString(name) {
 		panic(fmt.Sprintf("registry.RegisterBehavior: name %q must match ^[a-z][a-z0-9-]{0,63}$ — it is a URL segment and a manifest key", name))
@@ -279,17 +137,6 @@ func RegisterBehavior(name, js string, opts ...BehaviorOption) *Behavior {
 			panic(fmt.Sprintf("registry.RegisterBehavior(%s): marker %q must be an attribute selector on a data- attribute, [data-x] or [data-x=\"v\"]", name, m))
 		}
 	}
-	// An interaction is validated the way a marker is: refused here,
-	// at registration, where it is a startup failure and not a lost
-	// click. The event must be one the bridge retains — its node
-	// resolution branches on exactly click and keydown; a click names
-	// the node's selector, a keydown names its keys and the scope
-	// selector that arms the retention (the kernel resolves
-	// querySelector(scope) on every keydown, and the empty string is a
-	// selector querySelector throws on, so a keyless or scopeless
-	// spec is refused rather than shipped as a listener that dies on
-	// its first event). Fields a spec's event never reads are dead
-	// configuration and are refused with the field's name.
 	for i, ia := range e.Interactions {
 		where := fmt.Sprintf("registry.RegisterBehavior(%s): interaction %d", name, i)
 		switch ia.Event {
@@ -328,11 +175,6 @@ func RegisterBehavior(name, js string, opts ...BehaviorOption) *Behavior {
 			panic(fmt.Sprintf("%s: Event %q is not one the bridge retains — its node resolution branches on exactly click and keydown", where, ia.Event))
 		}
 	}
-	// A requirement is a module name: the same shape rule the
-	// behaviour's own name keeps, because it names the same URL shape.
-	// A self-requirement is a cycle of one and is refused here rather
-	// than by the graph check, where its path would read as noise.
-	// Repeats collapse, keeping the first position.
 	deduped := e.Requires[:0]
 	for _, r := range e.Requires {
 		if r == name {
@@ -363,10 +205,6 @@ func RegisterBehavior(name, js string, opts ...BehaviorOption) *Behavior {
 		}
 		return &Behavior{e: existing}
 	}
-	// The same freeze RegisterStyle honours: the host builds the
-	// manifest (behaviours block and module hashes) once, at Freeze, so
-	// a behaviour registered later is preloaded and served but never in
-	// the block the kernel scans, and its marker stays dead.
 	if frozen {
 		panic("registry.RegisterBehavior(" + name + "): registered after the host built its manifest; register behaviours at package init")
 	}
@@ -377,11 +215,7 @@ func RegisterBehavior(name, js string, opts ...BehaviorOption) *Behavior {
 	return &Behavior{e: e}
 }
 
-// IsMarkerAttr reports whether name (lowercase) is the attribute of a
-// registered behaviour marker. A module binds every element carrying
-// its marker, so untrusted markup that names one arms that module's
-// action on the host page; core-ui/noderender drops these attributes
-// from untrusted IR.
+// IsMarkerAttr reports whether name is the attribute of a registered marker.
 func IsMarkerAttr(name string) bool {
 	mu.Lock()
 	defer mu.Unlock()
@@ -396,8 +230,7 @@ func LookupBehavior(name string) (*BehaviorEntry, bool) {
 	return e, ok
 }
 
-// Behaviors returns a snapshot of every registered behaviour, sorted
-// by name.
+// Behaviors returns every registered behaviour, sorted by name.
 func Behaviors() []*BehaviorEntry {
 	mu.Lock()
 	defer mu.Unlock()
@@ -406,13 +239,7 @@ func Behaviors() []*BehaviorEntry {
 	})
 }
 
-// MarkerSubstring is what a marker selector looks like inside rendered
-// HTML, for the host's preload scan: "[data-x]" is the attribute name
-// data-x, "[data-x=\"v\"]" is data-x="v" with the value escaped the way
-// the renderer escapes an attribute value (& as &amp; and so on), since
-// the scan runs over rendered HTML. The host matches it at an
-// attribute-name boundary, so a marker never fires as the prefix of a
-// longer attribute.
+// MarkerSubstring returns a marker selector as it appears in rendered HTML.
 func MarkerSubstring(selector string) string {
 	m := behaviorMarker.FindStringSubmatch(selector)
 	if m == nil {
@@ -421,7 +248,7 @@ func MarkerSubstring(selector string) string {
 	if m[2] == "" {
 		return m[1]
 	}
-	value := m[2][2 : len(m[2])-1] // strip ="…"
+	value := m[2][2 : len(m[2])-1]
 	return m[1] + `="` + render.Escape(value) + `"`
 }
 

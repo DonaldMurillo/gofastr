@@ -1,0 +1,53 @@
+primitive: webmcp.metadata
+summary: Tool metadata for agents - usage examples checked against the input schema, output schemas, named tool groups, and developer instructions served through a generated orientation tool.
+code:
+  - framework/experimental/webmcp/metadata.go
+docs:
+  - framework/docs/content/webmcp.md
+invariants:
+  - id: examples-match-their-schema
+    rule: Register refuses an example whose input is not a JSON object (a literal null included), lacks a required key, or gives a declared property a value of another JSON type, where integer accepts only whole numbers, a type list accepts any member, and a type keyword outside JSON Schema's seven accepts anything.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestExamplesValidateAgainstSchema
+      - test: framework/experimental/webmcp.TestExampleTypeCheckIgnoresUnknownTypeKeywords
+      - test: framework/experimental/webmcp.TestExampleNullInputIsNotAnObject
+  - id: output-schema-is-object
+    rule: Register refuses an OutputSchema that is not a JSON object and otherwise copies it into the manifest unchanged.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestOutputSchemaValidatedAndPreserved
+  - id: bad-group-fails-mount
+    rule: A group named outside the tool-name grammar or declared twice refuses its own Register and Handle and fails Mount, as does a WithPreferredFirst naming no tool in the group.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestBadGroupDeclarationFailsMount
+      - test: framework/experimental/webmcp.TestGroupValidationFailsMount
+  - id: groups-never-rename
+    rule: A group changes no tool's name, path, method or middleware; it only tags the tool and adds the group to the manifest.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestGroupsOrganizeWithoutRenaming
+  - id: orientation-tool-is-browser-complete
+    rule: The generated get_app_instructions tool carries the empty-object input schema, GET, read-only hint and the prefixed InstructionsRoute path, because it joins the manifest without passing through Register.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestInstructionsGenerateOrientationTool
+      - test: framework/experimental/webmcp.TestBridgeRegistersAndExecutesTools
+  - id: instructions-follow-asset-policies
+    rule: InstructionsRoute is wrapped by the same authorization, page scope and cache policy as the script and manifest.
+    enforced_by:
+      - test: framework/experimental/webmcp.TestInstructionsRouteFollowsAssetPolicies
+decisions:
+  - id: structural-example-check
+    date: 2026-11-18
+    status: accepted
+    decision: Examples are checked only for object shape, required keys and declared property types.
+    rejected:
+      - option: A full JSON Schema validator.
+        why: The check exists to stop an example contradicting its own schema at startup; real input is validated by the endpoint, and a validator would reject schemas using vocabulary it does not know.
+    upholds: [examples-match-their-schema]
+  - id: instructions-through-a-tool
+    date: 2026-11-18
+    status: accepted
+    decision: Instructions are served at InstructionsRoute through a generated read-only tool as well as in the manifest.
+    rejected:
+      - option: Put them only in the manifest.
+        why: registerTool has no app-instructions field, so in-browser agents would never see them.
+    revisit_if: The WebMCP proposal adds a field for app-level instructions.
+    upholds: [orientation-tool-is-browser-complete]

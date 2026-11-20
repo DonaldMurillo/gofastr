@@ -172,21 +172,7 @@ var x = "<div style=\"x\"></div>"
 //
 //gofastr:test-reads *.go
 func TestLintNoInlineStyles_RepoIsClean(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := wd
-	for {
-		if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
-			break
-		}
-		parent := filepath.Dir(root)
-		if parent == root {
-			t.Skip("could not locate repo root")
-		}
-		root = parent
-	}
+	root := repoRoot(t)
 	res, err := LintNoInlineStylesRecursive(root)
 	if err != nil {
 		t.Fatal(err)

@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -48,17 +47,7 @@ func beforeNavigateServer(t *testing.T, spaFetches *atomic.Int32) *httptest.Serv
 		w.Write([]byte(js))
 	})
 	handleRuntimeModules(t, mux)
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		if r.Header.Get("X-Gofastr-Navigate") == "1" {
-			spaFetches.Add(1)
-			w.Header().Set("X-Gofastr-Partial", "true")
-			w.Header().Set("X-Gofastr-Title", "other")
-			fmt.Fprint(w, `<p>other screen</p>`)
-			return
-		}
-		fmt.Fprint(w, beforeNavigatePage())
-	})
+	mux.HandleFunc("/", spaPartial(spaFetches, "other", "", `<p>other screen</p>`, beforeNavigatePage()))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

@@ -85,15 +85,8 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) (*query.QueryBuilder, e
 		}
 		o.Apply(qb)
 	}
-	if len(q.nestedFilters) > 0 {
-		nested, err := resolveNestedFilters(q.handler.Entity, q.handler.Registry, q.nestedFilters)
-		if err != nil {
-			return nil, err
-		}
-		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
-			return nil, err
-		}
-		applyNestedFilters(func(sql string, args ...any) { qb.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
+	if err := q.applyNested(ctx, func(sql string, args ...any) { qb.Where(sql, args...) }); err != nil {
+		return nil, err
 	}
 	if q.limit != nil {
 		qb.Limit(*q.limit)
@@ -114,6 +107,31 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) (*query.QueryBuilder, e
 
 func (q *TypedQuery[T]) requireTenantCtx(ctx context.Context) error {
 	return q.handler.requireTenantContext(ctx)
+}
+
+// applyNested resolves and scopes the query's nested filters, if any, and
+// appends them to where, the Where method of the statement builder in use.
+func (q *TypedQuery[T]) applyNested(ctx context.Context, where func(sql string, args ...any)) error {
+	if len(q.nestedFilters) == 0 {
+		return nil
+	}
+	nested, err := resolveNestedFilters(q.handler.Entity, q.handler.Registry, q.nestedFilters)
+	if err != nil {
+		return err
+	}
+	if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
+		return err
+	}
+	applyNestedFilters(where, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
+	return nil
+}
+
+// applyWheres appends the explicit Where chain and then any nested filters.
+func (q *TypedQuery[T]) applyWheres(ctx context.Context, where func(sql string, args ...any)) error {
+	for _, c := range q.wheres {
+		where(c.SQL(), c.Args()...)
+	}
+	return q.applyNested(ctx, where)
 }
 
 func (q *TypedQuery[T]) findRaw(ctx context.Context) ([]map[string]any, *http.Request, error) {
@@ -218,18 +236,8 @@ func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	cb := query.Count(q.handler.Entity.GetTable())
-	for _, c := range q.wheres {
-		cb.Where(c.SQL(), c.Args()...)
-	}
-	if len(q.nestedFilters) > 0 {
-		nested, err := resolveNestedFilters(q.handler.Entity, q.handler.Registry, q.nestedFilters)
-		if err != nil {
-			return 0, err
-		}
-		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
-			return 0, err
-		}
-		applyNestedFilters(func(sql string, args ...any) { cb.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
+	if err := q.applyWheres(ctx, func(sql string, args ...any) { cb.Where(sql, args...) }); err != nil {
+		return 0, err
 	}
 	req := syntheticRequest(ctx, "GET", "/")
 	q.handler.ApplyTenantScopeCount(cb, req)
@@ -465,18 +473,8 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	if !anySet {
 		return 0, errNoFieldsToUpdate
 	}
-	for _, c := range q.wheres {
-		ub.Where(c.SQL(), c.Args()...)
-	}
-	if len(q.nestedFilters) > 0 {
-		nested, err := resolveNestedFilters(q.handler.Entity, q.handler.Registry, q.nestedFilters)
-		if err != nil {
-			return 0, err
-		}
-		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
-			return 0, err
-		}
-		applyNestedFilters(func(sql string, args ...any) { ub.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
+	if err := q.applyWheres(ctx, func(sql string, args ...any) { ub.Where(sql, args...) }); err != nil {
+		return 0, err
 	}
 	if q.handler.Entity.Config.Scope.SoftDelete {
 		ub.Where("deleted_at IS NULL")
@@ -514,18 +512,8 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 	if q.handler.Entity.Config.Scope.SoftDelete {
 		ub := query.Update(q.handler.Entity.GetTable()).
 			Set("deleted_at", time.Now().UTC())
-		for _, c := range q.wheres {
-			ub.Where(c.SQL(), c.Args()...)
-		}
-		if len(q.nestedFilters) > 0 {
-			nested, err := resolveNestedFilters(q.handler.Entity, q.handler.Registry, q.nestedFilters)
-			if err != nil {
-				return 0, err
-			}
-			if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
-				return 0, err
-			}
-			applyNestedFilters(func(sql string, args ...any) { ub.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
+		if err := q.applyWheres(ctx, func(sql string, args ...any) { ub.Where(sql, args...) }); err != nil {
+			return 0, err
 		}
 		ub.Where("deleted_at IS NULL")
 		q.handler.ApplyTenantScopeUpdate(ub, req)
@@ -540,18 +528,8 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 	}
 
 	db := query.Delete(q.handler.Entity.GetTable())
-	for _, c := range q.wheres {
-		db.Where(c.SQL(), c.Args()...)
-	}
-	if len(q.nestedFilters) > 0 {
-		nested, err := resolveNestedFilters(q.handler.Entity, q.handler.Registry, q.nestedFilters)
-		if err != nil {
-			return 0, err
-		}
-		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
-			return 0, err
-		}
-		applyNestedFilters(func(sql string, args ...any) { db.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
+	if err := q.applyWheres(ctx, func(sql string, args ...any) { db.Where(sql, args...) }); err != nil {
+		return 0, err
 	}
 	q.handler.ApplyTenantScopeDelete(db, req)
 	q.handler.ApplyOwnerScopeDelete(db, req)

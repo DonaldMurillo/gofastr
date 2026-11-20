@@ -387,24 +387,30 @@ func groupLabel(ctx context.Context, m *meta, field, key string) string {
 	return m.valueLabel(ctx, field, key)
 }
 
+// groupSeries maps the grouped counts to the label/value pairs a chart
+// takes, sharing one loop over groupCounts between the chart shapes.
+func groupSeries[T any](ctx context.Context, m *meta, groupBy string, counts []groupCount, pair func(label string, value float64) T) []T {
+	out := make([]T, 0, len(counts))
+	for _, g := range counts {
+		out = append(out, pair(groupLabel(ctx, m, groupBy, g.key), float64(g.n)))
+	}
+	return out
+}
+
 // GroupBars counts an entity's rows per value of groupBy, as bar chart bars.
 func (u *UI) GroupBars(ctx context.Context, entityName, groupBy string) []ui.BarChartBar {
 	m, counts := u.groupCounts(ctx, entityName, groupBy)
-	bars := make([]ui.BarChartBar, 0, len(counts))
-	for _, g := range counts {
-		bars = append(bars, ui.BarChartBar{Label: groupLabel(ctx, m, groupBy, g.key), Value: float64(g.n)})
-	}
-	return bars
+	return groupSeries(ctx, m, groupBy, counts, func(label string, value float64) ui.BarChartBar {
+		return ui.BarChartBar{Label: label, Value: value}
+	})
 }
 
 // GroupSlices is GroupBars as pie chart slices.
 func (u *UI) GroupSlices(ctx context.Context, entityName, groupBy string) []ui.PieSlice {
 	m, counts := u.groupCounts(ctx, entityName, groupBy)
-	out := make([]ui.PieSlice, 0, len(counts))
-	for _, g := range counts {
-		out = append(out, ui.PieSlice{Label: groupLabel(ctx, m, groupBy, g.key), Value: float64(g.n)})
-	}
-	return out
+	return groupSeries(ctx, m, groupBy, counts, func(label string, value float64) ui.PieSlice {
+		return ui.PieSlice{Label: label, Value: value}
+	})
 }
 
 // LineChart draws the grouped counts as a single-series line chart.

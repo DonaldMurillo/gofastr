@@ -151,20 +151,37 @@ func newCountersApp(t *testing.T, db *sql.DB) *App {
 	return app
 }
 
+// seedSerialRows inserts three labeled rows so the generated id column
+// reaches 3.
+func seedSerialRows(t *testing.T, db *sql.DB, table string) {
+	t.Helper()
+	cascadeExec(t, db,
+		`INSERT INTO `+table+` (label) VALUES ('a')`,
+		`INSERT INTO `+table+` (label) VALUES ('b')`,
+		`INSERT INTO `+table+` (label) VALUES ('c')`)
+}
+
+// nextSerialIDFollowsRestore verifies the advance-serial contract both
+// restore suites pin: the next generated id continues the restored
+// sequence instead of replaying it.
+func nextSerialIDFollowsRestore(t *testing.T, dst *sql.DB, table string) {
+	t.Helper()
+	var id int64
+	if err := dst.QueryRow(`INSERT INTO ` + table + ` (label) VALUES ('next') RETURNING id`).Scan(&id); err != nil {
+		t.Fatalf("insert after restore: %v", err)
+	}
+	if id != 4 {
+		t.Errorf("next id after restore = %d, want 4", id)
+	}
+}
+
 // After a restore, the next generated id follows the restored ones.
 func TestImportAdvancesSerialSequence(t *testing.T) {
-	forEachRestore(t, newCountersApp, func(t *testing.T, db *sql.DB) {
-		cascadeExec(t, db, `INSERT INTO counters (label) VALUES ('a')`, `INSERT INTO counters (label) VALUES ('b')`,
-			`INSERT INTO counters (label) VALUES ('c')`)
-	}, func(t *testing.T, dst *sql.DB, _ migrate.Dialect) {
-		var id int64
-		if err := dst.QueryRow(`INSERT INTO counters (label) VALUES ('next') RETURNING id`).Scan(&id); err != nil {
-			t.Fatalf("insert after restore: %v", err)
-		}
-		if id != 4 {
-			t.Errorf("next id after restore = %d, want 4", id)
-		}
-	})
+	forEachRestore(t, newCountersApp,
+		func(t *testing.T, db *sql.DB) { seedSerialRows(t, db, "counters") },
+		func(t *testing.T, dst *sql.DB, _ migrate.Dialect) {
+			nextSerialIDFollowsRestore(t, dst, "counters")
+		})
 }
 
 type recordingExec struct{ stmts []string }

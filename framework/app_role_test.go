@@ -195,23 +195,31 @@ func get(t *testing.T, addr, path string) *http.Response {
 // Serve role: background consumers do NOT start
 // ──────────────────────────────────────────────────────────────────────
 
-// In RoleServe, AddQueue's worker does not start, and Close is never called
-// on shutdown, a serve-only process never owns a queue it would drain.
-func TestServeRole_QueueDoesNotStart(t *testing.T) {
+// runRoleQueueScenario boots an app in role with a fakeStartStop queue
+// registered, stops it, and pins how many times the queue was started
+// and closed.
+func runRoleQueueScenario(t *testing.T, role Role, label string, wantStarts, wantCloses int32) {
+	t.Helper()
 	t.Setenv("GOFASTR_ROLE", "")
-	app := NewApp(WithoutDefaultMiddleware(), WithRole(RoleServe))
+	app := NewApp(WithoutDefaultMiddleware(), WithRole(role))
 	f := &fakeStartStop{}
 	app.AddQueue(f)
 
 	_, stop := startOnRandomPort(t, app)
 	stop() // explicit so the Close assertion sees post-shutdown state
 
-	if f.starts.Load() != 0 {
-		t.Fatalf("serve role: queue Start called %d times, want 0", f.starts.Load())
+	if got := f.starts.Load(); got != wantStarts {
+		t.Fatalf("%s role: queue Start called %d times, want %d", label, got, wantStarts)
 	}
-	if f.closes.Load() != 0 {
-		t.Fatalf("serve role: queue Close called %d times, want 0", f.closes.Load())
+	if got := f.closes.Load(); got != wantCloses {
+		t.Fatalf("%s role: queue Close called %d times, want %d", label, got, wantCloses)
 	}
+}
+
+// In RoleServe, AddQueue's worker does not start, and Close is never called
+// on shutdown, a serve-only process never owns a queue it would drain.
+func TestServeRole_QueueDoesNotStart(t *testing.T) {
+	runRoleQueueScenario(t, RoleServe, "serve", 0, 0)
 }
 
 // In RoleServe the outbox relay never starts: a staged row is never
@@ -340,20 +348,7 @@ func TestWorkerRole_EntityRouteNotServed(t *testing.T) {
 
 // In RoleWorker, AddQueue's worker DOES start and Close runs on shutdown.
 func TestWorkerRole_QueueStarts(t *testing.T) {
-	t.Setenv("GOFASTR_ROLE", "")
-	app := NewApp(WithoutDefaultMiddleware(), WithRole(RoleWorker))
-	f := &fakeStartStop{}
-	app.AddQueue(f)
-
-	_, stop := startOnRandomPort(t, app)
-	stop() // explicit so the Close assertion sees post-shutdown state
-
-	if f.starts.Load() != 1 {
-		t.Fatalf("worker role: queue Start called %d times, want 1", f.starts.Load())
-	}
-	if f.closes.Load() != 1 {
-		t.Fatalf("worker role: queue Close called %d times, want 1", f.closes.Load())
-	}
+	runRoleQueueScenario(t, RoleWorker, "worker", 1, 1)
 }
 
 // In RoleWorker the outbox relay runs: a staged row is delivered to the

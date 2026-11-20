@@ -1,0 +1,64 @@
+primitive: runtime.bundle
+summary: The Go side of the browser runtime's delivery - the full, static and embed compositions of frag/*.js inside one IIFE, the embed loader, the colour-scheme bootstrap, the split modules of src/*.js, each minified once under minify.Enabled, and the markup generation a navigation fetch names.
+code:
+  - core-ui/runtime/runtime.go
+  - core-ui/runtime/doc.go
+  - core-ui/runtime/markup.go
+docs:
+  - core-ui/ARCHITECTURE.md
+  - framework/docs/content/runtime-contract.md
+  - framework/docs/content/runtime-minification.md
+on_change:
+  - A change to the data-cui-* vocabulary that an older kernel cannot read bumps MarkupVersion here and _markup in frag/kernel.js together.
+invariants:
+  - id: compositions-share-fragments
+    rule: Every composition is assembled by composeFragments from the same fragment files, the embed composition carries no nav fragment, the static one carries rpc-stub before the shared boot, and RPC is a demand module rather than part of any bundle.
+    enforced_by:
+      - test: core-ui/runtime.TestCompositionsShareByteIdenticalFragments
+      - test: core-ui/runtime.TestEmbedCompositionOmitsNav
+      - test: core-ui/runtime.TestRPCIsDemandLoaded
+      - test: core-ui/runtime.TestComposedRuntimeIsSymbolComplete
+      - test: core-ui/runtime.TestStaticMode_RPCShowsNotice
+      - test: core-ui/runtime.TestStaticActionsSkipRequests
+  - id: served-code-is-minified
+    rule: The compositions, the embed loader, the colour-scheme bootstrap and every module are minified when minify.Enabled, and the bundles stay within their gzip budgets.
+    enforced_by:
+      - test: core-ui/runtime.TestMinifiedBundle
+      - test: core-ui/runtime.TestColorSchemeJSShipsMinified
+      - test: core-ui/runtime.TestCoreBudgetAtPreLayout
+      - test: core-ui/runtime.TestEmbedSizeBudgets
+      - test: core-ui/runtime.TestRuntimeModuleSizeBudgets
+  - id: module-names-meet-once
+    rule: Module returns nothing for a name outside the module grammar, and ModuleNames panics when a registered behaviour shares an embedded module's name.
+    enforced_by:
+      - test: core-ui/runtime.TestRuntimeModuleRejectsBadName
+      - test: core-ui/runtime.TestBehaviorShadowingAnEmbeddedModuleIsRefused
+  - id: markup-generation-matches-kernel
+    rule: MarkupVersion is the generation frag/kernel.js names in its X-Gofastr-Markup header.
+    enforced_by:
+      - test: core-ui/runtime.TestKernelMarkupMatchesGo
+decisions:
+  - id: embed-omits-nav
+    date: 2026-11-20
+    status: accepted
+    decision: The embed composition leaves the nav fragment out instead of disabling it.
+    rejected:
+      - option: Ship nav with a flag that turns soft navigation off inside a frame.
+        why: Code that is absent cannot be re-enabled by mistake.
+    upholds: [compositions-share-fragments]
+  - id: embed-budgets
+    date: 2026-11-20
+    status: accepted
+    decision: The embed bundle's budget is looser than the core runtime's and the embed loader's is the tightest.
+    rejected:
+      - option: One budget for every bundle.
+        why: The embed bundle loads inside a frame and blocks nothing on the host page, while the loader sits on a stranger's critical path and only creates the frame, hands over the nonce and resizes.
+    upholds: [served-code-is-minified]
+  - id: markup-generation-reloads
+    date: 2026-11-20
+    status: accepted
+    decision: A host whose markup generation differs from the fetching kernel's answers with a body that reloads the document.
+    rejected:
+      - option: Swap the new markup into the old kernel.
+        why: A tab opened before a deploy would get markup its kernel cannot read, and every interactive marker would be dead.
+    upholds: [markup-generation-matches-kernel]

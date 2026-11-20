@@ -1,0 +1,54 @@
+primitive: harness.hook
+summary: Runs lifecycle hooks, shell commands registered per session event, each under a deadline with capped output, and reports exit code and timeout per hook.
+code:
+  - framework/experimental/harness/hook/
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: per-event-default-timeouts
+    rule: A hook with a zero Timeout gets 5s for SessionStart, UserPromptSubmit and Stop, 30s for PreToolUse and PostToolUse, and 60s for Compact.
+    enforced_by:
+      - test: framework/experimental/harness/hook.TestDefaultTimeouts
+  - id: negative-timeout-rejected
+    rule: Register returns an error for a negative Timeout instead of folding it onto the per-event default, while a zero Timeout registers and keeps the default.
+    enforced_by:
+      - test: framework/experimental/harness/hook.TestHookRegisterNegativeTimeoutRejected
+      - test: framework/experimental/harness/hook.TestHookRegisterZeroTimeoutKeepsDefault
+  - id: project-hooks-off-by-default
+    rule: Register drops a hook whose Source is "project" without error unless Runner.AllowProjectHooks is set.
+    enforced_by:
+      - test: framework/experimental/harness/hook.TestProjectHookSkippedByDefault
+      - test: framework/experimental/harness/hook.TestProjectHookAllowedWithFlag
+  - id: timeout-signals-process-group
+    rule: On Unix a hook runs in its own process group; at its deadline the group gets SIGTERM, Run returns within the 5s WaitDelay grace even when a descendant holds the output pipe or ignores SIGTERM, and the group then gets SIGKILL, so a TERM-ignoring descendant is gone within 5s of the deadline.
+    enforced_by:
+      - test: framework/experimental/harness/hook.TestRunTimeoutReturnsPromptly
+      - test: framework/experimental/harness/hook.TestRunTimeout
+      - test: framework/experimental/harness/hook.TestRunTimeoutKillsTermIgnoringDescendant
+  - id: output-capped-with-one-marker
+    rule: A hook's combined stdout and stderr is cut at 64 KiB and carries exactly one truncation marker, whatever the write sizes.
+    enforced_by:
+      - test: framework/experimental/harness/hook.TestRunOutputCapped
+      - test: framework/experimental/harness/hook.TestCappedWriterMarksWriteAfterExactFill
+  - id: exit-code-reported
+    rule: Result.ExitCode is the hook's own exit status, -1 when it could not start, and TimedOut is set only when the deadline passed.
+    enforced_by:
+      - test: framework/experimental/harness/hook.TestRunNonZeroExit
+      - test: framework/experimental/harness/hook.TestRunOK
+decisions:
+  - id: reject-negative-timeout
+    date: 2026-11-18
+    status: accepted
+    decision: A negative hook Timeout is an error at Register.
+    rejected:
+      - option: Treat any Timeout <= 0 as "use the per-event default".
+        why: A negative value is a sign or unit error, and the default would give the hook the longest deadline where the caller asked for the shortest.
+    upholds: [negative-timeout-rejected]
+  - id: term-the-group-via-cancel
+    date: 2026-11-18
+    status: accepted
+    decision: The deadline is enforced by exec.Cmd.Cancel sending SIGTERM to the hook's process group, cmd.WaitDelay as the 5s grace, and a SIGKILL to the group once Run returns.
+    rejected:
+      - option: Let CommandContext SIGKILL the shell and send SIGTERM and SIGKILL to it after Run returns.
+        why: The shell was already dead, a backgrounded child kept the pipe open until WaitDelay, and the after-the-fact grace held every timed-out hook for another 5s while the child survived.
+    upholds: [timeout-signals-process-group]

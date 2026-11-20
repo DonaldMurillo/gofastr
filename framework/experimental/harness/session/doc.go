@@ -1,5 +1,2 @@
-// Package session is part of the GoFastr harness.
-//
-// See docs/harness-architecture.md for the architecture this package
-// implements.
+// Package session defines the durable session event log and its export bundle.
 package session

@@ -15,6 +15,8 @@ func TestLevenshtein(t *testing.T) {
 		{"status", "statuss", 1}, // insertion
 		{"status", "stauts", 2},  // transposition = 2 edits
 		{"score", "scor", 1},     // deletion
+		{"é", "", 2},             // bytewise: two UTF-8 bytes
+		{"né", "ne", 2},
 	}
 	for _, c := range cases {
 		if got := Levenshtein(c.a, c.b); got != c.want {

@@ -25,9 +25,41 @@ type ControlConfig struct {
 	EnterKeyHint, InputMode string
 	// NoSpellCheck sets spellcheck="false" and autocapitalize="off".
 	NoSpellCheck bool
-	Class        string
+	// AutoCapitalize sets autocapitalize, the case an on-screen keyboard
+	// starts in; it wins over NoSpellCheck's "off". Empty leaves the
+	// browser's default.
+	AutoCapitalize AutoCapitalize
+	Class          string
 	// ExtraAttrs lands on the input; keys the control owns are dropped.
 	ExtraAttrs html.Attrs
+}
+
+// AutoCapitalize is an autocapitalize hint: the case an on-screen
+// keyboard starts a field in. It changes nothing a hardware keyboard
+// types and nothing the server receives.
+type AutoCapitalize string
+
+const (
+	// AutoCapitalizeOff starts every letter lower case: addresses,
+	// handles, codes.
+	AutoCapitalizeOff AutoCapitalize = "off"
+	// AutoCapitalizeSentences capitalizes the first letter of each
+	// sentence: prose.
+	AutoCapitalizeSentences AutoCapitalize = "sentences"
+	// AutoCapitalizeWords capitalizes the first letter of each word:
+	// names, titles.
+	AutoCapitalizeWords AutoCapitalize = "words"
+	// AutoCapitalizeCharacters capitalizes every letter: postcodes,
+	// licence plates.
+	AutoCapitalizeCharacters AutoCapitalize = "characters"
+)
+
+func (a AutoCapitalize) valid() bool {
+	switch a {
+	case "", AutoCapitalizeOff, AutoCapitalizeSentences, AutoCapitalizeWords, AutoCapitalizeCharacters:
+		return true
+	}
+	return false
 }
 
 // Control renders the styled native input a FormField builder uses when
@@ -38,6 +70,9 @@ func Control(cfg ControlConfig) render.HTML {
 	}
 	if cfg.Name == "" {
 		panic("ui: Control requires Name — a control with no name submits nothing")
+	}
+	if !cfg.AutoCapitalize.valid() {
+		panic("ui: Control AutoCapitalize " + strconv.Quote(string(cfg.AutoCapitalize)) + " is not off, sentences, words or characters")
 	}
 	owned := html.Attrs{}
 	if cfg.Min != "" {
@@ -74,6 +109,9 @@ func Control(cfg ControlConfig) render.HTML {
 	if cfg.NoSpellCheck {
 		extra["spellcheck"] = "false"
 		extra["autocapitalize"] = "off"
+	}
+	if cfg.AutoCapitalize != "" {
+		extra["autocapitalize"] = string(cfg.AutoCapitalize)
 	}
 	return inputHTML(headless.InputProps{
 		Type:        cfg.Type,

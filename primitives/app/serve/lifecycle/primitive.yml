@@ -12,8 +12,7 @@ invariants:
   - id: drain-under-one-shared-timeout
     rule: All drainers share one drain context whose deadline is the shutdown timeout from Shutdown's start, thirty seconds unless set, and a non-positive timeout keeps the current one.
     enforced_by:
-      - test: framework/lifecycle.TestDrainTimeout
-      - test: framework/lifecycle.TestSlowDrainerInterrupted
+      - test: framework/lifecycle.TestDrainTimesOut
       - test: framework/lifecycle.TestDefaultDrainTimeoutIsThirtySeconds
       - test: framework/lifecycle.TestNonPositiveShutdownTimeoutKeepsDefault
   - id: shutdown-doc-names-the-order

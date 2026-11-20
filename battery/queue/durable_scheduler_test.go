@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -14,15 +13,7 @@ import (
 
 func openDurableSchedulerDB(t *testing.T) *sql.DB {
 	t.Helper()
-	dsn := "file:" + filepath.ToSlash(filepath.Join(t.TempDir(), "scheduler.db")) +
-		"?_busy_timeout=5000&_journal_mode=WAL"
-	db, err := sql.Open("sqlite3", dsn)
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	db.SetMaxOpenConns(8)
-	t.Cleanup(func() { _ = db.Close() })
-	return db
+	return openQueueFileDB(t, "scheduler.db", 5000, 8)
 }
 
 func newDurableTestQueue(t *testing.T, db *sql.DB) *DBQueue {

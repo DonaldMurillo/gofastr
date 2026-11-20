@@ -2,20 +2,15 @@ package render
 
 import "sync"
 
-// Component is a reusable template function parameterised by data of type T.
-// Any function matching func(T) HTML can be used as a Component.
+// Component is a template function over data of type T.
 type Component[T any] func(data T) HTML
 
-// componentRegistry stores named components. Components are any function
-// that returns HTML; callers type-assert to the concrete signature.
 var (
 	componentMu       sync.RWMutex
 	componentRegistry = make(map[string]any)
 )
 
-// RegisterComponent registers a component function under the given name.
-// The function must have the signature func(T) HTML for some concrete type T.
-// It panics if fn is nil.
+// RegisterComponent stores fn, a func(T) HTML, under name; it panics on a nil fn.
 func RegisterComponent(name string, fn any) {
 	if fn == nil {
 		panic("render: RegisterComponent called with nil function")
@@ -25,9 +20,7 @@ func RegisterComponent(name string, fn any) {
 	componentMu.Unlock()
 }
 
-// GetComponent retrieves a previously registered component by name.
-// Returns the function value and true if found, or nil and false.
-// The caller should type-assert the result to the expected func signature.
+// GetComponent returns the function registered under name, for the caller to type-assert, and whether one was.
 func GetComponent(name string) (any, bool) {
 	componentMu.RLock()
 	fn, ok := componentRegistry[name]

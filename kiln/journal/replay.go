@@ -105,12 +105,9 @@ func Apply(s *Session, e Entry) error {
 		if err := e.Decode(&p); err != nil {
 			return err
 		}
-		plan, ok := s.Plans[p.PlanID]
-		if !ok {
-			return fmt.Errorf("plan_approved references unknown plan_id %q", p.PlanID)
-		}
-		if plan.Rejected {
-			return fmt.Errorf("plan_approved on already-rejected plan %q", p.PlanID)
+		plan, err := openPlan(s, "plan_approved", p.PlanID, "rejected", func(pl *Plan) bool { return pl.Rejected })
+		if err != nil {
+			return err
 		}
 		plan.Approved = true
 		plan.ApprovedAt = e.Timestamp
@@ -121,12 +118,9 @@ func Apply(s *Session, e Entry) error {
 		if err := e.Decode(&p); err != nil {
 			return err
 		}
-		plan, ok := s.Plans[p.PlanID]
-		if !ok {
-			return fmt.Errorf("plan_rejected references unknown plan_id %q", p.PlanID)
-		}
-		if plan.Approved {
-			return fmt.Errorf("plan_rejected on already-approved plan %q", p.PlanID)
+		plan, err := openPlan(s, "plan_rejected", p.PlanID, "approved", func(pl *Plan) bool { return pl.Approved })
+		if err != nil {
+			return err
 		}
 		plan.Rejected = true
 		plan.RejectedAt = e.Timestamp
@@ -135,6 +129,19 @@ func Apply(s *Session, e Entry) error {
 	default:
 		return fmt.Errorf("unknown entry kind %q", e.Kind)
 	}
+}
+
+// openPlan returns the proposed plan a kind entry decides, refusing an
+// unknown plan_id and a plan the other verdict already closed.
+func openPlan(s *Session, kind, planID, closedAs string, closed func(*Plan) bool) (*Plan, error) {
+	plan, ok := s.Plans[planID]
+	if !ok {
+		return nil, fmt.Errorf("%s references unknown plan_id %q", kind, planID)
+	}
+	if closed(plan) {
+		return nil, fmt.Errorf("%s on already-%s plan %q", kind, closedAs, planID)
+	}
+	return plan, nil
 }
 
 // applyWorldEdit dispatches by Op.

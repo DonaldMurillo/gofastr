@@ -62,7 +62,15 @@ no-store`. `Live.ServeHTTP` sets an `X-Kiln-Server` header; the
 `waitReady` probe requires it and fails when serve exits, instead of
 hanging on a port held by something else.
 
-`kiln mcp` exposes the same tools over stdio MCP. `kiln acp` speaks the
+`kiln mcp` exposes the same tools over stdio MCP. Each MCP tool carries
+annotations (see [tool annotations](mcp.md#tool-annotations)): `world_get`
+is read-only and idempotent, every tool whose descriptor is `Destructive`
+(the `delete_*` tools, `update_entity`, `reset_session` and `undo`, which
+nothing redoes) is `destructiveHint: true`, the rest are
+`destructiveHint: false` because `undo` can revert them, and none reaches
+outside the project (`openWorldHint: false`). Under `kiln acp` a
+`Destructive` tool asks `session/request_permission` first, so `undo` now
+asks too; it still needs no plan. `kiln acp` speaks the
 published Agent Client Protocol v1 instead (see
 [ACP](/docs/acp)): `initialize` → `session/new` → `session/prompt`, with
 tool invocations streamed as `session/update` `tool_call` frames and
@@ -342,6 +350,15 @@ Freeze writes exactly:
 - `build/gofastr.yml`: deterministic current app spec, ready for the
   one-shot generator;
 - `build/world.json`: lossless authoring snapshot.
+
+The current app spec and generated clients support camelCase JSON only.
+Freeze refuses `app.json_case: snake` (also `snake_case`) instead of silently
+changing the preview's wire contract. Keep using the Kiln preview for
+snake_case, or explicitly change `app.json_case` to `camel` before freezing,
+then set `framework.AppConfig.JSONCase` to `framework.CaseSnake` in owned Go
+before serving clients. Generated clients still target camelCase; adapt them
+to the owned app's wire contract as well. Empty, `camel`, and `camelCase`
+retain the default behavior. Unknown casing values are rejected.
 
 A database URL with an embedded password never lands in either file:
 freeze writes a `${DATABASE_URL}` reference instead, and the generated

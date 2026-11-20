@@ -55,28 +55,44 @@ func TestMultipleDrainersCalled(t *testing.T) {
 	}
 }
 
-func TestDrainTimeout(t *testing.T) {
-	lc := lifecycle.New()
-	lc.SetShutdownTimeout(50 * time.Millisecond)
-
-	lc.RegisterDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
-		select {
-		case <-time.After(5 * time.Second):
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}))
-
-	start := time.Now()
-	err := lc.Shutdown(context.Background())
-	elapsed := time.Since(start)
-
-	if err == nil {
-		t.Error("expected timeout error")
+func TestDrainTimesOut(t *testing.T) {
+	cases := []struct {
+		name     string
+		timeout  time.Duration // SetShutdownTimeout
+		wait     time.Duration // how long the drainer stalls if not interrupted
+		maxPause time.Duration // Shutdown must return within this
+	}{
+		// The drainer stalls past the deadline and Shutdown returns a
+		// timeout error instead of waiting the drainer out.
+		{"drain timeout", 50 * time.Millisecond, 5 * time.Second, 200 * time.Millisecond},
+		// A drainer only just slower than the deadline is interrupted, not
+		// waited for: Shutdown returns well before the drainer would.
+		{"slow drainer interrupted", 10 * time.Millisecond, 50 * time.Millisecond, 40 * time.Millisecond},
 	}
-	if elapsed > 200*time.Millisecond {
-		t.Errorf("drain took %v, should have timed out sooner", elapsed)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lc := lifecycle.New()
+			lc.SetShutdownTimeout(tc.timeout)
+
+			lc.RegisterDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
+				select {
+				case <-time.After(tc.wait):
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}))
+
+			start := time.Now()
+			err := lc.Shutdown(context.Background())
+			elapsed := time.Since(start)
+			if err == nil {
+				t.Fatal("expected timeout error")
+			}
+			if elapsed > tc.maxPause {
+				t.Errorf("Shutdown elapsed %v, expected under %v", elapsed, tc.maxPause)
+			}
+		})
 	}
 }
 
@@ -164,30 +180,6 @@ func TestRegisterAfterShutdownRejected(t *testing.T) {
 	}
 	close(release)
 	<-done
-}
-
-func TestSlowDrainerInterrupted(t *testing.T) {
-	lc := lifecycle.New()
-	lc.SetShutdownTimeout(10 * time.Millisecond)
-
-	lc.RegisterDrainer(lifecycle.DrainFunc(func(ctx context.Context) error {
-		select {
-		case <-time.After(50 * time.Millisecond):
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}))
-
-	start := time.Now()
-	err := lc.Shutdown(context.Background())
-	elapsed := time.Since(start)
-	if err == nil {
-		t.Fatal("expected timeout error")
-	}
-	if elapsed > 40*time.Millisecond {
-		t.Errorf("Shutdown elapsed %v, expected under 40ms", elapsed)
-	}
 }
 
 func TestDrainerPanicIsolated(t *testing.T) {

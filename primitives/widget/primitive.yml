@@ -1,0 +1,93 @@
+primitive: widget
+summary: Self-mounting overlay surfaces (panels, modals, drawers, popovers, toast stacks) declared as a widget.Definition, mounted on a router with their chrome, stylesheet, state and RPC routes, and published to the catalog the runtime opens them from; the runtime, module and compute asset handlers live here too.
+code:
+  - core-ui/widget/*.go
+docs:
+  - framework/docs/content/widgets.md
+  - core-ui/ARCHITECTURE.md
+on_change:
+  - A signal source takes no context, so its value is the same for every caller; a widget that needs per-user data sets RequireAuthenticated and reads it in a context-aware slot, never in a signal.
+invariants:
+  - id: gates-fail-closed
+    rule: RequireSession and RequireAuthenticated gate /state, /chrome and every RPC through the host's installed check, the stricter level wins when both are set, a missing check refuses, and the check sees the widget it guards.
+    enforced_by:
+      - test: core-ui/widget.TestWidgetStateGate
+      - test: core-ui/widget.TestRequireSessionGatesWidgetRPCs
+      - test: core-ui/widget.TestMountSharedKeepsTheSessionGate
+      - test: core-ui/widget.TestStricterGateWins
+      - test: core-ui/widget.TestGatePassesItsWidgetToThePredicate
+  - id: catalog-lists-what-the-caller-may-reach
+    rule: The /__gofastr/widgets catalog is never stored, lists only widgets whose gate the caller passes and whose ListedFor accepts it (a panicking ListedFor counts as no), and scopes by the decoded ?page path through each widget's Routes, none meaning every page.
+    enforced_by:
+      - test: core-ui/widget.TestCatalogListsOnlyReachable
+      - test: core-ui/widget.TestCatalogIsNotStored
+      - test: core-ui/widget.TestCatalogUsesDecodedPagePath
+      - test: core-ui/widget.TestArchContract_ExactPageScoping
+      - test: core-ui/widget.TestArchContract_PrefixPageScoping
+      - test: core-ui/widget.TestArchContract_MatchFnPageScoping
+      - test: core-ui/widget.TestArchContract_AvailableOnHelper
+      - test: core-ui/widget.TestArchContract_GlobalWidgetAvailableEverywhere
+  - id: chrome-renders-safely
+    rule: The chrome endpoint refuses a ctx over MaxChromeContext bytes, not valid UTF-8 or holding a C0 or C1 control or DEL; a panicking slot, Skeleton or ExtraCSS renders empty instead of failing the request; RenderChromeCtx threads its context into every slot, and RenderChrome matches the endpoint.
+    enforced_by:
+      - test: core-ui/widget.TestServeChromeRejectsOversizeCtx
+      - test: core-ui/widget.TestServeChromeRejectsControlCharsInCtx
+      - test: core-ui/widget.TestServeChromeRejectsInvalidUTF8Ctx
+      - test: core-ui/widget.TestWidgetChromeRedPanicContained
+      - test: core-ui/widget.TestRenderChromeCtxThreadsRequestContext
+      - test: core-ui/widget.TestArchContract_RenderChromeMatchesChromeEndpoint
+      - test: core-ui/widget.TestChromeRedPositionEscaped
+      - test: core-ui/widget.TestDefaultSkeletonEscapesApostrophes
+  - id: state-is-whole-or-keeps-polling
+    rule: /state is never stored, omits a signal that fails to read or has no JSON form and logs it, and sends X-Gofastr-Poll-Stop only when PollTerminal is true and every signal was read.
+    enforced_by:
+      - test: core-ui/widget.TestStateOmitsUnencodableSignal
+      - test: core-ui/widget.TestWidgetStateLogsWriteFailure
+      - test: core-ui/widget.TestServeState_PollTerminalHeader
+      - test: core-ui/widget.TestPollStopNeverOnPartialRead
+      - test: core-ui/widget.TestPollStopNeverOnStaleSnapshot
+  - id: versioned-assets-are-immutable-only-at-their-hash
+    rule: The runtime, module and compute asset handlers answer immutable only when ?v= equals the asset's hash, and no-cache with the ETag otherwise.
+    enforced_by:
+      - test: core-ui/widget.TestServeRuntimeModuleStaleVersionIsNotImmutable
+      - test: core-ui/widget.TestServeComputeStaleVersionIsNotImmutable
+      - test: core-ui/widget.TestServeRuntimeModuleServesRegisteredBehavior
+      - test: core-ui/widget.TestServeComputeWorker
+  - id: inline-json-never-closes-its-script
+    rule: The module, behaviours and compute manifests written into a page hold no </.
+    enforced_by:
+      - test: core-ui/widget.TestBehaviorsManifestEscapesClosingScript
+      - test: core-ui/widget.TestComputeManifestEscapesClosingScript
+      - test: core-ui/widget.TestRuntimeTagEmbedsModuleManifest
+  - id: mount-validates-and-publishes
+    rule: Mount panics on an RPC method other than GET, POST, PUT, PATCH, DELETE or empty, registers each RPC under its method, and publishes StyleURL, StateURL and ChromeURL under the router group's prefix.
+    enforced_by:
+      - test: core-ui/widget.TestMountRefusesUnknownRPCMethod
+      - test: core-ui/widget.TestMountRegistersEachRPCMethod
+      - test: core-ui/widget.TestPrefixedMountPublishesItsURLs
+      - test: core-ui/widget.TestMountTwicePanics
+decisions:
+  - id: session-is-not-authentication
+    date: 2026-11-20
+    status: accepted
+    decision: RequireSession asks only for a browser session and RequireAuthenticated for a signed-in principal.
+    rejected:
+      - option: One RequireSession flag meaning signed in.
+        why: framework/uihost mints an anonymous session on the first page render, so every visitor holds a session and a session gate admits them all.
+    upholds: [gates-fail-closed]
+  - id: listing-is-not-authorisation
+    date: 2026-11-20
+    status: accepted
+    decision: ListedFor decides only whether the catalog names a widget; the gate on its endpoints refuses requests.
+    rejected:
+      - option: Treat an unlisted widget as unreachable.
+        why: Its /state and /chrome URLs are predictable, so hiding the name stops nobody who guesses them.
+    upholds: [catalog-lists-what-the-caller-may-reach]
+  - id: stale-version-is-not-immutable
+    date: 2026-11-20
+    status: accepted
+    decision: An asset URL whose ?v= is not the current hash is answered no-cache.
+    rejected:
+      - option: Answer immutable for any ?v=.
+        why: A page still holding an old hash would pin the new bytes under the old URL for a year, or the old bytes after a deploy.
+    upholds: [versioned-assets-are-immutable-only-at-their-hash]

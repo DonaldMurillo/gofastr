@@ -20,17 +20,13 @@ import (
 )
 
 // Unmounted is one entry of the unmounted section: a gofastr package the
-// project copied into its own tree with `gofastr unmount`. The section is
-// the CLI's registry of copies; `gofastr unmount` and `gofastr remount`
-// write it, and verify, upgrade and audit read it.
+// project copied into its own tree with `gofastr unmount`.
 type Unmounted struct {
 	// Source is the upstream import path the copy was made from.
 	Source string
-	// Version is the gofastr version copied: a release tag, or dev for a
-	// copy made from a checkout.
+	// Version is the gofastr version copied: a release tag, or dev.
 	Version string
-	// Path is the copy's directory, slash-separated and relative to the
-	// settings file.
+	// Path is the copy's directory, relative to the settings file.
 	Path string
 	// Date is the day the copy was made, YYYY-MM-DD.
 	Date string
@@ -81,8 +77,6 @@ func (f File) Unmounted() ([]Unmounted, error) {
 		if err := u.Validate(); err != nil {
 			return nil, fmt.Errorf("%s: %w", at, err)
 		}
-		// A path holds one copy. One source may have several: `generate
-		// package` copies a chrome package once per binary that owns it.
 		if seen[u.Path] {
 			return nil, fmt.Errorf("%s: %s is listed twice", at, u.Path)
 		}
@@ -92,9 +86,8 @@ func (f File) Unmounted() ([]Unmounted, error) {
 	return out, nil
 }
 
-// Validate checks one entry: an import path, a plain version, a local
-// slash path and a calendar date. Every field lands in YAML and in
-// generated Go, so nothing outside those shapes is written or read.
+// Validate checks one entry: an import path, a plain version, a clean
+// relative path outside vendor/ and a YYYY-MM-DD date.
 func (u Unmounted) Validate() error {
 	if err := module.CheckImportPath(u.Source); err != nil {
 		return fmt.Errorf("source: %w", err)
@@ -132,18 +125,11 @@ func plainVersion(v string) bool {
 	return true
 }
 
-// unmountedHeader is the comment gofastr writes above the unmounted
-// section.
 const unmountedHeader = "# Written by gofastr unmount and gofastr remount."
 
-// SetUnmounted writes entries as the unmounted section of the settings
-// file at p, creating the file when it does not exist. The rest of the
-// file keeps its bytes and comments, trailing blank lines aside; the
-// unmounted section is gofastr's to write, so it is replaced whole (an
-// empty list removes it, and the file with it when nothing else is left).
-// The result is parsed back before it is written and must hold exactly
-// entries, so a write never leaves a file the readers refuse or a section
-// the rewrite failed to find.
+// SetUnmounted replaces the unmounted section of the settings file at p with
+// entries, creating the file when needed and removing it when nothing is
+// left. It errors when the result would not read back as exactly entries.
 func SetUnmounted(p string, entries []Unmounted) error {
 	for _, u := range entries {
 		if err := u.Validate(); err != nil {
@@ -174,14 +160,7 @@ func SetUnmounted(p string, entries []Unmounted) error {
 	})
 }
 
-// setSection replaces the top-level section name of the settings file at
-// p with body, written under header; an empty body removes the section.
-// check reads the result back before it is written.
 func setSection(p, name, header, body string, check func(File) error) error {
-	// The lock lives in the project's .gofastr/ state directory, which
-	// generated apps ignore, so it never shows up beside the committed
-	// settings file. Keep its inode: removing it after unlock would let a
-	// new writer lock a different file while a waiting writer holds this one.
 	stateDir := filepath.Join(filepath.Dir(p), ".gofastr")
 	if err := os.Mkdir(stateDir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 		return err
@@ -220,7 +199,6 @@ func setSection(p, name, header, body string, check func(File) error) error {
 	}
 	out := b.String()
 	if out == "" {
-		// The section was all the file held: an empty file says nothing.
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -236,10 +214,6 @@ func setSection(p, name, header, body string, check func(File) error) error {
 	return replaceFile(p, []byte(out))
 }
 
-// replaceFile writes data to a temporary file beside p and renames it over
-// p, so a failed write leaves the old file whole: the settings file holds
-// more than the unmounted section. The temporary file is created
-// owner-only, the mode fileperm.WriteOwnerOnly gave it before.
 func replaceFile(p string, data []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(p), "."+filepath.Base(p)+".tmp-*")
 	if err != nil {
@@ -256,11 +230,6 @@ func replaceFile(p string, data []byte) error {
 	return os.Rename(tmp.Name(), p)
 }
 
-// withoutSection drops a top-level section from a settings document: its
-// key line, every line indented under it, and header, the comment line
-// gofastr writes above it. A top-level key ends the section, and so does a
-// column-0 comment unless more of the section's indented lines follow it:
-// a comment between two entries belongs to the section.
 func withoutSection(doc, name, header string) string {
 	lines := strings.SplitAfter(doc, "\n")
 	isTop := func(line string) bool {
@@ -269,8 +238,6 @@ func withoutSection(doc, name, header string) string {
 	}
 	isComment := func(line string) bool { return strings.HasPrefix(line, "#") }
 	isBlank := func(line string) bool { return strings.TrimSpace(line) == "" }
-	// continues reports whether the section goes on after line i: the next
-	// line that is neither blank nor a column-0 comment is indented.
 	continues := func(i int) bool {
 		for _, line := range lines[i+1:] {
 			if isBlank(line) || (isTop(line) && isComment(line)) {

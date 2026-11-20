@@ -51,18 +51,7 @@ func TestGroupSlashlessIndexNavPreservesShell(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, shell(`<h1 id="create-screen">Create</h1>`))
 	})
-	mux.HandleFunc("/studio/read", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-Gofastr-Navigate") == "1" {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("X-Gofastr-Partial", "true")
-			w.Header().Set("X-Gofastr-Title", "Read")
-			w.Header().Set("X-Gofastr-Swap", "g:/studio/:studio")
-			fmt.Fprint(w, `<h1 id="read-screen">Read</h1>`)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, shell(`<h1 id="read-screen">Read</h1>`))
-	})
+	mux.HandleFunc("/studio/read", spaPartial(nil, "Read", "g:/studio/:studio", `<h1 id="read-screen">Read</h1>`, shell(`<h1 id="read-screen">Read</h1>`)))
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

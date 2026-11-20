@@ -1,0 +1,47 @@
+primitive: harness.logging
+summary: The harness's own operational log, separate from the per-session event log - a Logger writing one JSON object per line with a default level and per-component overrides, and a DailyFileWriter appending to harness-YYYYMMDD.log.
+code:
+  - framework/experimental/harness/logging/
+docs:
+  - framework/docs/content/harness-architecture.md
+twins:
+  - job: Open a fixed-name log or journal file for append, refusing a symlinked leaf and keeping the file owner-only.
+    why: Each package spells the open itself (Lstat refusal here and in kiln, O_NOFOLLOW in battery/log) and no shared helper exists yet.
+    sites:
+      - path: framework/experimental/harness/logging/logging.go
+        note: openDailyFile, Lstat refusal and Chmod 0600 on the handle.
+      - path: kiln/journal/journal.go
+        note: openJournalFile, Lstat refusal and fileperm.RestrictOpenFile.
+      - path: battery/log/file.go
+        note: fileSink.open, O_NOFOLLOW and tightenLocked on the handle.
+invariants:
+  - id: component-level-overrides-default
+    rule: A record is written only when its level is at or above the logger component's override, or the default level when the component has none.
+    enforced_by:
+      - test: framework/experimental/harness/logging.TestPerComponentLevel
+      - test: framework/experimental/harness/logging.TestLevelFiltering
+  - id: daily-file-refuses-symlink
+    rule: DailyFileWriter.Write returns an error and writes nothing when the day's file is a symlink.
+    enforced_by:
+      - test: framework/experimental/harness/logging.TestDailyWriterRedSymlinkRefused
+  - id: daily-file-owner-only
+    rule: DailyFileWriter leaves the day's file at mode 0600 after opening it, tightening a file that already existed with a wider mode.
+    enforced_by:
+      - test: framework/experimental/harness/logging.TestDailyWriterRedSymlinkRefused
+decisions:
+  - id: chmod-the-handle
+    date: 2026-11-18
+    status: accepted
+    decision: openDailyFile calls Chmod(0600) on the opened handle every time it opens the day's file.
+    rejected:
+      - option: Rely on the 0600 mode passed to OpenFile.
+        why: The mode applies only when the file is created, so a file left at 0644 by an operator, a restored backup or umask keeps receiving log lines world-readable.
+    upholds: [daily-file-owner-only]
+  - id: lstat-refusal
+    date: 2026-11-18
+    status: accepted
+    decision: The symlink check is an Lstat before the open, as kiln's openJournalFile spells it.
+    rejected:
+      - option: O_NOFOLLOW, as battery/log uses.
+        why: It is not portable to every platform the harness builds for.
+    upholds: [daily-file-refuses-symlink]

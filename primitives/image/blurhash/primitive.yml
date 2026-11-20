@@ -15,9 +15,8 @@ invariants:
   - id: encode-downscales-longest-side
     rule: BlurHash scales a source over 64 px on either side to fit inside 64x64 before hashing, never enlarging the short side.
     enforced_by:
-      - test: framework/image.TestBlurHashAutoResizeCapsLongestSideForPortrait
+      - test: framework/image.TestBlurHashAutoResizeBoundsAllocation
       - test: framework/image.TestBlurHashAutoResizeDoesNotUpscaleSkinnyInput
-      - test: framework/image.TestBlurHashAutoResizesLargeInput
   - id: encode-matches-the-spec
     rule: Re-encoding the decode of the reference hash gives every component within 0.027 of the reference, and a solid colour hashes to its exact DC value.
     enforced_by:

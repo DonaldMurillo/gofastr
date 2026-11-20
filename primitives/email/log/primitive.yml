@@ -16,8 +16,7 @@ invariants:
   - id: bodies-and-headers-redacted
     rule: The text and HTML bodies and every header value pass RedactBody, which removes URLs whose query names a token, code, key, secret or password parameter and Bearer values.
     enforced_by:
-      - test: battery/email.TestLogSender_DoesNotExposeLiveResetLinksInTextBody
-      - test: battery/email.TestLogSender_DoesNotExposeLiveResetLinksInHTMLBody
+      - test: battery/email.TestLogSender_DoesNotExposeLiveResetLinks
       - test: battery/email.TestRedactBodyEveryParam
       - test: battery/email.TestRedactBodyDropsBearerValue
   - id: terminal-output-is-scrubbed

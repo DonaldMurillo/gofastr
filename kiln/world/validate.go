@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -160,22 +161,10 @@ func ValidateRoute(r *Route) error {
 	if !strings.HasPrefix(r.Path, "/") {
 		return fmt.Errorf("route %q %q: path must start with /", r.Method, r.Path)
 	}
-	if err := routePatternErr(r.Method + " " + r.Path); err != nil {
-		return fmt.Errorf("route %q %q: %v", r.Method, r.Path, err)
+	if err := router.ValidatePattern(r.Method, r.Path); err != nil {
+		detail := strings.TrimPrefix(err.Error(), fmt.Sprintf("router: invalid route %q: ", r.Method+" "+r.Path))
+		return fmt.Errorf("route %q %q: %s", r.Method, r.Path, detail)
 	}
-	return nil
-}
-
-// routePatternErr parses pattern with net/http's mux, the parser the
-// rebuild registers routes through. It panics on a bad pattern
-// ("/x/{oops"), so the panic is turned into the refusal here.
-func routePatternErr(pattern string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("%v", r)
-		}
-	}()
-	http.NewServeMux().HandleFunc(pattern, func(http.ResponseWriter, *http.Request) {})
 	return nil
 }
 
@@ -199,7 +188,11 @@ func OverlappingPattern(existing []string, pattern string) string {
 func patternsConflict(a, b string) (conflict bool) {
 	h := func(http.ResponseWriter, *http.Request) {}
 	mux := http.NewServeMux()
-	if routePatternErr(a) != nil {
+	method, path := "", a
+	if i := strings.IndexAny(a, " \t"); i >= 0 {
+		method, path = a[:i], a[i+1:]
+	}
+	if router.ValidatePattern(method, path) != nil {
 		return false
 	}
 	mux.HandleFunc(a, h)

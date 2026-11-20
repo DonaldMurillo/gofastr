@@ -1,0 +1,70 @@
+primitive: check.runtimeshapes
+summary: The ten runtime-shape lints over the runtime's fragment and module sources, one per recurring bug shape the adversarial audits found - unescaped selector interpolation, own-property registry reads, response bodies mounted before an ok gate, attribute-borne path segments, bare-argument selectors, raw cookie writes, ungated module URLs, raw storage keys, raw decodeURIComponent and prototype-key writes.
+code:
+  - core-ui/check/runtimeshapes.go
+docs:
+  - framework/docs/content/runtime-contract.md
+invariants:
+  - id: each-shape-fires
+    rule: Each of LintSelectorInterpolation, LintRegistryOwnProps, LintResponseMountedAfterOK, LintAttributePathSegments, LintSelectorBareArgGuarded, LintCookieConcat, LintModuleURLShape, LintStorageKeyRaw, LintDecodeURIRaw and LintProtoKeyWrite reports its pre-fix shape and its synthetic positives.
+    enforced_by:
+      - test: core-ui/check.TestLintSelectorInterpolation_FiresOnPreFixShapes
+      - test: core-ui/check.TestLintSelectorInterpolation_SyntheticPositives
+      - test: core-ui/check.TestLintRegistryOwnProps_FiresOnPreFixShapes
+      - test: core-ui/check.TestLintRegistryOwnProps_SyntheticPositives
+      - test: core-ui/check.TestLintResponseMountedAfterOK_FiresOnPreFixShape
+      - test: core-ui/check.TestLintAttributePathSegments_FiresOnPreFixShape
+      - test: core-ui/check.TestBareAttrSelectorFiresOnPreFixSites
+      - test: core-ui/check.TestCookieConcatFiresOnRawOperand
+      - test: core-ui/check.TestModuleURLShapeFiresUngatedId
+      - test: core-ui/check.TestStorageKeyRawFiresOnAttrKey
+      - test: core-ui/check.TestLintDecodeURIRaw_FiresOnAttrDerived
+      - test: core-ui/check.TestLintProtoKeyWrite_FiresOnAttrKey
+  - id: fix-spellings-stay-quiet
+    rule: Code-shaped text inside a string literal, comment or regex literal never fires, and every audited fix spelling - escaped or numeric operands, own-property guards, status gates, sanitizers - stays quiet.
+    enforced_by:
+      - test: core-ui/check.TestLintSelectorAndAttribute_StringLiteralCodeIsQuiet
+      - test: core-ui/check.TestSafeIdentsIgnoreStringProse
+      - test: core-ui/check.TestLintSelectorInterpolation_Review6RegexLiteralMustNotCloseScopes
+      - test: core-ui/check.TestLintAttributePathSegments_RegexBraceSkew
+      - test: core-ui/check.TestLintProtoKeyWrite_RegexBraceSkew
+      - test: core-ui/check.TestLintResponseMountedAfterOK_StatusTextIsNotAGate
+      - test: core-ui/check.TestRegistryGuardKeyMustMatch
+      - test: core-ui/check.TestDisplayOnlyOKIsNotAGate
+      - test: core-ui/check.TestTruncatedTemplateNoPanic
+  - id: the-runtime-is-clean
+    rule: Every runtime-shape lint passes over the live runtime fragment and module sources and the registered behaviours.
+    enforced_by:
+      - test: core-ui/check.TestLintSelectorInterpolation_RepoIsClean
+      - test: core-ui/check.TestLintRegistryOwnProps_RepoIsClean
+      - test: core-ui/check.TestLintResponseMountedAfterOK_RepoIsClean
+      - test: core-ui/check.TestLintAttributePathSegments_RepoIsClean
+      - test: core-ui/check.TestLintSelectorBareArgGuarded_RepoIsClean
+      - test: core-ui/check.TestLintCookieConcat_RepoIsClean
+      - test: core-ui/check.TestLintModuleURLShape_RepoIsClean
+      - test: core-ui/check.TestLintStorageKeyRaw_RepoIsClean
+      - test: core-ui/check.TestLintDecodeURIRaw_RepoIsClean
+      - test: core-ui/check.TestLintProtoKeyWrite_RepoIsClean
+decisions:
+  - id: lint-sources-not-the-bundle
+    date: 2026-11-20
+    status: accepted
+    decision: The lints read core-ui/runtime/frag and core-ui/runtime/src, never the composed runtime.js, which a composition test pins byte-identical to its fragments.
+    rejected:
+      - option: Lint the generated bundle.
+        why: A finding belongs at the source that produced it.
+  - id: two-aligned-views
+    date: 2026-11-20
+    status: accepted
+    decision: Each file is read as two offset-aligned views, comments blanked with strings kept and comments and strings blanked, and a call matched on the second has its argument read from the first.
+    rejected:
+      - option: Match on the raw source.
+        why: Prose in a comment or code-shaped text in a string literal fired as code.
+    upholds: [fix-spellings-stay-quiet]
+  - id: line-index
+    date: 2026-11-20
+    status: accepted
+    decision: Line numbers come from a per-file index of newline offsets searched by binary search.
+    rejected:
+      - option: Count newlines in the prefix per finding.
+        why: On generated stress files of 40,000 and 80,000 findings it took 22.9s and 97.4s against 0.94s and 3.23s.

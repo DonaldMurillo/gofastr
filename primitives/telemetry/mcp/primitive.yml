@@ -18,3 +18,7 @@ invariants:
     enforced_by:
       - test: battery/telemetry.TestMCPToolsRefuseUnreadableArguments
       - test: battery/telemetry.TestLimitArgIsCapped
+  - id: tools-carry-listing-hints
+    rule: Every telemetry tool lists as read-only, idempotent, closed-world and not destructive.
+    enforced_by:
+      - test: battery/telemetry.TestMCPToolsCarryListingHints

@@ -56,7 +56,7 @@ func TestModulesWireInsertedRoot(t *testing.T) {
 	}
 	var dead []string
 	for _, c := range []struct{ name, expr string }{
-		{"textarea autogrow", `document.getElementById('ta').style.height !== ''`},
+		{"textarea autogrow", `(s => s.height !== '' || s.fieldSizing === 'content')(document.getElementById('ta').style)`},
 		{"persist-storage", `document.getElementById('ps').value === 'saved'`},
 		{"clear-on-esc", `document.getElementById('clr').value === ''`},
 		{"charcount", `document.getElementById('cnt').textContent !== ''`},

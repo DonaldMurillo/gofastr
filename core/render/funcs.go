@@ -9,8 +9,7 @@ import (
 	"unicode/utf8"
 )
 
-// FuncMap is the default set of template functions available for use
-// in rendering pipelines. Call [RegisterFunc] to add custom functions.
+// FuncMap is the set of template functions; add to it with [RegisterFunc].
 var FuncMap = map[string]any{
 	"ToUpper":      strings.ToUpper,
 	"ToLower":      strings.ToLower,
@@ -32,9 +31,7 @@ var FuncMap = map[string]any{
 
 var funcMu sync.RWMutex
 
-// RegisterFunc adds a named function to the global FuncMap.
-// It panics if fn is nil. A later call under the same name replaces the
-// earlier function, built-ins included.
+// RegisterFunc sets FuncMap[name] to fn, replacing any earlier one; it panics on a nil fn.
 func RegisterFunc(name string, fn any) {
 	if fn == nil {
 		panic(fmt.Sprintf("render: RegisterFunc(%q, nil)", name))

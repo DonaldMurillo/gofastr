@@ -10,7 +10,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
-	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // NameStore is the optional UserStore extension that keeps a user's
@@ -48,19 +47,7 @@ func CleanName(name string) (string, error) {
 // ensureNameColumn adds the display-name column to a table made before
 // it existed, as ” for every row.
 func (s *EntityUserStore) ensureNameColumn(ctx context.Context) error {
-	ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s TEXT NOT NULL DEFAULT ''",
-		query.QuoteFolded(s.table), query.QuoteFolded(s.fieldMap.Name))
-	if s.dialect.of(s.db) == migrate.DialectPostgres {
-		ddl = fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s TEXT NOT NULL DEFAULT ''",
-			query.QuoteFolded(s.table), query.QuoteFolded(s.fieldMap.Name))
-	} else {
-		has, err := sqliteTableHasColumn(ctx, s.db, s.table, s.fieldMap.Name)
-		if err != nil || has {
-			return err
-		}
-	}
-	_, err := s.db.ExecContext(ctx, ddl)
-	return err
+	return addColumnIfMissing(ctx, s.db, s.dialect.of(s.db), s.table, s.fieldMap.Name, "TEXT NOT NULL DEFAULT ''")
 }
 
 // UserName reads the user's display name. Implements NameStore.

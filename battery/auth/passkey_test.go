@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,13 +17,14 @@ import (
 )
 
 type passkeyFixture struct {
-	mgr   *AuthManager
-	users *memoryUserStore
-	pk    *PasskeyPlugin
-	twofa *TwoFAPlugin
-	sink  *recordingSink
-	mail  *stubEmailSender
-	r     *router.Router
+	mgr     *AuthManager
+	users   *memoryUserStore
+	pk      *PasskeyPlugin
+	twofa   *TwoFAPlugin
+	sink    *recordingSink
+	mail    *stubEmailSender
+	notices *stubEmailSender
+	r       *router.Router
 }
 
 func newPasskeyFixture(t *testing.T) *passkeyFixture {
@@ -45,9 +48,10 @@ func newPasskeyFixtureFor(t *testing.T, rpID, origin string) *passkeyFixture {
 		UserStore:           store,
 		AuditSink:           sink,
 	})
-	pk := NewPasskeyPlugin(PasskeyConfig{RPID: rpID, Origins: []string{origin}, OnSuccessURL: "/app", TwoFactorURL: "/2fa"})
-	twofa := NewTwoFAPlugin(TwoFAConfig{})
 	mail := &stubEmailSender{}
+	notices := &stubEmailSender{}
+	pk := NewPasskeyPlugin(PasskeyConfig{NoticeSender: notices, RPID: rpID, Origins: []string{origin}, OnSuccessURL: "/app", TwoFactorURL: "/2fa"})
+	twofa := NewTwoFAPlugin(TwoFAConfig{})
 	mgr.Use(NewCorePlugin().WithTwoFactorURL("/login/2fa"))
 	mgr.Use(twofa)
 	mgr.Use(pk)
@@ -55,6 +59,12 @@ func newPasskeyFixtureFor(t *testing.T, rpID, origin string) *passkeyFixture {
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
+	// The notice workers live for the test, and are joined after it.
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = pk.OnStop(ctx)
+	})
 	for _, u := range []*BasicUser{
 		{ID: "u-alice", Email: "alice@example.com"},
 		{ID: "u-bob", Email: "bob@example.com"},
@@ -64,7 +74,7 @@ func newPasskeyFixtureFor(t *testing.T, rpID, origin string) *passkeyFixture {
 	}
 	r := router.New()
 	mgr.RegisterRoutes(r)
-	return &passkeyFixture{mgr: mgr, users: users, pk: pk, twofa: twofa, sink: sink, mail: mail, r: r}
+	return &passkeyFixture{mgr: mgr, users: users, pk: pk, twofa: twofa, sink: sink, mail: mail, notices: notices, r: r}
 }
 
 // session mints a full session for userID and returns its cookie value.
@@ -107,6 +117,7 @@ func challengeOf(t *testing.T, w *httptest.ResponseRecorder) string {
 		t.Fatalf("options: %d %s", w.Code, w.Body)
 	}
 	var out struct {
+		Binding   string `json:"binding"`
 		PublicKey struct {
 			Challenge string `json:"challenge"`
 		} `json:"publicKey"`
@@ -118,7 +129,20 @@ func challengeOf(t *testing.T, w *httptest.ResponseRecorder) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if out.Binding != "" {
+		bindings.Store(string(ch), out.Binding)
+	}
 	return string(ch)
+}
+
+// bindings holds each registration challenge's session binding, as the
+// browser module keeps it from the options answer to the register POST.
+var bindings sync.Map
+
+func bindingOf(challenge string) string {
+	b, _ := bindings.Load(challenge)
+	s, _ := b.(string)
+	return s
 }
 
 func registerBody(a *fakeAuthenticator, challenge string) map[string]string {
@@ -126,6 +150,7 @@ func registerBody(a *fakeAuthenticator, challenge string) map[string]string {
 	return map[string]string{
 		"name": "Laptop", "id": b64url.EncodeToString(a.credID),
 		"clientDataJSON": b64url.EncodeToString(cdj), "attestationObject": b64url.EncodeToString(att),
+		"binding": bindingOf(challenge),
 	}
 }
 
@@ -238,6 +263,20 @@ func TestPasskeyChallengePurposes(t *testing.T) {
 	if w := f.do(t, "POST", "/passkey/register", alice, registerBody(a, loginCh)); w.Code != http.StatusBadRequest {
 		t.Fatalf("register with a sign-in challenge: %d", w.Code)
 	}
+	// A sign-in-purpose token carrying alice's own id passes the owner
+	// check: only the purpose guard can refuse it.
+	ownCh, err := createPurposeToken(context.Background(), f.pk.challenges, purposePasskeyLogin, "u-alice", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := len(f.sink.findByKindAll("passkey.refused"))
+	if w := f.do(t, "POST", "/passkey/register", alice, registerBody(a, ownCh)); w.Code != http.StatusBadRequest {
+		t.Fatalf("register with alice's own sign-in-purpose token: %d", w.Code)
+	}
+	evs := f.sink.findByKindAll("passkey.refused")
+	if len(evs) != before+1 || evs[len(evs)-1].Meta["reason"] != "challenge" {
+		t.Fatalf("refusal events %+v, want one more with reason challenge", evs)
+	}
 	b := f.enrol(t, "u-alice")
 	regCh := challengeOf(t, f.do(t, "POST", "/passkey/register/options", alice, nil))
 	if w := f.do(t, "POST", "/passkey/login", "", loginBody(b, regCh, "u-alice")); w.Code != http.StatusUnauthorized {
@@ -346,7 +385,7 @@ func TestPasskeyDeleteOnlyOwn(t *testing.T) {
 	if w := f.do(t, "POST", "/passkey/delete", alice, id); w.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d %s", w.Code, w.Body)
 	}
-	if w := f.login(t, a, "u-alice"); w.Code != http.StatusUnauthorized {
+	if w := f.login(t, a, "u-alice"); w.Code != http.StatusNotFound {
 		t.Fatalf("deleted passkey signed in: %d", w.Code)
 	}
 }
@@ -358,7 +397,7 @@ func TestPasskeyClaimRemovesPasskeys(t *testing.T) {
 	if err := f.mgr.claimAccount(context.Background(), "u-alice", "magic_link", "", true); err != nil {
 		t.Fatal(err)
 	}
-	if w := f.login(t, a, "u-alice"); w.Code != http.StatusUnauthorized {
+	if w := f.login(t, a, "u-alice"); w.Code != http.StatusNotFound {
 		t.Fatalf("squatter's passkey survived the claim: %d", w.Code)
 	}
 }
@@ -385,7 +424,7 @@ type durableSessions struct{ *MemorySessionStore }
 
 func TestPasskeyProdRefusesMemoryStores(t *testing.T) {
 	mgr := New(AuthConfig{JWTSecret: "s", SessionTTL: time.Hour, SessionCookie: "sid", UserStore: newMemoryUserStore(), SessionStore: durableSessions{NewMemorySessionStore()}})
-	mgr.Use(NewPasskeyPlugin(PasskeyConfig{RPID: "example.com", Origins: []string{"https://example.com"}}))
+	mgr.Use(NewPasskeyPlugin(PasskeyConfig{NoAddedNotice: true, RPID: "example.com", Origins: []string{"https://example.com"}}))
 	err := mgr.Init(nil)
 	if err == nil || !strings.Contains(err.Error(), "in-memory stores") {
 		t.Fatalf("Init: %v", err)
@@ -394,7 +433,7 @@ func TestPasskeyProdRefusesMemoryStores(t *testing.T) {
 
 func TestPasskeyBadOriginFailsInit(t *testing.T) {
 	mgr := New(AuthConfig{JWTSecret: "s", AllowInMemoryStores: true, SessionTTL: time.Hour, SessionCookie: "sid", UserStore: newMemoryUserStore()})
-	mgr.Use(NewPasskeyPlugin(PasskeyConfig{RPID: "example.com", Origins: []string{"https://evil.example"}}))
+	mgr.Use(NewPasskeyPlugin(PasskeyConfig{NoAddedNotice: true, RPID: "example.com", Origins: []string{"https://evil.example"}}))
 	if err := mgr.Init(nil); err == nil {
 		t.Fatal("Init accepted an origin outside the RP ID")
 	}
@@ -427,7 +466,7 @@ func TestPasskeyPerUserCap(t *testing.T) {
 func TestPasskeyTwoFactorNeedsURL(t *testing.T) {
 	mgr := New(AuthConfig{JWTSecret: "s", AllowInMemoryStores: true, SessionTTL: time.Hour, SessionCookie: "sid", UserStore: newMemoryUserStore()})
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{}))
-	mgr.Use(NewPasskeyPlugin(PasskeyConfig{RPID: "example.com", Origins: []string{"https://example.com"}}))
+	mgr.Use(NewPasskeyPlugin(PasskeyConfig{NoAddedNotice: true, RPID: "example.com", Origins: []string{"https://example.com"}}))
 	if err := mgr.Init(nil); err == nil || !strings.Contains(err.Error(), "TwoFactorURL") {
 		t.Fatalf("Init: %v", err)
 	}
@@ -446,7 +485,7 @@ func TestPasskeyResetRemovesPasskeys(t *testing.T) {
 	if w := f.do(t, "POST", "/reset-password", "", map[string]string{"token": tok, "password": "brandnewpw1"}); w.Code != http.StatusOK {
 		t.Fatalf("reset-password: %d %s", w.Code, w.Body)
 	}
-	if w := f.login(t, a, "u-alice"); w.Code != http.StatusUnauthorized {
+	if w := f.login(t, a, "u-alice"); w.Code != http.StatusNotFound {
 		t.Fatalf("a passkey survived the reset: %d", w.Code)
 	}
 
@@ -490,10 +529,13 @@ func TestPasskeyRoutesAreRateLimited(t *testing.T) {
 	for _, rt := range []struct{ method, path string }{
 		{"POST", "/passkey/login/options"}, {"POST", "/passkey/login"},
 		{"POST", "/passkey/register/options"}, {"POST", "/passkey/register"},
-		{"GET", "/passkey/list"}, {"POST", "/passkey/delete"},
+		{"GET", "/passkey/list"}, {"POST", "/passkey/rename"}, {"POST", "/passkey/delete"},
+		{"POST", "/passkey/reauth/options"}, {"POST", "/passkey/reauth"},
 	} {
 		f := newPasskeyFixture(t)
-		f.pk.limit = newScopedRateLimiter(RateLimiterConfig{MaxAttempts: 2, Window: time.Minute, BlockDuration: time.Minute}, "passkey")
+		tight := RateLimiterConfig{MaxAttempts: 2, Window: time.Minute, BlockDuration: time.Minute}
+		f.pk.limit = newScopedRateLimiter(tight, "passkey")
+		f.pk.listLimit = newScopedRateLimiter(tight, "passkey-list")
 		alice := f.session(t, "u-alice")
 		var last int
 		for range 3 {
@@ -561,7 +603,9 @@ func TestPasskeyTwoFADownFailsClosed(t *testing.T) {
 // delete button would remove a passkey with one click.
 func TestPasskeyMarkersLeaveUntrustedIR(t *testing.T) {
 	got := string(noderender.RenderKind("button", map[string]any{
-		"data-passkey-delete": "/auth", "data-passkey-login": "/auth", "data-passkey-register": "/auth", "text": "View invoice",
+		"data-passkey-delete": "/auth", "data-passkey-login": "/auth", "data-passkey-register": "/auth",
+		"data-passkey-rename": "/auth", "data-passkey-reauth": "/auth", "data-passkey-upgrade": "/auth",
+		"data-passkey-autofill": "/auth", "data-passkey-list": "/auth", "text": "View invoice",
 	}, nil))
 	if strings.Contains(got, "data-passkey-") {
 		t.Fatalf("untrusted IR kept a passkey marker: %s", got)
@@ -674,4 +718,59 @@ func TestPasskeyResetFailsIfPurgeFails(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("reset with a failed purge: %d %s, want 500", w.Code, w.Body)
 	}
+}
+
+// The browser module reads the list on its own (page load, after an add
+// or a remove); those reads must not spend the ceremonies' budget.
+func TestPasskeyListDoesNotSpendCeremonyLimit(t *testing.T) {
+	f := newPasskeyFixture(t)
+	tight := RateLimiterConfig{MaxAttempts: 2, Window: time.Minute, BlockDuration: time.Minute}
+	f.pk.limit = newScopedRateLimiter(tight, "passkey")
+	f.pk.listLimit = newScopedRateLimiter(RateLimiterConfig{MaxAttempts: 50, Window: time.Minute, BlockDuration: time.Minute}, "passkey-list")
+	alice := f.session(t, "u-alice")
+	for i := range 5 {
+		if w := f.do(t, "GET", "/passkey/list", alice, nil); w.Code != http.StatusOK {
+			t.Fatalf("list read %d: %d", i, w.Code)
+		}
+	}
+	if w := f.do(t, "POST", "/passkey/login/options", "", nil); w.Code != http.StatusOK {
+		t.Fatalf("sign-in options after five list reads: %d", w.Code)
+	}
+}
+
+// The autofill field asks for sign-in options on every page view, without
+// a click: those requests count against a limit of their own, and are
+// still limited.
+func TestPasskeyAutofillOptionsHaveTheirOwnLimit(t *testing.T) {
+	f := newPasskeyFixture(t)
+	tight := RateLimiterConfig{MaxAttempts: 2, Window: time.Minute, BlockDuration: time.Minute}
+	f.pk.limit = newScopedRateLimiter(tight, "passkey")
+	f.pk.autofillLimit = newScopedRateLimiter(RateLimiterConfig{MaxAttempts: 4, Window: time.Minute, BlockDuration: time.Minute}, "passkey-autofill")
+	const autofill = "/passkey/login/options?autofill=1"
+	for range 4 {
+		if w := f.do(t, "POST", autofill, "", nil); w.Code != http.StatusOK {
+			t.Fatalf("autofill options: %d", w.Code)
+		}
+	}
+	// Refused before a byte of the body is read.
+	body := &readSpy{}
+	req := httptest.NewRequest("POST", "https://example.com/auth"+autofill, body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	w := httptest.NewRecorder()
+	f.r.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests || body.read {
+		t.Fatalf("fifth autofill options: %d (body read %v), want 429 before the body", w.Code, body.read)
+	}
+	if w := f.do(t, "POST", "/passkey/login/options", "", nil); w.Code != http.StatusOK {
+		t.Fatalf("button sign-in options after autofill used its own budget: %d", w.Code)
+	}
+}
+
+// readSpy is a request body that records whether anything read it.
+type readSpy struct{ read bool }
+
+func (r *readSpy) Read(p []byte) (int, error) {
+	r.read = true
+	return 0, io.EOF
 }

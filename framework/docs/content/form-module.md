@@ -355,7 +355,7 @@ ui.FormRepeater(ui.FormRepeaterConfig{
 All components pass **axe-core 4.10** with zero violations:
 
 - **Labels**: Every input has an associated `<label>` via `for`/`id` or `aria-label`
-- **Error states**: `aria-invalid="true"` + `aria-describedby` linking to error message
+- **Error states**: `aria-invalid="true"` + `aria-describedby` linking to error message. The kit draws the error ring on `:user-invalid` too, so a required or mistyped field shows it once the user has left the field, before any server answer; a field the user has not touched stays plain
 - **Keyboard**: All interactive elements focusable and operable via keyboard
 - **Contrast**: All text meets WCAG 2.1 AA minimum (4.5:1 for normal text)
 - **Roles**: Proper ARIA roles (`role="alert"`, `role="list"`, `role="listitem"`, etc.)

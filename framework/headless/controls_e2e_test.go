@@ -73,6 +73,9 @@ func TestE2E_ControlsSliderMirrorsItsOutput(t *testing.T) {
 	if !pollTrue(ctx, `document.querySelector('[data-hui-slider-output]').textContent === '70'`) {
 		t.Fatal("the output did not mirror the thumb's live value")
 	}
+	if !pollTrue(ctx, `document.getElementById('cpu').getAttribute('aria-valuetext') === '70'`) {
+		t.Fatal("the thumb's aria-valuetext did not follow its live value")
+	}
 
 	bare := startBehaviorServer(t, string(Slider(SliderProps{Name: "mem", Label: "Memory"}, nil)))
 	bctx := behaviorPage(t, bare)
@@ -110,7 +113,7 @@ func TestE2E_SliderOutputsUsePageDigits(t *testing.T) {
 		`const i = document.getElementById('cpu'); i.value = 70; i.dispatchEvent(new Event('input', {bubbles:true}))`, nil)); err != nil {
 		t.Fatal(err)
 	}
-	if !pollTrue(ctx, `document.querySelector('[data-hui-slider-output]').textContent === '٧٠'`) {
+	if !pollTrue(ctx, `document.querySelector('[data-hui-slider-output]').textContent === '٧٠' && document.querySelector('[data-hui-slider] input').getAttribute('aria-valuetext') === '٧٠'`) {
 		t.Fatal("a drag wrote the slider's raw value")
 	}
 }

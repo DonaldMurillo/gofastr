@@ -1,0 +1,22 @@
+primitive: uiregistry.template
+summary: RegisterTemplate and Template - markup fragments a layer above the kernel registers by name (the toast row, the confirm dialog) for a renderer below it to emit without importing the kit.
+code:
+  - core-ui/registry/template.go
+docs:
+  - framework/docs/content/widgets.md
+invariants:
+  - id: one-renderer-per-template
+    rule: RegisterTemplate panics on an empty name, a nil renderer and a second, different renderer for a name, returns the name for an identical one, and Template reports false for a name nothing registered.
+    enforced_by:
+      - test: core-ui/registry.TestTemplateRegisterAndLookup
+      - test: core-ui/registry.TestTemplateSameRendererTwiceIsANoop
+      - test: core-ui/registry.TestTemplateDifferentRendererPanics
+      - test: core-ui/registry.TestTemplateEmptyNameAndNilRendererPanic
+decisions:
+  - id: templates-outside-the-freeze
+    date: 2026-11-20
+    status: accepted
+    decision: Templates are looked up per render and may register after Freeze.
+    rejected:
+      - option: Freeze templates with the style catalog.
+        why: Nothing is handed to the runtime ahead of time, so a late template reaches the next render without a stale catalog.

@@ -14,14 +14,22 @@ func activityBody(t *testing.T, x *testUI) string {
 		RenderCtx(x.userCtx("/rec/invoices/inv-1", "?tab=activity", "u1")))
 }
 
+// invoiceUIWithChanges is the invoice UI over a one-entry update trail by u1
+// moving every field in before to its value in after.
+func invoiceUIWithChanges(t *testing.T, before, after map[string]any) *testUI {
+	t.Helper()
+	return newInvoiceUI(t, withAudit(fakeAudit{entries: []AuditEntry{{
+		At: time.Now(), Actor: "u1", Operation: "update",
+		Before: before, After: after,
+	}}}))
+}
+
 // The audit log stores wire names (issuedOn, customerId): a multi-word
 // field's change is listed, and an unchanged one is not.
 func TestActivityListsWireNamedFields(t *testing.T) {
-	x := newInvoiceUI(t, withAudit(fakeAudit{entries: []AuditEntry{{
-		At: time.Now(), Actor: "u1", Operation: "update",
-		Before: map[string]any{"issuedOn": "2026-01-05", "customerId": "c1", "memo": "same"},
-		After:  map[string]any{"issuedOn": "2026-02-09", "customerId": "c1", "memo": "same"},
-	}}}))
+	x := invoiceUIWithChanges(t,
+		map[string]any{"issuedOn": "2026-01-05", "customerId": "c1", "memo": "same"},
+		map[string]any{"issuedOn": "2026-02-09", "customerId": "c1", "memo": "same"})
 	body := activityBody(t, x)
 	if !strings.Contains(body, `data-cui-internal="">Issued On</span>`) {
 		t.Fatalf("a wire-named field's change is missing:\n%s", body)
@@ -82,11 +90,9 @@ func TestSnapshotTitle(t *testing.T) {
 // An update that moved only a stamp or a masked column reads as a save,
 // with no change list: "made changes" would claim what it cannot show.
 func TestActivityEmptyUpdateReadsAsSave(t *testing.T) {
-	x := newInvoiceUI(t, withAudit(fakeAudit{entries: []AuditEntry{{
-		At: time.Now(), Actor: "u1", Operation: "update",
-		Before: map[string]any{"number": "INV-1", "token": "a", "updatedAt": "2026-01-01T00:00:00Z"},
-		After:  map[string]any{"number": "INV-1", "token": "b", "updatedAt": "2026-01-02T00:00:00Z"},
-	}}}))
+	x := invoiceUIWithChanges(t,
+		map[string]any{"number": "INV-1", "token": "a", "updatedAt": "2026-01-01T00:00:00Z"},
+		map[string]any{"number": "INV-1", "token": "b", "updatedAt": "2026-01-02T00:00:00Z"})
 	body := activityBody(t, x)
 	if !strings.Contains(body, "<strong>u1</strong> saved this invoice") {
 		t.Fatalf("an update with no visible change must read as a save:\n%s", body)

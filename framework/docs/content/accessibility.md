@@ -21,6 +21,25 @@ config struct*: `html.Image` has an `Alt` field, `html.Button` a
 `Label`, `html.Nav` a `Label`/`LabelledBy` pair, `html.FieldSet` a
 `Legend`. The audit below checks that you actually set them.
 
+Forms follow the same rules on every surface:
+
+- A field shows its error once the reader has left it or tried to
+  submit, not while they type: the kit styles
+  `:is(:user-invalid, [aria-invalid="true"])`, and the
+  `headless-validity` module copies `:user-invalid` onto `aria-invalid`
+  (`"true"` or `"false"`) for every control in a field or choice, so a
+  screen reader hears the same state the border shows. A server's
+  verdict stays until the next submit clears it.
+- A refused submit is read once, from one polite live region
+  (`#cui-form-errors`), as one "Label: message" sentence per field. No
+  error node is its own `role="alert"`. Focus then moves to the first
+  refused field.
+- A field's hint sits between its label and its control, so the rule
+  is read before the reader types.
+- Every page's head carries `<meta name="text-scale" content="scale">`:
+  in Chrome and Edge the OS text size scales the root font, and every
+  `rem` follows it. Other browsers ignore it.
+
 The document language (WCAG 3.1.1) defaults to `en`. Set it for a
 non-English app with `app.WithLang("…")` (or `uihost.WithLang("…")`),
 which stamps `<html lang>` on every rendered surface: pages, error

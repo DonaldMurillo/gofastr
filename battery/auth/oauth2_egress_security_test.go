@@ -55,26 +55,7 @@ func TestProviderFetchRefusesRedirect(t *testing.T) {
 	}))
 	defer origin.Close()
 
-	ctx := context.Background()
-	g := NewGoogleProvider("cid-test", "client-secret-value", "https://app.example.com/cb")
-	g.tokenEndpoint = origin.URL
-	g.userInfoEndpoint = origin.URL
-	gh := NewGitHubProvider("cid-test", "client-secret-value", "https://app.example.com/cb")
-	gh.tokenEndpoint = origin.URL
-	gh.userInfoEndpoint = origin.URL
-
-	surfaces := []struct {
-		name string
-		call func() error
-	}{
-		{"GoogleProvider.ExchangeCode", func() error { _, err := g.ExchangeCode(ctx, "code-live-xyz"); return err }},
-		{"GoogleProvider.RefreshToken", func() error { _, err := g.RefreshToken(ctx, "refresh-live-xyz"); return err }},
-		{"GoogleProvider.FetchUserInfo", func() error { _, err := g.FetchUserInfo(ctx, "bearer-live-xyz"); return err }},
-		{"GitHubProvider.ExchangeCode", func() error { _, err := gh.ExchangeCode(ctx, "code-live-xyz"); return err }},
-		{"GitHubProvider.RefreshToken", func() error { _, err := gh.RefreshToken(ctx, "refresh-live-xyz"); return err }},
-		{"GitHubProvider.FetchUserInfo", func() error { _, err := gh.FetchUserInfo(ctx, "bearer-live-xyz"); return err }},
-	}
-	for _, s := range surfaces {
+	for _, s := range providerEgressSurfaces(origin.URL) {
 		before := hits.Load()
 		_ = s.call() // result irrelevant: the fetch must stop at the origin's 3xx
 		if got := hits.Load() - before; got != 0 {
@@ -119,30 +100,38 @@ func TestProviderResponseBodiesCapped(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ctx := context.Background()
-	g := NewGoogleProvider("cid", "cs", "https://app.example.com/cb")
-	g.tokenEndpoint = srv.URL
-	g.userInfoEndpoint = srv.URL
-	gh := NewGitHubProvider("cid", "cs", "https://app.example.com/cb")
-	gh.tokenEndpoint = srv.URL
-	gh.userInfoEndpoint = srv.URL
-
-	surfaces := []struct {
-		name string
-		call func() error
-	}{
-		{"GoogleProvider.ExchangeCode", func() error { _, err := g.ExchangeCode(ctx, "c"); return err }},
-		{"GoogleProvider.RefreshToken", func() error { _, err := g.RefreshToken(ctx, "r"); return err }},
-		{"GoogleProvider.FetchUserInfo", func() error { _, err := g.FetchUserInfo(ctx, "t"); return err }},
-		{"GitHubProvider.ExchangeCode", func() error { _, err := gh.ExchangeCode(ctx, "c"); return err }},
-		{"GitHubProvider.RefreshToken", func() error { _, err := gh.RefreshToken(ctx, "r"); return err }},
-		{"GitHubProvider.FetchUserInfo", func() error { _, err := gh.FetchUserInfo(ctx, "t"); return err }},
-	}
-	for _, s := range surfaces {
+	for _, s := range providerEgressSurfaces(srv.URL) {
 		if err := s.call(); err == nil {
 			t.Errorf("SECURITY: [oauth-bodycap] %s consumed a >1 MiB provider response without error: "+
 				"the body is decoded from resp.Body with no LimitReader, unlike every OIDC fetch "+
 				"(jwksMaxBody / fetchDiscovery / ExchangeCode / fetchUserinfo, all 1<<20)", s.name)
 		}
+	}
+}
+
+// providerEgressSurface names one credential-bearing built-in provider
+// fetch and how to invoke it.
+type providerEgressSurface struct {
+	name string
+	call func() error
+}
+
+// providerEgressSurfaces points both built-in providers' token and
+// userinfo endpoints at url and returns all six egress-sensitive calls.
+func providerEgressSurfaces(url string) []providerEgressSurface {
+	ctx := context.Background()
+	g := NewGoogleProvider("cid-test", "client-secret-value", "https://app.example.com/cb")
+	g.tokenEndpoint = url
+	g.userInfoEndpoint = url
+	gh := NewGitHubProvider("cid-test", "client-secret-value", "https://app.example.com/cb")
+	gh.tokenEndpoint = url
+	gh.userInfoEndpoint = url
+	return []providerEgressSurface{
+		{"GoogleProvider.ExchangeCode", func() error { _, err := g.ExchangeCode(ctx, "code-live-xyz"); return err }},
+		{"GoogleProvider.RefreshToken", func() error { _, err := g.RefreshToken(ctx, "refresh-live-xyz"); return err }},
+		{"GoogleProvider.FetchUserInfo", func() error { _, err := g.FetchUserInfo(ctx, "bearer-live-xyz"); return err }},
+		{"GitHubProvider.ExchangeCode", func() error { _, err := gh.ExchangeCode(ctx, "code-live-xyz"); return err }},
+		{"GitHubProvider.RefreshToken", func() error { _, err := gh.RefreshToken(ctx, "refresh-live-xyz"); return err }},
+		{"GitHubProvider.FetchUserInfo", func() error { _, err := gh.FetchUserInfo(ctx, "bearer-live-xyz"); return err }},
 	}
 }

@@ -26,7 +26,7 @@ invariants:
   - id: next-is-strictly-after
     rule: Next returns the earliest matching minute strictly after its argument, skipping none, and the zero Time for a schedule that never fires.
     enforced_by:
-      - test: framework/cron.TestCron_NextStrictlyAfter
+      - test: framework/cron.TestCron_Next
       - test: framework/cron.TestCron_NextIsEarliestMatchNoSkips
       - test: framework/cron.TestCron_NextUnsatisfiableReturnsZero
       - test: framework/cron.TestNextFindsRareSpec

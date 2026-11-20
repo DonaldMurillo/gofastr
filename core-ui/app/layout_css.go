@@ -1,20 +1,7 @@
 package app
 
-// InterceptOverlayCSS returns the chrome for an intercepted route's
-// overlay, the drawer or sheet that a soft navigation from a declared
-// origin presents instead of a full page (see intercept.go).
-//
-// It lives here, beside the layout shells, for the same reason they do:
-// the runtime module that mounts the overlay owns wiring, never styling,
-// and an app must not have to ship CSS to make a framework feature look
-// right. The UI host injects it only when a route actually declares an
-// intercept, so pages that never intercept carry none of it.
-//
-// Every value is a theme token, so the overlay inherits an app's palette,
-// spacing, and radii without an override. Presentation keys off each
-// layer's data-cui-intercept-as, which the SERVER sets from the
-// registered ScreenType (the client cannot pick its own chrome), so one
-// stack can hold a sheet over a drawer.
+// InterceptOverlayCSS returns the chrome for an intercepted route's overlay, the drawer or sheet
+// that a soft navigation from a declared origin presents instead of a full page (see intercept.go).
 func InterceptOverlayCSS() string {
 	return `/* Intercepted-route overlay: a scrim over the page that stays
    mounted underneath, with each layer docked to an edge. */

@@ -1,11 +1,11 @@
 # WebMCP bridge (experimental)
 
 `framework/experimental/webmcp` exposes server-declared tools to
-in-browser AI agents through the [WebMCP proposal](https://developer.chrome.com/docs/ai/webmcp)
+in-browser AI agents through the [WebMCP draft](https://webmachinelearning.github.io/webmcp/)
 (`document.modelContext`; Chromium also exposes the legacy
 `navigator.modelContext` binding). The server declares each tool's name,
 description, JSON Schema, and the same-origin endpoint that implements
-it; a mounted bridge script registers the set on `navigator.modelContext`
+it; a mounted bridge script registers the set on `document.modelContext`
 and proxies each `execute()` call back to that endpoint with the
 visitor's own session credentials.
 
@@ -21,7 +21,7 @@ Chrome origin-trial API. Chromium 146+ exposes it behind
 `chrome://flags/#enable-webmcp-testing`; the origin trial runs from
 Chrome 149. Automation and tests enable it with
 `--enable-blink-features=WebMCP`. On any browser without the API the
-bridge script feature-detects and does nothing.
+bridge script feature-detects and does nothing by default.
 
 ## Declaring and mounting tools
 
@@ -63,6 +63,22 @@ manifest at `/__gofastr/webmcp/tools.json` (for tests, introspection,
 and server-side agents), and registers the script URL through the
 `ScriptRegistrar` seam. Pass `nil` for the registrar to inject the
 returned `scriptURL` into your own markup instead.
+
+## In-page fallback without Node
+
+Pass `webmcp.WithPolyfill()` to `Mount` to include the standalone
+`@w3c/webmcp-polyfill` browser script in the bridge. Go embeds the pinned
+bundle and serves it with the bridge using the same URL, scope, and
+authorization. Apps can build and serve it without Node, npm, or a CDN.
+Serve the page over HTTPS or localhost.
+
+The bridge prefers a usable native context, including Chromium's legacy
+`navigator.modelContext` binding. The fallback supports in-page discovery
+and execution, for example in an embedded assistant or browser test.
+Built-in browser agents still require native WebMCP. The polyfill has
+limited Permissions Policy introspection and does not support declarative
+forms. Keep HTTP authorization on the tool routes and scoped assets.
+See the [upstream limitations](https://github.com/w3c-oss/webmcp-polyfill/blob/v0.1.1/TESTING.md).
 
 ## One call for declaration and route
 
@@ -214,7 +230,7 @@ attributes a call; it never grants one.
 ## Capability lifetime across navigation
 
 Removing the bridge script from the DOM does not unregister tools: a
-tool registered on `navigator.modelContext` belongs to the document,
+tool registered on `document.modelContext` belongs to the document,
 not to the tag. A partial (SPA) swap never runs a body script either,
 so a public page that soft-swapped over a support page would keep the
 support tools alive in the same document. When the bridge belongs to
@@ -369,7 +385,7 @@ app-instructions field yet, `Mount` also serves it at
 `/__gofastr/webmcp/instructions.json` through a deterministic read-only
 orientation tool (`get_app_instructions`), so in-browser agents can
 read it without the app hand-rolling a tool. That name is reserved
-while instructions are set. The route follows the same asset policies
+while instructions are set: `Register` and `Handle` refuse it. The route follows the same asset policies
 as the script and manifest (page scope, authorization middleware,
 private caching).
 
@@ -377,14 +393,16 @@ private caching).
 `Group.Register` and `Group.Handle` tag tools with the group name, and
 the manifest carries the group's description and preferred-first tool.
 Grouping is pure metadata — it never changes endpoints, middleware, or
-hints. `Register` refuses a tool referencing an undeclared group, and
-`Mount` fails when a group's `WithPreferredFirst` names a tool that
-never joined the group.
+hints. `Register` and `Handle` refuse a tool referencing an undeclared
+group. `Mount` fails when a group name breaks the tool-name grammar or
+is declared twice, and when a group's `WithPreferredFirst` names a tool
+that never joined the group.
 
 **Examples** are validated against the input schema at registration
 with a minimal structural check: the input must be a JSON object,
 required keys present, declared property types respected (`"integer"`
-accepts whole numbers; a list of types accepts any of them). An example
+accepts whole numbers; a list of types accepts any of them; a type
+keyword outside JSON Schema's seven accepts any value). An example
 that contradicts its own schema fails at startup next to the
 declaration. **Output schemas** are checked to be JSON objects and
 preserved, but they are documentation: responses are returned to the
@@ -392,13 +410,13 @@ agent verbatim with no runtime validation, so do not treat the schema
 as a guarantee. Keep `UntrustedContentHint` on tools whose outputs
 include user-controlled content, with or without an output schema.
 
-The browser proposal's `registerTool` accepts only name, title,
-description, input schema, and annotations — so groups, examples,
-output schemas, and instructions cannot be forwarded to the browser
-today. They ride in the manifest (`/__gofastr/webmcp/tools.json`) for
-server-side agents and any tooling that reads it, and the bridge
-degrades safely: it ignores the fields it cannot forward, and
-registration of the tool itself is unaffected.
+Groups, examples, and instructions are available in the manifest
+(`/__gofastr/webmcp/tools.json`). The generated orientation tool also
+serves instructions to in-browser agents when configured. The WebMCP
+draft supports `outputSchema` for the return value of `execute()`.
+GoFastr's `OutputSchema` describes the HTTP response body. The bridge
+wraps that body in a text-content result, so GoFastr publishes the body
+schema in the manifest only.
 
 ## Tool fields
 
@@ -406,7 +424,7 @@ registration of the tool itself is unaffected.
 |---|---|---|
 | `Name` | yes | Unique per page, constrained to the WebMCP spec grammar `[A-Za-z0-9_.-]{1,128}` (the browser rejects anything else asynchronously, which reads as a tool that never existed; `Register` fails loudly instead). The browser also refuses duplicate registrations, so it must not collide with tools the app registers from its own JS. |
 | `Title` | no | Human-readable display name. |
-| `Group` | no | Tags the tool into a group declared with `Host.Group`. Set by `Group.Register`/`Group.Handle`; `Register` fails on a group that was never declared. Metadata only: no renaming, no routing or authorization change. |
+| `Group` | no | Tags the tool into a group declared with `Host.Group`. Set by `Group.Register`/`Group.Handle`; `Register` and `Handle` fail on a group that was never declared. Metadata only: no renaming, no routing or authorization change. |
 | `Description` | yes | What the tool does and when to use it. An agent cannot pick an undescribed tool, so `Register` refuses a blank one. |
 | `InputSchema` | no | JSON Schema object for the input. Defaults to `{"type":"object","properties":{}}`. |
 | `Examples` | no | Usage examples, validated against `InputSchema` at registration (object shape, required keys, declared property types) and preserved in the manifest. |
@@ -415,6 +433,8 @@ registration of the tool itself is unaffected.
 | `Path` | yes | Same-origin absolute path of the implementing endpoint. Query strings allowed; schemes, hosts, fragments, backslashes, control characters, and `.`/`..` segments are rejected. |
 | `ReadOnlyHint` | no | Advertises the tool as non-mutating (`annotations.readOnlyHint`). Advisory only — never a substitute for endpoint authorization. |
 | `UntrustedContentHint` | no | Warns the agent the result may carry content the app does not control (`annotations.untrustedContentHint`). Advisory only — never a substitute for output sanitization. |
+| `ConsequentialHint` | no | Flags tools with significant consequences (`annotations.consequentialHint`). Browsers and agents may use this to request confirmation. |
+| `Debugging` | no | Identifies tools intended for developer or test workflows (`annotations.debugging`). |
 
 `Register` returns an error naming the exact field for any violation,
 and refuses registration after `Mount` (the script and manifest are
@@ -462,7 +482,7 @@ from the devtools console.
 
 The package's own e2e (`browser_test.go`) is the template: launch
 Chromium with the flag, load a page carrying the bridge, and drive
-`navigator.modelContext` directly.
+`document.modelContext` directly.
 
 chromedp:
 
@@ -480,9 +500,7 @@ const browser = await chromium.launch({
 });
 ```
 
-Empirical notes on the Chromium 151 API surface (this is what the
-bridge and tests are written against; it may change while the proposal
-is in trial):
+The draft API and the Chromium origin trial are still evolving.
 
 - The spec's IDL exposes `modelContext` on `Document`; Chromium
   additionally exposes the same object on `Navigator` (the legacy
@@ -490,9 +508,12 @@ is in trial):
   back to `navigator.modelContext`.
 - `registerTool(descriptor)` returns a promise resolving to
   `undefined`; tool handles come from `getTools()`.
-- `executeTool(handle, input)` takes the handle from `getTools()` plus
-  the input as a **JSON string**, and resolves with the tool's return
-  value JSON-stringified.
+- `executeTool(tool, input)` takes the tool descriptor from `getTools()`
+  and an input object. It resolves with the serialized tool result.
+  The browser test helper also handles older Chromium builds that
+  required string input.
+- The bridge passes the invocation's `AbortSignal` to its HTTP request.
+  Aborting a request does not undo work the endpoint already committed.
 - Duplicate names reject with `InvalidStateError`.
 - The API only exists in secure contexts (`data:` URLs don't get it).
 

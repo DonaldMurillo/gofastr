@@ -106,10 +106,92 @@ whose remaining comments are one-line docs on exported identifiers
 (`factory`, `agentsinv`, `owner`, `routegroup`, `lifecycle`, `hook`,
 `softdelete`, `db`, `tenant`, `imagefield`, `slowquery`, `db/sqlbusy`,
 `sdkdocs/internal/docpage`). Those groups added 669 invariants, 234
-decisions and 8 twins. `framework/` as a whole is at 7.8%, its tests at
-12.0%; the repository as a whole is at the share the script prints.
-Next: `framework/experimental` (harness, webmcp, apiversions), then
-`core/`.
+decisions and 8 twins. `framework/experimental` (harness, webmcp,
+apiversions) is swept too, at 4.5%: `harness` 4.3% (286 invariants, 112
+decisions, 38 twins, one primitive per job), `webmcp` 7.3% and
+`apiversions` 11.8%, all of it exported docs. The replay eval after it and
+the first twelve `core/` packages held every number it can see, but no
+replay task reads those packages
+(`2026-11-19-replay-step2-experimental-core.md`). `framework/` as a whole
+is at 5.5%.
+
+`core/` is swept, 23.4% to 5.3%, its tests 12.9% to 12.6%. Every one of its
+32 package directories is in `TestCoveredPackagesHaveNoUnownedFile`.
+Per package (before, after):
+
+| Package | Before | After | | Package | Before | After |
+|---|---|---|---|---|---|---|
+| a2a | 24.1% | 6.4% | | migrate | 30.4% | 3.4% |
+| acp | 27.1% | 7.5% | | moduleproto | 44.5% | 12.3% * |
+| backoff | | 6.2% | | netguard | 43.5% | 6.9% |
+| config | 28.7% | 3.6% | | openapi | 22.8% | 7.3% |
+| datexport | 44.3% | 7.9% | | query | | 7.7% |
+| dotenv | | 2.5% | | render | | 4.2% |
+| fanout | 44.1% | 7.2% | | router | | 5.1% |
+| featureflag | 37.0% | 7.7% | | schema | | 5.7% |
+| fuzzy | | 6.1% | | settings | 17.8% | 7.4% |
+| handler | 29.3% | 7.2% | | static | 37.1% | 4.1% |
+| i18n | 20.7% | 4.7% | | stream | 38.4% | 7.9% |
+| jcs | | 1.0% | | textsafe | | 6.4% |
+| markdown | 28.2% | 1.5% | | tracing | 16.9% | 3.0% |
+| mcp | 13.2% | 3.7% | | unmounted | 35.3% | 19.5% * |
+| middleware | | 2.9% | | upload | 36.9% | 5.7% |
+| | | | | webbotauth | 22.5% | 2.1% |
+| | | | | yaml | | 0.0% |
+
+A blank "before" was swept in an earlier stack. `core/mcp` was swept
+there too; a merge from main (92dec879) brought back the comments of five
+of its files, and this stack swept them again. The two starred packages are
+exceptions: what remains is a one-line doc on each exported identifier
+(about 100 in `moduleproto`, a handful in the 41-line `unmounted`). The
+stack (#810, #811, #815, #819 and the config PR) added 58 primitives, 375
+invariants and 127 decisions. It merged more than a dozen twins into one implementation
+each, among them the outbound URL check and guarded client
+(`netguard.CheckOutboundURL`, `GuardRoundTripper`), the cross-origin check
+(`netguard.OriginAllowed`), the SSE frame encoder (`internal/sseframe`),
+the fanout loop guard (`fanout.UnwrapForeign`) and the SQL lexer
+(`internal/sqllex`). The registry now holds 112 twins left to merge, 15
+more than before, each with a `why`. Fixed on the way: webhook
+registration's unbounded DNS lookup, `Bind` accepting nested duplicate
+keys (breaking), fanout queues delivering after `stop`; and, from review,
+a WebSocket `Close` that could hang behind a keepalive Ping, a `Write`
+racing `Close` that was accepted and dropped, the strict-key walk's
+quadratic allocation, a hostless URL passing with private networks
+allowed, and a `Close` panic escaping the static-file hash goroutine. The replay eval
+after them held every number but the upgrade note, which one task missed
+as it had before (`2026-11-19-replay-core-sweeps.md`).
+
+`core-ui/` is swept, 32.0% to 5.2%, its tests 15.0% to 14.9%. All 26 package
+directories are in `TestCoveredPackagesHaveNoUnownedFile`. Per package
+(before, after; a directory counts its subdirectories):
+
+| Package | Before | After | | Package | Before | After |
+|---|---|---|---|---|---|---|
+| app | 38.3% | 7.9% | | registry | 34.1% | 6.0% |
+| app/decide | 57.1% | 20.6% * | | runtime | 30.6% | 2.0% |
+| check | 30.0% | 1.5% | | runtime/internal/treegate | 19.5% | 5.1% |
+| component | 36.7% | 15.0% * | | runtime/minify | 22.7% | 0.5% |
+| compute | 14.0% | 8.2% * | | seo | 30.8% | 10.6% * |
+| di | 23.6% | 3.5% | | store | 31.4% | 5.4% |
+| html | 25.2% | 12.3% * | | style | 33.0% | 5.3% |
+| interactive | 33.1% | 7.9% | | uinodev1 | 31.0% | 5.8% |
+| island | 40.9% | 5.5% | | urlprefix | 21.7% | 3.4% |
+| localdb | 29.0% | 8.6% * | | urlsafe | 43.8% | 8.2% * |
+| node | 34.3% | 8.9% * | | widget | 43.1% | 6.8% |
+| noderender | 25.7% | 0.7% | | widget/preset | 57.8% | 11.5% * |
+| ownstyle | 19.1% | 3.4% | | widget/theme | 15.0% | 1.3% |
+
+In the starred packages, what remains is a doc on each exported
+identifier, except for two lines in `urlsafe`. The two groups added 48
+primitives, 263 invariants and 103 decisions, plus 46 tests for rules that
+had none. They also recorded 6 twins and merged one (island's two
+roster loops, now `localMembersLocked`). One bug was fixed on the way:
+`registry.IsolateForTest` did not isolate the behavior-marker attributes.
+The replay eval after the sweep held every number, moving one cell at most,
+but no replay task reads `core-ui/` (`2026-11-20-replay-coreui-sweep.md`).
+
+Next: `battery/`, `cmd/`, `internal/`. The repository as a whole is at
+14.1%.
 
 ### 3. Bring the known twins in, and merge them
 

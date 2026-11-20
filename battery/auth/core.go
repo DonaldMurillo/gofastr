@@ -18,7 +18,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
-	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // CorePlugin is the always-loaded auth plugin providing email/password
@@ -276,14 +275,14 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 				Meta:   map[string]string{"reason": reason},
 			})
 			if isForm {
-				writeFormAuthError(w, r, status, why)
+				writeLoginFormError(w, r, status, why)
 			} else {
 				writeAuthError(w, r, status, why)
 			}
 		}
 		if email == "" || password == "" {
 			if isForm {
-				writeFormAuthError(w, r, http.StatusBadRequest, reasonCredentialsRequired)
+				writeLoginFormError(w, r, http.StatusBadRequest, reasonCredentialsRequired)
 			} else {
 				writeAuthError(w, r, http.StatusBadRequest, reasonCredentialsRequired)
 			}
@@ -304,7 +303,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			if !allowed {
 				w.Header().Set("Retry-After", ratelimit.RetryAfterSeconds(retry))
 				if isForm {
-					writeFormAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
+					writeLoginFormError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 				} else {
 					writeAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 				}
@@ -722,21 +721,9 @@ func (c *CorePlugin) deliverRegisterDuplicateNotice(r *http.Request, holderEmail
 	if sender == nil {
 		return
 	}
-	c.notices.enqueue(r.Context(), holderEmail, func(ctx context.Context) {
-		defer func() {
-			if p := recover(); p != nil {
-				// Scrub before the log (textsafe.Recovered): the panic
-				// value is host-sender state, control/bidi bytes in it
-				// must not reach the operator's tail raw.
-				slog.Warn("register duplicate-notice sender panicked",
-					"plugin", "core", "email_hash", hashedIdentifier(holderEmail), "panic", textsafe.Recovered(p))
-			}
-		}()
-		if err := sender.Send(ctx, holderEmail, duplicateRegisterNoticeBody); err != nil {
-			slog.Warn("register duplicate-notice send failed",
-				"plugin", "core", "email_hash", hashedIdentifier(holderEmail), "err", err)
-		}
-	})
+	c.notices.enqueue(r.Context(), holderEmail, scrubbedNoticeSend("core",
+		"register duplicate-notice sender panicked", "register duplicate-notice send failed",
+		holderEmail, sender, duplicateRegisterNoticeBody))
 }
 
 // writeAuthError is the shared error helper: it emits the canonical flat

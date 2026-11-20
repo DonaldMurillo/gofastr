@@ -126,15 +126,16 @@ func (a *App) EraseUserData(ctx context.Context, userID string, opts ...EraseOpt
 	dialect := migrate.DetectDialect(a.DB)
 	erasers := datexport.AllErasers()
 
+	tenant := cfg.tenant
+	if !cfg.tenantSet {
+		tenant = handler.GetTenantID(ctx)
+	}
+	cfg.tenant, cfg.tenantSet = tenant, true
 	user, err := a.resolveErasedUser(ctx, dialect, userID, erasers)
 	if err != nil {
 		return EraseReport{}, err
 	}
 	resolved, skipped := resolveEraserIdentities(user, erasers)
-	tenant := cfg.tenant
-	if !cfg.tenantSet {
-		tenant = handler.GetTenantID(ctx)
-	}
 	for i := range resolved {
 		resolved[i].tenant = tenant
 	}
@@ -1190,7 +1191,9 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, user date
 		if err := tx.Rollback(); err != nil {
 			return report, fmt.Errorf("framework: erase dry run: rollback: %w", err)
 		}
-		return report, a.eraseStores(ctx, user, true, &report)
+		// A dry run counts what a retry would reach: each failed store
+		// with what was kept for it. It writes nothing.
+		return report, a.eraseStoresDry(ctx, dialect, cfg.tenant, user, &report)
 	}
 	if err := tx.Commit(); err != nil {
 		return report, fmt.Errorf("framework: erase: commit: %w", err)
@@ -1203,27 +1206,7 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, user date
 	} else {
 		objErr = a.eraseStoredObjects(ctx, deletable)
 	}
-	return report, errors.Join(objErr, a.eraseStores(ctx, user, false, &report))
-}
-
-func (a *App) eraseStores(ctx context.Context, user datexport.ErasedUser, dryRun bool, rep *EraseReport) error {
-	var failed []string
-	for _, s := range datexport.AllStoreErasers() {
-		n, err := runStoreEraser(ctx, s, user, dryRun)
-		if err != nil {
-			failed = append(failed, fmt.Sprintf("%s (%v)", s.Name, err))
-			continue
-		}
-		rep.Stores = append(rep.Stores, EraseTableResult{Name: s.Name, Source: s.Source, Mode: "delete", RowsAffected: n})
-	}
-	if len(failed) == 0 {
-		return nil
-	}
-	if dryRun {
-		return fmt.Errorf("framework: erase dry run: %d store(s) could not be counted: %s", len(failed), strings.Join(failed, "; "))
-	}
-	return fmt.Errorf("framework: erase: rows deleted but %d store(s) failed and may still hold the user's data: %s",
-		len(failed), strings.Join(failed, "; "))
+	return report, errors.Join(objErr, a.eraseStoresRetained(ctx, dialect, cfg.tenant, user, &report))
 }
 
 func runStoreEraser(ctx context.Context, s datexport.StoreEraser, user datexport.ErasedUser, dryRun bool) (n int, err error) {

@@ -797,16 +797,8 @@ func isInboundRequest(pass *analysis.Pass, expr ast.Expr) bool {
 
 // isRequestType: *net/http.Request (or an http.Request value).
 func isRequestType(t types.Type) bool {
-	if ptr, isPtr := t.(*types.Pointer); isPtr {
-		t = ptr.Elem()
-	}
-	named, ok := t.(*types.Named)
-	if !ok {
-		return false
-	}
-	obj := named.Obj()
-	return obj != nil && obj.Name() == "Request" &&
-		obj.Pkg() != nil && obj.Pkg().Path() == "net/http"
+	named := astx.NamedOf(t)
+	return named != nil && astx.IsNamed(named, "net/http", "Request")
 }
 
 // hasCapCall reports whether n mentions one of the standard capping

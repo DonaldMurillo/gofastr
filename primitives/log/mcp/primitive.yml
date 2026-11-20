@@ -19,3 +19,7 @@ invariants:
     enforced_by:
       - test: battery/log.TestLogToolsRequireAdmin
       - test: battery/log.TestLogReadToolsRefuseAnonCaller
+  - id: tools-carry-listing-hints
+    rule: Every log tool lists as idempotent, closed-world and not destructive, and every one but log_set_level as read-only.
+    enforced_by:
+      - test: battery/log.TestMCPToolsCarryListingHints

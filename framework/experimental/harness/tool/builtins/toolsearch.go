@@ -1,30 +1,5 @@
 package builtins
 
-// ToolSearch, the harness's tool-discovery tool. Always available in
-// the base toolset; lets the model ask "what tools do I have for
-// editing files?" instead of being primed with every schema up front.
-//
-// Why this exists:
-//
-//   - As MCP servers and plugin packs grow, shipping every tool's
-//     full JSON schema in every Request burns input tokens fast.
-//     ToolSearch lets the model narrow to relevant tools on demand.
-//   - When the model encounters a problem it hasn't solved before,
-//     it can search for capabilities by intent ("compress files",
-//     "send email") rather than guessing which tool exists.
-//   - Plugin or runtime-added tools that the system-prompt template
-//     can't enumerate at startup are still discoverable.
-//
-// Behavior:
-//
-//   - Substring + word-overlap ranking against name + description.
-//     Cheap, deterministic, no dep on a fuzzy-match library.
-//   - Returns top N (default 8) matches each carrying name, mutating
-//     flag, description, and the full inputSchema bytes. The model
-//     can call the discovered tool the very next round.
-//   - Always-on: registered in every session regardless of pack
-//     filters so the model can never end up tool-less.
-
 import (
 	"context"
 	"encoding/json"
@@ -36,8 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
 
-// ToolSearch tool. Stateless, pulls the registry from the dispatch
-// ctx via tool.RegistryFromContext.
+// ToolSearch ranks the dispatch context's registered tools against a query and returns the best matches with their schemas.
 type ToolSearch struct{}
 
 func (ToolSearch) Name() string { return "ToolSearch" }
@@ -91,7 +65,6 @@ func (ToolSearch) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink)
 	all := reg.List()
 	matches := make([]toolMatch, 0, len(all))
 	for _, t := range all {
-		// Skip ToolSearch itself, model already knows about it.
 		if t.Name() == "ToolSearch" {
 			continue
 		}
@@ -131,8 +104,6 @@ func (ToolSearch) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink)
 	}, nil
 }
 
-// tokenize splits a query into lowercase words, dropping common
-// stopwords that don't help matching.
 func tokenize(q string) []string {
 	stop := map[string]bool{
 		"a": true, "an": true, "the": true, "to": true, "for": true,
@@ -150,8 +121,6 @@ func tokenize(q string) []string {
 	return out
 }
 
-// scoreMatch returns a relevance score: name match weighs more than
-// description; multi-term overlap accumulates.
 func scoreMatch(terms []string, name, desc string) int {
 	if len(terms) == 0 {
 		return 0

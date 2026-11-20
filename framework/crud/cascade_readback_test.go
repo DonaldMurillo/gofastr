@@ -11,6 +11,25 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
+// cascadePostsEntity defines the posts parent carrying one cascade-write
+// relation of every kind, all targeting the notes child.
+func cascadePostsEntity() *entity.Entity {
+	return entity.Define("posts", entity.EntityConfig{
+		Table: "posts",
+		Fields: []schema.Field{
+			{Name: "title", Type: schema.String},
+			{Name: "note_id", Type: schema.String},
+		},
+		Relations: []entity.Relation{
+			entity.BelongsTo("lead", "notes", "note_id").WithCascadeWrite(true),
+			entity.HasOne("note", "notes", "post_id").WithCascadeWrite(true),
+			entity.HasMany("notes", "notes", "post_id").WithCascadeWrite(true),
+			entity.ManyToMany("tagged", "notes", "post_notes", "post_id", "note_id").WithCascadeWrite(true),
+		},
+		Exposure: &entity.ExposureConfig{Public: true},
+	}.WithTimestamps(false))
+}
+
 // cascadeNotesHandler builds posts with a cascade write of every relation
 // kind onto notes, whose ReadScope admits only status=published. noteKey,
 // when set, is the WireName of the notes primary key.
@@ -21,7 +40,6 @@ func cascadeNotesHandler(t *testing.T, jsonCase JSONCase, noteKey string) (*Crud
 		`CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT, note_id TEXT)`,
 		`CREATE TABLE post_notes (post_id TEXT NOT NULL, note_id TEXT NOT NULL, PRIMARY KEY (post_id, note_id))`,
 	)
-	public := &entity.ExposureConfig{Public: true}
 	notes := entity.Define("notes", entity.EntityConfig{
 		Table: "notes",
 		Fields: []schema.Field{
@@ -34,20 +52,7 @@ func cascadeNotesHandler(t *testing.T, jsonCase JSONCase, noteKey string) (*Crud
 			Filter: []entity.RowPredicate{{Field: "status", Value: "published"}},
 		}},
 	}.WithTimestamps(false))
-	posts := entity.Define("posts", entity.EntityConfig{
-		Table: "posts",
-		Fields: []schema.Field{
-			{Name: "title", Type: schema.String},
-			{Name: "note_id", Type: schema.String},
-		},
-		Relations: []entity.Relation{
-			entity.BelongsTo("lead", "notes", "note_id").WithCascadeWrite(true),
-			entity.HasOne("note", "notes", "post_id").WithCascadeWrite(true),
-			entity.HasMany("notes", "notes", "post_id").WithCascadeWrite(true),
-			entity.ManyToMany("tagged", "notes", "post_notes", "post_id", "note_id").WithCascadeWrite(true),
-		},
-		Exposure: public,
-	}.WithTimestamps(false))
+	posts := cascadePostsEntity()
 	notes.SetDB(db)
 	posts.SetDB(db)
 	ch := NewCrudHandler(posts, db).WithJSONCase(jsonCase)

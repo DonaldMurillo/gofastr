@@ -11,6 +11,22 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
+// createCounter POSTs {"label":label} as u1 against /counters and returns
+// the created body, proving by what it echoes which id the DATABASE put
+// on the row.
+func createCounter(t testing.TB, ch *CrudHandler, label string) string {
+	t.Helper()
+	req := withTestUser(httptest.NewRequest(http.MethodPost, "/counters",
+		strings.NewReader(`{"label":"`+label+`"}`)), "u1")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ch.Create()(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create %q = %d, body=%s", label, rec.Code, rec.Body.String())
+	}
+	return rec.Body.String()
+}
+
 // TestCreate_AutoIncrementPK_AssignedByDB proves an auto-incrementing integer
 // primary key is assigned by the DATABASE, not stamped by the framework. Two
 // creates must yield distinct, monotonically-incrementing ids. The framework
@@ -18,6 +34,7 @@ import (
 // SERIAL sequence) fills it; sending a 0 placeholder would collide on every
 // insert after the first.
 func TestCreate_AutoIncrementPK_AssignedByDB(t *testing.T) {
+
 	// "INTEGER PRIMARY KEY" on SQLite aliases the rowid and auto-increments
 	// when the column is omitted from INSERT, exactly what SQLType emits.
 	dbc := setupDB(t, `CREATE TABLE counters (id INTEGER PRIMARY KEY, label TEXT)`)
@@ -31,17 +48,7 @@ func TestCreate_AutoIncrementPK_AssignedByDB(t *testing.T) {
 	ent.SetDB(dbc)
 	ch := NewCrudHandler(ent, dbc)
 
-	create := func(label string) string {
-		req := withTestUser(httptest.NewRequest(http.MethodPost, "/counters",
-			strings.NewReader(`{"label":"`+label+`"}`)), "u1")
-		req.Header.Set("Content-Type", "application/json")
-		rec := httptest.NewRecorder()
-		ch.Create()(rec, req)
-		if rec.Code != http.StatusCreated {
-			t.Fatalf("create %q = %d, body=%s", label, rec.Code, rec.Body.String())
-		}
-		return rec.Body.String()
-	}
+	create := func(label string) string { return createCounter(t, ch, label) }
 
 	first := create("a")
 	second := create("b")

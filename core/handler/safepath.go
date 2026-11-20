@@ -5,17 +5,8 @@ import (
 	"strings"
 )
 
-// IsSafeRelativePath reports whether p is a same-origin, path-only
-// redirect target: it must start with a single "/", carry no scheme or
-// host (also after percent-decoding, where "/%2Fevil" would become
-// "//evil"), and contain none of backslash, NUL, CR, LF, or TAB in
-// either the raw or the decoded form, since browsers decode before they
-// navigate and any of those bytes changes what the redirect means.
-//
-// It is the one implementation of the check formerly duplicated as
-// battery/auth's isSafeRelativePath (the "next" / return-to form field)
-// and framework/uihost's isSafePartialRedirect (the X-Gofastr-Location
-// partial-redirect header).
+// IsSafeRelativePath reports whether p is a single-slash, path-only
+// redirect target with no backslash, NUL, CR, LF or tab, raw or decoded.
 func IsSafeRelativePath(p string) bool {
 	if p == "" {
 		return false
@@ -43,4 +34,13 @@ func IsSafeRelativePath(p string) bool {
 		return false
 	}
 	return true
+}
+
+// SafeRelativePathOr returns p if IsSafeRelativePath accepts it. Otherwise it
+// returns the caller's trusted fallback unchanged.
+func SafeRelativePathOr(p, fallback string) string {
+	if IsSafeRelativePath(p) {
+		return p
+	}
+	return fallback
 }

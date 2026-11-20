@@ -24,7 +24,8 @@ func TestRuntimeModule_FormErrors(t *testing.T) {
 		`'filled'`,               // a rendered node the module wrote into
 		"aria-invalid",
 		"aria-describedby",
-		"role", // role=alert on the message
+		"cui-form-errors", // the one polite region every refusal is read from
+		"'polite'",
 		"_toastOrFallback",
 		"NS._formErrors",
 		"loadedModules",
@@ -33,14 +34,20 @@ func TestRuntimeModule_FormErrors(t *testing.T) {
 			t.Errorf("formerrors module missing %q", want)
 		}
 	}
+	if strings.Contains(src, "'alert'") {
+		t.Error("formerrors must not make each error its own alert: a refusal is read once, from the polite region")
+	}
 	if strings.Contains(src, "innerHTML") {
 		t.Error("formerrors must build its markup with DOM calls, never innerHTML")
 	}
 	if strings.Contains(src, "fui-") {
 		t.Error("formerrors names a kit class: the kernel places errors by headless hook only")
 	}
-	if size := ModuleSize("formerrors"); size > 4000 {
-		t.Errorf("formerrors module is %d bytes, budget is 4000", size)
+	// 4000 → 4400 (#704): the one polite region, an id for every live
+	// node, a radio named by its group's legend, and the region emptied
+	// on navigation.
+	if size := ModuleSize("formerrors"); size > 4400 {
+		t.Errorf("formerrors module is %d bytes, budget is 4400", size)
 	}
 	trimmed := strings.TrimSpace(src)
 	if !strings.HasPrefix(trimmed, "(()=>{'use strict'") && !strings.HasPrefix(trimmed, "(() => {") {

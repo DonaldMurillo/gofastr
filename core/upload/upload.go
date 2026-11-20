@@ -17,38 +17,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// maxMultipartMemory bounds how many bytes of a multipart request are
-// buffered in memory before parts spill to temp files. It is deliberately
-// small and independent of Config.MaxSize: passing MaxSize as the
-// maxMemory arg to ParseMultipartForm only controls the RAM-vs-disk spill
-// threshold, it does NOT cap the request body. The body cap is enforced
-// separately via http.MaxBytesReader below.
-const maxMultipartMemory = 1 << 20 // 1 MiB
+const maxMultipartMemory = 1 << 20
 
-// multipartFramingSlack is added to Config.MaxSize when wrapping the
-// request body so the multipart boundary markers, part headers, and
-// other framing bytes don't push a legitimately-sized file part over
-// the body cap and trigger a spurious 413.
-const multipartFramingSlack = 4 << 10 // 4 KiB
+const multipartFramingSlack = 4 << 10
 
-// DefaultMaxSize is the upload cap Handler applies when Config.MaxSize is
-// zero or negative: 32 MiB, the same ceiling framework/file uses. Set
-// MaxSize to allow larger files.
+// DefaultMaxSize is Handler's cap when Config.MaxSize is zero or negative.
 const DefaultMaxSize int64 = 32 << 20
 
-// UniqueFilename derives a collision-proof storage name from a client
-// filename: the sanitized base name, a UnixNano timestamp, and 16 hex
-// chars of crypto/rand. The random component is the real uniqueness
-// guarantee: the timestamp is retained only for human-readable
-// ordering, because two requests landing on the same clock tick must
-// still map to different objects (Storage.Save implementations open
-// with O_TRUNC, so a colliding key silently overwrites). This is the
-// single unique-key generator the framework's upload surfaces share:
-// framework/file.GenerateFilePath builds its entity/field-scoped paths
-// on top of it; do not grow a second scheme.
-//
-// There is no error return: crypto/rand.Read cannot fail (see
-// randomSuffix), so the random component is always present.
+// UniqueFilename returns SanitizeFilename(filename) with a UnixNano
+// timestamp and 16 random hex characters before its extension, cut to fit
+// MaxFilenameBytes.
 func UniqueFilename(filename string) string {
 	safe := SanitizeFilename(filename)
 	ext := filepath.Ext(safe)
@@ -57,11 +35,6 @@ func UniqueFilename(filename string) string {
 		name = "upload"
 	}
 	suffix := fmt.Sprintf("_%d_%s", time.Now().UnixNano(), randomSuffix())
-	// SanitizeFilename lets the name reach MaxFilenameBytes, and the
-	// suffix comes on top: cut the stem (on a rune boundary, keeping the
-	// extension) so the whole component still fits the filesystem's
-	// name limit. An extension that leaves no room for a stem is dropped,
-	// as SanitizeFilename drops one past the cap.
 	budget := MaxFilenameBytes - len(suffix)
 	if len(name)+len(ext) > budget {
 		if len(ext) >= budget {
@@ -75,12 +48,6 @@ func UniqueFilename(filename string) string {
 	return name + suffix + ext
 }
 
-// randomSuffix returns a hex-encoded 8-byte crypto-random token. It has no
-// error path because crypto/rand.Read has none: it "never returns an
-// error, and always fills b entirely", crashing the program irrecoverably
-// if the OS source fails. So there is no reachable state where the suffix
-// is missing and two requests on the same clock tick could collide into an
-// O_TRUNC clobber, which is the whole reason the suffix exists.
 func randomSuffix() string {
 	var b [8]byte
 	rand.Read(b[:])
@@ -106,15 +73,14 @@ type Metadata struct {
 
 // Config holds configuration for the upload handler.
 type Config struct {
-	MaxSize      int64    // Maximum file size in bytes (0 or less = DefaultMaxSize)
-	AllowedTypes []string // MIME type whitelist (empty = allow all)
-	AllowedExts  []string // Extension whitelist (empty = allow all)
-	Storage      Storage  // Storage backend implementation
+	MaxSize      int64    // bytes; 0 or less means DefaultMaxSize
+	AllowedTypes []string // sniffed MIME types allowed; empty allows all
+	AllowedExts  []string // extensions allowed; empty allows all
+	Storage      Storage
 }
 
-// Handler returns an http.HandlerFunc that processes multipart file uploads.
-// It expects a single file in the "file" form field.
-// On success it responds with 200 and JSON Metadata.
+// Handler stores the multipart "file" field of a POST under a
+// UniqueFilename key and answers 200 with its JSON Metadata.
 func Handler(cfg Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -122,27 +88,16 @@ func Handler(cfg Config) http.HandlerFunc {
 			return
 		}
 
-		// Bound the request body before parsing so an attacker can't
-		// force the whole multipart payload to be buffered/spilled to
-		// disk before the size check runs. MaxBytesReader caps total
-		// body bytes (with a small slack for multipart framing); the
-		// maxMemory arg to ParseMultipartForm is a separate RAM-vs-disk
-		// spill threshold, not a body cap. A zero MaxSize gets
-		// DefaultMaxSize: an unset field must not mean "spool anything".
 		maxSize := cfg.MaxSize
 		if maxSize <= 0 {
 			maxSize = DefaultMaxSize
 		}
-		// The slack saturates: at MaxInt64 the sum wrapped negative and
-		// MaxBytesReader refused the first byte, so every upload was 413.
 		bodyCap := maxSize
 		if maxSize <= math.MaxInt64-multipartFramingSlack {
 			bodyCap = maxSize + multipartFramingSlack
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, bodyCap)
 
-		// Parse multipart form. Use a small fixed in-memory threshold so
-		// large parts spill predictably; do NOT pass MaxSize here.
 		if err := r.ParseMultipartForm(maxMultipartMemory); err != nil {
 			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 				i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, reasonFileTooLarge)
@@ -151,9 +106,6 @@ func Handler(cfg Config) http.HandlerFunc {
 			i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
 			return
 		}
-		// Remove any temp files multipart spilled to disk on every return
-		// path, including the validation-reject paths below. The net/http
-		// server does not delete these deterministically.
 		defer func() {
 			if r.MultipartForm != nil {
 				_ = r.MultipartForm.RemoveAll()
@@ -167,45 +119,29 @@ func Handler(cfg Config) http.HandlerFunc {
 		}
 		defer file.Close()
 
-		// Validate extension
 		if err := ValidateExt(header.Filename, cfg.AllowedExts); err != nil {
 			i18n.HTTPErrorFor(w, r, http.StatusBadRequest, err)
 			return
 		}
 
-		// Validate size
 		if err := ValidateSize(header.Size, maxSize); err != nil {
 			i18n.HTTPErrorFor(w, r, http.StatusRequestEntityTooLarge, err)
 			return
 		}
 
-		// Validate MIME type
 		if err := ValidateMIME(file, cfg.AllowedTypes); err != nil {
 			i18n.HTTPErrorFor(w, r, http.StatusUnsupportedMediaType, err)
 			return
 		}
 
-		// Sniff the actual content type so stored metadata reflects what
-		// the file *is*, not what the client claimed in the multipart
-		// header. A misleading Content-Type / extension is a standard
-		// MIME-spoofing primitive (HTML uploaded as image/png, etc.):
-		// stored metadata must never echo the attacker-controlled value
-		// back to downstream consumers.
 		detectedMime, err := sniffContentType(file)
 		if err != nil {
 			i18n.HTTPError(w, r, http.StatusBadRequest, reasonSniffFailed)
 			return
 		}
 
-		// Storage key: the sanitized filename PLUS a unique timestamp/rand
-		// component. The bare sanitized filename keyed objects per-client-
-		// name, and Storage.Save implementations open O_TRUNC: two users
-		// uploading report.txt silently overwrote each other. UniqueFilename
-		// is the same generator the auto-CRUD path builds on
-		// (framework/file.GenerateFilePath).
 		key := UniqueFilename(header.Filename)
 
-		// Save via storage backend
 		if err := cfg.Storage.Save(r.Context(), key, file); err != nil {
 			i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
@@ -225,10 +161,6 @@ func Handler(cfg Config) http.HandlerFunc {
 	}
 }
 
-// sniffContentType reads the first 512 bytes of f to detect its content
-// type via [http.DetectContentType], then rewinds f so the storage
-// backend reads the full payload. The detected type is what the metadata
-// must record, never the attacker-controlled multipart Content-Type.
 func sniffContentType(f io.ReadSeeker) (string, error) {
 	buf := make([]byte, 512)
 	n, err := io.ReadFull(f, buf)
@@ -241,11 +173,6 @@ func sniffContentType(f io.ReadSeeker) (string, error) {
 	return http.DetectContentType(buf[:n]), nil
 }
 
-// ext returns the lowercase file extension (without dot) from a filename.
-// Lowercasing is the point, not a nicety: scriptableExt matches against a
-// lowercase set, so a "payload.SVG" or "payload.HTML" walked straight past
-// the stored-XSS guard's extension leg while the identical lowercase name
-// was caught.
 func ext(filename string) string {
 	e := filepath.Ext(filename)
 	if len(e) > 0 && e[0] == '.' {

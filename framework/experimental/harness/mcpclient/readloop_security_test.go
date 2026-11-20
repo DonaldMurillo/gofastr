@@ -2,10 +2,6 @@ package mcpclient
 
 import (
 	"context"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 )
@@ -40,11 +36,7 @@ import (
 // stub_windows_test.go).
 func writeDupFloodStub(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	if runtime.GOOS == "windows" {
-		src := filepath.Join(dir, "dupstub.go")
-		bin := filepath.Join(dir, "dupstub.exe")
-		const source = `package main
+	const source = `package main
 
 import (
   "bufio"
@@ -73,16 +65,7 @@ func main() {
   }
 }
 `
-		if err := os.WriteFile(src, []byte(source), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if out, err := exec.Command("go", "build", "-o", bin, src).CombinedOutput(); err != nil {
-			t.Fatalf("setup broken: build dup stub: %v\n%s", err, out)
-		}
-		return bin
-	}
-	path := filepath.Join(dir, "dup-mcp.sh")
-	script := `#!/bin/sh
+	const script = `#!/bin/sh
 while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*)
@@ -103,10 +86,7 @@ while IFS= read -r line; do
   esac
 done
 `
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return writePeerStub(t, "dupstub", "dup-mcp.sh", "dup stub", source, script)
 }
 
 // TestReadLoopRedDupResponseWedge: after a peer's duplicate-response burst,

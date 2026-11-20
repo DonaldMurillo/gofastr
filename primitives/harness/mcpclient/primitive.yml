@@ -1,0 +1,78 @@
+primitive: harness.mcpclient
+summary: The harness's MCP client - Spawn starts an MCP server as a child process with a scrubbed environment and an optional binary hash check, Client speaks newline-delimited JSON-RPC 2.0 over its stdio, and Source exposes the server's tools as harness tools named "<server>.<tool>".
+code:
+  - framework/experimental/harness/mcpclient/
+docs:
+  - framework/docs/content/harness-architecture.md
+twins:
+  - job: Refuse third-party MCP bytes holding duplicate or case-folded JSON keys.
+    why: The readLoop check vets every depth of the whole line, so the result checks in ListTools and mcpTool.Run cannot fire through a Client; they stay as defence until the result checks are dropped or the line check narrowed.
+    sites:
+      - path: framework/experimental/harness/mcpclient/client.go
+        note: readLoop drops the line, and ListTools checks the tools/list result again.
+      - path: framework/experimental/harness/mcpclient/source.go
+        note: mcpTool.Run checks the tools/call result again.
+invariants:
+  - id: child-env-is-allowlisted
+    rule: A spawned server's environment holds only the allowlisted names (locale, PATH, HOME, TMPDIR, USER, LOGNAME, and the Windows basics), the names in SpawnConfig.InheritEnv and the entries in SpawnConfig.Env, never the rest of the host environment.
+    enforced_by:
+      - test: framework/experimental/harness/mcpclient.TestSpawn_ScrubsInheritedEnv
+      - test: framework/experimental/harness/mcpclient.TestSpawnWithConfig_AllowlistAndExtras
+  - id: explicit-env-wins
+    rule: A SpawnConfig.Env entry replaces an allowlisted or inherited variable of the same name in the child's environment.
+    enforced_by:
+      - test: framework/experimental/harness/mcpclient.TestExplicitEnvWinsOverAllowlist
+  - id: binary-hash-checked
+    rule: With a non-empty expected SHA-256, Spawn returns a SHA256MismatchError and starts nothing when the binary's hash differs.
+    enforced_by:
+      - test: framework/experimental/harness/mcpclient.TestSHA256Mismatch
+  - id: ambiguous-envelope-dropped
+    rule: A server line with duplicate or case-folded keys at any depth never resolves a pending call.
+    enforced_by:
+      - test: framework/experimental/harness/mcpclient.TestResponseRedRefusesAmbiguousEnvelope
+  - id: duplicate-response-never-blocks
+    rule: The read loop drops a second response for an id whose first answer is still unread instead of blocking, so later calls still resolve.
+    enforced_by:
+      - test: framework/experimental/harness/mcpclient.TestReadLoopRedDupResponseWedge
+  - id: dead-transport-fails-pending
+    rule: When the read loop stops on a scanner error, it attempts to deliver that error to every call pending at that moment and keeps no error for later calls; a clean EOF fails no call.
+    enforced_by:
+      - test: framework/experimental/harness/mcpclient.TestUnreadableLineFailsPendingCalls
+  - id: mcp-tools-are-mutating
+    rule: Every tool a Source exposes reports Mutating true.
+    enforced_by:
+      - test: framework/experimental/harness/mcpclient.TestMCPToolsAreMutating
+decisions:
+  - id: scrubbed-child-env
+    date: 2026-11-18
+    status: accepted
+    decision: Spawn builds the child's environment from a short allowlist plus what the caller names, and never passes os.Environ.
+    rejected:
+      - option: Inherit the host environment (a nil cmd.Env).
+        why: Every spawned server would receive host secrets such as JWT keys, database DSNs and OAuth keys.
+    revisit_if: A server that only needs ordinary tools cannot run without a name outside the allowlist.
+    upholds: [child-env-is-allowlisted, explicit-env-wins]
+  - id: assume-mutating
+    date: 2026-11-18
+    status: accepted
+    decision: MCP tools are treated as mutating because MCP does not say whether a tool mutates.
+    rejected:
+      - option: Treat MCP tools as read-only.
+        why: A mutating tool would then skip the intent and outcome ledger fsyncs.
+    upholds: [mcp-tools-are-mutating]
+  - id: bounded-wait-on-close
+    date: 2026-11-18
+    status: accepted
+    decision: Spawn sets cmd.WaitDelay to 5 seconds so Close never waits without bound on the child's I/O.
+    rejected:
+      - option: No WaitDelay.
+        why: A descendant the server forked can hold the child's output open past the kill; with StdoutPipe today Wait closes the pipe itself, so the bound is a guard for a writer-backed Stdout.
+    revisit_if: The client stops using StdoutPipe and StderrPipe.
+  - id: stdio-only-and-stderr-discarded
+    date: 2026-11-18
+    status: accepted
+    decision: The client speaks stdio only, ignores server notifications, discards the server's stderr and accepts but does not act on the eager or lazy discovery setting.
+    rejected:
+      - option: HTTP+SSE and streamable HTTP transports, notification subscriptions and stderr capture now.
+        why: The MCP servers the shipped profiles start need none of them.
+    revisit_if: A profile needs a remote MCP server, a resource subscription, the server's stderr in the harness log, or lazy schema loading.

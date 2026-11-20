@@ -1,0 +1,20 @@
+primitive: config.envbool
+summary: EnvBool, the strict reading of an opt-in environment flag that dev mode, live reload, the dev MCP bind and runtime minification share.
+code:
+  - core/config/env.go
+docs:
+  - framework/docs/content/core-packages.md
+invariants:
+  - id: strict-true-only
+    rule: EnvBool is true only for a value strconv.ParseBool reads as true, and false when the variable is unset, empty, false or unparseable.
+    enforced_by:
+      - test: core/config.TestSweepConfigEnvBool
+decisions:
+  - id: one-env-bool
+    date: 2026-11-19
+    status: accepted
+    decision: Opt-in environment flags are read through config.EnvBool, which replaced the envBool copies in core-ui/runtime and framework/dev and the body of framework's devMCPExposeAllowed.
+    rejected:
+      - option: Keep a helper per package.
+        why: Three body-identical copies drift, and a looser copy could turn a dev-only switch on in production.
+    upholds: [strict-true-only]

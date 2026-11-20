@@ -96,6 +96,10 @@ invariants:
     enforced_by:
       - test: framework/entityui.TestLastUpdatedStaysInScope
       - test: framework/entityui.TestSweepPGLastUpdatedSkipsNullTimestamps
+  - id: exact-kinds-name-their-fill
+    rule: The email, tel and url kinds render an input of that type with the autocomplete token of the same name and spellcheck false and autocapitalize off; the color kind names no fill.
+    enforced_by:
+      - test: framework/entityui.TestExactKindsCarryAutocomplete
 decisions:
   - id: scriptless-edit-through-an-entityui-route
     date: 2026-11-16

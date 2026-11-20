@@ -39,6 +39,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/provider"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/skill/skillmd"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
+	"github.com/DonaldMurillo/gofastr/framework/internal/wstest"
 )
 
 // ---------- 1. MCP stdio: full tools/call cycle ----------
@@ -250,7 +251,7 @@ func TestE2EExternal_WS_CommandAndEventFrames(t *testing.T) {
 	// Send a SendInput command frame.
 	cmd := control.SendInput{SessionID: sess, Content: engine.SimpleInput("ping")}
 	cmdBody, _ := control.MarshalCommand(cmd)
-	frame := wsClientTextFrame(t, mustJSON(map[string]any{
+	frame := wstest.MaskedTextFrame(mustJSON(map[string]any{
 		"frame": "command",
 		"body":  json.RawMessage(cmdBody),
 	}))
@@ -472,34 +473,6 @@ func postJSON(t *testing.T, url, body, label string) string {
 func mustJSON(v any) []byte {
 	b, _ := json.Marshal(v)
 	return b
-}
-
-// wsClientTextFrame builds a masked client-side text frame (mask bit
-// required for client→server frames per RFC 6455).
-func wsClientTextFrame(t *testing.T, payload []byte) []byte {
-	t.Helper()
-	mask := []byte{0xAB, 0xCD, 0xEF, 0x12}
-	header := []byte{0x80 | 0x1} // FIN + text
-	switch {
-	case len(payload) < 126:
-		header = append(header, byte(len(payload))|0x80)
-	case len(payload) <= 0xFFFF:
-		header = append(header, 126|0x80)
-		var ext [2]byte
-		binary.BigEndian.PutUint16(ext[:], uint16(len(payload)))
-		header = append(header, ext[:]...)
-	default:
-		header = append(header, 127|0x80)
-		var ext [8]byte
-		binary.BigEndian.PutUint64(ext[:], uint64(len(payload)))
-		header = append(header, ext[:]...)
-	}
-	header = append(header, mask...)
-	masked := make([]byte, len(payload))
-	for i := range payload {
-		masked[i] = payload[i] ^ mask[i%4]
-	}
-	return append(header, masked...)
 }
 
 func readServerFrame(br *bufio.Reader) (op byte, payload []byte, err error) {

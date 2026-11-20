@@ -606,8 +606,10 @@ appUI := fwApp.EntityUI(entityui.Extensions{
   slots that hold plain text: a row link's label, a card's title,
   subtitle and meta line. With no `Text` those slots print the field
   type's own text; `Cell`'s markup never reaches them. `Display.Fields[f].Input`
-  picks one by name. `email`, `url`, `color`, `markdown` and `code` are
-  built in (`color` draws the picker only for a stored lowercase
+  picks one by name. `email`, `tel`, `url`, `color`, `markdown` and `code` are
+  built in (`email`, `tel` and `url` draw an input of that type with the
+  `autocomplete` token of the same name and no spell check or
+  autocapitalize; `color` draws the picker only for a stored lowercase
   `#rrggbb`, and a text input that keeps any other value), and so is `money` for an Int, Float or Decimal: a number input
   behind the currency symbol, and the value printed as an amount (`$1,234.50`,
   `-$5.00`) in cells, text slots and read-only. The symbol is the

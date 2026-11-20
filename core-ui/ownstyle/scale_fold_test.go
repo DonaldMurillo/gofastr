@@ -7,10 +7,10 @@ import "testing"
 // the KELVIN SIGN, which strings.ToLower folds onto i and k, are other
 // values.
 func TestSameScaleValueFoldsASCIIOnly(t *testing.T) {
-	if !sameScaleValue("16PX", "1rem") || !sameScaleValue("INHERIT", "inherit") {
+	if !SameScaleValue("16PX", "1rem") || !SameScaleValue("INHERIT", "inherit") {
 		t.Error("an ASCII case difference no longer compares equal")
 	}
-	if sameScaleValue("İnherit", "inherit") || sameScaleValue("Keep", "keep") {
+	if SameScaleValue("İnherit", "inherit") || SameScaleValue("Keep", "keep") {
 		t.Error("a Unicode look-alike compared equal to an ASCII value")
 	}
 }

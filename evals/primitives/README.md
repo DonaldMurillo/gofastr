@@ -57,6 +57,11 @@ reports one path. The real fix reached others with the same defect.
 The registry entries for the first three tasks were written knowing the
 bugs. Those for the last five were written by a separate agent that was
 given the pre-fix code and the format, and not told what the bugs were.
+Since 2026-11-20 `form-field-typo` reads its own copy of those entries
+(`overlays/appspec-form`) with one twin added after the fix, naming the
+sibling sites; its blind baseline is 2 of 10 other paths
+(`results/2026-11-20-replay-v097.md`). `dup-column-key` is the blind
+twin task left.
 
 Conditions are `plain` (the report alone), `nudge` (the report plus one
 sentence asking the agent to check other paths for the same defect) and
@@ -131,7 +136,8 @@ a cell inside it would read this checkout's `CLAUDE.md`.
 
 A cell is not a sandbox. It is an agent with a shell on the machine that
 runs the eval. Every cell gets a small deny policy (no pushes, no `ssh`
-or `gh`, no reading of SSH keys or cloud credentials), which stops the
+or `gh`, no reading of SSH keys or cloud credentials, no `go clean`,
+which would empty the build cache the cells share), which stops the
 usual spellings and nothing more. Run the eval somewhere disposable: a
 cloud session or a container, not a workstation with credentials on it.
 

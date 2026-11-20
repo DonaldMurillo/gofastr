@@ -12,13 +12,20 @@ func negotiateHeader(tr *Translator, header string) string {
 	return Negotiate(tr, r).Tag
 }
 
+// qTestTranslator builds a translator over a "k" message per locale
+// with the given fallback.
+func qTestTranslator(fallback string, locales ...string) *Translator {
+	c := NewMapCatalog()
+	for _, l := range locales {
+		c.Set(l, "k", Message{Text: l})
+	}
+	return NewTranslator(c, fallback)
+}
+
 // A wildcard matches any catalog locale the header did not refuse with
 // q=0; it used to match nothing, so the refused fallback was served.
 func TestWildcardSkipsRefusedLocale(t *testing.T) {
-	c := NewMapCatalog()
-	c.Set("en", "k", Message{Text: "en"})
-	c.Set("fr", "k", Message{Text: "fr"})
-	tr := NewTranslator(c, "en")
+	tr := qTestTranslator("en", "en", "fr")
 
 	if got := negotiateHeader(tr, "en;q=0, *;q=1"); got != "fr" {
 		t.Errorf("en;q=0, * negotiated %q, want fr", got)
@@ -32,10 +39,7 @@ func TestWildcardSkipsRefusedLocale(t *testing.T) {
 // truncates to it: en-GB falling back to the refused en served it ahead
 // of the accepted fr (2026-10-27 C11).
 func TestTruncationSkipsRefusedLocale(t *testing.T) {
-	c := NewMapCatalog()
-	c.Set("en", "k", Message{Text: "en"})
-	c.Set("fr", "k", Message{Text: "fr"})
-	tr := NewTranslator(c, "en")
+	tr := qTestTranslator("en", "en", "fr")
 
 	if got := negotiateHeader(tr, "en;q=0, en-GB;q=0.9, fr;q=0.8"); got != "fr" {
 		t.Errorf("en;q=0, en-GB, fr negotiated %q, want fr", got)
@@ -48,11 +52,7 @@ func TestTruncationSkipsRefusedLocale(t *testing.T) {
 // A q the grammar does not allow drops its entry; it used to keep the
 // default q=1 and outrank every well-formed entry.
 func TestMalformedQDropsEntry(t *testing.T) {
-	c := NewMapCatalog()
-	c.Set("en", "k", Message{Text: "en"})
-	c.Set("fr", "k", Message{Text: "fr"})
-	c.Set("de", "k", Message{Text: "de"})
-	tr := NewTranslator(c, "de")
+	tr := qTestTranslator("de", "en", "fr", "de")
 
 	for _, h := range []string{"fr;q=garbage, en;q=0.8", "fr;q=NaN, en;q=0.8", "fr;q=2, en;q=0.8"} {
 		if got := negotiateHeader(tr, h); got != "en" {

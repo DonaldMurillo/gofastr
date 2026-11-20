@@ -28,9 +28,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// runtimeHash is the SHA256 of the embedded runtime.js, computed once
-// at first use. Cache-busts the script URL so a new build invalidates
-// any previously-cached runtime in the browser.
 var (
 	runtimeHashOnce sync.Once
 	runtimeHashVal  string
@@ -44,33 +41,18 @@ func runtimeHash() string {
 			return
 		}
 		sum := sha256.Sum256([]byte(js))
-		runtimeHashVal = hex.EncodeToString(sum[:8]) // 16 hex chars is plenty
+		runtimeHashVal = hex.EncodeToString(sum[:8])
 	})
 	return runtimeHashVal
 }
 
-// RuntimeHash exposes the core runtime's content hash so hosts can emit
-// the ?v= form of /__gofastr/runtime.js and serve it immutable. The
-// kiln/manual path (RuntimeTag) always versioned the URL; the uihost
-// path served it no-cache and re-downloaded on every visit.
+// RuntimeHash returns the core runtime's content hash, its ?v= value.
 func RuntimeHash() string { return runtimeHash() }
 
 // Per-module content-addressed hashes for the split runtime modules.
-// Each module URL ships with ?v=<hash>; the response uses
-// `Cache-Control: public, max-age=31536000, immutable` so the browser
-// caches it forever and a new build (different hash → different URL)
-// busts cleanly.
-// RuntimeModuleHash returns the content-addressed hash for a split
-// runtime module, embedded or registered. Used by client-side preload
-// tags + by the loader to construct `?v=<hash>` URLs. Empty string if
-// the module is unknown.
 func RuntimeModuleHash(name string) string { return runtime.ModuleHash(name) }
 
-// RuntimeModuleManifestJSON returns the raw JSON manifest mapping every
-// split runtime module to its content-addressed hash, nil when no
-// modules are embedded. Hosts that ship the manifest as an external
-// hashed script (framework/uihost's /__gofastr/manifest.js) embed this
-// instead of the inline block, saving the bytes on every page.
+// RuntimeModuleManifestJSON maps every runtime module to its hash, or is nil.
 func RuntimeModuleManifestJSON() []byte {
 	names := runtime.ModuleNames()
 	if len(names) == 0 {
@@ -87,15 +69,7 @@ func RuntimeModuleManifestJSON() []byte {
 	return buf
 }
 
-// RuntimeModuleManifestScript emits an inert JSON manifest mapping every
-// split runtime module to its content-addressed hash. Returns "" when no
-// modules are embedded.
-//
-// Both RuntimeTag (kiln + manual hosts) and framework/uihost's export
-// mode embed this script. Pages without the manifest fall through to
-// un-versioned module URLs and then collide with the immutable cache
-// headers. See TestRuntimeTagEmbedsModuleManifest for the regression
-// that motivated this.
+// RuntimeModuleManifestScript renders the module manifest as an inert JSON script.
 func RuntimeModuleManifestScript() string {
 	var script string
 	if buf := RuntimeModuleManifestJSON(); buf != nil {
@@ -106,12 +80,7 @@ func RuntimeModuleManifestScript() string {
 	return script + BehaviorsManifestScript() + ComputeManifestScript() + uiregistry.DataBlocksHTML()
 }
 
-// BehaviorsManifestScript emits the inert JSON block the kernel reads
-// to learn registered behaviours' markers (registry.RegisterBehavior):
-// {"<name>": {"s": ["[data-x]"], "i": true}}. Returns "" when nothing
-// is registered. Live pages get the same data as
-// window.__gofastr_behaviors from /__gofastr/manifest.js; this block is
-// for exports and the embed frame, which must be self-contained.
+// BehaviorsManifestScript renders the behaviours block as an inert JSON script.
 func BehaviorsManifestScript() string {
 	buf := runtime.BehaviorsJSON()
 	if buf == nil {
@@ -122,8 +91,7 @@ func BehaviorsManifestScript() string {
 		`</script>`
 }
 
-// ComputeManifestScript emits an inert JSON manifest mapping registered
-// compute asset names to their worker and WebAssembly content hashes.
+// ComputeManifestScript renders the compute asset hashes as an inert JSON script.
 func ComputeManifestScript() string {
 	return computeManifestScript(compute.Manifest())
 }
@@ -141,27 +109,16 @@ func computeManifestScript(manifest map[string]compute.Versions) string {
 		`</script>`
 }
 
-// escapeJSONForScript neutralises the one HTML sequence that can
-// prematurely terminate an inline <script>…</script> block: closing `</`.
-// JSON itself never produces it, but URL strings or user-controlled
-// payloads can.
 func escapeJSONForScript(buf []byte) string {
 	return strings.ReplaceAll(string(buf), `</`, `<\/`)
 }
 
 // ServeRuntimeModule is the exported handler for /__gofastr/runtime/<name>.js.
-// Hosts that mount routes via uihost get it through framework/uihost;
-// kiln and standalone hosts can wire it themselves alongside MountRuntime.
 func ServeRuntimeModule(w http.ResponseWriter, r *http.Request) {
 	serveRuntimeModule(w, r)
 }
 
-// serveRuntimeModule returns one split runtime module by name. URL
-// shape: /__gofastr/runtime/<name>.js?v=<hash>. Served with
-// long-lived immutable cache headers since the URL itself busts on
-// a new build.
 func serveRuntimeModule(w http.ResponseWriter, r *http.Request) {
-	// URL path: /__gofastr/runtime/<name>.js → strip prefix + .js.
 	const prefix = "/__gofastr/runtime/"
 	path := r.URL.Path
 	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, ".js") {
@@ -181,15 +138,6 @@ func serveRuntimeModule(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, src)
 }
 
-// serveContentAddressed sets the cache policy for a content-addressed
-// asset and answers a conditional request; it reports true when the
-// response is complete (a 304, or a HEAD). The URL is immutable only
-// when its ?v= names the bytes this process serves: during a rolling
-// deploy a page from a newer replica asks for x.js?v=<new> and can land
-// on an older one, and an immutable answer there pins the old bytes
-// under the new URL in browsers, CDNs and the PWA precache for a year.
-// Any other ?v= (stale, missing, mistyped) is no-cache with the ETag,
-// so the next request revalidates and picks up the right bytes.
 func serveContentAddressed(w http.ResponseWriter, r *http.Request, hash string) bool {
 	h := w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
@@ -212,8 +160,7 @@ func serveContentAddressed(w http.ResponseWriter, r *http.Request, hash string) 
 
 const computeWorkerCSP = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'"
 
-// ServeComputeAsset serves registered workers and WebAssembly modules from
-// /__gofastr/compute/<name>.js|wasm under immutable cache headers.
+// ServeComputeAsset serves /__gofastr/compute/<name>.js and .wasm.
 func ServeComputeAsset(w http.ResponseWriter, r *http.Request) {
 	const prefix = "/__gofastr/compute/"
 	path := r.URL.Path
@@ -245,8 +192,6 @@ func ServeComputeAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", contentType)
 	if strings.HasSuffix(relative, ".js") {
-		// Dedicated workers enforce the CSP delivered with their own script.
-		// Permit WebAssembly compilation without enabling JavaScript eval.
 		w.Header().Set("Content-Security-Policy", computeWorkerCSP)
 	}
 	if serveContentAddressed(w, r, asset.Hash()) {
@@ -255,20 +200,10 @@ func ServeComputeAsset(w http.ResponseWriter, r *http.Request) {
 	_, _ = asset.WriteTo(w)
 }
 
-// server is the per-widget HTTP plumbing: stylesheet + signal state
-// snapshot. One instance per Mount call.
 type server struct {
 	def Definition
 }
 
-// serveRuntime returns the framework runtime JS at /__gofastr/runtime.js.
-// Single URL for every page; the runtime self-discovers widgets via
-// /__gofastr/widgets at startup. Pages embed the runtime URL with a
-// ?v=<hash> cache-bust query param (see RuntimeTag) so a new build
-// invalidates any previously cached runtime.
-//
-// Belt-and-suspenders cache headers: no-store + no-cache + must-revalidate
-// + Pragma:no-cache + Expires:0 covers every browser quirk.
 func serveRuntime(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
@@ -276,8 +211,6 @@ func serveRuntime(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Expires", "0")
 	rt, err := runtime.RuntimeJS()
 	if err != nil {
-		// The error names embed paths; the client gets the fact, the
-		// operator gets the cause.
 		log.Printf("widget: runtime unavailable: %v", err)
 		i18n.HTTPError(w, r, http.StatusInternalServerError, reasonRuntimeUnavailable)
 		return
@@ -285,33 +218,10 @@ func serveRuntime(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, rt)
 }
 
-// ServeWidgetList returns the JSON list of registered widgets, the
-// payload the framework runtime fetches at /__gofastr/widgets to
-// discover and mount what's been registered with widget.Mount.
-// Exported so hosts that already own the /__gofastr/widgets route
-// (e.g. framework/uihost, which serves an empty stub for widget-free
-// apps) can delegate to the registry without double-registering the
-// HTTP route.
+// ServeWidgetList serves the /__gofastr/widgets catalog.
 func ServeWidgetList(w http.ResponseWriter, r *http.Request) { serveWidgetList(w, r) }
 
-// serveWidgetList returns the JSON registry of widgets. Metadata
-// ONLY, chrome HTML is shipped via the per-widget endpoint
-// `/core-ui/widget/<name>/chrome` and fetched lazily when the
-// runtime needs to insert the widget. Same pattern as styles +
-// state: minimal index, fetch on demand.
-//
-// The runtime appends `?page=<escaped pathname>` when fetching the catalog.
-// Decode that path once to match the server request URL.Path used for SSR,
-// so widgets scoped via .Pages / .PagesPrefix / .PagesMatch are
-// filtered out of pages they don't belong to. A request with no
-// page parameter returns the unfiltered registry, backwards-compat
-// for static catalog inspection.
-//
-// statePath is only emitted when the widget declared signals, the
-// runtime skips the /state hydrate fetch when this field is absent.
 func serveWidgetList(w http.ResponseWriter, r *http.Request) {
-	// The answer is per caller (a host gates it on its session), so no
-	// cache keeps one caller's catalog for the next.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Add("Vary", "Cookie")
 	page, err := url.PathUnescape(r.URL.Query().Get("page"))
@@ -327,10 +237,6 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(defs))
 	for _, d := range defs {
-		// Only what this caller is offered (OfferedTo): a widget its gate
-		// refuses would only name itself here and 403 on /chrome, and one
-		// its ListedFor turns away stays out of the listing. ListedFor
-		// scopes the listing only; /chrome and /state check the gate.
 		if !d.OfferedTo(r) {
 			continue
 		}
@@ -346,12 +252,6 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 			"deepLinkValue":  d.DeepLinkValue,
 			"deepLinkParams": d.DeepLinkParams,
 		}
-		// statePath is omitted entirely when there are no signals so
-		// the runtime can skip the empty round-trip on every mount.
-		// pollMs is emitted ONLY when both conditions hold: there is
-		// something to poll (statePath exists) AND PollMS > 0. A
-		// widget without signals never carries pollMs even if PollMS
-		// was set, the runtime would have nothing to fetch.
 		if len(d.Signals) > 0 {
 			cfg["statePath"] = d.StateURL()
 			if d.PollMS > 0 {
@@ -367,9 +267,6 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(out); err != nil {
-		// A state value that cannot encode would answer the catalog
-		// with an empty body, mounting no widgets; answer 500 so the
-		// runtime treats the catalog as failed, not empty.
 		i18n.HTTPError(w, r, http.StatusInternalServerError, reasonEncodeFailed)
 		return
 	}
@@ -377,63 +274,30 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf.Bytes())
 }
 
-// chromePathFor returns the route the runtime fetches to get the
-// widget's rendered chrome HTML. Path-derivable from name; explicit
-// in the registry so hosts can override the convention if needed.
 func chromePathFor(d *Definition) string {
 	return "/core-ui/widget/" + d.Name + "/chrome"
 }
 
-// MaxChromeContext bounds the trigger-carried chrome context (#321): the
-// string a `data-cui-ctx` open trigger forwards to the chrome endpoint as
-// ?ctx=…. It is an attacker-chosen value in a URL, so it needs a hard byte
-// cap before it reaches render, logs, or error text. 256 comfortably covers
-// every real entity key (ids, slugs, UUIDs, small compound keys) while
-// staying trivially inside URL and header limits.
+// MaxChromeContext bounds the trigger-carried chrome context (#321).
 const MaxChromeContext = 256
 
-// chromeCtxKey is the private context key for the trigger-carried chrome
-// context. Private so the only way to set it is WithChromeContext, which is
-// the only path that has validated the value.
 type chromeCtxKey struct{}
 
-// WithChromeContext returns ctx carrying v as the trigger context for a
-// chrome render. Hosts thread it (or let serveChrome do it) so context-aware
-// slots can read it via [ChromeContext]. The value is opaque to the
-// framework: it is forwarded and keyed on, never parsed.
+// WithChromeContext returns ctx carrying v as a chrome render's trigger context.
 func WithChromeContext(ctx context.Context, v string) context.Context {
 	return context.WithValue(ctx, chromeCtxKey{}, v)
 }
 
-// ChromeContext returns the trigger-carried context string for this chrome
-// render, "" when the open carried none. Read it inside a slot's
-// RenderCtx(ctx); it is the per-entity key the opening trigger named
-// (e.g. "inv-42"). See the authorisation note in framework/docs/content/
-// widgets.md § Chrome context: the runtime forwards whatever the page said,
-// so a ctx naming an entity the CURRENT user may not see is an
-// authorisation question and must be answered HERE, against the request
-// context, never trusted from the string.
+// ChromeContext returns the trigger context of this chrome render, or "".
 func ChromeContext(ctx context.Context) string {
 	v, _ := ctx.Value(chromeCtxKey{}).(string)
 	return v
 }
 
-// validChromeContext reports whether v is safe to accept as ?ctx=. It
-// rejects anything over MaxChromeContext bytes, anything that is not
-// valid UTF-8, and any control rune: C0 (incl. NUL, CR, LF), DEL, and
-// the C1 range are log-poisoning and header-smuggling surfaces once a
-// URL-decoded value flows into access logs and rendered markup.
-// Everything else is allowed — the framework treats ctx as opaque and
-// assigns no meaning to its characters.
 func validChromeContext(v string) bool {
 	if len(v) > MaxChromeContext {
 		return false
 	}
-	// UTF-8 validity is a gate, not something the rune loop below can
-	// check for itself: ranging over a string decodes every invalid
-	// byte to U+FFFD, which is not a control rune, so raw C1 bytes
-	// arriving un-decoded (%9D, the %9B%9C pair) would sail through it
-	// and reach logs and markup as raw bytes.
 	if !utf8.ValidString(v) {
 		return false
 	}
@@ -445,50 +309,24 @@ func validChromeContext(v string) bool {
 	return true
 }
 
-// serveChrome returns the rendered chrome HTML for a single widget.
-// Cache-Control: no-store because the chrome may depend on per-widget
-// signal defaults that change between deploys; let the client refetch
-// rather than serve stale HTML from a CDN.
 func (s *server) serveChrome(w http.ResponseWriter, r *http.Request) {
-	// #321: the open trigger may carry context (?ctx=…, forwarded from
-	// data-cui-ctx). Validate before it reaches anything: it is a
-	// page-supplied string in a URL. Reject, don't truncate — truncated
-	// context would silently render chrome for the wrong entity.
 	triggerCtx := r.URL.Query().Get("ctx")
 	if !validChromeContext(triggerCtx) {
 		i18n.HTTPError(w, r, http.StatusBadRequest, reasonInvalidChrome)
 		return
 	}
-	// Render with the request context so context-aware slots (e.g. a
-	// role-aware nav drawer) see the signed-in user the session
-	// middleware placed on r. A hidden drawer reaches this endpoint on
-	// every open except a deep-link arrival (where the host SSR-inlines
-	// a ctx-less chrome), so this is where it gets personalised; the
-	// runtime replaces the inlined node with this fetch whenever the
-	// trigger carries data-cui-ctx (#321). The trigger context rides
-	// the same context so a slot can vary per entity.
 	chrome := s.renderSkeletonCtx(WithChromeContext(r.Context(), triggerCtx))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte(chrome))
 }
 
-// serveStyle returns the widget stylesheet. The framework owns
-// positioning (corner/center/edge) + chrome (panel, modal, toast,
-// backdrop). Hosts that need additional rules, typically content
-// styling for slot innards, supply def.ExtraCSS, which is appended
-// verbatim after the framework rules (under the chrome containment, see
-// safeExtraCSS).
 func (s *server) serveStyle(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	fmt.Fprint(w, RenderCSS(&s.def))
 }
 
-// safeExtraCSS invokes the host ExtraCSS hook under the chrome containment
-// the Skeleton hook gets: a panic degrades to no extra rules and is logged
-// through textsafe.Recovered. Shared by the live style endpoint and the
-// static builder's RenderCSS dump so neither can abort on a host hook.
 func safeExtraCSS(def Definition) (css string) {
 	if def.ExtraCSS == nil {
 		return ""
@@ -503,19 +341,7 @@ func safeExtraCSS(def Definition) (css string) {
 	return def.ExtraCSS()
 }
 
-// serveState returns the current value of every named signal as JSON.
-// The bootstrap fetches this on first mount; runtime polling (when
-// the widget declared Builder.Poll) keeps things fresh after that.
 func (s *server) serveState(w http.ResponseWriter, _ *http.Request) {
-	// Each signal encodes on its own: one value with no JSON form (NaN,
-	// Inf, a channel) failed the whole encode after the headers went, and
-	// /state served an empty 200. It is omitted and logged, as a signal
-	// whose Read fails is omitted.
-	//
-	// Terminal is decided BEFORE the signals are read: a job that finished
-	// between the read and a later PollTerminal call stopped the poll on a
-	// snapshot still saying "running". Asked first, a true answer means
-	// every value read after it is at least as new as the finish.
 	terminal := s.def.PollTerminal != nil && s.def.PollTerminal()
 	out := map[string]json.RawMessage{}
 	partial := false
@@ -535,47 +361,19 @@ func (s *server) serveState(w http.ResponseWriter, _ *http.Request) {
 		out[name] = b
 	}
 	w.Header().Set("Content-Type", "application/json")
-	// no-store: this IS the freshness source the poll re-fetches. A
-	// cache serving a stale snapshot would make every poll tick report
-	// live (pollStatus increments) while showing old state, and a
-	// post-mutation pollNow would re-apply the stale value. The sibling
-	// catalog + chrome handlers already set no-store; /state needs it most.
 	w.Header().Set("Cache-Control", "no-store")
-	// #192: terminal contract. When the widget declares PollTerminal
-	// and it reports a terminal state, signal the runtime to end the
-	// cadence after applying this (final) snapshot. Opt-in: a widget
-	// without PollTerminal never emits it, so the historical "poll for-
-	// ever" behavior is unchanged for widgets that don't opt in. A
-	// snapshot missing a signal is never the final one: the runtime would
-	// stop for good without that value, so the next poll tries again.
 	if terminal && !partial {
 		w.Header().Set("X-Gofastr-Poll-Stop", "1")
 	}
-	// Every value here already survived its own json.Marshal above, so
-	// this encode can only fail at the write (a client gone mid-poll).
 	if err := json.NewEncoder(w).Encode(out); err != nil {
 		slog.Default().Debug("widget: state write", "widget", s.def.Name, "err", err)
 	}
 }
 
-// renderSkeleton produces the initial chrome HTML: framework-default
-// for the position, OR the host's custom Skeleton if provided. Slots
-// are rendered to HTML and looked up by name.
 func (s *server) renderSkeleton() render.HTML {
 	return s.renderSkeletonCtx(context.Background())
 }
 
-// renderSkeletonCtx is renderSkeleton with an explicit request context, threaded
-// into each slot so context-aware slots render per-request (role-aware nav,
-// tenant-scoped chrome, …). Slots that aren't context-aware are unaffected.
-//
-// Slot Components and the host Skeleton hook are host-pluggable render
-// hooks of exactly the class layout chrome slots are, so they get the same
-// containment (app/layout.go: an errored hook renders its fallback rather
-// than killing the page; a panicking Skeleton degrades to empty chrome).
-// uihost inline-injects this chrome on every full-page render a host with
-// non-hidden widgets serves, so an unnetted hook would take the page down
-// with no response.
 func (s *server) renderSkeletonCtx(ctx context.Context) render.HTML {
 	slots := map[string]render.HTML{}
 	for _, sl := range s.def.Slots {
@@ -587,9 +385,6 @@ func (s *server) renderSkeletonCtx(ctx context.Context) render.HTML {
 	return defaultSkeleton(s.def, slots)
 }
 
-// safeSkeleton invokes the host Skeleton hook under the chrome containment:
-// a panic degrades to empty chrome and is logged through textsafe.Recovered
-// (the panicked-on bytes are host state, they must not forge log lines).
 func (s *server) safeSkeleton(slots map[string]render.HTML) (out render.HTML) {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -601,27 +396,14 @@ func (s *server) safeSkeleton(slots map[string]render.HTML) (out render.HTML) {
 	return s.def.Skeleton(slots)
 }
 
-// paintsOwnPanel lists the positions whose chrome paints a panel of
-// its own (the drawer and sheet containers, the centered .cui-panel),
-// where Definition.Surface adds nothing. The centered root is the whole
-// viewport, so painting it would cover the page.
 var paintsOwnPanel = map[Position]bool{Center: true, Edge: true, EdgeRight: true, Bottom: true}
 
-// defaultSkeleton is the framework-built chrome for each Position.
-// It writes a <div class="cui-widget cui-pos-<pos>"> with the slot
-// contents inserted by name. Hosts that want bespoke chrome supply
-// their own Skeleton func.
 func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 	var b strings.Builder
 	cls := "cui-widget cui-pos-" + render.Escape(string(def.Position))
 	if def.Surface && !paintsOwnPanel[def.Position] {
-		// The root is the panel: see the surface rule in widgetCSS.
 		cls += " cui-surface"
 	}
-	// A backdrop'd widget is a modal: a <dialog> the runtime opens with
-	// showModal(), so the browser supplies the top layer, the inert page,
-	// ::backdrop, Escape and the platform back gesture. The SSR copy
-	// carries open, so a deep-linked modal shows before the runtime loads.
 	tag := "div"
 	if def.Backdrop {
 		tag = "dialog"
@@ -643,31 +425,17 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 		b.WriteString(` aria-describedby="` + render.Escape(def.DescribedBy) + `"`)
 	}
 	if def.DragDismiss {
-		// data-cui-drag-dismiss is the runtime delegator hook; the
-		// runtime listens on the widget root and the handle bar.
 		b.WriteString(` data-cui-drag-dismiss="true"`)
 	}
 	b.WriteString(`>`)
 
 	if def.DragDismiss {
-		// Visible drag-handle bar at the top of the panel. role=button
-		// keyboard activation isn't meaningful (drag is the gesture);
-		// keep it inert for AT and rely on ESC + backdrop click as the
-		// keyboard/pointer dismiss path.
 		b.WriteString(`<div class="cui-widget-drag-handle" aria-hidden="true" data-cui-drag-handle="true"></div>`)
 	}
 
-	// Centered (modal) widgets group every slot inside ONE .cui-panel,
-	// the element the chrome CSS paints as the dialog surface. Slots
-	// as direct flex children of the viewport-filling center wrapper
-	// would each paint their own card (a header/body/footer modal read
-	// as three panels). Other positions paint the surface on the
-	// position container / widget root, so their slots stay direct
-	// children.
 	if def.Position == Center {
 		b.WriteString(`<div class="cui-panel">`)
 	}
-	// Render header / body / footer slots if present.
 	for _, name := range []string{"header", "body", "footer"} {
 		if html, ok := slots[name]; ok {
 			b.WriteString(`<div class="cui-slot cui-slot-` + name + `">`)
@@ -675,9 +443,7 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 			b.WriteString(`</div>`)
 		}
 	}
-	// Render any other slots after the canonical ones.
 	canonical := map[string]bool{"header": true, "body": true, "footer": true}
-	// Sorted so non-canonical slot DOM order is stable across renders.
 	for _, name := range slices.Sorted(maps.Keys(slots)) {
 		if canonical[name] {
 			continue
@@ -693,20 +459,10 @@ func defaultSkeleton(def Definition, slots map[string]render.HTML) render.HTML {
 	return render.HTML(b.String())
 }
 
-// widgetCSS builds the stylesheet using core-ui/style. Owns:
-//
-//   - Per-position layout (cui-pos-bottom-right, cui-pos-center, …)
-//   - Backdrop styles for modal-mode widgets
-//   - Slot containers
-//
-// The host's slot components carry their own classes (resolved through
-// the theme's tokens). This function is intentionally small, it's the
-// chrome, not the contents.
 func widgetCSS(def Definition) string {
 	theme := style.DefaultTheme()
 	ss := style.NewStyleSheet(theme)
 
-	// Common widget base.
 	ss.Rule(".cui-widget").
 		Set(
 			"position", "fixed",
@@ -717,9 +473,6 @@ func widgetCSS(def Definition) string {
 			"box-sizing", "border-box",
 		).
 		End()
-	// Honour the `hidden` HTML attribute even when a `.cui-pos-*`
-	// selector tries to apply display: flex/grid. SSR-inlined widgets
-	// rely on `hidden` to stay invisible until openWidget removes it.
 	ss.Rule(".cui-widget[hidden]").
 		Set("display", "none").
 		End()
@@ -727,15 +480,6 @@ func widgetCSS(def Definition) string {
 		Set("box-sizing", "border-box").
 		End()
 
-	// Position presets: 6 corner/edge points + 2 full-width banners.
-	// Knobs: the 20px viewport offsets read the spacing scale;
-	// --ui-widget-drawer-width (360px) caps the edge drawers,
-	// --ui-widget-modal-min-width (20rem) / --ui-widget-modal-max-width
-	// (36rem) size the centered modal panel, --ui-widget-drag-handle-width
-	// (40px) / --ui-widget-drag-handle-height (4px) the sheet drag handle,
-	// and --ui-scrim (rgba(0,0,0,0.45)) the shared backdrop colour.
-	// A corner or edge named left or right is the reading direction's
-	// start or end: right to left, bottom-right sits bottom-left.
 	for _, p := range []struct{ cls, top, right, bottom, left string }{
 		{"cui-pos-bottom-right", "", "calc(var(--spacing-sm, 4px) * 5)", "calc(var(--spacing-sm, 4px) * 5)", ""},
 		{"cui-pos-bottom-left", "", "", "calc(var(--spacing-sm, 4px) * 5)", "calc(var(--spacing-sm, 4px) * 5)"},
@@ -759,9 +503,6 @@ func widgetCSS(def Definition) string {
 		}
 		ss.Rule("." + p.cls).Set(props...).End()
 	}
-	// Horizontally centered top + bottom, toast stacks anchored at
-	// the viewport's top-center or bottom-center. transform centers
-	// the element regardless of its width.
 	ss.Rule(".cui-pos-top-center").
 		Set("top", "calc(var(--spacing-sm, 4px) * 5)", "left", "50%", "transform", "translateX(-50%)").
 		End()
@@ -769,9 +510,6 @@ func widgetCSS(def Definition) string {
 		Set("bottom", "calc(var(--spacing-sm, 4px) * 5)", "left", "50%", "transform", "translateX(-50%)").
 		End()
 
-	// Edge mounts (drawer-style). Background + shadow so the drawer
-	// is visually distinct from the dimmed page below; overflow:auto
-	// lets long content scroll inside the drawer.
 	ss.Rule(".cui-pos-edge-left").
 		Set("top", "0", "inset-inline-start", "0", "bottom", "0",
 			"width", "min(var(--ui-widget-drawer-width, 360px), 90vw)",
@@ -789,13 +527,6 @@ func widgetCSS(def Definition) string {
 		).
 		End()
 
-	// Bottom sheet (preset.BottomSheet mounts at widget.Bottom). Like
-	// the edge drawers, the position container paints the panel:
-	// surface background, shadow, rounded top corners, a height cap
-	// so tall content scrolls inside the sheet instead of covering
-	// the page. Without this the sheet's slot text floats over the
-	// page content on the dimmed backdrop, same invisible-panel
-	// defect the centered modal had.
 	ss.Rule(".cui-pos-bottom").
 		Set(
 			"background", "{colors.surface}",
@@ -805,24 +536,10 @@ func widgetCSS(def Definition) string {
 			"overflow", "auto",
 		).
 		End()
-	// Sheet slot: breathing room inside the panel (the panel is the
-	// root, so padding lives on the slot; the drag handle above it
-	// keeps its own margins).
 	ss.Rule(".cui-pos-bottom > .cui-slot").
 		Set("padding", "{spacing.md} {spacing.lg} {spacing.lg}").
 		End()
 
-	// Center / modal: framework provides a backdrop + centered content
-	// wrapper. The wrapper itself stays transparent so the slot
-	// component (e.g. demo-modal-body) owns the visual card chrome.
-	//
-	// `pointer-events: none` on the wrapper is load-bearing: the
-	// wrapper IS the full viewport (top/left/right/bottom: 0) and sits
-	// ABOVE the backdrop in the z-order, so without it real mouse
-	// clicks on the dim area always land on the wrapper and never
-	// reach the backdrop's click handler, the "backdrop-click closes"
-	// affordance breaks silently. Direct children are flipped back to
-	// `pointer-events: auto` so the slot content stays interactive.
 	ss.Rule(".cui-pos-center").
 		Set(
 			"inset", "0",
@@ -835,9 +552,6 @@ func widgetCSS(def Definition) string {
 		Set("pointer-events", "auto").
 		End()
 
-	// A <dialog> root (every default-chrome modal) drops the UA dialog
-	// box, so the position rules alone lay it out. :where keeps the reset
-	// at zero specificity: any .cui-pos-* value wins over it.
 	ss.Rule(":where(dialog.cui-widget)").
 		Set(
 			"margin", "0", "padding", "0", "border", "0",
@@ -849,8 +563,6 @@ func widgetCSS(def Definition) string {
 			"overscroll-behavior", "contain",
 		).
 		End()
-	// The centered dialog is the whole viewport, so a click on it outside
-	// the panel is the backdrop click; it takes the pointer itself.
 	ss.Rule("dialog.cui-pos-center").Set("pointer-events", "auto").End()
 	ss.Rule("dialog.cui-widget::backdrop").
 		Set(
@@ -859,9 +571,6 @@ func widgetCSS(def Definition) string {
 		).
 		End()
 
-	// Backdrop overlay for a custom-Skeleton modal whose root is not a
-	// <dialog>: the runtime appends a <div class="cui-backdrop"> sibling
-	// to the widget root when def.Backdrop is true.
 	ss.Rule(".cui-backdrop").
 		Set(
 			"position", "fixed", "inset", "0",
@@ -872,10 +581,6 @@ func widgetCSS(def Definition) string {
 		).
 		End()
 
-	// Entrance animations for modal + drawer + sheet surfaces. The
-	// runtime appends the widget root after mount; the animation
-	// runs once on insertion. Theme-driven duration + easing so a
-	// single theme tweak retunes every surface.
 	ss.Rule(".cui-pos-center").
 		Set("animation", "cui-overlay-scale-in {durations.overlay-enter} {easings.spring}").
 		End()
@@ -885,8 +590,6 @@ func widgetCSS(def Definition) string {
 	ss.Rule(".cui-pos-edge-right").
 		Set("animation", "cui-edge-right-in {durations.overlay-enter} {easings.ease-out}").
 		End()
-	// Right to left the start drawer sits on the right, so it slides in
-	// from there, and the end drawer from the left.
 	ss.Rule(".cui-pos-edge-left:dir(rtl)").Set("animation-name", "cui-edge-right-in").End()
 	ss.Rule(".cui-pos-edge-right:dir(rtl)").Set("animation-name", "cui-edge-left-in").End()
 	ss.Rule(".cui-pos-bottom").
@@ -896,25 +599,8 @@ func widgetCSS(def Definition) string {
 		Set("animation", "cui-top-in {durations.overlay-enter} {easings.ease-out}").
 		End()
 
-	// Slots are plain containers, the visible surface lives on the
-	// position container (drawers, sheets), the widget root (popovers)
-	// or the .cui-panel slot group (centered modals, below).
 	ss.Rule(".cui-slot").Set("display", "block").End()
 
-	// Centered (modal) panel: default dialog surface. Drawers paint
-	// their surface on the position container and popovers on the
-	// widget root, but the centered wrapper IS the full viewport, so
-	// defaultSkeleton groups every slot inside one .cui-panel and the
-	// panel paints the card. Painting each slot instead would render a
-	// header/body/footer modal as three separate cards; painting
-	// nothing leaves slot content floating bare on the dimmed backdrop
-	// (a plain preset.Modal would open, trap focus, and round-trip
-	// RPCs while showing no dialog).
-	//
-	// Opt-out: full-bleed bodies that own (or reject) the chrome put
-	// `.cui-slot-bare` on the slot's root element, one level under the
-	// panel — the documented escape hatch for chrome-less content
-	// (Lightbox viewers and the command palette use it).
 	ss.Rule(`.cui-pos-center > .cui-panel:not(:has(> .cui-slot > .cui-slot-bare))`).
 		Set(
 			"background", "{colors.surface}",
@@ -929,13 +615,6 @@ func widgetCSS(def Definition) string {
 		).
 		End()
 
-	// ─── Drag-to-dismiss handle (bottom sheets) ───────────────────
-	// Visible 40×4px rounded bar centered at the top of the panel.
-	// The runtime attaches pointer handlers when it sees
-	// data-cui-drag-dismiss on the widget root, and a drag starts only
-	// on this bar. touch-action: none lives here and nowhere else: the
-	// sheet root is its own scroller, and none on it leaves a finger no
-	// pan, so a long sheet would never scroll on a phone.
 	ss.Rule(".cui-widget-drag-handle").
 		Set(
 			"display", "block",
@@ -948,9 +627,6 @@ func widgetCSS(def Definition) string {
 			"cursor", "grab",
 		).
 		End()
-	// While dragging the runtime sets data-cui-dragging=true; disable
-	// the entrance animation + transitions so the live transform isn't
-	// fought by competing tweens.
 	ss.Rule(`[data-cui-widget][data-cui-dragging]`).
 		Set(
 			"animation", "none",
@@ -962,28 +638,6 @@ func widgetCSS(def Definition) string {
 		Set("cursor", "grabbing").
 		End()
 
-	// ─── Anchored popover chrome ────────────────────────────────────
-	// When the runtime positions a popover next to its trigger
-	// (data-cui-popover-anchor on the trigger), it sets
-	// data-cui-popover-side="top|bottom|left|right" on the widget
-	// root after picking the final placement (post auto-flip). The
-	// rules below paint the surface, constrain its size so it can
-	// actually fit beside small triggers on small viewports, and
-	// draw a directional arrow back to the trigger via a ::before
-	// pseudo-element. All values come from the canonical theme so a
-	// single token tweak retunes every popover surface.
-	// Knobs: --ui-popover-max-width (360px), --ui-popover-arrow-size
-	// (12px, both axes of the ::before arrow; the ±7px edge insets are
-	// half the arrow plus the popover border, as a calc over both).
-	// Popover root keeps overflow visible so the arrow ::before (sitting
-	// outside the root's box, half the arrow past the border) renders.
-	// The scroll cap moves to the inner .cui-slot below, a tall slot
-	// scrolls inside the popover, the arrow stays visible.
-	// .cui-surface (Definition.Surface: preset.Popover, preset.FloatingPanel)
-	// paints the same panel at a corner or banner position, where the
-	// runtime sets no side: an unanchored popover, or an anchored one
-	// opened without its trigger (a deep link), would otherwise float
-	// its slot content bare over the page. The arrow stays side-only.
 	ss.Rule("[data-cui-widget][data-cui-popover-side], .cui-widget.cui-surface").
 		Set("border-radius", "{radii.md}",
 			"box-shadow", "{shadows.lg}",
@@ -994,20 +648,12 @@ func widgetCSS(def Definition) string {
 			"display", "flex",
 			"flex-direction", "column").
 		End()
-	// Inner slot scrolls when content exceeds the popover's
-	// max-block-size. flex: 1 1 auto + min-block-size: 0 lets the
-	// slot consume whatever the parent allows; overflow-y: auto then
-	// engages on tall content. Keeps the arrow on the root visible.
 	ss.Rule(`[data-cui-widget][data-cui-popover-side] > .cui-slot, .cui-widget.cui-surface > .cui-slot`).
 		Set("flex", "1 1 auto",
 			"min-block-size", "0",
 			"max-block-size", "100%",
 			"overflow-y", "auto").
 		End()
-	// The runtime places the popover and its arrow in physical pixels
-	// (left, top, --ui-popover-arrow-x from the left edge), so the arrow
-	// lays out left to right in every document: its logical insets and
-	// borders then name the sides the measurements meant.
 	ss.Rule(`[data-cui-widget][data-cui-popover-side]::before`).
 		Set("content", "''",
 			"direction", "ltr",
@@ -1018,40 +664,27 @@ func widgetCSS(def Definition) string {
 			"border-inline-start", "{strokes.thin} solid {colors.border}",
 			"border-block-start", "{strokes.thin} solid {colors.border}").
 		End()
-	// side="top" → popover sits ABOVE trigger → arrow at its
-	// bottom edge, pointing DOWN.
 	ss.Rule(`[data-cui-widget][data-cui-popover-side="top"]::before`).
 		Set("inset-block-end", "calc(-1 * (var(--ui-popover-arrow-size, 12px) / 2 + var(--stroke-thin, 1px)))",
 			"inset-inline-start", "var(--ui-popover-arrow-x, 16px)",
 			"transform", "translateX(-50%) rotate(225deg)").
 		End()
-	// side="bottom" → popover sits BELOW trigger → arrow at its
-	// top edge, pointing UP.
 	ss.Rule(`[data-cui-widget][data-cui-popover-side="bottom"]::before`).
 		Set("inset-block-start", "calc(-1 * (var(--ui-popover-arrow-size, 12px) / 2 + var(--stroke-thin, 1px)))",
 			"inset-inline-start", "var(--ui-popover-arrow-x, 16px)",
 			"transform", "translateX(-50%) rotate(45deg)").
 		End()
-	// side="left" → popover sits LEFT of trigger → arrow at its
-	// right edge, pointing RIGHT.
 	ss.Rule(`[data-cui-widget][data-cui-popover-side="left"]::before`).
 		Set("inset-inline-end", "calc(-1 * (var(--ui-popover-arrow-size, 12px) / 2 + var(--stroke-thin, 1px)))",
 			"inset-block-start", "var(--ui-popover-arrow-y, 16px)",
 			"transform", "translateY(-50%) rotate(135deg)").
 		End()
-	// side="right" → popover sits RIGHT of trigger → arrow at its
-	// left edge, pointing LEFT.
 	ss.Rule(`[data-cui-widget][data-cui-popover-side="right"]::before`).
 		Set("inset-inline-start", "calc(-1 * (var(--ui-popover-arrow-size, 12px) / 2 + var(--stroke-thin, 1px)))",
 			"inset-block-start", "var(--ui-popover-arrow-y, 16px)",
 			"transform", "translateY(-50%) rotate(-45deg)").
 		End()
 
-	// Trigger highlight: the runtime adds .is-popover-trigger-active
-	// to the originating button while its popover is open. Default
-	// styling: invert background to the primary color so the user
-	// can clearly tell which trigger fired the surface. Apps that
-	// want a different highlight can override the rule at site level.
 	ss.Rule(".is-popover-trigger-active").
 		Set("background", "{colors.primary}",
 			"color", "{colors.primary-fg}",
@@ -1059,9 +692,6 @@ func widgetCSS(def Definition) string {
 			"box-shadow", "0 0 0 calc(1.5 * {strokes.focus}) color-mix(in oklab, {colors.primary} 25%, transparent)").
 		End()
 
-	// Keyframes + reduced-motion suppression. Emitted as raw CSS
-	// because the StyleSheet builder doesn't yet model @keyframes /
-	// @media, small targeted escape hatch.
 	const animationCSS = `
 @keyframes cui-backdrop-in    { from { opacity: 0; } to { opacity: 1; } }
 @keyframes cui-overlay-scale-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
@@ -1075,13 +705,5 @@ func widgetCSS(def Definition) string {
   }
 }
 `
-	// Do NOT prepend theme.CSSCustomProperties(), that would emit a
-	// :root block of the framework DefaultTheme tokens AFTER the
-	// host's app.css, overwriting any custom theme an app has set
-	// via app.WithTheme(...). The widget's CSS uses bare var(--…)
-	// refs; those resolve against whatever :root the page already
-	// has (app.css owns that). DefaultTheme is only used here to
-	// supply token VALUES to the token-substituting StyleSheet DSL
-	// during build, never as an emitted :root override.
 	return ss.CSS() + animationCSS
 }

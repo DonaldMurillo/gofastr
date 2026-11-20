@@ -1,0 +1,19 @@
+primitive: harness.slash
+summary: Slash commands typed at a client - Parse turns "/[namespace:]name args" into a Cmd before it is sent to the engine, and AllBuiltins and AllNamespaces list the built-in commands and reserved namespaces.
+code:
+  - framework/experimental/harness/slash/
+docs:
+  - framework/docs/content/harness-architecture.md
+invariants:
+  - id: parse-shape
+    rule: Parse refuses input without a leading "/", an empty command and an empty name after a namespace colon, and a command with no colon is a built-in.
+    enforced_by:
+      - test: framework/experimental/harness/slash.TestParseRejectsNonSlash
+      - test: framework/experimental/harness/slash.TestParseRejectsEmpty
+      - test: framework/experimental/harness/slash.TestParseRejectsEmptyName
+      - test: framework/experimental/harness/slash.TestParseBuiltin
+  - id: arg-quoting
+    rule: Double quotes keep whitespace inside one argument, and a backslash turns n into a newline, t into a tab and any other character into itself.
+    enforced_by:
+      - test: framework/experimental/harness/slash.TestParseEscapeSequences
+      - test: framework/experimental/harness/slash.TestParseQuotedArgs

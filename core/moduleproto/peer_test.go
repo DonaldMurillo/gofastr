@@ -152,41 +152,32 @@ func TestPerDirectionIDCorrelation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
+	// callEcho issues one directed Call and decodes the echo reply into
+	// the result the assertions below read.
+	callEcho := func(p *Peer, method, payload string) result {
+		raw, err := p.Call(ctx, method, map[string]any{"p": payload})
+		if err != nil {
+			return result{err: err}
+		}
+		var r struct {
+			From string          `json:"from"`
+			In   json.RawMessage `json:"in"`
+		}
+		if jErr := json.Unmarshal(raw, &r); jErr != nil {
+			return result{err: jErr}
+		}
+		return result{from: r.From, in: string(r.In)}
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		raw, err := host.Call(ctx, "c.echo", map[string]any{"p": hostPayload})
-		if err != nil {
-			hostRes <- result{err: err}
-			return
-		}
-		var r struct {
-			From string          `json:"from"`
-			In   json.RawMessage `json:"in"`
-		}
-		if jErr := json.Unmarshal(raw, &r); jErr != nil {
-			hostRes <- result{err: jErr}
-			return
-		}
-		hostRes <- result{from: r.From, in: string(r.In)}
+		hostRes <- callEcho(host, "c.echo", hostPayload)
 	}()
 	go func() {
 		defer wg.Done()
-		raw, err := child.Call(ctx, "h.echo", map[string]any{"p": childPayload})
-		if err != nil {
-			childRes <- result{err: err}
-			return
-		}
-		var r struct {
-			From string          `json:"from"`
-			In   json.RawMessage `json:"in"`
-		}
-		if jErr := json.Unmarshal(raw, &r); jErr != nil {
-			childRes <- result{err: jErr}
-			return
-		}
-		childRes <- result{from: r.From, in: string(r.In)}
+		childRes <- callEcho(child, "h.echo", childPayload)
 	}()
 
 	hr := <-hostRes

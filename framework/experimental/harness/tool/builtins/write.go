@@ -13,7 +13,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/tool"
 )
 
-// writeImpl creates or overwrites a file with the given content.
 type writeImpl struct{}
 
 func (writeImpl) Name() string        { return "Write" }
@@ -59,8 +58,6 @@ func (writeImpl) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) 
 	return textResult(fmt.Sprintf("Wrote %d bytes to %s", len(args.Content), args.Path)), nil
 }
 
-// editImpl performs a string-replace edit on a file. Refuses to operate
-// when the old_string appears more than once unless replace_all is true.
 type editImpl struct{}
 
 func (editImpl) Name() string        { return "Edit" }

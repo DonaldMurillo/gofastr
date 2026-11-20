@@ -344,7 +344,7 @@ func TestEraseCoversConfiguredStoreTables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("challenge store: %v", err)
 	}
-	mgr.Use(NewPasskeyPlugin(PasskeyConfig{
+	mgr.Use(NewPasskeyPlugin(PasskeyConfig{NoAddedNotice: true,
 		RPID: "example.com", Origins: []string{"https://example.com"},
 		Store: passkeys, ChallengeStore: challenges, TwoFactorURL: "/2fa",
 	}))
@@ -375,8 +375,10 @@ func TestEraseCoversConfiguredStoreTables(t *testing.T) {
 	if _, err := createPurposeToken(ctx, magicLinks, purposeMagicLink, email, time.Hour); err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
-	if _, err := createPurposeToken(ctx, challenges, purposePasskeyRegister, userID, time.Hour); err != nil {
-		t.Fatalf("passkey challenge: %v", err)
+	for _, p := range []tokenPurpose{purposePasskeyRegister, purposePasskeyRegisterQuiet, purposePasskeyReauth} {
+		if _, err := createPurposeToken(ctx, challenges, p, userID, time.Hour); err != nil {
+			t.Fatalf("passkey %s token: %v", p, err)
+		}
 	}
 	if err := passkeys.AddPasskey(ctx, PasskeyCredential{
 		ID: []byte("cred-1"), UserID: userID, PublicKey: []byte{1}, Algorithm: coseAlgES256, CreatedAt: time.Now(),
@@ -416,6 +418,11 @@ func TestEraseCoversConfiguredStoreTables(t *testing.T) {
 	for table, m := range tables {
 		if n := rowsFor(table, m.col, m.val); n != 0 {
 			t.Errorf("%s still holds %d row(s) for the erased user under the battery's documented default wiring; the erasure must follow the configured stores' tables", table, n)
+		}
+	}
+	for _, p := range []tokenPurpose{purposePasskeyRegisterQuiet, purposePasskeyReauth} {
+		if n := rowsFor("passkey_challenges", "email", string(p)+":"+userID); n != 0 {
+			t.Errorf("passkey_challenges still holds %d %s token(s) for the erased user", n, p)
 		}
 	}
 }

@@ -158,3 +158,16 @@ func TestToolEventRedNameScrubbed(t *testing.T) {
 		}
 	}
 }
+
+func TestModalTextStrips8BitStringSequences(t *testing.T) {
+	for in, want := range map[string]string{
+		"a\u0090qpayload\u009cb":    "ab",
+		"a\u0098sos body\u009cb":    "ab",
+		"a\u009b31mb":               "ab",
+		"a\u0090qx\u009cb \x1b[1mc": "ab c",
+	} {
+		if got := sanitizeModalText(in); got != want {
+			t.Errorf("sanitizeModalText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

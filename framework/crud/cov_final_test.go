@@ -110,26 +110,7 @@ func TestBatchCreate_HTTP_RollbackScrubsData(t *testing.T) {
 
 func TestBatchCreate_EmptyAndTooBig(t *testing.T) {
 	ch, _ := covBatchHandler(t)
-	rec := httptest.NewRecorder()
-	ch.BatchCreate()(rec, batchReq("POST", `{"items":[]}`))
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("empty batch = %d, want 400", rec.Code)
-	}
-	// Build > MaxBatchSize items.
-	var sb strings.Builder
-	sb.WriteString(`{"items":[`)
-	for i := 0; i <= MaxBatchSize; i++ {
-		if i > 0 {
-			sb.WriteString(",")
-		}
-		sb.WriteString(`{"title":"x"}`)
-	}
-	sb.WriteString(`]}`)
-	rec = httptest.NewRecorder()
-	ch.BatchCreate()(rec, batchReq("POST", sb.String()))
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("oversized batch = %d, want 400", rec.Code)
-	}
+	assertBatchEmptyAndOversized(t, ch.BatchCreate(), http.MethodPost, `{"title":"x"}`)
 }
 
 func TestBatchCreate_BadContentType(t *testing.T) {

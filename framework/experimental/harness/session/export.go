@@ -5,10 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
@@ -21,25 +19,15 @@ import (
 type RedactLevel int
 
 const (
-	// RedactStrict: drop full content; emit kinds + timestamps only.
+	// RedactStrict replaces every payload with {"redacted":"strict"}.
 	RedactStrict RedactLevel = iota
-	// RedactStandard: apply the same redactors that ran on write.
-	// (The on-disk events already passed through these; this level
-	// re-applies them to be safe in case a custom redactor was
-	// disabled.)
+	// RedactStandard exports payloads as stored, after the store's on-write redaction.
 	RedactStandard
-	// RedactMaintainer: run a deeper-pass detector on top of the
-	// stored content and include a redaction report in the bundle.
+	// RedactMaintainer runs the deep secret patterns over stored payloads and adds redactions.json.
 	RedactMaintainer
 )
 
-// ExportBundle writes a zip archive containing:
-//
-//   - bundle.json:     manifest (session ID, profile, version, redact level,
-//     skipped_events: events whose stored payload would not encode)
-//   - events.jsonl:    one canonical event envelope per line
-//   - redactions.txt:  only at RedactMaintainer; counts per pattern
-//   - meta.json:       extra metadata (profile, model, turn count)
+// ExportBundle writes one session as a zip of events.jsonl, a bundle.json manifest and, at RedactMaintainer, redactions.json.
 type ExportBundle struct {
 	Store   Store
 	Session ids.SessionID
@@ -49,26 +37,18 @@ type ExportBundle struct {
 	OutPath string
 }
 
-// exportPage is how many events one EventsSince call asks for.
 const exportPage = 1000
 
-// Write produces the bundle on disk. Returns the bundle path.
+// Write writes the bundle to OutPath, owner-only, and returns that path.
 func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 	if e.OutPath == "" {
 		return "", fmt.Errorf("export: OutPath required")
 	}
 	tmp := e.OutPath + ".tmp"
-	// 0600: the bundle is the session event log carried off-box, and the
-	// operator may point OutPath at a shared dir; the sibling sqlite store
-	// already writes this data owner-only (0700 dir / 0600 files).
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", err
 	}
-	// Tighten the HANDLE, not just the create mode: a pre-existing
-	// 0644 tmp (operator re-export, restored backup, umask drift)
-	// otherwise keeps the bundle world-readable while the zip streams
-	// into it (writeSecretFile's grammar).
 	if err := fileperm.RestrictOpenFile(f); err != nil {
 		_ = f.Close()
 		return "", err
@@ -79,10 +59,6 @@ func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 		_ = f.Close()
 	}()
 
-	// Events, page by page: a store caps one EventsSince call (SQLite
-	// at 10,000 rows), so a single call exported a long session minus
-	// its tail. Read until a page comes back empty, not merely short:
-	// a store may return fewer rows than asked while more remain.
 	report := newRedactionReport()
 	jsonl, err := zw.Create("events.jsonl")
 	if err != nil {
@@ -102,8 +78,6 @@ func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 			out := applyExportRedaction(env, e.Level, report)
 			body, err := json.Marshal(out)
 			if err != nil {
-				// A payload stored unparseable cannot go into the
-				// JSONL. Skip it, and say how many in the manifest.
 				skipped++
 				continue
 			}
@@ -111,8 +85,6 @@ func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 				return "", err
 			}
 		}
-		// A page that does not move past since would be read again
-		// forever: a store that ignores since is an error, not a hang.
 		last := events[len(events)-1].ID
 		if last <= since {
 			return "", fmt.Errorf("session export: EventsSince returned id %d after %d", last, since)
@@ -120,8 +92,6 @@ func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 		since = last
 	}
 
-	// Manifest, written after the events so it can count the ones
-	// that could not be exported.
 	manifest := map[string]any{
 		"schema_version": 1,
 		"session_id":     string(e.Session),
@@ -135,14 +105,12 @@ func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	// Maintainer report.
 	if e.Level == RedactMaintainer {
 		if err := writeJSON(zw, "redactions.json", report); err != nil {
 			return "", err
 		}
 	}
 
-	// Close & atomic rename.
 	if err := zw.Close(); err != nil {
 		return "", err
 	}
@@ -177,18 +145,12 @@ func levelString(l RedactLevel) string {
 	return "unknown"
 }
 
-// applyExportRedaction returns a copy of the envelope with redaction
-// applied according to the level. At RedactStrict, the payload is
-// replaced with "{\"redacted\":\"strict\"}".
 func applyExportRedaction(env control.EventEnvelope, level RedactLevel, report *redactionReport) control.EventEnvelope {
 	if level == RedactStrict {
 		env.Payload = []byte(`{"redacted":"strict"}`)
 		return env
 	}
 	if level == RedactMaintainer {
-		// Redact the decoded strings, not the serialized JSON: a match
-		// that starts inside a \u003c escape leaves an invalid escape
-		// behind and the event no longer parses.
 		redact := func(text string) string {
 			out, hits := deepRedact(text)
 			for k, v := range hits {
@@ -213,13 +175,6 @@ func newRedactionReport() *redactionReport {
 	return &redactionReport{Counts: make(map[string]int)}
 }
 
-// deepRedact applies a stronger redaction pass than the on-write
-// middleware. Used only at RedactMaintainer.
-//
-// Patterns include: AWS keys, GitHub PATs, Bearer/JWT, base64-shaped
-// blobs ≥40 chars (catches Anthropic / OpenAI API keys), email
-// addresses, plausible private-key headers, and arbitrary
-// hex-shaped 64+-char tokens.
 var deepPatterns = []struct {
 	re   *regexp.Regexp
 	kind string
@@ -248,7 +203,3 @@ func deepRedact(text string) (string, map[string]int) {
 	}
 	return out, hits
 }
-
-// keep imports honest
-var _ = strings.Contains
-var _ = io.Discard

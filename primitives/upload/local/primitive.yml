@@ -1,0 +1,88 @@
+primitive: upload.local
+summary: LocalStorage and the containment, fold and staging helpers battery/storage's local backend shares.
+code:
+  - core/upload/local.go
+  - core/upload/keyfold.go
+docs:
+  - framework/docs/content/uploads.md
+on_change:
+  - battery/storage's LocalStorage calls ResolveUnderRoot, RefuseFoldedKey, CommitUnfolded, CreateTempInRoot and ScrubPath; run its tests too.
+twins:
+  - job: Store, read and delete objects under a local directory behind the Storage interface.
+    why: battery/storage keeps keys earlier releases wrote readable and applies Windows portability rules to new writes only, so one key policy has to be chosen before the two backends can be one; they already share containment, fold checks, staging and scrubbing.
+    sites:
+      - path: core/upload/local.go
+        note: LocalStorage, sanitizeKey and resolveKey.
+      - path: battery/storage/local.go
+        note: LocalStorage, validateKey and validateWritableKey.
+invariants:
+  - id: keys-are-clean-and-contained
+    rule: A key that is empty, absolute, holds .. or is not its own clean slash form is refused with ErrInvalidKey, and ResolveUnderRoot refuses a chain, leaf or missing tail included, whose resolved path leaves the base.
+    enforced_by:
+      - test: core/upload.TestLocalAliasKeysRefused
+      - test: core/upload.TestLocalStorageRejectsPathTraversal
+      - test: core/upload.TestLocalStorageRefusesSymlinkEscape
+      - test: core/upload.TestSweepResolveRefusesSymlinkedMissingTail
+      - test: core/upload.TestMintedKeysAreClean
+  - id: kernel-contained-syscalls
+    rule: Once the base exists every open, stat, write, rename and remove goes through a pinned *os.Root, so a symlink planted after resolution is refused, and a re-pinned root stays open until Close.
+    enforced_by:
+      - test: core/upload.TestLocalStorageRefusesMidResolvePlant
+  - id: atomic-durable-save
+    rule: Save writes a 0o600 temp file beside the target in 0o700 directories, syncs it, checks its context once more before taking the commit lock and then renames it into place, so a reader sees the old object or the whole new one and a save canceled before that check keeps the old object; one canceled while it waits on the lock still commits.
+    enforced_by:
+      - test: core/upload.TestSaveNotVisibleUntilComplete
+      - test: core/upload.TestCanceledMutationsKeepObject
+      - test: core/upload.TestSweepSaveCanceledAfterCopyKeepsObject
+      - test: core/upload.TestLocalStorage_PartialWriteCleanup
+      - test: core/upload.TestLocalStorage_SaveRestrictsFilePermissions
+      - test: core/upload.TestLocalStorage_SaveRestrictsDirectoryPermissions
+  - id: directories-are-not-objects
+    rule: Get, GetRange, Exists and Delete treat a key naming a directory as not found and leave the directory.
+    enforced_by:
+      - test: core/upload.TestDirectoryKeyIsNotAnObject
+  - id: no-absolute-path-in-errors
+    rule: No error from LocalStorage or the fold walk names the storage base or an absolute path, and for a missing object Get and GetRange wrap ErrNotFound (which wraps os.ErrNotExist), Delete wraps os.ErrNotExist alone and Exists answers false with a nil error.
+    enforced_by:
+      - test: core/upload.TestLocalStorage_GetMissingScrubsPath
+      - test: core/upload.TestDeleteExistsLeakNoAbsPath
+      - test: core/upload.TestLocalStorage_DeleteMissingIsNotExist
+      - test: core/upload.TestSweepFoldWalkErrorNamesNoRoot
+  - id: folded-keys-refused
+    rule: Save, Get, Exists and Delete refuse a key a case- or normalization-insensitive filesystem folds onto an object stored under another spelling, Save before creating anything and again under CommitUnfolded's lock at the rename.
+    enforced_by:
+      - test: core/upload.TestFoldedKeysDoNotAlias
+      - test: core/upload.TestFoldedReadRefused
+      - test: core/upload.TestLocalFoldedDeleteRefused
+  - id: fold-walk-lists-only-when-needed
+    rule: dirMayFold lists a directory on Windows and for a name holding a non-ASCII byte, K, ;, a backtick or ~, and otherwise only when the case-swapped spelling is the same file or its probe fails for a reason other than absence.
+    enforced_by:
+      - test: core/upload.TestDirMayFoldListsNormalizationCandidates
+      - test: core/upload.TestDirMayFoldListsShortNamesAndWindows
+      - test: core/upload.TestFoldWalkDoesNotListCaseSensitiveDirs
+      - test: core/upload.TestFoldWalkListsWhenTheSwappedSpellingIsTheSameFile
+decisions:
+  - id: refuse-not-clean-keys
+    date: 2026-11-19
+    status: accepted
+    decision: An unclean key is refused rather than cleaned.
+    rejected:
+      - option: Clean the key and go on.
+        why: Erasure deletes the keys a row names, so a row naming an alias such as a//b.png deleted another key's file.
+    upholds: [keys-are-clean-and-contained]
+  - id: probe-before-listing
+    date: 2026-11-19
+    status: accepted
+    decision: The fold walk probes the case-swapped spelling of a plain ASCII name and lists the directory only when folding is possible.
+    rejected:
+      - option: List the parent for every component.
+        why: In a flat directory of 50,000 objects every Get cost about 85ms of syscalls, and Save ran the walk under the process-wide lock.
+    upholds: [fold-walk-lists-only-when-needed]
+  - id: one-fold-implementation
+    date: 2026-11-19
+    status: accepted
+    decision: RefuseFoldedKey, CommitUnfolded, ResolveUnderRoot, CreateTempInRoot and ScrubPath are exported so battery/storage's local backend uses them instead of a private copy.
+    rejected:
+      - option: A copy in each backend.
+        why: The two backends had drifted on exactly these checks.
+    upholds: [folded-keys-refused, keys-are-clean-and-contained]

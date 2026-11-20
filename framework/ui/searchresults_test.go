@@ -41,7 +41,7 @@ func searchFixture() SearchResultsConfig {
 func TestSearchResultsRendersLinks(t *testing.T) {
 	out := string(SearchResults(searchFixture()))
 	for _, want := range []string{
-		`<form action="/search" class="fui-search__form" method="GET" role="search"`,
+		`<search class="fui-search__landmark" data-cui-comp="ui-search-input" data-cui-internal=""><form action="/search" class="fui-search__form" data-cui-internal="" method="GET">`,
 		`value="form"`,
 		`href="/docs/forms"`, `Forms &lt;b&gt;`,
 		`href="/docs/forms#validation"`,

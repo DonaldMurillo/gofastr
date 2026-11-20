@@ -231,16 +231,16 @@ func TestEmbedGateFlagsRenderedChildAction(t *testing.T) {
 	}
 }
 
-// A component that is NOT in the surface's tree keeps its server action, even
-// though its compiled JS sits in the same app-global bundle. The gate keys on
-// reachability from the surface; flagging every server action in the app would
-// make an embeddable surface anywhere ban them everywhere.
-func TestEmbedGateIgnoresUnreachedServerAction(t *testing.T) {
-	application := app.NewApp("embed unreached action")
-	screen := app.NewScreen("/reports", &plainActionScreenComp{})
+// buildEmbedGateHost builds a host whose one embeddable surface, "reports",
+// is screen, with any extra screens registered alongside it, and returns it
+// ready for panicFromMount.
+func buildEmbedGateHost(t *testing.T, name string, screen *app.Screen, extra ...*app.Screen) *UIHost {
+	t.Helper()
+	application := app.NewApp(name)
 	application.RegisterScreen(screen, nil)
-	application.RegisterScreen(app.NewScreen("/elsewhere", &serverActionScreenComp{}), nil)
-
+	for _, other := range extra {
+		application.RegisterScreen(other, nil)
+	}
 	eh, err := fembed.New(fembed.Config{
 		Surfaces: []fembed.Surface{{
 			Name:    "reports",
@@ -253,8 +253,18 @@ func TestEmbedGateIgnoresUnreachedServerAction(t *testing.T) {
 		t.Fatalf("embed.New: %v", err)
 	}
 	eh.SetKeys([]byte("nonce-key-nonce-key-nonce-key-32"), []byte("grant-key-grant-key-grant-key-32"))
+	return New(application, WithEmbed(eh))
+}
 
-	if got := panicFromMount(t, New(application, WithEmbed(eh))); got != "" {
+// A component that is NOT in the surface's tree keeps its server action, even
+// though its compiled JS sits in the same app-global bundle. The gate keys on
+// reachability from the surface; flagging every server action in the app would
+// make an embeddable surface anywhere ban them everywhere.
+func TestEmbedGateIgnoresUnreachedServerAction(t *testing.T) {
+	host := buildEmbedGateHost(t, "embed unreached action",
+		app.NewScreen("/reports", &plainActionScreenComp{}),
+		app.NewScreen("/elsewhere", &serverActionScreenComp{}))
+	if got := panicFromMount(t, host); got != "" {
 		t.Fatalf("Mount panicked for a server action on an unrelated screen:\n%s", got)
 	}
 }
@@ -263,25 +273,10 @@ func TestEmbedGateIgnoresUnreachedServerAction(t *testing.T) {
 // that walked declared FIELD TYPES would refuse to boot on a component that
 // merely can hold a child it does not hold.
 func TestEmbedGateSkipsNilChild(t *testing.T) {
-	application := app.NewApp("embed nil child")
-	screen := app.NewScreen("/reports", &parentOfActionComp{})
-	application.RegisterScreen(screen, nil)
-	application.RegisterScreen(app.NewScreen("/child-action", &childActionComp{}), nil)
-
-	eh, err := fembed.New(fembed.Config{
-		Surfaces: []fembed.Surface{{
-			Name:    "reports",
-			Screen:  screen,
-			Origins: []string{embedTestOrigin},
-		}},
-		BurnStore: fembed.NewMemoryBurnStore(),
-	})
-	if err != nil {
-		t.Fatalf("embed.New: %v", err)
-	}
-	eh.SetKeys([]byte("nonce-key-nonce-key-nonce-key-32"), []byte("grant-key-grant-key-grant-key-32"))
-
-	if got := panicFromMount(t, New(application, WithEmbed(eh))); got != "" {
+	host := buildEmbedGateHost(t, "embed nil child",
+		app.NewScreen("/reports", &parentOfActionComp{}),
+		app.NewScreen("/child-action", &childActionComp{}))
+	if got := panicFromMount(t, host); got != "" {
 		t.Fatalf("Mount panicked for a child field that is nil:\n%s", got)
 	}
 }

@@ -1,0 +1,44 @@
+primitive: harness.control.seats
+summary: Per-principal admission for long-lived control streams (REST SSE, websocket, MCP streamable-HTTP GET) - one process-wide SeatTable, a default cap of DefaultStreamSeats, and Refuse or EvictOldest on overflow through core/stream's shared AdmitSeat.
+code:
+  - framework/experimental/harness/control/seats.go
+twins:
+  - job: Resolve a seat cap of 0 to the default of 16 seats per principal.
+    why: control exports DefaultStreamSeats as a public number while core/stream keeps its default unexported, so control resolves 0 itself before AdmitSeat resolves it again; TestSeatTableCapAndEviction pins the two to the same number.
+    sites:
+      - path: framework/experimental/harness/control/seats.go
+        note: seatsFor and DefaultStreamSeats, for SeatTable.AcquireSeat.
+      - path: core/stream/seats.go
+        note: seatsFor and defaultSeatsPerPrincipal, for AdmitSeat.
+invariants:
+  - id: default-cap-matches-core-stream
+    rule: A cap of 0 admits exactly DefaultStreamSeats streams per principal, the same number core/stream.AdmitSeat admits for a cap of 0, and a negative cap admits without limit.
+    enforced_by:
+      - test: framework/experimental/harness/control.TestSeatTableCapAndEviction
+  - id: seat-leaves-fifo-once
+    rule: An EvictOldest admission closes the oldest seat's Done and removes it, ReleaseSeat on a seat already removed is a no-op, and after release the principal's FIFO holds no departed seat.
+    enforced_by:
+      - test: framework/experimental/harness/control.TestSeatTableCapAndEviction
+  - id: one-table-per-process
+    rule: DefaultSeatTable returns the same table on every call, so the transports that fall back to it count one credential's streams together.
+    enforced_by:
+      - test: framework/experimental/harness/control.TestSeatTableCapAndEviction
+decisions:
+  - id: one-cap-across-transports
+    date: 2026-11-18
+    status: accepted
+    decision: The REST, websocket and MCP HTTP transports share one SeatTable, so the cap counts per credential, not per transport.
+    rejected:
+      - option: A table per transport.
+        why: One token could then hold the cap three times over by opening streams on each transport.
+    upholds: [one-table-per-process]
+  - id: sixteen-seats
+    date: 2026-11-18
+    status: accepted
+    decision: The default cap is 16, the same number as core/stream's SSE broker, core/mcp's notification stream and framework/crud's event stream.
+    rejected:
+      - option: A smaller cap such as 1 or 4.
+        why: One credential used from several tabs or devices would evict or refuse its own streams.
+      - option: No cap.
+        why: Each stream parks a handler goroutine, a bus subscription and a revocation watcher, so one token could hold unbounded resident state.
+    upholds: [default-cap-matches-core-stream]

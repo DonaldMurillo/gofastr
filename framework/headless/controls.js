@@ -1,6 +1,6 @@
 // headless-controls: the behaviour module for the stateful form
 // controls this package renders — the animated counter, the number
-// stepper, the slider's output mirror and the range pair's cross-clamp
+// stepper, the slider's output and aria-valuetext mirror and the range pair's cross-clamp
 // and output sentence. Loaded by the kernel when one of its markers is
 // on the page, at boot, on insertion, or after a client navigation.
 //
@@ -136,10 +136,14 @@
 
   // ─── slider output mirror ────────────────────────────────────────
 
+  // The thumb's spoken value follows the visible one: aria-valuetext
+  // is the same formatted number the output shows.
   function syncSlider(input) {
     const root = input.closest('[data-hui-slider]');
     const out = root && root.querySelector('[data-hui-slider-output]');
-    if (out) out.textContent = valueText(input);
+    if (!out) return;
+    out.textContent = valueText(input);
+    input.setAttribute('aria-valuetext', out.textContent);
   }
 
   // ─── range pair ──────────────────────────────────────────────────
@@ -212,7 +216,7 @@
     for (const el of within(scope, '[data-hui-slider-output]')) {
       const input = el.closest('[data-hui-slider]');
       const range = input && input.querySelector('input[type="range"]');
-      if (range) el.textContent = valueText(range);
+      if (range) syncSlider(range);
     }
     for (const el of within(scope, '[data-hui-json]')) if (el.value.trim()) checkJSON(el);
     const seen = new Set();

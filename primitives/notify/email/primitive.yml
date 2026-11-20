@@ -18,13 +18,8 @@ invariants:
   - id: custom-headers-are-screened
     rule: An Extra["headers"] entry whose name holds CR, LF, NUL or a colon, whose value holds CR, LF or NUL, or whose name matches a reserved header case-insensitively (To, Cc, Bcc, From, Sender, Reply-To, Subject and the MIME headers) refuses the whole message.
     enforced_by:
-      - test: battery/notify.TestEmailChannel_RejectsCRLFHeaderKey
-      - test: battery/notify.TestEmailChannel_RejectsCRLFHeaderValue
+      - test: battery/notify.TestEmailChannel_RejectsUnsafeRenderedHeaders
       - test: battery/notify.TestEmailChannelRejectsColonInHeaderName
-      - test: battery/notify.TestEmailChannel_RejectsReservedBccHeaderOverride
-      - test: battery/notify.TestEmailChannel_RejectsReservedFromHeaderOverride
-      - test: battery/notify.TestEmailChannel_RejectsReservedReplyToHeaderOverride
-      - test: battery/notify.TestEmailChannel_RejectsReservedContentTypeHeaderOverride
       - test: battery/notify.TestEmailChannel_RejectsTransferEncodingOverride
   - id: mistyped-attachments-refuse-the-message
     rule: A present Extra["attachments"] that is not []email.Attachment refuses the message with ErrInvalidAttachments, and a typed nil slice is no attachments.

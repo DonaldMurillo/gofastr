@@ -126,7 +126,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   width: 1px; height: 1px;
   padding: 0; margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
@@ -139,7 +139,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   width: 1px; height: 1px;
   padding: 0; margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
@@ -150,7 +150,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   margin: 0;
   overflow: visible;
-  clip: auto;
+  clip-path: none;
   white-space: normal;
   z-index: calc(var(--z-toast, 500) + 1);
   background: var(--color-text, #09090B);

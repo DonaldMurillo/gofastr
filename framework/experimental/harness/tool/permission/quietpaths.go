@@ -6,27 +6,11 @@ import (
 	"strings"
 )
 
-// Quiet mode reads only under the working directory. The preset was
-// documented as "Read, Glob, Ls (anywhere under the repo)", `cat
-// <repo-file>` and `find . *`, but it allowed any path: Read:/proc/self/
-// environ, ~/.ssh/id_rsa, `cat /proc/self/environ`, `grep -r .
-// ~/.config/gofastr` and `find / -name creds.enc` all ran with no prompt.
-// quietPathsInside is the path half of the preset: every path a call
-// names must resolve, symlinks included, under the working directory,
-// and a path it cannot place (~, .., an expansion it does not perform)
-// asks instead.
-
-// quietPathCommands are the allow-listed Bash commands whose arguments
-// name files to read. Their every non-flag argument (and every flag
-// value) is checked as a path; a pattern argument such as grep's is
-// checked too, which only ever makes the check stricter.
 var quietPathCommands = map[string]bool{
 	"cat": true, "head": true, "tail": true, "wc": true,
 	"grep": true, "rg": true, "find": true, "ls": true, "git": true,
 }
 
-// quietPathsInside reports whether every path the call reads lies under
-// base. toolName and argv are what Evaluate was given.
 func quietPathsInside(base, toolName, argv string) bool {
 	if base == "" {
 		wd, err := os.Getwd()
@@ -45,7 +29,7 @@ func quietPathsInside(base, toolName, argv string) bool {
 		return ok && pathInside(base, baseReal, p)
 	case "Ls":
 		if argv == "Ls" {
-			return true // no path: the working directory
+			return true
 		}
 		p, ok := strings.CutPrefix(argv, "Ls:")
 		return ok && pathInside(base, baseReal, p)
@@ -104,17 +88,13 @@ func quietPathsInside(base, toolName, argv string) bool {
 	return false
 }
 
-// bashPathsInside checks the path arguments of an allow-listed read
-// command. bashQuietAllow has already refused every shell
-// metacharacter, so no expansion other than ~ and filename globs can
-// reach the command.
 func bashPathsInside(base, baseReal, cmd string) bool {
 	words, ok := splitWords(cmd)
 	if !ok || len(words) == 0 {
 		return false
 	}
 	if !quietPathCommands[words[0]] {
-		return true // pwd, echo: read no file
+		return true
 	}
 	for _, w := range words[1:] {
 		switch {
@@ -123,7 +103,6 @@ func bashPathsInside(base, baseReal, cmd string) bool {
 				return false
 			}
 		case strings.HasPrefix(w, "-") && len(w) > 1:
-			// A short flag with its value attached (grep -f/etc/shadow).
 			if strings.ContainsAny(w, "/~") && !shellPathInside(base, baseReal, w[2:]) {
 				return false
 			}
@@ -136,8 +115,6 @@ func bashPathsInside(base, baseReal, cmd string) bool {
 	return true
 }
 
-// shellPathInside checks one shell word: a glob must match only paths
-// under base, the way the shell would expand it there.
 func shellPathInside(base, baseReal, w string) bool {
 	if !pathInside(base, baseReal, w) {
 		return false
@@ -161,9 +138,6 @@ func shellPathInside(base, baseReal, w string) bool {
 	return true
 }
 
-// toolGlobInside checks a Glob tool pattern (or Grep's --glob) read
-// under root: relative, with no .. and no ~, and its fixed leading
-// directories resolving under base.
 func toolGlobInside(base, baseReal, root, pattern string) bool {
 	if pattern == "" || filepath.IsAbs(pattern) || strings.HasPrefix(pattern, "/") {
 		return false
@@ -181,9 +155,6 @@ func toolGlobInside(base, baseReal, root, pattern string) bool {
 	return pathInside(base, baseReal, filepath.Join(append([]string{root}, fixed...)...))
 }
 
-// pathInside reports whether p, relative to base or absolute, resolves
-// (symlinks followed as far as the path exists) under baseReal. A path
-// starting with ~, holding a .. segment, or naming a variable asks.
 func pathInside(base, baseReal, p string) bool {
 	if p == "" || strings.HasPrefix(p, "~") || strings.ContainsAny(p, "$`\x00") {
 		return false
@@ -208,9 +179,6 @@ func pathInside(base, baseReal, p string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel))
 }
 
-// resolveExisting resolves the symlinks of the longest existing prefix
-// of an absolute, clean path and appends the rest unchanged: a file not
-// created yet still has a parent that decides where it would be.
 func resolveExisting(p string) (string, bool) {
 	var rest []string
 	for cur := p; ; {
@@ -226,11 +194,6 @@ func resolveExisting(p string) (string, bool) {
 	}
 }
 
-// splitWords splits s into words the way a POSIX shell does for the
-// quoting this package sees: whitespace separates, single quotes keep
-// everything, double quotes keep everything but a backslash escape, and
-// a backslash outside quotes keeps the next byte. ok is false on an
-// unterminated quote.
 func splitWords(s string) ([]string, bool) {
 	var (
 		words []string

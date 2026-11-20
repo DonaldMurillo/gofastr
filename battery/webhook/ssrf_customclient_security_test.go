@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/netguard"
 )
 
 // Property: supplying a custom Options.HTTPClient (for a proxy, tracing,
@@ -56,11 +58,11 @@ func TestSSRF_CustomTransportSettingsSurvive(t *testing.T) {
 	}
 	mgr := New(NewMemoryStore(), Options{HTTPClient: &http.Client{Transport: tr}})
 
-	got, ok := mgr.opts.HTTPClient.Transport.(*ssrfGuardedRoundTripper)
+	got, ok := mgr.opts.HTTPClient.Transport.(*netguard.ResolveGuard)
 	if !ok {
 		t.Fatalf("expected the guard wrapper after guarding, got %T", mgr.opts.HTTPClient.Transport)
 	}
-	if got.inner != http.RoundTripper(tr) {
+	if got.Inner != http.RoundTripper(tr) {
 		t.Fatal("caller transport replaced instead of wrapped — custom dialers/proxies would break")
 	}
 	if err := dialLoopback(t, mgr.opts.HTTPClient); err == nil {
