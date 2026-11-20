@@ -24,15 +24,30 @@ func injected(t *testing.T, handler http.HandlerFunc) *httptest.ResponseRecorder
 }
 
 func TestInjectorMixedCaseHTML(t *testing.T) {
-	for _, ct := range []string{"Text/HTML; charset=utf-8", "Text/HTML; charset", "", "text/htmlish"} {
-		t.Run(ct, func(t *testing.T) {
+	for _, tt := range []struct {
+		name, contentType string
+		want              bool
+	}{
+		{"mixed_case", "tExT/HtMl", true},
+		{"parameters", "Text/HTML; charset=utf-8", true},
+		{"missing_semicolon", "text/html charset=utf-8", true},
+		{"whitespace", " text/html ; charset=utf-8", true},
+		{"trailing_whitespace", "text/html \t", true},
+		{"malformed_parameter", "text/html; charset", true},
+		{"mixed_case_malformed_parameter", "Text/HTML; charset", true},
+		{"suffix", "text/htmlish", false},
+		{"empty", "", false},
+		{"json", "application/json", false},
+		{"xhtml", "application/xhtml+xml", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
 			rec := injected(t, func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", ct)
+				w.Header().Set("Content-Type", tt.contentType)
 				_, _ = w.Write([]byte("<html><body>page</body></html>"))
 			})
 			got := strings.Contains(rec.Body.String(), `<script src="`+LiveReloadScriptURL+`"`)
-			if want := ct == "Text/HTML; charset=utf-8" || ct == "Text/HTML; charset"; got != want {
-				t.Fatalf("injected = %v, want %v: %s", got, want, rec.Body.String())
+			if got != tt.want {
+				t.Fatalf("injected = %v, want %v: %s", got, tt.want, rec.Body.String())
 			}
 		})
 	}

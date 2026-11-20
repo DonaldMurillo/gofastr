@@ -452,7 +452,7 @@ func writeSSEComment(rc *http.ResponseController, ew *errWriter) bool {
 }
 
 func wantsSSE(r *http.Request) bool {
-	return strings.EqualFold(r.Header.Get("Accept"), "text/event-stream")
+	return r.Header.Get("Accept") == "text/event-stream"
 }
 
 type contextKey struct{}

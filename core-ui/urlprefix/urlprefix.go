@@ -24,13 +24,13 @@ package urlprefix
 import (
 	"bytes"
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/internal/mediatype"
 	"golang.org/x/net/html"
 )
 
@@ -364,7 +364,7 @@ func (w *writer) WriteHeader(code int) {
 	w.rewriteHeaders()
 	h := w.ResponseWriter.Header()
 	if h.Get("Content-Encoding") == "" {
-		if mt, _, _ := mime.ParseMediaType(h.Get("Content-Type")); mt == "text/html" {
+		if mediatype.IsHTML(h.Get("Content-Type")) {
 			w.buffering = true
 			w.snap = h.Clone()
 			w.snap.Del("Content-Length")

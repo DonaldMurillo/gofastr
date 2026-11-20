@@ -443,7 +443,7 @@
 
       const toastHeader = r.headers.get('X-Gofastr-Toast');
       if (toastHeader) NS._dispatchToastHeader(toastHeader);
-      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      const ct = r.headers.get('content-type') || '';
       const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
       if (responseSignal) NS.setSignal(responseSignal, data);
       // Checked after the body read and the signal broadcast: a newer
