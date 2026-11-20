@@ -3,7 +3,6 @@ package search
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -258,18 +257,9 @@ func (s *SQLiteFTS) ensurePrefixSchema(ctx context.Context) error {
 // transaction, re-indexing the same id replaces in place with no duplicate
 // rows.
 func (s *SQLiteFTS) Index(ctx context.Context, doc Document) error {
-	// Fields are stored as a JSON text object. An empty/nil field map is
-	// stored as "{}" (never SQL NULL) so json_each behaves predictably
-	// and FieldEquals never matches a missing field.
-	var fieldsArg any
-	if len(doc.Fields) == 0 {
-		fieldsArg = "{}"
-	} else {
-		b, err := json.Marshal(doc.Fields)
-		if err != nil {
-			return fmt.Errorf("search: marshal fields: %w", err)
-		}
-		fieldsArg = string(b)
+	fieldsJSON, err := marshalFields(doc.Fields)
+	if err != nil {
+		return err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -283,7 +273,7 @@ func (s *SQLiteFTS) Index(ctx context.Context, doc Document) error {
 	}
 
 	insStmt := fmt.Sprintf(`INSERT INTO %s (id, type, fields, owner, text) VALUES (?, ?, ?, ?, ?)`, s.quotedTable)
-	res, err := tx.ExecContext(ctx, insStmt, doc.ID, doc.Type, fieldsArg, doc.Owner, doc.Text)
+	res, err := tx.ExecContext(ctx, insStmt, doc.ID, doc.Type, string(fieldsJSON), doc.Owner, doc.Text)
 	if err != nil {
 		return fmt.Errorf("search: index %q: %w", doc.ID, err)
 	}
@@ -332,6 +322,9 @@ func (s *SQLiteFTS) deleteTx(ctx context.Context, tx *sql.Tx, id string) error {
 // Search runs a ranked full-text query. See buildFts5Query for the query-text
 // rules and Query.FieldEquals for the JSON scoping hook.
 func (s *SQLiteFTS) Search(ctx context.Context, q Query) ([]Result, error) {
+	if err := validateFieldEquals(q.FieldEquals); err != nil {
+		return nil, err
+	}
 	// Mirror Memory's two edge behaviors exactly: an empty / whitespace-only
 	// query matches every document (score 0, Type/FieldEquals filters still
 	// applied), while a query whose terms all sanitize away (pure

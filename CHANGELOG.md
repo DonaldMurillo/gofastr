@@ -735,6 +735,21 @@ few lines, and link the PR or the docs page for the rest.
   cross-site JSON purge used to run. The 403 body each route sends is
   unchanged.
 
+- **Webhook due lists and claims use one order on memory, SQLite and
+  Postgres:** unset deadlines first, then the earliest due time, then the
+  delivery ID. Opening a SQLite webhook store rewrites legacy local-zone
+  timestamps to UTC, so due checks, lists and retention compare the same
+  instants.
+- **SQLite rate-limit sweeps keep attempts and blocks of a scope that
+  differs only in case,** as Postgres already did.
+- **On Postgres, a NULL password flag reads as unset** when the last OAuth
+  login method is unlinked, instead of failing the scan.
+- **Search refuses NUL bytes in document fields and exact-match filters**
+  on every bundled backend.
+- **Postgres queues and durable schedules take priorities and attempt
+  counts past the 32-bit range.** An existing table's columns are widened
+  to BIGINT when the queue opens.
+
 - **The SDK reference and OpenAPI document list an endpoint's method as
   the router mounts it** when the declared method has surrounding
   whitespace, and a blank method no longer panics the SDK reference.

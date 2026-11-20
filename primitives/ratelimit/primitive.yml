@@ -15,6 +15,12 @@ twins:
       - path: battery/auth/sql_ratelimit_store.go
         note: SQLRateLimitStore.Allow, the shared window.
 invariants:
+  - id: sql-sweeps-keep-sibling-scopes
+    rule: SQLRateLimitStore sweeps only the exact case-sensitive namespace, including its delimiter, on SQLite and Postgres.
+    enforced_by:
+      - test: battery/auth.TestRateLimitScopeCaseParity
+    applies:
+      - battery/auth/sql_ratelimit_store.go
   - id: window-then-lockout
     rule: MaxAttempts attempts inside Window are admitted, the next one starts a block of BlockDuration, and attempts older than Window stop counting.
     enforced_by:

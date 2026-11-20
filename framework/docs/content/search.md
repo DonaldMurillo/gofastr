@@ -43,6 +43,10 @@ Wire it into a custom endpoint such as `GET /posts/search?q=...`.
 | `Fields` | `map[string]any` | Optional structured fields returned with hits.   |
 | `Owner`  | `string`         | Optional. User id the document belongs to.       |
 
+The bundled backends require `Fields` to encode as JSON. `Index` rejects
+JSON keys or string values containing NUL bytes, including nested fields,
+before replacing any existing document.
+
 `Owner` is a storage tag, not a search filter: scope searches through
 `Fields` and `FieldEquals`. Its job is erasure. The SQLite and Postgres
 backends register a data eraser and `search.Memory` a store eraser, so
@@ -58,6 +62,9 @@ or fields carry one user's data, or erasure leaves that copy behind.
 | `Limit`  | `int`              | Max hits. `0` means no limit (engine default).   |
 | `Offset` | `int`              | Skip first N hits, useful for pagination.       |
 | `FieldEquals` | `map[string]string` | Optional. Exact-match filter on `Document.Fields`: the scope hook (see below). |
+
+`Search` rejects `FieldEquals` keys and values with invalid UTF-8 or NUL
+bytes, including on empty-text queries.
 
 ### `Result`
 

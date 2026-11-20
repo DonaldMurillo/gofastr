@@ -4,15 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
+
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 // The shared store used to count and then insert in two autocommit
@@ -117,8 +117,8 @@ func TestSQLRateLimitExpiryKeepsNewerAttempts(t *testing.T) {
 }
 
 func TestSQLRateLimitBurstCappedPostgres(t *testing.T) {
-	dsn := strings.TrimSpace(os.Getenv("TEST_POSTGRES_DSN"))
-	if dsn == "" {
+	dsn, _, err := pgtest.ResolveEnv()
+	if err != nil {
 		t.Skip("TEST_POSTGRES_DSN not set")
 	}
 	open := func() *sql.DB {

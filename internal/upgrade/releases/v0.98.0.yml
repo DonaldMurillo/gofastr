@@ -23,6 +23,9 @@ notes:
     breaking: true
     nodetect: "the route string and its expanded StaticPaths values decide it at build time"
     guidance: "Rename the route, or give it StaticPaths values whose output names hold no : or ?. The build error names the route."
+  - change: "on Postgres, opening a queue widens the jobs table's priority, attempts and max_attempts columns (and the durable schedule's option columns) from INTEGER to BIGINT"
+    guidance: "The ALTER rewrites the table once and holds its lock while it runs. On a large jobs table, run the first boot of the new release in a quiet window, or widen the columns yourself beforehand with ALTER TABLE ... ALTER COLUMN ... TYPE BIGINT."
+    nodetect: "the column types live in the database, not the app's source"
   - change: "BREAKING - framework/contracts/analyzers EntityInfo.Scoped and EntityInfo.HasAccess are removed"
     breaking: true
     hits: edit

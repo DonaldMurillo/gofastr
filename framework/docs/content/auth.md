@@ -1625,6 +1625,8 @@ auth.TwoFAConfig{ RateLimit: &auth.RateLimiterConfig{Store: shared} }
 One store instance can back every limiter: keys are namespaced by
 `RateLimiterConfig.Scope`, which each built-in limiter defaults to a
 distinct value (`login_ip`, `login_account`, `register`, `twofa`, …).
+Scopes are case-sensitive. SQLite and Postgres sweeps expire attempts
+and blocks only inside the scope that triggered the sweep.
 A store error **fails closed** (denies with a short Retry-After): an
 attacker must never lift the limit by degrading its backend. See
 [Horizontal scaling](scaling.md).
@@ -2264,6 +2266,7 @@ GET    /auth/oauth/{provider}/callback  → callback, binds (provider, providerI
 Unlink refuses (`409`) when the requested unlink would leave the user
 with no remaining login method. The check considers both linked OAuth
 accounts and whether the user has set a real password.
+The SQL user store treats a NULL password flag as an unset password.
 
 Unlink also **drops the stored provider tokens**: when the OAuth2 plugin
 has a `TokenStore` (`OAuth2Config.TokenStore`), a successful

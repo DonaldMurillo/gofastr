@@ -788,13 +788,13 @@ func (s *DurableScheduler) ensureTables() error {
 			cron_spec TEXT NOT NULL DEFAULT '',
 			tz TEXT NOT NULL DEFAULT '',
 			lane TEXT NOT NULL DEFAULT '',
-			priority INTEGER NOT NULL DEFAULT 0,
-			max_attempts INTEGER NOT NULL DEFAULT 0,
+			priority %s NOT NULL DEFAULT 0,
+			max_attempts %s NOT NULL DEFAULT 0,
 			user_id TEXT NOT NULL DEFAULT '',
 			next_run %s NOT NULL,
 			updated_at %s NOT NULL,
 			version BIGINT NOT NULL DEFAULT 0
-		)`, s.queue.schedulerSchedulesTable(), tsType, tsType),
+		)`, s.queue.schedulerSchedulesTable(), s.queue.intType(), s.queue.intType(), tsType, tsType),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			occurrence_id TEXT PRIMARY KEY NOT NULL,
 			schedule_id TEXT NOT NULL,

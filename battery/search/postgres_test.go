@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -428,5 +429,52 @@ func TestPostgresHyphenatedQueryTerm(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Fatalf("hyphenated first term missed: %#v", got)
+	}
+}
+
+func TestSearchFieldNULParity(t *testing.T) {
+	for _, backend := range []struct {
+		name string
+		open func(*testing.T) Backend
+	}{
+		{"sqlite", func(t *testing.T) Backend { return newSQLiteFTS(t) }},
+		{"postgres", func(t *testing.T) Backend { return newSearchIndex(t, nil) }},
+		{"memory", func(t *testing.T) Backend {
+			index := NewMemory()
+			t.Cleanup(func() { _ = index.Close() })
+			return index
+		}},
+	} {
+		t.Run(backend.name, func(t *testing.T) {
+			ctx := context.Background()
+			idx := backend.open(t)
+			valid := Document{ID: "valid", Text: "gofastr search", Fields: map[string]any{"tenant": `literal\x00`}}
+			if err := idx.Index(ctx, valid); err != nil {
+				t.Fatal(err)
+			}
+			for _, fields := range []map[string]any{
+				{"bad\x00key": "value"},
+				{"tenant": "bad\x00value"},
+				{"nested": []any{map[string]any{"value": "\x00"}}},
+				{"raw": json.RawMessage(`{"value":"\u0000"}`)},
+			} {
+				replacement := valid
+				replacement.Fields = fields
+				if err := idx.Index(ctx, replacement); err == nil {
+					t.Errorf("Index accepted NUL in %#v", fields)
+				}
+			}
+			for _, text := range []string{"", "gofastr", "!!!"} {
+				for _, filter := range []map[string]string{{"bad\x00key": "value"}, {"tenant": "bad\x00value"}} {
+					if _, err := idx.Search(ctx, Query{Text: text, FieldEquals: filter}); err == nil {
+						t.Errorf("Search(%q) accepted NUL in %#v", text, filter)
+					}
+				}
+			}
+			results, err := idx.Search(ctx, Query{FieldEquals: map[string]string{"tenant": `literal\x00`}})
+			if err != nil || len(results) != 1 || results[0].Document.ID != valid.ID {
+				t.Errorf("valid field after rejected replacements = %+v, %v", results, err)
+			}
+		})
 	}
 }

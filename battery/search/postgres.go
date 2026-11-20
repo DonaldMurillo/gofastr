@@ -386,23 +386,14 @@ func (p *PostgresSearch) ensurePrefixTrigger(ctx context.Context) error {
 // value is a string, so re-indexing the same id updates in place with no
 // duplicate rows.
 func (p *PostgresSearch) Index(ctx context.Context, doc Document) error {
-	// Fields are stored as a JSONB object. An empty/nil field map is stored
-	// as "{}" (never SQL NULL) so the @> containment operator behaves
-	// predictably and FieldEquals never matches a missing field.
-	var fieldsArg any
-	if len(doc.Fields) == 0 {
-		fieldsArg = []byte("{}")
-	} else {
-		b, err := json.Marshal(doc.Fields)
-		if err != nil {
-			return fmt.Errorf("search: marshal fields: %w", err)
-		}
-		fieldsArg = b
+	fieldsJSON, err := marshalFields(doc.Fields)
+	if err != nil {
+		return err
 	}
 
 	// Argument layout: $1=id $2=type $3=text $4=fields(JSONB) $5=language
 	// $6=owner.
-	args := []any{doc.ID, doc.Type, doc.Text, fieldsArg, p.language, doc.Owner}
+	args := []any{doc.ID, doc.Type, doc.Text, fieldsJSON, p.language, doc.Owner}
 	const textIdx, langIdx = 3, 5
 
 	// Text body is always weight 'A'. Each present weighted string field
@@ -458,13 +449,24 @@ func (p *PostgresSearch) Delete(ctx context.Context, id string) error {
 // Search runs a ranked full-text query. See buildTsQuery for the query-text
 // rules and Query.FieldEquals for the JSONB scoping hook.
 func (p *PostgresSearch) Search(ctx context.Context, q Query) ([]Result, error) {
+	if err := validateFieldEquals(q.FieldEquals); err != nil {
+		return nil, err
+	}
+	var fieldFilter []byte
+	if len(q.FieldEquals) > 0 {
+		var err error
+		fieldFilter, err = json.Marshal(q.FieldEquals)
+		if err != nil {
+			return nil, fmt.Errorf("search: marshal field filter: %w", err)
+		}
+	}
 	// Mirror Memory's two edge behaviors exactly: an empty / whitespace-only
 	// query matches every document (score 0, Type/FieldEquals filters still
 	// applied), while a query whose terms all sanitize away (pure
 	// punctuation) matches nothing, the same split Memory makes on
 	// queryTerms.
 	if len(strings.Fields(q.Text)) == 0 {
-		return p.searchAll(ctx, q)
+		return p.searchAll(ctx, q, fieldFilter)
 	}
 	terms := queryTerms(q.Text)
 	if len(terms) == 0 {
@@ -497,12 +499,8 @@ func (p *PostgresSearch) Search(ctx context.Context, q Query) ([]Result, error) 
 		args = append(args, q.Type)
 		fmt.Fprintf(&where, " AND type = $%d", len(args))
 	}
-	if len(q.FieldEquals) > 0 {
-		b, err := json.Marshal(q.FieldEquals)
-		if err != nil {
-			return nil, fmt.Errorf("search: marshal field filter: %w", err)
-		}
-		args = append(args, b)
+	if len(fieldFilter) > 0 {
+		args = append(args, fieldFilter)
 		fmt.Fprintf(&where, " AND fields @> $%d::jsonb", len(args))
 	}
 
@@ -538,7 +536,7 @@ ORDER BY score DESC, id ASC%s`,
 // searchAll is the empty-query path: every document (score 0) that passes
 // the Type/FieldEquals filters, ordered by id for a stable page walk,
 // the same documents Memory returns for empty text.
-func (p *PostgresSearch) searchAll(ctx context.Context, q Query) ([]Result, error) {
+func (p *PostgresSearch) searchAll(ctx context.Context, q Query, fieldFilter []byte) ([]Result, error) {
 	args := []any{}
 	var where strings.Builder
 	where.WriteString("TRUE")
@@ -546,12 +544,8 @@ func (p *PostgresSearch) searchAll(ctx context.Context, q Query) ([]Result, erro
 		args = append(args, q.Type)
 		fmt.Fprintf(&where, " AND type = $%d", len(args))
 	}
-	if len(q.FieldEquals) > 0 {
-		b, err := json.Marshal(q.FieldEquals)
-		if err != nil {
-			return nil, fmt.Errorf("search: marshal field filter: %w", err)
-		}
-		args = append(args, b)
+	if len(fieldFilter) > 0 {
+		args = append(args, fieldFilter)
 		fmt.Fprintf(&where, " AND fields @> $%d::jsonb", len(args))
 	}
 

@@ -24,6 +24,10 @@ twins:
       - path: battery/queue/durable_scheduler.go
         note: DurableScheduler's Register and the second jobs eraser, queue_scheduler_swept_jobs.
 invariants:
+  - id: job-and-schedule-integers-fit
+    rule: The SQL queue persists and increments 64-bit job attempts and carries 64-bit priorities and attempt limits through durable scheduling, on both fresh and upgraded databases.
+    enforced_by:
+      - test: battery/queue.TestWideQueueNumbersParity
   - id: replay-reports-whether-it-queued
     rule: ReplayJob on DBQueue, MemoryQueue and RedisQueue answers true only when it queued a failed job again, and false with a nil error for an unknown id, a job that is not failed and a second replay.
     enforced_by:

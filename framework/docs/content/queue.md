@@ -95,6 +95,14 @@ durable scheduler's tables and indexes (`<table>_scheduler_schedules`,
 Postgres would make collides with another name; a cut that collides with
 nothing keeps that name, the one earlier releases created.
 
+On 64-bit Go builds, SQLite and Postgres both accept job priorities,
+attempt counts and attempt limits above the 32-bit range. The durable
+scheduler supports the same range for its priorities and attempt limits.
+When a Postgres table still has 32-bit columns for these fields, the
+corresponding queue or scheduler constructor widens them to `BIGINT`
+and preserves existing values and defaults. The widening takes a table
+lock during the upgrade.
+
 ## Quickstart: RedisQueue
 
 ```go

@@ -5,6 +5,10 @@ code:
 docs:
   - framework/docs/content/auth.md
 invariants:
+  - id: an-unset-password-keeps-the-last-oauth-link
+    rule: The entity user store treats a NULL password flag as unset on SQLite and Postgres and refuses to remove the last link from that account.
+    enforced_by:
+      - test: battery/auth.TestUnlinkNullPasswordParity
   - id: cross-site-arrival-reloads-same-site
     rule: SessionMiddleware answers a cookieless document navigation (GET or HEAD) that handler.IsCrossSiteRequest calls cross-site and that is about to be refused with the same-site hop page for the request's own path and query, in place of the refusal; a public page, a request that sent a session cookie, a request that is no such navigation and the hop's own reload get the app's answer.
     enforced_by:

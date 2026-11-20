@@ -12,6 +12,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -371,10 +372,10 @@ func (q *DBQueue) ensureTable() error {
 		occurrence_id TEXT NOT NULL DEFAULT '',
 		type          TEXT NOT NULL,
 		payload       TEXT,
-		priority      INTEGER NOT NULL DEFAULT 0,
+		priority      %s NOT NULL DEFAULT 0,
 		lane          TEXT NOT NULL DEFAULT '',
-		attempts      INTEGER NOT NULL DEFAULT 0,
-		max_attempts  INTEGER NOT NULL DEFAULT 3,
+		attempts      %s NOT NULL DEFAULT 0,
+		max_attempts  %s NOT NULL DEFAULT 3,
 		created_at    %s NOT NULL,
 		scheduled_at  %s NOT NULL,
 		status        TEXT NOT NULL DEFAULT 'pending',
@@ -386,8 +387,11 @@ func (q *DBQueue) ensureTable() error {
 		last_error    TEXT NOT NULL DEFAULT '',
 		max_age_ns    %s NOT NULL DEFAULT 0,
 		sequence_key  TEXT NOT NULL DEFAULT ''
-	)`, q.qt(), tsType, tsType, tsType, tsType, q.intType())
+	)`, q.qt(), q.intType(), q.intType(), q.intType(), tsType, tsType, tsType, tsType, q.intType())
 	if _, err := q.db.Exec(stmt); err != nil {
+		return err
+	}
+	if err := q.widenPostgresInts(q.qt(), "priority", "attempts", "max_attempts"); err != nil {
 		return err
 	}
 	// Best-effort migration for pre-existing tables created before the
@@ -542,12 +546,48 @@ func (q *DBQueue) addColumn(column, def string) error {
 }
 
 // intType is the dialect's 64-bit integer column type: Postgres INTEGER
-// is 32 bits, too narrow for a duration in nanoseconds.
+// is 32 bits, too narrow for a Go int on 64-bit hosts or a nanosecond duration.
 func (q *DBQueue) intType() string {
 	if q.dialect == dialectPostgres {
 		return "BIGINT"
 	}
 	return "INTEGER"
+}
+
+func (q *DBQueue) widenPostgresInts(table string, columns ...string) error {
+	if q.dialect != dialectPostgres {
+		return nil
+	}
+	rows, err := q.db.Query(`SELECT attname FROM pg_catalog.pg_attribute
+		WHERE attrelid = $1::regclass AND atttypid = 'pg_catalog.int4'::regtype
+		  AND attnum > 0 AND NOT attisdropped ORDER BY attnum`, table)
+	if err != nil {
+		return err
+	}
+	var alters []string
+	for rows.Next() {
+		var column string
+		if err := rows.Scan(&column); err != nil {
+			rows.Close()
+			return err
+		}
+		if slices.Contains(columns, column) {
+			alters = append(alters, "ALTER COLUMN "+query.QuoteFolded(column)+" TYPE BIGINT")
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(alters) == 0 {
+		return nil
+	}
+	if _, err := q.db.Exec("ALTER TABLE " + table + " " + strings.Join(alters, ", ")); err != nil {
+		return fmt.Errorf("widen queue columns in %s: %w", table, err)
+	}
+	return nil
 }
 
 // isDuplicateColumnErr reports whether err is the "column already exists"

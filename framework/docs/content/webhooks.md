@@ -212,8 +212,9 @@ expected = hmac.new(secret.encode(), material, hashlib.sha256).hexdigest()
 ok = hmac.compare_digest(expected, v1) and abs(time.time() - t) <= 300
 ```
 
-The body is whatever you passed to `Publish`; `application/json`
-isn't required, but the header advertises it.
+The body is the bytes you passed to `Publish`, sent as
+`Content-Type: application/json`. `Publish` refuses a non-empty payload
+that is not valid JSON.
 
 ### Signing in a receiver's existing format
 
@@ -507,14 +508,19 @@ rejected by both bundled stores — a negative lease can only be a sign
 or unit error, and folding it onto the default would hand the caller a
 longer lease than they asked for.
 
+The memory and SQL stores list and claim due deliveries in one order:
+unset deadlines first, then the earliest due time, then the delivery ID
+in byte order. A claim returns deliveries in the order it selected them.
+
 SQLite stores a timestamp as text with its offset and compares the
 text, so the SQL stores bind every timestamp in UTC whatever zone the
 caller's clock carries. Workers in different zones, or a lease that
 spans a DST change, then read each other's leases and due times
-correctly. Opening a `SQLStore` on SQLite rewrites in UTC the due
-times of pending rows an earlier release stored in the writer's zone.
-A replica still running that earlier release keeps writing its own
-zone until it is upgraded.
+correctly. Opening a `SQLStore` on SQLite rewrites in UTC the due,
+creation and update times of deliveries an earlier release stored in
+the writer's zone; opening a `SQLInboundStore` does the same for
+envelope receipt and update times. A replica still running that earlier
+release keeps writing its own zone until it is upgraded.
 
 ## Secret encryption at rest
 
