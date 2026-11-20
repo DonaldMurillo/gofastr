@@ -29,7 +29,7 @@ func TestHoverPrefetchUsesServerRouteConstraints(t *testing.T) {
 		<a id="number" href="/items/%37">Number</a>
 		<a id="slug" href="/items/help?tab=about">Help</a>
 	`), nil)
-	a.Register("/items/{id:int}", &constrainedPrefetchScreen{body: "Number"}, nil,
+	a.Register("/items/{id:int}", &constrainedPrefetchScreen{body: `<h1 id="number-screen">Number</h1>`}, nil,
 		app.Preload("hover"), app.InterceptFrom("/hub", app.ScreenDrawer))
 	a.Register("/items/{slug}", &constrainedPrefetchScreen{body: `<h1 id="slug-screen">Help</h1>`}, nil, app.Preload("hover"))
 
@@ -81,13 +81,28 @@ func TestHoverPrefetchUsesServerRouteConstraints(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	var inDrawer bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/hub"),
+		chromedp.Poll(`window.__gofastr.loadedModules?.preload && window.__gofastr.loadedModules?.intercept`, nil),
+		chromedp.Click("#number"),
+		chromedp.WaitVisible("#number-screen"),
+		chromedp.Evaluate(`!!document.querySelector('[data-cui-intercept-as="drawer"] #number-screen')`, &inDrawer),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !inDrawer {
+		t.Error("clicking /items/%37 did not open the integer route in a drawer")
+	}
+
 	mu.Lock()
 	defer mu.Unlock()
 	for _, req := range requests {
 		t.Logf("GET %s X-Gofastr-Prefetch=%q X-Gofastr-Intercept=%q", req.uri, req.prefetch, req.intercept)
 	}
 	want := request{"/items/help?tab=about", "1", ""}
-	if len(requests) != 1 || requests[0] != want {
-		t.Errorf("browser requests = %+v, want one hover prefetch %+v, no overlay or click fetch", requests, want)
+	drawer := request{"/items/%37", "", "1"}
+	if len(requests) != 2 || requests[0] != want || requests[1] != drawer {
+		t.Errorf("browser requests = %+v, want one hover prefetch %+v and one drawer request %+v", requests, want, drawer)
 	}
 }
