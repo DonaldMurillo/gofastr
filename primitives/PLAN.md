@@ -233,7 +233,13 @@ docs that said the opposite of the code (`search.md` on a non-string
 weighted field, webhook's `Options` on a caller's HTTP client). Every
 proof is in `docs/reviews/2026-11-20-battery-sweep-mutations.md`. Left
 unproven on Linux: the macOS and Windows desktop rules, whose tests run
-only there, and storage's case-folded keys, whose tests skip on a case-sensitive filesystem.
+only there, and storage's case-folded keys, whose tests skip on a case-sensitive filesystem. The replay eval after it held
+every number but `form-field-typo`, whose runs swing between one sibling
+path and all five (11 of 30 here, 34 of 60 over three batches), and
+`node-block-entity`, which was back at 22 of 24 on a rerun; no replay
+task reads `battery/` (`2026-11-20-replay-battery-sweep.md`).
+`dup-column-key` reads an entry that names its sibling sites and went
+from 1 of 4 to 4 of 4 (`2026-11-20-dup-column-key-twin.md`).
 
 Next: `cmd/`, `internal/`. The repository as a whole is at 10.4%.
 
