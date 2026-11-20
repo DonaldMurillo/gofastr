@@ -24,6 +24,12 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING: unquoted YAML hex and octal integers now read as numbers.**
+  Quote values meant to stay strings (for example, `default: "0x10"`) in
+  existing app specs and older Pack or Kiln snapshots. See the
+  [YAML migration examples](framework/docs/content/app-spec.md#yaml-subset).
+
 ## [0.97.0] - 2026-11-19
 
 ### Added

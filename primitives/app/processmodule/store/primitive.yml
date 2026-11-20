@@ -44,6 +44,10 @@ invariants:
     rule: A provisioning statement quoted in an error has its role password redacted.
     enforced_by:
       - test: framework.TestModuleSchemaRoleExecErrDoesNotLeakPassword
+  - id: admin-dsn-errors-hide-credentials
+    rule: Refusing a malformed or non-Postgres admin DSN never quotes the DSN or its credentials in the returned error.
+    enforced_by:
+      - test: framework.TestModuleRoleDSNErrorsHideAdminCredentials
   - id: stamp-bound-to-artifact
     rule: MigrationsAppliedAt is stamped only while the row still names the artifact the migrations ran for, and a boot with another artifact clears it.
     enforced_by:

@@ -87,6 +87,11 @@ func ReadGeneratedApp(appFile, mainFile *ast.File) AppSpecApp {
 		switch t := n.(type) {
 		case *ast.CompositeLit:
 			switch AstSelLast(t.Type) {
+			case "AppConfig":
+				if value, ok := FieldVals(t)["NoLLMMD"]; ok {
+					v := !AstBool(value)
+					app.EntityLLMMD = &v
+				}
 			case "Config":
 				cv := FieldVals(t)
 				// print.Config and other batteries' configs carry a

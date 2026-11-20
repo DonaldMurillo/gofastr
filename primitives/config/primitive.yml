@@ -27,11 +27,21 @@ invariants:
     rule: A sensitive field's value or default never appears in a Load error, a ConfigValidator error scrubbed longest value first in its raw, Go-quoted, JSON and URL-escaped spellings up to two escapes deep.
     enforced_by:
       - test: core/config.TestSensitiveValueRedacted
+      - test: core/config.TestSensitiveNamedStringPresetRedacted
+      - test: core/config.TestUnsetSecretIntKeepsParseErrorDigits
+      - test: core/config.TestPresetSensitiveRedactedInValidator
+      - test: core/config.TestSecretInOtherFieldParseError
+      - test: core/config.TestOverriddenSecretDefaultStaysReadable
+      - test: core/config.TestShortSecretPlaceholderStaysIntact
       - test: core/config.TestSensitiveRedactedInValidator
       - test: core/config.TestRedactLongestSecretFirst
       - test: core/config.TestRedactEscapedSecretSpellings
       - test: core/config.TestSweepConfigSensitiveBadDefaultRedacted
       - test: core/config.TestSweepConfigShadowedSensitiveDefaultRedactedInValidator
+  - id: unchanged-binding-errors-keep-chain
+    rule: A binding error whose message contains no sensitive value retains its original error chain; a redacted binding error drops the chain so it cannot expose the secret.
+    enforced_by:
+      - test: core/config.TestNonSecretParseErrorPreservesChain
   - id: key-naming
     rule: A leaf reads its config tag or else its upper-cased field name, a named nested struct reads its fields under NAME_, and a nested pointer is allocated only when one of its keys is present.
     enforced_by:

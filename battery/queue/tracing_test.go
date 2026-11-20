@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -38,6 +39,65 @@ func spanAttr(s sdktrace.ReadOnlySpan, key string) string {
 		}
 	}
 	return ""
+}
+
+type jobSpanError struct{}
+
+func (*jobSpanError) Error() string { return "private job payload" }
+
+func TestJobSpanErrorTypeSeesThroughWrapping(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"single", fmt.Errorf("job: %w", &jobSpanError{})},
+		{"nested", fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", &jobSpanError{}))},
+		{"multiple", fmt.Errorf("job: %w; %w", &jobSpanError{}, errors.New("other"))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, backend := range []string{"MemoryQueue", "DBQueue"} {
+				t.Run(backend, func(t *testing.T) {
+					rec := recordJobSpans(t)
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					done := make(chan struct{})
+					handler := func(context.Context, Job) error { close(done); return tc.err }
+					var q Queue
+					var start func()
+					if backend == "MemoryQueue" {
+						memory := NewMemoryQueue(1)
+						memory.RegisterHandler("wrapped", handler)
+						q, start = memory, memory.Start
+					} else {
+						_, db := openDBQueue(t, 1)
+						db.RegisterHandler("wrapped", handler)
+						q, start = db, func() { db.Start(ctx) }
+					}
+					t.Cleanup(func() { q.Close() })
+					if err := q.Enqueue(ctx, Job{Type: "wrapped", MaxAttempts: 1}); err != nil {
+						t.Fatal(err)
+					}
+					start()
+					select {
+					case <-done:
+					case <-ctx.Done():
+						t.Fatal("the wrapped-error job never ran")
+					}
+					q.Close()
+					s := endedSpan(rec, "process wrapped")
+					if s == nil {
+						t.Fatal("no span for the wrapped-error job")
+					}
+					if got := spanAttr(s, "error.type"); got != "*queue.jobSpanError" {
+						t.Errorf("error.type = %q, want %q", got, "*queue.jobSpanError")
+					}
+					if s.Status().Code != codes.Error || s.Status().Description != "" || len(s.Events()) != 0 {
+						t.Errorf("failed job span status = %+v, events = %v", s.Status(), s.Events())
+					}
+				})
+			}
+		})
+	}
 }
 
 func TestMemoryJobSpans(t *testing.T) {

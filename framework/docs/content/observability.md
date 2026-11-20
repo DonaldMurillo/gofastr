@@ -367,6 +367,13 @@ the span status to `codes.Error` with `error.type` holding the error's Go
 type (or the HTTP status code, or `panic`), never its message, since
 driver and handler errors routinely quote row values.
 
+`tracing.ErrorType(err)` supplies the same Go type name for custom spans.
+It unwraps only `fmt.Errorf` wrappers using `%w` (following the first error
+when there are several `%w` operands), and returns `"<nil>"` for nil.
+`errors.Join` reports `*errors.joinError`; a wrapped `errors.New` sentinel
+reports `*errors.errorString`.
+SQL, HTTP client and queue job spans share this logic.
+
 ### Exporting traces to a collector (OTLP)
 
 `WithTracing()` creates spans but drops them until you install an exporter.
