@@ -290,8 +290,8 @@ duplicates do not participate. Metadata validation follows encoded JSON,
 including custom encoders, every nested string value and key, and duplicate
 object members. Omitted fields do not participate. Ordinary Go strings with
 invalid UTF-8 are normalized by JSON encoding, except `metadata["kind"]`:
-PgVectorStore also binds it raw to a text column, so that string must itself
-be valid UTF-8 without NUL bytes. An escape for half a surrogate pair
+PgVectorStore also binds it raw to a text column, so it must be a Go string
+that is itself valid UTF-8 without NUL bytes. An escape for half a surrogate pair
 (`"\ud800"` in a `json.RawMessage`) is refused too: Go would decode it to
 U+FFFD, but Postgres's jsonb input rejects it. A metadata number outside
 jsonb's numeric range (more than 131072 digits before the decimal point or

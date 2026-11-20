@@ -206,15 +206,9 @@ func (r *Runner) CanRunHeadless(_ context.Context) (bool, error) {
 // same reason it is there: a setup step that did not run is
 // recoverable, one that ran twice is not.
 func (r *Runner) RunSteps(ctx context.Context) error {
-	r.mu.Lock()
-	for r.stepInFlight != nil {
-		inFlight := r.stepInFlight
-		r.mu.Unlock()
-		<-inFlight
-		r.mu.Lock()
+	if err := r.claimSteps(ctx); err != nil {
+		return err
 	}
-	r.stepInFlight = make(chan struct{})
-	r.mu.Unlock()
 	defer r.releaseStepClaim()
 
 	if r.cfg.Complete != nil {
@@ -236,6 +230,26 @@ func (r *Runner) RunSteps(ctx context.Context) error {
 			return fmt.Errorf("step %q: %w", step.Name, err)
 		}
 	}
+	return nil
+}
+
+func (r *Runner) claimSteps(ctx context.Context) error {
+	r.mu.Lock()
+	for r.stepInFlight != nil {
+		inFlight := r.stepInFlight
+		r.mu.Unlock()
+		select {
+		case <-inFlight:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		r.mu.Lock()
+	}
+	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.stepInFlight = make(chan struct{})
 	return nil
 }
 

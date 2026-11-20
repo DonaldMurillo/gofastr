@@ -132,13 +132,13 @@ func TestServeHandlerErrorContractBackends(t *testing.T) {
 			want: http.StatusBadRequest,
 		},
 		{
-			name: "battery LocalStorage control-byte key is 400",
+			name: "battery LocalStorage NUL key is 400",
 			make: func(t *testing.T) storage.Storage {
 				ls := newTestLocalStorage(t, t.TempDir())
 				seed(t, ls)
 				return ls
 			},
-			key:     "a\nb.png",
+			key:     "a\x00b.png",
 			want:    http.StatusBadRequest,
 			rawPath: true,
 		},

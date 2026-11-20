@@ -310,3 +310,23 @@ func TestOpenKeepsLegacyTextInMemoryKeyword(t *testing.T) {
 		t.Fatalf("keyword hits=%v, %v; want the legacy chunk kept", hits, err)
 	}
 }
+
+// Every store reads metadata["kind"] as a string, so a kind of another
+// type would be stored as "" and match no kind filter.
+func TestAddRefusesNonStringKind(t *testing.T) {
+	idx, err := Open(Options{Embedder: NewStubEmbedder(4)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = idx.Close() })
+	for _, kind := range []any{5, true, json.RawMessage(`"go"`), nil} {
+		err := idx.Add(context.Background(), Document{ID: "a", Text: "ok", Metadata: map[string]any{"kind": kind}})
+		var refusal *InvalidDocumentTextError
+		if !errors.As(err, &refusal) || refusal.Field != "metadata" {
+			t.Fatalf("Add(kind %#v): %v, want metadata refusal", kind, err)
+		}
+	}
+	if err := idx.Add(context.Background(), Document{ID: "a", Text: "ok", Metadata: map[string]any{"kind": "go"}}); err != nil {
+		t.Fatalf("string kind: %v", err)
+	}
+}

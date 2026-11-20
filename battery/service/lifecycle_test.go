@@ -214,17 +214,17 @@ func TestTaskSchedulerStopDrains(t *testing.T) {
 	}
 }
 
-// A drain that overruns gets /End, and stop still waits for the exit.
+// Even after /End succeeds, stop must refuse a daemon that stays alive.
 func TestTaskSchedulerStopEndsAStuckDaemon(t *testing.T) {
 	b, ft, _ := testBattery(t, "windows", Config{})
 	shortStopWait(t)
 	d := startFakeDaemon(t, b, false)
-	ft.hook["schtasks /End"] = d.kill
-	if err := (taskScheduler{}).stop(b); err != nil {
-		t.Fatal(err)
+	err := (taskScheduler{}).stop(b)
+	if err == nil || !strings.Contains(err.Error(), "did not exit") {
+		t.Fatalf("stop error = %v, want a did-not-exit error", err)
 	}
-	if !d.killed.Load() {
-		t.Fatal("stop returned while the daemon was still alive")
+	if !procalive.Alive(d.pid) {
+		t.Fatal("fake daemon died on its own")
 	}
 	want := []string{"schtasks /End /TN dev.gofastr.svctest-S-1-5-21-7"}
 	if got := ft.got(); !reflect.DeepEqual(got, want) {

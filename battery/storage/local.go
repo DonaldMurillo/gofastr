@@ -103,8 +103,8 @@ func (ls *LocalStorage) validateKey(key string) error {
 	if strings.Contains(key, "..") {
 		return fmt.Errorf("%w: key %q contains a path traversal sequence", upload.ErrInvalidKey, key)
 	}
-	if err := checkControlBytes(key); err != nil {
-		return err
+	if strings.ContainsRune(key, '\x00') {
+		return fmt.Errorf("%w: key %q contains a NUL byte", upload.ErrInvalidKey, key)
 	}
 	// Reject absolute paths and volume-qualified paths on every platform.
 	// filepath.IsAbs handles Unix roots and Windows roots such as /tmp and
@@ -133,6 +133,9 @@ func (ls *LocalStorage) validateKey(key string) error {
 // NEW objects, so a store written on Unix can be served from Windows.
 func (ls *LocalStorage) validateWritableKey(key string) error {
 	if err := ls.validateKey(key); err != nil {
+		return err
+	}
+	if err := checkControlBytes(key); err != nil {
 		return err
 	}
 	return validateWindowsCompatibleKey(key)
@@ -537,7 +540,7 @@ func (ls *LocalStorage) open(ctx context.Context, key string) (*os.File, error) 
 	}
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("%w: %s", upload.ErrNotFound, key)
+			return nil, fmt.Errorf("%w: %q", upload.ErrNotFound, key)
 		}
 		return nil, fmt.Errorf("storage: open %q: %w", key, scrubPathError(err))
 	}
@@ -548,7 +551,7 @@ func (ls *LocalStorage) open(ctx context.Context, key string) (*os.File, error) 
 		if err != nil {
 			return nil, fmt.Errorf("storage: open %q: %w", key, scrubPathError(err))
 		}
-		return nil, fmt.Errorf("%w: %s", upload.ErrNotFound, key)
+		return nil, fmt.Errorf("%w: %q", upload.ErrNotFound, key)
 	}
 	return f, nil
 }

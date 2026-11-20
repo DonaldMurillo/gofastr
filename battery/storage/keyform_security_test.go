@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -17,18 +18,18 @@ import (
 // object the row's key never named. Property: both refuse an absolute key,
 // a control byte, and a key that is not its own clean form, with
 // upload.ErrInvalidKey; clean relative keys pass.
-var unformedKeys = []string{
+var unformedPathKeys = []string{
 	"/etc/passwd",
 	"/a/b.png",
 	"a\x00b.png",
-	"a\nb.png",
-	"a\x7fb.png",
 	"a//b.png",
 	"./a.png",
 	"a/./b.png",
 	"a/b/",
 	".",
 }
+
+var unformedKeys = append(slices.Clone(unformedPathKeys), "a\nb.png", "a\x7fb.png")
 
 var formedKeys = []string{"a.png", "uploads/posts/photo/x_1_abc.png", "a b/c-d_e.txt"}
 
@@ -73,9 +74,8 @@ func TestS3RefusesUnformedKeys(t *testing.T) {
 	}
 }
 
-// TestLocalRefusesUnformedKeys: LocalStorage must refuse the same unformed
-// keys as S3 (checkObjectKey) with upload.ErrInvalidKey, and Save must wrap
-// its Windows-portability refusals in it too.
+// TestLocalRefusesUnformedKeys covers invalid paths on every operation
+// and Windows-portability refusals on writes.
 func TestLocalRefusesUnformedKeys(t *testing.T) {
 	ctx := context.Background()
 	ls := newTestLocalStorage(t, t.TempDir())
@@ -87,7 +87,11 @@ func TestLocalRefusesUnformedKeys(t *testing.T) {
 		"Exists":   func(k string) error { _, err := ls.Exists(ctx, k); return err },
 	}
 	for name, op := range ops {
-		for _, k := range append([]string{""}, unformedKeys...) {
+		keys := unformedPathKeys
+		if name == "Save" {
+			keys = unformedKeys
+		}
+		for _, k := range append([]string{""}, keys...) {
 			if err := op(k); !errors.Is(err, upload.ErrInvalidKey) {
 				t.Errorf("%s(%q) = %v, want upload.ErrInvalidKey", name, k, err)
 			}
