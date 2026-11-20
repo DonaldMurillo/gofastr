@@ -1086,6 +1086,65 @@ func TestDeployReconcilesUnrecordedReleases(t *testing.T) {
 	}
 }
 
+func TestDeployRetainsLastActivatedReleaseAfterInterruption(t *testing.T) {
+	const (
+		first       = rel0
+		interrupted = rel1
+		aborted     = 97
+	)
+	for _, tc := range []struct {
+		name         string
+		boundary     string
+		injectBefore bool
+		wantCurrent  string
+		wantPrevious string
+	}{
+		{"after binary copy", `install -m 0755 "$UPLOAD/bin" "$APP/releases/$REL/$NAME"` + "\n", false, first, first},
+		{"before health check", "  if ! healthy; then\n", true, interrupted, first},
+		{"before order publish", `mv -T "$ORDER.new" "$ORDER"` + "\n" + `retained="$(cat "$ORDER")"` + "\n", true, interrupted, interrupted},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newServer(t)
+			p := s.uploadPlan(first)
+			if out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(p.install())); code != 0 || err != nil {
+				t.Fatalf("first deploy: exit %d, error %v\n%s", code, err, out)
+			}
+			p = s.uploadPlan(interrupted)
+			script := p.install()
+			if strings.Count(script, tc.boundary) != 1 {
+				t.Fatalf("expected one interruption boundary %q", tc.boundary)
+			}
+			stop := fmt.Sprintf("exit %d\n", aborted)
+			replacement := tc.boundary + stop
+			if tc.injectBefore {
+				replacement = stop + tc.boundary
+			}
+			script = strings.Replace(script, tc.boundary, replacement, 1)
+			if out, code, err := s.ssh(context.Background(), nil, asRoot, strings.NewReader(script)); code != aborted || err != nil || s.current() != tc.wantCurrent {
+				t.Fatalf("interrupted deploy: exit %d, error %v, current %q, want %q\n%s", code, err, s.current(), tc.wantCurrent, out)
+			}
+			order := filepath.Join(s.dir, "opt/shop/.release-order")
+			if got, err := os.ReadFile(order); err != nil || string(got) != first+"\n" {
+				t.Fatalf("order after interruption = %q, error %v, want only %q", got, err, first)
+			}
+			if out, err := s.run(t0.Add(3*time.Minute), "prod", "--name", "shop", "--keep=1"); err != nil {
+				t.Fatalf("next deploy: %v\n%s", err, out)
+			}
+			next := s.current()
+			wantOrder := next + "\n" + tc.wantPrevious + "\n"
+			if got, err := os.ReadFile(order); err != nil || string(got) != wantOrder {
+				t.Errorf("release order = %q, error %v, want %q", got, err, wantOrder)
+			}
+			if got := s.releases(); !slices.Equal(got, []string{tc.wantPrevious, next}) {
+				t.Errorf("kept %q, want %q and %q", got, tc.wantPrevious, next)
+			}
+			if out, err := s.run(t0, "rollback", "prod", "--name", "shop"); err != nil || s.current() != tc.wantPrevious || !s.serving() {
+				t.Fatalf("rollback: %v, current %q, want %q serving\n%s", err, s.current(), tc.wantPrevious, out)
+			}
+		})
+	}
+}
+
 func TestDeployAndRollbackWaitForTheAppLock(t *testing.T) {
 	for _, action := range []string{"install", "rollback"} {
 		t.Run(action, func(t *testing.T) {

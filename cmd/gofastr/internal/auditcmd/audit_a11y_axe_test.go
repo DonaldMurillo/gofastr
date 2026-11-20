@@ -25,9 +25,9 @@ func TestA11ySitemapDiscoversURLSet(t *testing.T) {
 	read := sitemapFixture(map[string]string{"/sitemap.xml": `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://example.com</loc></url>
-  <url><loc>https://example.com/about</loc></url>
+  <url><loc>http://example.com/about</loc></url>
   <url><loc> </loc></url>
-  <url><loc>https://example.com/docs/intro</loc></url>
+  <url><loc>/docs/intro</loc></url>
 </urlset>`})
 	pages, err := discoverA11yPages(read)
 	want := []string{"/", "/about", "/docs/intro"}
@@ -70,16 +70,36 @@ func TestA11ySitemapRootFailuresFailDiscovery(t *testing.T) {
 	}
 }
 
+func TestA11ySitemapRejectsNonPageLocations(t *testing.T) {
+	for _, loc := range []string{"#help", "mailto:docs@example.test", "ftp://example.test/docs", "https:/missing-host", "//example.test/docs", "relative/path"} {
+		t.Run(loc, func(t *testing.T) {
+			urlSet := "<urlset><url><loc>" + loc + "</loc></url></urlset>"
+			for _, read := range []func(string) (a11ySitemap, error){
+				sitemapFixture(map[string]string{"/sitemap.xml": urlSet}),
+				sitemapFixture(map[string]string{
+					"/sitemap.xml": "<sitemapindex><sitemap><loc>/part.xml</loc></sitemap></sitemapindex>",
+					"/part.xml":    urlSet,
+				}),
+			} {
+				pages, err := discoverA11yPages(read)
+				if len(pages) != 0 || err == nil || !strings.Contains(err.Error(), "no page URLs found") {
+					t.Errorf("discovered %v, error %v, want no page URLs", pages, err)
+				}
+			}
+		})
+	}
+}
+
 func TestA11ySitemapIndexDoesNotScanPartURLs(t *testing.T) {
 	read := sitemapFixture(map[string]string{
 		"/sitemap.xml": `<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <sitemap><loc>https://example.com/sitemap/1.xml</loc></sitemap>
   <sitemap><loc>https://example.com/sitemap/2.xml</loc></sitemap>
 </sitemapindex>`,
-		"/sitemap/1.xml": `<urlset><url><loc>https://example.com/</loc></url>
+		"/sitemap/1.xml": `<urlset><url><loc>#help</loc></url><url><loc>https://example.com</loc></url>
 <url><loc>https://example.com/about</loc></url></urlset>`,
 		"/sitemap/2.xml": `<urlset><url><loc>https://example.com/about</loc></url>
-<url><loc>https://example.com/docs/intro</loc></url></urlset>`,
+<url><loc>/docs/intro</loc></url></urlset>`,
 	})
 	pages, err := discoverA11yPages(read)
 	if err != nil || !slices.Equal(pages, []string{"/", "/about", "/docs/intro"}) {

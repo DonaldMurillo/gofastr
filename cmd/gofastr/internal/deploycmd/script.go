@@ -209,11 +209,13 @@ activate() {
 }
 recover() {
   local reason="$failure"
-  if activate "$1"; then
-    outcome="ROLLED-BACK $1 $reason"
-    return ` + strconv.Itoa(exitRolledBack) + `
+  if release_ready "$1"; then
+    if activate "$1"; then
+      outcome="ROLLED-BACK $1 $reason"
+      return ` + strconv.Itoa(exitRolledBack) + `
+    fi
+    printf 'Recovery failed: %s\n' "$failure"
   fi
-  printf 'Recovery failed: %s\n' "$failure"
   outcome="DOWN $(running) $reason"
   return ` + strconv.Itoa(exitDown) + `
 }
@@ -229,6 +231,10 @@ ORDER="$APP/.release-order"
 release_dirs() {
   find "$APP/releases" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%f\n'
 }
+release_ready() {
+  local dir="$APP/releases/$1"
+  [ -f "$dir/$NAME" ] && [ -x "$dir/$NAME" ] && [ ! -e "$dir/.installing" ] && [ ! -e "$dir/.failed" ]
+}
 reconcile_order() {
   local current="" recorded=/dev/null
   if [ -f "$ORDER" ]; then
@@ -237,8 +243,7 @@ reconcile_order() {
   fi
   if [ -d "$APP/releases" ]; then
     release_dirs | LC_ALL=C sort -r | while IFS= read -r release; do
-      dir="$APP/releases/$release"
-      if [ -f "$dir/$NAME" ] && [ -x "$dir/$NAME" ] && [ ! -e "$dir/.failed" ]; then
+      if release_ready "$release"; then
         printf '%s\n' "$release"
       fi
     done | awk -v cur="$current" '
@@ -275,6 +280,7 @@ if ! mkdir -m 0755 "$APP/releases/$REL"; then
   rm -rf "$UPLOAD"
   exit 1
 fi
+: > "$APP/releases/$REL/.installing"
 install -m 0755 "$UPLOAD/bin" "$APP/releases/$REL/$NAME"
 install -d -m 0750 "$STATE"
 chown "$NAME:$NAME" "$STATE"
@@ -319,7 +325,10 @@ if ! activate "$REL" enable; then
   fi
   echo "--- the last lines the new release logged ---"
   said
-  if [ -n "$PREV" ] && [ "$PREV" != "$REL" ] && [ -x "$APP/releases/$PREV/$NAME" ]; then
+  if [ -n "$PREV" ] && ! release_ready "$PREV"; then
+    PREV="$(head -n 1 "$ORDER")"
+  fi
+  if [ -n "$PREV" ]; then
     code=0
     recover "$PREV" || code=$?
     if [ "$(running)" != "$REL" ]; then
@@ -332,6 +341,7 @@ if ! activate "$REL" enable; then
   exit ` + strconv.Itoa(exitDown) + `
 fi
 
+unlink "$APP/releases/$REL/.installing"
 mv -T "$ORDER.new" "$ORDER"
 retained="$(cat "$ORDER")"
 release_dirs | while IFS= read -r old; do

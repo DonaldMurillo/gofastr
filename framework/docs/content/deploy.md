@@ -64,11 +64,12 @@ gofastr deploy deploy@203.0.113.7 --name shop --env-file prod.env --port 8080
 It asks the server what CPU it has, builds the package in this directory
 for it, copies the binary over SSH, starts it, and waits for the app to
 answer `/healthz` with a 2xx within 30 seconds. If activation or the
-health check fails, the command prints diagnostics, tries to start the
-release it replaced, and exits non-zero. Once it switches back, it removes
-the failed release. With no earlier release, the failed release stays
-in place. Installs and rollbacks for the same app take turns on the
-server, including environment inheritance and recovery.
+health check fails, the command prints diagnostics and exits non-zero.
+It tries to restore the previous release, or the latest eligible release
+in the order if the previous one was incomplete. Once it switches back,
+it removes the failed release. With no earlier release, the failed
+release stays in place. Installs and rollbacks for the same app take
+turns on the server, including environment inheritance and recovery.
 
 `--name` defaults to the lowercased directory basename. Set it
 explicitly if that name is invalid. A valid name is 1 to 31 characters,
@@ -128,16 +129,20 @@ gofastr deploy rollback deploy@203.0.113.7 --name shop   # back one release
 
 `rollback` starts the release before the running one in the server's
 recorded deployment order and checks it the same way. Before a deploy or
-rollback, the server updates that order to account for missing releases
-and releases left unrecorded by an older client or interrupted deploy.
-An unrecorded running release goes first, followed by other unrecorded
+rollback, the server reconciles that order with releases on disk.
+A deploy marks a release incomplete until activation and its health
+check succeed. Reconciliation and rollback skip incomplete releases.
+A release left unrecorded by an older client or by an interruption after
+successful activation can still enter the order. An eligible unrecorded
+running release goes first, followed by other eligible unrecorded
 releases in descending release ID order. Previously recorded releases
 keep their relative order. An installation without a recorded order
 starts with descending release ID order.
-If activation or the health check fails, it tries to restore
-the release it left. Each release uses its own environment and saved
-`--port` and `--health` settings. For a release without saved health
-settings, pass those flags to `rollback` or `status` as needed.
+If rollback activation or its health check fails, the server tries to
+restore the release it left if it is eligible. Each release uses its own
+environment and saved `--port` and `--health` settings. For a release
+without saved health settings, pass those flags to `rollback` or
+`status` as needed.
 `--wait <seconds>` sets the elapsed time allowed for each release's
 health check. `status` probes the health URL only while the service is
 active.

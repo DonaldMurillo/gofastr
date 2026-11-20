@@ -99,11 +99,20 @@ func discoverA11yPages(readSitemap func(path string) (a11ySitemap, error)) ([]st
 	seen := map[string]bool{}
 	for _, loc := range locations {
 		loc = strings.TrimSpace(loc)
-		if loc == "" {
-			continue
-		}
 		u, err := url.Parse(loc)
 		if err != nil {
+			continue
+		}
+		switch u.Scheme {
+		case "http", "https":
+			if u.Hostname() == "" {
+				continue
+			}
+		case "":
+			if !strings.HasPrefix(loc, "/") || strings.HasPrefix(loc, "//") {
+				continue
+			}
+		default:
 			continue
 		}
 		p := u.EscapedPath()

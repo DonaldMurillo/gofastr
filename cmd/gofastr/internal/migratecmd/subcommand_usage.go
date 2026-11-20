@@ -17,6 +17,7 @@ Run database migrations. The subcommand defaults to 'up'.
                    --snapshot=<path> the committed schema snapshot (default
                    <migrations>/schema.snapshot.json)
   force <V>        mark version V applied without running its SQL (--not-applied removes it)
+  repair           report stale owner-column foreign keys on SQLite (--from=<yml>, --apply rebuilds)
 
 Common flags:
   --db-url=<url>   database URL (default: DATABASE_URL, then .env)

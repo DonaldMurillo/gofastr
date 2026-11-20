@@ -81,6 +81,17 @@ func repairT_run(t *testing.T, args ...string) (string, int) {
 	return out, code
 }
 
+func TestMigrateRepairHelp(t *testing.T) {
+	out := clitest.CaptureStdout(t, func() { RunMigrate([]string{"repair", "--help"}) })
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "repair ") &&
+			strings.Contains(line, "--from=<yml>") && strings.Contains(line, "--apply") {
+			return
+		}
+	}
+	t.Fatalf("migrate repair help is missing the repair entry with --from and --apply:\n%s", out)
+}
+
 func TestMigrateRepairCleanDBExitsZero(t *testing.T) {
 	bp, dbPath := repairT_setup(t)
 	out, code := repairT_run(t, "repair", "--from="+bp, "--db-url="+dbPath)

@@ -57,3 +57,13 @@ func TestWriteHostSkillDropsFileWithFrontmatter(t *testing.T) {
 		t.Fatal("written skill missing the reinvent-guidance heading")
 	}
 }
+
+func TestWriteHostSkillRejectsRegularFileRoot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "project")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteHostSkill(path, false); err == nil {
+		t.Fatal("WriteHostSkill accepted a regular file as the project root")
+	}
+}
