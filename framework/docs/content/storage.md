@@ -68,6 +68,13 @@ the absolute storage path. `WithPermissions` sets the saved Unix file mode;
 Windows files use protected owner-only ACLs.
 Directory ACL changes stop at the storage root, including when Windows path
 spellings differ only by letter case.
+A new key is also held to Windows-portable names: no `:` and no
+reserved device name (`CON`, `NUL`, `COM1`, ...) in any component, and no
+component ending in a space or dot. Those rules apply to `Save` only, so
+an object an older release stored under such a key stays readable and
+deletable. A key that names a directory of other keys is not an object:
+`Get` returns `ErrNotFound`, `Exists` reports false and `Delete` leaves
+the directory in place.
 `WithTempDir` overrides the temp directory used for the atomic write
 (a temp dir outside `baseDir` keeps the older resolve-then-open staging
 there, because the atomic rename cannot be expressed through the root).

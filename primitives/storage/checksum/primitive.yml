@@ -1,0 +1,20 @@
+primitive: storage.checksum
+summary: SaveWithChecksum and VerifyChecksum, which hash an object's bytes in one pass on save and re-read them to check a digest.
+code:
+  - battery/storage/checksum.go
+docs:
+  - framework/docs/content/storage.md
+invariants:
+  - id: save-reports-size-and-digest
+    rule: SaveWithChecksum returns the byte count and lowercase hex SHA-256 of exactly the bytes Save read, and the zero SaveResult on a Save error.
+    enforced_by:
+      - test: battery/storage.TestSaveWithChecksumKnownVector
+      - test: battery/storage.TestSaveWithChecksumLargeStream
+      - test: battery/storage.TestSaveWithChecksumSaveError
+  - id: verify-takes-a-64-hex-digest
+    rule: VerifyChecksum accepts a 64-character digest in either case, refuses any other length or non-hex input without wrapping ErrChecksumMismatch, and wraps ErrChecksumMismatch only for a digest that differs.
+    enforced_by:
+      - test: battery/storage.TestVerifyChecksumUppercaseHex
+      - test: battery/storage.TestVerifyChecksumRefusesShortDigest
+      - test: battery/storage.TestVerifyChecksumMalformedHex
+      - test: battery/storage.TestVerifyChecksumMismatch

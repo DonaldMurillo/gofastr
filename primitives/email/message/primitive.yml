@@ -1,0 +1,49 @@
+primitive: email.message
+summary: buildMessage and its encoders, which serialize an Email into RFC 5322 and MIME bytes with checked headers, encoded words, folding and unguessable boundaries.
+code:
+  - battery/email/message.go
+  - battery/email/base64.go
+docs:
+  - framework/docs/content/email.md
+invariants:
+  - id: header-values-refuse-control-and-invisible
+    rule: buildMessage refuses a From, To, Cc, Bcc, Subject, Headers key or value, attachment filename or content type holding a C0 control byte, DEL, a C1 or invisible codepoint, or invalid UTF-8.
+    enforced_by:
+      - test: battery/email.TestEmail_HeaderInjection
+      - test: battery/email.TestEmail_AttachmentFilenameHeaderInjection
+      - test: battery/email.TestInvisibleHeaderCodepointIsAnError
+  - id: headers-keys-are-field-names
+    rule: A Headers key must be one printable-ASCII field name without a colon, no two keys may fold to one name, and none may name Content-Type, Content-Transfer-Encoding, MIME-Version, From, To, Cc, Bcc, Resent-Bcc or Subject.
+    enforced_by:
+      - test: battery/email.TestHeadersKeyIsOneFieldName
+      - test: battery/email.TestHeadersKeysAreOneFieldEach
+      - test: battery/email.TestHeadersCannotNameMIMEStructure
+  - id: date-and-message-id
+    rule: Every message carries a Date and a random Message-ID unless Headers sets them.
+    enforced_by:
+      - test: battery/email.TestMessageHasDateAndMessageID
+      - test: battery/email.TestHeadersOverrideDateAndMessageID
+  - id: boundary-cannot-be-forged
+    rule: Each multipart container gets a fresh crypto-random boundary, and a body with a line starting with its delimiter is refused.
+    enforced_by:
+      - test: battery/email.TestNestedBoundaryCannotBeForged
+      - test: battery/email.TestBoundaryCheckReadsEncodedLines
+      - test: battery/email.TestEmail_BodyCannotInjectMIMEPart
+  - id: attachment-type-is-the-base-type
+    rule: An attachment's Content-Type keeps only the parsed base media type, and its name and filename are encoded parameters, so no caller parameter reaches the wire.
+    enforced_by:
+      - test: battery/email.TestAttachmentContentTypeKeepsOnlyTheBaseType
+      - test: battery/email.TestEmail_FilenameCannotInjectMIMEParam
+  - id: text-and-html-are-alternative
+    rule: A text and an HTML body go out as multipart/alternative, text first, wrapped in multipart/mixed when attachments are present.
+    enforced_by:
+      - test: battery/email.TestTextAndHTMLAreAlternative
+  - id: bodies-are-quoted-printable
+    rule: Bodies go out quoted-printable with CRLF line endings and no line past 76 octets.
+    enforced_by:
+      - test: battery/email.TestBodyLinesAreCRLFAndShort
+  - id: non-ascii-headers-are-encoded
+    rule: A non-ASCII Subject or display name is written as RFC 2047 encoded words, and every header line is folded within 998 octets.
+    enforced_by:
+      - test: battery/email.TestNonASCIIHeadersAreEncoded
+      - test: battery/email.TestLongHeadersFoldUnder998

@@ -123,6 +123,11 @@ Built-in CSS utilities available in your document components:
 `.page-break` (force a page break), `.avoid-break` (keep a block together),
 `.print-only` / `.screen-only` (show content only in one medium).
 
+On screen the document is a centred column `820px` wide; set
+`--ui-print-doc-max-width` in your app's style sheet to change it. The
+print base reads design tokens with fallbacks, so it looks right with or
+without `AppCSSURL`, and drops shadows and backgrounds under `@media print`.
+
 ## Access control
 
 Printable documents usually contain per-user data, so access is

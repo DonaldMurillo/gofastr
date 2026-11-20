@@ -15,10 +15,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/localapp"
 )
 
-// mcpSession serves one stdio MCP session against the App's MCP
-// server. The session runs as the local identity the gate gives a
-// signed-in browser: the control socket already proved the caller is
-// the OS user the daemon runs as.
 func mcpSession(srv *mcp.Server, user *localapp.User) func(context.Context, io.Reader, io.Writer) {
 	return func(ctx context.Context, in io.Reader, out io.Writer) {
 		if user != nil {
@@ -28,12 +24,6 @@ func mcpSession(srv *mcp.Server, user *localapp.User) func(context.Context, io.R
 	}
 }
 
-// mcpCommand is the argv that bridges an agent to the daemon whose
-// state directory is dir: `<exe> service mcp [--dev] --state-dir
-// <dir>`. The directory is spelled out because an agent starts the
-// command from its own working directory and environment, which pick
-// neither a worktree's dev run nor a GOFASTR_SERVICE_DATA_DIR base.
-// Nil when the executable path is unknown.
 func mcpCommand(dev bool, dir string) []string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -46,16 +36,7 @@ func mcpCommand(dev bool, dir string) []string {
 	return append(argv, "--state-dir", dir)
 }
 
-// mcpBridge is `service mcp`: it connects to the running daemon's
-// control socket and copies stdin to the daemon's MCP server and its
-// replies to stdout, so an agent configured with this command as a
-// stdio MCP server reaches the app with no token: the socket admits
-// only the same OS user. stateDir, when set, names the daemon's state
-// directory instead of resolving it from dev, the working directory and
-// the environment.
 func (b *Battery) mcpBridge(dev bool, stateDir string, in io.Reader, out io.Writer) error {
-	// With --state-dir the environment is never consulted, so an agent
-	// whose environment cannot resolve a layout still connects.
 	var l layout
 	if stateDir != "" {
 		if !filepath.IsAbs(stateDir) {
@@ -84,8 +65,6 @@ func (b *Battery) mcpBridge(dev bool, stateDir string, in io.Reader, out io.Writ
 
 	go func() {
 		_, _ = io.Copy(c, in)
-		// End of input ends the session: half-close so the daemon
-		// sees EOF and still flushes its last replies.
 		if uc, ok := c.(*net.UnixConn); !ok || uc.CloseWrite() != nil {
 			c.Close()
 		}

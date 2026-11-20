@@ -12,27 +12,25 @@ import (
 	ttpl "text/template"
 )
 
-// Template represents an email template with subject, text, and HTML bodies.
-// Fields may contain Go template directives like {{.Name}}.
+// Template represents an email template with subject, text, and HTML
+// bodies.
 type Template struct {
 	Subject  string
 	TextBody string
 	HTMLBody string
 }
 
-// Execute fills the template with the provided data and returns a complete Email.
-// The From and To fields must be set by the caller after execution.
+// Execute fills the template with the provided data and returns a
+// complete Email.
 func Execute(tmpl Template, data map[string]any) (Email, error) {
 	var email Email
 
-	// Render subject
 	subject, err := renderTemplate(ttpl.New, "text", tmpl.Subject, data)
 	if err != nil {
 		return Email{}, fmt.Errorf("email: render subject: %w", err)
 	}
 	email.Subject = subject
 
-	// Render text body
 	if tmpl.TextBody != "" {
 		text, err := renderTemplate(ttpl.New, "text", tmpl.TextBody, data)
 		if err != nil {
@@ -41,7 +39,6 @@ func Execute(tmpl Template, data map[string]any) (Email, error) {
 		email.TextBody = text
 	}
 
-	// Render HTML body
 	if tmpl.HTMLBody != "" {
 		html, err := renderTemplate(template.New, "html", tmpl.HTMLBody, data)
 		if err != nil {
@@ -53,11 +50,6 @@ func Execute(tmpl Template, data map[string]any) (Email, error) {
 	return email, nil
 }
 
-// renderTemplate parses src with the passed template constructor
-// (text/template's or html/template's New) and executes it against
-// data, returning the rendered string. name is the template name error
-// messages carry. It replaces the former executeText and executeHTML,
-// whose bodies were identical except for the engine and that name.
 func renderTemplate[T interface {
 	Parse(string) (T, error)
 	Execute(io.Writer, any) error
@@ -74,11 +66,6 @@ func renderTemplate[T interface {
 }
 
 // LoadFromDir loads email templates from a directory.
-// It expects files with .txt and .html extensions, paired by name.
-// For example, "welcome.txt" and "welcome.html" become a Template named "welcome".
-// Subject lines are extracted from the first line of .txt files if it starts
-// with "Subject: ", or from .html files if no .txt is present.
-// Alternatively, a .subject file with the same base name can provide the subject.
 func LoadFromDir(dir string) (map[string]Template, error) {
 	templates := make(map[string]Template)
 
@@ -87,8 +74,7 @@ func LoadFromDir(dir string) (map[string]Template, error) {
 		return nil, fmt.Errorf("email: read template dir: %w", err)
 	}
 
-	// Group files by base name (without extension).
-	fileMap := make(map[string]map[string]string) // basename -> ext -> content
+	fileMap := make(map[string]map[string]string)
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -167,11 +153,6 @@ func LoadFromFS(fsys fs.FS) (map[string]Template, error) {
 	return templates, nil
 }
 
-// templateFromFiles builds one Template from a basename's grouped
-// contents (extension → file bytes): the subject comes from a .subject
-// file when present, otherwise from a leading "Subject: " line
-// stripped off the .txt or .html body. Replaces the two identical
-// build loops formerly inline in LoadFromDir and LoadFromFS.
 func templateFromFiles(files map[string]string) Template {
 	var tmpl Template
 	if subject, ok := files[".subject"]; ok {
@@ -186,10 +167,6 @@ func templateFromFiles(files map[string]string) Template {
 	return tmpl
 }
 
-// stripSubjectLine extracts a leading "Subject: " line from body when
-// subject is empty, returning the new subject and the remaining body
-// (empty when the subject line was the only line). Replaces the two
-// near-identical .txt/.html extraction blocks the build loops carried.
 func stripSubjectLine(subject, body string) (string, string) {
 	if subject != "" {
 		return subject, body
@@ -199,9 +176,6 @@ func stripSubjectLine(subject, body string) (string, string) {
 	if !ok {
 		return subject, body
 	}
-	// A CRLF file leaves the "\r" on the first line. Kept, it reaches
-	// the Subject header, and buildMessage refuses every send of the
-	// template as header injection.
 	after = strings.TrimSuffix(after, "\r")
 	if len(lines) > 1 {
 		return after, lines[1]

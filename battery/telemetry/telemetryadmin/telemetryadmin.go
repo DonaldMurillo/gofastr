@@ -1,12 +1,4 @@
-// Package telemetryadmin puts battery/telemetry's request and log
-// screens in the admin's sidebar, behind the admin's own gate:
-//
-//	admin.New(admin.Config{Pages: telemetryadmin.Pages(tel, "/admin")})
-//
-// It is a package of its own so that neither battery links the other
-// for an app that uses only one.
-//
-// Experimental, with battery/telemetry.
+// Package telemetryadmin puts the telemetry screens in the admin's sidebar.
 package telemetryadmin
 
 import (
@@ -27,14 +19,10 @@ import (
 // NavGroup is the sidebar group the pages sit in.
 const NavGroup = "telemetry"
 
-// Pages returns the Overview, Requests, Issues and Logs pages for tel. adminPrefix is the
-// admin's Config.PathPrefix ("/admin"): the pages link to each other
-// under it.
+// Pages returns the Overview, Requests, Issues and Logs pages for tel.
 func Pages(tel *telemetry.Plugin, adminPrefix string) []admin.Page {
 	prefix := strings.TrimRight(adminPrefix, "/")
 	screens := telemetryui.NewScreens(tel, prefix+"/telemetry", false)
-	// The newest page of each list re-fetches its rows from the admin's
-	// page-part route, which the admin gates as it gates the page.
 	screens.Live = func(list string) string { return admin.PagePartPath(prefix, "/telemetry/"+list) }
 	build := func(draw func(context.Context) render.HTML) func(*http.Request) (component.Component, error) {
 		return func(*http.Request) (component.Component, error) { return page{draw: draw}, nil }
@@ -55,11 +43,6 @@ func Pages(tel *telemetry.Plugin, adminPrefix string) []admin.Page {
 	return pages
 }
 
-// platformOnly admits a caller with no tenant. The files hold every
-// tenant's request paths, client addresses, errors and log lines in
-// one directory, with nothing to tell one tenant's from another's: an
-// admin scoped to a tenant would read all of them. The admin refuses
-// the same callers on its own tenant-less pages (the queue, roles).
 func platformOnly(ctx context.Context) bool { return tenant.GetTenantID(ctx) == "" }
 
 type page struct {

@@ -18,10 +18,6 @@ var (
 	procFreeConsole      = kernel32.NewProc("FreeConsole")
 )
 
-// redirectDaemonOutput sends the daemon's stdout and stderr to its log
-// file. Task Scheduler captures neither, and a console binary started
-// at logon gets a console window, which is hidden and detached here.
-// Build with -ldflags=-H=windowsgui to avoid the window altogether.
 func redirectDaemonOutput(logPath string) error {
 	if err := ensurePrivateDir(filepath.Dir(logPath)); err != nil {
 		return err

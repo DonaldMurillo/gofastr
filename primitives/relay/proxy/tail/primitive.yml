@@ -1,0 +1,28 @@
+primitive: relay.proxy.tail
+summary: The sink-side check on a subtree route's path remainder and its join onto the upstream base path.
+code:
+  - battery/relay/tail.go
+docs:
+  - framework/docs/content/relay.md
+invariants:
+  - id: hostile-tail-is-refused
+    rule: A tail is refused with 400 when the request URL carries a non-canonical percent-encoding, or the tail holds a control byte, a backslash, a "#", an empty segment other than one trailing slash, or a "." or ".." segment.
+    enforced_by:
+      - test: battery/relay.TestValidateTailRejectsHostileForms
+      - test: battery/relay.TestHostileTailsRejectedOrStayOnHost
+      - test: battery/relay.TestRawFragmentTailRefused
+  - id: trailing-slash-is-kept
+    rule: A tail's trailing slash, and an exact route's base-path slash, reach the upstream path.
+    enforced_by:
+      - test: battery/relay.TestTrailingSlashTailForwarded
+      - test: battery/relay.TestExactRouteKeepsBaseSlash
+      - test: battery/relay.TestJoinUpstreamPathSlash
+decisions:
+  - id: refuse-not-truncate
+    date: 2026-11-20
+    status: accepted
+    decision: validateTail refuses a hostile tail.
+    rejected:
+      - option: Truncate it the way router.Param does.
+        why: A truncated tail proxies a different path than the one the client asked for, and encoded forms survive the router decoded into the tail.
+    upholds: [hostile-tail-is-refused]

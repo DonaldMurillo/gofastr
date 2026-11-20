@@ -1,0 +1,30 @@
+primitive: log.access
+summary: The access-log and panic-recovery middleware the plugin installs, one bounded, scrubbed access line per request.
+code:
+  - battery/log/middleware.go
+docs:
+  - framework/docs/content/log.md
+invariants:
+  - id: access-fields-scrubbed-and-capped
+    rule: The access line's method, path and forwarded_for pass ScrubControlBytes, the path and forwarded_for are cut at 2 KiB, forwarded_for joins every X-Forwarded-For line, and the query string is never logged.
+    enforced_by:
+      - test: battery/log.TestAccessEntryScrubbedOfControlBytes
+      - test: battery/log.TestAccessInvisibleCharsScrubbed
+      - test: battery/log.TestAccessPathCapped
+      - test: battery/log.TestForwardedHeaderCapped
+      - test: battery/log.TestAccessLogAllForwardedLines
+      - test: battery/log.TestAccessLogOmitsQueryString
+  - id: remote-is-the-peer-by-default
+    rule: The remote field is the connection's address unless TrustForwardedFor is set.
+    enforced_by:
+      - test: battery/log.TestSpoofedXFFDoesNotChangeRemote
+  - id: panic-recovered-and-capped
+    rule: A handler panic is recovered, reported with its value cut at 4 KiB, and answered 500, except http.ErrAbortHandler, which is re-raised.
+    enforced_by:
+      - test: battery/log.TestPanicEntrySizeCapped
+      - test: battery/log.TestRecoveryReraisesAbortHandler
+      - test: battery/log.TestPluginRecoversPanic
+  - id: informational-status-not-logged
+    rule: A 1xx other than 101 does not become the logged status.
+    enforced_by:
+      - test: battery/log.TestAccessLogKeepsStatusAfterHints

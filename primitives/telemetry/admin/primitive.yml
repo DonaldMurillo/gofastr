@@ -1,0 +1,11 @@
+primitive: telemetry.admin
+summary: The telemetry screens as admin pages in the sidebar, behind the admin's gate.
+code:
+  - battery/telemetry/telemetryadmin/
+docs:
+  - framework/docs/content/telemetry.md
+invariants:
+  - id: platform-callers-only
+    rule: Every page refuses a caller with a tenant, since the files hold every tenant's lines.
+    enforced_by:
+      - test: battery/telemetry/telemetryadmin.TestPagesRefuseATenantScopedCaller

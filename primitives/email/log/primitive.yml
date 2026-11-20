@@ -1,0 +1,26 @@
+primitive: email.log
+summary: LogSender, the development sender that prints a message to a writer, and RedactBody, the credential scrub it and notify's LoggerChannel share.
+code:
+  - battery/email/log.go
+docs:
+  - framework/docs/content/email.md
+invariants:
+  - id: bcc-never-printed
+    rule: LogSender prints no Bcc recipient and no Bcc label.
+    enforced_by:
+      - test: battery/email.TestLogSender_DoesNotExposeBCCRecipients
+  - id: sensitive-headers-withheld
+    rule: LogSender prints no header named in sensitiveHeaderNames, compared case-insensitively.
+    enforced_by:
+      - test: battery/email.TestLogSender_DoesNotExposeSensitiveHeaders
+  - id: bodies-and-headers-redacted
+    rule: The text and HTML bodies and every header value pass RedactBody, which removes URLs whose query names a token, code, key, secret or password parameter and Bearer values.
+    enforced_by:
+      - test: battery/email.TestLogSender_DoesNotExposeLiveResetLinks
+      - test: battery/email.TestRedactBodyEveryParam
+      - test: battery/email.TestRedactBodyDropsBearerValue
+  - id: terminal-output-is-scrubbed
+    rule: Every header line LogSender prints passes scrubHeaderValue and every body logText, so no control, C1 or invisible codepoint reaches the terminal.
+    enforced_by:
+      - test: battery/email.TestLogSenderScrubsHeaders
+      - test: battery/email.TestLogSenderScrubsBodiesAndAttachments

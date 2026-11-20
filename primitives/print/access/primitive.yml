@@ -1,0 +1,26 @@
+primitive: print.access
+summary: The access policies that gate a print document before its Build runs, and the print:read scope a token needs to reach them.
+code:
+  - battery/print/access.go
+docs:
+  - framework/docs/content/print.md
+invariants:
+  - id: default-access-is-require-auth
+    rule: A document with no Access under a Config with no DefaultAccess is gated by RequireAuth, so an anonymous caller gets 401.
+    enforced_by:
+      - test: battery/print.TestDefaultRequiresAuth
+      - test: battery/print.TestSecPerUserDocNotPublic
+  - id: scoped-caller-needs-print-scope
+    rule: RequireAuth and RequireOwner answer 403 to a scope-restricted caller that does not hold Scope, and RequireOwner does not call owns for it.
+    enforced_by:
+      - test: battery/print.TestPrintGatesNarrowByScope
+  - id: owner-mismatch-is-forbidden
+    rule: RequireOwner answers 401 with no user and 403 when owns returns false.
+    enforced_by:
+      - test: battery/print.TestOwnerMismatchForbidden
+      - test: battery/print.TestRequireOwnerAllows
+  - id: policy-runs-before-build
+    rule: The access policy runs before Build on the HTML and PDF routes, so a refused caller triggers no data load.
+    enforced_by:
+      - test: battery/print.TestPDFAppliesAccessGate
+      - test: battery/print.TestDefaultRequiresAuth

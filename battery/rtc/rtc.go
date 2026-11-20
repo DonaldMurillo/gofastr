@@ -2,36 +2,7 @@
 // core/stream.StateChannel WebSocket per room, addressed relay of
 // offer/answer/ICE frames, ICE server configuration with per-peer
 // time-limited TURN credentials, and cross-replica relay over
-// core/fanout. Signaling only: SDP and ICE candidates cross the Go
-// process as uninterpreted bytes, media never does. The browser half
-// is the `rtc` runtime module (`__gofastr.connectRoom`).
-//
-// Identity is server-derived. A client names nothing about itself on
-// the wire; every Join field comes from the host's own authorization
-// (cookies, sessions, handler.GetUser) through Config.Authorize. The
-// TURN static-auth-secret never leaves the process: each peer's
-// credential is minted at snapshot time and marshaled for that peer
-// only.
-//
-// Usage:
-//
-//	app.RegisterPlugin(rtc.New(rtc.Config{
-//	    ICEServers: []rtc.ICEServer{{URLs: []string{"stun:stun.example.net:3478"}}},
-//	    Authorize: func(r *http.Request) (rtc.Join, error) {
-//	        // resolve the room and identity from the app's own auth
-//	        return rtc.Join{Room: "support-17", User: "u_42", Role: "caller"}, nil
-//	    },
-//	}))
-//
-// A join with no Join.User is refused with 403 unless
-// Config.AnonymousSeats names a policy (AnonymousPerSocket).
-//
-// Init mounts the endpoint (GET Config.Path, default /__gofastr/rtc)
-// and wires Close into app shutdown; App.Mount wires SetFanout
-// automatically when the app has WithFanout.
-//
-// Serve skips Authorize when the caller has already authorized the
-// request and passes its own Join.
+// core/fanout.
 package rtc
 
 import (
@@ -55,12 +26,10 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-// DefaultPath is the WebSocket endpoint Mount registers when
-// Config.Path is empty.
+// DefaultPath is the WebSocket endpoint Mount registers when Config.Path
+// is empty.
 const DefaultPath = "/__gofastr/rtc"
 
-// Defaults applied by New when a Config field is zero. Negative values
-// are refused at New, not silently remapped.
 const (
 	defaultMaxPeers              = 8
 	defaultMaxSignalBytes        = 48 * 1024
@@ -72,7 +41,7 @@ const (
 )
 
 // ICEServer is one entry of the RTCConfiguration.iceServers list handed
-// to a peer. JSON tags match the browser's RTCIceServer dictionary.
+// to a peer.
 type ICEServer struct {
 	URLs       []string `json:"urls"`
 	Username   string   `json:"username,omitempty"`
@@ -80,25 +49,16 @@ type ICEServer struct {
 }
 
 // TURN mints per-peer, time-limited TURN credentials in the coturn
-// static-auth-secret convention (also called the TURN REST API):
-// username is "<unix-expiry>:<peer id>", credential is
-// base64(HMAC-SHA1(secret, username)). The secret is shared with the
-// TURN server and never leaves the Go process; each peer receives only
-// its own credential, inside its own snapshot.
+// static-auth-secret convention (also called the TURN REST API): username
+// is "<unix-expiry>:<peer id>", credential is base64(HMAC-SHA1(secret,
+// username)).
 type TURN struct {
 	URLs   []string      // "turn:host:3478?transport=udp", "turns:host:5349"
 	Secret string        // static-auth-secret configured on the TURN server
 	TTL    time.Duration // credential lifetime; 0 means 1h; minimum 1m
 }
 
-// Credentials (in turn.go) returns the ICEServer entry for one peer,
-// valid until now+TTL. Exported so a host can mint credentials for a
-// non-browser peer or a test can pin the algorithm.
-
-// Join is the server-derived identity of one connecting peer. Every
-// field comes from the host's own authorization (cookies, sessions,
-// handler.GetUser), never from the wire: a client names nothing about
-// itself except through the host's Authorize.
+// Join is the server-derived identity of one connecting peer.
 type Join struct {
 	Room        string // required; 1-128 bytes, printable ASCII, no whitespace
 	Role        string // optional app label ("caller", "viewer"); 0-32 bytes, same charset
@@ -107,9 +67,7 @@ type Join struct {
 	DisplayName string // optional; 0-64 bytes; control bytes refused
 }
 
-// PeerInfo is a room member as every other member sees it. Order is the
-// join instant in Unix nanoseconds and decides negotiation politeness
-// (see the wire protocol's politeness rule); ties break on ID.
+// PeerInfo is a room member as every other member sees it.
 type PeerInfo struct {
 	ID          string          `json:"id"`
 	Role        string          `json:"role,omitempty"`
@@ -120,73 +78,46 @@ type PeerInfo struct {
 }
 
 type Config struct {
-	// ICEServers is the static list every peer receives (STUN servers,
-	// or TURN entries with long-lived credentials the host accepts).
-	// Only stun:, stuns:, turn:, turns: URL schemes are allowed; New
-	// refuses anything else.
+	// ICEServers is the static list every peer receives (STUN servers, or
+	// TURN entries with long-lived credentials the host accepts).
 	ICEServers []ICEServer
 
 	// TURN, when set, appends a per-peer time-limited entry.
 	TURN *TURN
 
-	// Authorize decides who joins which room. Required for Mount and
-	// ServeHTTP; Serve callers pass their own Join and may leave it nil.
-	// A returned error refuses the upgrade with 403 (or the status
-	// carried by a *HTTPError). The Join it returns is trusted.
+	// Authorize decides who joins which room.
 	Authorize func(r *http.Request) (Join, error)
 
-	// Path is the WebSocket endpoint Mount registers. Default
-	// "/__gofastr/rtc". Validated like relay.Config.Path: absolute, no
-	// trailing slash, no traversal, no percent-encoding.
+	// Path is the WebSocket endpoint Mount registers.
 	Path string
 
-	// MaxPeers caps members per room, local plus remote; default 8. A
-	// join past the cap is refused with 409 before the upgrade. Mesh
-	// cost is O(n²) connections; an SFU is a different product.
+	// MaxPeers caps members per room, local plus remote; default 8.
 	MaxPeers int
 
-	// MaxSignalBytes caps one signaling payload (SDP, ICE candidate);
-	// default 48 KiB. Larger frames are dropped and the peer closed.
-	// A camera plus a data channel offers in 3-8 KiB; many codecs,
-	// simulcast, and several tracks reach 15-25 KiB. The cap plus 1 KiB
-	// of envelope must fit WS.ReadLimit (at most 64 KiB), or New panics
-	// rather than accept a cap the socket would cut off first.
+	// MaxSignalBytes caps one signaling payload (SDP, ICE candidate); default
+	// 48 KiB.
 	MaxSignalBytes int
 
 	// MaxStatusBytes caps a peer's status document; default 1 KiB.
 	MaxStatusBytes int
 
-	// MaxFramesPerSecond caps inbound frames per socket (token bucket,
-	// burst = 2× rate); default 128. Over the cap the socket is closed.
+	// MaxFramesPerSecond caps inbound frames per socket (token bucket, burst
+	// = 2× rate); default 128.
 	MaxFramesPerSecond int
 
 	// MaxSocketsPerUser caps concurrent signaling sockets per principal
-	// (Join.User) across every room; default 16, the core/stream seat
-	// parity (SSE broker, CRUD event stream). A principal's next socket
-	// past the cap displaces its oldest one — the replace-on-rejoin
-	// policy, applied across rooms — so a reconnecting client always
-	// wins and one principal can never park unbounded read loops and
-	// per-room channel goroutines. Zero keeps the default. A socket with
-	// no Join.User has no principal to count against; AnonymousSeats
-	// decides whether it may join at all.
+	// (Join.User) across every room; default 16, the core/stream seat parity
+	// (SSE broker, CRUD event stream).
 	MaxSocketsPerUser int
 
 	// AnonymousSeats decides what a join with an empty Join.User gets.
-	// The zero value, AnonymousRefused, refuses it with 403 before the
-	// upgrade: anonymous callers used to share one seat bucket, so the
-	// 17th evicted the first, who rejoined and evicted the next.
-	// AnonymousPerSocket admits it with a seat of its own, so only
-	// MaxPeers bounds it and one person can hold many sockets; pick it
-	// for a public lobby where the app knows no user.
 	AnonymousSeats AnonymousSeatPolicy
 
-	// RoomIdleTTL is how long an empty room's state survives before it
-	// is dropped; default 1 minute. Rooms are created on first join.
+	// RoomIdleTTL is how long an empty room's state survives before it is
+	// dropped; default 1 minute.
 	RoomIdleTTL time.Duration
 
-	// WS is applied to every upgrade. ConnectionID and OnClose are
-	// owned by the package and overwritten. Leave zero for defaults
-	// (ReadLimit is forced to at most 64 KiB either way).
+	// WS is applied to every upgrade.
 	WS stream.WSConfig
 
 	Logger *slog.Logger // nil means slog.Default()
@@ -197,70 +128,47 @@ type Config struct {
 type AnonymousSeatPolicy int
 
 const (
-	// AnonymousRefused refuses a join with no Join.User (403). The default.
+	// AnonymousRefused refuses a join with no Join.User (403).
 	AnonymousRefused AnonymousSeatPolicy = iota
-	// AnonymousPerSocket admits a join with no Join.User and gives each
-	// such socket its own seat: MaxPeers still caps the room, but
+	// AnonymousPerSocket admits a join with no Join.User and gives each such
+	// socket its own seat: MaxPeers still caps the room, but
 	// MaxSocketsPerUser does not apply.
 	AnonymousPerSocket
 )
 
 // Signaler is one signaling server: the room set, its sockets, and the
-// optional cross-replica fanout lane. Construct with New, register
-// with App.RegisterPlugin. Implements framework.Plugin.
+// optional cross-replica fanout lane.
 type Signaler struct {
 	cfg    Config
 	logger *slog.Logger
 
-	// testAtAnnounce / testAnnounceGate, when set, are a test seam on
-	// a joining socket's goroutine between its snapshot being queued
-	// and its join being announced: Serve sends the peer id on the
-	// first and waits on the second, so the join-ordering test can
-	// place a second socket inside the hydrate-then-announce window.
-	// Both nil outside tests.
 	testAtAnnounce   chan string
 	testAnnounceGate chan struct{}
 
-	// mu serializes every room mutation and every channel Publish, so
-	// event order on a room's channel equals mutation order (the
-	// sequence discipline StateChannel snapshots reconcile against).
-	mu    sync.Mutex
-	rooms map[string]*room
-	// seatOrder is the per-principal socket FIFO the seat cap evicts
-	// from; guarded by mu (seats.go).
+	mu        sync.Mutex
+	rooms     map[string]*room
 	seatOrder map[string][]*socketSeat
 
 	closed bool
 
-	// Cross-replica state; empty until SetFanout.
 	fanout       fanout.Fanout
 	nodeID       string
 	fanoutSend   func([]byte, func(error))
 	fanoutStopQ  func()
 	fanoutCancel func()
-	remote       map[string]map[string]*remoteEntry // room -> replica node -> roster
+	remote       map[string]map[string]*remoteEntry
 	beatDone     chan struct{}
 	beatWG       sync.WaitGroup
 
-	// Test knobs: production runs on the defaults (see fanout.go).
-	heartbeatEvery time.Duration
-	// recheckEvery paces the idle re-check of a joined socket's
-	// principal (default peerRecheckEvery).
-	recheckEvery time.Duration
-	remoteTTL    time.Duration
-	// turnRefreshEvery is the credential push interval (default half
-	// the TURN TTL); refreshDone stops the loop, refreshWG joins it.
+	heartbeatEvery   time.Duration
+	recheckEvery     time.Duration
+	remoteTTL        time.Duration
 	turnRefreshEvery time.Duration
 	refreshDone      chan struct{}
 	refreshWG        sync.WaitGroup
 }
 
-// New validates cfg and constructs the Signaler. It panics on invalid
-// configuration with a message prefixed "rtc:": a bad rtc Config is a
-// construction-time programmer error (same posture as relay.New and
-// framework.NewApp's registration panics), not a runtime condition
-// the process should limp along with. Call Close when done, or let
-// Init wire it to app shutdown.
+// New validates cfg and constructs the Signaler.
 func New(cfg Config) *Signaler {
 	if cfg.Path == "" {
 		cfg.Path = DefaultPath
@@ -296,14 +204,9 @@ func New(cfg Config) *Signaler {
 	if cfg.RoomIdleTTL == 0 {
 		cfg.RoomIdleTTL = defaultRoomIdleTTL
 	}
-	// At most 64 KiB either way: a host may tighten, never loosen.
 	if cfg.WS.ReadLimit <= 0 || cfg.WS.ReadLimit > defaultWSReadLimit {
 		cfg.WS.ReadLimit = defaultWSReadLimit
 	}
-	// A payload cap the socket cannot carry is dead config: the frame
-	// is cut off by the read limit before the cap is consulted, and the
-	// host would believe it allowed something it silently drops. The
-	// slack covers the JSON envelope around the payload.
 	const envelopeSlack = 1024
 	if int64(cfg.MaxSignalBytes)+envelopeSlack > cfg.WS.ReadLimit {
 		panic(fmt.Sprintf("rtc: MaxSignalBytes %d does not fit the socket read limit %d (at most %d)",
@@ -313,10 +216,6 @@ func New(cfg Config) *Signaler {
 		panic(fmt.Sprintf("rtc: MaxStatusBytes %d does not fit the socket read limit %d (at most %d)",
 			cfg.MaxStatusBytes, cfg.WS.ReadLimit, cfg.WS.ReadLimit-envelopeSlack))
 	}
-	// Signaling bursts (trickle ICE from a full room) queue deeper
-	// than presence does, and an overflow closes the socket here
-	// (see newRoomLocked), so the default buffer is four times the
-	// stream package's.
 	if cfg.WS.SendBuffer == 0 {
 		cfg.WS.SendBuffer = defaultWSSendBuffer
 	}
@@ -342,18 +241,11 @@ func New(cfg Config) *Signaler {
 func (s *Signaler) Name() string { return "rtc" }
 
 // ReservedEmbedPrefixes reports the path this Signaler actually mounted.
-// Authorize reads the request's user, and an embed grant installs its
-// subject as that user, so a grant living in a stranger's page would join
-// rooms as the subject. No embed surface may reach it. See
-// framework.EmbedReserving.
 func (s *Signaler) ReservedEmbedPrefixes() []string { return []string{s.cfg.Path} }
 
-// Init is the lifecycle path: Mount on the App (which registers the
-// route and, when the app has WithFanout, wires SetFanout) and Close
-// into app shutdown. A nil Config.Authorize is returned as an error,
-// not a panic: plugin wiring is a runtime step the host can react to.
-// Mount keeps its panic for the direct-mount spelling of the same
-// rule.
+// Init is the lifecycle path: Mount on the App (which registers the route
+// and, when the app has WithFanout, wires SetFanout) and Close into app
+// shutdown.
 func (s *Signaler) Init(app *framework.App) error {
 	if s.cfg.Authorize == nil {
 		return errors.New("rtc: Init: Config.Authorize is nil: the endpoint must decide who joins")
@@ -366,9 +258,6 @@ func (s *Signaler) Init(app *framework.App) error {
 	return nil
 }
 
-// validatePath enforces the mount contract, the same rules
-// relay.Config.Path applies: absolute, clean, no percent-encoding, no
-// control bytes.
 func validatePath(p string) error {
 	if !strings.HasPrefix(p, "/") {
 		return fmt.Errorf("rtc: Config.Path %q must be absolute (start with /)", p)
@@ -416,9 +305,6 @@ func validateICEServers(cfg Config) error {
 	return nil
 }
 
-// validJoin enforces the Join contract: the room is a plain path-shaped
-// token, identity fields are bounded, and nothing carries control
-// bytes into logs or the roster.
 func validJoin(j Join) error {
 	if !printableToken(j.Room, 1, 128) {
 		return fmt.Errorf("rtc: Join.Room must be 1-128 bytes of printable ASCII without whitespace")
@@ -438,8 +324,6 @@ func validJoin(j Join) error {
 	return nil
 }
 
-// printableToken reports whether s is n..max bytes of printable ASCII
-// excluding whitespace (0x21-0x7E).
 func printableToken(s string, min, max int) bool {
 	if len(s) < min || len(s) > max {
 		return false
@@ -452,10 +336,6 @@ func printableToken(s string, min, max int) bool {
 	return true
 }
 
-// scrubLogField strips C0 control bytes and DEL so a room name or peer
-// id that somehow carries them cannot forge log lines. Join validation
-// already refuses them; this is the sink-side backstop the controlbytes
-// analyzer pins.
 func scrubLogField(s string) string {
 	if !strings.ContainsAny(s, "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f") {
 		return s
@@ -471,11 +351,7 @@ func scrubLogField(s string) string {
 	return b.String()
 }
 
-// Mount registers GET cfg.Path → ServeHTTP on the router. It panics if
-// Config.Authorize is nil: a mounted signaling endpoint with no gate is
-// a bug, not a default. The Signaler also satisfies the framework's
-// Mountable seam, so App.Mount wires SetFanout automatically when the
-// app has WithFanout.
+// Mount registers GET cfg.Path → ServeHTTP on the router.
 func (s *Signaler) Mount(rt *router.Router) {
 	if s.cfg.Authorize == nil {
 		panic("rtc: Mount: Config.Authorize is nil: a mounted signaling endpoint must decide who joins")
@@ -499,44 +375,24 @@ func (s *Signaler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.refuse(w, r, http.StatusForbidden, i18n.Phrase{}, nil)
 		return
 	}
-	// The socket outlives this answer. Re-ask on the refreshed request:
-	// a peer Authorize would now refuse, or would place in another room or
-	// role or under another user, is closed (see serve).
 	s.serve(w, r, join, func(fresh *http.Request) bool {
 		again, err := s.cfg.Authorize(fresh) //gofastr:allow(unrechecked) this IS the re-run the connect-time call above is judged against, inside the recheck closure handed to serve
 		return err == nil && again.Room == join.Room && again.User == join.User && again.Role == join.Role
 	})
 }
 
-// refuse answers a refused join. A plain request gets the HTTP status
-// and msg as the body. A WebSocket upgrade request is accepted and
-// closed with code 4000+status and msg as the reason: a browser cannot
-// read the status of a failed handshake (the WHATWG spec withholds it
-// so a page cannot probe the network), and the runtime's ws module
-// classes that band as refused and does not reconnect. A status
-// outside 4xx/5xx is sent as 403.
 func (s *Signaler) refuse(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, params map[string]any) {
-	// Clamp before either branch: a host's HTTPError with a stray or
-	// zero Status must not reach WriteHeader (which panics) any more
-	// than the wire.
 	if status < 400 || status > 599 {
 		status = http.StatusForbidden
 	}
 	if reason.IsZero() {
 		reason = i18n.StatusPhrase(status)
 	}
-	// Every Upgrade line: a client may list its protocols across lines
-	// (RFC 9110 §5.3), and the websocket token on a second one is still
-	// an upgrade request.
 	if !httpguts.HeaderValuesContainsToken(r.Header.Values("Upgrade"), "websocket") {
 		i18n.HTTPError(w, r, status, reason, params)
 		return
 	}
 	msg := reason.Text(r.Context(), params)
-	// The close code is on the wire before the close handshake wait
-	// begins, so the wait buys a refusal nothing: at the default 1 s
-	// CloseTimeout every unauthenticated dial pinned a hijacked
-	// socket, its fd, and two goroutines for a second.
 	ws := s.cfg.WS
 	ws.CloseTimeout = refuseCloseTimeout
 	conn, err := stream.Upgrade(w, r, ws)
@@ -547,19 +403,10 @@ func (s *Signaler) refuse(w http.ResponseWriter, r *http.Request, status int, re
 	_ = conn.CloseWithStatus(uint16(4000+status), msg)
 }
 
-// refuseCloseTimeout bounds how long a refused socket waits for the
-// peer's reciprocal close: long enough for a browser on the same host
-// to answer, short enough that a flood pins nothing.
 const refuseCloseTimeout = 20 * time.Millisecond
 
-// Serve (in room.go) upgrades r to a WebSocket, joins the peer to
-// join.Room, and runs the read loop until the socket closes. The
-// caller has already authorized the request; join is trusted. Blocks.
-// Writes the HTTP error itself on a refused join (400 bad Join, 409
-// room full, 503 closed).
-
 // Peers returns the merged local plus live-remote roster of a room,
-// sorted by Order then ID. Empty for an unknown room.
+// sorted by Order then ID.
 func (s *Signaler) Peers(room string) []PeerInfo {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -582,13 +429,7 @@ func (s *Signaler) Rooms() []string {
 	return names
 }
 
-// Kick closes the local socket of one peer. Reports whether a local
-// peer with that id was found; a peer held by another replica is not
-// reached. The close runs off the caller's goroutine, and the leave
-// event is published when the socket's read loop exits. Kick is a nudge, not a revocation: the browser module
-// reconnects with backoff, so a peer that must stay out is refused by
-// Authorize on that reconnect, and a TURN credential it already holds
-// keeps working until TURN.TTL runs out.
+// Kick closes the local socket of one peer.
 func (s *Signaler) Kick(room, peerID string) bool {
 	s.mu.Lock()
 	rm, ok := s.rooms[room]
@@ -607,7 +448,7 @@ func (s *Signaler) Kick(room, peerID string) bool {
 }
 
 // Close stops every room, closes every socket, stops the fanout
-// subscription. Safe to call twice.
+// subscription.
 func (s *Signaler) Close() {
 	s.mu.Lock()
 	if s.closed {
@@ -623,9 +464,6 @@ func (s *Signaler) Close() {
 	s.mu.Unlock()
 	s.refreshWG.Wait()
 
-	// Graceful leave first (inside stopFanout: empty rosters are
-	// published synchronously before the subscription drops), then
-	// stop the rooms.
 	s.stopFanout(rooms)
 	for _, rm := range rooms {
 		rm.channel.Stop()
@@ -641,16 +479,9 @@ const (
 	DisplayCapture Feature = "display-capture"
 )
 
-// PermissionsPolicy returns a Permissions-Policy header value that
-// closes geolocation, microphone, camera, and display-capture and
-// opens the named features to the app's own origin ("(self)"). Every
-// feature is written out: an omitted directive is not a closed one
-// (the default allowlist for camera, microphone, and display-capture
-// is self), so a header that only listed what it opened would open
-// what it left out as well. Hand it to
-// middleware.SecurityHeadersConfig.PermissionsPolicy. Example:
-// PermissionsPolicy(Camera, Microphone) ==
-// "geolocation=(), microphone=(self), camera=(self), display-capture=()".
+// PermissionsPolicy returns a Permissions-Policy header value that closes
+// geolocation, microphone, camera, and display-capture and opens the
+// named features to the app's own origin ("(self)").
 func PermissionsPolicy(features ...Feature) string {
 	wanted := make(map[Feature]bool, len(features))
 	for _, f := range features {

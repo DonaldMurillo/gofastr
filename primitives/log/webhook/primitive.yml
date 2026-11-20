@@ -1,0 +1,27 @@
+primitive: log.webhook
+summary: The webhook sink, a bounded batching queue that posts JSON to a URL with retries, and the HTTPErrorReporter built on it.
+code:
+  - battery/log/webhook.go
+docs:
+  - framework/docs/content/log.md
+invariants:
+  - id: queue-drops-oldest-and-counts
+    rule: A full queue drops its oldest entry and counts the drop.
+    enforced_by:
+      - test: battery/log.TestWebhookDropsOldestWhenQueueFull
+      - test: battery/log.TestWebhookDroppedCounterAdvances
+  - id: retry-only-on-5xx
+    rule: A 5xx or transport error is retried, a 3xx or 4xx is not, and redirects are never followed.
+    enforced_by:
+      - test: battery/log.TestWebhookNoRetryOn4xx
+      - test: battery/log.TestWebhookRetriesOn5xx
+      - test: battery/log.TestWebhookRefusesRedirects
+  - id: content-type-is-forced
+    rule: A configured header never overrides Content-Type application/json, whatever its key's case.
+    enforced_by:
+      - test: battery/log.TestWebhookContentTypeIsForcedWhateverTheKeyCase
+  - id: url-never-in-errors
+    rule: A delivery error carries the webhook URL cut to scheme and host.
+    enforced_by:
+      - test: battery/log.TestWebhookGiveUpWarningHidesURLCredential
+      - test: battery/log.TestWebhookRequestBuildErrorHidesURL

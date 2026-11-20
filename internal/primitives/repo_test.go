@@ -243,6 +243,22 @@ var ownedPackages = []string{
 	"core-ui/widget",
 	"core-ui/ownstyle",
 	"core-ui/style",
+	"battery/notify",
+	"battery/storage",
+	"battery/print",
+	"battery/print/chromepdf",
+	"battery/relay",
+	"battery/setup",
+	"battery/search",
+	"battery/email",
+	"battery/cache",
+	"battery/sitesearch",
+	"battery/telemetry",
+	"battery/telemetry/telemetryui",
+	"battery/telemetry/telemetryadmin",
+	"battery/rtc",
+	"battery/log",
+	"battery/service",
 }
 
 //gofastr:test-reads primitives/ *.go

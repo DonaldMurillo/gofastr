@@ -16,56 +16,46 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// WebhookOpts configures a webhook sink. All fields have sensible defaults.
+// WebhookOpts configures a webhook sink.
 type WebhookOpts struct {
 	// Method defaults to "POST".
 	Method string
 
-	// Headers are appended to every request. Content-Type is forced to
-	// application/json and cannot be overridden here.
+	// Headers are appended to every request.
 	Headers map[string]string
 
-	// BatchSize triggers a flush. Default 50.
+	// BatchSize triggers a flush.
 	BatchSize int
-	// BatchInterval triggers a flush regardless of size. Default 1s.
+	// BatchInterval triggers a flush regardless of size.
 	BatchInterval time.Duration
-	// QueueSize caps the in-memory buffer. When full, the oldest entry
-	// is dropped to make room (drop-oldest, never block the caller).
-	// Default 1000.
+	// QueueSize caps the in-memory buffer.
 	QueueSize int
 
-	// Timeout for each HTTP request. Default 5s.
+	// Timeout for each HTTP request.
 	Timeout time.Duration
-	// MaxRetries on transient failure (5xx, network). Default 3. Exponential
-	// backoff starts at 250ms.
+	// MaxRetries on transient failure (5xx, network).
 	MaxRetries int
 
-	// HTTPClient lets tests inject a stub. Nil = http.Client{Timeout: Timeout}.
+	// HTTPClient lets tests inject a stub.
 	HTTPClient *http.Client
 }
 
-// webhookSink batches entries and POSTs them as {"entries": [<raw json>, ...]}.
-// Entries are stored as []byte and concatenated server-side; no re-decoding.
 type webhookSink struct {
 	url    string
 	opts   WebhookOpts
 	client *http.Client
 
 	mu        sync.Mutex
-	queue     [][]byte // bounded ring
+	queue     [][]byte
 	flush     chan struct{}
 	closed    chan struct{}
 	closeOnce sync.Once
 	done      chan struct{}
 
-	dropped atomic.Uint64 // entries discarded because the queue was full
-	gaveUp  atomic.Uint64 // batches given up after MaxRetries
+	dropped atomic.Uint64
+	gaveUp  atomic.Uint64
 
-	// Rate-limit stderr emissions of "give up" / "4xx" messages so a
-	// persistently broken receiver doesn't drown stderr (which may go
-	// to systemd-journald with its own rate limiter, that limiter
-	// would then drop legitimate logs from elsewhere in the process).
-	lastWarnAt   atomic.Int64 // unix nano
+	lastWarnAt   atomic.Int64
 	warnInterval time.Duration
 }
 
@@ -93,9 +83,6 @@ func WebhookSink(url string, opts WebhookOpts) Sink {
 	if client == nil {
 		client = &http.Client{Timeout: opts.Timeout}
 	}
-	// Refuse redirects, on a host-supplied client too: a 307/308 replays
-	// the batch and every configured header (an X-API-Key) to whatever
-	// host it names. The 3xx is then a failed delivery.
 	cp := *client
 	cp.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
@@ -114,9 +101,6 @@ func WebhookSink(url string, opts WebhookOpts) Sink {
 	return s
 }
 
-// warnOncePer rate-limits stderr emissions so a persistently broken
-// receiver doesn't drown the host's stderr. Returns true if the caller
-// should emit, false if it should stay quiet.
 func (s *webhookSink) shouldWarn() bool {
 	now := time.Now().UnixNano()
 	last := s.lastWarnAt.Load()
@@ -133,9 +117,6 @@ func (s *webhookSink) Write(entry []byte) error {
 	default:
 	}
 	s.mu.Lock()
-	// Again under the lock: a Write that passed the check above while
-	// Close ran would otherwise append behind the final drain, an entry
-	// nobody sends and Dropped never counts.
 	select {
 	case <-s.closed:
 		s.mu.Unlock()
@@ -143,9 +124,6 @@ func (s *webhookSink) Write(entry []byte) error {
 	default:
 	}
 	if len(s.queue) >= s.opts.QueueSize {
-		// Drop oldest to make room. Never block. Counter is surfaced
-		// via Dropped() and emitted to stderr on shutdown so silent
-		// log loss is at least diagnosable.
 		s.queue = s.queue[1:]
 		s.dropped.Add(1)
 	}
@@ -163,7 +141,7 @@ func (s *webhookSink) Write(entry []byte) error {
 }
 
 // Dropped returns the running count of entries discarded because the
-// queue was full. Useful for tests + operators chasing silent log loss.
+// queue was full.
 func (s *webhookSink) Dropped() uint64 { return s.dropped.Load() }
 
 // GaveUp returns the running count of batches given up after exhausting
@@ -171,9 +149,6 @@ func (s *webhookSink) Dropped() uint64 { return s.dropped.Load() }
 func (s *webhookSink) GaveUp() uint64 { return s.gaveUp.Load() }
 
 // Close signals the worker goroutine to flush + exit and waits for it.
-// Cancels any in-flight HTTP retry via the closed channel; bounded to
-// the current attempt's Timeout, then immediate exit. Concurrent /
-// repeated Close calls are safe, only the first signals the worker.
 func (s *webhookSink) Close() error {
 	s.closeOnce.Do(func() { close(s.closed) })
 	<-s.done
@@ -224,9 +199,6 @@ func (s *webhookSink) send(batch [][]byte) {
 		if err == nil {
 			return
 		}
-		// If Close was signalled during this attempt, exit immediately
-		// rather than spending another (Timeout × remaining-attempts)
-		// before respecting shutdown.
 		select {
 		case <-s.closed:
 			s.gaveUp.Add(1)
@@ -250,18 +222,11 @@ func (s *webhookSink) send(batch [][]byte) {
 }
 
 func (s *webhookSink) postOnce(body []byte) (err error) {
-	// The client is the host's (WebhookOpts.HTTPClient): its Transport
-	// runs here on the worker goroutine, which has no recover net. A panic
-	// is one failed delivery, final for this batch (it would panic again),
-	// not the end of the process.
 	defer func() {
 		if r := recover(); r != nil {
 			err = nonRetryableError{fmt.Errorf("log: webhook delivery panicked: %s", textsafe.Recovered(r))}
 		}
 	}()
-	// Bounded by Timeout; we DON'T cancel on s.closed here because the
-	// flush-on-Close path needs the final attempt to complete normally.
-	// Mid-retry shutdown is handled by the post-attempt check in send.
 	ctx, cancel := context.WithTimeout(context.Background(), s.opts.Timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, s.opts.Method, s.url, bytes.NewReader(body))
@@ -270,8 +235,6 @@ func (s *webhookSink) postOnce(body []byte) (err error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	for k, v := range s.opts.Headers {
-		// Header.Set canonicalizes the key, so the skip must too:
-		// "content-type" replaced the forced type.
 		if http.CanonicalHeaderKey(k) == "Content-Type" {
 			continue
 		}
@@ -286,21 +249,11 @@ func (s *webhookSink) postOnce(body []byte) (err error) {
 		return retryableError{code: resp.StatusCode}
 	}
 	if resp.StatusCode >= 300 {
-		// A 3xx (redirects are refused, so it cannot be followed) or a
-		// 4xx is the receiver's answer to this batch: a 401 after a key
-		// rotation or a 413 says the same thing on every attempt.
 		return nonRetryableError{fmt.Errorf("log: webhook %d", resp.StatusCode)}
 	}
 	return nil
 }
 
-// redactURLError strips the webhook URL down to its scheme and host in a
-// *url.Error. net/http renders the whole URL into the message, and an
-// incoming-webhook URL is its own credential (Slack's
-// /services/T…/B…/<secret>, a collector's ?token=…): the give-up warning
-// wrote it to stderr. The host stays so an operator can still tell which
-// receiver failed. Retryability is unchanged: the result is still a
-// *url.Error around the same cause.
 func redactURLError(err error) error {
 	ue, ok := errors.AsType[*url.Error](err)
 	if !ok {
@@ -309,8 +262,6 @@ func redactURLError(err error) error {
 	return &url.Error{Op: ue.Op, URL: redactURL(ue.URL), Err: ue.Err}
 }
 
-// redactURL keeps scheme://host of raw and drops userinfo, path, query
-// and fragment. A string that does not parse becomes a placeholder.
 func redactURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
@@ -319,9 +270,6 @@ func redactURL(raw string) string {
 	return u.Scheme + "://" + u.Host + "/…"
 }
 
-// buildEnvelope serializes batch as {"entries":[ <raw entry 1>, <raw entry 2>, ...]}.
-// Entries are already valid JSON objects from the fan-out handler, so we
-// can splice them in without re-decoding.
 func buildEnvelope(batch [][]byte) []byte {
 	var b bytes.Buffer
 	b.Grow(estimateSize(batch) + 32)
@@ -352,13 +300,9 @@ func isRetryable(err error) bool {
 	if _, ok := errors.AsType[retryableError](err); ok {
 		return true
 	}
-	// Network errors (timeout, refused), http.Client returns *url.Error.
-	// Treat all transport errors as retryable.
 	return err != nil && !errors.As(err, &nonRetryableError{})
 }
 
-// nonRetryableError marks a final answer from the receiver (a 3xx or
-// 4xx): the batch is dropped instead of posted again.
 type nonRetryableError struct{ error }
 
 func (e nonRetryableError) Unwrap() error { return e.error }

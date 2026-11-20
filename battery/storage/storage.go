@@ -12,25 +12,20 @@ import (
 // Storage is a re-export of the upload.Storage interface for convenience.
 type Storage = upload.Storage
 
-// RangeGetter is a re-export of [upload.RangeGetter], the optional capability
-// a backend implements to expose seekable reads so HTTP range requests can be
-// answered. LocalStorage and MemoryStorage implement it; S3Storage declines,
-// a network-backed store would have to buffer the whole object to satisfy
-// Seek, and [WithPresigner] lets the transfer bypass the app entirely.
+// RangeGetter is a re-export of [upload.RangeGetter].
 type RangeGetter = upload.RangeGetter
 
-// Verify interface compliance at compile time.
 var (
 	_ Storage = (*LocalStorage)(nil)
 	_ Storage = (*MemoryStorage)(nil)
 	_ Storage = (*S3Storage)(nil)
 
-	// Backends that can serve byte ranges. S3Storage is deliberately absent.
 	_ RangeGetter = (*LocalStorage)(nil)
 	_ RangeGetter = (*MemoryStorage)(nil)
 )
 
-// KeyValidator validates storage keys to prevent path traversal and other attacks.
+// KeyValidator validates storage keys to prevent path traversal and other
+// attacks.
 type KeyValidator interface {
 	ValidateKey(key string) error
 }
@@ -38,10 +33,7 @@ type KeyValidator interface {
 // DefaultKeyValidator implements basic key validation.
 type DefaultKeyValidator struct{}
 
-// ValidateKey refuses a key that could name something other than the
-// object it spells: the checks of [S3Storage]'s keys (see checkObjectKey)
-// plus a backslash, a separator on Windows. Refusals wrap
-// [upload.ErrInvalidKey].
+// ValidateKey refuses a key S3Storage refuses, or one holding a backslash.
 func (DefaultKeyValidator) ValidateKey(key string) error {
 	if err := checkObjectKey(key); err != nil {
 		return err
@@ -52,14 +44,6 @@ func (DefaultKeyValidator) ValidateKey(key string) error {
 	return nil
 }
 
-// checkObjectKey refuses an empty key, any ".." (the traversal sequence
-// the backends always refused), a control byte (NUL truncates a path in
-// C-backed tooling, CR/LF splits a log or header line), an absolute key,
-// and a key that is not its own clean form (a//b, ./a, a/./b, a trailing
-// slash, "."). Each of those names an object under a second spelling, so
-// a row naming one could erase or serve an object its key never named.
-// Refusals wrap [upload.ErrInvalidKey]; keys the framework mints are
-// already clean.
 func checkObjectKey(key string) error {
 	switch {
 	case key == "":
@@ -76,7 +60,8 @@ func checkObjectKey(key string) error {
 	return nil
 }
 
-// ReadCloser wraps an io.Reader to implement io.ReadCloser with a no-op Close.
+// ReadCloser wraps an io.Reader to implement io.ReadCloser with a no-op
+// Close.
 type ReadCloser struct {
 	io.Reader
 }

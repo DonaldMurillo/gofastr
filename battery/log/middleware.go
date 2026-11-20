@@ -17,40 +17,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
-// Caps on the size of pieces that flow into a log entry. Without these,
-// a hostile or buggy caller can write multi-MB JSON lines per request:
-// Go's default MaxHeaderBytes allows ~1 MiB request lines, so URL.Path
-// or an X-Forwarded-For / X-Real-IP header alone can be that large; a
-// panic with a giant value or stack compounds the problem across every
-// sink. Every request-derived field (path, forwarded_for, remote, panic,
-// stack) is therefore truncated before it reaches a log entry.
 const (
-	maxPanicValueLen = 4 << 10  // 4 KiB
-	maxStackLen      = 64 << 10 // 64 KiB
-	maxPathLen       = 2 << 10  // 2 KiB
+	maxPanicValueLen = 4 << 10
+	maxStackLen      = 64 << 10
+	maxPathLen       = 2 << 10
 )
 
-// accessMiddleware emits one INFO record per request once the response
-// has flushed. Fields: method, path, status, bytes, dur_ms, request_id,
-// remote, forwarded_for.
-//
-// The emit runs in a defer so a panicking handler still gets an entry.
-// When the inner recoveryMiddleware catches a panic it writes status 500
-// to the response; we read that back from the wrapped writer.
-//
-// The URL.Path is snapshotted BEFORE next.ServeHTTP so inner middleware
-// rewrites (StripPrefix, custom rewriters) don't change the logged path.
-//
-// `remote` is r.RemoteAddr by default; if trustXFF is true the first
-// X-Forwarded-For / X-Real-IP value overrides it. Both forms always
-// emit `forwarded_for` (raw) so operators can correlate without trust.
 func accessMiddleware(logger *slog.Logger, trustXFF bool) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
-			// Snapshot path/method up front, inner middleware may
-			// rewrite r.URL; the access log records what the client
-			// actually sent.
 			method := textsafe.ScrubControlBytes(r.Method)
 			path := textsafe.Truncate(textsafe.ScrubControlBytes(r.URL.Path), maxPathLen)
 			forwardedRaw := textsafe.Truncate(textsafe.ScrubControlBytes(strings.Join(r.Header.Values("X-Forwarded-For"), ", ")), maxPathLen)
@@ -72,31 +48,15 @@ func accessMiddleware(logger *slog.Logger, trustXFF bool) middleware.Middleware 
 	}
 }
 
-// recoveryMiddleware recovers panics, reports them through the configured
-// ErrorReporter (default: the log plugin's slog reporter, preserving the
-// http.panic log line), then returns 500. A nil reporter is a safe no-op so
-// the middleware never nil-derefs on the recovery path.
-//
-// The panic value and stack are capped (4 KiB / 64 KiB) so a handler that
-// panics with a 100 MB string doesn't write a 100 MB log entry or POST one
-// to an error collector, the file sink would serialize all of it before
-// rotating, and the webhook sink would try to deliver it as a batch element.
 func recoveryMiddleware(reporter ErrorReporter) middleware.Middleware {
 	if reporter == nil {
 		reporter = noopReporter{}
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// rw records whether the response started (a final status, a
-			// body byte, a flush). A panic after that cannot become a 500:
-			// net/http would drop the status and append the error body to
-			// the bytes already sent.
 			rw := &countingResponseWriter{ResponseWriter: w, status: http.StatusOK}
 			defer func() {
 				if v := recover(); v != nil {
-					// net/http's abort signal, not a bug: re-raise it so the
-					// server drops the connection, the way core/middleware's
-					// Recovery does.
 					if v == http.ErrAbortHandler {
 						panic(v)
 					}
@@ -111,9 +71,6 @@ func recoveryMiddleware(reporter ErrorReporter) middleware.Middleware {
 						ctx:       r.Context(),
 					})
 					if rw.wroteHeader {
-						// Reported above; cut the connection so the client
-						// sees a truncated response, not a 500 body spliced
-						// onto the one it was already reading.
 						panic(http.ErrAbortHandler)
 					}
 					i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
@@ -136,12 +93,9 @@ func (rw *countingResponseWriter) WriteHeader(code int) {
 		return
 	}
 	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
-		rw.ResponseWriter.WriteHeader(code) // informational: forward, keep waiting
+		rw.ResponseWriter.WriteHeader(code)
 		return
 	}
-	// Latch only once the call returned: net/http panics on a code
-	// outside 100-999 before sending anything, and the recovery
-	// middleware still owes that request its 500.
 	rw.ResponseWriter.WriteHeader(code)
 	rw.status = code
 	rw.wroteHeader = true
@@ -149,7 +103,6 @@ func (rw *countingResponseWriter) WriteHeader(code int) {
 
 func (rw *countingResponseWriter) Write(b []byte) (int, error) {
 	if !rw.wroteHeader {
-		// Implicit 200; record it but don't double-call WriteHeader.
 		rw.wroteHeader = true
 	}
 	n, err := rw.ResponseWriter.Write(b)
@@ -159,8 +112,7 @@ func (rw *countingResponseWriter) Write(b []byte) (int, error) {
 
 // ReadFrom keeps the connection's sendfile path: io.Copy and
 // http.ServeContent use the writer's ReaderFrom when it has one, and
-// embedding http.ResponseWriter does not promote it. It latches the
-// implicit 200 and counts the bytes the way Write does.
+// embedding http.ResponseWriter does not promote it.
 func (rw *countingResponseWriter) ReadFrom(src io.Reader) (int64, error) {
 	rw.wroteHeader = true
 	n, err := io.Copy(rw.ResponseWriter, src)
@@ -168,27 +120,17 @@ func (rw *countingResponseWriter) ReadFrom(src io.Reader) (int64, error) {
 	return n, err
 }
 
-// Flush forwards to the underlying ResponseWriter's Flusher if it has one.
-// Without this, any SSE / chunked-JSON / long-poll handler downstream of
-// battery/log returns 500 "streaming unsupported", its
-// `w.(http.Flusher)` assertion fails against the wrapper. Mirrors the
-// fix already present on core/middleware.statusWriter.
+// Flush forwards to the underlying ResponseWriter's Flusher if it has
+// one.
 func (rw *countingResponseWriter) Flush() {
-	// A flush sends the headers: the status is the one set, or 200.
-	// Latch it, so a WriteHeader after the flush (which net/http drops)
-	// does not log a status the client never got.
 	rw.wroteHeader = true
 	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
 }
 
-// Hijack forwards to the underlying ResponseWriter's Hijacker if it has one.
-// Without this, wrapping breaks any handler that performs a WebSocket upgrade
-// or otherwise type-asserts http.Hijacker (e.g. core/stream/websocket.go),
-// because the assertion would see the wrapper instead of the real writer and
-// fail with "does not support hijacking". Mirrors the fix on
-// core/middleware.statusWriter.
+// Hijack forwards to the underlying ResponseWriter's Hijacker if it has
+// one.
 func (rw *countingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hj, ok := rw.ResponseWriter.(http.Hijacker); ok {
 		return hj.Hijack()
@@ -205,23 +147,9 @@ func (rw *countingResponseWriter) Push(target string, opts *http.PushOptions) er
 }
 
 // Unwrap lets http.NewResponseController walk through this wrapper so
-// per-write deadlines reach the real connection. battery/log is the
-// production access-log path, so without this every streaming handler
-// behind it silently loses SetWriteDeadline (ErrNotSupported). Mirrors
-// core/middleware's cors/metrics/tracing/logging wrappers.
+// per-write deadlines reach the real connection.
 func (rw *countingResponseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
 
-// remoteAddr returns the client address the access log should record.
-// When trustXFF is false (default) it returns r.RemoteAddr only;
-// X-Forwarded-For / X-Real-IP are still emitted as a separate
-// `forwarded_for` field but never override `remote`.
-//
-// When trustXFF is true the returned value is the RIGHTMOST
-// X-Forwarded-For entry (then X-Real-IP), the address the proxy in
-// front of the app observed. Entries to its left are whatever the
-// client sent when the proxy appends, so logging the leftmost one let a
-// client choose its own `remote`. A value that does not parse as an IP
-// falls back to r.RemoteAddr; the raw header stays in `forwarded_for`.
 func remoteAddr(r *http.Request, trustXFF bool) string {
 	if trustXFF {
 		if len(r.Header.Values("X-Forwarded-For")) > 0 {
