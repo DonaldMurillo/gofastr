@@ -113,7 +113,8 @@ func (b *Builder) rewriteBaseURLs(page string) string {
 	if b.BasePath == "" {
 		return page
 	}
-	page = baseAttrURL.ReplaceAllString(page, "${1}${2}=\""+b.BasePath+"/${3}")
+	replacementBase := strings.ReplaceAll(b.BasePath, "$", "$$")
+	page = baseAttrURL.ReplaceAllString(page, "${1}${2}=\""+replacementBase+"/${3}")
 	page = baseSrcsetAttr.ReplaceAllStringFunc(page, func(m string) string {
 		sub := baseSrcsetAttr.FindStringSubmatch(m)
 		return sub[1] + prefixSrcset(sub[2], b.BasePath) + `"`
