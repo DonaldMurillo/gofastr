@@ -1,0 +1,34 @@
+primitive: search
+summary: The search battery's Backend interface, its lifecycle adapter and owner erasure, with the query sanitizing every backend shares.
+code:
+  - battery/search/search.go
+  - battery/search/battery.go
+  - battery/search/doc.go
+  - battery/search/erase.go
+  - battery/search/agents.go
+docs:
+  - framework/docs/content/search.md
+on_change:
+  - A matching rule changed in one backend changes in the other two, or search.md says where they differ.
+twins:
+  - job: Match a sanitized query against indexed documents with Type and FieldEquals filters, the empty query matching all and a punctuation-only one none.
+    why: Each backend speaks its own engine (Go word scan, tsvector and FTS5) and only queryTerms is shared; the parity is held by mirrored tests per backend.
+    sites:
+      - path: battery/search/memory.go
+        note: Memory.Search, scoreTerms and matchesFields.
+      - path: battery/search/postgres.go
+        note: PostgresSearch.Search and searchAll.
+      - path: battery/search/sqlite.go
+        note: SQLiteFTS.Search, searchAll and appendFilters.
+invariants:
+  - id: query-terms-are-capped
+    rule: queryTerms keeps at most maxQueryTerms (64) distinct sanitized terms, and every backend queries with it.
+    enforced_by:
+      - test: battery/search.TestBuildTsQueryBounded
+      - test: battery/search.TestBuildFts5QueryBounded
+      - test: battery/search.TestSearchQueryTermsBounded
+  - id: sql-erasers-key-on-owner
+    rule: The SQL backends register a datexport eraser per table, the SQLite prefix companion included, that deletes rows by the owner column.
+    enforced_by:
+      - test: battery/search.TestEraseRemovesSQLiteDocuments
+      - test: battery/search.TestEraseRemovesPostgresDocuments

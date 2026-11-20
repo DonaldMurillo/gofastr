@@ -149,6 +149,7 @@ var ownedPackages = []string{
 	"battery/print/chromepdf",
 	"battery/relay",
 	"battery/setup",
+	"battery/search",
 }
 
 //gofastr:test-reads primitives/ *.go
