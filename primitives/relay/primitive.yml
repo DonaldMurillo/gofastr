@@ -1,0 +1,77 @@
+primitive: relay
+summary: The first-party relay plugin, a same-origin reverse proxy whose every route names one fixed upstream validated at New, with the guarded dialer the routes share.
+code:
+  - battery/relay/relay.go
+  - battery/relay/phrases.go
+  - battery/relay/agents.go
+docs:
+  - framework/docs/content/relay.md
+on_change:
+  - A new Config or Route field, or a new refusal at New, goes in relay.md's wiring section.
+invariants:
+  - id: mount-path-is-literal-and-unreserved
+    rule: New panics for a Config.Path or route prefix that is not absolute (the path) or is absolute (the prefix), holds a control byte, space, "{", "}", "$", "%", "#", "?" or backslash, an empty or traversal segment, ends in a slash (the path), is "/" or "/__gofastr", or collides with a reserved /__gofastr segment.
+    enforced_by:
+      - test: battery/relay.TestNewPanicsOnBadPath
+      - test: battery/relay.TestNewPanicsOnBadRouteConfig
+      - test: battery/relay.TestRouteConfigRequiresLiteralPaths
+  - id: routes-are-declared-explicitly
+    rule: New panics with no routes, a duplicate prefix, empty Methods, a method that is not an uppercase token or a negative MaxBodyBytes.
+    enforced_by:
+      - test: battery/relay.TestNoRoutesPanics
+      - test: battery/relay.TestNewPanicsOnBadRouteConfig
+  - id: upstream-is-public-https
+    rule: New panics for an upstream that is not http or https, has no host, carries userinfo, a query or a fragment, is http to a non-loopback host, ends in .internal or resolves to a non-loopback internal address; an upstream that does not resolve yet is accepted.
+    enforced_by:
+      - test: battery/relay.TestNewPanicsOnBadUpstream
+      - test: battery/relay.TestResolvedPrivateUpstreamRefused
+      - test: battery/relay.TestNewAcceptsLoopbackAndHTTPS
+      - test: battery/relay.TestBaseReturnsMountPath
+  - id: dial-checks-every-resolved-address
+    rule: The transport resolves the upstream at dial time and refuses to dial when any address is internal, or, for a localhost name, any address is off loopback, then dials only a validated address.
+    enforced_by:
+      - test: battery/relay.TestGuardedDialRejectsDNSRebindingToLoopback
+      - test: battery/relay.TestGuardedDialRejectsUnsafeResolutions
+      - test: battery/relay.TestGuardedDialUsesValidatedIPForPublicHost
+  - id: no-environment-proxy
+    rule: The relay's transport sets no Proxy, so no environment proxy resolves the destination past the dial-time check.
+    enforced_by:
+      - test: battery/relay.TestTransportIgnoresEnvironmentProxy
+  - id: bytes-pass-uncompressed
+    rule: The transport disables its own compression, so it neither adds Accept-Encoding nor unpacks a response.
+    enforced_by:
+      - test: battery/relay.TestGzipNotAskedForOrUnpacked
+      - test: battery/relay.TestGzipPassthroughBytesIdentical
+  - id: shutdown-closes-idle-connections
+    rule: Init registers an OnStop hook that closes the shared transport's idle connections.
+    enforced_by:
+      - test: battery/relay.TestShutdownClosesIdleTransportConns
+  - id: default-client-ip-is-the-peer
+    rule: Without Config.ClientIP, X-Forwarded-For is the host part of RemoteAddr, never a request header.
+    enforced_by:
+      - test: battery/relay.TestClientIPHeadersNotRelayedUpstream
+      - test: battery/relay.TestClientIPOverride
+decisions:
+  - id: panic-on-bad-config
+    date: 2026-11-20
+    status: accepted
+    decision: New panics with a "relay:" message on invalid configuration, as framework.NewApp does for registrations.
+    rejected:
+      - option: Return an error or skip the bad route.
+        why: A misdeclared relay is a programmer error, and a process that limps along without the route hides it.
+    upholds: [routes-are-declared-explicitly]
+  - id: dns-failure-defers-to-request-time
+    date: 2026-11-20
+    status: accepted
+    decision: An upstream name that does not resolve at New is accepted, and the guarded dialer checks every address each request resolves.
+    rejected:
+      - option: Refuse an unresolvable upstream at New.
+        why: Construction should not need the vendor resolvable right now, and a name checked once is still open to DNS rebinding later.
+    upholds: [upstream-is-public-https, dial-checks-every-resolved-address]
+  - id: one-transport
+    date: 2026-11-20
+    status: accepted
+    decision: All routes share one transport and connection pool.
+    rejected:
+      - option: A transport per route.
+        why: It multiplies idle sockets by the number of vendors for no benefit.

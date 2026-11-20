@@ -5,10 +5,6 @@ import (
 	"strings"
 )
 
-// The relay answers on the app's own origin, so a relayed response with
-// a type the browser renders as a document runs as the app. These are
-// the types an analytics, error-tracking or asset vendor serves; a
-// route opts more in with Route.ContentTypes.
 var defaultContentTypes = map[string]bool{
 	"text/javascript":               true,
 	"application/javascript":        true,
@@ -26,12 +22,8 @@ var defaultContentTypes = map[string]bool{
 	"application/vnd.ms-fontobject": true,
 }
 
-// svgType is an image type that is also a document able to run script.
-// It passes, served under Content-Security-Policy: sandbox.
 const svgType = "image/svg+xml"
 
-// relayableType reports whether media type mt (lowercased, no
-// parameters) may be relayed on rt.
 func relayableType(rt *routeRuntime, mt string) bool {
 	if rt.extraCT[mt] || defaultContentTypes[mt] {
 		return true
@@ -46,8 +38,6 @@ func relayableType(rt *routeRuntime, mt string) bool {
 	return false
 }
 
-// validMediaType reports whether s is a lowercase type/subtype with no
-// parameters and no wildcard, the spelling Route.ContentTypes takes.
 func validMediaType(s string) bool {
 	if s == "" || s != strings.ToLower(s) || strings.Contains(s, "*") {
 		return false

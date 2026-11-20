@@ -1,0 +1,108 @@
+primitive: relay.proxy
+summary: One relay route's request and response path, which builds the outbound request from the fixed upstream, strips credentials and forwarding claims inbound, and strips vendor identity, origin policy and redirects outbound.
+code:
+  - battery/relay/proxy.go
+docs:
+  - framework/docs/content/relay.md
+invariants:
+  - id: upstream-fixed-by-the-route
+    rule: The outbound URL's scheme and host come only from the route's upstream; the request supplies at most the validated path tail and the query string.
+    enforced_by:
+      - test: battery/relay.TestSubtreeForwardsPathAndQuery
+      - test: battery/relay.TestHostileTailsRejectedOrStayOnHost
+  - id: inbound-credentials-stripped
+    rule: Cookie, Authorization, Proxy-Authorization, X-CSRF-Token, X-API-Key and every X-Gofastr- header, the embed grant among them, never reach the upstream.
+    enforced_by:
+      - test: battery/relay.TestInboundCredentialsStripped
+      - test: battery/relay.TestEmbedGrantNotForwarded
+      - test: battery/relay.TestPreservedHeadersReachUpstream
+  - id: forwarding-identity-from-the-connection
+    rule: No inbound Forwarded, X-Forwarded-*, X-Real-IP, X-Client-IP, True-Client-IP, CF-Connecting-IP or Fastly-Client-IP reaches the upstream; X-Forwarded-For is set from ClientIP and X-Forwarded-Proto from the TLS state.
+    enforced_by:
+      - test: battery/relay.TestForwardedNotRelayedUpstream
+      - test: battery/relay.TestInboundXForwardedHostNotRelayed
+      - test: battery/relay.TestClientIPHeadersNotRelayedUpstream
+      - test: battery/relay.TestForwardedProtoHTTPSOnTLSLeg
+  - id: referer-reduced-to-origin
+    rule: The upstream gets the Referer reduced to its http or https origin with a trailing slash, and none for anything else.
+    enforced_by:
+      - test: battery/relay.TestRefererReducedToOrigin
+  - id: no-protocol-switch
+    rule: The inbound Connection and Upgrade headers are dropped and an upstream 101 is refused with 502 after its body, which owns the switched connection, is closed.
+    enforced_by:
+      - test: battery/relay.TestRelayStripsInboundUpgrade
+      - test: battery/relay.TestRelayRefuses101AndClosesUpstream
+  - id: request-body-capped
+    rule: A request whose declared length passes MaxBodyBytes gets 413 before anything is read, and a chunked body past it ends in 413 too.
+    enforced_by:
+      - test: battery/relay.TestBodyCapDeclaredLength413
+      - test: battery/relay.TestBodyCapChunked413
+  - id: request-deadline
+    rule: Each proxied request runs under min(the inherited context, 30s), and a deadline or timeout answers 504.
+    enforced_by:
+      - test: battery/relay.TestDeadlineExceededGives504
+    judge: Does this change let a proxied request outlive 30s when its inherited context has no shorter deadline?
+  - id: failures-are-plain
+    rule: A transport failure answers 502 and a timeout 504 with a generic phrase; upstream detail goes to the log with the method percent-encoded.
+    enforced_by:
+      - test: battery/relay.TestTransportFailureHidesUpstreamDetail
+      - test: battery/relay.TestTransportFailureGives502
+      - test: battery/relay.TestDeadlineExceededGives504
+  - id: redirects-become-502
+    rule: An upstream 3xx with a Location is replaced by a plain 502 after its body is drained and closed, and a 3xx with no Location passes.
+    enforced_by:
+      - test: battery/relay.TestUpstreamRedirectRefused502
+      - test: battery/relay.TestRefusedRedirectClosesUpstreamBody
+      - test: battery/relay.TestNotModifiedPassesThrough
+  - id: vendor-identity-and-origin-policy-stripped
+    rule: Set-Cookie, the authenticate challenges, Access-Control-*, Refresh, Clear-Site-Data, Service-Worker-Allowed, NEL, Report-To, Reporting-Endpoints, Alt-Svc, Accept-CH, Critical-CH, Strict-Transport-Security and Set-Login from the upstream never reach the client, while a value the host set before the relay ran stays.
+    enforced_by:
+      - test: battery/relay.TestOutboundAuthHeadersStripped
+      - test: battery/relay.TestVendorBrowserStateHeadersStripped
+      - test: battery/relay.TestServiceWorkerAllowedStripped
+      - test: battery/relay.TestVendorOriginPolicyHeadersStripped
+      - test: battery/relay.TestHostOriginPolicyHeadersKept
+  - id: no-informational-responses
+    rule: An upstream 1xx never reaches the client, and the final response carries every header value the host set before dispatch.
+    enforced_by:
+      - test: battery/relay.TestEarlyHintsKeepHostHeaders
+  - id: cross-origin-link-dropped
+    rule: A Link value with any target a browser parses as another origin (a scheme, an authority, a backslash or a tab inside one) is dropped whole, and relative targets pass.
+    enforced_by:
+      - test: battery/relay.TestLinkOtherOriginSpellingsStripped
+  - id: nosniff-and-no-store
+    rule: Every relayed response carries X-Content-Type-Options nosniff and, unless the route sets CacheOK, Cache-Control no-store.
+    enforced_by:
+      - test: battery/relay.TestNoStoreForcedWhenCacheOKFalse
+      - test: battery/relay.TestCacheOKTruePassesCacheHeaders
+      - test: battery/relay.TestOutboundAuthHeadersStripped
+  - id: response-body-capped
+    rule: A response body past MaxBodyBytes ends in a read error that aborts the stream, never a clean EOF, and one that ends exactly at the cap is whole.
+    enforced_by:
+      - test: battery/relay.TestOversizedResponseAbortsStream
+      - test: battery/relay.TestUpstreamResponseBodyCapped
+decisions:
+  - id: rewrite-not-director
+    date: 2026-11-20
+    status: accepted
+    decision: The proxy uses ReverseProxy's Rewrite hook, which builds the outbound request from scratch.
+    rejected:
+      - option: The Director hook.
+        why: It is deprecated and edits the inbound request in place, so request data could still shape the destination.
+    upholds: [upstream-fixed-by-the-route]
+  - id: refuse-switch-not-splice
+    date: 2026-11-20
+    status: accepted
+    decision: An upstream 101 is refused by returning an error from ModifyResponse.
+    rejected:
+      - option: Splice the switched connection through.
+        why: It would hand the vendor an open socket past the body caps, the request deadline and no-store.
+    upholds: [no-protocol-switch]
+  - id: cap-ends-in-an-error
+    date: 2026-11-20
+    status: accepted
+    decision: cappedBody returns errUpstreamTooLarge past the budget.
+    rejected:
+      - option: Return io.EOF at the budget.
+        why: It ended a chunked response cleanly, and the client or a cache took the cut-off body for the whole one.
+    upholds: [response-body-capped]

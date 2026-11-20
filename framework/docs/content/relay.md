@@ -57,8 +57,18 @@ plausibleBase := r.Base() + "/e"
 non-loopback host, an internal/private upstream, empty `Methods`,
 traversal in a prefix, `{`, `}`, or `$` in a prefix or `Config.Path`
 (paths must be literal), a mount colliding with a reserved
-`/__gofastr/...` route). A misdeclared relay is a programmer error you
-want at startup, not a runtime surprise.
+`/__gofastr/...` route, percent-encoding, a fragment, a backslash or an
+empty segment in a prefix or `Config.Path`, a duplicate prefix, a method
+that is not an uppercase token, an upstream with userinfo, a query or a
+fragment, a `ContentTypes` entry that is not a lowercase `type/subtype`).
+A misdeclared relay is a programmer error you want at startup, not a
+runtime surprise. An upstream name that does not resolve at `New` is
+accepted; every request checks the addresses it resolves to before
+dialing, and an unresolvable one answers `502`.
+
+`Config.ClientIP` replaces the default client address (the peer on the
+wire) written into `X-Forwarded-For`. Back it with a trusted proxy layer,
+never with a function that reads a request header.
 
 ## Route table semantics
 
