@@ -18,7 +18,7 @@ invariants:
       - test: core-ui/registry.TestInjectMarkerEscapesName
       - test: core-ui/interactive.TestInteractiveAttributesReachRootAfterComments
   - id: attribute-found-at-a-name-boundary
-    rule: An attribute counts only outside quoted values, preceded by whitespace and followed by =, whitespace, / or the tag end; a tag that already carries it is returned unchanged, and Attribute reads a quoted value to its own closing quote.
+    rule: An attribute counts only outside quoted values, preceded by whitespace and followed by =, whitespace, / or the tag end; injectMarker and InjectAttribute return a tag that already carries it unchanged, AppendAttributes keeps the existing bytes and appends each pair render.Attr accepts, even a name the tag already has, and Attribute reads a quoted value to its own closing quote.
     enforced_by:
       - test: core-ui/registry.TestInjectIdempotentWhenAlreadyMarked
       - test: core-ui/registry.TestInjectIgnoresAttrNameInsideQuotedValue
