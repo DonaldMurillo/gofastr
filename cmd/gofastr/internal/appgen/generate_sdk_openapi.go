@@ -222,7 +222,12 @@ func buildOASDKOp(ts *oaTypeSet, op cliOp) (oaSDKOp, error) {
 			if err != nil {
 				return sop, fmt.Errorf("request body: %w", err)
 			}
-			if _, typed := resolved["type"]; !typed {
+			constrained := slices.ContainsFunc([]string{"type", "oneOf", "anyOf", "allOf", "enum", "const", "not"}, func(key string) bool {
+				_, original := body[key]
+				_, present := resolved[key]
+				return original || present
+			})
+			if !constrained {
 				sop.BodyNullable = true
 			}
 		}

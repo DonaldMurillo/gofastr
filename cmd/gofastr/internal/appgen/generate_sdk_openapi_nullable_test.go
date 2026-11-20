@@ -104,9 +104,24 @@ await assert.rejects(() => client.plainRequired(null), /request body is required
 
 func TestOpenAPISDKTypelessBody(t *testing.T) {
 	for _, version := range []string{"3.0.3", "3.1.0"} {
-		for _, schema := range []string{`{}`, `{"description":"Any JSON value"}`, `{"$ref":"#/components/schemas/Any"}`, `{"properties":{"name":{"type":"string"}}}`} {
+		for _, tc := range []struct {
+			schema   string
+			nullable bool
+		}{
+			{`{}`, true},
+			{`{"description":"Any JSON value"}`, true},
+			{`{"$ref":"#/components/schemas/Any"}`, true},
+			{`{"properties":{"name":{"type":"string"}}}`, true},
+			{`{"oneOf":[{"$ref":"#/components/schemas/A"},{"$ref":"#/components/schemas/B"}]}`, false},
+			{`{"anyOf":[{"$ref":"#/components/schemas/A"},{"$ref":"#/components/schemas/B"}]}`, false},
+			{`{"allOf":[{"properties":{"name":{"type":"string"}}}]}`, false},
+			{`{"enum":["ok"]}`, false},
+			{`{"const":"ok"}`, false},
+			{`{"not":{"type":"null"}}`, false},
+		} {
+			schema := tc.schema
 			t.Run(version+"/"+schema, func(t *testing.T) {
-				doc := fmt.Sprintf(`{"openapi":%q,"info":{"title":"Any","version":"1"},"components":{"schemas":{"Any":{}}},"paths":{`, version)
+				doc := fmt.Sprintf(`{"openapi":%q,"info":{"title":"Any","version":"1"},"components":{"schemas":{"Any":{},"A":{"type":"object","properties":{"a":{"type":"string"}}},"B":{"type":"object","properties":{"b":{"type":"string"}}}}},"paths":{`, version)
 				for i, name := range []string{"required", "optional"} {
 					if i > 0 {
 						doc += ","
@@ -118,6 +133,12 @@ func TestOpenAPISDKTypelessBody(t *testing.T) {
 					t.Fatal(err)
 				}
 				files := renderOASDKJSFiles(spec)
+				wantNullable := version == "3.1.0" && tc.nullable
+				for _, op := range spec.Ops {
+					if got := oaJSDescribe(op).BodyNullable; got != wantNullable {
+						t.Errorf("%s descriptor bodyNullable=%v, want %v", op.JSName, got, wantNullable)
+					}
+				}
 				for _, file := range files[:2] {
 					for _, line := range strings.Split(file.Content, "\n") {
 						if strings.Contains(line, `"bodyNullable"`) || strings.Contains(line, "required(body:") || strings.Contains(line, "optional(body?:") {
@@ -174,7 +195,7 @@ assert.deepEqual(seen.at(-1), {body:'', contentType:''});
 await assert.rejects(() => client.required(undefined), /request body is required/);
 await client.required({name:'ok'});
 assert.deepEqual(seen.at(-1), {body:'{"name":"ok"}', contentType:'application/json'});
-`, server.URL, version == "3.1.0")
+`, server.URL, wantNullable)
 				dir := t.TempDir()
 				for name, content := range map[string]string{"client.mjs": files[0].Content, "probe.mjs": probe} {
 					if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
