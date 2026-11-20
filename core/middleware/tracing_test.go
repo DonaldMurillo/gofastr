@@ -85,6 +85,7 @@ func TestTracing_ResponseErrorType(t *testing.T) {
 		errorType  string
 	}{
 		{"ok", http.StatusOK, codes.Unset, ""},
+		{"not found", http.StatusNotFound, codes.Unset, ""},
 		{"client error", 499, codes.Unset, ""},
 		{"internal server error", http.StatusInternalServerError, codes.Error, "500"},
 		{"service unavailable", http.StatusServiceUnavailable, codes.Error, "503"},

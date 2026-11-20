@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/core/tracing"
 	"github.com/DonaldMurillo/gofastr/internal/panicstack"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -74,7 +75,7 @@ func Tracing() Middleware {
 						stack = debug.Stack()
 					}
 					span.SetAttributes(
-						attribute.String("error.type", "panic"),
+						attribute.String("error.type", tracing.ErrorTypePanic),
 						attribute.String("exception.stacktrace", panicOrigin(stack)),
 					)
 					panic(v)

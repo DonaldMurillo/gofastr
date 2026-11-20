@@ -23,7 +23,7 @@ invariants:
     enforced_by:
       - test: core/middleware.TestTracing_ResponseErrorType
   - id: panicked-span-carries-the-stack
-    rule: A panicked request's span gets the status the client got, an error status, error.type set to "panic" regardless of the response status, and an exception.stacktrace from the goroutine that panicked.
+    rule: A panicked request's span gets the status the client got, an error status, error.type set to tracing.ErrorTypePanic regardless of the response status, and an exception.stacktrace from the goroutine that panicked.
     enforced_by:
       - test: core/middleware.TestTracingMarksPanickedSpan
       - test: core/middleware.TestTracingSpanCarriesThePanicsStack

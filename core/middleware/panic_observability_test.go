@@ -13,6 +13,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/DonaldMurillo/gofastr/core/tracing"
 	"github.com/DonaldMurillo/gofastr/internal/scrubtest"
 )
 
@@ -149,8 +150,8 @@ func TestTracingMarksPanickedSpan(t *testing.T) {
 			if status != tc.want {
 				t.Fatalf("span http.status_code = %d, want %d", status, tc.want)
 			}
-			if errorType != "panic" {
-				t.Errorf("span error.type = %q, want %q", errorType, "panic")
+			if errorType != tracing.ErrorTypePanic {
+				t.Errorf("span error.type = %q, want %q", errorType, tracing.ErrorTypePanic)
 			}
 			exceptions := 0
 			for _, ev := range span.Events() {

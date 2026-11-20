@@ -12,6 +12,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/DonaldMurillo/gofastr/core/tracing"
 )
 
 func recordJobSpans(t *testing.T) *tracetest.SpanRecorder {
@@ -147,7 +149,7 @@ func TestMemoryJobSpans(t *testing.T) {
 		t.Error("the handler's error message reached the span")
 	}
 	boom := endedSpan(rec, "process boom")
-	if boom == nil || boom.Status().Code != codes.Error || spanAttr(boom, "error.type") != "panic" {
+	if boom == nil || boom.Status().Code != codes.Error || spanAttr(boom, "error.type") != tracing.ErrorTypePanic {
 		t.Fatalf("panicked job span = %+v", boom)
 	}
 }

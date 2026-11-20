@@ -30,6 +30,13 @@ few lines, and link the PR or the docs page for the rest.
   existing app specs and older Pack or Kiln snapshots. See the
   [YAML migration examples](framework/docs/content/app-spec.md#yaml-subset).
 
+### Fixed
+- **Failed HTTP server spans now say what failed.** A response of 500 or
+  more sets `error.type` to the status code (for example, `"503"`), and a
+  panic that reaches the tracing middleware sets it to `"panic"`, the new
+  `tracing.ErrorTypePanic` constant that queue job spans use too. See
+  [Observability](framework/docs/content/observability.md).
+
 ## [0.97.0] - 2026-11-19
 
 ### Added
