@@ -164,6 +164,32 @@ func TestScaffoldHandlerTestPackageScope(t *testing.T) {
 	}
 }
 
+func TestScaffoldHandlerDotlessModuleImportName(t *testing.T) {
+	root := t.TempDir()
+	writeGo(t, root, "go.mod", "module local/app\n\ngo 1.23\n")
+	for _, subdir := range []string{"gopher-lua", "handlers"} {
+		if err := os.Mkdir(filepath.Join(root, subdir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeGo(t, filepath.Join(root, "gopher-lua"), "lua.go", "package lua\n")
+	dir := filepath.Join(root, "handlers")
+	writeGo(t, dir, "handlers.go", "package handlers\nimport \"local/app/gopher-lua\"\n")
+	clitest.CovT_chdir(t, dir)
+	if err := scaffoldHandler(dir, "lua", "GET", "/", false); err == nil || !strings.Contains(err.Error(), `import of "local/app/gopher-lua" in handlers.go`) {
+		t.Errorf("lua: %v, want declared-name import refusal", err)
+	}
+	if err := scaffoldHandler(dir, "gopher", "GET", "/", false); err != nil {
+		t.Errorf("gopher: %v, want success", err)
+	}
+	if err := checkRouteHandler("lua"); err == nil {
+		t.Error("route lua: want import refusal")
+	}
+	if err := checkRouteHandler("gopher"); err != nil {
+		t.Errorf("route gopher: %v", err)
+	}
+}
+
 func TestScaffoldHandlerImportResolutionFallback(t *testing.T) {
 	for _, missingGo := range []bool{false, true} {
 		t.Run(strconv.FormatBool(missingGo), func(t *testing.T) {
@@ -222,11 +248,17 @@ func TestScaffoldHandlerPreservesModuleFiles(t *testing.T) {
 
 func TestResolveImportNamesSkipsStandardLibrary(t *testing.T) {
 	for _, tc := range []struct{ imports, want string }{
+		{"", ""},
 		{"\"net/http\"; \"log\"", ""},
 		{"\"net/http\"; alias \"example.com/aliased\"", ""},
 		{"\"net/http\"; \"example.com/dep\"; \"log\"", "example.com/dep"},
+		{"\"local/app\"", "local/app"},
+		{"\"local/app/gopher-lua\"", "local/app/gopher-lua"},
+		{"\"local/application/dep\"", ""},
 	} {
 		t.Run(tc.imports, func(t *testing.T) {
+			dir := t.TempDir()
+			writeGo(t, dir, "go.mod", "module local/app\n\ngo 1.23\n")
 			original := importNameCommand
 			t.Cleanup(func() { importNameCommand = original })
 			calls := 0
@@ -241,7 +273,7 @@ func TestResolveImportNamesSkipsStandardLibrary(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resolveImportNames(t.TempDir(), []*ast.File{f})
+			resolveImportNames(dir, []*ast.File{f})
 			wantCalls := 0
 			if tc.want != "" {
 				wantCalls = 1

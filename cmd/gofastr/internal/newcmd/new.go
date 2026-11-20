@@ -442,6 +442,11 @@ func importNames(f *ast.File, source string, resolved map[string]string) map[str
 var importNameCommand = exec.Command
 
 func resolveImportNames(dir string, files []*ast.File) map[string]string {
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil
+	}
+	modulePath, _ := project.FindEnclosingGoMod(absDir)
 	var paths []string
 	seen := map[string]bool{}
 	for _, f := range files {
@@ -451,7 +456,8 @@ func resolveImportNames(dir string, files []*ast.File) map[string]string {
 			}
 			importPath, err := strconv.Unquote(spec.Path.Value)
 			first, _, _ := strings.Cut(importPath, "/")
-			if err == nil && strings.Contains(first, ".") && !seen[importPath] {
+			nonStdlib := strings.Contains(first, ".") || modulePath != "" && (importPath == modulePath || strings.HasPrefix(importPath, modulePath+"/"))
+			if err == nil && nonStdlib && !seen[importPath] {
 				seen[importPath] = true
 				paths = append(paths, importPath)
 			}
