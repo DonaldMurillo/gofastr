@@ -418,7 +418,7 @@ func bindStruct(elem reflect.Value, prefix string, src Source) error {
 		}
 
 		if cf.shadowed {
-			if err := applyDefaults(fieldVal, field); err != nil {
+			if err := applyDefaults(fieldVal, field, cf.path); err != nil {
 				return err
 			}
 			continue
@@ -456,8 +456,8 @@ func bindStruct(elem reflect.Value, prefix string, src Source) error {
 			if required {
 				return fmt.Errorf("config: required field %s (%s) not set", field.Name, key)
 			}
-			if err := validateTags(fieldVal, field.Tag.Get("validate")); err != nil {
-				return fmt.Errorf("config: field %s: %s", field.Name, err.Error())
+			if err := checkValue(fieldVal, field, "field "+field.Name); err != nil {
+				return err
 			}
 			continue
 		}
@@ -468,15 +468,15 @@ func bindStruct(elem reflect.Value, prefix string, src Source) error {
 			}
 			return err
 		}
-		if err := validateTags(fieldVal, field.Tag.Get("validate")); err != nil {
-			return fmt.Errorf("config: field %s: %s", field.Name, err.Error())
+		if err := checkValue(fieldVal, field, "field "+field.Name); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-func applyDefaults(v reflect.Value, sf reflect.StructField) error {
+func applyDefaults(v reflect.Value, sf reflect.StructField, path string) error {
 	if isNestedStruct(sf.Type) {
 		if v.Kind() == reflect.Pointer {
 			return nil
@@ -490,7 +490,7 @@ func applyDefaults(v reflect.Value, sf reflect.StructField) error {
 			if !ok || !fv.CanSet() {
 				continue
 			}
-			if err := applyDefaults(fv, f.sf); err != nil {
+			if err := applyDefaults(fv, f.sf, path+"."+f.path); err != nil {
 				return err
 			}
 		}
@@ -507,8 +507,12 @@ func applyDefaults(v reflect.Value, sf reflect.StructField) error {
 		}
 		return err
 	}
+	return checkValue(v, sf, "default of shadowed field "+path)
+}
+
+func checkValue(v reflect.Value, sf reflect.StructField, label string) error {
 	if err := validateTags(v, sf.Tag.Get("validate")); err != nil {
-		return fmt.Errorf("config: field %s: %s", sf.Name, err)
+		return fmt.Errorf("config: %s: %s", label, err)
 	}
 	return nil
 }
@@ -670,13 +674,69 @@ func MustLoad(cfg any, sources ...Source) {
 	}
 }
 
-func validateTags(v reflect.Value, tag string) error {
+type valueRule struct {
+	key      string
+	arg      string
+	intBound int64
+	bound    float64
+	choices  []string
+}
+
+func parseRules(t reflect.Type, tag string) ([]valueRule, error) {
 	if tag == "" {
-		return nil
+		return nil, nil
+	}
+	switch t.Kind() {
+	case reflect.String, reflect.Int, reflect.Int64, reflect.Float64:
+	default:
+		return nil, fmt.Errorf("validation unsupported for %s", t.Kind())
+	}
+	isInt := t.Kind() == reflect.Int || t.Kind() == reflect.Int64
+	var rules []valueRule
+	for i, rule := range strings.Split(tag, ",") {
+		key, arg, ok := strings.Cut(rule, "=")
+		if !ok {
+			return nil, fmt.Errorf("validation rule %d is not name=value", i+1)
+		}
+		r := valueRule{key: key, arg: arg}
+		switch key {
+		case "min", "max":
+			var err error
+			switch {
+			case t == reflect.TypeFor[time.Duration]():
+				r.intBound, err = parseDuration(arg)
+			case isInt:
+				r.intBound, err = strconv.ParseInt(arg, 10, 64)
+			default:
+				r.bound, err = strconv.ParseFloat(arg, 64)
+				if math.IsNaN(r.bound) || math.IsInf(r.bound, 0) {
+					err = strconv.ErrRange
+				}
+			}
+			if err != nil {
+				return nil, fmt.Errorf("invalid %s bound", key)
+			}
+		case "oneof":
+			if t.Kind() != reflect.String {
+				return nil, fmt.Errorf("oneof requires a string")
+			}
+			r.choices = strings.Fields(arg)
+		default:
+			return nil, fmt.Errorf("validation rule %d has an unknown name (want min, max or oneof)", i+1)
+		}
+		rules = append(rules, r)
+	}
+	return rules, nil
+}
+
+func validateTags(v reflect.Value, tag string) error {
+	rules, err := parseRules(v.Type(), tag)
+	if err != nil || len(rules) == 0 {
+		return err
 	}
 	f := schema.Field{}
 	var value any
-	isDuration := v.Type() == reflect.TypeFor[time.Duration]()
+	isInt := false
 	switch v.Kind() {
 	case reflect.String:
 		f.Type = schema.String
@@ -684,62 +744,25 @@ func validateTags(v reflect.Value, tag string) error {
 	case reflect.Int, reflect.Int64:
 		f.Type = schema.Int
 		value = v.Int()
+		isInt = true
 	case reflect.Float64:
 		f.Type = schema.Float
 		value = v.Float()
-	default:
-		return fmt.Errorf("validation unsupported for %s", v.Kind())
 	}
-	for _, rule := range strings.Split(tag, ",") {
-		key, arg, ok := strings.Cut(rule, "=")
-		if !ok {
-			return fmt.Errorf("invalid validation rule %q", rule)
-		}
-		switch key {
-		case "min", "max":
-			if v.Kind() == reflect.Int || v.Kind() == reflect.Int64 {
-				var b int64
-				var err error
-				if isDuration {
-					b, err = parseDuration(arg)
-				} else {
-					b, err = strconv.ParseInt(arg, 10, 64)
-				}
-				if err != nil {
-					return fmt.Errorf("invalid %s bound", key)
-				}
-				if key == "min" && v.Int() < b {
-					return fmt.Errorf("must be at least %s", arg)
-				}
-				if key == "max" && v.Int() > b {
-					return fmt.Errorf("must be at most %s", arg)
-				}
-				continue
+	for _, r := range rules {
+		switch {
+		case r.key == "oneof":
+			if !slices.Contains(r.choices, v.String()) {
+				return fmt.Errorf("must be one of %s", r.arg)
 			}
-			n, err := strconv.ParseFloat(arg, 64)
-			if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
-				return fmt.Errorf("invalid %s bound", key)
-			}
-			if key == "min" {
-				f.Min = &n
-			} else {
-				f.Max = &n
-			}
-		case "oneof":
-			if v.Kind() != reflect.String {
-				return fmt.Errorf("oneof requires a string")
-			}
-			valid := false
-			for _, choice := range strings.Fields(arg) {
-				if v.String() == choice {
-					valid = true
-				}
-			}
-			if !valid {
-				return fmt.Errorf("must be one of %s", arg)
-			}
-		default:
-			return fmt.Errorf("unknown validation rule %q", key)
+		case isInt && r.key == "min" && v.Int() < r.intBound:
+			return fmt.Errorf("must be at least %s", r.arg)
+		case isInt && r.key == "max" && v.Int() > r.intBound:
+			return fmt.Errorf("must be at most %s", r.arg)
+		case !isInt && r.key == "min":
+			f.Min = &r.bound
+		case !isInt && r.key == "max":
+			f.Max = &r.bound
 		}
 	}
 	return schema.Validate(f, value)
@@ -757,6 +780,9 @@ func checkConfigShape(t reflect.Type, active map[reflect.Type]bool) error {
 	}
 	for _, f := range fields {
 		if !f.nested {
+			if _, err := parseRules(f.sf.Type, f.sf.Tag.Get("validate")); err != nil {
+				return fmt.Errorf("config: field %s: %s", f.path, err)
+			}
 			continue
 		}
 		ft := f.sf.Type

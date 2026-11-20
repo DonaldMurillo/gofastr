@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 	"github.com/DonaldMurillo/gofastr/internal/teststorage"
 )
 
@@ -88,11 +89,11 @@ func TestSweepRecordKindInputIsNotElevated(t *testing.T) {
 func TestSweepRecordDateInputValueIsDateOnly(t *testing.T) {
 	d := time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC)
 	f := schema.Field{Name: "issued_on", Type: schema.Date}
-	if got := formValueText(f, d); got != "2026-03-04" {
-		t.Fatalf("formValueText(Date, time.Time) = %q, want 2026-03-04", got)
+	if got := fieldtext.Form(f, d); got != "2026-03-04" {
+		t.Fatalf("fieldtext.Form(Date, time.Time) = %q, want 2026-03-04", got)
 	}
-	if got := formValueText(f, &d); got != "2026-03-04" {
-		t.Fatalf("formValueText(Date, *time.Time) = %q, want 2026-03-04", got)
+	if got := fieldtext.Form(f, &d); got != "2026-03-04" {
+		t.Fatalf("fieldtext.Form(Date, *time.Time) = %q, want 2026-03-04", got)
 	}
 }
 
@@ -173,7 +174,7 @@ func memoMaskedWhenUndated(t *testing.T, x *testUI) {
 	ch.Hooks = hook.NewHookRegistry()
 	ch.Hooks.RegisterHook(hook.AfterGet, func(_ context.Context, data any) error {
 		if p, ok := data.(*hook.GetPayload); ok && p.Result != nil &&
-			cell(p.Result["issued_on"]) == "" && cell(p.Result["issuedOn"]) == "" {
+			fieldtext.Cell(p.Result["issued_on"]) == "" && fieldtext.Cell(p.Result["issuedOn"]) == "" {
 			p.Result["memo"] = "****"
 		}
 		return nil

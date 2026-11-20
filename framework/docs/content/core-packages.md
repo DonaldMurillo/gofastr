@@ -629,8 +629,10 @@ JSON-encodes or URL-escapes it. `validate:"min=1,max=65535"` enforces numeric bo
 count characters; a `time.Duration` takes duration bounds such as
 `min=1s,max=5m`); `validate:"oneof=debug info warn error"` restricts string
 choices. A rule `Load` cannot apply (an unknown rule, a bound on a bool)
-fails `Load`. An empty value (`KEY=`) leaves the field as it was, without
-the `default:` tag, and the rules still check it. Recursive configuration
+fails `Load` before any source is read, on every field, including one no
+source binds (a shadowed field, a field behind a nil nested pointer). An
+empty value (`KEY=`) leaves the field as it was, without the `default:`
+tag, and the rules still check it. Recursive configuration
 struct shapes are rejected.
 Integer values must fit the destination field: `int` uses the target
 architecture's width (32 or 64 bits), while `int64` always accepts the
@@ -653,7 +655,9 @@ it gets its own `default:` tag. When `Cfg` embeds `Base` (whose
 reading `PORT`, `cfg.Port` reads `PORT` and `cfg.Base.Port` holds
 `8080`, so a method on `Base` reading `b.Port` sees its default, not
 `0`. The shadowed field's `validate:` tag checks that default, so a
-default its own rule refuses fails `Load` as it would on a bound field;
+default its own rule refuses fails `Load` as it would on a bound field,
+with an error that names the embedded field's path and says the value
+was its default;
 its `required:` tag does not apply, and a shadowed field with no
 default is left as it was. When a source still holds a key spelled the old way
 (`BASE_PORT`) and no field reads it, `Load` logs one warning per key

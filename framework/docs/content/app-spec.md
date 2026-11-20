@@ -1015,7 +1015,10 @@ partial and keeps the shell).
   target with `primary_key: [currency_code]` offers its codes; a target
   keyed on more than one column has no single value to offer and its
   select stays empty; a number input steps by 1 for `int`, 0.0001 for
-  `decimal` and `any` for `float`) for forms not bound to one entity. The record form on
+  `decimal` and `any` for `float`; each control starts at its field's
+  `default:`, written as the entityui create form writes it (a date as
+  `YYYY-MM-DD`, a timestamp as UTC wall time, a JSON value as JSON), so
+  an untouched field submits the default rather than an empty value) for forms not bound to one entity. The record form on
   the entityui screens is drawn from the entity's `display: form:`.
   Submitted control names use the default camelCase API wire keys
   (`address_line_1` becomes `addressLine1`) so field refusals land on the
@@ -1032,6 +1035,16 @@ partial and keeps the shell).
   `read_only` or `auto_generate` field or a column the server fills
   (`id`, `created_at`, `updated_at`, `deleted_at`) on a create form, or an entry
   listed twice, since the form would draw nothing for it.
+  A successful create resets the form and stays on the same screen.
+  Generated screens that read that entity (lists, record/edit views,
+  stats and charts, including nested blocks) attach
+  [`ui.InvalidateScreens`](reactivity.md#2-rpc) headers to its
+  mutation responses. Returning to those screens fetches fresh rows
+  without a reload; failed submissions do not evict their cached screens.
+  This also covers entityui creates, edits and deletes. Parameterized
+  screen routes use the documented `"*"` selector, evicting all cached
+  screens because the concrete record URLs are not known at generation
+  time. Invalidation does not repaint a screen that is already visible.
 - `entity_form` with `mode: edit` on an `{id}` route renders the record
   page, `appUI.Record("<entity>", id)`, without Delete or Duplicate. It
   loads the record into its form, keeps the key read-only, and Save PUTs

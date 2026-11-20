@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
@@ -33,7 +34,7 @@ func TestTimestampInputIsUTC(t *testing.T) {
 		{"2026-10-27T10:00", "2026-10-27T10:00"},
 		{"not a time", ""},
 	} {
-		if got := timestampInputValue(formValueText(f, tc.in)); got != tc.want {
+		if got := fieldtext.TimestampInput(fieldtext.Form(f, tc.in)); got != tc.want {
 			t.Errorf("input value for %v = %q, want %q", tc.in, got, tc.want)
 		}
 	}
@@ -71,7 +72,7 @@ func TestPGTimestampFormRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 		v := (&meta{}).rowValue(got, "occurred_at")
-		shown := timestampInputValue(formValueText(f, v))
+		shown := fieldtext.TimestampInput(fieldtext.Form(f, v))
 		if shown != "2026-10-27T10:00" {
 			t.Fatalf("form shows %q for %#v, want the UTC wall time", shown, v)
 		}

@@ -19,6 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 const probeText = "entityui-probe"
@@ -50,11 +51,11 @@ func hookMaskedFields(ctx context.Context, m *meta, id string, base map[string]a
 		if m.isKey(f.Name) {
 			continue
 		}
-		if cell(m.rowValue(probe, f.Name)) == "" {
+		if fieldtext.Cell(m.rowValue(probe, f.Name)) == "" {
 			probe[m.ch.WireKey(f.Name)] = probeValue(f)
 			probed = append(probed, f.Name)
 		}
-		before[f.Name] = cell(m.rowValue(probe, f.Name))
+		before[f.Name] = fieldtext.Cell(m.rowValue(probe, f.Name))
 	}
 	hctx := crud.WithoutElevation(ctx)
 	r := appui.RequestFromContext(ctx)
@@ -73,7 +74,7 @@ func hookMaskedFields(ctx context.Context, m *meta, id string, base map[string]a
 		return masked
 	}
 	for _, f := range m.fields {
-		if was, ok := before[f.Name]; ok && cell(m.rowValue(payload.Result, f.Name)) != was {
+		if was, ok := before[f.Name]; ok && fieldtext.Cell(m.rowValue(payload.Result, f.Name)) != was {
 			masked[f.Name] = true
 		}
 	}
@@ -332,7 +333,7 @@ func (u *UI) changes(ctx context.Context, s *listState, labels labelResolver, be
 }
 
 func (u *UI) changeValue(ctx context.Context, s *listState, labels labelResolver, f schema.Field, row map[string]any) render.HTML {
-	if cell(s.m.rowValue(row, f.Name)) == "" {
+	if fieldtext.Cell(s.m.rowValue(row, f.Name)) == "" {
 		return ""
 	}
 	return u.cellHTML(ctx, s, labels, f, row, f.Name)
@@ -344,7 +345,7 @@ func (m *meta) changeFields(before, after map[string]any, masked map[string]bool
 		if m.isKey(f.Name) || f.AutoGenerate != schema.AutoNone || m.hiddenFromCaller(f) || masked[f.Name] {
 			continue
 		}
-		if cell(m.rowValue(before, f.Name)) == cell(m.rowValue(after, f.Name)) {
+		if fieldtext.Cell(m.rowValue(before, f.Name)) == fieldtext.Cell(m.rowValue(after, f.Name)) {
 			continue
 		}
 		out = append(out, f)

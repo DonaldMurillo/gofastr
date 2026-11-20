@@ -17,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/fieldtext"
 )
 
 const statRowCap = 100000
@@ -286,7 +287,7 @@ func (u *UI) statSum(ctx context.Context, m *meta, field string, opts crud.ListO
 	}
 	total := new(big.Rat)
 	for _, r := range rows {
-		if v, ok := new(big.Rat).SetString(cell(m.rowValue(r, field))); ok {
+		if v, ok := new(big.Rat).SetString(fieldtext.Cell(m.rowValue(r, field))); ok {
 			total.Add(total, v)
 		}
 	}
@@ -341,7 +342,7 @@ func (u *UI) groupCounts(ctx context.Context, entityName, groupBy string) (*meta
 	switch {
 	case err == nil:
 		for _, g := range groups {
-			out = append(out, groupCount{key: cell(g.Value), n: g.Count})
+			out = append(out, groupCount{key: fieldtext.Cell(g.Value), n: g.Count})
 		}
 	case errors.Is(err, crud.ErrAggregateMasked):
 		rows, ok := u.statRows(ctx, m, groupBy, opts)
@@ -350,7 +351,7 @@ func (u *UI) groupCounts(ctx context.Context, entityName, groupBy string) (*meta
 		}
 		idx := map[string]int{}
 		for _, r := range rows {
-			k := cell(m.rowValue(r, groupBy))
+			k := fieldtext.Cell(m.rowValue(r, groupBy))
 			if i, seen := idx[k]; seen {
 				out[i].n++
 				continue
