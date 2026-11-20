@@ -275,19 +275,21 @@ const jsOAClientTail = `  async do(method, path, body) {
 
   async _call(op, params, body) {
     params = params || {};
+    const readParam = (name) => Object.prototype.hasOwnProperty.call(params, name) ? params[name] : undefined;
     for (const name of op.required) {
-      if (params[name] === undefined || params[name] === null) {
+      const value = readParam(name);
+      if (value === undefined || value === null) {
         throw new TypeError(op.name + ": parameter " + name + " is required");
       }
     }
     let path = op.path;
     for (const name of op.pathParams) {
-      path = path.split("{" + name + "}").join(pathEscape(params[name]));
+      path = path.split("{" + name + "}").join(pathEscape(readParam(name)));
     }
     const q = new URLSearchParams();
     const joined = [];
     for (const [name, mode] of op.query) {
-      const value = params[name];
+      const value = readParam(name);
       if (value === undefined || value === null) continue;
       if (mode === "join") {
         if (value.length) joined.push(formEncode(name) + "=" + Array.from(value, formEncode).join(","));
@@ -301,7 +303,7 @@ const jsOAClientTail = `  async do(method, path, body) {
     const query = [q.toString(), ...joined].filter(Boolean).join("&");
     const headers = {};
     for (const [name, mode] of op.header) {
-      const value = params[name];
+      const value = readParam(name);
       if (value === undefined || value === null) continue;
       if (mode === "repeat") {
         if (value.length) headers[name] = Array.from(value, String).join(",");
