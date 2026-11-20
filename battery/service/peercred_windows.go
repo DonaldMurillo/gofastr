@@ -10,13 +10,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// sioAFUnixGetPeerPID is SIO_AF_UNIX_GETPEERPID from afunix.h:
-// _WSAIOR(IOC_VENDOR, 256) = IOC_OUT | IOC_VENDOR | 256.
 const sioAFUnixGetPeerPID = 0x40000000 | 0x18000000 | 256
 
-// peerIsSelf resolves the connecting process through
-// SIO_AF_UNIX_GETPEERPID and compares its token's user SID with the
-// daemon's own.
 func peerIsSelf(c *net.UnixConn) error {
 	raw, err := c.SyscallConn()
 	if err != nil {
@@ -45,7 +40,6 @@ func peerIsSelf(c *net.UnixConn) error {
 	return checkPeerSID(peer.String(), self.User.Sid.String(), pid)
 }
 
-// processUserSID returns a copy of pid's token user SID.
 func processUserSID(pid uint32) (*windows.SID, error) {
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 	if err != nil {

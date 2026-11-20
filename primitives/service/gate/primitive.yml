@@ -1,0 +1,37 @@
+primitive: service.gate
+summary: The loopback gate every request to the service passes, with Host pinning, single-use sign-in tokens, signed session cookies and the cross-site check.
+code:
+  - battery/service/gate.go
+  - battery/service/signin_page.go
+docs:
+  - framework/docs/content/service.md
+invariants:
+  - id: host-is-pinned
+    rule: Before pin every request is refused, and after it only the bound loopback address, its localhost spelling and the extra allowed hosts pass.
+    enforced_by:
+      - test: battery/service.TestGateRefusesEverythingBeforePin
+      - test: battery/service.TestGateRefusesRebindingHost
+  - id: tokens-are-single-use-and-bounded
+    rule: A sign-in token works once, expires after loginTokenTTL, a wrong one burns nothing, and at most maxPendingTokens are outstanding.
+    enforced_by:
+      - test: battery/service.TestGateTokenIsSingleUse
+      - test: battery/service.TestGateTokenExpires
+      - test: battery/service.TestGateWrongTokenBurnsNothing
+      - test: battery/service.TestGateCapsPendingTokens
+  - id: login-get-needs-the-hatch
+    rule: The login door takes a token by GET only with InsecureTokenInURL, and reads a POST body through a bounded reader.
+    enforced_by:
+      - test: battery/service.TestGateLoginGETNeedsHatch
+      - test: battery/service.TestGateLoginBodyIsBounded
+  - id: sessions-are-signed-and-expire
+    rule: A session cookie is HttpOnly and SameSite=Strict, passes only with a valid HMAC and an unexpired time, and any valid cookie of the gate's name keeps the session.
+    enforced_by:
+      - test: battery/service.TestGateSessionCookieAttributes
+      - test: battery/service.TestGateRefusesForgedSessions
+      - test: battery/service.TestGateSessionExpires
+      - test: battery/service.TestGateStaleDuplicateCookieDoesNotLogOut
+  - id: cross-site-writes-refused
+    rule: A cross-site unsafe request is refused, and on an open path a forged cross-site write is refused.
+    enforced_by:
+      - test: battery/service.TestGateRefusesCrossSiteUnsafeMethod
+      - test: battery/service.TestOpenPrefixKeepsCrossSiteRefusal
