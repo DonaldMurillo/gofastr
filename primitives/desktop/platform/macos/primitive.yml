@@ -5,7 +5,7 @@ code:
 docs:
   - framework/docs/content/desktop.md
 on_change:
-  - Its tests run on darwin only, except the source scans; run them on a Mac before merging a change here.
+  - Its tests run on darwin only, except the source scans, and CI does not run them; run them on a Mac before merging a change here.
 invariants:
   - id: modals-wait-for-the-person
     rule: Every runModal (the permission alert and the open, save and folder panels) runs inside onMainWithTimeout(modalTimeout, ...), never onMain's ten-second default, so a person's slow answer still reaches the bridge.
@@ -18,6 +18,12 @@ invariants:
   - id: delegates-never-wait-on-go
     rule: A delegate or action callback on the UI thread hands its report to a channel or goroutine and returns at once, so the UI thread never waits on Go code that may itself hop back to the main thread.
     judge: Does this change make an AppKit or WebKit callback on the main thread wait on a Go channel, lock or Main hop?
+  - id: main-hop-runs-inline-on-the-ui-thread
+    rule: onMain and onMainWithTimeout run fn inline when the caller is already on the main thread and hop through objc.MainWithTimeout otherwise, because dispatching and waiting from the thread that drains the queue deadlocks, and the ready callback navigates on the UI thread before the run loop starts.
+    judge: Does this change make onMain, onMainWithTimeout or Main dispatch and wait when the caller is already on the main thread?
+  - id: unified-toolbar-before-title-visibility
+    rule: applyWindowStyle attaches the toolbar before it sets titleVisibility to NSWindowTitleHidden (1), so an AppKit release that resets the visibility when a toolbar is attached cannot bring the title back.
+    judge: Does this change set titleVisibility before setToolbar in applyWindowStyle, or change the NSWindowTitleHidden value from 1?
   - id: frames-flip-on-the-primary-screen
     rule: Frames convert between the Frame contract's top-left coordinates and AppKit's bottom-left ones against the primary screen, never the main screen, and a remembered frame that no longer meets any screen by the minimum overlap is dropped.
     enforced_by:

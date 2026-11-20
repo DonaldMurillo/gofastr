@@ -20,6 +20,13 @@ invariants:
     enforced_by:
       - test: battery/desktop.TestDenyPersistsWhenPageAborts
       - test: battery/desktop.TestAllowPersistsWhenPageAborts
+      - test: battery/desktop.TestGrantWriteIsBoundedByGrantWriteTimeout
+  - id: grant-read-error-fails-closed
+    rule: A grant store read that errors, before or after the prompt slot is taken, refuses the call with code internal, shows no prompt and never runs the handler.
+    enforced_by:
+      - test: battery/desktop.TestGrantReadErrorFailsClosed
+    applies:
+      - battery/desktop/bridge.go
   - id: one-alert-at-a-time
     rule: Prompts are serialized through a one-slot semaphore and the store is read again once the slot is held, so two concurrent first calls show one alert and the second reads the first one's decision.
     enforced_by:

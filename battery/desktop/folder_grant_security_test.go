@@ -2,8 +2,11 @@ package desktop
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -147,8 +150,31 @@ func TestFolderPickRefusesARelativeLinkOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := callMethod(t, b, "fs", "readText", `{"path":`+quoteJSON(filepath.Join(folder, "up"))+`}`)
-	if refusal, ok := err.(*Error); !ok || refusal.Code != CodeDenied {
-		t.Fatalf("readText through a relative link out of the folder = %v, want denied", err)
+	if refusal, ok := err.(*Error); !ok || refusal.Code != CodeDenied || refusal.Message != errPathNotAllowed.Message {
+		t.Fatalf("readText through a relative link out of the folder = %v, want the fixed denial %q", err, errPathNotAllowed.Message)
+	}
+	_, err = callMethod(t, b, "fs", "list", `{"path":`+quoteJSON(filepath.Join(folder, "up"))+`}`)
+	if refusal, ok := err.(*Error); !ok || refusal.Code != CodeDenied || refusal.Message != errPathNotAllowed.Message {
+		t.Fatalf("list through a relative link out of the folder = %v, want the fixed denial %q", err, errPathNotAllowed.Message)
+	}
+}
+
+func TestFSErrorsNeverEchoThePath(t *testing.T) {
+	const secret = "/Users/someone/secret-project/notes.txt"
+	for name, cause := range map[string]error{
+		"not exist":  &fs.PathError{Op: "open", Path: secret, Err: fs.ErrNotExist},
+		"permission": &fs.PathError{Op: "open", Path: secret, Err: fs.ErrPermission},
+		"other":      &fs.PathError{Op: "read", Path: secret, Err: errors.New("input/output error")},
+	} {
+		for fn, got := range map[string]*Error{"fsError": fsError(cause), "folderError": folderError(cause)} {
+			want := map[string]string{"not exist": "path does not exist", "permission": "path is not accessible", "other": InternalErrorMsg}[name]
+			if fn == "folderError" && name == "other" {
+				want = errPathNotAllowed.Message
+			}
+			if got.Message != want || strings.Contains(got.Message, "secret") {
+				t.Errorf("%s(%s) message = %q, want the fixed %q", fn, name, got.Message, want)
+			}
+		}
 	}
 }
 

@@ -259,6 +259,20 @@ func TestDeepLinkSchemeBounds(t *testing.T) {
 			t.Errorf("scheme %q accepted", scheme)
 		}
 	}
+	b := New(Config{ID: "dlscheme.example.app", Shell: newFakeShell(), Logger: testLogger(t), DeepLink: &DeepLinkConfig{Scheme: "notes"}})
+	b.cfg.DeepLink.Scheme = "NOTES"
+	if path, ok := b.mapDeepLink("notes://a"); ok {
+		t.Fatalf("a link was mapped to %q under a scheme off the grammar set after New", path)
+	}
+}
+
+func TestScrubDeepLinkCutsAndMasks(t *testing.T) {
+	if got := scrubDeepLink(strings.Repeat("a", 500)); len(got) != 200 {
+		t.Fatalf("scrubbed length = %d, want 200", len(got))
+	}
+	if got := scrubDeepLink("a\x7fb\x00c\x1bd"); got != "a?b?c?d" {
+		t.Fatalf("scrubDeepLink = %q, want a?b?c?d", got)
+	}
 }
 
 type bootingPageWindow struct {

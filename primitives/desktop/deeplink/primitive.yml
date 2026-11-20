@@ -8,8 +8,9 @@ docs:
   - framework/docs/content/desktop.md
 invariants:
   - id: link-validation
-    rule: A link longer than 2048 bytes, unparseable, on another scheme, carrying userinfo, arriving with deep links off, or mapping to a path off the navigate grammar is dropped with a Warn whose URL is scrubbed of control characters and cut to 200 bytes.
+    rule: A link longer than 2048 bytes, unparseable, on another scheme, carrying userinfo, arriving with deep links off, or mapping to a path off the navigate grammar is dropped with a Warn whose URL is cut to 200 bytes and has every byte below 0x20 and DEL replaced by a question mark.
     enforced_by:
+      - test: battery/desktop.TestScrubDeepLinkCutsAndMasks
       - test: battery/desktop.TestDeepLinkRefusesOffSchemeUserinfoLength
       - test: battery/desktop.TestDeepLinkRefusesTraversal
       - test: battery/desktop.TestDeepLinkRefusesEncodedDots

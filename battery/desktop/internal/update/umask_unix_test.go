@@ -88,6 +88,30 @@ func TestExtractDropsGroupOtherWrite(t *testing.T) {
 	}
 }
 
+func TestExtractStripsSetuidSetgidSticky(t *testing.T) {
+	const special = fs.ModeSetuid | fs.ModeSetgid | fs.ModeSticky
+	data := buildZip(t, map[string]struct {
+		content []byte
+		mode    fs.FileMode
+	}{
+		"Notes.app/":    {nil, fs.ModeDir | special | 0o755},
+		"Notes.app/bin": {[]byte("bin"), special | 0o755},
+	})
+	app, err := ExtractZip(data, t.TempDir(), "Notes.app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{app, filepath.Join(app, "bin")} {
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode() & special; got != 0 {
+			t.Fatalf("%s kept the special mode bits %v", filepath.Base(p), got)
+		}
+	}
+}
+
 // MoveTree's copy path runs after its absence check; a destination that
 // appears in between must stop the copy, not take a merge of both trees.
 func TestCopyTreeRefusesExistingDestination(t *testing.T) {

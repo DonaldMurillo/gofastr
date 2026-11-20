@@ -6,6 +6,7 @@ docs:
   - framework/docs/content/desktop.md
 on_change:
   - Every platform package keeps compiling on every GOOS, so check GOOS=darwin, GOOS=windows and GOOS=linux go vet ./battery/desktop/... after a change.
+  - "The enforced_by tests of desktop.platform.macos (shell-construction-is-lazy, frames-flip-on-the-primary-screen, closed-window-refuses-mutations, prompt-honours-cancellation, deep-links-keep-arrival-order), of desktop.platform.macos.objc (nsstring-never-panics, c-buffers-on-the-heap, main-timeout-removes-the-job, blocks-live-forever, msgsend-abi-per-arch) and of desktop.update (darwin-signature-pin, windows-layout-is-closed) carry darwin or windows build tags: they run only on a Mac or a Windows machine, CI does not run them, so run them there by hand before merging a change they cover."
 invariants:
   - id: picker-fills-only-a-nil-shell
     rule: native.New sets cfg.Shell to Shell() only when the caller left it nil.

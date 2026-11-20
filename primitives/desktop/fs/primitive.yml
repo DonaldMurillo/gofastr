@@ -31,6 +31,11 @@ invariants:
     enforced_by:
       - test: battery/desktop.TestFolderPickGrantsReadUnderIt
       - test: battery/desktop.TestFolderPickRefusesARelativeLinkOut
+      - test: battery/desktop.TestFSErrorsNeverEchoThePath
+  - id: fs-errors-echo-no-path
+    rule: An fs or folder-grant error reaches the page as fixed words (path does not exist, path is not accessible, or the internal error message), never the OS error text, so no refusal echoes a path.
+    enforced_by:
+      - test: battery/desktop.TestFSErrorsNeverEchoThePath
   - id: dialogs-grant-what-they-answer
     rule: openFile and saveFile put each exact returned path on the allow-list, openFolder grants the folder, and each answers the filepath.Clean form it granted.
     enforced_by:
