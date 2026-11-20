@@ -15,6 +15,7 @@ import (
 	coremig "github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 
 	_ "github.com/lib/pq"
 )
@@ -31,7 +32,7 @@ func sweepDB(t *testing.T) *sql.DB {
 
 func sweepPG(t *testing.T) (*sql.DB, string) {
 	t.Helper()
-	dsn := os.Getenv("TEST_POSTGRES_DSN")
+	dsn := os.Getenv(pgtest.DSNEnv)
 	if dsn == "" {
 		t.Skip("TEST_POSTGRES_DSN is not set")
 	}

@@ -55,6 +55,11 @@ invariants:
     enforced_by:
       - test: framework/sdkdocs.TestEndpointRowsUseMountedPaths
       - test: framework/sdkdocs.TestEndpointRowsOmitMCPOnlyDeclarations
+  - id: endpoint-rows-use-mounted-methods
+    rule: The SDK endpoints table and OpenAPI use the same trimmed, uppercase method as the HTTP route mount and skip declarations whose normalized method is empty.
+    enforced_by:
+      - test: framework/sdkdocs.TestEndpointRowsTrimMethods
+      - test: framework/openapi.TestEndpointMethodIgnoresCase
   - id: errors-use-response-wire-keys
     rule: The errors guide uses response wire keys in both per-field maps and describes them as part of field-level refusals.
     enforced_by:

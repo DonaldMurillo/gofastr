@@ -142,7 +142,7 @@ var nativeMainPanel = flag.Bool("desktop-main-panel", false, "run only the nativ
 // e2eDataDir is the app's data dir under the phase's temp base
 // (NativePhase points GOFASTR_DESKTOP_DATA_DIR at one when unset).
 func e2eDataDir() string {
-	return filepath.Join(os.Getenv("GOFASTR_DESKTOP_DATA_DIR"), e2eAppID)
+	return filepath.Join(os.Getenv(desktop.DataDirEnv), e2eAppID)
 }
 
 // buildNativeApp assembles the app the whole e2e build runs against:

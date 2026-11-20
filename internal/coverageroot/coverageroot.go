@@ -7,6 +7,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/ancestor"
 )
 
+// AxeDirEnv is the shared axe coverage root override.
+const AxeDirEnv = "GOFASTR_AXE_COVERAGE_DIR"
+
 // Resolve returns the first set variable in keys, else the go.work, go.mod or working directory.
 func Resolve(keys ...string) string {
 	for _, key := range keys {

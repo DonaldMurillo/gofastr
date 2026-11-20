@@ -2779,6 +2779,10 @@ app.Entity("posts", framework.EntityConfig{
 })
 ```
 
+Go endpoint declarations accept methods in any case. Route registration,
+OpenAPI, and the SDK reference use `openapi.EntityEndpointMethod` to trim
+surrounding whitespace and uppercase the method.
+
 Endpoint paths can be absolute (`/posts/{id}/publish`) or relative to the
 entity table path (`{id}/publish`). Both `{id}` and `:id` parameter syntax are
 accepted.

@@ -1,5 +1,13 @@
 # Implementation regression notes
 
+## 2026-11-20 - Recheck the lease recovery handshake in isolation
+
+- Scope: framework process-module supervisor.
+- Trigger: child handshake timeouts during the cleanup race run.
+- Approach: run `go test -race -count=3 ./framework/ -run '^TestLeaseRedRecoversAfterOutage$'`. The fixture uses SQLite in-process with a real child.
+- Next time: if the rerun fails, compare the same command on the base revision before assigning the failure to supervisor changes.
+- Status: active
+
 ## 2026-11-19 - Test cached Postgres DSNs in a fresh process
 
 - Scope: internal/pgtest, testdb, and auth fixtures.

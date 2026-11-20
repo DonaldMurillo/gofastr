@@ -32,6 +32,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/internal/astbase"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 // appSpecHasEntityAccess reports whether any entity declares an `access:`
@@ -1513,16 +1514,16 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 		b.WriteString("func e2eExtractID(body string) string {\n\tif m := e2eIDRe.FindStringSubmatch(body); len(m) == 2 { return m[1] }\n\treturn \"\"\n}\n")
 	}
 	if isPostgres {
-		b.WriteString(`
+		fmt.Fprintf(&b, `
 func e2ePostgresDSN(t *testing.T) string {
 	t.Helper()
-	adminDSN := os.Getenv("TEST_POSTGRES_DSN")
+	adminDSN := os.Getenv(%q)
 	if adminDSN == "" {
 		t.Skip("TEST_POSTGRES_DSN unset; skipping postgres e2e")
 	}
 	return testkit.NewIsolatedDBDSN(t, adminDSN)
 }
-`)
+`, pgtest.DSNEnv)
 	}
 	return b.String()
 }
@@ -2119,10 +2120,7 @@ func RenderAppSpecMain(bp appspec.AppSpec) string {
 		sb.WriteString("\t}\n")
 	}
 	sb.WriteString("}\n\n")
-	sb.WriteString("func getEnv(key, fallback string) string {\n")
-	sb.WriteString("\tif v := os.Getenv(key); v != \"\" {\n\t\treturn v\n\t}\n")
-	sb.WriteString("\treturn fallback\n")
-	sb.WriteString("}\n\n")
+	sb.WriteString(project.GetEnvSource + "\n")
 	iconFrom, iconTo := appSpecIconStops(bp)
 	sb.WriteString("// appIconPNG generates the app's icon source at startup: a diagonal\n")
 	sb.WriteString("// gradient in the app spec's primary color. uihost.WithAppIcon derives\n")

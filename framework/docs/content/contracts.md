@@ -540,11 +540,10 @@ file under an OS lock on `.gofastr/semantic-coverage.lock`, so packages
 that finish together keep each other's records.
 
 The manifest sits under the project root, or under the Go workspace
-root when a `go.work` sits above the module, unless
-`GOFASTR_SEMANTIC_COVERAGE_DIR` or `GOFASTR_AXE_COVERAGE_DIR` is set, in
-which case the tests, the server and `gofastr verify` all use that
-directory. Set it the same way for all three, or verify reads a manifest
-the tests never wrote.
+root when a `go.work` sits above the module. The tests, the server, and
+`gofastr verify` use `GOFASTR_SEMANTIC_COVERAGE_DIR` when set, then
+`GOFASTR_AXE_COVERAGE_DIR` if set. Give all three the same environment
+so verify reads the manifest the tests wrote.
 
 Six dimensions are recorded, each through a hook the runtime packages
 expose rather than by importing the recorder (the router's

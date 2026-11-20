@@ -569,7 +569,8 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity, id string) render.HTML 
 		}
 	}
 	for _, ep := range cfg.Endpoints {
-		if ep.Handler == nil {
+		method := openapi.EntityEndpointMethod(ep.Method)
+		if ep.Handler == nil || method == "" {
 			continue
 		}
 		path := openapi.EntityEndpointRoutePath(e, ep.Path, sc.site.cfg.APIPrefix)
@@ -582,7 +583,7 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity, id string) render.HTML 
 		} else {
 			desc += ": use the SDK's Do escape hatch"
 		}
-		ops = append(ops, op{strings.ToUpper(ep.Method), path, desc})
+		ops = append(ops, op{method, path, desc})
 	}
 	var rows []ui.Row
 	for _, o := range ops {

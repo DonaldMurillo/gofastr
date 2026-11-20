@@ -30,7 +30,7 @@ func TestNewSchemaNameFitsUnderALongTestName(t *testing.T) {
 }
 
 func TestResolvePostgresWithoutDSNIsAnError(t *testing.T) {
-	if os.Getenv("TEST_POSTGRES_DSN") != "" {
+	if os.Getenv(pgtest.DSNEnv) != "" {
 		t.Skip("TEST_POSTGRES_DSN is set")
 	}
 	dsn, err := ResolvePostgresOnce()
@@ -40,7 +40,7 @@ func TestResolvePostgresWithoutDSNIsAnError(t *testing.T) {
 }
 
 func TestOpenPostgresSkipsWithoutDSN(t *testing.T) {
-	if os.Getenv("TEST_POSTGRES_DSN") != "" {
+	if os.Getenv(pgtest.DSNEnv) != "" {
 		t.Skip("TEST_POSTGRES_DSN is set")
 	}
 	skipped := false

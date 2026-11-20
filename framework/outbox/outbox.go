@@ -17,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
+	"github.com/DonaldMurillo/gofastr/internal/settle"
 )
 
 // Row is a snapshot of one parent outbox row. Status is "pending" until every
@@ -159,7 +160,7 @@ func New(db *sql.DB, opts ...Option) (*Outbox, error) {
 		consumers:      map[string]map[string]event.EventHandler{},
 		handlerGrace:   15 * time.Minute,
 		handlerTimeout: 30 * time.Second,
-		settleTimeout:  10 * time.Second,
+		settleTimeout:  settle.Timeout,
 	}
 	for _, opt := range opts {
 		opt(o)

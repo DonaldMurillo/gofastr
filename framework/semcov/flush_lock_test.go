@@ -91,3 +91,25 @@ func TestFlushWaitsForOtherProcess(t *testing.T) {
 		}
 	}
 }
+
+func TestFlushUsesUniqueTemp(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+	root := t.TempDir()
+	oldTemp := fmt.Sprintf("%s.%d.tmp", filepath.Join(root, FileName), os.Getpid())
+	if err := os.MkdirAll(oldTemp, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	Enable(root)
+	RecordRoute("GET", "/recorded")
+	if err := Flush(); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Read(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.CoveredRoute("GET", "/recorded") {
+		t.Fatalf("recorded route missing: %v", m.Routes)
+	}
+}

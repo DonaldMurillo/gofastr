@@ -944,7 +944,7 @@ func batchIDsDesc(ent *entity.Entity) string {
 
 func hasCustomEndpoints(ent *entity.Entity) bool {
 	for _, endpoint := range ent.Config.Endpoints {
-		if endpoint.Method != "" && endpoint.Path != "" {
+		if EntityEndpointMethod(endpoint.Method) != "" && endpoint.Path != "" {
 			return true
 		}
 	}
@@ -959,7 +959,7 @@ func addBodyRefusals(op *openapi.Operation, errorRef map[string]any) {
 func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName, apiPrefix string, components map[string]bool) (gated bool) {
 	errorRef := map[string]any{"$ref": "#/components/schemas/Error"}
 	for _, endpoint := range ent.Config.Endpoints {
-		method := strings.ToUpper(endpoint.Method)
+		method := EntityEndpointMethod(endpoint.Method)
 		if method == "" || endpoint.Path == "" {
 			continue
 		}

@@ -1663,7 +1663,7 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 	if len(endpoints) > 0 || (a.entityUI != nil && crudMount != "" && a.entityUIWouldOwn(ent)) {
 		resolved := make([]Endpoint, 0, len(endpoints))
 		for _, ep := range endpoints {
-			if strings.TrimSpace(ep.Method) == "" || ep.Handler == nil {
+			if openapi.EntityEndpointMethod(ep.Method) == "" || ep.Handler == nil {
 				continue
 			}
 			ep.Path, _ = m.endpointPaths(ep)
@@ -1702,7 +1702,7 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 }
 
 func validateEndpoint(ep entity.Endpoint) (string, error) {
-	method := strings.ToUpper(strings.TrimSpace(ep.Method))
+	method := openapi.EntityEndpointMethod(ep.Method)
 	if method == "" {
 		return "", fmt.Errorf("endpoint %q: method is required", ep.Path)
 	}
@@ -1779,7 +1779,7 @@ func endpointMCPOptions(ent *entity.Entity, ep entity.Endpoint) []mcp.ToolOption
 		gate = MCPRequireUser()
 	}
 	verb := "write"
-	if m := strings.ToUpper(strings.TrimSpace(ep.Method)); m == http.MethodGet || m == http.MethodHead {
+	if m := openapi.EntityEndpointMethod(ep.Method); m == http.MethodGet || m == http.MethodHead {
 		verb = "read"
 	}
 	scope := access.Permission(ent.GetTable() + ":" + verb)

@@ -126,8 +126,9 @@ macOS), created 0700. Four files live there:
 The first three are [`framework/localapp`](local-apps.md)'s, the same
 set every one-person host opens.
 
-`GOFASTR_DESKTOP_DATA_DIR` overrides the base directory (absolute
-paths only); tests and CI use it to avoid touching a real profile.
+`GOFASTR_DESKTOP_DATA_DIR` overrides the base directory and requires an
+absolute path. Go code can refer to the variable name as
+`desktop.DataDirEnv`. Tests and CI use it to avoid touching a real profile.
 `Config.DataDir` overrides the whole path per battery.
 
 ### Persistent browser profiles on Linux
@@ -2600,8 +2601,9 @@ for a deep-link scheme). On Windows, put `WebView2Loader.dll` beside the
 Microsoft.Web.WebView2 NuGet package, version 1.0.4258.31, the one
 `build` pins, after checking the package's SHA-256 is
 `56f7f4b8bf9aee4b8efefbbdd4f67d5f74ebd1b100ed0806da71bf76af481aa9`.
-Without the DLL the window cannot open. A plain
-`go build` has no version resource or icon; those come from `build`.
+Set `GOFASTR_WEBVIEW2_LOADER` to the full path to a
+`WebView2Loader.dll` to try that file before the copy beside the executable.
+The window needs the DLL to open. A plain `go build` has no version resource or icon; those come from `build`.
 For a universal macOS executable, build once with `GOARCH=arm64` and
 once with `GOARCH=amd64`, then merge the two with
 `lipo -create -output <Name> <arm64> <amd64>` before signing.

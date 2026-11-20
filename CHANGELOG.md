@@ -41,6 +41,8 @@ few lines, and link the PR or the docs page for the rest.
   [testkit](framework/docs/content/testkit.md).
 - **`app.CanonicalRoutePattern`** returns the pattern the screen router
   registers and compares routes by.
+- **`desktop.DataDirEnv` names the `GOFASTR_DESKTOP_DATA_DIR` override**
+  for Go callers and test harnesses.
 
 ### Changed
 
@@ -732,6 +734,13 @@ few lines, and link the PR or the docs page for the rest.
   content type with 403, like the other entityui write routes. A
   cross-site JSON purge used to run. The 403 body each route sends is
   unchanged.
+
+- **The SDK reference and OpenAPI document list an endpoint's method as
+  the router mounts it** when the declared method has surrounding
+  whitespace, and a blank method no longer panics the SDK reference.
+- **Semantic coverage flushes when an earlier process left its temporary
+  file behind.** The axe and semantic coverage recorders share one
+  locked, atomic manifest write.
 
 ### Security
 

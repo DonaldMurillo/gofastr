@@ -387,6 +387,20 @@ func TestEndpointRowsUseMountedPaths(t *testing.T) {
 	}
 }
 
+func TestEndpointRowsTrimMethods(t *testing.T) {
+	e := entity.Define("posts", entity.EntityConfig{Endpoints: []entity.Endpoint{
+		{Method: " head ", Path: "stats", Handler: http.NotFoundHandler()},
+		{Method: " ", Path: "blank_method", Handler: http.NotFoundHandler()},
+	}})
+	ref := (&entityScreen{site: &site{}}).endpointsTable(e, "").String()
+	if !strings.Contains(ref, ">HEAD</span>") {
+		t.Error("reference lacks a HEAD label for the mounted HEAD route")
+	}
+	if strings.Contains(ref, "/posts/blank_method") {
+		t.Error("reference lists an endpoint with no HTTP method")
+	}
+}
+
 func TestEndpointRowsOmitMCPOnlyDeclarations(t *testing.T) {
 	e := entity.Define("posts", entity.EntityConfig{Endpoints: []entity.Endpoint{
 		{Method: "GET", Path: "visible_stats", Handler: http.NotFoundHandler()},

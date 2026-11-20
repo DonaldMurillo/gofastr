@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/internal/coverageroot"
-	"github.com/DonaldMurillo/gofastr/internal/filelock"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -187,17 +186,11 @@ func Flush() error {
 	if current == nil || dir == "" || !dirty {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(lockName)), 0o700); err != nil {
-		return fmt.Errorf("semcov: create %s: %w", filepath.Dir(lockName), err)
-	}
-	lock, err := os.OpenFile(filepath.Join(dir, lockName), os.O_CREATE|os.O_RDWR, 0o600)
+	lock, err := coverageroot.LockManifest(filepath.Join(dir, lockName), "semcov")
 	if err != nil {
-		return fmt.Errorf("semcov: open lock: %w", err)
+		return err
 	}
 	defer lock.Close()
-	if err := filelock.Lock(lock); err != nil {
-		return fmt.Errorf("semcov: lock manifest: %w", err)
-	}
 	merged := current
 	if onDisk, err := readFrom(dir); err == nil {
 		merged = mergeManifests(onDisk, current)
@@ -255,23 +248,7 @@ func mergeManifests(a, b *Manifest) *Manifest {
 }
 
 func writeTo(root string, m *Manifest) error {
-	file := filepath.Join(root, FileName)
-	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
-		return fmt.Errorf("semcov: create %s: %w", filepath.Dir(file), err)
-	}
-	data, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return fmt.Errorf("semcov: encode manifest: %w", err)
-	}
-	tmp := fmt.Sprintf("%s.%d.tmp", file, os.Getpid())
-	if err := fileperm.WriteOwnerOnly(tmp, append(data, '\n')); err != nil {
-		return fmt.Errorf("semcov: write manifest: %w", err)
-	}
-	if err := os.Rename(tmp, file); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("semcov: replace manifest: %w", err)
-	}
-	return nil
+	return coverageroot.WriteManifest(filepath.Join(root, FileName), "semcov", m, fileperm.RestrictOpenFile)
 }
 
 // Read loads the manifest under root; a missing one is fs.ErrNotExist.
@@ -388,7 +365,7 @@ func DirFor(root string) string {
 	return root
 }
 
-var overrideKeys = []string{"GOFASTR_SEMANTIC_COVERAGE_DIR", "GOFASTR_AXE_COVERAGE_DIR"}
+var overrideKeys = []string{"GOFASTR_SEMANTIC_COVERAGE_DIR", coverageroot.AxeDirEnv}
 
 func overrideDir() string {
 	for _, key := range overrideKeys {

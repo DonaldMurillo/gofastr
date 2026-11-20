@@ -1641,25 +1641,6 @@ func isRequestCookieCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 	return ok && sel.Sel.Name == "Cookie" && isRequestTyped(pass, sel.X)
 }
 
-// boundToCookie: e is a variable whose binding came from an
-// r.Cookie(...) call.
-func (t *taint) boundToCookie(e ast.Expr) bool {
-	id, ok := ast.Unparen(e).(*ast.Ident)
-	if !ok {
-		return false
-	}
-	obj, ok := t.pass.TypesInfo.ObjectOf(id).(*types.Var)
-	if !ok {
-		return false
-	}
-	for _, b := range t.bind[obj] {
-		if call, ok := ast.Unparen(b).(*ast.CallExpr); ok && isRequestCookieCall(t.pass, call) {
-			return true
-		}
-	}
-	return false
-}
-
 // isChildOutputParam: a parameter named stderr/stdout — the child
 // process output convention. The producer is out of sight; the name is
 // the seam this rule can see.

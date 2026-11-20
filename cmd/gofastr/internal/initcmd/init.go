@@ -691,12 +691,6 @@ func main() {
 	}
 }
 
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
 `, modulePath, appName)
 	} else {
 		driverImport := `_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"`
@@ -861,15 +855,9 @@ func main() {
 	}
 }
 
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
 `, modulePath, appName, driverImport, sqlDriver, dsnFallback, migrateDialect)
 	}
-	if err := writeScaffoldFile(name, "main.go", []byte(content)); err != nil {
+	if err := writeScaffoldFile(name, "main.go", []byte(content+project.GetEnvSource)); err != nil {
 		cli.Fail("Failed to write main.go: %v", err)
 		cli.OsExit(1)
 	}

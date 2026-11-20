@@ -47,6 +47,9 @@ var (
 	logged     atomic.Bool
 )
 
+// DSNEnv names the environment variable that supplies a Postgres test DSN.
+const DSNEnv = "TEST_POSTGRES_DSN"
+
 // ErrNoPostgres is what every caller sees when TEST_POSTGRES_DSN is unset. It
 // names the two ways to supply one rather than reporting a bare absence.
 var ErrNoPostgres = errors.New(
@@ -62,7 +65,7 @@ var ErrNoPostgres = errors.New(
 // server answers is each entry point's ping to establish.
 func ResolveEnv() (dsn string, source string, err error) {
 	once.Do(func() {
-		if dsn := strings.TrimSpace(os.Getenv("TEST_POSTGRES_DSN")); dsn != "" {
+		if dsn := strings.TrimSpace(os.Getenv(DSNEnv)); dsn != "" {
 			baseDSN, using = dsn, "env"
 			return
 		}

@@ -149,6 +149,11 @@ the app's page routes and fails boot for any route no axe test covered.
 Coverage follows the router, not string equality: a recorded scan of
 `/docs/install` covers the `/docs/:slug` pattern.
 
+Set `GOFASTR_SEMANTIC_COVERAGE_DIR` to put the [semantic coverage
+manifest](contracts.md#semantic-coverage) in a separate directory. Semantic
+coverage checks that variable first and falls back to
+`GOFASTR_AXE_COVERAGE_DIR`.
+
 The demand surface mirrors the sitemap's discovery surface: a dynamic
 route (`/orders/:id`) is only demanded when its screen's
 `StaticPaths(ctx)` returns at least one concrete instance; then the

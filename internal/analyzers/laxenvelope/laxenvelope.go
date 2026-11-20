@@ -108,6 +108,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
+	"github.com/DonaldMurillo/gofastr/internal/ancestor"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -1033,22 +1034,21 @@ func moduleIndex(pass *analysis.Pass, files []*ast.File) *strictIndex {
 // moduleRoot walks up from dir to the nearest go.mod, returning the
 // module root and its path declaration.
 func moduleRoot(dir string) (root, modPath string, ok bool) {
-	for {
-		if data, err := os.ReadFile(filepath.Join(dir, "go.mod")); err == nil {
-			for _, line := range strings.Split(string(data), "\n") {
-				line = strings.TrimSpace(line)
-				if rest, found := strings.CutPrefix(line, "module "); found {
-					return dir, strings.TrimSpace(rest), true
-				}
-			}
-			return dir, "", true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", "", false
-		}
-		dir = parent
+	var data []byte
+	root, ok, _ = ancestor.Find(dir, func(candidate string) (bool, error) {
+		var err error
+		data, err = os.ReadFile(filepath.Join(candidate, "go.mod"))
+		return err == nil, nil
+	})
+	if !ok {
+		return "", "", false
 	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if rest, found := strings.CutPrefix(strings.TrimSpace(line), "module "); found {
+			return root, strings.TrimSpace(rest), true
+		}
+	}
+	return root, "", true
 }
 
 func buildIndex(root, modPath string) *strictIndex {

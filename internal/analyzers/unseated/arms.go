@@ -390,15 +390,6 @@ func timeChan(pass *analysis.Pass, e ast.Expr) bool {
 	return ok && astx.IsNamed(ch.Elem(), "time", "Time")
 }
 
-func holdsLoop(loops []*parkLoop, f *family) bool {
-	for _, l := range loops {
-		if l.fam == f {
-			return true
-		}
-	}
-	return false
-}
-
 // recheckCall: handler.RecheckPrincipal.
 func (a *arms) recheckCall(call *ast.CallExpr) bool {
 	fn, ok := astx.CalleeFunc(a.pass, call.Fun)

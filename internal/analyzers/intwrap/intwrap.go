@@ -790,11 +790,6 @@ func isComparison(op token.Token) bool {
 	return false
 }
 
-func isIdentObj(pass *analysis.Pass, e ast.Expr, obj types.Object) bool {
-	id, ok := e.(*ast.Ident)
-	return ok && pass.TypesInfo.ObjectOf(id) == obj
-}
-
 // unboundedSources collects the objects of the genuinely unbounded
 // operands: case variables of a type switch over an any/empty-interface
 // tag (anySwitchVars), and the value variables of comma-ok assertions

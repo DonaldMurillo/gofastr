@@ -943,9 +943,9 @@ func (nw *NativeWindow) State() (desktop.WindowState, error) {
 // bootEnv prepares the process for a native run.
 func bootEnv() {
 	os.Setenv(isolation.EnvIsolation, "off")
-	if os.Getenv(dataDirEnv) == "" {
+	if os.Getenv(desktop.DataDirEnv) == "" {
 		if dir, err := os.MkdirTemp("", "gofastr-desktop-native-*"); err == nil {
-			os.Setenv(dataDirEnv, dir)
+			os.Setenv(desktop.DataDirEnv, dir)
 		}
 	}
 }

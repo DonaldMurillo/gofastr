@@ -79,9 +79,6 @@ const (
 	maxHarnessBody = 8 << 20
 )
 
-// dataDirEnv is the battery's data-dir override (desktop.DataDir).
-const dataDirEnv = "GOFASTR_DESKTOP_DATA_DIR"
-
 // Run starts d.Run(app) on a goroutine, waits for the fake window to
 // receive the boot navigation, walks the single-use token handshake
 // as the WebView would, and returns the harness holding the resulting
@@ -97,8 +94,8 @@ func Run(t testing.TB, app *framework.App, d *desktop.Battery) *Harness {
 	if !ok {
 		t.Fatalf("desktoptest.Run: the battery's Shell is %T; construct it with desktop.Config{Shell: desktoptest.NewShell()}", d.Shell())
 	}
-	if os.Getenv(dataDirEnv) == "" {
-		t.Setenv(dataDirEnv, t.TempDir())
+	if os.Getenv(desktop.DataDirEnv) == "" {
+		t.Setenv(desktop.DataDirEnv, t.TempDir())
 	}
 	h := &Harness{t: t, App: app, Battery: d, Shell: shell, runErr: make(chan error, 1)}
 	go func() { h.runErr <- d.Run(app) }()
