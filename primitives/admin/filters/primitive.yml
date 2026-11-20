@@ -1,0 +1,42 @@
+primitive: admin.filters
+summary: Narrowing an admin screen from the query string - spotting a narrowing pair url.ParseQuery drops and drawing the "Filter not applied" warning over it, for the Audit, Jobs and Search pages.
+code:
+  - battery/admin/query_pairs.go
+docs:
+  - framework/docs/content/admin.md
+on_change:
+  - A new admin screen that narrows what it lists from the query string calls droppedNarrowing with every narrowing param it reads and draws filterNotApplied, and its case joins TestUndecodablePairWarns.
+twins:
+  - job: Spot a query pair url.ParseQuery drops that would have narrowed a list, and warn "Filter not applied" instead of listing wider.
+    why: entityui's detector and callout are unexported and admin is another package, so sharing them needs an exported helper in framework/entityui or framework/ui, an API change this sweep did not make; both callouts draw the same i18nui phrases.
+    sites:
+      - path: battery/admin/query_pairs.go
+        note: droppedNarrowing and filterNotApplied, used by the Audit, Jobs and Search pages.
+      - path: framework/entityui/list_query.go
+        note: listState.ownPairUndecodable, for the entity lists.
+      - path: framework/entityui/list_views.go
+        note: filterWarning, the entity list's callout.
+invariants:
+  - id: dropped-filter-warns
+    rule: The Audit, Jobs and Search pages warn that a filter was not applied when a narrowing query pair cannot be decoded or holds a value the page cannot use, an unknown ?status= on the Jobs page included, instead of silently listing wider.
+    enforced_by:
+      - test: battery/admin.TestUndecodablePairWarns
+      - test: battery/admin.TestAuditFilterIgnoresBadValues
+      - test: battery/admin.TestUnknownFilterValueWarns
+    applies:
+      - battery/admin/audit.go
+      - battery/admin/queue.go
+      - battery/admin/palette.go
+  - id: only-narrowing-pairs-warn
+    rule: droppedNarrowing reports a dropped pair whose key does not decode or carries a ';', or whose key is one of the screen's narrowing params, and ignores an undecodable pair that narrows nothing, such as limit.
+    enforced_by:
+      - test: battery/admin.TestUndecodablePairWarns
+  - id: every-narrowing-param-is-named
+    rule: Each screen passes droppedNarrowing every param it narrows by - the Audit page actor, entity, op, from and to, the Jobs page status, the Search page q.
+    enforced_by:
+      - test: battery/admin.TestUndecodablePairWarns
+    judge: Does this change make an admin screen narrow by a new query param without adding it to the screen's droppedNarrowing call?
+    applies:
+      - battery/admin/audit.go
+      - battery/admin/queue.go
+      - battery/admin/palette.go

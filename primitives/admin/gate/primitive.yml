@@ -1,0 +1,87 @@
+primitive: admin.gate
+summary: The one default-deny gate in front of every admin page and route - who may enter, the cross-site refusal, the answer headers and the platform-only pages.
+code:
+  - battery/admin/gate.go
+  - battery/admin/csrf.go
+  - battery/admin/platform.go
+docs:
+  - framework/docs/content/admin.md
+on_change:
+  - A new admin route mounts on b.routes(), so the gate and the cross-site refusal cover it, and a page, post or fragment over platform data (jobs, accounts, grants, modules) also goes behind platformPolicy or platformOnly.
+invariants:
+  - id: refusals-run-before-authorize
+    rule: An embed grant, an API token without AdminScope and a Decider's deny refuse the back office before Authorize or the role check runs, so neither can lift them.
+    enforced_by:
+      - test: battery/admin.TestGateRefusesAnEmbedGrant
+      - test: battery/admin.TestScopedTokenRefusedAdmin
+      - test: battery/admin.TestGateHonorsADeciderDeny
+  - id: nil-user-is-refused
+    rule: A request whose context carries a nil user, which battery/auth seeds on every request, is refused by the default role check.
+    enforced_by:
+      - test: battery/admin.TestGateRefusesASeededNilUser
+      - test: battery/admin.TestGateRefusesAnonymous
+  - id: policy-callback-fails-closed
+    rule: A panic in Authorize or another policy callback answers false, and the log names the callback and the panic's type, never its value.
+    enforced_by:
+      - test: battery/admin.TestPanickingAuthorizeRefuses
+      - test: battery/admin.TestPanickingPageAccessHidesOnlyThatPage
+      - test: battery/admin.TestPanickingPolicyLogsTypeNotValue
+  - id: refused-status-and-login
+    rule: A signed-out caller gets 401, or a 303 to LoginPath?next= carrying the escaped path and the raw query on a GET, and a signed-in caller without the role gets 403.
+    enforced_by:
+      - test: battery/admin.TestGateSendsSignedOutToLogin
+      - test: battery/admin.TestGateLoginRedirectKeepsQuery
+      - test: battery/admin.TestGateRefusesNonAdmin
+  - id: cross-site-forgeable-posts-refused
+    rule: The gate answers 403 to every request that handler.IsForgeableRequest calls forgeable and handler.IsCrossSiteRequest calls cross-site, a text/plain form, a bodyless post and a same-site sibling whose Origin names another host included, and lets GET, HEAD and OPTIONS through.
+    enforced_by:
+      - test: battery/admin.TestGateRefusesCrossSitePosts
+      - test: battery/admin.TestGateRefusesEveryForgeableCrossSiteShape
+  - id: every-answer-is-no-store
+    rule: Every answer under the prefix, refusals and host-served screens included, carries Cache-Control no-store and the middleware's security headers.
+    enforced_by:
+      - test: battery/admin.TestGateHeadersOnEveryAnswer
+  - id: queued-run-passes-the-same-gate
+    rule: A queued bulk run's rebuilt context gets Config.Policy when it holds none, keeps one it holds, and runs elevated only when the gate still admits its creator.
+    enforced_by:
+      - test: battery/admin.TestAdmitJobPutsThePolicyOnABareContext
+      - test: battery/admin.TestBulkRunAdminIsElevated
+      - test: battery/admin.TestBulkRunUsesCurrentRoles
+  - id: elevation-stops-at-exposed-entities
+    rule: The admin's elevation lifts the Access check of the entities it exposes and of no other.
+    enforced_by:
+      - test: battery/admin.TestElevationStopsAtExposedEntities
+      - test: battery/admin.TestEntityElevationLiftsAccess
+  - id: platform-pages-refuse-tenant-callers
+    rule: A caller with a tenant gets 403 from the Jobs, User roles, Roles and Modules pages and their posts before anything is read, and the sidebar, palette and dashboard leave those pages out for it.
+    enforced_by:
+      - test: battery/admin.TestTenantAdminRefusedPlatformPages
+      - test: battery/admin.TestTenantAdminNavOmitsPlatformPages
+      - test: battery/admin.TestTenantAttentionOmitsFailedJobs
+decisions:
+  - id: own-cross-site-posture
+    date: 2026-11-20
+    status: accepted
+    decision: The gate refuses forgeable cross-site requests itself, through handler.IsForgeableRequest and handler.IsCrossSiteRequest, instead of relying on the app's CSRF middleware.
+    rejected:
+      - option: Rely on middleware.CSRF.
+        why: It is an optional app-level add-on, and an app that never installs it still serves the admin's ops posts.
+      - option: Refuse only a cross-site urlencoded form, by Content-Type.
+        why: A text/plain form and a bodyless fetch POST are CORS-simple too, and the queue replay route mutates with no body.
+    upholds: [cross-site-forgeable-posts-refused]
+  - id: token-needs-admin-scope
+    date: 2026-11-20
+    status: accepted
+    decision: A request an API token authenticated passes only when the token holds AdminScope ("admin:*" and "*:*" cover it); sessions and JWTs carry no token scopes and are unaffected.
+    rejected:
+      - option: Admit a token by its owner's roles alone.
+        why: A token carries its owner's roles, so one an admin minted for another surface would open the back office.
+    upholds: [refusals-run-before-authorize]
+  - id: platform-data-is-tenantless
+    date: 2026-11-20
+    status: accepted
+    decision: The platform operator is a caller with no tenant, the reading the audit page uses, and only that caller reaches the pages over queue jobs, accounts, grants and modules.
+    rejected:
+      - option: Show those pages to a tenant-scoped admin.
+        why: Those rows carry no tenant, so a tenant's admin would read and change every tenant's.
+    upholds: [platform-pages-refuse-tenant-callers]

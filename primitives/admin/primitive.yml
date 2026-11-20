@@ -26,12 +26,6 @@ invariants:
     rule: A single replay makes one call to the queue and never reads the job list, and a queue without ReplayReporter replays and audits as a plain Replay does.
     enforced_by:
       - test: battery/admin.TestSingleReplayNeverScansTheFailedList
-  - id: dropped-filter-warns
-    rule: The Audit and Jobs pages warn that a filter was not applied when a narrowing query pair cannot be decoded or holds a value the page cannot use, an unknown ?status= on the Jobs page included, instead of silently listing wider.
-    enforced_by:
-      - test: battery/admin.TestUndecodablePairWarns
-      - test: battery/admin.TestAuditFilterIgnoresBadValues
-      - test: battery/admin.TestUnknownFilterValueWarns
   - id: audit-ops-cover-admin-writes
     rule: Every op the admin's own pages write on success is one the audit filter's ?op= takes, and a module lever's op is tinted and drawn by its verb.
     enforced_by:

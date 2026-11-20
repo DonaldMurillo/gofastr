@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -190,5 +191,39 @@ func TestGateRefusesCrossSitePosts(t *testing.T) {
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	if rr := serve(x.as(theAdmin), req); rr.Code != http.StatusOK {
 		t.Errorf("same-origin palette = %d, want 200", rr.Code)
+	}
+}
+
+func TestGateRefusesEveryForgeableCrossSiteShape(t *testing.T) {
+	x := gatedEnv(t, Config{})
+	plain := httptest.NewRequest(http.MethodPost, "/admin/_palette", strings.NewReader("q=a"))
+	plain.Header.Set("Content-Type", "text/plain")
+	plain.Header.Set("Sec-Fetch-Site", "cross-site")
+	bodyless := httptest.NewRequest(http.MethodPost, "/admin/queue/_replay/j1", nil)
+	bodyless.Header.Set("Sec-Fetch-Site", "cross-site")
+	sibling := newPost("/admin/_palette", url.Values{"q": {"a"}})
+	sibling.Header.Set("Sec-Fetch-Site", "same-site")
+	sibling.Header.Set("Origin", "https://other.example.com")
+	for name, req := range map[string]*http.Request{"text/plain": plain, "bodyless": bodyless, "same-site sibling": sibling} {
+		if rr := serve(x.as(theAdmin), req); rr.Code != http.StatusForbidden {
+			t.Errorf("a %s cross-site post = %d, want 403", name, rr.Code)
+		}
+	}
+}
+
+func TestAdmitJobPutsThePolicyOnABareContext(t *testing.T) {
+	p, held := access.NewRolePolicy(), access.NewRolePolicy()
+	b := &Battery{cfg: Config{Policy: p}}
+	if got := access.PolicyFromContext(b.admitJob(context.Background())); got != p {
+		t.Error("a queued run's rebuilt context did not get Config.Policy")
+	}
+	if got := access.PolicyFromContext(b.admitJob(access.WithPolicy(context.Background(), held))); got != held {
+		t.Error("admitJob replaced the policy the context already held")
+	}
+}
+
+func TestGateRefusesASeededNilUser(t *testing.T) {
+	if (&Battery{}).authorized(handler.SetUser(context.Background(), nil)) {
+		t.Error("a request carrying a nil user reached the back office")
 	}
 }
