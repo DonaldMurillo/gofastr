@@ -9,20 +9,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/email"
 )
 
-// ErrUnsafeRecipient is returned by EmailChannel.Send when the
-// recipient or from address is one the SMTP battery refuses
-// (email.ValidateAddress): a control byte that would let a caller
-// smuggle extra headers (CR / LF / NUL), an invisible codepoint, or a
-// value that is not exactly one mailbox.
+// ErrUnsafeRecipient reports a recipient or from address email.ValidateAddress refuses.
 var ErrUnsafeRecipient = errors.New("notify: unsafe recipient address")
 
-// ErrInvalidAttachments reports a rendered attachments entry that is not
-// []email.Attachment. The channel refuses the entire message before sending.
+// ErrInvalidAttachments reports an attachments entry that is not []email.Attachment.
 var ErrInvalidAttachments = errors.New("notify: attachments must be []email.Attachment")
 
-// EmailChannel adapts a battery/email Sender to the notify Channel
-// interface. Renders Subject/TextBody/HTMLBody from the Templater into
-// the email's matching fields.
+// EmailChannel adapts a battery/email Sender to the Channel interface.
 type EmailChannel struct {
 	sender  email.Sender
 	from    string
@@ -33,14 +26,11 @@ type EmailChannel struct {
 type EmailChannelOption func(*EmailChannel)
 
 // WithEmailChannelName overrides the registered name (default "email").
-// Useful when you want multiple email adapters (e.g. transactional vs
-// marketing) on the same Notifier.
 func WithEmailChannelName(name string) EmailChannelOption {
 	return func(c *EmailChannel) { c.channel = name }
 }
 
-// NewEmailChannel wraps a battery/email Sender with a from-address
-// default. Pass any [EmailChannelOption]s to tweak the registration.
+// NewEmailChannel wraps sender, sending from the from address.
 func NewEmailChannel(sender email.Sender, from string, opts ...EmailChannelOption) *EmailChannel {
 	c := &EmailChannel{sender: sender, from: from, channel: "email"}
 	for _, opt := range opts {
@@ -52,40 +42,16 @@ func NewEmailChannel(sender email.Sender, from string, opts ...EmailChannelOptio
 // Name implements Channel.
 func (c *EmailChannel) Name() string { return c.channel }
 
-// Send implements Channel. Maps the Rendered payload onto an
-// email.Email and dispatches via the wrapped Sender.
-//
-// Recipient and from addresses are checked for the three shapes that
-// turn an address into a header-injection vector: CR, LF, NUL. They are
-// also screened for an "@" and rejected if they contain HTML tag
-// characters, a literal "<script>alert(1)</script>@evil.com" is never
-// a legitimate address. The downstream SMTP sender re-checks at the
-// transport boundary, but rejecting early surfaces the bug nearer the
-// data source.
-//
-// HTMLBody is passed through verbatim: the channel does not escape it.
-// The bundled MapTemplater already escapes interpolated values for
-// their context, attribute and URL included (see its Render doc); a
-// CUSTOM Templater owns the same obligation — hand the channel a body
-// whose user-controlled parts are escaped (html/template does it),
-// webmail is an HTML application and an unescaped value is a
-// session-theft-class XSS.
+// Send implements Channel.
 func (c *EmailChannel) Send(ctx context.Context, n Notification, r Rendered) (err error) {
-	// The wrapped email.Sender is host-supplied code invoked from
-	// Notifier.Send's fan-out goroutines, which have no per-request
-	// recover net — a panicking sender must surface as an attributed
-	// error, not kill the process.
 	defer func() {
 		if v := recover(); v != nil {
 			err = fmt.Errorf("notify: email channel: sender panicked: %v", v)
 		}
 	}()
 	if n.To.Email == "" {
-		return nil // router shouldn't have selected us, but guard anyway
+		return nil
 	}
-	// Rendered.Extra["from"] is rejected: a templated from override is a
-	// sender-spoofing vector, the channel's configured from-address is
-	// the only legitimate source.
 	if _, ok := r.Extra["from"]; ok {
 		return fmt.Errorf("%w: rendered 'from' override not allowed", ErrUnsafeHeader)
 	}
@@ -129,17 +95,9 @@ func (c *EmailChannel) Send(ctx context.Context, n Notification, r Rendered) (er
 	return c.sender.Send(ctx, msg)
 }
 
-// ErrUnsafeHeader is returned when rendered Extra contains a header
-// name/value that would let a caller smuggle SMTP headers (CR/LF), or
-// when it tries to override a reserved header that the channel owns.
+// ErrUnsafeHeader reports a rendered from override or an unsafe or reserved custom header.
 var ErrUnsafeHeader = errors.New("notify: unsafe header")
 
-// reservedHeaderNames are header keys that callers must NOT override
-// through Rendered.Extra["headers"]. The channel or the sender computes
-// them itself (To/From/Subject and the MIME structure headers), or they
-// are routing-critical fields a caller could weaponize for recipient
-// smuggling (Bcc, Cc) or reply hijacking (Reply-To). Compared
-// case-insensitively.
 var reservedHeaderNames = map[string]struct{}{
 	"to":                        {},
 	"cc":                        {},
@@ -168,12 +126,6 @@ func validateCustomHeaders(h map[string]string) error {
 	return nil
 }
 
-// assertSafeAddress refuses an address the SMTP battery would refuse,
-// through the battery's own rule (email.ValidateAddress): a CR/LF/NUL or
-// other control byte, an invisible codepoint, or anything that is not
-// exactly one mailbox. Its own character list used to refuse an
-// apostrophe (o'brien@example.com) and a display-named From that the
-// sender accepts, and let a comma list through.
 func assertSafeAddress(field, addr string) error {
 	if err := email.ValidateAddress(addr); err != nil {
 		return fmt.Errorf("%w: %s: %v", ErrUnsafeRecipient, field, err)

@@ -1,0 +1,70 @@
+primitive: notify
+summary: The Notifier that routes one typed notification to its channels, renders each through a templater and fans the sends out, with the bundled MapTemplater and LoggerChannel.
+code:
+  - battery/notify/notify.go
+  - battery/notify/agents.go
+docs:
+  - framework/docs/content/notifications.md
+on_change:
+  - A new Extra key a bundled channel reads, or a new default-router channel name, goes in notifications.md.
+invariants:
+  - id: host-code-panics-become-errors
+    rule: A panic in the router, a templater, a channel's Send or the error callback comes back from Send as an error naming what panicked, never as a crash of the fan-out goroutine, and a panicking error callback becomes that channel's reported error.
+    enforced_by:
+      - test: battery/notify.TestPanickingHostCodeBecomesAnError
+  - id: router-names-resolve-to-registered-channels
+    rule: Send sends to each name the router returns once, drops a name no registered channel carries, and returns ErrNoChannels when none is left.
+    enforced_by:
+      - test: battery/notify.TestRouterSelectionValidated
+      - test: battery/notify.TestNotifier_NoChannelsSelectedReturnsErr
+  - id: pre-rendered-payload-skips-the-templater
+    rule: A Rendered under Data["_rendered_<channel>"] is that channel's payload, else one under Data["_rendered"], and only with neither does the templater run.
+    enforced_by:
+      - test: battery/notify.TestPerChannelPreRenderedWinsOverShared
+      - test: battery/notify.TestNotifier_PreRenderedPayloadShortCircuitsTemplater
+  - id: send-runs-in-the-recipient-locale
+    rule: With Recipient.Locale set, the templater and the channel run under the catalog's match for that tag, not the caller's locale.
+    enforced_by:
+      - test: battery/notify.TestRecipientLocaleWins
+  - id: subject-drops-unsafe-codepoints
+    rule: MapTemplater drops every codepoint textsafe.IsUnsafe reports (C0, DEL, C1, zero-width and bidi) from the rendered Subject.
+    enforced_by:
+      - test: battery/notify.TestMapTemplater_StripCRLFFromSubject
+      - test: battery/notify.TestSubjectScrubbedOfInvisible
+  - id: html-body-escapes-by-context
+    rule: MapTemplater fills HTMLBody placeholders through html/template, so a value stays one attribute value even unquoted, a javascript URL in href is refused and only an html/template.HTML value goes in as markup.
+    enforced_by:
+      - test: battery/notify.TestUnquotedAttrValueStaysOneAttr
+      - test: battery/notify.TestHrefValueRefusesJavascriptURL
+      - test: battery/notify.TestMapTemplaterEscapesHTMLBody
+      - test: battery/notify.TestMapTemplaterTrustedHTMLMarker
+  - id: html-body-with-nul-is-refused
+    rule: An HTMLBody holding a NUL byte is a Render error, so host markup can never spell the action delimiters renderHTMLBody writes.
+    enforced_by:
+      - test: battery/notify.TestHTMLBodyWithNULIsRefused
+  - id: unfilled-placeholder-stays
+    rule: A placeholder the data does not fill stays as written, through the one expander Subject, TextBody and HTMLBody share.
+    enforced_by:
+      - test: battery/notify.TestHTMLBodyKeepsUnfilledPlaceholder
+  - id: rendered-output-is-capped
+    rule: One rendered Subject, TextBody or HTMLBody is cut at MaxInterpolatedOutputBytes.
+    enforced_by:
+      - test: battery/notify.TestMapTemplater_CapsInterpolatedOutput
+      - test: battery/notify.TestHTMLBodyOutputIsCapped
+  - id: templater-owns-its-extra-maps
+    rule: MapTemplater copies Template.Extra on Set and on Render, so neither the caller's map nor a rendered one aliases the stored template.
+    enforced_by:
+      - test: battery/notify.TestTemplaterOwnsExtraMaps
+  - id: logger-channel-redacts
+    rule: LoggerChannel writes the subject and text body through email.RedactBody, so a credential URL never reaches the log.
+    enforced_by:
+      - test: battery/notify.TestLoggerChannelRedactsCredentialURLs
+decisions:
+  - id: html-body-through-html-template
+    date: 2026-11-20
+    status: accepted
+    decision: MapTemplater renders HTMLBody through html/template with each value passed as data, the engine battery/email.Execute uses for its HTMLBody.
+    rejected:
+      - option: HTML-escape every value as element text.
+        why: An unquoted attribute value took a second attribute from the value, and href took a javascript URL.
+    upholds: [html-body-escapes-by-context]
