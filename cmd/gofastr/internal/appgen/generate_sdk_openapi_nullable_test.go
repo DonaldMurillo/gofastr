@@ -118,6 +118,11 @@ func TestOpenAPISDKTypelessBody(t *testing.T) {
 			{`{"enum":["ok"]}`, false},
 			{`{"const":"ok"}`, false},
 			{`{"not":{"type":"null"}}`, false},
+			{`{"if":{"type":"null"},"then":false}`, false},
+			{`{"$ref":"#/components/schemas/Any","if":{"type":"null"},"then":false}`, false},
+			{`{"dependentSchemas":{"name":false}}`, false},
+			{`{"unknownKeyword":true}`, false},
+			{`{"title":"Any","x-custom":true,"minLength":3,"items":false}`, true},
 		} {
 			schema := tc.schema
 			t.Run(version+"/"+schema, func(t *testing.T) {

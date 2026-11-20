@@ -511,9 +511,11 @@ absence. In JS/TS, pass `null` to send the literal JSON `null` with
 `Content-Type: application/json`; `undefined` omits an optional body
 and rejects a required one. The body parameter's TypeScript type includes
 `| null` unless it is already `unknown`, which admits null. In OpenAPI 3.1,
-a JSON request body schema without `type`, `oneOf`, `anyOf`, `allOf`,
-`enum`, `const` or `not`, including `{}` and properties-only schemas,
-also admits null; this does not change response or field typing. OpenAPI 3.0 `{}`
+a type-less JSON request body is implicitly nullable only when its keywords
+are annotations, type-specific assertions that ignore null, or `x-` extensions.
+This includes `{}` and properties-only schemas, but excludes conditional,
+composition and unknown keywords. Both the resolved schema and `$ref` siblings
+must qualify; this does not change response or field typing. OpenAPI 3.0 `{}`
 bodies retain their existing behavior: JS treats null as absent (and
 throws when required), while Go keeps its existing nil behavior described
 below. For other non-nullable bodies, `null` still means absent.

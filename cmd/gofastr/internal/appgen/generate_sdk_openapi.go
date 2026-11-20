@@ -222,12 +222,7 @@ func buildOASDKOp(ts *oaTypeSet, op cliOp) (oaSDKOp, error) {
 			if err != nil {
 				return sop, fmt.Errorf("request body: %w", err)
 			}
-			constrained := slices.ContainsFunc([]string{"type", "oneOf", "anyOf", "allOf", "enum", "const", "not"}, func(key string) bool {
-				_, original := body[key]
-				_, present := resolved[key]
-				return original || present
-			})
-			if !constrained {
+			if oaImplicitlyNullableBody(resolved) && oaImplicitlyNullableBody(body) {
 				sop.BodyNullable = true
 			}
 		}
@@ -244,6 +239,22 @@ func buildOASDKOp(ts *oaTypeSet, op cliOp) (oaSDKOp, error) {
 		}
 	}
 	return sop, nil
+}
+
+func oaImplicitlyNullableBody(schema map[string]any) bool {
+	for key := range schema {
+		switch key {
+		case "$ref", "title", "description", "examples", "default", "deprecated", "readOnly", "writeOnly", "$comment", "format", "externalDocs", "xml", "example", "discriminator",
+			"properties", "patternProperties", "additionalProperties", "required", "minProperties", "maxProperties", "propertyNames", "dependentRequired",
+			"items", "prefixItems", "contains", "minItems", "maxItems", "uniqueItems", "minContains", "maxContains",
+			"minLength", "maxLength", "pattern", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf":
+		default:
+			if !strings.HasPrefix(key, "x-") {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // oaRequestSchema is the unresolved schema of an operation's JSON request
