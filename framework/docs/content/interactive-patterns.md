@@ -264,6 +264,14 @@ after the specified debounce interval (default 300ms).
 Attributes injected: `data-cui-rpc-trigger="input"`,
 `data-cui-rpc-debounce-ms` (milliseconds; default 300).
 
+### Dropdown (click-toggle panel)
+
+`interactive.Dropdown(trigger, panel)` wraps a trigger and a panel: the
+trigger gets `data-cui-dropdown`, `aria-expanded` and `aria-haspopup`,
+the panel `data-cui-dropdown-panel` and `hidden`. The runtime's dropdown
+module toggles it on click and closes it on a click outside or Escape.
+Knob: `--ui-dropdown-min-width` (11rem).
+
 ### Optimistic Update (immediate visual + background RPC)
 
 `interactive.OptimisticUpdate(action, idle, success)` accepts only the

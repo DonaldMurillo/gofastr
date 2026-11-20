@@ -182,6 +182,7 @@ var ownedPackages = []string{
 	"core-ui/compute",
 	"core-ui/di",
 	"core-ui/html",
+	"core-ui/interactive",
 	"core-ui/localdb",
 	"core-ui/node",
 	"core-ui/noderender",
