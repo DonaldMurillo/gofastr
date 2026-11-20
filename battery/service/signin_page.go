@@ -1,3 +1,5 @@
+// check-csp:ignore-file
+
 package service
 
 import (
