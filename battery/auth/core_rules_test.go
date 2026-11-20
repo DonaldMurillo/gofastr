@@ -136,6 +136,17 @@ func TestLoginRefusedWhenEmailNowNamesAnotherUser(t *testing.T) {
 	}
 }
 
+func TestLinkBaseURLNeedsAHost(t *testing.T) {
+	for _, base := range []string{"https://", "http:///path"} {
+		if invalidLinkBaseURL(base) == "" {
+			t.Errorf("BaseURL %q with no host was accepted", base)
+		}
+	}
+	if why := invalidLinkBaseURL("https://app.example"); why != "" {
+		t.Errorf("a plain origin was refused: %s", why)
+	}
+}
+
 func TestRegisterStoreFailureIs500(t *testing.T) {
 	mgr := New(AuthConfig{JWTSecret: "s", DevMode: true, UserStore: failingCreateStore{newMemoryUserStore()}})
 	mgr.Use(NewCorePlugin())

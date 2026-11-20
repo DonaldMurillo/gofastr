@@ -18,208 +18,80 @@ import (
 )
 
 // AuthConfig is the top-level configuration for the auth battery.
-// It is passed to New() and stored on AuthManager.
 type AuthConfig struct {
-	// JWTSecret is the signing key for JWT tokens. Required for JWT-based auth.
-	// In production mode (DevMode=false) it is mandatory: Init fails closed
-	// with an error when it is empty, because an empty HMAC key yields
-	// forgeable JWTs. In DevMode a random per-process secret is minted.
+	// JWTSecret is the JWT signing key; Init requires it outside DevMode.
 	JWTSecret string
-	// JWTPreviousSecrets are verify-only signing keys retained for a drain
-	// window after a JWTSecret rotation, mirroring the CSRF AdditionalKeys
-	// idiom. Tokens signed by any key here still validate; the operator drops
-	// them once old tokens have expired (one token TTL). New tokens are always
-	// signed with JWTSecret. Production mode still requires a non-empty
-	// JWTSecret, a previous-only configuration is rejected at Init.
+	// JWTPreviousSecrets are verify-only keys kept for a rotation's drain window.
 	JWTPreviousSecrets []string
 
-	// JWTExpiry is the duration for which JWT tokens are valid.
-	// Defaults to 1 hour if zero.
+	// JWTExpiry is a JWT's lifetime; zero means one hour.
 	JWTExpiry time.Duration
 
-	// CookieOnly suppresses JWTs in login responses. Session cookies remain
-	// HttpOnly, Secure in production, and SameSite=Strict. Prefer enabling this
-	// through WithBFFPosture so session hydration, CSRF, and Origin enforcement
-	// are installed together instead of creating a partial posture.
+	// CookieOnly leaves JWTs out of login responses; WithBFFPosture sets it.
 	CookieOnly bool
 
 	// SessionCookie is the cookie name for session-based auth.
-	// Defaults to "session_id".
 	SessionCookie string
 
-	// SessionTTL is how long a session lives. Zero means 7 days; Init
-	// refuses a negative one.
+	// SessionTTL is a session's lifetime; zero means seven days.
 	SessionTTL time.Duration
 
 	// SessionSecure sets the Secure flag on session cookies.
-	// Should be true in production (HTTPS).
 	SessionSecure bool
 
 	// BasePath is the URL prefix for all auth routes. Defaults to "/auth".
 	BasePath string
 
-	// UserStore looks up and creates users. Unlike SessionStore, there
-	// is NO default: if nil, the register/login/magic-link/OAuth
-	// handlers fail with "user store not configured". Wire an
-	// auth.EntityUserStore (or your own implementation) in every
-	// deployment, including dev/test.
+	// UserStore looks up and creates users; it has no default.
 	UserStore UserStore
 
-	// SessionStore is the storage backend for sessions.
-	// If nil, an in-memory store is used (dev/test only).
+	// SessionStore stores sessions; nil means an in-memory store.
 	SessionStore SessionStore
 
-	// GlobalSessionLookup declares that both session and user lookup ignore
-	// the context tenant: 2FA assurance is about the user alone. Custom stores
-	// bind assurance to the lookup tenant by default. The built-in stores are
-	// recognized as global without this opt-out. This does not add filtering.
+	// GlobalSessionLookup declares that session and user lookups ignore the context tenant.
 	GlobalSessionLookup bool
 
-	// LoginRateLimit applies a per-IP rate limit to /auth/login. nil
-	// does NOT mean unlimited: New installs 30 attempts/min with a
-	// 5-minute block, in DevMode too. To loosen it, pass a config with a
-	// large MaxAttempts.
+	// LoginRateLimit is the per-IP limit on /auth/login; nil means the default.
 	LoginRateLimit *RateLimiterConfig
 
-	// LoginRateLimitPerAccount applies a per-account rate limit to
-	// /auth/login, keyed on the canonical email (see CanonicalEmail).
-	// Combined with the per-IP limiter it defeats the attacker who
-	// pivots through a botnet's worth of IPs to pound a single account.
-	// nil does NOT disable it: New installs 10 attempts/min with a
-	// 15-minute block. To loosen it, pass a config with a large
-	// MaxAttempts.
+	// LoginRateLimitPerAccount is the per-address limit on /auth/login; nil means the default.
 	LoginRateLimitPerAccount *RateLimiterConfig
 
 	// RegisterRateLimit applies a per-IP rate limit to /auth/register.
-	// Defaults to 10/min with a 15-minute block when nil, unthrottled
-	// registration is account-table flooding and, once an EmailSender
-	// is wired, an email-bombing primitive. To disable, pass a config
-	// with a huge MaxAttempts.
 	RegisterRateLimit *RateLimiterConfig
 
-	// MailAddressRateLimit limits the two endpoints that mail a link to
-	// whatever address they are given (/auth/magic-link/send and
-	// /auth/forgot-password) per email address, however many IPs ask:
-	// without it a rotating proxy mails a victim an unbounded stream of
-	// sign-in and reset links. Both endpoints spend the one budget the
-	// auth manager owns: a mail from either starts the cooldown for
-	// both, so an address gets at most one mail per window across the
-	// endpoints. nil does NOT mean unlimited: New installs one mail per
-	// address every two minutes (see defaultMailAddressRateLimit for why
-	// that is a cooldown, not an hourly budget). Past it the request
-	// gets the same 200 as any other and nothing is minted or sent, so
-	// the limit tells a caller nothing about the address. The key is a
-	// SHA-256 digest of the canonical address, never the address.
-	// Loosen by passing a config with a large MaxAttempts.
+	// MailAddressRateLimit is the per-address mail budget magic-link send and forgot-password share; nil means the default.
 	MailAddressRateLimit *RateLimiterConfig
 
 	// DevMode loosens the cookie defaults for local HTTP development.
-	// When true: SessionSecure=false, SessionCookie="session_id".
-	// When false (production default): SessionSecure=true, cookie name
-	// "__Host-session", the prefix forces browsers to reject the cookie
-	// unless Path=/, Secure, no Domain, blocking subdomain cookie
-	// injection.
 	DevMode bool
 
-	// AllowInMemoryStores acknowledges a deliberate single-node
-	// deployment. Without it, production mode (DevMode=false) REFUSES to
-	// boot when sessions live in the default in-memory store, they
-	// don't survive restarts and never resolve on a second replica, and
-	// likewise REFUSES to boot when 2FA state does, since a restart
-	// silently reverting enrolled accounts to password-only auth is a
-	// security downgrade, not a scaling nuisance. With the flag set, both
-	// stores boot; the 2FA store still leaves a WARN trace in the log so
-	// the downgrade risk stays visible. See the horizontal-scaling doc
-	// for the DB-backed alternatives (EntitySessionStore,
-	// EntityTwoFAStore).
+	// AllowInMemoryStores lets production boot on the in-memory session and 2FA stores.
 	AllowInMemoryStores bool
 
-	// DefaultRoles are the server-assigned roles stamped onto every
-	// newly created account, register, magic-link auto-create, and
-	// OAuth auto-create all draw from it. When empty (the default),
-	// ["user"] is used.
-	//
-	// These are operator configuration, NEVER request data: the
-	// registration and auto-create flows are anonymous, so honoring a
-	// client-supplied roles key would let anyone self-promote. The
-	// handlers read this value through AuthManager.DefaultRoles() and
-	// ignore any roles field on the incoming request.
+	// DefaultRoles are the roles every new account gets; empty means ["user"].
 	DefaultRoles []string
 
-	// AuditSink, when non-nil, receives security events: login success
-	// and failure, 2FA enrolment/challenge/disable, password reset,
-	// OAuth link and login, magic-link request and consume. The events
-	// land in the same audit_log table as the CRUD hooks (via
-	// NewSQLAuditSink) so an operator has one trail for "who did what".
-	// nil disables auditing entirely, emit calls are no-ops. Wire it
-	// with auth.NewSQLAuditSink(db, "") for the one-line default.
+	// AuditSink receives security events; nil disables them.
 	AuditSink AuditSink
 
-	// RegisterEmailSender, when non-nil, receives the duplicate-
-	// registration notice mailed to the EXISTING holder when an
-	// anonymous caller registers with an address that already has an
-	// account. It is the register twin of forgot-password's uniform
-	// response: the caller gets the same 202 either way, so account
-	// existence stays unreadable, while the holder learns someone
-	// tried. Delivery runs off the timed path, after the response is
-	// decided. nil (the default) skips the notice — the response is
-	// uniform either way.
+	// RegisterEmailSender mails the existing holder when someone registers their address; nil sends nothing.
 	RegisterEmailSender EmailSender
 
-	// CanonicalizeEmail, when set, replaces the battery's default email
-	// canonicalization at EVERY ingestion point (register, login,
-	// password reset, magic link, OAuth email matching, the per-account
-	// login limiter key). nil uses the default, auth.CanonicalEmail: it
-	// strips zero-width, bidi and C1 control characters, normalizes to
-	// NFC, trims and lowercases, so the composed and decomposed spellings
-	// of one mailbox, and a zero-width twin of it, are one identity. Set
-	// this only for rules the default does not apply (a provider that
-	// ignores dots or plus tags, a legacy store keyed on raw bytes). An
-	// override replaces the default whole, including the strip, so it
-	// owns its own invisible-character policy: wrap auth.CanonicalEmail
-	// rather than starting from scratch.
-	//
-	// The function must be idempotent (canonicalizing a canonical address
-	// returns it unchanged) and safe for concurrent use. An error from it
-	// (auth.ErrEmailNotComposed, or any other) fails the request with
-	// 400 at every email-ingesting endpoint.
+	// CanonicalizeEmail replaces CanonicalEmail at every ingestion point; it must be idempotent.
 	CanonicalizeEmail func(email string) (string, error)
 
-	// Pages renders the screens the battery answers with itself: the
-	// magic-link confirmation and the same-site hop a cross-site OAuth
-	// link callback or verification link lands on. A UIHost app sets
-	// it to authui.Pages(host) (battery/auth/authui) so they carry the
-	// app's chrome and theme. nil keeps the plain built-in documents.
+	// Pages renders the battery's own screens; nil keeps the built-in documents.
 	Pages Pages
 }
 
-// defaults fills in zero values with sensible defaults.
-//
-// Production defaults (DevMode=false):
-//   - SessionCookie = "__Host-session" (browser-enforced subdomain
-//     isolation; requires Path=/, Secure, no Domain).
-//   - SessionSecure = true.
-//
-// Dev defaults (DevMode=true):
-//   - SessionCookie = "session_id".
-//   - SessionSecure = false.
 func (c *AuthConfig) defaults() {
 	if c.BasePath == "" {
 		c.BasePath = "/auth"
 	}
 	if c.SessionTTL == 0 {
-		// 7 days matches MemorySessionStore.Create's previous fallback.
-		// Without this, EntitySessionStore.Create would silently mint
-		// already-expired sessions (broken login on the very next request).
-		// A negative TTL is not unset: Init refuses it.
 		c.SessionTTL = 7 * 24 * time.Hour
 	}
-	// Default brute-force throttles. These run in BOTH DevMode and
-	// production because credential-stuffing is a network attack, not
-	// a config-mode attack, leaving /auth/login un-throttled in dev
-	// has been the source of every "we wrote a test and it found 22
-	// vulns" story since 2016. Apps that really want unlimited login
-	// throughput can pass a custom config with a huge MaxAttempts.
 	if c.LoginRateLimit == nil {
 		c.LoginRateLimit = &RateLimiterConfig{
 			MaxAttempts:   30, // ~ generous per-IP burst
@@ -248,10 +120,6 @@ func (c *AuthConfig) defaults() {
 		if c.SessionCookie == "" {
 			c.SessionCookie = "session_id"
 		}
-		// In dev with no explicit JWTSecret, mint a random per-process
-		// secret so the boilerplate doesn't ship a literal "change-me"
-		// string. Sessions invalidate on restart, set JWTSecret if you
-		// need stable dev tokens across restarts.
 		if c.JWTSecret == "" {
 			secret, err := randomDevJWTSecret()
 			if err == nil {
@@ -260,24 +128,14 @@ func (c *AuthConfig) defaults() {
 					"recommendation", "set AuthConfig.JWTSecret if you need stable dev tokens across restarts")
 			}
 		}
-		// SessionSecure stays false (zero value) in dev.
 		return
 	}
-	// Production defaults: secure-by-default.
 	if c.SessionCookie == "" {
 		c.SessionCookie = "__Host-session"
 	}
 	c.SessionSecure = true
-	// No signing key in production is a fatal misconfiguration: an empty
-	// HMAC secret yields forgeable JWTs and sessions that don't survive
-	// a restart. Init fails closed on it (see AuthManager.Init). DevMode
-	// mints a per-process secret; production must supply one explicitly.
 }
 
-// randomDevJWTSecret returns 32 cryptographically-random bytes encoded
-// as URL-safe base64, enough entropy for the HMAC-SHA256 signing
-// path NewJWTAuth uses. Only called when DevMode is on and no
-// JWTSecret was supplied.
 func randomDevJWTSecret() (string, error) {
 	var buf [32]byte
 	if _, err := rand.Read(buf[:]); err != nil {
@@ -286,19 +144,6 @@ func randomDevJWTSecret() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf[:]), nil
 }
 
-// defaultMailAddressRateLimit is the per-address floor on the two
-// endpoints that mail a link to whatever address they are given
-// (magic-link send, forgot-password), one budget shared by both: one
-// mail every two minutes, no longer block.
-//
-// It is a cooldown on purpose, not an hourly budget. Anyone can spend an
-// address's budget, and the first version (5 an hour, then an hour's
-// block) let a stranger send six requests and stop every link to the
-// victim for the next hour: for a passwordless app, no sign-in at all.
-// With a two-minute cooldown the mails a stranger triggers still reach
-// the victim's inbox, and each link lives longer than the cooldown, so
-// the owner always holds a working one, while a flood is held to about
-// thirty mails an hour.
 func defaultMailAddressRateLimit() *RateLimiterConfig {
 	return &RateLimiterConfig{
 		MaxAttempts:   1,
@@ -308,118 +153,74 @@ func defaultMailAddressRateLimit() *RateLimiterConfig {
 }
 
 // UserStore is the interface auth needs to look up and manage users.
-// This decouples auth from any specific storage backend.
 type UserStore interface {
-	// FindByEmail looks up a user by email. Returns the user and their
-	// hashed password, or ErrUserNotFound if no row matches. Other errors
-	// (e.g. transport failures) are returned verbatim so handlers can
-	// distinguish "user doesn't exist" from "DB unavailable".
+	// FindByEmail returns the user and password hash, or ErrUserNotFound.
 	FindByEmail(ctx context.Context, email string) (User, string, error)
 
-	// FindByID looks up a user by their unique ID. Returns ErrUserNotFound
-	// if no row matches.
+	// FindByID returns the user, or ErrUserNotFound.
 	FindByID(ctx context.Context, id string) (User, error)
 
-	// CreateUser creates a new user account. Returns ErrEmailTaken if the
-	// email is already registered.
+	// CreateUser creates an account, or returns ErrEmailTaken.
 	CreateUser(ctx context.Context, email, hashedPassword string, roles []string) (User, error)
 
-	// UpdateRoles replaces the roles for an existing user. Returns
-	// ErrUserNotFound if the user does not exist. The roles slice is
-	// OPERATOR input (from an admin screen), never request data, the
-	// same security posture as AuthConfig.DefaultRoles.
+	// UpdateRoles replaces a user's roles, or returns ErrUserNotFound.
 	UpdateRoles(ctx context.Context, userID string, roles []string) error
 }
 
-// AuthPlugin is the interface for composable auth features. Each plugin
-// adds authentication capabilities (email/password, OAuth2, 2FA, etc.)
-// to the AuthManager.
-//
-// Plugins are registered via AuthManager.Use() and initialized in order
-// during AuthManager.Init().
+// AuthPlugin is one composable auth feature registered with AuthManager.Use.
 type AuthPlugin interface {
 	// Name returns the unique plugin identifier.
 	Name() string
 
 	// Init initializes the plugin with access to the AuthManager.
-	// The manager is fully configured (stores, config) but not yet started.
 	Init(mgr *AuthManager) error
 }
 
-// AuthPluginRoutes is the optional interface for plugins that register
-// HTTP routes under the auth base path.
+// AuthPluginRoutes is a plugin that mounts routes under the base path.
 type AuthPluginRoutes interface {
 	AuthPlugin
 	RegisterRoutes(r *router.Router, basePath string)
 }
 
-// AuthPluginMiddleware is the optional interface for plugins that provide
-// middleware (e.g., session hydration, 2FA challenge).
+// AuthPluginMiddleware is a plugin that contributes middleware.
 type AuthPluginMiddleware interface {
 	AuthPlugin
 	Middleware() func(http.Handler) http.Handler
 }
 
-// AuthPluginOnStart is the optional interface for plugins that need
-// startup logic (e.g., OAuth2 provider validation, cleanup goroutines).
+// AuthPluginOnStart is a plugin with startup work.
 type AuthPluginOnStart interface {
 	AuthPlugin
 	OnStart(ctx context.Context) error
 }
 
-// AuthPluginOnStop is the optional interface for plugins that need
-// shutdown logic (e.g., cleanup goroutines).
+// AuthPluginOnStop is a plugin with shutdown work.
 type AuthPluginOnStop interface {
 	AuthPlugin
 	OnStop(ctx context.Context) error
 }
 
-// AuthManager is the core orchestrator for the auth system. It manages
-// the plugin lifecycle, provides shared state (stores, config), and
-// implements the framework.Battery interface so it can be registered
-// directly on an App.
-//
-// Usage:
-//
-//	mgr := auth.New(auth.Config{
-//	    JWTSecret: "secret",
-//	})
-//	mgr.Use(oauth2plugin.New(oauth2plugin.Config{...}))
-//	mgr.Use(twofaplugin.New())
-//	app.RegisterBattery(mgr)
+// AuthManager runs the auth plugins over shared stores and is a framework.Battery.
 type AuthManager struct {
 	config  AuthConfig
 	plugins map[string]AuthPlugin
 	order   []string
 
-	// Shared state, available to all plugins via AuthManager accessors.
 	userStore    UserStore
 	sessionStore SessionStore
 	jwtAuth      *JWTAuth
-	// mailAddressLimit is the one per-address mail budget
-	// (AuthConfig.MailAddressRateLimit) magic-link send and
-	// forgot-password both spend from.
 	mailAddressLimit *RateLimiter
 
 	mu      sync.RWMutex
 	started bool
 
-	// app and resolving feed the banner's "no auth is wired" hint. The
-	// app is noted only when Init has run AND a resolving middleware
-	// (SessionMiddleware, Middleware, or RequireAuth over JWT()) was
-	// built, in either order:
-	// Init alone mounts routes but signs nobody in.
 	app       *framework.App
 	resolving bool
 
-	// unregisterMemoryErase drops the in-memory store eraser a previous
-	// Init registered (memory_erase.go).
 	unregisterMemoryErase func()
 	memoryEraseName       string
 }
 
-// noteIfWired tells the app callers can be signed in, once both halves
-// exist. markResolving and Init each call it after recording their half.
 func (m *AuthManager) noteIfWired() {
 	m.mu.RLock()
 	app, ok := m.app, m.resolving
@@ -437,19 +238,6 @@ func (m *AuthManager) markResolving() {
 }
 
 // New creates a new AuthManager with the given configuration.
-//
-// New does NOT install any auth plugin: AuthManager starts with an empty
-// plugin set, and no auth routes are registered until plugins are added
-// with Use. Install the plugins you need, in order, the core plugin
-// (email/password + sessions + JWT) is the usual starting point:
-//
-//	mgr := auth.New(auth.AuthConfig{JWTSecret: "..."})
-//	mgr.Use(auth.NewCorePlugin()) // login, logout, me, register
-//	mgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{}))
-//	app.RegisterBattery(mgr)
-//
-// RegisterRoutes / Middleware only see plugins registered via Use, so a
-// manager built without any Use call exposes no auth surface.
 func New(config AuthConfig) *AuthManager {
 	config.defaults()
 	mgr := &AuthManager{
@@ -457,7 +245,6 @@ func New(config AuthConfig) *AuthManager {
 		plugins: make(map[string]AuthPlugin),
 	}
 
-	// Apply user/session store from config or defaults
 	if config.UserStore != nil {
 		mgr.userStore = config.UserStore
 	}
@@ -466,15 +253,7 @@ func New(config AuthConfig) *AuthManager {
 	} else {
 		mgr.sessionStore = NewMemorySessionStore()
 	}
-	// The shared per-address mail budget is built here, not in the
-	// plugins' Init, so both mail endpoints spend the same limiter
-	// however late a plugin registers.
 	mgr.mailAddressLimit = newScopedRateLimiter(*config.MailAddressRateLimit, "mail_address")
-	// Built here, not in Init: the usual wiring calls
-	// RequireAuth(mgr.JWT()) before App.Start runs Init, and a JWTAuth that
-	// only appeared at Init left that middleware holding nil. Every bearer
-	// request then panicked, and the "no auth is wired" banner never
-	// cleared. Init finishes the wiring on this same value.
 	if config.JWTSecret != "" {
 		mgr.jwtAuth = NewJWTAuth(config.JWTSecret, config.JWTExpiry)
 		mgr.jwtAuth.onResolve = mgr.markResolving
@@ -484,7 +263,6 @@ func New(config AuthConfig) *AuthManager {
 }
 
 // Use registers an auth plugin. Returns the manager for chaining.
-// Plugins are initialized in registration order during Init().
 func (m *AuthManager) Use(plugin AuthPlugin) *AuthManager {
 	if _, exists := m.plugins[plugin.Name()]; exists {
 		panic(fmt.Sprintf("auth: plugin %q already registered", plugin.Name()))
@@ -494,8 +272,7 @@ func (m *AuthManager) Use(plugin AuthPlugin) *AuthManager {
 	return m
 }
 
-// Plugin retrieves a registered plugin by name. Useful for cross-plugin
-// communication (e.g., OAuth2 plugin checking if 2FA plugin is active).
+// Plugin returns a registered plugin by name.
 func (m *AuthManager) Plugin(name string) (AuthPlugin, bool) {
 	p, ok := m.plugins[name]
 	return p, ok
@@ -515,19 +292,10 @@ func PluginAs[T AuthPlugin](m *AuthManager, name string) (T, error) {
 	return typed, nil
 }
 
-// allowMailAddress spends one unit of the shared per-address mail budget
-// (AuthConfig.MailAddressRateLimit) and reports whether one was left.
-// Magic-link send and forgot-password both spend here, so a mail from
-// either endpoint starts the cooldown for both. A nil limiter allows
-// everything.
 func (m *AuthManager) allowMailAddress(ctx context.Context, email string) bool {
 	return allowAddress(ctx, m.mailAddressLimit, email)
 }
 
-// canonicalizeEmail applies AuthConfig.CanonicalizeEmail when set and
-// the package default (CanonicalEmail) otherwise, so the override is
-// total: every email ingestion point in the battery funnels through
-// here.
 func (m *AuthManager) canonicalizeEmail(email string) (string, error) {
 	return canonicalizeEmailWith(m.config.CanonicalizeEmail, email)
 }
@@ -537,14 +305,7 @@ func (m *AuthManager) Config() AuthConfig {
 	return m.config
 }
 
-// DefaultRoles returns the roles assigned to newly created accounts,
-// from AuthConfig.DefaultRoles or ["user"] when that field is empty.
-// It returns a fresh copy on every call so each caller owns its slice
-// and cannot mutate the shared configuration through it.
-//
-// This is the single source of truth the register handler and the
-// OAuth/magic-link auto-create flows read; it is server-side
-// configuration and is never influenced by request input.
+// DefaultRoles returns a copy of the roles new accounts get.
 func (m *AuthManager) DefaultRoles() []string {
 	if len(m.config.DefaultRoles) > 0 {
 		out := make([]string, len(m.config.DefaultRoles))
@@ -584,8 +345,7 @@ func (m *AuthManager) JWT() *JWTAuth {
 	return m.jwtAuth
 }
 
-// SetUserStore allows plugins or external code to set the user store
-// after construction but before Init.
+// SetUserStore replaces the user store; call it before Init.
 func (m *AuthManager) SetUserStore(store UserStore) {
 	m.userStore = store
 }
@@ -595,18 +355,7 @@ func (m *AuthManager) SetSessionStore(store SessionStore) {
 	m.sessionStore = store
 }
 
-// SetUserRoles replaces the roles for an existing user via the configured
-// UserStore. It is the supported server-side entry point for operator-driven
-// role assignment (e.g. the admin back-office). There is no HTTP route,
-// call it from trusted server code. The roles are OPERATOR input, never
-// request data: the caller is responsible for sourcing them from an
-// admin-gated screen, not from a client-supplied body.
-//
-// A successful change emits a roles.updated security event through the
-// audit funnel (the roles themselves are operator input, so they are the
-// one Meta value beside fixed-vocabulary tokens), so privilege changes
-// driven from scripts or future surfaces leave the same trail the admin
-// back-office writes today.
+// SetUserRoles replaces a user's roles from trusted server code and audits roles.updated.
 func (m *AuthManager) SetUserRoles(ctx context.Context, userID string, roles []string) error {
 	if !textsafe.Storable(userID) {
 		return ErrUserNotFound
@@ -622,9 +371,6 @@ func (m *AuthManager) SetUserRoles(ctx context.Context, userID string, roles []s
 	return nil
 }
 
-// refuseInMemorySessionStore is the production gate on single-node session
-// state. Init runs it twice, before and after plugin init, because a
-// plugin can swap the store out from under the first check.
 func (m *AuthManager) refuseInMemorySessionStore() error {
 	if m.config.DevMode || m.config.AllowInMemoryStores {
 		return nil
@@ -635,7 +381,6 @@ func (m *AuthManager) refuseInMemorySessionStore() error {
 	return nil
 }
 
-// initPlugins initializes all registered plugins in order.
 func (m *AuthManager) initPlugins() error {
 	for _, name := range m.order {
 		p := m.plugins[name]
@@ -646,59 +391,32 @@ func (m *AuthManager) initPlugins() error {
 	return nil
 }
 
-// ─── framework.Battery interface ────────────────────────────────────────
 
 // Name returns the battery name for the framework's BatteryManager.
 func (m *AuthManager) Name() string { return "auth" }
 
-// ReservedEmbedPrefixes reports the BasePath every auth route mounts under
-// (token minting, 2FA, account linking), so an embed grant can neither sit
-// over nor reach it wherever AuthConfig.BasePath moved it. framework/embed's
-// built-in list names only the default "/auth". See framework.EmbedReserving.
+// ReservedEmbedPrefixes reports BasePath so no embed grant reaches the auth routes.
 func (m *AuthManager) ReservedEmbedPrefixes() []string {
 	return []string{m.Config().BasePath}
 }
 
-// Init is called by the framework during App.Start. It initializes JWT
-// (if configured), all registered auth plugins, and mounts their HTTP
-// routes on app.Router() under the configured BasePath.
-//
-// Init fails closed when DevMode=false and JWTSecret is empty: the app
-// refuses to start rather than run with a forgeable signing key.
-//
-// app may be nil for unit tests that exercise auth in isolation; in
-// that case route mounting is skipped (the test wires routes directly
-// onto a router it owns).
+// Init initializes JWT and every plugin and, with an app, mounts their routes.
 func (m *AuthManager) Init(app *framework.App) error {
-	// Fail closed in production: an empty JWTSecret with DevMode=false
-	// yields forgeable, restart-unstable JWTs. Refuse to boot rather than
-	// warn. DevMode mints its own per-process secret, so it's exempt.
 	if !m.config.DevMode && m.config.JWTSecret == "" {
 		return fmt.Errorf("auth: production mode requires AuthConfig.JWTSecret: set it from your secret store, or set DevMode: true for local development")
 	}
-	// A negative SessionTTL is a sign or unit error. Substituting the
-	// default would log users in for a lifetime nobody chose.
 	if m.config.SessionTTL < 0 {
 		return fmt.Errorf("auth: AuthConfig.SessionTTL is negative (%v): set a positive duration, or leave it zero for the 7-day default", m.config.SessionTTL)
 	}
 
-	// Single-node session state in production is the silent multi-replica
-	// failure: the second replica never resolves the first one's cookies,
-	// and nothing survives a restart. A warn-only Init lets a broken
-	// deployment boot undiscovered, so, matching the in-memory 2FA store
-	// policy, production REFUSES to boot on the default in-memory session
-	// store unless the host explicitly opts in via AllowInMemoryStores.
 	if err := m.refuseInMemorySessionStore(); err != nil {
 		return err
 	}
 
-	// A negative JWTExpiry is the same sign or unit error: every login
-	// answered 200 with a token that had already expired.
 	if m.config.JWTExpiry < 0 {
 		return fmt.Errorf("auth: AuthConfig.JWTExpiry is negative (%v): set a positive duration, or leave it zero for the 1-hour default", m.config.JWTExpiry)
 	}
 
-	// Finish the JWTAuth New built (see New for why it is not built here).
 	if m.config.JWTSecret != "" {
 		expiry := m.config.JWTExpiry
 		if expiry == 0 {
@@ -710,12 +428,7 @@ func (m *AuthManager) Init(app *framework.App) error {
 		}
 		m.jwtAuth.Secret = m.config.JWTSecret
 		m.jwtAuth.Expiry = expiry
-		// Verify-only previous secrets for graceful JWTSecret rotation
-		// (sign with current; verify accepts current OR any previous).
 		m.jwtAuth.PreviousSecrets = m.config.JWTPreviousSecrets
-		// RequireAuth re-resolves every token subject against the fresh
-		// user row, so deletion and role downgrades fail closed at
-		// request time instead of at token TTL.
 		m.jwtAuth.SetUserStore(m.userStore)
 	}
 	ctx := context.Background()
@@ -729,35 +442,23 @@ func (m *AuthManager) Init(app *framework.App) error {
 		}
 	}
 
-	// Init all plugins
 	if err := m.initPlugins(); err != nil {
 		return err
 	}
 
-	// Re-check: a plugin's Init may call SetSessionStore, and the gate has
-	// to describe the store the app will actually RUN with. Checking only
-	// before plugin init let a plugin install the refused in-memory store
-	// and still return a nil error.
 	if err := m.refuseInMemorySessionStore(); err != nil {
 		return err
 	}
 
-	// Same re-check for the JWT owner store: a plugin's Init may have
-	// swapped the UserStore after the JWT wiring above, and RequireAuth
-	// must resolve owners against the store the app actually runs with.
 	if m.jwtAuth != nil {
 		m.jwtAuth.SetUserStore(m.userStore)
 	}
 
-	// Bind the erasure and export planes to the stores the app actually
-	// runs with (after plugins, since plugin Init can swap them in).
 	resolveEraseTables(m)
 	resolveExportTables(m)
 
 	if app != nil {
 		m.RegisterRoutes(app.Router())
-		// Quiets the startup banner's "no auth is wired" line, but only
-		// once a resolving middleware exists too (see noteIfWired).
 		m.mu.Lock()
 		m.app = app
 		m.mu.Unlock()
@@ -785,8 +486,6 @@ func (m *AuthManager) OnStart(ctx context.Context) error {
 
 // OnStop stops plugins that implement AuthPluginOnStop.
 func (m *AuthManager) OnStop(ctx context.Context) error {
-	// The in-memory store eraser is process-wide; a stopped manager's
-	// stores must not be reached by another app's EraseUserData.
 	unregisterMemoryStoreEraser(m)
 	var firstErr error
 	for _, name := range slices.Backward(m.order) {
@@ -800,10 +499,7 @@ func (m *AuthManager) OnStop(ctx context.Context) error {
 	return firstErr
 }
 
-// RegisterRoutes mounts all sub-plugin routes under the configured
-// auth base path. Called from AuthManager.Init when an app is supplied;
-// also exported so users can mount auth routes onto a router they
-// manage themselves.
+// RegisterRoutes mounts every plugin's routes under BasePath.
 func (m *AuthManager) RegisterRoutes(r *router.Router) {
 	for _, name := range m.order {
 		if rp, ok := m.plugins[name].(AuthPluginRoutes); ok {
@@ -812,13 +508,10 @@ func (m *AuthManager) RegisterRoutes(r *router.Router) {
 	}
 }
 
-// Middleware returns a composed middleware chain from all plugins that
-// implement AuthPluginMiddleware. Middleware is applied in registration order.
+// Middleware composes the plugins' middleware, first registered outermost.
 func (m *AuthManager) Middleware() func(http.Handler) http.Handler {
 	m.markResolving()
 	return func(next http.Handler) http.Handler {
-		// Apply plugin middleware in reverse order so the first registered
-		// plugin is the outermost middleware.
 		handler := next
 		for _, v := range slices.Backward(m.order) {
 			if pmw, ok := m.plugins[v].(AuthPluginMiddleware); ok {
