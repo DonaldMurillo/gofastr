@@ -179,6 +179,7 @@ var ownedPackages = []string{
 	"core/i18n",
 	"core/i18n/internal/cldrgen",
 	"core-ui/compute",
+	"core-ui/di",
 	"framework/experimental/harness",
 	"framework/experimental/harness/client/tui",
 	"framework/experimental/harness/client/web",
