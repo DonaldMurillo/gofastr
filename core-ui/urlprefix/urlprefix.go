@@ -364,7 +364,7 @@ func (w *writer) WriteHeader(code int) {
 	w.rewriteHeaders()
 	h := w.ResponseWriter.Header()
 	if h.Get("Content-Encoding") == "" {
-		if mt, _, err := mime.ParseMediaType(h.Get("Content-Type")); err == nil && mt == "text/html" {
+		if mt, _, _ := mime.ParseMediaType(h.Get("Content-Type")); mt == "text/html" {
 			w.buffering = true
 			w.snap = h.Clone()
 			w.snap.Del("Content-Length")

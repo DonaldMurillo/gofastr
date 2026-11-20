@@ -78,8 +78,8 @@ func (w *injectWriter) decide() {
 	}
 	w.decided = true
 	h := w.Header()
-	mt, _, err := mime.ParseMediaType(h.Get("Content-Type"))
-	if err != nil || mt != "text/html" {
+	mt, _, _ := mime.ParseMediaType(h.Get("Content-Type"))
+	if mt != "text/html" {
 		return
 	}
 	if ce := h.Get("Content-Encoding"); ce != "" && !strings.EqualFold(ce, "identity") {
