@@ -7,8 +7,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ImageConfig configures a void <img> element.
-// Required: Src and Alt (empty Alt = decorative, gets role="presentation").
+// ImageConfig configures a void <img> element. Required: Src and Alt (empty Alt = decorative, gets
+// role="presentation").
 type ImageConfig struct {
 	Src        string // required
 	Alt        string // required (empty = decorative image)
@@ -31,8 +31,7 @@ type VideoConfig struct {
 	ExtraAttrs Attrs
 }
 
-// SourceConfig configures a void <source> element.
-// Required: Src and Type.
+// SourceConfig configures a void <source> element. Required: Src and Type.
 type SourceConfig struct {
 	Src        string // required
 	Type       string // required: MIME type
@@ -41,18 +40,12 @@ type SourceConfig struct {
 	ExtraAttrs Attrs
 }
 
-// Image produces a void <img> element.
-// Required: Src and Alt. Empty Alt marks the image as decorative
-// (role="presentation" is added automatically).
+// Image produces a void <img> element. Required: Src and Alt.
 func Image(cfg ImageConfig) render.HTML {
 	if cfg.Src == "" {
 		panic("html: Image requires Src")
 	}
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
-	// ImageSource rather than Resource: an inline raster data: URI is a
-	// legitimate <img src> (LQIP placeholders, generated icons), while the
-	// sinks that must keep rejecting data:, <script src>, <link href>,
-	// stay on Resource.
 	attrs = setURLAttr(attrs, "src", cfg.Src, urlsafe.ImageSource)
 	attrs = setAttr(attrs, "alt", cfg.Alt)
 	if cfg.Alt == "" {
@@ -75,8 +68,8 @@ func Video(cfg VideoConfig, children ...render.HTML) render.HTML {
 	return render.Tag("video", attrs, children...)
 }
 
-// Source produces a void <source> element for use inside <audio> or <video>.
-// Required: Src and Type.
+// Source produces a void <source> element for use inside <audio> or <video>. Required: Src and
+// Type.
 func Source(cfg SourceConfig) render.HTML {
 	if cfg.Src == "" {
 		panic("html: Source requires Src")
@@ -90,29 +83,18 @@ func Source(cfg SourceConfig) render.HTML {
 	return render.VoidTag("source", attrs)
 }
 
-// IFrameConfig configures an <iframe> element.
-// Required: Src and Title. An iframe with no title is an unnamed region
-// to a screen reader.
+// IFrameConfig configures an <iframe> element. Required: Src and Title.
 type IFrameConfig struct {
-	Src   string // required
-	Title string // required
-	// Sandbox is the sandbox attribute's token list ("allow-popups
-	// allow-forms"). The attribute is always rendered: an empty Sandbox
-	// applies every restriction (no scripts, no forms, a unique origin),
-	// the right default for content the page did not write. Unsandboxed
-	// drops the attribute, for a frame of the app's own trusted pages.
+	Src         string // required
+	Title       string // required
 	Sandbox     string
 	Unsandboxed bool
 	Class       string
 	ID          string
-	// ExtraAttrs forwards additional attributes. src, srcdoc, sandbox and
-	// title belong to the fields above and are dropped in every case
-	// spelling, so ExtraAttrs cannot lift the sandbox or swap the URL.
-	ExtraAttrs Attrs
+	ExtraAttrs  Attrs
 }
 
-// IFrame produces an <iframe> element, sandboxed unless the config opts
-// out. Src passes the Resource URL policy; a refused URL omits src.
+// IFrame produces an <iframe> element, sandboxed unless the config opts out.
 func IFrame(cfg IFrameConfig) render.HTML {
 	if cfg.Src == "" {
 		panic("html: IFrame requires Src")
