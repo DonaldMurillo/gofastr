@@ -221,6 +221,7 @@ var ownedPackages = []string{
 	"core-ui/widget/theme",
 	"core-ui/widget/preset",
 	"core-ui/seo",
+	"core-ui/urlprefix",
 }
 
 //gofastr:test-reads primitives/ *.go
