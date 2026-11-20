@@ -67,6 +67,9 @@
   // The entry a declined move's history.go is heading back to: its
   // popstate is the repair arriving, not a move of its own.
   let repair = null;
+  // A save that keeps a layer changes what the layers under it and the
+  // page under the stack show; each re-renders when it is uncovered.
+  let pageStale = false;
 
   // Match a resolved path against the manifest's route patterns. Static
   // segments must match exactly; ':param' and '{param}' match one
@@ -241,6 +244,7 @@
     if (!below) {
       // The page under the stack is entry 0 of the new stack.
       underPath = location.pathname + location.search;
+      pageStale = false;
       stackId = RUN + ++seq;
       try { history.replaceState({ ...history.state, cui: { s: stackId } }, '', location.href); } catch (_) {}
     }
@@ -289,7 +293,26 @@
     layers.splice(layers.indexOf(t), 1);
     drop(t);
     settleAfterDrop(t.restoreFocus);
+    // A stale layer or page re-renders once the move has landed.
+    const below = top();
+    if (below ? below.stale : pageStale) repair = { k: below?.key, i: below?.cur, then: () => uncover(t.restoreFocus) };
     history.go(-(t.cur + 1)); // the entries this layer owns
+  }
+
+  // The top layer, or the page when none is left, has just been
+  // uncovered: re-render it if a save above it went stale on it.
+  function uncover(focus) {
+    const lay = top();
+    if (!lay) {
+      if (pageStale) { pageStale = false; NS.refresh?.(); }
+      return;
+    }
+    if (!lay.stale) return;
+    lay.stale = false;
+    const e = epoch;
+    fetchOverlay(lay.url, lay.fromURL)
+      .then((res) => { if (e === epoch && res) refresh(lay, res, focus); })
+      .catch(() => {});
   }
 
   // Drop every layer without a history move: a real navigation has
@@ -492,6 +515,8 @@
       NS.refresh?.();
       return true;
     }
+    for (const l of layers) l.stale = l !== lay;
+    pageStale = true;
     fetchOverlay(lay.url, lay.fromURL)
       .then((res) => {
         if (e !== epoch) return;
@@ -545,6 +570,7 @@
       if (refetch) {
         const u = location.pathname + location.search + location.hash;
         const e = epoch;
+        lay.stale = false;
         lay.cur = j;
         lay.url = u;
         fetchOverlay(u, lay.fromURL)
@@ -556,6 +582,7 @@
           .catch(() => { if (e === epoch) fallbackNav(u, ''); });
       }
       settleAfterDrop(focus);
+      uncover(focus);
       return true;
     }
     // The entry belongs to none of the layers (the page under the
@@ -580,6 +607,7 @@
     const focus = base && layers[0].restoreFocus;
     closeAllNow();
     refocus(focus);
+    if (base && pageStale) { uncover(); return true; }
     return false;
   };
 

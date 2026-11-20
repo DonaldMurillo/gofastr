@@ -12,6 +12,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 )
 
 // A save inside an intercept layer that names where to go next returns
@@ -21,7 +22,7 @@ import (
 // and its form navigates to the path the server saw as the origin, the
 // way entityui's create form does.
 const interceptReturnRoutes = `[{"path":"/list"},` +
-	`{"path":"/rec/:id","intercept":{"from":"/list","as":"drawer"}},` +
+	`{"path":"/rec/:id","intercept":{"from":"/list","also":["/rec/:id"],"as":"drawer"}},` +
 	`{"path":"/new","intercept":{"from":"/list","also":["/rec/:id"],"as":"drawer"}},` +
 	`{"path":"/away"}]`
 
@@ -55,8 +56,13 @@ func startInterceptReturnServer(t *testing.T) *httptest.Server {
 			switch r.URL.Path {
 			case "/rec/a":
 				fmt.Fprintf(w, `<div id="rec-a"><p id="rec-count">REC %d</p><a id="rec-new" href="/new">add</a>`+
+					`<a id="rec-to-b" href="/rec/b">rec b</a>`+
 					`<form id="rec-form" data-cui-rpc="/save" data-cui-rpc-method="POST" data-cui-rpc-navigate="/rec/a">`+
 					`<button id="rec-save" type="submit">Save</button></form></div>`, saves.Load())
+			case "/rec/b":
+				fmt.Fprintf(w, `<div id="rec-b"><p id="rec-b-count">REC %d</p>`+
+					`<form data-cui-rpc="/save" data-cui-rpc-method="POST" data-cui-rpc-navigate="/rec/b">`+
+					`<button id="rec-b-save" type="submit">Save</button></form></div>`, saves.Load())
 			case "/new":
 				dest, _, _ := strings.Cut(r.Header.Get("X-Gofastr-From"), "?")
 				if r.URL.Query().Get("to") == "away" {
@@ -167,6 +173,54 @@ func TestSaveInPaneKeepsIt(t *testing.T) {
 	}
 	if got := historyLen(t, ctx); got != h {
 		t.Errorf("history length = %d, want %d", got, h)
+	}
+}
+
+// A save that keeps its pane changed what the page under the stack
+// shows: closing the pane, by Escape or by Back, re-renders the list.
+func TestSaveInPaneRefreshesTheListOnClose(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		close chromedp.Action
+	}{
+		{"escape", chromedp.KeyEvent(kb.Escape)},
+		{"back", chromedp.Evaluate(`history.back()`, nil)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := returnRig(t)
+			returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+			returnClick(t, ctx, "rec-save", fmt.Sprintf(textIs, "rec-count", "REC 1"))
+			if err := chromedp.Run(ctx, tc.close); err != nil {
+				t.Fatal(err)
+			}
+			if !interceptWait(ctx, `!document.getElementById('rec-a') && `+fmt.Sprintf(textIs, "list-count", "LIST 1")) {
+				var list string
+				_ = chromedp.Run(ctx, chromedp.Text(`#list-count`, &list, chromedp.ByID))
+				t.Fatalf("after the save and close the list reads %q, want LIST 1 (%+v)", list, readStack(ctx))
+			}
+		})
+	}
+}
+
+// The same holds one layer up: a save in a record stacked over another
+// re-renders the lower record when the upper one closes, and the list
+// when the lower one closes.
+func TestSaveInUpperPaneRefreshesTheLayersUnder(t *testing.T) {
+	ctx := returnRig(t)
+	returnClick(t, ctx, "to-a", `!!document.getElementById('rec-a')`)
+	returnClick(t, ctx, "rec-to-b", `!!document.getElementById('rec-b')`)
+	returnClick(t, ctx, "rec-b-save", fmt.Sprintf(textIs, "rec-b-count", "REC 1"))
+	if err := chromedp.Run(ctx, chromedp.KeyEvent(kb.Escape)); err != nil {
+		t.Fatal(err)
+	}
+	if !interceptWait(ctx, `!document.getElementById('rec-b') && `+fmt.Sprintf(textIs, "rec-count", "REC 1")) {
+		t.Fatalf("closing the upper record left the lower one stale: %+v", readStack(ctx))
+	}
+	if err := chromedp.Run(ctx, chromedp.KeyEvent(kb.Escape)); err != nil {
+		t.Fatal(err)
+	}
+	if !interceptWait(ctx, `!document.getElementById('rec-a') && `+fmt.Sprintf(textIs, "list-count", "LIST 1")) {
+		t.Fatalf("closing the lower record left the list stale: %+v", readStack(ctx))
 	}
 }
 
