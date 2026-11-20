@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/core/tracing"
 )
 
 // invokeRecovering runs one handler call under a span and converts a panic
@@ -45,7 +46,7 @@ func invokeRecovering(ctx context.Context, h Handler, job Job) (err error) {
 		} else if err != nil {
 			// The type, not the message: a handler's error routinely
 			// quotes the payload it failed on.
-			span.SetAttributes(attribute.String("error.type", fmt.Sprintf("%T", err)))
+			span.SetAttributes(attribute.String("error.type", tracing.ErrorType(err)))
 			span.SetStatus(codes.Error, "")
 		}
 		span.End()
