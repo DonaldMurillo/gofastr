@@ -213,12 +213,12 @@ var SidebarShowcaseConfig = ui.SidebarConfig{
 	DrawerName: "ui-sidebar-drawer",
 	Items: []ui.SidebarItem{
 		{Label: "Modeling", Children: []ui.SidebarItem{
-			{Label: "Entities", Href: "/docs/entities"},
-			{Label: "Fields", Href: "/docs/fields"},
+			{Label: "Entities", Href: "/docs/entity-declarations"},
+			{Label: "Fields", Href: "/docs/entity-declarations#field-keys"},
 		}},
 		{Label: "Serving", Children: []ui.SidebarItem{
-			{Label: "Router", Href: "/docs/router"},
-			{Label: "Middleware", Href: "/docs/middleware"},
+			{Label: "Router", Href: "/docs/core-packages#router"},
+			{Label: "Middleware", Href: "/docs/security"},
 		}},
 	},
 }
