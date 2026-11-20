@@ -106,7 +106,7 @@ decisions:
   - id: preserve-openapi-30-typeless-body-behavior
     date: 2026-11-20
     status: accepted
-    decision: A type-less JSON request body is implicitly nullable only in OpenAPI 3.1 and only when every keyword in the resolved schema and its reference siblings is an annotation, schema metadata or definitions, a type-specific assertion that ignores null, or an x- extension. Conditional, composition and unknown keywords prevent implicit nullability. OpenAPI 3.0 keeps the JS TypeError for a required null body and the existing Go behavior.
+    decision: A type-less JSON request body is implicitly nullable only in OpenAPI 3.1 and later and only when every keyword in the resolved schema and its reference siblings is an annotation, schema metadata or definitions, a type-specific assertion that ignores null, or an x- extension. Conditional, composition and unknown keywords prevent implicit nullability. OpenAPI 3.0 keeps the JS TypeError for a required null body and the existing Go behavior.
     rejected:
       - option: Treat an OpenAPI 3.0 {} body as nullable in JS.
         why: OpenAPI 3.0 admits null only via nullable true, which 3.0.3 ties to an explicit type, so the JS TypeError matches the specification.

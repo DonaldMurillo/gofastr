@@ -506,11 +506,11 @@ of several members, or one beside properties, is the merged object. A
 document deriving more than 5000 struct types is refused.
 
 Nullable JSON request bodies (`nullable: true` in OpenAPI 3.0 or a
-`type` list containing `"null"` in 3.1) retain null separately from
+`type` list containing `"null"` in 3.1 and later) retain null separately from
 absence. In JS/TS, pass `null` to send the literal JSON `null` with
 `Content-Type: application/json`; `undefined` omits an optional body
 and rejects a required one. The body parameter's TypeScript type includes
-`| null` unless it is already `unknown`, which admits null. In OpenAPI 3.1,
+`| null` unless it is already `unknown`, which admits null. In OpenAPI 3.1 and later,
 a type-less JSON request body is implicitly nullable only when its keywords
 are annotations, schema metadata or definitions, type-specific assertions that
 ignore null, or `x-` extensions.

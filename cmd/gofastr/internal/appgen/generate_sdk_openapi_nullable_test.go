@@ -103,7 +103,7 @@ await assert.rejects(() => client.plainRequired(null), /request body is required
 }
 
 func TestOpenAPISDKTypelessBody(t *testing.T) {
-	for _, version := range []string{"3.0.3", "3.1.0"} {
+	for _, version := range []string{"3.0", "3.0.3", "3.1.0", "3.2.0"} {
 		for _, tc := range []struct {
 			schema   string
 			nullable bool
@@ -140,7 +140,7 @@ func TestOpenAPISDKTypelessBody(t *testing.T) {
 					t.Fatal(err)
 				}
 				files := renderOASDKJSFiles(spec)
-				wantNullable := version == "3.1.0" && tc.nullable
+				wantNullable := (version == "3.1.0" || version == "3.2.0") && tc.nullable
 				for _, op := range spec.Ops {
 					if got := oaJSDescribe(op).BodyNullable; got != wantNullable {
 						t.Errorf("%s descriptor bodyNullable=%v, want %v", op.JSName, got, wantNullable)
