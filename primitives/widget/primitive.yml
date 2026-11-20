@@ -1,0 +1,7 @@
+primitive: widget
+summary: Self-mounting overlay surfaces (panels, modals, drawers, popovers, toast stacks) declared as a widget.Definition, mounted on a router with their chrome, stylesheet, state and RPC routes, and published to the catalog the runtime opens them from.
+code:
+  - core-ui/widget/*.go
+docs:
+  - framework/docs/content/widgets.md
+  - core-ui/ARCHITECTURE.md

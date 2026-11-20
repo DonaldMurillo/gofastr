@@ -219,6 +219,7 @@ var ownedPackages = []string{
 	"framework/experimental/harness/tracing",
 	"core-ui/urlsafe",
 	"core-ui/widget/theme",
+	"core-ui/widget/preset",
 }
 
 //gofastr:test-reads primitives/ *.go
