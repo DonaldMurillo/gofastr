@@ -58,11 +58,14 @@ invariants:
       - test: core/static.TestDirectoryRedirectStaysOnHost
       - test: core/static.TestDirectoryRedirectOnDisk
   - id: content-hash-etag
-    rule: The ETag is a SHA-256 content hash streamed from the file, memoised per handler under name, size, modtime, inode and ctime, so two handlers never share a digest and a same-size rewrite with its modtime put back gets a new one.
+    rule: The ETag is a SHA-256 content hash streamed from the file, memoised per handler under name, size, modtime, inode and ctime only when ctime is at least one second old before hashing; a missing or future ctime needs no settling window. Nanosecond ctime fields can repeat within a filesystem clock tick, so recent revisions are hashed without memoisation and background workers wait a second before validating and hashing them.
     enforced_by:
       - test: core/static.TestDigestCacheDoesNotLeakAcrossHandlers
       - test: core/static.TestDigestCacheServesRepeatRequests
       - test: core/static.TestRewriteKeepingModTimeNewETag
+      - test: core/static.TestDigestRevisionSettled
+      - test: core/static.TestRewriteKeepingRevisionNewETag
+      - test: core/static.TestLargeFileFutureCTimeGetsETag
       - test: core/static.TestStatic_ServesLargeFileUntruncated
   - id: large-file-hashed-off-request
     rule: A file over 16 MiB missing from the cache is served without an ETag while at most two background hashes per handler run, each storing its digest only when the file kept its revision through the read, and a panic in the FS's Open, Stat, Read or Close during that hash costs only that ETag.
