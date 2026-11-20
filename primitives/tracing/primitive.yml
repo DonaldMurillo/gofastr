@@ -30,7 +30,6 @@ invariants:
     applies:
       - core/middleware/tracing.go
       - battery/queue/invoke.go
-      - core/tracing/job.go
     enforced_by:
       - test: core/middleware.TestTracingMarksPanickedSpan
       - test: battery/queue.TestMemoryJobSpans
